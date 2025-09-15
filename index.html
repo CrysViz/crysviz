@@ -897,6 +897,8 @@
         
         createBondLengthControls();
         updateVisualization();
+        resetView();
+
         renderComposition();
         setPicked(null);
         clearMeasure();
@@ -1194,6 +1196,7 @@
     window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
 
     init();
+    resetView();
 
   </script>
 
