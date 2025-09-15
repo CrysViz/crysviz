@@ -261,6 +261,29 @@
     .vsep { width: 1px; height: 22px; background: rgba(255,255,255,0.12); margin: 0 2px; }
 
 
+    /* --- Measure panel --- */
+  #measure { display:grid; gap:10px; }
+  #measureRow{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 12px; border-radius:12px;
+    background:rgba(79,195,247,0.10); border:1px solid rgba(79,195,247,0.35);
+  }
+  #pairText{ font-size:15px; font-weight:600; letter-spacing:.2px; }
+  #distanceValue{ font-size:18px; font-weight:800; color:#4fc3f7; }
+  .btn-mini{
+    align-self:end; padding:8px 12px; font-size:12px; color:#fff; cursor:pointer;
+    background:rgba(79,195,247,.15); border:1px solid rgba(79,195,247,.35); border-radius:8px;
+  }
+
+  /* --- Floating distance label in scene --- */
+  .measure-label{
+    padding:6px 9px; border-radius:10px; font-size:13px; font-weight:700;
+    color:#fff; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.2);
+    backdrop-filter: blur(6px); white-space:nowrap;
+  }
+
+
+
   </style>
 
   <script type="importmap">
@@ -326,6 +349,12 @@
     let showLattice = true;
 
     let gizmoScene, gizmoCamera, gizmoRenderer, gizmoAxes;
+
+        // Measurement state
+    let pickA = null, pickB = null;
+    let measureLine = null;          // THREE.Line
+    let measureLabel = null;         // CSS2DObject
+    let labelRenderer = null;        // CSS2DRenderer overlay for main scene
 
 
     // Atomic data
@@ -605,6 +634,81 @@
       return bondLengths[pair1] || bondLengths[pair2] || 3.0;
     }
 
+
+
+    function formatÅ(x){ return (Math.round(x*1000)/1000).toFixed(3); }
+
+    function clearHighlight(m){
+      if(!m || !m.material) return;
+      if(m.userData._origEmissive!==undefined){
+        m.material.emissive.setHex(m.userData._origEmissive);
+        m.material.emissiveIntensity = m.userData._origEmissiveInt || 0;
+      }
+    }
+    function highlight(m, hex){
+      if(!m || !m.material) return;
+      if(m.userData._origEmissive===undefined){
+        m.userData._origEmissive = m.material.emissive.getHex();
+        m.userData._origEmissiveInt = m.material.emissiveIntensity || 0;
+      }
+      m.material.emissive.setHex(hex);
+      m.material.emissiveIntensity = 0.6;
+    }
+
+    function updateMeasureUI(){
+      const pairEl = document.getElementById('pairText');
+      const distEl = document.getElementById('distanceValue');
+      if (pickA && pickB){
+        const a = pickA.userData.element, b = pickB.userData.element;
+        const pa = pickA.position, pb = pickB.position;
+        const d = Math.hypot(pa.x-pb.x, pa.y-pb.y, pa.z-pb.z);
+        pairEl.textContent = `${a} — ${b}`;
+        distEl.textContent = formatÅ(d);
+      } else {
+        pairEl.textContent = '—';
+        distEl.textContent = '—';
+      }
+    }
+
+    function clearMeasureGraphics(){
+      if (measureLine){ scene.remove(measureLine); measureLine.geometry.dispose(); measureLine = null; }
+      if (measureLabel){ scene.remove(measureLabel); measureLabel = null; }
+    }
+    function drawMeasureGraphics(){
+      clearMeasureGraphics();
+      if (!(pickA && pickB)) return;
+
+      // dashed line
+      const pa = pickA.position.clone(), pb = pickB.position.clone();
+      const geom = new THREE.BufferGeometry().setFromPoints([pa, pb]);
+      measureLine = new THREE.Line(
+        geom,
+        new THREE.LineDashedMaterial({ color:0x000000, dashSize:0.1, gapSize:0.15, linewidth:1.5 })
+      );
+      measureLine.computeLineDistances();
+      scene.add(measureLine);
+
+      // midpoint floating label
+      const mid = pa.clone().add(pb).multiplyScalar(0.5);
+      const div = document.createElement('div');
+      div.className = 'measure-label';
+      const a = pickA.userData.element, b = pickB.userData.element;
+      const d = pa.distanceTo(pb);
+      div.textContent = `${a} — ${b} = ${formatÅ(d)} Å`;
+      measureLabel = new CSS2DObject(div);
+      measureLabel.position.copy(mid);
+      scene.add(measureLabel);
+    }
+
+    function clearMeasure(){
+      clearHighlight(pickA); clearHighlight(pickB);
+      pickA = null; pickB = null;
+      clearMeasureGraphics();
+      updateMeasureUI();
+    }
+
+
+
     function createAtomMesh(element, position) {
       const radius = getAtomRadius(element);
       const color = getElementColor(element);
@@ -775,12 +879,7 @@
       if (showLattice) scene.add(latticeGroup);
 
       renderComposition();
-
-      // Update camera
-      // const { center, dist } = getCellCenterAndDist();
-      // camera.position.set(center.x + dist, center.y + dist, center.z + dist);
-      // controls.target.copy(center);
-      // controls.update();
+      clearMeasureGraphics();
     }
 
     function colorHexToCss(hex) {
@@ -800,6 +899,8 @@
         updateVisualization();
         renderComposition();
         setPicked(null);
+        clearMeasure();
+        updateMeasureUI();  
         resetView();
 
       } catch (error) {
@@ -826,6 +927,16 @@
       renderer.toneMappingExposure = 1.2;
 
       view.appendChild(renderer.domElement);
+
+
+      // Label for distances
+      labelRenderer = new CSS2DRenderer();
+      labelRenderer.setSize(w, h);
+      labelRenderer.domElement.style.position = 'absolute';
+      labelRenderer.domElement.style.top = '0';
+      labelRenderer.domElement.style.left = '0';
+      labelRenderer.domElement.style.pointerEvents = 'none';
+      view.appendChild(labelRenderer.domElement);
 
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
@@ -866,23 +977,34 @@
       let raycaster = new THREE.Raycaster();
       let mouse = new THREE.Vector2();
 
-      function onClickPick(event) {
+      function onClickPick(event){
         const rect = renderer.domElement.getBoundingClientRect();
-        const x = ( (event.clientX - rect.left) / rect.width ) * 2 - 1;
-        const y = - ( (event.clientY - rect.top) / rect.height ) * 2 + 1;
+        const x = ((event.clientX-rect.left)/rect.width)*2 - 1;
+        const y = -((event.clientY-rect.top)/rect.height)*2 + 1;
         mouse.set(x, y);
         raycaster.setFromCamera(mouse, camera);
-        if (!atomsGroup) return;
-        const hits = raycaster.intersectObjects(atomsGroup.children, true);
-        if (hits.length > 0) {
-          const el = hits[0].object.userData.element || null;
-          setPicked(el);
-        } else {
-          setPicked(null);
-        }
-      }
+        if(!atomsGroup) return;
 
+        const hits = raycaster.intersectObjects(atomsGroup.children, true);
+        if (!hits.length) return;
+
+        const hit = hits[0].object;
+
+        // selection cycling: A -> B -> restart with new A
+        if (!pickA || (pickA && pickB)) {
+          clearMeasure();
+          pickA = hit; highlight(pickA, 0x3dd5ff);
+        } else if (!pickB) {
+          if (hit === pickA) return;
+          pickB = hit; highlight(pickB, 0xff7ad6);
+        }
+
+        updateMeasureUI();
+        drawMeasureGraphics();
+      }
       renderer.domElement.addEventListener('click', onClickPick);
+
+      document.getElementById('clearMeasure').onclick = clearMeasure;
 
 
       // Axes gizmo (bottom-left)
@@ -1047,6 +1169,8 @@
       gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
 
       gizmoRenderer.render(gizmoScene, gizmoCamera);
+      labelRenderer.render(scene, camera);           // <-- add
+
     }
 
     // window resize
@@ -1061,13 +1185,15 @@
       gizmoRenderer.setSize(gizmoDiv.clientWidth, gizmoDiv.clientHeight);
       gizmoCamera.aspect = gizmoDiv.clientWidth / gizmoDiv.clientHeight;
       gizmoCamera.updateProjectionMatrix();
+
+      labelRenderer.setSize(w, h);
+
     });
 
     window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
     window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
 
     init();
-    resetView();
 
   </script>
 
@@ -1075,8 +1201,14 @@
   <div id="infoPanel">
     <h4>Structure</h4>
     <div id="composition"></div>
-    <h4 style="margin-top:10px;">Picked</h4>
-    <div id="picked"><span class="dot" id="pickedDot"></span><span id="pickedText">None</span></div>
+    <h4 style="margin-top:10px;">Measure</h4>
+    <div id="measure">
+      <div id="measureRow">
+        <span id="pairText">—</span>
+        <span><span id="distanceValue">—</span> Å</span>
+      </div>
+      <button id="clearMeasure" class="btn-mini">Clear</button>
+    </div>
   </div>
 
 
