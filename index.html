@@ -294,6 +294,7 @@
 
   <script type="module">
     import * as THREE from 'three';
+    import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
     import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
     import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
 
@@ -347,6 +348,21 @@
     function getAtomRadius(element) {
       return (atomicRadii[element] || 1.0) * atomSize;
     }
+
+    function latticeDirsNorm() {
+    if (!structureData) return {
+      a: new THREE.Vector3(1,0,0),
+      b: new THREE.Vector3(0,1,0),
+      c: new THREE.Vector3(0,0,1)
+    };
+    const L = structureData.lattice;
+    return {
+      a: new THREE.Vector3(L[0][0], L[0][1], L[0][2]).normalize(),
+      b: new THREE.Vector3(L[1][0], L[1][1], L[1][2]).normalize(),
+      c: new THREE.Vector3(L[2][0], L[2][1], L[2][2]).normalize()
+    };
+    }
+
 
     function periodicWrapped(frac, elements) {
       const eps = 1e-6;
@@ -403,19 +419,16 @@
       return { center, dist };
     }
 
-
+    // makes the center of structure as the rotation center.
     function setViewDirection(dir) {
       const { center, dist } = getCellCenterAndDist();
-      const n = new THREE.Vector3(...dir).normalize();
+      const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
       camera.position.copy(center.clone().add(n.multiplyScalar(dist)));
       controls.target.copy(center);
       controls.update();
     }
 
-    function resetView() {
-      setViewDirection(new THREE.Vector3(1,1,1).normalize())
-    }
-
+    function resetView() { setViewDirection(new THREE.Vector3(1,1,1)); }
 
     function latticeDirs() {
       if (!structureData) return {a:[1,0,0], b:[0,1,0], c:[0,0,1]};
@@ -863,18 +876,31 @@
       gizmoRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       gizmoDiv.appendChild(gizmoRenderer.domElement);
 
+      gizmoScene = new THREE.Scene();
+      gizmoCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+      gizmoCamera.position.set(0, 0, 3);   // <-- keep a fixed distance
+      gizmoCamera.lookAt(0, 0, 0);
+
+      const arrowLen = 1.3, headLen = 0.35, headWidth = 0.22;
+      const makeArrow = (color) => new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), arrowLen, color, headLen, headWidth);
+      const aArrow = makeArrow(0xff3333);
+      const bArrow = makeArrow(0x33cc33);
+      const cArrow = makeArrow(0x3366ff);
+      gizmoScene.add(aArrow, bArrow, cArrow);
+
+      // keep handles for animate()
+      gizmoScene.userData.aArrow = aArrow;
+      gizmoScene.userData.bArrow = bArrow;
+      gizmoScene.userData.cArrow = cArrow;
+
       function sizeGizmo(){
         const w = gizmoDiv.offsetWidth || 110, h = gizmoDiv.offsetHeight || 110;
         gizmoRenderer.setSize(w, h);
         gizmoCamera.aspect = w / h;
         gizmoCamera.updateProjectionMatrix();
       }
-      gizmoScene = new THREE.Scene();
-      gizmoCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-      gizmoCamera.position.set(0,0,0);           // <-- not at the origin
-      gizmoAxes = new THREE.AxesHelper(1.6);
-      gizmoScene.add(gizmoAxes);
       sizeGizmo();
+
 
       document.getElementById('viewX').onclick = () => setViewDirection([1,0,0]);
       document.getElementById('viewY').onclick = () => setViewDirection([0,1,0]);
@@ -969,14 +995,17 @@
       requestAnimationFrame(animate);
       controls.update();
       renderer.render(scene, camera);
-      const d = 3;
-      gizmoCamera.position.set(0, 0, d);
-      gizmoCamera.quaternion.copy(camera.quaternion);
-      gizmoCamera.updateMatrixWorld();
+      const invCamQ = camera.quaternion.clone().invert();
+      const { a, b, c } = latticeDirsNorm();
+
+      gizmoScene.userData.aArrow.setDirection(a.clone().applyQuaternion(invCamQ));
+      gizmoScene.userData.bArrow.setDirection(b.clone().applyQuaternion(invCamQ));
+      gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
+
       gizmoRenderer.render(gizmoScene, gizmoCamera);
     }
 
-    // Handle window resize
+    // window resize
     window.addEventListener('resize', () => {
       const w = view.clientWidth || window.innerWidth;
       const h = view.clientHeight || window.innerHeight;
@@ -1024,5 +1053,4 @@
   </div>
 
 </body>
-
 </html>
