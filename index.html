@@ -194,7 +194,7 @@
       color: #fff;
       padding: 12px 14px;
       border-radius: 14px;
-      font-size: 12px;
+      font-size: 14px;
       line-height: 1.4;
       backdrop-filter: blur(10px);
       border: 1px solid rgba(255,255,255,0.1);
@@ -204,7 +204,7 @@
       margin: 0 0 8px 0;
       font-weight: 600;
       color: #4fc3f7;
-      font-size: 12px;
+      font-size: 14px;
       letter-spacing: .3px;
     }
     .comp-row {
@@ -226,11 +226,26 @@
 
 
     #axesGizmo {
-    position: fixed; left: 450px; bottom: 16px; width: 110px; height: 110px;
+    position: fixed; left: 450px; bottom: 20px; width: 110px; height: 110px;
     border-radius: 10px; background: rgba(0,0,0,0.08); backdrop-filter: blur(6px);
     border: 1px solid rgba(255,255,255,0.15); z-index: 1000; overflow: hidden;
     pointer-events: none; 
     }
+
+    #axesLegend{
+    position: fixed; left: 410px; bottom: 20px;
+    transform: translateX(150px); /* sits right of the gizmo (140px + 10px gap) */
+    background: rgba(0,0,0,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 6px 8px;
+    font-size: 12px; color:#333;
+    backdrop-filter: blur(6px);
+    z-index:1000; pointer-events:none;
+  }
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;}
+  .dot-a{background:#ff3333;} .dot-b{background:#33cc33;} .dot-c{background:#3366ff;}
+  .legend-row{display:flex;align-items:center;gap:6px;line-height:1.2;}
 
     /* View toolbar (top-left) */
     #viewToolbar {
@@ -263,7 +278,7 @@
     
     <div class="control-group">
       <h3>Load POSCAR File</h3>
-      <input type="file" id="fileInput" accept=".poscar,.POSCAR,*">
+      <input type="file" id="fileInput" accept="POSCAR,CONTCAR,.vasp,.poscar,.POSCAR,*">
       <label for="fileInput" id="fileLabel">
         📁 Choose POSCAR file or drag & drop
       </label>
@@ -640,7 +655,7 @@
       const material = new THREE.LineBasicMaterial({
         color: 0x000000,
         transparent: true,
-        opacity: 0.2,
+        opacity: 0.7,
         linewidth: 3
       });
 
@@ -876,17 +891,44 @@
       gizmoRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       gizmoDiv.appendChild(gizmoRenderer.domElement);
 
+      // 2D label renderer
+      const gizmoLabelRenderer = new CSS2DRenderer();
+      gizmoLabelRenderer.setSize(gizmoDiv.clientWidth, gizmoDiv.clientHeight);
+      gizmoLabelRenderer.domElement.style.position = 'absolute';
+      gizmoLabelRenderer.domElement.style.top = '0';
+      gizmoLabelRenderer.domElement.style.left = '0';
+      gizmoLabelRenderer.domElement.style.pointerEvents = 'none';
+      gizmoDiv.appendChild(gizmoLabelRenderer.domElement);
+
       gizmoScene = new THREE.Scene();
       gizmoCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-      gizmoCamera.position.set(0, 0, 3);   // <-- keep a fixed distance
+      gizmoCamera.position.set(0, 0, 3);
       gizmoCamera.lookAt(0, 0, 0);
 
       const arrowLen = 1.3, headLen = 0.35, headWidth = 0.22;
-      const makeArrow = (color) => new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), arrowLen, color, headLen, headWidth);
+      const makeArrow = (color) => new THREE.ArrowHelper(
+        new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), arrowLen, color, headLen, headWidth
+      );
       const aArrow = makeArrow(0xff3333);
       const bArrow = makeArrow(0x33cc33);
       const cArrow = makeArrow(0x3366ff);
       gizmoScene.add(aArrow, bArrow, cArrow);
+
+      // labels at arrow tips (as children so they rotate with arrows)
+      function addLabel(parent, text, color) {
+        const el = document.createElement('div');
+        el.textContent = text;
+        el.style.color = color;
+        el.style.fontSize = '12px';
+        el.style.fontWeight = '700';
+        el.style.textShadow = '0 0 3px rgba(0,0,0,0.7)';
+        const obj = new CSS2DObject(el);
+        obj.position.set(arrowLen + 0.12, 0, 0); // just past tip, in local X
+        parent.add(obj);
+      }
+      addLabel(aArrow, 'a', '#ff4444');
+      addLabel(bArrow, 'b', '#33cc33');
+      addLabel(cArrow, 'c', '#3366ff');
 
       // keep handles for animate()
       gizmoScene.userData.aArrow = aArrow;
@@ -896,10 +938,12 @@
       function sizeGizmo(){
         const w = gizmoDiv.offsetWidth || 110, h = gizmoDiv.offsetHeight || 110;
         gizmoRenderer.setSize(w, h);
+        gizmoLabelRenderer.setSize(w, h);
         gizmoCamera.aspect = w / h;
         gizmoCamera.updateProjectionMatrix();
       }
       sizeGizmo();
+
 
 
       document.getElementById('viewX').onclick = () => setViewDirection([1,0,0]);
@@ -1037,7 +1081,11 @@
 
 
   <div id="axesGizmo"></div>
-
+  <div id="axesLegend">
+    <div class="legend-row"><span class="dot dot-a"></span>a</div>
+    <div class="legend-row"><span class="dot dot-b"></span>b</div>
+    <div class="legend-row"><span class="dot dot-c"></span>c</div>
+  </div>
   <div id="viewToolbar">
     <!-- Cartesian -->
     <button class="vbtn" id="viewX">X</button>
