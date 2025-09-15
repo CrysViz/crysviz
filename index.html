@@ -58,7 +58,7 @@
     #fileLabel {
       display: block;
       padding: 15px 20px;
-      background: linear-gradient(45deg, #667eea, #764ba2);
+      background: linear-gradient(45deg, #677eea, #769ba2);
       color: white;
       text-align: center;
       border-radius: 8px;
@@ -163,7 +163,7 @@
 
     .bond-label {
       color: #fff;
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 500;
       margin-bottom: 5px;
     }
@@ -194,7 +194,7 @@
       color: #fff;
       padding: 12px 14px;
       border-radius: 14px;
-      font-size: 14px;
+      font-size: 16px;
       line-height: 1.4;
       backdrop-filter: blur(10px);
       border: 1px solid rgba(255,255,255,0.1);
@@ -226,15 +226,15 @@
 
 
     #axesGizmo {
-    position: fixed; left: 450px; bottom: 20px; width: 110px; height: 110px;
+    position: fixed; left: 450px; bottom: 20px; width: 120px; height: 120px;
     border-radius: 10px; background: rgba(0,0,0,0.08); backdrop-filter: blur(6px);
     border: 1px solid rgba(255,255,255,0.15); z-index: 1000; overflow: hidden;
     pointer-events: none; 
     }
 
     #axesLegend{
-    position: fixed; left: 410px; bottom: 20px;
-    transform: translateX(150px); /* sits right of the gizmo (140px + 10px gap) */
+    position: fixed; left: 420px; bottom: 20px;
+    transform: translateX(150px); 
     background: rgba(0,0,0,0.08);
     border: 1px solid rgba(255,255,255,0.15);
     border-radius: 8px;
@@ -254,7 +254,7 @@
       border-radius: 12px; padding: 8px; z-index: 1000; backdrop-filter: blur(8px);
     }
     .vbtn {
-      padding: 6px 10px; font-size: 12px; color: #fff; background: rgba(79,195,247,.12);
+      padding: 6px 10px; font-size: 14px; color: #fff; background: rgba(79,195,247,.12);
       border: 1px solid rgba(79,195,247,.35); border-radius: 8px; cursor: pointer;
     }
     .vbtn:hover { background: rgba(79,195,247,.22); }
@@ -268,16 +268,16 @@
     padding:10px 12px; border-radius:12px;
     background:rgba(79,195,247,0.10); border:1px solid rgba(79,195,247,0.35);
   }
-  #pairText{ font-size:15px; font-weight:600; letter-spacing:.2px; }
+  #pairText{ font-size:16px; font-weight:600; letter-spacing:.2px; }
   #distanceValue{ font-size:18px; font-weight:800; color:#4fc3f7; }
   .btn-mini{
-    align-self:end; padding:8px 12px; font-size:12px; color:#fff; cursor:pointer;
+    align-self:end; padding:8px 12px; font-size:14px; color:#fff; cursor:pointer;
     background:rgba(79,195,247,.15); border:1px solid rgba(79,195,247,.35); border-radius:8px;
   }
 
   /* --- Floating distance label in scene --- */
   .measure-label{
-    padding:6px 9px; border-radius:10px; font-size:13px; font-weight:700;
+    padding:6px 9px; border-radius:10px; font-size:14px; font-weight:700;
     color:#fff; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.2);
     backdrop-filter: blur(6px); white-space:nowrap;
   }
@@ -316,8 +316,8 @@
         <input type="checkbox" id="showLattice" checked> Show Unit Cell
       </label>
       <label>
-        Atom Size: <span id="atomSizeValue" class="slider-value">1.0</span>
-        <input type="range" id="atomSize" min="0.2" max="2.0" step="0.1" value="1.0">
+        Atom Size: <span id="atomSizeValue" class="slider-value">0.8</span>
+        <input type="range" id="atomSize" min="0.2" max="2.0" step="0.1" value="0.8">
       </label>
     </div>
 
@@ -599,24 +599,54 @@
         
         const valueSpan = document.createElement('span');
         valueSpan.className = 'slider-value';
-        valueSpan.textContent = `${bondLengths[pair].toFixed(1)} Å`;
+        valueSpan.textContent = `${bondLengths[pair].toFixed(3)} Å`;
         label.appendChild(valueSpan);
+        
+        const controlsRow = document.createElement('div');
+        controlsRow.style.display = 'flex';
+        controlsRow.style.gap = '8px';
+        controlsRow.style.alignItems = 'center';
         
         const slider = document.createElement('input');
         slider.type = 'range';
-        slider.min = '0.5';
+        slider.min = '0.0';
         slider.max = '6.0';
-        slider.step = '0.1';
+        slider.step = '0.1' ;
         slider.value = bondLengths[pair];
+        slider.style.flex = '1';
         
-        slider.oninput = (e) => {
-          bondLengths[pair] = parseFloat(e.target.value);
-          valueSpan.textContent = `${bondLengths[pair].toFixed(1)} Å`;
+        const textInput = document.createElement('input');
+        textInput.type = 'number';
+        textInput.min = '0.1';
+        textInput.max = '10.0';
+        textInput.step = '0.01';
+        textInput.value = bondLengths[pair];
+        textInput.style.width = '70px';
+        textInput.style.padding = '4px';
+        textInput.style.background = 'rgba(255,255,255,0.1)';
+        textInput.style.border = '1px solid rgba(255,255,255,0.2)';
+        textInput.style.borderRadius = '4px';
+        textInput.style.color = '#fff';
+        
+        function updateValue(newValue) {
+          bondLengths[pair] = parseFloat(newValue);
+          valueSpan.textContent = `${bondLengths[pair].toFixed(3)} Å`;
+          slider.value = bondLengths[pair];
+          textInput.value = bondLengths[pair];
           updateVisualization();
+        }
+        
+        slider.oninput = (e) => updateValue(e.target.value);
+        textInput.onchange = (e) => {
+          const val = Math.max(0.1, Math.min(10.0, parseFloat(e.target.value) || 1.0));
+          updateValue(val);
         };
         
+        controlsRow.appendChild(slider);
+        controlsRow.appendChild(textInput);
+        
         div.appendChild(label);
-        div.appendChild(slider);
+        div.appendChild(controlsRow);
         bondControls.appendChild(div);
       });
     }
@@ -638,14 +668,14 @@
 
     function formatÅ(x){ return (Math.round(x*1000)/1000).toFixed(3); }
 
-    function clearHighlight(m){
+    function clearHighlightAtom(m){
       if(!m || !m.material) return;
       if(m.userData._origEmissive!==undefined){
         m.material.emissive.setHex(m.userData._origEmissive);
         m.material.emissiveIntensity = m.userData._origEmissiveInt || 0;
       }
     }
-    function highlight(m, hex){
+    function HighlightAtom(m, hex){
       if(!m || !m.material) return;
       if(m.userData._origEmissive===undefined){
         m.userData._origEmissive = m.material.emissive.getHex();
@@ -683,7 +713,7 @@
       const geom = new THREE.BufferGeometry().setFromPoints([pa, pb]);
       measureLine = new THREE.Line(
         geom,
-        new THREE.LineDashedMaterial({ color:0x000000, dashSize:0.1, gapSize:0.15, linewidth:1.5 })
+        new THREE.LineDashedMaterial({ color:0x000000, dashSize:0.15, gapSize:0.15, linewidth:2.0 })
       );
       measureLine.computeLineDistances();
       scene.add(measureLine);
@@ -701,7 +731,7 @@
     }
 
     function clearMeasure(){
-      clearHighlight(pickA); clearHighlight(pickB);
+      clearHighlightAtom(pickA); clearHighlightAtom(pickB);
       pickA = null; pickB = null;
       clearMeasureGraphics();
       updateMeasureUI();
@@ -823,18 +853,6 @@
       });
     }
 
-    function setPicked(elementSymbol) {
-      const dot = document.getElementById('pickedDot');
-      const txt = document.getElementById('pickedText');
-      if (!elementSymbol) {
-        dot.style.background = 'transparent';
-        txt.textContent = 'None';
-        return;
-      }
-      dot.style.background = colorHexToCss(getElementColor(elementSymbol));
-      txt.textContent = elementSymbol;
-    }
-
 
 
     function updateVisualization() {
@@ -900,7 +918,6 @@
         resetView();
 
         renderComposition();
-        setPicked(null);
         clearMeasure();
         updateMeasureUI();  
         resetView();
@@ -988,24 +1005,28 @@
         if(!atomsGroup) return;
 
         const hits = raycaster.intersectObjects(atomsGroup.children, true);
-        if (!hits.length) return;
+        if (!hits.length) {
+          // Clicked on empty space - clear selection
+          clearMeasure();
+          return;
+        }
 
         const hit = hits[0].object;
 
         // selection cycling: A -> B -> restart with new A
         if (!pickA || (pickA && pickB)) {
           clearMeasure();
-          pickA = hit; highlight(pickA, 0x3dd5ff);
+          pickA = hit; HighlightAtom(pickA, 0x3dd5ff);
         } else if (!pickB) {
           if (hit === pickA) return;
-          pickB = hit; highlight(pickB, 0xff7ad6);
+          pickB = hit; HighlightAtom(pickB, 0xff7ad6);
         }
 
         updateMeasureUI();
         drawMeasureGraphics();
       }
-      renderer.domElement.addEventListener('click', onClickPick);
 
+      renderer.domElement.addEventListener('click', onClickPick);
       document.getElementById('clearMeasure').onclick = clearMeasure;
 
 
