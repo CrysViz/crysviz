@@ -182,7 +182,9 @@
       border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
-    #infoPanel {
+    /* compositions and clicked element (bottom right) */
+
+    #infoPanel {  
       position: fixed;
       right: 20px;
       bottom: 20px;
@@ -224,9 +226,10 @@
 
 
     #axesGizmo {
-    position: fixed; left: 16px; bottom: 16px; width: 110px; height: 110px;
+    position: fixed; left: 450px; bottom: 16px; width: 110px; height: 110px;
     border-radius: 10px; background: rgba(0,0,0,0.08); backdrop-filter: blur(6px);
     border: 1px solid rgba(255,255,255,0.15); z-index: 1000; overflow: hidden;
+    pointer-events: none; 
     }
 
     /* View toolbar (top-left) */
@@ -405,17 +408,12 @@
       const { center, dist } = getCellCenterAndDist();
       const n = new THREE.Vector3(...dir).normalize();
       camera.position.copy(center.clone().add(n.multiplyScalar(dist)));
-      camera.up.set(0, 0, 1); // keep Z-up feel
       controls.target.copy(center);
       controls.update();
     }
 
     function resetView() {
-      const { center, dist } = getCellCenterAndDist();
-      camera.position.copy(center.clone().add(new THREE.Vector3(1,1,1).normalize().multiplyScalar(dist)));
-      camera.up.set(0, 0, 1);
-      controls.target.copy(center);
-      controls.update();
+      setViewDirection(new THREE.Vector3(1,1,1).normalize())
     }
 
 
@@ -751,10 +749,10 @@
       renderComposition();
 
       // Update camera
-      const { center, dist } = getCellCenterAndDist();
-      camera.position.set(center.x + dist, center.y + dist, center.z + dist);
-      controls.target.copy(center);
-      controls.update();
+      // const { center, dist } = getCellCenterAndDist();
+      // camera.position.set(center.x + dist, center.y + dist, center.z + dist);
+      // controls.target.copy(center);
+      // controls.update();
     }
 
     function colorHexToCss(hex) {
@@ -774,6 +772,7 @@
         updateVisualization();
         renderComposition();
         setPicked(null);
+        resetView();
 
       } catch (error) {
         setStatus(`Error: ${error.message}`);
@@ -805,6 +804,17 @@
       controls.dampingFactor = 0.05;
       controls.maxDistance = 1000;
       controls.minDistance = 1;
+
+      controls.enableRotate = true;
+      controls.enablePan = true;
+      controls.enableZoom = true;
+      controls.minPolarAngle = 0;
+      controls.maxPolarAngle = Math.PI;
+      controls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN
+      };
 
       // Enhanced lighting
       const pmrem = new THREE.PMREMGenerator(renderer);
@@ -850,15 +860,21 @@
       // Axes gizmo (bottom-left)
       const gizmoDiv = document.getElementById('axesGizmo');
       gizmoRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      gizmoRenderer.setSize(gizmoDiv.clientWidth, gizmoDiv.clientHeight);
       gizmoRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       gizmoDiv.appendChild(gizmoRenderer.domElement);
 
+      function sizeGizmo(){
+        const w = gizmoDiv.offsetWidth || 110, h = gizmoDiv.offsetHeight || 110;
+        gizmoRenderer.setSize(w, h);
+        gizmoCamera.aspect = w / h;
+        gizmoCamera.updateProjectionMatrix();
+      }
       gizmoScene = new THREE.Scene();
-      gizmoCamera = new THREE.PerspectiveCamera(45, gizmoDiv.clientWidth / gizmoDiv.clientHeight, 0.1, 100);
-      gizmoCamera.position.set(3,3,3);
-      gizmoAxes = new THREE.AxesHelper(1.6); // RGB: X=red, Y=green, Z=blue
+      gizmoCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+      gizmoCamera.position.set(0,0,0);           // <-- not at the origin
+      gizmoAxes = new THREE.AxesHelper(1.6);
       gizmoScene.add(gizmoAxes);
+      sizeGizmo();
 
       document.getElementById('viewX').onclick = () => setViewDirection([1,0,0]);
       document.getElementById('viewY').onclick = () => setViewDirection([0,1,0]);
@@ -953,9 +969,10 @@
       requestAnimationFrame(animate);
       controls.update();
       renderer.render(scene, camera);
-      gizmoCamera.position.set(0,0,0);
+      const d = 3;
+      gizmoCamera.position.set(0, 0, d);
       gizmoCamera.quaternion.copy(camera.quaternion);
-      gizmoCamera.updateProjectionMatrix();
+      gizmoCamera.updateMatrixWorld();
       gizmoRenderer.render(gizmoScene, gizmoCamera);
     }
 
