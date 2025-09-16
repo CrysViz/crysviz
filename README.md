@@ -22,6 +22,8 @@ Browser-based visualisation of POSCAR files with on-device rendering.
 9. Angle measurements
 10. Show the metainfo line from poscar file
 11. Option to create supercells with a limit to 2000 atom or something to not crash browser
+12. Increaase line-width dashed line along of currently measured distance.
+13. When selecting the atoms for measureing the bonds, similar colors are used to mark the selection as for the atoms. Maybe we can find a better way to mark the atoms 
     
 
 
