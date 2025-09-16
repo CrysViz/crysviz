@@ -114,32 +114,25 @@ function createAtomCross(position, radius, color) {
   const lineLength = radius * 1.8; // Cross extends slightly beyond atom surface
   const lineWidth = radius * 0.15; // Proportional line thickness
 
-  // Create cross lines (4 lines forming X and +)
-  const positions = [
-    // Horizontal line
-    [-lineLength/2, 0, 0, lineLength/2, 0, 0],
-    // Vertical line
-    [0, -lineLength/2, 0, 0, lineLength/2, 0],
-    // Diagonal line 1
-    [-lineLength/2, -lineLength/2, 0, lineLength/2, lineLength/2, 0],
-    // Diagonal line 2
-    [-lineLength/2, lineLength/2, 0, lineLength/2, -lineLength/2, 0]
+  // Create cross using small cylinders instead of lines to avoid rendering issues
+  const crossElements = [
+    // Horizontal bar
+    { length: lineLength, rotation: [0, 0, Math.PI/2] },
+    // Vertical bar
+    { length: lineLength, rotation: [0, 0, 0] },
+    // Diagonal 1
+    { length: lineLength * 0.7, rotation: [0, 0, Math.PI/4] },
+    // Diagonal 2
+    { length: lineLength * 0.7, rotation: [0, 0, -Math.PI/4] }
   ];
 
-  positions.forEach(pos => {
-    const geometry = new THREE.BufferGeometry();
-    const points = [
-      new THREE.Vector3(pos[0], pos[1], pos[2]),
-      new THREE.Vector3(pos[3], pos[4], pos[5])
-    ];
-    geometry.setFromPoints(points);
+  crossElements.forEach(element => {
+    const geometry = new THREE.CylinderGeometry(lineWidth, lineWidth, element.length, 6);
+    const material = new THREE.MeshBasicMaterial({ color: color });
+    const cylinder = new THREE.Mesh(geometry, material);
 
-    const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
-      color: color,
-      linewidth: Math.max(4, lineWidth * 10) // Ensure minimum visibility
-    }));
-
-    crossGroup.add(line);
+    cylinder.rotation.set(element.rotation[0], element.rotation[1], element.rotation[2]);
+    crossGroup.add(cylinder);
   });
 
   crossGroup.position.copy(position);
@@ -1154,6 +1147,14 @@ function init() {
   controls.enableZoom = true;
   controls.minPolarAngle = 0;
   controls.maxPolarAngle = Math.PI;
+
+  // Enable touch controls for mobile
+  controls.enableKeys = false; // Disable keyboard controls to avoid conflicts
+  controls.touches = {
+    ONE: THREE.TOUCH.ROTATE,
+    TWO: THREE.TOUCH.DOLLY_PAN
+  };
+
   controls.mouseButtons = {
     LEFT: THREE.MOUSE.ROTATE,
     MIDDLE: THREE.MOUSE.DOLLY,
@@ -1161,13 +1162,7 @@ function init() {
   };
 
   // Keep rotation centered on crystal structure
-  controls.addEventListener('end', () => {
-    if (structureData) {
-      const { center } = getCellCenterAndDist();
-      controls.target.copy(center);
-      controls.update();
-    }
-  });
+  // Removed auto-reset of controls target to allow proper panning on mobile
 
   // VESTA-style lighting setup - single camera-relative light
 
