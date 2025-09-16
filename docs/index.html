@@ -83,9 +83,13 @@
   <div id="view"></div>
   <div id="status">Loading crystal viewer...</div>
 
-  <!-- Measurement Tools UI (Top Right) -->
+  <!-- Measurement Tools UI -->
   <div id="measurementTools">
-    <div class="measurement-group">
+    <!-- Mobile toggle button (shows only on mobile) -->
+    <button id="measurementToggle" class="measurement-toggle" title="Toggle Measurements">📐</button>
+
+    <!-- Measurement panel -->
+    <div id="measurementPanel" class="measurement-group">
       <button id="distanceModeBtn" class="measure-tool-btn" title="Distance Measurement">
         <div class="tool-icon scale-icon">📏</div>
         <span>Distance</span>

@@ -298,10 +298,17 @@ z-index:1000; pointer-events:none;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
+/* Hide toggle button on desktop */
+.measurement-toggle {
+  display: none;
+}
+
 .measurement-group {
   display: flex;
   gap: 8px;
   align-items: center;
+  max-height: none;
+  overflow: visible;
 }
 
 .measure-tool-btn {
@@ -636,24 +643,82 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.15);
   }
 
-  /* Measurement tools adjustments for mobile */
+  /* Mobile-friendly measurement tools */
   #measurementTools {
-    top: 120px;
+    top: 10px;
     right: 10px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    backdrop-filter: none;
+    box-shadow: none;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  /* Mobile toggle button - compact and unobtrusive */
+  .measurement-toggle {
+    display: block;
+    width: 48px;
+    height: 48px;
+    background: rgba(44, 44, 44, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    color: white;
+    font-size: 20px;
+    padding: 0;
+    margin: 0 0 8px 0;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .measurement-toggle:hover,
+  .measurement-toggle:active {
+    background: rgba(64, 64, 64, 0.95);
+    transform: scale(1.05);
+  }
+
+  /* Collapsible measurement panel */
+  .measurement-group {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+    background: rgba(26, 26, 26, 0.95);
+    border-radius: 12px;
+    padding: 0;
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .measurement-group.expanded {
+    max-height: 200px;
     padding: 8px;
   }
 
-  .measurement-group {
-    flex-direction: column;
-    gap: 6px;
+  .measurement-group.expanded {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    justify-content: center;
   }
 
+  /* Compact mobile buttons */
   .measure-tool-btn {
-    padding: 14px 16px;
-    min-width: 70px;
-    min-height: 70px;
-    font-size: 12px;
-    gap: 4px;
+    padding: 8px;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 10px;
+    gap: 2px;
+    flex-direction: column;
+  }
+
+  .tool-icon {
+    font-size: 16px;
+    margin-bottom: 2px;
   }
 
   .tool-icon {

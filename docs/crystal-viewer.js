@@ -690,8 +690,8 @@ function addAngleMeasurement(atom1, atom2, atom3) {
   div.style.color = '#000000';
   div.style.fontWeight = '700';
   div.style.fontSize = '14px';
-  div.style.padding = '6px 10px';
-  div.style.borderRadius = '6px';
+  div.style.padding = '2px 6px';
+  div.style.borderRadius = '4px';
   const elements = measurement.elements;
   div.textContent = `∠${elements[0]}-${elements[1]}-${elements[2]}: ${angle.toFixed(1)}°`;
 
@@ -778,10 +778,10 @@ function addDistanceMeasurement(atom1, atom2) {
   div.style.color = '#000000';
   div.style.fontWeight = '700';
   div.style.fontSize = '14px';
-  div.style.padding = '6px 10px';
+  div.style.padding = '2px 6px';
   div.style.textShadow = '1px 1px 2px rgba(255,255,255,0.8)';
   div.style.boxShadow = '0 3px 8px rgba(0,0,0,0.4)';
-  div.style.borderRadius = '6px';
+  div.style.borderRadius = '4px';
   const a = atom1.userData.element, b = atom2.userData.element;
   const d = pa.distanceTo(pb);
   div.textContent = `${a}—${b}: ${formatÅ(d)} Å`;
@@ -880,11 +880,11 @@ function createBond(pos1, pos2, elem1, elem2) {
   const direction = new THREE.Vector3().subVectors(p2, p1);
   const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
 
-  const geometry = new THREE.CylinderGeometry(0.15, 0.15, dist, 8);
+  const geometry = new THREE.CylinderGeometry(0.08, 0.08, dist, 8);
   const material = new THREE.MeshPhysicalMaterial({
     color: 0x666666,
     transparent: true,
-    opacity: 0.8,
+    opacity: 0.6,
     roughness: 0.2,
     metalness: 0.3,
     clearcoat: 0.5,
@@ -1415,6 +1415,14 @@ function init() {
     useVestaColors = e.target.checked;
     updateVisualization();
   };
+
+  // Mobile measurement toggle functionality
+  document.getElementById('measurementToggle').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const panel = document.getElementById('measurementPanel');
+    panel.classList.toggle('expanded');
+  });
 
   // New measurement tool handlers with improved click handling
   document.getElementById('distanceModeBtn').addEventListener('click', (e) => {
