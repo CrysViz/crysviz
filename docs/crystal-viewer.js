@@ -7,6 +7,24 @@ const view = document.getElementById('view');
 const status = document.getElementById('status');
 const setStatus = (s) => { status.textContent = s; console.log('[viewer]', s); };
 
+// Default NaCl structure (rock salt structure)
+const defaultPOSCAR = `NaCl - Sodium Chloride (Rock Salt Structure)
+1.0
+5.64 0.00 0.00
+0.00 5.64 0.00
+0.00 0.00 5.64
+Na Cl
+4 4
+Direct
+0.0 0.0 0.0
+0.5 0.5 0.0
+0.5 0.0 0.5
+0.0 0.5 0.5
+0.5 0.0 0.0
+0.0 0.5 0.0
+0.0 0.0 0.5
+0.5 0.5 0.5`;
+
 let camera, controls, renderer, scene;
 let atomsGroup, bondsGroup, latticeGroup;
 let structureData = null;
@@ -572,10 +590,14 @@ function colorHexToCss(hex) {
     return `#${s}`;
 }
 
-function loadPOSCAR(content) {
+function loadPOSCAR(content, isDefault = false) {
   try {
     structureData = parsePOSCAR(content);
-    setStatus(`Loaded: ${structureData.elements.length} atoms`);
+    if (isDefault) {
+      setStatus(`Default structure: ${structureData.elements.length} atoms`);
+    } else {
+      setStatus(`Loaded: ${structureData.elements.length} atoms`);
+    }
 
     document.getElementById('structureControls').style.display = 'block';
     document.getElementById('bondControlsGroup').style.display = 'block';
@@ -593,6 +615,13 @@ function loadPOSCAR(content) {
     setStatus(`Error: ${error.message}`);
     console.error(error);
   }
+}
+
+function loadDefaultStructure() {
+  setStatus('Loading default NaCl structure...');
+  setTimeout(() => {
+    loadPOSCAR(defaultPOSCAR, true);
+  }, 100);
 }
 
 function init() {
@@ -705,13 +734,18 @@ function init() {
 
     const hit = hits[0].object;
 
-    // selection cycling: A -> B -> restart with new A
-    if (!pickA || (pickA && pickB)) {
-      clearMeasure();
+    // selection cycling: A -> B -> restart with new A (but keep measurement visible)
+    if (!pickA) {
+      // First selection
       pickA = hit; HighlightAtom(pickA, 0x3dd5ff);
     } else if (!pickB) {
-      if (hit === pickA) return;
+      // Second selection
+      if (hit === pickA) return; // Same atom, ignore
       pickB = hit; HighlightAtom(pickB, 0xff7ad6);
+    } else {
+      // Third selection - start new measurement
+      clearMeasure();
+      pickA = hit; HighlightAtom(pickA, 0x3dd5ff);
     }
 
     updateMeasureUI();
@@ -730,14 +764,7 @@ function init() {
   gizmoRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   gizmoDiv.appendChild(gizmoRenderer.domElement);
 
-  // 2D label renderer
-  const gizmoLabelRenderer = new CSS2DRenderer();
-  gizmoLabelRenderer.setSize(gizmoDiv.clientWidth, gizmoDiv.clientHeight);
-  gizmoLabelRenderer.domElement.style.position = 'absolute';
-  gizmoLabelRenderer.domElement.style.top = '0';
-  gizmoLabelRenderer.domElement.style.left = '0';
-  gizmoLabelRenderer.domElement.style.pointerEvents = 'none';
-  gizmoDiv.appendChild(gizmoLabelRenderer.domElement);
+  // No label renderer needed for gizmo - labels are in separate legend
 
   gizmoScene = new THREE.Scene();
   gizmoCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
@@ -753,21 +780,7 @@ function init() {
   const cArrow = makeArrow(0x3366ff);
   gizmoScene.add(aArrow, bArrow, cArrow);
 
-  // labels at arrow tips (as children so they rotate with arrows)
-  function addLabel(parent, text, color) {
-    const el = document.createElement('div');
-    el.textContent = text;
-    el.style.color = color;
-    el.style.fontSize = '12px';
-    el.style.fontWeight = '700';
-    el.style.textShadow = '0 0 3px rgba(0,0,0,0.7)';
-    const obj = new CSS2DObject(el);
-    obj.position.set(arrowLen + 0.12, 0, 0); // just past tip, in local X
-    parent.add(obj);
-  }
-  addLabel(aArrow, 'a', '#ff4444');
-  addLabel(bArrow, 'b', '#33cc33');
-  addLabel(cArrow, 'c', '#3366ff');
+  // No labels needed inside gizmo - they're in the external legend
 
   // keep handles for animate()
   gizmoScene.userData.aArrow = aArrow;
@@ -777,7 +790,6 @@ function init() {
   function sizeGizmo(){
     const w = gizmoDiv.offsetWidth || 110, h = gizmoDiv.offsetHeight || 110;
     gizmoRenderer.setSize(w, h);
-    gizmoLabelRenderer.setSize(w, h);
     gizmoCamera.aspect = w / h;
     gizmoCamera.updateProjectionMatrix();
   }
@@ -872,6 +884,9 @@ function init() {
   controls.update();
 
   animate();
+
+  // Load default structure after everything is initialized
+  loadDefaultStructure();
 }
 
 function animate() {
@@ -886,7 +901,7 @@ function animate() {
   gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
 
   gizmoRenderer.render(gizmoScene, gizmoCamera);
-  labelRenderer.render(scene, camera);           // <-- add
+  labelRenderer.render(scene, camera);
 
 }
 

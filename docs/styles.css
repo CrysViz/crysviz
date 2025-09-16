@@ -228,12 +228,12 @@ pointer-events: none;
 #axesLegend{
 position: fixed; left: 420px; bottom: 20px;
 transform: translateX(150px);
-background: rgba(0,0,0,0.08);
-border: 1px solid rgba(255,255,255,0.15);
+background: rgba(0,0,0,0.8);
+border: 1px solid rgba(255,255,255,0.2);
 border-radius: 8px;
 padding: 6px 8px;
-font-size: 12px; color:#333;
-backdrop-filter: blur(6px);
+font-size: 12px; color:#fff;
+backdrop-filter: blur(10px);
 z-index:1000; pointer-events:none;
 }
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;}
@@ -279,25 +279,30 @@ z-index:1000; pointer-events:none;
 #mobileMenuToggle {
   display: none;
   position: fixed;
-  top: 20px;
-  left: 20px;
+  top: 12px;
+  left: 12px;
   z-index: 2000;
-  background: rgba(26, 26, 26, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 12px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 0;
   color: #fff;
   cursor: pointer;
-  backdrop-filter: blur(10px);
-  font-size: 18px;
-  width: 48px;
-  height: 48px;
+  backdrop-filter: blur(12px);
+  font-size: 16px;
+  font-weight: 300;
+  width: 40px;
+  height: 40px;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
 }
 
-#mobileMenuToggle:hover {
-  background: rgba(26, 26, 26, 1);
+#mobileMenuToggle:hover,
+#mobileMenuToggle:active {
+  background: rgba(0, 0, 0, 0.9);
+  transform: scale(0.95);
 }
 
 /* Prevent text selection on touch devices */
@@ -335,32 +340,47 @@ body {
 
   /* Adjust view toolbar position for mobile toggle */
   #viewToolbar {
-    left: 80px;
-    top: 16px;
+    left: 60px;
+    top: 12px;
     flex-wrap: wrap;
+    padding: 6px;
+    border-radius: 8px;
   }
 
   .vbtn {
     padding: 8px 12px;
-    font-size: 16px;
-    min-height: 44px;
-    min-width: 44px;
+    font-size: 14px;
+    min-height: 40px;
+    min-width: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
+    background: rgba(79,195,247,.15);
+    border: 1px solid rgba(79,195,247,.4);
   }
 
-  /* Adjust axes gizmo position */
+  /* Adjust axes gizmo position and size */
   #axesGizmo {
-    left: 20px;
-    bottom: 20px;
-    width: 100px;
-    height: 100px;
+    left: 12px;
+    bottom: 12px;
+    width: 60px;
+    height: 60px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   #axesLegend {
-    left: 20px;
-    transform: translateX(110px);
+    left: 12px;
+    transform: translateX(68px);
+    font-size: 11px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(6px);
+    z-index: 1000;
   }
 
   /* Reset UI display for mobile - will be overridden below */
@@ -475,22 +495,30 @@ body {
     min-width: 200px;
     max-width: calc(100vw - 40px);
     font-size: 14px;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
   }
 
   /* Status adjustments */
   #status {
     top: 10px;
     right: 10px;
-    font-size: 14px;
+    font-size: 12px;
     max-width: calc(100vw - 100px);
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
   }
 
   /* View toolbar adjustments */
   #viewToolbar {
     left: 10px;
-    top: 80px;
+    top: 60px;
     right: 10px;
-    background: rgba(26, 26, 26, 0.9);
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   /* Measure panel improvements */
@@ -546,14 +574,21 @@ body {
   }
 
   #axesGizmo {
-    width: 80px;
-    height: 80px;
+    width: 50px;
+    height: 50px;
+    left: 8px;
+    bottom: 8px;
   }
 
   #axesLegend {
-    transform: translateX(90px);
-    font-size: 11px;
-    padding: 4px 6px;
+    transform: translateX(58px);
+    font-size: 10px;
+    padding: 3px 5px;
+    left: 8px;
+    background: rgba(0, 0, 0, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(8px);
+    color: #fff;
   }
 
   /* Smaller measure label for very small screens */
