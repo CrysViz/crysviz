@@ -1,6 +1,7 @@
-# SimpleViz
 
-Browser-based visualisation of POSCAR files with on-device rendering. 
+<img src="IMG_0056.png" width="250">
+
+Light-wight browser-based visualisation of POSCAR files with on-device rendering. 
 
 ### Current Features:
 
