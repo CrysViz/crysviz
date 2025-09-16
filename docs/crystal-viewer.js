@@ -46,6 +46,7 @@ let distanceMeasurements = [];
 let angleMeasurements = [];
 
 let gizmoScene, gizmoCamera, gizmoRenderer, gizmoAxes;
+let keyLight, fillLight, bottomLight; // Lighting variables
 
     // Measurement state
 let selectedAtoms = []; // Array to store selected atoms (up to 3 for angles)
@@ -782,12 +783,10 @@ function createAtomMesh(element, position) {
   const geometry = new THREE.SphereGeometry(radius, 32, 24);
   const material = new THREE.MeshPhysicalMaterial({
     color,
-    roughness: 0.15,
-    metalness: 0.1,
-    clearcoat: 0.9,
-    clearcoatRoughness: 0.02,
-    sheen: 0.1,
-    sheenColor: new THREE.Color(color).multiplyScalar(0.8),
+    roughness: 0.3,
+    metalness: 0.05,
+    clearcoat: 0.4,
+    clearcoatRoughness: 0.1
   });
   //const material = new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0.0 });
   const mesh = new THREE.Mesh(geometry, material);
@@ -816,10 +815,14 @@ function createBond(pos1, pos2, elem1, elem2) {
   const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
 
   const geometry = new THREE.CylinderGeometry(0.15, 0.15, dist, 8);
-  const material = new THREE.MeshLambertMaterial({
+  const material = new THREE.MeshPhysicalMaterial({
     color: 0x666666,
     transparent: true,
-    opacity: 0.8
+    opacity: 0.8,
+    roughness: 0.2,
+    metalness: 0.3,
+    clearcoat: 0.5,
+    clearcoatRoughness: 0.05
   });
   const bond = new THREE.Mesh(geometry, material);
 
@@ -1100,22 +1103,16 @@ function init() {
     }
   });
 
-  // Enhanced lighting
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.6).texture;
+  // VESTA-style lighting setup - single camera-relative light
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.6));
+  // Moderate ambient light for base illumination
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+  scene.add(ambientLight);
 
-  const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
-  keyLight.position.set(10, 10, 5);
-  keyLight.castShadow = true;
-  keyLight.shadow.mapSize.width = 2048;
-  keyLight.shadow.mapSize.height = 2048;
+  // Single main directional light - positioned relative to camera
+  keyLight = new THREE.DirectionalLight(0xffffff, 5.0);
+  keyLight.castShadow = false;
   scene.add(keyLight);
-
-  const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
-  fillLight.position.set(-5, 5, -5);
-  scene.add(fillLight);
 
   // Click Atom
 
@@ -1452,6 +1449,15 @@ function init() {
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
+
+  // Update camera-relative lighting position
+  const cameraPosition = camera.position.clone();
+
+  // Single key light from upper front-right relative to camera
+  keyLight.position.copy(cameraPosition).add(
+    new THREE.Vector3(3, 4, 3).applyQuaternion(camera.quaternion)
+  );
+
   renderer.render(scene, camera);
   const invCamQ = camera.quaternion.clone().invert();
   const { a, b, c } = latticeDirsNorm();
