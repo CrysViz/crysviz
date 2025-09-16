@@ -14,6 +14,29 @@
     }
   }
   </script>
+
+  <!-- Collapsible info panel styles (kept local so this change is self-contained) -->
+  <style>
+    #infoPanel { background:#1f262a; color:#e7f6fb; padding:12px; border-radius:10px; width:260px; box-shadow:0 8px 24px rgba(0,0,0,0.35); font-family:system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; }
+    .structure-toggle { display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none; padding:6px 8px; border-radius:8px; background:linear-gradient(180deg,#273033,#1e272a); border:1px solid rgba(255,255,255,0.03); }
+    .structure-toggle h4 { margin:0; font-size:14px; color:#63d2ff; font-weight:600; line-height:1; }
+    /* New shared heading style to align 'Structure' and 'Measure' */
+    /* Use the same left inset as the toggle container so text aligns perfectly */
+    .section-heading { margin-top:10px; margin-bottom:6px; font-size:14px; color:#63d2ff; font-weight:600; padding-left:8px; }
+    .toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(255,255,255,0.03); color:#63d2ff; font-weight:700; transition:transform .18s ease, background .18s ease, color .18s ease; }
+    .toggle-icon.open { transform:rotate(45deg); background:#63d2ff; color:#032226; }
+    .collapsible-content { overflow:hidden; max-height:0; transition:max-height .28s ease, padding .18s ease; }
+    .collapsible-content.open { padding-top:8px; max-height:600px; }
+    #composition { color:#d7eef6; font-size:13px; line-height:1.4; }
+    #measure { margin-top:8px; }
+    #measureRow { display:flex; justify-content:space-between; gap:8px; color:#cfeffb; }
+    .btn-mini { background:transparent; border:1px solid rgba(255,255,255,0.08); color:#cfeffb; padding:6px 10px; border-radius:6px; cursor:pointer; }
+    .btn-mini:hover { background:rgba(255,255,255,0.02); }
+    /* Highlighted clear button for visual clarity */
+    .btn-mini.highlight { background:linear-gradient(90deg,#2aa6f2,#0077b6); border-color:rgba(0,0,0,0.15); color:#fff; box-shadow:0 6px 14px rgba(10,100,160,0.18); }
+    .btn-mini.highlight:hover { filter:brightness(1.03); }
+    .btn-mini:focus { outline:3px solid rgba(100,180,240,0.18); }
+  </style>
 </head>
 
 <body>
@@ -57,17 +80,108 @@
 
 
   <div id="infoPanel">
-    <h4>Structure</h4>
-    <div id="composition"></div>
-    <h4 style="margin-top:10px;">Measure</h4>
+    <div id="structureToggle" class="structure-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="composition">
+      <h4>Structure</h4>
+      <div id="structureToggleIcon" class="toggle-icon">+</div>
+    </div>
+
+    <div id="composition" class="collapsible-content" aria-hidden="true">
+      <!-- Composition will be populated by JS. Hidden by default; expands when the header is toggled -->
+    </div>
+
+    <h4 class="section-heading">Measure</h4>
     <div id="measure">
       <div id="measureRow">
         <span id="pairText">—</span>
         <span><span id="distanceValue">—</span> Å</span>
       </div>
-      <button id="clearMeasure" class="btn-mini">Clear</button>
+      <button id="clearMeasure" class="btn-mini highlight">Clear</button>
     </div>
   </div>
+
+  <script>
+    (function(){
+      const toggle = document.getElementById('structureToggle');
+      const icon = document.getElementById('structureToggleIcon');
+      const content = document.getElementById('composition');
+
+      // Remove or hide injected controls like 'collapse', 'show more', '+1 more'
+      function stripControls(root) {
+        if (!root) return;
+        const nodes = Array.from(root.querySelectorAll('*'));
+        const moreRe = /(\+\s*\d+\s*more|^\+?\s*\d+\s*more$|\bshow more\b|\bcollapse\b)/i;
+        nodes.forEach(el => {
+          try {
+            const text = (el.textContent || '').trim();
+            if (!text) return;
+            if (moreRe.test(text) || el.classList.contains('more') || el.classList.contains('collapsed') || el.classList.contains('show-more')) {
+              // remove the toggle node entirely so it cannot re-appear
+              if (el.parentNode) el.parentNode.removeChild(el);
+            }
+          } catch (e) { /* ignore */ }
+        });
+      }
+
+      // Expand all composition children so none are hidden by collapsed UI
+      function expandAllComposition() {
+        if (!content) return;
+        // remove common hiding attributes/classes
+        const hiddenSelectors = '[hidden], .hidden, .collapsed, [aria-hidden="true"]';
+        content.querySelectorAll(hiddenSelectors).forEach(el => {
+          el.removeAttribute('hidden');
+          el.classList.remove('hidden', 'collapsed');
+          el.setAttribute('aria-hidden', 'false');
+          el.style.display = '';
+        });
+        // ensure list items or rows are visible
+        content.querySelectorAll('li, div, p, span').forEach(el => { el.style.display = ''; });
+      }
+
+      function setOpen(open) {
+        if (open) {
+          content.classList.add('open');
+          icon.classList.add('open');
+          icon.textContent = '−';
+          toggle.setAttribute('aria-expanded', 'true');
+          content.setAttribute('aria-hidden', 'false');
+
+          // remove any injected toggles and expand everything
+          stripControls(content);
+          expandAllComposition();
+        } else {
+          content.classList.remove('open');
+          icon.classList.remove('open');
+          icon.textContent = '+';
+          toggle.setAttribute('aria-expanded', 'false');
+          content.setAttribute('aria-hidden', 'true');
+        }
+      }
+
+      // initialize closed
+      setOpen(false);
+
+      toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
+      toggle.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!content.classList.contains('open')); } });
+
+      // Observe composition for changes and strip any injected UI. Also expand when already open.
+      const observer = new MutationObserver((mutations) => {
+        // If nodes added that look like 'more' toggles, remove them
+        let changed = false;
+        for (const m of mutations) {
+          if (m.addedNodes && m.addedNodes.length) { changed = true; break; }
+        }
+        if (changed) {
+          stripControls(content);
+          if (content.classList.contains('open')) expandAllComposition();
+        }
+      });
+      observer.observe(content, { childList: true, subtree: true });
+
+      // run once in case content was already populated
+      stripControls(content);
+
+    })();
+  </script>
 
 
   <div id="axesGizmo"></div>
