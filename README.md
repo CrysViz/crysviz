@@ -30,4 +30,5 @@ Browser-based visualisation of POSCAR files with on-device rendering.
 1. On the fly color changing. Some color picker(?)
 2. On-the-fly symmetry information and potentially symmetrisation
 3. Package as stand-alone offline application
+4. Bond are colors according to the atoms as in VESTA (maybe...)
  
