@@ -7,23 +7,28 @@ const view = document.getElementById('view');
 const status = document.getElementById('status');
 const setStatus = (s) => { status.textContent = s; console.log('[viewer]', s); };
 
-// Default NaCl structure (rock salt structure)
-const defaultPOSCAR = `NaCl - Sodium Chloride (Rock Salt Structure)
+// Default complex structure (Ba2YCu3O7) - high-Tc superconductor with 4 elements to test collapsible composition
+const defaultPOSCAR = `Ba2YCu3O7 - YBCO Superconductor
 1.0
-5.64 0.00 0.00
-0.00 5.64 0.00
-0.00 0.00 5.64
-Na Cl
-4 4
+3.82 0.00 0.00
+0.00 3.89 0.00
+0.00 0.00 11.68
+Ba Y Cu O
+2 1 3 7
 Direct
-0.0 0.0 0.0
-0.5 0.5 0.0
-0.5 0.0 0.5
-0.0 0.5 0.5
-0.5 0.0 0.0
+0.5 0.5 0.184
+0.5 0.5 0.816
+0.5 0.5 0.5
+0.0 0.0 0.356
+0.0 0.0 0.644
 0.0 0.5 0.0
-0.0 0.0 0.5
-0.5 0.5 0.5`;
+0.5 0.0 0.0
+0.0 0.5 0.378
+0.5 0.0 0.378
+0.0 0.5 0.622
+0.5 0.0 0.622
+0.0 0.0 0.159
+0.0 0.0 0.841`;
 
 let camera, controls, renderer, scene;
 let atomsGroup, bondsGroup, latticeGroup;
@@ -144,7 +149,7 @@ function getCellCenterAndDist() {
     L[0][2]+L[1][2]+L[2][2]
   );
   const center = corner.clone().multiplyScalar(0.5);
-  const dist = Math.max(corner.length()*1.8, 15);
+  const dist = Math.max(corner.length()*2.5, 20); // More zoomed out (was 1.8, 15)
   return { center, dist };
 }
 
@@ -269,7 +274,7 @@ function createBondLengthControls() {
 
       if (!bondLengths[pair]) {
         const defaultRadius = (atomicRadii[uniqueElements[i]] || 1.0) + (atomicRadii[uniqueElements[j]] || 1.0);
-        bondLengths[pair] = Math.min(defaultRadius * 1.2, 3.0);
+        bondLengths[pair] = Math.min(defaultRadius * 1.0, 6.0);
       }
     }
   }
@@ -442,7 +447,7 @@ function createAtomMesh(element, position) {
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(position[0], position[1], position[2]);
-  mesh.userData.element = element; // <-- add this
+  mesh.userData.element = element;
   return mesh;
 }
 
@@ -525,8 +530,8 @@ function renderComposition() {
   const total = Object.values(counts).reduce((a,b)=>a+b,0) || 1;
   const elements = Object.keys(counts).sort();
 
-  // Create collapsible structure if more than 4 elements
-  if (elements.length > 4) {
+  // Create collapsible structure if more than 3 elements
+  if (elements.length > 3) {
     elements.slice(0, 3).forEach(el => {
       const row = createCompositionRow(el, counts[el], total);
       compDiv.appendChild(row);
