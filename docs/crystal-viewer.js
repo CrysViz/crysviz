@@ -1,0 +1,950 @@
+import * as THREE from 'three';
+import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
+import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
+
+const view = document.getElementById('view');
+const status = document.getElementById('status');
+const setStatus = (s) => { status.textContent = s; console.log('[viewer]', s); };
+
+let camera, controls, renderer, scene;
+let atomsGroup, bondsGroup, latticeGroup;
+let structureData = null;
+let bondLengths = {};
+let atomSize = 1.0;
+let showBonds = true;
+let showLattice = true;
+
+let gizmoScene, gizmoCamera, gizmoRenderer, gizmoAxes;
+
+    // Measurement state
+let pickA = null, pickB = null;
+let measureLine = null;          // THREE.Line
+let measureLabel = null;         // CSS2DObject
+let labelRenderer = null;        // CSS2DRenderer overlay for main scene
+
+
+// Atomic data
+const atomicRadii = {
+  H: 0.31, He: 0.28, Li: 1.28, Be: 0.96, B: 0.84, C: 0.76, N: 0.71, O: 0.66, F: 0.57, Ne: 0.58,
+  Na: 1.66, Mg: 1.41, Al: 1.21, Si: 1.11, P: 1.07, S: 1.05, Cl: 1.02, Ar: 1.06,
+  K: 2.03, Ca: 1.76, Sc: 1.70, Ti: 1.60, V: 1.53, Cr: 1.39, Mn: 1.39, Fe: 1.32, Co: 1.26, Ni: 1.24,
+  Cu: 1.32, Zn: 1.22, Ga: 1.22, Ge: 1.20, As: 1.19, Se: 1.20, Br: 1.20, Kr: 1.16,
+  Rb: 2.20, Sr: 1.95, Y: 1.90, Zr: 1.75, Nb: 1.64, Mo: 1.54, Tc: 1.47, Ru: 1.46, Rh: 1.42, Pd: 1.39,
+  Ag: 1.45, Cd: 1.44, In: 1.42, Sn: 1.39, Sb: 1.39, Te: 1.38, I: 1.39, Xe: 1.40,
+  Cs: 2.44, Ba: 2.15, La: 2.07, Ce: 2.04, Pr: 2.03, Nd: 2.01, Pm: 1.99, Sm: 1.98, Eu: 1.98, Gd: 1.96,
+  Tb: 1.94, Dy: 1.92, Ho: 1.92, Er: 1.89, Tm: 1.90, Yb: 1.87, Lu: 1.87,
+  Hf: 1.75, Ta: 1.70, W: 1.62, Re: 1.51, Os: 1.44, Ir: 1.41, Pt: 1.36, Au: 1.36, Hg: 1.32,
+  Tl: 1.45, Pb: 1.46, Bi: 1.48, Po: 1.40, At: 1.50, Rn: 1.50
+};
+
+const elementColors = {
+  H: 0xffffff, He: 0xd9ffff, Li: 0xcc80ff, Be: 0xc2ff00, B: 0xffb5b5, C: 0x909090, N: 0x3050f8, O: 0xff0d0d,
+  F: 0x90e050, Ne: 0xb3e3f5, Na: 0xab5cf2, Mg: 0x8aff00, Al: 0xbfa6a6, Si: 0xf0c8a0, P: 0xff8000, S: 0xffff30,
+  Cl: 0x1ff01f, Ar: 0x80d1e3, K: 0x8f40d4, Ca: 0x3dff00, Sc: 0xe6e6e6, Ti: 0xbfc2c7, V: 0xa6a6ab, Cr: 0x8a99c7,
+  Mn: 0x9c7ac7, Fe: 0xe06633, Co: 0xf090a0, Ni: 0x50d050, Cu: 0xc88033, Zn: 0x7d80b0, Ga: 0xc28f8f, Ge: 0x668f8f,
+  As: 0xbd80e3, Se: 0xffa100, Br: 0xa62929, Kr: 0x5cb8d1, Rb: 0x702eb0, Sr: 0x00ff00, Y: 0x94ffff, Zr: 0x94e0e0,
+  Nb: 0x73c2c9, Mo: 0x54b5b5, Tc: 0x3b9e9e, Ru: 0x248f8f, Rh: 0x0a7d8c, Pd: 0x006985, Ag: 0xc0c0c0, Cd: 0xffd98f,
+  In: 0xa67573, Sn: 0x668080, Sb: 0x9e63b5, Te: 0xd47a00, I: 0x940094, Xe: 0x429eb0, Cs: 0x57178f, Ba: 0x00c900,
+  La: 0x70d4ff, Ce: 0xffffc7, Pr: 0xd9ffc7, Nd: 0xc7ffc7, Pm: 0xa3ffc7, Sm: 0x8fffc7, Eu: 0x61ffc7, Gd: 0x45ffc7,
+  Tb: 0x30ffc7, Dy: 0x1fffc7, Ho: 0x00ff9c, Er: 0x00e675, Tm: 0x00d452, Yb: 0x00bf38, Lu: 0x00ab24, Hf: 0x4dc2ff,
+  Ta: 0x4da6ff, W: 0x2194d6, Re: 0x267dab, Os: 0x266696, Ir: 0x175487, Pt: 0xd0d0e0, Au: 0xffd123, Hg: 0xb8b8d0,
+  Tl: 0xa6544d, Pb: 0x575961, Bi: 0x9e4fb5, Po: 0xab5c00, At: 0x754f45, Rn: 0x428296
+};
+
+function getElementColor(element) {
+  return elementColors[element] || 0x808080;
+}
+
+function getAtomRadius(element) {
+  return (atomicRadii[element] || 1.0) * atomSize;
+}
+
+function latticeDirsNorm() {
+if (!structureData) return {
+  a: new THREE.Vector3(1,0,0),
+  b: new THREE.Vector3(0,1,0),
+  c: new THREE.Vector3(0,0,1)
+};
+const L = structureData.lattice;
+return {
+  a: new THREE.Vector3(L[0][0], L[0][1], L[0][2]).normalize(),
+  b: new THREE.Vector3(L[1][0], L[1][1], L[1][2]).normalize(),
+  c: new THREE.Vector3(L[2][0], L[2][1], L[2][2]).normalize()
+};
+}
+
+
+function periodicWrapped(frac, elements) {
+  const eps = 1e-6;
+  const imagesInCube = [];
+
+  // Generate all combinations of [0, 1-eps] for 3 dimensions
+  for (let i = 0; i < 2; i++) {
+    for (let j = 0; j < 2; j++) {
+      for (let k = 0; k < 2; k++) {
+        imagesInCube.push([
+          i === 0 ? 0 : 1 - eps,
+          j === 0 ? 0 : 1 - eps,
+          k === 0 ? 0 : 1 - eps
+        ]);
+      }
+    }
+  }
+
+  const newElements = [];
+  const newFcrds = [];
+
+  for (let i = 0; i < frac.length; i++) {
+    const fc = frac[i];
+    const atm = elements[i];
+
+    for (const image of imagesInCube) {
+      const newCoord = [
+        fc[0] + image[0],
+        fc[1] + image[1],
+        fc[2] + image[2]
+      ];
+
+      // Check if all coordinates are less than 1 + eps
+      if (newCoord.every(coord => coord < 1 + eps)) {
+        newElements.push(atm);
+        newFcrds.push(newCoord);
+      }
+    }
+  }
+
+  return { elements: newElements, frac: newFcrds };
+}
+
+
+function getCellCenterAndDist() {
+  const L = structureData?.lattice || [[10,0,0],[0,10,0],[0,0,10]];
+  const corner = new THREE.Vector3(
+    L[0][0]+L[1][0]+L[2][0],
+    L[0][1]+L[1][1]+L[2][1],
+    L[0][2]+L[1][2]+L[2][2]
+  );
+  const center = corner.clone().multiplyScalar(0.5);
+  const dist = Math.max(corner.length()*1.8, 15);
+  return { center, dist };
+}
+
+// makes the center of structure as the rotation center.
+function setViewDirection(dir) {
+  const { center, dist } = getCellCenterAndDist();
+  const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
+  camera.position.copy(center.clone().add(n.multiplyScalar(dist)));
+  controls.target.copy(center);
+  controls.update();
+}
+
+function resetView() { setViewDirection(new THREE.Vector3(1,1,1)); }
+
+function latticeDirs() {
+  if (!structureData) return {a:[1,0,0], b:[0,1,0], c:[0,0,1]};
+  const L = structureData.lattice;
+  return {
+    a: [L[0][0], L[0][1], L[0][2]],
+    b: [L[1][0], L[1][1], L[1][2]],
+    c: [L[2][0], L[2][1], L[2][2]],
+  };
+}
+
+
+function parsePOSCAR(content) {
+  const lines = content.trim().split('\n').filter(l => l.trim());
+  let i = 0;
+
+  const comment = lines[i++].trim();
+  const scale = parseFloat(lines[i++]);
+
+  // lattice (scaled)
+  const lattice = Array.from({ length: 3 }, () =>
+    lines[i++].trim().split(/\s+/).slice(0, 3).map(v => parseFloat(v) * scale)
+  );
+
+  const elementLine = lines[i++].trim().split(/\s+/);
+  const countLine = lines[i++].trim().split(/\s+/).map(x => parseInt(x, 10));
+
+  const elements = [];
+  for (let e = 0; e < elementLine.length; e++) {
+    for (let c = 0; c < countLine[e]; c++) elements.push(elementLine[e]);
+  }
+
+  // coordinate type (+ optional selective dynamics)
+  let coordType = lines[i].trim().toLowerCase();
+  if (coordType.startsWith('s')) { i++; coordType = lines[i].trim().toLowerCase(); }
+  i++;
+
+  const isCartesian = coordType.startsWith('c') || coordType.startsWith('k'); // Cartesian
+
+  const totalAtoms = countLine.reduce((a, b) => a + b, 0);
+
+  // helpers
+  const fracToCart = (f) => ([
+    f[0]*lattice[0][0] + f[1]*lattice[1][0] + f[2]*lattice[2][0],
+    f[0]*lattice[0][1] + f[1]*lattice[1][1] + f[2]*lattice[2][1],
+    f[0]*lattice[0][2] + f[1]*lattice[1][2] + f[2]*lattice[2][2],
+  ]);
+  const invert3x3 = (m) => {
+    const [a,b,c] = m;
+    const A = a[0], B = a[1], C = a[2];
+    const D = b[0], E = b[1], F = b[2];
+    const G = c[0], H = c[1], I = c[2];
+    const det = A*(E*I - F*H) - B*(D*I - F*G) + C*(D*H - E*G);
+    const invDet = 1.0 / det;
+    return [
+      [(E*I - F*H)*invDet, (C*H - B*I)*invDet, (B*F - C*E)*invDet],
+      [(F*G - D*I)*invDet, (A*I - C*G)*invDet, (C*D - A*F)*invDet],
+      [(D*H - E*G)*invDet, (B*G - A*H)*invDet, (A*E - B*D)*invDet],
+    ];
+  };
+  const matVec = (m, v) => ([
+    m[0][0]*v[0] + m[0][1]*v[1] + m[0][2]*v[2],
+    m[1][0]*v[0] + m[1][1]*v[1] + m[1][2]*v[2],
+    m[2][0]*v[0] + m[2][1]*v[1] + m[2][2]*v[2],
+  ]);
+
+  const positionsRaw = [];
+  for (let n = 0; n < totalAtoms; n++) {
+    const toks = lines[i++].trim().split(/\s+/);
+    positionsRaw.push(toks.slice(0, 3).map(Number)); // ignore SD flags here
+  }
+
+  const positions   = isCartesian? positionsRaw.map(p => matVec(invert3x3(lattice), p))
+                          : positionsRaw; // fallback
+
+
+  return {
+    comment,
+    lattice,
+    elements,
+    positions,
+    uniqueElements: elementLine
+  };
+}
+
+
+function fracToCart(frac, lattice) {
+  return frac.map(fc => [
+    fc[0] * lattice[0][0] + fc[1] * lattice[1][0] + fc[2] * lattice[2][0],
+    fc[0] * lattice[0][1] + fc[1] * lattice[1][1] + fc[2] * lattice[2][1],
+    fc[0] * lattice[0][2] + fc[1] * lattice[1][2] + fc[2] * lattice[2][2]
+  ]);
+}
+
+function createBondLengthControls() {
+  const bondControls = document.getElementById('bondControls');
+  bondControls.innerHTML = '';
+
+  if (!structureData) return;
+
+  const uniqueElements = [...new Set(structureData.elements)];
+  const pairs = [];
+
+  // Generate all unique pairs
+  for (let i = 0; i < uniqueElements.length; i++) {
+    for (let j = i; j < uniqueElements.length; j++) {
+      const pair = uniqueElements[i] + '-' + uniqueElements[j];
+      pairs.push(pair);
+
+      if (!bondLengths[pair]) {
+        const defaultRadius = (atomicRadii[uniqueElements[i]] || 1.0) + (atomicRadii[uniqueElements[j]] || 1.0);
+        bondLengths[pair] = Math.min(defaultRadius * 1.2, 3.0);
+      }
+    }
+  }
+
+  pairs.forEach(pair => {
+    const div = document.createElement('div');
+    div.className = 'bond-control';
+
+    const label = document.createElement('div');
+    label.className = 'bond-label';
+    label.textContent = `${pair}: `;
+
+    const valueSpan = document.createElement('span');
+    valueSpan.className = 'slider-value';
+    valueSpan.textContent = `${bondLengths[pair].toFixed(3)} Å`;
+    label.appendChild(valueSpan);
+
+    const controlsRow = document.createElement('div');
+    controlsRow.style.display = 'flex';
+    controlsRow.style.gap = '8px';
+    controlsRow.style.alignItems = 'center';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0.0';
+    slider.max = '6.0';
+    slider.step = '0.1' ;
+    slider.value = bondLengths[pair];
+    slider.style.flex = '1';
+
+    const textInput = document.createElement('input');
+    textInput.type = 'number';
+    textInput.min = '0.1';
+    textInput.max = '10.0';
+    textInput.step = '0.01';
+    textInput.value = bondLengths[pair];
+    textInput.style.width = '70px';
+    textInput.style.padding = '4px';
+    textInput.style.background = 'rgba(255,255,255,0.1)';
+    textInput.style.border = '1px solid rgba(255,255,255,0.2)';
+    textInput.style.borderRadius = '4px';
+    textInput.style.color = '#fff';
+
+    function updateValue(newValue) {
+      bondLengths[pair] = parseFloat(newValue);
+      valueSpan.textContent = `${bondLengths[pair].toFixed(3)} Å`;
+      slider.value = bondLengths[pair];
+      textInput.value = bondLengths[pair];
+      updateVisualization();
+    }
+
+    slider.oninput = (e) => updateValue(e.target.value);
+    textInput.onchange = (e) => {
+      const val = Math.max(0.1, Math.min(10.0, parseFloat(e.target.value) || 1.0));
+      updateValue(val);
+    };
+
+    controlsRow.appendChild(slider);
+    controlsRow.appendChild(textInput);
+
+    div.appendChild(label);
+    div.appendChild(controlsRow);
+    bondControls.appendChild(div);
+  });
+}
+
+function distance(pos1, pos2) {
+  const dx = pos1.x - pos2.x;
+  const dy = pos1.y - pos2.y;
+  const dz = pos1.z - pos2.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+function getBondCutoff(elem1, elem2) {
+  const pair1 = elem1 + '-' + elem2;
+  const pair2 = elem2 + '-' + elem1;
+  return bondLengths[pair1] || bondLengths[pair2] || 3.0;
+}
+
+
+
+function formatÅ(x){ return (Math.round(x*1000)/1000).toFixed(3); }
+
+function clearHighlightAtom(m){
+  if(!m || !m.material) return;
+  if(m.userData._origEmissive!==undefined){
+    m.material.emissive.setHex(m.userData._origEmissive);
+    m.material.emissiveIntensity = m.userData._origEmissiveInt || 0;
+  }
+}
+function HighlightAtom(m, hex){
+  if(!m || !m.material) return;
+  if(m.userData._origEmissive===undefined){
+    m.userData._origEmissive = m.material.emissive.getHex();
+    m.userData._origEmissiveInt = m.material.emissiveIntensity || 0;
+  }
+  m.material.emissive.setHex(hex);
+  m.material.emissiveIntensity = 0.6;
+}
+
+function updateMeasureUI(){
+  const pairEl = document.getElementById('pairText');
+  const distEl = document.getElementById('distanceValue');
+  if (pickA && pickB){
+    const a = pickA.userData.element, b = pickB.userData.element;
+    const pa = pickA.position, pb = pickB.position;
+    const d = Math.hypot(pa.x-pb.x, pa.y-pb.y, pa.z-pb.z);
+    pairEl.textContent = `${a} — ${b}`;
+    distEl.textContent = formatÅ(d);
+  } else {
+    pairEl.textContent = '—';
+    distEl.textContent = '—';
+  }
+}
+
+function clearMeasureGraphics(){
+  if (measureLine){ scene.remove(measureLine); measureLine.geometry.dispose(); measureLine = null; }
+  if (measureLabel){ scene.remove(measureLabel); measureLabel = null; }
+}
+function drawMeasureGraphics(){
+  clearMeasureGraphics();
+  if (!(pickA && pickB)) return;
+
+  // dashed line
+  const pa = pickA.position.clone(), pb = pickB.position.clone();
+  const geom = new THREE.BufferGeometry().setFromPoints([pa, pb]);
+  measureLine = new THREE.Line(
+    geom,
+    new THREE.LineDashedMaterial({ color:0x000000, dashSize:0.15, gapSize:0.15, linewidth:2.0 })
+  );
+  measureLine.computeLineDistances();
+  scene.add(measureLine);
+
+  // midpoint floating label
+  const mid = pa.clone().add(pb).multiplyScalar(0.5);
+  const div = document.createElement('div');
+  div.className = 'measure-label';
+  const a = pickA.userData.element, b = pickB.userData.element;
+  const d = pa.distanceTo(pb);
+  div.textContent = `${a} — ${b} = ${formatÅ(d)} Å`;
+  measureLabel = new CSS2DObject(div);
+  measureLabel.position.copy(mid);
+  scene.add(measureLabel);
+}
+
+function clearMeasure(){
+  clearHighlightAtom(pickA); clearHighlightAtom(pickB);
+  pickA = null; pickB = null;
+  clearMeasureGraphics();
+  updateMeasureUI();
+}
+
+
+
+function createAtomMesh(element, position) {
+  const radius = getAtomRadius(element);
+  const color = getElementColor(element);
+  const geometry = new THREE.SphereGeometry(radius, 32, 24);
+  const material = new THREE.MeshPhysicalMaterial({
+    color,
+    roughness: 0.15,
+    metalness: 0.1,
+    clearcoat: 0.9,
+    clearcoatRoughness: 0.02,
+    sheen: 0.6,
+    sheenColor: new THREE.Color(color).multiplyScalar(0.8),
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(position[0], position[1], position[2]);
+  mesh.userData.element = element; // <-- add this
+  return mesh;
+}
+
+function createBond(pos1, pos2, elem1, elem2) {
+  const p1 = new THREE.Vector3(pos1[0], pos1[1], pos1[2]);
+  const p2 = new THREE.Vector3(pos2[0], pos2[1], pos2[2]);
+  const dist = distance(p1, p2);
+  const cutoff = getBondCutoff(elem1, elem2);
+
+  if (dist > cutoff || dist < 0.005) return null;
+
+  const direction = new THREE.Vector3().subVectors(p2, p1);
+  const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+
+  const geometry = new THREE.CylinderGeometry(0.15, 0.15, dist, 8);
+  const material = new THREE.MeshLambertMaterial({
+    color: 0x666666,
+    transparent: true,
+    opacity: 0.8
+  });
+  const bond = new THREE.Mesh(geometry, material);
+
+  bond.position.copy(midpoint);
+  bond.lookAt(p2);
+  bond.rotateX(Math.PI / 2);
+
+  return bond;
+}
+
+function createLatticeLines() {
+  const group = new THREE.Group();
+  const material = new THREE.LineBasicMaterial({
+    color: 0x000000,
+    transparent: true,
+    opacity: 0.7,
+    linewidth: 3
+  });
+
+  const lattice = structureData.lattice;
+
+  // Define unit cell vertices
+  const vertices = [
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(lattice[0][0], lattice[0][1], lattice[0][2]),
+    new THREE.Vector3(lattice[1][0], lattice[1][1], lattice[1][2]),
+    new THREE.Vector3(lattice[2][0], lattice[2][1], lattice[2][2]),
+    new THREE.Vector3(lattice[0][0] + lattice[1][0], lattice[0][1] + lattice[1][1], lattice[0][2] + lattice[1][2]),
+    new THREE.Vector3(lattice[0][0] + lattice[2][0], lattice[0][1] + lattice[2][1], lattice[0][2] + lattice[2][2]),
+    new THREE.Vector3(lattice[1][0] + lattice[2][0], lattice[1][1] + lattice[2][1], lattice[1][2] + lattice[2][2]),
+    new THREE.Vector3(lattice[0][0] + lattice[1][0] + lattice[2][0], lattice[0][1] + lattice[1][1] + lattice[2][1], lattice[0][2] + lattice[1][2] + lattice[2][2])
+  ];
+
+  // Define edges of unit cell
+  const edges = [
+    [0, 1], [0, 2], [0, 3], [1, 4], [1, 5], [2, 4], [2, 6], [3, 5], [3, 6], [4, 7], [5, 7], [6, 7]
+  ];
+
+  edges.forEach(edge => {
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      vertices[edge[0]], vertices[edge[1]]
+    ]);
+    const line = new THREE.Line(geometry, material);
+    group.add(line);
+  });
+
+  return group;
+}
+
+function computeComposition() {
+  if (!structureData) return {};
+  const counts = {};
+  structureData.elements.forEach(e => counts[e] = (counts[e] || 0) + 1);
+  return counts;
+}
+
+function renderComposition() {
+  const compDiv = document.getElementById('composition');
+  compDiv.innerHTML = '';
+  const counts = computeComposition();
+  const total = Object.values(counts).reduce((a,b)=>a+b,0) || 1;
+
+  Object.keys(counts).sort().forEach(el => {
+    const row = document.createElement('div'); row.className = 'comp-row';
+    const left = document.createElement('div'); left.className = 'comp-left';
+    const dot = document.createElement('span'); dot.className = 'dot';
+    dot.style.background = colorHexToCss(getElementColor(el));
+    const name = document.createElement('span'); name.textContent = el;
+    left.appendChild(dot); left.appendChild(name);
+
+    const right = document.createElement('span');
+    const pct = (100*counts[el]/total).toFixed(1);
+    right.textContent = `${counts[el]} (${pct}%)`;
+
+    row.appendChild(left); row.appendChild(right);
+    compDiv.appendChild(row);
+  });
+}
+
+
+
+function updateVisualization() {
+  if (!structureData) return;
+
+  // Clear existing geometry
+  if (atomsGroup) scene.remove(atomsGroup);
+  if (bondsGroup) scene.remove(bondsGroup);
+  if (latticeGroup) scene.remove(latticeGroup);
+
+  atomsGroup = new THREE.Group();
+  bondsGroup = new THREE.Group();
+  latticeGroup = new THREE.Group();
+
+  // Get wrapped positions
+  const wrapped = periodicWrapped(structureData.positions, structureData.elements);
+  const cartPositions = fracToCart(wrapped.frac, structureData.lattice);
+
+  // Create atoms
+  for (let i = 0; i < cartPositions.length; i++) {
+    const atomMesh = createAtomMesh(wrapped.elements[i], cartPositions[i]);
+    atomsGroup.add(atomMesh);
+  }
+
+  // Create bonds
+  if (showBonds) {
+    for (let i = 0; i < cartPositions.length; i++) {
+      for (let j = i + 1; j < cartPositions.length; j++) {
+        const bond = createBond(cartPositions[i], cartPositions[j], wrapped.elements[i], wrapped.elements[j]);
+        if (bond) bondsGroup.add(bond);
+      }
+    }
+  }
+
+  // Create lattice
+  if (showLattice) {
+    latticeGroup = createLatticeLines();
+  }
+
+  scene.add(atomsGroup);
+  if (showBonds) scene.add(bondsGroup);
+  if (showLattice) scene.add(latticeGroup);
+
+  renderComposition();
+  clearMeasureGraphics();
+}
+
+function colorHexToCss(hex) {
+    const s = hex.toString(16).padStart(6,'0');
+    return `#${s}`;
+}
+
+function loadPOSCAR(content) {
+  try {
+    structureData = parsePOSCAR(content);
+    setStatus(`Loaded: ${structureData.elements.length} atoms`);
+
+    document.getElementById('structureControls').style.display = 'block';
+    document.getElementById('bondControlsGroup').style.display = 'block';
+
+    createBondLengthControls();
+    updateVisualization();
+    resetView();
+
+    renderComposition();
+    clearMeasure();
+    updateMeasureUI();
+    resetView();
+
+  } catch (error) {
+    setStatus(`Error: ${error.message}`);
+    console.error(error);
+  }
+}
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf8f9fa);
+
+  const w = view.clientWidth || window.innerWidth;
+  const h = view.clientHeight || window.innerHeight;
+  camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+
+  view.appendChild(renderer.domElement);
+
+
+  // Label for distances
+  labelRenderer = new CSS2DRenderer();
+  labelRenderer.setSize(w, h);
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.top = '0';
+  labelRenderer.domElement.style.left = '0';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  view.appendChild(labelRenderer.domElement);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.maxDistance = 1000;
+  controls.minDistance = 1;
+
+  controls.enableRotate = true;
+  controls.enablePan = true;
+  controls.enableZoom = true;
+  controls.minPolarAngle = 0;
+  controls.maxPolarAngle = Math.PI;
+  controls.mouseButtons = {
+    LEFT: THREE.MOUSE.ROTATE,
+    MIDDLE: THREE.MOUSE.DOLLY,
+    RIGHT: THREE.MOUSE.PAN
+  };
+
+  // Enhanced lighting
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.6).texture;
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.6));
+
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  keyLight.position.set(10, 10, 5);
+  keyLight.castShadow = true;
+  keyLight.shadow.mapSize.width = 2048;
+  keyLight.shadow.mapSize.height = 2048;
+  scene.add(keyLight);
+
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+  fillLight.position.set(-5, 5, -5);
+  scene.add(fillLight);
+
+  // Click Atom
+
+  let raycaster = new THREE.Raycaster();
+  let mouse = new THREE.Vector2();
+
+  function onClickPick(event){
+    // Prevent default behavior and stop propagation
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Handle both mouse and touch events
+    const clientX = event.clientX || (event.touches && event.touches[0].clientX) || (event.changedTouches && event.changedTouches[0].clientX);
+    const clientY = event.clientY || (event.touches && event.touches[0].clientY) || (event.changedTouches && event.changedTouches[0].clientY);
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+    mouse.set(x, y);
+    raycaster.setFromCamera(mouse, camera);
+    if(!atomsGroup) return;
+
+    const hits = raycaster.intersectObjects(atomsGroup.children, true);
+    if (!hits.length) {
+      // Clicked on empty space - clear selection
+      clearMeasure();
+      return;
+    }
+
+    const hit = hits[0].object;
+
+    // selection cycling: A -> B -> restart with new A
+    if (!pickA || (pickA && pickB)) {
+      clearMeasure();
+      pickA = hit; HighlightAtom(pickA, 0x3dd5ff);
+    } else if (!pickB) {
+      if (hit === pickA) return;
+      pickB = hit; HighlightAtom(pickB, 0xff7ad6);
+    }
+
+    updateMeasureUI();
+    drawMeasureGraphics();
+  }
+
+  // Add both click and touch event listeners
+  renderer.domElement.addEventListener('click', onClickPick);
+  renderer.domElement.addEventListener('touchend', onClickPick);
+  document.getElementById('clearMeasure').onclick = clearMeasure;
+
+
+  // Axes gizmo (bottom-left)
+  const gizmoDiv = document.getElementById('axesGizmo');
+  gizmoRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  gizmoRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  gizmoDiv.appendChild(gizmoRenderer.domElement);
+
+  // 2D label renderer
+  const gizmoLabelRenderer = new CSS2DRenderer();
+  gizmoLabelRenderer.setSize(gizmoDiv.clientWidth, gizmoDiv.clientHeight);
+  gizmoLabelRenderer.domElement.style.position = 'absolute';
+  gizmoLabelRenderer.domElement.style.top = '0';
+  gizmoLabelRenderer.domElement.style.left = '0';
+  gizmoLabelRenderer.domElement.style.pointerEvents = 'none';
+  gizmoDiv.appendChild(gizmoLabelRenderer.domElement);
+
+  gizmoScene = new THREE.Scene();
+  gizmoCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+  gizmoCamera.position.set(0, 0, 3);
+  gizmoCamera.lookAt(0, 0, 0);
+
+  const arrowLen = 1.3, headLen = 0.35, headWidth = 0.22;
+  const makeArrow = (color) => new THREE.ArrowHelper(
+    new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), arrowLen, color, headLen, headWidth
+  );
+  const aArrow = makeArrow(0xff3333);
+  const bArrow = makeArrow(0x33cc33);
+  const cArrow = makeArrow(0x3366ff);
+  gizmoScene.add(aArrow, bArrow, cArrow);
+
+  // labels at arrow tips (as children so they rotate with arrows)
+  function addLabel(parent, text, color) {
+    const el = document.createElement('div');
+    el.textContent = text;
+    el.style.color = color;
+    el.style.fontSize = '12px';
+    el.style.fontWeight = '700';
+    el.style.textShadow = '0 0 3px rgba(0,0,0,0.7)';
+    const obj = new CSS2DObject(el);
+    obj.position.set(arrowLen + 0.12, 0, 0); // just past tip, in local X
+    parent.add(obj);
+  }
+  addLabel(aArrow, 'a', '#ff4444');
+  addLabel(bArrow, 'b', '#33cc33');
+  addLabel(cArrow, 'c', '#3366ff');
+
+  // keep handles for animate()
+  gizmoScene.userData.aArrow = aArrow;
+  gizmoScene.userData.bArrow = bArrow;
+  gizmoScene.userData.cArrow = cArrow;
+
+  function sizeGizmo(){
+    const w = gizmoDiv.offsetWidth || 110, h = gizmoDiv.offsetHeight || 110;
+    gizmoRenderer.setSize(w, h);
+    gizmoLabelRenderer.setSize(w, h);
+    gizmoCamera.aspect = w / h;
+    gizmoCamera.updateProjectionMatrix();
+  }
+  sizeGizmo();
+
+
+
+  document.getElementById('viewX').onclick = () => setViewDirection([1,0,0]);
+  document.getElementById('viewY').onclick = () => setViewDirection([0,1,0]);
+  document.getElementById('viewZ').onclick = () => setViewDirection([0,0,1]);
+
+  document.getElementById('viewA').onclick = () => { const {a} = latticeDirs(); setViewDirection(a); };
+  document.getElementById('viewB').onclick = () => { const {b} = latticeDirs(); setViewDirection(b); };
+  document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
+
+  document.getElementById('resetView').onclick = resetView;
+
+
+
+
+  // File handling
+  const fileInput = document.getElementById('fileInput');
+  const fileLabel = document.getElementById('fileLabel');
+
+  fileInput.onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => loadPOSCAR(e.target.result);
+      reader.readAsText(file);
+    }
+  };
+
+  // Drag and drop
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    fileLabel.addEventListener(eventName, preventDefaults, false);
+    document.body.addEventListener(eventName, preventDefaults, false);
+  });
+
+  ['dragenter', 'dragover'].forEach(eventName => {
+    fileLabel.addEventListener(eventName, highlight, false);
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    fileLabel.addEventListener(eventName, unhighlight, false);
+  });
+
+  fileLabel.addEventListener('drop', handleDrop, false);
+
+  function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function highlight(e) {
+    fileLabel.classList.add('dragover');
+  }
+
+  function unhighlight(e) {
+    fileLabel.classList.remove('dragover');
+  }
+
+  function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    if (files.length > 0) {
+      const file = files[0];
+      const reader = new FileReader();
+      reader.onload = (e) => loadPOSCAR(e.target.result);
+      reader.readAsText(file);
+    }
+  }
+
+  // Control handlers
+  document.getElementById('showBonds').onchange = (e) => {
+    showBonds = e.target.checked;
+    updateVisualization();
+  };
+
+  document.getElementById('showLattice').onchange = (e) => {
+    showLattice = e.target.checked;
+    updateVisualization();
+  };
+
+  document.getElementById('atomSize').oninput = (e) => {
+    atomSize = parseFloat(e.target.value);
+    document.getElementById('atomSizeValue').textContent = atomSize.toFixed(1);
+    updateVisualization();
+  };
+
+  camera.position.set(20, 20, 20);
+  controls.update();
+
+  animate();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+  const invCamQ = camera.quaternion.clone().invert();
+  const { a, b, c } = latticeDirsNorm();
+
+  gizmoScene.userData.aArrow.setDirection(a.clone().applyQuaternion(invCamQ));
+  gizmoScene.userData.bArrow.setDirection(b.clone().applyQuaternion(invCamQ));
+  gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
+
+  gizmoRenderer.render(gizmoScene, gizmoCamera);
+  labelRenderer.render(scene, camera);           // <-- add
+
+}
+
+// window resize
+window.addEventListener('resize', () => {
+  const w = view.clientWidth || window.innerWidth;
+  const h = view.clientHeight || window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+
+  const gizmoDiv = document.getElementById('axesGizmo');
+  gizmoRenderer.setSize(gizmoDiv.clientWidth, gizmoDiv.clientHeight);
+  gizmoCamera.aspect = gizmoDiv.clientWidth / gizmoDiv.clientHeight;
+  gizmoCamera.updateProjectionMatrix();
+
+  labelRenderer.setSize(w, h);
+
+});
+
+window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
+window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
+
+// Mobile menu functionality
+function setupMobileMenu() {
+  const mobileToggle = document.getElementById('mobileMenuToggle');
+  const mobileOverlay = document.getElementById('mobileOverlay');
+  const ui = document.getElementById('ui');
+
+  function toggleMobileMenu() {
+    ui.classList.toggle('mobile-open');
+    mobileOverlay.classList.toggle('active');
+  }
+
+  function closeMobileMenu() {
+    ui.classList.remove('mobile-open');
+    mobileOverlay.classList.remove('active');
+  }
+
+  if (mobileToggle) {
+    mobileToggle.addEventListener('click', toggleMobileMenu);
+    mobileToggle.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      toggleMobileMenu();
+    });
+  }
+
+  if (mobileOverlay) {
+    mobileOverlay.addEventListener('click', closeMobileMenu);
+    mobileOverlay.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      closeMobileMenu();
+    });
+  }
+
+  // Close mobile menu when clicking inside the UI (after making selections)
+  if (ui) {
+    ui.addEventListener('click', (e) => {
+      // Close menu when clicking file input or other interactive elements
+      if (e.target.matches('input, button, label')) {
+        setTimeout(closeMobileMenu, 500); // Small delay to allow interaction
+      }
+    });
+  }
+
+  // Prevent default touch behaviors on critical elements
+  const canvas = document.querySelector('#view canvas');
+  if (canvas) {
+    canvas.addEventListener('touchstart', (e) => {
+      // Allow normal touch interaction for atom picking
+    });
+  }
+}
+
+init();
+resetView();
+setupMobileMenu();

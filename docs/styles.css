@@ -1,0 +1,554 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+  display: flex;
+}
+
+#ui {
+  width: 380px;
+  overflow: auto;
+  padding: 20px;
+  background: rgba(26, 26, 26, 0.95);
+  color: #fff;
+  backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#ui h2 {
+  color: #4fc3f7;
+  margin: 0 0 25px 0;
+  font-size: 24px;
+  font-weight: 300;
+  text-align: center;
+}
+
+.control-group {
+  margin: 25px 0;
+  padding: 20px;
+  background: rgba(42, 42, 42, 0.8);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.control-group h3 {
+  margin: 0 0 15px 0;
+  color: #81c784;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+#fileInput {
+  display: none;
+}
+
+#fileLabel {
+  display: block;
+  padding: 15px 20px;
+  background: linear-gradient(45deg, #677eea, #769ba2);
+  color: white;
+  text-align: center;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  border: 2px dashed transparent;
+}
+
+#fileLabel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+}
+
+#fileLabel.dragover {
+  border: 2px dashed #4fc3f7;
+  background: rgba(79, 195, 247, 0.2);
+}
+
+label {
+  display: block;
+  margin: 15px 0 8px 0;
+  color: #ccc;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+input[type="range"] {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+  -webkit-appearance: none;
+  margin: 10px 0;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #4fc3f7;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #4fc3f7;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+input[type="checkbox"] {
+  margin-right: 10px;
+  transform: scale(1.2);
+  accent-color: #4fc3f7;
+}
+
+.slider-value {
+  color: #4fc3f7;
+  font-weight: 600;
+}
+
+#view {
+  flex: 1;
+  position: relative;
+  border-radius: 0 20px 20px 0;
+  overflow: hidden;
+}
+
+#bondControls {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+#bondControls::-webkit-scrollbar {
+  width: 6px;
+}
+
+#bondControls::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+#bondControls::-webkit-scrollbar-thumb {
+  background: #4fc3f7;
+  border-radius: 3px;
+}
+
+.bond-control {
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border-left: 3px solid #4fc3f7;
+}
+
+.bond-label {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+#status {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 10px 15px;
+  border-radius: 20px;
+  font-size: 12px;
+  z-index: 1000;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* compositions and clicked element (bottom right) */
+
+#infoPanel {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  min-width: 240px;
+  max-width: 320px;
+  background: rgba(0,0,0,0.8);
+  color: #fff;
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 16px;
+  line-height: 1.4;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.1);
+  z-index: 1000;
+}
+#infoPanel h4 {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+  color: #4fc3f7;
+  font-size: 14px;
+  letter-spacing: .3px;
+}
+.comp-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 0; border-bottom: 1px dashed rgba(255,255,255,0.1);
+}
+.comp-row:last-child { border-bottom: 0; }
+.dot {
+  width: 10px; height: 10px; border-radius: 50%; margin-right: 8px;
+  border: 1px solid rgba(255,255,255,0.4);
+}
+.comp-left { display: inline-flex; align-items: center; gap: 6px; }
+#picked {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 8px; background: rgba(79,195,247,0.12);
+  border: 1px solid rgba(79,195,247,0.3); border-radius: 10px;
+}
+#view canvas { cursor: pointer; } /* for click affordance */
+
+
+#axesGizmo {
+position: fixed; left: 450px; bottom: 20px; width: 120px; height: 120px;
+border-radius: 10px; background: rgba(0,0,0,0.08); backdrop-filter: blur(6px);
+border: 1px solid rgba(255,255,255,0.15); z-index: 1000; overflow: hidden;
+pointer-events: none;
+}
+
+#axesLegend{
+position: fixed; left: 420px; bottom: 20px;
+transform: translateX(150px);
+background: rgba(0,0,0,0.08);
+border: 1px solid rgba(255,255,255,0.15);
+border-radius: 8px;
+padding: 6px 8px;
+font-size: 12px; color:#333;
+backdrop-filter: blur(6px);
+z-index:1000; pointer-events:none;
+}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;}
+.dot-a{background:#ff3333;} .dot-b{background:#33cc33;} .dot-c{background:#3366ff;}
+.legend-row{display:flex;align-items:center;gap:6px;line-height:1.2;}
+
+/* View toolbar (top-left) */
+#viewToolbar {
+  position: fixed; left: 16px; top: 16px; display: flex; gap: 8px; flex-wrap: wrap;
+  background: rgba(26,26,26,0.85); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px; padding: 8px; z-index: 1000; backdrop-filter: blur(8px);
+}
+.vbtn {
+  padding: 6px 10px; font-size: 14px; color: #fff; background: rgba(79,195,247,.12);
+  border: 1px solid rgba(79,195,247,.35); border-radius: 8px; cursor: pointer;
+}
+.vbtn:hover { background: rgba(79,195,247,.22); }
+.vsep { width: 1px; height: 22px; background: rgba(255,255,255,0.12); margin: 0 2px; }
+
+
+/* --- Measure panel --- */
+#measure { display:grid; gap:10px; }
+#measureRow{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 12px; border-radius:12px;
+  background:rgba(79,195,247,0.10); border:1px solid rgba(79,195,247,0.35);
+}
+#pairText{ font-size:16px; font-weight:600; letter-spacing:.2px; }
+#distanceValue{ font-size:18px; font-weight:800; color:#4fc3f7; }
+.btn-mini{
+  align-self:end; padding:8px 12px; font-size:14px; color:#fff; cursor:pointer;
+  background:rgba(79,195,247,.15); border:1px solid rgba(79,195,247,.35); border-radius:8px;
+}
+
+/* --- Floating distance label in scene --- */
+.measure-label{
+  padding:6px 9px; border-radius:10px; font-size:14px; font-weight:700;
+  color:#fff; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.2);
+  backdrop-filter: blur(6px); white-space:nowrap;
+}
+
+/* Mobile Menu Toggle Button */
+#mobileMenuToggle {
+  display: none;
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 2000;
+  background: rgba(26, 26, 26, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  font-size: 18px;
+  width: 48px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+}
+
+#mobileMenuToggle:hover {
+  background: rgba(26, 26, 26, 1);
+}
+
+/* Prevent text selection on touch devices */
+#view canvas,
+.vbtn,
+#mobileMenuToggle,
+body {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Allow text selection only where needed */
+#ui input[type="number"],
+#ui label,
+#ui h2,
+#ui h3,
+#infoPanel,
+#status {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Mobile and Tablet Responsive Styles */
+@media screen and (max-width: 1024px) {
+  /* Show mobile menu toggle */
+  #mobileMenuToggle {
+    display: flex;
+  }
+
+  /* Adjust view toolbar position for mobile toggle */
+  #viewToolbar {
+    left: 80px;
+    top: 16px;
+    flex-wrap: wrap;
+  }
+
+  .vbtn {
+    padding: 8px 12px;
+    font-size: 16px;
+    min-height: 44px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Adjust axes gizmo position */
+  #axesGizmo {
+    left: 20px;
+    bottom: 20px;
+    width: 100px;
+    height: 100px;
+  }
+
+  #axesLegend {
+    left: 20px;
+    transform: translateX(110px);
+  }
+}
+
+@media screen and (max-width: 768px) {
+  body {
+    flex-direction: column;
+  }
+
+  #ui {
+    position: fixed;
+    top: 0;
+    left: -100%;
+    width: 320px;
+    height: 100vh;
+    z-index: 1500;
+    transition: left 0.3s ease;
+    border-right: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 2px 0 20px rgba(0, 0, 0, 0.3);
+  }
+
+  #ui.mobile-open {
+    left: 0;
+  }
+
+  #view {
+    flex: 1;
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+  }
+
+  /* Mobile overlay to close menu */
+  #mobileOverlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1400;
+  }
+
+  #mobileOverlay.active {
+    display: block;
+  }
+
+  /* Adjust control group spacing for mobile */
+  .control-group {
+    margin: 20px 0;
+    padding: 16px;
+  }
+
+  #ui h2 {
+    font-size: 20px;
+    margin: 0 0 20px 0;
+  }
+
+  /* Make touch targets larger */
+  input[type="checkbox"] {
+    transform: scale(1.5);
+    margin-right: 15px;
+  }
+
+  input[type="range"] {
+    height: 8px;
+    margin: 15px 0;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Adjust file label for mobile */
+  #fileLabel {
+    padding: 18px 20px;
+    font-size: 16px;
+    margin: 15px 0;
+  }
+
+  /* Adjust bond controls for mobile */
+  .bond-control {
+    padding: 16px;
+    margin: 16px 0;
+  }
+
+  .bond-label {
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+
+  /* Info panel adjustments */
+  #infoPanel {
+    right: 10px;
+    bottom: 10px;
+    min-width: 200px;
+    max-width: calc(100vw - 40px);
+    font-size: 14px;
+  }
+
+  /* Status adjustments */
+  #status {
+    top: 10px;
+    right: 10px;
+    font-size: 14px;
+    max-width: calc(100vw - 100px);
+  }
+
+  /* View toolbar adjustments */
+  #viewToolbar {
+    left: 10px;
+    top: 80px;
+    right: 10px;
+    background: rgba(26, 26, 26, 0.9);
+  }
+
+  /* Measure panel improvements */
+  #measureRow {
+    padding: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .btn-mini {
+    padding: 12px 16px;
+    font-size: 16px;
+    min-height: 44px;
+    align-self: stretch;
+    text-align: center;
+  }
+
+  /* Adjust scroll areas */
+  #bondControls {
+    max-height: 200px;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  #ui {
+    width: 280px;
+  }
+
+  #viewToolbar {
+    padding: 6px;
+    gap: 4px;
+  }
+
+  .vbtn {
+    padding: 10px;
+    font-size: 14px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  #infoPanel {
+    right: 5px;
+    bottom: 5px;
+    padding: 10px 12px;
+    min-width: 180px;
+  }
+
+  #status {
+    right: 5px;
+    top: 5px;
+    padding: 8px 12px;
+  }
+
+  #axesGizmo {
+    width: 80px;
+    height: 80px;
+  }
+
+  #axesLegend {
+    transform: translateX(90px);
+    font-size: 11px;
+    padding: 4px 6px;
+  }
+
+  /* Smaller measure label for very small screens */
+  .measure-label {
+    font-size: 12px;
+    padding: 4px 6px;
+  }
+}
