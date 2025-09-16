@@ -523,22 +523,66 @@ function renderComposition() {
   compDiv.innerHTML = '';
   const counts = computeComposition();
   const total = Object.values(counts).reduce((a,b)=>a+b,0) || 1;
+  const elements = Object.keys(counts).sort();
 
-  Object.keys(counts).sort().forEach(el => {
-    const row = document.createElement('div'); row.className = 'comp-row';
-    const left = document.createElement('div'); left.className = 'comp-left';
-    const dot = document.createElement('span'); dot.className = 'dot';
-    dot.style.background = colorHexToCss(getElementColor(el));
-    const name = document.createElement('span'); name.textContent = el;
-    left.appendChild(dot); left.appendChild(name);
+  // Create collapsible structure if more than 4 elements
+  if (elements.length > 4) {
+    elements.slice(0, 3).forEach(el => {
+      const row = createCompositionRow(el, counts[el], total);
+      compDiv.appendChild(row);
+    });
 
-    const right = document.createElement('span');
-    const pct = (100*counts[el]/total).toFixed(1);
-    right.textContent = `${counts[el]} (${pct}%)`;
+    // Add expand/collapse toggle
+    const toggleRow = document.createElement('div');
+    toggleRow.className = 'comp-toggle';
+    toggleRow.style.cssText = 'padding: 4px 0; cursor: pointer; color: #4fc3f7; font-size: 11px; text-align: center; border-top: 1px dashed rgba(255,255,255,0.1); margin-top: 4px;';
+    toggleRow.textContent = `+${elements.length - 3} more`;
 
-    row.appendChild(left); row.appendChild(right);
-    compDiv.appendChild(row);
-  });
+    const hiddenDiv = document.createElement('div');
+    hiddenDiv.className = 'comp-hidden';
+    hiddenDiv.style.display = 'none';
+
+    elements.slice(3).forEach(el => {
+      const row = createCompositionRow(el, counts[el], total);
+      hiddenDiv.appendChild(row);
+    });
+
+    toggleRow.onclick = () => {
+      const isHidden = hiddenDiv.style.display === 'none';
+      hiddenDiv.style.display = isHidden ? 'block' : 'none';
+      toggleRow.textContent = isHidden ? '− collapse' : `+${elements.length - 3} more`;
+    };
+
+    compDiv.appendChild(toggleRow);
+    compDiv.appendChild(hiddenDiv);
+  } else {
+    elements.forEach(el => {
+      const row = createCompositionRow(el, counts[el], total);
+      compDiv.appendChild(row);
+    });
+  }
+}
+
+function createCompositionRow(el, count, total) {
+  const row = document.createElement('div');
+  row.className = 'comp-row';
+  const left = document.createElement('div');
+  left.className = 'comp-left';
+  const dot = document.createElement('span');
+  dot.className = 'dot';
+  dot.style.background = colorHexToCss(getElementColor(el));
+  const name = document.createElement('span');
+  name.textContent = el;
+  left.appendChild(dot);
+  left.appendChild(name);
+
+  const right = document.createElement('span');
+  const pct = (100*count/total).toFixed(1);
+  right.textContent = `${count} (${pct}%)`;
+
+  row.appendChild(left);
+  row.appendChild(right);
+  return row;
 }
 
 
@@ -742,8 +786,7 @@ function init() {
 
     const hits = raycaster.intersectObjects(atomsGroup.children, true);
     if (!hits.length) {
-      // Clicked on empty space - clear selection
-      clearMeasure();
+      // Clicked on empty space - do NOT clear measurement, just return
       return;
     }
 
@@ -758,7 +801,7 @@ function init() {
       if (hit === pickA) return; // Same atom, ignore
       pickB = hit; HighlightAtom(pickB, 0xff7ad6);
     } else {
-      // Third selection - start new measurement
+      // Third selection - start new measurement (clear previous and start fresh)
       clearMeasure();
       pickA = hit; HighlightAtom(pickA, 0x3dd5ff);
     }
@@ -1000,12 +1043,32 @@ function setupMobileMenu() {
     console.warn('Mobile overlay not found');
   }
 
-  // Close mobile menu when clicking inside the UI (after making selections)
+  // Close mobile menu when clicking inside the UI (but not on inputs)
   if (ui) {
     ui.addEventListener('click', (e) => {
-      // Close menu when clicking file input or other interactive elements
-      if (e.target.matches('input, button, label')) {
+      // Only close menu for non-input interactions
+      if (e.target.matches('button, label[for="fileInput"]') && !e.target.matches('input')) {
         setTimeout(closeMobileMenu, 500); // Small delay to allow interaction
+      }
+    });
+
+    // Prevent menu from closing when keyboard appears or input fields are focused
+    ui.addEventListener('focusin', (e) => {
+      if (e.target.matches('input')) {
+        // Keep menu open when input is focused
+        e.stopPropagation();
+      }
+    });
+
+    ui.addEventListener('focusout', (e) => {
+      if (e.target.matches('input')) {
+        // Optionally close menu after input loses focus and no other input is focused
+        setTimeout(() => {
+          const activeElement = document.activeElement;
+          if (!activeElement || !activeElement.matches('input')) {
+            // No input is currently focused, safe to consider closing
+          }
+        }, 100);
       }
     });
   }

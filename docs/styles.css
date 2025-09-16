@@ -402,6 +402,7 @@ body {
     left: -320px;
     width: 320px;
     height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile keyboards */
     z-index: 1500;
     transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     border-right: 1px solid rgba(255, 255, 255, 0.2);
