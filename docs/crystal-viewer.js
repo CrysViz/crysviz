@@ -40,14 +40,15 @@ let showBonds = true;
 let showLattice = true;
 let useOrthographicCamera = true;
 let useVestaColors = true;
-let measureMode = false;
+let measureMode = 'none'; // 'none', 'distance', 'angle'
 let bondVisibility = {};
 let distanceMeasurements = [];
+let angleMeasurements = [];
 
 let gizmoScene, gizmoCamera, gizmoRenderer, gizmoAxes;
 
     // Measurement state
-let pickA = null, pickB = null;
+let selectedAtoms = []; // Array to store selected atoms (up to 3 for angles)
 let measureLine = null;          // THREE.Line
 let measureLabel = null;         // CSS2DObject
 let labelRenderer = null;        // CSS2DRenderer overlay for main scene
@@ -104,6 +105,79 @@ function getElementColor(element) {
 
 function getAtomRadius(element) {
   return (atomicRadii[element] || 1.0) * atomSize;
+}
+
+// Helper functions for creating measurement markers
+function createAtomCross(position, radius, color) {
+  const crossGroup = new THREE.Group();
+  const lineLength = radius * 1.8; // Cross extends slightly beyond atom surface
+  const lineWidth = radius * 0.15; // Proportional line thickness
+
+  // Create cross lines (4 lines forming X and +)
+  const positions = [
+    // Horizontal line
+    [-lineLength/2, 0, 0, lineLength/2, 0, 0],
+    // Vertical line
+    [0, -lineLength/2, 0, 0, lineLength/2, 0],
+    // Diagonal line 1
+    [-lineLength/2, -lineLength/2, 0, lineLength/2, lineLength/2, 0],
+    // Diagonal line 2
+    [-lineLength/2, lineLength/2, 0, lineLength/2, -lineLength/2, 0]
+  ];
+
+  positions.forEach(pos => {
+    const geometry = new THREE.BufferGeometry();
+    const points = [
+      new THREE.Vector3(pos[0], pos[1], pos[2]),
+      new THREE.Vector3(pos[3], pos[4], pos[5])
+    ];
+    geometry.setFromPoints(points);
+
+    const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+      color: color,
+      linewidth: Math.max(4, lineWidth * 10) // Ensure minimum visibility
+    }));
+
+    crossGroup.add(line);
+  });
+
+  crossGroup.position.copy(position);
+  // Offset slightly forward from atom surface toward camera
+  const offsetDir = position.clone().sub(camera.position).normalize().multiplyScalar(-radius * 0.05);
+  crossGroup.position.add(offsetDir);
+
+  return crossGroup;
+}
+
+function createAtomRings(position, radius, innerColor, outerColor) {
+  const ringGroup = new THREE.Group();
+
+  // Outer ring - scales with atom
+  const outerRingGeometry = new THREE.RingGeometry(radius * 1.1, radius * 1.3, 32);
+  const outerRingMaterial = new THREE.MeshBasicMaterial({
+    color: outerColor,
+    transparent: true,
+    opacity: 0.9,
+    side: THREE.DoubleSide
+  });
+  const outerRing = new THREE.Mesh(outerRingGeometry, outerRingMaterial);
+  outerRing.lookAt(camera.position);
+  ringGroup.add(outerRing);
+
+  // Inner ring - scales with atom
+  const innerRingGeometry = new THREE.RingGeometry(radius * 0.9, radius * 1.05, 32);
+  const innerRingMaterial = new THREE.MeshBasicMaterial({
+    color: innerColor,
+    transparent: true,
+    opacity: 1.0,
+    side: THREE.DoubleSide
+  });
+  const innerRing = new THREE.Mesh(innerRingGeometry, innerRingMaterial);
+  innerRing.lookAt(camera.position);
+  ringGroup.add(innerRing);
+
+  ringGroup.position.copy(position);
+  return ringGroup;
 }
 
 function latticeDirsNorm() {
@@ -484,23 +558,111 @@ function clearAllMeasurements(){
   measureLines = [];
   measureLabels = [];
   distanceMeasurements = [];
+  angleMeasurements = [];
+  selectedAtoms = [];
+  clearMeasureGraphics();
 }
 
-function addMeasurement(){
-  if (!(pickA && pickB)) return;
+function calculateAngle(atom1, atom2, atom3) {
+  // Calculate angle between three atoms: atom1-atom2-atom3 (atom2 is vertex)
+  const p1 = atom1.position.clone();
+  const p2 = atom2.position.clone();
+  const p3 = atom3.position.clone();
 
+  const v1 = p1.sub(p2).normalize();
+  const v2 = p3.sub(p2).normalize();
+
+  const dotProduct = v1.dot(v2);
+  const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
+  return angle * (180 / Math.PI); // Convert to degrees
+}
+
+function addAngleMeasurement(atom1, atom2, atom3) {
+  const angle = calculateAngle(atom1, atom2, atom3);
+
+  const measurement = {
+    atom1: atom1,
+    atom2: atom2, // vertex
+    atom3: atom3,
+    elements: [atom1.userData.element, atom2.userData.element, atom3.userData.element],
+    angle: angle
+  };
+  angleMeasurements.push(measurement);
+
+  // Create angle arc visualization
+  const p1 = atom1.position.clone();
+  const p2 = atom2.position.clone(); // vertex
+  const p3 = atom3.position.clone();
+
+  // Create lines from vertex to other atoms
+  const line1Geom = new THREE.BufferGeometry().setFromPoints([p2, p1]);
+  const line1 = new THREE.Line(line1Geom, new THREE.LineDashedMaterial({
+    color: 0x00ff00, // Green for angle measurements
+    dashSize: 0.15,
+    gapSize: 0.1,
+    linewidth: 4.0
+  }));
+  line1.computeLineDistances();
+  scene.add(line1);
+  measureLines.push(line1);
+
+  const line2Geom = new THREE.BufferGeometry().setFromPoints([p2, p3]);
+  const line2 = new THREE.Line(line2Geom, new THREE.LineDashedMaterial({
+    color: 0x00ff00,
+    dashSize: 0.15,
+    gapSize: 0.1,
+    linewidth: 4.0
+  }));
+  line2.computeLineDistances();
+  scene.add(line2);
+  measureLines.push(line2);
+
+  // Add markers to all three atoms
+  [atom1, atom2, atom3].forEach((atom, index) => {
+    const atomRadius = getAtomRadius(atom.userData.element);
+    const color = index === 1 ? 0x00ff00 : 0x00ff88; // Vertex gets different color
+
+    const rings = createAtomRings(atom.position, atomRadius, color, 0x000000);
+    scene.add(rings);
+    measureLines.push(rings);
+
+    const cross = createAtomCross(atom.position, atomRadius, color);
+    scene.add(cross);
+    measureLines.push(cross);
+  });
+
+  // Create angle label at vertex
+  const div = document.createElement('div');
+  div.className = 'measure-label';
+  div.style.background = 'rgba(0, 255, 0, 0.9)';
+  div.style.border = '2px solid #00ff00';
+  div.style.color = '#000000';
+  div.style.fontWeight = '700';
+  div.style.fontSize = '14px';
+  div.style.padding = '6px 10px';
+  div.style.borderRadius = '6px';
+  const elements = measurement.elements;
+  div.textContent = `∠${elements[0]}-${elements[1]}-${elements[2]}: ${angle.toFixed(1)}°`;
+
+  const label = new CSS2DObject(div);
+  label.position.copy(p2);
+  scene.add(label);
+  measureLabels.push(label);
+}
+
+function addDistanceMeasurement(atom1, atom2) {
   // Store the measurement data with atom references
   const measurement = {
-    atomA: pickA,
-    atomB: pickB,
-    element1: pickA.userData.element,
-    element2: pickB.userData.element,
-    distance: pickA.position.distanceTo(pickB.position)
+    atomA: atom1,
+    atomB: atom2,
+    element1: atom1.userData.element,
+    element2: atom2.userData.element,
+    distance: atom1.position.distanceTo(atom2.position)
   };
   distanceMeasurements.push(measurement);
 
   // Create thick black dotted line
-  const pa = pickA.position.clone(), pb = pickB.position.clone();
+  const pa = atom1.position.clone(), pb = atom2.position.clone();
   const geom = new THREE.BufferGeometry().setFromPoints([pa, pb]);
   const line = new THREE.Line(
     geom,
@@ -518,82 +680,9 @@ function addMeasurement(){
   // Create atom-size-aware surface markers
 
   // Get atom radii for proper scaling
-  const atomRadiusA = getAtomRadius(pickA.userData.element);
-  const atomRadiusB = getAtomRadius(pickB.userData.element);
+  const atomRadiusA = getAtomRadius(atom1.userData.element);
+  const atomRadiusB = getAtomRadius(atom2.userData.element);
 
-  // Create crosses on atom surfaces using line geometry
-  function createAtomCross(position, radius, color) {
-    const crossGroup = new THREE.Group();
-    const lineLength = radius * 1.8; // Cross extends slightly beyond atom surface
-    const lineWidth = radius * 0.15; // Proportional line thickness
-
-    // Create cross lines (4 lines forming X and +)
-    const positions = [
-      // Horizontal line
-      [-lineLength/2, 0, 0, lineLength/2, 0, 0],
-      // Vertical line
-      [0, -lineLength/2, 0, 0, lineLength/2, 0],
-      // Diagonal line 1
-      [-lineLength/2, -lineLength/2, 0, lineLength/2, lineLength/2, 0],
-      // Diagonal line 2
-      [-lineLength/2, lineLength/2, 0, lineLength/2, -lineLength/2, 0]
-    ];
-
-    positions.forEach(pos => {
-      const geometry = new THREE.BufferGeometry();
-      const points = [
-        new THREE.Vector3(pos[0], pos[1], pos[2]),
-        new THREE.Vector3(pos[3], pos[4], pos[5])
-      ];
-      geometry.setFromPoints(points);
-
-      const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
-        color: color,
-        linewidth: Math.max(4, lineWidth * 10) // Ensure minimum visibility
-      }));
-
-      crossGroup.add(line);
-    });
-
-    crossGroup.position.copy(position);
-    // Offset slightly forward from atom surface toward camera
-    const offsetDir = position.clone().sub(camera.position).normalize().multiplyScalar(-radius * 0.05);
-    crossGroup.position.add(offsetDir);
-
-    return crossGroup;
-  }
-
-  // Create scaling ring markers around atoms
-  function createAtomRings(position, radius, innerColor, outerColor) {
-    const ringGroup = new THREE.Group();
-
-    // Outer ring - scales with atom
-    const outerRingGeometry = new THREE.RingGeometry(radius * 1.1, radius * 1.3, 32);
-    const outerRingMaterial = new THREE.MeshBasicMaterial({
-      color: outerColor,
-      transparent: true,
-      opacity: 0.9,
-      side: THREE.DoubleSide
-    });
-    const outerRing = new THREE.Mesh(outerRingGeometry, outerRingMaterial);
-    outerRing.lookAt(camera.position);
-    ringGroup.add(outerRing);
-
-    // Inner ring - scales with atom
-    const innerRingGeometry = new THREE.RingGeometry(radius * 0.9, radius * 1.05, 32);
-    const innerRingMaterial = new THREE.MeshBasicMaterial({
-      color: innerColor,
-      transparent: true,
-      opacity: 1.0,
-      side: THREE.DoubleSide
-    });
-    const innerRing = new THREE.Mesh(innerRingGeometry, innerRingMaterial);
-    innerRing.lookAt(camera.position);
-    ringGroup.add(innerRing);
-
-    ringGroup.position.copy(position);
-    return ringGroup;
-  }
 
   // Add surface crosses to both atoms
   const crossA = createAtomCross(pa, atomRadiusA, 0xff0000); // Red crosses
@@ -626,52 +715,62 @@ function addMeasurement(){
   div.style.textShadow = '1px 1px 2px rgba(255,255,255,0.8)';
   div.style.boxShadow = '0 3px 8px rgba(0,0,0,0.4)';
   div.style.borderRadius = '6px';
-  const a = pickA.userData.element, b = pickB.userData.element;
+  const a = atom1.userData.element, b = atom2.userData.element;
   const d = pa.distanceTo(pb);
   div.textContent = `${a}—${b}: ${formatÅ(d)} Å`;
   const label = new CSS2DObject(div);
   label.position.copy(mid);
   scene.add(label);
   measureLabels.push(label);
-
-  // Store original emissive values but don't change them - visual markers are enough
-  if (!pickA.userData.originalEmissive) {
-    pickA.userData.originalEmissive = pickA.material.emissive.getHex();
-  }
-  if (!pickB.userData.originalEmissive) {
-    pickB.userData.originalEmissive = pickB.material.emissive.getHex();
-  }
 }
 
 function drawMeasureGraphics(){
   clearMeasureGraphics();
-  if (!(pickA && pickB)) return;
 
-  // dashed line
-  const pa = pickA.position.clone(), pb = pickB.position.clone();
-  const geom = new THREE.BufferGeometry().setFromPoints([pa, pb]);
-  measureLine = new THREE.Line(
-    geom,
-    new THREE.LineDashedMaterial({ color:0x000000, dashSize:0.15, gapSize:0.15, linewidth:2.0 })
-  );
-  measureLine.computeLineDistances();
-  scene.add(measureLine);
+  // Show preview lines/indicators for current selection
+  if (measureMode === 'distance' && selectedAtoms.length === 1) {
+    // Show preview for distance measurement (1 atom selected)
+    const atom1 = selectedAtoms[0];
+    const div = document.createElement('div');
+    div.className = 'measure-label';
+    div.style.background = 'rgba(255, 255, 255, 0.8)';
+    div.style.border = '2px solid #000000';
+    div.style.color = '#000000';
+    div.style.fontWeight = '700';
+    div.style.fontSize = '12px';
+    div.style.padding = '4px 8px';
+    div.style.borderRadius = '4px';
+    div.textContent = `${atom1.userData.element} — ? (click 2nd atom)`;
+    measureLabel = new CSS2DObject(div);
+    measureLabel.position.copy(atom1.position);
+    scene.add(measureLabel);
+  } else if (measureMode === 'angle' && selectedAtoms.length > 0) {
+    // Show preview for angle measurement
+    const div = document.createElement('div');
+    div.className = 'measure-label';
+    div.style.background = 'rgba(0, 255, 0, 0.8)';
+    div.style.border = '2px solid #00ff00';
+    div.style.color = '#000000';
+    div.style.fontWeight = '700';
+    div.style.fontSize = '12px';
+    div.style.padding = '4px 8px';
+    div.style.borderRadius = '4px';
 
-  // midpoint floating label
-  const mid = pa.clone().add(pb).multiplyScalar(0.5);
-  const div = document.createElement('div');
-  div.className = 'measure-label';
-  const a = pickA.userData.element, b = pickB.userData.element;
-  const d = pa.distanceTo(pb);
-  div.textContent = `${a} — ${b} = ${formatÅ(d)} Å`;
-  measureLabel = new CSS2DObject(div);
-  measureLabel.position.copy(mid);
-  scene.add(measureLabel);
+    if (selectedAtoms.length === 1) {
+      div.textContent = `${selectedAtoms[0].userData.element} — ? — ? (select vertex)`;
+    } else if (selectedAtoms.length === 2) {
+      div.textContent = `${selectedAtoms[0].userData.element} — ${selectedAtoms[1].userData.element} — ? (select 3rd atom)`;
+    }
+
+    measureLabel = new CSS2DObject(div);
+    measureLabel.position.copy(selectedAtoms[selectedAtoms.length - 1].position);
+    scene.add(measureLabel);
+  }
 }
 
 function clearMeasure(){
-  clearHighlightAtom(pickA); clearHighlightAtom(pickB);
-  pickA = null; pickB = null;
+  selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+  selectedAtoms = [];
   clearMeasureGraphics();
 }
 
@@ -1025,7 +1124,7 @@ function init() {
 
   function onClickPick(event){
     // Only handle clicks if measure mode is enabled
-    if (!measureMode) return;
+    if (measureMode === 'none') return;
 
     // Prevent default behavior to avoid conflicts with pan/zoom
     event.preventDefault();
@@ -1064,29 +1163,38 @@ function init() {
 
     const hits = raycaster.intersectObjects(atomsGroup.children, true);
     if (!hits.length) {
-      // Clicked on empty space - do NOT clear measurement, just return
+      // Clicked on empty space - reset selection
+      selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+      selectedAtoms = [];
+      clearMeasureGraphics();
       return;
     }
 
     const hit = hits[0].object;
 
-    // selection cycling: A -> B -> add measurement and start new one
-    if (!pickA) {
-      // First selection - FIRE ENGINE RED
-      pickA = hit; HighlightAtom(pickA, 0xff0000);
-    } else if (!pickB) {
-      // Second selection
-      if (hit === pickA) return; // Same atom, ignore
-      pickB = hit; HighlightAtom(pickB, 0x0000ff); // IN-YOUR-FACE BLUE
+    // Don't select the same atom twice
+    if (selectedAtoms.includes(hit)) return;
 
-      // Add this measurement to persistent storage
-      addMeasurement();
+    // Add atom to selection
+    selectedAtoms.push(hit);
+    HighlightAtom(hit, selectedAtoms.length === 1 ? 0xff0000 : selectedAtoms.length === 2 ? 0x0000ff : 0x00ff00);
 
-      // Clear current selection but keep the measurement
-      clearHighlightAtom(pickA);
-      clearHighlightAtom(pickB);
-      pickA = null;
-      pickB = null;
+    // Handle measurements based on mode
+    if (measureMode === 'distance' && selectedAtoms.length === 2) {
+      // Distance measurement complete
+      addDistanceMeasurement(selectedAtoms[0], selectedAtoms[1]);
+
+      // Clear selection
+      selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+      selectedAtoms = [];
+      clearMeasureGraphics();
+    } else if (measureMode === 'angle' && selectedAtoms.length === 3) {
+      // Angle measurement complete
+      addAngleMeasurement(selectedAtoms[0], selectedAtoms[1], selectedAtoms[2]);
+
+      // Clear selection
+      selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+      selectedAtoms = [];
       clearMeasureGraphics();
     }
 
@@ -1096,10 +1204,6 @@ function init() {
   // Add event listeners - use touchstart instead of touchend for better responsiveness
   renderer.domElement.addEventListener('click', onClickPick);
   renderer.domElement.addEventListener('touchstart', onClickPick, { passive: false });
-  document.getElementById('clearMeasure').onclick = () => {
-    clearMeasure();
-    clearAllMeasurements();
-  };
 
 
   // Axes gizmo (bottom-left)
@@ -1248,19 +1352,77 @@ function init() {
     updateVisualization();
   };
 
-  document.getElementById('measureModeToggle').onclick = (e) => {
-    measureMode = !measureMode;
-    const button = e.target;
-    if (measureMode) {
-      button.classList.add('active');
-      button.textContent = 'Stop Measuring';
+  // New measurement tool handlers with improved click handling
+  document.getElementById('distanceModeBtn').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const button = document.getElementById('distanceModeBtn');
+    const wasActive = measureMode === 'distance';
+
+    // Clear previous mode
+    document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
+    selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+    selectedAtoms = [];
+    clearMeasureGraphics();
+
+    if (wasActive) {
+      measureMode = 'none';
     } else {
-      button.classList.remove('active');
-      button.textContent = 'Start Measuring';
-      // Clear current measurement when disabling
-      clearMeasure();
+      measureMode = 'distance';
+      button.classList.add('active');
     }
-  };
+  });
+
+  document.getElementById('angleModeBtn').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const button = document.getElementById('angleModeBtn');
+    const wasActive = measureMode === 'angle';
+
+    // Clear previous mode
+    document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
+    selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+    selectedAtoms = [];
+    clearMeasureGraphics();
+
+    if (wasActive) {
+      measureMode = 'none';
+    } else {
+      measureMode = 'angle';
+      button.classList.add('active');
+    }
+  });
+
+  document.getElementById('clearAllMeasurements').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    clearAllMeasurements();
+    // Also clear active measurement mode
+    document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
+    measureMode = 'none';
+  });
+
+  // Add touch event handlers for better mobile support
+  document.getElementById('distanceModeBtn').addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    document.getElementById('distanceModeBtn').click();
+  });
+
+  document.getElementById('angleModeBtn').addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    document.getElementById('angleModeBtn').click();
+  });
+
+  document.getElementById('clearAllMeasurements').addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    document.getElementById('clearAllMeasurements').click();
+  });
 
   document.getElementById('resetBondLengths').onclick = resetBondLengths;
 

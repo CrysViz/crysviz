@@ -83,6 +83,24 @@
   <div id="view"></div>
   <div id="status">Loading crystal viewer...</div>
 
+  <!-- Measurement Tools UI (Top Right) -->
+  <div id="measurementTools">
+    <div class="measurement-group">
+      <button id="distanceModeBtn" class="measure-tool-btn" title="Distance Measurement">
+        <div class="tool-icon scale-icon">📏</div>
+        <span>Distance</span>
+      </button>
+      <button id="angleModeBtn" class="measure-tool-btn" title="Angle Measurement">
+        <div class="tool-icon protractor-icon">📐</div>
+        <span>Angle</span>
+      </button>
+      <button id="clearAllMeasurements" class="measure-tool-btn clear-btn" title="Clear All Measurements">
+        <div class="tool-icon">🗑️</div>
+        <span>Clear</span>
+      </button>
+    </div>
+  </div>
+
   <script type="module" src="crystal-viewer.js"></script>
 
 
@@ -94,11 +112,6 @@
 
     <div id="composition" class="collapsible-content" aria-hidden="true">
       <!-- Composition will be populated by JS. Hidden by default; expands when the header is toggled -->
-    </div>
-
-    <div id="measure">
-      <button id="measureModeToggle" class="btn-measure">Start Measuring</button>
-      <button id="clearMeasure" class="btn-clear">Clear All</button>
     </div>
   </div>
 
