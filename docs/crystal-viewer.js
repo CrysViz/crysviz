@@ -442,9 +442,10 @@ function createAtomMesh(element, position) {
     metalness: 0.1,
     clearcoat: 0.9,
     clearcoatRoughness: 0.02,
-    sheen: 0.6,
+    sheen: 0.1,
     sheenColor: new THREE.Color(color).multiplyScalar(0.8),
   });
+  //const material = new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0.0 });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(position[0], position[1], position[2]);
   mesh.userData.element = element;
@@ -687,6 +688,12 @@ function init() {
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(w, h);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+  // renderer.shadowMap.enabled = false;
+  // renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // renderer.toneMapping = THREE.NoToneMapping;
+  // renderer.toneMappingExposure = 1.0;
+
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -706,8 +713,8 @@ function init() {
   view.appendChild(labelRenderer.domElement);
 
   controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.05;
+  controls.enableDamping = false; //damping the rotation for smoother experience
+  //controls.dampingFactor = 0.05;
   controls.maxDistance = 1000;
   controls.minDistance = 1;
 
@@ -886,8 +893,6 @@ function init() {
                              fileName.includes('contcar') ||
                              fileName.endsWith('.vasp') ||
                              fileName.endsWith('.poscar') ||
-                             fileName.endsWith('.cif') ||
-                             fileName.endsWith('.xsf') ||
                              fileName === 'poscar' ||
                              fileName === 'contcar';
 
@@ -957,6 +962,20 @@ function init() {
     document.getElementById('atomSizeValue').textContent = atomSize.toFixed(1);
     updateVisualization();
   };
+
+  // Initialize atomSize from the UI slider so the initial view respects the slider value
+  (function initAtomSizeFromSlider(){
+    const slider = document.getElementById('atomSize');
+    const span = document.getElementById('atomSizeValue');
+    if (slider) {
+      const v = parseFloat(slider.value);
+      if (!isNaN(v)) {
+        atomSize = v; // apply slider value to internal scale
+        if (span) span.textContent = atomSize.toFixed(1);
+        if (structureData) updateVisualization();
+      }
+    }
+  })();
 
   camera.position.set(20, 20, 20);
   controls.update();
