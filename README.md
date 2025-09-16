@@ -14,7 +14,7 @@ Light-weight browser-based visualisation of POSCAR files with on-device renderin
 ### Features We Could Add  
  
 1. Switch for parallel vs. perspective view &#x2705;
-2. Lighter shadow rendering
+2. Lighter shadow rendering &#x2705;
 3. Checkbox to select and deselect individual bonds &#x2705;
 4. Minimum bond lenght slider (?)
 5. Reset button for bond lengths, fix 0 bond length &#x2705;
