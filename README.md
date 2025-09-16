@@ -2,14 +2,14 @@
 
 Browser-based visualisation of POSCAR files with on-device rendering. 
 
-### Current features:
+### Current Features:
 
 - Fully running in browser with mobile device and touch support
 - Automatic periodice boundary conditions
 - Automatic visualisation of bonds with customisable bond min lenght values
 - Inter-atomic distance measuring  
 
-### Feature we could add  
+### Features We Could Add  
  
 1. Switch for Parallel vs. Perspective View
 2. Lighter shadow rendering
@@ -25,7 +25,7 @@ Browser-based visualisation of POSCAR files with on-device rendering.
     
 
 
-### Possible Advanced Options 
+### Possible Advanced Feature 
 
 1. On the fly color changing. Some color picker(?)
 2. On-the-fly symmetry information and potentially symmetrisation
