@@ -330,7 +330,7 @@ body {
 @media screen and (max-width: 1024px) {
   /* Show mobile menu toggle */
   #mobileMenuToggle {
-    display: flex;
+    display: flex !important;
   }
 
   /* Adjust view toolbar position for mobile toggle */
@@ -362,27 +362,37 @@ body {
     left: 20px;
     transform: translateX(110px);
   }
+
+  /* Reset UI display for mobile - will be overridden below */
+  #ui {
+    display: block;
+  }
 }
 
 @media screen and (max-width: 768px) {
   body {
     flex-direction: column;
+    position: relative;
+    overflow-x: hidden;
   }
 
   #ui {
-    position: fixed;
+    position: fixed !important;
     top: 0;
-    left: -100%;
+    left: -320px;
     width: 320px;
     height: 100vh;
     z-index: 1500;
-    transition: left 0.3s ease;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     border-right: 1px solid rgba(255, 255, 255, 0.2);
     box-shadow: 2px 0 20px rgba(0, 0, 0, 0.3);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    display: block !important;
   }
 
   #ui.mobile-open {
-    left: 0;
+    left: 0 !important;
   }
 
   #view {

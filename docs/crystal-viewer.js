@@ -664,13 +664,29 @@ function init() {
   let mouse = new THREE.Vector2();
 
   function onClickPick(event){
-    // Prevent default behavior and stop propagation
-    event.preventDefault();
-    event.stopPropagation();
+    // Handle both mouse and touch events with better error checking
+    let clientX, clientY;
 
-    // Handle both mouse and touch events
-    const clientX = event.clientX || (event.touches && event.touches[0].clientX) || (event.changedTouches && event.changedTouches[0].clientX);
-    const clientY = event.clientY || (event.touches && event.touches[0].clientY) || (event.changedTouches && event.changedTouches[0].clientY);
+    if (event.type === 'touchend' || event.type === 'touchstart') {
+      if (event.changedTouches && event.changedTouches.length > 0) {
+        clientX = event.changedTouches[0].clientX;
+        clientY = event.changedTouches[0].clientY;
+      } else if (event.touches && event.touches.length > 0) {
+        clientX = event.touches[0].clientX;
+        clientY = event.touches[0].clientY;
+      } else {
+        console.warn('Touch event without touch coordinates');
+        return;
+      }
+    } else {
+      clientX = event.clientX;
+      clientY = event.clientY;
+    }
+
+    if (clientX === undefined || clientY === undefined) {
+      console.warn('Could not get event coordinates');
+      return;
+    }
 
     const rect = renderer.domElement.getBoundingClientRect();
     const x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -702,9 +718,9 @@ function init() {
     drawMeasureGraphics();
   }
 
-  // Add both click and touch event listeners
+  // Add event listeners with passive options for better mobile performance
   renderer.domElement.addEventListener('click', onClickPick);
-  renderer.domElement.addEventListener('touchend', onClickPick);
+  renderer.domElement.addEventListener('touchend', onClickPick, { passive: true });
   document.getElementById('clearMeasure').onclick = clearMeasure;
 
 
@@ -900,30 +916,58 @@ function setupMobileMenu() {
   const mobileOverlay = document.getElementById('mobileOverlay');
   const ui = document.getElementById('ui');
 
+  console.log('Setting up mobile menu...', {
+    mobileToggle: !!mobileToggle,
+    mobileOverlay: !!mobileOverlay,
+    ui: !!ui
+  });
+
   function toggleMobileMenu() {
-    ui.classList.toggle('mobile-open');
-    mobileOverlay.classList.toggle('active');
+    console.log('Toggle mobile menu');
+    if (ui && mobileOverlay) {
+      ui.classList.toggle('mobile-open');
+      mobileOverlay.classList.toggle('active');
+      console.log('Menu toggled:', ui.classList.contains('mobile-open'));
+    }
   }
 
   function closeMobileMenu() {
-    ui.classList.remove('mobile-open');
-    mobileOverlay.classList.remove('active');
+    console.log('Close mobile menu');
+    if (ui && mobileOverlay) {
+      ui.classList.remove('mobile-open');
+      mobileOverlay.classList.remove('active');
+    }
   }
 
   if (mobileToggle) {
-    mobileToggle.addEventListener('click', toggleMobileMenu);
-    mobileToggle.addEventListener('touchstart', (e) => {
+    console.log('Adding mobile toggle listeners');
+    mobileToggle.addEventListener('click', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       toggleMobileMenu();
     });
+
+    mobileToggle.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleMobileMenu();
+    });
+  } else {
+    console.warn('Mobile toggle button not found');
   }
 
   if (mobileOverlay) {
-    mobileOverlay.addEventListener('click', closeMobileMenu);
-    mobileOverlay.addEventListener('touchstart', (e) => {
+    mobileOverlay.addEventListener('click', (e) => {
       e.preventDefault();
       closeMobileMenu();
     });
+
+    mobileOverlay.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      closeMobileMenu();
+    });
+  } else {
+    console.warn('Mobile overlay not found');
   }
 
   // Close mobile menu when clicking inside the UI (after making selections)
@@ -936,12 +980,13 @@ function setupMobileMenu() {
     });
   }
 
-  // Prevent default touch behaviors on critical elements
-  const canvas = document.querySelector('#view canvas');
-  if (canvas) {
-    canvas.addEventListener('touchstart', (e) => {
-      // Allow normal touch interaction for atom picking
-    });
+  // Add viewport meta tag if not present for proper mobile scaling
+  if (!document.querySelector('meta[name="viewport"]')) {
+    const viewport = document.createElement('meta');
+    viewport.name = 'viewport';
+    viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=no';
+    document.head.appendChild(viewport);
+    console.log('Added viewport meta tag');
   }
 }
 
