@@ -150,7 +150,7 @@ function createAtomCross(position, radius, color) {
   return crossGroup;
 }
 
-function createAtomRings(position, radius, innerColor, outerColor) {
+function createAtomRings(position, radius, innerColor, outerColor, element = null) {
   const ringGroup = new THREE.Group();
 
   // Outer ring - scales with atom
@@ -178,7 +178,42 @@ function createAtomRings(position, radius, innerColor, outerColor) {
   ringGroup.add(innerRing);
 
   ringGroup.position.copy(position);
+
+  // Store metadata for scaling when atom size changes
+  ringGroup.userData = {
+    isAtomMarker: true,
+    markerType: 'rings',
+    element: element
+  };
+
   return ringGroup;
+}
+
+function updateMeasurementMarkers() {
+  // Update all measurement rings to reflect current atom size
+  measureLines.forEach(item => {
+    if (item.userData && item.userData.isAtomMarker && item.userData.markerType === 'rings') {
+      const element = item.userData.element;
+      if (element) {
+        const newRadius = getAtomRadius(element);
+
+        // Update ring geometries
+        item.children.forEach((ring, index) => {
+          if (ring.geometry && ring.geometry.type === 'RingGeometry') {
+            ring.geometry.dispose(); // Clean up old geometry
+
+            if (index === 0) {
+              // Outer ring
+              ring.geometry = new THREE.RingGeometry(newRadius * 1.1, newRadius * 1.3, 32);
+            } else {
+              // Inner ring
+              ring.geometry = new THREE.RingGeometry(newRadius * 0.9, newRadius * 1.05, 32);
+            }
+          }
+        });
+      }
+    }
+  });
 }
 
 function latticeDirsNorm() {
@@ -595,35 +630,50 @@ function addAngleMeasurement(atom1, atom2, atom3) {
   const p2 = atom2.position.clone(); // vertex
   const p3 = atom3.position.clone();
 
-  // Create lines from vertex to other atoms
-  const line1Geom = new THREE.BufferGeometry().setFromPoints([p2, p1]);
-  const line1 = new THREE.Line(line1Geom, new THREE.LineDashedMaterial({
-    color: 0x00ff00, // Green for angle measurements
-    dashSize: 0.15,
-    gapSize: 0.1,
-    linewidth: 4.0
-  }));
-  line1.computeLineDistances();
-  scene.add(line1);
-  measureLines.push(line1);
+  // Create thick dashed cylinders from vertex to other atoms (ORANGE for angles)
+  function createDashedCylinder(startPos, endPos, color) {
+    const distance = startPos.distanceTo(endPos);
+    const direction = new THREE.Vector3().subVectors(endPos, startPos);
 
-  const line2Geom = new THREE.BufferGeometry().setFromPoints([p2, p3]);
-  const line2 = new THREE.Line(line2Geom, new THREE.LineDashedMaterial({
-    color: 0x00ff00,
-    dashSize: 0.15,
-    gapSize: 0.1,
-    linewidth: 4.0
-  }));
-  line2.computeLineDistances();
-  scene.add(line2);
-  measureLines.push(line2);
+    const dashLength = 0.25;
+    const gapLength = 0.15;
+    const segmentLength = dashLength + gapLength;
+    const numSegments = Math.floor(distance / segmentLength);
+
+    const cylinderGroup = new THREE.Group();
+
+    for (let i = 0; i < numSegments; i++) {
+      const segmentStart = i * segmentLength;
+      const segmentGeometry = new THREE.CylinderGeometry(0.06, 0.06, dashLength, 8); // Slightly thinner than distance
+      const segmentMaterial = new THREE.MeshBasicMaterial({ color: color });
+      const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
+
+      const segmentCenter = startPos.clone().add(direction.clone().normalize().multiplyScalar(segmentStart + dashLength/2));
+      segment.position.copy(segmentCenter);
+      segment.lookAt(endPos);
+      segment.rotateX(Math.PI / 2);
+
+      cylinderGroup.add(segment);
+    }
+    return cylinderGroup;
+  }
+
+  // Create orange dashed cylinders for angle measurement
+  const angleColor = 0xff6600; // Orange for angle measurements
+  const angleLine1 = createDashedCylinder(p2, p1, angleColor);
+  const angleLine2 = createDashedCylinder(p2, p3, angleColor);
+
+  scene.add(angleLine1);
+  scene.add(angleLine2);
+  measureLines.push(angleLine1);
+  measureLines.push(angleLine2);
 
   // Add markers to all three atoms
   [atom1, atom2, atom3].forEach((atom, index) => {
     const atomRadius = getAtomRadius(atom.userData.element);
     const color = index === 1 ? 0x00ff00 : 0x00ff88; // Vertex gets different color
 
-    const rings = createAtomRings(atom.position, atomRadius, color, 0x000000);
+    const rings = createAtomRings(atom.position, atomRadius, color, 0x000000, atom.userData.element);
     scene.add(rings);
     measureLines.push(rings);
 
@@ -662,21 +712,37 @@ function addDistanceMeasurement(atom1, atom2) {
   };
   distanceMeasurements.push(measurement);
 
-  // Create thick black dotted line
+  // Create thick dashed cylinder for distance measurement (BLUE for distance)
   const pa = atom1.position.clone(), pb = atom2.position.clone();
-  const geom = new THREE.BufferGeometry().setFromPoints([pa, pb]);
-  const line = new THREE.Line(
-    geom,
-    new THREE.LineDashedMaterial({
-      color: 0x000000, // Pure black for maximum contrast
-      dashSize: 0.2,   // Short dashes for dotted appearance
-      gapSize: 0.15,   // Small gaps between dots
-      linewidth: 6.0   // Very thick line
-    })
-  );
-  line.computeLineDistances();
-  scene.add(line);
-  measureLines.push(line);
+  const distance = pa.distanceTo(pb);
+  const direction = new THREE.Vector3().subVectors(pb, pa);
+  const midpoint = new THREE.Vector3().addVectors(pa, pb).multiplyScalar(0.5);
+
+  // Create multiple cylinder segments for dashed effect
+  const dashLength = 0.3;
+  const gapLength = 0.2;
+  const segmentLength = dashLength + gapLength;
+  const numSegments = Math.floor(distance / segmentLength);
+
+  const cylinderGroup = new THREE.Group();
+
+  for (let i = 0; i < numSegments; i++) {
+    const segmentStart = i * segmentLength;
+    const segmentGeometry = new THREE.CylinderGeometry(0.08, 0.08, dashLength, 8); // Thick cylinder
+    const segmentMaterial = new THREE.MeshBasicMaterial({ color: 0x0066ff }); // Blue for distance
+    const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
+
+    // Position segment along the line
+    const segmentCenter = pa.clone().add(direction.clone().normalize().multiplyScalar(segmentStart + dashLength/2));
+    segment.position.copy(segmentCenter);
+    segment.lookAt(pb);
+    segment.rotateX(Math.PI / 2);
+
+    cylinderGroup.add(segment);
+  }
+
+  scene.add(cylinderGroup);
+  measureLines.push(cylinderGroup);
 
   // Create atom-size-aware surface markers
 
@@ -695,11 +761,11 @@ function addDistanceMeasurement(atom1, atom2) {
   measureLines.push(crossB);
 
   // Add scaling rings to both atoms
-  const ringsA = createAtomRings(pa, atomRadiusA, 0xffff00, 0x000000); // Yellow inner, black outer
+  const ringsA = createAtomRings(pa, atomRadiusA, 0xffff00, 0x000000, atom1.userData.element); // Yellow inner, black outer
   scene.add(ringsA);
   measureLines.push(ringsA);
 
-  const ringsB = createAtomRings(pb, atomRadiusB, 0xffff00, 0x000000); // Yellow inner, black outer
+  const ringsB = createAtomRings(pb, atomRadiusB, 0xffff00, 0x000000, atom2.userData.element); // Yellow inner, black outer
   scene.add(ringsB);
   measureLines.push(ringsB);
 
@@ -1336,6 +1402,7 @@ function init() {
     atomSize = parseFloat(e.target.value);
     document.getElementById('atomSizeValue').textContent = atomSize.toFixed(1);
     updateVisualization();
+    updateMeasurementMarkers(); // Update ring markers when atom size changes
   };
 
   // New control handlers
