@@ -372,7 +372,7 @@ function HighlightAtom(m, hex){
     m.userData._origEmissiveInt = m.material.emissiveIntensity || 0;
   }
   m.material.emissive.setHex(hex);
-  m.material.emissiveIntensity = 0.6;
+  m.material.emissiveIntensity = 2.0; // MAXIMUM BLAZING GLOW!
 }
 
 function updateMeasureUI(){
@@ -799,16 +799,16 @@ function init() {
 
     // selection cycling: A -> B -> restart with new A (but keep measurement visible)
     if (!pickA) {
-      // First selection
-      pickA = hit; HighlightAtom(pickA, 0x3dd5ff);
+      // First selection - FIRE ENGINE RED
+      pickA = hit; HighlightAtom(pickA, 0xff0000);
     } else if (!pickB) {
       // Second selection
       if (hit === pickA) return; // Same atom, ignore
-      pickB = hit; HighlightAtom(pickB, 0xff7ad6);
+      pickB = hit; HighlightAtom(pickB, 0x0000ff); // IN-YOUR-FACE BLUE
     } else {
       // Third selection - start new measurement (clear previous and start fresh)
       clearMeasure();
-      pickA = hit; HighlightAtom(pickA, 0x3dd5ff);
+      pickA = hit; HighlightAtom(pickA, 0xff0000); // FIRE ENGINE RED
     }
 
     updateMeasureUI();
@@ -880,6 +880,21 @@ function init() {
   fileInput.onchange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      // Accept any file but give helpful feedback for structure files
+      const fileName = file.name.toLowerCase();
+      const isStructureFile = fileName.includes('poscar') ||
+                             fileName.includes('contcar') ||
+                             fileName.endsWith('.vasp') ||
+                             fileName.endsWith('.poscar') ||
+                             fileName.endsWith('.cif') ||
+                             fileName.endsWith('.xsf') ||
+                             fileName === 'poscar' ||
+                             fileName === 'contcar';
+
+      if (!isStructureFile) {
+        console.warn('Selected file may not be a structure file:', file.name);
+      }
+
       const reader = new FileReader();
       reader.onload = (e) => loadPOSCAR(e.target.result);
       reader.readAsText(file);
