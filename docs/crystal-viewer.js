@@ -34,9 +34,15 @@ let camera, controls, renderer, scene;
 let atomsGroup, bondsGroup, latticeGroup;
 let structureData = null;
 let bondLengths = {};
+let defaultBondLengths = {};
 let atomSize = 1.0;
 let showBonds = true;
 let showLattice = true;
+let useOrthographicCamera = true;
+let useVestaColors = true;
+let measureMode = false;
+let bondVisibility = {};
+let distanceMeasurements = [];
 
 let gizmoScene, gizmoCamera, gizmoRenderer, gizmoAxes;
 
@@ -45,6 +51,8 @@ let pickA = null, pickB = null;
 let measureLine = null;          // THREE.Line
 let measureLabel = null;         // CSS2DObject
 let labelRenderer = null;        // CSS2DRenderer overlay for main scene
+let measureLines = [];           // Array to store multiple measurement lines
+let measureLabels = [];          // Array to store multiple measurement labels
 
 
 // Atomic data
@@ -61,7 +69,7 @@ const atomicRadii = {
   Tl: 1.45, Pb: 1.46, Bi: 1.48, Po: 1.40, At: 1.50, Rn: 1.50
 };
 
-const elementColors = {
+const jmolColors = {
   H: 0xffffff, He: 0xd9ffff, Li: 0xcc80ff, Be: 0xc2ff00, B: 0xffb5b5, C: 0x909090, N: 0x3050f8, O: 0xff0d0d,
   F: 0x90e050, Ne: 0xb3e3f5, Na: 0xab5cf2, Mg: 0x8aff00, Al: 0xbfa6a6, Si: 0xf0c8a0, P: 0xff8000, S: 0xffff30,
   Cl: 0x1ff01f, Ar: 0x80d1e3, K: 0x8f40d4, Ca: 0x3dff00, Sc: 0xe6e6e6, Ti: 0xbfc2c7, V: 0xa6a6ab, Cr: 0x8a99c7,
@@ -75,8 +83,23 @@ const elementColors = {
   Tl: 0xa6544d, Pb: 0x575961, Bi: 0x9e4fb5, Po: 0xab5c00, At: 0x754f45, Rn: 0x428296
 };
 
+const vestaColors = {
+  H: 0xffffff, He: 0xffc0cb, Li: 0xb22222, Be: 0x00ff00, B: 0x00ffff, C: 0x000000, N: 0x8f8fff, O: 0xff0000,
+  F: 0xdaa520, Ne: 0xffc0cb, Na: 0x0000ff, Mg: 0x228b22, Al: 0x808090, Si: 0xdaa520, P: 0xff8c00, S: 0xffff00,
+  Cl: 0x00ff00, Ar: 0xffc0cb, K: 0x8f40d4, Ca: 0x808090, Sc: 0xff1493, Ti: 0x808090, V: 0xff1493, Cr: 0x808090,
+  Mn: 0x808090, Fe: 0xff8c00, Co: 0xff1493, Ni: 0x228b22, Cu: 0x8b4513, Zn: 0x808090, Ga: 0xff1493, Ge: 0xff1493,
+  As: 0xff1493, Se: 0xff8c00, Br: 0x8b4513, Kr: 0xffc0cb, Rb: 0xff1493, Sr: 0x00ff00, Y: 0xff1493, Zr: 0xff1493,
+  Nb: 0xff1493, Mo: 0xff1493, Tc: 0xff1493, Ru: 0xff1493, Rh: 0xff1493, Pd: 0xff1493, Ag: 0x808090, Cd: 0xff1493,
+  In: 0xff1493, Sn: 0xff1493, Sb: 0xff1493, Te: 0xff1493, I: 0x8b4513, Xe: 0xffc0cb, Cs: 0xff1493, Ba: 0xff8c00,
+  La: 0xff1493, Ce: 0xff1493, Pr: 0xff1493, Nd: 0xff1493, Pm: 0xff1493, Sm: 0xff1493, Eu: 0xff1493, Gd: 0xff1493,
+  Tb: 0xff1493, Dy: 0xff1493, Ho: 0xff1493, Er: 0xff1493, Tm: 0xff1493, Yb: 0xff1493, Lu: 0xff1493, Hf: 0xff1493,
+  Ta: 0xff1493, W: 0xff1493, Re: 0xff1493, Os: 0xff1493, Ir: 0xff1493, Pt: 0xff1493, Au: 0xffd700, Hg: 0xff1493,
+  Tl: 0xff1493, Pb: 0xff1493, Bi: 0xff1493, Po: 0xff1493, At: 0xff1493, Rn: 0xffc0cb
+};
+
 function getElementColor(element) {
-  return elementColors[element] || 0x808080;
+  const colorScheme = useVestaColors ? vestaColors : jmolColors;
+  return colorScheme[element] || 0x808080;
 }
 
 function getAtomRadius(element) {
@@ -163,6 +186,35 @@ function setViewDirection(dir) {
 }
 
 function resetView() { setViewDirection(new THREE.Vector3(1,1,1)); }
+
+function switchCameraType() {
+  const w = view.clientWidth || window.innerWidth;
+  const h = view.clientHeight || window.innerHeight;
+
+  if (useOrthographicCamera) {
+    // Switch to orthographic camera
+    const { center, dist } = getCellCenterAndDist();
+    const size = dist * 0.5; // Adjust this multiplier as needed
+    camera = new THREE.OrthographicCamera(-size, size, size / (w/h), -size / (w/h), 0.1, 1000);
+  } else {
+    // Switch to perspective camera
+    camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
+  }
+
+  controls.object = camera;
+  const { center, dist } = getCellCenterAndDist();
+  camera.position.copy(center.clone().add(new THREE.Vector3(1,1,1).normalize().multiplyScalar(dist)));
+  controls.target.copy(center);
+  controls.update();
+}
+
+function resetBondLengths() {
+  for (const pair in defaultBondLengths) {
+    bondLengths[pair] = defaultBondLengths[pair];
+  }
+  createBondLengthControls();
+  updateVisualization();
+}
 
 function latticeDirs() {
   if (!structureData) return {a:[1,0,0], b:[0,1,0], c:[0,0,1]};
@@ -274,7 +326,14 @@ function createBondLengthControls() {
 
       if (!bondLengths[pair]) {
         const defaultRadius = (atomicRadii[uniqueElements[i]] || 1.0) + (atomicRadii[uniqueElements[j]] || 1.0);
-        bondLengths[pair] = Math.min(defaultRadius * 1.0, 6.0);
+        const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
+        bondLengths[pair] = defaultValue;
+        defaultBondLengths[pair] = defaultValue; // Store default
+      }
+
+      // Initialize bond visibility if not set
+      if (bondVisibility[pair] === undefined) {
+        bondVisibility[pair] = true;
       }
     }
   }
@@ -282,6 +341,27 @@ function createBondLengthControls() {
   pairs.forEach(pair => {
     const div = document.createElement('div');
     div.className = 'bond-control';
+
+    // Add checkbox for bond visibility
+    const checkboxDiv = document.createElement('div');
+    checkboxDiv.className = 'bond-checkbox';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = bondVisibility[pair];
+    checkbox.onchange = (e) => {
+      bondVisibility[pair] = e.target.checked;
+      updateVisualization();
+    };
+
+    const checkboxLabel = document.createElement('label');
+    checkboxLabel.textContent = `Show ${pair} bonds`;
+    checkboxLabel.style.fontSize = '12px';
+    checkboxLabel.style.color = '#ccc';
+    checkboxLabel.style.margin = '0';
+
+    checkboxDiv.appendChild(checkbox);
+    checkboxDiv.appendChild(checkboxLabel);
 
     const label = document.createElement('div');
     label.className = 'bond-label';
@@ -307,7 +387,7 @@ function createBondLengthControls() {
 
     const textInput = document.createElement('input');
     textInput.type = 'number';
-    textInput.min = '0.1';
+    textInput.min = '0.0';
     textInput.max = '10.0';
     textInput.step = '0.01';
     textInput.value = bondLengths[pair];
@@ -319,22 +399,33 @@ function createBondLengthControls() {
     textInput.style.color = '#fff';
 
     function updateValue(newValue) {
-      bondLengths[pair] = parseFloat(newValue);
-      valueSpan.textContent = `${bondLengths[pair].toFixed(3)} Å`;
-      slider.value = bondLengths[pair];
-      textInput.value = bondLengths[pair];
+      const val = parseFloat(newValue);
+      bondLengths[pair] = val;
+
+      // Update display text with special message for disabled bonds
+      if (val <= 0.01) {
+        valueSpan.textContent = 'Disabled';
+        valueSpan.style.color = '#ff6666';
+      } else {
+        valueSpan.textContent = `${val.toFixed(3)} Å`;
+        valueSpan.style.color = '#4fc3f7';
+      }
+
+      slider.value = val;
+      textInput.value = val;
       updateVisualization();
     }
 
     slider.oninput = (e) => updateValue(e.target.value);
     textInput.onchange = (e) => {
-      const val = Math.max(0.1, Math.min(10.0, parseFloat(e.target.value) || 1.0));
+      const val = Math.max(0.0, Math.min(10.0, parseFloat(e.target.value) || 0.0));
       updateValue(val);
     };
 
     controlsRow.appendChild(slider);
     controlsRow.appendChild(textInput);
 
+    div.appendChild(checkboxDiv);
     div.appendChild(label);
     div.appendChild(controlsRow);
     bondControls.appendChild(div);
@@ -375,28 +466,183 @@ function HighlightAtom(m, hex){
   m.material.emissiveIntensity = 2.0; // MAXIMUM BLAZING GLOW!
 }
 
-function updateMeasureUI(){
-  const pairEl = document.getElementById('pairText');
-  const distEl = document.getElementById('distanceValue');
-  if (pickA && pickB){
-    const a = pickA.userData.element, b = pickB.userData.element;
-    const pa = pickA.position, pb = pickB.position;
-    const d = Math.hypot(pa.x-pb.x, pa.y-pb.y, pa.z-pb.z);
-    pairEl.textContent = `${a} — ${b}`;
-    distEl.textContent = formatÅ(d);
-  } else if (pickA) {
-    pairEl.textContent = `${pickA.userData.element} — ?`;
-    distEl.textContent = 'Tap 2nd atom';
-  } else {
-    pairEl.textContent = 'Tap atoms';
-    distEl.textContent = 'to measure';
-  }
-}
 
 function clearMeasureGraphics(){
   if (measureLine){ scene.remove(measureLine); measureLine.geometry.dispose(); measureLine = null; }
   if (measureLabel){ scene.remove(measureLabel); measureLabel = null; }
 }
+
+function clearAllMeasurements(){
+  // Clear all stored measurements
+  measureLines.forEach(item => {
+    scene.remove(item);
+    if (item.geometry) item.geometry.dispose();
+  });
+  measureLabels.forEach(label => {
+    scene.remove(label);
+  });
+  measureLines = [];
+  measureLabels = [];
+  distanceMeasurements = [];
+}
+
+function addMeasurement(){
+  if (!(pickA && pickB)) return;
+
+  // Store the measurement data with atom references
+  const measurement = {
+    atomA: pickA,
+    atomB: pickB,
+    element1: pickA.userData.element,
+    element2: pickB.userData.element,
+    distance: pickA.position.distanceTo(pickB.position)
+  };
+  distanceMeasurements.push(measurement);
+
+  // Create thick black dotted line
+  const pa = pickA.position.clone(), pb = pickB.position.clone();
+  const geom = new THREE.BufferGeometry().setFromPoints([pa, pb]);
+  const line = new THREE.Line(
+    geom,
+    new THREE.LineDashedMaterial({
+      color: 0x000000, // Pure black for maximum contrast
+      dashSize: 0.2,   // Short dashes for dotted appearance
+      gapSize: 0.15,   // Small gaps between dots
+      linewidth: 6.0   // Very thick line
+    })
+  );
+  line.computeLineDistances();
+  scene.add(line);
+  measureLines.push(line);
+
+  // Create atom-size-aware surface markers
+
+  // Get atom radii for proper scaling
+  const atomRadiusA = getAtomRadius(pickA.userData.element);
+  const atomRadiusB = getAtomRadius(pickB.userData.element);
+
+  // Create crosses on atom surfaces using line geometry
+  function createAtomCross(position, radius, color) {
+    const crossGroup = new THREE.Group();
+    const lineLength = radius * 1.8; // Cross extends slightly beyond atom surface
+    const lineWidth = radius * 0.15; // Proportional line thickness
+
+    // Create cross lines (4 lines forming X and +)
+    const positions = [
+      // Horizontal line
+      [-lineLength/2, 0, 0, lineLength/2, 0, 0],
+      // Vertical line
+      [0, -lineLength/2, 0, 0, lineLength/2, 0],
+      // Diagonal line 1
+      [-lineLength/2, -lineLength/2, 0, lineLength/2, lineLength/2, 0],
+      // Diagonal line 2
+      [-lineLength/2, lineLength/2, 0, lineLength/2, -lineLength/2, 0]
+    ];
+
+    positions.forEach(pos => {
+      const geometry = new THREE.BufferGeometry();
+      const points = [
+        new THREE.Vector3(pos[0], pos[1], pos[2]),
+        new THREE.Vector3(pos[3], pos[4], pos[5])
+      ];
+      geometry.setFromPoints(points);
+
+      const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+        color: color,
+        linewidth: Math.max(4, lineWidth * 10) // Ensure minimum visibility
+      }));
+
+      crossGroup.add(line);
+    });
+
+    crossGroup.position.copy(position);
+    // Offset slightly forward from atom surface toward camera
+    const offsetDir = position.clone().sub(camera.position).normalize().multiplyScalar(-radius * 0.05);
+    crossGroup.position.add(offsetDir);
+
+    return crossGroup;
+  }
+
+  // Create scaling ring markers around atoms
+  function createAtomRings(position, radius, innerColor, outerColor) {
+    const ringGroup = new THREE.Group();
+
+    // Outer ring - scales with atom
+    const outerRingGeometry = new THREE.RingGeometry(radius * 1.1, radius * 1.3, 32);
+    const outerRingMaterial = new THREE.MeshBasicMaterial({
+      color: outerColor,
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide
+    });
+    const outerRing = new THREE.Mesh(outerRingGeometry, outerRingMaterial);
+    outerRing.lookAt(camera.position);
+    ringGroup.add(outerRing);
+
+    // Inner ring - scales with atom
+    const innerRingGeometry = new THREE.RingGeometry(radius * 0.9, radius * 1.05, 32);
+    const innerRingMaterial = new THREE.MeshBasicMaterial({
+      color: innerColor,
+      transparent: true,
+      opacity: 1.0,
+      side: THREE.DoubleSide
+    });
+    const innerRing = new THREE.Mesh(innerRingGeometry, innerRingMaterial);
+    innerRing.lookAt(camera.position);
+    ringGroup.add(innerRing);
+
+    ringGroup.position.copy(position);
+    return ringGroup;
+  }
+
+  // Add surface crosses to both atoms
+  const crossA = createAtomCross(pa, atomRadiusA, 0xff0000); // Red crosses
+  scene.add(crossA);
+  measureLines.push(crossA);
+
+  const crossB = createAtomCross(pb, atomRadiusB, 0xff0000); // Red crosses
+  scene.add(crossB);
+  measureLines.push(crossB);
+
+  // Add scaling rings to both atoms
+  const ringsA = createAtomRings(pa, atomRadiusA, 0xffff00, 0x000000); // Yellow inner, black outer
+  scene.add(ringsA);
+  measureLines.push(ringsA);
+
+  const ringsB = createAtomRings(pb, atomRadiusB, 0xffff00, 0x000000); // Yellow inner, black outer
+  scene.add(ringsB);
+  measureLines.push(ringsB);
+
+  // Create a compact black and white floating label
+  const mid = pa.clone().add(pb).multiplyScalar(0.5);
+  const div = document.createElement('div');
+  div.className = 'measure-label';
+  div.style.background = 'rgba(255, 255, 255, 0.95)';
+  div.style.border = '2px solid #000000';
+  div.style.color = '#000000';
+  div.style.fontWeight = '700';
+  div.style.fontSize = '14px';
+  div.style.padding = '6px 10px';
+  div.style.textShadow = '1px 1px 2px rgba(255,255,255,0.8)';
+  div.style.boxShadow = '0 3px 8px rgba(0,0,0,0.4)';
+  div.style.borderRadius = '6px';
+  const a = pickA.userData.element, b = pickB.userData.element;
+  const d = pa.distanceTo(pb);
+  div.textContent = `${a}—${b}: ${formatÅ(d)} Å`;
+  const label = new CSS2DObject(div);
+  label.position.copy(mid);
+  scene.add(label);
+  measureLabels.push(label);
+
+  // Store original emissive values but don't change them - visual markers are enough
+  if (!pickA.userData.originalEmissive) {
+    pickA.userData.originalEmissive = pickA.material.emissive.getHex();
+  }
+  if (!pickB.userData.originalEmissive) {
+    pickB.userData.originalEmissive = pickB.material.emissive.getHex();
+  }
+}
+
 function drawMeasureGraphics(){
   clearMeasureGraphics();
   if (!(pickA && pickB)) return;
@@ -427,7 +673,6 @@ function clearMeasure(){
   clearHighlightAtom(pickA); clearHighlightAtom(pickB);
   pickA = null; pickB = null;
   clearMeasureGraphics();
-  updateMeasureUI();
 }
 
 
@@ -458,7 +703,15 @@ function createBond(pos1, pos2, elem1, elem2) {
   const dist = distance(p1, p2);
   const cutoff = getBondCutoff(elem1, elem2);
 
-  if (dist > cutoff || dist < 0.005) return null;
+  // If bond length is set to 0 or very small, don't create any bonds
+  if (cutoff <= 0.01 || dist > cutoff || dist < 0.005) return null;
+
+  // Check bond visibility
+  const pair1 = elem1 + '-' + elem2;
+  const pair2 = elem2 + '-' + elem1;
+  const isVisible = bondVisibility[pair1] !== false && bondVisibility[pair2] !== false;
+
+  if (!isVisible) return null;
 
   const direction = new THREE.Vector3().subVectors(p2, p1);
   const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
@@ -636,6 +889,10 @@ function updateVisualization() {
 
   renderComposition();
   clearMeasureGraphics();
+
+  // Re-add persistent measurements
+  measureLines.forEach(line => scene.add(line));
+  measureLabels.forEach(label => scene.add(label));
 }
 
 function colorHexToCss(hex) {
@@ -661,7 +918,6 @@ function loadPOSCAR(content, isDefault = false) {
 
     renderComposition();
     clearMeasure();
-    updateMeasureUI();
     resetView();
 
   } catch (error) {
@@ -683,7 +939,14 @@ function init() {
 
   const w = view.clientWidth || window.innerWidth;
   const h = view.clientHeight || window.innerHeight;
-  camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
+
+  // Initialize with orthographic camera by default
+  if (useOrthographicCamera) {
+    const size = 20; // Initial size - will be adjusted when structure loads
+    camera = new THREE.OrthographicCamera(-size, size, size / (w/h), -size / (w/h), 0.1, 1000);
+  } else {
+    camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
+  }
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(w, h);
@@ -761,6 +1024,9 @@ function init() {
   let mouse = new THREE.Vector2();
 
   function onClickPick(event){
+    // Only handle clicks if measure mode is enabled
+    if (!measureMode) return;
+
     // Prevent default behavior to avoid conflicts with pan/zoom
     event.preventDefault();
     event.stopPropagation();
@@ -804,7 +1070,7 @@ function init() {
 
     const hit = hits[0].object;
 
-    // selection cycling: A -> B -> restart with new A (but keep measurement visible)
+    // selection cycling: A -> B -> add measurement and start new one
     if (!pickA) {
       // First selection - FIRE ENGINE RED
       pickA = hit; HighlightAtom(pickA, 0xff0000);
@@ -812,20 +1078,28 @@ function init() {
       // Second selection
       if (hit === pickA) return; // Same atom, ignore
       pickB = hit; HighlightAtom(pickB, 0x0000ff); // IN-YOUR-FACE BLUE
-    } else {
-      // Third selection - start new measurement (clear previous and start fresh)
-      clearMeasure();
-      pickA = hit; HighlightAtom(pickA, 0xff0000); // FIRE ENGINE RED
+
+      // Add this measurement to persistent storage
+      addMeasurement();
+
+      // Clear current selection but keep the measurement
+      clearHighlightAtom(pickA);
+      clearHighlightAtom(pickB);
+      pickA = null;
+      pickB = null;
+      clearMeasureGraphics();
     }
 
-    updateMeasureUI();
     drawMeasureGraphics();
   }
 
   // Add event listeners - use touchstart instead of touchend for better responsiveness
   renderer.domElement.addEventListener('click', onClickPick);
   renderer.domElement.addEventListener('touchstart', onClickPick, { passive: false });
-  document.getElementById('clearMeasure').onclick = clearMeasure;
+  document.getElementById('clearMeasure').onclick = () => {
+    clearMeasure();
+    clearAllMeasurements();
+  };
 
 
   // Axes gizmo (bottom-left)
@@ -962,6 +1236,33 @@ function init() {
     document.getElementById('atomSizeValue').textContent = atomSize.toFixed(1);
     updateVisualization();
   };
+
+  // New control handlers
+  document.getElementById('orthographicCamera').onchange = (e) => {
+    useOrthographicCamera = e.target.checked;
+    switchCameraType();
+  };
+
+  document.getElementById('vestaColors').onchange = (e) => {
+    useVestaColors = e.target.checked;
+    updateVisualization();
+  };
+
+  document.getElementById('measureModeToggle').onclick = (e) => {
+    measureMode = !measureMode;
+    const button = e.target;
+    if (measureMode) {
+      button.classList.add('active');
+      button.textContent = 'Stop Measuring';
+    } else {
+      button.classList.remove('active');
+      button.textContent = 'Start Measuring';
+      // Clear current measurement when disabling
+      clearMeasure();
+    }
+  };
+
+  document.getElementById('resetBondLengths').onclick = resetBondLengths;
 
   // Initialize atomSize from the UI slider so the initial view respects the slider value
   (function initAtomSizeFromSlider(){

@@ -62,6 +62,12 @@
         <input type="checkbox" id="showLattice" checked> Show Unit Cell
       </label>
       <label>
+        <input type="checkbox" id="orthographicCamera" checked> Parallel Projection
+      </label>
+      <label>
+        <input type="checkbox" id="vestaColors" checked> VESTA Colors
+      </label>
+      <label>
         Atom Size: <span id="atomSizeValue" class="slider-value">0.6</span>
         <input type="range" id="atomSize" min="0.1" max="2.0" step="0.1" value="0.6">
       </label>
@@ -69,6 +75,7 @@
 
     <div class="control-group" id="bondControlsGroup" style="display: none;">
       <h3>Bond Length Controls</h3>
+      <button id="resetBondLengths" class="reset-btn">Reset to Defaults</button>
       <div id="bondControls"></div>
     </div>
   </div>
@@ -89,13 +96,9 @@
       <!-- Composition will be populated by JS. Hidden by default; expands when the header is toggled -->
     </div>
 
-    <h4 class="section-heading">Measure</h4>
     <div id="measure">
-      <div id="measureRow">
-        <span id="pairText">—</span>
-        <span><span id="distanceValue">—</span> Å</span>
-      </div>
-      <button id="clearMeasure" class="btn-mini highlight">Clear</button>
+      <button id="measureModeToggle" class="btn-measure">Start Measuring</button>
+      <button id="clearMeasure" class="btn-clear">Clear All</button>
     </div>
   </div>
 

@@ -161,6 +161,36 @@ input[type="checkbox"] {
   margin-bottom: 5px;
 }
 
+.reset-btn {
+  background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 12px;
+  transition: all 0.3s ease;
+}
+
+.reset-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+}
+
+.bond-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 4px 0;
+}
+
+.bond-checkbox input[type="checkbox"] {
+  margin: 0;
+}
+
 #status {
   position: fixed;
   top: 20px;
@@ -255,17 +285,59 @@ z-index:1000; pointer-events:none;
 
 
 /* --- Measure panel --- */
-#measure { display:grid; gap:10px; }
-#measureRow{
-  display:flex; justify-content:space-between; align-items:center;
-  padding:10px 12px; border-radius:12px;
-  background:rgba(79,195,247,0.10); border:1px solid rgba(79,195,247,0.35);
+#measure {
+  display:flex; gap:8px; justify-content:space-between;
+  margin-top: 12px; padding: 12px 0;
+  border-top: 1px solid rgba(255,255,255,0.1);
 }
-#pairText{ font-size:16px; font-weight:600; letter-spacing:.2px; }
-#distanceValue{ font-size:18px; font-weight:800; color:#4fc3f7; }
-.btn-mini{
-  align-self:end; padding:8px 12px; font-size:14px; color:#fff; cursor:pointer;
-  background:rgba(79,195,247,.15); border:1px solid rgba(79,195,247,.35); border-radius:8px;
+
+.btn-measure {
+  flex: 1;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #4fc3f7, #29b6f6);
+  border: 2px solid #4fc3f7;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(79, 195, 247, 0.3);
+}
+
+.btn-measure:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(79, 195, 247, 0.4);
+}
+
+.btn-measure.active {
+  background: linear-gradient(135deg, #ff6b35, #f7931e);
+  border-color: #ff6b35;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
+}
+
+.btn-measure.active:hover {
+  box-shadow: 0 6px 16px rgba(255, 107, 53, 0.5);
+}
+
+.btn-clear {
+  flex: 0.7;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  border: 2px solid #e74c3c;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+}
+
+.btn-clear:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(231, 76, 60, 0.4);
 }
 
 /* --- Floating distance label in scene --- */
