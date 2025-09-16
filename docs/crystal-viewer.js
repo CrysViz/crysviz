@@ -379,9 +379,12 @@ function updateMeasureUI(){
     const d = Math.hypot(pa.x-pb.x, pa.y-pb.y, pa.z-pb.z);
     pairEl.textContent = `${a} — ${b}`;
     distEl.textContent = formatÅ(d);
+  } else if (pickA) {
+    pairEl.textContent = `${pickA.userData.element} — ?`;
+    distEl.textContent = 'Tap 2nd atom';
   } else {
-    pairEl.textContent = '—';
-    distEl.textContent = '—';
+    pairEl.textContent = 'Tap atoms';
+    distEl.textContent = 'to measure';
   }
 }
 
@@ -670,6 +673,15 @@ function init() {
     RIGHT: THREE.MOUSE.PAN
   };
 
+  // Keep rotation centered on crystal structure
+  controls.addEventListener('end', () => {
+    if (structureData) {
+      const { center } = getCellCenterAndDist();
+      controls.target.copy(center);
+      controls.update();
+    }
+  });
+
   // Enhanced lighting
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.6).texture;
@@ -693,16 +705,19 @@ function init() {
   let mouse = new THREE.Vector2();
 
   function onClickPick(event){
+    // Prevent default behavior to avoid conflicts with pan/zoom
+    event.preventDefault();
+    event.stopPropagation();
+
     // Handle both mouse and touch events with better error checking
     let clientX, clientY;
 
     if (event.type === 'touchend' || event.type === 'touchstart') {
-      if (event.changedTouches && event.changedTouches.length > 0) {
-        clientX = event.changedTouches[0].clientX;
-        clientY = event.changedTouches[0].clientY;
-      } else if (event.touches && event.touches.length > 0) {
-        clientX = event.touches[0].clientX;
-        clientY = event.touches[0].clientY;
+      // For touch events, use the appropriate touch list
+      const touchList = event.type === 'touchstart' ? event.touches : event.changedTouches;
+      if (touchList && touchList.length > 0) {
+        clientX = touchList[0].clientX;
+        clientY = touchList[0].clientY;
       } else {
         console.warn('Touch event without touch coordinates');
         return;
@@ -752,9 +767,9 @@ function init() {
     drawMeasureGraphics();
   }
 
-  // Add event listeners with passive options for better mobile performance
+  // Add event listeners - use touchstart instead of touchend for better responsiveness
   renderer.domElement.addEventListener('click', onClickPick);
-  renderer.domElement.addEventListener('touchend', onClickPick, { passive: true });
+  renderer.domElement.addEventListener('touchstart', onClickPick, { passive: false });
   document.getElementById('clearMeasure').onclick = clearMeasure;
 
 
