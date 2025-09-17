@@ -17,7 +17,7 @@ Light-weight browser-based visualisation of POSCAR files with on-device renderin
 2. Lighter shadow rendering &#x2705;
 3. Checkbox to select and deselect individual bonds &#x2705;
 4. Minimum bond length slider. Could be useful to identify ranges of bonds. 
-5. Reset button for bond lengths, fix 0 bond length &#x2705; <- even though it says no "disabled", it is still showing bonds. ❌
+5. Reset button for bond lengths, fix 0 bond length &#x2705; <- even though it says now "disabled", bonds are still shown  ❌
 6. Keep distance measurements (last 3 or something) until clear &#x2705;
 7. VESTA colors &#x2705; or some custom  map
 8. Checkbox for "activating measuring" to be more touch compatible; so measuring is not enabled by default but needs a button click &#x2705;
