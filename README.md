@@ -21,11 +21,11 @@ Light-weight browser-based visualisation of POSCAR files with on-device renderin
 6. Keep distance measurements (last 3 or something) until clear &#x2705;
 7. VESTA colors &#x2705; or some custom  map
 8. Checkbox for "activating measuring" to be more touch compatible; so measuring is not enabled by default but needs a button click &#x2705;
-9. Angle measurements &#x2705; Improve visualisation.
+9. Angle measurements &#x2705; Improve visualisation. &#x2705;
 10. Show the metainfo line from poscar file
 11. Option to create supercells with a limit of about 2000 atoms to not crash browser
-12. Increaase line-width of dashed line along the currently measured distances.
-13. When selecting the atoms for measuring the bonds, similar colors are used to mark the selection as for the atoms. Maybe we can find a better way to mark the atoms 
+12. Increaase line-width of dashed line along the currently measured distances. &#x2705;
+13. When selecting the atoms for measuring the bonds, similar colors are used to mark the selection as for the atoms. Maybe we can find a better way to mark the atoms &#x2705;
     
 
 
