@@ -1,5 +1,5 @@
 
-<img src="IMG_0056.png" width="250">
+<img src="CrysViz_logo.png" width="600">
 
 Light-weight browser-based visualisation of POSCAR files with on-device rendering. 
 
