@@ -16,8 +16,8 @@ Light-weight browser-based visualisation of POSCAR files with on-device renderin
 1. Switch for parallel vs. perspective view &#x2705;
 2. Lighter shadow rendering &#x2705;
 3. Checkbox to select and deselect individual bonds &#x2705;
-4. Minimum bond lenght slider (?)
-5. Reset button for bond lengths, fix 0 bond length &#x2705;
+4. Minimum bond length slider. Could be useful to identify ranges of bonds. 
+5. Reset button for bond lengths, fix 0 bond length &#x2705; <- even though it says no "disabled", it is still showing bonds. ❌
 6. Keep distance measurements (last 3 or something) until clear &#x2705;
 7. VESTA colors &#x2705; or some custom  map
 8. Checkbox for "activating measuring" to be more touch compatible; so measuring is not enabled by default but needs a button click &#x2705;
@@ -26,7 +26,8 @@ Light-weight browser-based visualisation of POSCAR files with on-device renderin
 11. Option to create supercells with a limit of about 2000 atoms to not crash browser
 12. Increaase line-width of dashed line along the currently measured distances. &#x2705;
 13. When selecting the atoms for measuring the bonds, similar colors are used to mark the selection as for the atoms. Maybe we can find a better way to mark the atoms &#x2705;
-    
+14. Possibility to deselect atoms by clicking them again
+15.     
 
 
 ### Possible Advanced Features 
