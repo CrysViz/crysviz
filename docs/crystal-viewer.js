@@ -109,40 +109,6 @@ function getAtomRadius(element) {
 }
 
 // Helper functions for creating measurement markers
-function createAtomCross(position, radius, color) {
-  const crossGroup = new THREE.Group();
-  const lineLength = radius * 1.8; // Cross extends slightly beyond atom surface
-  const lineWidth = radius * 0.15; // Proportional line thickness
-
-  // Create cross using small cylinders instead of lines to avoid rendering issues
-  const crossElements = [
-    // Horizontal bar
-    { length: lineLength, rotation: [0, 0, Math.PI/2] },
-    // Vertical bar
-    { length: lineLength, rotation: [0, 0, 0] },
-    // Diagonal 1
-    { length: lineLength * 0.7, rotation: [0, 0, Math.PI/4] },
-    // Diagonal 2
-    { length: lineLength * 0.7, rotation: [0, 0, -Math.PI/4] }
-  ];
-
-  crossElements.forEach(element => {
-    const geometry = new THREE.CylinderGeometry(lineWidth, lineWidth, element.length, 6);
-    const material = new THREE.MeshBasicMaterial({ color: color });
-    const cylinder = new THREE.Mesh(geometry, material);
-
-    cylinder.rotation.set(element.rotation[0], element.rotation[1], element.rotation[2]);
-    crossGroup.add(cylinder);
-  });
-
-  crossGroup.position.copy(position);
-  // Offset slightly forward from atom surface toward camera
-  const offsetDir = position.clone().sub(camera.position).normalize().multiplyScalar(-radius * 0.05);
-  crossGroup.position.add(offsetDir);
-
-  return crossGroup;
-}
-
 function createAtomRings(position, radius, innerColor, outerColor, element = null) {
   const ringGroup = new THREE.Group();
 
@@ -670,9 +636,6 @@ function addAngleMeasurement(atom1, atom2, atom3) {
     scene.add(rings);
     measureLines.push(rings);
 
-    const cross = createAtomCross(atom.position, atomRadius, color);
-    scene.add(cross);
-    measureLines.push(cross);
   });
 
   // Create angle label at vertex
@@ -742,16 +705,6 @@ function addDistanceMeasurement(atom1, atom2) {
   // Get atom radii for proper scaling
   const atomRadiusA = getAtomRadius(atom1.userData.element);
   const atomRadiusB = getAtomRadius(atom2.userData.element);
-
-
-  // Add surface crosses to both atoms
-  const crossA = createAtomCross(pa, atomRadiusA, 0xff0000); // Red crosses
-  scene.add(crossA);
-  measureLines.push(crossA);
-
-  const crossB = createAtomCross(pb, atomRadiusB, 0xff0000); // Red crosses
-  scene.add(crossB);
-  measureLines.push(crossB);
 
   // Add scaling rings to both atoms
   const ringsA = createAtomRings(pa, atomRadiusA, 0xffff00, 0x000000, atom1.userData.element); // Yellow inner, black outer
