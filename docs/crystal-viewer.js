@@ -477,7 +477,7 @@ function createBondLengthControls() {
         valueSpan.style.color = '#ff6666';
       } else {
         valueSpan.textContent = `${val.toFixed(3)} Å`;
-        valueSpan.style.color = '#4fc3f7';
+        valueSpan.style.color = 'rgba(6, 140, 50, 1)';
       }
 
       slider.value = val;

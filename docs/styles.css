@@ -115,7 +115,7 @@ input[type="checkbox"] {
 }
 
 .slider-value {
-  color: rgba(6, 71, 50, 1);
+  color: rgba(6, 140, 50, 1);
   font-weight: 600;
 }
 
@@ -225,7 +225,7 @@ input[type="checkbox"] {
 #infoPanel h4 {
   margin: 0 0 8px 0;
   font-weight: 600;
-  color: rgba(6, 71, 180, 0.4);
+  color: rgba(6, 100, 50, 0.4);
   font-size: 14px;
   letter-spacing: .3px;
 }
@@ -242,7 +242,7 @@ input[type="checkbox"] {
 #picked {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 6px 8px; background: rgba(6, 71, 50, 1);
-  border: 1px solid rgba(6, 71, 50, 1); border-radius: 10px;
+  border: 1px solid rgba(6, 100, 50, 1); border-radius: 10px;
 }
 #view canvas { cursor: pointer; } /* for click affordance */
 
@@ -338,7 +338,7 @@ z-index:1000; pointer-events:none;
   background: rgba(6, 71, 50, 1);
   border-color: rgba(6, 90, 50, 0.7);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(6, 180, 50, 1);
+  box-shadow: 0 6px 20px rgba(6, 100, 50, 1);
 }
 
 .measure-tool-btn.active {
