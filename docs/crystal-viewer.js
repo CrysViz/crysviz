@@ -754,7 +754,8 @@ function drawMeasureGraphics(){
     div.style.fontSize = '12px';
     div.style.padding = '4px 8px';
     div.style.borderRadius = '4px';
-    div.textContent = `${atom1.userData.element} — ? (click 2nd atom)`;
+    //div.textContent = `${atom1.userData.element} — ? (click 2nd atom)`;
+    div.textContent = `choose 2nd atom`;
     measureLabel = new CSS2DObject(div);
     measureLabel.position.copy(atom1.position);
     scene.add(measureLabel);
