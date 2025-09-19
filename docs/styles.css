@@ -50,7 +50,7 @@ body {
 #fileLabel {
   display: block;
   padding: 15px 20px;
-  background: linear-gradient(45deg, #677eea, #769ba2);
+  background:  rgba(0,0, 0, 0.4) 
   color: white;
   text-align: center;
   border-radius: 8px;
