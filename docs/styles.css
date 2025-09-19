@@ -141,7 +141,7 @@ input[type="checkbox"] {
 }
 
 #bondControls::-webkit-scrollbar-thumb {
-  background: #4fc3f7;
+  background: rgba(6, 71, 180, 0.4);
   border-radius: 3px;
 }
 
@@ -150,7 +150,7 @@ input[type="checkbox"] {
   padding: 12px;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 8px;
-  border-left: 3px solid #4fc3f7;
+  border-left: 3px solid rgba(6, 71, 180, 0.4);
 }
 
 .bond-label {
@@ -225,7 +225,7 @@ input[type="checkbox"] {
 #infoPanel h4 {
   margin: 0 0 8px 0;
   font-weight: 600;
-  color: #4fc3f7;
+  color: rgba(6, 71, 180, 0.4);
   font-size: 14px;
   letter-spacing: .3px;
 }
