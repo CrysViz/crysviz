@@ -730,7 +730,8 @@ function addDistanceMeasurement(atom1, atom2) {
   div.style.borderRadius = '4px';
   const a = atom1.userData.element, b = atom2.userData.element;
   const d = pa.distanceTo(pb);
-  div.textContent = `${a}—${b}: ${formatÅ(d)} Å`;
+  //div.textContent = `${a}—${b}: ${formatÅ(d)} Å`;
+  div.textContent = `${formatÅ(d)} Å`;
   const label = new CSS2DObject(div);
   label.position.copy(mid);
   scene.add(label);

@@ -14,7 +14,7 @@ body {
   width: 380px;
   overflow: auto;
   padding: 20px;
-  background: rgba(26, 26, 100, 0.95);
+  background: rgba(26, 26, 26, 0.95);
   color: #fff;
   backdrop-filter: blur(20px);
   border-right: 1px solid rgba(255, 255, 255, 0.1);
