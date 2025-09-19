@@ -111,7 +111,7 @@ input[type="range"]::-moz-range-thumb {
 input[type="checkbox"] {
   margin-right: 10px;
   transform: scale(1.2);
-  accent-color: rgba(6, 71, 50, 1);
+  accent-color: rgba(6, 140, 50, 1);
 }
 
 .slider-value {
@@ -141,7 +141,7 @@ input[type="checkbox"] {
 }
 
 #bondControls::-webkit-scrollbar-thumb {
-  background: rgba(6, 71, 50, 0.4);
+  background: rgba(6, 140, 50, 0.4);
   border-radius: 3px;
 }
 
@@ -150,7 +150,7 @@ input[type="checkbox"] {
   padding: 12px;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 8px;
-  border-left: 3px solid rgba(6, 71, 50, 0.4);
+  border-left: 3px solid rgba(6, 140, 50, 0.4);
 }
 
 .bond-label {
@@ -242,7 +242,7 @@ input[type="checkbox"] {
 #picked {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 6px 8px; background: rgba(6, 71, 50, 1);
-  border: 1px solid rgba(6, 100, 50, 1); border-radius: 10px;
+  border: 1px solid rgba(6, 140, 50, 1); border-radius: 10px;
 }
 #view canvas { cursor: pointer; } /* for click affordance */
 
