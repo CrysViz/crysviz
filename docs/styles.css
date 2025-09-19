@@ -225,7 +225,7 @@ input[type="checkbox"] {
 #infoPanel h4 {
   margin: 0 0 8px 0;
   font-weight: 600;
-  color: rgba(6, 140, 50, 0.4);
+  color: rgba(6, 140, 50, 1);
   font-size: 14px;
   letter-spacing: .3px;
 }
