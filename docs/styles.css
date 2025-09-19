@@ -22,7 +22,8 @@ body {
 
 #logo {
   margin: 0 0 25px 0;
-  width: 200px;
+  max-width: 200px;
+  height: auto;
   display: block;
   margin: 1rem auto;
 }
