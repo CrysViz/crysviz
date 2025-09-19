@@ -272,7 +272,7 @@ z-index:1000; pointer-events:none;
 
 /* View toolbar (top-left) */
 #viewToolbar {
-  position: fixed; left: 16px; top: 16px; display: flex; gap: 8px; flex-wrap: wrap;
+  position: fixed; left: 420px; top: 16px; display: flex; gap: 8px; flex-wrap: wrap;
   background: rgba(26,26,26,0.85); border: 1px solid rgba(255,255,255,0.1);
   border-radius: 12px; padding: 8px; z-index: 1000; backdrop-filter: blur(8px);
 }
