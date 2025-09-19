@@ -767,8 +767,8 @@ function drawMeasureGraphics(){
     div.style.border = '2px solid #00ff00';
     div.style.color = '#000000';
     div.style.fontWeight = '700';
-    div.style.fontSize = '12px';
-    div.style.padding = '4px 8px';
+    div.style.fontSize = '10px';
+    div.style.padding = '2px 4px';
     div.style.borderRadius = '4px';
 
     if (selectedAtoms.length === 1) {
