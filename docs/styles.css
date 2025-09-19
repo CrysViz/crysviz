@@ -241,8 +241,8 @@ input[type="checkbox"] {
 .comp-left { display: inline-flex; align-items: center; gap: 6px; }
 #picked {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 6px 8px; background: rgba(79,195,247,0.12);
-  border: 1px solid rgba(79,195,247,0.3); border-radius: 10px;
+  padding: 6px 8px; background: rgba(6, 71, 50, 1);
+  border: 1px solid rgba(6, 71, 50, 1); border-radius: 10px;
 }
 #view canvas { cursor: pointer; } /* for click affordance */
 
@@ -276,10 +276,10 @@ z-index:1000; pointer-events:none;
   border-radius: 12px; padding: 8px; z-index: 1000; backdrop-filter: blur(8px);
 }
 .vbtn {
-  padding: 6px 10px; font-size: 14px; color: #fff; background: rgba(79,195,247,.12);
-  border: 1px solid rgba(79,195,247,.35); border-radius: 8px; cursor: pointer;
+  padding: 6px 10px; font-size: 14px; color: #fff; background: rgba(6, 71, 50, 1);;
+  border: 1px solid rgba(6, 71, 50, 1); border-radius: 8px; cursor: pointer;
 }
-.vbtn:hover { background: rgba(79,195,247,.22); }
+.vbtn:hover { background: rgba(6, 71, 50, 1); }
 .vsep { width: 1px; height: 22px; background: rgba(255,255,255,0.12); margin: 0 2px; }
 
 
@@ -317,8 +317,8 @@ z-index:1000; pointer-events:none;
   justify-content: center;
   gap: 6px;
   padding: 16px 20px;
-  background: rgba(79, 195, 247, 0.15);
-  border: 2px solid rgba(79, 195, 247, 0.3);
+  background: rgba(6, 71, 50, 1);
+  border: 2px solid rgba(6, 180, 50, 1);
   border-radius: 12px;
   color: #fff;
   cursor: pointer;
@@ -335,10 +335,10 @@ z-index:1000; pointer-events:none;
 }
 
 .measure-tool-btn:hover {
-  background: rgba(79, 195, 247, 0.25);
-  border-color: rgba(79, 195, 247, 0.5);
+  background: rgba(6, 71, 50, 1);
+  border-color: rgba(6, 180, 50, 1);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(79, 195, 247, 0.3);
+  box-shadow: 0 6px 20px rgba(6, 180, 50, 1);
 }
 
 .measure-tool-btn.active {
@@ -465,8 +465,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(79,195,247,.15);
-    border: 1px solid rgba(79,195,247,.4);
+    background: rgba(6, 71, 50, 1)
+    border: 1px solid rgba(6, 180, 50, 1)
   }
 
   /* Adjust axes gizmo position and size */
