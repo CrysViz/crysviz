@@ -427,6 +427,261 @@ function parsePOSCAR(content) {
   };
 }
 
+// Attempt to lazily load a CIF parsing library from a CDN (ESM or UMD).
+// We prefer using @ccp-nc/crystcif-parse via CDN, but fall back to a
+// lightweight built-in parser if the CDN is unavailable.
+let cifLib = null;
+async function getCifLib() {
+  if (cifLib) return cifLib;
+  // Try a few common CDN ESM endpoints first
+  const esmCandidates = [
+    'https://unpkg.com/@ccp-nc/crystcif-parse?module',
+    'https://cdn.jsdelivr.net/npm/@ccp-nc/crystcif-parse/+esm',
+    'https://esm.sh/@ccp-nc/crystcif-parse'
+  ];
+  for (const url of esmCandidates) {
+    try {
+      const mod = await import(url);
+      if (mod) { cifLib = mod; return cifLib; }
+    } catch (_) {}
+  }
+  // Try UMD globals by injecting a script
+  const umdCandidates = [
+    'https://unpkg.com/@ccp-nc/crystcif-parse',
+    'https://cdn.jsdelivr.net/npm/@ccp-nc/crystcif-parse/dist/index.umd.js'
+  ];
+  for (const url of umdCandidates) {
+    try {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = url;
+        s.async = true;
+        s.onload = () => resolve();
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+      // Check common global names
+      const g = (window.crystcifParse || window.CIF || window.CcpNcCrystCifParse || window.crystcif || null);
+      if (g) { cifLib = g; return cifLib; }
+    } catch (_) {}
+  }
+  // As a last resort, leave cifLib null; caller should fall back to built-in
+  return null;
+}
+
+// Utility: build 3x3 lattice from cell lengths (a,b,c) and angles (alpha,beta,gamma) in degrees
+function latticeFromCell(a, b, c, alpha, beta, gamma) {
+  const rad = Math.PI / 180;
+  const ca = Math.cos(alpha * rad);
+  const cb = Math.cos(beta  * rad);
+  const cg = Math.cos(gamma * rad);
+  const sg = Math.sin(gamma * rad);
+  const ax = a, ay = 0, az = 0;
+  const bx = b * cg;
+  const by = b * sg;
+  const bz = 0;
+  const cx = c * cb;
+  const cy = c * ((ca - cb * cg) / (sg || 1e-12));
+  const czTerm = 1 - (cb*cb) - (((ca - cb*cg) / (sg || 1e-12))**2);
+  const cz = c * Math.sqrt(Math.max(0, czTerm));
+  return [ [ax, ay, az], [bx, by, bz], [cx, cy, cz] ];
+}
+
+// Strip numbers like 5.431(1) to 5.431, handles quotes too
+function parseMaybeWithUncertainty(v) {
+  if (v == null) return null;
+  let s = String(v).trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1);
+  }
+  s = s.replace(/\([^()]*\)$/,'');
+  const num = parseFloat(s);
+  return Number.isFinite(num) ? num : null;
+}
+
+// Very small helper to detect element symbol from label if needed (e.g., Si1 -> Si)
+function elementFromLabel(label) {
+  if (!label) return null;
+  const m = String(label).match(/^([A-Z][a-z]?)/);
+  return m ? m[1] : null;
+}
+
+// Built-in lightweight CIF extraction (fallback). Extracts:
+// - _cell_length_[abc], _cell_angle_[alpha|beta|gamma]
+// - loop_ with _atom_site_type_symbol or _atom_site_label and _atom_site_fract_[x|y|z]
+function parseCifFallback(content) {
+  const getTag = (tag) => {
+    const re = new RegExp('^\\s*' + tag.replace(/([.*+?^${}()|[\]\\])/g,'\\$1') + '\\s+([^\r\n#;]+)', 'mi');
+    const m = content.match(re);
+    return m ? m[1].trim() : null;
+  };
+
+  const a  = parseMaybeWithUncertainty(getTag('_cell_length_a'));
+  const b  = parseMaybeWithUncertainty(getTag('_cell_length_b'));
+  const c  = parseMaybeWithUncertainty(getTag('_cell_length_c'));
+  const al = parseMaybeWithUncertainty(getTag('_cell_angle_alpha'));
+  const be = parseMaybeWithUncertainty(getTag('_cell_angle_beta'));
+  const ga = parseMaybeWithUncertainty(getTag('_cell_angle_gamma'));
+  if (!(a&&b&&c&&al&&be&&ga)) throw new Error('CIF: missing unit cell parameters');
+  const lattice = latticeFromCell(a, b, c, al, be, ga);
+
+  // Find an atom_site loop
+  const lines = content.split(/\r?\n/);
+  let i = 0;
+  let headers = [];
+  let rows = [];
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (/^loop_/i.test(line)) {
+      i++;
+      headers = [];
+      while (i < lines.length && /^_/.test(lines[i].trim())) {
+        headers.push(lines[i].trim());
+        i++;
+      }
+      // If this loop contains atom_site fractional coords, parse rows until a blank or next loop/data block
+      const hasFrac = headers.includes('_atom_site_fract_x') && headers.includes('_atom_site_fract_y') && headers.includes('_atom_site_fract_z');
+      const hasType = headers.includes('_atom_site_type_symbol');
+      const hasLabel = headers.includes('_atom_site_label');
+      if (hasFrac && (hasType || hasLabel)) {
+        rows = [];
+        while (i < lines.length) {
+          const l = lines[i];
+          if (!l.trim()) break;
+          if (/^loop_/i.test(l) || /^data_/i.test(l) || /^_/.test(l.trim())) break;
+          rows.push(l);
+          i++;
+        }
+        break;
+      }
+    } else {
+      i++;
+    }
+  }
+  if (!rows.length) throw new Error('CIF: could not locate atom_site loop');
+  const colIndex = Object.create(null);
+  headers.forEach((h, idx) => colIndex[h] = idx);
+  const useType = colIndex['_atom_site_type_symbol'] != null ? '_atom_site_type_symbol' : '_atom_site_label';
+  const ix = colIndex['_atom_site_fract_x'];
+  const iy = colIndex['_atom_site_fract_y'];
+  const iz = colIndex['_atom_site_fract_z'];
+  const it = colIndex[useType];
+
+  const elements = [];
+  const positions = [];
+  for (const r of rows) {
+    // crude tokenization respecting single/double quotes
+    const toks = [];
+    let cur = '';
+    let quote = null;
+    for (let k = 0; k < r.length; k++) {
+      const ch = r[k];
+      if (quote) {
+        cur += ch;
+        if (ch === quote) { toks.push(cur.trim()); cur = ''; quote = null; }
+      } else if (ch === '"' || ch === "'") {
+        if (cur.trim()) { toks.push(cur.trim()); cur=''; }
+        quote = ch; cur = ch;
+      } else if (/\s/.test(ch)) {
+        if (cur) { toks.push(cur.trim()); cur = ''; }
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur.trim()) toks.push(cur.trim());
+    const sx = parseMaybeWithUncertainty(toks[ix]);
+    const sy = parseMaybeWithUncertainty(toks[iy]);
+    const sz = parseMaybeWithUncertainty(toks[iz]);
+    let el = toks[it];
+    if (!el) continue;
+    // remove quotes
+    if ((el.startsWith('"') && el.endsWith('"')) || (el.startsWith("'") && el.endsWith("'"))) el = el.slice(1,-1);
+    // If using label, reduce to element symbol
+    if (useType === '_atom_site_label') el = elementFromLabel(el) || el;
+    if ([sx,sy,sz].every(v => typeof v === 'number')) {
+      elements.push(el);
+      positions.push([sx, sy, sz]);
+    }
+  }
+  if (!elements.length) throw new Error('CIF: no atom_site rows parsed');
+
+  const seen = new Set();
+  const uniqueElements = [];
+  for (const e of elements) { if (!seen.has(e)) { seen.add(e); uniqueElements.push(e); } }
+  return { comment: 'CIF Structure', lattice, elements, positions, uniqueElements };
+}
+
+// Parse CIF using CDN library if available, else fallback parser
+async function parseCIF(content) {
+  try {
+    const lib = await getCifLib();
+    // Try known entry points
+    if (lib) {
+      // Accept common shapes: lib.parse(content), lib.default.parse(content), or function returning AST
+      const parserFn = lib.parse || (lib.default && lib.default.parse) || lib.default || lib;
+      const ast = typeof parserFn === 'function' ? parserFn(content) : null;
+      // If AST exists, try to find needed fields from the first data block
+      if (ast) {
+        // Heuristics over common shapes: { blocks: [{ data: { tag: value }, loops: [...] }] }
+        const block = (ast.blocks && ast.blocks[0]) || ast.block || ast[0] || ast;
+        const data = block.data || block;
+        const a  = parseMaybeWithUncertainty(data['_cell_length_a']);
+        const b  = parseMaybeWithUncertainty(data['_cell_length_b']);
+        const c  = parseMaybeWithUncertainty(data['_cell_length_c']);
+        const al = parseMaybeWithUncertainty(data['_cell_angle_alpha']);
+        const be = parseMaybeWithUncertainty(data['_cell_angle_beta']);
+        const ga = parseMaybeWithUncertainty(data['_cell_angle_gamma']);
+        if (a && b && c && al && be && ga) {
+          const lattice = latticeFromCell(a,b,c,al,be,ga);
+          // Try loop tables: prefer type_symbol + fract_x/y/z
+          let rows = [];
+          const loops = block.loops || data.loops || [];
+          for (const lp of loops) {
+            const keys = lp.keys || lp.columns || lp.headers || lp.names || [];
+            const hasFrac = keys.includes('_atom_site_fract_x') && keys.includes('_atom_site_fract_y') && keys.includes('_atom_site_fract_z');
+            const hasType = keys.includes('_atom_site_type_symbol');
+            const hasLabel = keys.includes('_atom_site_label');
+            if (hasFrac && (hasType || hasLabel)) { rows = lp.rows || lp.data || lp.values || []; if (rows.length) { var hdr = keys; break; } }
+          }
+          if (rows && rows.length) {
+            const colIndex = Object.create(null);
+            hdr.forEach((h, idx) => colIndex[h] = idx);
+            const useType = colIndex['_atom_site_type_symbol'] != null ? '_atom_site_type_symbol' : '_atom_site_label';
+            const ix = colIndex['_atom_site_fract_x'];
+            const iy = colIndex['_atom_site_fract_y'];
+            const iz = colIndex['_atom_site_fract_z'];
+            const it = colIndex[useType];
+            const elements = [];
+            const positions = [];
+            for (const r of rows) {
+              const row = Array.isArray(r) ? r : (r.values || r);
+              const sx = parseMaybeWithUncertainty(row[ix]);
+              const sy = parseMaybeWithUncertainty(row[iy]);
+              const sz = parseMaybeWithUncertainty(row[iz]);
+              let el = row[it];
+              if (useType === '_atom_site_label') el = elementFromLabel(el) || el;
+              if ([sx,sy,sz].every(v => typeof v === 'number')) {
+                elements.push(String(el));
+                positions.push([sx, sy, sz]);
+              }
+            }
+            if (elements.length) {
+              const seen = new Set();
+              const uniqueElements = [];
+              for (const e of elements) { if (!seen.has(e)) { seen.add(e); uniqueElements.push(e); } }
+              return { comment: 'CIF Structure', lattice, elements, positions, uniqueElements };
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('CIF CDN parser failed, using fallback:', e);
+  }
+  // Fallback
+  return parseCifFallback(content);
+}
+
 
 function fracToCart(frac, lattice) {
   return frac.map(fc => [
@@ -1356,9 +1611,14 @@ function colorHexToCss(hex) {
     return `#${s}`;
 }
 
-function loadPOSCAR(content, isDefault = false) {
+async function loadStructure(content, fileName = '', isDefault = false) {
   try {
-    structureData = parsePOSCAR(content);
+    const lower = (fileName || '').toLowerCase();
+    if (lower.endsWith('.cif') || lower.includes('.cif') || /(^|\W)cif(\W|$)/.test(lower)) {
+      structureData = await parseCIF(content);
+    } else {
+      structureData = parsePOSCAR(content);
+    }
     // keep a deep copy for restore (fractional positions + arrays)
     originalStructureData = JSON.parse(JSON.stringify(structureData));
     loadColorOverrides();
@@ -1388,7 +1648,7 @@ function loadPOSCAR(content, isDefault = false) {
 function loadDefaultStructure() {
   setStatus('Loading default NaCl structure...');
   setTimeout(() => {
-    loadPOSCAR(defaultPOSCAR, true);
+    loadStructure(defaultPOSCAR, 'POSCAR', true);
   }, 100);
 }
 
@@ -1658,14 +1918,15 @@ function sizeGizmo(){
                              fileName.endsWith('.vasp') ||
                              fileName.endsWith('.poscar') ||
                              fileName === 'poscar' ||
-                             fileName === 'contcar';
+                             fileName === 'contcar' ||
+                             fileName.endsWith('.cif');
 
       if (!isStructureFile) {
         console.warn('Selected file may not be a structure file:', file.name);
       }
 
       const reader = new FileReader();
-      reader.onload = (e) => loadPOSCAR(e.target.result);
+      reader.onload = (e) => loadStructure(e.target.result, file.name);
       reader.readAsText(file);
     }
   };
@@ -1705,7 +1966,7 @@ function sizeGizmo(){
     if (files.length > 0) {
       const file = files[0];
       const reader = new FileReader();
-      reader.onload = (e) => loadPOSCAR(e.target.result);
+      reader.onload = (e) => loadStructure(e.target.result, file.name);
       reader.readAsText(file);
     }
   }
