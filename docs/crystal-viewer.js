@@ -33,6 +33,7 @@ Direct
 let camera, controls, renderer, scene;
 let atomsGroup, bondsGroup, latticeGroup;
 let structureData = null;
+let originalStructureData = null; // deep-copy of last loaded structure for restore
 let bondLengths = {};
 let defaultBondLengths = {};
 let atomSize = 1.0;
@@ -49,7 +50,7 @@ let angleMeasurements = [];
 let userColorOverrides = {};
 
 let gizmoScene, gizmoCamera, gizmoRenderer, gizmoAxes;
-let keyLight, fillLight, bottomLight; // Lighting variables
+let keyLight; // Lighting variables
 
     // Measurement state
 let selectedAtoms = []; // Array to store selected atoms (up to 3 for angles)
@@ -212,19 +213,29 @@ function updateMeasurementMarkers() {
   });
 }
 
-function latticeDirsNorm() {
-if (!structureData) return {
+// Cached normalized lattice directions for performance; recompute on structure change
+let cachedLatticeDirs = {
   a: new THREE.Vector3(1,0,0),
   b: new THREE.Vector3(0,1,0),
   c: new THREE.Vector3(0,0,1)
 };
-const L = structureData.lattice;
-return {
-  a: new THREE.Vector3(L[0][0], L[0][1], L[0][2]).normalize(),
-  b: new THREE.Vector3(L[1][0], L[1][1], L[1][2]).normalize(),
-  c: new THREE.Vector3(L[2][0], L[2][1], L[2][2]).normalize()
-};
+function recomputeLatticeDirs() {
+  if (!structureData || !structureData.lattice) {
+    cachedLatticeDirs = {
+      a: new THREE.Vector3(1,0,0),
+      b: new THREE.Vector3(0,1,0),
+      c: new THREE.Vector3(0,0,1)
+    };
+    return;
+  }
+  const L = structureData.lattice;
+  cachedLatticeDirs = {
+    a: new THREE.Vector3(L[0][0], L[0][1], L[0][2]).normalize(),
+    b: new THREE.Vector3(L[1][0], L[1][1], L[1][2]).normalize(),
+    c: new THREE.Vector3(L[2][0], L[2][1], L[2][2]).normalize()
+  };
 }
+function latticeDirsNorm() { return cachedLatticeDirs; }
 
 
 function periodicWrapped(frac, elements) {
@@ -235,6 +246,7 @@ function periodicWrapped(frac, elements) {
   const eps = 1e-6;
   const newElements = [];
   const newFcrds = [];
+  const srcIndex = [];
 
   for (let i = 0; i < frac.length; i++) {
     const f = frac[i];
@@ -268,13 +280,14 @@ function periodicWrapped(frac, elements) {
             const cz = Math.min(Math.max(nz, 0), 1 - eps);
             newElements.push(atm);
             newFcrds.push([cx, cy, cz]);
+            srcIndex.push(i);
           }
         }
       }
     }
   }
 
-  return { elements: newElements, frac: newFcrds };
+  return { elements: newElements, frac: newFcrds, srcIndex };
 }
 
 
@@ -1148,14 +1161,14 @@ function createCompositionRow(el, count, total) {
   resetBtn.style.borderColor = 'rgba(0,0,0,0.15)';
   resetBtn.style.color = textColorForBg(defaultColorCss);
 
-  // Reset clears override and refreshes
-  resetBtn.onclick = () => { clearElementColorOverride(el); updateVisualization(); renderComposition(); };
+  // Reset clears override and refreshes (composition also rerendered inside updateVisualization)
+  resetBtn.onclick = () => { clearElementColorOverride(el); updateVisualization(); };
 
   // Apply commits the chosen color
   applyBtn.onclick = () => {
     const val = hexInput.value;
     const ok = setElementColorOverride(el, val);
-    if (ok) { updateVisualization(); renderComposition(); }
+    if (ok) { updateVisualization(); }
   };
   return row;
 }
@@ -1165,10 +1178,21 @@ function createCompositionRow(el, count, total) {
 function updateVisualization() {
   if (!structureData) return;
 
-  // Clear existing geometry
-  if (atomsGroup) scene.remove(atomsGroup);
-  if (bondsGroup) scene.remove(bondsGroup);
-  if (latticeGroup) scene.remove(latticeGroup);
+  // Clear existing geometry and dispose GPU resources
+  const disposeGroup = (grp) => {
+    if (!grp) return;
+    grp.traverse(obj => {
+      if (obj.geometry) { try { obj.geometry.dispose(); } catch(_){} }
+      if (obj.material) {
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach(m => { try { m.dispose(); } catch(_){} });
+      }
+    });
+    scene.remove(grp);
+  };
+  disposeGroup(atomsGroup);
+  disposeGroup(bondsGroup);
+  disposeGroup(latticeGroup);
 
   atomsGroup = new THREE.Group();
   bondsGroup = new THREE.Group();
@@ -1180,6 +1204,7 @@ function updateVisualization() {
   const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
   for (let i = 0; i < wrappedCart.length; i++) {
     const atomMesh = createAtomMesh(wrapped.elements[i], wrappedCart[i]);
+    atomMesh.userData.sourceIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     atomsGroup.add(atomMesh);
   }
 
@@ -1321,6 +1346,9 @@ function updateVisualization() {
   // Re-add persistent measurements
   measureLines.forEach(line => scene.add(line));
   measureLabels.forEach(label => scene.add(label));
+
+  // Update cached lattice directions for gizmo
+  recomputeLatticeDirs();
 }
 
 function colorHexToCss(hex) {
@@ -1331,6 +1359,8 @@ function colorHexToCss(hex) {
 function loadPOSCAR(content, isDefault = false) {
   try {
     structureData = parsePOSCAR(content);
+    // keep a deep copy for restore (fractional positions + arrays)
+    originalStructureData = JSON.parse(JSON.stringify(structureData));
     loadColorOverrides();
     if (isDefault) {
       setStatus(`Default structure: ${structureData.elements.length} atoms`);
@@ -1344,10 +1374,10 @@ function loadPOSCAR(content, isDefault = false) {
     createBondLengthControls();
     updateVisualization();
     resetView();
-
-    renderComposition();
     clearMeasure();
-    resetView();
+    // Hide restore button when loading new structure
+    const btn = document.getElementById('restoreStructure');
+    if (btn) btn.classList.remove('visible');
 
   } catch (error) {
     setStatus(`Error: ${error.message}`);
@@ -1449,7 +1479,7 @@ function init() {
   let mouse = new THREE.Vector2();
 
   function onClickPick(event){
-    // Only handle clicks if measure mode is enabled
+    // Only handle clicks if a mode is enabled
     if (measureMode === 'none') return;
 
     // Prevent default behavior to avoid conflicts with pan/zoom
@@ -1505,7 +1535,7 @@ function init() {
     selectedAtoms.push(hit);
     HighlightAtom(hit, selectedAtoms.length === 1 ? 0xff0000 : selectedAtoms.length === 2 ? 0x0000ff : 0x00ff00);
 
-    // Handle measurements based on mode
+    // Handle actions based on mode
     if (measureMode === 'distance' && selectedAtoms.length === 2) {
       // Distance measurement complete
       addDistanceMeasurement(selectedAtoms[0], selectedAtoms[1]);
@@ -1522,6 +1552,24 @@ function init() {
       selectedAtoms.forEach(atom => clearHighlightAtom(atom));
       selectedAtoms = [];
       clearMeasureGraphics();
+    } else if (measureMode === 'delete') {
+      const idx = hit.userData.sourceIndex;
+      if (idx !== undefined && idx >= 0 && idx < structureData.positions.length) {
+        // Remove atom from structure
+        structureData.positions.splice(idx, 1);
+        structureData.elements.splice(idx, 1);
+        // Clean selections and graphics
+        selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+        selectedAtoms = [];
+        clearMeasureGraphics();
+        // Rebuild controls and view
+        createBondLengthControls();
+        updateVisualization();
+        // Show restore button
+        const btn = document.getElementById('restoreStructure');
+        if (btn) btn.classList.add('visible');
+      }
+      return; // nothing else to do in delete mode
     }
 
     drawMeasureGraphics();
@@ -1561,12 +1609,13 @@ function init() {
   gizmoScene.userData.bArrow = bArrow;
   gizmoScene.userData.cArrow = cArrow;
 
-  function sizeGizmo(){
-    const w = gizmoDiv.offsetWidth || 110, h = gizmoDiv.offsetHeight || 110;
-    gizmoRenderer.setSize(w, h);
-    gizmoCamera.aspect = w / h;
-    gizmoCamera.updateProjectionMatrix();
-  }
+function sizeGizmo(){
+  const w = gizmoDiv.clientWidth || 110; 
+  const h = gizmoDiv.clientHeight || 110;
+  gizmoRenderer.setSize(w, h);
+  gizmoCamera.aspect = w / h;
+  gizmoCamera.updateProjectionMatrix();
+}
   sizeGizmo();
 
 
@@ -1580,6 +1629,17 @@ function init() {
   document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
 
   document.getElementById('resetView').onclick = resetView;
+  const restoreBtn = document.getElementById('restoreStructure');
+  if (restoreBtn) {
+    restoreBtn.onclick = () => {
+      if (!originalStructureData) return;
+      structureData = JSON.parse(JSON.stringify(originalStructureData));
+      createBondLengthControls();
+      updateVisualization();
+      clearMeasure();
+      restoreBtn.classList.remove('visible');
+    };
+  }
 
 
 
@@ -1685,8 +1745,7 @@ function init() {
 
   document.getElementById('vestaColors').onchange = (e) => {
     useVestaColors = e.target.checked;
-    updateVisualization();
-    renderComposition();
+    updateVisualization(); // also re-renders composition
   };
 
   // Mobile measurement toggle functionality
@@ -1736,6 +1795,27 @@ function init() {
       measureMode = 'none';
     } else {
       measureMode = 'angle';
+      button.classList.add('active');
+    }
+  });
+
+  // Delete atom mode
+  document.getElementById('deleteModeBtn').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const button = document.getElementById('deleteModeBtn');
+    const wasActive = measureMode === 'delete';
+
+    document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
+    selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+    selectedAtoms = [];
+    clearMeasureGraphics();
+
+    if (wasActive) {
+      measureMode = 'none';
+    } else {
+      measureMode = 'delete';
       button.classList.add('active');
     }
   });
@@ -1845,23 +1925,15 @@ function setupMobileMenu() {
   const mobileOverlay = document.getElementById('mobileOverlay');
   const ui = document.getElementById('ui');
 
-  console.log('Setting up mobile menu...', {
-    mobileToggle: !!mobileToggle,
-    mobileOverlay: !!mobileOverlay,
-    ui: !!ui
-  });
 
   function toggleMobileMenu() {
-    console.log('Toggle mobile menu');
     if (ui && mobileOverlay) {
       ui.classList.toggle('mobile-open');
       mobileOverlay.classList.toggle('active');
-      console.log('Menu toggled:', ui.classList.contains('mobile-open'));
     }
   }
 
   function closeMobileMenu() {
-    console.log('Close mobile menu');
     if (ui && mobileOverlay) {
       ui.classList.remove('mobile-open');
       mobileOverlay.classList.remove('active');
@@ -1869,7 +1941,6 @@ function setupMobileMenu() {
   }
 
   if (mobileToggle) {
-    console.log('Adding mobile toggle listeners');
     mobileToggle.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -1881,8 +1952,6 @@ function setupMobileMenu() {
       e.stopPropagation();
       toggleMobileMenu();
     });
-  } else {
-    console.warn('Mobile toggle button not found');
   }
 
   if (mobileOverlay) {
@@ -1895,8 +1964,6 @@ function setupMobileMenu() {
       e.preventDefault();
       closeMobileMenu();
     });
-  } else {
-    console.warn('Mobile overlay not found');
   }
 
   // Close mobile menu when clicking inside the UI (but not on inputs)
@@ -1935,7 +2002,6 @@ function setupMobileMenu() {
     viewport.name = 'viewport';
     viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=no';
     document.head.appendChild(viewport);
-    console.log('Added viewport meta tag');
   }
 }
 
