@@ -38,6 +38,7 @@ let defaultBondLengths = {};
 let atomSize = 1.0;
 let showBonds = true;
 let showLattice = true;
+let showNeighborBonds = true; // VESTA-style ghost atoms + bonds across cell
 let useOrthographicCamera = true;
 let useVestaColors = true;
 let measureMode = 'none'; // 'none', 'distance', 'angle'
@@ -191,40 +192,48 @@ return {
 
 
 function periodicWrapped(frac, elements) {
+  // Build a fully "filled" unit cell by duplicating atoms that sit on
+  // faces/edges/corners so that both sides of each face are populated.
+  // We do this by adding, per-dimension, one extra image just inside the
+  // opposite face when an atom is within eps of a boundary.
   const eps = 1e-6;
-  const imagesInCube = [];
-
-  // Generate all combinations of [0, 1-eps] for 3 dimensions
-  for (let i = 0; i < 2; i++) {
-    for (let j = 0; j < 2; j++) {
-      for (let k = 0; k < 2; k++) {
-        imagesInCube.push([
-          i === 0 ? 0 : 1 - eps,
-          j === 0 ? 0 : 1 - eps,
-          k === 0 ? 0 : 1 - eps
-        ]);
-      }
-    }
-  }
-
   const newElements = [];
   const newFcrds = [];
 
   for (let i = 0; i < frac.length; i++) {
-    const fc = frac[i];
+    const f = frac[i];
     const atm = elements[i];
 
-    for (const image of imagesInCube) {
-      const newCoord = [
-        fc[0] + image[0],
-        fc[1] + image[1],
-        fc[2] + image[2]
-      ];
+    // Decide offsets for each axis
+    const offX = [0];
+    const offY = [0];
+    const offZ = [0];
 
-      // Check if all coordinates are less than 1 + eps
-      if (newCoord.every(coord => coord < 1 + eps)) {
-        newElements.push(atm);
-        newFcrds.push(newCoord);
+    if (f[0] < eps) offX.push(1 - eps);
+    if (f[0] > 1 - eps) offX.push(-1 + eps);
+    if (f[1] < eps) offY.push(1 - eps);
+    if (f[1] > 1 - eps) offY.push(-1 + eps);
+    if (f[2] < eps) offZ.push(1 - eps);
+    if (f[2] > 1 - eps) offZ.push(-1 + eps);
+
+    for (const dx of offX) {
+      for (const dy of offY) {
+        for (const dz of offZ) {
+          const nx = f[0] + dx;
+          const ny = f[1] + dy;
+          const nz = f[2] + dz;
+          // keep strictly inside [0, 1)
+          if (nx >= -eps && nx < 1 - eps + eps &&
+              ny >= -eps && ny < 1 - eps + eps &&
+              nz >= -eps && nz < 1 - eps + eps) {
+            // clamp into range [0, 1-eps]
+            const cx = Math.min(Math.max(nx, 0), 1 - eps);
+            const cy = Math.min(Math.max(ny, 0), 1 - eps);
+            const cz = Math.min(Math.max(nz, 0), 1 - eps);
+            newElements.push(atm);
+            newFcrds.push([cx, cy, cz]);
+          }
+        }
       }
     }
   }
@@ -376,6 +385,41 @@ function fracToCart(frac, lattice) {
     fc[0] * lattice[0][1] + fc[1] * lattice[1][1] + fc[2] * lattice[2][1],
     fc[0] * lattice[0][2] + fc[1] * lattice[1][2] + fc[2] * lattice[2][2]
   ]);
+}
+
+// Helpers for cartesian <-> fractional conversion at module scope
+function invert3x3Mat(m) {
+  const [a,b,c] = m;
+  const A = a[0], B = a[1], C = a[2];
+  const D = b[0], E = b[1], F = b[2];
+  const G = c[0], H = c[1], I = c[2];
+  const det = A*(E*I - F*H) - B*(D*I - F*G) + C*(D*H - E*G);
+  const invDet = 1.0 / det;
+  return [
+    [(E*I - F*H)*invDet, (C*H - B*I)*invDet, (B*F - C*E)*invDet],
+    [(F*G - D*I)*invDet, (A*I - C*G)*invDet, (C*D - A*F)*invDet],
+    [(D*H - E*G)*invDet, (B*G - A*H)*invDet, (A*E - B*D)*invDet],
+  ];
+}
+
+function matVec3(m, v) {
+  return [
+    m[0][0]*v[0] + m[0][1]*v[1] + m[0][2]*v[2],
+    m[1][0]*v[0] + m[1][1]*v[1] + m[1][2]*v[2],
+    m[2][0]*v[0] + m[2][1]*v[1] + m[2][2]*v[2],
+  ];
+}
+
+function cartToFrac(cart, lattice) {
+  const inv = invert3x3Mat(lattice);
+  return matVec3(inv, cart);
+}
+
+function isOutsideUnitCell(cart, lattice, eps = 1e-6) {
+  const f = cartToFrac(cart, lattice);
+  return (f[0] < -eps || f[0] >= 1 + eps ||
+          f[1] < -eps || f[1] >= 1 + eps ||
+          f[2] < -eps || f[2] >= 1 + eps);
 }
 
 function createBondLengthControls() {
@@ -828,23 +872,55 @@ function createBond(pos1, pos2, elem1, elem2) {
   const direction = new THREE.Vector3().subVectors(p2, p1);
   const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
 
-  const geometry = new THREE.CylinderGeometry(0.08, 0.08, dist, 8);
-  const material = new THREE.MeshPhysicalMaterial({
-    color: 0x666666,
+  // Build VESTA-style split bond, but start at atom surfaces
+  const bondGroup = new THREE.Group();
+
+  const color1 = getElementColor(elem1);
+  const color2 = getElementColor(elem2);
+
+  // Compute visible segment between atom surfaces
+  const r1 = getAtomRadius(elem1);
+  const r2 = getAtomRadius(elem2);
+  const dir = new THREE.Vector3().subVectors(p2, p1).normalize();
+  const visibleLen = Math.max(dist - (r1 + r2), 0);
+  if (visibleLen <= 1e-3) return null; // spheres overlap or touch; skip bond
+
+  const halfLen = visibleLen * 0.5;
+  const radius = 0.08;
+
+  const geometryHalf = new THREE.CylinderGeometry(radius, radius, halfLen, 8);
+
+  const matCommon = {
     transparent: true,
-    opacity: 0.6,
+    opacity: 0.8,
     roughness: 0.2,
     metalness: 0.3,
     clearcoat: 0.5,
     clearcoatRoughness: 0.05
-  });
-  const bond = new THREE.Mesh(geometry, material);
+  };
 
-  bond.position.copy(midpoint);
-  bond.lookAt(p2);
-  bond.rotateX(Math.PI / 2);
+  const material1 = new THREE.MeshPhysicalMaterial({ color: color1, ...matCommon });
+  const material2 = new THREE.MeshPhysicalMaterial({ color: color2, ...matCommon });
 
-  return bond;
+  // Centers for the two halves: start from each surface and end at the
+  // midpoint between surfaces, so centers are offset by r + halfLen/2
+  const center1 = p1.clone().add(dir.clone().multiplyScalar(r1 + halfLen / 2));
+  const center2 = p2.clone().add(dir.clone().multiplyScalar(-r2 - halfLen / 2));
+
+  const half1 = new THREE.Mesh(geometryHalf, material1);
+  half1.position.copy(center1);
+  half1.lookAt(p2);
+  half1.rotateX(Math.PI / 2);
+
+  const half2 = new THREE.Mesh(geometryHalf, material2);
+  half2.position.copy(center2);
+  half2.lookAt(p2);
+  half2.rotateX(Math.PI / 2);
+
+  bondGroup.add(half1);
+  bondGroup.add(half2);
+
+  return bondGroup;
 }
 
 function createLatticeLines() {
@@ -974,22 +1050,134 @@ function updateVisualization() {
   bondsGroup = new THREE.Group();
   latticeGroup = new THREE.Group();
 
-  // Get wrapped positions
+  // Create atoms to mimic PBC inside the cell: draw base atoms plus
+  // face/edge duplicates that still lie within the unit cell bounds.
   const wrapped = periodicWrapped(structureData.positions, structureData.elements);
-  const cartPositions = fracToCart(wrapped.frac, structureData.lattice);
-
-  // Create atoms
-  for (let i = 0; i < cartPositions.length; i++) {
-    const atomMesh = createAtomMesh(wrapped.elements[i], cartPositions[i]);
+  const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+  for (let i = 0; i < wrappedCart.length; i++) {
+    const atomMesh = createAtomMesh(wrapped.elements[i], wrappedCart[i]);
     atomsGroup.add(atomMesh);
   }
 
   // Create bonds
   if (showBonds) {
-    for (let i = 0; i < cartPositions.length; i++) {
-      for (let j = i + 1; j < cartPositions.length; j++) {
-        const bond = createBond(cartPositions[i], cartPositions[j], wrapped.elements[i], wrapped.elements[j]);
+    // 1) Bonds entirely inside the unit cell among the wrapped atoms
+    //    (fills corners/edges). This guarantees the box is fully connected.
+    for (let i = 0; i < wrappedCart.length; i++) {
+      for (let j = i + 1; j < wrappedCart.length; j++) {
+        const ei = wrapped.elements[i];
+        const ej = wrapped.elements[j];
+        const bond = createBond(wrappedCart[i], wrappedCart[j], ei, ej);
         if (bond) bondsGroup.add(bond);
+      }
+    }
+
+    // 2) Neighbor bonds to atoms outside the cell (ghosts)
+    //    Use a minimum-image approach on the reference cell and
+    //    explicitly add ghost atoms when needed.
+    const lattice = structureData.lattice;
+    const a = new THREE.Vector3(lattice[0][0], lattice[0][1], lattice[0][2]);
+    const b = new THREE.Vector3(lattice[1][0], lattice[1][1], lattice[1][2]);
+    const c = new THREE.Vector3(lattice[2][0], lattice[2][1], lattice[2][2]);
+
+    // Treat the filled unit cell as primary
+    const primCarts = wrappedCart.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+    const primElems = wrapped.elements;
+
+    // Precompute translation range dynamically from current maximum cutoff
+    const maxCutoff = Math.max(3.0, ...Object.values(bondLengths || {dummy:3.0}));
+    const ax = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(a.length(), 1e-6))));
+    const by = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(b.length(), 1e-6))));
+    const cz = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(c.length(), 1e-6))));
+    const shifts = [];
+    for (let dx = -ax; dx <= ax; dx++)
+      for (let dy = -by; dy <= by; dy++)
+        for (let dz = -cz; dz <= cz; dz++)
+          shifts.push([dx, dy, dz]);
+
+    const ghostAdded = new Map(); // key -> mesh (for potential styling later)
+    const bondDedupe = new Set();
+
+    for (let i = 0; i < primCarts.length; i++) {
+      const pi = primCarts[i];
+      const ei = primElems[i];
+      for (let j = 0; j < primCarts.length; j++) {
+        if (j === i) continue;
+        const pj = primCarts[j];
+        const ej = primElems[j];
+
+        const cutoff = getBondCutoff(ei, ej);
+        if (cutoff <= 0.01) continue;
+
+        for (const [dx, dy, dz] of shifts) {
+          const shiftVec = new THREE.Vector3()
+            .addScaledVector(a, dx)
+            .addScaledVector(b, dy)
+            .addScaledVector(c, dz);
+          const candidate = pj.clone().add(shiftVec);
+          const d = pi.distanceTo(candidate);
+          if (d > cutoff || d < 0.005) continue;
+
+          if (dx === 0 && dy === 0 && dz === 0) {
+            // Already handled in step (1) via wrapped bonds; skip here to avoid dupes
+          } else if (showNeighborBonds) {
+            // Only show true ghosts (position must lie outside the unit cell)
+            const candidateArr = [candidate.x, candidate.y, candidate.z];
+            if (!isOutsideUnitCell(candidateArr, lattice)) continue;
+            const gkey = `${j}:${dx},${dy},${dz}`;
+            let ghostMesh = ghostAdded.get(gkey);
+            if (!ghostMesh) {
+              ghostMesh = createAtomMesh(ej, [candidate.x, candidate.y, candidate.z]);
+              ghostMesh.userData.isGhost = true;
+              // Make ghost atoms feel translucent and slightly smaller
+              ghostMesh.material.opacity = 0.35;
+              ghostMesh.material.transparent = true;
+              ghostMesh.material.depthWrite = false;
+              atomsGroup.add(ghostMesh);
+              ghostAdded.set(gkey, ghostMesh);
+            }
+            const bkey = `${i}-${j}-${dx},${dy},${dz}`;
+            if (!bondDedupe.has(bkey)) {
+              const bond = createBond([pi.x, pi.y, pi.z], [candidate.x, candidate.y, candidate.z], ei, ej);
+              if (bond) {
+                // Fade the half connected to the ghost atom
+                if (bond.children && bond.children[1] && bond.children[1].material) {
+                  bond.children[1].material.transparent = true;
+                  bond.children[1].material.opacity = 0.5;
+                }
+                bondsGroup.add(bond);
+              }
+              bondDedupe.add(bkey);
+            }
+
+            // Symmetric ghost on the opposite side: ghost image of atom i
+            const opposite = pi.clone().sub(shiftVec);
+            if (isOutsideUnitCell([opposite.x, opposite.y, opposite.z], lattice)) {
+              const gkey2 = `${i}:${-dx},${-dy},${-dz}`;
+              if (!ghostAdded.has(gkey2)) {
+                const ghostMesh2 = createAtomMesh(ei, [opposite.x, opposite.y, opposite.z]);
+                ghostMesh2.userData.isGhost = true;
+                ghostMesh2.material.opacity = 0.35;
+                ghostMesh2.material.transparent = true;
+                ghostMesh2.material.depthWrite = false;
+                atomsGroup.add(ghostMesh2);
+                ghostAdded.set(gkey2, ghostMesh2);
+              }
+              const bkey2 = `sym-${i}-${j}-${dx},${dy},${dz}`;
+              if (!bondDedupe.has(bkey2)) {
+                const bond2 = createBond([opposite.x, opposite.y, opposite.z], [pj.x, pj.y, pj.z], ei, ej);
+                if (bond2) {
+                  if (bond2.children && bond2.children[0] && bond2.children[0].material) {
+                    bond2.children[0].material.transparent = true;
+                    bond2.children[0].material.opacity = 0.5;
+                  }
+                  bondsGroup.add(bond2);
+                }
+                bondDedupe.add(bkey2);
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -1347,6 +1535,15 @@ function init() {
     showLattice = e.target.checked;
     updateVisualization();
   };
+
+  // Toggle for VESTA-style neighbor bonds/ghost atoms
+  const neighborBondsEl = document.getElementById('neighborBonds');
+  if (neighborBondsEl) {
+    neighborBondsEl.onchange = (e) => {
+      showNeighborBonds = e.target.checked;
+      updateVisualization();
+    };
+  }
 
   document.getElementById('atomSize').oninput = (e) => {
     atomSize = parseFloat(e.target.value);
