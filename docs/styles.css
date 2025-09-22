@@ -482,6 +482,10 @@ body {
     padding: 6px;
     border-radius: 8px;
   }
+  /* When the panel is open, push toolbar and gizmos to the right of drawer */
+  body.panel-open #viewToolbar { left: calc(360px + 20px); }
+  body.panel-open #axesGizmo { left: calc(360px + 20px); }
+  body.panel-open #axesLegend { left: calc(360px + 20px); }
 
   .vbtn {
     padding: 8px 12px;
@@ -525,7 +529,7 @@ body {
   }
 }
 
-@media screen and (max-width: 768px) {
+@media screen and (max-width: 1024px) {
   body {
     flex-direction: column;
     position: relative;
@@ -535,8 +539,8 @@ body {
   #ui {
     position: fixed !important;
     top: 0;
-    left: -320px;
-    width: 320px;
+    left: -360px;
+    width: 360px;
     height: 100vh;
     height: 100dvh; /* Dynamic viewport height for mobile keyboards */
     z-index: 1500;
@@ -559,7 +563,7 @@ body {
     border-radius: 0;
   }
 
-  /* Mobile overlay to close menu */
+  /* Mobile/Tablet overlay to close menu */
   #mobileOverlay {
     display: none;
     position: fixed;

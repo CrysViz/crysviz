@@ -37,10 +37,12 @@ let originalStructureData = null; // deep-copy of last loaded structure for rest
 let bondLengths = {};
 let defaultBondLengths = {};
 let atomSize = 1.0;
+let bondRadius = 0.08; // radius of bond cylinders
 let showBonds = true;
 let showLattice = true;
 let showNeighborBonds = false; // Periodic image atoms + bonds across cell (off by default)
 let useOrthographicCamera = true;
+let defaultZoomScale = 0.75; // 25% closer default distance/size
 let useVestaColors = true;
 let measureMode = 'none'; // 'none', 'distance', 'angle'
 let bondVisibility = {};
@@ -299,7 +301,8 @@ function getCellCenterAndDist() {
     L[0][2]+L[1][2]+L[2][2]
   );
   const center = corner.clone().multiplyScalar(0.5);
-  const dist = Math.max(corner.length()*2.5, 20); // More zoomed out (was 1.8, 15)
+  const distBase = Math.max(corner.length()*2.5, 20);
+  const dist = distBase * defaultZoomScale;
   return { center, dist };
 }
 
@@ -427,47 +430,7 @@ function parsePOSCAR(content) {
   };
 }
 
-// Attempt to lazily load a CIF parsing library from a CDN (ESM or UMD).
-// We prefer using @ccp-nc/crystcif-parse via CDN, but fall back to a
-// lightweight built-in parser if the CDN is unavailable.
-let cifLib = null;
-async function getCifLib() {
-  if (cifLib) return cifLib;
-  // Try a few common CDN ESM endpoints first
-  const esmCandidates = [
-    'https://unpkg.com/@ccp-nc/crystcif-parse?module',
-    'https://cdn.jsdelivr.net/npm/@ccp-nc/crystcif-parse/+esm',
-    'https://esm.sh/@ccp-nc/crystcif-parse'
-  ];
-  for (const url of esmCandidates) {
-    try {
-      const mod = await import(url);
-      if (mod) { cifLib = mod; return cifLib; }
-    } catch (_) {}
-  }
-  // Try UMD globals by injecting a script
-  const umdCandidates = [
-    'https://unpkg.com/@ccp-nc/crystcif-parse',
-    'https://cdn.jsdelivr.net/npm/@ccp-nc/crystcif-parse/dist/index.umd.js'
-  ];
-  for (const url of umdCandidates) {
-    try {
-      await new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = url;
-        s.async = true;
-        s.onload = () => resolve();
-        s.onerror = reject;
-        document.head.appendChild(s);
-      });
-      // Check common global names
-      const g = (window.crystcifParse || window.CIF || window.CcpNcCrystCifParse || window.crystcif || null);
-      if (g) { cifLib = g; return cifLib; }
-    } catch (_) {}
-  }
-  // As a last resort, leave cifLib null; caller should fall back to built-in
-  return null;
-}
+// CIF parsing: use built-in lightweight parser (no external libraries)
 
 // Utility: build 3x3 lattice from cell lengths (a,b,c) and angles (alpha,beta,gamma) in degrees
 function latticeFromCell(a, b, c, alpha, beta, gamma) {
@@ -611,75 +574,11 @@ function parseCifFallback(content) {
   return { comment: 'CIF Structure', lattice, elements, positions, uniqueElements };
 }
 
-// Parse CIF using CDN library if available, else fallback parser
+// Parse CIF using built-in parser only (no external library)
 async function parseCIF(content) {
-  try {
-    const lib = await getCifLib();
-    // Try known entry points
-    if (lib) {
-      // Accept common shapes: lib.parse(content), lib.default.parse(content), or function returning AST
-      const parserFn = lib.parse || (lib.default && lib.default.parse) || lib.default || lib;
-      const ast = typeof parserFn === 'function' ? parserFn(content) : null;
-      // If AST exists, try to find needed fields from the first data block
-      if (ast) {
-        // Heuristics over common shapes: { blocks: [{ data: { tag: value }, loops: [...] }] }
-        const block = (ast.blocks && ast.blocks[0]) || ast.block || ast[0] || ast;
-        const data = block.data || block;
-        const a  = parseMaybeWithUncertainty(data['_cell_length_a']);
-        const b  = parseMaybeWithUncertainty(data['_cell_length_b']);
-        const c  = parseMaybeWithUncertainty(data['_cell_length_c']);
-        const al = parseMaybeWithUncertainty(data['_cell_angle_alpha']);
-        const be = parseMaybeWithUncertainty(data['_cell_angle_beta']);
-        const ga = parseMaybeWithUncertainty(data['_cell_angle_gamma']);
-        if (a && b && c && al && be && ga) {
-          const lattice = latticeFromCell(a,b,c,al,be,ga);
-          // Try loop tables: prefer type_symbol + fract_x/y/z
-          let rows = [];
-          const loops = block.loops || data.loops || [];
-          for (const lp of loops) {
-            const keys = lp.keys || lp.columns || lp.headers || lp.names || [];
-            const hasFrac = keys.includes('_atom_site_fract_x') && keys.includes('_atom_site_fract_y') && keys.includes('_atom_site_fract_z');
-            const hasType = keys.includes('_atom_site_type_symbol');
-            const hasLabel = keys.includes('_atom_site_label');
-            if (hasFrac && (hasType || hasLabel)) { rows = lp.rows || lp.data || lp.values || []; if (rows.length) { var hdr = keys; break; } }
-          }
-          if (rows && rows.length) {
-            const colIndex = Object.create(null);
-            hdr.forEach((h, idx) => colIndex[h] = idx);
-            const useType = colIndex['_atom_site_type_symbol'] != null ? '_atom_site_type_symbol' : '_atom_site_label';
-            const ix = colIndex['_atom_site_fract_x'];
-            const iy = colIndex['_atom_site_fract_y'];
-            const iz = colIndex['_atom_site_fract_z'];
-            const it = colIndex[useType];
-            const elements = [];
-            const positions = [];
-            for (const r of rows) {
-              const row = Array.isArray(r) ? r : (r.values || r);
-              const sx = parseMaybeWithUncertainty(row[ix]);
-              const sy = parseMaybeWithUncertainty(row[iy]);
-              const sz = parseMaybeWithUncertainty(row[iz]);
-              let el = row[it];
-              if (useType === '_atom_site_label') el = elementFromLabel(el) || el;
-              if ([sx,sy,sz].every(v => typeof v === 'number')) {
-                elements.push(String(el));
-                positions.push([sx, sy, sz]);
-              }
-            }
-            if (elements.length) {
-              const seen = new Set();
-              const uniqueElements = [];
-              for (const e of elements) { if (!seen.has(e)) { seen.add(e); uniqueElements.push(e); } }
-              return { comment: 'CIF Structure', lattice, elements, positions, uniqueElements };
-            }
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('CIF CDN parser failed, using fallback:', e);
-  }
-  // Fallback
-  return parseCifFallback(content);
+  const res = parseCifFallback(content);
+  try { console.log('[CIF] Parsed using built-in CIF parser. Atoms:', res.elements.length); } catch(_) {}
+  return res;
 }
 
 
@@ -1190,7 +1089,7 @@ function createBond(pos1, pos2, elem1, elem2) {
   if (visibleLen <= 1e-3) return null; // spheres overlap or touch; skip bond
 
   const halfLen = visibleLen * 0.5;
-  const radius = 0.08;
+  const radius = bondRadius;
 
   const geometryHalf = new THREE.CylinderGeometry(radius, radius, halfLen, 8);
 
@@ -1633,6 +1532,8 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 
     createBondLengthControls();
     updateVisualization();
+    // Rebuild camera with size/distance based on structure and zoom scale
+    switchCameraType();
     resetView();
     clearMeasure();
     // Hide restore button when loading new structure
@@ -1998,6 +1899,19 @@ function sizeGizmo(){
     updateMeasurementMarkers(); // Update ring markers when atom size changes
   };
 
+  // Bond width control
+  const bondWidthSlider = document.getElementById('bondWidth');
+  const bondWidthValue = document.getElementById('bondWidthValue');
+  if (bondWidthSlider && bondWidthValue) {
+    bondWidthSlider.oninput = (e) => {
+      const v = parseFloat(e.target.value);
+      // clamp defensively
+      bondRadius = Math.max(0.005, Math.min(1.0, isNaN(v) ? bondRadius : v));
+      bondWidthValue.textContent = bondRadius.toFixed(2);
+      updateVisualization();
+    };
+  }
+
   // New control handlers
   document.getElementById('orthographicCamera').onchange = (e) => {
     useOrthographicCamera = e.target.checked;
@@ -2126,6 +2040,20 @@ function sizeGizmo(){
     }
   })();
 
+  // Initialize bond width from slider
+  (function initBondWidthFromSlider(){
+    const slider = document.getElementById('bondWidth');
+    const span = document.getElementById('bondWidthValue');
+    if (slider) {
+      const v = parseFloat(slider.value);
+      if (!isNaN(v)) {
+        bondRadius = v;
+        if (span) span.textContent = bondRadius.toFixed(2);
+        if (structureData) updateVisualization();
+      }
+    }
+  })();
+
   camera.position.set(20, 20, 20);
   controls.update();
 
@@ -2191,6 +2119,12 @@ function setupMobileMenu() {
     if (ui && mobileOverlay) {
       ui.classList.toggle('mobile-open');
       mobileOverlay.classList.toggle('active');
+      // Reflect drawer state on body for responsive positioning
+      if (ui.classList.contains('mobile-open')) {
+        document.body.classList.add('panel-open');
+      } else {
+        document.body.classList.remove('panel-open');
+      }
     }
   }
 
@@ -2198,6 +2132,7 @@ function setupMobileMenu() {
     if (ui && mobileOverlay) {
       ui.classList.remove('mobile-open');
       mobileOverlay.classList.remove('active');
+      document.body.classList.remove('panel-open');
     }
   }
 
