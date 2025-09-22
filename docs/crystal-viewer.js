@@ -38,13 +38,15 @@ let defaultBondLengths = {};
 let atomSize = 1.0;
 let showBonds = true;
 let showLattice = true;
-let showNeighborBonds = true; // VESTA-style ghost atoms + bonds across cell
+let showNeighborBonds = false; // Periodic image atoms + bonds across cell (off by default)
 let useOrthographicCamera = true;
 let useVestaColors = true;
 let measureMode = 'none'; // 'none', 'distance', 'angle'
 let bondVisibility = {};
 let distanceMeasurements = [];
 let angleMeasurements = [];
+// User color overrides per element (persisted to localStorage)
+let userColorOverrides = {};
 
 let gizmoScene, gizmoCamera, gizmoRenderer, gizmoAxes;
 let keyLight, fillLight, bottomLight; // Lighting variables
@@ -101,8 +103,42 @@ const vestaColors = {
 };
 
 function getElementColor(element) {
+  // Prefer user override if present
+  if (userColorOverrides && userColorOverrides[element] !== undefined) {
+    return userColorOverrides[element];
+  }
   const colorScheme = useVestaColors ? vestaColors : jmolColors;
   return colorScheme[element] || 0x808080;
+}
+
+// Get the default palette color for an element (ignores user overrides)
+function getDefaultElementColor(element) {
+  const colorScheme = useVestaColors ? vestaColors : jmolColors;
+  return colorScheme[element] || 0x808080;
+}
+
+function saveColorOverrides() {
+  try { localStorage.setItem('atomColorOverrides', JSON.stringify(userColorOverrides || {})); } catch (_) {}
+}
+function loadColorOverrides() {
+  try {
+    const raw = localStorage.getItem('atomColorOverrides');
+    if (raw) userColorOverrides = JSON.parse(raw) || {};
+  } catch (_) { userColorOverrides = {}; }
+}
+function setElementColorOverride(el, cssHex) {
+  if (!cssHex) return false;
+  let hex = cssHex.toString().trim();
+  if (hex.startsWith('#')) hex = hex.slice(1);
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return false;
+  userColorOverrides[el] = parseInt(hex, 16);
+  saveColorOverrides();
+  return true;
+}
+function clearElementColorOverride(el) {
+  delete userColorOverrides[el];
+  saveColorOverrides();
 }
 
 function getAtomRadius(element) {
@@ -1017,11 +1053,14 @@ function renderComposition() {
 function createCompositionRow(el, count, total) {
   const row = document.createElement('div');
   row.className = 'comp-row';
+  // Two-column grid: left (fixed auto), right (flex). Editor lives under right.
+  row.style.cssText = 'display:grid; grid-template-columns: auto 1fr; align-items:center; column-gap:8px; row-gap:6px;';
   const left = document.createElement('div');
   left.className = 'comp-left';
   const dot = document.createElement('span');
   dot.className = 'dot';
-  dot.style.background = colorHexToCss(getElementColor(el));
+  const currentColor = colorHexToCss(getElementColor(el));
+  dot.style.background = currentColor;
   const name = document.createElement('span');
   name.textContent = el;
   left.appendChild(dot);
@@ -1031,8 +1070,93 @@ function createCompositionRow(el, count, total) {
   const pct = (100*count/total).toFixed(1);
   right.textContent = `${count} (${pct}%)`;
 
-  row.appendChild(left);
-  row.appendChild(right);
+  row.appendChild(left); // grid col 1
+  row.appendChild(right); // grid col 2
+
+  // Inline color editor (hidden by default)
+  const editor = document.createElement('div');
+  // Make editor occupy only the right column and not depend on name length
+  editor.style.cssText = 'display:none; grid-column:2; padding:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px;';
+  editor.className = 'color-editor';
+
+  const colorInput = document.createElement('input');
+  colorInput.type = 'color';
+  colorInput.value = currentColor;
+  colorInput.style.width = '28px';
+  colorInput.style.height = '28px';
+  colorInput.style.border = 'none';
+  colorInput.style.background = 'transparent';
+
+  const hexInput = document.createElement('input');
+  hexInput.type = 'text';
+  hexInput.value = currentColor;
+  hexInput.placeholder = '#RRGGBB';
+  hexInput.style.cssText = 'flex:1; height:28px; padding:6px 8px; border-radius:6px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.1); color:#e7f5ff; font-size:12px; box-sizing:border-box;';
+
+  // Top line: color swatch + hex field side by side
+  const topRow = document.createElement('div');
+  topRow.style.cssText = 'display:flex; align-items:center; gap:10px; margin-bottom:6px;';
+  topRow.appendChild(colorInput);
+  topRow.appendChild(hexInput);
+
+  // Buttons container to push Apply to the right
+  const btnBar = document.createElement('div');
+  btnBar.style.cssText = 'display:flex; align-items:center; gap:8px; justify-content:space-between;';
+
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset';
+  resetBtn.className = 'btn-mini';
+  resetBtn.style.height = '30px';
+
+  const applyBtn = document.createElement('button');
+  applyBtn.textContent = 'Apply';
+  applyBtn.className = 'btn-mini highlight';
+  applyBtn.style.height = '30px';
+
+  btnBar.appendChild(resetBtn);
+  btnBar.appendChild(applyBtn);
+
+  editor.appendChild(topRow);
+  editor.appendChild(btnBar);
+  row.appendChild(editor);
+
+  // Helper to decide readable text color over a background
+  function textColorForBg(cssHex) {
+    let hex = cssHex.replace('#','');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    const r = parseInt(hex.slice(0,2), 16);
+    const g = parseInt(hex.slice(2,4), 16);
+    const b = parseInt(hex.slice(4,6), 16);
+    const yiq = (r*299 + g*587 + b*114) / 1000;
+    return yiq >= 128 ? '#000' : '#fff';
+  }
+  dot.style.cursor = 'pointer';
+  row.style.cursor = 'default';
+  dot.title = 'Customize color';
+  dot.onclick = (e) => {
+    e.stopPropagation();
+    editor.style.display = (editor.style.display === 'none') ? 'flex' : 'none';
+    if (editor.style.display === 'flex') editor.style.flexDirection = 'column';
+  };
+  // Only sync inputs; application happens on Apply button
+  colorInput.oninput = (e) => { hexInput.value = e.target.value; };
+  hexInput.oninput = (e) => { colorInput.value = e.target.value; };
+
+  // Style reset button with the element's default palette color
+  const defaultColorCss = colorHexToCss(getDefaultElementColor(el));
+  resetBtn.style.background = defaultColorCss;
+  resetBtn.style.borderColor = 'rgba(0,0,0,0.15)';
+  resetBtn.style.color = textColorForBg(defaultColorCss);
+
+  // Reset clears override and refreshes
+  resetBtn.onclick = () => { clearElementColorOverride(el); updateVisualization(); renderComposition(); };
+
+  // Apply commits the chosen color
+  applyBtn.onclick = () => {
+    const val = hexInput.value;
+    const ok = setElementColorOverride(el, val);
+    if (ok) { updateVisualization(); renderComposition(); }
+  };
   return row;
 }
 
@@ -1207,6 +1331,7 @@ function colorHexToCss(hex) {
 function loadPOSCAR(content, isDefault = false) {
   try {
     structureData = parsePOSCAR(content);
+    loadColorOverrides();
     if (isDefault) {
       setStatus(`Default structure: ${structureData.elements.length} atoms`);
     } else {
@@ -1561,6 +1686,7 @@ function init() {
   document.getElementById('vestaColors').onchange = (e) => {
     useVestaColors = e.target.checked;
     updateVisualization();
+    renderComposition();
   };
 
   // Mobile measurement toggle functionality
