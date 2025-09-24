@@ -3,8 +3,8 @@ import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/exam
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
 
-import { loadCIF } from './file_reader.js';
-import { parseCIF } from './file_reader.js';
+//import { loadCIF } from './file_reader.js';
+//import { parseCIF } from './file_reader.js';
 
 const view = document.getElementById('view');
 const status = document.getElementById('status');
@@ -1297,11 +1297,11 @@ function init() {
       }
 
       const reader = new FileReader();
-      if (!isCIF){
+      if (!isCIF) {
         reader.onload = (e) => loadPOSCAR(e.target.result);
         reader.readAsText(file);
       }
-      if (isCIF){
+      if (isCIF) {
         reader.onload = (e) => loadPOSCAR(e.target.result);
         reader.readAsText(file);
       } 
