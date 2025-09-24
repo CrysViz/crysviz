@@ -3,6 +3,9 @@ import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/exam
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
 
+import { loadCIF } from './file_reader.js';
+import { parseCIF } from './file_reader.js';
+
 const view = document.getElementById('view');
 const status = document.getElementById('status');
 const setStatus = (s) => { status.textContent = s; console.log('[viewer]', s); };
@@ -1346,7 +1349,7 @@ function init() {
       // Accept any file but give helpful feedback for structure files
       const fileName = file.name.toLowerCase();
       const reader = new FileReader();
-      reader.onload = (e) => loadPOSCAR(e.target.result);
+      reader.onload = (e) => loadCIF(e.target.result);
       reader.readAsText(file);
     }
   };
