@@ -3,7 +3,7 @@ import { parsePOSCAR } from './crystal-viewer.js';
 
 function loadCIF(content, isDefault = false) {
   try {
-    structureData = parseCIF(content);
+    structureData = parsePOSCAR(content);
     setStatus(`Loaded: ${structureData.elements.length} atoms`);
 
     document.getElementById('structureControls').style.display = 'block';
