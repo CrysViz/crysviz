@@ -62,11 +62,11 @@ body {
 
 #fileLabel:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(6, 100, 50, 0.4);
+  box-shadow: 0 8px 25px rgba(6, 140, 50, 0.4);
 }
 
 #fileLabel.dragover {
-  border: 2px dashed rgba(6, 100, 50, 1);
+  border: 2px dashed rgba(6, 140, 50, 1);
   background: rgba(6, 71, 50, 0.4);
 }
 
