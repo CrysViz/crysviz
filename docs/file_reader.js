@@ -3,7 +3,7 @@ import { parsePOSCAR } from './crystal-viewer.js';
 
 function loadCIF(content, isDefault = false) {
   try {
-    structureData = parsePOSCAR(content);
+    structureData = parseCIF(content);
     setStatus(`Loaded: ${structureData.elements.length} atoms`);
 
     document.getElementById('structureControls').style.display = 'block';
@@ -328,8 +328,9 @@ function parseCIF(content) {
     if (!uniqOrder.includes(el)) uniqOrder.push(el);
   }
   const elementLine = uniqOrder.join(' ');
-
+  const comment="This is a CIF"
   return {
+    comment,
     lattice,        // [[ax,ay,az],[bx,by,bz],[cx,cy,cz]]  (Å)
     elements,       // ["C","C","O",...], length == positions.length
     positions,      // [[fx,fy,fz], ...], fractional in [0,1)
