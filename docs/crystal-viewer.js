@@ -1337,6 +1337,61 @@ function init() {
     }
   }
 
+  const fileCIFInput = document.getElementById('fileCIFInput');
+  const fileCIFLabel = document.getElementById('fileCIFLabel');
+
+  fileCIFInput.onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Accept any file but give helpful feedback for structure files
+      const fileName = file.name.toLowerCase();
+      const reader = new FileReader();
+      reader.onload = (e) => loadPOSCAR(e.target.result);
+      reader.readAsText(file);
+    }
+  };
+
+  // Drag and drop
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    fileCIFLabel.addEventListener(eventName, preventDefaults, false);
+    document.body.addEventListener(eventName, preventDefaults, false);
+  });
+
+  ['dragenter', 'dragover'].forEach(eventName => {
+    fileCIFLabel.addEventListener(eventName, highlight, false);
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    fileCIFLabel.addEventListener(eventName, unhighlight, false);
+  });
+
+  fileCIFLabel.addEventListener('drop', handleDrop, false);
+
+  function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function highlight(e) {
+    fileCIFLabel.classList.add('dragover');
+  }
+
+  function unhighlight(e) {
+    fileCIFLabel.classList.remove('dragover');
+  }
+
+  function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    if (files.length > 0) {
+      const file = files[0];
+      const reader = new FileReader();
+      reader.onload = (e) => loadCIF(e.target.result);
+      reader.readAsText(file);
+    }
+  }
+
+
   // Control handlers
   document.getElementById('showBonds').onchange = (e) => {
     showBonds = e.target.checked;
