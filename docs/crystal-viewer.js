@@ -1288,15 +1288,23 @@ function init() {
                              fileName.endsWith('.vasp') ||
                              fileName.endsWith('.poscar') ||
                              fileName === 'poscar' ||
-                             fileName === 'contcar';
+                             fileName === 'contcar'||
+                             fileName.endsWith('.cif');
+      const isCIF = fileName.endsWith('.cif');
 
       if (!isStructureFile) {
         console.warn('Selected file may not be a structure file:', file.name);
       }
 
       const reader = new FileReader();
-      reader.onload = (e) => loadPOSCAR(e.target.result);
-      reader.readAsText(file);
+      if (!isCIF){
+        reader.onload = (e) => loadPOSCAR(e.target.result);
+        reader.readAsText(file);
+      }
+      if (isCIF){
+        reader.onload = (e) => loadCIF(e.target.result);
+        reader.readAsText(file);
+      } 
     }
   };
 
@@ -1319,15 +1327,15 @@ function init() {
   function preventDefaults(e) {
     e.preventDefault();
     e.stopPropagation();
-  }
+  };
 
   function highlight(e) {
     fileLabel.classList.add('dragover');
-  }
+  };
 
   function unhighlight(e) {
     fileLabel.classList.remove('dragover');
-  }
+  };
 
   function handleDrop(e) {
     const dt = e.dataTransfer;
@@ -1338,61 +1346,8 @@ function init() {
       reader.onload = (e) => loadPOSCAR(e.target.result);
       reader.readAsText(file);
     }
-  }
-
-  const fileCIFInput = document.getElementById('fileCIFInput');
-  const fileCIFLabel = document.getElementById('fileCIFLabel');
-
-  fileCIFInput.onchange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      // Accept any file but give helpful feedback for structure files
-      const fileName = file.name.toLowerCase();
-      const reader = new FileReader();
-      reader.onload = (e) => loadCIF(e.target.result);
-      reader.readAsText(file);
-    }
   };
 
-  // Drag and drop
-  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    fileCIFLabel.addEventListener(eventName, preventDefaults, false);
-    document.body.addEventListener(eventName, preventDefaults, false);
-  });
-
-  ['dragenter', 'dragover'].forEach(eventName => {
-    fileCIFLabel.addEventListener(eventName, highlight, false);
-  });
-
-  ['dragleave', 'drop'].forEach(eventName => {
-    fileCIFLabel.addEventListener(eventName, unhighlight, false);
-  });
-
-  fileCIFLabel.addEventListener('drop', handleDrop, false);
-
-  function preventDefaults(e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-
-  function highlight(e) {
-    fileCIFLabel.classList.add('dragover');
-  }
-
-  function unhighlight(e) {
-    fileCIFLabel.classList.remove('dragover');
-  }
-
-  function handleDrop(e) {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    if (files.length > 0) {
-      const file = files[0];
-      const reader = new FileReader();
-      reader.onload = (e) => loadCIF(e.target.result);
-      reader.readAsText(file);
-    }
-  }
 
 
   // Control handlers

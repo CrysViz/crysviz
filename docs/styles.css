@@ -47,10 +47,6 @@ body {
   display: none;
 }
 
-#fileCIFInput {
-  display: none;
-}
-
 #fileLabel {
   display: block;
   padding: 15px 20px;
@@ -73,33 +69,6 @@ body {
   border: 2px dashed rgba(6, 100, 50, 1);
   background: rgba(6, 71, 50, 0.4);
 }
-
-#fileCIFLabel {
-  display: block;
-  padding: 15px 20px;
-  background: rgba(6, 71, 50, 1);
-  color: white;
-  text-align: center;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  border: 2px dashed transparent;
-}
-
-#fileCIFLabel:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(6, 100, 120, 0.4);
-}
-
-#fileCIFLabel.dragover {
-  border: 2px dashed rgba(6, 100, 50, 1);
-  background: rgba(6, 71, 50, 0.4);
-}
-
-
-
-
 
 
 
