@@ -3,7 +3,7 @@ import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/exam
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
 
-import { loadCIF } from './file_reader.js';
+//import { loadCIF } from './file_reader.js';
 
 const view = document.getElementById('view');
 const status = document.getElementById('status');
@@ -1289,6 +1289,7 @@ function init() {
                              fileName === 'poscar' ||
                              fileName === 'contcar'||
                              fileName.endsWith('.cif');
+
       const isCIF = fileName.endsWith('.cif');
 
       if (!isStructureFile) {
@@ -1301,7 +1302,7 @@ function init() {
         reader.readAsText(file);
       }
       if (isCIF) {
-        reader.onload = (e) => loadCIF(e.target.result);
+        reader.onload = (e) => loadPOSCAR(e.target.result);
         reader.readAsText(file);
       } 
     }
