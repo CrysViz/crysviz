@@ -4,7 +4,6 @@ import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/cont
 import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
 
 import { loadCIF } from './file_reader.js';
-import { parseCIF } from './file_reader.js';
 
 const view = document.getElementById('view');
 const status = document.getElementById('status');
@@ -1302,7 +1301,7 @@ function init() {
         reader.readAsText(file);
       }
       if (isCIF) {
-        reader.onload = (e) => loadPOSCAR(e.target.result);
+        reader.onload = (e) => loadCIF(e.target.result);
         reader.readAsText(file);
       } 
     }
