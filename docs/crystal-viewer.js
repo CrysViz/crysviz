@@ -1302,7 +1302,7 @@ function init() {
         reader.readAsText(file);
       }
       if (isCIF){
-        reader.onload = (e) => loadCIF(e.target.result);
+        reader.onload = (e) => loadPOSCAR(e.target.result);
         reader.readAsText(file);
       } 
     }
