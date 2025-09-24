@@ -21,7 +21,8 @@ function loadCIF(content, isDefault = false) {
     setStatus(`Error: ${error.message}`);
     console.error(error);
   }
-}
+export { loadCIF };  
+};
 
 function parseCIF(content) {
   // --- Utilities -------------------------------------------------------------
