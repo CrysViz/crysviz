@@ -204,6 +204,28 @@ input[type="checkbox"] {
   overflow: hidden;
 }
 
+.atom-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(12, 30, 24, 0.9);
+  color: #f6fff9;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -120%);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  white-space: nowrap;
+  z-index: 10;
+}
+
+.atom-tooltip.visible {
+  opacity: 1;
+}
+
 #bondControls {
   max-height: 300px;
   overflow-y: auto;

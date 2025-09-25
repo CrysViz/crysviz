@@ -55,6 +55,9 @@ let userColorOverrides = {};
 let gizmoScene, gizmoCamera, gizmoRenderer;
 let keyLight; // Lighting variables
 
+let atomTooltip = null;
+let hoveredAtom = null;
+
     // Measurement state
 let selectedAtoms = []; // Array to store selected atoms (up to 3 for angles)
 let measureLine = null;          // THREE.Line
@@ -1354,6 +1357,11 @@ function init() {
   labelRenderer.domElement.style.pointerEvents = 'none';
   view.appendChild(labelRenderer.domElement);
 
+  atomTooltip = document.createElement('div');
+  atomTooltip.className = 'atom-tooltip';
+  atomTooltip.setAttribute('aria-hidden', 'true');
+  view.appendChild(atomTooltip);
+
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = false; //damping the rotation for smoother experience
   //controls.dampingFactor = 0.05;
@@ -1397,6 +1405,59 @@ function init() {
 
   let raycaster = new THREE.Raycaster();
   let mouse = new THREE.Vector2();
+
+  function hideAtomTooltip() {
+    if (!atomTooltip) return;
+    atomTooltip.classList.remove('visible');
+    atomTooltip.setAttribute('aria-hidden', 'true');
+    hoveredAtom = null;
+  }
+
+  function updateAtomTooltip(event) {
+    if (!atomsGroup || !atomsGroup.children.length || !atomTooltip) {
+      hideAtomTooltip();
+      return;
+    }
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    const clientX = event.clientX;
+    const clientY = event.clientY;
+    if (clientX == null || clientY == null) {
+      hideAtomTooltip();
+      return;
+    }
+
+    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    mouse.set(x, y);
+    raycaster.setFromCamera(mouse, camera);
+
+    const hits = raycaster.intersectObjects(atomsGroup.children, true);
+    if (!hits.length) {
+      hideAtomTooltip();
+      return;
+    }
+
+    const hit = hits[0].object;
+    const element = hit?.userData?.element || hit?.parent?.userData?.element || null;
+    if (!element) {
+      hideAtomTooltip();
+      return;
+    }
+
+    if (hoveredAtom !== hit) {
+      hoveredAtom = hit;
+      atomTooltip.textContent = element;
+    }
+    atomTooltip.style.left = `${clientX - rect.left}px`;
+    atomTooltip.style.top = `${clientY - rect.top}px`;
+    atomTooltip.classList.add('visible');
+    atomTooltip.setAttribute('aria-hidden', 'false');
+  }
+
+  renderer.domElement.addEventListener('mousemove', updateAtomTooltip);
+  renderer.domElement.addEventListener('mouseleave', hideAtomTooltip);
+  renderer.domElement.addEventListener('touchstart', hideAtomTooltip, { passive: true });
 
   function onClickPick(event){
     // Only handle clicks if a mode is enabled
