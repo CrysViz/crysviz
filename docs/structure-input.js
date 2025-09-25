@@ -5,25 +5,32 @@ function formatNumber(value) {
   const fixed = value.toFixed(NUMBER_PRECISION);
   return fixed.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
 }
-
-function invert3x3(m) {
-  const [a, b, c] = m;
-  const A = a[0], B = a[1], C = a[2];
-  const D = b[0], E = b[1], F = b[2];
-  const G = c[0], H = c[1], I = c[2];
-  const det = A * (E * I - F * H) - B * (D * I - F * G) + C * (D * H - E * G);
-  if (Math.abs(det) < 1e-12) {
-    throw new Error('OPTIMADE: lattice matrix is singular');
-  }
-  const invDet = 1.0 / det;
+//[A, B, C]T   [A, D, G]
+//[D, E, F] -> [B, E, H]
+//[G, H, I]    [C, F, I]
+function transpose3x3(m) {
   return [
-    [(E * I - F * H) * invDet, (C * H - B * I) * invDet, (B * F - C * E) * invDet],
-    [(F * G - D * I) * invDet, (A * I - C * G) * invDet, (C * D - A * F) * invDet],
-    [(D * H - E * G) * invDet, (B * G - A * H) * invDet, (A * E - B * D) * invDet],
+    [m[0][0], m[1][0], m[2][0]],
+    [m[0][1], m[1][1], m[2][1]],
+    [m[0][2], m[1][2], m[2][2]],
   ];
 }
 
-function multiplyMatVec(mat, vec) {
+export function invert3x3(m) {
+  const [a, b, c] = m;
+  const [A,B,C] = a, [D,E,F] = b, [G,H,I] = c;
+  const det = A*(E*I - F*H) - B*(D*I - F*G) + C*(D*H - E*G);
+  if (Math.abs(det) < 1e-12) throw new Error('Singular matrix');
+  const invDet = 1 / det;
+  return [
+    [(E*I - F*H)*invDet, (C*H - B*I)*invDet, (B*F - C*E)*invDet],
+    [(F*G - D*I)*invDet, (A*I - C*G)*invDet, (C*D - A*F)*invDet],
+    [(D*H - E*G)*invDet, (B*G - A*H)*invDet, (A*E - B*D)*invDet],
+  ];
+}
+
+
+export function multiplyMatVec(mat, vec) {
   return [
     mat[0][0] * vec[0] + mat[0][1] * vec[1] + mat[0][2] * vec[2],
     mat[1][0] * vec[0] + mat[1][1] * vec[1] + mat[1][2] * vec[2],
@@ -31,13 +38,220 @@ function multiplyMatVec(mat, vec) {
   ];
 }
 
-function normalizeFractional(value) {
+export function normalizeFractional(value) {
   if (!Number.isFinite(value)) return 0;
   let normalized = value - Math.floor(value);
   if (normalized < 0) normalized += 1;
   if (Math.abs(normalized) < 1e-8) normalized = 0;
   if (Math.abs(normalized - 1) < 1e-8) normalized = 0;
   return normalized;
+}
+
+export function latticeFromCell(a, b, c, alpha, beta, gamma) {
+  const rad = Math.PI / 180;
+  const ca = Math.cos(alpha * rad);
+  const cb = Math.cos(beta * rad);
+  const cg = Math.cos(gamma * rad);
+  const sinGamma = Math.sin(gamma * rad);
+  const sg = Math.abs(sinGamma) > 1e-12 ? sinGamma : (sinGamma >= 0 ? 1e-12 : -1e-12);
+
+  const ax = a, ay = 0, az = 0;
+  const bx = b * cg;
+  const by = b * sinGamma;
+  const bz = 0;
+  const cx = c * cb;
+  const cy = c * ((ca - cb * cg) / sg);
+  const czTerm = 1 - (cb * cb) - (((ca - cb * cg) / sg) ** 2);
+  const cz = c * Math.sqrt(Math.max(0, czTerm));
+  return [[ax, ay, az], [bx, by, bz], [cx, cy, cz]];
+}
+
+export function cartToFractional(cartVec, lattice, precomputedInverse) {
+  const inverse = precomputedInverse || invert3x3(transpose3x3(lattice));
+  return multiplyMatVec(inverse, cartVec);
+}
+
+function parseMaybeWithUncertainty(value) {
+  if (value == null) return null;
+  let str = String(value).trim();
+  if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+    str = str.slice(1, -1);
+  }
+  str = str.replace(/\([^()]*\)$/,'');
+  const num = parseFloat(str);
+  return Number.isFinite(num) ? num : null;
+}
+
+function elementFromLabel(label) {
+  if (!label) return null;
+  const match = String(label).match(/^([A-Z][a-z]?)/);
+  return match ? match[1] : null;
+}
+
+export function parsePOSCAR(content) {
+  const lines = content.trim().split('\n').filter(l => l.trim());
+  let i = 0;
+
+  const comment = lines[i++]?.trim() || 'POSCAR Structure';
+  const scale = parseFloat(lines[i++]);
+  if (!Number.isFinite(scale)) throw new Error('POSCAR: missing scale factor');
+
+  const lattice = Array.from({ length: 3 }, () =>
+    (lines[i++] || '').trim().split(/\s+/).slice(0, 3).map(v => parseFloat(v) * scale)
+  );
+
+  const elementLine = (lines[i++] || '').trim().split(/\s+/);
+  const countLine = (lines[i++] || '').trim().split(/\s+/).map(x => parseInt(x, 10));
+
+  if (!elementLine.length || !countLine.length || elementLine.length !== countLine.length) {
+    throw new Error('POSCAR: invalid element/count lines');
+  }
+
+  const elements = [];
+  elementLine.forEach((el, idx) => {
+    const repetitions = countLine[idx];
+    if (!Number.isFinite(repetitions)) throw new Error('POSCAR: invalid atom count');
+    for (let c = 0; c < repetitions; c++) elements.push(el);
+  });
+
+  let coordType = (lines[i] || '').trim().toLowerCase();
+  if (coordType.startsWith('s')) { i++; coordType = (lines[i] || '').trim().toLowerCase(); }
+  i++;
+
+  const isCartesian = coordType.startsWith('c') || coordType.startsWith('k');
+  const totalAtoms = countLine.reduce((a, b) => a + b, 0);
+
+  const positionsRaw = [];
+  for (let n = 0; n < totalAtoms; n++) {
+    const tokens = (lines[i++] || '').trim().split(/\s+/);
+    if (tokens.length < 3) throw new Error('POSCAR: atomic position line too short');
+    positionsRaw.push(tokens.slice(0, 3).map(Number));
+  }
+
+  const latticeInverse = isCartesian ? invert3x3(transpose3x3(lattice)) : null;
+  const positions = (isCartesian
+    ? positionsRaw.map(vec => cartToFractional(vec, lattice, latticeInverse))
+    : positionsRaw
+  ).map(pos => pos.map(normalizeFractional));
+
+  return {
+    comment,
+    lattice,
+    elements,
+    positions,
+    uniqueElements: elementLine
+  };
+}
+
+function parseCifFallback(content) {
+  const getTag = (tag) => {
+    const re = new RegExp('^\\s*' + tag.replace(/([.*+?^${}()|[\]\\])/g,'\\$1') + '\\s+([^\r\n#;]+)', 'mi');
+    const match = content.match(re);
+    return match ? match[1].trim() : null;
+  };
+
+  const a  = parseMaybeWithUncertainty(getTag('_cell_length_a'));
+  const b  = parseMaybeWithUncertainty(getTag('_cell_length_b'));
+  const c  = parseMaybeWithUncertainty(getTag('_cell_length_c'));
+  const al = parseMaybeWithUncertainty(getTag('_cell_angle_alpha'));
+  const be = parseMaybeWithUncertainty(getTag('_cell_angle_beta'));
+  const ga = parseMaybeWithUncertainty(getTag('_cell_angle_gamma'));
+  if (!(a && b && c && al && be && ga)) throw new Error('CIF: missing unit cell parameters');
+  const lattice = latticeFromCell(a, b, c, al, be, ga);
+
+  const lines = content.split(/\r?\n/);
+  let idx = 0;
+  let headers = [];
+  let rows = [];
+  while (idx < lines.length) {
+    const line = lines[idx].trim();
+    if (/^loop_/i.test(line)) {
+      idx++;
+      headers = [];
+      while (idx < lines.length && /^_/.test(lines[idx].trim())) {
+        headers.push(lines[idx].trim());
+        idx++;
+      }
+      const hasFrac = headers.includes('_atom_site_fract_x') && headers.includes('_atom_site_fract_y') && headers.includes('_atom_site_fract_z');
+      const hasType = headers.includes('_atom_site_type_symbol');
+      const hasLabel = headers.includes('_atom_site_label');
+      if (hasFrac && (hasType || hasLabel)) {
+        rows = [];
+        while (idx < lines.length) {
+          const entry = lines[idx];
+          if (!entry.trim()) break;
+          if (/^loop_/i.test(entry) || /^data_/i.test(entry) || /^_/.test(entry.trim())) break;
+          rows.push(entry);
+          idx++;
+        }
+        break;
+      }
+    } else {
+      idx++;
+    }
+  }
+  if (!rows.length) throw new Error('CIF: could not locate atom_site loop');
+
+  const colIndex = Object.create(null);
+  headers.forEach((h, index) => { colIndex[h] = index; });
+  const useType = colIndex['_atom_site_type_symbol'] != null ? '_atom_site_type_symbol' : '_atom_site_label';
+  const ix = colIndex['_atom_site_fract_x'];
+  const iy = colIndex['_atom_site_fract_y'];
+  const iz = colIndex['_atom_site_fract_z'];
+  const it = colIndex[useType];
+
+  const elements = [];
+  const positions = [];
+  for (const row of rows) {
+    const tokens = [];
+    let current = '';
+    let quote = null;
+    for (let k = 0; k < row.length; k++) {
+      const ch = row[k];
+      if (quote) {
+        current += ch;
+        if (ch === quote) { tokens.push(current.trim()); current = ''; quote = null; }
+      } else if (ch === '"' || ch === "'") {
+        if (current.trim()) { tokens.push(current.trim()); current = ''; }
+        quote = ch; current = ch;
+      } else if (/\s/.test(ch)) {
+        if (current) { tokens.push(current.trim()); current = ''; }
+      } else {
+        current += ch;
+      }
+    }
+    if (current.trim()) tokens.push(current.trim());
+
+    const sx = parseMaybeWithUncertainty(tokens[ix]);
+    const sy = parseMaybeWithUncertainty(tokens[iy]);
+    const sz = parseMaybeWithUncertainty(tokens[iz]);
+    let el = tokens[it];
+    if (!el) continue;
+    if ((el.startsWith('"') && el.endsWith('"')) || (el.startsWith("'") && el.endsWith("'"))) el = el.slice(1, -1);
+    if (useType === '_atom_site_label') el = elementFromLabel(el) || el;
+    if ([sx, sy, sz].every(v => typeof v === 'number')) {
+      elements.push(el);
+      positions.push([sx, sy, sz]);
+    }
+  }
+
+  if (!elements.length) throw new Error('CIF: no atom_site rows parsed');
+
+  const seen = new Set();
+  const uniqueElements = [];
+  for (const el of elements) {
+    if (!seen.has(el)) {
+      seen.add(el);
+      uniqueElements.push(el);
+    }
+  }
+  return { comment: 'CIF Structure', lattice, elements, positions, uniqueElements };
+}
+
+export async function parseCIF(content) {
+  const result = parseCifFallback(content);
+  try { console.log('[CIF] Parsed using built-in CIF parser. Atoms:', result.elements.length); } catch (_) {}
+  return result;
 }
 
 function looksLikeUrl(text) {
@@ -83,8 +297,6 @@ function buildPoscarFromOptimade(data) {
     return vec.map(Number);
   });
 
-  const inverseLattice = invert3x3(latticeClean);
-
   const elements = speciesAtSites.map((siteName, index) => {
     try {
       return extractElementForSite(species, siteName);
@@ -93,12 +305,14 @@ function buildPoscarFromOptimade(data) {
     }
   });
 
+  const latticeInverse = invert3x3(transpose3x3(latticeClean));
+
   const fractionalPositions = positions.map((cart) => {
     if (!Array.isArray(cart) || cart.length !== 3) {
       throw new Error('OPTIMADE: cartesian position dimension mismatch');
     }
     const coords = cart.map(Number);
-    const frac = multiplyMatVec(inverseLattice, coords);
+    const frac = cartToFractional(coords, latticeClean, latticeInverse);
     return frac.map(normalizeFractional);
   });
 

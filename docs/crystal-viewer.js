@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 //import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
-import { setupStructureInput, isLikelyCIFContent } from './structure-input.js';
+import { setupStructureInput, isLikelyCIFContent, parsePOSCAR, parseCIF, cartToFractional } from './structure-input.js';
 
 const view = document.getElementById('view');
 const status = document.getElementById('status');
@@ -43,7 +43,7 @@ let showBonds = true;
 let showLattice = true;
 let showNeighborBonds = false; // Periodic image atoms + bonds across cell (off by default)
 let useOrthographicCamera = true;
-let defaultZoomScale = 0.75; // 25% closer default distance/size
+let defaultZoomScale = 0.75; // initial zoom of the atom.
 let useVestaColors = true;
 let measureMode = 'none'; // 'none', 'distance', 'angle'
 let bondVisibility = {};
@@ -52,7 +52,7 @@ let angleMeasurements = [];
 // User color overrides per element (persisted to localStorage)
 let userColorOverrides = {};
 
-let gizmoScene, gizmoCamera, gizmoRenderer, gizmoAxes;
+let gizmoScene, gizmoCamera, gizmoRenderer;
 let keyLight; // Lighting variables
 
     // Measurement state
@@ -76,7 +76,7 @@ const atomicRadii = {
   Tb: 1.94, Dy: 1.92, Ho: 1.92, Er: 1.89, Tm: 1.90, Yb: 1.87, Lu: 1.87,
   Hf: 1.75, Ta: 1.70, W: 1.62, Re: 1.51, Os: 1.44, Ir: 1.41, Pt: 1.36, Au: 1.36, Hg: 1.32,
   Tl: 1.45, Pb: 1.46, Bi: 1.48, Po: 1.40, At: 1.50, Rn: 1.50
-};
+}; //chatgpt vibe atom radii in angstroms TODO: please fix this
 
 const jmolColors = {
   H: 0xffffff, He: 0xd9ffff, Li: 0xcc80ff, Be: 0xc2ff00, B: 0xffb5b5, C: 0x909090, N: 0x3050f8, O: 0xff0d0d,
@@ -104,7 +104,7 @@ const vestaColors = {
   Tb: 0xff1493, Dy: 0xff1493, Ho: 0xff1493, Er: 0xff1493, Tm: 0xff1493, Yb: 0xff1493, Lu: 0xff1493, Hf: 0xff1493,
   Ta: 0xff1493, W: 0xff1493, Re: 0xff1493, Os: 0xff1493, Ir: 0xff1493, Pt: 0xff1493, Au: 0xffd700, Hg: 0xff1493,
   Tl: 0xff1493, Pb: 0x3c3d3f, Bi: 0xff1493, Po: 0xff1493, At: 0xff1493, Rn: 0xffc0cb
-};
+}; //not really, but close enough
 
 function getElementColor(element) {
   // Prefer user override if present
@@ -245,7 +245,7 @@ function periodicWrapped(frac, elements) {
   // Build a fully "filled" unit cell by duplicating atoms that sit on
   // faces/edges/corners so that both sides of each face are populated.
   // We do this by adding, per-dimension, one extra image just inside the
-  // opposite face when an atom is within eps of a boundary.
+  // opposite face when an atom is within eps of a boundary. 
   const eps = 1e-6;
   const newElements = [];
   const newFcrds = [];
@@ -316,7 +316,7 @@ function setViewDirection(dir) {
   controls.update();
 }
 
-function resetView() { setViewDirection(new THREE.Vector3(1,1,1)); }
+function resetView() { setViewDirection(new THREE.Vector3(1,1,1)); } //CAMERA RESET
 
 function switchCameraType() {
   const w = view.clientWidth || window.innerWidth;
@@ -358,230 +358,6 @@ function latticeDirs() {
 }
 
 
-function parsePOSCAR(content) {
-  const lines = content.trim().split('\n').filter(l => l.trim());
-  let i = 0;
-
-  const comment = lines[i++].trim();
-  const scale = parseFloat(lines[i++]);
-
-  // lattice (scaled)
-  const lattice = Array.from({ length: 3 }, () =>
-    lines[i++].trim().split(/\s+/).slice(0, 3).map(v => parseFloat(v) * scale)
-  );
-
-  const elementLine = lines[i++].trim().split(/\s+/);
-  const countLine = lines[i++].trim().split(/\s+/).map(x => parseInt(x, 10));
-
-  const elements = [];
-  for (let e = 0; e < elementLine.length; e++) {
-    for (let c = 0; c < countLine[e]; c++) elements.push(elementLine[e]);
-  }
-
-  // coordinate type (+ optional selective dynamics)
-  let coordType = lines[i].trim().toLowerCase();
-  if (coordType.startsWith('s')) { i++; coordType = lines[i].trim().toLowerCase(); }
-  i++;
-
-  const isCartesian = coordType.startsWith('c') || coordType.startsWith('k'); // Cartesian
-
-  const totalAtoms = countLine.reduce((a, b) => a + b, 0);
-
-  // helpers
-  const fracToCart = (f) => ([
-    f[0]*lattice[0][0] + f[1]*lattice[1][0] + f[2]*lattice[2][0],
-    f[0]*lattice[0][1] + f[1]*lattice[1][1] + f[2]*lattice[2][1],
-    f[0]*lattice[0][2] + f[1]*lattice[1][2] + f[2]*lattice[2][2],
-  ]);
-  const invert3x3 = (m) => {
-    const [a,b,c] = m;
-    const A = a[0], B = a[1], C = a[2];
-    const D = b[0], E = b[1], F = b[2];
-    const G = c[0], H = c[1], I = c[2];
-    const det = A*(E*I - F*H) - B*(D*I - F*G) + C*(D*H - E*G);
-    const invDet = 1.0 / det;
-    return [
-      [(E*I - F*H)*invDet, (C*H - B*I)*invDet, (B*F - C*E)*invDet],
-      [(F*G - D*I)*invDet, (A*I - C*G)*invDet, (C*D - A*F)*invDet],
-      [(D*H - E*G)*invDet, (B*G - A*H)*invDet, (A*E - B*D)*invDet],
-    ];
-  };
-  const matVec = (m, v) => ([
-    m[0][0]*v[0] + m[0][1]*v[1] + m[0][2]*v[2],
-    m[1][0]*v[0] + m[1][1]*v[1] + m[1][2]*v[2],
-    m[2][0]*v[0] + m[2][1]*v[1] + m[2][2]*v[2],
-  ]);
-
-  const positionsRaw = [];
-  for (let n = 0; n < totalAtoms; n++) {
-    const toks = lines[i++].trim().split(/\s+/);
-    positionsRaw.push(toks.slice(0, 3).map(Number)); // ignore SD flags here
-  }
-
-  const positions   = isCartesian? positionsRaw.map(p => matVec(invert3x3(lattice), p))
-                          : positionsRaw; // fallback
-
-
-  return {
-    comment,
-    lattice,
-    elements,
-    positions,
-    uniqueElements: elementLine
-  };
-}
-
-// CIF parsing: use built-in lightweight parser (no external libraries)
-
-// Utility: build 3x3 lattice from cell lengths (a,b,c) and angles (alpha,beta,gamma) in degrees
-function latticeFromCell(a, b, c, alpha, beta, gamma) {
-  const rad = Math.PI / 180;
-  const ca = Math.cos(alpha * rad);
-  const cb = Math.cos(beta  * rad);
-  const cg = Math.cos(gamma * rad);
-  const sg = Math.sin(gamma * rad);
-  const ax = a, ay = 0, az = 0;
-  const bx = b * cg;
-  const by = b * sg;
-  const bz = 0;
-  const cx = c * cb;
-  const cy = c * ((ca - cb * cg) / (sg || 1e-12));
-  const czTerm = 1 - (cb*cb) - (((ca - cb*cg) / (sg || 1e-12))**2);
-  const cz = c * Math.sqrt(Math.max(0, czTerm));
-  return [ [ax, ay, az], [bx, by, bz], [cx, cy, cz] ];
-}
-
-// Strip numbers like 5.431(1) to 5.431, handles quotes too
-function parseMaybeWithUncertainty(v) {
-  if (v == null) return null;
-  let s = String(v).trim();
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    s = s.slice(1, -1);
-  }
-  s = s.replace(/\([^()]*\)$/,'');
-  const num = parseFloat(s);
-  return Number.isFinite(num) ? num : null;
-}
-
-// Very small helper to detect element symbol from label if needed (e.g., Si1 -> Si)
-function elementFromLabel(label) {
-  if (!label) return null;
-  const m = String(label).match(/^([A-Z][a-z]?)/);
-  return m ? m[1] : null;
-}
-
-// Built-in lightweight CIF extraction (fallback). Extracts:
-// - _cell_length_[abc], _cell_angle_[alpha|beta|gamma]
-// - loop_ with _atom_site_type_symbol or _atom_site_label and _atom_site_fract_[x|y|z]
-function parseCifFallback(content) {
-  const getTag = (tag) => {
-    const re = new RegExp('^\\s*' + tag.replace(/([.*+?^${}()|[\]\\])/g,'\\$1') + '\\s+([^\r\n#;]+)', 'mi');
-    const m = content.match(re);
-    return m ? m[1].trim() : null;
-  };
-
-  const a  = parseMaybeWithUncertainty(getTag('_cell_length_a'));
-  const b  = parseMaybeWithUncertainty(getTag('_cell_length_b'));
-  const c  = parseMaybeWithUncertainty(getTag('_cell_length_c'));
-  const al = parseMaybeWithUncertainty(getTag('_cell_angle_alpha'));
-  const be = parseMaybeWithUncertainty(getTag('_cell_angle_beta'));
-  const ga = parseMaybeWithUncertainty(getTag('_cell_angle_gamma'));
-  if (!(a&&b&&c&&al&&be&&ga)) throw new Error('CIF: missing unit cell parameters');
-  const lattice = latticeFromCell(a, b, c, al, be, ga);
-
-  // Find an atom_site loop
-  const lines = content.split(/\r?\n/);
-  let i = 0;
-  let headers = [];
-  let rows = [];
-  while (i < lines.length) {
-    const line = lines[i].trim();
-    if (/^loop_/i.test(line)) {
-      i++;
-      headers = [];
-      while (i < lines.length && /^_/.test(lines[i].trim())) {
-        headers.push(lines[i].trim());
-        i++;
-      }
-      // If this loop contains atom_site fractional coords, parse rows until a blank or next loop/data block
-      const hasFrac = headers.includes('_atom_site_fract_x') && headers.includes('_atom_site_fract_y') && headers.includes('_atom_site_fract_z');
-      const hasType = headers.includes('_atom_site_type_symbol');
-      const hasLabel = headers.includes('_atom_site_label');
-      if (hasFrac && (hasType || hasLabel)) {
-        rows = [];
-        while (i < lines.length) {
-          const l = lines[i];
-          if (!l.trim()) break;
-          if (/^loop_/i.test(l) || /^data_/i.test(l) || /^_/.test(l.trim())) break;
-          rows.push(l);
-          i++;
-        }
-        break;
-      }
-    } else {
-      i++;
-    }
-  }
-  if (!rows.length) throw new Error('CIF: could not locate atom_site loop');
-  const colIndex = Object.create(null);
-  headers.forEach((h, idx) => colIndex[h] = idx);
-  const useType = colIndex['_atom_site_type_symbol'] != null ? '_atom_site_type_symbol' : '_atom_site_label';
-  const ix = colIndex['_atom_site_fract_x'];
-  const iy = colIndex['_atom_site_fract_y'];
-  const iz = colIndex['_atom_site_fract_z'];
-  const it = colIndex[useType];
-
-  const elements = [];
-  const positions = [];
-  for (const r of rows) {
-    // crude tokenization respecting single/double quotes
-    const toks = [];
-    let cur = '';
-    let quote = null;
-    for (let k = 0; k < r.length; k++) {
-      const ch = r[k];
-      if (quote) {
-        cur += ch;
-        if (ch === quote) { toks.push(cur.trim()); cur = ''; quote = null; }
-      } else if (ch === '"' || ch === "'") {
-        if (cur.trim()) { toks.push(cur.trim()); cur=''; }
-        quote = ch; cur = ch;
-      } else if (/\s/.test(ch)) {
-        if (cur) { toks.push(cur.trim()); cur = ''; }
-      } else {
-        cur += ch;
-      }
-    }
-    if (cur.trim()) toks.push(cur.trim());
-    const sx = parseMaybeWithUncertainty(toks[ix]);
-    const sy = parseMaybeWithUncertainty(toks[iy]);
-    const sz = parseMaybeWithUncertainty(toks[iz]);
-    let el = toks[it];
-    if (!el) continue;
-    // remove quotes
-    if ((el.startsWith('"') && el.endsWith('"')) || (el.startsWith("'") && el.endsWith("'"))) el = el.slice(1,-1);
-    // If using label, reduce to element symbol
-    if (useType === '_atom_site_label') el = elementFromLabel(el) || el;
-    if ([sx,sy,sz].every(v => typeof v === 'number')) {
-      elements.push(el);
-      positions.push([sx, sy, sz]);
-    }
-  }
-  if (!elements.length) throw new Error('CIF: no atom_site rows parsed');
-
-  const seen = new Set();
-  const uniqueElements = [];
-  for (const e of elements) { if (!seen.has(e)) { seen.add(e); uniqueElements.push(e); } }
-  return { comment: 'CIF Structure', lattice, elements, positions, uniqueElements };
-}
-
-// Parse CIF using built-in parser only (no external library)
-async function parseCIF(content) {
-  const res = parseCifFallback(content);
-  try { console.log('[CIF] Parsed using built-in CIF parser. Atoms:', res.elements.length); } catch(_) {}
-  return res;
-}
-
 
 function fracToCart(frac, lattice) {
   return frac.map(fc => [
@@ -591,32 +367,8 @@ function fracToCart(frac, lattice) {
   ]);
 }
 
-// Helpers for cartesian <-> fractional conversion at module scope
-function invert3x3Mat(m) {
-  const [a,b,c] = m;
-  const A = a[0], B = a[1], C = a[2];
-  const D = b[0], E = b[1], F = b[2];
-  const G = c[0], H = c[1], I = c[2];
-  const det = A*(E*I - F*H) - B*(D*I - F*G) + C*(D*H - E*G);
-  const invDet = 1.0 / det;
-  return [
-    [(E*I - F*H)*invDet, (C*H - B*I)*invDet, (B*F - C*E)*invDet],
-    [(F*G - D*I)*invDet, (A*I - C*G)*invDet, (C*D - A*F)*invDet],
-    [(D*H - E*G)*invDet, (B*G - A*H)*invDet, (A*E - B*D)*invDet],
-  ];
-}
-
-function matVec3(m, v) {
-  return [
-    m[0][0]*v[0] + m[0][1]*v[1] + m[0][2]*v[2],
-    m[1][0]*v[0] + m[1][1]*v[1] + m[1][2]*v[2],
-    m[2][0]*v[0] + m[2][1]*v[1] + m[2][2]*v[2],
-  ];
-}
-
 function cartToFrac(cart, lattice) {
-  const inv = invert3x3Mat(lattice);
-  return matVec3(inv, cart);
+  return cartToFractional(cart, lattice);
 }
 
 function isOutsideUnitCell(cart, lattice, eps = 1e-6) {
