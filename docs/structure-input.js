@@ -141,7 +141,7 @@ function buildPoscarFromOptimade(data) {
     }
   };
 }
-
+// Direct fetch of optimade fails due to cors. Not sure what or why.
 const CORS_PROXY_PREFIX = 'https://corsproxy.io/?';
 
 async function requestOptimadeJson(url) {
