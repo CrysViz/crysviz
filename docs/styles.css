@@ -79,6 +79,10 @@ body {
   display: block;
 }
 
+.input-mode-panel[hidden] {
+  display: none !important;
+}
+
 #fileInput {
   display: none;
 }
