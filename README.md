@@ -12,7 +12,7 @@ Light-weight browser-based visualisation of POSCAR files with on-device renderin
 - Angle measurements 🔥
 - Periodic images outside the Unitcell
 - Ability to remove atoms
-- POSCAR works, CIFS only if the symmetry is p1
+- POSCAR works, CIFS (only if the symmetry is p1) and Optimade Structure URLS !!
 - Choose your own colours 🔥
 
 ### Features We Could Add  

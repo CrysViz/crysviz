@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
+import { setupStructureInput, isLikelyCIFContent } from './structure-input.js';
 
 const view = document.getElementById('view');
 const status = document.getElementById('status');
@@ -1510,16 +1511,6 @@ function colorHexToCss(hex) {
     return `#${s}`;
 }
 
-function isLikelyCIFContent(content) {
-  if (!content || typeof content !== 'string') return false;
-  const trimmed = content.trim();
-  if (!trimmed) return false;
-  if (/^\s*data_/i.test(trimmed)) return true;
-  if (/_cell_(length|angle)_[abc]/i.test(trimmed)) return true;
-  if (/_symmetry_space_group_name_h-m/i.test(trimmed)) return true;
-  return false;
-}
-
 async function loadStructure(content, fileName = '', isDefault = false) {
   try {
     const lower = (fileName || '').toLowerCase();
@@ -1817,185 +1808,10 @@ function sizeGizmo(){
       restoreBtn.classList.remove('visible');
     };
   }
-
-
-
-
-  // File handling
-  const fileInput = document.getElementById('fileInput');
-  const fileLabel = document.getElementById('fileLabel');
-  const inputModeButtons = Array.from(document.querySelectorAll('.input-mode-btn'));
-  const fileInputContainer = document.getElementById('fileInputContainer');
-  const textInputContainer = document.getElementById('textInputContainer');
-  const structureText = document.getElementById('structureText');
-  const loadTextButton = document.getElementById('loadTextButton');
-
-  let currentInputMode = 'file';
-
-  function setInputMode(mode) {
-    if (!fileInputContainer || !textInputContainer) return;
-    currentInputMode = mode === 'text' ? 'text' : 'file';
-    const showText = currentInputMode === 'text';
-
-    inputModeButtons.forEach(btn => {
-      const isActive = btn.dataset.mode === currentInputMode;
-      btn.classList.toggle('active', isActive);
-      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-      const controls = btn.getAttribute('aria-controls');
-      if (controls) {
-        const panel = document.getElementById(controls);
-        if (panel) panel.setAttribute('tabindex', isActive ? '0' : '-1');
-      }
-    });
-
-    if (showText) {
-      if (fileInputContainer) {
-        fileInputContainer.setAttribute('hidden', '');
-        fileInputContainer.setAttribute('aria-hidden', 'true');
-      }
-      if (textInputContainer) {
-        textInputContainer.removeAttribute('hidden');
-        textInputContainer.setAttribute('aria-hidden', 'false');
-      }
-      if (structureText) {
-        structureText.focus({ preventScroll: true });
-      }
-    } else {
-      if (textInputContainer) {
-        textInputContainer.setAttribute('hidden', '');
-        textInputContainer.setAttribute('aria-hidden', 'true');
-      }
-      if (fileInputContainer) {
-        fileInputContainer.removeAttribute('hidden');
-        fileInputContainer.setAttribute('aria-hidden', 'false');
-      }
-    }
-  }
-
-  if (inputModeButtons.length >= 1) {
-    inputModeButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const mode = btn.dataset.mode;
-        if (mode) {
-          setInputMode(mode);
-        }
-      });
-    });
-  }
-
-  setInputMode('file');
-
-  function loadStructureFromText() {
-    if (!structureText) return;
-    const raw = structureText.value.trim();
-    if (!raw) {
-      setStatus('Paste POSCAR or CIF text before loading.');
-      structureText.focus({ preventScroll: true });
-      return;
-    }
-    setStatus('Loading pasted structure...');
-    const looksCIF = isLikelyCIFContent(raw);
-    const pseudoName = looksCIF ? 'pasted_structure.cif' : 'pasted_structure.poscar';
-    loadStructure(raw, pseudoName);
-  }
-
-  if (loadTextButton) {
-    loadTextButton.addEventListener('click', (e) => {
-      e.preventDefault();
-      loadStructureFromText();
-    });
-  }
-
-  if (structureText) {
-    structureText.addEventListener('keydown', (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-        event.preventDefault();
-        loadStructureFromText();
-      }
-    });
-  }
-
-  if (fileInput) {
-    fileInput.onchange = (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        // Accept any file but give helpful feedback for structure files
-        const fileName = file.name.toLowerCase();
-        const isStructureFile = fileName.includes('poscar') ||
-                               fileName.includes('contcar') ||
-                               fileName.endsWith('.vasp') ||
-                               fileName.endsWith('.poscar') ||
-                               fileName === 'poscar' ||
-                               fileName === 'contcar' ||
-                               fileName.endsWith('.cif');
-
-        if (!isStructureFile) {
-          console.warn('Selected file may not be a structure file:', file.name);
-        }
-
-        const reader = new FileReader();
-        reader.onload = (event) => loadStructure(event.target.result, file.name);
-        reader.readAsText(file);
-        if (fileInput) fileInput.value = '';
-      }
-    };
-  }
-
-  // Drag and drop
-  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    document.body.addEventListener(eventName, preventDefaults, false);
-    if (fileLabel) {
-      fileLabel.addEventListener(eventName, preventDefaults, false);
-    }
+  setupStructureInput({
+    onLoadStructure: (content, name) => loadStructure(content, name),
+    setStatus,
   });
-
-  if (fileLabel) {
-    ['dragenter', 'dragover'].forEach(eventName => {
-      fileLabel.addEventListener(eventName, highlight, false);
-    });
-
-    ['dragleave', 'drop'].forEach(eventName => {
-      fileLabel.addEventListener(eventName, unhighlight, false);
-    });
-
-    fileLabel.addEventListener('drop', handleDrop, false);
-  }
-
-  function preventDefaults(e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-
-  function highlight(e) {
-    if (!fileLabel || currentInputMode !== 'file') return;
-    fileLabel.classList.add('dragover');
-  }
-
-  function unhighlight(e) {
-    if (!fileLabel) return;
-    fileLabel.classList.remove('dragover');
-  }
-
-  function handleDrop(e) {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      if (currentInputMode !== 'file') {
-        setInputMode('file');
-      }
-      const reader = new FileReader();
-      reader.onload = (event) => loadStructure(event.target.result, file.name);
-      reader.readAsText(file);
-    } else if (structureText) {
-      const droppedText = dt.getData('text/plain') || dt.getData('text');
-      if (droppedText && droppedText.trim()) {
-        setInputMode('text');
-        structureText.value = droppedText;
-        setStatus('Text pasted from drop. Click "Load Structure" to parse.');
-      }
-    }
-  }
 
   // Control handlers
   document.getElementById('showBonds').onchange = (e) => {
