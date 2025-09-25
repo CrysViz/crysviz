@@ -10,6 +10,10 @@ Light-weight browser-based visualisation of POSCAR files with on-device renderin
 - Automatic visualisation of bonds with customisable maximum bond length values
 - Inter-atomic distance measuring
 - Angle measurements 🔥
+- Periodic images outside the Unitcell
+- Ability to remove atoms
+- POSCAR works, CIFS only if the symmetry is p1
+- Choose your own colours 🔥
 
 ### Features We Could Add  
  
@@ -27,13 +31,10 @@ Light-weight browser-based visualisation of POSCAR files with on-device renderin
 12. Increaase line-width of dashed line along the currently measured distances. &#x2705;
 13. When selecting the atoms for measuring the bonds, similar colors are used to mark the selection as for the atoms. Maybe we can find a better way to mark the atoms &#x2705;
 14. Possibility to deselect atoms by clicking them again
-15.     
 
 
 ### Possible Advanced Features 
 
-1. On-the-fly color changing. Some color picker (?)
-2. On-the-fly symmetry information and potentially symmetrisation
-3. Package as stand-alone offline application
-4. Bond are colors according to the atoms as in VESTA (maybe...)
+1. On-the-fly symmetry information and potentially symmetrisation
+2. Package as stand-alone offline application
  

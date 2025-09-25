@@ -43,6 +43,42 @@ body {
   font-weight: 500;
 }
 
+.input-mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 6px;
+  border-radius: 10px;
+}
+
+.input-mode-btn {
+  background: transparent;
+  color: #ddd;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.input-mode-btn:hover {
+  background: rgba(6, 71, 50, 0.5);
+  color: #fff;
+}
+
+.input-mode-btn.active {
+  background: rgba(6, 140, 50, 0.85);
+  color: #fff;
+}
+
+.input-mode-panel {
+  display: block;
+}
+
 #fileInput {
   display: none;
 }
@@ -68,6 +104,44 @@ body {
 #fileLabel.dragover {
   border: 2px dashed rgba(6, 100, 50, 1);
   background: rgba(6, 71, 50, 0.4);
+}
+
+#structureText {
+  width: 100%;
+  min-height: 160px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  color: #f5f5f5;
+  resize: vertical;
+  font-family: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+
+#structureText::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#loadTextButton {
+  margin-top: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  background: linear-gradient(45deg, #368f6e, #256951);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#loadTextButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(54, 143, 110, 0.35);
 }
 
 label {

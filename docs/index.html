@@ -24,11 +24,25 @@
   <div id="ui">
     <img src="./CrysViz_logo.png" alt="A description of my photo" class="logo">
     <div class="control-group">
-      <h3>Load POSCAR/CIF File</h3>
-      <input type="file" id="fileInput">
-      <label for="fileInput" id="fileLabel">
-        📁 Choose POSCAR/CIF file or drag & drop
-      </label>
+      <h3>Load POSCAR/CIF</h3>
+      <div class="input-mode-toggle" role="tablist" aria-label="Structure input mode">
+        <button type="button" class="input-mode-btn active" data-mode="file" role="tab" id="fileInputTab" aria-selected="true" aria-controls="fileInputContainer">
+          Upload File
+        </button>
+        <button type="button" class="input-mode-btn" data-mode="text" role="tab" id="textInputTab" aria-selected="false" aria-controls="textInputContainer">
+          Paste Text
+        </button>
+      </div>
+      <div id="fileInputContainer" class="input-mode-panel" role="tabpanel" aria-labelledby="fileInputTab">
+        <input type="file" id="fileInput">
+        <label for="fileInput" id="fileLabel" tabindex="0">
+          📁 Choose POSCAR/CIF file or drag & drop
+        </label>
+      </div>
+      <div id="textInputContainer" class="input-mode-panel" role="tabpanel" hidden aria-labelledby="textInputTab">
+        <textarea id="structureText" placeholder="Paste POSCAR or CIF content"></textarea>
+        <button type="button" id="loadTextButton">Load Structure</button>
+      </div>
     </div>
 
     <div class="control-group" id="structureControls" style="display: none;">
