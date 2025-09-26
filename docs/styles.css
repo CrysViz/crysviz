@@ -549,9 +549,8 @@ z-index:1000; pointer-events:none;
 /* --- Camera Tools (Top Left) --- */
 #cameraTools {
   position: fixed;
-  top: 20px;
-  left: 400px;
-  z-index: 1000;
+  left: 450px;
+  top: 16px;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -559,6 +558,7 @@ z-index:1000; pointer-events:none;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 8px;
+  z-index: 1000;
   backdrop-filter: blur(8px);
 }
 
@@ -809,14 +809,16 @@ body {
 
   /* Mobile-friendly camera tools - positioned below measurement tools */
   #cameraTools {
-    top: 138px;
-    right: 10px;
+    position: fixed !important;
+    top: 138px !important;
+    right: 10px !important;
+    left: auto !important;
     padding: 0;
     background: transparent;
     border: none;
     backdrop-filter: none;
     box-shadow: none;
-    display: flex;
+    display: flex !important;
     flex-direction: row;
     align-items: center;
     justify-content: flex-end;
@@ -1134,12 +1136,16 @@ body {
 
   /* Ensure camera tools are properly positioned on very small screens */
   #cameraTools {
-    top: 138px;
-    right: 5px;
+    top: 138px !important;
+    right: 5px !important;
+    left: auto !important;
+    position: fixed !important;
+    display: flex !important;
   }
 
   /* Ensure both toggle buttons are visible and properly sized */
   .measurement-toggle {
+    display: flex !important;
     width: 44px;
     height: 44px;
     font-size: 18px;
@@ -1152,6 +1158,7 @@ body {
   }
 
   #cameraToggle {
+    display: flex !important;
     z-index: 1003;
   }
 
