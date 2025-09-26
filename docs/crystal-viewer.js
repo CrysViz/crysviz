@@ -67,6 +67,8 @@ let aboutLoaded = false;
 let aboutLoading = false;
 let aboutPreviousFocus = null;
 
+let orthographicFrustumSize = null;
+
     // Measurement state
 let selectedAtoms = []; // Array to store selected atoms (up to 3 for angles)
 let measureLine = null;          // THREE.Line
@@ -337,11 +339,20 @@ function switchCameraType() {
   if (useOrthographicCamera) {
     // Switch to orthographic camera
     const { center, dist } = getCellCenterAndDist();
-    const size = dist * 0.5; // Adjust this multiplier as needed
-    camera = new THREE.OrthographicCamera(-size, size, size / (w/h), -size / (w/h), 0.1, 1000);
+    orthographicFrustumSize = dist * 0.5; // Adjust this multiplier as needed
+    const aspect = w / h;
+    camera = new THREE.OrthographicCamera(
+      -orthographicFrustumSize,
+      orthographicFrustumSize,
+      orthographicFrustumSize / aspect,
+      -orthographicFrustumSize / aspect,
+      0.1,
+      1000
+    );
   } else {
     // Switch to perspective camera
     camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
+    orthographicFrustumSize = null;
   }
 
   controls.object = camera;
@@ -349,6 +360,7 @@ function switchCameraType() {
   camera.position.copy(center.clone().add(new THREE.Vector3(1,1,1).normalize().multiplyScalar(dist)));
   controls.target.copy(center);
   controls.update();
+  resizeRenderer();
 }
 
 function resetBondLengths() {
@@ -512,6 +524,7 @@ function openAboutPanel() {
     if (aboutClose) {
       aboutClose.focus({ preventScroll: true });
     }
+    resizeRenderer();
   }, 120);
 }
 
@@ -523,10 +536,12 @@ function closeAboutPanel() {
       aboutOverlay.setAttribute('hidden', '');
     }
   }, 160);
-  if (aboutPreviousFocus && typeof aboutPreviousFocus.focus === 'function') {
-    setTimeout(() => aboutPreviousFocus.focus({ preventScroll: true }), 160);
-  }
+  const focusTarget = aboutPreviousFocus;
   aboutPreviousFocus = null;
+  if (focusTarget && typeof focusTarget.focus === 'function') {
+    setTimeout(() => focusTarget.focus({ preventScroll: true }), 160);
+  }
+  setTimeout(resizeRenderer, 200);
 }
 
 if (aboutTrigger) {
@@ -1488,6 +1503,7 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     switchCameraType();
     resetView();
     clearMeasure();
+    resizeRenderer();
     // Hide restore button when loading new structure
     const btn = document.getElementById('restoreStructure');
     if (btn) btn.classList.remove('visible');
@@ -1536,6 +1552,8 @@ function init() {
   renderer.toneMappingExposure = 1.2;
 
   view.appendChild(renderer.domElement);
+
+  resizeRenderer();
 
 
   // Label for distances
@@ -2033,21 +2051,41 @@ function animate() {
 }
 
 // window resize
-window.addEventListener('resize', () => {
+function resizeRenderer() {
+  if (!renderer || !camera) return;
   const w = view.clientWidth || window.innerWidth;
   const h = view.clientHeight || window.innerHeight;
-  camera.aspect = w / h;
+  const aspect = w / h;
+
+  if (camera.isOrthographicCamera) {
+    const base = orthographicFrustumSize || 10;
+    camera.left = -base;
+    camera.right = base;
+    camera.top = base / aspect;
+    camera.bottom = -base / aspect;
+  } else if (camera.isPerspectiveCamera) {
+    camera.aspect = aspect;
+  }
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
 
-  const gizmoDiv = document.getElementById('axesGizmo');
-  gizmoRenderer.setSize(gizmoDiv.clientWidth, gizmoDiv.clientHeight);
-  gizmoCamera.aspect = gizmoDiv.clientWidth / gizmoDiv.clientHeight;
-  gizmoCamera.updateProjectionMatrix();
+  if (labelRenderer) {
+    labelRenderer.setSize(w, h);
+  }
 
-  labelRenderer.setSize(w, h);
+  if (gizmoRenderer && gizmoCamera) {
+    const gizmoDiv = document.getElementById('axesGizmo');
+    if (gizmoDiv) {
+      const gw = gizmoDiv.clientWidth || 110;
+      const gh = gizmoDiv.clientHeight || 110;
+      gizmoRenderer.setSize(gw, gh);
+      gizmoCamera.aspect = gw / gh;
+      gizmoCamera.updateProjectionMatrix();
+    }
+  }
+}
 
-});
+window.addEventListener('resize', resizeRenderer);
 
 window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
 window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
