@@ -1484,9 +1484,6 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     resetView();
     clearMeasure();
     resizeRenderer();
-    // Hide restore button when loading new structure
-    const btn = document.getElementById('restoreStructure');
-    if (btn) btn.classList.remove('visible');
 
   } catch (error) {
     setStatus(`Error: ${error.message}`);
@@ -1734,9 +1731,6 @@ function init() {
         // Rebuild controls and view
         createBondLengthControls();
         updateVisualization();
-        // Show restore button
-        const btn = document.getElementById('restoreStructure');
-        if (btn) btn.classList.add('visible');
       }
       return; // nothing else to do in delete mode
     }
@@ -1797,18 +1791,6 @@ function sizeGizmo(){
   document.getElementById('viewB').onclick = () => { const {b} = latticeDirs(); setViewDirection(b); };
   document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
 
-  document.getElementById('resetView').onclick = resetView;
-  const restoreBtn = document.getElementById('restoreStructure');
-  if (restoreBtn) {
-    restoreBtn.onclick = () => {
-      if (!originalStructureData) return;
-      structureData = JSON.parse(JSON.stringify(originalStructureData));
-      createBondLengthControls();
-      updateVisualization();
-      clearMeasure();
-      restoreBtn.classList.remove('visible');
-    };
-  }
   setupStructureInput({
     onLoadStructure: (content, name) => loadStructure(content, name),
     setStatus,
@@ -1953,6 +1935,14 @@ function sizeGizmo(){
     // Also clear active measurement mode
     document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
     measureMode = 'none';
+
+    // Also restore deleted atoms
+    if (originalStructureData) {
+      structureData = JSON.parse(JSON.stringify(originalStructureData));
+      createBondLengthControls();
+      updateVisualization();
+      clearMeasure();
+    }
   });
 
   // Add touch event handlers for better mobile support
