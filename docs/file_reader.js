@@ -1,5 +1,5 @@
 
-import { parsePOSCAR } from './crystal-viewer.js';
+import { parsePOSCAR, parseCIF } from './structure-input.js';
 
 function loadCIF(content, isDefault = false) {
   try {
@@ -21,7 +21,6 @@ function loadCIF(content, isDefault = false) {
     setStatus(`Error: ${error.message}`);
     console.error(error);
   }
-export { loadCIF };  
 };
 
 function parseCIF(content) {
@@ -391,3 +390,4 @@ function parseCIF(content) {
   };
 }
 
+export { loadCIF };

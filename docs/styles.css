@@ -530,22 +530,13 @@ z-index:1000; pointer-events:none;
 .dot-a{background:#ff3333;} .dot-b{background:#33cc33;} .dot-c{background:#3366ff;}
 .legend-row{display:flex;align-items:center;gap:6px;line-height:1.2;}
 
-/* View toolbar (top-left) */
-#viewToolbar {
-  position: fixed; left: 450px; top: 16px; display: flex; gap: 8px; flex-wrap: wrap;
-  background: rgba(26,26,26,0.85); border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 12px; padding: 8px; z-index: 1000; backdrop-filter: blur(8px);
-}
-.vbtn {
-  padding: 6px 10px; font-size: 14px; color: #fff; background: rgba(6, 71, 50, 1);;
-  border: 1px solid rgba(6, 90, 50, 1); border-radius: 8px; cursor: pointer;
-}
-.vbtn:hover { background: rgba(6, 71, 50, 1); }
-.vsep { width: 1px; height: 22px; background: rgba(255,255,255,0.12); margin: 0 2px; }
-
 /* Restore button indicator color when visible */
 #restoreStructure { display: none; }
-#restoreStructure.visible { display: inline-block; background: #b33939; border-color: #e55039; }
+#restoreStructure.visible {
+  display: flex !important;
+  background: #b33939 !important;
+  border-color: #e55039 !important;
+}
 
 
 /* --- Measurement Tools (Top Right) --- */
@@ -560,6 +551,69 @@ z-index:1000; pointer-events:none;
   padding: 12px;
   backdrop-filter: blur(20px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+/* --- Camera Tools (Top Left) --- */
+#cameraTools {
+  position: fixed;
+  top: 16px;
+  left: 450px;
+  z-index: 1000;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: rgba(26, 26, 26, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 8px;
+  backdrop-filter: blur(8px);
+}
+
+/* Camera panel for desktop - horizontal layout */
+#cameraPanel {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-height: none;
+  overflow: visible;
+}
+
+/* Camera buttons for desktop - compact style like original vbtn */
+#cameraTools .measure-tool-btn {
+  padding: 6px 10px;
+  font-size: 14px;
+  color: #fff;
+  background: rgba(6, 71, 50, 1);
+  border: 1px solid rgba(6, 90, 50, 1);
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: auto;
+  min-height: auto;
+  flex-direction: row;
+  gap: 0;
+}
+
+#cameraTools .measure-tool-btn:hover {
+  background: rgba(6, 71, 50, 1);
+  transform: none;
+  box-shadow: none;
+}
+
+#cameraTools .measure-tool-btn .tool-icon {
+  font-size: 14px;
+  margin: 0;
+}
+
+#cameraTools .measure-tool-btn span {
+  display: none;
+}
+
+/* Separator for camera controls */
+.camera-separator {
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 2px;
 }
 
 /* Hide toggle button on desktop */
@@ -713,30 +767,10 @@ body {
     display: flex !important;
   }
 
-  /* Adjust view toolbar position for mobile toggle */
-  #viewToolbar {
-    left: 60px;
-    top: 12px;
-    flex-wrap: wrap;
-    padding: 6px;
-    border-radius: 8px;
-  }
-  /* When the panel is open, push toolbar and gizmos to the right of drawer */
-  body.panel-open #viewToolbar { left: calc(var(--drawer-width) + 20px); }
+  /* When the panel is open, push camera controls and gizmos to the right of drawer */
+  body.panel-open #cameraTools { left: calc(var(--drawer-width) + 20px); }
   body.panel-open #axesGizmo { left: calc(var(--drawer-width) + 20px); }
   body.panel-open #axesLegend { left: calc(var(--drawer-width) + 20px); }
-
-  .vbtn {
-    padding: 8px 12px;
-    font-size: 14px;
-    min-height: 40px;
-    min-width: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(6, 71, 50, 1);
-    border: 1px solid rgba(6, 100, 50, 1)
-  }
 
   /* Adjust axes gizmo position and size */
   #axesGizmo {
@@ -928,6 +962,71 @@ body {
     gap: 8px;
   }
 
+  /* Mobile-friendly camera tools */
+  #cameraTools {
+    top: 180px;
+    left: 10px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    backdrop-filter: none;
+    box-shadow: none;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  /* Hide separators on mobile */
+  .camera-separator {
+    display: none;
+  }
+
+  /* Mobile camera panel - collapsible */
+  #cameraPanel {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out, border 0.3s ease-out;
+    background: transparent;
+    border-radius: 12px;
+    padding: 0;
+    backdrop-filter: none;
+    border: none;
+    flex-wrap: wrap;
+  }
+
+  #cameraPanel.expanded {
+    max-height: 200px;
+    padding: 8px;
+    background: rgba(26, 26, 26, 0.95);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    justify-content: center;
+  }
+
+  /* Mobile camera buttons - override desktop styles */
+  #cameraTools .measure-tool-btn {
+    padding: 8px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    font-size: 10px !important;
+    gap: 2px !important;
+    flex-direction: column !important;
+  }
+
+  #cameraTools .measure-tool-btn .tool-icon {
+    font-size: 16px !important;
+    margin-bottom: 2px !important;
+  }
+
+  #cameraTools .measure-tool-btn span {
+    display: block !important;
+  }
+
   /* Mobile toggle button - compact and unobtrusive */
   .measurement-toggle {
     display: block;
@@ -1000,15 +1099,6 @@ body {
     font-size: 20px;
   }
 
-  /* View toolbar adjustments */
-  #viewToolbar {
-    left: 10px;
-    top: 60px;
-    right: 10px;
-    background: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
 
   /* Measure panel improvements */
   #measureRow {
@@ -1037,17 +1127,6 @@ body {
     width: 280px;
   }
 
-  #viewToolbar {
-    padding: 6px;
-    gap: 4px;
-  }
-
-  .vbtn {
-    padding: 10px;
-    font-size: 14px;
-    min-width: 40px;
-    min-height: 40px;
-  }
 
   #infoPanel {
     right: 5px;

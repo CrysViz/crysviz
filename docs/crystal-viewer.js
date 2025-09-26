@@ -6,7 +6,10 @@ import { setupStructureInput, isLikelyCIFContent, parsePOSCAR, parseCIF, cartToF
 
 const view = document.getElementById('view');
 const status = document.getElementById('status');
-const setStatus = (s) => { status.textContent = s; console.log('[viewer]', s); };
+const setStatus = (s) => {
+  if (status) status.textContent = s;
+  console.log('[viewer]', s);
+};
 
 // Default complex structure (Ba2YCu3O7) - high-Tc superconductor with 4 elements to test collapsible composition
 const defaultPOSCAR = `Ba2YCu3O7 - YBCO Superconductor
@@ -1867,6 +1870,14 @@ function sizeGizmo(){
     e.preventDefault();
     e.stopPropagation();
     const panel = document.getElementById('measurementPanel');
+    panel.classList.toggle('expanded');
+  });
+
+  // Mobile camera toggle functionality
+  document.getElementById('cameraToggle').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const panel = document.getElementById('cameraPanel');
     panel.classList.toggle('expanded');
   });
 

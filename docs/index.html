@@ -79,7 +79,6 @@
   </div>
 
   <div id="view"></div>
-  <div id="status">Loading crystal viewer...</div>
 
   <div id="aboutOverlay" hidden>
     <div id="aboutModal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle" tabindex="-1">
@@ -117,8 +116,51 @@
     <button id="measurementToggle" class="measurement-toggle" title="Toggle Measurements">📐</button>
   </div>
 
+  <!-- Camera Control Tools UI -->
+  <div id="cameraTools">
+    <!-- Camera panel -->
+    <div id="cameraPanel" class="measurement-group">
+      <button class="measure-tool-btn" id="viewX" title="View X axis">
+        <div class="tool-icon">x</div>
+        <span>x</span>
+      </button>
+      <button class="measure-tool-btn" id="viewY" title="View Y axis">
+        <div class="tool-icon">y</div>
+        <span>y</span>
+      </button>
+      <button class="measure-tool-btn" id="viewZ" title="View Z axis">
+        <div class="tool-icon">z</div>
+        <span>z</span>
+      </button>
+      <div class="camera-separator"></div>
+      <button class="measure-tool-btn" id="viewA" title="View A axis">
+        <div class="tool-icon">a</div>
+        <span>a</span>
+      </button>
+      <button class="measure-tool-btn" id="viewB" title="View B axis">
+        <div class="tool-icon">b</div>
+        <span>b</span>
+      </button>
+      <button class="measure-tool-btn" id="viewC" title="View C axis">
+        <div class="tool-icon">c</div>
+        <span>c</span>
+      </button>
+      <div class="camera-separator"></div>
+      <button class="measure-tool-btn" id="resetView" title="Reset View">
+        <div class="tool-icon">Reset</div>
+        <span>Reset</span>
+      </button>
+      <button class="measure-tool-btn" id="restoreStructure" title="Restore Structure">
+        <div class="tool-icon">Restore</div>
+        <span>Restore</span>
+      </button>
+    </div>
+
+    <!-- Mobile toggle button (shows only on mobile) -->
+    <button id="cameraToggle" class="measurement-toggle" title="Toggle Camera Controls">📷</button>
+  </div>
+
   <script type="module" src="crystal-viewer.js"></script>
-  <script type="module" src="file_reader.js"></script>
 
 
   <div id="infoPanel">
@@ -223,18 +265,6 @@
     <div class="legend-row"><span class="dot dot-a"></span>a</div>
     <div class="legend-row"><span class="dot dot-b"></span>b</div>
     <div class="legend-row"><span class="dot dot-c"></span>c</div>
-  </div>
-  <div id="viewToolbar">
-    <button class="vbtn" id="viewX">X</button>
-    <button class="vbtn" id="viewY">Y</button>
-    <button class="vbtn" id="viewZ">Z</button>
-    <div class="vsep"></div>
-    <button class="vbtn" id="viewA">a</button>
-    <button class="vbtn" id="viewB">b</button>
-    <button class="vbtn" id="viewC">c</button>
-    <div class="vsep"></div>
-    <button class="vbtn" id="resetView">Reset</button>
-    <button class="vbtn" id="restoreStructure">Restore</button>
   </div>
 
 </body>
