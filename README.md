@@ -23,14 +23,18 @@ Light-weight browser-based visualisation of POSCAR files with on-device renderin
 4. Minimum bond length slider. Could be useful to identify ranges of bonds. 
 5. Reset button for bond lengths, fix 0 bond length &#x2705; <- even though it says now "disabled", bonds are still shown  ❌
 6. Keep distance measurements (last 3 or something) until clear &#x2705;
-7. VESTA colors &#x2705; or some custom  map
+7. VESTA color are not correct; or some custom  map
 8. Checkbox for "activating measuring" to be more touch compatible; so measuring is not enabled by default but needs a button click &#x2705;
 9. Angle measurements &#x2705; Improve visualisation. &#x2705;
 10. Show the metainfo line from poscar file
 11. Option to create supercells with a limit of about 2000 atoms to not crash browser
-12. Increaase line-width of dashed line along the currently measured distances. &#x2705;
+12. Increase line-width of dashed line along the currently measured distances. &#x2705;
 13. When selecting the atoms for measuring the bonds, similar colors are used to mark the selection as for the atoms. Maybe we can find a better way to mark the atoms &#x2705;
 14. Possibility to deselect atoms by clicking them again
+14. Possibility to deselect atoms by clicking them again &#x2705;
+15. Bond diameter control &#x2705;
+16. some comment under the upload stating that "No data leaves your device". Is this really true? &#x2705;
+17. CIF reader. Some simple one for the start. Not sure what the minium required options are. We probably need two drag & drop windows. &#x2705;
 
 
 ### Possible Advanced Features 
