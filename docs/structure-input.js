@@ -252,7 +252,6 @@ function parseCifFallback(content) {
 
 export async function parseCIF(content) {
   const result = parseCifFallback(content);
-  try { console.log('[CIF] Parsed using built-in CIF parser. Atoms:', result.elements.length); } catch (_) {}
   return result;
 }
 

@@ -43,12 +43,10 @@ let showBonds = true;
 let showLattice = true;
 let showNeighborBonds = false; // Periodic image atoms + bonds across cell (off by default)
 let useOrthographicCamera = true;
-let defaultZoomScale = 0.75; // initial zoom of the atom.
+const defaultZoomScale = 0.75; // initial zoom of the atom.
 let useVestaColors = true;
 let measureMode = 'none'; // 'none', 'distance', 'angle'
 let bondVisibility = {};
-let distanceMeasurements = [];
-let angleMeasurements = [];
 // User color overrides per element (persisted to localStorage)
 let userColorOverrides = {};
 
@@ -90,7 +88,7 @@ const atomicRadii = {
   Tb: 1.94, Dy: 1.92, Ho: 1.92, Er: 1.89, Tm: 1.90, Yb: 1.87, Lu: 1.87,
   Hf: 1.75, Ta: 1.70, W: 1.62, Re: 1.51, Os: 1.44, Ir: 1.41, Pt: 1.36, Au: 1.36, Hg: 1.32,
   Tl: 1.45, Pb: 1.46, Bi: 1.48, Po: 1.40, At: 1.50, Rn: 1.50
-}; //chatgpt vibe atom radii in angstroms TODO: please fix this
+}; // atomic radii in angstroms
 
 const jmolColors = {
   H: 0xffffff, He: 0xd9ffff, Li: 0xcc80ff, Be: 0xc2ff00, B: 0xffb5b5, C: 0x909090, N: 0x3050f8, O: 0xff0d0d,
@@ -760,8 +758,6 @@ function clearAllMeasurements(){
   });
   measureLines = [];
   measureLabels = [];
-  distanceMeasurements = [];
-  angleMeasurements = [];
   selectedAtoms = [];
   clearMeasureGraphics();
 }
@@ -782,15 +778,6 @@ function calculateAngle(atom1, atom2, atom3) {
 
 function addAngleMeasurement(atom1, atom2, atom3) {
   const angle = calculateAngle(atom1, atom2, atom3);
-
-  const measurement = {
-    atom1: atom1,
-    atom2: atom2, // vertex
-    atom3: atom3,
-    elements: [atom1.userData.element, atom2.userData.element, atom3.userData.element],
-    angle: angle
-  };
-  angleMeasurements.push(measurement);
 
   // Create angle arc visualization
   const p1 = atom1.position.clone();
@@ -856,7 +843,7 @@ function addAngleMeasurement(atom1, atom2, atom3) {
   div.style.fontSize = '14px';
   div.style.padding = '2px 6px';
   div.style.borderRadius = '4px';
-  const elements = measurement.elements;
+  const elements = [atom1.userData.element, atom2.userData.element, atom3.userData.element];
   div.textContent = `∠${elements[0]}-${elements[1]}-${elements[2]}: ${angle.toFixed(1)}°`;
 
   const label = new CSS2DObject(div);
@@ -866,16 +853,6 @@ function addAngleMeasurement(atom1, atom2, atom3) {
 }
 
 function addDistanceMeasurement(atom1, atom2) {
-  // Store the measurement data with atom references
-  const measurement = {
-    atomA: atom1,
-    atomB: atom2,
-    element1: atom1.userData.element,
-    element2: atom2.userData.element,
-    distance: atom1.position.distanceTo(atom2.position)
-  };
-  distanceMeasurements.push(measurement);
-
   // Create thick dashed cylinder for distance measurement (BLUE for distance)
   const pa = atom1.position.clone(), pb = atom2.position.clone();
   const distance = pa.distanceTo(pb);
