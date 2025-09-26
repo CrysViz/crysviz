@@ -2121,36 +2121,6 @@ function setupMobileMenu() {
     });
   }
 
-  // Close mobile menu when clicking inside the UI (but not on inputs)
-  if (ui) {
-    ui.addEventListener('click', (e) => {
-      // Only close menu for non-input interactions
-      if (e.target.matches('button, label[for="fileInput"]') && !e.target.matches('input')) {
-        setTimeout(closeMobileMenu, 500); // Small delay to allow interaction
-      }
-    });
-
-    // Prevent menu from closing when keyboard appears or input fields are focused
-    ui.addEventListener('focusin', (e) => {
-      if (e.target.matches('input')) {
-        // Keep menu open when input is focused
-        e.stopPropagation();
-      }
-    });
-
-    ui.addEventListener('focusout', (e) => {
-      if (e.target.matches('input')) {
-        // Optionally close menu after input loses focus and no other input is focused
-        setTimeout(() => {
-          const activeElement = document.activeElement;
-          if (!activeElement || !activeElement.matches('input')) {
-            // No input is currently focused, safe to consider closing
-          }
-        }, 100);
-      }
-    });
-  }
-
   // Add viewport meta tag if not present for proper mobile scaling
   if (!document.querySelector('meta[name="viewport"]')) {
     const viewport = document.createElement('meta');

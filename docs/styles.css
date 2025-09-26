@@ -10,6 +10,10 @@ body {
   display: flex;
 }
 
+:root {
+  --drawer-width: 360px;
+}
+
 #ui {
   width: 380px;
   overflow: auto;
@@ -718,9 +722,9 @@ body {
     border-radius: 8px;
   }
   /* When the panel is open, push toolbar and gizmos to the right of drawer */
-  body.panel-open #viewToolbar { left: calc(360px + 20px); }
-  body.panel-open #axesGizmo { left: calc(360px + 20px); }
-  body.panel-open #axesLegend { left: calc(360px + 20px); }
+  body.panel-open #viewToolbar { left: calc(var(--drawer-width) + 20px); }
+  body.panel-open #axesGizmo { left: calc(var(--drawer-width) + 20px); }
+  body.panel-open #axesLegend { left: calc(var(--drawer-width) + 20px); }
 
   .vbtn {
     padding: 8px 12px;
@@ -774,8 +778,8 @@ body {
   #ui {
     position: fixed !important;
     top: 0;
-    left: -360px;
-    width: 360px;
+    left: calc(-1 * var(--drawer-width));
+    width: var(--drawer-width);
     height: 100vh;
     height: 100dvh; /* Dynamic viewport height for mobile keyboards */
     z-index: 1500;
@@ -802,16 +806,17 @@ body {
   #mobileOverlay {
     display: none;
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
+    z-index: 900;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 1400;
+    pointer-events: none;
   }
 
   #mobileOverlay.active {
     display: block;
+    left: 0;
+    right: 0;
+    pointer-events: auto;
   }
 
   /* Adjust control group spacing for mobile */
