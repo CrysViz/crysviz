@@ -1,4 +1,6 @@
 const NUMBER_PRECISION = 6;
+const MATERIALS_PROJECT_OPTIMADE_BASE = 'https://optimade.materialsproject.org/v1/structures/';
+const ALEXANDRIA_OPTIMADE_BASE = 'https://alexandria.icams.rub.de/pbe/v1/structures/';
 
 function formatNumber(value) {
   if (!Number.isFinite(value)) return '0';
@@ -263,6 +265,24 @@ function looksLikeUrl(text) {
   }
 }
 
+function normalizeMaterialsProjectId(text) {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim().toLowerCase();
+  if (/^mp-\d+$/.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
+}
+
+function normalizeAlexandriaId(text) {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim().toLowerCase();
+  if (/^agm[_-]?\d+$/.test(trimmed)) {
+    return trimmed.replace('-', '_');
+  }
+  return null;
+}
+
 function extractElementForSite(speciesList, speciesName) {
   const match = speciesList.find((item) => item && item.name === speciesName);
   if (!match) {
@@ -406,6 +426,22 @@ async function fetchOptimadeStructure(url) {
   };
 }
 
+async function fetchMaterialsProjectStructure(mpId) {
+  const normalized = normalizeMaterialsProjectId(mpId);
+  if (!normalized) {
+    throw new Error(`Invalid Materials Project ID: ${mpId}`);
+  }
+  return fetchOptimadeStructure(`${MATERIALS_PROJECT_OPTIMADE_BASE}${normalized}`);
+}
+
+async function fetchAlexandriaStructure(agmId) {
+  const normalized = normalizeAlexandriaId(agmId);
+  if (!normalized) {
+    throw new Error(`Invalid Alexandria ID: ${agmId}`);
+  }
+  return fetchOptimadeStructure(`${ALEXANDRIA_OPTIMADE_BASE}${normalized}`);
+}
+
 export function isLikelyCIFContent(content) {
   if (!content || typeof content !== 'string') return false;
   const trimmed = content.trim();
@@ -481,8 +517,40 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
     if (!structureText) return;
     const raw = structureText.value.trim();
     if (!raw) {
-      setStatus('Paste POSCAR, CIF, or OPTIMADE URL before loading.');
+      setStatus('Paste POSCAR, CIF, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id before loading.');
       structureText.focus({ preventScroll: true });
+      return;
+    }
+
+    const maybeMpId = normalizeMaterialsProjectId(raw);
+    if (maybeMpId) {
+      try {
+        setStatus('Fetching Materials Project structure...');
+        const { poscar, fileName, viaProxy } = await fetchMaterialsProjectStructure(maybeMpId);
+        if (viaProxy) {
+          setStatus('Fetched via CORS proxy. Parsing structure...');
+        }
+        onLoadStructure(poscar, fileName);
+      } catch (err) {
+        console.error(err);
+        setStatus(err.message);
+      }
+      return;
+    }
+
+    const maybeAgmId = normalizeAlexandriaId(raw);
+    if (maybeAgmId) {
+      try {
+        setStatus('Fetching Alexandria structure...');
+        const { poscar, fileName, viaProxy } = await fetchAlexandriaStructure(maybeAgmId);
+        if (viaProxy) {
+          setStatus('Fetched via CORS proxy. Parsing structure...');
+        }
+        onLoadStructure(poscar, fileName);
+      } catch (err) {
+        console.error(err);
+        setStatus(err.message);
+      }
       return;
     }
 

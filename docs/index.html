@@ -22,7 +22,7 @@
   <div id="mobileMenuToggle">☰</div>
   <div id="mobileOverlay"></div>
   <div id="ui">
-    <img src="./CrysViz_logo.png" alt="A description of my photo" class="logo">
+    <img src="./CrysViz_logo.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
     <div class="control-group">
       <h3>Load POSCAR/CIF</h3>
       <div class="input-mode-toggle" role="tablist" aria-label="Structure input mode">
@@ -40,7 +40,7 @@
         </label>
       </div>
       <div id="textInputContainer" class="input-mode-panel" role="tabpanel" hidden aria-labelledby="textInputTab">
-        <textarea id="structureText" placeholder="Paste POSCAR/CIF content or OPTIMADE structure URL"></textarea>
+        <textarea id="structureText" placeholder="Paste POSCAR/CIF content, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id"></textarea>
         <button type="button" id="loadTextButton">Load Structure</button>
       </div>
     </div>
@@ -81,6 +81,15 @@
 
   <div id="view"></div>
   <div id="status">Loading crystal viewer...</div>
+
+  <div id="aboutOverlay" hidden>
+    <div id="aboutModal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+      <button id="aboutClose" aria-label="Close About panel">×</button>
+      <div id="aboutContent" aria-live="polite">
+        <p id="aboutLoading">Loading About content…</p>
+      </div>
+    </div>
+  </div>
 
   <!-- Measurement Tools UI -->
   <div id="measurementTools">
