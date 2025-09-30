@@ -34,7 +34,11 @@ body {
   display: none;
 }
 
-/* When panel hidden: make view fullscreen and move left elements */
+/* When panel hidden: disable flex and make view fullscreen */
+body.panel-hidden {
+  display: block;
+}
+
 body.panel-hidden #view {
   position: fixed;
   top: 0;
@@ -42,6 +46,9 @@ body.panel-hidden #view {
   width: 100vw;
   height: 100vh;
   border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 body.panel-hidden #cameraTools {
