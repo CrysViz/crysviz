@@ -11,10 +11,12 @@ body {
 }
 
 :root {
-  --drawer-width: 360px;
+  --drawer-width: 380px;
 }
 
 #ui {
+  position: relative;
+  left: 0;
   width: 380px;
   overflow: auto;
   padding: 20px;
@@ -931,7 +933,7 @@ body {
   }
 
   #cameraTools .measure-tool-btn span {
-    display: block !important;
+    display: none !important;
   }
 
   /* Compact mobile buttons for measurement tools */
@@ -949,13 +951,7 @@ body {
     margin-bottom: 2px;
   }
 
-  /* Reset UI display for mobile - will be overridden below */
-  #ui {
-    display: block;
-  }
-}
-
-@media screen and (max-width: 1024px) {
+  /* Mobile layout - hide left panel, show hamburger, toggle tools */
   body {
     flex-direction: column;
     position: relative;
@@ -1080,8 +1076,10 @@ body {
   }
 
   #measureRow {
-    padding: 8px;
-    font-size: 12px;
+    padding: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
 
   #distanceValue {
@@ -1099,16 +1097,7 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.15);
   }
 
-
-
   /* Measure panel improvements */
-  #measureRow {
-    padding: 12px;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-
   .btn-mini {
     padding: 12px 16px;
     font-size: 16px;

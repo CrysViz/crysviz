@@ -250,11 +250,11 @@ function parseCifFallback(content) {
   return { comment: 'CIF Structure', lattice, elements, positions, uniqueElements };
 }
 
-export async function parseCIF(content) {
-  const result = parseCifFallback(content);
-  return result;
-}
-
+// export async function parseCIF(content) {
+//   const result = parseCifFallback(content);
+//   return result;
+// }
+//
 function looksLikeUrl(text) {
   try {
     const url = new URL(text);

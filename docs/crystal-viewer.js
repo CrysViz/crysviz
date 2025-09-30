@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 //import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
-import { setupStructureInput, isLikelyCIFContent, parsePOSCAR, parseCIF, cartToFractional } from './structure-input.js';
+import { setupStructureInput, isLikelyCIFContent, parsePOSCAR, cartToFractional } from './structure-input.js';
+import { parseCIF} from './file_reader.js'; 
 
 const view = document.getElementById('view');
 const status = document.getElementById('status');
@@ -1790,6 +1791,7 @@ function sizeGizmo(){
   document.getElementById('viewA').onclick = () => { const {a} = latticeDirs(); setViewDirection(a); };
   document.getElementById('viewB').onclick = () => { const {b} = latticeDirs(); setViewDirection(b); };
   document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
+  document.getElementById('resetView').onclick = () => resetView();
 
   setupStructureInput({
     onLoadStructure: (content, name) => loadStructure(content, name),

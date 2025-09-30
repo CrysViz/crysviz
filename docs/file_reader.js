@@ -1,6 +1,4 @@
 
-import { parsePOSCAR, parseCIF } from './structure-input.js';
-
 function loadCIF(content, isDefault = false) {
   try {
     structureData = parseCIF(content);
@@ -22,8 +20,7 @@ function loadCIF(content, isDefault = false) {
     console.error(error);
   }
 };
-
-function parseCIF(content) {
+export async function parseCIF(content) {
   // --- Utilities -------------------------------------------------------------
 
   const toRad = (deg) => (deg * Math.PI) / 180.0;
@@ -390,4 +387,4 @@ function parseCIF(content) {
   };
 }
 
-export { loadCIF };
+//export { loadCIF };
