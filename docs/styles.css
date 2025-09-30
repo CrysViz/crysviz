@@ -21,11 +21,11 @@ body {
   /* Gizmo positioning variables */
   --gizmo-size: 120px;
   --gizmo-bottom: 20px;
-  --gizmo-left: 450px;
+  --gizmo-left: 490px;
 }
 
 #ui {
-  width: 380px;
+  width: 420px;
   overflow: auto;
   padding: 20px;
   background: rgba(26, 26, 26, 0.95);
@@ -601,7 +601,7 @@ z-index:1000; pointer-events:none;
 /* --- Camera Tools (Desktop: Top Left beside panel, Fullscreen: aligned with hamburger) --- */
 #cameraTools {
   position: fixed;
-  left: 450px;  /* Default: beside panel */
+  left: 490px;  /* Default: beside panel */
   top: 16px;
   display: flex;
   gap: 8px;

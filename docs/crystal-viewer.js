@@ -1302,42 +1302,36 @@ function createCompositionRow(el, count, total) {
   const colorInput = document.createElement('input');
   colorInput.type = 'color';
   colorInput.value = currentColor;
-  colorInput.style.width = '28px';
-  colorInput.style.height = '28px';
-  colorInput.style.border = 'none';
-  colorInput.style.background = 'transparent';
+  colorInput.style.cssText = 'width: 32px; height: 32px; border: none; background: transparent; cursor: pointer; flex-shrink: 0;';
 
   const hexInput = document.createElement('input');
   hexInput.type = 'text';
   hexInput.value = currentColor;
   hexInput.placeholder = '#RRGGBB';
-  hexInput.style.cssText = 'flex:1; height:28px; padding:6px 8px; border-radius:6px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.1); color:#e7f5ff; font-size:12px; box-sizing:border-box;';
+  hexInput.style.cssText = 'flex: 1; height: 32px; padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0 6px;';
 
-  // Top line: color swatch + hex field side by side
+  // Single line: color swatch + hex field + buttons
   const topRow = document.createElement('div');
-  topRow.style.cssText = 'display:flex; align-items:center; gap:10px; margin-bottom:6px;';
+  topRow.style.cssText = 'display: flex; align-items: center; gap: 0;';
   topRow.appendChild(colorInput);
   topRow.appendChild(hexInput);
-
-  // Buttons container to push Apply to the right
-  const btnBar = document.createElement('div');
-  btnBar.style.cssText = 'display:flex; align-items:center; gap:8px; justify-content:space-between;';
 
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset';
   resetBtn.className = 'btn-mini';
-  resetBtn.style.height = '30px';
+  resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
 
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
   applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.height = '30px';
+  applyBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; min-width: 44px;';
 
-  btnBar.appendChild(resetBtn);
-  btnBar.appendChild(applyBtn);
+  // Add buttons to the same row
+  topRow.appendChild(resetBtn);
+  topRow.appendChild(applyBtn);
 
+  // Assembly: single row with everything
   editor.appendChild(topRow);
-  editor.appendChild(btnBar);
   row.appendChild(editor);
 
   // Helper to decide readable text color over a background
@@ -1560,31 +1554,31 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
 
   // Create color editor for this individual atom
   const editor = document.createElement('div');
-  editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 6px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
+  editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; width: 200px;';
 
   const colorInput = document.createElement('input');
   colorInput.type = 'color';
   colorInput.value = currentColor;
-  colorInput.style.cssText = 'width: 24px; height: 24px; border: none; background: transparent; margin-right: 6px;';
+  colorInput.style.cssText = 'width: 32px; height: 32px; border: none; background: transparent; cursor: pointer; flex-shrink: 0;';
 
   const hexInput = document.createElement('input');
   hexInput.type = 'text';
   hexInput.value = currentColor;
   hexInput.placeholder = '#RRGGBB';
-  hexInput.style.cssText = 'flex: 1; height: 24px; padding: 4px 6px; border-radius: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+  hexInput.style.cssText = 'flex: 1; height: 32px; padding: 6px 8px; border-radius: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0 6px;';
 
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
   applyBtn.className = 'btn-mini';
-  applyBtn.style.cssText = 'height: 24px; padding: 0 8px; margin-left: 6px; font-size: 10px;';
+  applyBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
 
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset';
   resetBtn.className = 'btn-mini';
-  resetBtn.style.cssText = 'height: 24px; padding: 0 8px; margin-left: 4px; font-size: 10px;';
+  resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; min-width: 44px;';
 
   const editorControls = document.createElement('div');
-  editorControls.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+  editorControls.style.cssText = 'display: flex; align-items: center; gap: 0;';
   editorControls.appendChild(colorInput);
   editorControls.appendChild(hexInput);
   editorControls.appendChild(applyBtn);
