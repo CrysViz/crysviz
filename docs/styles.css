@@ -54,15 +54,15 @@ body.panel-hidden #view canvas {
 }
 
 body.panel-hidden #cameraTools {
-  left: 70px;
+  left: 10px;
 }
 
 body.panel-hidden #axesGizmo {
-  left: 20px;
+  left: 10px;
 }
 
 body.panel-hidden #axesLegend {
-  left: 20px;
+  left: 10px;
 }
 
 /* Scale down measurement tools when panel hidden */
@@ -808,7 +808,7 @@ body {
   #ui {
     position: fixed;
     top: 0;
-    left: -381px;
+    left: -100%;
     height: 100vh;
     z-index: 1500;
     transition: left 0.3s ease;
