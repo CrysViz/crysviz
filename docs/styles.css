@@ -29,9 +29,31 @@ body {
   border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Desktop panel hide state - simple approach */
+/* Desktop panel hide state */
 #ui.panel-hidden {
   display: none;
+}
+
+/* When panel hidden: make view fullscreen and move left elements */
+body.panel-hidden #view {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  border-radius: 20px;
+}
+
+body.panel-hidden #cameraTools {
+  left: 70px;
+}
+
+body.panel-hidden #axesGizmo {
+  left: 70px;
+}
+
+body.panel-hidden #axesLegend {
+  left: 40px;
 }
 
 .logo {

@@ -2079,35 +2079,22 @@ function setupMobileMenu() {
   function togglePanel() {
     if (!ui) return;
 
-    const isDesktop = window.innerWidth > 1024;
-
-    if (isDesktop) {
-      // Desktop: Toggle panel hidden state
+    if (window.innerWidth > 1024) {
+      // Desktop: toggle panel-hidden
       ui.classList.toggle('panel-hidden');
+      document.body.classList.toggle('panel-hidden');
     } else {
-      // Mobile: Toggle panel open with overlay
+      // Mobile: toggle panel-open
       ui.classList.toggle('panel-open');
-      if (overlay) {
-        overlay.classList.toggle('active');
-      }
+      if (overlay) overlay.classList.toggle('active');
     }
   }
 
   function closePanel() {
     if (!ui) return;
-
-    const isDesktop = window.innerWidth > 1024;
-
-    if (isDesktop) {
-      // Desktop: Hide panel
-      ui.classList.add('panel-hidden');
-    } else {
-      // Mobile: Close panel
-      ui.classList.remove('panel-open');
-      if (overlay) {
-        overlay.classList.remove('active');
-      }
-    }
+    ui.classList.remove('panel-open', 'panel-hidden');
+    document.body.classList.remove('panel-hidden');
+    if (overlay) overlay.classList.remove('active');
   }
 
   if (hamburger) {
