@@ -1179,6 +1179,26 @@ function computeComposition() {
 function renderComposition() {
   const compDiv = document.getElementById('composition');
   compDiv.innerHTML = '';
+
+  // Ensure structure panel starts collapsed by default
+  if (!compDiv.classList.contains('open')) {
+    compDiv.classList.remove('open');
+    compDiv.setAttribute('aria-hidden', 'true');
+    const toggleIcon = document.getElementById('structureToggleIcon');
+    if (toggleIcon) {
+      toggleIcon.textContent = '+';
+      toggleIcon.classList.remove('open');
+    }
+    const structureToggle = document.getElementById('structureToggle');
+    if (structureToggle) {
+      structureToggle.setAttribute('aria-expanded', 'false');
+      // Add event listener to handle collapse behavior
+      structureToggle.removeEventListener('click', handleStructurePanelToggle);
+      structureToggle.addEventListener('click', handleStructurePanelToggle);
+    }
+    // Collapse all atom expansions when structure panel is collapsed
+    collapseAllAtomExpansions();
+  }
   const counts = computeComposition();
   const total = Object.values(counts).reduce((a,b)=>a+b,0) || 1;
   const elements = Object.keys(counts).sort();
@@ -1398,6 +1418,9 @@ function highlightAtomInStructurePanel(element, sourceIndex) {
   const composition = document.getElementById('composition');
   if (!composition) return;
 
+  // Collapse all other atom expansions first
+  collapseAllAtomExpansions();
+
   // Check if structure panel is collapsed and expand it
   if (composition.classList.contains('collapsible-content') && !composition.classList.contains('open')) {
     const toggleIcon = document.getElementById('structureToggleIcon');
@@ -1528,6 +1551,29 @@ function clearAllHighlights() {
 
 // Make clearAllHighlights available globally for manual clearing
 window.clearAtomHighlight = clearAllHighlights;
+
+// Function to collapse all individual atom expansions
+function collapseAllAtomExpansions() {
+  const atomsContainers = document.querySelectorAll('.individual-atoms');
+  const expandIcons = document.querySelectorAll('.comp-left span:last-child');
+
+  atomsContainers.forEach(container => {
+    container.style.display = 'none';
+  });
+
+  expandIcons.forEach(icon => {
+    icon.style.transform = 'rotate(0deg)';
+  });
+}
+
+// Function to handle structure panel toggle
+function handleStructurePanelToggle() {
+  const composition = document.getElementById('composition');
+  if (composition && !composition.classList.contains('open')) {
+    // Structure panel is being collapsed, so collapse all atom expansions
+    collapseAllAtomExpansions();
+  }
+}
 
 function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex + 1) {
   const row = document.createElement('div');
