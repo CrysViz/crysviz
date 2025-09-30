@@ -1317,21 +1317,25 @@ function createCompositionRow(el, count, total) {
   topRow.appendChild(hexInput);
 
   const resetBtn = document.createElement('button');
-  resetBtn.textContent = '✕';
+  resetBtn.textContent = 'Reset';
   resetBtn.className = 'btn-mini';
   resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
 
   const applyBtn = document.createElement('button');
-  applyBtn.textContent = '✓';
+  applyBtn.textContent = 'Apply';
   applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 30px; width: 30px;';
+  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
 
   // Add buttons to the same row
-  topRow.appendChild(resetBtn);
-  topRow.appendChild(applyBtn);
+  // Create separate button row
+  const buttonRow = document.createElement('div');
+  buttonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';
+  buttonRow.appendChild(resetBtn);
+  buttonRow.appendChild(applyBtn);
 
-  // Assembly: single row with everything
+  // Assembly: two rows
   editor.appendChild(topRow);
+  editor.appendChild(buttonRow);
   row.appendChild(editor);
 
   // Helper to decide readable text color over a background
@@ -1568,23 +1572,31 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   hexInput.style.cssText = 'width: 80px; height: 32px; padding: 6px 8px; border-radius: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0; box-sizing: border-box; vertical-align: top;';
 
   const applyBtn = document.createElement('button');
-  applyBtn.textContent = '✓';
+  applyBtn.textContent = 'Apply';
   applyBtn.className = 'btn-mini';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 30px; width: 30px;';
+  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
 
   const resetBtn = document.createElement('button');
-  resetBtn.textContent = '✕';
+  resetBtn.textContent = 'Reset';
   resetBtn.className = 'btn-mini';
-  resetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 30px; width: 30px;';
+  resetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
 
   const editorControls = document.createElement('div');
   editorControls.style.cssText = 'display: flex; align-items: center; gap: 6px;';
-  editorControls.appendChild(colorInput);
-  editorControls.appendChild(hexInput);
-  editorControls.appendChild(applyBtn);
-  editorControls.appendChild(resetBtn);
+  // First row: color + hex
+  const topRowIndiv = document.createElement('div');
+  topRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 6px;';
+  topRowIndiv.appendChild(colorInput);
+  topRowIndiv.appendChild(hexInput);
 
-  editor.appendChild(editorControls);
+  // Second row: buttons
+  const buttonRowIndiv = document.createElement('div');
+  buttonRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px;';
+  buttonRowIndiv.appendChild(resetBtn);
+  buttonRowIndiv.appendChild(applyBtn);
+
+  editor.appendChild(topRowIndiv);
+  editor.appendChild(buttonRowIndiv);
 
   // Event handlers
   colorBtn.onclick = (e) => {
