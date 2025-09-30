@@ -2088,6 +2088,11 @@ function setupMobileMenu() {
       ui.classList.toggle('panel-open');
       if (overlay) overlay.classList.toggle('active');
     }
+
+    // Refresh renderer immediately after layout change
+    if (typeof resizeRenderer === 'function') {
+      resizeRenderer();
+    }
   }
 
   function closePanel() {
