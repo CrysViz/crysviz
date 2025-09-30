@@ -46,9 +46,11 @@ body.panel-hidden #view {
   width: 100vw;
   height: 100vh;
   border-radius: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+}
+
+body.panel-hidden #view canvas {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 body.panel-hidden #cameraTools {
