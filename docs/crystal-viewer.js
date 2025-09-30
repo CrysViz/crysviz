@@ -1180,24 +1180,23 @@ function renderComposition() {
   const compDiv = document.getElementById('composition');
   compDiv.innerHTML = '';
 
+  // Ensure ALL info panel submenus default to closed
+  ensureAllSubmenusDefaultClosed();
+
   // Ensure structure panel starts collapsed by default
-  if (!compDiv.classList.contains('open')) {
-    compDiv.classList.remove('open');
-    compDiv.setAttribute('aria-hidden', 'true');
-    const toggleIcon = document.getElementById('structureToggleIcon');
-    if (toggleIcon) {
-      toggleIcon.textContent = '+';
-      toggleIcon.classList.remove('open');
-    }
-    const structureToggle = document.getElementById('structureToggle');
-    if (structureToggle) {
-      structureToggle.setAttribute('aria-expanded', 'false');
-      // Add event listener to handle collapse behavior
-      structureToggle.removeEventListener('click', handleStructurePanelToggle);
-      structureToggle.addEventListener('click', handleStructurePanelToggle);
-    }
-    // Collapse all atom expansions when structure panel is collapsed
-    collapseAllAtomExpansions();
+  compDiv.classList.remove('open');
+  compDiv.setAttribute('aria-hidden', 'true');
+  const toggleIcon = document.getElementById('structureToggleIcon');
+  if (toggleIcon) {
+    toggleIcon.textContent = '+';
+    toggleIcon.classList.remove('open');
+  }
+  const structureToggle = document.getElementById('structureToggle');
+  if (structureToggle) {
+    structureToggle.setAttribute('aria-expanded', 'false');
+    // Add event listener to handle collapse behavior
+    structureToggle.removeEventListener('click', handleStructurePanelToggle);
+    structureToggle.addEventListener('click', handleStructurePanelToggle);
   }
   const counts = computeComposition();
   const total = Object.values(counts).reduce((a,b)=>a+b,0) || 1;
@@ -1306,6 +1305,13 @@ function createCompositionRow(el, count, total) {
   row.addEventListener('click', (e) => {
     e.stopPropagation(); // Prevent triggering parent events
     const isExpanded = atomsContainer.style.display !== 'none';
+
+    // Close all other element expansions first
+    if (!isExpanded) {
+      closeOtherElementExpansions(atomsContainer);
+    }
+
+    // Toggle this element's expansion
     atomsContainer.style.display = isExpanded ? 'none' : 'block';
     expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
   });
@@ -1563,6 +1569,45 @@ function collapseAllAtomExpansions() {
 
   expandIcons.forEach(icon => {
     icon.style.transform = 'rotate(0deg)';
+  });
+}
+
+// Function to ensure all info panel submenus default to closed
+function ensureAllSubmenusDefaultClosed() {
+  // Close all collapsible content sections
+  const allCollapsibleSections = document.querySelectorAll('.collapsible-content');
+  allCollapsibleSections.forEach(section => {
+    if (section.id !== 'composition') { // Don't force close the composition we're handling separately
+      section.classList.remove('open');
+      section.setAttribute('aria-hidden', 'true');
+    }
+  });
+
+  // Close all toggle icons
+  const allToggleIcons = document.querySelectorAll('.toggle-icon');
+  allToggleIcons.forEach(icon => {
+    if (icon.id !== 'structureToggleIcon') { // Don't force close the structure icon we're handling separately
+      icon.classList.remove('open');
+      icon.textContent = '+';
+    }
+  });
+
+  // Close all individual atom expansions
+  collapseAllAtomExpansions();
+}
+
+// Function to close all other element expansions except the specified one
+function closeOtherElementExpansions(exceptContainer) {
+  const allAtomContainers = document.querySelectorAll('.individual-atoms');
+  const allExpandIcons = document.querySelectorAll('.comp-left span:last-child');
+
+  allAtomContainers.forEach((container, index) => {
+    if (container !== exceptContainer) {
+      container.style.display = 'none';
+      if (allExpandIcons[index]) {
+        allExpandIcons[index].style.transform = 'rotate(0deg)';
+      }
+    }
   });
 }
 
