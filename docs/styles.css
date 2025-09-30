@@ -591,8 +591,9 @@ z-index:1000; pointer-events:none;
 
 #cameraTools .measure-tool-btn:hover {
   background: rgba(6, 71, 50, 1);
-  transform: none;
-  box-shadow: none;
+  border-color: rgba(6, 90, 50, 0.7);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(6, 100, 50, 1);
 }
 
 #cameraTools .measure-tool-btn .tool-icon {
