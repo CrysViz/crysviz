@@ -1620,6 +1620,250 @@ function handleStructurePanelToggle() {
   }
 }
 
+// Share functionality
+function generatePOSCARString() {
+  if (!structureData) return null;
+
+  const { elements, positions, lattice } = structureData;
+  const comment = 'Shared structure';
+  const scale = 1.0;
+
+  // Build POSCAR string with proper formatting
+  let poscar = `${comment}\n`;
+  poscar += `${scale.toFixed(1)}\n`;  // Remove leading spaces from scale line
+
+  // Lattice vectors
+  for (let i = 0; i < 3; i++) {
+    poscar += `  ${lattice[i][0].toFixed(8)}  ${lattice[i][1].toFixed(8)}  ${lattice[i][2].toFixed(8)}\n`;
+  }
+
+  // Element names and counts
+  const elementCounts = {};
+  elements.forEach(el => elementCounts[el] = (elementCounts[el] || 0) + 1);
+  const uniqueElements = Object.keys(elementCounts).sort();
+
+  poscar += uniqueElements.join(' ') + '\n';
+  poscar += uniqueElements.map(el => elementCounts[el]).join(' ') + '\n';
+  poscar += 'Direct\n';
+
+  // Atomic positions grouped by element
+  uniqueElements.forEach(element => {
+    elements.forEach((el, i) => {
+      if (el === element) {
+        poscar += `  ${positions[i][0].toFixed(8)}  ${positions[i][1].toFixed(8)}  ${positions[i][2].toFixed(8)}\n`;
+      }
+    });
+  });
+
+  return poscar.trim(); // Remove trailing newlines
+}
+
+function createShareableURL() {
+  const poscarString = generatePOSCARString();
+  if (!poscarString) return null;
+
+  console.log('Generated POSCAR string:', poscarString);
+
+  // Encode to base64
+  const base64Data = btoa(poscarString);
+
+  // Create URL with structure parameter
+  const currentURL = new URL(window.location);
+  currentURL.searchParams.set('structure', base64Data);
+
+  return currentURL.toString();
+}
+
+function shareStructure() {
+  const shareURL = createShareableURL();
+  if (!shareURL) {
+    alert('No structure loaded to share!');
+    return;
+  }
+
+  // Try modern clipboard API first, then fallback
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(shareURL).then(() => {
+      // Show success message
+      const shareBtn = document.getElementById('shareBtn');
+      const originalText = shareBtn.textContent;
+      shareBtn.textContent = '✓ Copied!';
+      shareBtn.style.backgroundColor = '#4CAF50';
+
+      setTimeout(() => {
+        shareBtn.textContent = originalText;
+        shareBtn.style.backgroundColor = '';
+      }, 2000);
+    }).catch(() => {
+      // Fallback: show URL in prompt for manual copying
+      prompt('Copy this URL to share:', shareURL);
+    });
+  } else {
+    // Clipboard API not available, use fallback method
+    try {
+      // Try the older document.execCommand method
+      const textArea = document.createElement('textarea');
+      textArea.value = shareURL;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+
+      const success = document.execCommand('copy');
+      document.body.removeChild(textArea);
+
+      if (success) {
+        // Show success message
+        const shareBtn = document.getElementById('shareBtn');
+        const originalText = shareBtn.textContent;
+        shareBtn.textContent = '✓ Copied!';
+        shareBtn.style.backgroundColor = '#4CAF50';
+
+        setTimeout(() => {
+          shareBtn.textContent = originalText;
+          shareBtn.style.backgroundColor = '';
+        }, 2000);
+      } else {
+        throw new Error('execCommand failed');
+      }
+    } catch (err) {
+      // Final fallback: show URL in prompt for manual copying
+      prompt('Copy this URL to share:', shareURL);
+    }
+  }
+}
+
+// Function to create share button UI
+function createShareButton() {
+  // Check if button already exists
+  let shareBtn = document.getElementById('shareBtn');
+  if (shareBtn) return;
+
+  shareBtn = document.createElement('button');
+  shareBtn.id = 'shareBtn';
+  shareBtn.textContent = '🔗 Share';
+  shareBtn.style.cssText = `
+    padding: 8px 16px;
+    margin-top: 8px;
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    width: 100%;
+  `;
+
+  shareBtn.addEventListener('mouseenter', () => {
+    shareBtn.style.background = 'linear-gradient(135deg, #45a049, #4CAF50)';
+    shareBtn.style.transform = 'translateY(-1px)';
+  });
+
+  shareBtn.addEventListener('mouseleave', () => {
+    shareBtn.style.background = 'linear-gradient(135deg, #4CAF50, #45a049)';
+    shareBtn.style.transform = 'translateY(0)';
+  });
+
+  shareBtn.onclick = shareStructure;
+
+  // Try multiple locations to ensure the button appears
+  const structureControls = document.getElementById('structureControls');
+  const bondControlsGroup = document.getElementById('bondControlsGroup');
+  const composition = document.getElementById('composition');
+
+  if (structureControls) {
+    structureControls.appendChild(shareBtn);
+    console.log('Share button added to structureControls');
+  } else if (bondControlsGroup) {
+    bondControlsGroup.appendChild(shareBtn);
+    console.log('Share button added to bondControlsGroup (fallback)');
+  } else if (composition) {
+    composition.parentElement.appendChild(shareBtn);
+    console.log('Share button added near composition (fallback 2)');
+  } else {
+    console.error('Could not find a suitable container for share button');
+  }
+}
+
+// Flag to track if we've loaded a shared structure
+let sharedStructureLoaded = false;
+
+// Function to load structure from URL parameter
+function loadSharedStructure() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const structureParam = urlParams.get('structure');
+
+  if (structureParam) {
+    try {
+      // Decode base64 to get POSCAR string
+      const poscarString = atob(structureParam);
+      console.log('Decoded POSCAR string:', poscarString);
+
+      // Debug: check the individual lines
+      const lines = poscarString.split('\n');
+      console.log('POSCAR lines:', lines);
+      console.log('Scale line (line 1):', `"${lines[1]}"`);
+      console.log('parseFloat of scale line:', parseFloat(lines[1]));
+      console.log('isFinite check:', Number.isFinite(parseFloat(lines[1])));
+
+      // Parse the POSCAR string
+      console.log('About to call parsePOSCAR...');
+      let parsedStructureData;
+      try {
+        parsedStructureData = parsePOSCAR(poscarString);
+        console.log('parsePOSCAR succeeded:', parsedStructureData);
+      } catch (parseError) {
+        console.error('parsePOSCAR failed:', parseError);
+        console.error('Error stack:', parseError.stack);
+        throw parseError;
+      }
+
+      if (parsedStructureData) {
+        // Set the global structure data variable
+        structureData = parsedStructureData;
+        originalStructureData = JSON.parse(JSON.stringify(structureData));
+        loadColorOverrides();
+        loadIndividualAtomColors();
+        setStatus('Loaded shared structure');
+
+        // Show structure controls and create share button
+        document.getElementById('structureControls').style.display = 'block';
+        document.getElementById('bondControlsGroup').style.display = 'block';
+        createBondLengthControls();
+        createShareButton();
+
+        console.log('About to call updateVisualization with structure data:', structureData);
+        updateVisualization();
+        console.log('updateVisualization completed');
+
+        // Rebuild camera and reset view
+        console.log('About to rebuild camera and reset view');
+        switchCameraType();
+        resetView();
+        clearMeasure();
+        resizeRenderer();
+        console.log('Camera rebuild and view reset completed');
+
+        // Clear the URL parameter to clean up the URL
+        const newUrl = new URL(window.location);
+        newUrl.searchParams.delete('structure');
+        window.history.replaceState({}, document.title, newUrl.toString());
+
+        // Set flag to prevent loading default structure
+        sharedStructureLoaded = true;
+      }
+    } catch (error) {
+      console.error('Failed to load shared structure:', error);
+      console.error('POSCAR string was:', atob(structureParam));
+      setStatus('Failed to load shared structure');
+    }
+  }
+}
+
 function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex + 1) {
   const row = document.createElement('div');
   row.className = 'individual-atom-row';
@@ -1729,7 +1973,12 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
 
 
 function updateVisualization() {
-  if (!structureData) return;
+  console.log('updateVisualization called, structureData:', structureData);
+  if (!structureData) {
+    console.log('No structureData available, returning early');
+    return;
+  }
+  console.log('structureData exists, proceeding with visualization');
 
   // Clear existing geometry and dispose GPU resources
   const disposeGroup = (grp) => {
@@ -1938,6 +2187,7 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     document.getElementById('bondControlsGroup').style.display = 'block';
 
     createBondLengthControls();
+    createShareButton();
     updateVisualization();
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();
@@ -1952,6 +2202,12 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 }
 
 function loadDefaultStructure() {
+  // Don't load default structure if we've already loaded a shared structure
+  if (sharedStructureLoaded) {
+    console.log('Skipping default structure load - shared structure already loaded');
+    return;
+  }
+
   setStatus('Loading default NaCl structure...');
   setTimeout(() => {
     loadStructure(defaultPOSCAR, 'POSCAR', true);
@@ -2333,6 +2589,9 @@ function sizeGizmo(){
     onLoadStructure: (content, name) => loadStructure(content, name),
     setStatus,
   });
+
+  // Check for shared structure in URL
+  loadSharedStructure();
 
   // Control handlers
   document.getElementById('showBonds').onchange = (e) => {
