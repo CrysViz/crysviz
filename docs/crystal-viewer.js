@@ -137,13 +137,10 @@ function getIndividualAtomColor(element, atomIndex) {
   // Check if individual atom has custom color
   const atomKey = `${element}_${atomIndex}`;
   if (individualAtomColors && individualAtomColors[atomKey] !== undefined) {
-    console.log(`Found individual color for ${atomKey}: ${individualAtomColors[atomKey].toString(16)}`);
     return individualAtomColors[atomKey];
   }
   // Fall back to element-wide color
-  const fallbackColor = getElementColor(element);
-  console.log(`No individual color for ${atomKey}, using element color: ${fallbackColor.toString(16)}`);
-  return fallbackColor;
+  return getElementColor(element);
 }
 
 // Get the default palette color for an element (ignores user overrides)
@@ -1047,9 +1044,6 @@ function clearMeasure(){
 function createAtomMesh(element, position, atomIndex = null) {
   const radius = getAtomRadius(element);
   const color = atomIndex !== null ? getIndividualAtomColor(element, atomIndex) : getElementColor(element);
-  if (atomIndex !== null) {
-    console.log(`Creating atom mesh for ${element} at index ${atomIndex} with color: ${color.toString(16)}`);
-  }
   const geometry = new THREE.SphereGeometry(radius, 32, 24);
   const material = new THREE.MeshPhysicalMaterial({
     color,
@@ -1393,6 +1387,150 @@ function createCompositionRow(el, count, total) {
   return container;
 }
 
+// Global variable to track currently highlighted atoms
+let currentlyHighlightedAtom = null;
+let currentlyHighlightedRow = null;
+
+function highlightAtomInStructurePanel(element, sourceIndex) {
+  // First, clear any existing highlights
+  clearAllHighlights();
+
+  // Auto-expand the structure panel if it's collapsed
+  const structureToggle = document.getElementById('structureToggle');
+  const composition = document.getElementById('composition');
+  if (!composition) return;
+
+  // Check if structure panel is collapsed and expand it
+  if (composition.classList.contains('collapsible-content') && !composition.classList.contains('open')) {
+    const toggleIcon = document.getElementById('structureToggleIcon');
+    composition.classList.add('open');
+    composition.setAttribute('aria-hidden', 'false');
+    if (toggleIcon) {
+      toggleIcon.textContent = '−';
+      toggleIcon.classList.add('open');
+    }
+    if (structureToggle) {
+      structureToggle.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  // Look for the element container
+  const elementContainers = composition.querySelectorAll('.comp-container');
+  let targetContainer = null;
+
+  for (const container of elementContainers) {
+    const elementName = container.querySelector('.comp-left span:nth-child(2)');
+    if (elementName && elementName.textContent === element) {
+      targetContainer = container;
+      break;
+    }
+  }
+
+  if (!targetContainer) return;
+
+  // Auto-expand the element if not already expanded
+  const atomsContainer = targetContainer.querySelector('.individual-atoms');
+  const expandIcon = targetContainer.querySelector('.comp-left span:last-child');
+
+  if (atomsContainer && atomsContainer.style.display === 'none') {
+    atomsContainer.style.display = 'block';
+    if (expandIcon) {
+      expandIcon.style.transform = 'rotate(90deg)';
+    }
+  }
+
+  // Find the specific individual atom row
+  const atomRows = atomsContainer.querySelectorAll('.individual-atom-row');
+  for (const row of atomRows) {
+    const atomNameSpan = row.querySelector('span:nth-child(2)');
+    if (atomNameSpan) {
+      // Extract the atom index from the display name (e.g., "Ba1" -> check if this is sourceIndex 0)
+      const actualIndex = getAtomActualIndex(element, atomNameSpan.textContent);
+      if (actualIndex === sourceIndex) {
+        // Highlight this row
+        highlightAtomRow(row);
+        // Scroll into view
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        break;
+      }
+    }
+  }
+}
+
+function getAtomActualIndex(element, displayName) {
+  // Convert "Ba1" to actual index by finding all atoms of this element
+  if (!structureData) return -1;
+
+  const displayNumber = parseInt(displayName.replace(element, ''));
+  let elementCount = 0;
+
+  for (let i = 0; i < structureData.elements.length; i++) {
+    if (structureData.elements[i] === element) {
+      elementCount++;
+      if (elementCount === displayNumber) {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
+function highlightAtomRow(row) {
+  // Clear previous highlight
+  if (currentlyHighlightedRow) {
+    currentlyHighlightedRow.style.backgroundColor = '';
+    currentlyHighlightedRow.style.borderLeft = '';
+  }
+
+  // Add highlight to new row
+  row.style.backgroundColor = 'rgba(255, 191, 0, 0.2)'; // Orange highlight
+  row.style.borderLeft = '3px solid #FFB347';
+  currentlyHighlightedRow = row;
+
+  // Auto-clear highlight after 3 seconds
+  setTimeout(() => {
+    if (currentlyHighlightedRow === row) {
+      clearAllHighlights();
+    }
+  }, 3000);
+}
+
+function highlightAtomIn3D(atomMesh) {
+  // Clear previous 3D highlight
+  if (currentlyHighlightedAtom) {
+    clearHighlightAtom(currentlyHighlightedAtom);
+  }
+
+  // Add new highlight
+  HighlightAtom(atomMesh, 0xFFB347); // Orange glow
+  currentlyHighlightedAtom = atomMesh;
+
+  // Auto-clear highlight after 3 seconds
+  setTimeout(() => {
+    if (currentlyHighlightedAtom === atomMesh) {
+      clearAllHighlights();
+    }
+  }, 3000);
+}
+
+function clearAllHighlights() {
+  // Clear UI highlight
+  if (currentlyHighlightedRow) {
+    currentlyHighlightedRow.style.backgroundColor = '';
+    currentlyHighlightedRow.style.borderLeft = '';
+    currentlyHighlightedRow = null;
+  }
+
+  // Clear 3D highlight
+  if (currentlyHighlightedAtom) {
+    clearHighlightAtom(currentlyHighlightedAtom);
+    currentlyHighlightedAtom = null;
+  }
+}
+
+// Make clearAllHighlights available globally for manual clearing
+window.clearAtomHighlight = clearAllHighlights;
+
 function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex + 1) {
   const row = document.createElement('div');
   row.className = 'individual-atom-row';
@@ -1465,10 +1603,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
 
   applyBtn.onclick = () => {
     const val = hexInput.value;
-    console.log(`Setting individual color for ${element} at index ${atomIndex} to ${val}`);
     const ok = setIndividualAtomColor(element, atomIndex, val);
-    console.log(`setIndividualAtomColor returned: ${ok}`);
-    console.log(`individualAtomColors:`, individualAtomColors);
     if (ok) {
       dot.style.background = val;
       updateVisualization();
@@ -1880,12 +2015,7 @@ function init() {
     event.preventDefault();
     event.stopPropagation();
 
-    // TODO: Future feature - detect double-click on atoms
-    // When double-click or long-press is detected:
-    // 1. Get clicked atom's element and sourceIndex from hit.userData
-    // 2. Find element in structure panel and expand it
-    // 3. Highlight/scroll to the specific individual atom row
-    // 4. Add visual highlight/glow to both 3D atom and UI row
+    // Note: Double-click detection is handled by separate onDoubleClickAtom function
 
     // Handle both mouse and touch events with better error checking
     let clientX, clientY;
@@ -1973,9 +2103,84 @@ function init() {
     drawMeasureGraphics();
   }
 
+  // Double-click handler for atom highlighting feature
+  function onDoubleClickAtom(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Handle both mouse and touch events
+    let clientX, clientY;
+    if (event.changedTouches && event.changedTouches.length > 0) {
+      clientX = event.changedTouches[0].clientX;
+      clientY = event.changedTouches[0].clientY;
+    } else {
+      clientX = event.clientX;
+      clientY = event.clientY;
+    }
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    const mouse = new THREE.Vector2();
+    mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+    // Raycast to find clicked atom
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(atomsGroup.children, true);
+
+    if (hits.length > 0) {
+      const hit = hits[0];
+      const atomMesh = hit.object;
+
+      // Skip ghost atoms
+      if (atomMesh.userData.isGhost) return;
+
+      const element = atomMesh.userData.element;
+      const sourceIndex = atomMesh.userData.sourceIndex;
+
+      // Double-clicked atom detected
+
+      // Highlight the clicked atom in the structure panel
+      highlightAtomInStructurePanel(element, sourceIndex);
+
+      // Add visual glow to the 3D atom
+      highlightAtomIn3D(atomMesh);
+    }
+  }
+
   // Add event listeners - use touchstart instead of touchend for better responsiveness
   renderer.domElement.addEventListener('click', onClickPick);
   renderer.domElement.addEventListener('touchstart', onClickPick, { passive: false });
+
+  // Add double-click listener for atom highlighting feature
+  renderer.domElement.addEventListener('dblclick', onDoubleClickAtom);
+
+  // Add single click listener to clear highlights when clicking empty space
+  renderer.domElement.addEventListener('click', (event) => {
+    // Only clear highlights if no measurement mode is active
+    if (measureMode === 'none') {
+      // Small delay to avoid conflicts with double-click
+      setTimeout(() => {
+        // Check if we clicked on empty space
+        const rect = renderer.domElement.getBoundingClientRect();
+        const mouse = new THREE.Vector2();
+        const clientX = event.clientX || (event.changedTouches && event.changedTouches[0].clientX);
+        const clientY = event.clientY || (event.changedTouches && event.changedTouches[0].clientY);
+
+        if (clientX && clientY) {
+          mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+          mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+          raycaster.setFromCamera(mouse, camera);
+          const hits = raycaster.intersectObjects(atomsGroup.children, true);
+
+          // If no atom was clicked, clear highlights
+          if (hits.length === 0) {
+            clearAllHighlights();
+          }
+        }
+      }, 100);
+    }
+  });
 
 
   // Axes gizmo (bottom-left)
