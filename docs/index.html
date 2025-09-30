@@ -201,7 +201,6 @@
         content.querySelectorAll(hiddenSelectors).forEach(el => {
           el.removeAttribute('hidden');
           el.classList.remove('hidden', 'collapsed');
-          el.setAttribute('aria-hidden', 'false');
           el.style.display = '';
         });
         // ensure list items or rows are visible, but don't auto-open color editors
@@ -212,20 +211,17 @@
       function setOpen(open) {
         if (open) {
           content.classList.add('open');
-          icon.classList.add('open');
-          icon.textContent = '−';
-          toggle.setAttribute('aria-expanded', 'true');
           content.setAttribute('aria-hidden', 'false');
-
-          // remove any injected toggles and expand everything
-          stripControls(content);
+          icon.textContent = '−';
+          icon.classList.add('open');
+          toggle.setAttribute('aria-expanded', 'true');
           expandAllComposition();
         } else {
           content.classList.remove('open');
-          icon.classList.remove('open');
-          icon.textContent = '+';
-          toggle.setAttribute('aria-expanded', 'false');
           content.setAttribute('aria-hidden', 'true');
+          icon.textContent = '+';
+          icon.classList.remove('open');
+          toggle.setAttribute('aria-expanded', 'false');
         }
       }
 

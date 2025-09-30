@@ -537,6 +537,7 @@ input[type="checkbox"] {
   font-size: 14px;
   letter-spacing: .3px;
 }
+
 .comp-row {
   display: flex;
   align-items: flex-start;

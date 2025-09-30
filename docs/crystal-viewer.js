@@ -1192,7 +1192,7 @@ function renderComposition() {
 
   // Ensure structure panel starts collapsed by default
   compDiv.classList.remove('open');
-  compDiv.setAttribute('aria-hidden', 'true');
+  // compDiv.setAttribute('aria-hidden', 'true'); // Removed to prevent focus issues
   const toggleIcon = document.getElementById('structureToggleIcon');
   if (toggleIcon) {
     toggleIcon.textContent = '+';
@@ -1245,6 +1245,9 @@ function renderComposition() {
       compDiv.appendChild(row);
     });
   }
+
+  // Add lattice parameters section
+  addLatticeParametersSection();
 }
 
 function createCompositionRow(el, count, total) {
@@ -1418,6 +1421,69 @@ function createCompositionRow(el, count, total) {
   return container;
 }
 
+// Function to add lattice parameters section to composition
+function addLatticeParametersSection() {
+  const compDiv = document.getElementById('composition');
+  if (!compDiv || !structureData || !structureData.lattice) return;
+
+  // Check if lattice section already exists
+  let latticeSection = document.getElementById('latticeSection');
+  if (latticeSection) {
+    latticeSection.remove();
+  }
+
+  // Create lattice parameters section
+  latticeSection = document.createElement('div');
+  latticeSection.id = 'latticeSection';
+  latticeSection.style.cssText = 'border-top: 2px solid rgba(255,255,255,0.1); margin-top: 12px; padding-top: 12px;';
+
+  const title = document.createElement('h5');
+  title.textContent = 'Lattice Parameters';
+  title.style.cssText = 'margin: 0 0 8px 0; color: rgba(6, 140, 50, 1); font-size: 13px; font-weight: 600;';
+
+  latticeSection.appendChild(title);
+
+  const lattice = structureData.lattice;
+
+  // Calculate lattice parameters
+  const a = Math.sqrt(lattice[0][0]**2 + lattice[0][1]**2 + lattice[0][2]**2);
+  const b = Math.sqrt(lattice[1][0]**2 + lattice[1][1]**2 + lattice[1][2]**2);
+  const c = Math.sqrt(lattice[2][0]**2 + lattice[2][1]**2 + lattice[2][2]**2);
+
+  const alpha = Math.acos((lattice[1][0]*lattice[2][0] + lattice[1][1]*lattice[2][1] + lattice[1][2]*lattice[2][2]) / (b*c)) * 180/Math.PI;
+  const beta = Math.acos((lattice[0][0]*lattice[2][0] + lattice[0][1]*lattice[2][1] + lattice[0][2]*lattice[2][2]) / (a*c)) * 180/Math.PI;
+  const gamma = Math.acos((lattice[0][0]*lattice[1][0] + lattice[0][1]*lattice[1][1] + lattice[0][2]*lattice[1][2]) / (a*b)) * 180/Math.PI;
+
+  const parameters = [
+    { name: 'a', value: a, unit: 'Å' },
+    { name: 'b', value: b, unit: 'Å' },
+    { name: 'c', value: c, unit: 'Å' },
+    { name: 'α', value: alpha, unit: '°' },
+    { name: 'β', value: beta, unit: '°' },
+    { name: 'γ', value: gamma, unit: '°' }
+  ];
+
+  parameters.forEach(param => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 3px 0; font-size: 11px;';
+
+    const label = document.createElement('span');
+    label.textContent = `${param.name}:`;
+    label.style.cssText = 'font-weight: 500; color: rgba(255,255,255,0.8); min-width: 15px;';
+
+    const value = document.createElement('span');
+    value.textContent = `${param.value.toFixed(3)} ${param.unit}`;
+    value.style.cssText = 'color: rgba(255,255,255,0.6); font-family: monospace;';
+
+    row.appendChild(label);
+    row.appendChild(value);
+    latticeSection.appendChild(row);
+  });
+
+  compDiv.appendChild(latticeSection);
+}
+
+
 // Global variable to track currently highlighted atoms
 let currentlyHighlightedAtom = null;
 let currentlyHighlightedRow = null;
@@ -1438,7 +1504,7 @@ function highlightAtomInStructurePanel(element, sourceIndex) {
   if (composition.classList.contains('collapsible-content') && !composition.classList.contains('open')) {
     const toggleIcon = document.getElementById('structureToggleIcon');
     composition.classList.add('open');
-    composition.setAttribute('aria-hidden', 'false');
+    // composition.setAttribute('aria-hidden', 'false'); // Removed to prevent focus issues
     if (toggleIcon) {
       toggleIcon.textContent = '−';
       toggleIcon.classList.add('open');
@@ -1902,20 +1968,45 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   const currentColor = colorHexToCss(getIndividualAtomColor(element, atomIndex));
   dot.style.background = currentColor;
 
-  // Atom name (e.g., "Ba1", "Ba2")
+  // Atom name and coordinates container
+  const nameContainer = document.createElement('div');
+  nameContainer.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
+
   const name = document.createElement('span');
   name.textContent = `${element}${displayNumber}`;
   name.style.color = '#ddd';
 
+  // Coordinates display (fractional)
+  const coords = structureData.positions[atomIndex];
+  const coordsDisplay = document.createElement('span');
+  coordsDisplay.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.5); font-family: monospace;';
+  coordsDisplay.textContent = `(${coords[0].toFixed(3)}, ${coords[1].toFixed(3)}, ${coords[2].toFixed(3)})`;
+
+  nameContainer.appendChild(name);
+  nameContainer.appendChild(coordsDisplay);
+
+  // Button container
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = 'display: flex; gap: 2px;';
+
   // Color picker button
   const colorBtn = document.createElement('button');
   colorBtn.textContent = '🎨';
-  colorBtn.style.cssText = 'background: transparent; border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 10px;';
+  colorBtn.style.cssText = 'background: transparent; border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
   colorBtn.title = `Change color for ${element}${displayNumber}`;
 
+  // Coordinate edit button
+  const coordBtn = document.createElement('button');
+  coordBtn.textContent = '📍';
+  coordBtn.style.cssText = 'background: transparent; border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
+  coordBtn.title = `Edit coordinates for ${element}${displayNumber}`;
+
+  buttonContainer.appendChild(colorBtn);
+  buttonContainer.appendChild(coordBtn);
+
   row.appendChild(dot);
-  row.appendChild(name);
-  row.appendChild(colorBtn);
+  row.appendChild(nameContainer);
+  row.appendChild(buttonContainer);
 
   // Create color editor for this individual atom
   const editor = document.createElement('div');
@@ -1959,10 +2050,97 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   editor.appendChild(topRowIndiv);
   editor.appendChild(buttonRowIndiv);
 
+  // Create coordinate editor for this individual atom
+  const coordEditor = document.createElement('div');
+  coordEditor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
+
+  const coordTitle = document.createElement('div');
+  coordTitle.textContent = 'Fractional Coordinates';
+  coordTitle.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.8); margin-bottom: 6px; font-weight: 500;';
+
+  const xInput = document.createElement('input');
+  xInput.type = 'number';
+  xInput.value = coords[0].toFixed(6);
+  xInput.step = '0.000001';
+  xInput.style.cssText = 'width: 80px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px;';
+  xInput.placeholder = 'x';
+
+  const yInput = document.createElement('input');
+  yInput.type = 'number';
+  yInput.value = coords[1].toFixed(6);
+  yInput.step = '0.000001';
+  yInput.style.cssText = 'width: 80px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px;';
+  yInput.placeholder = 'y';
+
+  const zInput = document.createElement('input');
+  zInput.type = 'number';
+  zInput.value = coords[2].toFixed(6);
+  zInput.step = '0.000001';
+  zInput.style.cssText = 'width: 80px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px;';
+  zInput.placeholder = 'z';
+
+  const coordInputsRow = document.createElement('div');
+  coordInputsRow.style.cssText = 'display: flex; align-items: center; gap: 4px; margin-bottom: 6px;';
+  coordInputsRow.appendChild(xInput);
+  coordInputsRow.appendChild(yInput);
+  coordInputsRow.appendChild(zInput);
+
+  const coordApplyBtn = document.createElement('button');
+  coordApplyBtn.textContent = 'Apply';
+  coordApplyBtn.className = 'btn-mini highlight';
+  coordApplyBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px;';
+
+  const coordResetBtn = document.createElement('button');
+  coordResetBtn.textContent = 'Reset';
+  coordResetBtn.className = 'btn-mini';
+  coordResetBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px; margin-right: 6px;';
+
+  const coordButtonsRow = document.createElement('div');
+  coordButtonsRow.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+  coordButtonsRow.appendChild(coordResetBtn);
+  coordButtonsRow.appendChild(coordApplyBtn);
+
+  coordEditor.appendChild(coordTitle);
+  coordEditor.appendChild(coordInputsRow);
+  coordEditor.appendChild(coordButtonsRow);
+
   // Event handlers
   colorBtn.onclick = (e) => {
     e.stopPropagation();
+    coordEditor.style.display = 'none'; // Hide coord editor
     editor.style.display = (editor.style.display === 'none') ? 'block' : 'none';
+  };
+
+  coordBtn.onclick = (e) => {
+    e.stopPropagation();
+    editor.style.display = 'none'; // Hide color editor
+    coordEditor.style.display = (coordEditor.style.display === 'none') ? 'block' : 'none';
+  };
+
+  // Coordinate event handlers
+  coordApplyBtn.onclick = () => {
+    const newX = parseFloat(xInput.value);
+    const newY = parseFloat(yInput.value);
+    const newZ = parseFloat(zInput.value);
+
+    if (!isNaN(newX) && !isNaN(newY) && !isNaN(newZ)) {
+      updateAtomCoordinates(atomIndex, [newX, newY, newZ]);
+      coordsDisplay.textContent = `(${newX.toFixed(3)}, ${newY.toFixed(3)}, ${newZ.toFixed(3)})`;
+      coordEditor.style.display = 'none';
+    }
+  };
+
+  coordResetBtn.onclick = () => {
+    // Reset to original coordinates
+    if (originalStructureData && originalStructureData.positions[atomIndex]) {
+      const originalCoords = originalStructureData.positions[atomIndex];
+      xInput.value = originalCoords[0].toFixed(6);
+      yInput.value = originalCoords[1].toFixed(6);
+      zInput.value = originalCoords[2].toFixed(6);
+      updateAtomCoordinates(atomIndex, [...originalCoords]);
+      coordsDisplay.textContent = `(${originalCoords[0].toFixed(3)}, ${originalCoords[1].toFixed(3)}, ${originalCoords[2].toFixed(3)})`;
+      coordEditor.style.display = 'none';
+    }
   };
 
   colorInput.oninput = (e) => { hexInput.value = e.target.value; };
@@ -1993,7 +2171,24 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   };
 
   row.appendChild(editor);
+  row.appendChild(coordEditor);
   return row;
+}
+
+// Function to update atom coordinates and refresh visualization
+function updateAtomCoordinates(atomIndex, newCoords) {
+  if (!structureData || !structureData.positions || atomIndex >= structureData.positions.length) {
+    console.error('Invalid atom index or structure data');
+    return;
+  }
+
+  // Update the coordinates in the structure data
+  structureData.positions[atomIndex] = [...newCoords];
+
+  // Refresh the visualization to show the updated position
+  updateVisualization();
+
+  console.log(`Updated atom ${atomIndex} coordinates to: ${newCoords.join(', ')}`);
 }
 
 
