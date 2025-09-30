@@ -217,6 +217,14 @@ function getElementDisplayColor(element) {
   return colorHexToCss(getElementColor(element));
 }
 
+function clearAllIndividualColorsForElement(element) {
+  if (!individualAtomColors) return;
+  // Remove all individual colors for this element
+  const keysToRemove = Object.keys(individualAtomColors).filter(key => key.startsWith(`${element}_`));
+  keysToRemove.forEach(key => delete individualAtomColors[key]);
+  saveIndividualAtomColors();
+}
+
 function getAtomRadius(element) {
   return (atomicRadii[element] || 1.0) * atomSize;
 }
@@ -1226,7 +1234,7 @@ function createCompositionRow(el, count, total) {
   const row = document.createElement('div');
   row.className = 'comp-row';
   // Two-column grid: left (fixed auto), right (flex). Editor lives under right.
-  row.style.cssText = 'display:grid; grid-template-columns: auto 1fr; align-items:center; column-gap:8px; row-gap:6px; cursor: pointer;';
+  row.style.cssText = 'display:grid; grid-template-columns: auto 1fr; align-items:center; column-gap:8px; row-gap:6px; cursor: pointer; transition: background-color 0.2s ease;';
 
   const left = document.createElement('div');
   left.className = 'comp-left';
@@ -1237,10 +1245,10 @@ function createCompositionRow(el, count, total) {
   const name = document.createElement('span');
   name.textContent = el;
 
-  // Add expand/collapse indicator
+  // Add expand/collapse indicator - starts collapsed
   const expandIcon = document.createElement('span');
   expandIcon.textContent = '▶';
-  expandIcon.style.cssText = 'margin-left: 4px; font-size: 8px; transition: transform 0.2s ease; color: #4fc3f7;';
+  expandIcon.style.cssText = 'margin-left: 4px; font-size: 8px; transition: transform 0.2s ease; color: #4fc3f7; transform: rotate(0deg);';
 
   left.appendChild(dot);
   left.appendChild(name);
@@ -1271,6 +1279,14 @@ function createCompositionRow(el, count, total) {
     const atomRow = createIndividualAtomRow(el, actualAtomIndex, i + 1); // Pass display number as well
     atomsContainer.appendChild(atomRow);
   }
+
+  // Add hover effects
+  row.addEventListener('mouseenter', () => {
+    row.style.backgroundColor = 'rgba(255,255,255,0.03)';
+  });
+  row.addEventListener('mouseleave', () => {
+    row.style.backgroundColor = 'transparent';
+  });
 
   // Add click handler for expand/collapse
   row.addEventListener('click', (e) => {
@@ -1358,8 +1374,12 @@ function createCompositionRow(el, count, total) {
   resetBtn.style.borderColor = 'rgba(0,0,0,0.15)';
   resetBtn.style.color = textColorForBg(defaultColorCss);
 
-  // Reset clears override and refreshes (composition also rerendered inside updateVisualization)
-  resetBtn.onclick = () => { clearElementColorOverride(el); updateVisualization(); };
+  // Reset clears both element-wide override AND all individual colors for this element
+  resetBtn.onclick = () => {
+    clearElementColorOverride(el);
+    clearAllIndividualColorsForElement(el);
+    updateVisualization();
+  };
 
   // Apply commits the chosen color
   applyBtn.onclick = () => {
@@ -1859,6 +1879,13 @@ function init() {
     // Prevent default behavior to avoid conflicts with pan/zoom
     event.preventDefault();
     event.stopPropagation();
+
+    // TODO: Future feature - detect double-click on atoms
+    // When double-click or long-press is detected:
+    // 1. Get clicked atom's element and sourceIndex from hit.userData
+    // 2. Find element in structure panel and expand it
+    // 3. Highlight/scroll to the specific individual atom row
+    // 4. Add visual highlight/glow to both 3D atom and UI row
 
     // Handle both mouse and touch events with better error checking
     let clientX, clientY;
