@@ -1658,6 +1658,98 @@ function generatePOSCARString() {
   return poscar.trim(); // Remove trailing newlines
 }
 
+// Comprehensive state capture for full sharing
+function captureCompleteState() {
+  if (!structureData) return null;
+
+  const state = {
+    // Version for future compatibility
+    version: '1.0',
+
+    // Structure data (current basic sharing)
+    structure: {
+      comment: structureData.comment || 'Shared structure',
+      lattice: structureData.lattice,
+      elements: structureData.elements,
+      positions: structureData.positions
+    },
+
+    // Visual appearance
+    appearance: {
+      userColorOverrides: userColorOverrides || {},
+      individualAtomColors: individualAtomColors || {},
+      useVestaColors: useVestaColors || false
+    },
+
+    // Display settings
+    display: {
+      atomSize: parseFloat(atomSize) || 1.0,
+      bondWidth: parseFloat(window.bondWidth) || 0.1,
+      showBonds: Boolean(showBonds),
+      showLattice: Boolean(showLattice),
+      showNeighborBonds: Boolean(showNeighborBonds),
+      useOrthographicCamera: Boolean(useOrthographicCamera)
+    },
+
+    // Bond settings
+    bonds: {
+      bondLengths: bondLengths || {},
+      bondVisibility: bondVisibility || {}
+    },
+
+    // Camera state
+    camera: {
+      position: camera ? [camera.position.x, camera.position.y, camera.position.z] : null,
+      target: controls ? [controls.target.x, controls.target.y, controls.target.z] : null,
+      zoom: camera ? (camera.zoom || null) : null
+    },
+
+    // UI state
+    ui: {
+      structurePanelOpen: document.getElementById('composition')?.classList.contains('open') || false,
+      expandedElements: getExpandedElements(),
+      measurementMode: measureMode || 'none'
+    }
+  };
+
+  return state;
+}
+
+// Helper function to get currently expanded elements
+function getExpandedElements() {
+  const expanded = [];
+  const atomContainers = document.querySelectorAll('.individual-atoms');
+  atomContainers.forEach((container, index) => {
+    if (container.style.display !== 'none') {
+      // Find the element name from the parent container
+      const elementName = container.parentElement?.querySelector('.comp-left span:nth-child(2)')?.textContent;
+      if (elementName) {
+        expanded.push(elementName);
+      }
+    }
+  });
+  return expanded;
+}
+
+// Enhanced URL creation with complete state
+function createCompleteShareableURL() {
+  const completeState = captureCompleteState();
+  if (!completeState) return null;
+
+  console.log('Captured complete state:', completeState);
+
+  // Encode complete state to base64
+  const stateJSON = JSON.stringify(completeState);
+  const base64Data = btoa(stateJSON);
+
+  // Create URL with complete state parameter
+  const currentURL = new URL(window.location);
+  currentURL.searchParams.set('state', base64Data);
+
+  return currentURL.toString();
+}
+
+// Legacy function for basic structure sharing (keep for compatibility)
 function createShareableURL() {
   const poscarString = generatePOSCARString();
   if (!poscarString) return null;
@@ -1675,7 +1767,8 @@ function createShareableURL() {
 }
 
 function shareStructure() {
-  const shareURL = createShareableURL();
+  // Use complete state sharing instead of basic structure sharing
+  const shareURL = createCompleteShareableURL();
   if (!shareURL) {
     alert('No structure loaded to share!');
     return;
@@ -1743,7 +1836,7 @@ function createShareButton() {
 
   shareBtn = document.createElement('button');
   shareBtn.id = 'shareBtn';
-  shareBtn.textContent = '🔗 Share';
+  shareBtn.textContent = '🔗 Share All';
   shareBtn.style.cssText = `
     padding: 8px 16px;
     margin-top: 8px;
@@ -1792,11 +1885,162 @@ function createShareButton() {
 // Flag to track if we've loaded a shared structure
 let sharedStructureLoaded = false;
 
+// Function to restore complete state from shared URL
+function restoreCompleteState(state) {
+  console.log('Restoring complete state:', state);
+
+  // 1. Restore structure data
+  structureData = {
+    comment: state.structure.comment,
+    lattice: state.structure.lattice,
+    elements: state.structure.elements,
+    positions: state.structure.positions
+  };
+  originalStructureData = JSON.parse(JSON.stringify(structureData));
+
+  // 2. Restore appearance settings
+  userColorOverrides = state.appearance.userColorOverrides || {};
+  individualAtomColors = state.appearance.individualAtomColors || {};
+  useVestaColors = state.appearance.useVestaColors || false;
+
+  // 3. Restore display settings
+  atomSize = state.display.atomSize || 1.0;
+  window.bondWidth = state.display.bondWidth || 0.1;
+  showBonds = state.display.showBonds;
+  showLattice = state.display.showLattice;
+  showNeighborBonds = state.display.showNeighborBonds || false;
+  useOrthographicCamera = state.display.useOrthographicCamera || false;
+
+  // 4. Restore bond settings
+  bondLengths = state.bonds.bondLengths || {};
+  bondVisibility = state.bonds.bondVisibility || {};
+
+  // 5. Update UI controls to match restored state
+  updateUIControlsFromState(state);
+
+  // 6. Show structure controls and recreate interface
+  document.getElementById('structureControls').style.display = 'block';
+  document.getElementById('bondControlsGroup').style.display = 'block';
+  createBondLengthControls();
+  createShareButton();
+
+  // 7. Update visualization
+  updateVisualization();
+
+  // 8. Restore camera state
+  if (state.camera.position && state.camera.target) {
+    setTimeout(() => {
+      camera.position.set(...state.camera.position);
+      controls.target.set(...state.camera.target);
+      if (state.camera.zoom && camera.zoom !== undefined) {
+        camera.zoom = state.camera.zoom;
+        camera.updateProjectionMatrix();
+      }
+      controls.update();
+    }, 100);
+  } else {
+    // Fallback to default view setup
+    switchCameraType();
+    resetView();
+  }
+
+  // 9. Restore UI panel states
+  restoreUIPanelStates(state.ui);
+
+  clearMeasure();
+  resizeRenderer();
+
+  setStatus('Loaded shared state with complete settings');
+  sharedStructureLoaded = true;
+}
+
+// Helper function to update UI controls
+function updateUIControlsFromState(state) {
+  // Update sliders and checkboxes to match restored state
+  const atomSizeSlider = document.getElementById('atomSize');
+  const atomSizeValue = document.getElementById('atomSizeValue');
+  if (atomSizeSlider && atomSizeValue) {
+    const atomSizeNum = parseFloat(state.display.atomSize) || 1.0;
+    atomSizeSlider.value = atomSizeNum;
+    atomSizeValue.textContent = atomSizeNum.toFixed(1);
+  }
+
+  const bondWidthSlider = document.getElementById('bondWidth');
+  const bondWidthValue = document.getElementById('bondWidthValue');
+  if (bondWidthSlider && bondWidthValue) {
+    const bondWidthNum = parseFloat(state.display.bondWidth) || 0.1;
+    bondWidthSlider.value = bondWidthNum;
+    bondWidthValue.textContent = bondWidthNum.toFixed(2);
+  }
+
+  // Update checkboxes
+  const showBondsEl = document.getElementById('showBonds');
+  if (showBondsEl) showBondsEl.checked = state.display.showBonds;
+
+  const showLatticeEl = document.getElementById('showLattice');
+  if (showLatticeEl) showLatticeEl.checked = state.display.showLattice;
+
+  const neighborBondsEl = document.getElementById('neighborBonds');
+  if (neighborBondsEl) neighborBondsEl.checked = state.display.showNeighborBonds;
+
+  const orthoCameraEl = document.getElementById('orthographicCamera');
+  if (orthoCameraEl) orthoCameraEl.checked = state.display.useOrthographicCamera;
+
+  const vestaColorsEl = document.getElementById('vestaColors');
+  if (vestaColorsEl) vestaColorsEl.checked = state.appearance.useVestaColors;
+}
+
+// Helper function to restore UI panel states
+function restoreUIPanelStates(uiState) {
+  // Restore structure panel state
+  const composition = document.getElementById('composition');
+  const structureToggle = document.getElementById('structureToggle');
+  const toggleIcon = document.getElementById('structureToggleIcon');
+
+  if (uiState.structurePanelOpen) {
+    composition?.classList.add('open');
+    composition?.setAttribute('aria-hidden', 'false');
+    if (toggleIcon) {
+      toggleIcon.textContent = '−';
+      toggleIcon.classList.add('open');
+    }
+    if (structureToggle) {
+      structureToggle.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  // Note: Element expansions will be restored when renderComposition() is called
+}
+
 // Function to load structure from URL parameter
 function loadSharedStructure() {
   const urlParams = new URLSearchParams(window.location.search);
-  const structureParam = urlParams.get('structure');
+  const stateParam = urlParams.get('state');
+  const structureParam = urlParams.get('structure'); // Legacy support
 
+  // Try new complete state format first
+  if (stateParam) {
+    try {
+      const stateJSON = atob(stateParam);
+      const completeState = JSON.parse(stateJSON);
+
+      console.log('Loading complete shared state');
+      restoreCompleteState(completeState);
+
+      // Clear the URL parameter
+      const newUrl = new URL(window.location);
+      newUrl.searchParams.delete('state');
+      window.history.replaceState({}, document.title, newUrl.toString());
+      return;
+    } catch (error) {
+      console.error('Failed to load complete state:', error);
+      setStatus('Failed to load shared state');
+      sharedStructureLoaded = true; // Prevent default structure from loading
+      return;
+    }
+  }
+
+  // Fallback to legacy structure-only sharing
   if (structureParam) {
     try {
       // Decode base64 to get POSCAR string
