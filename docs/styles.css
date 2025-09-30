@@ -45,7 +45,7 @@ body.panel-hidden #view {
   left: 0;
   width: 100vw;
   height: 100vh;
-  border-radius: 20px;
+  border-radius: 0;
 }
 
 body.panel-hidden #view canvas {
@@ -58,11 +58,17 @@ body.panel-hidden #cameraTools {
 }
 
 body.panel-hidden #axesGizmo {
-  left: 70px;
+  left: 20px;
 }
 
 body.panel-hidden #axesLegend {
-  left: 40px;
+  left: 20px;
+}
+
+/* Scale down measurement tools when panel hidden */
+body.panel-hidden #measurementTools {
+  transform: scale(0.85);
+  transform-origin: top right;
 }
 
 .logo {
