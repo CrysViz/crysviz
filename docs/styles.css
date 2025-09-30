@@ -59,20 +59,21 @@ body.panel-hidden #view canvas {
   height: 100% !important;
 }
 
+/* === Desktop-only measurement tool scaling === */
+@media screen and (min-width: 1025px) {
+  #measurementTools {
+    transform: scale(0.85);
+  }
+}
+
 /* === Panel Hidden Overrides === */
 body.panel-hidden #cameraTools {
-  left: 12px;  /* Align with hamburger menu */
-  top: 64px;   /* Below hamburger menu */
+  left: 68px;  /* Decent separation from hamburger menu */
+  top: 12px;   /* Same Y level as hamburger menu */
 }
 
 body.panel-hidden #axesLegend {
   left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px);  /* Stick to gizmo */
-}
-
-/* Keep consistent measurement tool size in both states */
-body.panel-hidden #measurementTools {
-  transform: scale(0.85);
-  transform-origin: top right;
 }
 
 .logo {
