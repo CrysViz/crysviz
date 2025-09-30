@@ -11,12 +11,15 @@ body {
 }
 
 :root {
-  --drawer-width: 380px;
+  --panel-content-width: 380px; /* Panel content width */
+  --panel-border-width: 1px; /* Panel border width */
+  --panel-total-width: calc(var(--panel-content-width) + var(--panel-border-width)); /* Complete panel width */
+
+  /* Legacy variable for compatibility */
+  --drawer-width: var(--panel-total-width);
 }
 
 #ui {
-  position: relative;
-  left: 0;
   width: 380px;
   overflow: auto;
   padding: 20px;
@@ -24,6 +27,11 @@ body {
   color: #fff;
   backdrop-filter: blur(20px);
   border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Desktop panel hide state - simple approach */
+#ui.panel-hidden {
+  display: none;
 }
 
 .logo {
@@ -701,9 +709,9 @@ z-index:1000; pointer-events:none;
   backdrop-filter: blur(6px); white-space:nowrap;
 }
 
-/* Mobile Menu Toggle Button */
+/* Hamburger Menu - Always Top Left */
 #mobileMenuToggle {
-  display: none;
+  display: flex;
   position: fixed;
   top: 12px;
   left: 12px;
@@ -759,15 +767,20 @@ body {
 
 /* Mobile and Tablet Responsive Styles */
 @media screen and (max-width: 1024px) {
-  /* Show mobile menu toggle */
-  #mobileMenuToggle {
-    display: flex !important;
+  /* Mobile: Panel positioning */
+  #ui {
+    position: fixed;
+    top: 0;
+    left: -381px;
+    height: 100vh;
+    z-index: 1500;
+    transition: left 0.3s ease;
   }
 
-  /* When the panel is open, push camera controls and gizmos to the right of drawer */
-  body.panel-open #cameraTools { left: calc(var(--drawer-width) + 20px); }
-  body.panel-open #axesGizmo { left: calc(var(--drawer-width) + 20px); }
-  body.panel-open #axesLegend { left: calc(var(--drawer-width) + 20px); }
+  /* Panel open state for mobile */
+  #ui.panel-open {
+    left: 0;
+  }
 
   /* Adjust axes gizmo position and size */
   #axesGizmo {
@@ -952,35 +965,12 @@ body {
     margin-bottom: 2px;
   }
 
-  /* Mobile layout - hide left panel, show hamburger, toggle tools */
+  /* Mobile-specific adjustments */
   body {
-    flex-direction: column;
-    position: relative;
     overflow-x: hidden;
   }
 
-  #ui {
-    position: fixed !important;
-    top: 0;
-    left: calc(-1 * var(--drawer-width));
-    width: var(--drawer-width);
-    height: 100vh;
-    height: 100dvh; /* Dynamic viewport height for mobile keyboards */
-    z-index: 1500;
-    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    border-right: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 2px 0 20px rgba(0, 0, 0, 0.3);
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    display: block !important;
-  }
-
-  #ui.mobile-open {
-    left: 0 !important;
-  }
-
   #view {
-    flex: 1;
     width: 100vw;
     height: 100vh;
     border-radius: 0;

@@ -2070,57 +2070,69 @@ window.addEventListener('resize', resizeRenderer);
 window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
 window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
 
-// Mobile menu functionality
+// Panel toggle functionality for all screen sizes
 function setupMobileMenu() {
-  const mobileToggle = document.getElementById('mobileMenuToggle');
-  const mobileOverlay = document.getElementById('mobileOverlay');
+  const hamburger = document.getElementById('mobileMenuToggle');
+  const overlay = document.getElementById('mobileOverlay');
   const ui = document.getElementById('ui');
 
+  function togglePanel() {
+    if (!ui) return;
 
-  function toggleMobileMenu() {
-    if (ui && mobileOverlay) {
-      ui.classList.toggle('mobile-open');
-      mobileOverlay.classList.toggle('active');
-      // Reflect drawer state on body for responsive positioning
-      if (ui.classList.contains('mobile-open')) {
-        document.body.classList.add('panel-open');
-      } else {
-        document.body.classList.remove('panel-open');
+    const isDesktop = window.innerWidth > 1024;
+
+    if (isDesktop) {
+      // Desktop: Toggle panel hidden state
+      ui.classList.toggle('panel-hidden');
+    } else {
+      // Mobile: Toggle panel open with overlay
+      ui.classList.toggle('panel-open');
+      if (overlay) {
+        overlay.classList.toggle('active');
       }
     }
   }
 
-  function closeMobileMenu() {
-    if (ui && mobileOverlay) {
-      ui.classList.remove('mobile-open');
-      mobileOverlay.classList.remove('active');
-      document.body.classList.remove('panel-open');
+  function closePanel() {
+    if (!ui) return;
+
+    const isDesktop = window.innerWidth > 1024;
+
+    if (isDesktop) {
+      // Desktop: Hide panel
+      ui.classList.add('panel-hidden');
+    } else {
+      // Mobile: Close panel
+      ui.classList.remove('panel-open');
+      if (overlay) {
+        overlay.classList.remove('active');
+      }
     }
   }
 
-  if (mobileToggle) {
-    mobileToggle.addEventListener('click', (e) => {
+  if (hamburger) {
+    hamburger.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      toggleMobileMenu();
+      togglePanel();
     });
 
-    mobileToggle.addEventListener('touchend', (e) => {
+    hamburger.addEventListener('touchend', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      toggleMobileMenu();
+      togglePanel();
     });
   }
 
-  if (mobileOverlay) {
-    mobileOverlay.addEventListener('click', (e) => {
+  if (overlay) {
+    overlay.addEventListener('click', (e) => {
       e.preventDefault();
-      closeMobileMenu();
+      closePanel();
     });
 
-    mobileOverlay.addEventListener('touchend', (e) => {
+    overlay.addEventListener('touchend', (e) => {
       e.preventDefault();
-      closeMobileMenu();
+      closePanel();
     });
   }
 
