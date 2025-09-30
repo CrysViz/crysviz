@@ -1684,7 +1684,7 @@ function captureCompleteState() {
     // Display settings
     display: {
       atomSize: parseFloat(atomSize) || 1.0,
-      bondWidth: parseFloat(window.bondWidth) || 0.1,
+      bondWidth: parseFloat(bondRadius) || 0.08,
       showBonds: Boolean(showBonds),
       showLattice: Boolean(showLattice),
       showNeighborBonds: Boolean(showNeighborBonds),
@@ -1905,7 +1905,7 @@ function restoreCompleteState(state) {
 
   // 3. Restore display settings
   atomSize = state.display.atomSize || 1.0;
-  window.bondWidth = state.display.bondWidth || 0.1;
+  bondRadius = state.display.bondWidth || 0.08;
   showBonds = state.display.showBonds;
   showLattice = state.display.showLattice;
   showNeighborBonds = state.display.showNeighborBonds || false;
