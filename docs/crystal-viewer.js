@@ -53,6 +53,8 @@ let measureMode = 'none'; // 'none', 'distance', 'angle'
 let bondVisibility = {};
 // User color overrides per element (persisted to localStorage)
 let userColorOverrides = {};
+// Individual atom color overrides (persisted to localStorage)
+let individualAtomColors = {};
 
 let gizmoScene, gizmoCamera, gizmoRenderer;
 let keyLight; // Lighting variables
@@ -131,6 +133,19 @@ function getElementColor(element) {
   return colorScheme[element] || 0x808080;
 }
 
+function getIndividualAtomColor(element, atomIndex) {
+  // Check if individual atom has custom color
+  const atomKey = `${element}_${atomIndex}`;
+  if (individualAtomColors && individualAtomColors[atomKey] !== undefined) {
+    console.log(`Found individual color for ${atomKey}: ${individualAtomColors[atomKey].toString(16)}`);
+    return individualAtomColors[atomKey];
+  }
+  // Fall back to element-wide color
+  const fallbackColor = getElementColor(element);
+  console.log(`No individual color for ${atomKey}, using element color: ${fallbackColor.toString(16)}`);
+  return fallbackColor;
+}
+
 // Get the default palette color for an element (ignores user overrides)
 function getDefaultElementColor(element) {
   const colorScheme = useVestaColors ? vestaColors : jmolColors;
@@ -146,6 +161,16 @@ function loadColorOverrides() {
     if (raw) userColorOverrides = JSON.parse(raw) || {};
   } catch (_) { userColorOverrides = {}; }
 }
+
+function saveIndividualAtomColors() {
+  try { localStorage.setItem('individualAtomColors', JSON.stringify(individualAtomColors || {})); } catch (_) {}
+}
+function loadIndividualAtomColors() {
+  try {
+    const raw = localStorage.getItem('individualAtomColors');
+    if (raw) individualAtomColors = JSON.parse(raw) || {};
+  } catch (_) { individualAtomColors = {}; }
+}
 function setElementColorOverride(el, cssHex) {
   if (!cssHex) return false;
   let hex = cssHex.toString().trim();
@@ -159,6 +184,37 @@ function setElementColorOverride(el, cssHex) {
 function clearElementColorOverride(el) {
   delete userColorOverrides[el];
   saveColorOverrides();
+}
+
+function setIndividualAtomColor(element, atomIndex, cssHex) {
+  if (!cssHex) return false;
+  let hex = cssHex.toString().trim();
+  if (hex.startsWith('#')) hex = hex.slice(1);
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return false;
+  const atomKey = `${element}_${atomIndex}`;
+  individualAtomColors[atomKey] = parseInt(hex, 16);
+  saveIndividualAtomColors();
+  return true;
+}
+
+function clearIndividualAtomColor(element, atomIndex) {
+  const atomKey = `${element}_${atomIndex}`;
+  delete individualAtomColors[atomKey];
+  saveIndividualAtomColors();
+}
+
+function hasIndividualColors(element) {
+  if (!individualAtomColors) return false;
+  return Object.keys(individualAtomColors).some(key => key.startsWith(`${element}_`));
+}
+
+function getElementDisplayColor(element) {
+  if (hasIndividualColors(element)) {
+    // Return a special "mixed" color - a gradient or distinctive color
+    return '#FFB347'; // Orange to indicate mixed colors
+  }
+  return colorHexToCss(getElementColor(element));
 }
 
 function getAtomRadius(element) {
@@ -980,9 +1036,12 @@ function clearMeasure(){
 
 
 
-function createAtomMesh(element, position) {
+function createAtomMesh(element, position, atomIndex = null) {
   const radius = getAtomRadius(element);
-  const color = getElementColor(element);
+  const color = atomIndex !== null ? getIndividualAtomColor(element, atomIndex) : getElementColor(element);
+  if (atomIndex !== null) {
+    console.log(`Creating atom mesh for ${element} at index ${atomIndex} with color: ${color.toString(16)}`);
+  }
   const geometry = new THREE.SphereGeometry(radius, 32, 24);
   const material = new THREE.MeshPhysicalMaterial({
     color,
@@ -995,6 +1054,7 @@ function createAtomMesh(element, position) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(position[0], position[1], position[2]);
   mesh.userData.element = element;
+  mesh.userData.atomIndex = atomIndex;
   return mesh;
 }
 
@@ -1160,20 +1220,31 @@ function renderComposition() {
 }
 
 function createCompositionRow(el, count, total) {
+  const container = document.createElement('div');
+  container.className = 'comp-container';
+
   const row = document.createElement('div');
   row.className = 'comp-row';
   // Two-column grid: left (fixed auto), right (flex). Editor lives under right.
-  row.style.cssText = 'display:grid; grid-template-columns: auto 1fr; align-items:center; column-gap:8px; row-gap:6px;';
+  row.style.cssText = 'display:grid; grid-template-columns: auto 1fr; align-items:center; column-gap:8px; row-gap:6px; cursor: pointer;';
+
   const left = document.createElement('div');
   left.className = 'comp-left';
   const dot = document.createElement('span');
   dot.className = 'dot';
-  const currentColor = colorHexToCss(getElementColor(el));
+  const currentColor = getElementDisplayColor(el);
   dot.style.background = currentColor;
   const name = document.createElement('span');
   name.textContent = el;
+
+  // Add expand/collapse indicator
+  const expandIcon = document.createElement('span');
+  expandIcon.textContent = '▶';
+  expandIcon.style.cssText = 'margin-left: 4px; font-size: 8px; transition: transform 0.2s ease; color: #4fc3f7;';
+
   left.appendChild(dot);
   left.appendChild(name);
+  left.appendChild(expandIcon);
 
   const right = document.createElement('span');
   const pct = (100*count/total).toFixed(1);
@@ -1181,6 +1252,36 @@ function createCompositionRow(el, count, total) {
 
   row.appendChild(left); // grid col 1
   row.appendChild(right); // grid col 2
+
+  // Create individual atoms container (hidden by default)
+  const atomsContainer = document.createElement('div');
+  atomsContainer.className = 'individual-atoms';
+  atomsContainer.style.cssText = 'display: none; margin-left: 20px; margin-top: 8px; border-left: 2px solid rgba(255,255,255,0.1); padding-left: 8px;';
+
+  // Create individual atom rows - need to map element-specific indices to actual structure indices
+  const elementAtomIndices = [];
+  for (let i = 0; i < structureData.elements.length; i++) {
+    if (structureData.elements[i] === el) {
+      elementAtomIndices.push(i);
+    }
+  }
+
+  for (let i = 0; i < elementAtomIndices.length; i++) {
+    const actualAtomIndex = elementAtomIndices[i];
+    const atomRow = createIndividualAtomRow(el, actualAtomIndex, i + 1); // Pass display number as well
+    atomsContainer.appendChild(atomRow);
+  }
+
+  // Add click handler for expand/collapse
+  row.addEventListener('click', (e) => {
+    e.stopPropagation(); // Prevent triggering parent events
+    const isExpanded = atomsContainer.style.display !== 'none';
+    atomsContainer.style.display = isExpanded ? 'none' : 'block';
+    expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
+  });
+
+  container.appendChild(row);
+  container.appendChild(atomsContainer);
 
   // Inline color editor (hidden by default)
   const editor = document.createElement('div');
@@ -1266,6 +1367,110 @@ function createCompositionRow(el, count, total) {
     const ok = setElementColorOverride(el, val);
     if (ok) { updateVisualization(); }
   };
+  // Add element-wide color editor to container (after individual atoms)
+  container.appendChild(editor);
+
+  return container;
+}
+
+function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex + 1) {
+  const row = document.createElement('div');
+  row.className = 'individual-atom-row';
+  row.style.cssText = 'display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 8px; padding: 4px 0; font-size: 11px;';
+
+  // Individual atom dot with its specific color
+  const dot = document.createElement('span');
+  dot.className = 'dot';
+  dot.style.cssText = 'width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; border: 1px solid rgba(255,255,255,0.4);';
+  const currentColor = colorHexToCss(getIndividualAtomColor(element, atomIndex));
+  dot.style.background = currentColor;
+
+  // Atom name (e.g., "Ba1", "Ba2")
+  const name = document.createElement('span');
+  name.textContent = `${element}${displayNumber}`;
+  name.style.color = '#ddd';
+
+  // Color picker button
+  const colorBtn = document.createElement('button');
+  colorBtn.textContent = '🎨';
+  colorBtn.style.cssText = 'background: transparent; border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 10px;';
+  colorBtn.title = `Change color for ${element}${displayNumber}`;
+
+  row.appendChild(dot);
+  row.appendChild(name);
+  row.appendChild(colorBtn);
+
+  // Create color editor for this individual atom
+  const editor = document.createElement('div');
+  editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 6px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
+
+  const colorInput = document.createElement('input');
+  colorInput.type = 'color';
+  colorInput.value = currentColor;
+  colorInput.style.cssText = 'width: 24px; height: 24px; border: none; background: transparent; margin-right: 6px;';
+
+  const hexInput = document.createElement('input');
+  hexInput.type = 'text';
+  hexInput.value = currentColor;
+  hexInput.placeholder = '#RRGGBB';
+  hexInput.style.cssText = 'flex: 1; height: 24px; padding: 4px 6px; border-radius: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+
+  const applyBtn = document.createElement('button');
+  applyBtn.textContent = 'Apply';
+  applyBtn.className = 'btn-mini';
+  applyBtn.style.cssText = 'height: 24px; padding: 0 8px; margin-left: 6px; font-size: 10px;';
+
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset';
+  resetBtn.className = 'btn-mini';
+  resetBtn.style.cssText = 'height: 24px; padding: 0 8px; margin-left: 4px; font-size: 10px;';
+
+  const editorControls = document.createElement('div');
+  editorControls.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+  editorControls.appendChild(colorInput);
+  editorControls.appendChild(hexInput);
+  editorControls.appendChild(applyBtn);
+  editorControls.appendChild(resetBtn);
+
+  editor.appendChild(editorControls);
+
+  // Event handlers
+  colorBtn.onclick = (e) => {
+    e.stopPropagation();
+    editor.style.display = (editor.style.display === 'none') ? 'block' : 'none';
+  };
+
+  colorInput.oninput = (e) => { hexInput.value = e.target.value; };
+  hexInput.oninput = (e) => { colorInput.value = e.target.value; };
+
+  applyBtn.onclick = () => {
+    const val = hexInput.value;
+    console.log(`Setting individual color for ${element} at index ${atomIndex} to ${val}`);
+    const ok = setIndividualAtomColor(element, atomIndex, val);
+    console.log(`setIndividualAtomColor returned: ${ok}`);
+    console.log(`individualAtomColors:`, individualAtomColors);
+    if (ok) {
+      dot.style.background = val;
+      updateVisualization();
+      // Update the composition to refresh element colors
+      renderComposition();
+      editor.style.display = 'none';
+    }
+  };
+
+  resetBtn.onclick = () => {
+    clearIndividualAtomColor(element, atomIndex);
+    const newColor = colorHexToCss(getIndividualAtomColor(element, atomIndex));
+    dot.style.background = newColor;
+    colorInput.value = newColor;
+    hexInput.value = newColor;
+    updateVisualization();
+    // Update the composition to refresh element colors
+    renderComposition();
+    editor.style.display = 'none';
+  };
+
+  row.appendChild(editor);
   return row;
 }
 
@@ -1299,8 +1504,9 @@ function updateVisualization() {
   const wrapped = periodicWrapped(structureData.positions, structureData.elements);
   const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
   for (let i = 0; i < wrappedCart.length; i++) {
-    const atomMesh = createAtomMesh(wrapped.elements[i], wrappedCart[i]);
-    atomMesh.userData.sourceIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    const atomMesh = createAtomMesh(wrapped.elements[i], wrappedCart[i], originalIndex);
+    atomMesh.userData.sourceIndex = originalIndex;
     atomsGroup.add(atomMesh);
   }
 
@@ -1469,6 +1675,7 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     // keep a deep copy for restore (fractional positions + arrays)
     originalStructureData = JSON.parse(JSON.stringify(structureData));
     loadColorOverrides();
+    loadIndividualAtomColors();
     if (isDefault) {
       setStatus(`Default structure: ${structureData.elements.length} atoms`);
     } else {
