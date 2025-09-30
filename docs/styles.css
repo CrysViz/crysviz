@@ -17,6 +17,11 @@ body {
 
   /* Legacy variable for compatibility */
   --drawer-width: var(--panel-total-width);
+
+  /* Gizmo positioning variables */
+  --gizmo-size: 120px;
+  --gizmo-bottom: 20px;
+  --gizmo-left: 450px;
 }
 
 #ui {
@@ -37,6 +42,7 @@ body {
 /* When panel hidden: disable flex and make view fullscreen */
 body.panel-hidden {
   display: block;
+  --gizmo-left: 20px;
 }
 
 body.panel-hidden #view {
@@ -53,19 +59,17 @@ body.panel-hidden #view canvas {
   height: 100% !important;
 }
 
+/* === Panel Hidden Overrides === */
 body.panel-hidden #cameraTools {
-  left: 20px;
-}
-
-body.panel-hidden #axesGizmo {
-  left: 20px;
+  left: 12px;  /* Align with hamburger menu */
+  top: 64px;   /* Below hamburger menu */
 }
 
 body.panel-hidden #axesLegend {
-  left: 20px;
+  left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px);  /* Stick to gizmo */
 }
 
-/* Scale down measurement tools when panel hidden */
+/* Keep consistent measurement tool size in both states */
 body.panel-hidden #measurementTools {
   transform: scale(0.85);
   transform-origin: top right;
@@ -556,15 +560,14 @@ input[type="checkbox"] {
 
 
 #axesGizmo {
-position: fixed; left: 450px; bottom: 20px; width: 120px; height: 120px;
+position: fixed; left: var(--gizmo-left); bottom: var(--gizmo-bottom); width: var(--gizmo-size); height: var(--gizmo-size);
 border-radius: 10px; background: rgba(0,0,0,0.08); backdrop-filter: blur(6px);
 border: 1px solid rgba(255,255,255,0.15); z-index: 1000; overflow: hidden;
 pointer-events: none;
 }
 
 #axesLegend{
-position: fixed; left: 420px; bottom: 20px;
-transform: translateX(150px);
+position: fixed; left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px); bottom: var(--gizmo-bottom);
 background: rgba(0,0,0,0.8);
 border: 1px solid rgba(255,255,255,0.2);
 border-radius: 8px;
@@ -591,12 +594,13 @@ z-index:1000; pointer-events:none;
   padding: 12px;
   backdrop-filter: blur(20px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  transform-origin: top right;
 }
 
-/* --- Camera Tools (Top Left) --- */
+/* --- Camera Tools (Desktop: Top Left beside panel, Fullscreen: aligned with hamburger) --- */
 #cameraTools {
   position: fixed;
-  left: 450px;
+  left: 450px;  /* Default: beside panel */
   top: 16px;
   display: flex;
   gap: 8px;
@@ -762,8 +766,8 @@ z-index:1000; pointer-events:none;
   backdrop-filter: blur(12px);
   font-size: 16px;
   font-weight: 300;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -826,7 +830,6 @@ body {
     width: 60px;
     height: 60px;
     border-radius: 6px;
-    background: rgba(0, 0, 0, 0.6);
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
@@ -887,13 +890,13 @@ body {
   /* Mobile toggle button - compact and unobtrusive */
   .measurement-toggle {
     display: flex !important;
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
     background: rgba(44, 44, 44, 0.9);
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 50%;
     color: white;
-    font-size: 20px;
+    font-size: 18px;
     padding: 0;
     margin: 0;
     cursor: pointer;
@@ -970,17 +973,17 @@ body {
 
   /* Mobile buttons - override desktop styles */
   #cameraTools .measure-tool-btn {
-    padding: 8px !important;
-    min-width: 44px !important;
-    min-height: 44px !important;
-    font-size: 10px !important;
-    gap: 2px !important;
+    padding: 6px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    font-size: 9px !important;
+    gap: 1px !important;
     flex-direction: column !important;
   }
 
   #cameraTools .measure-tool-btn .tool-icon {
-    font-size: 16px !important;
-    margin-bottom: 2px !important;
+    font-size: 14px !important;
+    margin-bottom: 1px !important;
   }
 
   #cameraTools .measure-tool-btn span {
@@ -989,17 +992,17 @@ body {
 
   /* Compact mobile buttons for measurement tools */
   .measure-tool-btn {
-    padding: 8px;
-    min-width: 44px;
-    min-height: 44px;
-    font-size: 10px;
-    gap: 2px;
+    padding: 6px;
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 9px;
+    gap: 1px;
     flex-direction: column;
   }
 
   .tool-icon {
-    font-size: 16px;
-    margin-bottom: 2px;
+    font-size: 14px;
+    margin-bottom: 1px;
   }
 
   /* Mobile-specific adjustments */
