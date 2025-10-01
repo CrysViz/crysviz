@@ -1,7 +1,9 @@
 
 <img src="docs/CrysViz_logo_clear_back.png" width="400">
 
-Light-weight browser-based crystal structure visualisation with on-device rendering. 
+# Light-weight browser-based crystal structure visualisation with on-device rendering. 
+
+## This is the live developement repository. If you are not Abhijith or Florian, you should not be here!
 
 ### Current Features:
 
