@@ -1,23 +1,11 @@
 import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-//import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
-import { setupStructureInput, isLikelyCIFContent, parsePOSCAR, cartToFractional } from './structure-input.js';
-import { parseCIF} from './file_reader.js';
-import {
-  captureCompleteState,
-  createCompleteShareableURL,
-  createLegacyShareableURL,
-  restoreCompleteState,
-  generatePOSCARString
-} from './shareutils.js'; 
+import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
 
 const view = document.getElementById('view');
 const status = document.getElementById('status');
-const setStatus = (s) => {
-  if (status) status.textContent = s;
-  console.log('[viewer]', s);
-};
+const setStatus = (s) => { status.textContent = s; console.log('[viewer]', s); };
 
 // Default complex structure (Ba2YCu3O7) - high-Tc superconductor with 4 elements to test collapsible composition
 const defaultPOSCAR = `Ba2YCu3O7 - YBCO Superconductor
@@ -45,40 +33,20 @@ Direct
 let camera, controls, renderer, scene;
 let atomsGroup, bondsGroup, latticeGroup;
 let structureData = null;
-let originalStructureData = null; // deep-copy of last loaded structure for restore
 let bondLengths = {};
 let defaultBondLengths = {};
 let atomSize = 1.0;
-let bondRadius = 0.08; // radius of bond cylinders
 let showBonds = true;
 let showLattice = true;
-let showNeighborBonds = false; // Periodic image atoms + bonds across cell (off by default)
 let useOrthographicCamera = true;
-const defaultZoomScale = 0.75; // initial zoom of the atom.
 let useVestaColors = true;
 let measureMode = 'none'; // 'none', 'distance', 'angle'
 let bondVisibility = {};
-// User color overrides per element (persisted to localStorage)
-let userColorOverrides = {};
-// Individual atom color overrides (persisted to localStorage)
-let individualAtomColors = {};
+let distanceMeasurements = [];
+let angleMeasurements = [];
 
-let gizmoScene, gizmoCamera, gizmoRenderer;
-let keyLight; // Lighting variables
-
-let atomTooltip = null;
-let hoveredAtom = null;
-
-const aboutTrigger = document.getElementById('aboutTrigger');
-const aboutOverlay = document.getElementById('aboutOverlay');
-const aboutModal = document.getElementById('aboutModal');
-const aboutClose = document.getElementById('aboutClose');
-const aboutContent = document.getElementById('aboutContent');
-let aboutLoaded = false;
-let aboutLoading = false;
-let aboutPreviousFocus = null;
-
-let orthographicFrustumSize = null;
+let gizmoScene, gizmoCamera, gizmoRenderer, gizmoAxes;
+let keyLight, fillLight, bottomLight; // Lighting variables
 
     // Measurement state
 let selectedAtoms = []; // Array to store selected atoms (up to 3 for angles)
@@ -101,7 +69,7 @@ const atomicRadii = {
   Tb: 1.94, Dy: 1.92, Ho: 1.92, Er: 1.89, Tm: 1.90, Yb: 1.87, Lu: 1.87,
   Hf: 1.75, Ta: 1.70, W: 1.62, Re: 1.51, Os: 1.44, Ir: 1.41, Pt: 1.36, Au: 1.36, Hg: 1.32,
   Tl: 1.45, Pb: 1.46, Bi: 1.48, Po: 1.40, At: 1.50, Rn: 1.50
-}; // atomic radii in angstroms
+};
 
 const jmolColors = {
   H: 0xffffff, He: 0xd9ffff, Li: 0xcc80ff, Be: 0xc2ff00, B: 0xffb5b5, C: 0x909090, N: 0x3050f8, O: 0xff0d0d,
@@ -129,104 +97,11 @@ const vestaColors = {
   Tb: 0xff1493, Dy: 0xff1493, Ho: 0xff1493, Er: 0xff1493, Tm: 0xff1493, Yb: 0xff1493, Lu: 0xff1493, Hf: 0xff1493,
   Ta: 0xff1493, W: 0xff1493, Re: 0xff1493, Os: 0xff1493, Ir: 0xff1493, Pt: 0xff1493, Au: 0xffd700, Hg: 0xff1493,
   Tl: 0xff1493, Pb: 0x3c3d3f, Bi: 0xff1493, Po: 0xff1493, At: 0xff1493, Rn: 0xffc0cb
-}; //not really, but close enough
+};
 
 function getElementColor(element) {
-  // Prefer user override if present
-  if (userColorOverrides && userColorOverrides[element] !== undefined) {
-    return userColorOverrides[element];
-  }
   const colorScheme = useVestaColors ? vestaColors : jmolColors;
   return colorScheme[element] || 0x808080;
-}
-
-function getIndividualAtomColor(element, atomIndex) {
-  // Check if individual atom has custom color
-  const atomKey = `${element}_${atomIndex}`;
-  if (individualAtomColors && individualAtomColors[atomKey] !== undefined) {
-    return individualAtomColors[atomKey];
-  }
-  // Fall back to element-wide color
-  return getElementColor(element);
-}
-
-// Get the default palette color for an element (ignores user overrides)
-function getDefaultElementColor(element) {
-  const colorScheme = useVestaColors ? vestaColors : jmolColors;
-  return colorScheme[element] || 0x808080;
-}
-
-function saveColorOverrides() {
-  try { localStorage.setItem('atomColorOverrides', JSON.stringify(userColorOverrides || {})); } catch (_) {}
-}
-function loadColorOverrides() {
-  try {
-    const raw = localStorage.getItem('atomColorOverrides');
-    if (raw) userColorOverrides = JSON.parse(raw) || {};
-  } catch (_) { userColorOverrides = {}; }
-}
-
-function saveIndividualAtomColors() {
-  try { localStorage.setItem('individualAtomColors', JSON.stringify(individualAtomColors || {})); } catch (_) {}
-}
-function loadIndividualAtomColors() {
-  try {
-    const raw = localStorage.getItem('individualAtomColors');
-    if (raw) individualAtomColors = JSON.parse(raw) || {};
-  } catch (_) { individualAtomColors = {}; }
-}
-function setElementColorOverride(el, cssHex) {
-  if (!cssHex) return false;
-  let hex = cssHex.toString().trim();
-  if (hex.startsWith('#')) hex = hex.slice(1);
-  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return false;
-  userColorOverrides[el] = parseInt(hex, 16);
-  saveColorOverrides();
-  return true;
-}
-function clearElementColorOverride(el) {
-  delete userColorOverrides[el];
-  saveColorOverrides();
-}
-
-function setIndividualAtomColor(element, atomIndex, cssHex) {
-  if (!cssHex) return false;
-  let hex = cssHex.toString().trim();
-  if (hex.startsWith('#')) hex = hex.slice(1);
-  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return false;
-  const atomKey = `${element}_${atomIndex}`;
-  individualAtomColors[atomKey] = parseInt(hex, 16);
-  saveIndividualAtomColors();
-  return true;
-}
-
-function clearIndividualAtomColor(element, atomIndex) {
-  const atomKey = `${element}_${atomIndex}`;
-  delete individualAtomColors[atomKey];
-  saveIndividualAtomColors();
-}
-
-function hasIndividualColors(element) {
-  if (!individualAtomColors) return false;
-  return Object.keys(individualAtomColors).some(key => key.startsWith(`${element}_`));
-}
-
-function getElementDisplayColor(element) {
-  if (hasIndividualColors(element)) {
-    // Return a special "mixed" color - a gradient or distinctive color
-    return '#FFB347'; // Orange to indicate mixed colors
-  }
-  return colorHexToCss(getElementColor(element));
-}
-
-function clearAllIndividualColorsForElement(element) {
-  if (!individualAtomColors) return;
-  // Remove all individual colors for this element
-  const keysToRemove = Object.keys(individualAtomColors).filter(key => key.startsWith(`${element}_`));
-  keysToRemove.forEach(key => delete individualAtomColors[key]);
-  saveIndividualAtomColors();
 }
 
 function getAtomRadius(element) {
@@ -300,81 +175,61 @@ function updateMeasurementMarkers() {
   });
 }
 
-// Cached normalized lattice directions for performance; recompute on structure change
-let cachedLatticeDirs = {
+function latticeDirsNorm() {
+if (!structureData) return {
   a: new THREE.Vector3(1,0,0),
   b: new THREE.Vector3(0,1,0),
   c: new THREE.Vector3(0,0,1)
 };
-function recomputeLatticeDirs() {
-  if (!structureData || !structureData.lattice) {
-    cachedLatticeDirs = {
-      a: new THREE.Vector3(1,0,0),
-      b: new THREE.Vector3(0,1,0),
-      c: new THREE.Vector3(0,0,1)
-    };
-    return;
-  }
-  const L = structureData.lattice;
-  cachedLatticeDirs = {
-    a: new THREE.Vector3(L[0][0], L[0][1], L[0][2]).normalize(),
-    b: new THREE.Vector3(L[1][0], L[1][1], L[1][2]).normalize(),
-    c: new THREE.Vector3(L[2][0], L[2][1], L[2][2]).normalize()
-  };
+const L = structureData.lattice;
+return {
+  a: new THREE.Vector3(L[0][0], L[0][1], L[0][2]).normalize(),
+  b: new THREE.Vector3(L[1][0], L[1][1], L[1][2]).normalize(),
+  c: new THREE.Vector3(L[2][0], L[2][1], L[2][2]).normalize()
+};
 }
-function latticeDirsNorm() { return cachedLatticeDirs; }
 
 
 function periodicWrapped(frac, elements) {
-  // Build a fully "filled" unit cell by duplicating atoms that sit on
-  // faces/edges/corners so that both sides of each face are populated.
-  // We do this by adding, per-dimension, one extra image just inside the
-  // opposite face when an atom is within eps of a boundary. 
   const eps = 1e-6;
-  const newElements = [];
-  const newFcrds = [];
-  const srcIndex = [];
+  const imagesInCube = [];
 
-  for (let i = 0; i < frac.length; i++) {
-    const f = frac[i];
-    const atm = elements[i];
-
-    // Decide offsets for each axis
-    const offX = [0];
-    const offY = [0];
-    const offZ = [0];
-
-    if (f[0] < eps) offX.push(1 - eps);
-    if (f[0] > 1 - eps) offX.push(-1 + eps);
-    if (f[1] < eps) offY.push(1 - eps);
-    if (f[1] > 1 - eps) offY.push(-1 + eps);
-    if (f[2] < eps) offZ.push(1 - eps);
-    if (f[2] > 1 - eps) offZ.push(-1 + eps);
-
-    for (const dx of offX) {
-      for (const dy of offY) {
-        for (const dz of offZ) {
-          const nx = f[0] + dx;
-          const ny = f[1] + dy;
-          const nz = f[2] + dz;
-          // keep strictly inside [0, 1)
-          if (nx >= -eps && nx < 1 - eps + eps &&
-              ny >= -eps && ny < 1 - eps + eps &&
-              nz >= -eps && nz < 1 - eps + eps) {
-            // clamp into range [0, 1-eps]
-            const cx = Math.min(Math.max(nx, 0), 1 - eps);
-            const cy = Math.min(Math.max(ny, 0), 1 - eps);
-            const cz = Math.min(Math.max(nz, 0), 1 - eps);
-            newElements.push(atm);
-            newFcrds.push([cx, cy, cz]);
-            srcIndex.push(i);
-          }
-        }
+  // Generate all combinations of [0, 1-eps] for 3 dimensions
+  for (let i = 0; i < 2; i++) {
+    for (let j = 0; j < 2; j++) {
+      for (let k = 0; k < 2; k++) {
+        imagesInCube.push([
+          i === 0 ? 0 : 1 - eps,
+          j === 0 ? 0 : 1 - eps,
+          k === 0 ? 0 : 1 - eps
+        ]);
       }
     }
   }
 
-  return { elements: newElements, frac: newFcrds, srcIndex };
+  const newElements = [];
+  const newFcrds = [];
+
+  for (let i = 0; i < frac.length; i++) {
+    const fc = frac[i];
+    const atm = elements[i];
+
+    for (const image of imagesInCube) {
+      const newCoord = [
+        fc[0] + image[0],
+        fc[1] + image[1],
+        fc[2] + image[2]
+      ];
+
+      // Check if all coordinates are less than 1 + eps
+      if (newCoord.every(coord => coord < 1 + eps)) {
+        newElements.push(atm);
+        newFcrds.push(newCoord);
+      }
+    }
+  }
+
+  return { elements: newElements, frac: newFcrds };
 }
 
 
@@ -386,8 +241,7 @@ function getCellCenterAndDist() {
     L[0][2]+L[1][2]+L[2][2]
   );
   const center = corner.clone().multiplyScalar(0.5);
-  const distBase = Math.max(corner.length()*2.5, 20);
-  const dist = distBase * defaultZoomScale;
+  const dist = Math.max(corner.length()*2.5, 20); // More zoomed out (was 1.8, 15)
   return { center, dist };
 }
 
@@ -400,7 +254,7 @@ function setViewDirection(dir) {
   controls.update();
 }
 
-function resetView() { setViewDirection(new THREE.Vector3(1,1,1)); } //CAMERA RESET
+function resetView() { setViewDirection(new THREE.Vector3(1,1,1)); }
 
 function switchCameraType() {
   const w = view.clientWidth || window.innerWidth;
@@ -409,20 +263,11 @@ function switchCameraType() {
   if (useOrthographicCamera) {
     // Switch to orthographic camera
     const { center, dist } = getCellCenterAndDist();
-    orthographicFrustumSize = dist * 0.5; // Adjust this multiplier as needed
-    const aspect = w / h;
-    camera = new THREE.OrthographicCamera(
-      -orthographicFrustumSize,
-      orthographicFrustumSize,
-      orthographicFrustumSize / aspect,
-      -orthographicFrustumSize / aspect,
-      0.1,
-      1000
-    );
+    const size = dist * 0.5; // Adjust this multiplier as needed
+    camera = new THREE.OrthographicCamera(-size, size, size / (w/h), -size / (w/h), 0.1, 1000);
   } else {
     // Switch to perspective camera
     camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
-    orthographicFrustumSize = null;
   }
 
   controls.object = camera;
@@ -430,7 +275,6 @@ function switchCameraType() {
   camera.position.copy(center.clone().add(new THREE.Vector3(1,1,1).normalize().multiplyScalar(dist)));
   controls.target.copy(center);
   controls.update();
-  resizeRenderer();
 }
 
 function resetBondLengths() {
@@ -452,6 +296,79 @@ function latticeDirs() {
 }
 
 
+function parsePOSCAR(content) {
+  const lines = content.trim().split('\n').filter(l => l.trim());
+  let i = 0;
+
+  const comment = lines[i++].trim();
+  const scale = parseFloat(lines[i++]);
+
+  // lattice (scaled)
+  const lattice = Array.from({ length: 3 }, () =>
+    lines[i++].trim().split(/\s+/).slice(0, 3).map(v => parseFloat(v) * scale)
+  );
+
+  const elementLine = lines[i++].trim().split(/\s+/);
+  const countLine = lines[i++].trim().split(/\s+/).map(x => parseInt(x, 10));
+
+  const elements = [];
+  for (let e = 0; e < elementLine.length; e++) {
+    for (let c = 0; c < countLine[e]; c++) elements.push(elementLine[e]);
+  }
+
+  // coordinate type (+ optional selective dynamics)
+  let coordType = lines[i].trim().toLowerCase();
+  if (coordType.startsWith('s')) { i++; coordType = lines[i].trim().toLowerCase(); }
+  i++;
+
+  const isCartesian = coordType.startsWith('c') || coordType.startsWith('k'); // Cartesian
+
+  const totalAtoms = countLine.reduce((a, b) => a + b, 0);
+
+  // helpers
+  const fracToCart = (f) => ([
+    f[0]*lattice[0][0] + f[1]*lattice[1][0] + f[2]*lattice[2][0],
+    f[0]*lattice[0][1] + f[1]*lattice[1][1] + f[2]*lattice[2][1],
+    f[0]*lattice[0][2] + f[1]*lattice[1][2] + f[2]*lattice[2][2],
+  ]);
+  const invert3x3 = (m) => {
+    const [a,b,c] = m;
+    const A = a[0], B = a[1], C = a[2];
+    const D = b[0], E = b[1], F = b[2];
+    const G = c[0], H = c[1], I = c[2];
+    const det = A*(E*I - F*H) - B*(D*I - F*G) + C*(D*H - E*G);
+    const invDet = 1.0 / det;
+    return [
+      [(E*I - F*H)*invDet, (C*H - B*I)*invDet, (B*F - C*E)*invDet],
+      [(F*G - D*I)*invDet, (A*I - C*G)*invDet, (C*D - A*F)*invDet],
+      [(D*H - E*G)*invDet, (B*G - A*H)*invDet, (A*E - B*D)*invDet],
+    ];
+  };
+  const matVec = (m, v) => ([
+    m[0][0]*v[0] + m[0][1]*v[1] + m[0][2]*v[2],
+    m[1][0]*v[0] + m[1][1]*v[1] + m[1][2]*v[2],
+    m[2][0]*v[0] + m[2][1]*v[1] + m[2][2]*v[2],
+  ]);
+
+  const positionsRaw = [];
+  for (let n = 0; n < totalAtoms; n++) {
+    const toks = lines[i++].trim().split(/\s+/);
+    positionsRaw.push(toks.slice(0, 3).map(Number)); // ignore SD flags here
+  }
+
+  const positions   = isCartesian? positionsRaw.map(p => matVec(invert3x3(lattice), p))
+                          : positionsRaw; // fallback
+
+
+  return {
+    comment,
+    lattice,
+    elements,
+    positions,
+    uniqueElements: elementLine
+  };
+}
+
 
 function fracToCart(frac, lattice) {
   return frac.map(fc => [
@@ -459,201 +376,6 @@ function fracToCart(frac, lattice) {
     fc[0] * lattice[0][1] + fc[1] * lattice[1][1] + fc[2] * lattice[2][1],
     fc[0] * lattice[0][2] + fc[1] * lattice[1][2] + fc[2] * lattice[2][2]
   ]);
-}
-
-function cartToFrac(cart, lattice) {
-  return cartToFractional(cart, lattice);
-}
-
-function escapeHtml(str = '') {
-  return String(str).replace(/[&<>"']/g, ch => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  }[ch]));
-}
-
-function escapeAttribute(str = '') {
-  return escapeHtml(str).replace(/`/g, '&#96;');
-}
-
-function renderMarkdownInline(text) {
-  if (!text) return '';
-  const codePlaceholders = [];
-  const linkPlaceholders = [];
-  let working = text.replace(/`([^`]+)`/g, (_, code) => {
-    const index = codePlaceholders.push(code) - 1;
-    return `\u0000CODE${index}\u0000`;
-  }).replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
-    const index = linkPlaceholders.push({ label, url }) - 1;
-    return `\u0000LINK${index}\u0000`;
-  });
-
-  working = escapeHtml(working);
-
-  working = working.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                   .replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-  working = working.replace(/\u0000LINK(\d+)\u0000/g, (_, idx) => {
-    const entry = linkPlaceholders[Number(idx)];
-    if (!entry) return '';
-    return `<a href="${escapeAttribute(entry.url)}" target="_blank" rel="noopener">${escapeHtml(entry.label)}</a>`;
-  });
-
-  working = working.replace(/\u0000CODE(\d+)\u0000/g, (_, idx) => {
-    const code = codePlaceholders[Number(idx)];
-    return `<code>${escapeHtml(code)}</code>`;
-  });
-
-  return working;
-}
-
-function renderMarkdownContent(markdown) {
-  if (!markdown) return '';
-  const lines = markdown.split(/\r?\n/);
-  const html = [];
-  let inList = false;
-
-  const closeList = () => {
-    if (inList) {
-      html.push('</ul>');
-      inList = false;
-    }
-  };
-
-  lines.forEach(line => {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      closeList();
-      html.push('');
-      return;
-    }
-
-    const headingMatch = trimmed.match(/^(#{1,3})\s+(.*)$/);
-    if (headingMatch) {
-      closeList();
-      const level = headingMatch[1].length;
-      const content = renderMarkdownInline(headingMatch[2]);
-      html.push(`<h${level}>${content}</h${level}>`);
-      return;
-    }
-
-    const listMatch = trimmed.match(/^[-*+]\s+(.*)$/);
-    if (listMatch) {
-      if (!inList) {
-        html.push('<ul>');
-        inList = true;
-      }
-      html.push(`<li>${renderMarkdownInline(listMatch[1])}</li>`);
-      return;
-    }
-
-    closeList();
-    html.push(`<p>${renderMarkdownInline(trimmed)}</p>`);
-  });
-
-  closeList();
-  return html.join('\n');
-}
-
-async function loadAboutContent() {
-  if (!aboutContent || aboutLoading || aboutLoaded) return;
-  aboutLoading = true;
-  aboutContent.innerHTML = '<p id="aboutLoading">Loading About content…</p>';
-  try {
-    const response = await fetch('about.md', { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`Request failed (${response.status})`);
-    }
-    const text = await response.text();
-    aboutContent.innerHTML = renderMarkdownContent(text) || '<p>No About content available.</p>';
-    aboutLoaded = true;
-  } catch (error) {
-    aboutContent.innerHTML = `<p class="about-error">${escapeHtml(error.message || 'Failed to load About content.')}</p>`;
-  } finally {
-    aboutLoading = false;
-  }
-}
-
-function openAboutPanel() {
-  if (!aboutOverlay) return;
-  if (aboutOverlay.hasAttribute('hidden')) {
-    aboutOverlay.removeAttribute('hidden');
-  }
-  requestAnimationFrame(() => aboutOverlay.classList.add('visible'));
-  aboutPreviousFocus = document.activeElement;
-  if (!aboutLoaded) {
-    loadAboutContent();
-  }
-  setTimeout(() => {
-    if (aboutModal) {
-      aboutModal.focus({ preventScroll: true });
-    }
-    if (aboutClose) {
-      aboutClose.focus({ preventScroll: true });
-    }
-    resizeRenderer();
-  }, 120);
-}
-
-function closeAboutPanel() {
-  if (!aboutOverlay) return;
-  aboutOverlay.classList.remove('visible');
-  setTimeout(() => {
-    if (!aboutOverlay.classList.contains('visible')) {
-      aboutOverlay.setAttribute('hidden', '');
-    }
-  }, 160);
-  const focusTarget = aboutPreviousFocus;
-  aboutPreviousFocus = null;
-  if (focusTarget && typeof focusTarget.focus === 'function') {
-    setTimeout(() => focusTarget.focus({ preventScroll: true }), 160);
-  }
-  setTimeout(resizeRenderer, 200);
-}
-
-if (aboutTrigger) {
-  aboutTrigger.setAttribute('aria-haspopup', 'dialog');
-  aboutTrigger.addEventListener('click', (event) => {
-    event.preventDefault();
-    openAboutPanel();
-  });
-  aboutTrigger.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      openAboutPanel();
-    }
-  });
-}
-
-if (aboutOverlay) {
-  aboutOverlay.addEventListener('click', (event) => {
-    if (event.target === aboutOverlay) {
-      closeAboutPanel();
-    }
-  });
-}
-
-if (aboutClose) {
-  aboutClose.addEventListener('click', (event) => {
-    event.preventDefault();
-    closeAboutPanel();
-  });
-}
-
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && aboutOverlay && !aboutOverlay.hasAttribute('hidden')) {
-    closeAboutPanel();
-  }
-});
-
-function isOutsideUnitCell(cart, lattice, eps = 1e-6) {
-  const f = cartToFrac(cart, lattice);
-  return (f[0] < -eps || f[0] >= 1 + eps ||
-          f[1] < -eps || f[1] >= 1 + eps ||
-          f[2] < -eps || f[2] >= 1 + eps);
 }
 
 function createBondLengthControls() {
@@ -830,6 +552,8 @@ function clearAllMeasurements(){
   });
   measureLines = [];
   measureLabels = [];
+  distanceMeasurements = [];
+  angleMeasurements = [];
   selectedAtoms = [];
   clearMeasureGraphics();
 }
@@ -850,6 +574,15 @@ function calculateAngle(atom1, atom2, atom3) {
 
 function addAngleMeasurement(atom1, atom2, atom3) {
   const angle = calculateAngle(atom1, atom2, atom3);
+
+  const measurement = {
+    atom1: atom1,
+    atom2: atom2, // vertex
+    atom3: atom3,
+    elements: [atom1.userData.element, atom2.userData.element, atom3.userData.element],
+    angle: angle
+  };
+  angleMeasurements.push(measurement);
 
   // Create angle arc visualization
   const p1 = atom1.position.clone();
@@ -889,23 +622,6 @@ function addAngleMeasurement(atom1, atom2, atom3) {
   const angleLine1 = createDashedCylinder(p2, p1, angleColor);
   const angleLine2 = createDashedCylinder(p2, p3, angleColor);
 
-  // Store atom indices for dynamic updates
-  angleLine1.userData = {
-    type: 'angle',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex, // vertex
-    atom3Index: atom3.userData.atomIndex,
-    lineIndex: 1 // first line (vertex to atom1)
-  };
-
-  angleLine2.userData = {
-    type: 'angle',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex, // vertex
-    atom3Index: atom3.userData.atomIndex,
-    lineIndex: 2 // second line (vertex to atom3)
-  };
-
   scene.add(angleLine1);
   scene.add(angleLine2);
   measureLines.push(angleLine1);
@@ -917,14 +633,6 @@ function addAngleMeasurement(atom1, atom2, atom3) {
     const color = index === 1 ? 0x00ff00 : 0x00ff88; // Vertex gets different color
 
     const rings = createAtomRings(atom.position, atomRadius, color, 0x000000, atom.userData.element);
-    rings.userData = {
-      ...rings.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
-      type: 'angleMarker',
-      atomIndex: atom.userData.atomIndex,
-      atom1Index: atom1.userData.atomIndex,
-      atom2Index: atom2.userData.atomIndex,
-      atom3Index: atom3.userData.atomIndex
-    };
     scene.add(rings);
     measureLines.push(rings);
 
@@ -940,25 +648,26 @@ function addAngleMeasurement(atom1, atom2, atom3) {
   div.style.fontSize = '14px';
   div.style.padding = '2px 6px';
   div.style.borderRadius = '4px';
-  const elements = [atom1.userData.element, atom2.userData.element, atom3.userData.element];
+  const elements = measurement.elements;
   div.textContent = `∠${elements[0]}-${elements[1]}-${elements[2]}: ${angle.toFixed(1)}°`;
 
   const label = new CSS2DObject(div);
   label.position.copy(p2);
-
-  // Store atom indices for dynamic updates
-  label.userData = {
-    type: 'angle',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex, // vertex
-    atom3Index: atom3.userData.atomIndex
-  };
-
   scene.add(label);
   measureLabels.push(label);
 }
 
 function addDistanceMeasurement(atom1, atom2) {
+  // Store the measurement data with atom references
+  const measurement = {
+    atomA: atom1,
+    atomB: atom2,
+    element1: atom1.userData.element,
+    element2: atom2.userData.element,
+    distance: atom1.position.distanceTo(atom2.position)
+  };
+  distanceMeasurements.push(measurement);
+
   // Create thick dashed cylinder for distance measurement (BLUE for distance)
   const pa = atom1.position.clone(), pb = atom2.position.clone();
   const distance = pa.distanceTo(pb);
@@ -988,13 +697,6 @@ function addDistanceMeasurement(atom1, atom2) {
     cylinderGroup.add(segment);
   }
 
-  // Store atom indices for dynamic updates
-  cylinderGroup.userData = {
-    type: 'distance',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex
-  };
-
   scene.add(cylinderGroup);
   measureLines.push(cylinderGroup);
 
@@ -1006,22 +708,10 @@ function addDistanceMeasurement(atom1, atom2) {
 
   // Add scaling rings to both atoms
   const ringsA = createAtomRings(pa, atomRadiusA, 0xffff00, 0x000000, atom1.userData.element); // Yellow inner, black outer
-  ringsA.userData = {
-    ...ringsA.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
-    type: 'distanceMarker',
-    atomIndex: atom1.userData.atomIndex,
-    measurementIndex: measureLines.length // Reference to the cylinder group
-  };
   scene.add(ringsA);
   measureLines.push(ringsA);
 
   const ringsB = createAtomRings(pb, atomRadiusB, 0xffff00, 0x000000, atom2.userData.element); // Yellow inner, black outer
-  ringsB.userData = {
-    ...ringsB.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
-    type: 'distanceMarker',
-    atomIndex: atom2.userData.atomIndex,
-    measurementIndex: measureLines.length - 1 // Reference to the cylinder group
-  };
   scene.add(ringsB);
   measureLines.push(ringsB);
 
@@ -1044,14 +734,6 @@ function addDistanceMeasurement(atom1, atom2) {
   div.textContent = `${formatÅ(d)} Å`;
   const label = new CSS2DObject(div);
   label.position.copy(mid);
-
-  // Store atom indices for dynamic updates
-  label.userData = {
-    type: 'distance',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex
-  };
-
   scene.add(label);
   measureLabels.push(label);
 }
@@ -1109,9 +791,9 @@ function clearMeasure(){
 
 
 
-function createAtomMesh(element, position, atomIndex = null) {
+function createAtomMesh(element, position) {
   const radius = getAtomRadius(element);
-  const color = atomIndex !== null ? getIndividualAtomColor(element, atomIndex) : getElementColor(element);
+  const color = getElementColor(element);
   const geometry = new THREE.SphereGeometry(radius, 32, 24);
   const material = new THREE.MeshPhysicalMaterial({
     color,
@@ -1124,7 +806,6 @@ function createAtomMesh(element, position, atomIndex = null) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(position[0], position[1], position[2]);
   mesh.userData.element = element;
-  mesh.userData.atomIndex = atomIndex;
   return mesh;
 }
 
@@ -1147,55 +828,23 @@ function createBond(pos1, pos2, elem1, elem2) {
   const direction = new THREE.Vector3().subVectors(p2, p1);
   const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
 
-  // Build VESTA-style split bond, but start at atom surfaces
-  const bondGroup = new THREE.Group();
-
-  const color1 = getElementColor(elem1);
-  const color2 = getElementColor(elem2);
-
-  // Compute visible segment between atom surfaces
-  const r1 = getAtomRadius(elem1);
-  const r2 = getAtomRadius(elem2);
-  const dir = new THREE.Vector3().subVectors(p2, p1).normalize();
-  const visibleLen = Math.max(dist - (r1 + r2), 0);
-  if (visibleLen <= 1e-3) return null; // spheres overlap or touch; skip bond
-
-  const halfLen = visibleLen * 0.5;
-  const radius = bondRadius;
-
-  const geometryHalf = new THREE.CylinderGeometry(radius, radius, halfLen, 8);
-
-  const matCommon = {
+  const geometry = new THREE.CylinderGeometry(0.08, 0.08, dist, 8);
+  const material = new THREE.MeshPhysicalMaterial({
+    color: 0x666666,
     transparent: true,
-    opacity: 0.8,
+    opacity: 0.6,
     roughness: 0.2,
     metalness: 0.3,
     clearcoat: 0.5,
     clearcoatRoughness: 0.05
-  };
+  });
+  const bond = new THREE.Mesh(geometry, material);
 
-  const material1 = new THREE.MeshPhysicalMaterial({ color: color1, ...matCommon });
-  const material2 = new THREE.MeshPhysicalMaterial({ color: color2, ...matCommon });
+  bond.position.copy(midpoint);
+  bond.lookAt(p2);
+  bond.rotateX(Math.PI / 2);
 
-  // Centers for the two halves: start from each surface and end at the
-  // midpoint between surfaces, so centers are offset by r + halfLen/2
-  const center1 = p1.clone().add(dir.clone().multiplyScalar(r1 + halfLen / 2));
-  const center2 = p2.clone().add(dir.clone().multiplyScalar(-r2 - halfLen / 2));
-
-  const half1 = new THREE.Mesh(geometryHalf, material1);
-  half1.position.copy(center1);
-  half1.lookAt(p2);
-  half1.rotateX(Math.PI / 2);
-
-  const half2 = new THREE.Mesh(geometryHalf, material2);
-  half2.position.copy(center2);
-  half2.lookAt(p2);
-  half2.rotateX(Math.PI / 2);
-
-  bondGroup.add(half1);
-  bondGroup.add(half2);
-
-  return bondGroup;
+  return bond;
 }
 
 function createLatticeLines() {
@@ -1247,25 +896,6 @@ function computeComposition() {
 function renderComposition() {
   const compDiv = document.getElementById('composition');
   compDiv.innerHTML = '';
-
-  // Ensure ALL info panel submenus default to closed
-  ensureAllSubmenusDefaultClosed();
-
-  // Ensure structure panel starts collapsed by default
-  compDiv.classList.remove('open');
-  // compDiv.setAttribute('aria-hidden', 'true'); // Removed to prevent focus issues
-  const toggleIcon = document.getElementById('structureToggleIcon');
-  if (toggleIcon) {
-    toggleIcon.textContent = '+';
-    toggleIcon.classList.remove('open');
-  }
-  const structureToggle = document.getElementById('structureToggle');
-  if (structureToggle) {
-    structureToggle.setAttribute('aria-expanded', 'false');
-    // Add event listener to handle collapse behavior
-    structureToggle.removeEventListener('click', handleStructurePanelToggle);
-    structureToggle.addEventListener('click', handleStructurePanelToggle);
-  }
   const counts = computeComposition();
   const total = Object.values(counts).reduce((a,b)=>a+b,0) || 1;
   const elements = Object.keys(counts).sort();
@@ -1306,1283 +936,60 @@ function renderComposition() {
       compDiv.appendChild(row);
     });
   }
-
-  // Add lattice parameters section
-  addLatticeParametersSection();
 }
 
 function createCompositionRow(el, count, total) {
-  const container = document.createElement('div');
-  container.className = 'comp-container';
-
   const row = document.createElement('div');
   row.className = 'comp-row';
-  // Two-column grid: left (fixed auto), right (flex). Editor lives under right.
-  row.style.cssText = 'display:grid; grid-template-columns: auto 1fr; align-items:center; column-gap:8px; row-gap:6px; cursor: pointer; transition: background-color 0.2s ease;';
-
   const left = document.createElement('div');
   left.className = 'comp-left';
   const dot = document.createElement('span');
   dot.className = 'dot';
-  const currentColor = getElementDisplayColor(el);
-  dot.style.background = currentColor;
+  dot.style.background = colorHexToCss(getElementColor(el));
   const name = document.createElement('span');
   name.textContent = el;
-
-  // Add expand/collapse indicator - starts collapsed
-  const expandIcon = document.createElement('span');
-  expandIcon.textContent = '▶';
-  expandIcon.style.cssText = 'margin-left: 4px; font-size: 8px; transition: transform 0.2s ease; color: #4fc3f7; transform: rotate(0deg);';
-
   left.appendChild(dot);
   left.appendChild(name);
-  left.appendChild(expandIcon);
 
   const right = document.createElement('span');
   const pct = (100*count/total).toFixed(1);
   right.textContent = `${count} (${pct}%)`;
 
-  row.appendChild(left); // grid col 1
-  row.appendChild(right); // grid col 2
-
-  // Create individual atoms container (hidden by default)
-  const atomsContainer = document.createElement('div');
-  atomsContainer.className = 'individual-atoms';
-  atomsContainer.style.cssText = 'display: none; margin-left: 20px; margin-top: 8px; border-left: 2px solid rgba(255,255,255,0.1); padding-left: 8px;';
-
-  // Create individual atom rows - need to map element-specific indices to actual structure indices
-  const elementAtomIndices = [];
-  for (let i = 0; i < structureData.elements.length; i++) {
-    if (structureData.elements[i] === el) {
-      elementAtomIndices.push(i);
-    }
-  }
-
-  for (let i = 0; i < elementAtomIndices.length; i++) {
-    const actualAtomIndex = elementAtomIndices[i];
-    const atomRow = createIndividualAtomRow(el, actualAtomIndex, i + 1); // Pass display number as well
-    atomsContainer.appendChild(atomRow);
-  }
-
-  // Add hover effects
-  row.addEventListener('mouseenter', () => {
-    row.style.backgroundColor = 'rgba(255,255,255,0.03)';
-  });
-  row.addEventListener('mouseleave', () => {
-    row.style.backgroundColor = 'transparent';
-  });
-
-  // Add click handler for expand/collapse
-  row.addEventListener('click', (e) => {
-    e.stopPropagation(); // Prevent triggering parent events
-    const isExpanded = atomsContainer.style.display !== 'none';
-
-    // Close all other element expansions first
-    if (!isExpanded) {
-      closeOtherElementExpansions(atomsContainer);
-    }
-
-    // Toggle this element's expansion
-    atomsContainer.style.display = isExpanded ? 'none' : 'block';
-    expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
-  });
-
-  container.appendChild(row);
-  container.appendChild(atomsContainer);
-
-  // Inline color editor (hidden by default)
-  const editor = document.createElement('div');
-  // Make editor occupy only the right column and not depend on name length
-  editor.style.cssText = 'display:none; grid-column:2; padding:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px;';
-  editor.className = 'color-editor';
-
-  const colorInput = document.createElement('input');
-  colorInput.type = 'color';
-  colorInput.value = currentColor;
-  colorInput.style.cssText = 'width: 32px; height: 32px; border: none; background: transparent; cursor: pointer; flex-shrink: 0; margin: 0; padding: 0; box-sizing: border-box; vertical-align: top;';
-
-  const hexInput = document.createElement('input');
-  hexInput.type = 'text';
-  hexInput.value = currentColor;
-  hexInput.placeholder = '#RRGGBB';
-  hexInput.style.cssText = 'width: 80px; height: 32px; padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0; box-sizing: border-box; vertical-align: top;';
-
-  // Single line: color swatch + hex field + buttons
-  const topRow = document.createElement('div');
-  topRow.style.cssText = 'display: flex; align-items: center; gap: 6px;';
-  topRow.appendChild(colorInput);
-  topRow.appendChild(hexInput);
-
-  const resetBtn = document.createElement('button');
-  resetBtn.textContent = 'Reset';
-  resetBtn.className = 'btn-mini';
-  resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
-
-  const applyBtn = document.createElement('button');
-  applyBtn.textContent = 'Apply';
-  applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
-
-  // Add buttons to the same row
-  // Create separate button row
-  const buttonRow = document.createElement('div');
-  buttonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';
-  buttonRow.appendChild(resetBtn);
-  buttonRow.appendChild(applyBtn);
-
-  // Assembly: two rows
-  editor.appendChild(topRow);
-  editor.appendChild(buttonRow);
-  row.appendChild(editor);
-
-  // Helper to decide readable text color over a background
-  function textColorForBg(cssHex) {
-    let hex = cssHex.replace('#','');
-    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-    const r = parseInt(hex.slice(0,2), 16);
-    const g = parseInt(hex.slice(2,4), 16);
-    const b = parseInt(hex.slice(4,6), 16);
-    const yiq = (r*299 + g*587 + b*114) / 1000;
-    return yiq >= 128 ? '#000' : '#fff';
-  }
-  dot.style.cursor = 'pointer';
-  row.style.cursor = 'default';
-  dot.title = 'Customize color';
-  dot.onclick = (e) => {
-    e.stopPropagation();
-    editor.style.display = (editor.style.display === 'none') ? 'flex' : 'none';
-    if (editor.style.display === 'flex') editor.style.flexDirection = 'column';
-  };
-  // Only sync inputs; application happens on Apply button
-  colorInput.oninput = (e) => { hexInput.value = e.target.value; };
-  hexInput.oninput = (e) => { colorInput.value = e.target.value; };
-
-  // Style reset button with the element's default palette color
-  const defaultColorCss = colorHexToCss(getDefaultElementColor(el));
-  resetBtn.style.background = defaultColorCss;
-  resetBtn.style.borderColor = 'rgba(0,0,0,0.15)';
-  resetBtn.style.color = textColorForBg(defaultColorCss);
-
-  // Reset clears both element-wide override AND all individual colors for this element
-  resetBtn.onclick = () => {
-    clearElementColorOverride(el);
-    clearAllIndividualColorsForElement(el);
-    updateVisualization();
-  };
-
-  // Apply commits the chosen color
-  applyBtn.onclick = () => {
-    const val = hexInput.value;
-    const ok = setElementColorOverride(el, val);
-    if (ok) { updateVisualization(); }
-  };
-  // Add element-wide color editor to container (after individual atoms)
-  container.appendChild(editor);
-
-  return container;
-}
-
-// Function to add lattice parameters section to composition
-function addLatticeParametersSection() {
-  const compDiv = document.getElementById('composition');
-  if (!compDiv || !structureData || !structureData.lattice) return;
-
-  // Check if lattice section already exists
-  let latticeSection = document.getElementById('latticeSection');
-  if (latticeSection) {
-    latticeSection.remove();
-  }
-
-  // Create lattice parameters section
-  latticeSection = document.createElement('div');
-  latticeSection.id = 'latticeSection';
-  latticeSection.style.cssText = 'border-top: 2px solid rgba(255,255,255,0.1); margin-top: 12px; padding-top: 12px;';
-
-  const title = document.createElement('h5');
-  title.textContent = 'Lattice Parameters';
-  title.style.cssText = 'margin: 0 0 8px 0; color: rgba(6, 140, 50, 1); font-size: 13px; font-weight: 600;';
-
-  latticeSection.appendChild(title);
-
-  const lattice = structureData.lattice;
-
-  // Calculate lattice parameters
-  const a = Math.sqrt(lattice[0][0]**2 + lattice[0][1]**2 + lattice[0][2]**2);
-  const b = Math.sqrt(lattice[1][0]**2 + lattice[1][1]**2 + lattice[1][2]**2);
-  const c = Math.sqrt(lattice[2][0]**2 + lattice[2][1]**2 + lattice[2][2]**2);
-
-  const alpha = Math.acos((lattice[1][0]*lattice[2][0] + lattice[1][1]*lattice[2][1] + lattice[1][2]*lattice[2][2]) / (b*c)) * 180/Math.PI;
-  const beta = Math.acos((lattice[0][0]*lattice[2][0] + lattice[0][1]*lattice[2][1] + lattice[0][2]*lattice[2][2]) / (a*c)) * 180/Math.PI;
-  const gamma = Math.acos((lattice[0][0]*lattice[1][0] + lattice[0][1]*lattice[1][1] + lattice[0][2]*lattice[1][2]) / (a*b)) * 180/Math.PI;
-
-  const parameters = [
-    { name: 'a', value: a, unit: 'Å' },
-    { name: 'b', value: b, unit: 'Å' },
-    { name: 'c', value: c, unit: 'Å' },
-    { name: 'α', value: alpha, unit: '°' },
-    { name: 'β', value: beta, unit: '°' },
-    { name: 'γ', value: gamma, unit: '°' }
-  ];
-
-  parameters.forEach(param => {
-    const row = document.createElement('div');
-    row.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 3px 0; font-size: 11px;';
-
-    const label = document.createElement('span');
-    label.textContent = `${param.name}:`;
-    label.style.cssText = 'font-weight: 500; color: rgba(255,255,255,0.8); min-width: 15px;';
-
-    const value = document.createElement('span');
-    value.textContent = `${param.value.toFixed(3)} ${param.unit}`;
-    value.style.cssText = 'color: rgba(255,255,255,0.6); font-family: monospace;';
-
-    row.appendChild(label);
-    row.appendChild(value);
-    latticeSection.appendChild(row);
-  });
-
-  compDiv.appendChild(latticeSection);
-}
-
-
-// Global variable to track currently highlighted atoms
-let currentlyHighlightedAtom = null;
-let currentlyHighlightedRow = null;
-
-function highlightAtomInStructurePanel(element, sourceIndex) {
-  // First, clear any existing highlights
-  clearAllHighlights();
-
-  // Auto-expand the structure panel if it's collapsed
-  const structureToggle = document.getElementById('structureToggle');
-  const composition = document.getElementById('composition');
-  if (!composition) return;
-
-  // Collapse all other atom expansions first
-  collapseAllAtomExpansions();
-
-  // Check if structure panel is collapsed and expand it
-  if (composition.classList.contains('collapsible-content') && !composition.classList.contains('open')) {
-    const toggleIcon = document.getElementById('structureToggleIcon');
-    composition.classList.add('open');
-    // composition.setAttribute('aria-hidden', 'false'); // Removed to prevent focus issues
-    if (toggleIcon) {
-      toggleIcon.textContent = '−';
-      toggleIcon.classList.add('open');
-    }
-    if (structureToggle) {
-      structureToggle.setAttribute('aria-expanded', 'true');
-    }
-  }
-
-  // Look for the element container
-  const elementContainers = composition.querySelectorAll('.comp-container');
-  let targetContainer = null;
-
-  for (const container of elementContainers) {
-    const elementName = container.querySelector('.comp-left span:nth-child(2)');
-    if (elementName && elementName.textContent === element) {
-      targetContainer = container;
-      break;
-    }
-  }
-
-  if (!targetContainer) return;
-
-  // Auto-expand the element if not already expanded
-  const atomsContainer = targetContainer.querySelector('.individual-atoms');
-  const expandIcon = targetContainer.querySelector('.comp-left span:last-child');
-
-  if (atomsContainer && atomsContainer.style.display === 'none') {
-    atomsContainer.style.display = 'block';
-    if (expandIcon) {
-      expandIcon.style.transform = 'rotate(90deg)';
-    }
-  }
-
-  // Find the specific individual atom row
-  const atomRows = atomsContainer.querySelectorAll('.individual-atom-row');
-  for (const row of atomRows) {
-    const atomNameSpan = row.querySelector('span:nth-child(2)');
-    if (atomNameSpan) {
-      // Extract the atom index from the display name (e.g., "Ba1" -> check if this is sourceIndex 0)
-      const actualIndex = getAtomActualIndex(element, atomNameSpan.textContent);
-      if (actualIndex === sourceIndex) {
-        // Highlight this row
-        highlightAtomRow(row);
-        // Scroll into view
-        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        break;
-      }
-    }
-  }
-}
-
-function getAtomActualIndex(element, displayName) {
-  // Convert "Ba1" to actual index by finding all atoms of this element
-  if (!structureData) return -1;
-
-  const displayNumber = parseInt(displayName.replace(element, ''));
-  let elementCount = 0;
-
-  for (let i = 0; i < structureData.elements.length; i++) {
-    if (structureData.elements[i] === element) {
-      elementCount++;
-      if (elementCount === displayNumber) {
-        return i;
-      }
-    }
-  }
-  return -1;
-}
-
-function highlightAtomRow(row) {
-  // Clear previous highlight
-  if (currentlyHighlightedRow) {
-    currentlyHighlightedRow.style.backgroundColor = '';
-    currentlyHighlightedRow.style.borderLeft = '';
-  }
-
-  // Add highlight to new row
-  row.style.backgroundColor = 'rgba(255, 191, 0, 0.2)'; // Orange highlight
-  row.style.borderLeft = '3px solid #FFB347';
-  currentlyHighlightedRow = row;
-
-  // Auto-clear highlight after 3 seconds
-  setTimeout(() => {
-    if (currentlyHighlightedRow === row) {
-      clearAllHighlights();
-    }
-  }, 3000);
-}
-
-function highlightAtomIn3D(atomMesh) {
-  // Clear previous 3D highlight
-  if (currentlyHighlightedAtom) {
-    clearHighlightAtom(currentlyHighlightedAtom);
-  }
-
-  // Add new highlight
-  HighlightAtom(atomMesh, 0xFFB347); // Orange glow
-  currentlyHighlightedAtom = atomMesh;
-
-  // Auto-clear highlight after 3 seconds
-  setTimeout(() => {
-    if (currentlyHighlightedAtom === atomMesh) {
-      clearAllHighlights();
-    }
-  }, 3000);
-}
-
-function clearAllHighlights() {
-  // Clear UI highlight
-  if (currentlyHighlightedRow) {
-    currentlyHighlightedRow.style.backgroundColor = '';
-    currentlyHighlightedRow.style.borderLeft = '';
-    currentlyHighlightedRow = null;
-  }
-
-  // Clear 3D highlight
-  if (currentlyHighlightedAtom) {
-    clearHighlightAtom(currentlyHighlightedAtom);
-    currentlyHighlightedAtom = null;
-  }
-}
-
-// Make clearAllHighlights available globally for manual clearing
-window.clearAtomHighlight = clearAllHighlights;
-
-// Function to collapse all individual atom expansions
-function collapseAllAtomExpansions() {
-  const atomsContainers = document.querySelectorAll('.individual-atoms');
-  const expandIcons = document.querySelectorAll('.comp-left span:last-child');
-
-  atomsContainers.forEach(container => {
-    container.style.display = 'none';
-  });
-
-  expandIcons.forEach(icon => {
-    icon.style.transform = 'rotate(0deg)';
-  });
-}
-
-// Function to ensure all info panel submenus default to closed
-function ensureAllSubmenusDefaultClosed() {
-  // Close all collapsible content sections
-  const allCollapsibleSections = document.querySelectorAll('.collapsible-content');
-  allCollapsibleSections.forEach(section => {
-    if (section.id !== 'composition') { // Don't force close the composition we're handling separately
-      section.classList.remove('open');
-      section.setAttribute('aria-hidden', 'true');
-    }
-  });
-
-  // Close all toggle icons
-  const allToggleIcons = document.querySelectorAll('.toggle-icon');
-  allToggleIcons.forEach(icon => {
-    if (icon.id !== 'structureToggleIcon') { // Don't force close the structure icon we're handling separately
-      icon.classList.remove('open');
-      icon.textContent = '+';
-    }
-  });
-
-  // Close all individual atom expansions
-  collapseAllAtomExpansions();
-}
-
-// Function to close all other element expansions except the specified one
-function closeOtherElementExpansions(exceptContainer) {
-  const allAtomContainers = document.querySelectorAll('.individual-atoms');
-  const allExpandIcons = document.querySelectorAll('.comp-left span:last-child');
-
-  allAtomContainers.forEach((container, index) => {
-    if (container !== exceptContainer) {
-      container.style.display = 'none';
-      if (allExpandIcons[index]) {
-        allExpandIcons[index].style.transform = 'rotate(0deg)';
-      }
-    }
-  });
-}
-
-// Function to handle structure panel toggle
-function handleStructurePanelToggle() {
-  const composition = document.getElementById('composition');
-  if (composition && !composition.classList.contains('open')) {
-    // Structure panel is being collapsed, so collapse all atom expansions
-    collapseAllAtomExpansions();
-  }
-}
-
-// Share functionality - moved to shareutils.js
-
-function shareStructure() {
-  // Prepare global state object for sharing
-  const globalState = {
-    userColorOverrides,
-    individualAtomColors,
-    useVestaColors,
-    atomSize,
-    bondRadius,
-    showBonds,
-    showLattice,
-    showNeighborBonds,
-    useOrthographicCamera,
-    bondLengths,
-    bondVisibility,
-    camera,
-    controls,
-    measureMode
-  };
-
-  // Use complete state sharing instead of basic structure sharing
-  const shareURL = createCompleteShareableURL(structureData, globalState);
-  if (!shareURL) {
-    alert('No structure loaded to share!');
-    return;
-  }
-
-  // Try modern clipboard API first, then fallback
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(shareURL).then(() => {
-      // Show success message
-      const shareBtn = document.getElementById('shareBtn');
-      const originalText = shareBtn.textContent;
-      shareBtn.textContent = '✓ Copied!';
-      shareBtn.style.backgroundColor = '#4CAF50';
-
-      setTimeout(() => {
-        shareBtn.textContent = originalText;
-        shareBtn.style.backgroundColor = '';
-      }, 2000);
-    }).catch(() => {
-      // Fallback: show URL in prompt for manual copying
-      prompt('Copy this URL to share:', shareURL);
-    });
-  } else {
-    // Clipboard API not available, use fallback method
-    try {
-      // Try the older document.execCommand method
-      const textArea = document.createElement('textarea');
-      textArea.value = shareURL;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      textArea.style.top = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-
-      const success = document.execCommand('copy');
-      document.body.removeChild(textArea);
-
-      if (success) {
-        // Show success message
-        const shareBtn = document.getElementById('shareBtn');
-        const originalText = shareBtn.textContent;
-        shareBtn.textContent = '✓ Copied!';
-        shareBtn.style.backgroundColor = '#4CAF50';
-
-        setTimeout(() => {
-          shareBtn.textContent = originalText;
-          shareBtn.style.backgroundColor = '';
-        }, 2000);
-      } else {
-        throw new Error('execCommand failed');
-      }
-    } catch (err) {
-      // Final fallback: show URL in prompt for manual copying
-      prompt('Copy this URL to share:', shareURL);
-    }
-  }
-}
-
-// Function to create share button UI
-function createShareButton() {
-  // Check if button already exists
-  let shareBtn = document.getElementById('shareBtn');
-  if (shareBtn) return;
-
-  shareBtn = document.createElement('button');
-  shareBtn.id = 'shareBtn';
-  shareBtn.textContent = '🔗 Share All';
-  shareBtn.style.cssText = `
-    padding: 8px 16px;
-    margin-top: 8px;
-    background: linear-gradient(135deg, #4CAF50, #45a049);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    width: 100%;
-  `;
-
-  shareBtn.addEventListener('mouseenter', () => {
-    shareBtn.style.background = 'linear-gradient(135deg, #45a049, #4CAF50)';
-    shareBtn.style.transform = 'translateY(-1px)';
-  });
-
-  shareBtn.addEventListener('mouseleave', () => {
-    shareBtn.style.background = 'linear-gradient(135deg, #4CAF50, #45a049)';
-    shareBtn.style.transform = 'translateY(0)';
-  });
-
-  shareBtn.onclick = shareStructure;
-
-  // Try multiple locations to ensure the button appears
-  const structureControls = document.getElementById('structureControls');
-  const bondControlsGroup = document.getElementById('bondControlsGroup');
-  const composition = document.getElementById('composition');
-
-  if (structureControls) {
-    structureControls.appendChild(shareBtn);
-    console.log('Share button added to structureControls');
-  } else if (bondControlsGroup) {
-    bondControlsGroup.appendChild(shareBtn);
-    console.log('Share button added to bondControlsGroup (fallback)');
-  } else if (composition) {
-    composition.parentElement.appendChild(shareBtn);
-    console.log('Share button added near composition (fallback 2)');
-  } else {
-    console.error('Could not find a suitable container for share button');
-  }
-}
-
-// Flag to track if we've loaded a shared structure
-let sharedStructureLoaded = false;
-
-
-// Function to load structure from URL parameter
-function loadSharedStructure() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const stateParam = urlParams.get('state');
-  const structureParam = urlParams.get('structure'); // Legacy support
-
-  // Try new complete state format first
-  if (stateParam) {
-    try {
-      const stateJSON = atob(stateParam);
-      const completeState = JSON.parse(stateJSON);
-
-      console.log('Loading complete shared state');
-      restoreCompleteState(completeState, {
-        setStructureData: (data) => { structureData = data; },
-        setOriginalStructureData: (data) => { originalStructureData = data; },
-        setUserColorOverrides: (overrides) => { userColorOverrides = overrides; },
-        setIndividualAtomColors: (colors) => { individualAtomColors = colors; },
-        setUseVestaColors: (use) => { useVestaColors = use; },
-        setAtomSize: (size) => { atomSize = size; },
-        setBondRadius: (radius) => { bondRadius = radius; },
-        setShowBonds: (show) => { showBonds = show; },
-        setShowLattice: (show) => { showLattice = show; },
-        setShowNeighborBonds: (show) => { showNeighborBonds = show; },
-        setUseOrthographicCamera: (use) => { useOrthographicCamera = use; },
-        setBondLengths: (lengths) => { bondLengths = lengths; },
-        setBondVisibility: (visibility) => { bondVisibility = visibility; },
-        loadColorOverrides,
-        loadIndividualAtomColors,
-        updateVisualization,
-        createBondLengthControls,
-        createShareButton,
-        switchCameraType,
-        resetView,
-        clearMeasure,
-        resizeRenderer,
-        setStatus,
-        camera,
-        controls
-      });
-
-      // Clear the URL parameter
-      const newUrl = new URL(window.location);
-      newUrl.searchParams.delete('state');
-      window.history.replaceState({}, document.title, newUrl.toString());
-      sharedStructureLoaded = true;
-      return;
-    } catch (error) {
-      console.error('Failed to load complete state:', error);
-      setStatus('Failed to load shared state');
-      sharedStructureLoaded = true; // Prevent default structure from loading
-      return;
-    }
-  }
-
-  // Fallback to legacy structure-only sharing
-  if (structureParam) {
-    try {
-      // Decode base64 to get POSCAR string
-      const poscarString = atob(structureParam);
-      console.log('Decoded POSCAR string:', poscarString);
-
-      // Debug: check the individual lines
-      const lines = poscarString.split('\n');
-      console.log('POSCAR lines:', lines);
-      console.log('Scale line (line 1):', `"${lines[1]}"`);
-      console.log('parseFloat of scale line:', parseFloat(lines[1]));
-      console.log('isFinite check:', Number.isFinite(parseFloat(lines[1])));
-
-      // Parse the POSCAR string
-      console.log('About to call parsePOSCAR...');
-      let parsedStructureData;
-      try {
-        parsedStructureData = parsePOSCAR(poscarString);
-        console.log('parsePOSCAR succeeded:', parsedStructureData);
-      } catch (parseError) {
-        console.error('parsePOSCAR failed:', parseError);
-        console.error('Error stack:', parseError.stack);
-        throw parseError;
-      }
-
-      if (parsedStructureData) {
-        // Set the global structure data variable
-        structureData = parsedStructureData;
-        originalStructureData = JSON.parse(JSON.stringify(structureData));
-        loadColorOverrides();
-        loadIndividualAtomColors();
-        setStatus('Loaded shared structure');
-
-        // Show structure controls and create share button
-        document.getElementById('structureControls').style.display = 'block';
-        document.getElementById('bondControlsGroup').style.display = 'block';
-        createBondLengthControls();
-        createShareButton();
-
-        console.log('About to call updateVisualization with structure data:', structureData);
-        updateVisualization();
-        console.log('updateVisualization completed');
-
-        // Rebuild camera and reset view
-        console.log('About to rebuild camera and reset view');
-        switchCameraType();
-        resetView();
-        clearMeasure();
-        resizeRenderer();
-        console.log('Camera rebuild and view reset completed');
-
-        // Clear the URL parameter to clean up the URL
-        const newUrl = new URL(window.location);
-        newUrl.searchParams.delete('structure');
-        window.history.replaceState({}, document.title, newUrl.toString());
-
-        // Set flag to prevent loading default structure
-        sharedStructureLoaded = true;
-      }
-    } catch (error) {
-      console.error('Failed to load shared structure:', error);
-      console.error('POSCAR string was:', atob(structureParam));
-      setStatus('Failed to load shared structure');
-    }
-  }
-}
-
-function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex + 1) {
-  const row = document.createElement('div');
-  row.className = 'individual-atom-row';
-  row.style.cssText = 'display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 8px; padding: 4px 0; font-size: 11px;';
-
-  // Individual atom dot with its specific color
-  const dot = document.createElement('span');
-  dot.className = 'dot';
-  dot.style.cssText = 'width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; border: 1px solid rgba(255,255,255,0.4);';
-  const currentColor = colorHexToCss(getIndividualAtomColor(element, atomIndex));
-  dot.style.background = currentColor;
-
-  // Atom name and coordinates container
-  const nameContainer = document.createElement('div');
-  nameContainer.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
-
-  const name = document.createElement('span');
-  name.textContent = `${element}${displayNumber}`;
-  name.style.color = '#ddd';
-
-  // Coordinates display (fractional)
-  const coords = structureData.positions[atomIndex];
-  const coordsDisplay = document.createElement('span');
-  coordsDisplay.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.5); font-family: monospace;';
-  coordsDisplay.textContent = `(${coords[0].toFixed(3)}, ${coords[1].toFixed(3)}, ${coords[2].toFixed(3)})`;
-
-  nameContainer.appendChild(name);
-  nameContainer.appendChild(coordsDisplay);
-
-  // Button container
-  const buttonContainer = document.createElement('div');
-  buttonContainer.style.cssText = 'display: flex; gap: 2px;';
-
-  // Color picker button
-  const colorBtn = document.createElement('button');
-  colorBtn.textContent = '🎨';
-  colorBtn.style.cssText = 'background: transparent; border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
-  colorBtn.title = `Change color for ${element}${displayNumber}`;
-
-  // Coordinate edit button
-  const coordBtn = document.createElement('button');
-  coordBtn.textContent = '📍';
-  coordBtn.style.cssText = 'background: transparent; border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
-  coordBtn.title = `Edit coordinates for ${element}${displayNumber}`;
-
-  buttonContainer.appendChild(colorBtn);
-  buttonContainer.appendChild(coordBtn);
-
-  row.appendChild(dot);
-  row.appendChild(nameContainer);
-  row.appendChild(buttonContainer);
-
-  // Create color editor for this individual atom
-  const editor = document.createElement('div');
-  editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
-
-  const colorInput = document.createElement('input');
-  colorInput.type = 'color';
-  colorInput.value = currentColor;
-  colorInput.style.cssText = 'width: 32px; height: 32px; border: none; background: transparent; cursor: pointer; flex-shrink: 0; margin: 0; padding: 0; box-sizing: border-box; vertical-align: top;';
-
-  const hexInput = document.createElement('input');
-  hexInput.type = 'text';
-  hexInput.value = currentColor;
-  hexInput.placeholder = '#RRGGBB';
-  hexInput.style.cssText = 'width: 80px; height: 32px; padding: 6px 8px; border-radius: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0; box-sizing: border-box; vertical-align: top;';
-
-  const applyBtn = document.createElement('button');
-  applyBtn.textContent = 'Apply';
-  applyBtn.className = 'btn-mini';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
-
-  const resetBtn = document.createElement('button');
-  resetBtn.textContent = 'Reset';
-  resetBtn.className = 'btn-mini';
-  resetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
-
-  const editorControls = document.createElement('div');
-  editorControls.style.cssText = 'display: flex; align-items: center; gap: 6px;';
-  // First row: color + hex
-  const topRowIndiv = document.createElement('div');
-  topRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 6px;';
-  topRowIndiv.appendChild(colorInput);
-  topRowIndiv.appendChild(hexInput);
-
-  // Second row: buttons
-  const buttonRowIndiv = document.createElement('div');
-  buttonRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px;';
-  buttonRowIndiv.appendChild(resetBtn);
-  buttonRowIndiv.appendChild(applyBtn);
-
-  editor.appendChild(topRowIndiv);
-  editor.appendChild(buttonRowIndiv);
-
-  // Create coordinate editor for this individual atom
-  const coordEditor = document.createElement('div');
-  coordEditor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
-
-  const coordTitle = document.createElement('div');
-  coordTitle.textContent = 'Fractional Coordinates';
-  coordTitle.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.8); margin-bottom: 6px; font-weight: 500;';
-
-  const xInput = document.createElement('input');
-  xInput.type = 'number';
-  xInput.value = coords[0].toFixed(6);
-  xInput.step = '0.000001';
-  xInput.style.cssText = 'width: 80px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px;';
-  xInput.placeholder = 'x';
-
-  const yInput = document.createElement('input');
-  yInput.type = 'number';
-  yInput.value = coords[1].toFixed(6);
-  yInput.step = '0.000001';
-  yInput.style.cssText = 'width: 80px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px;';
-  yInput.placeholder = 'y';
-
-  const zInput = document.createElement('input');
-  zInput.type = 'number';
-  zInput.value = coords[2].toFixed(6);
-  zInput.step = '0.000001';
-  zInput.style.cssText = 'width: 80px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px;';
-  zInput.placeholder = 'z';
-
-  const coordInputsRow = document.createElement('div');
-  coordInputsRow.style.cssText = 'display: flex; align-items: center; gap: 4px; margin-bottom: 6px;';
-  coordInputsRow.appendChild(xInput);
-  coordInputsRow.appendChild(yInput);
-  coordInputsRow.appendChild(zInput);
-
-  const coordApplyBtn = document.createElement('button');
-  coordApplyBtn.textContent = 'Apply';
-  coordApplyBtn.className = 'btn-mini highlight';
-  coordApplyBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px;';
-
-  const coordResetBtn = document.createElement('button');
-  coordResetBtn.textContent = 'Reset';
-  coordResetBtn.className = 'btn-mini';
-  coordResetBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px; margin-right: 6px;';
-
-  const coordButtonsRow = document.createElement('div');
-  coordButtonsRow.style.cssText = 'display: flex; align-items: center; gap: 4px;';
-  coordButtonsRow.appendChild(coordResetBtn);
-  coordButtonsRow.appendChild(coordApplyBtn);
-
-  coordEditor.appendChild(coordTitle);
-  coordEditor.appendChild(coordInputsRow);
-  coordEditor.appendChild(coordButtonsRow);
-
-  // Event handlers
-  colorBtn.onclick = (e) => {
-    e.stopPropagation();
-    coordEditor.style.display = 'none'; // Hide coord editor
-    editor.style.display = (editor.style.display === 'none') ? 'block' : 'none';
-  };
-
-  coordBtn.onclick = (e) => {
-    e.stopPropagation();
-    editor.style.display = 'none'; // Hide color editor
-    coordEditor.style.display = (coordEditor.style.display === 'none') ? 'block' : 'none';
-  };
-
-  // Coordinate event handlers
-  coordApplyBtn.onclick = () => {
-    const newX = parseFloat(xInput.value);
-    const newY = parseFloat(yInput.value);
-    const newZ = parseFloat(zInput.value);
-
-    if (!isNaN(newX) && !isNaN(newY) && !isNaN(newZ)) {
-      updateAtomCoordinates(atomIndex, [newX, newY, newZ]);
-      coordsDisplay.textContent = `(${newX.toFixed(3)}, ${newY.toFixed(3)}, ${newZ.toFixed(3)})`;
-      coordEditor.style.display = 'none';
-    }
-  };
-
-  coordResetBtn.onclick = () => {
-    // Reset to original coordinates
-    if (originalStructureData && originalStructureData.positions[atomIndex]) {
-      const originalCoords = originalStructureData.positions[atomIndex];
-      xInput.value = originalCoords[0].toFixed(6);
-      yInput.value = originalCoords[1].toFixed(6);
-      zInput.value = originalCoords[2].toFixed(6);
-      updateAtomCoordinates(atomIndex, [...originalCoords]);
-      coordsDisplay.textContent = `(${originalCoords[0].toFixed(3)}, ${originalCoords[1].toFixed(3)}, ${originalCoords[2].toFixed(3)})`;
-      coordEditor.style.display = 'none';
-    }
-  };
-
-  colorInput.oninput = (e) => { hexInput.value = e.target.value; };
-  hexInput.oninput = (e) => { colorInput.value = e.target.value; };
-
-  applyBtn.onclick = () => {
-    const val = hexInput.value;
-    const ok = setIndividualAtomColor(element, atomIndex, val);
-    if (ok) {
-      dot.style.background = val;
-      updateVisualization();
-      // Update the composition to refresh element colors
-      renderComposition();
-      editor.style.display = 'none';
-    }
-  };
-
-  resetBtn.onclick = () => {
-    clearIndividualAtomColor(element, atomIndex);
-    const newColor = colorHexToCss(getIndividualAtomColor(element, atomIndex));
-    dot.style.background = newColor;
-    colorInput.value = newColor;
-    hexInput.value = newColor;
-    updateVisualization();
-    // Update the composition to refresh element colors
-    renderComposition();
-    editor.style.display = 'none';
-  };
-
-  row.appendChild(editor);
-  row.appendChild(coordEditor);
+  row.appendChild(left);
+  row.appendChild(right);
   return row;
-}
-
-// Function to update all measurements when atom positions change
-// Helper function to find atom by its original index (atomIndex) in the current atomsGroup
-function findAtomByOriginalIndex(originalIndex) {
-  if (!atomsGroup || !atomsGroup.children) return null;
-  
-  for (let i = 0; i < atomsGroup.children.length; i++) {
-    const atom = atomsGroup.children[i];
-    if (atom.userData && atom.userData.atomIndex === originalIndex) {
-      return atom;
-    }
-  }
-  return null;
-}
-
-function updateAllMeasurements() {
-  if (!atomsGroup || !atomsGroup.children) return;
-
-  measureLines.forEach(measureItem => {
-    if (!measureItem.userData) return;
-
-    if (measureItem.userData.type === 'distance') {
-      // Update distance measurement
-      const atom1Index = measureItem.userData.atom1Index;
-      const atom2Index = measureItem.userData.atom2Index;
-
-      const atom1 = findAtomByOriginalIndex(atom1Index);
-      const atom2 = findAtomByOriginalIndex(atom2Index);
-
-      if (atom1 && atom2) {
-        // Recalculate distance and update display
-        const pa = atom1.position.clone();
-        const pb = atom2.position.clone();
-        const distance = pa.distanceTo(pb);
-
-        // Update the cylinder segments positions
-        const direction = new THREE.Vector3().subVectors(pb, pa);
-        const dashLength = 0.3;
-        const gapLength = 0.2;
-        const segmentLength = dashLength + gapLength;
-        const numSegments = Math.floor(distance / segmentLength);
-
-        // Clear old segments
-        measureItem.clear();
-
-        // Create new segments with updated positions
-        for (let i = 0; i < numSegments; i++) {
-          const segmentStart = i * segmentLength;
-          const segmentGeometry = new THREE.CylinderGeometry(0.08, 0.08, dashLength, 8);
-          const segmentMaterial = new THREE.MeshBasicMaterial({ color: 0x0066ff });
-          const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
-
-          const segmentCenter = pa.clone().add(direction.clone().normalize().multiplyScalar(segmentStart + dashLength/2));
-          segment.position.copy(segmentCenter);
-          segment.lookAt(pb);
-          segment.rotateX(Math.PI / 2);
-
-          measureItem.add(segment);
-        }
-      }
-    } else if (measureItem.userData.type === 'angle') {
-      // Update angle measurement
-      const atom1Index = measureItem.userData.atom1Index;
-      const atom2Index = measureItem.userData.atom2Index; // vertex
-      const atom3Index = measureItem.userData.atom3Index;
-      const lineIndex = measureItem.userData.lineIndex;
-
-      const atom1 = findAtomByOriginalIndex(atom1Index);
-      const atom2 = findAtomByOriginalIndex(atom2Index); // vertex
-      const atom3 = findAtomByOriginalIndex(atom3Index);
-
-      if (atom1 && atom2 && atom3) {
-        // Determine which line this is (vertex to atom1 or vertex to atom3)
-        const startPos = atom2.position.clone(); // vertex
-        const endPos = lineIndex === 1 ? atom1.position.clone() : atom3.position.clone();
-
-        const distance = startPos.distanceTo(endPos);
-        const direction = new THREE.Vector3().subVectors(endPos, startPos);
-
-        const dashLength = 0.25;
-        const gapLength = 0.15;
-        const segmentLength = dashLength + gapLength;
-        const numSegments = Math.floor(distance / segmentLength);
-
-        // Clear old segments
-        measureItem.clear();
-
-        // Create new segments with updated positions
-        for (let i = 0; i < numSegments; i++) {
-          const segmentStart = i * segmentLength;
-          const segmentGeometry = new THREE.CylinderGeometry(0.06, 0.06, dashLength, 8);
-          const segmentMaterial = new THREE.MeshBasicMaterial({ color: 0xff6600 }); // Orange
-          const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
-
-          const segmentCenter = startPos.clone().add(direction.clone().normalize().multiplyScalar(segmentStart + dashLength/2));
-          segment.position.copy(segmentCenter);
-          segment.lookAt(endPos);
-          segment.rotateX(Math.PI / 2);
-
-          measureItem.add(segment);
-        }
-      }
-    } else if (measureItem.userData.type === 'distanceMarker') {
-      // Update distance marker position
-      const atomIndex = measureItem.userData.atomIndex;
-      const atom = findAtomByOriginalIndex(atomIndex);
-      
-      if (atom) {
-        measureItem.position.copy(atom.position);
-      }
-    } else if (measureItem.userData.type === 'angleMarker') {
-      // Update angle marker position
-      const atomIndex = measureItem.userData.atomIndex;
-      const atom = findAtomByOriginalIndex(atomIndex);
-      
-      if (atom) {
-        measureItem.position.copy(atom.position);
-      }
-    }
-  });
-
-  // Update measurement labels
-  measureLabels.forEach(label => {
-    if (label.userData && label.userData.type === 'distance') {
-      const atom1Index = label.userData.atom1Index;
-      const atom2Index = label.userData.atom2Index;
-
-      const atom1 = findAtomByOriginalIndex(atom1Index);
-      const atom2 = findAtomByOriginalIndex(atom2Index);
-
-      if (atom1 && atom2) {
-        const pa = atom1.position.clone();
-        const pb = atom2.position.clone();
-        const distance = pa.distanceTo(pb);
-        const midpoint = pa.clone().add(pb).multiplyScalar(0.5);
-
-        // Update label position and text
-        label.position.copy(midpoint);
-        if (label.element && label.element.firstChild) {
-          label.element.firstChild.textContent = distance.toFixed(3) + ' Å';
-        }
-      }
-    } else if (label.userData && label.userData.type === 'angle') {
-      // Update angle label
-      const atom1Index = label.userData.atom1Index;
-      const atom2Index = label.userData.atom2Index; // vertex
-      const atom3Index = label.userData.atom3Index;
-
-      const atom1 = findAtomByOriginalIndex(atom1Index);
-      const atom2 = findAtomByOriginalIndex(atom2Index); // vertex
-      const atom3 = findAtomByOriginalIndex(atom3Index);
-
-      if (atom1 && atom2 && atom3) {
-        // Recalculate angle
-        const angle = calculateAngle(atom1, atom2, atom3);
-
-        // Update label position to vertex
-        label.position.copy(atom2.position);
-
-        // Update label text
-        if (label.element && label.element.firstChild) {
-          const elements = [atom1.userData.element, atom2.userData.element, atom3.userData.element];
-          label.element.firstChild.textContent = `∠${elements[0]}-${elements[1]}-${elements[2]}: ${angle.toFixed(1)}°`;
-        }
-      }
-    }
-  });
-
-  // Update measurement marker sizes to match current atom sizes
-  updateMeasurementMarkers();
-}
-
-// Function to update atom coordinates and refresh visualization
-function updateAtomCoordinates(atomIndex, newCoords) {
-  if (!structureData || !structureData.positions || atomIndex >= structureData.positions.length) {
-    console.error('Invalid atom index or structure data');
-    return;
-  }
-
-  // Update the coordinates in the structure data
-  structureData.positions[atomIndex] = [...newCoords];
-
-  // Refresh the visualization to show the updated position
-  updateVisualization();
-
-  console.log(`Updated atom ${atomIndex} coordinates to: ${newCoords.join(', ')}`);
 }
 
 
 
 function updateVisualization() {
-  console.log('updateVisualization called, structureData:', structureData);
-  if (!structureData) {
-    console.log('No structureData available, returning early');
-    return;
-  }
-  console.log('structureData exists, proceeding with visualization');
+  if (!structureData) return;
 
-  // Clear existing geometry and dispose GPU resources
-  const disposeGroup = (grp) => {
-    if (!grp) return;
-    grp.traverse(obj => {
-      if (obj.geometry) { try { obj.geometry.dispose(); } catch(_){} }
-      if (obj.material) {
-        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-        mats.forEach(m => { try { m.dispose(); } catch(_){} });
-      }
-    });
-    scene.remove(grp);
-  };
-  disposeGroup(atomsGroup);
-  disposeGroup(bondsGroup);
-  disposeGroup(latticeGroup);
+  // Clear existing geometry
+  if (atomsGroup) scene.remove(atomsGroup);
+  if (bondsGroup) scene.remove(bondsGroup);
+  if (latticeGroup) scene.remove(latticeGroup);
 
   atomsGroup = new THREE.Group();
   bondsGroup = new THREE.Group();
   latticeGroup = new THREE.Group();
 
-  // Create atoms to mimic PBC inside the cell: draw base atoms plus
-  // face/edge duplicates that still lie within the unit cell bounds.
+  // Get wrapped positions
   const wrapped = periodicWrapped(structureData.positions, structureData.elements);
-  const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
-  for (let i = 0; i < wrappedCart.length; i++) {
-    const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    const atomMesh = createAtomMesh(wrapped.elements[i], wrappedCart[i], originalIndex);
-    atomMesh.userData.sourceIndex = originalIndex;
+  const cartPositions = fracToCart(wrapped.frac, structureData.lattice);
+
+  // Create atoms
+  for (let i = 0; i < cartPositions.length; i++) {
+    const atomMesh = createAtomMesh(wrapped.elements[i], cartPositions[i]);
     atomsGroup.add(atomMesh);
   }
 
   // Create bonds
   if (showBonds) {
-    // 1) Bonds entirely inside the unit cell among the wrapped atoms
-    //    (fills corners/edges). This guarantees the box is fully connected.
-    for (let i = 0; i < wrappedCart.length; i++) {
-      for (let j = i + 1; j < wrappedCart.length; j++) {
-        const ei = wrapped.elements[i];
-        const ej = wrapped.elements[j];
-        const bond = createBond(wrappedCart[i], wrappedCart[j], ei, ej);
+    for (let i = 0; i < cartPositions.length; i++) {
+      for (let j = i + 1; j < cartPositions.length; j++) {
+        const bond = createBond(cartPositions[i], cartPositions[j], wrapped.elements[i], wrapped.elements[j]);
         if (bond) bondsGroup.add(bond);
-      }
-    }
-
-    // 2) Neighbor bonds to atoms outside the cell (ghosts)
-    //    Use a minimum-image approach on the reference cell and
-    //    explicitly add ghost atoms when needed.
-    const lattice = structureData.lattice;
-    const a = new THREE.Vector3(lattice[0][0], lattice[0][1], lattice[0][2]);
-    const b = new THREE.Vector3(lattice[1][0], lattice[1][1], lattice[1][2]);
-    const c = new THREE.Vector3(lattice[2][0], lattice[2][1], lattice[2][2]);
-
-    // Treat the filled unit cell as primary
-    const primCarts = wrappedCart.map(p => new THREE.Vector3(p[0], p[1], p[2]));
-    const primElems = wrapped.elements;
-
-    // Precompute translation range dynamically from current maximum cutoff
-    const maxCutoff = Math.max(3.0, ...Object.values(bondLengths || {dummy:3.0}));
-    const ax = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(a.length(), 1e-6))));
-    const by = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(b.length(), 1e-6))));
-    const cz = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(c.length(), 1e-6))));
-    const shifts = [];
-    for (let dx = -ax; dx <= ax; dx++)
-      for (let dy = -by; dy <= by; dy++)
-        for (let dz = -cz; dz <= cz; dz++)
-          shifts.push([dx, dy, dz]);
-
-    const ghostAdded = new Map(); // key -> mesh (for potential styling later)
-    const bondDedupe = new Set();
-
-    for (let i = 0; i < primCarts.length; i++) {
-      const pi = primCarts[i];
-      const ei = primElems[i];
-      for (let j = 0; j < primCarts.length; j++) {
-        if (j === i) continue;
-        const pj = primCarts[j];
-        const ej = primElems[j];
-
-        const cutoff = getBondCutoff(ei, ej);
-        if (cutoff <= 0.01) continue;
-
-        for (const [dx, dy, dz] of shifts) {
-          const shiftVec = new THREE.Vector3()
-            .addScaledVector(a, dx)
-            .addScaledVector(b, dy)
-            .addScaledVector(c, dz);
-          const candidate = pj.clone().add(shiftVec);
-          const d = pi.distanceTo(candidate);
-          if (d > cutoff || d < 0.005) continue;
-
-          if (dx === 0 && dy === 0 && dz === 0) {
-            // Already handled in step (1) via wrapped bonds; skip here to avoid dupes
-          } else if (showNeighborBonds) {
-            // Only show true ghosts (position must lie outside the unit cell)
-            const candidateArr = [candidate.x, candidate.y, candidate.z];
-            if (!isOutsideUnitCell(candidateArr, lattice)) continue;
-            const gkey = `${j}:${dx},${dy},${dz}`;
-            let ghostMesh = ghostAdded.get(gkey);
-            if (!ghostMesh) {
-              ghostMesh = createAtomMesh(ej, [candidate.x, candidate.y, candidate.z]);
-              ghostMesh.userData.isGhost = true;
-              // Make ghost atoms feel translucent and slightly smaller
-              ghostMesh.material.opacity = 0.35;
-              ghostMesh.material.transparent = true;
-              ghostMesh.material.depthWrite = false;
-              atomsGroup.add(ghostMesh);
-              ghostAdded.set(gkey, ghostMesh);
-            }
-            const bkey = `${i}-${j}-${dx},${dy},${dz}`;
-            if (!bondDedupe.has(bkey)) {
-              const bond = createBond([pi.x, pi.y, pi.z], [candidate.x, candidate.y, candidate.z], ei, ej);
-              if (bond) {
-                // Fade the half connected to the ghost atom
-                if (bond.children && bond.children[1] && bond.children[1].material) {
-                  bond.children[1].material.transparent = true;
-                  bond.children[1].material.opacity = 0.5;
-                }
-                bondsGroup.add(bond);
-              }
-              bondDedupe.add(bkey);
-            }
-
-            // Symmetric ghost on the opposite side: ghost image of atom i
-            const opposite = pi.clone().sub(shiftVec);
-            if (isOutsideUnitCell([opposite.x, opposite.y, opposite.z], lattice)) {
-              const gkey2 = `${i}:${-dx},${-dy},${-dz}`;
-              if (!ghostAdded.has(gkey2)) {
-                const ghostMesh2 = createAtomMesh(ei, [opposite.x, opposite.y, opposite.z]);
-                ghostMesh2.userData.isGhost = true;
-                ghostMesh2.material.opacity = 0.35;
-                ghostMesh2.material.transparent = true;
-                ghostMesh2.material.depthWrite = false;
-                atomsGroup.add(ghostMesh2);
-                ghostAdded.set(gkey2, ghostMesh2);
-              }
-              const bkey2 = `sym-${i}-${j}-${dx},${dy},${dz}`;
-              if (!bondDedupe.has(bkey2)) {
-                const bond2 = createBond([opposite.x, opposite.y, opposite.z], [pj.x, pj.y, pj.z], ei, ej);
-                if (bond2) {
-                  if (bond2.children && bond2.children[0] && bond2.children[0].material) {
-                    bond2.children[0].material.transparent = true;
-                    bond2.children[0].material.opacity = 0.5;
-                  }
-                  bondsGroup.add(bond2);
-                }
-                bondDedupe.add(bkey2);
-              }
-            }
-          }
-        }
       }
     }
   }
@@ -2602,12 +1009,6 @@ function updateVisualization() {
   // Re-add persistent measurements
   measureLines.forEach(line => scene.add(line));
   measureLabels.forEach(label => scene.add(label));
-
-  // Update cached lattice directions for gizmo
-  recomputeLatticeDirs();
-
-  // Update all measurements after visualization is complete
-  updateAllMeasurements();
 }
 
 function colorHexToCss(hex) {
@@ -2615,24 +1016,9 @@ function colorHexToCss(hex) {
     return `#${s}`;
 }
 
-async function loadStructure(content, fileName = '', isDefault = false) {
+function loadPOSCAR(content, isDefault = false) {
   try {
-    const lower = (fileName || '').toLowerCase();
-    const contentString = typeof content === 'string' ? content : '';
-    const treatAsCIF = lower.endsWith('.cif') ||
-                      lower.includes('.cif') ||
-                      /(^|\W)cif(\W|$)/.test(lower) ||
-                      isLikelyCIFContent(contentString);
-
-    if (treatAsCIF) {
-      structureData = await parseCIF(contentString);
-    } else {
-      structureData = parsePOSCAR(contentString);
-    }
-    // keep a deep copy for restore (fractional positions + arrays)
-    originalStructureData = JSON.parse(JSON.stringify(structureData));
-    loadColorOverrides();
-    loadIndividualAtomColors();
+    structureData = parsePOSCAR(content);
     if (isDefault) {
       setStatus(`Default structure: ${structureData.elements.length} atoms`);
     } else {
@@ -2643,13 +1029,12 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     document.getElementById('bondControlsGroup').style.display = 'block';
 
     createBondLengthControls();
-    createShareButton();
     updateVisualization();
-    // Rebuild camera with size/distance based on structure and zoom scale
-    switchCameraType();
     resetView();
+
+    renderComposition();
     clearMeasure();
-    resizeRenderer();
+    resetView();
 
   } catch (error) {
     setStatus(`Error: ${error.message}`);
@@ -2658,15 +1043,9 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 }
 
 function loadDefaultStructure() {
-  // Don't load default structure if we've already loaded a shared structure
-  if (sharedStructureLoaded) {
-    console.log('Skipping default structure load - shared structure already loaded');
-    return;
-  }
-
   setStatus('Loading default NaCl structure...');
   setTimeout(() => {
-    loadStructure(defaultPOSCAR, 'POSCAR', true);
+    loadPOSCAR(defaultPOSCAR, true);
   }, 100);
 }
 
@@ -2702,8 +1081,6 @@ function init() {
 
   view.appendChild(renderer.domElement);
 
-  resizeRenderer();
-
 
   // Label for distances
   labelRenderer = new CSS2DRenderer();
@@ -2713,11 +1090,6 @@ function init() {
   labelRenderer.domElement.style.left = '0';
   labelRenderer.domElement.style.pointerEvents = 'none';
   view.appendChild(labelRenderer.domElement);
-
-  atomTooltip = document.createElement('div');
-  atomTooltip.className = 'atom-tooltip';
-  atomTooltip.setAttribute('aria-hidden', 'true');
-  view.appendChild(atomTooltip);
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = false; //damping the rotation for smoother experience
@@ -2763,68 +1135,13 @@ function init() {
   let raycaster = new THREE.Raycaster();
   let mouse = new THREE.Vector2();
 
-  function hideAtomTooltip() {
-    if (!atomTooltip) return;
-    atomTooltip.classList.remove('visible');
-    atomTooltip.setAttribute('aria-hidden', 'true');
-    hoveredAtom = null;
-  }
-
-  function updateAtomTooltip(event) {
-    if (!atomsGroup || !atomsGroup.children.length || !atomTooltip) {
-      hideAtomTooltip();
-      return;
-    }
-
-    const rect = renderer.domElement.getBoundingClientRect();
-    const clientX = event.clientX;
-    const clientY = event.clientY;
-    if (clientX == null || clientY == null) {
-      hideAtomTooltip();
-      return;
-    }
-
-    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
-    const y = -((clientY - rect.top) / rect.height) * 2 + 1;
-    mouse.set(x, y);
-    raycaster.setFromCamera(mouse, camera);
-
-    const hits = raycaster.intersectObjects(atomsGroup.children, true);
-    if (!hits.length) {
-      hideAtomTooltip();
-      return;
-    }
-
-    const hit = hits[0].object;
-    const element = hit?.userData?.element || hit?.parent?.userData?.element || null;
-    if (!element) {
-      hideAtomTooltip();
-      return;
-    }
-
-    if (hoveredAtom !== hit) {
-      hoveredAtom = hit;
-      atomTooltip.textContent = element;
-    }
-    atomTooltip.style.left = `${clientX - rect.left}px`;
-    atomTooltip.style.top = `${clientY - rect.top}px`;
-    atomTooltip.classList.add('visible');
-    atomTooltip.setAttribute('aria-hidden', 'false');
-  }
-
-  renderer.domElement.addEventListener('mousemove', updateAtomTooltip);
-  renderer.domElement.addEventListener('mouseleave', hideAtomTooltip);
-  renderer.domElement.addEventListener('touchstart', hideAtomTooltip, { passive: true });
-
   function onClickPick(event){
-    // Only handle clicks if a mode is enabled
+    // Only handle clicks if measure mode is enabled
     if (measureMode === 'none') return;
 
     // Prevent default behavior to avoid conflicts with pan/zoom
     event.preventDefault();
     event.stopPropagation();
-
-    // Note: Double-click detection is handled by separate onDoubleClickAtom function
 
     // Handle both mouse and touch events with better error checking
     let clientX, clientY;
@@ -2875,7 +1192,7 @@ function init() {
     selectedAtoms.push(hit);
     HighlightAtom(hit, selectedAtoms.length === 1 ? 0xff0000 : selectedAtoms.length === 2 ? 0x0000ff : 0x00ff00);
 
-    // Handle actions based on mode
+    // Handle measurements based on mode
     if (measureMode === 'distance' && selectedAtoms.length === 2) {
       // Distance measurement complete
       addDistanceMeasurement(selectedAtoms[0], selectedAtoms[1]);
@@ -2892,104 +1209,14 @@ function init() {
       selectedAtoms.forEach(atom => clearHighlightAtom(atom));
       selectedAtoms = [];
       clearMeasureGraphics();
-    } else if (measureMode === 'delete') {
-      const idx = hit.userData.sourceIndex;
-      if (idx !== undefined && idx >= 0 && idx < structureData.positions.length) {
-        // Remove atom from structure
-        structureData.positions.splice(idx, 1);
-        structureData.elements.splice(idx, 1);
-        // Clean selections and graphics
-        selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-        selectedAtoms = [];
-        clearMeasureGraphics();
-        // Rebuild controls and view
-        createBondLengthControls();
-        updateVisualization();
-      }
-      return; // nothing else to do in delete mode
     }
 
     drawMeasureGraphics();
   }
 
-  // Double-click handler for atom highlighting feature
-  function onDoubleClickAtom(event) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    // Handle both mouse and touch events
-    let clientX, clientY;
-    if (event.changedTouches && event.changedTouches.length > 0) {
-      clientX = event.changedTouches[0].clientX;
-      clientY = event.changedTouches[0].clientY;
-    } else {
-      clientX = event.clientX;
-      clientY = event.clientY;
-    }
-
-    const rect = renderer.domElement.getBoundingClientRect();
-    const mouse = new THREE.Vector2();
-    mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-
-    // Raycast to find clicked atom
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(atomsGroup.children, true);
-
-    if (hits.length > 0) {
-      const hit = hits[0];
-      const atomMesh = hit.object;
-
-      // Skip ghost atoms
-      if (atomMesh.userData.isGhost) return;
-
-      const element = atomMesh.userData.element;
-      const sourceIndex = atomMesh.userData.sourceIndex;
-
-      // Double-clicked atom detected
-
-      // Highlight the clicked atom in the structure panel
-      highlightAtomInStructurePanel(element, sourceIndex);
-
-      // Add visual glow to the 3D atom
-      highlightAtomIn3D(atomMesh);
-    }
-  }
-
   // Add event listeners - use touchstart instead of touchend for better responsiveness
   renderer.domElement.addEventListener('click', onClickPick);
   renderer.domElement.addEventListener('touchstart', onClickPick, { passive: false });
-
-  // Add double-click listener for atom highlighting feature
-  renderer.domElement.addEventListener('dblclick', onDoubleClickAtom);
-
-  // Add single click listener to clear highlights when clicking empty space
-  renderer.domElement.addEventListener('click', (event) => {
-    // Only clear highlights if no measurement mode is active
-    if (measureMode === 'none') {
-      // Small delay to avoid conflicts with double-click
-      setTimeout(() => {
-        // Check if we clicked on empty space
-        const rect = renderer.domElement.getBoundingClientRect();
-        const mouse = new THREE.Vector2();
-        const clientX = event.clientX || (event.changedTouches && event.changedTouches[0].clientX);
-        const clientY = event.clientY || (event.changedTouches && event.changedTouches[0].clientY);
-
-        if (clientX && clientY) {
-          mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-          mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-
-          raycaster.setFromCamera(mouse, camera);
-          const hits = raycaster.intersectObjects(atomsGroup.children, true);
-
-          // If no atom was clicked, clear highlights
-          if (hits.length === 0) {
-            clearAllHighlights();
-          }
-        }
-      }, 100);
-    }
-  });
 
 
   // Axes gizmo (bottom-left)
@@ -3021,13 +1248,12 @@ function init() {
   gizmoScene.userData.bArrow = bArrow;
   gizmoScene.userData.cArrow = cArrow;
 
-function sizeGizmo(){
-  const w = gizmoDiv.clientWidth || 110; 
-  const h = gizmoDiv.clientHeight || 110;
-  gizmoRenderer.setSize(w, h);
-  gizmoCamera.aspect = w / h;
-  gizmoCamera.updateProjectionMatrix();
-}
+  function sizeGizmo(){
+    const w = gizmoDiv.offsetWidth || 110, h = gizmoDiv.offsetHeight || 110;
+    gizmoRenderer.setSize(w, h);
+    gizmoCamera.aspect = w / h;
+    gizmoCamera.updateProjectionMatrix();
+  }
   sizeGizmo();
 
 
@@ -3039,15 +1265,77 @@ function sizeGizmo(){
   document.getElementById('viewA').onclick = () => { const {a} = latticeDirs(); setViewDirection(a); };
   document.getElementById('viewB').onclick = () => { const {b} = latticeDirs(); setViewDirection(b); };
   document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
-  document.getElementById('resetView').onclick = () => resetView();
 
-  setupStructureInput({
-    onLoadStructure: (content, name) => loadStructure(content, name),
-    setStatus,
+  document.getElementById('resetView').onclick = resetView;
+
+
+
+
+  // File handling
+  const fileInput = document.getElementById('fileInput');
+  const fileLabel = document.getElementById('fileLabel');
+
+  fileInput.onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Accept any file but give helpful feedback for structure files
+      const fileName = file.name.toLowerCase();
+      const isStructureFile = fileName.includes('poscar') ||
+                             fileName.includes('contcar') ||
+                             fileName.endsWith('.vasp') ||
+                             fileName.endsWith('.poscar') ||
+                             fileName === 'poscar' ||
+                             fileName === 'contcar';
+
+      if (!isStructureFile) {
+        console.warn('Selected file may not be a structure file:', file.name);
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => loadPOSCAR(e.target.result);
+      reader.readAsText(file);
+    }
+  };
+
+  // Drag and drop
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    fileLabel.addEventListener(eventName, preventDefaults, false);
+    document.body.addEventListener(eventName, preventDefaults, false);
   });
 
-  // Check for shared structure in URL
-  loadSharedStructure();
+  ['dragenter', 'dragover'].forEach(eventName => {
+    fileLabel.addEventListener(eventName, highlight, false);
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    fileLabel.addEventListener(eventName, unhighlight, false);
+  });
+
+  fileLabel.addEventListener('drop', handleDrop, false);
+
+  function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function highlight(e) {
+    fileLabel.classList.add('dragover');
+  }
+
+  function unhighlight(e) {
+    fileLabel.classList.remove('dragover');
+  }
+
+  function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    if (files.length > 0) {
+      const file = files[0];
+      const reader = new FileReader();
+      reader.onload = (e) => loadPOSCAR(e.target.result);
+      reader.readAsText(file);
+    }
+  }
 
   // Control handlers
   document.getElementById('showBonds').onchange = (e) => {
@@ -3060,34 +1348,12 @@ function sizeGizmo(){
     updateVisualization();
   };
 
-  // Toggle for VESTA-style neighbor bonds/ghost atoms
-  const neighborBondsEl = document.getElementById('neighborBonds');
-  if (neighborBondsEl) {
-    neighborBondsEl.onchange = (e) => {
-      showNeighborBonds = e.target.checked;
-      updateVisualization();
-    };
-  }
-
   document.getElementById('atomSize').oninput = (e) => {
     atomSize = parseFloat(e.target.value);
     document.getElementById('atomSizeValue').textContent = atomSize.toFixed(1);
     updateVisualization();
     updateMeasurementMarkers(); // Update ring markers when atom size changes
   };
-
-  // Bond width control
-  const bondWidthSlider = document.getElementById('bondWidth');
-  const bondWidthValue = document.getElementById('bondWidthValue');
-  if (bondWidthSlider && bondWidthValue) {
-    bondWidthSlider.oninput = (e) => {
-      const v = parseFloat(e.target.value);
-      // clamp defensively
-      bondRadius = Math.max(0.005, Math.min(1.0, isNaN(v) ? bondRadius : v));
-      bondWidthValue.textContent = bondRadius.toFixed(2);
-      updateVisualization();
-    };
-  }
 
   // New control handlers
   document.getElementById('orthographicCamera').onchange = (e) => {
@@ -3097,7 +1363,7 @@ function sizeGizmo(){
 
   document.getElementById('vestaColors').onchange = (e) => {
     useVestaColors = e.target.checked;
-    updateVisualization(); // also re-renders composition
+    updateVisualization();
   };
 
   // Mobile measurement toggle functionality
@@ -3105,14 +1371,6 @@ function sizeGizmo(){
     e.preventDefault();
     e.stopPropagation();
     const panel = document.getElementById('measurementPanel');
-    panel.classList.toggle('expanded');
-  });
-
-  // Mobile camera toggle functionality
-  document.getElementById('cameraToggle').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const panel = document.getElementById('cameraPanel');
     panel.classList.toggle('expanded');
   });
 
@@ -3159,27 +1417,6 @@ function sizeGizmo(){
     }
   });
 
-  // Delete atom mode
-  document.getElementById('deleteModeBtn').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const button = document.getElementById('deleteModeBtn');
-    const wasActive = measureMode === 'delete';
-
-    document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
-    selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-    selectedAtoms = [];
-    clearMeasureGraphics();
-
-    if (wasActive) {
-      measureMode = 'none';
-    } else {
-      measureMode = 'delete';
-      button.classList.add('active');
-    }
-  });
-
   document.getElementById('clearAllMeasurements').addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -3188,14 +1425,6 @@ function sizeGizmo(){
     // Also clear active measurement mode
     document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
     measureMode = 'none';
-
-    // Also restore deleted atoms
-    if (originalStructureData) {
-      structureData = JSON.parse(JSON.stringify(originalStructureData));
-      createBondLengthControls();
-      updateVisualization();
-      clearMeasure();
-    }
   });
 
   // Add touch event handlers for better mobile support
@@ -3228,20 +1457,6 @@ function sizeGizmo(){
       if (!isNaN(v)) {
         atomSize = v; // apply slider value to internal scale
         if (span) span.textContent = atomSize.toFixed(1);
-        if (structureData) updateVisualization();
-      }
-    }
-  })();
-
-  // Initialize bond width from slider
-  (function initBondWidthFromSlider(){
-    const slider = document.getElementById('bondWidth');
-    const span = document.getElementById('bondWidthValue');
-    if (slider) {
-      const v = parseFloat(slider.value);
-      if (!isNaN(v)) {
-        bondRadius = v;
-        if (span) span.textContent = bondRadius.toFixed(2);
         if (structureData) updateVisualization();
       }
     }
@@ -3282,100 +1497,112 @@ function animate() {
 }
 
 // window resize
-function resizeRenderer() {
-  if (!renderer || !camera) return;
+window.addEventListener('resize', () => {
   const w = view.clientWidth || window.innerWidth;
   const h = view.clientHeight || window.innerHeight;
-  const aspect = w / h;
-
-  if (camera.isOrthographicCamera) {
-    const base = orthographicFrustumSize || 10;
-    camera.left = -base;
-    camera.right = base;
-    camera.top = base / aspect;
-    camera.bottom = -base / aspect;
-  } else if (camera.isPerspectiveCamera) {
-    camera.aspect = aspect;
-  }
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
 
-  if (labelRenderer) {
-    labelRenderer.setSize(w, h);
-  }
+  const gizmoDiv = document.getElementById('axesGizmo');
+  gizmoRenderer.setSize(gizmoDiv.clientWidth, gizmoDiv.clientHeight);
+  gizmoCamera.aspect = gizmoDiv.clientWidth / gizmoDiv.clientHeight;
+  gizmoCamera.updateProjectionMatrix();
 
-  if (gizmoRenderer && gizmoCamera) {
-    const gizmoDiv = document.getElementById('axesGizmo');
-    if (gizmoDiv) {
-      const gw = gizmoDiv.clientWidth || 110;
-      const gh = gizmoDiv.clientHeight || 110;
-      gizmoRenderer.setSize(gw, gh);
-      gizmoCamera.aspect = gw / gh;
-      gizmoCamera.updateProjectionMatrix();
-    }
-  }
-}
+  labelRenderer.setSize(w, h);
 
-window.addEventListener('resize', resizeRenderer);
+});
 
 window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
 window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
 
-// Panel toggle functionality for all screen sizes
+// Mobile menu functionality
 function setupMobileMenu() {
-  const hamburger = document.getElementById('mobileMenuToggle');
-  const overlay = document.getElementById('mobileOverlay');
+  const mobileToggle = document.getElementById('mobileMenuToggle');
+  const mobileOverlay = document.getElementById('mobileOverlay');
   const ui = document.getElementById('ui');
 
-  function togglePanel() {
-    if (!ui) return;
+  console.log('Setting up mobile menu...', {
+    mobileToggle: !!mobileToggle,
+    mobileOverlay: !!mobileOverlay,
+    ui: !!ui
+  });
 
-    if (window.innerWidth > 1024) {
-      // Desktop: toggle panel-hidden
-      ui.classList.toggle('panel-hidden');
-      document.body.classList.toggle('panel-hidden');
-    } else {
-      // Mobile: toggle panel-open
-      ui.classList.toggle('panel-open');
-      if (overlay) overlay.classList.toggle('active');
-    }
-
-    // Refresh renderer immediately after layout change
-    if (typeof resizeRenderer === 'function') {
-      resizeRenderer();
+  function toggleMobileMenu() {
+    console.log('Toggle mobile menu');
+    if (ui && mobileOverlay) {
+      ui.classList.toggle('mobile-open');
+      mobileOverlay.classList.toggle('active');
+      console.log('Menu toggled:', ui.classList.contains('mobile-open'));
     }
   }
 
-  function closePanel() {
-    if (!ui) return;
-    ui.classList.remove('panel-open', 'panel-hidden');
-    document.body.classList.remove('panel-hidden');
-    if (overlay) overlay.classList.remove('active');
+  function closeMobileMenu() {
+    console.log('Close mobile menu');
+    if (ui && mobileOverlay) {
+      ui.classList.remove('mobile-open');
+      mobileOverlay.classList.remove('active');
+    }
   }
 
-  if (hamburger) {
-    hamburger.addEventListener('click', (e) => {
+  if (mobileToggle) {
+    console.log('Adding mobile toggle listeners');
+    mobileToggle.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      togglePanel();
+      toggleMobileMenu();
     });
 
-    hamburger.addEventListener('touchend', (e) => {
+    mobileToggle.addEventListener('touchend', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      togglePanel();
+      toggleMobileMenu();
     });
+  } else {
+    console.warn('Mobile toggle button not found');
   }
 
-  if (overlay) {
-    overlay.addEventListener('click', (e) => {
+  if (mobileOverlay) {
+    mobileOverlay.addEventListener('click', (e) => {
       e.preventDefault();
-      closePanel();
+      closeMobileMenu();
     });
 
-    overlay.addEventListener('touchend', (e) => {
+    mobileOverlay.addEventListener('touchend', (e) => {
       e.preventDefault();
-      closePanel();
+      closeMobileMenu();
+    });
+  } else {
+    console.warn('Mobile overlay not found');
+  }
+
+  // Close mobile menu when clicking inside the UI (but not on inputs)
+  if (ui) {
+    ui.addEventListener('click', (e) => {
+      // Only close menu for non-input interactions
+      if (e.target.matches('button, label[for="fileInput"]') && !e.target.matches('input')) {
+        setTimeout(closeMobileMenu, 500); // Small delay to allow interaction
+      }
+    });
+
+    // Prevent menu from closing when keyboard appears or input fields are focused
+    ui.addEventListener('focusin', (e) => {
+      if (e.target.matches('input')) {
+        // Keep menu open when input is focused
+        e.stopPropagation();
+      }
+    });
+
+    ui.addEventListener('focusout', (e) => {
+      if (e.target.matches('input')) {
+        // Optionally close menu after input loses focus and no other input is focused
+        setTimeout(() => {
+          const activeElement = document.activeElement;
+          if (!activeElement || !activeElement.matches('input')) {
+            // No input is currently focused, safe to consider closing
+          }
+        }, 100);
+      }
     });
   }
 
@@ -3385,6 +1612,7 @@ function setupMobileMenu() {
     viewport.name = 'viewport';
     viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=no';
     document.head.appendChild(viewport);
+    console.log('Added viewport meta tag');
   }
 }
 

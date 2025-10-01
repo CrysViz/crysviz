@@ -10,22 +10,8 @@ body {
   display: flex;
 }
 
-:root {
-  --panel-content-width: 380px; /* Panel content width */
-  --panel-border-width: 1px; /* Panel border width */
-  --panel-total-width: calc(var(--panel-content-width) + var(--panel-border-width)); /* Complete panel width */
-
-  /* Legacy variable for compatibility */
-  --drawer-width: var(--panel-total-width);
-
-  /* Gizmo positioning variables */
-  --gizmo-size: 120px;
-  --gizmo-bottom: 20px;
-  --gizmo-left: 490px;
-}
-
 #ui {
-  width: 420px;
+  width: 380px;
   overflow: auto;
   padding: 20px;
   background: rgba(26, 26, 26, 0.95);
@@ -34,74 +20,13 @@ body {
   border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Desktop panel hide state */
-#ui.panel-hidden {
-  display: none;
-}
-
-/* When panel hidden: disable flex and make view fullscreen */
-body.panel-hidden {
-  display: block;
-  --gizmo-left: 20px;
-}
-
-body.panel-hidden #view {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  border-radius: 0;
-}
-
-body.panel-hidden #view canvas {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-/* === Desktop-only measurement tool scaling === */
-@media screen and (min-width: 1025px) {
-  #measurementTools {
-    transform: scale(0.85);
-  }
-}
-
-/* === Panel Hidden Overrides === */
-body.panel-hidden #cameraTools {
-  left: 68px;  /* Decent separation from hamburger menu */
-  top: 12px;   /* Same Y level as hamburger menu */
-}
-
-body.panel-hidden #axesLegend {
-  left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px);  /* Stick to gizmo */
-}
-
 .logo {
   margin: 0 0 25px 0;
   width: 200px;
   height: auto;
   display: block;
   margin: 1rem auto;
-  cursor: pointer;
-  transition: transform 0.2s ease;
 }
-.logo:hover,
-.logo:focus {
-  transform: scale(1.02);
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 .control-group {
   margin: 25px 0;
   padding: 20px;
@@ -111,58 +36,11 @@ body.panel-hidden #axesLegend {
   backdrop-filter: blur(10px);
 }
 
-.control-group h1 {
-  margin: 0 0 15px 0;
-  color: 	#FFBF00;
-  font-size: 16px;
-  font-weight: 500;
-}
-
 .control-group h3 {
   margin: 0 0 15px 0;
   color: #81c784;
   font-size: 16px;
   font-weight: 500;
-}
-
-.input-mode-toggle {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin-bottom: 15px;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 6px;
-  border-radius: 10px;
-}
-
-.input-mode-btn {
-  background: transparent;
-  color: #ddd;
-  border: none;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-.input-mode-btn:hover {
-  background: rgba(6, 71, 50, 0.5);
-  color: #fff;
-}
-
-.input-mode-btn.active {
-  background: rgba(6, 140, 50, 0.85);
-  color: #fff;
-}
-
-.input-mode-panel {
-  display: block;
-}
-
-.input-mode-panel[hidden] {
-  display: none !important;
 }
 
 #fileInput {
@@ -184,50 +62,12 @@ body.panel-hidden #axesLegend {
 
 #fileLabel:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(6, 140, 50, 0.4);
+  box-shadow: 0 8px 25px rgba(6, 100, 50, 0.4);
 }
 
 #fileLabel.dragover {
-  border: 2px dashed rgba(6, 140, 50, 1);
+  border: 2px dashed rgba(6, 100, 50, 1);
   background: rgba(6, 71, 50, 0.4);
-}
-
-#structureText {
-  width: 100%;
-  min-height: 160px;
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.2);
-  color: #f5f5f5;
-  resize: vertical;
-  font-family: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.4;
-  box-sizing: border-box;
-}
-
-#structureText::placeholder {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-#loadTextButton {
-  margin-top: 12px;
-  width: 100%;
-  padding: 12px 16px;
-  background: linear-gradient(45deg, #368f6e, #256951);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-#loadTextButton:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(54, 143, 110, 0.35);
 }
 
 label {
@@ -284,137 +124,6 @@ input[type="checkbox"] {
   position: relative;
   border-radius: 0 20px 20px 0;
   overflow: hidden;
-}
-
-.atom-tooltip {
-  position: absolute;
-  pointer-events: none;
-  background: rgba(12, 30, 24, 0.9);
-  color: #f6fff9;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-  transform: translate(-50%, -120%);
-  opacity: 0;
-  transition: opacity 0.12s ease;
-  white-space: nowrap;
-  z-index: 10;
-}
-
-#aboutOverlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-#aboutOverlay.visible {
-  opacity: 1;
-}
-
-#aboutModal {
-  background: #0b1f1c;
-  color: #f5fffa;
-  max-width: 640px;
-  max-height: 80vh;
-  overflow-y: auto;
-  padding: 28px 32px;
-  border-radius: 16px;
-  border: 1px solid rgba(129, 199, 132, 0.4);
-  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45);
-  position: relative;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-#aboutClose {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  background: transparent;
-  border: none;
-  color: #81c784;
-  font-size: 24px;
-  cursor: pointer;
-  line-height: 1;
-  padding: 4px;
-}
-
-#aboutClose:hover {
-  color: #a5d6a7;
-}
-
-#aboutContent h1,
-#aboutContent h2,
-#aboutContent h3 {
-  color: #81c784;
-  margin-top: 1.4em;
-  margin-bottom: 0.6em;
-  font-weight: 600;
-}
-
-#aboutContent h1 {
-  font-size: 1.6rem;
-}
-
-#aboutContent h2 {
-  font-size: 1.3rem;
-}
-
-#aboutContent h3 {
-  font-size: 1.1rem;
-}
-
-#aboutContent p {
-  margin: 0.8em 0;
-  color: #e8f5e9;
-}
-
-#aboutContent ul {
-  padding-left: 1.2em;
-  margin: 0.6em 0;
-}
-
-#aboutContent li {
-  margin: 0.35em 0;
-}
-
-#aboutContent a {
-  color: #4fc3f7;
-  text-decoration: underline;
-}
-
-#aboutContent a:hover {
-  color: #81d4fa;
-}
-
-#aboutContent code {
-  background: rgba(12, 45, 36, 0.7);
-  padding: 2px 4px;
-  border-radius: 4px;
-  font-family: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  font-size: 0.92em;
-}
-
-#aboutContent .about-error {
-  color: #ff8a80;
-}
-
-#aboutOverlay[hidden] {
-  display: none;
-}
-
-.atom-tooltip.visible {
-  opacity: 1;
 }
 
 #bondControls {
@@ -501,8 +210,8 @@ input[type="checkbox"] {
   position: fixed;
   right: 20px;
   bottom: 20px;
-  min-width: 160px;
-  max-width: 200px;
+  min-width: 240px;
+  max-width: 320px;
   background: rgba(0,0,0,0.8);
   color: #fff;
   padding: 12px 14px;
@@ -513,39 +222,16 @@ input[type="checkbox"] {
   border: 1px solid rgba(255,255,255,0.1);
   z-index: 1000;
 }
-#infoPanel .structure-toggle { display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none; padding:6px 8px; border-radius:8px; background:linear-gradient(180deg,#273033,#1e272a); border:1px solid rgba(255,255,255,0.03); }
-#infoPanel .structure-toggle h4 { margin:0; font-size:14px; color:rgba(6, 140, 50, 1); font-weight:600; line-height:1; }
-.section-heading { margin-top:10px; margin-bottom:6px; font-size:14px; color:rgba(6, 140, 50, 1); font-weight:600; padding-left:8px; }
-.toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(255,255,255,0.03); color:rgba(6,140,50,1); font-weight:700; transition:transform .18s ease, background .18s ease, color .18s ease; }
-.toggle-icon.open { transform:rotate(45deg); background:rgba(6,140,50,1); color:#032226; }
-.collapsible-content { overflow:hidden; max-height:0; transition:max-height .28s ease, padding .18s ease; }
-.collapsible-content.open { padding-top:8px; max-height:600px; }
-#composition { color:#d7eef6; font-size:13px; line-height:1.4; }
-#measure { margin-top:8px; }
-#measureRow { display:flex; justify-content:space-between; gap:8px; color:#cfeffb; }
-
-/* Small actions */
-.btn-mini { background:transparent; border:1px solid rgba(255,255,255,0.08); color:#cfeffb; padding:6px 10px; border-radius:6px; cursor:pointer; }
-.btn-mini:hover { background:rgba(255,255,255,0.02); }
-.btn-mini:focus { outline:3px solid rgba(100,180,240,0.18); }
-.btn-mini.highlight { background:linear-gradient(90deg,#2aa6f2,#0077b6); border-color:rgba(0,0,0,0.15); color:#fff; box-shadow:0 6px 14px rgba(10,100,160,0.18); }
-.btn-mini.highlight:hover { filter:brightness(1.03); }
 #infoPanel h4 {
   margin: 0 0 8px 0;
   font-weight: 600;
-  color: rgba(6, 140, 50, 1);
+  color: rgba(6, 140, 50, 0.4);
   font-size: 14px;
   letter-spacing: .3px;
 }
-
 .comp-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 4px 0;
-  border-bottom: 1px dashed rgba(255,255,255,0.1);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 0; border-bottom: 1px dashed rgba(255,255,255,0.1);
 }
 .comp-row:last-child { border-bottom: 0; }
 .dot {
@@ -562,14 +248,15 @@ input[type="checkbox"] {
 
 
 #axesGizmo {
-position: fixed; left: var(--gizmo-left); bottom: var(--gizmo-bottom); width: var(--gizmo-size); height: var(--gizmo-size);
+position: fixed; left: 450px; bottom: 20px; width: 120px; height: 120px;
 border-radius: 10px; background: rgba(0,0,0,0.08); backdrop-filter: blur(6px);
 border: 1px solid rgba(255,255,255,0.15); z-index: 1000; overflow: hidden;
 pointer-events: none;
 }
 
 #axesLegend{
-position: fixed; left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px); bottom: var(--gizmo-bottom);
+position: fixed; left: 420px; bottom: 20px;
+transform: translateX(150px);
 background: rgba(0,0,0,0.8);
 border: 1px solid rgba(255,255,255,0.2);
 border-radius: 8px;
@@ -582,6 +269,18 @@ z-index:1000; pointer-events:none;
 .dot-a{background:#ff3333;} .dot-b{background:#33cc33;} .dot-c{background:#3366ff;}
 .legend-row{display:flex;align-items:center;gap:6px;line-height:1.2;}
 
+/* View toolbar (top-left) */
+#viewToolbar {
+  position: fixed; left: 450px; top: 16px; display: flex; gap: 8px; flex-wrap: wrap;
+  background: rgba(26,26,26,0.85); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px; padding: 8px; z-index: 1000; backdrop-filter: blur(8px);
+}
+.vbtn {
+  padding: 6px 10px; font-size: 14px; color: #fff; background: rgba(6, 71, 50, 1);;
+  border: 1px solid rgba(6, 90, 50, 1); border-radius: 8px; cursor: pointer;
+}
+.vbtn:hover { background: rgba(6, 71, 50, 1); }
+.vsep { width: 1px; height: 22px; background: rgba(255,255,255,0.12); margin: 0 2px; }
 
 
 /* --- Measurement Tools (Top Right) --- */
@@ -596,72 +295,6 @@ z-index:1000; pointer-events:none;
   padding: 12px;
   backdrop-filter: blur(20px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  transform-origin: top right;
-}
-
-/* --- Camera Tools (Desktop: Top Left beside panel, Fullscreen: aligned with hamburger) --- */
-#cameraTools {
-  position: fixed;
-  left: 490px;  /* Default: beside panel */
-  top: 16px;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  background: rgba(26, 26, 26, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 8px;
-  z-index: 1000;
-  backdrop-filter: blur(8px);
-}
-
-/* Camera panel for desktop - horizontal layout */
-#cameraPanel {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  max-height: none;
-  overflow: visible;
-}
-
-
-/* Camera buttons for desktop - compact style like original vbtn */
-#cameraTools .measure-tool-btn {
-  padding: 6px 10px;
-  font-size: 14px;
-  color: #fff;
-  background: rgba(6, 71, 50, 1);
-  border: 1px solid rgba(6, 90, 50, 1);
-  border-radius: 8px;
-  cursor: pointer;
-  min-width: auto;
-  min-height: auto;
-  flex-direction: row;
-  gap: 0;
-}
-
-#cameraTools .measure-tool-btn:hover {
-  background: rgba(6, 71, 50, 1);
-  border-color: rgba(6, 90, 50, 0.7);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(6, 100, 50, 1);
-}
-
-#cameraTools .measure-tool-btn .tool-icon {
-  font-size: 14px;
-  margin: 0;
-}
-
-#cameraTools .measure-tool-btn span {
-  display: none;
-}
-
-/* Separator for camera controls */
-.camera-separator {
-  width: 1px;
-  height: 22px;
-  background: rgba(255, 255, 255, 0.12);
-  margin: 0 2px;
 }
 
 /* Hide toggle button on desktop */
@@ -752,9 +385,9 @@ z-index:1000; pointer-events:none;
   backdrop-filter: blur(6px); white-space:nowrap;
 }
 
-/* Hamburger Menu - Always Top Left */
+/* Mobile Menu Toggle Button */
 #mobileMenuToggle {
-  display: flex;
+  display: none;
   position: fixed;
   top: 12px;
   left: 12px;
@@ -768,8 +401,8 @@ z-index:1000; pointer-events:none;
   backdrop-filter: blur(12px);
   font-size: 16px;
   font-weight: 300;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -810,19 +443,30 @@ body {
 
 /* Mobile and Tablet Responsive Styles */
 @media screen and (max-width: 1024px) {
-  /* Mobile: Panel positioning */
-  #ui {
-    position: fixed;
-    top: 0;
-    left: -100%;
-    height: 100vh;
-    z-index: 1500;
-    transition: left 0.3s ease;
+  /* Show mobile menu toggle */
+  #mobileMenuToggle {
+    display: flex !important;
   }
 
-  /* Panel open state for mobile */
-  #ui.panel-open {
-    left: 0;
+  /* Adjust view toolbar position for mobile toggle */
+  #viewToolbar {
+    left: 60px;
+    top: 12px;
+    flex-wrap: wrap;
+    padding: 6px;
+    border-radius: 8px;
+  }
+
+  .vbtn {
+    padding: 8px 12px;
+    font-size: 14px;
+    min-height: 40px;
+    min-width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(6, 71, 50, 1);
+    border: 1px solid rgba(6, 100, 50, 1)
   }
 
   /* Adjust axes gizmo position and size */
@@ -832,6 +476,7 @@ body {
     width: 60px;
     height: 60px;
     border-radius: 6px;
+    background: rgba(0, 0, 0, 0.6);
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
@@ -840,7 +485,7 @@ body {
     transform: translateX(68px);
     font-size: 11px;
     padding: 4px 6px;
-    /*! border-radius: 4px; */
+    border-radius: 4px;
     background: rgba(0, 0, 0, 0.8);
     color: #fff;
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -848,191 +493,60 @@ body {
     z-index: 1000;
   }
 
-  /* Mobile-friendly measurement tools */
-  #measurementTools {
-    top: 80px;
-    right: 10px;
-    padding: 0;
-    background: transparent;
-    border: none;
-    backdrop-filter: none;
-    box-shadow: none;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    z-index: 1002;
+  /* Reset UI display for mobile - will be overridden below */
+  #ui {
+    display: block;
   }
+}
 
-  /* Mobile-friendly camera tools - positioned below measurement tools */
-  #cameraTools {
-    position: fixed !important;
-    top: 138px !important;
-    right: 10px !important;
-    left: auto !important;
-    padding: 0;
-    background: transparent;
-    border: none;
-    backdrop-filter: none;
-    box-shadow: none;
-    display: flex !important;
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    z-index: 1000;
-  }
-
-  /* Hide separators on mobile */
-  .camera-separator {
-    display: none;
-  }
-
-  /* Mobile toggle button - compact and unobtrusive */
-  .measurement-toggle {
-    display: flex !important;
-    width: 44px;
-    height: 44px;
-    background: rgba(44, 44, 44, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 50%;
-    color: white;
-    font-size: 18px;
-    padding: 0;
-    margin: 0;
-    cursor: pointer;
-    backdrop-filter: blur(10px);
-    transition: all 0.2s ease;
-    align-items: center;
-    justify-content: center;
-    z-index: 1003;
-  }
-
-  /* Specific z-index for each toggle */
-  #measurementToggle {
-    z-index: 1004;
-  }
-
-  #cameraToggle {
-    z-index: 1003;
-  }
-
-  .measurement-toggle:hover,
-  .measurement-toggle:active {
-    background: rgba(64, 64, 64, 0.95);
-    transform: scale(1.05);
-  }
-
-  /* Collapsible measurement and camera panels */
-  .measurement-group {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease-out, border 0.3s ease-out;
-    background: transparent;
-    border-radius: 12px;
-    padding: 0;
-    backdrop-filter: none;
-    border: none;
-  }
-
-  .measurement-group.expanded {
-    max-height: 200px;
-    padding: 8px;
-    background: rgba(26, 26, 26, 0.95);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    display: flex;
-    flex-direction: row;
-    gap: 4px;
-    justify-content: center;
-  }
-
-  /* Mobile camera panel - collapsible */
-  #cameraPanel {
-    max-height: 0 !important;
-    overflow: hidden !important;
-    transition: max-height 0.3s ease-out, border 0.3s ease-out;
-    background: transparent !important;
-    border-radius: 12px;
-    padding: 0 !important;
-    backdrop-filter: none !important;
-    border: none !important;
-    flex-wrap: wrap;
-  }
-
-  #cameraPanel.expanded {
-    max-height: 200px !important;
-    padding: 8px !important;
-    background: rgba(26, 26, 26, 0.95) !important;
-    backdrop-filter: blur(12px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    display: flex !important;
-    flex-direction: row;
-    gap: 4px;
-    justify-content: center;
-  }
-
-  /* Mobile buttons - override desktop styles */
-  #cameraTools .measure-tool-btn {
-    padding: 6px !important;
-    min-width: 40px !important;
-    min-height: 40px !important;
-    font-size: 9px !important;
-    gap: 1px !important;
-    flex-direction: column !important;
-  }
-
-  #cameraTools .measure-tool-btn .tool-icon {
-    font-size: 14px !important;
-    margin-bottom: 1px !important;
-  }
-
-  #cameraTools .measure-tool-btn span {
-    display: none !important;
-  }
-
-  /* Compact mobile buttons for measurement tools */
-  .measure-tool-btn {
-    padding: 6px;
-    min-width: 40px;
-    min-height: 40px;
-    font-size: 9px;
-    gap: 1px;
-    flex-direction: column;
-  }
-
-  .tool-icon {
-    font-size: 14px;
-    margin-bottom: 1px;
-  }
-
-  /* Mobile-specific adjustments */
+@media screen and (max-width: 768px) {
   body {
+    flex-direction: column;
+    position: relative;
     overflow-x: hidden;
   }
 
+  #ui {
+    position: fixed !important;
+    top: 0;
+    left: -320px;
+    width: 320px;
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile keyboards */
+    z-index: 1500;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-right: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 2px 0 20px rgba(0, 0, 0, 0.3);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    display: block !important;
+  }
+
+  #ui.mobile-open {
+    left: 0 !important;
+  }
+
   #view {
+    flex: 1;
     width: 100vw;
     height: 100vh;
     border-radius: 0;
   }
 
-  /* Mobile/Tablet overlay to close menu */
+  /* Mobile overlay to close menu */
   #mobileOverlay {
     display: none;
     position: fixed;
-    inset: 0;
-    z-index: 900;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
     background: rgba(0, 0, 0, 0.5);
-    pointer-events: none;
+    z-index: 1400;
   }
 
   #mobileOverlay.active {
     display: block;
-    left: 0;
-    right: 0;
-    pointer-events: auto;
   }
 
   /* Adjust control group spacing for mobile */
@@ -1109,10 +623,8 @@ body {
   }
 
   #measureRow {
-    padding: 12px;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
+    padding: 8px;
+    font-size: 12px;
   }
 
   #distanceValue {
@@ -1130,7 +642,112 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.15);
   }
 
+  /* Mobile-friendly measurement tools */
+  #measurementTools {
+    top: 120px;
+    right: 10px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    backdrop-filter: none;
+    box-shadow: none;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  /* Mobile toggle button - compact and unobtrusive */
+  .measurement-toggle {
+    display: block;
+    width: 48px;
+    height: 48px;
+    background: rgba(44, 44, 44, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    color: white;
+    font-size: 20px;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .measurement-toggle:hover,
+  .measurement-toggle:active {
+    background: rgba(64, 64, 64, 0.95);
+    transform: scale(1.05);
+  }
+
+  /* Collapsible measurement panel */
+  .measurement-group {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out, border 0.3s ease-out;
+    background: transparent;
+    border-radius: 12px;
+    padding: 0;
+    backdrop-filter: none;
+    border: none;
+  }
+
+  .measurement-group.expanded {
+    max-height: 200px;
+    padding: 8px;
+    background: rgba(26, 26, 26, 0.95);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .measurement-group.expanded {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    justify-content: center;
+  }
+
+  /* Compact mobile buttons */
+  .measure-tool-btn {
+    padding: 8px;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 10px;
+    gap: 2px;
+    flex-direction: column;
+  }
+
+  .tool-icon {
+    font-size: 16px;
+    margin-bottom: 2px;
+  }
+
+  .tool-icon {
+    font-size: 20px;
+  }
+
+  /* View toolbar adjustments */
+  #viewToolbar {
+    left: 10px;
+    top: 60px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
   /* Measure panel improvements */
+  #measureRow {
+    padding: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
   .btn-mini {
     padding: 12px 16px;
     font-size: 16px;
@@ -1150,38 +767,16 @@ body {
     width: 280px;
   }
 
-  /* Ensure measurement tools are properly positioned on very small screens */
-  #measurementTools {
-    top: 16px;
-    right: 5px;
+  #viewToolbar {
+    padding: 6px;
+    gap: 4px;
   }
 
-  /* Ensure camera tools are properly positioned on very small screens */
-  #cameraTools {
-    top: 86px !important;
-    right: 5px !important;
-    left: auto !important;
-    position: fixed !important;
-    display: flex !important;
-  }
-
-  /* Ensure both toggle buttons are visible and properly sized */
-  .measurement-toggle {
-    display: flex !important;
-    width: 50px;
-    height: 50px;
-    font-size: 18px;
-    z-index: 1003;
-  }
-
-  /* Ensure measurement toggle is above camera toggle */
-  #measurementToggle {
-    z-index: 1004;
-  }
-
-  #cameraToggle {
-    display: flex !important;
-    z-index: 1003;
+  .vbtn {
+    padding: 10px;
+    font-size: 14px;
+    min-width: 40px;
+    min-height: 40px;
   }
 
   #infoPanel {
@@ -1234,7 +829,6 @@ body {
   #axesLegend {
     transform: translateX(58px);
     font-size: 10px;
-    bottom: 8px;
     padding: 3px 5px;
     left: 8px;
     background: rgba(0, 0, 0, 0.9);
