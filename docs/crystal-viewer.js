@@ -1437,6 +1437,7 @@ function createCompositionRow(el, count, total) {
   // Apply commits the chosen color
   applyBtn.onclick = () => {
     const val = hexInput.value;
+    clearAllIndividualColorsForElement(el)
     const ok = setElementColorOverride(el, val);
     if (ok) { updateVisualization(); }
   };
