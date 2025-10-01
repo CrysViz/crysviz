@@ -1,18 +1,19 @@
-# Crystal Structure Viewer
-Crystal Structure Viewer is a standalone exploration tool built on top of Three.js. Paste a POSCAR/CIF snippet, drop a local file, or grab an OPTIMADE endpoint (or just Materials Project or Alexandria IDs).
+# CrysViz Crystal Structure Viewer
+by Abhijith S. Parackal and Florian Trybel
+
+CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POSCAR/CIF snippet, drop a local file, or grab an OPTIMADE endpoint (or just Materials Project or Alexandria IDs). You crystal structure will NOT leave your device. 
+
 ## Key Features
-- No backend required; runs entirely in the browser, no data leaves your machine.
-- Surprisingly fast :D
+- No backend required; runs entirely in the browser, no data leaves your machine. Runs in nearly every device (in particular smartphons and tablets) and in every browser. 
+- Fast and highly repsonse even for several thousand atoms. 
 - Toggle mode distances, angles, ability to remove atoms, custom bond lengths with the optional ability to display atoms outside the unit cell.
-- Customizable color schemes.
+- Customizable color schemes can be choosen for any individual atoms 
 
 ## Notes
-A significant 'look and feel' inspiration is drawn from [VESTA](https://jp-minerals.org/vesta/en/). But, if you want something much more polished, head over to [Matterviz](https://matterviz.janosh.dev/).
-This project is almost entirely vibe coded, about half a million tokens from chatGPT as well as Claude.
-
-
-## Limitations
-- The CIF support is basic and only supports p1 symmetry.
+If you are looking for a desktop application with more features →[VESTA](https://jp-minerals.org/vesta/en/).
+If you look for Jupyter Notebook support → [Matterviz](https://matterviz.janosh.dev/).
+If you want a JS tool that you can embedd in your webpage → [JSmol](https://jmol.sourceforge.net)
+This project is under very active delevopment and at best in an early beta phase with known bugs that we are trying to fix. Please report them to Abhijith Parackal (abhijith.s.parackal@liu.se) or Florian Trybel (florian.trybel@liu.se)
 
 ## Powered By
 - [Three.js](https://threejs.org/) for the WebGL rendering pipeline.
