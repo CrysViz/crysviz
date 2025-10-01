@@ -1,5 +1,5 @@
 
-<img src="docs/CrysViz_logo_clear_back.png" width="600">
+<img src="docs/CrysViz_logo_clear_back.png" width="400">
 
 Light-weight browser-based visualisation of POSCAR files with on-device rendering. 
 
