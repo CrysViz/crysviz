@@ -1248,12 +1248,10 @@ function renderComposition() {
   const compDiv = document.getElementById('composition');
   compDiv.innerHTML = '';
 
-  // Ensure ALL info panel submenus default to closed
-  ensureAllSubmenusDefaultClosed();
 
   // Ensure structure panel starts collapsed by default
   compDiv.classList.remove('open');
-  // compDiv.setAttribute('aria-hidden', 'true'); // Removed to prevent focus issues
+  compDiv.style.maxHeight = ''; // reset
   const toggleIcon = document.getElementById('structureToggleIcon');
   if (toggleIcon) {
     toggleIcon.textContent = '+';
@@ -1262,52 +1260,22 @@ function renderComposition() {
   const structureToggle = document.getElementById('structureToggle');
   if (structureToggle) {
     structureToggle.setAttribute('aria-expanded', 'false');
-    // Add event listener to handle collapse behavior
+    // Rebind listener cleanly
     structureToggle.removeEventListener('click', handleStructurePanelToggle);
     structureToggle.addEventListener('click', handleStructurePanelToggle);
   }
+
   const counts = computeComposition();
-  const total = Object.values(counts).reduce((a,b)=>a+b,0) || 1;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
   const elements = Object.keys(counts).sort();
 
-  // Create collapsible structure if more than 3 elements
-  if (elements.length > 3) {
-    elements.slice(0, 3).forEach(el => {
-      const row = createCompositionRow(el, counts[el], total);
-      compDiv.appendChild(row);
-    });
+  // Render ALL rows directly (no “+N more” collapsing)
+  elements.forEach(el => {
+    const row = createCompositionRow(el, counts[el], total);
+    compDiv.appendChild(row);
+  });
 
-    // Add expand/collapse toggle
-    const toggleRow = document.createElement('div');
-    toggleRow.className = 'comp-toggle';
-    toggleRow.style.cssText = 'padding: 4px 0; cursor: pointer; color: #4fc3f7; font-size: 11px; text-align: center; border-top: 1px dashed rgba(255,255,255,0.1); margin-top: 4px;';
-    toggleRow.textContent = `+${elements.length - 3} more`;
-
-    const hiddenDiv = document.createElement('div');
-    hiddenDiv.className = 'comp-hidden';
-    hiddenDiv.style.display = 'none';
-
-    elements.slice(3).forEach(el => {
-      const row = createCompositionRow(el, counts[el], total);
-      hiddenDiv.appendChild(row);
-    });
-
-    toggleRow.onclick = () => {
-      const isHidden = hiddenDiv.style.display === 'none';
-      hiddenDiv.style.display = isHidden ? 'block' : 'none';
-      toggleRow.textContent = isHidden ? '− collapse' : `+${elements.length - 3} more`;
-    };
-
-    compDiv.appendChild(toggleRow);
-    compDiv.appendChild(hiddenDiv);
-  } else {
-    elements.forEach(el => {
-      const row = createCompositionRow(el, counts[el], total);
-      compDiv.appendChild(row);
-    });
-  }
-
-  // Add lattice parameters section
+  // Lattice parameters section
   addLatticeParametersSection();
 }
 
@@ -1332,7 +1300,7 @@ function createCompositionRow(el, count, total) {
   // Add expand/collapse indicator - starts collapsed
   const expandIcon = document.createElement('span');
   expandIcon.textContent = '▶';
-  expandIcon.style.cssText = 'margin-left: 4px; font-size: 8px; transition: transform 0.2s ease; color: #4fc3f7; transform: rotate(0deg);';
+  expandIcon.style.cssText = 'margin-left: 4px; font-size: 8px; transition: transform 0.2s ease; color: rgba(6,140,50,1); transform: rotate(0deg);';
 
   left.appendChild(dot);
   left.appendChild(name);
@@ -1344,6 +1312,7 @@ function createCompositionRow(el, count, total) {
 
   row.appendChild(left); // grid col 1
   row.appendChild(right); // grid col 2
+
 
   // Create individual atoms container (hidden by default)
   const atomsContainer = document.createElement('div');
@@ -1376,11 +1345,6 @@ function createCompositionRow(el, count, total) {
   row.addEventListener('click', (e) => {
     e.stopPropagation(); // Prevent triggering parent events
     const isExpanded = atomsContainer.style.display !== 'none';
-
-    // Close all other element expansions first
-    if (!isExpanded) {
-      closeOtherElementExpansions(atomsContainer);
-    }
 
     // Toggle this element's expansion
     atomsContainer.style.display = isExpanded ? 'none' : 'block';
@@ -1483,64 +1447,99 @@ function createCompositionRow(el, count, total) {
 }
 
 // Function to add lattice parameters section to composition
+//
+
 function addLatticeParametersSection() {
   const compDiv = document.getElementById('composition');
   if (!compDiv || !structureData || !structureData.lattice) return;
 
-  // Check if lattice section already exists
+  // Remove old section if present
   let latticeSection = document.getElementById('latticeSection');
-  if (latticeSection) {
-    latticeSection.remove();
-  }
+  if (latticeSection) latticeSection.remove();
 
   // Create lattice parameters section
   latticeSection = document.createElement('div');
   latticeSection.id = 'latticeSection';
-  latticeSection.style.cssText = 'border-top: 2px solid rgba(255,255,255,0.1); margin-top: 12px; padding-top: 12px;';
+  latticeSection.style.cssText =
+    'border-top: 2px solid rgba(255,255,255,0.1); margin-top: 12px; padding-top: 12px;';
 
-  const title = document.createElement('h5');
-  title.textContent = 'Lattice Parameters';
-  title.style.cssText = 'margin: 0 0 8px 0; color: rgba(6, 140, 50, 1); font-size: 13px; font-weight: 600;';
+  // Title
 
-  latticeSection.appendChild(title);
+  // ---- Calculations ----
+  const L = structureData.lattice; // 3x3 array, lattice vectors as rows
+  const norm = (v) => Math.hypot(v[0], v[1], v[2]);
+  const dot = (u, v) => u[0]*v[0] + u[1]*v[1] + u[2]*v[2];
+  const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+  const acosDeg = (x) => Math.acos(clamp(x, -1, 1)) * 180 / Math.PI;
 
-  const lattice = structureData.lattice;
+  const a = norm(L[0]);
+  const b = norm(L[1]);
+  const c = norm(L[2]);
 
-  // Calculate lattice parameters
-  const a = Math.sqrt(lattice[0][0]**2 + lattice[0][1]**2 + lattice[0][2]**2);
-  const b = Math.sqrt(lattice[1][0]**2 + lattice[1][1]**2 + lattice[1][2]**2);
-  const c = Math.sqrt(lattice[2][0]**2 + lattice[2][1]**2 + lattice[2][2]**2);
+  const alpha = acosDeg(dot(L[1], L[2]) / (b * c || 1)); // angle between b and c
+  const beta  = acosDeg(dot(L[0], L[2]) / (a * c || 1)); // angle between a and c
+  const gamma = acosDeg(dot(L[0], L[1]) / (a * b || 1)); // angle between a and b
 
-  const alpha = Math.acos((lattice[1][0]*lattice[2][0] + lattice[1][1]*lattice[2][1] + lattice[1][2]*lattice[2][2]) / (b*c)) * 180/Math.PI;
-  const beta = Math.acos((lattice[0][0]*lattice[2][0] + lattice[0][1]*lattice[2][1] + lattice[0][2]*lattice[2][2]) / (a*c)) * 180/Math.PI;
-  const gamma = Math.acos((lattice[0][0]*lattice[1][0] + lattice[0][1]*lattice[1][1] + lattice[0][2]*lattice[1][2]) / (a*b)) * 180/Math.PI;
+  // ---- Table helper ----
+  const makeTable = (headers, values, unit) => {
+    const table = document.createElement('table');
+    table.style.cssText = `
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      color: rgba(255,255,255,0.75);
+      margin: 0 0 6px 0;
+    `;
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    headers.forEach(h => {
+      const th = document.createElement('th');
+      th.textContent = h;
+      th.style.cssText = `
+        text-align: right;
+        font-weight: 600;
+        color: rgba(255,255,255,0.85);
+        padding: 4px 6px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      `;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
 
-  const parameters = [
-    { name: 'a', value: a, unit: 'Å' },
-    { name: 'b', value: b, unit: 'Å' },
-    { name: 'c', value: c, unit: 'Å' },
-    { name: 'α', value: alpha, unit: '°' },
-    { name: 'β', value: beta, unit: '°' },
-    { name: 'γ', value: gamma, unit: '°' }
-  ];
+    const tbody = document.createElement('tbody');
+    const valRow = document.createElement('tr');
+    values.forEach(v => {
+      const td = document.createElement('td');
+      // Handle NaN gracefully
+      const num = Number.isFinite(v) ? v.toFixed(3) : '—';
+      td.textContent = unit ? `${num} ${unit}` : num;
+      td.style.cssText = `
+        text-align: right;
+        padding: 6px;
+        font-family: monospace;
+        color: rgba(255,255,255,0.6);
+      `;
+      valRow.appendChild(td);
+    });
+    tbody.appendChild(valRow);
+    table.appendChild(tbody);
+    return table;
+  };
 
-  parameters.forEach(param => {
-    const row = document.createElement('div');
-    row.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 3px 0; font-size: 11px;';
+  // ---- Lengths table (Å) ----
+  const lengthsTitle = document.createElement('div');
+  lengthsTitle.style.cssText = 'margin: 6px 0 4px 0; color: rgba(255,255,255,0.75); font-size: 14px;';
+  latticeSection.appendChild(lengthsTitle);
+  latticeSection.appendChild(makeTable(['a', 'b', 'c'], [a, b, c], 'Å'));
 
-    const label = document.createElement('span');
-    label.textContent = `${param.name}:`;
-    label.style.cssText = 'font-weight: 500; color: rgba(255,255,255,0.8); min-width: 15px;';
+  // ---- Angles table (°) ----
+  const anglesTitle = document.createElement('div');
+  anglesTitle.style.cssText = 'margin: 6px 0 4px 0; color: rgba(255,255,255,0.75); font-size: 14px;';
+  latticeSection.appendChild(anglesTitle);
+  latticeSection.appendChild(makeTable(['α', 'β', 'γ'], [alpha, beta, gamma], '°'));
 
-    const value = document.createElement('span');
-    value.textContent = `${param.value.toFixed(3)} ${param.unit}`;
-    value.style.cssText = 'color: rgba(255,255,255,0.6); font-family: monospace;';
-
-    row.appendChild(label);
-    row.appendChild(value);
-    latticeSection.appendChild(row);
-  });
-
+  // Attach to container
   compDiv.appendChild(latticeSection);
 }
 
@@ -1706,44 +1705,7 @@ function collapseAllAtomExpansions() {
   });
 }
 
-// Function to ensure all info panel submenus default to closed
-function ensureAllSubmenusDefaultClosed() {
-  // Close all collapsible content sections
-  const allCollapsibleSections = document.querySelectorAll('.collapsible-content');
-  allCollapsibleSections.forEach(section => {
-    if (section.id !== 'composition') { // Don't force close the composition we're handling separately
-      section.classList.remove('open');
-      section.setAttribute('aria-hidden', 'true');
-    }
-  });
 
-  // Close all toggle icons
-  const allToggleIcons = document.querySelectorAll('.toggle-icon');
-  allToggleIcons.forEach(icon => {
-    if (icon.id !== 'structureToggleIcon') { // Don't force close the structure icon we're handling separately
-      icon.classList.remove('open');
-      icon.textContent = '+';
-    }
-  });
-
-  // Close all individual atom expansions
-  collapseAllAtomExpansions();
-}
-
-// Function to close all other element expansions except the specified one
-function closeOtherElementExpansions(exceptContainer) {
-  const allAtomContainers = document.querySelectorAll('.individual-atoms');
-  const allExpandIcons = document.querySelectorAll('.comp-left span:last-child');
-
-  allAtomContainers.forEach((container, index) => {
-    if (container !== exceptContainer) {
-      container.style.display = 'none';
-      if (allExpandIcons[index]) {
-        allExpandIcons[index].style.transform = 'rotate(0deg)';
-      }
-    }
-  });
-}
 
 // Function to handle structure panel toggle
 function handleStructurePanelToggle() {
@@ -2020,7 +1982,7 @@ function loadSharedStructure() {
 function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex + 1) {
   const row = document.createElement('div');
   row.className = 'individual-atom-row';
-  row.style.cssText = 'display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 8px; padding: 4px 0; font-size: 11px;';
+  row.style.cssText = 'display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 20px; padding: 4px 0; font-size: 11px;';
 
   // Individual atom dot with its specific color
   const dot = document.createElement('span');
@@ -2034,7 +1996,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   nameContainer.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
 
   const name = document.createElement('span');
-  name.textContent = `${element}${displayNumber}`;
+  name.textContent = `${element}${displayNumber}  `;
   name.style.color = '#ddd';
 
   // Coordinates display (fractional)
@@ -2046,27 +2008,30 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   nameContainer.appendChild(name);
   nameContainer.appendChild(coordsDisplay);
 
+  row.appendChild(nameContainer);
+
   // Button container
   const buttonContainer = document.createElement('div');
-  buttonContainer.style.cssText = 'display: flex; gap: 2px;';
+  buttonContainer.style.cssText = 'display: flex; gap: 10px;';
 
   // Color picker button
   const colorBtn = document.createElement('button');
-  colorBtn.textContent = '🎨';
-  colorBtn.style.cssText = 'background: transparent; border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
+  colorBtn.textContent = 'Color';
+  colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
+  const choosenColor = hexToRgba(colorHexToCss(getIndividualAtomColor(element, atomIndex)),0.8);
+  console.log(getIndividualAtomColor(element, atomIndex))
+  colorBtn.style.background = choosenColor;
   colorBtn.title = `Change color for ${element}${displayNumber}`;
 
   // Coordinate edit button
   const coordBtn = document.createElement('button');
-  coordBtn.textContent = '📍';
-  coordBtn.style.cssText = 'background: transparent; border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
+  coordBtn.textContent = 'Position';
+  coordBtn.style.cssText = 'background: rgba(6,100,50,0.8); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
   coordBtn.title = `Edit coordinates for ${element}${displayNumber}`;
 
   buttonContainer.appendChild(colorBtn);
   buttonContainer.appendChild(coordBtn);
 
-  row.appendChild(dot);
-  row.appendChild(nameContainer);
   row.appendChild(buttonContainer);
 
   // Create color editor for this individual atom
@@ -2086,7 +2051,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
 
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
-  applyBtn.className = 'btn-mini';
+  applyBtn.className = 'btn-mini highlight';
   applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
 
   const resetBtn = document.createElement('button');
@@ -2613,6 +2578,20 @@ function updateVisualization() {
 function colorHexToCss(hex) {
     const s = hex.toString(16).padStart(6,'0');
     return `#${s}`;
+}
+
+function hexToRgba(color, alpha = 1) {
+  // Create a dummy element to let the browser parse the color
+  const ctx = document.createElement("canvas").getContext("2d");
+  ctx.fillStyle = color;
+  const computed = ctx.fillStyle; // normalized to #rrggbb
+
+  // Extract RGB from normalized hex (#rrggbb)
+  const r = parseInt(computed.substr(1, 2), 16);
+  const g = parseInt(computed.substr(3, 2), 16);
+  const b = parseInt(computed.substr(5, 2), 16);
+
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 async function loadStructure(content, fileName = '', isDefault = false) {

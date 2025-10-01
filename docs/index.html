@@ -165,95 +165,48 @@
       <div id="structureToggleIcon" class="toggle-icon">+</div>
     </div>
 
-    <div id="composition" class="collapsible-content" aria-hidden="true">
+    <div id="composition" class="collapsible-content" aria-exanded="false">
       <!-- Composition will be populated by JS. Hidden by default; expands when the header is toggled -->
     </div>
   </div>
 
-  <script>
-    (function(){
-      const toggle = document.getElementById('structureToggle');
-      const icon = document.getElementById('structureToggleIcon');
-      const content = document.getElementById('composition');
+<script>
+(function(){
+  const toggle = document.getElementById('structureToggle');
+  const icon = document.getElementById('structureToggleIcon');
+  const content = document.getElementById('composition');
 
-      // Remove or hide injected controls like 'collapse', 'show more', '+1 more'
-      function stripControls(root) {
-        if (!root) return;
-        const nodes = Array.from(root.querySelectorAll('*'));
-        const moreRe = /(\+\s*\d+\s*more|^\+?\s*\d+\s*more$|\bshow more\b|\bcollapse\b)/i;
-        nodes.forEach(el => {
-          try {
-            const text = (el.textContent || '').trim();
-            if (!text) return;
-            if (moreRe.test(text) || el.classList.contains('more') || el.classList.contains('collapsed') || el.classList.contains('show-more')) {
-              // remove the toggle node entirely so it cannot re-appear
-              if (el.parentNode) el.parentNode.removeChild(el);
-            }
-          } catch (e) { /* ignore */ }
-        });
-      }
+  function setOpen(open) {
+    if (open) {
+      content.classList.add('open');
+      content.setAttribute('aria-hidden', 'false');
+      icon.textContent = '−';
+      icon.classList.add('open');
+      toggle.setAttribute('aria-expanded', 'true');
+    } else {
+      content.classList.remove('open');
+      content.setAttribute('aria-hidden', 'true');
+      icon.textContent = '+';
+      icon.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+  }
 
-      // Expand all composition children so none are hidden by collapsed UI
-      function expandAllComposition() {
-        if (!content) return;
-        // remove common hiding attributes/classes
-        const hiddenSelectors = '[hidden], .hidden, .collapsed, [aria-hidden="true"]';
-        content.querySelectorAll(hiddenSelectors).forEach(el => {
-          el.removeAttribute('hidden');
-          el.classList.remove('hidden', 'collapsed');
-          el.style.display = '';
-        });
-        // ensure list items or rows are visible, but don't auto-open color editors
-        content.querySelectorAll('li:not(.color-editor), div:not(.color-editor), p:not(.color-editor), span:not(.color-editor)')
-          .forEach(el => { el.style.display = ''; });
-      }
+  // initialize closed
+  setOpen(false);
 
-      function setOpen(open) {
-        if (open) {
-          content.classList.add('open');
-          content.setAttribute('aria-hidden', 'false');
-          icon.textContent = '−';
-          icon.classList.add('open');
-          toggle.setAttribute('aria-expanded', 'true');
-          expandAllComposition();
-        } else {
-          content.classList.remove('open');
-          content.setAttribute('aria-hidden', 'true');
-          icon.textContent = '+';
-          icon.classList.remove('open');
-          toggle.setAttribute('aria-expanded', 'false');
-        }
-      }
-
-      // initialize closed
-      setOpen(false);
-
-      toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
-      toggle.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!content.classList.contains('open')); } });
-
-      // Observe composition for changes and strip any injected UI. Also expand when already open.
-      const observer = new MutationObserver((mutations) => {
-        // If nodes added that look like 'more' toggles, remove them
-        let changed = false;
-        for (const m of mutations) {
-          if (m.addedNodes && m.addedNodes.length) { changed = true; break; }
-        }
-        if (changed) {
-          stripControls(content);
-          if (content.classList.contains('open')) expandAllComposition();
-        }
-      });
-      observer.observe(content, { childList: true, subtree: true });
-
-      // run once in case content was already populated
-      stripControls(content);
-
-    })();
-  </script>
-
+  toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
+  toggle.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setOpen(!content.classList.contains('open'));
+    }
+  });
+})();
+</script>
 
   <div id="axesGizmo"></div>
-  <div id="axesLegend">
+  <div id="axesLegend"> 
     <div class="legend-row"><span class="dot dot-a"></span>a</div>
     <div class="legend-row"><span class="dot dot-b"></span>b</div>
     <div class="legend-row"><span class="dot dot-c"></span>c</div>
