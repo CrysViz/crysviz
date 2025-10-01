@@ -1,6 +1,8 @@
 # CrysViz Crystal Structure Viewer
 by Abhijith S. Parackal and Florian Trybel
 
+## This is the live developement repository. If you are not Abhijith or Florian, you should not be here!
+
 CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POSCAR/CIF snippet, drop a local file, or grab an OPTIMADE endpoint (or just Materials Project or Alexandria IDs). You crystal structure will NOT leave your device. 
 
 ## Key Features
