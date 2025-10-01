@@ -918,6 +918,7 @@ function addAngleMeasurement(atom1, atom2, atom3) {
 
     const rings = createAtomRings(atom.position, atomRadius, color, 0x000000, atom.userData.element);
     rings.userData = {
+      ...rings.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
       type: 'angleMarker',
       atomIndex: atom.userData.atomIndex,
       atom1Index: atom1.userData.atomIndex,
@@ -1006,6 +1007,7 @@ function addDistanceMeasurement(atom1, atom2) {
   // Add scaling rings to both atoms
   const ringsA = createAtomRings(pa, atomRadiusA, 0xffff00, 0x000000, atom1.userData.element); // Yellow inner, black outer
   ringsA.userData = {
+    ...ringsA.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
     type: 'distanceMarker',
     atomIndex: atom1.userData.atomIndex,
     measurementIndex: measureLines.length // Reference to the cylinder group
@@ -1015,6 +1017,7 @@ function addDistanceMeasurement(atom1, atom2) {
 
   const ringsB = createAtomRings(pb, atomRadiusB, 0xffff00, 0x000000, atom2.userData.element); // Yellow inner, black outer
   ringsB.userData = {
+    ...ringsB.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
     type: 'distanceMarker',
     atomIndex: atom2.userData.atomIndex,
     measurementIndex: measureLines.length - 1 // Reference to the cylinder group
@@ -2234,6 +2237,19 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
 }
 
 // Function to update all measurements when atom positions change
+// Helper function to find atom by its original index (atomIndex) in the current atomsGroup
+function findAtomByOriginalIndex(originalIndex) {
+  if (!atomsGroup || !atomsGroup.children) return null;
+  
+  for (let i = 0; i < atomsGroup.children.length; i++) {
+    const atom = atomsGroup.children[i];
+    if (atom.userData && atom.userData.atomIndex === originalIndex) {
+      return atom;
+    }
+  }
+  return null;
+}
+
 function updateAllMeasurements() {
   if (!atomsGroup || !atomsGroup.children) return;
 
@@ -2245,40 +2261,38 @@ function updateAllMeasurements() {
       const atom1Index = measureItem.userData.atom1Index;
       const atom2Index = measureItem.userData.atom2Index;
 
-      if (atom1Index < atomsGroup.children.length && atom2Index < atomsGroup.children.length) {
-        const atom1 = atomsGroup.children[atom1Index];
-        const atom2 = atomsGroup.children[atom2Index];
+      const atom1 = findAtomByOriginalIndex(atom1Index);
+      const atom2 = findAtomByOriginalIndex(atom2Index);
 
-        if (atom1 && atom2) {
-          // Recalculate distance and update display
-          const pa = atom1.position.clone();
-          const pb = atom2.position.clone();
-          const distance = pa.distanceTo(pb);
+      if (atom1 && atom2) {
+        // Recalculate distance and update display
+        const pa = atom1.position.clone();
+        const pb = atom2.position.clone();
+        const distance = pa.distanceTo(pb);
 
-          // Update the cylinder segments positions
-          const direction = new THREE.Vector3().subVectors(pb, pa);
-          const dashLength = 0.3;
-          const gapLength = 0.2;
-          const segmentLength = dashLength + gapLength;
-          const numSegments = Math.floor(distance / segmentLength);
+        // Update the cylinder segments positions
+        const direction = new THREE.Vector3().subVectors(pb, pa);
+        const dashLength = 0.3;
+        const gapLength = 0.2;
+        const segmentLength = dashLength + gapLength;
+        const numSegments = Math.floor(distance / segmentLength);
 
-          // Clear old segments
-          measureItem.clear();
+        // Clear old segments
+        measureItem.clear();
 
-          // Create new segments with updated positions
-          for (let i = 0; i < numSegments; i++) {
-            const segmentStart = i * segmentLength;
-            const segmentGeometry = new THREE.CylinderGeometry(0.08, 0.08, dashLength, 8);
-            const segmentMaterial = new THREE.MeshBasicMaterial({ color: 0x0066ff });
-            const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
+        // Create new segments with updated positions
+        for (let i = 0; i < numSegments; i++) {
+          const segmentStart = i * segmentLength;
+          const segmentGeometry = new THREE.CylinderGeometry(0.08, 0.08, dashLength, 8);
+          const segmentMaterial = new THREE.MeshBasicMaterial({ color: 0x0066ff });
+          const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
 
-            const segmentCenter = pa.clone().add(direction.clone().normalize().multiplyScalar(segmentStart + dashLength/2));
-            segment.position.copy(segmentCenter);
-            segment.lookAt(pb);
-            segment.rotateX(Math.PI / 2);
+          const segmentCenter = pa.clone().add(direction.clone().normalize().multiplyScalar(segmentStart + dashLength/2));
+          segment.position.copy(segmentCenter);
+          segment.lookAt(pb);
+          segment.rotateX(Math.PI / 2);
 
-            measureItem.add(segment);
-          }
+          measureItem.add(segment);
         }
       }
     } else if (measureItem.userData.type === 'angle') {
@@ -2288,65 +2302,56 @@ function updateAllMeasurements() {
       const atom3Index = measureItem.userData.atom3Index;
       const lineIndex = measureItem.userData.lineIndex;
 
-      if (atom1Index < atomsGroup.children.length &&
-          atom2Index < atomsGroup.children.length &&
-          atom3Index < atomsGroup.children.length) {
+      const atom1 = findAtomByOriginalIndex(atom1Index);
+      const atom2 = findAtomByOriginalIndex(atom2Index); // vertex
+      const atom3 = findAtomByOriginalIndex(atom3Index);
 
-        const atom1 = atomsGroup.children[atom1Index];
-        const atom2 = atomsGroup.children[atom2Index]; // vertex
-        const atom3 = atomsGroup.children[atom3Index];
+      if (atom1 && atom2 && atom3) {
+        // Determine which line this is (vertex to atom1 or vertex to atom3)
+        const startPos = atom2.position.clone(); // vertex
+        const endPos = lineIndex === 1 ? atom1.position.clone() : atom3.position.clone();
 
-        if (atom1 && atom2 && atom3) {
-          // Determine which line this is (vertex to atom1 or vertex to atom3)
-          const startPos = atom2.position.clone(); // vertex
-          const endPos = lineIndex === 1 ? atom1.position.clone() : atom3.position.clone();
+        const distance = startPos.distanceTo(endPos);
+        const direction = new THREE.Vector3().subVectors(endPos, startPos);
 
-          const distance = startPos.distanceTo(endPos);
-          const direction = new THREE.Vector3().subVectors(endPos, startPos);
+        const dashLength = 0.25;
+        const gapLength = 0.15;
+        const segmentLength = dashLength + gapLength;
+        const numSegments = Math.floor(distance / segmentLength);
 
-          const dashLength = 0.25;
-          const gapLength = 0.15;
-          const segmentLength = dashLength + gapLength;
-          const numSegments = Math.floor(distance / segmentLength);
+        // Clear old segments
+        measureItem.clear();
 
-          // Clear old segments
-          measureItem.clear();
+        // Create new segments with updated positions
+        for (let i = 0; i < numSegments; i++) {
+          const segmentStart = i * segmentLength;
+          const segmentGeometry = new THREE.CylinderGeometry(0.06, 0.06, dashLength, 8);
+          const segmentMaterial = new THREE.MeshBasicMaterial({ color: 0xff6600 }); // Orange
+          const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
 
-          // Create new segments with updated positions
-          for (let i = 0; i < numSegments; i++) {
-            const segmentStart = i * segmentLength;
-            const segmentGeometry = new THREE.CylinderGeometry(0.06, 0.06, dashLength, 8);
-            const segmentMaterial = new THREE.MeshBasicMaterial({ color: 0xff6600 }); // Orange
-            const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
+          const segmentCenter = startPos.clone().add(direction.clone().normalize().multiplyScalar(segmentStart + dashLength/2));
+          segment.position.copy(segmentCenter);
+          segment.lookAt(endPos);
+          segment.rotateX(Math.PI / 2);
 
-            const segmentCenter = startPos.clone().add(direction.clone().normalize().multiplyScalar(segmentStart + dashLength/2));
-            segment.position.copy(segmentCenter);
-            segment.lookAt(endPos);
-            segment.rotateX(Math.PI / 2);
-
-            measureItem.add(segment);
-          }
+          measureItem.add(segment);
         }
       }
     } else if (measureItem.userData.type === 'distanceMarker') {
       // Update distance marker position
       const atomIndex = measureItem.userData.atomIndex;
-
-      if (atomIndex < atomsGroup.children.length) {
-        const atom = atomsGroup.children[atomIndex];
-        if (atom) {
-          measureItem.position.copy(atom.position);
-        }
+      const atom = findAtomByOriginalIndex(atomIndex);
+      
+      if (atom) {
+        measureItem.position.copy(atom.position);
       }
     } else if (measureItem.userData.type === 'angleMarker') {
       // Update angle marker position
       const atomIndex = measureItem.userData.atomIndex;
-
-      if (atomIndex < atomsGroup.children.length) {
-        const atom = atomsGroup.children[atomIndex];
-        if (atom) {
-          measureItem.position.copy(atom.position);
-        }
+      const atom = findAtomByOriginalIndex(atomIndex);
+      
+      if (atom) {
+        measureItem.position.copy(atom.position);
       }
     }
   });
@@ -2357,21 +2362,19 @@ function updateAllMeasurements() {
       const atom1Index = label.userData.atom1Index;
       const atom2Index = label.userData.atom2Index;
 
-      if (atom1Index < atomsGroup.children.length && atom2Index < atomsGroup.children.length) {
-        const atom1 = atomsGroup.children[atom1Index];
-        const atom2 = atomsGroup.children[atom2Index];
+      const atom1 = findAtomByOriginalIndex(atom1Index);
+      const atom2 = findAtomByOriginalIndex(atom2Index);
 
-        if (atom1 && atom2) {
-          const pa = atom1.position.clone();
-          const pb = atom2.position.clone();
-          const distance = pa.distanceTo(pb);
-          const midpoint = pa.clone().add(pb).multiplyScalar(0.5);
+      if (atom1 && atom2) {
+        const pa = atom1.position.clone();
+        const pb = atom2.position.clone();
+        const distance = pa.distanceTo(pb);
+        const midpoint = pa.clone().add(pb).multiplyScalar(0.5);
 
-          // Update label position and text
-          label.position.copy(midpoint);
-          if (label.element && label.element.firstChild) {
-            label.element.firstChild.textContent = distance.toFixed(3) + ' Å';
-          }
+        // Update label position and text
+        label.position.copy(midpoint);
+        if (label.element && label.element.firstChild) {
+          label.element.firstChild.textContent = distance.toFixed(3) + ' Å';
         }
       }
     } else if (label.userData && label.userData.type === 'angle') {
@@ -2380,30 +2383,28 @@ function updateAllMeasurements() {
       const atom2Index = label.userData.atom2Index; // vertex
       const atom3Index = label.userData.atom3Index;
 
-      if (atom1Index < atomsGroup.children.length &&
-          atom2Index < atomsGroup.children.length &&
-          atom3Index < atomsGroup.children.length) {
+      const atom1 = findAtomByOriginalIndex(atom1Index);
+      const atom2 = findAtomByOriginalIndex(atom2Index); // vertex
+      const atom3 = findAtomByOriginalIndex(atom3Index);
 
-        const atom1 = atomsGroup.children[atom1Index];
-        const atom2 = atomsGroup.children[atom2Index]; // vertex
-        const atom3 = atomsGroup.children[atom3Index];
+      if (atom1 && atom2 && atom3) {
+        // Recalculate angle
+        const angle = calculateAngle(atom1, atom2, atom3);
 
-        if (atom1 && atom2 && atom3) {
-          // Recalculate angle
-          const angle = calculateAngle(atom1, atom2, atom3);
+        // Update label position to vertex
+        label.position.copy(atom2.position);
 
-          // Update label position to vertex
-          label.position.copy(atom2.position);
-
-          // Update label text
-          if (label.element && label.element.firstChild) {
-            const elements = [atom1.userData.element, atom2.userData.element, atom3.userData.element];
-            label.element.firstChild.textContent = `∠${elements[0]}-${elements[1]}-${elements[2]}: ${angle.toFixed(1)}°`;
-          }
+        // Update label text
+        if (label.element && label.element.firstChild) {
+          const elements = [atom1.userData.element, atom2.userData.element, atom3.userData.element];
+          label.element.firstChild.textContent = `∠${elements[0]}-${elements[1]}-${elements[2]}: ${angle.toFixed(1)}°`;
         }
       }
     }
   });
+
+  // Update measurement marker sizes to match current atom sizes
+  updateMeasurementMarkers();
 }
 
 // Function to update atom coordinates and refresh visualization
