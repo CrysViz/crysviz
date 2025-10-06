@@ -1131,7 +1131,7 @@ function createAtomMesh(element, position, atomIndex = null) {
   return mesh;
 }
 
-function createBond(pos1, pos2, elem1, elem2) {
+function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2) {
   const p1 = new THREE.Vector3(pos1[0], pos1[1], pos1[2]);
   const p2 = new THREE.Vector3(pos2[0], pos2[1], pos2[2]);
   const dist = distance(p1, p2);
@@ -1153,12 +1153,12 @@ function createBond(pos1, pos2, elem1, elem2) {
   // Build VESTA-style split bond, but start at atom surfaces
   const bondGroup = new THREE.Group();
 
-  const color1 = getElementColor(elem1);
-  const color2 = getElementColor(elem2);
+  const color1 = getIndividualAtomColor(elem1,atomIndex1);
+  const color2 = getIndividualAtomColor(elem2,atomIndex2);
 
   // Compute visible segment between atom surfaces
-  const r1 = getAtomRadius(elem1);
-  const r2 = getAtomRadius(elem2);
+  const r1 = getAtomRadius(elem1)-0.05*getAtomRadius(elem1);
+  const r2 = getAtomRadius(elem2)-0.05*getAtomRadius(elem2);
   const dir = new THREE.Vector3().subVectors(p2, p1).normalize();
   const visibleLen = Math.max(dist - (r1 + r2), 0);
   if (visibleLen <= 1e-3) return null; // spheres overlap or touch; skip bond
@@ -1166,7 +1166,7 @@ function createBond(pos1, pos2, elem1, elem2) {
   const halfLen = visibleLen * 0.5;
   const radius = bondRadius;
 
-  const geometryHalf = new THREE.CylinderGeometry(radius, radius, halfLen, 8);
+  const geometryHalf = new THREE.CylinderGeometry(radius, radius, halfLen, 20);
 
   const matCommon = {
     transparent: true,
@@ -1457,7 +1457,14 @@ function createCompositionRow(el, count, total) {
    applyBtn.onclick = () => {
       dot.style.background = picker.getHex;
       renderComposition();
+      updateVisualization({
+          reRenderAtoms: true,
+          reRenderBonds: true,
+          reRenderLattice: false,
+          reRenderOther: false
+        });
       editor.style.display = 'none';
+
   };
   // Add element-wide color editor to container (after individual atoms)
   container.appendChild(editor);
@@ -2061,6 +2068,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
     const ok = setIndividualAtomColor(element, atomIndex, hex); 
     dot.style.background = hex;
       if (ok) {
+        updateBonds()
         updateVisualization({
           reRenderAtoms: true,
           reRenderBonds: true,
@@ -2441,8 +2449,10 @@ function updateBonds() {
   for (let i = 0; i < wrappedCart.length; i++) {
     for (let j = i + 1; j < wrappedCart.length; j++) {
       const ei = wrapped.elements[i];
+      const atomIndex_i = i
       const ej = wrapped.elements[j];
-      const bond = createBond(wrappedCart[i], wrappedCart[j], ei, ej);
+      const atomIndex_j = i
+      const bond = createBond(wrappedCart[i], wrappedCart[j], ei, ej,atomIndex_i,atomIndex_j);
       if (bond) bondsGroup.add(bond);
     }
   }
@@ -2472,10 +2482,12 @@ function updateBonds() {
   for (let i = 0; i < primCarts.length; i++) {
     const pi = primCarts[i];
     const ei = primElems[i];
+    const atomIndex_i = i
     for (let j = 0; j < primCarts.length; j++) {
       if (j === i) continue;
       const pj = primCarts[j];
       const ej = primElems[j];
+      const atomIndex_j = j
 
       const cutoff = getBondCutoff(ei, ej);
       if (cutoff <= 0.01) continue;
@@ -2509,7 +2521,7 @@ function updateBonds() {
 
           const bkey = `${i}-${j}-${dx},${dy},${dz}`;
           if (!bondDedupe.has(bkey)) {
-            const bond = createBond([pi.x, pi.y, pi.z], [candidate.x, candidate.y, candidate.z], ei, ej);
+            const bond = createBond([pi.x, pi.y, pi.z], [candidate.x, candidate.y, candidate.z], ei, ej,atomIndex_i,atomIndex_j);
             if (bond) {
               if (bond.children && bond.children[1] && bond.children[1].material) {
                 bond.children[1].material.transparent = true;
@@ -2535,7 +2547,7 @@ function updateBonds() {
             }
             const bkey2 = `sym-${i}-${j}-${dx},${dy},${dz}`;
             if (!bondDedupe.has(bkey2)) {
-              const bond2 = createBond([opposite.x, opposite.y, opposite.z], [pj.x, pj.y, pj.z], ei, ej);
+              const bond2 = createBond([opposite.x, opposite.y, opposite.z], [pj.x, pj.y, pj.z], ei, ej,atomIndex_i,atomIndex_j );
               if (bond2) {
                 if (bond2.children && bond2.children[0] && bond2.children[0].material) {
                   bond2.children[0].material.transparent = true;
