@@ -2449,9 +2449,9 @@ function updateBonds() {
   for (let i = 0; i < wrappedCart.length; i++) {
     for (let j = i + 1; j < wrappedCart.length; j++) {
       const ei = wrapped.elements[i];
-      const atomIndex_i = i
+      const atomIndex_i = wrapped.srcIndex[i];
       const ej = wrapped.elements[j];
-      const atomIndex_j = i
+      const atomIndex_j = wrapped.srcIndex[j];
       const bond = createBond(wrappedCart[i], wrappedCart[j], ei, ej,atomIndex_i,atomIndex_j);
       if (bond) bondsGroup.add(bond);
     }
@@ -2482,12 +2482,12 @@ function updateBonds() {
   for (let i = 0; i < primCarts.length; i++) {
     const pi = primCarts[i];
     const ei = primElems[i];
-    const atomIndex_i = i
+    const atomIndex_i = wrapped.srcIndex[i];
     for (let j = 0; j < primCarts.length; j++) {
       if (j === i) continue;
       const pj = primCarts[j];
       const ej = primElems[j];
-      const atomIndex_j = j
+      const atomIndex_i = wrapped.srcIndex[j];
 
       const cutoff = getBondCutoff(ei, ej);
       if (cutoff <= 0.01) continue;
