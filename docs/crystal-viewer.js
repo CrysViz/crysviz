@@ -178,6 +178,7 @@ function loadIndividualAtomColors() {
     if (raw) individualAtomColors = JSON.parse(raw) || {};
   } catch (_) { individualAtomColors = {}; }
 }
+
 function setElementColorOverride(el, cssHex) {
   if (!cssHex) return false;
   let hex = cssHex.toString().trim();
@@ -216,13 +217,59 @@ function hasIndividualColors(element) {
   return Object.keys(individualAtomColors).some(key => key.startsWith(`${element}_`));
 }
 
+function getAllIndividualAtomColors(element) {
+  if (!individualAtomColors) return [];
+
+  // Find keys starting with element_ and map to colors
+  const colors = Object.entries(individualAtomColors)
+    .filter(([key]) => key.startsWith(`${element}_`))
+    .map(([, color]) => colorHexToCss(color));
+
+  return colors;
+}
+
 function getElementDisplayColor(element) {
   if (hasIndividualColors(element)) {
-    // Return a special "mixed" color - a gradient or distinctive color
-    return '#FFB347'; // Orange to indicate mixed colors
+    const colors = getAllIndividualAtomColors(element);
+    // Defensive: ensure it's an array of strings
+    if (Array.isArray(colors) && colors.every(c => typeof c === 'string')) {
+      return colors;
+    }
+    // If not, fallback:
+    return [colorHexToCss(getElementColor(element))];
+  } else {
+    return [colorHexToCss(getElementColor(element))];
   }
-  return colorHexToCss(getElementColor(element));
 }
+
+
+function createPieDot(colors, size = 200) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  const center = size / 2;
+  const radius = center;
+  const slice = (2 * Math.PI) / colors.length;
+
+  colors.forEach((color, i) => {
+    const start = i * slice;
+    const end = start + slice;
+    ctx.beginPath();
+    ctx.moveTo(center, center);
+    ctx.arc(center, center, radius, start, end);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+  });
+  canvas.style.borderRadius = '50%';
+  canvas.style.border = '1px solid #666';
+  canvas.style.display = 'inline-block';
+
+  return canvas;
+}
+
 
 function clearAllIndividualColorsForElement(element) {
   if (!individualAtomColors) return;
@@ -1293,10 +1340,23 @@ function createCompositionRow(el, count, total) {
 
   const left = document.createElement('div');
   left.className = 'comp-left';
-  const dot = document.createElement('span');
-  dot.className = 'dot';
   const currentColor = getElementDisplayColor(el);
-  dot.style.background = currentColor;
+
+  const curr_elem_colors = getElementDisplayColor(el);
+  let dot;
+
+  if (curr_elem_colors.length > 1) {
+    dot = createPieDot(curr_elem_colors, 20);
+    dot.classList.add('dot');
+  } else {
+    dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = curr_elem_colors[0];
+  }
+
+
+  
+
   const name = document.createElement('span');
   name.textContent = el;
 
