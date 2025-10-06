@@ -4,6 +4,9 @@ import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/cont
 //import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
 import { setupStructureInput, isLikelyCIFContent, parsePOSCAR, cartToFractional } from './structure-input.js';
 import { parseCIF} from './file_reader.js';
+import { createColorPicker } from './color-picker.js';
+
+
 import {
   captureCompleteState,
   createCompleteShareableURL,
@@ -1371,11 +1374,27 @@ function createCompositionRow(el, count, total) {
   hexInput.placeholder = '#RRGGBB';
   hexInput.style.cssText = 'width: 80px; height: 32px; padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0; box-sizing: border-box; vertical-align: top;';
 
+
+  const picker = createColorPicker({
+  onChange: ({ hex }) => {
+    clearAllIndividualColorsForElement(el);      // Clear old color overrides
+    const ok = setElementColorOverride(el, hex); // Apply new color override
+    if (ok) {
+      updateVisualization({
+          reRenderAtoms: true,
+          reRenderBonds: true,
+          reRenderLattice: false,
+          reRenderOther: false
+});
+    }
+    }
+  });
+
+
   // Single line: color swatch + hex field + buttons
   const topRow = document.createElement('div');
   topRow.style.cssText = 'display: flex; align-items: center; gap: 6px;';
-  topRow.appendChild(colorInput);
-  topRow.appendChild(hexInput);
+  topRow.appendChild(picker);
 
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset';
@@ -2039,16 +2058,23 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   const editor = document.createElement('div');
   editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
 
-  const colorInput = document.createElement('input');
-  colorInput.type = 'color';
-  colorInput.value = currentColor;
-  colorInput.style.cssText = 'width: 32px; height: 32px; border: none; background: transparent; cursor: pointer; flex-shrink: 0; margin: 0; padding: 0; box-sizing: border-box; vertical-align: top;';
+  const picker = createColorPicker({
+   onChange: ({ hex }) => {
+    const ok = setIndividualAtomColor(element, atomIndex, hex); 
+    dot.style.background = hex;
+    if (ok) {
+      updateVisualization({
+          reRenderAtoms: true,
+          reRenderBonds: true,
+          reRenderLattice: false,
+          reRenderOther: false
+    });
+      }
+      }
+    });
 
-  const hexInput = document.createElement('input');
-  hexInput.type = 'text';
-  hexInput.value = currentColor;
-  hexInput.placeholder = '#RRGGBB';
-  hexInput.style.cssText = 'width: 80px; height: 32px; padding: 6px 8px; border-radius: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0; box-sizing: border-box; vertical-align: top;';
+
+
 
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
@@ -2065,8 +2091,8 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   // First row: color + hex
   const topRowIndiv = document.createElement('div');
   topRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 6px;';
-  topRowIndiv.appendChild(colorInput);
-  topRowIndiv.appendChild(hexInput);
+
+  topRowIndiv.appendChild(picker);
 
   // Second row: buttons
   const buttonRowIndiv = document.createElement('div');
@@ -2131,12 +2157,13 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   coordEditor.appendChild(coordInputsRow);
   coordEditor.appendChild(coordButtonsRow);
 
-  // Event handlers
+  //Event handlers
   colorBtn.onclick = (e) => {
-    e.stopPropagation();
+      e.stopPropagation();
     coordEditor.style.display = 'none'; // Hide coord editor
     editor.style.display = (editor.style.display === 'none') ? 'block' : 'none';
   };
+
 
   coordBtn.onclick = (e) => {
     e.stopPropagation();
@@ -2170,8 +2197,8 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
     }
   };
 
-  colorInput.oninput = (e) => { hexInput.value = e.target.value; };
-  hexInput.oninput = (e) => { colorInput.value = e.target.value; };
+  //colorInput.oninput = (e) => { hexInput.value = e.target.value; };
+  //hexInput.oninput = (e) => { colorInput.value = e.target.value; };
 
   applyBtn.onclick = () => {
     const val = hexInput.value;
@@ -2189,8 +2216,8 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
     clearIndividualAtomColor(element, atomIndex);
     const newColor = colorHexToCss(getIndividualAtomColor(element, atomIndex));
     dot.style.background = newColor;
-    colorInput.value = newColor;
-    hexInput.value = newColor;
+    //colorInput.value = newColor;
+   // hexInput.value = newColor;
     updateVisualization();
     // Update the composition to refresh element colors
     renderComposition();
@@ -2389,38 +2416,22 @@ function updateAtomCoordinates(atomIndex, newCoords) {
   console.log(`Updated atom ${atomIndex} coordinates to: ${newCoords.join(', ')}`);
 }
 
+function disposeGroup(grp) {
+  if (!grp) return;
+  grp.traverse(obj => {
+    if (obj.geometry) { try { obj.geometry.dispose(); } catch(_){} }
+    if (obj.material) {
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(m => { try { m.dispose(); } catch(_){} });
+    }
+  });
+  scene.remove(grp);
+}
 
-
-function updateVisualization() {
-  console.log('updateVisualization called, structureData:', structureData);
-  if (!structureData) {
-    console.log('No structureData available, returning early');
-    return;
-  }
-  console.log('structureData exists, proceeding with visualization');
-
-  // Clear existing geometry and dispose GPU resources
-  const disposeGroup = (grp) => {
-    if (!grp) return;
-    grp.traverse(obj => {
-      if (obj.geometry) { try { obj.geometry.dispose(); } catch(_){} }
-      if (obj.material) {
-        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-        mats.forEach(m => { try { m.dispose(); } catch(_){} });
-      }
-    });
-    scene.remove(grp);
-  };
+function updateAtoms() {
   disposeGroup(atomsGroup);
-  disposeGroup(bondsGroup);
-  disposeGroup(latticeGroup);
-
   atomsGroup = new THREE.Group();
-  bondsGroup = new THREE.Group();
-  latticeGroup = new THREE.Group();
 
-  // Create atoms to mimic PBC inside the cell: draw base atoms plus
-  // face/edge duplicates that still lie within the unit cell bounds.
   const wrapped = periodicWrapped(structureData.positions, structureData.elements);
   const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
   for (let i = 0; i < wrappedCart.length; i++) {
@@ -2429,123 +2440,125 @@ function updateVisualization() {
     atomMesh.userData.sourceIndex = originalIndex;
     atomsGroup.add(atomMesh);
   }
+  scene.add(atomsGroup);
+}
 
-  // Create bonds
-  if (showBonds) {
-    // 1) Bonds entirely inside the unit cell among the wrapped atoms
-    //    (fills corners/edges). This guarantees the box is fully connected.
-    for (let i = 0; i < wrappedCart.length; i++) {
-      for (let j = i + 1; j < wrappedCart.length; j++) {
-        const ei = wrapped.elements[i];
-        const ej = wrapped.elements[j];
-        const bond = createBond(wrappedCart[i], wrappedCart[j], ei, ej);
-        if (bond) bondsGroup.add(bond);
-      }
+function updateBonds() {
+  disposeGroup(bondsGroup);
+  bondsGroup = new THREE.Group();
+
+  if (!showBonds) return;
+
+  const wrapped = periodicWrapped(structureData.positions, structureData.elements);
+  const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+
+  // 1) Bonds entirely inside the unit cell among the wrapped atoms
+  for (let i = 0; i < wrappedCart.length; i++) {
+    for (let j = i + 1; j < wrappedCart.length; j++) {
+      const ei = wrapped.elements[i];
+      const ej = wrapped.elements[j];
+      const bond = createBond(wrappedCart[i], wrappedCart[j], ei, ej);
+      if (bond) bondsGroup.add(bond);
     }
+  }
 
-    // 2) Neighbor bonds to atoms outside the cell (ghosts)
-    //    Use a minimum-image approach on the reference cell and
-    //    explicitly add ghost atoms when needed.
-    const lattice = structureData.lattice;
-    const a = new THREE.Vector3(lattice[0][0], lattice[0][1], lattice[0][2]);
-    const b = new THREE.Vector3(lattice[1][0], lattice[1][1], lattice[1][2]);
-    const c = new THREE.Vector3(lattice[2][0], lattice[2][1], lattice[2][2]);
+  // 2) Neighbor bonds to atoms outside the cell (ghosts)
+  const lattice = structureData.lattice;
+  const a = new THREE.Vector3(lattice[0][0], lattice[0][1], lattice[0][2]);
+  const b = new THREE.Vector3(lattice[1][0], lattice[1][1], lattice[1][2]);
+  const c = new THREE.Vector3(lattice[2][0], lattice[2][1], lattice[2][2]);
 
-    // Treat the filled unit cell as primary
-    const primCarts = wrappedCart.map(p => new THREE.Vector3(p[0], p[1], p[2]));
-    const primElems = wrapped.elements;
+  const primCarts = wrappedCart.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+  const primElems = wrapped.elements;
 
-    // Precompute translation range dynamically from current maximum cutoff
-    const maxCutoff = Math.max(3.0, ...Object.values(bondLengths || {dummy:3.0}));
-    const ax = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(a.length(), 1e-6))));
-    const by = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(b.length(), 1e-6))));
-    const cz = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(c.length(), 1e-6))));
-    const shifts = [];
-    for (let dx = -ax; dx <= ax; dx++)
-      for (let dy = -by; dy <= by; dy++)
-        for (let dz = -cz; dz <= cz; dz++)
-          shifts.push([dx, dy, dz]);
+  const maxCutoff = Math.max(3.0, ...Object.values(bondLengths || {dummy:3.0}));
+  const ax = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(a.length(), 1e-6))));
+  const by = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(b.length(), 1e-6))));
+  const cz = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(c.length(), 1e-6))));
+  const shifts = [];
+  for (let dx = -ax; dx <= ax; dx++)
+    for (let dy = -by; dy <= by; dy++)
+      for (let dz = -cz; dz <= cz; dz++)
+        shifts.push([dx, dy, dz]);
 
-    const ghostAdded = new Map(); // key -> mesh (for potential styling later)
-    const bondDedupe = new Set();
+  const ghostAdded = new Map();
+  const bondDedupe = new Set();
 
-    for (let i = 0; i < primCarts.length; i++) {
-      const pi = primCarts[i];
-      const ei = primElems[i];
-      for (let j = 0; j < primCarts.length; j++) {
-        if (j === i) continue;
-        const pj = primCarts[j];
-        const ej = primElems[j];
+  for (let i = 0; i < primCarts.length; i++) {
+    const pi = primCarts[i];
+    const ei = primElems[i];
+    for (let j = 0; j < primCarts.length; j++) {
+      if (j === i) continue;
+      const pj = primCarts[j];
+      const ej = primElems[j];
 
-        const cutoff = getBondCutoff(ei, ej);
-        if (cutoff <= 0.01) continue;
+      const cutoff = getBondCutoff(ei, ej);
+      if (cutoff <= 0.01) continue;
 
-        for (const [dx, dy, dz] of shifts) {
-          const shiftVec = new THREE.Vector3()
-            .addScaledVector(a, dx)
-            .addScaledVector(b, dy)
-            .addScaledVector(c, dz);
-          const candidate = pj.clone().add(shiftVec);
-          const d = pi.distanceTo(candidate);
-          if (d > cutoff || d < 0.005) continue;
+      for (const [dx, dy, dz] of shifts) {
+        const shiftVec = new THREE.Vector3()
+          .addScaledVector(a, dx)
+          .addScaledVector(b, dy)
+          .addScaledVector(c, dz);
+        const candidate = pj.clone().add(shiftVec);
+        const d = pi.distanceTo(candidate);
+        if (d > cutoff || d < 0.005) continue;
 
-          if (dx === 0 && dy === 0 && dz === 0) {
-            // Already handled in step (1) via wrapped bonds; skip here to avoid dupes
-          } else if (showNeighborBonds) {
-            // Only show true ghosts (position must lie outside the unit cell)
-            const candidateArr = [candidate.x, candidate.y, candidate.z];
-            if (!isOutsideUnitCell(candidateArr, lattice)) continue;
-            const gkey = `${j}:${dx},${dy},${dz}`;
-            let ghostMesh = ghostAdded.get(gkey);
-            if (!ghostMesh) {
-              ghostMesh = createAtomMesh(ej, [candidate.x, candidate.y, candidate.z]);
-              ghostMesh.userData.isGhost = true;
-              // Make ghost atoms feel translucent and slightly smaller
-              ghostMesh.material.opacity = 0.35;
-              ghostMesh.material.transparent = true;
-              ghostMesh.material.depthWrite = false;
-              atomsGroup.add(ghostMesh);
-              ghostAdded.set(gkey, ghostMesh);
+        if (dx === 0 && dy === 0 && dz === 0) {
+          // already handled in step (1)
+        } else if (showNeighborBonds) {
+          const candidateArr = [candidate.x, candidate.y, candidate.z];
+          if (!isOutsideUnitCell(candidateArr, lattice)) continue;
+
+          const gkey = `${j}:${dx},${dy},${dz}`;
+          let ghostMesh = ghostAdded.get(gkey);
+          if (!ghostMesh) {
+            ghostMesh = createAtomMesh(ej, [candidate.x, candidate.y, candidate.z]);
+            ghostMesh.userData.isGhost = true;
+            ghostMesh.material.opacity = 0.35;
+            ghostMesh.material.transparent = true;
+            ghostMesh.material.depthWrite = false;
+            atomsGroup.add(ghostMesh);
+            ghostAdded.set(gkey, ghostMesh);
+          }
+
+          const bkey = `${i}-${j}-${dx},${dy},${dz}`;
+          if (!bondDedupe.has(bkey)) {
+            const bond = createBond([pi.x, pi.y, pi.z], [candidate.x, candidate.y, candidate.z], ei, ej);
+            if (bond) {
+              if (bond.children && bond.children[1] && bond.children[1].material) {
+                bond.children[1].material.transparent = true;
+                bond.children[1].material.opacity = 0.5;
+              }
+              bondsGroup.add(bond);
             }
-            const bkey = `${i}-${j}-${dx},${dy},${dz}`;
-            if (!bondDedupe.has(bkey)) {
-              const bond = createBond([pi.x, pi.y, pi.z], [candidate.x, candidate.y, candidate.z], ei, ej);
-              if (bond) {
-                // Fade the half connected to the ghost atom
-                if (bond.children && bond.children[1] && bond.children[1].material) {
-                  bond.children[1].material.transparent = true;
-                  bond.children[1].material.opacity = 0.5;
-                }
-                bondsGroup.add(bond);
-              }
-              bondDedupe.add(bkey);
-            }
+            bondDedupe.add(bkey);
+          }
 
-            // Symmetric ghost on the opposite side: ghost image of atom i
-            const opposite = pi.clone().sub(shiftVec);
-            if (isOutsideUnitCell([opposite.x, opposite.y, opposite.z], lattice)) {
-              const gkey2 = `${i}:${-dx},${-dy},${-dz}`;
-              if (!ghostAdded.has(gkey2)) {
-                const ghostMesh2 = createAtomMesh(ei, [opposite.x, opposite.y, opposite.z]);
-                ghostMesh2.userData.isGhost = true;
-                ghostMesh2.material.opacity = 0.35;
-                ghostMesh2.material.transparent = true;
-                ghostMesh2.material.depthWrite = false;
-                atomsGroup.add(ghostMesh2);
-                ghostAdded.set(gkey2, ghostMesh2);
-              }
-              const bkey2 = `sym-${i}-${j}-${dx},${dy},${dz}`;
-              if (!bondDedupe.has(bkey2)) {
-                const bond2 = createBond([opposite.x, opposite.y, opposite.z], [pj.x, pj.y, pj.z], ei, ej);
-                if (bond2) {
-                  if (bond2.children && bond2.children[0] && bond2.children[0].material) {
-                    bond2.children[0].material.transparent = true;
-                    bond2.children[0].material.opacity = 0.5;
-                  }
-                  bondsGroup.add(bond2);
+          // Symmetric ghost on opposite side
+          const opposite = pi.clone().sub(shiftVec);
+          if (isOutsideUnitCell([opposite.x, opposite.y, opposite.z], lattice)) {
+            const gkey2 = `${i}:${-dx},${-dy},${-dz}`;
+            if (!ghostAdded.has(gkey2)) {
+              const ghostMesh2 = createAtomMesh(ei, [opposite.x, opposite.y, opposite.z]);
+              ghostMesh2.userData.isGhost = true;
+              ghostMesh2.material.opacity = 0.35;
+              ghostMesh2.material.transparent = true;
+              ghostMesh2.material.depthWrite = false;
+              atomsGroup.add(ghostMesh2);
+              ghostAdded.set(gkey2, ghostMesh2);
+            }
+            const bkey2 = `sym-${i}-${j}-${dx},${dy},${dz}`;
+            if (!bondDedupe.has(bkey2)) {
+              const bond2 = createBond([opposite.x, opposite.y, opposite.z], [pj.x, pj.y, pj.z], ei, ej);
+              if (bond2) {
+                if (bond2.children && bond2.children[0] && bond2.children[0].material) {
+                  bond2.children[0].material.transparent = true;
+                  bond2.children[0].material.opacity = 0.5;
                 }
-                bondDedupe.add(bkey2);
+                bondsGroup.add(bond2);
               }
+              bondDedupe.add(bkey2);
             }
           }
         }
@@ -2553,28 +2566,53 @@ function updateVisualization() {
     }
   }
 
-  // Create lattice
+  scene.add(bondsGroup);
+}
+
+function updateLattice() {
+  disposeGroup(latticeGroup);
+
   if (showLattice) {
     latticeGroup = createLatticeLines();
+    scene.add(latticeGroup);
   }
+}
 
-  scene.add(atomsGroup);
-  if (showBonds) scene.add(bondsGroup);
-  if (showLattice) scene.add(latticeGroup);
-
+function updateOther() {
   renderComposition();
   clearMeasureGraphics();
 
-  // Re-add persistent measurements
   measureLines.forEach(line => scene.add(line));
   measureLabels.forEach(label => scene.add(label));
 
-  // Update cached lattice directions for gizmo
   recomputeLatticeDirs();
-
-  // Update all measurements after visualization is complete
   updateAllMeasurements();
 }
+
+function updateVisualization(options = {}) {
+  const {
+    reRenderAtoms = true,
+    reRenderBonds = true,
+    reRenderLattice = true,
+    reRenderOther = true
+  } = options;
+
+  if (!structureData) {
+    console.log('No structureData available, returning early');
+    return;
+  }
+
+  if (reRenderAtoms) updateAtoms();
+  if (reRenderBonds) updateBonds();
+  if (reRenderLattice) updateLattice();
+  if (reRenderOther) updateOther();
+}
+
+
+
+
+
+
 
 function colorHexToCss(hex) {
     const s = hex.toString(16).padStart(6,'0');
