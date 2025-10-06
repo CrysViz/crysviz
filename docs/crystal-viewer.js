@@ -1374,27 +1374,28 @@ function createCompositionRow(el, count, total) {
   hexInput.placeholder = '#RRGGBB';
   hexInput.style.cssText = 'width: 80px; height: 32px; padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0; box-sizing: border-box; vertical-align: top;';
 
+  const mom_color = currentColor
+  console.log(currentColor)
 
-  const picker = createColorPicker({
-  onChange: ({ hex }) => {
+  const picker = createColorPicker(mom_color, (hex) => {
     clearAllIndividualColorsForElement(el);      // Clear old color overrides
     const ok = setElementColorOverride(el, hex); // Apply new color override
-    if (ok) {
-      updateVisualization({
+    dot.style.background = hex;
+      if (ok) {
+        updateVisualization({
           reRenderAtoms: true,
           reRenderBonds: true,
           reRenderLattice: false,
           reRenderOther: false
-});
-    }
-    }
-  });
+        });
+      }
+    });
 
 
   // Single line: color swatch + hex field + buttons
   const topRow = document.createElement('div');
   topRow.style.cssText = 'display: flex; align-items: center; gap: 6px;';
-  topRow.appendChild(picker);
+  topRow.appendChild(picker.element);
 
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset';
@@ -1453,12 +1454,10 @@ function createCompositionRow(el, count, total) {
     updateVisualization();
   };
 
-  // Apply commits the chosen color
-  applyBtn.onclick = () => {
-    const val = hexInput.value;
-    clearAllIndividualColorsForElement(el)
-    const ok = setElementColorOverride(el, val);
-    if (ok) { updateVisualization(); }
+   applyBtn.onclick = () => {
+      dot.style.background = picker.getHex;
+      renderComposition();
+      editor.style.display = 'none';
   };
   // Add element-wide color editor to container (after individual atoms)
   container.appendChild(editor);
@@ -2039,7 +2038,6 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   colorBtn.textContent = 'Color';
   colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
   const choosenColor = hexToRgba(colorHexToCss(getIndividualAtomColor(element, atomIndex)),0.8);
-  console.log(getIndividualAtomColor(element, atomIndex))
   colorBtn.style.background = choosenColor;
   colorBtn.title = `Change color for ${element}${displayNumber}`;
 
@@ -2057,24 +2055,20 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   // Create color editor for this individual atom
   const editor = document.createElement('div');
   editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
-
-  const picker = createColorPicker({
-   onChange: ({ hex }) => {
+  const mom_color = colorHexToCss(getIndividualAtomColor(element, atomIndex))
+  console.log(mom_color)
+  const picker = createColorPicker(mom_color, (hex) => {
     const ok = setIndividualAtomColor(element, atomIndex, hex); 
     dot.style.background = hex;
-    if (ok) {
-      updateVisualization({
+      if (ok) {
+        updateVisualization({
           reRenderAtoms: true,
           reRenderBonds: true,
           reRenderLattice: false,
           reRenderOther: false
-    });
+        });
       }
-      }
     });
-
-
-
 
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
@@ -2092,7 +2086,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   const topRowIndiv = document.createElement('div');
   topRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 6px;';
 
-  topRowIndiv.appendChild(picker);
+  topRowIndiv.appendChild(picker.element);
 
   // Second row: buttons
   const buttonRowIndiv = document.createElement('div');
@@ -2197,19 +2191,10 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
     }
   };
 
-  //colorInput.oninput = (e) => { hexInput.value = e.target.value; };
-  //hexInput.oninput = (e) => { colorInput.value = e.target.value; };
-
   applyBtn.onclick = () => {
-    const val = hexInput.value;
-    const ok = setIndividualAtomColor(element, atomIndex, val);
-    if (ok) {
-      dot.style.background = val;
-      updateVisualization();
-      // Update the composition to refresh element colors
+      dot.style.background = picker.getHex;
       renderComposition();
       editor.style.display = 'none';
-    }
   };
 
   resetBtn.onclick = () => {
