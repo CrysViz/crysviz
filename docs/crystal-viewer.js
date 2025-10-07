@@ -1529,7 +1529,12 @@ function createCompositionRow(el, count, total) {
   resetBtn.onclick = () => {
     clearElementColorOverride(el);
     clearAllIndividualColorsForElement(el);
-    updateVisualization();
+    updateVisualization({
+          reRenderAtoms: true,
+          reRenderBonds: true,
+          reRenderLattice: false,
+          reRenderOther: false
+        });
   };
 
    applyBtn.onclick = () => {
@@ -1557,94 +1562,248 @@ function addLatticeParametersSection() {
   const compDiv = document.getElementById('composition');
   if (!compDiv || !structureData || !structureData.lattice) return;
 
-  // Remove old section if present
-  let latticeSection = document.getElementById('latticeSection');
-  if (latticeSection) latticeSection.remove();
+  const resetWrapper = document.createElement('div');
+  resetWrapper.style.cssText = `
+    display: flex;
+    justify-content: center;
+    margin-top: 16px;
+  `;
 
-  // Create lattice parameters section
-  latticeSection = document.createElement('div');
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset All Colors';
+  resetBtn.className = 'reset-btn';
+  resetBtn.style.cssText = `
+    height: 32px;
+    padding: 6px 12px;
+    font-size: 12px;
+    min-width: 100px;
+    cursor: pointer;
+  `;
+
+  resetBtn.onclick = () => {
+    const uniqueElements = new Set(structureData.elements);
+    for (const element of uniqueElements) {
+      clearElementColorOverride(element);
+      clearAllIndividualColorsForElement(element);
+    }
+    updateVisualization({
+      reRenderAtoms: true,
+      reRenderBonds: true,
+      reRenderLattice: false,
+      reRenderOther: true,
+    });
+  };
+
+  resetWrapper.appendChild(resetBtn);
+  compDiv.appendChild(resetWrapper);
+
+  const oldSection = document.getElementById('latticeSection');
+  if (oldSection) oldSection.remove();
+
+  const latticeSection = document.createElement('div');
   latticeSection.id = 'latticeSection';
-  latticeSection.style.cssText =
-    'border-top: 2px solid rgba(255,255,255,0.1); margin-top: 12px; padding-top: 12px;';
+  latticeSection.style.cssText = `
+    border-top: 2px solid rgba(255,255,255,0.1);
+    margin-top: 12px;
+    padding-top: 12px;
+    color: rgba(255,255,255,0.85);
+    font-size: 13px;
+  `;
 
-  // Title
+  // ---- Toggle controls ----
+  const toggleRow = document.createElement('div');
+  toggleRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;';
 
-  // ---- Calculations ----
-  const L = structureData.lattice; // 3x3 array, lattice vectors as rows
+  const toggleLabel = document.createElement('span');
+  toggleLabel.textContent = 'Lattice Display:    ';
+  toggleLabel.style.cssText = 'font-weight:600; color:rgba(255,255,255,0.8);';
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.textContent = 'Show Matrix';
+  toggleBtn.className = 'mini-btn';
+  toggleBtn.style.cssText = `
+    height:24px; padding:2px 8px; font-size:12px; cursor:pointer;
+    border:none; border-radius:4px; background:rgba(255,255,255,0.1); color:white;margin-left:8px;
+  `;
+
+  toggleRow.appendChild(toggleLabel);
+  toggleRow.appendChild(toggleBtn);
+  latticeSection.appendChild(toggleRow);
+
+  const latticeResetBtn = document.createElement('button');
+  latticeResetBtn.textContent = 'Reset Lattice';
+  latticeResetBtn.className = 'reset-btn';
+  latticeResetBtn.id = 'LatticeResetBtn';
+  latticeResetBtn.style.cssText = `
+    height: 28px;
+    padding: 4px 10px;
+    font-size: 12px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    border: none;
+    border-radius: 4px;
+    color: white;
+  `;
+  latticeSection.appendChild(latticeResetBtn);
+
+  // ---- Container for inputs ----
+  const viewContainer = document.createElement('div');
+  latticeSection.appendChild(viewContainer);
+
+  // ---- Volume display ----
+  const volumeDiv = document.createElement('div');
+  volumeDiv.style.cssText = 'margin-top:8px; font-size:13px; color:rgba(255,255,255,0.8);';
+  latticeSection.appendChild(volumeDiv);
+
+  compDiv.appendChild(latticeSection);
+
+  // ===== Helper math functions =====
   const norm = (v) => Math.hypot(v[0], v[1], v[2]);
   const dot = (u, v) => u[0]*v[0] + u[1]*v[1] + u[2]*v[2];
   const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
   const acosDeg = (x) => Math.acos(clamp(x, -1, 1)) * 180 / Math.PI;
+  const deg2rad = (deg) => deg * Math.PI / 180;
+  const cross = (a,b) => [
+    a[1]*b[2]-a[2]*b[1],
+    a[2]*b[0]-a[0]*b[2],
+    a[0]*b[1]-a[1]*b[0]
+  ];
 
-  const a = norm(L[0]);
-  const b = norm(L[1]);
-  const c = norm(L[2]);
+  function updateVolumeDisplay(L) {
+    const V = Math.abs(dot(L[0], cross(L[1], L[2])));
+    volumeDiv.textContent = `Volume: ${V.toFixed(3)} Å³`;
+  }
 
-  const alpha = acosDeg(dot(L[1], L[2]) / (b * c || 1)); // angle between b and c
-  const beta  = acosDeg(dot(L[0], L[2]) / (a * c || 1)); // angle between a and c
-  const gamma = acosDeg(dot(L[0], L[1]) / (a * b || 1)); // angle between a and b
+  // ===== Lattice Parameter View =====
+  function renderLatticeParams() {
+    viewContainer.innerHTML = '';
+    const L = structureData.lattice;
+    const a = norm(L[0]);
+    const b = norm(L[1]);
+    const c = norm(L[2]);
+    const alpha = acosDeg(dot(L[1], L[2]) / (b * c || 1));
+    const beta  = acosDeg(dot(L[0], L[2]) / (a * c || 1));
+    const gamma = acosDeg(dot(L[0], L[1]) / (a * b || 1));
 
-  // ---- Table helper ----
-  const makeTable = (headers, values, unit) => {
+    const params = { a, b, c, alpha, beta, gamma };
     const table = document.createElement('table');
-    table.style.cssText = `
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 11px;
-      color: rgba(255,255,255,0.75);
-      margin: 0 0 6px 0;
-    `;
-    const thead = document.createElement('thead');
-    const headRow = document.createElement('tr');
-    headers.forEach(h => {
-      const th = document.createElement('th');
-      th.textContent = h;
-      th.style.cssText = `
-        text-align: right;
-        font-weight: 600;
-        color: rgba(255,255,255,0.85);
-        padding: 4px 6px;
-        border-bottom: 1px solid rgba(255,255,255,0.1);
-      `;
-      headRow.appendChild(th);
-    });
-    thead.appendChild(headRow);
-    table.appendChild(thead);
-
+    table.style.cssText = 'width:100%; border-collapse:collapse; font-size:12px;';
     const tbody = document.createElement('tbody');
-    const valRow = document.createElement('tr');
-    values.forEach(v => {
-      const td = document.createElement('td');
-      // Handle NaN gracefully
-      const num = Number.isFinite(v) ? v.toFixed(3) : '—';
-      td.textContent = unit ? `${num} ${unit}` : num;
-      td.style.cssText = `
-        text-align: right;
-        padding: 6px;
-        font-family: monospace;
-        color: rgba(255,255,255,0.6);
-      `;
-      valRow.appendChild(td);
-    });
-    tbody.appendChild(valRow);
+
+    for (const [key, val] of Object.entries(params)) {
+      const tr = document.createElement('tr');
+      const tdLabel = document.createElement('td');
+      tdLabel.textContent = key;
+      tdLabel.style.cssText = 'padding:4px;';
+
+      const tdInput = document.createElement('td');
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.value = val.toFixed(4);
+      input.step = key.length === 1 ? '0.01' : '0.1';
+      input.style.cssText = 'width:80px; text-align:right; font-family:monospace; padding:2px;';
+      input.id = `${key}Input`;
+      input.oninput = () => {
+        const vals = {
+          a: parseFloat(document.querySelector('#aInput').value),
+          b: parseFloat(document.querySelector('#bInput').value),
+          c: parseFloat(document.querySelector('#cInput').value),
+          alpha: parseFloat(document.querySelector('#alphaInput').value),
+          beta: parseFloat(document.querySelector('#betaInput').value),
+          gamma: parseFloat(document.querySelector('#gammaInput').value),
+        };
+        if (Object.values(vals).some(v => !isFinite(v))) return;
+
+        const { a, b, c, alpha, beta, gamma } = vals;
+        const cosA = Math.cos(deg2rad(alpha));
+        const cosB = Math.cos(deg2rad(beta));
+        const cosG = Math.cos(deg2rad(gamma));
+        const sinG = Math.sin(deg2rad(gamma));
+        const Lnew = [
+          [a, 0, 0],
+          [b*cosG, b*sinG, 0],
+          [c*cosB, c*(cosA - cosB*cosG)/sinG, c*Math.sqrt(1 - cosB**2 - ((cosA - cosB*cosG)/sinG)**2)]
+        ];
+
+        structureData.lattice = Lnew;
+        updateVisualization({
+          reRenderAtoms: true,
+          reRenderBonds: true,
+          reRenderLattice: false,
+          reRenderOther: false
+        });
+        updateVolumeDisplay(Lnew);
+      };
+      tdInput.appendChild(input);
+      tr.appendChild(tdLabel);
+      tr.appendChild(tdInput);
+      tbody.appendChild(tr);
+    }
+
     table.appendChild(tbody);
-    return table;
+    viewContainer.appendChild(table);
+    updateVolumeDisplay(L);
+  }
+
+  // ===== Matrix View =====
+  function renderMatrixView() {
+    viewContainer.innerHTML = '';
+    const L = structureData.lattice;
+
+    const table = document.createElement('table');
+    table.style.cssText = 'width:100%; border-collapse:collapse; font-size:12px;';
+    const tbody = document.createElement('tbody');
+
+    for (let i = 0; i < 3; i++) {
+      const tr = document.createElement('tr');
+      for (let j = 0; j < 3; j++) {
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.value = L[i][j].toFixed(4);
+        input.step = '0.01';
+        input.style.cssText = 'width:80px; text-align:right; font-family:monospace; padding:2px;';
+        input.oninput = () => {
+          const val = parseFloat(input.value);
+          if (isFinite(val)) {
+            structureData.lattice[i][j] = val;
+            updateVisualization({ 
+                        reRenderAtoms: true,
+                        reRenderBonds: true,
+                        reRenderLattice: true,
+                        reRenderOther: false
+            });
+            updateVolumeDisplay(structureData.lattice);
+          }
+        };
+        td.appendChild(input);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+
+    table.appendChild(tbody);
+    viewContainer.appendChild(table);
+    updateVolumeDisplay(L);
+  }
+
+  // ===== Event Handlers =====
+  let showMatrix = false;
+  toggleBtn.onclick = () => {
+    showMatrix = !showMatrix;
+    toggleBtn.textContent = showMatrix ? 'Show Parameters' : 'Show Matrix';
+    showMatrix ? renderMatrixView() : renderLatticeParams();
   };
 
-  // ---- Lengths table (Å) ----
-  const lengthsTitle = document.createElement('div');
-  lengthsTitle.style.cssText = 'margin: 6px 0 4px 0; color: rgba(255,255,255,0.75); font-size: 14px;';
-  latticeSection.appendChild(lengthsTitle);
-  latticeSection.appendChild(makeTable(['a', 'b', 'c'], [a, b, c], 'Å'));
+  latticeResetBtn.onclick = () => {
+    const originalData = JSON.parse(JSON.stringify(originalStructureData));
+    structureData.lattice = originalData.lattice
+    updateVisualization({ reRenderAtoms:true, reRenderBonds:true, reRenderLattice:true,reRenderOther:false });
+    (showMatrix ? renderMatrixView : renderLatticeParams)();
+  };
 
-  // ---- Angles table (°) ----
-  const anglesTitle = document.createElement('div');
-  anglesTitle.style.cssText = 'margin: 6px 0 4px 0; color: rgba(255,255,255,0.75); font-size: 14px;';
-  latticeSection.appendChild(anglesTitle);
-  latticeSection.appendChild(makeTable(['α', 'β', 'γ'], [alpha, beta, gamma], '°'));
-
-  // Attach to container
-  compDiv.appendChild(latticeSection);
+  // Initial render
+  renderLatticeParams();
 }
 
 
@@ -3272,7 +3431,9 @@ function sizeGizmo(){
 
     // Also restore deleted atoms
     if (originalStructureData) {
+      const currentLattice = structureData.lattice
       structureData = JSON.parse(JSON.stringify(originalStructureData));
+      structureData.lattice = currentLattice 
       createBondLengthControls();
       updateVisualization();
       clearMeasure();

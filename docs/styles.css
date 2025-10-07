@@ -452,7 +452,7 @@ input[type="checkbox"] {
 }
 
 .reset-btn {
-  background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+  background: rgba(240, 132, 18,0.90); /*rgba(60,60,60,0.8)*/
   color: white;
   border: none;
   padding: 8px 16px;
