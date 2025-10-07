@@ -1475,7 +1475,20 @@ function computeComposition() {
 function renderComposition() {
   const compDiv = document.getElementById('composition');
   compDiv.innerHTML = '';
+  // Title
+  const title = document.createElement('div');
+  const titleWrapper = document.createElement('div');
+    titleWrapper.style.cssText = `
+    display: flex;
+    justify-content: center;
+    margin-top: 2px;
+  `;
 
+  title.textContent = 'Modify Color/Positions';
+  title.style.cssText = 'font-size:14px; font-weight:300; margin-bottom:10px;';
+
+  titleWrapper.appendChild(title);
+  compDiv.appendChild(titleWrapper);
 
   // Ensure structure panel starts collapsed by default
   compDiv.classList.remove('open');
@@ -1775,7 +1788,7 @@ function addSupercellSection() {
   `;
 
   title.textContent = 'Create Supercell';
-  title.style.cssText = 'font-size:14px; font-weight:300; margin-bottom:2px;';
+  title.style.cssText = 'font-size:14px; font-weight:300; margin-bottom:10px;';
 
   titleWrapper.appendChild(title);
   supercellSection.appendChild(titleWrapper);
@@ -1817,7 +1830,15 @@ function addSupercellSection() {
     'flex:1; background:rgba(255,255,255,0.15); border:none; border-radius:6px; color:white; height:28px; cursor:pointer;';
 
 
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset';
+  resetBtn.className = 'reset-btn';
+  resetBtn.style.cssText =
+    'flex:1; border:none; border-radius:6px; color:white; height:28px; cursor:pointer;';
+
+
   btnRow.appendChild(applyBtn);
+  btnRow.appendChild(resetBtn);
   supercellSection.appendChild(btnRow);
 
   // --- Apply logic ---
@@ -1842,7 +1863,15 @@ function addSupercellSection() {
     resetView()
   };
 
-
+  resetBtn.onclick = () => {
+    createSupercell(1, 1, 1);
+    updateVisualization({
+        reRenderAtoms: true,
+        reRenderBonds: true,
+        reRenderLattice: true
+      });
+    resetView()
+  }
   // --- Attach section ---
   compDiv.appendChild(supercellSection);
 }
@@ -1868,6 +1897,22 @@ function addLatticeParametersSection() {
     color: rgba(255,255,255,0.85);
     font-size: 13px;
   `;
+
+
+  const title = document.createElement('div');
+  const titleWrapper = document.createElement('div');
+    titleWrapper.style.cssText = `
+    display: flex;
+    justify-content: center;
+    margin-top: 2px;
+  `;
+
+  title.textContent = 'Modify Lattice';
+  title.style.cssText = 'font-size:14px; font-weight:300; margin-bottom:10px;';
+
+  titleWrapper.appendChild(title);
+  latticeSection.appendChild(titleWrapper);
+
 
   // ---- Toggle controls ----
   const toggleRow = document.createElement('div');
@@ -3715,7 +3760,13 @@ function sizeGizmo(){
     if (originalStructureData) {
       const currentLattice = structureData.lattice
       structureData = JSON.parse(JSON.stringify(originalStructureData));
-      structureData.lattice = currentLattice 
+
+      if (modifiedLattice === null){
+        structureData.lattice = modifiedLattice
+      }
+      if (currentSupercell != null){
+          createSupercell(currentSupercell.nx,currentSupercell.ny,currentSupercell.nz)
+          }
       createBondLengthControls();
       updateVisualization();
       clearMeasure();
