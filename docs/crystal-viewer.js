@@ -119,20 +119,106 @@ const jmolColors = {
   Ta: 0x4da6ff, W: 0x2194d6, Re: 0x267dab, Os: 0x266696, Ir: 0x175487, Pt: 0xd0d0e0, Au: 0xffd123, Hg: 0xb8b8d0,
   Tl: 0xa6544d, Pb: 0x575961, Bi: 0x9e4fb5, Po: 0xab5c00, At: 0x754f45, Rn: 0x428296
 };
-
 const vestaColors = {
-  H: 0xffffff, He: 0xffc0cb, Li: 0xb22222, Be: 0x00ff00, B: 0x00ffff, C: 0x652e00, N: 0x9ea6b0, O: 0xff0000,
-  F: 0xdaa520, Ne: 0xffc0cb, Na: 0x0000ff, Mg: 0x228b22, Al: 0x808090, Si: 0xdaa520, P: 0xff8c00, S: 0xffff00,
-  Cl: 0x00ff00, Ar: 0xffc0cb, K: 0x8f40d4, Ca: 0x808090, Sc: 0xff1493, Ti: 0x808090, V: 0xff1493, Cr: 0x808090,
-  Mn: 0x808090, Fe: 0xff8c00, Co: 0xff1493, Ni: 0x228b22, Cu: 0x8b4513, Zn: 0x808090, Ga: 0xff1493, Ge: 0xff1493,
-  As: 0xff1493, Se: 0xff8c00, Br: 0x8b4513, Kr: 0xffc0cb, Rb: 0xff1493, Sr: 0x00ff00, Y: 0xff1493, Zr: 0xff1493,
-  Nb: 0xff1493, Mo: 0xff1493, Tc: 0xff1493, Ru: 0xff1493, Rh: 0xff1493, Pd: 0xff1493, Ag: 0x808090, Cd: 0xff1493,
-  In: 0xff1493, Sn: 0xff1493, Sb: 0xff1493, Te: 0xff1493, I: 0x8b4513, Xe: 0xffc0cb, Cs: 0xff1493, Ba: 0xff8c00,
-  La: 0xff1493, Ce: 0xff1493, Pr: 0xff1493, Nd: 0xff1493, Pm: 0xff1493, Sm: 0xff1493, Eu: 0xff1493, Gd: 0xff1493,
-  Tb: 0xff1493, Dy: 0xff1493, Ho: 0xff1493, Er: 0xff1493, Tm: 0xff1493, Yb: 0xff1493, Lu: 0xff1493, Hf: 0xff1493,
-  Ta: 0xff1493, W: 0xff1493, Re: 0xff1493, Os: 0xff1493, Ir: 0xff1493, Pt: 0xff1493, Au: 0xffd700, Hg: 0xff1493,
-  Tl: 0xff1493, Pb: 0x3c3d3f, Bi: 0xff1493, Po: 0xff1493, At: 0xff1493, Rn: 0xffc0cb
-}; //not really, but close enough
+  H:  0xffcccc,
+  D:  0xccccff,
+  He: 0xfce9d0,
+  Li: 0x87e07a,
+  Be: 0x5ef6c1,
+  B:  0x20a332,
+  C:  0x814839,
+  N:  0xb1bad6,
+  O:  0xff0300,
+  F:  0xb1bad6,
+  Ne: 0xff37b4,
+  Na: 0xf9dd3d,
+  Mg: 0xfce27a,
+  Al: 0x81b3d6,
+  Si: 0x1b3bfa,
+  P:  0xc18fa3,
+  S:  0xffff00,
+  Cl: 0x31fc03,
+  Ar: 0xd2ffa4,
+  K:  0xa123f7,
+  Ca: 0x5b96bd,
+  Sc: 0xb57dab,
+  Ti: 0x789efb,
+  V:  0xe60000,
+  Cr: 0x00009e,
+  Mn: 0xa90b9f,
+  Fe: 0xb5b271,
+  Co: 0x0000af,
+  Ni: 0xb8b9bd,
+  Cu: 0x223fdc,
+  Zn: 0x8f8f81,
+  Ga: 0x9fb4b7,
+  Ge: 0x7f6faa,
+  As: 0x75d057,
+  Se: 0x9acf0f,
+  Br: 0x7e3102,
+  Kr: 0xf9c1f4,
+  Rb: 0xff0099,
+  Sr: 0x00ff26,
+  Y:  0x679960,
+  Zr: 0x00ff00,
+  Nb: 0x4cbc76,
+  Mo: 0xb4868f,
+  Tc: 0xcdafca,
+  Ru: 0xcfb7ad,
+  Rh: 0xcdbfab,
+  Pd: 0xc1c4b9,
+  Ag: 0xb8b9bd,
+  Cd: 0xf3f4dc,
+  In: 0xd680bb,
+  Sn: 0x9b8fba,
+  Sb: 0xd78250,
+  Te: 0xadd42f,
+  I:  0x8e1f8b,
+  Xe: 0x9aa1f8,
+  Cs: 0x0efcb9,
+  Ba: 0x1ee05a,
+  La: 0x5ac431,
+  Ce: 0xd1fc06,
+  Pr: 0xfce21c,
+  Nd: 0xfc8e07,
+  Pm: 0x0000f5,
+  Sm: 0xfc063e,
+  Eu: 0xfb04d5,
+  Gd: 0xc00eff,
+  Tb: 0x7100fe,
+  Dy: 0x3117fe,
+  Ho: 0x072fae,
+  Er: 0x497323,
+  Tm: 0x0000e0,
+  Yb: 0x273fe4,
+  Lu: 0x26fed0,
+  Hf: 0xb3b369,
+  Ta: 0xb79af5,
+  W:  0x8e8690,
+  Re: 0xb3b17e,
+  Os: 0xc9b179,
+  Ir: 0xc9cfc7,
+  Pt: 0xccc5c0,
+  Au: 0xfeb236,
+  Hg: 0xd3b8cc,
+  Tl: 0x968a6d,
+  Pb: 0x53545b,
+  Bi: 0xd22fc7,
+  Po: 0x0000ff,
+  At: 0x0000ff,
+  Rn: 0xffff00,
+  Fr: 0x000000,
+  Ra: 0x6eaa59,
+  Ac: 0x648f73,
+  Th: 0x26fe78,
+  Pa: 0x28fb35,
+  U:  0x7aa1aa,
+  Np: 0x4c4c4c,
+  Pu: 0x4c4c4c,
+  Am: 0x4c4c4c,
+  XX: 0x4c4c4c
+};
+
 
 function getElementColor(element) {
   // Prefer user override if present
@@ -1729,7 +1815,7 @@ function addLatticeParametersSection() {
         updateVisualization({
           reRenderAtoms: true,
           reRenderBonds: true,
-          reRenderLattice: false,
+          reRenderLattice: true,
           reRenderOther: false
         });
         updateVolumeDisplay(Lnew);
@@ -2674,10 +2760,10 @@ function updateBonds() {
   for (let i = 0; i < wrappedCart.length; i++) {
     for (let j = i + 1; j < wrappedCart.length; j++) {
       const ei = wrapped.elements[i];
-      const atomIndex_i = wrapped.srcIndex[i];
+      const atomIndex_i = wrapped.srcIndex[i]; 
       const ej = wrapped.elements[j];
       const atomIndex_j = wrapped.srcIndex[j];
-      const bond = createBond(wrappedCart[i], wrappedCart[j], ei, ej,atomIndex_i,atomIndex_j);
+      const bond = createBond(wrappedCart[i], wrappedCart[j], ei, ej, atomIndex_i, atomIndex_j);
       if (bond) bondsGroup.add(bond);
     }
   }
@@ -2692,6 +2778,8 @@ function updateBonds() {
   const primElems = wrapped.elements;
 
   const maxCutoff = Math.max(3.0, ...Object.values(bondLengths || {dummy:3.0}));
+
+
   const ax = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(a.length(), 1e-6))));
   const by = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(b.length(), 1e-6))));
   const cz = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(c.length(), 1e-6))));
@@ -2707,12 +2795,12 @@ function updateBonds() {
   for (let i = 0; i < primCarts.length; i++) {
     const pi = primCarts[i];
     const ei = primElems[i];
-    const atomIndex_i = wrapped.srcIndex[i];
+    const atomIndex_i = wrapped.srcIndex[i]; // here is something off!!! 
     for (let j = 0; j < primCarts.length; j++) {
       if (j === i) continue;
       const pj = primCarts[j];
       const ej = primElems[j];
-      const atomIndex_i = wrapped.srcIndex[j];
+      const atomIndex_j = wrapped.srcIndex[j];
 
       const cutoff = getBondCutoff(ei, ej);
       if (cutoff <= 0.01) continue;
@@ -2737,7 +2825,7 @@ function updateBonds() {
           if (!ghostMesh) {
             ghostMesh = createAtomMesh(ej, [candidate.x, candidate.y, candidate.z]);
             ghostMesh.userData.isGhost = true;
-            ghostMesh.material.opacity = 0.35;
+            ghostMesh.material.opacity = 1.0;
             ghostMesh.material.transparent = true;
             ghostMesh.material.depthWrite = false;
             atomsGroup.add(ghostMesh);
@@ -2746,6 +2834,7 @@ function updateBonds() {
 
           const bkey = `${i}-${j}-${dx},${dy},${dz}`;
           if (!bondDedupe.has(bkey)) {
+            console.log(atomIndex_i,atomIndex_j)
             const bond = createBond([pi.x, pi.y, pi.z], [candidate.x, candidate.y, candidate.z], ei, ej,atomIndex_i,atomIndex_j);
             if (bond) {
               if (bond.children && bond.children[1] && bond.children[1].material) {
@@ -2764,7 +2853,7 @@ function updateBonds() {
             if (!ghostAdded.has(gkey2)) {
               const ghostMesh2 = createAtomMesh(ei, [opposite.x, opposite.y, opposite.z]);
               ghostMesh2.userData.isGhost = true;
-              ghostMesh2.material.opacity = 0.35;
+              ghostMesh2.material.opacity = 1;
               ghostMesh2.material.transparent = true;
               ghostMesh2.material.depthWrite = false;
               atomsGroup.add(ghostMesh2);
@@ -2831,7 +2920,70 @@ function updateVisualization(options = {}) {
 }
 
 
+function createSupercell(nx = 1, ny = 1, nz = 1) {
+  if (!structureData || !structureData.positions || !structureData.lattice) return;
 
+  // Save original if not yet saved
+  if (!structureData.originalPositions) {
+    structureData.originalPositions = structureData.positions.map(p => [...p]);
+    structureData.originalLattice = structureData.lattice.map(v => [...v]);
+  }
+
+  const newPositions = [];
+  const newElements = [];
+
+  // Loop over supercell indices
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < ny; j++) {
+      for (let k = 0; k < nz; k++) {
+        const offset = [i, j, k];
+        for (let idx = 0; idx < structureData.positions.length; idx++) {
+          const p = structureData.positions[idx];
+          const newP = [
+            (p[0] + offset[0]) / nx,
+            (p[1] + offset[1]) / ny,
+            (p[2] + offset[2]) / nz
+          ];
+          newPositions.push(newP);
+          newElements.push(structureData.elements[idx]);
+        }
+      }
+    }
+  }
+
+  // Scale lattice vectors
+  const scaledLattice = [
+    structureData.lattice[0].map(x => x * nx),
+    structureData.lattice[1].map(x => x * ny),
+    structureData.lattice[2].map(x => x * nz)
+  ];
+
+  // Update structure data
+  structureData.positions = newPositions;
+  structureData.elements = newElements;
+  structureData.lattice = scaledLattice;
+
+  // Re-render scene
+  updateVisualization({
+    reRenderAtoms: true,
+    reRenderBonds: true,
+    reRenderLattice: true,
+    reRenderOther: true,
+  });
+}
+
+function resetSupercell() {
+  if (!structureData.originalPositions || !structureData.originalLattice) return;
+  structureData.positions = structureData.originalPositions.map(p => [...p]);
+  structureData.lattice = structureData.originalLattice.map(v => [...v]);
+  structureData.elements = structureData.elements.slice(0, structureData.originalPositions.length);
+  updateVisualization({
+    reRenderAtoms: true,
+    reRenderBonds: true,
+    reRenderLattice: true,
+    reRenderOther: true
+  });
+}
 
 
 
