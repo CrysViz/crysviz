@@ -28,9 +28,9 @@ export function captureCompleteState(structureData, globalState) {
     // Structure data (current basic sharing)
     structure: {
       comment: structureData.comment || 'Shared structure',
-      lattice: structureData.lattice,
+      lattice: structureData.unitCellLattice,
       elements: structureData.elements,
-      positions: structureData.positions
+      positions: structureData.unitCellPositions
     },
 
     // Visual appearance

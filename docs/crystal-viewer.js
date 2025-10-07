@@ -48,6 +48,8 @@ Direct
 let camera, controls, renderer, scene;
 let atomsGroup, bondsGroup, latticeGroup;
 let structureData = null;
+let modifiedLattice = null;
+let currentSupercell = null;
 let originalStructureData = null; // deep-copy of last loaded structure for restore
 let bondLengths = {};
 let defaultBondLengths = {};
@@ -382,6 +384,78 @@ function clearAllIndividualColorsForElement(element) {
   keysToRemove.forEach(key => delete individualAtomColors[key]);
   saveIndividualAtomColors();
 }
+
+
+function createSupercell(nx = 1, ny = 1, nz = 1) {
+ 
+  if (!originalStructureData) return;
+
+  const basePositions = originalStructureData.positions;
+  const baseElements = originalStructureData.elements;
+
+  let baseLattice;
+
+  if (modifiedLattice == null) {
+    // No modified lattice → use original
+    baseLattice = originalStructureData.lattice;
+  } else {
+    if (currentSupercell == null) {
+      // No supercell info → use as-is
+      baseLattice = modifiedLattice;
+    } else {
+      // Scale each lattice vector by its corresponding supercell multiplier
+      const { nx, ny, nz } = currentSupercell;
+      const scales = [nx, ny, nz];
+      baseLattice = modifiedLattice.map((v, i) => v.map(x => x / scales[i]));
+    }
+  }
+
+  const newPositions = [];
+  const newElements = [];
+
+  // Simple tiling
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < ny; j++) {
+      for (let k = 0; k < nz; k++) {
+        for (let p = 0; p < basePositions.length; p++) {
+          const pos = basePositions[p];
+          newPositions.push([
+            (pos[0] + i) / nx,
+            (pos[1] + j) / ny,
+            (pos[2] + k) / nz
+          ]);
+          newElements.push(baseElements[p]);
+        }
+      }
+    }
+  }
+
+  // Scale lattice vectors
+  const newLattice = [
+    baseLattice[0].map(x => x * nx),
+    baseLattice[1].map(x => x * ny),
+    baseLattice[2].map(x => x * nz)
+  ];
+
+  // Update structureData
+  structureData.positions = newPositions;
+  structureData.elements = newElements;
+  structureData.lattice = newLattice;
+  structureData.supercell = { nx, ny, nz };
+  currentSupercell={ nx, ny, nz }
+
+  // Re-render
+  //
+  updateVisualization({
+    reRenderAtoms: true,
+    reRenderBonds: true,
+    reRenderLattice: true
+  });
+}
+
+
+
+
 
 function getAtomRadius(element) {
   return (atomicRadii[element] || 1.0) * atomSize;
@@ -1430,6 +1504,7 @@ function renderComposition() {
   });
 
   // Lattice parameters section
+  addSupercellSection();
   addLatticeParametersSection();
 }
 
@@ -1641,13 +1716,10 @@ function createCompositionRow(el, count, total) {
   return container;
 }
 
-// Function to add lattice parameters section to composition
-//
 
-function addLatticeParametersSection() {
+function addSupercellSection() {
   const compDiv = document.getElementById('composition');
-  if (!compDiv || !structureData || !structureData.lattice) return;
-
+  if (!compDiv || !structureData) return;
   const resetWrapper = document.createElement('div');
   resetWrapper.style.cssText = `
     display: flex;
@@ -1655,10 +1727,10 @@ function addLatticeParametersSection() {
     margin-top: 16px;
   `;
 
-  const resetBtn = document.createElement('button');
-  resetBtn.textContent = 'Reset All Colors';
-  resetBtn.className = 'reset-btn';
-  resetBtn.style.cssText = `
+  const fullColorResetBtn = document.createElement('button');
+  fullColorResetBtn.textContent = 'Reset All Colors';
+  fullColorResetBtn.className = 'reset-btn';
+  fullColorResetBtn.style.cssText = `
     height: 32px;
     padding: 6px 12px;
     font-size: 12px;
@@ -1666,7 +1738,7 @@ function addLatticeParametersSection() {
     cursor: pointer;
   `;
 
-  resetBtn.onclick = () => {
+  fullColorResetBtn.onclick = () => {
     const uniqueElements = new Set(structureData.elements);
     for (const element of uniqueElements) {
       clearElementColorOverride(element);
@@ -1680,8 +1752,109 @@ function addLatticeParametersSection() {
     });
   };
 
-  resetWrapper.appendChild(resetBtn);
+  resetWrapper.appendChild(fullColorResetBtn);
   compDiv.appendChild(resetWrapper);
+
+  // Wrapper section
+  const supercellSection = document.createElement('div');
+  supercellSection.id = 'supercellSection';
+  supercellSection.style.cssText = `
+    border-top: 2px solid rgba(255,255,255,0.1);
+    margin-top: 12px;
+    padding-top: 12px;
+    color: rgba(255,255,255,0.85);
+  `;
+
+  // Title
+  const title = document.createElement('div');
+  const titleWrapper = document.createElement('div');
+    titleWrapper.style.cssText = `
+    display: flex;
+    justify-content: center;
+    margin-top: 2px;
+  `;
+
+  title.textContent = 'Create Supercell';
+  title.style.cssText = 'font-size:14px; font-weight:300; margin-bottom:2px;';
+
+  titleWrapper.appendChild(title);
+  supercellSection.appendChild(titleWrapper);
+
+    // --- Initialize supercell values ---
+  if (!structureData.supercell) structureData.supercell = { nx: 1, ny: 1, nz: 1 };
+  const { nx,ny,nz } = structureData.supercell;
+
+  // --- Input row ---
+  const inputRow = document.createElement('div');
+  inputRow.style.cssText = 'display:flex; gap:6px; margin-bottom:8px;';
+  const inputs = {};
+  ['nx', 'ny', 'nz'].forEach(axis => {
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '1';
+    input.step = '1';
+    if (currentSupercell != null) {
+    input.value = currentSupercell[axis];
+    }
+    else{
+      input.value = 1
+    }  
+    input.style.cssText =
+      'width:50px; text-align:center; border:none; border-radius:4px; background:rgba(255,255,255,0.1); color:white; font-family:monospace; padding:3px;';
+    inputs[axis] = input;
+    inputRow.appendChild(input);
+  });
+  supercellSection.appendChild(inputRow);
+
+  // --- Buttons row ---
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex; gap:8px;';
+
+  const applyBtn = document.createElement('button');
+  applyBtn.textContent = 'Apply';
+  applyBtn.className = 'mini-btn';
+  applyBtn.style.cssText =
+    'flex:1; background:rgba(255,255,255,0.15); border:none; border-radius:6px; color:white; height:28px; cursor:pointer;';
+
+
+  btnRow.appendChild(applyBtn);
+  supercellSection.appendChild(btnRow);
+
+  // --- Apply logic ---
+  applyBtn.onclick = () => {
+    const newA = Math.max(1, parseInt(inputs.nx.value));
+    const newB = Math.max(1, parseInt(inputs.ny.value));
+    const newC = Math.max(1, parseInt(inputs.nz.value));
+    structureData.supercell = { nx: newA, ny: newB, nz: newC };
+
+    // Restore pristine structure from originalStructureData
+    structureData.atoms = structuredClone(originalStructureData.atoms);
+    structureData.lattice = structuredClone(originalStructureData.lattice);
+    structureData.elements = structuredClone(originalStructureData.elements);
+
+    // Build supercell
+    createSupercell(newA, newB, newC);
+    updateVisualization({
+        reRenderAtoms: true,
+        reRenderBonds: true,
+        reRenderLattice: true
+      });
+    resetView()
+  };
+
+
+  // --- Attach section ---
+  compDiv.appendChild(supercellSection);
+}
+
+
+
+// Function to add lattice parameters section to composition
+//
+
+function addLatticeParametersSection() {
+  const compDiv = document.getElementById('composition');
+  if (!compDiv || !structureData || !structureData.lattice) return;
 
   const oldSection = document.getElementById('latticeSection');
   if (oldSection) oldSection.remove();
@@ -1701,11 +1874,11 @@ function addLatticeParametersSection() {
   toggleRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;';
 
   const toggleLabel = document.createElement('span');
-  toggleLabel.textContent = 'Lattice Display:    ';
+  toggleLabel.textContent = 'Input options:    ';
   toggleLabel.style.cssText = 'font-weight:600; color:rgba(255,255,255,0.8);';
 
   const toggleBtn = document.createElement('button');
-  toggleBtn.textContent = 'Show Matrix';
+  toggleBtn.textContent = 'Matrix';
   toggleBtn.className = 'mini-btn';
   toggleBtn.style.cssText = `
     height:24px; padding:2px 8px; font-size:12px; cursor:pointer;
@@ -1810,7 +1983,7 @@ function addLatticeParametersSection() {
           [b*cosG, b*sinG, 0],
           [c*cosB, c*(cosA - cosB*cosG)/sinG, c*Math.sqrt(1 - cosB**2 - ((cosA - cosB*cosG)/sinG)**2)]
         ];
-
+        modifiedLattice = Lnew;
         structureData.lattice = Lnew;
         updateVisualization({
           reRenderAtoms: true,
@@ -1862,6 +2035,7 @@ function addLatticeParametersSection() {
             updateVolumeDisplay(structureData.lattice);
           }
         };
+        modifiedLattice = structureData.lattice
         td.appendChild(input);
         tr.appendChild(td);
       }
@@ -1877,14 +2051,20 @@ function addLatticeParametersSection() {
   let showMatrix = false;
   toggleBtn.onclick = () => {
     showMatrix = !showMatrix;
-    toggleBtn.textContent = showMatrix ? 'Show Parameters' : 'Show Matrix';
+    toggleBtn.textContent = showMatrix ? 'Parameters' : 'Show Matrix';
     showMatrix ? renderMatrixView() : renderLatticeParams();
   };
 
   latticeResetBtn.onclick = () => {
     const originalData = JSON.parse(JSON.stringify(originalStructureData));
+    //createSupercell(1,1,1)
+    modifiedLattice = null
     structureData.lattice = originalData.lattice
-    updateVisualization({ reRenderAtoms:true, reRenderBonds:true, reRenderLattice:true,reRenderOther:false });
+    if (currentSupercell != null){
+      createSupercell(currentSupercell.nx,currentSupercell.ny,currentSupercell.nz)
+    } 
+    updateVisualization({ reRenderAtoms:true, reRenderBonds:true, reRenderLattice:true,reRenderOther:true });
+    resetView();
     (showMatrix ? renderMatrixView : renderLatticeParams)();
   };
 
@@ -2918,75 +3098,6 @@ function updateVisualization(options = {}) {
   if (reRenderLattice) updateLattice();
   if (reRenderOther) updateOther();
 }
-
-
-function createSupercell(nx = 1, ny = 1, nz = 1) {
-  if (!structureData || !structureData.positions || !structureData.lattice) return;
-
-  // Save original if not yet saved
-  if (!structureData.originalPositions) {
-    structureData.originalPositions = structureData.positions.map(p => [...p]);
-    structureData.originalLattice = structureData.lattice.map(v => [...v]);
-  }
-
-  const newPositions = [];
-  const newElements = [];
-
-  // Loop over supercell indices
-  for (let i = 0; i < nx; i++) {
-    for (let j = 0; j < ny; j++) {
-      for (let k = 0; k < nz; k++) {
-        const offset = [i, j, k];
-        for (let idx = 0; idx < structureData.positions.length; idx++) {
-          const p = structureData.positions[idx];
-          const newP = [
-            (p[0] + offset[0]) / nx,
-            (p[1] + offset[1]) / ny,
-            (p[2] + offset[2]) / nz
-          ];
-          newPositions.push(newP);
-          newElements.push(structureData.elements[idx]);
-        }
-      }
-    }
-  }
-
-  // Scale lattice vectors
-  const scaledLattice = [
-    structureData.lattice[0].map(x => x * nx),
-    structureData.lattice[1].map(x => x * ny),
-    structureData.lattice[2].map(x => x * nz)
-  ];
-
-  // Update structure data
-  structureData.positions = newPositions;
-  structureData.elements = newElements;
-  structureData.lattice = scaledLattice;
-
-  // Re-render scene
-  updateVisualization({
-    reRenderAtoms: true,
-    reRenderBonds: true,
-    reRenderLattice: true,
-    reRenderOther: true,
-  });
-}
-
-function resetSupercell() {
-  if (!structureData.originalPositions || !structureData.originalLattice) return;
-  structureData.positions = structureData.originalPositions.map(p => [...p]);
-  structureData.lattice = structureData.originalLattice.map(v => [...v]);
-  structureData.elements = structureData.elements.slice(0, structureData.originalPositions.length);
-  updateVisualization({
-    reRenderAtoms: true,
-    reRenderBonds: true,
-    reRenderLattice: true,
-    reRenderOther: true
-  });
-}
-
-
-
 
 function colorHexToCss(hex) {
     const s = hex.toString(16).padStart(6,'0');
