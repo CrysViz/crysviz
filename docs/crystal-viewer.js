@@ -159,6 +159,9 @@ function getDefaultElementColor(element) {
   return colorScheme[element] || 0x808080;
 }
 
+
+// This is why the colors are persistent. It is stored in the browser itself. The only thing we store is the customg color state! 
+
 function saveColorOverrides() {
   try { localStorage.setItem('atomColorOverrides', JSON.stringify(userColorOverrides || {})); } catch (_) {}
 }
@@ -220,13 +223,28 @@ function hasIndividualColors(element) {
 function getAllIndividualAtomColors(element) {
   if (!individualAtomColors) return [];
 
-  // Find keys starting with element_ and map to colors
-  const colors = Object.entries(individualAtomColors)
+  // Collect all individual color overrides for the element
+  const currentPalette = Object.entries(individualAtomColors)
     .filter(([key]) => key.startsWith(`${element}_`))
     .map(([, color]) => colorHexToCss(color));
 
-  return colors;
+  // Count how many atoms of this element are in the structure
+  let elementCount = 0;
+  for (let i = 0; i < structureData.elements.length; i++) {
+    if (structureData.elements[i] === element) {
+      elementCount++;
+    }
+  }
+
+  // If not all atoms are overridden, add the default color too
+  if (currentPalette.length < elementCount) {
+    const defaultColor = colorHexToCss(getElementColor(element));
+    currentPalette.push(defaultColor);
+  }
+
+  return currentPalette;
 }
+
 
 function getElementDisplayColor(element) {
   if (hasIndividualColors(element)) {
@@ -1688,7 +1706,7 @@ function highlightAtomInStructurePanel(element, sourceIndex) {
   // Find the specific individual atom row
   const atomRows = atomsContainer.querySelectorAll('.individual-atom-row');
   for (const row of atomRows) {
-    const atomNameSpan = row.querySelector('span:nth-child(2)');
+    const atomNameSpan = row.querySelector('span:nth-child(1)');  // was 2 which is the coordiante and not the name. therefore the highlight did not work 
     if (atomNameSpan) {
       // Extract the atom index from the display name (e.g., "Ba1" -> check if this is sourceIndex 0)
       const actualIndex = getAtomActualIndex(element, atomNameSpan.textContent);
@@ -1705,8 +1723,7 @@ function highlightAtomInStructurePanel(element, sourceIndex) {
 
 function getAtomActualIndex(element, displayName) {
   // Convert "Ba1" to actual index by finding all atoms of this element
-  if (!structureData) return -1;
-
+  //if (!structureData) return -1;
   const displayNumber = parseInt(displayName.replace(element, ''));
   let elementCount = 0;
 
@@ -1723,6 +1740,7 @@ function getAtomActualIndex(element, displayName) {
 
 function highlightAtomRow(row) {
   // Clear previous highlight
+  console.log("Highlighting atom row")
   if (currentlyHighlightedRow) {
     currentlyHighlightedRow.style.backgroundColor = '';
     currentlyHighlightedRow.style.borderLeft = '';
@@ -1733,12 +1751,6 @@ function highlightAtomRow(row) {
   row.style.borderLeft = '3px solid #FFB347';
   currentlyHighlightedRow = row;
 
-  // Auto-clear highlight after 3 seconds
-  setTimeout(() => {
-    if (currentlyHighlightedRow === row) {
-      clearAllHighlights();
-    }
-  }, 3000);
 }
 
 function highlightAtomIn3D(atomMesh) {
@@ -1751,12 +1763,6 @@ function highlightAtomIn3D(atomMesh) {
   HighlightAtom(atomMesh, 0xFFB347); // Orange glow
   currentlyHighlightedAtom = atomMesh;
 
-  // Auto-clear highlight after 3 seconds
-  setTimeout(() => {
-    if (currentlyHighlightedAtom === atomMesh) {
-      clearAllHighlights();
-    }
-  }, 3000);
 }
 
 function clearAllHighlights() {

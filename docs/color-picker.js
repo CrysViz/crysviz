@@ -94,6 +94,8 @@ export function createColorPicker(initialHex, onChange) {
   svCanvas.width = WIDTH - HUE_WIDTH;
   svCanvas.height = HEIGHT;
   svCanvas.style.cursor = 'crosshair';
+  svCanvas.style.userSelect = 'none';
+
   const svCtx = svCanvas.getContext('2d');
 
   const hueCanvas = document.createElement('canvas');
@@ -101,6 +103,7 @@ export function createColorPicker(initialHex, onChange) {
   hueCanvas.height = HEIGHT;
   hueCanvas.style.cursor = 'ns-resize';
   hueCanvas.style.marginLeft = '4px';
+  hueCanvas.style.userSelect = 'none';
   const hueCtx = hueCanvas.getContext('2d');
 
   const canvasWrapper = document.createElement('div');
@@ -267,6 +270,13 @@ export function createColorPicker(initialHex, onChange) {
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   });
+
+
+  svCanvas.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+  svCanvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+  hueCanvas.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+  hueCanvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 
   rgbInput.addEventListener('change', () => {
     const parsed = parseRgbString(rgbInput.value);
