@@ -3034,18 +3034,37 @@ function init() {
       hideAtomTooltip();
       return;
     }
-
     const hit = hits[0].object;
     const element = hit?.userData?.element || hit?.parent?.userData?.element || null;
+    const sourceIndex = hit?.userData?.sourceIndex ?? hit?.parent?.userData?.sourceIndex ?? null;
+
     if (!element) {
       hideAtomTooltip();
       return;
     }
 
+    // Build list of all atom indices for this element
+    const elementAtomIndices = [];
+    for (let i = 0; i < structureData.elements.length; i++) {
+      if (structureData.elements[i] === element) {
+        elementAtomIndices.push(i);
+      }
+    }
+
     if (hoveredAtom !== hit) {
       hoveredAtom = hit;
-      atomTooltip.textContent = element;
+
+      if (sourceIndex == null) {
+        atomTooltip.textContent = `${element}`;
+      } else {
+        // compute atom number within this element type
+        const elementLocalIndex = elementAtomIndices.indexOf(sourceIndex) + 1; // +1 for 1-based display
+        const displayIndex = elementLocalIndex || sourceIndex; // fallback if not found
+        atomTooltip.textContent = `${element} ${displayIndex}`;
+      }
     }
+
+
     atomTooltip.style.left = `${clientX - rect.left}px`;
     atomTooltip.style.top = `${clientY - rect.top}px`;
     atomTooltip.classList.add('visible');
