@@ -455,12 +455,9 @@ input[type="checkbox"] {
   background: rgba(240, 132, 18,0.90); /*rgba(60,60,60,0.8)*/
   color: white;
   border: none;
-  padding: 8px 16px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 12px;
   font-weight: 500;
-  margin-bottom: 12px;
   transition: all 0.3s ease;
 }
 
@@ -501,7 +498,7 @@ input[type="checkbox"] {
   position: fixed;
   right: 20px;
   bottom: 20px;
-  min-width: 160px;
+  min-width: 200px;
   max-width: 600px;
   background: rgba(0,0,0,0.8);
   color: #fff;
@@ -521,16 +518,17 @@ input[type="checkbox"] {
   justify-content:space-between; 
   cursor:pointer; user-select:none; 
   padding:6px 8px; border-radius:8px; 
-  background:linear-gradient(180deg,#273033,#1e272a); 
-  border:1px solid rgba(255,255,255,0.03); 
+  background: rgba(6,70,50,0.8);
+  border:1px solid rgba(255,255,255,0.1); 
 
 }
 
 
-#infoPanel .structure-toggle h4 { margin:0; font-size:14px; color:rgba(6, 140, 50, 1); font-weight:600; line-height:1; }
-.section-heading { margin-top:10px; margin-bottom:6px; font-size:14px; color:rgba(6, 140, 50, 1); font-weight:600; padding-left:8px; }
-.toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(255,255,255,0.03); color:rgba(6,140,50,1); font-weight:700; transition:transform .18s ease, background .18s ease, color .18s ease; }
-.toggle-icon.open { transform: background:rgba(6,140,50,1); color:#032226; }
+#infoPanel .structure-toggle h4 { margin-top: 5px;margin-left:30px; font-size:14px; font-weight:800; line-height:1.0; color:rgba(255,255,255,0.8) }
+.section-heading { margin-top:10px; margin-bottom:6px; font-size:14px; font-weight:600; padding-left:8px; }
+.toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(0,0,0,0.5); color:rgba(6,140,50,1); font-weight:1000; transition:transform .18s ease, background .18s ease, color .18s ease; }
+
+.toggle-icon.open { transform: background:rgba(6,140,50,1); color:rgba(6,140,50,1); }
 .collapsible-content { overflow-y:auto; max-height:0; transition:max-height .28s ease, padding .18s ease; }
 
 .collapsible-content::-webkit-scrollbar {
@@ -607,7 +605,7 @@ input[type="checkbox"] {
 #infoPanel h4 {
   margin: 0 0 8px 0;
   font-weight: 600;
-  color: rgba(6, 140, 50, 1);
+  color: rgba(255, 255, 255, 1);
   font-size: 14px;
   letter-spacing: .3px;
 }
@@ -1163,8 +1161,8 @@ body {
   #infoPanel {
     right: 10px;
     bottom: 10px;
-    min-width: 160px;
-    max-width: 200px;
+    min-width: 200px;
+    max-width: 300px;
     font-size: 12px;
     background: rgba(0, 0, 0, 0.85);
     backdrop-filter: blur(12px);

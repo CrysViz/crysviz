@@ -67,11 +67,11 @@ export function createColorPicker(initialHex, onChange) {
   }
 
   // --- Default & Initial Values ---
-  const fallbackHex = '#FF0000';
-  if (typeof initialHex !== 'string') {
-    console.warn('Invalid initialHex value. Using fallback.');
-    initialHex = fallbackHex;
-  }
+  //const fallbackHex = '#FF0000';
+  //if (typeof initialHex !== 'string') {
+   //   console.warn('Invalid initialHex value. Using fallback.');
+   // initialHex = fallbackHex;
+ // }
 
   const initialRgb = hexToRgb(initialHex) || hexToRgb(fallbackHex);
   let hsv = rgbToHsv(initialRgb.r, initialRgb.g, initialRgb.b);

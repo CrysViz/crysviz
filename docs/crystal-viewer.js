@@ -469,8 +469,8 @@ function createAtomRings(position, radius, innerColor, outerColor, element = nul
   const outerRingGeometry = new THREE.RingGeometry(radius * 1.1, radius * 1.3, 32);
   const outerRingMaterial = new THREE.MeshBasicMaterial({
     color: outerColor,
-    transparent: true,
-    opacity: 0.9,
+    transparent: false,
+    opacity: 1.0,
     side: THREE.DoubleSide
   });
   const outerRing = new THREE.Mesh(outerRingGeometry, outerRingMaterial);
@@ -481,7 +481,7 @@ function createAtomRings(position, radius, innerColor, outerColor, element = nul
   const innerRingGeometry = new THREE.RingGeometry(radius * 0.9, radius * 1.05, 32);
   const innerRingMaterial = new THREE.MeshBasicMaterial({
     color: innerColor,
-    transparent: true,
+    transparent: false,
     opacity: 1.0,
     side: THREE.DoubleSide
   });
@@ -1394,8 +1394,8 @@ function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2) {
   const geometryHalf = new THREE.CylinderGeometry(radius, radius, halfLen, 20);
 
   const matCommon = {
-    transparent: true,
-    opacity: 0.8,
+    transparent: false,
+    opacity: 1.0,
     roughness: 0.2,
     metalness: 0.3,
     clearcoat: 0.5,
@@ -1430,8 +1430,8 @@ function createLatticeLines() {
   const group = new THREE.Group();
   const material = new THREE.LineBasicMaterial({
     color: 0x000000,
-    transparent: true,
-    opacity: 0.7,
+    transparent: false,
+    opacity: 1.0,
     linewidth: 3
   });
 
@@ -1485,7 +1485,7 @@ function renderComposition() {
   `;
 
   title.textContent = 'Modify Color/Positions';
-  title.style.cssText = 'font-size:14px; font-weight:300; margin-bottom:10px;';
+  title.style.cssText = 'font-size:14px; font-weight:500; margin-bottom:10px;';
 
   titleWrapper.appendChild(title);
   compDiv.appendChild(titleWrapper);
@@ -1533,7 +1533,6 @@ function createCompositionRow(el, count, total) {
   const left = document.createElement('div');
   left.className = 'comp-left';
   const currentColor = getElementDisplayColor(el);
-
   const curr_elem_colors = getElementDisplayColor(el);
   let dot;
 
@@ -1626,10 +1625,10 @@ function createCompositionRow(el, count, total) {
   hexInput.placeholder = '#RRGGBB';
   hexInput.style.cssText = 'width: 80px; height: 32px; padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0; box-sizing: border-box; vertical-align: top;';
 
-  const mom_color = currentColor
-  console.log(currentColor)
+  const mom_color = getElementDisplayColor(el);
+  console.log(mom_color[0])
 
-  const picker = createColorPicker(mom_color, (hex) => {
+  const picker = createColorPicker(mom_color[0], (hex) => {
     clearAllIndividualColorsForElement(el);      // Clear old color overrides
     const ok = setElementColorOverride(el, hex); // Apply new color override
     dot.style.background = hex;
@@ -1747,7 +1746,7 @@ function addSupercellSection() {
     height: 32px;
     padding: 6px 12px;
     font-size: 12px;
-    min-width: 100px;
+    min-width: 50px;
     cursor: pointer;
   `;
 
@@ -1788,7 +1787,7 @@ function addSupercellSection() {
   `;
 
   title.textContent = 'Create Supercell';
-  title.style.cssText = 'font-size:14px; font-weight:300; margin-bottom:10px;';
+  title.style.cssText = 'font-size:14px; font-weight:500; margin-bottom:10px;';
 
   titleWrapper.appendChild(title);
   supercellSection.appendChild(titleWrapper);
@@ -1799,7 +1798,7 @@ function addSupercellSection() {
 
   // --- Input row ---
   const inputRow = document.createElement('div');
-  inputRow.style.cssText = 'display:flex; gap:6px; margin-bottom:8px;';
+  inputRow.style.cssText = 'display:flex; gap:6px; margin-bottom:8px;justify-content: center;';
   const inputs = {};
   ['nx', 'ny', 'nz'].forEach(axis => {
     const input = document.createElement('input');
@@ -1908,31 +1907,17 @@ function addLatticeParametersSection() {
   `;
 
   title.textContent = 'Modify Lattice';
-  title.style.cssText = 'font-size:14px; font-weight:300; margin-bottom:10px;';
+  title.style.cssText = 'font-size:14px; font-weight:500; margin-bottom:10px;';
 
   titleWrapper.appendChild(title);
   latticeSection.appendChild(titleWrapper);
 
-
-  // ---- Toggle controls ----
-  const toggleRow = document.createElement('div');
-  toggleRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;';
-
-  const toggleLabel = document.createElement('span');
-  toggleLabel.textContent = 'Input options:    ';
-  toggleLabel.style.cssText = 'font-weight:600; color:rgba(255,255,255,0.8);';
-
-  const toggleBtn = document.createElement('button');
-  toggleBtn.textContent = 'Matrix';
-  toggleBtn.className = 'mini-btn';
-  toggleBtn.style.cssText = `
-    height:24px; padding:2px 8px; font-size:12px; cursor:pointer;
-    border:none; border-radius:4px; background:rgba(255,255,255,0.1); color:white;margin-left:8px;
+   const latticeResetBtnWrapper = document.createElement('div');
+    latticeResetBtnWrapper.style.cssText = `
+    display: flex;
+    justify-content: center;
+    margin-top: 2px;
   `;
-
-  toggleRow.appendChild(toggleLabel);
-  toggleRow.appendChild(toggleBtn);
-  latticeSection.appendChild(toggleRow);
 
   const latticeResetBtn = document.createElement('button');
   latticeResetBtn.textContent = 'Reset Lattice';
@@ -1948,7 +1933,30 @@ function addLatticeParametersSection() {
     border-radius: 4px;
     color: white;
   `;
-  latticeSection.appendChild(latticeResetBtn);
+  latticeResetBtnWrapper.appendChild(latticeResetBtn);
+  latticeSection.appendChild(latticeResetBtnWrapper);
+
+
+  // ---- Toggle controls ----
+  const toggleRow = document.createElement('div');
+  toggleRow.style.cssText = 'display:flex; justify-content:center; align-items:center; margin-bottom:8px;';
+
+  const toggleLabel = document.createElement('span');
+  toggleLabel.textContent = 'Input Option:    ';
+  toggleLabel.style.cssText = 'font-weight:600; color:rgba(255,255,255,0.8);';
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.textContent = 'Matrix';
+  toggleBtn.className = 'mini-btn';
+  toggleBtn.style.cssText = `
+    height:24px; padding:2px 8px; font-size:12px; cursor:pointer;
+    border:none; border-radius:4px; background:rgba(255,255,255,0.1); color:white;margin-left:8px;
+  `;
+
+  toggleRow.appendChild(toggleLabel);
+  toggleRow.appendChild(toggleBtn);
+  latticeSection.appendChild(toggleRow);
+
 
   // ---- Container for inputs ----
   const viewContainer = document.createElement('div');
@@ -2599,7 +2607,6 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   const editor = document.createElement('div');
   editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
   const mom_color = colorHexToCss(getIndividualAtomColor(element, atomIndex))
-  console.log(mom_color)
   const picker = createColorPicker(mom_color, (hex) => {
     const ok = setIndividualAtomColor(element, atomIndex, hex); 
     dot.style.background = hex;
@@ -3064,7 +3071,7 @@ function updateBonds() {
             if (bond) {
               if (bond.children && bond.children[1] && bond.children[1].material) {
                 bond.children[1].material.transparent = true;
-                bond.children[1].material.opacity = 0.5;
+                bond.children[1].material.opacity = 1.0;
               }
               bondsGroup.add(bond);
             }
@@ -3078,7 +3085,7 @@ function updateBonds() {
             if (!ghostAdded.has(gkey2)) {
               const ghostMesh2 = createAtomMesh(ei, [opposite.x, opposite.y, opposite.z]);
               ghostMesh2.userData.isGhost = true;
-              ghostMesh2.material.opacity = 1;
+              ghostMesh2.material.opacity = 1.0;
               ghostMesh2.material.transparent = true;
               ghostMesh2.material.depthWrite = false;
               atomsGroup.add(ghostMesh2);
@@ -3090,7 +3097,7 @@ function updateBonds() {
               if (bond2) {
                 if (bond2.children && bond2.children[0] && bond2.children[0].material) {
                   bond2.children[0].material.transparent = true;
-                  bond2.children[0].material.opacity = 0.5;
+                  bond2.children[0].material.opacity = 1.0;
                 }
                 bondsGroup.add(bond2);
               }

@@ -267,7 +267,7 @@ function updateUIControlsFromState(state) {
   const atomSizeSlider = document.getElementById('atomSize');
   const atomSizeValue = document.getElementById('atomSizeValue');
   if (atomSizeSlider && atomSizeValue) {
-    const atomSizeNum = parseFloat(state.display.atomSize) || 1.0;
+    const atomSizeNum = parseFloat(state.display.atomSize) || 1.00;
     atomSizeSlider.value = atomSizeNum;
     atomSizeValue.textContent = atomSizeNum.toFixed(1);
   }
