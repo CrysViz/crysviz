@@ -25,7 +25,7 @@ body {
 }
 
 #ui {
-  width: 420px;
+  min-width: 300px;
   overflow: auto;
   padding: 20px;
   background: rgba(26, 26, 26, 0.95);
@@ -509,8 +509,8 @@ input[type="checkbox"] {
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255,255,255,0.1);
   z-index: 1000;
-  overflow-y: auto;
-  max-height:800px;
+  overflow-y: visible;
+  max-height: 800px;
 }
 #infoPanel .structure-toggle { 
   display:flex;
@@ -912,7 +912,7 @@ body {
   #ui {
     position: fixed;
     top: 0;
-    left: -100%;
+    left: -120%;
     height: 100vh;
     z-index: 1500;
     transition: left 0.3s ease;
@@ -1176,17 +1176,18 @@ body {
 
   /* Info panel adjustments - much smaller on mobile */
   #infoPanel {
+    overflow-y: visible;
     right: 10px;
     bottom: 10px;
     min-width: 200px;
     max-width: 400px;
-    max-height: 500px;
     font-size: 12px;
     background: rgba(0, 0, 0, 0.85);
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 8px 10px;
   }
+  .collapsible-content.open { padding-top:8px; max-height:500px; }
 
   #infoPanel h4 {
     font-size: 12px;
@@ -1233,9 +1234,111 @@ body {
   #bondControls {
     max-height: 200px;
   }
+
+@media screen and (max-height: 480px) {
+  #ui {
+    height: 450px;
+  }
+
+  /* Ensure measurement tools are properly positioned on very small screens */
+  #measurementTools {
+    top: 16px;
+    right: 5px;
+  }
+
+  /* Ensure camera tools are properly positioned on very small screens */
+  #cameraTools {
+    top: 86px !important;
+    right: 5px !important;
+    left: auto !important;
+    position: fixed !important;
+    display: flex !important;
+  }
+
+  /* Ensure both toggle buttons are visible and properly sized */
+  .measurement-toggle {
+    display: flex !important;
+    width: 50px;
+    height: 50px;
+    font-size: 18px;
+  }
+
+
+  #cameraToggle {
+    display: flex !important;
+  }
+
+  #infoPanel {
+    overflow-y: visible;
+    right: 5px;
+    bottom: 5px;
+    padding: 6px 8px;
+    max-height: 300px;
+    min-width: 200px;
+    max-width: 400px;
+    font-size: 11px;
+  }
+
+  .collapsible-content.open { padding-top:8px; max-height:300px; }
+
+  #infoPanel h4 {
+    font-size: 11px;
+    margin: 0 0 3px 0;
+  }
+
+  .comp-row {
+    padding: 1px 0;
+    font-size: 10px;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    margin-right: 4px;
+  }
+
+  #measureRow {
+    padding: 6px;
+    font-size: 11px;
+  }
+
+  #distanceValue {
+    font-size: 12px;
+  }
+
+  #status {
+    right: 5px;
+    top: 5px;
+    padding: 8px 12px;
+  }
+
+  #axesGizmo {
+    width: 50px;
+    height: 50px;
+    left: 8px;
+    bottom: 8px;
+  }
+
+  #axesLegend {
+    transform: translateX(58px);
+    font-size: 10px;
+    bottom: 8px;
+    padding: 3px 5px;
+    left: 8px;
+    background: rgba(0, 0, 0, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(8px);
+    color: #fff;
+  }
+
+  /* Smaller measure label for very small screens */
+  .measure-label {
+    font-size: 12px;
+    padding: 4px 6px;
+  }
 }
 
-@media screen and (max-width: 480px) {
+ @media screen and (max-height: 390px) {
   #ui {
     width: 280px;
   }
@@ -1282,6 +1385,7 @@ body {
     min-width: 200px;
     max-width: 400px;
     font-size: 11px;
+    overflow-y: visible;
   }
 
   #infoPanel h4 {
