@@ -510,7 +510,7 @@ input[type="checkbox"] {
   border: 1px solid rgba(255,255,255,0.1);
   z-index: 1000;
   overflow-y: auto;
-  max-height:400;
+  max-height:800px;
 }
 #infoPanel .structure-toggle { 
   display:flex;
@@ -1180,7 +1180,7 @@ body {
     bottom: 10px;
     min-width: 200px;
     max-width: 400px;
-    max-height: 1500px;
+    max-height: 500px;
     font-size: 12px;
     background: rgba(0, 0, 0, 0.85);
     backdrop-filter: blur(12px);
@@ -1278,7 +1278,7 @@ body {
     right: 5px;
     bottom: 5px;
     padding: 6px 8px;
-    max-height: 600px;
+    max-height: 500px;
     min-width: 200px;
     max-width: 400px;
     font-size: 11px;
