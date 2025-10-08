@@ -49,8 +49,8 @@ body.panel-hidden #view {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 100dvw;
+  height: 100dvh;
   border-radius: 0;
 }
 
@@ -325,7 +325,7 @@ input[type="checkbox"] {
   background: #0b1f1c;
   color: #f5fffa;
   max-width: 640px;
-  max-height: 80vh;
+  max-height: 80dvh;
   overflow-y: auto;
   padding: 28px 32px;
   border-radius: 16px;
@@ -913,7 +913,7 @@ body {
     position: fixed;
     top: 0;
     left: -120%;
-    height: 100vh;
+    height: 100dvh;
     z-index: 1500;
     transition: left 0.3s ease;
   }
@@ -1103,7 +1103,7 @@ body {
 
   #view {
     width: 100vw;
-    height: 100vh;
+    height: 100dvh;
     border-radius: 0;
   }
 
@@ -1237,7 +1237,7 @@ body {
 
 @media screen and (max-height: 480px) {
   #ui {
-    height: 450px;
+    height: 100dvh;
   }
 
   /* Ensure measurement tools are properly positioned on very small screens */
