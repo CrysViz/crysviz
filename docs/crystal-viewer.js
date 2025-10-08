@@ -3532,10 +3532,102 @@ function init() {
 
   // Add event listeners - use touchstart instead of touchend for better responsiveness
   renderer.domElement.addEventListener('click', onClickPick);
-  renderer.domElement.addEventListener('touchstart', onClickPick, { passive: false });
 
   // Add double-click listener for atom highlighting feature
   renderer.domElement.addEventListener('dblclick', onDoubleClickAtom);
+
+  const el = renderer.domElement;
+el.style.touchAction = 'none'; // important: prevents browser gestures so we don't need preventDefault()
+
+let longPressTimer = null;
+let longPressFired = false;
+let pointerDownPos = null;
+let moved = false;
+const LONG_PRESS_MS = 600;
+const MOVE_THRESHOLD_PX = 10;
+
+// keep dblclick for mouse (desktop)
+el.addEventListener('dblclick', onDoubleClickAtom);
+
+// Pointer event handlers
+function onPointerDown(e) {
+  // only start long-press timer for touch pointers
+  if (e.pointerType === 'touch') {
+    longPressFired = false;
+    moved = false;
+    pointerDownPos = { x: e.clientX, y: e.clientY };
+
+    longPressTimer = setTimeout(() => {
+      longPressFired = true;
+      // call your dblclick logic for long-press
+      onDoubleClickAtom(e);
+      // optionally visually indicate the long-press
+    }, LONG_PRESS_MS);
+  }
+
+  // capture pointer to continue receiving move/up for this pointer
+  try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+}
+
+function onPointerMove(e) {
+  if (!pointerDownPos) return;
+  const dx = e.clientX - pointerDownPos.x;
+  const dy = e.clientY - pointerDownPos.y;
+  if (Math.hypot(dx, dy) > MOVE_THRESHOLD_PX) {
+    moved = true;
+    clearLongPress();
+  }
+}
+
+function onPointerUp(e) {
+  clearLongPress();
+  try { e.target.releasePointerCapture(e.pointerId); } catch (err) {}
+
+  // if long-press already fired, suppress the normal tap/click action
+  if (longPressFired) {
+    longPressFired = false;
+    pointerDownPos = null;
+    return;
+  }
+
+  // if it was a drag/move, ignore as a click
+  if (moved) {
+    pointerDownPos = null;
+    moved = false;
+    return;
+  }
+
+  // Treat as tap/click -> call your pick handler (selection/deselection)
+  onClickPick(e);
+  pointerDownPos = null;
+}
+
+function onPointerCancel(e) {
+  clearLongPress();
+  pointerDownPos = null;
+}
+
+function clearLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+}
+
+// attach
+el.addEventListener('pointerdown', onPointerDown);
+el.addEventListener('pointermove', onPointerMove);
+el.addEventListener('pointerup', onPointerUp);
+el.addEventListener('pointercancel', onPointerCancel);
+
+// OPTIONAL: detect pointerdown outside canvas to deselect
+document.addEventListener('pointerdown', (e) => {
+  if (!el.contains(e.target)) {
+    // user clicked/tapped outside the canvas -> deselect
+    deselect();
+  }
+});
+
 
   // Add single click listener to clear highlights when clicking empty space
   renderer.domElement.addEventListener('click', (event) => {
