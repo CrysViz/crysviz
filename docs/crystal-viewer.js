@@ -1554,7 +1554,7 @@ function createCompositionRow(el, count, total) {
   // Add expand/collapse indicator - starts collapsed
   const expandIcon = document.createElement('span');
   expandIcon.textContent = '▶';
-  expandIcon.style.cssText = 'margin-left: 4px; font-size: 8px; transition: transform 0.2s ease; color: rgba(6,140,50,1); transform: rotate(0deg);';
+  expandIcon.style.cssText = 'margin-left: 4px; font-size: 14px; transition: transform 0.2s ease; color: rgba(255,255,255,0.8); transform: rotate(0deg);';
 
   left.appendChild(dot);
   left.appendChild(name);
@@ -2572,7 +2572,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   // Coordinates display (fractional)
   const coords = structureData.positions[atomIndex];
   const coordsDisplay = document.createElement('span');
-  coordsDisplay.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.5); font-family: monospace;';
+  coordsDisplay.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.8); font-family: monospace;';
   coordsDisplay.textContent = `(${coords[0].toFixed(3)}, ${coords[1].toFixed(3)}, ${coords[2].toFixed(3)})`;
 
   nameContainer.appendChild(name);
