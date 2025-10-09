@@ -20,12 +20,7 @@
 - on-the-fly position and lattice chagnes
 
 ### Known Bugs & Problems
-- choosing one atom for measurements and pushing clear button leads to highlight to be stuck <- seems to be fixed 
 - zooming out on the website (ctrl + - )and the zooming the atoms crashes the atom view
-- bonds need to be a tiny bit longer as there is a gap between atom and bonds <- seems to be fixed
-- on high-res displays the bonds have a visible hexagonal shape. Is there a way to render them as tubes? <- seems to be fixed
-- choosing an individual color for one atom does not change the color for the associated bonds <-  fixed 
-- the "dot" on the species does not change the color if the color of an individual atom is changed  <-  fixed
 - in the vesta-like colors a lot of elements are pink... colors need to be chosen somehow
 - when a bond is measured and some color or position is changed, the measured bond switches to the periodic images
 - - on bond lenght zero, even though it says now "disabled", bonds are still shown  
