@@ -1472,10 +1472,60 @@ function computeComposition() {
   return counts;
 }
 
+function getCompositionString() {
+  // Generate the chemical formula as a string
+  const counts = computeComposition();
+  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+  const elements = Object.keys(counts).sort();
+
+  let formula = '';
+
+  // Iterate through the counts object and build the formula string
+  for (const element in counts) {
+    const count = counts[element];
+    if (currentSupercell === null) {
+      formula += element + (count > 1 ? `<sub>${count}</sub>` : ''); // Add subscript if count > 1
+    } else {
+      const supercellSize = currentSupercell.nx * currentSupercell.ny * currentSupercell.nz;
+      // Divide the count by the supercell size
+      const currCount = count / supercellSize;
+      formula += element + (currCount > 1 ? `<sub>${Math.round(currCount)}</sub>` : ''); // Add subscript if count > 1
+    }
+  }
+
+  // Set the composition string in the 'h4' of the #structureToggle
+  const structureToggleHeading = document.querySelector('#structureToggle h4');
+  if (structureToggleHeading) {
+    structureToggleHeading.innerHTML = formula + ` (${total} Atoms)`; // Use innerHTML to allow HTML tags
+  }
+
+  // Display the chemical formula and the total number of atoms
+  const compString = document.createElement('div');
+  compString.innerHTML = `${formula} (${total} Atoms)`; // Use innerHTML to allow HTML tags
+  compString.style.cssText = 'font-size:12px; font-weight:500; margin-bottom:10px;';
+
+  const compWrapper = document.querySelector('#composition');
+  compWrapper.appendChild(compString);
+
+  // Return elements, counts, and total
+  return { elements, counts, total };
+}
+
 function renderComposition() {
+
+  const {elements, counts, total}=getCompositionString()
+
   const compDiv = document.getElementById('composition');
   compDiv.innerHTML = '';
-  // Title
+   const compString = document.createElement('div');
+  const compWrapper = document.createElement('div');
+    compWrapper.style.cssText = `
+    display: flex;
+    justify-content: center;
+    margin-top: 2px;
+  `;
+
+
   const title = document.createElement('div');
   const titleWrapper = document.createElement('div');
     titleWrapper.style.cssText = `
@@ -1506,9 +1556,7 @@ function renderComposition() {
     structureToggle.addEventListener('click', handleStructurePanelToggle);
   }
 
-  const counts = computeComposition();
-  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
-  const elements = Object.keys(counts).sort();
+
 
   // Render ALL rows directly (no “+N more” collapsing)
   elements.forEach(el => {
@@ -3112,6 +3160,8 @@ function updateBonds() {
   scene.add(bondsGroup);
 }
 
+
+
 function updateLattice() {
   disposeGroup(latticeGroup);
 
@@ -3131,6 +3181,126 @@ function updateOther() {
   recomputeLatticeDirs();
   updateAllMeasurements();
 }
+
+
+// ===== SPINS STATE =====
+let showSpins = true;
+let spinsGroup = new THREE.Group();
+
+let defaultSpinLength = 1.0;           // default length for spins
+let defaultSpinColor  = '#ff3366';     // default color for spins (hex string)
+let spinCoordSpace    = 'cart';        // 'cart' or 'frac' (direction input)
+let spinTextInput     = '';            // holds raw multi-line text input
+
+// Per-atom spin spec.
+// Key is source atom index (structureData.positions index).
+// Value: { dir:[ax,by,cz], length?:number, color?:string }
+let spinData = new Map();
+
+// ===== UTILS =====
+function parseColorToHexInt(s, fallback = '#ff3366') {
+  if (!s || typeof s !== 'string') s = fallback;
+  let t = s.trim();
+  if (t.startsWith('0x')) t = '#' + t.slice(2);
+  if (!t.startsWith('#')) t = '#' + t;
+  // three.js Color can take string; ArrowHelper also accepts Color/number.
+  // We'll return integer for consistency.
+  const col = new THREE.Color(t);
+  return col.getHex();
+}
+
+function fracVecToCart(ax, by, cz, lattice) {
+  // lattice is 3x3 array [a,b,c] with Cartesian components
+  const a = lattice[0], b = lattice[1], c = lattice[2];
+  const v = new THREE.Vector3(
+    ax * a[0] + by * b[0] + cz * c[0],
+    ax * a[1] + by * b[1] + cz * c[1],
+    ax * a[2] + by * b[2] + cz * c[2],
+  );
+  return v;
+}
+
+function parseSpinsText(text, { allowLineIndexMapping = true } = {}) {
+  // Lines can be:
+  //   "a b c length color"
+  //   "index a b c length color"
+  // index: 0-based or 1-based (we normalize to 0-based)
+  // length, color are optional; we fallback to defaults
+  const out = new Map();
+  if (!text) return out;
+  const lines = text.split('\n');
+
+  for (let li = 0; li < lines.length; li++) {
+    const raw = lines[li].trim();
+    if (!raw || raw.startsWith('#') || raw.startsWith('//')) continue;
+    const toks = raw.split(/[\s,]+/).filter(Boolean);
+    if (toks.length < 3) continue;
+
+    let idx = null, off = 0;
+
+    // If first token looks like an integer, treat it as index
+    const maybeIdx = parseFloat(toks[0]);
+    if (Number.isFinite(maybeIdx) && Math.floor(maybeIdx) === maybeIdx && toks.length >= 4) {
+      idx = parseInt(toks[0], 10);
+      // Support 1-based in input by auto-shifting to 0-based if user used 1..N range:
+      if (idx >= 1) {
+        // We accept both; if you want strict 0-based only, remove this adjustment.
+        idx = idx - 1;
+      }
+      off = 1;
+    } else if (!allowLineIndexMapping) {
+      // If we require explicit indices and didn't get one, skip.
+      continue;
+    }
+
+    const ax = parseFloat(toks[0 + off]);
+    const by = parseFloat(toks[1 + off]);
+    const cz = parseFloat(toks[2 + off]);
+    if (!Number.isFinite(ax) || !Number.isFinite(by) || !Number.isFinite(cz)) continue;
+
+    let length = undefined;
+    let color  = undefined;
+
+    if (toks[3 + off] !== undefined) {
+      const maybeLen = parseFloat(toks[3 + off]);
+      if (Number.isFinite(maybeLen)) length = maybeLen;
+      else color = toks[3 + off]; // user may have omitted length and given color
+    }
+    if (toks[4 + off] !== undefined) {
+      color = toks[4 + off];
+    }
+
+    if (idx === null) idx = li; // line i maps to atom i when index not given
+
+    out.set(idx, { dir: [ax, by, cz], length, color });
+  }
+
+  return out;
+}
+
+function makeArrowAt(positionVec3, dirVec3, length, colorHexInt) {
+  const dir = dirVec3.clone();
+  const L = (typeof length === 'number') ? length : defaultSpinLength;
+  if (dir.lengthSq() < 1e-16 || L <= 1e-8) return null;
+  dir.normalize();
+
+  // ArrowHelper(colorHex|Color)
+  const arrow = new THREE.ArrowHelper(dir, positionVec3, L, colorHexInt);
+  // Optionally tweak shaft/head sizes, if desired:
+  // arrow.line.material.linewidth = 2; // (Note: line width not supported widely in WebGL)
+  // arrow.cone.scale.set(1.0, 1.0, 1.0); // adjust head thickness if needed
+  return arrow;
+}
+
+
+
+
+
+
+
+
+
+
 
 function updateVisualization(options = {}) {
   const {
