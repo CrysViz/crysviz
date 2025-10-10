@@ -1060,7 +1060,10 @@ function createSpinControls(containerId = "spinControls") {
   textarea.placeholder = "x y z scale color\nExample:\n0 0 1 0.5 #ff0000\n1 1 0 2.0 #0000ff";
   textarea.style.width = "100%";
   textarea.style.height = "120px";
+  textarea.style.background= "rgba(16,16,16,0.8)";
+  textarea.style.color= "rgb(255, 255, 255)";
   textPanel.appendChild(textarea);
+
 
   const drawBtn = document.createElement("button");
   drawBtn.textContent = "Draw Spins";
@@ -1113,6 +1116,7 @@ function createSpinControls(containerId = "spinControls") {
 
   // ----- 8️⃣ Parse input & draw -----
   drawBtn.addEventListener("click", drawSpinsFromInput);
+  drawBtn.className="btn-mini highlight"
 
   function drawSpinsFromInput() {
     const input = textarea.value.trim().split("\n").filter(Boolean);
@@ -1140,80 +1144,220 @@ function createSpinControls(containerId = "spinControls") {
     updateSpins(spinsData, parseFloat(slider.value));
   }
 
-  // ----- 9️⃣ Populate spin viewer -----
-  function populateSpinViewer() {
-    viewerPanel.innerHTML = "";
-    if (!spinsData.length) {
-      viewerPanel.textContent = "No spins defined yet.";
-      return;
-    }
+function populateSpinViewer() {
+  // Inject CSS to hide native spin buttons (only once)
+  if (!document.getElementById("hide-native-spin-buttons-style")) {
+    const style = document.createElement("style");
+    style.id = "hide-native-spin-buttons-style";
+    style.textContent = `
+      /* Hide native spin buttons in WebKit browsers */
+      input[type="number"]::-webkit-inner-spin-button,
+      input[type="number"]::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      /* Hide native spin buttons in Firefox */
+      input[type="number"] {
+        -moz-appearance: textfield;
+      }
+    `;
+    document.head.appendChild(style);
+  }
 
-    const table = document.createElement("table");
-    table.style.width = "100%";
-    table.style.borderCollapse = "collapse";
+  viewerPanel.innerHTML = "";
+  if (!spinsData.length) {
+    viewerPanel.textContent = "No spins defined yet.";
+    return;
+  }
 
-    const header = document.createElement("tr");
-    ["Idx", "X", "Y", "Z", "Scale", "Color"].forEach(h => {
-      const th = document.createElement("th");
-      th.textContent = h;
-      th.style.borderBottom = "1px solid #aaa";
-      th.style.padding = "2px";
-      table.appendChild(th);
-      header.appendChild(th);
+  // Helper: create custom number input with vertically stacked buttons
+  function createCustomNumberInput(value, step, onChange) {
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.alignItems = "center";
+    wrapper.style.gap = "4px";
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.value = value.toFixed(2);
+    input.step = step;
+    input.style.width = "40px";
+    input.style.backgroundColor = "#333";
+    input.style.color = "white";
+    input.style.border = "1px solid #ccc";
+    input.style.fontFamily = "monospace";
+    input.style.padding = "2px 6px";
+    input.style.textAlign = "right";
+    input.style.fontSize = "12px";
+    input.style.outline = "none";
+
+    input.addEventListener("keydown", e => {
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
     });
-    table.appendChild(header);
 
-    spinsData.forEach((spin, idx) => {
-      const row = document.createElement("tr");
+    // Container for vertical buttons
+    const btnContainer = document.createElement("div");
+    btnContainer.style.display = "flex";
+    btnContainer.style.flexDirection = "column";
+    btnContainer.style.justifyContent = "center";
+    btnContainer.style.border = "1px solid #444";
+    btnContainer.style.borderRadius = "4px";
+    btnContainer.style.overflow = "hidden";
+    btnContainer.style.height = "32px"; // approx input height
+    btnContainer.style.width = "16px";
+    btnContainer.style.backgroundColor = "#222";
 
-      // Index
-      const tdIdx = document.createElement("td");
-      tdIdx.textContent = spin.atomIndex;
-      tdIdx.style.padding = "2px 4px";
-      row.appendChild(tdIdx);
+    const btnUp = document.createElement("button");
+    btnUp.type = "button";
+    btnUp.textContent = "▲";
+    btnUp.style.cssText = `
+      background: transparent;
+      color: white;
+      border: none;
+      padding: 0;
+      margin: 0;
+      flex: 1;
+      cursor: pointer;
+      font-size: 10px;
+      line-height: 1;
+      user-select: none;
+    `;
 
-      // Editable vector components
-      spin.vector.forEach((val, comp) => {
-        const td = document.createElement("td");
-        td.contentEditable = true;
-        td.textContent = val.toFixed(3);
-        td.style.border = "1px solid #ccc";
-        td.addEventListener("input", () => {
-          spin.vector[comp] = parseFloat(td.textContent);
-          updateSpins(spinsData, parseFloat(slider.value));
-        });
-        row.appendChild(td);
-      });
+  btnUp.addEventListener("mouseenter", () => {
+    btnUp.style.backgroundColor = "#555";
+  });
+  btnUp.addEventListener("mouseleave", () => {
+    btnUp.style.backgroundColor = "transparent";
+  });
 
-      // Editable scale
-      const tdScale = document.createElement("td");
-      tdScale.contentEditable = true;
-      tdScale.textContent = spin.scalingFactor.toFixed(2);
-      tdScale.style.border = "1px solid #ccc";
-      tdScale.addEventListener("input", () => {
-        spin.scalingFactor = parseFloat(tdScale.textContent);
+  const btnDown = document.createElement("button");
+  btnDown.type = "button";
+  btnDown.textContent = "▼";
+  btnDown.style.cssText = btnUp.style.cssText;
+  btnDown.addEventListener("mouseenter", () => {
+    btnDown.style.backgroundColor = "#555";
+  });
+  btnDown.addEventListener("mouseleave", () => {
+    btnDown.style.backgroundColor = "transparent";
+  });
+
+  // Press-and-hold logic
+  let intervalId;
+
+  function changeValue(delta) {
+    let newVal = parseFloat(input.value) + delta;
+    if (isNaN(newVal)) newVal = value;
+    input.value = newVal.toFixed(3);
+    onChange(newVal);
+  }
+
+  btnUp.addEventListener("mousedown", () => {
+    changeValue(parseFloat(step));
+    intervalId = setInterval(() => changeValue(parseFloat(step)), 100);
+  });
+  btnUp.addEventListener("mouseup", () => clearInterval(intervalId));
+  btnUp.addEventListener("mouseleave", () => clearInterval(intervalId));
+
+  btnDown.addEventListener("mousedown", () => {
+    changeValue(-parseFloat(step));
+    intervalId = setInterval(() => changeValue(-parseFloat(step)), 100);
+  });
+  btnDown.addEventListener("mouseup", () => clearInterval(intervalId));
+  btnDown.addEventListener("mouseleave", () => clearInterval(intervalId));
+
+
+    btnContainer.appendChild(btnUp);
+    btnContainer.appendChild(btnDown);
+    wrapper.appendChild(input);
+    wrapper.appendChild(btnContainer);
+
+    return wrapper;
+  }
+
+  const table = document.createElement("table");
+  table.style.width = "auto";
+  table.style.maxWidth = "100%";
+  table.style.borderCollapse = "collapse";
+  table.style.backgroundColor = "transparent";
+
+  const header = document.createElement("tr");
+  ["Idx", "X", "Y", "Z", "Scale", "Color"].forEach(h => {
+    const th = document.createElement("th");
+    th.textContent = h;
+    th.style.borderBottom = "1px solid #aaa";
+    th.style.padding = "2px 2px";
+    th.style.color = "white";
+    th.style.fontSize = "12px";
+    th.style.width = "fit-content";
+    header.appendChild(th);
+  });
+  table.appendChild(header);
+
+  spinsData.forEach((spin) => {
+    const row = document.createElement("tr");
+
+    // Index cell
+    const tdIdx = document.createElement("td");
+    tdIdx.textContent = spin.atomIndex;
+    tdIdx.style.padding = "2px 2px";
+    tdIdx.style.color = "white";
+    tdIdx.style.fontSize = "14px";
+    row.appendChild(tdIdx);
+
+    // Vector components (custom inputs with vertical buttons)
+    spin.vector.forEach((val, comp) => {
+      const td = document.createElement("td");
+      td.style.padding = "2px 2px";
+
+      const customInput = createCustomNumberInput(val, 0.01, newVal => {
+        spin.vector[comp] = newVal;
         updateSpins(spinsData, parseFloat(slider.value));
       });
-      row.appendChild(tdScale);
 
-      // Color dot with picker
-      const tdColor = document.createElement("td");
-      const dot = document.createElement("span");
-      dot.style.display = "inline-block";
-      dot.style.width = "16px";
-      dot.style.height = "16px";
-      dot.style.borderRadius = "50%";
-      dot.style.backgroundColor = spin.color;
-      dot.style.cursor = "pointer";
-      tdColor.appendChild(dot);
-      row.appendChild(tdColor);
-
-      dot.addEventListener("click", () => openColorPicker(spin, dot));
-      table.appendChild(row);
+      td.appendChild(customInput);
+      row.appendChild(td);
     });
 
-    viewerPanel.appendChild(table);
-  }
+    // Scale input with custom buttons
+    const tdScale = document.createElement("td");
+    tdScale.style.padding = "2px 2px";
+
+    const customScaleInput = createCustomNumberInput(spin.scalingFactor, 0.01, newVal => {
+      spin.scalingFactor = newVal;
+      updateSpins(spinsData, parseFloat(slider.value));
+    });
+
+    tdScale.appendChild(customScaleInput);
+    row.appendChild(tdScale);
+
+    // Color dot centered with white border
+    const tdColor = document.createElement("td");
+    tdColor.style.padding = "10px 6px";
+    tdColor.style.display = "flex";
+    tdColor.style.justifyContent = "center";
+    tdColor.style.alignItems = "center";
+
+    const dot = document.createElement("span");
+    dot.style.display = "inline-block";
+    dot.style.width = "16px";
+    dot.style.height = "16px";
+    dot.style.borderRadius = "50%";
+    dot.style.backgroundColor = spin.color;
+    dot.style.border = "2px solid white";
+    dot.style.cursor = "pointer";
+
+    dot.addEventListener("click", () => openColorPicker(spin, dot));
+
+    tdColor.appendChild(dot);
+    row.appendChild(tdColor);
+
+    table.appendChild(row);
+  });
+
+  viewerPanel.appendChild(table);
+}
+  
+
 
 
 function openColorPicker(spin, dot) {
@@ -1235,7 +1379,7 @@ function openColorPicker(spin, dot) {
   pickerPanel.className = "spin-color-picker";
   Object.assign(pickerPanel.style, {
     position: "absolute",
-    background: "#fff",
+    background: "rgba(26,26,26,0.8)",
     border: "1px solid #ccc",
     padding: "10px",
     borderRadius: "8px",

@@ -25,6 +25,7 @@ body {
 }
 
 #ui {
+  height: 98dvh;
   min-width: 300px;
   overflow: auto;
   padding: 20px;
@@ -578,7 +579,6 @@ justify-content: center;
 
 #spinControls {
   max-height: 380px;
-  max-width: 300px;
   overflow-y: auto;
 }
 
@@ -1132,7 +1132,7 @@ body {
     position: fixed;
     top: 0;
     left: -120%;
-    height: 100dvh;
+    height: 98dvh;
     z-index: 1500;
     transition: left 0.3s ease;
   }
@@ -1357,7 +1357,6 @@ body {
   /* Make touch targets larger */
   input[type="checkbox"] {
     transform: scale(1.5);
-    margin-right: 15px;
   }
 
   input[type="range"] {
@@ -1375,12 +1374,6 @@ body {
     height: 24px;
   }
 
-  /* Adjust file label for mobile */
-  #fileLabel {
-    padding: 18px 20px;
-    font-size: 16px;
-    margin: 15px 0;
-  }
 
   /* Adjust bond controls for mobile */
   .bond-control {
