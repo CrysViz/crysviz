@@ -46,7 +46,7 @@ Direct
 0.0 0.0 0.841`;
 
 let camera, controls, renderer, scene;
-let atomsGroup, bondsGroup, latticeGroup;
+let atomsGroup, bondsGroup, latticeGroup,spinGroup;
 let structureData = null;
 let modifiedLattice = null;
 let currentSupercell = null;
@@ -1005,6 +1005,330 @@ function createBondLengthControls() {
     div.appendChild(controlsRow);
     bondControls.appendChild(div);
   });
+}
+
+
+
+
+function createSpinControls(containerId = "spinControls") {
+  const container = document.getElementById(containerId);
+  container.innerHTML = ""; // Clear previous controls
+
+  // ----- 1️⃣ Input Mode Toggle -----
+  const toggleWrapper = document.createElement("tablist");
+  toggleWrapper.className = "spin-input-mode-toggle";
+  toggleWrapper.style.marginBottom = "6px";
+
+  const textModeBtn = document.createElement("button");
+  textModeBtn.textContent = "Text Input";
+  textModeBtn.className = "spin-input-mode-btn active";
+  textModeBtn.disabled = true;
+
+  const viewerModeBtn = document.createElement("button");
+  viewerModeBtn.textContent = "Spin Viewer";
+  viewerModeBtn.className = "spin-input-mode-btn";
+
+  toggleWrapper.appendChild(textModeBtn);
+  toggleWrapper.appendChild(viewerModeBtn);
+  container.appendChild(toggleWrapper);
+
+  // ----- 2️⃣ Slider for scaling arrows -----
+  const sliderWrapper = document.createElement("div");
+  sliderWrapper.style.marginBottom = "8px";
+
+  const sliderLabel = document.createElement("label");
+  sliderLabel.textContent = "Spin Length Factor: ";
+  sliderWrapper.appendChild(sliderLabel);
+
+  const sliderValue = document.createElement("span");
+  sliderValue.textContent = "1.0";
+  sliderValue.style.marginRight = "8px";
+  sliderWrapper.appendChild(sliderValue);
+
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = 0.1;
+  slider.max = 10;
+  slider.step = 0.1;
+  slider.value = 1;
+  sliderWrapper.appendChild(slider);
+  container.appendChild(sliderWrapper);
+
+  // ----- 3️⃣ Text Input Panel -----
+  const textPanel = document.createElement("div");
+  const textarea = document.createElement("textarea");
+  textarea.placeholder = "x y z scale color\nExample:\n0 0 1 0.5 #ff0000\n1 1 0 2.0 #0000ff";
+  textarea.style.width = "100%";
+  textarea.style.height = "120px";
+  textPanel.appendChild(textarea);
+
+  const drawBtn = document.createElement("button");
+  drawBtn.textContent = "Draw Spins";
+  drawBtn.style.marginTop = "6px";
+  textPanel.appendChild(drawBtn);
+  container.appendChild(textPanel);
+
+  // ----- 4️⃣ Viewer Panel -----
+  const viewerPanel = document.createElement("div");
+  viewerPanel.style.display = "none";
+  container.appendChild(viewerPanel);
+
+  // ----- 5️⃣ Mode Switch -----
+  textModeBtn.addEventListener("click", () => {
+    textModeBtn.className = "spin-input-mode-btn active";
+    viewerModeBtn.className = "spin-input-mode-btn";
+    textPanel.style.display = "block";
+    viewerPanel.style.display = "none";
+    textModeBtn.disabled = true;
+    viewerModeBtn.disabled = false;
+  });
+
+  viewerModeBtn.addEventListener("click", () => {
+    textModeBtn.className = "spin-input-mode-btn";
+    viewerModeBtn.className = "spin-input-mode-btn active";
+    textPanel.style.display = "none";
+    viewerPanel.style.display = "block";
+    textModeBtn.disabled = false;
+    viewerModeBtn.disabled = true;
+    populateSpinViewer();
+  });
+
+  // ----- 6️⃣ Spins data -----
+  let spinsData = [];
+
+  // ----- 7️⃣ Slider live updates -----
+  slider.addEventListener("input", () => {
+    let val = parseFloat(slider.value);
+
+    // sticky zone near 1
+    if (Math.abs(val - 1) < 0.05) val = 1;
+
+    slider.value = val;
+    sliderValue.textContent = val.toFixed(2);
+
+    if (spinsData.length) {
+      updateSpins(spinsData, val);
+    }
+  });
+
+  // ----- 8️⃣ Parse input & draw -----
+  drawBtn.addEventListener("click", drawSpinsFromInput);
+
+  function drawSpinsFromInput() {
+    const input = textarea.value.trim().split("\n").filter(Boolean);
+    const spins = [];
+
+    input.forEach((line, i) => {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 4) return; // ignore invalid lines
+
+      const x = parseFloat(parts[0]);
+      const y = parseFloat(parts[1]);
+      const z = parseFloat(parts[2]);
+      const scalingFactor = parseFloat(parts[3]);
+      const color = parts[4] || "#000000";
+
+      spins.push({
+        atomIndex: i,
+        vector: [x, y, z],
+        scalingFactor,
+        color
+      });
+    });
+
+    spinsData = spins;
+    updateSpins(spinsData, parseFloat(slider.value));
+  }
+
+  // ----- 9️⃣ Populate spin viewer -----
+  function populateSpinViewer() {
+    viewerPanel.innerHTML = "";
+    if (!spinsData.length) {
+      viewerPanel.textContent = "No spins defined yet.";
+      return;
+    }
+
+    const table = document.createElement("table");
+    table.style.width = "100%";
+    table.style.borderCollapse = "collapse";
+
+    const header = document.createElement("tr");
+    ["Idx", "X", "Y", "Z", "Scale", "Color"].forEach(h => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      th.style.borderBottom = "1px solid #aaa";
+      th.style.padding = "2px";
+      table.appendChild(th);
+      header.appendChild(th);
+    });
+    table.appendChild(header);
+
+    spinsData.forEach((spin, idx) => {
+      const row = document.createElement("tr");
+
+      // Index
+      const tdIdx = document.createElement("td");
+      tdIdx.textContent = spin.atomIndex;
+      tdIdx.style.padding = "2px 4px";
+      row.appendChild(tdIdx);
+
+      // Editable vector components
+      spin.vector.forEach((val, comp) => {
+        const td = document.createElement("td");
+        td.contentEditable = true;
+        td.textContent = val.toFixed(3);
+        td.style.border = "1px solid #ccc";
+        td.addEventListener("input", () => {
+          spin.vector[comp] = parseFloat(td.textContent);
+          updateSpins(spinsData, parseFloat(slider.value));
+        });
+        row.appendChild(td);
+      });
+
+      // Editable scale
+      const tdScale = document.createElement("td");
+      tdScale.contentEditable = true;
+      tdScale.textContent = spin.scalingFactor.toFixed(2);
+      tdScale.style.border = "1px solid #ccc";
+      tdScale.addEventListener("input", () => {
+        spin.scalingFactor = parseFloat(tdScale.textContent);
+        updateSpins(spinsData, parseFloat(slider.value));
+      });
+      row.appendChild(tdScale);
+
+      // Color dot with picker
+      const tdColor = document.createElement("td");
+      const dot = document.createElement("span");
+      dot.style.display = "inline-block";
+      dot.style.width = "16px";
+      dot.style.height = "16px";
+      dot.style.borderRadius = "50%";
+      dot.style.backgroundColor = spin.color;
+      dot.style.cursor = "pointer";
+      tdColor.appendChild(dot);
+      row.appendChild(tdColor);
+
+      dot.addEventListener("click", () => openColorPicker(spin, dot));
+      table.appendChild(row);
+    });
+
+    viewerPanel.appendChild(table);
+  }
+
+
+function openColorPicker(spin, dot) {
+  // Remove any existing picker first
+  document.querySelectorAll(".spin-color-picker").forEach(p => p.remove());
+
+  // --- Helper: ensure color is in valid hex format ---
+  function toHexColor(color) {
+    const ctx = document.createElement("canvas").getContext("2d");
+    ctx.fillStyle = color;
+    return ctx.fillStyle.startsWith("#") ? ctx.fillStyle : "#000000";
+  }
+
+  const currentHex = toHexColor(spin.color || "#000000");
+  let selectedHex = currentHex;
+
+  // --- Create main picker container ---
+  const pickerPanel = document.createElement("div");
+  pickerPanel.className = "spin-color-picker";
+  Object.assign(pickerPanel.style, {
+    position: "absolute",
+    background: "#fff",
+    border: "1px solid #ccc",
+    padding: "10px",
+    borderRadius: "8px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+    zIndex: 9999,
+  });
+
+  // --- Create the color picker using external helper ---
+  const { element: pickerElement } = createColorPicker(currentHex, (hex) => {
+    selectedHex = hex;
+    dot.style.background = hex; // live preview
+  });
+
+  // --- Apply / Reset Buttons ---
+  const buttonRow = document.createElement("div");
+  Object.assign(buttonRow.style, {
+    display: "flex",
+    justifyContent: "space-between",
+    marginTop: "10px",
+    gap: "8px"
+  });
+
+  const resetBtn = document.createElement("button");
+  resetBtn.textContent = "Reset";
+  Object.assign(resetBtn.style, {
+    padding: "4px 8px",
+    borderRadius: "4px",
+    border: "1px solid #ccc",
+    cursor: "pointer",
+    background: "#f6f6f6"
+  });
+
+  const applyBtn = document.createElement("button");
+  applyBtn.textContent = "Apply";
+  Object.assign(applyBtn.style, {
+    padding: "4px 8px",
+    borderRadius: "4px",
+    border: "none",
+    cursor: "pointer",
+    background: "#007bff",
+    color: "#fff"
+  });
+
+  buttonRow.appendChild(resetBtn);
+  buttonRow.appendChild(applyBtn);
+
+  pickerPanel.appendChild(pickerElement);
+  pickerPanel.appendChild(buttonRow);
+  document.body.appendChild(pickerPanel);
+
+  // --- Position near the clicked dot ---
+  const rect = dot.getBoundingClientRect();
+  pickerPanel.style.left = `${rect.left + window.scrollX + 24}px`;
+  pickerPanel.style.top = `${rect.top + window.scrollY - 200}px`;
+
+  // --- Close picker helper ---
+  const closePicker = () => {
+    pickerPanel.remove();
+    document.removeEventListener("mousedown", outsideClick);
+  };
+
+  // --- Handle outside clicks ---
+  const outsideClick = (e) => {
+    if (!pickerPanel.contains(e.target) && e.target !== dot) closePicker();
+  };
+
+  document.addEventListener("mousedown", outsideClick);
+  pickerPanel.addEventListener("mousedown", (e) => e.stopPropagation());
+
+  // --- Apply button behavior ---
+  applyBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    spin.color = selectedHex;
+    dot.style.backgroundColor = selectedHex;
+    updateSpins(spinsData, parseFloat(slider.value));
+    closePicker();
+  });
+
+  // --- Reset button behavior ---
+  resetBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectedHex = "#000000";
+    spin.color = selectedHex;
+    dot.style.backgroundColor = selectedHex;
+    updateSpins(spinsData, parseFloat(slider.value));
+    closePicker();
+  });
+}
+
+
+
+
+
 }
 
 function distance(pos1, pos2) {
@@ -2453,7 +2777,9 @@ function createShareButton() {
 
   // Try multiple locations to ensure the button appears
   const structureControls = document.getElementById('structureControls');
+
   const bondControlsGroup = document.getElementById('bondControlsGroup');
+  const spinControlsGroup = document.getElementById('spinControlsGroup');
   const composition = document.getElementById('composition');
 
   if (structureControls) {
@@ -2505,6 +2831,7 @@ function loadSharedStructure() {
         loadIndividualAtomColors,
         updateVisualization,
         createBondLengthControls,
+        createSpinControls,
         createShareButton,
         switchCameraType,
         resetView,
@@ -2566,7 +2893,9 @@ function loadSharedStructure() {
         // Show structure controls and create share button
         document.getElementById('structureControls').style.display = 'block';
         document.getElementById('bondControlsGroup').style.display = 'block';
+        document.getElementById('spinControlsGroup').style.display = 'block';
         createBondLengthControls();
+        createSpinControls();
         createShareButton();
 
         console.log('About to call updateVisualization with structure data:', structureData);
@@ -3162,6 +3491,104 @@ function updateBonds() {
 
 
 
+function updateSpins(spinData, spinFactor = 1) {
+  // Dispose old spin arrows
+  if (spinGroup) {
+    spinGroup.children.forEach(child => {
+      child.traverse(c => {
+        if (c.geometry) c.geometry.dispose();
+        if (c.material) c.material.dispose();
+      });
+    });
+    scene.remove(spinGroup);
+  }
+
+  spinGroup = new THREE.Group();
+
+  if (!structureData || !structureData.positions || !structureData.lattice) return;
+
+  // --- 1️⃣ Wrap atomic positions periodically ---
+  const wrapped = periodicWrapped(structureData.positions, structureData.elements);
+  const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+
+  // --- 2️⃣ Get lattice vectors for ghost cell replication (like bonds) ---
+  const lattice = structureData.lattice;
+  const a = new THREE.Vector3(...lattice[0]);
+  const b = new THREE.Vector3(...lattice[1]);
+  const c = new THREE.Vector3(...lattice[2]);
+
+  // --- 3️⃣ Render arrows per atom ---
+  for (let i = 0; i < wrappedCart.length; i++) {
+    const atomIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    const spin = spinData.find(s => s.atomIndex === atomIndex);
+    if (!spin || !spin.vector || spin.vector.length !== 3) continue;
+
+    const { vector, scalingFactor = 1.0, color = "#000000" } = spin;
+
+    const origin = new THREE.Vector3(...wrappedCart[i]);
+    const dirVec = new THREE.Vector3(...vector);
+    const baseLen = dirVec.length();
+    const totalLength = baseLen * scalingFactor * spinFactor;
+    const dir = dirVec.clone().normalize();
+
+    // --- Material (match atom style) ---
+    const material = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(color),
+      roughness: 0.3,
+      metalness: 0.05,
+      clearcoat: 0.4,
+      clearcoatRoughness: 0.1,
+      emissive: new THREE.Color(color),
+      emissiveIntensity: 0.15
+    });
+
+    // --- Shaft geometry (extends both directions) ---
+    const shaftRadius = 0.1;
+    const shaftLength = totalLength;
+
+    const shaftPos = new THREE.Mesh(
+      new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength / 2, 16),
+      material
+    );
+    shaftPos.position.set(0, shaftLength / 4, 0);
+
+    const shaftNeg = new THREE.Mesh(
+      new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength / 2, 16),
+      material
+    );
+    shaftNeg.position.set(0, -shaftLength / 4, 0);
+
+    // --- Tip (only positive direction) ---
+    const tipLength = 0.8;
+    const tipRadius = 0.3;
+    const tip = new THREE.Mesh(
+      new THREE.ConeGeometry(tipRadius, tipLength, 16),
+      material
+    );
+    tip.position.set(0, shaftLength / 2 + tipLength / 2, 0);
+
+    // --- Combine into arrowGroup ---
+    const arrowGroup = new THREE.Group();
+    arrowGroup.add(shaftPos);
+    arrowGroup.add(shaftNeg);
+    arrowGroup.add(tip);
+
+    // --- Orientation ---
+    const arrowAxis = new THREE.Vector3(0, 1, 0);
+    arrowGroup.quaternion.setFromUnitVectors(arrowAxis, dir);
+    arrowGroup.position.copy(origin);
+
+    // --- Add to main group ---
+    spinGroup.add(arrowGroup);
+  }
+
+  // --- 4️⃣ Add to scene ---
+  scene.add(spinGroup);
+}
+
+
+
+
 function updateLattice() {
   disposeGroup(latticeGroup);
 
@@ -3366,8 +3793,10 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 
     document.getElementById('structureControls').style.display = 'block';
     document.getElementById('bondControlsGroup').style.display = 'block';
+    document.getElementById('spinControlsGroup').style.display = 'block';
 
     createBondLengthControls();
+    createSpinControls();
     createShareButton();
     updateVisualization();
     // Rebuild camera with size/distance based on structure and zoom scale
@@ -3648,6 +4077,7 @@ function init() {
         clearMeasureGraphics();
         // Rebuild controls and view
         createBondLengthControls();
+        createSpinControls();
         updateVisualization();
       }
       return; // nothing else to do in delete mode
@@ -4049,6 +4479,7 @@ function sizeGizmo(){
           createSupercell(currentSupercell.nx,currentSupercell.ny,currentSupercell.nz)
           }
       createBondLengthControls();
+      createSpinControls();
       updateVisualization();
       clearMeasure();
     }

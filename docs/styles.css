@@ -417,7 +417,7 @@ input[type="checkbox"] {
   opacity: 1;
 }
 
-  .bond-toggle {
+.bond-toggle {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -529,6 +529,174 @@ justify-content: center;
   margin: 0;
 }
 
+.spin-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: rgba(6,70,50,0.8);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 0.6em 1em;
+    cursor: pointer;
+    user-select: none;
+    margin: 15px 0;
+    transition: background-color 0.2s, box-shadow 0.2s;
+  }
+
+  .spin-toggle:hover,
+  .spin-toggle:focus {
+    background-color: rgba(6,70,50,0.8);
+    box-shadow: 0 0 0 2px rgba(6,70,50,0.8);
+    border: 1px solid rgba(255,255,255,0.1);
+    outline: none;
+  }
+
+  .spin-toggle h4 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .toggle-icon {
+    font-size: 1.25rem;
+    margin-left: 0.5em;
+    transition: transform 0.2s;
+  }
+
+  .collapsible-content {
+    display: none;
+    margin-top: 0.5em;
+    padding: 0.5em 1em;
+    border-radius: 8px;
+    border:1px solid rgba(255,255,255,0.3);
+  }
+
+  .collapsible-content.open {
+    display: block;
+  }
+
+
+#spinControls {
+  max-height: 380px;
+  max-width: 300px;
+  overflow-y: auto;
+}
+
+#spinControls::-webkit-scrollbar {
+  width: 6px;
+}
+
+#spinControls::-webkit-scrollbar-track {
+  background: rgba(6,70,50,0.8);
+  border-radius: 3px;
+}
+
+#spinControls::-webkit-scrollbar-thumb {
+  background: rgba(6, 140, 50, 0.4);
+  border-radius: 3px;
+}
+
+.spin-control {
+  justify-content: center;
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border-left: 3px solid rgba(6, 140, 50, 0.4);
+}
+
+.spin-label {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+.spinInputWrapper {
+justify-content: center;
+display: grid; 
+padding: 6px;
+background: rgba(255, 255, 255, 0.05);
+border-radius: 10px;
+gap: 8px;
+
+}
+
+.spin-input-mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 6px;
+  border-radius: 10px;
+}
+
+.spin-input-mode-btn {
+  background: transparent;
+  color: #ddd;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.spin-input-mode-btn:hover {
+  background: rgba(6, 71, 50, 0.5);
+  color: #fff;
+}
+
+.spin-input-mode-btn.active {
+  background: rgba(6, 140, 50, 0.85);
+  color: #fff;
+}
+
+.spin-input-mode-panel {
+  display: block;
+}
+
+.spin-input-mode-panel[hidden] {
+  display: none !important;
+}
+
+
+.bottonWrapper {
+padding: 0px 0px 10px 0px;
+display: flex;
+justify-content: center;
+}
+
+.reset-btn {
+  background: rgba(240, 132, 18,0.90); /*rgba(60,60,60,0.8)*/
+  color: white;
+  border: none;
+  padding: 10px 10px 10px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.reset-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+}
+
+.spin-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 4px 0;
+}
+
+.spin-checkbox input[type="checkbox"] {
+  margin: 0;
+}
+
 #status {
   position: fixed;
   top: 20px;
@@ -596,7 +764,7 @@ justify-content: center;
   border-radius: 3px;
 }
 
-.collapsible-content.open { padding-top:8px; max-height:600px; }
+.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:600px; }
 #composition { color:#d7eef6; font-size:13px; line-height:1.4; }
 #composition [hidden] { display: none !important; }
 #measure { margin-top:8px; }
