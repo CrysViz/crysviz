@@ -417,6 +417,50 @@ input[type="checkbox"] {
   opacity: 1;
 }
 
+  .bond-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: rgba(6,70,50,0.8);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 0.6em 1em;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s, box-shadow 0.2s;
+  }
+
+  .bond-toggle:hover,
+  .bond-toggle:focus {
+    background-color: rgba(6,70,50,0.8);
+    box-shadow: 0 0 0 2px rgba(6,70,50,0.8);
+    border: 1px solid rgba(255,255,255,0.1);
+    outline: none;
+  }
+
+  .bond-toggle h4 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .toggle-icon {
+    font-size: 1.25rem;
+    margin-left: 0.5em;
+    transition: transform 0.2s;
+  }
+
+  .collapsible-content {
+    display: none;
+    margin-top: 0.5em;
+    padding: 0.5em 1em;
+  }
+
+  .collapsible-content.open {
+    display: block;
+  }
+
+
 #bondControls {
   max-height: 300px;
   overflow-y: auto;
@@ -427,7 +471,7 @@ input[type="checkbox"] {
 }
 
 #bondControls::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(6,70,50,0.8);
   border-radius: 3px;
 }
 
@@ -451,10 +495,17 @@ input[type="checkbox"] {
   margin-bottom: 5px;
 }
 
+.bottonWrapper {
+padding: 0px 0px 10px 0px;
+display: flex;
+justify-content: center;
+}
+
 .reset-btn {
   background: rgba(240, 132, 18,0.90); /*rgba(60,60,60,0.8)*/
   color: white;
   border: none;
+  padding: 10px 10px 10px 10px;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
@@ -1017,7 +1068,7 @@ body {
     display: flex;
     max-height: 0;
     overflow: hidden;
-    transition: max-height 0.3s ease-out, border 0.3s ease-out;
+    transition: opacity 0.1s ease-out, border 0.1s ease-out;
     background: transparent;
     border-radius: 12px;
     padding: 0;
@@ -1026,8 +1077,8 @@ body {
   }
 
   .measurement-group.expanded {
-    max-height: 50px;
-    padding: 6px;
+    max-height: 44px;
+    padding: 5px;
     background: rgba(26, 26, 26, 0.95);
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1041,7 +1092,7 @@ body {
   #cameraPanel {
     max-height: 0 !important;
     overflow: hidden !important;
-    transition: max-height 0.3s ease-out, border 0.3s ease-out;
+    transition: opacity 0.1s ease-out, border 0.1s ease-out;
     background: transparent !important;
     border-radius: 12px;
     padding: 0 !important;
@@ -1237,7 +1288,7 @@ body {
 
 @media screen and (max-height: 480px) {
   #ui {
-    height: 100dvh;
+    height: 90dvh;
   }
 
   /* Ensure measurement tools are properly positioned on very small screens */
@@ -1361,8 +1412,8 @@ body {
   /* Ensure both toggle buttons are visible and properly sized */
   .measurement-toggle {
     display: flex !important;
-    width: 50px;
-    height: 50px;
+    width: 55px;
+    height: 55px;
     font-size: 18px;
     z-index: 1003;
   }

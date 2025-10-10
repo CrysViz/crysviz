@@ -70,12 +70,21 @@
         <input type="range" id="bondWidth" min="0.02" max="0.20" step="0.01" value="0.1">
       </label>
     </div>
+     <div id="bondControlsGroup" style="display: none;">
+       <div id="bondPanel">
+         <div id="bondToggle" class="bond-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="bondControlsContent">
+           <h4>Bond Length Controls</h4>
+           <div id="bondToggleIcon" class="toggle-icon">+</div>
+         </div>
 
-    <div class="control-group" id="bondControlsGroup" style="display: none;">
-      <h3>Bond Length Controls</h3>
-      <button id="resetBondLengths" class="reset-btn">Reset to Defaults</button>
-      <div id="bondControls"></div>
-    </div>
+         <div id="bondControlsContent" class="collapsible-content" aria-hidden="true">
+           <div id="resetBondLenghtsWrapper" class="bottonWrapper" aria-hidden="true">
+             <button id="resetBondLengths" class="reset-btn">Reset to Defaults</button>
+           </div>
+         <div id="bondControls"></div>
+        </div>
+      </div>
+  </div>
   </div>
 
   <div id="view"></div>
@@ -211,6 +220,39 @@
     <div class="legend-row"><span class="dot dot-b"></span>b</div>
     <div class="legend-row"><span class="dot dot-c"></span>c</div>
   </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const toggle = document.getElementById('bondToggle');
+  const icon = document.getElementById('bondToggleIcon');
+  const content = document.getElementById('bondControlsContent');
+
+  if (!toggle || !icon || !content) return;
+
+  function setOpen(open) {
+    if (open) {
+      content.classList.add('open');
+      content.setAttribute('aria-hidden', 'false');
+      icon.textContent = '−';
+      toggle.setAttribute('aria-expanded', 'true');
+    } else {
+      content.classList.remove('open');
+      content.setAttribute('aria-hidden', 'true');
+      icon.textContent = '+';
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  setOpen(false);
+  toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
+  toggle.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setOpen(!content.classList.contains('open'));
+    }
+  });
+});
+</script>
 
 </body>
 </html>

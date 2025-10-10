@@ -944,7 +944,7 @@ function createBondLengthControls() {
 
     const valueSpan = document.createElement('span');
     valueSpan.className = 'slider-value';
-    valueSpan.textContent = `${bondLengths[pair].toFixed(3)} Å`;
+    valueSpan.textContent = `${bondLengths[pair].toFixed(2)} Å`;
     label.appendChild(valueSpan);
 
     const controlsRow = document.createElement('div');
@@ -963,7 +963,7 @@ function createBondLengthControls() {
     const textInput = document.createElement('input');
     textInput.type = 'number';
     textInput.min = '0.0';
-    textInput.max = '10.0';
+    textInput.max = '6.0';
     textInput.step = '0.01';
     textInput.value = bondLengths[pair];
     textInput.style.width = '70px';
@@ -1017,7 +1017,7 @@ function distance(pos1, pos2) {
 function getBondCutoff(elem1, elem2) {
   const pair1 = elem1 + '-' + elem2;
   const pair2 = elem2 + '-' + elem1;
-  return bondLengths[pair1] || bondLengths[pair2] || 3.0;
+  return bondLengths[pair1] || bondLengths[pair2] || 0.0;
 }
 
 
@@ -3057,7 +3057,7 @@ function updateBonds() {
   const primCarts = wrappedCart.map(p => new THREE.Vector3(p[0], p[1], p[2]));
   const primElems = wrapped.elements;
 
-  const maxCutoff = Math.max(3.0, ...Object.values(bondLengths || {dummy:3.0}));
+  const maxCutoff = Math.max(0.0, ...Object.values(bondLengths || {dummy:0.0}));
 
 
   const ax = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(a.length(), 1e-6))));
