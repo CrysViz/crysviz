@@ -1121,16 +1121,26 @@ function createSpinControls(containerId = "spinControls") {
   function drawSpinsFromInput() {
     const input = textarea.value.trim().split("\n").filter(Boolean);
     const spins = [];
+    let scalingFactor = null;
+    let color = null;
 
     input.forEach((line, i) => {
       const parts = line.trim().split(/\s+/);
-      if (parts.length < 4) return; // ignore invalid lines
+      if (parts.length < 3) return; // ignore invalid lines
 
       const x = parseFloat(parts[0]);
       const y = parseFloat(parts[1]);
       const z = parseFloat(parts[2]);
-      const scalingFactor = parseFloat(parts[3]);
-      const color = parts[4] || "#000000";
+
+      if (/^-?\d+(\.\d+)?$/.test(parts[3])) {
+        scalingFactor = parseFloat(parts[3]);
+        color = parts[4] || "#000000";
+       }
+      else {
+        console.log("not a number")  
+        scalingFactor = 1.0;
+        color = parts[3] || "#000000";
+      }
 
       spins.push({
         atomIndex: i,
@@ -1432,8 +1442,18 @@ function openColorPicker(spin, dot) {
 
   // --- Position near the clicked dot ---
   const rect = dot.getBoundingClientRect();
+  let topPosition = rect.top + window.scrollY - 200;
+  let bottomSpace = window.innerHeight - (rect.top + window.scrollY + 24 + pickerPanel.offsetHeight);
+
+  // Ensure at least 40px space at the bottom of the screen
+  if (bottomSpace < 40) {
+      topPosition = window.innerHeight - pickerPanel.offsetHeight - 40; // Move it up so it has 40px from the bottom
+  }
+
   pickerPanel.style.left = `${rect.left + window.scrollX + 24}px`;
-  pickerPanel.style.top = `${rect.top + window.scrollY - 200}px`;
+  pickerPanel.style.top = `${topPosition}px`;
+
+
 
   // --- Close picker helper ---
   const closePicker = () => {

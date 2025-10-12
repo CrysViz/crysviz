@@ -86,9 +86,9 @@ body.panel-hidden #axesLegend {
   cursor: pointer;
   transition: transform 0.2s ease;
 }
-.logo:hover,
-.logo:focus {
-  transform: scale(1.02);
+.logo:hover{
+  transform: scale(1.05);
+  filter: drop-shadow(0 8px 25px rgba(6, 110, 50, 0.8));
 }
 
 .visually-hidden {
