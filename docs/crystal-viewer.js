@@ -52,7 +52,7 @@ let modifiedLattice = null;
 let currentSupercell = null;
 let originalStructureData = null; // deep-copy of last loaded structure for restore
 let bondLengths = {};
-let currentLatticeColor = "black"
+let currentLatticeColor = null;
 let defaultBondLengths = {};
 let atomSize = 1.0;
 let bondRadius = 0.08; // radius of bond cylinders
@@ -1915,7 +1915,7 @@ function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2) {
   return bondGroup;
 }
 
-function createLatticeLines(color = 0x000000) {
+function createLatticeLines(color = currentLatticeColor) {
   const group = new THREE.Group();
   const material = new THREE.LineBasicMaterial({
     color: color,
@@ -3756,6 +3756,7 @@ function updateSpins(spinData, spinFactor = 1) {
 
 
 function updateLattice(color = currentLatticeColor) {
+  console.log(`updating lattice to ${color}` );
   disposeGroup(latticeGroup);
   if (showLattice) { 
     latticeGroup = createLatticeLines(color);
@@ -3886,13 +3887,10 @@ function makeArrowAt(positionVec3, dirVec3, length, colorHexInt) {
 
 function openBackgroundColorPicker(scene, dot) {
   // Remove any existing picker first
+  //
+  let currentHex=null
   document.querySelectorAll(".spin-color-picker").forEach(p => p.remove());
-
-  let currentHex = "#E7E7E7"; 
   if (scene.background) currentHex = "#" + scene.background.getHexString();
-
-
-
   let selectedHex = currentHex;
 
 
@@ -3931,14 +3929,6 @@ function getContrastingBorder(hex) {
     dot.style.backgroundColor = hex;           // live preview on dot
 
     let contrastColor = `${getContrastingBorder(selectedHex)}`
-
-    const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-if (isDarkMode) {
-    console.log("The user prefers a dark theme.");
-} else {
-    console.log("The user prefers a light theme.");
-}
 
     dot.style.border = `2px solid ${contrastColor}`
     currentLatticeColor = contrastColor
@@ -4069,7 +4059,7 @@ function updateVisualization(options = {}) {
 
   if (reRenderAtoms) updateAtoms();
   if (reRenderBonds) updateBonds();
-  if (reRenderLattice) updateLattice();
+  if (reRenderLattice) updateLattice(currentLatticeColor);
   if (reRenderOther) updateOther();
 }
 
@@ -4152,8 +4142,19 @@ function loadDefaultStructure() {
 
 function init() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xE7E7E7); // maybe dynamically update this to give the option to change the background?
 
+  const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (isDarkMode) {
+    console.log("The user prefers a dark theme.");
+    scene.background = new THREE.Color(0x021302)
+    currentLatticeColor = 0xE7E7E7
+   } else {
+    console.log("The user prefers a light theme.");
+    scene.background = new THREE.Color(0xE7E7E7);
+    currentLatticeColor = 0x021302
+   }
+
+  console.log(`picked lattice color ${currentLatticeColor}`)
   const w = view.clientWidth || window.innerWidth;
   const h = view.clientHeight || window.innerHeight;
 
@@ -4874,6 +4875,18 @@ function sizeGizmo(){
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
+  const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+   if (isDarkMode && currentLatticeColor === 0x021302){
+    scene.background = new THREE.Color(0x021302)
+    currentLatticeColor = 0xE7E7E7
+    updateLattice()
+   }
+   else if (!isDarkMode && currentLatticeColor === 0xE7E7E7)
+   {
+    scene.background = new THREE.Color(0xE7E7E7);
+    currentLatticeColor = 0x021302
+    updateLattice() 
+   }
 
   // Update camera-relative lighting position
   const cameraPosition = camera.position.clone();

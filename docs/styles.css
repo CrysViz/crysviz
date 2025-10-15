@@ -83,11 +83,17 @@ body.panel-hidden #axesLegend {
   width: 55px;
   height: 55px;
   border-radius: 50%;
-  border: 2px solid rgba(26,26,26,0.9);
+  border: 2px solid rgba(26,26,26,0.8);
   cursor: pointer;
   top: 120px;
   right: 40px;
   z-index: 2000;
+}
+
+@media (prefers-color-scheme: dark) {
+  .background-dot {
+    border: 2px solid rgba(255,255,255,0.8);
+  }
 }
 
 .logo {
