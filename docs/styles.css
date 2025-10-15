@@ -94,6 +94,23 @@ body.panel-hidden #axesLegend {
   z-index: 999;
 }
 
+.popup {
+  position: absolute;
+  top: 120px;
+  left: 120px;
+  overflow: auto;
+  background: rgba(26,26,26,0.9);
+  border: 1px solid #444;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  z-index: 999;
+  display: none;         /* initially hidden */
+  user-select: none;     /* prevent text selection while dragging */
+}
+.popup table * {
+  user-select: text !important;
+}
+
 @media (prefers-color-scheme: dark) {
    .background-dot {
      border: 2px solid rgba(255,255,255,0.8);
@@ -1414,6 +1431,15 @@ body {
   right: 20px;
   z-index: 2000;
 }
+
+  /* Mobile version*/
+  .popup {
+    position: fixed;
+    max-height: 300px;
+    top:40px;
+    left: 100px
+  }
+
 
   /* Mobile toggle button - compact and unobtrusive */
   .measurement-toggle {

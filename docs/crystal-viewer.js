@@ -61,6 +61,8 @@ let defaultBackgroundColor = null;
 let defaultBondLengths = {};
 let atomSize = 1.0;
 let structure2OpacityValue=0.5; 
+let mainOpacity = 1.0;
+let secondOpacity = 1.0;
 let bondRadius = 0.08; // radius of bond cylinders
 let showBonds = true;
 let showLattice = true;
@@ -4128,7 +4130,9 @@ function updateVisualization(options = {}) {
     reRenderAtoms = true,
     reRenderBonds = true,
     reRenderLattice = true,
-    reRenderOther = true
+    reRenderOther = true,
+    sOpactiy = secondOpacity,
+    mOpacity = mainOpacity
   } = options;
 
   if (!structureData) {
@@ -4137,9 +4141,9 @@ function updateVisualization(options = {}) {
   }
 
   if (reRenderAtoms) {
-    updateAtoms();
+    updateAtoms(mOpacity);
     if (atomsGroup2){
-      addSecondStructure()
+      addSecondStructure(sOpactiy)
      }
   }
 
@@ -4826,21 +4830,26 @@ function sizeGizmo(){
     structure2OpacityValue = parseFloat(e.target.value);
     document.getElementById('structure2OpacityValue').textContent = structure2OpacityValue.toFixed(1);
     if (showSecond){
+     mainOpacity = 2*structure2OpacityValue
+     secondOpacity = 1.0
 
     if (structure2OpacityValue < 0.5){
-      addSecondStructure(2*structure2OpacityValue)
-      updateAtoms(1.0)
+           secondOpacity = 2*structure2OpacityValue
+     mainOpacity = 1.0
       }
     else if (structure2OpacityValue > 0.5){
+      mainOpacity = 1-2 * (structure2OpacityValue - 0.5)
+      secondOpacity = 1.0
       addSecondStructure(1.0)
       updateAtoms(1-2 * (structure2OpacityValue - 0.5))
       console.log(1-2 * (structure2OpacityValue - 0.5))
       }
     else {
-      addSecondStructure(1.0)
-      updateAtoms(1.0)      
-      updateVisualization();
+      secondOpacity =1.0
+      mainOpacity = 1.0
     }
+    updateVisualization(mainOpacity,secondOpacity);
+      
     console.log(`changing opacity to ${structure2OpacityValue}`)
 
       

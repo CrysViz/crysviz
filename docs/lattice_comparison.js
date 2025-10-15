@@ -44,18 +44,8 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
   }
   const popup = document.createElement("div");
   popup.id = "latticeComparisonPopup";
-  popup.style.position = "absolute";
-  popup.style.top = "120px";
-  popup.style.left = "120px";
-  popup.style.width = "500px";
-  popup.style.height = "460px";
-  popup.style.background = "rgba(26,26,26,0.9)";
-  popup.style.border = "1px solid #444";
-  popup.style.borderRadius = "12px";
-  popup.style.boxShadow = "0 4px 12px rgba(0,0,0,0.5)";
-  popup.style.zIndex = 999;
-  popup.style.display = "none";
-  popup.style.userSelect = "none";
+  popup.className="popup"
+
 
   // Header bar
   const header = document.createElement("div");
@@ -92,15 +82,38 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
   header.appendChild(closeBtn);
 
   // Canvas
+  //
+  // the dpi part results on a higher resolution figure on high-res displays
+  const dpi = window.devicePixelRatio || 1;
   const canvas = document.createElement("canvas");
-  canvas.width = 400;
-  canvas.height = 400;
+
+  let displayWidth = null;
+  let displayHeight = null;
+  let Size = null;
+  console.log(window.innerWidth);
+  if (window.innerWidth > 1024) {
+
+    displayWidth = 400;   // CSS pixels
+    displayHeight = 400;
+    Size=16;
+  }
+  else{
+    displayWidth = 200;
+    displayHeight = 200;
+    Size=12;
+  }
+
+
+  canvas.width = displayWidth * dpi;   // actual pixels
+  canvas.height = displayHeight * dpi;
+  canvas.style.width = displayWidth + "px";   // CSS size
+  canvas.style.height = displayHeight + "px";
   canvas.style.display = "block";
   canvas.style.margin = "10px auto 0 auto";
   popup.appendChild(canvas);
   document.body.appendChild(popup);
   const ctx = canvas.getContext("2d");
-
+  
   const center = {x: canvas.width/2, y: canvas.height/2 + 10};
   const radius = Math.min(canvas.width, canvas.height)/2 - 60;
   const numAxes = diffs.length;
@@ -109,10 +122,12 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
   // --------------------------
   // Draw grid with ticks
   // --------------------------
+  // font size needs to be adapted for high-res displays 
+  const fontSize = Size * dpi;
   ctx.strokeStyle = "#666";
   ctx.fillStyle = "#fff";
   ctx.lineWidth = 1;
-  ctx.font = "18px sans-serif";
+  ctx.font = `${fontSize}px sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
@@ -165,21 +180,19 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
     else ctx.lineTo(x,y);
   });
   ctx.closePath();
-  ctx.fillStyle = "rgba(9,140,50, 0.3)";
+  ctx.fillStyle = "rgba(9,140,50, 0.4)";
   ctx.fill();
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 4;
   ctx.stroke();
-
   // --------------------------
   // Collapsible matrix & differences panel
   // --------------------------
   const collapsible = document.createElement("div");
   collapsible.style.width = "100%";
   collapsible.style.margin = "10px auto";
+  collapsible.style.border = 
   collapsible.style.background = "#222";
-  collapsible.style.border = "1px solid #444";
-  collapsible.style.borderRadius = "6px";
   collapsible.style.color = "#fff";
   popup.appendChild(collapsible);
 
@@ -210,6 +223,7 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
   // Table
   const table = document.createElement("table");
   table.style.width="100%";
+  table.style.fontSize = `${Size}px`;
   table.style.borderCollapse="collapse";
   content.appendChild(table);
 
@@ -221,6 +235,7 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
     th.style.borderBottom="1px solid #555";
     th.style.padding="2px 5px";
     th.style.color="#fff";
+    th.style.textAlign = "left";
     headRow.appendChild(th);
   });
   thead.appendChild(headRow);
@@ -231,8 +246,8 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
   keys.forEach((k,i)=>{
     const row = document.createElement("tr");
     const parameter = label[i]
-    const v1 = p1[k].toFixed(4);
-    const v2 = p2[k].toFixed(4);
+    const v1 = p1[k].toFixed(2);
+    const v2 = p2[k].toFixed(2);
     const diffPercent = (diffs[i]*100).toFixed(2)+"%";
 
     [parameter,v1,v2,diffPercent].forEach(val=>{
@@ -249,22 +264,40 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
   // --------------------------
   // Dragging only from header
   // --------------------------
-  let offsetX, offsetY, dragging=false;
-  header.addEventListener("mousedown", e=>{
-    dragging=true;
+  let offsetX, offsetY, dragging = false;
+
+  header.addEventListener("mousedown", (e) => {
+    dragging = true;
     offsetX = e.clientX - popup.offsetLeft;
     offsetY = e.clientY - popup.offsetTop;
     header.style.cursor = "grabbing";
   });
-  document.addEventListener("mouseup", ()=>{
-    dragging=false;
-    header.style.cursor="move";
+
+  document.addEventListener("mouseup", () => {
+    dragging = false;
+    header.style.cursor = "move";
   });
-  document.addEventListener("mousemove", e=>{
-    if(!dragging) return;
-    popup.style.left = e.clientX - offsetX + "px";
-    popup.style.top = e.clientY - offsetY + "px";
-  });
+
+  document.addEventListener("mousemove", (e) => {
+  if (!dragging) return;
+
+  // Calculate new positions
+  let newLeft = e.clientX - offsetX;
+  let newTop = e.clientY - offsetY;
+
+  // Compute viewport bounds
+  const maxLeft = window.innerWidth - popup.offsetWidth;
+  const maxTop = window.innerHeight - popup.offsetHeight;
+
+  // Clamp position so popup stays in view
+  newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+  newTop = Math.max(0, Math.min(newTop, maxTop));
+
+  popup.style.left = newLeft + "px";
+  popup.style.top = newTop + "px";
+});
+
+
 
   return popup;
 }
