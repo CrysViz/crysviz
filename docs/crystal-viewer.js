@@ -53,6 +53,7 @@ let currentSupercell = null;
 let originalStructureData = null; // deep-copy of last loaded structure for restore
 let bondLengths = {};
 let currentLatticeColor = null;
+let defaultBackgroundColor = null;
 let defaultBondLengths = {};
 let atomSize = 1.0;
 let bondRadius = 0.08; // radius of bond cylinders
@@ -3935,7 +3936,7 @@ function getContrastingBorder(hex) {
   });
 
 
-  dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`;
+  //dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`;
 
   // --- Apply / Reset Buttons ---
   const buttonRow = document.createElement("div");
@@ -3953,7 +3954,7 @@ function getContrastingBorder(hex) {
     borderRadius: "4px",
     border: "1px solid #ccc",
     cursor: "pointer",
-    background: "#f6f6f6"
+    background: defaultBackgroundColor,
   });
 
   const applyBtn = document.createElement("button");
@@ -4007,22 +4008,22 @@ function getContrastingBorder(hex) {
   // --- Reset button behavior ---
   resetBtn.addEventListener("click", (e) => {
     e.stopPropagation();
+    closePicker();
     const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
    if (isDarkMode )
     {
     scene.background = new THREE.Color(0x021302)
     currentLatticeColor = 0xE7E7E7;
-    dot.style.border = "2px solid 0xE7E7E7";
+    dot.style.border = `2px solid #E7E7E7`
     updateLattice()
    }
    else if (!isDarkMode )
    {
     scene.background = new THREE.Color(0xE7E7E7);
     currentLatticeColor = 0x021302
-    dot.style.border = "2px solid 0x021302";
+    dot.style.border = `2px solid #021302`
     updateLattice()
    }
-    closePicker();
 
   });
 }
@@ -4039,11 +4040,9 @@ function createBackgroundControl() {
 
   // Make it visible and clickable
   dot.style.position = "fixed";
-  dot.style.zIndex = "9999";
+  dot.style.zIndex = "999";
   dot.style.pointerEvents = "auto";
   dot.style.borderRadius = "50%";
-  dot.style.backgroundColor = currentBackground;
-
   dot.style.cursor = "pointer";
 
   // Attach click listener directly
@@ -4156,10 +4155,12 @@ function init() {
   if (isDarkMode) {
     console.log("The user prefers a dark theme.");
     scene.background = new THREE.Color(0x021302)
+    defaultBackgroundColor = 0x021302
     currentLatticeColor = 0xE7E7E7
    } else {
     console.log("The user prefers a light theme.");
     scene.background = new THREE.Color(0xE7E7E7);
+    defaultBackgroundColor = 0xE7E7E7
     currentLatticeColor = 0x021302
    }
 
@@ -4887,12 +4888,14 @@ function animate() {
   const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
    if (isDarkMode && currentLatticeColor === 0x021302){
     scene.background = new THREE.Color(0x021302)
+    defaultBackgroundColor = 0x021302
     currentLatticeColor = 0xE7E7E7
     updateLattice()
    }
    else if (!isDarkMode && currentLatticeColor === 0xE7E7E7)
    {
     scene.background = new THREE.Color(0xE7E7E7);
+    defaultBackgroundColor = 0xE7E7E7
     currentLatticeColor = 0x021302
     updateLattice() 
    }

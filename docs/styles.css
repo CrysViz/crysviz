@@ -87,14 +87,14 @@ body.panel-hidden #axesLegend {
   cursor: pointer;
   top: 120px;
   right: 40px;
-  z-index: 2000;
+  z-index: 999;
 }
 
 @media (prefers-color-scheme: dark) {
-  .background-dot {
-    border: 2px solid rgba(255,255,255,0.8);
-  }
-}
+   .background-dot {
+     border: 2px solid rgba(255,255,255,0.8);
+   }
+ }
 
 .logo {
   margin: 0 0 25px 0;
@@ -746,7 +746,7 @@ justify-content: center;
   line-height: 1.4;
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255,255,255,0.1);
-  z-index: 10000;
+  z-index: 1000;
   overflow-y: visible;
   max-height: 800px;
 }
@@ -1430,9 +1430,9 @@ body {
   }
   .collapsible-content.open { padding-top:8px; max-height:500px; }
 
-  #infoPanel h4 {
-    font-size: 12px;
-    margin: 0 0 4px 0;
+  #infoPanel .structure-toggle h4 {
+    font-size: 11px;
+    margin: 2px 2px 0px 10px;
   }
 
   .comp-row {
@@ -1520,7 +1520,7 @@ body {
     font-size: 11px;
   }
 
-  .collapsible-content.open { padding-top:8px; max-height:300px; }
+  .collapsible-content.open { padding-top:8px; max-height:250px; min-height:250px}
 
   #infoPanel h4 {
     font-size: 11px;
@@ -1599,7 +1599,7 @@ body {
     display: flex !important;
   }
 
-    .background-dot {
+ .background-dot {
   position: fixed;
   width: 40px;
   height: 40px;
@@ -1607,7 +1607,7 @@ body {
   cursor: pointer;
   top: 155px;
   right: 11px;
-  z-index: 2000;
+  z-index: 999;
 }
 
   /* Ensure both toggle buttons are visible and properly sized */
