@@ -71,11 +71,19 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
   closeBtn.style.fontSize = "16px";
   closeBtn.style.color = "#fff";
   closeBtn.addEventListener("click", () => { 
-
     popup.style.display="none";
     const checkbox = document.getElementById("showComparisonInfo");
     if (checkbox) {
       checkbox.checked = false; 
+      showComparisonInfo = false;
+      }
+  });
+
+  closeBtn.addEventListener("touchstart", (e) => {
+    e.preventDefault(); // Prevent ghost click
+    popup.style.display="none";
+    if (checkbox) {
+      checkbox.checked = false;
       showComparisonInfo = false;
     }
   });
