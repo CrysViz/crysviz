@@ -3574,7 +3574,7 @@ function addSecondStructure(opacity) {
   }
 
 
-  if (showCompInfo) {
+  if (showComparisonInfo===true) {
        const latticeCompPanel =  createLatticeComparisonPanel( structureData.lattice, _structureData.lattice)
        if (latticeCompPanel){
         document.body.appendChild(latticeCompPanel);
@@ -4237,7 +4237,6 @@ async function loadSecondStructure(content, fileName = '', isDefault = false) {
     addSecondStructure();
     if (structureData2){
     }
-    showComparisonInfo = true;
     structure2OpacityValue=0.5
 
   } catch (error) {
@@ -4794,12 +4793,14 @@ function sizeGizmo(){
 
   document.getElementById('showSecond').onchange = (e) => {
     showSecond = e.target.checked;
+    let slider = document.getElementById("structure2OpacityValue");
     structure2OpacityValue=0.5;
+    slider.value=0.5;
     addSecondStructure();
   };
 
   document.getElementById('showComparisonInfo').onchange = (e) => {
-    showCompInfo = e.target.checked;
+    showComparisonInfo = e.target.checked;
     addSecondStructure();
   }
 

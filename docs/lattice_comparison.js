@@ -84,8 +84,10 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
 
     popup.style.display="none";
     const checkbox = document.getElementById("showComparisonInfo");
-    if (checkbox) checkbox.checked = false; 
-     
+    if (checkbox) {
+      checkbox.checked = false; 
+      showComparisonInfo = false;
+    }
   });
   header.appendChild(closeBtn);
 
