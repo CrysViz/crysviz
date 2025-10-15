@@ -52,6 +52,7 @@ let modifiedLattice = null;
 let currentSupercell = null;
 let originalStructureData = null; // deep-copy of last loaded structure for restore
 let bondLengths = {};
+let currentLatticeColor = "black"
 let defaultBondLengths = {};
 let atomSize = 1.0;
 let bondRadius = 0.08; // radius of bond cylinders
@@ -3754,7 +3755,7 @@ function updateSpins(spinData, spinFactor = 1) {
 
 
 
-function updateLattice(color = 0x000000) {
+function updateLattice(color = currentLatticeColor) {
   disposeGroup(latticeGroup);
   if (showLattice) { 
     latticeGroup = createLatticeLines(color);
@@ -3931,7 +3932,16 @@ function getContrastingBorder(hex) {
 
     let contrastColor = `${getContrastingBorder(selectedHex)}`
 
+    const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+if (isDarkMode) {
+    console.log("The user prefers a dark theme.");
+} else {
+    console.log("The user prefers a light theme.");
+}
+
     dot.style.border = `2px solid ${contrastColor}`
+    currentLatticeColor = contrastColor
     updateLattice(contrastColor)
     scene.background = new THREE.Color(hex);   // live preview in scene
   });
