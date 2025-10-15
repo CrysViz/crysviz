@@ -3888,7 +3888,7 @@ function openBackgroundColorPicker(scene, dot) {
   // Remove any existing picker first
   document.querySelectorAll(".spin-color-picker").forEach(p => p.remove());
 
-  let currentHex = "#000000"; 
+  let currentHex = "#E7E7E7"; 
   if (scene.background) currentHex = "#" + scene.background.getHexString();
 
 
@@ -3977,7 +3977,7 @@ function getContrastingBorder(hex) {
   const rect = dot.getBoundingClientRect();
   let topPosition = rect.top + window.scrollY + 60;
   let bottomSpace = window.innerHeight - (rect.top + window.scrollY + 24 + pickerPanel.offsetHeight);
-  if (bottomSpace < 40) topPosition = window.innerHeight - pickerPanel.offsetHeight - 40;
+  if (bottomSpace < 40) topPosition = window.innerHeight - pickerPanel.offsetHeight - 65;
 
   pickerPanel.style.left = `${rect.left + window.scrollX - 200}px`;
   pickerPanel.style.top = `${topPosition}px`;
@@ -4007,7 +4007,7 @@ function getContrastingBorder(hex) {
   // --- Reset button behavior ---
   resetBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    selectedHex = "#000000";
+    selectedHex = "#E7E7E7";
     dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`
     scene.background = new THREE.Color(selectedHex);
     dot.style.backgroundColor = selectedHex;
@@ -4139,7 +4139,7 @@ function loadDefaultStructure() {
 
 function init() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1D2F14); // maybe dynamically update this to give the option to change the background?
+  scene.background = new THREE.Color(0xE7E7E7); // maybe dynamically update this to give the option to change the background?
 
   const w = view.clientWidth || window.innerWidth;
   const h = view.clientHeight || window.innerHeight;
