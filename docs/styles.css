@@ -78,6 +78,18 @@ body.panel-hidden #axesLegend {
   left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px);  /* Stick to gizmo */
 }
 
+.background-dot {
+  position: fixed;
+  width: 55px;
+  height: 55px;
+  border-radius: 50%;
+  border: 2px solid white;
+  cursor: pointer;
+  top: 120px;
+  right: 40px;
+  z-index: 2000;
+}
+
 .logo {
   margin: 0 0 25px 0;
   width: 200px;
@@ -765,7 +777,7 @@ justify-content: center;
   border-radius: 3px;
 }
 
-.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:600px; }
+.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:600px;min-height: 380px; }
 #composition { color:#d7eef6; font-size:13px; line-height:1.4; }
 #composition [hidden] { display: none !important; }
 #measure { margin-top:8px; }
@@ -1204,6 +1216,17 @@ body {
   .camera-separator {
     display: none;
   }
+  .background-dot {
+  position: fixed;
+  width: 55px;
+  height: 55px;
+  border-radius: 50%;
+  border: 2px solid white;
+  cursor: pointer;
+  top: 190px;
+  right: 10px;
+  z-index: 2000;
+}
 
   /* Mobile toggle button - compact and unobtrusive */
   .measurement-toggle {

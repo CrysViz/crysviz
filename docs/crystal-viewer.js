@@ -2996,6 +2996,7 @@ function loadSharedStructure() {
         updateVisualization,
         createBondLengthControls,
         createSpinControls,
+        createBackgroundControl,
         createShareButton,
         switchCameraType,
         resetView,
@@ -3883,14 +3884,161 @@ function makeArrowAt(positionVec3, dirVec3, length, colorHexInt) {
   return arrow;
 }
 
+function openBackgroundColorPicker(scene, dot) {
+  // Remove any existing picker first
+  document.querySelectorAll(".spin-color-picker").forEach(p => p.remove());
+
+  let currentHex = "#000000"; 
+  if (scene.background) currentHex = "#" + scene.background.getHexString();
 
 
 
+  let selectedHex = currentHex;
 
 
+  function getLuminance(hex) {
+  // Convert hex to RGB
+  const c = hex.startsWith("#") ? hex.substring(1) : hex;
+  const r = parseInt(c.substring(0, 2), 16) / 255;
+  const g = parseInt(c.substring(2, 4), 16) / 255;
+  const b = parseInt(c.substring(4, 6), 16) / 255;
+
+  // Perceived luminance formula
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+function getContrastingBorder(hex) {
+  const lum = getLuminance(hex);
+  return lum > 0.5 ? "#333333" : "#ffffff"; // dark border for light bg, white for dark bg
+}
+
+  // --- Create main picker container ---
+  const pickerPanel = document.createElement("div");
+  pickerPanel.className = "spin-color-picker";
+  Object.assign(pickerPanel.style, {
+    position: "absolute",
+    background: "rgba(26,26,26,0.8)",
+    border: "1px solid #ccc",
+    padding: "10px",
+    borderRadius: "8px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+    zIndex: 9999,
+  });
+
+  // --- Create the color picker using your existing helper ---
+  const { element: pickerElement } = createColorPicker(currentHex, (hex) => {
+    selectedHex = hex;
+    dot.style.backgroundColor = hex;           // live preview on dot
+    dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`
+    scene.background = new THREE.Color(hex);   // live preview in scene
+  });
 
 
+  dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`;
 
+  // --- Apply / Reset Buttons ---
+  const buttonRow = document.createElement("div");
+  Object.assign(buttonRow.style, {
+    display: "flex",
+    justifyContent: "space-between",
+    marginTop: "10px",
+    gap: "8px"
+  });
+
+  const resetBtn = document.createElement("button");
+  resetBtn.textContent = "Reset";
+  Object.assign(resetBtn.style, {
+    padding: "4px 8px",
+    borderRadius: "4px",
+    border: "1px solid #ccc",
+    cursor: "pointer",
+    background: "#f6f6f6"
+  });
+
+  const applyBtn = document.createElement("button");
+  applyBtn.textContent = "Apply";
+  Object.assign(applyBtn.style, {
+    padding: "4px 8px",
+    borderRadius: "4px",
+    border: "none",
+    cursor: "pointer",
+    background: "#007bff",
+    color: "#fff"
+  });
+
+  buttonRow.appendChild(resetBtn);
+  buttonRow.appendChild(applyBtn);
+
+  pickerPanel.appendChild(pickerElement);
+  pickerPanel.appendChild(buttonRow);
+  document.body.appendChild(pickerPanel);
+
+  // --- Position near the dot ---
+  const rect = dot.getBoundingClientRect();
+  let topPosition = rect.top + window.scrollY + 60;
+  let bottomSpace = window.innerHeight - (rect.top + window.scrollY + 24 + pickerPanel.offsetHeight);
+  if (bottomSpace < 40) topPosition = window.innerHeight - pickerPanel.offsetHeight - 40;
+
+  pickerPanel.style.left = `${rect.left + window.scrollX - 200}px`;
+  pickerPanel.style.top = `${topPosition}px`;
+
+  // --- Close picker helper ---
+  const closePicker = () => {
+    pickerPanel.remove();
+    document.removeEventListener("mousedown", outsideClick);
+  };
+
+  const outsideClick = (e) => {
+    if (!pickerPanel.contains(e.target) && e.target !== dot) closePicker();
+  };
+
+  document.addEventListener("mousedown", outsideClick);
+  pickerPanel.addEventListener("mousedown", (e) => e.stopPropagation());
+
+  // --- Apply button behavior ---
+  applyBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`;
+    scene.background = new THREE.Color(selectedHex); // lock in color
+    dot.style.backgroundColor = selectedHex;
+    closePicker();
+  });
+
+  // --- Reset button behavior ---
+  resetBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectedHex = "#000000";
+    dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`
+    scene.background = new THREE.Color(selectedHex);
+    dot.style.backgroundColor = selectedHex;
+    closePicker();
+  });
+}
+
+
+function createBackgroundControl() {
+  const dot = document.getElementById("backgroundDot");
+  if (!dot) {
+    console.error("No element found with ID 'backgroundDot'");
+    return;
+  }
+
+  let currentBackground = scene.backgrounda
+
+  // Make it visible and clickable
+  dot.style.position = "fixed";
+  dot.style.zIndex = "9999";
+  dot.style.pointerEvents = "auto";
+  dot.style.borderRadius = "50%";
+  dot.style.backgroundColor = currentBackground;
+
+  dot.style.cursor = "pointer";
+
+  // Attach click listener directly
+  dot.addEventListener("click", () => {
+    openBackgroundColorPicker(scene, dot); // uncomment when scene is ready
+  });
+}
 
 
 function updateVisualization(options = {}) {
@@ -3961,6 +4109,7 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 
     createBondLengthControls();
     createSpinControls();
+    createBackgroundControl();
     createShareButton();
     updateVisualization();
     // Rebuild camera with size/distance based on structure and zoom scale
@@ -3990,7 +4139,7 @@ function loadDefaultStructure() {
 
 function init() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xf8f9fa);
+  scene.background = new THREE.Color(0x1D2F14); // maybe dynamically update this to give the option to change the background?
 
   const w = view.clientWidth || window.innerWidth;
   const h = view.clientHeight || window.innerHeight;
@@ -4242,6 +4391,7 @@ function init() {
         // Rebuild controls and view
         createBondLengthControls();
         createSpinControls();
+        createBackgroundControl();
         updateVisualization();
       }
       return; // nothing else to do in delete mode
@@ -4644,6 +4794,7 @@ function sizeGizmo(){
           }
       createBondLengthControls();
       createSpinControls();
+      createBackgroundControl();
       updateVisualization();
       clearMeasure();
     }
@@ -4768,7 +4919,6 @@ function resizeRenderer() {
 }
 
 window.addEventListener('resize', resizeRenderer);
-
 window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
 window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
 
