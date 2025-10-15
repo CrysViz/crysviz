@@ -3,6 +3,8 @@ import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/exam
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 //import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
 import { setupStructureInput, isLikelyCIFContent, parsePOSCAR, cartToFractional } from './structure-input.js';
+import { setupSecondStructureInput } from './compare-structure-input.js';
+import { createLatticeComparisonPanel }from './lattice_comparison.js'
 import { parseCIF} from './file_reader.js';
 import { createColorPicker } from './color-picker.js';
 
@@ -47,7 +49,9 @@ Direct
 
 let camera, controls, renderer, scene;
 let atomsGroup, bondsGroup, latticeGroup,spinGroup;
+let atomsGroup2, bondsGroup2, latticeGroup2,spinGroup2;
 let structureData = null;
+let structureData2 = null;
 let modifiedLattice = null;
 let currentSupercell = null;
 let originalStructureData = null; // deep-copy of last loaded structure for restore
@@ -56,9 +60,12 @@ let currentLatticeColor = null;
 let defaultBackgroundColor = null;
 let defaultBondLengths = {};
 let atomSize = 1.0;
+let structure2OpacityValue=0.5; 
 let bondRadius = 0.08; // radius of bond cylinders
 let showBonds = true;
 let showLattice = true;
+let showSecond = false;
+let showCompInfo = false;
 let showNeighborBonds = false; // Periodic image atoms + bonds across cell (off by default)
 let useOrthographicCamera = true;
 const defaultZoomScale = 0.75; // initial zoom of the atom.
@@ -462,6 +469,8 @@ function createSupercell(nx = 1, ny = 1, nz = 1) {
 function getAtomRadius(element) {
   return (atomicRadii[element] || 1.0) * atomSize;
 }
+
+
 
 // Helper functions for creating measurement markers
 function createAtomRings(position, radius, innerColor, outerColor, element = null) {
@@ -1827,16 +1836,22 @@ function clearMeasure(){
 
 
 
-function createAtomMesh(element, position, atomIndex = null) {
+function createAtomMesh(element, position, atomIndex = null,opacity=1.0) {
   const radius = getAtomRadius(element);
   const color = atomIndex !== null ? getIndividualAtomColor(element, atomIndex) : getElementColor(element);
   const geometry = new THREE.SphereGeometry(radius, 32, 24);
+  let isTransparent = false
+  if (opacity != 1.0)
+    isTransparent = true
   const material = new THREE.MeshPhysicalMaterial({
     color,
+    transparent: isTransparent,
+    opacity: opacity,
     roughness: 0.3,
     metalness: 0.05,
     clearcoat: 0.4,
-    clearcoatRoughness: 0.1
+    clearcoatRoughness: 0.1,
+    opacity: opacity,
   });
   //const material = new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0.0 });
   const mesh = new THREE.Mesh(geometry, material);
@@ -1846,7 +1861,7 @@ function createAtomMesh(element, position, atomIndex = null) {
   return mesh;
 }
 
-function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2) {
+function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2,opacity=1.0) {
   const p1 = new THREE.Vector3(pos1[0], pos1[1], pos1[2]);
   const p2 = new THREE.Vector3(pos2[0], pos2[1], pos2[2]);
   const dist = distance(p1, p2);
@@ -1885,7 +1900,7 @@ function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2) {
 
   const matCommon = {
     transparent: false,
-    opacity: 1.0,
+    opacity: opacity,
     roughness: 0.2,
     metalness: 0.3,
     clearcoat: 0.5,
@@ -2836,6 +2851,8 @@ function shareStructure() {
     bondRadius,
     showBonds,
     showLattice,
+    showSecond,
+    showCompInfo,
     showNeighborBonds,
     useOrthographicCamera,
     bondLengths,
@@ -2989,6 +3006,8 @@ function loadSharedStructure() {
         setBondRadius: (radius) => { bondRadius = radius; },
         setShowBonds: (show) => { showBonds = show; },
         setShowLattice: (show) => { showLattice = show; },
+        setShowSecond: (show) => {showSecond = show; },
+        setShowCompInfo: (show) => {showCompInfo = show; },
         setShowNeighborBonds: (show) => { showNeighborBonds = show; },
         setUseOrthographicCamera: (use) => { useOrthographicCamera = use; },
         setBondLengths: (lengths) => { bondLengths = lengths; },
@@ -2996,6 +3015,7 @@ function loadSharedStructure() {
         loadColorOverrides,
         loadIndividualAtomColors,
         updateVisualization,
+        addSecondStructure,
         createBondLengthControls,
         createSpinControls,
         createBackgroundControl,
@@ -3508,7 +3528,7 @@ function disposeGroup(grp) {
   scene.remove(grp);
 }
 
-function updateAtoms() {
+function updateAtoms(opacity=1.0) {
   disposeGroup(atomsGroup);
   atomsGroup = new THREE.Group();
 
@@ -3516,12 +3536,63 @@ function updateAtoms() {
   const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
   for (let i = 0; i < wrappedCart.length; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    const atomMesh = createAtomMesh(wrapped.elements[i], wrappedCart[i], originalIndex);
+    const atomMesh = createAtomMesh(wrapped.elements[i], wrappedCart[i], originalIndex,opacity);
     atomMesh.userData.sourceIndex = originalIndex;
     atomsGroup.add(atomMesh);
   }
   scene.add(atomsGroup);
 }
+
+function addSecondStructure(opacity) {
+
+  function updateAtomCoordinates(atomIndex, newCoords, _structureData) {
+    if (!_structureData || !_structureData.positions || atomIndex >= _structureData.positions.length) {
+      console.error('Invalid atom index or structure data');
+      return;
+    }
+    // Update the coordinates in the structure data
+    _structureData.positions[atomIndex] = [...newCoords];
+    console.log(`Updated atom ${atomIndex} coordinates to: ${newCoords.join(', ')}`);
+    return _structureData
+  }
+
+  disposeGroup(atomsGroup2);
+
+  if (!showSecond) return;
+    atomsGroup2 = new THREE.Group();
+  
+  const _structureData = structureData2
+  console.log("added second")
+
+  const wrapped = periodicWrapped(_structureData.positions, _structureData.elements);
+  const wrappedCart = fracToCart(wrapped.frac, _structureData.lattice);
+  for (let i = 0; i < wrappedCart.length; i++) {
+    const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    const atomMesh = createAtomMesh(wrapped.elements[i], wrappedCart[i], originalIndex,opacity);
+    atomMesh.userData.sourceIndex = originalIndex;
+    atomsGroup2.add(atomMesh);
+  }
+
+
+  if (showCompInfo) {
+       const latticeCompPanel =  createLatticeComparisonPanel( structureData.lattice, _structureData.lattice)
+       if (latticeCompPanel){
+        document.body.appendChild(latticeCompPanel);
+        latticeCompPanel.style.display = "block";
+        console.log("Added latticeCompPanel") 
+        }
+        else{
+          console.log("latticeCompPanel not defined")
+        }
+  }
+  scene.add(atomsGroup2);
+}
+
+
+
+
+
+
 
 function updateBonds() {
   disposeGroup(bondsGroup);
@@ -4065,7 +4136,13 @@ function updateVisualization(options = {}) {
     return;
   }
 
-  if (reRenderAtoms) updateAtoms();
+  if (reRenderAtoms) {
+    updateAtoms();
+    if (atomsGroup2){
+      addSecondStructure()
+     }
+  }
+
   if (reRenderBonds) updateBonds();
   if (reRenderLattice) updateLattice(currentLatticeColor);
   if (reRenderOther) updateOther();
@@ -4088,6 +4165,7 @@ function hexToRgba(color, alpha = 1) {
   const b = parseInt(computed.substr(5, 2), 16);
 
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+
 }
 
 async function loadStructure(content, fileName = '', isDefault = false) {
@@ -4128,6 +4206,39 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     resetView();
     clearMeasure();
     resizeRenderer();
+
+  } catch (error) {
+    setStatus(`Error: ${error.message}`);
+    console.error(error);
+  }
+}
+
+async function loadSecondStructure(content, fileName = '', isDefault = false) {
+  try {
+    const lower = (fileName || '').toLowerCase();
+    const contentString = typeof content === 'string' ? content : '';
+    const treatAsCIF = lower.endsWith('.cif') ||
+                      lower.includes('.cif') ||
+                      /(^|\W)cif(\W|$)/.test(lower) ||
+                      isLikelyCIFContent(contentString);
+
+    if (treatAsCIF) {
+      structureData2 = await parseCIF(contentString);
+    } else {
+      structureData2 = parsePOSCAR(contentString);
+    }
+    loadColorOverrides();
+    loadIndividualAtomColors();
+    if (isDefault) {
+      setStatus(`Default structure: ${structureData.elements.length} atoms`);
+    } else {
+      setStatus(`Loaded: ${structureData.elements.length} atoms`);
+    }
+    addSecondStructure();
+    if (structureData2){
+    }
+    showComparisonInfo = true;
+    structure2OpacityValue=0.5
 
   } catch (error) {
     setStatus(`Error: ${error.message}`);
@@ -4662,6 +4773,11 @@ function sizeGizmo(){
     setStatus,
   });
 
+  setupSecondStructureInput({
+    onLoadStructure: (content, name) => loadSecondStructure(content, name),
+    setStatus,
+  });
+
   // Check for shared structure in URL
   loadSharedStructure();
 
@@ -4675,6 +4791,19 @@ function sizeGizmo(){
     showLattice = e.target.checked;
     updateVisualization();
   };
+
+  document.getElementById('showSecond').onchange = (e) => {
+    showSecond = e.target.checked;
+    structure2OpacityValue=0.5;
+    addSecondStructure();
+  };
+
+  document.getElementById('showComparisonInfo').onchange = (e) => {
+    showCompInfo = e.target.checked;
+    addSecondStructure();
+  }
+
+   
 
   // Toggle for VESTA-style neighbor bonds/ghost atoms
   const neighborBondsEl = document.getElementById('neighborBonds');
@@ -4692,6 +4821,39 @@ function sizeGizmo(){
     updateMeasurementMarkers(); // Update ring markers when atom size changes
   };
 
+  document.getElementById('structure2OpacityValue').oninput = (e) => {
+    structure2OpacityValue = parseFloat(e.target.value);
+    document.getElementById('structure2OpacityValue').textContent = structure2OpacityValue.toFixed(1);
+    if (showSecond){
+
+    if (structure2OpacityValue < 0.5){
+      addSecondStructure(2*structure2OpacityValue)
+      updateAtoms(1.0)
+      }
+    else if (structure2OpacityValue > 0.5){
+      addSecondStructure(1.0)
+      updateAtoms(1-2 * (structure2OpacityValue - 0.5))
+      console.log(1-2 * (structure2OpacityValue - 0.5))
+      }
+    else {
+      addSecondStructure(1.0)
+      updateAtoms(1.0)      
+      updateVisualization();
+    }
+    console.log(`changing opacity to ${structure2OpacityValue}`)
+
+      
+    updateVisualization({
+          reRenderAtoms: false,
+          reRenderBonds: false,
+          reRenderLattice: false,
+          reRenderOther: true
+        });
+
+
+    }
+  };
+
   // Bond width control
   const bondWidthSlider = document.getElementById('bondWidth');
   const bondWidthValue = document.getElementById('bondWidthValue');
@@ -4704,6 +4866,23 @@ function sizeGizmo(){
       updateVisualization();
     };
   }
+
+  let checkbox_second = document.getElementById("showSecond");
+      checkbox_second.checked = false; // explicitly untick
+
+      let checkbox_showComparisonInfo = document.getElementById("showComparisonInfo");
+      checkbox_showComparisonInfo.checked = false; // explicitly untick
+
+     let checkbox_secondBonds = document.getElementById("showSecondBonds");
+      checkbox_secondBonds.checked = false; // explicitly untick
+
+  let checkbox_secondLattice = document.getElementById("showSecondLattice");
+      checkbox_secondLattice.checked = false; // explicitly untick
+
+
+
+  let checkbox_neighbours = document.getElementById("neighborBonds");
+      checkbox_neighbours.checked = false; // explicitly untick
 
   // New control handlers
   document.getElementById('orthographicCamera').onchange = (e) => {

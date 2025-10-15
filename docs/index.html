@@ -23,7 +23,10 @@
     <div id="mobileOverlay"></div>
     <div id="backgroundDot" class="background-dot"></div>
     <div id="ui">
+
       <img src="./CrysViz_logo_clear_back.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
+
+      
       <div class="control-group">
         <h3>Load POSCAR/CIF</h3>
         <div class="input-mode-toggle" role="tablist" aria-label="Structure input mode">
@@ -47,6 +50,49 @@
       </div>
 
 
+      <div class="comparison-group">
+         <div id="comparisonToggle" class="comparison-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="comparisonControlsContent">
+           <h4>Load Second POSCAR/CIF</h4>
+            <div id="comparisonToggleIcon" class="toggle-icon">+</div>
+          </div> 
+
+        <div id="comparisonContent" class="collapsible-content" aria-hidden="true">
+        <div class="second-input-mode-toggle" role="tablist" aria-label="Second structure input mode">
+          <button type="button" class="second-input-mode-btn active" data-mode="file" role="tab" id="secondFileInputTab" aria-selected="true" aria-controls="secondFileInputContainer">
+            Upload File
+          </button>
+          <button type="button" class="second-input-mode-btn" data-mode="text" role="tab" id="secondTextInputTab" aria-selected="false" aria-controls="secondTextInputContainer">
+            Paste Text
+          </button>
+        </div>
+        <div id="secondFileInputContainer" class="second-input-mode-panel" role="tabpanel" aria-labelledby="secondFileInputTab">
+          <input type="file" id="secondFileInput">
+          <label for="secondFileInput" id="secondFileLabel" tabindex="0">
+            📁 Choose POSCAR/CIF file or drag & drop
+          </label>
+        </div>
+        <div id="secondTextInputContainer" class="second-input-mode-panel" role="tabpanel" hidden aria-labelledby="secondTextInputTab">
+          <textarea id="secondStructureText" placeholder="Paste POSCAR/CIF content, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id"></textarea>
+          <button type="button" id="secondLoadTextButton">Load Structure</button>
+        </div>
+        <label>
+            <input type="checkbox" id="showSecond" checked> Show Second Structure
+          </label>
+           <label>
+          <input type="checkbox" id="showSecondBonds" checked> Show Bonds
+        </label>
+        <label>
+          <input type="checkbox" id="showSecondLattice" checked> Show Unit Cell
+        </label>
+        <label>
+          <input type="checkbox" id="showComparisonInfo" checked>Show Comparison
+        </label>
+          <label>
+            Structure Overlay: <span id="structure2Opacity" class="slider-value"></span>
+            <input type="range" id="structure2OpacityValue" min="0.0" max="1.0" step="0.1" v    alue="0.5">
+          </label>
+          </div>
+      </div>
 
       <div class="control-group" id="structureControls" style="display: none;">
         <h3>Visualization Options</h3>
@@ -249,6 +295,41 @@
       <div class="legend-row"><span class="dot dot-b"></span>b</div>
       <div class="legend-row"><span class="dot dot-c"></span>c</div>
     </div>
+
+
+    <script>
+      // comparion control script. default is closed!
+      document.addEventListener('DOMContentLoaded', function() {
+        const toggle = document.getElementById('comparisonToggle');
+        const icon = document.getElementById('comparisonToggleIcon');
+        const content = document.getElementById('comparisonContent');
+
+        if (!toggle || !icon || !content) return;
+
+        function setOpen(open) {
+          if (open) {
+            content.classList.add('open');
+            content.setAttribute('aria-hidden', 'false');
+            icon.textContent = '−';
+            toggle.setAttribute('aria-expanded', 'true');
+          } else {
+            content.classList.remove('open');
+            content.setAttribute('aria-hidden', 'true');
+            icon.textContent = '+';
+            toggle.setAttribute('aria-expanded', 'false');
+          }
+        }
+
+        setOpen(false);
+        toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
+        toggle.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setOpen(!content.classList.contains('open'));
+          }
+        });
+      });
+    </script>
 
     <script>
       // Bond control script. default is closed!

@@ -18,6 +18,9 @@
 - user colors for  individual atoms
 - switch for parallel vs. perspective view 
 - on-the-fly position and lattice chagnes
+- Spins! per atom, indivudual colors, scaling, etc.
+- Automatic dark/light mode
+- on-the-fly custom background color 
 
 ### Known Bugs & Problems
 - zooming out on the website (ctrl + - )and the zooming the atoms crashes the atom view
@@ -28,9 +31,7 @@
 ### Features We Could Add  
  
 1. Minimum bond length slider. Could be useful to identify ranges of bonds.
-2. VESTA color are not correct; or some custom  map
 3. Show the metainfo line from poscar file
-4. Option to create supercells with a limit of about 2000 atoms to not crash browser
 5. Possibility to deselect single measurements by clicking them again
 6. some comment under the upload stating that "No data leaves your device". Is this really true? 
 
@@ -43,7 +44,3 @@
    - Mode (1): Compare structures by overlay. Option to load two structures that differ by a shade in color and a visualised on top of each other.  
    - Mode (2): Load two structures side by side. both can rotate on their own, but there is a button to lock them in the current state and then all roation is synced unless the button is pushed again
   
-5. Magnetic Moment Visualisation:
-  - Option (1): Load directly VASP output <- not sure we need that
-  - Option (2): Add a second textbox at the end of the input where you can paste a list of N vectors that are added to the first N atoms.
- 
