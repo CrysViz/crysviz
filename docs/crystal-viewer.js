@@ -3926,8 +3926,6 @@ function getContrastingBorder(hex) {
   // --- Create the color picker using your existing helper ---
   const { element: pickerElement } = createColorPicker(currentHex, (hex) => {
     selectedHex = hex;
-    dot.style.backgroundColor = hex;           // live preview on dot
-
     let contrastColor = `${getContrastingBorder(selectedHex)}`
 
     dot.style.border = `2px solid ${contrastColor}`
@@ -4003,18 +4001,29 @@ function getContrastingBorder(hex) {
     e.stopPropagation();
     dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`;
     scene.background = new THREE.Color(selectedHex); // lock in color
-    dot.style.backgroundColor = selectedHex;
     closePicker();
   });
 
   // --- Reset button behavior ---
   resetBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    selectedHex = "#E7E7E7";
-    dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`
-    scene.background = new THREE.Color(selectedHex);
-    dot.style.backgroundColor = selectedHex;
+    const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+   if (isDarkMode )
+    {
+    scene.background = new THREE.Color(0x021302)
+    currentLatticeColor = 0xE7E7E7;
+    dot.style.border = "2px solid 0xE7E7E7";
+    updateLattice()
+   }
+   else if (!isDarkMode )
+   {
+    scene.background = new THREE.Color(0xE7E7E7);
+    currentLatticeColor = 0x021302
+    dot.style.border = "2px solid 0x021302";
+    updateLattice()
+   }
     closePicker();
+
   });
 }
 
