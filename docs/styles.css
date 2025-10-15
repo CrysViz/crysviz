@@ -1434,7 +1434,7 @@ body {
 
   /* Mobile version*/
   .popup {
-    position: fixed;
+    position: absolut;
     max-height: 300px;
     top:40px;
     left: 100px
