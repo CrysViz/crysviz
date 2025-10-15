@@ -1914,10 +1914,10 @@ function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2) {
   return bondGroup;
 }
 
-function createLatticeLines() {
+function createLatticeLines(color = 0x000000) {
   const group = new THREE.Group();
   const material = new THREE.LineBasicMaterial({
-    color: 0x000000,
+    color: color,
     transparent: false,
     opacity: 1.0,
     linewidth: 3
@@ -3754,11 +3754,10 @@ function updateSpins(spinData, spinFactor = 1) {
 
 
 
-function updateLattice() {
+function updateLattice(color = 0x000000) {
   disposeGroup(latticeGroup);
-
-  if (showLattice) {
-    latticeGroup = createLatticeLines();
+  if (showLattice) { 
+    latticeGroup = createLatticeLines(color);
     scene.add(latticeGroup);
   }
 }
@@ -3929,7 +3928,11 @@ function getContrastingBorder(hex) {
   const { element: pickerElement } = createColorPicker(currentHex, (hex) => {
     selectedHex = hex;
     dot.style.backgroundColor = hex;           // live preview on dot
-    dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`
+
+    let contrastColor = `${getContrastingBorder(selectedHex)}`
+
+    dot.style.border = `2px solid ${contrastColor}`
+    updateLattice(contrastColor)
     scene.background = new THREE.Color(hex);   // live preview in scene
   });
 
