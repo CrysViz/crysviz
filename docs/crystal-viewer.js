@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+import { TrackballControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/TrackballControls.js';
 //import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
 import { setupStructureInput, isLikelyCIFContent, parsePOSCAR, cartToFractional } from './structure-input.js';
 import { setupSecondStructureInput } from './compare-structure-input.js';
@@ -636,12 +637,38 @@ function getCellCenterAndDist() {
 function setViewDirection(dir) {
   const { center, dist } = getCellCenterAndDist();
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
-  camera.position.copy(center.clone().add(n.multiplyScalar(dist)));
-  controls.target.copy(center);
+  camera.position.copy(                  center.clone().add(n.multiplyScalar(dist)  )                    )       ;
+  controls.target = center;
   controls.update();
 }
 
-function resetView() { setViewDirection(new THREE.Vector3(1,1,1)); } //CAMERA RESET
+//function setViewDirection(dir) {
+// const viewDir = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
+// const center = controls.target.clone(); // the point we're orbiting around
+//
+// const camToTarget = camera.position.clone().sub(center);
+// const distance = camToTarget.length();
+//
+// const newPos = center.clone().add(viewDir.clone().multiplyScalar(distance));
+// camera.position.copy(newPos);
+//
+// // 🚫 Don't change camera.up — always keep Y-up
+// camera.up.set(0, 1, 0);
+//
+// // Instead of camera.lookAt (which can cause instability),
+// // manually sync camera rotation using lookAt matrix
+// camera.lookAt(center);
+// camera.updateMatrixWorld(); // important
+//
+// // Manually update TrackballControls
+// controls.object.position.copy(camera.position);
+// controls.target.copy(center);
+// controls.update();
+//}
+
+
+
+function resetView() { controls.reset(); setViewDirection(new THREE.Vector3(1,1,1)); } //CAMERA RESET
 
 function switchCameraType() {
   const w = view.clientWidth || window.innerWidth;
@@ -1071,8 +1098,8 @@ function createSpinControls(containerId = "spinControls") {
   const textPanel = document.createElement("div");
   const textarea = document.createElement("textarea");
   textarea.placeholder = "x y z scale color\nExample:\n0 0 1 0.5 #ff0000\n1 1 0 2.0 #0000ff";
-  textarea.style.width = "100%";
-  textarea.style.height = "120px";
+  textarea.style.width = "95%";
+  textarea.style.height = "200px";
   textarea.style.background= "rgba(16,16,16,0.8)";
   textarea.style.color= "rgb(255, 255, 255)";
   textPanel.appendChild(textarea);
@@ -1427,24 +1454,11 @@ function openColorPicker(spin, dot) {
 
   const resetBtn = document.createElement("button");
   resetBtn.textContent = "Reset";
-  Object.assign(resetBtn.style, {
-    padding: "4px 8px",
-    borderRadius: "4px",
-    border: "1px solid #ccc",
-    cursor: "pointer",
-    background: "#f6f6f6"
-  });
+  resetBtn.className="reset-btn"
 
   const applyBtn = document.createElement("button");
   applyBtn.textContent = "Apply";
-  Object.assign(applyBtn.style, {
-    padding: "4px 8px",
-    borderRadius: "4px",
-    border: "none",
-    cursor: "pointer",
-    background: "#007bff",
-    color: "#fff"
-  });
+  applyBtn.className="btn-mini highlight"
 
   buttonRow.appendChild(resetBtn);
   buttonRow.appendChild(applyBtn);
@@ -3545,7 +3559,7 @@ function updateAtoms(opacity=1.0) {
   scene.add(atomsGroup);
 }
 
-function addSecondStructure(opacity) {
+function addSecondStructure(opacity=1.0) {
 
   function updateAtomCoordinates(atomIndex, newCoords, _structureData) {
     if (!_structureData || !_structureData.positions || atomIndex >= _structureData.positions.length) {
@@ -3997,7 +4011,7 @@ function getContrastingBorder(hex) {
     zIndex: 9999,
   });
 
-  // --- Create the color picker using your existing helper ---
+  // --- Create the color picker using existing helper ---
   const { element: pickerElement } = createColorPicker(currentHex, (hex) => {
     selectedHex = hex;
     let contrastColor = `${getContrastingBorder(selectedHex)}`
@@ -4020,26 +4034,17 @@ function getContrastingBorder(hex) {
     gap: "8px"
   });
 
-  const resetBtn = document.createElement("button");
-  resetBtn.textContent = "Reset";
-  Object.assign(resetBtn.style, {
-    padding: "4px 8px",
-    borderRadius: "4px",
-    border: "1px solid #ccc",
-    cursor: "pointer",
-    background: defaultBackgroundColor,
-  });
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset';
+  resetBtn.className = 'reset-btn';
+  resetBtn.style.cssText = 'height: 32px';
+  resetBtn.style.background = defaultBackgroundColor;
 
-  const applyBtn = document.createElement("button");
-  applyBtn.textContent = "Apply";
-  Object.assign(applyBtn.style, {
-    padding: "4px 8px",
-    borderRadius: "4px",
-    border: "none",
-    cursor: "pointer",
-    background: "#007bff",
-    color: "#fff"
-  });
+  const applyBtn = document.createElement('button');
+  applyBtn.textContent = 'Apply';
+  applyBtn.className = 'btn-mini highlight';
+  applyBtn.style.cssText = 'height: 32px';
+
 
   buttonRow.appendChild(resetBtn);
   buttonRow.appendChild(applyBtn);
@@ -4324,30 +4329,52 @@ function init() {
   atomTooltip.setAttribute('aria-hidden', 'true');
   view.appendChild(atomTooltip);
 
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = false; //damping the rotation for smoother experience
-  //controls.dampingFactor = 0.05;
-  controls.maxDistance = 1000;
-  controls.minDistance = 1;
-
-  controls.enableRotate = true;
-  controls.enablePan = true;
-  controls.enableZoom = true;
-  controls.minPolarAngle = 0;
-  controls.maxPolarAngle = Math.PI;
-
-  // Enable touch controls for mobile
+//  controls = new OrbitControls(camera, renderer.domElement);
+//  controls.enableDamping = false; //damping the rotation for smoother experience
+//  //controls.dampingFactor = 0.05;
+//  controls.maxDistance = 1000;
+//  controls.minDistance = 1;
+// 
+//  controls.enableRotate = true;
+//  controls.enablePan = true;
+//  controls.enableZoom = true;
+//  controls.minPolarAngle = -Math.PI;
+//  controls.maxPolarAngle = Math.PI;
+//  controls.screenSpacePanning = true;
+// 
+//  // Enable touch controls for mobile
+//  controls.enableKeys = false; // Disable keyboard controls to avoid conflicts
+//  controls.touches = {
+//    ONE: THREE.TOUCH.ROTATE,
+//    TWO: THREE.TOUCH.DOLLY_PAN
+//  };
+// 
+//  controls.mouseButtons = {
+//    LEFT: THREE.MOUSE.ROTATE,
+//    MIDDLE: THREE.MOUSE.DOLLY,
+//    RIGHT: THREE.MOUSE.PAN
+//  };
+  //
+  //
+  //
+  controls = new TrackballControls(camera, renderer.domElement);
+  controls.dynamicDampingFactor=0.2;
+  controls.rotateSpeed=4;
   controls.enableKeys = false; // Disable keyboard controls to avoid conflicts
-  controls.touches = {
-    ONE: THREE.TOUCH.ROTATE,
-    TWO: THREE.TOUCH.DOLLY_PAN
-  };
+  controls.noPan= false;
+  controls.noRotate= false;
+  controls.panSpeed = 0.8;
 
   controls.mouseButtons = {
     LEFT: THREE.MOUSE.ROTATE,
     MIDDLE: THREE.MOUSE.DOLLY,
     RIGHT: THREE.MOUSE.PAN
-  };
+    };
+
+
+   
+
+
 
   // Keep rotation centered on crystal structure
   // Removed auto-reset of controls target to allow proper panning on mobile
@@ -4735,9 +4762,9 @@ function clearLongPress() {
   gizmoCamera.position.set(0, 0, 3);
   gizmoCamera.lookAt(0, 0, 0);
 
-  const arrowLen = 1.3, headLen = 0.35, headWidth = 0.22;
+  const arrowLen = 1., headLen = 0.35, headWidth = 0.22;
   const makeArrow = (color) => new THREE.ArrowHelper(
-    new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), arrowLen, color, headLen, headWidth
+  new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), arrowLen, color, headLen, headWidth
   );
   const aArrow = makeArrow(0xff3333);
   const bArrow = makeArrow(0x33cc33);
@@ -4762,13 +4789,14 @@ function sizeGizmo(){
 
 
 
-  document.getElementById('viewX').onclick = () => setViewDirection([1,0,0]);
-  document.getElementById('viewY').onclick = () => setViewDirection([0,1,0]);
-  document.getElementById('viewZ').onclick = () => setViewDirection([0,0,1]);
+  document.getElementById('viewX').onclick = () => {controls.reset(); setViewDirection(new THREE.Vector3( 1., 0., 0.))};
+  document.getElementById('viewY').onclick = () => {controls.reset(); setViewDirection(new THREE.Vector3( 0., 1., 0.))};
+  document.getElementById('viewZ').onclick = () => {controls.reset(); setViewDirection(new THREE.Vector3( 0., 0., 1.))};
 
-  document.getElementById('viewA').onclick = () => { const {a} = latticeDirs(); setViewDirection(a); };
-  document.getElementById('viewB').onclick = () => { const {b} = latticeDirs(); setViewDirection(b); };
-  document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
+
+  document.getElementById('viewA').onclick = () => {controls.reset(); const {a} = latticeDirs(); setViewDirection(a); };
+  document.getElementById('viewB').onclick = () => {controls.reset(); const {b} = latticeDirs(); setViewDirection(b); };
+  document.getElementById('viewC').onclick = () => {controls.reset(); const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
 
   setupStructureInput({

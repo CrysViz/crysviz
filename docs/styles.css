@@ -20,9 +20,9 @@ body {
   --drawer-width: var(--panel-total-width);
 
   /* Gizmo positioning variables */
-  --gizmo-size: 120px;
+  --gizmo-size: 90px;
   --gizmo-bottom: 20px;
-  --gizmo-left: 490px;
+  --gizmo-left: 430px;
 }
 
 #ui {
@@ -62,14 +62,6 @@ body.panel-hidden #view canvas {
   width: 100% !important;
   height: 100% !important;
 }
-
-/* === Desktop-only measurement tool scaling === */
-@media screen and (min-width: 1025px) {
-  #measurementTools {
-    transform: scale(0.85);
-  }
-}
-
 
 
 /* === Panel Hidden Overrides === */
@@ -167,7 +159,7 @@ body.panel-hidden #axesLegend {
 }
 
 .control-group {
-  margin: 25px 0;
+  margin: 0 0 16px 0;
   padding: 20px;
   background: rgba(42, 42, 42, 0.8);
   border-radius: 12px;
@@ -766,7 +758,7 @@ justify-content: center;
 
 
 #spinControls {
-  max-height: 380px;
+  max-height: 400px;
   overflow-y: auto;
 }
 
@@ -982,7 +974,7 @@ justify-content: center;
   border-radius: 3px;
 }
 
-.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:600px;min-height: 280px; }
+.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:600px;min-height: 280px; margin: 0 0 20px 0;}
 #composition { color:#d7eef6; font-size:13px; line-height:1.4; }
 #composition [hidden] { display: none !important; }
 #measure { margin-top:8px; }
@@ -1039,6 +1031,7 @@ justify-content: center;
 .btn-mini.highlight { background:rgba(6,100,50,1); border-color:rgba(0,0,0,0.15); color:#fff; box-shadow:0 6px 14px rgba(10,100,160,0.18); }
 .btn-mini.highlight:hover { filter:brightness(1.03); }
 .btn-mini.highlight:focus { outline:3px solid rgba(6,140,50,1);}
+
 #infoPanel h4 {
   margin: 0 0 8px 0;
   font-weight: 600;
@@ -1102,7 +1095,7 @@ z-index:1000; pointer-events:none;
   background: rgba(26, 26, 26, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
-  padding: 12px;
+  padding: 8px;
   backdrop-filter: blur(20px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   transform-origin: top right;
@@ -1111,8 +1104,8 @@ z-index:1000; pointer-events:none;
 /* --- Camera Tools (Desktop: Top Left beside panel, Fullscreen: aligned with hamburger) --- */
 #cameraTools {
   position: fixed;
-  left: 490px;  /* Default: beside panel */
-  top: 16px;
+  left: 430px;  /* Default: beside panel */
+  top: 20px;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -1218,17 +1211,17 @@ z-index:1000; pointer-events:none;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 16px 20px;
+  padding: 8px 8px;
   background: rgba(6, 71, 50, 1);
   border: 2px solid rgba(6, 90, 50, 0.7);
   border-radius: 12px;
   color: #fff;
   cursor: pointer;
   transition: all 0.3s ease;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  min-width: 80px;
-  min-height: 80px;
+  min-width: 45px;
+  min-height: 45px;
   text-align: center;
   user-select: none;
   -webkit-user-select: none;
@@ -1344,44 +1337,9 @@ body {
 }
 
 /* Mobile and Tablet Responsive Styles */
-@media screen and (max-width: 1024px) {
-  /* Mobile: Panel positioning */
-  #ui {
-    position: fixed;
-    top: 0;
-    left: -120%;
-    height: 98dvh;
-    z-index: 1500;
-    transition: left 0.3s ease;
-  }
 
-  /* Panel open state for mobile */
-  #ui.panel-open {
-    left: 0;
-  }
 
-  /* Adjust axes gizmo position and size */
-  #axesGizmo {
-    left: 12px;
-    bottom: 12px;
-    width: 60px;
-    height: 60px;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  #axesLegend {
-    left: 12px;
-    transform: translateX(68px);
-    font-size: 11px;
-    padding: 4px 6px;
-    /*! border-radius: 4px; */
-    background: rgba(0, 0, 0, 0.8);
-    color: #fff;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    backdrop-filter: blur(6px);
-    z-index: 1000;
-  }
+@media screen and (max-width: 1200px) {
 
   /* Mobile-friendly measurement tools */
   #measurementTools {
@@ -1421,6 +1379,7 @@ body {
   .camera-separator {
     display: none;
   }
+
   .background-dot {
   position: fixed;
   width: 40px;
@@ -1483,13 +1442,13 @@ body {
 
   .measurement-group.expanded {
     max-height: 44px;
-    padding: 5px;
+    padding: 12px;
     background: rgba(26, 26, 26, 0.95);
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
     flex-direction: row;
-    gap: 4px;
+    gap: 6px;
     justify-content: center;
   }
 
@@ -1537,7 +1496,7 @@ body {
     display: none !important;
   }
 
-  /* Compact mobile buttons for measurement tools */
+  /* Compact mobile buttons for measurement tools 
   .measure-tool-btn {
     padding: 6px;
     min-width: 40px;
@@ -1545,12 +1504,53 @@ body {
     font-size: 9px;
     gap: 1px;
     flex-direction: column;
-  }
+  }*/
 
   .tool-icon {
     font-size: 14px;
     margin-bottom: 1px;
   }
+
+}
+
+@media screen and (max-width: 1024px) {
+  /* Mobile: Panel positioning */
+  #ui {
+    position: fixed;
+    top: 0;
+    left: -120%;
+    height: 98dvh;
+    z-index: 1500;
+    transition: left 0.3s ease;
+  }
+
+  /* Panel open state for mobile */
+  #ui.panel-open {
+    left: 0;
+  }
+
+  /* Adjust axes gizmo position and size */
+  #axesGizmo {
+    left: 12px;
+    bottom: 12px;
+    width: 60px;
+    height: 60px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  #axesLegend {
+    left: 12px;
+    transform: translateX(68px);
+    font-size: 11px;
+    padding: 4px 6px;
+    /*! border-radius: 4px; */
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(6px);
+    z-index: 1000;
+  }  
 
   /* Mobile-specific adjustments */
   body {
@@ -1636,7 +1636,8 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 8px 10px;
   }
-  .collapsible-content.open { padding-top:8px; max-height:500px; }
+  .collapsible-content.open { padding-top:8px; max-height: 230px;
+    min-height: auto;}
 
   #infoPanel .structure-toggle h4 {
     font-size: 11px;
@@ -1683,6 +1684,7 @@ body {
   #bondControls {
     max-height: 200px;
   }
+}
 
 @media screen and (max-height: 480px) {
   #ui {
@@ -1728,7 +1730,8 @@ body {
     font-size: 11px;
   }
 
-  .collapsible-content.open { padding-top:8px; max-height:250px; min-height:250px}
+  .collapsible-content.open { padding-top:8px;max-height: 230px;
+    min-height: auto}
 
   #infoPanel h4 {
     font-size: 11px;

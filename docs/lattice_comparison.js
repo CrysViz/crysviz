@@ -70,6 +70,9 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
   closeBtn.style.background = "transparent";
   closeBtn.style.fontSize = "16px";
   closeBtn.style.color = "#fff";
+  closeBtn.style.pointerEvents = "auto";
+  closeBtn.style.touchAction = "manipulation";
+  
   closeBtn.addEventListener("click", () => { 
     popup.style.display="none";
     const checkbox = document.getElementById("showComparisonInfo");
@@ -82,6 +85,7 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
   closeBtn.addEventListener("touchstart", (e) => {
     e.preventDefault(); // Prevent ghost click
     popup.style.display="none";
+    const checkbox = document.getElementById("showComparisonInfo");
     if (checkbox) {
       checkbox.checked = false;
       showComparisonInfo = false;
