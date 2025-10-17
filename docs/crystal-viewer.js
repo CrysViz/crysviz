@@ -635,8 +635,17 @@ function getCellCenterAndDist() {
 
 // makes the center of structure as the rotation center.
 function setViewDirection(dir) {
+  console.log("settingview");
   const { center, dist } = getCellCenterAndDist();
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
+  if (n.x === 0 && n.y === 1 && n.z === 0){
+    //console.log("changing camer.up to 0.,0.,1.")
+    camera.up = new THREE.Vector3(0.,0.,1.);}
+  else {
+    camera.up = new THREE.Vector3(0.,1.,0.);
+    //console.log("changing camer.up to 0.,1.,0.")
+  }
+
   camera.position.copy(                  center.clone().add(n.multiplyScalar(dist)  )                    )       ;
   controls.target = center;
   controls.update();
@@ -4789,7 +4798,7 @@ function sizeGizmo(){
 
 
 
-  document.getElementById('viewX').onclick = () => {controls.reset(); setViewDirection(new THREE.Vector3( 1., 0., 0.))};
+document.getElementById('viewX').onclick = () => {controls.reset(); setViewDirection(new THREE.Vector3( 1., 0., 0.))};
   document.getElementById('viewY').onclick = () => {controls.reset(); setViewDirection(new THREE.Vector3( 0., 1., 0.))};
   document.getElementById('viewZ').onclick = () => {controls.reset(); setViewDirection(new THREE.Vector3( 0., 0., 1.))};
 
