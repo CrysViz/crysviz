@@ -4368,7 +4368,7 @@ function init() {
   //
   controls = new TrackballControls(camera, renderer.domElement);
   controls.dynamicDampingFactor=0.2;
-  controls.rotateSpeed=4;
+  controls.rotateSpeed=2.5;
   controls.enableKeys = false; // Disable keyboard controls to avoid conflicts
   controls.noPan= false;
   controls.noRotate= false;
