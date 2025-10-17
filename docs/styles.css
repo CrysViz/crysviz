@@ -41,6 +41,50 @@ body {
   display: none;
 }
 
+/*------*/
+.rotation-axis {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.angle-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.angle-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.angle-btn {
+  font-size: 10px;
+  padding: 5px 10px;
+  cursor: pointer;
+  background:rgba(26,26,26,0.9);
+  color:#f9f9f9;
+  border-radius: 10px; 
+  border: 1px solid rgba(128,128,128,1.0);
+}
+.angle-btn:hover {
+    transform: scale(1.05);
+    border: 1px solid white;
+}
+
+.angle-input {
+  width: 40px;
+  text-align: center;
+  padding: 2px;
+  font-size: 12px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background-color: rgba(26,26,26,0.9);
+  color:#f9f9f9;
+}
+/*------*/
 
 
 /* When panel hidden: disable flex and make view fullscreen */
@@ -1339,7 +1383,7 @@ body {
 /* Mobile and Tablet Responsive Styles */
 
 
-@media screen and (max-width: 1200px) {
+@media screen and (max-width: 1320px) {
 
   /* Mobile-friendly measurement tools */
   #measurementTools {
@@ -1475,6 +1519,7 @@ body {
     flex-direction: row;
     gap: 4px;
     justify-content: center;
+    max-width: 285px;
   }
 
   /* Mobile buttons - override desktop styles */
