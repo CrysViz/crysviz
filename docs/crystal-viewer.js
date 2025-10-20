@@ -8,6 +8,7 @@ import { setupSecondStructureInput } from './compare-structure-input.js';
 import { createLatticeComparisonPanel }from './lattice_comparison.js'
 import { parseCIF} from './file_reader.js';
 import { createColorPicker } from './color-picker.js';
+import {updateAngleDisplays, setupAxisControls} from './cameraAngleControl.js';
 
 
 import {
@@ -620,7 +621,7 @@ function periodicWrapped(frac, elements) {
 }
 
 
-function getCellCenterAndDist() {
+export function getCellCenterAndDist() {
   const L = structureData?.lattice || [[10,0,0],[0,10,0],[0,0,10]];
   const corner = new THREE.Vector3(
     L[0][0]+L[1][0]+L[2][0],
@@ -634,8 +635,8 @@ function getCellCenterAndDist() {
 }
 
 // makes the center of structure as the rotation center.
-function setViewDirection(dir) {
-  console.log("settingview");
+export function setViewDirection(dir) {
+  console.log('[setView] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
   const { center, dist } = getCellCenterAndDist();
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
   if (n.x === 0 && n.y === 1 && n.z === 0){
@@ -646,7 +647,7 @@ function setViewDirection(dir) {
     //console.log("changing camer.up to 0.,1.,0.")
   }
 
-  camera.position.copy(                  center.clone().add(n.multiplyScalar(dist)  )                    )       ;
+  camera.position.copy(center.clone().add(n.multiplyScalar(dist)));
   controls.target = center;
   controls.update();
 }
@@ -701,8 +702,10 @@ function switchCameraType() {
     camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
     orthographicFrustumSize = null;
   }
-
+  console.log("called controls.object = camera;")
   controls.object = camera;
+  ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis,controls));
+
   const { center, dist } = getCellCenterAndDist();
   camera.position.copy(center.clone().add(new THREE.Vector3(1,1,1).normalize().multiplyScalar(dist)));
   controls.target.copy(center);
@@ -4221,7 +4224,7 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     updateVisualization();
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();
-    resetView();
+    //resetView();
     clearMeasure();
     resizeRenderer();
 
@@ -4277,6 +4280,7 @@ function loadDefaultStructure() {
 }
 
 function init() {
+
   scene = new THREE.Scene();
 
   const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -4338,34 +4342,6 @@ function init() {
   atomTooltip.setAttribute('aria-hidden', 'true');
   view.appendChild(atomTooltip);
 
-//  controls = new OrbitControls(camera, renderer.domElement);
-//  controls.enableDamping = false; //damping the rotation for smoother experience
-//  //controls.dampingFactor = 0.05;
-//  controls.maxDistance = 1000;
-//  controls.minDistance = 1;
-// 
-//  controls.enableRotate = true;
-//  controls.enablePan = true;
-//  controls.enableZoom = true;
-//  controls.minPolarAngle = -Math.PI;
-//  controls.maxPolarAngle = Math.PI;
-//  controls.screenSpacePanning = true;
-// 
-//  // Enable touch controls for mobile
-//  controls.enableKeys = false; // Disable keyboard controls to avoid conflicts
-//  controls.touches = {
-//    ONE: THREE.TOUCH.ROTATE,
-//    TWO: THREE.TOUCH.DOLLY_PAN
-//  };
-// 
-//  controls.mouseButtons = {
-//    LEFT: THREE.MOUSE.ROTATE,
-//    MIDDLE: THREE.MOUSE.DOLLY,
-//    RIGHT: THREE.MOUSE.PAN
-//  };
-  //
-  //
-  //
   controls = new TrackballControls(camera, renderer.domElement);
   controls.dynamicDampingFactor=0.2;
   controls.rotateSpeed=2.5;
@@ -4379,18 +4355,11 @@ function init() {
     MIDDLE: THREE.MOUSE.DOLLY,
     RIGHT: THREE.MOUSE.PAN
     };
+  ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis,controls));
+
+  updateAngleDisplays(controls);
 
 
-   
-
-
-
-  // Keep rotation centered on crystal structure
-  // Removed auto-reset of controls target to allow proper panning on mobile
-
-  // VESTA-style lighting setup - single camera-relative light
-
-  // Moderate ambient light for base illumination
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
   scene.add(ambientLight);
 
@@ -5108,9 +5077,22 @@ document.getElementById('viewX').onclick = () => {controls.reset(); setViewDirec
   loadDefaultStructure();
 }
 
+
+
+let _counter = 1;
+
 function animate() {
+
   requestAnimationFrame(animate);
+
   controls.update();
+  //if (_counter%60 === 0 || _counter=== 1) {
+  //  console.log('[animate] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
+  //} 
+
+  _counter = _counter+1;
+  updateAngleDisplays(controls);
+
   const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
    if (isDarkMode && currentLatticeColor === 0x021302){
     scene.background = new THREE.Color(0x021302)
@@ -5136,8 +5118,8 @@ function animate() {
 
   renderer.render(scene, camera);
   const invCamQ = camera.quaternion.clone().invert();
-  const { a, b, c } = latticeDirsNorm();
 
+  const { a, b, c } = latticeDirsNorm();
   gizmoScene.userData.aArrow.setDirection(a.clone().applyQuaternion(invCamQ));
   gizmoScene.userData.bArrow.setDirection(b.clone().applyQuaternion(invCamQ));
   gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
@@ -5254,5 +5236,5 @@ function setupMobileMenu() {
 }
 
 init();
-resetView();
+//resetView();
 setupMobileMenu();

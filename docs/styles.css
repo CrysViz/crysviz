@@ -1018,7 +1018,7 @@ justify-content: center;
   border-radius: 3px;
 }
 
-.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:600px;min-height: 280px; margin: 0 0 20px 0;}
+.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:600px;min-height: 280px; margin: 10px 0 20px 0;}
 #composition { color:#d7eef6; font-size:13px; line-height:1.4; }
 #composition [hidden] { display: none !important; }
 #measure { margin-top:8px; }
@@ -1159,6 +1159,8 @@ z-index:1000; pointer-events:none;
   padding: 8px;
   z-index: 1000;
   backdrop-filter: blur(8px);
+  max-width: 320px;
+  overflow-y: hidden;
 }
 
 /* Camera panel for desktop - horizontal layout */
@@ -1167,7 +1169,6 @@ z-index:1000; pointer-events:none;
   gap: 8px;
   align-items: center;
   max-height: none;
-  overflow: visible;
 }
 
 
