@@ -451,6 +451,16 @@ export function isLikelyCIFContent(content) {
   return false;
 }
 
+export function isLikelyOUTCARContent(content) {
+  if (!content || typeof content !== 'string') return false;
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+  if (/Startparameter/i.test(trimmed)) return true;
+  if (/Iteration:/i.test(trimmed)) return true;
+  return false;
+}
+
+
 export function setupStructureInput({ onLoadStructure, setStatus }) {
   const fileInput = document.getElementById('fileInput');
   const fileLabel = document.getElementById('fileLabel');
@@ -601,7 +611,10 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
                               fileName.endsWith('.poscar') ||
                               fileName === 'poscar' ||
                               fileName === 'contcar' ||
-                              fileName.endsWith('.cif');
+                              fileName.endsWith('.cif')||
+                              fileName.endsWith('.vasp.out') ||
+                              fileName === 'outcar' ||
+                              fileName.includes('outcar');
 
       if (!isStructureFile) {
         console.warn('Selected file may not be a structure file:', file.name);

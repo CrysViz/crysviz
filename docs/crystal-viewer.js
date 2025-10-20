@@ -7,6 +7,7 @@ import { setupStructureInput, isLikelyCIFContent, parsePOSCAR, cartToFractional 
 import { setupSecondStructureInput } from './compare-structure-input.js';
 import { createLatticeComparisonPanel }from './lattice_comparison.js'
 import { parseCIF} from './file_reader.js';
+import { parseOUTCAR} from './file_reader_OUTCAR.js';
 import { createColorPicker } from './color-picker.js';
 import {updateAngleDisplays, setupAxisControls} from './cameraAngleControl.js';
 
@@ -54,6 +55,7 @@ let atomsGroup, bondsGroup, latticeGroup,spinGroup;
 let atomsGroup2, bondsGroup2, latticeGroup2,spinGroup2;
 let structureData = null;
 let structureData2 = null;
+let spinsData = null;
 let modifiedLattice = null;
 let currentSupercell = null;
 let originalStructureData = null; // deep-copy of last loaded structure for restore
@@ -636,7 +638,7 @@ export function getCellCenterAndDist() {
 
 // makes the center of structure as the rotation center.
 export function setViewDirection(dir) {
-  console.log('[setView] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
+  //console.log('[setView] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
   const { center, dist } = getCellCenterAndDist();
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
   if (n.x === 0 && n.y === 1 && n.z === 0){
@@ -702,7 +704,6 @@ function switchCameraType() {
     camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
     orthographicFrustumSize = null;
   }
-  console.log("called controls.object = camera;")
   controls.object = camera;
   ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis,controls));
 
@@ -1060,13 +1061,31 @@ function createBondLengthControls() {
 }
 
 
+function deleteSpins(){
+    console.log("deletingSpins")
+     if (!spinsData){
+       console.warn("no spins data to delete")
+       return};
+     spinsData = null;
+     updateSpins(spinsData, 0.0);
+     const textarea = document.getElementById("textArea");
+      if (textarea) {
+        textarea.value = "";
+      } else {
+        console.warn('No element with id="textArea" found');
+      }
+
+     //populateSpinViewer()
+  }
+
+
 
 
 function createSpinControls(containerId = "spinControls") {
   const container = document.getElementById(containerId);
   container.innerHTML = ""; // Clear previous controls
 
-  // ----- 1️⃣ Input Mode Toggle -----
+  // ----- 1 Input Mode Toggle -----
   const toggleWrapper = document.createElement("tablist");
   toggleWrapper.className = "spin-input-mode-toggle";
   toggleWrapper.style.marginBottom = "6px";
@@ -1084,7 +1103,7 @@ function createSpinControls(containerId = "spinControls") {
   toggleWrapper.appendChild(viewerModeBtn);
   container.appendChild(toggleWrapper);
 
-  // ----- 2️⃣ Slider for scaling arrows -----
+  // ----- 2 Slider for scaling arrows -----
   const sliderWrapper = document.createElement("div");
   sliderWrapper.style.marginBottom = "8px";
 
@@ -1106,9 +1125,10 @@ function createSpinControls(containerId = "spinControls") {
   sliderWrapper.appendChild(slider);
   container.appendChild(sliderWrapper);
 
-  // ----- 3️⃣ Text Input Panel -----
+  // ----- 3 Text Input Panel -----
   const textPanel = document.createElement("div");
   const textarea = document.createElement("textarea");
+  textarea.id="textArea";
   textarea.placeholder = "x y z scale color\nExample:\n0 0 1 0.5 #ff0000\n1 1 0 2.0 #0000ff";
   textarea.style.width = "95%";
   textarea.style.height = "200px";
@@ -1123,12 +1143,12 @@ function createSpinControls(containerId = "spinControls") {
   textPanel.appendChild(drawBtn);
   container.appendChild(textPanel);
 
-  // ----- 4️⃣ Viewer Panel -----
+  // ----- 4 Viewer Panel -----
   const viewerPanel = document.createElement("div");
   viewerPanel.style.display = "none";
   container.appendChild(viewerPanel);
 
-  // ----- 5️⃣ Mode Switch -----
+  // ----- 5 Mode Switch -----
   textModeBtn.addEventListener("click", () => {
     textModeBtn.className = "spin-input-mode-btn active";
     viewerModeBtn.className = "spin-input-mode-btn";
@@ -1148,10 +1168,8 @@ function createSpinControls(containerId = "spinControls") {
     populateSpinViewer();
   });
 
-  // ----- 6️⃣ Spins data -----
-  let spinsData = [];
 
-  // ----- 7️⃣ Slider live updates -----
+  // ----- 6 Slider live updates -----
   slider.addEventListener("input", () => {
     let val = parseFloat(slider.value);
 
@@ -1166,7 +1184,7 @@ function createSpinControls(containerId = "spinControls") {
     }
   });
 
-  // ----- 8️⃣ Parse input & draw -----
+  // ----- 7 Parse input & draw -----
   drawBtn.addEventListener("click", drawSpinsFromInput);
   drawBtn.className="btn-mini highlight"
 
@@ -1189,7 +1207,6 @@ function createSpinControls(containerId = "spinControls") {
         color = parts[4] || "#000000";
        }
       else {
-        console.log("not a number")  
         scalingFactor = 1.0;
         color = parts[3] || "#000000";
       }
@@ -1201,23 +1218,15 @@ function createSpinControls(containerId = "spinControls") {
         color
       });
     });
+    
+    let deleteBtn = document.getElementById("deleteSpins")
+    console.log("Delete Spin Button Initialised")
+    deleteBtn.addEventListener("click",(e) => {
+               console.log("Delete Spin Clicked")
+               e.stopPropagation();
+               deleteSpins();
+        });
 
-  let deleteBtn = document.getElementById("deleteSpins")
-  deleteBtn.addEventListener("click",(e) => {
-    e.stopPropagation();
-    deleteSpins();});
-
-  function deleteSpins(){
-     console.log("Deleting Spins1")
-     if (!spinsData){return};
-     console.log("Deleting Spins2")
-     spinsData = null;
-     updateSpins(spinsData, parseFloat(slider.value));
-     
-     textarea.value = "";
-     populateSpinViewer()
-
-  }
 
     spinsData = spins;
     updateSpins(spinsData, parseFloat(slider.value));
@@ -1244,7 +1253,7 @@ function populateSpinViewer() {
   }
 
   viewerPanel.innerHTML = "";
-  if (!spinsData.length) {
+  if (spinsData===null) {
     viewerPanel.textContent = "No spins defined yet.";
     return;
   }
@@ -2225,7 +2234,6 @@ function createCompositionRow(el, count, total) {
   hexInput.style.cssText = 'width: 80px; height: 32px; padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0; box-sizing: border-box; vertical-align: top;';
 
   const mom_color = getElementDisplayColor(el);
-  console.log(mom_color[0])
 
   const picker = createColorPicker(mom_color[0], (hex) => {
     clearAllIndividualColorsForElement(el);      // Clear old color overrides
@@ -3776,6 +3784,18 @@ function updateBonds() {
 
 
 function updateSpins(spinData, spinFactor = 1) {
+  console.log(spinData)
+
+    let deleteBtn = document.getElementById("deleteSpins")
+
+    if (deleteBtn){
+    console.log("Delete Spin Button Initialised")
+    deleteBtn.addEventListener("click",(e) => {
+               console.log("Delete Spin Clicked")
+               e.stopPropagation();
+               deleteSpins();
+        });};
+
   // Dispose old spin arrows
   if (spinGroup) {
     spinGroup.children.forEach(child => {
@@ -3815,6 +3835,12 @@ function updateSpins(spinData, spinFactor = 1) {
 
     const origin = new THREE.Vector3(...wrappedCart[i]);
     const dirVec = new THREE.Vector3(...vector);
+
+    const norm = Math.sqrt(vector[0]**2 + vector[1]**2 + vector[2]**2);
+    if (norm < 0.05) {
+      console.warn("Spin vector too small (<0.05)", norm)
+      continue};
+
     const baseLen = dirVec.length();
     const totalLength = baseLen * scalingFactor * spinFactor;
     const dir = dirVec.clone().normalize();
@@ -3878,7 +3904,6 @@ function updateSpins(spinData, spinFactor = 1) {
 
 
 function updateLattice(color = currentLatticeColor) {
-  console.log(`updating lattice to ${color}` );
   disposeGroup(latticeGroup);
   if (showLattice) { 
     latticeGroup = createLatticeLines(color);
@@ -3910,7 +3935,7 @@ let spinTextInput     = '';            // holds raw multi-line text input
 // Per-atom spin spec.
 // Key is source atom index (structureData.positions index).
 // Value: { dir:[ax,by,cz], length?:number, color?:string }
-let spinData = new Map();
+let spinData = null;
 
 // ===== UTILS =====
 function parseColorToHexInt(s, fallback = '#ff3366') {
@@ -4220,11 +4245,28 @@ async function loadStructure(content, fileName = '', isDefault = false) {
                       /(^|\W)cif(\W|$)/.test(lower) ||
                       isLikelyCIFContent(contentString);
 
+     const treatAsOUTCAR = lower.endsWith('.vasp.out') ||
+                      lower.includes('.vasp.out') ||
+                      lower.includes('outcar');
+
     if (treatAsCIF) {
+      console.log("This is probably a CIF file")
       structureData = await parseCIF(contentString);
-    } else {
-      structureData = parsePOSCAR(contentString);
+    } 
+    
+    else if (treatAsOUTCAR){
+
+      console.log("This is probably an OUTCAR file");
+      ({ structure: structureData, spin: spinsData } = await parseOUTCAR(contentString));
     }
+
+
+    else {
+      console.log("This is probably a POSCAR file")
+      structureData = await parsePOSCAR(contentString);
+    }
+
+
     // keep a deep copy for restore (fractional positions + arrays)
     originalStructureData = JSON.parse(JSON.stringify(structureData));
     loadColorOverrides();
@@ -4244,6 +4286,10 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     createBackgroundControl();
     createShareButton();
     updateVisualization();
+    if (spinsData != null){
+      updateSpins(spinsData, 1.0);
+      //populateSpinViewer();
+    }
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();
     //resetView();
@@ -4870,16 +4916,12 @@ document.getElementById('viewX').onclick = () => {controls.reset(); setViewDirec
       secondOpacity = 1.0
       addSecondStructure(1.0)
       updateAtoms(1-2 * (structure2OpacityValue - 0.5))
-      console.log(1-2 * (structure2OpacityValue - 0.5))
       }
     else {
       secondOpacity =1.0
       mainOpacity = 1.0
     }
     updateVisualization(mainOpacity,secondOpacity);
-      
-    console.log(`changing opacity to ${structure2OpacityValue}`)
-
       
     updateVisualization({
           reRenderAtoms: false,
