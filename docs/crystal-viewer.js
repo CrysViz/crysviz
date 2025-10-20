@@ -1202,6 +1202,23 @@ function createSpinControls(containerId = "spinControls") {
       });
     });
 
+  let deleteBtn = document.getElementById("deleteSpins")
+  deleteBtn.addEventListener("click",(e) => {
+    e.stopPropagation();
+    deleteSpins();});
+
+  function deleteSpins(){
+     console.log("Deleting Spins1")
+     if (!spinsData){return};
+     console.log("Deleting Spins2")
+     spinsData = null;
+     updateSpins(spinsData, parseFloat(slider.value));
+     
+     textarea.value = "";
+     populateSpinViewer()
+
+  }
+
     spinsData = spins;
     updateSpins(spinsData, parseFloat(slider.value));
   }
@@ -1417,6 +1434,7 @@ function populateSpinViewer() {
   });
 
   viewerPanel.appendChild(table);
+
 }
   
 
@@ -3768,6 +3786,10 @@ function updateSpins(spinData, spinFactor = 1) {
     });
     scene.remove(spinGroup);
   }
+
+  if (spinData === null){
+    return;
+    }
 
   spinGroup = new THREE.Group();
 
