@@ -1160,7 +1160,8 @@ z-index:1000; pointer-events:none;
   z-index: 1000;
   backdrop-filter: blur(8px);
   max-width: 320px;
-  overflow-y: hidden;
+  overflow-y:hidden;
+  overflow-x:auto;
 }
 
 /* Camera panel for desktop - horizontal layout */
@@ -1404,6 +1405,8 @@ body {
 
   /* Mobile-friendly camera tools - positioned below measurement tools */
   #cameraTools {
+    overflow: visible;
+    max-width: 400px; !important;
     position: fixed !important;
     top: 110px !important;
     right: 10px !important;
