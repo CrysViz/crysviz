@@ -3663,6 +3663,222 @@ function addSecondStructure(opacity=1.0) {
 }
 
 
+function NewupdatePolyhedra() {
+  const DEBUG = true;
+
+  if (polyhedraGroup) disposeGroup(polyhedraGroup);
+  polyhedraGroup = new THREE.Group();
+  if (!showPolyhedra) { scene.add(polyhedraGroup); return; }
+
+  // --- Style ---
+  const FACE_OPACITY = 0.7;
+  const EDGE_OPACITY = 1.0
+  const FACE_FALLBACK_COLOR = 0x00aaff;
+  const EDGE_COLOR = 0x006c99;
+  const EDGE_ANGLE = 18;
+  const DOUBLE_SIDE = true;
+  const DEPTH_WRITE = false;
+  const POLY_OFFSET = true;
+  const POLY_OFFSET_FACTOR = 1;
+  const POLY_OFFSET_UNITS = 1;
+
+  // --- Behavior ---
+  const CENTERED_CNs_DESC = [12,10,8,7,6,5,4];
+  const ALLOW_CAGES = true;
+  const CAGE_TARGET_NS_DESC = [20,12,10,8,6,4];
+  const CAGE_BFS_DEPTH = 5;
+  const MAX_EDGE_SPREAD = 1.30;
+  const MIN_THICKNESS_RATIO = 0.08;
+
+  const ConvexGeomCtor = (typeof ConvexGeometry !== 'undefined') ? ConvexGeometry : (THREE.ConvexGeometry || null);
+  if (!ConvexGeomCtor) { console.error('[updatePolyhedra] ConvexGeometry missing'); scene.add(polyhedraGroup); return; }
+
+  // --- Helpers ---
+  function thicknessRatio(points) {
+    const mean = points.reduce((acc,p)=>acc.add(p), new THREE.Vector3()).multiplyScalar(1/points.length);
+    const rel = points.map(p=>p.clone().sub(mean));
+    let xx=0,xy=0,xz=0,yy=0,yz=0,zz=0;
+    for(const v of rel){ const x=v.x,y=v.y,z=v.z; xx+=x*x; xy+=x*y; xz+=x*z; yy+=y*y; yz+=y*z; zz+=z*z; }
+    const n=Math.max(1,rel.length); xx/=n; xy/=n; xz/=n; yy/=n; yz/=n; zz/=n;
+    const m00=xx,m01=xy,m02=xz,m11=yy,m12=yz,m22=zz;
+    const p1=m01*m01+m02*m02+m12*m12;
+    let eMin=0,eMax=0;
+    if(p1<=1e-18){ const e=[m00,m11,m22].sort((a,b)=>a-b); eMin=e[0]; eMax=e[2]; }
+    else {
+      const q=(m00+m11+m22)/3;
+      let p2=(m00-q)*(m00-q)+(m11-q)*(m11-q)+(m22-q)*(m22-q)+2*p1;
+      const p=Math.sqrt(p2/6);
+      const b00=(m00-q)/p,b01=m01/p,b02=m02/p,b10=m01/p,b11=(m11-q)/p,b12=m12/p,b20=m02/p,b21=m12/p,b22=(m22-q)/p;
+      const detB = b00*(b11*b22-b12*b21)-b01*(b10*b22-b12*b20)+b02*(b10*b21-b11*b20);
+      const r = Math.max(-1,Math.min(1,detB/2));
+      const phi = Math.acos(r)/3;
+      const eig1 = q+2*p*Math.cos(phi);
+      const eig3 = q+2*p*Math.cos(phi+2*Math.PI/3);
+      const eig2 = 3*q-eig1-eig3;
+      const ev=[eig1,eig2,eig3].sort((a,b)=>a-b);
+      eMin=ev[0]; eMax=ev[2];
+    }
+    return eMin/Math.max(1e-12,eMax);
+  }
+
+  function edgeSpreadOK(geom) {
+    if(!geom) return false;
+    const egeom=new THREE.EdgesGeometry(geom,EDGE_ANGLE);
+    const pos=egeom.getAttribute('position');
+    let minL=Infinity,maxL=0;
+    for(let i=0;i<pos.count;i+=2){
+      const a=new THREE.Vector3().fromBufferAttribute(pos,i);
+      const b=new THREE.Vector3().fromBufferAttribute(pos,i+1);
+      const L=a.distanceTo(b);
+      minL=Math.min(minL,L); maxL=Math.max(maxL,L);
+    }
+    egeom.dispose();
+    if(!isFinite(minL)||minL<=1e-9) return false;
+    return maxL/minL<=MAX_EDGE_SPREAD;
+  }
+
+  function pickSpreadSubset(points,N){
+    if(points.length<N) return null;
+    let aIdx=0,bIdx=1,best=-1;
+    for(let i=0;i<points.length;i++) for(let j=i+1;j<points.length;j++){ const d=points[i].distanceToSquared(points[j]); if(d>best){best=d;aIdx=i;bIdx=j;} }
+    const chosenIdx=[aIdx,bIdx];
+    while(chosenIdx.length<N){
+      let bestIdx=-1,bestScore=-Infinity;
+      for(let i=0;i<points.length;i++){ if(chosenIdx.includes(i)) continue; let minD=Infinity; for(const j of chosenIdx){ const d=points[i].distanceToSquared(points[j]); if(d<minD) minD=minD; } if(minD>bestScore){ bestScore=minD; bestIdx=i; } }
+      if(bestIdx<0) break;
+      chosenIdx.push(bestIdx);
+    }
+    if(chosenIdx.length<N) return null;
+    return chosenIdx.map(k=>points[k]);
+  }
+
+  function pointInsideConvexGeometry(p,geom,eps=1e-6){
+    if(!geom) return false;
+    const pos=geom.getAttribute('position');
+    const idx=geom.getIndex();
+    if(!pos) return false;
+    const pc=new THREE.Vector3();
+    for(let i=0;i<pos.count;i++) pc.add(new THREE.Vector3().fromBufferAttribute(pos,i));
+    pc.multiplyScalar(1/pos.count);
+    const triCount=idx?idx.count/3:pos.count/3;
+    for(let t=0;t<triCount;t++){
+      const i0=idx?idx.getX(3*t):3*t,i1=idx?idx.getX(3*t+1):3*t+1,i2=idx?idx.getX(3*t+2):3*t+2;
+      const a=new THREE.Vector3().fromBufferAttribute(pos,i0),b=new THREE.Vector3().fromBufferAttribute(pos,i1),c=new THREE.Vector3().fromBufferAttribute(pos,i2);
+      const n=b.clone().sub(a).cross(c.clone().sub(a));
+      if(n.lengthSq()<1e-18) continue;
+      const outward=Math.sign(n.dot(a.clone().sub(pc)))||1;
+      n.multiplyScalar(outward);
+      if(n.dot(new THREE.Vector3().subVectors(p,a))>eps) return false;
+    }
+    return true;
+  }
+
+  // --- Build wrapped positions, adjacency, per-center images ---
+  const wrapped = periodicWrapped(structureData.positions, structureData.elements);
+  const wrappedCart = fracToCart(wrapped.frac,structureData.lattice);
+  const Wpos = wrappedCart.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
+  const Welem = wrapped.elements;
+  const Wsrc = wrapped.srcIndex;
+  const L = structureData.lattice;
+  const a = new THREE.Vector3(...L[0]), b=new THREE.Vector3(...L[1]), c=new THREE.Vector3(...L[2]);
+
+  const shifts=[];
+  for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++) for(let dz=-1;dz<=1;dz++) shifts.push([dx,dy,dz]);
+
+  const adjacency = new Map();
+  function addBond(u,v){ if(!adjacency.has(u)) adjacency.set(u,new Set()); if(!adjacency.has(v)) adjacency.set(v,new Set()); adjacency.get(u).add(v); adjacency.get(v).add(u); }
+
+  const perCenterImages = new Map();
+  for(let i=0;i<Wpos.length;i++){
+    const pi=Wpos[i],ei=Welem[i],srcI=Wsrc[i];
+    const bonded=[];
+    for(let j=0;j<Wpos.length;j++){ if(i===j) continue; const pj=Wpos[j],ej=Welem[j],srcJ=Wsrc[j]; const cutoff=getBondCutoff(ei,ej); if(cutoff<=1e-3) continue;
+      for(const [dx,dy,dz] of shifts){ const shiftVec=new THREE.Vector3().addScaledVector(a,dx).addScaledVector(b,dy).addScaledVector(c,dz); const q=pj.clone().add(shiftVec); const d=q.distanceTo(pi); if(d>cutoff||d<1e-4) continue; addBond(srcI,srcJ); bonded.push({pos:q,srcJ,shift:[dx,dy,dz],d,wi:j}); } 
+    } 
+    perCenterImages.set(i,bonded);
+  }
+
+  const wrappedIdxBySrc = new Map();
+  for(let wi=0;wi<Wsrc.length;wi++){ const s=Wsrc[wi]; if(!wrappedIdxBySrc.has(s)) wrappedIdxBySrc.set(s,[]); wrappedIdxBySrc.get(s).push(wi); }
+
+  if(DEBUG) console.info('[poly DEBUG] Wpos.length=',Wpos.length,'uniqueSrcs=',new Set(Wsrc).size,'adjacencyEntries=',adjacency.size);
+
+  // --- Candidates generation (centered and cage) ---
+  const candidates=[];
+
+  // Centered polyhedra
+  for(let i=0;i<Wpos.length;i++){
+    const imgs=perCenterImages.get(i)||[];
+    if(imgs.length<3) continue;
+    for(const N of CENTERED_CNs_DESC){ if(imgs.length<N) continue;
+      const nearest=imgs.slice().sort((u,v)=>u.d-v.d).slice(0,N);
+      const posList=nearest.map(o=>o.pos);
+      let geom;
+      try{ geom=new ConvexGeomCtor(posList); } catch{ continue; }
+      if(!edgeSpreadOK(geom)||thicknessRatio(posList)<MIN_THICKNESS_RATIO){ geom.dispose(); continue; }
+      candidates.push({kind:'centered',centerWrappedIdx:i,centerPos:Wpos[i],colorElem:Welem[i],posList,posListSrcs:nearest.map(o=>o.srcJ),geom});
+      break;
+    }
+  }
+
+  // Cage polyhedra
+  if(ALLOW_CAGES){
+    for(let seedWi=0;seedWi<Wpos.length;seedWi++){
+      const seedSrc=Wsrc[seedWi]; const seedElem=Welem[seedWi];
+      let pool=[{wi:seedWi,pos:Wpos[seedWi],src:seedSrc}];
+      // Simple BFS limited to CAGE_BFS_DEPTH
+      const visited=new Set([seedSrc]); let q=[seedSrc]; let depth=0;
+      while(q.length>0 && depth<CAGE_BFS_DEPTH){ const nextQ=[]; for(const u of q){ const nb=adjacency.get(u)||[]; for(const v of nb){ if(!visited.has(v)){ visited.add(v); const idxs=wrappedIdxBySrc.get(v)||[]; for(const wi of idxs) pool.push({wi,pos:Wpos[wi],src:v}); nextQ.push(v); } } } q=nextQ; depth++; }
+      if(pool.length<4) continue;
+      const centroid=pool.reduce((acc,o)=>acc.add(o.pos),new THREE.Vector3()).multiplyScalar(1/pool.length);
+      const dists=pool.map(o=>o.pos.distanceTo(centroid)).sort((a,b)=>a-b);
+      for(const N of CAGE_TARGET_NS_DESC){
+        const band=pool.slice(0,N);
+        const posList=band.map(o=>o.pos);
+        let geom;
+        try{ geom=new ConvexGeomCtor(posList); } catch{ continue; }
+        if(!edgeSpreadOK(geom)||thicknessRatio(posList)<MIN_THICKNESS_RATIO){ geom.dispose(); continue; }
+        candidates.push({kind:'cage',posList,colorElem:seedElem,posListSrcs:band.map(o=>o.src),geom});
+        break;
+      }
+    }
+  }
+
+  // --- Sorting candidates: larger N first, centered over cages ---
+  candidates.sort((A,B)=>{ if(A.posList.length!==B.posList.length) return B.posList.length-A.posList.length; if(A.kind!==B.kind) return (A.kind==='centered'? -1:1); return 0; });
+
+  const acceptedCenterWrappedKeys=new Set();
+  const acceptedHulls=[];
+
+  const sharedEdgeMat=new THREE.LineBasicMaterial({color:EDGE_COLOR,transparent:true,opacity:EDGE_OPACITY});
+
+  for(const cand of candidates){
+    // Avoid nesting
+    let inside=false;
+    for(const g of acceptedHulls){ if(pointInsideConvexGeometry(cand.posList[0],g)) inside=true; }
+    if(inside){ if(cand.geom && cand.geom.dispose) cand.geom.dispose(); continue; }
+
+    const faceColor=(typeof getElementColor==='function')? getElementColor(cand.colorElem): FACE_FALLBACK_COLOR;
+    const mat=new THREE.MeshStandardMaterial({color:faceColor,transparent:true,opacity:FACE_OPACITY,metalness:0,roughness:1,side:DOUBLE_SIDE?THREE.DoubleSide:THREE.FrontSide,depthWrite:DEPTH_WRITE,polygonOffset:POLY_OFFSET,polygonOffsetFactor:POLY_OFFSET?POLY_OFFSET_FACTOR:0,polygonOffsetUnits:POLY_OFFSET?POLY_OFFSET_UNITS:0});
+
+    const mesh=new THREE.Mesh(cand.geom,mat);
+    mesh.userData={type:'polyhedron',mode:cand.kind,cn:cand.posList.length,vertexSrcs:cand.posListSrcs};
+    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(cand.geom,EDGE_ANGLE),sharedEdgeMat));
+    polyhedraGroup.add(mesh);
+
+    acceptedHulls.push(cand.geom);
+    if(cand.kind==='centered'&&typeof cand.centerWrappedIdx==='number') acceptedCenterWrappedKeys.add(`wi:${cand.centerWrappedIdx}`);
+  }
+
+  scene.add(polyhedraGroup);
+  if(DEBUG) console.info('[poly DEBUG] total candidates rendered:',polyhedraGroup.children.length);
+}
+
+
+//----------------------------------/
+//-----Below versio works but not with B12 cages ----------------------/
+//----------------------------------/
+
 // --- Utility: robust median (used by the C12 "band-hull" path and a few sanity checks) ---
 function median(arr) {
   if (!arr || arr.length === 0) return 0;
@@ -4096,7 +4312,9 @@ function minVertexDegreeForCageSize(N) {
 
           // 2) Induced-degree in the selected vertex set (B12 needs 5)
           const minDeg = minVertexDegreeForCageSize(posList.length);
-          if (!inducedDegreeOK(selSrcs, minDeg)) { geom.dispose(); continue; }
+          if (!inducedDegreeOK(selSrcs, minDeg)) { 
+            geom.dispose(); continue; 
+          }
           // 3) Accept cage candidate (push into candidates with posList/selSrcs/refPoint as you already do)
 
 

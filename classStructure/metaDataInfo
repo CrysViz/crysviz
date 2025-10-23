@@ -1,0 +1,34 @@
+CrysViz/
+│
+├── index.html
+├── main.js
+├── classes/
+│   ├── ColoredComponent.js
+│   ├── Structure.js
+│   ├── Spin.js
+│   ├── Forces.js
+│   ├── Polyhedron.js
+│   ├── Polyhedra.js
+│   ├── Symmetry.js
+│   ├── StructureData.js
+│   └── classIndex.js       
+├── modules/
+│   ├── AtomsModule.js
+│   ├── LatticeModule.js
+│   ├── BondsModule.js
+│   ├── SpinModule.js
+│   ├── PolyhedraModule.js
+│   ├── MeasurementModule.js
+│   ├── TrajectoryModule.js
+│   └── moduleIndex.js
+├───panels/
+│   ├── CameraPanel.js
+│   ├── ToolPanel.js
+│   ├── StructureDataInfoPanel.js
+│   └── panelIndex.js
+└── styles/
+    ├── main_screen.css
+    ├── phone.css
+    ├── medium_screen.css
+    ├── small_screen.css
+    └── styles.css
