@@ -20,11 +20,18 @@ CrysViz/
 │   ├── PolyhedraModule.js
 │   ├── MeasurementModule.js
 │   ├── TrajectoryModule.js
+│   ├── ReaderModule.js
+│   ├── StructureInputModule.js
+│   ├── ColorPickerModule.js
+│   ├── ExportModule.js
 │   └── moduleIndex.js
 ├───panels/
+│   ├── StructureInputPanel.js
 │   ├── CameraPanel.js
 │   ├── ToolPanel.js
 │   ├── StructureDataInfoPanel.js
+│   ├── GeneralSettingsPanel.js
+│   ├── SpinInputPanel.js
 │   └── panelIndex.js
 └── styles/
     ├── main_screen.css
