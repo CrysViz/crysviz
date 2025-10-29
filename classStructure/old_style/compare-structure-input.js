@@ -1,3 +1,4 @@
+
 const NUMBER_PRECISION = 6;
 const MATERIALS_PROJECT_OPTIMADE_BASE = 'https://optimade.materialsproject.org/v1/structures/';
 const ALEXANDRIA_OPTIMADE_BASE = 'https://alexandria.icams.rub.de/pbe/v1/structures/';

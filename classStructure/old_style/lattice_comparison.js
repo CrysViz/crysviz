@@ -1,3 +1,5 @@
+import {general} from '../store.js';
+
 export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
   // --------------------------
   // Helper functions
@@ -78,7 +80,7 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
     const checkbox = document.getElementById("showComparisonInfo");
     if (checkbox) {
       checkbox.checked = false; 
-      showComparisonInfo = false;
+      general.showComparisonInfo = false;
       }
   });
 

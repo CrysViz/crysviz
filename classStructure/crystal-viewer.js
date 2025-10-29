@@ -5,7 +5,7 @@ import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/exam
 import { setupStructureInput, isLikelyCIFContent, parsePOSCAR, cartToFractional } from './old_style/structure-input.js';
 import { setupSecondStructureInput } from './old_style/compare-structure-input.js';
 import { createLatticeComparisonPanel }from './old_style/lattice_comparison.js'
-import { parseCIF} from './old_style/file_reader.js';
+
 import { parseOUTCAR} from './old_style/file_reader_OUTCAR.js';
 import { createColorPicker } from './old_style/color-picker.js';
 import { updateAngleDisplays, setupAxisControls} from './old_style/cameraAngleControl.js';
@@ -14,13 +14,14 @@ import { updateAngleDisplays, setupAxisControls} from './old_style/cameraAngleCo
 // import modules
 
 
-import {animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames. 
-import {shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
-import {updateBonds} from './modules/BondsModule.js'
-import {updateLattice,recomputeLatticeDirs,latticeDirsNorm} from '../modules/LatticeModule.js'
-import {Structure} from './classes/Structure.js';
-import {StructureData} from './classes/StructureData.js';
-import {updateSpins} from './modules/SpinModule.js'
+import { animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames. 
+import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
+import { updateBonds} from './modules/BondsModule.js'
+import { updateLattice,recomputeLatticeDirs,latticeDirsNorm} from '../modules/LatticeModule.js'
+import { Structure} from './classes/Structure.js';
+import { StructureData} from './classes/StructureData.js';
+import { updateSpins} from './modules/SpinModule.js'
+import { parseCIF} from './modules/ReaderModule.js';
 
 // import panels
 import {
@@ -64,7 +65,6 @@ import { app,structureData,spinsData, groups, general,mode,defaultPOSCAR, polySt
 
 let polyhedraGroup;
 let atomsGroup2, bondsGroup2, latticeGroup2,spinGroup2;
-
 let structureData2 = null;
 
 let originalStructureData = null; // deep-copy of last loaded structure for restore
@@ -78,8 +78,6 @@ let measureLine = null;          // THREE.Line
 let measureLabel = null;         // CSS2DObject
 let measureLines = [];           // Array to store multiple measurement lines
 let measureLabels = [];          // Array to store multiple measurement labels
-
-
 
 
 function getElementColor(element) {
@@ -1668,7 +1666,7 @@ function addLatticeParametersSection() {
     general.modifiedLattice = null
     structureData.lattice = originalData.lattice
     if (general.currentSupercell != null){
-      createSupercell(currentSupercell.nx,currentSupercell.ny,currentSupercell.nz)
+      createSupercell(general.currentSupercell.nx,general.currentSupercell.ny,general.currentSupercell.nz)
     } 
     updateVisualization({ reRenderAtoms:true, reRenderBonds:true, reRenderLattice:true,reRenderOther:true });
     resetView();
@@ -2274,7 +2272,7 @@ function addSecondStructure(opacity=1.0) {
 
   disposeGroup(atomsGroup2);
 
-  if (!showSecond) return;
+  if (!general.showSecond) return;
     atomsGroup2 = new THREE.Group();
   
   const _structureData = structureData2
@@ -2290,7 +2288,7 @@ function addSecondStructure(opacity=1.0) {
   }
 
 
-  if (showComparisonInfo===true) {
+  if (general.showComparisonInfo===true) {
        const latticeCompPanel =  createLatticeComparisonPanel( structureData.lattice, _structureData.lattice)
        if (latticeCompPanel){
         document.body.appendChild(latticeCompPanel);
@@ -3096,78 +3094,6 @@ function fracVecToCart(ax, by, cz, lattice) {
     ax * a[2] + by * b[2] + cz * c[2],
   );
   return v;
-}
-
-function parseSpinsText(text, { allowLineIndexMapping = true } = {}) {
-  // Lines can be:
-  //   "a b c length color"
-  //   "index a b c length color"
-  // index: 0-based or 1-based (we normalize to 0-based)
-  // length, color are optional; we fallback to defaults
-  const out = new Map();
-  if (!text) return out;
-  const lines = text.split('\n');
-
-  for (let li = 0; li < lines.length; li++) {
-    const raw = lines[li].trim();
-    if (!raw || raw.startsWith('#') || raw.startsWith('//')) continue;
-    const toks = raw.split(/[\s,]+/).filter(Boolean);
-    if (toks.length < 3) continue;
-
-    let idx = null, off = 0;
-
-    // If first token looks like an integer, treat it as index
-    const maybeIdx = parseFloat(toks[0]);
-    if (Number.isFinite(maybeIdx) && Math.floor(maybeIdx) === maybeIdx && toks.length >= 4) {
-      idx = parseInt(toks[0], 10);
-      // Support 1-based in input by auto-shifting to 0-based if user used 1..N range:
-      if (idx >= 1) {
-        // We accept both; if you want strict 0-based only, remove this adjustment.
-        idx = idx - 1;
-      }
-      off = 1;
-    } else if (!allowLineIndexMapping) {
-      // If we require explicit indices and didn't get one, skip.
-      continue;
-    }
-
-    const ax = parseFloat(toks[0 + off]);
-    const by = parseFloat(toks[1 + off]);
-    const cz = parseFloat(toks[2 + off]);
-    if (!Number.isFinite(ax) || !Number.isFinite(by) || !Number.isFinite(cz)) continue;
-
-    let length = undefined;
-    let color  = undefined;
-
-    if (toks[3 + off] !== undefined) {
-      const maybeLen = parseFloat(toks[3 + off]);
-      if (Number.isFinite(maybeLen)) length = maybeLen;
-      else color = toks[3 + off]; // user may have omitted length and given color
-    }
-    if (toks[4 + off] !== undefined) {
-      color = toks[4 + off];
-    }
-
-    if (idx === null) idx = li; // line i maps to atom i when index not given
-
-    out.set(idx, { dir: [ax, by, cz], length, color });
-  }
-
-  return out;
-}
-
-function makeArrowAt(positionVec3, dirVec3, length, colorHexInt) {
-  const dir = dirVec3.clone();
-  const L = (typeof length === 'number') ? length : defaultSpinLength;
-  if (dir.lengthSq() < 1e-16 || L <= 1e-8) return null;
-  dir.normalize();
-
-  // ArrowHelper(colorHex|Color)
-  const arrow = new THREE.ArrowHelper(dir, positionVec3, L, colorHexInt);
-  // Optionally tweak shaft/head sizes, if desired:
-  // arrow.line.material.linewidth = 2; // (Note: line width not supported widely in WebGL)
-  // arrow.cone.scale.set(1.0, 1.0, 1.0); // adjust head thickness if needed
-  return arrow;
 }
 
 function openBackgroundColorPicker(dot) {
