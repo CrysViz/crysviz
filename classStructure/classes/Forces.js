@@ -1,10 +1,11 @@
-import { ColoredComponent } from './ColoredComponent.js';
+import { ColoredObject } from './ColoredObject.js';
 
-class Forces extends ColoredComponent {
-  constructor({ forces = [], scaling = [], colors = [] } = {}) {
-    super({ colors });
+export class Forces extends ColoredObject {
+  constructor({ forces = [], scaling = [], colors = [], forcesGroup = null } = {}) {
+    super({ colors, defaultColors });
     this.forces = forces;   // 3×N
     this.scaling = scaling; // N
+    this.forcesGroup = forcesGroup;
   }
 
   get N() {

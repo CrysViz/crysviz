@@ -1,3 +1,11 @@
+export const structureData = {
+  positions:null,
+  elements:null,
+  lattice:null,
+  supercell:null,
+}
+
+export const spinsData = [];
 
 export const app = {
   renderer: null,
@@ -13,6 +21,14 @@ export const app = {
   orthographicFrustumSize:null,
   keyLight:null,
 };
+
+export const groups = {
+  bondsGroup:null,
+  atomsGroup:null,
+  latticeGroup:null,
+  spinGroup:null,
+}
+
 
 export const general = {  
   currentLatticeColor:null,
@@ -89,7 +105,7 @@ export const atomicRadii = {
   Tl: 1.45, Pb: 1.46, Bi: 1.48, Po: 1.40, At: 1.50, Rn: 1.50
 }; // atomic radii in angstroms
 
-export const jmolColors = {
+export const jmolColorMap = {
   H: 0xffffff, He: 0xd9ffff, Li: 0xcc80ff, Be: 0xc2ff00, B: 0xffb5b5, C: 0x909090, N: 0x3050f8, O: 0xff0d0d,
   F: 0x90e050, Ne: 0xb3e3f5, Na: 0xab5cf2, Mg: 0x8aff00, Al: 0xbfa6a6, Si: 0xf0c8a0, P: 0xff8000, S: 0xffff30,
   Cl: 0x1ff01f, Ar: 0x80d1e3, K: 0x8f40d4, Ca: 0x3dff00, Sc: 0xe6e6e6, Ti: 0xbfc2c7, V: 0xa6a6ab, Cr: 0x8a99c7,
@@ -138,7 +154,7 @@ export function getLatticeVisSettings(color) {
   };
 
 
-export const defaultColors = {
+export const defaultColorMap = {
   H:  0xffcccc,
   D:  0xccccff,
   He: 0xfce9d0,

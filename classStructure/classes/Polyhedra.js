@@ -1,26 +1,17 @@
-import { ColoredComponent } from './ColoredComponent.js';
+import { Polyhedron } from './Polyhedron.js';
 
-export class Polyhedron {
-  constructor({ name = "", vertices = [], centerIndex = null, type = null } = {}) {
-    this.name = name;
-    this.vertices = vertices;
-    this.centerIndex = centerIndex;
-    this.type = type;
-  }
+export class Polyhedra {
+  constructor({ polyhedra = [] } = {}) {
+    if (!Array.isArray(polyhedra)) {
+      throw new TypeError("polyhedra must be an array");
+    }
 
-  get numVertices() {
-    return this.vertices.length;
-  }
-}
+    for (const item of polyhedra) {
+      if (!(item instanceof Polyhedron)) {
+        throw new TypeError("Each item in polyhedra must be an instance of Polyhedron");
+      }
+    }
 
-class Polyhedra extends ColoredComponent {
-  constructor({ items = [], colors = [] } = {}) {
-    super({ colors });
-    this.items = items.map(p => p instanceof Polyhedron ? p : new Polyhedron(p));
-  }
-
-  get M() {
-    return this.items.length;
+    this.polyhedra = polyhedra;
   }
 }
-

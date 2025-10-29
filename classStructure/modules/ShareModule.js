@@ -1,6 +1,6 @@
 // Share functionality - moved to shareutils.js
 //
-import { app, general,mode,defaultPOSCAR, polyStyle, defaultColors, jmolColors, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings } from '../store.js';
+import { app, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings } from '../store.js';
 
 export function shareStructure() {
   // Prepare global state object for sharing

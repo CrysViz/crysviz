@@ -4,6 +4,8 @@ import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/exam
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 import { TrackballControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/TrackballControls.js';
 import { app } from '../store.js';
+import { updateAngleDisplays, setupAxisControls} from '../modules/cameraAngleControl.js';
+import { getCellCenterAndDist} from '../crystal-viewer.js'
 
 export function disposeGroup(grp) {
   if (!grp) return;
@@ -161,4 +163,67 @@ function sizeGizmo(){
 }
   sizeGizmo();
 }
+
+
+
+export function switchCameraType() {
+  const w = view.clientWidth || window.innerWidth;
+  const h = view.clientHeight || window.innerHeight;
+
+  if (app.useOrthographicCamera) {
+    // Switch to orthographic camera
+    const { center, dist } = getCellCenterAndDist();
+    app.orthographicFrustumSize = dist * 0.5; // Adjust this multiplier as needed
+    const aspect = w / h;
+    app.camera = new THREE.OrthographicCamera(
+      -app.orthographicFrustumSize,
+      app.orthographicFrustumSize,
+      app.orthographicFrustumSize / aspect,
+      -app.orthographicFrustumSize / aspect,
+      0.1,
+      1000
+    );
+  } else {
+    // Switch to perspective camera
+    app.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
+    app.orthographicFrustumSize = null;
+  }
+  app.controls.object = app.camera;
+  ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis));
+
+  const { center, dist } = getCellCenterAndDist();
+  app.camera.position.copy(center.clone().add(new THREE.Vector3(1,1,1).normalize().multiplyScalar(dist)));
+  app.controls.target.copy(center);
+  app.controls.update();
+  resizeRenderer(app.orthographicFrustumSize);
+}
+
+// makes the center of structure as the rotation center.
+export function setViewDirection(dir) {
+  //console.log('[setView] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
+  const { center, dist } = getCellCenterAndDist();
+  const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
+  if (n.x === 0 && n.y === 1 && n.z === 0){
+    //console.log("changing camer.up to 0.,0.,1.")
+    app.camera.up = new THREE.Vector3(0.,0.,1.);}
+  else {
+    app.camera.up = new THREE.Vector3(0.,1.,0.);
+    //console.log("changing camer.up to 0.,1.,0.")
+  }
+
+  app.camera.position.copy(center.clone().add(n.multiplyScalar(dist)));
+  app.controls.target = center;
+  app.controls.update();
+}
+
+
+export function resetView() { app.controls.reset(); setViewDirection(new THREE.Vector3(1,1,1)); } //CAMERA RESET
+
+
+
+
+
+
+
+
 

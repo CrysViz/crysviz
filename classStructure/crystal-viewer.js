@@ -8,7 +8,7 @@ import { createLatticeComparisonPanel }from './old_style/lattice_comparison.js'
 import { parseCIF} from './old_style/file_reader.js';
 import { parseOUTCAR} from './old_style/file_reader_OUTCAR.js';
 import { createColorPicker } from './old_style/color-picker.js';
-import {updateAngleDisplays, setupAxisControls} from './old_style/cameraAngleControl.js';
+import { updateAngleDisplays, setupAxisControls} from './old_style/cameraAngleControl.js';
 
 
 // import modules
@@ -16,8 +16,11 @@ import {updateAngleDisplays, setupAxisControls} from './old_style/cameraAngleCon
 
 import {animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames. 
 import {shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
-
-
+import {updateBonds} from './modules/BondsModule.js'
+import {updateLattice,recomputeLatticeDirs,latticeDirsNorm} from '../modules/LatticeModule.js'
+import {Structure} from './classes/Structure.js';
+import {StructureData} from './classes/StructureData.js';
+import {updateSpins} from './modules/SpinModule.js'
 
 // import panels
 import {
@@ -27,13 +30,16 @@ import {
   initControls,
   resizeRenderer,
   initAxesGizmo,
-  disposeGroup
+  disposeGroup,
+  switchCameraType,
+  setViewDirection,
+  resetView
+  
 } from './panels/WindowAndSceneControls.js'
 
 import {loadAboutContent, openAboutPanel, closeAboutPanel} from './panels/AboutPanel.js';
 
-
-
+import {createSpinControls} from './modules/SpinModule.js'
 
 
 // import utils needs to moce to the "share" functionality
@@ -53,16 +59,14 @@ const setStatus = (s) => {
 };
 
 // store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc. 
-import { app, general,mode,defaultPOSCAR, polyStyle, defaultColors, jmolColors, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from './store.js';
+import { app,structureData,spinsData, groups, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from './store.js';
 
 
-let atomsGroup, bondsGroup, latticeGroup,spinGroup, polyhedraGroup;
+let polyhedraGroup;
 let atomsGroup2, bondsGroup2, latticeGroup2,spinGroup2;
 
-let structureData = null;
 let structureData2 = null;
 
-let spinsData = null;
 let originalStructureData = null; // deep-copy of last loaded structure for restore
 
 let atomTooltip = null;
@@ -83,11 +87,11 @@ function getElementColor(element) {
   if (general.userColorOverrides && general.userColorOverrides[element] !== undefined) {
     return general.userColorOverrides[element];
   }
-  const colorScheme = general.useDefaultColors ? defaultColors : jmolColors;
+  const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
   return colorScheme[element] || 0x808080;
 }
 
-function getIndividualAtomColor(element, atomIndex) {
+export function getIndividualAtomColor(element, atomIndex) {
   // Check if individual atom has custom color
   const atomKey = `${element}_${atomIndex}`;
   if (general.individualAtomColors && general.individualAtomColors[atomKey] !== undefined) {
@@ -99,7 +103,7 @@ function getIndividualAtomColor(element, atomIndex) {
 
 // Get the default palette color for an element (ignores user overrides)
 function getDefaultElementColor(element) {
-  const colorScheme = general.useDefaultColors ? defaultColors : jmolColors;
+  const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
   return colorScheme[element] || 0x808080;
 }
 
@@ -236,7 +240,7 @@ function createPieDot(colors, size = 200) {
 function clearAllIndividualColorsForElement(element) {
   if (!general.individualAtomColors) return;
   // Remove all individual colors for this element
-  const keysToRemove = Object.keys(individualAtomColors).filter(key => key.startsWith(`${element}_`));
+  const keysToRemove = Object.keys(general.individualAtomColors).filter(key => key.startsWith(`${element}_`));
   keysToRemove.forEach(key => delete general.individualAtomColors[key]);
   saveIndividualAtomColors();
 }
@@ -251,7 +255,7 @@ function createSupercell(nx = 1, ny = 1, nz = 1) {
 
   let baseLattice;
 
-  if (genera.modifiedLattice == null) {
+  if (general.modifiedLattice == null) {
     // No modified lattice → use original
     baseLattice = originalStructureData.lattice;
   } else {
@@ -299,6 +303,21 @@ function createSupercell(nx = 1, ny = 1, nz = 1) {
   structureData.lattice = newLattice;
   structureData.supercell = { nx, ny, nz };
   general.currentSupercell={ nx, ny, nz }
+  
+  let structure = new Structure({
+    elements: newElements,
+    positions: newPositions,
+    lattice: newLattice,
+    supercell: { nx, ny, nz }
+  });
+
+  let structureD = new StructureData()
+  let id = 0
+  structureD.structure.push(structure);
+  structureD.id.push(id);
+
+  console.log(structureD.structure[0].defaultColors["Ba"])
+  console.log(structureD.structure[0].colors["Ba"])
 
   // Re-render
   //
@@ -310,10 +329,7 @@ function createSupercell(nx = 1, ny = 1, nz = 1) {
 }
 
 
-
-
-
-function getAtomRadius(element) {
+export function getAtomRadius(element) {
   return (atomicRadii[element] || 1.0) * general.atomSize;
 }
 
@@ -386,32 +402,8 @@ function updateMeasurementMarkers() {
   });
 }
 
-// Cached normalized lattice directions for performance; recompute on structure change
-let cachedLatticeDirs = {
-  a: new THREE.Vector3(1,0,0),
-  b: new THREE.Vector3(0,1,0),
-  c: new THREE.Vector3(0,0,1)
-};
-function recomputeLatticeDirs() {
-  if (!structureData || !structureData.lattice) {
-    cachedLatticeDirs = {
-      a: new THREE.Vector3(1,0,0),
-      b: new THREE.Vector3(0,1,0),
-      c: new THREE.Vector3(0,0,1)
-    };
-    return;
-  }
-  const L = structureData.lattice;
-  cachedLatticeDirs = {
-    a: new THREE.Vector3(L[0][0], L[0][1], L[0][2]).normalize(),
-    b: new THREE.Vector3(L[1][0], L[1][1], L[1][2]).normalize(),
-    c: new THREE.Vector3(L[2][0], L[2][1], L[2][2]).normalize()
-  };
-}
-function latticeDirsNorm() { return cachedLatticeDirs; }
 
-
-function periodicWrapped(frac, elements) {
+export function periodicWrapped(frac, elements) {
   // Build a fully "filled" unit cell by duplicating atoms that sit on
   // faces/edges/corners so that both sides of each face are populated.
   // We do this by adding, per-dimension, one extra image just inside the
@@ -477,58 +469,6 @@ export function getCellCenterAndDist() {
   return { center, dist };
 }
 
-// makes the center of structure as the rotation center.
-export function setViewDirection(dir) {
-  //console.log('[setView] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
-  const { center, dist } = getCellCenterAndDist();
-  const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
-  if (n.x === 0 && n.y === 1 && n.z === 0){
-    //console.log("changing camer.up to 0.,0.,1.")
-    app.camera.up = new THREE.Vector3(0.,0.,1.);}
-  else {
-    app.camera.up = new THREE.Vector3(0.,1.,0.);
-    //console.log("changing camer.up to 0.,1.,0.")
-  }
-
-  app.camera.position.copy(center.clone().add(n.multiplyScalar(dist)));
-  app.controls.target = center;
-  app.controls.update();
-}
-
-
-function resetView() { app.controls.reset(); setViewDirection(new THREE.Vector3(1,1,1)); } //CAMERA RESET
-
-function switchCameraType() {
-  const w = view.clientWidth || window.innerWidth;
-  const h = view.clientHeight || window.innerHeight;
-
-  if (app.useOrthographicCamera) {
-    // Switch to orthographic camera
-    const { center, dist } = getCellCenterAndDist();
-    app.orthographicFrustumSize = dist * 0.5; // Adjust this multiplier as needed
-    const aspect = w / h;
-    app.camera = new THREE.OrthographicCamera(
-      -app.orthographicFrustumSize,
-      app.orthographicFrustumSize,
-      app.orthographicFrustumSize / aspect,
-      -app.orthographicFrustumSize / aspect,
-      0.1,
-      1000
-    );
-  } else {
-    // Switch to perspective camera
-    app.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
-    app.orthographicFrustumSize = null;
-  }
-  app.controls.object = app.camera;
-  ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis));
-
-  const { center, dist } = getCellCenterAndDist();
-  app.camera.position.copy(center.clone().add(new THREE.Vector3(1,1,1).normalize().multiplyScalar(dist)));
-  app.controls.target.copy(center);
-  app.controls.update();
-  resizeRenderer(app.orthographicFrustumSize);
-}
 
 function resetBondLengths() {
   for (const pair in general.defaultBondLengths) {
@@ -691,507 +631,6 @@ function createBondLengthControls() {
     div.appendChild(controlsRow);
     bondControls.appendChild(div);
   });
-}
-
-
-function deleteSpins(){
-    console.log("deletingSpins")
-     if (!spinsData){
-       console.warn("no spins data to delete")
-       return};
-     spinsData = null;
-     updateSpins(spinsData, 0.0);
-     const textarea = document.getElementById("textArea");
-      if (textarea) {
-        textarea.value = "";
-      } else {
-        console.warn('No element with id="textArea" found');
-      }
-
-     //populateSpinViewer()
-  }
-
-
-
-
-function createSpinControls(containerId = "spinControls") {
-  const container = document.getElementById(containerId);
-  container.innerHTML = ""; // Clear previous controls
-
-  // ----- 1 Input Mode Toggle -----
-  const toggleWrapper = document.createElement("tablist");
-  toggleWrapper.className = "spin-input-mode-toggle";
-  toggleWrapper.style.marginBottom = "6px";
-
-  const textModeBtn = document.createElement("button");
-  textModeBtn.textContent = "Text Input";
-  textModeBtn.className = "spin-input-mode-btn active";
-  textModeBtn.disabled = true;
-
-  const viewerModeBtn = document.createElement("button");
-  viewerModeBtn.textContent = "Spin Viewer";
-  viewerModeBtn.className = "spin-input-mode-btn";
-
-  toggleWrapper.appendChild(textModeBtn);
-  toggleWrapper.appendChild(viewerModeBtn);
-  container.appendChild(toggleWrapper);
-
-  // ----- 2 Slider for scaling arrows -----
-  const sliderWrapper = document.createElement("div");
-  sliderWrapper.style.marginBottom = "8px";
-
-  const sliderLabel = document.createElement("label");
-  sliderLabel.textContent = "Spin Length Factor: ";
-  sliderWrapper.appendChild(sliderLabel);
-
-  const sliderValue = document.createElement("span");
-  sliderValue.textContent = "1.0";
-  sliderValue.style.marginRight = "8px";
-  sliderWrapper.appendChild(sliderValue);
-
-  const slider = document.createElement("input");
-  slider.type = "range";
-  slider.min = 0.1;
-  slider.max = 10;
-  slider.step = 0.1;
-  slider.value = 1;
-  sliderWrapper.appendChild(slider);
-  container.appendChild(sliderWrapper);
-
-  // ----- 3 Text Input Panel -----
-  const textPanel = document.createElement("div");
-  const textarea = document.createElement("textarea");
-  textarea.id="textArea";
-  textarea.placeholder = "x y z scale color\nExample:\n0 0 1 0.5 #ff0000\n1 1 0 2.0 #0000ff";
-  textarea.style.width = "95%";
-  textarea.style.height = "200px";
-  textarea.style.background= "rgba(16,16,16,0.8)";
-  textarea.style.color= "rgb(255, 255, 255)";
-  textPanel.appendChild(textarea);
-
-
-  const drawBtn = document.createElement("button");
-  drawBtn.textContent = "Draw Spins";
-  drawBtn.style.marginTop = "6px";
-  textPanel.appendChild(drawBtn);
-  container.appendChild(textPanel);
-
-  // ----- 4 Viewer Panel -----
-  const viewerPanel = document.createElement("div");
-  viewerPanel.style.display = "none";
-  container.appendChild(viewerPanel);
-
-  // ----- 5 Mode Switch -----
-  textModeBtn.addEventListener("click", () => {
-    textModeBtn.className = "spin-input-mode-btn active";
-    viewerModeBtn.className = "spin-input-mode-btn";
-    textPanel.style.display = "block";
-    viewerPanel.style.display = "none";
-    textModeBtn.disabled = true;
-    viewerModeBtn.disabled = false;
-  });
-
-  viewerModeBtn.addEventListener("click", () => {
-    textModeBtn.className = "spin-input-mode-btn";
-    viewerModeBtn.className = "spin-input-mode-btn active";
-    textPanel.style.display = "none";
-    viewerPanel.style.display = "block";
-    textModeBtn.disabled = false;
-    viewerModeBtn.disabled = true;
-    populateSpinViewer();
-  });
-
-
-  // ----- 6 Slider live updates -----
-  slider.addEventListener("input", () => {
-    let val = parseFloat(slider.value);
-
-    // sticky zone near 1
-    if (Math.abs(val - 1) < 0.05) val = 1;
-
-    slider.value = val;
-    sliderValue.textContent = val.toFixed(2);
-
-    if (spinsData.length) {
-      updateSpins(spinsData, val);
-    }
-  });
-
-  // ----- 7 Parse input & draw -----
-  drawBtn.addEventListener("click", drawSpinsFromInput);
-  drawBtn.className="btn-mini highlight"
-
-  function drawSpinsFromInput() {
-    const input = textarea.value.trim().split("\n").filter(Boolean);
-    const spins = [];
-    let scalingFactor = null;
-    let color = null;
-
-    input.forEach((line, i) => {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length < 3) return; // ignore invalid lines
-
-      const x = parseFloat(parts[0]);
-      const y = parseFloat(parts[1]);
-      const z = parseFloat(parts[2]);
-
-      if (/^-?\d+(\.\d+)?$/.test(parts[3])) {
-        scalingFactor = parseFloat(parts[3]);
-        color = parts[4] || "#000000";
-       }
-      else {
-        scalingFactor = 1.0;
-        color = parts[3] || "#000000";
-      }
-
-      spins.push({
-        atomIndex: i,
-        vector: [x, y, z],
-        scalingFactor,
-        color
-      });
-    });
-    
-    let deleteBtn = document.getElementById("deleteSpins")
-    console.log("Delete Spin Button Initialised")
-    deleteBtn.addEventListener("click",(e) => {
-               console.log("Delete Spin Clicked")
-               e.stopPropagation();
-               deleteSpins();
-        });
-
-
-    spinsData = spins;
-    updateSpins(spinsData, parseFloat(slider.value));
-  }
-
-function populateSpinViewer() {
-  // Inject CSS to hide native spin buttons (only once)
-  if (!document.getElementById("hide-native-spin-buttons-style")) {
-    const style = document.createElement("style");
-    style.id = "hide-native-spin-buttons-style";
-    style.textContent = `
-      /* Hide native spin buttons in WebKit browsers */
-      input[type="number"]::-webkit-inner-spin-button,
-      input[type="number"]::-webkit-outer-spin-button {
-        -webkit-appearance: none;
-        margin: 0;
-      }
-      /* Hide native spin buttons in Firefox */
-      input[type="number"] {
-        -moz-appearance: textfield;
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  viewerPanel.innerHTML = "";
-  if (spinsData===null) {
-    viewerPanel.textContent = "No spins defined yet.";
-    return;
-  }
-
-  // Helper: create custom number input with vertically stacked buttons
-  function createCustomNumberInput(value, step, onChange) {
-    const wrapper = document.createElement("div");
-    wrapper.style.display = "flex";
-    wrapper.style.alignItems = "center";
-    wrapper.style.gap = "4px";
-
-    const input = document.createElement("input");
-    input.type = "number";
-    input.value = value.toFixed(2);
-    input.step = step;
-    input.style.width = "40px";
-    input.style.backgroundColor = "#333";
-    input.style.color = "white";
-    input.style.border = "1px solid #ccc";
-    input.style.fontFamily = "monospace";
-    input.style.padding = "2px 6px";
-    input.style.textAlign = "right";
-    input.style.fontSize = "12px";
-    input.style.outline = "none";
-
-    input.addEventListener("keydown", e => {
-      if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
-    });
-
-    // Container for vertical buttons
-    const btnContainer = document.createElement("div");
-    btnContainer.style.display = "flex";
-    btnContainer.style.flexDirection = "column";
-    btnContainer.style.justifyContent = "center";
-    btnContainer.style.border = "1px solid #444";
-    btnContainer.style.borderRadius = "4px";
-    btnContainer.style.overflow = "hidden";
-    btnContainer.style.height = "32px"; // approx input height
-    btnContainer.style.width = "16px";
-    btnContainer.style.backgroundColor = "#222";
-
-    const btnUp = document.createElement("button");
-    btnUp.type = "button";
-    btnUp.textContent = "▲";
-    btnUp.style.cssText = `
-      background: transparent;
-      color: white;
-      border: none;
-      padding: 0;
-      margin: 0;
-      flex: 1;
-      cursor: pointer;
-      font-size: 10px;
-      line-height: 1;
-      user-select: none;
-    `;
-
-  btnUp.addEventListener("mouseenter", () => {
-    btnUp.style.backgroundColor = "#555";
-  });
-  btnUp.addEventListener("mouseleave", () => {
-    btnUp.style.backgroundColor = "transparent";
-  });
-
-  const btnDown = document.createElement("button");
-  btnDown.type = "button";
-  btnDown.textContent = "▼";
-  btnDown.style.cssText = btnUp.style.cssText;
-  btnDown.addEventListener("mouseenter", () => {
-    btnDown.style.backgroundColor = "#555";
-  });
-  btnDown.addEventListener("mouseleave", () => {
-    btnDown.style.backgroundColor = "transparent";
-  });
-
-  // Press-and-hold logic
-  let intervalId;
-
-  function changeValue(delta) {
-    let newVal = parseFloat(input.value) + delta;
-    if (isNaN(newVal)) newVal = value;
-    input.value = newVal.toFixed(3);
-    onChange(newVal);
-  }
-
-  btnUp.addEventListener("mousedown", () => {
-    changeValue(parseFloat(step));
-    intervalId = setInterval(() => changeValue(parseFloat(step)), 100);
-  });
-  btnUp.addEventListener("mouseup", () => clearInterval(intervalId));
-  btnUp.addEventListener("mouseleave", () => clearInterval(intervalId));
-
-  btnDown.addEventListener("mousedown", () => {
-    changeValue(-parseFloat(step));
-    intervalId = setInterval(() => changeValue(-parseFloat(step)), 100);
-  });
-  btnDown.addEventListener("mouseup", () => clearInterval(intervalId));
-  btnDown.addEventListener("mouseleave", () => clearInterval(intervalId));
-
-
-    btnContainer.appendChild(btnUp);
-    btnContainer.appendChild(btnDown);
-    wrapper.appendChild(input);
-    wrapper.appendChild(btnContainer);
-
-    return wrapper;
-  }
-
-  const table = document.createElement("table");
-  table.style.width = "auto";
-  table.style.maxWidth = "100%";
-  table.style.borderCollapse = "collapse";
-  table.style.backgroundColor = "transparent";
-
-  const header = document.createElement("tr");
-  ["Idx", "X", "Y", "Z", "Scale", "Color"].forEach(h => {
-    const th = document.createElement("th");
-    th.textContent = h;
-    th.style.borderBottom = "1px solid #aaa";
-    th.style.padding = "2px 2px";
-    th.style.color = "white";
-    th.style.fontSize = "12px";
-    th.style.width = "fit-content";
-    header.appendChild(th);
-  });
-  table.appendChild(header);
-
-  spinsData.forEach((spin) => {
-    const row = document.createElement("tr");
-
-    // Index cell
-    const tdIdx = document.createElement("td");
-    tdIdx.textContent = spin.atomIndex;
-    tdIdx.style.padding = "2px 2px";
-    tdIdx.style.color = "white";
-    tdIdx.style.fontSize = "14px";
-    row.appendChild(tdIdx);
-
-    // Vector components (custom inputs with vertical buttons)
-    spin.vector.forEach((val, comp) => {
-      const td = document.createElement("td");
-      td.style.padding = "2px 2px";
-
-      const customInput = createCustomNumberInput(val, 0.01, newVal => {
-        spin.vector[comp] = newVal;
-        updateSpins(spinsData, parseFloat(slider.value));
-      });
-
-      td.appendChild(customInput);
-      row.appendChild(td);
-    });
-
-    // Scale input with custom buttons
-    const tdScale = document.createElement("td");
-    tdScale.style.padding = "2px 2px";
-
-    const customScaleInput = createCustomNumberInput(spin.scalingFactor, 0.01, newVal => {
-      spin.scalingFactor = newVal;
-      updateSpins(spinsData, parseFloat(slider.value));
-    });
-
-    tdScale.appendChild(customScaleInput);
-    row.appendChild(tdScale);
-
-    // Color dot centered with white border
-    const tdColor = document.createElement("td");
-    tdColor.style.padding = "10px 6px";
-    tdColor.style.display = "flex";
-    tdColor.style.justifyContent = "center";
-    tdColor.style.alignItems = "center";
-
-    const dot = document.createElement("span");
-    dot.style.display = "inline-block";
-    dot.style.width = "16px";
-    dot.style.height = "16px";
-    dot.style.borderRadius = "50%";
-    dot.style.backgroundColor = spin.color;
-    dot.style.border = "2px solid white";
-    dot.style.cursor = "pointer";
-
-    dot.addEventListener("click", () => openColorPicker(spin, dot));
-
-    tdColor.appendChild(dot);
-    row.appendChild(tdColor);
-
-    table.appendChild(row);
-  });
-
-  viewerPanel.appendChild(table);
-
-}
-  
-
-
-
-function openColorPicker(spin, dot) {
-  // Remove any existing picker first
-  document.querySelectorAll(".spin-color-picker").forEach(p => p.remove());
-
-  // --- Helper: ensure color is in valid hex format ---
-  function toHexColor(color) {
-    const ctx = document.createElement("canvas").getContext("2d");
-    ctx.fillStyle = color;
-    return ctx.fillStyle.startsWith("#") ? ctx.fillStyle : "#000000";
-  }
-
-  const currentHex = toHexColor(spin.color || "#000000");
-  let selectedHex = currentHex;
-
-  // --- Create main picker container ---
-  const pickerPanel = document.createElement("div");
-  pickerPanel.className = "spin-color-picker";
-  Object.assign(pickerPanel.style, {
-    position: "absolute",
-    background: "rgba(26,26,26,0.8)",
-    border: "1px solid #ccc",
-    padding: "10px",
-    borderRadius: "8px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
-    zIndex: 9999,
-  });
-
-  // --- Create the color picker using external helper ---
-  const { element: pickerElement } = createColorPicker(currentHex, (hex) => {
-    selectedHex = hex;
-    dot.style.background = hex; // live preview
-  });
-
-  // --- Apply / Reset Buttons ---
-  const buttonRow = document.createElement("div");
-  Object.assign(buttonRow.style, {
-    display: "flex",
-    justifyContent: "space-between",
-    marginTop: "10px",
-    gap: "8px"
-  });
-
-  const resetBtn = document.createElement("button");
-  resetBtn.textContent = "Reset";
-  resetBtn.className="reset-btn"
-
-  const applyBtn = document.createElement("button");
-  applyBtn.textContent = "Apply";
-  applyBtn.className="btn-mini highlight"
-
-  buttonRow.appendChild(resetBtn);
-  buttonRow.appendChild(applyBtn);
-
-  pickerPanel.appendChild(pickerElement);
-  pickerPanel.appendChild(buttonRow);
-  document.body.appendChild(pickerPanel);
-
-  // --- Position near the clicked dot ---
-  const rect = dot.getBoundingClientRect();
-  let topPosition = rect.top + window.scrollY - 200;
-  let bottomSpace = window.innerHeight - (rect.top + window.scrollY + 24 + pickerPanel.offsetHeight);
-
-  // Ensure at least 40px space at the bottom of the screen
-  if (bottomSpace < 40) {
-      topPosition = window.innerHeight - pickerPanel.offsetHeight - 40; // Move it up so it has 40px from the bottom
-  }
-
-  pickerPanel.style.left = `${rect.left + window.scrollX + 24}px`;
-  pickerPanel.style.top = `${topPosition}px`;
-
-
-
-  // --- Close picker helper ---
-  const closePicker = () => {
-    pickerPanel.remove();
-    document.removeEventListener("mousedown", outsideClick);
-  };
-
-  // --- Handle outside clicks ---
-  const outsideClick = (e) => {
-    if (!pickerPanel.contains(e.target) && e.target !== dot) closePicker();
-  };
-
-  document.addEventListener("mousedown", outsideClick);
-  pickerPanel.addEventListener("mousedown", (e) => e.stopPropagation());
-
-  // --- Apply button behavior ---
-  applyBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    spin.color = selectedHex;
-    dot.style.backgroundColor = selectedHex;
-    updateSpins(spinsData, parseFloat(slider.value));
-    closePicker();
-  });
-
-  // --- Reset button behavior ---
-  resetBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    selectedHex = "#000000";
-    spin.color = selectedHex;
-    dot.style.backgroundColor = selectedHex;
-    updateSpins(spinsData, parseFloat(slider.value));
-    closePicker();
-  });
-}
-
-
-
-
-
 }
 
 function distance(pos1, pos2) {
@@ -1522,7 +961,7 @@ function clearMeasure(){
   clearMeasureGraphics();
 }
 
-function createAtomMesh(element, position, atomIndex = null,opacity=1.0) {
+export function createAtomMesh(element, position, atomIndex = null,opacity=1.0) {
   const radius = getAtomRadius(element);
   const color = atomIndex !== null ? getIndividualAtomColor(element, atomIndex) : getElementColor(element);
   const geometry = new THREE.SphereGeometry(radius, 32, 24);
@@ -1535,101 +974,6 @@ function createAtomMesh(element, position, atomIndex = null,opacity=1.0) {
   return mesh;
 }
 
-function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2,opacity=1.0) {
-  const p1 = new THREE.Vector3(pos1[0], pos1[1], pos1[2]);
-  const p2 = new THREE.Vector3(pos2[0], pos2[1], pos2[2]);
-  const dist = distance(p1, p2);
-  const cutoff = getBondCutoff(elem1, elem2);
-
-  // If bond length is set to 0 or very small, don't create any bonds
-  if (cutoff <= 0.01 || dist > cutoff || dist < 0.005) return null;
-
-  // Check bond visibility
-  const pair1 = elem1 + '-' + elem2;
-  const pair2 = elem2 + '-' + elem1;
-  const isVisible = general.bondVisibility[pair1] !== false && general.bondVisibility[pair2] !== false;
-
-  if (!isVisible) return null;
-
-  const direction = new THREE.Vector3().subVectors(p2, p1);
-  const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
-
-  // Build VESTA-style split bond, but start at atom surfaces
-  const bondGroup = new THREE.Group();
-
-  const color1 = getIndividualAtomColor(elem1,atomIndex1);
-  const color2 = getIndividualAtomColor(elem2,atomIndex2);
-
-  // Compute visible segment between atom surfaces
-  const r1 = getAtomRadius(elem1)-0.05*getAtomRadius(elem1);
-  const r2 = getAtomRadius(elem2)-0.05*getAtomRadius(elem2);
-  const dir = new THREE.Vector3().subVectors(p2, p1).normalize();
-  const visibleLen = Math.max(dist - (r1 + r2), 0);
-  if (visibleLen <= 1e-3) return null; // spheres overlap or touch; skip bond
-
-  const halfLen = visibleLen * 0.5;
-  const radius = general.bondRadius;
-
-  const geometryHalf = new THREE.CylinderGeometry(radius, radius, halfLen, 20);
-
-
-  const material1 = new THREE.MeshPhysicalMaterial(getBondVisSettings(color1,opacity));
-  const material2 = new THREE.MeshPhysicalMaterial(getBondVisSettings(color2,opacity));
-
-  // Centers for the two halves: start from each surface and end at the
-  // midpoint between surfaces, so centers are offset by r + halfLen/2
-  const center1 = p1.clone().add(dir.clone().multiplyScalar(r1 + halfLen / 2));
-  const center2 = p2.clone().add(dir.clone().multiplyScalar(-r2 - halfLen / 2));
-
-  const half1 = new THREE.Mesh(geometryHalf, material1);
-  half1.position.copy(center1);
-  half1.lookAt(p2);
-  half1.rotateX(Math.PI / 2);
-
-  const half2 = new THREE.Mesh(geometryHalf, material2);
-  half2.position.copy(center2);
-  half2.lookAt(p2);
-  half2.rotateX(Math.PI / 2);
-
-  bondGroup.add(half1);
-  bondGroup.add(half2);
-
-  return bondGroup;
-}
-
-function createLatticeLines(color = currentLatticeColor) {
-  const group = new THREE.Group();
-  const material = new THREE.LineBasicMaterial(getLatticeVisSettings(color));
-
-  const lattice = structureData.lattice;
-
-  // Define unit cell vertices
-  const vertices = [
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(lattice[0][0], lattice[0][1], lattice[0][2]),
-    new THREE.Vector3(lattice[1][0], lattice[1][1], lattice[1][2]),
-    new THREE.Vector3(lattice[2][0], lattice[2][1], lattice[2][2]),
-    new THREE.Vector3(lattice[0][0] + lattice[1][0], lattice[0][1] + lattice[1][1], lattice[0][2] + lattice[1][2]),
-    new THREE.Vector3(lattice[0][0] + lattice[2][0], lattice[0][1] + lattice[2][1], lattice[0][2] + lattice[2][2]),
-    new THREE.Vector3(lattice[1][0] + lattice[2][0], lattice[1][1] + lattice[2][1], lattice[1][2] + lattice[2][2]),
-    new THREE.Vector3(lattice[0][0] + lattice[1][0] + lattice[2][0], lattice[0][1] + lattice[1][1] + lattice[2][1], lattice[0][2] + lattice[1][2] + lattice[2][2])
-  ];
-
-  // Define edges of unit cell
-  const edges = [
-    [0, 1], [0, 2], [0, 3], [1, 4], [1, 5], [2, 4], [2, 6], [3, 5], [3, 6], [4, 7], [5, 7], [6, 7]
-  ];
-
-  edges.forEach(edge => {
-    const geometry = new THREE.BufferGeometry().setFromPoints([
-      vertices[edge[0]], vertices[edge[1]]
-    ]);
-    const line = new THREE.Line(geometry, material);
-    group.add(line);
-  });
-
-  return group;
-}
 
 function computeComposition() {
   if (!structureData) return {};
@@ -2246,7 +1590,7 @@ function addLatticeParametersSection() {
           [b*cosG, b*sinG, 0],
           [c*cosB, c*(cosA - cosB*cosG)/sinG, c*Math.sqrt(1 - cosB**2 - ((cosA - cosB*cosG)/sinG)**2)]
         ];
-        modifiedLattice = Lnew;
+        general.modifiedLattice = Lnew;
         structureData.lattice = Lnew;
         updateVisualization({
           reRenderAtoms: true,
@@ -2321,9 +1665,9 @@ function addLatticeParametersSection() {
   latticeResetBtn.onclick = () => {
     const originalData = JSON.parse(JSON.stringify(originalStructureData));
     //createSupercell(1,1,1)
-    modifiedLattice = null
+    general.modifiedLattice = null
     structureData.lattice = originalData.lattice
-    if (currentSupercell != null){
+    if (general.currentSupercell != null){
       createSupercell(currentSupercell.nx,currentSupercell.ny,currentSupercell.nz)
     } 
     updateVisualization({ reRenderAtoms:true, reRenderBonds:true, reRenderLattice:true,reRenderOther:true });
@@ -2716,10 +2060,10 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
 // Function to update all measurements when atom positions change
 // Helper function to find atom by its original index (atomIndex) in the current atomsGroup
 function findAtomByOriginalIndex(originalIndex) {
-  if (!atomsGroup || !atomsGroup.children) return null;
+  if (!groups.atomsGroup || !groups.atomsGroup.children) return null;
   
   for (let i = 0; i < atomsGroup.children.length; i++) {
-    const atom = atomsGroup.children[i];
+    const atom = groups.atomsGroup.children[i];
     if (atom.userData && atom.userData.atomIndex === originalIndex) {
       return atom;
     }
@@ -2728,7 +2072,7 @@ function findAtomByOriginalIndex(originalIndex) {
 }
 
 function updateAllMeasurements() {
-  if (!atomsGroup || !atomsGroup.children) return;
+  if (!groups.atomsGroup || !groups.atomsGroup.children) return;
 
   measureLines.forEach(measureItem => {
     if (!measureItem.userData) return;
@@ -2902,18 +2246,17 @@ function updateAtomCoordinates(atomIndex, newCoords) {
 
 
 function updateAtoms(opacity=1.0) {
-  disposeGroup(atomsGroup);
-  atomsGroup = new THREE.Group();
-
+  disposeGroup(groups.atomsGroup);
+  groups.atomsGroup = new THREE.Group();
   const wrapped = periodicWrapped(structureData.positions, structureData.elements);
   const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
   for (let i = 0; i < wrappedCart.length; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     const atomMesh = createAtomMesh(wrapped.elements[i], wrappedCart[i], originalIndex,opacity);
     atomMesh.userData.sourceIndex = originalIndex;
-    atomsGroup.add(atomMesh);
+    groups.atomsGroup.add(atomMesh);
   }
-  app.scene.add(atomsGroup);
+  app.scene.add(groups.atomsGroup);
 }
 
 function addSecondStructure(opacity=1.0) {
@@ -3726,278 +3069,11 @@ function minVertexDegreeForCageSize(N) {
   app.scene.add(polyhedraGroup);
 }
 
-function updateBonds() {
-  disposeGroup(bondsGroup);
-  bondsGroup = new THREE.Group();
-
-  if (!general.showBonds) return;
-
-  const wrapped = periodicWrapped(structureData.positions, structureData.elements);
-  const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
-
-  // 1) Bonds entirely inside the unit cell among the wrapped atoms
-  for (let i = 0; i < wrappedCart.length; i++) {
-    for (let j = i + 1; j < wrappedCart.length; j++) {
-      const ei = wrapped.elements[i];
-      const atomIndex_i = wrapped.srcIndex[i]; 
-      const ej = wrapped.elements[j];
-      const atomIndex_j = wrapped.srcIndex[j];
-      const bond = createBond(wrappedCart[i], wrappedCart[j], ei, ej, atomIndex_i, atomIndex_j);
-      if (bond) bondsGroup.add(bond);
-    }
-  }
-
-  // 2) Neighbor bonds to atoms outside the cell (ghosts)
-  const lattice = structureData.lattice;
-  const a = new THREE.Vector3(lattice[0][0], lattice[0][1], lattice[0][2]);
-  const b = new THREE.Vector3(lattice[1][0], lattice[1][1], lattice[1][2]);
-  const c = new THREE.Vector3(lattice[2][0], lattice[2][1], lattice[2][2]);
-
-  const primCarts = wrappedCart.map(p => new THREE.Vector3(p[0], p[1], p[2]));
-  const primElems = wrapped.elements;
-
-  const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || {dummy:0.0}));
-
-
-  const ax = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(a.length(), 1e-6))));
-  const by = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(b.length(), 1e-6))));
-  const cz = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(c.length(), 1e-6))));
-  const shifts = [];
-  for (let dx = -ax; dx <= ax; dx++)
-    for (let dy = -by; dy <= by; dy++)
-      for (let dz = -cz; dz <= cz; dz++)
-        shifts.push([dx, dy, dz]);
-
-  const ghostAdded = new Map();
-  const bondDedupe = new Set();
-
-  for (let i = 0; i < primCarts.length; i++) {
-    const pi = primCarts[i];
-    const ei = primElems[i];
-    const atomIndex_i = wrapped.srcIndex[i]; // here is something off!!! 
-    for (let j = 0; j < primCarts.length; j++) {
-      if (j === i) continue;
-      const pj = primCarts[j];
-      const ej = primElems[j];
-      const atomIndex_j = wrapped.srcIndex[j];
-
-      const cutoff = getBondCutoff(ei, ej);
-      if (cutoff <= 0.01) continue;
-
-      for (const [dx, dy, dz] of shifts) {
-        const shiftVec = new THREE.Vector3()
-          .addScaledVector(a, dx)
-          .addScaledVector(b, dy)
-          .addScaledVector(c, dz);
-        const candidate = pj.clone().add(shiftVec);
-        const d = pi.distanceTo(candidate);
-        if (d > cutoff || d < 0.005) continue;
-
-        if (dx === 0 && dy === 0 && dz === 0) {
-          // already handled in step (1)
-        } else if (general.showNeighborBonds) {
-          const candidateArr = [candidate.x, candidate.y, candidate.z];
-          if (!isOutsideUnitCell(candidateArr, lattice)) continue;
-
-          const gkey = `${j}:${dx},${dy},${dz}`;
-          let ghostMesh = ghostAdded.get(gkey);
-          if (!ghostMesh) {
-            ghostMesh = createAtomMesh(ej, [candidate.x, candidate.y, candidate.z]);
-            ghostMesh.userData.isGhost = true;
-            ghostMesh.material.opacity = 1.0;
-            ghostMesh.material.transparent = true;
-            ghostMesh.material.depthWrite = false;
-            atomsGroup.add(ghostMesh);
-            ghostAdded.set(gkey, ghostMesh);
-          }
-
-          const bkey = `${i}-${j}-${dx},${dy},${dz}`;
-          if (!bondDedupe.has(bkey)) {
-            console.log(atomIndex_i,atomIndex_j)
-            const bond = createBond([pi.x, pi.y, pi.z], [candidate.x, candidate.y, candidate.z], ei, ej,atomIndex_i,atomIndex_j);
-            if (bond) {
-              if (bond.children && bond.children[1] && bond.children[1].material) {
-                bond.children[1].material.transparent = true;
-                bond.children[1].material.opacity = 1.0;
-              }
-              bondsGroup.add(bond);
-            }
-            bondDedupe.add(bkey);
-          }
-
-          // Symmetric ghost on opposite side
-          const opposite = pi.clone().sub(shiftVec);
-          if (isOutsideUnitCell([opposite.x, opposite.y, opposite.z], lattice)) {
-            const gkey2 = `${i}:${-dx},${-dy},${-dz}`;
-            if (!ghostAdded.has(gkey2)) {
-              const ghostMesh2 = createAtomMesh(ei, [opposite.x, opposite.y, opposite.z]);
-              ghostMesh2.userData.isGhost = true;
-              ghostMesh2.material.opacity = 1.0;
-              ghostMesh2.material.transparent = true;
-              ghostMesh2.material.depthWrite = false;
-              atomsGroup.add(ghostMesh2);
-              ghostAdded.set(gkey2, ghostMesh2);
-            }
-            const bkey2 = `sym-${i}-${j}-${dx},${dy},${dz}`;
-            if (!bondDedupe.has(bkey2)) {
-              const bond2 = createBond([opposite.x, opposite.y, opposite.z], [pj.x, pj.y, pj.z], ei, ej,atomIndex_i,atomIndex_j );
-              if (bond2) {
-                if (bond2.children && bond2.children[0] && bond2.children[0].material) {
-                  bond2.children[0].material.transparent = true;
-                  bond2.children[0].material.opacity = 1.0;
-                }
-                bondsGroup.add(bond2);
-              }
-              bondDedupe.add(bkey2);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  app.scene.add(bondsGroup);
-}
-
-
-
-function updateSpins(spinData, spinFactor = 1) {
-  console.log(spinData)
-
-    let deleteBtn = document.getElementById("deleteSpins")
-
-    if (deleteBtn){
-    console.log("Delete Spin Button Initialised")
-    deleteBtn.addEventListener("click",(e) => {
-               console.log("Delete Spin Clicked")
-               e.stopPropagation();
-               deleteSpins();
-        });};
-
-  // Dispose old spin arrows
-  if (spinGroup) {
-    spinGroup.children.forEach(child => {
-      child.traverse(c => {
-        if (c.geometry) c.geometry.dispose();
-        if (c.material) c.material.dispose();
-      });
-    });
-    disposeGroup(spinGroup);
-  }
-
-  if (spinData === null){
-    return;
-    }
-
-  spinGroup = new THREE.Group();
-
-  if (!structureData || !structureData.positions || !structureData.lattice) return;
-
-  // --- 1️⃣ Wrap atomic positions periodically ---
-  const wrapped = periodicWrapped(structureData.positions, structureData.elements);
-  const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
-
-  // --- 2️⃣ Get lattice vectors for ghost cell replication (like bonds) ---
-  const lattice = structureData.lattice;
-  const a = new THREE.Vector3(...lattice[0]);
-  const b = new THREE.Vector3(...lattice[1]);
-  const c = new THREE.Vector3(...lattice[2]);
-
-  // --- 3️⃣ Render arrows per atom ---
-  for (let i = 0; i < wrappedCart.length; i++) {
-    const atomIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    const spin = spinData.find(s => s.atomIndex === atomIndex);
-    if (!spin || !spin.vector || spin.vector.length !== 3) continue;
-
-    const { vector, scalingFactor = 1.0, color = "#000000" } = spin;
-
-    const origin = new THREE.Vector3(...wrappedCart[i]);
-    const dirVec = new THREE.Vector3(...vector);
-
-    const norm = Math.sqrt(vector[0]**2 + vector[1]**2 + vector[2]**2);
-    if (norm < 0.05) {
-      console.warn("Spin vector too small (<0.05)", norm)
-      continue};
-
-    const baseLen = dirVec.length();
-    const totalLength = baseLen * scalingFactor * spinFactor;
-    const dir = dirVec.clone().normalize();
-
-    // --- Material (match atom style) ---
-    const material = new THREE.MeshPhysicalMaterial(getAtomVisSettings(color,1.0));
-
-    // --- Shaft geometry (extends both directions) ---
-    const shaftRadius = 0.1;
-    const shaftLength = totalLength;
-
-    const shaftPos = new THREE.Mesh(
-      new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength / 2, 16),
-      material
-    );
-    shaftPos.position.set(0, shaftLength / 4, 0);
-
-    const shaftNeg = new THREE.Mesh(
-      new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength / 2, 16),
-      material
-    );
-    shaftNeg.position.set(0, -shaftLength / 4, 0);
-
-    // --- Tip (only positive direction) ---
-    const tipLength = 0.8;
-    const tipRadius = 0.3;
-    const tip = new THREE.Mesh(
-      new THREE.ConeGeometry(tipRadius, tipLength, 16),
-      material
-    );
-    tip.position.set(0, shaftLength / 2 + tipLength / 2, 0);
-
-    // --- Combine into arrowGroup ---
-    const arrowGroup = new THREE.Group();
-    arrowGroup.add(shaftPos);
-    arrowGroup.add(shaftNeg);
-    arrowGroup.add(tip);
-
-    // --- Orientation ---
-    const arrowAxis = new THREE.Vector3(0, 1, 0);
-    arrowGroup.quaternion.setFromUnitVectors(arrowAxis, dir);
-    arrowGroup.position.copy(origin);
-
-    // --- Add to main group ---
-    spinGroup.add(arrowGroup);
-  }
-
-  // --- 4️⃣ Add to scene ---
-  app.scene.add(spinGroup);
-}
-
-
-
-
-function updateLattice(color = general.currentLatticeColor) {
-  disposeGroup(latticeGroup);
-  if (showLattice) { 
-    latticeGroup = createLatticeLines(color);
-    app.scene.add(latticeGroup);
-  }
-}
-
-function updateOther() {
-  renderComposition();
-  clearMeasureGraphics();
-
-  measureLines.forEach(line => app.scene.add(line));
-  measureLabels.forEach(label => app.scene.add(label));
-
-  recomputeLatticeDirs();
-  updateAllMeasurements();
-}
-
 
 
 // Per-atom spin spec.
 // Key is source atom index (structureData.positions index).
 // Value: { dir:[ax,by,cz], length?:number, color?:string }
-let spinData = null;
 
 // ===== UTILS =====
 function parseColorToHexInt(s, fallback = '#ff3366') {
@@ -4138,7 +3214,7 @@ function getContrastingBorder(hex) {
     let contrastColor = `${getContrastingBorder(selectedHex)}`
 
     dot.style.border = `2px solid ${contrastColor}`
-    currentLatticeColor = contrastColor
+    general.currentLatticeColor = contrastColor
     updateLattice(contrastColor)
     app.scene.background = new THREE.Color(hex);   // live preview in scene
   });
@@ -4250,6 +3326,17 @@ function createBackgroundControl() {
   });
 }
 
+function updateOther() {
+  renderComposition();
+  clearMeasureGraphics();
+
+  measureLines.forEach(line => scene.add(line));
+  measureLabels.forEach(label => scene.add(label));
+
+  recomputeLatticeDirs();
+  updateAllMeasurements();
+}
+
 
 function updateVisualization(options = {}) {
   const {
@@ -4273,7 +3360,10 @@ function updateVisualization(options = {}) {
      }
   }
 
-  if (reRenderBonds) updateBonds();
+  if (reRenderBonds) { 
+    disposeGroup();
+    updateBonds();
+  }
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
   if (reRenderOther) updateOther();
 }
@@ -4300,6 +3390,8 @@ function hexToRgba(color, alpha = 1) {
 
 async function loadStructure(content, fileName = '', isDefault = false) {
   try {
+
+    console.log("")
     const lower = (fileName || '').toLowerCase();
     const contentString = typeof content === 'string' ? content : '';
     const treatAsCIF = lower.endsWith('.cif') ||
@@ -4310,23 +3402,38 @@ async function loadStructure(content, fileName = '', isDefault = false) {
      const treatAsOUTCAR = lower.endsWith('.vasp.out') ||
                       lower.includes('.vasp.out') ||
                       lower.includes('outcar');
-
+    let parsed;
+    let parsedSpinsData
     if (treatAsCIF) {
       console.log("This is probably a CIF file")
-      structureData = await parseCIF(contentString);
+
+      parsed = await parseCIF(contentString);
     } 
     
     else if (treatAsOUTCAR){
-
       console.log("This is probably an OUTCAR file");
-      ({ structure: structureData, spin: spinsData } = await parseOUTCAR(contentString));
+      ({ structure: parsed, spin: parsedSpinsData } = await parseOUTCAR(contentString));
+
+    if (spinsData?.length != null) {
+      spinsData.length = 0;
     }
+    spinsData.push(...parsedSpinsData);
 
-
+    }
     else {
       console.log("This is probably a POSCAR file")
-      structureData = await parsePOSCAR(contentString);
+      parsed = await parsePOSCAR(contentString);
     }
+
+  // Ensure the fields exist and are the right typed arrays
+    //
+
+    structureData.positions = parsed.positions ?? null;
+    structureData.elements  = parsed.elements  ?? null;
+    structureData.lattice   = parsed.lattice   ?? null;
+    structureData.supercell = parsed.supercell ?? {nx:1,ny:1,nz:1};
+
+    console.log("after load",structureData)
 
 
     // keep a deep copy for restore (fractional positions + arrays)
@@ -4349,7 +3456,7 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     createShareButton();
     updateVisualization();
     if (spinsData != null){
-      updateSpins(spinsData, 1.0);
+      updateSpins(1.0);
       //populateSpinViewer();
     }
     // Rebuild camera with size/distance based on structure and zoom scale
@@ -4482,7 +3589,7 @@ function init() {
   }
 
   function updateAtomTooltip(event) {
-    if (!atomsGroup || !atomsGroup.children.length || !atomTooltip) {
+    if (!groups.atomsGroup || !groups.atomsGroup.children.length || !atomTooltip) {
       hideAtomTooltip();
       return;
     }
@@ -4500,7 +3607,7 @@ function init() {
     mouse.set(x, y);
     raycaster.setFromCamera(mouse, app.camera);
 
-    const hits = raycaster.intersectObjects(atomsGroup.children, true);
+    const hits = raycaster.intersectObjects(groups.atomsGroup.children, true);
     if (!hits.length) {
       hideAtomTooltip();
       return;
@@ -4585,9 +3692,9 @@ function init() {
 
     mouse.set(x, y);
     raycaster.setFromCamera(mouse,app.camera);
-    if(!atomsGroup) return;
+    if(!groups.atomsGroup) return;
 
-    const hits = raycaster.intersectObjects(atomsGroup.children, true);
+    const hits = raycaster.intersectObjects(groups.atomsGroup.children, true);
     if (!hits.length) {
       // Clicked on empty space - reset selection
       selectedAtoms.forEach(atom => clearHighlightAtom(atom));
@@ -4666,7 +3773,7 @@ function init() {
 
     // Raycast to find clicked atom
     raycaster.setFromCamera(mouse, app.camera);
-    const hits = raycaster.intersectObjects(atomsGroup.children, true);
+    const hits = raycaster.intersectObjects(groups.atomsGroup.children, true);
 
     if (hits.length > 0) {
       const hit = hits[0];
@@ -4712,7 +3819,7 @@ function init() {
           mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
           raycaster.setFromCamera(mouse, app.camera);
-          const hits = raycaster.intersectObjects(atomsGroup.children, true);
+          const hits = raycaster.intersectObjects(groups.atomsGroup.children, true);
 
           // If no atom was clicked, clear highlights
           if (hits.length === 0) {
@@ -4895,7 +4002,7 @@ function clearLongPress() {
 
   document.getElementById('atomSize').oninput = (e) => {
     general.atomSize = parseFloat(e.target.value);
-    document.getElementById('atomSizeValue').textContent = atomSize.toFixed(1);
+    document.getElementById('atomSizeValue').textContent = general.atomSize.toFixed(1);
     updateVisualization();
     updateMeasurementMarkers(); // Update ring markers when atom size changes
   };
@@ -4942,7 +4049,7 @@ function clearLongPress() {
       const v = parseFloat(e.target.value);
       // clamp defensively
       general.bondRadius = Math.max(0.005, Math.min(1.0, isNaN(v) ? bondRadius : v));
-      bondWidthValue.textContent = bondRadius.toFixed(2);
+      bondWidthValue.textContent = general.bondRadius.toFixed(2);
       updateVisualization();
     };
   }
@@ -5070,8 +4177,17 @@ function clearLongPress() {
     // Also restore deleted atoms
     if (originalStructureData) {
       general.currentLattice = structureData.lattice
-      structureData = JSON.parse(JSON.stringify(originalStructureData));
 
+
+    const parsed = JSON.parse(JSON.stringify(originalStructureData));
+          // wherever you parse:
+
+     // Ensure the fields exist and are the right typed arrays
+      //
+    structureData.positions = parsed.positions ?? null;
+    structureData.elements  = parsed.elements  ?? null;
+    structureData.lattice   = parsed.lattice   ?? null;
+    structureData.supercell = parsed.supercell ?? null;
       if (general.modifiedLattice != null){
         structureData.lattice = general.modifiedLattice
       }
@@ -5116,7 +4232,6 @@ function clearLongPress() {
       if (!isNaN(v)) {
         general.atomSize = v; // apply slider value to internal scale
         if (span) span.textContent = general.atomSize.toFixed(1);
-        if (structureData) updateVisualization();
       }
     }
   })();
@@ -5130,7 +4245,6 @@ function clearLongPress() {
       if (!isNaN(v)) {
         general.bondRadius = v;
         if (span) span.textContent = general.bondRadius.toFixed(2);
-        if (structureData) updateVisualization();
       }
     }
   })();
@@ -5138,12 +4252,12 @@ function clearLongPress() {
   app.camera.position.set(20, 20, 20);
   app.controls.update();
  
-  animation_update();
-
+  console.log("Loading structure...")
   // Load default structure after everything is initialized
   loadDefaultStructure();
-}
 
+  animation_update();
+  }
   window.addEventListener('resize', () => resizeRenderer(app.orthographicFrustumSize));
   window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
   window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
@@ -5213,8 +4327,9 @@ function setupMobileMenu() {
     viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=no';
     document.head.appendChild(viewport);
   }
-}
 
+  console.log(app.scene)
+}
 
 init();
 //resetView();

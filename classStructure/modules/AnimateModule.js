@@ -5,6 +5,7 @@ import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/exam
 
 import {updateAngleDisplays} from '../old_style/cameraAngleControl.js';
 import { app, general,mode} from '../store.js';
+import {updateLattice,recomputeLatticeDirs,latticeDirsNorm} from '../modules/LatticeModule.js'
 
 
 let _counter = 1;
@@ -44,12 +45,12 @@ export function animation_update() {
   app.renderer.render(app.scene, app.camera);
   const invCamQ = app.camera.quaternion.clone().invert();
 
-  //const { a, b, c } = latticeDirsNorm();
-  //app.gizmoScene.userData.aArrow.setDirection(a.clone().applyQuaternion(invCamQ));
-  //app.gizmoScene.userData.bArrow.setDirection(b.clone().applyQuaternion(invCamQ));
-  //app.gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
+  const { a, b, c } = latticeDirsNorm();
+  app.gizmoScene.userData.aArrow.setDirection(a.clone().applyQuaternion(invCamQ));
+  app.gizmoScene.userData.bArrow.setDirection(b.clone().applyQuaternion(invCamQ));
+  app.gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
 
-  //app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
+  app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
   app.labelRenderer.render(app.scene, app.camera);
 
   }

@@ -4,23 +4,31 @@ import { Forces } from './Forces.js';
 import { Polyhedra } from './Polyhedra.js';
 import { Symmetry } from './Symmetry.js';
 
-class StructureData {
+export class StructureData {
   constructor({
-    structure = {},
-    symmetry = {},
-    spin = {},
-    forces = {},
-    polyhedra = {},
+    id = [],
+    structure = [],
+    symmetry = [],
+    spin = [],
+    forces = [],
+    polyhedra = []
   } = {}) {
-    this.structure = structure instanceof Structure ? structure : new Structure(structure);
-    this.symmetry = symmetry instanceof Symmetry ? symmetry : new Symmetry(symmetry);
-    this.spin = spin instanceof Spin ? spin : new Spin(spin);
-    this.forces = forces instanceof Forces ? forces : new Forces(forces);
-    this.polyhedra = polyhedra instanceof Polyhedra ? polyhedra : new Polyhedra(polyhedra);
+    this.id = id
+    this.structure = this._ensureListOfClass(structure, Structure);
+    this.symmetry = this._ensureListOfClass(symmetry, Symmetry);
+    this.spin = this._ensureListOfClass(spin, Spin);
+    this.forces = this._ensureListOfClass(forces, Forces);
+    this.polyhedra = this._ensureListOfClass(polyhedra, Polyhedra);
   }
 
-  validate() {
-    this.structure.validate();
+  _ensureListOfClass(input, ClassType) {
+    if (!Array.isArray(input)) {
+      input = [input];
+    }
+
+    return input.map(item =>
+      item instanceof ClassType ? item : new ClassType(item)
+    );
   }
 
   toJSON() {

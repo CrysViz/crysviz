@@ -1,41 +1,61 @@
-CrysViz/
-│
+├── classes
+│   ├── ColoredComponent.js
+│   ├── Forces.js
+│   ├── Polyhedra.js
+│   ├── Polyhedron.js
+│   ├── Spin.js
+│   ├── Structure.js
+│   ├── StructureData.js
+│   ├── Symmetry.js
+│   └── classIndex.js
+├── crystal-viewer.js
+├── data
+│   └── CrysViz_logo_clear_back.png
 ├── index.html
-├── main.js
-├── classes/
-│   ├── ColoredComponent.js
-│   ├── Structure.js
-│   ├── Spin.js
-│   ├── Forces.js
-│   ├── Polyhedron.js
-│   ├── Polyhedra.js
-│   ├── Symmetry.js
-│   ├── StructureData.js
-│   └── classIndex.js       
-├── modules/
-│   ├── AtomsModule.js
-│   ├── LatticeModule.js
-│   ├── BondsModule.js
-│   ├── SpinModule.js
-│   ├── PolyhedraModule.js
-│   ├── MeasurementModule.js
-│   ├── TrajectoryModule.js
-│   ├── ReaderModule.js
-│   ├── StructureInputModule.js
-│   ├── ColorPickerModule.js
-│   ├── ExportModule.js
-│   └── moduleIndex.js
-├───panels/
-│   ├── StructureInputPanel.js
-│   ├── CameraPanel.js
-│   ├── ToolPanel.js
-│   ├── StructureDataInfoPanel.js
-│   ├── GeneralSettingsPanel.js
-│   ├── SpinInputPanel.js
-│   └── panelIndex.js
-└── styles/
-    ├── main_screen.css
-    ├── phone.css
-    ├── medium_screen.css
-    ├── small_screen.css
-    └── styles.css
+├── modules
+│   ├── AnimateModule.js
+│   ├── BondsModule.js
+│   ├── ColorPickerModule.js
+│   ├── ComparisonModule.js
+│   ├── ExportModule.js
+│   ├── ForceModule.js
+│   ├── LatticeModule.js
+│   ├── MeasurementModule.js
+│   ├── PolyhedraModule.js
+│   ├── ReaderModule.js
+│   ├── ShareModule.js
+│   ├── SpinModule.js
+│   ├── StructureInputModule.js
+│   └── TrajectoryModule.js
+├── old_style
+│   ├── CrysViz_logo.png
+│   ├── CrysViz_logo_clear_back.png
+│   ├── about.md
+│   ├── cameraAngleControl.js
+│   ├── color-picker.js
+│   ├── compare-structure-input.js
+│   ├── crystal-viewer.js
+│   ├── file_reader.js
+│   ├── file_reader_OUTCAR.js
+│   ├── file_reader_QE.js
+│   ├── index.html
+│   ├── lattice_comparison.js
+│   ├── polyhedra.js
+│   ├── shareutils.js
+│   ├── structure-input.js
+│   └── styles.css
+├── panels
+│   ├── AboutPanel.js
+│   ├── CameraPanel.js
+│   ├── GeneralSettingsPanel.js
+│   ├── LatticeComparisonPanel.js
+│   ├── SpinInputPanel.js
+│   ├── StructureInputPanel.js
+│   ├── ToolPanel.js
+│   ├── WindowAndSceneControls.js
+│   └── about.md
+├── store.js
+├── styles
+│   └── styles.css
+└── utils
+    └── shareutils.js
