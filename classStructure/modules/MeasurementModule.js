@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { measurements,app, groups, general,spinsData, structureData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js';
-import {periodicWrapped} from '../crystal-viewer.js';
+import {periodicWrapped} from './LatticeModule.js';
 import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
 
 
@@ -530,3 +530,17 @@ export function updateAllMeasurements() {
   // Update measurement marker sizes to match current atom sizes
   updateMeasurementMarkers();
 }        
+
+// Function to update all measurements when atom positions change
+// Helper function to find atom by its original index (atomIndex) in the current atomsGroup
+function findAtomByOriginalIndex(originalIndex) {
+  if (!groups.atomsGroup || !groups.atomsGroup.children) return null;
+
+  for (let i = 0; i < groups.atomsGroup.children.length; i++) {
+    const atom = groups.atomsGroup.children[i];
+    if (atom.userData && atom.userData.atomIndex === originalIndex) {
+      return atom;
+    }
+  }
+  return null;
+}

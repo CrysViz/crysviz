@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import {getCellCenterAndDist} from '../crystal-viewer.js'
-
+import {getCellCenterAndDist} from './LatticeModule.js'
 import { app } from '../store.js';
 
 let currentX = 0;

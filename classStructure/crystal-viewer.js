@@ -7,7 +7,7 @@ import { createLatticeComparisonPanel }from './old_style/lattice_comparison.js'
 
 import { parseOUTCAR} from './old_style/file_reader_OUTCAR.js';
 import { createColorPicker } from './old_style/color-picker.js';
-import { updateAngleDisplays, setupAxisControls} from './old_style/cameraAngleControl.js';
+import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleControl.js';
 
 
 // import modules
@@ -15,14 +15,14 @@ import { updateAngleDisplays, setupAxisControls} from './old_style/cameraAngleCo
 import { animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames. 
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
 import { updateBonds} from './modules/BondsModule.js'
-import { updateLattice,recomputeLatticeDirs,latticeDirsNorm} from '../modules/LatticeModule.js'
+import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm} from '../modules/LatticeModule.js'
 import { Structure} from './classes/Structure.js';
 import { StructureData} from './classes/StructureData.js';
 import { updateSpins} from './modules/SpinModule.js'
 import { parseCIF} from './modules/ReaderModule.js';
 import {createSupercell} from './modules/SuperCellModule.js';
 
-import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor } from './modules/ColorModule.js';
+import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor } from './modules/ColorModule.js';
 
 import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './modules/MeasurementModule.js' // not all imports might be needed in this file
 
@@ -68,71 +68,6 @@ export function getAtomRadius(element) {
 }
 
 
-export function periodicWrapped(frac, elements) {
-  // Build a fully "filled" unit cell by duplicating atoms that sit on
-  // faces/edges/corners so that both sides of each face are populated.
-  // We do this by adding, per-dimension, one extra image just inside the
-  // opposite face when an atom is within eps of a boundary. 
-  const eps = 1e-6;
-  const newElements = [];
-  const newFcrds = [];
-  const srcIndex = [];
-
-  for (let i = 0; i < frac.length; i++) {
-    const f = frac[i];
-    const atm = elements[i];
-
-    // Decide offsets for each axis
-    const offX = [0];
-    const offY = [0];
-    const offZ = [0];
-
-    if (f[0] < eps) offX.push(1 - eps);
-    if (f[0] > 1 - eps) offX.push(-1 + eps);
-    if (f[1] < eps) offY.push(1 - eps);
-    if (f[1] > 1 - eps) offY.push(-1 + eps);
-    if (f[2] < eps) offZ.push(1 - eps);
-    if (f[2] > 1 - eps) offZ.push(-1 + eps);
-
-    for (const dx of offX) {
-      for (const dy of offY) {
-        for (const dz of offZ) {
-          const nx = f[0] + dx;
-          const ny = f[1] + dy;
-          const nz = f[2] + dz;
-          // keep strictly inside [0, 1)
-          if (nx >= -eps && nx < 1 - eps + eps &&
-              ny >= -eps && ny < 1 - eps + eps &&
-              nz >= -eps && nz < 1 - eps + eps) {
-            // clamp into range [0, 1-eps]
-            const cx = Math.min(Math.max(nx, 0), 1 - eps);
-            const cy = Math.min(Math.max(ny, 0), 1 - eps);
-            const cz = Math.min(Math.max(nz, 0), 1 - eps);
-            newElements.push(atm);
-            newFcrds.push([cx, cy, cz]);
-            srcIndex.push(i);
-          }
-        }
-      }
-    }
-  }
-
-  return { elements: newElements, frac: newFcrds, srcIndex };
-}
-
-
-export function getCellCenterAndDist() {
-  const L = structureData?.lattice || [[10,0,0],[0,10,0],[0,0,10]];
-  const corner = new THREE.Vector3(
-    L[0][0]+L[1][0]+L[2][0],
-    L[0][1]+L[1][1]+L[2][1],
-    L[0][2]+L[1][2]+L[2][2]
-  );
-  const center = corner.clone().multiplyScalar(0.5);
-  const distBase = Math.max(corner.length()*2.5, 20);
-  const dist = distBase * app.defaultZoomScale;
-  return { center, dist };
-}
 
 
 function resetBondLengths() {
@@ -142,17 +77,6 @@ function resetBondLengths() {
   createBondLengthControls();
   updateVisualization();
 }
-
-function latticeDirs() {
-  if (!structureData) return {a:[1,0,0], b:[0,1,0], c:[0,0,1]};
-  const L = structureData.lattice;
-  return {
-    a: [L[0][0], L[0][1], L[0][2]],
-    b: [L[1][0], L[1][1], L[1][2]],
-    c: [L[2][0], L[2][1], L[2][2]],
-  };
-}
-
 
 
 function fracToCart(frac, lattice) {
@@ -168,12 +92,6 @@ function cartToFrac(cart, lattice) {
 }
 
 
-function isOutsideUnitCell(cart, lattice, eps = 1e-6) {
-  const f = cartToFrac(cart, lattice);
-  return (f[0] < -eps || f[0] >= 1 + eps ||
-          f[1] < -eps || f[1] >= 1 + eps ||
-          f[2] < -eps || f[2] >= 1 + eps);
-}
 
 function createBondLengthControls() {
   const bondControls = document.getElementById('bondControls');
@@ -1430,20 +1348,6 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   return row;
 }
 
-// Function to update all measurements when atom positions change
-// Helper function to find atom by its original index (atomIndex) in the current atomsGroup
-function findAtomByOriginalIndex(originalIndex) {
-  if (!groups.atomsGroup || !groups.atomsGroup.children) return null;
-  
-  for (let i = 0; i < atomsGroup.children.length; i++) {
-    const atom = groups.atomsGroup.children[i];
-    if (atom.userData && atom.userData.atomIndex === originalIndex) {
-      return atom;
-    }
-  }
-  return null;
-}
-
 
 
 // Function to update atom coordinates and refresh visualization
@@ -2476,8 +2380,8 @@ function updateOther() {
   renderComposition();
   clearMeasureGraphics();
 
-  measurements.measureLines.forEach(line => scene.add(line));
-  measurements.measureLabels.forEach(label => scene.add(label));
+  measurements.measureLines.forEach(line => app.scene.add(line));
+  measurements.measureLabels.forEach(label => app.scene.add(label));
 
   recomputeLatticeDirs();
   updateAllMeasurements();
@@ -2889,8 +2793,8 @@ function init() {
         structureData.positions.splice(idx, 1);
         structureData.elements.splice(idx, 1);
         // Clean selections and graphics
-        selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-        selectedAtoms = [];
+        measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+        measurements.selectedAtoms = [];
         clearMeasureGraphics();
         // Rebuild controls and view
         createBondLengthControls();
@@ -3306,8 +3210,8 @@ function clearLongPress() {
     const wasActive = mode.measureMode === 'delete';
 
     document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
-    selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-    selectedAtoms = [];
+    measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+    measurements.selectedAtoms = [];
     clearMeasureGraphics();
 
     if (wasActive) {

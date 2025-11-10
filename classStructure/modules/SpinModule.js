@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { app, groups, general,spinsData, structureData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
-import {periodicWrapped} from '../crystal-viewer.js'
+import {periodicWrapped} from './LatticeModule.js'
 import { createColorPicker } from '../old_style/color-picker.js';
 
 export function updateSpins(spinFactor = 1) {

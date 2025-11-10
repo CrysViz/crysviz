@@ -3,9 +3,9 @@ import { ConvexGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geo
 import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
 
 
-import {updateAngleDisplays} from '../old_style/cameraAngleControl.js';
+import {updateAngleDisplays} from './cameraAngleControl.js';
 import { app, general,mode} from '../store.js';
-import {updateLattice,recomputeLatticeDirs,latticeDirsNorm} from '../modules/LatticeModule.js'
+import {updateLattice,recomputeLatticeDirs,latticeDirsNorm} from './LatticeModule.js'
 
 
 let _counter = 1;

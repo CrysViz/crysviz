@@ -5,7 +5,7 @@ import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/cont
 import { TrackballControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/TrackballControls.js';
 import { app } from '../store.js';
 import { updateAngleDisplays, setupAxisControls} from '../modules/cameraAngleControl.js';
-import { getCellCenterAndDist} from '../crystal-viewer.js'
+import { getCellCenterAndDist} from '../modules/LatticeModule.js'
 
 export function disposeGroup(grp) {
   if (!grp) return;
@@ -73,7 +73,7 @@ export function initControls(){
   app.controls.dynamicDampingFactor=0.2;
   app.controls.rotateSpeed=1.5;
   app.controls.enableKeys = false; // Disable keyboard controls to avoid conflicts
-  app.controls.noPan= false;
+  app.controls.noPan= true; // disable panning as it only causes problems and does not really have a use
   app.controls.noRotate= false;
   app.controls.panSpeed = 0.8;
 

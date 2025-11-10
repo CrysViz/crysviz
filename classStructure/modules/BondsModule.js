@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 
-import {getIndividualAtomColor} from './ColorModule.js'
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {cartToFractional } from '../old_style/structure-input.js';
 
-import {createAtomMesh,getAtomRadius,periodicWrapped} from '../crystal-viewer.js'
+import {createAtomMesh,getAtomRadius} from '../crystal-viewer.js'
+import {periodicWrapped} from './LatticeModule.js'
 
+import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
 
 export function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2,opacity=1.0) {
   const p1 = new THREE.Vector3(pos1[0], pos1[1], pos1[2]);
