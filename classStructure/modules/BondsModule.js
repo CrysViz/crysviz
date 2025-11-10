@@ -5,7 +5,7 @@ import { app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defa
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {cartToFractional } from '../old_style/structure-input.js';
 
-import {createAtomMesh} from '../crystal-viewer.js'
+import {createAtomMesh} from './AtomsModule.js'
 import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
 import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';

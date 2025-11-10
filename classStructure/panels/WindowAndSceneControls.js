@@ -221,7 +221,19 @@ export function resetView() { app.controls.reset(); setViewDirection(new THREE.V
 
 
 
+// Function to collapse all individual atom expansions
+export function collapseAllAtomExpansions() {
+  const atomsContainers = document.querySelectorAll('.individual-atoms');
+  const expandIcons = document.querySelectorAll('.comp-left span:last-child');
 
+  atomsContainers.forEach(container => {
+    container.style.display = 'none';
+  });
+
+  expandIcons.forEach(icon => {
+    icon.style.transform = 'rotate(0deg)';
+  });
+}
 
 
 

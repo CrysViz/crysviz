@@ -11,6 +11,12 @@ export const originalStructureData = {
   supercell:null,
 }
 
+export const highlightHover ={
+   hoveredAtom:null,
+   currentlyHighlightedAtom:null,
+   currentlyHighlightedRow:null,
+
+}
 export const measurements ={
   measureLines: [],           // Array to store multiple measurement lines
   measureLabels: [],          // Array to store multiple measurement labels

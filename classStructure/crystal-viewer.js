@@ -1,17 +1,24 @@
+// external  imports
 import * as THREE from 'three';
 import { ConvexGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/ConvexGeometry.js';
 import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
-import { setupStructureInput, isLikelyCIFContent, parsePOSCAR} from './old_style/structure-input.js';
-import { setupSecondStructureInput } from './old_style/compare-structure-input.js';
-import { createLatticeComparisonPanel }from './old_style/lattice_comparison.js'
 
-import { parseOUTCAR} from './old_style/file_reader_OUTCAR.js';
-import { createColorPicker } from './old_style/color-picker.js';
+
+
+
+// import from the old file structure that need to be combined and ported to the new structure
+import { setupSecondStructureInput } from './modules/secondStructureModule.js';
+import { parseOUTCAR} from './modules/ReadOutcarModule.js';
+import { setupStructureInput, isLikelyCIFContent, parsePOSCAR} from './modules/StructureInputModule.js';
+
+// ........................................................................................................
+// Import Modules
+//
+// These modules should contain all the functions related to specific functionalities
+//
+// .........................................................................................................
 import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleControl.js';
-
-
-// import modules
-
+import { createColorPicker } from './modules/ColorPickerModule.js';
 import { animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames. 
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
 import {getBondCutoff,updateBonds} from './modules/BondsModule.js'
@@ -19,23 +26,37 @@ import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fra
 import { Structure} from './classes/Structure.js';
 import { StructureData} from './classes/StructureData.js';
 import { updateSpins} from './modules/SpinModule.js'
+import {updateAtoms,createAtomMesh} from './modules/AtomsModule.js';
 import { parseCIF} from './modules/ReaderModule.js';
 import {createSupercell} from './modules/SuperCellModule.js';
+import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,
+        getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,
+        setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,
+        createPieDot,clearIndividualAtomColor } from './modules/ColorModule.js';
+import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,
+        addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './modules/MeasurementModule.js' // not all imports might be needed in this file
 
-import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor } from './modules/ColorModule.js';
+import {HighlightAtom,clearHighlightAtom,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
 
-import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './modules/MeasurementModule.js' // not all imports might be needed in this file
-
-// import panels
+// .........................................................................................................
+// Import Panels
+//
+// Panel files should contain all the functions related to a specific panels 
+//
+// // .........................................................................................................
 import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
-  initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView
+  initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView,collapseAllAtomExpansions
 } from './panels/WindowAndSceneControls.js'
 import {loadAboutContent, openAboutPanel, closeAboutPanel} from './panels/AboutPanel.js';
-import {createSpinControls} from './modules/SpinModule.js';
+import {createSpinControls} from './panels/SpinPanel.js';
+import { createLatticeComparisonPanel }from './panels/LatticeComparisonPanel.js'
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
 import {createCompositionRow,renderComposition} from './panels/StructureInfoPanel.js';
 
-// import utils needs to moce to the "share" functionality
+
+// .........................................................................................................
+// import utils needs to moce to the "share" functionality. This is currently broken.
+// .........................................................................................................
 import {
   captureCompleteState,
   createCompleteShareableURL,
@@ -43,6 +64,23 @@ import {
   restoreCompleteState,
   generatePOSCARString,
 } from './utils/shareutils.js'; 
+// .........................................................................................................
+// store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
+//
+//  This is currently necessary as classes are not yet fully adapter. structureData, originalStructureData,spinsData are global variables for now and should be replaced 
+//  with the proper classes. However, this already solved some problems with camera and controls getting redefined as a side effect of some functions of the viewing angle
+//  control. The rest of the singletons should be preserved. 
+// .........................................................................................................
+import { highlightHover,app,structureData,originalStructureData,spinsData, groups, general,measurements, 
+         mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,
+         getBondVisSettings,getLatticeVisSettings} from './store.js';
+
+
+// ........................................................................................................
+//
+// Some thing need to be globally defiend here. There should only be status variables left. 
+// Nothing should be defined here. Use store, classes, panels or modules for new definitions!
+// ........................................................................................................
 
 const view = document.getElementById('view');
 const status = document.getElementById('status');
@@ -51,226 +89,14 @@ const setStatus = (s) => {
   console.log('[viewer]', s);
 };
 
-// store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc. 
-import { app,structureData,originalStructureData,spinsData, groups, general,measurements, mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from './store.js';
-
+// ........................................................................................................
+//
+//These will not be kept as sson as classes and therefore trajectories are workgin
+// ........................................................................................................
 
 let polyhedraGroup;
 let atomsGroup2, bondsGroup2, latticeGroup2,spinGroup2;
 let structureData2 = null;
-
-let atomTooltip = null;
-let hoveredAtom = null;
-
-
-function clearHighlightAtom(m){
-  if(!m || !m.material) return;
-  if(m.userData._origEmissive!==undefined){
-    m.material.emissive.setHex(m.userData._origEmissive);
-    m.material.emissiveIntensity = m.userData._origEmissiveInt || 0;
-  }
-}
-function HighlightAtom(m, hex){
-  if(!m || !m.material) return;
-  if(m.userData._origEmissive===undefined){
-    m.userData._origEmissive = m.material.emissive.getHex();
-    m.userData._origEmissiveInt = m.material.emissiveIntensity || 0;
-  }
-  m.material.emissive.setHex(hex);
-  m.material.emissiveIntensity = 2.0; // MAXIMUM BLAZING GLOW!
-}
-
-
-export function createAtomMesh(element, position, atomIndex = null,opacity=1.0) {
-
-  const radius = (atomicRadii[element] || 1.0) * general.atomSize;
-  const color = atomIndex !== null ? getIndividualAtomColor(element, atomIndex) : getElementColor(element);
-  const geometry = new THREE.SphereGeometry(radius, 32, 24);
-  const material = new THREE.MeshPhysicalMaterial(getAtomVisSettings(color, opacity));
-
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(position[0], position[1], position[2]);
-  mesh.userData.element = element;
-  mesh.userData.atomIndex = atomIndex;
-  return mesh;
-}
-
-
-
-
-// Global variable to track currently highlighted atoms
-let currentlyHighlightedAtom = null;
-let currentlyHighlightedRow = null;
-
-function highlightAtomInStructurePanel(element, sourceIndex) {
-  // First, clear any existing highlights
-  clearAllHighlights();
-
-  // Auto-expand the structure panel if it's collapsed
-  const structureToggle = document.getElementById('structureToggle');
-  const composition = document.getElementById('composition');
-  if (!composition) return;
-
-  // Collapse all other atom expansions first
-  collapseAllAtomExpansions();
-
-  // Check if structure panel is collapsed and expand it
-  if (composition.classList.contains('collapsible-content') && !composition.classList.contains('open')) {
-    const toggleIcon = document.getElementById('structureToggleIcon');
-    composition.classList.add('open');
-    // composition.setAttribute('aria-hidden', 'false'); // Removed to prevent focus issues
-    if (toggleIcon) {
-      toggleIcon.textContent = '−';
-      toggleIcon.classList.add('open');
-    }
-    if (structureToggle) {
-      structureToggle.setAttribute('aria-expanded', 'true');
-    }
-  }
-
-  // Look for the element container
-  const elementContainers = composition.querySelectorAll('.comp-container');
-  let targetContainer = null;
-
-  for (const container of elementContainers) {
-    const elementName = container.querySelector('.comp-left span:nth-child(2)');
-    if (elementName && elementName.textContent === element) {
-      targetContainer = container;
-      break;
-    }
-  }
-
-  if (!targetContainer) return;
-
-  // Auto-expand the element if not already expanded
-  const atomsContainer = targetContainer.querySelector('.individual-atoms');
-  const expandIcon = targetContainer.querySelector('.comp-left span:last-child');
-
-  if (atomsContainer && atomsContainer.style.display === 'none') {
-    atomsContainer.style.display = 'block';
-    if (expandIcon) {
-      expandIcon.style.transform = 'rotate(90deg)';
-    }
-  }
-
-  // Find the specific individual atom row
-  const atomRows = atomsContainer.querySelectorAll('.individual-atom-row');
-  for (const row of atomRows) {
-    const atomNameSpan = row.querySelector('span:nth-child(1)');  // was 2 which is the coordiante and not the name. therefore the highlight did not work 
-    if (atomNameSpan) {
-      // Extract the atom index from the display name (e.g., "Ba1" -> check if this is sourceIndex 0)
-      const actualIndex = getAtomActualIndex(element, atomNameSpan.textContent);
-      if (actualIndex === sourceIndex) {
-        // Highlight this row
-        highlightAtomRow(row);
-        // Scroll into view
-        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        break;
-      }
-    }
-  }
-}
-
-function getAtomActualIndex(element, displayName) {
-  // Convert "Ba1" to actual index by finding all atoms of this element
-  //if (!structureData) return -1;
-  const displayNumber = parseInt(displayName.replace(element, ''));
-  let elementCount = 0;
-
-  for (let i = 0; i < structureData.elements.length; i++) {
-    if (structureData.elements[i] === element) {
-      elementCount++;
-      if (elementCount === displayNumber) {
-        return i;
-      }
-    }
-  }
-  return -1;
-}
-
-function highlightAtomRow(row) {
-  // Clear previous highlight
-  console.log("Highlighting atom row")
-  if (currentlyHighlightedRow) {
-    currentlyHighlightedRow.style.backgroundColor = '';
-    currentlyHighlightedRow.style.borderLeft = '';
-  }
-
-  // Add highlight to new row
-  row.style.backgroundColor = 'rgba(255, 191, 0, 0.2)'; // Orange highlight
-  row.style.borderLeft = '3px solid #FFB347';
-  currentlyHighlightedRow = row;
-
-}
-
-function highlightAtomIn3D(atomMesh) {
-  // Clear previous 3D highlight
-  if (currentlyHighlightedAtom) {
-    clearHighlightAtom(currentlyHighlightedAtom);
-  }
-
-  // Add new highlight
-  HighlightAtom(atomMesh, 0xFFB347); // Orange glow
-  currentlyHighlightedAtom = atomMesh;
-
-}
-
-function clearAllHighlights() {
-  // Clear UI highlight
-  if (currentlyHighlightedRow) {
-    currentlyHighlightedRow.style.backgroundColor = '';
-    currentlyHighlightedRow.style.borderLeft = '';
-    currentlyHighlightedRow = null;
-  }
-
-  // Clear 3D highlight
-  if (currentlyHighlightedAtom) {
-    clearHighlightAtom(currentlyHighlightedAtom);
-    currentlyHighlightedAtom = null;
-  }
-}
-
-// Make clearAllHighlights available globally for manual clearing
-window.clearAtomHighlight = clearAllHighlights;
-
-// Function to collapse all individual atom expansions
-function collapseAllAtomExpansions() {
-  const atomsContainers = document.querySelectorAll('.individual-atoms');
-  const expandIcons = document.querySelectorAll('.comp-left span:last-child');
-
-  atomsContainers.forEach(container => {
-    container.style.display = 'none';
-  });
-
-  expandIcons.forEach(icon => {
-    icon.style.transform = 'rotate(0deg)';
-  });
-}
-
-
-
-// Function to handle structure panel toggle
-function handleStructurePanelToggle() {
-  const composition = document.getElementById('composition');
-  if (composition && !composition.classList.contains('open')) {
-    // Structure panel is being collapsed, so collapse all atom expansions
-    collapseAllAtomExpansions();
-  }
-}
-
-function updateAtoms(opacity=1.0) {
-  disposeGroup(groups.atomsGroup);
-  groups.atomsGroup = new THREE.Group();
-  const wrapped = periodicWrapped(structureData.positions, structureData.elements);
-  const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
-  for (let i = 0; i < wrappedCart.length; i++) {
-    const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    const atomMesh = createAtomMesh(wrapped.elements[i], wrappedCart[i], originalIndex,opacity);
-    atomMesh.userData.sourceIndex = originalIndex;
-    groups.atomsGroup.add(atomMesh);
-  }
-  app.scene.add(groups.atomsGroup);
-}
 
 function addSecondStructure(opacity=1.0) {
 
@@ -528,22 +354,6 @@ function NewupdatePolyhedra() {
   app.scene.add(polyhedraGroup);
   if(DEBUG) console.info('[poly DEBUG] total candidates rendered:',polyhedraGroup.children.length);
 }
-
-
-//----------------------------------/
-//-----Below versio works but not with B12 cages ----------------------/
-//----------------------------------/
-
-// --- Utility: robust median (used by the C12 "band-hull" path and a few sanity checks) ---
-function median(arr) {
-  if (!arr || arr.length === 0) return 0;
-  const a = arr.slice().sort((x, y) => x - y);
-  const n = a.length;
-  return (n % 2) ? a[(n - 1) / 2] : 0.5 * (a[n / 2 - 1] + a[n / 2]);
-}
-
-
-// Keep this group at module scope
 
 function updatePolyhedra() {
   // ---------- TOGGLE ----------
@@ -1083,34 +893,6 @@ function minVertexDegreeForCageSize(N) {
 }
 
 
-
-// Per-atom spin spec.
-// Key is source atom index (structureData.positions index).
-// Value: { dir:[ax,by,cz], length?:number, color?:string }
-
-// ===== UTILS =====
-function parseColorToHexInt(s, fallback = '#ff3366') {
-  if (!s || typeof s !== 'string') s = fallback;
-  let t = s.trim();
-  if (t.startsWith('0x')) t = '#' + t.slice(2);
-  if (!t.startsWith('#')) t = '#' + t;
-  // three.js Color can take string; ArrowHelper also accepts Color/number.
-  // We'll return integer for consistency.
-  const col = new THREE.Color(t);
-  return col.getHex();
-}
-
-function fracVecToCart(ax, by, cz, lattice) {
-  // lattice is 3x3 array [a,b,c] with Cartesian components
-  const a = lattice[0], b = lattice[1], c = lattice[2];
-  const v = new THREE.Vector3(
-    ax * a[0] + by * b[0] + cz * c[0],
-    ax * a[1] + by * b[1] + cz * c[1],
-    ax * a[2] + by * b[2] + cz * c[2],
-  );
-  return v;
-}
-
 function openBackgroundColorPicker(dot) {
   // Remove any existing picker first
   //
@@ -1481,7 +1263,7 @@ function init() {
 
   // not even sure what this does??
 
-  atomTooltip = document.createElement('div');
+  const atomTooltip = document.createElement('div');
   atomTooltip.className = 'atom-tooltip';
   atomTooltip.setAttribute('aria-hidden', 'true');
   view.appendChild(atomTooltip);
@@ -1514,7 +1296,7 @@ function init() {
     if (!atomTooltip) return;
     atomTooltip.classList.remove('visible');
     atomTooltip.setAttribute('aria-hidden', 'true');
-    hoveredAtom = null;
+    highlightHover.hoveredAtom = null;
   }
 
   function updateAtomTooltip(event) {
@@ -1558,8 +1340,8 @@ function init() {
       }
     }
 
-    if (hoveredAtom !== hit) {
-      hoveredAtom = hit;
+    if (highlightHover.hoveredAtom !== hit) {
+      highlightHover.hoveredAtom = hit;
 
       if (sourceIndex == null) {
         atomTooltip.textContent = `${element}`;
