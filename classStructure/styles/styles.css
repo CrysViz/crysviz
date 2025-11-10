@@ -258,6 +258,7 @@ body.panel-hidden #axesLegend {
 }
 
 .input-mode-panel {
+  max-width: 270px;
   display: block;
 }
 
@@ -381,6 +382,8 @@ body.panel-hidden #axesLegend {
 }
 
 .second-input-mode-panel {
+
+  max-width: 270px;
   display: block;
 }
 
@@ -395,7 +398,7 @@ body.panel-hidden #axesLegend {
 
 #secondFileLabel {
   display: block;
-  padding: 15px 20px;
+  padding: 15px 10px;
   background: rgba(6, 71, 50, 1);
   color: white;
   text-align: center;
@@ -730,7 +733,6 @@ justify-content: center;
   background: rgba(240, 132, 18,0.90); /*rgba(60,60,60,0.8)*/
   color: white;
   border: none;
-  padding: 10px 10px 10px 10px;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
@@ -897,7 +899,6 @@ justify-content: center;
   background: rgba(240, 132, 18,0.90); /*rgba(60,60,60,0.8)*/
   color: white;
   border: none;
-  padding: 10px 10px 10px 10px;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;

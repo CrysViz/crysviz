@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { ConvexGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/ConvexGeometry.js';
 import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
-//import { RoomEnvironment } from 'https://unpkg.com/three@0.160.0/examples/jsm/environments/RoomEnvironment.js';
 import { setupStructureInput, isLikelyCIFContent, parsePOSCAR, cartToFractional } from './old_style/structure-input.js';
 import { setupSecondStructureInput } from './old_style/compare-structure-input.js';
 import { createLatticeComparisonPanel }from './old_style/lattice_comparison.js'
@@ -13,7 +12,6 @@ import { updateAngleDisplays, setupAxisControls} from './old_style/cameraAngleCo
 
 // import modules
 
-
 import { animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames. 
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
 import { updateBonds} from './modules/BondsModule.js'
@@ -22,26 +20,18 @@ import { Structure} from './classes/Structure.js';
 import { StructureData} from './classes/StructureData.js';
 import { updateSpins} from './modules/SpinModule.js'
 import { parseCIF} from './modules/ReaderModule.js';
+import {createSupercell} from './modules/SuperCellModule.js';
+
+import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor } from './modules/ColorModule.js';
+
+import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './modules/MeasurementModule.js' // not all imports might be needed in this file
 
 // import panels
-import {
-  initCamera,
-  initRenderer,
-  initLabelRenderer,
-  initControls,
-  resizeRenderer,
-  initAxesGizmo,
-  disposeGroup,
-  switchCameraType,
-  setViewDirection,
-  resetView
-  
+import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
+  initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView
 } from './panels/WindowAndSceneControls.js'
-
 import {loadAboutContent, openAboutPanel, closeAboutPanel} from './panels/AboutPanel.js';
-
-import {createSpinControls} from './modules/SpinModule.js'
-
+import {createSpinControls} from './modules/SpinModule.js';
 
 // import utils needs to moce to the "share" functionality
 import {
@@ -60,344 +50,21 @@ const setStatus = (s) => {
 };
 
 // store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc. 
-import { app,structureData,spinsData, groups, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from './store.js';
+import { app,structureData,originalStructureData,spinsData, groups, general,measurements, mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from './store.js';
 
 
 let polyhedraGroup;
 let atomsGroup2, bondsGroup2, latticeGroup2,spinGroup2;
 let structureData2 = null;
 
-let originalStructureData = null; // deep-copy of last loaded structure for restore
-
 let atomTooltip = null;
 let hoveredAtom = null;
 
-    // Measurement state
-let selectedAtoms = []; // Array to store selected atoms (up to 3 for angles)
-let measureLine = null;          // THREE.Line
-let measureLabel = null;         // CSS2DObject
-let measureLines = [];           // Array to store multiple measurement lines
-let measureLabels = [];          // Array to store multiple measurement labels
 
-
-function getElementColor(element) {
-  // Prefer user override if present
-  if (general.userColorOverrides && general.userColorOverrides[element] !== undefined) {
-    return general.userColorOverrides[element];
-  }
-  const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
-  return colorScheme[element] || 0x808080;
-}
-
-export function getIndividualAtomColor(element, atomIndex) {
-  // Check if individual atom has custom color
-  const atomKey = `${element}_${atomIndex}`;
-  if (general.individualAtomColors && general.individualAtomColors[atomKey] !== undefined) {
-    return general.individualAtomColors[atomKey];
-  }
-  // Fall back to element-wide color
-  return getElementColor(element);
-}
-
-// Get the default palette color for an element (ignores user overrides)
-function getDefaultElementColor(element) {
-  const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
-  return colorScheme[element] || 0x808080;
-}
-
-
-// This is why the colors are persistent. It is stored in the browser itself. The only thing we store is the customg color state! 
-
-function saveColorOverrides() {
-  try { localStorage.setItem('atomColorOverrides', JSON.stringify(general.userColorOverrides || {})); } catch (_) {}
-}
-function loadColorOverrides() {
-  try {
-    const raw = localStorage.getItem('atomColorOverrides');
-    if (raw) general.userColorOverrides = JSON.parse(raw) || {};
-  } catch (_) { general.userColorOverrides = {}; }
-}
-
-function saveIndividualAtomColors() {
-  try { localStorage.setItem('individualAtomColors', JSON.stringify(general.individualAtomColors || {})); } catch (_) {}
-}
-function loadIndividualAtomColors() {
-  try {
-    const raw = localStorage.getItem('individualAtomColors');
-    if (raw) general.individualAtomColors = JSON.parse(raw) || {};
-  } catch (_) { general.individualAtomColors = {}; }
-}
-
-function setElementColorOverride(el, cssHex) {
-  if (!cssHex) return false;
-  let hex = cssHex.toString().trim();
-  if (hex.startsWith('#')) hex = hex.slice(1);
-  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return false;
-  general.userColorOverrides[el] = parseInt(hex, 16);
-  saveColorOverrides();
-  return true;
-}
-function clearElementColorOverride(el) {
-  delete general.userColorOverrides[el];
-  saveColorOverrides();
-}
-
-function setIndividualAtomColor(element, atomIndex, cssHex) {
-  if (!cssHex) return false;
-  let hex = cssHex.toString().trim();
-  if (hex.startsWith('#')) hex = hex.slice(1);
-  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return false;
-  const atomKey = `${element}_${atomIndex}`;
-  general.individualAtomColors[atomKey] = parseInt(hex, 16);
-  saveIndividualAtomColors();
-  return true;
-}
-
-function clearIndividualAtomColor(element, atomIndex) {
-  const atomKey = `${element}_${atomIndex}`;
-  delete general.individualAtomColors[atomKey];
-  saveIndividualAtomColors();
-}
-
-function hasIndividualColors(element) {
-  if (!general.individualAtomColors) return false;
-  return Object.keys(general.individualAtomColors).some(key => key.startsWith(`${element}_`));
-}
-
-function getAllIndividualAtomColors(element) {
-  if (!general.individualAtomColors) return [];
-
-  // Collect all individual color overrides for the element
-  const currentPalette = Object.entries(general.individualAtomColors)
-    .filter(([key]) => key.startsWith(`${element}_`))
-    .map(([, color]) => colorHexToCss(color));
-
-  // Count how many atoms of this element are in the structure
-  let elementCount = 0;
-  for (let i = 0; i < structureData.elements.length; i++) {
-    if (structureData.elements[i] === element) {
-      elementCount++;
-    }
-  }
-
-  // If not all atoms are overridden, add the default color too
-  if (currentPalette.length < elementCount) {
-    const defaultColor = colorHexToCss(getElementColor(element));
-    currentPalette.push(defaultColor);
-  }
-
-  return currentPalette;
-}
-
-
-function getElementDisplayColor(element) {
-  if (hasIndividualColors(element)) {
-    const colors = getAllIndividualAtomColors(element);
-    // Defensive: ensure it's an array of strings
-    if (Array.isArray(colors) && colors.every(c => typeof c === 'string')) {
-      return colors;
-    }
-    // If not, fallback:
-    return [colorHexToCss(getElementColor(element))];
-  } else {
-    return [colorHexToCss(getElementColor(element))];
-  }
-}
-
-
-function createPieDot(colors, size = 200) {
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-
-  const center = size / 2;
-  const radius = center;
-  const slice = (2 * Math.PI) / colors.length;
-
-  colors.forEach((color, i) => {
-    const start = i * slice;
-    const end = start + slice;
-    ctx.beginPath();
-    ctx.moveTo(center, center);
-    ctx.arc(center, center, radius, start, end);
-    ctx.closePath();
-    ctx.fillStyle = color;
-    ctx.fill();
-  });
-  canvas.style.borderRadius = '50%';
-  canvas.style.border = '1px solid #666';
-  canvas.style.display = 'inline-block';
-
-  return canvas;
-}
-
-
-function clearAllIndividualColorsForElement(element) {
-  if (!general.individualAtomColors) return;
-  // Remove all individual colors for this element
-  const keysToRemove = Object.keys(general.individualAtomColors).filter(key => key.startsWith(`${element}_`));
-  keysToRemove.forEach(key => delete general.individualAtomColors[key]);
-  saveIndividualAtomColors();
-}
-
-
-function createSupercell(nx = 1, ny = 1, nz = 1) {
- 
-  if (!originalStructureData) return;
-
-  const basePositions = originalStructureData.positions;
-  const baseElements = originalStructureData.elements;
-
-  let baseLattice;
-
-  if (general.modifiedLattice == null) {
-    // No modified lattice → use original
-    baseLattice = originalStructureData.lattice;
-  } else {
-    if (general.currentSupercell == null) {
-      // No supercell info → use as-is
-      baseLattice = general.modifiedLattice;
-    } else {
-      // Scale each lattice vector by its corresponding supercell multiplier
-      const { nx, ny, nz } = general.currentSupercell;
-      const scales = [nx, ny, nz];
-      baseLattice = general.modifiedLattice.map((v, i) => v.map(x => x / scales[i]));
-    }
-  }
-
-  const newPositions = [];
-  const newElements = [];
-
-  // Simple tiling
-  for (let i = 0; i < nx; i++) {
-    for (let j = 0; j < ny; j++) {
-      for (let k = 0; k < nz; k++) {
-        for (let p = 0; p < basePositions.length; p++) {
-          const pos = basePositions[p];
-          newPositions.push([
-            (pos[0] + i) / nx,
-            (pos[1] + j) / ny,
-            (pos[2] + k) / nz
-          ]);
-          newElements.push(baseElements[p]);
-        }
-      }
-    }
-  }
-
-  // Scale lattice vectors
-  const newLattice = [
-    baseLattice[0].map(x => x * nx),
-    baseLattice[1].map(x => x * ny),
-    baseLattice[2].map(x => x * nz)
-  ];
-
-  // Update structureData
-  structureData.positions = newPositions;
-  structureData.elements = newElements;
-  structureData.lattice = newLattice;
-  structureData.supercell = { nx, ny, nz };
-  general.currentSupercell={ nx, ny, nz }
-  
-  let structure = new Structure({
-    elements: newElements,
-    positions: newPositions,
-    lattice: newLattice,
-    supercell: { nx, ny, nz }
-  });
-
-  let structureD = new StructureData()
-  let id = 0
-  structureD.structure.push(structure);
-  structureD.id.push(id);
-
-  console.log(structureD.structure[0].defaultColors["Ba"])
-  console.log(structureD.structure[0].colors["Ba"])
-
-  // Re-render
-  //
-  updateVisualization({
-    reRenderAtoms: true,
-    reRenderBonds: true,
-    reRenderLattice: true
-  });
-}
 
 
 export function getAtomRadius(element) {
   return (atomicRadii[element] || 1.0) * general.atomSize;
-}
-
-
-
-// Helper functions for creating measurement markers
-function createAtomRings(position, radius, innerColor, outerColor, element = null) {
-  const ringGroup = new THREE.Group();
-
-  // Outer ring - scales with atom
-  const outerRingGeometry = new THREE.RingGeometry(radius * 1.1, radius * 1.3, 32);
-  const outerRingMaterial = new THREE.MeshBasicMaterial({
-    color: outerColor,
-    transparent: false,
-    opacity: 1.0,
-    side: THREE.DoubleSide
-  });
-  const outerRing = new THREE.Mesh(outerRingGeometry, outerRingMaterial);
-  outerRing.lookAt(app.camera.position);
-  ringGroup.add(outerRing);
-
-  // Inner ring - scales with atom
-  const innerRingGeometry = new THREE.RingGeometry(radius * 0.9, radius * 1.05, 32);
-  const innerRingMaterial = new THREE.MeshBasicMaterial({
-    color: innerColor,
-    transparent: false,
-    opacity: 1.0,
-    side: THREE.DoubleSide
-  });
-  const innerRing = new THREE.Mesh(innerRingGeometry, innerRingMaterial);
-  innerRing.lookAt(app.camera.position);
-  ringGroup.add(innerRing);
-
-  ringGroup.position.copy(position);
-
-  // Store metadata for scaling when atom size changes
-  ringGroup.userData = {
-    isAtomMarker: true,
-    markerType: 'rings',
-    element: element
-  };
-
-  return ringGroup;
-}
-
-function updateMeasurementMarkers() {
-  // Update all measurement rings to reflect current atom size
-  measureLines.forEach(item => {
-    if (item.userData && item.userData.isAtomMarker && item.userData.markerType === 'rings') {
-      const element = item.userData.element;
-      if (element) {
-        const newRadius = getAtomRadius(element);
-
-        // Update ring geometries
-        item.children.forEach((ring, index) => {
-          if (ring.geometry && ring.geometry.type === 'RingGeometry') {
-            ring.geometry.dispose(); // Clean up old geometry
-
-            if (index === 0) {
-              // Outer ring
-              ring.geometry = new THREE.RingGeometry(newRadius * 1.1, newRadius * 1.3, 32);
-            } else {
-              // Inner ring
-              ring.geometry = new THREE.RingGeometry(newRadius * 0.9, newRadius * 1.05, 32);
-            }
-          }
-        });
-      }
-    }
-  });
 }
 
 
@@ -666,298 +333,6 @@ function HighlightAtom(m, hex){
 }
 
 
-function clearMeasureGraphics(){
-  if (measureLine){ app.scene.remove(measureLine); measureLine.geometry.dispose(); measureLine = null; }
-  if (measureLabel){ app.scene.remove(measureLabel); measureLabel = null; }
-}
-
-function clearAllMeasurements(){
-  // Clear all stored measurements
-  measureLines.forEach(item => {
-    app.scene.remove(item);
-    if (item.geometry) item.geometry.dispose();
-  });
-  measureLabels.forEach(label => {
-    app.scene.remove(label);
-  });
-  measureLines = [];
-  measureLabels = [];
-  selectedAtoms = [];
-  clearMeasureGraphics();
-}
-
-function calculateAngle(atom1, atom2, atom3) {
-  // Calculate angle between three atoms: atom1-atom2-atom3 (atom2 is vertex)
-  const p1 = atom1.position.clone();
-  const p2 = atom2.position.clone();
-  const p3 = atom3.position.clone();
-
-  const v1 = p1.sub(p2).normalize();
-  const v2 = p3.sub(p2).normalize();
-
-  const dotProduct = v1.dot(v2);
-  const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
-  return angle * (180 / Math.PI); // Convert to degrees
-}
-
-function addAngleMeasurement(atom1, atom2, atom3) {
-  const angle = calculateAngle(atom1, atom2, atom3);
-
-  // Create angle arc visualization
-  const p1 = atom1.position.clone();
-  const p2 = atom2.position.clone(); // vertex
-  const p3 = atom3.position.clone();
-
-  // Create thick dashed cylinders from vertex to other atoms (ORANGE for angles)
-  function createDashedCylinder(startPos, endPos, color) {
-    const distance = startPos.distanceTo(endPos);
-    const direction = new THREE.Vector3().subVectors(endPos, startPos);
-
-    const dashLength = 0.25;
-    const gapLength = 0.15;
-    const segmentLength = dashLength + gapLength;
-    const numSegments = Math.floor(distance / segmentLength);
-
-    const cylinderGroup = new THREE.Group();
-
-    for (let i = 0; i < numSegments; i++) {
-      const segmentStart = i * segmentLength;
-      const segmentGeometry = new THREE.CylinderGeometry(0.06, 0.06, dashLength, 8); // Slightly thinner than distance
-      const segmentMaterial = new THREE.MeshBasicMaterial({ color: color });
-      const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
-
-      const segmentCenter = startPos.clone().add(direction.clone().normalize().multiplyScalar(segmentStart + dashLength/2));
-      segment.position.copy(segmentCenter);
-      segment.lookAt(endPos);
-      segment.rotateX(Math.PI / 2);
-
-      cylinderGroup.add(segment);
-    }
-    return cylinderGroup;
-  }
-
-  // Create orange dashed cylinders for angle measurement
-  const angleColor = 0xff6600; // Orange for angle measurements
-  const angleLine1 = createDashedCylinder(p2, p1, angleColor);
-  const angleLine2 = createDashedCylinder(p2, p3, angleColor);
-
-  // Store atom indices for dynamic updates
-  angleLine1.userData = {
-    type: 'angle',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex, // vertex
-    atom3Index: atom3.userData.atomIndex,
-    lineIndex: 1 // first line (vertex to atom1)
-  };
-
-  angleLine2.userData = {
-    type: 'angle',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex, // vertex
-    atom3Index: atom3.userData.atomIndex,
-    lineIndex: 2 // second line (vertex to atom3)
-  };
-
-  app.scene.add(angleLine1);
-  app.scene.add(angleLine2);
-  measureLines.push(angleLine1);
-  measureLines.push(angleLine2);
-
-  // Add markers to all three atoms
-  [atom1, atom2, atom3].forEach((atom, index) => {
-    const atomRadius = getAtomRadius(atom.userData.element);
-    const color = index === 1 ? 0x00ff00 : 0x00ff88; // Vertex gets different color
-
-    const rings = createAtomRings(atom.position, atomRadius, color, 0x000000, atom.userData.element);
-    rings.userData = {
-      ...rings.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
-      type: 'angleMarker',
-      atomIndex: atom.userData.atomIndex,
-      atom1Index: atom1.userData.atomIndex,
-      atom2Index: atom2.userData.atomIndex,
-      atom3Index: atom3.userData.atomIndex
-    };
-    app.scene.add(rings);
-    measureLines.push(rings);
-
-  });
-
-  // Create angle label at vertex
-  const div = document.createElement('div');
-  div.className = 'measure-label';
-  div.style.background = 'rgba(0, 255, 0, 0.9)';
-  div.style.border = '2px solid #00ff00';
-  div.style.color = '#000000';
-  div.style.fontWeight = '700';
-  div.style.fontSize = '14px';
-  div.style.padding = '2px 6px';
-  div.style.borderRadius = '4px';
-  const elements = [atom1.userData.element, atom2.userData.element, atom3.userData.element];
-  div.textContent = `∠${elements[0]}-${elements[1]}-${elements[2]}: ${angle.toFixed(1)}°`;
-
-  const label = new CSS2DObject(div);
-  label.position.copy(p2);
-
-  // Store atom indices for dynamic updates
-  label.userData = {
-    type: 'angle',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex, // vertex
-    atom3Index: atom3.userData.atomIndex
-  };
-
-  app.scene.add(label);
-  measureLabels.push(label);
-}
-
-function addDistanceMeasurement(atom1, atom2) {
-  // Create thick dashed cylinder for distance measurement (BLUE for distance)
-  const pa = atom1.position.clone(), pb = atom2.position.clone();
-  const distance = pa.distanceTo(pb);
-  const direction = new THREE.Vector3().subVectors(pb, pa);
-  const midpoint = new THREE.Vector3().addVectors(pa, pb).multiplyScalar(0.5);
-
-  // Create multiple cylinder segments for dashed effect
-  const dashLength = 0.3;
-  const gapLength = 0.2;
-  const segmentLength = dashLength + gapLength;
-  const numSegments = Math.floor(distance / segmentLength);
-
-  const cylinderGroup = new THREE.Group();
-
-  for (let i = 0; i < numSegments; i++) {
-    const segmentStart = i * segmentLength;
-    const segmentGeometry = new THREE.CylinderGeometry(0.08, 0.08, dashLength, 8); // Thick cylinder
-    const segmentMaterial = new THREE.MeshBasicMaterial({ color: 0x0066ff }); // Blue for distance
-    const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
-
-    // Position segment along the line
-    const segmentCenter = pa.clone().add(direction.clone().normalize().multiplyScalar(segmentStart + dashLength/2));
-    segment.position.copy(segmentCenter);
-    segment.lookAt(pb);
-    segment.rotateX(Math.PI / 2);
-
-    cylinderGroup.add(segment);
-  }
-
-  // Store atom indices for dynamic updates
-  cylinderGroup.userData = {
-    type: 'distance',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex
-  };
-
-  app.scene.add(cylinderGroup);
-  measureLines.push(cylinderGroup);
-
-  // Create atom-size-aware surface markers
-
-  // Get atom radii for proper scaling
-  const atomRadiusA = getAtomRadius(atom1.userData.element);
-  const atomRadiusB = getAtomRadius(atom2.userData.element);
-
-  // Add scaling rings to both atoms
-  const ringsA = createAtomRings(pa, atomRadiusA, 0xffff00, 0x000000, atom1.userData.element); // Yellow inner, black outer
-  ringsA.userData = {
-    ...ringsA.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
-    type: 'distanceMarker',
-    atomIndex: atom1.userData.atomIndex,
-    measurementIndex: measureLines.length // Reference to the cylinder group
-  };
-  app.scene.add(ringsA);
-  measureLines.push(ringsA);
-
-  const ringsB = createAtomRings(pb, atomRadiusB, 0xffff00, 0x000000, atom2.userData.element); // Yellow inner, black outer
-  ringsB.userData = {
-    ...ringsB.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
-    type: 'distanceMarker',
-    atomIndex: atom2.userData.atomIndex,
-    measurementIndex: measureLines.length - 1 // Reference to the cylinder group
-  };
-  app.scene.add(ringsB);
-  measureLines.push(ringsB);
-
-  // Create a compact black and white floating label
-  const mid = pa.clone().add(pb).multiplyScalar(0.5);
-  const div = document.createElement('div');
-  div.className = 'measure-label';
-  div.style.background = 'rgba(255, 255, 255, 0.95)';
-  div.style.border = '2px solid #000000';
-  div.style.color = '#000000';
-  div.style.fontWeight = '700';
-  div.style.fontSize = '14px';
-  div.style.padding = '2px 6px';
-  div.style.textShadow = '1px 1px 2px rgba(255,255,255,0.8)';
-  div.style.boxShadow = '0 3px 8px rgba(0,0,0,0.4)';
-  div.style.borderRadius = '4px';
-  const a = atom1.userData.element, b = atom2.userData.element;
-  const d = pa.distanceTo(pb);
-  //div.textContent = `${a}—${b}: ${formatÅ(d)} Å`;
-  div.textContent = `${formatÅ(d)} Å`;
-  const label = new CSS2DObject(div);
-  label.position.copy(mid);
-
-  // Store atom indices for dynamic updates
-  label.userData = {
-    type: 'distance',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex
-  };
-
-  app.scene.add(label);
-  measureLabels.push(label);
-}
-
-function drawMeasureGraphics(){
-  clearMeasureGraphics();
-
-  // Show preview lines/indicators for current selection
-  if (mode.measureMode === 'distance' && selectedAtoms.length === 1) {
-    // Show preview for distance measurement (1 atom selected)
-    const atom1 = selectedAtoms[0];
-    const div = document.createElement('div');
-    div.className = 'measure-label';
-    div.style.background = 'rgba(255, 255, 255, 0.8)';
-    div.style.border = '2px solid #000000';
-    div.style.color = '#000000';
-    div.style.fontWeight = '700';
-    div.style.fontSize = '12px';
-    div.style.padding = '4px 8px';
-    div.style.borderRadius = '4px';
-    //div.textContent = `${atom1.userData.element} — ? (click 2nd atom)`;
-    div.textContent = `choose 2nd atom`;
-    measureLabel = new CSS2DObject(div);
-    measureLabel.position.copy(atom1.position);
-    app.scene.add(measureLabel);
-  } else if (mode.measureMode === 'angle' && selectedAtoms.length > 0) {
-    // Show preview for angle measurement
-    const div = document.createElement('div');
-    div.className = 'measure-label';
-    div.style.background = 'rgba(0, 255, 0, 0.8)';
-    div.style.border = '2px solid #00ff00';
-    div.style.color = '#000000';
-    div.style.fontWeight = '700';
-    div.style.fontSize = '10px';
-    div.style.padding = '2px 4px';
-    div.style.borderRadius = '4px';
-
-    if (selectedAtoms.length === 1) {
-      div.textContent = `${selectedAtoms[0].userData.element} — ? — ? (select vertex)`;
-    } else if (selectedAtoms.length === 2) {
-      div.textContent = `${selectedAtoms[0].userData.element} — ${selectedAtoms[1].userData.element} — ? (select 3rd atom)`;
-    }
-
-    measureLabel = new CSS2DObject(div);
-    measureLabel.position.copy(selectedAtoms[selectedAtoms.length - 1].position);
-    app.scene.add(measureLabel);
-  }
-}
-
-function clearMeasure(){
-  selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-  selectedAtoms = [];
-  clearMeasureGraphics();
-}
 
 export function createAtomMesh(element, position, atomIndex = null,opacity=1.0) {
   const radius = getAtomRadius(element);
@@ -2069,162 +1444,7 @@ function findAtomByOriginalIndex(originalIndex) {
   return null;
 }
 
-function updateAllMeasurements() {
-  if (!groups.atomsGroup || !groups.atomsGroup.children) return;
 
-  measureLines.forEach(measureItem => {
-    if (!measureItem.userData) return;
-
-    if (measureItem.userData.type === 'distance') {
-      // Update distance measurement
-      const atom1Index = measureItem.userData.atom1Index;
-      const atom2Index = measureItem.userData.atom2Index;
-
-      const atom1 = findAtomByOriginalIndex(atom1Index);
-      const atom2 = findAtomByOriginalIndex(atom2Index);
-
-      if (atom1 && atom2) {
-        // Recalculate distance and update display
-        const pa = atom1.position.clone();
-        const pb = atom2.position.clone();
-        const distance = pa.distanceTo(pb);
-
-        // Update the cylinder segments positions
-        const direction = new THREE.Vector3().subVectors(pb, pa);
-        const dashLength = 0.3;
-        const gapLength = 0.2;
-        const segmentLength = dashLength + gapLength;
-        const numSegments = Math.floor(distance / segmentLength);
-
-        // Clear old segments
-        measureItem.clear();
-
-        // Create new segments with updated positions
-        for (let i = 0; i < numSegments; i++) {
-          const segmentStart = i * segmentLength;
-          const segmentGeometry = new THREE.CylinderGeometry(0.08, 0.08, dashLength, 8);
-          const segmentMaterial = new THREE.MeshBasicMaterial({ color: 0x0066ff });
-          const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
-
-          const segmentCenter = pa.clone().add(direction.clone().normalize().multiplyScalar(segmentStart + dashLength/2));
-          segment.position.copy(segmentCenter);
-          segment.lookAt(pb);
-          segment.rotateX(Math.PI / 2);
-
-          measureItem.add(segment);
-        }
-      }
-    } else if (measureItem.userData.type === 'angle') {
-      // Update angle measurement
-      const atom1Index = measureItem.userData.atom1Index;
-      const atom2Index = measureItem.userData.atom2Index; // vertex
-      const atom3Index = measureItem.userData.atom3Index;
-      const lineIndex = measureItem.userData.lineIndex;
-
-      const atom1 = findAtomByOriginalIndex(atom1Index);
-      const atom2 = findAtomByOriginalIndex(atom2Index); // vertex
-      const atom3 = findAtomByOriginalIndex(atom3Index);
-
-      if (atom1 && atom2 && atom3) {
-        // Determine which line this is (vertex to atom1 or vertex to atom3)
-        const startPos = atom2.position.clone(); // vertex
-        const endPos = lineIndex === 1 ? atom1.position.clone() : atom3.position.clone();
-
-        const distance = startPos.distanceTo(endPos);
-        const direction = new THREE.Vector3().subVectors(endPos, startPos);
-
-        const dashLength = 0.25;
-        const gapLength = 0.15;
-        const segmentLength = dashLength + gapLength;
-        const numSegments = Math.floor(distance / segmentLength);
-
-        // Clear old segments
-        measureItem.clear();
-
-        // Create new segments with updated positions
-        for (let i = 0; i < numSegments; i++) {
-          const segmentStart = i * segmentLength;
-          const segmentGeometry = new THREE.CylinderGeometry(0.06, 0.06, dashLength, 8);
-          const segmentMaterial = new THREE.MeshBasicMaterial({ color: 0xff6600 }); // Orange
-          const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
-
-          const segmentCenter = startPos.clone().add(direction.clone().normalize().multiplyScalar(segmentStart + dashLength/2));
-          segment.position.copy(segmentCenter);
-          segment.lookAt(endPos);
-          segment.rotateX(Math.PI / 2);
-
-          measureItem.add(segment);
-        }
-      }
-    } else if (measureItem.userData.type === 'distanceMarker') {
-      // Update distance marker position
-      const atomIndex = measureItem.userData.atomIndex;
-      const atom = findAtomByOriginalIndex(atomIndex);
-      
-      if (atom) {
-        measureItem.position.copy(atom.position);
-      }
-    } else if (measureItem.userData.type === 'angleMarker') {
-      // Update angle marker position
-      const atomIndex = measureItem.userData.atomIndex;
-      const atom = findAtomByOriginalIndex(atomIndex);
-      
-      if (atom) {
-        measureItem.position.copy(atom.position);
-      }
-    }
-  });
-
-  // Update measurement labels
-  measureLabels.forEach(label => {
-    if (label.userData && label.userData.type === 'distance') {
-      const atom1Index = label.userData.atom1Index;
-      const atom2Index = label.userData.atom2Index;
-
-      const atom1 = findAtomByOriginalIndex(atom1Index);
-      const atom2 = findAtomByOriginalIndex(atom2Index);
-
-      if (atom1 && atom2) {
-        const pa = atom1.position.clone();
-        const pb = atom2.position.clone();
-        const distance = pa.distanceTo(pb);
-        const midpoint = pa.clone().add(pb).multiplyScalar(0.5);
-
-        // Update label position and text
-        label.position.copy(midpoint);
-        if (label.element && label.element.firstChild) {
-          label.element.firstChild.textContent = distance.toFixed(3) + ' Å';
-        }
-      }
-    } else if (label.userData && label.userData.type === 'angle') {
-      // Update angle label
-      const atom1Index = label.userData.atom1Index;
-      const atom2Index = label.userData.atom2Index; // vertex
-      const atom3Index = label.userData.atom3Index;
-
-      const atom1 = findAtomByOriginalIndex(atom1Index);
-      const atom2 = findAtomByOriginalIndex(atom2Index); // vertex
-      const atom3 = findAtomByOriginalIndex(atom3Index);
-
-      if (atom1 && atom2 && atom3) {
-        // Recalculate angle
-        const angle = calculateAngle(atom1, atom2, atom3);
-
-        // Update label position to vertex
-        label.position.copy(atom2.position);
-
-        // Update label text
-        if (label.element && label.element.firstChild) {
-          const elements = [atom1.userData.element, atom2.userData.element, atom3.userData.element];
-          label.element.firstChild.textContent = `∠${elements[0]}-${elements[1]}-${elements[2]}: ${angle.toFixed(1)}°`;
-        }
-      }
-    }
-  });
-
-  // Update measurement marker sizes to match current atom sizes
-  updateMeasurementMarkers();
-}
 
 // Function to update atom coordinates and refresh visualization
 function updateAtomCoordinates(atomIndex, newCoords) {
@@ -3256,15 +2476,15 @@ function updateOther() {
   renderComposition();
   clearMeasureGraphics();
 
-  measureLines.forEach(line => scene.add(line));
-  measureLabels.forEach(label => scene.add(label));
+  measurements.measureLines.forEach(line => scene.add(line));
+  measurements.measureLabels.forEach(label => scene.add(label));
 
   recomputeLatticeDirs();
   updateAllMeasurements();
 }
 
 
-function updateVisualization(options = {}) {
+export function updateVisualization(options = {}) {
   const {
     reRenderAtoms = true,
     reRenderBonds = true,
@@ -3363,7 +2583,14 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 
 
     // keep a deep copy for restore (fractional positions + arrays)
-    originalStructureData = JSON.parse(JSON.stringify(structureData));
+    //
+    let parseOriginalStructureData = JSON.parse(JSON.stringify(structureData));
+    originalStructureData.positions = parseOriginalStructureData.positions
+    originalStructureData.elements = parseOriginalStructureData.elements
+    originalStructureData.lattice = parseOriginalStructureData.lattice
+    originalStructureData.supercell= parseOriginalStructureData.supercell
+
+
     loadColorOverrides();
     loadIndividualAtomColors();
     if (isDefault) {
@@ -3623,8 +2850,8 @@ function init() {
     const hits = raycaster.intersectObjects(groups.atomsGroup.children, true);
     if (!hits.length) {
       // Clicked on empty space - reset selection
-      selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-      selectedAtoms = [];
+      measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+      measurements.selectedAtoms = [];
       clearMeasureGraphics();
       return;
     }
@@ -3632,28 +2859,28 @@ function init() {
     const hit = hits[0].object;
 
     // Don't select the same atom twice
-    if (selectedAtoms.includes(hit)) return;
+    if (measurements.selectedAtoms.includes(hit)) return;
 
     // Add atom to selection
-    selectedAtoms.push(hit);
-    HighlightAtom(hit, selectedAtoms.length === 1 ? 0xff0000 : selectedAtoms.length === 2 ? 0x0000ff : 0x00ff00);
+    measurements.selectedAtoms.push(hit);
+    HighlightAtom(hit, measurements.selectedAtoms.length === 1 ? 0xff0000 : measurements.selectedAtoms.length === 2 ? 0x0000ff : 0x00ff00);
 
     // Handle actions based on mode
-    if (mode.measureMode === 'distance' && selectedAtoms.length === 2) {
+    if (mode.measureMode === 'distance' && measurements.selectedAtoms.length === 2) {
       // Distance measurement complete
-      addDistanceMeasurement(selectedAtoms[0], selectedAtoms[1]);
+      addDistanceMeasurement(measurements.selectedAtoms[0], measurements.selectedAtoms[1]);
 
       // Clear selection
-      selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-      selectedAtoms = [];
+      measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+      measurements.selectedAtoms = [];
       clearMeasureGraphics();
-    } else if (mode.measureMode === 'angle' && selectedAtoms.length === 3) {
+    } else if (mode.measureMode === 'angle' && measurements.selectedAtoms.length === 3) {
       // Angle measurement complete
-      addAngleMeasurement(selectedAtoms[0], selectedAtoms[1], selectedAtoms[2]);
+      addAngleMeasurement(measurements.selectedAtoms[0], measurements.selectedAtoms[1], measurements.selectedAtoms[2]);
 
       // Clear selection
-      selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-      selectedAtoms = [];
+      measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+      measurements.selectedAtoms = [];
       clearMeasureGraphics();
     } else if (mode.measureMode === 'delete') {
       const idx = hit.userData.sourceIndex;
@@ -4037,8 +3264,8 @@ function clearLongPress() {
 
     // Clear previous mode
     document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
-    selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-    selectedAtoms = [];
+    measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+    measurements.selectedAtoms = [];
     clearMeasureGraphics();
 
     if (wasActive) {
@@ -4058,8 +3285,8 @@ function clearLongPress() {
 
     // Clear previous mode
     document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
-    selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-    selectedAtoms = [];
+    measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+    measurements.selectedAtoms = [];
     clearMeasureGraphics();
 
     if (wasActive) {

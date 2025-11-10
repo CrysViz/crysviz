@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 
+import {getIndividualAtomColor} from './ColorModule.js'
+
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {cartToFractional } from '../old_style/structure-input.js';
 
-import {createAtomMesh,getAtomRadius,periodicWrapped,getIndividualAtomColor} from '../crystal-viewer.js'
+import {createAtomMesh,getAtomRadius,periodicWrapped} from '../crystal-viewer.js'
 
 
 export function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2,opacity=1.0) {

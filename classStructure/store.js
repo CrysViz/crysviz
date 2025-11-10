@@ -4,6 +4,19 @@ export const structureData = {
   lattice:null,
   supercell:null,
 }
+export const originalStructureData = {
+  positions:null,
+  elements:null,
+  lattice:null,
+  supercell:null,
+}
+
+export const measurements ={
+  measureLines: [],           // Array to store multiple measurement lines
+  measureLabels: [],          // Array to store multiple measurement labels
+  selectedAtoms: []
+}
+
 
 export const spinsData = [];
 
