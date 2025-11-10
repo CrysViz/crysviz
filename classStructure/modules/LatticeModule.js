@@ -153,3 +153,18 @@ export function isOutsideUnitCell(cart, lattice, eps = 1e-6) {
           f[1] < -eps || f[1] >= 1 + eps ||
           f[2] < -eps || f[2] >= 1 + eps);
 }
+
+
+
+export function fracToCart(frac, lattice) { // this should probably be moved to a utility file or the lattice module
+  return frac.map(fc => [
+    fc[0] * lattice[0][0] + fc[1] * lattice[1][0] + fc[2] * lattice[2][0],
+    fc[0] * lattice[0][1] + fc[1] * lattice[1][1] + fc[2] * lattice[2][1],
+    fc[0] * lattice[0][2] + fc[1] * lattice[1][2] + fc[2] * lattice[2][2]
+  ]);
+}
+
+export function cartToFrac(cartVec, lattice) {
+  const inverse = invert3x3(transpose3x3(lattice));
+  return multiplyMatVec(inverse, cartVec);
+}

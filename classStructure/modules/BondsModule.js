@@ -5,12 +5,19 @@ import { app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defa
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {cartToFractional } from '../old_style/structure-input.js';
 
-import {createAtomMesh,getAtomRadius} from '../crystal-viewer.js'
-import {periodicWrapped} from './LatticeModule.js'
+import {createAtomMesh} from '../crystal-viewer.js'
+import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
 import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
 
+
+
 export function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2,opacity=1.0) {
+
+  function getAtomRadius(element) {
+    return (atomicRadii[element] || 1.0) * general.atomSize;
+  }
+
   const p1 = new THREE.Vector3(pos1[0], pos1[1], pos1[2]);
   const p2 = new THREE.Vector3(pos2[0], pos2[1], pos2[2]);
   const dist = distance(p1, p2);
@@ -206,15 +213,6 @@ export function updateBonds() {
 }
 
 
-
-function fracToCart(frac, lattice) {
-  return frac.map(fc => [
-    fc[0] * lattice[0][0] + fc[1] * lattice[1][0] + fc[2] * lattice[2][0],
-    fc[0] * lattice[0][1] + fc[1] * lattice[1][1] + fc[2] * lattice[2][1],
-    fc[0] * lattice[0][2] + fc[1] * lattice[1][2] + fc[2] * lattice[2][2]
-  ]);
-}
-
 function distance(pos1, pos2) {
   const dx = pos1.x - pos2.x;
   const dy = pos1.y - pos2.y;
@@ -222,7 +220,7 @@ function distance(pos1, pos2) {
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-function getBondCutoff(elem1, elem2) {
+export function getBondCutoff(elem1, elem2) {
   const pair1 = elem1 + '-' + elem2;
   const pair2 = elem2 + '-' + elem1;
   return general.bondLengths[pair1] || general.bondLengths[pair2] || 0.0;
@@ -234,7 +232,5 @@ function isOutsideUnitCell(cart, lattice, eps = 1e-6) {
           f[1] < -eps || f[1] >= 1 + eps ||
           f[2] < -eps || f[2] >= 1 + eps);
 }
-
-
 
 
