@@ -1177,7 +1177,6 @@ function loadStructure(content, fileName = '', isDefault = false) {
 
     createBondLengthControls();
     createSpinControls();
-    createBackgroundControl();
     createShareButton();
     updateVisualization();
     if (spinsData != null){
