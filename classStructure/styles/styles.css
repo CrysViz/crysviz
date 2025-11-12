@@ -258,7 +258,8 @@ body.panel-hidden #axesLegend {
 }
 
 .input-mode-panel {
-  max-width: 270px;
+  margin: 0px 0px 15px 0px;
+  max-width: 100%;
   display: block;
 }
 
@@ -804,7 +805,7 @@ justify-content: center;
 
 
 #spinControls {
-  max-height: 400px;
+  max-height: 450px;
   overflow-y: auto;
 }
 
@@ -1687,7 +1688,7 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 8px 10px;
   }
-  .collapsible-content.open { padding-top:8px; max-height: 230px;
+  .collapsible-content.open { padding-top:8px;
     min-height: auto;}
 
   #infoPanel .structure-toggle h4 {

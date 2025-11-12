@@ -1,27 +1,36 @@
+import {StructureShip} from './classes/StructureShip.js'
+
+export const fileBrowser = { 
+  fileData:[],
+  selectedRow:null, 
+}  
+
+export const structureShip = new StructureShip();
+
 export const structureData = {
   positions:null,
   elements:null,
   lattice:null,
   supercell:null,
-}
+};
 export const originalStructureData = {
   positions:null,
   elements:null,
   lattice:null,
   supercell:null,
-}
+};
 
 export const highlightHover ={
    hoveredAtom:null,
    currentlyHighlightedAtom:null,
    currentlyHighlightedRow:null,
+};
 
-}
 export const measurements ={
   measureLines: [],           // Array to store multiple measurement lines
   measureLabels: [],          // Array to store multiple measurement labels
   selectedAtoms: []
-}
+};
 
 
 export const spinsData = [];

@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { ConvexGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/ConvexGeometry.js';
 import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
 
-
+//this needs to life somewhere else! only for testing
+const tableBody = document.querySelector("#objectTable tbody");
 
 
 // import from the old file structure that need to be combined and ported to the new structure
@@ -22,9 +23,7 @@ import { createColorPicker } from './modules/ColorPickerModule.js';
 import { animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames. 
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
 import {getBondCutoff,updateBonds} from './modules/BondsModule.js'
-import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac} from '../modules/LatticeModule.js'
-import { Structure} from './classes/Structure.js';
-import { StructureData} from './classes/StructureData.js';
+import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
 import { updateSpins} from './modules/SpinModule.js'
 import {updateAtoms,createAtomMesh} from './modules/AtomsModule.js';
 import { parseCIF} from './modules/ReaderModule.js';
@@ -71,9 +70,25 @@ import {
 //  with the proper classes. However, this already solved some problems with camera and controls getting redefined as a side effect of some functions of the viewing angle
 //  control. The rest of the singletons should be preserved. 
 // .........................................................................................................
-import { highlightHover,app,structureData,originalStructureData,spinsData, groups, general,measurements, 
+import { structureShip,highlightHover,app,structureData,originalStructureData,spinsData, groups, general,measurements, 
          mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,
          getBondVisSettings,getLatticeVisSettings} from './store.js';
+
+
+
+
+// file browser test
+//
+//
+import {fileBrowser} from './store.js';
+import {createRow} from './panels/FileBrowswerPanel.js'
+
+
+// Class Structure
+//
+import {StructureContainer} from './classes/StructureContainer.js'
+import {Structure} from './classes/Structure.js'
+
 
 
 // ........................................................................................................
@@ -1091,8 +1106,7 @@ export function updateVisualization(options = {}) {
   if (reRenderOther) updateOther();
 }
 
-
-async function loadStructure(content, fileName = '', isDefault = false) {
+function loadStructure(content, fileName = '', isDefault = false) {
   try {
 
     console.log("")
@@ -1111,12 +1125,12 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     if (treatAsCIF) {
       console.log("This is probably a CIF file")
 
-      parsed = await parseCIF(contentString);
+      parsed = parseCIF(contentString);
     } 
     
     else if (treatAsOUTCAR){
       console.log("This is probably an OUTCAR file");
-      ({ structure: parsed, spin: parsedSpinsData } = await parseOUTCAR(contentString));
+      ({ structure: parsed, spin: parsedSpinsData } = parseOUTCAR(contentString));
 
     if (spinsData?.length != null) {
       spinsData.length = 0;
@@ -1126,7 +1140,7 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     }
     else {
       console.log("This is probably a POSCAR file")
-      parsed = await parsePOSCAR(contentString);
+      parsed = parsePOSCAR(contentString);
     }
 
   // Ensure the fields exist and are the right typed arrays
@@ -1176,6 +1190,43 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     clearMeasure();
     resizeRenderer(app.orthographicFrustumSize);
 
+    const structure = new Structure({
+      lattice: structureData.lattice,
+      positions: structureData.positions,
+      elements: structureData.elements,
+      atomsGroup: null,
+      latticeGroup: null,
+    });
+
+
+    const _structureData = new StructureContainer({
+      structures: [structure],   // assuming StructureShip expects { container: [...] }
+      fileName: fileName,
+    });
+
+    // Push to some array
+   structureShip.container.push(_structureData);
+   
+     
+   let filename = _structureData.fileName;
+   let traj = _structureData.structures.length;
+   let step = traj;
+    let idx;
+   if (fileBrowser.fileData != null) {
+     idx = fileBrowser.fileData.length + 1
+   }
+
+   fileBrowser.fileData.push({idx: idx, name: filename, traj: traj, step: step })
+
+   const row = createRow({name: filename, traj: traj, step: step });
+   tableBody.appendChild(row);
+
+   console.log(structureShip)
+
+
+
+
+
   } catch (error) {
     setStatus(`Error: ${error.message}`);
     console.error(error);
@@ -1222,9 +1273,9 @@ function loadDefaultStructure() {
   }
 
   setStatus('Loading default NaCl structure...');
-  setTimeout(() => {
-    loadStructure(defaultPOSCAR, 'POSCAR', true);
-  }, 100);
+  loadStructure(defaultPOSCAR, 'defaultYBCO.vasp', true);
+      // Create a new Structure instance
+
 }
 
 function init() {
@@ -1662,13 +1713,13 @@ function clearLongPress() {
     setStatus,
   });
 
-  setupSecondStructureInput({
-    onLoadStructure: (content, name) => loadSecondStructure(content, name),
-    setStatus,
-  });
+//setupSecondStructureInput({
+//    onLoadStructure: (content, name) => loadSecondStructure(content, name),
+//    setStatus,
+//  });
 
   // Check for shared structure in URL
-  loadSharedStructure();
+ // loadSharedStructure();
 
   // Control handlers
   document.getElementById('showBonds').onchange = (e) => {
@@ -1687,18 +1738,18 @@ function clearLongPress() {
     updateVisualization();
   };
 
-  document.getElementById('showSecond').onchange = (e) => {
-    general.showSecond = e.target.checked;
-    let slider = document.getElementById("structure2OpacityValue");
-    general.structure2OpacityValue=0.5;
-    slider.value=0.5;
-    addSecondStructure();
-  };
+ //document.getElementById('showSecond').onchange = (e) => {
+ //   general.showSecond = e.target.checked;
+ //   let slider = document.getElementById("structure2OpacityValue");
+ //   general.structure2OpacityValue=0.5;
+ //   slider.value=0.5;
+ //   addSecondStructure();
+ // };
 
-  document.getElementById('showComparisonInfo').onchange = (e) => {
-    general.showComparisonInfo = e.target.checked;
-    addSecondStructure();
-  }
+ // document.getElementById('showComparisonInfo').onchange = (e) => {
+ //   general.showComparisonInfo = e.target.checked;
+ //   addSecondStructure();
+ // }
 
    
 
@@ -1721,7 +1772,6 @@ function clearLongPress() {
   document.getElementById('structure2OpacityValue').oninput = (e) => {
     general.structure2OpacityValue = parseFloat(e.target.value);
     document.getElementById('structure2OpacityValue').textContent = general.structure2OpacityValue.toFixed(1);
-    if (showSecond){
      general.mainOpacity = 2*structure2OpacityValue
      general.secondOpacity = 1.0
 
@@ -1749,7 +1799,6 @@ function clearLongPress() {
         });
 
 
-    }
   };
 
   // Bond width control
@@ -1765,22 +1814,12 @@ function clearLongPress() {
     };
   }
 
-  let checkbox_second = document.getElementById("showSecond");
-      checkbox_second.checked = false; // explicitly untick
 
     let checkbox_polyhedra = document.getElementById("showPolyhedra");
       checkbox_polyhedra.checked = false; // explicitly untick 
 
-      let checkbox_showComparisonInfo = document.getElementById("showComparisonInfo");
-      checkbox_showComparisonInfo.checked = false; // explicitly untick
-
-     let checkbox_secondBonds = document.getElementById("showSecondBonds");
-      checkbox_secondBonds.checked = false; // explicitly untick
-
-  let checkbox_secondLattice = document.getElementById("showSecondLattice");
-      checkbox_secondLattice.checked = false; // explicitly untick
-
-
+ //     let checkbox_showComparisonInfo = document.getElementById("showComparisonInfo");
+ //     checkbox_showComparisonInfo.checked = false; // explicitly untick
 
   let checkbox_neighbours = document.getElementById("neighborBonds");
       checkbox_neighbours.checked = false; // explicitly untick
@@ -1966,6 +2005,7 @@ function clearLongPress() {
   console.log("Loading structure...")
   // Load default structure after everything is initialized
   loadDefaultStructure();
+  
 
   animation_update();
   }
@@ -2030,6 +2070,8 @@ function setupMobileMenu() {
       closePanel();
     });
   }
+
+  const errorPanel = document.getElementById("errorPanel");
 
   // Add viewport meta tag if not present for proper mobile scaling
   if (!document.querySelector('meta[name="viewport"]')) {
