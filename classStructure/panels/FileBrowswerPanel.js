@@ -43,30 +43,57 @@ export function createRow(obj) {
       }
     });
 
-    // Row click selection
-  row.addEventListener("click", (e) => {
-    if (e.target.tagName === "INPUT" || e.target.classList.contains("icon") || e.target.tagName === "IMG") return;
-    if (fileBrowser.selectedRow) fileBrowser.selectedRow.classList.remove("selected");
-    row.classList.add("selected");
-    fileBrowser.selectedRow = row;
+    // Function to update the displayed structure based on row and step
+function updateStructureFromRowAndStep(rowIndex) {
+  const step = parseInt(stepInput.value, 10) - 1; // zero-based index
+  const container = structureShip.container[rowIndex];
+  if (!container || step < 0 || step >= container.structures.length) return;
 
-    const rowIndex = Array.from(row.parentElement.children).indexOf(row); // row index relative to tbody
+  const selectedStructure = container.structures[step];
 
-    const selectedStructure = structureShip.container[rowIndex].structures[0];
+  // Assign arrays (make copies to avoid mutating original)
+  structureData.positions = [...selectedStructure.positions];
+  structureData.elements = [...selectedStructure.elements];
+  structureData.lattice = selectedStructure.lattice.map(r => [...r]);
 
-    // Assign arrays directly (or make copies to avoid mutating original)
-    structureData.positions = [...selectedStructure.positions];
-    structureData.elements  = [...selectedStructure.elements];
-    structureData.lattice   = selectedStructure.lattice.map(row => [...row]);
+  createBondLengthControls();
+  createSpinControls();
+  updateVisualization();
+  //resetView();
+}
 
-    console.log("Row index:", rowIndex);
-    console.log("Selected structureData:", structureData);
-    createBondLengthControls();
-    createSpinControls();
-    updateVisualization();
-    resetView();
-    });
+// --------------------------------------
+// Row click handler
+// --------------------------------------
+row.addEventListener("click", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.classList.contains("icon") || e.target.tagName === "IMG") return;
 
+  if (fileBrowser.selectedRow) fileBrowser.selectedRow.classList.remove("selected");
+  row.classList.add("selected");
+  fileBrowser.selectedRow = row;
+
+  const rowIndex = Array.from(row.parentElement.children).indexOf(row); // row index relative to tbody
+  row.dataset.index = rowIndex; // store index on row
+
+  updateStructureFromRowAndStep(rowIndex);
+});
+
+// --------------------------------------
+// Step input handler
+// --------------------------------------
+//     // Step validation
+    const stepInput = row.querySelector('input[type="number"]');
+stepInput.addEventListener("input", () => {
+  const val = parseInt(stepInput.value, 10);
+  const rowIndex = fileBrowser.selectedRow ? parseInt(fileBrowser.selectedRow.dataset.index, 10) : 0;
+
+  if (val < 1 || val > obj.traj) {
+    stepInput.setCustomValidity(`Step must be between 1 and ${obj.traj}`);
+  } else {
+    stepInput.setCustomValidity("");
+    updateStructureFromRowAndStep(rowIndex);
+  }
+});
 
 
     // Duplicate (copy) logic
@@ -93,16 +120,7 @@ export function createRow(obj) {
 
     });
 
-    // Step validation
-    const stepInput = row.querySelector('input[type="number"]');
-    stepInput.addEventListener("input", () => {
-      const val = parseInt(stepInput.value, 10);
-      if (val < 1 || val > obj.traj) {
-        stepInput.setCustomValidity(`Step must be between 1 and ${obj.traj}`);
-      } else {
-        stepInput.setCustomValidity("");
-      }
-    });
+
     if (fileBrowser.selectedRow) fileBrowser.selectedRow.classList.remove("selected");
     row.classList.add("selected");
     fileBrowser.selectedRow = row;

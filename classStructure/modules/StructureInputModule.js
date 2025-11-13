@@ -2,6 +2,12 @@ const NUMBER_PRECISION = 6;
 const MATERIALS_PROJECT_OPTIMADE_BASE = 'https://optimade.materialsproject.org/v1/structures/';
 const ALEXANDRIA_OPTIMADE_BASE = 'https://alexandria.icams.rub.de/pbe/v1/structures/';
 
+import { StructureContainer } from '../classes/StructureContainer.js';
+import { Structure } from '../classes/Structure.js';
+const tableBody = document.querySelector("#objectTable tbody");
+import {fileBrowser} from '../store.js';
+import {createRow} from '../panels/FileBrowswerPanel.js'
+
 function formatNumber(value) {
   if (!Number.isFinite(value)) return '0';
   const fixed = value.toFixed(NUMBER_PRECISION);
@@ -10,7 +16,7 @@ function formatNumber(value) {
 //[A, B, C]T   [A, D, G]
 //[D, E, F] -> [B, E, H]
 //[G, H, I]    [C, F, I]
-function transpose3x3(m) {
+export function transpose3x3(m) {
   return [
     [m[0][0], m[1][0], m[2][0]],
     [m[0][1], m[1][1], m[2][1]],
@@ -90,7 +96,8 @@ function elementFromLabel(label) {
   return match ? match[1] : null;
 }
 
-export function parsePOSCAR(content) {
+
+export function parsePOSCAR(content,fileName) {
   const lines = content.trim().split('\n').filter(l => l.trim());
   let i = 0;
 
@@ -98,17 +105,24 @@ export function parsePOSCAR(content) {
   const scale = parseFloat(lines[i++]);
   if (!Number.isFinite(scale)) throw new Error('POSCAR: missing scale factor');
 
+  // --- lattice (3×3)
   const lattice = Array.from({ length: 3 }, () =>
     (lines[i++] || '').trim().split(/\s+/).slice(0, 3).map(v => parseFloat(v) * scale)
   );
 
+  // --- element symbols + counts
   const elementLine = (lines[i++] || '').trim().split(/\s+/);
   const countLine = (lines[i++] || '').trim().split(/\s+/).map(x => parseInt(x, 10));
 
-  if (!elementLine.length || !countLine.length || elementLine.length !== countLine.length) {
+  if (
+    !elementLine.length ||
+    !countLine.length ||
+    elementLine.length !== countLine.length
+  ) {
     throw new Error('POSCAR: invalid element/count lines');
   }
 
+  // --- flattened list of all atoms
   const elements = [];
   elementLine.forEach((el, idx) => {
     const repetitions = countLine[idx];
@@ -116,13 +130,18 @@ export function parsePOSCAR(content) {
     for (let c = 0; c < repetitions; c++) elements.push(el);
   });
 
+  // --- coordinate type (Direct/Cartesian)
   let coordType = (lines[i] || '').trim().toLowerCase();
-  if (coordType.startsWith('s')) { i++; coordType = (lines[i] || '').trim().toLowerCase(); }
+  if (coordType.startsWith('s')) {
+    i++;
+    coordType = (lines[i] || '').trim().toLowerCase();
+  }
   i++;
 
   const isCartesian = coordType.startsWith('c') || coordType.startsWith('k');
   const totalAtoms = countLine.reduce((a, b) => a + b, 0);
 
+  // --- read raw positions
   const positionsRaw = [];
   for (let n = 0; n < totalAtoms; n++) {
     const tokens = (lines[i++] || '').trim().split(/\s+/);
@@ -130,20 +149,41 @@ export function parsePOSCAR(content) {
     positionsRaw.push(tokens.slice(0, 3).map(Number));
   }
 
+  // --- convert cart → frac if needed
   const latticeInverse = isCartesian ? invert3x3(transpose3x3(lattice)) : null;
   const positions = (isCartesian
     ? positionsRaw.map(vec => cartToFractional(vec, lattice, latticeInverse))
     : positionsRaw
   ).map(pos => pos.map(normalizeFractional));
 
-  return {
-    comment,
-    lattice,
+  const structure = new Structure({
     elements,
-    positions,
-    uniqueElements: elementLine
-  };
+    uniqueElements: elementLine,
+    lattice,
+    positions
+  });
+
+   let traj = 1
+   let step = 1
+   const row = createRow({name: fileName, traj: traj, step: step });
+   tableBody.appendChild(row);
+   fileBrowser.fileData.push({idx: -1, name: fileName, traj: traj, step: step });
+
+
+    const container = new StructureContainer({
+    fileName: comment,
+    structures: [structure],
+    symmetries: [],
+    spins: [],
+    forces: [],
+    polyhedra: []
+  });
+  return container
+
 }
+
+
+
 
 function parseCifFallback(content) {
   const getTag = (tag) => {

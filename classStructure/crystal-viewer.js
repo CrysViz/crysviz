@@ -2,6 +2,16 @@
 import * as THREE from 'three';
 import { ConvexGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/ConvexGeometry.js';
 import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
+// .........................................................................................................
+// store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
+//
+//  This is currently necessary as classes are not yet fully adapter. structureData, originalStructureData,spinsData are global variables for now and should be replaced
+//  with the proper classes. However, this already solved some problems with camera and controls getting redefined as a side effect of some functions of the viewing angle
+//  control. The rest of the singletons should be preserved.
+// .........................................................................................................
+import { structureShip,highlightHover,app,structureData,originalStructureData,spinsData, groups, general,measurements,
+         mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,
+         getBondVisSettings,getLatticeVisSettings} from './store.js';
 
 //this needs to life somewhere else! only for testing
 const tableBody = document.querySelector("#objectTable tbody");
@@ -10,6 +20,7 @@ const tableBody = document.querySelector("#objectTable tbody");
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupSecondStructureInput } from './modules/secondStructureModule.js';
 import { parseOUTCAR} from './modules/ReadOutcarModule.js';
+import { parsePWSCFout} from './modules/ReadPWSCFoutModule.js'; 
 import { setupStructureInput, isLikelyCIFContent, parsePOSCAR} from './modules/StructureInputModule.js';
 
 // ........................................................................................................
@@ -63,16 +74,6 @@ import {
   restoreCompleteState,
   generatePOSCARString,
 } from './utils/shareutils.js'; 
-// .........................................................................................................
-// store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
-//
-//  This is currently necessary as classes are not yet fully adapter. structureData, originalStructureData,spinsData are global variables for now and should be replaced 
-//  with the proper classes. However, this already solved some problems with camera and controls getting redefined as a side effect of some functions of the viewing angle
-//  control. The rest of the singletons should be preserved. 
-// .........................................................................................................
-import { structureShip,highlightHover,app,structureData,originalStructureData,spinsData, groups, general,measurements, 
-         mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,
-         getBondVisSettings,getLatticeVisSettings} from './store.js';
 
 
 
@@ -1117,30 +1118,56 @@ function loadStructure(content, fileName = '', isDefault = false) {
                       /(^|\W)cif(\W|$)/.test(lower) ||
                       isLikelyCIFContent(contentString);
 
-     const treatAsOUTCAR = lower.endsWith('.vasp.out') ||
+    const treatAsOUTCAR = lower.endsWith('.vasp.out') ||
                       lower.includes('.vasp.out') ||
                       lower.includes('outcar');
-    let parsed;
-    let parsedSpinsData
+
+    const treatAsPWSCFout = lower.endsWith(".scf.out") ||
+                            lower.endsWith(".scf.in.out") ||
+                            lower.endsWith(".vcrx.out") ||  
+                            lower.endsWith(".vcrx.in.out") ||
+                            lower.includes('.scf.out') ||
+                            lower.includes('.scf.in.out') ||
+                            lower.includes(".vcrx.out") ||
+                            lower.includes(".vcrx.in.out");
+
+    let parsed = {};
+    let parsedSpinsData;
+
     if (treatAsCIF) {
       console.log("This is probably a CIF file")
-
       parsed = parseCIF(contentString);
     } 
+
+    else if (treatAsPWSCFout) {
+        console.log("This is probably a QE output file");
+        let parsedContainer = parsePWSCFout(content,fileName);
+        console.log(parsedContainer)
+        structureShip.container.push(parsedContainer)
+        parsed.positions = parsedContainer.structures[0].positions
+        parsed.elements = parsedContainer.structures[0].elements
+        parsed.lattice = parsedContainer.structures[0].lattice
+
+    }
     
     else if (treatAsOUTCAR){
-      console.log("This is probably an OUTCAR file");
-      ({ structure: parsed, spin: parsedSpinsData } = parseOUTCAR(contentString));
-
-    if (spinsData?.length != null) {
-      spinsData.length = 0;
-    }
-    spinsData.push(...parsedSpinsData);
-
+        console.log("This is probably an OUTCAR file");
+        let parsedContainer = parseOUTCAR(contentString,fileName);
+        structureShip.container.push(parsedContainer)
+        parsed.positions = parsedContainer.structures[0].positions
+        parsed.elements = parsedContainer.structures[0].elements
+        parsed.lattice = parsedContainer.structures[0].lattice
+        
     }
     else {
       console.log("This is probably a POSCAR file")
-      parsed = parsePOSCAR(contentString);
+      let parsedContainer = parsePOSCAR(contentString,fileName);
+
+      structureShip.container.push(parsedContainer)
+      
+      parsed.positions = parsedContainer.structures[0].positions
+      parsed.elements = parsedContainer.structures[0].elements
+      parsed.lattice = parsedContainer.structures[0].lattice
     }
 
   // Ensure the fields exist and are the right typed arrays
@@ -1188,41 +1215,6 @@ function loadStructure(content, fileName = '', isDefault = false) {
     //resetView();
     clearMeasure();
     resizeRenderer(app.orthographicFrustumSize);
-
-    const structure = new Structure({
-      lattice: structureData.lattice,
-      positions: structureData.positions,
-      elements: structureData.elements,
-      atomsGroup: null,
-      latticeGroup: null,
-    });
-
-
-    const _structureData = new StructureContainer({
-      structures: [structure],   // assuming StructureShip expects { container: [...] }
-      fileName: fileName,
-    });
-
-    // Push to some array
-   structureShip.container.push(_structureData);
-   
-     
-   let filename = _structureData.fileName;
-   let traj = _structureData.structures.length;
-   let step = traj;
-    let idx;
-   if (fileBrowser.fileData != null) {
-     idx = fileBrowser.fileData.length + 1
-   }
-
-   fileBrowser.fileData.push({idx: idx, name: filename, traj: traj, step: step })
-
-   const row = createRow({name: filename, traj: traj, step: step });
-   tableBody.appendChild(row);
-
-   console.log(structureShip)
-
-
 
 
 
