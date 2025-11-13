@@ -20,7 +20,7 @@ function loadCIF(content, isDefault = false) {
     console.error(error);
   }
 };
-export async function parseCIF(content) {
+export function parseCIF(content) {
   // --- Utilities -------------------------------------------------------------
 
   const toRad = (deg) => (deg * Math.PI) / 180.0;
