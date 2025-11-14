@@ -335,9 +335,7 @@ function loadStructure(content, fileName = '', isDefault = false) {
 
 
      const treatAsPWSCFin = lower.endsWith(".scf.in") ||
-                            lower.endsWith(".vcrx.in") ||
-                            lower.includes('.scf.in') ||
-                            lower.includes(".vcrx.in") 
+                            lower.endsWith(".vcrx.in");
 
     let parsed = {};
     let parsedSpinsData;
