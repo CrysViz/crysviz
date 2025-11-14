@@ -21,6 +21,7 @@ const tableBody = document.querySelector("#objectTable tbody");
 import { setupSecondStructureInput } from './modules/secondStructureModule.js';
 import { parseOUTCAR} from './modules/ReadOutcarModule.js';
 import { parsePWSCFout} from './modules/ReadPWSCFoutModule.js'; 
+import { parsePWSCFin} from './modules/ReadPWSCFinModule.js'; 
 import { setupStructureInput, isLikelyCIFContent, parsePOSCAR} from './modules/StructureInputModule.js';
 
 // ........................................................................................................
@@ -261,6 +262,7 @@ function createBackgroundControl() {
 
   // Attach click listener directly
   dot.addEventListener("click", () => {
+    console.warn("background dot clicked")
     openBackgroundColorPicker(dot); // uncomment when scene is ready
   });
 }
@@ -331,6 +333,12 @@ function loadStructure(content, fileName = '', isDefault = false) {
                             lower.includes(".vcrx.out") ||
                             lower.includes(".vcrx.in.out");
 
+
+     const treatAsPWSCFin = lower.endsWith(".scf.in") ||
+                            lower.endsWith(".vcrx.in") ||
+                            lower.includes('.scf.in') ||
+                            lower.includes(".vcrx.in") 
+
     let parsed = {};
     let parsedSpinsData;
 
@@ -338,6 +346,17 @@ function loadStructure(content, fileName = '', isDefault = false) {
       console.log("This is probably a CIF file")
       parsed = parseCIF(contentString);
     } 
+
+   else if (treatAsPWSCFin) {
+        console.log("This is probably a QE input file");
+        let parsedContainer = parsePWSCFin(content,fileName);
+        console.log(parsedContainer)
+        structureShip.container.push(parsedContainer)
+        parsed.positions = parsedContainer.structures[0].positions
+        parsed.elements = parsedContainer.structures[0].elements
+        parsed.lattice = parsedContainer.structures[0].lattice
+
+    }
 
     else if (treatAsPWSCFout) {
         console.log("This is probably a QE output file");
@@ -662,7 +681,6 @@ function init() {
         // Rebuild controls and view
         createBondLengthControls();
         createSpinControls();
-        createBackgroundControl();
         updateVisualization();
       }
       return; // nothing else to do in delete mode
@@ -1228,7 +1246,7 @@ function setupMobileMenu() {
       closePanel();
     });
   }
-
+  createBackgroundControl();
   const errorPanel = document.getElementById("errorPanel");
 
   // Add viewport meta tag if not present for proper mobile scaling
