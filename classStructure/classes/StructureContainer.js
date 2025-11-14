@@ -3,24 +3,24 @@ import { Spin } from './Spin.js';
 import { Forces } from './Forces.js';
 import { Polyhedra } from './Polyhedra.js';
 import { Symmetry } from './Symmetry.js';
-
+import {Stress} from './Stress.js';
 
 export class StructureContainer {
   constructor({
-    ids = [],
     fileName = null,
     structures = [],
     symmetries = [],
     spins = [],
     forces = [],
+    stresses = [],
     polyhedra = []
   } = {}) {
-    this.ids = ids
     this.fileName = fileName ? fileName : "Unspecified";
     this.structures = this._ensureListOfClass(structures, Structure);
     this.symmetries = this._ensureListOfClass(symmetries, Symmetry);
     this.spins = this._ensureListOfClass(spins, Spin);
     this.forces = this._ensureListOfClass(forces, Forces);
+    this.stresses = this._ensureListOfClass(stresses, Stress)
     this.polyhedra = this._ensureListOfClass(polyhedra, Polyhedra);
   }
 

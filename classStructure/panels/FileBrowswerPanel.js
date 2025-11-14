@@ -74,7 +74,6 @@ row.addEventListener("click", (e) => {
 
   const rowIndex = Array.from(row.parentElement.children).indexOf(row); // row index relative to tbody
   row.dataset.index = rowIndex; // store index on row
-
   updateStructureFromRowAndStep(rowIndex);
 });
 
@@ -83,6 +82,7 @@ row.addEventListener("click", (e) => {
 // --------------------------------------
 //     // Step validation
     const stepInput = row.querySelector('input[type="number"]');
+    console.warn("here")
 stepInput.addEventListener("input", () => {
   const val = parseInt(stepInput.value, 10);
   const rowIndex = fileBrowser.selectedRow ? parseInt(fileBrowser.selectedRow.dataset.index, 10) : 0;

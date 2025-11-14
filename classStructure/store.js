@@ -51,6 +51,7 @@ export const app = {
 };
 
 export const groups = {
+  polyhedraGroup:null,
   bondsGroup:null,
   atomsGroup:null,
   latticeGroup:null,
