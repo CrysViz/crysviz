@@ -63,8 +63,8 @@ export const general = {
   currentLatticeColor:null,
   defaultBackgroundColor:null,
   currentLatticeColor:null,
-  userColorOverrides:null,  // userColorOverrides and individualAtomColors need to be overwritten with the new colors in the object containing the atoms
-  individualAtomColors:null,
+  userColorOverrides:[],  // userColorOverrides and individualAtomColors need to be overwritten with the new colors in the object containing the atoms
+  individualAtomColors:[],
   useDefaultColors:true,
   //defaultSpinColor:'#ff3366',
   //defaultSpinLength:1.0,
