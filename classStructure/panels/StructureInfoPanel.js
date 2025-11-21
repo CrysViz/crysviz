@@ -258,8 +258,16 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   coordBtn.style.cssText = 'background: rgba(6,100,50,0.8); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
   coordBtn.title = `Edit coordinates for ${element}${displayNumber}`;
 
+
+    // Spin Edit button
+  const spinBtn = document.createElement('button');
+  spinBtn.textContent = 'Spin/Force';
+  spinBtn.style.cssText = 'background: rgba(6,100,50,0.8); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
+  spinBtn.title = `Edit Spin for ${element}${displayNumber}`;
+
   buttonContainer.appendChild(colorBtn);
   buttonContainer.appendChild(coordBtn);
+  buttonContainer.appendChild(spinBtn);
 
   row.appendChild(buttonContainer);
 
@@ -280,7 +288,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
         });
       }
   });
-const applyBtn = document.createElement('button');
+  const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
   applyBtn.className = 'btn-mini highlight';
   applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
@@ -290,8 +298,6 @@ const applyBtn = document.createElement('button');
   resetBtn.className = 'btn-mini';
   resetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
 
-  const editorControls = document.createElement('div');
-  editorControls.style.cssText = 'display: flex; align-items: center; gap: 6px;';
   // First row: color + hex
   const topRowIndiv = document.createElement('div');
   topRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 6px;';
@@ -359,18 +365,213 @@ const applyBtn = document.createElement('button');
   coordEditor.appendChild(coordInputsRow);
   coordEditor.appendChild(coordButtonsRow);
 
+
+
+  const spinEditor = document.createElement('div');
+  spinEditor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
+
+  const switchWrapper = document.createElement('div');
+switchWrapper.style.cssText = `
+  display: inline-flex;
+  background: #2d2d2d;
+  border-radius: 10px;
+  padding: 4px;
+  gap: 4px;
+  font-size: 11px;
+   min-width:98%;
+     margin-bottom: 10px;
+`;
+
+function makeSwitchButton(label, active = false) {
+  const btn = document.createElement('div');
+  btn.textContent = label;
+  btn.style.cssText = `
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: 0.15s ease;
+    user-select: none;
+    font-weight: 500;
+    min-width:40%;
+    justify-content: center;
+    display: flex;
+  `;
+  if (active) {
+    btn.style.background = "#0d8a36";   // green highlight
+    btn.style.color = "#fff";
+  } else {
+    btn.style.color = "rgba(255,255,255,0.8)";
+  }
+  return btn;
+}
+
+const spinSelectBtn = makeSwitchButton("Spin", true);
+const forceSelectBtn = makeSwitchButton("Force", false);
+
+// click behavior
+spinSelectBtn.onclick = () => {
+  spinSelectBtn.style.background = "#0d8a36";
+  spinSelectBtn.style.color = "#fff";
+  forceSelectBtn.style.background = "transparent";
+  forceSelectBtn.style.color = "rgba(255,255,255,0.8)";
+};
+
+forceSelectBtn.onclick = () => {
+  forceSelectBtn.style.background = "#0d8a36";
+  forceSelectBtn.style.color = "#fff";
+  spinSelectBtn.style.background = "transparent";
+  spinSelectBtn.style.color = "rgba(255,255,255,0.8)";
+};
+
+switchWrapper.appendChild(spinSelectBtn);
+switchWrapper.appendChild(forceSelectBtn);
+
+spinEditor.appendChild(switchWrapper);  // replace your old title
+
+
+
+  const spinApplyBtn = document.createElement('button');
+  spinApplyBtn.textContent = 'Apply';
+  spinApplyBtn.className = 'btn-mini highlight';
+  spinApplyBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px;';
+
+  const spinColorBtn = document.createElement('button');
+  spinColorBtn.textContent = 'Color';
+  spinColorBtn.className = 'btn-mini highlight';
+  spinColorBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px;';
+  const mom_spin_color = colorHexToCss(getIndividualAtomColor(element, atomIndex))
+  spinColorBtn.style.background =mom_spin_color;
+
+  const spinResetBtn = document.createElement('button');
+  spinResetBtn.textContent = 'Reset';
+  spinResetBtn.className = 'btn-mini';
+  spinResetBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px; margin-right: 6px;';
+
+  const xSpinInput = document.createElement('input');
+  xSpinInput.type = 'number';
+  xSpinInput.value = "0"
+  xSpinInput.step = '0.001';
+  xSpinInput.style.cssText = 'width: 60px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px;';
+  xSpinInput.style.webkitAppearance = "none";
+  xSpinInput.style.MozAppearance = "textfield";
+  xSpinInput.placeholder = 'x';
+
+  const ySpinInput = document.createElement('input');
+  ySpinInput.type = 'number';
+  ySpinInput.value = "0"
+  ySpinInput.step = '0.001';
+  ySpinInput.style.cssText = 'width: 60px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px;';
+  ySpinInput.style.webkitAppearance = "none";
+  ySpinInput.style.MozAppearance = "textfield";
+  ySpinInput.placeholder = 'y';
+
+  const zSpinInput = document.createElement('input');
+  zSpinInput.type = 'number';
+  zSpinInput.value = "0"
+  zSpinInput.step = '0.001';
+  zSpinInput.style.cssText = 'width: 60px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px;';
+  zSpinInput.style.webkitAppearance = "none";
+  zSpinInput.style.MozAppearance = "textfield";
+  zSpinInput.placeholder = 'z';
+
+
+  const scaleSpinInput = document.createElement('input');
+  scaleSpinInput.type = 'number';
+  scaleSpinInput.value = "0"
+  scaleSpinInput.step = '0.001';
+  scaleSpinInput.style.cssText = 'width: 60px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px;';
+  scaleSpinInput.placeholder = 'scale';
+
+
+  const spinInputsRow = document.createElement('div');
+  spinInputsRow.style.cssText = 'display: flex; align-items: center; gap: 4px; margin-bottom: 6px;justify-content:center;';
+  spinInputsRow.className="SpinInputRow"
+  spinInputsRow.appendChild(xSpinInput);
+  spinInputsRow.appendChild(ySpinInput);
+  spinInputsRow.appendChild(zSpinInput);
+  spinInputsRow.appendChild(scaleSpinInput);
+
+  const spinButtonsRow = document.createElement('div');
+  spinButtonsRow.style.cssText = 'display: flex; align-items: center; gap: 4px;justify-content:center;';
+  spinButtonsRow.appendChild(coordResetBtn);
+  spinButtonsRow.appendChild(coordApplyBtn);
+  spinButtonsRow.appendChild(spinColorBtn);
+
+  spinEditor.appendChild(spinInputsRow);
+  spinEditor.appendChild(spinButtonsRow);
+
+  // Create color editor for this individual atom
+  const spinColorEditor = document.createElement('div');
+  spinColorEditor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
+  const spinColorPicker = createColorPicker(mom_spin_color, (hex) => {
+    const ok = setIndividualAtomColor(element, atomIndex, hex);
+    dot.style.background = hex;
+      if (ok) {
+        updateBonds()
+        updateVisualization({
+          reRenderAtoms: true,
+          reRenderBonds: true,
+          reRenderLattice: false,
+          reRenderOther: false
+        });
+      }
+   });
+  const SpinColorApplyBtn = document.createElement('button');
+  SpinColorApplyBtn.textContent = 'Apply';
+  SpinColorApplyBtn.className = 'btn-mini highlight';
+  SpinColorApplyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
+
+  const spinColorResetBtn = document.createElement('button');
+  spinColorResetBtn.textContent = 'Reset';
+  spinColorResetBtn.className = 'btn-mini';
+  spinColorResetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
+
+  const spinColorEditorControls = document.createElement('div');
+  spinColorEditorControls.style.cssText = 'display: flex; align-items: center; gap: 6px;';
+  // First row: color + hex
+  const spinTopRowIndiv = document.createElement('div');
+  spinTopRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 6px;';
+  spinTopRowIndiv.appendChild(spinColorPicker.element);
+
+  // Second row: buttons
+  const spinButtonRowIndiv = document.createElement('div');
+  spinButtonRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px;';
+  spinButtonRowIndiv.appendChild(resetBtn);
+  spinButtonRowIndiv.appendChild(applyBtn);
+
+  spinColorEditor.appendChild(spinTopRowIndiv);
+  spinColorEditor.appendChild(spinButtonRowIndiv);
+  spinEditor.appendChild(spinColorEditor);
+
+  //Event handlers
+  spinColorBtn.onclick = (e) => {
+      e.stopPropagation();
+    spinColorEditor.style.display = (spinColorEditor.style.display === 'none') ? 'block' : 'none';
+  };
+
+
   //Event handlers
   colorBtn.onclick = (e) => {
       e.stopPropagation();
     coordEditor.style.display = 'none'; // Hide coord editor
+    spinEditor.style.display = 'none'; // Hide coord editor
     editor.style.display = (editor.style.display === 'none') ? 'block' : 'none';
   };
-
 
   coordBtn.onclick = (e) => {
     e.stopPropagation();
     editor.style.display = 'none'; // Hide color editor
+    spinEditor.style.display = 'none'; // Hide color editor
     coordEditor.style.display = (coordEditor.style.display === 'none') ? 'block' : 'none';
+  };
+
+
+
+  spinBtn.onclick = (e) => {
+    e.stopPropagation();
+    editor.style.display = 'none'; // Hide color editor
+    coordEditor.style.display = 'none'; // Hide coord editor
+    spinEditor.style.display = (spinEditor.style.display === 'none') ? 'block' : 'none';
   };
   // Coordinate event handlers
   coordApplyBtn.onclick = () => {
@@ -418,6 +619,7 @@ const applyBtn = document.createElement('button');
 
   row.appendChild(editor);
   row.appendChild(coordEditor);
+  row.appendChild(spinEditor);
   return row;
 }
 
@@ -508,19 +710,47 @@ export function renderComposition() {
   `;
 
 
+
+  // Button to add additional atoms to structure <- FIXME so far not working
+  const addButtonsRow = document.createElement('div');
+  addButtonsRow.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+  const addAtomButton = document.createElement('button');
+  addAtomButton.innerHTML = '+';               // icon only
+  addAtomButton.className = 'btn-mini highlight';
+  addAtomButton.style.cssText = `
+    height: 26px;
+    width: 26px;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.08);  /* slightly darker square */
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+  `;
+
+   addButtonsRow.appendChild(addAtomButton)
+  
   const title = document.createElement('div');
   const titleWrapper = document.createElement('div');
     titleWrapper.style.cssText = `
     display: flex;
-    justify-content: center;
+    justify-content: space-between;
+    gap:20px;
     margin-top: 2px;
   `;
 
-  title.textContent = 'Modify Color/Positions';
+  title.textContent = 'Modify Atoms';
   title.style.cssText = 'font-size:14px; font-weight:500; margin-bottom:10px;';
 
   titleWrapper.appendChild(title);
+  titleWrapper.appendChild(addButtonsRow);
   compDiv.appendChild(titleWrapper);
+
 
   // Ensure structure panel starts collapsed by default
   compDiv.classList.remove('open');

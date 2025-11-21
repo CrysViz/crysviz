@@ -1,0 +1,25 @@
+.segmented-control {
+  display: inline-flex;
+  background: #2a2a2a;
+  padding: 4px;
+  border-radius: 10px;
+  gap: 4px;
+}
+
+.segmented-control button {
+  border: none;
+  background: none;
+  color: rgba(255,255,255,0.8);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.segmented-control button.active {
+  background: rgb(35, 128, 0);  /* same green highlight as your screenshot */
+  color: white;
+}
+
+
+

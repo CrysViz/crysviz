@@ -1022,7 +1022,7 @@ justify-content: center;
 }
 
 .collapsible-content.open { justify-content: center;  padding-top:8px; max-height:600px;min-height: 280px; margin: 10px 0 20px 0;}
-#composition { color:#d7eef6; font-size:13px; line-height:1.4; }
+#composition { color:#d7eef6; line-height:1.4; }
 #composition [hidden] { display: none !important; }
 #measure { margin-top:8px; }
 #measureRow { display:flex; justify-content:space-between; gap:8px; color:#cfeffb; }

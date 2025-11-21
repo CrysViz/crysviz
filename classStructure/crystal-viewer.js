@@ -64,6 +64,8 @@ import {createSpinControls} from './panels/SpinPanel.js';
 import { createLatticeComparisonPanel }from './panels/LatticeComparisonPanel.js'
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
 import {createCompositionRow,renderComposition} from './panels/StructureInfoPanel.js';
+import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
+import {addControlPanelModeSwitch} from './panels/ControlPanel.js';
 
 
 // .........................................................................................................
@@ -1245,6 +1247,7 @@ function setupMobileMenu() {
     });
   }
   createBackgroundControl();
+  addControlPanelModeSwitch();
   const errorPanel = document.getElementById("errorPanel");
 
   // Add viewport meta tag if not present for proper mobile scaling
@@ -1254,7 +1257,6 @@ function setupMobileMenu() {
     viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=no';
     document.head.appendChild(viewport);
   }
-
   console.log(app.scene)
 }
 

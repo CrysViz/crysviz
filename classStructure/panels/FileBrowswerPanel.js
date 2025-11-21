@@ -62,38 +62,38 @@ function updateStructureFromRowAndStep(rowIndex) {
   //resetView();
 }
 
-// --------------------------------------
-// Row click handler
-// --------------------------------------
-row.addEventListener("click", (e) => {
-  if (e.target.tagName === "INPUT" || e.target.classList.contains("icon") || e.target.tagName === "IMG") return;
+  // --------------------------------------
+  // Row click handler
+  // --------------------------------------
+  row.addEventListener("click", (e) => {
+    if (e.target.tagName === "INPUT" || e.target.classList.contains("icon") || e.target.tagName === "IMG") return;
 
-  if (fileBrowser.selectedRow) fileBrowser.selectedRow.classList.remove("selected");
-  row.classList.add("selected");
-  fileBrowser.selectedRow = row;
+    if (fileBrowser.selectedRow) fileBrowser.selectedRow.classList.remove("selected");
+    row.classList.add("selected");
+    fileBrowser.selectedRow = row;
 
-  const rowIndex = Array.from(row.parentElement.children).indexOf(row); // row index relative to tbody
-  row.dataset.index = rowIndex; // store index on row
-  updateStructureFromRowAndStep(rowIndex);
-});
-
-// --------------------------------------
-// Step input handler
-// --------------------------------------
-//     // Step validation
-    const stepInput = row.querySelector('input[type="number"]');
-    console.warn("here")
-stepInput.addEventListener("input", () => {
-  const val = parseInt(stepInput.value, 10);
-  const rowIndex = fileBrowser.selectedRow ? parseInt(fileBrowser.selectedRow.dataset.index, 10) : 0;
-
-  if (val < 1 || val > obj.traj) {
-    stepInput.setCustomValidity(`Step must be between 1 and ${obj.traj}`);
-  } else {
-    stepInput.setCustomValidity("");
+    const rowIndex = Array.from(row.parentElement.children).indexOf(row); // row index relative to tbody
+    row.dataset.index = rowIndex; // store index on row
     updateStructureFromRowAndStep(rowIndex);
-  }
-});
+  });
+
+  // --------------------------------------
+  // Step input handler
+  // --------------------------------------
+  //     // Step validation
+    const stepInput = row.querySelector('input[type="number"]');
+    fileBrowser.stepInput = stepInput
+    console.warn("here")
+    stepInput.addEventListener("input", () => {
+      const val = parseInt(stepInput.value, 10);
+      const strucIndex = fileBrowser.selectedRow ? parseInt(fileBrowser.selectedRow.dataset.index, 10) : 0;
+      if (val < 1 || val > obj.traj) {
+        stepInput.setCustomValidity(`Step must be between 1 and ${obj.traj}`);
+      } else {
+        stepInput.setCustomValidity("");
+        updateStructureFromRowAndStep(strucIndex);
+      }
+     });
 
 
     // Duplicate (copy) logic

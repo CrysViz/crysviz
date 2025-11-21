@@ -3,6 +3,7 @@ import {StructureShip} from './classes/StructureShip.js'
 export const fileBrowser = { 
   fileData:[],
   selectedRow:null, 
+  stepInput:null,
 }  
 
 export const structureShip = new StructureShip();
@@ -84,6 +85,7 @@ export const general = {
   showSecond:false,
   showComparisonInfo:false,
   showNeighborBonds:false, // Periodic image atoms + bonds across cell (off by default)
+  playerModeStata: "none", 
   currentSupercell: null,
   modifiedLattice: null, // this needs to be part of the structure object 
   sharedStructureLoaded:false

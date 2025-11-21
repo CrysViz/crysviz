@@ -7,6 +7,9 @@
     <title>CrysViz Crystal Structure Viewer</title>
     <link rel="stylesheet" href="./styles/styles.css">
     <link rel="stylesheet" href="./styles/styles_file_browswer.css">
+    <link rel="stylesheet" href="./styles/trajectoryPanel.css">
+    <link rel="stylesheet" href="./styles/controlPanel.css">
+
 
     <script type="importmap">
       {
@@ -75,6 +78,11 @@
 
       <div class="control-group" id="structureControls" style="display: none;">
         <h3>Visualization Options</h3>
+        <div class="segmented-control" id="ControlPanelModeSwitch">
+          <button data-mode="none" class="active">None</button>
+          <button data-mode="trajectory">Trajectory</button>
+          <button data-mode="comparison">Comparison</button>
+        </div>
         <label>
           <input type="checkbox" id="showBonds" checked> Show Bonds
         </label>
@@ -389,6 +397,7 @@
         });
       });
     </script>
+<script>
 
   </body>
 </html>
