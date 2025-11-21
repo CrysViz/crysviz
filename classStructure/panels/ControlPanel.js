@@ -1,6 +1,6 @@
 import { general } from '../store.js';
 import { addTrajectoryPlayer,removeTrajectoryPlayer} from './TrajectoryPanel.js';
-import { createLatticeComparisonPanel } from './LatticeComparisonPanel.js';
+import { addLatticeComparisonPanel } from './LatticeComparisonPanel.js';
 
 const ControlPanelModeSwitch = document.getElementById("ControlPanelModeSwitch");
 export function addControlPanelModeSwitch() {

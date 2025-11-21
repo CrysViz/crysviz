@@ -3,6 +3,7 @@ import {StructureShip} from './classes/StructureShip.js'
 export const fileBrowser = { 
   fileData:[],
   selectedRow:null, 
+  selectedRowIndex:0,
   stepInput:null,
 }  
 

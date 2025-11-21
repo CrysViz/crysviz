@@ -61,9 +61,9 @@ import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
 } from './panels/WindowAndSceneControls.js'
 import {loadAboutContent, openAboutPanel, closeAboutPanel} from './panels/AboutPanel.js';
 import {createSpinControls} from './panels/SpinPanel.js';
-import { createLatticeComparisonPanel }from './panels/LatticeComparisonPanel.js'
+import { addLatticeComparisonPanel }from './panels/LatticeComparisonPanel.js'
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
-import {createCompositionRow,renderComposition} from './panels/StructureInfoPanel.js';
+import {createCompositionRow,renderComposition} from './panels/StructureInfoPanel/General.js';
 import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
 import {addControlPanelModeSwitch} from './panels/ControlPanel.js';
 

@@ -1,13 +1,13 @@
-import {app, groups, originalStructureData,structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import {app, groups, originalStructureData,structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../store.js';
 
-import { updateVisualization } from '../crystal-viewer.js';
+import { updateVisualization } from '../../crystal-viewer.js';
 
-import {colorHexToCss,hexToRgba,getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor } from '../modules/ColorModule.js';
+import {colorHexToCss,hexToRgba,getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor } from '../../modules/ColorModule.js';
 
-import { createColorPicker } from '../old_style/color-picker.js';
-import { updateBonds } from '../modules/BondsModule.js'
-import {createSupercell} from '../modules/SuperCellModule.js';
-import {resetView,collapseAllAtomExpansions} from '../panels/WindowAndSceneControls.js'
+import { createColorPicker } from '../../old_style/color-picker.js';
+import { updateBonds } from '../../modules/BondsModule.js'
+import {createSupercell} from '../../modules/SuperCellModule.js';
+import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
 
 export function createCompositionRow(el, count, total) {
   const container = document.createElement('div');

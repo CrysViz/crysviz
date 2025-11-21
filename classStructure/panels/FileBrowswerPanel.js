@@ -75,6 +75,7 @@ function updateStructureFromRowAndStep(rowIndex) {
     const rowIndex = Array.from(row.parentElement.children).indexOf(row); // row index relative to tbody
     row.dataset.index = rowIndex; // store index on row
     updateStructureFromRowAndStep(rowIndex);
+    fileBrowser.selectedRowIndex=rowIndex
   });
 
   // --------------------------------------

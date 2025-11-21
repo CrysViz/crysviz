@@ -1,4 +1,4 @@
-export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
+export function addLatticeComparisonPanel(L1_matrix, L2_matrix) {
   // --------------------------
   // Helper functions
   // --------------------------
@@ -312,4 +312,10 @@ export function createLatticeComparisonPanel(L1_matrix, L2_matrix) {
 
 
   return popup;
+}
+
+export function removeLatticeComparionPanel(){
+  if (!trajectoryPlayerElements.trajControlPanel) return;
+  trajectoryPlayerElements.trajControlPanel.remove();
+  trajectoryPlayerElements = {};
 }
