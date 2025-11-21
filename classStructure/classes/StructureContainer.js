@@ -13,15 +13,17 @@ export class StructureContainer {
     spins = [],
     forces = [],
     stresses = [],
-    polyhedra = []
+    polyhedra = [],
+    finalSCF = false,
   } = {}) {
     this.fileName = fileName ? fileName : "Unspecified";
     this.structures = this._ensureListOfClass(structures, Structure);
     this.symmetries = this._ensureListOfClass(symmetries, Symmetry);
     this.spins = this._ensureListOfClass(spins, Spin);
     this.forces = this._ensureListOfClass(forces, Forces);
-    this.stresses = this._ensureListOfClass(stresses, Stress)
+    this.stresses = this._ensureListOfClass(stresses, Stress);
     this.polyhedra = this._ensureListOfClass(polyhedra, Polyhedra);
+    this.finalSCF=finalSCF;
   }
 
   _ensureListOfClass(input, ClassType) {

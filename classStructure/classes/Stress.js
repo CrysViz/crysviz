@@ -6,7 +6,6 @@ export class Stress extends ColoredObject {
     const defaultColors = [];
     super({ colors, defaultColors });
     this.tensor = Stress._validateTensor(tensor);
-    this.pressure = Stress._computePressure(this.tensor);
     this.pearson = Stress._computePearsonMeasure(this.tensor);
     this.scaling = scaling;
     this.stressGroup = stressGroup;
@@ -17,7 +16,7 @@ export class Stress extends ColoredObject {
   }
 
   get pressure() {
-    return this._pressure;
+    return this._computePressure(this.tensor)
   }
 
   setTensor(tensor) {
