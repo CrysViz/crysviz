@@ -65,7 +65,7 @@ import { addLatticeComparisonPanel }from './panels/LatticeComparisonPanel.js'
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
 import {createCompositionRow,renderComposition} from './panels/StructureInfoPanel/General.js';
 import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
-import {addControlPanelModeSwitch} from './panels/ControlPanel.js';
+import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch} from './panels/ControlPanel.js';
 
 
 // .........................................................................................................
@@ -1248,6 +1248,7 @@ function setupMobileMenu() {
   }
   createBackgroundControl();
   addControlPanelModeSwitch();
+  addControlPanelSpinForceSwitch();
   const errorPanel = document.getElementById("errorPanel");
 
   // Add viewport meta tag if not present for proper mobile scaling

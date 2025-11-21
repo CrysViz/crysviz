@@ -37,3 +37,60 @@ export function addControlPanelModeSwitch() {
     console.log(general.playerModeState);
   });
 }
+
+const ControlPanelSpinForceSwitch = document.getElementById("ControlPanelSpinForceSwitch");
+export function addControlPanelSpinForceSwitch() {
+  ControlPanelSpinForceSwitch.addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn || !btn.dataset.mode) return;
+
+    const mode = btn.dataset.mode;
+    general.spinForceState = mode;
+
+    // Update UI
+    ControlPanelSpinForceSwitch.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    // Handle different modes
+    if (general.spinForceState == "Forces") {
+      console.log("Force selected")
+      }
+    else if (general.spinForceState == "Spins") {
+      console.log("Spins selected");
+        }
+    else {
+      console.log("None selected");
+    }
+  });
+}
+
+
+export function resetSwitch(switchContainer, stateKey, defaultMode = "None") {
+  // Update internal state
+  general[stateKey] = defaultMode;
+
+  // Remove active class from all buttons
+  const buttons = switchContainer.querySelectorAll("button");
+  buttons.forEach(btn => btn.classList.remove("active"));
+
+  // Find button with matching data-mode (case-insensitive)
+  const defaultBtn = Array.from(buttons).find(
+    btn => btn.dataset.mode && btn.dataset.mode.trim().toLowerCase() === defaultMode.toLowerCase()
+  );
+
+  if (defaultBtn) {
+    defaultBtn.classList.add("active");
+  } else {
+    console.warn(`No button with data-mode="${defaultMode}" found in`, switchContainer);
+  }
+}
+
+// Convenience functions
+export function resetSpinForceSwitch() {
+  resetSwitch(ControlPanelSpinForceSwitch, "spinForceState", "None");
+}
+
+export function resetModeSwitch() {
+  resetSwitch(ControlPanelModeSwitch, "modeState", "None");
+  removeTrajectoryPlayer();
+}

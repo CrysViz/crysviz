@@ -1,7 +1,7 @@
 import {structureData,structureShip, fileBrowser} from '../store.js'
 import {updateVisualization} from '../crystal-viewer.js'
 import {resetView} from './WindowAndSceneControls.js'
-
+import {resetModeSwitch, resetSpinForceSwitch} from './ControlPanel.js'
 import {createBondLengthControls} from './BondLengthPanel.js'
 import {createSpinControls} from './SpinPanel.js'
 
@@ -75,7 +75,12 @@ function updateStructureFromRowAndStep(rowIndex) {
     const rowIndex = Array.from(row.parentElement.children).indexOf(row); // row index relative to tbody
     row.dataset.index = rowIndex; // store index on row
     updateStructureFromRowAndStep(rowIndex);
+    let oldRowIndex=fileBrowser.selectedRowIndex
     fileBrowser.selectedRowIndex=rowIndex
+    if (oldRowIndex != rowIndex){
+      resetSpinForceSwitch() // for now the panels reset if the structure is switched. In the future it would be nice if the state could be preserved 
+      resetModeSwitch()
+      }
   });
 
   // --------------------------------------
