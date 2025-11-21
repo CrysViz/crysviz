@@ -65,14 +65,14 @@ export function parsePWSCFout(content,fileName) {
       let forces = [];
 
       while (i < n && !lines[i].includes("Forces acting on atoms")) i++;
-
       if (i < n && lines[i].includes("Forces acting on atoms")) {
         i++; // skip header
-
+        i++;  
         while (i < n && lines[i].includes("atom")) {
           const match = lines[i].match(/force\s*=\s*(.*)/);
           if (match) {
             const nums = match[1].trim().split(/\s+/).map(Number);
+            console.log(nums.slice(0, 3))
             forces.push(nums.slice(0, 3));
           }
           i++;
@@ -108,15 +108,16 @@ export function parsePWSCFout(content,fileName) {
     })
   );
 
-  const forceObjects = steps.map(s => ({ forces: s.forces }));
+   const forceObjects = steps.map(s => ({ forces: s.forces }));
 
    let traj = structures.length
    let step = traj
    const row = createRow({name: fileName, traj: traj, step: step });
    tableBody.appendChild(row);
    fileBrowser.fileData.push({idx: -1, name: fileName, traj: traj, step: step });
-  console.log(structures)
+   console.log(structures)
 
+    console.log(forceObjects)
   return new StructureContainer({
     fileName: fileName,
     structures,

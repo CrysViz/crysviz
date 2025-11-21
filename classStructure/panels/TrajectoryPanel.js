@@ -76,7 +76,7 @@ export function addTrajectoryPlayer() {
         <button id="stepFwdBtn">⏭️</button>
       </div>
       <div style="display:flex; flex-direction:column; align-items:center; width:100%;">
-        <label style="font-size:12px; margin-bottom:4px;">Speed (ms per step):</label>
+        <label style="font-size:12px; margin-bottom:4px;">Speed:</label>
         <select id="speedSelect">
           <option value="500">0.5s</option>
           <option value="200" selected>0.2s</option>
