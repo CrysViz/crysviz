@@ -49,7 +49,7 @@
   }
 
   tr.selected {
-    background-color: rgba(6,70,50,1);
+    background-color: var(--accent-color);
   }
 
   .icon {

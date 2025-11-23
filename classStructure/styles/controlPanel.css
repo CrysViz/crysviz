@@ -20,9 +20,13 @@
 }
 
 .segmented-control button.active {
-  background: rgba(6, 140, 50, 0.85);
+  background: var(--accent-color);
   color: white;
   font-weight: 500;
+}
+
+.segmented-control button:hover {
+  background: var(--border-color);
 }
 
 

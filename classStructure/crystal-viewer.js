@@ -238,8 +238,8 @@ function getContrastingBorder(hex) {
    }
    else if (!isDarkMode )
    {
-    app.scene.background = new THREE.Color(0xE7E7E7);
-    general.currentLatticeColor = 0x021302
+    app.scene.background = new THREE.Color(0xE7E7E7)
+    general.currentLatticeColor = 0x021302;
     dot.style.border = `2px solid #021302`
     updateLattice()
    }
@@ -460,20 +460,20 @@ function loadDefaultStructure() {
 }
 
 function init() {
-
+  document.body.classList.add(`theme-standard`);
   app.scene = new THREE.Scene();
 
   const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   if (isDarkMode) {
     console.log("The user prefers a dark theme.");
-    app.scene.background = new THREE.Color(0x021302)
-    general.defaultBackgroundColor = 0x021302
+    app.scene.background = new THREE.Color(0x090A09)
+    general.defaultBackgroundColor = 0x090A09
     general.currentLatticeColor = 0xE7E7E7
    } else {
     console.log("The user prefers a light theme.");
     app.scene.background = new THREE.Color(0xE7E7E7);
     general.defaultBackgroundColor = 0xE7E7E7
-    general.currentLatticeColor = 0x021302
+    general.currentLatticeColor = 0x090A09
    };
 
   console.log(`picked lattice color ${general.currentLatticeColor}`);

@@ -12,6 +12,34 @@ body {
 }
 
 :root {
+  /* optional: fallback colors */
+}
+
+.theme-standard {
+  --bg-color: rgba(6,70,50,0.8);
+  --highlight-color: rgba(6,140,50, 1.0);
+  --accent-color: rgba(6,140,50,0.8);
+  --hover-color:rgba(6,140,50,0.3);
+  --border-color:rgba(6,90,50,0.5);
+}
+
+.theme-ai {
+  --bg-color: rgba(81,0,0,0.8);
+  --highlight-color: rgba(159,52,52,1.0);
+  --accent-color: rgba(159,52,52,0.9);
+  --hover-color:rgba(159,52,52,0.3);
+  --border-color:rgba(255,118,118,0.3);
+}
+
+.theme-symmetry {
+  --bg-color: rgba(15, 3, 56,0.8);
+  --highlight-color: rgba(18, 141, 204,1.0);
+  --accent-color: rgba(18, 141, 204,0.8);
+  --hover-color: rgba(18, 141, 204,0.2);
+  --border-color: rgba(17, 71, 129, 0.5);
+}
+
+:root {
   --panel-content-width: 380px; /* Panel content width */
   --panel-border-width: 1px; /* Panel border width */
   --panel-total-width: calc(var(--panel-content-width) + var(--panel-border-width)); /* Complete panel width */
@@ -187,7 +215,7 @@ body.panel-hidden #axesLegend {
 }
 .logo:hover{
   transform: scale(1.05);
-  filter: drop-shadow(0 8px 25px rgba(6, 110, 50, 0.8));
+  filter: drop-shadow(0 8px 25px var(--highlight-color));
 }
 
 .visually-hidden {
@@ -220,7 +248,6 @@ body.panel-hidden #axesLegend {
 
 .control-group h3 {
   margin: 0 0 15px 0;
-  color: #81c784;
   font-size: 16px;
   font-weight: 500;
 }
@@ -248,12 +275,12 @@ body.panel-hidden #axesLegend {
 }
 
 .input-mode-btn:hover {
-  background: rgba(6, 71, 50, 0.5);
+  background: var(--bg-color);
   color: #fff;
 }
 
 .input-mode-btn.active {
-  background: rgba(6, 140, 50, 0.85);
+  background: var(--highlight-color);
   color: #fff;
 }
 
@@ -274,7 +301,7 @@ body.panel-hidden #axesLegend {
 #fileLabel {
   display: block;
   padding: 15px 20px;
-  background: rgba(6, 71, 50, 1); 
+  background: var(--bg-color);
   color: white;
   text-align: center;
   border-radius: 8px;
@@ -286,12 +313,12 @@ body.panel-hidden #axesLegend {
 
 #fileLabel:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(6, 140, 50, 0.4);
+  box-shadow: 0 8px 25px var(--highlight-color);
 }
 
 #fileLabel.dragover {
-  border: 2px dashed rgba(6, 140, 50, 1);
-  background: rgba(6, 71, 50, 0.4);
+  border: 2px dashed var(--highlight-color);
+  background: var(--bg-color);
 }
 
 #structureText {
@@ -317,7 +344,7 @@ body.panel-hidden #axesLegend {
   margin-top: 12px;
   width: 100%;
   padding: 12px 16px;
-  background: linear-gradient(45deg, #368f6e, #256951);
+  background: var( --bg-color);
   color: white;
   border: none;
   border-radius: 8px;
@@ -329,7 +356,7 @@ body.panel-hidden #axesLegend {
 
 #loadTextButton:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(54, 143, 110, 0.35);
+  box-shadow: 0 8px 18px var(--highlight-color);
 }
 
 .comparison-group {
@@ -373,12 +400,12 @@ body.panel-hidden #axesLegend {
 }
 
 .second-input-mode-btn:hover {
-  background: rgba(6, 71, 50, 0.5);
+  background: var(--bg-color);
   color: #fff;
 }
 
 .second-input-mode-btn.active {
-  background: rgba(6, 140, 50, 0.85);
+  background: var(--highlight-color);
   color: #fff;
 }
 
@@ -400,7 +427,7 @@ body.panel-hidden #axesLegend {
 #secondFileLabel {
   display: block;
   padding: 15px 10px;
-  background: rgba(6, 71, 50, 1);
+  background: var(--bg-color);
   color: white;
   text-align: center;
   border-radius: 8px;
@@ -412,12 +439,12 @@ body.panel-hidden #axesLegend {
 
 #secondFileLabel:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(6, 140, 50, 0.4);
+  box-shadow: 0 8px 25px var(--hover-color);
 }
 
 #secondFileLabel.dragover {
-  border: 2px dashed rgba(6, 140, 50, 1);
-  background: rgba(6, 71, 50, 0.4);
+  border: 2px dashed var(--highlight-color);
+  background: var(--bg-color);
 }
 
 #secondStructureText {
@@ -443,7 +470,7 @@ body.panel-hidden #axesLegend {
   margin-top: 12px;
   width: 100%;
   padding: 12px 16px;
-  background: linear-gradient(45deg, #368f6e, #256951);
+  background: var( --bg-color);
   color: white;
   border: none;
   border-radius: 8px;
@@ -482,7 +509,7 @@ input[type="range"]::-webkit-slider-thumb {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: rgba(6, 140, 50, 0.8);
+  background: var(--highlight-color);
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
@@ -491,7 +518,7 @@ input[type="range"]::-moz-range-thumb {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: rgba(6, 140, 50, 0.8);
+  background: var(--highlight-color);
   cursor: pointer;
   border: none;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
@@ -500,11 +527,11 @@ input[type="range"]::-moz-range-thumb {
 input[type="checkbox"] {
   margin-right: 10px;
   transform: scale(1.2);
-  accent-color: rgba(6, 140, 50, 0.8);
+  accent-color: var(--highlight-color);
 }
 
 .slider-value {
-  color: rgba(6, 140, 50, 1);
+  color: var(--highlight-color);
   font-weight: 600;
 }
 
@@ -650,7 +677,7 @@ input[type="checkbox"] {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background-color: rgba(6,70,50,0.8);
+    background-color: var( --bg-color);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 8px;
     padding: 0.6em 1em;
@@ -661,8 +688,8 @@ input[type="checkbox"] {
 
   .bond-toggle:hover,
   .bond-toggle:focus {
-    background-color: rgba(6,70,50,0.8);
-    box-shadow: 0 0 0 2px rgba(6,70,50,0.8);
+    background-color: var( --bg-color);
+    box-shadow: 0 0 0 2px var( --bg-color);
     border: 1px solid rgba(255,255,255,0.1);
     outline: none;
   }
@@ -700,12 +727,12 @@ input[type="checkbox"] {
 }
 
 #bondControls::-webkit-scrollbar-track {
-  background: rgba(6,70,50,0.8);
+  background: var( --bg-color);
   border-radius: 3px;
 }
 
 #bondControls::-webkit-scrollbar-thumb {
-  background: rgba(6, 140, 50, 0.4);
+  background: var(--hover-color);
   border-radius: 3px;
 }
 
@@ -714,7 +741,7 @@ input[type="checkbox"] {
   padding: 12px;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 8px;
-  border-left: 3px solid rgba(6, 140, 50, 0.4);
+  border-left: 3px solid var(--hover-color);
 }
 
 .bond-label {
@@ -761,7 +788,7 @@ justify-content: center;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background-color: rgba(6,70,50,0.8);
+    background-color: var( --bg-color);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 8px;
     padding: 0.6em 1em;
@@ -773,8 +800,8 @@ justify-content: center;
 
   .spin-toggle:hover,
   .spin-toggle:focus {
-    background-color: rgba(6,70,50,0.8);
-    box-shadow: 0 0 0 2px rgba(6,70,50,0.8);
+    background-color: var( --bg-color);
+    box-shadow: 0 0 0 2px var( --bg-color);
     border: 1px solid rgba(255,255,255,0.1);
     outline: none;
   }
@@ -814,12 +841,12 @@ justify-content: center;
 }
 
 #spinControls::-webkit-scrollbar-track {
-  background: rgba(6,70,50,0.8);
+  background: var( --bg-color);
   border-radius: 3px;
 }
 
 #spinControls::-webkit-scrollbar-thumb {
-  background: rgba(6, 140, 50, 0.4);
+  background: var(--hover-color);
   border-radius: 3px;
 }
 
@@ -829,7 +856,7 @@ justify-content: center;
   padding: 12px;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 8px;
-  border-left: 3px solid rgba(6, 140, 50, 0.4);
+  border-left: 3px solid var(--hover-color);
 }
 
 .spin-label {
@@ -872,12 +899,12 @@ gap: 8px;
 }
 
 .spin-input-mode-btn:hover {
-  background: rgba(6, 71, 50, 0.5);
+  background: var(--bg-color);
   color: #fff;
 }
 
 .spin-input-mode-btn.active {
-  background: rgba(6, 140, 50, 0.85);
+  background: var(--highlight-color)
   color: #fff;
 }
 
@@ -940,8 +967,8 @@ justify-content: center;
 
   .comparison-toggle:hover,
   .comparison-toggle:focus {
-    background-color: rgba(6,70,50,0.8);
-    box-shadow: 0 0 0 2px rgba(6,70,50,0.8);
+    background-color: var( --bg-color);
+    box-shadow: 0 0 0 2px var( --bg-color);
     border: 1px solid rgba(255,255,255,0.1);
     outline: none;
   }
@@ -994,7 +1021,7 @@ justify-content: center;
   justify-content:space-between; 
   cursor:pointer; user-select:none; 
   padding:6px 8px; border-radius:8px; 
-  background: rgba(6,70,50,0.8);
+  background: var( --bg-color);
   border:1px solid rgba(255,255,255,0.1); 
 
 }
@@ -1002,9 +1029,9 @@ justify-content: center;
 
 #infoPanel .structure-toggle h4 { margin-top: 5px; margin-left: 20px; margin-right: 20px; font-size:14px; font-weight:800; line-height:1.0; color:rgba(255,255,255,0.8) }
 .section-heading { margin-top:10px; margin-bottom:6px; font-size:14px; font-weight:600; padding-left:8px; }
-.toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(0,0,0,0.5); color:rgba(6,140,50,1); font-weight:1000; transition:transform .18s ease, background .18s ease, color .18s ease; }
+.toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(0,0,0,0.5); color:var(--accent-color); font-weight:1000; transition:transform .18s ease, background .18s ease, color .18s ease; }
 
-.toggle-icon.open { transform: background:rgba(6,140,50,1); color:rgba(6,140,50,1); }
+.toggle-icon.open { transform: background:var(--accent-color); color:var(--accent-color); }
 .collapsible-content { overflow-y:auto; max-height:0; transition:max-height .28s ease, padding .18s ease; }
 
 .collapsible-content::-webkit-scrollbar {
@@ -1017,7 +1044,7 @@ justify-content: center;
 }
 
 .collapsible-content::-webkit-scrollbar-thumb {
-  background: rgba(6, 140, 50, 0.4);
+  background: var(--hover-color);
   border-radius: 3px;
 }
 
@@ -1075,9 +1102,9 @@ justify-content: center;
 .btn-mini:hover { background:rgba(255,255,255,0.02); }
 .btn-mini:focus { outline:3px solid rgba(100,180,240,0.18); }
 
-.btn-mini.highlight { background:rgba(6,100,50,1); border-color:rgba(0,0,0,0.15); color:#fff; box-shadow:0 6px 14px rgba(10,100,160,0.18); }
+.btn-mini.highlight { background:var(--bg-color); border-color:rgba(0,0,0,0.15); color:#fff; box-shadow:0 6px 14px rgba(10,100,160,0.18); }
 .btn-mini.highlight:hover { filter:brightness(1.03); }
-.btn-mini.highlight:focus { outline:3px solid rgba(6,140,50,1);}
+.btn-mini.highlight:focus { outline:3px solid var(--accent-color);}
 
 #infoPanel h4 {
   margin: 0 0 8px 0;
@@ -1104,8 +1131,8 @@ justify-content: center;
 .comp-left { display: inline-flex; align-items: center; gap: 6px; }
 #picked {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 6px 8px; background: rgba(6, 71, 50, 1);
-  border: 1px solid rgba(6, 140, 50, 1); border-radius: 10px;
+  padding: 6px 8px; background: var(--bg-color);
+  border: 1px solid var(--accent-color); border-radius: 10px;
 }
 #view canvas { cursor: pointer; } /* for click affordance */
 
@@ -1181,8 +1208,8 @@ z-index:1000; pointer-events:none;
   padding: 6px 10px;
   font-size: 14px;
   color: #fff;
-  background: rgba(6, 71, 50, 1);
-  border: 1px solid rgba(6, 90, 50, 1);
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   cursor: pointer;
   min-width: 32px;
@@ -1206,17 +1233,17 @@ z-index:1000; pointer-events:none;
 }
 
 #cameraTools .measure-tool-btn:hover {
-  background: rgba(6, 71, 50, 1);
-  border-color: rgba(6, 90, 50, 0.7);
+  background: var(--bg-color);
+  border-color: var(--highlight-color);
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(6, 100, 50, 1);
 }
 
 #cameraTools .measure-tool-reset-btn:hover {
-  background: rgba(240, 132, 18,0.90);
-  border-color: rgba(240, 132, 18,0.5);
+  background: var(--highlight-color);
+  border-color: var(--highlight-color);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(240, 132, 18,1);
+  box-shadow: 0 6px 20px var(--highlight-color);
 }
 
 #cameraTools .measure-tool-btn .tool-icon {
@@ -1261,8 +1288,8 @@ z-index:1000; pointer-events:none;
   justify-content: center;
   gap: 6px;
   padding: 8px 8px;
-  background: rgba(6, 71, 50, 1);
-  border: 2px solid rgba(6, 90, 50, 0.7);
+  background: var(--bg-color);
+  border: 2px solid var(--border-color);
   border-radius: 12px;
   color: #fff;
   cursor: pointer;
@@ -1279,14 +1306,14 @@ z-index:1000; pointer-events:none;
 }
 
 .measure-tool-btn:hover {
-  background: rgba(6, 71, 50, 1);
-  border-color: rgba(6, 90, 50, 0.7);
+  background: var(--bg-color);
+  border-color: var(--border-color);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(6, 100, 50, 1);
+  box-shadow: 0 6px 20px var(--highlight-color);
 }
 
 .measure-tool-btn.active {
-  background: linear-gradient(135deg, #ff6b35, #f7931e);
+  background: var( --bg-color);
   border-color: #ff6b35;
   color: #fff;
   box-shadow: 0 4px 16px rgba(255, 107, 53, 0.4);

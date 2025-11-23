@@ -35,7 +35,7 @@ export function shareStructure() {
       const shareBtn = document.getElementById('shareBtn');
       const originalText = shareBtn.textContent;
       shareBtn.textContent = '✓ Copied!';
-      shareBtn.style.backgroundColor = '#4CAF50';
+
 
       setTimeout(() => {
         shareBtn.textContent = originalText;
@@ -95,7 +95,6 @@ export function createShareButton() {
   shareBtn.style.cssText = `
     padding: 8px 16px;
     margin-top: 8px;
-    background: linear-gradient(135deg, #4CAF50, #45a049);
     color: white;
     border: none;
     border-radius: 6px;
@@ -107,12 +106,10 @@ export function createShareButton() {
   `;
 
   shareBtn.addEventListener('mouseenter', () => {
-    shareBtn.style.background = 'linear-gradient(135deg, #45a049, #4CAF50)';
     shareBtn.style.transform = 'translateY(-1px)';
   });
 
   shareBtn.addEventListener('mouseleave', () => {
-    shareBtn.style.background = 'linear-gradient(135deg, #4CAF50, #45a049)';
     shareBtn.style.transform = 'translateY(0)';
   });
 

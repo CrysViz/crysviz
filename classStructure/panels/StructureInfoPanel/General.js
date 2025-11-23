@@ -255,14 +255,14 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   // Coordinate edit button
   const coordBtn = document.createElement('button');
   coordBtn.textContent = 'Position';
-  coordBtn.style.cssText = 'background: rgba(6,100,50,0.8); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
+  coordBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
   coordBtn.title = `Edit coordinates for ${element}${displayNumber}`;
 
 
     // Spin Edit button
   const spinBtn = document.createElement('button');
   spinBtn.textContent = 'Spin/Force';
-  spinBtn.style.cssText = 'background: rgba(6,100,50,0.8); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
+  spinBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
   spinBtn.title = `Edit Spin for ${element}${displayNumber}`;
 
   buttonContainer.appendChild(colorBtn);

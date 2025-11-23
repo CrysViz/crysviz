@@ -16,7 +16,7 @@
 
 .backend-control-group h3 {
   margin: 0 0 15px 0;
-  color: #81c784;
+  color: var(--bg-color);
   font-size: 16px;
   font-weight: 500;
 }
@@ -47,18 +47,18 @@
 }
 
 .segmented-backend-control button.active {
-  background: rgba(6, 140, 50, 0.85);
+  background: var(--accent-color);
   color: white;
   font-weight: 500;
 }
 .segmented-backend-control button.symmetry {
-  background: rgba(63, 37, 2);
+  background: var(--accent-color);
   color: white;
   font-weight: 500;
 }
 
 .segmented-backend-control button.ai {
-  background: rgba(61, 2, 47, 1);
+  background: var(--accent-color);
   color: white;
   font-weight: 500;
 }
