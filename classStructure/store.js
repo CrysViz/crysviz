@@ -88,6 +88,7 @@ export const general = {
   showNeighborBonds:false, // Periodic image atoms + bonds across cell (off by default)
   playerModeStata: "none", 
   spinForceState: "none",
+  backendState:"none",
   currentSupercell: null,
   modifiedLattice: null, // this needs to be part of the structure object 
   sharedStructureLoaded:false

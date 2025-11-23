@@ -67,6 +67,8 @@ import {createCompositionRow,renderComposition} from './panels/StructureInfoPane
 import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
 import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch} from './panels/ControlPanel.js';
 
+import {addBackendModeSwitch} from './panels/BackendPanel.js';
+
 
 // .........................................................................................................
 // import utils needs to moce to the "share" functionality. This is currently broken.
@@ -1249,6 +1251,7 @@ function setupMobileMenu() {
   createBackgroundControl();
   addControlPanelModeSwitch();
   addControlPanelSpinForceSwitch();
+  addBackendModeSwitch();
   const errorPanel = document.getElementById("errorPanel");
 
   // Add viewport meta tag if not present for proper mobile scaling

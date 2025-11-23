@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="./styles/styles_file_browswer.css">
     <link rel="stylesheet" href="./styles/trajectoryPanel.css">
     <link rel="stylesheet" href="./styles/controlPanel.css">
+    <link rel="stylesheet" href="./styles/backendPanel.css">
 
 
     <script type="importmap">
@@ -28,7 +29,13 @@
     <div id="backgroundDot" class="background-dot"></div>
     <div id="ui">
       <img src="./data/CrysViz_logo_clear_back_beta.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
-      
+      <div class="backend-control-group">
+        <div class="segmented-backend-control" id="BackendModeSwitch">
+          <button data-mode="None" class="active">None</button>
+          <button data-mode="Symmetry">Symmetry</button>
+          <button data-mode="AI">AI</button>
+        </div>
+      </div>
       <div class="control-group">
         <div class="input-mode-toggle" role="tablist" aria-label="Structure input mode">
           <button type="button" class="input-mode-btn active" data-mode="file" role="tab" id="fileInputTab" aria-selected="true" aria-controls="fileInputContainer">

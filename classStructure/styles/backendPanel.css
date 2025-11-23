@@ -1,0 +1,65 @@
+.backend-control-group {
+  margin: 0 0 16px 0;
+  padding: 10px 20px 0px 20px;
+  background: rgba(42, 42, 42, 0.8);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.backend-control-group h1 {
+  margin: 0 0 15px 0;
+  color:  #FFBF00;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.backend-control-group h3 {
+  margin: 0 0 15px 0;
+  color: #81c784;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.segmented-backend-control {
+  display: revert;
+  background: rgba(25,25,25,0.8);
+  padding: 8px;
+  border-radius: 10px;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.segmented-backend-control button {
+  border: none;
+  background: none;
+  color: rgba(255,255,255,0.8);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  min-width: 100px;
+}
+
+.segmented-backend-control button:hover {
+  background: rgba(0,0,0,0.2);
+}
+
+.segmented-backend-control button.active {
+  background: rgba(6, 140, 50, 0.85);
+  color: white;
+  font-weight: 500;
+}
+.segmented-backend-control button.symmetry {
+  background: rgba(63, 37, 2);
+  color: white;
+  font-weight: 500;
+}
+
+.segmented-backend-control button.ai {
+  background: rgba(61, 2, 47, 1);
+  color: white;
+  font-weight: 500;
+}
+
