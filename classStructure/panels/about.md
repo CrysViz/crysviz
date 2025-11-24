@@ -1,7 +1,8 @@
 # CrysViz Crystal Structure Viewer
+
 by Abhijith S. Parackal and Florian Trybel
 
-Version 0.3 Beta
+Version 0.4 Beta 2025-11-24
 
 ## This is the live developement repository. If you are not Abhijith or Florian, you should not be here!
 
@@ -15,7 +16,8 @@ CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POS
 - Customizable color schemes can be choosen for any individual atoms 
 - Spin Viewer
 - Compare two crystal structures by overlay and lattice differenc radar plot
-- Possibility to activate a calcualtions backend. This allows: (1) Symmetry Analyis and (2) structural relaxation with MACE (trajectory is added and can be played)
+- Trajectory player. Load OUTCARs and pwscf vc-relax output files directly and visualise the trajectories. (MDs might hit your memory limit!)
+- Possibility to activate a calcualtions backend. This allows: (1) symmetry analysis with spglib and (2) structural relaxation with MACE (MPA0 modell; trajectory is added and can be played using the trajectory player)
 
 ## Currently broken due to developments 
 - Structure and lattice comparsion
@@ -26,19 +28,23 @@ CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POS
 ## Comming Soon...
 - Visualise forces and stress
 - Visualise trajectories with spins or forces/stress
-- Read Quantum Espresso Input
-- Manipulate structures under symmetry constraints 
+- Manipulate structures under symmetry constraints
+- Possibility to add atoms
+- Symmetry Refinement
 
 ## Experimental
 - Trajectory player
 - Backend for symmetry refinement and AI-accelerated structural relaxations
+- last loaded trajectory is not automaticaly selected... requires currently an extra "click" on the row in the file browser
 
 ## Notes
 If you are looking for a desktop application with more features →[VESTA](https://jp-minerals.org/vesta/en/).
 If you look for Jupyter Notebook support → [Matterviz](https://matterviz.janosh.dev/).
 If you want a JS tool that you can embedd in your webpage → [JSmol](https://jmol.sourceforge.net)
-This project is under very active delevopment and at best in an early beta phase with known bugs that we are trying to fix. Please report them to Abhijith Parackal (abhijith.s.parackal@liu.se) or Florian Trybel (florian.trybel@liu.se)
+This project is under very active delevopment and at best in an early beta phase with known bugs that we are trying to fix. Please report them to Abhijith Parackal (abhijith.s.parackal@liu.se) and Florian Trybel (florian.trybel@liu.se)
 
 ## Powered By
 - [Three.js](https://threejs.org/) for the WebGL rendering pipeline.
 - [OPTIMADE](https://www.optimade.org/) compatible structure providers including Materials Project and Alexandria.
+- Structural relaxation are running [MACE-MP](https://github.com/ACEsuit/mace-foundations) models
+- Symmetry analysis is based on [spglib](https://github.com/spglib/spglib)
