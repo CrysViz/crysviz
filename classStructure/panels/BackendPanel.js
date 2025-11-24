@@ -27,7 +27,7 @@ export function addErrorPanel(message="Default") {
   header.style.display= "flex";
 
   const msg = document.createElement("div");
-  msg.textContent = message;
+  msg.innerHTML = message;
   msg.style.lineHeight = "1.6";
 
   const actions = document.createElement("div");
@@ -101,7 +101,7 @@ export function addBackendModeSwitch() {
     });
 
     if (mode === "symmetry") {
-      showWarning("Using symmetry mode will start a Python backend.\nSome data will temporarily be stored on our server!")
+      showWarning(`Using symmetry mode will start a Python backend.\nSome data will temporarily be stored on our server!\n <a href="https://github.com/ftrybel/CrysViz_hot_develop/" target="_blank">Learn more</a>`)
         .then(result => {
           if (result === "accept") {
             btn.classList.add("symmetry");
@@ -116,7 +116,7 @@ export function addBackendModeSwitch() {
         });
 
     } else if (mode === "ai") {
-      showWarning("Using AI mode will start a Python backend.\nSome data will temporarily be stored on our server!")
+        showWarning(`Using AI mode will start a Python backend.\nSome data will temporarily be stored on our server!\n <a href="https://github.com/ftrybel/CrysViz_hot_develop/" targe    t="_blank">Learn more</a>`)
         .then(result => {
           if (result === "accept") {
             btn.classList.add("ai");

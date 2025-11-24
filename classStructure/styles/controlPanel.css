@@ -1,5 +1,5 @@
 .segmented-control {
-  display: revert;
+  display: block ruby;
   background: rgba(25,25,25,0.8);
   padding: 8px;
   border-radius: 10px;

@@ -42,7 +42,7 @@
     button { background: #3a3a3a; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 18px; }
     button:hover { background: #555; }
 
-    select, input[type=number] { padding: 4px; border-radius: 6px; background: #3a3a3a; color: white; border: none; width: 100%; box-sizing: border-box; text-align: center; }
+    select, input[type=number] { padding: 4px; border-radius: 6px; background: #3a3a3a; color: white; border: none; box-sizing: border-box; text-align: center; }
 
     #toggleControls { position: fixed; top: 20px; right: 20px; }
     #frameIndicator { text-align: center; font-size: 12px; margin-top: 6px; display: block; }
