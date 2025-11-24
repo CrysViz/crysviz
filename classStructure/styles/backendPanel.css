@@ -1,4 +1,53 @@
+
+#calcResult {
+font-size: 14px;
+color: var(--highlight-color);
+}
+
+#calcBtn {
+font-size: 12px;
+  background: var(--bg-color);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+#connectBtn{
+font-size: 12px;
+  background: var(--bg-color);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+#disconnectBtn{
+font-size: 12px;
+background: var(--bg-color);
+border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+#calcBtn:hover {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 10px var(--highlight-color);
+}
+
+#disconnectBtn:hover {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 10px var(--highlight-color);
+}
+
+#connectBtn:hover {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 10px var(--highlight-color);
+}
+
+
+
+
 .backend-control-group {
+  font-size: 12px;
+  max-width: 360px;
   margin: 0 0 16px 0;
   padding: 20px 10px 20px 20px;
   background: rgba(42, 42, 42, 0.8);
@@ -19,6 +68,19 @@
   color: var(--bg-color);
   font-size: 16px;
   font-weight: 500;
+}
+
+.acceptBtn:hover {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 10px var(--highlight-color);
+}
+
+.denyBtn:hover {
+  border-color: rgba(243, 174, 100, 0.9);
+  border: 2px solid rgba(243, 174, 100, 0.9);
+  box-shadow: 0 2px 10px rgba(240, 132, 18, 0.9);
 }
 
 .segmented-backend-control {
