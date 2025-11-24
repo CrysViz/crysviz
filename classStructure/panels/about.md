@@ -15,6 +15,7 @@ CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POS
 - Customizable color schemes can be choosen for any individual atoms 
 - Spin Viewer
 - Compare two crystal structures by overlay and lattice differenc radar plot
+- Possibility to activate a calcualtions backend. This allows: (1) Symmetry Analyis and (2) structural relaxation with MACE (trajectory is added and can be played)
 
 ## Currently broken due to developments 
 - Structure and lattice comparsion
