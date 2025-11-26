@@ -51,39 +51,79 @@ def getSpacegroup(data):
 
 @socketio.on("relaxStructure")
 def relaxStructure(data):
-  positions= data.get("positions",-1)
-  lattice= data.get("lattice",-1)
-  elements= data.get("elements",-1)
-  fmax=data.get("fmax",0.001)
-  pressure=data.get("pressure",0)
+    positions = data.get("positions", -1)
+    lattice   = data.get("lattice", -1)
+    elements  = data.get("elements", -1)
+    fmax      = data.get("fmax", 0.001)
+    pressure  = data.get("pressure", 0)
+    style    =data.get("style","getEFS")
 
-  print(f"{pressure=}")
-  print(f"{fmax=}")
-  
-  optimization_steps=[]
+    print(f"{pressure=}")
+    print(f"{fmax=}")
 
-  struc = Atoms(cell=lattice, symbols=elements, scaled_positions = positions,pbc=True)
-  struc.calc = calc
-  def store_step():
-    optimization_steps.append(struc.copy())
+    if style == "new" or style == "append":
 
-  ecf = FrechetCellFilter(struc, hydrostatic_strain=False, scalar_pressure=pressure)
-  opt = BFGS(ecf)
-  opt.attach(store_step, 1)
-  opt.run(fmax=fmax)
+        optimization_steps = []
 
-  lattices=[]
-  positions=[]
+        struc = Atoms(
+            cell=lattice,
+            symbols=elements,
+            scaled_positions=positions,
+            pbc=True
+        )
+        struc.calc = calc  # your calculator
 
-  for atoms in optimization_steps:
-    lattices.append(atoms.cell.array.tolist())
-    positions.append(atoms.get_scaled_positions().tolist())
+        def store_step():
+            optimization_steps.append({
+                "cell":      struc.cell.array.copy().tolist(),
+                "positions": struc.get_scaled_positions().copy().tolist(),
+                "forces":    struc.get_forces().copy().tolist(),
+                "stress":    struc.get_stress(voigt=False).copy().tolist(),
+                "energy":    struc.get_potential_energy()
+            })
+            emit("stressUpdate", {"stress":struc.get_stress(voigt=False,apply_constraint=False).copy().tolist(),"maxf":np.max(struc.get_forces()),
+                                  "positions":  struc.get_scaled_positions().copy().tolist(), "lattice":struc.cell.array.copy().tolist() })
+ 
 
-  
-  result={"lattices":lattices,"positions":positions,"numSteps": len(lattices), "log":"Calculation converged"}
-  emit("result", {"result": result})
-  
-    
+        ecf = FrechetCellFilter(struc, hydrostatic_strain=False, scalar_pressure=pressure)
+        opt = BFGS(ecf)
+        opt.attach(store_step, 1)
+        opt.run(fmax=fmax)
+
+        result = {
+            "lattices" : [step["cell"]      for step in optimization_steps],
+            "positions": [step["positions"] for step in optimization_steps],
+            "forces"   : [step["forces"]    for step in optimization_steps],
+            "stresses" : [step["stress"]    for step in optimization_steps],
+            "energies" : [step["energy"]    for step in optimization_steps],
+            "maxf"     : np.max(struc.get_forces()),
+            "numSteps" : len(optimization_steps),
+            "log": "Calculation converged",
+        }
+
+    elif style == "getEFS":
+
+        struc = Atoms(
+            cell=lattice,
+            symbols=elements,
+            scaled_positions=positions,
+            pbc=True
+        )
+        struc.calc = calc  # your calculator
+        result = {
+         "lattices" : struc.cell.array.copy().tolist(),
+         "positions": struc.get_scaled_positions().copy().tolist(),
+         "forces":    struc.get_forces().copy().tolist(),
+         "stress":    struc.get_stress(voigt=False).copy().tolist(),
+         "energy":    struc.get_potential_energy(),
+         "maxf"     : np.max(struc.get_forces()),
+         "log"      : "Got EFS!"
+         }
+         
+    else:
+     print("Calculation style unknown")
+     
+    emit(style, {"result": result})
     
 if __name__ == "__main__":
     socketio.run(app, port=5001)

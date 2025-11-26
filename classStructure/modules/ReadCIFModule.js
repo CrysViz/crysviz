@@ -1,3 +1,7 @@
+import { Structure } from "../classes/Structure.js";
+import { StructureContainer } from "../classes/StructureContainer.js";
+import { fileBrowser } from '../store.js';
+import { createRow,selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
 
 function loadCIF(content, isDefault = false) {
   try {
@@ -20,7 +24,7 @@ function loadCIF(content, isDefault = false) {
     console.error(error);
   }
 };
-export function parseCIF(content) {
+export function parseCIF(content,fileName) {
   // --- Utilities -------------------------------------------------------------
 
   const toRad = (deg) => (deg * Math.PI) / 180.0;
@@ -377,14 +381,25 @@ export function parseCIF(content) {
   for (const e of elements) {
     if (!seenElem.has(e)) { seenElem.add(e); uniqueElements.push(e); }
   }
+  const structures = [
+    new Structure({
+      elements:elements,
+      uniqueElements: [...new Set(elements)],
+      lattice:lattice,
+      positions:positions
+    })
+  ];
+  // UI updates
+  const row = createRow({ name: fileName, traj: structures.length, step: structures.length });
+  document.querySelector("#objectTable tbody").appendChild(row);
+  fileBrowser.fileData.push({ name: fileName, traj: structures.length, step: structures.length });  
+  selectLastAddedRow()
 
-  return {
-    comment,
-    lattice,          // 3x3 Cartesian lattice vectors (Å)
-    elements,         // per-atom element symbols, aligned with positions
-    positions,        // fractional coordinates in [0,1)
-    uniqueElements,   // unique species in first-seen order
-  };
+  let container= new StructureContainer({
+    fileName,
+    structures,
+  });  
+  return container
 }
 
 //export { loadCIF };

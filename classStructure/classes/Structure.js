@@ -1,6 +1,10 @@
 import { ColoredComponent } from './ColoredComponent.js';
 import { general, defaultColorMap, jmolColorMap} from '../store.js';
-
+import { Spin } from './Spin.js';
+import { Forces } from './Forces.js';
+import { Polyhedra } from './Polyhedra.js';
+import { Symmetry } from './Symmetry.js';
+import {Stress} from './Stress.js';
 
 export class Structure extends ColoredComponent {
   constructor({
@@ -9,6 +13,11 @@ export class Structure extends ColoredComponent {
     uniqueElements = [],
     lattice = [],
     positions = [],
+    symmetry = null,
+    spins = null,
+    forces = null,
+    stress = null,
+    polyhedra = null,
     colors = [],
     atomsGroup = null,
     latticeGroup = null,
@@ -22,8 +31,11 @@ export class Structure extends ColoredComponent {
     this.uniqueElements = [...new Set(elements)];
     this.lattice = lattice;       // 3×3
     this.positions = positions;   // 3×N
-    this.atomsGroup = atomsGroup; // THREE group for atoms
-    this.latticeGroup = latticeGroup; // THREE group for lattice
+    this.symmetry = symmetry;
+    this.spins = spins;
+    this.forces = forces;
+    this.stress = stress;
+    this.polyhedra = polyhedra;
     const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
     this.defaultColors = {};
     for (const element of this.elements) {
@@ -45,7 +57,6 @@ export class Structure extends ColoredComponent {
     });
 
   }
-
   get NumberOfAtoms() {
     return this.positions.length;
     }

@@ -14,7 +14,7 @@
 
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser} from '../store.js';
-import {createRow} from '../panels/FileBrowswerPanel.js'
+import {createRow,selectLastAddedRow} from '../panels/FileBrowswerPanel.js'
 // ------------------------------------------------------------
 // parseOUTCAR — returns a StructureContainer with full trajectory
 // ------------------------------------------------------------
@@ -49,33 +49,21 @@ export function parseOUTCAR(content,fileName) {
 
   for (const step of steps) {
     const lattice = step.lattice;
-
+    
     // --- convert positions to fractional
     const frac = convertCartesianToFractional(step.positions, lattice);
-
     structures.push(
       new Structure({
         elements,
         uniqueElements,
         lattice,
         positions: frac,               // fractional = used by your viewer
+        spins:new Spin({vectors:step.spins_3xN}),
+        forces:new Forces({vectors:step.forces_3xN})
         //positions_cartesian: step.positions // keep working behavior
       })
     );
 
-    spins.push(
-      new Spin({
-        spins: step.spins_3xN,        // 3×N
-        scaling: step.scaling,        // N
-      })
-    );
-
-    forces.push(
-      new Forces({
-        forces: step.forces_3xN,       // 3×N
-        scaling: step.forceScaling,    // N
-      })
-    );
   }
 
    let traj = structures.length
@@ -83,7 +71,7 @@ export function parseOUTCAR(content,fileName) {
    const row = createRow({name: fileName, traj: traj, step: step });
    tableBody.appendChild(row);
    fileBrowser.fileData.push({idx: -1, name: fileName, traj: traj, step: step });
-
+   selectLastAddedRow();
   return new StructureContainer({
     fileName: fileName,
     structures,

@@ -17,7 +17,7 @@ CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POS
 - Spin Viewer
 - Compare two crystal structures by overlay and lattice differenc radar plot
 - Trajectory player. Load OUTCARs and pwscf vc-relax output files directly and visualise the trajectories. (MDs might hit your memory limit!)
-- Possibility to activate a calcualtions backend. This allows: (1) symmetry analysis with spglib and (2) structural relaxation with MACE (MPA0 modell; trajectory is added and can be played using the trajectory player)
+- Possibility to activate a calcualtions backend. This allows: (1) symmetry analysis with spglib and (2) structural relaxation with MACE (MPA0 model; trajectory is added and can be played using the trajectory player)
 
 ## Currently broken due to developments 
 - Structure and lattice comparsion

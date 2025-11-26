@@ -1,9 +1,9 @@
 import { ColoredObject } from './ColoredObject.js';
 
 export class Forces extends ColoredObject {
-  constructor({ forces = [], scaling = [], colors = [], forcesGroup = null } = {}) {
+  constructor({ vectors = [], scaling = [], colors = [], forcesGroup = null } = {}) {
     super({ colors, defaultColors });
-    this.forces = forces;   // 3×N
+    this.vectors = vectors;   // 3×N
     this.scaling = scaling; // N
     this.forcesGroup = forcesGroup;
   }

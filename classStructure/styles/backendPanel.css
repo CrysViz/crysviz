@@ -1,10 +1,9 @@
 
 #calcResult {
 font-size: 14px;
-color: var(--highlight-color);
 }
 
-#calcBtn {
+.calcButton {
 font-size: 12px;
   background: var(--bg-color);
   border: 2px solid rgba(255, 255, 255, 0.1);
@@ -21,7 +20,7 @@ background: var(--bg-color);
 border: 2px solid rgba(255, 255, 255, 0.1);
 }
 
-#calcBtn:hover {
+.calcButton:hover {
   background: var(--bg-color);
   border-color: var(--border-color);
   border: 2px solid rgba(255, 255, 255, 0.4);
@@ -89,6 +88,7 @@ border: 2px solid rgba(255, 255, 255, 0.1);
   padding: 8px;
   border-radius: 10px;
   gap: 4px;
+  margin-bottom: 10px;
 }
 
 .segmented-backend-control button {

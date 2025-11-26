@@ -1,8 +1,7 @@
 import { Structure } from "../classes/Structure.js";
 import { StructureContainer } from "../classes/StructureContainer.js";
-const tableBody = document.querySelector("#objectTable tbody");
 import { fileBrowser } from '../store.js';
-import { createRow } from '../panels/FileBrowswerPanel.js';
+import { createRow,selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
 import {
   transpose3x3,
   invert3x3,
@@ -10,6 +9,7 @@ import {
 } from "./StructureInputModule.js";
 
 export function parsePWSCFin(content, fileName) {
+  if (!fileName) return;
   const lines = content.split("\n");
 
   const BOHR_TO_ANG = 0.52917721092;
@@ -17,15 +17,17 @@ export function parsePWSCFin(content, fileName) {
   let natoms = 0;
 
   // ----------------------
-  // 1. Read celldm(n)
+  // Read celldm(n)
   // ----------------------
   for (const line of lines) {
     const m = line.match(/celldm\s*\(\s*(\d+)\s*\)\s*=\s*([\d.eE+-]+)/);
-    if (m) celldm[Number(m[1])] = Number(m[2]);
-  }
+    if (m) {
+      celldm[Number(m[1])] = Number(m[2]);
+    }
+  };
 
   // ----------------------
-  // 2. Find ATOMIC_POSITIONS
+  // Find ATOMIC_POSITIONS
   // ----------------------
   let posIndex = lines.findIndex(l => /^ATOMIC_POSITIONS/i.test(l.trim()));
   if (posIndex === -1) return { error: "No ATOMIC_POSITIONS found" };
@@ -49,7 +51,7 @@ export function parsePWSCFin(content, fileName) {
   natoms = elements.length;
 
   // ----------------------
-  // 3. Find CELL_PARAMETERS
+  // Find CELL_PARAMETERS
   // ----------------------
   let cellIndex = lines.findIndex(l => /^CELL_PARAMETERS/i.test(l.trim()));
   if (cellIndex === -1) return { error: "No CELL_PARAMETERS found" };
@@ -69,34 +71,27 @@ export function parsePWSCFin(content, fileName) {
     lattice.push(vec.slice(0, 3));
   }
 
-  // ----------------------
-  // 4. Done — create Structure
-  // ----------------------
   const structures = [
     new Structure({
-      elements,
+      elements:elements,
       uniqueElements: [...new Set(elements)],
-      lattice,
-      positions,
-      positions_cartesian: null
+      lattice:lattice,
+      positions:positions
     })
   ];
-
-  const forceObjects = [{ forces: [] }];
 
   // UI updates
   const row = createRow({ name: fileName, traj: structures.length, step: structures.length });
   document.querySelector("#objectTable tbody").appendChild(row);
-  fileBrowser.fileData.push({ idx: -1, name: fileName, traj: structures.length, step: structures.length });
+  fileBrowser.fileData.push({ name: fileName, traj: structures.length, step: structures.length });
+  selectLastAddedRow();
 
-  return new StructureContainer({
+  let container= new StructureContainer({
     fileName,
     structures,
-    spins: [],
-    symmetries: [],
-    forces: forceObjects,
-    polyhedra: []
   });
+
+  return container;
 }
 
 

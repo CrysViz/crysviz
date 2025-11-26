@@ -24,10 +24,19 @@ export class Stress extends ColoredObject {
     this._pressure = Stress._computePressure(this.tensor);
   }
 
-  static _computePressure(tensor) {
-    const tr = tensor[0][0] + tensor[1][1] + tensor[2][2];
-    return tr / 3.0; // flip sign if you use compression-positive convention
+  _computePressure(tensor) {
+  if (!tensor || tensor.length !== 3 || tensor.some(row => row.length !== 3)) {
+    throw new Error("Tensor must be a 3x3 array");
   }
+
+  // Sum of diagonal elements
+  const trace = tensor[0][0] + tensor[1][1] + tensor[2][2];
+
+  // Pressure = -1/3 * trace
+  const pressure = -trace / 3;
+
+  return pressure;
+}
 
   static _computePearsonMeasure(tensor) {
     return -1 ;

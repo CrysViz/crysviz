@@ -2,7 +2,7 @@ import { Structure } from "../classes/Structure.js";
 import { StructureContainer } from "../classes/StructureContainer.js";
 const tableBody = document.querySelector("#objectTable tbody");
 import { fileBrowser } from "../store.js";
-import { createRow } from "../panels/FileBrowswerPanel.js";
+import { createRow,selectLastAddedRow } from "../panels/FileBrowswerPanel.js";
 
 const BOHR_TO_ANG = 0.52917721092;
 
@@ -254,6 +254,7 @@ export function parsePWSCFout(content, fileName) {
 
   if (fileBrowser && Array.isArray(fileBrowser.fileData)) {
     fileBrowser.fileData.push({ idx: -1, name: fileName, traj, step });
+    selectLastAddedRow();
   }
 
   // -----------------------------

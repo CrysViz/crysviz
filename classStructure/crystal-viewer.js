@@ -39,7 +39,7 @@ import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fra
 import { updateSpins} from './modules/SpinModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
 import {updateAtoms,createAtomMesh} from './modules/AtomsModule.js';
-import { parseCIF} from './modules/ReaderModule.js';
+import { parseCIF} from './modules/ReadCIFModule.js';
 import {createSupercell} from './modules/SuperCellModule.js';
 import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,
         getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,
@@ -346,7 +346,13 @@ function loadStructure(content, fileName = '', isDefault = false) {
 
     if (treatAsCIF) {
       console.log("This is probably a CIF file")
-      parsed = parseCIF(contentString);
+      let parsedContainer = parseCIF(contentString,fileName);
+      console.log(parsedContainer)
+      structureShip.container.push(parsedContainer)
+      parsed.positions = parsedContainer.structures[0].positions
+      parsed.elements = parsedContainer.structures[0].elements
+      parsed.lattice = parsedContainer.structures[0].lattice
+
     } 
 
    else if (treatAsPWSCFin) {

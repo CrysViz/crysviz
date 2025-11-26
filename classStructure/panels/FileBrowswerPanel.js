@@ -97,6 +97,7 @@ export function createRow(obj) {
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     structureShip.len = structureShip.len + 1;
     structureShip.container.splice(rowIndex + 1, 0, structureShip.container[rowIndex]);
+    selectLastAddedRow();
   });
 
   // Delete logic
@@ -112,6 +113,7 @@ export function createRow(obj) {
     
     // Now remove the row from the DOM
     row.remove();
+    selectLastAddedRow();
     
     console.log("Deleted:", row);
   });
@@ -119,11 +121,40 @@ export function createRow(obj) {
   // Store the updated object in the row's dataset (used for copying and other operations)
   row.dataset.obj = JSON.stringify(obj);
 
-
-  // Return the row, ready to be appended
-  fileBrowser.selectedRow=row;
   return row;
 }
+
+export function selectLastAddedRow() {
+  const tbody = document.querySelector("#objectTable tbody");
+  if (!tbody) return;
+
+  const rows = tbody.querySelectorAll("tr");
+  if (rows.length === 0) return;
+
+  const row = rows[rows.length - 1]; // last row
+
+  // Clear any previously selected row
+  if (fileBrowser.selectedRow) {
+    fileBrowser.selectedRow.classList.remove("selected");
+  }
+
+  // Mark this as selected
+  row.classList.add("selected");
+  fileBrowser.selectedRow = row;
+
+  // Store the index
+  const rowIndex = rows.length - 1;
+  row.dataset.index = rowIndex;
+  fileBrowser.selectedRowIndex = rowIndex;
+
+  // Update structure panel
+  updateStructureFromRowAndStep(rowIndex);
+
+  // Reset UI panels
+  resetSpinForceSwitch();
+  resetModeSwitch();
+}
+
 
 // Function to update an existing row when the object (obj) changes
 export function updateRow(row, obj) {
@@ -200,6 +231,9 @@ function updateStructureFromRowAndStep(rowIndex) {
   // Assign arrays (make copies to avoid mutating original)
   structureData.positions = [...selectedStructure.positions];
   structureData.elements = [...selectedStructure.elements];
+  //structureData.spin= [...selectedStructure.spins];
+  //structureData.forces = [...selectedStructure.forces];
+  //structureData.stress =  selectedStructure.stress.map(r => [...r]);
   structureData.lattice = selectedStructure.lattice.map(r => [...r]);
 
   createBondLengthControls();

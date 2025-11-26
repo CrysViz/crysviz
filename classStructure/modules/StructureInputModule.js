@@ -6,7 +6,7 @@ import { StructureContainer } from '../classes/StructureContainer.js';
 import { Structure } from '../classes/Structure.js';
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser} from '../store.js';
-import {createRow} from '../panels/FileBrowswerPanel.js'
+import {createRow,selectLastAddedRow} from '../panels/FileBrowswerPanel.js'
 
 function formatNumber(value) {
   if (!Number.isFinite(value)) return '0';
@@ -157,10 +157,10 @@ export function parsePOSCAR(content,fileName) {
   ).map(pos => pos.map(normalizeFractional));
 
   const structure = new Structure({
-    elements,
+    elements:elements,
     uniqueElements: elementLine,
-    lattice,
-    positions
+    lattice:lattice,
+    positions:positions,
   });
 
    let traj = 1
@@ -168,16 +168,12 @@ export function parsePOSCAR(content,fileName) {
    const row = createRow({name: fileName, traj: traj, step: step });
    tableBody.appendChild(row);
    fileBrowser.fileData.push({idx: -1, name: fileName, traj: traj, step: step });
-
+   selectLastAddedRow();
 
     const container = new StructureContainer({
-    fileName: comment,
+    fileName: fileName,
     structures: [structure],
-    symmetries: [],
-    spins: [],
-    forces: [],
-    polyhedra: []
-  });
+    });
   return container
 
 }
