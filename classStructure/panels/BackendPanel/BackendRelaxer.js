@@ -20,7 +20,7 @@ export function addBackendRelaxPanel() {
     panel.innerHTML = "";
     panel.innerHTML = `
       <h2>MLIP Relax</h2>
-
+      <h4> ⚠️ This routine uses the MACE-MPA0 model with all its limitations as default. NOT production ready!!</h4>
       <button id="connectBtn">Connect Backend</button>
       <button id="disconnectBtn">Disconnect</button>
       <p id="backendStatus">Backend: not connected</p>

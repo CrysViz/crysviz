@@ -235,27 +235,65 @@ export function parseCIF(content,fileName) {
   };
 
   // Deduplicate fractional positions within tolerance
-  const dedupPositions = (positions, elements, tol = 1e-6) => {
-    const seen = new Map(); // key -> index
-    const outPos = [];
-    const outElm = [];
-    const keyOf = (p, e) => {
-      // include element to keep species-separated uniqueness
-      const k = `${e}|${roundN(p[0], 6)},${roundN(p[1], 6)},${roundN(p[2], 6)}`;
-      return k;
-    };
-    for (let i = 0; i < positions.length; i++) {
-      const p = positions[i];
-      const e = elements[i];
-      const k = keyOf(p, e);
-      if (!seen.has(k)) {
-        seen.set(k, outPos.length);
-        outPos.push(p);
-        outElm.push(e);
+  //
+  /**
+ * Deduplicate symmetry-expanded fractional positions.
+ * Works for CIF-expanded atoms with numeric noise and periodic images.
+ * @param {Array} positions - Nx3 array of fractional coordinates
+ * @param {Array} elements - length-N array of element symbols
+ * @param {number} tol - fractional tolerance for duplicate detection
+ * @returns {Object} { positions: [], elements: [] }
+ */
+function dedupPositions(positions, elements, tol = 5e-2) {
+  const outPos = [];
+  const outElm = [];
+
+  // wrap fractional coordinates into [0,1)
+  const wrap = p => [
+    ((p[0] % 1) + 1) % 1,
+    ((p[1] % 1) + 1) % 1,
+    ((p[2] % 1) + 1) % 1
+  ];
+
+  // check if two positions are equivalent within tol, considering periodic images
+  const isDuplicate = (p, q) => {
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        for (let k = -1; k <= 1; k++) {
+          const dx = p[0] - (q[0] + i);
+          const dy = p[1] - (q[1] + j);
+          const dz = p[2] - (q[2] + k);
+          const dist2 = dx*dx + dy*dy + dz*dz;
+          if (dist2 < tol*tol) return true;
+        }
       }
     }
-    return { positions: outPos, elements: outElm };
+    return false;
   };
+
+  for (let i = 0; i < positions.length; i++) {
+    const p = wrap(positions[i]);
+    const e = elements[i];
+
+    let duplicate = false;
+    for (let j = 0; j < outPos.length; j++) {
+      if (outElm[j] !== e) continue; // species-specific
+      if (isDuplicate(p, outPos[j])) {
+        duplicate = true;
+        break;
+      }
+    }
+
+    if (!duplicate) {
+      outPos.push(p);
+      outElm.push(e);
+    }
+  }
+
+  return { positions: outPos, elements: outElm };
+}
+
+
 
   // --- Extract meta and cell -------------------------------------------------
 
