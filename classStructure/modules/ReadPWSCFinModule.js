@@ -8,6 +8,8 @@ import {
   cartToFractional,
 } from "./StructureInputModule.js";
 
+
+
 export function parsePWSCFin(content, fileName) {
   if (!fileName) return;
   const lines = content.split("\n");
@@ -17,14 +19,25 @@ export function parsePWSCFin(content, fileName) {
   let natoms = 0;
 
   // ----------------------
+  // Read nat = XX
+  // ----------------------
+  for (const line of lines) {
+    const m = line.match(/nat\s*=\s*(\d+)/i);
+    if (m) {
+      natoms = parseInt(m[1]);
+      break;
+    }
+  }
+
+  if (!natoms) return { error: "nat (number of atoms) not found" };
+
+  // ----------------------
   // Read celldm(n)
   // ----------------------
   for (const line of lines) {
     const m = line.match(/celldm\s*\(\s*(\d+)\s*\)\s*=\s*([\d.eE+-]+)/);
-    if (m) {
-      celldm[Number(m[1])] = Number(m[2]);
-    }
-  };
+    if (m) celldm[Number(m[1])] = Number(m[2]);
+  }
 
   // ----------------------
   // Find ATOMIC_POSITIONS
@@ -35,20 +48,14 @@ export function parsePWSCFin(content, fileName) {
   const elements = [];
   const positions = [];
 
-  // optional: try to detect number of atoms from following non-empty lines
-  let i = posIndex + 1;
-  while (i < lines.length && lines[i].trim() === "") i++;
-  const startAtoms = i;
-
-  while (i < lines.length && lines[i].trim() !== "" && !/^CELL_PARAMETERS/i.test(lines[i].trim())) {
+  for (let i = posIndex + 1; i <= posIndex + natoms; i++) {
+    if (i >= lines.length) break;
     const parts = lines[i].trim().split(/\s+/);
     if (parts.length >= 4) {
       elements.push(parts[0]);
       positions.push(parts.slice(1, 4).map(Number));
     }
-    i++;
   }
-  natoms = elements.length;
 
   // ----------------------
   // Find CELL_PARAMETERS
@@ -71,28 +78,31 @@ export function parsePWSCFin(content, fileName) {
     lattice.push(vec.slice(0, 3));
   }
 
+  // ----------------------
+  // Build structure
+  // ----------------------
   const structures = [
     new Structure({
-      elements:elements,
+      elements: elements,
       uniqueElements: [...new Set(elements)],
-      lattice:lattice,
-      positions:positions
+      lattice: lattice,
+      positions: positions
     })
   ];
 
+  // ----------------------
   // UI updates
+  // ----------------------
   const row = createRow({ name: fileName, traj: structures.length, step: structures.length });
   document.querySelector("#objectTable tbody").appendChild(row);
   fileBrowser.fileData.push({ name: fileName, traj: structures.length, step: structures.length });
   selectLastAddedRow();
 
-  let container= new StructureContainer({
+  let container = new StructureContainer({
     fileName,
     structures,
   });
 
   return container;
 }
-
-
 
