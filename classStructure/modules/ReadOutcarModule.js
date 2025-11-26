@@ -44,12 +44,10 @@ export function parseOUTCAR(content,fileName) {
   const steps = extractAllSteps(lines, natoms);
 
   const structures = [];
-  const spins = [];
-  const forces = [];
 
   for (const step of steps) {
     const lattice = step.lattice;
-    
+
     // --- convert positions to fractional
     const frac = convertCartesianToFractional(step.positions, lattice);
     structures.push(
@@ -58,8 +56,8 @@ export function parseOUTCAR(content,fileName) {
         uniqueElements,
         lattice,
         positions: frac,               // fractional = used by your viewer
-        spins:new Spin({vectors:step.spins_3xN}),
-        forces:new Forces({vectors:step.forces_3xN})
+        spins:new Spin({vectors:[...step.spins]}),
+        forces:new Forces({vectors:[...step.forces]})
         //positions_cartesian: step.positions // keep working behavior
       })
     );
@@ -72,12 +70,10 @@ export function parseOUTCAR(content,fileName) {
    tableBody.appendChild(row);
    fileBrowser.fileData.push({idx: -1, name: fileName, traj: traj, step: step });
    selectLastAddedRow();
+
   return new StructureContainer({
     fileName: fileName,
-    structures,
-    spins,
-    forces,
-    ids: steps.map((_, i) => i),
+    structures
   });
 }
 
@@ -97,12 +93,12 @@ function extractAllSteps(lines, natoms) {
       const lattice = findLatticeBefore(lines, i);
       const { positions, forces } = readPositionsForcesBlock(lines, i, natoms);
       const spins = readSpinVectors(lines, i, natoms);
-
+      
       steps.push({
         lattice,
         positions,
         forces,
-        spins_3xN: transpose(spins),
+        spins: spins,
         scaling: spins.map(v => Math.max(...v.map(Math.abs))),
         forces_3xN: transpose(forces),
         forceScaling: forces.map(v => Math.max(...v.map(Math.abs))),
@@ -155,9 +151,6 @@ function readPositionsForcesBlock(lines, idx, natoms) {
     positions.push([x, y, z]);
     forces.push([fx, fy, fz]);
   }
-
-  console.log(positions)
-
   return { positions, forces };
 }
 
@@ -171,9 +164,10 @@ function readSpinVectors(lines, idx, natoms) {
   const X = readSpinComponent(lines, natoms, /^\s*magnetization\s*\(x\)/i);
   const Y = readSpinComponent(lines, natoms, /^\s*magnetization\s*\(y\)/i);
   const Z = readSpinComponent(lines, natoms, /^\s*magnetization\s*\(z\)/i);
-
+  console.log(Y)
   if (X && Y && Z) {
-    return X.map((_, i) => [X[i], Y[i], Z[i]]);
+    let spinsList = X.map((_, i) => [X[i], Y[i], Z[i]])
+    return spinsList
   }
 
   if (X) {
@@ -192,16 +186,15 @@ function readSpinComponent(lines, natoms, regex) {
 
   let i = start + 2;
   let count = 0;
-
+  console.log(start, lines.length)
   while (i < lines.length && count < natoms) {
     const line = lines[i];
-
     if (/^\s*tot/i.test(line)) break;
     if (/^\s*$/i.test(line)) break;
     if (/^\s*magnetization/i.test(line)) break;
 
     const toks = parseFloats(line);
-    if (toks.length < 2) break;
+    //if (toks.length < 2) break;
 
     const idxAtom = toks[0] - 1;
     const value = toks[toks.length - 1];
@@ -213,7 +206,6 @@ function readSpinComponent(lines, natoms, regex) {
 
     i++;
   }
-
   return out;
 }
 

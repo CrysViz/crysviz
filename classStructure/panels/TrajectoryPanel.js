@@ -2,7 +2,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164/build/three.mod
 import { updateVisualization } from '../crystal-viewer.js';
 import { structureData, structureShip, fileBrowser } from '../store.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
-import { createSpinControls } from './SpinPanel.js';
+import { createSpinControls} from './SpinPanel.js';
+import { updateSpins} from '../modules/SpinModule.js';
 
 let trajectoryPlayerElements = {};
 let currentFrame = 0;
@@ -21,6 +22,7 @@ function updateStructureFromFrame(frame, container) {
 
   createBondLengthControls();
   createSpinControls();
+  updateSpins();
   updateVisualization();
 }
 

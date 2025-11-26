@@ -18,7 +18,7 @@ const tableBody = document.querySelector("#objectTable tbody");
 
 
 // import from the old file structure that need to be combined and ported to the new structure
-import { setupSecondStructureInput } from './modules/secondStructureModule.js';
+import { setupSecondStructureInput } from './modules/SecondStructureModule.js';
 import { parseOUTCAR} from './modules/ReadOutcarModule.js';
 import { parsePWSCFout} from './modules/ReadPWSCFoutModule.js'; 
 import { parsePWSCFin} from './modules/ReadPWSCFinModule.js'; 
@@ -36,7 +36,6 @@ import { animation_update} from './modules/AnimateModule.js'; // animate functio
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
 import {getBondCutoff,updateBonds} from './modules/BondsModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
-import { updateSpins} from './modules/SpinModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
 import {updateAtoms,createAtomMesh} from './modules/AtomsModule.js';
 import { parseCIF} from './modules/ReadCIFModule.js';
@@ -384,6 +383,12 @@ function loadStructure(content, fileName = '', isDefault = false) {
         parsed.positions = parsedContainer.structures[0].positions
         parsed.elements = parsedContainer.structures[0].elements
         parsed.lattice = parsedContainer.structures[0].lattice
+        parsed.spins = parsedContainer.structures[0].spins.vectors
+        parsed.forces = parsedContainer.structures[0].forces
+
+        if (parsed.spins.length != 0) {
+         createSpinControls();
+        }
         
     }
     else {
@@ -404,6 +409,8 @@ function loadStructure(content, fileName = '', isDefault = false) {
     structureData.elements  = parsed.elements  ?? null;
     structureData.lattice   = parsed.lattice   ?? null;
     structureData.supercell = parsed.supercell ?? {nx:1,ny:1,nz:1};
+    structureData.spins = parsed.spins ?? null;
+    structureData.forces = parsed.forces ?? null;
 
     console.log("after load",structureData)
 
@@ -430,13 +437,8 @@ function loadStructure(content, fileName = '', isDefault = false) {
     document.getElementById('spinControlsGroup').style.display = 'block';
 
     createBondLengthControls();
-    createSpinControls();
     createShareButton();
     updateVisualization();
-    if (spinsData != null){
-      updateSpins(1.0);
-      //populateSpinViewer();
-    }
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();
     //resetView();

@@ -1,6 +1,7 @@
 import { general } from '../store.js';
 import { addTrajectoryPlayer,removeTrajectoryPlayer} from './TrajectoryPanel.js';
 import { addLatticeComparisonPanel } from './LatticeComparisonPanel.js';
+import {removeSpins,updateSpins} from '../modules/SpinModule.js';
 
 const ControlPanelModeSwitch = document.getElementById("ControlPanelModeSwitch");
 export function addControlPanelModeSwitch() {
@@ -53,13 +54,17 @@ export function addControlPanelSpinForceSwitch() {
 
     // Handle different modes
     if (general.spinForceState == "Forces") {
-      console.log("Force selected")
+      removeSpins();
+      //updateForces();
       }
     else if (general.spinForceState == "Spins") {
-      console.log("Spins selected");
+      //removeForces();
+      console.log("updating spins")
+      updateSpins();
         }
     else {
-      console.log("None selected");
+      //removeForces
+      removeSpins();
     }
   });
 }

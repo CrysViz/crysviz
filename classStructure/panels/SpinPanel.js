@@ -92,14 +92,11 @@ export function createSpinControls(containerId = "spinControls") {
   // ----- 6 Slider live updates -----
   slider.addEventListener("input", () => {
     let val = parseFloat(slider.value);
-
     // sticky zone near 1
     if (Math.abs(val - 1) < 0.05) val = 1;
-
     slider.value = val;
     sliderValue.textContent = val.toFixed(2);
-
-    if (spinsData.length) {
+    if (structureData.spins.length) {
       updateSpins(val);
     }
   });

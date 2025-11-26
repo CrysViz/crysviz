@@ -4,6 +4,17 @@ import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped} from './LatticeModule.js'
 import { createColorPicker } from '../old_style/color-picker.js';
 
+export function removeSpins(){
+if (groups.spinGroup) {
+    groups.spinGroup.children.forEach(child => {
+      child.traverse(c => {
+        if (c.geometry) c.geometry.dispose();
+        if (c.material) c.material.dispose();
+      });
+    });
+    disposeGroup(groups.spinGroup);
+  }
+}
 export function updateSpins(spinFactor = 1) {
 
   // Dispose old spin arrows
@@ -17,31 +28,33 @@ export function updateSpins(spinFactor = 1) {
     disposeGroup(groups.spinGroup);
   }
 
-  if (spinsData === null){
+  if (structureData.spins === null){
     return;
     }
-
   groups.spinGroup = new THREE.Group();
 
   if (!structureData || !structureData.positions || !structureData.lattice) return;
 
-  // --- 1️⃣ Wrap atomic positions periodically ---
+  // Wrap atomic positions periodically
   const wrapped = periodicWrapped(structureData.positions, structureData.elements);
   const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
 
-  // --- 2️⃣ Get lattice vectors for ghost cell replication (like bonds) ---
+  // Get lattice vectors for ghost cell replication (like bonds)
   const lattice = structureData.lattice;
   const a = new THREE.Vector3(...lattice[0]);
   const b = new THREE.Vector3(...lattice[1]);
   const c = new THREE.Vector3(...lattice[2]);
 
-  // --- 3️⃣ Render arrows per atom ---
   for (let i = 0; i < wrappedCart.length; i++) {
+    console.log("in loop")
     const atomIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    const spin = spinsData.find(s => s.atomIndex === atomIndex);
-    if (!spin || !spin.vector || spin.vector.length !== 3) continue;
-
-    const { vector, scalingFactor = 1.0, color = "#000000" } = spin;
+    const vector = structureData.spins[atomIndex]
+    console.log(vector)
+    const scalingFactor = 1.0
+    const color = "#000000"
+    
+    if ( !vector || vector.length !== 3) continue;
+    console.log("Adding Spin for attom",i)
 
     const origin = new THREE.Vector3(...wrappedCart[i]);
     const dirVec = new THREE.Vector3(...vector);
@@ -74,7 +87,7 @@ export function updateSpins(spinFactor = 1) {
     );
     shaftNeg.position.set(0, -shaftLength / 4, 0);
 
-    // --- Tip (only positive direction) ---
+    //  Tip (only positive direction)
     const tipLength = 0.8;
     const tipRadius = 0.3;
     const tip = new THREE.Mesh(
@@ -83,32 +96,29 @@ export function updateSpins(spinFactor = 1) {
     );
     tip.position.set(0, shaftLength / 2 + tipLength / 2, 0);
 
-    // --- Combine into arrowGroup ---
+    // Create an arrowGroup
     const arrowGroup = new THREE.Group();
     arrowGroup.add(shaftPos);
     arrowGroup.add(shaftNeg);
     arrowGroup.add(tip);
 
-    // --- Orientation ---
     const arrowAxis = new THREE.Vector3(0, 1, 0);
     arrowGroup.quaternion.setFromUnitVectors(arrowAxis, dir);
     arrowGroup.position.copy(origin);
 
-    // --- Add to main group ---
     groups.spinGroup.add(arrowGroup);
   }
 
-  // --- 4️⃣ Add to scene ---
   app.scene.add(groups.spinGroup);
 }
 
 
 export function deleteSpins(){
     console.log("deletingSpins")
-     if (!spinsData){
+     if (!structureData.spins){
        console.warn("no spins data to delete")
        return};
-     spinsData.length = 0;
+     structureData.spins.length = 0;
      updateSpins(0.0);
      const textarea = document.getElementById("textArea");
       if (textarea) {

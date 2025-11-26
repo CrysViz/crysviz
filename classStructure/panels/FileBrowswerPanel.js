@@ -231,7 +231,8 @@ function updateStructureFromRowAndStep(rowIndex) {
   // Assign arrays (make copies to avoid mutating original)
   structureData.positions = [...selectedStructure.positions];
   structureData.elements = [...selectedStructure.elements];
-  //structureData.spin= [...selectedStructure.spins];
+  structureData.spins= [...selectedStructure.spins.vectors];
+  console.log("structureData.spins",structureData.spins)
   //structureData.forces = [...selectedStructure.forces];
   //structureData.stress =  selectedStructure.stress.map(r => [...r]);
   structureData.lattice = selectedStructure.lattice.map(r => [...r]);

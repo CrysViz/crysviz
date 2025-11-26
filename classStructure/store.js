@@ -89,7 +89,7 @@ export const general = {
   showSecond:false,
   showComparisonInfo:false,
   showNeighborBonds:false, // Periodic image atoms + bonds across cell (off by default)
-  playerModeStata: "none", 
+  playerModeState: "none", 
   spinForceState: "none",
   backendState:"none",
   currentSupercell: null,
