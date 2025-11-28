@@ -38,30 +38,32 @@ body {
   --hover-color: rgba(18, 141, 204,0.2);
   --border-color: rgba(17, 71, 129, 0.5);
 }
-
 :root {
-  --panel-content-width: 380px; /* Panel content width */
-  --panel-border-width: 1px; /* Panel border width */
-  --panel-total-width: calc(var(--panel-content-width) + var(--panel-border-width)); /* Complete panel width */
-
-  /* Legacy variable for compatibility */
-  --drawer-width: var(--panel-total-width);
+  --ui-width: 380px;      /* Panel content width */
+  --ui-border: 1px;       /* Panel border width */
+  --ui-padding: 20px;     /* Panel padding */
+  
+  /* Correct total width calculation */
+  --ui-total-width: calc(var(--ui-width) + 2 * var(--ui-border) + 2 * var(--ui-padding));
 
   /* Gizmo positioning variables */
   --gizmo-size: 90px;
   --gizmo-bottom: 20px;
-  --gizmo-left: 430px;
+  --gizmo-left: calc(var(--ui-total-width) + 10px); /* Panel width + gap */
+  --camera-tools-left: calc(var(--ui-total-width) + 10px);
+  --popup-left: calc(var(--ui-total-width) + 10px);
 }
-
 #ui {
   height: 98dvh;
-  min-width: 300px;
+  min-width: var(--ui-width);
+  width:var(--ui-width);
+  max-width:var(--ui-width)
   overflow: auto;
-  padding: 20px;
+  padding: var(--ui-padding);
   background: rgba(26, 26, 26, 0.95);
   color: #fff;
   backdrop-filter: blur(20px);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: var(--ui-border) solid rgba(255, 255, 255, 0.1);
 }
 
 /* Desktop panel hide state */
@@ -1197,7 +1199,7 @@ z-index:1000; pointer-events:none;
 /* --- Camera Tools (Desktop: Top Left beside panel, Fullscreen: aligned with hamburger) --- */
 #cameraTools {
   position: fixed;
-  left: 430px;  /* Default: beside panel */
+  left: var(--camera-tools-left);  /* Default: beside panel */
   top: 20px;
   display: flex;
   gap: 8px;
