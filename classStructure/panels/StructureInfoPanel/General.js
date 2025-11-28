@@ -715,6 +715,7 @@ export function renderComposition() {
   const addButtonsRow = document.createElement('div');
   addButtonsRow.style.cssText = 'display: flex; align-items: center; gap: 4px;';
   const addAtomButton = document.createElement('button');
+  addAtomButton.id = 'addButton';
   addAtomButton.innerHTML = '+';               // icon only
   addAtomButton.className = 'btn-mini highlight';
   addAtomButton.style.cssText = `

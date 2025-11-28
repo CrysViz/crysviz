@@ -359,6 +359,25 @@ body.panel-hidden #axesLegend {
   box-shadow: 0 8px 18px var(--highlight-color);
 }
 
+#saveButton {
+  margin-top: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  background: var( --bg-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#saveButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px var(--highlight-color);
+}
+
 .comparison-group {
   backdrop-filter: blur(10px);
 }
@@ -1102,7 +1121,7 @@ justify-content: center;
 .btn-mini:hover { background:rgba(255,255,255,0.02); }
 .btn-mini:focus { outline:3px solid rgba(100,180,240,0.18); }
 
-.btn-mini.highlight { background:var(--bg-color); border-color:rgba(0,0,0,0.15); color:#fff; box-shadow:0 6px 14px rgba(10,100,160,0.18); }
+.btn-mini.highlight { background:var(--bg-color); border-color:rgba(0,0,0,0.15); color:#fff; }
 .btn-mini.highlight:hover { filter:brightness(1.03); }
 .btn-mini.highlight:focus { outline:3px solid var(--accent-color);}
 

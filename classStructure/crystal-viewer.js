@@ -49,6 +49,8 @@ import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMea
 
 import {HighlightAtom,clearHighlightAtom,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
 
+import {addVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
+
 // .........................................................................................................
 // Import Panels
 //
@@ -67,6 +69,8 @@ import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
 import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch} from './panels/ControlPanel.js';
 
 import {addBackendModeSwitch} from './panels/BackendPanel/BackendSwitchPanel.js';
+
+import {addSavePanel} from '././panels/SavePanel.js'
 
 
 // .........................................................................................................
@@ -279,6 +283,7 @@ function updateOther() {
 
   recomputeLatticeDirs();
   updateAllMeasurements();
+  addVacuumPanel();
 }
 
 
@@ -1260,6 +1265,8 @@ function setupMobileMenu() {
   addControlPanelModeSwitch();
   addControlPanelSpinForceSwitch();
   addBackendModeSwitch();
+  addSavePanel();
+  addVacuumPanel();
   const errorPanel = document.getElementById("errorPanel");
 
   // Add viewport meta tag if not present for proper mobile scaling

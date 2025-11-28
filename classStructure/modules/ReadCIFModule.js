@@ -244,7 +244,7 @@ export function parseCIF(content,fileName) {
  * @param {number} tol - fractional tolerance for duplicate detection
  * @returns {Object} { positions: [], elements: [] }
  */
-function dedupPositions(positions, elements, tol = 5e-2) {
+function dedupPositions(positions, elements, tol = 1e-3) {
   const outPos = [];
   const outElm = [];
 
