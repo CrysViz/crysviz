@@ -1,5 +1,7 @@
 import {StructureShip} from './classes/StructureShip.js'
 
+export const bondLengths = {}
+
 export const fileBrowser = { 
   fileData:[],
   selectedRow:null, 
@@ -91,6 +93,7 @@ export const general = {
   showNeighborBonds:false, // Periodic image atoms + bonds across cell (off by default)
   playerModeState: "none", 
   spinForceState: "none",
+  analysisState:"none",
   backendState:"none",
   currentSupercell: null,
   modifiedLattice: null, // this needs to be part of the structure object 

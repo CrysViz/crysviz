@@ -1,10 +1,11 @@
 .segmented-control {
-  display: block ruby;
+  display: flex;
   background: rgba(25,25,25,0.8);
   padding: 8px;
   border-radius: 10px;
   gap: 4px;
   margin-bottom: 10px;
+  justify-content: center;
 }
 
 .segmented-control button {
@@ -16,7 +17,7 @@
   font-size: 12px;
   cursor: pointer;
   font-weight: 500;
-  min-width:100px;
+  min-width:70px;
 }
 
 .segmented-control button.active {

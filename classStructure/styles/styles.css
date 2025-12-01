@@ -57,7 +57,7 @@ body {
   height: 98dvh;
   min-width: var(--ui-width);
   width:var(--ui-width);
-  max-width:var(--ui-width)
+  max-width:var(--ui-width);
   overflow: auto;
   padding: var(--ui-padding);
   background: rgba(26, 26, 26, 0.95);

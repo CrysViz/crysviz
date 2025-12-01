@@ -50,6 +50,7 @@ import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMea
 import {HighlightAtom,clearHighlightAtom,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
 
 import {addVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
+//import {addAtomPanel} from './modules/addToStructureModule/addAtomPanel.js'
 
 // .........................................................................................................
 // Import Panels
@@ -66,8 +67,8 @@ import { addLatticeComparisonPanel }from './panels/LatticeComparisonPanel.js'
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
 import {createCompositionRow,renderComposition} from './panels/StructureInfoPanel/General.js';
 import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
-import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch} from './panels/ControlPanel.js';
-
+import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch} from './panels/ControlPanel.js';
+import {addHistogramPanel} from  './panels/AnalysisPanels/BondAnalysisPanel.js';
 import {addBackendModeSwitch} from './panels/BackendPanel/BackendSwitchPanel.js';
 
 import {addSavePanel} from '././panels/SavePanel.js'
@@ -1267,6 +1268,8 @@ function setupMobileMenu() {
   addBackendModeSwitch();
   addSavePanel();
   addVacuumPanel();
+  addControlPanelAnalysisSwitch()
+  //addAtomPanel();
   const errorPanel = document.getElementById("errorPanel");
 
   // Add viewport meta tag if not present for proper mobile scaling

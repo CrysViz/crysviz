@@ -1,7 +1,10 @@
-import { general } from '../store.js';
+import { general,bondLengths} from '../store.js';
 import { addTrajectoryPlayer,removeTrajectoryPlayer} from './TrajectoryPanel.js';
 import { addLatticeComparisonPanel } from './LatticeComparisonPanel.js';
-import {removeSpins,updateSpins} from '../modules/SpinModule.js';
+import { removeSpins,updateSpins } from '../modules/SpinModule.js';
+import { addHistogramPanel,removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
+
+
 
 const ControlPanelModeSwitch = document.getElementById("ControlPanelModeSwitch");
 export function addControlPanelModeSwitch() {
@@ -69,6 +72,41 @@ export function addControlPanelSpinForceSwitch() {
   });
 }
 
+const ControlPanelAnalysisSwitch = document.getElementById("ControlPanelAnalysisSwitch");
+export function addControlPanelAnalysisSwitch() {
+  ControlPanelAnalysisSwitch.addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn || !btn.dataset.mode) return;
+
+    const mode = btn.dataset.mode;
+    general.analysisState = mode;
+
+    // Update UI
+    ControlPanelAnalysisSwitch.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    // Handle different modes
+    if (general.analysisState == "Lattice") {
+      console.warn("Lattice analysis not yet implemented!")
+      removeHistogramPanel()
+    }
+    else if (general.analysisState == "Bonds") {
+      const dataArrays = Object.values(bondLengths);
+      const labelsArray = Object.keys(bondLengths);
+      console.log(dataArrays)
+      console.log(labelsArray)
+      addHistogramPanel(dataArrays, labelsArray)
+     }
+    else if (general.analysisState == "TBD") {
+      console.warn("TBD analysis not yet implemented!")
+      removeHistogramPanel()
+    }
+    else {
+      removeHistogramPanel()
+    }
+  });
+}
+
 
 export function resetSwitch(switchContainer, stateKey, defaultMode = "None") {
   // Update internal state
@@ -99,3 +137,6 @@ export function resetModeSwitch() {
   resetSwitch(ControlPanelModeSwitch, "modeState", "None");
   removeTrajectoryPlayer();
 }
+
+
+

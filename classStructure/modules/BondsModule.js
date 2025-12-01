@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import { bondLengths, app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
@@ -13,6 +13,7 @@ import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getEl
 
 
 export function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2,opacity=1.0) {
+  const key = `${elem1}-${elem2}`;
 
   function getAtomRadius(element) {
     return (atomicRadii[element] || 1.0) * general.atomSize;
@@ -32,6 +33,10 @@ export function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2,opac
   const isVisible = general.bondVisibility[pair1] !== false && general.bondVisibility[pair2] !== false;
 
   if (!isVisible) return null;
+  if (!(key in bondLengths)) {
+    bondLengths[key] = [];
+  }
+  bondLengths[key].push(dist)
 
   const direction = new THREE.Vector3().subVectors(p2, p1);
   const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
@@ -86,6 +91,9 @@ export function updateBonds() {
 
   if (!general.showBonds) return;
 
+  for (const key in bondLengths) {
+    delete bondLengths[key];
+   }
   const wrapped = periodicWrapped(structureData.positions, structureData.elements);
   const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
 
