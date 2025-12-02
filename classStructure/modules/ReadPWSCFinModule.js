@@ -1,4 +1,5 @@
 import { Structure } from "../classes/Structure.js";
+import { Atom } from "../classes/Atom.js";
 import { StructureContainer } from "../classes/StructureContainer.js";
 import { fileBrowser } from '../store.js';
 import { createRow,selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
@@ -81,12 +82,23 @@ export function parsePWSCFin(content, fileName) {
   // ----------------------
   // Build structure
   // ----------------------
-  const structures = [
-    new Structure({
-      elements: elements,
-      uniqueElements: [...new Set(elements)],
-      lattice: lattice,
-      positions: positions
+  //
+  const atoms = [];
+    positions.forEach((pos, i) => {
+    atoms.push(new Atom({
+      position: pos,
+      element: elements[i]
+    }));
+  });
+
+  
+  const structures = [new Structure({
+    elements:elements,
+    uniqueElements: [...new Set(elements)],
+    lattice:lattice,
+    atoms:atoms,
+    spins:[],
+    forces:[]
     })
   ];
 
@@ -99,8 +111,8 @@ export function parsePWSCFin(content, fileName) {
   selectLastAddedRow();
 
   let container = new StructureContainer({
-    fileName,
-    structures,
+    fileName:fileName,
+    structures:structures,
   });
 
   return container;

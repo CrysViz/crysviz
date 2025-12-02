@@ -4,6 +4,7 @@ const ALEXANDRIA_OPTIMADE_BASE = 'https://alexandria.icams.rub.de/pbe/v1/structu
 
 import { StructureContainer } from '../classes/StructureContainer.js';
 import { Structure } from '../classes/Structure.js';
+import { Atom } from '../classes/Atom.js';
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser} from '../store.js';
 import {createRow,selectLastAddedRow} from '../panels/FileBrowswerPanel.js'
@@ -156,11 +157,21 @@ export function parsePOSCAR(content,fileName) {
     : positionsRaw
   ).map(pos => pos.map(normalizeFractional));
 
+  const atoms = [];
+
+  positions.forEach((pos, i) => {
+    atoms.push(new Atom({
+      position: pos,
+      element: elements[i]
+    }));
+  });
+ 
+
   const structure = new Structure({
     elements:elements,
     uniqueElements: elementLine,
     lattice:lattice,
-    positions:positions,
+    atoms:atoms,
   });
 
    let traj = 1

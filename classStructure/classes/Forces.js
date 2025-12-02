@@ -6,6 +6,8 @@ export class Forces extends ColoredObject {
     this.vectors = vectors;   // 3×N
     this.scaling = scaling; // N
     this.forcesGroup = forcesGroup;
+    this.colors=colors;
+    this.defaultColors=defaultColors;
   }
 
   get N() {

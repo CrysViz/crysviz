@@ -22,6 +22,7 @@ import {createRow,selectLastAddedRow} from '../panels/FileBrowswerPanel.js'
 import { StructureContainer } from "../classes/StructureContainer.js";
 import { Structure } from "../classes/Structure.js";
 import { Spin } from "../classes/Spin.js";
+import { Atom } from "../classes/Atom.js";
 import { Forces } from "../classes/Forces.js";
 
 // ------------------------------------------------------------
@@ -50,12 +51,20 @@ export function parseOUTCAR(content,fileName) {
 
     // --- convert positions to fractional
     const frac = convertCartesianToFractional(step.positions, lattice);
+    const atoms = [];
+    frac.forEach((pos, i) => {
+        atoms.push(new Atom({
+        position: pos,
+        element: elements[i]
+       }))
+      });
+
     structures.push(
       new Structure({
         elements,
         uniqueElements,
         lattice,
-        positions: frac,               // fractional = used by your viewer
+        atoms: atoms,               // fractional = used by your viewer
         spins:new Spin({vectors:[...step.spins]}),
         forces:new Forces({vectors:[...step.forces]})
         //positions_cartesian: step.positions // keep working behavior

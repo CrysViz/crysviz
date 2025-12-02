@@ -354,7 +354,7 @@ function loadStructure(content, fileName = '', isDefault = false) {
       let parsedContainer = parseCIF(contentString,fileName);
       console.log(parsedContainer)
       structureShip.container.push(parsedContainer)
-      parsed.positions = parsedContainer.structures[0].positions
+      parsed.positions = parsedContainer.structures[0].atoms.map(a => a.position);
       parsed.elements = parsedContainer.structures[0].elements
       parsed.lattice = parsedContainer.structures[0].lattice
 
@@ -363,9 +363,8 @@ function loadStructure(content, fileName = '', isDefault = false) {
    else if (treatAsPWSCFin) {
         console.log("This is probably a QE input file");
         let parsedContainer = parsePWSCFin(content,fileName);
-        console.log(parsedContainer)
         structureShip.container.push(parsedContainer)
-        parsed.positions = parsedContainer.structures[0].positions
+        parsed.positions = parsedContainer.structures[0].atoms.map(a => a.position);
         parsed.elements = parsedContainer.structures[0].elements
         parsed.lattice = parsedContainer.structures[0].lattice
 
@@ -376,7 +375,7 @@ function loadStructure(content, fileName = '', isDefault = false) {
         let parsedContainer = parsePWSCFout(content,fileName);
         console.log(parsedContainer)
         structureShip.container.push(parsedContainer)
-        parsed.positions = parsedContainer.structures[0].positions
+        parsed.positions = parsedContainer.structures[0].atoms.map(a => a.position);
         parsed.elements = parsedContainer.structures[0].elements
         parsed.lattice = parsedContainer.structures[0].lattice
 
@@ -386,11 +385,12 @@ function loadStructure(content, fileName = '', isDefault = false) {
         console.log("This is probably an OUTCAR file");
         let parsedContainer = parseOUTCAR(contentString,fileName);
         structureShip.container.push(parsedContainer)
-        parsed.positions = parsedContainer.structures[0].positions
+
+        parsed.positions = parsedContainer.structures[0].atoms.map(a => a.position);
         parsed.elements = parsedContainer.structures[0].elements
         parsed.lattice = parsedContainer.structures[0].lattice
-        parsed.spins = parsedContainer.structures[0].spins.vectors
-        parsed.forces = parsedContainer.structures[0].forces
+        parsed.spins = parsedContainer.structures[0].spins.vectors ?? null; 
+        parsed.forces = parsedContainer.structures[0].forces ?? null;
 
         if (parsed.spins.length != 0) {
          createSpinControls();
@@ -402,10 +402,9 @@ function loadStructure(content, fileName = '', isDefault = false) {
       let parsedContainer = parsePOSCAR(contentString,fileName);
 
       structureShip.container.push(parsedContainer)
-      
-      parsed.positions = parsedContainer.structures[0].positions
       parsed.elements = parsedContainer.structures[0].elements
       parsed.lattice = parsedContainer.structures[0].lattice
+      parsed.positions = parsedContainer.structures[0].atoms.map(a => a.position);
     }
 
   // Ensure the fields exist and are the right typed arrays

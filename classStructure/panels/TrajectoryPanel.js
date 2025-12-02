@@ -16,7 +16,7 @@ function updateStructureFromFrame(frame, container) {
   if (!container || frame < 0 || frame >= container.structures.length) return;
 
   const selectedStructure = container.structures[frame];
-  structureData.positions = [...selectedStructure.positions];
+  structureData.positions = selectedStructure.atoms.map(a => a.position)
   structureData.elements = [...selectedStructure.elements];
   structureData.lattice = selectedStructure.lattice.map(r => [...r]);
 

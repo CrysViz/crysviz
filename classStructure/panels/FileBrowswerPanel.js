@@ -229,7 +229,7 @@ function updateStructureFromRowAndStep(rowIndex) {
   const selectedStructure = container.structures[step];
 
   // Assign arrays (make copies to avoid mutating original)
-  structureData.positions = [...selectedStructure.positions];
+  structureData.positions = selectedStructure.atoms.map(a => a.position);
   structureData.elements = [...selectedStructure.elements];
   structureData.lattice = selectedStructure.lattice.map(r => [...r]);
   if (selectedStructure.spins != null) {

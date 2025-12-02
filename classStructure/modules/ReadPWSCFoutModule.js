@@ -1,4 +1,5 @@
 import { Structure } from "../classes/Structure.js";
+import { Atom } from "../classes/Atom.js";
 import { StructureContainer } from "../classes/StructureContainer.js";
 const tableBody = document.querySelector("#objectTable tbody");
 import { fileBrowser } from "../store.js";
@@ -233,15 +234,27 @@ export function parsePWSCFout(content, fileName) {
   // -----------------------------
   // Convert to Structure objects
   // -----------------------------
-  const structures = steps.map(s =>
-    new Structure({
-      elements: s.elements,
-      uniqueElements: [...new Set(s.elements)],
-      lattice: s.lattice,
-      positions: s.positionsFrac,
-      positions_cartesian: null
-    })
-  );
+  //
+  const structures = steps.map(s => {
+  const atoms = [];
+
+  s.positionsFrac.forEach((pos, i) => {
+    atoms.push(
+      new Atom({
+        position: pos,
+        element: s.elements[i]  // use s.elements here
+      })
+    );
+  });
+
+  return new Structure({
+    elements: s.elements,
+    uniqueElements: [...new Set(s.elements)],
+    lattice: s.lattice,
+    atoms: atoms,
+  });
+});
+
 
   const forceObjects = steps.map(s => ({ forces: s.forces }));
   const stressObjects = steps.map(s => ({ stressMatrix: s.stressMatrix }));
