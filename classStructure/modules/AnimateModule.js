@@ -8,8 +8,27 @@ import { app, general,mode} from '../store.js';
 import {updateLattice,recomputeLatticeDirs,latticeDirsNorm} from './LatticeModule.js'
 
 
+let isRendering = true;
+
+export function pauseRendering() {
+  isRendering = false;
+  console.warn("pause rendering")
+}
+
+export function resumeRendering() {
+  if (!isRendering) {
+    console.warn("resume rendering")
+    isRendering = true;
+    animation_update(); // restart loop
+  }
+}
+
+
+
 let _counter = 1;
 export function animation_update() {
+  if (!isRendering) return;
+
   requestAnimationFrame(animation_update);
   app.controls.update();
   //if (_counter%60 === 0 || _counter=== 1) {

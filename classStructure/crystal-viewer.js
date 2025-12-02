@@ -32,7 +32,7 @@ import { setupStructureInput, isLikelyCIFContent, parsePOSCAR} from './modules/S
 // .........................................................................................................
 import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleControl.js';
 import { createColorPicker } from './modules/ColorPickerModule.js';
-import { animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames. 
+import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames. 
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
 import {getBondCutoff,updateBonds} from './modules/BondsModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
@@ -1196,8 +1196,14 @@ function clearLongPress() {
   console.log("Loading structure...")
   // Load default structure after everything is initialized
   loadDefaultStructure();
-  
 
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      pauseRendering();   // window/tab not visible
+    } else {
+      resumeRendering();  // window/tab active again
+    }
+  });
   animation_update();
   }
   window.addEventListener('resize', () => resizeRenderer(app.orthographicFrustumSize));
