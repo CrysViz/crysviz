@@ -1,8 +1,8 @@
 // ReadCubeModule.js
 // Parser for Gaussian .cube volumetric files + Marching Cubes isosurface extraction
 // Exports: readCubeFile(), updateField()
-
-import * as THREE from "three";
+//
+import * as THREE from '../backend/three/three.module.js';
 
 //------------------------------------------------------------
 //  Periodic table (lookup table for cube files as it contains 

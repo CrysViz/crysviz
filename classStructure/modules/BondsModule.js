@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../backend/three/three.module.js';
 import { bondLengths, app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 
 

@@ -1,7 +1,5 @@
-import * as THREE from 'three';
-import { ConvexGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/ConvexGeometry.js';
-import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
 
+import * as THREE from '../backend/three/three.module.js';
 
 import {updateAngleDisplays} from './cameraAngleControl.js';
 import { app, general,mode} from '../store.js';
@@ -11,25 +9,61 @@ import {updateLattice,recomputeLatticeDirs,latticeDirsNorm} from './LatticeModul
 let isRendering = true;
 
 export function pauseRendering() {
-  isRendering = false;
-  console.warn("pause rendering")
+  if (!general.powerMode) {
+    let now = getCurrentTime()
+    alert("Power saving mode is active. Click OK to resume rendering.");
+    isRendering = false;
+    //console.warn(`pause rendering1 ${now}`)
+  }
+  else{
+    return;
+  }
 }
 
 export function resumeRendering() {
   if (!isRendering) {
-    console.warn("resume rendering")
+    let now = getCurrentTime()
     isRendering = true;
+    console.warn(`pause rendering ${now}`)
     animation_update(); // restart loop
   }
 }
 
+function getCurrentTime() {
+  const now = new Date();
+  const hours = now.getHours().toString().padStart(2, '0');
+  const minutes = now.getMinutes().toString().padStart(2, '0');
+  const seconds = now.getSeconds().toString().padStart(2, '0');
 
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+let targetFPS = 80;           // desired max FPS
+let lastFrameTime = 0;
+let lastTime = performance.now();
+let frames = 0;
+let fps = 0;
 
 let _counter = 1;
-export function animation_update() {
-  if (!isRendering) return;
+export function animation_update(time = 0) {
 
+  if (!isRendering) return;
   requestAnimationFrame(animation_update);
+  const interval = 1000 / targetFPS;
+  if (time - lastFrameTime < interval) return;
+  lastFrameTime = time;
+
+
+
+  frames++;
+  const delta = time - lastTime;
+  if (delta >= 1000) { // every 1 second
+    fps = (frames / delta) * 1000;
+    console.log('FPS:', Math.round(fps));
+    frames = 0;
+    lastTime = time;
+  }
+
   app.controls.update();
   //if (_counter%60 === 0 || _counter=== 1) {
   //  console.log('[animate] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);

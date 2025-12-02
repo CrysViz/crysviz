@@ -1,8 +1,7 @@
-import * as THREE from 'three';
+import * as THREE from '../backend/three/three.module.js';
 import { measurements,app, groups, general,spinsData, structureData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js';
 import {periodicWrapped} from './LatticeModule.js';
-import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
 
 
 let measureLabel = null;

@@ -1,4 +1,3 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164/build/three.module.js';
 import { updateVisualization } from '../crystal-viewer.js';
 import { structureData, structureShip, fileBrowser } from '../store.js';
 import { createBondLengthControls } from './BondLengthPanel.js';

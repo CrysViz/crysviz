@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../backend/three/three.module.js';
 import { app, groups, general,structureData, mode, atomicRadii,getLatticeVisSettings} from '../store.js';
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'

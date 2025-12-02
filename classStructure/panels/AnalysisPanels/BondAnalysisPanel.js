@@ -93,7 +93,7 @@ export function addHistogramPanel(datasets, labels = [], xAxisLabel="Bond length
 
           <div style="display:flex; align-items:center; gap:6px;">
             <label for="maxSlider" style="width:70px; text-align:right;">Max Dist:</label>
-            <input type="range" id="maxSlider" min="2" max="6" value="3" style="flex:1;">
+            <input type="range" id="maxSlider" min="2" max="8" value="6" style="flex:1;">
             <span id="maxValLabel" style="min-width:30px; text-align:right;">6</span>
           </div>
 

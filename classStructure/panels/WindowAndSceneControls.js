@@ -1,8 +1,6 @@
-import * as THREE from 'three';
-import { ConvexGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/ConvexGeometry.js';
-import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
-import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-import { TrackballControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/TrackballControls.js';
+import * as THREE from '../backend/three/three.module.js';
+import { CSS2DRenderer, CSS2DObject } from '../backend/three/CSS2DRenderer.js';
+import { TrackballControls } from '../backend/three/TrackballControls.js';
 import { app } from '../store.js';
 import { updateAngleDisplays, setupAxisControls} from '../modules/cameraAngleControl.js';
 import { getCellCenterAndDist} from '../modules/LatticeModule.js'

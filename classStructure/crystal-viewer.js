@@ -1,7 +1,5 @@
 // external  imports
-import * as THREE from 'three';
-import { ConvexGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/ConvexGeometry.js';
-import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
+import * as THREE from './backend/three/three.module.js';
 // .........................................................................................................
 // store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
 //
@@ -1197,13 +1195,15 @@ function clearLongPress() {
   // Load default structure after everything is initialized
   loadDefaultStructure();
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      pauseRendering();   // window/tab not visible
-    } else {
-      resumeRendering();  // window/tab active again
-    }
-  });
+  function handleVisibilityChange() {
+  if (document.hidden) pauseRendering();
+    else resumeRendering();
+  }
+
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('blur', pauseRendering);
+  window.addEventListener('focus', resumeRendering);
+
   animation_update();
   }
   window.addEventListener('resize', () => resizeRenderer(app.orthographicFrustumSize));
