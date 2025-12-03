@@ -2,6 +2,10 @@ import { general } from '../../store.js';
 import {addBackendCalcPanel,removeBackendCalcPanel} from './BackendCalculator.js';
 import {addBackendRelaxPanel,removeBackendRelaxPanel} from './BackendRelaxer.js';
 
+
+
+import {addMoyoPanel} from './MoyoWASM.js'; 
+
 const BackendModeSwitch = document.getElementById("BackendModeSwitch");
 
 export function addErrorPanel(message="Default") {
@@ -105,22 +109,12 @@ export function addBackendModeSwitch() {
     });
 
     if (mode === "symmetry") {
-      showWarning(`Using symmetry mode will start a Python backend.\nSome data will temporarily be stored on our server!\n <a href="https://github.com/ftrybel/CrysViz_hot_develop/" target="_blank">Learn more</a>`)
-        .then(result => {
-          if (result === "accept") {
             btn.classList.add("symmetry");
             general.backendState = "symmetry";
             setTheme("symmetry");
-            addBackendCalcPanel();
-          } else {
-            general.backendState = "none";
-            setTheme("standard")
-            resetSwitch();
-          }
-          console.log("Backend state:", general.backendState);
-        });
-
-    } else if (mode === "ai") {
+            addMoyoPanel();
+        }
+    else if (mode === "ai") {
         showWarning(`Using AI mode will start a Python backend.\nSome data will temporarily be stored on our server!\n <a href="https://github.com/ftrybel/CrysViz_hot_develop/" targe    t="_blank">Learn more</a>`)
         .then(result => {
           if (result === "accept") {

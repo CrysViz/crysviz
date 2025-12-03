@@ -8,6 +8,7 @@ import {structureData,structureShip,fileBrowser} from '../../store.js'
 import { Structure } from "../../classes/Structure.js";
 import { StructureContainer } from "../../classes/StructureContainer.js";
 import { Forces } from "../../classes/Forces.js";
+import { Atom } from "../../classes/Atom.js";
 import { Stress } from "../../classes/Stress.js";
 let socket = null;
 let backendConnected = false
@@ -100,11 +101,19 @@ export function connectBackend() {
         document.getElementById("calcResult").textContent = data.log
         let newTraj = structureShip.container[fileBrowser.selectedRowIndex].structures.length+ data.result.positions.length
         for (let i = 0; i < data.result.positions.length; i++) {
+           let atoms = []
+           data.result.position[i].forEach((pos, i) => {
+                 atoms.push(new Atom({
+                 position: pos,
+                 element: structureData.elements,
+                 }))
+               });
            let structure = new Structure({
                elements:structureData.elements,
                uniqueElements: [...new Set(structureData.elements)],
                lattice:data.result.lattices[i],
                positions:data.result.positions[i],
+               atoms: atoms,
                forces:new Forces({vectors: data.result.forces[i]}),
                stress:new Stress({tensor: convertStressEvA3ToGPa(data.result.stresses[i])}),
            })
