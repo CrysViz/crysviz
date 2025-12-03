@@ -73,13 +73,24 @@ export async function addMoyoPanel() {
     panel.innerHTML = "";
 
     panel.innerHTML = `
-        <h2>Analyse Symmetry with Moyo</h2>
+    <div id="panel">
+  <h2>Analyse Symmetry with Moyo</h2>
 
-        <button class="calcBtn" id="getSymBtn">Get Symmmetry Info</button>
-        <button class="calcBtn" id="getPrimBtn">Sym. Prim. Cell</button>
-        <button class="calcBtn" id="getConvBtn">Sym. Conv. Cell</button>
+  <div style="margin-bottom: 1em;">
+    <p>Get symmetry information:</p>
+    <button class="calcButton" id="getSymBtn">Get Symmetry Info</button>
+  </div>
 
-        <p id="calcResult"></p>
+  <div style="margin-bottom: 1em;">
+    <p>Symmetrize cell:</p>
+    <div style="display: flex; gap: 0.5em;">
+      <button class="calcButton" id="getPrimBtn">Prim. Cell</button>
+      <button class="calcButton" id="getConvBtn">Conv. Cell</button>
+    </div>
+  </div>
+
+  <p id="calcResult" style="margin-top: 1em; font-weight: bold;"></p>
+</div>
     `;
 
     document.getElementById("getSymBtn").onclick = () => {
@@ -90,11 +101,13 @@ export async function addMoyoPanel() {
 
     document.getElementById("getConvBtn").onclick = () => {
       let result = callMoyo("getConvUnit", 1e-5);
+      calcResult.textContent =`${result.spg_symbol} (${result.spg_number}): ${result.wyckoffs}`
       newContainerFromSymmetrisation("conv",result.positions,result.lattice,result.elements)
     }
 
     document.getElementById("getPrimBtn").onclick = () => {
       let result = callMoyo("getPrimUnit", 1e-5);
+      calcResult.textContent =`${result.spg_symbol} (${result.spg_number}): ${result.wyckoffs}`
       newContainerFromSymmetrisation("prim",result.positions,result.lattice,result.elements)
     }
 }
@@ -117,7 +130,7 @@ function callMoyo(calcType="getSymmetryInfo", tolerance="1e-5") {
         flat.slice(6, 9)
       ];
       let elements = result.prim_std_cell.numbers.map(el => PT[el]);
-      return {lattice:lattice3x3, positions:result.prim_std_cell.positions, elements:elements};
+      return {lattice:lattice3x3, positions:result.prim_std_cell.positions, elements:elements,spg_symbol:result.hm_symbol, spg_number:result.number, wyckoffs: result.wyckoffs.join(', ')};
   }
   else if (calcType === "getConvUnit"){
       const flat = result.prim_std_cell.lattice.basis;
@@ -127,7 +140,7 @@ function callMoyo(calcType="getSymmetryInfo", tolerance="1e-5") {
         flat.slice(6, 9)
       ];
       let elements = result.prim_std_cell.numbers.map(el => PT[el]);
-      return {lattice:lattice3x3, positions:result.std_cell.positions, elements:elements};
+      return {lattice:lattice3x3, positions:result.std_cell.positions, elements:elements,spg_symbol:result.hm_symbol, spg_number:result.number, wyckoffs: result.wyckoffs.join(', ')};
   }
   else {
       console.warn("Unknown calculation type!");
