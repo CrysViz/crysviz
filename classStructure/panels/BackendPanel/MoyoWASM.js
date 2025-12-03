@@ -135,13 +135,13 @@ function callMoyo(calcType="getSymmetryInfo", tolerance="1e-5") {
       return {lattice:lattice3x3, positions:result.prim_std_cell.positions, elements:elements,spg_symbol:result.hm_symbol, spg_number:result.number, wyckoffs: result.wyckoffs.join(', ')};
   }
   else if (calcType === "getConvUnit"){
-      const flat = result.prim_std_cell.lattice.basis;
+      const flat = result.std_cell.lattice.basis;
       const lattice3x3 = [
         flat.slice(0, 3),
         flat.slice(3, 6),
         flat.slice(6, 9)
       ];
-      let elements = result.prim_std_cell.numbers.map(el => PT[el]);
+      let elements = result.std_cell.numbers.map(el => PT[el]);
       return {lattice:lattice3x3, positions:result.std_cell.positions, elements:elements,spg_symbol:result.hm_symbol, spg_number:result.number, wyckoffs: result.wyckoffs.join(', ')};
   }
   else {

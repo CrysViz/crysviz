@@ -11,7 +11,7 @@ export class Atom extends ColoredComponent {
     // Call parent constructor
     super({ color, defaultColor });
     // Mutable instance properties
-    this.position = position;   // 3×1
+    this.position = position.map(c => ((c % 1) + 1) % 1);;   // 3×1
     const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
     this.defaultColor = null;
     this.defaultColor = colorScheme[element] || 0x808080;

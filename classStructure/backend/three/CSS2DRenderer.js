@@ -3,7 +3,7 @@ import {
 	Object3D,
 	Vector2,
 	Vector3
-} from 'three';
+} from './three.module.js';
 
 /**
  * The only type of 3D object that is supported by {@link CSS2DRenderer}.
