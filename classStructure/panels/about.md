@@ -47,4 +47,4 @@ This project is under very active delevopment and at best in an early beta phase
 - [Three.js](https://threejs.org/) for the WebGL rendering pipeline.
 - [OPTIMADE](https://www.optimade.org/) compatible structure providers including Materials Project and Alexandria.
 - Structural relaxation are running [MACE-MP](https://github.com/ACEsuit/mace-foundations) models
-- Symmetry analysis is based on [spglib](https://github.com/spglib/spglib)
+- Symmetry analysis is based on [moyo](https://github.com/spglib/moyo)

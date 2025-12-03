@@ -74,8 +74,10 @@ export async function addMoyoPanel() {
 
     panel.innerHTML = `
     <div id="panel">
-  <h2>Analyse Symmetry with Moyo</h2>
-
+<div style="margin-bottom: 1em; text-align: center;">
+  <h2 style="margin: 0;">Analyse Symmetry with Moyo</h2>
+  <p style="margin: 0;">(Data stays on your device!)</p>
+</div>
   <div style="margin-bottom: 1em;">
     <p>Get symmetry information:</p>
     <button class="calcButton" id="getSymBtn">Get Symmetry Info</button>
