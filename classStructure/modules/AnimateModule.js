@@ -13,7 +13,7 @@ export function pauseRendering() {
     let now = getCurrentTime()
     alert("Power saving mode is active. Click OK to resume rendering.");
     isRendering = false;
-    //console.warn(`pause rendering1 ${now}`)
+    console.warn(`Pause rendering ${now}`)
   }
   else{
     return;
@@ -24,7 +24,7 @@ export function resumeRendering() {
   if (!isRendering) {
     let now = getCurrentTime()
     isRendering = true;
-    console.warn(`pause rendering ${now}`)
+    console.warn(`Resume rendering ${now}`)
     animation_update(); // restart loop
   }
 }
