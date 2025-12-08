@@ -19,7 +19,7 @@ export function countChecked() {
 // Function to create a new row in the table
 export function createRow(obj) {
   const row = document.createElement("tr");
-  row.className="ftr";
+  row.classList.add("ftr");
   row.innerHTML = `
   <td class="ftd"><input type="checkbox"></td>
   <td class="ftd">
@@ -245,7 +245,7 @@ function updateStructureFromRowAndStep(rowIndex) {
   }  
 
   createBondLengthControls();
-  createSpinControls();
+  //createSpinControls();
   updateVisualization();
 }
 
