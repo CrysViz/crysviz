@@ -78,14 +78,8 @@
         </div>
          <button type="button" id="saveButton">Download POSCAR</button>
       </div>
-      <div class="comparison-group">
-              <span id="structure2Opacity" class="slider-value"></span>
-               <input type="range" id="structure2OpacityValue" min="0.0" max="1.0" step="0.05" v    alue="0.5">
-              <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-top: 4px;">
-                <span>Main</span>
-                <span>Second</span>
-              </div>
-      </div>
+
+      
 
       <div class="control-group" id="structureControls" style="display: none;">
         <div class="segmented-control" id="ControlPanelModeSwitch">
@@ -93,17 +87,21 @@
           <button data-mode="trajectory">Trajectory</button>
           <button data-mode="comparison">Comparison</button>
         </div>
+
         <div class="segmented-control" id="ControlPanelSpinForceSwitch">
           <button data-mode="none" class="active">None</button>
           <button data-mode="Forces">Forces</button>
           <button data-mode="Spins">Spins</button>
         </div>
+        <div id="SpinForceContainer"></div>
+
         <div class="segmented-control" id="ControlPanelAnalysisSwitch">
           <button data-mode="none" class="active">None</button>
-          <button data-mode="Lattice">Lattice</button>
           <button data-mode="Bonds">Bonds</button>
+          <button data-mode="Lattice">Lattice</button>
           <button data-mode="TBD">TBD</button>
         </div>
+        <div id="BondLatticeContainer"></div>
 
         <label>
           <input type="checkbox" id="showBonds" checked> Show Bonds
@@ -132,44 +130,6 @@
           <input type="range" id="bondWidth" min="0.02" max="0.20" step="0.01" value="0.1">
         </label>
       </div>
-
-
-      <!-- Bond controls group -->
-      <div id="bondControlsGroup" style="display: none;">
-        <div id="bondPanel">
-          <div id="bondToggle" class="bond-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="bondControlsContent">
-            <h4>Bond Length Controls</h4>
-            <div id="bondToggleIcon" class="toggle-icon">+</div>
-          </div>
-
-          <div id="bondControlsContent" class="collapsible-content" aria-hidden="true">
-            <div id="resetBondLenghtsWrapper" class="bottonWrapper" aria-hidden="true">
-              <button id="resetBondLengths" class="reset-btn">Reset to Defaults</button>
-            </div>
-            <div id="bondControls"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Spin controls group -->
-      <div id="spinControlsGroup" style="display: none;">
-        <div id="spinPanel">
-          <div id="spinToggle" class="spin-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="spinControlsContent">
-            <h4>Spin Controls</h4>
-            <div id="spinToggleIcon" class="toggle-icon">+</div>
-          </div>
-
-          <div id="spinControlsContent" class="collapsible-content" aria-hidden="true">
-            
-            <div id="resetSpinLenghtsWrapper" class="bottonWrapper" aria-hidden="true">
-              <button id="deleteSpins" class="reset-btn">Delete Spins</button>
-            </div>
-
-            <div id="spinControls"></div>
-          </div>
-        </div>
-      </div>
-
     </div>
     <div id="view"></div>
 
@@ -350,76 +310,6 @@
       <div class="legend-row"><span class="dot dot-b"></span>b</div>
       <div class="legend-row"><span class="dot dot-c"></span>c</div>
     </div>
-
-    <script>
-      // Bond control script. default is closed!
-      document.addEventListener('DOMContentLoaded', function() {
-        const toggle = document.getElementById('bondToggle');
-        const icon = document.getElementById('bondToggleIcon');
-        const content = document.getElementById('bondControlsContent');
-
-        if (!toggle || !icon || !content) return;
-
-        function setOpen(open) {
-          if (open) {
-            content.classList.add('open');
-            content.setAttribute('aria-hidden', 'false');
-            icon.textContent = '−';
-            toggle.setAttribute('aria-expanded', 'true');
-          } else {
-            content.classList.remove('open');
-            content.setAttribute('aria-hidden', 'true');
-            icon.textContent = '+';
-            toggle.setAttribute('aria-expanded', 'false');
-          }
-        }
-
-        setOpen(false);
-        toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
-        toggle.addEventListener('keydown', e => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setOpen(!content.classList.contains('open'));
-          }
-        });
-      });
-    </script>
-
-
-    <script>
-      // Spin control script. default is closed!
-      document.addEventListener('DOMContentLoaded', function() {
-        const toggle = document.getElementById('spinToggle');
-        const icon = document.getElementById('spinToggleIcon');
-        const content = document.getElementById('spinControlsContent');
-
-        if (!toggle || !icon || !content) return;
-
-        function setOpen(open) {
-          if (open) {
-            content.classList.add('open');
-            content.setAttribute('aria-hidden', 'false');
-            icon.textContent = '−';
-            toggle.setAttribute('aria-expanded', 'true');
-          } else {
-            content.classList.remove('open');
-            content.setAttribute('aria-hidden', 'true');
-            icon.textContent = '+';
-            toggle.setAttribute('aria-expanded', 'false');
-          }
-        }
-
-        setOpen(false);
-        toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
-        toggle.addEventListener('keydown', e => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setOpen(!content.classList.contains('open'));
-          }
-        });
-      });
-    </script>
-<script>
 
   </body>
 </html>

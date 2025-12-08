@@ -32,7 +32,7 @@ import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleCont
 import { createColorPicker } from './modules/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames. 
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
-import {getBondCutoff,updateBonds} from './modules/BondsModule.js'
+import {getBondCutoff,updateBonds,initBonds} from './modules/BondsModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
 import {updateAtoms,createAtomMesh} from './modules/AtomsModule.js';
@@ -436,11 +436,10 @@ function loadStructure(content, fileName = '', isDefault = false) {
     }
 
     document.getElementById('structureControls').style.display = 'block';
-    document.getElementById('bondControlsGroup').style.display = 'block';
-    document.getElementById('spinControlsGroup').style.display = 'block';
 
-    createBondLengthControls();
+    //createBondLengthControls();
     createShareButton();
+    initBonds();
     updateVisualization();
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();
@@ -958,37 +957,39 @@ function clearLongPress() {
     updateMeasurementMarkers(); // Update ring markers when atom size changes
   };
 
-  document.getElementById('structure2OpacityValue').oninput = (e) => {
-    general.structure2OpacityValue = parseFloat(e.target.value);
-    document.getElementById('structure2OpacityValue').textContent = general.structure2OpacityValue.toFixed(1);
-     general.mainOpacity = 2*structure2OpacityValue
-     general.secondOpacity = 1.0
+// former slider to compare two structure. Should be added to new panel 
 
-    if (general.structure2OpacityValue < 0.5){
-           general.secondOpacity = 2*general.structure2OpacityValue
-     general.mainOpacity = 1.0
-      }
-    else if (general.structure2OpacityValue > 0.5){
-      general.mainOpacity = 1-2 * (general.structure2OpacityValue - 0.5)
-      general.secondOpacity = 1.0
-      addSecondStructure(1.0)
-      updateAtoms(1-2 * (general.structure2OpacityValue - 0.5))
-      }
-    else {
-      general.secondOpacity =1.0
-      general.mainOpacity = 1.0
-    }
-    updateVisualization(general.mainOpacity,general.secondOpacity);
-      
-    updateVisualization({
-          reRenderAtoms: false,
-          reRenderBonds: false,
-          reRenderLattice: false,
-          reRenderOther: true
-        });
-
-
-  };
+// document.getElementById('structure2OpacityValue').oninput = (e) => {
+//   general.structure2OpacityValue = parseFloat(e.target.value);
+//   document.getElementById('structure2OpacityValue').textContent = general.structure2OpacityValue.toFixed(1);
+//    general.mainOpacity = 2*structure2OpacityValue
+//    general.secondOpacity = 1.0
+//
+//   if (general.structure2OpacityValue < 0.5){
+//          general.secondOpacity = 2*general.structure2OpacityValue
+//    general.mainOpacity = 1.0
+//     }
+//   else if (general.structure2OpacityValue > 0.5){
+//     general.mainOpacity = 1-2 * (general.structure2OpacityValue - 0.5)
+//     general.secondOpacity = 1.0
+//     addSecondStructure(1.0)
+//     updateAtoms(1-2 * (general.structure2OpacityValue - 0.5))
+//     }
+//   else {
+//     general.secondOpacity =1.0
+//     general.mainOpacity = 1.0
+//   }
+//   updateVisualization(general.mainOpacity,general.secondOpacity);
+//     
+//   updateVisualization({
+//         reRenderAtoms: false,
+//         reRenderBonds: false,
+//         reRenderLattice: false,
+//         reRenderOther: true
+//       });
+//
+//
+// };
 
   // Bond width control
   const bondWidthSlider = document.getElementById('bondWidth');
@@ -1133,8 +1134,6 @@ function clearLongPress() {
       if (general.currentSupercell != null){
           createSupercell(currentSupercell.nx,currentSupercell.ny,currentSupercell.nz)
           }
-      createBondLengthControls();
-      createSpinControls();
       createBackgroundControl();
       updateVisualization();
       clearMeasure();
@@ -1160,7 +1159,6 @@ function clearLongPress() {
     document.getElementById('clearAllMeasurements').click();
   });
 
-  document.getElementById('resetBondLengths').onclick = resetBondLengths;
 
   // Initialize atomSize from the UI slider so the initial view respects the slider value
   (function initAtomSizeFromSlider(){
@@ -1188,12 +1186,14 @@ function clearLongPress() {
     }
   })();
 
+
   app.camera.position.set(20, 20, 20);
   app.controls.update();
  
   console.log("Loading structure...")
   // Load default structure after everything is initialized
   loadDefaultStructure();
+
 
   function handleVisibilityChange() {
   if (document.hidden) pauseRendering();
@@ -1267,6 +1267,7 @@ function setupMobileMenu() {
       closePanel();
     });
   }
+
   createBackgroundControl();
   addControlPanelModeSwitch();
   addControlPanelSpinForceSwitch();

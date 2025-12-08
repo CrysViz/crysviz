@@ -12,6 +12,7 @@ export function resetBondLengths() {
 
 export function createBondLengthControls() {
   const bondControls = document.getElementById('bondControls');
+  if (!bondControls) return;
   bondControls.innerHTML = '';
 
   if (!structureData) return;
@@ -99,7 +100,7 @@ export function createBondLengthControls() {
     textInput.style.borderRadius = '4px';
     textInput.style.color = '#fff';
 
-        function updateValue(newValue) {
+    function updateValue(newValue) {
       const val = parseFloat(newValue);
       general.bondLengths[pair] = val;
 

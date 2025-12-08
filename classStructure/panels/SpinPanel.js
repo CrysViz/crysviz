@@ -2,6 +2,118 @@ import { createColorPicker } from '../old_style/color-picker.js';
 import {updateSpins,deleteSpins} from '../modules/SpinModule.js';
 import { app, groups, general,spinsData, structureData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 
+
+export function removeSpinPanel() {
+  const panel = document.getElementById("spinControlsGroup");
+  if (panel) {
+    panel.remove();
+  } else {
+    console.warn("Spin Controls panel does not exist.");
+  }
+}
+
+export function addSpinPanel(target = "SpinForceContainer") {
+  const targetPanel = document.getElementById(target);
+  if (document.getElementById("spinControlsGroup")) {
+    console.warn("Spin Controls already exist.");
+    return;
+  }
+
+  // --- Outer wrapper ---
+  const group = document.createElement("div");
+  group.id = "spinControlsGroup";
+
+  // --- Panel ---
+  const panel = document.createElement("div");
+  panel.id = "spinPanel";
+
+  // --- Toggle ---
+  const toggle = document.createElement("div");
+  toggle.id = "spinToggle";
+  toggle.className = "spin-toggle";
+  toggle.setAttribute("role", "button");
+  toggle.setAttribute("tabindex", "0");
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.setAttribute("aria-controls", "spinControlsContent");
+
+  const title = document.createElement("h4");
+  title.textContent = "Spin Controls";
+
+  const icon = document.createElement("div");
+  icon.id = "spinToggleIcon";
+  icon.className = "toggle-icon";
+  icon.textContent = "+";
+
+  toggle.appendChild(title);
+  toggle.appendChild(icon);
+
+  // --- Collapsible content ---
+  const content = document.createElement("div");
+  content.id = "spinControlsContent";
+  content.className = "collapsible-content";
+  content.setAttribute("aria-hidden", "true");
+
+  // --- Reset wrapper ---
+  const resetWrapper = document.createElement("div");
+  resetWrapper.id = "resetSpinLenghtsWrapper";
+  resetWrapper.className = "bottonWrapper";
+  resetWrapper.setAttribute("aria-hidden", "true");
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.id = "deleteSpins";
+  deleteBtn.className = "reset-btn";
+  deleteBtn.textContent = "Delete Spins";
+
+  resetWrapper.appendChild(deleteBtn);
+
+  // --- Spin Controls container ---
+  const spinControls = document.createElement("div");
+  spinControls.id = "spinControls";
+
+  // Build hierarchy
+  content.appendChild(resetWrapper);
+  content.appendChild(spinControls);
+  panel.appendChild(toggle);
+  panel.appendChild(content);
+  group.appendChild(panel);
+
+  // Insert into DOM
+  targetPanel.appendChild(group);
+
+  // --- Apply YOUR script logic immediately ---
+
+  function setOpen(open) {
+    if (open) {
+      content.classList.add('open');
+      content.setAttribute('aria-hidden', 'false');
+      icon.textContent = '−';
+      toggle.setAttribute('aria-expanded', 'true');
+    } else {
+      content.classList.remove('open');
+      content.setAttribute('aria-hidden', 'true');
+      icon.textContent = '+';
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  // Default is closed
+  setOpen(false);
+
+  // Click
+  toggle.addEventListener('click', () =>
+    setOpen(!content.classList.contains('open'))
+  );
+
+  // Keyboard
+  toggle.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setOpen(!content.classList.contains('open'));
+    }
+  });
+}
+
+
 export function createSpinControls(containerId = "spinControls") {
   const container = document.getElementById(containerId);
   container.innerHTML = ""; // Clear previous controls

@@ -67,7 +67,7 @@ export const groups = {
 
 
 export const general = {  
-  powerMode: false,
+  powerMode: true,
   currentLatticeColor:null,
   defaultBackgroundColor:null,
   currentLatticeColor:null,

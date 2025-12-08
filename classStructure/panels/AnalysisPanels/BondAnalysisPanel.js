@@ -76,7 +76,8 @@ export function addHistogramPanel(datasets, labels = [], xAxisLabel="Bond length
 
   panel.innerHTML = `
     <div id="histHeader" style="padding:6px 10px; background:#333; cursor:move; font-weight:bold; border-bottom:1px solid #555; color:#fff;">
-      Histogram <span id="histFoldToggle" style="float:right; cursor:pointer;">▼</span>
+      Histogram 
+      <span id="histCloseBtn" style="float:right; cursor:pointer; margin-left:20px;">✖</span>
     </div>
     <div id="histBody" style="padding:10px; display:block;">
       <canvas id="histCanvas" width="600" height="300" style="border:1px solid #444; border-radius:4px; background:#111;padding-bottom: 10px;} "></canvas>
@@ -108,6 +109,7 @@ export function addHistogramPanel(datasets, labels = [], xAxisLabel="Bond length
   const canvas = panel.querySelector("#histCanvas");
   const legendBox = panel.querySelector("#histLegend");
   const foldToggle = panel.querySelector("#histFoldToggle");
+  const closeBtn = panel.querySelector("#histCloseBtn");
   const tooltip = panel.querySelector("#histTooltip");
   const binSlider = panel.querySelector("#binSlider");
   const binCountLabel = panel.querySelector("#binCountLabel");
@@ -265,6 +267,10 @@ canvas.addEventListener("mousemove", e => {
   if (!found) tooltip.style.display = "none";
 });
 
+closeBtn.addEventListener("click", () => {
+  removeHistogramPanel(); // remove the histogram panel from DOM
+});  
+
 // Click selection
 canvas.addEventListener("click", e => {
   const rect = canvas.getBoundingClientRect();
@@ -283,10 +289,6 @@ canvas.addEventListener("click", e => {
   document.addEventListener("mousemove", e => { if(dragging){panel.style.left=(e.clientX-offsetX)+"px"; panel.style.top=(e.clientY-offsetY)+"px";}});
   document.addEventListener("mouseup", ()=>dragging=false);
 
-  foldToggle.onclick = () => {
-    if(body.style.display==="none"){ body.style.display="block"; foldToggle.textContent="▼"; }
-    else{ body.style.display="none"; foldToggle.textContent="▲"; }
-  };
 }
 
 

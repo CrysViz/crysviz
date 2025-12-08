@@ -2,7 +2,11 @@ import { general,bondLengths} from '../store.js';
 import { addTrajectoryPlayer,removeTrajectoryPlayer} from './TrajectoryPanel.js';
 import { addLatticeComparisonPanel } from './LatticeComparisonPanel.js';
 import { removeSpins,updateSpins } from '../modules/SpinModule.js';
-import { addHistogramPanel,removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
+import { removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
+import {addSpinPanel,removeSpinPanel} from './SpinPanel.js';
+import {addForcePanel,removeForcePanel} from './ForcePanel.js';
+import {addBondPanel,removeBondPanel} from './BondPanel.js';
+import {updateVisualization} from '../crystal-viewer.js';
 
 
 
@@ -37,7 +41,6 @@ export function addControlPanelModeSwitch() {
         removeTrajectoryPlayer();
       }
     }
-
     console.log(general.playerModeState);
   });
 }
@@ -57,17 +60,23 @@ export function addControlPanelSpinForceSwitch() {
 
     // Handle different modes
     if (general.spinForceState == "Forces") {
+      addForcePanel()
       removeSpins();
+      removeSpinPanel()
       //updateForces();
       }
     else if (general.spinForceState == "Spins") {
       //removeForces();
       console.log("updating spins")
+      addSpinPanel()
       updateSpins();
+      removeForcePanel();
         }
     else {
       //removeForces
       removeSpins();
+      removeSpinPanel();
+      removeForcePanel();
     }
   });
 }
@@ -89,20 +98,19 @@ export function addControlPanelAnalysisSwitch() {
     if (general.analysisState == "Lattice") {
       console.warn("Lattice analysis not yet implemented!")
       removeHistogramPanel()
+      removeBondPanel()
     }
     else if (general.analysisState == "Bonds") {
-      const dataArrays = Object.values(bondLengths);
-      const labelsArray = Object.keys(bondLengths);
-      console.log(dataArrays)
-      console.log(labelsArray)
-      addHistogramPanel(dataArrays, labelsArray)
+      addBondPanel()
      }
     else if (general.analysisState == "TBD") {
+      removeBondPanel()
       console.warn("TBD analysis not yet implemented!")
       removeHistogramPanel()
     }
     else {
       removeHistogramPanel()
+      removeBondPanel()
     }
   });
 }

@@ -11,6 +11,40 @@ import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
 
 
+export function initBonds(){
+  if (!structureData) {
+    console.warn("Could not init bonds!")
+    return;
+
+  }
+
+  console.log("initBonds")
+
+  const uniqueElements = [...new Set(structureData.elements)];
+  const pairs = [];
+
+  // Generate all unique pairs
+  for (let i = 0; i < uniqueElements.length; i++) {
+    for (let j = i; j < uniqueElements.length; j++) {
+      const pair = uniqueElements[i] + '-' + uniqueElements[j];
+      pairs.push(pair);
+
+      if (!general.bondLengths[pair]) {
+        const defaultRadius = (atomicRadii[uniqueElements[i]] || 1.0) + (atomicRadii[uniqueElements[j]] || 1.0);
+        const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
+        general.bondLengths[pair] = defaultValue;
+        general.defaultBondLengths[pair] = defaultValue; // Store default
+      }
+
+      // Initialize bond visibility if not set
+      if (general.bondVisibility[pair] === undefined) {
+        general.bondVisibility[pair] = true;
+      }
+    }
+  }
+  updateBonds()
+
+} 
 
 export function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2,opacity=1.0) {
   const key = `${elem1}-${elem2}`;

@@ -168,7 +168,7 @@ body.panel-hidden #axesLegend {
   background: rgba(26,26,26,0.9);
   border: 1px solid #444;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  box-shadow: 0px 0px 4px 2px  rgba(0,0,0,0.5);
   z-index: 999;
   display: none;         /* initially hidden */
   user-select: none;     /* prevent text selection while dragging */
@@ -190,7 +190,7 @@ body.panel-hidden #axesLegend {
       background: #fff;
       border: 1px solid #ccc;
       border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      box-shadow: 0px 0px 4px 2px  rgba(0,0,0,0.2);
       cursor: move;
       padding: 10px;
       z-index: 1100;
@@ -314,8 +314,9 @@ body.panel-hidden #axesLegend {
 }
 
 #fileLabel:hover {
+  border: 1px solid rgba(255,255,255,0.1);
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px var(--highlight-color);
+  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
 }
 
 #fileLabel.dragover {
@@ -357,8 +358,9 @@ body.panel-hidden #axesLegend {
 }
 
 #loadTextButton:hover {
+  border: 1px solid rgba(255,255,255,0.1);
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px var(--highlight-color);
+  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
 }
 
 #saveButton {
@@ -376,8 +378,10 @@ body.panel-hidden #axesLegend {
 }
 
 #saveButton:hover {
+  border: 1px solid rgba(255,255,255,0.1);
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px var(--highlight-color);
+  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
+
 }
 
 .comparison-group {
@@ -460,7 +464,7 @@ body.panel-hidden #axesLegend {
 
 #secondFileLabel:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px var(--hover-color);
+  box-shadow: 0px 0px 4px 2px  var(--hover-color);
 }
 
 #secondFileLabel.dragover {
@@ -503,7 +507,7 @@ body.panel-hidden #axesLegend {
 
 #secondLoadTextButton:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(54, 143, 110, 0.35);
+  box-shadow: 0px 0px 4px 2px  rgba(54, 143, 110, 0.35);
 }
 
 
@@ -532,7 +536,7 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 50%;
   background: var(--highlight-color);
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.3);
 }
 
 input[type="range"]::-moz-range-thumb {
@@ -542,7 +546,7 @@ input[type="range"]::-moz-range-thumb {
   background: var(--highlight-color);
   cursor: pointer;
   border: none;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.3);
 }
 
 input[type="checkbox"] {
@@ -573,7 +577,7 @@ input[type="checkbox"] {
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.35);
   transform: translate(-50%, -120%);
   opacity: 0;
   transition: opacity 0.12s ease;
@@ -607,7 +611,7 @@ input[type="checkbox"] {
   padding: 28px 32px;
   border-radius: 16px;
   border: 1px solid rgba(129, 199, 132, 0.4);
-  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45);
+  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.45);
   position: relative;
   font-size: 14px;
   line-height: 1.6;
@@ -710,7 +714,7 @@ input[type="checkbox"] {
   .bond-toggle:hover,
   .bond-toggle:focus {
     background-color: var( --bg-color);
-    box-shadow: 0 0 0 2px var( --bg-color);
+    box-shadow: 0px 0px 4px 2px  var( --bg-color);
     border: 1px solid rgba(255,255,255,0.1);
     outline: none;
   }
@@ -790,7 +794,7 @@ justify-content: center;
 
 .reset-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+  box-shadow: 0px 0px 4px 2px  rgba(255, 107, 107, 0.3);
 }
 
 .bond-checkbox {
@@ -822,7 +826,7 @@ justify-content: center;
   .spin-toggle:hover,
   .spin-toggle:focus {
     background-color: var( --bg-color);
-    box-shadow: 0 0 0 2px var( --bg-color);
+    box-shadow: 0px 0px 4px 2px  var( --bg-color);
     border: 1px solid rgba(255,255,255,0.1);
     outline: none;
   }
@@ -957,7 +961,7 @@ justify-content: center;
 
 .reset-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+  box-shadow: 0px 0px 4px 2px  rgba(255, 107, 107, 0.3);
 }
 
 .spin-checkbox {
@@ -989,7 +993,7 @@ justify-content: center;
   .comparison-toggle:hover,
   .comparison-toggle:focus {
     background-color: var( --bg-color);
-    box-shadow: 0 0 0 2px var( --bg-color);
+    box-shadow: 0px 0px 4px 2px  var( --bg-color);
     border: 1px solid rgba(255,255,255,0.1);
     outline: none;
   }
@@ -1192,7 +1196,7 @@ z-index:1000; pointer-events:none;
   border-radius: 12px;
   padding: 8px;
   backdrop-filter: blur(20px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.3);
   transform-origin: top right;
 }
 
@@ -1257,14 +1261,14 @@ z-index:1000; pointer-events:none;
   background: var(--bg-color);
   border-color: var(--highlight-color);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(6, 100, 50, 1);
+  box-shadow:0px 0px 4px 2px  rgba(6, 100, 50, 1);
 }
 
 #cameraTools .measure-tool-reset-btn:hover {
   background: var(--highlight-color);
   border-color: var(--highlight-color);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px var(--highlight-color);
+  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
 }
 
 #cameraTools .measure-tool-btn .tool-icon {
@@ -1330,18 +1334,18 @@ z-index:1000; pointer-events:none;
   background: var(--bg-color);
   border-color: var(--border-color);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px var(--highlight-color);
+  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
 }
 
 .measure-tool-btn.active {
   background: var( --bg-color);
   border-color: #ff6b35;
   color: #fff;
-  box-shadow: 0 4px 16px rgba(255, 107, 53, 0.4);
+  box-shadow: 0px 0px 4px 2px  rgba(255, 107, 53, 0.4);
 }
 
 .measure-tool-btn.active:hover {
-  box-shadow: 0 6px 20px rgba(255, 107, 53, 0.5);
+  box-shadow: 0px 0px 4px 2px rgba(255, 107, 53, 0.5);
   transform: translateY(-2px);
 }
 
@@ -1353,7 +1357,7 @@ z-index:1000; pointer-events:none;
 .measure-tool-btn.clear-btn:hover {
   background: rgba(231, 76, 60, 0.25);
   border-color: rgba(231, 76, 60, 0.5);
-  box-shadow: 0 6px 20px rgba(231, 76, 60, 0.3);
+  box-shadow: 0px 0px 4px 2px  rgba(231, 76, 60, 0.3);
 }
 
 .tool-icon {
@@ -1397,7 +1401,7 @@ z-index:1000; pointer-events:none;
   height: 44px;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0px 0px 4px 2px rgba(0, 0, 0, 0.3);
   transition: all 0.2s ease;
 }
 
