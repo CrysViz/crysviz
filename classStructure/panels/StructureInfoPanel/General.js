@@ -873,20 +873,18 @@ export function addSupercellSection() {
 
   // --- Buttons row ---
   const btnRow = document.createElement('div');
-  btnRow.style.cssText = 'display:flex; gap:8px;';
+  btnRow.style.cssText = 'display:flex; gap:8px;justify-content: center;';
 
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
-  applyBtn.className = 'mini-btn';
-  applyBtn.style.cssText =
-    'flex:1; background:rgba(255,255,255,0.15); border:none; border-radius:6px; color:white; height:28px; cursor:pointer;';
+  applyBtn.className = 'btn-mini highlight';
+  applyBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right:      4px; min-width: 80px;';
 
 
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset';
   resetBtn.className = 'reset-btn';
-  resetBtn.style.cssText =
-    'flex:1; border:none; border-radius:6px; color:white; height:28px; cursor:pointer;';
+  resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right:      4px; min-width: 80px;';
 
 
   btnRow.appendChild(applyBtn);

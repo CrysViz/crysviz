@@ -21,8 +21,8 @@
   border-collapse: collapse; 
   }
 
-  #objectTable th,
-  #objectTable td {
+  #objectTable .fth,
+  #objectTable .ftd {
   border: 1px solid rgba(255, 255, 255, 0.2);
   padding: 8px;
  }
@@ -32,23 +32,23 @@
     border-collapse: collapse;
   }
 
-  th, td {
+  .fth, .ftd {
     padding: 4px 6px;
     border-bottom: 1px solid #ddd;
     text-align: left;
   }
 
-  th {
+  .fth {
     color: white;
     font-weight: 200;
     font-size: 12px;
   }
 
-  tr:hover {
+  .ftr:hover {
     background-color: rgba(255, 255, 255, 0.05);
   }
 
-  tr.selected {
+  .ftr.selected {
     background-color: var(--accent-color);
   }
 

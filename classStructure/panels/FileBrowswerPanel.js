@@ -19,21 +19,23 @@ export function countChecked() {
 // Function to create a new row in the table
 export function createRow(obj) {
   const row = document.createElement("tr");
+  row.className="ftr";
+  row.innerHTML = `
+  <td class="ftd"><input type="checkbox"></td>
+  <td class="ftd">
+    <div class="name-cell">
+      <span class="name-inner">${obj.name}</span>
+      <span class="name-scroll">${obj.name}</span>
+    </div>
+  </td>
+  <td class="ftd">${obj.traj}</td>
+  <td class="ftd"><input type="number" min="1" max="${obj.traj}" value="${obj.step}" /></td>
+  <td class="ftd icon copy"><img src="copy.png" alt="copy"></td>
+  <td class="ftd icon delete">×</td>
+`;
+
 
   // Populate the row with the initial object data
-  row.innerHTML = `
-    <td><input type="checkbox"></td>
-    <td>
-      <div class="name-cell">
-        <span class="name-inner">${obj.name}</span>
-        <span class="name-scroll">${obj.name}</span>
-      </div>
-    </td>
-    <td>${obj.traj}</td>
-    <td><input type="number" min="1" max="${obj.traj}" value="${obj.step}" /></td>
-    <td class="icon copy"><img src="copy.png" alt="copy"></td>
-    <td class="icon delete">×</td>
-  `;
 
   // Bind the checkbox limit logic
   const checkbox = row.querySelector('input[type="checkbox"]');

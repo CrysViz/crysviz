@@ -72,9 +72,9 @@ export function addTrajectoryPlayer() {
     </div>
     <div class="panelBody" id="panelBody">
       <div class="controlsRow">
-        <button id="stepBackBtn">⏮️</button>
-        <button id="playPauseBtn">▶️</button>
-        <button id="stepFwdBtn">⏭️</button>
+        <button id="stepBackBtn" className="control-button">⏮️</button>
+        <button id="playPauseBtn" className="control-button">▶️</button>
+        <button id="stepFwdBtn" className="control-button">⏭️</button>
       </div>
       <div style="display:flex; flex-direction:column; align-items:center; width:100%;">
         <label style="font-size:12px; margin-bottom:4px;">Speed:</label>

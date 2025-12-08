@@ -39,8 +39,8 @@
       justify-content: center;
     }
 
-    button { background: #3a3a3a; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 18px; }
-    button:hover { background: #555; }
+    .control-button { background: #3a3a3a; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 18px; }
+    .control-button:hover { background: #555; }
 
     select, input[type=number] { padding: 4px; border-radius: 6px; background: #3a3a3a; color: white; border: none; box-sizing: border-box; text-align: center; }
 

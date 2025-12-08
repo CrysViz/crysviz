@@ -61,7 +61,7 @@ export function addBondPanel(target = "BondLatticeContainer") {
 
   const histogramBtn = document.createElement("button");
   histogramBtn.id = "bondHistogram";
-  histogramBtn.className = "histogram-btn";
+  histogramBtn.className = "btn-mini highlight";
   histogramBtn.textContent = "Histogram";
   histogramBtn.style.fonsize = "12px";
 
