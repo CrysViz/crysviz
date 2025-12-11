@@ -67,16 +67,16 @@
   }
 
   .icon:hover img {
-    filter: brightness(0.3) saturate(3);
+    filter: var(--accent-color);
   }
   .icon.copy {
-    font-weight: normal;
-    font-size: 12px;
-  
+    font-weight: 400;
+    font-size: 18px;
   }
 
   .icon.copy:hover {
-    color: rgba(235, 117, 8, 1.0);
+    transform: scale(1.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
   }
   .icon.delete:hover {
     color: #e63946;

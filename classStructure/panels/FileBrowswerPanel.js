@@ -30,7 +30,7 @@ export function createRow(obj) {
   </td>
   <td class="ftd">${obj.traj}</td>
   <td class="ftd"><input type="number" min="1" max="${obj.traj}" value="${obj.step}" /></td>
-  <td class="ftd icon copy"><img src="copy.png" alt="copy"></td>
+  <td class="ftd icon copy"><img src="copy.png" alt="⿻"></td>
   <td class="ftd icon delete">×</td>
 `;
 

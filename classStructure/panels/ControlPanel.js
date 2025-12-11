@@ -3,7 +3,7 @@ import { addTrajectoryPlayer,removeTrajectoryPlayer} from './TrajectoryPanel.js'
 import { addLatticeComparisonPanel } from './LatticeComparisonPanel.js';
 import { removeSpins,updateSpins } from '../modules/SpinModule.js';
 import { removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
-import {addSpinPanel,removeSpinPanel} from './SpinPanel.js';
+import {createSpinControls,addSpinPanel,removeSpinPanel} from './SpinPanel.js';
 import {addForcePanel,removeForcePanel} from './ForcePanel.js';
 import {addBondPanel,removeBondPanel} from './BondPanel.js';
 import {updateVisualization} from '../crystal-viewer.js';
@@ -69,6 +69,7 @@ export function addControlPanelSpinForceSwitch() {
       //removeForces();
       console.log("updating spins")
       addSpinPanel()
+      createSpinControls();
       updateSpins();
       removeForcePanel();
         }
