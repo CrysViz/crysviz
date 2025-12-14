@@ -4,6 +4,8 @@ import {resetView} from './WindowAndSceneControls.js'
 import {resetModeSwitch, resetSpinForceSwitch} from './ControlPanel.js'
 import {createBondLengthControls} from './BondLengthPanel.js'
 import {createSpinControls} from './SpinPanel.js'
+import {updateSpins} from '../modules/SpinModule.js'
+
 
 export function showError(message) {
     errorPanel.textContent = message;
@@ -234,11 +236,12 @@ function updateStructureFromRowAndStep(rowIndex) {
   structureData.positions = selectedStructure.atoms.map(a => a.position);
   structureData.elements = [...selectedStructure.elements];
   structureData.lattice = selectedStructure.lattice.map(r => [...r]);
-  if (selectedStructure.spins != null) {
-    structureData.spins= [...selectedStructure.spins.vectors];
+  if (selectedStructure.spins.length != null) {
+    structureData.spins = selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
+    updateSpins();
   }
-  if (selectedStructure.forces != null) {
-    structureData.forces = [...selectedStructure.forces];
+  if (selectedStructure.forces.lenght != null) {
+    structureData.spins = selectedStructure.forces?.map(force => force.vector ?? null) ?? null;
   }
   if (selectedStructure.stress != null) {
      structureData.stress =  selectedStructure.stress.map(r => [...r]);

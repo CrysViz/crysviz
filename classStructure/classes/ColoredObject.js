@@ -1,7 +1,7 @@
 export class ColoredObject {
-  constructor({ colors = [], defaultColors= []} = {}) {
-    this.colors = colors; 
-    this.defaultColors = defaultColors; 
+  constructor({ color = [], defaultColor= []} = {}) {
+    this.color = color; 
+    this.defaultColor = defaultColor; 
   }
 
 }

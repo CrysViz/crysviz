@@ -7,7 +7,7 @@ import { createRow,selectLastAddedRow } from '../FileBrowswerPanel.js';
 import {structureData,structureShip,fileBrowser} from '../../store.js'
 import { Structure } from "../../classes/Structure.js";
 import { StructureContainer } from "../../classes/StructureContainer.js";
-import { Forces } from "../../classes/Forces.js";
+import { Force } from "../../classes/Force.js";
 import { Atom } from "../../classes/Atom.js";
 import { Stress } from "../../classes/Stress.js";
 let socket = null;

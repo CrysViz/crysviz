@@ -20,8 +20,10 @@ function updateStructureFromFrame(frame, container) {
   structureData.lattice = selectedStructure.lattice.map(r => [...r]);
 
   createBondLengthControls();
-  createSpinControls();
-  updateSpins();
+  if (structureData.spin) {
+    createSpinControls();
+    updateSpins();
+  }
   updateVisualization();
 }
 

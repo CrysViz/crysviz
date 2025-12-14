@@ -23,7 +23,7 @@ import { StructureContainer } from "../classes/StructureContainer.js";
 import { Structure } from "../classes/Structure.js";
 import { Spin } from "../classes/Spin.js";
 import { Atom } from "../classes/Atom.js";
-import { Forces } from "../classes/Forces.js";
+import { Force } from "../classes/Force.js";
 
 // ------------------------------------------------------------
 // Main exported function
@@ -57,7 +57,25 @@ export function parseOUTCAR(content,fileName) {
         position: pos,
         element: elements[i]
        }))
-      });
+      }); 
+
+    const spins = [];
+    step.spins.forEach((vector,i) =>{
+       console.log(vector)
+       spins.push(new Spin({
+         vector: vector,
+         scaling: 1.0
+       }))
+    });
+
+    const forces = [];
+    step.forces.forEach((vector,i) =>{
+       forces.push(new Force({
+         vector: vector,
+         scaling: 1.0
+       })
+       )
+    });
 
     structures.push(
       new Structure({
@@ -65,8 +83,8 @@ export function parseOUTCAR(content,fileName) {
         uniqueElements,
         lattice,
         atoms: atoms,               // fractional = used by your viewer
-        spins:new Spin({vectors:[...step.spins]}),
-        forces:new Forces({vectors:[...step.forces]})
+        spins:spins,
+        forces:forces,
         //positions_cartesian: step.positions // keep working behavior
       })
     );

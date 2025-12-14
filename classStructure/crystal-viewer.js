@@ -62,7 +62,7 @@ import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
   initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView,collapseAllAtomExpansions
 } from './panels/WindowAndSceneControls.js'
 import {loadAboutContent, openAboutPanel, closeAboutPanel} from './panels/AboutPanel.js';
-import {createSpinControls} from './panels/SpinPanel.js';
+import {addSpinPanel,createSpinControls} from './panels/SpinPanel.js';
 import { addLatticeComparisonPanel }from './panels/LatticeComparisonPanel.js'
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
 import {createCompositionRow,renderComposition} from './panels/StructureInfoPanel/General.js';
@@ -389,10 +389,12 @@ function loadStructure(content, fileName = '', isDefault = false) {
         parsed.positions = parsedContainer.structures[0].atoms.map(a => a.position);
         parsed.elements = parsedContainer.structures[0].elements
         parsed.lattice = parsedContainer.structures[0].lattice
-        parsed.spins = parsedContainer.structures[0].spins.vectors ?? null; 
+        console.warn(parsedContainer.structures[0].spins);
+        parsed.spins = parsedContainer.structures?.[0]?.spins?.map(spin => spin.vector ?? null) ?? null;
         parsed.forces = parsedContainer.structures[0].forces ?? null;
 
         if (parsed.spins.length != 0) {
+         addSpinPanel(); 
          createSpinControls();
         }
         

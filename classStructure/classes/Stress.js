@@ -2,9 +2,9 @@ import { ColoredObject } from './ColoredObject.js';
 
 
 export class Stress extends ColoredObject {
-  constructor({ tensor = [[0,0,0],[0,0,0],[0,0,0]], scaling = [], colors = [], stressGroup = null } = {}) {
-    const defaultColors = [];
-    super({ colors, defaultColors });
+  constructor({ tensor = [[0,0,0],[0,0,0],[0,0,0]], scaling = [], color = [], stressGroup = null } = {}) {
+    const defaultColor = [];
+    super({ color, defaultColor});
     this.tensor = Stress._validateTensor(tensor);
     this.pearson = Stress._computePearsonMeasure(this.tensor);
     this.scaling = scaling;

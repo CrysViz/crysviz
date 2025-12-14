@@ -1,7 +1,7 @@
 import { ColoredComponent } from './ColoredComponent.js';
 import { general, defaultColorMap, jmolColorMap} from '../store.js';
 import { Spin } from './Spin.js';
-import { Forces } from './Forces.js';
+import { Force } from './Force.js';
 import { Polyhedra } from './Polyhedra.js';
 import { Symmetry } from './Symmetry.js';
 import {Stress} from './Stress.js';
@@ -15,8 +15,8 @@ export class Structure extends ColoredComponent {
     lattice = [],
     atoms = [],
     symmetry = null,
-    spins = null,
-    forces = null,
+    spins = [] ,
+    forces = [],
     stress = null,
     polyhedra = null,
     colors = [],
@@ -33,8 +33,8 @@ export class Structure extends ColoredComponent {
     this.lattice = lattice;       // 3×3
     this.atoms = atoms;   // list of atoms 
     this.symmetry = symmetry;
-    this.spins = spins;
-    this.forces = forces;
+    this.spins = spins; // list of spins
+    this.forces = forces;// list of forces
     this.stress = stress;
     this.polyhedra = polyhedra;
 

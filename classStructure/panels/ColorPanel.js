@@ -152,3 +152,63 @@ export function addColorPanel(target = "colorContainer") {
   });
 }
 
+function getHeatMapColor(){
+  const nBins = 50;
+  const heatmapColors = [];
+
+  for (let i = 0; i < nBins; i++) {
+      const t = i / (nBins - 1); // 0..1
+
+      let color = new THREE.Color();
+
+      if (t < 0.25) {
+          // White → Yellow
+          color.lerpColors(new THREE.Color(0xffffff), new THREE.Color(0xffff00), t / 0.25);
+      } else if (t < 0.5) {
+          // Yellow → Orange
+          color.lerpColors(new THREE.Color(0xffff00), new THREE.Color(0xff9900), (t - 0.25) / 0.25);
+      } else if (t < 0.75) {
+          // Orange → Red
+          color.lerpColors(new THREE.Color(0xff9900), new THREE.Color(0xff0000), (t - 0.5) / 0.25);
+      } else {
+          // Red → Black
+          color.lerpColors(new THREE.Color(0xff0000), new THREE.Color(0x000000), (t - 0.75) / 0.25);
+      }
+
+      heatmapColors.push(color);
+  }
+
+  return heatmapColors
+}
+
+
+function mapNumbersToHeatColors(values) {
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const heatmapColors = getHeatMapColor()
+
+    if (max === min) return values.map(() => heatmapColors[Math.floor(nBins/2)]);
+
+    return values.map(v => {
+        const t = (v - min) / (max - min);
+        const bin = Math.min(Math.floor(t * nBins), nBins - 1);
+        return heatmapColors[bin];
+    });
+}
+
+function ForceToColor(forces){
+
+const colors = mapNumbersToHeatColors(forces);
+  objects.forEach((obj, i) => {
+    obj.material.color.copy(colors[i]);
+});
+
+  return colors
+
+}
+
+
+
+
+
+

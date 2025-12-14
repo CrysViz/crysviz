@@ -1,5 +1,7 @@
 import { Structure } from "../classes/Structure.js";
 import { Atom } from "../classes/Atom.js";
+import { Force } from "../classes/Force.js";
+import { Spin } from "../classes/Spin.js";
 import { StructureContainer } from "../classes/StructureContainer.js";
 const tableBody = document.querySelector("#objectTable tbody");
 import { fileBrowser } from "../store.js";
@@ -246,6 +248,26 @@ export function parsePWSCFout(content, fileName) {
       })
     );
   });
+  if (s.spins) {
+   const spins = [];
+    s.spins.forEach((vector,i) =>{
+       spins.push(new Spin({
+         vector: vector,
+         scaling: 1.0
+       })
+       );
+    });}
+    else{
+      const spins = null;
+    }
+    const forces = [];
+    s.forces.forEach((vector,i) =>{
+       forces.push(new Force({
+         vector: vector,
+         scaling: 1.0
+       })
+       );
+    });  
 
   return new Structure({
     elements: s.elements,
