@@ -48,6 +48,8 @@ import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMea
 import {HighlightAtom,clearHighlightAtom,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
 
 import {addVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
+import {addCameraPanel} from './panels/CameraPanel.js' 
+import {addColorPanel} from './panels/ColorPanel.js' 
 //import {addAtomPanel} from './modules/addToStructureModule/addAtomPanel.js'
 
 // .........................................................................................................
@@ -1014,12 +1016,6 @@ function clearLongPress() {
   let checkbox_neighbours = document.getElementById("neighborBonds");
       checkbox_neighbours.checked = false; // explicitly untick
 
-  // New control handlers
-  document.getElementById('orthographicCamera').onchange = (e) => {
-    app.useOrthographicCamera = e.target.checked;
-    switchCameraType();
-  };
-
   document.getElementById('defaultColors').onchange = (e) => {
     general.useDefaultColors = e.target.checked;
     updateVisualization(); // also re-renders composition
@@ -1273,6 +1269,8 @@ function setupMobileMenu() {
   addControlPanelSpinForceSwitch();
   addBackendModeSwitch();
   addSavePanel();
+  addCameraPanel();
+  addColorPanel();
   addVacuumPanel();
   addControlPanelAnalysisSwitch()
   //addAtomPanel();

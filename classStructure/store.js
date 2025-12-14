@@ -43,6 +43,8 @@ export const measurements ={
 export const spinsData = [];
 
 export const app = {
+  clock:null,
+  angularVelocity:null,
   renderer: null,
   scene: null,
   camera: null,
@@ -67,6 +69,7 @@ export const groups = {
 
 
 export const general = {  
+  autoRandomEnabled: false,
   powerMode: true,
   currentLatticeColor:null,
   defaultBackgroundColor:null,

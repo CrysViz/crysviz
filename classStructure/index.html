@@ -105,113 +105,53 @@
           <button data-mode="TBD">TBD</button>
         </div>
         <div id="BondLatticeContainer"></div>
-<div class="toggle_group">
 
-  <label class="toggle_row toggle_container">
-    <span class="toggle_switch">
-      <input type="checkbox" id="showBonds" checked>
-      <span class="toggle_slider"></span>
-    </span>
-    <span class="toggle_text">Show Bonds</span>
-  </label>
+        <div class="toggle_group">
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="showBonds" checked>
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Show Bonds</span>
+          </label>
 
-  <label class="toggle_row toggle_container">
-    <span class="toggle_switch">
-      <input type="checkbox" id="showLattice" checked>
-      <span class="toggle_slider"></span>
-    </span>
-    <span class="toggle_text">Show Unit Cell</span>
-  </label>
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="showLattice" checked>
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Show Unit Cell</span>
+          </label>
 
-  <label class="toggle_row toggle_container">
-    <span class="toggle_switch">
-      <input type="checkbox" id="neighborBonds">
-      <span class="toggle_slider"></span>
-    </span>
-    <span class="toggle_text">Show Periodic Images</span>
-  </label>
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="neighborBonds">
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Show Periodic Images</span>
+          </label>
 
-  <label class="toggle_row toggle_container">
-    <span class="toggle_switch">
-      <input type="checkbox" id="showPolyhedra">
-      <span class="toggle_slider"></span>
-    </span>
-    <span class="toggle_text">Show Polyhedra</span>
-  </label>
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="showPolyhedra">
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Show Polyhedra</span>
+          </label>
+        </div>
 
-  <!-- Colors Section -->
-<div class="colors_section">
-  <!-- Colors title -->
-  <div class="colors_title">Color Map Settings</div>
+       <!-- Color Settings -->
+       <div id="colorContainer"></div>
+        <!-- Camera Settings -->
+       <div id="cameraContainer"></div>
 
-  <!-- Menus -->
-  <div class="menus_wrapper">
-    <div class="menu_block">
-      <label for="atomsMenu">Atoms</label>
-      <select id="atomsMenu">
-        <option value="elements" selected>Element</option>
-        <option value="force">Force</option>
-        <option value="localStress">Local Stress</option>
-      </select>
-    </div>
-
-    <div class="menu_block">
-      <label for="bondsMenu">Bonds</label>
-      <select id="bondsMenu">
-        <option value="elements" selected>Elements</option>
-        <option value="black">Black</option>
-        <option value="length">Length</option>
-      </select>
-    </div>
-  </div>
-</div>
-
-
-
-  <!-- Camera -->
-  <div class="camera_section">
-    <div class="camera_title">Camera Settings</div>
-
-    <label class="camera_toggle">
-      <span class="camera_label">Perspective</span>
-
-      <span class="toggle_switch">
-        <input type="checkbox" id="orthographicCamera" checked>
-        <span class="toggle_slider"></span>
-      </span>
-      <span class="camera_label_r">Parallel</span>
-    </label>
-  <label class="camera_toggle">
-    <span class="camera_label">Drag</span>
-
-    <span class="toggle_switch">
-      <input type="checkbox" id="autoRotate">
-      <span class="toggle_slider"></span>
-    </span>
-    <span class="camera_label_r">Auto Rotation</span>
-  </label>
-  <!-- Push / Random Toggle -->
-  <label class="camera_toggle">
-    <span class="camera_label-pnr">Push & Release</span>
-
-    <span class="toggle_switch">
-      <input type="checkbox" id="pushRandom">
-      <span class="toggle_slider"></span>
-    </span>
-
-    <span class="camera_label_r">Random</span>
-  </label>
-</div>
-
-</div>
- <label class="toggle_container">
-    <span class="toggle_switch">
-      <input type="checkbox" id="defaultColors" checked>
-      <span class="toggle_slider"></span>
-    </span>
-    Default Colors
-  </label>
-
+       <label class="toggle_container">
+          <span class="toggle_switch">
+            <input type="checkbox" id="defaultColors" checked>
+            <span class="toggle_slider"></span>
+          </span>
+          Default Colors
+        </label>
 
         <label>
           Atom Size: <span id="atomSizeValue" class="slider-value">0.40</span>
@@ -221,8 +161,11 @@
           Bond Width: <span id="bondWidthValue" class="slider-value">0.12</span>
           <input type="range" id="bondWidth" min="0.02" max="0.20" step="0.01" value="0.1">
         </label>
-      </div>
     </div>
+    </div>
+
+
+
     <div id="view"></div>
 
     <div id="aboutOverlay" hidden>
@@ -399,6 +342,7 @@
         });
       })();
     </script>
+
 
     <div id="axesGizmo"></div>
     <div id="axesLegend"> 

@@ -46,7 +46,9 @@ let fps = 0;
 
 let _counter = 1;
 export function animation_update(time = 0) {
-
+  if (_counter == 1){
+     app.clock = new THREE.Clock();
+  }
   if (!isRendering) return;
   requestAnimationFrame(animation_update);
   const interval = 1000 / targetFPS;
@@ -106,6 +108,26 @@ export function animation_update(time = 0) {
 
   app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
   app.labelRenderer.render(app.scene, app.camera);
+  if( app.angularVelocity != null ){
+    if (general.autoRandomEnabled && app.angularVelocity.lengthSq() > 0) {
+      const delta = app.clock.getDelta(); // seconds since last frame
+      const axis = app.angularVelocity.clone().normalize();
+      const angle = app.angularVelocity.length() * delta;
+
+      const q = new THREE.Quaternion().setFromAxisAngle(axis, angle);
+
+      // Rotate camera position around the target
+      app.camera.position.sub(app.controls.target);
+      app.camera.position.applyQuaternion(q);
+      app.camera.position.add(app.controls.target);
+
+      // Rotate camera orientation
+      app.camera.quaternion.premultiply(q);
+
+      // Optionally add decay
+      //app.angularVelocity.multiplyScalar(0.98); // damping if desired
+      }
+    }
 
   }
 
