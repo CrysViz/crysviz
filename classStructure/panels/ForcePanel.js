@@ -29,7 +29,7 @@ export function addForcePanel(target = "SpinForceContainer") {
   // --- Toggle ---
   const toggle = document.createElement("div");
   toggle.id = "forceToggle";
-  toggle.className = "spin-toggle";
+  toggle.className = "force-toggle";
   toggle.setAttribute("role", "button");
   toggle.setAttribute("tabindex", "0");
   toggle.setAttribute("aria-expanded", "false");

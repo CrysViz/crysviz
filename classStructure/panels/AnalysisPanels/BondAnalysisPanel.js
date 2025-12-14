@@ -193,7 +193,7 @@ export function addHistogramPanel(datasets, labels = [], xAxisLabel="Bond length
     ctx.fillStyle = "#ddd"; ctx.font = "14px 'Segoe UI', sans-serif"; ctx.textAlign = "center";
     for (let i = 0; i < groupCount; i++) {
       const x = margin + i*(totalBinWidth + binSpacing) + totalBinWidth/2;
-      const v = (globalMin + i*(maxXValue-globalMin)/BINCOUNT).toFixed(1);
+      const v = (globalMin + i*(maxXValue-globalMin)/BINCOUNT).toFixed(2);
       ctx.fillText(v, x, H - margin + 15);
     }
 
