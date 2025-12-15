@@ -81,31 +81,9 @@
         </div>
          <button type="button" id="saveButton">Download POSCAR</button>
       </div>
-
-      
-
       <div class="control-group" id="structureControls" style="display: none;">
-        <div class="segmented-control" id="ControlPanelModeSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="trajectory">Trajectory</button>
-          <button data-mode="comparison">Comparison</button>
-        </div>
 
-        <div class="segmented-control" id="ControlPanelSpinForceSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="Forces">Forces</button>
-          <button data-mode="Spins">Spins</button>
-        </div>
-        <div id="SpinForceContainer"></div>
-
-        <div class="segmented-control" id="ControlPanelAnalysisSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="Bonds">Bonds</button>
-          <button data-mode="Lattice">Lattice</button>
-          <button data-mode="TBD">TBD</button>
-        </div>
-        <div id="BondLatticeContainer"></div>
-
+        <label class="SettingsHeader">Settings & Analysis</label>
         <div class="toggle_group">
           <label class="toggle_row toggle_container">
             <span class="toggle_switch">
@@ -139,6 +117,31 @@
             <span class="toggle_text">Show Polyhedra</span>
           </label>
         </div>
+
+        <div class="segmented-control" id="ControlPanelModeSwitch">
+          <button data-mode="none" class="active">None</button>
+          <button data-mode="trajectory">Trajectory</button>
+          <button data-mode="comparison">Comparison</button>
+        </div>
+
+        <div class="segmented-control" id="ControlPanelSpinForceSwitch">
+          <button data-mode="none" class="active">None</button>
+          <button data-mode="Forces">Forces</button>
+          <button data-mode="Spins">Spins</button>
+          <button data-mode="Field">Field</button>
+        </div>
+        <div id="SpinForceContainer"></div>
+
+        <div class="segmented-control" id="ControlPanelAnalysisSwitch">
+          <button data-mode="none" class="active">None</button>
+          <button data-mode="Bonds">Bonds</button>
+          <button data-mode="Lattice">Lattice</button>
+          <button data-mode="Polyhedra">Polyhedra</button>
+        </div>
+        <div id="BondLatticeContainer"></div>
+
+
+
 
        <!-- Color Settings -->
        <div id="colorContainer"></div>

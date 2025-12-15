@@ -68,7 +68,7 @@ export function addCameraPanel(target = "cameraContainer") {
 
 
   const perspectiveSlider = document.createElement("span");
-  perspectiveSlider.className = "toggle_slider";
+  perspectiveSlider.className = "toggle_slider_dual";
 
   perspectiveSwitch.appendChild(perspectiveCheckbox);
   perspectiveSwitch.appendChild(perspectiveSlider);
@@ -87,7 +87,7 @@ export function addCameraPanel(target = "cameraContainer") {
 
   const dragLabel = document.createElement("span");
   dragLabel.className = "camera_label";
-  dragLabel.textContent = "Drag";
+  dragLabel.textContent = "Damped";
 
   const dragSwitch = document.createElement("span");
   dragSwitch.className = "toggle_switch";
@@ -97,14 +97,14 @@ export function addCameraPanel(target = "cameraContainer") {
   dragCheckbox.id = "autoRotate";
 
   const dragSlider = document.createElement("span");
-  dragSlider.className = "toggle_slider";
+  dragSlider.className = "toggle_slider_dual";
 
   dragSwitch.appendChild(dragCheckbox);
   dragSwitch.appendChild(dragSlider);
 
   const autoRotateLabel = document.createElement("span");
   autoRotateLabel.className = "camera_label_r";
-  autoRotateLabel.textContent = "Auto Rotation";
+  autoRotateLabel.textContent = "Rotation";
 
   dragToggle.appendChild(dragLabel);
   dragToggle.appendChild(dragSwitch);
@@ -126,7 +126,7 @@ export function addCameraPanel(target = "cameraContainer") {
   pushCheckbox.id = "pushRandom";
 
   const pushSlider = document.createElement("span");
-  pushSlider.className = "toggle_slider";
+  pushSlider.className = "toggle_slider_dual";
 
   pushSwitch.appendChild(pushCheckbox);
   pushSwitch.appendChild(pushSlider);

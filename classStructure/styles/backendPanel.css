@@ -1,23 +1,32 @@
 
 #calcResult {
-font-size: 14px;
+font-size: 12px;
 }
 
 .calcButton {
 font-size: 12px;
   background: var(--bg-color);
   border: 2px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255,255,255);
+  padding: 8px;
+  border-radius: 10px;
 }
 #connectBtn{
 font-size: 12px;
   background: var(--bg-color);
   border: 2px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255,255,255);
+  padding: 8px;
+  border-radius: 10px;
 }
 
 #disconnectBtn{
 font-size: 12px;
 background: var(--bg-color);
 border: 2px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255,255,255);
+  padding: 8px;
+  border-radius: 10px;
 }
 
 .calcButton:hover {
@@ -69,11 +78,30 @@ border: 2px solid rgba(255, 255, 255, 0.1);
   font-weight: 500;
 }
 
+.acceptBtn {
+ font-size: 12px;
+  background: var(--bg-color);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255,255,255);
+  padding: 8px;
+  border-radius: 10px;
+}
+
+
 .acceptBtn:hover {
   background: var(--bg-color);
   border-color: var(--border-color);
   border: 2px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 2px 10px var(--highlight-color);
+}
+
+.denyBtn {
+font-size: 12px;
+  background: var(--bg-color);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255,255,255);
+  padding: 8px;
+  border-radius: 10px;
 }
 
 .denyBtn:hover {

@@ -67,10 +67,14 @@ export function addControlPanelSpinForceSwitch() {
       }
     else if (general.spinForceState == "Spins") {
       //removeForces();
-      console.log("updating spins")
       addSpinPanel()
       createSpinControls();
       updateSpins();
+      removeForcePanel();
+        }
+    else if (general.spinForceState == "Field") {
+      // add vectorFieldPanel();
+      removeSpinPanel()
       removeForcePanel();
         }
     else {
@@ -78,6 +82,7 @@ export function addControlPanelSpinForceSwitch() {
       removeSpins();
       removeSpinPanel();
       removeForcePanel();
+      //remove  vectorFieldPanel();
     }
   });
 }
@@ -104,9 +109,9 @@ export function addControlPanelAnalysisSwitch() {
     else if (general.analysisState == "Bonds") {
       addBondPanel()
      }
-    else if (general.analysisState == "TBD") {
+    else if (general.analysisState == "Polyhedra") {
       removeBondPanel()
-      console.warn("TBD analysis not yet implemented!")
+      console.warn("Polyhedera analysis not yet implemented!")
       removeHistogramPanel()
     }
     else {
