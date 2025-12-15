@@ -1,7 +1,7 @@
-import { ColoredComponent } from './ColoredComponent.js';
+import { ColoredObject } from './ColoredObject.js';
 import { general, defaultColorMap, jmolColorMap} from '../store.js';
 
-export class Atom extends ColoredComponent {
+export class Atom extends ColoredObject {
   constructor({
     element = [],
     position = [],

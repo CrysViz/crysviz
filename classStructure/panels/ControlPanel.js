@@ -2,6 +2,7 @@ import { general,bondLengths} from '../store.js';
 import { addTrajectoryPlayer,removeTrajectoryPlayer} from './TrajectoryPanel.js';
 import { addLatticeComparisonPanel } from './LatticeComparisonPanel.js';
 import { removeSpins,updateSpins } from '../modules/SpinModule.js';
+import { removeForces,updateForces } from '../modules/ForceModule.js';
 import { removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
 import {createSpinControls,addSpinPanel,removeSpinPanel} from './SpinPanel.js';
 import {addForcePanel,removeForcePanel} from './ForcePanel.js';
@@ -60,10 +61,10 @@ export function addControlPanelSpinForceSwitch() {
 
     // Handle different modes
     if (general.spinForceState == "Forces") {
-      addForcePanel()
       removeSpins();
       removeSpinPanel()
-      //updateForces();
+      addForcePanel()
+      updateForces();
       }
     else if (general.spinForceState == "Spins") {
       //removeForces();
@@ -87,7 +88,7 @@ export function addControlPanelSpinForceSwitch() {
   });
 }
 
-const ControlPanelAnalysisSwitch = document.getElementById("ControlPanelAnalysisSwitch");
+const ControlPangeneral.spinForceStateelAnalysisSwitch = document.getElementById("ControlPanelAnalysisSwitch");
 export function addControlPanelAnalysisSwitch() {
   ControlPanelAnalysisSwitch.addEventListener("click", (e) => {
     const btn = e.target.closest("button");

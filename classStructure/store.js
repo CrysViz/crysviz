@@ -18,6 +18,7 @@ export const structureData = {
   supercell:null,
   spins:null,
   forces:null,
+  force_amps:null,
   stress:null,
 };
 export const originalStructureData = {

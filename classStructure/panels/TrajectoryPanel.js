@@ -1,8 +1,9 @@
 import { updateVisualization } from '../crystal-viewer.js';
-import { structureData, structureShip, fileBrowser } from '../store.js';
+import { general,structureData, structureShip, fileBrowser } from '../store.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { createSpinControls} from './SpinPanel.js';
 import { updateSpins} from '../modules/SpinModule.js';
+import { updateForces} from '../modules/ForceModule.js';
 
 let trajectoryPlayerElements = {};
 let currentFrame = 0;
@@ -18,11 +19,21 @@ function updateStructureFromFrame(frame, container) {
   structureData.positions = selectedStructure.atoms.map(a => a.position)
   structureData.elements = [...selectedStructure.elements];
   structureData.lattice = selectedStructure.lattice.map(r => [...r]);
+  structureData.forces = selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
+  structureData.spins = selectedStructure.spins?.map(spins => spins.vector ?? null) ?? null;
 
   createBondLengthControls();
-  if (structureData.spin) {
+
+   const ControlPanelSpinForceSwitch = document.getElementById("ControlPanelSpinForceSwitch");
+
+
+  if (structureData.spin != null && general.spinForceState === "Spins") {
     createSpinControls();
     updateSpins();
+  }
+  
+  if (structureData.forces != null && general.spinForceState === "Forces" ) {
+    updateForces();
   }
   updateVisualization();
 }

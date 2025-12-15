@@ -1,10 +1,11 @@
-import {structureData,structureShip, fileBrowser} from '../store.js'
+import {general,structureData,structureShip, fileBrowser} from '../store.js'
 import {updateVisualization} from '../crystal-viewer.js'
 import {resetView} from './WindowAndSceneControls.js'
 import {resetModeSwitch, resetSpinForceSwitch} from './ControlPanel.js'
 import {createBondLengthControls} from './BondLengthPanel.js'
 import {createSpinControls} from './SpinPanel.js'
 import {updateSpins} from '../modules/SpinModule.js'
+import {updateForces} from '../modules/ForceModule.js'
 
 
 export function showError(message) {
@@ -236,12 +237,14 @@ function updateStructureFromRowAndStep(rowIndex) {
   structureData.positions = selectedStructure.atoms.map(a => a.position);
   structureData.elements = [...selectedStructure.elements];
   structureData.lattice = selectedStructure.lattice.map(r => [...r]);
-  if (selectedStructure.spins.length != null) {
-    structureData.spins = selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
+  structureData.spins = selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
+  if (structureData.spin != null && general.spinForceState === "Spins") {
     updateSpins();
   }
-  if (selectedStructure.forces.lenght != null) {
-    structureData.spins = selectedStructure.forces?.map(force => force.vector ?? null) ?? null;
+  structureData.forces = selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
+  if (structureData.forces != null && general.spinForceState === "Forces" ) {
+    //structureData.force_amps = selectedStructure.forces?.map(length => force.length ?? null) ?? null;
+    updateForces();
   }
   if (selectedStructure.stress != null) {
      structureData.stress =  selectedStructure.stress.map(r => [...r]);

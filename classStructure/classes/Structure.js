@@ -1,4 +1,3 @@
-import { ColoredComponent } from './ColoredComponent.js';
 import { general, defaultColorMap, jmolColorMap} from '../store.js';
 import { Spin } from './Spin.js';
 import { Force } from './Force.js';
@@ -7,7 +6,7 @@ import { Symmetry } from './Symmetry.js';
 import {Stress} from './Stress.js';
 import {Atom} from './Atom.js';
 
-export class Structure extends ColoredComponent {
+export class Structure {
   constructor({
     elements = [],
     supercell = {},
@@ -23,8 +22,6 @@ export class Structure extends ColoredComponent {
     atomsGroup = null,
     latticeGroup = null,
   } = {}) {
-    // Call parent constructor
-    super({ colors, defaultColors });
 
     // Mutable instance properties
     this.elements = elements;

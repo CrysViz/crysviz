@@ -114,7 +114,7 @@ export async function addMoyoPanel() {
     }
 }
 
-function callMoyo(calcType="getSymmetryInfo", tolerance="1e-5") {
+function callMoyo(calcType="getSymmetryInfo", tolerance="1e-2") {
 
   const numbers = structureData.elements.map(el => PT_INVERTED[el]);
   const struct = { positions: structureData.positions, lattice:{basis:structureData.lattice.flat()}, numbers: numbers }

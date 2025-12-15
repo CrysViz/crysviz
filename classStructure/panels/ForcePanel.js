@@ -1,6 +1,8 @@
 import { createColorPicker } from '../old_style/color-picker.js';
 import { app, groups, general, structureData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 
+import {updateForces} from '../modules/ForceModule.js';
+
 
 export function removeForcePanel() {
   const panel = document.getElementById("forceControlsGroup");
@@ -28,8 +30,8 @@ export function addForcePanel(target = "SpinForceContainer") {
 
   // --- Toggle ---
   const toggle = document.createElement("div");
-  toggle.id = "forceToggle";
-  toggle.className = "force-toggle";
+  toggle.id = "spinToggle";
+  toggle.className = "spin-toggle";
   toggle.setAttribute("role", "button");
   toggle.setAttribute("tabindex", "0");
   toggle.setAttribute("aria-expanded", "false");
@@ -39,7 +41,7 @@ export function addForcePanel(target = "SpinForceContainer") {
   title.textContent = "Force Controls";
 
   const icon = document.createElement("div");
-  icon.id = "forceToggleIcon";
+  icon.id = "spinToggleIcon";
   icon.className = "toggle-icon";
   icon.textContent = "+";
 
@@ -48,7 +50,7 @@ export function addForcePanel(target = "SpinForceContainer") {
 
   // --- Collapsible content ---
   const content = document.createElement("div");
-  content.id = "forceControlsContent";
+  content.id = "spinControlsContent";
   content.className = "collapsible-content";
   content.setAttribute("aria-hidden", "true");
 
@@ -62,12 +64,32 @@ export function addForcePanel(target = "SpinForceContainer") {
   deleteBtn.id = "deleteForces";
   deleteBtn.className = "reset-btn";
   deleteBtn.textContent = "Delete Forces";
-
   resetWrapper.appendChild(deleteBtn);
 
   // --- Force Controls container ---
   const forceControls = document.createElement("div");
-  forceControls.id = "forceControls";
+  forceControls.id = "spinControls";
+
+  const sliderWrapper = document.createElement("div");
+  sliderWrapper.style.marginBottom = "8px";
+
+  const sliderLabel = document.createElement("label");
+  sliderLabel.textContent = "Spin Length Factor: ";
+  sliderWrapper.appendChild(sliderLabel);
+
+  const sliderValue = document.createElement("span");
+  sliderValue.textContent = "1.0";
+  sliderValue.style.marginRight = "8px";
+  sliderWrapper.appendChild(sliderValue);
+
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = 0.1;
+  slider.max = 10;
+  slider.step = 0.1;
+  slider.value = 1;
+  sliderWrapper.appendChild(slider);
+  content.appendChild(sliderWrapper);
 
   // Build hierarchy
   content.appendChild(resetWrapper);
@@ -108,6 +130,17 @@ export function addForcePanel(target = "SpinForceContainer") {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       setOpen(!content.classList.contains('open'));
+    }
+  });
+
+  slider.addEventListener("input", () => {
+    let val = parseFloat(slider.value);
+    // sticky zone near 1
+    if (Math.abs(val - 1) < 0.05) val = 1;
+    slider.value = val;
+    sliderValue.textContent = val.toFixed(2);
+    if (structureData.forces.length) {
+      updateForces(val);
     }
   });
 }

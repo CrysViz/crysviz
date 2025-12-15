@@ -1,7 +1,7 @@
 import * as THREE from '../backend/three/three.module.js';
 import { app, groups, general,spinsData, structureData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
-import {disposeGroup} from '../panels/WindowAndSceneControls.js'
-import {periodicWrapped} from './LatticeModule.js'
+import {disposeGroup} from '../panels/WindowAndSceneControls.js';
+import {periodicWrapped} from './LatticeModule.js';
 import { createColorPicker } from '../old_style/color-picker.js';
 
 export function removeSpins(){
@@ -44,12 +44,10 @@ export function updateSpins(spinFactor = 1) {
   const a = new THREE.Vector3(...lattice[0]);
   const b = new THREE.Vector3(...lattice[1]);
   const c = new THREE.Vector3(...lattice[2]);
-
+  console.log("Updating Spins")
   for (let i = 0; i < wrappedCart.length; i++) {
-    console.log("in loop")
     const atomIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     const vector = structureData.spins[atomIndex]
-    console.log(vector)
     const scalingFactor = 1.0
     const color = "#000000"
     

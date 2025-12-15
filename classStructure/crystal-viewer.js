@@ -378,6 +378,8 @@ function loadStructure(content, fileName = '', isDefault = false) {
         parsed.positions = parsedContainer.structures[0].atoms.map(a => a.position);
         parsed.elements = parsedContainer.structures[0].elements
         parsed.lattice = parsedContainer.structures[0].lattice
+        parsed.forces = parsedContainer.structures?.[0]?.forces?.map(force => force.vector ?? null) ?? null;
+        parsed.spins = parsedContainer.structures?.[0]?.spins?.map(spin => spin.vector ?? null) ?? null;
 
     }
     
@@ -391,7 +393,7 @@ function loadStructure(content, fileName = '', isDefault = false) {
         parsed.lattice = parsedContainer.structures[0].lattice
         console.warn(parsedContainer.structures[0].spins);
         parsed.spins = parsedContainer.structures?.[0]?.spins?.map(spin => spin.vector ?? null) ?? null;
-        parsed.forces = parsedContainer.structures[0].forces ?? null;
+        parsed.forces = parsedContainer.structures?.[0]?.forces?.map(force => force.vector ?? null) ?? null;
 
         if (parsed.spins.length != 0) {
          addSpinPanel(); 

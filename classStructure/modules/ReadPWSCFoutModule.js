@@ -2,6 +2,7 @@ import { Structure } from "../classes/Structure.js";
 import { Atom } from "../classes/Atom.js";
 import { Force } from "../classes/Force.js";
 import { Spin } from "../classes/Spin.js";
+import { Stress } from "../classes/Stress.js";
 import { StructureContainer } from "../classes/StructureContainer.js";
 const tableBody = document.querySelector("#objectTable tbody");
 import { fileBrowser } from "../store.js";
@@ -49,7 +50,7 @@ export function parsePWSCFout(content, fileName) {
     let positions = [];
     let elements = [];
     let forces = [];
-    let stressMatrix = [];
+    let stressTensor = [];
 
     // -----------------------------
     // Normal relaxation step
@@ -109,7 +110,7 @@ export function parsePWSCFout(content, fileName) {
         for (let r = 0; r < 3; r++) {
           const parts = lines[j + r].trim().split(/\s+/).map(Number);
           const pressures = parts.slice(3, 6);
-          stressMatrix.push(pressures.map(v => v * 0.1)); // GPa
+          stressTensor.push(pressures.map(v => v * 0.1)); // GPa
         }
       }
 
@@ -118,14 +119,14 @@ export function parsePWSCFout(content, fileName) {
         lattice && lattice.length === 3 &&
         positions && positions.length > 0 &&
         forces && forces.length > 0 &&
-        stressMatrix && stressMatrix.length === 3
+        stressTensor && stressTensor.length === 3
       ) {
         steps.push({
           lattice,
           elements,
           positionsFrac: positions,
           forces,
-          stressMatrix
+          stressTensor
         });
       }
 
@@ -166,7 +167,7 @@ export function parsePWSCFout(content, fileName) {
           for (let r = 0; r < 3; r++) {
             const parts = lines[j + r].trim().split(/\s+/).map(Number);
             const pressures = parts.slice(3, 6);
-            stressMatrix.push(pressures.map(v => v * 0.1));
+            stressTensor.push(pressures.map(v => v * 0.1));
           }
         }
 
@@ -176,7 +177,7 @@ export function parsePWSCFout(content, fileName) {
           elements,
           positionsFrac: positions,
           forces,
-          stressMatrix
+          stressTensor
         });
 
         finalSCF = true;
@@ -207,7 +208,7 @@ export function parsePWSCFout(content, fileName) {
         j++;
       }
 
-      const stressMatrix = [];
+      const stressTensor = [];
       const stressIdx = findIndexInRange(remainingForcesIdx, n, ln =>
         ln.includes("Computing stress")
       );
@@ -216,17 +217,17 @@ export function parsePWSCFout(content, fileName) {
         for (let r = 0; r < 3; r++) {
           const parts = lines[k + r].trim().split(/\s+/).map(Number);
           const pressures = parts.slice(3, 6);
-          stressMatrix.push(pressures.map(v => v * 0.1));
+          stressTensor.push(pressures.map(v => v * 0.1));
         }
       }
 
-      if (forces.length > 0 || stressMatrix.length > 0) {
+      if (forces.length > 0 || stressTensor.length > 0) {
         steps.push({
           lattice: lastStep.lattice,
           elements: lastStep.elements,
           positionsFrac: lastStep.positionsFrac,
           forces,
-          stressMatrix
+          stressTensor,
         });
         finalSCF = true;
       }
@@ -240,6 +241,7 @@ export function parsePWSCFout(content, fileName) {
   const structures = steps.map(s => {
   const atoms = [];
 
+
   s.positionsFrac.forEach((pos, i) => {
     atoms.push(
       new Atom({
@@ -248,8 +250,8 @@ export function parsePWSCFout(content, fileName) {
       })
     );
   });
+  const spins = [];   
   if (s.spins) {
-   const spins = [];
     s.spins.forEach((vector,i) =>{
        spins.push(new Spin({
          vector: vector,
@@ -273,13 +275,14 @@ export function parsePWSCFout(content, fileName) {
     elements: s.elements,
     uniqueElements: [...new Set(s.elements)],
     lattice: s.lattice,
+    forces: forces,
+    polyhedra: [],
+    stresses: new Stress( {tensor:s.stressTensor}),
     atoms: atoms,
+    spins: spins ?? []
   });
 });
 
-
-  const forceObjects = steps.map(s => ({ forces: s.forces }));
-  const stressObjects = steps.map(s => ({ stressMatrix: s.stressMatrix }));
 
   const traj = structures.length;
   const step = traj;
@@ -298,11 +301,7 @@ export function parsePWSCFout(content, fileName) {
   return new StructureContainer({
     fileName,
     structures,
-    spins: [],
     symmetries: [],
-    forces: forceObjects,
-    polyhedra: [],
-    stresses: stressObjects,
     finalSCF
   });
 }
