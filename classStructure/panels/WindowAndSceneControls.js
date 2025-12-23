@@ -84,8 +84,6 @@ export function initControls(){
 }
 
 
-
-
 // window resize
 export function resizeRenderer(orthographicFrustumSize) {
   if (!app.renderer || !app.camera) return;

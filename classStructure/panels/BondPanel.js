@@ -75,12 +75,56 @@ export function addBondPanel(target = "BondLatticeContainer") {
   resetWrapper.appendChild(resetBtn);
   resetWrapper.appendChild(histogramBtn);
 
+
+  const drawBondWrapper = document.createElement("div");
+  drawBondWrapper.id = "drawBondWrapper";
+  drawBondWrapper.className = "drawBondWrapper";
+  drawBondWrapper.setAttribute("aria-hidden", "true");
+  drawBondWrapper.style.display = "flex";
+  drawBondWrapper.style.gap = "8px";
+  drawBondWrapper.style.justifyContent = "center";
+
+  const drawBondsBtn = document.createElement("button");
+  drawBondsBtn.id = "drawBondBtn";
+  drawBondsBtn.className = "btn-mini highlight";
+  drawBondsBtn.textContent = "🖋️";
+  drawBondsBtn.style.fonsize = "48px";
+
+  drawBondsBtn.onclick = () => {
+    console.warn("Clicked draw bonds button")
+  }
+
+  const undoDrawBtn = document.createElement("button");
+  undoDrawBtn.id = "undoDrawBtn";
+  undoDrawBtn.className = "btn-mini highlight";
+  undoDrawBtn.textContent = "↩";
+  undoDrawBtn.style.fonsize = "48px";
+  undoDrawBtn.onclick = () => {
+    console.warn("Clicked undo draw bonds button")
+  }
+
+  const deleteDrawBtn = document.createElement("button");
+  deleteDrawBtn.id = "deleteDrawBtn";
+  deleteDrawBtn.className = "btn-mini highlight";
+  deleteDrawBtn.textContent = "🗑️";
+  deleteDrawBtn.style.fonsize = "48px";
+  deleteDrawBtn.onclick = () => {
+    console.warn("Clicked delte draw bonds button")
+  }
+
+  drawBondWrapper.appendChild(drawBondsBtn);
+  drawBondWrapper.appendChild(undoDrawBtn);
+  drawBondWrapper.appendChild(deleteDrawBtn);
+
+
+
   // --- Bond Controls container ---
   const controls = document.createElement("div");
   controls.id = "bondControls";
 
   // Build structure
   content.appendChild(resetWrapper);
+  content.appendChild(drawBondWrapper);
   content.appendChild(controls);
 
   panel.appendChild(toggle);

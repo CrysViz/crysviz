@@ -72,23 +72,25 @@ export function addControlPanelSpinForceSwitch() {
       createSpinControls();
       updateSpins();
       removeForcePanel();
+      removeForces()
         }
     else if (general.spinForceState == "Field") {
       // add vectorFieldPanel();
       removeSpinPanel()
       removeForcePanel();
+      removeForces()
         }
     else {
       //removeForces
       removeSpins();
       removeSpinPanel();
       removeForcePanel();
+      removeForces()
       //remove  vectorFieldPanel();
     }
   });
 }
 
-const ControlPangeneral.spinForceStateelAnalysisSwitch = document.getElementById("ControlPanelAnalysisSwitch");
 export function addControlPanelAnalysisSwitch() {
   ControlPanelAnalysisSwitch.addEventListener("click", (e) => {
     const btn = e.target.closest("button");

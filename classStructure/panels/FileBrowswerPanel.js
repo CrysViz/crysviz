@@ -77,10 +77,6 @@ export function createRow(obj) {
 
     let oldRowIndex = fileBrowser.selectedRowIndex;
     fileBrowser.selectedRowIndex = rowIndex;
-    if (oldRowIndex !== rowIndex) {
-      resetSpinForceSwitch(); // Reset panels on structure switch
-      resetModeSwitch();
-    }
   });
 
   // Duplicate (copy) logic
@@ -155,9 +151,6 @@ export function selectLastAddedRow() {
   // Update structure panel
   updateStructureFromRowAndStep(rowIndex);
 
-  // Reset UI panels
-  resetSpinForceSwitch();
-  resetModeSwitch();
 }
 
 
