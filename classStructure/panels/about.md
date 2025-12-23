@@ -2,7 +2,7 @@
 
 by Abhijith S. Parackal and Florian Trybel
 
-Version 0.4 Beta 2025-11-24
+Version 0.5 Beta 2025-12-23
 
 ## This is the live developement repository. If you are not Abhijith or Florian, you should not be here!
 
@@ -19,19 +19,18 @@ CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POS
 - Trajectory player. Load OUTCARs and pwscf vc-relax output files directly and visualise the trajectories. (MDs might hit your memory limit!)
 - Possibility to activate a calcualtions backend. This allows: (1) symmetry analysis with spglib and (2) structural relaxation with MACE (MPA0 model; trajectory is added and can be played using the trajectory player)
 - Watch forces and spins change in relaxaton trajectories (VASP and QE output)
+- Bond length histogram
+- symmetry analysis and refinement powered by Moyo 
 
 ## Currently broken due to developments 
 - Structure and lattice comparsion
-- Spins are not stored correctly when switching files in the file browser
 - Camera does not re-center when switching files in the file browser 
 - Due to many new addtions there are side effects in the styles... fonts are to large, panels to wide. Will be cleaned up once the functionalities are working.
 
 ## Comming Soon...
-- Visualise forces and stress
-- Visualise trajectories with spins or forces/stress
+- Visualise  stress
 - Manipulate structures under symmetry constraints
 - Possibility to add atoms
-- Symmetry Refinement
 
 ## Experimental
 - Trajectory player
