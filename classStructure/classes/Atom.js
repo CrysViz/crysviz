@@ -5,6 +5,7 @@ export class Atom extends ColoredObject {
   constructor({
     element = [],
     position = [],
+    coordination = [],
     color = null,
     defaultColor=null,
   } = {}) {
@@ -13,6 +14,7 @@ export class Atom extends ColoredObject {
     // Mutable instance properties
     this.position = position.map(c => ((c % 1) + 1) % 1);;   // 3×1
     const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
+    this.coordination = null;
     this.defaultColor = null;
     this.defaultColor = colorScheme[element] || 0x808080;
     // Current mutable colors

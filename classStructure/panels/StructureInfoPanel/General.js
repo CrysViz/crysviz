@@ -777,401 +777,44 @@ export function renderComposition() {
     compDiv.appendChild(row);
   });
 
-  // Lattice parameters section
-  addSupercellSection();
-  addLatticeParametersSection();
-}
-
-
-export function addSupercellSection() {
-  const compDiv = document.getElementById('composition');
-  if (!compDiv || !structureData) return;
-  const resetWrapper = document.createElement('div');
-  resetWrapper.style.cssText = `
-    display: flex;
-    justify-content: center;
-    margin-top: 16px;
-  `;
-
-  const fullColorResetBtn = document.createElement('button');
-  fullColorResetBtn.textContent = 'Reset All Colors';
-  fullColorResetBtn.className = 'reset-btn';
-  fullColorResetBtn.style.cssText = `
-    height: 32px;
-    padding: 6px 12px;
-    font-size: 12px;
-    min-width: 50px;
-    cursor: pointer;
-  `;
-
-  fullColorResetBtn.onclick = () => {
-    const uniqueElements = new Set(structureData.elements);
-    for (const element of uniqueElements) {
-      clearElementColorOverride(element);
-      clearAllIndividualColorsForElement(element);
-    }
-    updateVisualization({
-      reRenderAtoms: true,
-      reRenderBonds: true,
-      reRenderLattice: false,
-      reRenderOther: true,
-    });
-  };
- resetWrapper.appendChild(fullColorResetBtn);
-  compDiv.appendChild(resetWrapper);
-
-  // Wrapper section
-  const supercellSection = document.createElement('div');
-  supercellSection.id = 'supercellSection';
-  supercellSection.style.cssText = `
-    border-top: 2px solid rgba(255,255,255,0.1);
-    margin-top: 12px;
-    padding-top: 12px;
-    color: rgba(255,255,255,0.85);
-  `;
-
-  // Title
-  const title = document.createElement('div');
-  const titleWrapper = document.createElement('div');
-    titleWrapper.style.cssText = `
-    display: flex;
-    justify-content: center;
-    margin-top: 2px;
-  `;
-
-  title.textContent = 'Create Supercell';
-  title.style.cssText = 'font-size:14px; font-weight:500; margin-bottom:10px;';
-
-  titleWrapper.appendChild(title);
-  supercellSection.appendChild(titleWrapper);
-
-    // --- Initialize supercell values ---
-  if (!structureData.supercell) structureData.supercell = { nx: 1, ny: 1, nz: 1 };
-  const { nx,ny,nz } = structureData.supercell;
-
-  // --- Input row ---
-  const inputRow = document.createElement('div');
-  inputRow.style.cssText = 'display:flex; gap:6px; margin-bottom:8px;justify-content: center;';
-  const inputs = {};
-  ['nx', 'ny', 'nz'].forEach(axis => {
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.min = '1';
-    input.step = '1';
-    if (general.currentSupercell != null) {
-    input.value = general.currentSupercell[axis];
-    }
-    else{
-      input.value = 1
-    }
-    input.style.cssText =
-      'width:50px; text-align:center; border:none; border-radius:4px; background:rgba(255,255,255,0.1); color:white; font-family:monospace; padding:3px;';
-    inputs[axis] = input;
-    inputRow.appendChild(input);
-  });
-  supercellSection.appendChild(inputRow);
-
-  // --- Buttons row ---
-  const btnRow = document.createElement('div');
-  btnRow.style.cssText = 'display:flex; gap:8px;justify-content: center;';
-
-  const applyBtn = document.createElement('button');
-  applyBtn.textContent = 'Apply';
-  applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right:      4px; min-width: 80px;';
-
-
-  const resetBtn = document.createElement('button');
-  resetBtn.textContent = 'Reset';
-  resetBtn.className = 'reset-btn';
-  resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right:      4px; min-width: 80px;';
-
-
-  btnRow.appendChild(applyBtn);
-  btnRow.appendChild(resetBtn);
-  supercellSection.appendChild(btnRow);
-  // --- Apply logic ---
-  applyBtn.onclick = () => {
-    const newA = Math.max(1, parseInt(inputs.nx.value));
-    const newB = Math.max(1, parseInt(inputs.ny.value));
-    const newC = Math.max(1, parseInt(inputs.nz.value));
-    structureData.supercell = { nx: newA, ny: newB, nz: newC };
-
-    // Restore pristine structure from originalStructureData
-    structureData.atoms = structuredClone(originalStructureData.atoms);
-    structureData.lattice = structuredClone(originalStructureData.lattice);
-    structureData.elements = structuredClone(originalStructureData.elements);
-
-    // Build supercell
-    createSupercell(newA, newB, newC);
-    updateVisualization({
-        reRenderAtoms: true,
-        reRenderBonds: true,
-        reRenderLattice: true
-      });
-    resetView()
-  };
-
-  resetBtn.onclick = () => {
-    createSupercell(1, 1, 1);
-    updateVisualization({
-        reRenderAtoms: true,
-        reRenderBonds: true,
-        reRenderLattice: true
-      });
-    resetView()
-  }
-  // --- Attach section ---
-  compDiv.appendChild(supercellSection);
-}
-
-// Function to add lattice parameters section to composition
-//
-
-function addLatticeParametersSection() {
-  const compDiv = document.getElementById('composition');
-  if (!compDiv || !structureData || !structureData.lattice) return;
-
-  const oldSection = document.getElementById('latticeSection');
-  if (oldSection) oldSection.remove();
-
-  const latticeSection = document.createElement('div');
-  latticeSection.id = 'latticeSection';
-  latticeSection.style.cssText = `
-    border-top: 2px solid rgba(255,255,255,0.1);
-    margin-top: 12px;
-    padding-top: 12px;
-    color: rgba(255,255,255,0.85);
+  // Example usage:
+// Assuming `structureData.lattice` is available
+  //
+  const volumeDiv = document.createElement("div");
+  volumeDiv.style.cssText = `
+    margin-top: 8px;
     font-size: 13px;
+    color: rgba(255, 255, 255, 0.8);
   `;
 
 
-  const title = document.createElement('div');
-  const titleWrapper = document.createElement('div');
-    titleWrapper.style.cssText = `
-    display: flex;
-    justify-content: center;
-    margin-top: 2px;
-  `;
-
-  title.textContent = 'Modify Lattice';
-  title.style.cssText = 'font-size:14px; font-weight:500; margin-bottom:10px;';
-
-  titleWrapper.appendChild(title);
-  latticeSection.appendChild(titleWrapper);
-
-   const latticeResetBtnWrapper = document.createElement('div');
-    latticeResetBtnWrapper.style.cssText = `
-    display: flex;
-    justify-content: center;
-    margin-top: 2px;
-  `;
-
-  const latticeResetBtn = document.createElement('button');
-  latticeResetBtn.textContent = 'Reset Lattice';
-  latticeResetBtn.className = 'reset-btn';
-  latticeResetBtn.id = 'LatticeResetBtn';
-  latticeResetBtn.style.cssText = `
-    height: 28px;
-    padding: 4px 10px;
-    font-size: 12px;
-    margin-bottom: 10px;
-    cursor: pointer;
-    border: none;
-    border-radius: 4px;
-    color: white;
-  `;
-  latticeResetBtnWrapper.appendChild(latticeResetBtn);
-  latticeSection.appendChild(latticeResetBtnWrapper);
-
- // ---- Toggle controls ----
-  const toggleRow = document.createElement('div');
-  toggleRow.style.cssText = 'display:flex; justify-content:center; align-items:center; margin-bottom:8px;';
-
-  const toggleLabel = document.createElement('span');
-  toggleLabel.textContent = 'Input Option:    ';
-  toggleLabel.style.cssText = 'font-weight:600; color:rgba(255,255,255,0.8);';
-
-  const toggleBtn = document.createElement('button');
-  toggleBtn.textContent = 'Matrix';
-  toggleBtn.className = 'mini-btn';
-  toggleBtn.style.cssText = `
-    height:24px; padding:2px 8px; font-size:12px; cursor:pointer;
-    border:none; border-radius:4px; background:rgba(255,255,255,0.1); color:white;margin-left:8px;
-  `;
-
-  toggleRow.appendChild(toggleLabel);
-  toggleRow.appendChild(toggleBtn);
-  latticeSection.appendChild(toggleRow);
+  compDiv.appendChild(volumeDiv);
+  const volume = getLatticeVolume(structureData.lattice);
+  console.log(`Lattice Volume: ${volume} Å³`);
+  volumeDiv.textContent = `Volume: ${volume} Å³`;
 
 
-  // ---- Container for inputs ----
-  const viewContainer = document.createElement('div');
-  latticeSection.appendChild(viewContainer);
 
-  // ---- Volume display ----
-  const volumeDiv = document.createElement('div');
-  volumeDiv.style.cssText = 'margin-top:8px; font-size:13px; color:rgba(255,255,255,0.8);';
-  latticeSection.appendChild(volumeDiv);
+}
 
-  compDiv.appendChild(latticeSection);
 
-  // ===== Helper math functions =====
-  const norm = (v) => Math.hypot(v[0], v[1], v[2]);
-  const dot = (u, v) => u[0]*v[0] + u[1]*v[1] + u[2]*v[2];
-  const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
-  const acosDeg = (x) => Math.acos(clamp(x, -1, 1)) * 180 / Math.PI;
-  const deg2rad = (deg) => deg * Math.PI / 180;
-  const cross = (a,b) => [
-    a[1]*b[2]-a[2]*b[1],
-    a[2]*b[0]-a[0]*b[2],
-    a[0]*b[1]-a[1]*b[0]
+
+
+
+
+function getLatticeVolume(lattice) {
+  // Helper functions for vector math
+  const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const cross = (a, b) => [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
   ];
 
-  function updateVolumeDisplay(L) {
-    const V = Math.abs(dot(L[0], cross(L[1], L[2])));
-    volumeDiv.textContent = `Volume: ${V.toFixed(3)} Å³`;
-  }
-
-  // ===== Lattice Parameter View =====
-  function renderLatticeParams() {
-    viewContainer.innerHTML = '';
-    const L = structureData.lattice;
-    const a = norm(L[0]);
-    const b = norm(L[1]);
-    const c = norm(L[2]);
-    const alpha = acosDeg(dot(L[1], L[2]) / (b * c || 1));
-    const beta  = acosDeg(dot(L[0], L[2]) / (a * c || 1));
-    const gamma = acosDeg(dot(L[0], L[1]) / (a * b || 1));
-
-    const params = { a, b, c, alpha, beta, gamma };
-    const table = document.createElement('table');
-    table.style.cssText = 'width:100%; border-collapse:collapse; font-size:12px;';
-    const tbody = document.createElement('tbody');
-
-    for (const [key, val] of Object.entries(params)) {
-      const tr = document.createElement('tr');
-      const tdLabel = document.createElement('td');
-      tdLabel.textContent = key;
-      tdLabel.style.cssText = 'padding:4px;';
-
-      const tdInput = document.createElement('td');
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.value = val.toFixed(4);
-      input.step = key.length === 1 ? '0.01' : '0.1';
-      input.style.cssText = 'width:80px; text-align:right; font-family:monospace; padding:2px;';
-      input.id = `${key}Input`;
-      input.oninput = () => {
-        const vals = {
-          a: parseFloat(document.querySelector('#aInput').value),
-          b: parseFloat(document.querySelector('#bInput').value),
-          c: parseFloat(document.querySelector('#cInput').value),
-          alpha: parseFloat(document.querySelector('#alphaInput').value),
-          beta: parseFloat(document.querySelector('#betaInput').value),
-          gamma: parseFloat(document.querySelector('#gammaInput').value),
-        };
-        if (Object.values(vals).some(v => !isFinite(v))) return;
-
-        const { a, b, c, alpha, beta, gamma } = vals;
-        const cosA = Math.cos(deg2rad(alpha));
-        const cosB = Math.cos(deg2rad(beta));
-        const cosG = Math.cos(deg2rad(gamma));
-        const sinG = Math.sin(deg2rad(gamma));
-        const Lnew = [
-          [a, 0, 0],
-          [b*cosG, b*sinG, 0],
-          [c*cosB, c*(cosA - cosB*cosG)/sinG, c*Math.sqrt(1 - cosB**2 - ((cosA - cosB*cosG)/sinG)**2)]
-        ];
-        general.modifiedLattice = Lnew;
-        structureData.lattice = Lnew;
-        updateVisualization({
-          reRenderAtoms: true,
-          reRenderBonds: true,
-          reRenderLattice: true,
-          reRenderOther: false
-        });
-        updateVolumeDisplay(Lnew);
-      };
-      tdInput.appendChild(input);
-      tr.appendChild(tdLabel);
-      tr.appendChild(tdInput);
-      tbody.appendChild(tr);
-    }
-
-    table.appendChild(tbody);
-    viewContainer.appendChild(table);
-    updateVolumeDisplay(L);
-  }
-  // ===== Matrix View =====
-  function renderMatrixView() {
-    viewContainer.innerHTML = '';
-    const L = structureData.lattice;
-
-    const table = document.createElement('table');
-    table.style.cssText = 'width:100%; border-collapse:collapse; font-size:12px;';
-    const tbody = document.createElement('tbody');
-
-    for (let i = 0; i < 3; i++) {
-      const tr = document.createElement('tr');
-      for (let j = 0; j < 3; j++) {
-        const td = document.createElement('td');
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.value = L[i][j].toFixed(4);
-        input.step = '0.01';
-        input.style.cssText = 'width:80px; text-align:right; font-family:monospace; padding:2px;';
-        input.oninput = () => {
-          const val = parseFloat(input.value);
-          if (isFinite(val)) {
-            structureData.lattice[i][j] = val;
-            updateVisualization({
-                        reRenderAtoms: true,
-                        reRenderBonds: true,
-                        reRenderLattice: true,
-                        reRenderOther: false
-            });
-            updateVolumeDisplay(structureData.lattice);
-          }
-        };
-        general.modifiedLattice = structureData.lattice
-        td.appendChild(input);
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
-    }
-
-    table.appendChild(tbody);
-    viewContainer.appendChild(table);
-    updateVolumeDisplay(L);
-  }
-
-  // ===== Event Handlers =====
-  let showMatrix = false;
-  toggleBtn.onclick = () => {
-    showMatrix = !showMatrix;
-    toggleBtn.textContent = showMatrix ? 'Parameters' : 'Show Matrix';
-    showMatrix ? renderMatrixView() : renderLatticeParams();
-  };
-
-  latticeResetBtn.onclick = () => {
-    const originalData = JSON.parse(JSON.stringify(originalStructureData));
-    //createSupercell(1,1,1)
-    general.modifiedLattice = null
-    structureData.lattice = originalData.lattice
-    if (general.currentSupercell != null){
-      createSupercell(general.currentSupercell.nx,general.currentSupercell.ny,general.currentSupercell.nz)
-    }
-    updateVisualization({ reRenderAtoms:true, reRenderBonds:true, reRenderLattice:true,reRenderOther:true });
-    resetView();
-    (showMatrix ? renderMatrixView : renderLatticeParams)();
-  };
-
-  // Initial render
-  renderLatticeParams();
-
-}  
-
+  // Calculate volume: |a · (b × c)|
+  const volume = Math.abs(dot(lattice[0], cross(lattice[1], lattice[2])));
+  return volume.toFixed(3); // Round to 3 decimal places
+}
 
 
 

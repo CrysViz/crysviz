@@ -7,6 +7,7 @@ import { removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
 import {createSpinControls,addSpinPanel,removeSpinPanel} from './SpinPanel.js';
 import {addForcePanel,removeForcePanel} from './ForcePanel.js';
 import {addBondPanel,removeBondPanel} from './BondPanel.js';
+import {addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel} from './LatticeSupercellPanel.js'
 import {updateVisualization} from '../crystal-viewer.js';
 
 
@@ -108,18 +109,22 @@ export function addControlPanelAnalysisSwitch() {
       console.warn("Lattice analysis not yet implemented!")
       removeHistogramPanel()
       removeBondPanel()
+      addLatticeAndSupercellPanel()
     }
     else if (general.analysisState == "Bonds") {
       addBondPanel()
+      removeLatticeAndSupercellPanel()
      }
     else if (general.analysisState == "Polyhedra") {
       removeBondPanel()
       console.warn("Polyhedera analysis not yet implemented!")
       removeHistogramPanel()
+      removeLatticeAndSupercellPanel()
     }
     else {
       removeHistogramPanel()
       removeBondPanel()
+      removeLatticeAndSupercellPanel()
     }
   });
 }

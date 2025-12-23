@@ -9,77 +9,125 @@ export function addBondPanel(target = "BondLatticeContainer") {
     return;
   }
 
-  // --- Outer wrapper ---
+  // --- Outer wrapper (dark grey background) ---
   const group = document.createElement("div");
   group.id = "bondControlsGroup";
+  group.style.padding = "10px";
+  group.style.borderRadius = "5px";
+  group.style.border = "1px solid rgba(255, 255, 255, 0.3)";
+  group.style.backgroundColor = "#333"; // Added for consistency
 
-  // --- Panel ---
-  const panel = document.createElement("div");
-  panel.id = "bondPanel";
+  // --- Histograms Panel ---
+  const histogramsPanel = document.createElement("div");
+  histogramsPanel.id = "histogramsPanel";
+  histogramsPanel.style.marginBottom = "10px";
 
-  // --- Toggle ---
-  const toggle = document.createElement("div");
-  toggle.id = "bondToggle";
-  toggle.className = "bond-toggle";
-  toggle.setAttribute("role", "button");
-  toggle.setAttribute("tabindex", "0");
-  toggle.setAttribute("aria-expanded", "false");
-  toggle.setAttribute("aria-controls", "bondControlsContent");
+  const histogramsToggle = document.createElement("div");
+  histogramsToggle.id = "histogramsToggle";
+  histogramsToggle.className = "bond-toggle";
+  histogramsToggle.setAttribute("role", "button");
+  histogramsToggle.setAttribute("tabindex", "0");
+  histogramsToggle.setAttribute("aria-expanded", "false");
+  histogramsToggle.setAttribute("aria-controls", "histogramsContent");
 
-  const title = document.createElement("h4");
-  title.textContent = "Bond Length Controls";
+  const histogramsTitle = document.createElement("h4");
+  histogramsTitle.textContent = "Histograms";
 
-  const icon = document.createElement("div");
-  icon.id = "bondToggleIcon";
-  icon.className = "toggle-icon";
-  icon.textContent = "+";
+  const histogramsIcon = document.createElement("div");
+  histogramsIcon.id = "histogramsToggleIcon";
+  histogramsIcon.className = "toggle-icon";
+  histogramsIcon.textContent = "+";
 
-  toggle.appendChild(title);
-  toggle.appendChild(icon);
+  histogramsToggle.appendChild(histogramsTitle);
+  histogramsToggle.appendChild(histogramsIcon);
 
-  // --- Collapsible content ---
-  const content = document.createElement("div");
-  content.id = "bondControlsContent";
-  content.className = "collapsible-content";
-  content.setAttribute("aria-hidden", "true");
+  const histogramsContent = document.createElement("div");
+  histogramsContent.id = "histogramsContent";
+  histogramsContent.className = "collapsible-content"; // Fixed: className instead of classname
+  histogramsContent.setAttribute("aria-hidden", "true");
 
-  // --- Reset wrapper + button ---
-  const resetWrapper = document.createElement("div");
-  resetWrapper.id = "resetBondLenghtsWrapper";
-  resetWrapper.className = "bottonWrapper";
-  resetWrapper.setAttribute("aria-hidden", "true");
-  resetWrapper.style.display = "flex";
-  resetWrapper.style.gap = "8px";
-
-  const resetBtn = document.createElement("button");
-  resetBtn.id = "resetBondLengths";
-  resetBtn.className = "reset-btn";
-  resetBtn.textContent = "Reset to Defaults";
-  resetWrapper.style.fonsize = "12px";
-
-  resetBtn.onclick = resetBondLengths;
+  // --- Histogram buttons row (centered) ---
+  const histogramButtonsRow = document.createElement("div");
+  histogramButtonsRow.style.display = "flex";
+  histogramButtonsRow.style.gap = "8px";
+  histogramButtonsRow.style.justifyContent = "center";
 
   const histogramBtn = document.createElement("button");
   histogramBtn.id = "bondHistogram";
   histogramBtn.className = "btn-mini highlight";
   histogramBtn.textContent = "Histogram";
-  histogramBtn.style.fonsize = "12px";
+  histogramBtn.style.fontSize = "12px";
 
   histogramBtn.onclick = () => {
-      const dataArrays = Object.values(bondLengths);
-      const labelsArray = Object.keys(bondLengths);
+    const dataArrays = Object.values(bondLengths);
+    const labelsArray = Object.keys(bondLengths);
     addHistogramPanel(dataArrays, labelsArray);
+  };
 
-  }  
+  const angleHistogramBtn = document.createElement("button");
+  angleHistogramBtn.id = "angleHistogram";
+  angleHistogramBtn.className = "btn-mini highlight";
+  angleHistogramBtn.textContent = "Angle Histogram";
+  angleHistogramBtn.style.fontSize = "12px";
 
-  resetWrapper.appendChild(resetBtn);
-  resetWrapper.appendChild(histogramBtn);
+  angleHistogramBtn.onclick = () => {
+    console.warn("Clicked Angle Histogram button");
+    // Add your logic for angle histogram here
+  };
 
+  const coordinationNumberBtn = document.createElement("button");
+  coordinationNumberBtn.id = "coordinationNumber";
+  coordinationNumberBtn.className = "btn-mini highlight";
+  coordinationNumberBtn.textContent = "Coordination Number";
+  coordinationNumberBtn.style.fontSize = "12px";
 
+  coordinationNumberBtn.onclick = () => {
+    console.warn("Clicked Coordination Number button");
+    // Add your logic for coordination number here
+  };
+
+  histogramButtonsRow.appendChild(histogramBtn);
+  histogramButtonsRow.appendChild(angleHistogramBtn);
+  histogramButtonsRow.appendChild(coordinationNumberBtn);
+
+  histogramsContent.appendChild(histogramButtonsRow);
+
+  histogramsPanel.appendChild(histogramsToggle);
+  histogramsPanel.appendChild(histogramsContent);
+
+  // --- Draw Bonds Panel ---
+  const drawBondsPanel = document.createElement("div");
+  drawBondsPanel.id = "drawBondsPanel";
+  drawBondsPanel.style.marginBottom = "10px";
+
+  const drawBondsToggle = document.createElement("div");
+  drawBondsToggle.id = "drawBondsToggle";
+  drawBondsToggle.className = "bond-toggle";
+  drawBondsToggle.setAttribute("role", "button");
+  drawBondsToggle.setAttribute("tabindex", "0");
+  drawBondsToggle.setAttribute("aria-expanded", "false");
+  drawBondsToggle.setAttribute("aria-controls", "drawBondsContent");
+
+  const drawBondsTitle = document.createElement("h4");
+  drawBondsTitle.textContent = "Draw Bonds";
+
+  const drawBondsIcon = document.createElement("div");
+  drawBondsIcon.id = "drawBondsToggleIcon";
+  drawBondsIcon.className = "toggle-icon";
+  drawBondsIcon.textContent = "+";
+
+  drawBondsToggle.appendChild(drawBondsTitle);
+  drawBondsToggle.appendChild(drawBondsIcon);
+
+  const drawBondsContent = document.createElement("div");
+  drawBondsContent.id = "drawBondsContent";
+  drawBondsContent.className = "collapsible-content";
+  drawBondsContent.setAttribute("aria-hidden", "true");
+
+  // --- Draw/undo/delete buttons row (centered) ---
   const drawBondWrapper = document.createElement("div");
   drawBondWrapper.id = "drawBondWrapper";
   drawBondWrapper.className = "drawBondWrapper";
-  drawBondWrapper.setAttribute("aria-hidden", "true");
   drawBondWrapper.style.display = "flex";
   drawBondWrapper.style.gap = "8px";
   drawBondWrapper.style.justifyContent = "center";
@@ -88,83 +136,190 @@ export function addBondPanel(target = "BondLatticeContainer") {
   drawBondsBtn.id = "drawBondBtn";
   drawBondsBtn.className = "btn-mini highlight";
   drawBondsBtn.textContent = "🖋️";
-  drawBondsBtn.style.fonsize = "48px";
+  drawBondsBtn.style.fontSize = "24px";
 
   drawBondsBtn.onclick = () => {
-    console.warn("Clicked draw bonds button")
-  }
+    console.warn("Clicked draw bonds button");
+  };
 
   const undoDrawBtn = document.createElement("button");
   undoDrawBtn.id = "undoDrawBtn";
   undoDrawBtn.className = "btn-mini highlight";
   undoDrawBtn.textContent = "↩";
-  undoDrawBtn.style.fonsize = "48px";
+  undoDrawBtn.style.fontSize = "24px";
+
   undoDrawBtn.onclick = () => {
-    console.warn("Clicked undo draw bonds button")
-  }
+    console.warn("Clicked undo draw bonds button");
+  };
 
   const deleteDrawBtn = document.createElement("button");
   deleteDrawBtn.id = "deleteDrawBtn";
   deleteDrawBtn.className = "btn-mini highlight";
   deleteDrawBtn.textContent = "🗑️";
-  deleteDrawBtn.style.fonsize = "48px";
+  deleteDrawBtn.style.fontSize = "24px";
+
   deleteDrawBtn.onclick = () => {
-    console.warn("Clicked delte draw bonds button")
-  }
+    console.warn("Clicked delete draw bonds button");
+  };
 
   drawBondWrapper.appendChild(drawBondsBtn);
   drawBondWrapper.appendChild(undoDrawBtn);
   drawBondWrapper.appendChild(deleteDrawBtn);
 
+  drawBondsContent.appendChild(drawBondWrapper);
 
+  drawBondsPanel.appendChild(drawBondsToggle);
+  drawBondsPanel.appendChild(drawBondsContent);
+
+  // --- Bond Length Controls Panel ---
+  const bondLengthPanel = document.createElement("div");
+  bondLengthPanel.id = "bondLengthPanel";
+
+  const bondLengthToggle = document.createElement("div");
+  bondLengthToggle.id = "bondLengthToggle";
+  bondLengthToggle.className = "bond-toggle";
+  bondLengthToggle.setAttribute("role", "button");
+  bondLengthToggle.setAttribute("tabindex", "0");
+  bondLengthToggle.setAttribute("aria-expanded", "false");
+  bondLengthToggle.setAttribute("aria-controls", "bondLengthContent");
+
+  const bondLengthTitle = document.createElement("h4");
+  bondLengthTitle.textContent = "Bond Length Controls";
+
+  const bondLengthIcon = document.createElement("div");
+  bondLengthIcon.id = "bondLengthToggleIcon";
+  bondLengthIcon.className = "toggle-icon";
+  bondLengthIcon.textContent = "+";
+
+  bondLengthToggle.appendChild(bondLengthTitle);
+  bondLengthToggle.appendChild(bondLengthIcon);
+
+  const bondLengthContent = document.createElement("div");
+  bondLengthContent.id = "bondLengthContent";
+  bondLengthContent.className = "collapsible-content";
+  bondLengthContent.setAttribute("aria-hidden", "true");
+
+  // --- Reset wrapper + button ---
+  const resetWrapper = document.createElement("div");
+  resetWrapper.id = "resetBondLengthsWrapper";
+  resetWrapper.className = "buttonWrapper";
+  resetWrapper.setAttribute("aria-hidden", "true");
+  resetWrapper.style.display = "flex";
+  resetWrapper.style.gap = "8px";
+
+  const resetBtn = document.createElement("button");
+  resetBtn.id = "resetBondLengths";
+  resetBtn.className = "reset-btn";
+  resetBtn.textContent = "Reset to Defaults";
+  resetBtn.style.fontSize = "12px";
+
+  resetBtn.onclick = resetBondLengths;
+
+  resetWrapper.appendChild(resetBtn);
+  bondLengthContent.appendChild(resetWrapper);
 
   // --- Bond Controls container ---
-  const controls = document.createElement("div");
-  controls.id = "bondControls";
+  const bondControls = document.createElement("div");
+  bondControls.id = "bondControls";
+  bondLengthContent.appendChild(bondControls);
 
-  // Build structure
-  content.appendChild(resetWrapper);
-  content.appendChild(drawBondWrapper);
-  content.appendChild(controls);
+  bondLengthPanel.appendChild(bondLengthToggle);
+  bondLengthPanel.appendChild(bondLengthContent);
 
-  panel.appendChild(toggle);
-  panel.appendChild(content);
-
-  group.appendChild(panel);
-
-  // Insert into DOM
-  targetPanel.appendChild(group);
-
-  // --- Toggle script (same logic as spin panel) ---
-
-  function setOpen(open) {
+  // --- Toggle logic for Histograms ---
+  function setHistogramsOpen(open) {
     if (open) {
-      content.classList.add("open");
-      content.setAttribute("aria-hidden", "false");
-      icon.textContent = "−";
-      toggle.setAttribute("aria-expanded", "true");
+      histogramsContent.classList.add("open");
+      histogramsContent.setAttribute("aria-hidden", "false");
+      histogramsIcon.textContent = "−";
+      histogramsToggle.setAttribute("aria-expanded", "true");
     } else {
-      content.classList.remove("open");
-      content.setAttribute("aria-hidden", "true");
-      icon.textContent = "+";
-      toggle.setAttribute("aria-expanded", "false");
+      histogramsContent.classList.remove("open");
+      histogramsContent.setAttribute("aria-hidden", "true");
+      histogramsIcon.textContent = "+";
+      histogramsToggle.setAttribute("aria-expanded", "false");
     }
   }
 
-  setOpen(false);
+  setHistogramsOpen(false);
 
-  toggle.addEventListener("click", () =>
-    setOpen(!content.classList.contains("open"))
+  histogramsToggle.addEventListener("click", () =>
+    setHistogramsOpen(!histogramsContent.classList.contains("open"))
   );
 
-  toggle.addEventListener("keydown", (e) => {
+  histogramsToggle.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      setOpen(!content.classList.contains("open"));
+      setHistogramsOpen(!histogramsContent.classList.contains("open"));
     }
   });
-  createBondLengthControls()
+
+  // --- Toggle logic for Draw Bonds ---
+  function setDrawBondsOpen(open) {
+    if (open) {
+      drawBondsContent.classList.add("open");
+      drawBondsContent.setAttribute("aria-hidden", "false");
+      drawBondsIcon.textContent = "−";
+      drawBondsToggle.setAttribute("aria-expanded", "true");
+    } else {
+      drawBondsContent.classList.remove("open");
+      drawBondsContent.setAttribute("aria-hidden", "true");
+      drawBondsIcon.textContent = "+";
+      drawBondsToggle.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  setDrawBondsOpen(false);
+
+  drawBondsToggle.addEventListener("click", () =>
+    setDrawBondsOpen(!drawBondsContent.classList.contains("open"))
+  );
+
+  drawBondsToggle.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      setDrawBondsOpen(!drawBondsContent.classList.contains("open"));
+    }
+  });
+
+  // --- Toggle logic for Bond Length Controls ---
+  function setBondLengthOpen(open) {
+    if (open) {
+      bondLengthContent.classList.add("open");
+      bondLengthContent.setAttribute("aria-hidden", "false");
+      bondLengthIcon.textContent = "−";
+      bondLengthToggle.setAttribute("aria-expanded", "true");
+    } else {
+      bondLengthContent.classList.remove("open");
+      bondLengthContent.setAttribute("aria-hidden", "true");
+      bondLengthIcon.textContent = "+";
+      bondLengthToggle.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  setBondLengthOpen(false);
+
+  bondLengthToggle.addEventListener("click", () =>
+    setBondLengthOpen(!bondLengthContent.classList.contains("open"))
+  );
+
+  bondLengthToggle.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      setBondLengthOpen(!bondLengthContent.classList.contains("open"));
+    }
+  });
+
+  // --- Build structure ---
+  group.appendChild(histogramsPanel);
+  group.appendChild(drawBondsPanel);
+  group.appendChild(bondLengthPanel);
+  targetPanel.appendChild(group);
+
+  // --- Create bond controls ---
+  createBondLengthControls();
 }
+
 
 
 export function removeBondPanel() {
