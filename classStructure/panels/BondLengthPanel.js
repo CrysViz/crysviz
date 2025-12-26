@@ -1,6 +1,7 @@
 import { app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 import {getBondCutoff} from '../modules/BondsModule.js';
 import { updateVisualization } from '../crystal-viewer.js';
+import {createPieDot} from '../modules/ColorModule.js';
 
 export function resetBondLengths() {
   for (const pair in general.defaultBondLengths) {
@@ -34,6 +35,8 @@ export function createBondLengthControls(targetPanel='bondControls') {
   resetBtn.className = "reset-btn";
   resetBtn.textContent = "Reset to Defaults";
   resetBtn.style.fontSize = "12px";
+  resetBtn.style.marginTop= "2px";
+  resetBtn.style.height ="22px";
   resetBtn.onclick = resetBondLengths;
 
   resetWrapper.appendChild(resetBtn);
@@ -85,8 +88,20 @@ export function createBondLengthControls(targetPanel='bondControls') {
     checkboxLabel.style.color = '#ccc';
     checkboxLabel.style.margin = '0';
 
+    let dot
+    let curr_bond_colors = ["#ccc","#fff"]
+    if (curr_bond_colors.length > 1) {
+      dot = createPieDot(curr_bond_colors, 50);
+      dot.classList.add('dot');
+    } else {
+      dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = curr_bond_colors[0];
+    }
+
     checkboxDiv.appendChild(checkbox);
     checkboxDiv.appendChild(checkboxLabel);
+    checkboxDiv.appendChild(dot);
 
     const label = document.createElement('div');
     label.className = 'bond-label';

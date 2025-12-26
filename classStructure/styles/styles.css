@@ -956,7 +956,6 @@ justify-content: center;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
-  padding: 10px;
 }
 
 
@@ -1173,8 +1172,8 @@ font-size: 12px; color:#fff;
 backdrop-filter: blur(10px);
 z-index:1000; pointer-events:none;
 }
-.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;}
-.dot-a{background:#ff3333;} .dot-b{background:#33cc33;} .dot-c{background:#3366ff;}
+.dot{display:inline-block;width:15px;height:15px;border-radius:50%;margin-right:6px;}
+.dot-a{width:10px;height:10px;background:#ff3333;} .dot-b{width:10px;height:10px;background:#33cc33;} .dot-c{width:10px;height:10px;background:#3366ff;}
 .legend-row{display:flex;align-items:center;gap:6px;line-height:1.2;}
 
 
