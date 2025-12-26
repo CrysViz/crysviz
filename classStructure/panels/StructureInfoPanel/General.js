@@ -10,6 +10,7 @@ import {createSupercell} from '../../modules/SuperCellModule.js';
 import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
 import {createCompositionRow} from './Species.js'
 
+import {createBondLengthControls} from '../BondLengthPanel.js'
 
 
 
@@ -144,29 +145,92 @@ export function renderComposition(panelState="closed") {
     }
   }
 
+// Create a new div element for the segmented control
+const atomBondControl = document.createElement('div');
+atomBondControl.id = 'atomBondControl';
+atomBondControl.className = "atomBondControl";
 
+// Add the segmented control to the div
+const segmentedControl = addSegmentedControl(atomBondControl, 'atomBondControlSwitch');
+// Append the div to compDiv
+compDiv.appendChild(atomBondControl);
 
-  // Create a new div element for the segmented control
-  const atomBondControl = document.createElement('div');
-  atomBondControl.id = 'atomBondControl';
-  atomBondControl.className = "atomBondControl";
+// Create atom panel
+const atomPanel = document.createElement("div");
+atomPanel.id = "atomPanel";
+atomPanel.className = "atomBondClass"; // Add a class for styling
+elements.forEach(el => {
+  const row = createCompositionRow(el, counts[el], total);
+  atomPanel.appendChild(row);
+});
 
-  // Add the segmented control to the div
-  addSegmentedControl(atomBondControl, 'atomBondControlSwitch');
+// Create bonds panel
+const bondsPanel = document.createElement("div");
+bondsPanel.id = "bondControls";
+bondsPanel.className = "atomBondClass"; // Add a class for styling
+// Append panels to compDiv
+compDiv.appendChild(atomPanel);
+compDiv.appendChild(bondsPanel);
 
-  // Append the div to compDiv
-  compDiv.appendChild(atomBondControl);
+createBondLengthControls("bondControls"); // Make sure to pass the panel element
 
-  // Render ALL rows directly (no “+N more” collapsing)
-   
-  const atomPanel = document.createElement("div")
-  atomPanel.id="atomPanel"
-  elements.forEach(el => {
-    const row = createCompositionRow(el, counts[el], total);
-    atomPanel.appendChild(row);
+// Function to show the selected panel and hide others
+function showPanel(panelId) {
+  // Hide all panels
+  document.querySelectorAll('.atomBondClass').forEach(panel => {
+    panel.style.display = 'none';
   });
 
-  compDiv.appendChild(atomPanel);
+  // Show the selected panel
+  const panelToShow = document.getElementById(panelId);
+  console.warn(panelId)
+  if (panelToShow) {
+    panelToShow.style.display = 'block';
+  }
+}
+
+// Set up event listeners for the segmented control buttons
+segmentedControl.querySelectorAll('button').forEach(button => {
+  button.addEventListener('click', function() {
+    // Remove active class from all buttons
+    segmentedControl.querySelectorAll('button').forEach(btn => {
+      btn.classList.remove('active');
+    });
+
+    // Add active class to the clicked button
+    this.classList.add('active');
+    // Show the appropriate panel based on the selected mode
+    const selectedMode = this.dataset.mode;
+    if (selectedMode === 'atoms') {
+      // You can decide what to show for trajectory mode
+      // For now, let's show the atom panel
+      showPanel('atomPanel');
+    } else if (selectedMode === 'bonds') {
+      console.log("mode bonds selected")
+      // For comparison mode, maybe show both panels?
+      // For now, let's show the bonds panel
+      showPanel('bondControls');
+    }
+  });
+});
+// Let atoms button be active. Which is button 0 in the list
+segmentedControl.querySelectorAll('button')[0].classList.add('active');
+showPanel("atomPanel")
+
+// CSS for the panels
+const style = document.createElement('style');
+style.textContent = `
+  .control-panel {
+    display: none; /* Initially hidden */
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: rgba(26, 26, 26, 0.95);
+  }
+`;
+document.head.appendChild(style);
+
 
 
   // Example usage:
@@ -218,7 +282,7 @@ function createSegmentedControl(containerId) {
 
   const BondsButton = document.createElement('button');
   BondsButton.textContent = 'Bonds';
-  BondsButton.dataset.mode = 'bons';
+  BondsButton.dataset.mode = 'bonds';
 
   // Add buttons to the container
   container.appendChild(AtomsButton);

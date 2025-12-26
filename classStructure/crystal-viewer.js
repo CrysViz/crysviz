@@ -294,7 +294,7 @@ export function updateVisualization(options = {}) {
     reRenderBonds = true,
     reRenderLattice = true,
     reRenderOther = true,
-    reRenderComposition = null,
+    reRenderComposition = false,
     sOpactiy = general.secondOpacity,
     mOpacity = general.mainOpacity
   } = options;
@@ -316,7 +316,7 @@ export function updateVisualization(options = {}) {
     updateBonds();
   }
 
-  if (reRenderComposition != null) {
+  if (reRenderComposition != false) {
     renderComposition(reRenderComposition);
   }
   if (reRenderLattice) updateLattice(general.currentLatticeColor);

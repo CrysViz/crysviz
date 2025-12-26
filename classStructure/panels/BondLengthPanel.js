@@ -7,15 +7,38 @@ export function resetBondLengths() {
     general.bondLengths[pair] = general.defaultBondLengths[pair];
   }
   createBondLengthControls();
-  updateVisualization();
+  updateVisualization({reRenderOther: false, reRenderComposition: false});
 }
 
-export function createBondLengthControls() {
-  const bondControls = document.getElementById('bondControls');
-  if (!bondControls) return;
+export function createBondLengthControls(targetPanel='bondControls') {
+  const bondControls = document.getElementById(targetPanel);
+  if (!bondControls) { 
+    console.warn(`Could not find ${targetPanel}`)
+    return;
+  }
   bondControls.innerHTML = '';
 
   if (!structureData) return;
+
+    // --- Reset wrapper + button ---
+  const resetWrapper = document.createElement("div");
+  resetWrapper.id = "resetBondLengthsWrapper";
+  resetWrapper.className = "buttonWrapper";
+  resetWrapper.setAttribute("aria-hidden", "true");
+  resetWrapper.style.display = "flex";
+  resetWrapper.style.justifyContent = "center";
+  resetWrapper.style.gap = "8px";
+
+  const resetBtn = document.createElement("button");
+  resetBtn.id = "resetBondLengths";
+  resetBtn.className = "reset-btn";
+  resetBtn.textContent = "Reset to Defaults";
+  resetBtn.style.fontSize = "12px";
+  resetBtn.onclick = resetBondLengths;
+
+  resetWrapper.appendChild(resetBtn);
+
+  bondControls.appendChild(resetWrapper);
 
   const uniqueElements = [...new Set(structureData.elements)];
   const pairs = [];
@@ -53,7 +76,7 @@ export function createBondLengthControls() {
     checkbox.checked = general.bondVisibility[pair];
     checkbox.onchange = (e) => {
       general.bondVisibility[pair] = e.target.checked;
-      updateVisualization();
+      updateVisualization({reRenderOther: false, reRenderComposition: false});
     };
 
     const checkboxLabel = document.createElement('label');
@@ -115,7 +138,7 @@ export function createBondLengthControls() {
 
       slider.value = val;
       textInput.value = val;
-      updateVisualization();
+      updateVisualization({reRenderOther: false, reRenderComposition: false});
     }
 
     slider.oninput = (e) => updateValue(e.target.value);

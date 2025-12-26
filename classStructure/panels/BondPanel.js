@@ -1,5 +1,4 @@
 import { app,bondLengths, groups, general, structureData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
-import {resetBondLengths,createBondLengthControls} from './BondLengthPanel.js';
 import { addHistogramPanel,removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
 
 export function addBondPanel(target = "BondLatticeContainer") {
@@ -183,48 +182,7 @@ export function addBondPanel(target = "BondLatticeContainer") {
   bondLengthToggle.setAttribute("aria-expanded", "false");
   bondLengthToggle.setAttribute("aria-controls", "bondLengthContent");
 
-  const bondLengthTitle = document.createElement("h4");
-  bondLengthTitle.textContent = "Bond Length Controls";
 
-  const bondLengthIcon = document.createElement("div");
-  bondLengthIcon.id = "bondLengthToggleIcon";
-  bondLengthIcon.className = "toggle-icon";
-  bondLengthIcon.textContent = "+";
-
-  bondLengthToggle.appendChild(bondLengthTitle);
-  bondLengthToggle.appendChild(bondLengthIcon);
-
-  const bondLengthContent = document.createElement("div");
-  bondLengthContent.id = "bondLengthContent";
-  bondLengthContent.className = "collapsible-content";
-  bondLengthContent.setAttribute("aria-hidden", "true");
-
-  // --- Reset wrapper + button ---
-  const resetWrapper = document.createElement("div");
-  resetWrapper.id = "resetBondLengthsWrapper";
-  resetWrapper.className = "buttonWrapper";
-  resetWrapper.setAttribute("aria-hidden", "true");
-  resetWrapper.style.display = "flex";
-  resetWrapper.style.gap = "8px";
-
-  const resetBtn = document.createElement("button");
-  resetBtn.id = "resetBondLengths";
-  resetBtn.className = "reset-btn";
-  resetBtn.textContent = "Reset to Defaults";
-  resetBtn.style.fontSize = "12px";
-
-  resetBtn.onclick = resetBondLengths;
-
-  resetWrapper.appendChild(resetBtn);
-  bondLengthContent.appendChild(resetWrapper);
-
-  // --- Bond Controls container ---
-  const bondControls = document.createElement("div");
-  bondControls.id = "bondControls";
-  bondLengthContent.appendChild(bondControls);
-
-  bondLengthPanel.appendChild(bondLengthToggle);
-  bondLengthPanel.appendChild(bondLengthContent);
 
   // --- Toggle logic for Histograms ---
   function setHistogramsOpen(open) {
@@ -282,42 +240,13 @@ export function addBondPanel(target = "BondLatticeContainer") {
     }
   });
 
-  // --- Toggle logic for Bond Length Controls ---
-  function setBondLengthOpen(open) {
-    if (open) {
-      bondLengthContent.classList.add("open");
-      bondLengthContent.setAttribute("aria-hidden", "false");
-      bondLengthIcon.textContent = "−";
-      bondLengthToggle.setAttribute("aria-expanded", "true");
-    } else {
-      bondLengthContent.classList.remove("open");
-      bondLengthContent.setAttribute("aria-hidden", "true");
-      bondLengthIcon.textContent = "+";
-      bondLengthToggle.setAttribute("aria-expanded", "false");
-    }
-  }
-
-  setBondLengthOpen(false);
-
-  bondLengthToggle.addEventListener("click", () =>
-    setBondLengthOpen(!bondLengthContent.classList.contains("open"))
-  );
-
-  bondLengthToggle.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      setBondLengthOpen(!bondLengthContent.classList.contains("open"));
-    }
-  });
 
   // --- Build structure ---
   group.appendChild(histogramsPanel);
   group.appendChild(drawBondsPanel);
-  group.appendChild(bondLengthPanel);
   targetPanel.appendChild(group);
 
   // --- Create bond controls ---
-  createBondLengthControls();
 }
 
 

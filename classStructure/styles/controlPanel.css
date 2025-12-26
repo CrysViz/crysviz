@@ -1,8 +1,8 @@
 .segmented-control {
   display: flex;
-  margin-top: 15px;
+  margin-top: 5px;
   background: rgba(25,25,25,0.8);
-  padding: 8px;
+  padding: 4px;
   border-radius: 10px;
   gap: 4px;
   margin-bottom: 10px;
