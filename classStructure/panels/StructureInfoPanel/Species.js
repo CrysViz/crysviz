@@ -248,7 +248,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   // Color picker button
   const colorBtn = document.createElement('button');
   colorBtn.textContent = 'Color';
-  colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
+  colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;';
   const choosenColor = hexToRgba(colorHexToCss(getIndividualAtomColor(element, atomIndex)),0.8);
   colorBtn.style.background = choosenColor;
   colorBtn.title = `Change color for ${element}${displayNumber}`;
@@ -256,14 +256,14 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   // Coordinate edit button
   const coordBtn = document.createElement('button');
   coordBtn.textContent = 'Position';
-  coordBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
+  coordBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; cursor: pointer; font-size: 10px;';
   coordBtn.title = `Edit coordinates for ${element}${displayNumber}`;
 
 
     // Spin Edit button
   const spinBtn = document.createElement('button');
   spinBtn.textContent = 'Spin/Force';
-  spinBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; min-width: 22px;';
+  spinBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; cursor: pointer; font-size: 10px;';
   spinBtn.title = `Edit Spin for ${element}${displayNumber}`;
 
   buttonContainer.appendChild(colorBtn);
@@ -289,15 +289,15 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
         });
       }
   });
-  const applyBtn = document.createElement('button');
-  applyBtn.textContent = 'Apply';
-  applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
+  const AtomColorApplyBtn = document.createElement('button');
+  AtomColorApplyBtn.textContent = 'Apply';
+  AtomColorApplyBtn.className = 'btn-mini highlight';
+  AtomColorApplyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
 
-  const resetBtn = document.createElement('button');
-  resetBtn.textContent = 'Reset';
-  resetBtn.className = 'btn-mini';
-  resetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
+  const AtomColorResetBtn = document.createElement('button');
+  AtomColorResetBtn.textContent = 'Reset';
+  AtomColorResetBtn.className = 'btn-mini';
+  AtomColorResetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
 
   // First row: color + hex
   const topRowIndiv = document.createElement('div');
@@ -308,8 +308,8 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   // Second row: buttons
   const buttonRowIndiv = document.createElement('div');
   buttonRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px;';
-  buttonRowIndiv.appendChild(resetBtn);
-  buttonRowIndiv.appendChild(applyBtn);
+  buttonRowIndiv.appendChild(AtomColorResetBtn);
+  buttonRowIndiv.appendChild(AtomColorApplyBtn);
 
   editor.appendChild(topRowIndiv);
   editor.appendChild(buttonRowIndiv);
@@ -517,10 +517,10 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
         });
       }
    });
-  const SpinColorApplyBtn = document.createElement('button');
-  SpinColorApplyBtn.textContent = 'Apply';
-  SpinColorApplyBtn.className = 'btn-mini highlight';
-  SpinColorApplyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
+  const spinColorApplyBtn = document.createElement('button');
+  spinColorApplyBtn.textContent = 'Apply';
+  spinColorApplyBtn.className = 'btn-mini highlight';
+  spinColorApplyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
 
   const spinColorResetBtn = document.createElement('button');
   spinColorResetBtn.textContent = 'Reset';
@@ -537,8 +537,8 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
   // Second row: buttons
   const spinButtonRowIndiv = document.createElement('div');
   spinButtonRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px;';
-  spinButtonRowIndiv.appendChild(resetBtn);
-  spinButtonRowIndiv.appendChild(applyBtn);
+  spinButtonRowIndiv.appendChild(spinColorResetBtn);
+  spinButtonRowIndiv.appendChild(spinColorApplyBtn);
 
   spinColorEditor.appendChild(spinTopRowIndiv);
   spinColorEditor.appendChild(spinButtonRowIndiv);
@@ -600,7 +600,7 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
     }
   };
 
-  applyBtn.onclick = () => {
+  AtomColorApplyBtn.onclick = () => {
       dot.style.background = picker.getHex;
       editor.style.display = 'none';
       updateVisualization({
@@ -612,7 +612,7 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
       });
   };
 
-  resetBtn.onclick = () => {
+  AtomColorResetBtn.onclick = () => {
     clearIndividualAtomColor(element, atomIndex);
     const newColor = colorHexToCss(getIndividualAtomColor(element, atomIndex));
     dot.style.background = newColor;
