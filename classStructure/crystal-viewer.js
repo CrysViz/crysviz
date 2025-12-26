@@ -65,7 +65,7 @@ import {loadAboutContent, openAboutPanel, closeAboutPanel} from './panels/AboutP
 import {addSpinPanel,createSpinControls} from './panels/SpinPanel.js';
 import { addLatticeComparisonPanel }from './panels/LatticeComparisonPanel.js'
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
-import {createCompositionRow,renderComposition} from './panels/StructureInfoPanel/General.js';
+import {renderComposition} from './panels/StructureInfoPanel/General.js';
 import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
 import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch} from './panels/ControlPanel.js';
 import {addHistogramPanel} from  './panels/AnalysisPanels/BondAnalysisPanel.js';
@@ -294,6 +294,7 @@ export function updateVisualization(options = {}) {
     reRenderBonds = true,
     reRenderLattice = true,
     reRenderOther = true,
+    reRenderComposition = null,
     sOpactiy = general.secondOpacity,
     mOpacity = general.mainOpacity
   } = options;
@@ -313,6 +314,10 @@ export function updateVisualization(options = {}) {
   if (reRenderBonds) { 
     disposeGroup();
     updateBonds();
+  }
+
+  if (reRenderComposition != null) {
+    renderComposition(reRenderComposition);
   }
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
   if (reRenderOther) updateOther();

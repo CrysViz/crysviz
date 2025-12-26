@@ -20,6 +20,7 @@ export const structureData = {
   forces:null,
   force_amps:null,
   stress:null,
+  original:null,
 };
 export const originalStructureData = {
   positions:null,
@@ -71,7 +72,7 @@ export const groups = {
 
 export const general = {  
   autoRandomEnabled: false,
-  powerMode: true,
+  powerMode: false,
   currentLatticeColor:null,
   defaultBackgroundColor:null,
   currentLatticeColor:null,

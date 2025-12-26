@@ -11,7 +11,7 @@ let isRendering = true;
 export function pauseRendering() {
   if (!general.powerMode) {
     let now = getCurrentTime()
-    alert("Power saving mode is active. Click OK to resume rendering.");
+    //alert("Power saving mode is active. Click OK to resume rendering.");
     isRendering = false;
     console.warn(`Pause rendering ${now}`)
   }
