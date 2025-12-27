@@ -17,7 +17,6 @@ export function createBondLengthControls(targetPanel='bondControls') {
     console.warn(`Could not find ${targetPanel}`)
     return;
   }
-  bondControls.innerHTML = '';
 
   if (!structureData) return;
 

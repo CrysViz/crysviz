@@ -45,7 +45,7 @@ import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividua
 import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,
         addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './modules/MeasurementModule.js' // not all imports might be needed in this file
 
-import {HighlightAtom,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
+import {highlightBondInfoInStructurePanel,HighlightAtom,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
 
 import {addVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
 import {addCameraPanel} from './panels/CameraPanel.js' 
@@ -759,6 +759,9 @@ function init() {
 
     //highlightBondInStructurePanel(bondIndex);
     highlightBondIn3D(bondMesh);
+    highlightBondInfoInStructurePanel()
+
+
   }  
   else  {
      clearAllHighlights();

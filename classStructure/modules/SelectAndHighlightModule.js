@@ -1,6 +1,7 @@
 
 import {groups,highlightHover,structureData} from '../store.js';
 import {collapseAllAtomExpansions} from '../panels/WindowAndSceneControls.js';
+import {updateBondControlPanel} from '../panels/StructureInfoPanel/Bonds.js';
 
 
 export function clearHighlightAtom(m) {
@@ -74,6 +75,41 @@ export function HighlightBond(m, hex){
 }
 
 
+function showPanel(panelId) {
+  // Hide all panels
+  document.querySelectorAll('.atomBondClass').forEach(panel => {
+    panel.style.display = 'none';
+  });
+
+  // Show the selected panel
+  const panelToShow = document.getElementById(panelId);
+  console.warn(panelId)
+  if (panelToShow) {
+    panelToShow.style.display = 'block';
+  }
+}
+
+export function highlightBondInfoInStructurePanel(){
+ const structureToggle = document.getElementById('structureToggle');
+ // Check if structure panel is collapsed and expand it
+ if (composition.classList.contains('collapsible-content') && !composition.classList.contains('open')) {
+    const toggleIcon = document.getElementById('structureToggleIcon');
+    composition.classList.add('open');
+    // composition.setAttribute('aria-hidden', 'false'); // Removed to prevent focus issues
+    if (toggleIcon) {
+      toggleIcon.textContent = '−';
+      toggleIcon.classList.add('open');
+    }
+    if (structureToggle) {
+      structureToggle.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  // select the bond information panel
+  const panelSwitch = document.getElementById('atomBondControlSwitch')
+  panelSwitch.querySelectorAll('button')[0].classList.add('active');
+  showPanel("bondControls")
+}
 
 
 export function highlightAtomInStructurePanel(element, sourceIndex) {
@@ -193,7 +229,8 @@ export function clearAllHighlights() {
    // Clear 3D bond highlight
   if (highlightHover.currentlyHighlightedBond) {
     clearHighlightBond(highlightHover.currentlyHighlightedBond);
-    highlightHover.currentlyHighlightedBond = null;
+    highlightHover.currentlyHighlightedBond = [];
+    updateBondControlPanel();
   }
 }
 
@@ -227,11 +264,19 @@ export function highlightBondIn3D(bondMesh) {
     half.material.needsUpdate = true;
   });
   // Update the currently highlighted bond reference
-  highlightHover.currentlyHighlightedBond = allHalves[0]; // or allHalves[0], if you prefer
+  highlightHover.currentlyHighlightedBond = allHalves; // or allHalves[0], if you prefer
+  updateBondControlPanel()
 }
 
 function clearHighlightBond(bondMesh) {
-  const bondName = bondMesh.name;
+  if (!bondMesh) return;
+  let bondName
+  if (bondMesh.length > 0){
+     bondName = bondMesh[0].name;
+  }
+  else {
+    bondName = bondMesh.name;
+  }
   const allHalves = [];
 
   // Use traverse to search recursively

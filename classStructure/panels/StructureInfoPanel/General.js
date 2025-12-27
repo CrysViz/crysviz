@@ -9,7 +9,7 @@ import { updateBonds } from '../../modules/BondsModule.js'
 import {createSupercell} from '../../modules/SuperCellModule.js';
 import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
 import {createCompositionRow} from './Species.js'
-
+import {createSpecificBondControl} from './Bonds.js'
 import {createBondLengthControls} from '../BondLengthPanel.js'
 
 
@@ -163,6 +163,33 @@ elements.forEach(el => {
   atomPanel.appendChild(row);
 });
 
+const ResetColorAtomsButtonRow = document.createElement('div');
+ResetColorAtomsButtonRow.style.display = 'flex';
+ResetColorAtomsButtonRow.style.justifyContent = 'center';
+ResetColorAtomsButtonRow.style.marginTop = '20px';
+ResetColorAtomsButtonRow.style.gap = '20px';
+
+
+const resetAllColorsBtn = document.createElement('button');
+resetAllColorsBtn.id="resetAllColorsBtn"
+resetAllColorsBtn.textContent = 'Reset Colors';
+resetAllColorsBtn.className = 'reset-btn';
+resetAllColorsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
+
+const resetAtomsBtn = document.createElement('button');
+resetAtomsBtn.id = "resetAtomsBtn"
+resetAtomsBtn.textContent = 'Reset Atoms';
+resetAtomsBtn.className = 'reset-btn';
+resetAtomsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
+
+ResetColorAtomsButtonRow.appendChild(resetAllColorsBtn)
+ResetColorAtomsButtonRow.appendChild(resetAtomsBtn)
+
+
+atomPanel.appendChild(ResetColorAtomsButtonRow)
+
+
+
 // Create bonds panel
 const bondsPanel = document.createElement("div");
 bondsPanel.id = "bondControls";
@@ -170,6 +197,8 @@ bondsPanel.className = "atomBondClass"; // Add a class for styling
 // Append panels to compDiv
 compDiv.appendChild(atomPanel);
 compDiv.appendChild(bondsPanel);
+
+createSpecificBondControl("bondControls");
 
 createBondLengthControls("bondControls"); // Make sure to pass the panel element
 
@@ -271,7 +300,7 @@ function createSegmentedControl(containerId) {
   // Create the container div
   const container = document.createElement('div');
   container.className = 'segmented-control';
-  container.id = containerId || 'ControlPanelModeSwitch';
+  container.id = containerId; 
 
   // Create the buttons
 
@@ -287,7 +316,7 @@ function createSegmentedControl(containerId) {
   container.appendChild(AtomsButton);
   container.appendChild(BondsButton);
 
-  // Add event listeners for the buttons
+   // Add event listeners for the buttons
   container.querySelectorAll('button').forEach(button => {
     button.addEventListener('click', function() {
       // Remove active class from all buttons
