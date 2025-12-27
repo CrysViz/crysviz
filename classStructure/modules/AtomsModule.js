@@ -27,6 +27,7 @@ export function updateAtoms(opacity=1.0) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     const atomMesh = createAtomMesh(wrapped.elements[i], wrappedCart[i], originalIndex,opacity);
     atomMesh.userData.sourceIndex = originalIndex;
+    atomMesh.name = originalIndex;
     groups.atomsGroup.add(atomMesh);
   }
   app.scene.add(groups.atomsGroup);

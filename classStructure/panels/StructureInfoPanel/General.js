@@ -13,7 +13,6 @@ import {createCompositionRow} from './Species.js'
 import {createBondLengthControls} from '../BondLengthPanel.js'
 
 
-
 // Function to handle structure panel toggle
 export function handleStructurePanelToggle() {
   const composition = document.getElementById('composition');

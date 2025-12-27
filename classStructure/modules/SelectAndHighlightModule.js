@@ -1,14 +1,31 @@
 
-import {highlightHover,structureData} from '../store.js';
+import {groups,highlightHover,structureData} from '../store.js';
 import {collapseAllAtomExpansions} from '../panels/WindowAndSceneControls.js';
 
-export function clearHighlightAtom(m){
-  if(!m || !m.material) return;
-  if(m.userData._origEmissive!==undefined){
-    m.material.emissive.setHex(m.userData._origEmissive);
-    m.material.emissiveIntensity = m.userData._origEmissiveInt || 0;
-  }
+
+export function clearHighlightAtom(m) {
+  if (!m || !m.material) return;
+
+  // Find all atoms with the same name
+  const atomName = m.name;
+  const allAtoms = [];
+  groups.atomsGroup.traverse((child) => {
+    if (child.name === atomName) {
+      allAtoms.push(child);
+    }
+  });
+
+  // Restore original emissive properties for all matching atoms
+  allAtoms.forEach((atom) => {
+    if (!atom.material) return;
+    if (atom.userData._origEmissive !== undefined) {
+      atom.material.emissive.setHex(atom.userData._origEmissive);
+      atom.material.emissiveIntensity = atom.userData._origEmissiveInt || 0;
+      atom.material.needsUpdate = true;
+    }
+  });
 }
+
 
 export function HighlightAtom(m, hex){
   if(!m || !m.material) return;
@@ -17,8 +34,46 @@ export function HighlightAtom(m, hex){
     m.userData._origEmissiveInt = m.material.emissiveIntensity || 0;
   }
   m.material.emissive.setHex(hex);
+  m.material.emissiveIntensity = 2.0; 
+
+}
+
+export function highlightAtomIn3D(atomMesh) {
+  // Clear previous 3D highlight
+  if (highlightHover.currentlyHighlightedAtom) {
+    clearHighlightAtom(highlightHover.currentlyHighlightedAtom);
+  }
+
+  // Find all atoms with the same name (e.g., originalIndex)
+  const atomName = atomMesh.name;
+  const allAtoms = [];
+  groups.atomsGroup.traverse((child) => {
+    if (child.name === atomName) {
+      allAtoms.push(child);
+    }
+  });
+
+  // Apply highlight to all matching atoms
+  allAtoms.forEach((atom) => {
+    HighlightAtom(atom, 0xFFB347); // Orange glow
+  });
+
+  // Update the currently highlighted atom reference
+  highlightHover.currentlyHighlightedAtom = atomMesh;
+}
+
+
+export function HighlightBond(m, hex){
+  if(!m || !m.material) return;
+  if(m.userData._origEmissive===undefined){
+    m.userData._origEmissive = m.material.emissive.getHex();
+    m.userData._origEmissiveInt = m.material.emissiveIntensity || 0;
+  }
+  m.material.emissive.setHex(hex);
   m.material.emissiveIntensity = 2.0; // MAXIMUM BLAZING GLOW!
 }
+
+
 
 
 export function highlightAtomInStructurePanel(element, sourceIndex) {
@@ -109,7 +164,6 @@ export function getAtomActualIndex(element, displayName) {
 
 export function highlightAtomRow(row) {
   // Clear previous highlight
-  console.log("Highlighting atom row")
   if (highlightHover.currentlyHighlightedRow) {
     highlightHover.currentlyHighlightedRow.style.backgroundColor = '';
     highlightHover.currentlyHighlightedRow.style.borderLeft = '';
@@ -122,17 +176,6 @@ export function highlightAtomRow(row) {
 
 }
 
-export function highlightAtomIn3D(atomMesh) {
-  // Clear previous 3D highlight
-  if (highlightHover.currentlyHighlightedAtom) {
-    clearHighlightAtom(highlightHover.currentlyHighlightedAtom);
-  }
-
-  // Add new highlight
-  HighlightAtom(atomMesh, 0xFFB347); // Orange glow
-  highlightHover.currentlyHighlightedAtom = atomMesh;
-
-}
 
 export function clearAllHighlights() {
   // Clear UI highlight
@@ -147,7 +190,72 @@ export function clearAllHighlights() {
     clearHighlightAtom(highlightHover.currentlyHighlightedAtom);
     highlightHover.currentlyHighlightedAtom = null;
   }
+   // Clear 3D bond highlight
+  if (highlightHover.currentlyHighlightedBond) {
+    clearHighlightBond(highlightHover.currentlyHighlightedBond);
+    highlightHover.currentlyHighlightedBond = null;
+  }
 }
 
 // Make clearAllHighlights available globally for manual clearing
 window.clearAtomHighlight = clearAllHighlights;
+
+export function highlightBondIn3D(bondMesh) {
+  const bondName = bondMesh.name;
+  const allHalves = [];
+  groups.bondsGroup.traverse((child) => {
+    if (child.name === bondName) {
+      allHalves.push(child);
+    }
+  });
+
+  // Clear previous bond or atom highlight
+  if (highlightHover.currentlyHighlightedBond) {
+    clearHighlightBond(highlightHover.currentlyHighlightedBond);
+  }
+   if (highlightHover.currentlyHighlightedAtom) {
+    clearAllHighlights();
+
+  }
+
+  // Apply highlight to all halves
+  allHalves.forEach((half) => {
+    half.userData._origEmissive = half.material.emissive.getHex();
+    half.userData._origEmissiveInt = half.material.emissiveIntensity;
+    half.material.emissive.setHex(0xFFB347); // Orange glow
+    half.material.emissiveIntensity = 1.5;
+    half.material.needsUpdate = true;
+  });
+  // Update the currently highlighted bond reference
+  highlightHover.currentlyHighlightedBond = allHalves[0]; // or allHalves[0], if you prefer
+}
+
+function clearHighlightBond(bondMesh) {
+  const bondName = bondMesh.name;
+  const allHalves = [];
+
+  // Use traverse to search recursively
+  groups.bondsGroup.traverse((child) => {
+    if (child.name === bondName) {
+      allHalves.push(child);
+    }
+  });
+
+  // Clear the highlight for all halves
+  allHalves.forEach((half) => {
+    if (!half || !half.material) return;
+
+    // Restore original emissive properties if they were saved
+    if (half.userData._origEmissive !== undefined) {
+      half.material.emissive.setHex(half.userData._origEmissive);
+      half.material.emissiveIntensity = half.userData._origEmissiveInt || 0;
+    } else {
+      // If no original emissive was saved, reset to default (no highlight)
+      half.material.emissive.setHex(0x000000);
+      half.material.emissiveIntensity = 0;
+    }
+
+    half.material.needsUpdate = true; // Ensure the material updates
+  });
+}
+

@@ -35,6 +35,7 @@ export const highlightHover ={
    hoveredAtom:null,
    currentlyHighlightedAtom:null,
    currentlyHighlightedRow:null,
+   currentlyHighlightedBond:null
 };
 
 export const measurements ={

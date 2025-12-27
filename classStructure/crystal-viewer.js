@@ -45,7 +45,7 @@ import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividua
 import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,
         addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './modules/MeasurementModule.js' // not all imports might be needed in this file
 
-import {HighlightAtom,clearHighlightAtom,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
+import {HighlightAtom,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
 
 import {addVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
 import {addCameraPanel} from './panels/CameraPanel.js' 
@@ -715,47 +715,58 @@ function init() {
 
   // Double-click handler for atom highlighting feature
   function onDoubleClickAtom(event) {
-    event.preventDefault();
-    event.stopPropagation();
+  event.preventDefault();
+  event.stopPropagation();
 
-    // Handle both mouse and touch events
-    let clientX, clientY;
-    if (event.changedTouches && event.changedTouches.length > 0) {
-      clientX = event.changedTouches[0].clientX;
-      clientY = event.changedTouches[0].clientY;
-    } else {
-      clientX = event.clientX;
-      clientY = event.clientY;
-    }
-
-    const rect = app.renderer.domElement.getBoundingClientRect();
-    const mouse = new THREE.Vector2();
-    mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-
-    // Raycast to find clicked atom
-    raycaster.setFromCamera(mouse, app.camera);
-    const hits = raycaster.intersectObjects(groups.atomsGroup.children, true);
-
-    if (hits.length > 0) {
-      const hit = hits[0];
-      const atomMesh = hit.object;
-
-      // Skip ghost atoms
-      if (atomMesh.userData.isGhost) return;
-
-      const element = atomMesh.userData.element;
-      const sourceIndex = atomMesh.userData.sourceIndex;
-
-      // Double-clicked atom detected
-
-      // Highlight the clicked atom in the structure panel
-      highlightAtomInStructurePanel(element, sourceIndex);
-
-      // Add visual glow to the 3D atom
-      highlightAtomIn3D(atomMesh);
-    }
+  // Handle both mouse and touch events
+  let clientX, clientY;
+  if (event.changedTouches && event.changedTouches.length > 0) {
+    clientX = event.changedTouches[0].clientX;
+    clientY = event.changedTouches[0].clientY;
+  } else {
+    clientX = event.clientX;
+    clientY = event.clientY;
   }
+
+  const rect = app.renderer.domElement.getBoundingClientRect();
+  const mouse = new THREE.Vector2();
+  mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+  // Raycast for atoms
+  raycaster.setFromCamera(mouse, app.camera);
+  const atomHits = raycaster.intersectObjects(groups.atomsGroup.children, true);
+
+  // Raycast for bonds
+  const bondHits = raycaster.intersectObjects(groups.bondsGroup.children, true);
+
+  if (atomHits.length > 0) {
+    const hit = atomHits[0];
+    const atomMesh = hit.object;
+    if (atomMesh.userData.isGhost) return;
+
+    const element = atomMesh.userData.element;
+    const sourceIndex = atomMesh.userData.sourceIndex;
+
+    highlightAtomInStructurePanel(element, sourceIndex);
+    highlightAtomIn3D(atomMesh);
+  } else if (bondHits.length > 0) {
+    const hit = bondHits[0];
+    const bondMesh = hit.object;
+    if (bondMesh.userData.isGhost) return;
+
+    const bondIndex = bondMesh.userData.sourceIndex; // or similar, depending on your data structure
+
+    //highlightBondInStructurePanel(bondIndex);
+    highlightBondIn3D(bondMesh);
+  }  
+  else  {
+     clearAllHighlights();
+  }
+
+  
+}
+
 
   // Add event listeners - use touchstart instead of touchend for better responsiveness
   app.renderer.domElement.addEventListener('click', onClickPick);
@@ -764,33 +775,7 @@ function init() {
   app.renderer.domElement.addEventListener('dblclick', onDoubleClickAtom);
 
 
-  // Add single click listener to clear highlights when clicking empty space
-  app.renderer.domElement.addEventListener('click', (event) => {
-    // Only clear highlights if no measurement mode is active
-    if (mode.measureMode === 'none') {
-      // Small delay to avoid conflicts with double-click
-      setTimeout(() => {
-        // Check if we clicked on empty space
-        const rect = app.renderer.domElement.getBoundingClientRect();
-        const mouse = new THREE.Vector2();
-        const clientX = event.clientX || (event.changedTouches && event.changedTouches[0].clientX);
-        const clientY = event.clientY || (event.changedTouches && event.changedTouches[0].clientY);
 
-        if (clientX && clientY) {
-          mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-          mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-
-          raycaster.setFromCamera(mouse, app.camera);
-          const hits = raycaster.intersectObjects(groups.atomsGroup.children, true);
-
-          // If no atom was clicked, clear highlights
-          if (hits.length === 0) {
-            clearAllHighlights();
-          }
-        }
-      }, 100);
-    }
-  });
 
 // --- Event setup for Three.js renderer element ---
 const el = app.renderer.domElement;

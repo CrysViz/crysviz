@@ -124,11 +124,13 @@ export function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2,opac
   half1.position.copy(center1);
   half1.lookAt(p2);
   half1.rotateX(Math.PI / 2);
+  half1.name =`${atomIndex1}-${atomIndex2}`
 
   const half2 = new THREE.Mesh(geometryHalf, material2);
   half2.position.copy(center2);
   half2.lookAt(p2);
   half2.rotateX(Math.PI / 2);
+  half2.name =`${atomIndex1}-${atomIndex2}`
 
   bondGroup.add(half1);
   bondGroup.add(half2);
