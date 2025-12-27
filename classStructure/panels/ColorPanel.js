@@ -1,6 +1,7 @@
 import * as THREE from '../backend/three/three.module.js'
 import { general, app } from '../store.js';
 import { switchCameraType } from '../panels/WindowAndSceneControls.js';
+import { updateBonds} from '../modules/BondsModule.js'
 
 export function addColorPanel(target = "colorContainer") {
   console.warn("addColorPanel called");
@@ -93,7 +94,7 @@ export function addColorPanel(target = "colorContainer") {
 
   const bondsOptions = [
     { value: "elements", text: "Elements", selected: true },
-    { value: "black", text: "Black" },
+    { value: "white", text: "White" },
     { value: "length", text: "Length" },
   ];
 
@@ -103,6 +104,22 @@ export function addColorPanel(target = "colorContainer") {
     optElement.textContent = option.text;
     if (option.selected) optElement.selected = true;
     bondsMenu.appendChild(optElement);
+  });
+  bondsMenu.addEventListener("change", () => {
+  switch (bondsMenu.value) {
+    case "elements":
+      general.bondsColor="elements"
+      updateBonds();
+      break;
+    case "white":
+      general.bondsColor="white"
+      updateBonds();
+      break;
+    case "length":
+      general.bondsColor="length"
+      updateBonds();
+      break;
+    }
   });
 
   bondsMenuBlock.appendChild(bondsLabel);
@@ -197,6 +214,23 @@ export function forceLengthToColor(forceLength) {
   // Normalize to 0..1 using log scale
   const t = (Math.log10(clamped) - Math.log10(minVal)) / (Math.log10(maxVal) - Math.log10(minVal));
 
+  // Map to color bin
+  const bin = Math.min(Math.floor(t * nBins), nBins - 1);
+  return heatmapColors[bin];
+}
+
+export function bondLengthToColor(bondLength) {
+  const heatmapColors = getHeatMapColors();
+  const nBins = heatmapColors.length;
+  const minVal = 1.1;
+  const maxVal = 5;
+
+  // Clamp value
+  const clamped = Math.max(minVal, Math.min(maxVal, bondLength));
+
+  // Normalize to 0..1 (linear scale)
+  let t = (clamped - minVal) / (maxVal - minVal);
+  t = 1 - t;
   // Map to color bin
   const bin = Math.min(Math.floor(t * nBins), nBins - 1);
   return heatmapColors[bin];

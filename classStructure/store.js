@@ -107,7 +107,8 @@ export const general = {
   backendState:"none",
   currentSupercell: null,
   modifiedLattice: null, // this needs to be part of the structure object 
-  sharedStructureLoaded:false
+  sharedStructureLoaded:false,
+  bondsColor: null
 };
 
 

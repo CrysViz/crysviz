@@ -11,6 +11,8 @@ import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
 import {updateAtoms} from './AtomsModule.js'
 
+import {bondLengthToColor} from '../panels/ColorPanel.js'
+
 export function initBonds(){
   if (!structureData) {
     console.warn("Could not init bonds!")
@@ -64,6 +66,8 @@ export function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2,opac
   
   const key = `${elem1}-${elem2}`;
 
+   
+
  // check if this has does already exist. If so, just update and do not create a new bond  
 
 
@@ -90,14 +94,27 @@ export function createBond(pos1, pos2, elem1, elem2, atomIndex1, atomIndex2,opac
   }
   bondLengths[key].push(dist)
 
+  
   const direction = new THREE.Vector3().subVectors(p2, p1);
   const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
 
   // Build VESTA-style split bond, but start at atom surfaces
   const bondGroup = new THREE.Group();
 
-  const color1 = getIndividualAtomColor(elem1,atomIndex1);
-  const color2 = getIndividualAtomColor(elem2,atomIndex2);
+  let color1
+  let color2
+  if (general.bondsColor === "length"){
+  color1= bondLengthToColor(dist)
+  color2 = color1
+  }
+  else if (general.bondsColor === "white"){
+    color1="#ccc"
+    color2="#ccc"
+  }
+  else { 
+    color1 = getIndividualAtomColor(elem1,atomIndex1);
+    color2 = getIndividualAtomColor(elem2,atomIndex2);
+  }
 
   // Compute visible segment between atom surfaces
   const r1 = getAtomRadius(elem1)-0.2*getAtomRadius(elem1);
