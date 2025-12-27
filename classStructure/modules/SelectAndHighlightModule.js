@@ -107,7 +107,10 @@ export function highlightBondInfoInStructurePanel(){
 
   // select the bond information panel
   const panelSwitch = document.getElementById('atomBondControlSwitch')
-  panelSwitch.querySelectorAll('button')[0].classList.add('active');
+  panelSwitch.querySelectorAll('button').forEach(btn => {
+        btn.classList.remove('active');
+      });
+  panelSwitch.querySelectorAll('button')[1].classList.add('active');
   showPanel("bondControls")
 }
 
@@ -137,6 +140,13 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
       structureToggle.setAttribute('aria-expanded', 'true');
     }
   }
+
+  const panelSwitch = document.getElementById('atomBondControlSwitch')
+  panelSwitch.querySelectorAll('button').forEach(btn => {
+        btn.classList.remove('active');
+      });
+  panelSwitch.querySelectorAll('button')[0].classList.add('active');
+  showPanel("atomPanel")
 
   // Look for the element container
   const elementContainers = composition.querySelectorAll('.comp-container');
