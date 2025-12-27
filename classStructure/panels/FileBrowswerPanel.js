@@ -1,4 +1,4 @@
-import {general,structureData,structureShip, fileBrowser} from '../store.js'
+import {allAtoms,general,structureData,structureShip, fileBrowser} from '../store.js'
 import {updateVisualization} from '../crystal-viewer.js'
 import {resetView} from './WindowAndSceneControls.js'
 import {resetModeSwitch, resetSpinForceSwitch} from './ControlPanel.js'
@@ -6,7 +6,7 @@ import {createBondLengthControls} from './BondLengthPanel.js'
 import {createSpinControls} from './SpinPanel.js'
 import {updateSpins} from '../modules/SpinModule.js'
 import {updateForces} from '../modules/ForceModule.js'
-
+import {getAllPeriodicImages,updateNeighborMap} from '../modules/BondsModule.js'
 
 export function showError(message) {
     errorPanel.textContent = message;
@@ -226,9 +226,14 @@ function updateStructureFromRowAndStep(rowIndex) {
 
   const selectedStructure = container.structures[step];
 
+  updateNeighborMap(selectedStructure)
+  getAllPeriodicImages(selectedStructure)
+  console.warn(allAtoms)
   // Assign arrays (make copies to avoid mutating original)
   structureData.positions = selectedStructure.atoms.map(a => a.position);
+  structureData.ucpositions = selectedStructure.ucatoms.map(a => a.position);
   structureData.elements = [...selectedStructure.elements];
+  structureData.ucelements = [...selectedStructure.ucelements];
   structureData.lattice = selectedStructure.lattice.map(r => [...r]);
   structureData.spins = selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
   if (structureData.spin != null && general.spinForceState === "Spins") {

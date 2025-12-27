@@ -8,8 +8,21 @@ import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getEl
 export function updateAtoms(opacity=1.0) {
   disposeGroup(groups.atomsGroup);
   groups.atomsGroup = new THREE.Group();
-  const wrapped = periodicWrapped(structureData.positions, structureData.elements);
-  const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+  let wrapped;
+  let wrappedCart;
+  if (general.showPeriodic) {
+    wrapped = periodicWrapped(structureData.positions, structureData.elements);
+    wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+    }
+  else {
+    wrapped = {
+        elements: structureData.elements,
+        frac: structureData.positions,
+        srcIndex: structureData.positions.map((_, index) => index)
+    };
+    wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+  }
+
   for (let i = 0; i < wrappedCart.length; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     const atomMesh = createAtomMesh(wrapped.elements[i], wrappedCart[i], originalIndex,opacity);

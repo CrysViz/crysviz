@@ -119,7 +119,7 @@ export function periodicWrapped(frac, elements) {
     }
   }
 
-  return { elements: newElements, frac: newFcrds, srcIndex };
+  return { elements: newElements, frac: newFcrds, srcIndex: srcIndex };
 }
 
 

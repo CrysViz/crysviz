@@ -31,33 +31,43 @@ function deepCopyArrayOfObjects(array) {
 export class Structure {
   constructor({
     elements = [],
+    ucelements = [],
     supercell = {},
     uniqueElements = [],
     lattice = [],
     atoms = [],
+    ucatoms = [],
     symmetry = null,
     spins = [],
+    ucspins = [],
     forces = [],
+    ucforces = [],
     stress = null,
     polyhedra = null,
     colors = [],
     atomsGroup = null,
     latticeGroup = null,
+    NeighborMap = {},
   } = {}) {
     // Mutable instance properties
     this.elements = elements;
+    this.ucelements = ucelements;
     this.supercell = supercell;
     this.uniqueElements = [...new Set(elements)];
     this.lattice = lattice;       // 3×3
     this.atoms = atoms;           // list of atoms
+    this.ucatoms = ucatoms;           // list of atoms
     this.symmetry = symmetry;
     this.spins = spins;           // list of spins
+    this.ucspins = ucspins;           // list of spins
     this.forces = forces;         // list of forces
+    this.ucforces = ucforces;         // list of forces
     this.stress = stress;
     this.polyhedra = polyhedra;
     this.colors = colors;
     this.atomsGroup = atomsGroup;
     this.latticeGroup = latticeGroup;
+    this.NeighborMap = {};
 
     // Create an immutable snapshot of the original data
     this.original = deepFreeze({
@@ -65,12 +75,13 @@ export class Structure {
       supercell: { ...supercell },
       uniqueElements: [...new Set(elements)],
       lattice: lattice.map(row => [...row]),  // deep copy of lattice array
-      atoms: deepCopyArrayOfObjects(atoms),  // deep copy of atom objects
-      spins: deepCopyArrayOfObjects(spins),  // deep copy of spin objects
-      forces: deepCopyArrayOfObjects(forces), // deep copy of force objects
+      ucatoms: deepCopyArrayOfObjects(ucatoms),  // deep copy of atom objects
+      ucspins: deepCopyArrayOfObjects(ucspins),  // deep copy of spin objects
+      ucforces: deepCopyArrayOfObjects(ucforces), // deep copy of force objects
       stress: stress ? { ...stress } : null, // deep copy of stress object if it exists
       polyhedra: polyhedra ? { ...polyhedra } : null,
       colors: [...colors],
+      NeighborMap: NeighborMap,
     });
 
     // Undo/Redo functionality
@@ -82,6 +93,10 @@ export class Structure {
 
   get NumberOfAtoms() {
     return this.atoms.length;
+  }
+
+  get ucNumberOfAtoms() {
+    return this.ucatoms.length;
   }
 
   validate() {

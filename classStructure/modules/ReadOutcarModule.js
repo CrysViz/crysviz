@@ -1,11 +1,5 @@
 // ============================================================================
-//  parseOUTCAR.js — Full OUTCAR trajectory parser
-//  Produces a StructureContainer with Structures, Spins, and Forces for each step
-// ============================================================================
-//
-//  let traj = structures.length
-// let step = traj
-// const row = createRow({name: fileName, traj: traj, step: step });
+
 // tableBody.appendChild(row);
 // fileBrowser.fileData.push({idx: -1, name: fileName, traj: traj, step: step })
 //
@@ -79,12 +73,12 @@ export function parseOUTCAR(content,fileName) {
 
     structures.push(
       new Structure({
-        elements,
+        ucelements,
         uniqueElements,
         lattice,
-        atoms: atoms,               // fractional = used by your viewer
-        spins:spins,
-        forces:forces,
+        ucatoms: atoms,               // fractional = used by your viewer
+        ucspins:spins,
+        ucforces:forces,
         //positions_cartesian: step.positions // keep working behavior
       })
     );

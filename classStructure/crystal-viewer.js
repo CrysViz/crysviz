@@ -426,6 +426,7 @@ function loadStructure(content, fileName = '', isDefault = false) {
     structureData.spins = parsed.spins ?? null;
     structureData.forces = parsed.forces ?? null;
 
+
     console.log("after load",structureData)
 
 
@@ -952,14 +953,22 @@ function clearLongPress() {
 
    
 
-  // Toggle for VESTA-style neighbor bonds/ghost atoms
-  const neighborBondsEl = document.getElementById('neighborBonds');
-  if (neighborBondsEl) {
-    neighborBondsEl.onchange = (e) => {
-      general.showNeighborBonds = e.target.checked;
+  const PBCBondToggle = document.getElementById('PBCBondToggle');
+  if (PBCBondToggle) {
+      PBCBondToggle.onchange = (e) => {
+      general.showPBCBonds = e.target.checked;
       updateVisualization();
     };
   }
+
+  const showPeriodicToggle = document.getElementById('showPeriodic');
+  if (showPeriodicToggle) {
+    showPeriodicToggle.onchange = (e) => {
+      general.showPeriodic = e.target.checked;
+      updateVisualization();
+    };
+  }
+ 
 
   document.getElementById('atomSize').oninput = (e) => {
     general.atomSize = parseFloat(e.target.value);
@@ -1022,8 +1031,11 @@ function clearLongPress() {
  //     let checkbox_showComparisonInfo = document.getElementById("showComparisonInfo");
  //     checkbox_showComparisonInfo.checked = false; // explicitly untick
 
-  let checkbox_neighbours = document.getElementById("neighborBonds");
+  let checkbox_neighbours = document.getElementById("PBCBondToggle");
       checkbox_neighbours.checked = false; // explicitly untick
+
+  let checkbox_periodic = document.getElementById("showPeriodic");
+      checkbox_periodic.checked = true; // explicitly tick 
 
   document.getElementById('defaultColors').onchange = (e) => {
     general.useDefaultColors = e.target.checked;

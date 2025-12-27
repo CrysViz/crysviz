@@ -172,4 +172,55 @@ export function createBondLengthControls(targetPanel='bondControls') {
   });
 }
 
+function addFuncToBondColorSettings(){
 
+  dot.onclick = (e) => {
+    e.stopPropagation();
+    editor.style.display = (editor.style.display === 'none') ? 'flex' : 'none';
+    if (editor.style.display === 'flex') editor.style.flexDirection = 'column';
+  }; 
+
+  const picker = createColorPicker(mom_color[0], (hex) => {
+    clearAllIndividualColorsForElement(el);      // Clear old color overrides
+    const ok = setElementColorOverride(el, hex); // Apply new color override
+    dot.style.background = hex;
+      if (ok) {
+        updateVisualization({
+          reRenderAtoms: true,
+          reRenderBonds: true,
+          reRenderLattice: false,
+          reRenderOther: false
+        });
+      }
+    });
+
+  AtomColorApplyBtn.onclick = () => {
+      dot.style.background = picker.getHex;
+      editor.style.display = 'none';
+      updateVisualization({
+        reRenderAtoms: true,
+        reRenderBonds : true,
+        reRenderLattice : false,
+        reRenderOther: false,
+        reRenderComposition : true,
+      });
+  };
+
+  AtomColorResetBtn.onclick = () => {
+    clearIndividualAtomColor(element, atomIndex);
+    const newColor = colorHexToCss(getIndividualAtomColor(element, atomIndex));
+    dot.style.background = newColor;
+    //colorInput.value = newColor;
+   // hexInput.value = newColor;
+    updateVisualization({
+        reRenderAtoms: true,
+        reRenderBonds : true,
+        reRenderLattice : false,
+        reRenderOther: false,
+        reRenderComposition : true,
+      });
+    // Update the composition to refresh element colors
+    editor.style.display = 'none';
+  };
+
+}

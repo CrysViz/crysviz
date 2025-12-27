@@ -8,6 +8,7 @@ export class Atom extends ColoredObject {
     coordination = [],
     color = null,
     defaultColor=null,
+    image = []
   } = {}) {
     // Call parent constructor
     super({ color, defaultColor });
@@ -19,6 +20,7 @@ export class Atom extends ColoredObject {
     this.defaultColor = colorScheme[element] || 0x808080;
     // Current mutable colors
     this.color = this.defaultColor;
+    this.image = image || [0,0,0]; 
     // Create an immutable snapshot of the original data
     this.original = Object.freeze({
       element:element,

@@ -9,6 +9,7 @@ const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser} from '../store.js';
 import {createRow,selectLastAddedRow} from '../panels/FileBrowswerPanel.js'
 
+
 function formatNumber(value) {
   if (!Number.isFinite(value)) return '0';
   const fixed = value.toFixed(NUMBER_PRECISION);
@@ -165,13 +166,13 @@ export function parsePOSCAR(content,fileName) {
       element: elements[i]
     }));
   });
- 
+
 
   const structure = new Structure({
     elements:elements,
     uniqueElements: elementLine,
     lattice:lattice,
-    atoms:atoms,
+    atoms:atoms
   });
 
    let traj = 1
