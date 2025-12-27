@@ -235,7 +235,7 @@ function getContrastingBorder(hex) {
     const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
    if (isDarkMode )
     {
-    app.scene.background = new THREE.Color(0x021302)
+    app.scene.background = new THREE.Color(0x090A09)
     general.currentLatticeColor = 0xE7E7E7;
     dot.style.border = `2px solid #E7E7E7`
     updateLattice()
@@ -243,8 +243,8 @@ function getContrastingBorder(hex) {
    else if (!isDarkMode )
    {
     app.scene.background = new THREE.Color(0xE7E7E7)
-    general.currentLatticeColor = 0x021302;
-    dot.style.border = `2px solid #021302`
+    general.currentLatticeColor = 0x090A09;
+    dot.style.border = `2px solid #090A09`
     updateLattice()
    }
 

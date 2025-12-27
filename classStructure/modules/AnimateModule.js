@@ -75,9 +75,9 @@ export function animation_update(time = 0) {
   updateAngleDisplays();
 
   const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-   if (isDarkMode && general.currentLatticeColor === 0x021302){
-    app.scene.background = new THREE.Color(0x021302)
-    general.defaultBackgroundColor = 0x021302
+   if (isDarkMode && general.currentLatticeColor === 0x090A09){
+    app.scene.background = new THREE.Color(0x090A09)
+    general.defaultBackgroundColor = 0x090A09
     general.currentLatticeColor = 0xE7E7E7
     updateLattice()
    }
@@ -85,7 +85,7 @@ export function animation_update(time = 0) {
    {
     app.scene.background = new THREE.Color(0xE7E7E7);
     general.defaultBackgroundColor = 0xE7E7E7
-    general.currentLatticeColor = 0x021302
+    general.currentLatticeColor = 0x090A09
     updateLattice()
    }
 

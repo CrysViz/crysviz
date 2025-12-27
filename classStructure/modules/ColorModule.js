@@ -131,12 +131,11 @@ export function getElementDisplayColor(element) {
   }
 }
 
+function drawPieDot(canvas, colors) {
+  const ctx = canvas.getContext("2d");
+  const size = canvas.width;
 
-export function createPieDot(colors, size = 200) {
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
 
   const center = size / 2;
   const radius = center;
@@ -145,6 +144,7 @@ export function createPieDot(colors, size = 200) {
   colors.forEach((color, i) => {
     const start = i * slice;
     const end = start + slice;
+
     ctx.beginPath();
     ctx.moveTo(center, center);
     ctx.arc(center, center, radius, start, end);
@@ -152,12 +152,30 @@ export function createPieDot(colors, size = 200) {
     ctx.fillStyle = color;
     ctx.fill();
   });
-  canvas.style.borderRadius = '50%';
-  canvas.style.border = '1px solid #666';
-  canvas.style.display = 'inline-block';
+}
+
+export function createPieDot(colors, size = 200) {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+
+  drawPieDot(canvas, colors);
+
+  canvas.style.borderRadius = "50%";
+  canvas.style.border = "1px solid #666";
+  canvas.style.display = "inline-block";
+
+  // store colors for later reference (optional but useful)
+  canvas._colors = colors;
 
   return canvas;
 }
+
+export function updatePieDot(canvas, newColors) {
+  canvas._colors = newColors;
+  drawPieDot(canvas, newColors);
+}
+
 
 export function clearAllIndividualColorsForElement(element) {
   if (!general.individualAtomColors) return;

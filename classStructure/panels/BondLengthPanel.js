@@ -2,7 +2,8 @@ import { app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defa
 import {getBondCutoff} from '../modules/BondsModule.js';
 import { updateVisualization } from '../crystal-viewer.js';
 import {createPieDot} from '../modules/ColorModule.js';
-
+import {clearAllHighlights} from '../modules/SelectAndHighlightModule.js';
+import {updateBondControlPanel} from './StructureInfoPanel/Bonds.js'
 export function resetBondLengths() {
   for (const pair in general.defaultBondLengths) {
     general.bondLengths[pair] = general.defaultBondLengths[pair];
@@ -36,7 +37,11 @@ export function createBondLengthControls(targetPanel='bondControls') {
   resetBtn.style.fontSize = "12px";
   resetBtn.style.marginTop= "2px";
   resetBtn.style.height ="22px";
-  resetBtn.onclick = resetBondLengths;
+  resetBtn.onclick = () => {
+    resetBondLengths();
+    clearAllHighlights();
+
+   };
 
   resetWrapper.appendChild(resetBtn);
 

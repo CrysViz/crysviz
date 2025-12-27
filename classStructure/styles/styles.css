@@ -60,7 +60,7 @@ body {
   max-width:var(--ui-width);
   overflow: auto;
   padding: var(--ui-padding);
-  background: rgba(26, 26, 26, 0.95);
+  background: rgba(26, 26, 26, 1);
   color: #fff;
   backdrop-filter: blur(20px);
   border-right: var(--ui-border) solid rgba(255, 255, 255, 0.1);
@@ -1258,10 +1258,10 @@ z-index:1000; pointer-events:none;
 }
 
 #cameraTools .measure-tool-reset-btn:hover {
-  background: var(--highlight-color);
-  border-color: var(--highlight-color);
-  transform: translateY(-2px);
-  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
+  background: rgba(240, 132, 18,0.90);
+  border-color: white;
+  transform: translateY(-1px);
+  box-shadow: 0px 0px 2px 1px  var(--highlight-color);
 }
 
 #cameraTools .measure-tool-btn .tool-icon {
