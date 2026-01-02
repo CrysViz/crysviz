@@ -1209,7 +1209,7 @@ z-index:1000; pointer-events:none;
   backdrop-filter: blur(8px);
   max-width: 320px;
   overflow-y:hidden;
-  overflow-x:auto;
+  overflow-x: hidden;
 }
 
 /* Camera panel for desktop - horizontal layout */

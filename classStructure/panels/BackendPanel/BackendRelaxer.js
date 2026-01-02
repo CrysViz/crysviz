@@ -1,4 +1,4 @@
-//import { io } from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
+import { io } from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
 import {updateVisualization} from '../../crystal-viewer.js'
 import {createBondLengthControls} from '../BondLengthPanel.js'
 import {createSpinControls} from '../SpinPanel.js'
@@ -102,19 +102,27 @@ export function connectBackend() {
         let newTraj = structureShip.container[fileBrowser.selectedRowIndex].structures.length+ data.result.positions.length
         for (let i = 0; i < data.result.positions.length; i++) {
            let atoms = []
-           data.result.position[i].forEach((pos, i) => {
+           data.result.positions[i].forEach((pos, i) => {
                  atoms.push(new Atom({
                  position: pos,
                  element: structureData.elements,
                  }))
                });
+
+           let forces = []
+           data.result.forces[i].forEach((force, i) => {
+                 forces.push(new Force({
+                 vector: force
+                 }))
+               });           
+
            let structure = new Structure({
                elements:structureData.elements,
                uniqueElements: [...new Set(structureData.elements)],
                lattice:data.result.lattices[i],
                positions:data.result.positions[i],
                atoms: atoms,
-               forces:new Forces({vectors: data.result.forces[i]}),
+               forces:forces,
                stress:new Stress({tensor: convertStressEvA3ToGPa(data.result.stresses[i])}),
            })
            structureShip.container[fileBrowser.selectedRowIndex].structures.push(structure)
@@ -134,12 +142,28 @@ export function connectBackend() {
         const container = new StructureContainer({fileName:fileName})
          
         for (let i = 0; i < data.result.positions.length; i++) {
+           let atoms = []
+           data.result.positions[i].forEach((pos, i) => {
+                 atoms.push(new Atom({
+                 position: pos,
+                 element: structureData.elements,
+                 }))
+               });
+
+           let forces = []
+           data.result.forces[i].forEach((force, i) => {
+                 forces.push(new Force({
+                 vector: force,
+                 }))
+               });
+
            let structure = new Structure({
                elements:structureData.elements,
                uniqueElements: [...new Set(structureData.elements)],
                lattice:data.result.lattices[i],
                positions:data.result.positions[i],
-               forces:new Forces({vectors: data.result.forces[i]}),
+               atoms: atoms,
+               forces: forces,
                stress:new Stress({tensor: convertStressEvA3ToGPa(data.result.stresses[i])}),
            })
            container.structures.push(structure);           
@@ -163,7 +187,7 @@ export function connectBackend() {
             uniqueElements: [...new Set(structureData.elements)],
             lattice:data.result.lattice,
             positions:data.result.positions,
-            forces:new Forces({vectors: data.result.forces}),
+            forces:new Force({vectors: data.result.forces}),
             stress:new Stress({tensor: convertStressEvA3ToGPa(data.result.stress)}),
         })
         const pressure = structure.stress.pressure;

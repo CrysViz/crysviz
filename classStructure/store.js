@@ -108,7 +108,10 @@ export const general = {
   currentSupercell: null,
   modifiedLattice: null, // this needs to be part of the structure object 
   sharedStructureLoaded:false,
-  bondsColor: null
+  bondsColor: null,
+  bondsColorMap: null,
+  atomsColor: null,
+  atomsColorMaps: null,
 };
 
 
@@ -120,7 +123,7 @@ export const mode = {
 
 
 // Default complex structure (Ba2YCu3O7) - high-Tc superconductor with 4 elements to test collapsible composition
-export const defaultPOSCAR = `Ba2YCu3O7 - YBCO Superconductor
+export const defaultPOSCAR1 = `Ba2YCu3O7 - YBCO Superconductor
 1.0
 3.82 0.00 0.00
 0.00 3.89 0.00
@@ -141,6 +144,32 @@ Direct
 0.5 0.0 0.622
 0.0 0.0 0.159
 0.0 0.0 0.841`;
+export const defaultPOSCAR = `
+From DOI: 10.1126/sciadv.aay8361
+1.0
+        4.6090002060         0.0000000000         0.0000000000
+        0.0000000000         4.6090002060         0.0000000000
+        0.0000000000         0.0000000000         4.6090002060
+   Sr    C    B
+    2    6    6
+Direct
+     0.500000000         0.500000000         0.500000000
+     0.000000000         0.000000000         0.000000000
+     0.000000000         0.250000000         0.500000000
+     0.000000000         0.750000000         0.500000000
+     0.500000000         0.000000000         0.250000000
+     0.500000000         0.000000000         0.750000000
+     0.250000000         0.500000000         0.000000000
+     0.750000000         0.500000000         0.000000000
+     0.250000000         0.000000000         0.500000000
+     0.750000000         0.000000000         0.500000000
+     0.500000000         0.250000000         0.000000000
+     0.500000000         0.750000000         0.000000000
+     0.000000000         0.500000000         0.250000000
+     0.000000000         0.500000000         0.750000000`;
+
+
+
 
 // Atomic data
 export const atomicRadii = {

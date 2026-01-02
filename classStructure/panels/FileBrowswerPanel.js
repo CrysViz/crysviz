@@ -244,9 +244,9 @@ function updateStructureFromRowAndStep(rowIndex) {
     //structureData.force_amps = selectedStructure.forces?.map(length => force.length ?? null) ?? null;
     updateForces();
   }
-  if (selectedStructure.stress != null) {
-     structureData.stress =  selectedStructure.stress.map(r => [...r]);
-  }  
+  //if (selectedStructure.stress != null) {
+  //   structureData.stress =  selectedStructure.stress.map(r => r.tensor);
+  //}  
 
   createBondLengthControls();
   //createSpinControls();
