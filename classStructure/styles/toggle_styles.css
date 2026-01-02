@@ -1,7 +1,7 @@
 .toggle_group {
   display: flex;
+  margin-bottom: 10px;
   flex-direction: column;
-  font-family: system-ui, sans-serif;
 }
 
 /* normal toggle rows */

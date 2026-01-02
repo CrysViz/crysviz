@@ -2,68 +2,79 @@ import * as THREE from '../backend/three/three.module.js'
 import { general, app } from '../store.js';
 import { switchCameraType } from '../panels/WindowAndSceneControls.js';
 import { updateBonds} from '../modules/BondsModule.js'
+import { updateAtoms} from '../modules/AtomsModule.js'
 
 
-// Standalone colorbar function with min/max labels
-function createColorBar(container, colormap, minValue = "Min", maxValue = "Max") {
-  // Create colorbar wrapper
-  const colorBarWrapper = document.createElement("div");
-  colorBarWrapper.style.display = "flex";
-  colorBarWrapper.style.flexDirection = "column";
-  colorBarWrapper.style.alignItems = "center";
-  colorBarWrapper.style.width = "100%";
-  colorBarWrapper.style.marginTop = "5px";
 
-  // Create colorbar container
-  const colorBarContainer = document.createElement("div");
-  colorBarContainer.className = "colorbar-container";
-  colorBarContainer.style.width = "120px";
-  colorBarContainer.style.height = "40px";
-  colorBarContainer.style.borderRadius = "3px";
-  colorBarContainer.style.overflow = "hidden";
+function createElement(tag, attributes = {}, styles = {}, textContent = "") {
+  const el = document.createElement(tag);
+  Object.entries(attributes).forEach(([k, v]) => el.setAttribute(k, v));
+  Object.entries(styles).forEach(([k, v]) => (el.style[k] = v));
+  if (textContent) el.textContent = textContent;
+  return el;
+}
 
-  // Create canvas for colorbar
-  const canvas = document.createElement("canvas");
-  canvas.style.width = "100%";
-  canvas.style.height = "100%";
-  colorBarContainer.appendChild(canvas);
+// --- Color Bar ---
+function createColorBar(container, colormap, minValue, maxValue,type) {
+  const wrapper = createElement("div", {}, {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    width: "100%",
+    marginTop: "6px"
+  });
 
-  // Set canvas dimensions
+  const barContainer = createElement("div", {}, {
+    width: "120px",
+    borderRadius: "3px",
+    overflow: "hidden"
+  });
+
+  const canvas = createElement("canvas");
   canvas.width = 100;
   canvas.height = 20;
+  barContainer.appendChild(canvas);
 
-  // Create labels container (positioned under the colorbar)
-  const labelsContainer = document.createElement("div");
-  labelsContainer.style.display = "flex";
-  labelsContainer.style.justifyContent = "space-between";
-  labelsContainer.style.width = "100%";
-  labelsContainer.style.marginTop = "3px";
+  const labels = createElement("div", {}, {
+    display: "flex",
+    justifyContent: "space-between",
+    width: "120px",
+    marginTop: "4px"
+  });
 
-  // Create min label
-  const minLabel = document.createElement("div");
-  minLabel.textContent = `${minValue} Å`;
-  minLabel.style.fontSize = "12px";
-  minLabel.style.color = "rgba(255,255,255,0.9)";
+  const inputStyle = {
+    width: "25%",
+    fontSize: "12px",
+    padding: "2px 4px",
+    background: "#555",
+    color: "#fff",
+    border: "1px solid #777",
+    borderRadius: "3px",
+    textAlign: "center"
+  };
 
-  // Create max label
-  const maxLabel = document.createElement("div");
-  maxLabel.textContent = `${maxValue} Å`;
-  maxLabel.style.fontSize = "12px";
-  maxLabel.style.color = "rgba(255,255,255,0.9)";
+  const minInput = createElement("input", {
+    type: "text",
+    value: minValue
+  }, inputStyle);
 
-  // Add labels to container
-  labelsContainer.appendChild(minLabel);
-  labelsContainer.appendChild(maxLabel);
+  const maxInput = createElement("input", {
+    type: "text",
+    value: maxValue
+  }, inputStyle);
 
-  // Add elements to wrapper
-  colorBarWrapper.appendChild(colorBarContainer);
-  colorBarWrapper.appendChild(labelsContainer);
+  labels.appendChild(minInput);
+  labels.appendChild(maxInput);
 
-  // Render the colorbar
-  function renderColorBar() {
+  wrapper.appendChild(barContainer);
+  wrapper.appendChild(labels);
+  container.appendChild(wrapper);
+
+  function render() {
     const ctx = canvas.getContext("2d");
-    let colors;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    let colors;
     switch (colormap) {
       case "batlow": colors = getBatlowColors(); break;
       case "hawaii": colors = getHawaiiColors(); break;
@@ -74,372 +85,286 @@ function createColorBar(container, colormap, minValue = "Min", maxValue = "Max")
       default: colors = getHeatMapColors();
     }
 
-    const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+    const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
     const step = Math.max(1, Math.floor(colors.length / 20));
 
     for (let i = 0; i < colors.length; i += step) {
-      const color = colors[i];
-      const offset = i / colors.length;
-      gradient.addColorStop(offset, `rgb(${Math.floor(color.r * 255)}, ${Math.floor(color.g * 255)}, ${Math.floor(color.b * 255)})`);
+      const c = colors[i];
+      grad.addColorStop(i / colors.length,
+        `rgb(${c.r * 255 | 0}, ${c.g * 255 | 0}, ${c.b * 255 | 0})`);
     }
 
-    ctx.fillStyle = gradient;
+    ctx.fillStyle = grad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  // Initial render
-  renderColorBar();
+  function onLimitsChange() {
+    const min = parseFloat(minInput.value);
+    const max = parseFloat(maxInput.value);
+    if (!isFinite(min) || !isFinite(max) || min >= max) return;
 
-  // Add to parent container
-  container.appendChild(colorBarWrapper);
+    if (type === "atoms") {
+      general.ForceMin = min;
+      general.ForceMax = max;
+      updateAtoms();
+    } else if (type === "bonds") {
+      general.BondMin = min;
+      general.BondMax = max;
+      updateBonds();
+    }
+  }
+
+  minInput.addEventListener("change", onLimitsChange);
+  maxInput.addEventListener("change", onLimitsChange);
+
+  render();
 
   return {
-    update: (newColormap) => {
-      colormap = newColormap;
-      renderColorBar();
+    update(cmap) {
+      colormap = cmap;
+      render();
     },
-    setLabels: (newMin, newMax) => {
-      minLabel.textContent = newMin;
-      maxLabel.textContent = newMax;
-    },
-    remove: () => {
-      colorBarWrapper.remove();
+    remove() {
+      wrapper.remove();
     }
   };
 }
 
-export function addColorPanel(target = "colorContainer") {
-  console.warn("addColorPanel called");
-  const targetPanel = document.getElementById(target);
-  if (document.getElementById("colorControlsGroup")) {
-    console.warn("Color Controls already exist.");
-    return;
-  }
-  if (!targetPanel) {
-    console.warn("colorContainer does not exist!");
-    return;
-  }
+// --- Dropdown Creation ---
+function createDropdown(id, labelText, options, onChange) {
+  const block = createElement("div", { class: "menu_block" });
+  const label = createElement("label", { for: id }, { display: "block", textAlign: "center", marginBottom: "5px", width: "100%" }, labelText);
+  const select = createElement("select", { id }, { width: "100%", maxWidth: "120px", margin: "0 auto" });
 
-  // --- Outer wrapper ---
-  const group = document.createElement("div");
-  group.id = "colorControlsGroup";
-
-  // --- Panel ---
-  const panel = document.createElement("div");
-  panel.id = "colorSettingsPanel";
-
-  // --- Toggle ---
-  const toggle = document.createElement("div");
-  toggle.id = "colorSettingsToggle";
-  toggle.className = "spin-toggle";
-  toggle.setAttribute("role", "button");
-  toggle.setAttribute("tabindex", "0");
-  toggle.setAttribute("aria-expanded", "false");
-  toggle.setAttribute("aria-controls", "colorControlsContent");
-
-  const title = document.createElement("h4");
-  title.textContent = "Color Map Settings";
-  title.style.width = "100%";
-  title.style.margin = "0";
-
-  const icon = document.createElement("div");
-  icon.id = "colorToggleIcon";
-  icon.className = "toggle-icon";
-  icon.textContent = "+";
-
-  toggle.appendChild(title);
-  toggle.appendChild(icon);
-
-  // --- Collapsible content ---
-  const content = document.createElement("div");
-  content.id = "colorControlsContent";
-  content.className = "collapsible-content";
-  content.setAttribute("aria-hidden", "true");
-
-  // --- Menus wrapper ---
-  const menusWrapper = document.createElement("div");
-  menusWrapper.className = "menus_wrapper";
-  menusWrapper.style.width = "100%";
-
-  // --- Atoms menu block ---
-  const atomsMenuBlock = document.createElement("div");
-  atomsMenuBlock.className = "menu_block";
-  atomsMenuBlock.style.width = "100%";
-  atomsMenuBlock.style.marginBottom = "15px";
-
-  const atomsLabel = document.createElement("label");
-  atomsLabel.setAttribute("for", "atomsMenu");
-  atomsLabel.textContent = "Atoms";
-  atomsLabel.style.display = "block";
-  atomsLabel.style.textAlign = "center";
-  atomsLabel.style.marginBottom = "5px";
-  atomsLabel.style.width = "100%";
-
-  const atomsMenu = document.createElement("select");
-  atomsMenu.id = "atomsMenu";
-  atomsMenu.style.width = "100%";
-  atomsMenu.style.maxWidth = "120px";
-  atomsMenu.style.margin = "0 auto";
-
-  const atomsOptions = [
-    { value: "elements", text: "Element", selected: true },
-    { value: "force", text: "Force" },
-    { value: "localStress", text: "Local Stress" },
-  ];
-
-  atomsOptions.forEach((option) => {
-    const optElement = document.createElement("option");
-    optElement.value = option.value;
-    optElement.textContent = option.text;
-    if (option.selected) optElement.selected = true;
-    atomsMenu.appendChild(optElement);
+  options.forEach((opt) => {
+    const option = createElement("option", { value: opt.value }, {}, opt.text);
+    if (opt.selected) option.selected = true;
+    select.appendChild(option);
   });
 
-  // --- Atoms Color Map Dropdown (hidden by default) ---
-  const atomsColorMapBlock = document.createElement("div");
-  atomsColorMapBlock.className = "menu_block";
-  atomsColorMapBlock.style.display = "none";
-  atomsColorMapBlock.style.width = "100%";
-  atomsColorMapBlock.style.marginTop = "10px";
-  atomsColorMapBlock.style.textAlign = "center";
+  select.addEventListener("change", onChange);
+  block.appendChild(label);
+  block.appendChild(select);
+  return block;
+}
 
-  const atomsColorMapLabel = document.createElement("label");
-  atomsColorMapLabel.setAttribute("for", "atomsColorMapMenu");
-  atomsColorMapLabel.textContent = "Color Map";
-  atomsColorMapLabel.style.display = "block";
-  atomsColorMapLabel.style.textAlign = "center";
-  atomsColorMapLabel.style.marginBottom = "5px";
-  atomsColorMapLabel.style.width = "100%";
+// --- Toggle Logic ---
+function setupToggle(toggle, content) {
+  let isOpen = false;
+  const icon = toggle.querySelector(".toggle-icon");
 
-  const atomsColorMapMenu = document.createElement("select");
-  atomsColorMapMenu.id = "atomsColorMapMenu";
-  atomsColorMapMenu.style.width = "100%";
-  atomsColorMapMenu.style.maxWidth = "120px";
-  atomsColorMapMenu.style.margin = "0 auto";
-
-  const atomsColorMapOptions = [
-    { value: "heatmap", text: "Heatmap", selected: true },
-    { value: "batlow", text: "Batlow" },
-    { value: "hawaii", text: "Hawaii" },
-    { value: "managua", text: "Managua" },
-    { value: "viridis", text: "Viridis" },
-    { value: "plasma", text: "Plasma" },
-    { value: "spectralR", text: "Spectral R" },
-  ];
-
-  atomsColorMapOptions.forEach((option) => {
-    const optElement = document.createElement("option");
-    optElement.value = option.value;
-    optElement.textContent = option.text;
-    if (option.selected) optElement.selected = true;
-    atomsColorMapMenu.appendChild(optElement);
-  });
-
-  // Create atoms colorbar container
-  const atomsColorBarContainer = document.createElement("div");
-  atomsColorBarContainer.style.display = "flex";
-  atomsColorBarContainer.style.justifyContent = "center";
-  atomsColorBarContainer.style.width = "100%";
-  atomsColorBarContainer.style.marginTop = "5px";
-
-  atomsColorMapBlock.appendChild(atomsColorMapLabel);
-  atomsColorMapBlock.appendChild(atomsColorMapMenu);
-  atomsColorMapBlock.appendChild(atomsColorBarContainer);
-
-  // Create atoms colorbar
-  let atomsColorBar;
-  atomsColorMapMenu.addEventListener("change", () => {
-    general.atomColorMap = atomsColorMapMenu.value;
-    if (!atomsColorBar) {
-      atomsColorBar = createColorBar(atomsColorBarContainer, atomsColorMapMenu.value, "1e-4", "2");
-    } else {
-      atomsColorBar.update(atomsColorMapMenu.value);
-    }
-    console.log("Atom colormap set to:", general.atomColorMap);
-    updateAtoms();
-  });
-
-  // --- Bonds menu block ---
-  const bondsMenuBlock = document.createElement("div");
-  bondsMenuBlock.className = "menu_block";
-  bondsMenuBlock.style.width = "100%";
-  bondsMenuBlock.style.marginBottom = "15px";
-
-  const bondsLabel = document.createElement("label");
-  bondsLabel.setAttribute("for", "bondsMenu");
-  bondsLabel.textContent = "Bonds";
-  bondsLabel.style.display = "block";
-  bondsLabel.style.textAlign = "center";
-  bondsLabel.style.marginBottom = "5px";
-  bondsLabel.style.width = "100%";
-
-  const bondsMenu = document.createElement("select");
-  bondsMenu.id = "bondsMenu";
-  bondsMenu.style.width = "100%";
-  bondsMenu.style.maxWidth = "120px";
-  bondsMenu.style.margin = "0 auto";
-
-  const bondsOptions = [
-    { value: "elements", text: "Elements", selected: true },
-    { value: "white", text: "White" },
-    { value: "length", text: "Length" },
-  ];
-
-  bondsOptions.forEach((option) => {
-    const optElement = document.createElement("option");
-    optElement.value = option.value;
-    optElement.textContent = option.text;
-    if (option.selected) optElement.selected = true;
-    bondsMenu.appendChild(optElement);
-  });
-
-  // --- Bonds Color Map Dropdown (hidden by default) ---
-  const bondsColorMapBlock = document.createElement("div");
-  bondsColorMapBlock.className = "menu_block";
-  bondsColorMapBlock.style.display = "none";
-  bondsColorMapBlock.style.width = "100%";
-  bondsColorMapBlock.style.marginTop = "10px";
-  bondsColorMapBlock.style.textAlign = "center";
-
-  const bondsColorMapLabel = document.createElement("label");
-  bondsColorMapLabel.setAttribute("for", "bondsColorMapMenu");
-  bondsColorMapLabel.textContent = "Color Map";
-  bondsColorMapLabel.style.display = "block";
-  bondsColorMapLabel.style.textAlign = "center";
-  bondsColorMapLabel.style.marginBottom = "5px";
-  bondsColorMapLabel.style.width = "100%";
-
-  const bondsColorMapMenu = document.createElement("select");
-  bondsColorMapMenu.id = "bondsColorMapMenu";
-  bondsColorMapMenu.style.width = "100%";
-  bondsColorMapMenu.style.maxWidth = "120px";
-  bondsColorMapMenu.style.margin = "0 auto";
-
-  const bondsColorMapOptions = [
-    { value: "heatmap", text: "Heatmap", selected: true },
-    { value: "batlow", text: "Batlow" },
-    { value: "hawaii", text: "Hawaii" },
-    { value: "managua", text: "Managua" },
-    { value: "viridis", text: "Viridis" },
-    { value: "plasma", text: "Plasma" },
-    { value: "spectralR", text: "Spectral R" },
-  ];
-
-  bondsColorMapOptions.forEach((option) => {
-    const optElement = document.createElement("option");
-    optElement.value = option.value;
-    optElement.textContent = option.text;
-    if (option.selected) optElement.selected = true;
-    bondsColorMapMenu.appendChild(optElement);
-  });
-
-  // Create bonds colorbar container
-  const bondsColorBarContainer = document.createElement("div");
-  bondsColorBarContainer.style.display = "flex";
-  bondsColorBarContainer.style.justifyContent = "center";
-  bondsColorBarContainer.style.width = "100%";
-  bondsColorBarContainer.style.marginTop = "5px";
-
-  bondsColorMapBlock.appendChild(bondsColorMapLabel);
-  bondsColorMapBlock.appendChild(bondsColorMapMenu);
-  bondsColorMapBlock.appendChild(bondsColorBarContainer);
-
-  // Create bonds colorbar
-  let bondsColorBar;
-  bondsColorMapMenu.addEventListener("change", () => {
-    general.bondsColorMap = bondsColorMapMenu.value;
-    if (!bondsColorBar) {
-      bondsColorBar = createColorBar(bondsColorBarContainer, bondsColorMapMenu.value, "1.1", "5");
-    } else {
-      bondsColorBar.update(bondsColorMapMenu.value);
-    }
-    console.log("Bond colormap set to:", general.bondsColorMap);
-    updateBonds();
-  });
-
-  // Append atoms and bonds blocks to wrapper
-  atomsMenuBlock.appendChild(atomsLabel);
-  atomsMenuBlock.appendChild(atomsMenu);
-  atomsMenuBlock.appendChild(atomsColorMapBlock);
-
-  bondsMenuBlock.appendChild(bondsLabel);
-  bondsMenuBlock.appendChild(bondsMenu);
-  bondsMenuBlock.appendChild(bondsColorMapBlock);
-
-  menusWrapper.appendChild(atomsMenuBlock);
-  menusWrapper.appendChild(bondsMenuBlock);
-
-  // Toggle visibility of atoms color map dropdown and update general.atomsColor
-  atomsMenu.addEventListener("change", () => {
-    if (atomsMenu.value === "localStress" || atomsMenu.value === "force") {
-      atomsColorMapBlock.style.display = "block";
-      if (!atomsColorBar) {
-        atomsColorBar = createColorBar(atomsColorBarContainer, atomsColorMapMenu.value, "1e-4", "2");
-      }
-    } else {
-      atomsColorMapBlock.style.display = "none";
-    }
-    general.atomsColor = atomsMenu.value;
-    console.log("Atom color mode set to:", general.atomsColor);
-    updateAtoms();
-  });
-
-  // Toggle visibility of bonds color map dropdown and update general.bondsColor
-  bondsMenu.addEventListener("change", () => {
-    if (bondsMenu.value === "length") {
-      bondsColorMapBlock.style.display = "block";
-      if (!bondsColorBar) {
-        bondsColorBar = createColorBar(bondsColorBarContainer, bondsColorMapMenu.value, "1.1", "5");
-      }
-    } else {
-      bondsColorMapBlock.style.display = "none";
-    }
-    general.bondsColor = bondsMenu.value;
-    console.log("Bond color mode set to:", general.bondsColor);
-    updateBonds();
-  });
-
-  // Append menus wrapper to content
-  content.appendChild(menusWrapper);
-
-  // Build hierarchy
-  panel.appendChild(toggle);
-  panel.appendChild(content);
-  group.appendChild(panel);
-
-  // Insert into DOM
-  targetPanel.appendChild(group);
-
-  // --- Toggle logic ---
   function setOpen(open) {
-    if (open) {
-      content.classList.add("open");
-      content.setAttribute("aria-hidden", "false");
-      icon.textContent = "−";
-      toggle.setAttribute("aria-expanded", "true");
-    } else {
-      content.classList.remove("open");
-      content.setAttribute("aria-hidden", "true");
-      icon.textContent = "+";
-      toggle.setAttribute("aria-expanded", "false");
-    }
+    isOpen = open;
+    content.classList.toggle("open", open);
+    content.setAttribute("aria-hidden", !open);
+    icon.textContent = open ? "−" : "+";
+    toggle.setAttribute("aria-expanded", open);
   }
 
-  // Default is closed
-  setOpen(false);
-
-  // Click to toggle
-  toggle.addEventListener("click", () => setOpen(!content.classList.contains("open")));
-
-  // Keyboard support
+  toggle.addEventListener("click", () => setOpen(!isOpen));
   toggle.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      setOpen(!content.classList.contains("open"));
+      setOpen(!isOpen);
     }
   });
+
+  setOpen(false);
 }
 
+export function addColorPanel(target = "colorContainer") {
+  const targetPanel = document.getElementById(target);
+  if (!targetPanel || document.getElementById("colorControlsGroup")) return;
+
+  const group = createElement("div", { id: "colorControlsGroup" });
+  const panel = createElement("div", { id: "colorSettingsPanel" });
+
+  // --- Toggle ---
+  const toggle = createElement("div", {
+    id: "colorSettingsToggle",
+    class: "spin-toggle",
+    role: "button",
+    tabindex: "0",
+    "aria-expanded": "false",
+    "aria-controls": "colorControlsContent"
+  });
+
+  toggle.appendChild(createElement("h4", {}, { margin: "0" }, "Color Map Settings"));
+  toggle.appendChild(createElement("div", { class: "toggle-icon" }, {}, "+"));
+
+  const content = createElement("div", {
+    id: "colorControlsContent",
+    class: "collapsible-content",
+    "aria-hidden": "true"
+  });
+
+  const menusWrapper = createElement("div", { class: "menus_wrapper" });
+
+  // =========================
+  // ATOMS
+  // =========================
+  let atomsColorBar = null;
+
+  const atomsMenuBlock = createElement("div", { class: "menu_block" });
+  const atomsMenu = createDropdown("atomsMenu", "Atoms", [
+    { value: "elements", text: "Element", selected: true },
+    { value: "force", text: "Force" },
+    { value: "localStress", text: "Local Stress" }
+  ], onAtomsModeChange);
+
+  const atomsElementColorMapBlock = createElement("div", { class: "menu_block" });
+  const atomsElementColorMapMenu = createDropdown("atomsElementColorMapMenu", "Element Color Map", [
+    { value: "default", text: "CrysViz Default", selected: true },
+    { value: "jmol", text: "JMol-like" }
+  ], () => {
+    general.useDefaultColors =
+      atomsElementColorMapMenu.querySelector("select").value === "default";
+    updateAtoms();
+  });
+
+  const atomsColorMapBlock = createElement("div", {
+    class: "menu_block",
+    style: "display:none;"
+  });
+
+  const atomsColorMapMenu = createDropdown("atomsColorMapMenu", "Color Map", [
+    { value: "heatmap", text: "Heatmap", selected: true },
+    { value: "batlow", text: "Batlow" },
+    { value: "hawaii", text: "Hawaii" },
+    { value: "managua", text: "Managua" },
+    { value: "viridis", text: "Viridis" },
+    { value: "plasma", text: "Plasma" },
+    { value: "spectralR", text: "Spectral R" }
+  ], () => {
+    const cmap = atomsColorMapMenu.querySelector("select").value;
+    general.atomColorMap = cmap;
+    atomsColorBar?.update(cmap);
+    updateAtoms();
+  });
+
+  const atomsColorBarContainer = createElement("div", {}, {
+    display: "none",
+    marginTop: "8px"
+  });
+
+  atomsColorMapBlock.appendChild(atomsColorMapMenu);
+  atomsColorMapBlock.appendChild(atomsColorBarContainer);
+
+  atomsMenuBlock.appendChild(atomsMenu);
+  atomsMenuBlock.appendChild(atomsElementColorMapBlock);
+  atomsElementColorMapBlock.appendChild(atomsElementColorMapMenu);
+  atomsMenuBlock.appendChild(atomsColorMapBlock);
+
+  function onAtomsModeChange() {
+    const mode = atomsMenu.querySelector("select").value;
+    const isScalar = mode === "force" || mode === "localStress";
+
+    atomsElementColorMapBlock.style.display = mode === "elements" ? "block" : "none";
+    atomsColorMapBlock.style.display = isScalar ? "block" : "none";
+    atomsColorBarContainer.style.display = isScalar ? "block" : "none";
+
+    if (isScalar) {
+      if (!atomsColorBar) {
+        atomsColorBar = createColorBar(
+          atomsColorBarContainer,
+          general.atomColorMap,
+          general.ForceMin,
+          general.ForceMax,
+          "atoms"
+        );
+      }
+    } else {
+      atomsColorBar?.remove();
+      atomsColorBar = null;
+    }
+
+    general.atomsColor = mode;
+    updateAtoms();
+  }
+
+  // =========================
+  // BONDS
+  // =========================
+  let bondsColorBar = null;
+
+  const bondsMenuBlock = createElement("div", { class: "menu_block" });
+  const bondsMenu = createDropdown("bondsMenu", "Bonds", [
+    { value: "elements", text: "Elements", selected: true },
+    { value: "white", text: "White" },
+    { value: "length", text: "Length" }
+  ], onBondsModeChange);
+
+  const bondsColorMapBlock = createElement("div", {
+    class: "menu_block",
+    style: "display:none;"
+  });
+
+  const bondsColorMapMenu = createDropdown("bondsColorMapMenu", "Color Map", [
+    { value: "heatmap", text: "Heatmap", selected: true },
+    { value: "batlow", text: "Batlow" },
+    { value: "hawaii", text: "Hawaii" },
+    { value: "managua", text: "Managua" },
+    { value: "viridis", text: "Viridis" },
+    { value: "plasma", text: "Plasma" },
+    { value: "spectralR", text: "Spectral R" }
+  ], () => {
+    const cmap = bondsColorMapMenu.querySelector("select").value;
+    general.bondsColorMap = cmap;
+    bondsColorBar?.update(cmap);
+    updateBonds();
+  });
+
+  const bondsColorBarContainer = createElement("div", {}, {
+    display: "none",
+    marginTop: "8px"
+  });
+
+  bondsColorMapBlock.appendChild(bondsColorMapMenu);
+  bondsColorMapBlock.appendChild(bondsColorBarContainer);
+
+  bondsMenuBlock.appendChild(bondsMenu);
+  bondsMenuBlock.appendChild(bondsColorMapBlock);
+
+  function onBondsModeChange() {
+    const mode = bondsMenu.querySelector("select").value;
+    const isLength = mode === "length";
+
+    bondsColorMapBlock.style.display = isLength ? "block" : "none";
+    bondsColorBarContainer.style.display = isLength ? "block" : "none";
+
+    if (isLength) {
+      if (!bondsColorBar) {
+        bondsColorBar = createColorBar(
+          bondsColorBarContainer,
+          general.bondsColorMap,
+          general.BondMin,
+          general.BondMax,
+          "bonds"
+        );
+      }
+    } else {
+      bondsColorBar?.remove();
+      bondsColorBar = null;
+    }
+
+    general.bondsColor = mode;
+    updateBonds();
+  }
+
+  // =========================
+  // ASSEMBLE
+  // =========================
+  menusWrapper.appendChild(atomsMenuBlock);
+  menusWrapper.appendChild(bondsMenuBlock);
+
+  content.appendChild(menusWrapper);
+  panel.appendChild(toggle);
+  panel.appendChild(content);
+  group.appendChild(panel);
+  targetPanel.appendChild(group);
+
+  setupToggle(toggle, content);
+}
 
 
 
@@ -466,141 +391,51 @@ function getHeatMapColors() {
   return heatmapColors;
 }
 
-function getBatlowColors() {
-  const nBins = 100; // Number of color bins
-  const batlowColors = [];
-
-  // Normalized RGB stops for the Batlow colormap (0-1 range)
+function getBatlowColors(nBins = 100) {
   const batlowStops = [
-    { t: 0.00, r: 0.005193, g: 0.098238, b: 0.349842 },
-    { t: 0.01, r: 0.009065, g: 0.104487, b: 0.350933 },
-    { t: 0.02, r: 0.012963, g: 0.110779, b: 0.351992 },
-    { t: 0.03, r: 0.016530, g: 0.116913, b: 0.353070 },
-    { t: 0.04, r: 0.019936, g: 0.122985, b: 0.354120 },
-    { t: 0.05, r: 0.023189, g: 0.129035, b: 0.355182 },
-    { t: 0.06, r: 0.026291, g: 0.135044, b: 0.356210 },
-    { t: 0.07, r: 0.029245, g: 0.140964, b: 0.357239 },
-    { t: 0.08, r: 0.032053, g: 0.146774, b: 0.358239 },
-    { t: 0.09, r: 0.034853, g: 0.152558, b: 0.359233 },
-    { t: 0.10, r: 0.037449, g: 0.158313, b: 0.360216 },
-    { t: 0.11, r: 0.039845, g: 0.163978, b: 0.361187 },
-    { t: 0.12, r: 0.042104, g: 0.169557, b: 0.362151 },
-    { t: 0.13, r: 0.044069, g: 0.175053, b: 0.363084 },
-    { t: 0.14, r: 0.045905, g: 0.180460, b: 0.364007 },
-    { t: 0.15, r: 0.047665, g: 0.185844, b: 0.364915 },
-    { t: 0.16, r: 0.049378, g: 0.191076, b: 0.365810 },
-    { t: 0.17, r: 0.050795, g: 0.196274, b: 0.366684 },
-    { t: 0.18, r: 0.052164, g: 0.201323, b: 0.367524 },
-    { t: 0.19, r: 0.053471, g: 0.206357, b: 0.368370 },
-    { t: 0.20, r: 0.054721, g: 0.211234, b: 0.369184 },
-    { t: 0.21, r: 0.055928, g: 0.216046, b: 0.369974 },
-    { t: 0.22, r: 0.057033, g: 0.220754, b: 0.370750 },
-    { t: 0.23, r: 0.058032, g: 0.225340, b: 0.371509 },
-    { t: 0.24, r: 0.059164, g: 0.229842, b: 0.372252 },
-    { t: 0.25, r: 0.060167, g: 0.234299, b: 0.372978 },
-    { t: 0.26, r: 0.061052, g: 0.238625, b: 0.373691 },
-    { t: 0.27, r: 0.062060, g: 0.242888, b: 0.374386 },
-    { t: 0.28, r: 0.063071, g: 0.247085, b: 0.375050 },
-    { t: 0.29, r: 0.063982, g: 0.251213, b: 0.375709 },
-    { t: 0.30, r: 0.064936, g: 0.255264, b: 0.376362 },
-    { t: 0.31, r: 0.065903, g: 0.259257, b: 0.376987 },
-    { t: 0.32, r: 0.066899, g: 0.263188, b: 0.377594 },
-    { t: 0.33, r: 0.067921, g: 0.267056, b: 0.378191 },
-    { t: 0.34, r: 0.069002, g: 0.270922, b: 0.378774 },
-    { t: 0.35, r: 0.070001, g: 0.274713, b: 0.379342 },
-    { t: 0.36, r: 0.071115, g: 0.278497, b: 0.379895 },
-    { t: 0.37, r: 0.072192, g: 0.282249, b: 0.380434 },
-    { t: 0.38, r: 0.073440, g: 0.285942, b: 0.380957 },
-    { t: 0.39, r: 0.074595, g: 0.289653, b: 0.381452 },
-    { t: 0.40, r: 0.075833, g: 0.293321, b: 0.381922 },
-    { t: 0.41, r: 0.077136, g: 0.296996, b: 0.382376 },
-    { t: 0.42, r: 0.078517, g: 0.300622, b: 0.382814 },
-    { t: 0.43, r: 0.079984, g: 0.304252, b: 0.383224 },
-    { t: 0.44, r: 0.081553, g: 0.307858, b: 0.383598 },
-    { t: 0.45, r: 0.083082, g: 0.311461, b: 0.383936 },
-    { t: 0.46, r: 0.084778, g: 0.315043, b: 0.384240 },
-    { t: 0.47, r: 0.086503, g: 0.318615, b: 0.384506 },
-    { t: 0.48, r: 0.088353, g: 0.322167, b: 0.384731 },
-    { t: 0.49, r: 0.090281, g: 0.325685, b: 0.384910 },
-    { t: 0.50, r: 0.092304, g: 0.329220, b: 0.385040 },
-    { t: 0.51, r: 0.094462, g: 0.332712, b: 0.385116 },
-    { t: 0.52, r: 0.096618, g: 0.336161, b: 0.385134 },
-    { t: 0.53, r: 0.098915, g: 0.339621, b: 0.385090 },
-    { t: 0.54, r: 0.101481, g: 0.343036, b: 0.384981 },
-    { t: 0.55, r: 0.104078, g: 0.346410, b: 0.384801 },
-    { t: 0.56, r: 0.106842, g: 0.349774, b: 0.384548 },
-    { t: 0.57, r: 0.109695, g: 0.353098, b: 0.384217 },
-    { t: 0.58, r: 0.112655, g: 0.356391, b: 0.383807 },
-    { t: 0.59, r: 0.115748, g: 0.359638, b: 0.383310 },
-    { t: 0.60, r: 0.118992, g: 0.362849, b: 0.382713 },
-    { t: 0.61, r: 0.122320, g: 0.366030, b: 0.382026 },
-    { t: 0.62, r: 0.125889, g: 0.369160, b: 0.381259 },
-    { t: 0.63, r: 0.129519, g: 0.372238, b: 0.380378 },
-    { t: 0.64, r: 0.133298, g: 0.375282, b: 0.379395 },
-    { t: 0.65, r: 0.137212, g: 0.378282, b: 0.378315 },
-    { t: 0.66, r: 0.141260, g: 0.381240, b: 0.377135 },
-    { t: 0.67, r: 0.145432, g: 0.384130, b: 0.375840 },
-    { t: 0.68, r: 0.149706, g: 0.386975, b: 0.374449 },
-    { t: 0.69, r: 0.154073, g: 0.389777, b: 0.372934 },
-    { t: 0.70, r: 0.158620, g: 0.392531, b: 0.371320 },
-    { t: 0.71, r: 0.163246, g: 0.395237, b: 0.369609 },
-    { t: 0.72, r: 0.167952, g: 0.397889, b: 0.367784 },
-    { t: 0.73, r: 0.172788, g: 0.400496, b: 0.365867 },
-    { t: 0.74, r: 0.177752, g: 0.403041, b: 0.363833 },
-    { t: 0.75, r: 0.182732, g: 0.405551, b: 0.361714 },
-    { t: 0.76, r: 0.187886, g: 0.408003, b: 0.359484 },
-    { t: 0.77, r: 0.193050, g: 0.410427, b: 0.357177 },
-    { t: 0.78, r: 0.198310, g: 0.412798, b: 0.354767 },
-    { t: 0.79, r: 0.203676, g: 0.415116, b: 0.352253 },
-    { t: 0.80, r: 0.209075, g: 0.417412, b: 0.349677 },
-    { t: 0.81, r: 0.214555, g: 0.419661, b: 0.347019 },
-    { t: 0.82, r: 0.220112, g: 0.421864, b: 0.344261 },
-    { t: 0.83, r: 0.225707, g: 0.424049, b: 0.341459 },
-    { t: 0.84, r: 0.231362, g: 0.426197, b: 0.338572 },
-    { t: 0.85, r: 0.237075, g: 0.428325, b: 0.335634 },
-    { t: 0.86, r: 0.242795, g: 0.430418, b: 0.332635 },
-    { t: 0.87, r: 0.248617, g: 0.432493, b: 0.329571 },
-    { t: 0.88, r: 0.254452, g: 0.434529, b: 0.326434 },
-    { t: 0.89, r: 0.260320, g: 0.436556, b: 0.323285 },
-    { t: 0.90, r: 0.266241, g: 0.438555, b: 0.320085 },
-    { t: 0.91, r: 0.272168, g: 0.440541, b: 0.316831 },
-    { t: 0.92, r: 0.278171, g: 0.442524, b: 0.313552 },
-    { t: 0.93, r: 0.284175, g: 0.444484, b: 0.310243 },
-    { t: 0.94, r: 0.290214, g: 0.446420, b: 0.306889 },
-    { t: 0.95, r: 0.296294, g: 0.448357, b: 0.303509 },
-    { t: 0.96, r: 0.302379, g: 0.450282, b: 0.300122 },
-    { t: 0.97, r: 0.308517, g: 0.452205, b: 0.296721 },
-    { t: 0.98, r: 0.314648, g: 0.454107, b: 0.293279 },
-    { t: 0.99, r: 0.320834, g: 0.456006, b: 0.289841 },
-    { t: 1.00, r: 0.327007, g: 0.457900, b: 0.286377 }
+    [0.000000, 0.0588235, 0.3490196],
+    [0.0256410, 0.0784314, 0.4196078],
+    [0.0512821, 0.2596078, 0.5254902],
+    [0.1111111, 0.5019608, 0.6352941],
+    [0.2222222, 0.7450980, 0.7058824],
+    [0.3333333, 0.8784314, 0.7686275],
+    [0.4444444, 0.9705882, 0.8274510],
+    [0.5555556, 0.9960784, 0.8745098],
+    [0.6666667, 0.9529412, 0.9098039],
+    [0.7777778, 0.8352941, 0.9215686],
+    [0.8888889, 0.6862745, 0.9058824],
+    [1.0000000, 0.5215686, 0.8588235]
   ];
 
+  const colors = [];
   for (let i = 0; i < nBins; i++) {
-    const t = i / (nBins - 1);
-    let r, g, b;
+    let t = i / (nBins - 1);
 
-    // Find the two closest stops
-    let stop1, stop2;
+    // find segment
+    let lower = batlowStops[0];
+    let upper = batlowStops[batlowStops.length - 1];
     for (let j = 0; j < batlowStops.length - 1; j++) {
-      if (t >= batlowStops[j].t && t <= batlowStops[j + 1].t) {
-        stop1 = batlowStops[j];
-        stop2 = batlowStops[j + 1];
+      if (t >= batlowStops[j][0] && t <= batlowStops[j + 1][0]) {
+        lower = batlowStops[j];
+        upper = batlowStops[j + 1];
         break;
       }
     }
 
-    // Interpolate between the two stops
-    const localT = (t - stop1.t) / (stop2.t - stop1.t);
-    r = stop1.r + (stop2.r - stop1.r) * localT;
-    g = stop1.g + (stop2.g - stop1.g) * localT;
-    b = stop1.b + (stop2.b - stop1.b) * localT;
+    // normalize between stops
+    const range = upper[0] - lower[0];
+    const localT = range <= 0 ? 0 : (t - lower[0]) / range;
 
-    // Create THREE.Color with normalized RGB values
-    batlowColors.push(new THREE.Color(r, g, b));
+    const r = lower[1] + (upper[1] - lower[1]) * localT;
+    const g = lower[2] + (upper[2] - lower[2]) * localT;
+    const b = lower[3] + (upper[3] - lower[3]) * localT;
+
+    colors.push(new THREE.Color(r, g, b));
   }
 
-  return batlowColors;
+  return colors;
 }
+
 
 
 
@@ -864,7 +699,7 @@ function getSpectralRColors() {
 // ... (other colormap functions like getViridisColors, getPlasmaColors, getRainbowColors)
 
 // --- Mapping Functions ---
-export function forceLengthToColor(forceLength) {
+export function forceLengthToColor(forceLength,minVal = 1e-4, maxVal = 2) {
   let colors;
   switch (general.bondsColorMap) {
     case "batlow":
@@ -883,21 +718,19 @@ export function forceLengthToColor(forceLength) {
       colors = getPlasmaColors();
       break;
     case "spectalR":
-      colors = getSpectralRColors() 
+      colors = getSpectralRColors()
       break;
     default:
       colors = getHeatMapColors();
   }
   const nBins = colors.length;
-  const minVal = 1e-4;
-  const maxVal = 2;
   const clamped = Math.max(minVal, Math.min(maxVal, forceLength));
   const t = (Math.log10(clamped) - Math.log10(minVal)) / (Math.log10(maxVal) - Math.log10(minVal));
   const bin = Math.min(Math.floor(t * nBins), nBins - 1);
   return colors[bin];
 }
 
-export function bondLengthToColor(bondLength) {
+export function bondLengthToColor(bondLength,minVal=general.BondMin,maxVal=general.BondMax) {
   let colors;
   switch (general.bondsColorMap) {
     case "batlow":
@@ -922,11 +755,8 @@ export function bondLengthToColor(bondLength) {
       colors = getHeatMapColors();
   }
   const nBins = colors.length;
-  const minVal = 1.1;
-  const maxVal = 4;
   const clamped = Math.max(minVal, Math.min(maxVal, bondLength));
   let t = (clamped - minVal) / (maxVal - minVal);
-  t = 1 - t;
   const bin = Math.min(Math.floor(t * nBins), nBins - 1);
   return colors[bin];
 }

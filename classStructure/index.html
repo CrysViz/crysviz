@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="./styles/controlPanel.css">
     <link rel="stylesheet" href="./styles/backendPanel.css">
     <link rel="stylesheet" href="./styles/toggle_styles.css">
+    <link rel="stylesheet" href="./styles/BondAtomColorPanel.css">
 
 
     <script type="importmap">
@@ -32,12 +33,12 @@
       <img src="./data/CrysViz_logo_clear_back_newyear.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
       <div class="backend-control-group">
         <div class="segmented-backend-control" id="BackendModeSwitch">
-          <button data-mode="None" class="active">None</button>
+          <button data-mode="none"class="active">None</button>
           <button data-mode="symmetry">Symmetry</button>
           <button data-mode="ai">AI</button>
         </div>
         <div class="backend-control-group", id="BackendCalcPanel">
-            <h1>No backend connected. All data remains on your computer</h1>
+            <h1> Choose Symmetry or AI mode for more advanced functionalities </h1>
         </div>
       </div>
       <div class="control-group">
@@ -155,13 +156,6 @@
         <!-- Camera Settings -->
        <div id="cameraContainer"></div>
 
-       <label class="toggle_container">
-          <span class="toggle_switch">
-            <input type="checkbox" id="defaultColors" checked>
-            <span class="toggle_slider"></span>
-          </span>
-          Default Colors
-        </label>
 
         <label>
           Atom Size: <span id="atomSizeValue" class="slider-value">0.40</span>

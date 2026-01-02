@@ -5,6 +5,7 @@ import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
 
+
 export function updateAtoms(opacity=1.0) {
   disposeGroup(groups.atomsGroup);
   groups.atomsGroup = new THREE.Group();
@@ -35,11 +36,11 @@ export function updateAtoms(opacity=1.0) {
 
 
 export function createAtomMesh(element, position, atomIndex = null,opacity=1.0) {
-
   const radius = (atomicRadii[element] || 1.0) * general.atomSize;
   const color = atomIndex !== null ? getIndividualAtomColor(element, atomIndex) : getElementColor(element);
   const geometry = new THREE.SphereGeometry(radius, 32, 24);
   const material = new THREE.MeshPhysicalMaterial(getAtomVisSettings(color, opacity));
+
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(position[0], position[1], position[2]);

@@ -1025,10 +1025,6 @@ function clearLongPress() {
   let checkbox_periodic = document.getElementById("showPeriodic");
       checkbox_periodic.checked = true; // explicitly tick 
 
-  document.getElementById('defaultColors').onchange = (e) => {
-    general.useDefaultColors = e.target.checked;
-    updateVisualization(); // also re-renders composition
-  };
 
   // Mobile measurement toggle functionality
   document.getElementById('measurementToggle').addEventListener('click', (e) => {

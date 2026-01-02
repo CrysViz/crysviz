@@ -34,7 +34,7 @@ export function addBackendCalcPanel() {
 export function removeBackendCalcPanel() {
     const panel = document.getElementById("BackendCalcPanel");
     panel.innerHTML = `
-        <h1>No backend connected. All data remains on your computer</h1>
+        <h1>Choose Symmetry or AI mode for more advanced functionalities</h1>
     `;
 }
 

@@ -74,6 +74,10 @@ export const groups = {
 
 
 export const general = {  
+  ForceMin:1e-4,
+  ForceMax:2.5,
+  BondMin:1.1,
+  BondMax:4.5,
   autoRandomEnabled: false,
   powerMode: false,
   currentLatticeColor:null,
@@ -199,15 +203,16 @@ export const jmolColorMap = {
   Tl: 0xa6544d, Pb: 0x575961, Bi: 0x9e4fb5, Po: 0xab5c00, At: 0x754f45, Rn: 0x428296
 };
 
+
 export function getAtomVisSettings(color,opacity) {
   return {
     color,
     opacity,
     transparent: opacity !== 1.0,
-    roughness: 0.3,
-    metalness: 0.05,
-    clearcoat: 0.4,
-    clearcoatRoughness: 0.1,
+    roughness: 0.2,
+    metalness: 0.3,
+    clearcoat: 0.5,
+    clearcoatRoughness: 0.05,
   };
 };
 
@@ -223,6 +228,7 @@ export function  getBondVisSettings(color,opacity=1.0) {
     clearcoatRoughness: 0.05
   };
 };
+
 
 export function getLatticeVisSettings(color) {
     return{

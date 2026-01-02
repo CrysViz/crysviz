@@ -67,7 +67,7 @@ export function addBackendRelaxPanel() {
 export function removeBackendRelaxPanel() {
     const panel = document.getElementById("BackendRelaxPanel");
     panel.innerHTML = `
-        <h1>No backend connected. All data remains on your computer</h1>
+        <h1>Choose Symmetry or AI mode for more advanced functionalities</h1>
     `;
 }
 
