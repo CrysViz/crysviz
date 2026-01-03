@@ -97,7 +97,7 @@ export function createRow(obj) {
     // Update the structure ship container correctly (adjusting for new row)
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     structureShip.len = structureShip.len + 1;
-    structureShip.container.splice(rowIndex + 1, 0, structureShip.container[rowIndex]);
+    structureShip.container.splice(rowIndex + 1, 0, JSON.parse(JSON.stringify(structureShip.container[rowIndex])));
     selectLastAddedRow();
   });
 
