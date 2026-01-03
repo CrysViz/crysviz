@@ -1,6 +1,6 @@
 import { createColorPicker } from '../old_style/color-picker.js';
 import {updateSpins,deleteSpins} from '../modules/SpinModule.js';
-import { app, groups, general,spinsData, structureData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
+import { app, groups, fileBrowser,general, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 
 
 export function removeSpinPanel() {
@@ -208,7 +208,10 @@ export function createSpinControls(containerId = "spinControls") {
     if (Math.abs(val - 1) < 0.05) val = 1;
     slider.value = val;
     sliderValue.textContent = val.toFixed(2);
-    if (structureData.spins.length) {
+    
+    spins = fileBrowser.selectedStructure.spins.map(spin => spin.vector) // this might not work 
+
+    if (spins.length != 0 ) {
       updateSpins(val);
     }
   });

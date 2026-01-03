@@ -1,4 +1,4 @@
-import {app, groups,structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../store.js';
+import {app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../store.js';
 
 import { updateVisualization } from '../../crystal-viewer.js';
 
@@ -24,9 +24,9 @@ export function handleStructurePanelToggle() {
 
 export function getCompositionString() {
   function computeComposition() {
-    if (!structureData) return {};
+    if (!fileBrowser.selectedStructure) return {};
       const counts = {};
-      structureData.elements.forEach(e => counts[e] = (counts[e] || 0) + 1);
+      fileBrowser.selectedStructure.elements.forEach(e => counts[e] = (counts[e] || 0) + 1);
     return counts;
   }
   // Generate the chemical formula as a string
@@ -262,7 +262,6 @@ document.head.appendChild(style);
 
 
   // Example usage:
-// Assuming `structureData.lattice` is available
   //
   const volumeDiv = document.createElement("div");
   volumeDiv.style.cssText = `
@@ -273,7 +272,8 @@ document.head.appendChild(style);
 
 
   compDiv.appendChild(volumeDiv);
-  const volume = getLatticeVolume(structureData.lattice);
+  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+  const volume = getLatticeVolume(lattice);
   console.log(`Lattice Volume: ${volume} Å³`);
   volumeDiv.textContent = `Volume: ${volume} Å³`;
 

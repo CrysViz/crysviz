@@ -1,4 +1,4 @@
-import {structureShip,fileBrowser, structureData} from '../../store.js'
+import {structureShip,fileBrowser} from '../../store.js'
 import { createRow,selectLastAddedRow } from '../FileBrowswerPanel.js';
 import {updateVisualization} from '../../crystal-viewer.js'
 import init, { analyze_cell } from '../../backend/moyo-test/moyo_wasm.js';
@@ -115,9 +115,11 @@ export async function addMoyoPanel() {
 }
 
 function callMoyo(calcType="getSymmetryInfo", tolerance="1e-2") {
-
-  const numbers = structureData.elements.map(el => PT_INVERTED[el]);
-  const struct = { positions: structureData.positions, lattice:{basis:structureData.lattice.flat()}, numbers: numbers }
+  let elements = [...fileBrowser.selectedStructure.elements];
+  const numbers = elements.map(el => PT_INVERTED[el]);
+  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
+  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+  const struct = { positions: positions, lattice:{basis:lattice.flat()}, numbers: numbers }
 
   const result = analyze_cell(JSON.stringify(struct), tolerance, 'Standard');
 

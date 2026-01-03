@@ -1,5 +1,5 @@
 import * as THREE from '../backend/three/three.module.js';
-import { app, groups, general, structureData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
+import { app, fileBrowser, groups, general, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped} from './LatticeModule.js'
 import { createColorPicker } from '../old_style/color-picker.js';
@@ -36,26 +36,29 @@ export function updateForces(forceFactor = 1.0) {
     disposeGroup(groups.forceGroup);
   }
 
-
-  if (structureData.forces=== null){
+  const forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
+  if (forces.length == 0){
     return;
     }
   groups.forceGroup = new THREE.Group();
 
-  if (!structureData || !structureData.positions || !structureData.lattice) return;
+  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
+  let elements = [...fileBrowser.selectedStructure.elements];
+  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+
+  if (!positions || !lattice) return;
 
   // Wrap atomic positions periodically
-  const wrapped = periodicWrapped(structureData.positions, structureData.elements);
-  const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+  const wrapped = periodicWrapped(positions, elements);
+  const wrappedCart = fracToCart(positions, lattice);
 
   // Get lattice vectors for ghost cell replication (like bonds)
-  const lattice = structureData.lattice;
   const a = new THREE.Vector3(...lattice[0]);
   const b = new THREE.Vector3(...lattice[1]);
   const c = new THREE.Vector3(...lattice[2]);
   for (let i = 0; i < wrappedCart.length; i++) {
     const atomIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    const vector = structureData.forces[atomIndex]
+    const vector = forces[atomIndex].vector
     const scalingFactor = 1.0
 
     if ( !vector || vector.length !== 3) continue;

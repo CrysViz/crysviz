@@ -1,5 +1,5 @@
 import * as THREE from '../backend/three/three.module.js';
-import { measurements,app, groups, general,spinsData, structureData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
+import { measurements,app, groups, general,spinsData, fileBrowser, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js';
 import {periodicWrapped} from './LatticeModule.js';
 import { CSS2DRenderer, CSS2DObject } from '../backend/three/CSS2DRenderer.js';

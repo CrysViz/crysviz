@@ -1,6 +1,6 @@
 import * as THREE from '../backend/three/three.module.js';
 import { ConvexGeometry } from '../backend/three/ConvexGeometry.js';
-import {app,general,groups,structureData} from '../store.js'
+import {app,general,groups, fileBrowser} from '../store.js'
 import {periodicWrapped,fracToCart} from '../modules/LatticeModule.js'
 import { getBondCutoff} from '../modules/BondsModule.js'
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
@@ -116,13 +116,16 @@ function NewupdatePolyhedra() {
   }
 
   // --- Build wrapped positions, adjacency, per-center images ---
-  const wrapped = periodicWrapped(structureData.positions, structureData.elements);
-  const wrappedCart = fracToCart(wrapped.frac,structureData.lattice);
+  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
+  let elements = [...fileBrowser.selectedStructure.elements];
+  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+  let wrapped = periodicWrapped(positions, elements);
+  let wrappedCart = fracToCart(wrapped.frac, lattice);
+
   const Wpos = wrappedCart.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
   const Welem = wrapped.elements;
   const Wsrc = wrapped.srcIndex;
-  const L = structureData.lattice;
-  const a = new THREE.Vector3(...L[0]), b=new THREE.Vector3(...L[1]), c=new THREE.Vector3(...L[2]);
+  const a = new THREE.Vector3(...lattice[0]), b=new THREE.Vector3(...lattice[1]), c=new THREE.Vector3(...lattice[2]);
     const shifts=[];
   for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++) for(let dz=-1;dz<=1;dz++) shifts.push([dx,dy,dz]);
 
@@ -403,16 +406,21 @@ function minVertexDegreeForCageSize(N) {
   }
 
   // ---------- Build bond graph + per-center bonded images (with shifts) ----------
-  const wrapped = periodicWrapped(structureData.positions, structureData.elements);
-  const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+
+  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
+  let elements = [...fileBrowser.selectedStructure.elements];
+  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+
+  let  wrapped = periodicWrapped(positions, elements);
+  let  wrappedCart = fracToCart(wrapped.frac, lattice); 
+
   const Wpos  = wrappedCart.map(p => new THREE.Vector3(p[0], p[1], p[2]));
   const Welem = wrapped.elements;
   const Wsrc  = wrapped.srcIndex;
 
-  const L = structureData.lattice;
-  const a = new THREE.Vector3(L[0][0], L[0][1], L[0][2]);
-  const b = new THREE.Vector3(L[1][0], L[1][1], L[1][2]);
-  const c = new THREE.Vector3(L[2][0], L[2][1], L[2][2]);
+  const a = new THREE.Vector3(lattice[0][0], lattice[0][1], lattice[0][2]);
+  const b = new THREE.Vector3(lattice[1][0], lattice[1][1], lattice[1][2]);
+  const c = new THREE.Vector3(lattice[2][0], lattice[2][1], lattice[2][2]);
 
   const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || { dummy: 0.0 }));
   const ax = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(a.length(), 1e-6))));

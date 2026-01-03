@@ -1,6 +1,6 @@
 //import { io } from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
 
-import {structureData} from '../../store.js'
+import {fileBrowser} from '../../store.js'
 let socket = null;
 let backendConnected = false
 
@@ -93,6 +93,8 @@ function calculate() {
     document.getElementById("calcStatus").textContent =
         "Request sent to backend...";
     document.getElementById("calcResult").textContent = "";
-
-    socket.emit("getSpacegroup", { "positions": structureData.positions, "lattice":structureData.lattice, "elements":structureData.elements });
+    let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
+    let elements = [...fileBrowser.selectedStructure.elements];
+    let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+    socket.emit("getSpacegroup", { "positions": positions, "lattice": lattice, "elements": elements });
 }

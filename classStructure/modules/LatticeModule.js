@@ -1,13 +1,13 @@
 import * as THREE from '../backend/three/three.module.js';
-import { app, groups, general,structureData, mode, atomicRadii,getLatticeVisSettings} from '../store.js';
+import { app, groups, general,fileBrowser, mode, atomicRadii,getLatticeVisSettings} from '../store.js';
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 
-export function createLatticeLines(structureData,color = currentLatticeColor) {
+export function createLatticeLines(color = currentLatticeColor) {
   const group = new THREE.Group();
   const material = new THREE.LineBasicMaterial(getLatticeVisSettings(color));
 
-  const lattice = structureData.lattice;
+  const lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
 
   // Define unit cell vertices
   const vertices = [
@@ -40,7 +40,7 @@ export function createLatticeLines(structureData,color = currentLatticeColor) {
 export function updateLattice(color = general.currentLatticeColor) {
   disposeGroup(groups.latticeGroup);
   if (general.showLattice) {
-    groups.latticeGroup = createLatticeLines(structureData,color);
+    groups.latticeGroup = createLatticeLines(color);
     app.scene.add(groups.latticeGroup);
   }
 }
@@ -52,15 +52,7 @@ let cachedLatticeDirs = {
   c: new THREE.Vector3(0,0,1)
 };
 export function recomputeLatticeDirs() {
-  if (!structureData || !structureData.lattice) {
-    cachedLatticeDirs = {
-      a: new THREE.Vector3(1,0,0),
-      b: new THREE.Vector3(0,1,0),
-      c: new THREE.Vector3(0,0,1)
-    };
-    return;
-  }
-  const L = structureData.lattice;
+  const L = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   cachedLatticeDirs = {
     a: new THREE.Vector3(L[0][0], L[0][1], L[0][2]).normalize(),
     b: new THREE.Vector3(L[1][0], L[1][1], L[1][2]).normalize(),
@@ -124,7 +116,7 @@ export function periodicWrapped(frac, elements) {
 
 
 export function getCellCenterAndDist() {
-  const L = structureData.lattice;
+  const L = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   const corner = new THREE.Vector3(
     L[0][0]+L[1][0]+L[2][0],
     L[0][1]+L[1][1]+L[2][1],
@@ -137,8 +129,7 @@ export function getCellCenterAndDist() {
 }
 
 export function latticeDirs() {
-  if (!structureData) return {a:[1,0,0], b:[0,1,0], c:[0,0,1]};
-  const L = structureData.lattice;
+  const L = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   return {
     a: [L[0][0], L[0][1], L[0][2]],
     b: [L[1][0], L[1][1], L[1][2]],

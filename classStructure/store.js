@@ -14,18 +14,6 @@ export const fileBrowser = {
 
 export const structureShip = new StructureShip();
 
-export const structureData = {
-  positions:null,
-  elements:null,
-  lattice:null,
-  supercell:null,
-  spins:null,
-  forces:null,
-  force_amps:null,
-  stress:null,
-  original:null,
-};
-
 export const highlightHover ={
    hoveredAtom:null,
    currentlyHighlightedAtom:null,

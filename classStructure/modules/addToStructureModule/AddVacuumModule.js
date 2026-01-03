@@ -1,5 +1,5 @@
 // AddVacuumModule.js
-import { structureData } from '../../store.js';
+import { fileBrowser } from '../../store.js';
 import {createBondLengthControls} from '../../panels/BondLengthPanel.js'
 import {createSpinControls} from '../../panels/SpinPanel.js'
 import {updateVisualization} from '../../crystal-viewer.js'
@@ -13,11 +13,11 @@ import {updateVisualization} from '../../crystal-viewer.js'
 //
 
 function addVacuum(vacX = 0, vacY = 0, vacZ = 0) {
-  if (!structureData.positions || !structureData.lattice) {
-    throw new Error("Structure data incomplete: positions and lattice are required.");
-  }
-
-  const lattice = structureData.lattice.map(v => [...v]);
+ 
+  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
+  let elements = [...fileBrowser.selectedStructure.elements];
+  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+   
   const lengths = lattice.map(v => Math.hypot(...v));
 
   // Add vacuum symmetrically: increase lattice vector lengths
@@ -32,14 +32,18 @@ function addVacuum(vacX = 0, vacY = 0, vacZ = 0) {
     vacZ / (2 * (lengths[2] + vacZ))
   ];
 
-  const newPositions = structureData.positions.map(pos => [
+  const newPositions = positions.map(pos => [
     pos[0] * lengths[0]/(lengths[0]+vacX) + shift[0],
     pos[1] * lengths[1]/(lengths[1]+vacY) + shift[1],
     pos[2] * lengths[2]/(lengths[2]+vacZ) + shift[2]
   ]);
 
-  structureData.lattice = lattice;
-  structureData.positions = newPositions;
+  fileBrowser.selectedStructure.lattice = lattice;
+
+  positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
+  fileBrowser.selectedStructure.atoms.forEach((atom, index) => {
+  atom.position = newPositions[index];
+  });
 
   createBondLengthControls?.();
   createSpinControls?.();

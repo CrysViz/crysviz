@@ -25,7 +25,7 @@ export function updateAtoms(opacity=1.0) {
         frac: positions,
         srcIndex: positions.map((_, index) => index)
     };
-    wrappedCart = fracToCart(frac, lattice);
+    wrappedCart = fracToCart(positions, lattice);
   }
 
   for (let i = 0; i < wrappedCart.length; i++) {

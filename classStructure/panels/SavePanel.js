@@ -1,4 +1,4 @@
-import { structureData, fileBrowser} from '../store.js';
+import {fileBrowser} from '../store.js';
 
 //------------------------------------------------------------
 // Convert current structure data to POSCAR string

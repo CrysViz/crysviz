@@ -1,5 +1,5 @@
 
-import {groups,highlightHover,structureData} from '../store.js';
+import {groups,highlightHover,fileBrowser} from '../store.js';
 import {collapseAllAtomExpansions} from '../panels/WindowAndSceneControls.js';
 import {updateBondControlPanel} from '../panels/StructureInfoPanel/Bonds.js';
 
@@ -192,13 +192,11 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
 }
 
 export function getAtomActualIndex(element, displayName) {
-  // Convert "Ba1" to actual index by finding all atoms of this element
-  //if (!structureData) return -1;
   const displayNumber = parseInt(displayName.replace(element, ''));
   let elementCount = 0;
-
-  for (let i = 0; i < structureData.elements.length; i++) {
-    if (structureData.elements[i] === element) {
+  let elements = [...fileBrowser.selectedStructure.elements];
+  for (let i = 0; i < elements.length; i++) {
+    if (elements[i] === element) {
       elementCount++;
       if (elementCount === displayNumber) {
         return i;

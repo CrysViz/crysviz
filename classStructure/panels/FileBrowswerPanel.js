@@ -1,4 +1,4 @@
-import {allAtoms,general,structureData,structureShip, fileBrowser} from '../store.js'
+import {allAtoms,general,structureShip, fileBrowser} from '../store.js'
 import {updateVisualization} from '../crystal-viewer.js'
 import {resetView} from './WindowAndSceneControls.js'
 import {resetModeSwitch, resetSpinForceSwitch} from './ControlPanel.js'
@@ -243,22 +243,20 @@ function updateStructureFromRowAndStep(rowIndex) {
   console.warn(allAtoms)
   // Assign arrays (make copies to avoid mutating original)
 
-  structureData.positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
-  structureData.elements = [...fileBrowser.selectedStructure.elements];
-  structureData.lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-  structureData.spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
-  if (structureData.spin != null && general.spinForceState === "Spins") {
+  //structureData.positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
+  //structureData.elements = [...fileBrowser.selectedStructure.elements];
+  //structureData.lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+  let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
+  if (spins != null && general.spinForceState === "Spins") {
     updateSpins();
   }
-  structureData.forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
-  if (structureData.forces != null && general.spinForceState === "Forces" ) {
-    structureData.force_amps = fileBrowser.selectedStructure.forces?.map(length => force.length ?? null) ?? null;
+  let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
+  if (forces != null && general.spinForceState === "Forces" ) {
     updateForces();
   }
   if (fileBrowser.selectedStructure.stress != null) {
-     structureData.stress =  selectedStructure.stress.map(r => r.tensor);
+     stress =  fileBrowser.selectedStructure.stress.map(r => r.tensor);
   }  
-  console.warn(fileBrowser.selectedStructure)
   createBondLengthControls();
   //createSpinControls();
   updateVisualization();

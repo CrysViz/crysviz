@@ -1,4 +1,4 @@
-import { app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import { app, groups, fileBrowser,general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 import {getBondCutoff} from '../modules/BondsModule.js';
 import { updateVisualization } from '../crystal-viewer.js';
 import {createPieDot} from '../modules/ColorModule.js';
@@ -19,7 +19,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     return;
   }
 
-  if (!structureData) return;
+  if (!fileBrowser.selectedStructure) return;
 
     // --- Reset wrapper + button ---
   const resetWrapper = document.createElement("div");
@@ -46,8 +46,8 @@ export function createBondLengthControls(targetPanel='bondControls') {
   resetWrapper.appendChild(resetBtn);
 
   bondControls.appendChild(resetWrapper);
-
-  const uniqueElements = [...new Set(structureData.elements)];
+  let elements = [...fileBrowser.selectedStructure.elements];
+  const uniqueElements = [...new Set(elements)];
   const pairs = [];
 
   // Generate all unique pairs

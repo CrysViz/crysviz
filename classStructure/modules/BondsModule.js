@@ -315,7 +315,6 @@ export function updateBonds() {
   }
 
   app.scene.add(groups.bondsGroup);
-  console.log(groups.bondsGroup)
 }
 
 

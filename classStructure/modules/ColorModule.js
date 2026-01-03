@@ -1,5 +1,5 @@
 // store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
-import { app,structureData, groups, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import { app, groups, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 
 
 export function getElementColor(element) {
@@ -101,8 +101,9 @@ export function getAllIndividualAtomColors(element) {
 
   // Count how many atoms of this element are in the structure
   let elementCount = 0;
-  for (let i = 0; i < structureData.elements.length; i++) {
-    if (structureData.elements[i] === element) {
+  let elements= [...fileBrowser.selectedStructure.elements];
+  for (let i = 0; i < elements.length; i++) {
+    if (elements[i] === element) {
       elementCount++;
     }
   }

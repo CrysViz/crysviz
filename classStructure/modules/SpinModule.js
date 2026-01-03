@@ -1,5 +1,5 @@
 import * as THREE from '../backend/three/three.module.js';
-import { app, groups, general,spinsData, structureData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
+import { app, fileBrowser, groups, general,spinsData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js';
 import {periodicWrapped} from './LatticeModule.js';
 import { createColorPicker } from '../old_style/color-picker.js';
@@ -27,27 +27,30 @@ export function updateSpins(spinFactor = 1) {
     });
     disposeGroup(groups.spinGroup);
   }
-
-  if (structureData.spins === null){
+  let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector)
+ 
+  if (spins.length == 0){
     return;
     }
+  let elements = [...fileBrowser.selectedStructure.elements];
+  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
+  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   groups.spinGroup = new THREE.Group();
 
-  if (!structureData || !structureData.positions || !structureData.lattice) return;
+  if (!positions || !lattice) return;
 
   // Wrap atomic positions periodically
-  const wrapped = periodicWrapped(structureData.positions, structureData.elements);
-  const wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+  const wrapped = periodicWrapped(positions, elements);
+  const wrappedCart = fracToCart(positions, lattice);
 
   // Get lattice vectors for ghost cell replication (like bonds)
-  const lattice = structureData.lattice;
   const a = new THREE.Vector3(...lattice[0]);
   const b = new THREE.Vector3(...lattice[1]);
   const c = new THREE.Vector3(...lattice[2]);
   console.log("Updating Spins")
   for (let i = 0; i < wrappedCart.length; i++) {
     const atomIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    const vector = structureData.spins[atomIndex]
+    const vector = spins[atomIndex].vector
     const scalingFactor = 1.0
     const color = "#000000"
     
@@ -112,20 +115,7 @@ export function updateSpins(spinFactor = 1) {
 
 
 export function deleteSpins(){
-    console.log("deletingSpins")
-     if (!structureData.spins){
-       console.warn("no spins data to delete")
-       return};
-     structureData.spins.length = 0;
-     updateSpins(0.0);
-     const textarea = document.getElementById("textArea");
-      if (textarea) {
-        textarea.value = "";
-      } else {
-        console.warn('No element with id="textArea" found');
-      }
-
-     //populateSpinViewer()
+  // dummy: should delete the three objects and not the spins themselved
   }
 
 

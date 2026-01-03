@@ -1,31 +1,17 @@
-import { app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import { app, groups, fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 import { Structure} from '../classes/Structure.js';
+import { Atom} from '../classes/Atom.js';
 import { StructureContainer} from '../classes/StructureContainer.js';
 import {updateVisualization} from '../crystal-viewer.js'
 
 export function createSupercell(nx = 1, ny = 1, nz = 1) {
 
-  if (!originalStructureData) return;
-
-  const basePositions = originalStructureData.positions;
-  const baseElements = originalStructureData.elements;
+  const basePositions = fileBrowser.selectedStructure.original.atoms.map(a => a.position)
+  const baseElements = [...fileBrowser.selectedStructure.original.elements];
 
   let baseLattice;
 
-  if (general.modifiedLattice == null) {
-    // No modified lattice → use original
-    baseLattice = originalStructureData.lattice;
-  } else {
-    if (general.currentSupercell == null) {
-      // No supercell info → use as-is
-      baseLattice = general.modifiedLattice;
-    } else {
-      // Scale each lattice vector by its corresponding supercell multiplier
-      const { nx, ny, nz } = general.currentSupercell;
-      const scales = [nx, ny, nz];
-      baseLattice = general.modifiedLattice.map((v, i) => v.map(x => x / scales[i]));
-    }
-  }
+  baseLattice = fileBrowser.selectedStructure.original.lattice.map(r => [...r]);;
 
   const newPositions = [];
   const newElements = [];
@@ -55,11 +41,19 @@ export function createSupercell(nx = 1, ny = 1, nz = 1) {
   ];
 
   // Update structureData
-  structureData.positions = newPositions;
-  structureData.elements = newElements;
-  structureData.lattice = newLattice;
-  structureData.supercell = { nx, ny, nz };
-  general.currentSupercell={ nx, ny, nz }
+  //
+  const atoms = [];
+    newPositions.forEach((pos, i) => {
+    atoms.push(new Atom({
+      position: pos,
+      element: newElements[i]
+    }));
+  });
+  fileBrowser.selectedStructure.elements = newElements;
+  fileBrowser.selectedStructure.atoms = atoms
+
+  fileBrowser.selectedStructure.lattice = newLattice;
+  fileBrowser.selectedStructure.supercell = { nx, ny, nz };
 
 
   // Re-render

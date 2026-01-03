@@ -1,5 +1,5 @@
 import { createColorPicker } from '../old_style/color-picker.js';
-import { app, groups, general, structureData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
+import { app, groups, general, fileBrowser, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 
 import {updateForces} from '../modules/ForceModule.js';
 
@@ -139,7 +139,8 @@ export function addForcePanel(target = "SpinForceContainer") {
     if (Math.abs(val - 1) < 0.05) val = 1;
     slider.value = val;
     sliderValue.textContent = val.toFixed(2);
-    if (structureData.forces.length) {
+    forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
+    if (forces != null) {
       updateForces(val);
     }
   });

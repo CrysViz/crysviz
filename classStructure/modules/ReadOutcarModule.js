@@ -76,9 +76,9 @@ export function parseOUTCAR(content,fileName) {
         ucelements,
         uniqueElements,
         lattice,
-        ucatoms: atoms,               // fractional = used by your viewer
-        ucspins:spins,
-        ucforces:forces,
+        atoms: atoms,               // fractional = used by your viewer
+        spins:spins,
+        forces:forces,
         //positions_cartesian: step.positions // keep working behavior
       })
     );

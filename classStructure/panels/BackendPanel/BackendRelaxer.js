@@ -4,7 +4,7 @@ import {createBondLengthControls} from '../BondLengthPanel.js'
 import {createSpinControls} from '../SpinPanel.js'
 import {updateRow} from '../FileBrowswerPanel.js'
 import { createRow,selectLastAddedRow } from '../FileBrowswerPanel.js';
-import {structureData,structureShip,fileBrowser} from '../../store.js'
+import {structureShip,fileBrowser} from '../../store.js'
 import { Structure } from "../../classes/Structure.js";
 import { StructureContainer } from "../../classes/StructureContainer.js";
 import { Force } from "../../classes/Force.js";
@@ -105,7 +105,7 @@ export function connectBackend() {
            data.result.positions[i].forEach((pos, i) => {
                  atoms.push(new Atom({
                  position: pos,
-                 element: structureData.elements,
+                 element: [...fileBrowser.selectedStructure.elements]
                  }))
                });
 
@@ -115,10 +115,10 @@ export function connectBackend() {
                  vector: force
                  }))
                });           
-
+           let elements = [...fileBrowser.selectedStructure.elements];  
            let structure = new Structure({
-               elements:structureData.elements,
-               uniqueElements: [...new Set(structureData.elements)],
+               elements: elements,
+               uniqueElements: [...new Set(elements)],
                lattice:data.result.lattices[i],
                positions:data.result.positions[i],
                atoms: atoms,
@@ -146,7 +146,7 @@ export function connectBackend() {
            data.result.positions[i].forEach((pos, i) => {
                  atoms.push(new Atom({
                  position: pos,
-                 element: structureData.elements,
+                 element: [...fileBrowser.selectedStructure.elements],
                  }))
                });
 
@@ -156,10 +156,10 @@ export function connectBackend() {
                  vector: force,
                  }))
                });
-
+           let elements = [...fileBrowser.selectedStructure.elements];  
            let structure = new Structure({
-               elements:structureData.elements,
-               uniqueElements: [...new Set(structureData.elements)],
+               elements: elements,
+               uniqueElements: [...new Set(elements)],
                lattice:data.result.lattices[i],
                positions:data.result.positions[i],
                atoms: atoms,
@@ -182,9 +182,10 @@ export function connectBackend() {
 
     socket.on("getEFS", (data) => {
         document.getElementById("calcStatus").textContent = data.log;
+        let elements = [...fileBrowser.selectedStructure.elements];
         let structure = new Structure({
-            elements:structureData.elements,
-            uniqueElements: [...new Set(structureData.elements)],
+            elements:elements,
+            uniqueElements: [...new Set(elements)],
             lattice:data.result.lattice,
             positions:data.result.positions,
             forces:new Force({vectors: data.result.forces}),
@@ -200,8 +201,10 @@ export function connectBackend() {
      console.log( data.stress[2])
      let stress= new Stress({tensor: convertStressEvA3ToGPa(data.stress)})
      displayPressureAndTensor(data.maxf, stress.pressure, stress.tensor, "calcOutput")
-     structureData.lattice= [...data.lattice];
-     structureData.positions = [...data.positions];
+
+     //structureData.lattice= [...data.lattice];  # this needs to be fixed!
+     //structureData.positions = [...data.positions];
+     
      createBondLengthControls();
      createSpinControls();
      updateVisualization();
@@ -266,5 +269,8 @@ function calculate(style="new") {
         "Request sent to backend...";
     document.getElementById("calcResult").textContent = "";
     let press_eV=pressure/160.21766
-    socket.emit("relaxStructure", { "positions": structureData.positions, "lattice":structureData.lattice, "elements":structureData.elements,"fmax":maxForce,"pressure":press_eV,"style":style });
+    let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
+    let elements = [...fileBrowser.selectedStructure.elements];
+    let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+    socket.emit("relaxStructure", { "positions": positions, "lattice": lattice, "elements": elements,"fmax":maxForce,"pressure":press_eV,"style":style });
 }

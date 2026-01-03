@@ -1,5 +1,5 @@
 import { updateVisualization } from '../crystal-viewer.js';
-import { general,structureData, structureShip, fileBrowser } from '../store.js';
+import { general, structureShip, fileBrowser } from '../store.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { createSpinControls} from './SpinPanel.js';
 import { updateSpins} from '../modules/SpinModule.js';
@@ -19,23 +19,18 @@ function updateStructureFromFrame(frame, container) {
   fileBrowser.stepInput = frame
 
 
-  structureData.positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
-  structureData.elements = [...fileBrowser.selectedStructure.elements];
-  structureData.lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-  structureData.forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
-  structureData.spins = fileBrowser.selectedStructure.spins?.map(spins => spins.vector ?? null) ?? null;
 
   createBondLengthControls();
 
    const ControlPanelSpinForceSwitch = document.getElementById("ControlPanelSpinForceSwitch");
 
-
-  if (structureData.spin != null && general.spinForceState === "Spins") {
+  spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
+  if (spins != null && general.spinForceState === "Spins") {
     createSpinControls();
     updateSpins();
   }
-  
-  if (structureData.forces != null && general.spinForceState === "Forces" ) {
+  forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
+  if (forces != null && general.spinForceState === "Forces" ) {
     updateForces();
   }
   updateVisualization();
