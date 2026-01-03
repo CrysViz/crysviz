@@ -5,7 +5,7 @@ import { Spin } from "../classes/Spin.js";
 import { Stress } from "../classes/Stress.js";
 import { StructureContainer } from "../classes/StructureContainer.js";
 const tableBody = document.querySelector("#objectTable tbody");
-import { fileBrowser } from "../store.js";
+import { structureShip,fileBrowser } from "../store.js";
 import { createRow,selectLastAddedRow } from "../panels/FileBrowswerPanel.js";
 
 const BOHR_TO_ANG = 0.52917721092;
@@ -289,20 +289,20 @@ export function parsePWSCFout(content, fileName) {
 
   const row = createRow({ name: fileName, traj, step });
   if (tableBody) tableBody.appendChild(row);
-
-  if (fileBrowser && Array.isArray(fileBrowser.fileData)) {
-    fileBrowser.fileData.push({ idx: -1, name: fileName, traj, step });
-    selectLastAddedRow();
-  }
+  fileBrowser.fileData.push({ idx: -1, name: fileName, traj, step });
 
   // -----------------------------
   // Return container with finalSCF flag
   // -----------------------------
-  return new StructureContainer({
+  let container =  new StructureContainer({
     fileName,
     structures,
     symmetries: [],
-    finalSCF
+    afinalSCF
   });
+
+  structureShip.container.push(container)
+  selectLastAddedRow();
+
 }
 

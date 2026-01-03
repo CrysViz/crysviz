@@ -8,6 +8,7 @@ export const fileBrowser = {
   fileData:[],
   selectedRow:null, 
   selectedRowIndex:0,
+  selectedStructure:null,
   stepInput:null,
 }  
 
@@ -23,12 +24,6 @@ export const structureData = {
   force_amps:null,
   stress:null,
   original:null,
-};
-export const originalStructureData = {
-  positions:null,
-  elements:null,
-  lattice:null,
-  supercell:null,
 };
 
 export const highlightHover ={

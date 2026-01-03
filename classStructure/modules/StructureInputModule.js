@@ -6,7 +6,7 @@ import { StructureContainer } from '../classes/StructureContainer.js';
 import { Structure } from '../classes/Structure.js';
 import { Atom } from '../classes/Atom.js';
 const tableBody = document.querySelector("#objectTable tbody");
-import {fileBrowser} from '../store.js';
+import {fileBrowser,structureShip} from '../store.js';
 import {createRow,selectLastAddedRow} from '../panels/FileBrowswerPanel.js'
 
 
@@ -180,14 +180,13 @@ export function parsePOSCAR(content,fileName) {
    const row = createRow({name: fileName, traj: traj, step: step });
    tableBody.appendChild(row);
    fileBrowser.fileData.push({idx: -1, name: fileName, traj: traj, step: step });
+
+   const container = new StructureContainer({
+   fileName: fileName,
+   structures: [structure],
+   });
+   structureShip.container.push(container)
    selectLastAddedRow();
-
-    const container = new StructureContainer({
-    fileName: fileName,
-    structures: [structure],
-    });
-  return container
-
 }
 
 

@@ -1,7 +1,7 @@
 import { Structure } from "../classes/Structure.js";
 import { Atom } from "../classes/Atom.js";
 import { StructureContainer } from "../classes/StructureContainer.js";
-import { fileBrowser } from '../store.js';
+import { structureShip,fileBrowser } from '../store.js';
 import { createRow,selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
 import {
   transpose3x3,
@@ -108,13 +108,13 @@ export function parsePWSCFin(content, fileName) {
   const row = createRow({ name: fileName, traj: structures.length, step: structures.length });
   document.querySelector("#objectTable tbody").appendChild(row);
   fileBrowser.fileData.push({ name: fileName, traj: structures.length, step: structures.length });
-  selectLastAddedRow();
 
-  let container = new StructureContainer({
-    fileName:fileName,
-    structures:structures,
+  const container = new StructureContainer({
+  fileName: fileName,
+  structures: [structure],
   });
+  structureShip.container.push(container)
 
-  return container;
+  selectLastAddedRow();
 }
 

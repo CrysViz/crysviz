@@ -1,4 +1,4 @@
-import { app, groups, structureData,originalStructureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import { app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 import { Structure} from '../classes/Structure.js';
 import { StructureContainer} from '../classes/StructureContainer.js';
 import {updateVisualization} from '../crystal-viewer.js'

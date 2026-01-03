@@ -1,5 +1,5 @@
 import * as THREE from '../backend/three/three.module.js';
-import { app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import { app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
@@ -11,17 +11,21 @@ export function updateAtoms(opacity=1.0) {
   groups.atomsGroup = new THREE.Group();
   let wrapped;
   let wrappedCart;
+
+  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
+  let elements = [...fileBrowser.selectedStructure.elements];
+  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   if (general.showPeriodic) {
-    wrapped = periodicWrapped(structureData.positions, structureData.elements);
-    wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+    wrapped = periodicWrapped(positions, elements);
+    wrappedCart = fracToCart(wrapped.frac,lattice);
     }
   else {
     wrapped = {
-        elements: structureData.elements,
-        frac: structureData.positions,
-        srcIndex: structureData.positions.map((_, index) => index)
+        elements: elements,
+        frac: positions,
+        srcIndex: positions.map((_, index) => index)
     };
-    wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+    wrappedCart = fracToCart(frac, lattice);
   }
 
   for (let i = 0; i < wrappedCart.length; i++) {

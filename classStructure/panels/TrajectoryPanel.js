@@ -15,12 +15,15 @@ let autoPlayInterval = null;
 function updateStructureFromFrame(frame, container) {
   if (!container || frame < 0 || frame >= container.structures.length) return;
 
-  const selectedStructure = container.structures[frame];
-  structureData.positions = selectedStructure.atoms.map(a => a.position)
-  structureData.elements = [...selectedStructure.elements];
-  structureData.lattice = selectedStructure.lattice.map(r => [...r]);
-  structureData.forces = selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
-  structureData.spins = selectedStructure.spins?.map(spins => spins.vector ?? null) ?? null;
+  fileBrowser.selectedStructure = container.structures[frame];
+  fileBrowser.stepInput = frame
+
+
+  structureData.positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
+  structureData.elements = [...fileBrowser.selectedStructure.elements];
+  structureData.lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+  structureData.forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
+  structureData.spins = fileBrowser.selectedStructure.spins?.map(spins => spins.vector ?? null) ?? null;
 
   createBondLengthControls();
 

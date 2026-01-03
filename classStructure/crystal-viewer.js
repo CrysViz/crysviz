@@ -7,7 +7,7 @@ import * as THREE from './backend/three/three.module.js';
 //  with the proper classes. However, this already solved some problems with camera and controls getting redefined as a side effect of some functions of the viewing angle
 //  control. The rest of the singletons should be preserved.
 // .........................................................................................................
-import { structureShip,highlightHover,app,structureData,originalStructureData,spinsData, groups, general,measurements,
+import { structureShip,highlightHover,app, groups, general,measurements,
          mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,
          getBondVisSettings,getLatticeVisSettings} from './store.js';
 
@@ -299,8 +299,8 @@ export function updateVisualization(options = {}) {
     mOpacity = general.mainOpacity
   } = options;
 
-  if (!structureData) {
-    console.log('No structureData available, returning early');
+  if (!fileBrowser.selectedStructure) {
+    console.log('updateVisualization:No structure data selected available, returning early');
     return;
   }
 
@@ -351,56 +351,29 @@ function loadStructure(content, fileName = '', isDefault = false) {
      const treatAsPWSCFin = lower.endsWith(".scf.in") ||
                             lower.endsWith(".vcrx.in");
 
-    let parsed = {};
-    let parsedSpinsData;
 
     if (treatAsCIF) {
       console.log("This is probably a CIF file")
+      console.warn("CIF reader currently not available!")
+      return;
       let parsedContainer = parseCIF(contentString,fileName);
-      console.log(parsedContainer)
-      structureShip.container.push(parsedContainer)
-      parsed.positions = parsedContainer.structures[0].atoms.map(a => a.position);
-      parsed.elements = parsedContainer.structures[0].elements
-      parsed.lattice = parsedContainer.structures[0].lattice
-
     } 
 
    else if (treatAsPWSCFin) {
         console.log("This is probably a QE input file");
-        let parsedContainer = parsePWSCFin(content,fileName);
-        structureShip.container.push(parsedContainer)
-        parsed.positions = parsedContainer.structures[0].atoms.map(a => a.position);
-        parsed.elements = parsedContainer.structures[0].elements
-        parsed.lattice = parsedContainer.structures[0].lattice
-
+        parsePWSCFin(content,fileName);
     }
 
     else if (treatAsPWSCFout) {
         console.log("This is probably a QE output file");
-        let parsedContainer = parsePWSCFout(content,fileName);
-        console.log(parsedContainer)
-        structureShip.container.push(parsedContainer)
-        parsed.positions = parsedContainer.structures[0].atoms.map(a => a.position);
-        parsed.elements = parsedContainer.structures[0].elements
-        parsed.lattice = parsedContainer.structures[0].lattice
-        parsed.forces = parsedContainer.structures?.[0]?.forces?.map(force => force.vector ?? null) ?? null;
-        parsed.spins = parsedContainer.structures?.[0]?.spins?.map(spin => spin.vector ?? null) ?? null;
-
+        parsePWSCFout(content,fileName);
     }
     
     else if (treatAsOUTCAR){
         console.log("This is probably an OUTCAR file");
-        let parsedContainer = parseOUTCAR(contentString,fileName);
-        structureShip.container.push(parsedContainer)
+        parseOUTCAR(contentString,fileName);
 
-        parsed.positions = parsedContainer.structures[0].atoms.map(a => a.position);
-        parsed.elements = parsedContainer.structures[0].elements
-        parsed.lattice = parsedContainer.structures[0].lattice
-        console.warn(parsedContainer.structures[0].spins);
-        parsed.spins = parsedContainer.structures?.[0]?.spins?.map(spin => spin.vector ?? null) ?? null;
-        parsed.forces = parsedContainer.structures?.[0]?.forces?.map(force => force.vector ?? null) ?? null;
-
-        if (parsed.spins.length != 0) {
+        if (fileBrowser.selectedStructure.spin != null) {
          addSpinPanel(); 
          createSpinControls();
         }
@@ -408,44 +381,17 @@ function loadStructure(content, fileName = '', isDefault = false) {
     }
     else {
       console.log("This is probably a POSCAR file")
-      let parsedContainer = parsePOSCAR(contentString,fileName);
+      parsePOSCAR(contentString,fileName);
 
-      structureShip.container.push(parsedContainer)
-      parsed.elements = parsedContainer.structures[0].elements
-      parsed.lattice = parsedContainer.structures[0].lattice
-      parsed.positions = parsedContainer.structures[0].atoms.map(a => a.position);
     }
 
   // Ensure the fields exist and are the right typed arrays
     //
 
-    structureData.positions = parsed.positions ?? null;
-    structureData.elements  = parsed.elements  ?? null;
-    structureData.lattice   = parsed.lattice   ?? null;
-    structureData.supercell = parsed.supercell ?? {nx:1,ny:1,nz:1};
-    structureData.spins = parsed.spins ?? null;
-    structureData.forces = parsed.forces ?? null;
-
-
-    console.log("after load",structureData)
-
-
-    // keep a deep copy for restore (fractional positions + arrays)
-    //
-    let parseOriginalStructureData = JSON.parse(JSON.stringify(structureData));
-    originalStructureData.positions = parseOriginalStructureData.positions
-    originalStructureData.elements = parseOriginalStructureData.elements
-    originalStructureData.lattice = parseOriginalStructureData.lattice
-    originalStructureData.supercell= parseOriginalStructureData.supercell
 
 
     loadColorOverrides();
     loadIndividualAtomColors();
-    if (isDefault) {
-      setStatus(`Default structure: ${structureData.elements.length} atoms`);
-    } else {
-      setStatus(`Loaded: ${structureData.elements.length} atoms`);
-    }
 
     document.getElementById('structureControls').style.display = 'block';
 
@@ -586,8 +532,9 @@ function init() {
 
     // Build list of all atom indices for this element
     const elementAtomIndices = [];
-    for (let i = 0; i < structureData.elements.length; i++) {
-      if (structureData.elements[i] === element) {
+    let elements = [...fileBrowser.selectedStructure.elements];
+    for (let i = 0; i < elements.length; i++) {
+      if (elements[i] === element) {
         elementAtomIndices.push(i);
       }
     }
@@ -694,10 +641,11 @@ function init() {
       clearMeasureGraphics();
     } else if (mode.measureMode === 'delete') {
       const idx = hit.userData.sourceIndex;
-      if (idx !== undefined && idx >= 0 && idx < structureData.positions.length) {
+      let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
+      if (idx !== undefined && idx >= 0 && idx < positions.length) {
         // Remove atom from structure
-        structureData.positions.splice(idx, 1);
-        structureData.elements.splice(idx, 1);
+        positions.splice(idx, 1);
+        elements.splice(idx, 1);
         // Clean selections and graphics
         measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
         measurements.selectedAtoms = [];
@@ -1115,13 +1063,6 @@ function clearLongPress() {
     document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
     mode.measureMode = 'none';
 
-    // Also restore deleted atoms
-    if (originalStructureData) {
-      general.currentLattice = structureData.lattice
-
-
-    const parsed = JSON.parse(JSON.stringify(originalStructureData));
-          // wherever you parse:
 
      // Ensure the fields exist and are the right typed arrays
       //
@@ -1129,17 +1070,17 @@ function clearLongPress() {
     structureData.elements  = parsed.elements  ?? null;
     structureData.lattice   = parsed.lattice   ?? null;
     structureData.supercell = parsed.supercell ?? null;
-      if (general.modifiedLattice != null){
+    if (general.modifiedLattice != null){
         structureData.lattice = general.modifiedLattice
       }
-      if (general.currentSupercell != null){
+    if (general.currentSupercell != null){
           createSupercell(currentSupercell.nx,currentSupercell.ny,currentSupercell.nz)
           }
       createBackgroundControl();
       updateVisualization();
       clearMeasure();
     }
-  });
+  );
 
   // Add touch event handlers for better mobile support
   document.getElementById('distanceModeBtn').addEventListener('touchstart', (e) => {

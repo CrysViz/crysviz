@@ -126,6 +126,7 @@ export function createRow(obj) {
 }
 
 export function selectLastAddedRow() {
+  console.warn("selecting last row")
   const tbody = document.querySelector("#objectTable tbody");
   if (!tbody) return;
 
@@ -147,7 +148,7 @@ export function selectLastAddedRow() {
   const rowIndex = rows.length - 1;
   row.dataset.index = rowIndex;
   fileBrowser.selectedRowIndex = rowIndex;
-
+  console.warn(`selecting row ${rowIndex}`)
   // Update structure panel
   updateStructureFromRowAndStep(rowIndex);
 
@@ -221,33 +222,42 @@ function updateStructureFromRowAndStep(rowIndex) {
   const stepInput = fileBrowser.selectedRow.querySelector('input[type="number"]');  // Use the step input from the selected row
   const step = parseInt(stepInput.value, 10) - 1; // zero-based index
   const container = structureShip.container[rowIndex];
-  
-  if (!container || step < 0 || step >= container.structures.length) return;
+   
+  if (!container || step < 0 || step >= container.structures.length) {
+    if (!container){
+     console.warn("Structure could not be selected: Container not found")
+    }
+    if (step < 0) {
+     console.warn("Structure could not be selected:Step > 0 ")
+    }
+    if (step >= container.structures.length) {
+    console.warn("Structure could not be selected: step >= container.structures.length")
+    }
+    return;
+  }
+  fileBrowser.selectedStructure = container.structures[step];
 
-  const selectedStructure = container.structures[step];
-
-  updateNeighborMap(selectedStructure)
-  getAllPeriodicImages(selectedStructure)
+  updateNeighborMap(fileBrowser.selectedStructure)
+  getAllPeriodicImages(fileBrowser.selectedStructure)
   console.warn(allAtoms)
   // Assign arrays (make copies to avoid mutating original)
-  structureData.positions = selectedStructure.atoms.map(a => a.position);
-  structureData.ucpositions = selectedStructure.ucatoms.map(a => a.position);
-  structureData.elements = [...selectedStructure.elements];
-  structureData.ucelements = [...selectedStructure.ucelements];
-  structureData.lattice = selectedStructure.lattice.map(r => [...r]);
-  structureData.spins = selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
+
+  structureData.positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
+  structureData.elements = [...fileBrowser.selectedStructure.elements];
+  structureData.lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+  structureData.spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
   if (structureData.spin != null && general.spinForceState === "Spins") {
     updateSpins();
   }
-  structureData.forces = selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
+  structureData.forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
   if (structureData.forces != null && general.spinForceState === "Forces" ) {
-    //structureData.force_amps = selectedStructure.forces?.map(length => force.length ?? null) ?? null;
+    structureData.force_amps = fileBrowser.selectedStructure.forces?.map(length => force.length ?? null) ?? null;
     updateForces();
   }
-  //if (selectedStructure.stress != null) {
-  //   structureData.stress =  selectedStructure.stress.map(r => r.tensor);
-  //}  
-
+  if (fileBrowser.selectedStructure.stress != null) {
+     structureData.stress =  selectedStructure.stress.map(r => r.tensor);
+  }  
+  console.warn(fileBrowser.selectedStructure)
   createBondLengthControls();
   //createSpinControls();
   updateVisualization();

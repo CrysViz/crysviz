@@ -7,7 +7,7 @@
 //
 
 const tableBody = document.querySelector("#objectTable tbody");
-import {fileBrowser} from '../store.js';
+import {structureShip,fileBrowser} from '../store.js';
 import {createRow,selectLastAddedRow} from '../panels/FileBrowswerPanel.js'
 // ------------------------------------------------------------
 // parseOUTCAR — returns a StructureContainer with full trajectory
@@ -90,12 +90,14 @@ export function parseOUTCAR(content,fileName) {
    const row = createRow({name: fileName, traj: traj, step: step });
    tableBody.appendChild(row);
    fileBrowser.fileData.push({idx: -1, name: fileName, traj: traj, step: step });
-   selectLastAddedRow();
 
-  return new StructureContainer({
+  let container= new StructureContainer({
     fileName: fileName,
-    structures
+    structures: structures
   });
+
+  structureShip.container.push(container)
+  selectLastAddedRow();
 }
 
 //
