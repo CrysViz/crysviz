@@ -222,6 +222,7 @@ function updateStructureFromRowAndStep(rowIndex) {
   const stepInput = fileBrowser.selectedRow.querySelector('input[type="number"]');  // Use the step input from the selected row
   const step = parseInt(stepInput.value, 10) - 1; // zero-based index
   const container = structureShip.container[rowIndex];
+  fileBrowser.stepInput = step
    
   if (!container || step < 0 || step >= container.structures.length) {
     if (!container){

@@ -1,5 +1,5 @@
 import * as THREE from '../backend/three/three.module.js';
-import {allAtoms, bondLengths, app, groups, structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import {allAtoms, bondLengths, app, groups, fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 import {Atom} from '../../classes/Atom.js';
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
@@ -14,15 +14,16 @@ import {updateAtoms} from './AtomsModule.js'
 import {bondLengthToColor} from '../panels/ColorPanel.js'
 
 export function initBonds(){
-  if (!structureData) {
+  if (!fileBrowser.selectedStructure) {
     console.warn("Could not init bonds!")
     return;
 
   }
-
   console.log("initBonds")
 
-  const uniqueElements = [...new Set(structureData.elements)];
+  let elements = [...fileBrowser.selectedStructure.elements]; 
+
+  const uniqueElements = [...new Set(elements)]; // there is a object variable for this!
   const pairs = [];
 
   // Generate all unique pairs
@@ -169,17 +170,21 @@ export function updateBonds() {
 
   let wrapped;
   let wrappedCart;
+  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
+  let elements = [...fileBrowser.selectedStructure.elements];
+  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+
   if (general.showPeriodic) {
-    wrapped = periodicWrapped(structureData.positions, structureData.elements);
-    wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+    wrapped = periodicWrapped(positions, elements);
+    wrappedCart = fracToCart(wrapped.frac, lattice);
     } 
   else {
     wrapped = {
-        elements: structureData.elements,
-        frac: structureData.positions,
-        srcIndex: structureData.positions.map((_, index) => index)
+        elements: elements,
+        frac: positions,
+        srcIndex: positions.map((_, index) => index)
     };
-    wrappedCart = fracToCart(wrapped.frac, structureData.lattice);
+    wrappedCart = fracToCart(wrapped.frac, lattice);
   } 
 
 
@@ -203,7 +208,6 @@ export function updateBonds() {
   }
 
   // 2) Neighbor bonds to atoms outside the cell (ghosts)
-  const lattice = structureData.lattice;
   const a = new THREE.Vector3(lattice[0][0], lattice[0][1], lattice[0][2]);
   const b = new THREE.Vector3(lattice[1][0], lattice[1][1], lattice[1][2]);
   const c = new THREE.Vector3(lattice[2][0], lattice[2][1], lattice[2][2]);

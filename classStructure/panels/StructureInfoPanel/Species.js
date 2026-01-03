@@ -1,4 +1,4 @@
-import {app, groups,structureData, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../store.js';
+import {structureShip,app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../store.js';
 
 import { updateVisualization } from '../../crystal-viewer.js';
 
@@ -60,8 +60,9 @@ export function createCompositionRow(el, count, total) {
 
   // Create individual atom rows - need to map element-specific indices to actual structure indices
   const elementAtomIndices = [];
-  for (let i = 0; i < structureData.elements.length; i++) {
-    if (structureData.elements[i] === el) {
+  let elements = [...fileBrowser.selectedStructure.elements]
+  for (let i = 0; i < elements.length; i++) {
+    if (elements[i] === el) {
       elementAtomIndices.push(i);
     }
   }
@@ -232,7 +233,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   name.style.color = '#ddd';
 
   // Coordinates display (fractional)
-  const coords = structureData.positions[atomIndex];
+  const coords = fileBrowser.selectedStructure.atoms.map(a => a.position)[atomIndex]
   const coordsDisplay = document.createElement('span');
   coordsDisplay.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.8); font-family: monospace;';
   coordsDisplay.textContent = `(${coords[0].toFixed(3)}, ${coords[1].toFixed(3)}, ${coords[2].toFixed(3)})`;
@@ -494,8 +495,8 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
 
   const spinButtonsRow = document.createElement('div');
   spinButtonsRow.style.cssText = 'display: flex; align-items: center; gap: 4px;justify-content:center;';
-  spinButtonsRow.appendChild(coordResetBtn);
-  spinButtonsRow.appendChild(coordApplyBtn);
+  spinButtonsRow.appendChild(spinResetBtn);
+  spinButtonsRow.appendChild(spinApplyBtn);
   spinButtonsRow.appendChild(spinColorBtn);
 
   spinEditor.appendChild(spinInputsRow);
@@ -637,13 +638,24 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
 
 // Function to update atom coordinates and refresh visualization
 function updateAtomCoordinates(atomIndex, newCoords) {
-  if (!structureData || !structureData.positions || atomIndex >= structureData.positions.length) {
+  console.warn("hahahah");
+  if (!fileBrowser.selectedStructure) {
+   console.error("updateAtomCoordinates: selected structure not found");
+   return;
+  };  
+  if (atomIndex >= fileBrowser.selectedStructure.atoms.length) {
     console.error('Invalid atom index or structure data');
     return;
-  }
+  };
 
   // Update the coordinates in the structure data
-  structureData.positions[atomIndex] = [...newCoords];
+  
+  fileBrowser.selectedStructure.atoms[atomIndex].postion = [...newCoords];
+  structureShip.container[fileBrowser.selectedRowIndex].structures[fileBrowser.stepInput].atoms[atomIndex].position  = [...newCoords]; 
+
+    //atoms[atomIndex].position)
+
+    //= [...newCoords];
 
   // Refresh the visualization to show the updated position
   updateVisualization();
