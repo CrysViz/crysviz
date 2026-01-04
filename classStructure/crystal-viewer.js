@@ -71,8 +71,8 @@ import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanel
 import {addHistogramPanel} from  './panels/AnalysisPanels/BondAnalysisPanel.js';
 import {addBackendModeSwitch} from './panels/BackendPanel/BackendSwitchPanel.js';
 
-import {addSavePanel} from '././panels/SavePanel.js'
-
+import {addSavePanel} from './panels/SavePanel.js'
+import {addAnalysisInfoPanel,addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from './panels/InfoPanel.js'  
 
 // .........................................................................................................
 // import utils needs to moce to the "share" functionality. This is currently broken.
@@ -394,6 +394,7 @@ function loadStructure(content, fileName = '', isDefault = false) {
     loadIndividualAtomColors();
 
     document.getElementById('structureControls').style.display = 'block';
+    document.getElementById('structureControls2').style.display = 'block';
 
     //createBondLengthControls();
     createShareButton();
@@ -1218,7 +1219,11 @@ function setupMobileMenu() {
   addCameraPanel();
   addColorPanel();
   addVacuumPanel();
-  addControlPanelAnalysisSwitch()
+  addControlPanelAnalysisSwitch();
+  addStorageInfoPanel();
+  addAnalysisInfoPanel();
+  addUploadInfoPanel();
+  addBackendInfoPanel();
   //addAtomPanel();
   const errorPanel = document.getElementById("errorPanel");
 

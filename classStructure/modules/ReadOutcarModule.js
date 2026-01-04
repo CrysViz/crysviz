@@ -73,7 +73,7 @@ export function parseOUTCAR(content,fileName) {
 
     structures.push(
       new Structure({
-        ucelements,
+        elements,
         uniqueElements,
         lattice,
         atoms: atoms,               // fractional = used by your viewer

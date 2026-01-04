@@ -139,7 +139,7 @@ export function addForcePanel(target = "SpinForceContainer") {
     if (Math.abs(val - 1) < 0.05) val = 1;
     slider.value = val;
     sliderValue.textContent = val.toFixed(2);
-    forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
+    let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
     if (forces != null) {
       updateForces(val);
     }

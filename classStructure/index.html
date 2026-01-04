@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="./styles/backendPanel.css">
     <link rel="stylesheet" href="./styles/toggle_styles.css">
     <link rel="stylesheet" href="./styles/BondAtomColorPanel.css">
+    <link rel="stylesheet" href="./styles/info_button_styles.css">
 
 
     <script type="importmap">
@@ -32,8 +33,11 @@
     <div id="ui">
       <img src="./data/CrysViz_logo_clear_back_newyear.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
       <div class="backend-control-group">
+         <div class="info-button-panel">
+            <button class="info-button" id="backendInfoButton">i</button>
+         </div>  
         <div class="segmented-backend-control" id="BackendModeSwitch">
-          <button data-mode="none"class="active">None</button>
+          <button data-mode="none"class="active">Viz</button>
           <button data-mode="symmetry">Symmetry</button>
           <button data-mode="ai">AI</button>
         </div>
@@ -42,6 +46,9 @@
         </div>
       </div>
       <div class="control-group">
+         <div class="info-button-panel">
+            <button class="info-button" id="uploadInfoButton">i</button>
+         </div>
         <div class="input-mode-toggle" role="tablist" aria-label="Structure input mode">
           <button type="button" class="input-mode-btn active" data-mode="file" role="tab" id="fileInputTab" aria-selected="true" aria-controls="fileInputContainer">
             Upload File
@@ -82,9 +89,50 @@
         </div>
          <button type="button" id="saveButton">Download POSCAR</button>
       </div>
-      <div class="control-group" id="structureControls" style="display: none;">
 
-        <label class="SettingsHeader">Settings & Analysis</label>
+    <div class="control-group" id="structureControls2" style="display: none;">
+         <div class="info-button-panel">
+            <button class="info-button" id="analysisInfoButton">i</button>
+         </div>
+        <div class="segmented-control" id="ControlPanelModeSwitch">
+          <button data-mode="none" class="active">None</button>
+          <button data-mode="trajectory">Trajectory</button>
+          <button data-mode="comparison">Comparison</button>
+        </div>
+
+        <div class="segmented-control" id="ControlPanelSpinForceSwitch">
+          <button data-mode="none" class="active">None</button>
+          <button data-mode="Forces">Forces</button>
+          <button data-mode="Spins">Spins</button>
+          <button data-mode="Field">Field</button>
+         </div>
+         <div id="SpinForceContainer"></div>
+
+        <div class="segmented-control" id="ControlPanelAnalysisSwitch">
+          <button data-mode="none" class="active">None</button>
+          <button data-mode="Bonds">Bonds</button>
+          <button data-mode="Lattice">Lattice</button>
+          <button data-mode="Polyhedra">Polyhedra</button>
+        </div>
+        <div id="BondLatticeContainer"></div>
+
+    </div>
+
+
+
+
+
+
+      <div class="control-group" id="structureControls" style="display: none;">
+         <div class="info-button-panel">
+            <button class="info-button" id="storageInfoButton">i</button>
+         </div> 
+         <div class="segmented-control" id="StorageOptionSwitch">
+          <button data-mode="Nothing">None</button>
+          <button data-mode="Minimal"class="active"> Minimal</button>
+          <button data-mode="All Settings">All Settings</button>
+        </div>
+
         <div class="toggle_group">
           <label class="toggle_row toggle_container">
             <span class="toggle_switch">
@@ -125,32 +173,6 @@
             <span class="toggle_text">Show Polyhedra</span>
           </label>
         </div>
-
-        <div class="segmented-control" id="ControlPanelModeSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="trajectory">Trajectory</button>
-          <button data-mode="comparison">Comparison</button>
-        </div>
-
-        <div class="segmented-control" id="ControlPanelSpinForceSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="Forces">Forces</button>
-          <button data-mode="Spins">Spins</button>
-          <button data-mode="Field">Field</button>
-        </div>
-        <div id="SpinForceContainer"></div>
-
-        <div class="segmented-control" id="ControlPanelAnalysisSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="Bonds">Bonds</button>
-          <button data-mode="Lattice">Lattice</button>
-          <button data-mode="Polyhedra">Polyhedra</button>
-        </div>
-        <div id="BondLatticeContainer"></div>
-
-
-
-
        <!-- Color Settings -->
        <div id="colorContainer"></div>
         <!-- Camera Settings -->
@@ -166,7 +188,8 @@
           <input type="range" id="bondWidth" min="0.02" max="0.20" step="0.01" value="0.1">
         </label>
     </div>
-    </div>
+
+     </div>
 
 
 

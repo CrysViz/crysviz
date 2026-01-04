@@ -49,6 +49,7 @@ export function addControlPanelModeSwitch() {
 
 const ControlPanelSpinForceSwitch = document.getElementById("ControlPanelSpinForceSwitch");
 export function addControlPanelSpinForceSwitch() {
+
   ControlPanelSpinForceSwitch.addEventListener("click", (e) => {
     const btn = e.target.closest("button");
     if (!btn || !btn.dataset.mode) return;

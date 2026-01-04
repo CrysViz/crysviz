@@ -7,6 +7,7 @@ import {createSpinControls} from './SpinPanel.js'
 import {updateSpins} from '../modules/SpinModule.js'
 import {updateForces} from '../modules/ForceModule.js'
 import {getAllPeriodicImages,updateNeighborMap} from '../modules/BondsModule.js'
+import {removeLatticeAndSupercellPanel, addLatticeAndSupercellPanel} from './LatticeSupercellPanel.js'
 
 export function showError(message) {
     errorPanel.textContent = message;
@@ -259,6 +260,10 @@ function updateStructureFromRowAndStep(rowIndex) {
   }  
   createBondLengthControls();
   //createSpinControls();
+  if (document.getElementById('latticeAndSupercellGroup')) { // reload the lattice supercell panel if it exists to make sure that parameters are corrects and no side effects arise.
+    removeLatticeAndSupercellPanel()
+    addLatticeAndSupercellPanel()
+  }
   updateVisualization();
 }
 

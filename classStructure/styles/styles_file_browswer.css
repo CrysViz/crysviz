@@ -130,8 +130,7 @@
   }
 
   input[type="number"]:invalid {
-    border-color: #e63946;
-    background-color: #ffecec;
+    color: "red";
   }
 
   /* Error popup */
