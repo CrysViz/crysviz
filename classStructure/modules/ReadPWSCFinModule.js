@@ -111,7 +111,7 @@ export function parsePWSCFin(content, fileName) {
 
   const container = new StructureContainer({
   fileName: fileName,
-  structures: [structure],
+  structures: structures,
   });
   structureShip.container.push(container)
 

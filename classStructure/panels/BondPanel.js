@@ -12,9 +12,9 @@ export function addBondPanel(target = "BondLatticeContainer") {
   const group = document.createElement("div");
   group.id = "bondControlsGroup";
   group.style.padding = "10px";
-  group.style.borderRadius = "5px";
-  group.style.border = "1px solid rgba(255, 255, 255, 0.3)";
-  group.style.backgroundColor = "#333"; // Added for consistency
+   // group.style.borderRadius = "5px";
+  //group.style.border = "1px solid rgba(255, 255, 255, 0.3)";
+  //group.style.backgroundColor = "#333"; // Added for consistency
 
   // --- Histograms Panel ---
   const histogramsPanel = document.createElement("div");

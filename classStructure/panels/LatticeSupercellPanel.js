@@ -21,7 +21,6 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
     border: 1px solid rgba(255,255,255,0.3)
     border-radius: 5px;
     padding: 10px;
-    margin-top: 12px;
   `;
 
   // --- Lattice Parameters Panel (collapsible) ---
