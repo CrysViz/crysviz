@@ -1,5 +1,5 @@
 import {StructureShip} from './classes/StructureShip.js'
-
+import * as THREE from './backend/three/three.module.js';
 export const bondLengths = {}
 
 export const allAtoms=[]
@@ -53,10 +53,13 @@ export const groups = {
   atomsGroup:null,
   latticeGroup:null,
   spinGroup:null,
+  atomsMesh: null,
+  bondsMesh: null,
 }
 
 
 export const general = {  
+  matte:false,
   ForceMin:1e-4,
   ForceMax:2.5,
   BondMin:1.1,
@@ -187,30 +190,54 @@ export const jmolColorMap = {
 };
 
 
-export function getAtomVisSettings(color,opacity) {
-  return {
-    color,
-    opacity,
-    transparent: opacity !== 1.0,
-    roughness: 0.2,
-    metalness: 0.3,
-    clearcoat: 0.5,
-    clearcoatRoughness: 0.05,
-  };
+export function getAtomVisSettings(opacity=1.0) {
+  // Convert to THREE.Color
+  if (general.matte) {
+    return {
+      transparent: opacity !== 1.0,
+      roughness: 1.0,
+      metalness: 0.3,
+      clearcoat: 0.5,
+      clearcoatRoughness: 1.0,
+    };
+  } else {
+    return {
+      opacity,
+      transparent: opacity !== 1.0,
+      roughness: 0.2,
+      metalness: 0.3,
+      clearcoat: 0.5,
+      clearcoatRoughness: 0.2,
+    };
+  }
+};
+
+export function  getBondVisSettings(color,opacity=1) {
+    if (general.matte){
+     return {
+      color,
+      opacity,
+      transparent: opacity !== 1.0,
+      roughness: 1.0,
+      metalness: 0.3,
+      clearcoat: 0.5,
+      clearcoatRoughness: 1.0,
+    };
+  }
+  else{
+    return {
+      color,
+      opacity,
+      transparent: opacity !== 1.0,
+      roughness: 0.2,
+      metalness: 0.3,
+      clearcoat: 0.5,
+      clearcoatRoughness: 0.2,
+    };
+  }
 };
 
 
-export function  getBondVisSettings(color,opacity=1.0) {
-  return {
-    color:color,
-    transparent: opacity !== 1.0,
-    opacity: opacity,
-    roughness: 0.2,
-    metalness: 0.3,
-    clearcoat: 0.5,
-    clearcoatRoughness: 0.05
-  };
-};
 
 
 export function getLatticeVisSettings(color) {

@@ -2,7 +2,7 @@ import * as THREE from '../backend/three/three.module.js'
 import { general, app } from '../store.js';
 import { switchCameraType } from '../panels/WindowAndSceneControls.js';
 import { updateBonds} from '../modules/BondsModule.js'
-import { updateAtoms} from '../modules/AtomsModule.js'
+import { updateAtoms} from '../modules/AtomsFracUpdateModule.js'
 
 
 
@@ -197,6 +197,46 @@ export function addColorPanel(target = "colorContainer") {
     class: "collapsible-content",
     "aria-hidden": "true"
   });
+
+
+    // Drag/Auto Rotation Toggle
+  const matteToggle = document.createElement("label");
+  matteToggle.className = "camera_toggle";
+
+  const metallicLabel = document.createElement("span");
+  metallicLabel.className = "camera_label";
+  metallicLabel.textContent = "Metallic";
+
+  const matteSwitch = document.createElement("span");
+  matteSwitch.className = "toggle_switch";
+
+  const matteCheckbox = document.createElement("input");
+  matteCheckbox.type = "checkbox";
+  matteCheckbox.id = "matteColors";
+
+  const matteSlider = document.createElement("span");
+  matteSlider.className = "toggle_slider_dual";
+
+  matteSwitch.appendChild(matteCheckbox);
+  matteSwitch.appendChild(matteSlider);
+
+  const matteLabel = document.createElement("span");
+  matteLabel.className = "camera_label_r";
+  matteLabel.textContent = "Matte";
+
+  matteToggle.appendChild(metallicLabel);
+  matteToggle.appendChild(matteSwitch);
+  matteToggle.appendChild(matteLabel);
+
+  content.appendChild(matteToggle);
+
+  matteCheckbox.addEventListener("change", () => {
+    general.matte = !general.matte;
+    updateAtoms();
+    updateBonds();
+  });
+
+
 
   const menusWrapper = createElement("div", { class: "menus_wrapper" });
 

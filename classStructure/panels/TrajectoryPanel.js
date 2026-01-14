@@ -24,12 +24,12 @@ function updateStructureFromFrame(frame, container) {
 
    const ControlPanelSpinForceSwitch = document.getElementById("ControlPanelSpinForceSwitch");
 
-  spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
+  let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
   if (spins != null && general.spinForceState === "Spins") {
     createSpinControls();
     updateSpins();
   }
-  forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
+  let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
   if (forces != null && general.spinForceState === "Forces" ) {
     updateForces();
   }

@@ -298,7 +298,6 @@ export function parsePWSCFout(content, fileName) {
     fileName,
     structures,
     symmetries: [],
-    afinalSCF
   });
 
   structureShip.container.push(container)

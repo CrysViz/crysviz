@@ -1,5 +1,5 @@
 // store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
-import { app, groups, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import { app, fileBrowser, groups, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 
 
 export function getElementColor(element) {

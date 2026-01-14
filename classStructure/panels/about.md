@@ -4,7 +4,7 @@ by Abhijith S. Parackal and Florian Trybel
 
 Version 0.6 Beta 2026-01-06
 
-## This is the live developement repository. If you are not Abhijith or Florian, you should not be here!
+## This is the live developement repository. If you are not Abhijith, Rickard or Florian, you should not be here!
 
 CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POSCAR/OUTCAR/CIF snippet, drop a local file, or grab an OPTIMADE endpoint (or just Materials Project or Alexandria IDs). You crystal structure will NOT leave your device. 
 

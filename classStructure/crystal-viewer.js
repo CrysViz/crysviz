@@ -35,7 +35,7 @@ import { shareStructure,createShareButton,loadSharedStructure} from './modules/S
 import {getBondCutoff,updateBonds,initBonds} from './modules/BondsModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
-import {updateAtoms,createAtomMesh} from './modules/AtomsModule.js';
+import {rebuildAtoms,updateAtoms} from './modules/AtomsFracUpdateModule.js';
 import { parseCIF} from './modules/ReadCIFModule.js';
 import {createSupercell} from './modules/SuperCellModule.js';
 import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,
@@ -305,7 +305,7 @@ export function updateVisualization(options = {}) {
   }
 
   if (reRenderAtoms) {
-    updateAtoms(mOpacity);
+    rebuildAtoms(mOpacity);
     if (atomsGroup2){
       addSecondStructure(sOpactiy)
      }

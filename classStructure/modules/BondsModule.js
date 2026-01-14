@@ -9,7 +9,7 @@ import {createAtomMesh} from './AtomsModule.js'
 import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
 import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
-import {updateAtoms} from './AtomsModule.js'
+import {updateAtoms} from './AtomsFracUpdateModule.js'
 
 import {bondLengthToColor} from '../panels/ColorPanel.js'
 
