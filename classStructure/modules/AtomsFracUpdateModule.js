@@ -48,6 +48,39 @@ export function buildAtoms() {
     clearcoatRoughness: atomVisSettings.clearcoatRoughness, // Use clearcoat roughness
   });
 
+  material.onBeforeCompile = (shader) => {
+    // ---- VERTEX ----
+    shader.vertexShader = `
+      attribute vec3 instanceEmissive;
+      attribute float instanceEmissiveIntensity;
+      varying vec3 vInstanceEmissive;
+      varying float vInstanceEmissiveIntensity;
+    ` + shader.vertexShader;
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `
+        #include <begin_vertex>
+        vInstanceEmissive = instanceEmissive;
+        vInstanceEmissiveIntensity = instanceEmissiveIntensity;
+      `
+    );
+
+    // ---- FRAGMENT ----
+    shader.fragmentShader = `
+      varying vec3 vInstanceEmissive;
+      varying float vInstanceEmissiveIntensity;
+    ` + shader.fragmentShader;
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <emissivemap_fragment>',
+      `
+        totalEmissiveRadiance += vInstanceEmissive * vInstanceEmissiveIntensity;
+      `
+    );
+  };
+
+
   // Instanced mesh
   const mesh = new THREE.InstancedMesh(geometry, material, atomCount);
 
@@ -55,6 +88,21 @@ export function buildAtoms() {
   mesh.instanceColor = new THREE.InstancedBufferAttribute(
     new Float32Array(atomCount * 3), 3
   );
+  mesh.geometry.setAttribute(
+   'instanceEmissive',
+   new THREE.InstancedBufferAttribute(
+     new Float32Array(atomCount * 3),
+    3
+    )
+  );
+  mesh.geometry.setAttribute(
+  'instanceEmissiveIntensity',
+  new THREE.InstancedBufferAttribute(
+    new Float32Array(mesh.count),
+    1
+   )
+  );
+
 
   // Mark buffers as dynamic
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -132,6 +180,13 @@ export function updateAtoms(opacity=1.0) {
      updateSingleAtomColor(originalIndex,i, wrapped.elements[i], opacity)
      updateSingleAtomDiameter(i,wrapped.elements[i])
   }
+
+
+  groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(5, 1, 0.549, 0);
+  groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.setX(5, 2.0);
+  groups.atomsMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
+  groups.atomsMesh.setColorAt(5, new THREE.Color(0xFF8C00));
+
   groups.atomsMesh.instanceMatrix.needsUpdate = true;
   groups.atomsMesh.instanceColor.needsUpdate = true;
   groups.atomsMesh.material.needsUpdate = true;
@@ -139,11 +194,11 @@ export function updateAtoms(opacity=1.0) {
 
 
 
-export function updateAtomsPerElement
-  const a = groups.atomsMesh.instanceMatrix.array;
-  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
-  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-  let elements = [...fileBrowser.selectedStructure.elements];
+//export function updateAtomsPerElement
+//  const a = groups.atomsMesh.instanceMatrix.array;
+//  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
+//  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+//  let elements = [...fileBrowser.selectedStructure.elements];
 
   
 
