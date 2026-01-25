@@ -38,9 +38,9 @@ export function parseCIF(content,fileName) {
   const numOrNull = (s) => {
     if (s == null) return null;
     const cleaned = String(s).trim()
-      .replace(/^[\'\"]|[\'\"]$/g, '')      // strip quotes
-      .replace(/\([^\)]*\)/g, '')           // strip uncertainties: 1.234(5)
-      .replace(/^\s+|\s+$/g, '');
+          .replace(/^[\'\"]|[\'\"]$/g, '')      // strip quotes
+          .replace(/\([^\)]*\)/g, '')           // strip uncertainties: 1.234(5)
+          .replace(/^\s+|\s+$/g, '');
     if (!cleaned) return null;
     const v = Number(cleaned);
     return Number.isFinite(v) ? v : null;
@@ -237,61 +237,61 @@ export function parseCIF(content,fileName) {
   // Deduplicate fractional positions within tolerance
   //
   /**
- * Deduplicate symmetry-expanded fractional positions.
- * Works for CIF-expanded atoms with numeric noise and periodic images.
- * @param {Array} positions - Nx3 array of fractional coordinates
- * @param {Array} elements - length-N array of element symbols
- * @param {number} tol - fractional tolerance for duplicate detection
- * @returns {Object} { positions: [], elements: [] }
- */
-function dedupPositions(positions, elements, tol = 1e-3) {
-  const outPos = [];
-  const outElm = [];
+   * Deduplicate symmetry-expanded fractional positions.
+   * Works for CIF-expanded atoms with numeric noise and periodic images.
+   * @param {Array} positions - Nx3 array of fractional coordinates
+   * @param {Array} elements - length-N array of element symbols
+   * @param {number} tol - fractional tolerance for duplicate detection
+   * @returns {Object} { positions: [], elements: [] }
+   */
+  function dedupPositions(positions, elements, tol = 1e-3) {
+    const outPos = [];
+    const outElm = [];
 
-  // wrap fractional coordinates into [0,1)
-  const wrap = p => [
-    ((p[0] % 1) + 1) % 1,
-    ((p[1] % 1) + 1) % 1,
-    ((p[2] % 1) + 1) % 1
-  ];
+    // wrap fractional coordinates into [0,1)
+    const wrap = p => [
+      ((p[0] % 1) + 1) % 1,
+      ((p[1] % 1) + 1) % 1,
+      ((p[2] % 1) + 1) % 1
+    ];
 
-  // check if two positions are equivalent within tol, considering periodic images
-  const isDuplicate = (p, q) => {
-    for (let i = -1; i <= 1; i++) {
-      for (let j = -1; j <= 1; j++) {
-        for (let k = -1; k <= 1; k++) {
-          const dx = p[0] - (q[0] + i);
-          const dy = p[1] - (q[1] + j);
-          const dz = p[2] - (q[2] + k);
-          const dist2 = dx*dx + dy*dy + dz*dz;
-          if (dist2 < tol*tol) return true;
+    // check if two positions are equivalent within tol, considering periodic images
+    const isDuplicate = (p, q) => {
+      for (let i = -1; i <= 1; i++) {
+        for (let j = -1; j <= 1; j++) {
+          for (let k = -1; k <= 1; k++) {
+            const dx = p[0] - (q[0] + i);
+            const dy = p[1] - (q[1] + j);
+            const dz = p[2] - (q[2] + k);
+            const dist2 = dx*dx + dy*dy + dz*dz;
+            if (dist2 < tol*tol) return true;
+          }
         }
       }
-    }
-    return false;
-  };
+      return false;
+    };
 
-  for (let i = 0; i < positions.length; i++) {
-    const p = wrap(positions[i]);
-    const e = elements[i];
+    for (let i = 0; i < positions.length; i++) {
+      const p = wrap(positions[i]);
+      const e = elements[i];
 
-    let duplicate = false;
-    for (let j = 0; j < outPos.length; j++) {
-      if (outElm[j] !== e) continue; // species-specific
-      if (isDuplicate(p, outPos[j])) {
-        duplicate = true;
-        break;
+      let duplicate = false;
+      for (let j = 0; j < outPos.length; j++) {
+        if (outElm[j] !== e) continue; // species-specific
+        if (isDuplicate(p, outPos[j])) {
+          duplicate = true;
+          break;
+        }
+      }
+
+      if (!duplicate) {
+        outPos.push(p);
+        outElm.push(e);
       }
     }
 
-    if (!duplicate) {
-      outPos.push(p);
-      outElm.push(e);
-    }
+    return { positions: outPos, elements: outElm };
   }
-
-  return { positions: outPos, elements: outElm };
-}
 
 
 
@@ -300,8 +300,8 @@ function dedupPositions(positions, elements, tol = 1e-3) {
   const txt = content; // keep as is for regex tags
   const dataBlock = (txt.match(/^\s*data_([^\s]+)/mi) || [null, null])[1];
   const chemName  = extractStringTag(txt, /_chemical_name_common/i) ||
-                    extractStringTag(txt, /_chemical_name_systematic/i) ||
-                    extractStringTag(txt, /_chemical_formula_sum/i);
+        extractStringTag(txt, /_chemical_name_systematic/i) ||
+        extractStringTag(txt, /_chemical_formula_sum/i);
   const comment = chemName || dataBlock || 'CIF structure';
 
   // Cell parameters
