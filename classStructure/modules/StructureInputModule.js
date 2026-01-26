@@ -175,18 +175,12 @@ export function parsePOSCAR(content,fileName) {
     atoms:atoms
   });
 
-   let traj = 1
-   let step = 1
-   const row = createRow({name: fileName, traj: traj, step: step });
-   tableBody.appendChild(row);
-   fileBrowser.fileData.push({idx: -1, name: fileName, traj: traj, step: step });
+  const container = new StructureContainer({
+    fileName: fileName,
+    structures: [structure],
+  });
 
-   const container = new StructureContainer({
-   fileName: fileName,
-   structures: [structure],
-   });
-   structureShip.container.push(container)
-   selectLastAddedRow();
+  initializeUIOnLoad(container);
 }
 
 
@@ -734,3 +728,19 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
     setInputMode,
   };
 }
+
+export function initializeUIOnLoad(structureContainer) {
+  console.log(structureContainer);
+  const fileName = structureContainer.fileName;
+  const structures = structureContainer.structures;
+
+  const traj = structures.length;
+  const step = traj;
+  const row = createRow({ name: fileName, traj, step });
+  tableBody.appendChild(row);
+  fileBrowser.fileData.push({ idx: -1, name: fileName, traj, step });
+
+  structureShip.container.push(structureContainer);
+  selectLastAddedRow();
+}
+

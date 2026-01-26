@@ -18,9 +18,9 @@ const tableBody = document.querySelector("#objectTable tbody");
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupSecondStructureInput } from './modules/SecondStructureModule.js';
 import { parseOUTCAR} from './modules/ReadOutcarModule.js';
-import { parsePWSCFout} from './modules/ReadPWSCFoutModule.js'; 
-import { parsePWSCFin} from './modules/ReadPWSCFinModule.js'; 
-import { setupStructureInput, isLikelyCIFContent, parsePOSCAR} from './modules/StructureInputModule.js';
+import { parsePWSCFout} from './modules/ReadPWSCFoutModule.js';
+import { parsePWSCFin} from './modules/ReadPWSCFinModule.js';
+import { setupStructureInput, parsePOSCAR} from './modules/StructureInputModule.js';
 
 // ........................................................................................................
 // Import Modules
@@ -30,13 +30,12 @@ import { setupStructureInput, isLikelyCIFContent, parsePOSCAR} from './modules/S
 // .........................................................................................................
 import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleControl.js';
 import { createColorPicker } from './modules/ColorPickerModule.js';
-import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames. 
+import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
 import {getBondCutoff,updateBonds,initBonds} from './modules/BondsModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
 import {rebuildAtoms,updateAtoms} from './modules/AtomsFracUpdateModule.js';
-import { parseCIF} from './modules/ReadCIFModule.js';
 import {createSupercell} from './modules/SuperCellModule.js';
 import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,
         getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,
@@ -48,14 +47,14 @@ import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMea
 import {highlightBondInfoInStructurePanel,HighlightAtom,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
 
 import {addVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
-import {addCameraPanel} from './panels/CameraPanel.js' 
-import {addColorPanel} from './panels/ColorPanel.js' 
+import {addCameraPanel} from './panels/CameraPanel.js'
+import {addColorPanel} from './panels/ColorPanel.js'
 //import {addAtomPanel} from './modules/addToStructureModule/addAtomPanel.js'
 
 // .........................................................................................................
 // Import Panels
 //
-// Panel files should contain all the functions related to a specific panels 
+// Panel files should contain all the functions related to a specific panels
 //
 // // .........................................................................................................
 import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
@@ -72,7 +71,7 @@ import {addHistogramPanel} from  './panels/AnalysisPanels/BondAnalysisPanel.js';
 import {addBackendModeSwitch} from './panels/BackendPanel/BackendSwitchPanel.js';
 
 import {addSavePanel} from './panels/SavePanel.js'
-import {addAnalysisInfoPanel,addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from './panels/InfoPanel.js'  
+import {addAnalysisInfoPanel,addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from './panels/InfoPanel.js'
 
 // .........................................................................................................
 // import utils needs to moce to the "share" functionality. This is currently broken.
@@ -83,7 +82,7 @@ import {
   createLegacyShareableURL,
   restoreCompleteState,
   generatePOSCARString,
-} from './utils/shareutils.js'; 
+} from './utils/shareutils.js';
 
 // file browser test
 //
@@ -96,10 +95,13 @@ import {createRow} from './panels/FileBrowswerPanel.js'
 //
 import {Structure} from './classes/Structure.js'
 
+// New imports (which go here, because they need initializations that happen above until things are refactored)
+import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from './modules/io.js';
+import { initializeUIOnLoad } from './modules/StructureInputModule.js';
 
 // ........................................................................................................
 //
-// Some thing need to be globally defiend here. There should only be status variables left. 
+// Some thing need to be globally defiend here. There should only be status variables left.
 // Nothing should be defined here. Use store, classes, panels or modules for new definitions!
 // ........................................................................................................
 
@@ -311,7 +313,7 @@ export function updateVisualization(options = {}) {
      }
   }
 
-  if (reRenderBonds) { 
+  if (reRenderBonds) {
     disposeGroup();
     updateBonds();
   }
@@ -323,7 +325,7 @@ export function updateVisualization(options = {}) {
   if (reRenderOther) updateOther();
 }
 
-function loadStructure(content, fileName = '', isDefault = false) {
+async function loadStructure(content, fileName = '', isDefault = false) {
   try {
 
     console.log("")
@@ -332,7 +334,11 @@ function loadStructure(content, fileName = '', isDefault = false) {
     const treatAsCIF = lower.endsWith('.cif') ||
                       lower.includes('.cif') ||
                       /(^|\W)cif(\W|$)/.test(lower) ||
-                      isLikelyCIFContent(contentString);
+          isLikelyCIFContent(contentString);
+    const treatAsmagCIF = lower.endsWith('.mcif') ||
+        lower.includes('.mcif') ||
+      /(^|\W)mcif(\W|$)/.test(lower) ||
+          isLikelymagCIFContent(contentString);
 
     const treatAsOUTCAR = lower.endsWith('.vasp.out') ||
                       lower.includes('.vasp.out') ||
@@ -340,7 +346,7 @@ function loadStructure(content, fileName = '', isDefault = false) {
 
     const treatAsPWSCFout = lower.endsWith(".scf.out") ||
                             lower.endsWith(".scf.in.out") ||
-                            lower.endsWith(".vcrx.out") ||  
+                            lower.endsWith(".vcrx.out") ||
                             lower.endsWith(".vcrx.in.out") ||
                             lower.includes('.scf.out') ||
                             lower.includes('.scf.in.out') ||
@@ -352,12 +358,11 @@ function loadStructure(content, fileName = '', isDefault = false) {
                             lower.endsWith(".vcrx.in");
 
 
-    if (treatAsCIF) {
-      console.log("This is probably a CIF file")
-      console.warn("CIF reader currently not available!")
-      return;
-      let parsedContainer = parseCIF(contentString,fileName);
-    } 
+    if (treatAsCIF || treatAsmagCIF) {
+        console.log("This is probably a CIF or magCIF file")
+        const structureContainer = await parse_any(contentString,fileName);
+        initializeUIOnLoad(structureContainer);
+    }
 
    else if (treatAsPWSCFin) {
         console.log("This is probably a QE input file");
@@ -368,16 +373,16 @@ function loadStructure(content, fileName = '', isDefault = false) {
         console.log("This is probably a QE output file");
         parsePWSCFout(content,fileName);
     }
-    
+
     else if (treatAsOUTCAR){
         console.log("This is probably an OUTCAR file");
         parseOUTCAR(contentString,fileName);
 
         if (fileBrowser.selectedStructure.spin != null) {
-         addSpinPanel(); 
+         addSpinPanel();
          createSpinControls();
         }
-        
+
     }
     else {
       console.log("This is probably a POSCAR file")
@@ -415,7 +420,7 @@ function loadStructure(content, fileName = '', isDefault = false) {
 }
 
 
-function loadDefaultStructure() {
+async function loadDefaultStructure() {
   // Don't load default structure if we've already loaded a shared structure
   if (general.sharedStructureLoaded) {
     console.log('Skipping default structure load - shared structure already loaded');
@@ -470,7 +475,7 @@ function init() {
   view.appendChild(atomTooltip);
 
   // init Angle display windows
-  
+
   ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis));
 
   updateAngleDisplays();
@@ -711,12 +716,12 @@ function init() {
     highlightBondInfoInStructurePanel()
 
 
-  }  
+  }
   else  {
      clearAllHighlights();
   }
 
-  
+
 }
 
 
@@ -888,7 +893,7 @@ function clearLongPress() {
  //   addSecondStructure();
  // }
 
-   
+
 
   const PBCBondToggle = document.getElementById('PBCBondToggle');
   if (PBCBondToggle) {
@@ -905,7 +910,7 @@ function clearLongPress() {
       updateVisualization();
     };
   }
- 
+
 
   document.getElementById('atomSize').oninput = (e) => {
     general.atomSize = parseFloat(e.target.value);
@@ -914,7 +919,7 @@ function clearLongPress() {
     updateMeasurementMarkers(); // Update ring markers when atom size changes
   };
 
-// former slider to compare two structure. Should be added to new panel 
+// former slider to compare two structure. Should be added to new panel
 
 // document.getElementById('structure2OpacityValue').oninput = (e) => {
 //   general.structure2OpacityValue = parseFloat(e.target.value);
@@ -937,7 +942,7 @@ function clearLongPress() {
 //     general.mainOpacity = 1.0
 //   }
 //   updateVisualization(general.mainOpacity,general.secondOpacity);
-//     
+//
 //   updateVisualization({
 //         reRenderAtoms: false,
 //         reRenderBonds: false,
@@ -963,7 +968,7 @@ function clearLongPress() {
 
 
     let checkbox_polyhedra = document.getElementById("showPolyhedra");
-      checkbox_polyhedra.checked = false; // explicitly untick 
+      checkbox_polyhedra.checked = false; // explicitly untick
 
  //     let checkbox_showComparisonInfo = document.getElementById("showComparisonInfo");
  //     checkbox_showComparisonInfo.checked = false; // explicitly untick
@@ -972,7 +977,7 @@ function clearLongPress() {
       checkbox_neighbours.checked = false; // explicitly untick
 
   let checkbox_periodic = document.getElementById("showPeriodic");
-      checkbox_periodic.checked = true; // explicitly tick 
+      checkbox_periodic.checked = true; // explicitly tick
 
 
   // Mobile measurement toggle functionality
@@ -1132,7 +1137,7 @@ function clearLongPress() {
 
   app.camera.position.set(20, 20, 20);
   app.controls.update();
- 
+
   console.log("Loading structure...")
   // Load default structure after everything is initialized
   loadDefaultStructure();
