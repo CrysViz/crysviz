@@ -16,6 +16,7 @@ export function rebuildAtoms(opacity) {
   updateAtoms(opacity);
 }
 
+
 export function buildAtoms() {
   let wrapped;
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
@@ -32,6 +33,9 @@ export function buildAtoms() {
   }
   const atomCount = wrapped.elements.length;
 
+  // Lookup table for element names
+  const elementNames = wrapped.elements.map((element, index) => element);
+
   // Geometry: unit sphere, scaled per instance
   const geometry = new THREE.SphereGeometry(1, 32, 24);
 
@@ -40,12 +44,12 @@ export function buildAtoms() {
 
   // Material: visualization-mode dependent
   const material = new THREE.MeshPhysicalMaterial({
-    transparent: false, // Use transparency setting
-    opacity:  1.0,   // Use opacity setting
-    roughness: atomVisSettings.roughness,     // Use roughness setting
-    metalness: atomVisSettings.metalness,     // Use metalness setting
-    clearcoat: atomVisSettings.clearcoat,     // Use clearcoat setting
-    clearcoatRoughness: atomVisSettings.clearcoatRoughness, // Use clearcoat roughness
+    transparent: false,
+    opacity: 1.0,
+    roughness: atomVisSettings.roughness,
+    metalness: atomVisSettings.metalness,
+    clearcoat: atomVisSettings.clearcoat,
+    clearcoatRoughness: atomVisSettings.clearcoatRoughness,
   });
 
   material.onBeforeCompile = (shader) => {
@@ -53,8 +57,12 @@ export function buildAtoms() {
     shader.vertexShader = `
       attribute vec3 instanceEmissive;
       attribute float instanceEmissiveIntensity;
+      attribute float instanceHash; // Custom hash attribute
+      attribute float instanceElementIndex; // Custom element index attribute
       varying vec3 vInstanceEmissive;
       varying float vInstanceEmissiveIntensity;
+      varying float vInstanceHash; // Pass hash to fragment shader
+      varying float vInstanceElementIndex; // Pass element index to fragment shader
     ` + shader.vertexShader;
 
     shader.vertexShader = shader.vertexShader.replace(
@@ -63,6 +71,8 @@ export function buildAtoms() {
         #include <begin_vertex>
         vInstanceEmissive = instanceEmissive;
         vInstanceEmissiveIntensity = instanceEmissiveIntensity;
+        vInstanceHash = instanceHash;
+        vInstanceElementIndex = instanceElementIndex;
       `
     );
 
@@ -70,6 +80,8 @@ export function buildAtoms() {
     shader.fragmentShader = `
       varying vec3 vInstanceEmissive;
       varying float vInstanceEmissiveIntensity;
+      varying float vInstanceHash; // Receive hash in fragment shader
+      varying float vInstanceElementIndex; // Receive element index in fragment shader
     ` + shader.fragmentShader;
 
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -80,7 +92,6 @@ export function buildAtoms() {
     );
   };
 
-
   // Instanced mesh
   const mesh = new THREE.InstancedMesh(geometry, material, atomCount);
 
@@ -88,21 +99,32 @@ export function buildAtoms() {
   mesh.instanceColor = new THREE.InstancedBufferAttribute(
     new Float32Array(atomCount * 3), 3
   );
-  mesh.geometry.setAttribute(
-   'instanceEmissive',
-   new THREE.InstancedBufferAttribute(
-     new Float32Array(atomCount * 3),
-    3
-    )
-  );
-  mesh.geometry.setAttribute(
-  'instanceEmissiveIntensity',
-  new THREE.InstancedBufferAttribute(
-    new Float32Array(mesh.count),
-    1
-   )
-  );
 
+  // Custom attributes for hash and index
+  const instanceHashes = new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1);
+  const instanceElementIndices = new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1);
+
+  // Fill custom attributes
+  wrapped.elements.forEach((element, index) => {
+    // Generate a simple hash (e.g., using index + element name)
+    const hash = simpleHash(index + element);
+    instanceHashes.setX(index, hash);
+    instanceElementIndices.setX(index, index);
+  });
+
+  // Add custom attributes to geometry
+  geometry.setAttribute('instanceHash', instanceHashes);
+  geometry.setAttribute('instanceElementIndex', instanceElementIndices);
+
+  // Existing attributes
+  geometry.setAttribute(
+    'instanceEmissive',
+    new THREE.InstancedBufferAttribute(new Float32Array(atomCount * 3), 3)
+  );
+  geometry.setAttribute(
+    'instanceEmissiveIntensity',
+    new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1)
+  );
 
   // Mark buffers as dynamic
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -111,7 +133,24 @@ export function buildAtoms() {
   // Add to scene & store reference
   app.scene.add(mesh);
   groups.atomsMesh = mesh;
+
+  // Store elementNames for later lookup
+  groups.atomsMesh.userData.elementNames = elementNames;
 }
+
+// Helper function to generate a simple hash
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return hash;
+}
+
+
+
 
 
 export function updateSingleAtomPosition(index, position) {
@@ -179,13 +218,13 @@ export function updateAtoms(opacity=1.0) {
      updateSingleAtomPosition(i, wrappedCart[i])
      updateSingleAtomColor(originalIndex,i, wrapped.elements[i], opacity)
      updateSingleAtomDiameter(i,wrapped.elements[i])
+     groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);
+     groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.setX(i, 0.0); 
   }
 
-
-  groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(5, 1, 0.549, 0);
-  groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.setX(5, 2.0);
+  // Mark attributes as needing update
   groups.atomsMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
-  groups.atomsMesh.setColorAt(5, new THREE.Color(0xFF8C00));
+  groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
 
   groups.atomsMesh.instanceMatrix.needsUpdate = true;
   groups.atomsMesh.instanceColor.needsUpdate = true;

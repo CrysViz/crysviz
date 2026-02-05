@@ -44,7 +44,7 @@ import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividua
 import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,
         addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './modules/MeasurementModule.js' // not all imports might be needed in this file
 
-import {highlightBondInfoInStructurePanel,HighlightAtom,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
+import {highlightBondInfoInStructurePanel,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
 
 import {addVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
 import {addCameraPanel} from './panels/CameraPanel.js'
@@ -689,21 +689,34 @@ function init() {
 
   // Raycast for atoms
   raycaster.setFromCamera(mouse, app.camera);
-  const atomHits = raycaster.intersectObjects(groups.atomsGroup.children, true);
+
+  // Raycast against InstancedMesh objects
+  const atomHits = raycaster.intersectObject(groups.atomsMesh);
+
+
+  // Handle atom hits
+  if (atomHits.length > 0) {
+    const hit = atomHits[0];
+    console.log("Hit atom instance ID:", hit.instanceId);
+    // You can now use hit.instanceId to identify the specific atom
+  }
+
+ const  bondHits = raycaster.intersectObjects(groups.bondsGroup.children, true);  
+
 
   // Raycast for bonds
-  const bondHits = raycaster.intersectObjects(groups.bondsGroup.children, true);
+  //const bondHits = raycaster.intersectObjects(groups.bondsGroup.children, true);
 
   if (atomHits.length > 0) {
     const hit = atomHits[0];
-    const atomMesh = hit.object;
-    if (atomMesh.userData.isGhost) return;
 
-    const element = atomMesh.userData.element;
-    const sourceIndex = atomMesh.userData.sourceIndex;
+    //const element = atomMesh.userData.element;
+    const sourceIndex = hit.instanceId
+    const elementName = groups.atomsMesh.userData.elementNames[hit.instanceId];
+    console.log("Hit atom instance ID:", hit.instanceId, elementName);
+    highlightAtomInStructurePanel(elementName, sourceIndex); //This needs to be fixed, currently this is not the correct index as we count differently. in the structureInfoPanel there is not global index but a per element index. 
+    highlightAtomIn3D(sourceIndex);
 
-    highlightAtomInStructurePanel(element, sourceIndex);
-    highlightAtomIn3D(atomMesh);
   } else if (bondHits.length > 0) {
     const hit = bondHits[0];
     const bondMesh = hit.object;

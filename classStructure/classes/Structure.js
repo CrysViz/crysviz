@@ -42,8 +42,6 @@ export class Structure {
     stress = null,
     polyhedra = null,
     colors = [],
-    atomsGroup = null,
-    latticeGroup = null,
     NeighborMap = {},
   } = {}) {
     // Mutable instance properties
@@ -58,8 +56,6 @@ export class Structure {
     this.stress = stress;
     this.polyhedra = polyhedra;
     this.colors = colors;
-    this.atomsGroup = atomsGroup;
-    this.latticeGroup = latticeGroup;
     this.NeighborMap = {};
         // Create an immutable snapshot of the original data
     this.original = deepFreeze({

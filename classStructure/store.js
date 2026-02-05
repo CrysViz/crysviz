@@ -65,7 +65,7 @@ export const general = {
   BondMin:1.1,
   BondMax:4.5,
   autoRandomEnabled: false,
-  powerMode: false,
+  powerMode: true,
   currentLatticeColor:null,
   defaultBackgroundColor:null,
   currentLatticeColor:null,

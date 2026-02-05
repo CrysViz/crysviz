@@ -2,66 +2,31 @@
 import {groups,highlightHover,fileBrowser} from '../store.js';
 import {collapseAllAtomExpansions} from '../panels/WindowAndSceneControls.js';
 import {updateBondControlPanel} from '../panels/StructureInfoPanel/Bonds.js';
+import * as THREE from '../backend/three/three.module.js';
+import {updateAtoms} from './AtomsFracUpdateModule.js'
+
+export function clearHighlightAtom() {
+  updateAtoms(1.0)
+} 
 
 
-export function clearHighlightAtom(m) {
-  if (!m || !m.material) return;
-
-  // Find all atoms with the same name
-  const atomName = m.name;
-  const allAtoms = [];
-  groups.atomsGroup.traverse((child) => {
-    if (child.name === atomName) {
-      allAtoms.push(child);
-    }
-  });
-
-  // Restore original emissive properties for all matching atoms
-  allAtoms.forEach((atom) => {
-    if (!atom.material) return;
-    if (atom.userData._origEmissive !== undefined) {
-      atom.material.emissive.setHex(atom.userData._origEmissive);
-      atom.material.emissiveIntensity = atom.userData._origEmissiveInt || 0;
-      atom.material.needsUpdate = true;
-    }
-  });
-}
-
-
-export function HighlightAtom(m, hex){
-  if(!m || !m.material) return;
-  if(m.userData._origEmissive===undefined){
-    m.userData._origEmissive = m.material.emissive.getHex();
-    m.userData._origEmissiveInt = m.material.emissiveIntensity || 0;
-  }
-  m.material.emissive.setHex(hex);
-  m.material.emissiveIntensity = 2.0; 
-
-}
-
-export function highlightAtomIn3D(atomMesh) {
+export function highlightAtomIn3D(index) {
   // Clear previous 3D highlight
-  if (highlightHover.currentlyHighlightedAtom) {
-    clearHighlightAtom(highlightHover.currentlyHighlightedAtom);
-  }
+  clearHighlightAtom();
 
-  // Find all atoms with the same name (e.g., originalIndex)
-  const atomName = atomMesh.name;
-  const allAtoms = [];
-  groups.atomsGroup.traverse((child) => {
-    if (child.name === atomName) {
-      allAtoms.push(child);
-    }
-  });
+  // Update emissive color and intensity
+  groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(index, 1, 0.549, 0);
+  groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.setX(index, 2.0);
 
-  // Apply highlight to all matching atoms
-  allAtoms.forEach((atom) => {
-    HighlightAtom(atom, 0xFFB347); // Orange glow
-  });
+  // Update color if needed
+  groups.atomsMesh.setColorAt(index, new THREE.Color(0xFF8C00));
 
-  // Update the currently highlighted atom reference
-  highlightHover.currentlyHighlightedAtom = atomMesh;
+  // Mark attributes as needing update
+  groups.atomsMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
+  groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
+  groups.atomsMesh.instanceColor.needsUpdate = true;
 }
+
 
 
 export function HighlightBond(m, hex){
@@ -114,7 +79,6 @@ export function highlightBondInfoInStructurePanel(){
   showPanel("bondControls")
 }
 
-
 export function highlightAtomInStructurePanel(element, sourceIndex) {
   // First, clear any existing highlights
   clearAllHighlights();
@@ -131,7 +95,6 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
   if (composition.classList.contains('collapsible-content') && !composition.classList.contains('open')) {
     const toggleIcon = document.getElementById('structureToggleIcon');
     composition.classList.add('open');
-    // composition.setAttribute('aria-hidden', 'false'); // Removed to prevent focus issues
     if (toggleIcon) {
       toggleIcon.textContent = '−';
       toggleIcon.classList.add('open');
@@ -141,12 +104,12 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
     }
   }
 
-  const panelSwitch = document.getElementById('atomBondControlSwitch')
+  const panelSwitch = document.getElementById('atomBondControlSwitch');
   panelSwitch.querySelectorAll('button').forEach(btn => {
-        btn.classList.remove('active');
-      });
+    btn.classList.remove('active');
+  });
   panelSwitch.querySelectorAll('button')[0].classList.add('active');
-  showPanel("atomPanel")
+  showPanel("atomPanel");
 
   // Look for the element container
   const elementContainers = composition.querySelectorAll('.comp-container');
@@ -160,7 +123,7 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
     }
   }
 
-  if (!targetContainer) return;
+  //if (!targetContainer) return;
 
   // Auto-expand the element if not already expanded
   const atomsContainer = targetContainer.querySelector('.individual-atoms');
@@ -173,38 +136,27 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
     }
   }
 
-  // Find the specific individual atom row
+  // Find the specific individual atom row by sourceIndex
   const atomRows = atomsContainer.querySelectorAll('.individual-atom-row');
-  for (const row of atomRows) {
-    const atomNameSpan = row.querySelector('span:nth-child(1)');  // was 2 which is the coordiante and not the name. therefore the highlight did not work
-    if (atomNameSpan) {
-      // Extract the atom index from the display name (e.g., "Ba1" -> check if this is sourceIndex 0)
-      const actualIndex = getAtomActualIndex(element, atomNameSpan.textContent);
-      if (actualIndex === sourceIndex) {
-        // Highlight this row
-        highlightAtomRow(row);
-        // Scroll into view
-        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        break;
-      }
+  console.warn(atomRows.length)
+  console.warn("Searching for row",sourceIndex)
+  for (let i = 0; i < atomRows.length; i++) {
+   sourceIndex=0
+    console.log(i)
+    const row = atomRows[i];
+    // Use the row's data-index attribute or assume the order matches the global index
+    // If rows are ordered the same as the global index, you can directly use sourceIndex
+    if (i === sourceIndex) {
+      // Highlight this row
+      console.log("highlighting row", row)
+      highlightAtomRow(row);
+      // Scroll into view
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      break;
     }
   }
 }
 
-export function getAtomActualIndex(element, displayName) {
-  const displayNumber = parseInt(displayName.replace(element, ''));
-  let elementCount = 0;
-  let elements = [...fileBrowser.selectedStructure.elements];
-  for (let i = 0; i < elements.length; i++) {
-    if (elements[i] === element) {
-      elementCount++;
-      if (elementCount === displayNumber) {
-        return i;
-      }
-    }
-  }
-  return -1;
-}
 
 export function highlightAtomRow(row) {
   // Clear previous highlight

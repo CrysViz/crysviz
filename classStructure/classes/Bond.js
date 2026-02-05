@@ -1,4 +1,4 @@
-import { general, defaultColorMap, jmolColorMap} from '../store.js';
+ oimport { general, defaultColorMap, jmolColorMap} from '../store.js';
 
 
 export class Bond {
