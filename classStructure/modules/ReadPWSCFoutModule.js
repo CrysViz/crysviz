@@ -7,6 +7,7 @@ import { StructureContainer } from "../classes/StructureContainer.js";
 const tableBody = document.querySelector("#objectTable tbody");
 import { structureShip,fileBrowser } from "../store.js";
 import { createRow,selectLastAddedRow } from "../panels/FileBrowswerPanel.js";
+import {generateID} from './UUIDModule.js'
 
 const BOHR_TO_ANG = 0.52917721092;
 
@@ -246,7 +247,8 @@ export function parsePWSCFout(content, fileName) {
     atoms.push(
       new Atom({
         position: pos,
-        element: s.elements[i]  // use s.elements here
+        element: s.elements[i],  // use s.elements here
+        uuid: generateID([s.elements[i]])
       })
     );
   });

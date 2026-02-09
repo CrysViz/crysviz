@@ -8,6 +8,7 @@ import {
   invert3x3,
   cartToFractional,
 } from "./StructureInputModule.js";
+import {generateID} from './UUIDModule.js'
 
 
 
@@ -87,7 +88,8 @@ export function parsePWSCFin(content, fileName) {
     positions.forEach((pos, i) => {
     atoms.push(new Atom({
       position: pos,
-      element: elements[i]
+      element: elements[i],
+      uuid: generateID([elements[i]])
     }));
   });
 

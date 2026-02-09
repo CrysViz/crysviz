@@ -3,6 +3,7 @@ import { Structure} from '../classes/Structure.js';
 import { Atom} from '../classes/Atom.js';
 import { StructureContainer} from '../classes/StructureContainer.js';
 import {updateVisualization} from '../crystal-viewer.js'
+import {generateID} from './UUIDModule.js'
 
 export function createSupercell(nx = 1, ny = 1, nz = 1) {
 
@@ -46,7 +47,8 @@ export function createSupercell(nx = 1, ny = 1, nz = 1) {
     newPositions.forEach((pos, i) => {
     atoms.push(new Atom({
       position: pos,
-      element: newElements[i]
+      element: newElements[i],
+      uuid: generateID([newElements[i]], "Atom-")
     }));
   });
   fileBrowser.selectedStructure.elements = newElements;

@@ -279,6 +279,8 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   const mom_color = colorHexToCss(getIndividualAtomColor(element, atomIndex))
   const picker = createColorPicker(mom_color, (hex) => {
     const ok = setIndividualAtomColor(element, atomIndex, hex);
+    //fileBrowser.selectedStructure.atoms[atomIndex].color = hex
+    //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)
     dot.style.background = hex;
       if (ok) {
         updateBonds()

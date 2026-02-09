@@ -1,9 +1,72 @@
 import * as THREE from '../backend/three/three.module.js';
-import { app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
-
+import { structureShip, app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import {Atom} from '../classes/Atom.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
+
+import {generateID} from './UUIDModule.js' 
+
+
+export function getUUIDFromGeometry(index) {
+  const mesh = groups.atomsMesh;
+  const attr = mesh.geometry.attributes.instanceUUID;
+
+  // Each instance = 4 floats = 16 bytes
+  const floatOffset = index * 4;
+
+  // View directly into the attribute buffer
+  const floatView = attr.array.subarray(floatOffset, floatOffset + 4);
+
+  // Reinterpret the same memory as bytes
+  const byteView = new Uint8Array(floatView.buffer, floatView.byteOffset, 16);
+
+  // Decode to string
+  const decoder = new TextDecoder();
+  const rawUUID = decoder.decode(byteView);
+
+  // Remove padding nulls
+  const cleanedUUID = rawUUID.replace(/\0/g, '');
+
+  // Now, cleanedUUID = stored UUID WITHOUT dashes
+  return cleanedUUID;
+}
+
+
+
+export function updateAtomByUUID(mesh, uuid, newPosition, newColor) {
+  const index = mesh.userData.uuidToIndex.get(uuid);
+  if (index !== undefined) {
+    // Get the UUID from the geometry
+    const geometryUUID = getUUIDFromGeometry(mesh, index);
+
+    // Failsafe: Check that the UUID in the geometry matches the lookup
+    if (geometryUUID === uuid) {
+      updateSingleAtomPosition(index, newPosition);
+      if (newColor) {
+        mesh.setColorAt(index, new THREE.Color(newColor));
+        mesh.instanceColor.needsUpdate = true;
+      }
+    } else {
+      console.error(`UUID mismatch at index ${index}: Expected ${uuid}, got ${geometryUUID}`);
+    }
+  } else {
+    console.error(`No sphere found for UUID: ${uuid}`);
+  }
+}
+
+
+
+//-------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------
+//
+//
+//
+
 
 export function rebuildAtoms(opacity) {
   if (groups.atomsMesh) {
@@ -16,33 +79,26 @@ export function rebuildAtoms(opacity) {
   updateAtoms(opacity);
 }
 
-
 export function buildAtoms() {
   let wrapped;
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   let elements = [...fileBrowser.selectedStructure.elements];
+  let atoms=fileBrowser.selectedStructure.atoms
 
-  if (general.showPeriodic) {
-    wrapped = periodicWrapped(positions, elements);
-  } else {
-    wrapped = {
-      elements: elements,
-      srcIndex: positions.map((_, index) => index),
-    };
-  }
+
+
+  wrapped = periodicWrapped(positions, elements);
+
+
+
   const atomCount = wrapped.elements.length;
-
-  // Lookup table for element names
-  const elementNames = wrapped.elements.map((element, index) => element);
 
   // Geometry: unit sphere, scaled per instance
   const geometry = new THREE.SphereGeometry(1, 32, 24);
 
-  // Get material settings from getAtomVisSettings
-  const atomVisSettings = getAtomVisSettings();
-
   // Material: visualization-mode dependent
+  const atomVisSettings = getAtomVisSettings();
   const material = new THREE.MeshPhysicalMaterial({
     transparent: false,
     opacity: 1.0,
@@ -53,16 +109,15 @@ export function buildAtoms() {
   });
 
   material.onBeforeCompile = (shader) => {
-    // ---- VERTEX ----
     shader.vertexShader = `
+      attribute vec4 instanceUUID;
+      varying vec4 vInstanceUUID;
       attribute vec3 instanceEmissive;
       attribute float instanceEmissiveIntensity;
-      attribute float instanceHash; // Custom hash attribute
-      attribute float instanceElementIndex; // Custom element index attribute
+      attribute float instanceElementIndex;
       varying vec3 vInstanceEmissive;
       varying float vInstanceEmissiveIntensity;
-      varying float vInstanceHash; // Pass hash to fragment shader
-      varying float vInstanceElementIndex; // Pass element index to fragment shader
+      varying float vInstanceElementIndex;
     ` + shader.vertexShader;
 
     shader.vertexShader = shader.vertexShader.replace(
@@ -71,22 +126,21 @@ export function buildAtoms() {
         #include <begin_vertex>
         vInstanceEmissive = instanceEmissive;
         vInstanceEmissiveIntensity = instanceEmissiveIntensity;
-        vInstanceHash = instanceHash;
+        vInstanceUUID = instanceUUID;
         vInstanceElementIndex = instanceElementIndex;
       `
     );
 
-    // ---- FRAGMENT ----
     shader.fragmentShader = `
       varying vec3 vInstanceEmissive;
       varying float vInstanceEmissiveIntensity;
-      varying float vInstanceHash; // Receive hash in fragment shader
-      varying float vInstanceElementIndex; // Receive element index in fragment shader
+      varying vec4 vInstanceUUID;
+      varying float vInstanceElementIndex;
     ` + shader.fragmentShader;
 
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <emissivemap_fragment>',
-      `
+      ` 
         totalEmissiveRadiance += vInstanceEmissive * vInstanceEmissiveIntensity;
       `
     );
@@ -95,33 +149,63 @@ export function buildAtoms() {
   // Instanced mesh
   const mesh = new THREE.InstancedMesh(geometry, material, atomCount);
 
-  // Per-instance color + alpha
-  mesh.instanceColor = new THREE.InstancedBufferAttribute(
-    new Float32Array(atomCount * 3), 3
-  );
+  // Initialize instance color buffer with a default color (e.g., grey)
+  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(atomCount * 3), 3, false);
 
-  // Custom attributes for hash and index
-  const instanceHashes = new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1);
+  for (let i = 0; i < atomCount; i++) {
+    mesh.setColorAt(i, new THREE.Color(0x808080)); // Default grey color
+  }
+
   const instanceElementIndices = new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1);
 
-  // Fill custom attributes
+  // Store UUIDs in mesh.userData as an array
+  mesh.userData.uuids = [];
+  const uuidToIndex = new Map();
+
   wrapped.elements.forEach((element, index) => {
-    // Generate a simple hash (e.g., using index + element name)
-    const hash = simpleHash(index + element);
-    instanceHashes.setX(index, hash);
+    const atom = atoms[wrapped.srcIndex[index]];
+    mesh.userData.uuids.push(atom.uuid);
+    uuidToIndex.set(atom.uuid, index);
     instanceElementIndices.setX(index, index);
   });
 
-  // Add custom attributes to geometry
-  geometry.setAttribute('instanceHash', instanceHashes);
-  geometry.setAttribute('instanceElementIndex', instanceElementIndices);
+  // Store the lookup table in mesh.userData
+  mesh.userData.uuidToIndex = uuidToIndex;
+
+  // Encode UUIDs as a vec4 and store them in the geometry
+  const uuidByteLength = 16; // 16 bytes = 4 floats
+  const uuidAttributeData = new Float32Array(atomCount * 4); // 4 floats per UUID
+  wrapped.elements.forEach((element, index) => {
+    const atom = atoms[wrapped.srcIndex[index]];
+    const cleanedUUID = atom.uuid.replace(/-/g, '');
+
+    const encoder = new TextEncoder();
+    const encodedUUID = encoder.encode(cleanedUUID);
+
+    if (encodedUUID.length > 16) {
+      console.warn("UUID too long, will be truncated:", atom.uuid);
+    }
+
+    const padded = new Uint8Array(16);
+    padded.set(encodedUUID.subarray(0, 16));
+
+    const floatView = new Float32Array(padded.buffer);
+    uuidAttributeData.set(floatView, index * 4);
+  });
+
+
+  // Add the UUID attribute to the geometry
+  const instanceUUIDs = new THREE.InstancedBufferAttribute(uuidAttributeData, 4);
+
+  mesh.geometry.setAttribute('instanceUUID', instanceUUIDs);
+  mesh.geometry.setAttribute('instanceElementIndex', instanceElementIndices);
 
   // Existing attributes
-  geometry.setAttribute(
+  mesh.geometry.setAttribute(
     'instanceEmissive',
     new THREE.InstancedBufferAttribute(new Float32Array(atomCount * 3), 3)
   );
-  geometry.setAttribute(
+  mesh.geometry.setAttribute(
     'instanceEmissiveIntensity',
     new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1)
   );
@@ -130,96 +214,67 @@ export function buildAtoms() {
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
 
+
+  // Mark instanceColor as needing update
+  mesh.instanceColor.needsUpdate = true;
+
   // Add to scene & store reference
   app.scene.add(mesh);
   groups.atomsMesh = mesh;
-
-  // Store elementNames for later lookup
-  groups.atomsMesh.userData.elementNames = elementNames;
+  groups.atomsMesh.userData.elementNames = wrapped.elements;
 }
-
-// Helper function to generate a simple hash
-function simpleHash(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return hash;
-}
-
 
 
 
 
 export function updateSingleAtomPosition(index, position) {
   const a = groups.atomsMesh.instanceMatrix.array;
-
   const mOffset = index * 16;
-
   a[mOffset + 12] = position[0];
   a[mOffset + 13] = position[1];
   a[mOffset + 14] = position[2];
 }
 
-
 export function updateSingleAtomColor(originalIndex, index, element, opacity = 1.0) {
-  const hex = getElementColor(element);
+  //const hex = getElementColor(element);
+  const hex = getIndividualAtomColor(element, originalIndex)
   // console.log(`Element: ${element}, Hex: ${hex}, RGB: [${((hex >> 16) & 0xFF) / 255}, ${((hex >> 8) & 0xFF) / 255}, ${(hex & 0xFF) / 255}]`);
   groups.atomsMesh.setColorAt(index, new THREE.Color(hex));
+  groups.atomsMesh.instanceColor.needsUpdate = true;
 }
-
-
-
 
 export function updateSingleAtomDiameter(index, element) {
-  
   const mesh = groups.atomsMesh;
   const a = mesh.instanceMatrix.array;
-
-  const atomSize = general.atomSize; // assuming this is a scalar
-
-  const mOffset = index * 16;
+  const atomSize = general.atomSize;
   const radius = (atomicRadii[element] || 1.0) * atomSize;
-
-  // uniform scale on diagonal
-  a[mOffset + 0]  = radius;
-  a[mOffset + 5]  = radius;
+  const mOffset = index * 16;
+  a[mOffset + 0] = radius;
+  a[mOffset + 5] = radius;
   a[mOffset + 10] = radius;
-
 }
 
 
-
-export function updateAtoms(opacity=1.0) {
-  const a = groups.atomsMesh.instanceMatrix.array;
-  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
+export function updateAtoms(opacity = 1.0) {
+  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+  let atoms = [...fileBrowser.selectedStructure.atoms];
   let elements = [...fileBrowser.selectedStructure.elements];
 
   let wrapped;
   let wrappedCart;
 
-  if (general.showPeriodic) {
-    wrapped = periodicWrapped(positions, elements);
-    wrappedCart = fracToCart(wrapped.frac,lattice);
-    }
-  else {
-    wrapped = {
-        elements: elements,
-        frac: positions,
-        srcIndex: positions.map((_, index) => index)
-    };
-    wrappedCart = fracToCart(positions, lattice);
-  }
+  wrapped = periodicWrapped(positions, elements);
+  wrappedCart = fracToCart(wrapped.frac,lattice);
+
   for (let i = 0; i < groups.atomsMesh.count; i++) {
-     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-     updateSingleAtomPosition(i, wrappedCart[i])
-     updateSingleAtomColor(originalIndex,i, wrapped.elements[i], opacity)
-     updateSingleAtomDiameter(i,wrapped.elements[i])
-     groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);
-     groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.setX(i, 0.0); 
+    const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    updateSingleAtomPosition(i, wrappedCart[i])
+    updateSingleAtomColor(originalIndex,i, wrapped.elements[i], opacity)
+    updateSingleAtomDiameter(i,wrapped.elements[i])    
+
+    groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);
+    groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.setX(i, 0.0);
   }
 
   // Mark attributes as needing update
@@ -230,9 +285,4 @@ export function updateAtoms(opacity=1.0) {
   groups.atomsMesh.instanceColor.needsUpdate = true;
   groups.atomsMesh.material.needsUpdate = true;
 }
-
-
-
-
-
 

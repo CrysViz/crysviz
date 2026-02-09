@@ -8,6 +8,8 @@ import { Atom } from '../classes/Atom.js';
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser,structureShip} from '../store.js';
 import {createRow,selectLastAddedRow} from '../panels/FileBrowswerPanel.js'
+import {generateID} from './UUIDModule.js'
+
 
 
 function formatNumber(value) {
@@ -163,7 +165,8 @@ export function parsePOSCAR(content,fileName) {
   positions.forEach((pos, i) => {
     atoms.push(new Atom({
       position: pos,
-      element: elements[i]
+      element: elements[i],
+      uuid: generateID([elements[i]])
     }));
   });
 

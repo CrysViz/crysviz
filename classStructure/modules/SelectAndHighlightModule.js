@@ -4,6 +4,8 @@ import {collapseAllAtomExpansions} from '../panels/WindowAndSceneControls.js';
 import {updateBondControlPanel} from '../panels/StructureInfoPanel/Bonds.js';
 import * as THREE from '../backend/three/three.module.js';
 import {updateAtoms} from './AtomsFracUpdateModule.js'
+import InstanceMeshManager from '../classes/InstanceMeshManager.js'
+import {getUUIDFromGeometry} from './AtomsFracUpdateModule.js'
 
 export function clearHighlightAtom() {
   updateAtoms(1.0)
@@ -17,7 +19,8 @@ export function highlightAtomIn3D(index) {
   // Update emissive color and intensity
   groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(index, 1, 0.549, 0);
   groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.setX(index, 2.0);
-
+  console.warn("atom UUID",groups.atomsMesh.userData.uuids[index])
+  console.warn(getUUIDFromGeometry(index))
   // Update color if needed
   groups.atomsMesh.setColorAt(index, new THREE.Color(0xFF8C00));
 

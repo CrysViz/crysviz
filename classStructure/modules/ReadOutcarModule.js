@@ -6,6 +6,7 @@ import { Structure } from "../classes/Structure.js";
 import { Spin } from "../classes/Spin.js";
 import { Atom } from "../classes/Atom.js";
 import { Force } from "../classes/Force.js";
+import {generateID} from './UUIDModule.js'
 
 // Function to show progress bar
 function showProgressBar() {
@@ -216,7 +217,7 @@ export function parseOUTCAR(content, fileName) {
 
         // Build Structure objects
         const structureObjects = structures.map(structureData => {
-          const atoms = structureData.atoms.map(atomData => new Atom(atomData));
+          const atoms = structureData.atoms.map(atomData => new Atom({...atomData, uuid: generateID([atomData.element])}));
           const spins = structureData.spins.map(spinData => new Spin(spinData));
           const forces = structureData.forces.map(forceData => new Force(forceData));
 

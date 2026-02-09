@@ -307,10 +307,8 @@ export function updateVisualization(options = {}) {
   }
 
   if (reRenderAtoms) {
+    console.warn("Calling rebuildAtoms")
     rebuildAtoms(mOpacity);
-    if (atomsGroup2){
-      addSecondStructure(sOpactiy)
-     }
   }
 
   if (reRenderBonds) {
@@ -920,7 +918,7 @@ function clearLongPress() {
   if (showPeriodicToggle) {
     showPeriodicToggle.onchange = (e) => {
       general.showPeriodic = e.target.checked;
-      updateVisualization();
+      updateVisualization({reRenderAtoms:true});
     };
   }
 

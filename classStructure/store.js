@@ -2,7 +2,11 @@ import {StructureShip} from './classes/StructureShip.js'
 import * as THREE from './backend/three/three.module.js';
 export const bondLengths = {}
 
+export const wrapped = {}
+
 export const allAtoms=[]
+
+export const usedIDs = new Set();
 
 export const fileBrowser = { 
   fileData:[],
