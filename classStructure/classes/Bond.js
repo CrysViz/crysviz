@@ -4,11 +4,10 @@
 export class Bond {
   constructor({
     elements = [],
-    vector = [],
-    idcs_unique = [],
-    idcs_wrapped = [],
+    idcs = [],
+    idcs_original = [],
     length = null,
-    origin = null, // can be cell, periodic, drawn
+    hash=null
     defaultColors = [],
   } = {}) {
     // Safely set default colors for the bond
@@ -16,7 +15,6 @@ export class Bond {
     const color2 = elements.length > 1 ? (colorScheme[elements[1]] || 0x808080) : 0x808080;
     this.defaultColor = [color1, color2];
     this.color = this.defaultColor;
-
   }
 }
 

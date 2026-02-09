@@ -233,14 +233,6 @@ export function updateAtoms(opacity=1.0) {
 
 
 
-//export function updateAtomsPerElement
-//  const a = groups.atomsMesh.instanceMatrix.array;
-//  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
-//  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-//  let elements = [...fileBrowser.selectedStructure.elements];
-
-  
-
 
 
 
