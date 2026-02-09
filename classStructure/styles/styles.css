@@ -38,6 +38,14 @@ body {
   --hover-color: rgba(18, 141, 204,0.2);
   --border-color: rgba(17, 71, 129, 0.5);
 }
+
+.theme-nep {
+  --bg-color: rgba(58, 48, 0, 0.85);
+  --highlight-color: rgba(212, 170, 0, 1.0);
+  --accent-color: rgba(212, 170, 0, 0.9);
+  --hover-color: rgba(212, 170, 0, 0.25);
+  --border-color: rgba(160, 132, 0, 0.55);
+}
 :root {
   --ui-width: 380px;      /* Panel content width */
   --ui-border: 1px;       /* Panel border width */

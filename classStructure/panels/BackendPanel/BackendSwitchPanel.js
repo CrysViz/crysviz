@@ -5,6 +5,7 @@ import {addBackendRelaxPanel,removeBackendRelaxPanel} from './BackendRelaxer.js'
 
 
 import {addMoyoPanel} from './MoyoWASM.js'; 
+import {addNEPPanel} from './NEPWASM.js';
 
 const BackendModeSwitch = document.getElementById("BackendModeSwitch");
 
@@ -105,7 +106,7 @@ export function addBackendModeSwitch() {
 
     // Reset UI
     BackendModeSwitch.querySelectorAll("button").forEach(b => {
-      b.classList.remove("active", "symmetry", "ai");
+      b.classList.remove("active", "symmetry", "ai", "nep");
     });
 
     if (mode === "symmetry") {
@@ -132,6 +133,11 @@ export function addBackendModeSwitch() {
           console.log("Backend state:", general.backendState);
         });
 
+    } else if (mode === "nep") {
+            btn.classList.add("nep");
+            general.backendState = "nep";
+            setTheme("nep");
+            addNEPPanel();
     } else {
       btn.classList.add("active");
       general.backendState = mode.toLowerCase();
@@ -153,6 +159,8 @@ function setTheme(themeName) {
     figure.src = "../data/CrysViz_logo_clear_back_beta_red.png";
   } else if (theme === "theme-symmetry") {
     figure.src = "../data/CrysViz_logo_clear_back_beta_blue.png";
+  } else if (theme === "theme-nep") {
+    figure.src = "../data/CrysViz_logo_clear_back_beta.png";
   }
 }
 
@@ -166,6 +174,7 @@ export function resetSwitch(defaultMode = "None") {
   buttons.forEach(btn => btn.classList.remove("active"));
   buttons.forEach(btn => btn.classList.remove("symmetry"));
   buttons.forEach(btn => btn.classList.remove("ai"));
+  buttons.forEach(btn => btn.classList.remove("nep"));
 
   // Find button with matching data-mode (case-insensitive)
   const defaultBtn = Array.from(buttons).find(
@@ -180,4 +189,3 @@ export function resetSwitch(defaultMode = "None") {
 }
 
 // Convenience functions
-

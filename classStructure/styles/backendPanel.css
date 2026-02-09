@@ -152,3 +152,8 @@ font-size: 12px;
   font-weight: 500;
 }
 
+.segmented-backend-control button.nep {
+  background: var(--accent-color);
+  color: white;
+  font-weight: 500;
+}
