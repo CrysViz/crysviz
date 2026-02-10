@@ -36,8 +36,11 @@ export function updateForces(forceFactor = 1.0) {
     disposeGroup(groups.forceGroup);
   }
 
-  const forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
+  const forces = fileBrowser.selectedStructure.forces;
+
+  console.log(forces)
   if (forces.length == 0){
+    console.warn("No forces found!")
     return;
     }
   groups.forceGroup = new THREE.Group();
@@ -61,23 +64,41 @@ export function updateForces(forceFactor = 1.0) {
     const vector = forces[atomIndex].vector
     const scalingFactor = 1.0
 
-    if ( !vector || vector.length !== 3) continue;
+    if ( !vector || vector.length !== 3) {
+      console.warn("Force has wrong format")
+      continue;
+    }
     const origin = new THREE.Vector3(...wrappedCart[i]);
     const dirVec = new THREE.Vector3(...vector);
     const baseLen = dirVec.length();
+    console.log(baseLen)
+
+
     const color = forceLengthToColor(baseLen)
 
-    const logValue = Math.log10(baseLen);
-    // Map log10(1e-4) to 0, log10(1e-3) to 0.5, log10(2) to 1 (or higher if needed)
-    const mapped = (logValue + 4) / 3; // log10(1e-4) = -4 → 0, log10(1e-3) = -3 → 0.333...
-    // Adjust so 1e-3 → 0.5
-    const adjusted = mapped * 1.5; // Now 1e-3 → 0.5, 1e-4 → 0, 2 → ~1.3
+    // Treat values below 1e-5 as 0
+const clampedBaseLen = baseLen < 1e-5 ? 0 : baseLen;
+let totalLength = 0    
 
+// If baseLen is 0, set totalLength to 0 and skip further calculations
+if (clampedBaseLen === 0) {
+  totalLength = 0;
+} else {
+  const logValue = Math.log10(clampedBaseLen);
 
-    const totalLength = adjusted * scalingFactor * forceFactor; // add a factor five here otherwise reasonable forces are too small
+  // Clamp logValue to ensure it's within the expected range
+  const clampedLogValue = Math.max(-4, Math.min(logValue, 0.3010)); // log10(2) ≈ 0.3010
+
+  // Map log10(1e-4) to 0, log10(1e-3) to 0.5, log10(2) to 1
+  const mapped = (clampedLogValue + 4) / 4.301; // Normalize to map log10(2) to 1
+  const adjusted = mapped * 1.5; // Adjust so 1e-3 → 0.5, 1e-4 → 0, 2 → 1
+
+  totalLength = adjusted * scalingFactor 
+}
+
 
     if (totalLength < 0.5) {
-      //console.warn("Force vector too small (<0.5)", totalLength)
+      console.warn("Force vector too small (<0.5)", totalLength)
       continue};
      
     const dir = dirVec.clone().normalize();
@@ -122,7 +143,7 @@ export function updateForces(forceFactor = 1.0) {
 
     groups.forceGroup.add(arrowGroup);
   }
-
+  console.log(groups.forceGroup)
   app.scene.add(groups.forceGroup);
 }
 
