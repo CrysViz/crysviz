@@ -119,8 +119,10 @@ export function createCompositionRow(el, count, total) {
     dot.style.background = hex;
       if (ok) {
         updateVisualization({
-          reRenderAtoms: true,
-          reRenderBonds: true,
+          atomsUpdate:true,
+          bondsUpdate:false,
+          reRenderAtoms: false,
+          reRenderBonds: false,
           reRenderLattice: false,
           reRenderOther: false
         });
@@ -186,8 +188,9 @@ export function createCompositionRow(el, count, total) {
     clearElementColorOverride(el);
     clearAllIndividualColorsForElement(el);
     updateVisualization({
-          reRenderAtoms: true,
-          reRenderBonds: true,
+          bondsUpdate:false,
+          reRenderAtoms: false,
+          reRenderBonds: false,
           reRenderLattice: false,
           reRenderOther: false,
           reRenderComposition : "open",
@@ -197,8 +200,9 @@ export function createCompositionRow(el, count, total) {
    applyBtn.onclick = () => {
       dot.style.background = picker.getHex;
       updateVisualization({
-          reRenderAtoms: true,
-          reRenderBonds: true,
+          bondsUpdate:false,
+          reRenderAtoms: false,
+          reRenderBonds: false,
           reRenderLattice: false,
           reRenderOther: false,
           reRenderComposition: "open",
@@ -285,7 +289,8 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
       if (ok) {
         updateBonds()
         updateVisualization({
-          reRenderAtoms: true,
+          bondsUpdate:false,
+          reRenderAtoms: false,
           reRenderBonds: true,
           reRenderLattice: false,
           reRenderOther: false
@@ -511,9 +516,9 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
     const ok = setIndividualAtomColor(element, atomIndex, hex);
     dot.style.background = hex;
       if (ok) {
-        updateBonds()
         updateVisualization({
-          reRenderAtoms: true,
+          bondsUpdate:false,
+          reRenderAtoms: false,
           reRenderBonds: true,
           reRenderLattice: false,
           reRenderOther: false
@@ -607,8 +612,9 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
       dot.style.background = picker.getHex;
       editor.style.display = 'none';
       updateVisualization({
-        reRenderAtoms: true,
-        reRenderBonds : true,
+        bondsUpdate:false,
+        reRenderAtoms: false,
+        reRenderBonds : false,
         reRenderLattice : false,
         reRenderOther: false,
         reRenderComposition : true, 
@@ -622,8 +628,9 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
     //colorInput.value = newColor;
    // hexInput.value = newColor;
     updateVisualization({
-        reRenderAtoms: true,
-        reRenderBonds : true,
+        bondsUpdate:false,
+        reRenderAtoms: false,
+        reRenderBonds : false,
         reRenderLattice : false,
         reRenderOther: false,
         reRenderComposition : true,
@@ -660,7 +667,14 @@ function updateAtomCoordinates(atomIndex, newCoords) {
     //= [...newCoords];
 
   // Refresh the visualization to show the updated position
-  updateVisualization();
+      updateVisualization({
+        bondsUpdate:false,
+        reRenderAtoms: false,
+        reRenderBonds : false,
+        reRenderLattice : false,
+        reRenderOther: false,
+        reRenderComposition : true,
+      });
 
   console.log(`Updated atom ${atomIndex} coordinates to: ${newCoords.join(', ')}`);
 };

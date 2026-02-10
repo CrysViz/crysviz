@@ -292,11 +292,14 @@ function updateOther() {
 
 export function updateVisualization(options = {}) {
   const {
-    reRenderAtoms = true,
-    reRenderBonds = true,
+    atomsUpdate = true,
+    bondsUpdate = true,
+    reRenderAtoms = false,
+    reRenderBonds = false,
     reRenderLattice = true,
     reRenderOther = true,
     reRenderComposition = false,
+
     sOpactiy = general.secondOpacity,
     mOpacity = general.mainOpacity
   } = options;
@@ -310,9 +313,17 @@ export function updateVisualization(options = {}) {
     console.warn("Calling rebuildAtoms")
     rebuildAtoms(mOpacity);
   }
+  if (!reRenderAtoms & atomsUpdate) {
+    console.warn("Calling updateAtoms")
+    updateAtoms(mOpacity);
+  }
 
   if (reRenderBonds) {
     disposeGroup();
+    updateBonds();
+  }
+  if (!reRenderAtoms & bondsUpdate) {
+    console.warn("Calling updateBonds")
     updateBonds();
   }
 
@@ -910,7 +921,7 @@ function clearLongPress() {
   if (PBCBondToggle) {
       PBCBondToggle.onchange = (e) => {
       general.showPBCBonds = e.target.checked;
-      updateVisualization();
+      updateVisualization({reRenderAtoms:true});  
     };
   }
 

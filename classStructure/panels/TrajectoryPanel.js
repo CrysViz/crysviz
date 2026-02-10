@@ -33,7 +33,7 @@ function updateStructureFromFrame(frame, container) {
   if (forces != null && general.spinForceState === "Forces" ) {
     updateForces();
   }
-  updateVisualization();
+  updateVisualization({reRenderAtoms: true, reRenderBonds: true});
 }
 
 // --- Update UI and scene ---

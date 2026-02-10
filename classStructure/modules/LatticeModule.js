@@ -1,5 +1,5 @@
 import * as THREE from '../backend/three/three.module.js';
-import { app, groups, general,fileBrowser, mode, atomicRadii,getLatticeVisSettings} from '../store.js';
+import { periodic,app, groups, general,fileBrowser, mode, atomicRadii,getLatticeVisSettings} from '../store.js';
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {getBondCutoff} from './BondsModule.js'
@@ -217,6 +217,114 @@ export function periodicWrapped(frac, elements) {
   };
 }
 
+
+
+
+
+function workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(
+       new URL('./wrapWorker.js', import.meta.url),
+       { type: 'module' }
+    );
+    worker.onmessage = (e) => {
+      if (e.data.error) {
+        reject(new Error(e.data.error));
+      } else {
+        resolve(e.data);
+      }
+      worker.terminate();
+    };
+
+    worker.onerror = (e) => {
+      console.error("Worker reports error:", e);
+      reject(e);
+      worker.terminate();
+    };
+    worker.postMessage({ functionName: "periodicWrapped", args: [frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice] });
+  });
+}
+
+
+
+
+// Simple fast hash for strings
+function simpleHash(str) {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i); // hash * 33 + c
+    hash |= 0; // convert to 32-bit integer
+  }
+  return hash >>> 0; // convert to unsigned
+}
+
+// Serialize Map or nested Map/arrays into deterministic string
+function serializeMap(map) {
+  const obj = {};
+  for (const [key, value] of map) {
+    if (value instanceof Map) {
+      obj[key] = serializeMap(value); // recurse
+    } else if (Array.isArray(value)) {
+      obj[key] = value.map(v => (v instanceof Map ? serializeMap(v) : v));
+    } else {
+      obj[key] = value;
+    }
+  }
+  // Sort keys for deterministic order
+  const sortedObj = Object.keys(obj).sort().reduce((acc, k) => {
+    acc[k] = obj[k];
+    return acc;
+  }, {});
+  return JSON.stringify(sortedObj);
+}
+
+// Hash function for Map input
+function hashInput(map) {
+  const serialized = serializeMap(map);
+  return simpleHash(serialized); // returns fixed-length hash string
+}
+
+
+
+export async function runPeriodicWrapped(frac, elements) {
+    
+  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r])
+  let bondLenghts = general.bondLengths
+  let showPBCBonds = general.showPBCBonds
+  let showPeriodic = general.showPeriodic
+   
+    const map = new Map([
+    ["frac", frac],
+    ["elements", elements],
+    ["bondLenghts", bondLenghts],
+    ["lattice", lattice],
+    ["showPeriodic",showPeriodic],
+    ["showPBCBonds",showPBCBonds]  
+  ]);
+  let inputHash = hashInput(map)
+
+  console.warn("hashes",inputHash,periodic.hash)
+   
+  if (periodic.hash != inputHash){
+    periodic.hash = inputHash
+    try {
+      console.log("Calling workerPeriodicWrapped...")
+      const result = await workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice);
+      console.log(result)
+      periodic.wrapped = result
+      return result;
+    } catch (error) {
+      console.error('Error in worker:', error);
+      throw error;
+    }
+  }
+  else{
+    return periodic.wrapped 
+
+  }
+
+
+}
 
 
 export function getCellCenterAndDist() {

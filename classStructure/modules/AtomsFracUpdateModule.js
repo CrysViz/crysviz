@@ -2,7 +2,7 @@ import * as THREE from '../backend/three/three.module.js';
 import { structureShip, app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 import {Atom} from '../classes/Atom.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
-import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
+import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
 
 import {generateID} from './UUIDModule.js' 
@@ -255,7 +255,7 @@ export function updateSingleAtomDiameter(index, element) {
 }
 
 
-export function updateAtoms(opacity = 1.0) {
+export async function updateAtoms(opacity = 1.0) {
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   let atoms = [...fileBrowser.selectedStructure.atoms];
@@ -264,7 +264,8 @@ export function updateAtoms(opacity = 1.0) {
   let wrapped;
   let wrappedCart;
 
-  wrapped = periodicWrapped(positions, elements);
+  wrapped = await runPeriodicWrapped(positions, elements);
+  console.log(wrapped)
   wrappedCart = fracToCart(wrapped.frac,lattice);
 
   for (let i = 0; i < groups.atomsMesh.count; i++) {

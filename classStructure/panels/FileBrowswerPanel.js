@@ -264,6 +264,6 @@ function updateStructureFromRowAndStep(rowIndex) {
     removeLatticeAndSupercellPanel()
     addLatticeAndSupercellPanel()
   }
-  updateVisualization();
+  updateVisualization({reRenderAtoms: true, reRenderBonds: true});
 }
 
