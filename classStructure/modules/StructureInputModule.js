@@ -7,9 +7,10 @@ import { Structure } from '../classes/Structure.js';
 import { Atom } from '../classes/Atom.js';
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser,structureShip} from '../store.js';
-import {createRow,selectLastAddedRow} from '../panels/FileBrowswerPanel.js'
-import {generateID} from './UUIDModule.js'
-
+import {createRow,selectLastAddedRow} from '../panels/FileBrowswerPanel.js';
+import {generateID} from './UUIDModule.js';
+import {buildBondObjects} from './BondsFracUpdateModule.js';
+import {runPeriodicWrapped} from './LatticeModule.js';
 
 
 function formatNumber(value) {
@@ -101,7 +102,7 @@ function elementFromLabel(label) {
 }
 
 
-export function parsePOSCAR(content,fileName) {
+export  function parsePOSCAR(content,fileName) {
   const lines = content.trim().split('\n').filter(l => l.trim());
   let i = 0;
 
@@ -170,13 +171,23 @@ export function parsePOSCAR(content,fileName) {
     }));
   });
 
+  let periodic = runPeriodicWrapped(
+  { hash: "None",wrapped: {}},
+  positions,  
+  elements,
+  lattice
+);
+
+  console.log("Periodic",periodic)
 
   const structure = new Structure({
-    elements:elements,
-    uniqueElements: elementLine,
-    lattice:lattice,
-    atoms:atoms
+  elements: elements,
+  uniqueElements: elementLine,
+  lattice: lattice,
+  atoms: atoms,
+  periodic: periodic
   });
+
 
   const container = new StructureContainer({
     fileName: fileName,

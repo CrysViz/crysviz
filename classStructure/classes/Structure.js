@@ -6,7 +6,6 @@ import { Symmetry } from './Symmetry.js';
 import { Stress } from './Stress.js';
 import { Atom } from './Atom.js';
 
-
 // Helper function to deep freeze objects
 function deepFreeze(object) {
   if (object === null || typeof object !== 'object') {
@@ -28,13 +27,13 @@ function deepCopyArrayOfObjects(array) {
   return array.map(item => ({ ...item }));
 }
 
-
 export class Structure {
   constructor({
     elements = [],
     supercell = {},
     uniqueElements = [],
     lattice = [],
+    bonds = [],
     atoms = [],
     symmetry = null,
     spins = [],
@@ -42,7 +41,7 @@ export class Structure {
     stress = null,
     polyhedra = null,
     colors = [],
-    NeighborMap = {},
+    periodic = {}, // Accept periodic as an input
   } = {}) {
     // Mutable instance properties
     this.elements = elements;
@@ -56,54 +55,29 @@ export class Structure {
     this.stress = stress;
     this.polyhedra = polyhedra;
     this.colors = colors;
-    this.NeighborMap = {};
-        // Create an immutable snapshot of the original data
+    this.bonds = bonds;           // list of bonds
+    this.periodic = periodic;     // Initialize periodic
+
+    // Calculate periodic wrapped positions for atoms in-place
+
+    // Build bond objects if not provided
+    this.bonds = bonds
+
+    // Create an immutable snapshot of the original data
     this.original = deepFreeze({
       elements: [...elements],
       supercell: { ...supercell },
       uniqueElements: [...new Set(elements)],
       lattice: lattice.map(row => [...row]),  // deep copy of lattice array
-      atoms: deepCopyArrayOfObjects(atoms),  // deep copy of atom objects
-      spins: deepCopyArrayOfObjects(spins),  // deep copy of spin objects
+      atoms: deepCopyArrayOfObjects(atoms),   // deep copy of atom objects
+      spins: deepCopyArrayOfObjects(spins),   // deep copy of spin objects
       forces: deepCopyArrayOfObjects(forces), // deep copy of force objects
-      //stress: stress ? { ...stress } : null, // deep copy of stress object if it exists
-      //polyhedra: polyhedra ? { ...polyhedra } : null,
+      stress: stress ? { ...stress } : null,  // deep copy of stress object if it exists
+      polyhedra: polyhedra ? { ...polyhedra } : null,
       colors: [...colors],
-      //NeighborMap: NeighborMap,
+      bonds: deepCopyArrayOfObjects(this.bonds), // deep copy of bond objects
     });
 
-
-    // Undo/Redo functionality
-    this.history = []; // Stack to store snapshots for undo
-    this.future = [];  // Stack to store snapshots for redo
-    this.maxHistoryLength = 10; // Limit the number of stored snapshots
   }
-
-  get NumberOfAtoms() {
-    return this.atoms.length;
-  }
-
-  get ucNumberOfAtoms() {
-    return this.ucatoms.length;
-  }
-
-  validate() {
-    if (this.atoms.length !== this.NumberOfAtoms) {
-      throw new Error("Atoms array length is inconsistent");
-    }
-
-    if (this.lattice.length !== 3 || this.lattice.some(row => row.length !== 3)) {
-      throw new Error("Lattice must be 3×3");
-    }
-
-    if (this.elements.length !== this.NumberOfAtoms) {
-      throw new Error("Elements must be N");
-    }
-
-    if (this.colors.length !== this.NumberOfAtoms) {
-      throw new Error("Colors must be N");
-    }
-  }
-
-}
+}  
 

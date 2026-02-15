@@ -6,7 +6,6 @@ import {createBondLengthControls} from './BondLengthPanel.js'
 import {createSpinControls} from './SpinPanel.js'
 import {updateSpins} from '../modules/SpinModule.js'
 import {updateForces} from '../modules/ForceModule.js'
-import {getAllPeriodicImages,updateNeighborMap} from '../modules/BondsModule.js'
 import {removeLatticeAndSupercellPanel, addLatticeAndSupercellPanel} from './LatticeSupercellPanel.js'
 
 export function showError(message) {
@@ -239,8 +238,6 @@ function updateStructureFromRowAndStep(rowIndex) {
   }
   fileBrowser.selectedStructure = container.structures[step];
 
-  updateNeighborMap(fileBrowser.selectedStructure)
-  getAllPeriodicImages(fileBrowser.selectedStructure)
   console.warn(allAtoms)
   // Assign arrays (make copies to avoid mutating original)
 

@@ -1,5 +1,5 @@
 import * as THREE from '../backend/three/three.module.js';
-import { structureShip, app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import {periodic,structureShip, app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 import {Atom} from '../classes/Atom.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
@@ -80,15 +80,15 @@ export function rebuildAtoms(opacity) {
 }
 
 export function buildAtoms() {
-  let wrapped;
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   let elements = [...fileBrowser.selectedStructure.elements];
   let atoms=fileBrowser.selectedStructure.atoms
+  //perdic.wrapped
 
-
-
-  wrapped = periodicWrapped(positions, elements);
+  let wrapped = runPeriodicWrapped(fileBrowser.selectedStructure.periodic, positions, elements,lattice).wrapped
+  console.warn("wrapped",wrapped)
+  console.warn(fileBrowser.selectedStructure.periodic)
 
 
 
@@ -163,6 +163,8 @@ export function buildAtoms() {
   const uuidToIndex = new Map();
 
   wrapped.elements.forEach((element, index) => {
+    console.log("index",index)
+    console.log("srcIndex",wrapped.srcIndex)
     const atom = atoms[wrapped.srcIndex[index]];
     mesh.userData.uuids.push(atom.uuid);
     uuidToIndex.set(atom.uuid, index);
@@ -260,13 +262,14 @@ export async function updateAtoms(opacity = 1.0) {
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   let atoms = [...fileBrowser.selectedStructure.atoms];
   let elements = [...fileBrowser.selectedStructure.elements];
+  let periodic = fileBrowser.selectedStructure.periodic;
 
   let wrapped;
   let wrappedCart;
 
-  wrapped = await runPeriodicWrapped(positions, elements);
+  wrapped = periodic.wrapped
   console.log(wrapped)
-  wrappedCart = fracToCart(wrapped.frac,lattice);
+  wrappedCart = wrapped.cart
 
   for (let i = 0; i < groups.atomsMesh.count; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;

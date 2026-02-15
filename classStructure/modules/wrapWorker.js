@@ -25,7 +25,9 @@ function periodicWrapped(frac, elements, bondLengths, showPeriodic,showPBCBonds,
   const eps = 1e-6;
   const newElements = [];
   const newFcrds = [];
+  const newCcrds = [];
   const srcIndex = [];
+  const latticeInverse = invert3x3(transpose3x3(lattice));
 
   // Always wrap atoms, but only return wrapped or original based on showPeriodic
   if (showPeriodic) {
@@ -70,7 +72,8 @@ function periodicWrapped(frac, elements, bondLengths, showPeriodic,showPBCBonds,
     return {
       elements: elements,
       frac: frac,
-      srcIndex: elements.map((_, index) => index),
+      cart: fracToCart(frac,lattice),
+      srcIndex: srcIndex
     };
   }
 
@@ -78,8 +81,8 @@ function periodicWrapped(frac, elements, bondLengths, showPeriodic,showPBCBonds,
   //
   //
   if (showPBCBonds) {
+    console.log("worker calculates periodic bonds")
   // Copy lattice and precompute inverse
-  const latticeInverse = invert3x3(transpose3x3(lattice));
 
   // Convert wrapped fractional coords to Cartesian vectors
   const wrappedCart = newFcrds.map(f => {
@@ -158,12 +161,12 @@ function periodicWrapped(frac, elements, bondLengths, showPeriodic,showPBCBonds,
   }
 }
 
-
-
   // Always return all wrapped frac coords and their original indices
+
   return {
     elements: newElements,
     frac: newFcrds,
+    cart: fracToCart(newFcrds,lattice),
     srcIndex: srcIndex,
   };
 }
@@ -188,6 +191,7 @@ export function fracToCart(frac, lattice) { // this should probably be moved to 
     fc[0] * lattice[0][2] + fc[1] * lattice[1][2] + fc[2] * lattice[2][2]
   ]);
 }
+
 
 //export function cartToFrac(cartVec, lattice) {
 //  const inverse = invert3x3(transpose3x3(lattice));

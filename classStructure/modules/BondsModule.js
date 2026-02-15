@@ -169,33 +169,23 @@ export function updateBonds() {
    }
 
   let wrapped;
-  let wrappedCart;
+
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
   let elements = [...fileBrowser.selectedStructure.elements];
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
 
-  if (general.showPeriodic) {
-    wrapped = periodicWrapped(positions, elements);
-    wrappedCart = fracToCart(wrapped.frac, lattice);
-    } 
-  else {
-    wrapped = {
-        elements: elements,
-        frac: positions,
-        srcIndex: positions.map((_, index) => index)
-    };
-    wrappedCart = fracToCart(wrapped.frac, lattice);
-  } 
 
+  let periodic = fileBrowser.selectedStructure.periodic
+  wrapped = periodic.wrapped
 
   // 1) Bonds entirely inside the unit cell among the wrapped atoms
-  for (let i = 0; i < wrappedCart.length; i++) {
-    for (let j = i + 1; j < wrappedCart.length; j++) {
+  for (let i = 0; i < wrapped.cart.length; i++) {
+    for (let j = i + 1; j < wrapped.cart.length; j++) {
       const ei = wrapped.elements[i];
       const atomIndex_i = wrapped.srcIndex[i];
       const ej = wrapped.elements[j];
       const atomIndex_j = wrapped.srcIndex[j];
-      const bond = createBond(wrappedCart[i], wrappedCart[j], ei, ej, atomIndex_i, atomIndex_j);
+      const bond = createBond(wrapped.cart[i], wrapped.cart[j], ei, ej, atomIndex_i, atomIndex_j);
       if (bond) groups.bondsGroup.add(bond);
     }
   }
@@ -351,57 +341,6 @@ function simpleHash(str) {
     hash = hash & hash; // Convert to 32-bit integer
   }
   return hash.toString();
-}
-
-
-export function updateNeighborMap(structure){
-  const wrapped = periodicWrapped(structure.atoms.map(a => a.position), structure.elements);
-  const wrappedCart = fracToCart(wrapped.frac, structure.lattice);
-
-  for (let i = 0; i < wrappedCart.length; i++) {
-    for (let j = i + 1; j < wrappedCart.length; j++) {
-
-      const ei = wrapped.elements[i];
-      const atomIndex_i = wrapped.srcIndex[i];
-      const ej = wrapped.elements[j];
-      const atomIndex_j = wrapped.srcIndex[j];
-
-      const posi = wrappedCart[i]
-      const posj = wrappedCart[j]
-      const pi = new THREE.Vector3(posi[0], posi[1], posi[2]);
-      const pj = new THREE.Vector3(posj[0], posj[1], posj[2]);
-
-      // Make sure the order is always the same
-      const atomi = { elem: ei, pos: pi, atomIndex: i };
-      const atomj = { elem: ej, pos: pj, atomIndex: j };
-
-      const [firstElement, secondElement] = atomi.elem.localeCompare(atomj.elem) <= 0 ? [atomi, atomj] : [atomj, atomi];
-
-      const dist = distance(firstElement.pos, secondElement.pos);
-      const cutoff = getBondCutoff(firstElement.elem, secondElement.elem);
-      let isBond = null;
-
-      if (cutoff <= 0.01 || dist > cutoff || dist < 0.005){
-         isBond = false;
-      }
-      else{
-         isBond = true;
-      }
-
-      const key = `${firstElement.atomIndex}-${secondElement.atomIndex}`;
-      const periodic = false;
-      if (isOutsideUnitCell(firstElement.pos,structure.lattice) || isOutsideUnitCell(secondElement.pos,structure.lattice)){
-         periodic = true;
-      }
-
-      structure.NeighborMap[key]={
-          isBond:isBond,
-          distance:dist,
-          periodic:periodic
-      }
-    }
-  }
-  console.log(structure.NeighborMap)
 }
 
 

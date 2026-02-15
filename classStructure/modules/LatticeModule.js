@@ -67,13 +67,14 @@ export function recomputeLatticeDirs() {
 export function latticeDirsNorm() { return cachedLatticeDirs; }
 
 
-export function periodicWrapped(frac, elements) {
+export function periodicWrapped(periodic, frac, elements, lattice) {
   // Default options
 
   const eps = 1e-6;
   const newElements = [];
   const newFcrds = [];
-  const srcIndex = [];
+  const newCcrds = [];
+  const newSrcIndex = [];
 
   // Always wrap atoms, but only return wrapped or original based on showPeriodic
   if (general.showPeriodic) {
@@ -106,7 +107,8 @@ export function periodicWrapped(frac, elements) {
               const cz = Math.min(Math.max(nz, 0), 1 - eps);
               newElements.push(atm);
               newFcrds.push([cx, cy, cz]);
-              srcIndex.push(i);
+              newCcrds.push(fracToCart([[cx, cy, cz]],lattice)[0]);
+              newSrcIndex.push(i);
             }
           }
         }
@@ -116,18 +118,19 @@ export function periodicWrapped(frac, elements) {
   // If showPeriodic is false, return original frac and srcIndex
   if (!general.showPeriodic) {
     return {
-      elements: elements,
-      frac: frac,
-      srcIndex: elements.map((_, index) => index),
-    };
+    elements: elements,
+    frac: frac,
+    cart: fracToCart(frac,lattice),
+    srcIndex: elements.map((_, index) => index),
+  };
   }
 
   // If showNeighbours is true, compute neighbors 
   //
   //
   if (general.showPBCBonds) {
+
   // Copy lattice and precompute inverse
-  const lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   const latticeInverse = invert3x3(transpose3x3(lattice));
 
   // Convert wrapped fractional coords to Cartesian vectors
@@ -161,7 +164,7 @@ export function periodicWrapped(frac, elements) {
   for (let i = 0; i < wrappedCart.length; i++) {
     const pi = wrappedCart[i];
     const ei = newElements[i];
-    const atomIndex_i = srcIndex[i];
+    const atomIndex_i = newSrcIndex[i];
 
     // Loop over original atoms
     for (let j = 0; j < frac.length; j++) {
@@ -197,8 +200,8 @@ export function periodicWrapped(frac, elements) {
             // Add ghost atom
             newElements.push(ej);
             newFcrds.push(candidateFrac);
-            srcIndex.push(j);
-
+            newCcrds.push(candidateCart)
+            newSrcIndex.push(j);
             ghostAdded.add(gkey);
           }
         }
@@ -207,21 +210,16 @@ export function periodicWrapped(frac, elements) {
   }
 }
 
-
-
   // Always return all wrapped frac coords and their original indices
   return {
     elements: newElements,
     frac: newFcrds,
-    srcIndex: srcIndex,
+    cart: newCcrds,
+    srcIndex: newSrcIndex,
   };
 }
 
-
-
-
-
-function workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice) {
+async function workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
        new URL('./wrapWorker.js', import.meta.url),
@@ -245,6 +243,52 @@ function workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBC
   });
 }
 
+
+
+export function runPeriodicWrapped(periodic, frac, elements,lattice) {
+
+    let bondLenghts = general.bondLengths
+    let showPBCBonds = general.showPBCBonds
+    let showPeriodic = general.showPeriodic
+    console.log("elements",elements)
+
+    const map = new Map([
+      ["frac", frac],
+      ["elements", elements],
+      ["bondLenghts", bondLenghts],
+      ["lattice", lattice],
+      ["showPeriodic",showPeriodic],
+      ["showPBCBonds",showPBCBonds]
+    ]);
+    let inputHash = hashInput(map)
+
+    console.warn("hashes",inputHash,periodic.hash)
+    let result = null
+    if (periodic.hash != inputHash){
+      if(1==1){ //#(periodic.hash==="None") {
+        console.warn("Calling sync periodicWrapped")
+        result = periodicWrapped(periodic, frac, elements,lattice)
+        periodic.wrapped = result
+      }
+      else{
+        try {
+          console.log("Calling workerPeriodicWrapped...")
+          result = workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice);
+          console.log(result)
+          periodic.wrapped = result
+        } catch (error) {
+          console.error('Error in worker:', error);
+          throw error;
+        }
+      }
+      periodic.hash = inputHash
+      periodic.wrapped = result
+      return periodic
+    }  
+    else{
+      return periodic
+    }
+}
 
 
 
@@ -284,47 +328,6 @@ function hashInput(map) {
   return simpleHash(serialized); // returns fixed-length hash string
 }
 
-
-
-export async function runPeriodicWrapped(frac, elements) {
-    
-  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r])
-  let bondLenghts = general.bondLengths
-  let showPBCBonds = general.showPBCBonds
-  let showPeriodic = general.showPeriodic
-   
-    const map = new Map([
-    ["frac", frac],
-    ["elements", elements],
-    ["bondLenghts", bondLenghts],
-    ["lattice", lattice],
-    ["showPeriodic",showPeriodic],
-    ["showPBCBonds",showPBCBonds]  
-  ]);
-  let inputHash = hashInput(map)
-
-  console.warn("hashes",inputHash,periodic.hash)
-   
-  if (periodic.hash != inputHash){
-    periodic.hash = inputHash
-    try {
-      console.log("Calling workerPeriodicWrapped...")
-      const result = await workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice);
-      console.log(result)
-      periodic.wrapped = result
-      return result;
-    } catch (error) {
-      console.error('Error in worker:', error);
-      throw error;
-    }
-  }
-  else{
-    return periodic.wrapped 
-
-  }
-
-
-}
 
 
 export function getCellCenterAndDist() {
