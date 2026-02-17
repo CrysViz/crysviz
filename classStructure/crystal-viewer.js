@@ -53,7 +53,8 @@ import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleCont
 import { createColorPicker } from './modules/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
-import {getBondCutoff,updateBonds,initBonds} from './modules/BondsModule.js'
+import {getBondCutoff} from './modules/BondsModule.js'
+import {updateBonds,rebuildBonds,buildBondObjects} from './modules/BondsFracUpdateModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
 import {rebuildAtoms,updateAtoms} from './modules/AtomsFracUpdateModule.js';
@@ -340,10 +341,13 @@ export function updateVisualization(options = {}) {
   }
 
   if (reRenderBonds) {
+    console.warn("Calling rebuildBonds")
+    rebuildBonds(mOpacity)
   }
+
   if (!reRenderAtoms & bondsUpdate) {
     console.warn("Calling updateBonds")
-    updateBonds();
+    updateBonds(mOpacity)
   }
 
   if (reRenderComposition != false) {
@@ -431,7 +435,6 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 
     //createBondLengthControls();
     createShareButton();
-    initBonds();
     updateVisualization();
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();

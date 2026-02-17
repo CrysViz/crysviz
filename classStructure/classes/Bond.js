@@ -1,5 +1,5 @@
- import { general,atomicRadii, defaultColorMap, jmolColorMap} from '../store.js';
-
+import { general, atomicRadii, defaultColorMap } from '../store.js';
+import * as THREE from '../backend/three/three.module.js';
 
 export class Bond {
   constructor({
@@ -9,63 +9,54 @@ export class Bond {
     colors = [],
     uuid = null,
     indices = null,
-    elem1 = null,
-    elem2 = null,
-    dist = null,
-    dir = null,
-    p1 = null,
-    p2 = null,
   } = {}) {
-    // Safely set default colors for the bond
-    const color1 = elements.length > 0 ? (colorScheme[elements[0]] || 0x808080) : 0x808080;
-    const color2 = elements.length > 1 ? (colorScheme[elements[1]] || 0x808080) : 0x808080;
+    this.elements = elements;
+    const color1 = elements.length > 0 ? (defaultColorMap[elements[0]] || 0x6523b0) : 0x6523b0;
+    const color2 = elements.length > 1 ? (defaultColorMap[elements[1]] || 0x808080) : 0x808080;
     this.defaultColor = [color1, color2];
-    this.positions = positions;
     this.color = this.defaultColor;
+    this.positions = positions;
     this.indices = indices;
     this.uuid = uuid;
 
-    // Calculate midpoint, direction, and length if positions are provided
-    if (positions.length >= 2) {
+    // Compute positions, direction, distance
+    if (positions.length === 2) {
       this.p1 = new THREE.Vector3().fromArray(positions[0]);
       this.p2 = new THREE.Vector3().fromArray(positions[1]);
       this.midpoint = new THREE.Vector3().addVectors(this.p1, this.p2).multiplyScalar(0.5);
-      this.direction = new THREE.Vector3().subVectors(this.p2, this.p1);
-      this.length = this.direction.length();
+      this.dir = new THREE.Vector3().subVectors(this.p2, this.p1);
+      this.dist = this.dir.length();
     } else {
-      this.midpoint = null;
-      this.direction = null;
-      this.length = null;
+      this.p1 = this.p2 = this.midpoint = this.dir = null;
+      this.dist = null;
     }
 
-    // Calculate bond visibility and geometry properties
-    if (elem1 && elem2 && dist !== null && dir && p1 && p2) {
-      function getAtomRadius(element) {
-        return (atomicRadii[element] || 1.0) * general.atomSize;
-      }
+    // Compute clipped bond geometry
+    if (elements.length >= 2 && this.dist !== null) {
+      this.r1 = getAtomRadius(elements[0]) * 0.8; // 0.8 scaling like before
+      this.r2 = getAtomRadius(elements[1]) * 0.8;
 
-      this.r1 = getAtomRadius(elem1) - 0.2 * getAtomRadius(elem1);
-      this.r2 = getAtomRadius(elem2) - 0.2 * getAtomRadius(elem2);
-      this.visibleLen = Math.max(dist - (this.r1 + this.r2), 0);
+      this.visibleLen = Math.max(this.dist - (this.r1 + this.r2), 0);
       this.halfLen = this.visibleLen * 0.5;
       this.radius = general.bondRadius;
 
       if (this.visibleLen > 1e-3) {
-        this.center1 = p1.clone().add(dir.clone().multiplyScalar(this.r1 + this.halfLen / 2));
-        this.center2 = p2.clone().add(dir.clone().multiplyScalar(-this.r2 - this.halfLen / 2));
+        const dirNorm = this.dir.clone().normalize();
+        this.center1 = this.p1.clone().add(dirNorm.clone().multiplyScalar(this.r1 + this.halfLen / 2));
+        this.center2 = this.p2.clone().add(dirNorm.clone().multiplyScalar(-this.r2 - this.halfLen / 2));
       } else {
-        this.center1 = null;
-        this.center2 = null;
+        this.center1 = this.center2 = null;
       }
     } else {
-      this.r1 = null;
-      this.r2 = null;
-      this.visibleLen = null;
-      this.halfLen = null;
-      this.radius = null;
-      this.center1 = null;
-      this.center2 = null;
+      // fallback if not enough info
+      this.r1 = this.r2 = this.visibleLen = this.halfLen = this.radius = null;
+      this.center1 = this.center2 = null;
     }
   }
+}
+
+// Helper outside class
+function getAtomRadius(element) {
+  return (atomicRadii[element] || 1.0) * general.atomSize;
 }
 

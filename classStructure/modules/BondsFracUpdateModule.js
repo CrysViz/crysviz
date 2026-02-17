@@ -2,6 +2,7 @@ import * as THREE from '../backend/three/three.module.js';
 import {allAtoms, bondLengths, app, groups, fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 
 import {Atom} from '../../classes/Atom.js';
+import {Bond} from '../../classes/Bond.js';
 
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
@@ -17,9 +18,42 @@ import {updateAtoms} from './AtomsFracUpdateModule.js'
 import {bondLengthToColor} from '../panels/ColorPanel.js'
 import {generateID} from './UUIDModule.js'
 import {periodic} from '../store.js'
+//import {getBondCutoff} from './BondsModule.js'
+//
+export function initBondsLengths(){
+  if (!fileBrowser.selectedStructure) {
+    console.warn("Could not init bonds!")
+    return;
+
+  }
+  let elements = [...fileBrowser.selectedStructure.elements];
+  const uniqueElements = [...new Set(elements)]; // there is a object variable for this!
+  const pairs = [];
+
+  // Generate all unique pairs
+  for (let i = 0; i < uniqueElements.length; i++) {
+    for (let j = i; j < uniqueElements.length; j++) {
+      const pair = uniqueElements[i] + '-' + uniqueElements[j];
+      pairs.push(pair);
+
+      if (!general.bondLengths[pair]) {
+        const defaultRadius = (atomicRadii[uniqueElements[i]] || 1.0) + (atomicRadii[uniqueElements[j]] || 1.0);
+        const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
+        general.bondLengths[pair] = defaultValue;
+        general.defaultBondLengths[pair] = defaultValue; // Store default
+      }
+
+      // Initialize bond visibility if not set
+      if (general.bondVisibility[pair] === undefined) {
+        general.bondVisibility[pair] = true;
+      }
+    }
+  }
+}
 
 
 export function rebuildBonds(opacity) {
+  initBondsLengths()
   if (groups.bondsMesh) {
     groups.bondsMesh.geometry.dispose();
     groups.bondsMesh.material.dispose();
@@ -27,309 +61,272 @@ export function rebuildBonds(opacity) {
     groups.bondssMesh = null;
   }
   console.log("Building bond objects");
-  buildBonds();
+  buildBondObjects(fileBrowser.selectedStructure)
   console.log("Rendering bond objects");
   renderBonds();
   console.log("Updating bond positions");
   updateBonds(opacity);
 }
 
+export function getBondCutoff(elem1, elem2) {
+  const pair1 = elem1 + '-' + elem2;
+  const pair2 = elem2 + '-' + elem1;
+  return general.bondLengths[pair1] || general.bondLengths[pair2] || 0.0;
+}
 
 export function buildBondObjects(structure){
-  wrappedFrac = periodic.wrapped.frac
-  wrappedCart = periodic.wrapped.cart
-  
+  structure.bonds = [];
+
+  const wrapped = structure.periodic.wrapped;
+  const wrappedCart = wrapped.cart;
+
   for (let i = 0; i < wrappedCart.length; i++) {
     for (let j = i + 1; j < wrappedCart.length; j++) {
 
       const ei = wrapped.elements[i];
-      const atomIndex_i = wrapped.srcIndex[i];
       const ej = wrapped.elements[j];
-      const atomIndex_j = wrapped.srcIndex[j];
-      const cutoff = getBondCutoff(elem1, elem2);
-      if (cutoff <= 0.01) return null;
 
-      p1 = new THREE.Vector3(...wrappedCart[i]);
-      p1 = new THREE.Vector3(...wrappedCart[j]);
-      const dist = distance(p1, p2);
-      if (dist > cutoff || dist < 0.005) return null;
+      const cutoff = getBondCutoff(ei, ej);
+      if (cutoff <= 0.01) {
+        console.log("Bond Cutoff too small for",ei,ej, cutoff)
+        continue;
+      }
+      const p1 = new THREE.Vector3(...wrappedCart[i]);
+      const p2 = new THREE.Vector3(...wrappedCart[j]);
 
-      let bond = new Bond({
-        elements: [ei,ej],
+      const dist = p1.distanceTo(p2);
+      if (dist > cutoff || dist < 0.005) {
+        // console.log("Skipping bond with dist",dist, "due to cutoff", cutoff)
+        continue;
+      }
+      const bond = new Bond({
+        elements: [ei, ej],
         length: dist,
-        positions: [p1,p2],
-        uuid: generateID(ei,ej),
-        indices: [[-1,-1]]
-        });
-
-      structure.bonds.push(bond)
+        positions: [p1.toArray(), p2.toArray()],
+        uuid: generateID([ei, ej]),
+        indices: [wrapped.srcIndex[i], wrapped.srcIndex[j]],
+      });
+      structure.bonds.push(bond);
     }
-  }    
+  }
+  console.warn(structure.bonds)
 }
 
 export function renderBonds() {
   const bonds = fileBrowser.selectedStructure.bonds;
-  const bondCount = bonds.length;
+  const validBonds = bonds.filter(b => b.visibleLen > 1e-3);
+  const bondCount = validBonds.length;
+  console.log("Rendering", bondCount, "bonds");
 
-  // Geometry: unit cylinder, scaled per instance
-  const geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 16, 1, false);
-  geometry.rotateX(Math.PI / 2);
+  // Geometry: unit cylinder along +Y
+  const geometry = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true);
 
-  // Material: for bonds
-  const bondVisSettings = getBondVisSettings();
+  // Material: copy atom material logic
+  const atomVisSettings = getAtomVisSettings();
   const material = new THREE.MeshPhysicalMaterial({
     transparent: false,
     opacity: 1.0,
-    roughness: bondVisSettings.roughness,
-    metalness: bondVisSettings.metalness,
-    clearcoat: bondVisSettings.clearcoat,
-    clearcoatRoughness: bondVisSettings.clearcoatRoughness,
-    vertexColors: true,
+    roughness: atomVisSettings.roughness,
+    metalness: atomVisSettings.metalness,
+    clearcoat: atomVisSettings.clearcoat,
+    clearcoatRoughness: atomVisSettings.clearcoatRoughness,
   });
 
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = `
-      attribute mat4 instanceMatrix;
-      attribute vec3 instanceColor1;
-      attribute vec3 instanceColor2;
       attribute vec4 instanceUUID;
-
-      varying vec3 vColor;
       varying vec4 vInstanceUUID;
+      attribute vec3 instanceEmissive;
+      attribute float instanceEmissiveIntensity;
+      attribute float instanceElementIndex;
+      varying vec3 vInstanceEmissive;
+      varying float vInstanceEmissiveIntensity;
+      varying float vInstanceElementIndex;
     ` + shader.vertexShader;
 
     shader.vertexShader = shader.vertexShader.replace(
       '#include <begin_vertex>',
       `
         #include <begin_vertex>
+        vInstanceEmissive = instanceEmissive;
+        vInstanceEmissiveIntensity = instanceEmissiveIntensity;
         vInstanceUUID = instanceUUID;
-
-        // Use the instance matrix for position and orientation
-        transformed = instanceMatrix * vec4(position, 1.0);
-
-        // Interpolate vertex color based on position along the bond (Y-axis)
-        vColor = mix(instanceColor1, instanceColor2, smoothstep(-1.0, 1.0, position.y));
+        vInstanceElementIndex = instanceElementIndex;
       `
     );
 
     shader.fragmentShader = `
-      varying vec3 vColor;
+      varying vec3 vInstanceEmissive;
+      varying float vInstanceEmissiveIntensity;
       varying vec4 vInstanceUUID;
+      varying float vInstanceElementIndex;
     ` + shader.fragmentShader;
 
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <emissivemap_fragment>',
       `
-        diffuseColor.rgb = vColor;
+        totalEmissiveRadiance += vInstanceEmissive * vInstanceEmissiveIntensity;
       `
     );
   };
 
-  // Instanced mesh for bonds
-  const mesh = new THREE.InstancedMesh(geometry, material, bondCount);
+  // Instanced mesh: 2 halves per bond
+  const mesh = new THREE.InstancedMesh(geometry, material, bondCount * 2);
 
-  // Initialize buffers for bond properties
-  const instanceMatrix = new THREE.InstancedBufferAttribute(new Float32Array(bondCount * 16), 16);
-  const instanceColor1 = new THREE.InstancedBufferAttribute(new Float32Array(bondCount * 3), 3);
-  const instanceColor2 = new THREE.InstancedBufferAttribute(new Float32Array(bondCount * 3), 3);
-  const instanceUUIDs = new THREE.InstancedBufferAttribute(new Float32Array(bondCount * 4), 4);
+  // Instance colors
+  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2*3), 3, false);
 
-  // Temporary objects for matrix calculations
+  // Emissive attributes
+  mesh.geometry.setAttribute(
+    'instanceEmissive',
+    new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2*3), 3)
+  );
+  mesh.geometry.setAttribute(
+    'instanceEmissiveIntensity',
+    new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2), 1)
+  );
+
+  // Element index per half (optional, can be 0 for all)
+  mesh.geometry.setAttribute(
+    'instanceElementIndex',
+    new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2), 1)
+  );
+
+  // UUIDs
+  const uuidAttr = new Float32Array(bondCount*2*4);
+  const encoder = new TextEncoder();
+  const paddedUUID = new Uint8Array(16);
+
   const dummy = new THREE.Object3D();
-  const matrix = new THREE.Matrix4();
 
-  // Store UUIDs
-  mesh.userData.uuids = [];
-  const uuidToIndex = new Map();
+  validBonds.forEach((bond, i) => {
+    if (!bond.center1 || !bond.center2) return;
 
-  bonds.forEach((bond, bondIndex) => {
-    const pos1 = new THREE.Vector3().fromArray(bond.positions[0]);
-    const pos2 = new THREE.Vector3().fromArray(bond.positions[1]);
+    const dirNorm = bond.dir.clone().normalize();
 
-    // Calculate bond midpoint and orientation
-    const midPoint = new THREE.Vector3().addVectors(pos1, pos2).multiplyScalar(0.5);
-    const direction = new THREE.Vector3().subVectors(pos2, pos1);
-    const length = direction.length();
-
-    // Set up dummy object for matrix calculation
-    dummy.position.copy(midPoint);
-    dummy.scale.set(bond.diameter || 0.1, length / 2, bond.diameter || 0.1);
-    if (length > 0) {
-      dummy.lookAt(pos2);
-    }
+    // ---- first half ----
+    dummy.position.copy(bond.center1);
+    dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
+    dummy.lookAt(bond.center1.clone().add(dirNorm));
+    dummy.rotateX(Math.PI / 2);
     dummy.updateMatrix();
-    matrix.copy(dummy.matrix);
+    mesh.setMatrixAt(i*2 , dummy.matrix);
 
-    // Set instance matrix
-    instanceMatrix.set(matrix.elements, bondIndex * 16);
+    // color
+    mesh.instanceColor.setXYZ(i*2,
+      new THREE.Color(bond.color[0]).r,
+      new THREE.Color(bond.color[0]).g,
+      new THREE.Color(bond.color[0]).b
+    );
 
-    // Set bond colors (no blending)
-    const color1 = new THREE.Color().setHex(bond.color[0]);
-    const color2 = new THREE.Color().setHex(bond.color[1]);
-    instanceColor1.setXYZ(bondIndex, color1.r, color1.g, color1.b);
-    instanceColor2.setXYZ(bondIndex, color2.r, color2.g, color2.b);
+    // emissive
+    mesh.geometry.attributes.instanceEmissive.setXYZ(i*2, 0, 0, 0);
+    mesh.geometry.attributes.instanceEmissiveIntensity.setX(i*2, 0);
+    mesh.geometry.attributes.instanceElementIndex.setX(i*2, 0);
 
-    // Encode UUID
-    const cleanedUUID = bond.uuid.replace(/-/g, '');
-    const encoder = new TextEncoder();
-    const encodedUUID = encoder.encode(cleanedUUID);
-    const padded = new Uint8Array(16);
-    padded.set(encodedUUID.subarray(0, 16));
-    const floatView = new Float32Array(padded.buffer);
-    instanceUUIDs.setXYZW(bondIndex, floatView[0], floatView[1], floatView[2], floatView[3]);
+    const uuid1 = `1${bond.uuid}`.replace(/-/g,'');
+    paddedUUID.fill(0);
+    paddedUUID.set(encoder.encode(uuid1).subarray(0,16));
+    uuidAttr.set(new Float32Array(paddedUUID.buffer), i*8+0);
 
-    mesh.userData.uuids.push(bond.uuid);
-    uuidToIndex.set(bond.uuid, bondIndex);
+    // ---- second half ----
+    dummy.position.copy(bond.center2);
+    dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
+    dummy.lookAt(bond.center2.clone().add(dirNorm));
+    dummy.rotateX(Math.PI / 2);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i*2 + 1, dummy.matrix);
+
+    // color
+    mesh.instanceColor.setXYZ(i*2 + 1,
+      new THREE.Color(bond.color[1]).r,
+      new THREE.Color(bond.color[1]).g,
+      new THREE.Color(bond.color[1]).b
+    );
+
+    // emissive
+    mesh.geometry.attributes.instanceEmissive.setXYZ(i*2+1, 0,0,0);
+    mesh.geometry.attributes.instanceEmissiveIntensity.setX(i*2+1, 0);
+    mesh.geometry.attributes.instanceElementIndex.setX(i*2+1, 0);
+
+    const uuid2 = `2${bond.uuid}`.replace(/-/g,'');
+    paddedUUID.fill(0);
+    paddedUUID.set(encoder.encode(uuid2).subarray(0,16));
+    uuidAttr.set(new Float32Array(paddedUUID.buffer), i*8+4);
   });
 
-  // Add attributes to the geometry
-  mesh.geometry.setAttribute('instanceMatrix', instanceMatrix);
-  mesh.geometry.setAttribute('instanceColor1', instanceColor1);
-  mesh.geometry.setAttribute('instanceColor2', instanceColor2);
-  mesh.geometry.setAttribute('instanceUUID', instanceUUIDs);
+  // Assign UUID attribute
+  mesh.geometry.setAttribute('instanceUUID', new THREE.InstancedBufferAttribute(uuidAttr, 4));
 
   // Mark buffers as dynamic
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  instanceColor1.setUsage(THREE.DynamicDrawUsage);
-  instanceColor2.setUsage(THREE.DynamicDrawUsage);
+  mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  mesh.instanceColor.needsUpdate = true;
 
-  // Add to scene & store reference
+  mesh.geometry.attributes.instanceEmissive.needsUpdate = true;
+  mesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
+  mesh.geometry.attributes.instanceElementIndex.needsUpdate = true;
+
+  // Add to scene
   app.scene.add(mesh);
   groups.bondsMesh = mesh;
 }
 
-export function updateBonds() {
-  const bonds = fileBrowser.selectedStructure.bonds;
-  const bondCount = bonds.length;
 
-  const instanceMatrix = groups.bondsMesh.geometry.attributes.instanceMatrix;
-  const instanceColor1 = groups.bondsMesh.geometry.attributes.instanceColor1;
-  const instanceColor2 = groups.bondsMesh.geometry.attributes.instanceColor2;
-
-  // Temporary objects for matrix calculations
+export function updateSingleBond(index, bond) {
+  const mesh = groups.bondsMesh;
   const dummy = new THREE.Object3D();
-  const matrix = new THREE.Matrix4();
+  const dirNorm = bond.dir.clone().normalize();
 
-  bonds.forEach((bond, bondIndex) => {
-    // Skip if bond is not visible
-    if (bond.visibleLen <= 1e-3) return;
+  // ---- first half ----
+  dummy.position.copy(bond.center1);
+  dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
+  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dirNorm); // precise alignment
+  dummy.updateMatrix();
+  mesh.setMatrixAt(index*2, dummy.matrix);
 
-    // Use precomputed midpoint and direction
-    const midPoint = bond.midpoint;
-    const direction = bond.direction;
-    const length = bond.visibleLen; // Use visible length for rendering
+  mesh.instanceColor.setXYZ(index*2,
+    new THREE.Color(bond.color[0]).r,
+    new THREE.Color(bond.color[0]).g,
+    new THREE.Color(bond.color[0]).b
+  );
 
-    // Default bond diameter if not provided
-    const diameter = bond.diameter || 0.1;
+  mesh.geometry.attributes.instanceEmissive.setXYZ(index*2, 0,0,0);
+  mesh.geometry.attributes.instanceEmissiveIntensity.setX(index*2, 0);
+  mesh.geometry.attributes.instanceElementIndex.setX(index*2, 0);
 
-    // Set up dummy object for matrix calculation
-    dummy.position.copy(midPoint);
-    dummy.scale.set(diameter, length / 2, diameter);
-    if (length > 0) {
-      dummy.lookAt(direction.clone().add(midPoint));
-    }
-    dummy.updateMatrix();
-    matrix.copy(dummy.matrix);
+  // ---- second half ----
+  dummy.position.copy(bond.center2);
+  dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
+  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dirNorm);
+  dummy.updateMatrix();
+  mesh.setMatrixAt(index*2 + 1, dummy.matrix);
 
-    // Update instance matrix
-    instanceMatrix.set(matrix.elements, bondIndex * 16);
+  mesh.instanceColor.setXYZ(index*2 + 1,
+    new THREE.Color(bond.color[1]).r,
+    new THREE.Color(bond.color[1]).g,
+    new THREE.Color(bond.color[1]).b
+  );
 
-    // Update bond colors (use default if not provided)
-    const color1 = new THREE.Color().setHex(bond.color[0] || bond.defaultColor[0]);
-    const color2 = new THREE.Color().setHex(bond.color[1] || bond.defaultColor[1]);
-    instanceColor1.setXYZ(bondIndex, color1.r, color1.g, color1.b);
-    instanceColor2.setXYZ(bondIndex, color2.r, color2.g, color2.b);
+  mesh.geometry.attributes.instanceEmissive.setXYZ(index*2 + 1, 0,0,0);
+  mesh.geometry.attributes.instanceEmissiveIntensity.setX(index*2 + 1, 0);
+  mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, 0);
+}
+
+export async function updateBonds() {
+  const bonds = fileBrowser.selectedStructure.bonds.filter(b => b.visibleLen > 1e-3);
+  const mesh = groups.bondsMesh;
+
+  bonds.forEach((bond, i) => {
+    updateSingleBond(i, bond);
   });
 
-  // Mark attributes as needing update
-  instanceMatrix.needsUpdate = true;
-  instanceColor1.needsUpdate = true;
-  instanceColor2.needsUpdate = true;
-}
-
-
-function updateSingleBondPosition(bondIndex, pos1, pos2) {
-  const bond = fileBrowser.selectedStructure.bonds[bondIndex];
-  const instanceMatrix = groups.bondsMesh.geometry.attributes.instanceMatrix;
-  const dummy = new THREE.Object3D();
-  const matrix = new THREE.Matrix4();
-
-  // Update the bond's positions and recalculate midpoint and direction
-  bond.positions = [pos1.toArray(), pos2.toArray()];
-  bond.p1 = pos1;
-  bond.p2 = pos2;
-  bond.midpoint = new THREE.Vector3().addVectors(pos1, pos2).multiplyScalar(0.5);
-  bond.direction = new THREE.Vector3().subVectors(pos2, pos1);
-  bond.length = bond.direction.length();
-
-  // Use precomputed midpoint and direction
-  const midPoint = bond.midpoint;
-  const direction = bond.direction;
-  const length = bond.visibleLen || bond.length; // Use visible length if available
-
-  // Default bond diameter if not provided
-  const diameter = bond.diameter || 0.1;
-
-  // Set up dummy object for matrix calculation
-  dummy.position.copy(midPoint);
-  dummy.scale.set(diameter, length / 2, diameter);
-  if (length > 0) {
-    dummy.lookAt(direction.clone().add(midPoint));
-  }
-  dummy.updateMatrix();
-  matrix.copy(dummy.matrix);
-
-  // Update instance matrix
-  instanceMatrix.set(matrix.elements, bondIndex * 16);
-  instanceMatrix.needsUpdate = true;
-}
-
-
-function updateSingleBondColor(bondIndex, color1, color2) {
-  const instanceColor1 = groups.bondsMesh.geometry.attributes.instanceColor1;
-  const instanceColor2 = groups.bondsMesh.geometry.attributes.instanceColor2;
-
-  // Update bond colors
-  const bond = fileBrowser.selectedStructure.bonds[bondIndex];
-  bond.color = [color1, color2];
-
-  const c1 = new THREE.Color().setHex(color1);
-  const c2 = new THREE.Color().setHex(color2);
-
-  instanceColor1.setXYZ(bondIndex, c1.r, c1.g, c1.b);
-  instanceColor2.setXYZ(bondIndex, c2.r, c2.g, c2.b);
-
-  instanceColor1.needsUpdate = true;
-  instanceColor2.needsUpdate = true;
-}
-
-
-function updateSingleBondDiameter(bondIndex, diameter) {
-  const bond = fileBrowser.selectedStructure.bonds[bondIndex];
-  const instanceMatrix = groups.bondsMesh.geometry.attributes.instanceMatrix;
-  const dummy = new THREE.Object3D();
-  const matrix = new THREE.Matrix4();
-
-  // Update bond diameter
-  bond.diameter = diameter;
-
-  // Use precomputed midpoint and direction
-  const midPoint = bond.midpoint;
-  const direction = bond.direction;
-  const length = bond.visibleLen || bond.length; // Use visible length if available
-
-  // Set up dummy object for matrix calculation
-  dummy.position.copy(midPoint);
-  dummy.scale.set(diameter, length / 2, diameter);
-  if (length > 0) {
-    dummy.lookAt(direction.clone().add(midPoint));
-  }
-  dummy.updateMatrix();
-  matrix.copy(dummy.matrix);
-
-  // Update instance matrix
-  instanceMatrix.set(matrix.elements, bondIndex * 16);
-  instanceMatrix.needsUpdate = true;
+  // mark all attributes as needing update
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.instanceColor.needsUpdate = true;
+  mesh.geometry.attributes.instanceEmissive.needsUpdate = true;
+  mesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
+  mesh.geometry.attributes.instanceElementIndex.needsUpdate = true;
+  mesh.material.needsUpdate = true;
 }
 
