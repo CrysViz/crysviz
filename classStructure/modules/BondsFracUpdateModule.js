@@ -26,8 +26,11 @@ export function rebuildBonds(opacity) {
     app.scene.remove(groups.bondsMesh);
     groups.bondssMesh = null;
   }
+  console.log("Building bond objects");
   buildBonds();
+  console.log("Rendering bond objects");
   renderBonds();
+  console.log("Updating bond positions");
   updateBonds(opacity);
 }
 
@@ -63,9 +66,6 @@ export function buildBondObjects(structure){
     }
   }    
 }
-
-
-
 
 export function renderBonds() {
   const bonds = fileBrowser.selectedStructure.bonds;

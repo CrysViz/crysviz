@@ -200,7 +200,7 @@ export function periodicWrapped(periodic, frac, elements, lattice) {
             // Add ghost atom
             newElements.push(ej);
             newFcrds.push(candidateFrac);
-            newCcrds.push(candidateCart)
+            newCcrds.push([candidateCart.x, candidateCart.y, candidateCart.z]);
             newSrcIndex.push(j);
             ghostAdded.add(gkey);
           }
@@ -250,7 +250,6 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
     let bondLenghts = general.bondLengths
     let showPBCBonds = general.showPBCBonds
     let showPeriodic = general.showPeriodic
-    console.log("elements",elements)
 
     const map = new Map([
       ["frac", frac],

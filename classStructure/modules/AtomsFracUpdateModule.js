@@ -75,9 +75,18 @@ export function rebuildAtoms(opacity) {
     app.scene.remove(groups.atomsMesh);
     groups.atomsMesh = null;
   }
+  console.log("Rebuilding periodic")
+  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
+  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+  let elements = [...fileBrowser.selectedStructure.elements];
+  let _ = runPeriodicWrapped(fileBrowser.selectedStructure.periodic, positions, elements,lattice)
+
+  console.log("Building atoms")
   buildAtoms();
-  updateAtoms(opacity);
-}
+  console.log("updating atoms")
+  let ok = updateAtoms(opacity);
+  console.log("status updateAtoms", ok)
+ }
 
 export function buildAtoms() {
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
@@ -86,13 +95,10 @@ export function buildAtoms() {
   let atoms=fileBrowser.selectedStructure.atoms
   //perdic.wrapped
 
-  let wrapped = runPeriodicWrapped(fileBrowser.selectedStructure.periodic, positions, elements,lattice).wrapped
-  console.warn("wrapped",wrapped)
-  console.warn(fileBrowser.selectedStructure.periodic)
-
-
+  let wrapped = fileBrowser.selectedStructure.periodic.wrapped
 
   const atomCount = wrapped.elements.length;
+  console.log("Building mesh for",atomCount,"atoms")
 
   // Geometry: unit sphere, scaled per instance
   const geometry = new THREE.SphereGeometry(1, 32, 24);
@@ -163,8 +169,8 @@ export function buildAtoms() {
   const uuidToIndex = new Map();
 
   wrapped.elements.forEach((element, index) => {
-    console.log("index",index)
-    console.log("srcIndex",wrapped.srcIndex)
+    //console.log("index",index)
+    //console.log("srcIndex",wrapped.srcIndex)
     const atom = atoms[wrapped.srcIndex[index]];
     mesh.userData.uuids.push(atom.uuid);
     uuidToIndex.set(atom.uuid, index);
@@ -230,11 +236,15 @@ export function buildAtoms() {
 
 
 export function updateSingleAtomPosition(index, position) {
+  //console.log("Updatng atom",index,"to",position)
   const a = groups.atomsMesh.instanceMatrix.array;
   const mOffset = index * 16;
   a[mOffset + 12] = position[0];
   a[mOffset + 13] = position[1];
   a[mOffset + 14] = position[2];
+
+ // console.log("Matrix array length:", groups.atomsMesh.instanceMatrix.array.length);
+ // console.log("Expected length:", 16 * groups.atomsMesh.count);
 }
 
 export function updateSingleAtomColor(originalIndex, index, element, opacity = 1.0) {
@@ -268,7 +278,6 @@ export async function updateAtoms(opacity = 1.0) {
   let wrappedCart;
 
   wrapped = periodic.wrapped
-  console.log(wrapped)
   wrappedCart = wrapped.cart
 
   for (let i = 0; i < groups.atomsMesh.count; i++) {
@@ -288,5 +297,7 @@ export async function updateAtoms(opacity = 1.0) {
   groups.atomsMesh.instanceMatrix.needsUpdate = true;
   groups.atomsMesh.instanceColor.needsUpdate = true;
   groups.atomsMesh.material.needsUpdate = true;
+  
 }
+
 
