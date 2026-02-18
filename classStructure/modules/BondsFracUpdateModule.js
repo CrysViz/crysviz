@@ -53,7 +53,7 @@ export function initBondsLengths(){
 
 
 export function rebuildBonds(opacity) {
-  initBondsLengths()
+  initBondsLengths() // this needs to be called once in general. Otherwise the sliders do nothing
   if (groups.bondsMesh) {
     groups.bondsMesh.geometry.dispose();
     groups.bondsMesh.material.dispose();
@@ -66,6 +66,7 @@ export function rebuildBonds(opacity) {
   renderBonds();
   console.log("Updating bond positions");
   updateBonds(opacity);
+  groups.bondsMesh.visible = true;
 }
 
 export function getBondCutoff(elem1, elem2) {

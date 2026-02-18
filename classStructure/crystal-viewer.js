@@ -910,7 +910,10 @@ function clearLongPress() {
   // Control handlers
   document.getElementById('showBonds').onchange = (e) => {
     general.showBonds = e.target.checked;
-    updateVisualization();
+    if (groups.bondsMesh) {
+      groups.bondsMesh.visible = general.showBonds
+      updateVisualization();
+    }
   };
 
     // Control handlers

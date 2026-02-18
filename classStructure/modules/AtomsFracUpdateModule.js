@@ -66,6 +66,27 @@ export function updateAtomByUUID(mesh, uuid, newPosition, newColor) {
 //
 //
 //
+export function hideBond(index) {
+  const mesh = groups.bondsMesh;
+  const a = mesh.instanceMatrix.array;
+
+  for (let half = 0; half < 2; half++) {
+    const i = index*2 + half;
+    const mOffset = i * 16;
+
+    // identity scale
+    a[mOffset + 0] = 1;
+    a[mOffset + 5] = 1;
+    a[mOffset + 10] = 1;
+
+    // move far away
+    a[mOffset + 12] = 1e9;
+    a[mOffset + 13] = 1e9;
+    a[mOffset + 14] = 1e9;
+  }
+
+  mesh.instanceMatrix.needsUpdate = true;
+}
 
 
 export function rebuildAtoms(opacity) {
