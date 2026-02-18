@@ -946,7 +946,7 @@ function clearLongPress() {
   if (PBCBondToggle) {
       PBCBondToggle.onchange = (e) => {
       general.showPBCBonds = e.target.checked;
-      updateVisualization({reRenderAtoms:true});  
+      updateVisualization({reRenderAtoms:true, reRenderBonds:true});  
     };
   }
 
@@ -954,7 +954,7 @@ function clearLongPress() {
   if (showPeriodicToggle) {
     showPeriodicToggle.onchange = (e) => {
       general.showPeriodic = e.target.checked;
-      updateVisualization({reRenderAtoms:true});
+      updateVisualization({reRenderAtoms:true, reRenderBonds:true});
     };
   }
 
