@@ -1,5 +1,6 @@
 import { fileBrowser } from '../store.js';
 import { updateVisualization } from '../crystal-viewer.js';
+import { updateAtoms } from '../modules/AtomsFracUpdateModule.js'
 
 function symbolCase(sym) {
   const s = String(sym ?? '').trim();
@@ -75,8 +76,7 @@ function deformationFromStress(stress, cellStep, targetPressureEvA3 = 0) {
     }
   }
 
-  // Drive toward target isotropic stress sigma_target = -P_target * I
-  // so the update acts on (sigma - sigma_target) = (sigma + P_target * I).
+  //the update acts on (sigma - sigma_target) = (sigma + P_target * I).
   for (let i = 0; i < 3; i += 1) {
     sym[i][i] += targetPressureEvA3;
   }
@@ -127,7 +127,7 @@ export function maxForce(forces) {
 }
 
 export function pressureFromStress(stress) {
-  // Pressure convention: P = -trace(stress)/3
+  // Pressure conventio -trace(stress)/3 - not sure if this is right but the cell moves in the right direction
   return -(stress[0][0] + stress[1][1] + stress[2][2]) / 3.0;
 }
 
