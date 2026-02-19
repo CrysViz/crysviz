@@ -1,6 +1,6 @@
 import { fileBrowser } from '../store.js';
 import { updateVisualization } from '../crystal-viewer.js';
-import { updateAtoms } from '../modules/AtomsFracUpdateModule.js'
+import { runPeriodicWrapped } from '../modules/LatticeModule.js';
 
 function symbolCase(sym) {
   const s = String(sym ?? '').trim();
@@ -156,7 +156,21 @@ export function applyStructureToViewer(nepStruct, structure = fileBrowser.select
   structure.atoms.forEach((atom, i) => {
     atom.position = [...frac[i]];
   });
-  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: true, reRenderComposition: false }); //todo florian : Please implement the fancy render here.
+
+  if (!structure.periodic) {
+    structure.periodic = { hash: 'None', wrapped: null };
+  }
+  runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
+
+  updateVisualization({
+    atomsUpdate: true,
+    bondsUpdate: true,
+    reRenderAtoms: false,
+    reRenderBonds: false,
+    reRenderLattice: true,
+    reRenderOther: false,
+    reRenderComposition: false,
+  });
 }
 
 function nextFrame() {
