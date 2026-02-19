@@ -912,7 +912,7 @@ function clearLongPress() {
     general.showBonds = e.target.checked;
     if (groups.bondsMesh) {
       groups.bondsMesh.visible = general.showBonds
-      updateVisualization();
+  //    updateVisualization();
     }
   };
 
