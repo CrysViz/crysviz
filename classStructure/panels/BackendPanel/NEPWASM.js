@@ -6,6 +6,15 @@ import {
   maxForce,
   pressureGPaFromStress,
 } from '../../atomistic/relaxer.js';
+import {
+  initializeMDState,
+  runMDSimulation,
+  applyMDStateToViewer,
+  createMDMonitorPanel,
+  createNEPForceEvaluator,
+  createVelocityVerletIntegrator,
+  createVelocityRescaleThermostat,
+} from '../../atomistic/MD.js';
 import { updateForces } from '../../modules/ForceModule.js';
 import { updateRow } from '../FileBrowswerPanel.js';
 import { Atom } from '../../classes/Atom.js';
@@ -97,9 +106,20 @@ export async function addNEPPanel() {
           target P (GPa)
           <input type="number" id="nepTargetPressureInput" value="0.0" step="0.1" style="width:90px;" />
         </label>
+      </div>
+      <hr style="margin:12px 0; border-color:#444;" />
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="calcButton" id="nepMDStartBtn" disabled>Run MD</button>
+        <button class="calcButton" id="nepMDStopBtn" disabled>Stop MD</button>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap;">
         <label style="display:flex; align-items:center; gap:6px;">
-          save traj
-          <input type="checkbox" id="nepSaveTrajInput" checked />
+          MD steps
+          <input type="number" id="nepMDStepsInput" value="500" step="50" min="1" style="width:80px;" />
+        </label>
+        <label style="display:flex; align-items:center; gap:6px;">
+          target T (K)
+          <input type="number" id="nepMDTempInput" value="300" step="10" min="1" style="width:90px;" />
         </label>
       </div>
       <p id="nepStatus" style="margin-top:10px;"></p>
@@ -109,11 +129,16 @@ export async function addNEPPanel() {
 
   const runBtn = document.getElementById('nepRunBtn');
   const relaxBtn = document.getElementById('nepRelaxBtn');
+  const mdStartBtn = document.getElementById('nepMDStartBtn');
+  const mdStopBtn = document.getElementById('nepMDStopBtn');
   const maxStepsInput = document.getElementById('nepMaxStepsInput');
   const targetPressureInput = document.getElementById('nepTargetPressureInput');
-  const saveTrajInput = document.getElementById('nepSaveTrajInput');
+  const mdStepsInput = document.getElementById('nepMDStepsInput');
+  const mdTempInput = document.getElementById('nepMDTempInput');
   const status = document.getElementById('nepStatus');
   const result = document.getElementById('nepResult');
+  let mdStopRequested = false;
+  let mdRunning = false;
 
   try {
     await initNEP();
@@ -121,10 +146,12 @@ export async function addNEPPanel() {
     runBtn.textContent = 'Get Forces + Stress';
     runBtn.disabled = false;
     relaxBtn.disabled = false;
+    mdStartBtn.disabled = false;
   } catch (err) {
     status.textContent = `NEP init failed: ${err.message || String(err)}`;
     runBtn.textContent = 'Initialization failed';
     relaxBtn.disabled = true;
+    mdStartBtn.disabled = true;
     return;
   }
 
@@ -148,13 +175,14 @@ export async function addNEPPanel() {
       const cellStep = 0.002;
       const maxSteps = Number(maxStepsInput.value || 200);
       const targetPressureGPa = Number(targetPressureInput.value || 0.0);
-      const saveTrajectory = !!saveTrajInput.checked;
+      const saveTrajectory = true;
       const stride = 1;
       const container = structureShip.container[fileBrowser.selectedRowIndex];
       const row = fileBrowser.selectedRow;
 
       runBtn.disabled = true;
       relaxBtn.disabled = true;
+      mdStartBtn.disabled = true;
       status.textContent = `Relaxing... target fmax=${fmaxTol.toFixed(3)} eV/A, target P=${targetPressureGPa.toFixed(2)} GPa`;
 
       const nepStruct = buildNEPStructure(nepRunner, fileBrowser.selectedStructure);
@@ -203,7 +231,100 @@ export async function addNEPPanel() {
     } finally {
       runBtn.disabled = false;
       relaxBtn.disabled = false;
+      mdStartBtn.disabled = false;
     }
+    })();
+  };
+
+  mdStopBtn.onclick = () => {
+    mdStopRequested = true;
+    status.textContent = 'Stopping MD after current step...';
+  };
+
+  mdStartBtn.onclick = () => {
+    (async () => {
+      if (mdRunning) return;
+      let monitor = null;
+      try {
+        mdRunning = true;
+        mdStopRequested = false;
+
+        const mdSteps = Number(mdStepsInput.value || 500);
+        const targetTemperatureK = Number(mdTempInput.value || 300);
+        const dtFs = 1.0;
+        const container = structureShip.container[fileBrowser.selectedRowIndex];
+        const row = fileBrowser.selectedRow;
+
+        runBtn.disabled = true;
+        relaxBtn.disabled = true;
+        mdStartBtn.disabled = true;
+        mdStopBtn.disabled = false;
+        status.textContent = `MD running... dt=${dtFs.toFixed(2)} fs, Ttarget=${targetTemperatureK.toFixed(1)} K`;
+
+        monitor = createMDMonitorPanel();
+        const forceEvaluator = createNEPForceEvaluator(nepRunner);
+        const integrator = createVelocityVerletIntegrator();
+        const thermostat = createVelocityRescaleThermostat({ targetTemperatureK, tauFs: 20 });
+        const state = await initializeMDState({
+          nepRunner,
+          structure: fileBrowser.selectedStructure,
+          temperatureTargetK: targetTemperatureK,
+          forceEvaluator,
+        });
+
+        const mdRun = await runMDSimulation({
+          state,
+          steps: mdSteps,
+          dtFs,
+          forceEvaluator,
+          integrator,
+          thermostat,
+          shouldStop: () => mdStopRequested,
+          onStep: ({ step, timeFs, temperatureK, epotEv, ekinEv, etotEv, state: mdState }) => {
+            const forceRerender = step % 5 === 0;
+            applyMDStateToViewer(mdState, fileBrowser.selectedStructure, { forceRerender });
+            setCurrentEFS({
+              forces: mdState.forces,
+              stress: { matrix3x3: mdState.stress },
+            });
+
+            if (container) {
+              container.structures.push(snapshotCurrentStructure());
+            }
+
+            const nAtoms = Math.max(1, mdState.positions.length);
+            const ePerAtom = epotEv / nAtoms;
+            const mF = maxForce(mdState.forces);
+            result.textContent = `MD step ${step}: E/atom=${ePerAtom.toFixed(6)} eV, max|F|=${mF.toFixed(5)} eV/A`;
+            status.textContent = `MD t=${timeFs.toFixed(1)} fs | T=${temperatureK.toFixed(1)} K`;
+            monitor.update({ step, temperatureK, etotEv, epotEv, ekinEv });
+          },
+        });
+
+        if (container && row) {
+          const n = container.structures.length;
+          updateRow(row, {
+            name: container.fileName,
+            traj: n,
+            step: n,
+          });
+        }
+
+        if (mdRun.stopped) {
+          status.textContent = `MD stopped at step ${state.step}`;
+        } else {
+          status.textContent = `MD finished at step ${state.step}`;
+        }
+      } catch (err) {
+        result.textContent = `MD failed: ${err.message || String(err)}`;
+      } finally {
+        mdRunning = false;
+        mdStopRequested = false;
+        runBtn.disabled = false;
+        relaxBtn.disabled = false;
+        mdStartBtn.disabled = false;
+        mdStopBtn.disabled = true;
+      }
     })();
   };
 }
