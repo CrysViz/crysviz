@@ -1,15 +1,19 @@
-
 import {groups,highlightHover,fileBrowser} from '../store.js';
 import {collapseAllAtomExpansions} from '../panels/WindowAndSceneControls.js';
 import {updateBondControlPanel} from '../panels/StructureInfoPanel/Bonds.js';
 import * as THREE from '../backend/three/three.module.js';
 import {updateAtoms} from './AtomsFracUpdateModule.js'
+import {updateBonds} from './BondsFracUpdateModule.js'
 import InstanceMeshManager from '../classes/InstanceMeshManager.js'
 import {getUUIDFromGeometry} from './AtomsFracUpdateModule.js'
 
 export function clearHighlightAtom() {
   updateAtoms(1.0)
 } 
+
+export function clearHighlightBond() {
+  updateBonds(1.0)
+}
 
 
 export function highlightAtomIn3D(index) {
@@ -31,15 +35,21 @@ export function highlightAtomIn3D(index) {
 }
 
 
+export function highlightBondIn3D(indexList) {
+  // Clear previous 3D highlight
+  clearHighlightBond();
 
-export function HighlightBond(m, hex){
-  if(!m || !m.material) return;
-  if(m.userData._origEmissive===undefined){
-    m.userData._origEmissive = m.material.emissive.getHex();
-    m.userData._origEmissiveInt = m.material.emissiveIntensity || 0;
-  }
-  m.material.emissive.setHex(hex);
-  m.material.emissiveIntensity = 2.0; // MAXIMUM BLAZING GLOW!
+  // Update emissive color and intensity
+  indexList.forEach(index => {
+  groups.bondsMesh.geometry.attributes.instanceEmissive.setXYZ(index, 1, 0.549, 0);
+  groups.bondsMesh.geometry.attributes.instanceEmissiveIntensity.setX(index, 2.0);
+  groups.bondsMesh.setColorAt(index, new THREE.Color(0xFF8C00));
+    });  
+
+  // Mark attributes as needing update
+  groups.bondsMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
+  groups.bondsMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
+  groups.bondsMesh.instanceColor.needsUpdate = true;
 }
 
 
@@ -183,87 +193,10 @@ export function clearAllHighlights() {
     highlightHover.currentlyHighlightedRow.style.borderLeft = '';
     highlightHover.currentlyHighlightedRow = null;
   }
-
-  // Clear 3D highlight
-  if (highlightHover.currentlyHighlightedAtom) {
-    clearHighlightAtom(highlightHover.currentlyHighlightedAtom);
-    highlightHover.currentlyHighlightedAtom = null;
-  }
-   // Clear 3D bond highlight
-  if (highlightHover.currentlyHighlightedBond) {
-    clearHighlightBond(highlightHover.currentlyHighlightedBond);
-    highlightHover.currentlyHighlightedBond = [];
-    updateBondControlPanel();
-  }
+  clearHighlightBond();
+  clearHighlightAtom();
 }
 
 // Make clearAllHighlights available globally for manual clearing
 window.clearAtomHighlight = clearAllHighlights;
-
-export function highlightBondIn3D(bondMesh) {
-  const bondName = bondMesh.name;
-  const allHalves = [];
-  groups.bondsGroup.traverse((child) => {
-    if (child.name === bondName) {
-      allHalves.push(child);
-    }
-  });
-
-  // Clear previous bond or atom highlight
-  if (highlightHover.currentlyHighlightedBond) {
-    clearHighlightBond(highlightHover.currentlyHighlightedBond);
-  }
-   if (highlightHover.currentlyHighlightedAtom) {
-    clearAllHighlights();
-
-  }
-
-  // Apply highlight to all halves
-  allHalves.forEach((half) => {
-    half.userData._origEmissive = half.material.emissive.getHex();
-    half.userData._origEmissiveInt = half.material.emissiveIntensity;
-    half.material.emissive.setHex(0xFFB347); // Orange glow
-    half.material.emissiveIntensity = 1.5;
-    half.material.needsUpdate = true;
-  });
-  // Update the currently highlighted bond reference
-  highlightHover.currentlyHighlightedBond = allHalves; // or allHalves[0], if you prefer
-  updateBondControlPanel()
-}
-
-function clearHighlightBond(bondMesh) {
-  if (!bondMesh) return;
-  let bondName
-  if (bondMesh.length > 0){
-     bondName = bondMesh[0].name;
-  }
-  else {
-    bondName = bondMesh.name;
-  }
-  const allHalves = [];
-
-  // Use traverse to search recursively
-  groups.bondsGroup.traverse((child) => {
-    if (child.name === bondName) {
-      allHalves.push(child);
-    }
-  });
-
-  // Clear the highlight for all halves
-  allHalves.forEach((half) => {
-    if (!half || !half.material) return;
-
-    // Restore original emissive properties if they were saved
-    if (half.userData._origEmissive !== undefined) {
-      half.material.emissive.setHex(half.userData._origEmissive);
-      half.material.emissiveIntensity = half.userData._origEmissiveInt || 0;
-    } else {
-      // If no original emissive was saved, reset to default (no highlight)
-      half.material.emissive.setHex(0x000000);
-      half.material.emissiveIntensity = 0;
-    }
-
-    half.material.needsUpdate = true; // Ensure the material updates
-  });
-}
 

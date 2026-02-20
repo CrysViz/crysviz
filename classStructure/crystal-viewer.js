@@ -723,23 +723,31 @@ function init() {
 
   // Raycast against InstancedMesh objects
   const atomHits = raycaster.intersectObject(groups.atomsMesh);
+  const bondHits = raycaster.intersectObject(groups.bondsMesh);
 
+  let hit = null;
 
   // Handle atom hits
   if (atomHits.length > 0) {
-    const hit = atomHits[0];
+    hit = atomHits[0];
     console.log("Hit atom instance ID:", hit.instanceId);
     // You can now use hit.instanceId to identify the specific atom
   }
 
- const  bondHits = raycaster.intersectObjects(groups.bondsGroup.children, true);  
+  // Handle atom hits
+  if (bondHits.length > 0) {
+    hit = bondHits[0];
+    console.log("Hit Bond instance ID:", hit.instanceId);
+    // You can now use hit.instanceId to identify the specific atom
+  }    
+
 
 
   // Raycast for bonds
   //const bondHits = raycaster.intersectObjects(groups.bondsGroup.children, true);
 
   if (atomHits.length > 0) {
-    const hit = atomHits[0];
+    hit = atomHits[0];
 
     //const element = atomMesh.userData.element;
     const sourceIndex = hit.instanceId
@@ -749,15 +757,18 @@ function init() {
     highlightAtomIn3D(sourceIndex);
 
   } else if (bondHits.length > 0) {
-    const hit = bondHits[0];
-    const bondMesh = hit.object;
-    if (bondMesh.userData.isGhost) return;
-
-    const bondIndex = bondMesh.userData.sourceIndex; // or similar, depending on your data structure
-
+    let id2;
+    console.log(hit.instanceId%2)
+    if (hit.instanceId%2 == 0){
+      id2 = hit.instanceId+1
+    }
+    else{
+      id2 = hit.instanceId-1
+    }
+    console.log("Hit atom instance ID:", hit.instanceId,id2);
     //highlightBondInStructurePanel(bondIndex);
-    highlightBondIn3D(bondMesh);
-    highlightBondInfoInStructurePanel()
+    highlightBondIn3D([hit.instanceId,id2]);
+    //highlightBondInfoInStructurePanel()
 
 
   }
