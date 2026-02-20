@@ -2,7 +2,7 @@ import { fileBrowser } from '../store.js';
 import { updateVisualization } from '../crystal-viewer.js';
 import { runPeriodicWrapped } from '../modules/LatticeModule.js';
 import { buildNEPStructure } from './relaxer.js';
-import { transpose3x3, invert3x3, matVec } from './math.js';
+import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart } from './math.js';
 
 const KB_EV_PER_K = 8.617333262e-5;
 const ACCEL_AFS2_PER_EVAA_AMU = 0.00964853399;
@@ -38,6 +38,15 @@ function gaussianRand() {
 
 function clone3xN(a) {
   return a.map((r) => [...r]);
+}
+
+function wrap01(x) {
+  return ((x % 1) + 1) % 1;
+}
+
+function wrapCartesianPositionsToCell(positions, lattice) {
+  const frac = cartToFrac(positions, lattice).map((f) => [wrap01(f[0]), wrap01(f[1]), wrap01(f[2])]);
+  return fracToCart(frac, lattice);
 }
 
 function kineticEnergyEv(velocities, masses) {
@@ -108,6 +117,7 @@ export function createVelocityVerletIntegrator() {
         state.positions[i][1] += dtFs * state.velocities[i][1];
         state.positions[i][2] += dtFs * state.velocities[i][2];
       }
+      state.positions = wrapCartesianPositionsToCell(state.positions, state.lattice);
 
       const efs = await forceEvaluator({
         lattice: state.lattice,

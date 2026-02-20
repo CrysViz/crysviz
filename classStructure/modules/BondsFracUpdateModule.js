@@ -66,12 +66,16 @@ export function rebuildBonds(opacity) {
   renderBonds();
   console.log("Updating bond positions");
   updateBonds(opacity);
-  groups.bondsMesh.visible = true;
+  if (groups.bondsMesh) {
+    groups.bondsMesh.visible = !!general.showBonds;
+  }
 }
 
 export function getBondCutoff(elem1, elem2) {
   const pair1 = elem1 + '-' + elem2;
   const pair2 = elem2 + '-' + elem1;
+  const isVisible = general.bondVisibility[pair1] !== false && general.bondVisibility[pair2] !== false;
+  if (!isVisible) return 0.0;
   return general.bondLengths[pair1] || general.bondLengths[pair2] || 0.0;
 }
 
@@ -315,8 +319,12 @@ export function updateSingleBond(index, bond) {
 }
 
 export async function updateBonds() {
-  const bonds = fileBrowser.selectedStructure.bonds.filter(b => b.visibleLen > 1e-3);
   const mesh = groups.bondsMesh;
+  if (!mesh) return;
+  mesh.visible = !!general.showBonds;
+  if (!general.showBonds) return;
+
+  const bonds = fileBrowser.selectedStructure.bonds.filter(b => b.visibleLen > 1e-3);
 
   bonds.forEach((bond, i) => {
     updateSingleBond(i, bond);
@@ -330,4 +338,3 @@ export async function updateBonds() {
   mesh.geometry.attributes.instanceElementIndex.needsUpdate = true;
   mesh.material.needsUpdate = true;
 }
-

@@ -119,9 +119,6 @@ export function applyStructureToViewer(nepStruct, structure = fileBrowser.select
     atom.position = [...frac[i]];
   });
 
-  if (!structure.periodic) {
-    structure.periodic = { hash: 'None', wrapped: null };
-  }
   runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
 
   updateVisualization({

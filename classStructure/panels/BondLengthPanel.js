@@ -83,7 +83,11 @@ export function createBondLengthControls(targetPanel='bondControls') {
     checkbox.checked = general.bondVisibility[pair];
     checkbox.onchange = (e) => {
       general.bondVisibility[pair] = e.target.checked;
-      updateVisualization({reRenderOther: false, reRenderComposition: false});
+      updateVisualization({
+        reRenderBonds: true,
+        reRenderOther: false,
+        reRenderComposition: false,
+      });
     };
 
     const checkboxLabel = document.createElement('label');
@@ -157,7 +161,11 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
       slider.value = val;
       textInput.value = val;
-      updateVisualization({reRenderOther: false, reRenderComposition: false});
+      updateVisualization({
+        reRenderBonds: true,
+        reRenderOther: false,
+        reRenderComposition: false,
+      });
     }
 
     slider.oninput = (e) => updateValue(e.target.value);
