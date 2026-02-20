@@ -18,7 +18,7 @@ export function clearHighlightBond() {
 
 export function highlightAtomIn3D(index) {
   // Clear previous 3D highlight
-  clearHighlightAtom();
+  clearAllHighlights()
 
   // Update emissive color and intensity
   groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(index, 1, 0.549, 0);
@@ -37,7 +37,7 @@ export function highlightAtomIn3D(index) {
 
 export function highlightBondIn3D(indexList) {
   // Clear previous 3D highlight
-  clearHighlightBond();
+  clearAllHighlights()
 
   // Update emissive color and intensity
   indexList.forEach(index => {
