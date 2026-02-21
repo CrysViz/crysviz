@@ -1,5 +1,5 @@
 import * as THREE from '../backend/three/three.module.js';
-import {allAtoms, bondLengths, app, groups, fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import {allAtoms, bondLengths, app, groups, fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 
 import {Atom} from '../../classes/Atom.js';
 import {Bond} from '../../classes/Bond.js';
@@ -127,14 +127,14 @@ export function renderBonds() {
   const geometry = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true);
 
   // Material: copy atom material logic
-  const atomVisSettings = getAtomVisSettings();
+  const bondVisSettings = getBondVisSettings()
   const material = new THREE.MeshPhysicalMaterial({
     transparent: false,
     opacity: 1.0,
-    roughness: atomVisSettings.roughness,
-    metalness: atomVisSettings.metalness,
-    clearcoat: atomVisSettings.clearcoat,
-    clearcoatRoughness: atomVisSettings.clearcoatRoughness,
+    roughness: bondVisSettings.roughness,
+    metalness: bondVisSettings.metalness,
+    clearcoat: bondVisSettings.clearcoat,
+    clearcoatRoughness: bondVisSettings.clearcoatRoughness,
   });
 
   material.onBeforeCompile = (shader) => {

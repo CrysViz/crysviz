@@ -1,7 +1,7 @@
 import * as THREE from '../backend/three/three.module.js'
-import { general, app } from '../store.js';
+import { general, groups, app, getAtomVisSettings, getBondVisSettings } from '../store.js';
 import { switchCameraType } from '../panels/WindowAndSceneControls.js';
-import { updateBonds} from '../modules/BondsModule.js'
+import { updateBonds} from '../modules/BondsFracUpdateModule.js'
 import { updateAtoms} from '../modules/AtomsFracUpdateModule.js'
 
 
@@ -230,9 +230,24 @@ export function addColorPanel(target = "colorContainer") {
 
   content.appendChild(matteToggle);
 
-  matteCheckbox.addEventListener("change", () => {
+  matteCheckbox.addEventListener("change", () => 
+    {
     general.matte = !general.matte;
-    updateAtoms();
+    let atomVisSettings = getAtomVisSettings();
+    groups.atomsMesh.material.clearcoatRoughness = atomVisSettings.clearcoatRoughness
+    groups.atomsMesh.material.clearcout =          atomVisSettings.clearcoat;
+    groups.atomsMesh.material.metalness =          atomVisSettings.metalness;  
+    groups.atomsMesh.material.roughness =          atomVisSettings.roughness;
+    groups.atomsMesh.material.needsUpdate = true;
+    //updateAtoms();
+    let bondsVisSettings = getBondVisSettings();
+    groups.bondsMesh.material.clearcoatRoughness = bondsVisSettings.clearcoatRoughness
+    groups.bondsMesh.material.clearcout =          bondsVisSettings.clearcoat;
+    groups.bondsMesh.material.metalness =          bondsVisSettings.metalness;
+    groups.bondsMesh.material.roughness =          bondsVisSettings.roughness;
+
+
+    groups.bondsMesh.material.needsUpdate = true;
     updateBonds();
   });
 
