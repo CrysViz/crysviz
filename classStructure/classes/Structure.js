@@ -42,6 +42,7 @@ export class Structure {
     polyhedra = null,
     colors = [],
     periodic = {}, // Accept periodic as an input
+    volumetricFields = null,
   } = {}) {
     // Mutable instance properties
     this.elements = elements;
@@ -62,8 +63,8 @@ export class Structure {
 
     // Build bond objects if not provided
     this.bonds = bonds
-
-    // Create an immutable snapshot of the original data
+    this.volumetricFields = volumetricFields;
+        // Create an immutable snapshot of the original data
     this.original = deepFreeze({
       elements: [...elements],
       supercell: { ...supercell },

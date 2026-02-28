@@ -12,7 +12,7 @@ export function removeSpinPanel() {
   }
 }
 
-export function addSpinPanel(target = "SpinForceContainer") {
+export function addSpinPanel(target = "SpinForceFieldContainer") {
   const targetPanel = document.getElementById(target);
   if (document.getElementById("spinControlsGroup")) {
     console.warn("Spin Controls already exist.");

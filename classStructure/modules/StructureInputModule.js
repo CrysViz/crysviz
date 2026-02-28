@@ -101,8 +101,7 @@ function elementFromLabel(label) {
   return match ? match[1] : null;
 }
 
-
-export  function parsePOSCAR(content,fileName) {
+export function readPOSCAR(content, fileName) {
   const lines = content.trim().split('\n').filter(l => l.trim());
   let i = 0;
 
@@ -185,10 +184,22 @@ export  function parsePOSCAR(content,fileName) {
   uniqueElements: elementLine,
   lattice: lattice,
   atoms: atoms,
-  periodic: periodic
+  periodic: periodic,
+  volumetricFields:null
   });
 
+  return structure
+}
 
+
+export  function parsePOSCAR(content, fileName) {
+  
+  const structure = readPOSCAR(content, fileName);
+
+  initializeWithPOSCAR(structure, fileName);  
+}
+
+export function initializeWithPOSCAR(structure, fileName) {
   const container = new StructureContainer({
     fileName: fileName,
     structures: [structure],
@@ -661,15 +672,17 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
 
       const fileName = file.name.toLowerCase();
       const isStructureFile = fileName.includes('poscar') ||
-                              fileName.includes('contcar') ||
-                              fileName.endsWith('.vasp') ||
-                              fileName.endsWith('.poscar') ||
-                              fileName === 'poscar' ||
-                              fileName === 'contcar' ||
-                              fileName.endsWith('.cif')||
-                              fileName.endsWith('.vasp.out') ||
-                              fileName === 'outcar' ||
-                              fileName.includes('outcar');
+                        fileName.includes('contcar') ||
+                        fileName.endsWith('.vasp') ||
+                        fileName.endsWith('.poscar') ||
+                        fileName === 'poscar' ||
+                        fileName === 'contcar' ||
+                        fileName.endsWith('.cif')||
+                        fileName.endsWith('.vasp.out') ||
+                        fileName === 'outcar' ||
+                        fileName.includes('outcar') ||
+                        fileName.endsWith('.cube') || 
+                        fileName.includes('chgcar'); 
 
       if (!isStructureFile) {
         console.warn('Selected file may not be a structure file:', file.name);

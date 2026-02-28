@@ -13,7 +13,7 @@ export function removeForcePanel() {
   }
 }
 
-export function addForcePanel(target = "SpinForceContainer") {
+export function addForcePanel(target = "SpinForceFieldContainer") {
   const targetPanel = document.getElementById(target);
   if (document.getElementById("forceControlsGroup")) {
     console.warn("Force Controls already exist.");

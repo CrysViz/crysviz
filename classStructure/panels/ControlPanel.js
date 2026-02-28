@@ -7,7 +7,8 @@ import { removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
 import {createSpinControls,addSpinPanel,removeSpinPanel} from './SpinPanel.js';
 import {addForcePanel,removeForcePanel} from './ForcePanel.js';
 import {addBondPanel,removeBondPanel} from './BondPanel.js';
-import {addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel} from './LatticeSupercellPanel.js'
+import {addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
+import {addFieldPanel, removeFieldPanel} from './FieldPanel.js';
 import {updateVisualization} from '../crystal-viewer.js';
 
 
@@ -65,6 +66,7 @@ export function addControlPanelSpinForceSwitch() {
     if (general.spinForceState == "Forces") {
       removeSpins();
       removeSpinPanel()
+      removeFieldPanel();
       addForcePanel()
       updateForces();
       }
@@ -74,19 +76,22 @@ export function addControlPanelSpinForceSwitch() {
       createSpinControls();
       updateSpins();
       removeForcePanel();
+      removeFieldPanel();
       removeForces()
         }
     else if (general.spinForceState == "Field") {
-      // add vectorFieldPanel();
-      removeSpinPanel()
+      removeSpinPanel();
       removeForcePanel();
-      removeForces()
+      removeForces();
+      removeSpins();
+      addFieldPanel();
         }
     else {
       //removeForces
       removeSpins();
       removeSpinPanel();
       removeForcePanel();
+      removeFieldPanel();
       removeForces()
       //remove  vectorFieldPanel();
     }

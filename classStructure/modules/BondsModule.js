@@ -169,7 +169,6 @@ export function updateBonds() {
    }
 
   let wrapped;
-
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
   let elements = [...fileBrowser.selectedStructure.elements];
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);

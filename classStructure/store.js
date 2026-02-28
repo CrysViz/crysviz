@@ -63,7 +63,10 @@ export const groups = {
   spinGroup:null,
   atomsMesh: null,
   bondsMesh: null,
-}
+  fieldMeshPos: null,
+  fieldMeshNeg: null,
+  activeField: null,
+};
 
 
 export const general = {  

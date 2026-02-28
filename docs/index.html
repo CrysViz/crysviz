@@ -166,6 +166,25 @@
         </div>
       </div>
 
+      <!-- Field controls group -->
+      <div id="fieldControlsGroup" style="display: none;">
+        <div id="fieldPanel">
+          <div id="fieldToggle" class="field-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="fieldControlsContent">
+            <h4>Field Controls</h4>
+            <div id="fieldToggleIcon" class="toggle-icon">+</div>
+          </div>
+
+          <div id="fieldControlsContent" class="collapsible-content" aria-hidden="true">
+            
+            <div id="resetFieldWrapper" class="bottonWrapper" aria-hidden="true">
+              <button id="deleteField" class="reset-btn">Delete Field</button>
+            </div>
+
+            <div id="fieldControls"></div>
+          </div>
+        </div>
+      </div>
+
     </div>
     <div id="view"></div>
 
@@ -423,6 +442,40 @@
         const toggle = document.getElementById('spinToggle');
         const icon = document.getElementById('spinToggleIcon');
         const content = document.getElementById('spinControlsContent');
+
+        if (!toggle || !icon || !content) return;
+
+        function setOpen(open) {
+          if (open) {
+            content.classList.add('open');
+            content.setAttribute('aria-hidden', 'false');
+            icon.textContent = '−';
+            toggle.setAttribute('aria-expanded', 'true');
+          } else {
+            content.classList.remove('open');
+            content.setAttribute('aria-hidden', 'true');
+            icon.textContent = '+';
+            toggle.setAttribute('aria-expanded', 'false');
+          }
+        }
+
+        setOpen(false);
+        toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
+        toggle.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setOpen(!content.classList.contains('open'));
+          }
+        });
+      });
+    </script>
+
+    <script>
+      // Field control script. default is closed!
+      document.addEventListener('DOMContentLoaded', function() {
+        const toggle = document.getElementById('fieldToggle');
+        const icon = document.getElementById('fieldToggleIcon');
+        const content = document.getElementById('fieldControlsContent');
 
         if (!toggle || !icon || !content) return;
 

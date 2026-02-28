@@ -71,6 +71,8 @@ import {highlightBondInfoInStructurePanel,clearHighlightAtom,highlightBondIn3D,h
 import {addVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
 import {addCameraPanel} from './panels/CameraPanel.js'
 import {addColorPanel} from './panels/ColorPanel.js'
+
+import { updateField, parseCHGCARFile, parseCubeFile } from './modules/Render3DFieldModule.js';
 //import {addAtomPanel} from './modules/addToStructureModule/addAtomPanel.js'
 
 // .........................................................................................................
@@ -120,6 +122,7 @@ import {Structure} from './classes/Structure.js'
 // New imports (which go here, because they need initializations that happen above until things are refactored)
 import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from './modules/io.js';
 import { initializeUIOnLoad } from './modules/StructureInputModule.js';
+import { fieldBrowser } from './panels/FieldPanel.js';
 
 // ........................................................................................................
 //
@@ -323,7 +326,8 @@ export function updateVisualization(options = {}) {
     reRenderComposition = false,
 
     sOpactiy = general.secondOpacity,
-    mOpacity = general.mainOpacity
+    mOpacity = general.mainOpacity,
+    reRenderField = false
   } = options;
 
   if (!fileBrowser.selectedStructure) {
@@ -355,6 +359,9 @@ export function updateVisualization(options = {}) {
   }
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
   if (reRenderOther) updateOther();
+  if (reRenderField && fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
+    updateField();
+  }
 }
 
 async function loadStructure(content, fileName = '', isDefault = false) {
@@ -363,6 +370,14 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     console.log("")
     const lower = (fileName || '').toLowerCase();
     const contentString = typeof content === 'string' ? content : '';
+    
+    // Add these new file type detections
+    const treatAsCube = lower.endsWith('.cube') ||
+                       lower.includes('.cube');
+                       
+    const treatAsCHGCAR = lower.includes('chgcar') ||
+                         lower.endsWith('.chgcar');
+
     const treatAsCIF = lower.endsWith('.cif') ||
                       lower.includes('.cif') ||
                       /(^|\W)cif(\W|$)/.test(lower) ||
@@ -389,8 +404,16 @@ async function loadStructure(content, fileName = '', isDefault = false) {
      const treatAsPWSCFin = lower.endsWith(".scf.in") ||
                             lower.endsWith(".vcrx.in");
 
+    if (treatAsCube) {
+      console.log("This is probably a CUBE file");
+      await parseCubeFile(contentString, fileName);
+    }
+    else if (treatAsCHGCAR) {
+      console.log("This is probably a CHGCAR file"); 
+      await parseCHGCARFile(contentString, fileName);
+    }
 
-    if (treatAsCIF || treatAsmagCIF) {
+    else if (treatAsCIF || treatAsmagCIF) {
         console.log("This is probably a CIF or magCIF file")
         const structureContainer = await parse_any(contentString,fileName);
         initializeUIOnLoad(structureContainer);
