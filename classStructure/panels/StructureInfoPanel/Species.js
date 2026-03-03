@@ -130,13 +130,13 @@ export function createCompositionRow(el, count, total) {
     atomIndices.forEach(atomIndex => {
       fileBrowser.selectedStructure.atomImages[atomIndex].forEach(imageIndex => {
         fileBrowser.selectedStructure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
-          console.log(bondHalvIndex)
           updateSingleBondColor(bondHalvIndex, hex)
           //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)
         });
       });
     });  
     groups.atomsMesh.instanceColor.needsUpdate = true;
+    groups.bondsMesh.instanceColor.needsUpdate = true;
 
 
 
@@ -312,15 +312,14 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
     //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)
     //
     ////FIXME: this needs to also update the atoms
-    console.log("atomIndex",atomIndex, "bondMap",fileBrowser.selectedStructure.bondMapping[atomIndex])
     fileBrowser.selectedStructure.atomImages[atomIndex].forEach(imageIndex => {
       fileBrowser.selectedStructure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
-        console.log(bondHalvIndex)
         updateSingleBondColor(bondHalvIndex, hex)
         //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)    
       });
     });  
     groups.atomsMesh.instanceColor.needsUpdate = true;
+    groups.bondsMesh.instanceColor.needsUpdate = true;
 
     dot.style.background = hex;
       if (ok) {

@@ -293,18 +293,16 @@ export function renderBonds() {
   groups.bondsMesh = mesh;
 }
 
-
+// change the color of a bond "half  cylinder" with index bondMeshIndex to color "color" (hex)
 export function updateSingleBondColor(bondMeshIndex, color) {
   const mesh = groups.bondsMesh;
-  console.log("Color value:", color, typeof color);
-  // First half color
   mesh.instanceColor.setXYZ(
     bondMeshIndex,
     new THREE.Color(color).r,
     new THREE.Color(color).g,
     new THREE.Color(color).b
   );
-  mesh.instanceColor.needsUpdate = true;
+  //mesh.instanceColor.needsUpdate = true;
 }
 
 
@@ -329,24 +327,34 @@ export function updateSingleBondPosition(index, bond) {
   mesh.setMatrixAt(index * 2 + 1, dummy.matrix);
 }
 
-export function updateSingleBondDiameter(index, bond) {
+export function updateSingleBondDiameter(instanceIndex, newRadius) {
   const mesh = groups.bondsMesh;
   const dummy = new THREE.Object3D();
-  const dirNorm = bond.dir.clone().normalize();
 
-  // First half diameter
-  dummy.position.copy(bond.center1);
-  dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
-  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirNorm);
-  dummy.updateMatrix();
-  mesh.setMatrixAt(index * 2, dummy.matrix);
+  // Get the current matrix for the instance
+  const matrix = new THREE.Matrix4();
+  mesh.getMatrixAt(instanceIndex, matrix);
 
-  // Second half diameter
-  dummy.position.copy(bond.center2);
-  dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
-  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirNorm);
+  // Decompose the matrix to extract position, rotation, and scale
+  const position = new THREE.Vector3();
+  const rotation = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  matrix.decompose(position, rotation, scale);
+
+  // Update only the x and z components of the scale (diameter)
+  scale.set(newRadius, scale.y, newRadius);
+
+  // Recompose the matrix with the updated scale
+  dummy.position.copy(position);
+  dummy.quaternion.copy(rotation);
+  dummy.scale.copy(scale);
   dummy.updateMatrix();
-  mesh.setMatrixAt(index * 2 + 1, dummy.matrix);
+
+  // Set the updated matrix back to the instance
+  mesh.setMatrixAt(instanceIndex, dummy.matrix);
+
+  // Flag the mesh for update
+  mesh.instanceMatrix.needsUpdate = true;
 }
 
 

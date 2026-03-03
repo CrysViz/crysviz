@@ -54,10 +54,10 @@ import { createColorPicker } from './modules/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
 import {getBondCutoff} from './modules/BondsModule.js'
-import {updateBonds,rebuildBonds,buildBondObjects} from './modules/BondsFracUpdateModule.js'
+import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter} from './modules/BondsFracUpdateModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
-import {rebuildAtoms,updateAtoms} from './modules/AtomsFracUpdateModule.js';
+import {rebuildAtoms,updateAtoms,updateSingleAtomDiameter} from './modules/AtomsFracUpdateModule.js';
 import {createSupercell} from './modules/SuperCellModule.js';
 import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,
         getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,
@@ -981,8 +981,14 @@ setupStructureInput({
   document.getElementById('atomSize').oninput = (e) => {
     general.atomSize = parseFloat(e.target.value);
     document.getElementById('atomSizeValue').textContent = general.atomSize.toFixed(1);
-    updateVisualization();
+    fileBrowser.selectedStructure.elements.forEach((element, index) => {
+      fileBrowser.selectedStructure.atomImages[index].forEach(imageIndex => { 
+        updateSingleAtomDiameter(imageIndex, element)
+       });
+    });
+    groups.atomsMesh.instanceMatrix.needsUpdate = true;
     updateMeasurementMarkers(); // Update ring markers when atom size changes
+
   };
 
 // former slider to compare two structure. Should be added to new panel
@@ -1028,7 +1034,13 @@ setupStructureInput({
       // clamp defensively
       general.bondRadius = Math.max(0.005, Math.min(1.0, isNaN(v) ? bondRadius : v));
       bondWidthValue.textContent = general.bondRadius.toFixed(2);
-      updateVisualization();
+      for (let i = 0; i < groups.bondsMesh.count; i++) {
+        updateSingleBondDiameter(i,  general.bondRadius)
+        //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)
+       }
+      groups.bondsMesh.instanceColor.needsUpdate = true;
+
+      //updateVisualization();
     };
   }
 
