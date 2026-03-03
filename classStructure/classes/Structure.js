@@ -41,6 +41,8 @@ export class Structure {
     stress = null,
     polyhedra = null,
     colors = [],
+    bondMapping = {},
+    atomImages = {},
     periodic = {}, // Accept periodic as an input
   } = {}) {
     // Mutable instance properties
@@ -55,8 +57,10 @@ export class Structure {
     this.stress = stress;
     this.polyhedra = polyhedra;
     this.colors = colors;
+    this.bondMapping={};
     this.bonds = bonds;           // list of bonds
     this.periodic = periodic;     // Initialize periodic
+    this.atomImages = {};
 
     // Calculate periodic wrapped positions for atoms in-place
 

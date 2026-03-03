@@ -22,7 +22,7 @@ export class Atom extends ColoredObject {
     this.defaultColor = colorScheme[element] || 0x808080;
     // Current mutable colors
     this.color = this.defaultColor;
-    this.uuid = uuid
+    this.uuid = uuid;
     // Create an immutable snapshot of the original data
     this.original = Object.freeze({
       element:element,

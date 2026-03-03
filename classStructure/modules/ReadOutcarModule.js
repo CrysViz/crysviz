@@ -268,13 +268,15 @@ function findLastIonsPerType(lines) {
 
 function findUniqueElements(lines) {
   const out = [];
-  const re = /POTCAR:\s+[A-Za-z0-9_]+\s+([A-Za-z][a-z]?)\s+/i;
+  const re = /POTCAR:\s+[A-Za-z0-9_]+\s+([A-Za-z]{1,2})\s*.*/i;
   for (const line of lines) {
     const m = line.match(re);
     if (m && m[1] && !out.includes(m[1])) {
+      console.log(m)
       out.push(m[1]);
     }
   }
+  console.log(out)
   return out;
 }
 

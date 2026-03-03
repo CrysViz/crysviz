@@ -96,6 +96,7 @@ export function rebuildAtoms(opacity) {
     app.scene.remove(groups.atomsMesh);
     groups.atomsMesh = null;
   }
+  fileBrowser.selectedStructure.atomImages={}
   console.log("Rebuilding periodic")
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
@@ -114,6 +115,7 @@ export function buildAtoms() {
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   let elements = [...fileBrowser.selectedStructure.elements];
   let atoms=fileBrowser.selectedStructure.atoms
+  let structure = fileBrowser.selectedStructure
   //perdic.wrapped
 
   let wrapped = fileBrowser.selectedStructure.periodic.wrapped
@@ -205,6 +207,14 @@ export function buildAtoms() {
   const uuidByteLength = 16; // 16 bytes = 4 floats
   const uuidAttributeData = new Float32Array(atomCount * 4); // 4 floats per UUID
   wrapped.elements.forEach((element, index) => {
+    let key = wrapped.srcIndex[index]
+    if (!structure.atomImages[key]) {
+        structure.atomImages[key] = []; // Initialize with an empty array
+    }
+    structure.atomImages[key].push(index)
+
+
+
     const atom = atoms[wrapped.srcIndex[index]];
     const cleanedUUID = atom.uuid.replace(/-/g, '');
 

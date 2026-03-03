@@ -408,7 +408,7 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 
     else if (treatAsOUTCAR){
         console.log("This is probably an OUTCAR file");
-        parseOUTCAR(contentString,fileName);
+        await parseOUTCAR(contentString,fileName);
 
         if (fileBrowser.selectedStructure.spin != null) {
          addSpinPanel();
@@ -421,10 +421,6 @@ async function loadStructure(content, fileName = '', isDefault = false) {
       parsePOSCAR(contentString,fileName);
 
     }
-
-  // Ensure the fields exist and are the right typed arrays
-    //
-
 
 
     loadColorOverrides();
@@ -441,7 +437,7 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     //resetView();
     clearMeasure();
     resizeRenderer(app.orthographicFrustumSize);
-
+    console.warn("Loaded Structure:", fileBrowser.selectedStructure)
 
 
   } catch (error) {
@@ -905,11 +901,23 @@ function clearLongPress() {
   document.getElementById('viewC').onclick = () => {app.controls.reset(); const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
 
-  setupStructureInput({
-    onLoadStructure: (content, name) => loadStructure(content, name),
-    setStatus,
-  });
 
+setupStructureInput({
+  onLoadStructure: async (content, name) => {
+    setStatus('Loading structure...');
+    try {
+      // Wait for the structure to load
+      await loadStructure(content, name);
+      setStatus('Structure loaded!');
+    } catch (error) {
+      console.error('Error loading structure:', error);
+      setStatus('Error loading structure.');
+    }
+  },
+  setStatus,
+});
+
+ 
 //setupSecondStructureInput({
 //    onLoadStructure: (content, name) => loadSecondStructure(content, name),
 //    setStatus,

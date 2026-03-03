@@ -69,6 +69,7 @@ export function rebuildBonds(opacity) {
   if (groups.bondsMesh) {
     groups.bondsMesh.visible = !!general.showBonds;
   }
+  console.log(fileBrowser.selectedStructure)
 }
 
 export function getBondCutoff(elem1, elem2) {
@@ -81,6 +82,7 @@ export function getBondCutoff(elem1, elem2) {
 
 export function buildBondObjects(structure){
   structure.bonds = [];
+  structure.bondMapping ={};
 
   const wrapped = structure.periodic.wrapped;
   const wrappedCart = wrapped.cart;
@@ -109,7 +111,8 @@ export function buildBondObjects(structure){
         length: dist,
         positions: [p1.toArray(), p2.toArray()],
         uuid: generateID([ei, ej]),
-        indices: [wrapped.srcIndex[i], wrapped.srcIndex[j]],
+        srcIndices: [wrapped.srcIndex[i], wrapped.srcIndex[j]],
+        indices: [i, j]
       });
       structure.bonds.push(bond);
     }
@@ -118,6 +121,7 @@ export function buildBondObjects(structure){
 }
 
 export function renderBonds() {
+  const structure = fileBrowser.selectedStructure;
   const bonds = fileBrowser.selectedStructure.bonds;
   const validBonds = bonds.filter(b => b.visibleLen > 1e-3);
   const bondCount = validBonds.length;
@@ -217,6 +221,13 @@ export function renderBonds() {
     dummy.updateMatrix();
     mesh.setMatrixAt(i*2 , dummy.matrix);
 
+    let key = bond.indices[0];
+    if (!structure.bondMapping[key]) {
+        structure.bondMapping[key] = []; // Initialize with an empty array
+    }
+    structure.bondMapping[key].push(i * 2);    
+
+
     // color
     mesh.instanceColor.setXYZ(i*2,
       new THREE.Color(bond.color[0]).r,
@@ -241,6 +252,11 @@ export function renderBonds() {
     dummy.rotateX(Math.PI / 2);
     dummy.updateMatrix();
     mesh.setMatrixAt(i*2 + 1, dummy.matrix);
+    key = bond.indices[1];
+    if (!structure.bondMapping[key]) {
+        structure.bondMapping[key] = []; // Initialize with an empty array
+    }
+    structure.bondMapping[key].push(i * 2 + 1);
 
     // color
     mesh.instanceColor.setXYZ(i*2 + 1,
@@ -276,6 +292,64 @@ export function renderBonds() {
   app.scene.add(mesh);
   groups.bondsMesh = mesh;
 }
+
+
+export function updateSingleBondColor(bondMeshIndex, color) {
+  const mesh = groups.bondsMesh;
+  console.log("Color value:", color, typeof color);
+  // First half color
+  mesh.instanceColor.setXYZ(
+    bondMeshIndex,
+    new THREE.Color(color).r,
+    new THREE.Color(color).g,
+    new THREE.Color(color).b
+  );
+  mesh.instanceColor.needsUpdate = true;
+}
+
+
+
+export function updateSingleBondPosition(index, bond) {
+  const mesh = groups.bondsMesh;
+  const dummy = new THREE.Object3D();
+  const dirNorm = bond.dir.clone().normalize();
+
+  // First half position and orientation
+  dummy.position.copy(bond.center1);
+  dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
+  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirNorm);
+  dummy.updateMatrix();
+  mesh.setMatrixAt(index * 2, dummy.matrix);
+
+  // Second half position and orientation
+  dummy.position.copy(bond.center2);
+  dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
+  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirNorm);
+  dummy.updateMatrix();
+  mesh.setMatrixAt(index * 2 + 1, dummy.matrix);
+}
+
+export function updateSingleBondDiameter(index, bond) {
+  const mesh = groups.bondsMesh;
+  const dummy = new THREE.Object3D();
+  const dirNorm = bond.dir.clone().normalize();
+
+  // First half diameter
+  dummy.position.copy(bond.center1);
+  dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
+  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirNorm);
+  dummy.updateMatrix();
+  mesh.setMatrixAt(index * 2, dummy.matrix);
+
+  // Second half diameter
+  dummy.position.copy(bond.center2);
+  dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
+  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirNorm);
+  dummy.updateMatrix();
+  mesh.setMatrixAt(index * 2 + 1, dummy.matrix);
+}
+
+
 
 
 export function updateSingleBond(index, bond) {

@@ -6,6 +6,7 @@ import {colorHexToCss,hexToRgba,getElementColor,loadColorOverrides,loadIndividua
 
 import { createColorPicker } from '../../old_style/color-picker.js';
 import { updateBonds } from '../../modules/BondsModule.js'
+import { updateSingleBondColor } from '../../modules/BondsFracUpdateModule.js'
 import {createSupercell} from '../../modules/SuperCellModule.js';
 import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
 
@@ -112,10 +113,33 @@ export function createCompositionRow(el, count, total) {
   hexInput.style.cssText = 'width: 80px; height: 32px; padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0; box-sizing: border-box; vertical-align: top;';
 
   const mom_color = getElementDisplayColor(el);
+  let  atomIndices=[]
+  fileBrowser.selectedStructure.elements.forEach((element, index)=> {
+    if (element === el) {
+       atomIndices.push(index)
+    }
+  });
 
   const picker = createColorPicker(mom_color[0], (hex) => {
     clearAllIndividualColorsForElement(el);      // Clear old color overrides
     const ok = setElementColorOverride(el, hex); // Apply new color override
+
+
+
+    //FIXME: this needs to also update the atoms 
+    atomIndices.forEach(atomIndex => {
+      fileBrowser.selectedStructure.atomImages[atomIndex].forEach(imageIndex => {
+        fileBrowser.selectedStructure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
+          console.log(bondHalvIndex)
+          updateSingleBondColor(bondHalvIndex, hex)
+          //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)
+        });
+      });
+    });  
+    groups.atomsMesh.instanceColor.needsUpdate = true;
+
+
+
     dot.style.background = hex;
       if (ok) {
         updateVisualization({
@@ -283,15 +307,28 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   const mom_color = colorHexToCss(getIndividualAtomColor(element, atomIndex))
   const picker = createColorPicker(mom_color, (hex) => {
     const ok = setIndividualAtomColor(element, atomIndex, hex);
+
     //fileBrowser.selectedStructure.atoms[atomIndex].color = hex
     //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)
+    //
+    ////FIXME: this needs to also update the atoms
+    console.log("atomIndex",atomIndex, "bondMap",fileBrowser.selectedStructure.bondMapping[atomIndex])
+    fileBrowser.selectedStructure.atomImages[atomIndex].forEach(imageIndex => {
+      fileBrowser.selectedStructure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
+        console.log(bondHalvIndex)
+        updateSingleBondColor(bondHalvIndex, hex)
+        //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)    
+      });
+    });  
+    groups.atomsMesh.instanceColor.needsUpdate = true;
+
     dot.style.background = hex;
       if (ok) {
-        updateBonds()
+        //updateBonds()
         updateVisualization({
           bondsUpdate:false,
           reRenderAtoms: false,
-          reRenderBonds: true,
+          reRenderBonds: false,
           reRenderLattice: false,
           reRenderOther: false
         });

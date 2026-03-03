@@ -2,7 +2,7 @@
 
 by Abhijith S. Parackal and Florian Trybel
 
-Version 0.6 Beta 2026-01-06
+Version 0.7 Beta 2026-03-03
 
 ## This is the live developement repository. If you are not Abhijith, Rickard or Florian, you should not be here!
 
