@@ -942,11 +942,17 @@ function clearLongPress() {
  // loadSharedStructure();
 
   // Control handlers
+  document.getElementById('showAtoms').onchange = (e) => {
+    general.showAtoms = e.target.checked;
+    if (groups.atomsMesh) groups.atomsMesh.visible = general.showAtoms;
+  };
+
+  // Control handlers
   document.getElementById('showBonds').onchange = (e) => {
     general.showBonds = e.target.checked;
     if (groups.bondsMesh) {
-      groups.bondsMesh.visible = general.showBonds
-  //    updateVisualization();
+      groups.bondsMesh.visible = general.showBonds;
+  //  updateVisualization()
     }
   };
 

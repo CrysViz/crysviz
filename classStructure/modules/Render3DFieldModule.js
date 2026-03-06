@@ -317,7 +317,7 @@ function updateIsosurface(iso) {
 
   const mc = groups.fieldMeshPos;
   mc.isolation = iso;
-  mc.blur(1);
+  //mc.blur(1);
   mc.scale.set(1,1,1);
 
   mc.update();
@@ -331,7 +331,7 @@ function updateIsosurface(iso) {
     
     const mc2 = groups.fieldMeshNeg;
     mc2.isolation = -iso;
-    mc2.blur(1);
+    //mc2.blur(1);
     mc2.update();
 
     mc2.geometry.computeVertexNormals();

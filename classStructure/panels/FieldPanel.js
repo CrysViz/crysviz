@@ -1,5 +1,5 @@
-import { fileBrowser, app, general } from '../store.js';
-import { updateField } from '../modules/Render3DFieldModule.js';
+import { fileBrowser, app, general, groups } from '../store.js';
+import { updateField, setActiveField } from '../modules/Render3DFieldModule.js';
 import * as THREE from '../backend/three/three.module.js';
 
 /**
@@ -68,6 +68,7 @@ export const fieldBrowser = {
     if (this.availableFields.length > 0 && fieldIndex >= 0 && fieldIndex < this.availableFields.length) {
       this.selectedFieldIndex = fieldIndex;
       this.selectedField = this.availableFields[fieldIndex];
+      setActiveField(this.selectedField); // Update the active field in the Render3DFieldModule
       return true;
     }
     return false;
@@ -139,13 +140,6 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
     </div>
 
     <div class="control-group">
-      <label class="toggle_row toggle_container">
-        <span class="toggle_switch">
-          <input type="checkbox" id="ShowStructureToggle">
-          <span class="toggle_slider"></span>
-        </span>
-        <span class="toggle_text"> Show Structure</span>
-      </label>
       <label class="toggle_row toggle_container">
         <span class="toggle_switch">
           <input type="checkbox" id="FieldAbsoluteValueToggle">
@@ -254,11 +248,11 @@ export function removeFieldPanel(target = "SpinForceFieldContainer") {
 function setupFieldControlEvents(fields, container) {
   const slider = document.getElementById('isoSlider');
   const valueDisplay = document.getElementById('isoValue');
-  const showStructureCheckbox = document.getElementById('ShowStructureToggle');
   const absoluteValueCheckbox = document.getElementById('FieldAbsoluteValueToggle');
   const fieldToggles = document.querySelectorAll('.fieldToggle');
   const fieldPrimaryRadios = document.querySelectorAll('.fieldPrimary');
   const selectedFieldName = document.getElementById('selectedFieldName');
+
 
   function updateSliderRange() {
     if (!fieldBrowser.selectedField) return;
@@ -292,8 +286,8 @@ function setupFieldControlEvents(fields, container) {
 
   // Event listeners
 
-  // Iso-slider: update display, compute new iso value, re-render selected field
-  slider.addEventListener('input', function () {
+  // Iso-slider: update display, compute new iso value, re-render selected field on release
+  slider.addEventListener('change', function () {
     let sliderValue = parseFloat(slider.value);
     if (!fieldBrowser.selectedField) return;
 
@@ -312,13 +306,16 @@ function setupFieldControlEvents(fields, container) {
     }
   });
 
-  showStructureCheckbox.addEventListener('change', function() {
-    // Toggle atoms and bonds visibility
-    app.scene.traverse((obj) => {
-      if (obj.userData.isAtom || obj.userData.isBond) {
-        obj.visible = this.checked;
-      }
-    });
+  // slider input event: update text of slider value
+  slider.addEventListener('input', function () {
+    let sliderValue = parseFloat(slider.value);
+    if (!fieldBrowser.selectedField) return;
+
+    const isoValue = sliderToIsoValue(sliderValue, fieldBrowser.selectedField);
+
+    // Update the displayed value
+    valueDisplay.textContent = isoValue.toExponential(3);
+    fieldBrowser.selectedField.isoValue = isoValue; // Update the isoValue on the selected field for memory
   });
 
   //absoluteValueCheckbox.addEventListener('change', updateAllIsosurfaces);
@@ -329,6 +326,19 @@ function setupFieldControlEvents(fields, container) {
 
   // Initialize with first field visible
   //updateAllIsosurfaces();
+
+  // Primary field selection radios
+  fieldPrimaryRadios.forEach((radio) => {
+    radio.addEventListener('change', function() {
+      const fieldIndex = parseInt(this.dataset.fieldIndex);
+      if (fieldBrowser.setSelectedField(fieldIndex)) {
+        const isoValue = fieldBrowser.selectedField.isoValue || sliderToIsoValue(55, fieldBrowser.selectedField);
+        slider.value = isoValueToSlider(isoValue, fieldBrowser.selectedField);
+        valueDisplay.textContent = isoValue.toExponential(3);
+        updateField(isoValue);
+      }
+    });
+  });
 }
 
 export function updateFieldPanel() {

@@ -95,6 +95,7 @@ export const general = {
   structure2OpacityValue: 0.5,
   mainOpacity:1.0,
   secondOpacity:1.0,
+  showAtoms:true,
   showBonds:true,
   showLattice:true,
   showPolyhedra:false,

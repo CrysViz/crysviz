@@ -9,6 +9,9 @@ import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getEl
 export function updateAtoms(opacity=1.0) {
   disposeGroup(groups.atomsGroup);
   groups.atomsGroup = new THREE.Group();
+
+  if (!general.showAtoms) return;
+
   let wrapped;
   let wrappedCart;
 
