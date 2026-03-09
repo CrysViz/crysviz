@@ -55,7 +55,7 @@ import { pauseRendering, resumeRendering,animation_update} from './modules/Anima
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
 import {getBondCutoff} from './modules/BondsModule.js'
 import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter} from './modules/BondsFracUpdateModule.js'
-import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
+import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from './modules/LatticeModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
 import {rebuildAtoms,updateAtoms,updateSingleAtomDiameter} from './modules/AtomsFracUpdateModule.js';
 import {createSupercell} from './modules/SuperCellModule.js';

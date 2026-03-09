@@ -1,12 +1,11 @@
 import * as THREE from '../backend/three/three.module.js';
 import {allAtoms, bondLengths, app, groups, fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 
-import {Atom} from '../../classes/Atom.js';
-import {Bond} from '../../classes/Bond.js';
+import {Atom} from '../classes/Atom.js';
+import {Bond} from '../classes/Bond.js';
 
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
-import {cartToFractional } from '../old_style/structure-input.js';
 
 
 import {createAtomMesh} from './AtomsModule.js'
