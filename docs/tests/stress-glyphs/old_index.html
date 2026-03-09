@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Patel-style Stress Glyph</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body {margin:0; background:#111228; font-family:Arial,sans-serif; color:#fff; display:flex; justify-content:center; align-items:center; height:100vh;}
+#container {display:flex; gap:24px;}
+#canvas {width:600px; height:600px; background:#1b1f3f; border-radius:16px;}
+.panel {display:flex; flex-direction:column; gap:12px;}
+textarea {width:300px; height:120px; font-family:monospace; border-radius:12px; border:1px solid #555; padding:8px; background:#222; color:#fff;}
+button {padding:10px 20px; border:none; border-radius:999px; background:#4cc9f0; color:#08121f; font-weight:bold; cursor:pointer;}
+</style>
+</head>
+<body>
+<div id="container">
+  <div id="canvas"></div>
+  <div class="panel">
+    <h3>Stress Tensor (row-wise)</h3>
+    <textarea id="matrixInput">2,0,0,0,2,0,0,0,2</textarea>
+    <button id="updateButton">Update Glyph</button>
+    <p style="font-size:12px;">Enter symmetric 3x3 tensor. Red=tensile, Blue=compressive axes.</p>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+<script>
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1b1f3f);
+const camera = new THREE.PerspectiveCamera(45,1,0.1,100);
+camera.position.set(5,5,5);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(600,600);
+renderer.setPixelRatio(window.devicePixelRatio);
+document.getElementById('canvas').appendChild(renderer.domElement);
+const controls = new THREE.OrbitControls(camera,renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.AmbientLight(0xffffff,0.5));
+const key = new THREE.DirectionalLight(0xffffff,1.0); key.position.set(6,6,6); scene.add(key);
+const fill = new THREE.DirectionalLight(0xffffff,0.5); fill.position.set(-4,-2,-4); scene.add(fill);
+const glyph = new THREE.Group(); scene.add(glyph);
+
+/* Eigen decomposition for symmetric 3x3 */
+function eigenSym3(m){
+    let a=[[m[0],m[1],m[2]],[m[1],m[4],m[5]],[m[2],m[5],m[8]]];
+    let v=[[1,0,0],[0,1,0],[0,0,1]];
+    for(let k=0;k<25;k++){
+        let p=0,q=1; let max=Math.abs(a[0][1]);
+        if(Math.abs(a[0][2])>max){p=0;q=2;max=Math.abs(a[0][2]);}
+        if(Math.abs(a[1][2])>max){p=1;q=2;}
+        if(max<1e-12) break;
+        const phi=0.5*Math.atan2(2*a[p][q],a[q][q]-a[p][p]);
+        const c=Math.cos(phi), s=Math.sin(phi);
+        for(let i=0;i<3;i++){ let aip=a[i][p], aiq=a[i][q]; a[i][p]=c*aip-s*aiq; a[i][q]=s*aip+c*aiq;}
+        for(let i=0;i<3;i++){ let api=a[p][i], aqi=a[q][i]; a[p][i]=c*api-s*aqi; a[q][i]=s*api+c*aqi;}
+        for(let i=0;i<3;i++){ let vip=v[i][p], viq=v[i][q]; v[i][p]=c*vip-s*viq; v[i][q]=s*vip+c*viq;}
+    }
+    const vals=[a[0][0],a[1][1],a[2][2]];
+    const vecs=[
+        new THREE.Vector3(v[0][0],v[1][0],v[2][0]),
+        new THREE.Vector3(v[0][1],v[1][1],v[2][1]),
+        new THREE.Vector3(v[0][2],v[1][2],v[2][2])
+    ];
+    const idx=[0,1,2].sort((i,j)=>Math.abs(vals[j])-Math.abs(vals[i]));
+    return {values: idx.map(i=>vals[i]), vectors: idx.map(i=>vecs[i].normalize())};
+}
+
+/* Superquadric geometry with axis scaling */
+function superquadricGeometry(n1,n2,axes,eigenvalues){
+    const geom=new THREE.BufferGeometry();
+    const pos=[],color=[];
+    const U=64,V=40;
+    for(let i=0;i<=U;i++){
+        const u=i/U*2*Math.PI-Math.PI;
+        for(let j=0;j<=V;j++){
+            const w=j/V*Math.PI-Math.PI/2;
+            const cu=Math.cos(u), su=Math.sin(u);
+            const cw=Math.cos(w), sw=Math.sin(w);
+            const x = axes[0]*Math.sign(cu)*Math.pow(Math.abs(cu),2/n2)*Math.sign(cw)*Math.pow(Math.abs(cw),2/n1);
+            const y = axes[1]*Math.sign(su)*Math.pow(Math.abs(su),2/n2)*Math.sign(cw)*Math.pow(Math.abs(cw),2/n1);
+            const z = axes[2]*Math.sign(sw)*Math.pow(Math.abs(sw),2/n1);
+            pos.push(x,y,z);
+            const s = eigenvalues[0]>0 ? x : -x;
+            const t = eigenvalues[1]>0 ? y : -y;
+            const r = eigenvalues[2]>0 ? z : -z;
+            const colorVal = (x*x*eigenvalues[0]+y*y*eigenvalues[1]+z*z*eigenvalues[2])>=0 ? new THREE.Color(0xe74c3c) : new THREE.Color(0x3498db);
+            color.push(colorVal.r,colorVal.g,colorVal.b);
+        }
+    }
+    const idx=[];
+    for(let i=0;i<U;i++) for(let j=0;j<V;j++){
+        const A=i*(V+1)+j; const B=A+1; const C=(i+1)*(V+1)+j; const D=C+1;
+        idx.push(A,B,D,A,D,C);
+    }
+    geom.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    geom.setAttribute('color',new THREE.Float32BufferAttribute(color,3));
+    geom.setIndex(idx);
+    geom.computeVertexNormals();
+    return geom;
+}
+
+function createStressGlyph(m){
+    glyph.clear();
+
+    // Eigen decomposition
+    const {values, vectors} = eigenSym3(m);
+
+    // Axes lengths = absolute eigenvalues
+    const axes = values.map(v => Math.abs(v));
+
+    // Fixed exponent for smooth superquadric (sphere for hydrostatic)
+    const n1 = 2;
+    const n2 = 2;
+
+    // Create superquadric geometry
+    const geom = superquadricGeometry(n1, n2, axes, values);
+
+    // Mesh material with vertex colors
+    const mat = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        metalness: 0.3,
+        roughness: 0.4,
+        side: THREE.DoubleSide
+    });
+
+    const mesh = new THREE.Mesh(geom, mat);
+
+    // Rotate according to eigenvectors
+    const R = new THREE.Matrix4();
+    R.makeBasis(vectors[0], vectors[1], vectors[2]);
+    mesh.setRotationFromMatrix(R);
+
+    glyph.add(mesh);
+
+    // Axes helper
+    glyph.add(new THREE.AxesHelper(1.5));
+}
+
+
+
+
+createStressGlyph([2,0,0,0,2,0,0,0,2]);
+document.getElementById('updateButton').onclick=()=>{
+    const v=document.getElementById('matrixInput').value.trim().split(/[\s,]+/).map(Number).filter(Number.isFinite);
+    if(v.length===9) createStressGlyph(v); else alert('Need exactly 9 numeric values');
+};
+
+function animate(){requestAnimationFrame(animate); controls.update(); renderer.render(scene,camera);}
+animate();
+</script>
+</body>
+</html>
+

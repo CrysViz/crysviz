@@ -1,0 +1,222 @@
+.toggle_group {
+  display: flex;
+  margin-bottom: 10px;
+  flex-direction: column;
+}
+
+/* normal toggle rows */
+.toggle_row {
+  display: flex;
+  align-items: center;
+}
+
+/* toggle + text */
+.toggle_container {
+   margin: 15px 0px 0px 0px;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* text always to the RIGHT */
+.toggle_text {
+  white-space: nowrap;
+}
+
+/* toggle base */
+.toggle_switch {
+  position: relative;
+  width: 46px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+/* hide checkbox but keep logic */
+.toggle_switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+}
+
+/* track */
+.toggle_slider {
+  position: absolute;
+  inset: 0;
+  background-color: #ccc;
+  border-radius: 24px;
+  transition: background-color 0.25s;
+}
+
+/* knob */
+.toggle_slider::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+  background-color: #fff;
+  border-radius: 50%;
+  transition: transform 0.25s;
+}
+
+
+
+
+/* track */
+.toggle_slider_dual {
+  position: absolute;
+  inset: 0;
+  background-color: var(--highlight-color);
+  border-radius: 24px;
+  transition: background-color 0.25s;
+}
+
+/* knob */
+.toggle_slider_dual::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+  background-color: #fff;
+  border-radius: 50%;
+  transition: transform 0.25s;
+}
+
+/* checked */
+.toggle_switch input:checked + .toggle_slider {
+  background-color: var(--highlight-color);
+}
+
+.toggle_switch input:checked + .toggle_slider::before {
+  transform: translateX(22px);
+}
+
+
+/* checked */
+
+.toggle_switch input:checked + .toggle_slider_dual::before {
+  transform: translateX(22px);
+}
+
+/* camera */
+
+.camera_section {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* centers the title */
+  gap: 10px;
+  background: rgba(25,25,25,0.8);
+  border-radius: 10px;
+  margin: 15px 0px 5px 0px;
+}
+
+.camera_title {
+  font-weight: bold;
+  font-size: 1em;
+  text-align: center;
+  margin: 10px 0px -10px;
+    padding: 10px;
+  border-radius: 10px;
+}
+
+.camera_toggle {
+  display: flex;
+  align-items: center;
+  margin: 10px 0;
+}
+
+.camera_label,
+.camera_label_r,
+.camera_label-pnr {
+  display: inline-block;
+  width: 100px; /* Adjust width as needed */
+  text-align: center;
+  padding: 5px;
+  border-radius: 4px; /* Rounded corners */
+  margin: 0 10px;
+  font-size: 14px; /* Adjust font size as needed */
+  background:rgba(255,255,255,0.1);
+}
+
+
+
+.toggle_slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transition: .4s;
+  border-radius: 24px;
+}
+
+.toggle_slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+input:checked + .toggle_slider {
+  background-color: #2196F3;
+}
+
+input:checked + .toggle_slider:before {
+  transform: translateX(26px);
+}
+
+
+.colors_section {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* centers the title */
+  gap: 10px;
+    background: rgba(25,25,25,0.8);
+  border-radius: 10px;
+margin: 15px 0px 5px 0px;
+}
+
+.colors_title {
+  font-weight: bold;
+  font-size: 1em;
+  text-align: center;
+  margin: 10px 0px -10px;
+    padding: 10px;
+  border-radius: 10px;
+}
+
+
+.menus_wrapper {
+  justify-content: center;
+  display: flex;
+  gap: 20px; /* spacing between menus */
+}
+
+.menu_block {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* centers label above select */
+  margin: 0 0 20px 0px;
+}
+
+.menu_block label {
+  font-size: 0.85em;
+  margin-bottom: 5px; /* space below label */
+}
+
+.menu_block select {
+  min-width: 100px;
+  padding: 3px 5px;
+}
+

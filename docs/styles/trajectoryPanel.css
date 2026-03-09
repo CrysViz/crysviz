@@ -1,0 +1,48 @@
+
+    #TrajControlPanel {
+      position: fixed;
+      left: 430px;
+      top: 110px;
+      width: auto; min-width: 220px; max-width: 320px;
+      background: rgba(20, 20, 20, 0.85);
+      color: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      backdrop-filter: blur(6px);
+      overflow: hidden;
+      transition: height 0.3s ease;
+      display:inline;
+    }
+
+    .panelHeader {
+      background: rgba(255,255,255,0.08);
+      padding: 10px 12px;
+      font-weight: bold;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: move;
+      user-select: none;
+    }
+
+    .panelBody {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .controlsRow {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .control-button { background: #3a3a3a; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 18px; }
+    .control-button:hover { background: #555; }
+
+    select, input[type=number] { padding: 4px; border-radius: 6px; background: #3a3a3a; color: white; border: none; box-sizing: border-box; text-align: center; }
+
+    #toggleControls { position: fixed; top: 20px; right: 20px; }
+    #frameIndicator { text-align: center; font-size: 12px; margin-top: 6px; display: block; }

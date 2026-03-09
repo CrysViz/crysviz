@@ -1,0 +1,12 @@
+import init, { NEP89Wasm } from './pkg/nep89_rust.js';
+
+async function run() {
+    await init();
+    const weights = [/* your weights */];
+    const model = new NEP89Wasm(weights, 6.0, 4, 4);
+    const energy = model.predict_energy([/* descriptors */]);
+    const forces = model.compute_forces([/* positions */], [/* atom types */]);
+}
+
+run();
+

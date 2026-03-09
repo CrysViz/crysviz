@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Object List Panel</title>
+<body>
+
+<div class="panel">
+  <table id="objectTable">
+    <thead>
+      <tr>
+        <th colspan="1"></th>
+        <th>Filename</th>
+        <th>Traj.</th>
+        <th>Step</th>
+        <th colspan="2"></th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div id="errorPanel" class="error-panel">
+    Only two structures can be compared
+  </div>
+</div>
+
+<script>
+  const data = [
+    { name: "LongObjectNameOne", traj: 12, step: 5 },
+    { name: "AnotherObj", traj: 8, step: 3 },
+    { name: "ThirdObject", traj: 20, step: 7 },
+    { name: "FourthStruct", traj: 6, step: 2 },
+  ];
+
+  const tableBody = document.querySelector("#objectTable tbody");
+  const errorPanel = document.getElementById("errorPanel");
+  let selectedRow = null;
+
+  function showError(message) {
+    errorPanel.textContent = message;
+    errorPanel.style.display = "block";
+    setTimeout(() => (errorPanel.style.display = "none"), 2000);
+  }
+
+  function countChecked() {
+    return [...document.querySelectorAll('#objectTable tbody input[type="checkbox"]')]
+      .filter((cb) => cb.checked).length;
+  }
+
+  function createRow(obj) {
+    const row = document.createElement("tr");
+
+    row.innerHTML = `
+      <td><input type="checkbox"></td>
+      <td>
+        <div class="name-cell">
+          <span class="name-inner">${obj.name}</span>
+          <span class="name-scroll">${obj.name}</span>
+        </div>
+      </td>
+      <td>${obj.traj}</td>
+      <td><input type="number" min="1" max="${obj.traj}" value="${obj.step}" /></td>
+      <td class="icon copy"><img src="copy.png" alt="copy"></td>
+      <td class="icon delete">×</td>
+    `;
+
+    // Checkbox limit logic
+    const checkbox = row.querySelector('input[type="checkbox"]');
+    checkbox.addEventListener("change", () => {
+      const count = countChecked();
+      if (count > 2) {
+        checkbox.checked = false;
+        showError("Only two structures can be compared");
+      }
+    });
+
+    // Row click selection
+    row.addEventListener("click", (e) => {
+      if (e.target.tagName === "INPUT" || e.target.classList.contains("icon") || e.target.tagName === "IMG") return;
+      if (selectedRow) selectedRow.classList.remove("selected");
+      row.classList.add("selected");
+      selectedRow = row;
+      console.log("Selected:", obj);
+    });
+
+    // Duplicate (copy) logic
+    row.querySelector(".copy").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const cloneData = { ...obj };
+      const newRow = createRow(cloneData);
+      row.insertAdjacentElement("afterend", newRow);
+      console.log("Duplicated:", cloneData);
+    });
+
+    // Delete logic
+    row.querySelector(".delete").addEventListener("click", (e) => {
+      e.stopPropagation();
+      console.log("Deleted:", obj);
+      row.remove();
+    });
+
+    // Step validation
+    const stepInput = row.querySelector('input[type="number"]');
+    stepInput.addEventListener("input", () => {
+      const val = parseInt(stepInput.value, 10);
+      if (val < 1 || val > obj.traj) {
+        stepInput.setCustomValidity(`Step must be between 1 and ${obj.traj}`);
+      } else {
+        stepInput.setCustomValidity("");
+      }
+    });
+
+    return row;
+  }
+
+  data.forEach((obj) => {
+    const row = createRow(obj);
+    tableBody.appendChild(row);
+  });
+</script>
+
+</body>
+</html>
+

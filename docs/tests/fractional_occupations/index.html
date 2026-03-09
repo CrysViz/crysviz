@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Camera-Locked 3-Wedge Pie Spheres</title>
+<style>
+body { margin: 0; overflow: hidden; }
+#sliderContainer {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: white;
+  font-family: sans-serif;
+  text-align: center;
+  z-index: 10;
+}
+input[type=range] { width: 300px; }
+</style>
+</head>
+<body>
+
+<div id="sliderContainer">
+  <label>Red fraction: <span id="splitValue">40</span>%</label><br>
+  <input type="range" id="splitSlider" min="0" max="100" value="40">
+</div>
+
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+import { TrackballControls } from './TrackballControls.js';
+
+/* ---------- SCENE ---------- */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x222222);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+camera.position.set(4,4,6);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+const controls = new TrackballControls(camera, renderer.domElement);
+
+/* ---------- LIGHTS ---------- */
+scene.add(new THREE.AmbientLight(0xffffff,0.3));
+const light = new THREE.DirectionalLight(0xffffff,0.8);
+light.position.set(5,5,5);
+scene.add(light);
+
+/* ---------- SHADER MATERIAL (3-WEDGE PIE) ---------- */
+let redFraction = 0.4;       // adjustable
+const greenFraction = 0.3;   // fixed middle wedge
+const pieMaterial = new THREE.ShaderMaterial({
+  uniforms: {
+    redFrac: { value: redFraction },
+    greenFrac: { value: greenFraction }
+  },
+  vertexShader: `
+    varying vec3 vViewNormal;
+    void main() {
+      vViewNormal = normalize(normalMatrix * normal); // normal in camera space
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vViewNormal;
+    uniform float redFrac;
+    uniform float greenFrac;
+    void main() {
+      // project normal onto camera plane
+      vec2 proj = normalize(vViewNormal.xy);
+      float angle = atan(proj.y, proj.x); // [-PI, PI]
+      float frac = (angle + 3.14159265)/(2.0*3.14159265); // 0..1
+
+      vec3 color;
+      if(frac < redFrac){
+          color = vec3(1.0,0.2,0.2); // red
+      } else if(frac < redFrac + greenFrac){
+          color = vec3(0.2,1.0,0.2); // green
+      } else {
+          color = vec3(0.2,0.4,1.0); // blue
+      }
+      gl_FragColor = vec4(color,1.0);
+    }
+  `
+});
+
+/* ---------- STRUCTURE ---------- */
+const root = new THREE.Group();
+scene.add(root);
+
+const sphereGeo = new THREE.SphereGeometry(0.3, 128, 128);
+const cylGeo = new THREE.CylinderGeometry(0.05,0.05,2,16);
+const edgeMat = new THREE.MeshStandardMaterial({color:0x999999});
+
+const positions = [-1,1];
+const spheres = [];
+
+// spheres at cube corners
+for(let x of positions)
+  for(let y of positions)
+    for(let z of positions){
+      const s = new THREE.Mesh(sphereGeo,pieMaterial.clone());
+      s.position.set(x,y,z);
+      root.add(s);
+      spheres.push(s);
+    }
+
+// cylinders along cube edges
+function edge(from,to){
+  const dir = new THREE.Vector3().subVectors(to,from);
+  const len = dir.length();
+  const cyl = new THREE.Mesh(cylGeo, edgeMat);
+  cyl.position.copy(from).add(to).multiplyScalar(0.5);
+  cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize());
+  cyl.scale.y = len/2;
+  root.add(cyl);
+}
+
+// all cube edges
+for(let x of positions)
+  for(let y of positions){
+    edge(new THREE.Vector3(x,y,-1), new THREE.Vector3(x,y,1));
+    edge(new THREE.Vector3(x,-1,y), new THREE.Vector3(x,1,y));
+    edge(new THREE.Vector3(-1,x,y), new THREE.Vector3(1,x,y));
+  }
+
+/* ---------- SLIDER ---------- */
+const slider = document.getElementById('splitSlider');
+const splitValueLabel = document.getElementById('splitValue');
+slider.addEventListener('input', () => {
+  redFraction = parseFloat(slider.value)/100;
+  pieMaterial.uniforms.redFrac.value = redFraction;
+  splitValueLabel.textContent = slider.value;
+});
+
+/* ---------- ANIMATION ---------- */
+function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene,camera);
+}
+animate();
+
+/* ---------- RESIZE ---------- */
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  controls.handleResize();
+});
+</script>
+
+</body>
+</html>
+
