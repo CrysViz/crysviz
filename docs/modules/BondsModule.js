@@ -1,6 +1,6 @@
 import * as THREE from '../backend/three/three.module.js';
 import {allAtoms, bondLengths, app, groups, fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
-import {Atom} from '../../classes/Atom.js';
+import {Atom} from '../classes/Atom.js';
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {cartToFractional } from '../old_style/structure-input.js';
