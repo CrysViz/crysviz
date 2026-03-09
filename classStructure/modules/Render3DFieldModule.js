@@ -253,6 +253,56 @@ export function readCHGCAR(text, fileName) {
     }));
   }
 
+  // if it is a chgcar with spin density, form the spin up and spin down densities separately for visualization
+  if (fields.length == 2 && fields[0].label === 'Charge Density' && fields[1].label === 'Spin Density') {
+    const chargeField = fields[0];
+    const spinField = fields[1];
+    const spinUpValues = new Float32Array(chargeField.values.length);
+    const spinDownValues = new Float32Array(chargeField.values.length);
+    for (let i = 0; i < chargeField.values.length; i++) {
+      spinUpValues[i] = 0.5 * (chargeField.values[i] + spinField.values[i]);
+      spinDownValues[i] = 0.5 * (chargeField.values[i] - spinField.values[i]);
+    }
+    // min max value calculation
+    const spinUpMax = spinUpValues.reduce((m, v) => Math.max(m, v), -Infinity);
+    const spinDownMax = spinDownValues.reduce((m, v) => Math.max(m, v), -Infinity);
+    const spinUpMin = spinUpValues.reduce((m, v) => Math.min(m, v), Infinity);
+    const spinDownMin = spinDownValues.reduce((m, v) => Math.min(m, v), Infinity);
+    const spinUpAbsMax = spinUpValues.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+    const spinDownAbsMax = spinDownValues.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+    const spinUpAbsMin = spinUpValues.reduce((m, v) => Math.min(m, Math.abs(v)), Infinity);
+    const spinDownAbsMin = spinDownValues.reduce((m, v) => Math.min(m, Math.abs(v)), Infinity);
+
+    fields.push(new Field({
+      nx: chargeField.nx,
+      ny: chargeField.ny,
+      nz: chargeField.nz,
+      origin: [0, 0, 0],
+      voxel: null, // will set later
+      values: spinUpValues,
+      component: fields.length, // 0 for charge density, 1+ for spin components
+      label: 'Spin Up Density',
+      minValue: spinUpMin,
+      maxValue: spinUpMax,
+      absMinValue: spinUpAbsMin,
+      absMaxValue: spinUpAbsMax
+    }));
+    fields.push(new Field({
+      nx: chargeField.nx,
+      ny: chargeField.ny,
+      nz: chargeField.nz,
+      origin: [0, 0, 0],
+      voxel: null, // will set later
+      values: spinDownValues,
+      component: fields.length, // 0 for charge density, 1+ for spin components
+      label: 'Spin Down Density',
+      minValue: spinDownMin,
+      maxValue: spinDownMax,
+      absMinValue: spinDownAbsMin,
+      absMaxValue: spinDownAbsMax
+    }));
+  }
+
   // Create volumetric field container with metadata
   const fieldContainer = new FieldContainer({
     fileName,
@@ -315,26 +365,28 @@ function initIsosurfaceMesh(field, colorPos = 0x33aaff, colorNeg = 0xff3333) {
 function updateIsosurface(iso) {
   if (!groups.fieldMeshPos || !groups.activeField) return;
 
-  const mc = groups.fieldMeshPos;
-  mc.isolation = iso;
-  //mc.blur(1);
-  mc.scale.set(1,1,1);
-
-  mc.update();
-
-  // MarchingCubes is already a Mesh with geometry built-in
-  // Compute normals for proper lighting
-  mc.geometry.computeVertexNormals();
-
-  // If using absolute isovalue, also update the negative mesh with -iso
   if (groups.activeField.useAbsoluteIsoValue && groups.fieldMeshNeg) {
-    
-    const mc2 = groups.fieldMeshNeg;
-    mc2.isolation = -iso;
-    //mc2.blur(1);
-    mc2.update();
+    for (let mesh of [groups.fieldMeshPos, groups.fieldMeshNeg]) {
+      mesh.isolation = mesh === groups.fieldMeshPos ? iso : -iso;
+      //mesh.blur(1);
+      mesh.scale.set(1,1,1);
 
-    mc2.geometry.computeVertexNormals();
+      mesh.update();
+
+      mesh.geometry.computeVertexNormals();
+    }
+  }
+  else {
+    const mc = iso >= 0 ? groups.fieldMeshPos : groups.fieldMeshNeg;
+    mc.isolation = iso;
+    //mc.blur(1);
+    mc.scale.set(1,1,1);
+
+    mc.update();
+
+    // MarchingCubes is already a Mesh with geometry built-in
+    // Compute normals for proper lighting
+    mc.geometry.computeVertexNormals();
   }
 }
 
@@ -487,7 +539,6 @@ export function updateField(iso = null) {
   }
   if (groups.fieldMeshNeg) {
     clearMesh(groups.fieldMeshNeg);
-    groups.fieldMeshNeg = null;
   }
 
   const field = groups.activeField;
@@ -536,21 +587,29 @@ export function updateField(iso = null) {
     (field.voxel[0][2] * (nx+1) + field.voxel[1][2] * (ny+1) + field.voxel[2][2] * (nz+1)) * 0.5
   );
 
-  groups.fieldMeshPos.applyMatrix4(cell);
-  groups.fieldMeshPos.position.set(midpoint.x, midpoint.y, midpoint.z);
-
   if (field.useAbsoluteIsoValue && groups.fieldMeshNeg) {
-    groups.fieldMeshNeg.applyMatrix4(cell);
-    groups.fieldMeshNeg.position.set(midpoint.x, midpoint.y, midpoint.z);
+    for (let mesh of [groups.fieldMeshPos, groups.fieldMeshNeg]) {
+      mesh.applyMatrix4(cell);
+      mesh.position.set(midpoint.x, midpoint.y, midpoint.z);
+    }
+  }
+  else {
+    const mesh = iso >= 0 ? groups.fieldMeshPos : groups.fieldMeshNeg;
+    mesh.applyMatrix4(cell);
+    mesh.position.set(midpoint.x, midpoint.y, midpoint.z);
   }
 
 
   //--------------------------------------------------------
   //  Add to scene and record
   //--------------------------------------------------------
-  app.scene.add(groups.fieldMeshPos);
   if (field.useAbsoluteIsoValue && groups.fieldMeshNeg) {
+    app.scene.add(groups.fieldMeshPos);
     app.scene.add(groups.fieldMeshNeg);
+  }
+  else {
+    const mesh = iso >= 0 ? groups.fieldMeshPos : groups.fieldMeshNeg;
+    app.scene.add(mesh);
   }
 }
 

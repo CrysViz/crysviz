@@ -78,7 +78,9 @@ export const fieldBrowser = {
     this.availableFields = fields || [];
     // Set default to first field if available
     if (this.availableFields.length > 0) {
-      this.setSelectedField(0);
+      if (!this.selectedField) {
+        this.setSelectedField(0);
+      }
     } else {
       this.selectedField = null;
       this.selectedFieldIndex = -1;
@@ -149,7 +151,7 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
       </label>
     </div>
 
-    <div class="panel">
+    <div class="control-group">
       <label>Field Selection:</label>
       <table id="fieldSelectionTable">
         <thead>
@@ -264,8 +266,8 @@ function setupFieldControlEvents(fields, container) {
     const absMaxLog = Math.log10(Math.abs(fieldMax));
     const absMax = Math.max(Math.abs(fieldMin), Math.abs(fieldMax));
     
-    logMin = Math.log10(absMax * 0.001);
-    logMax = Math.log10(absMax);
+    const logMin = Math.log10(absMax * 0.001);
+    const logMax = Math.log10(absMax);
 
     container.dataset.logMin = logMin;
     container.dataset.logMax = logMax;
@@ -318,7 +320,18 @@ function setupFieldControlEvents(fields, container) {
     fieldBrowser.selectedField.isoValue = isoValue; // Update the isoValue on the selected field for memory
   });
 
-  //absoluteValueCheckbox.addEventListener('change', updateAllIsosurfaces);
+  absoluteValueCheckbox.addEventListener('change', function () {
+    if (!fieldBrowser.selectedField) return;
+
+    fieldBrowser.selectedField.useAbsoluteIsoValue = absoluteValueCheckbox.checked;
+
+    // Update the slider range and displayed value based on the new setting
+    const sliderValue = isoValueToSlider(fieldBrowser.selectedField.isoValue, fieldBrowser.selectedField);
+    slider.value = sliderValue;
+
+    // Re-render the field with the updated absolute value setting
+    updateField(fieldBrowser.selectedField.isoValue);
+  });
 
   fieldToggles.forEach((toggle) => {
     toggle.addEventListener('change', updateAllIsosurfaces);
@@ -335,6 +348,10 @@ function setupFieldControlEvents(fields, container) {
         const isoValue = fieldBrowser.selectedField.isoValue || sliderToIsoValue(55, fieldBrowser.selectedField);
         slider.value = isoValueToSlider(isoValue, fieldBrowser.selectedField);
         valueDisplay.textContent = isoValue.toExponential(3);
+        // Update the Absolute Iso Value toggle state based on the newly selected field
+        absoluteValueCheckbox.checked = fieldBrowser.selectedField.useAbsoluteIsoValue || false;
+
+        // Update field with iso value for newly selected field
         updateField(isoValue);
       }
     });
