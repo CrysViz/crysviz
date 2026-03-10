@@ -1,4 +1,3 @@
-import { createColorPicker } from '../old_style/color-picker.js';
 import {updateSpins,deleteSpins} from '../modules/SpinModule.js';
 import { app, groups, fileBrowser,general, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 

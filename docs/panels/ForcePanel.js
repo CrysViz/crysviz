@@ -1,4 +1,3 @@
-import { createColorPicker } from '../old_style/color-picker.js';
 import { app, groups, general, fileBrowser, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 
 import {updateForces} from '../modules/ForceModule.js';

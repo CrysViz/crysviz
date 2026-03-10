@@ -3,7 +3,6 @@ import {allAtoms, bondLengths, app, groups, fileBrowser, general,mode,defaultPOS
 import {Atom} from '../classes/Atom.js';
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
-import {cartToFractional } from '../old_style/structure-input.js';
 
 import {createAtomMesh} from './AtomsModule.js'
 import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'

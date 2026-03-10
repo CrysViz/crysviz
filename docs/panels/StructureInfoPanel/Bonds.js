@@ -1,7 +1,7 @@
 import { updateVisualization } from '../../crystal-viewer.js';
 import {highlightHover,app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../store.js'
 import {colorHexToCss,hexToRgba,getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,updatePieDot,clearIndividualAtomColor } from '../../modules/ColorModule.js';
-import { createColorPicker } from '../../old_style/color-picker.js';
+import { createColorPicker } from '../../modules/ColorPickerModule.js';
 import { updateBonds } from '../../modules/BondsModule.js'
 import * as THREE from '../../backend/three/three.module.js';
 import {fracToCart} from '../../modules/LatticeModule.js'

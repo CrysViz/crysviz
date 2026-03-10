@@ -1,8 +1,8 @@
 # CrysViz Crystal Structure Viewer
 
-by Abhijith S. Parackal and Florian Trybel
+by Florian Trybel, Abhijith S Parackal, and Rickard Armiento
 
-Version 0.7 Beta 2026-03-03
+Version 0.8 Beta 2026-03-10
 
 ## This is the live developement repository. If you are not Abhijith, Rickard or Florian, you should not be here!
 

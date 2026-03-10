@@ -2,7 +2,6 @@ import * as THREE from '../backend/three/three.module.js';
 import { app, fileBrowser, groups, general, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped} from './LatticeModule.js'
-import { createColorPicker } from '../old_style/color-picker.js';
 
 
 import {forceLengthToColor} from '../panels/ColorPanel.js'
