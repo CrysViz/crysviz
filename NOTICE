@@ -40,3 +40,10 @@ Third-Party Libraries and Attribution:
    - Copyright: THREE.js authors
    - See LICENSE-THREEjs for the full license text.
 
+4. NEP89 Weights (from GPUMD)
+   - Repository: https://github.com/brucefan1983/GPUMD
+   - License: GPL-3.0
+   - Copyright: GPUMD authors
+   - the weights can be found in /docs/backend/nep_wasm/
+   - See LICENSE-GPUMD for the full license text.
+
