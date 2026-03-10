@@ -1,4 +1,4 @@
-import * as THREE from '../backend/three/three.module.js';
+import * as THREE from '../external/three/three.module.js';
 import {allAtoms, bondLengths, app, groups, fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 
 import {Atom} from '../classes/Atom.js';

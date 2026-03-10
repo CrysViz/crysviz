@@ -1,6 +1,6 @@
-import * as THREE from '../backend/three/three.module.js';
-import { CSS2DRenderer, CSS2DObject } from '../backend/three/CSS2DRenderer.js';
-import { TrackballControls } from '../backend/three/TrackballControls.js';
+import * as THREE from '../external/three/three.module.js';
+import { CSS2DRenderer, CSS2DObject } from '../external/three/CSS2DRenderer.js';
+import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app } from '../store.js';
 import { updateAngleDisplays, setupAxisControls} from '../modules/cameraAngleControl.js';
 import { getCellCenterAndDist} from '../modules/LatticeModule.js'

@@ -1,5 +1,5 @@
-import * as THREE from '../backend/three/three.module.js';
-import { ConvexGeometry } from '../backend/three/ConvexGeometry.js';
+import * as THREE from '../external/three/three.module.js';
+import { ConvexGeometry } from '../external/three/ConvexGeometry.js';
 import {app,general,groups, fileBrowser} from '../store.js'
 import {periodicWrapped,fracToCart} from '../modules/LatticeModule.js'
 import { getBondCutoff} from '../modules/BondsModule.js'

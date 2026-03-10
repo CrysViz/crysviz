@@ -1,4 +1,4 @@
-import * as THREE from '../backend/three/three.module.js'
+import * as THREE from '../external/three/three.module.js'
 import { general, groups, app, getAtomVisSettings, getBondVisSettings } from '../store.js';
 import { switchCameraType } from '../panels/WindowAndSceneControls.js';
 import { updateBonds} from '../modules/BondsFracUpdateModule.js'

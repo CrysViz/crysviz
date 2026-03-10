@@ -1,26 +1,4 @@
-// external  imports
-function findDuplicateIndices(positions, eps = 1e-6) {
-  console.log(positions)
-  const seen = new Map();
-  const duplicates = [];
-
-  positions.forEach((p, i) => {
-    const key = [
-      Math.round(p.x / eps),
-      Math.round(p.y / eps),
-      Math.round(p.z / eps)
-    ].join(",");
-
-    if (seen.has(key)) {
-      duplicates.push({ first: seen.get(key), duplicate: i });
-    } else {
-      seen.set(key, i);
-    }
-  });
-
-  console.log(seen);
-}
-import * as THREE from './backend/three/three.module.js';
+import * as THREE from './external/three/three.module.js';
 // .........................................................................................................
 // store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
 //

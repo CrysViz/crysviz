@@ -1,7 +1,7 @@
 import {structureShip,fileBrowser} from '../../store.js'
 import { createRow,selectLastAddedRow } from '../FileBrowswerPanel.js';
 import {updateVisualization} from '../../crystal-viewer.js'
-import init, { analyze_cell } from '../../backend/moyo-test/moyo_wasm.js';
+import init, { analyze_cell } from '../../external/moyo-test/moyo_wasm.js';
 import { Structure } from "../../classes/Structure.js";
 import { Atom } from "../../classes/Atom.js";
 import { StructureContainer } from "../../classes/StructureContainer.js";

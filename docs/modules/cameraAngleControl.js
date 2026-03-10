@@ -1,4 +1,4 @@
-import * as THREE from '../backend/three/three.module.js';
+import * as THREE from '../external/three/three.module.js';
 import {getCellCenterAndDist} from './LatticeModule.js'
 import { app } from '../store.js';
 

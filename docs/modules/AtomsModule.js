@@ -1,4 +1,4 @@
-import * as THREE from '../backend/three/three.module.js';
+import * as THREE from '../external/three/three.module.js';
 import { app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'

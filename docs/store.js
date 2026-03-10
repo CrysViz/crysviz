@@ -1,5 +1,5 @@
 import {StructureShip} from './classes/StructureShip.js'
-import * as THREE from './backend/three/three.module.js';
+import * as THREE from './external/three/three.module.js';
 export const bondLengths = {}
 
 

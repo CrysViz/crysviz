@@ -1,5 +1,5 @@
 import { general, atomicRadii, defaultColorMap } from '../store.js';
-import * as THREE from '../backend/three/three.module.js';
+import * as THREE from '../external/three/three.module.js';
 
 export class Bond {
   constructor({

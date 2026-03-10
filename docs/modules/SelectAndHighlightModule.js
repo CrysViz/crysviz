@@ -1,7 +1,7 @@
 import {groups,highlightHover,fileBrowser} from '../store.js';
 import {collapseAllAtomExpansions} from '../panels/WindowAndSceneControls.js';
 import {updateBondControlPanel} from '../panels/StructureInfoPanel/Bonds.js';
-import * as THREE from '../backend/three/three.module.js';
+import * as THREE from '../external/three/three.module.js';
 import {updateAtoms} from './AtomsFracUpdateModule.js'
 import {updateBonds} from './BondsFracUpdateModule.js'
 import InstanceMeshManager from '../classes/InstanceMeshManager.js'

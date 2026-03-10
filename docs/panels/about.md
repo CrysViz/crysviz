@@ -1,6 +1,14 @@
 # CrysViz Crystal Structure Viewer
 
-by Florian Trybel, Abhijith S Parackal, and Rickard Armiento
+by Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, and Rickard Armiento
+
+## Maintainers
+- **Florian Trybel (https://github.com/ftrybel)** - Project lead, core development, and design.
+- **Abhijith S Parackal (https://github.com/Abhivega** - Core development, and design
+
+## Contributors
+- **[Rickard Armiento] (https://github.com/rartino)** - CIF Reader, I/O
+- **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)** - Vector Field Visualisation (ELF, Charge)
 
 Version 0.8 Beta 2026-03-10
 

@@ -39,11 +39,11 @@ async function initNEP() {
   if (nepInitPromise) return nepInitPromise;
 
   nepInitPromise = (async () => {
-    await loadScript('./backend/nep_wasm/nep_wasm.js');
-    await loadScript('./backend/nep_wasm/nep_simple.js');
+    await loadScript('./external/nep_wasm/nep_wasm.js');
+    await loadScript('./external/nep_wasm/nep_simple.js');
 
     nepRunner = new window.NEPWasmRunner({
-      defaultModelUrl: './backend/nep_wasm/nep89_20250409.txt',
+      defaultModelUrl: './external/nep_wasm/nep89_20250409.txt',
     });
 
     await nepRunner.init();
