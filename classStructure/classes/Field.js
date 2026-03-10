@@ -13,7 +13,8 @@ export class Field {
     minValue = null, // minimum field value (can be computed from values)
     maxValue = null, // maximum field value (can be computed from values)
     label = "", // optional label for the field (e.g., "Charge Density", "Spin Density X", etc.)
-    useAbsoluteIsoValue = null // whether to use absolute values when determining isovalue
+    useAbsoluteIsoValue = null, // whether to use absolute values when determining isovalue
+    isVisible = true // whether this field should be rendered (can be toggled by user)
   } = {}) {
     this.nx = nx;
     this.ny = ny;
@@ -29,6 +30,7 @@ export class Field {
     this.absMaxValue = absMaxValue;
     this.label = label;
     this.useAbsoluteIsoValue = useAbsoluteIsoValue;
+    this.isVisible = isVisible;
   }
 
 }

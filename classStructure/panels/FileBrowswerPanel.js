@@ -7,6 +7,8 @@ import {createSpinControls} from './SpinPanel.js'
 import {updateSpins} from '../modules/SpinModule.js'
 import {updateForces} from '../modules/ForceModule.js'
 import {removeLatticeAndSupercellPanel, addLatticeAndSupercellPanel} from './LatticeSupercellPanel.js'
+import { fieldBrowser } from './FieldPanel.js'
+import { toggleFieldVisibility, setActiveField, updateField } from '../modules/Render3DFieldModule.js'
 
 export function showError(message) {
     errorPanel.textContent = message;
@@ -77,6 +79,16 @@ export function createRow(obj) {
 
     let oldRowIndex = fileBrowser.selectedRowIndex;
     fileBrowser.selectedRowIndex = rowIndex;
+
+    toggleFieldVisibility(false); // hide field when switching structures to prevent confusion
+    if (fileBrowser.selectedStructure.volumetricFields && fileBrowser.selectedStructure.volumetricFields.fields.length > 0) {
+      fieldBrowser.setAvailableFields(fileBrowser.selectedStructure.volumetricFields.fields);
+      fieldBrowser.setSelectedField(0); // default to first field
+      const selectedField = fieldBrowser.selectedField;
+      
+      setActiveField(selectedField);
+      updateField();
+    }
   });
 
   // Duplicate (copy) logic

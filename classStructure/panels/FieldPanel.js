@@ -1,6 +1,8 @@
 import { fileBrowser, app, general, groups } from '../store.js';
-import { updateField, setActiveField } from '../modules/Render3DFieldModule.js';
+import { updateField, setActiveField, toggleFieldVisibility } from '../modules/Render3DFieldModule.js';
 import * as THREE from '../backend/three/three.module.js';
+
+export let useLogSliderScale = false; // Global variable to track log scale state for iso slider
 
 /**
  * Convert an isoSlider value (0-100) to an iso value based on the selected field's range.
@@ -14,9 +16,6 @@ export function sliderToIsoValue(sliderValue, field) {
   let normalizedValue = sliderValue / 100;
   let isoFactor = 1;
 
-  const logMin = Math.log10(field.absMinValue);
-  const logMax = Math.log10(field.absMaxValue);
-
   if (field.minValue < 0 && !field.useAbsoluteIsoValue) {
     normalizedValue = normalizedValue - 0.5; // Center at 0 for signed fields
     if (normalizedValue < 0) {
@@ -26,7 +25,19 @@ export function sliderToIsoValue(sliderValue, field) {
     normalizedValue *= 2;
   }
 
-  return isoFactor * Math.pow(10, logMin + normalizedValue * (logMax - logMin));
+  const logMax = Math.log10(field.absMaxValue);
+  const logMin = (field.absMinValue > 0) ? Math.log10(field.absMinValue) : logMax - 30; // avoid log(0)
+
+  if (useLogSliderScale) {
+    // use logarithmic scaling for wide ranges to give more control over smaller values
+    return isoFactor * Math.pow(10, logMin + normalizedValue * (logMax - logMin));
+  }
+  else {
+    // use linear scaling for narrow ranges
+    return isoFactor * (field.minValue + normalizedValue * (field.maxValue - field.minValue));
+  }
+
+  
 }
 
 /**
@@ -38,21 +49,31 @@ export function sliderToIsoValue(sliderValue, field) {
 export function isoValueToSlider(isoValue, field) {
   if (!field) return 50;
 
-  const logMin = Math.log10(field.absMinValue);
+  
   const logMax = Math.log10(field.absMaxValue);
+  const logMin = (field.absMinValue > 0) ? Math.log10(field.absMinValue) : logMax - 30; // avoid log(0)
+  const useLog = useLogSliderScale;
 
   if (field.useAbsoluteIsoValue || field.minValue >= 0) {
-    const logIso = Math.log10(Math.abs(isoValue));
-    const normalizedValue = (logIso - logMin) / (logMax - logMin);
+    let normalizedValue;
+    if (useLog) {
+      const logIso = Math.log10(Math.abs(isoValue));
+      normalizedValue = (logIso - logMin) / (logMax - logMin);
+    } else {
+      normalizedValue = (isoValue - field.absMinValue) / (field.absMaxValue - field.absMinValue);
+    }
     return Math.max(0, Math.min(100, normalizedValue * 100));
   } else {
     const sign = isoValue < 0 ? -1 : 1;
-    const logIso = Math.log10(Math.abs(isoValue));
-    let normalizedValue = (logIso - logMin) / (logMax - logMin);
-    normalizedValue /= 2; // Reverse the *2
-    if (sign < 0) {
-      normalizedValue *= -1;
+    let normalizedValue;
+    if (useLog) {
+      const logIso = Math.log10(Math.abs(isoValue));
+      normalizedValue = (logIso - logMin) / (logMax - logMin);
+    } else {
+      normalizedValue = (Math.abs(isoValue) - field.absMinValue) / (field.absMaxValue - field.absMinValue);
     }
+    normalizedValue /= 2; // Reverse the *2
+    normalizedValue *= sign;
     normalizedValue += 0.5; // Reverse the -0.5 centering
     return Math.max(0, Math.min(100, normalizedValue * 100));
   }
@@ -144,10 +165,24 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
     <div class="control-group">
       <label class="toggle_row toggle_container">
         <span class="toggle_switch">
-          <input type="checkbox" id="FieldAbsoluteValueToggle">
+          <input type="checkbox" id="ShowFieldToggle" ${fieldBrowser.selectedField.isVisible ? 'checked' : ''}>
+          <span class="toggle_slider"></span>
+        </span>
+        <span class="toggle_text"> Show Field </span>
+      </label>
+      <label class="toggle_row toggle_container">
+        <span class="toggle_switch">
+          <input type="checkbox" id="FieldAbsoluteValueToggle" ${fieldBrowser.selectedField.useAbsoluteIsoValue ? 'checked' : ''}>
           <span class="toggle_slider"></span>
         </span>
         <span class="toggle_text"> Absolute Isosurface Values</span>
+      </label>
+      <label class="toggle_row toggle_container">
+        <span class="toggle_switch">
+          <input type="checkbox" id="LogSliderScaleToggle" ${useLogSliderScale ? 'checked' : ''}>
+          <span class="toggle_slider"></span>
+        </span>
+        <span class="toggle_text"> Logarithmic Slider Scale</span>
       </label>
     </div>
 
@@ -250,7 +285,9 @@ export function removeFieldPanel(target = "SpinForceFieldContainer") {
 function setupFieldControlEvents(fields, container) {
   const slider = document.getElementById('isoSlider');
   const valueDisplay = document.getElementById('isoValue');
+  const showFieldToggle = document.getElementById('ShowFieldToggle');
   const absoluteValueCheckbox = document.getElementById('FieldAbsoluteValueToggle');
+  const logScaleCheckbox = document.getElementById('LogSliderScaleToggle');
   const fieldToggles = document.querySelectorAll('.fieldToggle');
   const fieldPrimaryRadios = document.querySelectorAll('.fieldPrimary');
   const selectedFieldName = document.getElementById('selectedFieldName');
@@ -320,6 +357,17 @@ function setupFieldControlEvents(fields, container) {
     fieldBrowser.selectedField.isoValue = isoValue; // Update the isoValue on the selected field for memory
   });
 
+  showFieldToggle.addEventListener('change', function () {
+    if (!fieldBrowser.selectedField) return;
+
+    fieldBrowser.selectedField.isVisible = showFieldToggle.checked;
+
+    // Re-render the field with the updated visibility setting
+    toggleFieldVisibility(showFieldToggle.checked);
+
+    updateField(fieldBrowser.selectedField.isoValue);
+  });
+
   absoluteValueCheckbox.addEventListener('change', function () {
     if (!fieldBrowser.selectedField) return;
 
@@ -331,6 +379,21 @@ function setupFieldControlEvents(fields, container) {
 
     // Re-render the field with the updated absolute value setting
     updateField(fieldBrowser.selectedField.isoValue);
+  });
+
+  logScaleCheckbox.addEventListener('change', function () {
+    if (!fieldBrowser.selectedField) return;
+
+    useLogSliderScale = logScaleCheckbox.checked;
+
+    // Update the slider range and displayed value based on the new setting
+    const sliderValue = parseFloat(slider.value);
+    if (useLogSliderScale) {
+      slider.value = sliderValue.toExponential(3);
+    }
+    else {
+      slider.value = sliderValue.toPrecision(3);
+    }
   });
 
   fieldToggles.forEach((toggle) => {
@@ -349,7 +412,8 @@ function setupFieldControlEvents(fields, container) {
         slider.value = isoValueToSlider(isoValue, fieldBrowser.selectedField);
         valueDisplay.textContent = isoValue.toExponential(3);
         // Update the Absolute Iso Value toggle state based on the newly selected field
-        absoluteValueCheckbox.checked = fieldBrowser.selectedField.useAbsoluteIsoValue || false;
+        absoluteValueCheckbox.checked = fieldBrowser.selectedField.useAbsoluteIsoValue;
+        showFieldToggle.checked = fieldBrowser.selectedField.isVisible; // default to visible if not set
 
         // Update field with iso value for newly selected field
         updateField(isoValue);

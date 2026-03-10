@@ -2,7 +2,14 @@
 // Parser for Gaussian .cube volumetric files + Marching Cubes isosurface extraction
 // Exports: readCubeFile(), updateField()
 //
-import * as THREE from '../backend/three/three.module.js';
+import { Structure } from '../classes/Structure.js';
+import { invert3x3, transpose3x3, cartToFractional, normalizeFractional } from './StructureInputModule.js';
+import { runPeriodicWrapped } from './LatticeModule.js';
+import { Field } from '../classes/Field.js';
+import { FieldContainer } from '../classes/FieldContainer.js';
+import { Atom } from '../classes/Atom.js';
+import { generateID } from './UUIDModule.js';
+
 
 //------------------------------------------------------------
 //  Periodic table (lookup table for cube files as it contains 
@@ -35,98 +42,159 @@ export const PT = {
   118: "Og"
 };
 
+export const Bohr2Angstrom = 0.529177249; // conversion factor from Bohr to Angstroms
 
 //------------------------------------------------------------
 //  readCubeFile(file) → { lattice, positions_cart, field }
 //------------------------------------------------------------
-export async function readCubeFile(content,fileName) {
+export function readCubeFile(content,fileName) {
 
-  const lines = content.split(/\r?\n/);
+  const lines = content.trim().split(/\r?\n/).filter(l => l.trim());
+  const label = lines.slice(0, 2).map(l => l.trim()).join(" ");
+  let i = 2; // skip first 2 comment lines
 
-  let i = 0;
+  let line = lines[i].trim().split(/\s+/);
+  const natoms = parseInt(line[0]);
+  const origin = line.slice(1, 4).map(parseFloat);
 
-// Normalize slice
-const min = Math.min(...slice);
-const max = Math.max(...slice);
-const norm = slice.map(v => (v - min) / (max - min));
+  const density_lines = lines.slice(5 + natoms + 1, lines.length);
+  const structure_lines = lines.slice(0, 5 + natoms + 1);
 
-// Create colormap texture
-const tex = new THREE.DataTexture(norm, w, h, THREE.RedFormat, THREE.FloatType);
-tex.needsUpdate = true;
+  let structure = readCubeStructure(structure_lines, fileName);
 
-const geom = new THREE.PlaneGeometry(w, h);
-const mat = new THREE.ShaderMaterial({
-uniforms: {
-sliceTex: { value: tex },
-},
-vertexShader: `
-varying vec2 vUv;
-void main() {
-vUv = uv;
-gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  let isBorh = [];
+  let grid = [];
+  for (let j = 0; j < 3; j++) {
+    i++;
+    line = lines[i].trim().split(/\s+/);
+    const n = parseInt(line[0]);
+    grid.push(n);
+    isBorh.push(n >= 0); // If n is positive, it indicates that the units are in Bohr
+  }
+  const voxel = structure.lattice.map((vec, row) => vec.map(c => c / grid[row]));
+  const npoints = grid.reduce((a, b) => a * b, 1);
+  const zd = grid[0] * grid[1];
+  const yd = grid[0];
+  
+  let lineIndex = 0;
+  let indexInLine = 0;
+  let gridIndex = 0;
+  let element = 0;
+  const field_values = new Float32Array(npoints); 
+  line = density_lines[lineIndex].trim().split(/\s+/);
+  // marching cubes expects iteration order of z,y,x (slowest to fastest)
+  for (let x = 0; x < grid[2]; x++) {
+    for (let y = 0; y < grid[1]; y++) {
+      for (let z = 0; z < grid[0]; z++) {
+        gridIndex = z * zd + y * yd + x;
+        if (lineIndex >= density_lines.length) {
+          console.error("Not enough lines in density data");
+          break;
+        }
+        if (indexInLine >= line.length) {
+          lineIndex++;
+          indexInLine = 0;
+          line = density_lines[lineIndex].trim().split(/\s+/);
+        }
+        element = parseFloat(line[indexInLine]);
+        field_values[gridIndex] = element;
+        indexInLine++;
+      }
+    }
+  }
+
+  const MaxValue = field_values.reduce((max, val) => Math.max(max, val), -Infinity);
+  const MinValue = field_values.reduce((min, val) => Math.min(min, val), Infinity);
+  const AbsMaxValue = field_values.reduce((max, val) => Math.max(max, Math.abs(val)), 0);
+  const AbsMinValue = field_values.reduce((min, val) => Math.min(min, Math.abs(val)), Infinity);
+  let fields = [];
+  fields.push(new Field({
+      nx: grid[0],
+      ny: grid[1],
+      nz: grid[2],
+      origin: [0, 0, 0],
+      voxel: voxel, 
+      values: field_values,
+      component: 0, 
+      label: label,
+      minValue: MinValue,
+      maxValue: MaxValue,
+      absMinValue: AbsMinValue,
+      absMaxValue: AbsMaxValue
+  }));
+
+  const container = new FieldContainer({
+    fileName: fileName,
+    source: "Cube",
+    fields: fields,
+    fieldCount: fields.length
+  });
+
+  structure.volumetricFields = container; // Attach field container to structure for easy access in rendering
+  return {
+    fileName,
+    structure_with_field: structure
+  };
 }
-`,
-fragmentShader: `
-uniform sampler2D sliceTex;
-varying vec2 vUv;
 
-vec3 colormap(float t) {
-// Inferno-like map
-return vec3(
-smoothstep(0.0,0.3,t),
-pow(t,1.5),
-pow(t,3.0)
-);
-}
+export function readCubeStructure(lines, filename) {
+  let i = 2; // skip first 2 comment lines
+  let line = lines[i].trim().split(/\s+/);
+  const natoms = parseInt(line[0]);
+  const origin = line.slice(1, 4).map(parseFloat);
 
-void main() {
-float v = texture2D(sliceTex, vUv).r;
-gl_FragColor = vec4(colormap(v), 1.0);
-}
-`
-});
+  let isBorh = [];
+  let lattice = [];
+  for (let j = 0; j < 3; j++) {
+    i++;
+    line = lines[i].trim().split(/\s+/);
+    const n = parseInt(line[0]);
+    const vec = line.slice(1, 4).map(parseFloat);
+    isBorh.push(n >= 0); // If n is positive, it indicates that the units are in Bohr
+    lattice.push(vec.map(c => c * n * (isBorh[j] ? Bohr2Angstrom : 1))); // Store lattice vectors in Cartesian coordinates
+  }
 
-const mesh = new THREE.Mesh(geom, mat);
-mesh.userData.axis = axis;
-return mesh;
-}
+  const elements = [];
+  const positions_cart = [];
+  for (let j = 0; j < natoms; j++) {
+    i++;
+    line = lines[i].trim().split(/\s+/);
+    const elementNum = parseInt(line[0]);
+    const position = line.slice(2, 5).map((l, index) => (parseFloat(l) - origin[index]) * (isBorh[index] ? Bohr2Angstrom : 1)); // Convert to Cartesian coordinates and shift by origin
+    positions_cart.push(position);
+    elements.push(PT[elementNum] || "X");
+  }
 
-//------------------------------------------------------------
-// updateField(scene, structure, field, iso)
-// Adds isosurface to existing atom/bond visualizer
-//------------------------------------------------------------
-export function updateField(scene, structure, field, iso = 0.75) {
-// Remove previous field mesh if any
-if (structure.__fieldMesh) {
-scene.remove(structure.__fieldMesh);
-structure.__fieldMesh.geometry.dispose();
-structure.__fieldMesh.material.dispose();
-}
+  // --- convert cart → frac if needed
+    const latticeInverse = invert3x3(transpose3x3(lattice));
+    const positions = (
+      positions_cart.map(vec => cartToFractional(vec, lattice, latticeInverse))
+    ).map(pos => pos.map(normalizeFractional));
+  
+    const atoms = [];
+  
+    positions.forEach((pos, i) => {
+      atoms.push(new Atom({
+        position: pos,
+        element: elements[i],
+        uuid: generateID([elements[i]])
+      }));
+    });
+  
+    let periodic = runPeriodicWrapped(
+      { hash: "None",wrapped: {}},
+      positions,  
+      elements,
+      lattice
+    );
 
-//--------------------------------------------------------
-// Build marching cubes isosurface in voxel space
-//--------------------------------------------------------
-const mesh = buildIsosurface(field, iso);
+    const structure = new Structure({
+      elements: elements,
+      uniqueElements: [...new Set(elements)],
+      lattice: lattice,
+      atoms: atoms,
+      periodic: periodic
+    });
 
-//--------------------------------------------------------
-// Align the voxel cube with real‑space lattice
-//--------------------------------------------------------
-const { nx, ny, nz } = field;
-
-// Convert 0→1 cube into actual cell
-const cell = new THREE.Matrix4();
-cell.set(
-field.voxel[0][0] * nx, field.voxel[1][0] * ny, field.voxel[2][0] * nz, field.origin[0],
-field.voxel[0][1] * nx, field.voxel[1][1] * ny, field.voxel[2][1] * nz, field.origin[1],
-field.voxel[0][2] * nx, field.voxel[1][2] * ny, field.voxel[2][2] * nz, field.origin[2],
-0, 0, 0, 1
-);
-
-mesh.applyMatrix4(cell);
-
-//--------------------------------------------------------
-// Add to scene and record
-//--------------------------------------------------------
-scene.add(mesh);
-structure.__fieldMesh = mesh;
+    return structure;
 }
