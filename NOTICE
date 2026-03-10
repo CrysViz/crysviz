@@ -32,7 +32,7 @@ Third-Party Libraries and Attribution:
    - License: GPL-3.0
    - Copyright: NEP_CPU authors
    - See LICENSE-NEP_CPU for the full license text.
-   - explicitly NEP_CPU is compliled into a WASM module. 
+   - Explicitly NEP_CPU is compliled into a WASM module. 
 
 3. THREE.js
    - Repository: https://github.com/mrdoob/three.js/
