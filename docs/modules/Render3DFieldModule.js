@@ -4,7 +4,7 @@
 
 import * as THREE from "three";
 
-import { MarchingCubes } from "../backend/three/MarchingCubes.js";
+import { MarchingCubes } from "../external/three/MarchingCubes.js";
 import { initializeUIOnLoad, readPOSCAR, initializeWithPOSCAR } from './StructureInputModule.js';
 import { fieldBrowser, updateFieldPanel } from "../panels/FieldPanel.js";
 import { app, fileBrowser, groups } from '../store.js';

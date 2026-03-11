@@ -61,7 +61,7 @@ export const PT_INVERTED = {
 
 let wasmReady;
 async function initMoyo() {
-      wasmReady = await init('../../backend/moyo-test/moyo_wasm_bg.wasm');
+      wasmReady = await init('../../external/moyo-test/moyo_wasm_bg.wasm');
     }
 
 export async function addMoyoPanel() {

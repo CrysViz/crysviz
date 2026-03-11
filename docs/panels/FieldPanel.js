@@ -1,6 +1,5 @@
 import { fileBrowser, app, general, groups } from '../store.js';
 import { updateField, setActiveField, toggleFieldVisibility } from '../modules/Render3DFieldModule.js';
-import * as THREE from '../backend/three/three.module.js';
 
 export let useLogSliderScale = false; // Global variable to track log scale state for iso slider
 

@@ -107,7 +107,7 @@
           <button data-mode="Spins">Spins</button>
           <button data-mode="Field">Field</button>
          </div>
-         <div id="SpinForceContainer"></div>
+         <div id="SpinForceFieldContainer"></div>
 
         <div class="segmented-control" id="ControlPanelAnalysisSwitch">
           <button data-mode="none" class="active">None</button>
@@ -135,6 +135,14 @@
         </div>
 
         <div class="toggle_group">
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="showAtoms" checked>
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Show Atoms</span>
+          </label>
+
           <label class="toggle_row toggle_container">
             <span class="toggle_switch">
               <input type="checkbox" id="showBonds" checked>

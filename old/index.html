@@ -65,28 +65,11 @@
             Paste Text
           </button>
         </div>
-<<<<<<< HEAD:classStructure/index.html
-
-        <div class="segmented-control" id="ControlPanelSpinForceSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="Forces">Forces</button>
-          <button data-mode="Spins">Spins</button>
-          <button data-mode="Field">Field</button>
-         </div>
-         <div id="SpinForceFieldContainer"></div>
-
-        <div class="segmented-control" id="ControlPanelAnalysisSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="Bonds">Bonds</button>
-          <button data-mode="Lattice">Cell</button>
-          <button data-mode="Polyhedra">Polyhedra</button>
-=======
         <div id="secondFileInputContainer" class="second-input-mode-panel" role="tabpanel" aria-labelledby="secondFileInputTab">
           <input type="file" id="secondFileInput">
           <label for="secondFileInput" id="secondFileLabel" tabindex="0">
             📁 Choose POSCAR/CIF file or drag & drop
           </label>
->>>>>>> 099390d2ecab70e85f04846e122f430e1f175dee:old/index.html
         </div>
         <div id="secondTextInputContainer" class="second-input-mode-panel" role="tabpanel" hidden aria-labelledby="secondTextInputTab">
           <textarea id="secondStructureText" placeholder="Paste POSCAR/CIF content, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id"></textarea>
@@ -117,71 +100,6 @@
       </div>
 
       <div class="control-group" id="structureControls" style="display: none;">
-<<<<<<< HEAD:classStructure/index.html
-         <div class="info-button-panel">
-            <button class="info-button" id="storageInfoButton">i</button>
-         </div> 
-         <div class="segmented-control" id="StorageOptionSwitch">
-          <button data-mode="Nothing">None</button>
-          <button data-mode="Minimal"class="active"> Minimal</button>
-          <button data-mode="All Settings">All Settings</button>
-        </div>
-
-        <div class="toggle_group">
-          <label class="toggle_row toggle_container">
-            <span class="toggle_switch">
-              <input type="checkbox" id="showAtoms" checked>
-              <span class="toggle_slider"></span>
-            </span>
-            <span class="toggle_text">Show Atoms</span>
-          </label>
-
-          <label class="toggle_row toggle_container">
-            <span class="toggle_switch">
-              <input type="checkbox" id="showBonds" checked>
-              <span class="toggle_slider"></span>
-            </span>
-            <span class="toggle_text">Show Bonds</span>
-          </label>
-
-          <label class="toggle_row toggle_container">
-            <span class="toggle_switch">
-              <input type="checkbox" id="showLattice" checked>
-              <span class="toggle_slider"></span>
-            </span>
-            <span class="toggle_text">Show Unit Cell</span>
-          </label>
-
-          <label class="toggle_row toggle_container">
-            <span class="toggle_switch">
-              <input type="checkbox" id="showPeriodic">
-              <span class="toggle_slider"></span>
-            </span>
-            <span class="toggle_text">Show Periodic Images</span>
-          </label>
-          <label class="toggle_row toggle_container">
-            <span class="toggle_switch">
-              <input type="checkbox" id="PBCBondToggle">
-              <span class="toggle_slider"></span>
-            </span>
-            <span class="toggle_text"> Neighbour Bonds</span>
-          </label>
-
-          <label class="toggle_row toggle_container">
-            <span class="toggle_switch">
-              <input type="checkbox" id="showPolyhedra">
-              <span class="toggle_slider"></span>
-            </span>
-            <span class="toggle_text">Show Polyhedra</span>
-          </label>
-        </div>
-       <!-- Color Settings -->
-       <div id="colorContainer"></div>
-        <!-- Camera Settings -->
-       <div id="cameraContainer"></div>
-
-
-=======
         <h3>Visualization Options</h3>
         <label>
           <input type="checkbox" id="showBonds" checked> Show Bonds
@@ -201,7 +119,6 @@
         <label>
           <input type="checkbox" id="vestaColors" checked> VESTA Colors
         </label>
->>>>>>> 099390d2ecab70e85f04846e122f430e1f175dee:old/index.html
         <label>
           Atom Size: <span id="atomSizeValue" class="slider-value">0.40</span>
           <input type="range" id="atomSize" min="0.30" max="0.80" step="0.1" value="0.40">

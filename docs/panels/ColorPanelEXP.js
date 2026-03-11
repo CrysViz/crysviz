@@ -1,4 +1,4 @@
-import * as THREE from '../backend/three/three.module.js'
+import * as THREE from './external/three/three.module.js'
 import { general, app } from '../store.js';
 import { switchCameraType } from '../panels/WindowAndSceneControls.js';
 import { updateBonds} from '../modules/BondsModule.js'
