@@ -1,0 +1,320 @@
+<!doctype html>
+<html>
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>CrysViz Crystal Structure Viewer</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <script type="importmap">
+      {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+    </script>
+
+    <!-- All styles moved to styles.css -->
+  </head>
+
+  <body>
+    <div id="mobileMenuToggle">☰</div>
+    <div id="mobileOverlay"></div>
+    <div id="ui">
+      <img src="./CrysViz_logo_clear_back.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
+      <div class="control-group">
+        <h3>Load POSCAR/CIF</h3>
+        <div class="input-mode-toggle" role="tablist" aria-label="Structure input mode">
+          <button type="button" class="input-mode-btn active" data-mode="file" role="tab" id="fileInputTab" aria-selected="true" aria-controls="fileInputContainer">
+            Upload File
+          </button>
+          <button type="button" class="input-mode-btn" data-mode="text" role="tab" id="textInputTab" aria-selected="false" aria-controls="textInputContainer">
+            Paste Text
+          </button>
+        </div>
+        <div id="fileInputContainer" class="input-mode-panel" role="tabpanel" aria-labelledby="fileInputTab">
+          <input type="file" id="fileInput">
+          <label for="fileInput" id="fileLabel" tabindex="0">
+            📁 Choose POSCAR/CIF file or drag & drop
+          </label>
+        </div>
+        <div id="textInputContainer" class="input-mode-panel" role="tabpanel" hidden aria-labelledby="textInputTab">
+          <textarea id="structureText" placeholder="Paste POSCAR/CIF content, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id"></textarea>
+          <button type="button" id="loadTextButton">Load Structure</button>
+        </div>
+      </div>
+
+
+
+      <div class="control-group" id="structureControls" style="display: none;">
+        <h3>Visualization Options</h3>
+        <label>
+          <input type="checkbox" id="showBonds" checked> Show Bonds
+        </label>
+        <label>
+          <input type="checkbox" id="showLattice" checked> Show Unit Cell
+        </label>
+        <label>
+          <input type="checkbox" id="neighborBonds"> Show Periodic Images
+        </label>
+        <label>
+          <input type="checkbox" id="orthographicCamera" checked> Parallel Projection
+        </label>
+        <label>
+          <input type="checkbox" id="vestaColors" checked> VESTA Colors
+        </label>
+        <label>
+          Atom Size: <span id="atomSizeValue" class="slider-value">0.40</span>
+          <input type="range" id="atomSize" min="0.30" max="0.80" step="0.1" value="0.40">
+        </label>
+        <label>
+          Bond Width: <span id="bondWidthValue" class="slider-value">0.12</span>
+          <input type="range" id="bondWidth" min="0.02" max="0.20" step="0.01" value="0.1">
+        </label>
+      </div>
+
+
+      <!-- Bond controls group -->
+      <div id="bondControlsGroup" style="display: none;">
+        <div id="bondPanel">
+          <div id="bondToggle" class="bond-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="bondControlsContent">
+            <h4>Bond Length Controls</h4>
+            <div id="bondToggleIcon" class="toggle-icon">+</div>
+          </div>
+
+          <div id="bondControlsContent" class="collapsible-content" aria-hidden="true">
+            <div id="resetBondLenghtsWrapper" class="bottonWrapper" aria-hidden="true">
+              <button id="resetBondLengths" class="reset-btn">Reset to Defaults</button>
+            </div>
+            <div id="bondControls"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Spin controls group -->
+      <div id="spinControlsGroup" style="display: none;">
+        <div id="spinPanel">
+          <div id="spinToggle" class="spin-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="spinControlsContent">
+            <h4>Spin Controls</h4>
+            <div id="spinToggleIcon" class="toggle-icon">+</div>
+          </div>
+
+          <div id="spinControlsContent" class="collapsible-content" aria-hidden="true">
+            
+            <div id="resetSpinLenghtsWrapper" class="bottonWrapper" aria-hidden="true">
+              <button id="resetSpinLengths" class="reset-btn">Reset to Defaults</button>
+            </div>
+
+
+            <div id="spinControls"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div id="view"></div>
+
+    <div id="aboutOverlay" hidden>
+      <div id="aboutModal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle" tabindex="-1">
+        <h1 id="aboutTitle" class="visually-hidden">About Crystal Structure Viewer</h1>
+        <button id="aboutClose" aria-label="Close About panel">×</button>
+        <div id="aboutContent" aria-live="polite">
+          <p id="aboutLoading">Loading About content…</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Measurement Tools UI -->
+    <div id="measurementTools">
+      <!-- Measurement panel -->
+      <div id="measurementPanel" class="measurement-group">
+        <button id="distanceModeBtn" class="measure-tool-btn" title="Distance Measurement">
+          <div class="tool-icon scale-icon">📏</div>
+          <span>Distance</span>
+        </button>
+        <button id="angleModeBtn" class="measure-tool-btn" title="Angle Measurement">
+          <div class="tool-icon protractor-icon">📐</div>
+          <span>Angle</span>
+        </button>
+        <button id="deleteModeBtn" class="measure-tool-btn" title="Delete Atom">
+          <div class="tool-icon">❌</div>
+          <span>Delete</span>
+        </button>
+        <button id="clearAllMeasurements" class="measure-tool-btn clear-btn" title="Clear All Measurements">
+          <div class="tool-icon">🗑️</div>
+          <span>Clear</span>
+        </button>
+      </div>
+
+      <!-- Mobile toggle button (shows only on mobile) -->
+      <button id="measurementToggle" class="measurement-toggle" title="Toggle Measurements">🛠️</button>
+    </div>
+
+    <!-- Camera Control Tools UI -->
+    <div id="cameraTools">
+      <!-- Camera panel -->
+      <div id="cameraPanel" class="measurement-group">
+        <button class="measure-tool-btn" id="viewX" title="View X axis">
+          <div class="tool-icon">x</div>
+          <span>x</span>
+        </button>
+        <button class="measure-tool-btn" id="viewY" title="View Y axis">
+          <div class="tool-icon">y</div>
+          <span>y</span>
+        </button>
+        <button class="measure-tool-btn" id="viewZ" title="View Z axis">
+          <div class="tool-icon">z</div>
+          <span>z</span>
+        </button>
+        <div class="camera-separator"></div>
+        <button class="measure-tool-btn" id="viewA" title="View A axis">
+          <div class="tool-icon">a</div>
+          <span>a</span>
+        </button>
+        <button class="measure-tool-btn" id="viewB" title="View B axis">
+          <div class="tool-icon">b</div>
+          <span>b</span>
+        </button>
+        <button class="measure-tool-btn" id="viewC" title="View C axis">
+          <div class="tool-icon">c</div>
+          <span>c</span>
+        </button>
+        <div class="camera-separator"></div>
+        <button class="measure-tool-reset-btn" id="resetView" title="Reset Camera View">
+          <div class="reset-icon"></div>
+          <span>Reset</span>
+        </button>
+      </div>
+
+      <!-- Mobile toggle button (shows only on mobile) -->
+      <button id="cameraToggle" class="measurement-toggle" title="Toggle Camera Controls">📷</button>
+    </div>
+
+    <script type="module" src="crystal-viewer.js"></script>
+
+
+    <div id="infoPanel">
+      <div id="structureToggle" class="structure-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="composition">
+        <h4>Structure</h4>
+        <div id="structureToggleIcon" class="toggle-icon">+</div>
+      </div>
+
+      <div id="composition" class="collapsible-content" aria-exanded="false">
+        <!-- Composition will be populated by JS. Hidden by default; expands when the header is toggled -->
+      </div>
+    </div>
+
+    <script>
+      (function(){
+        const toggle = document.getElementById('structureToggle');
+        const icon = document.getElementById('structureToggleIcon');
+        const content = document.getElementById('composition');
+
+        function setOpen(open) {
+          if (open) {
+            content.classList.add('open');
+            content.setAttribute('aria-hidden', 'false');
+            icon.textContent = '−';
+            icon.classList.add('open');
+            toggle.setAttribute('aria-expanded', 'true');
+          } else {
+            content.classList.remove('open');
+            content.setAttribute('aria-hidden', 'true');
+            icon.textContent = '+';
+            icon.classList.remove('open');
+            toggle.setAttribute('aria-expanded', 'false');
+          }
+        }
+
+        // initialize closed
+        setOpen(false);
+
+        toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
+        toggle.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setOpen(!content.classList.contains('open'));
+          }
+        });
+      })();
+    </script>
+
+    <div id="axesGizmo"></div>
+    <div id="axesLegend"> 
+      <div class="legend-row"><span class="dot dot-a"></span>a</div>
+      <div class="legend-row"><span class="dot dot-b"></span>b</div>
+      <div class="legend-row"><span class="dot dot-c"></span>c</div>
+    </div>
+
+    <script>
+      // Bond control script. default is closed!
+      document.addEventListener('DOMContentLoaded', function() {
+        const toggle = document.getElementById('bondToggle');
+        const icon = document.getElementById('bondToggleIcon');
+        const content = document.getElementById('bondControlsContent');
+
+        if (!toggle || !icon || !content) return;
+
+        function setOpen(open) {
+          if (open) {
+            content.classList.add('open');
+            content.setAttribute('aria-hidden', 'false');
+            icon.textContent = '−';
+            toggle.setAttribute('aria-expanded', 'true');
+          } else {
+            content.classList.remove('open');
+            content.setAttribute('aria-hidden', 'true');
+            icon.textContent = '+';
+            toggle.setAttribute('aria-expanded', 'false');
+          }
+        }
+
+        setOpen(false);
+        toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
+        toggle.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setOpen(!content.classList.contains('open'));
+          }
+        });
+      });
+    </script>
+
+
+    <script>
+      // Spin control script. default is closed!
+      document.addEventListener('DOMContentLoaded', function() {
+        const toggle = document.getElementById('spinToggle');
+        const icon = document.getElementById('spinToggleIcon');
+        const content = document.getElementById('spinControlsContent');
+
+        if (!toggle || !icon || !content) return;
+
+        function setOpen(open) {
+          if (open) {
+            content.classList.add('open');
+            content.setAttribute('aria-hidden', 'false');
+            icon.textContent = '−';
+            toggle.setAttribute('aria-expanded', 'true');
+          } else {
+            content.classList.remove('open');
+            content.setAttribute('aria-hidden', 'true');
+            icon.textContent = '+';
+            toggle.setAttribute('aria-expanded', 'false');
+          }
+        }
+
+        setOpen(false);
+        toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
+        toggle.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setOpen(!content.classList.contains('open'));
+          }
+        });
+      });
+    </script>
+
+  </body>
+</html>

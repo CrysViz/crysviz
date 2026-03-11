@@ -1,5 +1,5 @@
 
-<img src="docs/CrysViz_logo_clear_back.png" width="400">
+<img src="old/CrysViz_logo_clear_back.png" width="400">
 
 # Light-weight browser-based crystal structure visualisation with on-device rendering.
 
