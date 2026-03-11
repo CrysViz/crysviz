@@ -83,9 +83,9 @@ export function readCubeFile(content,fileName) {
   const field_values = new Float32Array(npoints); 
   line = density_lines[lineIndex].trim().split(/\s+/);
   // marching cubes expects iteration order of z,y,x (slowest to fastest)
-  for (let x = 0; x < grid[2]; x++) {
+  for (let x = 0; x < grid[0]; x++) {
     for (let y = 0; y < grid[1]; y++) {
-      for (let z = 0; z < grid[0]; z++) {
+      for (let z = 0; z < grid[2]; z++) {
         gridIndex = z * zd + y * yd + x;
         if (lineIndex >= density_lines.length) {
           console.error("Not enough lines in density data");

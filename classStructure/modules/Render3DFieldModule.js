@@ -184,22 +184,16 @@ export function createSlice(field, axis = "z", index = null) {
   return mesh;
 }
 
-function clearMesh(mesh) {
-  if (mesh) {
-    app.scene.remove(mesh);
-    mesh.geometry.dispose();
-    mesh.material.dispose();
+function clearField() {
+  if (groups.fieldGroup) {
+    app.scene.remove(groups.fieldGroup);
+    groups.fieldGroup.clear(); // remove all children
+    groups.fieldGroup = null;
   }
 }
 
 export function setActiveField(field, absoluteIsoValue = null, color1 = 0x33aaff, color2 = 0xff3333) {
-  if (groups.fieldMeshPos) {
-    clearMesh(groups.fieldMeshPos);
-  }
-  if (groups.fieldMeshNeg) {
-    clearMesh(groups.fieldMeshNeg);
-    groups.fieldMeshNeg = null;
-  }
+  clearField();
 
   if (absoluteIsoValue === null) {
     if (field.useAbsoluteIsoValue === null) {
@@ -246,17 +240,7 @@ export function updateField(iso = null) {
   }
 
   // Remove previous field mesh if any
-  if (groups.fieldMeshPos) {
-    clearMesh(groups.fieldMeshPos);
-  }
-  if (groups.fieldMeshNeg) {
-    clearMesh(groups.fieldMeshNeg);
-  }
-
-  if (!groups.activeField.isVisible) {
-    console.warn("Active field is set to invisible, skipping update");
-    return;
-  }
+  clearField();
 
   const field = groups.activeField;
 
@@ -289,44 +273,40 @@ export function updateField(iso = null) {
   //--------------------------------------------------------
   const { nx, ny, nz } = field;
 
+  if (!groups.fieldGroup) {
+    groups.fieldGroup = new THREE.Group();
+  }
+
+  groups.fieldGroup.matrixAutoUpdate = false; // we'll handle matrix updates manually
   // Convert 0→1 cube into actual cell (scaled to half the voxel extent)
   const cell = new THREE.Matrix4();
-  cell.makeBasis(
-    new THREE.Vector3(field.voxel[0][0] * nx * 0.5, field.voxel[0][1] * nx * 0.5, field.voxel[0][2] * nx * 0.5),
-    new THREE.Vector3(field.voxel[1][0] * ny * 0.5, field.voxel[1][1] * ny * 0.5, field.voxel[1][2] * ny * 0.5),
-    new THREE.Vector3(field.voxel[2][0] * nz * 0.5, field.voxel[2][1] * nz * 0.5, field.voxel[2][2] * nz * 0.5)
+
+  cell.set(
+    field.voxel[0][0], field.voxel[1][0], field.voxel[2][0], 0,
+    field.voxel[0][1], field.voxel[1][1], field.voxel[2][1], 0,
+    field.voxel[0][2], field.voxel[1][2], field.voxel[2][2], 0,
+    0, 0, 0, 1
   );
-  // Translate to the midpoint of the full voxel extent
-  const midpoint = new THREE.Vector3(
-    (field.voxel[0][0] * (nx+1) + field.voxel[1][0] * (ny+1) + field.voxel[2][0] * (nz+1)) * 0.5,
-    (field.voxel[0][1] * (nx+1) + field.voxel[1][1] * (ny+1) + field.voxel[2][1] * (nz+1)) * 0.5,
-    (field.voxel[0][2] * (nx+1) + field.voxel[1][2] * (ny+1) + field.voxel[2][2] * (nz+1)) * 0.5
-  );
+  cell.scale(new THREE.Vector3(nx/2, ny/2, nz/2));
 
   if (field.useAbsoluteIsoValue && groups.fieldMeshNeg) {
     for (let mesh of [groups.fieldMeshPos, groups.fieldMeshNeg]) {
-      mesh.applyMatrix4(cell);
-      mesh.position.set(midpoint.x, midpoint.y, midpoint.z);
+      groups.fieldGroup.add(mesh);
+      mesh.position.set(1, 1, 1);
     }
   }
   else {
     const mesh = iso >= 0 ? groups.fieldMeshPos : groups.fieldMeshNeg;
-    mesh.applyMatrix4(cell);
-    //mesh.position.set(midpoint.x, midpoint.y, midpoint.z);
+    groups.fieldGroup.add(mesh);
+    mesh.position.set(1, 1, 1);
   }
+  groups.fieldGroup.applyMatrix4(cell);
 
 
   //--------------------------------------------------------
   //  Add to scene and record
   //--------------------------------------------------------
-  if (field.useAbsoluteIsoValue && groups.fieldMeshNeg) {
-    app.scene.add(groups.fieldMeshPos);
-    app.scene.add(groups.fieldMeshNeg);
-  }
-  else {
-    const mesh = iso >= 0 ? groups.fieldMeshPos : groups.fieldMeshNeg;
-    app.scene.add(mesh);
-  }
+  app.scene.add(groups.fieldGroup);
 }
 
 export function parseCubeFile(content, fileName) {

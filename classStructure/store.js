@@ -63,6 +63,7 @@ export const groups = {
   spinGroup:null,
   atomsMesh: null,
   bondsMesh: null,
+  fieldGroup: null,
   fieldMeshPos: null,
   fieldMeshNeg: null,
   activeField: null,
