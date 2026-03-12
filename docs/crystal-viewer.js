@@ -20,7 +20,7 @@ function findDuplicateIndices(positions, eps = 1e-6) {
 
   console.log(seen);
 }
-import * as THREE from './backend/three/three.module.js';
+import * as THREE from './external/three/three.module.js';
 // .........................................................................................................
 // store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
 //
