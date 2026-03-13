@@ -71,6 +71,8 @@ import {highlightBondInfoInStructurePanel,clearHighlightAtom,highlightBondIn3D,h
 import {addVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
 import {addCameraPanel} from './panels/CameraPanel.js'
 import {addColorPanel} from './panels/ColorPanel.js'
+
+import { updateField, parseCHGCARFile, parseCubeFile } from './modules/Render3DFieldModule.js';
 //import {addAtomPanel} from './modules/addToStructureModule/addAtomPanel.js'
 
 // .........................................................................................................
@@ -120,6 +122,7 @@ import {Structure} from './classes/Structure.js'
 // New imports (which go here, because they need initializations that happen above until things are refactored)
 import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from './modules/io.js';
 import { initializeUIOnLoad } from './modules/StructureInputModule.js';
+import { fieldBrowser } from './panels/FieldPanel.js';
 
 // ........................................................................................................
 //
@@ -323,7 +326,8 @@ export function updateVisualization(options = {}) {
     reRenderComposition = false,
 
     sOpactiy = general.secondOpacity,
-    mOpacity = general.mainOpacity
+    mOpacity = general.mainOpacity,
+    reRenderField = false
   } = options;
 
   if (!fileBrowser.selectedStructure) {
@@ -355,6 +359,9 @@ export function updateVisualization(options = {}) {
   }
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
   if (reRenderOther) updateOther();
+  if (reRenderField && fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
+    updateField();
+  }
 }
 
 async function loadStructure(content, fileName = '', isDefault = false) {
@@ -363,6 +370,14 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     console.log("")
     const lower = (fileName || '').toLowerCase();
     const contentString = typeof content === 'string' ? content : '';
+    
+    // Add these new file type detections
+    const treatAsCube = lower.endsWith('.cube') ||
+                       lower.includes('.cube');
+                       
+    const treatAsCHGCAR = lower.includes('chgcar') ||
+                         lower.endsWith('.chgcar');
+
     const treatAsCIF = lower.endsWith('.cif') ||
                       lower.includes('.cif') ||
                       /(^|\W)cif(\W|$)/.test(lower) ||
@@ -389,8 +404,16 @@ async function loadStructure(content, fileName = '', isDefault = false) {
      const treatAsPWSCFin = lower.endsWith(".scf.in") ||
                             lower.endsWith(".vcrx.in");
 
+    if (treatAsCube) {
+      console.log("This is probably a CUBE file");
+      await parseCubeFile(contentString, fileName);
+    }
+    else if (treatAsCHGCAR) {
+      console.log("This is probably a CHGCAR file"); 
+      await parseCHGCARFile(contentString, fileName);
+    }
 
-    if (treatAsCIF || treatAsmagCIF) {
+    else if (treatAsCIF || treatAsmagCIF) {
         console.log("This is probably a CIF or magCIF file")
         const structureContainer = await parse_any(contentString,fileName);
         initializeUIOnLoad(structureContainer);
@@ -723,23 +746,31 @@ function init() {
 
   // Raycast against InstancedMesh objects
   const atomHits = raycaster.intersectObject(groups.atomsMesh);
+  const bondHits = raycaster.intersectObject(groups.bondsMesh);
 
+  let hit = null;
 
   // Handle atom hits
   if (atomHits.length > 0) {
-    const hit = atomHits[0];
+    hit = atomHits[0];
     console.log("Hit atom instance ID:", hit.instanceId);
     // You can now use hit.instanceId to identify the specific atom
   }
 
- const  bondHits = raycaster.intersectObjects(groups.bondsGroup.children, true);  
+  // Handle atom hits
+  if (bondHits.length > 0) {
+    hit = bondHits[0];
+    console.log("Hit Bond instance ID:", hit.instanceId);
+    // You can now use hit.instanceId to identify the specific atom
+  }    
+
 
 
   // Raycast for bonds
   //const bondHits = raycaster.intersectObjects(groups.bondsGroup.children, true);
 
   if (atomHits.length > 0) {
-    const hit = atomHits[0];
+    hit = atomHits[0];
 
     //const element = atomMesh.userData.element;
     const sourceIndex = hit.instanceId
@@ -749,15 +780,18 @@ function init() {
     highlightAtomIn3D(sourceIndex);
 
   } else if (bondHits.length > 0) {
-    const hit = bondHits[0];
-    const bondMesh = hit.object;
-    if (bondMesh.userData.isGhost) return;
-
-    const bondIndex = bondMesh.userData.sourceIndex; // or similar, depending on your data structure
-
+    let id2;
+    console.log(hit.instanceId%2)
+    if (hit.instanceId%2 == 0){
+      id2 = hit.instanceId+1
+    }
+    else{
+      id2 = hit.instanceId-1
+    }
+    console.log("Hit atom instance ID:", hit.instanceId,id2);
     //highlightBondInStructurePanel(bondIndex);
-    highlightBondIn3D(bondMesh);
-    highlightBondInfoInStructurePanel()
+    highlightBondIn3D([hit.instanceId,id2]);
+    //highlightBondInfoInStructurePanel()
 
 
   }
@@ -908,11 +942,17 @@ function clearLongPress() {
  // loadSharedStructure();
 
   // Control handlers
+  document.getElementById('showAtoms').onchange = (e) => {
+    general.showAtoms = e.target.checked;
+    if (groups.atomsMesh) groups.atomsMesh.visible = general.showAtoms;
+  };
+
+  // Control handlers
   document.getElementById('showBonds').onchange = (e) => {
     general.showBonds = e.target.checked;
     if (groups.bondsMesh) {
-      groups.bondsMesh.visible = general.showBonds
-  //    updateVisualization();
+      groups.bondsMesh.visible = general.showBonds;
+  //  updateVisualization()
     }
   };
 
