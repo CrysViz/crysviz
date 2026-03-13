@@ -258,48 +258,30 @@ async function workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,s
 
 
 
-export function runPeriodicWrapped(periodic, frac, elements,lattice) {
-
-    let bondLenghts = general.bondLengths
-    let showPBCBonds = general.showPBCBonds
-    let showPeriodic = general.showPeriodic
+export function runPeriodicWrapped(periodic, frac, elements, lattice) {
+    const bondLenghts = general.bondLengths
+    const showPBCBonds = general.showPBCBonds
+    const showPeriodic = general.showPeriodic
 
     const map = new Map([
       ["frac", frac],
       ["elements", elements],
       ["bondLenghts", bondLenghts],
       ["lattice", lattice],
-      ["showPeriodic",showPeriodic],
-      ["showPBCBonds",showPBCBonds]
+      ["showPeriodic", showPeriodic],
+      ["showPBCBonds", showPBCBonds]
     ]);
-    let inputHash = hashInput(map)
+    const inputHash = hashInput(map)
 
-    console.warn("hashes",inputHash,periodic.hash)
-    let result = null
-    if (periodic.hash != inputHash){
-      if(1==1){ //#(periodic.hash==="None") {
-        console.warn("Calling sync periodicWrapped")
-        result = periodicWrapped(periodic, frac, elements,lattice)
-        periodic.wrapped = result
-      }
-      else{
-        try {
-          console.log("Calling workerPeriodicWrapped...")
-          result = workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice);
-          console.log(result)
-          periodic.wrapped = result
-        } catch (error) {
-          console.error('Error in worker:', error);
-          throw error;
-        }
-      }
+    if (periodic.hash !== inputHash) {
+      console.log("[WASM] periodicWrapped called — showPeriodic:", showPeriodic, "showPBCBonds:", showPBCBonds, "nAtoms:", frac.length)
+      const result = periodicWrapped(general, frac, elements, lattice)
+      console.log("[WASM] periodicWrapped returned", result.elements.length, "atoms")
       periodic.hash = inputHash
       periodic.wrapped = result
-      return periodic
-    }  
-    else{
-      return periodic
     }
+
+    return periodic
 }
 
 
