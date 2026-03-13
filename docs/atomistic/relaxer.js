@@ -125,7 +125,7 @@ export function applyStructureToViewer(nepStruct, structure = fileBrowser.select
     atomsUpdate: true,
     bondsUpdate: true,
     reRenderAtoms: false,
-    reRenderBonds: false,
+    reRenderBonds: true,
     reRenderLattice: true,
     reRenderOther: false,
     reRenderComposition: false,
