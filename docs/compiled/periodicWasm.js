@@ -85,10 +85,12 @@ export function periodicWrapped(general, frac, elements, lattice) {
     fracFlat[3 * i + 2] = frac[i][2];
   }
 
+  // Transpose before sending: JS fracToCart uses L^T * frac, Rust uses L * frac.
+  // Sending L^T makes Rust compute L^T * frac = correct Cartesian.
   const latticeFlat = new Float64Array(9);
   for (let r = 0; r < 3; r++) {
     for (let c = 0; c < 3; c++) {
-      latticeFlat[r * 3 + c] = lattice[r][c];
+      latticeFlat[c * 3 + r] = lattice[r][c];
     }
   }
 
