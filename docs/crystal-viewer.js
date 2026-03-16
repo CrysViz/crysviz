@@ -1,25 +1,3 @@
-// external  imports
-function findDuplicateIndices(positions, eps = 1e-6) {
-  console.log(positions)
-  const seen = new Map();
-  const duplicates = [];
-
-  positions.forEach((p, i) => {
-    const key = [
-      Math.round(p.x / eps),
-      Math.round(p.y / eps),
-      Math.round(p.z / eps)
-    ].join(",");
-
-    if (seen.has(key)) {
-      duplicates.push({ first: seen.get(key), duplicate: i });
-    } else {
-      seen.set(key, i);
-    }
-  });
-
-  console.log(seen);
-}
 import * as THREE from './external/three/three.module.js';
 // .........................................................................................................
 // store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
@@ -54,10 +32,10 @@ import { createColorPicker } from './modules/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
 import {getBondCutoff} from './modules/BondsModule.js'
-import {updateBonds,rebuildBonds,buildBondObjects} from './modules/BondsFracUpdateModule.js'
+import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter} from './modules/BondsFracUpdateModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
-import {rebuildAtoms,updateAtoms} from './modules/AtomsFracUpdateModule.js';
+import {rebuildAtoms,updateAtoms,updateSingleAtomDiameter} from './modules/AtomsFracUpdateModule.js';
 import {createSupercell} from './modules/SuperCellModule.js';
 import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,
         getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,
@@ -431,7 +409,7 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 
     else if (treatAsOUTCAR){
         console.log("This is probably an OUTCAR file");
-        parseOUTCAR(contentString,fileName);
+        await parseOUTCAR(contentString,fileName);
 
         if (fileBrowser.selectedStructure.spin != null) {
          addSpinPanel();
@@ -928,11 +906,20 @@ function clearLongPress() {
   document.getElementById('viewC').onclick = () => {app.controls.reset(); const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
 
-  setupStructureInput({
-    onLoadStructure: (content, name) => loadStructure(content, name),
-    setStatus,
-  });
-
+setupStructureInput({
+  onLoadStructure: async (content, name) => {
+    setStatus('Loading structure...');
+    try {
+      // Wait for the structure to load
+      await loadStructure(content, name);
+      setStatus('Structure loaded!');
+    } catch (error) {
+      console.error('Error loading structure:', error);
+      setStatus('Error loading structure.');
+    }
+  },
+  setStatus,
+});
 //setupSecondStructureInput({
 //    onLoadStructure: (content, name) => loadSecondStructure(content, name),
 //    setStatus,
@@ -998,12 +985,17 @@ function clearLongPress() {
     };
   }
 
-
   document.getElementById('atomSize').oninput = (e) => {
     general.atomSize = parseFloat(e.target.value);
     document.getElementById('atomSizeValue').textContent = general.atomSize.toFixed(1);
-    updateVisualization();
+    fileBrowser.selectedStructure.elements.forEach((element, index) => {
+      fileBrowser.selectedStructure.atomImages[index].forEach(imageIndex => {
+        updateSingleAtomDiameter(imageIndex, element)
+       });
+    });
+    groups.atomsMesh.instanceMatrix.needsUpdate = true;
     updateMeasurementMarkers(); // Update ring markers when atom size changes
+
   };
 
 // former slider to compare two structure. Should be added to new panel
@@ -1049,11 +1041,15 @@ function clearLongPress() {
       // clamp defensively
       general.bondRadius = Math.max(0.005, Math.min(1.0, isNaN(v) ? bondRadius : v));
       bondWidthValue.textContent = general.bondRadius.toFixed(2);
-      updateVisualization();
+      for (let i = 0; i < groups.bondsMesh.count; i++) {
+        updateSingleBondDiameter(i,  general.bondRadius)
+        //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)
+       }
+      groups.bondsMesh.instanceColor.needsUpdate = true;
+
+      //updateVisualization();
     };
   }
-
-
     let checkbox_polyhedra = document.getElementById("showPolyhedra");
       checkbox_polyhedra.checked = false; // explicitly untick
 
