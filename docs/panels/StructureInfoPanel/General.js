@@ -192,15 +192,15 @@ atomPanel.appendChild(ResetColorAtomsButtonRow)
 
 // Create bonds panel
 const bondsPanel = document.createElement("div");
-bondsPanel.id = "bondControls";
+bondsPanel.id = "infoBondControls";
 bondsPanel.className = "atomBondClass"; // Add a class for styling
 // Append panels to compDiv
 compDiv.appendChild(atomPanel);
 compDiv.appendChild(bondsPanel);
 
-createSpecificBondControl("bondControls");
+createSpecificBondControl("infoBondControls");
 
-createBondLengthControls("bondControls"); // Make sure to pass the panel element
+createBondLengthControls("infoBondControls"); // Make sure to pass the panel element
 
 // Function to show the selected panel and hide others
 function showPanel(panelId) {
@@ -235,9 +235,7 @@ segmentedControl.querySelectorAll('button').forEach(button => {
       showPanel('atomPanel');
     } else if (selectedMode === 'bonds') {
       console.log("mode bonds selected")
-      // For comparison mode, maybe show both panels?
-      // For now, let's show the bonds panel
-      showPanel('bondControls');
+      showPanel('infoBondControls');
     }
   });
 });
