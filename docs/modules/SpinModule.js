@@ -42,10 +42,13 @@ export function updateSpins(spinFactor = 1.0) {
   const spinMap = new Map();
   spinsData.forEach(s => spinMap.set(s.atomIndex, s));
 
-  // Collect valid arrows
+  // Collect valid arrows — one per original atom (skip periodic images)
   const arrows = [];
+  const seen = new Set();
   for (let i = 0; i < wrapped.cart.length; i++) {
     const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    if (seen.has(srcIdx)) continue;
+    seen.add(srcIdx);
     const spin = spinMap.get(srcIdx);
     if (!spin?.vector || spin.vector.length !== 3) continue;
 

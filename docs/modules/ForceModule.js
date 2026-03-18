@@ -37,10 +37,14 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0) {
   const wrapped = structure.periodic.wrapped;
   const shaftRadius = general.forceRadius ?? 0.08;
 
-  // Collect valid arrows
+  // Collect valid arrows — one per original atom (skip periodic images)
   const arrows = [];
+  const seen = new Set();
   for (let i = 0; i < wrapped.cart.length; i++) {
     const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    if (seen.has(srcIdx)) continue; // skip periodic image duplicates
+    seen.add(srcIdx);
+
     const force = structure.forces[srcIdx];
     if (!force?.vector) continue;
     const v = force.vector;

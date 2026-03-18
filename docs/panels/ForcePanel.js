@@ -135,8 +135,8 @@ export function addForcePanel(target = "SpinForceFieldContainer") {
     }
   }
 
-  // Default is closed
-  setOpen(false);
+  // Default is open
+  setOpen(true);
 
   // Click
   toggle.addEventListener('click', () =>
