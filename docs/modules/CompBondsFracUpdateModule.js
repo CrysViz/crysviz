@@ -57,7 +57,7 @@ export function rebuildSecondBonds(structure, opacity) {
     groups.secondBondsMesh.geometry.dispose();
     groups.secondBondsMesh.material.dispose();
     app.scene.remove(groups.secondBondsMesh);
-    groups.bondssMesh = null;
+    groups.secondBondssMesh = null;
   }
   console.log("Building bond objects");
   buildSecondBondObjects(structure)
@@ -397,8 +397,8 @@ export function updateSecondSingleBond(index, bond) {
   mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, 0);
 }
 
-export async function updateSecondBonds(structure) {
-  const mesh = groups.bondsMesh;
+export function updateSecondBonds(structure) {
+  const mesh = groups.secondBondsMesh;
   if (!mesh) return;
   mesh.visible = !!general.showBonds;
   if (!general.showBonds) return;

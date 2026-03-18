@@ -43,9 +43,9 @@ export function createRow(obj) {
   const checkbox = row.querySelector('input[type="checkbox"]');
   checkbox.addEventListener("change", () => {
     const count = countChecked();
-    if (count > 2) {
+    if (count > 1) {
       checkbox.checked = false;
-      showError("Only two structures can be compared");
+      showError("Only one structure can be selected for comparison");
       return;
     }
     updateComparisonStructure(row, checkbox.checked);
@@ -146,22 +146,45 @@ export function updateComparisonStructure(row, isChecked) {
         SecondReRenderLattice: false
       });
     }
-    // if the lattice comparison panel is visible update the matrices
-    // Example: Call this when a new structure is selected
+
+    // Add event listener for step input changes
+    stepInput.addEventListener("input", () => {
+      const newStep = parseInt(stepInput.value, 10) - 1;
+      if (newStep >= 0 && newStep < container.structures.length) {
+        fileBrowser.comparisonStructure = container.structures[newStep];
+        updateVisualization({
+          SecondAtomsUpdate: false,
+          SecondReRenderAtoms: true,
+          SecondBondsUpdate: false,
+          SecondReRenderBonds: true,
+          SecondReRenderLattice: false
+        });
+
+        // Update lattice comparison panel if in comparison mode
+        if (
+          fileBrowser.comparisonStructure &&
+          fileBrowser.selectedStructure &&
+          general.playerModeState === "comparison"
+        ) {
+          const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
+          const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
+          updateLatticeComparisonPanel(L1, L2);
+        }
+      }
+    });
+
+    // Update lattice comparison panel if in comparison mode
     if (
       fileBrowser.comparisonStructure &&
       fileBrowser.selectedStructure &&
-      general.playerModeState === "comparison" // Only update if in comparison mode
+      general.playerModeState === "comparison"
     ) {
       const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
       const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
       updateLatticeComparisonPanel(L1, L2);
     }
-
-
-
-
-  } else {
+  }
+  else {
     // If unchecked, clear the comparison structure if this row was the comparison row
     if (fileBrowser.comparisonRow === row) {
       fileBrowser.comparisonRow = null;
@@ -174,7 +197,7 @@ export function updateComparisonStructure(row, isChecked) {
         app.scene.remove(groups.secondAtomsMesh);
         groups.secondAtomsMesh = null;
       }
-     if (groups.secondBondsMesh) {
+      if (groups.secondBondsMesh) {
         groups.secondBondsMesh.geometry.dispose();
         groups.secondBondsMesh.material.dispose();
         app.scene.remove(groups.secondBondsMesh);
@@ -190,6 +213,7 @@ export function updateComparisonStructure(row, isChecked) {
     }
   }
 }
+
 
 // Function to update an existing row when the object (obj) changes
 export function updateRow(row, obj) {
