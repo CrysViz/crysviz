@@ -33,9 +33,13 @@ import { pauseRendering, resumeRendering,animation_update} from './modules/Anima
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
 import {getBondCutoff} from './modules/BondsModule.js'
 import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter} from './modules/BondsFracUpdateModule.js'
+import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './modules/CompBondsFracUpdateModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
 import {rebuildAtoms,updateAtoms,updateSingleAtomDiameter} from './modules/AtomsFracUpdateModule.js';
+import {rebuildSecondAtoms,updateSecondAtoms,updateSecondSingleAtomDiameter} from './modules/CompAtomsFracUpdateModule.js';
+
+
 import {createSupercell} from './modules/SuperCellModule.js';
 import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,
         getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,
@@ -64,7 +68,6 @@ import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
 } from './panels/WindowAndSceneControls.js'
 import {loadAboutContent, openAboutPanel, closeAboutPanel} from './panels/AboutPanel.js';
 import {addSpinPanel,createSpinControls} from './panels/SpinPanel.js';
-import { addLatticeComparisonPanel }from './panels/LatticeComparisonPanel.js'
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
 import {renderComposition} from './panels/StructureInfoPanel/General.js';
 import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
@@ -292,14 +295,23 @@ function updateOther() {
   addVacuumPanel();
 }
 
-
 export function updateVisualization(options = {}) {
   const {
+    // Main Structure
     atomsUpdate = true,
-    bondsUpdate = true,
     reRenderAtoms = false,
+    bondsUpdate = true,
     reRenderBonds = false,
     reRenderLattice = true,
+
+    // Comparison Structure
+    SecondAtomsUpdate = false,
+    SecondReRenderAtoms = false,
+    SecondBondsUpdate = false,
+    SecondReRenderBonds = false,
+    SecondReRenderLattice = false,
+
+    // Panels
     reRenderOther = true,
     reRenderComposition = false,
 
@@ -313,11 +325,12 @@ export function updateVisualization(options = {}) {
     return;
   }
 
+  // Main Structure
   if (reRenderAtoms) {
     console.warn("Calling rebuildAtoms")
     rebuildAtoms(mOpacity);
   }
-  if (!reRenderAtoms & atomsUpdate) {
+  if (!reRenderAtoms && atomsUpdate) {
     console.warn("Calling updateAtoms")
     updateAtoms(mOpacity);
   }
@@ -327,11 +340,35 @@ export function updateVisualization(options = {}) {
     rebuildBonds(mOpacity)
   }
 
-  if (!reRenderAtoms & bondsUpdate) {
+  if (!reRenderBonds && bondsUpdate) {
     console.warn("Calling updateBonds")
     updateBonds(mOpacity)
   }
 
+  // Comparison Structure
+  if (SecondReRenderAtoms) {
+    console.warn("Calling rebuildSecondAtoms")
+    console.log(fileBrowser.compStructure)
+    rebuildSecondAtoms(fileBrowser.comparisonStructure, sOpactiy);
+  }
+  if (!SecondReRenderAtoms && SecondAtomsUpdate) {
+    console.warn("Calling updateSecondAtoms")
+    updateSecondAtoms(fileBrowser.comparisonStructure, sOpactiy);
+  }
+
+  if (SecondReRenderBonds) {
+    console.warn("Calling rebuildSecondBonds")
+    rebuildSecondBonds(fileBrowser.comparisonStructure,sOpactiy)
+  }
+
+  if (!SecondReRenderBonds && SecondBondsUpdate) {
+    console.warn("Calling updateSecondBonds")
+    updateSecondBonds(fileBrowser.comparisonStructure,sOpactiy)
+  }
+
+  if (SecondReRenderLattice) updateSecondLattice(general.secondLatticeColor);
+
+  // Panels
   if (reRenderComposition != false) {
     renderComposition(reRenderComposition);
   }
@@ -341,6 +378,7 @@ export function updateVisualization(options = {}) {
     updateField();
   }
 }
+
 
 async function loadStructure(content, fileName = '', isDefault = false) {
   try {

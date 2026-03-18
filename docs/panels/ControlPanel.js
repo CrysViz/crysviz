@@ -1,6 +1,6 @@
-import { general,bondLengths} from '../store.js';
+import { general,bondLengths,fileBrowser} from '../store.js';
 import { addTrajectoryPlayer,removeTrajectoryPlayer} from './TrajectoryPanel.js';
-import { addLatticeComparisonPanel } from './LatticeComparisonPanel.js';
+import { createLatticeComparisonPopup, updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import { removeSpins,updateSpins } from '../modules/SpinModule.js';
 import { removeForces,updateForces } from '../modules/ForceModule.js';
 import { removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
@@ -27,26 +27,34 @@ export function addControlPanelModeSwitch() {
     btn.classList.add("active");
 
     // Handle different modes
-    if (general.playerModeState == "trajectory") {
-      console.log("calling addTrajectoryPlayer()")
-        const frames = Array.from({ length: 200 }, (_, i) => i * 0.05);
-        addTrajectoryPlayer(frames);
-      } 
-    else if (general.playerModeState == "comparison") {
+    if (mode === "trajectory") {
+      console.log("Calling addTrajectoryPlayer()");
+      const frames = Array.from({ length: 200 }, (_, i) => i * 0.05);
+      addTrajectoryPlayer(frames);
+    }
+    else if (mode === "comparison") {
       const trajPanel = document.getElementById("TrajControlPanel");
       if (trajPanel) {
         removeTrajectoryPlayer();
-        }
-      } 
+      }
+      if (fileBrowser.comparisonStructure) {
+        console.log("Updating lattice comparison panel");
+        createLatticeComparisonPopup();
+        const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
+        const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
+        updateLatticeComparisonPanel(L1, L2);
+      }
+    }
     else {
       const trajPanel = document.getElementById("TrajControlPanel");
       if (trajPanel) {
         removeTrajectoryPlayer();
       }
     }
-    console.log(general.playerModeState);
+    console.log("Current mode:", general.playerModeState);
   });
 }
+
 
 const ControlPanelSpinForceSwitch = document.getElementById("ControlPanelSpinForceSwitch");
 export function addControlPanelSpinForceSwitch() {

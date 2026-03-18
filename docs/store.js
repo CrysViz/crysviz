@@ -17,6 +17,9 @@ export const fileBrowser = {
   selectedRow:null, 
   selectedRowIndex:0,
   selectedStructure:null,
+  comparisonRow:null,
+  comparisonRowIndex:-1,
+  comparisonStructure:null,
   stepInput:null,
 }  
 
