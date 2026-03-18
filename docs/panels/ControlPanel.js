@@ -1,6 +1,6 @@
 import { general,bondLengths,fileBrowser} from '../store.js';
 import { addTrajectoryPlayer,removeTrajectoryPlayer} from './TrajectoryPanel.js';
-import { createLatticeComparisonPopup, updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
+import {removeLatticeComparisonPopup, createLatticeComparisonPopup, updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import { removeSpins,updateSpins } from '../modules/SpinModule.js';
 import { removeForces,updateForces } from '../modules/ForceModule.js';
 import { removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
@@ -28,9 +28,11 @@ export function addControlPanelModeSwitch() {
 
     // Handle different modes
     if (mode === "trajectory") {
+      removeLatticeComparisonPopup();
       console.log("Calling addTrajectoryPlayer()");
       const frames = Array.from({ length: 200 }, (_, i) => i * 0.05);
       addTrajectoryPlayer(frames);
+
     }
     else if (mode === "comparison") {
       const trajPanel = document.getElementById("TrajControlPanel");
@@ -50,6 +52,7 @@ export function addControlPanelModeSwitch() {
       if (trajPanel) {
         removeTrajectoryPlayer();
       }
+      removeLatticeComparisonPopup();
     }
     console.log("Current mode:", general.playerModeState);
   });
