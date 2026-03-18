@@ -98,7 +98,7 @@ export const general = {
   atomSize:1.0,
   structure2OpacityValue: 0.5,
   mainOpacity:1.0,
-  secondOpacity:1.0,
+  compOpacity:1.0,
   showAtoms:true,
   showBonds:true,
   showLattice:true,

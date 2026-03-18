@@ -123,8 +123,6 @@ const setStatus = (s) => {
 //These will not be kept as sson as classes and therefore trajectories are workgin
 // ........................................................................................................
 
-let atomsGroup2, bondsGroup2, latticeGroup2,spinGroup2;
-let structureData2 = null;
 
 function openBackgroundColorPicker(dot) {
   // Remove any existing picker first
@@ -315,7 +313,7 @@ export function updateVisualization(options = {}) {
     reRenderOther = true,
     reRenderComposition = false,
 
-    sOpactiy = general.secondOpacity,
+    sOpacity = general.compOpacity,
     mOpacity = general.mainOpacity,
     reRenderField = false
   } = options;
@@ -349,21 +347,21 @@ export function updateVisualization(options = {}) {
   if (SecondReRenderAtoms) {
     console.warn("Calling rebuildSecondAtoms")
     console.log(fileBrowser.compStructure)
-    rebuildSecondAtoms(fileBrowser.comparisonStructure, sOpactiy);
+    rebuildSecondAtoms(fileBrowser.comparisonStructure, sOpacity);
   }
   if (!SecondReRenderAtoms && SecondAtomsUpdate) {
     console.warn("Calling updateSecondAtoms")
-    updateSecondAtoms(fileBrowser.comparisonStructure, sOpactiy);
+    updateSecondAtoms(fileBrowser.comparisonStructure, sOpacity);
   }
 
   if (SecondReRenderBonds) {
     console.warn("Calling rebuildSecondBonds")
-    rebuildSecondBonds(fileBrowser.comparisonStructure,sOpactiy)
+    rebuildSecondBonds(fileBrowser.comparisonStructure,sOpacity)
   }
 
   if (!SecondReRenderBonds && SecondBondsUpdate) {
     console.warn("Calling updateSecondBonds")
-    updateSecondBonds(fileBrowser.comparisonStructure,sOpactiy)
+    updateSecondBonds(fileBrowser.comparisonStructure,sOpacity)
   }
 
   if (SecondReRenderLattice) updateSecondLattice(general.secondLatticeColor);

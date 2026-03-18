@@ -223,7 +223,7 @@ export function updateSecondSingleAtomDiameter(index, element) {
 }
 
 
-export async function updateSecondAtoms(structure, opacity = 1.0) {
+export function updateSecondAtoms(structure, opacity = 1.0) {
 
   let positions = structure.atoms.map(a => a.position);
   let lattice = structure.lattice.map(r => [...r]);
@@ -238,9 +238,17 @@ export async function updateSecondAtoms(structure, opacity = 1.0) {
   wrappedCart = wrapped.cart
   const mesh = groups.secondAtomsMesh;
  
-  mesh.material.opacity = 0.8;
-  mesh.material.transparent = true;
-  mesh.material.depthWrite = false; // Important for transparency
+  mesh.material.opacity = opacity;
+  console.log("opacity",opacity)
+  if (opacity === 1) {
+    console.log("Switching of transparency for comp atoms")
+    mesh.material.transparent = false;
+    mesh.material.depthWrite = true;
+  }
+  else {
+    mesh.material.transparent = true;
+    mesh.material.depthWrite = false;
+  }
   mesh.material.needsUpdate = true; 
 
   for (let i = 0; i < groups.atomsMesh.count; i++) {

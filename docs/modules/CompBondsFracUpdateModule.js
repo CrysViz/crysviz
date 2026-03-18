@@ -397,22 +397,27 @@ export function updateSecondSingleBond(index, bond) {
   mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, 0);
 }
 
-export function updateSecondBonds(structure) {
+export function updateSecondBonds(structure, opacity) {
   const mesh = groups.secondBondsMesh;
   if (!mesh) return;
-  mesh.visible = !!general.showBonds;
-  if (!general.showBonds) return;
+  //mesh.visible = !!general.showBonds;
+  //if (!general.showBonds) return;
 
   let bonds = structure.bonds.filter(b => b.visibleLen > 1e-3); 
 
   bonds.forEach((bond, i) => {
     updateSecondSingleBond(i, bond);
   });
-  mesh.material.opacity = 0.8;
-  mesh.material.transparent = true;
-  mesh.material.depthWrite = false; // Important for transparency
-  mesh.material.needsUpdate = true;
-
+  mesh.material.opacity = opacity;
+  if (opacity === 1) {
+    console.log("Switching of transparency for comp bonds")
+    mesh.material.transparent = false;
+    mesh.material.depthWrite = true;
+  }
+  else {
+    mesh.material.transparent = true;
+    mesh.material.depthWrite = true;
+  } 
   // mark all attributes as needing update
   mesh.instanceMatrix.needsUpdate = true;
   mesh.instanceColor.needsUpdate = true;
