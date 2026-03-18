@@ -1,147 +1,130 @@
 import * as THREE from '../external/three/three.module.js';
-import { app, fileBrowser, groups, general,spinsData, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
-import {disposeGroup} from '../panels/WindowAndSceneControls.js';
-import {periodicWrapped} from './LatticeModule.js';
+import { app, fileBrowser, groups, general, spinsData } from '../store.js';
+import { disposeGroup } from '../panels/WindowAndSceneControls.js';
 
-export function removeSpins(){
-if (groups.spinGroup) {
-    groups.spinGroup.children.forEach(child => {
-      child.traverse(c => {
-        if (c.geometry) c.geometry.dispose();
-        if (c.material) c.material.dispose();
-      });
-    });
-    disposeGroup(groups.spinGroup);
-  }
-}
-export function updateSpins(spinFactor = 1) {
+const SHAFT_SEGS = 12;
+const TIP_SEGS = 12;
+const TIP_LENGTH = 0.8;
+const TIP_RADIUS = 0.3;
+const UP = new THREE.Vector3(0, 1, 0);
 
-  // Dispose old spin arrows
-  if (groups.spinGroup) {
-    groups.spinGroup.children.forEach(child => {
-      child.traverse(c => {
-        if (c.geometry) c.geometry.dispose();
-        if (c.material) c.material.dispose();
-      });
-    });
-    disposeGroup(groups.spinGroup);
-  }
-  let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector)
- 
-  if (spins.length == 0){
-    return;
+function disposeSpinMeshes() {
+  for (const key of ['spinShaftMesh', 'spinTipMesh']) {
+    if (groups[key]) {
+      groups[key].geometry.dispose();
+      groups[key].material.dispose();
+      app.scene.remove(groups[key]);
+      groups[key] = null;
     }
-  let elements = [...fileBrowser.selectedStructure.elements];
-  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
-  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-  groups.spinGroup = new THREE.Group();
+  }
+}
 
-  if (!positions || !lattice) return;
+export function removeSpins() {
+  disposeSpinMeshes();
+}
 
-  // Wrap atomic positions periodically
-  const wrapped = periodicWrapped(positions, elements);
-  const wrappedCart = fracToCart(positions, lattice);
+export function deleteSpins() {
+  spinsData.length = 0;
+  disposeSpinMeshes();
+}
 
-  // Get lattice vectors for ghost cell replication (like bonds)
-  const a = new THREE.Vector3(...lattice[0]);
-  const b = new THREE.Vector3(...lattice[1]);
-  const c = new THREE.Vector3(...lattice[2]);
-  console.log("Updating Spins")
-  for (let i = 0; i < wrappedCart.length; i++) {
-    const atomIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    const vector = spins[atomIndex].vector
-    const scalingFactor = 1.0
-    const color = "#000000"
-    
-    if ( !vector || vector.length !== 3) continue;
-    console.log("Adding Spin for attom",i)
-
-    const origin = new THREE.Vector3(...wrappedCart[i]);
-    const dirVec = new THREE.Vector3(...vector);
-
-    const norm = Math.sqrt(vector[0]**2 + vector[1]**2 + vector[2]**2);
-    if (norm < 0.05) {
-      console.warn("Spin vector too small (<0.05)", norm)
-      continue};
-
-    const baseLen = dirVec.length();
-    const totalLength = baseLen * scalingFactor * spinFactor;
-    const dir = dirVec.clone().normalize();
-
-    // --- Material (match atom style) ---
-    const material = new THREE.MeshPhysicalMaterial(getAtomVisSettings(color,1.0));
-
-    // --- Shaft geometry (extends both directions) ---
-    const shaftRadius = 0.1;
-    const shaftLength = totalLength;
-
-    const shaftPos = new THREE.Mesh(
-      new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength / 2, 16),
-      material
-    );
-    shaftPos.position.set(0, shaftLength / 4, 0);
-
-    const shaftNeg = new THREE.Mesh(
-      new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength / 2, 16),
-      material
-    );
-    shaftNeg.position.set(0, -shaftLength / 4, 0);
-
-    //  Tip (only positive direction)
-    const tipLength = 0.8;
-    const tipRadius = 0.3;
-    const tip = new THREE.Mesh(
-      new THREE.ConeGeometry(tipRadius, tipLength, 16),
-      material
-    );
-    tip.position.set(0, shaftLength / 2 + tipLength / 2, 0);
-
-    // Create an arrowGroup
-    const arrowGroup = new THREE.Group();
-    arrowGroup.add(shaftPos);
-    arrowGroup.add(shaftNeg);
-    arrowGroup.add(tip);
-
-    const arrowAxis = new THREE.Vector3(0, 1, 0);
-    arrowGroup.quaternion.setFromUnitVectors(arrowAxis, dir);
-    arrowGroup.position.copy(origin);
-
-    groups.spinGroup.add(arrowGroup);
+export function updateSpins(spinFactor = 1.0) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure?.periodic?.wrapped || !spinsData?.length) {
+    disposeSpinMeshes();
+    return;
   }
 
-  app.scene.add(groups.spinGroup);
-}
+  const wrapped = structure.periodic.wrapped;
+  const shaftRadius = general.spinRadius ?? 0.08;
 
+  // Build lookup: atomIndex → spin
+  const spinMap = new Map();
+  spinsData.forEach(s => spinMap.set(s.atomIndex, s));
 
-export function deleteSpins(){
-  // dummy: should delete the three objects and not the spins themselved
+  // Collect valid arrows
+  const arrows = [];
+  for (let i = 0; i < wrapped.cart.length; i++) {
+    const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    const spin = spinMap.get(srcIdx);
+    if (!spin?.vector || spin.vector.length !== 3) continue;
+
+    const v = spin.vector;
+    const mag = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
+    if (mag < 0.05) continue;
+
+    const totalLen = mag * (spin.scalingFactor ?? 1.0) * spinFactor;
+    if (totalLen < 0.05) continue;
+
+    arrows.push({
+      origin: new THREE.Vector3(...wrapped.cart[i]),
+      dir: new THREE.Vector3(...v).normalize(),
+      shaftHalfLen: totalLen / 2,
+      color: new THREE.Color(spin.color ?? '#000000'),
+    });
   }
 
+  const count = arrows.length;
 
-function fracToCart(frac, lattice) {
-  return frac.map(fc => [
-    fc[0] * lattice[0][0] + fc[1] * lattice[1][0] + fc[2] * lattice[2][0],
-    fc[0] * lattice[0][1] + fc[1] * lattice[1][1] + fc[2] * lattice[2][1],
-    fc[0] * lattice[0][2] + fc[1] * lattice[1][2] + fc[2] * lattice[2][2]
-  ]);
-}
+  // Rebuild InstancedMesh if count changed or meshes missing
+  if (!groups.spinShaftMesh || groups.spinShaftMesh.count !== count * 2) {
+    disposeSpinMeshes();
+    if (count === 0) return;
 
-function distance(pos1, pos2) {
-  const dx = pos1.x - pos2.x;
-  const dy = pos1.y - pos2.y;
-  const dz = pos1.z - pos2.z;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
-}
+    const shaftGeo = new THREE.CylinderGeometry(1, 1, 1, SHAFT_SEGS, 1);
+    const shaftMat = new THREE.MeshPhysicalMaterial({ roughness: 0.4, metalness: 0.2 });
+    groups.spinShaftMesh = new THREE.InstancedMesh(shaftGeo, shaftMat, count * 2);
+    groups.spinShaftMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 2 * 3), 3);
+    groups.spinShaftMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    groups.spinShaftMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    app.scene.add(groups.spinShaftMesh);
 
-function getBondCutoff(elem1, elem2) {
-  const pair1 = elem1 + '-' + elem2;
-  const pair2 = elem2 + '-' + elem1;
-  return general.bondLengths[pair1] || general.bondLengths[pair2] || 0.0;
-}
+    const tipGeo = new THREE.ConeGeometry(1, 1, TIP_SEGS);
+    const tipMat = new THREE.MeshPhysicalMaterial({ roughness: 0.4, metalness: 0.2 });
+    groups.spinTipMesh = new THREE.InstancedMesh(tipGeo, tipMat, count);
+    groups.spinTipMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
+    groups.spinTipMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    groups.spinTipMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    app.scene.add(groups.spinTipMesh);
+  }
 
-function isOutsideUnitCell(cart, lattice, eps = 1e-6) {
-  const f = cartToFractional(cart, lattice);
-  return (f[0] < -eps || f[0] >= 1 + eps ||
-          f[1] < -eps || f[1] >= 1 + eps ||
-          f[2] < -eps || f[2] >= 1 + eps);
+  const dummy = new THREE.Object3D();
+
+  arrows.forEach(({ origin, dir, shaftHalfLen, color }, i) => {
+    const quat = new THREE.Quaternion();
+    if (dir.dot(UP) < -0.9999) {
+      quat.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
+    } else {
+      quat.setFromUnitVectors(UP, dir);
+    }
+
+    // Shaft+
+    dummy.position.copy(origin).addScaledVector(dir, shaftHalfLen / 2);
+    dummy.scale.set(shaftRadius, shaftHalfLen, shaftRadius);
+    dummy.quaternion.copy(quat);
+    dummy.updateMatrix();
+    groups.spinShaftMesh.setMatrixAt(i * 2, dummy.matrix);
+    groups.spinShaftMesh.instanceColor.setXYZ(i * 2, color.r, color.g, color.b);
+
+    // Shaft-
+    dummy.position.copy(origin).addScaledVector(dir, -shaftHalfLen / 2);
+    dummy.scale.set(shaftRadius, shaftHalfLen, shaftRadius);
+    dummy.quaternion.copy(quat);
+    dummy.updateMatrix();
+    groups.spinShaftMesh.setMatrixAt(i * 2 + 1, dummy.matrix);
+    groups.spinShaftMesh.instanceColor.setXYZ(i * 2 + 1, color.r, color.g, color.b);
+
+    // Tip cone
+    dummy.position.copy(origin).addScaledVector(dir, shaftHalfLen + TIP_LENGTH / 2);
+    dummy.scale.set(TIP_RADIUS, TIP_LENGTH, TIP_RADIUS);
+    dummy.quaternion.copy(quat);
+    dummy.updateMatrix();
+    groups.spinTipMesh.setMatrixAt(i, dummy.matrix);
+    groups.spinTipMesh.instanceColor.setXYZ(i, color.r, color.g, color.b);
+  });
+
+  groups.spinShaftMesh.instanceMatrix.needsUpdate = true;
+  groups.spinShaftMesh.instanceColor.needsUpdate = true;
+  groups.spinTipMesh.instanceMatrix.needsUpdate = true;
+  groups.spinTipMesh.instanceColor.needsUpdate = true;
 }

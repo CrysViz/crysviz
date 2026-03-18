@@ -1,4 +1,4 @@
-import { app, groups, general, fileBrowser, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
+import { app, groups, general, fileBrowser } from '../store.js';
 
 import {updateForces} from '../modules/ForceModule.js';
 
@@ -73,7 +73,7 @@ export function addForcePanel(target = "SpinForceFieldContainer") {
   sliderWrapper.style.marginBottom = "8px";
 
   const sliderLabel = document.createElement("label");
-  sliderLabel.textContent = "Spin Length Factor: ";
+  sliderLabel.textContent = "Force Length Scale: ";
   sliderWrapper.appendChild(sliderLabel);
 
   const sliderValue = document.createElement("span");
@@ -89,6 +89,25 @@ export function addForcePanel(target = "SpinForceFieldContainer") {
   slider.value = 1;
   sliderWrapper.appendChild(slider);
   content.appendChild(sliderWrapper);
+
+  // Arrow width slider
+  const widthWrapper = document.createElement("div");
+  widthWrapper.style.marginBottom = "8px";
+  const widthLabel = document.createElement("label");
+  widthLabel.textContent = "Arrow Width: ";
+  widthWrapper.appendChild(widthLabel);
+  const widthValue = document.createElement("span");
+  widthValue.textContent = "0.08";
+  widthValue.style.marginRight = "8px";
+  widthWrapper.appendChild(widthValue);
+  const widthSlider = document.createElement("input");
+  widthSlider.type = "range";
+  widthSlider.min = 0.01;
+  widthSlider.max = 0.5;
+  widthSlider.step = 0.01;
+  widthSlider.value = general.forceRadius;
+  widthWrapper.appendChild(widthSlider);
+  content.appendChild(widthWrapper);
 
   // Build hierarchy
   content.appendChild(resetWrapper);
@@ -134,13 +153,21 @@ export function addForcePanel(target = "SpinForceFieldContainer") {
 
   slider.addEventListener("input", () => {
     let val = parseFloat(slider.value);
-    // sticky zone near 1
     if (Math.abs(val - 1) < 0.05) val = 1;
     slider.value = val;
     sliderValue.textContent = val.toFixed(2);
-    let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
-    if (forces != null) {
+    general.forceScale = val;
+    if (fileBrowser.selectedStructure?.forces?.length) {
       updateForces(val);
+    }
+  });
+
+  widthSlider.addEventListener("input", () => {
+    const val = parseFloat(widthSlider.value);
+    widthValue.textContent = val.toFixed(2);
+    general.forceRadius = val;
+    if (fileBrowser.selectedStructure?.forces?.length) {
+      updateForces(general.forceScale);
     }
   });
 }
