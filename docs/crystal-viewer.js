@@ -340,6 +340,10 @@ export function updateVisualization(options = {}) {
   if (reRenderField && fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
     updateField();
   }
+
+  if (measurements.measureLines.length > 0) {
+    updateAllMeasurements();
+  }
 }
 
 async function loadStructure(content, fileName = '', isDefault = false) {
@@ -639,26 +643,35 @@ function init() {
     const y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
     mouse.set(x, y);
-    raycaster.setFromCamera(mouse,app.camera);
-    if(!groups.atomsGroup) return;
+    raycaster.setFromCamera(mouse, app.camera);
+    if (!groups.atomsMesh) return;
 
-    const hits = raycaster.intersectObjects(groups.atomsGroup.children, true);
+    const hits = raycaster.intersectObject(groups.atomsMesh);
     if (!hits.length) {
       // Clicked on empty space - reset selection
-      measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+      measurements.selectedAtoms.forEach(a => clearHighlightAtom(a));
       measurements.selectedAtoms = [];
       clearMeasureGraphics();
       return;
     }
 
-    const hit = hits[0].object;
+    const rawHit = hits[0];
+    const instanceId = rawHit.instanceId;
+    const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
+    if (!wrapped) return;
+    const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[instanceId] : instanceId;
+    const element = groups.atomsMesh.userData.elementNames?.[instanceId] || wrapped.elements?.[instanceId] || '?';
+    const hit = {
+      position: new THREE.Vector3(...wrapped.cart[instanceId]),
+      userData: { atomIndex: srcIdx, element, instanceId }
+    };
 
-    // Don't select the same atom twice
-    if (measurements.selectedAtoms.includes(hit)) return;
+    // Don't select the same atom twice (by source index)
+    if (measurements.selectedAtoms.some(a => a.userData.atomIndex === srcIdx)) return;
 
-    // Add atom to selection
+    // Add atom to selection and highlight it
     measurements.selectedAtoms.push(hit);
-    HighlightAtom(hit, measurements.selectedAtoms.length === 1 ? 0xff0000 : measurements.selectedAtoms.length === 2 ? 0x0000ff : 0x00ff00);
+    highlightAtomIn3D(instanceId);
 
     // Handle actions based on mode
     if (mode.measureMode === 'distance' && measurements.selectedAtoms.length === 2) {
@@ -701,6 +714,8 @@ function init() {
 
   // Double-click handler for atom highlighting feature
   function onDoubleClickAtom(event) {
+  // Don't open info panel while measuring — two measurement clicks look like a dblclick
+  if (mode.measureMode !== 'none') return;
   event.preventDefault();
   event.stopPropagation();
 
@@ -780,9 +795,6 @@ function init() {
 
 }
 
-
-  // Add event listeners - use touchstart instead of touchend for better responsiveness
-  app.renderer.domElement.addEventListener('click', onClickPick);
 
   // Add double-click listener for atom highlighting feature
   app.renderer.domElement.addEventListener('dblclick', onDoubleClickAtom);
