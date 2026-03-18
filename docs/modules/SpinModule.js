@@ -30,17 +30,21 @@ export function deleteSpins() {
 
 export function updateSpins(spinFactor = 1.0) {
   const structure = fileBrowser.selectedStructure;
-  if (!structure?.periodic?.wrapped || !spinsData?.length) {
-    disposeSpinMeshes();
-    return;
-  }
+  if (!structure?.periodic?.wrapped) { disposeSpinMeshes(); return; }
 
   const wrapped = structure.periodic.wrapped;
   const shaftRadius = general.spinRadius ?? 0.08;
 
-  // Build lookup: atomIndex → spin
-  const spinMap = new Map();
-  spinsData.forEach(s => spinMap.set(s.atomIndex, s));
+  // Determine spin source: structure.spins (OUTCAR) takes priority over manual spinsData
+  const useStructureSpins = structure.spins?.length > 0;
+  const useManualSpins = !useStructureSpins && spinsData?.length > 0;
+
+  if (!useStructureSpins && !useManualSpins) { disposeSpinMeshes(); return; }
+
+  // Build manual spin lookup: atomIndex → spin entry
+  const manualSpinMap = useManualSpins
+    ? new Map(spinsData.map(s => [s.atomIndex, s]))
+    : null;
 
   // Collect valid arrows — one per original atom (skip periodic images)
   const arrows = [];
@@ -49,21 +53,36 @@ export function updateSpins(spinFactor = 1.0) {
     const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     if (seen.has(srcIdx)) continue;
     seen.add(srcIdx);
-    const spin = spinMap.get(srcIdx);
-    if (!spin?.vector || spin.vector.length !== 3) continue;
 
-    const v = spin.vector;
+    let v, scalingFactor, color;
+    if (useStructureSpins) {
+      const spin = structure.spins[srcIdx];
+      if (!spin?.vector) continue;
+      v = spin.vector;
+      scalingFactor = spin.scaling ?? 1.0;
+      // Color non-collinear spins by direction: |x|→r, |y|→g, |z|→b
+      const mag = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
+      if (mag < 0.001) continue;
+      color = new THREE.Color(Math.abs(v[0]) / mag, Math.abs(v[1]) / mag, Math.abs(v[2]) / mag);
+    } else {
+      const spin = manualSpinMap.get(srcIdx);
+      if (!spin?.vector) continue;
+      v = spin.vector;
+      scalingFactor = spin.scalingFactor ?? 1.0;
+      color = new THREE.Color(spin.color ?? '#ffffff');
+    }
+
     const mag = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
     if (mag < 0.05) continue;
 
-    const totalLen = mag * (spin.scalingFactor ?? 1.0) * spinFactor;
+    const totalLen = mag * scalingFactor * spinFactor;
     if (totalLen < 0.05) continue;
 
     arrows.push({
       origin: new THREE.Vector3(...wrapped.cart[i]),
       dir: new THREE.Vector3(...v).normalize(),
       shaftHalfLen: totalLen / 2,
-      color: new THREE.Color(spin.color ?? '#000000'),
+      color,
     });
   }
 
