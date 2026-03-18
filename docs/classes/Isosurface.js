@@ -16,13 +16,14 @@ const defaultNegColor = new THREE.Color(0xff3333);
 
 var MarchingCubesModule = await MarchCubes();
 
-export class Isosurface {
+export class Isosurface extends THREE.Group {
     constructor(field) {
+        super();
         this.field = field;
 
-        const positiveMC = MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz);
+        const positiveMC = new MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz);
         this.fieldPtr = positiveMC.get_field();
-        const negativeMC = MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz, this.fieldPtr);
+        const negativeMC = new MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz, this.fieldPtr);
         this.marchingCubes = {
             positive: positiveMC,
             negative: negativeMC
@@ -42,10 +43,9 @@ export class Isosurface {
             positive: new THREE.Mesh(positiveGeom, materialPos),
             negative: new THREE.Mesh(negativeGeom, materialNeg)
         };
-    }
 
-    setPositiveMesh(mesh) {
-        this.meshes.positive = mesh;
+        this.add(this.meshes.positive);
+        this.add(this.meshes.negative);
     }
 
     get positiveMesh() {
@@ -60,34 +60,71 @@ export class Isosurface {
         this.field.isovalue = value;
     }
 
-    updateFieldMesh() {
-        if (this.marchingCubes.positive) {
+    updateMesh(isoValue = this.field.isovalue) {
+        this.clearMesh();
 
-    }
+        if (this.marchingCubes.positive && (isoValue >= 0 || this.activeField.useAbsoluteValue)) {
+            if (this.activeField.useAbsoluteValue) {
+                isoValue = Math.abs(isoValue);
+            }
+            this.marchingCubes.positive.update_vertices(isoValue);
+            const vertexPtr = this.marchingCubes.positive.get_vertices();
+            const normalPtr = this.marchingCubes.positive.get_normals();
+            const numVertices = this.marchingCubes.positive.get_num_vertices();
 
-    setNegativeMesh(mesh) {
-        this.meshes.negative = mesh;
+            const positionArray = new Float64Array(MarchingCubesModule.HEAPF64.buffer, vertexPtr, numVertices * 3);
+            const positionAttribute = new THREE.BufferAttribute(positionArray, 3);
+            positionAttribute.setUsage(THREE.DynamicDrawUsage);
+            this.meshes.positive.geometry.setAttribute('position', positionAttribute);
+
+            const normalArray = new Float64Array(MarchingCubesModule.HEAPF64.buffer, normalPtr, numVertices * 3);
+            const normalAttribute = new THREE.BufferAttribute(normalArray, 3);
+            normalAttribute.setUsage(THREE.DynamicDrawUsage);
+            this.meshes.positive.geometry.setAttribute('normal', normalAttribute);
+        }
+        if (this.marchingCubes.negative && (isoValue < 0 || this.activeField.useAbsoluteValue)) {
+            if (this.activeField.useAbsoluteValue) {
+                isoValue = -Math.abs(isoValue);
+            }
+            this.marchingCubes.negative.update_vertices(isoValue);
+            const vertexPtr = this.marchingCubes.negative.get_vertices();
+            const normalPtr = this.marchingCubes.negative.get_normals();
+            const numVertices = this.marchingCubes.negative.get_num_vertices();
+
+            const positionArray = new Float64Array(MarchingCubesModule.HEAPF64.buffer, vertexPtr, numVertices * 3);
+            const positionAttribute = new THREE.BufferAttribute(positionArray, 3);
+            positionAttribute.setUsage(THREE.DynamicDrawUsage);
+            this.meshes.negative.geometry.setAttribute('position', positionAttribute);
+
+            const normalArray = new Float64Array(MarchingCubesModule.HEAPF64.buffer, normalPtr, numVertices * 3);
+            const normalAttribute = new THREE.BufferAttribute(normalArray, 3);
+            normalAttribute.setUsage(THREE.DynamicDrawUsage);
+            this.meshes.negative.geometry.setAttribute('normal', normalAttribute);
+        }
+
+        this.matrixAutoUpdate = false;
+        const cell = new THREE.Matrix4();
+        cell.set(
+            field.voxel[0][0], field.voxel[1][0], field.voxel[2][0], 0,
+            field.voxel[0][1], field.voxel[1][1], field.voxel[2][1], 0,
+            field.voxel[0][2], field.voxel[1][2], field.voxel[2][2], 0,
+            0, 0, 0, 1
+        );
+        cell.scale(new THREE.Vector3(nx, ny, nz));
+        this.applyMatrix4(cell);
     }
 
     setActiveField(field) {
         this.activeField = field;
     }
 
-    setPositiveMarchingCubes(mc) {
-        this.marchingCubes.positive = mc;
-    }
-
-    setNegativeMarchingCubes(mc) {
-        this.marchingCubes.negative = mc;
-    }
-
-    getActiveMarchingCubes() {
-        return this.activeField === 'positive' ? this.marchingCubes.positive : this.marchingCubes.negative;
-    }
-
     clearMesh() {
-        this.meshes.positive.geometry.dispose();
-        this.meshes.negative.geometry.dispose();
+        if (this.meshes.positive) {
+            this.meshes.positive.geometry.dispose();
+        }
+        if (this.meshes.negative) {
+            this.meshes.negative.geometry.dispose();
+        }
     }
 
 }
