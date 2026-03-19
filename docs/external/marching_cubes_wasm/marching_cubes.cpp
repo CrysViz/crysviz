@@ -352,9 +352,28 @@ inline float linear_interp(float isoval, float x1, float x2, float val1, float v
 	return x1 + (x2 - x1) * (isoval - val1) / (val2 - val1); // interpolation
 }
 
-inline float linear_interp(double x1, double x2, double factor) {
+inline float linear_interp(float x1, float x2, float factor) {
 	return x1 + (x2 - x1) * factor; // interpolation
 }
+
+struct DoubleBuffer {
+	float* data;
+	size_t _size;
+	DoubleBuffer(size_t size) : _size(size) {
+		data = new float[size];
+	}
+	~DoubleBuffer() {
+		delete[] data;
+		data = nullptr;
+	}
+
+	uintptr_t data_ptr() const {
+		return reinterpret_cast<uintptr_t>(data);
+	}
+	size_t size() const {
+		return _size;
+	}
+};
 
 class MarchingCubes {
 public:
@@ -362,18 +381,19 @@ public:
 	unsigned int nx, ny, nz;
 	size_t field_size;
 	size_t vertex_count;
-	double dx, dy, dz;
+	float dx, dy, dz;
 
-	bool use_external_field = false;
-	double* field;
-	double* vertex_list;
-	double* vnormal_list;
-	double* vnormal_cache;
+	std::shared_ptr<DoubleBuffer> field_buffer;
+	std::shared_ptr<DoubleBuffer> vertex_list_buffer;
+	std::shared_ptr<DoubleBuffer> vnormal_list_buffer;
+	float* field;
+	float* vertex_list;
+	float* vnormal_list;
+	float* vnormal_cache;
 
-	MarchingCubes(unsigned int resx, unsigned int resy, unsigned int resz, double* field_data)
+	MarchingCubes(unsigned int resx, unsigned int resy, unsigned int resz, std::shared_ptr<DoubleBuffer> field_data)
 			: MarchingCubes(resx, resy, resz) {
-		this->field = field_data; // use provided field data (assumed to be pre-allocated and filled, and not owned by this class, so no free in destructor)
-		this->use_external_field = true;
+		this->field_buffer = field_data; // use provided field data (assumed to be pre-allocated and filled, and not owned by this class, so no free in destructor)
 	}
 	MarchingCubes(unsigned int resx, unsigned int resy, unsigned int resz)
 			: nx(resx), ny(resy), nz(resz), x_step(1), y_step(resx), z_step(resy * resx), vertex_count(0) {
@@ -386,36 +406,34 @@ public:
 		field_size = resx * resy * resz;
 		size_t vertex_size = field_size * 5 * 3; // max 3D vertex positions
 		size_t normals_size = vertex_size * 3; // max 3D vertex normals
-		field = new double[field_size];
-		vertex_list = new double[vertex_size];
-		vnormal_list = new double[normals_size];
-		vnormal_cache = new double[normals_size]; // cache initialized to 0
+		field_buffer = std::make_shared<DoubleBuffer>(field_size);
+		vertex_list_buffer = std::make_shared<DoubleBuffer>(vertex_size);
+		vnormal_list_buffer = std::make_shared<DoubleBuffer>(normals_size);
+		field = field_buffer->data;
+		vertex_list = vertex_list_buffer->data;
+		vnormal_list = vnormal_list_buffer->data;
+		vnormal_cache = (float*)calloc(normals_size, sizeof(float)); // cache initialized to 0
 	}
 	
 
 	~MarchingCubes() {
-		if (!use_external_field) {
-			delete[] field;
-		}
-		delete[] vertex_list;
-		delete[] vnormal_list;
-		delete[] vnormal_cache;
+		free(vnormal_cache);
 	}
 
-	double* get_field() {
-		return field;
+	std::shared_ptr<DoubleBuffer> get_field() {
+		return field_buffer;
 	}
-	double* get_vertex_list() {
-		return vertex_list;
+	std::shared_ptr<DoubleBuffer> get_vertex_list() {
+		return vertex_list_buffer;
 	}
-	double* get_vnormal_list() {
-		return vnormal_list;
+	std::shared_ptr<DoubleBuffer> get_vnormal_list() {
+		return vnormal_list_buffer;
 	}
-	double get_vertex_count() {
+	float get_vertex_count() {
 		return vertex_count;
 	}
 
-	inline void calc_norm(size_t v, double* norm) {
+	inline void calc_norm(size_t v, float* norm) {
 		// takes a vertex index, and 3-element array to write the normal to.
 		// Computes the normal using central differences, with forward/backward differences at the boundaries.
 		const size_t x_min = v - x_step, x_max = v + x_step;
@@ -455,11 +473,11 @@ public:
 	void _add_edge_vertex(float isoval,
 			unsigned char edge_ind,
 			size_t v1_ind, size_t v2_ind,
-			double x1, double y1, double z1,
-			double field1, double field2,
-			double* pos_out, double* normal_out) {
+			float x1, float y1, float z1,
+			float field1, float field2,
+			float* pos_out, float* normal_out) {
 
-		double mu = 0;
+		float mu = 0;
 		if (abs(field1 - field2) > 1e-16) { // avoid division by zero
 			mu = (isoval - field1) / (field2 - field1);
 		}
@@ -487,18 +505,20 @@ public:
 	}
 
 	void update_vertices(float isovalue) {
-		double vertices_on_edge[12*3]; // flattened vertex positions for the 12 edges, each with x,y,z components
-		double vnormals_on_edge[12*3]; // flattened vertex normals for the 12 edges, each with x,y,z components
+		float vertices_on_edge[12*3]; // flattened vertex positions for the 12 edges, each with x,y,z components
+		float vnormals_on_edge[12*3]; // flattened vertex normals for the 12 edges, each with x,y,z components
 		int z_ind, y_ind, x_ind;
 		size_t vertex_index = (size_t)(-1), vertex_count = 0;
 		unsigned char cube_index;
 		unsigned short edge_flags;
 		size_t cube_points[8];
-		double vertex_pos[8*3]; // max 5 triangles per cube, each with x,y,z components
+		float vertex_pos[8*3]; // max 5 triangles per cube, each with x,y,z components
 
 		for (z_ind = 0; z_ind < nz-1; z_ind++) {
+			printf("Processing cube at (%d, %d, %d) with vertex index %zu\n", x_ind, y_ind, z_ind, vertex_index + 1);
 			for (y_ind = 0; y_ind < ny-1; y_ind++) {
 				for (x_ind = 0; x_ind < nx-1; x_ind++) {
+					
 					vertex_index++;
 					
 					cube_points[0] = vertex_index; 								// v1
@@ -535,13 +555,13 @@ public:
 							_update_norm_cache(v2_ind);
 							// compute vertex position and normal for this edge
 							// and store in vertex_list and vnormal_list at the appropriate index
-							const double pos1[3] = {
+							const float pos1[3] = {
 								(nx + (int)cube_vertex_pos[edge2vertex[i][0]][0])*dx,
 								(ny + (int)cube_vertex_pos[edge2vertex[i][0]][1])*dy,
 								(nz + (int)cube_vertex_pos[edge2vertex[i][0]][2])*dz
 							};
-							const double field1 = field[v1_ind];
-							const double field2 = field[v2_ind];
+							const float field1 = field[v1_ind];
+							const float field2 = field[v2_ind];
 							_add_edge_vertex(isovalue,
 								i, // edge index
 								v1_ind, v2_ind, // vertex indices for the edge endpoints
@@ -574,11 +594,16 @@ public:
 EMSCRIPTEN_BINDINGS(marching_cubes_module) {
 	emscripten::class_<MarchingCubes>("MarchingCubes")
 		.constructor<unsigned int, unsigned int, unsigned int>()
-		.constructor<unsigned int, unsigned int, unsigned int, double*>()
+		.constructor<unsigned int, unsigned int, unsigned int, std::shared_ptr<DoubleBuffer>>()
 		.function("getField", &MarchingCubes::get_field, emscripten::return_value_policy::reference())
 		.function("getVertices", &MarchingCubes::get_vertex_list, emscripten::return_value_policy::reference())
 		.function("getNormals", &MarchingCubes::get_vnormal_list, emscripten::return_value_policy::reference())
 		.function("getVertexCount", &MarchingCubes::get_vertex_count)
-		.function("updateVertices", &MarchingCubes::update_vertices)
-	;
+		.function("updateVertices", &MarchingCubes::update_vertices);
+	
+	emscripten::class_<DoubleBuffer>("DoubleBuffer")
+		.smart_ptr<std::shared_ptr<DoubleBuffer>>("DoubleBuffer") // use shared_ptr for memory management in JS
+		.constructor<size_t>()
+		.function("dataPtr", &DoubleBuffer::data_ptr)
+		.function("size", &DoubleBuffer::size);
 }
