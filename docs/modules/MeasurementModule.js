@@ -375,7 +375,7 @@ function formatÅ(x){ return (Math.round(x*1000)/1000).toFixed(3); }
 
 
 export function updateAllMeasurements() {
-  if (!groups.atomsGroup || !groups.atomsGroup.children) return;
+  if (!fileBrowser.selectedStructure?.periodic?.wrapped) return;
 
   measurements.measureLines.forEach(measureItem => {
     if (!measureItem.userData) return;
@@ -530,15 +530,19 @@ export function updateAllMeasurements() {
   updateMeasurementMarkers();
 }        
 
-// Function to update all measurements when atom positions change
-// Helper function to find atom by its original index (atomIndex) in the current atomsGroup
+// Find atom by original (src) index using the InstancedMesh wrapped data
 function findAtomByOriginalIndex(originalIndex) {
-  if (!groups.atomsGroup || !groups.atomsGroup.children) return null;
+  const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
+  if (!wrapped) return null;
 
-  for (let i = 0; i < groups.atomsGroup.children.length; i++) {
-    const atom = groups.atomsGroup.children[i];
-    if (atom.userData && atom.userData.atomIndex === originalIndex) {
-      return atom;
+  for (let i = 0; i < wrapped.cart.length; i++) {
+    const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    if (srcIdx === originalIndex) {
+      const element = groups.atomsMesh?.userData?.elementNames?.[i] || wrapped.elements?.[i] || '?';
+      return {
+        position: new THREE.Vector3(...wrapped.cart[i]),
+        userData: { atomIndex: srcIdx, element, instanceId: i }
+      };
     }
   }
   return null;

@@ -2,8 +2,8 @@ import { updateVisualization } from '../crystal-viewer.js';
 import { general, structureShip, fileBrowser } from '../store.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { createSpinControls} from './SpinPanel.js';
-import { updateSpins} from '../modules/SpinModule.js';
-import { updateForces} from '../modules/ForceModule.js';
+import { updateSpins, removeSpins } from '../modules/SpinModule.js';
+import { updateForces, removeForces } from '../modules/ForceModule.js';
 
 let trajectoryPlayerElements = {};
 let currentFrame = 0;
@@ -16,24 +16,28 @@ function updateStructureFromFrame(frame, container) {
   if (!container || frame < 0 || frame >= container.structures.length) return;
 
   fileBrowser.selectedStructure = container.structures[frame];
-  fileBrowser.stepInput = frame
-
-
+  fileBrowser.stepInput = frame;
 
   createBondLengthControls();
 
-   const ControlPanelSpinForceSwitch = document.getElementById("ControlPanelSpinForceSwitch");
+  // Full rebuild: rebuildAtoms sets up periodic.wrapped, rebuildBonds populates bondLengths
+  // and refreshes the histogram if open
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
 
-  let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
-  if (spins != null && general.spinForceState === "Spins") {
-    createSpinControls();
-    updateSpins();
+  // Forces and spins must be updated AFTER updateVisualization so periodic.wrapped is ready
+  const structure = fileBrowser.selectedStructure;
+
+  if (general.spinForceState === "Forces" && structure.forces?.length > 0) {
+    updateForces(general.forceScale ?? 1.0);
+  } else {
+    removeForces();
   }
-  let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
-  if (forces != null && general.spinForceState === "Forces" ) {
-    updateForces();
+
+  if (general.spinForceState === "Spins" && structure.spins?.length > 0) {
+    updateSpins(general.spinScale ?? 1.0);
+  } else {
+    removeSpins();
   }
-  updateVisualization({reRenderAtoms: true, reRenderBonds: true});
 }
 
 // --- Update UI and scene ---

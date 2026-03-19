@@ -310,6 +310,7 @@ export function createMDMonitorPanel() {
   panel.innerHTML = `
     <div class="panelHeader" id="mdHeader">
       MD Monitor <span id="mdFoldToggle">▼</span>
+      <span id="mdCloseBtn" style="float:right; cursor:pointer; margin-left:8px; font-size:14px;">✖</span>
     </div>
     <div class="panelBody" id="mdBody">
       <canvas id="mdCanvas" width="330" height="170" style="border:1px solid #444; border-radius:6px; background:#111;"></canvas>
@@ -325,15 +326,18 @@ export function createMDMonitorPanel() {
   const header = panel.querySelector('#mdHeader');
   const body = panel.querySelector('#mdBody');
   const fold = panel.querySelector('#mdFoldToggle');
+  const closeBtn = panel.querySelector('#mdCloseBtn');
   const text = panel.querySelector('#mdText');
   const canvas = panel.querySelector('#mdCanvas');
   const ctx = canvas.getContext('2d');
+
+  closeBtn.addEventListener('click', () => panel.remove());
 
   let dragging = false;
   let dx = 0;
   let dy = 0;
   header.addEventListener('mousedown', (e) => {
-    if (e.target === fold) return;
+    if (e.target === fold || e.target === closeBtn) return;
     dragging = true;
     dx = e.clientX - panel.offsetLeft;
     dy = e.clientY - panel.offsetTop;

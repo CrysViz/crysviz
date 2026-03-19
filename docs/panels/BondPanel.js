@@ -199,8 +199,6 @@ export function addBondPanel(target = "BondLatticeContainer") {
     }
   }
 
-  setHistogramsOpen(false);
-
   histogramsToggle.addEventListener("click", () =>
     setHistogramsOpen(!histogramsContent.classList.contains("open"))
   );
@@ -245,6 +243,10 @@ export function addBondPanel(target = "BondLatticeContainer") {
   group.appendChild(histogramsPanel);
   group.appendChild(drawBondsPanel);
   targetPanel.appendChild(group);
+
+  // Open histograms immediately — bypass CSS transition by setting inline style
+  setHistogramsOpen(true);
+  histogramsContent.style.maxHeight = "600px";
 
   // --- Create bond controls ---
 }

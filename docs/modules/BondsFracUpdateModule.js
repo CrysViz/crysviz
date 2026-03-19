@@ -15,6 +15,7 @@ import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
 import {updateAtoms} from './AtomsFracUpdateModule.js'
 import {bondLengthToColor} from '../panels/ColorPanel.js'
+import {refreshHistogram} from '../panels/AnalysisPanels/BondAnalysisPanel.js'
 import {generateID} from './UUIDModule.js'
 import {periodic} from '../store.js'
 //import {getBondCutoff} from './BondsModule.js'
@@ -59,16 +60,14 @@ export function rebuildBonds(opacity) {
     app.scene.remove(groups.bondsMesh);
     groups.bondssMesh = null;
   }
-  console.log("Building bond objects");
   buildBondObjects(fileBrowser.selectedStructure)
-  console.log("Rendering bond objects");
   renderBonds();
-  console.log("Updating bond positions");
   updateBonds(opacity);
   if (groups.bondsMesh) {
     groups.bondsMesh.visible = !!general.showBonds;
   }
-  console.log(fileBrowser.selectedStructure)
+  // Refresh histogram if it's open
+  refreshHistogram(Object.values(bondLengths), Object.keys(bondLengths));
 }
 
 export function getBondCutoff(elem1, elem2) {
@@ -102,7 +101,6 @@ export function buildBondObjects(structure){
 
       const dist = p1.distanceTo(p2);
       if (dist > cutoff || dist < 0.005) {
-        // console.log("Skipping bond with dist",dist, "due to cutoff", cutoff)
         continue;
       }
       const bond = new Bond({
@@ -116,7 +114,17 @@ export function buildBondObjects(structure){
       structure.bonds.push(bond);
     }
   }
-  console.warn(structure.bonds)
+
+  // Populate global bondLengths for histogram (alphabetically sorted pair key)
+  for (const key in bondLengths) delete bondLengths[key];
+  for (const bond of structure.bonds) {
+    const [a, b] = bond.elements[0].localeCompare(bond.elements[1]) <= 0
+      ? [bond.elements[0], bond.elements[1]]
+      : [bond.elements[1], bond.elements[0]];
+    const key = `${a}-${b}`;
+    if (!bondLengths[key]) bondLengths[key] = [];
+    bondLengths[key].push(bond.dist);
+  }
 }
 
 export function renderBonds() {
