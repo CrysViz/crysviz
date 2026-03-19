@@ -87,16 +87,131 @@ export function createRow(obj) {
   });
 
   // Duplicate (copy) logic
-  row.querySelector(".copy").addEventListener("click", (e) => {
-    e.stopPropagation();
-    const updatedObj = JSON.parse(row.dataset.obj);
-    const newRow = createRow(updatedObj);
-    row.insertAdjacentElement("afterend", newRow);
-    const rowIndex = Array.from(row.parentElement.children).indexOf(row);
-    structureShip.len = structureShip.len + 1;
-    structureShip.container.splice(rowIndex + 1, 0, JSON.parse(JSON.stringify(structureShip.container[rowIndex])));
-    selectLastAddedRow();
+row.querySelector(".copy").addEventListener("click", (e) => {
+  e.stopPropagation();
+
+  // Create a popup container
+  const popup = document.createElement("div");
+  popup.style.position = "absolute";
+  popup.style.zIndex = "1000";
+  popup.style.backgroundColor = "white";
+  popup.style.border = "1px solid #ccc";
+  popup.style.padding = "10px";
+  popup.style.borderRadius = "5px";
+  popup.style.boxShadow = "0 2px 5px rgba(0,0,0,0.2)";
+  popup.style.display = "flex";
+  popup.style.flexDirection = "column";
+  popup.style.gap = "10px";
+
+  // Create a dropdown for copy options
+  const select = document.createElement("select");
+  select.innerHTML = `
+    <option value="all">Copy All Steps</option>
+    <option value="current">Copy Current Step</option>
+    <option value="range">Copy Range of Steps</option>
+  `;
+
+  // Create a container for range inputs (hidden by default)
+  const rangeContainer = document.createElement("div");
+  rangeContainer.style.display = "none";
+  rangeContainer.style.gap = "10px";
+  rangeContainer.innerHTML = `
+    <div>
+      <label for="startStep" style="margin-right: 5px;">Start Step:</label>
+      <input type="number" id="startStep" min="1" max="${obj.traj}" value="1" style="width: 50px;">
+    </div>
+    <div>
+      <label for="endStep" style="margin-right: 5px;">End Step:</label>
+      <input type="number" id="endStep" min="1" max="${obj.traj}" value="${obj.traj}" style="width: 50px;">
+    </div>
+  `;
+
+  // Create buttons for confirmation and cancellation
+  const confirmButton = document.createElement("button");
+  confirmButton.textContent = "Copy";
+
+  const cancelButton = document.createElement("button");
+  cancelButton.textContent = "Cancel";
+
+  // Append all elements to the popup
+  popup.appendChild(select);
+  popup.appendChild(rangeContainer);
+  popup.appendChild(confirmButton);
+  popup.appendChild(cancelButton);
+
+  // Position the popup near the copy button
+  const rect = e.target.getBoundingClientRect();
+  popup.style.left = `${rect.left + window.scrollX}px`;
+  popup.style.top = `${rect.bottom + window.scrollY}px`;
+
+  // Append the popup to the body
+  document.body.appendChild(popup);
+
+  // Toggle range inputs based on selection
+  select.addEventListener("change", () => {
+    if (select.value === "range") {
+      rangeContainer.style.display = "flex";
+    } else {
+      rangeContainer.style.display = "none";
+    }
   });
+
+  // Handle confirmation
+  confirmButton.onclick = () => {
+    const updatedObj = JSON.parse(row.dataset.obj);
+    const option = select.value;
+    const rowIndex = Array.from(row.parentElement.children).indexOf(row);
+    const container = structureShip.container[rowIndex];
+
+    if (option === "all") {
+      // Copy all steps: clone the entire container
+      const newRow = createRow(updatedObj);
+      row.insertAdjacentElement("afterend", newRow);
+      structureShip.len += 1;
+      structureShip.container.splice(rowIndex + 1, 0, JSON.parse(JSON.stringify(container)));
+    } else if (option === "current") {
+      // Copy current step: create a new container with only the current structure
+      const stepInput = row.querySelector('input[type="number"]');
+      const currentStep = parseInt(stepInput.value, 10) - 1;
+      const currentStructure = container.structures[currentStep];
+
+      const newObj = {
+        ...updatedObj,
+        structures: [currentStructure],
+        traj: 1, // Only one step
+      };
+      const newRow = createRow(newObj);
+      row.insertAdjacentElement("afterend", newRow);
+      structureShip.len += 1;
+      structureShip.container.splice(rowIndex + 1, 0, newObj);
+    } else if (option === "range") {
+      // Copy range of steps: create a new container with only the selected range
+      const startStep = parseInt(rangeContainer.querySelector("#startStep").value, 10) - 1;
+      const endStep = parseInt(rangeContainer.querySelector("#endStep").value, 10) - 1;
+      const rangeStructures = container.structures.slice(startStep, endStep + 1);
+
+      const newObj = {
+        ...updatedObj,
+        structures: rangeStructures,
+        traj: rangeStructures.length, // Update traj to the number of steps in the range
+      };
+      const newRow = createRow(newObj);
+      row.insertAdjacentElement("afterend", newRow);
+      structureShip.len += 1;
+      structureShip.container.splice(rowIndex + 1, 0, newObj);
+    }
+
+    popup.remove();
+    selectLastAddedRow();
+  };
+
+  // Handle cancellation
+  cancelButton.onclick = () => {
+    popup.remove();
+  };
+});
+
+
 
   // Delete logic
   row.querySelector(".delete").addEventListener("click", (e) => {
