@@ -34,7 +34,7 @@ function updateStructureFromFrame(frame, container) {
   }
 
   if (general.spinForceState === "Spins" && structure.spins?.length > 0) {
-    updateSpins(1.0);
+    updateSpins(general.spinScale ?? 1.0);
   } else {
     removeSpins();
   }

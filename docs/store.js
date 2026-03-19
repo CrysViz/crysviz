@@ -98,6 +98,7 @@ export const general = {
   bondRadius:0.08,
   forceScale: 1.0,
   forceRadius: 0.08,
+  spinScale: 1.0,
   spinRadius: 0.08,
   atomSize:1.0,
   structure2OpacityValue: 0.5,

@@ -1,23 +1,20 @@
-import { app, groups, general, fileBrowser } from '../store.js';
-
-import {updateForces} from '../modules/ForceModule.js';
+import { general, fileBrowser } from '../store.js';
+import { updateForces, removeForces } from '../modules/ForceModule.js';
 
 
 export function removeForcePanel() {
-  const panel = document.getElementById("forceControlsGroup");
-  if (panel) {
-    panel.remove();
-  } else {
-    console.warn("Force Controls panel does not exist.");
+  const el = document.getElementById("forceControlsGroup");
+  if (el) {
+    const container = document.getElementById("SpinForceFieldContainer");
+    if (container) container.style.display = "none";
+    el.remove();
   }
 }
 
 export function addForcePanel(target = "SpinForceFieldContainer") {
+  if (document.getElementById("forceControlsGroup")) return;
   const targetPanel = document.getElementById(target);
-  if (document.getElementById("forceControlsGroup")) {
-    console.warn("Force Controls already exist.");
-    return;
-  }
+  if (!targetPanel) { console.warn("ForcePanel: target not found:", target); return; }
 
   // --- Outer wrapper ---
   const group = document.createElement("div");
@@ -27,149 +24,158 @@ export function addForcePanel(target = "SpinForceFieldContainer") {
   const panel = document.createElement("div");
   panel.id = "forcePanel";
 
-  // --- Toggle ---
+  // --- Toggle header ---
   const toggle = document.createElement("div");
-  toggle.id = "spinToggle";
   toggle.className = "spin-toggle";
   toggle.setAttribute("role", "button");
   toggle.setAttribute("tabindex", "0");
-  toggle.setAttribute("aria-expanded", "false");
-  toggle.setAttribute("aria-controls", "forceControlsContent");
 
   const title = document.createElement("h4");
   title.textContent = "Force Controls";
 
   const icon = document.createElement("div");
-  icon.id = "spinToggleIcon";
   icon.className = "toggle-icon";
-  icon.textContent = "+";
+  icon.textContent = "−";
 
   toggle.appendChild(title);
   toggle.appendChild(icon);
 
   // --- Collapsible content ---
   const content = document.createElement("div");
-  content.id = "spinControlsContent";
+  content.id = "forceControlsContent";
   content.className = "collapsible-content";
-  content.setAttribute("aria-hidden", "true");
 
-  // --- Reset wrapper ---
-  const resetWrapper = document.createElement("div");
-  resetWrapper.id = "resetForceLenghtsWrapper";
-  resetWrapper.className = "bottonWrapper";
-  resetWrapper.setAttribute("aria-hidden", "true");
-
-  const deleteBtn = document.createElement("button");
-  deleteBtn.id = "deleteForces";
-  deleteBtn.className = "reset-btn";
-  deleteBtn.textContent = "Delete Forces";
-  resetWrapper.appendChild(deleteBtn);
-
-  // --- Force Controls container ---
-  const forceControls = document.createElement("div");
-  forceControls.id = "spinControls";
-
+  // Force Length Scale slider
   const sliderWrapper = document.createElement("div");
   sliderWrapper.style.marginBottom = "8px";
-
   const sliderLabel = document.createElement("label");
   sliderLabel.textContent = "Force Length Scale: ";
-  sliderWrapper.appendChild(sliderLabel);
-
   const sliderValue = document.createElement("span");
-  sliderValue.textContent = "1.0";
+  sliderValue.textContent = (general.forceScale ?? 1.0).toFixed(2);
   sliderValue.style.marginRight = "8px";
-  sliderWrapper.appendChild(sliderValue);
-
   const slider = document.createElement("input");
   slider.type = "range";
-  slider.min = 0.1;
-  slider.max = 10;
-  slider.step = 0.1;
-  slider.value = 1;
+  slider.min = 0.1; slider.max = 10; slider.step = 0.1;
+  slider.value = general.forceScale ?? 1.0;
+  sliderWrapper.appendChild(sliderLabel);
+  sliderWrapper.appendChild(sliderValue);
   sliderWrapper.appendChild(slider);
   content.appendChild(sliderWrapper);
 
-  // Arrow width slider
+  // Arrow Width slider
   const widthWrapper = document.createElement("div");
   widthWrapper.style.marginBottom = "8px";
   const widthLabel = document.createElement("label");
   widthLabel.textContent = "Arrow Width: ";
-  widthWrapper.appendChild(widthLabel);
   const widthValue = document.createElement("span");
-  widthValue.textContent = "0.08";
+  widthValue.textContent = (general.forceRadius ?? 0.08).toFixed(2);
   widthValue.style.marginRight = "8px";
-  widthWrapper.appendChild(widthValue);
   const widthSlider = document.createElement("input");
   widthSlider.type = "range";
-  widthSlider.min = 0.01;
-  widthSlider.max = 0.5;
-  widthSlider.step = 0.01;
-  widthSlider.value = general.forceRadius;
+  widthSlider.min = 0.01; widthSlider.max = 0.5; widthSlider.step = 0.01;
+  widthSlider.value = general.forceRadius ?? 0.08;
+  widthWrapper.appendChild(widthLabel);
+  widthWrapper.appendChild(widthValue);
   widthWrapper.appendChild(widthSlider);
   content.appendChild(widthWrapper);
 
+  // Delete button
+  const deleteBtn = document.createElement("button");
+  deleteBtn.id = "deleteForces";
+  deleteBtn.className = "reset-btn";
+  deleteBtn.textContent = "Delete Forces";
+  deleteBtn.style.marginBottom = "10px";
+  content.appendChild(deleteBtn);
+
+  // Manual force text input
+  const textLabel = document.createElement("div");
+  textLabel.textContent = "Manual Force Vectors (x y z per atom):";
+  textLabel.style.fontSize = "11px";
+  textLabel.style.marginBottom = "4px";
+  content.appendChild(textLabel);
+
+  const textarea = document.createElement("textarea");
+  textarea.id = "forceTextInput";
+  textarea.placeholder = "x y z\nExample:\n0.1 0.2 -0.3\n0 0 1.5";
+  textarea.style.width = "95%";
+  textarea.style.height = "100px";
+  textarea.style.background = "rgba(16,16,16,0.8)";
+  textarea.style.color = "rgb(255,255,255)";
+  textarea.style.border = "1px solid #555";
+  textarea.style.fontFamily = "monospace";
+  textarea.style.fontSize = "12px";
+  content.appendChild(textarea);
+
+  const drawBtn = document.createElement("button");
+  drawBtn.textContent = "Draw Forces";
+  drawBtn.className = "btn-mini highlight";
+  drawBtn.style.marginTop = "6px";
+  content.appendChild(drawBtn);
+
   // Build hierarchy
-  content.appendChild(resetWrapper);
-  content.appendChild(forceControls);
   panel.appendChild(toggle);
   panel.appendChild(content);
   group.appendChild(panel);
 
-  // Insert into DOM
+  // Insert into DOM — ensure container is visible
+  targetPanel.style.display = "block";
   targetPanel.appendChild(group);
 
-  // --- Apply YOUR script logic immediately ---
+  // Open immediately — bypass CSS display:none
+  content.classList.add('open');
+  content.style.display = 'block';
+  content.style.maxHeight = '600px';
 
-  function setOpen(open) {
-    if (open) {
-      content.classList.add('open');
-      content.setAttribute('aria-hidden', 'false');
-      icon.textContent = '−';
-      toggle.setAttribute('aria-expanded', 'true');
-    } else {
+  // Toggle open/close
+  toggle.addEventListener('click', () => {
+    const isOpen = content.classList.contains('open');
+    if (isOpen) {
       content.classList.remove('open');
-      content.setAttribute('aria-hidden', 'true');
+      content.style.display = 'none';
       icon.textContent = '+';
-      toggle.setAttribute('aria-expanded', 'false');
-    }
-  }
-
-  // Default is open
-  setOpen(true);
-
-  // Click
-  toggle.addEventListener('click', () =>
-    setOpen(!content.classList.contains('open'))
-  );
-
-  // Keyboard
-  toggle.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setOpen(!content.classList.contains('open'));
+    } else {
+      content.classList.add('open');
+      content.style.display = 'block';
+      content.style.maxHeight = '600px';
+      icon.textContent = '−';
     }
   });
 
+  // --- Events ---
   slider.addEventListener("input", () => {
     let val = parseFloat(slider.value);
     if (Math.abs(val - 1) < 0.05) val = 1;
     slider.value = val;
     sliderValue.textContent = val.toFixed(2);
     general.forceScale = val;
-    if (fileBrowser.selectedStructure?.forces?.length) {
-      updateForces(val);
-    }
+    if (fileBrowser.selectedStructure?.forces?.length) updateForces(val);
   });
 
   widthSlider.addEventListener("input", () => {
     const val = parseFloat(widthSlider.value);
     widthValue.textContent = val.toFixed(2);
     general.forceRadius = val;
-    if (fileBrowser.selectedStructure?.forces?.length) {
-      updateForces(general.forceScale);
-    }
+    if (fileBrowser.selectedStructure?.forces?.length) updateForces(general.forceScale ?? 1.0);
+  });
+
+  deleteBtn.addEventListener("click", () => {
+    const s = fileBrowser.selectedStructure;
+    if (s) s.forces = [];
+    removeForces();
+  });
+
+  drawBtn.addEventListener("click", () => {
+    const s = fileBrowser.selectedStructure;
+    if (!s) return;
+    const forces = [];
+    textarea.value.trim().split("\n").filter(Boolean).forEach(line => {
+      const p = line.trim().split(/\s+/);
+      if (p.length < 3) return;
+      const x = parseFloat(p[0]), y = parseFloat(p[1]), z = parseFloat(p[2]);
+      if (!isNaN(x) && !isNaN(y) && !isNaN(z)) forces.push({ vector: [x, y, z] });
+    });
+    if (forces.length === 0) return;
+    s.forces = forces;
+    updateForces(general.forceScale ?? 1.0);
   });
 }
-
-

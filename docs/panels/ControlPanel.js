@@ -4,7 +4,7 @@ import { addLatticeComparisonPanel } from './LatticeComparisonPanel.js';
 import { removeSpins,updateSpins } from '../modules/SpinModule.js';
 import { removeForces,updateForces } from '../modules/ForceModule.js';
 import { removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
-import {createSpinControls,addSpinPanel,removeSpinPanel} from './SpinPanel.js';
+import {addSpinPanel,removeSpinPanel} from './SpinPanel.js';
 import {addForcePanel,removeForcePanel} from './ForcePanel.js';
 import {addBondPanel,removeBondPanel} from './BondPanel.js';
 import {addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
@@ -71,13 +71,11 @@ export function addControlPanelSpinForceSwitch() {
       updateForces();
       }
     else if (general.spinForceState == "Spins") {
-      //removeForces();
-      addSpinPanel()
-      createSpinControls();
+      addSpinPanel();
       updateSpins();
       removeForcePanel();
       removeFieldPanel();
-      removeForces()
+      removeForces();
         }
     else if (general.spinForceState == "Field") {
       removeSpinPanel();
