@@ -1,6 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
-import { mergeVertices } from '../external/three/BufferGeometryUtils.js';
-import MarchCubes from '../external/marching_cubes_wasm/MarchCubes.js';
+//import { mergeVertices } from '../external/three/BufferGeometryUtils.js';
+//import MarchCubes from '../external/marching_cubes_wasm/MarchCubes.js'; // uncomment for serial version
+import MarchCubes from '../external/marching_cubes_wasm/MarchCubesPar.js'; // uncomment for parallel version
 import { groups } from '../store.js';
 
 const surface_options = {
@@ -100,7 +101,7 @@ export class Isosurface extends THREE.Group {
             this.meshes.positive.geometry.setAttribute('normal', normalAttribute);
             this.meshes.positive.geometry.setDrawRange(0, numVertices);
 
-            this.meshes.positive.geometry = mergeVertices(this.meshes.positive.geometry);
+            //this.meshes.positive.geometry = mergeVertices(this.meshes.positive.geometry);
             this.meshes.positive.geometry.computeVertexNormals();
         }
         if (this.marchingCubes.negative && (isoValue < 0 || groups.activeField.useAbsoluteValue)) {
@@ -123,7 +124,7 @@ export class Isosurface extends THREE.Group {
             this.meshes.negative.geometry.setAttribute('normal', normalAttribute);
             this.meshes.negative.geometry.setDrawRange(0, numVertices);
             
-            this.meshes.negative.geometry = mergeVertices(this.meshes.negative.geometry);
+            //this.meshes.negative.geometry = mergeVertices(this.meshes.negative.geometry);
             this.meshes.negative.geometry.computeVertexNormals();
         }
 

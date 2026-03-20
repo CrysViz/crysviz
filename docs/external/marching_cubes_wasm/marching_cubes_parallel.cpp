@@ -377,7 +377,11 @@ public:
 	float* vnormal_list;
 	float* vnormal_cache;
 
-	std::vector<std::vector<std::tuple<size_t, unsigned short, unsigned char>>> pt_vertex_cache; // vertex indices and edge flags for thread caching
+	size_t local_count[8]; // per-thread vertex counts for parallel processing
+	size_t local_process_count[8]; // per-thread processed vertex counts for parallel processing
+
+	std::vector<std::vector<std::tuple<size_t, unsigned short, unsigned char>>> pt_cube_cache; // vertex indices and edge flags for thread caching
+	std::vector<size_t> pt_vertex_counts; // per-thread vertex counts for caching
 
 	MarchingCubes(unsigned int resx, unsigned int resy, unsigned int resz, uintptr_t field_data, uintptr_t cache_data)
 			: MarchingCubes(resx, resy, resz) {
@@ -512,49 +516,77 @@ public:
 	}
 
 	void update_vertices(float isovalue) {
-		unsigned int num_threads = std::thread::hardware_concurrency();
-		if (!emscripten_has_threading_support()) {
+		int num_threads = emscripten_num_logical_cores() <= 4 ? emscripten_num_logical_cores() - 1 : 4; // leave one core free to avoid freezing the system, but use all available threads otherwise
+		if (!emscripten_has_threading_support() || num_threads <= 0) {
 			printf("Threading not supported, running with single thread.\n");
 			num_threads = 1; // fallback to single-threaded if threading is not supported (e.g. in some browsers or WASM runtimes)
 		}
 		else {
 			printf("Threading supported, using %d threads.\n", num_threads);
 		}
-		this->pt_vertex_cache.resize(num_threads); // resize cache to have one vector per thread
+		this->pt_cube_cache.clear(); // clear cache from any previous runs to free memory and avoid stale data
+		this->pt_vertex_counts.clear(); // clear vertex counts from any previous runs to free memory and avoid stale data
+		this->pt_cube_cache.resize(num_threads); // resize cache to have one vector per thread
+		this->pt_vertex_counts.resize(num_threads, 0); // initialize vertex counts to 0 for each thread
 
+		printf("Launching %d threads for counting step...\n", num_threads);
 		std::vector<std::thread> threads;
 		size_t start_ind, end_ind;
-		// branch threads to iterate over grid and count vertices per thread, storing results in pt_vertex_cache for later use in vertex generation step
+		// branch threads to iterate over grid and count vertices per thread, storing results in pt_cube_cache for later use in vertex generation step
 		for (int i = 1; i < num_threads; i++) {
 			start_ind = (size_t)(i * this->field_size / (float)num_threads);
 			end_ind = (size_t)((i + 1) * this->field_size / (float)num_threads);
+			size_t x, y, z;
+			index2vertex(start_ind, x, y, z);
+			size_t x_end, y_end, z_end;
+			index2vertex(end_ind, x_end, y_end, z_end);
+			printf("Thread %d counting vertices from index %zu to %zu, i.e. (%zu, %zu, %zu) to (%zu, %zu, %zu)...\n", i, start_ind, end_ind, x, y, z, x_end, y_end, z_end);
 			threads.emplace_back(&MarchingCubes::_countIsoCubes, this, isovalue, start_ind, end_ind, i);
 		}
 		start_ind = 0;
 		end_ind = (size_t)(this->field_size / (float)num_threads);
+		size_t x, y, z;
+		index2vertex(start_ind, x, y, z);
+		size_t x_end, y_end, z_end;
+		index2vertex(end_ind, x_end, y_end, z_end);
+		printf("Thread %d counting vertices from index %zu to %zu, i.e. (%zu, %zu, %zu) to (%zu, %zu, %zu)...\n", 0, start_ind, end_ind, x, y, z, x_end, y_end, z_end);
 		_countIsoCubes(isovalue, start_ind, end_ind, 0);
-
 		// wait for counting threads to finish before proceeding to vertex generation step, which relies on the results of the counting step
 		for (int i = 0; i < threads.size(); i++) {
 			threads[i].join();
 		}
+	
+		printf("Counting threads finished.\n");
+		for (int i = 0; i < threads.size()+1; i++) {
+			printf("Counted %zu cubes on thread %d. Cached %zu vertices (%zu).\n", this->local_process_count[i], i, this->local_count[i], this->pt_cube_cache[i].size());
+		}
+		printf("Launching %d threads for vertex generation step...\n", num_threads);
 		threads.clear(); // clear thread vector to free resources
 
 		// branch threads to iterate over cached vertex indices and edge flags for each thread, generating vertices and normals and writing them to vertex_list and vnormal_list
 		for (int i = 1; i < num_threads; i++) {
-			threads.emplace_back(&MarchingCubes::_iterateCountedVertices, this, isovalue, i);
+			size_t start_ind = 0;
+			for (int j = 0; j < i; j++) {
+				start_ind += this->pt_vertex_counts[j]*3; // each vertex has 3 components, so multiply count by 3 to get starting index in vertex_list and vnormal_list for this thread
+			}
+			printf("Thread %d generating vertices starting at index %zu...\n", i, start_ind);
+			threads.emplace_back(&MarchingCubes::_iterateCountedVertices, this, isovalue, start_ind, i);
 		}
-		_iterateCountedVertices(isovalue, 0);
+		_iterateCountedVertices(isovalue, 0, 0);
 		for (int i = 0; i < threads.size(); i++) {
 			threads[i].join();
 		}
 		threads.clear(); // clear thread vector to free resources
 
+		this->vertex_count = 0; // reset vertex count to accumulate total from all threads
 		for (int i = 0; i < num_threads; i++) {
-			this->vertex_count += this->pt_vertex_cache[i].size();
-			this->pt_vertex_cache[i].clear(); // clear cache for this thread to free memory, since we no longer need the vertex indices or edge flags after generating vertices and normals
+			printf("Thread %d generated %zu vertices vs %zu.\n", i, this->local_count[i], this->pt_vertex_counts[i]);
+			this->vertex_count += this->pt_vertex_counts[i];
+			this->pt_cube_cache[i].clear(); // clear cache for this thread to free memory, since we no longer need the vertex indices or edge flags after generating vertices and normals
 		}
-		this->pt_vertex_cache.clear(); // clear entire cache vector to free memory
+		printf("Vertex generation threads finished. Total vertices generated: %zu\n", this->vertex_count);
+		this->pt_cube_cache.clear(); // clear entire cache vector to free memory
+		this->pt_vertex_counts.clear();
 	}
 
 	void _countIsoCubes(const float isovalue, const size_t start_ind, const size_t end_ind, const unsigned int thread_ind) {
@@ -563,14 +595,20 @@ public:
 		size_t x_end, y_end, z_end;
 		index2vertex(end_ind, x_end, y_end, z_end);
 
+		size_t local_count = 0, process_count = 0; // local count of vertices for this thread, used for debugging and verification
 		size_t vertex_index = 0;
 		size_t cube_points[8];
-		this->pt_vertex_cache[thread_ind].reserve((z_end - z_start) * (y_end - y_start) * (x_end - x_start)); // reserve enough space in cache to avoid reallocations during push_back
-		
+		this->pt_cube_cache[thread_ind].reserve(end_ind - start_ind + 10); // reserve enough space in cache to avoid reallocations during push_back
+		this->pt_vertex_counts[thread_ind] = 0;
+
 		unsigned char cube_index;
-		for (size_t z = z_start; z < z_end; z++) {
-			for (size_t y = y_start; y < y_end; y++) {
-				for (size_t x = x_start; x < x_end; x++) {
+		size_t y_limit, x_limit;
+		for (size_t z = z_start; z <= z_end && z < nz - 1; z++) {
+			y_limit = z == z_end ? y_end+1 : ny - 1; // iterate over all y unless on boundary of thread region
+			for (size_t y = y_start; y < y_limit && y < ny - 1; y++) {
+				x_limit = y == y_end && z == z_end ? x_end : nx - 1; // iterate over all x unless on boundary of thread region
+				for (size_t x = x_start; x < x_limit && x < nx - 1; x++) {
+					process_count++;
 					vertex_index = vertex2index(x, y, z);
 					cube_points[0] = vertex_index; 								// v0
 					cube_points[1] = vertex_index 		   + y_step			;	// v1
@@ -595,25 +633,28 @@ public:
 					if (cube_index == 0 || cube_index == 255) continue; // skip empty cubes
 
 					const unsigned short edge_flags = edgeTable[cube_index];
-					this->pt_vertex_cache[thread_ind].emplace_back(vertex_index, edge_flags, cube_index); // cache the vertex index and edge flags for this cube for later use in vertex generation step
+					this->pt_cube_cache[thread_ind].emplace_back(vertex_index, edge_flags, cube_index); // cache the vertex index and edge flags for this cube for later use in vertex generation step
+					for (int i = 0; triTable[cube_index][i] != 255; i++) {
+						this->pt_vertex_counts[thread_ind]++;
+					}
+					local_count++; // increment local count for this thread
+					//printf("Thread %d: Cached cube at vertex index %zu with edge flags %u and cube index %u\n", thread_ind, vertex_index, edge_flags, cube_index);
 				}
 			}
 		}
+		this->local_count[thread_ind] = local_count; // store local count for this thread in class member for later use in vertex generation step
+		this->local_process_count[thread_ind] = process_count; // store local processed cube
 	}
 
-	void _iterateCountedVertices(float isovalue, unsigned int thread_ind) {
+	void _iterateCountedVertices(float isovalue, size_t start_index, unsigned int thread_ind) {
 		float vertices_on_edge[12*3]; // flattened vertex positions for the 12 edges, each with x,y,z components
 		float vnormals_on_edge[12*3]; // flattened vertex normals for the 12 edges, each with x,y,z components
 		size_t cube_points[8];
 		size_t x, y, z;
 		
-		size_t list_start_index = 0; // index to keep track of where we are in the vertex_list and vnormal_list for this thread's vertices
-		for (int i = 0; i < thread_ind; i++) {
-			list_start_index += this->pt_vertex_cache[i].size() * 3; // normal and position index scaled by 3 for the vector elements
-		}
 		size_t v_count = 0; // local count of vertices generated by this thread, used to index into vertex_list and vnormal_list
 
-		for (const auto& [vertex_index, edge_flags, cube_index] : this->pt_vertex_cache[thread_ind]) {
+		for (const auto& [vertex_index, edge_flags, cube_index] : this->pt_cube_cache[thread_ind]) {
 			index2vertex(vertex_index, x, y, z); // get starting vertex coordinates for this thread's cache to compute positions for edge vertices
 
 			// add new vertices and normals to list for current cube
@@ -650,16 +691,18 @@ public:
 
 			for (int i = 0; triTable[cube_index][i] != 255; i++) {
 				const int edge = triTable[cube_index][i];
-				this->vertex_list[list_start_index + 3*v_count] 		= vertices_on_edge[edge*3];
-				this->vertex_list[list_start_index + 3*v_count + 1] 	= vertices_on_edge[edge*3 + 1];
-				this->vertex_list[list_start_index + 3*v_count + 2] 	= vertices_on_edge[edge*3 + 2];
+				this->vertex_list[start_index + 3*v_count] 		= vertices_on_edge[edge*3];
+				this->vertex_list[start_index + 3*v_count + 1] 	= vertices_on_edge[edge*3 + 1];
+				this->vertex_list[start_index + 3*v_count + 2] 	= vertices_on_edge[edge*3 + 2];
 
-				this->vnormal_list[list_start_index + 3*v_count] 		= vnormals_on_edge[edge*3];
-				this->vnormal_list[list_start_index + 3*v_count + 1] 	= vnormals_on_edge[edge*3 + 1];
-				this->vnormal_list[list_start_index + 3*v_count + 2] 	= vnormals_on_edge[edge*3 + 2];
+				this->vnormal_list[start_index + 3*v_count] 		= vnormals_on_edge[edge*3];
+				this->vnormal_list[start_index + 3*v_count + 1] 	= vnormals_on_edge[edge*3 + 1];
+				this->vnormal_list[start_index + 3*v_count + 2] 	= vnormals_on_edge[edge*3 + 2];
 				v_count++;
 			}
 		}
+
+		this->local_count[thread_ind] = v_count; // store local vertex count for this thread in class member for later use in final vertex count aggregation
 	}
 };
 

@@ -1,5 +1,4 @@
 import { usedIDs } from '../store.js';
-import * as THREE from 'three';
 
 /**
  * Generate a compact timestamp + random UUID string
