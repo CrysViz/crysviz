@@ -20,4 +20,26 @@ export class StructureContainer {
       item instanceof ClassType ? item : new ClassType(item)
     );
   }
+  flushColorToAllStructures(targetStructure) {
+    this.structures.forEach(structure => {
+      if (structure === targetStructure) return; // Skip the target itself
+
+      // Copy atom colors
+      structure.atoms.forEach((atom, atomIndex) => {
+        if (targetStructure.atoms[atomIndex]) {
+          atom.color = targetStructure.atoms[atomIndex].color;
+        }
+      });
+
+      // Copy bond colors
+      structure.bonds.forEach((bond, bondIndex) => {
+        if (targetStructure.bonds[bondIndex] && targetStructure.bonds[bondIndex].color) {
+          bond.color = [...targetStructure.bonds[bondIndex].color]; // Deep copy if needed
+        }
+      });
+    });
+  }
+
+
+
 }

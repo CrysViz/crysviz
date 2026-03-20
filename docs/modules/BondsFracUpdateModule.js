@@ -5,14 +5,9 @@ import {Atom} from '../classes/Atom.js';
 import {Bond} from '../classes/Bond.js';
 
 
-import {disposeGroup} from '../panels/WindowAndSceneControls.js'
-
-
-import {createAtomMesh} from './AtomsModule.js'
 import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
 
-import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
 import {updateAtoms} from './AtomsFracUpdateModule.js'
 import {bondLengthToColor} from '../panels/ColorPanel.js'
 import {refreshHistogram} from '../panels/AnalysisPanels/BondAnalysisPanel.js'
@@ -81,6 +76,7 @@ export function getBondCutoff(elem1, elem2) {
 export function buildBondObjects(structure){
   structure.bonds = [];
   structure.bondMapping ={};
+  structure.bondObjectMapping ={};
 
   const wrapped = structure.periodic.wrapped;
   const wrappedCart = wrapped.cart;
@@ -131,6 +127,7 @@ export function renderBonds() {
   const structure = fileBrowser.selectedStructure;
   const bonds = fileBrowser.selectedStructure.bonds;
   const validBonds = bonds.filter(b => b.visibleLen > 1e-3);
+  console.warn("bonds",bonds,"validBonds",validBonds)
   const bondCount = validBonds.length;
   console.log("Rendering", bondCount, "bonds");
 
@@ -235,6 +232,14 @@ export function renderBonds() {
     structure.bondMapping[key].push(i * 2);    
 
 
+    // Lookup table from bondHalf to the actual bond objects stored in the structure
+    //  mainly necessary for color changes
+    key = i*2
+    if (!structure.bondObjectMapping[key]){
+      structure.bondObjectMapping[key] = [];
+    }
+    structure.bondObjectMapping[key] = [i,0]
+
     // color
     mesh.instanceColor.setXYZ(i*2,
       new THREE.Color(bond.color[0]).r,
@@ -259,11 +264,21 @@ export function renderBonds() {
     dummy.rotateX(Math.PI / 2);
     dummy.updateMatrix();
     mesh.setMatrixAt(i*2 + 1, dummy.matrix);
+
     key = bond.indices[1];
     if (!structure.bondMapping[key]) {
         structure.bondMapping[key] = []; // Initialize with an empty array
     }
     structure.bondMapping[key].push(i * 2 + 1);
+
+    // Lookup table from bondHalf to the actual bond objects stored in the structure
+    //  mainly necessary for color changes
+
+    key = i*2+1
+    if (!structure.bondObjectMapping[key]){
+      structure.bondObjectMapping[key] = [];
+    }
+    structure.bondObjectMapping[key]=[i,1];
 
     // color
     mesh.instanceColor.setXYZ(i*2 + 1,
@@ -303,6 +318,7 @@ export function renderBonds() {
 // change the color of a bond "half  cylinder" with index bondMeshIndex to color "color" (hex)
 export function updateSingleBondColor(bondMeshIndex, color) {
   const mesh = groups.bondsMesh;
+  const bonds = fileBrowser.selectedStructure.bonds[bondMeshIndex]
   mesh.instanceColor.setXYZ(
     bondMeshIndex,
     new THREE.Color(color).r,

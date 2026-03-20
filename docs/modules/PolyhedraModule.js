@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { ConvexGeometry } from '../external/three/ConvexGeometry.js';
 import {app,general,groups, fileBrowser} from '../store.js'
 import {periodicWrapped,fracToCart} from '../modules/LatticeModule.js'
-import { getBondCutoff} from '../modules/BondsModule.js'
+import { getBondCutoff} from '../modules/BondsFracUpdateModule.js'
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 
 function NewupdatePolyhedra() {

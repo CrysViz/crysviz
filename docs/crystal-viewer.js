@@ -31,7 +31,6 @@ import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleCont
 import { createColorPicker } from './modules/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
-import {getBondCutoff} from './modules/BondsModule.js'
 import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter} from './modules/BondsFracUpdateModule.js'
 import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './modules/CompBondsFracUpdateModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
@@ -41,10 +40,6 @@ import {rebuildSecondAtoms,updateSecondAtoms,updateSecondSingleAtomDiameter} fro
 
 
 import {createSupercell} from './modules/SuperCellModule.js';
-import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,
-        getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,
-        setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,
-        createPieDot,clearIndividualAtomColor } from './modules/ColorModule.js';
 import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,
         addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './modules/MeasurementModule.js' // not all imports might be needed in this file
 
@@ -318,10 +313,13 @@ export function updateVisualization(options = {}) {
     reRenderField = false
   } = options;
 
+
   if (!fileBrowser.selectedStructure) {
     console.log('updateVisualization:No structure data selected available, returning early');
     return;
   }
+
+  console.log(fileBrowser.selectedStructure)
 
   // Main Structure
   if (reRenderAtoms) {
@@ -468,15 +466,16 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 
 
 
-    loadColorOverrides();
-    loadIndividualAtomColors();
+    //loadColorOverrides();
+    //loadIndividualAtomColors();
 
     document.getElementById('structureControls').style.display = 'block';
     document.getElementById('structureControls2').style.display = 'block';
 
     //createBondLengthControls();
     createShareButton();
-    updateVisualization();
+    updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true});
+    console.warn(fileBrowser.selectedStructure)
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();
     //resetView();

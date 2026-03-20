@@ -88,8 +88,6 @@ export const general = {
   currentLatticeColor:null,
   defaultBackgroundColor:null,
   currentLatticeColor:null,
-  userColorOverrides:[],  // userColorOverrides and individualAtomColors need to be overwritten with the new colors in the object containing the atoms
-  individualAtomColors:[],
   useDefaultColors:true,
   //defaultSpinColor:'#ff3366',
   //defaultSpinLength:1.0,
@@ -115,7 +113,7 @@ export const general = {
   showComparisonInfo:false,
   showPeriodic:true,
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
-  useWasmPeriodic:false, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
+  useWasmPeriodic:true, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
   playerModeState: "none", 
   spinForceState: "none",
   analysisState:"none",
@@ -124,7 +122,7 @@ export const general = {
   modifiedLattice: null, // this needs to be part of the structure object 
   sharedStructureLoaded:false,
   bondsColor: null,
-  bondsColorMap: null,
+  abondsColorMap: null,
   atomsColor: null,
   atomsColorMaps: null,
 };

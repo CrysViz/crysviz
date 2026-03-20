@@ -2,9 +2,6 @@ import { updateSingleBondColor } from '../modules/BondsFracUpdateModule.js'
 import { updateSingleAtomColor } from '../modules/AtomsFracUpdateModule.js'
 import { app,groups, general,mode,fileBrowser} from '../store.js';
 
-import {colorHexToCss,hexToRgba,getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor } from '../modules/ColorModule.js';
-
-
 
 function getRandomColor() {
   const letters = '0123456789ABCDEF';

@@ -2,10 +2,8 @@ import {app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultC
 
 import { updateVisualization } from '../../crystal-viewer.js';
 
-import {colorHexToCss,hexToRgba,getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor } from '../../modules/ColorModule.js';
 
 import { createColorPicker } from '../../modules/ColorPickerModule.js';
-import { updateBonds } from '../../modules/BondsModule.js'
 import {createSupercell} from '../../modules/SuperCellModule.js';
 import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
 import {createCompositionRow} from './Species.js'
@@ -199,7 +197,6 @@ compDiv.appendChild(atomPanel);
 compDiv.appendChild(bondsPanel);
 
 createSpecificBondControl("infoBondControls");
-
 createBondLengthControls("infoBondControls"); // Make sure to pass the panel element
 
 // Function to show the selected panel and hide others

@@ -3,8 +3,7 @@ import {periodic,structureShip, app, groups,fileBrowser, general,mode,defaultPOS
 import {Atom} from '../classes/Atom.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
-import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
-
+import {getAtomColor} from './ColorModule.js'
 import {generateID} from './UUIDModule.js' 
 
 
@@ -204,8 +203,7 @@ export function updateSecondSingleAtomPosition(index, position) {
 }
 
 export function updateSecondSingleAtomColor(originalIndex, index, element, opacity = 1.0) {
-  //const hex = getElementColor(element);
-  const hex = getIndividualAtomColor(element, originalIndex)
+  const hex = getAtomColor(originalIndex)
   // console.log(`Element: ${element}, Hex: ${hex}, RGB: [${((hex >> 16) & 0xFF) / 255}, ${((hex >> 8) & 0xFF) / 255}, ${(hex & 0xFF) / 255}]`);
   groups.secondAtomsMesh.setColorAt(index, new THREE.Color(hex));
   groups.secondAtomsMesh.instanceColor.needsUpdate = true;

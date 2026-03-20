@@ -85,7 +85,7 @@ export function parsePWSCFin(content, fileName) {
   // ----------------------
   //
   const atoms = [];
-    positions.forEach((pos, i) => {
+  positions.forEach((pos, i) => {
     atoms.push(new Atom({
       position: pos,
       element: elements[i],
@@ -93,14 +93,21 @@ export function parsePWSCFin(content, fileName) {
     }));
   });
 
+  let periodic = runPeriodicWrapped(
+   { hash: "None",wrapped: {}},
+   pos,
+   elements,
+   lattice
+  )
+
   
   const structures = [new Structure({
     elements:elements,
     uniqueElements: [...new Set(elements)],
     lattice:lattice,
     atoms:atoms,
-    spins:[],
-    forces:[]
+    periodic: periodic,
+    volumetricFields:null,
     })
   ];
 

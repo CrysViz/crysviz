@@ -514,9 +514,9 @@ function updateStructureFromRowAndStep(rowIndex) {
   if (forces != null && general.spinForceState === "Forces") updateForces();
   //if (fileBrowser.selectedStructure.stress != null) stress = fileBrowser.selectedStructure.stress.map(r => r.tensor);
   createBondLengthControls();
-  if (document.getElementById('latticeAndSupercellGroup')) {
-    removeLatticeAndSupercellPanel();
-    addLatticeAndSupercellPanel();
+  if (document.getElementById('latticeParametersPanel')) {
+   removeLatticeAndSupercellPanel();
+   addLatticeAndSupercellPanel();
   }
   if (
     fileBrowser.comparisonStructure &&

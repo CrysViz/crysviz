@@ -3,7 +3,8 @@ import {periodic,structureShip, app, groups,fileBrowser, general,mode,defaultPOS
 import {Atom} from '../classes/Atom.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
-import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
+
+import {setAtomColor}  from './ColorModule.js';
 
 import {generateID} from './UUIDModule.js' 
 
@@ -58,14 +59,6 @@ export function updateAtomByUUID(mesh, uuid, newPosition, newColor) {
 
 
 //-------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------
-//
-//
-//
 
 
 export function rebuildAtoms(opacity) {
@@ -257,9 +250,16 @@ export function updateSingleAtomPosition(index, position) {
  // console.log("Expected length:", 16 * groups.atomsMesh.count);
 }
 
-export function updateSingleAtomColor(originalIndex, index, element, opacity = 1.0) {
-  //const hex = getElementColor(element);
-  const hex = getIndividualAtomColor(element, originalIndex)
+export function updateSingleAtomColor(originalIndex, index, element, hex=null) {
+  //console.log("Updating color of atom",index)
+  let structure = fileBrowser.selectedStructure
+  let atom = structure.atoms[originalIndex]
+  if (hex == null){
+    hex = structure.atoms[originalIndex].getColor(originalIndex)
+  }
+  else{
+    setAtomColor(atom, hex);
+  }
   // console.log(`Element: ${element}, Hex: ${hex}, RGB: [${((hex >> 16) & 0xFF) / 255}, ${((hex >> 8) & 0xFF) / 255}, ${(hex & 0xFF) / 255}]`);
   groups.atomsMesh.setColorAt(index, new THREE.Color(hex));
   groups.atomsMesh.instanceColor.needsUpdate = true;
@@ -293,7 +293,7 @@ export async function updateAtoms(opacity = 1.0) {
   for (let i = 0; i < groups.atomsMesh.count; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     updateSingleAtomPosition(i, wrappedCart[i])
-    updateSingleAtomColor(originalIndex,i, wrapped.elements[i], opacity)
+    //updateSingleAtomColor(originalIndex,i, wrapped.elements[i])
     updateSingleAtomDiameter(i,wrapped.elements[i])    
 
     groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);

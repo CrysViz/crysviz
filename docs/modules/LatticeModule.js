@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { periodic,app, groups, general,fileBrowser, mode, atomicRadii,getLatticeVisSettings} from '../store.js';
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
-import {getBondCutoff} from './BondsModule.js'
+import {getBondCutoff} from './BondsFracUpdateModule.js'
 
 import init, { periodic_wrapped } from '../compiled/periodic_wasm.js';
 import { initPeriodicWasm, periodicWrapped as wasmPeriodicWrapped } from '../compiled/periodicWasm.js';
