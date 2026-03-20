@@ -86,18 +86,47 @@ export function createRow(obj) {
     }
   });
 
-  // Duplicate (copy) logic
+// Duplicate (copy) logic
 row.querySelector(".copy").addEventListener("click", (e) => {
+  // Check if Command (Mac) or Ctrl (Windows/Linux) is pressed
+  const isCommandClick = e.metaKey || e.ctrlKey;
+
+  if (isCommandClick) {
+    e.stopPropagation();
+    e.preventDefault();
+
+    // Copy current step logic
+    const updatedObj = JSON.parse(row.dataset.obj);
+    const rowIndex = Array.from(row.parentElement.children).indexOf(row);
+    const container = structureShip.container[rowIndex];
+    const stepInput = row.querySelector('input[type="number"]');
+    const currentStep = parseInt(stepInput.value, 10) - 1;
+    const currentStructure = container.structures[currentStep];
+
+    const newObj = {
+      ...updatedObj,
+      structures: [currentStructure],
+      traj: 1, // Only one step
+    };
+    const newRow = createRow(newObj);
+    row.insertAdjacentElement("afterend", newRow);
+    structureShip.len += 1;
+    structureShip.container.splice(rowIndex + 1, 0, newObj);
+    selectLastAddedRow();
+    return; // Exit early to avoid showing the popup
+  }
+
+  // If not a Command+Click, show the popup as before
   e.stopPropagation();
 
-  // Create a popup container
+  // Create a popup container with your custom styling
   const popup = document.createElement("div");
   popup.style.position = "absolute";
-  popup.style.zIndex = "1000";
-  popup.style.backgroundColor = "white";
-  popup.style.border = "1px solid #ccc";
+  popup.style.zIndex = "10000";
+  popup.style.backgroundColor = "rgba(13,13,13,0.95)";
+  popup.style.border = "1px solid rgba(255, 255, 255, 0.1)";
   popup.style.padding = "10px";
-  popup.style.borderRadius = "5px";
+  popup.style.borderRadius = "12px";
   popup.style.boxShadow = "0 2px 5px rgba(0,0,0,0.2)";
   popup.style.display = "flex";
   popup.style.flexDirection = "column";
@@ -105,6 +134,13 @@ row.querySelector(".copy").addEventListener("click", (e) => {
 
   // Create a dropdown for copy options
   const select = document.createElement("select");
+  select.style.background = "var(--bg-color)";
+  select.style.border = "1px solid rgba(255, 255, 255, 0.2)";
+  select.style.color = "rgb(255, 255, 255)";
+  select.style.borderRadius = "4px";
+  select.style.cursor = "pointer";
+  select.style.fontSize = "10px";
+  select.style.padding = "4px";
   select.innerHTML = `
     <option value="all">Copy All Steps</option>
     <option value="current">Copy Current Step</option>
@@ -115,23 +151,85 @@ row.querySelector(".copy").addEventListener("click", (e) => {
   const rangeContainer = document.createElement("div");
   rangeContainer.style.display = "none";
   rangeContainer.style.gap = "10px";
-  rangeContainer.innerHTML = `
-    <div>
-      <label for="startStep" style="margin-right: 5px;">Start Step:</label>
-      <input type="number" id="startStep" min="1" max="${obj.traj}" value="1" style="width: 50px;">
-    </div>
-    <div>
-      <label for="endStep" style="margin-right: 5px;">End Step:</label>
-      <input type="number" id="endStep" min="1" max="${obj.traj}" value="${obj.traj}" style="width: 50px;">
-    </div>
-  `;
+  rangeContainer.style.flexDirection = "column";
+
+  const startStepContainer = document.createElement("div");
+  startStepContainer.style.display = "flex";
+  startStepContainer.style.gap = "5px";
+  startStepContainer.style.alignItems = "center";
+
+  const startStepLabel = document.createElement("label");
+  startStepLabel.textContent = "Start Step:";
+  startStepLabel.style.color = "rgb(255, 255, 255)";
+  startStepLabel.style.fontSize = "10px";
+
+  const startStepInput = document.createElement("input");
+  startStepInput.type = "number";
+  startStepInput.id = "startStep";
+  startStepInput.min = "1";
+  startStepInput.max = obj.traj;
+  startStepInput.value = "1";
+  startStepInput.style.background = "var(--bg-color)";
+  startStepInput.style.border = "1px solid rgba(255, 255, 255, 0.2)";
+  startStepInput.style.color = "rgb(255, 255, 255)";
+  startStepInput.style.borderRadius = "4px";
+  startStepInput.style.fontSize = "10px";
+  startStepInput.style.width = "50px";
+  startStepInput.style.padding = "4px";
+
+  startStepContainer.appendChild(startStepLabel);
+  startStepContainer.appendChild(startStepInput);
+
+  const endStepContainer = document.createElement("div");
+  endStepContainer.style.display = "flex";
+  endStepContainer.style.gap = "5px";
+  endStepContainer.style.alignItems = "center";
+
+  const endStepLabel = document.createElement("label");
+  endStepLabel.textContent = "End Step:";
+  endStepLabel.style.color = "rgb(255, 255, 255)";
+  endStepLabel.style.fontSize = "10px";
+
+  const endStepInput = document.createElement("input");
+  endStepInput.type = "number";
+  endStepInput.id = "endStep";
+  endStepInput.min = "1";
+  endStepInput.max = obj.traj;
+  endStepInput.value = obj.traj;
+  endStepInput.style.background = "var(--bg-color)";
+  endStepInput.style.border = "1px solid rgba(255, 255, 255, 0.2)";
+  endStepInput.style.color = "rgb(255, 255, 255)";
+  endStepInput.style.borderRadius = "4px";
+  endStepInput.style.fontSize = "10px";
+  endStepInput.style.width = "50px";
+  endStepInput.style.padding = "4px";
+
+  endStepContainer.appendChild(endStepLabel);
+  endStepContainer.appendChild(endStepInput);
+
+  rangeContainer.appendChild(startStepContainer);
+  rangeContainer.appendChild(endStepContainer);
 
   // Create buttons for confirmation and cancellation
   const confirmButton = document.createElement("button");
   confirmButton.textContent = "Copy";
+  confirmButton.style.background = "var(--bg-color)";
+  confirmButton.style.border = "1px solid rgba(255, 255, 255, 0.2)";
+  confirmButton.style.color = "rgb(255, 255, 255)";
+  confirmButton.style.borderRadius = "4px";
+  confirmButton.style.cursor = "pointer";
+  confirmButton.style.fontSize = "10px";
+  confirmButton.style.padding = "4px 8px";
 
   const cancelButton = document.createElement("button");
   cancelButton.textContent = "Cancel";
+  cancelButton.style.background = "var(--bg-color)";
+  cancelButton.style.border = "1px solid rgba(255, 255, 255, 0.2)";
+  cancelButton.style.color = "rgb(255, 255, 255)";
+  cancelButton.style.borderRadius = "4px";
+  cancelButton.style.cursor = "pointer";
+  cancelButton.style.fontSize = "10px";
+  cancelButton.style.padding = "4px 8px";
 
   // Append all elements to the popup
   popup.appendChild(select);
@@ -155,6 +253,26 @@ row.querySelector(".copy").addEventListener("click", (e) => {
       rangeContainer.style.display = "none";
     }
   });
+
+  // Function to close the popup
+  const closePopup = () => {
+    if (popup && popup.parentNode) {
+      popup.remove();
+    }
+    document.removeEventListener("click", handleOutsideClick);
+  };
+
+  // Handle clicks outside the popup
+  const handleOutsideClick = (event) => {
+    if (!popup.contains(event.target)) {
+      closePopup();
+    }
+  };
+
+  // Add event listener to close popup when clicking outside
+  setTimeout(() => {
+    document.addEventListener("click", handleOutsideClick);
+  }, 0);
 
   // Handle confirmation
   confirmButton.onclick = () => {
@@ -186,8 +304,8 @@ row.querySelector(".copy").addEventListener("click", (e) => {
       structureShip.container.splice(rowIndex + 1, 0, newObj);
     } else if (option === "range") {
       // Copy range of steps: create a new container with only the selected range
-      const startStep = parseInt(rangeContainer.querySelector("#startStep").value, 10) - 1;
-      const endStep = parseInt(rangeContainer.querySelector("#endStep").value, 10) - 1;
+      const startStep = parseInt(startStepInput.value, 10) - 1;
+      const endStep = parseInt(endStepInput.value, 10) - 1;
       const rangeStructures = container.structures.slice(startStep, endStep + 1);
 
       const newObj = {
@@ -201,13 +319,13 @@ row.querySelector(".copy").addEventListener("click", (e) => {
       structureShip.container.splice(rowIndex + 1, 0, newObj);
     }
 
-    popup.remove();
+    closePopup();
     selectLastAddedRow();
   };
 
   // Handle cancellation
   cancelButton.onclick = () => {
-    popup.remove();
+    closePopup();
   };
 });
 
