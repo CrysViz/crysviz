@@ -34,6 +34,7 @@ function initIsosurfaceMesh(field) {
 
   if (groups.isosurface) {
     groups.isosurface.delete();
+    groups.isosurface = null;
   }
 
   groups.isosurface = new Isosurface(field);
