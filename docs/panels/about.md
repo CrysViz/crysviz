@@ -1,4 +1,6 @@
-# CrysViz Crystal Structure Visualisation & Analysis
+# CrysViz - Crystal Structure Visualisation & Analysis
+
+## Light-weight browser-based crystal structure visualisation with on-device rendering.
 
 Version 0.9 Beta 2026-03-21
 
