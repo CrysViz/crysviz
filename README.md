@@ -34,28 +34,27 @@ Source code: https://github.com/ftrybel/CrysViz_hot_develop
 ## Key Features
 - No backend required; runs entirely in the browser, no data leaves your machine. Runs in nearly every device (in particular smartphons and tablets) and in every browser.
 - Visualise Input and output files from VASP and Quantum Espress as well as CIFs.
-- Toggle mode distances, angles, ability to remove atoms, custom bond lengths with the optional ability to display atoms outside the unit cell.
+- Measure distances and angles.
+- Use custom bond lengths with the optional ability to display atoms outside the unit cell that are bonded neighbours.
 - Customizable color schemes can be choosen for any individual atoms
-- Watch forces and spins change in relaxaton trajectories
-- Charge density and electron localisation functions viewer (CHGCAR/ELFCAR or .cube files spin resolved)
-- Compare two crystal structures by overlaying the structure; view lattice differences in a radar plot
+- Forces and spin visualisation. Dynamically for relaxaton or MD trajectories
 - Trajectory player. Load OUTCARs and pwscf vc-relax output files directly and visualise the trajectories. Long MD trajecetories might be beyond your browsers memory limits.
-- Analyse symmetry and symmetrise structures (powered by Moyo)
-- Run relxations and molecular dynamics directly on your device with NEP potentials.
-- Possibility to activate a calcualtions backend. This allow structural relaxations with any ASE compatible calculater, e.g. MACE, UPET; trajectory is added and can be played using the trajectory player
-- Watch forces and spins change in relaxaton trajectories (VASP and QE output)
-- View a bond length histogram (angles and coordiantion numbers are comming)
+- Symmetry anlysis and structure refinement (powered by Moyo WASM)
+- Relxations and molecular dynamics simulations directly on your device with NEP potentials with upt to several hundred atoms.
+- Possibility to activate a calculation backend. This allow structural relaxations with any ASE compatible calculater, e.g. MACE, UPET; trajectory is added and can be played using the trajectory player
+- Bond length histogram (angles and coordiantion numbers are comming)
 
-## Comming Soon...
-- Visualise  stress
-- Manipulate structures under symmetry constraints
-- Possibility to add atoms
-- eXYZ reader for trajectories or sets of files.
-
-
-## Experimental
+## Work in progress... (already available)
+- Crystal structures structure comparison via structure overlay; Lattice difference analysis inradar plot
 - Charge density and electron localisation functions viewer (CHGCAR/ELFCAR or .cube files spin resolved). High memory requirements for large files.
+- Share links that contain the structure, view angle, colors and measurements (currently selected structure in trajectory only)
 
+## Comming soon...
+- Stress visualisation
+- Updated trajectory player for larger and longer trajectories
+- Structures manipulation under symmetry constraints
+- Add atoms and vaccuum
+- eXYZ reader for trajectories or sets of files.
 
 Third-Party Libraries and Attribution:
 
