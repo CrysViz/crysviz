@@ -293,7 +293,7 @@ export async function updateAtoms(opacity = 1.0) {
   for (let i = 0; i < groups.atomsMesh.count; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     updateSingleAtomPosition(i, wrappedCart[i])
-    //updateSingleAtomColor(originalIndex,i, wrapped.elements[i])
+    updateSingleAtomColor(originalIndex,i, wrapped.elements[i])
     updateSingleAtomDiameter(i,wrapped.elements[i])    
 
     groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);

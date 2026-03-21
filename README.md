@@ -1,45 +1,51 @@
 
-<img src="old/CrysViz_logo_clear_back.png" width="400">
+--- CrysViz - Crystal Structure Visualisation & Analysis ---
 
-# Light-weight browser-based crystal structure visualisation with on-device rendering.
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
-## This is the live developement repository. If you are not Abhijith, Florian, or Rickard, you should not be here!
+Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall and Rickard Armiento 
 
-### Current Features:
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published
+by the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-- Fully running in browser with mobile device and touch support
-- Automatic periodice boundary conditions
-- Automatic visualisation of bonds with customisable maximum bond length values
-- Inter-atomic distance measuring
-- Angle measurements
-- Periodic images outside the Unitcell
-- Ability to remove atoms
-- read POSCAR, CIFS and load from Optimade Structure URLS
-- user colors for  individual atoms
-- switch for parallel vs. perspective view
-- on-the-fly position and lattice chagnes
-- Spins! per atom, indivudual colors, scaling, etc.
-- Automatic dark/light mode
-- on-the-fly custom background color
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
 
-### Known Bugs & Problems
-- zooming out on the website (ctrl + - )and the zooming the atoms crashes the atom view
-- in the vesta-like colors a lot of elements are pink... colors need to be chosen somehow
-- when a bond is measured and some color or position is changed, the measured bond switches to the periodic images
-- - on bond lenght zero, even though it says now "disabled", bonds are still shown
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-### Features We Could Add
+Source code: https://github.com/ftrybel/CrysViz_hot_develop
 
-1. Minimum bond length slider. Could be useful to identify ranges of bonds.
-3. Show the metainfo line from poscar file
-5. Possibility to deselect single measurements by clicking them again
-6. some comment under the upload stating that "No data leaves your device". Is this really true?
+Third-Party Libraries and Attribution:
 
+1. Moyo
+   - Repository: https://github.com/spglib/moyo
+   - License: MIT or Apache-2.0
+   - Copyright: Kohei Shinohara
+   - See LICENSE-moyo for the full license text.
+   - Explicitly moyo-wasm is used.
 
-### Possible Advanced Features
+2. NEP_CPU
+   - Repository: https://github.com/brucefan1983/NEP_CPU
+   - License: GPL-3.0
+   - Copyright: NEP_CPU authors
+   - See LICENSE-NEP_CPU for the full license text.
+   - Explicitly NEP_CPU is compliled into a WASM module. 
 
-1. On-the-fly symmetry information and potentially symmetrisation
-2. Package as stand-alone offline application
-4. Crystal Structure Comparison:
-   - Mode (1): Compare structures by overlay. Option to load two structures that differ by a shade in color and a visualised on top of each other.
-   - Mode (2): Load two structures side by side. both can rotate on their own, but there is a button to lock them in the current state and then all roation is synced unless the button is pushed again
+3. THREE.js
+   - Repository: https://github.com/mrdoob/three.js/
+   - License: MIT
+   - Copyright: THREE.js authors
+   - See LICENSE-THREEjs for the full license text.
+
+4. NEP89 Weights (from GPUMD)
+   - Repository: https://github.com/brucefan1983/GPUMD
+   - License: GPL-3.0
+   - Copyright: GPUMD authors
+   - the weights can be found in /docs/backend/nep_wasm/
+   - See LICENSE-GPUMD for the full license text.
+
