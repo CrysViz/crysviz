@@ -1,5 +1,8 @@
+<img src="old/CrysViz_logo_clear_back.png" width="400">
 
---- CrysViz - Crystal Structure Visualisation & Analysis ---
+# CrysViz - Crystal Structure Visualisation & Analysis
+
+## Light-weight browser-based crystal structure visualisation with on-device rendering.
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
@@ -28,6 +31,7 @@ Third-Party Libraries and Attribution:
    - Copyright: Kohei Shinohara
    - See LICENSE-moyo for the full license text.
    - Explicitly moyo-wasm is used.
+   - License and code can be found in /docs/backend/moyo
 
 2. NEP_CPU
    - Repository: https://github.com/brucefan1983/NEP_CPU
@@ -35,17 +39,19 @@ Third-Party Libraries and Attribution:
    - Copyright: NEP_CPU authors
    - See LICENSE-NEP_CPU for the full license text.
    - Explicitly NEP_CPU is compliled into a WASM module. 
+   - License and code can be found in  /docs/backend/nep_wasm/
 
 3. THREE.js
    - Repository: https://github.com/mrdoob/three.js/
    - License: MIT
    - Copyright: THREE.js authors
    - See LICENSE-THREEjs for the full license text.
+   - License and code can be found in /docs/backend/thee
 
 4. NEP89 Weights (from GPUMD)
    - Repository: https://github.com/brucefan1983/GPUMD
    - License: GPL-3.0
    - Copyright: GPUMD authors
-   - the weights can be found in /docs/backend/nep_wasm/
+   - The weights can be found in /docs/backend/nep_wasm/
    - See LICENSE-GPUMD for the full license text.
 
