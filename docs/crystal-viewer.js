@@ -33,7 +33,7 @@ import { pauseRendering, resumeRendering,animation_update} from './modules/Anima
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
 import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter} from './modules/BondsFracUpdateModule.js'
 import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './modules/CompBondsFracUpdateModule.js'
-import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
+import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from './modules/LatticeModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
 import {rebuildAtoms,updateAtoms,updateSingleAtomDiameter} from './modules/AtomsFracUpdateModule.js';
 import {rebuildSecondAtoms,updateSecondAtoms,updateSecondSingleAtomDiameter} from './modules/CompAtomsFracUpdateModule.js';
@@ -327,7 +327,7 @@ export function updateVisualization(options = {}) {
     rebuildAtoms(mOpacity);
   }
   if (!reRenderAtoms && atomsUpdate) {
-    console.warn("Calling updateAtoms")
+    console.warn("Calling updateAtoms with opacity")
     updateAtoms(mOpacity);
   }
 
