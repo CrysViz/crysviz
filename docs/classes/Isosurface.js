@@ -1,5 +1,6 @@
 import * as THREE from '../external/three/three.module.js';
 import { MarchCubes } from '../external/marching_cubes_wasm/MarchCubes.js';
+import * as GPU from '../external/gpu-browser.min.js';
 
 const surface_options = {
     opacity: 0.4,
@@ -10,6 +11,60 @@ const surface_options = {
     side: THREE.DoubleSide,
     transparent: true,
   } 
+
+const defaultKernelSize = 4096;
+
+const vertex2pos = GPU.createKernel(function(vertexIndex, x_step, y_step, z_step) {
+    const vertex_id = vertexIndex[this.thread.x];
+    const z = Math.floor(vertex_id / z_step);
+    const y = Math.floor((vertex_id - z * z_step) / y_step);
+    const x = vertex_id - z * z_step - y * y_step;
+    return [x, y, z];
+}).setOutput([defaultKernelSize]);
+
+
+const normCalcKernel = GPU.createKernel(function(field, indexOffset, x_step, y_step, z_step, dx, dy, dz) {
+    const vertex_id = this.thread.x + indexOffset;
+    const x_min = vertex_id - x_step, x_max = vertex_id + x_step;
+    const y_min = vertex_id - y_step, y_max = vertex_id + y_step;
+    const z_min = vertex_id - z_step, z_max = vertex_id + z_step;
+
+    const norm_x = 0.5 * ( field[x_max] - field[x_min] ) / dx;
+    const norm_y = 0.5 * ( field[y_max] - field[y_min] ) / dy;
+    const norm_z = 0.5 * ( field[z_max] - field[z_min] ) / dz;
+
+    return [norm_x, norm_y, norm_z];
+}).setOutput([defaultKernelSize]);
+
+
+const countCubeKernel = GPU.createKernel(function(field, indexOffset, isoValue, x_step, y_step, z_step) {
+    vertex_index++;
+					
+    /* 
+    cube_points[0] = vertex_index; 								// v1
+    cube_points[1] = vertex_index + x_step; 					// v2
+    cube_points[2] = vertex_index + x_step + y_step; 			// v3
+    cube_points[3] = vertex_index +        + y_step; 			// v4
+    cube_points[4] = vertex_index + 				+ z_step; 	// v5
+    cube_points[5] = vertex_index + x_step 			+ z_step; 	// v6
+    cube_points[6] = vertex_index + x_step + y_step + z_step; 	// v7
+    cube_points[7] = vertex_index 		   + y_step + z_step; 	// v8 
+    */
+    
+    // map the isosurface encapsulation to byte-formatted table index
+    let cube_index = 0;
+    cube_index |= Number(field[this.thread.x + indexOffset] < isoValue);                                // v1
+    cube_index |= Number(field[this.thread.x + indexOffset + x_step] < isoValue) << 1;                  // v2
+    cube_index |= Number(field[this.thread.x + indexOffset + x_step + y_step] < isoValue) << 2;         // v3
+    cube_index |= Number(field[this.thread.x + indexOffset + y_step] < isoValue) << 3;                  // v4
+    cube_index |= Number(field[this.thread.x + indexOffset + z_step] < isoValue) << 4;                  // v5
+    cube_index |= Number(field[this.thread.x + indexOffset + x_step + z_step] < isoValue) << 5;         // v6
+    cube_index |= Number(field[this.thread.x + indexOffset + x_step + y_step + z_step] < isoValue) << 6;// v7
+    cube_index |= Number(field[this.thread.x + indexOffset + y_step + z_step] < isoValue) << 7;         // v8
+
+    return cube_index;
+
+}).setOutput([defaultKernelSize]);
 
 const defaultPosColor = new THREE.Color(0x33aaff);
 const defaultNegColor = new THREE.Color(0xff3333);
