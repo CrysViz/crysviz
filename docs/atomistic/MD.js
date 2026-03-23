@@ -296,10 +296,11 @@ export function createMDMonitorPanel() {
 
   const panel = document.createElement('div');
   panel.id = 'mdMonitorPanel';
+  const isMobile = window.innerWidth <= 1024;
   panel.style.position = 'fixed';
-  panel.style.left = '430px';
-  panel.style.top = '110px';
-  panel.style.width = '360px';
+  panel.style.left = isMobile ? '8px' : '430px';
+  panel.style.top  = isMobile ? '56px' : '110px';
+  panel.style.width = isMobile ? Math.min(360, window.innerWidth - 16) + 'px' : '360px';
   panel.style.background = 'rgba(20,20,20,0.9)';
   panel.style.color = '#fff';
   panel.style.borderRadius = '12px';
