@@ -986,7 +986,7 @@ setupStructureInput({
 //  });
 
   // Check for shared structure in URL
- // loadSharedStructure();
+  loadSharedStructure();
 
   // Control handlers
   document.getElementById('showAtoms').onchange = (e) => {

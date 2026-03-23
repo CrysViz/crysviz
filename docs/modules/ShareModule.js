@@ -1,268 +1,318 @@
-// Share functionality - moved to shareutils.js
-//
-import { app, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings } from '../store.js';
+import { app, general, measurements, fileBrowser } from '../store.js';
+import * as THREE from '../external/three/three.module.js';
+import { parsePOSCAR } from './StructureInputModule.js';
+import { updateAtoms } from './AtomsFracUpdateModule.js';
+import { rebuildBonds } from './BondsFracUpdateModule.js';
+import { addDistanceMeasurement, addAngleMeasurement } from './MeasurementModule.js';
+
+const URL_WARN_CHARS = 4000;
+const URL_HARD_CHARS = 10000;
+
+// ---------------------------------------------------------------------------
+// Capture
+// ---------------------------------------------------------------------------
+
+function captureState() {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return null;
+
+  // Per-atom color overrides — only atoms whose color differs from their element color
+  const atomColors = {};
+  structure.atoms.forEach((atom, i) => {
+    if (atom.color !== atom.elementColor) atomColors[i] = atom.color;
+  });
+
+  // Per-element color overrides — first occurrence per element
+  const elementColors = {};
+  structure.atoms.forEach((atom, i) => {
+    const el = structure.elements[i];
+    if (!(el in elementColors)) elementColors[el] = atom.elementColor;
+  });
+
+  // Measurements — labels carry the authoritative userData
+  const measurementData = measurements.measureLabels
+    .map(l => l.userData)
+    .filter(d => d && d.type);
+
+  return {
+    version: '2.0',
+    structure: {
+      elements: [...structure.elements],
+      lattice: structure.lattice.map(r => [...r]),
+      positions: structure.atoms.map(a => [...a.position]),
+    },
+    colors: {
+      atomColors,
+      elementColors,
+      useDefaultColors: general.useDefaultColors,
+    },
+    display: {
+      atomSize: general.atomSize,
+      showAtoms: general.showAtoms,
+      showBonds: general.showBonds,
+      showLattice: general.showLattice,
+      showPeriodic: general.showPeriodic,
+      showPBCBonds: general.showPBCBonds,
+      bondLengths: { ...general.bondLengths },
+      bondVisibility: { ...general.bondVisibility },
+    },
+    camera: {
+      position: app.camera
+        ? [app.camera.position.x, app.camera.position.y, app.camera.position.z]
+        : null,
+      target: app.controls
+        ? [app.controls.target.x, app.controls.target.y, app.controls.target.z]
+        : null,
+      zoom: app.camera?.zoom ?? null,
+    },
+    measurements: measurementData,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// POSCAR builder (for encoding into the URL)
+// ---------------------------------------------------------------------------
+
+function buildPOSCAR(state) {
+  const { elements, lattice, positions } = state.structure;
+
+  const seen = new Set();
+  const uniqueElements = [];
+  for (const el of elements) {
+    if (!seen.has(el)) { seen.add(el); uniqueElements.push(el); }
+  }
+
+  const counts = uniqueElements.map(el => elements.filter(e => e === el).length);
+
+  const lines = [
+    'Shared via CrysViz',
+    '   1.0',
+    ...lattice.map(v => v.map(x => x.toFixed(8).padStart(18)).join('')),
+    '   ' + uniqueElements.join('   '),
+    '   ' + counts.join('   '),
+    'Direct',
+  ];
+
+  for (const el of uniqueElements) {
+    elements.forEach((e, i) => {
+      if (e === el) lines.push(positions[i].map(v => v.toFixed(8).padStart(18)).join(''));
+    });
+  }
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Share (capture → encode → clipboard)
+// ---------------------------------------------------------------------------
 
 export function shareStructure() {
-  // Prepare global state object for sharing
-  const globalState = {
-    userColorOverrides,
-    individualAtomColors,
-    useDefaultColors,
-    atomSize,
-    bondRadius,
-    showBonds,
-    showLattice,
-    showSecond,
-    showCompInfo,
-    showNeighborBonds,
-    useOrthographicCamera,
-    bondLengths,
-    bondVisibility,
-    measureMode
+  const state = captureState();
+  if (!state) { alert('No structure loaded to share.'); return; }
+
+  // TextEncoder → Uint8Array → btoa avoids Latin-1 limitation of btoa(string)
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(state));
+  let binary = '';
+  for (let i = 0; i < jsonBytes.length; i++) binary += String.fromCharCode(jsonBytes[i]);
+  const b64 = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+
+  if (b64.length > URL_HARD_CHARS) {
+    const kb = (b64.length / 1024).toFixed(1);
+    const ok = confirm(
+      `Warning: the share URL is very large (${kb} KB). It may not work in all browsers or messaging platforms. Continue?`
+    );
+    if (!ok) return;
+  } else if (b64.length > URL_WARN_CHARS) {
+    console.warn(`Share URL is ${(b64.length / 1024).toFixed(1)} KB — may be large for some platforms.`);
+  }
+
+  const shareURL = window.location.href.split('?')[0] + '?state=' + b64;
+
+  // Always show URL in prompt so user can copy the full text (address bar truncates long URLs).
+  // Also attempt clipboard write for convenience.
+  navigator.clipboard?.writeText(shareURL).catch(() => {});
+  prompt('Share URL (select all and copy):', shareURL);
+}
+
+// ---------------------------------------------------------------------------
+// Restore helpers
+// ---------------------------------------------------------------------------
+
+function applyDisplaySettings(display) {
+  if (!display) return;
+
+  const setToggle = (id, val) => {
+    if (val == null) return;
+    const el = document.getElementById(id);
+    if (el) el.checked = val;
   };
 
-  // Use complete state sharing instead of basic structure sharing
-  const shareURL = createCompleteShareableURL(structureData, globalState);
-  if (!shareURL) {
-    alert('No structure loaded to share!');
+  if (display.atomSize != null) {
+    general.atomSize = display.atomSize;
+    const s = document.getElementById('atomSize');
+    const sv = document.getElementById('atomSizeValue');
+    if (s) s.value = display.atomSize;
+    if (sv) sv.textContent = Number(display.atomSize).toFixed(2);
+  }
+  if (display.showAtoms != null)   { general.showAtoms   = display.showAtoms;   setToggle('showAtoms', display.showAtoms); }
+  if (display.showBonds != null)   { general.showBonds   = display.showBonds;   setToggle('showBonds', display.showBonds); }
+  if (display.showLattice != null) { general.showLattice = display.showLattice; setToggle('showLattice', display.showLattice); }
+  if (display.showPeriodic != null){ general.showPeriodic= display.showPeriodic;setToggle('showPeriodic', display.showPeriodic); }
+  if (display.showPBCBonds != null){ general.showPBCBonds= display.showPBCBonds;setToggle('PBCBondToggle', display.showPBCBonds); }
+  if (display.bondLengths)    Object.assign(general.bondLengths, display.bondLengths);
+  if (display.bondVisibility) Object.assign(general.bondVisibility, display.bondVisibility);
+}
+
+function applyAtomColors(colors, structure) {
+  if (!colors || !structure) return;
+
+  if (colors.useDefaultColors != null) general.useDefaultColors = colors.useDefaultColors;
+
+  if (colors.elementColors) {
+    structure.atoms.forEach((atom, i) => {
+      const el = structure.elements[i];
+      if (colors.elementColors[el] != null) {
+        atom.elementColor = colors.elementColors[el];
+        atom.color = colors.elementColors[el];
+      }
+    });
+  }
+
+  if (colors.atomColors) {
+    Object.entries(colors.atomColors).forEach(([idx, color]) => {
+      const atom = structure.atoms[parseInt(idx)];
+      if (atom) atom.color = color;
+    });
+  }
+}
+
+function restoreCamera(camState) {
+  if (!camState?.position || !camState?.target) return;
+  setTimeout(() => {
+    app.camera.position.set(...camState.position);
+    app.controls.target.set(...camState.target);
+    if (camState.zoom != null) {
+      app.camera.zoom = camState.zoom;
+      app.camera.updateProjectionMatrix();
+    }
+    app.controls.update();
+  }, 150);
+}
+
+function restoreMeasurements(measurementData) {
+  if (!measurementData?.length) return;
+  setTimeout(() => {
+    const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
+    if (!wrapped) return;
+
+    measurementData.forEach(m => {
+      if (m.type === 'distance' && m.atom1Index != null && m.atom2Index != null) {
+        const a1 = makeAtomProxy(wrapped, m.atom1Index);
+        const a2 = makeAtomProxy(wrapped, m.atom2Index);
+        if (a1 && a2) addDistanceMeasurement(a1, a2);
+      } else if (m.type === 'angle' && m.atom1Index != null && m.atom2Index != null && m.atom3Index != null) {
+        const a1 = makeAtomProxy(wrapped, m.atom1Index);
+        const a2 = makeAtomProxy(wrapped, m.atom2Index);
+        const a3 = makeAtomProxy(wrapped, m.atom3Index);
+        if (a1 && a2 && a3) addAngleMeasurement(a1, a2, a3);
+      }
+    });
+  }, 200);
+}
+
+function makeAtomProxy(wrapped, index) {
+  if (index < 0 || index >= wrapped.cart.length) return null;
+  return {
+    position: new THREE.Vector3(...wrapped.cart[index]),
+    userData: {
+      atomIndex: index,
+      element: wrapped.elements[index],
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Load from URL
+// ---------------------------------------------------------------------------
+
+export function loadSharedStructure() {
+  const match = window.location.search.match(/[?&]state=([^&]+)/);
+  const stateParam = match ? match[1] : null;
+  if (!stateParam) return;
+
+  // Mark early so loadDefaultStructure() is skipped
+  general.sharedStructureLoaded = true;
+
+  let state;
+  try {
+    const padded = stateParam.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = padded.length % 4;
+    const b64 = pad ? padded + '='.repeat(4 - pad) : padded;
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    state = JSON.parse(new TextDecoder().decode(bytes));
+  } catch (e) {
+    const invalidChars = [...stateParam].filter(c => !/[A-Za-z0-9\-_]/.test(c));
+    console.error('Failed to decode shared state:', e,
+      'param length:', stateParam.length,
+      'invalid chars:', invalidChars.slice(0, 10));
     return;
   }
 
-  // Try modern clipboard API first, then fallback
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(shareURL).then(() => {
-      // Show success message
-      const shareBtn = document.getElementById('shareBtn');
-      const originalText = shareBtn.textContent;
-      shareBtn.textContent = '✓ Copied!';
-
-
-      setTimeout(() => {
-        shareBtn.textContent = originalText;
-        shareBtn.style.backgroundColor = '';
-      }, 2000);
-    }).catch(() => {
-      // Fallback: show URL in prompt for manual copying
-      prompt('Copy this URL to share:', shareURL);
-    });
-  } else {
-    // Clipboard API not available, use fallback method
-    try {
-      // Try the older document.execCommand method
-      const textArea = document.createElement('textarea');
-      textArea.value = shareURL;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      textArea.style.top = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-
-      const success = document.execCommand('copy');
-      document.body.removeChild(textArea);
-
-      if (success) {
-        // Show success message
-        const shareBtn = document.getElementById('shareBtn');
-        const originalText = shareBtn.textContent;
-        shareBtn.textContent = '✓ Copied!';
-        shareBtn.style.backgroundColor = '#4CAF50';
-
-        setTimeout(() => {
-          shareBtn.textContent = originalText;
-          shareBtn.style.backgroundColor = '';
-        }, 2000);
-      } else {
-        throw new Error('execCommand failed');
-      }
-    } catch (err) {
-      // Final fallback: show URL in prompt for manual copying
-      prompt('Copy this URL to share:', shareURL);
-    }
+  if (!state.version?.startsWith('2')) {
+    console.warn('Shared state version not supported:', state.version);
+    return;
   }
+
+  // Apply display settings before loading so parsePOSCAR renders with them
+  applyDisplaySettings(state.display);
+
+  // Load structure (synchronous — triggers updateVisualization internally)
+  try {
+    parsePOSCAR(buildPOSCAR(state), 'shared.vasp');
+  } catch (e) {
+    console.error('Failed to load shared structure:', e);
+    return;
+  }
+
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return;
+
+  // Apply colors on top of loaded structure, then push to GPU
+  applyAtomColors(state.colors, structure);
+  updateAtoms();
+
+  // Rebuild bonds to reflect any bondLength / bondVisibility changes
+  rebuildBonds();
+
+  // Camera and measurements need the render to have settled
+  restoreCamera(state.camera);
+  restoreMeasurements(state.measurements);
+
+  // Clean URL
+  const newUrl = new URL(window.location);
+  newUrl.searchParams.delete('state');
+  window.history.replaceState({}, document.title, newUrl.toString());
 }
 
+// ---------------------------------------------------------------------------
+// Share button
+// ---------------------------------------------------------------------------
 
-// Function to create share button UI
 export function createShareButton() {
-  // Check if button already exists
-  let shareBtn = document.getElementById('shareBtn');
-  if (shareBtn) return;
+  if (document.getElementById('shareBtn')) return;
 
-  shareBtn = document.createElement('button');
+  const shareBtn = document.createElement('button');
   shareBtn.id = 'shareBtn';
-  shareBtn.textContent = '🔗 Share All';
-  shareBtn.style.cssText = `
-    padding: 8px 16px;
-    margin-top: 8px;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    width: 100%;
-  `;
-
-  shareBtn.addEventListener('mouseenter', () => {
-    shareBtn.style.transform = 'translateY(-1px)';
-  });
-
-  shareBtn.addEventListener('mouseleave', () => {
-    shareBtn.style.transform = 'translateY(0)';
-  });
-
+  shareBtn.textContent = 'Share';
+  shareBtn.style.cssText =
+    'padding:8px 16px; margin-top:8px; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; width:100%;';
   shareBtn.onclick = shareStructure;
 
-  // Try multiple locations to ensure the button appears
-  const structureControls = document.getElementById('structureControls');
-
-  const bondControlsGroup = document.getElementById('bondControlsGroup');
-  const spinControlsGroup = document.getElementById('spinControlsGroup');
-  const composition = document.getElementById('composition');
-
-  if (structureControls) {
-    structureControls.appendChild(shareBtn);
-    console.log('Share button added to structureControls');
-  } else if (bondControlsGroup) {
-    bondControlsGroup.appendChild(shareBtn);
-    console.log('Share button added to bondControlsGroup (fallback)');
-  } else if (composition) {
-    composition.parentElement.appendChild(shareBtn);
-    console.log('Share button added near composition (fallback 2)');
-  } else {
-    console.error('Could not find a suitable container for share button');
-  }
+  const container =
+    document.getElementById('structureControls') ||
+    document.getElementById('bondControlsGroup') ||
+    document.getElementById('composition')?.parentElement;
+  if (container) container.appendChild(shareBtn);
 }
-
-
-// Function to load structure from URL parameter
-export function loadSharedStructure() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const stateParam = urlParams.get('state');
-  const structureParam = urlParams.get('structure'); // Legacy support
-
-  // Try new complete state format first
-  if (stateParam) {
-    try {
-      const stateJSON = atob(stateParam);
-      const completeState = JSON.parse(stateJSON);
-
-      console.log('Loading complete shared state');
-      restoreCompleteState(completeState, {
-        setStructureData: (data) => { structureData = data; },
-        setOriginalStructureData: (data) => { originalStructureData = data; },
-        setUserColorOverrides: (overrides) => { userColorOverrides = overrides; },
-        setIndividualAtomColors: (colors) => { individualAtomColors = colors; },
-        setUseDefaultColors: (use) => { useDefaultColors = use; },
-        setAtomSize: (size) => { atomSize = size; },
-        setBondRadius: (radius) => { bondRadius = radius; },
-        setShowBonds: (show) => { showBonds = show; },
-        setShowLattice: (show) => { showLattice = show; },
-        setShowSecond: (show) => {showSecond = show; },
-        setShowPolyhedra: (show) => {showPolyhedra = show; },
-        setShowCompInfo: (show) => {showCompInfo = show; },
-        setShowNeighborBonds: (show) => { showNeighborBonds = show; },
-        setUseOrthographicCamera: (use) => { useOrthographicCamera = use; },
-        setBondLengths: (lengths) => { bondLengths = lengths; },
-        setBondVisibility: (visibility) => { bondVisibility = visibility; },
-        loadColorOverrides,
-        loadIndividualAtomColors,
-        updateVisualization,
-        addSecondStructure,
-        createBondLengthControls,
-        createSpinControls,
-        createBackgroundControl,
-        createShareButton,
-        switchCameraType,
-        resetView,
-        clearMeasure,
-        resizeRenderer,
-        setStatus,
-      });
-
-      // Clear the URL parameter
-      const newUrl = new URL(window.location);
-      newUrl.searchParams.delete('state');
-      window.history.replaceState({}, document.title, newUrl.toString());
-      general.sharedStructureLoaded = true;
-      return;
-    } catch (error) {
-      console.error('Failed to load complete state:', error);
-      setStatus('Failed to load shared state');
-      general.sharedStructureLoaded = true; // Prevent default structure from loading
-      return;
-    }
-  }
-  // Fallback to legacy structure-only sharing
-  if (structureParam) {
-    try {
-      // Decode base64 to get POSCAR string
-      const poscarString = atob(structureParam);
-      console.log('Decoded POSCAR string:', poscarString);
-
-      // Debug: check the individual lines
-      const lines = poscarString.split('\n');
-      console.log('POSCAR lines:', lines);
-      console.log('Scale line (line 1):', `"${lines[1]}"`);
-      console.log('parseFloat of scale line:', parseFloat(lines[1]));
-      console.log('isFinite check:', Number.isFinite(parseFloat(lines[1])));
-
-      // Parse the POSCAR string
-      console.log('About to call parsePOSCAR...');
-      let parsedStructureData;
-      try {
-        parsedStructureData = parsePOSCAR(poscarString);
-        console.log('parsePOSCAR succeeded:', parsedStructureData);
-      } catch (parseError) {
-        console.error('parsePOSCAR failed:', parseError);
-        console.error('Error stack:', parseError.stack);
-        throw parseError;
-      }
-
-      if (parsedStructureData) {
-        // Set the global structure data variable
-        structureData = parsedStructureData;
-        originalStructureData = JSON.parse(JSON.stringify(structureData));
-        loadColorOverrides();
-        loadIndividualAtomColors();
-        setStatus('Loaded shared structure');
-
-        // Show structure controls and create share button
-        document.getElementById('structureControls').style.display = 'block';
-        document.getElementById('bondControlsGroup').style.display = 'block';
-        document.getElementById('spinControlsGroup').style.display = 'block';
-        createBondLengthControls();
-        createSpinControls();
-        createShareButton();
-
-        console.log('About to call updateVisualization with structure data:', structureData);
-        updateVisualization();
-        console.log('updateVisualization completed');
-
-        // Rebuild camera and reset view
-        console.log('About to rebuild camera and reset view');
-        switchCameraType();
-        resetView();
-        clearMeasure();
-        resizeRenderer(app.orthographicFrustumSize);
-        console.log('Camera rebuild and view reset completed');
-
-        // Clear the URL parameter to clean up the URL
-        const newUrl = new URL(window.location);
-        newUrl.searchParams.delete('structure');
-        window.history.replaceState({}, document.title, newUrl.toString());
-
-        // Set flag to prevent loading default structure
-        general.sharedStructureLoaded = true;
-      }
-    } catch (error) {
-      console.error('Failed to load shared structure:', error);
-      console.error('POSCAR string was:', atob(structureParam));
-      setStatus('Failed to load shared structure');
-    }
-  }
-}
-
-  
