@@ -238,6 +238,8 @@ export function createCompositionRow(el, count, total) {
 function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex + 1) {
   const row = document.createElement('div');
   row.className = 'individual-atom-row';
+  row.dataset.atomIndex = String(atomIndex);
+  row.dataset.element = element;
   row.style.cssText = 'display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 20px; padding: 4px 0; font-size: 11px;';
 
   // Individual atom dot with its specific color
@@ -687,7 +689,6 @@ function updateAtomCoordinates(atomIndex, newCoords) {
       });
 
 };
-
 
 
 

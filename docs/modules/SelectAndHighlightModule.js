@@ -7,7 +7,14 @@ import {updateBonds} from './BondsFracUpdateModule.js'
 import InstanceMeshManager from '../classes/InstanceMeshManager.js'
 import {getUUIDFromGeometry} from './AtomsFracUpdateModule.js'
 
+const ATOM_HIGHLIGHT_FADE_MS = 1200;
+let clearAtomHighlightTimer = null;
+
 export function clearHighlightAtom() {
+  if (clearAtomHighlightTimer) {
+    clearTimeout(clearAtomHighlightTimer);
+    clearAtomHighlightTimer = null;
+  }
   updateAtoms(1.0)
 } 
 
@@ -15,10 +22,22 @@ export function clearHighlightBond() {
   updateBonds(1.0)
 }
 
+function clearUIHighlight() {
+  if (highlightHover.currentlyHighlightedRow) {
+    highlightHover.currentlyHighlightedRow.style.backgroundColor = '';
+    highlightHover.currentlyHighlightedRow.style.borderLeft = '';
+    highlightHover.currentlyHighlightedRow = null;
+  }
+}
+
+function clear3DHighlights() {
+  clearHighlightBond();
+  clearHighlightAtom();
+}
 
 export function highlightAtomIn3D(index) {
   // Clear previous 3D highlight
-  clearAllHighlights()
+  clear3DHighlights()
 
   // Update emissive color and intensity
   groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(index, 1, 0.549, 0);
@@ -32,12 +51,17 @@ export function highlightAtomIn3D(index) {
   groups.atomsMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
   groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
   groups.atomsMesh.instanceColor.needsUpdate = true;
+
+  clearAtomHighlightTimer = setTimeout(() => {
+    clearAtomHighlightTimer = null;
+    clearHighlightAtom();
+  }, ATOM_HIGHLIGHT_FADE_MS);
 }
 
 
 export function highlightBondIn3D(indexList) {
   // Clear previous 3D highlight
-  clearAllHighlights()
+  clear3DHighlights()
 
   // Update emissive color and intensity
   indexList.forEach(index => {
@@ -136,11 +160,12 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
     }
   }
 
-  //if (!targetContainer) return;
+  if (!targetContainer) return;
 
   // Auto-expand the element if not already expanded
   const atomsContainer = targetContainer.querySelector('.individual-atoms');
   const expandIcon = targetContainer.querySelector('.comp-left span:last-child');
+  if (!atomsContainer) return;
 
   if (atomsContainer && atomsContainer.style.display === 'none') {
     atomsContainer.style.display = 'block';
@@ -151,14 +176,9 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
 
   // Find the specific individual atom row by sourceIndex
   const atomRows = atomsContainer.querySelectorAll('.individual-atom-row');
-  console.warn(atomRows.length)
-  console.warn("Searching for row",sourceIndex)
   for (let i = 0; i < atomRows.length; i++) {
-   sourceIndex=0
     const row = atomRows[i];
-    // Use the row's data-index attribute or assume the order matches the global index
-    // If rows are ordered the same as the global index, you can directly use sourceIndex
-    if (i === sourceIndex) {
+    if (Number(row.dataset.atomIndex) === sourceIndex) {
       // Highlight this row
       highlightAtomRow(row);
       // Scroll into view
@@ -185,14 +205,8 @@ export function highlightAtomRow(row) {
 
 
 export function clearAllHighlights() {
-  // Clear UI highlight
-  if (highlightHover.currentlyHighlightedRow) {
-    highlightHover.currentlyHighlightedRow.style.backgroundColor = '';
-    highlightHover.currentlyHighlightedRow.style.borderLeft = '';
-    highlightHover.currentlyHighlightedRow = null;
-  }
-  clearHighlightBond();
-  clearHighlightAtom();
+  clearUIHighlight();
+  clear3DHighlights();
 }
 
 // Make clearAllHighlights available globally for manual clearing

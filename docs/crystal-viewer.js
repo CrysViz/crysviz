@@ -797,12 +797,16 @@ async function initApp() {
 
   if (atomHits.length > 0) {
     hit = atomHits[0];
+    const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
+    const instanceId = hit.instanceId;
+    const sourceIndex = wrapped?.srcIndex ? wrapped.srcIndex[instanceId] : instanceId;
+    const elementName = wrapped?.elements?.[instanceId]
+      || groups.atomsMesh.userData.elementNames?.[instanceId]
+      || fileBrowser.selectedStructure?.elements?.[sourceIndex]
+      || '?';
 
-    //const element = atomMesh.userData.element;
-    const sourceIndex = hit.instanceId
-    const elementName = groups.atomsMesh.userData.elementNames[hit.instanceId];
-    highlightAtomInStructurePanel(elementName, sourceIndex); //This needs to be fixed, currently this is not the correct index as we count differently. in the structureInfoPanel there is not global index but a per element index. 
-    highlightAtomIn3D(sourceIndex);
+    highlightAtomInStructurePanel(elementName, sourceIndex);
+    highlightAtomIn3D(instanceId);
 
   } else if (bondHits.length > 0) {
     let id2;
