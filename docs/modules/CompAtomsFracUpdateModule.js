@@ -222,7 +222,7 @@ export function updateSecondSingleAtomDiameter(index, element) {
 
 
 export function updateSecondAtoms(structure, opacity = 1.0) {
-
+  console.error("Update comp  opacity", opacity)
   let positions = structure.atoms.map(a => a.position);
   let lattice = structure.lattice.map(r => [...r]);
   let elements = [...structure.elements];

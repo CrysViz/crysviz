@@ -8,7 +8,8 @@ import {updateSpins} from '../modules/SpinModule.js';
 import {updateForces} from '../modules/ForceModule.js';
 import {fieldBrowser} from './FieldPanel.js';
 import {toggleFieldVisibility, setActiveField, updateField} from '../modules/Render3DFieldModule.js';
-import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js'
+import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
+import {Structure} from '../classes/Structure.js';
 
 export function showError(message) {
   errorPanel.textContent = message;
@@ -86,8 +87,10 @@ export function createRow(obj) {
     }
   });
 
+
 // Duplicate (copy) logic
 row.querySelector(".copy").addEventListener("click", (e) => {
+  const updatedObj = JSON.parse(row.dataset.obj);
   // Check if Command (Mac) or Ctrl (Windows/Linux) is pressed
   const isCommandClick = e.metaKey || e.ctrlKey;
 
@@ -96,27 +99,36 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     e.preventDefault();
 
     // Copy current step logic
-    const updatedObj = JSON.parse(row.dataset.obj);
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     const container = structureShip.container[rowIndex];
     const stepInput = row.querySelector('input[type="number"]');
     const currentStep = parseInt(stepInput.value, 10) - 1;
     const currentStructure = container.structures[currentStep];
 
+    const newStructure = new Structure({
+      elements: [...currentStructure.elements],
+      uniqueElements: [...currentStructure.uniqueElements],
+      lattice: currentStructure.lattice.map(row => [...row]),
+      atoms: [...currentStructure.atoms],
+      periodic: { ...currentStructure.periodic }, // Clone as object/Map
+      volumetricFields: null
+    });
+
     const newObj = {
       ...updatedObj,
-      structures: [currentStructure],
-      traj: 1, // Only one step
+      structures: [newStructure],
+      traj: 1,
     };
+
     const newRow = createRow(newObj);
     row.insertAdjacentElement("afterend", newRow);
     structureShip.len += 1;
     structureShip.container.splice(rowIndex + 1, 0, newObj);
     selectLastAddedRow();
-    return; // Exit early to avoid showing the popup
+    return;
   }
 
-  // If not a Command+Click, show the popup as before
+  // If not a Command+Click, show the popup
   e.stopPropagation();
 
   // Create a popup container with your custom styling
@@ -167,7 +179,7 @@ row.querySelector(".copy").addEventListener("click", (e) => {
   startStepInput.type = "number";
   startStepInput.id = "startStep";
   startStepInput.min = "1";
-  startStepInput.max = obj.traj;
+  startStepInput.max = updatedObj.traj;
   startStepInput.value = "1";
   startStepInput.style.background = "var(--bg-color)";
   startStepInput.style.border = "1px solid rgba(255, 255, 255, 0.2)";
@@ -194,8 +206,8 @@ row.querySelector(".copy").addEventListener("click", (e) => {
   endStepInput.type = "number";
   endStepInput.id = "endStep";
   endStepInput.min = "1";
-  endStepInput.max = obj.traj;
-  endStepInput.value = obj.traj;
+  endStepInput.max = updatedObj.traj;
+  endStepInput.value = updatedObj.traj;
   endStepInput.style.background = "var(--bg-color)";
   endStepInput.style.border = "1px solid rgba(255, 255, 255, 0.2)";
   endStepInput.style.color = "rgb(255, 255, 255)";
@@ -276,43 +288,83 @@ row.querySelector(".copy").addEventListener("click", (e) => {
 
   // Handle confirmation
   confirmButton.onclick = () => {
-    const updatedObj = JSON.parse(row.dataset.obj);
     const option = select.value;
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     const container = structureShip.container[rowIndex];
 
     if (option === "all") {
-      // Copy all steps: clone the entire container
-      const newRow = createRow(updatedObj);
+      // Copy all steps: create a new container with new Structure objects
+      const newStructures = container.structures.map(structure => {
+        return new Structure({
+          elements: [...structure.elements],
+          uniqueElements: [...structure.uniqueElements],
+          lattice: structure.lattice.map(row => [...row]),
+          atoms: [...structure.atoms],
+          periodic: { ...structure.periodic }, // Clone as object/Map
+          volumetricFields: null
+        });
+      });
+
+      const newObj = {
+        ...updatedObj,
+        structures: newStructures,
+        traj: newStructures.length,
+      };
+
+      const newRow = createRow(newObj);
       row.insertAdjacentElement("afterend", newRow);
       structureShip.len += 1;
-      structureShip.container.splice(rowIndex + 1, 0, JSON.parse(JSON.stringify(container)));
-    } else if (option === "current") {
+      structureShip.container.splice(rowIndex + 1, 0, newObj);
+    }
+    else if (option === "current") {
       // Copy current step: create a new container with only the current structure
       const stepInput = row.querySelector('input[type="number"]');
       const currentStep = parseInt(stepInput.value, 10) - 1;
       const currentStructure = container.structures[currentStep];
 
+      const newStructure = new Structure({
+        elements: [...currentStructure.elements],
+        uniqueElements: [...currentStructure.uniqueElements],
+        lattice: currentStructure.lattice.map(row => [...row]),
+        atoms: [...currentStructure.atoms],
+        periodic: { ...currentStructure.periodic }, // Clone as object/Map
+        volumetricFields: null
+      });
+
       const newObj = {
         ...updatedObj,
-        structures: [currentStructure],
-        traj: 1, // Only one step
+        structures: [newStructure],
+        traj: 1,
       };
+
       const newRow = createRow(newObj);
       row.insertAdjacentElement("afterend", newRow);
       structureShip.len += 1;
       structureShip.container.splice(rowIndex + 1, 0, newObj);
-    } else if (option === "range") {
-      // Copy range of steps: create a new container with only the selected range
+    }
+    else if (option === "range") {
+      // Copy range of steps: create a new container with new Structure objects for the range
       const startStep = parseInt(startStepInput.value, 10) - 1;
       const endStep = parseInt(endStepInput.value, 10) - 1;
       const rangeStructures = container.structures.slice(startStep, endStep + 1);
 
+      const newStructures = rangeStructures.map(structure => {
+        return new Structure({
+          elements: [...structure.elements],
+          uniqueElements: [...structure.uniqueElements],
+          lattice: structure.lattice.map(row => [...row]),
+          atoms: [...structure.atoms],
+          periodic: { ...structure.periodic }, // Clone as object/Map
+          volumetricFields: null
+        });
+      });
+
       const newObj = {
         ...updatedObj,
-        structures: rangeStructures,
-        traj: rangeStructures.length, // Update traj to the number of steps in the range
+        structures: newStructures,
+        traj: newStructures.length,
       };
+
       const newRow = createRow(newObj);
       row.insertAdjacentElement("afterend", newRow);
       structureShip.len += 1;
@@ -328,6 +380,7 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     closePopup();
   };
 });
+
 
 
 

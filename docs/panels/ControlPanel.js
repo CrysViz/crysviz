@@ -192,9 +192,10 @@ export function addCompPanel() {
   // Add event listeners
   document.getElementById('showComparisonBonds').addEventListener('change', function() {
     const isChecked = this.checked;
+    general.showSecondBond = this.checked;
     updateVisualization({
-      SecondBondsUpdate: isChecked,
-      SecondReRenderBonds: isChecked
+      SecondBondsUpdate: true,
+      //SecondReRenderBonds: true,
     });
   });
 
@@ -217,14 +218,22 @@ export function addCompPanel() {
 
   opacitySliderElement.addEventListener('input', function() {
     const value = parseFloat(this.value);
-
-    // Update opacities
-    general.mainOpacity = 1 - value;
-    general.compOpacity = value;
+    if (value < 0.5){
+      general.compOpacity = 2*value
+      general.mainOpacity = 1.0
+      }
+    else if (value > 0.5){
+      general.mainOpacity = 1-2 * (value - 0.5)
+      general.compOpacity = 1.0
+      }
+    else {
+      general.compOpacity =1.0
+      general.mainOpacity = 1.0
+    }
 
     updateVisualization({
-      updateAtoms: false,
-      updateBonds: false,
+      atomsUpdate: true,
+      bondsUpdate: true,
       SecondBondsUpdate: true,
       SecondAtomsUpdate: true,
     });
@@ -267,11 +276,30 @@ export function addControlPanelModeSwitch() {
     }
     else if (mode === "comparison") {
       const trajPanel = document.getElementById("TrajControlPanel");
+      updateVisualization({
+        updateAtoms: true,
+        updateBonds: false,
+        SecondBondsUpdate: true,
+        SecondAtomsUpdate: true,
+      });
+
       if (trajPanel) {
         removeTrajectoryPlayer();
+        updateVisualization({
+          updateAtoms: true,
+          updateBonds: true,
+          SecondBondsUpdate: false,
+          SecondAtomsUpdate: false,
+          });
       }
       if (fileBrowser.comparisonStructure) {
         addCompPanel();
+        updateVisualization({
+          updateAtoms: true,
+          updateBonds: true,
+          SecondBondsUpdate: false,
+          SecondAtomsUpdate: false,
+          });
         console.log("Updating lattice comparison panel");
       }
     }

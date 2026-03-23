@@ -64,7 +64,7 @@ export function rebuildSecondBonds(structure, opacity) {
   console.log("Updating bond positions");
   updateSecondBonds(structure,opacity);
   if (groups.secondBondsMesh) {
-    groups.secondBondsMesh.visible = !!general.showBonds;
+    groups.secondBondsMesh.visible = general.showSecondBond;
   }
 }
 
@@ -398,17 +398,21 @@ export function updateSecondSingleBond(index, bond) {
 export function updateSecondBonds(structure, opacity) {
   const mesh = groups.secondBondsMesh;
   if (!mesh) return;
-  //mesh.visible = !!general.showBonds;
-  //if (!general.showBonds) return;
-
+  if (!general.showSecondBond) {
+    groups.secondBondsMesh.visible = general.showSecondBond
+    return;
+  }
+  else {
+     groups.secondBondsMesh.visible = general.showSecondBond
+  }
   let bonds = structure.bonds.filter(b => b.visibleLen > 1e-3); 
 
   bonds.forEach((bond, i) => {
     updateSecondSingleBond(i, bond);
   });
   mesh.material.opacity = opacity;
-  if (opacity === 1) {
-    console.log("Switching of transparency for comp bonds")
+  if (opacity == 1.0) {
+    console.log("Switching of transparency for main bonds")
     mesh.material.transparent = false;
     mesh.material.depthWrite = true;
   }
