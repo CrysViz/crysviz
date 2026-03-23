@@ -7,8 +7,8 @@ Click one of the buttons below to open the panel with the respective feature. Th
 - **Trajectory|Comparison**: Trajectory opens a classic trajectory player that allows you to watch the uploaded trajectory from (currently) a OUTCAR or Quantum Espresso output file. Trajectories can be from molecular dynamics simulations or structural relaxations. For QE currently only *vc-relax* and not *relax* is supported (update is under development). 
 
 
-- **Force|Spin|Field**: These are exclusive,*i.e* only one can be visualised. Choose either forces, spin or soon fields (charge density and ELF support in cube format is currently under development)
+- **Force|Spin|Field**: These are exclusive,*i.e* only one can be visualised. Choose either forces, spin or 3D-fields (charge densities and ELFs from cube files or VASP output). Currently experimental. Info: High memory consumption for high resolution files!
 
 
-- **Bonds|Lattice|Polyhedra**: This section allows to view histograms for bonds (currently lengths, future: angles, coordiation number), to modify the lattice on the fly and create supercells, and to view and modify polyhedra (partially implemented, but experimental)
+- **Bonds|Lattice|Polyhedra**: This section allows to view histograms for bonds (currently lengths, future: angles, coordiation number; an option to draw extra bonds is comming soon) and to modify the lattice on the fly and create supercells. Polyhedra option is currently under developement and will be active soon!
 

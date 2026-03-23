@@ -31,22 +31,21 @@ import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleCont
 import { createColorPicker } from './modules/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
-import {getBondCutoff} from './modules/BondsModule.js'
 import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter} from './modules/BondsFracUpdateModule.js'
+import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './modules/CompBondsFracUpdateModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../modules/LatticeModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
 import {rebuildAtoms,updateAtoms,updateSingleAtomDiameter} from './modules/AtomsFracUpdateModule.js';
+import {rebuildSecondAtoms,updateSecondAtoms,updateSecondSingleAtomDiameter} from './modules/CompAtomsFracUpdateModule.js';
+
+
 import {createSupercell} from './modules/SuperCellModule.js';
-import {getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,
-        getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,
-        setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,
-        createPieDot,clearIndividualAtomColor } from './modules/ColorModule.js';
 import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,
         addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './modules/MeasurementModule.js' // not all imports might be needed in this file
 
 import {highlightBondInfoInStructurePanel,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
 
-import {addVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
+import {addAtomVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
 import {addCameraPanel} from './panels/CameraPanel.js'
 import {addColorPanel} from './panels/ColorPanel.js'
 
@@ -64,7 +63,6 @@ import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
 } from './panels/WindowAndSceneControls.js'
 import {loadAboutContent, openAboutPanel, closeAboutPanel} from './panels/AboutPanel.js';
 import {addSpinPanel,createSpinControls} from './panels/SpinPanel.js';
-import { addLatticeComparisonPanel }from './panels/LatticeComparisonPanel.js'
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
 import {renderComposition} from './panels/StructureInfoPanel/General.js';
 import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
@@ -120,8 +118,6 @@ const setStatus = (s) => {
 //These will not be kept as sson as classes and therefore trajectories are workgin
 // ........................................................................................................
 
-let atomsGroup2, bondsGroup2, latticeGroup2,spinGroup2;
-let structureData2 = null;
 
 function openBackgroundColorPicker(dot) {
   // Remove any existing picker first
@@ -289,35 +285,48 @@ function updateOther() {
 
   recomputeLatticeDirs();
   updateAllMeasurements();
-  addVacuumPanel();
+  addAtomVacuumPanel();
 }
-
 
 export function updateVisualization(options = {}) {
   const {
+    // Main Structure
     atomsUpdate = true,
-    bondsUpdate = true,
     reRenderAtoms = false,
+    bondsUpdate = true,
     reRenderBonds = false,
     reRenderLattice = true,
+
+    // Comparison Structure
+    SecondAtomsUpdate = false,
+    SecondReRenderAtoms = false,
+    SecondBondsUpdate = false,
+    SecondReRenderBonds = false,
+    SecondReRenderLattice = false,
+
+    // Panels
     reRenderOther = true,
     reRenderComposition = false,
 
-    sOpactiy = general.secondOpacity,
+    sOpacity = general.compOpacity,
     mOpacity = general.mainOpacity,
     reRenderField = false
   } = options;
+
 
   if (!fileBrowser.selectedStructure) {
     console.log('updateVisualization:No structure data selected available, returning early');
     return;
   }
 
+  console.log(fileBrowser.selectedStructure)
+
+  // Main Structure
   if (reRenderAtoms) {
     console.warn("Calling rebuildAtoms")
     rebuildAtoms(mOpacity);
   }
-  if (!reRenderAtoms & atomsUpdate) {
+  if (!reRenderAtoms && atomsUpdate) {
     console.warn("Calling updateAtoms")
     updateAtoms(mOpacity);
   }
@@ -327,11 +336,35 @@ export function updateVisualization(options = {}) {
     rebuildBonds(mOpacity)
   }
 
-  if (!reRenderAtoms & bondsUpdate) {
+  if (!reRenderBonds && bondsUpdate) {
     console.warn("Calling updateBonds")
     updateBonds(mOpacity)
   }
 
+  // Comparison Structure
+  if (SecondReRenderAtoms) {
+    console.warn("Calling rebuildSecondAtoms")
+    console.log(fileBrowser.compStructure)
+    rebuildSecondAtoms(fileBrowser.comparisonStructure, sOpacity);
+  }
+  if (!SecondReRenderAtoms && SecondAtomsUpdate) {
+    console.warn("Calling updateSecondAtoms")
+    updateSecondAtoms(fileBrowser.comparisonStructure, sOpacity);
+  }
+
+  if (SecondReRenderBonds) {
+    console.warn("Calling rebuildSecondBonds")
+    rebuildSecondBonds(fileBrowser.comparisonStructure,sOpacity)
+  }
+
+  if (!SecondReRenderBonds && SecondBondsUpdate) {
+    console.warn("Calling updateSecondBonds")
+    updateSecondBonds(fileBrowser.comparisonStructure,sOpacity)
+  }
+
+  if (SecondReRenderLattice) updateSecondLattice(general.secondLatticeColor);
+
+  // Panels
   if (reRenderComposition != false) {
     renderComposition(reRenderComposition);
   }
@@ -340,7 +373,12 @@ export function updateVisualization(options = {}) {
   if (reRenderField && fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
     updateField();
   }
+
+  if (measurements.measureLines.length > 0) {
+    updateAllMeasurements();
+  }
 }
+
 
 async function loadStructure(content, fileName = '', isDefault = false) {
   try {
@@ -428,15 +466,16 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 
 
 
-    loadColorOverrides();
-    loadIndividualAtomColors();
+    //loadColorOverrides();
+    //loadIndividualAtomColors();
 
     document.getElementById('structureControls').style.display = 'block';
     document.getElementById('structureControls2').style.display = 'block';
 
     //createBondLengthControls();
     createShareButton();
-    updateVisualization();
+    updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true});
+    console.warn(fileBrowser.selectedStructure)
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();
     //resetView();
@@ -639,26 +678,35 @@ function init() {
     const y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
     mouse.set(x, y);
-    raycaster.setFromCamera(mouse,app.camera);
-    if(!groups.atomsGroup) return;
+    raycaster.setFromCamera(mouse, app.camera);
+    if (!groups.atomsMesh) return;
 
-    const hits = raycaster.intersectObjects(groups.atomsGroup.children, true);
+    const hits = raycaster.intersectObject(groups.atomsMesh);
     if (!hits.length) {
       // Clicked on empty space - reset selection
-      measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+      measurements.selectedAtoms.forEach(a => clearHighlightAtom(a));
       measurements.selectedAtoms = [];
       clearMeasureGraphics();
       return;
     }
 
-    const hit = hits[0].object;
+    const rawHit = hits[0];
+    const instanceId = rawHit.instanceId;
+    const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
+    if (!wrapped) return;
+    const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[instanceId] : instanceId;
+    const element = groups.atomsMesh.userData.elementNames?.[instanceId] || wrapped.elements?.[instanceId] || '?';
+    const hit = {
+      position: new THREE.Vector3(...wrapped.cart[instanceId]),
+      userData: { atomIndex: srcIdx, element, instanceId }
+    };
 
-    // Don't select the same atom twice
-    if (measurements.selectedAtoms.includes(hit)) return;
+    // Don't select the same atom twice (by source index)
+    if (measurements.selectedAtoms.some(a => a.userData.atomIndex === srcIdx)) return;
 
-    // Add atom to selection
+    // Add atom to selection and highlight it
     measurements.selectedAtoms.push(hit);
-    HighlightAtom(hit, measurements.selectedAtoms.length === 1 ? 0xff0000 : measurements.selectedAtoms.length === 2 ? 0x0000ff : 0x00ff00);
+    highlightAtomIn3D(instanceId);
 
     // Handle actions based on mode
     if (mode.measureMode === 'distance' && measurements.selectedAtoms.length === 2) {
@@ -701,6 +749,8 @@ function init() {
 
   // Double-click handler for atom highlighting feature
   function onDoubleClickAtom(event) {
+  // Don't open info panel while measuring — two measurement clicks look like a dblclick
+  if (mode.measureMode !== 'none') return;
   event.preventDefault();
   event.stopPropagation();
 
@@ -780,9 +830,6 @@ function init() {
 
 }
 
-
-  // Add event listeners - use touchstart instead of touchend for better responsiveness
-  app.renderer.domElement.addEventListener('click', onClickPick);
 
   // Add double-click listener for atom highlighting feature
   app.renderer.domElement.addEventListener('dblclick', onDoubleClickAtom);
@@ -1306,7 +1353,7 @@ function setupMobileMenu() {
   addSavePanel();
   addCameraPanel();
   addColorPanel();
-  addVacuumPanel();
+  addAtomVacuumPanel();
   addControlPanelAnalysisSwitch();
   addStorageInfoPanel();
   addAnalysisInfoPanel();

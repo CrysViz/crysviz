@@ -1,175 +1,127 @@
 import * as THREE from '../external/three/three.module.js';
-import { app, fileBrowser, groups, general, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
-import {disposeGroup} from '../panels/WindowAndSceneControls.js'
-import {periodicWrapped} from './LatticeModule.js'
+import { app, fileBrowser, groups, general } from '../store.js';
+import { forceLengthToColor } from '../panels/ColorPanel.js';
 
+const SHAFT_SEGS = 12;
+const TIP_SEGS = 12;
+const TIP_LENGTH = 0.8;
+const TIP_RADIUS = 0.3;
+const UP = new THREE.Vector3(0, 1, 0);
 
-import {forceLengthToColor} from '../panels/ColorPanel.js'
-
-
-export function removeForces(){
-if (groups.forceGroup) {
-    groups.forceGroup.children.forEach(child => {
-      child.traverse(c => {
-        if (c.geometry) c.geometry.dispose();
-        if (c.material) c.material.dispose();
-      });
-    });
-    disposeGroup(groups.forceGroup);
-  }
+function computeArrowLength(magnitude, forceFactor) {
+  if (magnitude < 1e-5) return 0;
+  const logVal = Math.max(-4, Math.min(Math.log10(magnitude), 0.301));
+  const mapped = (logVal + 4) / 4.301;
+  return mapped * 1.5 * forceFactor;
 }
 
-
-export function updateForces(forceFactor = 1.0) {
-
-  console.warn("Calling update forces")
-
-  // Dispose old force arrows
-  if (groups.forceGroup) {
-    groups.forceGroup.children.forEach(child => {
-      child.traverse(c => {
-        if (c.geometry) c.geometry.dispose();
-        if (c.material) c.material.dispose();
-      });
-    });
-    disposeGroup(groups.forceGroup);
-  }
-
-  const forces = fileBrowser.selectedStructure.forces;
-
-  console.log(forces)
-  if (forces.length == 0){
-    console.warn("No forces found!")
-    return;
+function disposeForceMeshes() {
+  for (const key of ['forcesShaftMesh', 'forcesTipMesh']) {
+    if (groups[key]) {
+      groups[key].geometry.dispose();
+      groups[key].material.dispose();
+      app.scene.remove(groups[key]);
+      groups[key] = null;
     }
-  groups.forceGroup = new THREE.Group();
-
-  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
-  let elements = [...fileBrowser.selectedStructure.elements];
-  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-
-  if (!positions || !lattice) return;
-
-  // Wrap atomic positions periodically
-  const wrapped = periodicWrapped(positions, elements);
-  const wrappedCart = fracToCart(positions, lattice);
-
-  // Get lattice vectors for ghost cell replication (like bonds)
-  const a = new THREE.Vector3(...lattice[0]);
-  const b = new THREE.Vector3(...lattice[1]);
-  const c = new THREE.Vector3(...lattice[2]);
-  for (let i = 0; i < wrappedCart.length; i++) {
-    const atomIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    const vector = forces[atomIndex].vector
-    const scalingFactor = 1.0
-
-    if ( !vector || vector.length !== 3) {
-      console.warn("Force has wrong format")
-      continue;
-    }
-    const origin = new THREE.Vector3(...wrappedCart[i]);
-    const dirVec = new THREE.Vector3(...vector);
-    const baseLen = dirVec.length();
-    console.log(baseLen)
-
-
-    const color = forceLengthToColor(baseLen)
-
-    // Treat values below 1e-5 as 0
-const clampedBaseLen = baseLen < 1e-5 ? 0 : baseLen;
-let totalLength = 0    
-
-// If baseLen is 0, set totalLength to 0 and skip further calculations
-if (clampedBaseLen === 0) {
-  totalLength = 0;
-} else {
-  const logValue = Math.log10(clampedBaseLen);
-
-  // Clamp logValue to ensure it's within the expected range
-  const clampedLogValue = Math.max(-4, Math.min(logValue, 0.3010)); // log10(2) ≈ 0.3010
-
-  // Map log10(1e-4) to 0, log10(1e-3) to 0.5, log10(2) to 1
-  const mapped = (clampedLogValue + 4) / 4.301; // Normalize to map log10(2) to 1
-  const adjusted = mapped * 1.5; // Adjust so 1e-3 → 0.5, 1e-4 → 0, 2 → 1
-
-  totalLength = adjusted * scalingFactor 
-}
-
-
-    if (totalLength < 0.5) {
-      console.warn("Force vector too small (<0.5)", totalLength)
-      continue};
-     
-    const dir = dirVec.clone().normalize();
-
-    // --- Material (match atom style) ---
-    const material = new THREE.MeshPhysicalMaterial(getAtomVisSettings(color,1.0));
-
-    // --- Shaft geometry (extends both directions) ---
-    const shaftRadius = 0.1;
-    const shaftLength = totalLength;
-
-    const shaftPos = new THREE.Mesh(
-      new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength / 2, 16),
-      material
-    );
-    shaftPos.position.set(0, shaftLength / 4, 0);
-
-    const shaftNeg = new THREE.Mesh(
-      new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength / 2, 16),
-      material
-    );
-    shaftNeg.position.set(0, -shaftLength / 4, 0);
-
-    //  Tip (only positive direction)
-    const tipLength = 0.8;
-    const tipRadius = 0.3;
-    const tip = new THREE.Mesh(
-      new THREE.ConeGeometry(tipRadius, tipLength, 16),
-      material
-    );
-    tip.position.set(0, shaftLength / 2 + tipLength / 2, 0);
-
-    // Create an arrowGroup
-    const arrowGroup = new THREE.Group();
-    arrowGroup.add(shaftPos);
-    arrowGroup.add(shaftNeg);
-    arrowGroup.add(tip);
-
-    const arrowAxis = new THREE.Vector3(0, 1, 0);
-    arrowGroup.quaternion.setFromUnitVectors(arrowAxis, dir);
-    arrowGroup.position.copy(origin);
-
-    groups.forceGroup.add(arrowGroup);
   }
-  console.log(groups.forceGroup)
-  app.scene.add(groups.forceGroup);
 }
 
-function fracToCart(frac, lattice) {
-  return frac.map(fc => [
-    fc[0] * lattice[0][0] + fc[1] * lattice[1][0] + fc[2] * lattice[2][0],
-    fc[0] * lattice[0][1] + fc[1] * lattice[1][1] + fc[2] * lattice[2][1],
-    fc[0] * lattice[0][2] + fc[1] * lattice[1][2] + fc[2] * lattice[2][2]
-  ]);
+export function removeForces() {
+  disposeForceMeshes();
 }
 
-function distance(pos1, pos2) {
-  const dx = pos1.x - pos2.x;
-  const dy = pos1.y - pos2.y;
-  const dz = pos1.z - pos2.z;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
-}
+export function updateForces(forceFactor = general.forceScale ?? 1.0) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure?.forces?.length || !structure.periodic?.wrapped) return;
 
-function getBondCutoff(elem1, elem2) {
-  const pair1 = elem1 + '-' + elem2;
-  const pair2 = elem2 + '-' + elem1;
-  return general.bondLengths[pair1] || general.bondLengths[pair2] || 0.0;
-}
+  const wrapped = structure.periodic.wrapped;
+  const shaftRadius = general.forceRadius ?? 0.08;
 
-function isOutsideUnitCell(cart, lattice, eps = 1e-6) {
-  const f = cartToFractional(cart, lattice);
-  return (f[0] < -eps || f[0] >= 1 + eps ||
-          f[1] < -eps || f[1] >= 1 + eps ||
-          f[2] < -eps || f[2] >= 1 + eps);
+  // Collect valid arrows — one per original atom (skip periodic images)
+  const arrows = [];
+  const seen = new Set();
+  for (let i = 0; i < wrapped.cart.length; i++) {
+    const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    if (seen.has(srcIdx)) continue; // skip periodic image duplicates
+    seen.add(srcIdx);
+
+    const force = structure.forces[srcIdx];
+    if (!force?.vector) continue;
+    const v = force.vector;
+    const mag = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
+    const totalLen = computeArrowLength(mag, forceFactor);
+    if (totalLen < 0.1) continue;
+
+    arrows.push({
+      origin: new THREE.Vector3(...wrapped.cart[i]),
+      dir: new THREE.Vector3(...v).normalize(),
+      shaftHalfLen: totalLen / 2,
+      color: new THREE.Color(forceLengthToColor(mag)),
+    });
+  }
+
+  const count = arrows.length;
+
+  // Rebuild InstancedMesh if count changed or meshes missing
+  if (!groups.forcesShaftMesh || groups.forcesShaftMesh.count !== count * 2) {
+    disposeForceMeshes();
+    if (count === 0) return;
+
+    const shaftGeo = new THREE.CylinderGeometry(1, 1, 1, SHAFT_SEGS, 1);
+    const shaftMat = new THREE.MeshPhysicalMaterial({ roughness: 0.4, metalness: 0.2 });
+    groups.forcesShaftMesh = new THREE.InstancedMesh(shaftGeo, shaftMat, count * 2);
+    groups.forcesShaftMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 2 * 3), 3);
+    groups.forcesShaftMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    groups.forcesShaftMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    app.scene.add(groups.forcesShaftMesh);
+
+    const tipGeo = new THREE.ConeGeometry(1, 1, TIP_SEGS);
+    const tipMat = new THREE.MeshPhysicalMaterial({ roughness: 0.4, metalness: 0.2 });
+    groups.forcesTipMesh = new THREE.InstancedMesh(tipGeo, tipMat, count);
+    groups.forcesTipMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
+    groups.forcesTipMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    groups.forcesTipMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    app.scene.add(groups.forcesTipMesh);
+  }
+
+  const dummy = new THREE.Object3D();
+
+  arrows.forEach(({ origin, dir, shaftHalfLen, color }, i) => {
+    // Safe quaternion: handle near-antiparallel to UP
+    const quat = new THREE.Quaternion();
+    if (dir.dot(UP) < -0.9999) {
+      quat.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
+    } else {
+      quat.setFromUnitVectors(UP, dir);
+    }
+
+    // Shaft+ (from origin toward tip)
+    dummy.position.copy(origin).addScaledVector(dir, shaftHalfLen / 2);
+    dummy.scale.set(shaftRadius, shaftHalfLen, shaftRadius);
+    dummy.quaternion.copy(quat);
+    dummy.updateMatrix();
+    groups.forcesShaftMesh.setMatrixAt(i * 2, dummy.matrix);
+    groups.forcesShaftMesh.instanceColor.setXYZ(i * 2, color.r, color.g, color.b);
+
+    // Shaft- (from origin away from tip)
+    dummy.position.copy(origin).addScaledVector(dir, -shaftHalfLen / 2);
+    dummy.scale.set(shaftRadius, shaftHalfLen, shaftRadius);
+    dummy.quaternion.copy(quat);
+    dummy.updateMatrix();
+    groups.forcesShaftMesh.setMatrixAt(i * 2 + 1, dummy.matrix);
+    groups.forcesShaftMesh.instanceColor.setXYZ(i * 2 + 1, color.r, color.g, color.b);
+
+    // Tip cone
+    dummy.position.copy(origin).addScaledVector(dir, shaftHalfLen + TIP_LENGTH / 2);
+    dummy.scale.set(TIP_RADIUS, TIP_LENGTH, TIP_RADIUS);
+    dummy.quaternion.copy(quat);
+    dummy.updateMatrix();
+    groups.forcesTipMesh.setMatrixAt(i, dummy.matrix);
+    groups.forcesTipMesh.instanceColor.setXYZ(i, color.r, color.g, color.b);
+  });
+
+  groups.forcesShaftMesh.instanceMatrix.needsUpdate = true;
+  groups.forcesShaftMesh.instanceColor.needsUpdate = true;
+  groups.forcesTipMesh.instanceMatrix.needsUpdate = true;
+  groups.forcesTipMesh.instanceColor.needsUpdate = true;
 }

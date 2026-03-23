@@ -1,13 +1,13 @@
 import {updateSpins,deleteSpins} from '../modules/SpinModule.js';
-import { app, groups, fileBrowser,general, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
+import { app, groups, fileBrowser, general, spinsData } from '../store.js';
 
 
 export function removeSpinPanel() {
   const panel = document.getElementById("spinControlsGroup");
   if (panel) {
+    const container = document.getElementById("SpinForceFieldContainer");
+    if (container) container.style.display = "none";
     panel.remove();
-  } else {
-    console.warn("Spin Controls panel does not exist.");
   }
 }
 
@@ -18,30 +18,25 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
     return;
   }
 
-  // --- Outer wrapper ---
   const group = document.createElement("div");
   group.id = "spinControlsGroup";
+  group.style.padding = "10px";
 
-  // --- Panel ---
   const panel = document.createElement("div");
   panel.id = "spinPanel";
 
-  // --- Toggle ---
+  // --- Toggle header ---
   const toggle = document.createElement("div");
-  toggle.id = "spinToggle";
   toggle.className = "spin-toggle";
   toggle.setAttribute("role", "button");
   toggle.setAttribute("tabindex", "0");
-  toggle.setAttribute("aria-expanded", "false");
-  toggle.setAttribute("aria-controls", "spinControlsContent");
 
   const title = document.createElement("h4");
   title.textContent = "Spin Controls";
 
   const icon = document.createElement("div");
-  icon.id = "spinToggleIcon";
   icon.className = "toggle-icon";
-  icon.textContent = "+";
+  icon.textContent = "−";
 
   toggle.appendChild(title);
   toggle.appendChild(icon);
@@ -50,66 +45,101 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
   const content = document.createElement("div");
   content.id = "spinControlsContent";
   content.className = "collapsible-content";
-  content.setAttribute("aria-hidden", "true");
 
-  // --- Reset wrapper ---
-  const resetWrapper = document.createElement("div");
-  resetWrapper.id = "resetSpinLenghtsWrapper";
-  resetWrapper.className = "bottonWrapper";
-  resetWrapper.setAttribute("aria-hidden", "true");
+  // Length scale slider
+  const lengthWrapper = document.createElement("div");
+  lengthWrapper.style.marginBottom = "8px";
+  const lengthLabel = document.createElement("label");
+  lengthLabel.textContent = "Arrow Length: ";
+  const lengthValue = document.createElement("span");
+  lengthValue.textContent = general.spinScale.toFixed(2);
+  lengthValue.style.marginRight = "8px";
+  const lengthSlider = document.createElement("input");
+  lengthSlider.type = "range";
+  lengthSlider.min = 0.1; lengthSlider.max = 10; lengthSlider.step = 0.1;
+  lengthSlider.value = general.spinScale;
+  lengthWrapper.appendChild(lengthLabel);
+  lengthWrapper.appendChild(lengthValue);
+  lengthWrapper.appendChild(lengthSlider);
+  content.appendChild(lengthWrapper);
 
+  // Width slider
+  const widthWrapper = document.createElement("div");
+  widthWrapper.style.marginBottom = "8px";
+  const widthLabel = document.createElement("label");
+  widthLabel.textContent = "Arrow Width: ";
+  const widthValue = document.createElement("span");
+  widthValue.textContent = general.spinRadius.toFixed(2);
+  widthValue.style.marginRight = "8px";
+  const widthSlider = document.createElement("input");
+  widthSlider.type = "range";
+  widthSlider.min = 0.01; widthSlider.max = 0.5; widthSlider.step = 0.01;
+  widthSlider.value = general.spinRadius;
+  widthWrapper.appendChild(widthLabel);
+  widthWrapper.appendChild(widthValue);
+  widthWrapper.appendChild(widthSlider);
+  content.appendChild(widthWrapper);
+
+  // Delete button
   const deleteBtn = document.createElement("button");
   deleteBtn.id = "deleteSpins";
   deleteBtn.className = "reset-btn";
   deleteBtn.textContent = "Delete Spins";
+  deleteBtn.style.marginTop = "4px";
+  content.appendChild(deleteBtn);
 
-  resetWrapper.appendChild(deleteBtn);
-
-  // --- Spin Controls container ---
+  // Spin Controls container (for createSpinControls compatibility)
   const spinControls = document.createElement("div");
   spinControls.id = "spinControls";
-
-  // Build hierarchy
-  content.appendChild(resetWrapper);
   content.appendChild(spinControls);
+
   panel.appendChild(toggle);
   panel.appendChild(content);
   group.appendChild(panel);
-
-  // Insert into DOM
+  targetPanel.style.display = "block";
   targetPanel.appendChild(group);
 
-  // --- Apply YOUR script logic immediately ---
+  // Open immediately — bypass CSS
+  content.classList.add('open');
+  content.style.display = 'block';
+  content.style.maxHeight = '600px';
 
-  function setOpen(open) {
-    if (open) {
-      content.classList.add('open');
-      content.setAttribute('aria-hidden', 'false');
-      icon.textContent = '−';
-      toggle.setAttribute('aria-expanded', 'true');
-    } else {
+  toggle.addEventListener('click', () => {
+    const isOpen = content.classList.contains('open');
+    if (isOpen) {
       content.classList.remove('open');
-      content.setAttribute('aria-hidden', 'true');
+      content.style.display = 'none';
+      content.style.maxHeight = '0';
       icon.textContent = '+';
-      toggle.setAttribute('aria-expanded', 'false');
-    }
-  }
-
-  // Default is closed
-  setOpen(false);
-
-  // Click
-  toggle.addEventListener('click', () =>
-    setOpen(!content.classList.contains('open'))
-  );
-
-  // Keyboard
-  toggle.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setOpen(!content.classList.contains('open'));
+    } else {
+      content.classList.add('open');
+      content.style.display = 'block';
+      content.style.maxHeight = '600px';
+      icon.textContent = '−';
     }
   });
+
+  // Slider events
+  lengthSlider.addEventListener("input", () => {
+    let val = parseFloat(lengthSlider.value);
+    if (Math.abs(val - 1) < 0.05) val = 1;
+    lengthSlider.value = val;
+    lengthValue.textContent = val.toFixed(2);
+    general.spinScale = val;
+    updateSpins(val);
+  });
+
+  widthSlider.addEventListener("input", () => {
+    const val = parseFloat(widthSlider.value);
+    widthValue.textContent = val.toFixed(2);
+    general.spinRadius = val;
+    updateSpins(general.spinScale);
+  });
+
+  deleteBtn.addEventListener("click", () => deleteSpins());
+
+  // Populate text input / spin viewer tabs
+  createSpinControls("spinControls");
 }
 
 
@@ -134,28 +164,6 @@ export function createSpinControls(containerId = "spinControls") {
   toggleWrapper.appendChild(textModeBtn);
   toggleWrapper.appendChild(viewerModeBtn);
   container.appendChild(toggleWrapper);
-
-  // ----- 2 Slider for scaling arrows -----
-  const sliderWrapper = document.createElement("div");
-  sliderWrapper.style.marginBottom = "8px";
-
-  const sliderLabel = document.createElement("label");
-  sliderLabel.textContent = "Spin Length Factor: ";
-  sliderWrapper.appendChild(sliderLabel);
-
-  const sliderValue = document.createElement("span");
-  sliderValue.textContent = "1.0";
-  sliderValue.style.marginRight = "8px";
-  sliderWrapper.appendChild(sliderValue);
-
-  const slider = document.createElement("input");
-  slider.type = "range";
-  slider.min = 0.1;
-  slider.max = 10;
-  slider.step = 0.1;
-  slider.value = 1;
-  sliderWrapper.appendChild(slider);
-  container.appendChild(sliderWrapper);
 
   // ----- 3 Text Input Panel -----
   const textPanel = document.createElement("div");
@@ -200,21 +208,6 @@ export function createSpinControls(containerId = "spinControls") {
     populateSpinViewer();
   });
 
-  // ----- 6 Slider live updates -----
-  slider.addEventListener("input", () => {
-    let val = parseFloat(slider.value);
-    // sticky zone near 1
-    if (Math.abs(val - 1) < 0.05) val = 1;
-    slider.value = val;
-    sliderValue.textContent = val.toFixed(2);
-    
-    spins = fileBrowser.selectedStructure.spins.map(spin => spin.vector) // this might not work 
-
-    if (spins.length != 0 ) {
-      updateSpins(val);
-    }
-  });
-
   // ----- 7 Parse input & draw -----
   drawBtn.addEventListener("click", drawSpinsFromInput);
   drawBtn.className="btn-mini highlight"
@@ -250,24 +243,12 @@ export function createSpinControls(containerId = "spinControls") {
       });
     });
 
-    let deleteBtn = document.getElementById("deleteSpins")
-    if (deleteBtn){
-    console.log("Delete Spin Button Initialised")
-    deleteBtn.addEventListener("click",(e) => {
-               console.log("Delete Spin Clicked")
-               e.stopPropagation();
-               deleteSpins();
-        });
-    };
-
-
-
     if (spinsData?.length != null) {
       spinsData.length = 0;
     }
 
     spinsData.push(...spins);
-    updateSpins(parseFloat(slider.value));
+    updateSpins(general.spinScale ?? 1.0);
   }
 
 function populateSpinViewer() {
@@ -435,7 +416,7 @@ function populateSpinViewer() {
 
       const customInput = createCustomNumberInput(val, 0.01, newVal => {
         spin.vector[comp] = newVal;
-        updateSpins(parseFloat(slider.value));
+        updateSpins(general.spinScale ?? 1.0);
       });
 
       td.appendChild(customInput);
@@ -448,7 +429,7 @@ function populateSpinViewer() {
 
     const customScaleInput = createCustomNumberInput(spin.scalingFactor, 0.01, newVal => {
       spin.scalingFactor = newVal;
-      updateSpins(parseFloat(slider.value));
+      updateSpins(general.spinScale ?? 1.0);
     });
 
     tdScale.appendChild(customScaleInput);
@@ -569,7 +550,7 @@ function openColorPicker(spin, dot) {
     e.stopPropagation();
     spin.color = selectedHex;
     dot.style.backgroundColor = selectedHex;
-    updateSpins(parseFloat(slider.value));
+    updateSpins(general.spinScale ?? 1.0);
     closePicker();
   });
 
@@ -579,7 +560,7 @@ function openColorPicker(spin, dot) {
     selectedHex = "#000000";
     spin.color = selectedHex;
     dot.style.backgroundColor = selectedHex;
-    updateSpins(parseFloat(slider.value));
+    updateSpins(general.spinScale ?? 1.0);
     closePicker();
   });
 }

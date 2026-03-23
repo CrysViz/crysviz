@@ -1,3 +1,11 @@
+// Module-level ref — set when panel is open, null when closed
+let activeUpdate = null;
+
+// Called by BondsFracUpdateModule after every rebuildBonds
+export function refreshHistogram(newDatasets, newLabels) {
+  if (activeUpdate) activeUpdate(newDatasets, newLabels);
+}
+
 // ---- Utility: Color palette ----
 const AUTO_COLORS1 = [
 "#ef2f27",
@@ -45,21 +53,22 @@ function computeHistogram(data, binCount = 10, minVal = null, maxVal = null) {
 }
 
 export function removeHistogramPanel() {
+  activeUpdate = null;
   const panel = document.getElementById("histogramPanel");
   if (panel) panel.remove();
   if (histogramPanelElements.histogramPanel)
     histogramPanelElements.histogramPanel.remove();
-
 }
 
 
-export function addHistogramPanel(datasets, labels = [], xAxisLabel="Bond length in Å", yAxisLabel="Count") {
+export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabel="Bond length in Å", yAxisLabel="Count") {
   if (histogramPanelElements.histogramPanel)
     histogramPanelElements.histogramPanel.remove();
 
-  if (!labels || labels.length !== datasets.length) {
-    labels = datasets.map((_, i) => "Dataset " + (i + 1));
-  }
+  let datasets = initialDatasets;
+  let labels = (!initialLabels || initialLabels.length !== initialDatasets.length)
+    ? initialDatasets.map((_, i) => "Dataset " + (i + 1))
+    : initialLabels;
 
   const panel = document.createElement("div");
   panel.id = "HistogramPanel";
@@ -130,8 +139,7 @@ export function addHistogramPanel(datasets, labels = [], xAxisLabel="Bond length
   const W = canvas.width / dpr;
   const H = canvas.height / dpr;
 
-  const allValues = datasets.flat();
-  const globalMin = Math.min(...allValues);
+  const globalMin = 0.5;
   let maxXValue = parseInt(maxSlider.value);
 
   let BINCOUNT = parseInt(binSlider.value);
@@ -146,7 +154,17 @@ export function addHistogramPanel(datasets, labels = [], xAxisLabel="Bond length
   const plotH = H - margin*2;
 
   function drawHistogram() {
-    const maxBinHeight = Math.max(...histograms.flatMap(h => h.bins));
+    const validHistograms = histograms.filter(Boolean);
+    if (validHistograms.length === 0) {
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = "#888";
+      ctx.font = "14px 'Segoe UI', sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("No bond data available", W / 2, H / 2);
+      return;
+    }
+    const maxBinHeight = Math.max(1, ...validHistograms.flatMap(h => h.bins));
     ctx.clearRect(0, 0, W, H);
     barRects.length = 0;
 
@@ -165,7 +183,8 @@ export function addHistogramPanel(datasets, labels = [], xAxisLabel="Bond length
     for (let i = 0; i < groupCount; i++) {
       const groupStartX = margin + i*(totalBinWidth + binSpacing);
       for (let di = 0; di < datasetCount; di++) {
-        const hist = histograms[di];
+        const hist = validHistograms[di];
+        if (!hist) continue;
         const value = hist.bins[i];
         const barHeight = (value/maxBinHeight)*plotH;
         const x0 = groupStartX + di*(barWidth + barSpacing);
@@ -191,14 +210,16 @@ export function addHistogramPanel(datasets, labels = [], xAxisLabel="Bond length
     }
 
     ctx.fillStyle = "#ddd"; ctx.font = "14px 'Segoe UI', sans-serif"; ctx.textAlign = "center";
+    const xMin = validHistograms[0].minX;
     for (let i = 0; i < groupCount; i++) {
       const x = margin + i*(totalBinWidth + binSpacing) + totalBinWidth/2;
-      const v = (globalMin + i*(maxXValue-globalMin)/BINCOUNT).toFixed(2);
+      const v = (xMin + i*(maxXValue-xMin)/BINCOUNT).toFixed(2);
       ctx.fillText(v, x, H - margin + 15);
     }
 
     ctx.textAlign = "right"; ctx.textBaseline = "middle";
-    for (let y = 0; y <= maxBinHeight; y += Math.ceil(maxBinHeight/5)) {
+    const yStep = Math.max(1, Math.ceil(maxBinHeight / 5));
+    for (let y = 0; y <= maxBinHeight; y += yStep) {
       const yPix = H - margin - (y/maxBinHeight)*plotH;
       ctx.fillText(y, margin - 4, yPix);
     }
@@ -215,14 +236,30 @@ export function addHistogramPanel(datasets, labels = [], xAxisLabel="Bond length
     ctx.restore();
   }
 
+  function updateLegend() {
+    legendBox.innerHTML = labels.map((lbl, i) => `
+      <div style="display:flex; align-items:center; width:70px;">
+        <div style="width:12px; height:12px; background:${AUTO_COLORS[i % AUTO_COLORS.length]}; margin-right:6px; border:1px solid rgba(255,255,255,.3);"></div>
+        <span style="color:#eee; font-size:12px;">${lbl}</span>
+      </div>
+    `).join("");
+  }
+
+  // Register live-update callback for MD
+  activeUpdate = (newDatasets, newLabels) => {
+    if (!newDatasets || newDatasets.length === 0) return;
+    datasets = newDatasets;
+    labels = newLabels && newLabels.length === newDatasets.length ? newLabels : newDatasets.map((_, i) => "Dataset " + (i + 1));
+    const allVals = datasets.flat();
+    if (allVals.length === 0) return;
+    histograms = datasets.map(ds => computeHistogram(ds, BINCOUNT, globalMin, maxXValue));
+    drawHistogram();
+    updateLegend();
+  };
+
   drawHistogram();
 
-  legendBox.innerHTML = labels.map((lbl,i)=>`
-    <div style="display:flex; align-items:center; width:70px;">
-      <div style="width:12px; height:12px; background:${AUTO_COLORS[i % AUTO_COLORS.length]}; margin-right:6px; border:1px solid rgba(255,255,255,.3); "></div>
-      <span style="color:#eee; font-size:12px;">${lbl}</span>
-    </div>
-  `).join("");
+  updateLegend();
 
   binSlider.addEventListener("input", () => {
     BINCOUNT = parseInt(binSlider.value);
@@ -268,8 +305,9 @@ canvas.addEventListener("mousemove", e => {
 });
 
 closeBtn.addEventListener("click", () => {
-  removeHistogramPanel(); // remove the histogram panel from DOM
-});  
+  activeUpdate = null;
+  removeHistogramPanel();
+});
 
 // Click selection
 canvas.addEventListener("click", e => {

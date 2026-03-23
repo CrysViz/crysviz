@@ -372,6 +372,7 @@ body.panel-hidden #axesLegend {
 }
 
 #saveButton {
+  margin-bottom: 12px;
   margin-top: 12px;
   width: 100%;
   padding: 12px 16px;

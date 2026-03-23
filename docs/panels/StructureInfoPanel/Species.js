@@ -2,11 +2,10 @@ import {structureShip,app, groups,fileBrowser, general,mode,defaultPOSCAR, polyS
 
 import { updateVisualization } from '../../crystal-viewer.js';
 
-import {colorHexToCss,hexToRgba,getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor } from '../../modules/ColorModule.js';
-
+import {setAtomColor,getAtomColor,colorHexToCss,hexToRgba} from '../../modules/ColorModule.js'
 import { createColorPicker } from '../../modules/ColorPickerModule.js';
-import { updateBonds } from '../../modules/BondsModule.js'
 import { updateSingleBondColor } from '../../modules/BondsFracUpdateModule.js'
+import { updateSingleAtomColor} from '../../modules/AtomsFracUpdateModule.js'
 import {createSupercell} from '../../modules/SuperCellModule.js';
 import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
 
@@ -21,8 +20,9 @@ export function createCompositionRow(el, count, total) {
 
   const left = document.createElement('div');
   left.className = 'comp-left';
-  const currentColor = getElementDisplayColor(el);
-  const curr_elem_colors = getElementDisplayColor(el);
+  let  currentColor = fileBrowser.selectedStructure.getElementColors()[el]
+  console.warn(currentColor)
+  let curr_elem_colors = fileBrowser.selectedStructure.getElementColors()[el]
   let dot;
 
   if (curr_elem_colors.length > 1) {
@@ -31,7 +31,7 @@ export function createCompositionRow(el, count, total) {
   } else {
     dot = document.createElement('span');
     dot.className = 'dot';
-    dot.style.background = curr_elem_colors[0];
+    dot.style.background = colorHexToCss(curr_elem_colors);
   }
 
   const name = document.createElement('span');
@@ -112,7 +112,7 @@ export function createCompositionRow(el, count, total) {
   hexInput.placeholder = '#RRGGBB';
   hexInput.style.cssText = 'width: 80px; height: 32px; padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0; box-sizing: border-box; vertical-align: top;';
 
-  const mom_color = getElementDisplayColor(el);
+  const mom_color = fileBrowser.selectedStructure.getElementColors()[el]
   let  atomIndices=[]
   fileBrowser.selectedStructure.elements.forEach((element, index)=> {
     if (element === el) {
@@ -120,37 +120,31 @@ export function createCompositionRow(el, count, total) {
     }
   });
 
-  const picker = createColorPicker(mom_color[0], (hex) => {
-    clearAllIndividualColorsForElement(el);      // Clear old color overrides
-    const ok = setElementColorOverride(el, hex); // Apply new color override
-
+  const picker = createColorPicker(mom_color, (hex) => {
+    //clearAllIndividualColorsForElement(el);      // Clear old color overrides
+    //const ok = setElementColorOverride(el, hex); // Apply new color override
 
 
     //FIXME: this needs to also update the atoms 
+    let structure = fileBrowser.selectedStructure
+    let indexset
     atomIndices.forEach(atomIndex => {
-      fileBrowser.selectedStructure.atomImages[atomIndex].forEach(imageIndex => {
-        fileBrowser.selectedStructure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
-          updateSingleBondColor(bondHalvIndex, hex)
-          //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)
-        });
-      });
-    });  
+        structure.atomImages[atomIndex].forEach(imageIndex => {
+          if (structure.bondMapping[imageIndex]) {
+            structure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
+              updateSingleBondColor(bondHalvIndex, hex)
+              indexset = structure.bondObjectMapping[bondHalvIndex]
+              structure.bonds[indexset[0]].color[indexset[1]] = hex
+              });
+            }
+            updateSingleAtomColor(atomIndex, imageIndex, el,hex)
+          });
+      });  
+
     groups.atomsMesh.instanceColor.needsUpdate = true;
     groups.bondsMesh.instanceColor.needsUpdate = true;
 
-
-
     dot.style.background = hex;
-      if (ok) {
-        updateVisualization({
-          atomsUpdate:true,
-          bondsUpdate:false,
-          reRenderAtoms: false,
-          reRenderBonds: false,
-          reRenderLattice: false,
-          reRenderOther: false
-        });
-      }
     });
   // Single line: color swatch + hex field + buttons
   const topRow = document.createElement('div');
@@ -163,9 +157,9 @@ export function createCompositionRow(el, count, total) {
   resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
 
   const applyBtn = document.createElement('button');
-  applyBtn.textContent = 'Apply';
+  applyBtn.textContent = 'Apply to Trajectory';
   applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
+  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 88px;';
 
   // Add buttons to the same row
   // Create separate button row
@@ -202,15 +196,15 @@ export function createCompositionRow(el, count, total) {
   hexInput.oninput = (e) => { colorInput.value = e.target.value; };
 
   // Style reset button with the element's default palette color
-  const defaultColorCss = colorHexToCss(getDefaultElementColor(el));
+  const defaultColorCss = colorHexToCss(fileBrowser.selectedStructure.getDefaultElementColor(el));
   resetBtn.style.background = defaultColorCss;
   resetBtn.style.borderColor = 'rgba(0,0,0,0.15)';
   resetBtn.style.color = textColorForBg(defaultColorCss);
 
   // Reset clears both element-wide override AND all individual colors for this element
   resetBtn.onclick = () => {
-    clearElementColorOverride(el);
-    clearAllIndividualColorsForElement(el);
+    //clearElementColorOverride(el);
+    //clearAllIndividualColorsForElement(el);
     updateVisualization({
           bondsUpdate:false,
           reRenderAtoms: false,
@@ -231,6 +225,7 @@ export function createCompositionRow(el, count, total) {
           reRenderOther: false,
           reRenderComposition: "open",
         });
+      structureShip.container[fileBrowser.selectedRowIndex].flushColorToAllStructures(fileBrowser.selectedStructure);
       editor.style.display = 'none';
 
   };
@@ -249,7 +244,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   const dot = document.createElement('span');
   dot.className = 'dot';
   dot.style.cssText = 'width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; border: 1px solid rgba(255,255,255,0.4);';
-  const currentColor = colorHexToCss(getIndividualAtomColor(element, atomIndex));
+  const currentColor = colorHexToCss(getAtomColor(atomIndex));
   dot.style.background = currentColor;
 
   // Atom name and coordinates container
@@ -278,7 +273,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   const colorBtn = document.createElement('button');
   colorBtn.textContent = 'Color';
   colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;';
-  const choosenColor = hexToRgba(colorHexToCss(getIndividualAtomColor(element, atomIndex)),0.8);
+  const choosenColor = hexToRgba(colorHexToCss(getAtomColor(atomIndex)),0.8);
   colorBtn.style.background = choosenColor;
   colorBtn.title = `Change color for ${element}${displayNumber}`;
 
@@ -304,34 +299,25 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   // Create color editor for this individual atom
   const editor = document.createElement('div');
   editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
-  const mom_color = colorHexToCss(getIndividualAtomColor(element, atomIndex))
+  const mom_color = colorHexToCss(getAtomColor(atomIndex))
   const picker = createColorPicker(mom_color, (hex) => {
-    const ok = setIndividualAtomColor(element, atomIndex, hex);
+    let structure = fileBrowser.selectedStructure
+    let indexset
+    structure.atomImages[atomIndex].forEach(imageIndex => {
+      console.warn("changing color of atom", imageIndex)
+       if (structure.bondMapping[imageIndex]) {
+         structure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
+           updateSingleBondColor(bondHalvIndex, hex)
+           indexset = structure.bondObjectMapping[bondHalvIndex]
+           structure.bonds[indexset[0]].color[indexset[1]] = hex
+           });
+         }
+         updateSingleAtomColor(atomIndex, imageIndex, element,hex)
+       });
 
-    //fileBrowser.selectedStructure.atoms[atomIndex].color = hex
-    //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)
-    //
-    ////FIXME: this needs to also update the atoms
-    fileBrowser.selectedStructure.atomImages[atomIndex].forEach(imageIndex => {
-      fileBrowser.selectedStructure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
-        updateSingleBondColor(bondHalvIndex, hex)
-        //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)    
-      });
-    });  
     groups.atomsMesh.instanceColor.needsUpdate = true;
     groups.bondsMesh.instanceColor.needsUpdate = true;
-
     dot.style.background = hex;
-      if (ok) {
-        //updateBonds()
-        updateVisualization({
-          bondsUpdate:false,
-          reRenderAtoms: false,
-          reRenderBonds: false,
-          reRenderLattice: false,
-          reRenderOther: false
-        });
-      }
   });
   const AtomColorApplyBtn = document.createElement('button');
   AtomColorApplyBtn.textContent = 'Apply';
@@ -484,7 +470,7 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
   spinColorBtn.textContent = 'Color';
   spinColorBtn.className = 'btn-mini highlight';
   spinColorBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px;';
-  const mom_spin_color = colorHexToCss(getIndividualAtomColor(element, atomIndex))
+  const mom_spin_color = colorHexToCss(getAtomColor(atomIndex))
   spinColorBtn.style.background =mom_spin_color;
 
   const spinResetBtn = document.createElement('button');
@@ -549,17 +535,15 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
   const spinColorEditor = document.createElement('div');
   spinColorEditor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
   const spinColorPicker = createColorPicker(mom_spin_color, (hex) => {
-    const ok = setIndividualAtomColor(element, atomIndex, hex);
+    //const ok = setIndividualAtomColor(element, atomIndex, hex);
     dot.style.background = hex;
-      if (ok) {
-        updateVisualization({
+    updateVisualization({
           bondsUpdate:false,
           reRenderAtoms: false,
           reRenderBonds: true,
           reRenderLattice: false,
           reRenderOther: false
         });
-      }
    });
   const spinColorApplyBtn = document.createElement('button');
   spinColorApplyBtn.textContent = 'Apply';
@@ -645,21 +629,11 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
   };
 
   AtomColorApplyBtn.onclick = () => {
-      dot.style.background = picker.getHex;
       editor.style.display = 'none';
-      updateVisualization({
-        bondsUpdate:false,
-        reRenderAtoms: false,
-        reRenderBonds : false,
-        reRenderLattice : false,
-        reRenderOther: false,
-        reRenderComposition : true, 
-      });
   };
 
   AtomColorResetBtn.onclick = () => {
-    clearIndividualAtomColor(element, atomIndex);
-    const newColor = colorHexToCss(getIndividualAtomColor(element, atomIndex));
+    const newColor = colorHexToCss(getAtomColor(atomIndex));
     dot.style.background = newColor;
     //colorInput.value = newColor;
    // hexInput.value = newColor;
