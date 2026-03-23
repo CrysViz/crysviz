@@ -1,4 +1,4 @@
-import * as THREE from '/external/three/three.module.js';
+import * as THREE from '../external/three/three.module.js';
 
 //imports in worker are relative to index!!
 
