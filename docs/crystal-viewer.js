@@ -690,11 +690,17 @@ async function initApp() {
     const element = groups.atomsMesh.userData.elementNames?.[instanceId] || wrapped.elements?.[instanceId] || '?';
     const hit = {
       position: new THREE.Vector3(...wrapped.cart[instanceId]),
-      userData: { atomIndex: srcIdx, element, instanceId }
+      userData: {
+        atomIndex: srcIdx,
+        element,
+        instanceId,
+        wrappedFrac: wrapped.frac?.[instanceId] ? [...wrapped.frac[instanceId]] : null,
+      }
     };
 
-    // Don't select the same atom twice (by source index)
-    if (measurements.selectedAtoms.some(a => a.userData.atomIndex === srcIdx)) return;
+    // Allow selecting the same source atom through a different periodic image,
+    // but avoid double-picking the exact same rendered instance.
+    if (measurements.selectedAtoms.some(a => a.userData.instanceId === instanceId)) return;
 
     // Add atom to selection and highlight it
     measurements.selectedAtoms.push(hit);

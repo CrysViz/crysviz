@@ -160,7 +160,7 @@ Direct
 0.5 0.0 0.622
 0.0 0.0 0.159
 0.0 0.0 0.841`;
-export const defaultPOSCAR2 = `
+export const defaultPOSCAR = `
 From DOI: 10.1126/sciadv.aay8361
 1.0
         4.6090002060         0.0000000000         0.0000000000
@@ -184,7 +184,7 @@ Direct
      0.000000000         0.500000000         0.250000000
      0.000000000         0.500000000         0.750000000`;
 
-export const defaultPOSCAR = `
+export const defaultPOSCAR3 = `
 Al2 Se2 Cl14
 1.0
    6.3948283377470441    0.0000000000000000    0.0000000000000000

@@ -1,8 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
-import { measurements,app, groups, general,spinsData, fileBrowser, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
-import {disposeGroup} from '../panels/WindowAndSceneControls.js';
-import {periodicWrapped} from './LatticeModule.js';
-import { CSS2DRenderer, CSS2DObject } from '../external/three/CSS2DRenderer.js';
+import { measurements,app, general, fileBrowser, mode, atomicRadii} from '../store.js';
+import { CSS2DObject } from '../external/three/CSS2DRenderer.js';
+import { fracToCart } from './math/index.js';
 
 let measureLabel = null;
 
@@ -112,7 +111,127 @@ export function calculateAngle(atom1, atom2, atom3) {
   return angle * (180 / Math.PI); // Convert to degrees
 }
 
+function createMeasurementAtomRef(atom) {
+  const structure = fileBrowser.selectedStructure;
+  const atomIndex = atom?.userData?.atomIndex;
+  if (!structure || atomIndex == null || !structure.atoms?.[atomIndex]) return null;
+
+  const baseFrac = structure.atoms[atomIndex].position;
+  const wrappedFrac = atom.userData?.wrappedFrac;
+  const imageOffset = wrappedFrac
+    ? wrappedFrac.map((value, axis) => Math.round(value - baseFrac[axis]))
+    : [0, 0, 0];
+  const resolvedFrac = baseFrac.map((value, axis) => value + imageOffset[axis]);
+
+  return {
+    atomIndex,
+    element: atom.userData?.element ?? structure.elements?.[atomIndex] ?? '?',
+    imageOffset,
+    lastResolvedFrac: resolvedFrac,
+  };
+}
+
+function cloneMeasurementRef(ref) {
+  if (!ref) return null;
+  return {
+    atomIndex: ref.atomIndex,
+    element: ref.element,
+    imageOffset: Array.isArray(ref.imageOffset) ? [...ref.imageOffset] : [0, 0, 0],
+    lastResolvedFrac: Array.isArray(ref.lastResolvedFrac) ? [...ref.lastResolvedFrac] : null,
+  };
+}
+
+function buildLegacyMeasurementRef(atomIndex, savedPosition = null) {
+  const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
+  if (!wrapped || atomIndex == null) return null;
+
+  let bestIndex = -1;
+  let bestDistance = Infinity;
+  const target = savedPosition?.length ? new THREE.Vector3(...savedPosition) : null;
+
+  for (let i = 0; i < wrapped.cart.length; i++) {
+    const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    if (srcIdx !== atomIndex) continue;
+
+    if (!target) {
+      bestIndex = i;
+      break;
+    }
+
+    const distance = target.distanceTo(new THREE.Vector3(...wrapped.cart[i]));
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = i;
+    }
+  }
+
+  if (bestIndex < 0) return null;
+
+  return createMeasurementAtomRef({
+    position: new THREE.Vector3(...wrapped.cart[bestIndex]),
+    userData: {
+      atomIndex,
+      element: wrapped.elements?.[bestIndex] ?? fileBrowser.selectedStructure?.elements?.[atomIndex] ?? '?',
+      wrappedFrac: wrapped.frac?.[bestIndex] ? [...wrapped.frac[bestIndex]] : null,
+    },
+  });
+}
+
+function ensureMeasurementRef(refOrIndex, savedPosition = null) {
+  if (refOrIndex && typeof refOrIndex === 'object' && refOrIndex.atomIndex != null) {
+    if (!Array.isArray(refOrIndex.imageOffset)) refOrIndex.imageOffset = [0, 0, 0];
+    if (!Array.isArray(refOrIndex.lastResolvedFrac)) {
+      const base = fileBrowser.selectedStructure?.atoms?.[refOrIndex.atomIndex]?.position;
+      refOrIndex.lastResolvedFrac = base
+        ? base.map((value, axis) => value + refOrIndex.imageOffset[axis])
+        : null;
+    }
+    if (!refOrIndex.element) {
+      refOrIndex.element = fileBrowser.selectedStructure?.elements?.[refOrIndex.atomIndex] ?? '?';
+    }
+    return refOrIndex;
+  }
+  return buildLegacyMeasurementRef(refOrIndex, savedPosition);
+}
+
+function resolveMeasurementAtom(refOrIndex, savedPosition = null) {
+  const structure = fileBrowser.selectedStructure;
+  const ref = ensureMeasurementRef(refOrIndex, savedPosition);
+  if (!structure || !ref || !structure.atoms?.[ref.atomIndex]) return null;
+
+  const baseFrac = structure.atoms[ref.atomIndex].position;
+  const imageOffset = baseFrac.map((value, axis) => {
+    const previous = ref.lastResolvedFrac?.[axis] ?? value + (ref.imageOffset?.[axis] ?? 0);
+    return Math.round(previous - value);
+  });
+  const resolvedFrac = baseFrac.map((value, axis) => value + imageOffset[axis]);
+  const cart = fracToCart([resolvedFrac], structure.lattice)[0];
+
+  ref.imageOffset = imageOffset;
+  ref.lastResolvedFrac = resolvedFrac;
+  ref.element = ref.element ?? structure.elements?.[ref.atomIndex] ?? '?';
+
+  return {
+    position: new THREE.Vector3(...cart),
+    userData: {
+      atomIndex: ref.atomIndex,
+      element: ref.element,
+      imageOffset: [...imageOffset],
+      wrappedFrac: [...resolvedFrac],
+      measurementRef: ref,
+    },
+  };
+}
+
+export function serializeMeasurementRef(ref) {
+  const normalized = ensureMeasurementRef(ref);
+  return normalized ? cloneMeasurementRef(normalized) : null;
+}
+
 export function addAngleMeasurement(atom1, atom2, atom3) {
+  const atom1Ref = createMeasurementAtomRef(atom1);
+  const atom2Ref = createMeasurementAtomRef(atom2);
+  const atom3Ref = createMeasurementAtomRef(atom3);
   const angle = calculateAngle(atom1, atom2, atom3);
 
   // Create angle arc visualization
@@ -156,23 +275,17 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
   // Store atom indices for dynamic updates
   angleLine1.userData = {
     type: 'angle',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex, // vertex
-    atom3Index: atom3.userData.atomIndex,
-    atom1Position: atom1.position.toArray(),
-    atom2Position: atom2.position.toArray(),
-    atom3Position: atom3.position.toArray(),
+    atom1Ref,
+    atom2Ref,
+    atom3Ref,
     lineIndex: 1 // first line (vertex to atom1)
   };
 
   angleLine2.userData = {
     type: 'angle',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex, // vertex
-    atom3Index: atom3.userData.atomIndex,
-    atom1Position: atom1.position.toArray(),
-    atom2Position: atom2.position.toArray(),
-    atom3Position: atom3.position.toArray(),
+    atom1Ref,
+    atom2Ref,
+    atom3Ref,
     lineIndex: 2 // second line (vertex to atom3)
   };
 
@@ -190,14 +303,10 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
     rings.userData = {
       ...rings.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
       type: 'angleMarker',
-      atomIndex: atom.userData.atomIndex,
-      atomPosition: atom.position.toArray(),
-      atom1Index: atom1.userData.atomIndex,
-      atom2Index: atom2.userData.atomIndex,
-      atom3Index: atom3.userData.atomIndex,
-      atom1Position: atom1.position.toArray(),
-      atom2Position: atom2.position.toArray(),
-      atom3Position: atom3.position.toArray()
+      atomRef: index === 0 ? atom1Ref : (index === 1 ? atom2Ref : atom3Ref),
+      atom1Ref,
+      atom2Ref,
+      atom3Ref
     };
     app.scene.add(rings);
     measurements.measureLines.push(rings);
@@ -223,12 +332,9 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
   // Store atom indices for dynamic updates
   label.userData = {
     type: 'angle',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex, // vertex
-    atom3Index: atom3.userData.atomIndex,
-    atom1Position: atom1.position.toArray(),
-    atom2Position: atom2.position.toArray(),
-    atom3Position: atom3.position.toArray()
+    atom1Ref,
+    atom2Ref,
+    atom3Ref
   };
 
   app.scene.add(label);
@@ -237,6 +343,8 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
 
 
 export function addDistanceMeasurement(atom1, atom2) {
+  const atom1Ref = createMeasurementAtomRef(atom1);
+  const atom2Ref = createMeasurementAtomRef(atom2);
   // Create thick dashed cylinder for distance measurement (BLUE for distance)
   const pa = atom1.position.clone(), pb = atom2.position.clone();
   const distance = pa.distanceTo(pb);
@@ -269,10 +377,8 @@ export function addDistanceMeasurement(atom1, atom2) {
   // Store atom indices for dynamic updates
   cylinderGroup.userData = {
     type: 'distance',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex,
-    atom1Position: atom1.position.toArray(),
-    atom2Position: atom2.position.toArray()
+    atom1Ref,
+    atom2Ref
   };
 
   app.scene.add(cylinderGroup);
@@ -288,8 +394,7 @@ export function addDistanceMeasurement(atom1, atom2) {
   ringsA.userData = {
     ...ringsA.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
     type: 'distanceMarker',
-    atomIndex: atom1.userData.atomIndex,
-    atomPosition: atom1.position.toArray(),
+    atomRef: atom1Ref,
     measurementIndex: measurements.measureLines.length // Reference to the cylinder group
   };
   app.scene.add(ringsA);
@@ -299,8 +404,7 @@ export function addDistanceMeasurement(atom1, atom2) {
   ringsB.userData = {
     ...ringsB.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
     type: 'distanceMarker',
-    atomIndex: atom2.userData.atomIndex,
-    atomPosition: atom2.position.toArray(),
+    atomRef: atom2Ref,
     measurementIndex: measurements.measureLines.length - 1 // Reference to the cylinder group
   };
   app.scene.add(ringsB);
@@ -329,10 +433,8 @@ export function addDistanceMeasurement(atom1, atom2) {
   // Store atom indices for dynamic updates
   label.userData = {
     type: 'distance',
-    atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex,
-    atom1Position: atom1.position.toArray(),
-    atom2Position: atom2.position.toArray()
+    atom1Ref,
+    atom2Ref
   };
 
   app.scene.add(label);
@@ -394,18 +496,15 @@ function formatÅ(x){ return (Math.round(x*1000)/1000).toFixed(3); }
 
 
 export function updateAllMeasurements() {
-  if (!fileBrowser.selectedStructure?.periodic?.wrapped) return;
+  if (!fileBrowser.selectedStructure?.atoms || !fileBrowser.selectedStructure?.lattice) return;
 
   measurements.measureLines.forEach(measureItem => {
     if (!measureItem.userData) return;
 
     if (measureItem.userData.type === 'distance') {
       // Update distance measurement
-      const atom1Index = measureItem.userData.atom1Index;
-      const atom2Index = measureItem.userData.atom2Index;
-
-      const atom1 = findAtomByReference(atom1Index, measureItem.userData.atom1Position);
-      const atom2 = findAtomByReference(atom2Index, measureItem.userData.atom2Position);
+      const atom1 = resolveMeasurementAtom(measureItem.userData.atom1Ref, measureItem.userData.atom1Position);
+      const atom2 = resolveMeasurementAtom(measureItem.userData.atom2Ref, measureItem.userData.atom2Position);
 
       if (atom1 && atom2) {
         // Recalculate distance and update display
@@ -440,14 +539,11 @@ export function updateAllMeasurements() {
       }
     } else if (measureItem.userData.type === 'angle') {
       // Update angle measurement
-      const atom1Index = measureItem.userData.atom1Index;
-      const atom2Index = measureItem.userData.atom2Index; // vertex
-      const atom3Index = measureItem.userData.atom3Index;
       const lineIndex = measureItem.userData.lineIndex;
 
-      const atom1 = findAtomByReference(atom1Index, measureItem.userData.atom1Position);
-      const atom2 = findAtomByReference(atom2Index, measureItem.userData.atom2Position); // vertex
-      const atom3 = findAtomByReference(atom3Index, measureItem.userData.atom3Position);
+      const atom1 = resolveMeasurementAtom(measureItem.userData.atom1Ref, measureItem.userData.atom1Position);
+      const atom2 = resolveMeasurementAtom(measureItem.userData.atom2Ref, measureItem.userData.atom2Position); // vertex
+      const atom3 = resolveMeasurementAtom(measureItem.userData.atom3Ref, measureItem.userData.atom3Position);
 
       if (atom1 && atom2 && atom3) {
         // Determine which line this is (vertex to atom1 or vertex to atom3)
@@ -481,16 +577,14 @@ export function updateAllMeasurements() {
       }
     } else if (measureItem.userData.type === 'distanceMarker') {
       // Update distance marker position
-      const atomIndex = measureItem.userData.atomIndex;
-      const atom = findAtomByReference(atomIndex, measureItem.userData.atomPosition);
+      const atom = resolveMeasurementAtom(measureItem.userData.atomRef, measureItem.userData.atomPosition);
 
       if (atom) {
         measureItem.position.copy(atom.position);
       }
     } else if (measureItem.userData.type === 'angleMarker') {
       // Update angle marker position
-      const atomIndex = measureItem.userData.atomIndex;
-      const atom = findAtomByReference(atomIndex, measureItem.userData.atomPosition);
+      const atom = resolveMeasurementAtom(measureItem.userData.atomRef, measureItem.userData.atomPosition);
 
       if (atom) {
         measureItem.position.copy(atom.position);
@@ -501,11 +595,8 @@ export function updateAllMeasurements() {
   // Update measurement labels
   measurements.measureLabels.forEach(label => {
     if (label.userData && label.userData.type === 'distance') {
-      const atom1Index = label.userData.atom1Index;
-      const atom2Index = label.userData.atom2Index;
-
-      const atom1 = findAtomByReference(atom1Index, label.userData.atom1Position);
-      const atom2 = findAtomByReference(atom2Index, label.userData.atom2Position);
+      const atom1 = resolveMeasurementAtom(label.userData.atom1Ref, label.userData.atom1Position);
+      const atom2 = resolveMeasurementAtom(label.userData.atom2Ref, label.userData.atom2Position);
 
       if (atom1 && atom2) {
         const pa = atom1.position.clone();
@@ -521,13 +612,9 @@ export function updateAllMeasurements() {
       }
     } else if (label.userData && label.userData.type === 'angle') {
       // Update angle label
-      const atom1Index = label.userData.atom1Index;
-      const atom2Index = label.userData.atom2Index; // vertex
-      const atom3Index = label.userData.atom3Index;
-
-      const atom1 = findAtomByReference(atom1Index, label.userData.atom1Position);
-      const atom2 = findAtomByReference(atom2Index, label.userData.atom2Position); // vertex
-      const atom3 = findAtomByReference(atom3Index, label.userData.atom3Position);
+      const atom1 = resolveMeasurementAtom(label.userData.atom1Ref, label.userData.atom1Position);
+      const atom2 = resolveMeasurementAtom(label.userData.atom2Ref, label.userData.atom2Position); // vertex
+      const atom3 = resolveMeasurementAtom(label.userData.atom3Ref, label.userData.atom3Position);
 
       if (atom1 && atom2 && atom3) {
         // Recalculate angle
@@ -548,32 +635,3 @@ export function updateAllMeasurements() {
   // Update measurement marker sizes to match current atom sizes
   updateMeasurementMarkers();
 }        
-
-// Find atom by original (src) index and prefer the wrapped image nearest the saved position.
-function findAtomByReference(originalIndex, savedPosition = null) {
-  const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
-  if (!wrapped) return null;
-
-  let bestMatch = null;
-  let bestDistance = Infinity;
-
-  for (let i = 0; i < wrapped.cart.length; i++) {
-    const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    if (srcIdx !== originalIndex) continue;
-
-    const element = groups.atomsMesh?.userData?.elementNames?.[i] || wrapped.elements?.[i] || '?';
-    const candidate = {
-      position: new THREE.Vector3(...wrapped.cart[i]),
-      userData: { atomIndex: srcIdx, element, instanceId: i }
-    };
-
-    if (!savedPosition?.length) return candidate;
-
-    const distance = candidate.position.distanceTo(new THREE.Vector3(...savedPosition));
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestMatch = candidate;
-    }
-  }
-  return bestMatch;
-}
