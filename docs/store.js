@@ -17,6 +17,9 @@ export const fileBrowser = {
   selectedRow:null, 
   selectedRowIndex:0,
   selectedStructure:null,
+  comparisonRow:null,
+  comparisonRowIndex:-1,
+  comparisonStructure:null,
   stepInput:null,
 }  
 
@@ -63,6 +66,10 @@ export const groups = {
   spinGroup:null,
   atomsMesh: null,
   bondsMesh: null,
+  forcesShaftMesh: null,
+  forcesTipMesh: null,
+  spinShaftMesh: null,
+  spinTipMesh: null,
   fieldGroup: null,
   fieldMeshPos: null,
   fieldMeshNeg: null,
@@ -81,8 +88,6 @@ export const general = {
   currentLatticeColor:null,
   defaultBackgroundColor:null,
   currentLatticeColor:null,
-  userColorOverrides:[],  // userColorOverrides and individualAtomColors need to be overwritten with the new colors in the object containing the atoms
-  individualAtomColors:[],
   useDefaultColors:true,
   //defaultSpinColor:'#ff3366',
   //defaultSpinLength:1.0,
@@ -92,10 +97,14 @@ export const general = {
   defaultBondLengths:{},
   bondVisibility:{},
   bondRadius:0.08,
+  forceScale: 1.0,
+  forceRadius: 0.08,
+  spinScale: 1.0,
+  spinRadius: 0.08,
   atomSize:1.0,
   structure2OpacityValue: 0.5,
   mainOpacity:1.0,
-  secondOpacity:1.0,
+  compOpacity:1.0,
   showAtoms:true,
   showBonds:true,
   showLattice:true,
@@ -104,7 +113,7 @@ export const general = {
   showComparisonInfo:false,
   showPeriodic:true,
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
-  useWasmPeriodic:false, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
+  useWasmPeriodic:true, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
   playerModeState: "none", 
   spinForceState: "none",
   analysisState:"none",
@@ -113,7 +122,7 @@ export const general = {
   modifiedLattice: null, // this needs to be part of the structure object 
   sharedStructureLoaded:false,
   bondsColor: null,
-  bondsColorMap: null,
+  abondsColorMap: null,
   atomsColor: null,
   atomsColorMaps: null,
 };

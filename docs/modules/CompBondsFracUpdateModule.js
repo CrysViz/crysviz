@@ -5,12 +5,14 @@ import {Atom} from '../classes/Atom.js';
 import {Bond} from '../classes/Bond.js';
 
 
+import {disposeGroup} from '../panels/WindowAndSceneControls.js'
+
+
 import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
 
 import {updateAtoms} from './AtomsFracUpdateModule.js'
 import {bondLengthToColor} from '../panels/ColorPanel.js'
-import {refreshHistogram} from '../panels/AnalysisPanels/BondAnalysisPanel.js'
 import {generateID} from './UUIDModule.js'
 import {periodic} from '../store.js'
 //import {getBondCutoff} from './BondsModule.js'
@@ -47,22 +49,23 @@ export function initBondsLengths(){
 }
 
 
-export function rebuildBonds(opacity) {
+export function rebuildSecondBonds(structure, opacity) {
   initBondsLengths() // this needs to be called once in general. Otherwise the sliders do nothing
-  if (groups.bondsMesh) {
-    groups.bondsMesh.geometry.dispose();
-    groups.bondsMesh.material.dispose();
-    app.scene.remove(groups.bondsMesh);
-    groups.bondssMesh = null;
+  if (groups.secondBondsMesh) {
+    groups.secondBondsMesh.geometry.dispose();
+    groups.secondBondsMesh.material.dispose();
+    app.scene.remove(groups.secondBondsMesh);
+    groups.secondBondssMesh = null;
   }
-  buildBondObjects(fileBrowser.selectedStructure)
-  renderBonds();
-  updateBonds(opacity);
-  if (groups.bondsMesh) {
-    groups.bondsMesh.visible = !!general.showBonds;
+  console.log("Building bond objects");
+  buildSecondBondObjects(structure)
+  console.log("Rendering bond objects");
+  renderSecondBonds(structure);
+  console.log("Updating bond positions");
+  updateSecondBonds(structure,opacity);
+  if (groups.secondBondsMesh) {
+    groups.secondBondsMesh.visible = !!general.showBonds;
   }
-  // Refresh histogram if it's open
-  refreshHistogram(Object.values(bondLengths), Object.keys(bondLengths));
 }
 
 export function getBondCutoff(elem1, elem2) {
@@ -73,10 +76,9 @@ export function getBondCutoff(elem1, elem2) {
   return general.bondLengths[pair1] || general.bondLengths[pair2] || 0.0;
 }
 
-export function buildBondObjects(structure){
+export function buildSecondBondObjects(structure){
   structure.bonds = [];
   structure.bondMapping ={};
-  structure.bondObjectMapping ={};
 
   const wrapped = structure.periodic.wrapped;
   const wrappedCart = wrapped.cart;
@@ -97,6 +99,7 @@ export function buildBondObjects(structure){
 
       const dist = p1.distanceTo(p2);
       if (dist > cutoff || dist < 0.005) {
+        // console.log("Skipping bond with dist",dist, "due to cutoff", cutoff)
         continue;
       }
       const bond = new Bond({
@@ -110,24 +113,12 @@ export function buildBondObjects(structure){
       structure.bonds.push(bond);
     }
   }
-
-  // Populate global bondLengths for histogram (alphabetically sorted pair key)
-  for (const key in bondLengths) delete bondLengths[key];
-  for (const bond of structure.bonds) {
-    const [a, b] = bond.elements[0].localeCompare(bond.elements[1]) <= 0
-      ? [bond.elements[0], bond.elements[1]]
-      : [bond.elements[1], bond.elements[0]];
-    const key = `${a}-${b}`;
-    if (!bondLengths[key]) bondLengths[key] = [];
-    bondLengths[key].push(bond.dist);
-  }
+  console.warn(structure.bonds)
 }
 
-export function renderBonds() {
-  const structure = fileBrowser.selectedStructure;
-  const bonds = fileBrowser.selectedStructure.bonds;
+export function renderSecondBonds(structure) {
+  const bonds = structure.bonds;
   const validBonds = bonds.filter(b => b.visibleLen > 1e-3);
-  console.warn("bonds",bonds,"validBonds",validBonds)
   const bondCount = validBonds.length;
   console.log("Rendering", bondCount, "bonds");
 
@@ -232,14 +223,6 @@ export function renderBonds() {
     structure.bondMapping[key].push(i * 2);    
 
 
-    // Lookup table from bondHalf to the actual bond objects stored in the structure
-    //  mainly necessary for color changes
-    key = i*2
-    if (!structure.bondObjectMapping[key]){
-      structure.bondObjectMapping[key] = [];
-    }
-    structure.bondObjectMapping[key] = [i,0]
-
     // color
     mesh.instanceColor.setXYZ(i*2,
       new THREE.Color(bond.color[0]).r,
@@ -264,21 +247,11 @@ export function renderBonds() {
     dummy.rotateX(Math.PI / 2);
     dummy.updateMatrix();
     mesh.setMatrixAt(i*2 + 1, dummy.matrix);
-
     key = bond.indices[1];
     if (!structure.bondMapping[key]) {
         structure.bondMapping[key] = []; // Initialize with an empty array
     }
     structure.bondMapping[key].push(i * 2 + 1);
-
-    // Lookup table from bondHalf to the actual bond objects stored in the structure
-    //  mainly necessary for color changes
-
-    key = i*2+1
-    if (!structure.bondObjectMapping[key]){
-      structure.bondObjectMapping[key] = [];
-    }
-    structure.bondObjectMapping[key]=[i,1];
 
     // color
     mesh.instanceColor.setXYZ(i*2 + 1,
@@ -312,13 +285,12 @@ export function renderBonds() {
 
   // Add to scene
   app.scene.add(mesh);
-  groups.bondsMesh = mesh;
+  groups.secondBondsMesh = mesh;
 }
 
 // change the color of a bond "half  cylinder" with index bondMeshIndex to color "color" (hex)
-export function updateSingleBondColor(bondMeshIndex, color) {
-  const mesh = groups.bondsMesh;
-  const bonds = fileBrowser.selectedStructure.bonds[bondMeshIndex]
+export function updateSecondSingleBondColor(bondMeshIndex, color) {
+  const mesh = groups.secondBondsMesh;
   mesh.instanceColor.setXYZ(
     bondMeshIndex,
     new THREE.Color(color).r,
@@ -330,8 +302,8 @@ export function updateSingleBondColor(bondMeshIndex, color) {
 
 
 
-export function updateSingleBondPosition(index, bond) {
-  const mesh = groups.bondsMesh;
+export function updateSecondSingleBondPosition(index, bond) {
+  const mesh = groups.secondBondsMesh;
   const dummy = new THREE.Object3D();
   const dirNorm = bond.dir.clone().normalize();
 
@@ -350,8 +322,8 @@ export function updateSingleBondPosition(index, bond) {
   mesh.setMatrixAt(index * 2 + 1, dummy.matrix);
 }
 
-export function updateSingleBondDiameter(instanceIndex, newRadius) {
-  const mesh = groups.bondsMesh;
+export function updateSecondSingleBondDiameter(instanceIndex, newRadius) {
+  const mesh = groups.secondBondsMesh;
   const dummy = new THREE.Object3D();
 
   // Get the current matrix for the instance
@@ -383,8 +355,8 @@ export function updateSingleBondDiameter(instanceIndex, newRadius) {
 
 
 
-export function updateSingleBond(index, bond) {
-  const mesh = groups.bondsMesh;
+export function updateSecondSingleBond(index, bond) {
+  const mesh = groups.secondBondsMesh;
   const dummy = new THREE.Object3D();
   const dirNorm = bond.dir.clone().normalize();
 
@@ -423,18 +395,27 @@ export function updateSingleBond(index, bond) {
   mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, 0);
 }
 
-export async function updateBonds() {
-  const mesh = groups.bondsMesh;
+export function updateSecondBonds(structure, opacity) {
+  const mesh = groups.secondBondsMesh;
   if (!mesh) return;
-  mesh.visible = !!general.showBonds;
-  if (!general.showBonds) return;
+  //mesh.visible = !!general.showBonds;
+  //if (!general.showBonds) return;
 
-  const bonds = fileBrowser.selectedStructure.bonds.filter(b => b.visibleLen > 1e-3);
+  let bonds = structure.bonds.filter(b => b.visibleLen > 1e-3); 
 
   bonds.forEach((bond, i) => {
-    updateSingleBond(i, bond);
+    updateSecondSingleBond(i, bond);
   });
-
+  mesh.material.opacity = opacity;
+  if (opacity === 1) {
+    console.log("Switching of transparency for comp bonds")
+    mesh.material.transparent = false;
+    mesh.material.depthWrite = true;
+  }
+  else {
+    mesh.material.transparent = true;
+    mesh.material.depthWrite = true;
+  } 
   // mark all attributes as needing update
   mesh.instanceMatrix.needsUpdate = true;
   mesh.instanceColor.needsUpdate = true;

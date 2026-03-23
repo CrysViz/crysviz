@@ -1,5 +1,5 @@
 import { app, groups, fileBrowser,general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
-import {getBondCutoff} from '../modules/BondsModule.js';
+import {getBondCutoff} from '../modules/BondsFracUpdateModule.js';
 import { updateVisualization } from '../crystal-viewer.js';
 import {createPieDot} from '../modules/ColorModule.js';
 import {clearAllHighlights} from '../modules/SelectAndHighlightModule.js';

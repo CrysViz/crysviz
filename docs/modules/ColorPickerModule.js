@@ -73,7 +73,7 @@ export function createColorPicker(initialHex, onChange) {
    // initialHex = fallbackHex;
  // }
 
-  const initialRgb = hexToRgb(initialHex) || hexToRgb(fallbackHex);
+  const initialRgb = hexToRgb(initialHex) || hexToRgb("#FF0000");
   let hsv = rgbToHsv(initialRgb.r, initialRgb.g, initialRgb.b);
   let rgb = initialRgb;
 
