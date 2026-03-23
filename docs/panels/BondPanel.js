@@ -3,10 +3,11 @@ import { addHistogramPanel,removeHistogramPanel } from './AnalysisPanels/BondAna
 
 export function addBondPanel(target = "BondLatticeContainer") {
   const targetPanel = document.getElementById(target);
-  if (document.getElementById("bondControlsGroup")) {
-    console.warn("Bond Controls already exist.");
-    return;
-  }
+
+  //if (document.getElementById("bondControlsGroup")) {
+  //  console.warn("Bond Controls already exist.");
+  //  return;
+   // }
 
   // --- Outer wrapper (dark grey background) ---
   const group = document.createElement("div");
