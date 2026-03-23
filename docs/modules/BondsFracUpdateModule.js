@@ -47,7 +47,7 @@ export function initBondsLengths(){
 }
 
 
-export function rebuildBonds(opacity) {
+export function rebuildBonds(opacity=1.0) {
   initBondsLengths() // this needs to be called once in general. Otherwise the sliders do nothing
   if (groups.bondsMesh) {
     groups.bondsMesh.geometry.dispose();
