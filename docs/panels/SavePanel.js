@@ -1,45 +1,45 @@
-import {fileBrowser} from '../store.js';
+import { fileBrowser } from '../store.js';
 
-//------------------------------------------------------------
-// Convert current structure data to POSCAR string
-//------------------------------------------------------------
 export function poscartoFile() {
-  if (!structureData.positions || !structureData.elements || !structureData.lattice) {
-    throw new Error("Structure data incomplete: positions, elements, and lattice are required.");
+  const structure = fileBrowser.selectedStructure;
+  if (!structure || !structure.atoms?.length || !structure.elements?.length || !structure.lattice?.length) {
+    throw new Error('No structure loaded.');
   }
-  const now = new Date();
-  const comment = `POSCAR created with CrysViz ${now}`;
-  const latticeScale = 1.0;
 
-  // lattice vectors
-  const latticeLines = structureData.lattice.map(v => v.map(x => x * latticeScale).join(' '));
+  const comment = `POSCAR created with CrysViz ${new Date().toISOString()}`;
 
-  // elements (unique, ordered)
-  const uniqueElements = [...new Set(structureData.elements)];
+  const latticeLines = structure.lattice.map(v =>
+    v.map(x => x.toFixed(8).padStart(18)).join('')
+  );
 
-  // counts per element
-  const counts = uniqueElements.map(el => structureData.elements.filter(e => e === el).length);
+  // unique elements preserving first-occurrence order
+  const seen = new Set();
+  const uniqueElements = [];
+  for (const el of structure.elements) {
+    if (!seen.has(el)) { seen.add(el); uniqueElements.push(el); }
+  }
 
-  // map element to indices
-  const elementIndices = uniqueElements.map(el => structureData.elements.map((e,i) => e === el ? i : -1).filter(i => i >= 0));
+  const counts = uniqueElements.map(el => structure.elements.filter(e => e === el).length);
 
-  // direct coordinates
+  // positions grouped by element (Direct / fractional)
   const posLines = [];
-  for (let idx of structureData.elements.map((_,i)=>i)) {
-    const pos = structureData.positions[idx];
-    posLines.push(pos.map(v => v.toFixed(6)).join(' '));
+  for (const el of uniqueElements) {
+    structure.atoms.forEach((atom, i) => {
+      if (structure.elements[i] === el) {
+        posLines.push(atom.position.map(v => v.toFixed(8).padStart(18)).join(''));
+      }
+    });
   }
 
-  const lines = [];
-  lines.push(comment);
-  lines.push('1.0');
-  lines.push(...latticeLines);
-  lines.push(uniqueElements.join(' '));
-  lines.push(counts.join(' '));
-  lines.push('Direct');
-  lines.push(...posLines);
-
-  return lines.join('\n');
+  return [
+    comment,
+    '   1.0',
+    ...latticeLines,
+    '   ' + uniqueElements.join('   '),
+    '   ' + counts.join('   '),
+    'Direct',
+    ...posLines,
+  ].join('\n');
 }
 
 
@@ -52,9 +52,13 @@ export function addSavePanel() {
     return;
   }
   button.addEventListener('click', () => {
-    const fileName = JSON.parse(fileBrowser.selectedRow.dataset.obj).name;
-    console.warn(fileName)
     try {
+      const rawName = fileBrowser.selectedRow
+        ? JSON.parse(fileBrowser.selectedRow.dataset.obj).name
+        : 'structure';
+      const baseName = rawName.replace(/\.[^.]+$/, '');
+      const fileName = baseName + '.vasp';
+
       const content = poscartoFile();
       const blob = new Blob([content], { type: 'text/plain' });
       const link = document.createElement('a');
@@ -63,9 +67,10 @@ export function addSavePanel() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-  } catch (e) {
-    alert(e.message);
-  }
+      URL.revokeObjectURL(link.href);
+    } catch (e) {
+      alert(e.message);
+    }
   });
 }
 

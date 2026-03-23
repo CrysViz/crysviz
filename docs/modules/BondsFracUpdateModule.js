@@ -423,7 +423,7 @@ export function updateSingleBond(index, bond) {
   mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, 0);
 }
 
-export async function updateBonds() {
+export async function updateBonds(opacity=1.0) {
   const mesh = groups.bondsMesh;
   if (!mesh) return;
   mesh.visible = !!general.showBonds;
@@ -434,6 +434,16 @@ export async function updateBonds() {
   bonds.forEach((bond, i) => {
     updateSingleBond(i, bond);
   });
+  mesh.material.opacity = opacity;
+  if (opacity === 1) {
+    console.log("Switching of transparency for comp bonds")
+    mesh.material.transparent = false;
+    mesh.material.depthWrite = true;
+  }
+  else {
+    mesh.material.transparent = true;
+    mesh.material.depthWrite = true;
+  }
 
   // mark all attributes as needing update
   mesh.instanceMatrix.needsUpdate = true;

@@ -110,10 +110,11 @@ export const general = {
   showLattice:true,
   showPolyhedra:false,
   showSecond:false,
+  showSecondBonds:false,
   showComparisonInfo:false,
   showPeriodic:true,
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
-  useWasmPeriodic:true, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
+  useWasmPeriodic:false, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
   playerModeState: "none", 
   spinForceState: "none",
   analysisState:"none",

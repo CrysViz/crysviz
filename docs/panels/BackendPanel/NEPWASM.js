@@ -16,11 +16,14 @@ import {
   createVelocityRescaleThermostat,
 } from '../../atomistic/MD.js';
 import { updateForces } from '../../modules/ForceModule.js';
-import { updateRow } from '../FileBrowswerPanel.js';
+import { updateRow, createRow } from '../FileBrowswerPanel.js';
+import { StructureContainer } from '../../classes/StructureContainer.js';
 import { Atom } from '../../classes/Atom.js';
 import { Force } from '../../classes/Force.js';
 import { Stress } from '../../classes/Stress.js';
 import { Structure } from '../../classes/Structure.js';
+
+const tableBody = document.querySelector('#objectTable tbody');
 
 let nepRunner = null;
 let nepInitPromise = null;
@@ -177,8 +180,12 @@ export async function addNEPPanel() {
       const targetPressureGPa = Number(targetPressureInput.value || 0.0);
       const saveTrajectory = true;
       const stride = 1;
-      const container = structureShip.container[fileBrowser.selectedRowIndex];
-      const row = fileBrowser.selectedRow;
+      const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
+      const relaxLabel = `Relax_${srcContainer?.fileName ?? 'run'}`;
+      const relaxContainer = new StructureContainer({ fileName: relaxLabel, structures: [snapshotCurrentStructure()] });
+      structureShip.container.push(relaxContainer);
+      const relaxRow = createRow({ name: relaxLabel, traj: 1, step: 1 });
+      tableBody.appendChild(relaxRow);
 
       runBtn.disabled = true;
       relaxBtn.disabled = true;
@@ -196,8 +203,8 @@ export async function addNEPPanel() {
           applyStructureToViewer(current, fileBrowser.selectedStructure);
           setCurrentEFS(out);
 
-          if (saveTrajectory && container && step % stride === 0) {
-            container.structures.push(snapshotCurrentStructure());
+          if (saveTrajectory && step % stride === 0) {
+            relaxContainer.structures.push(snapshotCurrentStructure());
           }
 
           const pGPa = pressureGPaFromStress(out.stress.matrix3x3);
@@ -208,13 +215,9 @@ export async function addNEPPanel() {
       applyStructureToViewer(relaxed.structure, fileBrowser.selectedStructure);
       setCurrentEFS(relaxed.result);
 
-      if (saveTrajectory && container && row) {
-        const n = container.structures.length;
-        updateRow(row, {
-          name: container.fileName,
-          traj: n,
-          step: n,
-        });
+      if (saveTrajectory) {
+        const n = relaxContainer.structures.length;
+        updateRow(relaxRow, { name: relaxLabel, traj: n, step: n });
       }
 
       const pGPa = pressureGPaFromStress(relaxed.result.stress.matrix3x3);
@@ -252,8 +255,12 @@ export async function addNEPPanel() {
         const mdSteps = Number(mdStepsInput.value || 500);
         const targetTemperatureK = Number(mdTempInput.value || 300);
         const dtFs = 1.0;
-        const container = structureShip.container[fileBrowser.selectedRowIndex];
-        const row = fileBrowser.selectedRow;
+        const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
+        const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
+        const mdContainer = new StructureContainer({ fileName: mdLabel, structures: [snapshotCurrentStructure()] });
+        structureShip.container.push(mdContainer);
+        const mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
+        tableBody.appendChild(mdRow);
 
         runBtn.disabled = true;
         relaxBtn.disabled = true;
@@ -288,9 +295,7 @@ export async function addNEPPanel() {
               stress: { matrix3x3: mdState.stress },
             });
 
-            if (container) {
-              container.structures.push(snapshotCurrentStructure());
-            }
+            mdContainer.structures.push(snapshotCurrentStructure());
 
             const nAtoms = Math.max(1, mdState.positions.length);
             const ePerAtom = epotEv / nAtoms;
@@ -301,14 +306,8 @@ export async function addNEPPanel() {
           },
         });
 
-        if (container && row) {
-          const n = container.structures.length;
-          updateRow(row, {
-            name: container.fileName,
-            traj: n,
-            step: n,
-          });
-        }
+        const n = mdContainer.structures.length;
+        updateRow(mdRow, { name: mdLabel, traj: n, step: n });
 
         if (mdRun.stopped) {
           status.textContent = `MD stopped at step ${state.step}`;
