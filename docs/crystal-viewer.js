@@ -717,6 +717,7 @@ function init() {
       measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
       measurements.selectedAtoms = [];
       clearMeasureGraphics();
+      resetControlsTouch();
     } else if (mode.measureMode === 'angle' && measurements.selectedAtoms.length === 3) {
       // Angle measurement complete
       addAngleMeasurement(measurements.selectedAtoms[0], measurements.selectedAtoms[1], measurements.selectedAtoms[2]);
@@ -725,6 +726,7 @@ function init() {
       measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
       measurements.selectedAtoms = [];
       clearMeasureGraphics();
+      resetControlsTouch();
     } else if (mode.measureMode === 'delete') {
       const idx = hit.userData.sourceIndex;
       let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
@@ -877,6 +879,7 @@ el.addEventListener('pointercancel', onPointerCancel);
 function onPointerDown(e) {
   // Track touch separately for long-press
   if (e.pointerType === 'touch') {
+    clearLongPress(); // always clear any pending timer before starting a new one
     longPressFired = false;
     moved = false;
     pointerDownPos = { x: e.clientX, y: e.clientY };
@@ -941,6 +944,16 @@ function clearLongPress() {
   }
 }
 
+// After a touch-based measurement completes, TrackballControls may have stale
+// pointer state that causes 1-finger drag to zoom instead of rotate.
+// Dispatching pointercancel flushes its internal pointer list.
+function resetControlsTouch() {
+  try {
+    const cancel = new PointerEvent('pointercancel', { bubbles: true, cancelable: false, pointerId: 1 });
+    el.dispatchEvent(cancel);
+  } catch {}
+}
+
 
 
   document.getElementById('viewX').onclick = () => {app.controls.reset(); setViewDirection(new THREE.Vector3( 1., 0., 0.))};
@@ -973,7 +986,7 @@ setupStructureInput({
 //  });
 
   // Check for shared structure in URL
- // loadSharedStructure();
+  loadSharedStructure();
 
   // Control handlers
   document.getElementById('showAtoms').onchange = (e) => {

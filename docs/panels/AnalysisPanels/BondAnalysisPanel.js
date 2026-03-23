@@ -128,6 +128,20 @@ export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabe
 
   histogramPanelElements = { histogramPanel: panel };
 
+  // Responsive canvas: shrink on small screens
+  const isMobile = window.innerWidth < 700;
+  const canvasW = Math.min(600, window.innerWidth - (isMobile ? 20 : 40));
+  const canvasH = Math.round(canvasW * 0.5);
+  canvas.width = canvasW;
+  canvas.height = canvasH;
+  canvas.style.width = canvasW + "px";
+  canvas.style.height = canvasH + "px";
+  if (isMobile) {
+    panel.style.left = "4px";
+    panel.style.top = "10px";
+    panel.style.maxWidth = (window.innerWidth - 8) + "px";
+  }
+
   // High-DPI scaling
   const dpr = window.devicePixelRatio || 1;
   canvas.width = canvas.width * dpr;
