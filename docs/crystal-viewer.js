@@ -327,7 +327,7 @@ export function updateVisualization(options = {}) {
     rebuildAtoms(mOpacity);
   }
   if (!reRenderAtoms && atomsUpdate) {
-    console.warn("Calling updateAtoms")
+    console.warn("Calling updateAtoms with opacity")
     updateAtoms(mOpacity);
   }
 

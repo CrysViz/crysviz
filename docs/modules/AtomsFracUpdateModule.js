@@ -277,7 +277,8 @@ export function updateSingleAtomDiameter(index, element) {
 }
 
 
-export async function updateAtoms(opacity = 1.0) {
+export function updateAtoms(opacity = 1.0) {
+  console.error("Update main opacity", opacity)
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   let atoms = [...fileBrowser.selectedStructure.atoms];
@@ -289,6 +290,20 @@ export async function updateAtoms(opacity = 1.0) {
 
   wrapped = periodic.wrapped
   wrappedCart = wrapped.cart
+  const mesh = groups.atomsMesh
+
+  mesh.material.opacity = opacity;
+  console.log("opacity",opacity)
+  if (opacity === 1) {
+    mesh.material.transparent = false;
+    mesh.material.depthWrite = true;
+  }
+  else {
+    console.log("Enabling transparency for main atoms")
+    mesh.material.transparent = true;
+    mesh.material.depthWrite = false;
+  }
+  mesh.material.needsUpdate = true;
 
   for (let i = 0; i < groups.atomsMesh.count; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
