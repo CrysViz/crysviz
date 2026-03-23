@@ -20,9 +20,7 @@ function updateStructureFromFrame(frame, container) {
 
   createBondLengthControls();
 
-  // Full rebuild: rebuildAtoms sets up periodic.wrapped, rebuildBonds populates bondLengths
-  // and refreshes the histogram if open
-  updateVisualization({ reRenderAtoms: true, reRenderBonds: false });
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
 
   // Forces and spins must be updated AFTER updateVisualization so periodic.wrapped is ready
   const structure = fileBrowser.selectedStructure;
