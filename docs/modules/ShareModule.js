@@ -126,12 +126,14 @@ export function shareStructure() {
     console.warn(`Share URL is ${(b64.length / 1024).toFixed(1)} KB — may be large for some platforms.`);
   }
 
-  const shareURL = window.location.href.split('?')[0] + '?state=' + b64;
+  const shareURL = new URL(window.location.href);
+  shareURL.searchParams.set('state', b64);
 
   // Always show URL in prompt so user can copy the full text (address bar truncates long URLs).
   // Also attempt clipboard write for convenience.
-  navigator.clipboard?.writeText(shareURL).catch(() => {});
-  prompt('Share URL (select all and copy):', shareURL);
+  const shareURLText = shareURL.toString();
+  navigator.clipboard?.writeText(shareURLText).catch(() => {});
+  prompt('Share URL (select all and copy):', shareURLText);
 }
 
 // ---------------------------------------------------------------------------
@@ -236,8 +238,7 @@ function makeAtomProxy(wrapped, index) {
 // ---------------------------------------------------------------------------
 
 export function loadSharedStructure() {
-  const match = window.location.search.match(/[?&]state=([^&]+)/);
-  const stateParam = match ? match[1] : null;
+  const stateParam = new URLSearchParams(window.location.search).get('state');
   if (!stateParam) return;
 
   // Mark early so loadDefaultStructure() is skipped
@@ -245,7 +246,16 @@ export function loadSharedStructure() {
 
   let state;
   try {
-    const padded = stateParam.replace(/-/g, '+').replace(/_/g, '/');
+    const normalized = stateParam.trim().replace(/\s+/g, '');
+    if (normalized.includes('...')) {
+      throw new Error('Shared URL appears truncated (contains "..."). Copy the full link from the share dialog.');
+    }
+
+    // Accept both current base64url and older plain base64 forms.
+    const padded = normalized
+      .replace(/ /g, '+')
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
     const pad = padded.length % 4;
     const b64 = pad ? padded + '='.repeat(4 - pad) : padded;
     const binary = atob(b64);
