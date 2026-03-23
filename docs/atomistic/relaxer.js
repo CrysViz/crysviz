@@ -136,6 +136,18 @@ function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
+function createTimingProfile(label) {
+  return {
+    label,
+    totalMs: 0,
+    computeMs: 0,
+    onStepMs: 0,
+    updateMs: 0,
+    waitMs: 0,
+    steps: 0,
+  };
+}
+
 export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
   const fmaxTol = Number(opts.fmaxTol ?? 0.01);
   const maxSteps = Number(opts.maxSteps ?? 250);
@@ -145,6 +157,8 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
   const pressureTolGPa = Number(opts.pressureTolGPa ?? 0.2);
   const targetPressureEvA3 = targetPressureGPa / EV_A3_TO_GPA;
   const onStep = opts.onStep ?? (() => {});
+  const timing = createTimingProfile('Relax');
+  const totalStart = performance.now();
 
   let current = {
     lattice: initial.lattice.map((r) => [...r]),
@@ -158,18 +172,30 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
   let step = 0;
 
   for (step = 1; step <= maxSteps; step += 1) {
+    let t0 = performance.now();
     out = nepRunner.compute(current);
+    timing.computeMs += performance.now() - t0;
     mF = maxForce(out.forces);
     pGPa = pressureGPaFromStress(out.stress.matrix3x3);
+
+    t0 = performance.now();
     onStep(step, current, out, mF);
+    timing.onStepMs += performance.now() - t0;
+    timing.steps = step;
 
     const forceOK = mF <= fmaxTol;
     const pressureOK = Math.abs(pGPa - targetPressureGPa) <= pressureTolGPa;
     if ((forceOK && pressureOK) || step === maxSteps) break;
 
+    t0 = performance.now();
     current = applyRelaxStep(current, out, atomStep, cellStep, targetPressureEvA3);
+    timing.updateMs += performance.now() - t0;
+
+    t0 = performance.now();
     await nextFrame();
+    timing.waitMs += performance.now() - t0;
   }
+  timing.totalMs = performance.now() - totalStart;
 
   const convergedForce = mF <= fmaxTol;
   const convergedPressure = Math.abs(pGPa - targetPressureGPa) <= pressureTolGPa;
@@ -183,5 +209,6 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
     convergedForce,
     convergedPressure,
     converged: convergedForce && convergedPressure,
+    timing,
   };
 }

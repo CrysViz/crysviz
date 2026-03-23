@@ -202,6 +202,18 @@ function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
+function createTimingProfile(label) {
+  return {
+    label,
+    totalMs: 0,
+    integrateMs: 0,
+    thermostatMs: 0,
+    onStepMs: 0,
+    waitMs: 0,
+    steps: 0,
+  };
+}
+
 export async function runMDSimulation({
   state,
   steps = 500,
@@ -217,6 +229,8 @@ export async function runMDSimulation({
   const stop = shouldStop ?? (() => false);
   let stopped = false;
   const startStep = state.step;
+  const timing = createTimingProfile('MD');
+  const totalStart = performance.now();
 
   for (let i = 1; i <= steps; i += 1) {
     if (stop()) {
@@ -224,8 +238,13 @@ export async function runMDSimulation({
       break;
     }
 
+    let t0 = performance.now();
     await integrator.step(state, dtFs, forceEvaluator);
+    timing.integrateMs += performance.now() - t0;
+
+    t0 = performance.now();
     thermostat.apply(state, dtFs);
+    timing.thermostatMs += performance.now() - t0;
 
     state.step += 1;
     state.timeFs += dtFs;
@@ -236,6 +255,7 @@ export async function runMDSimulation({
     const etot = epot + ke;
 
     if (onStep) {
+      t0 = performance.now();
       onStep({
         step: state.step,
         timeFs: state.timeFs,
@@ -245,18 +265,24 @@ export async function runMDSimulation({
         etotEv: etot,
         state,
       });
+      timing.onStepMs += performance.now() - t0;
     }
+    timing.steps = state.step - startStep;
 
     if (stop()) {
       stopped = true;
       break;
     }
+    t0 = performance.now();
     await nextFrame();
+    timing.waitMs += performance.now() - t0;
   }
+  timing.totalMs = performance.now() - totalStart;
 
   return {
     stopped,
     stepsRun: state.step - startStep,
+    timing,
   };
 }
 

@@ -62,6 +62,24 @@ function formatPerf(summary) {
   return `${summary.label}: ${summary.steps} steps in ${summary.totalSeconds.toFixed(2)} s | avg ${summary.avgFps.toFixed(1)} FPS | last ${summary.lastFps.toFixed(1)} FPS`;
 }
 
+function logTimingBreakdown(timing) {
+  if (!timing || !timing.totalMs) return;
+  const pct = (value) => ((100 * value) / timing.totalMs).toFixed(1);
+
+  if (timing.label === 'Relax') {
+    console.info(
+      `[timing] Relax total=${timing.totalMs.toFixed(1)}ms | compute=${timing.computeMs.toFixed(1)}ms (${pct(timing.computeMs)}%) | onStep=${timing.onStepMs.toFixed(1)}ms (${pct(timing.onStepMs)}%) | update=${timing.updateMs.toFixed(1)}ms (${pct(timing.updateMs)}%) | wait=${timing.waitMs.toFixed(1)}ms (${pct(timing.waitMs)}%)`
+    );
+    return;
+  }
+
+  if (timing.label === 'MD') {
+    console.info(
+      `[timing] MD total=${timing.totalMs.toFixed(1)}ms | integrate=${timing.integrateMs.toFixed(1)}ms (${pct(timing.integrateMs)}%) | thermostat=${timing.thermostatMs.toFixed(1)}ms (${pct(timing.thermostatMs)}%) | onStep=${timing.onStepMs.toFixed(1)}ms (${pct(timing.onStepMs)}%) | wait=${timing.waitMs.toFixed(1)}ms (${pct(timing.waitMs)}%)`
+    );
+  }
+}
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
@@ -212,6 +230,7 @@ export async function addNEPPanel() {
       const cellStep = 0.002;
       const maxSteps = Number(maxStepsInput.value || 200);
       const targetPressureGPa = Number(targetPressureInput.value || 0.0);
+      const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
       const saveTrajectory = true;
       const stride = 1;
       const perfTracker = createStepPerfTracker('Relax');
@@ -236,8 +255,11 @@ export async function addNEPPanel() {
         targetPressureGPa,
         onStep: (step, current, out, mF) => {
           perfTracker.tick(step);
-          applyStructureToViewer(current, fileBrowser.selectedStructure);
-          setCurrentEFS(out);
+          const shouldUpdateViewer = step === 1 || step % viewerStride === 0;
+          if (shouldUpdateViewer) {
+            applyStructureToViewer(current, fileBrowser.selectedStructure);
+            setCurrentEFS(out);
+          }
 
           if (saveTrajectory && step % stride === 0) {
             relaxContainer.structures.push(snapshotCurrentStructure());
@@ -268,6 +290,7 @@ export async function addNEPPanel() {
       {
         const summary = perfTracker.summary(relaxed.steps);
         console.info(formatPerf(summary));
+        logTimingBreakdown(relaxed.timing);
       }
     } catch (err) {
       result.textContent = `Relax failed: ${err.message || String(err)}`;
@@ -295,6 +318,7 @@ export async function addNEPPanel() {
         const mdSteps = Number(mdStepsInput.value || 500);
         const targetTemperatureK = Number(mdTempInput.value || 300);
         const dtFs = 1.0;
+        const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
         const perfTracker = createStepPerfTracker('MD');
         const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
         const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
@@ -330,12 +354,15 @@ export async function addNEPPanel() {
           shouldStop: () => mdStopRequested,
           onStep: ({ step, timeFs, temperatureK, epotEv, ekinEv, etotEv, state: mdState }) => {
             perfTracker.tick(step);
-            const forceRerender = step % 5 === 0;
-            applyMDStateToViewer(mdState, fileBrowser.selectedStructure, { forceRerender });
-            setCurrentEFS({
-              forces: mdState.forces,
-              stress: { matrix3x3: mdState.stress },
-            });
+            const shouldUpdateViewer = step === 1 || step % viewerStride === 0;
+            if (shouldUpdateViewer) {
+              const forceRerender = step % Math.max(5, viewerStride) === 0;
+              applyMDStateToViewer(mdState, fileBrowser.selectedStructure, { forceRerender });
+              setCurrentEFS({
+                forces: mdState.forces,
+                stress: { matrix3x3: mdState.stress },
+              });
+            }
 
             mdContainer.structures.push(snapshotCurrentStructure());
 
@@ -359,6 +386,7 @@ export async function addNEPPanel() {
         {
           const summary = perfTracker.summary(mdRun.stepsRun);
           console.info(formatPerf(summary));
+          logTimingBreakdown(mdRun.timing);
         }
       } catch (err) {
         result.textContent = `MD failed: ${err.message || String(err)}`;
