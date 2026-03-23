@@ -659,7 +659,6 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
 
 // Function to update atom coordinates and refresh visualization
 function updateAtomCoordinates(atomIndex, newCoords) {
-  console.warn("hahahah");
   if (!fileBrowser.selectedStructure) {
    console.error("updateAtomCoordinates: selected structure not found");
    return;
@@ -671,25 +670,19 @@ function updateAtomCoordinates(atomIndex, newCoords) {
 
   // Update the coordinates in the structure data
   
-  fileBrowser.selectedStructure.atoms[atomIndex].postion = [...newCoords];
-  structureShip.container[fileBrowser.selectedRowIndex].structures[fileBrowser.stepInput].atoms[atomIndex].position  = [...newCoords]; 
-
-    //atoms[atomIndex].position)
-
-    //= [...newCoords];
+  fileBrowser.selectedStructure.atoms[atomIndex].position = [...newCoords];
+  structureShip.container[fileBrowser.selectedRowIndex].structures[fileBrowser.stepInput].atoms[atomIndex].position = [...newCoords];
 
   // Refresh the visualization to show the updated position
-      updateVisualization({
-        bondsUpdate:false,
-        reRenderAtoms: false,
-        reRenderBonds : false,
-        reRenderLattice : false,
-        reRenderOther: false,
-        reRenderComposition : true,
-      });
+  updateVisualization({
+    reRenderAtoms: true,
+    reRenderBonds: true,
+    reRenderLattice: false,
+    reRenderOther: true,
+    reRenderComposition: "open",
+  });
 
 };
-
 
 
 
