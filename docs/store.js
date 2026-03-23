@@ -119,6 +119,7 @@ export const general = {
   backendViewerUpdateStride:4, // Update the viewer every N backend/NEP steps during relax/MD
   playerModeState: "none", 
   spinForceState: "none",
+  structurePanelMode: "atoms",
   analysisState:"none",
   backendState:"none",
   currentSupercell: null,
@@ -139,7 +140,7 @@ export const mode = {
 
 
 // Default complex structure (Ba2YCu3O7) - high-Tc superconductor with 4 elements to test collapsible composition
-export const defaultPOSCAR1 = `Ba2YCu3O7 - YBCO Superconductor
+export const defaultPOSCAR = `Ba2YCu3O7 - YBCO Superconductor
 1.0
 3.82 0.00 0.00
 0.00 3.89 0.00
@@ -160,7 +161,7 @@ Direct
 0.5 0.0 0.622
 0.0 0.0 0.159
 0.0 0.0 0.841`;
-export const defaultPOSCAR = `
+export const defaultPOSCAR2 = `
 From DOI: 10.1126/sciadv.aay8361
 1.0
         4.6090002060         0.0000000000         0.0000000000

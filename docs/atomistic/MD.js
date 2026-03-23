@@ -2,7 +2,13 @@ import { fileBrowser } from '../store.js';
 import { updateVisualization } from '../crystal-viewer.js';
 import { runPeriodicWrapped } from '../modules/LatticeModule.js';
 import { buildNEPStructure } from './relaxer.js';
-import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart } from './math.js';
+import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart, normalizeFractionalPositions } from './math.js';
+import {
+  getSymmetryDegreesOfFreedom,
+  isWyckoffModeActive,
+  symmetrizeCartesianPositions,
+  symmetrizeCartesianVectors,
+} from '../modules/SymmetryEditModule.js';
 
 const KB_EV_PER_K = 8.617333262e-5;
 const ACCEL_AFS2_PER_EVAA_AMU = 0.00964853399;
@@ -40,12 +46,8 @@ function clone3xN(a) {
   return a.map((r) => [...r]);
 }
 
-function wrap01(x) {
-  return ((x % 1) + 1) % 1;
-}
-
 function wrapCartesianPositionsToCell(positions, lattice) {
-  const frac = cartToFrac(positions, lattice).map((f) => [wrap01(f[0]), wrap01(f[1]), wrap01(f[2])]);
+  const frac = normalizeFractionalPositions(cartToFrac(positions, lattice));
   return fracToCart(frac, lattice);
 }
 
@@ -59,8 +61,8 @@ function kineticEnergyEv(velocities, masses) {
   return ke;
 }
 
-function temperatureK(velocities, masses) {
-  const dof = Math.max(1, 3 * velocities.length - 3);
+function temperatureK(velocities, masses, constrainedDof = null) {
+  const dof = Math.max(1, constrainedDof ?? (3 * velocities.length - 3));
   const ke = kineticEnergyEv(velocities, masses);
   return (2 * ke) / (dof * KB_EV_PER_K);
 }
@@ -118,13 +120,19 @@ export function createVelocityVerletIntegrator() {
         state.positions[i][2] += dtFs * state.velocities[i][2];
       }
       state.positions = wrapCartesianPositionsToCell(state.positions, state.lattice);
+      if (state.symmetryConstrained) {
+        state.positions = symmetrizeCartesianPositions(state.positions, state.lattice);
+        state.velocities = symmetrizeCartesianVectors(state.velocities, state.lattice);
+      }
 
       const efs = await forceEvaluator({
         lattice: state.lattice,
         positions: state.positions,
         types: state.types,
       });
-      state.forces = clone3xN(efs.forces);
+      state.forces = state.symmetryConstrained
+        ? symmetrizeCartesianVectors(clone3xN(efs.forces), state.lattice)
+        : clone3xN(efs.forces);
       state.potentialEnergyEv = Number(efs.total_energy);
       state.stress = clone3xN(efs.stress.matrix3x3);
 
@@ -138,6 +146,9 @@ export function createVelocityVerletIntegrator() {
         state.velocities[i][1] += 0.5 * dtFs * a2y;
         state.velocities[i][2] += 0.5 * dtFs * a2z;
       }
+      if (state.symmetryConstrained) {
+        state.velocities = symmetrizeCartesianVectors(state.velocities, state.lattice);
+      }
     },
   };
 }
@@ -150,7 +161,7 @@ export function createVelocityRescaleThermostat({ targetTemperatureK = 300, tauF
   return {
     name: 'rescale',
     apply(state, dtFs) {
-      const tNow = Math.max(1e-8, temperatureK(state.velocities, state.masses));
+      const tNow = Math.max(1e-8, temperatureK(state.velocities, state.masses, state.constrainedDof));
       const alpha = Math.max(0, Math.min(1, dtFs / Math.max(1e-6, tauFs)));
       const scale2 = 1 + alpha * (targetTemperatureK / tNow - 1);
       const scale = Math.sqrt(Math.max(1e-12, scale2));
@@ -158,6 +169,9 @@ export function createVelocityRescaleThermostat({ targetTemperatureK = 300, tauF
         state.velocities[i][0] *= scale;
         state.velocities[i][1] *= scale;
         state.velocities[i][2] *= scale;
+      }
+      if (state.symmetryConstrained) {
+        state.velocities = symmetrizeCartesianVectors(state.velocities, state.lattice);
       }
     },
   };
@@ -182,19 +196,33 @@ export async function initializeMDState({
     velocities[i] = [sigma * gaussianRand(), sigma * gaussianRand(), sigma * gaussianRand()];
   }
   if (zeroMomentum) removeCenterOfMassVelocity(velocities, masses);
+  const symmetryConstrained = isWyckoffModeActive(structure);
+  if (symmetryConstrained) {
+    for (let i = 0; i < velocities.length; i += 1) {
+      velocities[i] = [...velocities[i]];
+    }
+    const baseLattice = base.lattice.map((row) => [...row]);
+    const basePositions = symmetrizeCartesianPositions(base.positions, baseLattice, structure);
+    const symVelocities = symmetrizeCartesianVectors(velocities, baseLattice, structure);
+    base.positions = basePositions;
+    for (let i = 0; i < symVelocities.length; i += 1) velocities[i] = symVelocities[i];
+  }
 
   const efs = await evalForce(base);
+  const constrainedDof = getSymmetryDegreesOfFreedom(structure);
   return {
     lattice: clone3xN(base.lattice),
     positions: clone3xN(base.positions),
     types: [...base.types],
     masses,
     velocities,
-    forces: clone3xN(efs.forces),
+    forces: symmetryConstrained ? symmetrizeCartesianVectors(clone3xN(efs.forces), base.lattice, structure) : clone3xN(efs.forces),
     stress: clone3xN(efs.stress.matrix3x3),
     potentialEnergyEv: Number(efs.total_energy),
     step: 0,
     timeFs: 0,
+    symmetryConstrained,
+    constrainedDof,
   };
 }
 
@@ -250,7 +278,7 @@ export async function runMDSimulation({
     state.timeFs += dtFs;
 
     const ke = kineticEnergyEv(state.velocities, state.masses);
-    const temp = temperatureK(state.velocities, state.masses);
+    const temp = temperatureK(state.velocities, state.masses, state.constrainedDof);
     const epot = state.potentialEnergyEv;
     const etot = epot + ke;
 

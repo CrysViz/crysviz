@@ -6,6 +6,8 @@ import { Structure } from "../../classes/Structure.js";
 import { Atom } from "../../classes/Atom.js";
 import { StructureContainer } from "../../classes/StructureContainer.js";
 import { generateID } from "../../modules/UUIDModule.js";
+import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive } from '../../modules/SymmetryEditModule.js';
+import { renderComposition } from '../StructureInfoPanel/General.js';
 
 
 
@@ -92,6 +94,11 @@ export async function addMoyoPanel() {
     </div>
   </div>
 
+  <div style="margin-bottom: 1em;">
+    <p>Operate on Wyckoff positions:</p>
+    <button class="calcButton" id="getWyckoffBtn">Enable Wyckoff Editor</button>
+  </div>
+
   <p id="calcResult" style="margin-top: 1em; font-weight: bold;"></p>
 </div>
     `;
@@ -115,6 +122,32 @@ export async function addMoyoPanel() {
         `${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
       newContainerFromSymmetrisation("prim", result.positions, result.lattice, result.elements)
     }
+
+    const wyckoffBtn = document.getElementById("getWyckoffBtn");
+    const syncWyckoffButton = () => {
+      wyckoffBtn.textContent = isWyckoffModeActive(fileBrowser.selectedStructure)
+        ? 'Disable Wyckoff Editor'
+        : 'Enable Wyckoff Editor';
+    };
+
+    wyckoffBtn.onclick = async () => {
+      if (isWyckoffModeActive(fileBrowser.selectedStructure)) {
+        deactivateWyckoffMode(fileBrowser.selectedStructure);
+        renderComposition('open');
+        document.getElementById("calcResult").textContent = 'Wyckoff editor disabled';
+        syncWyckoffButton();
+        return;
+      }
+
+      const result = callMoyo("getSymmetryInfo", 1e-5);
+      await activateWyckoffMode(fileBrowser.selectedStructure, 1e-5);
+      renderComposition('open');
+      document.getElementById("calcResult").textContent =
+        `Wyckoff editor active: ${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
+      syncWyckoffButton();
+    };
+
+    syncWyckoffButton();
 }
 
 // Build an AFLOW-style label: "{spg}_{wyck_elem1}_{wyck_elem2}...:{elem1}-{elem2}-..."

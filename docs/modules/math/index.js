@@ -62,6 +62,8 @@ export function fracToCart(...args) { return activeMathBackend.fracToCart(...arg
 export function cartToFractional(...args) { return activeMathBackend.cartToFractional(...args); }
 export function cartToFrac(...args) { return activeMathBackend.cartToFrac(...args); }
 export function normalizeFractional(...args) { return activeMathBackend.normalizeFractional(...args); }
+export function normalizeFractionalPoint(...args) { return activeMathBackend.normalizeFractionalPoint(...args); }
+export function normalizeFractionalPositions(...args) { return activeMathBackend.normalizeFractionalPositions(...args); }
 export function latticeFromCell(...args) { return activeMathBackend.latticeFromCell(...args); }
 export function latticeVolume(...args) { return activeMathBackend.latticeVolume(...args); }
 export function latticeParameters(...args) { return activeMathBackend.latticeParameters(...args); }

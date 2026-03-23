@@ -5,21 +5,14 @@ import {
   fracToCart,
   cartToFrac,
   matVec,
+  normalizeFractionalPositions,
 } from './math.js';
+import { symmetrizeCartesianPositions, symmetrizeCartesianVectors, isWyckoffModeActive } from '../modules/SymmetryEditModule.js';
 
 function symbolCase(sym) {
   const s = String(sym ?? '').trim();
   return s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s;
 }
-
-function wrapFrac01(frac) {
-  return frac.map((v) => {
-    let x = v - Math.floor(v);
-    if (x < 0) x += 1;
-    return x >= 1 ? 0 : x;
-  });
-}
-
 
 //todo : everything here is implemented elsewhere. WE NEED TO REFACTOR INTO A MATH MODULE
 
@@ -98,22 +91,29 @@ export function pressureGPaFromStress(stress) {
 }
 
 export function applyRelaxStep(structure, efs, atomStep = 0.02, cellStep = 0.002, targetPressureEvA3 = 0) {
+  const activeForces = isWyckoffModeActive(fileBrowser.selectedStructure)
+    ? symmetrizeCartesianVectors(efs.forces, structure.lattice, fileBrowser.selectedStructure)
+    : efs.forces;
+
   const moved = structure.positions.map((r, i) => [
-    r[0] + atomStep * efs.forces[i][0],
-    r[1] + atomStep * efs.forces[i][1],
-    r[2] + atomStep * efs.forces[i][2],
+    r[0] + atomStep * activeForces[i][0],
+    r[1] + atomStep * activeForces[i][1],
+    r[2] + atomStep * activeForces[i][2],
   ]);
 
   const M = deformationFromStress(efs.stress.matrix3x3, cellStep, targetPressureEvA3);
 
-  const newPositions = moved.map((r) => matVec(M, r));
+  let newPositions = moved.map((r) => matVec(M, r));
   const newLattice = structure.lattice.map((row) => matVec(M, row));
+  if (isWyckoffModeActive(fileBrowser.selectedStructure)) {
+    newPositions = symmetrizeCartesianPositions(newPositions, newLattice, fileBrowser.selectedStructure);
+  }
 
   return { lattice: newLattice, positions: newPositions, types: structure.types };
 }
 
 export function applyStructureToViewer(nepStruct, structure = fileBrowser.selectedStructure) {
-  const frac = cartToFrac(nepStruct.positions, nepStruct.lattice).map(wrapFrac01);
+  const frac = normalizeFractionalPositions(cartToFrac(nepStruct.positions, nepStruct.lattice));
   structure.lattice = nepStruct.lattice.map((r) => [...r]);
   structure.atoms.forEach((atom, i) => {
     atom.position = [...frac[i]];
