@@ -28,6 +28,40 @@ const tableBody = document.querySelector('#objectTable tbody');
 let nepRunner = null;
 let nepInitPromise = null;
 
+function createStepPerfTracker(label) {
+  const startedAt = performance.now();
+  let lastAt = startedAt;
+  let lastStep = 0;
+  let fps = 0;
+
+  return {
+    tick(step) {
+      const now = performance.now();
+      const dt = Math.max(1e-9, now - lastAt);
+      const stepDelta = Math.max(1, step - lastStep);
+      fps = (stepDelta * 1000) / dt;
+      lastAt = now;
+      lastStep = step;
+      return fps;
+    },
+    summary(step) {
+      const totalMs = Math.max(1e-9, performance.now() - startedAt);
+      return {
+        label,
+        steps: step,
+        totalMs,
+        totalSeconds: totalMs / 1000,
+        avgFps: (step * 1000) / totalMs,
+        lastFps: fps,
+      };
+    },
+  };
+}
+
+function formatPerf(summary) {
+  return `${summary.label}: ${summary.steps} steps in ${summary.totalSeconds.toFixed(2)} s | avg ${summary.avgFps.toFixed(1)} FPS | last ${summary.lastFps.toFixed(1)} FPS`;
+}
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
@@ -180,6 +214,7 @@ export async function addNEPPanel() {
       const targetPressureGPa = Number(targetPressureInput.value || 0.0);
       const saveTrajectory = true;
       const stride = 1;
+      const perfTracker = createStepPerfTracker('Relax');
       const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
       const relaxLabel = `Relax_${srcContainer?.fileName ?? 'run'}`;
       const relaxContainer = new StructureContainer({ fileName: relaxLabel, structures: [snapshotCurrentStructure()] });
@@ -200,6 +235,7 @@ export async function addNEPPanel() {
         cellStep,
         targetPressureGPa,
         onStep: (step, current, out, mF) => {
+          perfTracker.tick(step);
           applyStructureToViewer(current, fileBrowser.selectedStructure);
           setCurrentEFS(out);
 
@@ -229,6 +265,10 @@ export async function addNEPPanel() {
         if (!relaxed.convergedPressure) misses.push('pressure');
         result.textContent = `Stopped after ${relaxed.steps} steps (not converged: ${misses.join('+')}): E/atom=${Number(relaxed.result.energy_per_atom).toFixed(6)} eV, max|F|=${relaxed.maxForce.toFixed(5)} eV/A, P=${pGPa.toFixed(2)} GPa`;
       }
+      {
+        const summary = perfTracker.summary(relaxed.steps);
+        console.info(formatPerf(summary));
+      }
     } catch (err) {
       result.textContent = `Relax failed: ${err.message || String(err)}`;
     } finally {
@@ -255,6 +295,7 @@ export async function addNEPPanel() {
         const mdSteps = Number(mdStepsInput.value || 500);
         const targetTemperatureK = Number(mdTempInput.value || 300);
         const dtFs = 1.0;
+        const perfTracker = createStepPerfTracker('MD');
         const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
         const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
         const mdContainer = new StructureContainer({ fileName: mdLabel, structures: [snapshotCurrentStructure()] });
@@ -288,6 +329,7 @@ export async function addNEPPanel() {
           thermostat,
           shouldStop: () => mdStopRequested,
           onStep: ({ step, timeFs, temperatureK, epotEv, ekinEv, etotEv, state: mdState }) => {
+            perfTracker.tick(step);
             const forceRerender = step % 5 === 0;
             applyMDStateToViewer(mdState, fileBrowser.selectedStructure, { forceRerender });
             setCurrentEFS({
@@ -313,6 +355,10 @@ export async function addNEPPanel() {
           status.textContent = `MD stopped at step ${state.step}`;
         } else {
           status.textContent = `MD finished at step ${state.step}`;
+        }
+        {
+          const summary = perfTracker.summary(mdRun.stepsRun);
+          console.info(formatPerf(summary));
         }
       } catch (err) {
         result.textContent = `MD failed: ${err.message || String(err)}`;

@@ -1292,7 +1292,7 @@ async function initializeMathBackend() {
 
   try {
     const { initMathWasmBackend, installMathWasmBackend } = await import('./modules/math/backend-wasm.js');
-    const backend = await initMathWasmBackend();
+    const backend = await initMathWasmBackend(new URL('./compiled/math_backend.wasm', import.meta.url));
     installMathWasmBackend(backend);
   } catch (error) {
     resetMathBackend();
