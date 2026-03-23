@@ -129,6 +129,25 @@ export function renderComposition(panelState="closed") {
   titleWrapper.appendChild(addButtonsRow);
   compDiv.appendChild(titleWrapper);
 
+  if (hasWyckoffPanel) {
+    const symmetryBadge = document.createElement('div');
+    symmetryBadge.textContent = 'Symmetry Locked  |  Wyckoff Mode Active';
+    symmetryBadge.style.cssText = `
+      margin: 0 0 10px 0;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, rgba(32,77,160,0.35), rgba(35,139,230,0.18));
+      border: 1px solid rgba(91,168,255,0.45);
+      color: #cfe6ff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+    `;
+    compDiv.appendChild(symmetryBadge);
+  }
+
 
   // Ensure structure panel starts collapsed by default
   if (panelState != "open") {
@@ -155,6 +174,10 @@ atomBondControl.className = "atomBondControl";
 
 // Add the segmented control to the div
 const segmentedControl = addSegmentedControl(atomBondControl, 'atomBondControlSwitch', hasWyckoffPanel);
+if (hasWyckoffPanel) {
+  segmentedControl.style.boxShadow = '0 0 0 1px rgba(91,168,255,0.35)';
+  segmentedControl.style.background = 'rgba(25,55,110,0.28)';
+}
 // Append the div to compDiv
 compDiv.appendChild(atomBondControl);
 
@@ -269,6 +292,18 @@ const initialButton = Array.from(segmentedControl.querySelectorAll('button'))
   .find((button) => button.dataset.mode === initialMode)
   || segmentedControl.querySelector(hasWyckoffPanel ? 'button[data-mode="wyckoff"]' : 'button[data-mode="atoms"]');
 initialButton?.classList.add('active');
+if (hasWyckoffPanel) {
+  segmentedControl.querySelectorAll('button').forEach((button) => {
+    if (button.dataset.mode === 'wyckoff') {
+      button.textContent = 'Wyckoff *';
+    }
+    if (button.classList.contains('active')) {
+      button.style.background = 'linear-gradient(135deg, #1c5fb8, #2493ff)';
+      button.style.color = '#f5fbff';
+      button.style.fontWeight = '700';
+    }
+  });
+}
 showPanel(initialMode === 'bonds' ? 'infoBondControls' : (initialMode === 'wyckoff' ? 'wyckoffPanel' : 'atomPanel'))
 
 // CSS for the panels

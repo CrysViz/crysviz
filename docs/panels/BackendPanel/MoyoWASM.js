@@ -125,9 +125,15 @@ export async function addMoyoPanel() {
 
     const wyckoffBtn = document.getElementById("getWyckoffBtn");
     const syncWyckoffButton = () => {
-      wyckoffBtn.textContent = isWyckoffModeActive(fileBrowser.selectedStructure)
+      const active = isWyckoffModeActive(fileBrowser.selectedStructure);
+      wyckoffBtn.textContent = active
         ? 'Disable Wyckoff Editor'
         : 'Enable Wyckoff Editor';
+      wyckoffBtn.style.background = active
+        ? 'linear-gradient(135deg, #1c5fb8, #2493ff)'
+        : '';
+      wyckoffBtn.style.color = active ? '#f5fbff' : '';
+      wyckoffBtn.style.boxShadow = active ? '0 0 0 1px rgba(91,168,255,0.45)' : '';
     };
 
     wyckoffBtn.onclick = async () => {
