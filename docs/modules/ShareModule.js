@@ -4,6 +4,7 @@ import { parsePOSCAR } from './StructureInputModule.js';
 import { updateAtoms } from './AtomsFracUpdateModule.js';
 import { rebuildBonds } from './BondsFracUpdateModule.js';
 import { addDistanceMeasurement, addAngleMeasurement } from './MeasurementModule.js';
+import { createBondLengthControls } from '../panels/BondLengthPanel.js';
 
 const URL_WARN_CHARS = 4000;
 const URL_HARD_CHARS = 10000;
@@ -351,6 +352,14 @@ export function loadSharedStructure() {
   // buildPOSCAR() groups atoms by element, so restore the saved atom ordering
   // before applying any per-atom state that relies on stable indices.
   restoreAtomOrder(state.structure, structure);
+
+  const structureControls = document.getElementById('structureControls');
+  if (structureControls) structureControls.style.display = 'block';
+  const structureControls2 = document.getElementById('structureControls2');
+  if (structureControls2) structureControls2.style.display = 'block';
+  const bondControlsGroup = document.getElementById('bondControlsGroup');
+  if (bondControlsGroup) bondControlsGroup.style.display = 'block';
+  createBondLengthControls();
 
   // Apply colors on top of loaded structure, then push to GPU
   applyAtomColors(state.colors, structure);
