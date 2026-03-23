@@ -4,15 +4,20 @@ import { forceLengthToColor } from '../panels/ColorPanel.js';
 
 const SHAFT_SEGS = 12;
 const TIP_SEGS = 12;
-const TIP_LENGTH = 0.8;
-const TIP_RADIUS = 0.3;
 const UP = new THREE.Vector3(0, 1, 0);
 
 function computeArrowLength(magnitude, forceFactor) {
   if (magnitude < 1e-5) return 0;
-  const logVal = Math.max(-4, Math.min(Math.log10(magnitude), 0.301));
-  const mapped = (logVal + 4) / 4.301;
-  return mapped * 1.5 * forceFactor;
+  return magnitude * forceFactor;
+}
+
+function computeTipDimensions(totalLen, shaftRadius) {
+  const tipRadius = Math.max(shaftRadius * 2.8, 0.06);
+  const tipLength = Math.min(
+    Math.max(shaftRadius * 6.0, 0.18),
+    Math.max(totalLen * 0.45, 0.18)
+  );
+  return { tipRadius, tipLength };
 }
 
 function disposeForceMeshes() {
@@ -55,7 +60,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0) {
     arrows.push({
       origin: new THREE.Vector3(...wrapped.cart[i]),
       dir: new THREE.Vector3(...v).normalize(),
-      shaftHalfLen: totalLen / 2,
+      totalLen,
       color: new THREE.Color(forceLengthToColor(mag)),
     });
   }
@@ -63,14 +68,14 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0) {
   const count = arrows.length;
 
   // Rebuild InstancedMesh if count changed or meshes missing
-  if (!groups.forcesShaftMesh || groups.forcesShaftMesh.count !== count * 2) {
+  if (!groups.forcesShaftMesh || groups.forcesShaftMesh.count !== count) {
     disposeForceMeshes();
     if (count === 0) return;
 
     const shaftGeo = new THREE.CylinderGeometry(1, 1, 1, SHAFT_SEGS, 1);
     const shaftMat = new THREE.MeshPhysicalMaterial({ roughness: 0.4, metalness: 0.2 });
-    groups.forcesShaftMesh = new THREE.InstancedMesh(shaftGeo, shaftMat, count * 2);
-    groups.forcesShaftMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 2 * 3), 3);
+    groups.forcesShaftMesh = new THREE.InstancedMesh(shaftGeo, shaftMat, count);
+    groups.forcesShaftMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
     groups.forcesShaftMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     groups.forcesShaftMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
     app.scene.add(groups.forcesShaftMesh);
@@ -86,7 +91,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0) {
 
   const dummy = new THREE.Object3D();
 
-  arrows.forEach(({ origin, dir, shaftHalfLen, color }, i) => {
+  arrows.forEach(({ origin, dir, totalLen, color }, i) => {
     // Safe quaternion: handle near-antiparallel to UP
     const quat = new THREE.Quaternion();
     if (dir.dot(UP) < -0.9999) {
@@ -95,25 +100,24 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0) {
       quat.setFromUnitVectors(UP, dir);
     }
 
-    // Shaft+ (from origin toward tip)
-    dummy.position.copy(origin).addScaledVector(dir, shaftHalfLen / 2);
-    dummy.scale.set(shaftRadius, shaftHalfLen, shaftRadius);
-    dummy.quaternion.copy(quat);
-    dummy.updateMatrix();
-    groups.forcesShaftMesh.setMatrixAt(i * 2, dummy.matrix);
-    groups.forcesShaftMesh.instanceColor.setXYZ(i * 2, color.r, color.g, color.b);
+    const { tipRadius, tipLength } = computeTipDimensions(totalLen, shaftRadius);
+    const shaftLength = Math.max(totalLen - tipLength, 0.02);
 
-    // Shaft- (from origin away from tip)
-    dummy.position.copy(origin).addScaledVector(dir, -shaftHalfLen / 2);
-    dummy.scale.set(shaftRadius, shaftHalfLen, shaftRadius);
+    // Center the full arrow on the atom so the atom sits at the arrow midpoint.
+    const tailOffset = -totalLen / 2;
+    const tipBaseOffset = totalLen / 2 - tipLength;
+
+    // Shaft
+    dummy.position.copy(origin).addScaledVector(dir, (tailOffset + tipBaseOffset) / 2);
+    dummy.scale.set(shaftRadius, shaftLength, shaftRadius);
     dummy.quaternion.copy(quat);
     dummy.updateMatrix();
-    groups.forcesShaftMesh.setMatrixAt(i * 2 + 1, dummy.matrix);
-    groups.forcesShaftMesh.instanceColor.setXYZ(i * 2 + 1, color.r, color.g, color.b);
+    groups.forcesShaftMesh.setMatrixAt(i, dummy.matrix);
+    groups.forcesShaftMesh.instanceColor.setXYZ(i, color.r, color.g, color.b);
 
     // Tip cone
-    dummy.position.copy(origin).addScaledVector(dir, shaftHalfLen + TIP_LENGTH / 2);
-    dummy.scale.set(TIP_RADIUS, TIP_LENGTH, TIP_RADIUS);
+    dummy.position.copy(origin).addScaledVector(dir, tipBaseOffset + tipLength / 2);
+    dummy.scale.set(tipRadius, tipLength, tipRadius);
     dummy.quaternion.copy(quat);
     dummy.updateMatrix();
     groups.forcesTipMesh.setMatrixAt(i, dummy.matrix);

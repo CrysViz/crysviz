@@ -68,12 +68,12 @@ export function addForcePanel(target = "SpinForceFieldContainer") {
   const widthLabel = document.createElement("label");
   widthLabel.textContent = "Arrow Width: ";
   const widthValue = document.createElement("span");
-  widthValue.textContent = (general.forceRadius ?? 0.08).toFixed(2);
+  widthValue.textContent = (general.forceRadius ?? 0.1).toFixed(2);
   widthValue.style.marginRight = "8px";
   const widthSlider = document.createElement("input");
   widthSlider.type = "range";
-  widthSlider.min = 0.01; widthSlider.max = 0.5; widthSlider.step = 0.01;
-  widthSlider.value = general.forceRadius ?? 0.08;
+  widthSlider.min = 0.01; widthSlider.max = 0.15; widthSlider.step = 0.01;
+  widthSlider.value = general.forceRadius ?? 0.1;
   widthWrapper.appendChild(widthLabel);
   widthWrapper.appendChild(widthValue);
   widthWrapper.appendChild(widthSlider);
