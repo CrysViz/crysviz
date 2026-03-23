@@ -188,6 +188,47 @@ function applyAtomColors(colors, structure) {
   }
 }
 
+function atomKey(element, position) {
+  return [
+    element,
+    ...position.map(v => Number(v).toFixed(8)),
+  ].join('|');
+}
+
+function restoreAtomOrder(savedStructure, loadedStructure) {
+  if (!savedStructure || !loadedStructure?.atoms?.length) return;
+
+  const buckets = new Map();
+  loadedStructure.atoms.forEach((atom, i) => {
+    const key = atomKey(loadedStructure.elements[i], atom.position);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push({
+      element: loadedStructure.elements[i],
+      atom,
+    });
+  });
+
+  const reorderedAtoms = [];
+  const reorderedElements = [];
+
+  for (let i = 0; i < savedStructure.elements.length; i++) {
+    const key = atomKey(savedStructure.elements[i], savedStructure.positions[i]);
+    const bucket = buckets.get(key);
+    if (!bucket?.length) {
+      console.warn('Failed to restore original atom order for shared structure at index', i, key);
+      return;
+    }
+
+    const match = bucket.shift();
+    reorderedAtoms.push(match.atom);
+    reorderedElements.push(match.element);
+  }
+
+  loadedStructure.atoms = reorderedAtoms;
+  loadedStructure.elements = reorderedElements;
+  loadedStructure.uniqueElements = [...new Set(reorderedElements)];
+}
+
 function restoreCamera(camState) {
   if (!camState?.position || !camState?.target) return;
   setTimeout(() => {
@@ -209,28 +250,46 @@ function restoreMeasurements(measurementData) {
 
     measurementData.forEach(m => {
       if (m.type === 'distance' && m.atom1Index != null && m.atom2Index != null) {
-        const a1 = makeAtomProxy(wrapped, m.atom1Index);
-        const a2 = makeAtomProxy(wrapped, m.atom2Index);
+        const a1 = makeAtomProxy(wrapped, m.atom1Index, m.atom1Position);
+        const a2 = makeAtomProxy(wrapped, m.atom2Index, m.atom2Position);
         if (a1 && a2) addDistanceMeasurement(a1, a2);
       } else if (m.type === 'angle' && m.atom1Index != null && m.atom2Index != null && m.atom3Index != null) {
-        const a1 = makeAtomProxy(wrapped, m.atom1Index);
-        const a2 = makeAtomProxy(wrapped, m.atom2Index);
-        const a3 = makeAtomProxy(wrapped, m.atom3Index);
+        const a1 = makeAtomProxy(wrapped, m.atom1Index, m.atom1Position);
+        const a2 = makeAtomProxy(wrapped, m.atom2Index, m.atom2Position);
+        const a3 = makeAtomProxy(wrapped, m.atom3Index, m.atom3Position);
         if (a1 && a2 && a3) addAngleMeasurement(a1, a2, a3);
       }
     });
   }, 200);
 }
 
-function makeAtomProxy(wrapped, index) {
-  if (index < 0 || index >= wrapped.cart.length) return null;
-  return {
-    position: new THREE.Vector3(...wrapped.cart[index]),
-    userData: {
-      atomIndex: index,
-      element: wrapped.elements[index],
-    },
-  };
+function makeAtomProxy(wrapped, originalIndex, savedPosition = null) {
+  let bestMatch = null;
+  let bestDistance = Infinity;
+
+  for (let i = 0; i < wrapped.cart.length; i++) {
+    const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    if (srcIdx !== originalIndex) continue;
+
+    const candidate = {
+      position: new THREE.Vector3(...wrapped.cart[i]),
+      userData: {
+        atomIndex: srcIdx,
+        element: wrapped.elements[i],
+        instanceId: i,
+      },
+    };
+
+    if (!savedPosition?.length) return candidate;
+
+    const distance = candidate.position.distanceTo(new THREE.Vector3(...savedPosition));
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestMatch = candidate;
+    }
+  }
+
+  return bestMatch;
 }
 
 // ---------------------------------------------------------------------------
@@ -288,6 +347,10 @@ export function loadSharedStructure() {
 
   const structure = fileBrowser.selectedStructure;
   if (!structure) return;
+
+  // buildPOSCAR() groups atoms by element, so restore the saved atom ordering
+  // before applying any per-atom state that relies on stable indices.
+  restoreAtomOrder(state.structure, structure);
 
   // Apply colors on top of loaded structure, then push to GPU
   applyAtomColors(state.colors, structure);

@@ -159,6 +159,9 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
     atom1Index: atom1.userData.atomIndex,
     atom2Index: atom2.userData.atomIndex, // vertex
     atom3Index: atom3.userData.atomIndex,
+    atom1Position: atom1.position.toArray(),
+    atom2Position: atom2.position.toArray(),
+    atom3Position: atom3.position.toArray(),
     lineIndex: 1 // first line (vertex to atom1)
   };
 
@@ -167,6 +170,9 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
     atom1Index: atom1.userData.atomIndex,
     atom2Index: atom2.userData.atomIndex, // vertex
     atom3Index: atom3.userData.atomIndex,
+    atom1Position: atom1.position.toArray(),
+    atom2Position: atom2.position.toArray(),
+    atom3Position: atom3.position.toArray(),
     lineIndex: 2 // second line (vertex to atom3)
   };
 
@@ -185,9 +191,13 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
       ...rings.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
       type: 'angleMarker',
       atomIndex: atom.userData.atomIndex,
+      atomPosition: atom.position.toArray(),
       atom1Index: atom1.userData.atomIndex,
       atom2Index: atom2.userData.atomIndex,
-      atom3Index: atom3.userData.atomIndex
+      atom3Index: atom3.userData.atomIndex,
+      atom1Position: atom1.position.toArray(),
+      atom2Position: atom2.position.toArray(),
+      atom3Position: atom3.position.toArray()
     };
     app.scene.add(rings);
     measurements.measureLines.push(rings);
@@ -215,7 +225,10 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
     type: 'angle',
     atom1Index: atom1.userData.atomIndex,
     atom2Index: atom2.userData.atomIndex, // vertex
-    atom3Index: atom3.userData.atomIndex
+    atom3Index: atom3.userData.atomIndex,
+    atom1Position: atom1.position.toArray(),
+    atom2Position: atom2.position.toArray(),
+    atom3Position: atom3.position.toArray()
   };
 
   app.scene.add(label);
@@ -257,7 +270,9 @@ export function addDistanceMeasurement(atom1, atom2) {
   cylinderGroup.userData = {
     type: 'distance',
     atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex
+    atom2Index: atom2.userData.atomIndex,
+    atom1Position: atom1.position.toArray(),
+    atom2Position: atom2.position.toArray()
   };
 
   app.scene.add(cylinderGroup);
@@ -274,6 +289,7 @@ export function addDistanceMeasurement(atom1, atom2) {
     ...ringsA.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
     type: 'distanceMarker',
     atomIndex: atom1.userData.atomIndex,
+    atomPosition: atom1.position.toArray(),
     measurementIndex: measurements.measureLines.length // Reference to the cylinder group
   };
   app.scene.add(ringsA);
@@ -284,6 +300,7 @@ export function addDistanceMeasurement(atom1, atom2) {
     ...ringsB.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
     type: 'distanceMarker',
     atomIndex: atom2.userData.atomIndex,
+    atomPosition: atom2.position.toArray(),
     measurementIndex: measurements.measureLines.length - 1 // Reference to the cylinder group
   };
   app.scene.add(ringsB);
@@ -313,7 +330,9 @@ export function addDistanceMeasurement(atom1, atom2) {
   label.userData = {
     type: 'distance',
     atom1Index: atom1.userData.atomIndex,
-    atom2Index: atom2.userData.atomIndex
+    atom2Index: atom2.userData.atomIndex,
+    atom1Position: atom1.position.toArray(),
+    atom2Position: atom2.position.toArray()
   };
 
   app.scene.add(label);
@@ -385,8 +404,8 @@ export function updateAllMeasurements() {
       const atom1Index = measureItem.userData.atom1Index;
       const atom2Index = measureItem.userData.atom2Index;
 
-      const atom1 = findAtomByOriginalIndex(atom1Index);
-      const atom2 = findAtomByOriginalIndex(atom2Index);
+      const atom1 = findAtomByReference(atom1Index, measureItem.userData.atom1Position);
+      const atom2 = findAtomByReference(atom2Index, measureItem.userData.atom2Position);
 
       if (atom1 && atom2) {
         // Recalculate distance and update display
@@ -426,9 +445,9 @@ export function updateAllMeasurements() {
       const atom3Index = measureItem.userData.atom3Index;
       const lineIndex = measureItem.userData.lineIndex;
 
-      const atom1 = findAtomByOriginalIndex(atom1Index);
-      const atom2 = findAtomByOriginalIndex(atom2Index); // vertex
-      const atom3 = findAtomByOriginalIndex(atom3Index);
+      const atom1 = findAtomByReference(atom1Index, measureItem.userData.atom1Position);
+      const atom2 = findAtomByReference(atom2Index, measureItem.userData.atom2Position); // vertex
+      const atom3 = findAtomByReference(atom3Index, measureItem.userData.atom3Position);
 
       if (atom1 && atom2 && atom3) {
         // Determine which line this is (vertex to atom1 or vertex to atom3)
@@ -463,7 +482,7 @@ export function updateAllMeasurements() {
     } else if (measureItem.userData.type === 'distanceMarker') {
       // Update distance marker position
       const atomIndex = measureItem.userData.atomIndex;
-      const atom = findAtomByOriginalIndex(atomIndex);
+      const atom = findAtomByReference(atomIndex, measureItem.userData.atomPosition);
 
       if (atom) {
         measureItem.position.copy(atom.position);
@@ -471,7 +490,7 @@ export function updateAllMeasurements() {
     } else if (measureItem.userData.type === 'angleMarker') {
       // Update angle marker position
       const atomIndex = measureItem.userData.atomIndex;
-      const atom = findAtomByOriginalIndex(atomIndex);
+      const atom = findAtomByReference(atomIndex, measureItem.userData.atomPosition);
 
       if (atom) {
         measureItem.position.copy(atom.position);
@@ -485,8 +504,8 @@ export function updateAllMeasurements() {
       const atom1Index = label.userData.atom1Index;
       const atom2Index = label.userData.atom2Index;
 
-      const atom1 = findAtomByOriginalIndex(atom1Index);
-      const atom2 = findAtomByOriginalIndex(atom2Index);
+      const atom1 = findAtomByReference(atom1Index, label.userData.atom1Position);
+      const atom2 = findAtomByReference(atom2Index, label.userData.atom2Position);
 
       if (atom1 && atom2) {
         const pa = atom1.position.clone();
@@ -506,9 +525,9 @@ export function updateAllMeasurements() {
       const atom2Index = label.userData.atom2Index; // vertex
       const atom3Index = label.userData.atom3Index;
 
-      const atom1 = findAtomByOriginalIndex(atom1Index);
-      const atom2 = findAtomByOriginalIndex(atom2Index); // vertex
-      const atom3 = findAtomByOriginalIndex(atom3Index);
+      const atom1 = findAtomByReference(atom1Index, label.userData.atom1Position);
+      const atom2 = findAtomByReference(atom2Index, label.userData.atom2Position); // vertex
+      const atom3 = findAtomByReference(atom3Index, label.userData.atom3Position);
 
       if (atom1 && atom2 && atom3) {
         // Recalculate angle
@@ -530,20 +549,31 @@ export function updateAllMeasurements() {
   updateMeasurementMarkers();
 }        
 
-// Find atom by original (src) index using the InstancedMesh wrapped data
-function findAtomByOriginalIndex(originalIndex) {
+// Find atom by original (src) index and prefer the wrapped image nearest the saved position.
+function findAtomByReference(originalIndex, savedPosition = null) {
   const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
   if (!wrapped) return null;
 
+  let bestMatch = null;
+  let bestDistance = Infinity;
+
   for (let i = 0; i < wrapped.cart.length; i++) {
     const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    if (srcIdx === originalIndex) {
-      const element = groups.atomsMesh?.userData?.elementNames?.[i] || wrapped.elements?.[i] || '?';
-      return {
-        position: new THREE.Vector3(...wrapped.cart[i]),
-        userData: { atomIndex: srcIdx, element, instanceId: i }
-      };
+    if (srcIdx !== originalIndex) continue;
+
+    const element = groups.atomsMesh?.userData?.elementNames?.[i] || wrapped.elements?.[i] || '?';
+    const candidate = {
+      position: new THREE.Vector3(...wrapped.cart[i]),
+      userData: { atomIndex: srcIdx, element, instanceId: i }
+    };
+
+    if (!savedPosition?.length) return candidate;
+
+    const distance = candidate.position.distanceTo(new THREE.Vector3(...savedPosition));
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestMatch = candidate;
     }
   }
-  return null;
+  return bestMatch;
 }
