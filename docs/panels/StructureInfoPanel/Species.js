@@ -686,9 +686,7 @@ function updateAtomCoordinates(atomIndex, newCoords) {
         reRenderComposition : true,
       });
 
-  console.log(`Updated atom ${atomIndex} coordinates to: ${newCoords.join(', ')}`);
 };
-
 
 
 

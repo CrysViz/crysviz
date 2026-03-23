@@ -9,6 +9,7 @@ import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneCo
 import {createCompositionRow} from './Species.js'
 import {createSpecificBondControl} from './Bonds.js'
 import {createBondLengthControls} from '../BondLengthPanel.js'
+import { latticeVolume } from '../../modules/math/index.js';
 
 
 // Function to handle structure panel toggle
@@ -231,7 +232,6 @@ segmentedControl.querySelectorAll('button').forEach(button => {
       // For now, let's show the atom panel
       showPanel('atomPanel');
     } else if (selectedMode === 'bonds') {
-      console.log("mode bonds selected")
       showPanel('infoBondControls');
     }
   });
@@ -269,24 +269,13 @@ document.head.appendChild(style);
   compDiv.appendChild(volumeDiv);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   const volume = getLatticeVolume(lattice);
-  console.log(`Lattice Volume: ${volume} Å³`);
   volumeDiv.textContent = `Volume: ${volume} Å³`;
 
 }
 
 
 function getLatticeVolume(lattice) {
-  // Helper functions for vector math
-  const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
-  const cross = (a, b) => [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
-
-  // Calculate volume: |a · (b × c)|
-  const volume = Math.abs(dot(lattice[0], cross(lattice[1], lattice[2])));
-  return volume.toFixed(3); // Round to 3 decimal places
+  return latticeVolume(lattice).toFixed(3);
 }
 
 
@@ -324,7 +313,6 @@ function createSegmentedControl(containerId) {
 
       // You can add additional logic here to handle mode changes
       const selectedMode = this.dataset.mode;
-      console.log(`Selected mode: ${selectedMode}`);
       // For example, you might want to call a function to handle the mode change
       // handleModeChange(selectedMode);
     });

@@ -2,6 +2,12 @@ import { app, groups, general, fileBrowser, mode,getLatticeVisSettings,getAtomVi
 import {updateVisualization} from '../crystal-viewer.js'
 import {createSupercell} from '../modules/SuperCellModule.js';
 import {resetView} from './WindowAndSceneControls.js'
+import {
+  vectorLength3,
+  dot3,
+  acosDeg,
+  latticeVolume,
+} from '../modules/math/index.js';
 
 export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
   const targetPanel = document.getElementById(target);
@@ -285,20 +291,10 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
     }
   });
 
-  // --- Helper Math Functions ---
-  const norm = (v) => Math.hypot(v[0], v[1], v[2]);
-  const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
-  const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
-  const acosDeg = (x) => (Math.acos(clamp(x, -1, 1)) * 180) / Math.PI;
   const deg2rad = (deg) => (deg * Math.PI) / 180;
-  const cross = (a, b) => [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
 
   function updateVolumeDisplay(L) {
-    const V = Math.abs(dot(L[0], cross(L[1], L[2])));
+    const V = latticeVolume(L);
     volumeDiv.textContent = `Volume: ${V.toFixed(3)} Å³`;
   }
 
@@ -307,12 +303,12 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
     latticeViewContainer.innerHTML = "";
 
     const L = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-    const a = norm(L[0]);
-    const b = norm(L[1]);
-    const c = norm(L[2]);
-    const alpha = acosDeg(dot(L[1], L[2]) / (b * c || 1));
-    const beta = acosDeg(dot(L[0], L[2]) / (a * c || 1));
-    const gamma = acosDeg(dot(L[0], L[1]) / (a * b || 1));
+    const a = vectorLength3(L[0]);
+    const b = vectorLength3(L[1]);
+    const c = vectorLength3(L[2]);
+    const alpha = acosDeg(dot3(L[1], L[2]) / (b * c || 1));
+    const beta = acosDeg(dot3(L[0], L[2]) / (a * c || 1));
+    const gamma = acosDeg(dot3(L[0], L[1]) / (a * b || 1));
 
     const params = { a, b, c, alpha, beta, gamma };
     const table = document.createElement("table");
@@ -501,4 +497,3 @@ export function removeLatticeAndSupercellPanel() {
     console.warn("Lattice & Supercell panel does not exist.");
   }
 }
-

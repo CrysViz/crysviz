@@ -155,13 +155,11 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
   console.warn("Searching for row",sourceIndex)
   for (let i = 0; i < atomRows.length; i++) {
    sourceIndex=0
-    console.log(i)
     const row = atomRows[i];
     // Use the row's data-index attribute or assume the order matches the global index
     // If rows are ordered the same as the global index, you can directly use sourceIndex
     if (i === sourceIndex) {
       // Highlight this row
-      console.log("highlighting row", row)
       highlightAtomRow(row);
       // Scroll into view
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -199,4 +197,3 @@ export function clearAllHighlights() {
 
 // Make clearAllHighlights available globally for manual clearing
 window.clearAtomHighlight = clearAllHighlights;
-
