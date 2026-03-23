@@ -5,66 +5,43 @@ import { fracToCart } from './math/index.js';
 
 let measureLabel = null;
 
-// Helper functions for creating measurement markers
+// Helper function for creating measurement markers.
+// A single translucent sphere reads closer to a ghost atom and is cheaper than stacked rings.
 export function createAtomRings(position, radius, innerColor, outerColor, element = null) {
-  const ringGroup = new THREE.Group();
-
-  // Outer ring - scales with atom
-  const outerRingGeometry = new THREE.RingGeometry(radius * 1.1, radius * 1.3, 32);
-  const outerRingMaterial = new THREE.MeshBasicMaterial({
-    color: outerColor,
-    transparent: false,
-    opacity: 1.0,
-    side: THREE.DoubleSide
-  });
-  const outerRing = new THREE.Mesh(outerRingGeometry, outerRingMaterial);
-  outerRing.lookAt(app.camera.position);
-  ringGroup.add(outerRing);
-
-  // Inner ring - scales with atom
-  const innerRingGeometry = new THREE.RingGeometry(radius * 0.9, radius * 1.05, 32);
-  const innerRingMaterial = new THREE.MeshBasicMaterial({
+  const shellGroup = new THREE.Group();
+  const shellGeometry = new THREE.SphereGeometry(radius * 1.06, 18, 14);
+  const shellMaterial = new THREE.MeshBasicMaterial({
     color: innerColor,
-    transparent: false,
-    opacity: 1.0,
-    side: THREE.DoubleSide
+    transparent: true,
+    opacity: 0.32,
+    depthWrite: false,
   });
-  const innerRing = new THREE.Mesh(innerRingGeometry, innerRingMaterial);
-  innerRing.lookAt(app.camera.position);
-  ringGroup.add(innerRing);
+  const shell = new THREE.Mesh(shellGeometry, shellMaterial);
+  shellGroup.add(shell);
 
-  ringGroup.position.copy(position);
-
-  // Store metadata for scaling when atom size changes
-  ringGroup.userData = {
+  shellGroup.position.copy(position);
+  shellGroup.userData = {
     isAtomMarker: true,
-    markerType: 'rings',
-    element: element
+    markerType: 'shell',
+    element,
+    accentColor: innerColor,
+    outlineColor: outerColor,
   };
 
-  return ringGroup;
+  return shellGroup;
 }
 
 export function updateMeasurementMarkers() {
-  // Update all measurement rings to reflect current atom size
+  // Update all measurement shells to reflect current atom size.
   measurements.measureLines.forEach(item => {
-    if (item.userData && item.userData.isAtomMarker && item.userData.markerType === 'rings') {
+    if (item.userData && item.userData.isAtomMarker && item.userData.markerType === 'shell') {
       const element = item.userData.element;
       if (element) {
         const newRadius = getAtomRadius(element);
-
-        // Update ring geometries
-        item.children.forEach((ring, index) => {
-          if (ring.geometry && ring.geometry.type === 'RingGeometry') {
-            ring.geometry.dispose(); // Clean up old geometry
-
-            if (index === 0) {
-              // Outer ring
-              ring.geometry = new THREE.RingGeometry(newRadius * 1.1, newRadius * 1.3, 32);
-            } else {
-              // Inner ring
-              ring.geometry = new THREE.RingGeometry(newRadius * 0.9, newRadius * 1.05, 32);
-            }
+        item.children.forEach((child) => {
+          if (child.geometry && child.geometry.type === 'SphereGeometry') {
+            child.geometry.dispose();
+            child.geometry = new THREE.SphereGeometry(newRadius * 1.06, 18, 14);
           }
         });
       }
