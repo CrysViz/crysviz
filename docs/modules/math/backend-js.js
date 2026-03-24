@@ -85,6 +85,18 @@ export function normalizeFractional(value) {
   return normalized;
 }
 
+export function normalizeFractionalPoint(point) {
+  return [
+    normalizeFractional(point[0]),
+    normalizeFractional(point[1]),
+    normalizeFractional(point[2]),
+  ];
+}
+
+export function normalizeFractionalPositions(points) {
+  return points.map((point) => normalizeFractionalPoint(point));
+}
+
 export function latticeFromCell(a, b, c, alpha, beta, gamma) {
   const rad = Math.PI / 180;
   const ca = Math.cos(alpha * rad);

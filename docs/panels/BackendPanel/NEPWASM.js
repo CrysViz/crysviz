@@ -13,6 +13,7 @@ import {
   createMDMonitorPanel,
   createNEPForceEvaluator,
   createVelocityVerletIntegrator,
+  createCosineAnnealingSchedule,
   createVelocityRescaleThermostat,
 } from '../../atomistic/MD.js';
 import { updateForces } from '../../modules/ForceModule.js';
@@ -177,6 +178,26 @@ export async function addNEPPanel() {
           <input type="number" id="nepMDTempInput" value="300" step="10" min="1" style="width:90px;" />
         </label>
       </div>
+      <div style="margin-top:8px; padding:8px 0 0 0; border-top:1px solid rgba(255,255,255,0.08);">
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:8px; color:rgba(255,255,255,0.9);">
+          <input type="checkbox" id="nepMDAnnealToggle" />
+          Simulated annealing
+        </label>
+        <div id="nepMDAnnealControls" style="display:none; gap:8px; align-items:center; flex-wrap:wrap; padding-left:22px;">
+          <label style="display:flex; align-items:center; gap:6px; opacity:0.92;">
+            Tmin (K)
+            <input type="number" id="nepMDAnnealMinInput" value="100" step="10" min="1" style="width:90px;" />
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; opacity:0.92;">
+            Tmax (K)
+            <input type="number" id="nepMDAnnealMaxInput" value="1200" step="10" min="1" style="width:90px;" />
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; opacity:0.92;">
+            Peak at (%)
+            <input type="number" id="nepMDAnnealPeakPctInput" value="30" step="1" min="1" max="99" style="width:80px;" />
+          </label>
+        </div>
+      </div>
       <p id="nepStatus" style="margin-top:10px;"></p>
       <p id="nepResult" style="margin-top:10px;font-weight:bold;"></p>
     </div>
@@ -190,10 +211,22 @@ export async function addNEPPanel() {
   const targetPressureInput = document.getElementById('nepTargetPressureInput');
   const mdStepsInput = document.getElementById('nepMDStepsInput');
   const mdTempInput = document.getElementById('nepMDTempInput');
+  const mdAnnealToggle = document.getElementById('nepMDAnnealToggle');
+  const mdAnnealControls = document.getElementById('nepMDAnnealControls');
+  const mdAnnealMinInput = document.getElementById('nepMDAnnealMinInput');
+  const mdAnnealMaxInput = document.getElementById('nepMDAnnealMaxInput');
+  const mdAnnealPeakPctInput = document.getElementById('nepMDAnnealPeakPctInput');
   const status = document.getElementById('nepStatus');
   const result = document.getElementById('nepResult');
   let mdStopRequested = false;
   let mdRunning = false;
+
+  function syncAnnealControls() {
+    mdAnnealControls.style.display = mdAnnealToggle.checked ? 'flex' : 'none';
+  }
+
+  mdAnnealToggle.addEventListener('change', syncAnnealControls);
+  syncAnnealControls();
 
   try {
     await initNEP();
@@ -316,7 +349,11 @@ export async function addNEPPanel() {
         mdStopRequested = false;
 
         const mdSteps = Number(mdStepsInput.value || 500);
-        const targetTemperatureK = Number(mdTempInput.value || 300);
+        const startTemperatureK = Number(mdTempInput.value || 300);
+        const useAnnealing = mdAnnealToggle.checked;
+        const minTemperatureK = Number(mdAnnealMinInput.value || 100);
+        const maxTemperatureK = Number(mdAnnealMaxInput.value || startTemperatureK);
+        const peakFraction = Math.max(0.01, Math.min(0.99, Number(mdAnnealPeakPctInput.value || 30) / 100));
         const dtFs = 1.0;
         const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
         const perfTracker = createStepPerfTracker('MD');
@@ -331,16 +368,27 @@ export async function addNEPPanel() {
         relaxBtn.disabled = true;
         mdStartBtn.disabled = true;
         mdStopBtn.disabled = false;
-        status.textContent = `MD running... dt=${dtFs.toFixed(2)} fs, Ttarget=${targetTemperatureK.toFixed(1)} K`;
+        status.textContent = useAnnealing
+          ? `MD annealing... dt=${dtFs.toFixed(2)} fs, T=${startTemperatureK.toFixed(1)} -> ${maxTemperatureK.toFixed(1)} -> ${minTemperatureK.toFixed(1)} K`
+          : `MD running... dt=${dtFs.toFixed(2)} fs, Ttarget=${startTemperatureK.toFixed(1)} K`;
 
         monitor = createMDMonitorPanel();
         const forceEvaluator = createNEPForceEvaluator(nepRunner);
         const integrator = createVelocityVerletIntegrator();
-        const thermostat = createVelocityRescaleThermostat({ targetTemperatureK, tauFs: 20 });
+        const targetTemperatureSchedule = useAnnealing
+          ? createCosineAnnealingSchedule({
+              startTemperatureK,
+              peakTemperatureK: maxTemperatureK,
+              minTemperatureK,
+              peakFraction,
+              totalSteps: mdSteps,
+            })
+          : startTemperatureK;
+        const thermostat = createVelocityRescaleThermostat({ targetTemperatureK: targetTemperatureSchedule, tauFs: 20 });
         const state = await initializeMDState({
           nepRunner,
           structure: fileBrowser.selectedStructure,
-          temperatureTargetK: targetTemperatureK,
+          temperatureTargetK: startTemperatureK,
           forceEvaluator,
         });
 
@@ -352,7 +400,7 @@ export async function addNEPPanel() {
           integrator,
           thermostat,
           shouldStop: () => mdStopRequested,
-          onStep: ({ step, timeFs, temperatureK, epotEv, ekinEv, etotEv, state: mdState }) => {
+          onStep: ({ step, timeFs, temperatureK, targetTemperatureK, epotEv, ekinEv, etotEv, state: mdState }) => {
             perfTracker.tick(step);
             const shouldUpdateViewer = step === 1 || step % viewerStride === 0;
             if (shouldUpdateViewer) {
@@ -370,8 +418,9 @@ export async function addNEPPanel() {
             const ePerAtom = epotEv / nAtoms;
             const mF = maxForce(mdState.forces);
             result.textContent = `MD step ${step}: E/atom=${ePerAtom.toFixed(6)} eV, max|F|=${mF.toFixed(5)} eV/A`;
-            status.textContent = `MD t=${timeFs.toFixed(1)} fs | T=${temperatureK.toFixed(1)} K`;
-            monitor.update({ step, temperatureK, etotEv, epotEv, ekinEv });
+            const targetText = Number.isFinite(targetTemperatureK) ? ` | Ttarget=${targetTemperatureK.toFixed(1)} K` : '';
+            status.textContent = `MD t=${timeFs.toFixed(1)} fs | T=${temperatureK.toFixed(1)} K${targetText}`;
+            monitor.update({ step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv });
           },
         });
 

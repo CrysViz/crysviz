@@ -119,6 +119,13 @@ export function highlightBondInfoInStructurePanel(){
 export function highlightAtomInStructurePanel(element, sourceIndex) {
   // First, clear any existing highlights
   clearAllHighlights();
+  const symmetry = fileBrowser.selectedStructure?.symmetry;
+  const wyckoffOrbit = symmetry?.mode === 'wyckoff'
+    ? symmetry.orbitGroups?.find((group) => group.atomIndices.includes(sourceIndex))
+    : null;
+  const targetAtomIndex = wyckoffOrbit?.representativeIndex ?? sourceIndex;
+  const targetPanelId = wyckoffOrbit ? 'wyckoffPanel' : 'atomPanel';
+  const targetMode = wyckoffOrbit ? 'wyckoff' : 'atoms';
 
   // Auto-expand the structure panel if it's collapsed
   const structureToggle = document.getElementById('structureToggle');
@@ -145,8 +152,9 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
   panelSwitch.querySelectorAll('button').forEach(btn => {
     btn.classList.remove('active');
   });
-  panelSwitch.querySelectorAll('button')[0].classList.add('active');
-  showPanel("atomPanel");
+  const targetButton = panelSwitch.querySelector(`button[data-mode="${targetMode}"]`);
+  targetButton?.classList.add('active');
+  showPanel(targetPanelId);
 
   // Look for the element container
   const elementContainers = composition.querySelectorAll('.comp-container');
@@ -178,7 +186,7 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
   const atomRows = atomsContainer.querySelectorAll('.individual-atom-row');
   for (let i = 0; i < atomRows.length; i++) {
     const row = atomRows[i];
-    if (Number(row.dataset.atomIndex) === sourceIndex) {
+    if (Number(row.dataset.atomIndex) === targetAtomIndex) {
       // Highlight this row
       highlightAtomRow(row);
       // Scroll into view
