@@ -129,6 +129,29 @@ export class Isosurface extends THREE.Group {
 
         this.add(this.meshes.positive);
         this.add(this.meshes.negative);
+
+        this.setChunkSize();
+    }
+
+    setChunkSize() {
+        const nChunks = Math.ceil(this.field.values.length / defaultKernelSize);
+        const chunkDims = [Math.floor(this.field.nx / Math.cbrt(nChunks)), Math.floor(this.field.ny / Math.cbrt(nChunks)), Math.floor(this.field.nz / Math.cbrt(nChunks))];
+        while (Math.min(...chunkDims) < 3 || chunkDims.reduce((a, b) => (a+1) * b) >= defaultKernelSize) {
+            const maxVal = Math.max(...chunkDims);
+            const minVal = Math.min(...chunkDims);
+
+            const maxIndex = chunkDims.indexOf(maxVal);
+            let minIndex = chunkDims.indexOf(minVal);
+
+            if (minIndex === maxIndex) {
+                minIndex = chunkDims.findIndex((v, i) => i !== maxIndex && v === minVal);
+                if (minIndex === -1) break;
+            }
+            if (Math.min(...chunkDims) < 3)
+                chunkDims[maxIndex] -= 1;
+            if (chunkDims.reduce((a, b) => a * b) >= defaultKernelSize)
+                chunkDims[minIndex] += 1;
+        }
     }
 
     get positiveMesh() {
@@ -144,7 +167,14 @@ export class Isosurface extends THREE.Group {
     }
 
     cacheGPU() {
-        const chunkSize = this.field.nx * 3 * 3;
+        
+        for (let z = 0; z < this.field.nz; z += chunkDims[2]) {
+            for (let y = 0; y < this.field.ny; y += chunkDims[1]) {
+                for (let x = 0; x < this.field.nx; x += chunkDims[0]) {
+
+                }
+            }
+        }
         for (let i = 0; i < this.field.values.length; i += defaultKernelSize) {
             const chunk = this.field.values.subarray(i, Math.min(i + defaultKernelSize, this.field.values.length));
             const texture = send2GPUKernel(chunk);
