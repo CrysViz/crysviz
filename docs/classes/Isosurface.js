@@ -14,6 +14,12 @@ const surface_options = {
 
 const defaultKernelSize = 4096;
 
+const send2GPUKernel = GPU.createKernel(function(field) {
+    return field[this.thread.x];
+})
+.setOutput([defaultKernelSize])
+.setPipeline(true);
+
 const vertex2pos = GPU.createKernel(function(vertexIndex, x_step, y_step, z_step) {
     const vertex_id = vertexIndex[this.thread.x];
     const z = Math.floor(vertex_id / z_step);
@@ -23,15 +29,34 @@ const vertex2pos = GPU.createKernel(function(vertexIndex, x_step, y_step, z_step
 }).setOutput([defaultKernelSize]);
 
 
-const normCalcKernel = GPU.createKernel(function(field, indexOffset, x_step, y_step, z_step, dx, dy, dz) {
+const normCalcKernel = GPU.createKernel(function(field, indexOffset, fieldLimit, x_step, y_step, z_step, dx, dy, dz) {
     const vertex_id = this.thread.x + indexOffset;
     const x_min = vertex_id - x_step, x_max = vertex_id + x_step;
     const y_min = vertex_id - y_step, y_max = vertex_id + y_step;
     const z_min = vertex_id - z_step, z_max = vertex_id + z_step;
 
-    const norm_x = 0.5 * ( field[x_max] - field[x_min] ) / dx;
-    const norm_y = 0.5 * ( field[y_max] - field[y_min] ) / dy;
-    const norm_z = 0.5 * ( field[z_max] - field[z_min] ) / dz;
+    let norm_x, norm_y, norm_z;
+    if (x_min >= 0 && x_max < fieldLimit) {
+        norm_x = 0.5 * ( field[x_max] - field[x_min] ) / dx;
+    } else if (x_min < 0) {
+        norm_x = ( field[x_max] - field[vertex_id] ) / dx;
+    } else {
+        norm_x = ( field[vertex_id] - field[x_min] ) / dx;
+    }
+    if (y_min >= 0 && y_max < fieldLimit) {
+        norm_y = 0.5 * ( field[y_max] - field[y_min] ) / dy;
+    } else if (y_min < 0) {
+        norm_y = ( field[y_max] - field[vertex_id] ) / dy;
+    } else {
+        norm_y = ( field[vertex_id] - field[y_min] ) / dy;
+    }
+    if (z_min >= 0 && z_max < fieldLimit) {
+        norm_z = 0.5 * ( field[z_max] - field[z_min] ) / dz;
+    } else if (z_min < 0) {
+        norm_z = ( field[z_max] - field[vertex_id] ) / dz;
+    } else {
+        norm_z = ( field[vertex_id] - field[z_min] ) / dz;
+    }
 
     return [norm_x, norm_y, norm_z];
 }).setOutput([defaultKernelSize]);
@@ -76,6 +101,9 @@ export class Isosurface extends THREE.Group {
         super();
         this.field = field;
 
+        this.fieldNormals = new Float32Array(field.nx * field.ny * field.nz * 3);
+        this.cachedTextures = []
+
         const positiveMC = new MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz);
         this.fieldPtr = positiveMC.get_field();
         const negativeMC = new MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz, this.fieldPtr);
@@ -113,6 +141,15 @@ export class Isosurface extends THREE.Group {
 
     set isovalue(value) {
         this.field.isovalue = value;
+    }
+
+    cacheGPU() {
+        const chunkSize = this.field.nx * 3 * 3;
+        for (let i = 0; i < this.field.values.length; i += defaultKernelSize) {
+            const chunk = this.field.values.subarray(i, Math.min(i + defaultKernelSize, this.field.values.length));
+            const texture = send2GPUKernel(chunk);
+            this.cachedTextures.push(texture);
+        }
     }
 
     updateMesh(isoValue = this.field.isovalue) {
@@ -169,8 +206,14 @@ export class Isosurface extends THREE.Group {
         this.applyMatrix4(cell);
     }
 
+    updateNormals(field) {
+
+    }
+
     setActiveField(field) {
         this.activeField = field;
+
+        updateNormals(this.activeField);
     }
 
     clearMesh() {
@@ -180,6 +223,15 @@ export class Isosurface extends THREE.Group {
         if (this.meshes.negative) {
             this.meshes.negative.geometry.dispose();
         }
+    }
+
+    delete() {
+        this.clearMesh();
+
+        for (const textures in this.cachedTextures) {
+            this.textures.delete();
+        }
+        this.cachedTextures = [];
     }
 
 }
