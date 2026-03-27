@@ -10,6 +10,7 @@ import { fieldBrowser, updateFieldPanel } from "../panels/FieldPanel.js";
 import { app, fileBrowser, groups } from '../store.js';
 import { readCHGCAR } from "./ReadChgcarModule.js";
 import { readCubeFile } from "./ReadCubeModule.js";
+import { Isosurface } from "../classes/Isosurface.js";
 
 const surface_options = {
     opacity: 0.4,
@@ -30,6 +31,9 @@ const surface_options = {
 //------------------------------------------------------------
 function initIsosurfaceMesh(field, colorPos = 0x33aaff, colorNeg = 0xff3333) {
   const { nx, ny, nz, values } = field;
+
+  const isosurface = Isosurface(field);
+
   let material_options = {};
   Object.assign(material_options, surface_options);
 
@@ -57,31 +61,12 @@ function initIsosurfaceMesh(field, colorPos = 0x33aaff, colorNeg = 0xff3333) {
 }
 
 function updateIsosurface(iso) {
-  if (!groups.fieldMeshPos || !groups.activeField) return;
-
-  if (groups.activeField.useAbsoluteIsoValue && groups.fieldMeshNeg) {
-    for (let mesh of [groups.fieldMeshPos, groups.fieldMeshNeg]) {
-      mesh.isolation = mesh === groups.fieldMeshPos ? iso : -iso;
-      //mesh.blur(1);
-      mesh.scale.set(1,1,1);
-
-      mesh.update();
-
-      mesh.geometry.computeVertexNormals();
-    }
+  if (!groups.isosurfaceGroup) {
+    console.warn("No isosurface group to update");
+    return;
   }
-  else {
-    const mc = iso >= 0 ? groups.fieldMeshPos : groups.fieldMeshNeg;
-    mc.isolation = iso;
-    //mc.blur(1);
-    mc.scale.set(1,1,1);
 
-    mc.update();
-
-    // MarchingCubes is already a Mesh with geometry built-in
-    // Compute normals for proper lighting
-    mc.geometry.computeVertexNormals();
-  }
+  groups.isosurfaceGroup.updateMesh(iso);
 }
 
 //------------------------------------------------------------
@@ -185,10 +170,9 @@ export function createSlice(field, axis = "z", index = null) {
 }
 
 function clearField() {
-  if (groups.fieldGroup) {
-    app.scene.remove(groups.fieldGroup);
-    groups.fieldGroup.clear(); // remove all children
-    groups.fieldGroup = null;
+  if (groups.isosurfaceGroup) {
+    app.scene.remove(groups.isosurfaceGroup);
+    groups.isosurfaceGroup.clearMesh();
   }
 }
 
@@ -203,33 +187,29 @@ export function setActiveField(field, absoluteIsoValue = null, color1 = 0x33aaff
     absoluteIsoValue = field.useAbsoluteIsoValue;
   }
 
-  // determine iso if not provided
-  const mesh = initIsosurfaceMesh(field, color1, color2);
+  if (groups.isosurfaceGroup) {
+    groups.isosurfaceGroup.delete();
+    groups.isosurfaceGroup = null;
+  }
 
-  if (absoluteIsoValue) {
-    groups.fieldMeshPos = mesh.pos;
-    groups.fieldMeshNeg = mesh.neg;
-  }
-  else {
-    groups.fieldMeshPos = mesh;
-  }
+  // determine iso if not provided
+  const isosurface = initIsosurfaceMesh(field, color1, color2);
+
+  groups.isosurfaceGroup = isosurface;
   groups.activeField = field;
 }
 
 export function toggleFieldVisibility(visible) {
   if (groups.activeField) {
     groups.activeField.isVisible = visible;
-    if (groups.fieldMeshPos) {
-      groups.fieldMeshPos.visible = visible;
-    }
-    if (groups.fieldMeshNeg) {
-      groups.fieldMeshNeg.visible = visible;
+    if (groups.isosurfaceGroup) {
+      groups.isosurfaceGroup.setVisible(visible);
     }
   }
 }
 
 export function updateField(iso = null) {
-  if (!groups.activeField || !groups.fieldMeshPos) {
+  if (!groups.activeField || !groups.isosurfaceGroup) {
     console.warn("No active field to update");
     return;
   }
@@ -269,44 +249,9 @@ export function updateField(iso = null) {
   updateIsosurface(iso);
 
   //--------------------------------------------------------
-  //  Align the voxel cube with real‑space lattice
-  //--------------------------------------------------------
-  const { nx, ny, nz } = field;
-
-  if (!groups.fieldGroup) {
-    groups.fieldGroup = new THREE.Group();
-  }
-
-  groups.fieldGroup.matrixAutoUpdate = false; // we'll handle matrix updates manually
-  // Convert 0→1 cube into actual cell (scaled to half the voxel extent)
-  const cell = new THREE.Matrix4();
-
-  cell.set(
-    field.voxel[0][0], field.voxel[1][0], field.voxel[2][0], 0,
-    field.voxel[0][1], field.voxel[1][1], field.voxel[2][1], 0,
-    field.voxel[0][2], field.voxel[1][2], field.voxel[2][2], 0,
-    0, 0, 0, 1
-  );
-  cell.scale(new THREE.Vector3(nx/2, ny/2, nz/2));
-
-  if (field.useAbsoluteIsoValue && groups.fieldMeshNeg) {
-    for (let mesh of [groups.fieldMeshPos, groups.fieldMeshNeg]) {
-      groups.fieldGroup.add(mesh);
-      mesh.position.set(1, 1, 1);
-    }
-  }
-  else {
-    const mesh = iso >= 0 ? groups.fieldMeshPos : groups.fieldMeshNeg;
-    groups.fieldGroup.add(mesh);
-    mesh.position.set(1, 1, 1);
-  }
-  groups.fieldGroup.applyMatrix4(cell);
-
-
-  //--------------------------------------------------------
   //  Add to scene and record
   //--------------------------------------------------------
-  app.scene.add(groups.fieldGroup);
+  app.scene.add(groups.isosurfaceGroup);
 }
 
 export function parseCubeFile(content, fileName) {

@@ -347,6 +347,7 @@ export class MarchCubes {
         this.cubeIndexTexture = null;
 
         this.compileKernels();
+        this.cacheFieldData(field);
     }
 
     compileKernels() {
@@ -482,12 +483,11 @@ export class MarchCubes {
             this.clearCache();
         }
         this.field = field;
-        this.fieldTexture = this.send2GPUKernel(field);
+        this.fieldTexture = this.send2GPUKernel(field.values);
         this.normTexture = this.normCalcKernel(this.fieldTexture);
-        this.cubeIndexTexture = this.countCubeKernel(this.fieldTexture, this.isoValue);
     }
 
-    update(isoValue) {
+    getVerticesForIso(isoValue) {
         const cubeFlags = this.countCubeKernel(this.fieldTexture, isoValue);
 
         let partitionedCubeFlags = [[],[],[],[],[]];
@@ -500,13 +500,12 @@ export class MarchCubes {
             }
         }
 
-        let vertices = new Float32Array([]);
         const totalFlags = partitionedCubeFlags.reduce(
             (sum, flags) => sum + flags.length,
             0
         );
-        vertices = new Float32Array(totalFlags);
-        normals = new Float32Array(totalFlags);
+        let vertices = new Float32Array(totalFlags*3);
+        let normals = new Float32Array(totalFlags*3);
         let c = 0;
         for (let i = 0; i < 5; i++) {
             this.createVertexKernel.setOutput([partitionedCubeFlags[i].length, 3*(i+1), 2]);

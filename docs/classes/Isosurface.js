@@ -27,16 +27,8 @@ export class Isosurface extends THREE.Group {
         super();
         this.field = field;
 
-        this.fieldNormals = new Float32Array(field.nx * field.ny * field.nz * 3);
-        this.cachedTextures = []
-
-        const positiveMC = new MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz);
-        this.fieldPtr = positiveMC.get_field();
-        const negativeMC = new MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz, this.fieldPtr);
-        this.marchingCubes = {
-            positive: positiveMC,
-            negative: negativeMC
-        };
+        const MC = new GPUMarchCubes.MarchCubes(field);
+        this.marchingCubes = MC;
 
         let material_options = {};
         Object.assign(material_options, surface_options);
@@ -71,15 +63,6 @@ export class Isosurface extends THREE.Group {
         this.field.isovalue = value;
     }
 
-    cacheGPU() {
-        const chunkSize = this.field.nx * 3 * 3; // 3 in y and 3 in z
-        for (let i = 0; i < this.field.values.length; i += defaultKernelSize) {
-            const chunk = this.field.values.subarray(i, Math.min(i + defaultKernelSize, this.field.values.length));
-            const texture = send2GPUKernel(chunk);
-            this.cachedTextures.push(texture);
-        }
-    }
-
     updateMesh(isoValue = this.field.isovalue) {
         this.clearMesh();
 
@@ -87,39 +70,37 @@ export class Isosurface extends THREE.Group {
             if (this.activeField.useAbsoluteValue) {
                 isoValue = Math.abs(isoValue);
             }
-            this.marchingCubes.positive.update_vertices(isoValue);
-            const vertexPtr = this.marchingCubes.positive.get_vertices();
-            const normalPtr = this.marchingCubes.positive.get_normals();
-            const numVertices = this.marchingCubes.positive.get_num_vertices();
+            const { vertices, normals } = this.marchingCubes.getVerticesForIso(isoValue);
 
-            const positionArray = new Float64Array(MarchingCubesModule.HEAPF64.buffer, vertexPtr, numVertices * 3);
+            const positionArray = vertices;
             const positionAttribute = new THREE.BufferAttribute(positionArray, 3);
             positionAttribute.setUsage(THREE.DynamicDrawUsage);
             this.meshes.positive.geometry.setAttribute('position', positionAttribute);
+            this.meshes.positive.geometry.setDrawRange(0, vertices.length / 3);
 
-            const normalArray = new Float64Array(MarchingCubesModule.HEAPF64.buffer, normalPtr, numVertices * 3);
+            const normalArray = normals;
             const normalAttribute = new THREE.BufferAttribute(normalArray, 3);
             normalAttribute.setUsage(THREE.DynamicDrawUsage);
             this.meshes.positive.geometry.setAttribute('normal', normalAttribute);
+            this.meshes.positive.geometry.setDrawRange(0, normals.length / 3);
         }
         if (this.marchingCubes.negative && (isoValue < 0 || this.activeField.useAbsoluteValue)) {
             if (this.activeField.useAbsoluteValue) {
                 isoValue = -Math.abs(isoValue);
             }
-            this.marchingCubes.negative.update_vertices(isoValue);
-            const vertexPtr = this.marchingCubes.negative.get_vertices();
-            const normalPtr = this.marchingCubes.negative.get_normals();
-            const numVertices = this.marchingCubes.negative.get_num_vertices();
+            const { vertices, normals } = this.marchingCubes.getVerticesForIso(isoValue);
 
-            const positionArray = new Float64Array(MarchingCubesModule.HEAPF64.buffer, vertexPtr, numVertices * 3);
+            const positionArray = vertices;
             const positionAttribute = new THREE.BufferAttribute(positionArray, 3);
             positionAttribute.setUsage(THREE.DynamicDrawUsage);
             this.meshes.negative.geometry.setAttribute('position', positionAttribute);
+            this.meshes.negative.geometry.setDrawRange(0, vertices.length / 3);
 
-            const normalArray = new Float64Array(MarchingCubesModule.HEAPF64.buffer, normalPtr, numVertices * 3);
+            const normalArray = normals;
             const normalAttribute = new THREE.BufferAttribute(normalArray, 3);
             normalAttribute.setUsage(THREE.DynamicDrawUsage);
             this.meshes.negative.geometry.setAttribute('normal', normalAttribute);
+            this.meshes.negative.geometry.setDrawRange(0, normals.length / 3);
         }
 
         this.matrixAutoUpdate = false;
@@ -132,10 +113,6 @@ export class Isosurface extends THREE.Group {
         );
         cell.scale(new THREE.Vector3(nx, ny, nz));
         this.applyMatrix4(cell);
-    }
-
-    updateNormals(field) {
-
     }
 
     setActiveField(field) {
@@ -156,10 +133,13 @@ export class Isosurface extends THREE.Group {
     delete() {
         this.clearMesh();
 
-        for (const textures in this.cachedTextures) {
-            this.textures.delete();
-        }
-        this.cachedTextures = [];
+        this.marchingCubes.delete();
+    }
+
+    setVisible(visible) {
+        this.meshes.positive.visible = visible;
+        this.meshes.negative.visible = visible;
+        this.field.isVisible = visible;
     }
 
 }
