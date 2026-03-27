@@ -1,6 +1,7 @@
 import { general } from '../../store.js';
 import { removeAtomisticPanel, addRelaxPanel, addMDPanel } from './AtomisticPanels.js';
 import {addMoyoPanel} from './MoyoWASM.js'; 
+import { refreshBackendTheme } from './BackendTheme.js';
 
 const BackendModeSwitch = document.getElementById("BackendModeSwitch");
 
@@ -92,6 +93,11 @@ export function showWarning(message) {
   });
 }
 
+function setUploadVisible(visible) {
+  const el = document.getElementById('uploadSection');
+  if (el) el.style.display = visible ? '' : 'none';
+}
+
 export function addBackendModeSwitch() {
   BackendModeSwitch.addEventListener("click", (e) => {
     const btn = e.target.closest("button");
@@ -107,43 +113,33 @@ export function addBackendModeSwitch() {
     if (mode === "symmetry") {
             btn.classList.add("symmetry");
             general.backendState = "symmetry";
-            setTheme("symmetry");
+            general.atomisticPotential = "nep";
+            refreshBackendTheme();
+            setUploadVisible(false);
             addMoyoPanel();
         }
     else if (mode === "relax") {
             btn.classList.add("relax");
             general.backendState = "relax";
-            setTheme("relax");
+            general.atomisticPotential = general.atomisticPotential || "nep";
+            refreshBackendTheme();
+            setUploadVisible(false);
             addRelaxPanel();
     } else if (mode === "md") {
             btn.classList.add("md");
             general.backendState = "md";
-            setTheme("md");
+            general.atomisticPotential = general.atomisticPotential || "nep";
+            refreshBackendTheme();
+            setUploadVisible(false);
             addMDPanel();
     } else {
       btn.classList.add("active");
       general.backendState = mode.toLowerCase();
-      console.log("Backend state:", general.backendState);
-      setTheme("standard")
+      refreshBackendTheme();
+      setUploadVisible(true);
       removeAtomisticPanel();
     }
   });
-}
-
-function setTheme(themeName) {
-  document.body.className = '';               // clear old themes
-  document.body.classList.add(`theme-${themeName}`);
-  const figure = document.getElementById("aboutTrigger");
-  let theme=`theme-${themeName}`;
-  if (theme === "theme-standard") {
-    figure.src = "./data/CrysViz_logo_clear_back_beta.png";
-  } else if (theme === "theme-relax") {
-    figure.src = "./data/CrysViz_logo_clear_back_beta_red.png";
-  } else if (theme === "theme-symmetry") {
-    figure.src = "./data/CrysViz_logo_clear_back_beta_blue.png";
-  } else if (theme === "theme-md") {
-    figure.src = "./data/CrysViz_logo_clear_back_beta.png";
-  }
 }
 
 

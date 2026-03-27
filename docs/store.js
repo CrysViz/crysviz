@@ -122,6 +122,7 @@ export const general = {
   structurePanelMode: "atoms",
   analysisState:"none",
   backendState:"none",
+  atomisticPotential:"nep",
   currentSupercell: null,
   modifiedLattice: null, // this needs to be part of the structure object 
   sharedStructureLoaded:false,

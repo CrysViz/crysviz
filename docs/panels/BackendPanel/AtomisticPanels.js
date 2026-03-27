@@ -24,6 +24,7 @@ import { Atom } from '../../classes/Atom.js';
 import { Force } from '../../classes/Force.js';
 import { Stress } from '../../classes/Stress.js';
 import { Structure } from '../../classes/Structure.js';
+import { refreshBackendTheme } from './BackendTheme.js';
 
 const tableBody = document.querySelector('#objectTable tbody');
 
@@ -351,16 +352,15 @@ function emitASEEFS() {
 function buildPanelShell(title) {
   return `
     <div class="atomistic-panel">
-      <div class="atomistic-header-row">
-        <h2>${title}</h2>
-        <div class="backend-potential-toggle" data-role="potential-toggle">
-          <button type="button" class="active" data-potential="nep">NEP</button>
-          <button type="button" data-potential="ase">ASE</button>
-        </div>
-      </div>
       <div class="atomistic-source-panel">
-        <div class="atomistic-source-copy">
+        <div class="atomistic-source-row">
           <div class="atomistic-source-label">Choose potential</div>
+          <div class="backend-potential-toggle" data-role="potential-toggle">
+            <button type="button" class="active" data-potential="nep">NEP</button>
+            <button type="button" data-potential="ase">ASE</button>
+          </div>
+        </div>
+        <div class="atomistic-source-copy">
           <div class="atomistic-source-state" data-role="source-state"></div>
         </div>
         <div class="atomistic-backend-actions hidden" data-role="ase-connectors">
@@ -399,41 +399,43 @@ function readRelaxParams(bodyEl) {
 
 function renderRelaxBody(bodyEl, potential) {
   bodyEl.innerHTML = `
-    <div class="atomistic-card">
+    <button type="button" class="atomistic-card atomistic-efs-card" id="relaxEfsCard">
       <div class="atomistic-card-title-row">
         <span class="atomistic-card-title">EFS</span>
-        <span class="atomistic-card-pill">${potential === 'nep' ? 'in-browser' : 'server'}</span>
-      </div>
-      <div class="atomistic-button-row">
-        <button type="button" class="calcButton atomistic-primary-action" id="relaxEfsCard">Get EFS</button>
+        <div class="atomistic-efs-title-right">
+          <span class="atomistic-card-pill">${potential === 'nep' ? 'in-browser' : 'server'}</span>
+          <span class="atomistic-efs-refresh-hint">↻ click to compute</span>
+        </div>
       </div>
       <div class="atomistic-card-metrics" id="relaxEfsMetrics">
-        <div class="atomistic-empty-state"></div>
+        <div>energy / atom: —</div>
+        <div>max force: —</div>
+        <div>pressure: —</div>
       </div>
-    </div>
-    <div class="atomistic-card">
+    </button>
+    <div class="atomistic-card atomistic-card-compact">
       <div class="atomistic-card-title atomistic-card-title-accent">Geometry optimization</div>
-      <div class="atomistic-grid atomistic-grid-2">
+      <div class="atomistic-grid atomistic-grid-2 atomistic-grid-compact">
         <label>
           <span>max steps</span>
-          <input type="number" id="relaxMaxStepsInput" value="200" step="10" min="1">
+          <input type="number" class="atomistic-input-sm" id="relaxMaxStepsInput" value="200" step="10" min="1">
         </label>
         <label>
           <span>force tol</span>
-          <input type="number" id="relaxForceTolInput" value="0.01" step="0.001" min="0">
+          <input type="number" class="atomistic-input-sm" id="relaxForceTolInput" value="0.01" step="0.001" min="0">
         </label>
         <label>
           <span>target P</span>
-          <input type="number" id="relaxTargetPressureInput" value="0" step="0.1">
+          <input type="number" class="atomistic-input-sm" id="relaxTargetPressureInput" value="0" step="0.1">
         </label>
         <label>
           <span>stress tol</span>
-          <input type="number" id="relaxStressTolInput" value="0.2" step="0.1" min="0">
+          <input type="number" class="atomistic-input-sm" id="relaxStressTolInput" value="0.2" step="0.1" min="0">
         </label>
       </div>
-      <div class="atomistic-button-row">
-        <button type="button" class="calcButton" id="relaxAppendBtn">Append Relaxation</button>
-        <button type="button" class="calcButton" id="relaxNewBtn">New Relaxation</button>
+      <div class="atomistic-button-row atomistic-button-row-compact">
+        <button type="button" class="calcButton" id="relaxAppendBtn">Append</button>
+        <button type="button" class="calcButton" id="relaxNewBtn">New</button>
       </div>
     </div>
   `;
@@ -449,49 +451,49 @@ function renderMDAnnealSummary(bodyEl) {
 
 function renderMDBody(bodyEl, potential) {
   bodyEl.innerHTML = `
-    <div class="atomistic-card">
-      <div class="atomistic-grid atomistic-grid-2">
+    <div class="atomistic-card atomistic-card-compact">
+      <div class="atomistic-grid atomistic-grid-2 atomistic-grid-compact">
         <label>
           <span>Steps</span>
-          <input type="number" id="mdStepsInput" value="500" step="50" min="1">
+          <input type="number" class="atomistic-input-sm" id="mdStepsInput" value="500" step="50" min="1">
         </label>
         <label>
           <span>timestep (fs)</span>
-          <input type="number" id="mdTimestepInput" value="1.0" step="0.1" min="0.1">
+          <input type="number" class="atomistic-input-sm" id="mdTimestepInput" value="1.0" step="0.1" min="0.1">
         </label>
         <label>
           <span>Temperature</span>
-          <input type="number" id="mdTemperatureInput" value="300" step="10" min="1">
+          <input type="number" class="atomistic-input-sm" id="mdTemperatureInput" value="300" step="10" min="1">
         </label>
         <label>
           <span class="atomistic-label-disabled">pressure</span>
-          <input type="number" id="mdPressureInput" value="0" step="0.1" disabled>
+          <input type="number" class="atomistic-input-sm" id="mdPressureInput" value="0" step="0.1" disabled>
         </label>
       </div>
-      <div class="atomistic-button-row">
+      <div class="atomistic-button-row atomistic-button-row-compact">
         <button type="button" class="calcButton" id="mdStartBtn"${potential === 'ase' ? ' disabled' : ''}>start</button>
         <button type="button" class="calcButton" id="mdStopBtn" disabled>stop</button>
       </div>
-    </div>
-    <div class="atomistic-card">
-      <button type="button" class="atomistic-collapse-toggle" id="mdAnnealHeader">
-        <span id="mdAnnealIcon">▸</span>
-        <span class="atomistic-card-title atomistic-card-title-accent">Simulated Annealing</span>
-      </button>
-      <div class="hidden" id="mdAnnealControls">
-        <div class="atomistic-grid atomistic-grid-3 atomistic-anneal-grid">
-          <label>
-            <span>Tmin (K)</span>
-            <input type="number" id="mdAnnealMinInput" value="100" step="10" min="1">
-          </label>
-          <label>
-            <span>Tmax (K)</span>
-            <input type="number" id="mdAnnealMaxInput" value="1200" step="10" min="1">
-          </label>
-          <label>
-            <span>Peak at %</span>
-            <input type="number" id="mdAnnealPeakPctInput" value="30" step="1" min="1" max="99">
-          </label>
+      <div class="atomistic-anneal-section">
+        <button type="button" class="atomistic-collapse-toggle" id="mdAnnealHeader">
+          <span id="mdAnnealIcon">▸</span>
+          <span class="atomistic-card-title-accent atomistic-anneal-title">Simulated Annealing</span>
+        </button>
+        <div class="hidden" id="mdAnnealControls">
+          <div class="atomistic-grid atomistic-grid-3 atomistic-grid-compact atomistic-anneal-grid">
+            <label>
+              <span>Tmin (K)</span>
+              <input type="number" class="atomistic-input-sm" id="mdAnnealMinInput" value="100" step="10" min="1">
+            </label>
+            <label>
+              <span>Tmax (K)</span>
+              <input type="number" class="atomistic-input-sm" id="mdAnnealMaxInput" value="1200" step="10" min="1">
+            </label>
+            <label>
+              <span>Peak at %</span>
+              <input type="number" class="atomistic-input-sm" id="mdAnnealPeakPctInput" value="30" step="1" min="1" max="99">
+            </label>
+          </div>
         </div>
       </div>
     </div>
@@ -500,6 +502,7 @@ function renderMDBody(bodyEl, potential) {
 }
 
 async function runNEPRelax(shell, params) {
+  const metricsEl = shell.bodyEl.querySelector('#relaxEfsMetrics');
   const runner = await ensureNEPReady(shell.statusEl, shell.sourceStateEl);
   const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
   const saveStride = 1;
@@ -533,7 +536,14 @@ async function runNEPRelax(shell, params) {
       }
 
       const pressure = pressureGPaFromStress(out.stress.matrix3x3);
-      shell.statusEl.textContent = `Relax step ${step}: E/atom=${Number(out.energy_per_atom).toFixed(6)} eV, max|F|=${mF.toFixed(5)} eV/A, P=${pressure.toFixed(2)} GPa`;
+      shell.statusEl.textContent = `step ${step} / ${params.maxSteps}`;
+      if (metricsEl) {
+        metricsEl.innerHTML = `
+          <div>energy / atom: ${Number(out.energy_per_atom).toFixed(6)} eV</div>
+          <div>max force: ${mF.toFixed(5)} eV/Å</div>
+          <div>pressure: ${pressure.toFixed(2)} GPa</div>
+        `;
+      }
     },
   });
 
@@ -543,10 +553,10 @@ async function runNEPRelax(shell, params) {
   const stepsSaved = relaxContainer.structures.length;
   updateRow(relaxRow, { name: relaxLabel, traj: stepsSaved, step: stepsSaved });
 
-  const pressure = pressureGPaFromStress(relaxed.result.stress.matrix3x3);
+  shell.statusEl.textContent = '';
   shell.resultEl.textContent = relaxed.converged
-    ? `Relax converged after ${relaxed.steps} steps. E/atom=${Number(relaxed.result.energy_per_atom).toFixed(6)} eV, max|F|=${relaxed.maxForce.toFixed(5)} eV/A, P=${pressure.toFixed(2)} GPa`
-    : `Relax stopped after ${relaxed.steps} steps. E/atom=${Number(relaxed.result.energy_per_atom).toFixed(6)} eV, max|F|=${relaxed.maxForce.toFixed(5)} eV/A, P=${pressure.toFixed(2)} GPa`;
+    ? `Converged after ${relaxed.steps} steps.`
+    : `Stopped after ${relaxed.steps} steps.`;
 }
 
 async function runNEPEFS(shell, metricsEl) {
@@ -560,7 +570,7 @@ async function runNEPEFS(shell, metricsEl) {
     <div>max force: ${maxForce(out.forces).toFixed(5)} eV/A</div>
     <div>pressure: ${pressure.toFixed(2)} GPa</div>
   `;
-  shell.resultEl.textContent = `EFS ready. E/atom=${Number(out.energy_per_atom).toFixed(6)} eV, max|F|=${maxForce(out.forces).toFixed(5)} eV/A, P=${pressure.toFixed(2)} GPa`;
+  shell.resultEl.textContent = '';
 }
 
 function bindRelaxBody(panel, shell, potential) {
@@ -721,19 +731,18 @@ function bindMDBody(panel, shell, potential) {
           }
 
           mdContainer.structures.push(snapshotCurrentStructure());
-          const ePerAtom = epotEv / Math.max(1, mdState.positions.length);
-          const mF = maxForce(mdState.forces);
-          shell.resultEl.textContent = `MD step ${step}: E/atom=${ePerAtom.toFixed(6)} eV, max|F|=${mF.toFixed(5)} eV/A`;
-          shell.statusEl.textContent = Number.isFinite(targetTemperatureK)
-            ? `MD t=${timeFs.toFixed(1)} fs | T=${temperatureK.toFixed(1)} K | Ttarget=${targetTemperatureK.toFixed(1)} K`
-            : `MD t=${timeFs.toFixed(1)} fs | T=${temperatureK.toFixed(1)} K`;
+          const tLabel = Number.isFinite(targetTemperatureK)
+            ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`
+            : `T=${temperatureK.toFixed(0)} K`;
+          shell.statusEl.textContent = `step ${step} / ${steps}  ·  t=${timeFs.toFixed(1)} fs  ·  ${tLabel}`;
           monitor.update({ step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv });
         },
       });
 
       const count = mdContainer.structures.length;
       updateRow(mdRow, { name: mdLabel, traj: count, step: count });
-      shell.statusEl.textContent = mdStopRequested ? `MD stopped at step ${state.step}` : `MD finished at step ${state.step}`;
+      shell.statusEl.textContent = '';
+      shell.resultEl.textContent = mdStopRequested ? `Stopped at step ${state.step}.` : `Finished at step ${state.step}.`;
     } catch (error) {
       shell.resultEl.textContent = `MD failed: ${error.message || String(error)}`;
     } finally {
@@ -752,6 +761,8 @@ function bindPotentialToggle(panel, shell, mode) {
     shell.toggle.querySelectorAll('button').forEach((button) => {
       button.classList.toggle('active', button.dataset.potential === potential);
     });
+    general.atomisticPotential = potential;
+    refreshBackendTheme();
 
     shell.aseConnectorsEl.classList.toggle('hidden', potential !== 'ase');
     shell.resultEl.textContent = '';
@@ -814,5 +825,5 @@ export function addMDPanel() {
 
 export function removeAtomisticPanel() {
   const panel = document.getElementById('BackendCalcPanel');
-  panel.innerHTML = '<h1>Choose Symmetry, Relax, or MD mode for more advanced functionalities</h1>';
+  panel.innerHTML = '';
 }

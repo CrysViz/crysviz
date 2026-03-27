@@ -23,7 +23,7 @@ body {
   --border-color:rgba(6,90,50,0.5);
 }
 
-.theme-relax {
+.theme-ase {
   --bg-color: rgba(81,0,0,0.8);
   --highlight-color: rgba(159,52,52,1.0);
   --accent-color: rgba(159,52,52,0.9);
@@ -39,12 +39,12 @@ body {
   --border-color: rgba(17, 71, 129, 0.5);
 }
 
-.theme-md {
-  --bg-color: rgba(58, 48, 0, 0.85);
-  --highlight-color: rgba(212, 170, 0, 1.0);
-  --accent-color: rgba(212, 170, 0, 0.9);
-  --hover-color: rgba(212, 170, 0, 0.25);
-  --border-color: rgba(160, 132, 0, 0.55);
+.theme-locked-ase {
+  --bg-color: rgba(66, 24, 81, 0.84);
+  --highlight-color: rgba(187, 98, 214, 1.0);
+  --accent-color: rgba(167, 92, 214, 0.9);
+  --hover-color: rgba(187, 98, 214, 0.24);
+  --border-color: rgba(183, 117, 221, 0.5);
 }
 :root {
   --ui-width: 380px;      /* Panel content width */
