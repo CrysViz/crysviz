@@ -57,7 +57,7 @@ border: 2px solid rgba(255, 255, 255, 0.1);
   font-size: 12px;
   max-width: 360px;
   margin: 0 0 16px 0;
-  padding: 20px 10px 20px 20px;
+  padding: 18px 14px 18px 18px;
   background: rgba(42, 42, 42, 0.8);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -111,7 +111,8 @@ font-size: 12px;
 }
 
 .segmented-backend-control {
-  display: block ruby;
+  display: flex;
+  flex-wrap: wrap;
   background: rgba(25,25,25,0.8);
   padding: 8px;
   border-radius: 10px;
@@ -147,14 +148,247 @@ font-size: 12px;
   font-weight: 500;
 }
 
-.segmented-backend-control button.ai {
+.segmented-backend-control button.relax {
   background: var(--accent-color);
   color: white;
   font-weight: 500;
 }
 
-.segmented-backend-control button.nep {
+.segmented-backend-control button.md {
   background: var(--accent-color);
   color: white;
   font-weight: 500;
+}
+
+.atomistic-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.atomistic-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.atomistic-header-row h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.backend-potential-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(18, 18, 18, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.backend-potential-toggle button {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.backend-potential-toggle button.active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.atomistic-source-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.atomistic-source-label {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+}
+
+.atomistic-source-state,
+.atomistic-backend-state,
+.atomistic-status,
+.atomistic-result,
+.atomistic-hint {
+  line-height: 1.5;
+}
+
+.atomistic-source-state,
+.atomistic-backend-state {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.atomistic-backend-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.atomistic-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.atomistic-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.atomistic-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.atomistic-card-title,
+.atomistic-card-title-accent {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.atomistic-card-title-accent {
+  color: #65adff;
+}
+
+.atomistic-card-pill {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+}
+
+.atomistic-card-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.9);
+  min-height: 72px;
+  justify-content: center;
+}
+
+.atomistic-grid {
+  display: grid;
+  gap: 16px 18px;
+}
+
+.atomistic-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.atomistic-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.atomistic-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+}
+
+.atomistic-grid input {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(24, 24, 24, 0.82);
+  color: #fff;
+  border-radius: 10px;
+  padding: 11px 12px;
+  font-size: 16px;
+  min-height: 44px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.atomistic-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.atomistic-button-row .calcButton {
+  flex: 1 1 140px;
+  min-height: 42px;
+  font-size: 13px;
+}
+
+.atomistic-primary-action {
+  flex: 1 1 auto;
+}
+
+.atomistic-empty-state {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.atomistic-collapse-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.atomistic-inline-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.atomistic-inline-toggle input {
+  accent-color: var(--accent-color);
+}
+
+.atomistic-label-disabled {
+  color: #ff7b7b;
+}
+
+.atomistic-status {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.atomistic-result {
+  margin: 0;
+  color: #ffcf4f;
+  font-weight: 500;
+}
+
+.atomistic-hint {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+@media (max-width: 420px) {
+  .atomistic-grid-2,
+  .atomistic-grid-3 {
+    grid-template-columns: 1fr;
+  }
 }

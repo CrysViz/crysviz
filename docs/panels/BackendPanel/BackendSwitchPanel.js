@@ -1,11 +1,6 @@
 import { general } from '../../store.js';
-import {addBackendCalcPanel,removeBackendCalcPanel} from './BackendCalculator.js';
-import {addBackendRelaxPanel,removeBackendRelaxPanel} from './BackendRelaxer.js';
-
-
-
+import { removeAtomisticPanel, addRelaxPanel, addMDPanel } from './AtomisticPanels.js';
 import {addMoyoPanel} from './MoyoWASM.js'; 
-import {addNEPPanel} from './NEPWASM.js';
 
 const BackendModeSwitch = document.getElementById("BackendModeSwitch");
 
@@ -106,7 +101,7 @@ export function addBackendModeSwitch() {
 
     // Reset UI
     BackendModeSwitch.querySelectorAll("button").forEach(b => {
-      b.classList.remove("active", "symmetry", "ai", "nep");
+      b.classList.remove("active", "symmetry", "relax", "md");
     });
 
     if (mode === "symmetry") {
@@ -115,35 +110,22 @@ export function addBackendModeSwitch() {
             setTheme("symmetry");
             addMoyoPanel();
         }
-    else if (mode === "ai") {
-        showWarning(`Using AI mode will start a Python backend.\nSome data will temporarily be stored on our server!\n <a href="https://github.com/ftrybel/CrysViz_hot_develop/" targe    t="_blank">Learn more</a>`)
-        .then(result => {
-          if (result === "accept") {
-            btn.classList.add("ai");
-            general.backendState = "ai";
-            setTheme("ai");
-            addBackendRelaxPanel();
-          } else {
-            general.backendState = "none";
-            setTheme("standard");
-            resetSwitch();
-            removeBackendCalcPanel();
-            removeBackendRelaxPanel()
-          }
-          console.log("Backend state:", general.backendState);
-        });
-
-    } else if (mode === "nep") {
-            btn.classList.add("nep");
-            general.backendState = "nep";
-            setTheme("nep");
-            addNEPPanel();
+    else if (mode === "relax") {
+            btn.classList.add("relax");
+            general.backendState = "relax";
+            setTheme("relax");
+            addRelaxPanel();
+    } else if (mode === "md") {
+            btn.classList.add("md");
+            general.backendState = "md";
+            setTheme("md");
+            addMDPanel();
     } else {
       btn.classList.add("active");
       general.backendState = mode.toLowerCase();
       console.log("Backend state:", general.backendState);
       setTheme("standard")
-      removeBackendCalcPanel();
+      removeAtomisticPanel();
     }
   });
 }
@@ -155,11 +137,11 @@ function setTheme(themeName) {
   let theme=`theme-${themeName}`;
   if (theme === "theme-standard") {
     figure.src = "./data/CrysViz_logo_clear_back_beta.png";
-  } else if (theme === "theme-ai") {
+  } else if (theme === "theme-relax") {
     figure.src = "./data/CrysViz_logo_clear_back_beta_red.png";
   } else if (theme === "theme-symmetry") {
     figure.src = "./data/CrysViz_logo_clear_back_beta_blue.png";
-  } else if (theme === "theme-nep") {
+  } else if (theme === "theme-md") {
     figure.src = "./data/CrysViz_logo_clear_back_beta.png";
   }
 }
@@ -173,8 +155,8 @@ export function resetSwitch(defaultMode = "None") {
   const buttons = BackendModeSwitch.querySelectorAll("button");
   buttons.forEach(btn => btn.classList.remove("active"));
   buttons.forEach(btn => btn.classList.remove("symmetry"));
-  buttons.forEach(btn => btn.classList.remove("ai"));
-  buttons.forEach(btn => btn.classList.remove("nep"));
+  buttons.forEach(btn => btn.classList.remove("relax"));
+  buttons.forEach(btn => btn.classList.remove("md"));
 
   // Find button with matching data-mode (case-insensitive)
   const defaultBtn = Array.from(buttons).find(
