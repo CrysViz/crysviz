@@ -29,35 +29,11 @@ const surface_options = {
 //------------------------------------------------------------
 //  MARCHING CUBES  (Three.js built‑in)
 //------------------------------------------------------------
-function initIsosurfaceMesh(field, colorPos = 0x33aaff, colorNeg = 0xff3333) {
-  const { nx, ny, nz, values } = field;
+function initIsosurfaceMesh(field) {
 
-  const isosurface = Isosurface(field);
+  const isosurface = new Isosurface(field);
 
-  let material_options = {};
-  Object.assign(material_options, surface_options);
-
-  material_options.color = colorPos;
-  const materialPos = new THREE.MeshPhysicalMaterial(material_options);
-
-  const maxPolyCount = nx * ny * nz * 5;
-  const pos_mesh_instance = new MarchingCubes([nx, ny, nz], materialPos, false, false, maxPolyCount);
-  // Copy field values directly into the MarchingCubes field buffer
-  for (let i = 0; i < values.length; i++) {
-    pos_mesh_instance.field[i] = values[i];
-  }
-
-  if (field.useAbsoluteIsoValue) {
-    material_options.color = colorNeg;
-    const materialNeg = new THREE.MeshPhysicalMaterial(material_options);
-    const neg_mesh_instance = new MarchingCubes([nx, ny, nz], materialNeg, false, false, maxPolyCount);
-    neg_mesh_instance.field = pos_mesh_instance.field; // share the same field data
-
-    return { pos: pos_mesh_instance, neg: neg_mesh_instance };
-  }
-  else {
-    return pos_mesh_instance;
-  }
+  return isosurface;
 }
 
 function updateIsosurface(iso) {
@@ -67,20 +43,6 @@ function updateIsosurface(iso) {
   }
 
   groups.isosurfaceGroup.updateMesh(iso);
-}
-
-//------------------------------------------------------------
-//  Convert voxel coordinates → world coordinates
-//------------------------------------------------------------
-function voxelToCartesian(i, j, k, field) {
-  const { origin, voxel } = field;
-  const [vx, vy, vz] = voxel;
-
-  return [
-    origin[0] + i * vx[0] + j * vy[0] + k * vz[0],
-    origin[1] + i * vx[1] + j * vy[1] + k * vz[1],
-    origin[2] + i * vx[2] + j * vy[2] + k * vz[2]
-  ];
 }
 
 export function createSlice(field, axis = "z", index = null) {

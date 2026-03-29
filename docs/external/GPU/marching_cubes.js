@@ -1,5 +1,6 @@
-import * as GPU from "./gpu-browser.min.js";
-
+import { GPU, input } from "./gpu-esm.js";
+// imported in index.html, since no apparent support for ES6 modules in GPU.js as of now
+const gpu = new GPU();
 
 const edgeTable = new Uint16Array([
 	0x0, 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c,
@@ -38,7 +39,7 @@ const edgeTable = new Uint16Array([
 
 // each row in this file represents the edges, in order, to be processed for each of the 256 possible cube configurations.
 // The value 255 is used to indicate the end of the list of edges to process for a given configuration.
-// It is a flattened 256x16 array
+// It is a flattened 256x15 array
 const triTable = new Uint8Array([
     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
       0,   8,   3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
@@ -328,6 +329,7 @@ const cubeVertexPos = new Uint8Array([
 	0,0,1, 1,0,1, 1,1,1, 0,1,1
 ]);
 
+const defaultKernelSize = 4096;
 
 // Marching Cubes implementation using GPU.js
 
@@ -342,6 +344,7 @@ export class MarchCubes {
         this.dy = 1 / (res_y - 1);
         this.dz = 1 / (res_z - 1);
 
+        this.field = field;
         this.fieldTexture = null;
         this.normTexture = null;
         this.cubeIndexTexture = null;
@@ -358,14 +361,15 @@ export class MarchCubes {
                 console.warn("Field dimensions exceed default GPU texture size limits. Further use may require chunking, which is not implemented.");
         }
 
-        this.send2GPUKernel = GPU.createKernel(function(field) {
+        this.send2GPUKernel = gpu.createKernel(function(field) {
             return field[this.thread.z][this.thread.y][this.thread.x];
         })
         .setOutput([this.field.nx, this.field.ny, this.field.nz])
-        .setPipeline(true);
+        .setPipeline(true)
+        .setImmutable(true); // take responsibility for deleting textures
 
 
-        this.normCalcKernel = GPU.createKernel(function(field) {
+        this.normCalcKernel = gpu.createKernel(function(field) {
             const x_min = Math.max(this.thread.x - 1, 0);
             const x_max = Math.min(this.thread.x + 1, this.constants.x_limit - 1);
             const y_min = Math.max(this.thread.y - 1, 0);
@@ -379,6 +383,7 @@ export class MarchCubes {
         })
         .setOutput([this.field.nx, this.field.ny, this.field.nz])
         .setPipeline(true)
+        .setImmutable(true)
         .setConstants({
             x_limit: this.field.nx,
             y_limit: this.field.ny,
@@ -389,7 +394,7 @@ export class MarchCubes {
         });
 
 
-        this.countCubeKernel = GPU.createKernel(function(field, isoValue) {
+        this.countCubeKernel = gpu.createKernel(function(field, isoValue) {
             /* 
             cube_points[0] = vertex_index; 								// v1
             cube_points[1] = vertex_index + x_step; 					// v2
@@ -402,42 +407,53 @@ export class MarchCubes {
             */
             
             // map the isosurface encapsulation to byte-formatted table index
+            // branchless: Math.max(0, Math.sign(iso - val)) = 1 if val < iso, else 0
             let cube_index = 0;
-            cube_index |= Number(field[this.thread.z][this.thread.y][this.thread.x] < isoValue);                                // v1
-            cube_index |= Number(field[this.thread.z][this.thread.y][this.thread.x + 1] < isoValue)
-                            << 1; // v2
-            cube_index |= Number(field[this.thread.z][this.thread.y + 1][this.thread.x + 1] < isoValue)
-                            << 2; // v3
-            cube_index |= Number(field[this.thread.z][this.thread.y + 1][this.thread.x] < isoValue)
-                            << 3; // v4
-            cube_index |= Number(field[this.thread.z + 1][this.thread.y][this.thread.x] < isoValue)                   
-                            << 4; // v5
-            cube_index |= Number(field[this.thread.z + 1][this.thread.y][this.thread.x + 1] < isoValue)          
-                            << 5; // v6
-            cube_index |= Number(field[this.thread.z + 1][this.thread.y + 1][this.thread.x + 1] < isoValue) 
-                            << 6; // v7
-            cube_index |= Number(field[this.thread.z + 1][this.thread.y + 1][this.thread.x] < isoValue)          
-                            << 7; // v8
+            cube_index += Math.max(0, Math.sign(isoValue - field[this.thread.z][this.thread.y][this.thread.x]));                                // v1
+            cube_index += Math.max(0, Math.sign(isoValue - field[this.thread.z][this.thread.y][this.thread.x + 1]))
+                            * 2; // v2
+            cube_index += Math.max(0, Math.sign(isoValue - field[this.thread.z][this.thread.y + 1][this.thread.x + 1]))
+                            * 4; // v3
+            cube_index += Math.max(0, Math.sign(isoValue - field[this.thread.z][this.thread.y + 1][this.thread.x]))
+                            * 8; // v4
+            cube_index += Math.max(0, Math.sign(isoValue - field[this.thread.z + 1][this.thread.y][this.thread.x]))
+                            * 16; // v5
+            cube_index += Math.max(0, Math.sign(isoValue - field[this.thread.z + 1][this.thread.y][this.thread.x + 1]))
+                            * 32; // v6
+            cube_index += Math.max(0, Math.sign(isoValue - field[this.thread.z + 1][this.thread.y + 1][this.thread.x + 1]))
+                            * 64; // v7
+            cube_index += Math.max(0, Math.sign(isoValue - field[this.thread.z + 1][this.thread.y + 1][this.thread.x]))
+                            * 128; // v8
 
             return cube_index;
         }).setOutput([this.field.nx - 1, this.field.ny - 1 , this.field.nz - 1]);
 
-        triTableInput = GPU.input(triTable, [256, 15]);
-        edge2vertexInput = GPU.input(edge2vertex, [12, 2]);
-        cubeVertexPosInput = GPU.input(cubeVertexPos, [8, 3]);
-        this.createVertexKernel = GPU.createKernel(function(field, normalField, cubeInds, cubeFlags, isoValue) {
-            const edgeToProcess = this.constants.triTable[this.thread.y][cubeFlags[this.thread.x]];
+        const triTableInput = input(triTable, [15, 256]);
+        const edge2vertexInput = input(edge2vertex, [2, 12]);
+        const cubeVertexPosInput = input(cubeVertexPos, [3, 8]);
+        this.createVertexKernel = gpu.createKernel(function(field, normalField, cubeInds, cubeFlags, isoValue) {
+            const flag = cubeFlags[this.thread.x];
+            const edgeToProcess = this.constants.triTable[flag][this.thread.y];
 
-            const v_loc = cubeInds[this.thread.x]
-            let v1_inds = [0,0,0];
-            let v2_inds = [0,0,0];
-            for (let i = 0; i < this.constants.ind_loop; i++) {
-                v1_inds[i] = v_loc[i] + cubeVertexPos[i][this.constants.edge2vertex[0][edgeToProcess]];
-                v2_inds[i] = v_loc[i] + cubeVertexPos[i][this.constants.edge2vertex[1][edgeToProcess]];
-            }
+            const vertex1 = this.constants.edge2vertex[edgeToProcess][0];
+            const vertex2 = this.constants.edge2vertex[edgeToProcess][1];
+            const cubeInd_x = cubeInds[this.thread.x] % this.constants.field_size[0];
+            const cubeInd_y = Math.floor(cubeInds[this.thread.x] / this.constants.field_size[0]) % this.constants.field_size[1];
+            const cubeInd_z = Math.floor(cubeInds[this.thread.x] / (this.constants.field_size[0] * this.constants.field_size[1]));
+            
+            const v1_inds = [
+                cubeInd_x + this.constants.cubeVertexPos[vertex1][0],
+                cubeInd_y + this.constants.cubeVertexPos[vertex1][1],
+                cubeInd_z + this.constants.cubeVertexPos[vertex1][2]
+            ];
+            const v2_inds = [
+                cubeInd_x + this.constants.cubeVertexPos[vertex2][0],
+                cubeInd_y + this.constants.cubeVertexPos[vertex2][1],
+                cubeInd_z + this.constants.cubeVertexPos[vertex2][2]
+            ];
             const v1_value = field[v1_inds[2]][v1_inds[1]][v1_inds[0]];
             const v2_value = field[v2_inds[2]][v2_inds[1]][v2_inds[0]];
-            const mu = (isoValue - v1_value) / (v2_value - v1_value);
+            const mu = Math.min(1, (isoValue - v1_value) / (v2_value - v1_value));
 
             if (this.thread.z === 0) {
                 const vertex_position = [
@@ -461,10 +477,12 @@ export class MarchCubes {
             
         })
         .setDynamicOutput(true)
+        .setDynamicArguments(true)
         .setConstants({triTable: triTableInput,
             edge2vertex: edge2vertexInput,
             cubeVertexPos: cubeVertexPosInput,
             voxel_size: [this.dx, this.dy, this.dz],
+            field_size: [this.field.nx, this.field.ny, this.field.nz],
             ind_loop: 3
         });
     }
@@ -478,12 +496,12 @@ export class MarchCubes {
         }
     }
 
-    cacheFieldData(field) {
+    cacheFieldData() {
         if (this.fieldTexture) {
             this.clearCache();
         }
-        this.field = field;
-        this.fieldTexture = this.send2GPUKernel(field.values);
+        const fieldInput = input(this.field.values, [this.field.nx, this.field.ny, this.field.nz]);
+        this.fieldTexture = this.send2GPUKernel(fieldInput);
         this.normTexture = this.normCalcKernel(this.fieldTexture);
     }
 
@@ -492,30 +510,62 @@ export class MarchCubes {
 
         let partitionedCubeFlags = [[],[],[],[],[]];
         let partitionedCubeInds = [[],[],[],[],[]];
-        for (let i = 0; i < cubeFlags.length; i++) {
-            const numTris = triTableCount[cubeFlags[i]];
-            if (numTris > 0) {
-                partitionedCubeFlags[numTris-1].push(cubeFlags[i]);
-                partitionedCubeInds[numTris-1].push(i);
+        let partitionedVertexInds = [[],[],[],[],[]];
+        let ind = 0;
+        for (let z = 0; z < this.field.nz - 1; z++) {
+            for (let y = 0; y < this.field.ny - 1; y++) {
+                for (let x = 0; x < this.field.nx - 1; x++) {
+                    const flag = cubeFlags[z][y][x];
+                    const numTris = triTableCount[flag];
+                    if (numTris > 0) {
+                        partitionedVertexInds[numTris-1].push(ind);
+                        partitionedCubeFlags[numTris-1].push(flag);
+                        partitionedCubeInds[numTris-1].push(x + y * this.field.nx + z * this.field.nx * this.field.ny);
+                        ind += numTris*3*3;
+                    }
+                }
             }
         }
 
-        const totalFlags = partitionedCubeFlags.reduce(
-            (sum, flags) => sum + flags.length,
-            0
-        );
-        let vertices = new Float32Array(totalFlags*3);
-        let normals = new Float32Array(totalFlags*3);
+        let totalVertices = 0;
+        for (let i = 0; i < 5; i++) {
+            totalVertices += partitionedCubeFlags[i].length * 3 * (i+1); // 3 vertices per triangle
+        }
+        let vertices = new Float32Array(totalVertices * 3);
+        let normals = new Float32Array(totalVertices * 3);
+
+        // determine max texture size and check if chunking is needed
+        const gl = gpu.context;
+        const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+        const maxTexels = maxTextureSize * maxTextureSize;
+
+        // field/norm textures: nx * ny * nz texels (3-component for normals)
+        const fieldTexels = this.field.nx * this.field.ny * this.field.nz;
+        if (fieldTexels > maxTexels) {
+            console.warn(`Field texture (${fieldTexels} texels) exceeds GPU max (${maxTexels}). Chunking required but not implemented.`);
+        }
+
         let c = 0;
         for (let i = 0; i < 5; i++) {
-            this.createVertexKernel.setOutput([partitionedCubeFlags[i].length, 3*(i+1), 2]);
-            const data = this.createVertexKernel(this.fieldTexture, this.normTexture, partitionedCubeInds[i], partitionedCubeFlags[i], isoValue);
-            for (let j = 0; j < data.length; j++) {
-                vertices.set(data[0][j].flat(Infinity), c);
-                normals.set(data[1][j].flat(Infinity), c);
-                c += data[0][j].length*3;
+            if (partitionedCubeFlags[i].length === 0) {
+                continue;
+            }
+            const numEdges = 3*(i+1); // 3 vertices per triangle
+            this.createVertexKernel.setOutput([partitionedCubeInds[i].length, numEdges, 2]);
+            const ind_inputs = input(partitionedCubeInds[i], [partitionedCubeInds[i].length]);
+            const flag_inputs = input(partitionedCubeFlags[i], [partitionedCubeFlags[i].length]);
+            const data = this.createVertexKernel(this.fieldTexture, this.normTexture, ind_inputs, flag_inputs, isoValue);
+            for (let j = 0; j < data[0][0].length; j++) {
+                for (let k = 0; k < numEdges; k++) {
+                    vertices.set(data[0][k][j], partitionedVertexInds[i][j] + 3*k);
+                    normals.set(data[1][k][j], partitionedVertexInds[i][j] + 3*k);
+                }
             }
         }
         return {vertices, normals};
+    }
+
+    delete() {
+        this.clearCache();
     }
 }
