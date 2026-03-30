@@ -134,7 +134,6 @@ export function createSlice(field, axis = "z", index = null) {
 function clearField() {
   if (groups.isosurfaceGroup) {
     app.scene.remove(groups.isosurfaceGroup);
-    groups.isosurfaceGroup.clearMesh();
   }
 }
 
@@ -176,13 +175,14 @@ export function updateField(iso = null) {
     return;
   }
 
+  app.scene.remove(groups.isosurfaceGroup); // Remove before updating to avoid rendering issues
+  groups.isosurfaceGroup.delete()
+  groups.isosurfaceGroup = null;
+  
+
   if (!groups.activeField.isVisible) {
-    console.warn("Active field is set to invisible, skipping update");
     return;
   }
-
-  // Remove previous field mesh if any
-  clearField();
 
   const field = groups.activeField;
 
@@ -205,15 +205,20 @@ export function updateField(iso = null) {
     }
   }
 
+  const isosurface = initIsosurfaceMesh(groups.activeField);
+  groups.isosurfaceGroup = isosurface;
+
   //--------------------------------------------------------
   //  Build marching cubes isosurface in voxel space
   //--------------------------------------------------------
   updateIsosurface(iso);
 
   //--------------------------------------------------------
-  //  Add to scene and record
+  //  Add to scene if not already there
   //--------------------------------------------------------
-  app.scene.add(groups.isosurfaceGroup);
+  if (!groups.isosurfaceGroup.parent) {
+    app.scene.add(groups.isosurfaceGroup);
+  }
 }
 
 export function parseCubeFile(content, fileName) {

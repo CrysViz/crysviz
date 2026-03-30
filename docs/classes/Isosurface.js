@@ -10,8 +10,8 @@ const surface_options = {
     side: THREE.DoubleSide,
     opacity:0.4,
     transparent: true,
-    depthWrite: false,
-    depthTest: true,
+    //depthWrite: false,
+    //depthTest: true,
   } 
 
 const defaultKernelSize = 4096;
@@ -74,54 +74,39 @@ export class Isosurface extends THREE.Group {
         this.field.isovalue = value;
     }
 
-    updateMesh(isoValue = this.field.isovalue) {
-        this.clearMesh();
+    _replaceGeometry(meshKey, vertices, normals) {
+        const tmpGeom = new THREE.BufferGeometry();
+        
+        tmpGeom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+        tmpGeom.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
 
-        if (this.marchingCubes && this.meshes.positive && (isoValue >= 0 || groups.activeField.useAbsoluteValue)) {
-            if (groups.activeField.useAbsoluteValue) {
+        const merged = mergeVertices(tmpGeom);
+        merged.computeVertexNormals();
+        merged.computeBoundingSphere();
+
+        const oldMesh = this.meshes[meshKey];
+        const newMesh = new THREE.Mesh(merged, oldMesh.material);
+        newMesh.frustumCulled = false;
+        this.remove(oldMesh);
+        this.add(newMesh);
+        this.meshes[meshKey] = newMesh;
+    }
+
+    updateMesh(isoValue = this.field.isovalue) {
+
+        if (this.marchingCubes && this.meshes.positive && (isoValue >= 0 || groups.activeField.useAbsoluteIsoValue)) {
+            if (groups.activeField.useAbsoluteIsoValue) {
                 isoValue = Math.abs(isoValue);
             }
             const { vertices, normals } = this.marchingCubes.getVerticesForIso(isoValue);
-
-            const positionArray = vertices;
-            const positionAttribute = new THREE.BufferAttribute(positionArray, 3);
-            positionAttribute.setUsage(THREE.DynamicDrawUsage);
-            this.meshes.positive.geometry.setAttribute('position', positionAttribute);
-            this.meshes.positive.geometry.setDrawRange(0, vertices.length / 3);
-
-            const normalArray = normals;
-            const normalAttribute = new THREE.BufferAttribute(normalArray, 3);
-            normalAttribute.setUsage(THREE.DynamicDrawUsage);
-            this.meshes.positive.geometry.setAttribute('normal', normalAttribute);
-            //this.meshes.positive.geometry.setDrawRange(0, normals.length / 3);
-            
-            this.meshes.positive.geometry = mergeVertices(this.meshes.positive.geometry);
-            this.meshes.positive.geometry.computeVertexNormals();
-
-            this.add(this.meshes.positive);
+            this._replaceGeometry('positive', vertices, normals);
         }
-        if (this.marchingCubes && this.meshes.negative && (isoValue < 0 || groups.activeField.useAbsoluteValue)) {
-            if (groups.activeField.useAbsoluteValue) {
+        if (this.marchingCubes && this.meshes.negative && (isoValue < 0 || groups.activeField.useAbsoluteIsoValue)) {
+            if (groups.activeField.useAbsoluteIsoValue) {
                 isoValue = -Math.abs(isoValue);
             }
             const { vertices, normals } = this.marchingCubes.getVerticesForIso(isoValue);
-
-            const positionArray = vertices;
-            const positionAttribute = new THREE.BufferAttribute(positionArray, 3);
-            positionAttribute.setUsage(THREE.DynamicDrawUsage);
-            this.meshes.negative.geometry.setAttribute('position', positionAttribute);
-            //this.meshes.negative.geometry.setDrawRange(0, vertices.length / 3);
-
-            const normalArray = normals;
-            const normalAttribute = new THREE.BufferAttribute(normalArray, 3);
-            normalAttribute.setUsage(THREE.DynamicDrawUsage);
-            this.meshes.negative.geometry.setAttribute('normal', normalAttribute);
-            //this.meshes.negative.geometry.setDrawRange(0, normals.length / 3);
-
-            this.meshes.negative.geometry = mergeVertices(this.meshes.negative.geometry);
-            this.meshes.negative.geometry.computeVertexNormals();
-
-            this.add(this.meshes.negative);
+            this._replaceGeometry('negative', vertices, normals);
         }
     }
 
@@ -133,12 +118,16 @@ export class Isosurface extends THREE.Group {
 
     clearMesh() {
         if (this.meshes.positive) {
+            this.remove(this.meshes.positive);
             this.meshes.positive.geometry.dispose();
             this.meshes.positive.geometry = new THREE.BufferGeometry();
+            this.add(this.meshes.positive);
         }
         if (this.meshes.negative) {
+            this.remove(this.meshes.negative);
             this.meshes.negative.geometry.dispose();
             this.meshes.negative.geometry = new THREE.BufferGeometry();
+            this.add(this.meshes.negative);
         }
     }
 
