@@ -99,6 +99,7 @@ import {Structure} from './classes/Structure.js'
 import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from './modules/io.js';
 import { initializeUIOnLoad } from './modules/StructureInputModule.js';
 import { fieldBrowser } from './panels/FieldPanel.js';
+import { resetMathBackend } from './modules/math/index.js';
 
 // ........................................................................................................
 //
@@ -106,11 +107,13 @@ import { fieldBrowser } from './panels/FieldPanel.js';
 // Nothing should be defined here. Use store, classes, panels or modules for new definitions!
 // ........................................................................................................
 
+console.log = () => {};
+console.warn = () => {};
+
 const view = document.getElementById('view');
 const status = document.getElementById('status');
 const setStatus = (s) => {
   if (status) status.textContent = s;
-  console.log('[viewer]', s);
 };
 
 // ........................................................................................................
@@ -315,11 +318,8 @@ export function updateVisualization(options = {}) {
 
 
   if (!fileBrowser.selectedStructure) {
-    console.log('updateVisualization:No structure data selected available, returning early');
     return;
   }
-
-  console.log(fileBrowser.selectedStructure)
 
   // Main Structure
   if (reRenderAtoms) {
@@ -344,7 +344,6 @@ export function updateVisualization(options = {}) {
   // Comparison Structure
   if (SecondReRenderAtoms) {
     console.warn("Calling rebuildSecondAtoms")
-    console.log(fileBrowser.compStructure)
     rebuildSecondAtoms(fileBrowser.comparisonStructure, sOpacity);
   }
   if (!SecondReRenderAtoms && SecondAtomsUpdate) {
@@ -383,7 +382,6 @@ export function updateVisualization(options = {}) {
 async function loadStructure(content, fileName = '', isDefault = false) {
   try {
 
-    console.log("")
     const lower = (fileName || '').toLowerCase();
     const contentString = typeof content === 'string' ? content : '';
     
@@ -421,32 +419,26 @@ async function loadStructure(content, fileName = '', isDefault = false) {
                             lower.endsWith(".vcrx.in");
 
     if (treatAsCube) {
-      console.log("This is probably a CUBE file");
       await parseCubeFile(contentString, fileName);
     }
     else if (treatAsCHGCAR) {
-      console.log("This is probably a CHGCAR file"); 
       await parseCHGCARFile(contentString, fileName);
     }
 
     else if (treatAsCIF || treatAsmagCIF) {
-        console.log("This is probably a CIF or magCIF file")
         const structureContainer = await parse_any(contentString,fileName);
         initializeUIOnLoad(structureContainer);
     }
 
    else if (treatAsPWSCFin) {
-        console.log("This is probably a QE input file");
         parsePWSCFin(content,fileName);
     }
 
     else if (treatAsPWSCFout) {
-        console.log("This is probably a QE output file");
         parsePWSCFout(content,fileName);
     }
 
     else if (treatAsOUTCAR){
-        console.log("This is probably an OUTCAR file");
         await parseOUTCAR(contentString,fileName);
 
         if (fileBrowser.selectedStructure.spin != null) {
@@ -456,7 +448,6 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 
     }
     else {
-      console.log("This is probably a POSCAR file")
       parsePOSCAR(contentString,fileName);
 
     }
@@ -494,7 +485,6 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 async function loadDefaultStructure() {
   // Don't load default structure if we've already loaded a shared structure
   if (general.sharedStructureLoaded) {
-    console.log('Skipping default structure load - shared structure already loaded');
     return;
   }
 
@@ -505,23 +495,25 @@ async function loadDefaultStructure() {
 }
 
 function init() {
+  return initApp();
+}
+
+async function initApp() {
+  await initializeMathBackend();
   document.body.classList.add(`theme-standard`);
   app.scene = new THREE.Scene();
 
   const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   if (isDarkMode) {
-    console.log("The user prefers a dark theme.");
     app.scene.background = new THREE.Color(0x090A09)
     general.defaultBackgroundColor = 0x090A09
     general.currentLatticeColor = 0xE7E7E7
    } else {
-    console.log("The user prefers a light theme.");
     app.scene.background = new THREE.Color(0xE7E7E7);
     general.defaultBackgroundColor = 0xE7E7E7
     general.currentLatticeColor = 0x090A09
    };
 
-  console.log(`picked lattice color ${general.currentLatticeColor}`);
   //
   //
 
@@ -698,11 +690,17 @@ function init() {
     const element = groups.atomsMesh.userData.elementNames?.[instanceId] || wrapped.elements?.[instanceId] || '?';
     const hit = {
       position: new THREE.Vector3(...wrapped.cart[instanceId]),
-      userData: { atomIndex: srcIdx, element, instanceId }
+      userData: {
+        atomIndex: srcIdx,
+        element,
+        instanceId,
+        wrappedFrac: wrapped.frac?.[instanceId] ? [...wrapped.frac[instanceId]] : null,
+      }
     };
 
-    // Don't select the same atom twice (by source index)
-    if (measurements.selectedAtoms.some(a => a.userData.atomIndex === srcIdx)) return;
+    // Allow selecting the same source atom through a different periodic image,
+    // but avoid double-picking the exact same rendered instance.
+    if (measurements.selectedAtoms.some(a => a.userData.instanceId === instanceId)) return;
 
     // Add atom to selection and highlight it
     measurements.selectedAtoms.push(hit);
@@ -783,14 +781,12 @@ function init() {
   // Handle atom hits
   if (atomHits.length > 0) {
     hit = atomHits[0];
-    console.log("Hit atom instance ID:", hit.instanceId);
     // You can now use hit.instanceId to identify the specific atom
   }
 
   // Handle atom hits
   if (bondHits.length > 0) {
     hit = bondHits[0];
-    console.log("Hit Bond instance ID:", hit.instanceId);
     // You can now use hit.instanceId to identify the specific atom
   }    
 
@@ -801,24 +797,25 @@ function init() {
 
   if (atomHits.length > 0) {
     hit = atomHits[0];
+    const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
+    const instanceId = hit.instanceId;
+    const sourceIndex = wrapped?.srcIndex ? wrapped.srcIndex[instanceId] : instanceId;
+    const elementName = wrapped?.elements?.[instanceId]
+      || groups.atomsMesh.userData.elementNames?.[instanceId]
+      || fileBrowser.selectedStructure?.elements?.[sourceIndex]
+      || '?';
 
-    //const element = atomMesh.userData.element;
-    const sourceIndex = hit.instanceId
-    const elementName = groups.atomsMesh.userData.elementNames[hit.instanceId];
-    console.log("Hit atom instance ID:", hit.instanceId, elementName);
-    highlightAtomInStructurePanel(elementName, sourceIndex); //This needs to be fixed, currently this is not the correct index as we count differently. in the structureInfoPanel there is not global index but a per element index. 
-    highlightAtomIn3D(sourceIndex);
+    highlightAtomInStructurePanel(elementName, sourceIndex);
+    highlightAtomIn3D(instanceId);
 
   } else if (bondHits.length > 0) {
     let id2;
-    console.log(hit.instanceId%2)
     if (hit.instanceId%2 == 0){
       id2 = hit.instanceId+1
     }
     else{
       id2 = hit.instanceId-1
     }
-    console.log("Hit atom instance ID:", hit.instanceId,id2);
     //highlightBondInStructurePanel(bondIndex);
     highlightBondIn3D([hit.instanceId,id2]);
     //highlightBondInfoInStructurePanel()
@@ -1281,7 +1278,6 @@ setupStructureInput({
   app.camera.position.set(20, 20, 20);
   app.controls.update();
 
-  console.log("Loading structure...")
   // Load default structure after everything is initialized
   loadDefaultStructure();
 
@@ -1296,7 +1292,24 @@ setupStructureInput({
   window.addEventListener('focus', resumeRendering);
 
   animation_update();
+}
+
+async function initializeMathBackend() {
+  if (!general.useWasmMath) {
+    resetMathBackend();
+    return;
   }
+
+  try {
+    const { initMathWasmBackend, installMathWasmBackend } = await import('./modules/math/backend-wasm.js');
+    const backend = await initMathWasmBackend(new URL('./compiled/math_backend.wasm', import.meta.url));
+    installMathWasmBackend(backend);
+  } catch (error) {
+    resetMathBackend();
+    general.useWasmMath = false;
+    console.warn('[math] Failed to initialize WASM backend, falling back to JavaScript backend', error);
+  }
+}
   window.addEventListener('resize', () => resizeRenderer(app.orthographicFrustumSize));
   window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
   window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
@@ -1382,9 +1395,13 @@ function setupMobileMenu() {
     viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=no';
     document.head.appendChild(viewport);
   }
-  console.log(app.scene)
 }
 
-init();
-//resetView();
-setupMobileMenu();
+init()
+  .then(() => {
+    setupMobileMenu();
+  })
+  .catch((error) => {
+    setStatus(`Error: ${error.message}`);
+    console.error(error);
+  });

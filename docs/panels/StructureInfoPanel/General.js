@@ -6,9 +6,10 @@ import { updateVisualization } from '../../crystal-viewer.js';
 import { createColorPicker } from '../../modules/ColorPickerModule.js';
 import {createSupercell} from '../../modules/SuperCellModule.js';
 import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
-import {createCompositionRow} from './Species.js'
+import {createCompositionRow, createWyckoffCompositionRow} from './Species.js'
 import {createSpecificBondControl} from './Bonds.js'
 import {createBondLengthControls} from '../BondLengthPanel.js'
+import { latticeVolume } from '../../modules/math/index.js';
 
 
 // Function to handle structure panel toggle
@@ -69,6 +70,11 @@ export function getCompositionString() {
 export function renderComposition(panelState="closed") {
 
   const {elements, counts, total}=getCompositionString()
+  const hasWyckoffPanel = fileBrowser.selectedStructure?.symmetry?.mode === 'wyckoff'
+    && (fileBrowser.selectedStructure.symmetry.orbitGroups?.length ?? 0) > 0;
+  if (!hasWyckoffPanel || general.structurePanelMode === 'atoms') {
+    general.structurePanelMode = hasWyckoffPanel ? 'wyckoff' : 'atoms';
+  }
 
   const compDiv = document.getElementById('composition');
   compDiv.innerHTML = '';
@@ -105,7 +111,7 @@ export function renderComposition(panelState="closed") {
     cursor: pointer;
   `;
 
-   addButtonsRow.appendChild(addAtomButton)
+   if (!hasWyckoffPanel) addButtonsRow.appendChild(addAtomButton)
   
   const title = document.createElement('div');
   const titleWrapper = document.createElement('div');
@@ -116,12 +122,31 @@ export function renderComposition(panelState="closed") {
     margin-top: 2px;
   `;
 
-  title.textContent = 'Modify Atoms/Bonds';
+  title.textContent = hasWyckoffPanel ? 'Modify Wyckoff Orbits/Bonds' : 'Modify Atoms/Bonds';
   title.style.cssText = 'font-size:14px; font-weight:500; margin-bottom:10px;';
 
   titleWrapper.appendChild(title);
   titleWrapper.appendChild(addButtonsRow);
   compDiv.appendChild(titleWrapper);
+
+  if (hasWyckoffPanel) {
+    const symmetryBadge = document.createElement('div');
+    symmetryBadge.textContent = 'Symmetry Locked  |  Wyckoff Mode Active';
+    symmetryBadge.style.cssText = `
+      margin: 0 0 10px 0;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, rgba(32,77,160,0.35), rgba(35,139,230,0.18));
+      border: 1px solid rgba(91,168,255,0.45);
+      color: #cfe6ff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+    `;
+    compDiv.appendChild(symmetryBadge);
+  }
 
 
   // Ensure structure panel starts collapsed by default
@@ -148,7 +173,11 @@ atomBondControl.id = 'atomBondControl';
 atomBondControl.className = "atomBondControl";
 
 // Add the segmented control to the div
-const segmentedControl = addSegmentedControl(atomBondControl, 'atomBondControlSwitch');
+const segmentedControl = addSegmentedControl(atomBondControl, 'atomBondControlSwitch', hasWyckoffPanel);
+if (hasWyckoffPanel) {
+  segmentedControl.style.boxShadow = '0 0 0 1px rgba(91,168,255,0.35)';
+  segmentedControl.style.background = 'rgba(25,55,110,0.28)';
+}
 // Append the div to compDiv
 compDiv.appendChild(atomBondControl);
 
@@ -156,10 +185,12 @@ compDiv.appendChild(atomBondControl);
 const atomPanel = document.createElement("div");
 atomPanel.id = "atomPanel";
 atomPanel.className = "atomBondClass"; // Add a class for styling
-elements.forEach(el => {
-  const row = createCompositionRow(el, counts[el], total);
-  atomPanel.appendChild(row);
-});
+if (!hasWyckoffPanel) {
+  elements.forEach(el => {
+    const row = createCompositionRow(el, counts[el], total);
+    atomPanel.appendChild(row);
+  });
+}
 
 const ResetColorAtomsButtonRow = document.createElement('div');
 ResetColorAtomsButtonRow.style.display = 'flex';
@@ -184,7 +215,7 @@ ResetColorAtomsButtonRow.appendChild(resetAllColorsBtn)
 ResetColorAtomsButtonRow.appendChild(resetAtomsBtn)
 
 
-atomPanel.appendChild(ResetColorAtomsButtonRow)
+if (!hasWyckoffPanel) atomPanel.appendChild(ResetColorAtomsButtonRow)
 
 
 
@@ -192,9 +223,25 @@ atomPanel.appendChild(ResetColorAtomsButtonRow)
 const bondsPanel = document.createElement("div");
 bondsPanel.id = "infoBondControls";
 bondsPanel.className = "atomBondClass"; // Add a class for styling
+
+const wyckoffPanel = document.createElement("div");
+wyckoffPanel.id = "wyckoffPanel";
+wyckoffPanel.className = "atomBondClass";
+if (hasWyckoffPanel) {
+  const orbitGroups = fileBrowser.selectedStructure.symmetry.orbitGroups;
+  const groupedByElement = orbitGroups.reduce((acc, group) => {
+    (acc[group.element] ||= []).push(group);
+    return acc;
+  }, {});
+  const totalOrbits = orbitGroups.length || 1;
+  Object.keys(groupedByElement).sort().forEach((element) => {
+    wyckoffPanel.appendChild(createWyckoffCompositionRow(element, groupedByElement[element], totalOrbits));
+  });
+}
 // Append panels to compDiv
-compDiv.appendChild(atomPanel);
+if (!hasWyckoffPanel) compDiv.appendChild(atomPanel);
 compDiv.appendChild(bondsPanel);
+if (hasWyckoffPanel) compDiv.appendChild(wyckoffPanel);
 
 createSpecificBondControl("infoBondControls");
 createBondLengthControls("infoBondControls"); // Make sure to pass the panel element
@@ -227,18 +274,37 @@ segmentedControl.querySelectorAll('button').forEach(button => {
     // Show the appropriate panel based on the selected mode
     const selectedMode = this.dataset.mode;
     if (selectedMode === 'atoms') {
-      // You can decide what to show for trajectory mode
-      // For now, let's show the atom panel
+      general.structurePanelMode = 'atoms';
       showPanel('atomPanel');
     } else if (selectedMode === 'bonds') {
-      console.log("mode bonds selected")
+      general.structurePanelMode = 'bonds';
       showPanel('infoBondControls');
+    } else if (selectedMode === 'wyckoff' && hasWyckoffPanel) {
+      general.structurePanelMode = 'wyckoff';
+      showPanel('wyckoffPanel');
     }
   });
 });
-// Let atoms button be active. Which is button 0 in the list
-segmentedControl.querySelectorAll('button')[0].classList.add('active');
-showPanel("atomPanel")
+const initialMode = hasWyckoffPanel
+  ? (general.structurePanelMode === 'bonds' ? 'bonds' : 'wyckoff')
+  : (general.structurePanelMode === 'bonds' ? 'bonds' : 'atoms');
+const initialButton = Array.from(segmentedControl.querySelectorAll('button'))
+  .find((button) => button.dataset.mode === initialMode)
+  || segmentedControl.querySelector(hasWyckoffPanel ? 'button[data-mode="wyckoff"]' : 'button[data-mode="atoms"]');
+initialButton?.classList.add('active');
+if (hasWyckoffPanel) {
+  segmentedControl.querySelectorAll('button').forEach((button) => {
+    if (button.dataset.mode === 'wyckoff') {
+      button.textContent = 'Wyckoff *';
+    }
+    if (button.classList.contains('active')) {
+      button.style.background = 'linear-gradient(135deg, #1c5fb8, #2493ff)';
+      button.style.color = '#f5fbff';
+      button.style.fontWeight = '700';
+    }
+  });
+}
+showPanel(initialMode === 'bonds' ? 'infoBondControls' : (initialMode === 'wyckoff' ? 'wyckoffPanel' : 'atomPanel'))
 
 // CSS for the panels
 const style = document.createElement('style');
@@ -269,29 +335,18 @@ document.head.appendChild(style);
   compDiv.appendChild(volumeDiv);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   const volume = getLatticeVolume(lattice);
-  console.log(`Lattice Volume: ${volume} Å³`);
   volumeDiv.textContent = `Volume: ${volume} Å³`;
 
 }
 
 
 function getLatticeVolume(lattice) {
-  // Helper functions for vector math
-  const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
-  const cross = (a, b) => [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
-
-  // Calculate volume: |a · (b × c)|
-  const volume = Math.abs(dot(lattice[0], cross(lattice[1], lattice[2])));
-  return volume.toFixed(3); // Round to 3 decimal places
+  return latticeVolume(lattice).toFixed(3);
 }
 
 
 // Function to create the segmented control
-function createSegmentedControl(containerId) {
+function createSegmentedControl(containerId, includeWyckoff = false) {
   // Create the container div
   const container = document.createElement('div');
   container.className = 'segmented-control';
@@ -307,9 +362,17 @@ function createSegmentedControl(containerId) {
   BondsButton.textContent = 'Bonds';
   BondsButton.dataset.mode = 'bonds';
 
-  // Add buttons to the container
-  container.appendChild(AtomsButton);
-  container.appendChild(BondsButton);
+  const WyckoffButton = document.createElement('button');
+  WyckoffButton.textContent = 'Wyckoff';
+  WyckoffButton.dataset.mode = 'wyckoff';
+
+  if (includeWyckoff) {
+    container.appendChild(WyckoffButton);
+    container.appendChild(BondsButton);
+  } else {
+    container.appendChild(AtomsButton);
+    container.appendChild(BondsButton);
+  }
 
    // Add event listeners for the buttons
   container.querySelectorAll('button').forEach(button => {
@@ -324,7 +387,6 @@ function createSegmentedControl(containerId) {
 
       // You can add additional logic here to handle mode changes
       const selectedMode = this.dataset.mode;
-      console.log(`Selected mode: ${selectedMode}`);
       // For example, you might want to call a function to handle the mode change
       // handleModeChange(selectedMode);
     });
@@ -334,8 +396,8 @@ function createSegmentedControl(containerId) {
 }
 
 // Function to add the segmented control to a specific element
-function addSegmentedControl(parentElement, containerId) {
-  const segmentedControl = createSegmentedControl(containerId);
+function addSegmentedControl(parentElement, containerId, includeWyckoff = false) {
+  const segmentedControl = createSegmentedControl(containerId, includeWyckoff);
   parentElement.appendChild(segmentedControl);
   return segmentedControl;
 }

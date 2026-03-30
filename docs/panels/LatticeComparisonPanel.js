@@ -1,23 +1,4 @@
-// Helper functions for lattice calculations
-function length(v) { return Math.sqrt(v[0]**2 + v[1]**2 + v[2]**2); }
-function dot(u, v) { return u[0]*v[0] + u[1]*v[1] + u[2]*v[2]; }
-function cross(u, v) {
-  return [
-    u[1]*v[2] - u[2]*v[1],
-    u[2]*v[0] - u[0]*v[2],
-    u[0]*v[1] - u[1]*v[0]
-  ];
-}
-
-function latticeParameters(matrix) {
-  const [a1, a2, a3] = matrix;
-  const a = length(a1), b = length(a2), c = length(a3);
-  const alpha = Math.acos(dot(a2, a3) / (b * c)) * 180 / Math.PI;
-  const beta = Math.acos(dot(a1, a3) / (a * c)) * 180 / Math.PI;
-  const gamma = Math.acos(dot(a1, a2) / (a * b)) * 180 / Math.PI;
-  const volume = Math.abs(dot(a1, cross(a2, a3)));
-  return { a, b, c, alpha, beta, gamma, volume };
-}
+import { latticeParameters } from '../modules/math/index.js';
 
 function percentDiff(v1, v2) { return Math.abs(v2 - v1) / v1; }
 
@@ -378,4 +359,3 @@ export function updateLatticeComparisonPanel(L1_matrix, L2_matrix) {
             popup.remove();
           }
   }
-
