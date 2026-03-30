@@ -388,8 +388,7 @@ export function createShareButton() {
   const shareBtn = document.createElement('button');
   shareBtn.id = 'shareBtn';
   shareBtn.textContent = 'Share';
-  shareBtn.style.cssText =
-    'padding:8px 16px; margin-top:8px; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; width:100%;';
+  shareBtn.style.cssText = 'padding:8px 16px; margin-top:8px; color:white; background-color: var(--accent-color); border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; width:100%;';
   shareBtn.onclick = shareStructure;
 
   const container =

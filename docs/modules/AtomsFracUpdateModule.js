@@ -305,7 +305,7 @@ export function updateAtoms(opacity = 1.0) {
   }
   mesh.material.needsUpdate = true;
 
-  for (let i = 0; i < groups.atomsMesh.count; i++) {
+  for (let i = 0; i < wrappedCart.length; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     updateSingleAtomPosition(i, wrappedCart[i])
     updateSingleAtomColor(originalIndex,i, wrapped.elements[i])
