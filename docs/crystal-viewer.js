@@ -964,30 +964,20 @@ function resetControlsTouch() {
   document.getElementById('viewC').onclick = () => {app.controls.reset(); const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
 
-  setupStructureInput({
-    onLoadStructure: async (content, name) => {
-      setStatus('Loading structure...');
-      try {
-        // Wait for the structure to load
-        await loadStructure(content, name);
-        setStatus('Structure loaded!');
-      } catch (error) {
-        console.error('Error loading structure:', error);
-        setStatus('Error loading structure.');
-      }
-    },
-    setStatus,
-  });
-
-  loadSharedStructure();
-
-  if (!general.sharedStructureLoaded) {
-    console.log("loadFromFilePath...")
-    loadFromFilePath()
-    console.log("loaded:",fileBrowser.selectedStructure)
-  }
-
-  console.error("after load shared")
+ setupStructureInput({
+   onLoadStructure: async (content, name) => {
+     setStatus('Loading structure...');
+     try {
+       // Wait for the structure to load
+       await loadStructure(content, name);
+       setStatus('Structure loaded!');
+     } catch (error) {
+       console.error('Error loading structure:', error);
+       setStatus('Error loading structure.');
+     }
+   },
+   setStatus,
+ });
 
 
   // Control handlers
@@ -1237,7 +1227,17 @@ function resetControlsTouch() {
   app.controls.update();
 
   // Load default structure after everything is initialized
-  loadDefaultStructure();
+    loadSharedStructure();
+
+  if (!general.sharedStructureLoaded) {
+    console.log("loadFromFilePath...")
+    loadFromFilePath()
+    console.log("loaded:",fileBrowser.selectedStructure)
+  }
+  console.error("after load shared")
+  if (!general.sharedStructureLoaded) {
+    loadDefaultStructure();
+  }
 
 
   function handleVisibilityChange() {

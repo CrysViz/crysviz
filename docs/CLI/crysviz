@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Check if file path is provided
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <browser> <path-to-file>"
+    echo "Supported browsers: chrome, firefox, safari, edge"
+    exit 1
+fi
+
+BROWSER="$1"
+FILE="$2"
+
+if [ ! -f "$FILE" ]; then
+    echo "File not found: $FILE"
+    exit 1
+fi
+
+# Extract filename from path
+FILENAME=$(basename "$FILE")
+# Read file, encode as base64, and URL-encode
+CONTENT=$(cat "$FILE" | base64 -w 0 | python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read()))")
+# URL-encode the filename
+ENCODED_FILENAME=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$FILENAME")
+
+# Combine filename and content in the hash
+URL="http://localhost:8889/#load-file=$ENCODED_FILENAME|$CONTENT"
+
+# Open in the specified browser
+case "$BROWSER" in
+    chrome|chromium)
+        open -a "Google Chrome" "$URL"  # macOS
+        # chromium-browser "$URL"      # Linux
+        # start chrome "$URL"          # Windows
+        ;;
+    firefox)
+        open -a "Firefox" "$URL"       # macOS
+        # firefox "$URL"               # Linux
+        # start firefox "$URL"         # Windows
+        ;;
+    safari)
+        open -a "Safari" "$URL"        # macOS
+        ;;
+    edge)
+        open -a "Microsoft Edge" "$URL" # macOS
+        # microsoft-edge "$URL"        # Linux
+        # start msedge "$URL"          # Windows
+        ;;
+    *)
+        echo "Unsupported browser: $BROWSER"
+        exit 1
+        ;;
+esac

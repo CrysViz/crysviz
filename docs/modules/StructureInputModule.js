@@ -144,9 +144,8 @@ export function readPOSCAR(content, fileName) {
 
 
 export  function parsePOSCAR(content, fileName) {
-  
+   console.log(content)
   const structure = readPOSCAR(content, fileName);
-
   initializeWithPOSCAR(structure, fileName);  
 }
 
@@ -634,6 +633,8 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
                         fileName.includes('outcar') ||
                         fileName.endsWith('.cube') || 
                         fileName.includes('chgcar'); 
+                        fileName.includes('scf'); 
+                        fileName.includes('vcrc'); 
 
       if (!isStructureFile) {
         console.warn('Selected file may not be a structure file:', file.name);
