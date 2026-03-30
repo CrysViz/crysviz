@@ -31,6 +31,7 @@ import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleCont
 import { createColorPicker } from './modules/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
+import {loadFromFilePath} from './modules/FileURLLoader.js'
 import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter} from './modules/BondsFracUpdateModule.js'
 import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './modules/CompBondsFracUpdateModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from './modules/LatticeModule.js'
@@ -107,8 +108,11 @@ import { resetMathBackend } from './modules/math/index.js';
 // Nothing should be defined here. Use store, classes, panels or modules for new definitions!
 // ........................................................................................................
 
-console.log = () => {};
-console.warn = () => {};
+if (general.verbose == false) {
+  console.warn("general.verbose is false: No console.log or console.warn will be shown")
+  console.log = () => {};
+  console.warn = () => {};
+}
 
 const view = document.getElementById('view');
 const status = document.getElementById('status');
@@ -983,7 +987,8 @@ setupStructureInput({
 //  });
 
   // Check for shared structure in URL
-  loadSharedStructure();
+  loadFromFilePath();
+  //loadSharedStructure(); // Keep your existing logic
 
   // Control handlers
   document.getElementById('showAtoms').onchange = (e) => {

@@ -78,6 +78,7 @@ export const groups = {
 
 
 export const general = {  
+  verbose:true,  // switched of all console.log and console.warn, keeps console.error
   matte:false,
   ForceMin:1e-4,
   ForceMax:2.5,

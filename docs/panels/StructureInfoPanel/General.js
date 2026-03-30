@@ -235,6 +235,7 @@ if (hasWyckoffPanel) {
   }, {});
   const totalOrbits = orbitGroups.length || 1;
   Object.keys(groupedByElement).sort().forEach((element) => {
+    console.warn("here")
     wyckoffPanel.appendChild(createWyckoffCompositionRow(element, groupedByElement[element], totalOrbits));
   });
 }

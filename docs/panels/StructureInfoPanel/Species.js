@@ -247,6 +247,7 @@ export function createWyckoffCompositionRow(el, entries, total) {
   const left = document.createElement('div');
   left.className = 'comp-left';
   const currElemColors = fileBrowser.selectedStructure.getElementColors()[el];
+  console.log("here")
   let dot;
   if (currElemColors.length > 1) {
     dot = createPieDot(currElemColors, 20);
