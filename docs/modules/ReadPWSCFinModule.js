@@ -1,6 +1,7 @@
 import { Structure } from "../classes/Structure.js";
 import { Atom } from "../classes/Atom.js";
 import { StructureContainer } from "../classes/StructureContainer.js";
+import {runPeriodicWrapped} from "./LatticeModule.js";
 import { structureShip,fileBrowser } from '../store.js';
 import { createRow,selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
 import {
@@ -95,7 +96,7 @@ export function parsePWSCFin(content, fileName) {
 
   let periodic = runPeriodicWrapped(
    { hash: "None",wrapped: {}},
-   pos,
+   positions,
    elements,
    lattice
   )
