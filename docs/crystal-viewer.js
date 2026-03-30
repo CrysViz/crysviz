@@ -30,7 +30,8 @@ import { setupStructureInput, parsePOSCAR} from './modules/StructureInputModule.
 import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleControl.js';
 import { createColorPicker } from './modules/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
-import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
+import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js';
+import {loadFromFilePath} from './modules/FileURLLoader.js';
 import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter} from './modules/BondsFracUpdateModule.js'
 import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './modules/CompBondsFracUpdateModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from './modules/LatticeModule.js'
@@ -107,8 +108,8 @@ import { resetMathBackend } from './modules/math/index.js';
 // Nothing should be defined here. Use store, classes, panels or modules for new definitions!
 // ........................................................................................................
 
-console.log = () => {};
-console.warn = () => {};
+//console.log = () => {};
+//console.warn = () => {};
 
 const view = document.getElementById('view');
 const status = document.getElementById('status');
@@ -379,7 +380,7 @@ export function updateVisualization(options = {}) {
 }
 
 
-async function loadStructure(content, fileName = '', isDefault = false) {
+export async function loadStructure(content, fileName = '', isDefault = false) {
   try {
 
     const lower = (fileName || '').toLowerCase();
@@ -460,8 +461,8 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     //loadColorOverrides();
     //loadIndividualAtomColors();
 
-    document.getElementById('structureControls').style.display = 'block';
-    document.getElementById('structureControls2').style.display = 'block';
+   document.getElementById('structureControls').style.display = 'block';
+   document.getElementById('structureControls2').style.display = 'block';
 
     //createBondLengthControls();
     createShareButton();
@@ -963,27 +964,31 @@ function resetControlsTouch() {
   document.getElementById('viewC').onclick = () => {app.controls.reset(); const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
 
-setupStructureInput({
-  onLoadStructure: async (content, name) => {
-    setStatus('Loading structure...');
-    try {
-      // Wait for the structure to load
-      await loadStructure(content, name);
-      setStatus('Structure loaded!');
-    } catch (error) {
-      console.error('Error loading structure:', error);
-      setStatus('Error loading structure.');
-    }
-  },
-  setStatus,
-});
-//setupSecondStructureInput({
-//    onLoadStructure: (content, name) => loadSecondStructure(content, name),
-//    setStatus,
-//  });
+  setupStructureInput({
+    onLoadStructure: async (content, name) => {
+      setStatus('Loading structure...');
+      try {
+        // Wait for the structure to load
+        await loadStructure(content, name);
+        setStatus('Structure loaded!');
+      } catch (error) {
+        console.error('Error loading structure:', error);
+        setStatus('Error loading structure.');
+      }
+    },
+    setStatus,
+  });
 
-  // Check for shared structure in URL
   loadSharedStructure();
+
+  if (!general.sharedStructureLoaded) {
+    console.log("loadFromFilePath...")
+    loadFromFilePath()
+    console.log("loaded:",fileBrowser.selectedStructure)
+  }
+
+  console.error("after load shared")
+
 
   // Control handlers
   document.getElementById('showAtoms').onchange = (e) => {
@@ -1010,20 +1015,6 @@ setupStructureInput({
     general.showLattice = e.target.checked;
     updateVisualization();
   };
-
- //document.getElementById('showSecond').onchange = (e) => {
- //   general.showSecond = e.target.checked;
- //   let slider = document.getElementById("structure2OpacityValue");
- //   general.structure2OpacityValue=0.5;
- //   slider.value=0.5;
- //   addSecondStructure();
- // };
-
- // document.getElementById('showComparisonInfo').onchange = (e) => {
- //   general.showComparisonInfo = e.target.checked;
- //   addSecondStructure();
- // }
-
 
 
   const PBCBondToggle = document.getElementById('PBCBondToggle');
@@ -1055,39 +1046,6 @@ setupStructureInput({
 
   };
 
-// former slider to compare two structure. Should be added to new panel
-
-// document.getElementById('structure2OpacityValue').oninput = (e) => {
-//   general.structure2OpacityValue = parseFloat(e.target.value);
-//   document.getElementById('structure2OpacityValue').textContent = general.structure2OpacityValue.toFixed(1);
-//    general.mainOpacity = 2*structure2OpacityValue
-//    general.secondOpacity = 1.0
-//
-//   if (general.structure2OpacityValue < 0.5){
-//          general.secondOpacity = 2*general.structure2OpacityValue
-//    general.mainOpacity = 1.0
-//     }
-//   else if (general.structure2OpacityValue > 0.5){
-//     general.mainOpacity = 1-2 * (general.structure2OpacityValue - 0.5)
-//     general.secondOpacity = 1.0
-//     addSecondStructure(1.0)
-//     updateAtoms(1-2 * (general.structure2OpacityValue - 0.5))
-//     }
-//   else {
-//     general.secondOpacity =1.0
-//     general.mainOpacity = 1.0
-//   }
-//   updateVisualization(general.mainOpacity,general.secondOpacity);
-//
-//   updateVisualization({
-//         reRenderAtoms: false,
-//         reRenderBonds: false,
-//         reRenderLattice: false,
-//         reRenderOther: true
-//       });
-//
-//
-// };
 
   // Bond width control
   const bondWidthSlider = document.getElementById('bondWidth');
