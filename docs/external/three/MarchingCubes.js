@@ -17,22 +17,17 @@ import {
  *
  * @three_import import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
  */
-class MarchingCubes extends Mesh {
+class MarchingCubes {
 
 	/**
 	 * Constructs a new marching cubes instance.
 	 *
-	 * @param {number} resolution - The effect's resolution.
-	 * @param {Material} material - The cube's material.
+	 * @param {number|Array<3>} resolution - The effect's resolution.
 	 * @param {boolean} [enableUvs=false] - Whether texture coordinates should be animated or not.
 	 * @param {boolean} [enableColors=false] - Whether colors should be animated or not.
 	 * @param {number} [maxPolyCount=10000] - The maximum size of the geometry buffers.
 	 */
-	constructor( resolution, material, enableUvs = false, enableColors = false, maxPolyCount = 10000 ) {
-
-		const geometry = new BufferGeometry();
-
-		super( geometry, material );
+	constructor( resolution, enableUvs = false, enableColors = false, maxPolyCount = 10000 ) {
 
 		/**
 		 * This flag can be used for type testing.
@@ -96,18 +91,18 @@ class MarchingCubes extends Mesh {
 
 			}
 
-			this.size = Math.max( this.sizeX, this.sizeY, this.sizeZ );
+			// this.size = Math.max( this.sizeX, this.sizeY, this.sizeZ );
 			this.size2 = this.sizeX * this.sizeY;
 			this.size3 = this.sizeX * this.sizeY * this.sizeZ;
-			this.halfsizeX = this.sizeX / 2.0;
-			this.halfsizeY = this.sizeY / 2.0;
-			this.halfsizeZ = this.sizeZ / 2.0;
+			// this.halfsizeX = this.sizeX / 2.0;
+			// this.halfsizeY = this.sizeY / 2.0;
+			// this.halfsizeZ = this.sizeZ / 2.0;
 
 			// deltas
 
-			this.deltaX = 2.0 / this.sizeX;
-			this.deltaY = 2.0 / this.sizeY;
-			this.deltaZ = 2.0 / this.sizeZ;
+			this.deltaX = 1.0 / (this.sizeX - 1);
+			this.deltaY = 1.0 / (this.sizeY - 1);
+			this.deltaZ = 1.0 / (this.sizeZ - 1);
 			this.yd = this.sizeX;
 			this.zd = this.sizeX * this.sizeY;
 
@@ -122,34 +117,28 @@ class MarchingCubes extends Mesh {
 			const maxVertexCount = maxPolyCount * 3;
 
 			this.positionArray = new Float32Array( maxVertexCount * 3 );
-			const positionAttribute = new BufferAttribute( this.positionArray, 3 );
-			positionAttribute.setUsage( DynamicDrawUsage );
-			geometry.setAttribute( 'position', positionAttribute );
 
 			this.normalArray = new Float32Array( maxVertexCount * 3 );
-			const normalAttribute = new BufferAttribute( this.normalArray, 3 );
-			normalAttribute.setUsage( DynamicDrawUsage );
-			geometry.setAttribute( 'normal', normalAttribute );
 
 			if ( this.enableUvs ) {
 
 				this.uvArray = new Float32Array( maxVertexCount * 2 );
-				const uvAttribute = new BufferAttribute( this.uvArray, 2 );
-				uvAttribute.setUsage( DynamicDrawUsage );
-				geometry.setAttribute( 'uv', uvAttribute );
+			// 	const uvAttribute = new BufferAttribute( this.uvArray, 2 );
+			// 	uvAttribute.setUsage( DynamicDrawUsage );
+			// 	geometry.setAttribute( 'uv', uvAttribute );
 
 			}
 
 			if ( this.enableColors ) {
 
 				this.colorArray = new Float32Array( maxVertexCount * 3 );
-				const colorAttribute = new BufferAttribute( this.colorArray, 3 );
-				colorAttribute.setUsage( DynamicDrawUsage );
-				geometry.setAttribute( 'color', colorAttribute );
+			// 	const colorAttribute = new BufferAttribute( this.colorArray, 3 );
+			// 	colorAttribute.setUsage( DynamicDrawUsage );
+			// 	geometry.setAttribute( 'color', colorAttribute );
 
 			}
 
-			geometry.boundingSphere = new Sphere( new Vector3(), 1 );
+			// geometry.boundingSphere = new Sphere( new Vector3(), 1 );
 
 		};
 
@@ -470,25 +459,25 @@ class MarchingCubes extends Mesh {
 
 			// normals
 
-			if ( scope.material.flatShading === true ) {
+			// if ( scope.material.flatShading === true ) {
 
-				const nx = ( norm[ o1 + 0 ] + norm[ o2 + 0 ] + norm[ o3 + 0 ] ) / 3;
-				const ny = ( norm[ o1 + 1 ] + norm[ o2 + 1 ] + norm[ o3 + 1 ] ) / 3;
-				const nz = ( norm[ o1 + 2 ] + norm[ o2 + 2 ] + norm[ o3 + 2 ] ) / 3;
+			// 	const nx = ( norm[ o1 + 0 ] + norm[ o2 + 0 ] + norm[ o3 + 0 ] ) / 3;
+			// 	const ny = ( norm[ o1 + 1 ] + norm[ o2 + 1 ] + norm[ o3 + 1 ] ) / 3;
+			// 	const nz = ( norm[ o1 + 2 ] + norm[ o2 + 2 ] + norm[ o3 + 2 ] ) / 3;
 
-				scope.normalArray[ c + 0 ] = nx;
-				scope.normalArray[ c + 1 ] = ny;
-				scope.normalArray[ c + 2 ] = nz;
+			// 	scope.normalArray[ c + 0 ] = nx;
+			// 	scope.normalArray[ c + 1 ] = ny;
+			// 	scope.normalArray[ c + 2 ] = nz;
 
-				scope.normalArray[ c + 3 ] = nx;
-				scope.normalArray[ c + 4 ] = ny;
-				scope.normalArray[ c + 5 ] = nz;
+			// 	scope.normalArray[ c + 3 ] = nx;
+			// 	scope.normalArray[ c + 4 ] = ny;
+			// 	scope.normalArray[ c + 5 ] = nz;
 
-				scope.normalArray[ c + 6 ] = nx;
-				scope.normalArray[ c + 7 ] = ny;
-				scope.normalArray[ c + 8 ] = nz;
+			// 	scope.normalArray[ c + 6 ] = nx;
+			// 	scope.normalArray[ c + 7 ] = ny;
+			// 	scope.normalArray[ c + 8 ] = nz;
 
-			} else {
+			// } else {
 
 				scope.normalArray[ c + 0 ] = norm[ o1 + 0 ];
 				scope.normalArray[ c + 1 ] = norm[ o1 + 1 ];
@@ -502,7 +491,7 @@ class MarchingCubes extends Mesh {
 				scope.normalArray[ c + 7 ] = norm[ o3 + 1 ];
 				scope.normalArray[ c + 8 ] = norm[ o3 + 2 ];
 
-			}
+			// }
 
 			// uvs
 
@@ -933,6 +922,17 @@ class MarchingCubes extends Mesh {
 		};
 
 		/**
+		 * Returns vertex array and normal array
+		 */
+		this.getVertices = function () {
+			return {
+				vertices: scope.positionArray,
+				normals: scope.normalArray,
+				vertexCount: this.count
+			};
+		}
+
+		/**
 		 * Updates the effect.
 		 */
 		this.update = function () {
@@ -945,19 +945,19 @@ class MarchingCubes extends Mesh {
 			const sminY = this.sizeY;
 			const sminZ = this.sizeZ;
 
-			for ( let z = 0; z < sminZ; z ++ ) {
+			for ( let z = 0; z < sminZ-1; z ++ ) {
 
 				const z_offset = this.zd * z;
-				const fz = ( z - this.halfsizeZ ) / this.halfsizeZ; //+ 1
+				const fz = z / (this.sizeZ - 1); //+ 1
 
-				for ( let y = 0; y < sminY; y ++ ) {
+				for ( let y = 0; y < sminY-1; y ++ ) {
 
 					const y_offset = z_offset + this.yd * y;
-					const fy = ( y - this.halfsizeY ) / this.halfsizeY; //+ 1
+					const fy = y / (this.sizeY - 1); //+ 1
 
-					for ( let x = 0; x < sminX; x ++ ) {
+					for ( let x = 0; x < sminX-1; x ++ ) {
 
-						const fx = ( x - this.halfsizeX ) / this.halfsizeX; //+ 1
+						const fx = x / (this.sizeX - 1); //+ 1
 						const q = y_offset + x;
 
 						 polygonize( fx, fy, fz, q, this.isolation );
@@ -970,15 +970,15 @@ class MarchingCubes extends Mesh {
 
 			// set the draw range to only the processed triangles
 
-			this.geometry.setDrawRange( 0, this.count );
+			// this.geometry.setDrawRange( 0, this.count );
 
-			// update geometry data
+			// // update geometry data
 
-			geometry.getAttribute( 'position' ).needsUpdate = true;
-			geometry.getAttribute( 'normal' ).needsUpdate = true;
+			// geometry.getAttribute( 'position' ).needsUpdate = true;
+			// geometry.getAttribute( 'normal' ).needsUpdate = true;
 
-			if ( this.enableUvs ) geometry.getAttribute( 'uv' ).needsUpdate = true;
-			if ( this.enableColors ) geometry.getAttribute( 'color' ).needsUpdate = true;
+			//if ( this.enableUvs ) geometry.getAttribute( 'uv' ).needsUpdate = true;
+			//if ( this.enableColors ) geometry.getAttribute( 'color' ).needsUpdate = true;
 
 			// safety check
 

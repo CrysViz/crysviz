@@ -15,11 +15,16 @@ export function sliderToIsoValue(sliderValue, field) {
   let normalizedValue = sliderValue / 100;
   let isoFactor = 1;
 
+  let range_min = 0;
+  let range_max = field.maxValue;
+
   if (field.minValue < 0 && !field.useAbsoluteIsoValue) {
     normalizedValue = normalizedValue - 0.5; // Center at 0 for signed fields
     if (normalizedValue < 0) {
       isoFactor = -1;
       normalizedValue *= -1;
+      range_min = 0;
+      range_max = field.minValue;
     }
     normalizedValue *= 2;
   }
@@ -31,9 +36,13 @@ export function sliderToIsoValue(sliderValue, field) {
     // use logarithmic scaling for wide ranges to give more control over smaller values
     return isoFactor * Math.pow(10, logMin + normalizedValue * (logMax - logMin));
   }
+  else if (field.useAbsoluteIsoValue) {
+    // use linear absolute range
+    return isoFactor * (field.absMinValue + normalizedValue * (field.absMaxValue - field.absMinValue));
+  }
   else {
     // use linear scaling for narrow ranges
-    return isoFactor * (field.minValue + normalizedValue * (field.maxValue - field.minValue));
+    return range_min + normalizedValue * (range_max - range_min);
   }
 
   
