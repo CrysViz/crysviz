@@ -400,14 +400,12 @@ public:
 	
 
 	~MarchingCubes() {
-		printf("MarchingCubes destructor called. owns_field = %d\n", owns_field);
 		if (owns_field) {
 			delete[] field;
 			delete[] vnormal_cache;
 		}
 		delete[] vertex_list;
 		delete[] vnormal_list;
-		printf("MarchingCubes destructor finished.\n");
 	}
 
 	uintptr_t get_field() {
@@ -506,8 +504,6 @@ public:
 		unsigned char cube_index;
 		unsigned short edge_flags;
 		size_t cube_points[8];
-
-		printf("Starting vertex update with isovalue %f\n", isovalue);
 
 		for (z_ind = 0; z_ind < nz-1; z_ind++) {
 			for (y_ind = 0; y_ind < ny-1; y_ind++) {

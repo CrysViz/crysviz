@@ -546,38 +546,13 @@ export class MarchCubes {
         }); // very unclear why, but without recompiling the vertex kernel with dynamic output/arguments,
         // the three.js bufferedGeometries refuse to render after second iteration
 
-        const cubeFlags = this.countCubeKernel(this.fieldTexture, isoValue);
+        const cubeFlags = this.run_countKernel(this.fieldTexture, isoValue);
 
-        let partitionCount = [0,0,0,0,0,0];
-        for (let z = 0; z < this.field.nz - 1; z++) {
-            for (let y = 0; y < this.field.ny - 1; y++) {
-                for (let x = 0; x < this.field.nx - 1; x++) {
-                    const flag = cubeFlags[z][y][x];
-                    const numTris = triTableCount[flag];
-                    partitionCount[numTris]++;
-                }
-            }
-        }
+        const partitionCount = this.makePartitionCount(cubeFlags);
         let partitionedCubeFlags = [new Uint32Array(partitionCount[1]), new Uint32Array(partitionCount[2]), new Uint32Array(partitionCount[3]), new Uint32Array(partitionCount[4]), new Uint32Array(partitionCount[5])];
         let partitionedCubeInds = [new Uint32Array(partitionCount[1]), new Uint32Array(partitionCount[2]), new Uint32Array(partitionCount[3]), new Uint32Array(partitionCount[4]), new Uint32Array(partitionCount[5])];
         let partitionedVertexInds = [new Uint32Array(partitionCount[1]), new Uint32Array(partitionCount[2]), new Uint32Array(partitionCount[3]), new Uint32Array(partitionCount[4]), new Uint32Array(partitionCount[5])];
-        let inds = [0,0,0,0,0];
-        let vertexInd = 0;
-        for (let z = 0; z < this.field.nz - 1; z++) {
-            for (let y = 0; y < this.field.ny - 1; y++) {
-                for (let x = 0; x < this.field.nx - 1; x++) {
-                    const flag = cubeFlags[z][y][x];
-                    const numTris = triTableCount[flag];
-                    if (numTris > 0) {
-                        partitionedVertexInds[numTris-1][inds[numTris-1]] = vertexInd;
-                        partitionedCubeFlags[numTris-1][inds[numTris-1]] = flag;
-                        partitionedCubeInds[numTris-1][inds[numTris-1]] = x + y * this.field.nx + z * this.field.nx * this.field.ny;
-                        inds[numTris-1] += 1;
-                        vertexInd += numTris*3*3;
-                    }
-                }
-            }
-        }
+        this.partitionCubes(cubeFlags, partitionedCubeFlags, partitionedCubeInds, partitionedVertexInds);
 
         let totalVertices = 0;
         for (let i = 0; i < 5; i++) {
@@ -606,7 +581,7 @@ export class MarchCubes {
             this.createVertexKernel.setOutput([partitionedCubeInds[i].length, numEdges, 2]);
             const ind_inputs = GPUInput(partitionedCubeInds[i], [partitionedCubeInds[i].length]);
             const flag_inputs = GPUInput(partitionedCubeFlags[i], [partitionedCubeFlags[i].length]);
-            const data = this.createVertexKernel(this.fieldTexture, this.normTexture, ind_inputs, flag_inputs, isoValue);
+            const data = this.run_VertexKernel(this.fieldTexture, this.normTexture, ind_inputs, flag_inputs, isoValue);
             for (let j = 0; j < data[0][0].length; j++) {
                 for (let k = 0; k < numEdges; k++) {
                     vertices.set(data[0][k][j], partitionedVertexInds[i][j] + 3*k);
@@ -620,6 +595,48 @@ export class MarchCubes {
             normals: normals, 
             vertexCount: totalVertices
         };
+    }
+
+    run_VertexKernel(fieldTexture, normTexture, cubeInds, cubeFlags, isoValue) {
+        return this.createVertexKernel(this.fieldTexture, this.normTexture, cubeInds, cubeFlags, isoValue);
+    }
+
+    run_countKernel(fieldTexture, isoValue) {
+        return this.countCubeKernel(this.fieldTexture, isoValue);
+    }
+
+    makePartitionCount(cubeFlags) {
+        let partitionCount = [0,0,0,0,0,0];
+        for (let z = 0; z < this.field.nz - 1; z++) {
+            for (let y = 0; y < this.field.ny - 1; y++) {
+                for (let x = 0; x < this.field.nx - 1; x++) {
+                    const flag = cubeFlags[z][y][x];
+                    const numTris = triTableCount[flag];
+                    partitionCount[numTris]++;
+                }
+            }
+        }
+        return partitionCount;
+    }
+
+    partitionCubes(cubeFlags, partitionedCubeFlags, partitionedCubeInds, partitionedVertexInds) {
+        let inds = [0,0,0,0,0];
+        let vertexInd = 0;
+        for (let z = 0; z < this.field.nz - 1; z++) {
+            for (let y = 0; y < this.field.ny - 1; y++) {
+                for (let x = 0; x < this.field.nx - 1; x++) {
+                    const flag = cubeFlags[z][y][x];
+                    const numTris = triTableCount[flag];
+                    if (numTris > 0) {
+                        partitionedVertexInds[numTris-1][inds[numTris-1]] = vertexInd;
+                        partitionedCubeFlags[numTris-1][inds[numTris-1]] = flag;
+                        partitionedCubeInds[numTris-1][inds[numTris-1]] = x + y * this.field.nx + z * this.field.nx * this.field.ny;
+                        inds[numTris-1] += 1;
+                        vertexInd += numTris*3*3;
+                    }
+                }
+            }
+        }
     }
 
     delete() {

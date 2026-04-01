@@ -27,7 +27,7 @@ export class Isosurface extends THREE.Group{
         super();
         this.field = field;
 
-        this.marchingCubes = new MarchingCubesWrapper(field, "gpu");
+        this.marchingCubes = new MarchingCubesWrapper(field, "wasm");
         
         this.addMeshes();
 
@@ -81,7 +81,7 @@ export class Isosurface extends THREE.Group{
         tmpGeom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
         tmpGeom.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
 
-        const merged = mergeVertices(tmpGeom);
+        const merged = tmpGeom; //mergeVertices(tmpGeom);
         merged.computeVertexNormals();
         //merged.computeBoundingSphere();
 
@@ -89,7 +89,7 @@ export class Isosurface extends THREE.Group{
     }
 
     updateMesh(isoValue = this.field.isovalue) {
-        console.time("Marching Cubes");
+        const t0 = performance.now();
 
         let iso = isoValue;
         if (this.marchingCubes && this.meshes.positive && (iso >= 0 || groups.activeField.useAbsoluteIsoValue)) {
@@ -110,7 +110,8 @@ export class Isosurface extends THREE.Group{
             this.meshes.negative.needUpdate = true;
             this.add(this.meshes.negative);
         }
-        console.timeEnd("Marching Cubes");
+        const t1 = performance.now();
+        console.log(`Marching Cubes took ${t1 - t0} milliseconds.`);
     }
 
     clearMesh() {
