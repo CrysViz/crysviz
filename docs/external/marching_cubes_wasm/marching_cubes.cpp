@@ -454,14 +454,14 @@ public:
 		}
 	}
 
-	void _update_norm_cache(size_t v) {
+	inline void _update_norm_cache(size_t v) {
 		const size_t cache_ind = 3*v;
 		if (vnormal_cache[cache_ind] == 0 && vnormal_cache[cache_ind + 1] == 0 && vnormal_cache[cache_ind + 2] == 0) {
 			calc_norm(v, &vnormal_cache[cache_ind]);
 		}
 	}
 
-	void _add_edge_vertex(float isoval,
+	inline void _add_edge_vertex(float isoval,
 			unsigned char edge_ind,
 			size_t v1_ind, size_t v2_ind,
 			float x1, float y1, float z1,

@@ -81,8 +81,8 @@ export class Isosurface extends THREE.Group{
         tmpGeom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
         tmpGeom.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
 
-        const merged = tmpGeom; //mergeVertices(tmpGeom);
-        merged.computeVertexNormals();
+        const merged = tmpGeom // mergeVertices(tmpGeom); // merging vertices might be a good idea, but currently way more expensive
+        //merged.computeVertexNormals();
         //merged.computeBoundingSphere();
 
         this.meshes[meshKey].geometry = merged;
