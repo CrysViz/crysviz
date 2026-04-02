@@ -3,8 +3,9 @@ import * as THREE from '../external/three/three.module.js';
 import { parsePOSCAR } from './StructureInputModule.js';
 import { updateAtoms } from './AtomsFracUpdateModule.js';
 import { rebuildBonds } from './BondsFracUpdateModule.js';
-import { addDistanceMeasurement, addAngleMeasurement } from './MeasurementModule.js';
+import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from './MeasurementModule.js';
 import { createBondLengthControls } from '../panels/BondLengthPanel.js';
+import { fracToCart } from './math/index.js';
 
 const URL_WARN_CHARS = 4000;
 const URL_HARD_CHARS = 10000;
@@ -32,7 +33,26 @@ function captureState() {
 
   // Measurements — labels carry the authoritative userData
   const measurementData = measurements.measureLabels
-    .map(l => l.userData)
+    .map((l) => {
+      const data = l.userData;
+      if (!data?.type) return null;
+      if (data.type === 'distance') {
+        return {
+          type: 'distance',
+          atom1Ref: serializeMeasurementRef(data.atom1Ref),
+          atom2Ref: serializeMeasurementRef(data.atom2Ref),
+        };
+      }
+      if (data.type === 'angle') {
+        return {
+          type: 'angle',
+          atom1Ref: serializeMeasurementRef(data.atom1Ref),
+          atom2Ref: serializeMeasurementRef(data.atom2Ref),
+          atom3Ref: serializeMeasurementRef(data.atom3Ref),
+        };
+      }
+      return data;
+    })
     .filter(d => d && d.type);
 
   return {
@@ -250,27 +270,29 @@ function restoreMeasurements(measurementData) {
     if (!wrapped) return;
 
     measurementData.forEach(m => {
-      if (m.type === 'distance' && m.atom1Index != null && m.atom2Index != null) {
-        const a1 = makeAtomProxy(wrapped, m.atom1Index, m.atom1Position);
-        const a2 = makeAtomProxy(wrapped, m.atom2Index, m.atom2Position);
+      if (m.type === 'distance' && (m.atom1Ref || m.atom1Index != null) && (m.atom2Ref || m.atom2Index != null)) {
+        const a1 = makeAtomProxy(wrapped, m.atom1Ref ?? { atomIndex: m.atom1Index, atomPosition: m.atom1Position });
+        const a2 = makeAtomProxy(wrapped, m.atom2Ref ?? { atomIndex: m.atom2Index, atomPosition: m.atom2Position });
         if (a1 && a2) addDistanceMeasurement(a1, a2);
-      } else if (m.type === 'angle' && m.atom1Index != null && m.atom2Index != null && m.atom3Index != null) {
-        const a1 = makeAtomProxy(wrapped, m.atom1Index, m.atom1Position);
-        const a2 = makeAtomProxy(wrapped, m.atom2Index, m.atom2Position);
-        const a3 = makeAtomProxy(wrapped, m.atom3Index, m.atom3Position);
+      } else if (m.type === 'angle' && (m.atom1Ref || m.atom1Index != null) && (m.atom2Ref || m.atom2Index != null) && (m.atom3Ref || m.atom3Index != null)) {
+        const a1 = makeAtomProxy(wrapped, m.atom1Ref ?? { atomIndex: m.atom1Index, atomPosition: m.atom1Position });
+        const a2 = makeAtomProxy(wrapped, m.atom2Ref ?? { atomIndex: m.atom2Index, atomPosition: m.atom2Position });
+        const a3 = makeAtomProxy(wrapped, m.atom3Ref ?? { atomIndex: m.atom3Index, atomPosition: m.atom3Position });
         if (a1 && a2 && a3) addAngleMeasurement(a1, a2, a3);
       }
     });
   }, 200);
 }
 
-function makeAtomProxy(wrapped, originalIndex, savedPosition = null) {
+function makeAtomProxy(wrapped, ref) {
+  const atomIndex = ref?.atomIndex;
+  const savedPosition = ref?.atomPosition ?? null;
   let bestMatch = null;
   let bestDistance = Infinity;
 
   for (let i = 0; i < wrapped.cart.length; i++) {
     const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    if (srcIdx !== originalIndex) continue;
+    if (srcIdx !== atomIndex) continue;
 
     const candidate = {
       position: new THREE.Vector3(...wrapped.cart[i]),
@@ -278,8 +300,17 @@ function makeAtomProxy(wrapped, originalIndex, savedPosition = null) {
         atomIndex: srcIdx,
         element: wrapped.elements[i],
         instanceId: i,
+        wrappedFrac: wrapped.frac?.[i] ? [...wrapped.frac[i]] : null,
       },
     };
+
+    if (Array.isArray(ref?.imageOffset) && candidate.userData.wrappedFrac) {
+      const baseFrac = fileBrowser.selectedStructure?.atoms?.[atomIndex]?.position;
+      if (baseFrac) {
+        const candidateOffset = candidate.userData.wrappedFrac.map((value, axis) => Math.round(value - baseFrac[axis]));
+        if (candidateOffset.every((value, axis) => value === ref.imageOffset[axis])) return candidate;
+      }
+    }
 
     if (!savedPosition?.length) return candidate;
 
@@ -288,6 +319,20 @@ function makeAtomProxy(wrapped, originalIndex, savedPosition = null) {
       bestDistance = distance;
       bestMatch = candidate;
     }
+  }
+
+  if (Array.isArray(ref?.imageOffset) && fileBrowser.selectedStructure?.atoms?.[atomIndex]) {
+    const baseFrac = fileBrowser.selectedStructure.atoms[atomIndex].position;
+    const wrappedFrac = baseFrac.map((value, axis) => value + ref.imageOffset[axis]);
+    const cart = fracToCart([wrappedFrac], fileBrowser.selectedStructure.lattice)[0];
+    return {
+      position: new THREE.Vector3(...cart),
+      userData: {
+        atomIndex,
+        element: fileBrowser.selectedStructure.elements?.[atomIndex] ?? '?',
+        wrappedFrac,
+      },
+    };
   }
 
   return bestMatch;

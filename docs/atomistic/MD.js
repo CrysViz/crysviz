@@ -2,7 +2,13 @@ import { fileBrowser } from '../store.js';
 import { updateVisualization } from '../crystal-viewer.js';
 import { runPeriodicWrapped } from '../modules/LatticeModule.js';
 import { buildNEPStructure } from './relaxer.js';
-import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart } from './math.js';
+import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart, normalizeFractionalPositions } from './math.js';
+import {
+  getSymmetryDegreesOfFreedom,
+  isWyckoffModeActive,
+  symmetrizeCartesianPositions,
+  symmetrizeCartesianVectors,
+} from '../modules/SymmetryEditModule.js';
 
 const KB_EV_PER_K = 8.617333262e-5;
 const ACCEL_AFS2_PER_EVAA_AMU = 0.00964853399;
@@ -40,12 +46,8 @@ function clone3xN(a) {
   return a.map((r) => [...r]);
 }
 
-function wrap01(x) {
-  return ((x % 1) + 1) % 1;
-}
-
 function wrapCartesianPositionsToCell(positions, lattice) {
-  const frac = cartToFrac(positions, lattice).map((f) => [wrap01(f[0]), wrap01(f[1]), wrap01(f[2])]);
+  const frac = normalizeFractionalPositions(cartToFrac(positions, lattice));
   return fracToCart(frac, lattice);
 }
 
@@ -59,8 +61,8 @@ function kineticEnergyEv(velocities, masses) {
   return ke;
 }
 
-function temperatureK(velocities, masses) {
-  const dof = Math.max(1, 3 * velocities.length - 3);
+function temperatureK(velocities, masses, constrainedDof = null) {
+  const dof = Math.max(1, constrainedDof ?? (3 * velocities.length - 3));
   const ke = kineticEnergyEv(velocities, masses);
   return (2 * ke) / (dof * KB_EV_PER_K);
 }
@@ -118,13 +120,19 @@ export function createVelocityVerletIntegrator() {
         state.positions[i][2] += dtFs * state.velocities[i][2];
       }
       state.positions = wrapCartesianPositionsToCell(state.positions, state.lattice);
+      if (state.symmetryConstrained) {
+        state.positions = symmetrizeCartesianPositions(state.positions, state.lattice);
+        state.velocities = symmetrizeCartesianVectors(state.velocities, state.lattice);
+      }
 
       const efs = await forceEvaluator({
         lattice: state.lattice,
         positions: state.positions,
         types: state.types,
       });
-      state.forces = clone3xN(efs.forces);
+      state.forces = state.symmetryConstrained
+        ? symmetrizeCartesianVectors(clone3xN(efs.forces), state.lattice)
+        : clone3xN(efs.forces);
       state.potentialEnergyEv = Number(efs.total_energy);
       state.stress = clone3xN(efs.stress.matrix3x3);
 
@@ -138,6 +146,9 @@ export function createVelocityVerletIntegrator() {
         state.velocities[i][1] += 0.5 * dtFs * a2y;
         state.velocities[i][2] += 0.5 * dtFs * a2z;
       }
+      if (state.symmetryConstrained) {
+        state.velocities = symmetrizeCartesianVectors(state.velocities, state.lattice);
+      }
     },
   };
 }
@@ -146,21 +157,69 @@ export function createNoThermostat() {
   return { name: 'none', apply() {} };
 }
 
+function resolveTargetTemperature(targetTemperatureK, context) {
+  const target = typeof targetTemperatureK === 'function'
+    ? targetTemperatureK(context)
+    : targetTemperatureK;
+  return Number.isFinite(target) ? target : null;
+}
+
 export function createVelocityRescaleThermostat({ targetTemperatureK = 300, tauFs = 20 } = {}) {
   return {
     name: 'rescale',
-    apply(state, dtFs) {
-      const tNow = Math.max(1e-8, temperatureK(state.velocities, state.masses));
+    apply(state, dtFs, context = {}) {
+      const targetK = resolveTargetTemperature(targetTemperatureK, context);
+      state.currentTargetTemperatureK = targetK;
+      if (!Number.isFinite(targetK) || targetK <= 0) return;
+      const tNow = Math.max(1e-8, temperatureK(state.velocities, state.masses, state.constrainedDof));
       const alpha = Math.max(0, Math.min(1, dtFs / Math.max(1e-6, tauFs)));
-      const scale2 = 1 + alpha * (targetTemperatureK / tNow - 1);
+      const scale2 = 1 + alpha * (targetK / tNow - 1);
       const scale = Math.sqrt(Math.max(1e-12, scale2));
       for (let i = 0; i < state.velocities.length; i += 1) {
         state.velocities[i][0] *= scale;
         state.velocities[i][1] *= scale;
         state.velocities[i][2] *= scale;
       }
+      if (state.symmetryConstrained) {
+        state.velocities = symmetrizeCartesianVectors(state.velocities, state.lattice);
+      }
     },
   };
+}
+
+export function createCosineAnnealingSchedule({
+  startTemperatureK = 300,
+  peakTemperatureK = 600,
+  minTemperatureK = 100,
+  peakFraction = 0.3,
+  totalSteps = 500,
+} = {}) {
+  const total = Math.max(1, Number(totalSteps) || 1);
+  const peakStep = Math.max(1, Math.min(total - 1, Math.round(total * Math.max(0, Math.min(1, peakFraction)))));
+  const cosineLerp = (a, b, t) => a + (b - a) * (0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, Math.min(1, t))));
+
+  return ({ step }) => {
+    const currentStep = Math.max(1, Math.min(total, Number(step) || 1));
+    if (currentStep <= peakStep) {
+      const rampT = peakStep <= 1 ? 1 : (currentStep - 1) / (peakStep - 1);
+      return cosineLerp(startTemperatureK, peakTemperatureK, rampT);
+    }
+    const coolSpan = Math.max(1, total - peakStep);
+    const coolT = (currentStep - peakStep) / coolSpan;
+    return cosineLerp(peakTemperatureK, minTemperatureK, coolT);
+  };
+}
+
+function syncStateSymmetryConstraint(state, structure = fileBrowser.selectedStructure) {
+  const symmetryConstrained = isWyckoffModeActive(structure);
+  state.symmetryConstrained = symmetryConstrained;
+  state.constrainedDof = symmetryConstrained ? getSymmetryDegreesOfFreedom(structure) : null;
+
+  if (!symmetryConstrained) return;
+
+  state.positions = symmetrizeCartesianPositions(state.positions, state.lattice, structure);
+  state.velocities = symmetrizeCartesianVectors(state.velocities, state.lattice, structure);
+  state.forces = symmetrizeCartesianVectors(state.forces, state.lattice, structure);
 }
 
 export async function initializeMDState({
@@ -182,24 +241,51 @@ export async function initializeMDState({
     velocities[i] = [sigma * gaussianRand(), sigma * gaussianRand(), sigma * gaussianRand()];
   }
   if (zeroMomentum) removeCenterOfMassVelocity(velocities, masses);
+  const symmetryConstrained = isWyckoffModeActive(structure);
+  if (symmetryConstrained) {
+    for (let i = 0; i < velocities.length; i += 1) {
+      velocities[i] = [...velocities[i]];
+    }
+    const baseLattice = base.lattice.map((row) => [...row]);
+    const basePositions = symmetrizeCartesianPositions(base.positions, baseLattice, structure);
+    const symVelocities = symmetrizeCartesianVectors(velocities, baseLattice, structure);
+    base.positions = basePositions;
+    for (let i = 0; i < symVelocities.length; i += 1) velocities[i] = symVelocities[i];
+  }
 
   const efs = await evalForce(base);
+  const constrainedDof = getSymmetryDegreesOfFreedom(structure);
   return {
     lattice: clone3xN(base.lattice),
     positions: clone3xN(base.positions),
     types: [...base.types],
     masses,
     velocities,
-    forces: clone3xN(efs.forces),
+    forces: symmetryConstrained ? symmetrizeCartesianVectors(clone3xN(efs.forces), base.lattice, structure) : clone3xN(efs.forces),
     stress: clone3xN(efs.stress.matrix3x3),
     potentialEnergyEv: Number(efs.total_energy),
     step: 0,
     timeFs: 0,
+    currentTargetTemperatureK: temperatureTargetK,
+    symmetryConstrained,
+    constrainedDof,
   };
 }
 
 function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+function createTimingProfile(label) {
+  return {
+    label,
+    totalMs: 0,
+    integrateMs: 0,
+    thermostatMs: 0,
+    onStepMs: 0,
+    waitMs: 0,
+    steps: 0,
+  };
 }
 
 export async function runMDSimulation({
@@ -217,6 +303,8 @@ export async function runMDSimulation({
   const stop = shouldStop ?? (() => false);
   let stopped = false;
   const startStep = state.step;
+  const timing = createTimingProfile('MD');
+  const totalStart = performance.now();
 
   for (let i = 1; i <= steps; i += 1) {
     if (stop()) {
@@ -224,39 +312,59 @@ export async function runMDSimulation({
       break;
     }
 
+    syncStateSymmetryConstraint(state);
+
+    let t0 = performance.now();
     await integrator.step(state, dtFs, forceEvaluator);
-    thermostat.apply(state, dtFs);
+    timing.integrateMs += performance.now() - t0;
+
+    t0 = performance.now();
+    thermostat.apply(state, dtFs, {
+      step: state.step + 1,
+      totalSteps: steps,
+      timeFs: state.timeFs + dtFs,
+      state,
+    });
+    timing.thermostatMs += performance.now() - t0;
 
     state.step += 1;
     state.timeFs += dtFs;
 
     const ke = kineticEnergyEv(state.velocities, state.masses);
-    const temp = temperatureK(state.velocities, state.masses);
+    const temp = temperatureK(state.velocities, state.masses, state.constrainedDof);
     const epot = state.potentialEnergyEv;
     const etot = epot + ke;
 
     if (onStep) {
+      t0 = performance.now();
       onStep({
         step: state.step,
         timeFs: state.timeFs,
         temperatureK: temp,
+        targetTemperatureK: state.currentTargetTemperatureK,
         epotEv: epot,
         ekinEv: ke,
         etotEv: etot,
         state,
       });
+      timing.onStepMs += performance.now() - t0;
     }
+    timing.steps = state.step - startStep;
 
     if (stop()) {
       stopped = true;
       break;
     }
+    t0 = performance.now();
     await nextFrame();
+    timing.waitMs += performance.now() - t0;
   }
+  timing.totalMs = performance.now() - totalStart;
 
   return {
     stopped,
     stepsRun: state.step - startStep,
+    timing,
   };
 }
 
@@ -317,6 +425,7 @@ export function createMDMonitorPanel() {
       <canvas id="mdCanvas" width="330" height="170" style="border:1px solid #444; border-radius:6px; background:#111;"></canvas>
       <div style="display:flex; gap:12px; font-size:11px; margin-top:6px;">
         <span style="color:#53c7ff;">Blue: Temperature (K)</span>
+        <span style="color:#95efff;">Dashed: Target T (K)</span>
         <span style="color:#ffb347;">Orange: Total Energy (eV)</span>
       </div>
       <div id="mdText" style="font-size:12px;"></div>
@@ -360,6 +469,7 @@ export function createMDMonitorPanel() {
   });
 
   const tSeries = [];
+  const targetSeries = [];
   const eSeries = [];
   const maxPts = 250;
 
@@ -376,6 +486,7 @@ export function createMDMonitorPanel() {
     const xmax = Math.max(1, n - 1);
     const tmin = Math.min(...tSeries);
     const tmax = Math.max(...tSeries);
+    const allTemps = [...tSeries, ...targetSeries.filter(Number.isFinite)];
     const emin = Math.min(...eSeries);
     const emax = Math.max(...eSeries);
 
@@ -389,10 +500,24 @@ export function createMDMonitorPanel() {
     ctx.strokeStyle = '#53c7ff';
     for (let i = 0; i < n; i += 1) {
       const x = mapX(i);
-      const y = mapY(tSeries[i], tmin, tmax);
+      const y = mapY(tSeries[i], Math.min(...allTemps), Math.max(...allTemps));
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     ctx.stroke();
+
+    if (targetSeries.some(Number.isFinite)) {
+      ctx.beginPath();
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = '#95efff';
+      for (let i = 0; i < n; i += 1) {
+        if (!Number.isFinite(targetSeries[i])) continue;
+        const x = mapX(i);
+        const y = mapY(targetSeries[i], Math.min(...allTemps), Math.max(...allTemps));
+        if (i === 0 || !Number.isFinite(targetSeries[i - 1])) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     ctx.beginPath();
     ctx.strokeStyle = '#ffb347';
@@ -405,19 +530,24 @@ export function createMDMonitorPanel() {
 
     ctx.fillStyle = '#53c7ff';
     ctx.font = '10px monospace';
-    ctx.fillText(`T: ${tmin.toFixed(1)}..${tmax.toFixed(1)} K`, 8, 14);
+    const plotTmin = Math.min(...allTemps);
+    const plotTmax = Math.max(...allTemps);
+    ctx.fillText(`T: ${plotTmin.toFixed(1)}..${plotTmax.toFixed(1)} K`, 8, 14);
     ctx.fillStyle = '#ffb347';
     ctx.fillText(`Etot: ${emin.toFixed(4)}..${emax.toFixed(4)} eV`, 8, 28);
   }
 
   return {
-    update({ step, temperatureK, etotEv, epotEv, ekinEv }) {
+    update({ step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv }) {
       tSeries.push(temperatureK);
+      targetSeries.push(Number.isFinite(targetTemperatureK) ? targetTemperatureK : NaN);
       eSeries.push(etotEv);
       if (tSeries.length > maxPts) tSeries.shift();
+      if (targetSeries.length > maxPts) targetSeries.shift();
       if (eSeries.length > maxPts) eSeries.shift();
       draw();
-      text.textContent = `step=${step} | T=${temperatureK.toFixed(1)} K | Etot=${etotEv.toFixed(4)} eV | Epot=${epotEv.toFixed(4)} eV | Ekin=${ekinEv.toFixed(4)} eV`;
+      const targetText = Number.isFinite(targetTemperatureK) ? ` | Ttarget=${targetTemperatureK.toFixed(1)} K` : '';
+      text.textContent = `step=${step} | T=${temperatureK.toFixed(1)} K${targetText} | Etot=${etotEv.toFixed(4)} eV | Epot=${epotEv.toFixed(4)} eV | Ekin=${ekinEv.toFixed(4)} eV`;
     },
     remove() {
       panel.remove();

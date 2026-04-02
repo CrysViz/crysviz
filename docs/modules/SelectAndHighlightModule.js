@@ -7,7 +7,14 @@ import {updateBonds} from './BondsFracUpdateModule.js'
 import InstanceMeshManager from '../classes/InstanceMeshManager.js'
 import {getUUIDFromGeometry} from './AtomsFracUpdateModule.js'
 
+const ATOM_HIGHLIGHT_FADE_MS = 1200;
+let clearAtomHighlightTimer = null;
+
 export function clearHighlightAtom() {
+  if (clearAtomHighlightTimer) {
+    clearTimeout(clearAtomHighlightTimer);
+    clearAtomHighlightTimer = null;
+  }
   updateAtoms(1.0)
 } 
 
@@ -15,10 +22,22 @@ export function clearHighlightBond() {
   updateBonds(1.0)
 }
 
+function clearUIHighlight() {
+  if (highlightHover.currentlyHighlightedRow) {
+    highlightHover.currentlyHighlightedRow.style.backgroundColor = '';
+    highlightHover.currentlyHighlightedRow.style.borderLeft = '';
+    highlightHover.currentlyHighlightedRow = null;
+  }
+}
+
+function clear3DHighlights() {
+  clearHighlightBond();
+  clearHighlightAtom();
+}
 
 export function highlightAtomIn3D(index) {
   // Clear previous 3D highlight
-  clearAllHighlights()
+  clear3DHighlights()
 
   // Update emissive color and intensity
   groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(index, 1, 0.549, 0);
@@ -32,12 +51,17 @@ export function highlightAtomIn3D(index) {
   groups.atomsMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
   groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
   groups.atomsMesh.instanceColor.needsUpdate = true;
+
+  clearAtomHighlightTimer = setTimeout(() => {
+    clearAtomHighlightTimer = null;
+    clearHighlightAtom();
+  }, ATOM_HIGHLIGHT_FADE_MS);
 }
 
 
 export function highlightBondIn3D(indexList) {
   // Clear previous 3D highlight
-  clearAllHighlights()
+  clear3DHighlights()
 
   // Update emissive color and intensity
   indexList.forEach(index => {
@@ -95,6 +119,13 @@ export function highlightBondInfoInStructurePanel(){
 export function highlightAtomInStructurePanel(element, sourceIndex) {
   // First, clear any existing highlights
   clearAllHighlights();
+  const symmetry = fileBrowser.selectedStructure?.symmetry;
+  const wyckoffOrbit = symmetry?.mode === 'wyckoff'
+    ? symmetry.orbitGroups?.find((group) => group.atomIndices.includes(sourceIndex))
+    : null;
+  const targetAtomIndex = wyckoffOrbit?.representativeIndex ?? sourceIndex;
+  const targetPanelId = wyckoffOrbit ? 'wyckoffPanel' : 'atomPanel';
+  const targetMode = wyckoffOrbit ? 'wyckoff' : 'atoms';
 
   // Auto-expand the structure panel if it's collapsed
   const structureToggle = document.getElementById('structureToggle');
@@ -121,8 +152,9 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
   panelSwitch.querySelectorAll('button').forEach(btn => {
     btn.classList.remove('active');
   });
-  panelSwitch.querySelectorAll('button')[0].classList.add('active');
-  showPanel("atomPanel");
+  const targetButton = panelSwitch.querySelector(`button[data-mode="${targetMode}"]`);
+  targetButton?.classList.add('active');
+  showPanel(targetPanelId);
 
   // Look for the element container
   const elementContainers = composition.querySelectorAll('.comp-container');
@@ -136,11 +168,12 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
     }
   }
 
-  //if (!targetContainer) return;
+  if (!targetContainer) return;
 
   // Auto-expand the element if not already expanded
   const atomsContainer = targetContainer.querySelector('.individual-atoms');
   const expandIcon = targetContainer.querySelector('.comp-left span:last-child');
+  if (!atomsContainer) return;
 
   if (atomsContainer && atomsContainer.style.display === 'none') {
     atomsContainer.style.display = 'block';
@@ -151,17 +184,10 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
 
   // Find the specific individual atom row by sourceIndex
   const atomRows = atomsContainer.querySelectorAll('.individual-atom-row');
-  console.warn(atomRows.length)
-  console.warn("Searching for row",sourceIndex)
   for (let i = 0; i < atomRows.length; i++) {
-   sourceIndex=0
-    console.log(i)
     const row = atomRows[i];
-    // Use the row's data-index attribute or assume the order matches the global index
-    // If rows are ordered the same as the global index, you can directly use sourceIndex
-    if (i === sourceIndex) {
+    if (Number(row.dataset.atomIndex) === targetAtomIndex) {
       // Highlight this row
-      console.log("highlighting row", row)
       highlightAtomRow(row);
       // Scroll into view
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -187,16 +213,9 @@ export function highlightAtomRow(row) {
 
 
 export function clearAllHighlights() {
-  // Clear UI highlight
-  if (highlightHover.currentlyHighlightedRow) {
-    highlightHover.currentlyHighlightedRow.style.backgroundColor = '';
-    highlightHover.currentlyHighlightedRow.style.borderLeft = '';
-    highlightHover.currentlyHighlightedRow = null;
-  }
-  clearHighlightBond();
-  clearHighlightAtom();
+  clearUIHighlight();
+  clear3DHighlights();
 }
 
 // Make clearAllHighlights available globally for manual clearing
 window.clearAtomHighlight = clearAllHighlights;
-

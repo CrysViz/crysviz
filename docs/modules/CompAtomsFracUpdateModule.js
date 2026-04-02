@@ -19,17 +19,13 @@ export function rebuildSecondAtoms(structure, opacity) {
     groups.secondAtomsMesh = null;
   }
   structure.atomImages={}
-  console.log("Rebuilding periodic")
   let positions = structure.atoms.map(a => a.position);
   let lattice = structure.lattice.map(r => [...r]);
   let elements = [...structure.elements];
   let _ = runPeriodicWrapped(structure.periodic, positions, elements,lattice)
 
-  console.log("Building atoms")
   buildSecondAtoms(structure);
-  console.log("updating atoms")
   let ok = updateSecondAtoms(structure,opacity);
-  console.log("status updateAtoms", ok)
  }
 
 export function buildSecondAtoms(structure) {
@@ -45,7 +41,6 @@ export function buildSecondAtoms(structure) {
   let wrapped = structure.periodic.wrapped
 
   const atomCount = wrapped.elements.length;
-  console.log("Building mesh for",atomCount,"atoms")
 
   // Geometry: unit sphere, scaled per instance
   const geometry = new THREE.SphereGeometry(1, 32, 24);
@@ -237,9 +232,7 @@ export function updateSecondAtoms(structure, opacity = 1.0) {
   const mesh = groups.secondAtomsMesh;
  
   mesh.material.opacity = opacity;
-  console.log("opacity",opacity)
   if (opacity === 1) {
-    console.log("Switching of transparency for comp atoms")
     mesh.material.transparent = false;
     mesh.material.depthWrite = true;
   }
@@ -268,5 +261,4 @@ export function updateSecondAtoms(structure, opacity = 1.0) {
   mesh.material.needsUpdate = true;
   
 }
-
 

@@ -7,7 +7,7 @@ import {
   transpose3x3,
   invert3x3,
   cartToFractional,
-} from "./StructureInputModule.js";
+} from "./math/index.js";
 import {generateID} from './UUIDModule.js'
 
 
@@ -126,4 +126,3 @@ export function parsePWSCFin(content, fileName) {
 
   selectLastAddedRow();
 }
-

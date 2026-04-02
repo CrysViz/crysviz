@@ -278,7 +278,7 @@ export function updateSingleAtomDiameter(index, element) {
 
 
 export function updateAtoms(opacity = 1.0) {
-  console.error("Update main opacity", opacity)
+  //console.error("Update main opacity", opacity)
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   let atoms = [...fileBrowser.selectedStructure.atoms];

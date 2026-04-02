@@ -1,3 +1,12 @@
+import {
+  transpose3x3,
+  multiplyMatVec,
+  invert3x3,
+} from './math/backend-js.js';
+
+console.log = () => {};
+console.warn = () => {};
+
 self.onmessage = (event) => {
   const { content, fileName } = event.data;
   const lines = content.split(/\r?\n/);
@@ -169,41 +178,7 @@ function readSpinComponent(lines, startIdx, natoms, regex) {
 }
 
 function convertCartesianToFractional(cart, lattice) {
-  const LT = transpose(lattice);
-  const inv = invert3x3(LT);
+  const LT = transpose3x3(lattice);
+  const inv = invert3x3(LT, 1e-14);
   return cart.map(v => multiplyMatVec(inv, v).map(x => ((x % 1) + 1) % 1));
 }
-
-function transpose(A) {
-  return A[0].map((_, i) => A.map(r => r[i]));
-}
-
-function multiplyMatVec(M, v) {
-  return [
-    M[0][0] * v[0] + M[0][1] * v[1] + M[0][2] * v[2],
-    M[1][0] * v[0] + M[1][1] * v[1] + M[1][2] * v[2],
-    M[2][0] * v[0] + M[2][1] * v[1] + M[2][2] * v[2],
-  ];
-}
-
-function invert3x3(m) {
-  const [[a, b, c], [d, e, f], [g, h, i]] = m;
-  const A = e * i - f * h;
-  const B = -(d * i - f * g);
-  const C = d * h - e * g;
-  const D = -(b * i - c * h);
-  const E = a * i - c * g;
-  const F = -(a * h - b * g);
-  const G = b * f - c * e;
-  const H = -(a * f - c * d);
-  const I = a * e - b * d;
-  const det = a * A + b * B + c * C;
-  if (Math.abs(det) < 1e-14) throw new Error("OUTCAR: lattice matrix not invertible");
-  const id = 1 / det;
-  return [
-    [A * id, D * id, G * id],
-    [B * id, E * id, H * id],
-    [C * id, F * id, I * id],
-  ];
-}
-
