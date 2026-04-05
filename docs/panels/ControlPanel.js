@@ -9,6 +9,7 @@ import {addForcePanel,removeForcePanel} from './ForcePanel.js';
 import {addBondPanel,removeBondPanel} from './BondPanel.js';
 import {addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
 import {addFieldPanel, removeFieldPanel} from './FieldPanel.js';
+import {addPlanesPanel, removePlanesPanel} from './PlanesPanel.js';
 import {updateVisualization} from '../crystal-viewer.js';
 
 
@@ -65,34 +66,46 @@ export function addControlPanelSpinForceSwitch() {
     // Handle different modes
     if (general.spinForceState == "Forces") {
       removeSpins();
-      removeSpinPanel()
+      removeSpinPanel();
       removeFieldPanel();
-      addForcePanel()
+      removePlanesPanel();
+      addForcePanel();
       updateForces();
-      }
+    }
     else if (general.spinForceState == "Spins") {
       //removeForces();
-      addSpinPanel()
+      addSpinPanel();
       createSpinControls();
       updateSpins();
       removeForcePanel();
       removeFieldPanel();
-      removeForces()
-        }
+      removePlanesPanel();
+      removeForces();
+    }
     else if (general.spinForceState == "Field") {
       removeSpinPanel();
       removeForcePanel();
       removeForces();
       removeSpins();
+      removePlanesPanel();
       addFieldPanel();
-        }
+    }
+    else if (general.spinForceState == "Planes") {
+      removeSpinPanel();
+      removeForcePanel();
+      removeFieldPanel();
+      removeForces();
+      removeSpins();
+      addPlanesPanel();
+    }
     else {
       //removeForces
       removeSpins();
       removeSpinPanel();
       removeForcePanel();
       removeFieldPanel();
-      removeForces()
+      removePlanesPanel();
+      removeForces();
       //remove  vectorFieldPanel();
     }
   });

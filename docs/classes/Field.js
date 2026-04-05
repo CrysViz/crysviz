@@ -33,4 +33,10 @@ export class Field {
     this.isVisible = isVisible;
   }
 
+  getValueAt(i, j, k) {
+    if (!this.values) return null;
+    const index = i + this.nx * (j + this.ny * k);
+    return this.values[index];
+  }
+
 }

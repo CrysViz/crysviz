@@ -36,5 +36,203 @@ font-size: 16px;
   background: var(--border-color);
 }
 
+/* ── Planes Panel ─────────────────────────────────────── */
+.planes-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.planes-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.planes-radio-label {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.planes-radio-label input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+
+.planes-row-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* uvwd layout: uvw cluster + d cluster separated */
+.planes-uvwd-layout {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.planes-uvw-cluster {
+  display: flex;
+  gap: 6px;
+}
+
+.planes-d-cluster {
+  display: flex;
+  margin-left: 14px;
+}
+
+.planes-labeled-input {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.planes-input-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.55);
+  text-transform: lowercase;
+  letter-spacing: 0.03em;
+}
+
+.planes-num-input {
+  width: 52px;
+  padding: 4px 5px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  text-align: center;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.planes-num-input::-webkit-inner-spin-button,
+.planes-num-input::-webkit-outer-spin-button {
+  opacity: 0.4;
+}
+
+.planes-num-input:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.planes-num-input:focus:not(:disabled) {
+  outline: none;
+  border-color: var(--accent-color);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.planes-viz-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.planes-viz-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+}
+
+.planes-select,
+.planes-select-sm {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.planes-select-sm {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.planes-buttons-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.planes-action-btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 7px 10px;
+  background: var(--accent-color);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.planes-action-btn:hover {
+  background: var(--highlight-color);
+}
+
+/* Table */
+.planes-table-wrapper {
+  overflow-x: auto;
+}
+
+.planes-empty-msg {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 12px;
+  text-align: center;
+  margin: 6px 0 0;
+}
+
+.planes-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.planes-th {
+  padding: 5px 8px;
+  text-align: left;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.planes-td {
+  padding: 5px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: middle;
+}
+
+.planes-params-cell {
+  font-family: monospace;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.plane-delete-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 80, 80, 0.75);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.plane-delete-btn:hover {
+  color: rgba(255, 80, 80, 1);
+}
 
 

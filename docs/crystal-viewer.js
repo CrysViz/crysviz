@@ -123,6 +123,7 @@ import {Structure} from './classes/Structure.js'
 import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from './modules/io.js';
 import { initializeUIOnLoad } from './modules/StructureInputModule.js';
 import { fieldBrowser } from './panels/FieldPanel.js';
+import { Plane } from './classes/Plane.js';
 
 // ........................................................................................................
 //
@@ -484,6 +485,15 @@ async function loadDefaultStructure() {
   setStatus('Loading default NaCl structure...');
   loadStructure(defaultPOSCAR, 'defaultYBCO.vasp', true);
       // Create a new Structure instance
+      
+  const defaultPlane = new Plane({
+    normal: [1, 1, 1], 
+    d: 1,
+    cell: fileBrowser.selectedStructure ? fileBrowser.selectedStructure.lattice : null,
+    mode: 'None'
+    });
+
+  app.scene.add(defaultPlane);
 
 }
 
