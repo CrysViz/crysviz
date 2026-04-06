@@ -10,6 +10,7 @@ import {fieldBrowser} from './FieldPanel.js';
 import {toggleFieldVisibility, setActiveField, updateField} from '../modules/Render3DFieldModule.js';
 import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import {Structure} from '../classes/Structure.js';
+import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 
 export function showError(message) {
   errorPanel.textContent = message;
@@ -561,6 +562,7 @@ function updateStructureFromRowAndStep(rowIndex) {
     return;
   }
   fileBrowser.selectedStructure = container.structures[step];
+  refreshBackendTheme();
   let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
   if (spins != null && general.spinForceState === "Spins") updateSpins();
   let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
@@ -582,4 +584,3 @@ function updateStructureFromRowAndStep(rowIndex) {
   }
   updateVisualization({reRenderAtoms: true, reRenderBonds: true});
 }
-
