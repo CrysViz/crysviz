@@ -370,21 +370,20 @@ function buildPanelShell(title) {
         </div>
       </div>
       <div class="atomistic-body" data-role="body"></div>
-      <p class="atomistic-status" data-role="status"></p>
-      <p class="atomistic-result" data-role="result"></p>
     </div>
   `;
 }
 
 function getShellBindings(panel) {
+  const sourceStateEl = panel.querySelector('[data-role="source-state"]');
   return {
     toggle: panel.querySelector('[data-role="potential-toggle"]'),
-    sourceStateEl: panel.querySelector('[data-role="source-state"]'),
+    sourceStateEl,
     aseConnectorsEl: panel.querySelector('[data-role="ase-connectors"]'),
     backendStateEl: panel.querySelector('[data-role="backend-state"]'),
     bodyEl: panel.querySelector('[data-role="body"]'),
-    statusEl: panel.querySelector('[data-role="status"]'),
-    resultEl: panel.querySelector('[data-role="result"]'),
+    statusEl: sourceStateEl,
+    resultEl: sourceStateEl,
   };
 }
 
