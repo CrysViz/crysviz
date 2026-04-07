@@ -1,9 +1,18 @@
 import * as THREE from '../external/three/three.module.js';
-import { app, fileBrowser, groups, general, spinsData } from '../store.js';
+import { app, fileBrowser, groups, general } from '../store.js';
 import { disposeGroup } from '../panels/WindowAndSceneControls.js';
+import {
+  getHeatMapColors,
+  getBatlowColors,
+  getHawaiiColors,
+  getManaguaColors,
+  getViridisColors,
+  getPlasmaColors,
+  getSpectralRColors
+} from '../panels/ColorPanel.js'; // Update the path accordingly
 
-const SHAFT_SEGS = 12;
-const TIP_SEGS = 12;
+const SHAFT_SEGS = 20;
+const TIP_SEGS = 20;
 const TIP_LENGTH = 0.8;
 const TIP_RADIUS = 0.3;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -24,59 +33,116 @@ export function removeSpins() {
 }
 
 export function deleteSpins() {
-  spinsData.length = 0;
   disposeSpinMeshes();
 }
 
-export function updateSpins(spinFactor = 1.0) {
+
+export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpins = [], colorMap = "none") {
   const structure = fileBrowser.selectedStructure;
   if (!structure?.periodic?.wrapped) { disposeSpinMeshes(); return; }
 
   const wrapped = structure.periodic.wrapped;
-  const shaftRadius = general.spinRadius ?? 0.08;
+  const shaftDiameter = general.spinRadius ?? 0.08;
+  const tipDiameter = TIP_RADIUS * (shaftDiameter / 0.08);
+  const tipLength = TIP_LENGTH * (shaftDiameter / 0.08);
 
-  // Determine spin source: structure.spins (OUTCAR) takes priority over manual spinsData
-  const useStructureSpins = structure.spins?.length > 0;
-  const useManualSpins = !useStructureSpins && spinsData?.length > 0;
+  let spins;
+  if (useManualSpins) {
+    spins = manualSpins;
+  } else {
+    spins = structure.spins;
+  }
 
-  if (!useStructureSpins && !useManualSpins) { disposeSpinMeshes(); return; }
+  if (!spins?.length) { disposeSpinMeshes(); return; }
 
-  // Build manual spin lookup: atomIndex → spin entry
-  const manualSpinMap = useManualSpins
-    ? new Map(spinsData.map(s => [s.atomIndex, s]))
-    : null;
-
-  // Collect valid arrows — one per original atom (skip periodic images)
   const arrows = [];
   const seen = new Set();
+
+  // Get all species visibility checkboxes
+  const speciesVisibility = {};
+  const checkboxes = document.querySelectorAll('#speciesVisibilityContainer input[type="checkbox"]');
+  checkboxes.forEach(checkbox => {
+    const element = checkbox.id.replace('species-', '');
+    speciesVisibility[element] = checkbox.checked;
+  });
+
   for (let i = 0; i < wrapped.cart.length; i++) {
     const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     if (seen.has(srcIdx)) continue;
     seen.add(srcIdx);
 
-    let v, scalingFactor, color;
-    if (useStructureSpins) {
-      const spin = structure.spins[srcIdx];
-      if (!spin?.vector) continue;
-      v = spin.vector;
-      scalingFactor = spin.scaling ?? 1.0;
-      // Color non-collinear spins by direction: |x|→r, |y|→g, |z|→b
-      const mag = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
-      if (mag < 0.001) continue;
-      color = new THREE.Color(Math.abs(v[0]) / mag, Math.abs(v[1]) / mag, Math.abs(v[2]) / mag);
+    let spin;
+    if (useManualSpins) {
+      spin = spins.find(s => s.atomIndex === srcIdx);
     } else {
-      const spin = manualSpinMap.get(srcIdx);
-      if (!spin?.vector) continue;
-      v = spin.vector;
-      scalingFactor = spin.scalingFactor ?? 1.0;
-      color = new THREE.Color(spin.color ?? '#ffffff');
+      spin = spins[srcIdx];
     }
+
+    if (!spin?.vector) continue;
+
+    // Get the element type for this atom
+    const element = structure.elements[srcIdx];
+
+    // Skip if the species is not visible
+    if (!speciesVisibility[element]) continue;
+
+    const v = spin.vector;
+    const scalingFactor = spin.scaling ?? 1.0;
+    let color;
 
     const mag = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
     if (mag < 0.05) continue;
 
     const totalLen = mag * scalingFactor * spinFactor;
     if (totalLen < 0.05) continue;
+
+    if (colorMap === "none") {
+      color = new THREE.Color(spin.color ?? '#008080');
+    } else if (colorMap === "heatmap") {
+      const colors = getHeatMapColors();
+      const nBins = colors.length;
+      const t = Math.min(totalLen / (general.spinMax || 2), 1);
+      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
+      color = colors[bin];
+    } else if (colorMap === "direction") {
+      color = new THREE.Color(Math.abs(v[0]) / mag, Math.abs(v[1]) / mag, Math.abs(v[2]) / mag);
+    } else if (colorMap === "batlow") {
+      const colors = getBatlowColors();
+      const nBins = colors.length;
+      const t = Math.min(totalLen / (general.spinMax || 2), 1);
+      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
+      color = colors[bin];
+    } else if (colorMap === "hawaii") {
+      const colors = getHawaiiColors();
+      const nBins = colors.length;
+      const t = Math.min(totalLen / (general.spinMax || 2), 1);
+      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
+      color = colors[bin];
+    } else if (colorMap === "managua") {
+      const colors = getManaguaColors();
+      const nBins = colors.length;
+      const t = Math.min(totalLen / (general.spinMax || 2), 1);
+      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
+      color = colors[bin];
+    } else if (colorMap === "viridis") {
+      const colors = getViridisColors();
+      const nBins = colors.length;
+      const t = Math.min(totalLen / (general.spinMax || 2), 1);
+      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
+      color = colors[bin];
+    } else if (colorMap === "plasma") {
+      const colors = getPlasmaColors();
+      const nBins = colors.length;
+      const t = Math.min(totalLen / (general.spinMax || 2), 1);
+      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
+      color = colors[bin];
+    } else if (colorMap === "spectralR") {
+      const colors = getSpectralRColors();
+      const nBins = colors.length;
+      const t = Math.min(totalLen / (general.spinMax || 2), 1);
+      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
+      color = colors[bin];
+    }
 
     arrows.push({
       origin: new THREE.Vector3(...wrapped.cart[i]),
@@ -88,7 +154,6 @@ export function updateSpins(spinFactor = 1.0) {
 
   const count = arrows.length;
 
-  // Rebuild InstancedMesh if count changed or meshes missing
   if (!groups.spinShaftMesh || groups.spinShaftMesh.count !== count * 2) {
     disposeSpinMeshes();
     if (count === 0) return;
@@ -122,7 +187,7 @@ export function updateSpins(spinFactor = 1.0) {
 
     // Shaft+
     dummy.position.copy(origin).addScaledVector(dir, shaftHalfLen / 2);
-    dummy.scale.set(shaftRadius, shaftHalfLen, shaftRadius);
+    dummy.scale.set(shaftDiameter, shaftHalfLen, shaftDiameter);
     dummy.quaternion.copy(quat);
     dummy.updateMatrix();
     groups.spinShaftMesh.setMatrixAt(i * 2, dummy.matrix);
@@ -130,15 +195,15 @@ export function updateSpins(spinFactor = 1.0) {
 
     // Shaft-
     dummy.position.copy(origin).addScaledVector(dir, -shaftHalfLen / 2);
-    dummy.scale.set(shaftRadius, shaftHalfLen, shaftRadius);
+    dummy.scale.set(shaftDiameter, shaftHalfLen, shaftDiameter);
     dummy.quaternion.copy(quat);
     dummy.updateMatrix();
     groups.spinShaftMesh.setMatrixAt(i * 2 + 1, dummy.matrix);
     groups.spinShaftMesh.instanceColor.setXYZ(i * 2 + 1, color.r, color.g, color.b);
 
     // Tip cone
-    dummy.position.copy(origin).addScaledVector(dir, shaftHalfLen + TIP_LENGTH / 2);
-    dummy.scale.set(TIP_RADIUS, TIP_LENGTH, TIP_RADIUS);
+    dummy.position.copy(origin).addScaledVector(dir, shaftHalfLen + tipLength / 2);
+    dummy.scale.set(tipDiameter, tipLength, tipDiameter);
     dummy.quaternion.copy(quat);
     dummy.updateMatrix();
     groups.spinTipMesh.setMatrixAt(i, dummy.matrix);

@@ -3,7 +3,6 @@ import {updateVisualization} from '../crystal-viewer.js';
 import {resetView} from './WindowAndSceneControls.js';
 import {resetModeSwitch, resetSpinForceSwitch} from './ControlPanel.js';
 import {createBondLengthControls} from './BondLengthPanel.js';
-import {createSpinControls} from './SpinPanel.js';
 import {updateSpins} from '../modules/SpinModule.js';
 import {updateForces} from '../modules/ForceModule.js';
 import {fieldBrowser} from './FieldPanel.js';

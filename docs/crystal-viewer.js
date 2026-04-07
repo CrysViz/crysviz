@@ -63,7 +63,7 @@ import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
   initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView,collapseAllAtomExpansions
 } from './panels/WindowAndSceneControls.js'
 import {loadAboutContent, openAboutPanel, closeAboutPanel} from './panels/AboutPanel.js';
-import {addSpinPanel,createSpinControls} from './panels/SpinPanel.js';
+import {addSpinPanel} from './panels/SpinPanel.js';
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
 import {renderComposition} from './panels/StructureInfoPanel/General.js';
 import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
@@ -441,12 +441,6 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
 
     else if (treatAsOUTCAR){
         await parseOUTCAR(contentString,fileName);
-
-        if (fileBrowser.selectedStructure.spin != null) {
-         addSpinPanel();
-         createSpinControls();
-        }
-
     }
     else {
       parsePOSCAR(contentString,fileName);

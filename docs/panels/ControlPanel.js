@@ -339,11 +339,12 @@ export function addControlPanelSpinForceSwitch() {
       updateForces();
       }
     else if (general.spinForceState == "Spins") {
-      addSpinPanel();
-      updateSpins();
+      console.log("Adding Spin Panel")
       removeForcePanel();
       removeFieldPanel();
       removeForces();
+      addSpinPanel();
+      updateSpins();
         }
     else if (general.spinForceState == "Field") {
       removeSpinPanel();

@@ -373,7 +373,6 @@ body.panel-hidden #axesLegend {
 
 #saveButton {
   margin-bottom: 12px;
-  margin-top: 12px;
   width: 100%;
   padding: 12px 16px;
   background: var( --bg-color);
@@ -1077,7 +1076,7 @@ justify-content: center;
   border-radius: 3px;
 }
 
-.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:600px; margin: 10px 0 20px 0;}
+.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:650px; margin: 10px 0 20px 0;}
 #composition { color:#d7eef6; line-height:1.4; }
 #composition [hidden] { display: none !important; }
 #measure { margin-top:8px; }

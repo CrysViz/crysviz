@@ -426,7 +426,7 @@ export function addColorPanel(target = "colorContainer") {
 
 
 // --- Colormap Functions ---
-function getHeatMapColors() {
+export function getHeatMapColors() {
   const nBins = 50;
   const heatmapColors = [];
   for (let i = 0; i < nBins; i++) {
@@ -446,7 +446,7 @@ function getHeatMapColors() {
   return heatmapColors;
 }
 
-function getBatlowColors(nBins = 100) {
+export function getBatlowColors(nBins = 100) {
   const batlowStops = [
     [0.000000, 0.0588235, 0.3490196],
     [0.0256410, 0.0784314, 0.4196078],
@@ -494,7 +494,7 @@ function getBatlowColors(nBins = 100) {
 
 
 
-function getHawaiiColors() {
+export function getHawaiiColors() {
   const nBins = 50;
   const hawaiiColors = [];
   const hawaiiStops = [
@@ -534,7 +534,7 @@ function getHawaiiColors() {
 }
 
 
-function getManaguaColors() {
+export function getManaguaColors() {
   const nBins = 50;
   const managuaColors = [];
 
@@ -621,7 +621,7 @@ function getManaguaColors() {
 
 
 
-function getViridisColors() {
+export function getViridisColors() {
   const nBins = 50;
   const viridisColors = [];
   const viridisStops = [
@@ -664,7 +664,7 @@ function getViridisColors() {
   return viridisColors;
 }
 
-function getPlasmaColors() {
+export function getPlasmaColors() {
   const nBins = 50;
   const plasmaColors = [];
   const plasmaStops = [
@@ -707,7 +707,7 @@ function getPlasmaColors() {
   return plasmaColors;
 }
 
-function getSpectralRColors() {
+export function getSpectralRColors() {
   const nBins = 50;
   const spectralRColors = [];
   const spectralRStops = [
