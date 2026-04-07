@@ -106,7 +106,41 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
       color = colors[bin];
     } else if (colorMap === "direction") {
       color = new THREE.Color(Math.abs(v[0]) / mag, Math.abs(v[1]) / mag, Math.abs(v[2]) / mag);
-    } else if (colorMap === "batlow") {
+    } 
+    else if (colorMap === "plusminus") {
+  // Normalize the vector
+  const mag = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+  const nx = v[0] / mag;
+  const ny = v[1] / mag;
+  const nz = v[2] / mag;
+
+  // Initialize RGB components
+  let r = 0, g = 0, b = 0;
+
+  // Handle positive and negative components
+  if (nx > 0) {
+    r += nx; // Positive x contributes to red
+  } else if (nx < 0) {
+    b += -nx; // Negative x contributes to blue
+  }
+
+  if (ny > 0) {
+    g += ny; // Positive y contributes to green
+  } else if (ny < 0) {
+    r += -ny; b += -ny; // Negative y contributes to magenta (red + blue)
+  }
+
+  if (nz > 0) {
+    b += nz; // Positive z contributes to blue
+  } else if (nz < 0) {
+    g += -nz; // Negative z contributes to green (or another color if preferred)
+  }
+
+  // Create the final color
+  color = new THREE.Color(r, g, b);
+}
+
+    else if (colorMap === "batlow") {
       const colors = getBatlowColors();
       const nBins = colors.length;
       const t = Math.min(totalLen / (general.spinMax || 2), 1);

@@ -705,6 +705,11 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
   directionMapOption.value = "direction";
   directionMapOption.textContent = "Direction Map";
 
+
+  const plusminusMapOption = document.createElement("option");
+  plusminusMapOption.value = "plusminus";
+  plusminusMapOption.textContent = "Plus-Minus Map";
+
   const batlowOption = document.createElement("option");
   batlowOption.value = "batlow";
   batlowOption.textContent = "Batlow";
@@ -730,8 +735,9 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
   spectralROption.textContent = "Spectral R";
 
   colorMapSelect.appendChild(noneOption);
-  colorMapSelect.appendChild(heatMapOption);
   colorMapSelect.appendChild(directionMapOption);
+  colorMapSelect.appendChild(plusminusMapOption);
+  colorMapSelect.appendChild(heatMapOption);
   colorMapSelect.appendChild(batlowOption);
   colorMapSelect.appendChild(hawaiiOption);
   colorMapSelect.appendChild(managuaOption);
@@ -850,6 +856,16 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
       icon.textContent = "−";
     }
   });
+
+  drawBtn.addEventListener("click", () => {
+  console.log("Draw button clicked"); // Debugging log
+  if (sourceSelect.value === "manual") {
+    const manualSpins = parseManualSpins();
+    console.log("Parsed manual spins:", manualSpins); // Debugging log
+    updateSpins(general.spinScale ?? 1.0, true, manualSpins, colorMapSelect.value);
+    updateCurrentSpinsList();
+  }
+});
 
   // Initialize min and max values for color bar
   general.spinMin = general.spinMin || 0;
@@ -1014,7 +1030,7 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
 
   colorMapSelect.addEventListener("change", () => {
   const cmap = colorMapSelect.value;
-  const isScalar = cmap !== "none" && cmap !== "direction";
+  const isScalar = cmap !== "none" && cmap !== "direction" && cmap !== "plusminus";  
 
   // Clear previous color bar if it exists
   colorBarContainer.innerHTML = '';
