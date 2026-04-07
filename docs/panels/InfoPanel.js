@@ -2,21 +2,21 @@
 export function addAnalysisInfoPanel() {
   const analysisInfoButton = document.getElementById("analysisInfoButton");
   if (!analysisInfoButton) return;
-  analysisInfoButton.onclick = () => showInfoPanel("../data/analysisInfo.md");
+  analysisInfoButton.onclick = () => showInfoPanel("./data/analysisInfo.md");
 }
 
 
 export function addUploadInfoPanel() {
   const InfoButton = document.getElementById("uploadInfoButton");
   if (!InfoButton) return;
-  InfoButton.onclick = () => showInfoPanel("../data/uploadInfo.md");
+  InfoButton.onclick = () => showInfoPanel("./data/uploadInfo.md");
 }
 
 
 export function addBackendInfoPanel() {
   const InfoButton = document.getElementById("backendInfoButton");
   if (!InfoButton) return;
-  InfoButton.onclick = () => showInfoPanel("../data/backendInfo.md");
+  InfoButton.onclick = () => showInfoPanel("./data/backendInfo.md");
 }
 
 
@@ -24,8 +24,7 @@ export function addBackendInfoPanel() {
 export function addStorageInfoPanel() {
   const storageInfoButton = document.getElementById("storageInfoButton");
   if (!storageInfoButton) return;
-
-  storageInfoButton.onclick = () => showInfoPanel("../data/storageInfo.md");
+  storageInfoButton.onclick = () => showInfoPanel("./data/storageInfo.md");
 }
 
 // Simple markdown renderer (for basic formatting)
