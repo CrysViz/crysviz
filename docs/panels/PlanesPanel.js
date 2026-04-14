@@ -1,11 +1,132 @@
-import { measurements } from '../store.js';
+import { measurements, app, fileBrowser } from '../store.js';
+import { Plane } from '../classes/Plane.js';
 
 export const planesData = {
-  planes: [],
   activeInputMode: 'hkl', // 'hkl' or 'uvwd'
-  nextId: 1,
   showPlanes: true,
 };
+
+const structurePlaneMeshes = new WeakMap();
+let activeRenderedStructure = null;
+
+function getSelectedStructure() {
+  return fileBrowser.selectedStructure || null;
+}
+
+function ensureStructurePlaneState(structure) {
+  if (!structure) return;
+  if (!Array.isArray(structure.planes)) structure.planes = [];
+}
+
+function getSelectedStructurePlanes() {
+  const structure = getSelectedStructure();
+  if (!structure || !Array.isArray(structure.planes)) return [];
+  return structure.planes;
+}
+
+function getStructureMeshMap(structure) {
+  let meshMap = structurePlaneMeshes.get(structure);
+  if (!meshMap) {
+    meshMap = new Map();
+    structurePlaneMeshes.set(structure, meshMap);
+  }
+  return meshMap;
+}
+
+function getPlaneDefinitionNormalAndD(planeDef) {
+  const params = planeDef?.params || {};
+  if (params.type === 'uvwd') {
+    return {
+      normal: [params.u || 0, params.v || 0, params.w || 0],
+      d: params.d || 0,
+    };
+  }
+
+  return {
+    normal: [params.h || 0, params.k || 0, params.l || 0],
+    d: 1,
+  };
+}
+
+function removePlaneMesh(structure, planeDef) {
+  if (!structure) return;
+  const meshMap = getStructureMeshMap(structure);
+  const mesh = meshMap.get(planeDef);
+  if (!mesh) return;
+  app.scene?.remove(mesh);
+  if (typeof mesh.dispose === 'function') {
+    mesh.dispose();
+  }
+  meshMap.delete(planeDef);
+}
+
+function upsertPlaneMesh(structure, planeDef) {
+  if (!structure || !planeDef || !app.scene) return;
+  removePlaneMesh(structure, planeDef);
+
+  const lattice = structure.lattice;
+  if (!Array.isArray(lattice) || lattice.length !== 3) return;
+
+  const { normal, d } = getPlaneDefinitionNormalAndD(planeDef);
+  if (Math.abs(normal[0]) + Math.abs(normal[1]) + Math.abs(normal[2]) < 1e-12) {
+    return;
+  }
+
+  const planeMesh = new Plane({
+    normal,
+    d,
+    cell: lattice,
+    mode: planeDef.visualization || 'None',
+  });
+
+  planeMesh.visible = Boolean(planesData.showPlanes && planeDef.enabled);
+  app.scene.add(planeMesh);
+  getStructureMeshMap(structure).set(planeDef, planeMesh);
+}
+
+function clearRenderedPlanesForStructure(structure) {
+  if (!structure || !app.scene) return;
+  const meshMap = getStructureMeshMap(structure);
+  meshMap.forEach(mesh => {
+    app.scene.remove(mesh);
+    if (typeof mesh.dispose === 'function') {
+      mesh.dispose();
+    }
+  });
+  meshMap.clear();
+}
+
+function bindPanelStateToSelectedStructure() {
+  const structure = getSelectedStructure();
+  if (!structure) return;
+
+  ensureStructurePlaneState(structure);
+}
+
+function refreshCurrentStructurePlanesInScene() {
+  const structure = getSelectedStructure();
+  if (!structure) return;
+
+  clearRenderedPlanesForStructure(structure);
+  structure.planes.forEach(planeDef => upsertPlaneMesh(structure, planeDef));
+}
+
+export function syncPlanesForSelectedStructure() {
+  const structure = getSelectedStructure();
+
+  if (activeRenderedStructure && activeRenderedStructure !== structure) {
+    clearRenderedPlanesForStructure(activeRenderedStructure);
+  }
+
+  activeRenderedStructure = structure;
+  bindPanelStateToSelectedStructure();
+
+  if (structure) {
+    refreshCurrentStructurePlanesInScene();
+  }
+
+  renderPlanesTable();
+}
 
 export function addPlanesPanel(target = "PlanesContainer") {
   const container = document.getElementById(target);
@@ -15,6 +136,7 @@ export function addPlanesPanel(target = "PlanesContainer") {
   }
 
   container.style.display = "block";
+  bindPanelStateToSelectedStructure();
   container.innerHTML = `
     <div class="control-group">
       <h3>Crystal Planes</h3>
@@ -118,6 +240,7 @@ export function addPlanesPanel(target = "PlanesContainer") {
   `;
 
   setupPlanesEvents(container);
+  syncPlanesForSelectedStructure();
   renderPlanesTable();
 }
 
@@ -125,7 +248,7 @@ function setupPlanesEvents(container) {
   const showPlanesToggle = container.querySelector('#showPlanesToggle');
   showPlanesToggle.addEventListener('change', e => {
     planesData.showPlanes = e.target.checked;
-    // TODO: trigger visibility update on rendered plane meshes when rendering is implemented
+    refreshCurrentStructurePlanesInScene();
   });
 
   const radioUVWD = container.querySelector('#radioUVWD');
@@ -149,6 +272,13 @@ function setupPlanesEvents(container) {
 }
 
 function addPlaneFromCurrentInputs() {
+  const structure = getSelectedStructure();
+  if (!structure) {
+    alert('Load/select a structure before adding planes.');
+    return;
+  }
+
+  ensureStructurePlaneState(structure);
   const viz = document.getElementById('planesVisualization')?.value ?? 'None';
   let label, params;
 
@@ -167,13 +297,16 @@ function addPlaneFromCurrentInputs() {
     label  = `[${u} ${v} ${w}] d=${d}`;
   }
 
-  planesData.planes.push({
-    id:            planesData.nextId++,
+  const newPlane = {
     enabled:       true,
     params,
     label,
     visualization: viz,
-  });
+  };
+
+  structure.planes.push(newPlane);
+
+  upsertPlaneMesh(structure, newPlane);
 
   renderPlanesTable();
 }
@@ -228,12 +361,13 @@ function renderPlanesTable() {
 
   tbody.innerHTML = '';
 
-  const empty = planesData.planes.length === 0;
+  const planes = getSelectedStructurePlanes();
+  const empty = planes.length === 0;
   if (noMsg)  noMsg.style.display  = empty ? 'block' : 'none';
   if (table)  table.style.display  = empty ? 'none'  : 'table';
   if (empty) return;
 
-  planesData.planes.forEach((plane, idx) => {
+  planes.forEach((plane, idx) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="planes-td">
@@ -255,19 +389,35 @@ function renderPlanesTable() {
 
   tbody.querySelectorAll('.plane-enable-cb').forEach(cb => {
     cb.addEventListener('change', e => {
-      planesData.planes[parseInt(e.target.dataset.idx)].enabled = e.target.checked;
+      const idx = parseInt(e.target.dataset.idx, 10);
+      const structure = getSelectedStructure();
+      const plane = structure?.planes?.[idx];
+      if (!plane) return;
+      plane.enabled = e.target.checked;
+      if (structure) upsertPlaneMesh(structure, plane);
     });
   });
 
   tbody.querySelectorAll('.plane-viz-select').forEach(sel => {
     sel.addEventListener('change', e => {
-      planesData.planes[parseInt(e.target.dataset.idx)].visualization = e.target.value;
+      const idx = parseInt(e.target.dataset.idx, 10);
+      const structure = getSelectedStructure();
+      const plane = structure?.planes?.[idx];
+      if (!plane) return;
+      plane.visualization = e.target.value;
+      if (structure) upsertPlaneMesh(structure, plane);
     });
   });
 
   tbody.querySelectorAll('.plane-delete-btn').forEach(btn => {
     btn.addEventListener('click', e => {
-      planesData.planes.splice(parseInt(e.target.dataset.idx), 1);
+      const idx = parseInt(e.target.dataset.idx, 10);
+      const structure = getSelectedStructure();
+      const plane = structure?.planes?.[idx];
+      if (!plane || !structure) return;
+
+      removePlaneMesh(structure, plane);
+      structure.planes.splice(idx, 1);
       renderPlanesTable();
     });
   });
@@ -278,5 +428,9 @@ export function removePlanesPanel(target = "PlanesContainer") {
   if (container) {
     container.innerHTML = '';
     container.style.display = 'none';
+  }
+
+  if (activeRenderedStructure) {
+    clearRenderedPlanesForStructure(activeRenderedStructure);
   }
 }
