@@ -45,6 +45,7 @@ export class Structure {
     atomImages = {},
     periodic = {}, // Accept periodic as an input
     volumetricFields = null,
+    planes = [],
   } = {}) {
     // Mutable instance properties
     this.elements = elements;
@@ -62,6 +63,7 @@ export class Structure {
     this.bonds = bonds;           // list of bonds
     this.periodic = periodic;     // Initialize periodic
     this.atomImages = {};
+    this.planes = planes;
 
     // Calculate periodic wrapped positions for atoms in-place
 
@@ -81,6 +83,7 @@ export class Structure {
       polyhedra: polyhedra ? { ...polyhedra } : null,
       colors: [...colors],
       bonds: deepCopyArrayOfObjects(this.bonds), // deep copy of bond objects
+      planes: deepCopyArrayOfObjects(planes),
     });
 
   }

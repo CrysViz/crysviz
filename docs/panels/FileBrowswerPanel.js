@@ -9,6 +9,7 @@ import {updateForces} from '../modules/ForceModule.js'
 import {removeLatticeAndSupercellPanel, addLatticeAndSupercellPanel} from './LatticeSupercellPanel.js'
 import { fieldBrowser } from './FieldPanel.js'
 import { toggleFieldVisibility, setActiveField, updateField } from '../modules/Render3DFieldModule.js'
+import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 
 export function showError(message) {
     errorPanel.textContent = message;
@@ -249,6 +250,7 @@ function updateStructureFromRowAndStep(rowIndex) {
     return;
   }
   fileBrowser.selectedStructure = container.structures[step];
+  syncPlanesForSelectedStructure();
 
   console.warn(allAtoms)
   // Assign arrays (make copies to avoid mutating original)
