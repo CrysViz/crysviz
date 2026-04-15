@@ -10,6 +10,7 @@ import {toggleFieldVisibility, setActiveField, updateField} from '../modules/Ren
 import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import {Structure} from '../classes/Structure.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
+import {removeLatticeAndSupercellPanel, addLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
 
 export function showError(message) {
   errorPanel.textContent = message;

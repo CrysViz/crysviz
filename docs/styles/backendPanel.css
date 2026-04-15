@@ -112,7 +112,6 @@ font-size: 12px;
 
 .segmented-backend-control {
   display: flex;
-  flex-wrap: wrap;
   background: rgba(25,25,25,0.8);
   padding: 8px;
   border-radius: 10px;
