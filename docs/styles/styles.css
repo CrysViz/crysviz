@@ -1445,6 +1445,7 @@ body {
 
   /* Mobile-friendly measurement tools */
   #measurementTools {
+    max-height: 60px;
     top: 30px;
     right: 10px;
     padding: 0;
@@ -1456,7 +1457,7 @@ body {
     flex-direction: row;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 0 8px;
   }
 
   /* Mobile-friendly camera tools - positioned below measurement tools */
@@ -1476,7 +1477,7 @@ body {
     flex-direction: row;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 0 8px;
   }
 
   /* Hide separators on mobile */
