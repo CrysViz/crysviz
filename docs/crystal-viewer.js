@@ -19,6 +19,7 @@ import { setupSecondStructureInput } from './modules/SecondStructureModule.js';
 import { parseOUTCAR} from './modules/ReadOutcarModule.js';
 import { parsePWSCFout} from './modules/ReadPWSCFoutModule.js';
 import { parsePWSCFin} from './modules/ReadPWSCFinModule.js';
+import {parseXYZFile} from './modules/ReadEXYZModule.js';
 import { setupStructureInput, parsePOSCAR} from './modules/StructureInputModule.js';
 
 // ........................................................................................................
@@ -419,7 +420,14 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
      const treatAsPWSCFin = lower.endsWith(".scf.in") ||
                             lower.endsWith(".vcrx.in");
 
-    if (treatAsCube) {
+     const treatAsEXZY = lower.endsWith(".xyz") ||
+                          lower.endsWith(".exyz");  
+
+    if (treatAsEXZY){
+      await parseXYZFile(content, fileName)
+    }
+
+    else if (treatAsCube) {
       await parseCubeFile(contentString, fileName);
     }
     else if (treatAsCHGCAR) {

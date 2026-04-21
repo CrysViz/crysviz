@@ -195,7 +195,7 @@ export function switchCameraType() {
 }
 
 // makes the center of structure as the rotation center.
-export function setViewDirection(dir) {
+export function asetViewDirection(dir) {
   //console.log('[setView] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
   const { center, dist } = getCellCenterAndDist();
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
@@ -209,6 +209,33 @@ export function setViewDirection(dir) {
 
   app.camera.position.copy(center.clone().add(n.multiplyScalar(dist)));
   app.controls.target = center;
+  app.controls.update();
+}
+export function setViewDirection(dir, up) {
+  const { center, dist } = getCellCenterAndDist();
+  const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
+
+  // Set camera position
+  app.camera.position.copy(center.clone().add(n.multiplyScalar(dist)));
+  app.controls.target = center;
+
+  console.warn(n)
+  // Set camera up vector based on the desired view
+  if (n.y == 0 && n.z == 0) {
+    // X towards me: up is Y, Z to the right
+    app.camera.up = new THREE.Vector3(0, 0, 1);
+    console.warn("setting z up")
+  } else if (n.z == 0 && n.x == 0) {
+    // Y towards me: up is Z, X to the right
+    app.camera.up = new THREE.Vector3(1, 0, 0);
+  } else if (n.x == 0 && n.y == 0) {
+    // Z towards me: up is Y, X to the right
+    app.camera.up = new THREE.Vector3(0, 1, 0);
+  } else {
+    // Default up
+    app.camera.up = new THREE.Vector3(0, 1, 0);
+  }
+
   app.controls.update();
 }
 
