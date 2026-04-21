@@ -1,7 +1,9 @@
-import { app, groups, general, fileBrowser, mode,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
-import {updateVisualization} from '../crystal-viewer.js'
-import {createSupercell} from '../modules/SuperCellModule.js';
-import {resetView} from './WindowAndSceneControls.js'
+import { applyLatticeTransformation } from '../modules/LatticeTransformModule.js';
+
+import { app, groups, general, fileBrowser, mode, getLatticeVisSettings, getAtomVisSettings } from '../store.js';
+import { updateVisualization } from '../crystal-viewer.js';
+import { createSupercell } from '../modules/SuperCellModule.js';
+import { resetView } from './WindowAndSceneControls.js';
 import {
   vectorLength3,
   dot3,
@@ -24,7 +26,7 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
   const group = document.createElement("div");
   group.id = "latticeAndSupercellGroup";
   group.style.cssText = `
-    border: 1px solid rgba(255,255,255,0.3)
+    border: 1px solid rgba(255,255,255,0.3);
     border-radius: 5px;
     padding: 10px;
   `;
@@ -137,6 +139,7 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
   // --- Supercell Panel (collapsible) ---
   const supercellPanel = document.createElement("div");
   supercellPanel.id = "supercellPanel";
+  supercellPanel.style.marginBottom = "10px";
 
   const supercellToggle = document.createElement("div");
   supercellToggle.id = "supercellToggle";
@@ -163,7 +166,7 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
   supercellContent.setAttribute("aria-hidden", "true");
 
   // --- Supercell Input Row ---
-  let supercell = fileBrowser.selectedStructure
+  let supercell = fileBrowser.selectedStructure;
 
   if (!supercell) fileBrowser.selectedStructure = { nx: 1, ny: 1, nz: 1 };
   const { nx, ny, nz } = fileBrowser.selectedStructure;
@@ -235,6 +238,129 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
   supercellPanel.appendChild(supercellToggle);
   supercellPanel.appendChild(supercellContent);
 
+  // --- Transformation Panel (collapsible) ---
+  const transformPanel = document.createElement("div");
+  transformPanel.id = "transformPanel";
+
+  const transformToggle = document.createElement("div");
+  transformToggle.id = "transformToggle";
+  transformToggle.className = "bond-toggle";
+  transformToggle.setAttribute("role", "button");
+  transformToggle.setAttribute("tabindex", "0");
+  transformToggle.setAttribute("aria-expanded", "false");
+  transformToggle.setAttribute("aria-controls", "transformContent");
+
+  const transformTitle = document.createElement("h4");
+  transformTitle.textContent = "Lattice Transformation";
+
+  const transformIcon = document.createElement("div");
+  transformIcon.id = "transformToggleIcon";
+  transformIcon.className = "toggle-icon";
+  transformIcon.textContent = "+";
+
+  transformToggle.appendChild(transformTitle);
+  transformToggle.appendChild(transformIcon);
+
+  const transformContent = document.createElement("div");
+  transformContent.id = "transformContent";
+  transformContent.className = "collapsible-content";
+  transformContent.setAttribute("aria-hidden", "true");
+
+
+  // --- Transformation Matrix Input ---
+const transformMatrixContainer = document.createElement("div");
+transformMatrixContainer.style.cssText = `
+  margin-bottom: 8px;
+`;
+
+const transformTable = document.createElement("table");
+transformTable.style.cssText = `
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+`;
+const transformTbody = document.createElement("tbody");
+
+// Create 3x4 matrix (3x3 for P, 1x3 for p)
+for (let i = 0; i < 3; i++) {
+  const tr = document.createElement("tr");
+  for (let j = 0; j < 4; j++) {
+    const td = document.createElement("td");
+    td.style.cssText = `
+      padding: 2px;
+      ${j === 3 ? 'border-left: 1px solid rgba(255, 255, 255, 0.3);' : ''}
+    `;
+    const input = document.createElement("input");
+    input.type = "number";
+    input.className = "TransformInput";
+    input.step = "0.1";
+    input.style.cssText = `
+      width: 60px;
+      text-align: center;
+      font-family: monospace;
+      padding: 2px;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: white;
+    `;
+    input.id = `transform_${i}_${j}`;
+
+    // Set default values: identity matrix for P, zero for p
+    if (j < 3) {
+      input.value = i === j ? "1" : "0";
+    } else {
+      input.value = "0.0";
+    }
+
+    td.appendChild(input);
+    tr.appendChild(td);
+  }
+  transformTbody.appendChild(tr);
+}
+transformTable.appendChild(transformTbody);
+transformMatrixContainer.appendChild(transformTable);
+transformContent.appendChild(transformMatrixContainer);
+
+
+
+  // --- Transformation Buttons Row ---
+  const transformBtnRow = document.createElement("div");
+  transformBtnRow.style.cssText = `
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+  `;
+
+  const transformApplyBtn = document.createElement("button");
+  transformApplyBtn.textContent = "Apply";
+  transformApplyBtn.className = "btn-mini highlight";
+  transformApplyBtn.style.cssText = `
+    height: 32px;
+    padding: 0 10px;
+    font-size: 11px;
+    margin-right: 4px;
+    min-width: 80px;
+  `;
+
+  const transformResetBtn = document.createElement("button");
+  transformResetBtn.textContent = "Reset";
+  transformResetBtn.className = "reset-btn";
+  transformResetBtn.style.cssText = `
+    height: 32px;
+    padding: 0 10px;
+    font-size: 11px;
+    margin-right: 4px;
+    min-width: 80px;
+  `;
+
+  transformBtnRow.appendChild(transformApplyBtn);
+  transformBtnRow.appendChild(transformResetBtn);
+  transformContent.appendChild(transformBtnRow);
+
+  transformPanel.appendChild(transformToggle);
+  transformPanel.appendChild(transformContent);
+
   // --- Toggle Logic for Lattice ---
   function setLatticeOpen(open) {
     if (open) {
@@ -288,6 +414,34 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       setSupercellOpen(!supercellContent.classList.contains("open"));
+    }
+  });
+
+  // --- Toggle Logic for Transformation ---
+  function setTransformOpen(open) {
+    if (open) {
+      transformContent.classList.add("open");
+      transformContent.setAttribute("aria-hidden", "false");
+      transformIcon.textContent = "−";
+      transformToggle.setAttribute("aria-expanded", "true");
+    } else {
+      transformContent.classList.remove("open");
+      transformContent.setAttribute("aria-hidden", "true");
+      transformIcon.textContent = "+";
+      transformToggle.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  setTransformOpen(false);
+
+  transformToggle.addEventListener("click", () =>
+    setTransformOpen(!transformContent.classList.contains("open"))
+  );
+
+  transformToggle.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      setTransformOpen(!transformContent.classList.contains("open"));
     }
   });
 
@@ -477,16 +631,63 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
     resetView();
   };
 
+
+transformApplyBtn.onclick = () => {
+  const matrix = [];
+  for (let i = 0; i < 3; i++) {
+    const row = [];
+    for (let j = 0; j < 4; j++) {
+      const val = parseFloat(document.getElementById(`transform_${i}_${j}`).value);
+      row.push(isFinite(val) ? val : 0);
+    }
+    matrix.push(row);
+  }
+  console.log("Applying transformation:", matrix);
+  applyLatticeTransformation(matrix);
+};
+
+transformResetBtn.onclick = () => {
+  // Reset matrix UI to identity
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 4; j++) {
+      const input = document.getElementById(`transform_${i}_${j}`);
+      if (j < 3) {
+        input.value = i === j ? "1" : "0";
+      } else {
+        input.value = "0.00000";
+      }
+    }
+  }
+  // Restore lattice and atom positions to original
+  if (fileBrowser.selectedStructure.original) {
+    // Restore lattice
+    fileBrowser.selectedStructure.lattice = fileBrowser.selectedStructure.original.lattice.map(row => [...row]);
+    // Restore only positions
+    const atoms = fileBrowser.selectedStructure.atoms;
+    const originalAtoms = fileBrowser.selectedStructure.original.atoms;
+    for (let i = 0; i < atoms.length; i++) {
+      atoms[i].position = [...originalAtoms[i].position];
+    }
+    updateVisualization({
+      reRenderAtoms: true,
+      reRenderBonds: true,
+      reRenderLattice: true,
+      reRenderOther: false,
+    });
+    resetView();
+    console.log("Transformation reset to original.");
+  }
+};
+
   // --- Build Structure ---
   group.appendChild(latticePanel);
   group.appendChild(supercellPanel);
+  group.appendChild(transformPanel);
   targetPanel.appendChild(group);
 
   // --- Initial Render ---
   renderLatticeParams();
 }
-
-
 
 export function removeLatticeAndSupercellPanel() {
   const panel = document.getElementById('latticeAndSupercellGroup');
@@ -497,3 +698,5 @@ export function removeLatticeAndSupercellPanel() {
     console.warn("Lattice & Supercell panel does not exist.");
   }
 }
+
+
