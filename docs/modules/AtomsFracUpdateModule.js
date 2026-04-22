@@ -1,5 +1,9 @@
 import * as THREE from '../external/three/three.module.js';
-import {periodic,structureShip, app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+
+import {structureShip, app, groups,fileBrowser, general,mode} from '../store.js';
+import {atomicRadii} from '../defaults/radii_defaults.js'
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
+
 import {Atom} from '../classes/Atom.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'

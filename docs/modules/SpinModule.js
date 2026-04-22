@@ -8,8 +8,9 @@ import {
   getManaguaColors,
   getViridisColors,
   getPlasmaColors,
-  getSpectralRColors
-} from '../panels/ColorPanel.js'; // Update the path accordingly
+  getSpectralRColors,
+  getColorFromMap
+} from '../defaults/color_texture_defaults.js'; 
 
 const SHAFT_SEGS = 20;
 const TIP_SEGS = 20;
@@ -37,6 +38,8 @@ export function deleteSpins() {
 }
 
 
+
+
 export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpins = [], colorMap = "none") {
   const structure = fileBrowser.selectedStructure;
   if (!structure?.periodic?.wrapped) { disposeSpinMeshes(); return; }
@@ -55,10 +58,48 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
 
   if (!spins?.length) { disposeSpinMeshes(); return; }
 
+  // Update spin colors based on colormap
+  const minValue = general.spinMin || 0;
+  const maxValue = general.spinMax || 2;
+
+  spins.forEach(spin => {
+    if (!spin.vector) return;
+
+    const mag = Math.sqrt(spin.vector[0] ** 2 + spin.vector[1] ** 2 + spin.vector[2] ** 2);
+    const totalLen = mag * (spin.scaling ?? 1.0) * spinFactor;
+
+    if (colorMap !== "none" && colorMap !== "direction" && colorMap !== "plusminus") {
+      // Normalize the spin magnitude to [0, 1] using UI min/max
+      const normalizedValue = maxValue > minValue ? Math.min(Math.max((totalLen - minValue) / (maxValue - minValue), 0), 1) : 0;
+      spin.updateColor(normalizedValue, colorMap);
+    } else if (colorMap === "direction") {
+      // Direction-based coloring
+      const normalizedDir = new THREE.Vector3(...spin.vector).normalize();
+      spin.color = new THREE.Color(
+        Math.abs(normalizedDir.x),
+        Math.abs(normalizedDir.y),
+        Math.abs(normalizedDir.z)
+      );
+    } else if (colorMap === "plusminus") {
+      // Plus/minus coloring
+      const normalizedDir = new THREE.Vector3(...spin.vector).normalize();
+      let r = 0, g = 0, b = 0;
+      if (normalizedDir.x > 0) r += normalizedDir.x;
+      else if (normalizedDir.x < 0) b += -normalizedDir.x;
+      if (normalizedDir.y > 0) g += normalizedDir.y;
+      else if (normalizedDir.y < 0) { r += -normalizedDir.y; b += -normalizedDir.y; }
+      if (normalizedDir.z > 0) b += normalizedDir.z;
+      else if (normalizedDir.z < 0) g += -normalizedDir.z;
+      spin.color = new THREE.Color(r, g, b);
+    }
+    // "none" case: spin.color is already set (default or manual)
+  });
+
+  // --- Prepare arrows for rendering ---
   const arrows = [];
   const seen = new Set();
 
-  // Get all species visibility checkboxes
+  // Get species visibility
   const speciesVisibility = {};
   const checkboxes = document.querySelectorAll('#speciesVisibilityContainer input[type="checkbox"]');
   checkboxes.forEach(checkbox => {
@@ -71,121 +112,28 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     if (seen.has(srcIdx)) continue;
     seen.add(srcIdx);
 
-    let spin;
-    if (useManualSpins) {
-      spin = spins.find(s => s.atomIndex === srcIdx);
-    } else {
-      spin = spins[srcIdx];
-    }
-
+    const spin = useManualSpins ? spins.find(s => s.atomIndex === srcIdx) : spins[srcIdx];
     if (!spin?.vector) continue;
 
-    // Get the element type for this atom
     const element = structure.elements[srcIdx];
-
-    // Skip if the species is not visible
     if (!speciesVisibility[element]) continue;
 
     const v = spin.vector;
-    const scalingFactor = spin.scaling ?? 1.0;
-    let color;
-
     const mag = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
     if (mag < 0.05) continue;
 
-    const totalLen = mag * scalingFactor * spinFactor;
+    const totalLen = mag * (spin.scaling ?? 1.0) * spinFactor;
     if (totalLen < 0.05) continue;
-
-    if (colorMap === "none") {
-      color = new THREE.Color(spin.color ?? '#008080');
-    } else if (colorMap === "heatmap") {
-      const colors = getHeatMapColors();
-      const nBins = colors.length;
-      const t = Math.min(totalLen / (general.spinMax || 2), 1);
-      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
-      color = colors[bin];
-    } else if (colorMap === "direction") {
-      color = new THREE.Color(Math.abs(v[0]) / mag, Math.abs(v[1]) / mag, Math.abs(v[2]) / mag);
-    } 
-    else if (colorMap === "plusminus") {
-  // Normalize the vector
-  const mag = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-  const nx = v[0] / mag;
-  const ny = v[1] / mag;
-  const nz = v[2] / mag;
-
-  // Initialize RGB components
-  let r = 0, g = 0, b = 0;
-
-  // Handle positive and negative components
-  if (nx > 0) {
-    r += nx; // Positive x contributes to red
-  } else if (nx < 0) {
-    b += -nx; // Negative x contributes to blue
-  }
-
-  if (ny > 0) {
-    g += ny; // Positive y contributes to green
-  } else if (ny < 0) {
-    r += -ny; b += -ny; // Negative y contributes to magenta (red + blue)
-  }
-
-  if (nz > 0) {
-    b += nz; // Positive z contributes to blue
-  } else if (nz < 0) {
-    g += -nz; // Negative z contributes to green (or another color if preferred)
-  }
-
-  // Create the final color
-  color = new THREE.Color(r, g, b);
-}
-
-    else if (colorMap === "batlow") {
-      const colors = getBatlowColors();
-      const nBins = colors.length;
-      const t = Math.min(totalLen / (general.spinMax || 2), 1);
-      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
-      color = colors[bin];
-    } else if (colorMap === "hawaii") {
-      const colors = getHawaiiColors();
-      const nBins = colors.length;
-      const t = Math.min(totalLen / (general.spinMax || 2), 1);
-      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
-      color = colors[bin];
-    } else if (colorMap === "managua") {
-      const colors = getManaguaColors();
-      const nBins = colors.length;
-      const t = Math.min(totalLen / (general.spinMax || 2), 1);
-      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
-      color = colors[bin];
-    } else if (colorMap === "viridis") {
-      const colors = getViridisColors();
-      const nBins = colors.length;
-      const t = Math.min(totalLen / (general.spinMax || 2), 1);
-      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
-      color = colors[bin];
-    } else if (colorMap === "plasma") {
-      const colors = getPlasmaColors();
-      const nBins = colors.length;
-      const t = Math.min(totalLen / (general.spinMax || 2), 1);
-      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
-      color = colors[bin];
-    } else if (colorMap === "spectralR") {
-      const colors = getSpectralRColors();
-      const nBins = colors.length;
-      const t = Math.min(totalLen / (general.spinMax || 2), 1);
-      const bin = Math.min(Math.floor(t * nBins), nBins - 1);
-      color = colors[bin];
-    }
 
     arrows.push({
       origin: new THREE.Vector3(...wrapped.cart[i]),
       dir: new THREE.Vector3(...v).normalize(),
       shaftHalfLen: totalLen / 2,
-      color,
+      color: spin.color, // Use the updated color from Spin class
     });
   }
 
+  // --- Rendering logic ---
   const count = arrows.length;
 
   if (!groups.spinShaftMesh || groups.spinShaftMesh.count !== count * 2) {
@@ -193,7 +141,11 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     if (count === 0) return;
 
     const shaftGeo = new THREE.CylinderGeometry(1, 1, 1, SHAFT_SEGS, 1);
-    const shaftMat = new THREE.MeshPhysicalMaterial({ roughness: 0.4, metalness: 0.2 });
+    const shaftMat = new THREE.MeshPhysicalMaterial({
+      roughness: 0.4,
+      metalness: 0.2,
+      //vertexColors: true // Enable vertex colors for instanced mesh
+    });
     groups.spinShaftMesh = new THREE.InstancedMesh(shaftGeo, shaftMat, count * 2);
     groups.spinShaftMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 2 * 3), 3);
     groups.spinShaftMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -201,7 +153,11 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     app.scene.add(groups.spinShaftMesh);
 
     const tipGeo = new THREE.ConeGeometry(1, 1, TIP_SEGS);
-    const tipMat = new THREE.MeshPhysicalMaterial({ roughness: 0.4, metalness: 0.2 });
+    const tipMat = new THREE.MeshPhysicalMaterial({
+      roughness: 0.4,
+      metalness: 0.2,
+      //vertexColors: true
+    });
     groups.spinTipMesh = new THREE.InstancedMesh(tipGeo, tipMat, count);
     groups.spinTipMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
     groups.spinTipMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -244,6 +200,7 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     groups.spinTipMesh.instanceColor.setXYZ(i, color.r, color.g, color.b);
   });
 
+  // Update matrices and colors
   groups.spinShaftMesh.instanceMatrix.needsUpdate = true;
   groups.spinShaftMesh.instanceColor.needsUpdate = true;
   groups.spinTipMesh.instanceMatrix.needsUpdate = true;

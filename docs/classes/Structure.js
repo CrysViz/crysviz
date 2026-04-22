@@ -1,4 +1,6 @@
-import { general, defaultColorMap, jmolColorMap } from '../store.js';
+import {general} from '../store.js';
+import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
+
 import { Spin } from './Spin.js';
 import { Force } from './Force.js';
 import { Polyhedra } from './Polyhedra.js';

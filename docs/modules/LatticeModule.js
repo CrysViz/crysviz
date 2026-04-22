@@ -1,5 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
-import { periodic,app, groups, general,fileBrowser, mode, atomicRadii,getLatticeVisSettings} from '../store.js';
+
+import {app, groups,periodic, fileBrowser, general,mode} from '../store.js';
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {getBondCutoff} from './BondsFracUpdateModule.js'

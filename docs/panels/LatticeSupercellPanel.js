@@ -1,6 +1,6 @@
 import { applyLatticeTransformation } from '../modules/LatticeTransformModule.js';
 
-import { app, groups, general, fileBrowser, mode, getLatticeVisSettings, getAtomVisSettings } from '../store.js';
+import { app, groups, general, fileBrowser, mode } from '../store.js';
 import { updateVisualization } from '../crystal-viewer.js';
 import { createSupercell } from '../modules/SuperCellModule.js';
 import { resetView } from './WindowAndSceneControls.js';

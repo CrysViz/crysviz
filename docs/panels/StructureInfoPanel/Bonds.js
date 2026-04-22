@@ -1,5 +1,10 @@
 import { updateVisualization } from '../../crystal-viewer.js';
-import {highlightHover,app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../store.js'
+
+import {app, groups,fileBrowser, general, mode, highlightHover} from '../../store.js';
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../defaults/color_texture_defaults.js'
+
+
+
 import { createColorPicker } from '../../modules/ColorPickerModule.js';
 import * as THREE from '../../external/three/three.module.js';
 import {fracToCart} from '../../modules/LatticeModule.js'

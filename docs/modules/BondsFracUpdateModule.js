@@ -1,5 +1,8 @@
 import * as THREE from '../external/three/three.module.js';
-import {allAtoms, bondLengths, app, groups, fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+
+import {bondLengths,structureShip, app, groups,fileBrowser, general,mode} from '../store.js';
+import {atomicRadii} from '../defaults/radii_defaults.js'
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
 
 import {Atom} from '../classes/Atom.js';
 import {Bond} from '../classes/Bond.js';

@@ -1,4 +1,6 @@
-import {structureShip,app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../store.js';
+import {structureShip,app, groups,fileBrowser, general, mode, highlightHover} from '../../store.js';
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../defaults/color_texture_defaults.js'
+
 
 import { updateVisualization } from '../../crystal-viewer.js';
 

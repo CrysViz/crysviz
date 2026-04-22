@@ -1,14 +1,14 @@
-import {app, groups,fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../store.js';
-
+import { app, groups,fileBrowser, general, mode, highlightHover} from '../../store.js';
+import { defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../defaults/color_texture_defaults.js'
 import { updateVisualization } from '../../crystal-viewer.js';
 
 
 import { createColorPicker } from '../../modules/ColorPickerModule.js';
-import {createSupercell} from '../../modules/SuperCellModule.js';
-import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
-import {createCompositionRow, createWyckoffCompositionRow} from './Species.js'
-import {createSpecificBondControl} from './Bonds.js'
-import {createBondLengthControls} from '../BondLengthPanel.js'
+import { createSupercell} from '../../modules/SuperCellModule.js';
+import { resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
+import { createCompositionRow, createWyckoffCompositionRow} from './Species.js'
+import { createSpecificBondControl} from './Bonds.js'
+import { createBondLengthControls} from '../BondLengthPanel.js'
 import { latticeVolume } from '../../modules/math/index.js';
 
 

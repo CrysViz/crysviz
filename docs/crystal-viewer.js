@@ -6,9 +6,11 @@ import * as THREE from './external/three/three.module.js';
 //  with the proper classes. However, this already solved some problems with camera and controls getting redefined as a side effect of some functions of the viewing angle
 //  control. The rest of the singletons should be preserved.
 // .........................................................................................................
-import { structureShip,highlightHover,app, groups, general,measurements,
-         mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,
-         getBondVisSettings,getLatticeVisSettings} from './store.js';
+
+import {structureShip, measurements,app, groups,fileBrowser, general, mode, highlightHover} from './store.js';
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from './defaults/color_texture_defaults.js'
+import {defaultPOSCAR} from './defaults/structure_defaults.js'
+
 
 //this needs to life somewhere else! only for testing
 const tableBody = document.querySelector("#objectTable tbody");
@@ -89,7 +91,6 @@ import {
 // file browser test
 //
 //
-import {fileBrowser} from './store.js';
 import {createRow} from './panels/FileBrowswerPanel.js'
 
 

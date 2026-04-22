@@ -1,4 +1,9 @@
-import { app, groups, fileBrowser,general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import { app, groups, fileBrowser,general,mode, polyStyle } from '../store.js';
+
+import {atomicRadii} from '../defaults/radii_defaults.js'
+
+
+
 import {getBondCutoff} from '../modules/BondsFracUpdateModule.js';
 import { updateVisualization } from '../crystal-viewer.js';
 import {createPieDot} from '../modules/ColorModule.js';

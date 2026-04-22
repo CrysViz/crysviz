@@ -1,4 +1,6 @@
-import { general, defaultColorMap, jmolColorMap, fileBrowser } from '../store.js';
+import {app, groups,fileBrowser, general} from '../store.js';
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
+
 
 // Get the color for an atom (custom or default)
 export function getAtomColor(index) {

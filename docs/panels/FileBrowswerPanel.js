@@ -1,4 +1,4 @@
-import {groups,app,allAtoms, general, structureShip, fileBrowser} from '../store.js';
+import {groups,app, general, structureShip, fileBrowser} from '../store.js';
 import {updateVisualization} from '../crystal-viewer.js';
 import {resetView} from './WindowAndSceneControls.js';
 import {resetModeSwitch, resetSpinForceSwitch} from './ControlPanel.js';

@@ -1,4 +1,7 @@
-import { general, fileBrowser, atomicRadii, defaultColorMap } from '../store.js';
+import {general,fileBrowser} from '../store.js';
+import {atomicRadii} from '../defaults/radii_defaults.js'
+import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
+
 import * as THREE from '../external/three/three.module.js';
 
 export class Bond {
