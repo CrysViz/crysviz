@@ -55,17 +55,41 @@ function setCutPlaneImmunityForAtoms(atomIndices, immune) {
 
 function createTinyImmunityToggle(atomIndices, title = 'Keep visible across cut planes') {
   const wrapper = document.createElement('label');
-  wrapper.style.cssText = 'display:inline-flex; align-items:center; justify-content:center; cursor:pointer; margin-left:6px; width:12px; height:12px; flex:0 0 auto;';
+  wrapper.style.cssText = 'display:inline-flex; align-items:center; justify-content:center; cursor:pointer; width:10px; height:10px; flex:0 0 auto;';
   wrapper.title = title;
 
   const toggle = document.createElement('input');
   toggle.type = 'checkbox';
   toggle.checked = areAllAtomsCutPlaneImmune(atomIndices);
-  toggle.style.cssText = 'width:12px; height:12px; margin:0; cursor:pointer;';
+  toggle.style.cssText = `
+    width:10px;
+    height:10px;
+    margin:0;
+    cursor:pointer;
+    appearance:none;
+    -webkit-appearance:none;
+    border-radius:50%;
+    border:1px solid rgba(255,255,255,0.5);
+    background: rgba(255,255,255,0.08);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18);
+  `;
+  const updateVisual = () => {
+    if (toggle.checked) {
+      toggle.style.background = 'rgba(255,255,255,0.96)';
+      toggle.style.borderColor = 'rgba(255,255,255,0.96)';
+      toggle.style.boxShadow = '0 0 0 2px rgba(255,255,255,0.08)';
+    } else {
+      toggle.style.background = 'rgba(255,255,255,0.08)';
+      toggle.style.borderColor = 'rgba(255,255,255,0.5)';
+      toggle.style.boxShadow = 'inset 0 0 0 1px rgba(0,0,0,0.18)';
+    }
+  };
+  updateVisual();
   toggle.addEventListener('click', (e) => e.stopPropagation());
   toggle.addEventListener('change', (e) => {
     e.stopPropagation();
     setCutPlaneImmunityForAtoms(atomIndices, toggle.checked);
+    updateVisual();
   });
 
   wrapper.appendChild(toggle);
@@ -85,6 +109,7 @@ export function createCompositionRow(el, count, total) {
   const currentColors = fileBrowser.selectedStructure.getElementColors()[el] || ['#808080'];
   const currentColor = currentColors[0];
   const currentOpacity = getElementOpacityValues(el)[0] ?? 1;
+  const elementAtomIndices = getElementAtomIndices(el);
   const dot = createPieDot(currentColors, 20);
   dot.classList.add('dot');
   setSwatchOpacity(dot, currentOpacity);
@@ -99,12 +124,15 @@ export function createCompositionRow(el, count, total) {
 
   left.appendChild(dot);
   left.appendChild(name);
-  left.appendChild(keepToggle.wrapper);
   left.appendChild(expandIcon);
 
-  const right = document.createElement('span');
+  const right = document.createElement('div');
+  right.style.cssText = 'display:flex; align-items:center; justify-content:flex-end; gap:8px;';
+  const countLabel = document.createElement('span');
   const pct = (100*count/total).toFixed(1);
-  right.textContent = `${count} (${pct}%)`;
+  countLabel.textContent = `${count} (${pct}%)`;
+  right.appendChild(countLabel);
+  right.appendChild(keepToggle.wrapper);
 
   row.appendChild(left);
   row.appendChild(right);
@@ -112,8 +140,6 @@ export function createCompositionRow(el, count, total) {
   const atomsContainer = document.createElement('div');
   atomsContainer.className = 'individual-atoms';
   atomsContainer.style.cssText = 'display: none; margin-left: 20px; margin-top: 8px; border-left: 2px solid rgba(255,255,255,0.1); padding-left: 8px;';
-
-  const elementAtomIndices = getElementAtomIndices(el);
 
   for (let i = 0; i < elementAtomIndices.length; i++) {
     const actualAtomIndex = elementAtomIndices[i];
@@ -326,12 +352,15 @@ export function createWyckoffCompositionRow(el, entries, total) {
 
   left.appendChild(dot);
   left.appendChild(name);
-  left.appendChild(keepToggle.wrapper);
   left.appendChild(expandIcon);
 
-  const right = document.createElement('span');
+  const right = document.createElement('div');
+  right.style.cssText = 'display:flex; align-items:center; justify-content:flex-end; gap:8px;';
+  const countLabel = document.createElement('span');
   const pct = (100 * entries.length / total).toFixed(1);
-  right.textContent = `${entries.length} (${pct}%)`;
+  countLabel.textContent = `${entries.length} (${pct}%)`;
+  right.appendChild(countLabel);
+  right.appendChild(keepToggle.wrapper);
 
   row.appendChild(left);
   row.appendChild(right);
@@ -379,7 +408,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   row.className = 'individual-atom-row';
   row.dataset.atomIndex = String(atomIndex);
   row.dataset.element = element;
-  row.style.cssText = 'display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 20px; padding: 4px 0; font-size: 11px;';
+  row.style.cssText = 'display: grid; grid-template-columns: 1fr auto auto; align-items: center; column-gap: 12px; padding: 4px 0; font-size: 11px;';
 
   const currentColor = colorHexToCss(getAtomColor(atomIndex));
   const currentOpacity = fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? fileBrowser.selectedStructure.atoms[atomIndex].opacity ?? 1;
@@ -448,9 +477,9 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   buttonContainer.appendChild(colorBtn);
   buttonContainer.appendChild(coordBtn);
   buttonContainer.appendChild(spinBtn);
-  buttonContainer.appendChild(keepToggle.wrapper);
 
   row.appendChild(buttonContainer);
+  row.appendChild(keepToggle.wrapper);
 
   // Create color editor for this individual atom
   const editor = document.createElement('div');
