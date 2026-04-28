@@ -9,7 +9,7 @@ import * as THREE from './external/three/three.module.js';
 
 import {structureShip, measurements,app, groups,fileBrowser, general, mode, highlightHover} from './store.js';
 import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from './defaults/color_texture_defaults.js'
-import {defaultPOSCAR} from './defaults/structure_defaults.js'
+import {defaultPOSCAR,defaultPOSCAR2,defaultPOSCAR3,defaultPOSCAR4} from './defaults/structure_defaults.js'
 
 
 //this needs to life somewhere else! only for testing
@@ -493,7 +493,7 @@ async function loadDefaultStructure() {
   }
 
   setStatus('Loading default NaCl structure...');
-  loadStructure(defaultPOSCAR, 'defaultYBCO.vasp', true);
+  loadStructure(defaultPOSCAR4, 'C3N4', true);
       // Create a new Structure instance
 
 }
