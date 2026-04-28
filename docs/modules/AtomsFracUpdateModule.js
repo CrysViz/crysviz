@@ -116,9 +116,11 @@ export function buildAtoms() {
       attribute vec3 instanceEmissive;
       attribute float instanceEmissiveIntensity;
       attribute float instanceElementIndex;
+      attribute float instanceOpacity;
       varying vec3 vInstanceEmissive;
       varying float vInstanceEmissiveIntensity;
       varying float vInstanceElementIndex;
+      varying float vInstanceOpacity;
     ` + shader.vertexShader;
 
     shader.vertexShader = shader.vertexShader.replace(
@@ -129,6 +131,7 @@ export function buildAtoms() {
         vInstanceEmissiveIntensity = instanceEmissiveIntensity;
         vInstanceUUID = instanceUUID;
         vInstanceElementIndex = instanceElementIndex;
+        vInstanceOpacity = instanceOpacity;
       `
     );
 
@@ -137,7 +140,13 @@ export function buildAtoms() {
       varying float vInstanceEmissiveIntensity;
       varying vec4 vInstanceUUID;
       varying float vInstanceElementIndex;
+      varying float vInstanceOpacity;
     ` + shader.fragmentShader;
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      'vec4 diffuseColor = vec4( diffuse, opacity );',
+      'vec4 diffuseColor = vec4( diffuse, opacity * vInstanceOpacity );'
+    );
 
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <emissivemap_fragment>',
@@ -220,6 +229,10 @@ export function buildAtoms() {
     'instanceEmissiveIntensity',
     new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1)
   );
+  mesh.geometry.setAttribute(
+    'instanceOpacity',
+    new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1)
+  );
 
   // Mark buffers as dynamic
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -265,6 +278,23 @@ export function updateSingleAtomColor(originalIndex, index, element, hex=null) {
   groups.atomsMesh.instanceColor.needsUpdate = true;
 }
 
+export function updateSingleAtomOpacity(index, opacity = 1.0) {
+  const normalizedOpacity = Math.max(0, Math.min(1, Number(opacity) || 0));
+  groups.atomsMesh.geometry.attributes.instanceOpacity.setX(index, normalizedOpacity);
+  groups.atomsMesh.geometry.attributes.instanceOpacity.needsUpdate = true;
+  syncAtomMaterialTransparency(general.mainOpacity);
+}
+
+function syncAtomMaterialTransparency(baseOpacity = 1.0) {
+  const mesh = groups.atomsMesh;
+  if (!mesh?.material) return;
+  const hasTransparentInstances = fileBrowser.selectedStructure?.atoms?.some((atom) => (atom.getOpacity?.() ?? atom.opacity ?? 1) < 0.999) ?? false;
+  const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances;
+  mesh.material.transparent = needsTransparency;
+  mesh.material.depthWrite = !needsTransparency;
+  mesh.material.needsUpdate = true;
+}
+
 export function updateSingleAtomDiameter(index, element) {
   const mesh = groups.atomsMesh;
   const a = mesh.instanceMatrix.array;
@@ -293,23 +323,14 @@ export function updateAtoms(opacity = 1.0) {
   const mesh = groups.atomsMesh
 
   mesh.material.opacity = opacity;
-  console.log("opacity",opacity)
-  if (opacity === 1) {
-    mesh.material.transparent = false;
-    mesh.material.depthWrite = true;
-  }
-  else {
-    console.log("Enabling transparency for main atoms")
-    mesh.material.transparent = true;
-    mesh.material.depthWrite = false;
-  }
-  mesh.material.needsUpdate = true;
+  syncAtomMaterialTransparency(opacity);
 
   for (let i = 0; i < wrappedCart.length; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     updateSingleAtomPosition(i, wrappedCart[i])
     updateSingleAtomColor(originalIndex,i, wrapped.elements[i])
     updateSingleAtomDiameter(i,wrapped.elements[i])    
+    updateSingleAtomOpacity(i, atoms[originalIndex].getOpacity?.() ?? atoms[originalIndex].opacity ?? 1)
 
     groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);
     groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.setX(i, 0.0);
@@ -318,11 +339,10 @@ export function updateAtoms(opacity = 1.0) {
   // Mark attributes as needing update
   groups.atomsMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
   groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
+  groups.atomsMesh.geometry.attributes.instanceOpacity.needsUpdate = true;
 
   groups.atomsMesh.instanceMatrix.needsUpdate = true;
   groups.atomsMesh.instanceColor.needsUpdate = true;
   groups.atomsMesh.material.needsUpdate = true;
   
 }
-
-

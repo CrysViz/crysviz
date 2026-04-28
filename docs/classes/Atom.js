@@ -8,6 +8,7 @@ export class Atom extends ColoredObject {
     position = [],
     coordination = [],
     color = null,
+    opacity = 1,
     defaultColor = null,
     elementColor = null,
     hash = null,
@@ -21,11 +22,13 @@ export class Atom extends ColoredObject {
     this.defaultColor = colorScheme[element] || 0x808080;
     this.elementColor = elementColor || this.defaultColor;
     this.color = color || this.elementColor;
+    this.opacity = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
     this.uuid = uuid;
     this.original = Object.freeze({
       element,
       position: [...position],
       color: color,
+      opacity: this.opacity,
     });
   }
 
@@ -45,6 +48,22 @@ export class Atom extends ColoredObject {
     return true;
   }
 
+  getOpacity() {
+    return this.opacity;
+  }
+
+  setOpacity(value) {
+    const opacity = Number(value);
+    if (!Number.isFinite(opacity)) return false;
+    this.opacity = Math.max(0, Math.min(1, opacity));
+    return true;
+  }
+
+  resetOpacity() {
+    this.opacity = this.original.opacity ?? 1;
+    return true;
+  }
+
   // Reset to the element's custom color (if set), otherwise to default
   resetToElementColor() {
     this.color = this.elementColor;
@@ -59,4 +78,3 @@ export class Atom extends ColoredObject {
     return true;
   }
 }
-
