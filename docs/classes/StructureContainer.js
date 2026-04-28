@@ -30,6 +30,7 @@ export class StructureContainer {
           atom.color = targetStructure.atoms[atomIndex].color;
           atom.opacity = targetStructure.atoms[atomIndex].opacity;
           atom.elementColor = targetStructure.atoms[atomIndex].elementColor;
+          atom.elementOpacity = targetStructure.atoms[atomIndex].elementOpacity;
         }
       });
 

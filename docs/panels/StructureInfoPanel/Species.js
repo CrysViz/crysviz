@@ -5,7 +5,7 @@ import { updateVisualization } from '../../crystal-viewer.js';
 import {setAtomColor,getAtomColor,colorHexToCss,hexToRgba,createPieDot,updatePieDot} from '../../modules/ColorModule.js'
 import { createColorPicker } from '../../modules/ColorPickerModule.js';
 import { updateSingleBondColor } from '../../modules/BondsFracUpdateModule.js'
-import { updateSingleAtomColor, updateSingleAtomOpacity} from '../../modules/AtomsFracUpdateModule.js'
+import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomCutPlaneImmunity} from '../../modules/AtomsFracUpdateModule.js'
 import {createSupercell} from '../../modules/SuperCellModule.js';
 import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
 import { applyWyckoffOrbitPosition } from '../../modules/SymmetryEditModule.js';
@@ -39,6 +39,39 @@ function setSwatchOpacity(swatch, opacity) {
   swatch.style.opacity = `${clampOpacity(opacity)}`;
 }
 
+function areAllAtomsCutPlaneImmune(atomIndices) {
+  return atomIndices.length > 0 && atomIndices.every((atomIndex) => !!fileBrowser.selectedStructure.atoms[atomIndex].cutPlaneImmune);
+}
+
+function setCutPlaneImmunityForAtoms(atomIndices, immune) {
+  atomIndices.forEach((atomIndex) => {
+    const atom = fileBrowser.selectedStructure.atoms[atomIndex];
+    atom.setCutPlaneImmune(immune);
+    fileBrowser.selectedStructure.atomImages[atomIndex]?.forEach((imageIndex) => {
+      updateSingleAtomCutPlaneImmunity(imageIndex, immune);
+    });
+  });
+}
+
+function createTinyImmunityToggle(atomIndices, title = 'Keep visible across cut planes') {
+  const wrapper = document.createElement('label');
+  wrapper.style.cssText = 'display:inline-flex; align-items:center; justify-content:center; cursor:pointer; margin-left:6px; width:12px; height:12px; flex:0 0 auto;';
+  wrapper.title = title;
+
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox';
+  toggle.checked = areAllAtomsCutPlaneImmune(atomIndices);
+  toggle.style.cssText = 'width:12px; height:12px; margin:0; cursor:pointer;';
+  toggle.addEventListener('click', (e) => e.stopPropagation());
+  toggle.addEventListener('change', (e) => {
+    e.stopPropagation();
+    setCutPlaneImmunityForAtoms(atomIndices, toggle.checked);
+  });
+
+  wrapper.appendChild(toggle);
+  return { wrapper, toggle };
+}
+
 export function createCompositionRow(el, count, total) {
   const container = document.createElement('div');
   container.className = 'comp-container';
@@ -62,9 +95,11 @@ export function createCompositionRow(el, count, total) {
   const expandIcon = document.createElement('span');
   expandIcon.textContent = '▶';
   expandIcon.style.cssText = 'margin-left: 4px; font-size: 14px; transition: transform 0.2s ease; color: rgba(255,255,255,0.8); transform: rotate(0deg);';
+  const keepToggle = createTinyImmunityToggle(elementAtomIndices, `Keep all ${el} atoms visible across cut planes`);
 
   left.appendChild(dot);
   left.appendChild(name);
+  left.appendChild(keepToggle.wrapper);
   left.appendChild(expandIcon);
 
   const right = document.createElement('span');
@@ -202,6 +237,7 @@ export function createCompositionRow(el, count, total) {
     alphaValue.value = value.toFixed(2);
     setSwatchOpacity(dot, value);
     atomIndices.forEach((atomIndex) => {
+      fileBrowser.selectedStructure.atoms[atomIndex].setElementOpacity(value);
       fileBrowser.selectedStructure.atoms[atomIndex].setOpacity(value);
       fileBrowser.selectedStructure.atomImages[atomIndex]?.forEach((imageIndex) => {
         updateSingleAtomOpacity(imageIndex, value);
@@ -221,7 +257,8 @@ export function createCompositionRow(el, count, total) {
     atomIndices.forEach((atomIndex) => {
       const atom = fileBrowser.selectedStructure.atoms[atomIndex];
       atom.resetToDefaultColor();
-      atom.resetOpacity();
+      atom.setElementOpacity(1);
+      atom.setOpacity(1);
       fileBrowser.selectedStructure.atomImages[atomIndex]?.forEach((imageIndex) => {
         if (fileBrowser.selectedStructure.bondMapping[imageIndex]) {
           fileBrowser.selectedStructure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
@@ -285,9 +322,11 @@ export function createWyckoffCompositionRow(el, entries, total) {
   const expandIcon = document.createElement('span');
   expandIcon.textContent = '▶';
   expandIcon.style.cssText = 'margin-left: 4px; font-size: 14px; transition: transform 0.2s ease; color: rgba(255,255,255,0.8); transform: rotate(0deg);';
+  const keepToggle = createTinyImmunityToggle(entries.flatMap((entry) => entry.atomIndices), `Keep all ${el} atoms visible across cut planes`);
 
   left.appendChild(dot);
   left.appendChild(name);
+  left.appendChild(keepToggle.wrapper);
   left.appendChild(expandIcon);
 
   const right = document.createElement('span');
@@ -404,9 +443,12 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   spinBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; cursor: pointer; font-size: 10px;';
   spinBtn.title = `Edit Spin for ${element}${displayNumber}`;
 
+  const keepToggle = createTinyImmunityToggle(linkedAtomIndices, `Keep ${element}${displayNumber} visible across cut planes`);
+
   buttonContainer.appendChild(colorBtn);
   buttonContainer.appendChild(coordBtn);
   buttonContainer.appendChild(spinBtn);
+  buttonContainer.appendChild(keepToggle.wrapper);
 
   row.appendChild(buttonContainer);
 
@@ -798,7 +840,7 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
     linkedAtomIndices.forEach((linkedAtomIndex) => {
       const atom = fileBrowser.selectedStructure.atoms[linkedAtomIndex];
       atom.resetToElementColor();
-      atom.resetOpacity();
+      atom.resetToElementOpacity();
       fileBrowser.selectedStructure.atomImages[linkedAtomIndex]?.forEach((imageIndex) => {
         if (fileBrowser.selectedStructure.bondMapping[imageIndex]) {
           fileBrowser.selectedStructure.bondMapping[imageIndex].forEach((bondHalvIndex) => {

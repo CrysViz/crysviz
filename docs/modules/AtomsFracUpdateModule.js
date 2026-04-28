@@ -8,6 +8,41 @@ import {setAtomColor}  from './ColorModule.js';
 
 import {generateID} from './UUIDModule.js' 
 
+const MAX_CUT_PLANES = 8;
+
+function normalizePlaneNormal(x = 1, y = 0, z = 0) {
+  const nx = Number(x) || 0;
+  const ny = Number(y) || 0;
+  const nz = Number(z) || 0;
+  const length = Math.hypot(nx, ny, nz);
+  if (length < 1e-8) {
+    return [1, 0, 0];
+  }
+  return [nx / length, ny / length, nz / length];
+}
+
+function getActiveCutPlanes() {
+  return (general.atomCutPlanes || [])
+    .filter((plane) => plane?.enabled)
+    .slice(0, MAX_CUT_PLANES);
+}
+
+function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
+  const shader = material?.userData?.shader;
+  if (!shader?.uniforms?.uCutPlanes || !shader.uniforms.uCutPlaneCount || !shader.uniforms.uCutPlaneMaskSide) return;
+  const activePlanes = getActiveCutPlanes();
+  shader.uniforms.uCutPlaneCount.value = activePlanes.length;
+  activePlanes.forEach((plane, index) => {
+    const [nx, ny, nz] = normalizePlaneNormal(plane.x, plane.y, plane.z);
+    shader.uniforms.uCutPlanes.value[index].set(nx, ny, nz, Number(plane.r) || 0);
+    shader.uniforms.uCutPlaneMaskSide.value[index] = plane.side === 'right' ? 1 : -1;
+  });
+  for (let index = activePlanes.length; index < MAX_CUT_PLANES; index++) {
+    shader.uniforms.uCutPlanes.value[index].set(0, 0, 0, 0);
+    shader.uniforms.uCutPlaneMaskSide.value[index] = 0;
+  }
+}
+
 
 export function getUUIDFromGeometry(index) {
   const mesh = groups.atomsMesh;
@@ -117,35 +152,58 @@ export function buildAtoms() {
       attribute float instanceEmissiveIntensity;
       attribute float instanceElementIndex;
       attribute float instanceOpacity;
+      attribute float instanceCutPlaneImmune;
       varying vec3 vInstanceEmissive;
       varying float vInstanceEmissiveIntensity;
       varying float vInstanceElementIndex;
       varying float vInstanceOpacity;
+      varying float vInstanceCutPlaneImmune;
+      varying vec3 vInstanceWorldCenter;
     ` + shader.vertexShader;
 
     shader.vertexShader = shader.vertexShader.replace(
       '#include <begin_vertex>',
       `
         #include <begin_vertex>
+        vec4 instanceWorldCenter = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
         vInstanceEmissive = instanceEmissive;
         vInstanceEmissiveIntensity = instanceEmissiveIntensity;
         vInstanceUUID = instanceUUID;
         vInstanceElementIndex = instanceElementIndex;
         vInstanceOpacity = instanceOpacity;
+        vInstanceCutPlaneImmune = instanceCutPlaneImmune;
+        vInstanceWorldCenter = instanceWorldCenter.xyz;
       `
     );
 
     shader.fragmentShader = `
+      uniform int uCutPlaneCount;
+      uniform vec4 uCutPlanes[${MAX_CUT_PLANES}];
+      uniform float uCutPlaneMaskSide[${MAX_CUT_PLANES}];
       varying vec3 vInstanceEmissive;
       varying float vInstanceEmissiveIntensity;
       varying vec4 vInstanceUUID;
       varying float vInstanceElementIndex;
       varying float vInstanceOpacity;
+      varying float vInstanceCutPlaneImmune;
+      varying vec3 vInstanceWorldCenter;
     ` + shader.fragmentShader;
 
     shader.fragmentShader = shader.fragmentShader.replace(
       'vec4 diffuseColor = vec4( diffuse, opacity );',
-      'vec4 diffuseColor = vec4( diffuse, opacity * vInstanceOpacity );'
+      `
+      vec4 diffuseColor = vec4( diffuse, opacity * vInstanceOpacity );
+      if (vInstanceCutPlaneImmune < 0.5) {
+        for (int i = 0; i < ${MAX_CUT_PLANES}; i++) {
+          if (i >= uCutPlaneCount) break;
+          vec4 cutPlane = uCutPlanes[i];
+          float planeSide = (dot(vInstanceWorldCenter, cutPlane.xyz) - cutPlane.w) * uCutPlaneMaskSide[i];
+          if (planeSide > 0.0) {
+            discard;
+          }
+        }
+      }
+      `
     );
 
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -154,6 +212,16 @@ export function buildAtoms() {
         totalEmissiveRadiance += vInstanceEmissive * vInstanceEmissiveIntensity;
       `
     );
+
+    shader.uniforms.uCutPlaneCount = { value: 0 };
+    shader.uniforms.uCutPlanes = {
+      value: Array.from({ length: MAX_CUT_PLANES }, () => new THREE.Vector4(0, 0, 0, 0)),
+    };
+    shader.uniforms.uCutPlaneMaskSide = {
+      value: new Float32Array(MAX_CUT_PLANES),
+    };
+    material.userData.shader = shader;
+    applyAtomCutPlaneUniforms(material);
   };
 
   // Instanced mesh
@@ -233,6 +301,10 @@ export function buildAtoms() {
     'instanceOpacity',
     new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1)
   );
+  mesh.geometry.setAttribute(
+    'instanceCutPlaneImmune',
+    new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1)
+  );
 
   // Mark buffers as dynamic
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -285,6 +357,26 @@ export function updateSingleAtomOpacity(index, opacity = 1.0) {
   syncAtomMaterialTransparency(general.mainOpacity);
 }
 
+export function updateSingleAtomCutPlaneImmunity(index, immune = false) {
+  groups.atomsMesh.geometry.attributes.instanceCutPlaneImmune.setX(index, immune ? 1 : 0);
+  groups.atomsMesh.geometry.attributes.instanceCutPlaneImmune.needsUpdate = true;
+}
+
+export function updateAtomCutPlaneState() {
+  const mesh = groups.atomsMesh;
+  if (!mesh || !fileBrowser.selectedStructure) return;
+  const wrapped = fileBrowser.selectedStructure.periodic?.wrapped;
+  if (!wrapped?.srcIndex) {
+    applyAtomCutPlaneUniforms(mesh.material);
+    return;
+  }
+  for (let i = 0; i < wrapped.srcIndex.length; i++) {
+    const atom = fileBrowser.selectedStructure.atoms[wrapped.srcIndex[i]];
+    updateSingleAtomCutPlaneImmunity(i, atom?.cutPlaneImmune);
+  }
+  applyAtomCutPlaneUniforms(mesh.material);
+}
+
 function syncAtomMaterialTransparency(baseOpacity = 1.0) {
   const mesh = groups.atomsMesh;
   if (!mesh?.material) return;
@@ -331,6 +423,7 @@ export function updateAtoms(opacity = 1.0) {
     updateSingleAtomColor(originalIndex,i, wrapped.elements[i])
     updateSingleAtomDiameter(i,wrapped.elements[i])    
     updateSingleAtomOpacity(i, atoms[originalIndex].getOpacity?.() ?? atoms[originalIndex].opacity ?? 1)
+    updateSingleAtomCutPlaneImmunity(i, atoms[originalIndex].cutPlaneImmune)
 
     groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);
     groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.setX(i, 0.0);
@@ -340,6 +433,8 @@ export function updateAtoms(opacity = 1.0) {
   groups.atomsMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
   groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
   groups.atomsMesh.geometry.attributes.instanceOpacity.needsUpdate = true;
+  groups.atomsMesh.geometry.attributes.instanceCutPlaneImmune.needsUpdate = true;
+  applyAtomCutPlaneUniforms(mesh.material);
 
   groups.atomsMesh.instanceMatrix.needsUpdate = true;
   groups.atomsMesh.instanceColor.needsUpdate = true;

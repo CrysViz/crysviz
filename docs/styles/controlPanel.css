@@ -1,5 +1,6 @@
 .segmented-control {
   display: flex;
+  flex-wrap: wrap;
   margin-top: 5px;
   background: rgba(25,25,25,0.8);
   padding: 4px;
@@ -7,6 +8,9 @@
   gap: 4px;
   margin-bottom: 10px;
   justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .SettingsHeader{
@@ -18,12 +22,14 @@ font-size: 16px;
   border: none;
   background: none;
   color: rgba(255,255,255,0.8);
-  padding: 6px 14px;
+  padding: 6px 10px;
   border-radius: 8px;
   font-size: 12px;
   cursor: pointer;
   font-weight: 500;
-  min-width: 70px;
+  min-width: 0;
+  flex: 1 1 0;
+  white-space: nowrap;
 }
 
 .segmented-control button.active {
@@ -35,6 +41,5 @@ font-size: 16px;
 .segmented-control button:hover {
   background: var(--border-color);
 }
-
 
 

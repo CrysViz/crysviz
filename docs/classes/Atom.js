@@ -9,8 +9,10 @@ export class Atom extends ColoredObject {
     coordination = [],
     color = null,
     opacity = 1,
+    elementOpacity = 1,
     defaultColor = null,
     elementColor = null,
+    cutPlaneImmune = false,
     hash = null,
     wyckoff = null,
     uuid = null,
@@ -21,14 +23,19 @@ export class Atom extends ColoredObject {
     const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
     this.defaultColor = colorScheme[element] || 0x808080;
     this.elementColor = elementColor || this.defaultColor;
+    const normalizedElementOpacity = Number.isFinite(elementOpacity) ? Math.max(0, Math.min(1, elementOpacity)) : 1;
+    this.elementOpacity = normalizedElementOpacity;
     this.color = color || this.elementColor;
-    this.opacity = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
+    this.opacity = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : this.elementOpacity;
+    this.cutPlaneImmune = !!cutPlaneImmune;
     this.uuid = uuid;
     this.original = Object.freeze({
       element,
       position: [...position],
       color: color,
       opacity: this.opacity,
+      elementOpacity: this.elementOpacity,
+      cutPlaneImmune: this.cutPlaneImmune,
     });
   }
 
@@ -59,8 +66,30 @@ export class Atom extends ColoredObject {
     return true;
   }
 
+  setElementOpacity(value) {
+    const opacity = Number(value);
+    if (!Number.isFinite(opacity)) return false;
+    this.elementOpacity = Math.max(0, Math.min(1, opacity));
+    return true;
+  }
+
   resetOpacity() {
     this.opacity = this.original.opacity ?? 1;
+    return true;
+  }
+
+  resetToElementOpacity() {
+    this.opacity = this.elementOpacity ?? 1;
+    return true;
+  }
+
+  setCutPlaneImmune(value) {
+    this.cutPlaneImmune = !!value;
+    return true;
+  }
+
+  resetCutPlaneImmune() {
+    this.cutPlaneImmune = this.original.cutPlaneImmune ?? false;
     return true;
   }
 
