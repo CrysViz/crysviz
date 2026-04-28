@@ -31,7 +31,7 @@ import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleCont
 import { createColorPicker } from './modules/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
-import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter} from './modules/BondsFracUpdateModule.js'
+import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter,disposeBondsMesh} from './modules/BondsFracUpdateModule.js'
 import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './modules/CompBondsFracUpdateModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from './modules/LatticeModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
@@ -332,11 +332,15 @@ export function updateVisualization(options = {}) {
   }
 
   if (reRenderBonds) {
-    console.warn("Calling rebuildBonds")
-    rebuildBonds(mOpacity)
+    if (general.showBonds) {
+      console.warn("Calling rebuildBonds")
+      rebuildBonds(mOpacity)
+    } else {
+      disposeBondsMesh(true);
+    }
   }
 
-  if (!reRenderBonds && bondsUpdate) {
+  if (!reRenderBonds && bondsUpdate && general.showBonds) {
     console.warn("Calling updateBonds")
     updateBonds(mOpacity)
   }
@@ -994,10 +998,11 @@ setupStructureInput({
   // Control handlers
   document.getElementById('showBonds').onchange = (e) => {
     general.showBonds = e.target.checked;
-    if (groups.bondsMesh) {
-      groups.bondsMesh.visible = general.showBonds;
-  //  updateVisualization()
-    }
+    updateVisualization({
+      reRenderAtoms: !!general.showPBCBonds,
+      reRenderBonds: true,
+      bondsUpdate: false
+    });
   };
 
     // Control handlers
