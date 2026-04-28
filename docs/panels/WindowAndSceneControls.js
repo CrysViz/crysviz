@@ -5,6 +5,31 @@ import { app } from '../store.js';
 import { updateAngleDisplays, setupAxisControls} from '../modules/cameraAngleControl.js';
 import { getCellCenterAndDist} from '../modules/LatticeModule.js'
 
+function disposeRendererInstance(renderer, host = null) {
+  if (!renderer) return;
+  const parent = host || renderer.domElement?.parentNode;
+  if (parent && renderer.domElement && renderer.domElement.parentNode === parent) {
+    parent.removeChild(renderer.domElement);
+  } else if (renderer.domElement?.parentNode) {
+    renderer.domElement.parentNode.removeChild(renderer.domElement);
+  }
+  try { renderer.dispose(); } catch (_) {}
+  try { renderer.forceContextLoss?.(); } catch (_) {}
+}
+
+function createRendererWithFallback(primaryOptions, fallbackOptions = null) {
+  try {
+    return new THREE.WebGLRenderer(primaryOptions);
+  } catch (primaryError) {
+    if (!fallbackOptions) throw primaryError;
+    try {
+      return new THREE.WebGLRenderer(fallbackOptions);
+    } catch (_) {
+      throw primaryError;
+    }
+  }
+}
+
 export function disposeGroup(grp) {
   if (!grp) return;
   grp.traverse(obj => {
@@ -35,7 +60,16 @@ export function initCamera(useOrthographicCamera){
 export function initRenderer(){
   const w = view.clientWidth || window.innerWidth;
   const h = view.clientHeight || window.innerHeight;
-  app.renderer = new THREE.WebGLRenderer({ antialias: true });
+  disposeRendererInstance(app.renderer, view);
+  app.renderer = null;
+  try {
+    app.renderer = createRendererWithFallback(
+      { antialias: true, powerPreference: 'high-performance' },
+      { antialias: false, powerPreference: 'default' }
+    );
+  } catch (_) {
+    throw new Error('WebGL could not be initialized. Close GPU-heavy tabs or restart the browser, then reload.');
+  }
   app.renderer.setSize(w, h);
   app.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 
@@ -123,9 +157,24 @@ export function resizeRenderer(orthographicFrustumSize) {
 export function initAxesGizmo(){
   // Axes gizmo (bottom-left)
   const gizmoDiv = document.getElementById('axesGizmo');
-  app.gizmoRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  if (!gizmoDiv) return;
+  disposeRendererInstance(app.gizmoRenderer, gizmoDiv);
+  app.gizmoRenderer = null;
+  try {
+    app.gizmoRenderer = createRendererWithFallback(
+      { antialias: true, alpha: true, powerPreference: 'low-power' },
+      { antialias: false, alpha: true, powerPreference: 'low-power' }
+    );
+  } catch (_) {
+    app.gizmoScene = null;
+    app.gizmoCamera = null;
+    gizmoDiv.innerHTML = '';
+    gizmoDiv.style.display = 'none';
+    return;
+  }
   app.gizmoRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   gizmoDiv.appendChild(app.gizmoRenderer.domElement);
+  gizmoDiv.style.display = '';
 
   // No label renderer needed for gizmo - labels are in separate legend
 
@@ -230,7 +279,6 @@ export function collapseAllAtomExpansions() {
     icon.style.transform = 'rotate(0deg)';
   });
 }
-
 
 
 
