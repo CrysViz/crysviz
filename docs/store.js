@@ -129,6 +129,7 @@ export const general = {
   abondsColorMap: null,
   atomsColor: null,
   atomsColorMaps: null,
+  atomCutPlanes: [],
 };
 
 

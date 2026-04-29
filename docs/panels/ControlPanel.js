@@ -9,6 +9,7 @@ import {addForcePanel,removeForcePanel} from './ForcePanel.js';
 import {addBondPanel,removeBondPanel} from './BondPanel.js';
 import {addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
 import {addFieldPanel, removeFieldPanel} from './FieldPanel.js';
+import { addCutPlanePanel, removeCutPlanePanel } from './CutPlanePanel.js';
 import {updateVisualization} from '../crystal-viewer.js';
 
 /**
@@ -267,6 +268,7 @@ export function addControlPanelModeSwitch() {
 
     // Handle different modes
     if (mode === "trajectory") {
+      removeCutPlanePanel("TrajectoryComparisonContainer");
       removeCompPanel()
       removeLatticeComparisonPopup();
       console.log("Calling addTrajectoryPlayer()");
@@ -275,6 +277,7 @@ export function addControlPanelModeSwitch() {
 
     }
     else if (mode === "comparison") {
+      removeCutPlanePanel("TrajectoryComparisonContainer");
       const trajPanel = document.getElementById("TrajControlPanel");
       updateVisualization({
         updateAtoms: true,
@@ -303,11 +306,21 @@ export function addControlPanelModeSwitch() {
         console.log("Updating lattice comparison panel");
       }
     }
+    else if (mode === "cutplanes") {
+      const trajPanel = document.getElementById("TrajControlPanel");
+      if (trajPanel) {
+        removeTrajectoryPlayer();
+      }
+      removeCompPanel();
+      removeLatticeComparisonPopup();
+      addCutPlanePanel("TrajectoryComparisonContainer");
+    }
     else {
       const trajPanel = document.getElementById("TrajControlPanel");
       if (trajPanel) {
         removeTrajectoryPlayer();
       }
+      removeCutPlanePanel("TrajectoryComparisonContainer");
       removeCompPanel()
       removeLatticeComparisonPopup();
     }
@@ -385,11 +398,13 @@ export function addControlPanelAnalysisSwitch() {
       
       removeBondPanel()
       
+      removeCutPlanePanel()
       addLatticeAndSupercellPanel()
     }
     else if (general.analysisState == "Bonds") {
       removeBondPanel()
       addBondPanel()
+      removeCutPlanePanel()
       removeLatticeAndSupercellPanel()
      }
     else if (general.analysisState == "Polyhedra") {
@@ -405,7 +420,6 @@ export function addControlPanelAnalysisSwitch() {
     }
   });
 }
-
 
 export function resetSwitch(switchContainer, stateKey, defaultMode = "None") {
   // Update internal state
@@ -436,6 +450,3 @@ export function resetModeSwitch() {
   resetSwitch(ControlPanelModeSwitch, "modeState", "None");
   removeTrajectoryPlayer();
 }
-
-
-

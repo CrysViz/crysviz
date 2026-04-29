@@ -49,15 +49,30 @@ export function initBondsLengths(){
   }
 }
 
-
-export function rebuildBonds(opacity=1.0) {
-  initBondsLengths() // this needs to be called once in general. Otherwise the sliders do nothing
+export function disposeBondsMesh(clearBondData = false) {
   if (groups.bondsMesh) {
     groups.bondsMesh.geometry.dispose();
     groups.bondsMesh.material.dispose();
     app.scene.remove(groups.bondsMesh);
-    groups.bondssMesh = null;
+    groups.bondsMesh = null;
   }
+  if (clearBondData && fileBrowser.selectedStructure) {
+    fileBrowser.selectedStructure.bonds = [];
+    fileBrowser.selectedStructure.bondMapping = {};
+    fileBrowser.selectedStructure.bondObjectMapping = {};
+  }
+  for (const key in bondLengths) delete bondLengths[key];
+  refreshHistogram([], []);
+}
+
+
+export function rebuildBonds(opacity=1.0) {
+  initBondsLengths() // this needs to be called once in general. Otherwise the sliders do nothing
+  if (!general.showBonds) {
+    disposeBondsMesh(true);
+    return;
+  }
+  disposeBondsMesh(true);
   buildBondObjects(fileBrowser.selectedStructure)
   renderBonds();
   updateBonds(opacity);

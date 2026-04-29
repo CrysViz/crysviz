@@ -1,7 +1,8 @@
 import { general } from '../../store.js';
 import { removeAtomisticPanel, addRelaxPanel, addMDPanel } from './AtomisticPanels.js';
-import {addMoyoPanel} from './MoyoWASM.js'; 
+import {addMoyoPanel} from './MoyoWASM.js';
 import { refreshBackendTheme } from './BackendTheme.js';
+import { addMDStreamPanel, removeMDStreamPanel } from './MDStreamPanel.js';
 
 const BackendModeSwitch = document.getElementById("BackendModeSwitch");
 
@@ -116,6 +117,7 @@ export function addBackendModeSwitch() {
             general.atomisticPotential = "nep";
             refreshBackendTheme();
             setUploadVisible(false);
+            removeMDStreamPanel();
             addMoyoPanel();
         }
     else if (mode === "relax") {
@@ -131,13 +133,22 @@ export function addBackendModeSwitch() {
             general.atomisticPotential = general.atomisticPotential || "nep";
             refreshBackendTheme();
             setUploadVisible(false);
+            removeMDStreamPanel();
             addMDPanel();
+    } else if (mode === "live") {
+            btn.classList.add("md");
+            general.backendState = "live";
+            refreshBackendTheme();
+            setUploadVisible(false);
+            removeAtomisticPanel();
+            addMDStreamPanel();
     } else {
       btn.classList.add("active");
       general.backendState = mode.toLowerCase();
       refreshBackendTheme();
       setUploadVisible(true);
       removeAtomisticPanel();
+      removeMDStreamPanel();
     }
   });
 }

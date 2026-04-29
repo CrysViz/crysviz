@@ -1,12 +1,6 @@
 import {general} from '../store.js';
 import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
-
-import { Spin } from './Spin.js';
-import { Force } from './Force.js';
-import { Polyhedra } from './Polyhedra.js';
-import { Symmetry } from './Symmetry.js';
-import { Stress } from './Stress.js';
-import { Atom } from './Atom.js';
+import { colorHexToCss } from '../modules/ColorModule.js';
 
 // Helper function to deep freeze objects
 function deepFreeze(object) {
@@ -96,10 +90,27 @@ export class Structure {
     const elementColors = {};
     this.atoms.forEach((atom, index) => {
       const element = this.elements[index];
-      if (!element || elementColors[element] !== undefined) return;
-      elementColors[element] = atom.getColor();
+      if (!element) return;
+      elementColors[element] ||= [];
+      const color = colorHexToCss(atom.getColor());
+      if (!elementColors[element].includes(color)) {
+        elementColors[element].push(color);
+      }
     });
     return elementColors;
   }
-}  
 
+  getElementOpacities() {
+    const elementOpacities = {};
+    this.atoms.forEach((atom, index) => {
+      const element = this.elements[index];
+      if (!element) return;
+      elementOpacities[element] ||= [];
+      const opacity = atom.getOpacity?.() ?? atom.opacity ?? 1;
+      if (!elementOpacities[element].includes(opacity)) {
+        elementOpacities[element].push(opacity);
+      }
+    });
+    return elementOpacities;
+  }
+}  
