@@ -499,7 +499,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
              structure.bonds[indexset[0]].color[indexset[1]] = hex
            });
          }
-         updateSingleAtomColor(linkedAtomIndex, imageIndex, structure.elements[linkedAtomIndex], hex)
+         updateSingleAtomColor(linkedAtomIndex, imageIndex, structure.elements[linkedAtomIndex], hex) 
       });
     });
 

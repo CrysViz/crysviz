@@ -1,6 +1,5 @@
 import * as THREE from '../external/three/three.module.js';
 import { app, fileBrowser, groups, general } from '../store.js';
-import { forceLengthToColor } from '../panels/ColorPanel.js';
 
 const SHAFT_SEGS = 12;
 const TIP_SEGS = 12;
@@ -61,7 +60,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0) {
       origin: new THREE.Vector3(...wrapped.cart[i]),
       dir: new THREE.Vector3(...v).normalize(),
       totalLen,
-      color: new THREE.Color(forceLengthToColor(mag)),
+      color: null,
     });
   }
 

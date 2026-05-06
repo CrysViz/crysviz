@@ -2,8 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 
 import {bondLengths,structureShip, app, groups,fileBrowser, general,mode} from '../store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
-import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
-
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings,getColorFromMap,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 import {Atom} from '../classes/Atom.js';
 import {Bond} from '../classes/Bond.js';
 
@@ -12,7 +11,7 @@ import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
 
 import {updateAtoms} from './AtomsFracUpdateModule.js'
-import {bondLengthToColor} from '../panels/ColorPanel.js'
+//import {bondLengthToColor} from '../panels/ColorPanel.js'
 import {refreshHistogram} from '../panels/AnalysisPanels/BondAnalysisPanel.js'
 import {generateID} from './UUIDModule.js'
 import {periodic} from '../store.js'
@@ -93,23 +92,25 @@ export function getBondCutoff(elem1, elem2) {
 
 export function buildBondObjects(structure){
   structure.bonds = [];
-  structure.bondMapping ={};
-  structure.bondObjectMapping ={};
+  structure.bondMapping = {};
+  structure.bondObjectMapping = {};
 
   const wrapped = structure.periodic.wrapped;
   const wrappedCart = wrapped.cart;
+  const atoms = fileBrowser.selectedStructure?.atoms;
 
+  // First pass: create all bonds
   for (let i = 0; i < wrappedCart.length; i++) {
     for (let j = i + 1; j < wrappedCart.length; j++) {
-
       const ei = wrapped.elements[i];
       const ej = wrapped.elements[j];
 
       const cutoff = getBondCutoff(ei, ej);
       if (cutoff <= 0.01) {
-        console.log("Bond Cutoff too small for",ei,ej, cutoff)
+        console.log("Bond Cutoff too small for", ei, ej, cutoff)
         continue;
       }
+
       const p1 = new THREE.Vector3(...wrappedCart[i]);
       const p2 = new THREE.Vector3(...wrappedCart[j]);
 
@@ -117,6 +118,7 @@ export function buildBondObjects(structure){
       if (dist > cutoff || dist < 0.005) {
         continue;
       }
+
       const bond = new Bond({
         elements: [ei, ej],
         length: dist,
@@ -125,11 +127,76 @@ export function buildBondObjects(structure){
         srcIndices: [wrapped.srcIndex[i], wrapped.srcIndex[j]],
         indices: [i, j]
       });
+
+      // Set bond colors based on current color mode
+      if (general.bondsColor === "white") {
+        bond.color = ["#ffffff", "#ffffff"];
+      } else if (general.bondsColor === "solid") {
+        bond.color = [general.solidBondColor || "#ffffff", general.solidBondColor || "#ffffff"];
+      } else if (general.bondsColor === "length") {
+        // Temporary color, will be updated in second pass
+        bond.color = bond.defaultColor;
+      } else {
+        // Default to element colors or atom colors
+        if (atoms && bond.srcIndices[0] < atoms.length && bond.srcIndices[1] < atoms.length) {
+          bond.color = [atoms[bond.srcIndices[0]].color, atoms[bond.srcIndices[1]].color];
+        } else {
+          bond.color = bond.defaultColor;
+        }
+      }
+
       structure.bonds.push(bond);
     }
   }
 
-  // Populate global bondLengths for histogram (alphabetically sorted pair key)
+  // Second pass: handle length-based coloring if in length mode
+  if (general.bondsColor === "length" && structure.bonds.length > 0) {
+    // Calculate min/max bond lengths if not already set
+    let minLength = general.BondMin;
+    let maxLength = general.BondMax;
+
+    if (minLength >= maxLength) {
+      // Auto-calculate range from actual bond lengths
+      minLength = Infinity;
+      maxLength = -Infinity;
+      structure.bonds.forEach(bond => {
+        if (bond.dist < minLength) minLength = bond.dist;
+        if (bond.dist > maxLength) maxLength = bond.dist;
+      });
+      // Ensure we don't have division by zero
+      if (minLength === maxLength) {
+        maxLength = minLength + 1;
+      }
+      general.BondMin = minLength;
+      general.BondMax = maxLength;
+    }
+
+    // Apply color mapping based on bond lengths
+    const colorMap = general.bondsColorMap || "heatmap";
+    let colors;
+    switch (colorMap) {
+      case "batlow": colors = getBatlowColors(); break;
+      case "hawaii": colors = getHawaiiColors(); break;
+      case "managua": colors = getManaguaColors(); break;
+      case "viridis": colors = getViridisColors(); break;
+      case "plasma": colors = getPlasmaColors(); break;
+      case "spectralR": colors = getSpectralRColors(); break;
+      default: colors = getHeatMapColors();
+    }
+
+    if (colors && colors.length > 0) {
+      const nBins = colors.length;
+      structure.bonds.forEach(bond => {
+        const clamped = Math.max(minLength, Math.min(maxLength, bond.dist));
+        const t = (maxLength > minLength) ? (clamped - minLength) / (maxLength - minLength) : 0.5;
+        const bin = Math.min(Math.max(0, Math.floor(t * nBins)), nBins - 1);
+        const color = `#${(colors[bin].r * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].g * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].b * 255 | 0).toString(16).padStart(2, '0')}`;
+        bond.color = [color, color];
+      });
+    }
+  }
+
+  // Populate global bondLengths for histogram
   for (const key in bondLengths) delete bondLengths[key];
   for (const bond of structure.bonds) {
     const [a, b] = bond.elements[0].localeCompare(bond.elements[1]) <= 0
@@ -140,7 +207,6 @@ export function buildBondObjects(structure){
     bondLengths[key].push(bond.dist);
   }
 }
-
 export function renderBonds() {
   const structure = fileBrowser.selectedStructure;
   const bonds = fileBrowser.selectedStructure.bonds;
@@ -471,3 +537,4 @@ export async function updateBonds(opacity=1.0) {
   mesh.geometry.attributes.instanceElementIndex.needsUpdate = true;
   mesh.material.needsUpdate = true;
 }
+

@@ -9,7 +9,7 @@ export class Bond {
     elements = [],
     positions = [],
     defaultColors = [],
-    colors = [],
+    color = [],
     uuid = null,
     indices = null,
     srcIndices=null,
@@ -22,13 +22,14 @@ export class Bond {
     this.indices = indices;
     this.srcIndices = srcIndices;
     this.uuid = uuid; 
-    if (fileBrowser.selectedStructure.atoms){
-      let atoms = fileBrowser.selectedStructure.atoms
-      this.color = [atoms[this.srcIndices[0]].color,atoms[this.srcIndices[1]].color];
-    }
-    else{
-      this.color = this.defaultColor
-    }
+    this.color=color;
+    //if (fileBrowser.selectedStructure.atoms){
+    //  let atoms = fileBrowser.selectedStructure.atoms
+    //  this.color = [atoms[this.srcIndices[0]].color,atoms[this.srcIndices[1]].color];
+    //}
+    //else{
+    //  this.color = this.defaultColor
+    //}
 
 
     // Compute positions, direction, distance
