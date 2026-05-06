@@ -1,5 +1,6 @@
 import * as THREE from '../external/three/three.module.js'
 import { createColorPicker } from '../modules/ColorPickerModule.js';
+import {updateVisualization} from '../crystal-viewer.js';  
 import {app, groups,fileBrowser, general,mode} from '../store.js';
 import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings,getColorFromMap,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 
@@ -237,7 +238,6 @@ function updateAtomColorsByForce() {
   }
 
   // Print first few force vectors for debugging
-  console.log("First 5 force vectors:", structure.forces.slice(0, 5).map(f => f.vector));
 
   const min = general.ForceMin;
   const max = general.ForceMax;
@@ -390,12 +390,12 @@ export function addColorPanel(target = "colorContainer") {
   });
 
   const menusWrapper = createElement("div", { class: "menus_wrapper" });
-  let atomsMenu; // Declare for access in fallback
 
   // =========================
   // ATOMS
   // =========================
   let atomsColorBar = null;
+  let atomsMenu; // Declare for access in fallback
 
   const atomsMenuBlock = createElement("div", { class: "menu_block" });
   atomsMenu = createDropdown("atomsMenu", "Atoms", [
@@ -408,9 +408,20 @@ export function addColorPanel(target = "colorContainer") {
     { value: "default", text: "CrysViz Default", selected: true },
     { value: "jmol", text: "JMol-like" }
   ], () => {
-    general.useDefaultColors = atomsElementColorMapMenu.querySelector("select").value === "default";
-    if (general.atomsColor !== "force") {
-      updateAtoms();
+    const useDefault = atomsElementColorMapMenu.querySelector("select").value === "default";
+    general.useDefaultColors = useDefault;
+    // Explicitly update all atom colors with the new scheme
+    const structure = fileBrowser.selectedStructure;
+
+    if (structure && general.atomsColor === "elements") {
+      structure.atoms.forEach((atom, atomIndex) => {
+        const element = structure.elements[atomIndex];
+        atom.color = structure.getDefaultElementColor(element);
+      });
+      if (groups.atomsMesh) {
+        groups.atomsMesh.instanceColor.needsUpdate = true;
+      }
+      updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true});
     }
   });
 
@@ -459,8 +470,9 @@ export function addColorPanel(target = "colorContainer") {
     }
 
     const isForce = mode === "force";
+    const isElements = mode === "elements";
 
-    atomsElementColorMapBlock.style.display = mode === "elements" ? "block" : "none";
+    atomsElementColorMapBlock.style.display = isElements ? "block" : "none";
     atomsColorMapBlock.style.display = isForce ? "block" : "none";
     atomsColorBarContainer.style.display = isForce ? "block" : "none";
 
@@ -475,11 +487,21 @@ export function addColorPanel(target = "colorContainer") {
         );
       }
       if (!updateAtomColorsByForce()) {
-        // If force coloring failed, switch back to elements
         atomsMenu.querySelector("select").value = "elements";
         general.atomsColor = "elements";
         updateAtoms();
         return;
+      }
+    } else if (isElements) {
+      // When switching to elements mode, update all atoms with current color scheme
+      if (structure && structure.atoms) {
+        structure.atoms.forEach((atom, atomIndex) => {
+          const element = structure.elements[atomIndex];
+          atom.color = structure.getDefaultElementColor(element);
+        });
+        if (groups.atomsMesh) {
+          groups.atomsMesh.instanceColor.needsUpdate = true;
+        }
       }
     } else {
       atomsColorBar?.remove();
@@ -499,6 +521,7 @@ export function addColorPanel(target = "colorContainer") {
     general.atomsColor = mode;
     updateAtoms();
   }
+
 
   // =========================
   // BONDS

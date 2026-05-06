@@ -125,9 +125,9 @@ export const general = {
   currentSupercell: null,
   modifiedLattice: null, // this needs to be part of the structure object 
   sharedStructureLoaded:false,
-  bondsColor: null,
+  bondsColor: "elements",
   abondsColorMap: null,
-  atomsColor: null,
+  atomsColor: "elements",
   atomsColorMaps: null,
   atomCutPlanes: [],
 };
