@@ -1,5 +1,5 @@
 // uncomment for GPU-centric marching cubes
-import * as GPUMarchCubes from '../external/GPU/marching_cubes.js';
+//import * as GPUMarchCubes from '../external/GPU/marching_cubes.js';
 let useGPUMarchCubes = false;
 
 // uncomment for WASM-centric marching cubes
@@ -22,11 +22,12 @@ class MarchingCubesWrapper {
         this.field = field;
         
         let backend_MC;
-        if (backend === "gpu") {
-            backend_MC = new GPUMarchCubes.MarchCubes(field, field.nx, field.ny, field.nz);
-            useGPUMarchCubes = true;
-            console.log("Using GPU-based Marching Cubes");
-        } else if (backend === "wasm") {
+        // if (backend === "gpu") {
+        //     backend_MC = new GPUMarchCubes.MarchCubes(field, field.nx, field.ny, field.nz);
+        //     useGPUMarchCubes = true;
+        //     console.log("Using GPU-based Marching Cubes");
+        // } 
+        if (backend === "wasm") {
             backend_MC = new MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz);
             const fieldPtr = backend_MC.getField();
             MarchingCubesModule.HEAPF32.set(field.values, fieldPtr >> 2);
@@ -42,10 +43,10 @@ class MarchingCubesWrapper {
     }
 
     getVertices(isoValue) {
-        if (useGPUMarchCubes) {
-            return this.marchingCubes.getVertices(isoValue);
-        }
-        else if (useWASMMarchCubes) {
+        // if (useGPUMarchCubes) {
+        //     return this.marchingCubes.getVertices(isoValue);
+        // }
+        if (useWASMMarchCubes) {
             this.marchingCubes.updateVertices(isoValue);
             const vertexCount = this.marchingCubes.getVertexCount();
             const verticesPtr = this.marchingCubes.getVertices();
@@ -73,10 +74,10 @@ class MarchingCubesWrapper {
     }
 
     delete() {
-        if (useGPUMarchCubes) {
-            this.marchingCubes.delete();
-        }
-        else if (useWASMMarchCubes) {
+        // if (useGPUMarchCubes) {
+        //     this.marchingCubes.delete();
+        // }
+        if (useWASMMarchCubes) {
             this.marchingCubes.delete();
         }
         else if (useThreeMarchCubes) {
