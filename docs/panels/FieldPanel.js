@@ -1,5 +1,10 @@
 import { fileBrowser, app, general, groups } from '../store.js';
 import { updateField, setActiveField, toggleFieldVisibility } from '../modules/Render3DFieldModule.js';
+import {
+  getIsosurfaceMaterialSettings,
+  setIsosurfaceMaterialSettings,
+  applyMaterialSettingsToStoredIsosurfaces,
+} from '../classes/Isosurface.js';
 
 export let useLogSliderScale = false; // Global variable to track log scale state for iso slider
 
@@ -162,6 +167,7 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
 
   const isoValue = fieldBrowser.selectedField.isoValue || sliderToIsoValue(55, fieldBrowser.selectedField);
   const sliderVal = isoValueToSlider(isoValue, fieldBrowser.selectedField);
+  const materialSettings = getIsosurfaceMaterialSettings();
 
   container.innerHTML = `
     <h3>Volumetric Field Controls</h3>
@@ -213,6 +219,28 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
       <label>Isosurface Value:</label>
       <input type="range" id="isoSlider" min="0" max="100" step="1" value="${sliderVal}">
       <span id="isoValue">${isoValue.toExponential(3)}</span>
+    </div>
+
+    <div class="control-group">
+      <div id="fieldColorToggle" class="spin-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="fieldColorContent">
+        <h4>Color controls</h4>
+        <div class="toggle-icon" id="fieldColorToggleIcon">+</div>
+      </div>
+      <div id="fieldColorContent" class="collapsible-content" aria-hidden="true">
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <label for="FieldPosColorPicker">Positive Isosurface Color:</label>
+          <input type="color" id="FieldPosColorPicker" value="${materialSettings.positiveColor}">
+
+          <label for="FieldNegColorPicker">Negative Isosurface Color:</label>
+          <input type="color" id="FieldNegColorPicker" value="${materialSettings.negativeColor}">
+
+          <label for="FieldOpacitySlider">Isosurface Opacity:</label>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <input type="range" id="FieldOpacitySlider" min="0" max="1" step="0.01" value="${materialSettings.opacity}">
+            <span id="FieldOpacityValue">${materialSettings.opacity.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
    
@@ -299,6 +327,103 @@ function setupFieldControlEvents(fields, container) {
   const fieldToggles = document.querySelectorAll('.fieldToggle');
   const fieldPrimaryRadios = document.querySelectorAll('.fieldPrimary');
   const selectedFieldName = document.getElementById('selectedFieldName');
+  const fieldColorToggle = document.getElementById('fieldColorToggle');
+  const fieldColorToggleIcon = document.getElementById('fieldColorToggleIcon');
+  const fieldColorContent = document.getElementById('fieldColorContent');
+  const posColorPicker = document.getElementById('FieldPosColorPicker');
+  const negColorPicker = document.getElementById('FieldNegColorPicker');
+  const opacitySlider = document.getElementById('FieldOpacitySlider');
+  const opacityValue = document.getElementById('FieldOpacityValue');
+
+  function setColorPanelOpen(open) {
+    if (!fieldColorContent || !fieldColorToggle || !fieldColorToggleIcon) return;
+
+    if (open) {
+      fieldColorContent.classList.add('open');
+      fieldColorContent.setAttribute('aria-hidden', 'false');
+      fieldColorToggle.setAttribute('aria-expanded', 'true');
+      fieldColorToggleIcon.textContent = '−';
+    } else {
+      fieldColorContent.classList.remove('open');
+      fieldColorContent.setAttribute('aria-hidden', 'true');
+      fieldColorToggle.setAttribute('aria-expanded', 'false');
+      fieldColorToggleIcon.textContent = '+';
+    }
+  }
+
+  function isAnyStoredIsosurfaceInScene() {
+    if (!app.scene || !groups.isosurfaceGroup) return false;
+
+    const isInScene = (entry) => {
+      if (!entry || !entry.id) return false;
+      return app.scene.getObjectById(entry.id) !== undefined;
+    };
+
+    if (Array.isArray(groups.isosurfaceGroup)) {
+      return groups.isosurfaceGroup.some(isInScene);
+    }
+    if (groups.isosurfaceGroup instanceof Set) {
+      for (const entry of groups.isosurfaceGroup) {
+        if (isInScene(entry)) return true;
+      }
+      return false;
+    }
+    if (groups.isosurfaceGroup instanceof Map) {
+      for (const entry of groups.isosurfaceGroup.values()) {
+        if (isInScene(entry)) return true;
+      }
+      return false;
+    }
+
+    return isInScene(groups.isosurfaceGroup);
+  }
+
+  function applyFieldMaterialControls() {
+    const settings = {
+      positiveColor: posColorPicker?.value,
+      negativeColor: negColorPicker?.value,
+      opacity: parseFloat(opacitySlider?.value),
+    };
+
+    if (opacityValue && Number.isFinite(settings.opacity)) {
+      opacityValue.textContent = settings.opacity.toFixed(2);
+    }
+
+    setIsosurfaceMaterialSettings(settings);
+    applyMaterialSettingsToStoredIsosurfaces(groups.isosurfaceGroup, settings);
+
+    if (isAnyStoredIsosurfaceInScene() && app.renderer && app.camera) {
+      app.renderer.render(app.scene, app.camera);
+    }
+  }
+
+  setColorPanelOpen(false);
+
+  if (fieldColorToggle) {
+    fieldColorToggle.addEventListener('click', function () {
+      setColorPanelOpen(!fieldColorContent.classList.contains('open'));
+    });
+
+    fieldColorToggle.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setColorPanelOpen(!fieldColorContent.classList.contains('open'));
+      }
+    });
+  }
+
+  if (posColorPicker) {
+    posColorPicker.addEventListener('input', applyFieldMaterialControls);
+    posColorPicker.addEventListener('change', applyFieldMaterialControls);
+  }
+  if (negColorPicker) {
+    negColorPicker.addEventListener('input', applyFieldMaterialControls);
+    negColorPicker.addEventListener('change', applyFieldMaterialControls);
+  }
+  if (opacitySlider) {
+    opacitySlider.addEventListener('input', applyFieldMaterialControls);
+    opacitySlider.addEventListener('change', applyFieldMaterialControls);
+  }
 
 
   function updateSliderRange() {

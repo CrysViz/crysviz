@@ -12,16 +12,6 @@ import { readCHGCAR } from "./ReadChgcarModule.js";
 import { readCubeFile } from "./ReadCubeModule.js";
 import { Isosurface } from "../classes/Isosurface.js";
 
-const surface_options = {
-    opacity: 0.4,
-    roughness: 0.3,
-    metalness: 0.05,
-    clearcoat: 0.4,
-    clearcoatRoughness: 0.1,
-    side: THREE.DoubleSide,
-    transparent: true,
-  } 
-
 
 
 

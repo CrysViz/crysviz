@@ -7,17 +7,102 @@ import { groups } from '../store.js';
 import { MarchingCubesWrapper } from './MarchingCubesWrapper.js';
 
 
-const surface_options = {
+export let surface_options = {
     //transmission: 0.95,
     side: THREE.DoubleSide,
     opacity:0.4,
     transparent: true,
+    alphaTest: 0.01,
     //depthWrite: false,
     //depthTest: true,
   } 
 
-const defaultPosColor = new THREE.Color(0x33aaff);
-const defaultNegColor = new THREE.Color(0xff3333);
+export let defaultPosColor = new THREE.Color(0x33aaff);
+export let defaultNegColor = new THREE.Color(0xff3333);
+
+function clampOpacity(opacity) {
+    if (!Number.isFinite(opacity)) return surface_options.opacity;
+    return Math.max(0, Math.min(1, opacity));
+}
+
+export function getIsosurfaceMaterialSettings() {
+    return {
+        positiveColor: `#${defaultPosColor.getHexString()}`,
+        negativeColor: `#${defaultNegColor.getHexString()}`,
+        opacity: surface_options.opacity
+    };
+}
+
+export function setIsosurfaceMaterialSettings(settings = {}) {
+    if (settings.positiveColor !== undefined) {
+        defaultPosColor.set(settings.positiveColor);
+    }
+    if (settings.negativeColor !== undefined) {
+        defaultNegColor.set(settings.negativeColor);
+    }
+    if (settings.opacity !== undefined) {
+        surface_options.opacity = clampOpacity(settings.opacity);
+    }
+}
+
+export function applyIsosurfaceMaterialSettings(isosurface, settings = {}) {
+    if (!isosurface || !isosurface.meshes) return;
+
+    const { positiveColor, negativeColor, opacity } = settings;
+    const positiveMat = isosurface.meshes.positive?.material;
+    const negativeMat = isosurface.meshes.negative?.material;
+
+    if (positiveMat) {
+        if (positiveColor !== undefined) {
+            positiveMat.color.set(positiveColor);
+        }
+        if (opacity !== undefined) {
+            positiveMat.opacity = clampOpacity(opacity);
+            positiveMat.transparent = positiveMat.opacity < 1;
+        }
+        positiveMat.needsUpdate = true;
+    }
+
+    if (negativeMat) {
+        if (negativeColor !== undefined) {
+            negativeMat.color.set(negativeColor);
+        }
+        if (opacity !== undefined) {
+            negativeMat.opacity = clampOpacity(opacity);
+            negativeMat.transparent = negativeMat.opacity < 1;
+        }
+        negativeMat.needsUpdate = true;
+    }
+}
+
+export function applyMaterialSettingsToStoredIsosurfaces(isosurfaceGroup, settings = {}) {
+    if (!isosurfaceGroup) return;
+
+    const applyOne = (entry) => {
+        if (!entry) return;
+        if (entry.meshes?.positive || entry.meshes?.negative) {
+            applyIsosurfaceMaterialSettings(entry, settings);
+            return;
+        }
+        if (entry.traverse) {
+            entry.traverse((child) => {
+                if (child?.meshes?.positive || child?.meshes?.negative) {
+                    applyIsosurfaceMaterialSettings(child, settings);
+                }
+            });
+        }
+    };
+
+    if (Array.isArray(isosurfaceGroup)) {
+        isosurfaceGroup.forEach(applyOne);
+    } else if (isosurfaceGroup instanceof Set) {
+        isosurfaceGroup.forEach(applyOne);
+    } else if (isosurfaceGroup instanceof Map) {
+        isosurfaceGroup.forEach((value) => applyOne(value));
+    } else {
+        applyOne(isosurfaceGroup);
+    }
+}
 
 
 
@@ -60,8 +145,14 @@ export class Isosurface extends THREE.Group{
         this.meshes.positive.name = 'isosurface_pos';
         this.meshes.negative.name = 'isosurface_neg';
 
+        this.applyMaterialSettings(getIsosurfaceMaterialSettings());
+
         this.add(this.meshes.positive);
         this.add(this.meshes.negative);
+    }
+
+    applyMaterialSettings(settings = {}) {
+        applyIsosurfaceMaterialSettings(this, settings);
     }
 
     get positiveMesh() {
