@@ -42,6 +42,7 @@ export class Structure {
     polyhedra = null,
     colors = [],
     bondMapping = {},
+    bondObjectMapping = {},
     atomImages = {},
     periodic = {}, // Accept periodic as an input
     volumetricFields = null,
@@ -60,6 +61,7 @@ export class Structure {
     this.polyhedra = polyhedra;
     this.colors = colors;
     this.bondMapping={};
+    this.bondObjectMapping={};
     this.bonds = bonds;           // list of bonds
     this.periodic = periodic;     // Initialize periodic
     this.atomImages = {};
@@ -86,6 +88,19 @@ export class Structure {
       planes: deepCopyArrayOfObjects(planes),
     });
 
+  }
+  getDefaultElementColor(element) {
+    const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
+    return colorScheme[element] || 0x808080;
+  }
+  getElementColors() {
+    const elementColors = {};
+    this.atoms.forEach((atom, index) => {
+      const element = this.elements[index];
+      if (!element || elementColors[element] !== undefined) return;
+      elementColors[element] = atom.getColor();
+    });
+    return elementColors;
   }
 }  
 

@@ -2,8 +2,8 @@ import { updateVisualization } from '../crystal-viewer.js';
 import { general, structureShip, fileBrowser } from '../store.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { createSpinControls} from './SpinPanel.js';
-import { updateSpins} from '../modules/SpinModule.js';
-import { updateForces} from '../modules/ForceModule.js';
+import { updateSpins, removeSpins } from '../modules/SpinModule.js';
+import { updateForces, removeForces } from '../modules/ForceModule.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 
 let trajectoryPlayerElements = {};
@@ -24,18 +24,22 @@ function updateStructureFromFrame(frame, container) {
 
   createBondLengthControls();
 
-   const ControlPanelSpinForceSwitch = document.getElementById("ControlPanelSpinForceSwitch");
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
 
-  let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
-  if (spins != null && general.spinForceState === "Spins") {
-    createSpinControls();
-    updateSpins();
+  // Forces and spins must be updated AFTER updateVisualization so periodic.wrapped is ready
+  const structure = fileBrowser.selectedStructure;
+
+  if (general.spinForceState === "Forces" && structure.forces?.length > 0) {
+    updateForces(general.forceScale ?? 1.0);
+  } else {
+    removeForces();
   }
-  let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
-  if (forces != null && general.spinForceState === "Forces" ) {
-    updateForces();
+
+  if (general.spinForceState === "Spins" && structure.spins?.length > 0) {
+    updateSpins(general.spinScale ?? 1.0);
+  } else {
+    removeSpins();
   }
-  updateVisualization({reRenderAtoms: true, reRenderBonds: true});
 }
 
 // --- Update UI and scene ---

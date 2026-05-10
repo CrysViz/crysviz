@@ -2,13 +2,13 @@ import {structureShip,app, groups,fileBrowser, general,mode,defaultPOSCAR, polyS
 
 import { updateVisualization } from '../../crystal-viewer.js';
 
-import {colorHexToCss,hexToRgba,getElementColor,loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor } from '../../modules/ColorModule.js';
-
+import {setAtomColor,getAtomColor,colorHexToCss,hexToRgba} from '../../modules/ColorModule.js'
 import { createColorPicker } from '../../modules/ColorPickerModule.js';
-import { updateBonds } from '../../modules/BondsModule.js'
 import { updateSingleBondColor } from '../../modules/BondsFracUpdateModule.js'
+import { updateSingleAtomColor} from '../../modules/AtomsFracUpdateModule.js'
 import {createSupercell} from '../../modules/SuperCellModule.js';
 import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
+import { applyWyckoffOrbitPosition } from '../../modules/SymmetryEditModule.js';
 
 export function createCompositionRow(el, count, total) {
   const container = document.createElement('div');
@@ -21,8 +21,9 @@ export function createCompositionRow(el, count, total) {
 
   const left = document.createElement('div');
   left.className = 'comp-left';
-  const currentColor = getElementDisplayColor(el);
-  const curr_elem_colors = getElementDisplayColor(el);
+  let  currentColor = fileBrowser.selectedStructure.getElementColors()[el]
+  console.warn(currentColor)
+  let curr_elem_colors = fileBrowser.selectedStructure.getElementColors()[el]
   let dot;
 
   if (curr_elem_colors.length > 1) {
@@ -31,7 +32,7 @@ export function createCompositionRow(el, count, total) {
   } else {
     dot = document.createElement('span');
     dot.className = 'dot';
-    dot.style.background = curr_elem_colors[0];
+    dot.style.background = colorHexToCss(curr_elem_colors);
   }
 
   const name = document.createElement('span');
@@ -112,7 +113,7 @@ export function createCompositionRow(el, count, total) {
   hexInput.placeholder = '#RRGGBB';
   hexInput.style.cssText = 'width: 80px; height: 32px; padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 12px; margin: 0; box-sizing: border-box; vertical-align: top;';
 
-  const mom_color = getElementDisplayColor(el);
+  const mom_color = fileBrowser.selectedStructure.getElementColors()[el]
   let  atomIndices=[]
   fileBrowser.selectedStructure.elements.forEach((element, index)=> {
     if (element === el) {
@@ -120,37 +121,31 @@ export function createCompositionRow(el, count, total) {
     }
   });
 
-  const picker = createColorPicker(mom_color[0], (hex) => {
-    clearAllIndividualColorsForElement(el);      // Clear old color overrides
-    const ok = setElementColorOverride(el, hex); // Apply new color override
-
+  const picker = createColorPicker(mom_color, (hex) => {
+    //clearAllIndividualColorsForElement(el);      // Clear old color overrides
+    //const ok = setElementColorOverride(el, hex); // Apply new color override
 
 
     //FIXME: this needs to also update the atoms 
+    let structure = fileBrowser.selectedStructure
+    let indexset
     atomIndices.forEach(atomIndex => {
-      fileBrowser.selectedStructure.atomImages[atomIndex].forEach(imageIndex => {
-        fileBrowser.selectedStructure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
-          updateSingleBondColor(bondHalvIndex, hex)
-          //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)
-        });
-      });
-    });  
+        structure.atomImages[atomIndex].forEach(imageIndex => {
+          if (structure.bondMapping[imageIndex]) {
+            structure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
+              updateSingleBondColor(bondHalvIndex, hex)
+              indexset = structure.bondObjectMapping[bondHalvIndex]
+              structure.bonds[indexset[0]].color[indexset[1]] = hex
+              });
+            }
+            updateSingleAtomColor(atomIndex, imageIndex, el,hex)
+          });
+      });  
+
     groups.atomsMesh.instanceColor.needsUpdate = true;
     groups.bondsMesh.instanceColor.needsUpdate = true;
 
-
-
     dot.style.background = hex;
-      if (ok) {
-        updateVisualization({
-          atomsUpdate:true,
-          bondsUpdate:false,
-          reRenderAtoms: false,
-          reRenderBonds: false,
-          reRenderLattice: false,
-          reRenderOther: false
-        });
-      }
     });
   // Single line: color swatch + hex field + buttons
   const topRow = document.createElement('div');
@@ -163,9 +158,9 @@ export function createCompositionRow(el, count, total) {
   resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
 
   const applyBtn = document.createElement('button');
-  applyBtn.textContent = 'Apply';
+  applyBtn.textContent = 'Apply to Trajectory';
   applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
+  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 88px;';
 
   // Add buttons to the same row
   // Create separate button row
@@ -202,15 +197,15 @@ export function createCompositionRow(el, count, total) {
   hexInput.oninput = (e) => { colorInput.value = e.target.value; };
 
   // Style reset button with the element's default palette color
-  const defaultColorCss = colorHexToCss(getDefaultElementColor(el));
+  const defaultColorCss = colorHexToCss(fileBrowser.selectedStructure.getDefaultElementColor(el));
   resetBtn.style.background = defaultColorCss;
   resetBtn.style.borderColor = 'rgba(0,0,0,0.15)';
   resetBtn.style.color = textColorForBg(defaultColorCss);
 
   // Reset clears both element-wide override AND all individual colors for this element
   resetBtn.onclick = () => {
-    clearElementColorOverride(el);
-    clearAllIndividualColorsForElement(el);
+    //clearElementColorOverride(el);
+    //clearAllIndividualColorsForElement(el);
     updateVisualization({
           bondsUpdate:false,
           reRenderAtoms: false,
@@ -231,6 +226,7 @@ export function createCompositionRow(el, count, total) {
           reRenderOther: false,
           reRenderComposition: "open",
         });
+      structureShip.container[fileBrowser.selectedRowIndex].flushColorToAllStructures(fileBrowser.selectedStructure);
       editor.style.display = 'none';
 
   };
@@ -240,16 +236,94 @@ export function createCompositionRow(el, count, total) {
   return container;
 }  
 
-function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex + 1) {
+export function createWyckoffCompositionRow(el, entries, total) {
+  const container = document.createElement('div');
+  container.className = 'comp-container';
+
+  const row = document.createElement('div');
+  row.className = 'comp-row';
+  row.style.cssText = 'display:grid; grid-template-columns: auto 1fr; align-items:center; column-gap:8px; row-gap:6px; cursor: pointer; transition: background-color 0.2s ease;';
+
+  const left = document.createElement('div');
+  left.className = 'comp-left';
+  const currElemColors = fileBrowser.selectedStructure.getElementColors()[el];
+  let dot;
+  if (currElemColors.length > 1) {
+    dot = createPieDot(currElemColors, 20);
+    dot.classList.add('dot');
+  } else {
+    dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = colorHexToCss(currElemColors);
+  }
+
+  const name = document.createElement('span');
+  name.textContent = el;
+  const expandIcon = document.createElement('span');
+  expandIcon.textContent = '▶';
+  expandIcon.style.cssText = 'margin-left: 4px; font-size: 14px; transition: transform 0.2s ease; color: rgba(255,255,255,0.8); transform: rotate(0deg);';
+
+  left.appendChild(dot);
+  left.appendChild(name);
+  left.appendChild(expandIcon);
+
+  const right = document.createElement('span');
+  const pct = (100 * entries.length / total).toFixed(1);
+  right.textContent = `${entries.length} (${pct}%)`;
+
+  row.appendChild(left);
+  row.appendChild(right);
+
+  const atomsContainer = document.createElement('div');
+  atomsContainer.className = 'individual-atoms';
+  atomsContainer.style.cssText = 'display: none; margin-left: 20px; margin-top: 8px; border-left: 2px solid rgba(255,255,255,0.1); padding-left: 8px;';
+
+  entries.forEach((entry, index) => {
+    const atomRow = createIndividualAtomRow(el, entry.representativeIndex, index + 1, {
+      linkedAtomIndices: entry.atomIndices,
+      label: `${el}${index + 1}  ${entry.multiplicity}${entry.wyckoff}`,
+      metaText: `${entry.siteSymmetry ? `${entry.siteSymmetry}  |  ` : ''}orbit ${entry.atomIndices.length}  |  ${entry.isFixed ? 'fixed' : `${entry.dofDimension} DOF`}`,
+      positionUpdater: (coords) => applyWyckoffOrbitPosition(entry.representativeIndex, coords),
+      resetCoordsProvider: () => fileBrowser.selectedStructure?.original?.atoms?.[entry.representativeIndex]?.position ?? null,
+      positionEditable: !entry.isFixed,
+    });
+    atomsContainer.appendChild(atomRow);
+  });
+
+  row.addEventListener('mouseenter', () => {
+    row.style.backgroundColor = 'rgba(255,255,255,0.03)';
+  });
+  row.addEventListener('mouseleave', () => {
+    row.style.backgroundColor = 'transparent';
+  });
+  row.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isExpanded = atomsContainer.style.display !== 'none';
+    atomsContainer.style.display = isExpanded ? 'none' : 'block';
+    expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
+  });
+
+  container.appendChild(row);
+  container.appendChild(atomsContainer);
+  return container;
+}
+
+function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex + 1, options = {}) {
+  const linkedAtomIndices = options.linkedAtomIndices ?? [atomIndex];
+  const positionUpdater = options.positionUpdater ?? ((coords) => updateAtomCoordinates(atomIndex, coords));
+  const resetCoordsProvider = options.resetCoordsProvider ?? (() => fileBrowser.selectedStructure?.original?.atoms?.[atomIndex]?.position ?? null);
+  const positionEditable = options.positionEditable ?? true;
   const row = document.createElement('div');
   row.className = 'individual-atom-row';
+  row.dataset.atomIndex = String(atomIndex);
+  row.dataset.element = element;
   row.style.cssText = 'display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 20px; padding: 4px 0; font-size: 11px;';
 
   // Individual atom dot with its specific color
   const dot = document.createElement('span');
   dot.className = 'dot';
   dot.style.cssText = 'width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; border: 1px solid rgba(255,255,255,0.4);';
-  const currentColor = colorHexToCss(getIndividualAtomColor(element, atomIndex));
+  const currentColor = colorHexToCss(getAtomColor(atomIndex));
   dot.style.background = currentColor;
 
   // Atom name and coordinates container
@@ -257,7 +331,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   nameContainer.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
 
   const name = document.createElement('span');
-  name.textContent = `${element}${displayNumber}  `;
+  name.textContent = options.label ?? `${element}${displayNumber}  `;
   name.style.color = '#ddd';
 
   // Coordinates display (fractional)
@@ -267,6 +341,12 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   coordsDisplay.textContent = `(${coords[0].toFixed(3)}, ${coords[1].toFixed(3)}, ${coords[2].toFixed(3)})`;
 
   nameContainer.appendChild(name);
+  if (options.metaText) {
+    const meta = document.createElement('span');
+    meta.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.55);';
+    meta.textContent = options.metaText;
+    nameContainer.appendChild(meta);
+  }
   nameContainer.appendChild(coordsDisplay);
 
   row.appendChild(nameContainer);
@@ -278,7 +358,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   const colorBtn = document.createElement('button');
   colorBtn.textContent = 'Color';
   colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;';
-  const choosenColor = hexToRgba(colorHexToCss(getIndividualAtomColor(element, atomIndex)),0.8);
+  const choosenColor = hexToRgba(colorHexToCss(getAtomColor(atomIndex)),0.8);
   colorBtn.style.background = choosenColor;
   colorBtn.title = `Change color for ${element}${displayNumber}`;
 
@@ -287,6 +367,12 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   coordBtn.textContent = 'Position';
   coordBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; cursor: pointer; font-size: 10px;';
   coordBtn.title = `Edit coordinates for ${element}${displayNumber}`;
+  if (!positionEditable) {
+    coordBtn.disabled = true;
+    coordBtn.style.opacity = '0.45';
+    coordBtn.style.cursor = 'not-allowed';
+    coordBtn.title = `Position is fixed by symmetry for ${element}${displayNumber}`;
+  }
 
 
     // Spin Edit button
@@ -304,34 +390,26 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   // Create color editor for this individual atom
   const editor = document.createElement('div');
   editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
-  const mom_color = colorHexToCss(getIndividualAtomColor(element, atomIndex))
+  const mom_color = colorHexToCss(getAtomColor(atomIndex))
   const picker = createColorPicker(mom_color, (hex) => {
-    const ok = setIndividualAtomColor(element, atomIndex, hex);
-
-    //fileBrowser.selectedStructure.atoms[atomIndex].color = hex
-    //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)
-    //
-    ////FIXME: this needs to also update the atoms
-    fileBrowser.selectedStructure.atomImages[atomIndex].forEach(imageIndex => {
-      fileBrowser.selectedStructure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
-        updateSingleBondColor(bondHalvIndex, hex)
-        //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)    
+    let structure = fileBrowser.selectedStructure
+    let indexset
+    linkedAtomIndices.forEach((linkedAtomIndex) => {
+      structure.atomImages[linkedAtomIndex]?.forEach(imageIndex => {
+         if (structure.bondMapping[imageIndex]) {
+           structure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
+             updateSingleBondColor(bondHalvIndex, hex)
+             indexset = structure.bondObjectMapping[bondHalvIndex]
+             structure.bonds[indexset[0]].color[indexset[1]] = hex
+           });
+         }
+         updateSingleAtomColor(linkedAtomIndex, imageIndex, structure.elements[linkedAtomIndex], hex)
       });
-    });  
+    });
+
     groups.atomsMesh.instanceColor.needsUpdate = true;
     groups.bondsMesh.instanceColor.needsUpdate = true;
-
     dot.style.background = hex;
-      if (ok) {
-        //updateBonds()
-        updateVisualization({
-          bondsUpdate:false,
-          reRenderAtoms: false,
-          reRenderBonds: false,
-          reRenderLattice: false,
-          reRenderOther: false
-        });
-      }
   });
   const AtomColorApplyBtn = document.createElement('button');
   AtomColorApplyBtn.textContent = 'Apply';
@@ -363,7 +441,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   coordEditor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
 
   const coordTitle = document.createElement('div');
-  coordTitle.textContent = 'Fractional Coordinates';
+  coordTitle.textContent = positionEditable ? 'Fractional Coordinates' : 'Fractional Coordinates (fixed by symmetry)';
   coordTitle.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.8); margin-bottom: 6px; font-weight: 500;';
   const xInput = document.createElement('input');
   xInput.type = 'number';
@@ -371,6 +449,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   xInput.step = '0.000001';
   xInput.style.cssText = 'width: 80px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px;';
   xInput.placeholder = 'x';
+  xInput.disabled = !positionEditable;
 
   const yInput = document.createElement('input');
   yInput.type = 'number';
@@ -378,6 +457,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   yInput.step = '0.000001';
   yInput.style.cssText = 'width: 80px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px;';
   yInput.placeholder = 'y';
+  yInput.disabled = !positionEditable;
 
   const zInput = document.createElement('input');
   zInput.type = 'number';
@@ -385,6 +465,7 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   zInput.step = '0.000001';
   zInput.style.cssText = 'width: 80px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px;';
   zInput.placeholder = 'z';
+  zInput.disabled = !positionEditable;
 
   const coordInputsRow = document.createElement('div');
   coordInputsRow.style.cssText = 'display: flex; align-items: center; gap: 4px; margin-bottom: 6px;';
@@ -395,11 +476,13 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
   coordApplyBtn.textContent = 'Apply';
   coordApplyBtn.className = 'btn-mini highlight';
   coordApplyBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px;';
+  coordApplyBtn.disabled = !positionEditable;
 
   const coordResetBtn = document.createElement('button');
   coordResetBtn.textContent = 'Reset';
   coordResetBtn.className = 'btn-mini';
   coordResetBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px; margin-right: 6px;';
+  coordResetBtn.disabled = !positionEditable;
 
   const coordButtonsRow = document.createElement('div');
   coordButtonsRow.style.cssText = 'display: flex; align-items: center; gap: 4px;';
@@ -484,7 +567,7 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
   spinColorBtn.textContent = 'Color';
   spinColorBtn.className = 'btn-mini highlight';
   spinColorBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px;';
-  const mom_spin_color = colorHexToCss(getIndividualAtomColor(element, atomIndex))
+  const mom_spin_color = colorHexToCss(getAtomColor(atomIndex))
   spinColorBtn.style.background =mom_spin_color;
 
   const spinResetBtn = document.createElement('button');
@@ -549,17 +632,15 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
   const spinColorEditor = document.createElement('div');
   spinColorEditor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
   const spinColorPicker = createColorPicker(mom_spin_color, (hex) => {
-    const ok = setIndividualAtomColor(element, atomIndex, hex);
+    //const ok = setIndividualAtomColor(element, atomIndex, hex);
     dot.style.background = hex;
-      if (ok) {
-        updateVisualization({
+    updateVisualization({
           bondsUpdate:false,
           reRenderAtoms: false,
           reRenderBonds: true,
           reRenderLattice: false,
           reRenderOther: false
         });
-      }
    });
   const spinColorApplyBtn = document.createElement('button');
   spinColorApplyBtn.textContent = 'Apply';
@@ -604,6 +685,7 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
   };
 
   coordBtn.onclick = (e) => {
+    if (!positionEditable) return;
     e.stopPropagation();
     editor.style.display = 'none'; // Hide color editor
     spinEditor.style.display = 'none'; // Hide color editor
@@ -625,7 +707,7 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
     const newZ = parseFloat(zInput.value);
 
     if (!isNaN(newX) && !isNaN(newY) && !isNaN(newZ)) {
-      updateAtomCoordinates(atomIndex, [newX, newY, newZ]);
+      positionUpdater([newX, newY, newZ]);
       coordsDisplay.textContent = `(${newX.toFixed(3)}, ${newY.toFixed(3)}, ${newZ.toFixed(3)})`;
       coordEditor.style.display = 'none';
     }
@@ -633,33 +715,23 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
 
   coordResetBtn.onclick = () => {
     // Reset to original coordinates
-    if (originalStructureData && originalStructureData.positions[atomIndex]) {
-      const originalCoords = originalStructureData.positions[atomIndex];
+    const originalCoords = resetCoordsProvider();
+    if (originalCoords) {
       xInput.value = originalCoords[0].toFixed(6);
       yInput.value = originalCoords[1].toFixed(6);
       zInput.value = originalCoords[2].toFixed(6);
-      updateAtomCoordinates(atomIndex, [...originalCoords]);
+      positionUpdater([...originalCoords]);
       coordsDisplay.textContent = `(${originalCoords[0].toFixed(3)}, ${originalCoords[1].toFixed(3)}, ${originalCoords[2].toFixed(3)})`;
       coordEditor.style.display = 'none';
     }
   };
 
   AtomColorApplyBtn.onclick = () => {
-      dot.style.background = picker.getHex;
       editor.style.display = 'none';
-      updateVisualization({
-        bondsUpdate:false,
-        reRenderAtoms: false,
-        reRenderBonds : false,
-        reRenderLattice : false,
-        reRenderOther: false,
-        reRenderComposition : true, 
-      });
   };
 
   AtomColorResetBtn.onclick = () => {
-    clearIndividualAtomColor(element, atomIndex);
-    const newColor = colorHexToCss(getIndividualAtomColor(element, atomIndex));
+    const newColor = colorHexToCss(getAtomColor(atomIndex));
     dot.style.background = newColor;
     //colorInput.value = newColor;
    // hexInput.value = newColor;
@@ -683,7 +755,6 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
 
 // Function to update atom coordinates and refresh visualization
 function updateAtomCoordinates(atomIndex, newCoords) {
-  console.warn("hahahah");
   if (!fileBrowser.selectedStructure) {
    console.error("updateAtomCoordinates: selected structure not found");
    return;
@@ -693,31 +764,27 @@ function updateAtomCoordinates(atomIndex, newCoords) {
     return;
   };
 
+  const orbit = fileBrowser.selectedStructure.symmetry?.mode === 'wyckoff'
+    ? fileBrowser.selectedStructure.symmetry.orbitGroups?.find((group) => group.atomIndices.includes(atomIndex))
+    : null;
+  if (orbit) {
+    applyWyckoffOrbitPosition(orbit.representativeIndex, newCoords);
+    return;
+  }
+
   // Update the coordinates in the structure data
   
-  fileBrowser.selectedStructure.atoms[atomIndex].postion = [...newCoords];
-  structureShip.container[fileBrowser.selectedRowIndex].structures[fileBrowser.stepInput].atoms[atomIndex].position  = [...newCoords]; 
-
-    //atoms[atomIndex].position)
-
-    //= [...newCoords];
+  fileBrowser.selectedStructure.atoms[atomIndex].position = [...newCoords];
+  structureShip.container[fileBrowser.selectedRowIndex].structures[fileBrowser.stepInput].atoms[atomIndex].position = [...newCoords];
 
   // Refresh the visualization to show the updated position
-      updateVisualization({
-        bondsUpdate:false,
-        reRenderAtoms: false,
-        reRenderBonds : false,
-        reRenderLattice : false,
-        reRenderOther: false,
-        reRenderComposition : true,
-      });
+  updateVisualization({
+    reRenderAtoms: true,
+    reRenderBonds: true,
+    reRenderLattice: false,
+    reRenderOther: true,
+    reRenderComposition: "open",
+  });
 
-  console.log(`Updated atom ${atomIndex} coordinates to: ${newCoords.join(', ')}`);
 };
-
-
-
-
-
-
 

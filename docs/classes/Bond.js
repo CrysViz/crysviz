@@ -1,4 +1,4 @@
-import { general, atomicRadii, defaultColorMap } from '../store.js';
+import { general, fileBrowser, atomicRadii, defaultColorMap } from '../store.js';
 import * as THREE from '../external/three/three.module.js';
 
 export class Bond {
@@ -9,15 +9,24 @@ export class Bond {
     colors = [],
     uuid = null,
     indices = null,
+    srcIndices=null,
   } = {}) {
     this.elements = elements;
-    const color1 = elements.length > 0 ? (defaultColorMap[elements[0]] || 0x6523b0) : 0x6523b0;
-    const color2 = elements.length > 1 ? (defaultColorMap[elements[1]] || 0x808080) : 0x808080;
-    this.defaultColor = [color1, color2];
-    this.color = this.defaultColor;
+    const dcolor1 = elements.length > 0 ? (defaultColorMap[elements[0]] || 0x6523b0) : 0x6523b0;
+    const dcolor2 = elements.length > 1 ? (defaultColorMap[elements[1]] || 0x808080) : 0x808080;
+    this.defaultColor = [dcolor1, dcolor2];
     this.positions = positions;
     this.indices = indices;
-    this.uuid = uuid;
+    this.srcIndices = srcIndices;
+    this.uuid = uuid; 
+    if (fileBrowser.selectedStructure.atoms){
+      let atoms = fileBrowser.selectedStructure.atoms
+      this.color = [atoms[this.srcIndices[0]].color,atoms[this.srcIndices[1]].color];
+    }
+    else{
+      this.color = this.defaultColor
+    }
+
 
     // Compute positions, direction, distance
     if (positions.length === 2) {

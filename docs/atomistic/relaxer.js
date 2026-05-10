@@ -5,21 +5,14 @@ import {
   fracToCart,
   cartToFrac,
   matVec,
+  normalizeFractionalPositions,
 } from './math.js';
+import { symmetrizeCartesianPositions, symmetrizeCartesianVectors, isWyckoffModeActive } from '../modules/SymmetryEditModule.js';
 
 function symbolCase(sym) {
   const s = String(sym ?? '').trim();
   return s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s;
 }
-
-function wrapFrac01(frac) {
-  return frac.map((v) => {
-    let x = v - Math.floor(v);
-    if (x < 0) x += 1;
-    return x >= 1 ? 0 : x;
-  });
-}
-
 
 //todo : everything here is implemented elsewhere. WE NEED TO REFACTOR INTO A MATH MODULE
 
@@ -98,22 +91,29 @@ export function pressureGPaFromStress(stress) {
 }
 
 export function applyRelaxStep(structure, efs, atomStep = 0.02, cellStep = 0.002, targetPressureEvA3 = 0) {
+  const activeForces = isWyckoffModeActive(fileBrowser.selectedStructure)
+    ? symmetrizeCartesianVectors(efs.forces, structure.lattice, fileBrowser.selectedStructure)
+    : efs.forces;
+
   const moved = structure.positions.map((r, i) => [
-    r[0] + atomStep * efs.forces[i][0],
-    r[1] + atomStep * efs.forces[i][1],
-    r[2] + atomStep * efs.forces[i][2],
+    r[0] + atomStep * activeForces[i][0],
+    r[1] + atomStep * activeForces[i][1],
+    r[2] + atomStep * activeForces[i][2],
   ]);
 
   const M = deformationFromStress(efs.stress.matrix3x3, cellStep, targetPressureEvA3);
 
-  const newPositions = moved.map((r) => matVec(M, r));
+  let newPositions = moved.map((r) => matVec(M, r));
   const newLattice = structure.lattice.map((row) => matVec(M, row));
+  if (isWyckoffModeActive(fileBrowser.selectedStructure)) {
+    newPositions = symmetrizeCartesianPositions(newPositions, newLattice, fileBrowser.selectedStructure);
+  }
 
   return { lattice: newLattice, positions: newPositions, types: structure.types };
 }
 
 export function applyStructureToViewer(nepStruct, structure = fileBrowser.selectedStructure) {
-  const frac = cartToFrac(nepStruct.positions, nepStruct.lattice).map(wrapFrac01);
+  const frac = normalizeFractionalPositions(cartToFrac(nepStruct.positions, nepStruct.lattice));
   structure.lattice = nepStruct.lattice.map((r) => [...r]);
   structure.atoms.forEach((atom, i) => {
     atom.position = [...frac[i]];
@@ -125,7 +125,7 @@ export function applyStructureToViewer(nepStruct, structure = fileBrowser.select
     atomsUpdate: true,
     bondsUpdate: true,
     reRenderAtoms: false,
-    reRenderBonds: false,
+    reRenderBonds: true,
     reRenderLattice: true,
     reRenderOther: false,
     reRenderComposition: false,
@@ -134,6 +134,18 @@ export function applyStructureToViewer(nepStruct, structure = fileBrowser.select
 
 function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+function createTimingProfile(label) {
+  return {
+    label,
+    totalMs: 0,
+    computeMs: 0,
+    onStepMs: 0,
+    updateMs: 0,
+    waitMs: 0,
+    steps: 0,
+  };
 }
 
 export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
@@ -145,6 +157,8 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
   const pressureTolGPa = Number(opts.pressureTolGPa ?? 0.2);
   const targetPressureEvA3 = targetPressureGPa / EV_A3_TO_GPA;
   const onStep = opts.onStep ?? (() => {});
+  const timing = createTimingProfile('Relax');
+  const totalStart = performance.now();
 
   let current = {
     lattice: initial.lattice.map((r) => [...r]),
@@ -158,18 +172,30 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
   let step = 0;
 
   for (step = 1; step <= maxSteps; step += 1) {
+    let t0 = performance.now();
     out = nepRunner.compute(current);
+    timing.computeMs += performance.now() - t0;
     mF = maxForce(out.forces);
     pGPa = pressureGPaFromStress(out.stress.matrix3x3);
+
+    t0 = performance.now();
     onStep(step, current, out, mF);
+    timing.onStepMs += performance.now() - t0;
+    timing.steps = step;
 
     const forceOK = mF <= fmaxTol;
     const pressureOK = Math.abs(pGPa - targetPressureGPa) <= pressureTolGPa;
     if ((forceOK && pressureOK) || step === maxSteps) break;
 
+    t0 = performance.now();
     current = applyRelaxStep(current, out, atomStep, cellStep, targetPressureEvA3);
+    timing.updateMs += performance.now() - t0;
+
+    t0 = performance.now();
     await nextFrame();
+    timing.waitMs += performance.now() - t0;
   }
+  timing.totalMs = performance.now() - totalStart;
 
   const convergedForce = mF <= fmaxTol;
   const convergedPressure = Math.abs(pGPa - targetPressureGPa) <= pressureTolGPa;
@@ -183,5 +209,6 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
     convergedForce,
     convergedPressure,
     converged: convergedForce && convergedPressure,
+    timing,
   };
 }

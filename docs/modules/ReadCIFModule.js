@@ -2,6 +2,7 @@ import { Structure } from "../classes/Structure.js";
 import { StructureContainer } from "../classes/StructureContainer.js";
 import { fileBrowser } from '../store.js';
 import { createRow,selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
+import { invert3x3, matVec, latticeFromCell } from './math/index.js';
 
 function loadCIF(content, isDefault = false) {
   try {
@@ -46,47 +47,6 @@ export function parseCIF(content,fileName) {
     return Number.isFinite(v) ? v : null;
   };
   const stripQuotes = (s) => String(s || '').trim().replace(/^[\'\"]|[\'\"]$/g, '');
-
-  // Invert 3x3 (same layout as your POSCAR code)
-  const invert3x3 = (m) => {
-    const [a,b,c] = m;
-    const A = a[0], B = a[1], C = a[2];
-    const D = b[0], E = b[1], F = b[2];
-    const G = c[0], H = c[1], I = c[2];
-    const det = A*(E*I - F*H) - B*(D*I - F*G) + C*(D*H - E*G);
-    const invDet = 1.0 / det;
-    return [
-      [(E*I - F*H)*invDet, (C*H - B*I)*invDet, (B*F - C*E)*invDet],
-      [(F*G - D*I)*invDet, (A*I - C*G)*invDet, (C*D - A*F)*invDet],
-      [(D*H - E*G)*invDet, (B*G - A*H)*invDet, (A*E - B*D)*invDet],
-    ];
-  };
-  const matVec = (m, v) => ([
-    m[0][0]*v[0] + m[0][1]*v[1] + m[0][2]*v[2],
-    m[1][0]*v[0] + m[1][1]*v[1] + m[1][2]*v[2],
-    m[2][0]*v[0] + m[2][1]*v[1] + m[2][2]*v[2],
-  ]);
-
-  // Build lattice from a,b,c and alpha,beta,gamma (degrees)
-  const cellToMatrix = (a, b, c, alphaDeg, betaDeg, gammaDeg) => {
-    const alpha = toRad(alphaDeg);
-    const beta  = toRad(betaDeg);
-    const gamma = toRad(gammaDeg);
-
-    const ax = a, ay = 0, az = 0;
-    const bx = b * Math.cos(gamma);
-    const by = b * Math.sin(gamma);
-    const bz = 0;
-    const cx = c * Math.cos(beta);
-    const cy = c * (Math.cos(alpha) - Math.cos(beta)*Math.cos(gamma)) / Math.sin(gamma);
-    const cz2 = c*c - cx*cx - cy*cy;
-    const cz = Math.sqrt(Math.max(0, cz2));
-    return [
-      [ax, ay, az],
-      [bx, by, bz],
-      [cx, cy, cz],
-    ];
-  };
 
   // Tokenize respecting quotes; return array of tokens from a line
   const tokenizeCIFLine = (line) => {
@@ -316,7 +276,7 @@ export function parseCIF(content,fileName) {
     throw new Error('Missing or invalid cell parameters in CIF (a,b,c,alpha,beta,gamma).');
   }
 
-  const lattice = cellToMatrix(a, b, c, alpha, beta, gamma);
+  const lattice = latticeFromCell(a, b, c, alpha, beta, gamma);
   const invLat = invert3x3(lattice);
 
   // --- Parse loops for atom sites & symmetry --------------------------------

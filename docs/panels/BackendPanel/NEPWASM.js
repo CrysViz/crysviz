@@ -13,17 +13,73 @@ import {
   createMDMonitorPanel,
   createNEPForceEvaluator,
   createVelocityVerletIntegrator,
+  createCosineAnnealingSchedule,
   createVelocityRescaleThermostat,
 } from '../../atomistic/MD.js';
 import { updateForces } from '../../modules/ForceModule.js';
-import { updateRow } from '../FileBrowswerPanel.js';
+import { updateRow, createRow } from '../FileBrowswerPanel.js';
+import { StructureContainer } from '../../classes/StructureContainer.js';
 import { Atom } from '../../classes/Atom.js';
 import { Force } from '../../classes/Force.js';
 import { Stress } from '../../classes/Stress.js';
 import { Structure } from '../../classes/Structure.js';
 
+const tableBody = document.querySelector('#objectTable tbody');
+
 let nepRunner = null;
 let nepInitPromise = null;
+
+function createStepPerfTracker(label) {
+  const startedAt = performance.now();
+  let lastAt = startedAt;
+  let lastStep = 0;
+  let fps = 0;
+
+  return {
+    tick(step) {
+      const now = performance.now();
+      const dt = Math.max(1e-9, now - lastAt);
+      const stepDelta = Math.max(1, step - lastStep);
+      fps = (stepDelta * 1000) / dt;
+      lastAt = now;
+      lastStep = step;
+      return fps;
+    },
+    summary(step) {
+      const totalMs = Math.max(1e-9, performance.now() - startedAt);
+      return {
+        label,
+        steps: step,
+        totalMs,
+        totalSeconds: totalMs / 1000,
+        avgFps: (step * 1000) / totalMs,
+        lastFps: fps,
+      };
+    },
+  };
+}
+
+function formatPerf(summary) {
+  return `${summary.label}: ${summary.steps} steps in ${summary.totalSeconds.toFixed(2)} s | avg ${summary.avgFps.toFixed(1)} FPS | last ${summary.lastFps.toFixed(1)} FPS`;
+}
+
+function logTimingBreakdown(timing) {
+  if (!timing || !timing.totalMs) return;
+  const pct = (value) => ((100 * value) / timing.totalMs).toFixed(1);
+
+  if (timing.label === 'Relax') {
+    console.info(
+      `[timing] Relax total=${timing.totalMs.toFixed(1)}ms | compute=${timing.computeMs.toFixed(1)}ms (${pct(timing.computeMs)}%) | onStep=${timing.onStepMs.toFixed(1)}ms (${pct(timing.onStepMs)}%) | update=${timing.updateMs.toFixed(1)}ms (${pct(timing.updateMs)}%) | wait=${timing.waitMs.toFixed(1)}ms (${pct(timing.waitMs)}%)`
+    );
+    return;
+  }
+
+  if (timing.label === 'MD') {
+    console.info(
+      `[timing] MD total=${timing.totalMs.toFixed(1)}ms | integrate=${timing.integrateMs.toFixed(1)}ms (${pct(timing.integrateMs)}%) | thermostat=${timing.thermostatMs.toFixed(1)}ms (${pct(timing.thermostatMs)}%) | onStep=${timing.onStepMs.toFixed(1)}ms (${pct(timing.onStepMs)}%) | wait=${timing.waitMs.toFixed(1)}ms (${pct(timing.waitMs)}%)`
+    );
+  }
+}
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -122,6 +178,26 @@ export async function addNEPPanel() {
           <input type="number" id="nepMDTempInput" value="300" step="10" min="1" style="width:90px;" />
         </label>
       </div>
+      <div style="margin-top:8px; padding:8px 0 0 0; border-top:1px solid rgba(255,255,255,0.08);">
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:8px; color:rgba(255,255,255,0.9);">
+          <input type="checkbox" id="nepMDAnnealToggle" />
+          Simulated annealing
+        </label>
+        <div id="nepMDAnnealControls" style="display:none; gap:8px; align-items:center; flex-wrap:wrap; padding-left:22px;">
+          <label style="display:flex; align-items:center; gap:6px; opacity:0.92;">
+            Tmin (K)
+            <input type="number" id="nepMDAnnealMinInput" value="100" step="10" min="1" style="width:90px;" />
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; opacity:0.92;">
+            Tmax (K)
+            <input type="number" id="nepMDAnnealMaxInput" value="1200" step="10" min="1" style="width:90px;" />
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; opacity:0.92;">
+            Peak at (%)
+            <input type="number" id="nepMDAnnealPeakPctInput" value="30" step="1" min="1" max="99" style="width:80px;" />
+          </label>
+        </div>
+      </div>
       <p id="nepStatus" style="margin-top:10px;"></p>
       <p id="nepResult" style="margin-top:10px;font-weight:bold;"></p>
     </div>
@@ -135,10 +211,22 @@ export async function addNEPPanel() {
   const targetPressureInput = document.getElementById('nepTargetPressureInput');
   const mdStepsInput = document.getElementById('nepMDStepsInput');
   const mdTempInput = document.getElementById('nepMDTempInput');
+  const mdAnnealToggle = document.getElementById('nepMDAnnealToggle');
+  const mdAnnealControls = document.getElementById('nepMDAnnealControls');
+  const mdAnnealMinInput = document.getElementById('nepMDAnnealMinInput');
+  const mdAnnealMaxInput = document.getElementById('nepMDAnnealMaxInput');
+  const mdAnnealPeakPctInput = document.getElementById('nepMDAnnealPeakPctInput');
   const status = document.getElementById('nepStatus');
   const result = document.getElementById('nepResult');
   let mdStopRequested = false;
   let mdRunning = false;
+
+  function syncAnnealControls() {
+    mdAnnealControls.style.display = mdAnnealToggle.checked ? 'flex' : 'none';
+  }
+
+  mdAnnealToggle.addEventListener('change', syncAnnealControls);
+  syncAnnealControls();
 
   try {
     await initNEP();
@@ -175,10 +263,16 @@ export async function addNEPPanel() {
       const cellStep = 0.002;
       const maxSteps = Number(maxStepsInput.value || 200);
       const targetPressureGPa = Number(targetPressureInput.value || 0.0);
+      const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
       const saveTrajectory = true;
       const stride = 1;
-      const container = structureShip.container[fileBrowser.selectedRowIndex];
-      const row = fileBrowser.selectedRow;
+      const perfTracker = createStepPerfTracker('Relax');
+      const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
+      const relaxLabel = `Relax_${srcContainer?.fileName ?? 'run'}`;
+      const relaxContainer = new StructureContainer({ fileName: relaxLabel, structures: [snapshotCurrentStructure()] });
+      structureShip.container.push(relaxContainer);
+      const relaxRow = createRow({ name: relaxLabel, traj: 1, step: 1 });
+      tableBody.appendChild(relaxRow);
 
       runBtn.disabled = true;
       relaxBtn.disabled = true;
@@ -193,11 +287,15 @@ export async function addNEPPanel() {
         cellStep,
         targetPressureGPa,
         onStep: (step, current, out, mF) => {
-          applyStructureToViewer(current, fileBrowser.selectedStructure);
-          setCurrentEFS(out);
+          perfTracker.tick(step);
+          const shouldUpdateViewer = step === 1 || step % viewerStride === 0;
+          if (shouldUpdateViewer) {
+            applyStructureToViewer(current, fileBrowser.selectedStructure);
+            setCurrentEFS(out);
+          }
 
-          if (saveTrajectory && container && step % stride === 0) {
-            container.structures.push(snapshotCurrentStructure());
+          if (saveTrajectory && step % stride === 0) {
+            relaxContainer.structures.push(snapshotCurrentStructure());
           }
 
           const pGPa = pressureGPaFromStress(out.stress.matrix3x3);
@@ -208,13 +306,9 @@ export async function addNEPPanel() {
       applyStructureToViewer(relaxed.structure, fileBrowser.selectedStructure);
       setCurrentEFS(relaxed.result);
 
-      if (saveTrajectory && container && row) {
-        const n = container.structures.length;
-        updateRow(row, {
-          name: container.fileName,
-          traj: n,
-          step: n,
-        });
+      if (saveTrajectory) {
+        const n = relaxContainer.structures.length;
+        updateRow(relaxRow, { name: relaxLabel, traj: n, step: n });
       }
 
       const pGPa = pressureGPaFromStress(relaxed.result.stress.matrix3x3);
@@ -225,6 +319,11 @@ export async function addNEPPanel() {
         if (!relaxed.convergedForce) misses.push('force');
         if (!relaxed.convergedPressure) misses.push('pressure');
         result.textContent = `Stopped after ${relaxed.steps} steps (not converged: ${misses.join('+')}): E/atom=${Number(relaxed.result.energy_per_atom).toFixed(6)} eV, max|F|=${relaxed.maxForce.toFixed(5)} eV/A, P=${pGPa.toFixed(2)} GPa`;
+      }
+      {
+        const summary = perfTracker.summary(relaxed.steps);
+        console.info(formatPerf(summary));
+        logTimingBreakdown(relaxed.timing);
       }
     } catch (err) {
       result.textContent = `Relax failed: ${err.message || String(err)}`;
@@ -250,25 +349,46 @@ export async function addNEPPanel() {
         mdStopRequested = false;
 
         const mdSteps = Number(mdStepsInput.value || 500);
-        const targetTemperatureK = Number(mdTempInput.value || 300);
+        const startTemperatureK = Number(mdTempInput.value || 300);
+        const useAnnealing = mdAnnealToggle.checked;
+        const minTemperatureK = Number(mdAnnealMinInput.value || 100);
+        const maxTemperatureK = Number(mdAnnealMaxInput.value || startTemperatureK);
+        const peakFraction = Math.max(0.01, Math.min(0.99, Number(mdAnnealPeakPctInput.value || 30) / 100));
         const dtFs = 1.0;
-        const container = structureShip.container[fileBrowser.selectedRowIndex];
-        const row = fileBrowser.selectedRow;
+        const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
+        const perfTracker = createStepPerfTracker('MD');
+        const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
+        const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
+        const mdContainer = new StructureContainer({ fileName: mdLabel, structures: [snapshotCurrentStructure()] });
+        structureShip.container.push(mdContainer);
+        const mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
+        tableBody.appendChild(mdRow);
 
         runBtn.disabled = true;
         relaxBtn.disabled = true;
         mdStartBtn.disabled = true;
         mdStopBtn.disabled = false;
-        status.textContent = `MD running... dt=${dtFs.toFixed(2)} fs, Ttarget=${targetTemperatureK.toFixed(1)} K`;
+        status.textContent = useAnnealing
+          ? `MD annealing... dt=${dtFs.toFixed(2)} fs, T=${startTemperatureK.toFixed(1)} -> ${maxTemperatureK.toFixed(1)} -> ${minTemperatureK.toFixed(1)} K`
+          : `MD running... dt=${dtFs.toFixed(2)} fs, Ttarget=${startTemperatureK.toFixed(1)} K`;
 
         monitor = createMDMonitorPanel();
         const forceEvaluator = createNEPForceEvaluator(nepRunner);
         const integrator = createVelocityVerletIntegrator();
-        const thermostat = createVelocityRescaleThermostat({ targetTemperatureK, tauFs: 20 });
+        const targetTemperatureSchedule = useAnnealing
+          ? createCosineAnnealingSchedule({
+              startTemperatureK,
+              peakTemperatureK: maxTemperatureK,
+              minTemperatureK,
+              peakFraction,
+              totalSteps: mdSteps,
+            })
+          : startTemperatureK;
+        const thermostat = createVelocityRescaleThermostat({ targetTemperatureK: targetTemperatureSchedule, tauFs: 20 });
         const state = await initializeMDState({
           nepRunner,
           structure: fileBrowser.selectedStructure,
-          temperatureTargetK: targetTemperatureK,
+          temperatureTargetK: startTemperatureK,
           forceEvaluator,
         });
 
@@ -280,40 +400,42 @@ export async function addNEPPanel() {
           integrator,
           thermostat,
           shouldStop: () => mdStopRequested,
-          onStep: ({ step, timeFs, temperatureK, epotEv, ekinEv, etotEv, state: mdState }) => {
-            const forceRerender = step % 5 === 0;
-            applyMDStateToViewer(mdState, fileBrowser.selectedStructure, { forceRerender });
-            setCurrentEFS({
-              forces: mdState.forces,
-              stress: { matrix3x3: mdState.stress },
-            });
-
-            if (container) {
-              container.structures.push(snapshotCurrentStructure());
+          onStep: ({ step, timeFs, temperatureK, targetTemperatureK, epotEv, ekinEv, etotEv, state: mdState }) => {
+            perfTracker.tick(step);
+            const shouldUpdateViewer = step === 1 || step % viewerStride === 0;
+            if (shouldUpdateViewer) {
+              const forceRerender = step % Math.max(5, viewerStride) === 0;
+              applyMDStateToViewer(mdState, fileBrowser.selectedStructure, { forceRerender });
+              setCurrentEFS({
+                forces: mdState.forces,
+                stress: { matrix3x3: mdState.stress },
+              });
             }
+
+            mdContainer.structures.push(snapshotCurrentStructure());
 
             const nAtoms = Math.max(1, mdState.positions.length);
             const ePerAtom = epotEv / nAtoms;
             const mF = maxForce(mdState.forces);
             result.textContent = `MD step ${step}: E/atom=${ePerAtom.toFixed(6)} eV, max|F|=${mF.toFixed(5)} eV/A`;
-            status.textContent = `MD t=${timeFs.toFixed(1)} fs | T=${temperatureK.toFixed(1)} K`;
-            monitor.update({ step, temperatureK, etotEv, epotEv, ekinEv });
+            const targetText = Number.isFinite(targetTemperatureK) ? ` | Ttarget=${targetTemperatureK.toFixed(1)} K` : '';
+            status.textContent = `MD t=${timeFs.toFixed(1)} fs | T=${temperatureK.toFixed(1)} K${targetText}`;
+            monitor.update({ step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv });
           },
         });
 
-        if (container && row) {
-          const n = container.structures.length;
-          updateRow(row, {
-            name: container.fileName,
-            traj: n,
-            step: n,
-          });
-        }
+        const n = mdContainer.structures.length;
+        updateRow(mdRow, { name: mdLabel, traj: n, step: n });
 
         if (mdRun.stopped) {
           status.textContent = `MD stopped at step ${state.step}`;
         } else {
           status.textContent = `MD finished at step ${state.step}`;
+        }
+        {
+          const summary = perfTracker.summary(mdRun.stepsRun);
+          console.info(formatPerf(summary));
+          logTimingBreakdown(mdRun.timing);
         }
       } catch (err) {
         result.textContent = `MD failed: ${err.message || String(err)}`;

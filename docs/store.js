@@ -17,6 +17,9 @@ export const fileBrowser = {
   selectedRow:null, 
   selectedRowIndex:0,
   selectedStructure:null,
+  comparisonRow:null,
+  comparisonRowIndex:-1,
+  comparisonStructure:null,
   stepInput:null,
 }  
 
@@ -63,6 +66,10 @@ export const groups = {
   spinGroup:null,
   atomsMesh: null,
   bondsMesh: null,
+  forcesShaftMesh: null,
+  forcesTipMesh: null,
+  spinShaftMesh: null,
+  spinTipMesh: null,
   fieldGroup: null,
   fieldMeshPos: null,
   fieldMeshNeg: null,
@@ -81,8 +88,6 @@ export const general = {
   currentLatticeColor:null,
   defaultBackgroundColor:null,
   currentLatticeColor:null,
-  userColorOverrides:[],  // userColorOverrides and individualAtomColors need to be overwritten with the new colors in the object containing the atoms
-  individualAtomColors:[],
   useDefaultColors:true,
   //defaultSpinColor:'#ff3366',
   //defaultSpinLength:1.0,
@@ -92,27 +97,36 @@ export const general = {
   defaultBondLengths:{},
   bondVisibility:{},
   bondRadius:0.08,
+  forceScale: 1.0,
+  forceRadius: 0.08,
+  spinScale: 1.0,
+  spinRadius: 0.08,
   atomSize:1.0,
   structure2OpacityValue: 0.5,
   mainOpacity:1.0,
-  secondOpacity:1.0,
+  compOpacity:1.0,
   showAtoms:true,
   showBonds:true,
   showLattice:true,
   showPolyhedra:false,
   showSecond:false,
+  showSecondBonds:false,
   showComparisonInfo:false,
   showPeriodic:true,
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
+  useWasmMath:true, // Use compiled WASM for selected math kernels (false = pure JS fallback)
+  useWasmPeriodic:false, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
+  backendViewerUpdateStride:4, // Update the viewer every N backend/NEP steps during relax/MD
   playerModeState: "none", 
   spinForceState: "none",
+  structurePanelMode: "atoms",
   analysisState:"none",
   backendState:"none",
   currentSupercell: null,
   modifiedLattice: null, // this needs to be part of the structure object 
   sharedStructureLoaded:false,
   bondsColor: null,
-  bondsColorMap: null,
+  abondsColorMap: null,
   atomsColor: null,
   atomsColorMaps: null,
 };
@@ -126,7 +140,7 @@ export const mode = {
 
 
 // Default complex structure (Ba2YCu3O7) - high-Tc superconductor with 4 elements to test collapsible composition
-export const defaultPOSCAR1 = `Ba2YCu3O7 - YBCO Superconductor
+export const defaultPOSCAR = `Ba2YCu3O7 - YBCO Superconductor
 1.0
 3.82 0.00 0.00
 0.00 3.89 0.00
@@ -147,7 +161,7 @@ Direct
 0.5 0.0 0.622
 0.0 0.0 0.159
 0.0 0.0 0.841`;
-export const defaultPOSCAR = `
+export const defaultPOSCAR2 = `
 From DOI: 10.1126/sciadv.aay8361
 1.0
         4.6090002060         0.0000000000         0.0000000000
@@ -171,9 +185,33 @@ Direct
      0.000000000         0.500000000         0.250000000
      0.000000000         0.500000000         0.750000000`;
 
-
-
-
+export const defaultPOSCAR3 = `
+Al2 Se2 Cl14
+1.0
+   6.3948283377470441    0.0000000000000000    0.0000000000000000
+   0.9288205839200830    8.2512315975857646    0.0000000000000000
+   2.2965358747882871    0.4151405692010720    9.7118912026610413
+Al Se Cl
+2 2 14
+direct
+   0.4610685700000000    0.3967455500000000    0.9504696399999991 Al3+
+   0.2099927200000000    0.9548767400000000    0.5201150500000000 Al3+
+   0.9958635799999991    0.0079210499999990    0.9950828699999991 Se4+
+   0.7831022599999991    0.5619649999999990    0.5270044300000000 Se4+
+   0.8733499300000001    0.7891064600000001    0.9539240999999981 Cl-
+   0.6692147900000001    0.1900304900000000    0.8622149699999990 Cl-
+   0.1300427099999990    0.3392970999999990    0.9981647099999991 Cl-
+   0.2716165400000000    0.8976135400000000    0.0687686499999990 Cl-
+   0.7783765599999991    0.0542511500000000    0.1899395099999990 Cl-
+   0.2859843199999990    0.0131195200000000    0.7092639300000000 Cl-
+   0.6400637000000000    0.3445696200000000    0.5071195200000000 Cl-
+   0.0285237099999990    0.4644031100000000    0.6337194599999990 Cl-
+   0.4139045099999991    0.7471629100000000    0.4292246299999991 Cl-
+   0.8788605500000001    0.8989058600000001    0.5629646800000000 Cl-
+   0.9779171400000001    0.5742536200000000    0.3210082799999990 Cl-
+   0.4780183099999991    0.5938067700000000    0.7960094099999990 Cl-
+   0.5420943900000000    0.4773392999999990    0.1262152699999990 Cl-
+   0.2591076899999990    0.1551272100000000    0.3769878899999990 Cl-`;
 // Atomic data
 export const atomicRadii = {
   H: 0.8, He: 1.0, Li: 1.28, Be: 0.96, B: 0.84, C: 0.76, N: 0.71, O: 0.66, F: 0.57, Ne: 0.58,

@@ -1,0 +1,15 @@
+{
+  "name": "periodic_wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "periodic_wasm_bg.wasm",
+    "periodic_wasm.js",
+    "periodic_wasm.d.ts"
+  ],
+  "main": "periodic_wasm.js",
+  "types": "periodic_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

@@ -5,6 +5,9 @@ import init, { analyze_cell } from '../../external/moyo-test/moyo_wasm.js';
 import { Structure } from "../../classes/Structure.js";
 import { Atom } from "../../classes/Atom.js";
 import { StructureContainer } from "../../classes/StructureContainer.js";
+import { generateID } from "../../modules/UUIDModule.js";
+import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive } from '../../modules/SymmetryEditModule.js';
+import { renderComposition } from '../StructureInfoPanel/General.js';
 
 
 
@@ -61,8 +64,8 @@ export const PT_INVERTED = {
 
 let wasmReady;
 async function initMoyo() {
-      wasmReady = await init('../../external/moyo-test/moyo_wasm_bg.wasm');
-    }
+  wasmReady = await init(); // no-arg: moyo_wasm.js resolves the .wasm via import.meta.url
+}
 
 export async function addMoyoPanel() {
     const panel = document.getElementById("BackendCalcPanel");
@@ -91,27 +94,92 @@ export async function addMoyoPanel() {
     </div>
   </div>
 
+  <div style="margin-bottom: 1em;">
+    <p>Operate on Wyckoff positions:</p>
+    <button class="calcButton" id="getWyckoffBtn">Enable Wyckoff Editor</button>
+  </div>
+
   <p id="calcResult" style="margin-top: 1em; font-weight: bold;"></p>
 </div>
     `;
 
     document.getElementById("getSymBtn").onclick = () => {
-      let result = callMoyo("getSymmetryInfo", 1e-5);
-      calcResult = document.getElementById("calcResult")
-      calcResult.textContent =`${result.spg_symbol} (${result.spg_number}): ${result.wyckoffs}`
+      const result = callMoyo("getSymmetryInfo", 1e-5);
+      document.getElementById("calcResult").textContent =
+        `${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
     }
 
     document.getElementById("getConvBtn").onclick = () => {
-      let result = callMoyo("getConvUnit", 1e-5);
-      calcResult.textContent =`${result.spg_symbol} (${result.spg_number}): ${result.wyckoffs}`
-      newContainerFromSymmetrisation("conv",result.positions,result.lattice,result.elements)
+      const result = callMoyo("getConvUnit", 1e-5);
+      document.getElementById("calcResult").textContent =
+        `${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
+      newContainerFromSymmetrisation("conv", result.positions, result.lattice, result.elements)
     }
 
     document.getElementById("getPrimBtn").onclick = () => {
-      let result = callMoyo("getPrimUnit", 1e-5);
-      calcResult.textContent =`${result.spg_symbol} (${result.spg_number}): ${result.wyckoffs}`
-      newContainerFromSymmetrisation("prim",result.positions,result.lattice,result.elements)
+      const result = callMoyo("getPrimUnit", 1e-5);
+      document.getElementById("calcResult").textContent =
+        `${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
+      newContainerFromSymmetrisation("prim", result.positions, result.lattice, result.elements)
     }
+
+    const wyckoffBtn = document.getElementById("getWyckoffBtn");
+    const syncWyckoffButton = () => {
+      const active = isWyckoffModeActive(fileBrowser.selectedStructure);
+      wyckoffBtn.textContent = active
+        ? 'Disable Wyckoff Editor'
+        : 'Enable Wyckoff Editor';
+      wyckoffBtn.style.background = active
+        ? 'linear-gradient(135deg, #1c5fb8, #2493ff)'
+        : '';
+      wyckoffBtn.style.color = active ? '#f5fbff' : '';
+      wyckoffBtn.style.boxShadow = active ? '0 0 0 1px rgba(91,168,255,0.45)' : '';
+    };
+
+    wyckoffBtn.onclick = async () => {
+      if (isWyckoffModeActive(fileBrowser.selectedStructure)) {
+        deactivateWyckoffMode(fileBrowser.selectedStructure);
+        renderComposition('open');
+        document.getElementById("calcResult").textContent = 'Wyckoff editor disabled';
+        syncWyckoffButton();
+        return;
+      }
+
+      const result = callMoyo("getSymmetryInfo", 1e-5);
+      await activateWyckoffMode(fileBrowser.selectedStructure, 1e-5);
+      renderComposition('open');
+      document.getElementById("calcResult").textContent =
+        `Wyckoff editor active: ${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
+      syncWyckoffButton();
+    };
+
+    syncWyckoffButton();
+}
+
+// Build an AFLOW-style label: "{spg}_{wyck_elem1}_{wyck_elem2}...:{elem1}-{elem2}-..."
+// wyckoffs and elements are parallel arrays, one entry per atom in the input cell.
+// For a primitive-cell input each entry is one inequivalent orbit, giving exact counts.
+function buildAflowLabel(spgNumber, wyckoffs, elements) {
+  const elemOrder = [];
+  const elemLetters = {};
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i];
+    if (!elemLetters[el]) {
+      elemLetters[el] = [];
+      elemOrder.push(el);
+    }
+    elemLetters[el].push(wyckoffs[i]);
+  }
+
+  const orbitParts = elemOrder.map(el => {
+    const count = {};
+    for (const l of elemLetters[el]) count[l] = (count[l] || 0) + 1;
+    return Object.keys(count).sort()
+      .map(l => (count[l] > 1 ? count[l] : '') + l)
+      .join('');
+  });
+
+  return `${spgNumber}_${orbitParts.join('_')}:${elemOrder.join('-')}`;
 }
 
 function callMoyo(calcType="getSymmetryInfo", tolerance="1e-2") {
@@ -122,29 +190,22 @@ function callMoyo(calcType="getSymmetryInfo", tolerance="1e-2") {
   const struct = { positions: positions, lattice:{basis:lattice.flat()}, numbers: numbers }
 
   const result = analyze_cell(JSON.stringify(struct), tolerance, 'Standard');
+  const aflowLabel = buildAflowLabel(result.number, result.wyckoffs, elements);
 
   if (calcType === "getSymmetryInfo"){
-      return {spg_symbol:result.hm_symbol, spg_number:result.number, wyckoffs: result.wyckoffs.join(', ')};
+      return {spg_symbol:result.hm_symbol, spg_number:result.number, aflowLabel};
   }
   else if (calcType === "getPrimUnit"){
       const flat = result.prim_std_cell.lattice.basis;
-      const lattice3x3 = [
-        flat.slice(0, 3),
-        flat.slice(3, 6),
-        flat.slice(6, 9)
-      ];
-      let elements = result.prim_std_cell.numbers.map(el => PT[el]);
-      return {lattice:lattice3x3, positions:result.prim_std_cell.positions, elements:elements,spg_symbol:result.hm_symbol, spg_number:result.number, wyckoffs: result.wyckoffs.join(', ')};
+      const lattice3x3 = [flat.slice(0,3), flat.slice(3,6), flat.slice(6,9)];
+      const primElements = result.prim_std_cell.numbers.map(el => PT[el]);
+      return {lattice:lattice3x3, positions:result.prim_std_cell.positions, elements:primElements, spg_symbol:result.hm_symbol, spg_number:result.number, aflowLabel};
   }
   else if (calcType === "getConvUnit"){
       const flat = result.std_cell.lattice.basis;
-      const lattice3x3 = [
-        flat.slice(0, 3),
-        flat.slice(3, 6),
-        flat.slice(6, 9)
-      ];
-      let elements = result.std_cell.numbers.map(el => PT[el]);
-      return {lattice:lattice3x3, positions:result.std_cell.positions, elements:elements,spg_symbol:result.hm_symbol, spg_number:result.number, wyckoffs: result.wyckoffs.join(', ')};
+      const lattice3x3 = [flat.slice(0,3), flat.slice(3,6), flat.slice(6,9)];
+      const convElements = result.std_cell.numbers.map(el => PT[el]);
+      return {lattice:lattice3x3, positions:result.std_cell.positions, elements:convElements, spg_symbol:result.hm_symbol, spg_number:result.number, aflowLabel};
   }
   else {
       console.warn("Unknown calculation type!");
@@ -159,11 +220,12 @@ function newContainerFromSymmetrisation(primConv,positions,lattice,elements){
   let atoms = [];
   const container = new StructureContainer({fileName:fileName})
   positions.forEach((pos, i) => {
-                 atoms.push(new Atom({
-                 position: pos,
-                 element: elements[i]
-                 }))
-               });
+    atoms.push(new Atom({
+      position: pos,
+      element: elements[i],
+      uuid: generateID([elements[i]])
+    }));
+  });
   let structure = new Structure({
          elements:elements,
          uniqueElements: [...new Set(elements)],

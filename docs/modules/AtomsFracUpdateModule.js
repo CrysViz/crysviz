@@ -3,7 +3,8 @@ import {periodic,structureShip, app, groups,fileBrowser, general,mode,defaultPOS
 import {Atom} from '../classes/Atom.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
-import {loadColorOverrides,loadIndividualAtomColors,getIndividualAtomColor,getElementDisplayColor,getDefaultElementColor,clearAllIndividualColorsForElement,setElementColorOverride,clearElementColorOverride,setIndividualAtomColor,createPieDot,clearIndividualAtomColor,getElementColor } from './ColorModule.js';
+
+import {setAtomColor}  from './ColorModule.js';
 
 import {generateID} from './UUIDModule.js' 
 
@@ -58,35 +59,6 @@ export function updateAtomByUUID(mesh, uuid, newPosition, newColor) {
 
 
 //-------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------
-//
-//
-//
-export function hideBond(index) {
-  const mesh = groups.bondsMesh;
-  const a = mesh.instanceMatrix.array;
-
-  for (let half = 0; half < 2; half++) {
-    const i = index*2 + half;
-    const mOffset = i * 16;
-
-    // identity scale
-    a[mOffset + 0] = 1;
-    a[mOffset + 5] = 1;
-    a[mOffset + 10] = 1;
-
-    // move far away
-    a[mOffset + 12] = 1e9;
-    a[mOffset + 13] = 1e9;
-    a[mOffset + 14] = 1e9;
-  }
-
-  mesh.instanceMatrix.needsUpdate = true;
-}
 
 
 export function rebuildAtoms(opacity) {
@@ -278,9 +250,16 @@ export function updateSingleAtomPosition(index, position) {
  // console.log("Expected length:", 16 * groups.atomsMesh.count);
 }
 
-export function updateSingleAtomColor(originalIndex, index, element, opacity = 1.0) {
-  //const hex = getElementColor(element);
-  const hex = getIndividualAtomColor(element, originalIndex)
+export function updateSingleAtomColor(originalIndex, index, element, hex=null) {
+  //console.log("Updating color of atom",index)
+  let structure = fileBrowser.selectedStructure
+  let atom = structure.atoms[originalIndex]
+  if (hex == null){
+    hex = structure.atoms[originalIndex].getColor(originalIndex)
+  }
+  else{
+    setAtomColor(atom, hex);
+  }
   // console.log(`Element: ${element}, Hex: ${hex}, RGB: [${((hex >> 16) & 0xFF) / 255}, ${((hex >> 8) & 0xFF) / 255}, ${(hex & 0xFF) / 255}]`);
   groups.atomsMesh.setColorAt(index, new THREE.Color(hex));
   groups.atomsMesh.instanceColor.needsUpdate = true;
@@ -298,7 +277,8 @@ export function updateSingleAtomDiameter(index, element) {
 }
 
 
-export async function updateAtoms(opacity = 1.0) {
+export function updateAtoms(opacity = 1.0) {
+  //console.error("Update main opacity", opacity)
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   let atoms = [...fileBrowser.selectedStructure.atoms];
@@ -310,11 +290,25 @@ export async function updateAtoms(opacity = 1.0) {
 
   wrapped = periodic.wrapped
   wrappedCart = wrapped.cart
+  const mesh = groups.atomsMesh
 
-  for (let i = 0; i < groups.atomsMesh.count; i++) {
+  mesh.material.opacity = opacity;
+  console.log("opacity",opacity)
+  if (opacity === 1) {
+    mesh.material.transparent = false;
+    mesh.material.depthWrite = true;
+  }
+  else {
+    console.log("Enabling transparency for main atoms")
+    mesh.material.transparent = true;
+    mesh.material.depthWrite = false;
+  }
+  mesh.material.needsUpdate = true;
+
+  for (let i = 0; i < wrappedCart.length; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     updateSingleAtomPosition(i, wrappedCart[i])
-    updateSingleAtomColor(originalIndex,i, wrapped.elements[i], opacity)
+    updateSingleAtomColor(originalIndex,i, wrapped.elements[i])
     updateSingleAtomDiameter(i,wrapped.elements[i])    
 
     groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);

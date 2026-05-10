@@ -733,10 +733,10 @@ export function cifblock_to_asu(cifblock, _opts = {}) {
     symops_xyz = cifblock.get("space_group_symop_operation_xyz");
   }
   if (symops_xyz == null) {
-    symops_xyz = cifblock.get("_symmetry_equiv_pos_as_xyz");
+    symops_xyz = cifblock.get("symmetry_equiv_pos_as_xyz");
   }
   if (symops_xyz == null) {
-    throw new Error("No symmetry operations in CIF.");
+    symops_xyz = ["x, y, z"];  // P1: identity only
   }
 
   const symops = xyz_symops_to_matrix(symops_xyz, true);
