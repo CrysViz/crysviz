@@ -430,7 +430,7 @@ export function removePlanesPanel(target = "PlanesContainer") {
     container.style.display = 'none';
   }
 
-  if (activeRenderedStructure) {
-    clearRenderedPlanesForStructure(activeRenderedStructure);
-  }
+  //if (activeRenderedStructure) {
+  //  clearRenderedPlanesForStructure(activeRenderedStructure);
+  //}
 }
