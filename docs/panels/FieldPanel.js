@@ -2,7 +2,9 @@ import { fileBrowser, app, general, groups } from '../store.js';
 import { updateField, setActiveField, toggleFieldVisibility } from '../modules/Render3DFieldModule.js';
 import {
   getIsosurfaceMaterialSettings,
+  getIsosurfaceTriangleSortingEnabled,
   setIsosurfaceMaterialSettings,
+  setIsosurfaceTriangleSortingEnabled,
   applyMaterialSettingsToStoredIsosurfaces,
 } from '../classes/Isosurface.js';
 
@@ -198,6 +200,13 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
         </span>
         <span class="toggle_text"> Logarithmic Slider Scale</span>
       </label>
+      <label class="toggle_row toggle_container">
+        <span class="toggle_switch">
+          <input type="checkbox" id="FieldTriangleSortToggle" ${getIsosurfaceTriangleSortingEnabled() ? 'checked' : ''}>
+          <span class="toggle_slider"></span>
+        </span>
+        <span class="toggle_text"> Sort Isosurface Triangles By Camera Distance</span>
+      </label>
     </div>
 
     <div class="control-group">
@@ -324,6 +333,7 @@ function setupFieldControlEvents(fields, container) {
   const showFieldToggle = document.getElementById('ShowFieldToggle');
   const absoluteValueCheckbox = document.getElementById('FieldAbsoluteValueToggle');
   const logScaleCheckbox = document.getElementById('LogSliderScaleToggle');
+  const triangleSortCheckbox = document.getElementById('FieldTriangleSortToggle');
   const fieldToggles = document.querySelectorAll('.fieldToggle');
   const fieldPrimaryRadios = document.querySelectorAll('.fieldPrimary');
   const selectedFieldName = document.getElementById('selectedFieldName');
@@ -528,6 +538,12 @@ function setupFieldControlEvents(fields, container) {
       slider.value = sliderValue.toPrecision(3);
     }
   });
+
+  if (triangleSortCheckbox) {
+    triangleSortCheckbox.addEventListener('change', function () {
+      setIsosurfaceTriangleSortingEnabled(triangleSortCheckbox.checked);
+    });
+  }
 
   fieldToggles.forEach((toggle) => {
     toggle.addEventListener('change', updateAllIsosurfaces);
