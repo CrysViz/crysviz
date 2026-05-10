@@ -1,5 +1,5 @@
 import { measurements, app, fileBrowser } from '../store.js';
-import { Plane } from '../classes/Plane.js';
+import { Plane, getPlaneDefinitionNormalAndD } from '../classes/Plane.js';
 
 export const planesData = {
   activeInputMode: 'hkl', // 'hkl' or 'uvwd'
@@ -33,21 +33,6 @@ function getStructureMeshMap(structure) {
   return meshMap;
 }
 
-function getPlaneDefinitionNormalAndD(planeDef) {
-  const params = planeDef?.params || {};
-  if (params.type === 'uvwd') {
-    return {
-      normal: [params.u || 0, params.v || 0, params.w || 0],
-      d: params.d || 0,
-    };
-  }
-
-  return {
-    normal: [params.h || 0, params.k || 0, params.l || 0],
-    d: 1,
-  };
-}
-
 function removePlaneMesh(structure, planeDef) {
   if (!structure) return;
   const meshMap = getStructureMeshMap(structure);
@@ -67,7 +52,7 @@ function upsertPlaneMesh(structure, planeDef) {
   const lattice = structure.lattice;
   if (!Array.isArray(lattice) || lattice.length !== 3) return;
 
-  const { normal, d } = getPlaneDefinitionNormalAndD(planeDef);
+  const { normal, d } = getPlaneDefinitionNormalAndD(planeDef, lattice);
   if (Math.abs(normal[0]) + Math.abs(normal[1]) + Math.abs(normal[2]) < 1e-12) {
     return;
   }

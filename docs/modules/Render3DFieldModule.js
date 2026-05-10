@@ -84,20 +84,6 @@ function updateIsosurface(iso) {
   }
 }
 
-//------------------------------------------------------------
-//  Convert voxel coordinates → world coordinates
-//------------------------------------------------------------
-function voxelToCartesian(i, j, k, field) {
-  const { origin, voxel } = field;
-  const [vx, vy, vz] = voxel;
-
-  return [
-    origin[0] + i * vx[0] + j * vy[0] + k * vz[0],
-    origin[1] + i * vx[1] + j * vy[1] + k * vz[1],
-    origin[2] + i * vx[2] + j * vy[2] + k * vz[2]
-  ];
-}
-
 export function createSlice(field, axis = "z", index = null) {
   const { nx, ny, nz, values, origin, voxel } = field;
 

@@ -30,6 +30,51 @@ function toVec3(v) {
     : new THREE.Vector3(v[0], v[1], v[2]);
 }
 
+export function getPlaneDefinitionNormalAndD(planeDef, lattice) {
+  const params = planeDef?.params || {};
+  if (params.type === 'uvwd') {
+    return {
+      normal: [params.u || 0, params.v || 0, params.w || 0],
+      d: params.d || 0,
+    };
+  }
+  else if (params.type === 'hkl') {
+    const h = Number(params.h || 0);
+    const k = Number(params.k || 0);
+    const l = Number(params.l || 0);
+
+    if (!(Array.isArray(lattice) && lattice.length === 3)) {
+        console.error('lattice vector provided to HKL plane definition fetching are invalid:', lattice);
+        return {};
+    }
+    const [a1, a2, a3] = lattice.map(toVec3);
+
+    // Fallback for zero Miller components (parallel-to-axis planes) and
+    // degenerate numerics: derive Cartesian plane from reciprocal relation.
+    // Plane in fractional form: h*u + k*v + l*w = 1.
+    const bc = new THREE.Vector3().crossVectors(a2, a3);
+    const ca = new THREE.Vector3().crossVectors(a3, a1);
+    const ab = new THREE.Vector3().crossVectors(a1, a2);
+    const rawNormal = bc.multiplyScalar(h).add(ca.multiplyScalar(k)).add(ab.multiplyScalar(l));
+
+    if (rawNormal.lengthSq() <= 1e-20) {
+      console.error('Invalid HKL plane definition:', { h, k, l });
+      return {};
+    }
+
+    const cellVolume = Math.abs(a1.dot(new THREE.Vector3().crossVectors(a2, a3)));
+    const nUnit = rawNormal.clone().normalize();
+    return {
+      normal: [nUnit.x, nUnit.y, nUnit.z],
+      d: cellVolume / rawNormal.length(),
+    };
+  }
+  else {
+    console.error('Unknown plane definition type:', params.type);
+    return {};
+  }
+}
+
 /**
  * Return the 8 corner vertices of the cell parallelepiped (origin at 0,0,0).
  * @param {Array} cell – [a, b, c], each a THREE.Vector3 or [x,y,z]
@@ -231,9 +276,9 @@ function makeCellClippingPlanes(cell) {
     nr.normalize();
 
     // Face at origin:  keep where  nr·x >= 0  →  THREE.Plane(nr, 0)
-    planes.push(new THREE.Plane(nr.clone(), 0));
+    planes.push(new THREE.Plane(nr.clone(), -1e-3)); // offset slightly to avoid numerical edge-clipping issues
     // Opposite face:   keep where  nr·x <= nr·w  →  THREE.Plane(-nr, nr·w)
-    planes.push(new THREE.Plane(nr.clone().negate(), nr.dot(w)));
+    planes.push(new THREE.Plane(nr.clone().negate(), nr.dot(w) + 1e-3));
   }
   return planes;
 }
@@ -290,12 +335,15 @@ export class Plane extends THREE.Group {
       ({ geometry, uAxis, vAxis, centroid, clippingPlanes } =
           buildPolygonGeometry(polygon, n, cell, resolution));
     } else {
-      // Fallback: unit square in the XY plane (plane misses cell or no cell given)
+      // Fallback: make plane outside of cell bounds
       console.warn('Plane: insufficient intersection with cell; using unit-square fallback.');
       geometry       = new THREE.PlaneGeometry(1, 1, 1, 1);
       uAxis          = new THREE.Vector3(1, 0, 0);
       vAxis          = new THREE.Vector3(0, 1, 0);
-      centroid       = new THREE.Vector3(0, 0, d);
+      centroid       = new THREE.Vector3(0, 0, -1);
+      const matrix = new THREE.Matrix4().makeBasis(uAxis, vAxis, n);
+      matrix.setPosition(centroid);
+      geometry.applyMatrix4(matrix);
       clippingPlanes = (cell && cell.length === 3) ? makeCellClippingPlanes(cell) : [];
     }
 
@@ -387,13 +435,7 @@ export class Plane extends THREE.Group {
         pts.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z);
       }
     } else {
-      // Unit-square fallback
-      pts.push(
-        -0.5, -0.5, 0,  0.5, -0.5, 0,
-         0.5, -0.5, 0,  0.5,  0.5, 0,
-         0.5,  0.5, 0, -0.5,  0.5, 0,
-        -0.5,  0.5, 0, -0.5, -0.5, 0,
-      );
+      console.warn('Plane._makeBorderMesh: no polygon provided, not drawing border.');
     }
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
