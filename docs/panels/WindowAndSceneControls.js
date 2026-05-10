@@ -83,7 +83,7 @@ export function initControls(){
     };
 
   app.controls.addEventListener('end', () => {
-    if (getIsosurfaceTriangleSortingEnabled()) {
+    if (getIsosurfaceTriangleSortingEnabled() && groups.activeField?.isVisible !== false) {
       updateStoredIsosurfaceRenderOrder(app.camera, groups.isosurfaceGroup);
     }
   });
