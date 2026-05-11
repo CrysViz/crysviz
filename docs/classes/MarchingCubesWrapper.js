@@ -8,8 +8,73 @@ var MarchingCubesModule = await MarchCubes();
 let useWASMMarchCubes = false;
 
 // uncomment for Three.js built-in marching cubes
-import * as ThreeMarchingCubes from '../external/three/MarchingCubes.js';
+import * as ThreeMarchingCubes from './JSMarchingCubes.js';
 let useThreeMarchCubes = false;
+
+
+function buildDistancePermutation(positions, point) {
+    if (!positions || !point) return [];
+
+    const vertexCount = Math.floor(positions.length / 3);
+    if (vertexCount <= 1) return vertexCount === 1 ? [0] : [];
+
+    const indexDistances = new Array(vertexCount);
+    for (let i = 0; i < vertexCount; i++) {
+        const base = i * 3;
+        const dx = positions[base] - point.x;
+        const dy = positions[base + 1] - point.y;
+        const dz = positions[base + 2] - point.z;
+        indexDistances[i] = { index: i, distanceSq: dx * dx + dy * dy + dz * dz };
+    }
+
+    indexDistances.sort((a, b) => a.distanceSq - b.distanceSq);
+
+    const permutation = new Array(vertexCount);
+    for (let i = 0; i < vertexCount; i++) {
+        permutation[i] = indexDistances[i].index;
+    }
+    return permutation;
+}
+
+function reorderArrayByPermutation(array, permutation, stride) {
+    if (!array || !permutation || permutation.length <= 1) return array;
+
+    const vertexCount = permutation.length;
+    const expectedLength = vertexCount * stride;
+    if (array.length < expectedLength) return array;
+
+    const temp = ArrayBuffer.isView(array) ? new array.constructor(array) : array.slice();
+    for (let i = 0; i < vertexCount; i++) {
+        const srcBase = permutation[i] * stride;
+        const dstBase = i * stride;
+        for (let j = 0; j < stride; j++) {
+            array[dstBase + j] = temp[srcBase + j];
+        }
+    }
+
+    return array;
+}
+
+/**
+ * Sorts a flat position buffer by distance to a target point.
+ *
+ * The input `positions` is expected to be laid out as xyz triplets:
+ * `[x0, y0, z0, x1, y1, z1, ...]`.
+ *
+ * Distances are computed from each vertex to `point` using Euclidean distance
+ * (squared distance is sufficient for ordering). The default order is
+ * ascending, so vertices closest to `point` appear first.
+ *
+ * Reorders the given `positions` array in-place and returns it.
+ *
+ * @param {Float32Array|number[]} positions - Flat xyz vertex array.
+ * @param {{x:number, y:number, z:number}} point - Reference point.
+ * @returns {Float32Array|number[]} The same `positions` array instance, sorted in-place.
+ */
+function sortPositionsToPoint(positions, point) {
+    const permutation = buildDistancePermutation(positions, point);
+    return reorderArrayByPermutation(positions, permutation, 3);
+}
 
 class MarchingCubesWrapper {
 
@@ -42,12 +107,21 @@ class MarchingCubesWrapper {
         this.marchingCubes = backend_MC;
     }
 
-    getVertices(isoValue) {
+    updateMesh(isoValue) {
+        if (useWASMMarchCubes) {
+            this.marchingCubes.updateVertices(isoValue);
+        }
+        else if (useThreeMarchCubes) {
+            this.marchingCubes.isolation = isoValue;
+            this.marchingCubes.update();
+        }
+    }
+
+    getVertices() {
         // if (useGPUMarchCubes) {
         //     return this.marchingCubes.getVertices(isoValue);
         // }
         if (useWASMMarchCubes) {
-            this.marchingCubes.updateVertices(isoValue);
             const vertexCount = this.marchingCubes.getVertexCount();
             const verticesPtr = this.marchingCubes.getVertices();
             const normalsPtr = this.marchingCubes.getNormals();
@@ -60,8 +134,6 @@ class MarchingCubesWrapper {
             };
         }
         else if (useThreeMarchCubes) {
-            this.marchingCubes.isolation = isoValue;
-            this.marchingCubes.update();
             const { vertices, normals, vertexCount } = this.marchingCubes.getVertices();
             const verticesArray = vertices.slice(0, vertexCount*3);
             const normalsArray = normals.slice(0, vertexCount*3);
@@ -84,6 +156,83 @@ class MarchingCubesWrapper {
             // Three.js built-in marching cubes does not require explicit deletion
         }
     }
+
+    /**
+     * Sorts arrays by camera distance using the vertex order derived from `primaryArray`.
+     *
+     * Signature:
+     * sortVerticesToCamera(cameraPosition, primaryArray, ...extraArrays)
+     *
+     * `primaryArray` must be xyz triplets (stride 3). Each `extraArray` is reordered
+     * with the same permutation. Extra array stride is inferred as:
+     * - 3 when array length is vertexCount * 3
+     * - 2 when array length is vertexCount * 2
+     * - otherwise it is skipped.
+     */
+    sortVerticesToCamera(cameraPosition, primaryArray, ...extraArrays) {
+        // if (useGPUMarchCubes) {
+        //     this.marchingCubes.sortVerticesToCamera(cameraPosition);
+        // }
+        if (useWASMMarchCubes) {
+            const elementCount = primaryArray.length / 3;
+
+            const inputPtr = MarchingCubesModule._malloc(primaryArray.length * primaryArray.BYTES_PER_ELEMENT);
+            MarchingCubesModule.HEAPF32.set(primaryArray, inputPtr >> 2);
+            const permutationPtr = MarchingCubesModule._malloc(elementCount * 4); // allocate space for permutation indices
+
+            MarchingCubesModule.buildDistancePermutation(inputPtr, elementCount, cameraPosition.x, cameraPosition.y, cameraPosition.z, permutationPtr);
+            MarchingCubesModule.reorderArrayByPermutation(inputPtr, elementCount, primaryArray.BYTES_PER_ELEMENT / 4, permutationPtr);
+            for (const array of extraArrays) {
+                const stride = array.length / elementCount;
+                if (stride === 3 || stride === 2) {
+                    const extraPtr = MarchingCubesModule._malloc(array.length * array.BYTES_PER_ELEMENT);
+                    MarchingCubesModule.HEAPF32.set(array, extraPtr >> 2);
+                    MarchingCubesModule.reorderArrayByPermutation(extraPtr, elementCount, array.BYTES_PER_ELEMENT / 4, permutationPtr);
+                    const sortedExtra = new array.constructor(MarchingCubesModule.HEAPF32.buffer, extraPtr, array.length).slice();
+                    array.set(sortedExtra);
+                    MarchingCubesModule._free(extraPtr);
+                }
+            }
+            const sortedPrimary = new primaryArray.constructor(MarchingCubesModule.HEAPF32.buffer, inputPtr, primaryArray.length).slice();
+            primaryArray.set(sortedPrimary);
+            MarchingCubesModule._free(inputPtr);
+            MarchingCubesModule._free(permutationPtr);
+        }
+        else if (useThreeMarchCubes) {
+            const { vertices } = this.getVertices();
+            const permutation = buildDistancePermutation(primaryArray, cameraPosition);
+            for (const array of [primaryArray, ...extraArrays]) {
+                const stride = array.length / (vertices.length / 3);
+                if (stride === 3 || stride === 2) {
+                    reorderArrayByPermutation(array, permutation, stride);
+                }
+            }
+        }
+
+        return [primaryArray, ...extraArrays];
+    }
+
+    /**
+     * Returns the currently computed vertex/normal arrays without re-running marching cubes.
+     */
+    getCurrentVertices() {
+        if (useWASMMarchCubes) {
+            const vertexCount = this.marchingCubes.getVertexCount();
+            const verticesPtr = this.marchingCubes.getVertices();
+            const normalsPtr  = this.marchingCubes.getNormals();
+            const vertices = new Float32Array(MarchingCubesModule.HEAPF32.buffer, verticesPtr, vertexCount * 3).slice();
+            const normals  = new Float32Array(MarchingCubesModule.HEAPF32.buffer, normalsPtr,  vertexCount * 3).slice();
+            return { vertices, normals, vertexCount };
+        }
+        else if (useThreeMarchCubes) {
+            const { vertices, normals, vertexCount } = this.marchingCubes.getVertices();
+            return {
+                vertices: vertices.slice(0, vertexCount * 3),
+                normals:  normals.slice(0, vertexCount * 3),
+                vertexCount
+            };
+        }
+    }
 }
 
-export { MarchingCubesWrapper };
+export { MarchingCubesWrapper, sortPositionsToPoint };

@@ -9,13 +9,11 @@ import { MarchingCubesWrapper } from './MarchingCubesWrapper.js';
 
 export let surface_options = {
     //transmission: 0.95,
-    side: THREE.BackSide,
+    side: THREE.DoubleSide,
     opacity:0.4,
     transparent: true,
-    alphaTest: 0.01,
     //depthWrite: false,
     //depthTest: true,
-    dithering: true,
   } 
 
 export let defaultPosColor = new THREE.Color(0x33aaff);
@@ -176,8 +174,9 @@ export class Isosurface extends THREE.Group{
     constructor(field) {
         super();
         this.field = field;
+        this.lastCameraPosition = new THREE.Vector3();
 
-        this.marchingCubes = new MarchingCubesWrapper(field, "wasm");
+        this.marchingCubes = new MarchingCubesWrapper(field, "three");
         
         this.addMeshes();
 
@@ -193,63 +192,29 @@ export class Isosurface extends THREE.Group{
         this.applyMatrix4(transform_cell);
     }
 
-    _sortMeshTrianglesByCameraDistance(mesh, cameraPosition) {
-        if (!mesh || !mesh.geometry || !cameraPosition) return;
-
-        const geometry = mesh.geometry;
-        const position = geometry.getAttribute('position');
-        if (!position || position.count < 3) return;
-
-        const indexAttr = geometry.getIndex();
-        const sourceIndexArray = indexAttr?.array;
-        const indexCount = sourceIndexArray ? sourceIndexArray.length : position.count;
-        const triangleCount = Math.floor(indexCount / 3);
-        if (triangleCount <= 0) return;
-
-        mesh.updateMatrixWorld(true);
-        const worldMatrix = mesh.matrixWorld;
-
-        const sortedTriangles = new Array(triangleCount);
-
-        for (let i = 0; i < triangleCount; i++) {
-            const base = i * 3;
-            const ia = sourceIndexArray ? sourceIndexArray[base] : base;
-            const ib = sourceIndexArray ? sourceIndexArray[base + 1] : base + 1;
-            const ic = sourceIndexArray ? sourceIndexArray[base + 2] : base + 2;
-
-            _sortTmpA.fromBufferAttribute(position, ia).applyMatrix4(worldMatrix);
-            _sortTmpB.fromBufferAttribute(position, ib).applyMatrix4(worldMatrix);
-            _sortTmpC.fromBufferAttribute(position, ic).applyMatrix4(worldMatrix);
-
-            _sortTmpCenter.copy(_sortTmpA).add(_sortTmpB).add(_sortTmpC).multiplyScalar(1 / 3);
-            const distanceSq = _sortTmpCenter.distanceToSquared(cameraPosition);
-
-            sortedTriangles[i] = { ia, ib, ic, distanceSq };
-        }
-
-        sortedTriangles.sort((a, b) => b.distanceSq - a.distanceSq);
-
-        const IndexArrayCtor = sourceIndexArray
-            ? sourceIndexArray.constructor
-            : (position.count > 65535 ? Uint32Array : Uint16Array);
-        const sortedIndices = new IndexArrayCtor(triangleCount * 3);
-
-        for (let i = 0; i < triangleCount; i++) {
-            const base = i * 3;
-            const tri = sortedTriangles[i];
-            sortedIndices[base] = tri.ia;
-            sortedIndices[base + 1] = tri.ib;
-            sortedIndices[base + 2] = tri.ic;
-        }
-
-        geometry.setIndex(new THREE.BufferAttribute(sortedIndices, 1));
-        geometry.getIndex().needsUpdate = true;
-    }
-
     sortTrianglesByCameraDistance(cameraPosition) {
-        if (!cameraPosition) return;
-        this._sortMeshTrianglesByCameraDistance(this.meshes?.positive, cameraPosition);
-        this._sortMeshTrianglesByCameraDistance(this.meshes?.negative, cameraPosition);
+        if (!cameraPosition || !this.marchingCubes) return;
+
+        // Transform camera position into the isosurface's local coordinate system
+        this.updateMatrixWorld(true);
+        this.lastCameraPosition.copy(cameraPosition);
+        const localCameraPosition = cameraPosition.clone();
+        const inverseMatrix = new THREE.Matrix4().copy(this.matrixWorld).invert();
+        localCameraPosition.applyMatrix4(inverseMatrix);
+
+        for (const meshKey of ['positive', 'negative']) {
+            const mesh = this.meshes?.[meshKey];
+            if (!mesh?.geometry) continue;
+
+            const positionAttr = mesh.geometry.getAttribute('position');
+            if (!positionAttr?.array || positionAttr.count < 3) continue;
+            const normalAttr = mesh.geometry.getAttribute('normal');
+
+            this.marchingCubes.sortVerticesToCamera(localCameraPosition, positionAttr.array, normalAttr?.array);
+
+            positionAttr.needsUpdate = true;
+            normalAttr.needsUpdate = true;
+        }
     }
 
     addMeshes() {
@@ -303,6 +268,29 @@ export class Isosurface extends THREE.Group{
         this.meshes[meshKey].geometry = merged;
     }
 
+    refreshGeometry(field_key, vertices, normals) {
+        if (field_key == "positive") {
+            if (vertices === undefined || normals === undefined) {
+                const data = this.marchingCubes.getVertices();
+                vertices = data.vertices;
+                normals = data.normals;
+            }
+            this._replaceGeometry('positive', vertices, normals);
+            this.meshes.positive.needUpdate = true;
+            this.add(this.meshes.positive);
+        }
+        else if (field_key == "negative") {
+            if (vertices === undefined || normals === undefined) {
+                const data = this.marchingCubes.getVertices();
+                vertices = data.vertices;
+                normals = data.normals;
+            }
+            this._replaceGeometry('negative', vertices, normals);
+            this.meshes.negative.needUpdate = true;
+            this.add(this.meshes.negative);
+        }
+    }
+
     updateMesh(isoValue = this.field.isovalue) {
         const t0 = performance.now();
 
@@ -311,19 +299,21 @@ export class Isosurface extends THREE.Group{
             if (groups.activeField.useAbsoluteIsoValue) {
                 iso = Math.abs(isoValue);
             }
-            const { vertices, normals } = this.marchingCubes.getVertices(iso);
-            this._replaceGeometry('positive', vertices, normals);
-            this.meshes.positive.needUpdate = true;
-            this.add(this.meshes.positive);
+            this._lastIsoPositive = iso;
+            this.marchingCubes.updateMesh(iso);
+            const posData = this.marchingCubes.getVertices();
+            this.marchingCubes.sortVerticesToCamera(this.lastCameraPosition, posData.vertices, posData.normals);
+            this.refreshGeometry("positive", posData.vertices, posData.normals);
         }
         if (this.marchingCubes && this.meshes.negative && (iso < 0 || groups.activeField.useAbsoluteIsoValue)) {
             if (groups.activeField.useAbsoluteIsoValue) {
                 iso = -Math.abs(isoValue);
             }
-            const { vertices, normals } = this.marchingCubes.getVertices(iso);
-            this._replaceGeometry('negative', vertices, normals);
-            this.meshes.negative.needUpdate = true;
-            this.add(this.meshes.negative);
+            this._lastIsoNegative = iso;
+            this.marchingCubes.updateMesh(iso);
+            const negData = this.marchingCubes.getVertices();
+            this.marchingCubes.sortVerticesToCamera(this.lastCameraPosition, negData.vertices, negData.normals);
+            this.refreshGeometry("negative", negData.vertices, negData.normals);
         }
         const t1 = performance.now();
         console.log(`Marching Cubes took ${t1 - t0} milliseconds.`);
