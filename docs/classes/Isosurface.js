@@ -10,7 +10,7 @@ import { MarchingCubesWrapper, MarchingCubesBackend } from './MarchingCubesWrapp
 export let surface_options = {
     //transmission: 0.95,
     side: THREE.DoubleSide,
-    opacity:0.4,
+    opacity:0.6,
     transparent: true,
     //depthWrite: false,
     //depthTest: true,

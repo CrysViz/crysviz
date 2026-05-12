@@ -230,26 +230,24 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
       <span id="isoValue">${isoValue.toExponential(3)}</span>
     </div>
 
-    <div class="control-group">
-      <div id="fieldColorToggle" class="spin-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="fieldColorContent">
-        <h4>Color controls</h4>
-        <div class="toggle-icon" id="fieldColorToggleIcon">+</div>
-      </div>
-      <div id="fieldColorContent" class="collapsible-content" aria-hidden="true">
-        <div style="display:flex; flex-direction:column; gap:8px;">
-          <label for="FieldPosColorPicker">Positive Isosurface Color:</label>
-          <input type="color" id="FieldPosColorPicker" value="${materialSettings.positiveColor}">
+    <div id="fieldColorToggle" class="spin-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="fieldColorContent">
+    <h4>Color controls</h4>
+    <div class="toggle-icon" id="fieldColorToggleIcon">+</div>
+    </div>
+    <div id="fieldColorContent" class="collapsible-content" aria-hidden="true">
+    <div style="display:flex; flex-direction:column; gap:8px;">
+        <label for="FieldPosColorPicker">Positive Isosurface Color:</label>
+        <input type="color" id="FieldPosColorPicker" value="${materialSettings.positiveColor}">
 
-          <label for="FieldNegColorPicker">Negative Isosurface Color:</label>
-          <input type="color" id="FieldNegColorPicker" value="${materialSettings.negativeColor}">
+        <label for="FieldNegColorPicker">Negative Isosurface Color:</label>
+        <input type="color" id="FieldNegColorPicker" value="${materialSettings.negativeColor}">
 
-          <label for="FieldOpacitySlider">Isosurface Opacity:</label>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <input type="range" id="FieldOpacitySlider" min="0" max="1" step="0.01" value="${materialSettings.opacity}">
-            <span id="FieldOpacityValue">${materialSettings.opacity.toFixed(2)}</span>
-          </div>
+        <label for="FieldOpacitySlider">Isosurface Opacity:</label>
+        <div style="display:flex; align-items:center; gap:8px;">
+        <input type="range" id="FieldOpacitySlider" min="0" max="1" step="0.01" value="${materialSettings.opacity}">
+        <span id="FieldOpacityValue">${materialSettings.opacity.toFixed(2)}</span>
         </div>
-      </div>
+    </div>
     </div>
 
    
