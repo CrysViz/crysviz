@@ -154,13 +154,13 @@ function setTheme(themeName) {
   const figure = document.getElementById("aboutTrigger");
   let theme=`theme-${themeName}`;
   if (theme === "theme-standard") {
-    figure.src = "../data/CrysViz_logo_clear_back_beta.png";
+    figure.src = "./data/CrysViz_logo_clear_back_beta.png";
   } else if (theme === "theme-ai") {
-    figure.src = "../data/CrysViz_logo_clear_back_beta_red.png";
+    figure.src = "./data/CrysViz_logo_clear_back_beta_red.png";
   } else if (theme === "theme-symmetry") {
-    figure.src = "../data/CrysViz_logo_clear_back_beta_blue.png";
+    figure.src = "./data/CrysViz_logo_clear_back_beta_blue.png";
   } else if (theme === "theme-nep") {
-    figure.src = "../data/CrysViz_logo_clear_back_beta.png";
+    figure.src = "./data/CrysViz_logo_clear_back_beta.png";
   }
 }
 

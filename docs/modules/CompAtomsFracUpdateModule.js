@@ -3,97 +3,44 @@ import {periodic,structureShip, app, groups,fileBrowser, general,mode,defaultPOS
 import {Atom} from '../classes/Atom.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
-
-import {setAtomColor}  from './ColorModule.js';
-
+import {getAtomColor} from './ColorModule.js'
 import {generateID} from './UUIDModule.js' 
 
 
-export function getUUIDFromGeometry(index) {
-  const mesh = groups.atomsMesh;
-  const attr = mesh.geometry.attributes.instanceUUID;
-
-  // Each instance = 4 floats = 16 bytes
-  const floatOffset = index * 4;
-
-  // View directly into the attribute buffer
-  const floatView = attr.array.subarray(floatOffset, floatOffset + 4);
-
-  // Reinterpret the same memory as bytes
-  const byteView = new Uint8Array(floatView.buffer, floatView.byteOffset, 16);
-
-  // Decode to string
-  const decoder = new TextDecoder();
-  const rawUUID = decoder.decode(byteView);
-
-  // Remove padding nulls
-  const cleanedUUID = rawUUID.replace(/\0/g, '');
-
-  // Now, cleanedUUID = stored UUID WITHOUT dashes
-  return cleanedUUID;
-}
-
-
-
-export function updateAtomByUUID(mesh, uuid, newPosition, newColor) {
-  const index = mesh.userData.uuidToIndex.get(uuid);
-  if (index !== undefined) {
-    // Get the UUID from the geometry
-    const geometryUUID = getUUIDFromGeometry(mesh, index);
-
-    // Failsafe: Check that the UUID in the geometry matches the lookup
-    if (geometryUUID === uuid) {
-      updateSingleAtomPosition(index, newPosition);
-      if (newColor) {
-        mesh.setColorAt(index, new THREE.Color(newColor));
-        mesh.instanceColor.needsUpdate = true;
-      }
-    } else {
-      console.error(`UUID mismatch at index ${index}: Expected ${uuid}, got ${geometryUUID}`);
+export function rebuildSecondAtoms(structure, opacity) {
+  if (!structure) {
+    console.error("rebuildSecondAtoms:Comparison structure not found")
+    return;
     }
-  } else {
-    console.error(`No sphere found for UUID: ${uuid}`);
+  if (groups.secondAtomsMesh) {
+    groups.secondAtomsMesh.geometry.dispose();
+    groups.secondAtomsMesh.material.dispose();
+    app.scene.remove(groups.secondAtomsMesh);
+    groups.secondAtomsMesh = null;
   }
-}
+  structure.atomImages={}
+  let positions = structure.atoms.map(a => a.position);
+  let lattice = structure.lattice.map(r => [...r]);
+  let elements = [...structure.elements];
+  let _ = runPeriodicWrapped(structure.periodic, positions, elements,lattice)
 
-
-
-//-------------------------------------------------------------------------------
-
-
-export function rebuildAtoms(opacity) {
-  if (groups.atomsMesh) {
-    groups.atomsMesh.geometry.dispose();
-    groups.atomsMesh.material.dispose();
-    app.scene.remove(groups.atomsMesh);
-    groups.atomsMesh = null;
-  }
-  fileBrowser.selectedStructure.atomImages={}
-  console.log("Rebuilding periodic")
-  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
-  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-  let elements = [...fileBrowser.selectedStructure.elements];
-  let _ = runPeriodicWrapped(fileBrowser.selectedStructure.periodic, positions, elements,lattice)
-
-  console.log("Building atoms")
-  buildAtoms();
-  console.log("updating atoms")
-  let ok = updateAtoms(opacity);
-  console.log("status updateAtoms", ok)
+  buildSecondAtoms(structure);
+  let ok = updateSecondAtoms(structure,opacity);
  }
 
-export function buildAtoms() {
-  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
-  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-  let elements = [...fileBrowser.selectedStructure.elements];
-  let atoms=fileBrowser.selectedStructure.atoms
-  let structure = fileBrowser.selectedStructure
+export function buildSecondAtoms(structure) {
+  if (!structure) return;
+
+  let positions = structure.atoms.map(a => a.position);
+  let lattice = structure.lattice.map(r => [...r]);
+  let elements = [...structure.elements];
+  let atoms= structure.atoms
+
   //perdic.wrapped
 
-  let wrapped = fileBrowser.selectedStructure.periodic.wrapped
+  let wrapped = structure.periodic.wrapped
 
   const atomCount = wrapped.elements.length;
-  console.log("Building mesh for",atomCount,"atoms")
 
   // Geometry: unit sphere, scaled per instance
   const geometry = new THREE.SphereGeometry(1, 32, 24);
@@ -231,16 +178,16 @@ export function buildAtoms() {
 
   // Add to scene & store reference
   app.scene.add(mesh);
-  groups.atomsMesh = mesh;
-  groups.atomsMesh.userData.elementNames = wrapped.elements;
+  groups.secondAtomsMesh = mesh;
+  groups.secondAtomsMesh.userData.elementNames = wrapped.elements;
 }
 
 
 
 
-export function updateSingleAtomPosition(index, position) {
+export function updateSecondSingleAtomPosition(index, position) {
   //console.log("Updatng atom",index,"to",position)
-  const a = groups.atomsMesh.instanceMatrix.array;
+  const a = groups.secondAtomsMesh.instanceMatrix.array;
   const mOffset = index * 16;
   a[mOffset + 12] = position[0];
   a[mOffset + 13] = position[1];
@@ -250,23 +197,15 @@ export function updateSingleAtomPosition(index, position) {
  // console.log("Expected length:", 16 * groups.atomsMesh.count);
 }
 
-export function updateSingleAtomColor(originalIndex, index, element, hex=null) {
-  //console.log("Updating color of atom",index)
-  let structure = fileBrowser.selectedStructure
-  let atom = structure.atoms[originalIndex]
-  if (hex == null){
-    hex = structure.atoms[originalIndex].getColor(originalIndex)
-  }
-  else{
-    setAtomColor(atom, hex);
-  }
+export function updateSecondSingleAtomColor(originalIndex, index, element, opacity = 1.0) {
+  const hex = getAtomColor(originalIndex)
   // console.log(`Element: ${element}, Hex: ${hex}, RGB: [${((hex >> 16) & 0xFF) / 255}, ${((hex >> 8) & 0xFF) / 255}, ${(hex & 0xFF) / 255}]`);
-  groups.atomsMesh.setColorAt(index, new THREE.Color(hex));
-  groups.atomsMesh.instanceColor.needsUpdate = true;
+  groups.secondAtomsMesh.setColorAt(index, new THREE.Color(hex));
+  groups.secondAtomsMesh.instanceColor.needsUpdate = true;
 }
 
-export function updateSingleAtomDiameter(index, element) {
-  const mesh = groups.atomsMesh;
+export function updateSecondSingleAtomDiameter(index, element) {
+  const mesh = groups.secondAtomsMesh;
   const a = mesh.instanceMatrix.array;
   const atomSize = general.atomSize;
   const radius = (atomicRadii[element] || 1.0) * atomSize;
@@ -277,52 +216,49 @@ export function updateSingleAtomDiameter(index, element) {
 }
 
 
-export function updateAtoms(opacity = 1.0) {
-  //console.error("Update main opacity", opacity)
-  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
-  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-  let atoms = [...fileBrowser.selectedStructure.atoms];
-  let elements = [...fileBrowser.selectedStructure.elements];
-  let periodic = fileBrowser.selectedStructure.periodic;
+export function updateSecondAtoms(structure, opacity = 1.0) {
+  console.error("Update comp  opacity", opacity)
+  let positions = structure.atoms.map(a => a.position);
+  let lattice = structure.lattice.map(r => [...r]);
+  let elements = [...structure.elements];
+  let atoms= structure.atoms
+  let periodic = structure.periodic;
 
   let wrapped;
   let wrappedCart;
 
   wrapped = periodic.wrapped
   wrappedCart = wrapped.cart
-  const mesh = groups.atomsMesh
-
+  const mesh = groups.secondAtomsMesh;
+ 
   mesh.material.opacity = opacity;
-  console.log("opacity",opacity)
   if (opacity === 1) {
     mesh.material.transparent = false;
     mesh.material.depthWrite = true;
   }
   else {
-    console.log("Enabling transparency for main atoms")
     mesh.material.transparent = true;
     mesh.material.depthWrite = false;
   }
-  mesh.material.needsUpdate = true;
+  mesh.material.needsUpdate = true; 
 
-  for (let i = 0; i < wrappedCart.length; i++) {
+  for (let i = 0; i < groups.atomsMesh.count; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    updateSingleAtomPosition(i, wrappedCart[i])
-    updateSingleAtomColor(originalIndex,i, wrapped.elements[i])
-    updateSingleAtomDiameter(i,wrapped.elements[i])    
+    updateSecondSingleAtomPosition(i, wrappedCart[i])
+    updateSecondSingleAtomColor(originalIndex,i, wrapped.elements[i], opacity)
+    updateSecondSingleAtomDiameter(i,wrapped.elements[i])    
 
-    groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);
-    groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.setX(i, 0.0);
+    mesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);
+    mesh.geometry.attributes.instanceEmissiveIntensity.setX(i, 0.0);
   }
 
   // Mark attributes as needing update
-  groups.atomsMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
-  groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
+  mesh.geometry.attributes.instanceEmissive.needsUpdate = true;
+  mesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
 
-  groups.atomsMesh.instanceMatrix.needsUpdate = true;
-  groups.atomsMesh.instanceColor.needsUpdate = true;
-  groups.atomsMesh.material.needsUpdate = true;
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.instanceColor.needsUpdate = true;
+  mesh.material.needsUpdate = true;
   
 }
-
 

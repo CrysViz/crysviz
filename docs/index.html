@@ -69,29 +69,29 @@
           <textarea id="structureText" placeholder="Paste POSCAR/CIF content, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id"></textarea>
           <button type="button" id="loadTextButton">Load Structure</button>
         </div>
+
         <div class="panel">
           <table id="objectTable">
-            <thead>
-              <tr>
-                <th class="fth" colspan="1"></th>
-                <th class="fth">Filename</th>
-                <th class="fth">Traj.</th>
-                <th class="fth">Step</th>
-                <th class="fth" colspan="2"></th>
-              </tr>
-            </thead>
+          <thead>
+            <th class="fth" colspan="1"></th>
+            <th class="fth">Filename</th>
+            <th class="fth">Traj.</th>
+            <th class="fth">Step</th>
+            <th class="fth" colspan="2">
+              <button type="button" class="add-structure-button">+</button>
+            </th>
+          </thead>
             <tbody>
-              <!-- JS-generated rows will go here -->
+              <!-- JS-generated rows -->
             </tbody>
-          </table>
-
-          <div id="errorPanel" class="error-panel">
-            Only two structures can be compared
-          </div>
-        </div>
-         <button type="button" id="saveButton">Download POSCAR</button>
-      </div>
-
+         </table>
+        <div id="errorPanel" class="error-panel">
+         Only two structures can be compared
+       </div>
+    </div>
+    </div>
+    <button type="button" id="saveButton">Download POSCAR</button>
+    
     <div class="control-group" id="structureControls2" style="display: none;">
          <div class="info-button-panel">
             <button class="info-button" id="analysisInfoButton">i</button>
@@ -101,6 +101,7 @@
           <button data-mode="trajectory">Trajectory</button>
           <button data-mode="comparison">Comparison</button>
         </div>
+        <div id="TrajectoryComparisonContainer"></div>
 
         <div class="segmented-control" id="ControlPanelSpinForceSwitch">
           <button data-mode="none" class="active">None</button>
@@ -119,11 +120,6 @@
         <div id="BondLatticeContainer"></div>
 
     </div>
-
-
-
-
-
 
       <div class="control-group" id="structureControls" style="display: none;">
          <div class="info-button-panel">

@@ -2,7 +2,14 @@ import * as THREE from '../external/three/three.module.js';
 import { periodic,app, groups, general,fileBrowser, mode, atomicRadii,getLatticeVisSettings} from '../store.js';
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
-import {getBondCutoff} from './BondsModule.js'
+import {getBondCutoff} from './BondsFracUpdateModule.js'
+import {
+  fracToCart,
+  cartToFrac,
+  transpose3x3,
+  invert3x3,
+  multiplyMatVec,
+} from './math/index.js';
 
 import init, { periodic_wrapped } from '../compiled/periodic_wasm.js';
 import { initPeriodicWasm, periodicWrapped as wasmPeriodicWrapped } from '../compiled/periodicWasm.js';
@@ -13,6 +20,14 @@ await initPeriodicWasm(
   periodic_wrapped,
   new URL('../compiled/periodic_wasm_bg.wasm', import.meta.url)
 );
+
+export {
+  fracToCart,
+  cartToFrac,
+  transpose3x3,
+  invert3x3,
+  multiplyMatVec,
+} from './math/index.js';
 
 export function periodicWrapped(general, frac, elements, lattice) {
   if (general.useWasmPeriodic) {
@@ -237,9 +252,7 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
       }
       else{
         try {
-          console.log("Calling workerPeriodicWrapped...")
           result = workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice);
-          console.log(result)
           periodic.wrapped = result
         } catch (error) {
           console.error('Error in worker:', error);
@@ -339,56 +352,4 @@ export function isOutsideUnitCell(cart, lattice, eps = 1e-6) {
   return (f[0] < -eps || f[0] >= 1 + eps ||
           f[1] < -eps || f[1] >= 1 + eps ||
           f[2] < -eps || f[2] >= 1 + eps);
-}
-
-
-
-export function fracToCart(frac, lattice) { // this should probably be moved to a utility file or the lattice module
-  return frac.map(fc => [
-    fc[0] * lattice[0][0] + fc[1] * lattice[1][0] + fc[2] * lattice[2][0],
-    fc[0] * lattice[0][1] + fc[1] * lattice[1][1] + fc[2] * lattice[2][1],
-    fc[0] * lattice[0][2] + fc[1] * lattice[1][2] + fc[2] * lattice[2][2]
-  ]);
-}
-
-//export function cartToFrac(cartVec, lattice) {
-//  const inverse = invert3x3(transpose3x3(lattice));
-//  return multiplyMatVec(inverse, cartVec);
-//}
-//
-//
-//
-export function cartToFrac(cartVec, lattice, precomputedInverse) {
-  const inverse = precomputedInverse || invert3x3(transpose3x3(lattice));
-  return multiplyMatVec(inverse, cartVec);
-}
-
-export function transpose3x3(m) {
-  return [
-    [m[0][0], m[1][0], m[2][0]],
-    [m[0][1], m[1][1], m[2][1]],
-    [m[0][2], m[1][2], m[2][2]],
-  ];
-}
-
-export function invert3x3(m) {
-  const [a, b, c] = m;
-  const [A,B,C] = a, [D,E,F] = b, [G,H,I] = c;
-  const det = A*(E*I - F*H) - B*(D*I - F*G) + C*(D*H - E*G);
-  if (Math.abs(det) < 1e-12) throw new Error('Singular matrix');
-  const invDet = 1 / det;
-  return [
-    [(E*I - F*H)*invDet, (C*H - B*I)*invDet, (B*F - C*E)*invDet],
-    [(F*G - D*I)*invDet, (A*I - C*G)*invDet, (C*D - A*F)*invDet],
-    [(D*H - E*G)*invDet, (B*G - A*H)*invDet, (A*E - B*D)*invDet],
-  ];
-}
-
-
-export function multiplyMatVec(mat, vec) {
-  return [
-    mat[0][0] * vec[0] + mat[0][1] * vec[1] + mat[0][2] * vec[2],
-    mat[1][0] * vec[0] + mat[1][1] * vec[1] + mat[1][2] * vec[2],
-    mat[2][0] * vec[0] + mat[2][1] * vec[1] + mat[2][2] * vec[2],
-  ];
 }

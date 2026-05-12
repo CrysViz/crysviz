@@ -1,45 +1,90 @@
-
 <img src="old/CrysViz_logo_clear_back.png" width="400">
 
-# Light-weight browser-based crystal structure visualisation with on-device rendering.
+# CrysViz - Crystal Structure Visualisation & Analysis
 
-## This is the live developement repository. If you are not Abhijith, Florian, or Rickard, you should not be here!
+## Light-weight browser-based crystal structure visualisation with on-device rendering.
 
-### Current Features:
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
-- Fully running in browser with mobile device and touch support
-- Automatic periodice boundary conditions
-- Automatic visualisation of bonds with customisable maximum bond length values
-- Inter-atomic distance measuring
-- Angle measurements
-- Periodic images outside the Unitcell
-- Ability to remove atoms
-- read POSCAR, CIFS and load from Optimade Structure URLS
-- user colors for  individual atoms
-- switch for parallel vs. perspective view
-- on-the-fly position and lattice chagnes
-- Spins! per atom, indivudual colors, scaling, etc.
-- Automatic dark/light mode
-- on-the-fly custom background color
+Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall and Rickard Armiento 
 
-### Known Bugs & Problems
-- zooming out on the website (ctrl + - )and the zooming the atoms crashes the atom view
-- in the vesta-like colors a lot of elements are pink... colors need to be chosen somehow
-- when a bond is measured and some color or position is changed, the measured bond switches to the periodic images
-- - on bond lenght zero, even though it says now "disabled", bonds are still shown
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published
+by the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-### Features We Could Add
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
 
-1. Minimum bond length slider. Could be useful to identify ranges of bonds.
-3. Show the metainfo line from poscar file
-5. Possibility to deselect single measurements by clicking them again
-6. some comment under the upload stating that "No data leaves your device". Is this really true?
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+Source code: https://github.com/ftrybel/CrysViz_hot_develop
 
-### Possible Advanced Features
+## Maintainers
+- **[Florian Trybel](https://github.com/ftrybel)** - Project lead, core development, and design.
+- **[Abhijith S Parackal](https://github.com/Abhivega)** - Core development, and design
 
-1. On-the-fly symmetry information and potentially symmetrisation
-2. Package as stand-alone offline application
-4. Crystal Structure Comparison:
-   - Mode (1): Compare structures by overlay. Option to load two structures that differ by a shade in color and a visualised on top of each other.
-   - Mode (2): Load two structures side by side. both can rotate on their own, but there is a button to lock them in the current state and then all roation is synced unless the button is pushed again
+## Contributors
+- **[Rickard Armiento](https://github.com/rartino)** - CIF Reader, I/O
+- **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)** - Vector Field Visualisation (ELF, Charge)
+
+## Key Features
+- No backend required; runs entirely in the browser, no data leaves your machine. Runs in nearly every device (in particular smartphons and tablets) and in every browser.
+- Visualise Input and output files from VASP and Quantum Espress as well as CIFs.
+- Measure distances and angles.
+- Use custom bond lengths with the optional ability to display atoms outside the unit cell that are bonded neighbours.
+- Customizable color schemes can be choosen for any individual atoms
+- Forces and spin visualisation. Dynamically for relaxaton or MD trajectories
+- Trajectory player. Load OUTCARs and pwscf vc-relax output files directly and visualise the trajectories. Long MD trajecetories might be beyond your browsers memory limits.
+- Symmetry anlysis and structure refinement (powered by Moyo WASM)
+- Relxations and molecular dynamics simulations directly on your device with NEP potentials with upt to several hundred atoms.
+- Possibility to activate a calculation backend. This allow structural relaxations with any ASE compatible calculater, e.g. MACE, UPET; trajectory is added and can be played using the trajectory player
+- Bond length histogram (angles and coordiantion numbers are comming)
+
+## Work in progress... (already available)
+- Crystal structures structure comparison via structure overlay; Lattice difference analysis inradar plot
+- Charge density and electron localisation functions viewer (CHGCAR/ELFCAR or .cube files spin resolved). High memory requirements for large files.
+- Share links that contain the structure, view angle, colors and measurements (currently selected structure in trajectory only)
+
+## Comming soon...
+- Stress visualisation
+- Updated trajectory player for larger and longer trajectories
+- Structures manipulation under symmetry constraints
+- Add atoms and vaccuum
+- eXYZ reader for trajectories or sets of files.
+
+Third-Party Libraries and Attribution:
+
+1. Moyo
+   - Repository: https://github.com/spglib/moyo
+   - License: MIT or Apache-2.0
+   - Copyright: Kohei Shinohara
+   - See LICENSE-moyo for the full license text.
+   - Explicitly moyo-wasm is used.
+   - License and code can be found in /docs/backend/moyo
+
+2. NEP_CPU
+   - Repository: https://github.com/brucefan1983/NEP_CPU
+   - License: GPL-3.0
+   - Copyright: NEP_CPU authors
+   - See LICENSE-NEP_CPU for the full license text.
+   - Explicitly NEP_CPU is compliled into a WASM module. 
+   - License and code can be found in  /docs/backend/nep_wasm/
+
+3. THREE.js
+   - Repository: https://github.com/mrdoob/three.js/
+   - License: MIT
+   - Copyright: THREE.js authors
+   - See LICENSE-THREEjs for the full license text.
+   - License and code can be found in /docs/backend/thee
+
+4. NEP89 Weights (from GPUMD)
+   - Repository: https://github.com/brucefan1983/GPUMD
+   - License: GPL-3.0
+   - Copyright: GPUMD authors
+   - The weights can be found in /docs/backend/nep_wasm/
+   - See LICENSE-GPUMD for the full license text.
+
