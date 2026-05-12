@@ -1,4 +1,8 @@
 #include <math.h>
+#include <algorithm>
+#include <cstdlib>
+#include <cstdint>
+#include <vector>
 #include <emscripten/bind.h>
 
 /////////////////////////////////////
@@ -352,6 +356,85 @@ const bool cube_vertex_pos[8][3] = {
 
 using namespace std;
 
+struct TriangleDistanceIndex {
+	unsigned int index;
+	float distance_sq;
+};
+
+uintptr_t mallocFloatArray(unsigned int length) {
+	if (length == 0) return 0;
+	return reinterpret_cast<uintptr_t>(std::malloc(sizeof(float) * length));
+}
+
+uintptr_t mallocUIntArray(unsigned int length) {
+	if (length == 0) return 0;
+	return reinterpret_cast<uintptr_t>(std::malloc(sizeof(unsigned int) * length));
+}
+
+void freeArray(uintptr_t ptr) {
+	if (ptr == 0) return;
+	std::free(reinterpret_cast<void*>(ptr));
+}
+
+void buildTriangleDistancePermutation(uintptr_t positions_ptr,
+		unsigned int vertex_count,
+		float point_x,
+		float point_y,
+		float point_z,
+		uintptr_t permutation_ptr) {
+	if (positions_ptr == 0 || permutation_ptr == 0 || vertex_count < 3) return;
+
+	const unsigned int triangle_count = vertex_count / 3;
+	if (triangle_count == 0) return;
+
+	const float* positions = reinterpret_cast<const float*>(positions_ptr);
+	unsigned int* permutation = reinterpret_cast<unsigned int*>(permutation_ptr);
+	vector<TriangleDistanceIndex> triangle_distances(triangle_count);
+
+	for (unsigned int i = 0; i < triangle_count; ++i) {
+		const unsigned int base = i * 9;
+		const float center_x = (positions[base] + positions[base + 3] + positions[base + 6]) / 3.0f;
+		const float center_y = (positions[base + 1] + positions[base + 4] + positions[base + 7]) / 3.0f;
+		const float center_z = (positions[base + 2] + positions[base + 5] + positions[base + 8]) / 3.0f;
+		const float dx = center_x - point_x;
+		const float dy = center_y - point_y;
+		const float dz = center_z - point_z;
+		triangle_distances[i] = { i, dx * dx + dy * dy + dz * dz };
+	}
+
+	stable_sort(triangle_distances.begin(), triangle_distances.end(),
+		[](const TriangleDistanceIndex& left, const TriangleDistanceIndex& right) {
+			return left.distance_sq > right.distance_sq;
+		});
+
+	for (unsigned int i = 0; i < triangle_count; ++i) {
+		permutation[i] = triangle_distances[i].index;
+	}
+}
+
+void reorderArrayByPermutation(uintptr_t array_ptr,
+		unsigned int vertex_count,
+		unsigned int item_size,
+		uintptr_t permutation_ptr) {
+	if (array_ptr == 0 || permutation_ptr == 0 || vertex_count < 3 || item_size == 0) return;
+
+	const unsigned int triangle_count = vertex_count / 3;
+	if (triangle_count == 0) return;
+
+	const unsigned int triangle_stride = item_size * 3;
+	float* array = reinterpret_cast<float*>(array_ptr);
+	const unsigned int* permutation = reinterpret_cast<const unsigned int*>(permutation_ptr);
+	vector<float> temp(array, array + vertex_count * item_size);
+
+	for (unsigned int i = 0; i < triangle_count; ++i) {
+		const unsigned int src_base = permutation[i] * triangle_stride;
+		const unsigned int dst_base = i * triangle_stride;
+		for (unsigned int j = 0; j < triangle_stride; ++j) {
+			array[dst_base + j] = temp[src_base + j];
+		}
+	}
+}
+
 inline float linear_interp(float isoval, float x1, float x2, float val1, float val2) {
 	if (fabs(val1 - val2) < 0.000000000001f) return x1; // avoid division by zero
 	return x1 + (x2 - x1) * (isoval - val1) / (val2 - val1); // interpolation
@@ -360,6 +443,8 @@ inline float linear_interp(float isoval, float x1, float x2, float val1, float v
 inline float linear_interp(float x1, float x2, float factor) {
 	return x1 + (x2 - x1) * factor; // interpolation
 }
+
+
 
 class MarchingCubes {
 public:
@@ -582,6 +667,11 @@ public:
 };
 
 EMSCRIPTEN_BINDINGS(marching_cubes_module) {
+	emscripten::function("mallocFloatArray", &mallocFloatArray);
+	emscripten::function("mallocUIntArray", &mallocUIntArray);
+	emscripten::function("freeArray", &freeArray);
+	emscripten::function("buildTriangleDistancePermutation", &buildTriangleDistancePermutation);
+	emscripten::function("reorderArrayByPermutation", &reorderArrayByPermutation);
 	emscripten::class_<MarchingCubes>("MarchingCubes")
 		.constructor<unsigned int, unsigned int, unsigned int>()
 		.constructor<unsigned int, unsigned int, unsigned int, uintptr_t, uintptr_t>()

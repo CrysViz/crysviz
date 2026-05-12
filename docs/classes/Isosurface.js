@@ -173,7 +173,7 @@ export class Isosurface extends THREE.Group{
     constructor(field) {
         super();
         this.field = field;
-        this.backend = MarchingCubesBackend.THREE;
+        this.backend = MarchingCubesBackend.WASM;
         this.lastCameraPosition = new THREE.Vector3();
 
         this.marchingCubes = new MarchingCubesWrapper(field, this.backend);

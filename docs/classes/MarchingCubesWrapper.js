@@ -152,8 +152,8 @@ class MarchingCubesWrapper {
             const vertexCount = this.marchingCubes.getVertexCount();
             const verticesPtr = this.marchingCubes.getVertices();
             const normalsPtr = this.marchingCubes.getNormals();
-            const vertices = new Float32Array(MarchingCubesModule.HEAPF32.buffer, verticesPtr, vertexCount * 3);
-            const normals = new Float32Array(MarchingCubesModule.HEAPF32.buffer, normalsPtr, vertexCount * 3);
+            const vertices = new Float32Array(MarchingCubesModule.HEAPF32.buffer, verticesPtr, vertexCount * 3).slice();
+            const normals = new Float32Array(MarchingCubesModule.HEAPF32.buffer, normalsPtr, vertexCount * 3).slice();
             return {
                 vertices: vertices, 
                 normals: normals, 
@@ -201,29 +201,35 @@ class MarchingCubesWrapper {
         //     this.marchingCubes.sortVerticesToCamera(cameraPosition);
         // }
         if (useWASMMarchCubes) {
-            const elementCount = primaryArray.length / 3;
+            const vertexCount = primaryArray.length / 3;
+            const triangleCount = Math.floor(vertexCount / 3);
 
-            const inputPtr = MarchingCubesModule._malloc(primaryArray.length * primaryArray.BYTES_PER_ELEMENT);
-            MarchingCubesModule.HEAPF32.set(primaryArray, inputPtr >> 2);
-            const permutationPtr = MarchingCubesModule._malloc(elementCount * 4); // allocate space for permutation indices
-
-            MarchingCubesModule.buildDistancePermutation(inputPtr, elementCount, cameraPosition.x, cameraPosition.y, cameraPosition.z, permutationPtr);
-            MarchingCubesModule.reorderArrayByPermutation(inputPtr, elementCount, primaryArray.BYTES_PER_ELEMENT / 4, permutationPtr);
-            for (const array of extraArrays) {
-                const stride = array.length / elementCount;
-                if (stride === 3 || stride === 2) {
-                    const extraPtr = MarchingCubesModule._malloc(array.length * array.BYTES_PER_ELEMENT);
-                    MarchingCubesModule.HEAPF32.set(array, extraPtr >> 2);
-                    MarchingCubesModule.reorderArrayByPermutation(extraPtr, elementCount, array.BYTES_PER_ELEMENT / 4, permutationPtr);
-                    const sortedExtra = new array.constructor(MarchingCubesModule.HEAPF32.buffer, extraPtr, array.length).slice();
-                    array.set(sortedExtra);
-                    MarchingCubesModule._free(extraPtr);
-                }
+            if (triangleCount <= 1) {
+                return [primaryArray, ...extraArrays];
             }
-            const sortedPrimary = new primaryArray.constructor(MarchingCubesModule.HEAPF32.buffer, inputPtr, primaryArray.length).slice();
+
+            const arrayPtr = MarchingCubesModule.mallocFloatArray(primaryArray.length);
+            MarchingCubesModule.HEAPF32.set(primaryArray, arrayPtr >> 2);
+            const permutationPtr = MarchingCubesModule.mallocUIntArray(triangleCount);
+
+            MarchingCubesModule.buildTriangleDistancePermutation(arrayPtr, vertexCount, cameraPosition.x, cameraPosition.y, cameraPosition.z, permutationPtr);
+            MarchingCubesModule.reorderArrayByPermutation(arrayPtr, vertexCount, 3, permutationPtr);
+            for (const array of extraArrays) {
+                if (!array) continue;
+
+                const itemSize = 3;
+
+                const extraArrayPtr = MarchingCubesModule.mallocFloatArray(array.length);
+                MarchingCubesModule.HEAPF32.set(array, extraArrayPtr >> 2);
+                MarchingCubesModule.reorderArrayByPermutation(extraArrayPtr, vertexCount, itemSize, permutationPtr);
+                const sortedExtra = new array.constructor(MarchingCubesModule.HEAPF32.buffer, extraArrayPtr, array.length).slice();
+                array.set(sortedExtra);
+                MarchingCubesModule.freeArray(extraArrayPtr);
+            }
+            const sortedPrimary = new primaryArray.constructor(MarchingCubesModule.HEAPF32.buffer, arrayPtr, primaryArray.length).slice();
             primaryArray.set(sortedPrimary);
-            MarchingCubesModule._free(inputPtr);
-            MarchingCubesModule._free(permutationPtr);
+            MarchingCubesModule.freeArray(arrayPtr);
+            MarchingCubesModule.freeArray(permutationPtr);
         }
         else if (useThreeMarchCubes) {
             const permutation = buildTriangleDistancePermutation(primaryArray, cameraPosition);
