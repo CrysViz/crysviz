@@ -11,30 +11,10 @@ let useWASMMarchCubes = false;
 import * as ThreeMarchingCubes from './JSMarchingCubes.js';
 let useThreeMarchCubes = false;
 
-
-function buildDistancePermutation(positions, point) {
-    if (!positions || !point) return [];
-
-    const vertexCount = Math.floor(positions.length / 3);
-    if (vertexCount <= 1) return vertexCount === 1 ? [0] : [];
-
-    const indexDistances = new Array(vertexCount);
-    for (let i = 0; i < vertexCount; i++) {
-        const base = i * 3;
-        const dx = positions[base] - point.x;
-        const dy = positions[base + 1] - point.y;
-        const dz = positions[base + 2] - point.z;
-        indexDistances[i] = { index: i, distanceSq: dx * dx + dy * dy + dz * dz };
-    }
-
-    indexDistances.sort((a, b) => a.distanceSq - b.distanceSq);
-
-    const permutation = new Array(vertexCount);
-    for (let i = 0; i < vertexCount; i++) {
-        permutation[i] = indexDistances[i].index;
-    }
-    return permutation;
-}
+const MarchingCubesBackend = Object.freeze({
+    THREE: 'three',
+    WASM: 'wasm'
+});
 
 function reorderArrayByPermutation(array, permutation, stride) {
     if (!array || !permutation || permutation.length <= 1) return array;
@@ -48,6 +28,53 @@ function reorderArrayByPermutation(array, permutation, stride) {
         const srcBase = permutation[i] * stride;
         const dstBase = i * stride;
         for (let j = 0; j < stride; j++) {
+            array[dstBase + j] = temp[srcBase + j];
+        }
+    }
+
+    return array;
+}
+
+function buildTriangleDistancePermutation(positions, point) {
+    if (!positions || !point) return [];
+
+    const triangleCount = Math.floor(positions.length / 9);
+    if (triangleCount <= 1) return triangleCount === 1 ? [0] : [];
+
+    const triangleDistances = new Array(triangleCount);
+    for (let i = 0; i < triangleCount; i++) {
+        const base = i * 9;
+        const centerX = (positions[base] + positions[base + 3] + positions[base + 6]) / 3;
+        const centerY = (positions[base + 1] + positions[base + 4] + positions[base + 7]) / 3;
+        const centerZ = (positions[base + 2] + positions[base + 5] + positions[base + 8]) / 3;
+        const dx = centerX - point.x;
+        const dy = centerY - point.y;
+        const dz = centerZ - point.z;
+        triangleDistances[i] = { index: i, distanceSq: dx * dx + dy * dy + dz * dz };
+    }
+
+    triangleDistances.sort((a, b) => b.distanceSq - a.distanceSq);
+
+    const permutation = new Array(triangleCount);
+    for (let i = 0; i < triangleCount; i++) {
+        permutation[i] = triangleDistances[i].index;
+    }
+    return permutation;
+}
+
+function reorderTriangleArrayByPermutation(array, permutation, itemSize) {
+    if (!array || !permutation || permutation.length <= 1) return array;
+
+    const triangleCount = permutation.length;
+    const triangleStride = itemSize * 3;
+    const expectedLength = triangleCount * triangleStride;
+    if (array.length < expectedLength) return array;
+
+    const temp = ArrayBuffer.isView(array) ? new array.constructor(array) : array.slice();
+    for (let i = 0; i < triangleCount; i++) {
+        const srcBase = permutation[i] * triangleStride;
+        const dstBase = i * triangleStride;
+        for (let j = 0; j < triangleStride; j++) {
             array[dstBase + j] = temp[srcBase + j];
         }
     }
@@ -81,9 +108,9 @@ class MarchingCubesWrapper {
     /**
      * Create a MarchingCubes instance for the given field and backend.
      * @param {Object} field - The field data containing nx, ny, nz, values, origin, voxel.
-     * @param {string} backend - The marching cubes backend to use ("three", "wasm", "gpu").
+     * @param {string} backend - The marching cubes backend to use.
      */
-    constructor(field, backend="javascript") {
+    constructor(field, backend = MarchingCubesBackend.WASM) {
         this.field = field;
         
         let backend_MC;
@@ -92,13 +119,13 @@ class MarchingCubesWrapper {
         //     useGPUMarchCubes = true;
         //     console.log("Using GPU-based Marching Cubes");
         // } 
-        if (backend === "wasm") {
+        if (backend === MarchingCubesBackend.WASM) {
             backend_MC = new MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz);
             const fieldPtr = backend_MC.getField();
             MarchingCubesModule.HEAPF32.set(field.values, fieldPtr >> 2);
             useWASMMarchCubes = true;
             console.log("Using WASM-based Marching Cubes");
-        } else if (backend === "three") {
+        } else if (backend === MarchingCubesBackend.THREE) {
             backend_MC = new ThreeMarchingCubes.MarchingCubes([field.nx, field.ny, field.nz], false, false, field.nx*field.ny*field.nz);
             backend_MC.field = field.values;
             useThreeMarchCubes = true;
@@ -199,12 +226,13 @@ class MarchingCubesWrapper {
             MarchingCubesModule._free(permutationPtr);
         }
         else if (useThreeMarchCubes) {
-            const { vertices } = this.getVertices();
-            const permutation = buildDistancePermutation(primaryArray, cameraPosition);
+            const permutation = buildTriangleDistancePermutation(primaryArray, cameraPosition);
             for (const array of [primaryArray, ...extraArrays]) {
-                const stride = array.length / (vertices.length / 3);
-                if (stride === 3 || stride === 2) {
-                    reorderArrayByPermutation(array, permutation, stride);
+                if (!array) continue;
+
+                const itemSize = array.length / (permutation.length * 3);
+                if (itemSize === 3 || itemSize === 2) {
+                    reorderTriangleArrayByPermutation(array, permutation, itemSize);
                 }
             }
         }
@@ -235,4 +263,4 @@ class MarchingCubesWrapper {
     }
 }
 
-export { MarchingCubesWrapper, sortPositionsToPoint };
+export { MarchingCubesBackend, MarchingCubesWrapper, sortPositionsToPoint };

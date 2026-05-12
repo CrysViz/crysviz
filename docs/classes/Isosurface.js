@@ -4,7 +4,7 @@ import * as THREE from '../external/three/three.module.js';
 import { mergeVertices } from '../external/three/BufferGeometryUtils.js';
 import { groups } from '../store.js';
 
-import { MarchingCubesWrapper } from './MarchingCubesWrapper.js';
+import { MarchingCubesWrapper, MarchingCubesBackend } from './MarchingCubesWrapper.js';
 
 
 export let surface_options = {
@@ -16,14 +16,13 @@ export let surface_options = {
     //depthTest: true,
   } 
 
+
+
 export let defaultPosColor = new THREE.Color(0x33aaff);
 export let defaultNegColor = new THREE.Color(0xff3333);
 export let isosurfaceTriangleSortingEnabled = true;
 
-const _sortTmpA = new THREE.Vector3();
-const _sortTmpB = new THREE.Vector3();
-const _sortTmpC = new THREE.Vector3();
-const _sortTmpCenter = new THREE.Vector3();
+
 const _sortCameraPosition = new THREE.Vector3();
 const _sortCameraQuaternion = new THREE.Quaternion();
 const _lastSortCameraPosition = new THREE.Vector3();
@@ -174,9 +173,10 @@ export class Isosurface extends THREE.Group{
     constructor(field) {
         super();
         this.field = field;
+        this.backend = MarchingCubesBackend.THREE;
         this.lastCameraPosition = new THREE.Vector3();
 
-        this.marchingCubes = new MarchingCubesWrapper(field, "three");
+        this.marchingCubes = new MarchingCubesWrapper(field, this.backend);
         
         this.addMeshes();
 
@@ -262,7 +262,11 @@ export class Isosurface extends THREE.Group{
         tmpGeom.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
 
         const merged = tmpGeom // mergeVertices(tmpGeom); // merging vertices might be a good idea, but currently way more expensive
-        //merged.computeVertexNormals();
+        if (this.backend === MarchingCubesBackend.THREE) {
+            // the JS/THREE gets the normal wrong somehow, so we recompute it here.
+            // The WASM backend computes correct normals, so we can skip this step for it.
+            merged.computeVertexNormals();
+        }
         //merged.computeBoundingSphere();
 
         this.meshes[meshKey].geometry = merged;
@@ -302,7 +306,7 @@ export class Isosurface extends THREE.Group{
             this._lastIsoPositive = iso;
             this.marchingCubes.updateMesh(iso);
             const posData = this.marchingCubes.getVertices();
-            this.marchingCubes.sortVerticesToCamera(this.lastCameraPosition, posData.vertices, posData.normals);
+            //this.marchingCubes.sortVerticesToCamera(this.lastCameraPosition, posData.vertices, posData.normals);
             this.refreshGeometry("positive", posData.vertices, posData.normals);
         }
         if (this.marchingCubes && this.meshes.negative && (iso < 0 || groups.activeField.useAbsoluteIsoValue)) {
@@ -312,7 +316,7 @@ export class Isosurface extends THREE.Group{
             this._lastIsoNegative = iso;
             this.marchingCubes.updateMesh(iso);
             const negData = this.marchingCubes.getVertices();
-            this.marchingCubes.sortVerticesToCamera(this.lastCameraPosition, negData.vertices, negData.normals);
+            //this.marchingCubes.sortVerticesToCamera(this.lastCameraPosition, negData.vertices, negData.normals);
             this.refreshGeometry("negative", negData.vertices, negData.normals);
         }
         const t1 = performance.now();
