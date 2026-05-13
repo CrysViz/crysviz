@@ -79,19 +79,6 @@ export function createRow(obj) {
     fileBrowser.selectedRowIndex = rowIndex;
     updateStructureFromRowAndStep(rowIndex);
 
-    if (fileBrowser.selectedStructure.volumetricFields && fileBrowser.selectedStructure.volumetricFields.fields.length > 0) {
-      fieldBrowser.setAvailableFields(fileBrowser.selectedStructure.volumetricFields.fields);
-      fieldBrowser.setSelectedField(0);
-      const selectedField = fieldBrowser.selectedField;
-      setActiveField(selectedField);
-      updateField();
-    }
-    else {
-      fieldBrowser.setAvailableFields();
-      fieldBrowser.setSelectedField(null);
-      clearField();
-    }
-
     updateControlSpinForcePanel();
   });
 
@@ -574,6 +561,19 @@ function updateStructureFromRowAndStep(rowIndex) {
   if (spins != null && general.spinForceState === "Spins") updateSpins();
   let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
   if (forces != null && general.spinForceState === "Forces") updateForces();
+  let fields = fileBrowser.selectedStructure.volumetricFields?.fields ?? null;
+  if (fields && fields.length > 0) {
+    fieldBrowser.setAvailableFields(fileBrowser.selectedStructure.volumetricFields.fields);
+    fieldBrowser.setSelectedField(0);
+    const selectedField = fieldBrowser.selectedField;
+    setActiveField(selectedField);
+    updateField();
+  }
+  else {
+    fieldBrowser.setAvailableFields();
+    fieldBrowser.setSelectedField(null);
+    clearField();
+  }
   //if (fileBrowser.selectedStructure.stress != null) stress = fileBrowser.selectedStructure.stress.map(r => r.tensor);
   createBondLengthControls();
   if (document.getElementById('latticeParametersPanel')) {
@@ -589,5 +589,5 @@ function updateStructureFromRowAndStep(rowIndex) {
     const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
     updateLatticeComparisonPanel(L1, L2);
   }
-  updateVisualization({reRenderAtoms: true, reRenderBonds: true});
+  updateVisualization({reRenderAtoms: true, reRenderBonds: true, reRenderField: true});
 }
