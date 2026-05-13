@@ -79,6 +79,7 @@ export function createRow(obj) {
     fileBrowser.selectedRowIndex = rowIndex;
     updateStructureFromRowAndStep(rowIndex);
 
+    resetView(); // do we want to reset it to a specific view per structure selection? Save view state?
     updateControlSpinForcePanel();
   });
 
