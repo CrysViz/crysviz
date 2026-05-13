@@ -120,13 +120,13 @@ export function createSlice(field, axis = "z", index = null) {
   return mesh;
 }
 
-function clearField() {
+export function clearField() {
   if (groups.isosurfaceGroup) {
     groups.isosurfaceGroup.clearMesh();
     app.scene.remove(groups.isosurfaceGroup);
   }
 }
-function deleteField() {
+export function deleteField() {
   if (groups.isosurfaceGroup) {
     groups.isosurfaceGroup.delete();
     groups.isosurfaceGroup = null;

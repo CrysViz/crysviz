@@ -53,7 +53,7 @@ import {addAtomVacuumPanel} from './modules/addToStructureModule/AddVacuumModule
 import {addCameraPanel} from './panels/CameraPanel.js'
 import {addColorPanel} from './panels/ColorPanel.js'
 
-import { updateField, parseCHGCARFile, parseCubeFile } from './modules/Render3DFieldModule.js';
+import { updateField, parseCHGCARFile, parseCubeFile, clearField } from './modules/Render3DFieldModule.js';
 //import {addAtomPanel} from './modules/addToStructureModule/addAtomPanel.js'
 
 // .........................................................................................................
@@ -70,7 +70,7 @@ import {addSpinPanel} from './panels/SpinPanel.js';
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
 import {renderComposition} from './panels/StructureInfoPanel/General.js';
 import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
-import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch} from './panels/ControlPanel.js';
+import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch, updateControlSpinForcePanel} from './panels/ControlPanel.js';
 import {addHistogramPanel} from  './panels/AnalysisPanels/BondAnalysisPanel.js';
 import {addBackendModeSwitch} from './panels/BackendPanel/BackendSwitchPanel.js';
 
@@ -376,8 +376,13 @@ export function updateVisualization(options = {}) {
   }
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
   if (reRenderOther) updateOther();
-  if (reRenderField && fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
-    updateField();
+  if (reRenderField) {
+    if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
+      updateField();
+    }
+    else {
+      clearField();
+    }
   }
 
   if (measurements.measureLines.length > 0) {
@@ -473,7 +478,8 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
 
     //createBondLengthControls();
     createShareButton();
-    updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true});
+    updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true,reRenderField:true});
+    updateControlSpinForcePanel();
     console.warn(fileBrowser.selectedStructure)
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();

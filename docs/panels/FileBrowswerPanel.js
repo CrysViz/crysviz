@@ -1,12 +1,12 @@
 import {groups,app, general, structureShip, fileBrowser} from '../store.js';
 import {updateVisualization} from '../crystal-viewer.js';
 import {resetView} from './WindowAndSceneControls.js';
-import {resetModeSwitch, resetSpinForceSwitch} from './ControlPanel.js';
+import {resetModeSwitch, resetSpinForceSwitch, updateControlSpinForcePanel} from './ControlPanel.js';
 import {createBondLengthControls} from './BondLengthPanel.js';
 import {updateSpins} from '../modules/SpinModule.js';
 import {updateForces} from '../modules/ForceModule.js';
 import {fieldBrowser} from './FieldPanel.js';
-import {toggleFieldVisibility, setActiveField, updateField} from '../modules/Render3DFieldModule.js';
+import {toggleFieldVisibility, setActiveField, updateField, clearField, deleteField} from '../modules/Render3DFieldModule.js';
 import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import {Structure} from '../classes/Structure.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
@@ -86,6 +86,13 @@ export function createRow(obj) {
       setActiveField(selectedField);
       updateField();
     }
+    else {
+      fieldBrowser.setAvailableFields();
+      fieldBrowser.setSelectedField(null);
+      clearField();
+    }
+
+    updateControlSpinForcePanel();
   });
 
 

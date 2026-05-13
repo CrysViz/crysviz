@@ -110,7 +110,7 @@ export const fieldBrowser = {
     return false;
   },
 
-  setAvailableFields(fields) {
+  setAvailableFields(fields = null) {
     this.availableFields = fields || [];
     // Set default to first field if available
     if (this.availableFields.length > 0) {
@@ -205,7 +205,7 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
           <input type="checkbox" id="FieldTriangleSortToggle" ${getIsosurfaceTriangleSortingEnabled() ? 'checked' : ''}>
           <span class="toggle_slider"></span>
         </span>
-        <span class="toggle_text"> Sort Isosurface Triangles By Camera Distance</span>
+        <span class="toggle_text"> Camera Distance Sorting</span>
       </label>
     </div>
 
