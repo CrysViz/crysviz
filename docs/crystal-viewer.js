@@ -21,7 +21,7 @@ import { setupSecondStructureInput } from './modules/SecondStructureModule.js';
 import { parseOUTCAR} from './modules/ReadOutcarModule.js';
 import { parsePWSCFout} from './modules/ReadPWSCFoutModule.js';
 import { parsePWSCFin} from './modules/ReadPWSCFinModule.js';
-import {parseXYZFile} from './modules/ReadEXYZModule.js';
+import {parseXYZFile} from './modules/ReadeXYZModule.js';
 import { setupStructureInput, parsePOSCAR} from './modules/StructureInputModule.js';
 
 // ........................................................................................................
