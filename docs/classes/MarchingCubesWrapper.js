@@ -248,4 +248,4 @@ class MarchingCubesWrapper {
     }
 }
 
-export { MarchingCubesBackend, MarchingCubesWrapper, sortPositionsToPoint };
+export { MarchingCubesBackend, MarchingCubesWrapper };

@@ -213,7 +213,9 @@ export class Isosurface extends THREE.Group{
             this.marchingCubes.sortVerticesToCamera(localCameraPosition, positionAttr.array, normalAttr?.array);
 
             positionAttr.needsUpdate = true;
-            normalAttr.needsUpdate = true;
+            if (normalAttr) {
+                normalAttr.needsUpdate = true;
+            }
         }
     }
 
