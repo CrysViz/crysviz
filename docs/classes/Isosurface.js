@@ -263,7 +263,7 @@ export class Isosurface extends THREE.Group{
         tmpGeom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
         tmpGeom.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
 
-        const merged = tmpGeom // mergeVertices(tmpGeom); // merging vertices might be a good idea, but currently way more expensive
+        const merged = tmpGeom; // mergeVertices(tmpGeom); // merging vertices might be a good idea, but currently way more expensive
         if (this.backend === MarchingCubesBackend.THREE) {
             // the JS/THREE gets the normal wrong somehow, so we recompute it here.
             // The WASM backend computes correct normals, so we can skip this step for it.
@@ -282,7 +282,7 @@ export class Isosurface extends THREE.Group{
                 normals = data.normals;
             }
             this._replaceGeometry('positive', vertices, normals);
-            this.meshes.positive.needUpdate = true;
+            this.meshes.positive.needsUpdate = true;
             this.add(this.meshes.positive);
         }
         else if (field_key == "negative") {
@@ -292,17 +292,17 @@ export class Isosurface extends THREE.Group{
                 normals = data.normals;
             }
             this._replaceGeometry('negative', vertices, normals);
-            this.meshes.negative.needUpdate = true;
+            this.meshes.negative.needsUpdate = true;
             this.add(this.meshes.negative);
         }
     }
 
-    updateMesh(isoValue = this.field.isovalue) {
-        const t0 = performance.now();
+    updateMesh(isoValue = this.field.isovalue, useAbsoluteIsoValue = false) {
+        if (!groups.activeField) return;
 
         let iso = isoValue;
-        if (this.marchingCubes && this.meshes.positive && (iso >= 0 || groups.activeField.useAbsoluteIsoValue)) {
-            if (groups.activeField.useAbsoluteIsoValue) {
+        if (this.marchingCubes && this.meshes.positive && (iso >= 0 || useAbsoluteIsoValue)) {
+            if (useAbsoluteIsoValue) {
                 iso = Math.abs(isoValue);
             }
             this._lastIsoPositive = iso;
@@ -311,8 +311,8 @@ export class Isosurface extends THREE.Group{
             //this.marchingCubes.sortVerticesToCamera(this.lastCameraPosition, posData.vertices, posData.normals);
             this.refreshGeometry("positive", posData.vertices, posData.normals);
         }
-        if (this.marchingCubes && this.meshes.negative && (iso < 0 || groups.activeField.useAbsoluteIsoValue)) {
-            if (groups.activeField.useAbsoluteIsoValue) {
+        if (this.marchingCubes && this.meshes.negative && (iso < 0 || useAbsoluteIsoValue)) {
+            if (useAbsoluteIsoValue) {
                 iso = -Math.abs(isoValue);
             }
             this._lastIsoNegative = iso;
@@ -321,8 +321,6 @@ export class Isosurface extends THREE.Group{
             //this.marchingCubes.sortVerticesToCamera(this.lastCameraPosition, negData.vertices, negData.normals);
             this.refreshGeometry("negative", negData.vertices, negData.normals);
         }
-        const t1 = performance.now();
-        console.log(`Marching Cubes took ${t1 - t0} milliseconds.`);
     }
 
     clearMesh() {

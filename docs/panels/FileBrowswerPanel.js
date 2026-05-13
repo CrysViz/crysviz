@@ -573,7 +573,7 @@ function updateStructureFromRowAndStep(rowIndex) {
   else {
     fieldBrowser.setAvailableFields();
     fieldBrowser.setSelectedField(null);
-    clearField();
+    deleteField();
   }
   //if (fileBrowser.selectedStructure.stress != null) stress = fileBrowser.selectedStructure.stress.map(r => r.tensor);
   createBondLengthControls();

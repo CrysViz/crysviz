@@ -25,13 +25,13 @@ function initIsosurfaceMesh(field) {
   return isosurface;
 }
 
-function updateIsosurface(iso) {
+function updateIsosurface(iso, useAbsoluteIsoValue = false) {
   if (!groups.isosurfaceGroup) {
     console.warn("No isosurface group to update");
     return;
   }
 
-  groups.isosurfaceGroup.updateMesh(iso);
+  groups.isosurfaceGroup.updateMesh(iso, useAbsoluteIsoValue);
 }
 
 export function createSlice(field, axis = "z", index = null) {
@@ -133,7 +133,7 @@ export function deleteField() {
   }
 }
 
-export function setActiveField(field, absoluteIsoValue = null, color1 = 0x33aaff, color2 = 0xff3333) {
+export function setActiveField(field, absoluteIsoValue = null) {
   clearField();
 
   if (absoluteIsoValue === null) {
@@ -150,7 +150,7 @@ export function setActiveField(field, absoluteIsoValue = null, color1 = 0x33aaff
   }
 
   // determine iso if not provided
-  const isosurface = initIsosurfaceMesh(field, color1, color2);
+  const isosurface = initIsosurfaceMesh(field);
 
   groups.isosurfaceGroup = isosurface;
   groups.activeField = field;
@@ -197,13 +197,10 @@ export function updateField(iso = null) {
     }
   }
 
-  //const isosurface = initIsosurfaceMesh(groups.activeField);
-  //groups.isosurfaceGroup = isosurface;
-
   //--------------------------------------------------------
   //  Build marching cubes isosurface in voxel space
   //--------------------------------------------------------
-  updateIsosurface(iso);
+  updateIsosurface(iso, field.useAbsoluteIsoValue);
 
   //--------------------------------------------------------
   //  Add to scene if not already there
