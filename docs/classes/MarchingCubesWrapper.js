@@ -82,27 +82,6 @@ function reorderTriangleArrayByPermutation(array, permutation, itemSize) {
     return array;
 }
 
-/**
- * Sorts a flat position buffer by distance to a target point.
- *
- * The input `positions` is expected to be laid out as xyz triplets:
- * `[x0, y0, z0, x1, y1, z1, ...]`.
- *
- * Distances are computed from each vertex to `point` using Euclidean distance
- * (squared distance is sufficient for ordering). The default order is
- * ascending, so vertices closest to `point` appear first.
- *
- * Reorders the given `positions` array in-place and returns it.
- *
- * @param {Float32Array|number[]} positions - Flat xyz vertex array.
- * @param {{x:number, y:number, z:number}} point - Reference point.
- * @returns {Float32Array|number[]} The same `positions` array instance, sorted in-place.
- */
-function sortPositionsToPoint(positions, point) {
-    const permutation = buildDistancePermutation(positions, point);
-    return reorderArrayByPermutation(positions, permutation, 3);
-}
-
 class MarchingCubesWrapper {
 
     /**
