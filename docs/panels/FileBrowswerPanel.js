@@ -1,15 +1,16 @@
-import {groups,app,allAtoms, general, structureShip, fileBrowser} from '../store.js';
+import {groups,app, general, structureShip, fileBrowser} from '../store.js';
 import {updateVisualization} from '../crystal-viewer.js';
 import {resetView} from './WindowAndSceneControls.js';
 import {resetModeSwitch, resetSpinForceSwitch} from './ControlPanel.js';
 import {createBondLengthControls} from './BondLengthPanel.js';
-import {createSpinControls} from './SpinPanel.js';
 import {updateSpins} from '../modules/SpinModule.js';
 import {updateForces} from '../modules/ForceModule.js';
 import {fieldBrowser} from './FieldPanel.js';
 import {toggleFieldVisibility, setActiveField, updateField} from '../modules/Render3DFieldModule.js';
 import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import {Structure} from '../classes/Structure.js';
+import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
+import {removeLatticeAndSupercellPanel, addLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
 
 export function showError(message) {
   errorPanel.textContent = message;
@@ -561,6 +562,7 @@ function updateStructureFromRowAndStep(rowIndex) {
     return;
   }
   fileBrowser.selectedStructure = container.structures[step];
+  refreshBackendTheme();
   let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
   if (spins != null && general.spinForceState === "Spins") updateSpins();
   let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
@@ -582,4 +584,3 @@ function updateStructureFromRowAndStep(rowIndex) {
   }
   updateVisualization({reRenderAtoms: true, reRenderBonds: true});
 }
-

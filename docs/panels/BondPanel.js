@@ -1,4 +1,4 @@
-import { app,bondLengths, groups, general, fileBrowser, mode, atomicRadii,getLatticeVisSettings,getAtomVisSettings} from '../store.js';
+import { app,bondLengths, groups, general, fileBrowser, mode} from '../store.js';
 import { addHistogramPanel,removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
 
 export function addBondPanel(target = "BondLatticeContainer") {

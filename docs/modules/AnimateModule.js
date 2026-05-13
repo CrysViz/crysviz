@@ -115,14 +115,14 @@ export function animation_update(time = 0) {
   );
 
   app.renderer.render(app.scene, app.camera);
-  const invCamQ = app.camera.quaternion.clone().invert();
-
-  const { a, b, c } = latticeDirsNorm();
-  app.gizmoScene.userData.aArrow.setDirection(a.clone().applyQuaternion(invCamQ));
-  app.gizmoScene.userData.bArrow.setDirection(b.clone().applyQuaternion(invCamQ));
-  app.gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
-
-  app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
+  if (app.gizmoRenderer && app.gizmoScene && app.gizmoCamera) {
+    const invCamQ = app.camera.quaternion.clone().invert();
+    const { a, b, c } = latticeDirsNorm();
+    app.gizmoScene.userData.aArrow.setDirection(a.clone().applyQuaternion(invCamQ));
+    app.gizmoScene.userData.bArrow.setDirection(b.clone().applyQuaternion(invCamQ));
+    app.gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
+    app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
+  }
   app.labelRenderer.render(app.scene, app.camera);
   if( app.angularVelocity != null ){
     if (general.autoRandomEnabled && app.angularVelocity.lengthSq() > 0) {
@@ -159,4 +159,3 @@ export function animation_update(time = 0) {
 
 
   }
-

@@ -1,5 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
-import { periodic,app, groups, general,fileBrowser, mode, atomicRadii,getLatticeVisSettings} from '../store.js';
+
+import {app, groups,periodic, fileBrowser, general,mode} from '../store.js';
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
 
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {getBondCutoff} from './BondsFracUpdateModule.js'
@@ -229,7 +231,7 @@ async function workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,s
 export function runPeriodicWrapped(periodic, frac, elements,lattice) {
 
     let bondLenghts = general.bondLengths
-    let showPBCBonds = general.showPBCBonds
+    let showPBCBonds = general.showBonds && general.showPBCBonds
     let showPeriodic = general.showPeriodic
 
     const map = new Map([
@@ -247,7 +249,7 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
     if (periodic.hash != inputHash){
       if(1==1){ //#(periodic.hash==="None") {
         console.warn("Calling sync periodicWrapped")
-        result = periodicWrapped(general, frac, elements,lattice)
+        result = periodicWrapped({ ...general, showPBCBonds }, frac, elements,lattice)
         periodic.wrapped = result
       }
       else{
