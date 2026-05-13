@@ -590,6 +590,10 @@ public:
 		unsigned short edge_flags;
 		size_t cube_points[8];
 
+		if (nx < 2 || ny < 2 || nz < 2) {
+			return;
+		}
+
 		for (z_ind = 0; z_ind < nz-1; z_ind++) {
 			for (y_ind = 0; y_ind < ny-1; y_ind++) {
 				for (x_ind = 0; x_ind < nx-1; x_ind++) {
