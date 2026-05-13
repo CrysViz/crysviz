@@ -1,15 +1,12 @@
 // uncomment for GPU-centric marching cubes
 //import * as GPUMarchCubes from '../external/GPU/marching_cubes.js';
-let useGPUMarchCubes = false;
 
 // uncomment for WASM-centric marching cubes
 import MarchCubes from '../external/marching_cubes_wasm/MarchCubes.js';
 var MarchingCubesModule = await MarchCubes();
-let useWASMMarchCubes = false;
 
 // uncomment for Three.js built-in marching cubes
 import * as ThreeMarchingCubes from './JSMarchingCubes.js';
-let useThreeMarchCubes = false;
 
 const MarchingCubesBackend = Object.freeze({
     THREE: 'three',
@@ -91,43 +88,43 @@ class MarchingCubesWrapper {
      */
     constructor(field, backend = MarchingCubesBackend.WASM) {
         this.field = field;
+        this.backend = backend;
         
         let backend_MC;
         // if (backend === "gpu") {
         //     backend_MC = new GPUMarchCubes.MarchCubes(field, field.nx, field.ny, field.nz);
-        //     useGPUMarchCubes = true;
         //     console.log("Using GPU-based Marching Cubes");
         // } 
         if (backend === MarchingCubesBackend.WASM) {
             backend_MC = new MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz);
             const fieldPtr = backend_MC.getField();
             MarchingCubesModule.HEAPF32.set(field.values, fieldPtr >> 2);
-            useWASMMarchCubes = true;
             console.log("Using WASM-based Marching Cubes");
         } else if (backend === MarchingCubesBackend.THREE) {
             backend_MC = new ThreeMarchingCubes.MarchingCubes([field.nx, field.ny, field.nz], false, false, field.nx*field.ny*field.nz);
             backend_MC.field = field.values;
-            useThreeMarchCubes = true;
             console.log("Using Three.js built-in Marching Cubes");
         }
         this.marchingCubes = backend_MC;
     }
 
     updateMesh(isoValue) {
-        if (useWASMMarchCubes) {
+        const backend = this.backend;
+        if (backend === MarchingCubesBackend.WASM) {
             this.marchingCubes.updateVertices(isoValue);
         }
-        else if (useThreeMarchCubes) {
+        else if (backend === MarchingCubesBackend.THREE) {
             this.marchingCubes.isolation = isoValue;
             this.marchingCubes.update();
         }
     }
 
     getVertices() {
-        // if (useGPUMarchCubes) {
+        // if (this.backend === "gpu") {
         //     return this.marchingCubes.getVertices(isoValue);
         // }
-        if (useWASMMarchCubes) {
+        const backend = this.backend;
+        if (backend === MarchingCubesBackend.WASM) {
             const vertexCount = this.marchingCubes.getVertexCount();
             const verticesPtr = this.marchingCubes.getVertices();
             const normalsPtr = this.marchingCubes.getNormals();
@@ -139,7 +136,7 @@ class MarchingCubesWrapper {
                 vertexCount: vertexCount
             };
         }
-        else if (useThreeMarchCubes) {
+        else if (backend === MarchingCubesBackend.THREE) {
             const { vertices, normals, vertexCount } = this.marchingCubes.getVertices();
             const verticesArray = vertices.slice(0, vertexCount*3);
             const normalsArray = normals.slice(0, vertexCount*3);
@@ -152,13 +149,14 @@ class MarchingCubesWrapper {
     }
 
     delete() {
-        // if (useGPUMarchCubes) {
+        // if (this.backend === "gpu") {
         //     this.marchingCubes.delete();
         // }
-        if (useWASMMarchCubes) {
+        const backend = this.backend;
+        if (backend === MarchingCubesBackend.WASM) {
             this.marchingCubes.delete();
         }
-        else if (useThreeMarchCubes) {
+        else if (backend === MarchingCubesBackend.THREE) {
             // Three.js built-in marching cubes does not require explicit deletion
         }
     }
@@ -176,10 +174,11 @@ class MarchingCubesWrapper {
      * - otherwise it is skipped.
      */
     sortVerticesToCamera(cameraPosition, primaryArray, ...extraArrays) {
-        // if (useGPUMarchCubes) {
+        // if (this.backend === "gpu") {
         //     this.marchingCubes.sortVerticesToCamera(cameraPosition);
         // }
-        if (useWASMMarchCubes) {
+        const backend = this.backend;
+        if (backend === MarchingCubesBackend.WASM) {
             const vertexCount = primaryArray.length / 3;
             const triangleCount = Math.floor(vertexCount / 3);
 
@@ -210,7 +209,7 @@ class MarchingCubesWrapper {
             MarchingCubesModule.freeArray(arrayPtr);
             MarchingCubesModule.freeArray(permutationPtr);
         }
-        else if (useThreeMarchCubes) {
+        else if (backend === MarchingCubesBackend.THREE) {
             const permutation = buildTriangleDistancePermutation(primaryArray, cameraPosition);
             for (const array of [primaryArray, ...extraArrays]) {
                 if (!array) continue;
@@ -229,7 +228,8 @@ class MarchingCubesWrapper {
      * Returns the currently computed vertex/normal arrays without re-running marching cubes.
      */
     getCurrentVertices() {
-        if (useWASMMarchCubes) {
+        const backend = this.backend;
+        if (backend === MarchingCubesBackend.WASM) {
             const vertexCount = this.marchingCubes.getVertexCount();
             const verticesPtr = this.marchingCubes.getVertices();
             const normalsPtr  = this.marchingCubes.getNormals();
@@ -237,7 +237,7 @@ class MarchingCubesWrapper {
             const normals  = new Float32Array(MarchingCubesModule.HEAPF32.buffer, normalsPtr,  vertexCount * 3).slice();
             return { vertices, normals, vertexCount };
         }
-        else if (useThreeMarchCubes) {
+        else if (backend === MarchingCubesBackend.THREE) {
             const { vertices, normals, vertexCount } = this.marchingCubes.getVertices();
             return {
                 vertices: vertices.slice(0, vertexCount * 3),
