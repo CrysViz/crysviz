@@ -116,6 +116,28 @@ function createColorBar(container, colormap, minValue, maxValue, type) {
       general.ForceMax = max;
       updateAtomColorsByForce();
       updateAtoms();
+
+      // If bonds should match atom colors, update them
+      if (general.bondsColor == "elements" || general.bondsColor == null) {
+        const structure = fileBrowser.selectedStructure;
+        if (structure && structure.atoms) {
+          structure.atoms.forEach((atom, atomIndex) => {
+            const color = atom.getColor();
+            if (structure.atomImages?.[atomIndex]) {
+              structure.atomImages[atomIndex].forEach((imageIndex) => {
+                if (structure.bondMapping?.[imageIndex]) {
+                  structure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
+                    updateSingleBondColor(bondHalvIndex, color, true);
+                    const indexset = structure.bondObjectMapping[bondHalvIndex];
+                    structure.bonds[indexset[0]].color[indexset[1]] = color;
+                  });
+                }
+              });
+            }
+          });
+          updateBonds();
+        }
+      }
     } else if (type === "bonds") {
       general.BondMin = min;
       general.BondMax = max;
@@ -123,6 +145,7 @@ function createColorBar(container, colormap, minValue, maxValue, type) {
       updateBonds();
     }
   }
+
 
   minInput.addEventListener("change", onLimitsChange);
   maxInput.addEventListener("change", onLimitsChange);
@@ -192,8 +215,8 @@ function updateBondColorsByLength() {
     const color = bondLengthToColor(bond.dist, general.BondMin, general.BondMax);
     bond.color[0] = color;
     bond.color[1] = color;
-    updateSingleBondColor(bondIndex * 2, color);
-    updateSingleBondColor(bondIndex * 2 + 1, color);
+    updateSingleBondColor(bondIndex * 2, color,true);
+    updateSingleBondColor(bondIndex * 2 + 1, color,true);
   });
 
   if (groups.bondsMesh) {
@@ -404,6 +427,7 @@ export function addColorPanel(target = "colorContainer") {
   ], onAtomsModeChange);
 
   const atomsElementColorMapBlock = createElement("div", { class: "menu_block" });
+
   const atomsElementColorMapMenu = createDropdown("atomsElementColorMapMenu", "Element Color Map", [
     { value: "default", text: "CrysViz Default", selected: true },
     { value: "jmol", text: "JMol-like" }
@@ -442,9 +466,30 @@ export function addColorPanel(target = "colorContainer") {
     if (general.atomsColor === "force") {
       updateAtomColorsByForce();
       updateAtoms();
+
+      // If bonds should match atom colors, update them
+      if (general.bondsColor == "elements" || general.bondsColor == null) {
+        const structure = fileBrowser.selectedStructure;
+        if (structure && structure.atoms) {
+          structure.atoms.forEach((atom, atomIndex) => {
+            const color = atom.getColor();
+            if (structure.atomImages?.[atomIndex]) {
+              structure.atomImages[atomIndex].forEach((imageIndex) => {
+                if (structure.bondMapping?.[imageIndex]) {
+                  structure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
+                    updateSingleBondColor(bondHalvIndex, color, true);
+                    const indexset = structure.bondObjectMapping[bondHalvIndex];
+                    structure.bonds[indexset[0]].color[indexset[1]] = color;
+                  });
+                }
+              });
+            }
+          });
+          updateBonds();
+        }
+      }
     }
   });
-
   const atomsColorBarContainer = createElement("div", {}, { display: "none", marginTop: "8px" });
   atomsColorMapBlock.appendChild(atomsColorMapMenu);
   atomsColorMapBlock.appendChild(atomsColorBarContainer);
@@ -475,6 +520,7 @@ export function addColorPanel(target = "colorContainer") {
     atomsElementColorMapBlock.style.display = isElements ? "block" : "none";
     atomsColorMapBlock.style.display = isForce ? "block" : "none";
     atomsColorBarContainer.style.display = isForce ? "block" : "none";
+
 
     if (isForce) {
       if (!atomsColorBar) {
@@ -518,8 +564,30 @@ export function addColorPanel(target = "colorContainer") {
       }
     }
 
+    // If bonds should match atom colors (elements mode or default)
+    if (general.bondsColor == "elements" || general.bondsColor == null) {
+      if (structure && structure.atoms) {
+        structure.atoms.forEach((atom, atomIndex) => {
+          const color = atom.getColor();
+          if (structure.atomImages?.[atomIndex]) {
+            structure.atomImages[atomIndex].forEach((imageIndex) => {
+              if (structure.bondMapping?.[imageIndex]) {
+                structure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
+                  updateSingleBondColor(bondHalvIndex, color, true); // Pass true to overwrite
+                  const indexset = structure.bondObjectMapping[bondHalvIndex];
+                  structure.bonds[indexset[0]].color[indexset[1]] = color;
+                });
+              }
+            });
+          }
+        });
+        updateBonds();
+      }
+    }
+
     general.atomsColor = mode;
     updateAtoms();
+
   }
 
 
@@ -598,8 +666,8 @@ export function addColorPanel(target = "colorContainer") {
         if (!bond.visibleLen || bond.visibleLen <= 1e-3) return;
         bond.color[0] = "#ffffff";
         bond.color[1] = "#ffffff";
-        updateSingleBondColor(bondIndex * 2, "#ffffff");
-        updateSingleBondColor(bondIndex * 2 + 1, "#ffffff");
+        updateSingleBondColor(bondIndex * 2, "#ffffff",true);
+        updateSingleBondColor(bondIndex * 2 + 1, "#ffffff",true);
       });
     }
     else if (isSolid) {
@@ -616,8 +684,8 @@ export function addColorPanel(target = "colorContainer") {
           if (!bond.visibleLen || bond.visibleLen <= 1e-3) return;
           bond.color[0] = hex;
           bond.color[1] = hex;
-          updateSingleBondColor(bondIndex * 2, hex);
-          updateSingleBondColor(bondIndex * 2 + 1, hex);
+          updateSingleBondColor(bondIndex * 2, hex,true);
+          updateSingleBondColor(bondIndex * 2 + 1, hex,true);
         });
         general.solidBondColor = hex;
         updateBonds();
@@ -633,8 +701,8 @@ export function addColorPanel(target = "colorContainer") {
         if (!bond.visibleLen || bond.visibleLen <= 1e-3) return;
         bond.color[0] = solidColor;
         bond.color[1] = solidColor;
-        updateSingleBondColor(bondIndex * 2, solidColor);
-        updateSingleBondColor(bondIndex * 2 + 1, solidColor);
+        updateSingleBondColor(bondIndex * 2, solidColor, true);
+        updateSingleBondColor(bondIndex * 2 + 1, solidColor,true);
       });
     }
     else {
@@ -655,9 +723,7 @@ export function addColorPanel(target = "colorContainer") {
       bondsSolidColorContainer.innerHTML = "";
       bondsSolidColorPicker = null;
     }
-
     general.bondsColor = mode;
-    updateBonds();
   }
 
   // =========================

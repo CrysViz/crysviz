@@ -13,6 +13,7 @@ export class Atom extends ColoredObject {
     position = [],
     coordination = [],
     color = null,
+    userColor=null,
     opacity = 1,
     elementOpacity = 1,
     defaultColor = null,
@@ -27,6 +28,7 @@ export class Atom extends ColoredObject {
     this.coordination = null;
     const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
     this.defaultColor = colorScheme[element] || 0x808080;
+    this.userColor=null;
     this.elementColor = elementColor || this.defaultColor;
     const normalizedElementOpacity = Number.isFinite(elementOpacity) ? Math.max(0, Math.min(1, elementOpacity)) : 1;
     this.elementOpacity = normalizedElementOpacity;
@@ -46,7 +48,8 @@ export class Atom extends ColoredObject {
 
   // Get the current color of the atom
   getColor() {
-    return this.color;
+    if (!this.userColor) return this.color;
+    else return this.userColor
   }
 
   // Set a custom color for the atom (accepts hex string or number)
@@ -101,6 +104,7 @@ export class Atom extends ColoredObject {
   // Reset to the element's custom color (if set), otherwise to default
   resetToElementColor() {
     this.color = this.elementColor;
+    this.userColor=null;
     return true;
   }
 
@@ -109,6 +113,7 @@ export class Atom extends ColoredObject {
     const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
     this.color = colorScheme[this.original.element] || 0x808080;
     this.elementColor = this.color;
+    this.userColor=null;
     return true;
   }
 }

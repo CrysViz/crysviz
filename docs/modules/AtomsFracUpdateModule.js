@@ -339,7 +339,7 @@ export function updateSingleAtomPosition(index, position) {
  // console.log("Expected length:", 16 * groups.atomsMesh.count);
 }
 
-export function updateSingleAtomColor(originalIndex, index, element, hex=null) {
+export function updateSingleAtomColor(originalIndex, index, element, hex=null,userColor=null) {
   //console.log("Updating color of atom",index)
   let structure = fileBrowser.selectedStructure
   let atom = structure.atoms[originalIndex]
@@ -347,7 +347,13 @@ export function updateSingleAtomColor(originalIndex, index, element, hex=null) {
     hex = structure.atoms[originalIndex].getColor(originalIndex)
   }
   else{
-    setAtomColor(atom, hex);
+    if (userColor==null){
+      setAtomColor(atom, hex);
+    }
+    else{
+      structure.atoms[originalIndex].userColor = userColor
+      setAtomColor(atom, userColor);
+    }
   }
   // console.log(`Element: ${element}, Hex: ${hex}, RGB: [${((hex >> 16) & 0xFF) / 255}, ${((hex >> 8) & 0xFF) / 255}, ${(hex & 0xFF) / 255}]`);
   groups.atomsMesh.setColorAt(index, new THREE.Color(hex));

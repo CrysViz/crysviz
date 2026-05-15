@@ -10,6 +10,7 @@ export class Bond {
     positions = [],
     defaultColors = [],
     color = [],
+    userColor=[],
     uuid = null,
     indices = null,
     srcIndices=null,
@@ -23,6 +24,7 @@ export class Bond {
     this.srcIndices = srcIndices;
     this.uuid = uuid; 
     this.color=color;
+    this.userColor=[null, null];
     //if (fileBrowser.selectedStructure.atoms){
     //  let atoms = fileBrowser.selectedStructure.atoms
     //  this.color = [atoms[this.srcIndices[0]].color,atoms[this.srcIndices[1]].color];

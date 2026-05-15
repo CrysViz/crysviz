@@ -59,6 +59,7 @@ export function disposeBondsMesh(clearBondData = false) {
     fileBrowser.selectedStructure.bonds = [];
     fileBrowser.selectedStructure.bondMapping = {};
     fileBrowser.selectedStructure.bondObjectMapping = {};
+    fileBrowser.selectedStructure.bondhalfToAtom = {};
   }
   for (const key in bondLengths) delete bondLengths[key];
   refreshHistogram([], []);
@@ -211,9 +212,9 @@ export function renderBonds() {
   const structure = fileBrowser.selectedStructure;
   const bonds = fileBrowser.selectedStructure.bonds;
   const validBonds = bonds.filter(b => b.visibleLen > 1e-3);
-  console.warn("bonds",bonds,"validBonds",validBonds)
+ // console.warn("bonds",bonds,"validBonds",validBonds)
   const bondCount = validBonds.length;
-  console.log("Rendering", bondCount, "bonds");
+ // console.log("Rendering", bondCount, "bonds");
 
   // Geometry: unit cylinder along +Y
   const geometry = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true);
@@ -309,6 +310,9 @@ export function renderBonds() {
     dummy.updateMatrix();
     mesh.setMatrixAt(i*2 , dummy.matrix);
 
+    if (!structure.bondhalfToAtom) structure.bondhalfToAtom = {};
+      structure.bondhalfToAtom[i * 2] = bond.srcIndices[0];
+
     let key = bond.indices[0];
     if (!structure.bondMapping[key]) {
         structure.bondMapping[key] = []; // Initialize with an empty array
@@ -348,6 +352,8 @@ export function renderBonds() {
     dummy.rotateX(Math.PI / 2);
     dummy.updateMatrix();
     mesh.setMatrixAt(i*2 + 1, dummy.matrix);
+
+    structure.bondhalfToAtom[i * 2 + 1] = bond.srcIndices[1];
 
     key = bond.indices[1];
     if (!structure.bondMapping[key]) {
@@ -400,18 +406,31 @@ export function renderBonds() {
 }
 
 // change the color of a bond "half  cylinder" with index bondMeshIndex to color "color" (hex)
-export function updateSingleBondColor(bondMeshIndex, color) {
+export function updateSingleBondColor(bondMeshIndex, color, overwriteAtom = false) {
   const mesh = groups.bondsMesh;
-  const bonds = fileBrowser.selectedStructure.bonds[bondMeshIndex]
-  mesh.instanceColor.setXYZ(
-    bondMeshIndex,
-    new THREE.Color(color).r,
-    new THREE.Color(color).g,
-    new THREE.Color(color).b
-  );
-  //mesh.instanceColor.needsUpdate = true;
-}
+  const structure = fileBrowser.selectedStructure;
 
+  // Ensure bondhalfToAtom and atoms exist; good check but not really necessary to improve performance
+  //if (!structure.bondhalfToAtom || !structure.atoms) {
+  //  console.warn("bondhalfToAtom or atoms not initialized.");
+  //  return;
+   // }
+  //
+
+  const atomIndex = structure.bondhalfToAtom[bondMeshIndex];
+  const atom = structure.atoms[atomIndex];
+
+  // Determine the color to use
+  let targetColor = overwriteAtom || atom.userColor == null ? color : atom.userColor;
+
+  //console.log(bondMeshIndex,atom.userColor, overwriteAtom, targetColor)
+
+  // Update bond half color
+  const threeColor = new THREE.Color(targetColor);
+  mesh.instanceColor.setXYZ(bondMeshIndex, threeColor.r, threeColor.g, threeColor.b);
+  mesh.instanceColor.needsUpdate = true;
+
+}
 
 
 export function updateSingleBondPosition(index, bond) {
@@ -467,7 +486,7 @@ export function updateSingleBondDiameter(instanceIndex, newRadius) {
 
 
 
-export function updateSingleBond(index, bond) {
+export function updateSingleBond(index, bond, overwriteAtom=false){
   const mesh = groups.bondsMesh;
   const dummy = new THREE.Object3D();
   const dirNorm = bond.dir.clone().normalize();
@@ -479,11 +498,7 @@ export function updateSingleBond(index, bond) {
   dummy.updateMatrix();
   mesh.setMatrixAt(index*2, dummy.matrix);
 
-  mesh.instanceColor.setXYZ(index*2,
-    new THREE.Color(bond.color[0]).r,
-    new THREE.Color(bond.color[0]).g,
-    new THREE.Color(bond.color[0]).b
-  );
+  updateSingleBondColor(index*2, bond.color[0],overwriteAtom)
 
   mesh.geometry.attributes.instanceEmissive.setXYZ(index*2, 0,0,0);
   mesh.geometry.attributes.instanceEmissiveIntensity.setX(index*2, 0);
@@ -496,11 +511,7 @@ export function updateSingleBond(index, bond) {
   dummy.updateMatrix();
   mesh.setMatrixAt(index*2 + 1, dummy.matrix);
 
-  mesh.instanceColor.setXYZ(index*2 + 1,
-    new THREE.Color(bond.color[1]).r,
-    new THREE.Color(bond.color[1]).g,
-    new THREE.Color(bond.color[1]).b
-  );
+  updateSingleBondColor(index*2+1, bond.color[1],overwriteAtom)
 
   mesh.geometry.attributes.instanceEmissive.setXYZ(index*2 + 1, 0,0,0);
   mesh.geometry.attributes.instanceEmissiveIntensity.setX(index*2 + 1, 0);
@@ -520,7 +531,7 @@ export async function updateBonds(opacity=1.0) {
   });
   mesh.material.opacity = opacity;
   if (opacity === 1) {
-    console.log("Switching of transparency for comp bonds")
+    //console.log("Switching of transparency for comp bonds")
     mesh.material.transparent = false;
     mesh.material.depthWrite = true;
   }

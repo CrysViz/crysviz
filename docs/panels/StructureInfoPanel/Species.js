@@ -6,7 +6,7 @@ import { updateVisualization } from '../../crystal-viewer.js';
 
 import {setAtomColor,getAtomColor,colorHexToCss,hexToRgba,createPieDot,updatePieDot} from '../../modules/ColorModule.js'
 import { createColorPicker } from '../../modules/ColorPickerModule.js';
-import { updateSingleBondColor } from '../../modules/BondsFracUpdateModule.js'
+import { updateBonds,updateSingleBondColor } from '../../modules/BondsFracUpdateModule.js'
 import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomCutPlaneImmunity} from '../../modules/AtomsFracUpdateModule.js'
 import {createSupercell} from '../../modules/SuperCellModule.js';
 import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
@@ -178,15 +178,20 @@ export function createCompositionRow(el, count, total) {
         const atom = structure.atoms[atomIndex];
         const parsedHex = parseInt(hex.replace('#', ''), 16);
         atom.elementColor = parsedHex;
+         
         structure.atomImages[atomIndex]?.forEach(imageIndex => {
-          if (structure.bondMapping[imageIndex]) {
-            structure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
-              updateSingleBondColor(bondHalvIndex, hex)
-              indexset = structure.bondObjectMapping[bondHalvIndex]
-              structure.bonds[indexset[0]].color[indexset[1]] = hex
-              });
+          if (general.bondsColor == "elements") {
+            if (structure.bondMapping[imageIndex]) {
+              structure.bondMapping[imageIndex].forEach(bondHalvIndex =>{
+                updateSingleBondColor(bondHalvIndex, hex)
+                indexset = structure.bondObjectMapping[bondHalvIndex]
+                structure.bonds[indexset[0]].color[indexset[1]] = hex
+                });
+              }
            }
-            updateSingleAtomColor(atomIndex, imageIndex, el,hex)
+           if (general.atomsColor == "elements") {
+              updateSingleAtomColor(atomIndex, imageIndex, el,hex, hex)
+            }
           });
       });  
 
@@ -297,6 +302,7 @@ export function createCompositionRow(el, count, total) {
         }
         updateSingleAtomColor(atomIndex, imageIndex, el);
         updateSingleAtomOpacity(imageIndex, atom.getOpacity());
+        updateBonds()
       });
     });
     updatePieDot(dot, fileBrowser.selectedStructure.getElementColors()[el] || [defaultColorCss]);
@@ -497,9 +503,10 @@ function createIndividualAtomRow(element, atomIndex, displayNumber = atomIndex +
              updateSingleBondColor(bondHalvIndex, hex)
              indexset = structure.bondObjectMapping[bondHalvIndex]
              structure.bonds[indexset[0]].color[indexset[1]] = hex
+             structure.bonds[indexset[0]].userColor[indexset[1]] = hex
            });
          }
-         updateSingleAtomColor(linkedAtomIndex, imageIndex, structure.elements[linkedAtomIndex], hex) 
+         updateSingleAtomColor(linkedAtomIndex, imageIndex, structure.elements[linkedAtomIndex], hex, hex) 
       });
     });
 
@@ -873,15 +880,20 @@ spinEditor.appendChild(switchWrapper);  // replace your old title
       atom.resetToElementColor();
       atom.resetToElementOpacity();
       fileBrowser.selectedStructure.atomImages[linkedAtomIndex]?.forEach((imageIndex) => {
-        if (fileBrowser.selectedStructure.bondMapping[imageIndex]) {
-          fileBrowser.selectedStructure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
-            updateSingleBondColor(bondHalvIndex, colorHexToCss(atom.getColor()));
-            const indexset = fileBrowser.selectedStructure.bondObjectMapping[bondHalvIndex];
-            fileBrowser.selectedStructure.bonds[indexset[0]].color[indexset[1]] = colorHexToCss(atom.getColor());
-          });
+        if (general.bondsColor == "elements") {
+          if (fileBrowser.selectedStructure.bondMapping[imageIndex]) {
+            fileBrowser.selectedStructure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
+              updateSingleBondColor(bondHalvIndex, colorHexToCss(atom.getColor()));
+              const indexset = fileBrowser.selectedStructure.bondObjectMapping[bondHalvIndex];
+              fileBrowser.selectedStructure.bonds[indexset[0]].color[indexset[1]] = colorHexToCss(atom.getColor());
+              fileBrowser.selectedStructure.bonds[indexset[0]].userColor[indexset[1]] = colorHexToCss(atom.getColor());
+            });
+          }
+        }  
+        if (general.atomsColor == "elements") {
+          updateSingleAtomColor(linkedAtomIndex, imageIndex, fileBrowser.selectedStructure.elements[linkedAtomIndex]);
+          updateSingleAtomOpacity(imageIndex, atom.getOpacity());
         }
-        updateSingleAtomColor(linkedAtomIndex, imageIndex, fileBrowser.selectedStructure.elements[linkedAtomIndex]);
-        updateSingleAtomOpacity(imageIndex, atom.getOpacity());
       });
     });
     const newColor = colorHexToCss(getAtomColor(atomIndex));

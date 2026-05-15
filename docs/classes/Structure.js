@@ -36,10 +36,10 @@ export class Structure {
     forces = [],
     stress = null,
     polyhedra = null,
-    colors = [],
-    bondMapping = {},
-    bondObjectMapping = {},
-    atomImages = {},
+    bondMapping = {}, // Mapping from bond index number to the indices in the THREE mesh object.
+    bondObjectMapping = {},     // Lookup table from bondHalf to the actual bond objects stored in the structure.  Mainly necessary for color changes . 
+    atomImages = {}, // stores all images in the visualisation for each object. Meaning the index of the atom maps to all indices in the THREE mesh
+    bondhalfToAtom={}, //  Mapping from the index of a bond half to the index of the respective atom. Neccessary for color updates. 
     periodic = {}, // Accept periodic as an input
     volumetricFields = null,
   } = {}) {
@@ -54,7 +54,6 @@ export class Structure {
     this.forces = forces;         // list of forces
     this.stress = stress;
     this.polyhedra = polyhedra;
-    this.colors = colors;
     this.bondMapping={};
     this.bondObjectMapping={};
     this.bonds = bonds;           // list of bonds
@@ -77,7 +76,6 @@ export class Structure {
       forces: deepCopyArrayOfObjects(forces), // deep copy of force objects
       stress: stress ? { ...stress } : null,  // deep copy of stress object if it exists
       polyhedra: polyhedra ? { ...polyhedra } : null,
-      colors: [...colors],
       bonds: deepCopyArrayOfObjects(this.bonds), // deep copy of bond objects
     });
 
