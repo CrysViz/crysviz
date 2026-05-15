@@ -343,39 +343,43 @@ export function addControlPanelSpinForceSwitch() {
     ControlPanelSpinForceSwitch.querySelectorAll("button").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
 
-    // Handle different modes
-    if (general.spinForceState == "Forces") {
-      removeSpins();
-      removeSpinPanel()
-      removeFieldPanel();
-      addForcePanel()
-      updateForces();
-      }
-    else if (general.spinForceState == "Spins") {
-      console.log("Adding Spin Panel")
-      removeForcePanel();
-      removeFieldPanel();
-      removeForces();
-      addSpinPanel();
-      updateSpins();
-        }
-    else if (general.spinForceState == "Field") {
-      removeSpinPanel();
-      removeForcePanel();
-      removeForces();
-      removeSpins();
-      addFieldPanel();
-        }
-    else {
-      //removeForces
-      removeSpins();
-      removeSpinPanel();
-      removeForcePanel();
-      removeFieldPanel();
-      removeForces()
-      //remove  vectorFieldPanel();
-    }
+    updateControlSpinForcePanel(mode);
   });
+}
+
+export function updateControlSpinForcePanel(mode = general.spinForceState) {
+  // Handle different modes
+  if (mode == "Forces") {
+    removeSpins();
+    removeSpinPanel()
+    removeFieldPanel();
+    addForcePanel()
+    updateForces();
+    }
+  else if (mode == "Spins") {
+    console.log("Adding Spin Panel")
+    removeForcePanel();
+    removeFieldPanel();
+    removeForces();
+    addSpinPanel();
+    updateSpins();
+      }
+  else if (mode == "Field") {
+    removeSpinPanel();
+    removeForcePanel();
+    removeForces();
+    removeSpins();
+    addFieldPanel();
+      }
+  else {
+    //removeForces
+    removeSpins();
+    removeSpinPanel();
+    removeForcePanel();
+    removeFieldPanel();
+    removeForces()
+    //remove  vectorFieldPanel();
+  }
 }
 
 export function addControlPanelAnalysisSwitch() {

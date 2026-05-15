@@ -1,12 +1,12 @@
 import {groups,app, general, structureShip, fileBrowser} from '../store.js';
 import {updateVisualization} from '../crystal-viewer.js';
 import {resetView} from './WindowAndSceneControls.js';
-import {resetModeSwitch, resetSpinForceSwitch} from './ControlPanel.js';
+import {resetModeSwitch, resetSpinForceSwitch, updateControlSpinForcePanel} from './ControlPanel.js';
 import {createBondLengthControls} from './BondLengthPanel.js';
 import {updateSpins} from '../modules/SpinModule.js';
 import {updateForces} from '../modules/ForceModule.js';
 import {fieldBrowser} from './FieldPanel.js';
-import {toggleFieldVisibility, setActiveField, updateField} from '../modules/Render3DFieldModule.js';
+import {toggleFieldVisibility, setActiveField, updateField, clearField, deleteField} from '../modules/Render3DFieldModule.js';
 import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import {Structure} from '../classes/Structure.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
@@ -79,13 +79,8 @@ export function createRow(obj) {
     fileBrowser.selectedRowIndex = rowIndex;
     updateStructureFromRowAndStep(rowIndex);
 
-    if (fileBrowser.selectedStructure.volumetricFields && fileBrowser.selectedStructure.volumetricFields.fields.length > 0) {
-      fieldBrowser.setAvailableFields(fileBrowser.selectedStructure.volumetricFields.fields);
-      fieldBrowser.setSelectedField(0);
-      const selectedField = fieldBrowser.selectedField;
-      setActiveField(selectedField);
-      updateField();
-    }
+    resetView(); // do we want to reset it to a specific view per structure selection? Save view state?
+    updateControlSpinForcePanel();
   });
 
 
@@ -567,6 +562,19 @@ function updateStructureFromRowAndStep(rowIndex) {
   if (spins != null && general.spinForceState === "Spins") updateSpins();
   let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
   if (forces != null && general.spinForceState === "Forces") updateForces();
+  let fields = fileBrowser.selectedStructure.volumetricFields?.fields ?? null;
+  if (fields && fields.length > 0) {
+    fieldBrowser.setAvailableFields(fileBrowser.selectedStructure.volumetricFields.fields);
+    fieldBrowser.setSelectedField(0);
+    const selectedField = fieldBrowser.selectedField;
+    setActiveField(selectedField);
+    updateField();
+  }
+  else {
+    fieldBrowser.setAvailableFields();
+    fieldBrowser.setSelectedField(null);
+    deleteField();
+  }
   //if (fileBrowser.selectedStructure.stress != null) stress = fileBrowser.selectedStructure.stress.map(r => r.tensor);
   createBondLengthControls();
   if (document.getElementById('latticeParametersPanel')) {
@@ -582,5 +590,5 @@ function updateStructureFromRowAndStep(rowIndex) {
     const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
     updateLatticeComparisonPanel(L1, L2);
   }
-  updateVisualization({reRenderAtoms: true, reRenderBonds: true});
+  updateVisualization({reRenderAtoms: true, reRenderBonds: true, reRenderField: true});
 }
