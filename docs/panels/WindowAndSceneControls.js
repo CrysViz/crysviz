@@ -1,9 +1,10 @@
 import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer, CSS2DObject } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
-import { app } from '../store.js';
+import { app, groups } from '../store.js';
 import { updateAngleDisplays, setupAxisControls} from '../modules/cameraAngleControl.js';
 import { getCellCenterAndDist} from '../modules/LatticeModule.js'
+import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../classes/Isosurface.js';
 
 function disposeRendererInstance(renderer, host = null) {
   if (!renderer) return;
@@ -115,6 +116,12 @@ export function initControls(){
     RIGHT: THREE.MOUSE.PAN
     };
 
+  app.controls.addEventListener('end', () => {
+    if (getIsosurfaceTriangleSortingEnabled() && groups.activeField?.isVisible !== false) {
+      updateStoredIsosurfaceRenderOrder(app.camera, groups.isosurfaceGroup);
+    }
+  });
+
 }
 
 
@@ -136,6 +143,9 @@ export function resizeRenderer(orthographicFrustumSize) {
   }
   app.camera.updateProjectionMatrix();
   app.renderer.setSize(w, h);
+  if (app.wboitPass) {
+    app.wboitPass.setSize(w, h);
+  }
 
   if (app.labelRenderer) {
     app.labelRenderer.setSize(w, h);

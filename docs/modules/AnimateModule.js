@@ -2,7 +2,7 @@
 import * as THREE from '../external/three/three.module.js';
 
 import {updateAngleDisplays} from './cameraAngleControl.js';
-import { app, general,mode} from '../store.js';
+import { app, general,mode, groups} from '../store.js';
 import {updateLattice,recomputeLatticeDirs,latticeDirsNorm} from './LatticeModule.js'
 
 import {updateRandomColors} from './DiscoModule.js'
@@ -114,7 +114,6 @@ export function animation_update(time = 0) {
     new THREE.Vector3(3, 4, 3).applyQuaternion(app.camera.quaternion)
   );
 
-   
   app.renderer.render(app.scene, app.camera);
   if (app.gizmoRenderer && app.gizmoScene && app.gizmoCamera) {
     const invCamQ = app.camera.quaternion.clone().invert();

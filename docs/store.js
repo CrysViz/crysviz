@@ -74,6 +74,7 @@ export const groups = {
   fieldMeshPos: null,
   fieldMeshNeg: null,
   activeField: null,
+  isosurfaceGroup: null,
 };
 
 
