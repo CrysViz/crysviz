@@ -1,9 +1,35 @@
 import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer, CSS2DObject } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
-import { app } from '../store.js';
+import { app, groups } from '../store.js';
 import { updateAngleDisplays, setupAxisControls} from '../modules/cameraAngleControl.js';
 import { getCellCenterAndDist} from '../modules/LatticeModule.js'
+import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../classes/Isosurface.js';
+
+function disposeRendererInstance(renderer, host = null) {
+  if (!renderer) return;
+  const parent = host || renderer.domElement?.parentNode;
+  if (parent && renderer.domElement && renderer.domElement.parentNode === parent) {
+    parent.removeChild(renderer.domElement);
+  } else if (renderer.domElement?.parentNode) {
+    renderer.domElement.parentNode.removeChild(renderer.domElement);
+  }
+  try { renderer.dispose(); } catch (_) {}
+  try { renderer.forceContextLoss?.(); } catch (_) {}
+}
+
+function createRendererWithFallback(primaryOptions, fallbackOptions = null) {
+  try {
+    return new THREE.WebGLRenderer(primaryOptions);
+  } catch (primaryError) {
+    if (!fallbackOptions) throw primaryError;
+    try {
+      return new THREE.WebGLRenderer(fallbackOptions);
+    } catch (_) {
+      throw primaryError;
+    }
+  }
+}
 
 export function disposeGroup(grp) {
   if (!grp) return;
@@ -35,7 +61,16 @@ export function initCamera(useOrthographicCamera){
 export function initRenderer(){
   const w = view.clientWidth || window.innerWidth;
   const h = view.clientHeight || window.innerHeight;
-  app.renderer = new THREE.WebGLRenderer({ antialias: true });
+  disposeRendererInstance(app.renderer, view);
+  app.renderer = null;
+  try {
+    app.renderer = createRendererWithFallback(
+      { antialias: true, powerPreference: 'high-performance' },
+      { antialias: false, powerPreference: 'default' }
+    );
+  } catch (_) {
+    throw new Error('WebGL could not be initialized. Close GPU-heavy tabs or restart the browser, then reload.');
+  }
   app.renderer.setSize(w, h);
   app.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 
@@ -82,6 +117,12 @@ export function initControls(){
     RIGHT: THREE.MOUSE.PAN
     };
 
+  app.controls.addEventListener('end', () => {
+    if (getIsosurfaceTriangleSortingEnabled() && groups.activeField?.isVisible !== false) {
+      updateStoredIsosurfaceRenderOrder(app.camera, groups.isosurfaceGroup);
+    }
+  });
+
 }
 
 
@@ -103,6 +144,9 @@ export function resizeRenderer(orthographicFrustumSize) {
   }
   app.camera.updateProjectionMatrix();
   app.renderer.setSize(w, h);
+  if (app.wboitPass) {
+    app.wboitPass.setSize(w, h);
+  }
 
   if (app.labelRenderer) {
     app.labelRenderer.setSize(w, h);
@@ -124,9 +168,24 @@ export function resizeRenderer(orthographicFrustumSize) {
 export function initAxesGizmo(){
   // Axes gizmo (bottom-left)
   const gizmoDiv = document.getElementById('axesGizmo');
-  app.gizmoRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  if (!gizmoDiv) return;
+  disposeRendererInstance(app.gizmoRenderer, gizmoDiv);
+  app.gizmoRenderer = null;
+  try {
+    app.gizmoRenderer = createRendererWithFallback(
+      { antialias: true, alpha: true, powerPreference: 'low-power' },
+      { antialias: false, alpha: true, powerPreference: 'low-power' }
+    );
+  } catch (_) {
+    app.gizmoScene = null;
+    app.gizmoCamera = null;
+    gizmoDiv.innerHTML = '';
+    gizmoDiv.style.display = 'none';
+    return;
+  }
   app.gizmoRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   gizmoDiv.appendChild(app.gizmoRenderer.domElement);
+  gizmoDiv.style.display = '';
 
   // No label renderer needed for gizmo - labels are in separate legend
 
@@ -196,7 +255,7 @@ export function switchCameraType() {
 }
 
 // makes the center of structure as the rotation center.
-export function setViewDirection(dir) {
+export function asetViewDirection(dir) {
   //console.log('[setView] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
   const { center, dist } = getCellCenterAndDist();
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
@@ -210,6 +269,33 @@ export function setViewDirection(dir) {
 
   app.camera.position.copy(center.clone().add(n.multiplyScalar(dist)));
   app.controls.target = center;
+  app.controls.update();
+}
+export function setViewDirection(dir, up) {
+  const { center, dist } = getCellCenterAndDist();
+  const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
+
+  // Set camera position
+  app.camera.position.copy(center.clone().add(n.multiplyScalar(dist)));
+  app.controls.target = center;
+
+  console.warn(n)
+  // Set camera up vector based on the desired view
+  if (n.y == 0 && n.z == 0) {
+    // X towards me: up is Y, Z to the right
+    app.camera.up = new THREE.Vector3(0, 0, 1);
+    console.warn("setting z up")
+  } else if (n.z == 0 && n.x == 0) {
+    // Y towards me: up is Z, X to the right
+    app.camera.up = new THREE.Vector3(1, 0, 0);
+  } else if (n.x == 0 && n.y == 0) {
+    // Z towards me: up is Y, X to the right
+    app.camera.up = new THREE.Vector3(0, 1, 0);
+  } else {
+    // Default up
+    app.camera.up = new THREE.Vector3(0, 1, 0);
+  }
+
   app.controls.update();
 }
 
@@ -231,7 +317,6 @@ export function collapseAllAtomExpansions() {
     icon.style.transform = 'rotate(0deg)';
   });
 }
-
 
 
 

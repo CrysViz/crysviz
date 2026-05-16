@@ -1,0 +1,82 @@
+#!/bin/bash
+
+# Check if file path is provided
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <browser> <path-to-file>"
+    echo "Supported browsers: chrome, chromium, firefox, safari, edge"
+    exit 1
+fi
+
+BROWSER="$1"
+FILE="$2"
+
+if [ ! -f "$FILE" ]; then
+    echo "File not found: $FILE"
+    exit 1
+fi
+
+# Extract filename from path
+FILENAME=$(basename "$FILE")
+# Read file, encode as base64, and URL-encode
+CONTENT=$(cat "$FILE" | base64 -w 0 | python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read()))")
+# URL-encode the filename
+ENCODED_FILENAME=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$FILENAME")
+
+# Combine filename and content in the hash
+URL="http://localhost:8889/#load-file=$ENCODED_FILENAME|$CONTENT"
+
+# Open in the specified browser
+case "$BROWSER" in
+    chrome|chromium)
+        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            # Linux
+            if command -v chromium-browser &> /dev/null; then
+                chromium-browser "$URL"
+            elif command -v google-chrome &> /dev/null; then
+                google-chrome "$URL"
+            else
+                echo "Neither Chromium nor Chrome is installed."
+                exit 1
+            fi
+        else
+            # macOS
+            open -a "Google Chrome" "$URL"
+        fi
+        ;;
+    firefox)
+        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            # Linux
+            firefox "$URL"
+        else
+            # macOS
+            open -a "Firefox" "$URL"
+        fi
+        ;;
+    safari)
+        if [[ "$OSTYPE" != "linux-gnu"* ]]; then
+            # macOS only
+            open -a "Safari" "$URL"
+        else
+            echo "Safari is not available on Linux."
+            exit 1
+        fi
+        ;;
+    edge)
+        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            # Linux
+            if command -v microsoft-edge &> /dev/null; then
+                microsoft-edge "$URL"
+            else
+                echo "Microsoft Edge is not installed."
+                exit 1
+            fi
+        else
+            # macOS
+            open -a "Microsoft Edge" "$URL"
+        fi
+        ;;
+    *)
+        echo "Unsupported browser: $BROWSER"
+        exit 1
+        ;;
+esac

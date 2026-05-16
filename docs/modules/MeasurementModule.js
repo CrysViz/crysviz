@@ -1,5 +1,6 @@
 import * as THREE from '../external/three/three.module.js';
-import { measurements,app, general, fileBrowser, mode, atomicRadii} from '../store.js';
+import { measurements,app, general, fileBrowser, mode} from '../store.js';
+import {atomicRadii} from '../defaults/radii_defaults.js'
 import { CSS2DObject } from '../external/three/CSS2DRenderer.js';
 import { fracToCart } from './math/index.js';
 

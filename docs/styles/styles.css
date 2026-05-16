@@ -23,7 +23,7 @@ body {
   --border-color:rgba(6,90,50,0.5);
 }
 
-.theme-ai {
+.theme-ase {
   --bg-color: rgba(81,0,0,0.8);
   --highlight-color: rgba(159,52,52,1.0);
   --accent-color: rgba(159,52,52,0.9);
@@ -39,12 +39,12 @@ body {
   --border-color: rgba(17, 71, 129, 0.5);
 }
 
-.theme-nep {
-  --bg-color: rgba(58, 48, 0, 0.85);
-  --highlight-color: rgba(212, 170, 0, 1.0);
-  --accent-color: rgba(212, 170, 0, 0.9);
-  --hover-color: rgba(212, 170, 0, 0.25);
-  --border-color: rgba(160, 132, 0, 0.55);
+.theme-locked-ase {
+  --bg-color: rgba(66, 24, 81, 0.84);
+  --highlight-color: rgba(187, 98, 214, 1.0);
+  --accent-color: rgba(167, 92, 214, 0.9);
+  --hover-color: rgba(187, 98, 214, 0.24);
+  --border-color: rgba(183, 117, 221, 0.5);
 }
 :root {
   --ui-width: 380px;      /* Panel content width */
@@ -373,7 +373,6 @@ body.panel-hidden #axesLegend {
 
 #saveButton {
   margin-bottom: 12px;
-  margin-top: 12px;
   width: 100%;
   padding: 12px 16px;
   background: var( --bg-color);
@@ -1077,7 +1076,7 @@ justify-content: center;
   border-radius: 3px;
 }
 
-.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:600px; margin: 10px 0 20px 0;}
+.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:650px; margin: 10px 0 20px 0;}
 #composition { color:#d7eef6; line-height:1.4; }
 #composition [hidden] { display: none !important; }
 #measure { margin-top:8px; }
@@ -1446,6 +1445,7 @@ body {
 
   /* Mobile-friendly measurement tools */
   #measurementTools {
+    max-height: 60px;
     top: 30px;
     right: 10px;
     padding: 0;
@@ -1457,7 +1457,7 @@ body {
     flex-direction: row;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 0 8px;
   }
 
   /* Mobile-friendly camera tools - positioned below measurement tools */
@@ -1477,7 +1477,7 @@ body {
     flex-direction: row;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 0 8px;
   }
 
   /* Hide separators on mobile */
@@ -1688,8 +1688,8 @@ body {
 
   /* Adjust control group spacing for mobile */
   .control-group {
-    margin: 20px 0;
-    padding: 16px;
+    margin: 0 0 16px 0;
+    padding: 20px;
   }
 
   #ui h2 {

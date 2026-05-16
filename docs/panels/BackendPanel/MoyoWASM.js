@@ -8,6 +8,7 @@ import { StructureContainer } from "../../classes/StructureContainer.js";
 import { generateID } from "../../modules/UUIDModule.js";
 import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive } from '../../modules/SymmetryEditModule.js';
 import { renderComposition } from '../StructureInfoPanel/General.js';
+import { refreshBackendTheme } from './BackendTheme.js';
 
 
 
@@ -142,6 +143,7 @@ export async function addMoyoPanel() {
         renderComposition('open');
         document.getElementById("calcResult").textContent = 'Wyckoff editor disabled';
         syncWyckoffButton();
+        refreshBackendTheme();
         return;
       }
 
@@ -151,6 +153,7 @@ export async function addMoyoPanel() {
       document.getElementById("calcResult").textContent =
         `Wyckoff editor active: ${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
       syncWyckoffButton();
+      refreshBackendTheme();
     };
 
     syncWyckoffButton();

@@ -13,17 +13,19 @@ function getRandomColor() {
 }
 
 export function updateRandomColors() {
+  console.log("Disco!!!")
   fileBrowser.selectedStructure.atoms.forEach((atom, atomIndex) => {
     const element = fileBrowser.selectedStructure.elements[atomIndex]; // Assuming `atom` has an `element` property
     const hex = getRandomColor();
     // Update atom color
-    let ok = setIndividualAtomColor(element, atomIndex, hex);
+ //   let ok = setIndividualAtomColor(element, atomIndex, hex);
+
     // Update associated bonds
     fileBrowser.selectedStructure.atomImages[atomIndex]?.forEach(imageIndex => {
-      updateSingleAtomColor(atomIndex, imageIndex, element, 1.0)
+      const hex = getRandomColor();
+      updateSingleAtomColor(atomIndex, imageIndex, element, hex)
       fileBrowser.selectedStructure.bondMapping[imageIndex]?.forEach(bondHalvIndex => {
-        const bondHex = getRandomColor();
-        updateSingleBondColor(bondHalvIndex, bondHex);
+        updateSingleBondColor(bondHalvIndex, hex);
       });
     });
   });

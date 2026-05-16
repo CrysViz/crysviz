@@ -39,36 +39,36 @@
         <div class="segmented-backend-control" id="BackendModeSwitch">
           <button data-mode="none"class="active">Viz</button>
           <button data-mode="symmetry">Symmetry</button>
-          <button data-mode="ai">AI</button>
-          <button data-mode="nep">NEP</button>
+          <button data-mode="relax">Relax</button>
+          <button data-mode="md">MD</button>
+          <button data-mode="live">Live</button>
         </div>
-        <div class="backend-control-group", id="BackendCalcPanel">
-            <h1> Choose Symmetry, AI, or NEP mode for more advanced functionalities </h1>
+        <div id="uploadSection">
+          <div class="info-button-panel">
+            <button class="info-button" id="uploadInfoButton">i</button>
+          </div>
+          <div class="input-mode-toggle" role="tablist" aria-label="Structure input mode">
+            <button type="button" class="input-mode-btn active" data-mode="file" role="tab" id="fileInputTab" aria-selected="true" aria-controls="fileInputContainer">
+              Upload File
+            </button>
+            <button type="button" class="input-mode-btn" data-mode="text" role="tab" id="textInputTab" aria-selected="false" aria-controls="textInputContainer">
+              Paste Text
+            </button>
+          </div>
+          <div id="fileInputContainer" class="input-mode-panel" role="tabpanel" aria-labelledby="fileInputTab">
+            <input type="file" id="fileInput" multiple>
+            <label for="fileInput" id="fileLabel" tabindex="0">
+              📁 Choose Files or Drag & Drop
+            </label>
+          </div>
+          <div id="textInputContainer" class="input-mode-panel" role="tabpanel" hidden aria-labelledby="textInputTab">
+            <textarea id="structureText" placeholder="Paste POSCAR/CIF content, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id"></textarea>
+            <button type="button" id="loadTextButton">Load Structure</button>
+          </div>
         </div>
+        <div class="backend-control-group" id="BackendCalcPanel"></div>
       </div>
       <div class="control-group">
-         <div class="info-button-panel">
-            <button class="info-button" id="uploadInfoButton">i</button>
-         </div>
-        <div class="input-mode-toggle" role="tablist" aria-label="Structure input mode">
-          <button type="button" class="input-mode-btn active" data-mode="file" role="tab" id="fileInputTab" aria-selected="true" aria-controls="fileInputContainer">
-            Upload File
-          </button>
-          <button type="button" class="input-mode-btn" data-mode="text" role="tab" id="textInputTab" aria-selected="false" aria-controls="textInputContainer">
-            Paste Text
-          </button>
-        </div>
-        <div id="fileInputContainer" class="input-mode-panel" role="tabpanel" aria-labelledby="fileInputTab">
-          <input type="file" id="fileInput" multiple>
-          <label for="fileInput" id="fileLabel" tabindex="0">
-            📁 Choose Files or Drag & Drop
-          </label>
-        </div>
-        <div id="textInputContainer" class="input-mode-panel" role="tabpanel" hidden aria-labelledby="textInputTab">
-          <textarea id="structureText" placeholder="Paste POSCAR/CIF content, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id"></textarea>
-          <button type="button" id="loadTextButton">Load Structure</button>
-        </div>
-
         <div class="panel">
           <table id="objectTable">
           <thead>
@@ -99,6 +99,7 @@
           <button data-mode="none" class="active">None</button>
           <button data-mode="trajectory">Trajectory</button>
           <button data-mode="comparison">Comparison</button>
+          <button data-mode="cutplanes">Cut</button>
         </div>
         <div id="TrajectoryComparisonContainer"></div>
 
