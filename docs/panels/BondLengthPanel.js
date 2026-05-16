@@ -5,6 +5,9 @@ import { updateVisualization } from '../crystal-viewer.js';
 import { createPieDot } from '../modules/ColorModule.js';
 import { clearAllHighlights } from '../modules/SelectAndHighlightModule.js';
 import { updateBondControlPanel } from './StructureInfoPanel/Bonds.js';
+import { openDoublePeriodicTable } from './PeriodicTableSelectTwoPanel.js';
+
+
 
 // Inject CSS for the double slider
 function injectDoubleSliderCSS() {
@@ -93,29 +96,54 @@ export function createBondLengthControls(targetPanel = 'bondControls') {
   // Clear existing controls
   bondControls.innerHTML = '';
 
-  // --- Reset wrapper + button ---
-  const resetWrapper = document.createElement("div");
-  resetWrapper.id = "resetBondLengthsWrapper";
-  resetWrapper.className = "buttonWrapper";
-  resetWrapper.setAttribute("aria-hidden", "true");
-  resetWrapper.style.display = "flex";
-  resetWrapper.style.justifyContent = "center";
-  resetWrapper.style.gap = "8px";
+  // --- Reset and Add Custom Bond wrapper ---
+  const controlsHeaderWrapper = document.createElement("div");
+  controlsHeaderWrapper.className = "buttonWrapper";
+  controlsHeaderWrapper.style.display = "flex";
+  controlsHeaderWrapper.style.justifyContent = "center";
+  controlsHeaderWrapper.style.gap = "8px";
+  controlsHeaderWrapper.style.marginBottom = "8px";
 
   const resetBtn = document.createElement("button");
   resetBtn.id = "resetBondLengths";
   resetBtn.className = "reset-btn";
   resetBtn.textContent = "Reset to Defaults";
   resetBtn.style.fontSize = "12px";
-  resetBtn.style.marginTop = "2px";
   resetBtn.style.height = "22px";
   resetBtn.onclick = () => {
     resetBondLengths();
     clearAllHighlights();
   };
 
-  resetWrapper.appendChild(resetBtn);
-  bondControls.appendChild(resetWrapper);
+  const addCustomBondBtn = document.createElement("button");
+  addCustomBondBtn.id = "addCustomBond";
+  addCustomBondBtn.className = "reset-btn";
+  addCustomBondBtn.textContent = "Add Custom Bond";
+  addCustomBondBtn.style.fontSize = "12px";
+  addCustomBondBtn.style.height = "22px";
+  addCustomBondBtn.onclick = () => {
+    openDoublePeriodicTable((pair) => {
+      if (!general.bondLengths[pair]) {
+        const [el1, el2] = pair.split('-');
+        const defaultRadius = (atomicRadii[el1] || 1.0) + (atomicRadii[el2] || 1.0);
+        const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
+        general.bondLengths[pair] = { min: 0, max: defaultValue };
+        general.defaultBondLengths[pair] = defaultValue;
+        general.bondVisibility[pair] = true;
+        createBondLengthControls(targetPanel);
+        updateVisualization({
+          reRenderBonds: true,
+          reRenderOther: false,
+          reRenderComposition: false,
+        });
+      }
+    });
+  };
+
+  controlsHeaderWrapper.appendChild(resetBtn);
+  controlsHeaderWrapper.appendChild(addCustomBondBtn);
+  bondControls.appendChild(controlsHeaderWrapper);
+
 
   let elements = [...fileBrowser.selectedStructure.elements];
   const uniqueElements = [...new Set(elements)];

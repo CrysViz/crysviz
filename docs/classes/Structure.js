@@ -42,6 +42,7 @@ export class Structure {
     bondhalfToAtom={}, //  Mapping from the index of a bond half to the index of the respective atom. Neccessary for color updates. 
     periodic = {}, // Accept periodic as an input
     volumetricFields = null,
+    elementColor={}
   } = {}) {
     // Mutable instance properties
     this.elements = elements;
@@ -59,6 +60,7 @@ export class Structure {
     this.bonds = bonds;           // list of bonds
     this.periodic = periodic;     // Initialize periodic
     this.atomImages = {};
+    this.elementColors = this.getDefaultElementColors();
 
     // Calculate periodic wrapped positions for atoms in-place
 
@@ -80,22 +82,22 @@ export class Structure {
     });
 
   }
+
+  getDefaultElementColors() {
+    const defaultElementColors = {};
+    this.elements.forEach(element => {
+      const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
+      defaultElementColors[element] = colorScheme[element] || 0x808080;
+    });
+    return defaultElementColors;
+  }
+
   getDefaultElementColor(element) {
     const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
     return colorScheme[element] || 0x808080;
   }
   getElementColors() {
-    const elementColors = {};
-    this.atoms.forEach((atom, index) => {
-      const element = this.elements[index];
-      if (!element) return;
-      elementColors[element] ||= [];
-      const color = colorHexToCss(atom.getColor());
-      if (!elementColors[element].includes(color)) {
-        elementColors[element].push(color);
-      }
-    });
-    return elementColors;
+    return this.elementColors;
   }
 
   getElementOpacities() {

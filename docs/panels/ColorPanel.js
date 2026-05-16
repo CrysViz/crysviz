@@ -116,6 +116,7 @@ function createColorBar(container, colormap, minValue, maxValue, type) {
       general.ForceMax = max;
       updateAtomColorsByForce();
       updateAtoms();
+      updateVisualization({updateOther:true});
 
       // If bonds should match atom colors, update them
       if (general.bondsColor == "elements" || general.bondsColor == null) {
@@ -224,7 +225,7 @@ function updateBondColorsByLength() {
   }
 }
 
-function bondLengthToColor(bondLength, minVal = general.BondMin, maxVal = general.BondMax) {
+export function bondLengthToColor(bondLength, minVal = general.BondMin, maxVal = general.BondMax) {
   let colors;
   switch (general.bondsColorMap) {
     case "batlow": colors = getBatlowColors(); break;
@@ -499,97 +500,102 @@ export function addColorPanel(target = "colorContainer") {
   atomsElementColorMapBlock.appendChild(atomsElementColorMapMenu);
   atomsMenuBlock.appendChild(atomsColorMapBlock);
 
-  function onAtomsModeChange() {
-    const mode = atomsMenu.querySelector("select").value;
-    const structure = fileBrowser.selectedStructure;
+function onAtomsModeChange() {
+  const mode = atomsMenu.querySelector("select").value;
+  const structure = fileBrowser.selectedStructure;
 
-    // Check if switching to force mode but no forces available
-    if (mode === "force") {
-      if (!structure || !structure.forces || structure.forces.length !== structure.atoms.length) {
-        alert("No force data available for this structure. Using element colors instead.");
-        atomsMenu.querySelector("select").value = "elements";
-        general.atomsColor = "elements";
-        updateAtoms();
-        return;
-      }
+  // Check if switching to force mode but no forces available
+  if (mode === "force") {
+    if (!structure || !structure.forces || structure.forces.length !== structure.atoms.length) {
+      alert("No force data available for this structure. Using element colors instead.");
+      atomsMenu.querySelector("select").value = "elements";
+      general.atomsColor = "elements";
+      updateAtoms();
+      updateVisualization({reRenderAtoms: true, reRenderBonds: true, updateOther: true});
+      return;
     }
-
-    const isForce = mode === "force";
-    const isElements = mode === "elements";
-
-    atomsElementColorMapBlock.style.display = isElements ? "block" : "none";
-    atomsColorMapBlock.style.display = isForce ? "block" : "none";
-    atomsColorBarContainer.style.display = isForce ? "block" : "none";
-
-
-    if (isForce) {
-      if (!atomsColorBar) {
-        atomsColorBar = createColorBar(
-          atomsColorBarContainer,
-          general.atomColorMap,
-          general.ForceMin,
-          general.ForceMax,
-          "atoms"
-        );
-      }
-      if (!updateAtomColorsByForce()) {
-        atomsMenu.querySelector("select").value = "elements";
-        general.atomsColor = "elements";
-        updateAtoms();
-        return;
-      }
-    } else if (isElements) {
-      // When switching to elements mode, update all atoms with current color scheme
-      if (structure && structure.atoms) {
-        structure.atoms.forEach((atom, atomIndex) => {
-          const element = structure.elements[atomIndex];
-          atom.color = structure.getDefaultElementColor(element);
-        });
-        if (groups.atomsMesh) {
-          groups.atomsMesh.instanceColor.needsUpdate = true;
-        }
-      }
-    } else {
-      atomsColorBar?.remove();
-      atomsColorBar = null;
-      // Reset to element colors
-      if (structure && structure.atoms) {
-        structure.atoms.forEach((atom, atomIndex) => {
-          const element = structure.elements[atomIndex];
-          atom.color = structure.getDefaultElementColor(element);
-        });
-        if (groups.atomsMesh) {
-          groups.atomsMesh.instanceColor.needsUpdate = true;
-        }
-      }
-    }
-
-    // If bonds should match atom colors (elements mode or default)
-    if (general.bondsColor == "elements" || general.bondsColor == null) {
-      if (structure && structure.atoms) {
-        structure.atoms.forEach((atom, atomIndex) => {
-          const color = atom.getColor();
-          if (structure.atomImages?.[atomIndex]) {
-            structure.atomImages[atomIndex].forEach((imageIndex) => {
-              if (structure.bondMapping?.[imageIndex]) {
-                structure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
-                  updateSingleBondColor(bondHalvIndex, color, true); // Pass true to overwrite
-                  const indexset = structure.bondObjectMapping[bondHalvIndex];
-                  structure.bonds[indexset[0]].color[indexset[1]] = color;
-                });
-              }
-            });
-          }
-        });
-        updateBonds();
-      }
-    }
-
-    general.atomsColor = mode;
-    updateAtoms();
-
   }
 
+  const isForce = mode === "force";
+  const isElements = mode === "elements";
+
+  atomsElementColorMapBlock.style.display = isElements ? "block" : "none";
+  atomsColorMapBlock.style.display = isForce ? "block" : "none";
+  atomsColorBarContainer.style.display = isForce ? "block" : "none";
+
+  if (isForce) {
+    if (!atomsColorBar) {
+      atomsColorBar = createColorBar(
+        atomsColorBarContainer,
+        general.atomColorMap,
+        general.ForceMin,
+        general.ForceMax,
+        "atoms"
+      );
+    }
+    if (!updateAtomColorsByForce()) {
+      atomsMenu.querySelector("select").value = "elements";
+      general.atomsColor = "elements";
+      updateAtoms();
+      updateVisualization({reRenderAtoms: true, reRenderBonds: true, updateOther: true});
+      return;
+    }
+    // ✅ FIX: Use the same update flags as element mode
+    updateAtoms();
+    updateVisualization({reRenderAtoms: true, reRenderBonds: true, updateOther: true});
+  } else if (isElements) {
+    // When switching to elements mode, update all atoms with current color scheme
+    if (structure && structure.atoms) {
+      structure.atoms.forEach((atom, atomIndex) => {
+        const element = structure.elements[atomIndex];
+        atom.color = structure.getDefaultElementColor(element);
+      });
+      if (groups.atomsMesh) {
+        groups.atomsMesh.instanceColor.needsUpdate = true;
+      }
+      updateAtoms();
+      updateVisualization({reRenderAtoms: true, reRenderBonds: true, updateOther: true});
+    }
+  } else {
+    atomsColorBar?.remove();
+    atomsColorBar = null;
+    // Reset to element colors
+    if (structure && structure.atoms) {
+      structure.atoms.forEach((atom, atomIndex) => {
+        const element = structure.elements[atomIndex];
+        atom.color = structure.getDefaultElementColor(element);
+      });
+      if (groups.atomsMesh) {
+        groups.atomsMesh.instanceColor.needsUpdate = true;
+      }
+      updateAtoms();
+      updateVisualization({reRenderAtoms: true, reRenderBonds: true, updateOther: true});
+    }
+  }
+
+  // If bonds should match atom colors (elements mode or default)
+  if (general.bondsColor == "elements" || general.bondsColor == null) {
+    if (structure && structure.atoms) {
+      structure.atoms.forEach((atom, atomIndex) => {
+        const color = atom.getColor();
+        if (structure.atomImages?.[atomIndex]) {
+          structure.atomImages[atomIndex].forEach((imageIndex) => {
+            if (structure.bondMapping?.[imageIndex]) {
+              structure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
+                updateSingleBondColor(bondHalvIndex, color, true);
+                const indexset = structure.bondObjectMapping[bondHalvIndex];
+                structure.bonds[indexset[0]].color[indexset[1]] = color;
+              });
+            }
+          });
+        }
+      });
+      updateBonds();
+    }
+  }
+
+  general.atomsColor = mode;
+}
 
   // =========================
   // BONDS
@@ -688,7 +694,7 @@ export function addColorPanel(target = "colorContainer") {
           updateSingleBondColor(bondIndex * 2 + 1, hex,true);
         });
         general.solidBondColor = hex;
-        updateBonds();
+        //updateBonds();
       });
 
       // Append the picker's DOM element
