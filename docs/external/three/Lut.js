@@ -20,7 +20,7 @@ class Lut {
 	/**
 	 * Constructs a new Lut.
 	 *
-	 * @param {('rainbow'|'cooltowarm'|'blackbody'|'grayscale')} [colormap='rainbow'] - Sets a colormap from predefined list of colormaps.
+	 * @param {('rainbow'|'cooltowarm'|'blackbody'|'grayscale'|'viridis'|'plasma'|'inferno'|'magma'|'cividis')} [colormap='rainbow'] - Sets a colormap from predefined list of colormaps.
 	 * @param {number} [count=32] - Sets the number of colors used to represent the data array.
 	 */
  	constructor( colormap, count = 32 ) {
@@ -207,11 +207,40 @@ class Lut {
 
 		alpha = MathUtils.clamp( alpha, this.minV, this.maxV );
 
+		if ( this.maxV === this.minV ) {
+
+			return this.lut[ 0 ];
+
+		}
+
 		alpha = ( alpha - this.minV ) / ( this.maxV - this.minV );
 
-		const colorPosition = Math.round( alpha * this.n );
+		if ( alpha <= this.map[ 0 ][ 0 ] ) {
 
-		return this.lut[ colorPosition ];
+			return new Color( this.map[ 0 ][ 1 ] );
+
+		}
+
+		for ( let i = 0; i < this.map.length - 1; i ++ ) {
+
+			const lowerStop = this.map[ i ];
+			const upperStop = this.map[ i + 1 ];
+
+			if ( alpha <= upperStop[ 0 ] && alpha >= lowerStop[ 0 ] ) {
+
+				const min = lowerStop[ 0 ];
+				const max = upperStop[ 0 ];
+				const t = max === min ? 0 : ( alpha - min ) / ( max - min );
+				const lowerColor = new Color().setHex( lowerStop[ 1 ], LinearSRGBColorSpace );
+				const upperColor = new Color().setHex( upperStop[ 1 ], LinearSRGBColorSpace );
+
+				return new Color().lerpColors( lowerColor, upperColor, t );
+
+			}
+
+		}
+
+		return new Color( this.map[ this.map.length - 1 ][ 1 ] );
 
 	}
 
@@ -307,10 +336,16 @@ class Lut {
 
 const ColorMapKeywords = {
 
+	'jet' : [[ 0.0, 0x00007F ], [ 0.2, 0x0000FF ], [ 0.4, 0x00FFFF ], [ 0.6, 0xFFFF00 ], [ 0.8, 0xFF0000 ], [ 1.0, 0x7F0000 ]],
 	'rainbow': [[ 0.0, 0x0000FF ], [ 0.2, 0x00FFFF ], [ 0.5, 0x00FF00 ], [ 0.8, 0xFFFF00 ], [ 1.0, 0xFF0000 ]],
 	'cooltowarm': [[ 0.0, 0x3C4EC2 ], [ 0.2, 0x9BBCFF ], [ 0.5, 0xDCDCDC ], [ 0.8, 0xF6A385 ], [ 1.0, 0xB40426 ]],
 	'blackbody': [[ 0.0, 0x000000 ], [ 0.2, 0x780000 ], [ 0.5, 0xE63200 ], [ 0.8, 0xFFFF00 ], [ 1.0, 0xFFFFFF ]],
-	'grayscale': [[ 0.0, 0x000000 ], [ 0.2, 0x404040 ], [ 0.5, 0x7F7F80 ], [ 0.8, 0xBFBFBF ], [ 1.0, 0xFFFFFF ]]
+	'grayscale': [[ 0.0, 0x000000 ], [ 0.2, 0x404040 ], [ 0.5, 0x7F7F80 ], [ 0.8, 0xBFBFBF ], [ 1.0, 0xFFFFFF ]],
+	'viridis': [[ 0.0, 0x440154 ], [ 0.25, 0x3B528B ], [ 0.5, 0x21918C ], [ 0.75, 0x5EC962 ], [ 1.0, 0xFDE725 ]],
+	'plasma': [[ 0.0, 0x0D0887 ], [ 0.25, 0x7E03A8 ], [ 0.5, 0xCC4778 ], [ 0.75, 0xF89441 ], [ 1.0, 0xF0F921 ]],
+	'inferno': [[ 0.0, 0x000004 ], [ 0.25, 0x420A68 ], [ 0.5, 0x932667 ], [ 0.75, 0xDD513A ], [ 1.0, 0xFCFFA4 ]],
+	'magma': [[ 0.0, 0x000004 ], [ 0.25, 0x3B0F70 ], [ 0.5, 0x8C2981 ], [ 0.75, 0xDE4968 ], [ 1.0, 0xFEF98D ]],
+	'cividis': [[ 0.0, 0x00224E ], [ 0.25, 0x35456C ], [ 0.5, 0x666970 ], [ 0.75, 0xA98E52 ], [ 1.0, 0xFDEA45 ]]
 
 };
 

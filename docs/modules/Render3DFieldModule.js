@@ -31,16 +31,7 @@ function updateIsosurface(iso, useAbsoluteIsoValue = false) {
     return;
   }
 
-<<<<<<< HEAD
-    mc.update();
-
-    // MarchingCubes is already a Mesh with geometry built-in
-    // Compute normals for proper lighting
-    mc.geometry.computeVertexNormals();
-  }
-=======
   groups.isosurfaceGroup.updateMesh(iso, useAbsoluteIsoValue);
->>>>>>> consolidated_marching_cubes
 }
 
 export function createSlice(field, axis = "z", index = null) {

@@ -15,9 +15,9 @@ const DEFAULT_COLORMAP_RESOLUTION = 256;
 //  Colormap helpers
 // ---------------------------------------------------------------------------
 
-// Shared cool-to-warm LUT (Three.js addon). Range is configured per-call in
-// updateColorMap() before the vertex loop.
-const _lut = new Lut('cooltowarm', 256);
+function createPlaneLut(colormap = 'cooltowarm') {
+  return new Lut(colormap, 256);
+}
 
 // ---------------------------------------------------------------------------
 //  Cell-plane intersection helpers
@@ -329,8 +329,10 @@ export class Plane extends THREE.Group {
    *                                                  or array of THREE.Vector3
    * @param {number}               [opts.resolution=256] – colormap texture resolution
    * @param {string}               [opts.mode]      – initial vis mode ('None' | 'Field')
+  * @param {object}               [opts.field]     – initial field data for 'Field' mode
+  * @param {string}               [opts.colormap]  – LUT name for field coloring
    */
-  constructor({ normal, d = 0, cell, resolution = DEFAULT_COLORMAP_RESOLUTION, mode } = {}) {
+  constructor({ normal, d = 0, cell, resolution = DEFAULT_COLORMAP_RESOLUTION, mode, field, colormap = 'cooltowarm' } = {}) {
     // ── Normalise the plane normal ──────────────────────────────────────────
     const n = normal
       ? toVec3(normal).normalize()
@@ -364,11 +366,14 @@ export class Plane extends THREE.Group {
 
     /** The clipped planar surface mesh — first child of this Group. */
     this._planeMesh = new THREE.Mesh(geometry, Plane._makeNoneMaterial(clippingPlanes));
+    this._planeMesh.renderOrder = 0; // render after opaque structures to reduce blending artifacts
     this.add(this._planeMesh);
 
     this._resolution     = resolution;
     this._mode           = null;
     this._field          = null;
+    this._colormap       = colormap;
+    this._lut            = createPlaneLut(colormap);
     /** THREE.Plane[] for the 6 cell faces — applied to every material. */
     this._clippingPlanes = clippingPlanes ?? [];
 
@@ -389,7 +394,10 @@ export class Plane extends THREE.Group {
     this._border = Plane._makeBorderMesh(polygon);
     this.add(this._border);
 
+    this.setField(field);
+  this.setColormap(colormap);
     this.setMode(mode ?? PLANE_VIS_NONE);
+    
   }
 
   // ── mesh / geometry / material accessors ─────────────────────────────────
@@ -414,10 +422,13 @@ export class Plane extends THREE.Group {
     const mat = new THREE.MeshBasicMaterial({
       color:       0x8c8c99,
       transparent: true,
-      opacity:     0.35,
+      depthWrite: false,
+      opacity:     0.70,
+      depthTest: true,
+      //alphaHash: true, // helps with sorting issues when multiple planes overlap
       side:        THREE.DoubleSide,
       clippingPlanes: clippingPlanes,
-      clipShadows: true
+      //clipShadows: true,
     });
     return mat;
   }
@@ -481,13 +492,9 @@ export class Plane extends THREE.Group {
 
     switch (mode) {
       case PLANE_VIS_FIELD:
-        if (!this.geometry.getAttribute('color')) {
-          // No vertex colours yet; show grey until setFieldZValues is called
-          this.material = Plane._makeNoneMaterial(this._clippingPlanes);
-        } else {
-          this.material = Plane._makeFieldMaterial(this._clippingPlanes);
-        }
+        this.material = Plane._makeFieldMaterial(this._clippingPlanes);
         this._border.visible = false;
+        this.updateColorMap(); // populate vertex colors from field values
         break;
 
       case PLANE_VIS_NONE:
@@ -507,6 +514,15 @@ export class Plane extends THREE.Group {
       console.warn('Plane.setField: argument is not a Field instance');
     }
     this._field = field;
+  }
+
+  setColormap(colormap = 'cooltowarm') {
+    this._colormap = colormap || 'cooltowarm';
+    this._lut = createPlaneLut(this._colormap);
+
+    if (this._mode === PLANE_VIS_FIELD) {
+      this.updateColorMap();
+    }
   }
 
   /**
@@ -533,54 +549,26 @@ export class Plane extends THREE.Group {
     // Configure LUT range once — keep zero at the midpoint for diverging data
     const minValue = this._field?.minValue ?? -1;
     const maxValue = this._field?.maxValue ?? 1;
-    _lut.setMin(minValue).setMax(maxValue);
+    this._lut.setMin(minValue).setMax(maxValue);
 
     for (let i = 0; i < positions.array.length; i += 3) {
       const vec = new THREE.Vector3(positions.array[i], positions.array[i + 1], positions.array[i + 2]);
       // Convert Cartesian position to relative (fractional) coordinates
       // in the voxel basis: vec = u*a + v*b + w*c  ->  [u,v,w]
       const voxelBasis = this._field?.voxel;
-      
+      if (!voxelBasis) continue;
+
       const [a, b, c] = voxelBasis.map(toVec3);
       const basisInv = new THREE.Matrix3()
-        .setFromMatrix4(new THREE.Matrix4().makeBasis(a, b, c))
+        .setFromMatrix4(new THREE.Matrix4().makeBasis(a.multiplyScalar(this._field.nx), b.multiplyScalar(this._field.ny), c.multiplyScalar(this._field.nz)))
         .invert();
-      vec.applyMatrix3(basisInv);
+      vec.applyMatrix3(basisInv); // get fractional coordinates in the voxel basis
+      vec.x = (vec.x % 1 + 1) % 1; // wrap fractional coordinates to [0,1]
+      vec.y = (vec.y % 1 + 1) % 1;
+      vec.z = (vec.z % 1 + 1) % 1;
 
-      const ind_x = vec.x * this._field.nx;
-      const ind_y = vec.y * this._field.ny;
-      const ind_z = vec.z * this._field.nz;
-      const cubeind_x = Math.floor(ind_x);
-      const cubeind_y = Math.floor(ind_y);
-      const cubeind_z = Math.floor(ind_z);
-      const pos_x = ind_x - cubeind_x;
-      const pos_y = ind_y - cubeind_y;
-      const pos_z = ind_z - cubeind_z;
-
-      const values = [
-        [
-          [this._field.getValueAt(cubeind_x, cubeind_y, cubeind_z),
-            this._field.getValueAt(cubeind_x, cubeind_y, (cubeind_z + 1) % this._field.nz)],
-          [this._field.getValueAt(cubeind_x, (cubeind_y + 1) % this._field.ny, cubeind_z),
-            this._field.getValueAt(cubeind_x, (cubeind_y + 1) % this._field.ny, (cubeind_z + 1) % this._field.nz)]
-        ],
-        [
-          [this._field.getValueAt((cubeind_x + 1) % this._field.nx, cubeind_y, cubeind_z),
-            this._field.getValueAt((cubeind_x + 1) % this._field.nx, cubeind_y, (cubeind_z + 1) % this._field.nz)],
-          [this._field.getValueAt((cubeind_x + 1) % this._field.nx, (cubeind_y + 1) % this._field.ny, cubeind_z),
-            this._field.getValueAt((cubeind_x + 1) % this._field.nx, (cubeind_y + 1) % this._field.ny, (cubeind_z + 1) % this._field.nz)]
-        ]
-      ];
-
-      // Trilinear interpolation
-      const c00 = values[0][0][0] * (1 - pos_x) + values[1][0][0] * pos_x;
-      const c01 = values[0][0][1] * (1 - pos_x) + values[1][0][1] * pos_x;
-      const c10 = values[0][1][0] * (1 - pos_x) + values[1][1][0] * pos_x;
-      const c11 = values[0][1][1] * (1 - pos_x) + values[1][1][1] * pos_x;
-      const c0 = c00 * (1 - pos_y) + c10 * pos_y;
-      const c1 = c01 * (1 - pos_y) + c11 * pos_y;
-      const interp = c0 * (1 - pos_z) + c1 * pos_z;
-      const col = _lut.getColor(interp);
+      const interp = this._field.getValueAtPoint(vec.x, vec.y, vec.z);
+      const col = this._lut.getColor(interp);
 
       colArray[i    ] = col.r;
       colArray[i + 1] = col.g;

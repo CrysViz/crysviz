@@ -1,5 +1,5 @@
 import { measurements, app, fileBrowser } from '../store.js';
-import { Plane, getPlaneDefinitionNormalAndD, CartesianParamsToMillerInds } from '../classes/Plane.js';
+import { Plane, getPlaneDefinitionNormalAndD, CartesianParamsToMillerInds, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../classes/Plane.js';
 import { fieldBrowser } from './FieldPanel.js';
 
 export const planesData = {
@@ -48,7 +48,7 @@ function removePlaneMesh(structure, planeDef) {
   meshMap.delete(planeDef);
 }
 
-function upsertPlaneMesh(structure, planeDef) {
+function replacePlaneMesh(structure, planeDef) {
   if (!structure || !planeDef || !app.scene) return;
   removePlaneMesh(structure, planeDef);
 
@@ -68,6 +68,8 @@ function upsertPlaneMesh(structure, planeDef) {
     d,
     cell: lattice,
     mode: planeDef.visualization || 'None',
+    field: planeDef.field || null,
+    colormap: planeDef.colormap || 'cooltowarm',
   });
 
   planeMesh.visible = Boolean(planesData.showPlanes && planeDef.enabled);
@@ -99,7 +101,7 @@ function refreshCurrentStructurePlanesInScene() {
   if (!structure) return;
 
   clearRenderedPlanesForStructure(structure);
-  structure.planes.forEach(planeDef => upsertPlaneMesh(structure, planeDef));
+  structure.planes.forEach(planeDef => replacePlaneMesh(structure, planeDef));
 }
 
 export function syncPlanesForSelectedStructure() {
@@ -266,7 +268,7 @@ function updateRangeDisplayAndPlane(changedInput = null) {
 
   plane.colormapMin = minValue;
   plane.colormapMax = maxValue;
-  upsertPlaneMesh(structure, plane);
+  replacePlaneMesh(structure, plane);
 }
 
 export function addPlanesPanel(target = "PlanesContainer") {
@@ -408,10 +410,16 @@ export function addPlanesPanel(target = "PlanesContainer") {
             <div class="planes-field-control">
             <label for="planesColormapSelect">Colormap:</label>
             <select id="planesColormapSelect" class="planes-select planes-full-width" disabled>
+              <option value="jet">Jet</option>
               <option value="cooltowarm">Cool to Warm</option>
               <option value="viridis">Viridis</option>
               <option value="plasma">Plasma</option>
               <option value="inferno">Inferno</option>
+              <option value="magma">Magma</option>
+              <option value="cividis">Cividis</option>
+              <option value="rainbow">Rainbow</option>
+              <option value="blackbody">Blackbody</option>
+              <option value="grayscale">Grayscale</option>
             </select>
           </div>
           </div>
@@ -448,7 +456,7 @@ function setupPlanesEvents(container) {
       const plane = structure.planes[selectedPlaneIndex];
       if (plane) {
         plane.enabled = e.target.checked;
-        upsertPlaneMesh(structure, plane);
+        replacePlaneMesh(structure, plane);
       }
     }
   });
@@ -494,8 +502,18 @@ function setupPlanesEvents(container) {
       
       // Update field assignment
       const selectedFieldLabel = e.target.value;
+      
       plane.fieldLabel = selectedFieldLabel;
-      upsertPlaneMesh(structure, plane);
+      if (selectedFieldLabel) {
+        plane.visualization = PLANE_VIS_FIELD;
+        const selectedField = fieldBrowser.availableFields.find(f => f.label === selectedFieldLabel);
+        plane.field = selectedField || null;
+      }
+      else {
+        plane.visualization = PLANE_VIS_NONE;
+        plane.field = null;
+      }
+      replacePlaneMesh(structure, plane);
       renderPlanesTable();
     });
   }
@@ -508,7 +526,7 @@ function setupPlanesEvents(container) {
       const plane = structure.planes[selectedPlaneIndex];
       if (!plane) return;
       plane.colormap = e.target.value;
-      upsertPlaneMesh(structure, plane);
+      replacePlaneMesh(structure, plane);
     });
   }
 
@@ -559,14 +577,14 @@ function addPlaneFromCurrentInputs() {
     label:         '(1 1 1)',
     visualization: 'None',
     cutMode:       'None',
-    colormap:      'cooltowarm',
+    colormap:      'jet',
     colormapMin:   0,
     colormapMax:   100,
-    fieldLabel:    null,
+    field:        null,
   };
 
   structure.planes.push(newPlane);
-  upsertPlaneMesh(structure, newPlane);
+  replacePlaneMesh(structure, newPlane);
 
   selectedPlaneIndex = structure.planes.length - 1;
   renderPlanesTable();
@@ -659,7 +677,7 @@ function loadSelectedPlaneParameters() {
 
   // Load colormap settings
   if (document.getElementById('planesColormapSelect')) {
-    document.getElementById('planesColormapSelect').value = plane.colormap || 'cooltowarm';
+    document.getElementById('planesColormapSelect').value = plane.colormap || 'jet';
   }
   if (document.getElementById('planesColormapRangeMin')) {
     document.getElementById('planesColormapRangeMin').value = plane.colormapMin !== undefined ? plane.colormapMin : 0;
@@ -697,7 +715,7 @@ function updateSelectedPlaneFromInputs() {
   }
 
   syncDerivedPlaneInputs(plane.params, structure.lattice);
-  upsertPlaneMesh(structure, plane);
+  replacePlaneMesh(structure, plane);
   renderPlanesTable();
 }
 
@@ -761,8 +779,8 @@ function updateFieldSelectionDropdown() {
   // Select the field if one is assigned to the current plane
   if (structure && selectedPlaneIndex !== null && selectedPlaneIndex >= 0) {
     const plane = structure.planes[selectedPlaneIndex];
-    if (plane && plane.fieldLabel) {
-      select.value = plane.fieldLabel;
+    if (plane && plane.field && plane.field.label) {
+      select.value = plane.field.label;
     }
   }
 
@@ -908,7 +926,7 @@ function renderPlanesTable() {
 
     const { hklStr, uvwdStr } = getPlaneTableDisplayParams(plane, lattice);
     const { hklValues, uvwdValues, dValue } = getPlaneTableDisplayData(plane, lattice);
-    const rawField = plane.fieldLabel || '—';
+    const rawField = plane.field?.label || '—';
     const fieldDisplay = rawField !== '—' && rawField.length > 15
       ? rawField.slice(0, 14) + '…'
       : rawField;
@@ -951,7 +969,7 @@ function renderPlanesTable() {
       const plane = s?.planes?.[idx];
       if (!plane) return;
       plane.enabled = e.target.checked;
-      upsertPlaneMesh(s, plane);
+      replacePlaneMesh(s, plane);
     });
   });
 
