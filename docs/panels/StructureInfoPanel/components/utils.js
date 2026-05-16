@@ -1,0 +1,78 @@
+import { fileBrowser, structureShip } from '../../../store.js';
+import { updateVisualization } from '../../../crystal-viewer.js';
+import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomCutPlaneImmunity } from '../../../modules/AtomsFracUpdateModule.js';
+import { updateSingleBondColor, updateBonds } from '../../../modules/BondsFracUpdateModule.js';
+import { applyWyckoffOrbitPosition } from '../../../modules/SymmetryEditModule.js';
+
+export function clampOpacity(value) {
+  const opacity = Number(value);
+  if (!Number.isFinite(opacity)) return 1;
+  return Math.max(0, Math.min(1, opacity));
+}
+
+export function getElementAtomIndices(element) {
+  const atomIndices = [];
+  fileBrowser.selectedStructure.elements.forEach((currentElement, index) => {
+    if (currentElement === element) {
+      atomIndices.push(index);
+    }
+  });
+  return atomIndices;
+}
+
+export function getElementOpacityValues(element) {
+  return Array.from(new Set(
+    getElementAtomIndices(element).map((atomIndex) => {
+      const atom = fileBrowser.selectedStructure.atoms[atomIndex];
+      return atom.getOpacity?.() ?? atom.opacity ?? 1;
+    })
+  ));
+}
+
+export function setSwatchOpacity(swatch, opacity) {
+  swatch.style.opacity = `${clampOpacity(opacity)}`;
+}
+
+export function areAllAtomsCutPlaneImmune(atomIndices) {
+  return atomIndices.length > 0 && atomIndices.every((atomIndex) => !!fileBrowser.selectedStructure.atoms[atomIndex].cutPlaneImmune);
+}
+
+export function setCutPlaneImmunityForAtoms(atomIndices, immune) {
+  atomIndices.forEach((atomIndex) => {
+    const atom = fileBrowser.selectedStructure.atoms[atomIndex];
+    atom.setCutPlaneImmune(immune);
+    fileBrowser.selectedStructure.atomImages[atomIndex]?.forEach((imageIndex) => {
+      updateSingleAtomCutPlaneImmunity(imageIndex, immune);
+    });
+  });
+}
+
+export function updateAtomCoordinates(atomIndex, newCoords) {
+  if (!fileBrowser.selectedStructure) {
+    console.error("updateAtomCoordinates: selected structure not found");
+    return;
+  }
+  if (atomIndex >= fileBrowser.selectedStructure.atoms.length) {
+    console.error('Invalid atom index or structure data');
+    return;
+  }
+
+  const orbit = fileBrowser.selectedStructure.symmetry?.mode === 'wyckoff'
+    ? fileBrowser.selectedStructure.symmetry.orbitGroups?.find((group) => group.atomIndices.includes(atomIndex))
+    : null;
+  if (orbit) {
+    applyWyckoffOrbitPosition(orbit.representativeIndex, newCoords);
+    return;
+  }
+
+  fileBrowser.selectedStructure.atoms[atomIndex].position = [...newCoords];
+  structureShip.container[fileBrowser.selectedRowIndex].structures[fileBrowser.stepInput].atoms[atomIndex].position = [...newCoords];
+
+  updateVisualization({
+    reRenderAtoms: true,
+    reRenderBonds: true,
+    reRenderLattice: false,
+    reRenderOther: true,
+    reRenderComposition: "open",
+  });
+}

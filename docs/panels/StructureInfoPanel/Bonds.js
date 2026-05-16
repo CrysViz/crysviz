@@ -5,7 +5,15 @@ import { createColorPicker } from '../../modules/ColorPickerModule.js';
 import * as THREE from '../../external/three/three.module.js';
 import {fracToCart} from '../../modules/LatticeModule.js'
 import {clearAllHighlights} from '../../modules/SelectAndHighlightModule.js';
+import { getAtomColor } from '../../modules/ColorModule.js';
 
+// Helper: Ensure color is always a valid CSS hex string
+function safeColor(color) {
+  if (!color || color === '#') return '#808080';
+  if (typeof color === 'number') return `#${color.toString(16).padStart(6, '0')}`;
+  if (typeof color === 'string' && !color.startsWith('#')) return `#${color}`;
+  return color;
+}
 
 let placeholderMessage;
 let detailsContainer;
@@ -56,6 +64,46 @@ export function createSpecificBondControl(containerId) {
   updateBondControlPanel();
 }
 
+// Helper: get bond colors based on atom species
+function getBondColors(bondMeshes) {
+  if (!Array.isArray(bondMeshes) || bondMeshes.length === 0) {
+    return ["#ffffff"]; // Default to white
+  }
+
+  const firstBond = bondMeshes[0];
+  const [i, j] = firstBond.name.split("-").map(Number);
+  const structure = fileBrowser.selectedStructure;
+  const elements = structure.elements;
+
+  const el1 = elements[i];
+  const el2 = elements[j];
+
+  // Only show element color if:
+  // 1. Same species (el1 === el2)
+  // 2. All atoms of that species have the same color
+  if (el1 === el2) {
+    const atomIndices = elements
+      .map((el, idx) => el === el1 ? idx : -1)
+      .filter(idx => idx !== -1);
+
+    if (atomIndices.length > 0) {
+      const firstColor = safeColor(getAtomColor(atomIndices[0]));
+      const allSameColor = atomIndices.every(idx =>
+        safeColor(getAtomColor(idx)) === firstColor
+      );
+
+      if (allSameColor) {
+        return [firstColor]; // Single color for same species
+      }
+    }
+  }
+
+  // Default to white for:
+  // - Different species
+  // - Same species but multiple colors
+  return ["#ffffff"];
+}
+
 // Update the bond panel based on selected bonds
 export function updateBondControlPanel(selectedBond) {
   if (!detailsContainer || !placeholderMessage) return;
@@ -76,7 +124,7 @@ export function updateBondControlPanel(selectedBond) {
   // Always treat bonds as an array
   const bonds = Array.isArray(bond) ? bond : [bond];
 
-  // Get unique colors
+  // Get colors based on atom species
   const colors = getBondColors(bonds);
 
   // Wrapper for dot + text + picker
@@ -87,7 +135,6 @@ export function updateBondControlPanel(selectedBond) {
 
   // Row: dot + text
   const row = document.createElement("div");
-  //row.style.display = "flex";
   row.style.alignItems = "center";
   row.style.gap = "6px";
 
@@ -96,18 +143,17 @@ export function updateBondControlPanel(selectedBond) {
   BondInfo.style.alignItems = "center";
   BondInfo.style.gap = "20px";
 
-
   const Info = document.createElement("div");
   Info.textContent = getBondInfo(bonds[0].name);
-  Info.className = "BondInfoText"
-  Info.Id = "BondInfoText"
-  Info.style.fontSize="14px";
-  Info.style.marginTop= "3px";
+  Info.className = "BondInfoText";
+  Info.id = "BondInfoText";
+  Info.style.fontSize = "14px";
+  Info.style.marginTop = "3px";
+  Info.style.color = colors[0] === "#ffffff" ? "#ffffff" : "#000000"; // ✅ Black text for colored background, white for white
 
   const dot = createPieDot(colors, 20);
   dot.style.cursor = "pointer";
-
-  const placeholderText = document.createElement("div");
+  dot.style.backgroundColor = colors[0] === "#ffffff" ? "rgba(255,255,255,0.2)" : colors[0];
 
   BondInfo.appendChild(dot);
   BondInfo.appendChild(Info);
@@ -122,12 +168,14 @@ export function updateBondControlPanel(selectedBond) {
   pickerPanel.style.background = "#2a2a2a";
   pickerPanel.style.borderRadius = "4px";
   pickerPanel.style.boxShadow = "0 2px 6px rgba(0,0,0,0.5)";
-  pickerPanel.classList.add("picker-panel"); // for document click listener
+  pickerPanel.classList.add("picker-panel");
 
   // Color picker
   const picker = createColorPicker(colors[0], (hex) => {
-    updateBondColor(bonds, hex); // update all selected bonds
-    updatePieDot(dot,[hex])
+    updateBondColor(bonds, hex);
+    updatePieDot(dot, [hex]);
+    Info.style.color = hex === "#ffffff" ? "#ffffff" : "#000000";
+    dot.style.backgroundColor = hex === "#ffffff" ? "rgba(255,255,255,0.2)" : hex;
   });
 
   pickerPanel.appendChild(picker.element);
@@ -143,22 +191,6 @@ export function updateBondControlPanel(selectedBond) {
   controlWrapper.appendChild(row);
   controlWrapper.appendChild(pickerPanel);
   detailsContainer.appendChild(controlWrapper);
-}
-
-// Helper: get unique colors of bonds
-function getBondColors(bondMeshes) {
-  if (!Array.isArray(bondMeshes)) return [];
-
-  const colorsSet = new Set();
-
-  bondMeshes.forEach((bond) => {
-    if (bond?.material?.color) {
-      const hex = `#${bond.material.color.getHexString()}`;
-      colorsSet.add(hex);
-    }
-  });
-
-  return Array.from(colorsSet);
 }
 
 // Helper: update color of all selected bonds
@@ -187,24 +219,21 @@ document.addEventListener("click", (e) => {
   });
 });
 
-
-
-
 function getBondInfo(key) {
   const [i, j] = key.split("-").map(Number);
-  let elements = [...fileBrowser.selectedStructure.elements]
+  let elements = [...fileBrowser.selectedStructure.elements];
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-  const el1 = elements[i]
-  const el2 = elements[j]
-  
-  const pos1 = fracToCart([positions[i]],lattice)[0]
-  const pos2 = fracToCart([positions[j]],lattice)[0]
+  const el1 = elements[i];
+  const el2 = elements[j];
+
+  const pos1 = fracToCart([positions[i]], lattice)[0];
+  const pos2 = fracToCart([positions[j]], lattice)[0];
   const p1 = new THREE.Vector3(pos1[0], pos1[1], pos1[2]);
   const p2 = new THREE.Vector3(pos2[0], pos2[1], pos2[2]);
   const dist = distance(p1, p2).toFixed(3);
 
-  return `${el1}-${el2} ${dist} Å`
+  return `${el1}-${el2} ${dist} Å`;
 }
 
 function distance(pos1, pos2) {
@@ -213,13 +242,3 @@ function distance(pos1, pos2) {
   const dz = pos1.z - pos2.z;
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
-
-  
-
-
-
-
-
-
-
-
