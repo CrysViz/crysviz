@@ -1,32 +1,99 @@
-import { app, groups, fileBrowser,general,mode, polyStyle } from '../store.js';
-
-import {atomicRadii} from '../defaults/radii_defaults.js'
-
-
-
-import {getBondCutoff} from '../modules/BondsFracUpdateModule.js';
+import { app, groups, fileBrowser, general, mode, polyStyle } from '../store.js';
+import { atomicRadii } from '../defaults/radii_defaults.js';
+import { getBondCutoff } from '../modules/BondsFracUpdateModule.js';
 import { updateVisualization } from '../crystal-viewer.js';
-import {createPieDot} from '../modules/ColorModule.js';
-import {clearAllHighlights} from '../modules/SelectAndHighlightModule.js';
-import {updateBondControlPanel} from './StructureInfoPanel/Bonds.js'
+import { createPieDot } from '../modules/ColorModule.js';
+import { clearAllHighlights } from '../modules/SelectAndHighlightModule.js';
+import { updateBondControlPanel } from './StructureInfoPanel/Bonds.js';
+
+// Inject CSS for the double slider
+function injectDoubleSliderCSS() {
+  const style = document.createElement('style');
+  style.textContent = `
+    .bond-range-slider {
+      position: relative;
+      width: 200px;
+      height: 16px;
+      margin: 0 8px;
+    }
+    .bond-range-slider .background-track {
+      position: absolute;
+      height: 4px;
+      background: rgba(150, 150, 150, 0.5);
+      border-radius: 2px;
+      top: 50%;
+      left: 0;
+      right: 0;
+      transform: translateY(-50%);
+      z-index: -2;
+      maring: 1px
+    }
+    .bond-range-slider .range-track {
+      position: absolute;
+      height: 4px;
+      background: rgba(6, 140, 50, 0.8);
+      border-radius: 2px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: -1;
+    }
+    .bond-range-slider input[type="range"] {
+      position: absolute;
+      width: 100%;
+      height: 16px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+      pointer-events: none;
+    }
+    .bond-range-slider input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      border: 1px solid #ccc;
+      cursor: pointer;
+      pointer-events: auto;
+      margin-top: -6px;
+    }
+    .bond-range-slider input[type="range"]::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      border: 1px solid #ccc;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+  `;
+  document.head.appendChild(style);
+}
+injectDoubleSliderCSS();
+
 export function resetBondLengths() {
   for (const pair in general.defaultBondLengths) {
-    general.bondLengths[pair] = general.defaultBondLengths[pair];
+    const defaultValue = general.defaultBondLengths[pair];
+    general.bondLengths[pair] = { min: 0, max: defaultValue };
   }
   createBondLengthControls();
-  updateVisualization({reRenderOther: false, reRenderComposition: false});
+  updateVisualization({ reRenderOther: false, reRenderComposition: false });
 }
 
-export function createBondLengthControls(targetPanel='bondControls') {
+export function createBondLengthControls(targetPanel = 'bondControls') {
   const bondControls = document.getElementById(targetPanel);
-  if (!bondControls) { 
-    console.warn(`Could not find ${targetPanel}`)
+  if (!bondControls) {
+    console.warn(`Could not find ${targetPanel}`);
     return;
   }
 
   if (!fileBrowser.selectedStructure) return;
 
-    // --- Reset wrapper + button ---
+  // Clear existing controls
+  bondControls.innerHTML = '';
+
+  // --- Reset wrapper + button ---
   const resetWrapper = document.createElement("div");
   resetWrapper.id = "resetBondLengthsWrapper";
   resetWrapper.className = "buttonWrapper";
@@ -40,17 +107,16 @@ export function createBondLengthControls(targetPanel='bondControls') {
   resetBtn.className = "reset-btn";
   resetBtn.textContent = "Reset to Defaults";
   resetBtn.style.fontSize = "12px";
-  resetBtn.style.marginTop= "2px";
-  resetBtn.style.height ="22px";
+  resetBtn.style.marginTop = "2px";
+  resetBtn.style.height = "22px";
   resetBtn.onclick = () => {
     resetBondLengths();
     clearAllHighlights();
-
-   };
+  };
 
   resetWrapper.appendChild(resetBtn);
-
   bondControls.appendChild(resetWrapper);
+
   let elements = [...fileBrowser.selectedStructure.elements];
   const uniqueElements = [...new Set(elements)];
   const pairs = [];
@@ -61,11 +127,15 @@ export function createBondLengthControls(targetPanel='bondControls') {
       const pair = uniqueElements[i] + '-' + uniqueElements[j];
       pairs.push(pair);
 
+      // Initialize bondLengths as { min: 0, max: defaultValue }
       if (!general.bondLengths[pair]) {
         const defaultRadius = (atomicRadii[uniqueElements[i]] || 1.0) + (atomicRadii[uniqueElements[j]] || 1.0);
         const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
-        general.bondLengths[pair] = defaultValue;
-        general.defaultBondLengths[pair] = defaultValue; // Store default
+        general.bondLengths[pair] = { min: 0, max: defaultValue };
+        general.defaultBondLengths[pair] = defaultValue; // Store default max
+      } else if (typeof general.bondLengths[pair] === 'number') {
+        // Migrate old single-value format to new { min, max } format
+        general.bondLengths[pair] = { min: 0, max: general.bondLengths[pair] };
       }
 
       // Initialize bond visibility if not set
@@ -101,8 +171,8 @@ export function createBondLengthControls(targetPanel='bondControls') {
     checkboxLabel.style.color = '#ccc';
     checkboxLabel.style.margin = '0';
 
-    let dot
-    let curr_bond_colors = ["#ccc","#fff"]
+    let dot;
+    let curr_bond_colors = ["#ccc", "#fff"];
     if (curr_bond_colors.length > 1) {
       dot = createPieDot(curr_bond_colors, 50);
       dot.classList.add('dot');
@@ -122,7 +192,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
     const valueSpan = document.createElement('span');
     valueSpan.className = 'slider-value';
-    valueSpan.textContent = `${general.bondLengths[pair].toFixed(2)} Å`;
+    valueSpan.textContent = `${general.bondLengths[pair].min.toFixed(2)} - ${general.bondLengths[pair].max.toFixed(2)} Å`;
     label.appendChild(valueSpan);
 
     const controlsRow = document.createElement('div');
@@ -130,42 +200,87 @@ export function createBondLengthControls(targetPanel='bondControls') {
     controlsRow.style.gap = '8px';
     controlsRow.style.alignItems = 'center';
 
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.min = '0.0';
-    slider.max = '6.0';
-    slider.step = '0.1' ;
-    slider.value = general.bondLengths[pair];
-    slider.style.flex = '1';
+    // Min value display
+    const minValueSpan = document.createElement('span');
+    minValueSpan.className = 'slider-value';
+    minValueSpan.textContent = `${general.bondLengths[pair].min.toFixed(2)} Å`;
+    minValueSpan.style.minWidth = '50px';
+    minValueSpan.style.textAlign = 'right';
 
-    const textInput = document.createElement('input');
-    textInput.type = 'number';
-    textInput.min = '0.0';
-    textInput.max = '6.0';
-    textInput.step = '0.01';
-    textInput.value = general.bondLengths[pair];
-    textInput.style.width = '70px';
-    textInput.style.padding = '4px';
-    textInput.style.background = 'rgba(255,255,255,0.1)';
-    textInput.style.border = '1px solid rgba(255,255,255,0.2)';
-    textInput.style.borderRadius = '4px';
-    textInput.style.color = '#fff';
+    // Max value display
+    const maxValueSpan = document.createElement('span');
+    maxValueSpan.className = 'slider-value';
+    maxValueSpan.textContent = `${general.bondLengths[pair].max.toFixed(2)} Å`;
+    maxValueSpan.style.minWidth = '50px';
+    maxValueSpan.style.textAlign = 'left';
 
-    function updateValue(newValue) {
-      const val = parseFloat(newValue);
-      general.bondLengths[pair] = val;
+    // Double slider container
+    const sliderContainer = document.createElement('div');
+    sliderContainer.className = 'bond-range-slider';
 
-      // Update display text with special message for disabled bonds
-      if (val <= 0.01) {
-        valueSpan.textContent = 'Disabled';
-        valueSpan.style.color = '#ff6666';
-      } else {
-        valueSpan.textContent = `${val.toFixed(3)} Å`;
-        valueSpan.style.color = 'rgba(6, 140, 50, 1)';
+    // Background track (light grey)
+    const backgroundTrack = document.createElement('div');
+    backgroundTrack.className = 'background-track';
+    sliderContainer.appendChild(backgroundTrack);
+
+    // Selected range track (green)
+    const track = document.createElement('div');
+    track.className = 'range-track';
+    track.style.left = '0%';
+    track.style.width = '100%';
+    sliderContainer.appendChild(track);
+
+    // Min slider
+    const minSlider = document.createElement('input');
+    minSlider.type = 'range';
+    minSlider.min = '0';
+    minSlider.max = '6';
+    minSlider.step = '0.1';
+    minSlider.value = general.bondLengths[pair].min;
+    minSlider.style.zIndex = '2';
+    sliderContainer.appendChild(minSlider);
+
+    // Max slider
+    const maxSlider = document.createElement('input');
+    maxSlider.type = 'range';
+    maxSlider.min = '0';
+    maxSlider.max = '6';
+    maxSlider.step = '0.1';
+    maxSlider.value = general.bondLengths[pair].max;
+    maxSlider.style.zIndex = '1';
+    sliderContainer.appendChild(maxSlider);
+
+    // Update function for both sliders
+    function updateBondRange() {
+      let minVal = parseFloat(minSlider.value);
+      let maxVal = parseFloat(maxSlider.value);
+
+      // Ensure min <= max
+      if (minVal > maxVal) {
+        if (this === minSlider) {
+          minVal = maxVal;
+          minSlider.value = maxVal;
+        } else {
+          maxVal = minVal;
+          maxSlider.value = minVal;
+        }
       }
 
-      slider.value = val;
-      textInput.value = val;
+      // Update the track position and width
+      const minPercent = (minVal / 6) * 100;
+      const maxPercent = (maxVal / 6) * 100;
+      track.style.left = `${minPercent}%`;
+      track.style.width = `${maxPercent - minPercent}%`;
+
+      // Update displayed values
+      minValueSpan.textContent = `${minVal.toFixed(2)} Å`;
+      maxValueSpan.textContent = `${maxVal.toFixed(2)} Å`;
+      valueSpan.textContent = `${minVal.toFixed(2)} - ${maxVal.toFixed(2)} Å`;
+
+      // Update stored values
+      general.bondLengths[pair].min = minVal;
+      general.bondLengths[pair].max = maxVal;
+
       updateVisualization({
         reRenderBonds: true,
         reRenderOther: false,
@@ -173,14 +288,18 @@ export function createBondLengthControls(targetPanel='bondControls') {
       });
     }
 
-    slider.oninput = (e) => updateValue(e.target.value);
-    textInput.onchange = (e) => {
-      const val = Math.max(0.0, Math.min(10.0, parseFloat(e.target.value) || 0.0));
-      updateValue(val);
-    };
+    minSlider.oninput = updateBondRange;
+    maxSlider.oninput = updateBondRange;
 
-    controlsRow.appendChild(slider);
-    controlsRow.appendChild(textInput);
+    // Initialize track
+    const minPercent = (parseFloat(minSlider.value) / 6) * 100;
+    const maxPercent = (parseFloat(maxSlider.value) / 6) * 100;
+    track.style.left = `${minPercent}%`;
+    track.style.width = `${maxPercent - minPercent}%`;
+
+    controlsRow.appendChild(minValueSpan);
+    controlsRow.appendChild(sliderContainer);
+    controlsRow.appendChild(maxValueSpan);
 
     div.appendChild(checkboxDiv);
     div.appendChild(label);
@@ -195,7 +314,7 @@ function addFuncToBondColorSettings(){
     e.stopPropagation();
     editor.style.display = (editor.style.display === 'none') ? 'flex' : 'none';
     if (editor.style.display === 'flex') editor.style.flexDirection = 'column';
-  }; 
+  };
 
   const picker = createColorPicker(mom_color[0], (hex) => {
     clearAllIndividualColorsForElement(el);      // Clear old color overrides
@@ -241,3 +360,4 @@ function addFuncToBondColorSettings(){
   };
 
 }
+

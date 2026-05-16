@@ -36,8 +36,12 @@ export function initBondsLengths(){
       if (!general.bondLengths[pair]) {
         const defaultRadius = (atomicRadii[uniqueElements[i]] || 1.0) + (atomicRadii[uniqueElements[j]] || 1.0);
         const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
-        general.bondLengths[pair] = defaultValue;
-        general.defaultBondLengths[pair] = defaultValue; // Store default
+        general.bondLengths[pair] = {};
+        general.bondLengths[pair]["max"] = defaultValue;
+        general.bondLengths[pair]["min"] = 0.0;
+        general.defaultBondLengths[pair]={};
+        general.defaultBondLengths[pair]["max"] = defaultValue; // Store default
+        general.defaultBondLengths[pair][Min] = 0.0; // Store default
       }
 
       // Initialize bond visibility if not set
@@ -83,12 +87,20 @@ export function rebuildBonds(opacity=1.0) {
   refreshHistogram(Object.values(bondLengths), Object.keys(bondLengths));
 }
 
+
+
 export function getBondCutoff(elem1, elem2) {
-  const pair1 = elem1 + '-' + elem2;
-  const pair2 = elem2 + '-' + elem1;
-  const isVisible = general.bondVisibility[pair1] !== false && general.bondVisibility[pair2] !== false;
+  const pair = elem1 < elem2 ? `${elem1}-${elem2}` : `${elem2}-${elem1}`;
+  const isVisible = general.bondVisibility[pair] !== false;
   if (!isVisible) return 0.0;
-  return general.bondLengths[pair1] || general.bondLengths[pair2] || 0.0;
+  return general.bondLengths[pair]?.max || 0.0;
+}
+
+export function getBondMinCutoff(elem1, elem2) {
+  const pair = elem1 < elem2 ? `${elem1}-${elem2}` : `${elem2}-${elem1}`;
+  const isVisible = general.bondVisibility[pair] !== false;
+  if (!isVisible) return 0.0;
+  return general.bondLengths[pair]?.min || 0.0;
 }
 
 export function buildBondObjects(structure){
@@ -107,16 +119,18 @@ export function buildBondObjects(structure){
       const ej = wrapped.elements[j];
 
       const cutoff = getBondCutoff(ei, ej);
+      const minCutoff = getBondMinCutoff(ei, ej);
       if (cutoff <= 0.01) {
         console.log("Bond Cutoff too small for", ei, ej, cutoff)
         continue;
       }
 
+
       const p1 = new THREE.Vector3(...wrappedCart[i]);
       const p2 = new THREE.Vector3(...wrappedCart[j]);
 
       const dist = p1.distanceTo(p2);
-      if (dist > cutoff || dist < 0.005) {
+      if (dist > cutoff || dist < 0.005 || dist < minCutoff) {
         continue;
       }
 
