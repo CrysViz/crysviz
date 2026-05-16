@@ -41,7 +41,7 @@
           <button data-mode="symmetry">Symmetry</button>
           <button data-mode="relax">Relax</button>
           <button data-mode="md">MD</button>
-          <button data-mode="live">Live</button>
+          <!-- <!button data-mode="live">Live</button!>  not sufficiently tested. For now disabled.--> 
         </div>
         <div id="uploadSection">
           <div class="info-button-panel">
@@ -251,64 +251,84 @@
     <div id="measurementTools">
       <!-- Measurement panel -->
       <div id="measurementPanel" class="measurement-group">
+        
+
         <button id="distanceModeBtn" class="measure-tool-btn" title="Distance Measurement">
-          <div class="tool-icon scale-icon">📏</div>
+          <div class="tool-icon">
+            <img src="./data/icons/measure-icon2.svg" alt="Ruler">
+          </div>
           <span>Distance</span>
         </button>
+
         <button id="angleModeBtn" class="measure-tool-btn" title="Angle Measurement">
-          <div class="tool-icon protractor-icon">📐</div>
+          <div class="tool-icon">
+            <img src="./data/icons/angle-icon2.svg" alt="Angle">
+          </div>
           <span>Angle</span>
+        
         </button>
-        <button id="clearAllMeasurements" class="measure-tool-btn clear-btn" title="Clear All Measurements">
-          <div class="tool-icon">🗑️</div>
+
+        <button id="clearAllMeasurements" class="measure-tool-btn" title="Clear All Measurements">
+          <div class="tool-icon">
+            <img src="./data/icons/delete-icon2.svg" alt="Clear">
+          </div>
           <span>Clear</span>
+
         </button>
+
         <button id="deleteModeBtn" class="measure-tool-btn" title="Delete Atom">
           <div class="tool-icon">❌</div>
           <span>Delete</span>
         </button>
-        <button id="restoreBtn" class="measure-tool-btn clear-btn" title="Delete Atom">
-          <div class="tool-icon">↩</div>
+
+        <button id="restoreBtn" class="measure-tool-btn clear-btn" title="Restore Atom">
+          <div class="tool-icon">
+            <img src="./data/icons/restore-icon.svg" alt="Restore">
+          </div>
           <span>Restore</span>
+
         </button>
       </div>
 
-      <!-- Mobile toggle button (shows only on mobile) -->
-      <button id="measurementToggle" class="measurement-toggle" title="Toggle Measurements">🛠️</button>
+
+        <!-- Mobile toggle button (shows only on mobile) -->
+      <button id="measurementToggle" class="measurement-toggle" title="Toggle Measurement">
+        <img src="./data/icons/tool-icon.svg" alt="Tool" class="button-icon">
+     </button> 
     </div>   
 
 <div id="cameraTools">
   <!-- Camera panel -->
   <div id="cameraPanel" class="measurement-group">
     <!-- First row of rotation buttons (X, Y, Z, A, B, C, Reset) -->
-    <button class="measure-tool-btn" id="viewX" title="View X axis">
-      <div class="tool-icon">x</div>
+    <button class="camera-tool-btn" id="viewX" title="View X axis">
+      <div class="camera-icon">x</div>
       <span>x</span>
     </button>
-    <button class="measure-tool-btn" id="viewY" title="View Y axis">
-      <div class="tool-icon">y</div>
+    <button class="camera-tool-btn" id="viewY" title="View Y axis">
+      <div class="camera-icon">y</div>
       <span>y</span>
     </button>
-    <button class="measure-tool-btn" id="viewZ" title="View Z axis">
-      <div class="tool-icon">z</div>
+    <button class="camera-tool-btn" id="viewZ" title="View Z axis">
+      <div class="camera-icon">z</div>
       <span>z</span>
     </button>
     <div class="camera-separator"></div>
-    <button class="measure-tool-btn" id="viewA" title="View A axis">
-      <div class="tool-icon">a</div>
+    <button class="camera-tool-btn" id="viewA" title="View A axis">
+      <div class="camera-icon">a</div>
       <span>a</span>
     </button>
-    <button class="measure-tool-btn" id="viewB" title="View B axis">
-      <div class="tool-icon">b</div>
+    <button class="camera-tool-btn" id="viewB" title="View B axis">
+      <div class="camera-icon">b</div>
       <span>b</span>
     </button>
-    <button class="measure-tool-btn" id="viewC" title="View C axis">
-      <div class="tool-icon">c</div>
+    <button class="camera-tool-btn" id="viewC" title="View C axis">
+      <div class="camera-icon">c</div>
       <span>c</span>
     </button>
 
     <!-- Reset button -->
-    <button class="measure-tool-reset-btn" id="resetView" title="Reset Camera View">
+    <button class="camera-tool-reset-btn" id="resetView" title="Reset Camera View">
       <div class="reset-icon"></div>
       <span>Reset</span>
     </button>
@@ -355,7 +375,9 @@
     </div>
 
   <!-- Mobile toggle button (shows only on mobile) -->
-  <button id="cameraToggle" class="measurement-toggle" title="Toggle Camera Controls">📷</button>
+      <button id="cameraToggle" class="measurement-toggle" title="Toggle Camera Controls">
+        <img src="./data/icons/camera-icon.svg" alt="Camera" class="button-icon">
+     </button>
    </div>
 </div>
 

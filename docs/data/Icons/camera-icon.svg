@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Camera Body -->
+  <rect x="96" y="144" width="320" height="224" rx="32" fill="#ffffff"/>
+
+  <!-- Top Bump -->
+  <rect x="160" y="112" width="96" height="40" rx="12" fill="#ffffff"/>
+
+  <!-- Lens Outer -->
+  <circle cx="256" cy="256" r="60" fill="none" stroke="#000000" stroke-width="16"/>
+
+
+  <rect x="320" y="160" fill="none" stroke="#000000" width="60" height="30" rx="12" stroke-width="8"/>
+</svg>
