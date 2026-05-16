@@ -30,19 +30,7 @@ function toVec3(v) {
     : new THREE.Vector3(v[0], v[1], v[2]);
 }
 
-export function getPlaneDefinitionNormalAndD(planeDef, lattice) {
-  const params = planeDef?.params || {};
-  if (params.type === 'uvwd') {
-    return {
-      normal: [params.u || 0, params.v || 0, params.w || 0],
-      d: params.d || 0,
-    };
-  }
-  else if (params.type === 'hkl') {
-    const h = Number(params.h || 0);
-    const k = Number(params.k || 0);
-    const l = Number(params.l || 0);
-
+function millerIndsToCartesianParams(h, k, l, lattice) {
     if (!(Array.isArray(lattice) && lattice.length === 3)) {
         console.error('lattice vector provided to HKL plane definition fetching are invalid:', lattice);
         return {};
@@ -68,6 +56,31 @@ export function getPlaneDefinitionNormalAndD(planeDef, lattice) {
       normal: [nUnit.x, nUnit.y, nUnit.z],
       d: cellVolume / rawNormal.length(),
     };
+}
+
+export function CartesianParamsToMillerInds(n, d, lattice) {
+  const [a1, a2, a3] = lattice.map(toVec3);
+  const a_intercept = n[0] !== 0 ? d / n[0] : 1e6;
+  const b_intercept = n[1] !== 0 ? d / n[1] : 1e6;
+  const c_intercept = n[2] !== 0 ? d / n[2] : 1e6;
+
+  const h = a1.length() / a_intercept;
+  const k = a2.length() / b_intercept;
+  const l = a3.length() / c_intercept;
+
+  return { h, k, l };
+}
+
+export function getPlaneDefinitionNormalAndD(planeDef, lattice) {
+  const params = planeDef?.params || {};
+  if (params.type === 'uvwd') {
+    return {
+      normal: [params.u || 0, params.v || 0, params.w || 0],
+      d: params.d || 0,
+    };
+  }
+  else if (params.type === 'hkl') {
+    return millerIndsToCartesianParams(params.h, params.k, params.l, lattice);
   }
   else {
     console.error('Unknown plane definition type:', params.type);
@@ -515,14 +528,14 @@ export class Plane extends THREE.Group {
     }
 
     const positions = this.geometry.getAttribute('position');
-    const basisLengths = this._field.voxel.map(v => toVec3(v).length());
+    const colArray = new Float32Array(positions.array.length);
 
     // Configure LUT range once — keep zero at the midpoint for diverging data
     const minValue = this._field?.minValue ?? -1;
     const maxValue = this._field?.maxValue ?? 1;
     _lut.setMin(minValue).setMax(maxValue);
 
-    for (let i = 0; i < positions.length; i += 3) {
+    for (let i = 0; i < positions.array.length; i += 3) {
       const vec = new THREE.Vector3(positions.array[i], positions.array[i + 1], positions.array[i + 2]);
       // Convert Cartesian position to relative (fractional) coordinates
       // in the voxel basis: vec = u*a + v*b + w*c  ->  [u,v,w]
@@ -569,9 +582,9 @@ export class Plane extends THREE.Group {
       const interp = c0 * (1 - pos_z) + c1 * pos_z;
       const col = _lut.getColor(interp);
 
-      colArray[i * 3    ] = col.r;
-      colArray[i * 3 + 1] = col.g;
-      colArray[i * 3 + 2] = col.b;
+      colArray[i    ] = col.r;
+      colArray[i + 1] = col.g;
+      colArray[i + 2] = col.b;
     }
 
     this.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colArray, 3));
