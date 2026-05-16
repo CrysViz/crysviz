@@ -244,6 +244,9 @@ compDiv.appendChild(bondsPanel);
 if (hasWyckoffPanel) compDiv.appendChild(wyckoffPanel);
 
 createSpecificBondControl("infoBondControls");
+
+
+
 createBondLengthControls("infoBondControls"); // Make sure to pass the panel element
 
 // Function to show the selected panel and hide others

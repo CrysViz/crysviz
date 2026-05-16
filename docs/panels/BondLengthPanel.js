@@ -167,6 +167,7 @@ export function createBondLengthControls(targetPanel = 'bondControls') {
 
     const checkboxLabel = document.createElement('label');
     checkboxLabel.textContent = `Show ${pair} bonds`;
+    checkboxLabel.style.padding="0px 0px 0px 4px";
     checkboxLabel.style.fontSize = '12px';
     checkboxLabel.style.color = '#ccc';
     checkboxLabel.style.margin = '0';
@@ -251,9 +252,21 @@ export function createBondLengthControls(targetPanel = 'bondControls') {
     sliderContainer.appendChild(maxSlider);
 
     // Update function for both sliders
+    //
     function updateBondRange() {
       let minVal = parseFloat(minSlider.value);
       let maxVal = parseFloat(maxSlider.value);
+
+      // Enforce a minimum range of 0.1
+      if (maxVal - minVal < 0.1) {
+        if (this === minSlider) {
+          minVal = maxVal - 0.1;
+          minSlider.value = minVal;
+        } else {
+          maxVal = minVal + 0.1;
+          maxSlider.value = maxVal;
+        }
+      }
 
       // Ensure min <= max
       if (minVal > maxVal) {
@@ -266,18 +279,16 @@ export function createBondLengthControls(targetPanel = 'bondControls') {
         }
       }
 
-      // Update the track position and width
+      // Rest of your update logic...
       const minPercent = (minVal / 6) * 100;
       const maxPercent = (maxVal / 6) * 100;
       track.style.left = `${minPercent}%`;
       track.style.width = `${maxPercent - minPercent}%`;
 
-      // Update displayed values
       minValueSpan.textContent = `${minVal.toFixed(2)} Å`;
       maxValueSpan.textContent = `${maxVal.toFixed(2)} Å`;
       valueSpan.textContent = `${minVal.toFixed(2)} - ${maxVal.toFixed(2)} Å`;
 
-      // Update stored values
       general.bondLengths[pair].min = minVal;
       general.bondLengths[pair].max = maxVal;
 
@@ -287,6 +298,7 @@ export function createBondLengthControls(targetPanel = 'bondControls') {
         reRenderComposition: false,
       });
     }
+
 
     minSlider.oninput = updateBondRange;
     maxSlider.oninput = updateBondRange;
