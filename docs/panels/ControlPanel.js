@@ -314,7 +314,7 @@ export function addControlPanelModeSwitch() {
       }
       removeCompPanel();
       removeLatticeComparisonPopup();
-      addCutPlanePanel("TrajectoryComparisonContainer");
+      //addCutPlanePanel("TrajectoryComparisonContainer");
     }
     else {
       const trajPanel = document.getElementById("TrajControlPanel");

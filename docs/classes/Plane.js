@@ -49,7 +49,7 @@ export function getCutPlaneMaskSign(side) {
 }
 
 // Resolution of the field colormap texture
-const DEFAULT_COLORMAP_RESOLUTION = 256;
+export const DEFAULT_COLORMAP_RESOLUTION = 256;
 
 // ---------------------------------------------------------------------------
 //  Colormap helpers
@@ -549,8 +549,10 @@ export class Plane extends THREE.Group {
    * @param {string}               [opts.mode]      – initial vis mode ('None' | 'Field')
   * @param {object}               [opts.field]     – initial field data for 'Field' mode
   * @param {string}               [opts.colormap]  – LUT name for field coloring
-   */
-  constructor({ normal, d = 0, cell, resolution = DEFAULT_COLORMAP_RESOLUTION, mode, field, colormap = 'cooltowarm' } = {}) {
+  * @param {number}               [opts.colormapMin] – LUT lower bound override
+  * @param {number}               [opts.colormapMax] – LUT upper bound override
+  */
+  constructor({ normal, d = 0, cell, resolution = DEFAULT_COLORMAP_RESOLUTION, mode, field, colormap = 'cooltowarm', colormapMin = null, colormapMax = null } = {}) {
     // ── Normalise the plane normal ──────────────────────────────────────────
     const n = normal
       ? toVec3(normal).normalize()
@@ -591,6 +593,8 @@ export class Plane extends THREE.Group {
     this._mode           = null;
     this._field          = null;
     this._colormap       = colormap;
+    this._colormapMin    = Number.isFinite(colormapMin) ? Number(colormapMin) : null;
+    this._colormapMax    = Number.isFinite(colormapMax) ? Number(colormapMax) : null;
     this._lut            = createPlaneLut(colormap);
     /** THREE.Plane[] for the 6 cell faces — applied to every material. */
     this._clippingPlanes = clippingPlanes ?? [];
@@ -743,6 +747,15 @@ export class Plane extends THREE.Group {
     }
   }
 
+  setColormapRange(minValue = null, maxValue = null) {
+    this._colormapMin = Number.isFinite(minValue) ? Number(minValue) : null;
+    this._colormapMax = Number.isFinite(maxValue) ? Number(maxValue) : null;
+
+    if (this._mode === PLANE_VIS_FIELD) {
+      this.updateColorMap();
+    }
+  }
+
   /**
    * Write field scalar values to the geometry's vertex-colour attribute.
    *
@@ -765,8 +778,8 @@ export class Plane extends THREE.Group {
     const colArray = new Float32Array(positions.array.length);
 
     // Configure LUT range once — keep zero at the midpoint for diverging data
-    const minValue = this._field?.minValue ?? -1;
-    const maxValue = this._field?.maxValue ?? 1;
+    const minValue = this._colormapMin ?? this._field?.minValue ?? -1;
+    const maxValue = this._colormapMax ?? this._field?.maxValue ?? 1;
     this._lut.setMin(minValue).setMax(maxValue);
 
     for (let i = 0; i < positions.array.length; i += 3) {

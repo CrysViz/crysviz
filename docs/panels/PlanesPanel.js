@@ -1,5 +1,5 @@
 import { measurements, app, fileBrowser, general } from '../store.js';
-import { Plane, CutModes, getCutPlaneSideLabel, getPlaneCutModeLabel, getPlaneDefinitionNormalAndD, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../classes/Plane.js';
+import { Plane, CutModes, DEFAULT_COLORMAP_RESOLUTION, getCutPlaneSideLabel, getPlaneCutModeLabel, getPlaneDefinitionNormalAndD, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../classes/Plane.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { updateAtomCutPlaneState } from '../modules/AtomsFracUpdateModule.js';
 import { getSelectedAtoms, subscribeToAtomSelection } from '../modules/SelectAndHighlightModule.js';
@@ -71,9 +71,12 @@ function replacePlaneMesh(structure, planeDef) {
     normal,
     d,
     cell: lattice,
+    resolution: Number.isFinite(Number(planeDef.colormapResolution)) ? Number(planeDef.colormapResolution) : DEFAULT_COLORMAP_RESOLUTION,
     mode: planeDef.visualization || 'None',
     field: planeDef.field || null,
     colormap: planeDef.colormap || 'cooltowarm',
+    colormapMin: planeDef.colormapMin,
+    colormapMax: planeDef.colormapMax,
   });
 
   planeMesh.visible = Boolean(planesData.showPlanes && planeDef.enabled);
@@ -213,7 +216,7 @@ function updateFieldControlsAvailability(enabled) {
   const fieldSection = document.getElementById('planesFieldSection');
   const fieldCard = fieldSection?.querySelector('.planes-field-colormap-container');
   const fieldControls = document.querySelectorAll(
-    '#planesFieldSelect, #planesColormapSelect, #planesColormapRangeMin, #planesColormapRangeMax'
+    '#planesFieldSelect, #planesColormapSelect, #planesColormapRangeMin, #planesColormapRangeMax, #planesColormapResolution'
   );
   const hasFields = fieldBrowser.availableFields && fieldBrowser.availableFields.length > 0;
   const controlsEnabled = Boolean(enabled && hasFields);
@@ -225,6 +228,75 @@ function updateFieldControlsAvailability(enabled) {
   if (fieldCard) {
     fieldCard.classList.toggle('planes-field-colormap-disabled', !controlsEnabled);
   }
+}
+
+function clampPlaneRangeValue(value, fallback) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
+function getPlaneColormapResolution(plane = null) {
+  const resolution = Number(plane?.colormapResolution);
+  return Number.isFinite(resolution) && resolution > 0
+    ? Math.round(resolution)
+    : DEFAULT_COLORMAP_RESOLUTION;
+}
+
+function syncPlaneResolutionInput(plane = null) {
+  const resolutionInput = document.getElementById('planesColormapResolution');
+  if (!resolutionInput) return;
+
+  resolutionInput.value = `${getPlaneColormapResolution(plane)}`;
+}
+
+function formatPlaneRangeLabel(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return '0';
+  }
+
+  if (Math.abs(numericValue) >= 1000 || (Math.abs(numericValue) > 0 && Math.abs(numericValue) < 0.01)) {
+    return numericValue.toExponential(2);
+  }
+
+  return `${numericValue.toFixed(3).replace(/\.?0+$/, '')}`;
+}
+
+function configurePlaneRangeInputs(field, plane = null) {
+  const rangeMin = document.getElementById('planesColormapRangeMin');
+  const rangeMax = document.getElementById('planesColormapRangeMax');
+  const rangeDisplay = document.getElementById('planesRangeDisplay');
+  if (!rangeMin || !rangeMax) return;
+
+  const fieldMin = Number(field?.minValue);
+  const fieldMax = Number(field?.maxValue);
+  const hasFieldRange = Number.isFinite(fieldMin) && Number.isFinite(fieldMax);
+  const sliderMin = hasFieldRange ? Math.min(fieldMin, fieldMax) : 0;
+  const sliderMax = hasFieldRange ? Math.max(fieldMin, fieldMax) : 100;
+
+  rangeMin.min = `${sliderMin}`;
+  rangeMin.max = `${sliderMax}`;
+  rangeMax.min = `${sliderMin}`;
+  rangeMax.max = `${sliderMax}`;
+
+  const span = sliderMax - sliderMin;
+  const step = span > 0 ? Math.max(span / 1000, Number.EPSILON) : 1;
+  rangeMin.step = `${step}`;
+  rangeMax.step = `${step}`;
+
+  const planeMin = clampPlaneRangeValue(plane?.colormapMin, sliderMin);
+  const planeMax = clampPlaneRangeValue(plane?.colormapMax, sliderMax);
+  const clampedMin = Math.min(Math.max(planeMin, sliderMin), sliderMax);
+  const clampedMax = Math.min(Math.max(planeMax, sliderMin), sliderMax);
+
+  rangeMin.value = `${Math.min(clampedMin, clampedMax)}`;
+  rangeMax.value = `${Math.max(clampedMin, clampedMax)}`;
+
+  if (rangeDisplay) {
+    rangeDisplay.textContent = `${formatPlaneRangeLabel(Number(rangeMin.value))} – ${formatPlaneRangeLabel(Number(rangeMax.value))}`;
+  }
+
+  updateDualSliderFill();
 }
 
 function syncDerivedPlaneInputs(params, lattice) {
@@ -318,7 +390,7 @@ function updateRangeDisplayAndPlane(changedInput = null) {
     }
   }
 
-  rangeDisplay.textContent = `${minValue} – ${maxValue}`;
+  rangeDisplay.textContent = `${formatPlaneRangeLabel(minValue)} – ${formatPlaneRangeLabel(maxValue)}`;
   updateDualSliderFill();
 
   const structure = getSelectedStructure();
@@ -498,6 +570,19 @@ export function addPlanesPanel(target = "PlanesContainer") {
             </div>
           </div>
 
+          <div class="planes-field-control planes-field-resolution-control">
+            <label for="planesColormapResolution">Colormap Resolution:</label>
+            <input
+              type="number"
+              id="planesColormapResolution"
+              class="planes-num-input planes-full-width"
+              value="${DEFAULT_COLORMAP_RESOLUTION}"
+              min="1"
+              step="1"
+              disabled
+            >
+          </div>
+
         </div>
       </div>
 
@@ -571,10 +656,16 @@ function setupPlanesEvents(container) {
         plane.visualization = PLANE_VIS_FIELD;
         const selectedField = fieldBrowser.availableFields.find(f => f.label === selectedFieldLabel);
         plane.field = selectedField || null;
+        plane.colormapMin = selectedField?.minValue;
+        plane.colormapMax = selectedField?.maxValue;
+        configurePlaneRangeInputs(selectedField, plane);
       }
       else {
         plane.visualization = PLANE_VIS_NONE;
         plane.field = null;
+        plane.colormapMin = 0;
+        plane.colormapMax = 100;
+        configurePlaneRangeInputs(null, plane);
       }
       replacePlaneMesh(structure, plane);
       renderPlanesTable();
@@ -595,6 +686,7 @@ function setupPlanesEvents(container) {
 
   const rangeMin = container.querySelector('#planesColormapRangeMin');
   const rangeMax = container.querySelector('#planesColormapRangeMax');
+  const resolutionInput = container.querySelector('#planesColormapResolution');
 
   if (rangeMin && rangeMax) {
     const bringThumbToFront = activeInput => {
@@ -610,6 +702,31 @@ function setupPlanesEvents(container) {
     rangeMax.addEventListener('pointerdown', () => bringThumbToFront(rangeMax));
 
     updateRangeDisplayAndPlane();
+  }
+
+  if (resolutionInput) {
+    const applyColormapResolution = () => {
+      const structure = getSelectedStructure();
+      if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return;
+      const plane = structure.planes[selectedPlaneIndex];
+      if (!plane) return;
+
+      const nextResolution = Math.max(1, Math.round(Number(resolutionInput.value) || DEFAULT_COLORMAP_RESOLUTION));
+      resolutionInput.value = `${nextResolution}`;
+      plane.colormapResolution = nextResolution;
+      replacePlaneMesh(structure, plane);
+    };
+
+    resolutionInput.addEventListener('change', applyColormapResolution);
+    resolutionInput.addEventListener('blur', applyColormapResolution);
+    resolutionInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        event.target.blur();
+      }
+    });
+
+    syncPlaneResolutionInput();
   }
 
   const cutModeSelect = container.querySelector('#planeCutMode');
@@ -642,6 +759,7 @@ function addPlaneFromCurrentInputs() {
     visualization: 'None',
     cutMode:       CutModes.NONE,
     colormap:      'jet',
+    colormapResolution: DEFAULT_COLORMAP_RESOLUTION,
     colormapMin:   0,
     colormapMax:   100,
     field:        null,
@@ -749,9 +867,9 @@ function loadSelectedPlaneParameters() {
   if (document.getElementById('planesColormapSelect')) {
     document.getElementById('planesColormapSelect').value = plane.colormap || 'jet';
   }
+  syncPlaneResolutionInput(plane);
   if (document.getElementById('planesColormapRangeMin')) {
-    document.getElementById('planesColormapRangeMin').value = plane.colormapMin !== undefined ? plane.colormapMin : 0;
-    document.getElementById('planesColormapRangeMax').value = plane.colormapMax !== undefined ? plane.colormapMax : 100;
+    configurePlaneRangeInputs(plane.field, plane);
     updateRangeDisplayAndPlane();
   }
   // Load cut mode
@@ -834,6 +952,8 @@ function updateFieldSelectionDropdown() {
 
   if (!hasFields) {
     select.innerHTML = '<option value="">No fields available</option>';
+    syncPlaneResolutionInput();
+    configurePlaneRangeInputs(null);
     updateFieldControlsAvailability(true);
     return;
   }
@@ -853,6 +973,8 @@ function updateFieldSelectionDropdown() {
     if (plane && plane.field && plane.field.label) {
       select.value = plane.field.label;
     }
+    syncPlaneResolutionInput(plane);
+    configurePlaneRangeInputs(plane?.field, plane);
   }
 
   updateFieldControlsAvailability(true);

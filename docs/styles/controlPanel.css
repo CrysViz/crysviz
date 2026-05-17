@@ -542,6 +542,22 @@ font-size: 16px;
   gap: 6px;
 }
 
+.planes-field-resolution-control {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.planes-field-resolution-control label {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.planes-field-resolution-control input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .planes-full-width {
   width: 100%;
   box-sizing: border-box;
