@@ -1,4 +1,5 @@
 import { general, fileBrowser } from '../store.js';
+import { CutModes, getCutPlaneSideLabel, normalizeCutPlaneSide } from '../classes/Plane.js';
 import { updateAtomCutPlaneState } from '../modules/AtomsFracUpdateModule.js';
 import { updateVisualization } from '../crystal-viewer.js';
 
@@ -62,7 +63,7 @@ export function addCutPlanePanel(target = "TrajectoryComparisonContainer") {
     updateAtomCutPlaneState();
     updateVisualization({
       atomsUpdate: false,
-      bondsUpdate: false,
+      bondsUpdate: true,
       reRenderAtoms: false,
       reRenderBonds: false,
       reRenderLattice: false,
@@ -78,7 +79,7 @@ export function addCutPlanePanel(target = "TrajectoryComparisonContainer") {
   }
 
   function formatPlaneSummary(plane) {
-    return `n=(${Math.round(plane.x ?? 0)}, ${Math.round(plane.y ?? 0)}, ${Math.round(plane.z ?? 0)})  r=${(plane.r ?? 0).toFixed(2)}  ${plane.side || 'left'}`;
+    return `n=(${Math.round(plane.x ?? 0)}, ${Math.round(plane.y ?? 0)}, ${Math.round(plane.z ?? 0)})  r=${(plane.r ?? 0).toFixed(2)}  ${getCutPlaneSideLabel(plane.side)}`;
   }
 
   const renderEditor = () => {
@@ -110,11 +111,14 @@ export function addCutPlanePanel(target = "TrajectoryComparisonContainer") {
     enabledLabel.appendChild(enabledText);
 
     const side = document.createElement('select');
-    ['left', 'right'].forEach((sideName) => {
+    [
+      { value: CutModes.ALONGN, label: 'left' },
+      { value: CutModes.OPPOSITEN, label: 'right' },
+    ].forEach(({ value: sideValue, label: sideLabel }) => {
       const option = document.createElement('option');
-      option.value = sideName;
-      option.textContent = sideName;
-      if ((plane.side || 'left') === sideName) option.selected = true;
+      option.value = sideValue;
+      option.textContent = sideLabel;
+      if (normalizeCutPlaneSide(plane.side) === sideValue) option.selected = true;
       side.appendChild(option);
     });
     side.style.cssText = 'height:28px; min-width:88px; background: rgba(0,0,0,0.28); color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:6px;';
@@ -125,7 +129,7 @@ export function addCutPlanePanel(target = "TrajectoryComparisonContainer") {
       renderPlaneRows();
     };
     side.onchange = () => {
-      plane.side = side.value;
+      plane.side = normalizeCutPlaneSide(side.value);
       syncCutPlanes();
       renderPlaneRows();
     };
@@ -273,7 +277,7 @@ export function addCutPlanePanel(target = "TrajectoryComparisonContainer") {
   };
 
   addButton.onclick = () => {
-    general.atomCutPlanes.push({ enabled: true, x: 1, y: 0, z: 0, r: 0, side: 'left' });
+    general.atomCutPlanes.push({ enabled: true, x: 1, y: 0, z: 0, r: 0, side: CutModes.ALONGN });
     selectedPlaneIndex = general.atomCutPlanes.length - 1;
     renderPlaneRows();
     syncCutPlanes();

@@ -5,6 +5,7 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
 
 import {Atom} from '../classes/Atom.js';
+import { getCutPlaneMaskSign } from '../classes/Plane.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
@@ -39,12 +40,12 @@ function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
   activePlanes.forEach((plane, index) => {
     const [nx, ny, nz] = normalizePlaneNormal(plane.x, plane.y, plane.z);
     shader.uniforms.uCutPlanes.value[index].set(nx, ny, nz, Number(plane.r) || 0);
-    shader.uniforms.uCutPlaneMaskSide.value[index] = plane.side === 'right' ? 1 : -1;
+    shader.uniforms.uCutPlaneMaskSide.value[index] = getCutPlaneMaskSign(plane.side);
   });
-  for (let index = activePlanes.length; index < MAX_CUT_PLANES; index++) {
-    shader.uniforms.uCutPlanes.value[index].set(0, 0, 0, 0);
-    shader.uniforms.uCutPlaneMaskSide.value[index] = 0;
-  }
+  // for (let index = activePlanes.length; index < MAX_CUT_PLANES; index++) {
+  //   shader.uniforms.uCutPlanes.value[index].set(0, 0, 0, 0);
+  //   shader.uniforms.uCutPlaneMaskSide.value[index] = 0;
+  // }
 }
 
 

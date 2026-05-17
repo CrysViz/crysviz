@@ -1,6 +1,8 @@
-import { measurements, app, fileBrowser } from '../store.js';
-import { Plane, getPlaneDefinitionNormalAndD, CartesianParamsToMillerInds, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../classes/Plane.js';
+import { measurements, app, fileBrowser, general } from '../store.js';
+import { Plane, CutModes, getCutPlaneSideLabel, getPlaneCutModeLabel, getPlaneDefinitionNormalAndD, normalizePlaneCutMode, CartesianParamsToMillerInds, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../classes/Plane.js';
 import { fieldBrowser } from './FieldPanel.js';
+import { updateAtomCutPlaneState } from '../modules/AtomsFracUpdateModule.js';
+import { updateVisualization } from '../crystal-viewer.js';
 
 export const planesData = {
   activeInputMode: 'hkl', // 'hkl' or 'uvwd'
@@ -104,6 +106,46 @@ function refreshCurrentStructurePlanesInScene() {
   structure.planes.forEach(planeDef => replacePlaneMesh(structure, planeDef));
 }
 
+function syncAtomCutPlanesFromSelectedStructure() {
+  const structure = getSelectedStructure();
+  const retainedPlanes = (general.atomCutPlanes || []).filter(
+    plane => plane?.source !== 'structure-plane'
+  );
+
+  if (structure?.planes?.length && Array.isArray(structure.lattice)) {
+    structure.planes.forEach((planeDef, planeIndex) => {
+      const cutMode = normalizePlaneCutMode(planeDef?.cutMode);
+      if (cutMode === CutModes.NONE) return;
+
+      const { normal, d } = getPlaneDefinitionNormalAndD(planeDef, structure.lattice);
+      if (!Array.isArray(normal) || normal.length !== 3) return;
+
+      retainedPlanes.push({
+        enabled: true,
+        x: normal[0],
+        y: normal[1],
+        z: normal[2],
+        r: d,
+        side: cutMode === CutModes.OPPOSITEN ? CutModes.OPPOSITEN : CutModes.ALONGN,
+        source: 'structure-plane',
+        planeIndex,
+      });
+    });
+  }
+
+  general.atomCutPlanes = retainedPlanes;
+  updateAtomCutPlaneState();
+  updateVisualization({
+    atomsUpdate: false,
+    bondsUpdate: true,
+    reRenderAtoms: false,
+    reRenderBonds: false,
+    reRenderLattice: false,
+    reRenderOther: false,
+    reRenderComposition: false,
+  });
+}
+
 export function syncPlanesForSelectedStructure() {
   const structure = getSelectedStructure();
 
@@ -117,6 +159,8 @@ export function syncPlanesForSelectedStructure() {
   if (structure) {
     refreshCurrentStructurePlanesInScene();
   }
+
+  syncAtomCutPlanesFromSelectedStructure();
 
   selectedPlaneIndex = null;
   renderPlanesTable();
@@ -386,9 +430,9 @@ export function addPlanesPanel(target = "PlanesContainer") {
         <div class="planes-cut-row">
           <label class="planes-cut-label">Filter/hide atoms:</label>
           <select id="planeCutMode" class="planes-select" disabled>
-            <option value="None">None</option>
-            <option value="Above">Above</option>
-            <option value="Below">Below</option>
+            <option value="${CutModes.NONE}">None</option>
+            <option value="${CutModes.ALONGN}">Along Normal</option>
+            <option value="${CutModes.OPPOSITEN}">Opposite Normal</option>
           </select>
         </div>
 
@@ -457,6 +501,7 @@ function setupPlanesEvents(container) {
       if (plane) {
         plane.enabled = e.target.checked;
         replacePlaneMesh(structure, plane);
+        syncAtomCutPlanesFromSelectedStructure();
       }
     }
   });
@@ -556,7 +601,8 @@ function setupPlanesEvents(container) {
       if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return;
       const plane = structure.planes[selectedPlaneIndex];
       if (!plane) return;
-      plane.cutMode = e.target.value;
+      plane.cutMode = normalizePlaneCutMode(e.target.value);
+      syncAtomCutPlanesFromSelectedStructure();
       renderPlanesTable();
     });
   }
@@ -576,7 +622,7 @@ function addPlaneFromCurrentInputs() {
     params:        { type: 'hkl', h: 1, k: 1, l: 1 },
     label:         '(1 1 1)',
     visualization: 'None',
-    cutMode:       'None',
+    cutMode:       CutModes.NONE,
     colormap:      'jet',
     colormapMin:   0,
     colormapMax:   100,
@@ -686,7 +732,7 @@ function loadSelectedPlaneParameters() {
   }
   // Load cut mode
   const cutModeEl = document.getElementById('planeCutMode');
-  if (cutModeEl) cutModeEl.value = plane.cutMode || 'None';
+  if (cutModeEl) cutModeEl.value = normalizePlaneCutMode(plane.cutMode);
 }
 
 /**
@@ -716,6 +762,7 @@ function updateSelectedPlaneFromInputs() {
 
   syncDerivedPlaneInputs(plane.params, structure.lattice);
   replacePlaneMesh(structure, plane);
+  syncAtomCutPlanesFromSelectedStructure();
   renderPlanesTable();
 }
 
@@ -930,7 +977,9 @@ function renderPlanesTable() {
     const fieldDisplay = rawField !== '—' && rawField.length > 15
       ? rawField.slice(0, 14) + '…'
       : rawField;
-    const cutMode = plane.cutMode || 'None';
+    const cutMode = plane.source === 'structure-plane'
+      ? getPlaneCutModeLabel(plane.cutMode)
+      : getCutPlaneSideLabel(plane.side);
 
     tr.innerHTML = `
       <td class="planes-td planes-td-cb">
@@ -970,6 +1019,7 @@ function renderPlanesTable() {
       if (!plane) return;
       plane.enabled = e.target.checked;
       replacePlaneMesh(s, plane);
+      syncAtomCutPlanesFromSelectedStructure();
     });
   });
 
@@ -989,6 +1039,7 @@ function renderPlanesTable() {
       }
 
       renderPlanesTable();
+      syncAtomCutPlanesFromSelectedStructure();
       if (selectedPlaneIndex !== null) {
         loadSelectedPlaneParameters();
       } else {
