@@ -1,7 +1,8 @@
 import { measurements, app, fileBrowser, general } from '../store.js';
-import { Plane, CutModes, getCutPlaneSideLabel, getPlaneCutModeLabel, getPlaneDefinitionNormalAndD, normalizePlaneCutMode, CartesianParamsToMillerInds, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../classes/Plane.js';
+import { Plane, CutModes, getCutPlaneSideLabel, getPlaneCutModeLabel, getPlaneDefinitionNormalAndD, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../classes/Plane.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { updateAtomCutPlaneState } from '../modules/AtomsFracUpdateModule.js';
+import { getSelectedAtoms, subscribeToAtomSelection } from '../modules/SelectAndHighlightModule.js';
 import { updateVisualization } from '../crystal-viewer.js';
 
 export const planesData = {
@@ -13,6 +14,7 @@ export const planesData = {
 const structurePlaneMeshes = new WeakMap();
 let activeRenderedStructure = null;
 let selectedPlaneIndex = null;
+let atomSelectionUnsubscribe = null;
 
 function getSelectedStructure() {
   return fileBrowser.selectedStructure || null;
@@ -178,6 +180,20 @@ export function setCalculateFromAtomsEnabled(enabled) {
   }
 }
 
+function updateCalculateFromAtomsButtonForSelection(selectedAtoms = []) {
+  setCalculateFromAtomsEnabled(Array.isArray(selectedAtoms) && selectedAtoms.length >= 3);
+}
+
+function ensureAtomSelectionSubscription() {
+  if (atomSelectionUnsubscribe) {
+    return;
+  }
+
+  atomSelectionUnsubscribe = subscribeToAtomSelection(({ selectedAtoms }) => {
+    updateCalculateFromAtomsButtonForSelection(selectedAtoms);
+  }, { emitCurrent: true });
+}
+
 function setNumericInputValue(elementId, value, fractionDigits = null) {
   const input = document.getElementById(elementId);
   if (!input) return;
@@ -324,6 +340,7 @@ export function addPlanesPanel(target = "PlanesContainer") {
 
   container.style.display = "block";
   bindPanelStateToSelectedStructure();
+  ensureAtomSelectionSubscription();
   container.innerHTML = `
     <div class="control-group">
       <div class="planes-header">
@@ -488,6 +505,7 @@ export function addPlanesPanel(target = "PlanesContainer") {
   `;
 
   setupPlanesEvents(container);
+  updateCalculateFromAtomsButtonForSelection(getSelectedAtoms());
   syncPlanesForSelectedStructure();
   renderPlanesTable();
 }
@@ -639,40 +657,42 @@ function addPlaneFromCurrentInputs() {
 
 function calculatePlaneFromSelectedAtoms() {
   const structure = getSelectedStructure();
-  const atoms = measurements.selectedAtoms;
+  if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) {
+    alert('Select a plane to update before calculating from atoms.');
+    return;
+  }
+
+  const plane = structure.planes[selectedPlaneIndex];
+  if (!plane) {
+    alert('Selected plane could not be found.');
+    return;
+  }
+
+  const atoms = getSelectedAtoms();
   if (!atoms || atoms.length < 3) {
-    alert('Select at least 3 atoms (in measurement mode) to define a plane.');
+    alert('Select at least 3 atoms to define a plane.');
     return;
   }
 
-  const p0 = atoms[0].position;
-  const p1 = atoms[1].position;
-  const p2 = atoms[2].position;
-
-  const ax = p1.x - p0.x, ay = p1.y - p0.y, az = p1.z - p0.z;
-  const bx = p2.x - p0.x, by = p2.y - p0.y, bz = p2.z - p0.z;
-
-  // Cross product a × b = plane normal
-  const nx = ay * bz - az * by;
-  const ny = az * bx - ax * bz;
-  const nz = ax * by - ay * bx;
-  const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
-
-  if (len < 1e-10) {
-    alert('Selected atoms are collinear — cannot define a plane.');
+  const points = atoms
+    .map((atom) => atom.position)
+    .filter((point) => point);
+  const planeFit = fitPlaneToPoints(points);
+  if (!planeFit.valid) {
+    alert('Selected atoms do not define a stable plane.');
     return;
   }
-
-  // d = signed distance from origin to the plane (plane eqn: n·x = d)
-  const d = (nx * p0.x + ny * p0.y + nz * p0.z) / len;
 
   const derivedParams = {
     type: 'uvwd',
-    u: nx / len,
-    v: ny / len,
-    w: nz / len,
-    d,
+    u: planeFit.normal[0],
+    v: planeFit.normal[1],
+    w: planeFit.normal[2],
+    d: planeFit.d,
   };
+
+  plane.params = derivedParams;
+  // plane.label = `[${derivedParams.u.toFixed(2)} ${derivedParams.v.toFixed(2)} ${derivedParams.w.toFixed(2)}] d=${derivedParams.d.toFixed(2)}`;
 
   syncDerivedPlaneInputs(derivedParams, structure?.lattice);
 
@@ -682,6 +702,10 @@ function calculatePlaneFromSelectedAtoms() {
     radioUVWD.checked = true;
     radioUVWD.dispatchEvent(new Event('change'));
   }
+
+  replacePlaneMesh(structure, plane);
+  syncAtomCutPlanesFromSelectedStructure();
+  renderPlanesTable();
 }
 
 /**
@@ -1054,6 +1078,11 @@ export function removePlanesPanel(target = "PlanesContainer") {
   if (container) {
     container.innerHTML = '';
     container.style.display = 'none';
+  }
+
+  if (atomSelectionUnsubscribe) {
+    atomSelectionUnsubscribe();
+    atomSelectionUnsubscribe = null;
   }
 
   //if (activeRenderedStructure) {

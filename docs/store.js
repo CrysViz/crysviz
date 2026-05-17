@@ -29,7 +29,13 @@ export const highlightHover ={
    hoveredAtom:null,
    currentlyHighlightedAtom:null,
    currentlyHighlightedRow:null,
+  currentlyHighlightedRows:[],
    currentlyHighlightedBond:null
+};
+
+export const atomSelection = {
+  selectedAtoms: [],
+  subscribers: new Set(),
 };
 
 export const measurements ={

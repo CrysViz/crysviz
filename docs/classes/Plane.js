@@ -8,6 +8,46 @@ import { Field } from './Field.js';
 export const PLANE_VIS_NONE  = 'None';
 export const PLANE_VIS_FIELD = 'Field';
 
+export const CutModes = {
+  NONE: "None",
+  ALONGN: "AlongNormal",
+  OPPOSITEN: "OppositeNormal",
+};
+
+export function normalizePlaneCutMode(cutMode) {
+  if (cutMode === 'Above' || cutMode === 'Along Normal') return CutModes.ALONGN;
+  if (cutMode === 'Below' || cutMode === 'Opposite Normal') return CutModes.OPPOSITEN;
+  if (cutMode === CutModes.ALONGN || cutMode === CutModes.OPPOSITEN) return cutMode;
+  return CutModes.NONE;
+}
+
+export function getPlaneCutModeLabel(cutMode) {
+  const normalized = normalizePlaneCutMode(cutMode);
+  if (normalized === CutModes.ALONGN) return 'Along Normal';
+  if (normalized === CutModes.OPPOSITEN) return 'Opposite Normal';
+  return 'None';
+}
+
+export function normalizeCutPlaneSide(side) {
+  if (side === 'left') return CutModes.ALONGN;
+  if (side === 'right') return CutModes.OPPOSITEN;
+  if (side === CutModes.ALONGN || side === CutModes.OPPOSITEN) return side;
+  return CutModes.ALONGN;
+}
+
+export function getCutPlaneSideLabel(side) {
+  const normalized = normalizeCutPlaneSide(side);
+  return normalized === CutModes.OPPOSITEN ? 'right' : 'left';
+}
+
+export function getCutPlaneMaskSign(side) {
+  switch (normalizeCutPlaneSide(side)) {
+    case CutModes.OPPOSITEN: return -1;
+    case CutModes.ALONGN: return 1;
+    default: return 0;
+  }
+}
+
 // Resolution of the field colormap texture
 const DEFAULT_COLORMAP_RESOLUTION = 256;
 
@@ -56,6 +96,184 @@ function millerIndsToCartesianParams(h, k, l, lattice) {
       normal: [nUnit.x, nUnit.y, nUnit.z],
       d: cellVolume / rawNormal.length(),
     };
+}
+
+function toPointVec3(point) {
+  if (point instanceof THREE.Vector3) {
+    return point.clone();
+  }
+
+  if (Array.isArray(point) && point.length >= 3) {
+    return new THREE.Vector3(point[0], point[1], point[2]);
+  }
+
+  if (point?.position instanceof THREE.Vector3) {
+    return point.position.clone();
+  }
+
+  if (
+    point
+    && Number.isFinite(point.x)
+    && Number.isFinite(point.y)
+    && Number.isFinite(point.z)
+  ) {
+    return new THREE.Vector3(point.x, point.y, point.z);
+  }
+
+  return null;
+}
+
+function getDummyPlaneFit() {
+  return {
+    normal: [0, 0, 1],
+    d: 0,
+    centroid: [0, 0, 0],
+    valid: false,
+  };
+}
+
+function jacobiSmallestEigenvector3x3(matrix) {
+  const a = matrix.map((row) => [...row]);
+  const eigenvectors = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+
+  const maxIterations = 16;
+  for (let iteration = 0; iteration < maxIterations; iteration++) {
+    let p = 0;
+    let q = 1;
+    let maxValue = Math.abs(a[0][1]);
+
+    if (Math.abs(a[0][2]) > maxValue) {
+      p = 0;
+      q = 2;
+      maxValue = Math.abs(a[0][2]);
+    }
+    if (Math.abs(a[1][2]) > maxValue) {
+      p = 1;
+      q = 2;
+      maxValue = Math.abs(a[1][2]);
+    }
+
+    if (maxValue < 1e-12) {
+      break;
+    }
+
+    const app = a[p][p];
+    const aqq = a[q][q];
+    const apq = a[p][q];
+    const tau = (aqq - app) / (2 * apq);
+    const t = Math.sign(tau || 1) / (Math.abs(tau) + Math.sqrt(1 + tau * tau));
+    const c = 1 / Math.sqrt(1 + t * t);
+    const s = t * c;
+
+    a[p][p] = app - t * apq;
+    a[q][q] = aqq + t * apq;
+    a[p][q] = 0;
+    a[q][p] = 0;
+
+    for (let r = 0; r < 3; r++) {
+      if (r !== p && r !== q) {
+        const arp = a[r][p];
+        const arq = a[r][q];
+        a[r][p] = c * arp - s * arq;
+        a[p][r] = a[r][p];
+        a[r][q] = c * arq + s * arp;
+        a[q][r] = a[r][q];
+      }
+
+      const vrp = eigenvectors[r][p];
+      const vrq = eigenvectors[r][q];
+      eigenvectors[r][p] = c * vrp - s * vrq;
+      eigenvectors[r][q] = c * vrq + s * vrp;
+    }
+  }
+
+  const eigenvalues = [a[0][0], a[1][1], a[2][2]];
+  let minIndex = 0;
+  if (eigenvalues[1] < eigenvalues[minIndex]) minIndex = 1;
+  if (eigenvalues[2] < eigenvalues[minIndex]) minIndex = 2;
+
+  return new THREE.Vector3(
+    eigenvectors[0][minIndex],
+    eigenvectors[1][minIndex],
+    eigenvectors[2][minIndex],
+  );
+}
+
+export function fitPlaneToPoints(points) {
+  if (!Array.isArray(points) || points.length < 3) {
+    return getDummyPlaneFit();
+  }
+
+  const vectors = points
+    .map(toPointVec3)
+    .filter((point) => point instanceof THREE.Vector3);
+
+  if (vectors.length < 3) {
+    return getDummyPlaneFit();
+  }
+
+  if (vectors.length === 3) {
+    const v1 = new THREE.Vector3().subVectors(vectors[0], vectors[1]);
+    const v2 = new THREE.Vector3().subVectors(vectors[2], vectors[1]);
+    const normal = new THREE.Vector3().crossVectors(v1, v2);
+    if (normal.lengthSq() < 1e-20) {
+      return getDummyPlaneFit();
+    }
+    normal.normalize();
+    return {
+      normal: [normal.x, normal.y, normal.z],
+      d: normal.dot(vectors[0]),
+      centroid: [
+        (vectors[0].x + vectors[1].x + vectors[2].x) / 3,
+        (vectors[0].y + vectors[1].y + vectors[2].y) / 3,
+        (vectors[0].z + vectors[1].z + vectors[2].z) / 3,
+      ],
+      valid: true,
+    };
+  }
+
+  // Try to minimize perpendicular distane via PCA analysis
+  const centroid = new THREE.Vector3();
+  vectors.forEach((point) => centroid.add(point));
+  centroid.divideScalar(vectors.length);
+
+  const covariance = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+
+  vectors.forEach((point) => {
+    const dx = point.x - centroid.x;
+    const dy = point.y - centroid.y;
+    const dz = point.z - centroid.z;
+    covariance[0][0] += dx * dx;
+    covariance[0][1] += dx * dy;
+    covariance[0][2] += dx * dz;
+    covariance[1][0] += dy * dx;
+    covariance[1][1] += dy * dy;
+    covariance[1][2] += dy * dz;
+    covariance[2][0] += dz * dx;
+    covariance[2][1] += dz * dy;
+    covariance[2][2] += dz * dz;
+  });
+
+  const normal = jacobiSmallestEigenvector3x3(covariance);
+  if (normal.lengthSq() < 1e-20) {
+    return getDummyPlaneFit();
+  }
+  normal.normalize();
+
+  return {
+    normal: [normal.x, normal.y, normal.z],
+    d: normal.dot(centroid),
+    centroid: [centroid.x, centroid.y, centroid.z],
+    valid: true,
+  };
 }
 
 export function CartesianParamsToMillerInds(n, d, lattice) {
