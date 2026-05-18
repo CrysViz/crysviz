@@ -3,6 +3,7 @@ import { general, structureShip, fileBrowser } from '../store.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { updateSpins, removeSpins } from '../modules/SpinModule.js';
 import { updateForces, removeForces } from '../modules/ForceModule.js';
+import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 
 let trajectoryPlayerElements = {};
 let currentFrame = 0;
@@ -15,7 +16,10 @@ function updateStructureFromFrame(frame, container) {
   if (!container || frame < 0 || frame >= container.structures.length) return;
 
   fileBrowser.selectedStructure = container.structures[frame];
-  fileBrowser.stepInput = frame;
+  fileBrowser.stepInput = frame
+  syncPlanesForSelectedStructure();
+
+
 
   createBondLengthControls();
 

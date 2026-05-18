@@ -5,6 +5,7 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings,getColorFromMap,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 import {Atom} from '../classes/Atom.js';
 import {Bond} from '../classes/Bond.js';
+import { getCutPlaneMaskSign } from '../classes/Plane.js';
 
 
 import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
@@ -105,6 +106,47 @@ export function getBondMinCutoff(elem1, elem2) {
   const isVisible = general.bondVisibility[pair] !== false;
   if (!isVisible) return 0.0;
   return general.bondLengths[pair]?.min || 0.0;
+}
+
+function getActiveCutPlanes() {
+  return (general.atomCutPlanes || []).filter((plane) => plane?.enabled);
+}
+
+function normalizeCutPlaneNormal(x = 1, y = 0, z = 0) {
+  const nx = Number(x) || 0;
+  const ny = Number(y) || 0;
+  const nz = Number(z) || 0;
+  const length = Math.hypot(nx, ny, nz);
+  if (length < 1e-8) {
+    return [1, 0, 0];
+  }
+  return [nx / length, ny / length, nz / length];
+}
+
+function isPointCutByPlanes(position, cutPlanes) {
+  if (!Array.isArray(position) || position.length < 3) return false;
+
+  return cutPlanes.some((plane) => {
+    const [nx, ny, nz] = normalizeCutPlaneNormal(plane.x, plane.y, plane.z);
+    const maskSign = getCutPlaneMaskSign(plane.side);
+    const planeSide = ((position[0] * nx) + (position[1] * ny) + (position[2] * nz) - (Number(plane.r) || 0)) * maskSign;
+    return planeSide > 0;
+  });
+}
+
+function isBondCutByPlanes(bond, cutPlanes) {
+  if (!cutPlanes.length || !bond?.srcIndices || !Array.isArray(bond.positions)) return false;
+
+  const atoms = fileBrowser.selectedStructure?.atoms;
+  if (!atoms) return false;
+
+  const atomA = atoms[bond.srcIndices[0]];
+  const atomB = atoms[bond.srcIndices[1]];
+
+  const firstCut = !atomA?.cutPlaneImmune && isPointCutByPlanes(bond.positions[0], cutPlanes);
+  const secondCut = !atomB?.cutPlaneImmune && isPointCutByPlanes(bond.positions[1], cutPlanes);
+
+  return firstCut || secondCut;
 }
 
 export function buildBondObjects(structure){
@@ -536,6 +578,19 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
   mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, 0);
 }
 
+function hideSingleBond(index) {
+  const mesh = groups.bondsMesh;
+  if (!mesh) return;
+
+  const dummy = new THREE.Object3D();
+  dummy.position.set(0, 0, 0);
+  dummy.scale.set(0, 0, 0);
+  dummy.updateMatrix();
+
+  mesh.setMatrixAt(index * 2, dummy.matrix);
+  mesh.setMatrixAt(index * 2 + 1, dummy.matrix);
+}
+
 export async function updateBonds(opacity=1.0) {
   const mesh = groups.bondsMesh;
   if (!mesh) return;
@@ -543,8 +598,13 @@ export async function updateBonds(opacity=1.0) {
   if (!general.showBonds) return;
 
   const bonds = fileBrowser.selectedStructure.bonds.filter(b => b.visibleLen > 1e-3);
+  const activeCutPlanes = getActiveCutPlanes();
 
   bonds.forEach((bond, i) => {
+    if (isBondCutByPlanes(bond, activeCutPlanes)) {
+      hideSingleBond(i);
+      return;
+    }
     updateSingleBond(i, bond);
   });
   mesh.material.opacity = opacity;

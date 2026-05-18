@@ -47,7 +47,7 @@ import {createSupercell} from './modules/SuperCellModule.js';
 import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,
         addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './modules/MeasurementModule.js' // not all imports might be needed in this file
 
-import {highlightBondInfoInStructurePanel,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
+import {highlightBondInfoInStructurePanel,clearHighlightAtom,clearHighlightBond,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,clearSelectedAtoms,updateAtomSelectionFrom3DHit } from './modules/SelectAndHighlightModule.js';
 
 import {addAtomVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
 import {addCameraPanel} from './panels/CameraPanel.js'
@@ -811,18 +811,18 @@ async function initApp() {
 
   if (atomHits.length > 0) {
     hit = atomHits[0];
-    const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
-    const instanceId = hit.instanceId;
-    const sourceIndex = wrapped?.srcIndex ? wrapped.srcIndex[instanceId] : instanceId;
-    const elementName = wrapped?.elements?.[instanceId]
-      || groups.atomsMesh.userData.elementNames?.[instanceId]
-      || fileBrowser.selectedStructure?.elements?.[sourceIndex]
-      || '?';
-
-    highlightAtomInStructurePanel(elementName, sourceIndex);
-    highlightAtomIn3D(instanceId);
+    clearHighlightBond();
+    updateAtomSelectionFrom3DHit(hit, {
+      selectionMode: (event.ctrlKey || event.metaKey) ? 'toggle' : (event.shiftKey ? 'add' : 'replace'),
+      sourceEvent: event,
+      scrollToSelection: true,
+    });
 
   } else if (bondHits.length > 0) {
+    clearSelectedAtoms({
+      sourceEvent: event,
+      reason: 'bond-select',
+    });
     let id2;
     if (hit.instanceId%2 == 0){
       id2 = hit.instanceId+1
@@ -837,7 +837,10 @@ async function initApp() {
 
   }
   else  {
-     clearAllHighlights();
+      clearAllHighlights({
+       sourceEvent: event,
+       reason: 'empty-space',
+      });
   }
 
 
