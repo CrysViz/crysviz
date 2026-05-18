@@ -343,11 +343,9 @@ function makeAtomProxy(wrapped, ref) {
 // ---------------------------------------------------------------------------
 
 export function loadSharedStructure() {
+  console.log("In loadSharedStructure")
   const stateParam = new URLSearchParams(window.location.search).get('state');
   if (!stateParam) return;
-
-  // Mark early so loadDefaultStructure() is skipped
-  general.sharedStructureLoaded = true;
 
   let state;
   try {
@@ -367,6 +365,8 @@ export function loadSharedStructure() {
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     state = JSON.parse(new TextDecoder().decode(bytes));
+    general.sharedStructureLoaded = true;
+    console.log(general.sharedStructureLoaded)
   } catch (e) {
     const invalidChars = [...stateParam].filter(c => !/[A-Za-z0-9\-_]/.test(c));
     console.error('Failed to decode shared state:', e,
@@ -433,8 +433,7 @@ export function createShareButton() {
   const shareBtn = document.createElement('button');
   shareBtn.id = 'shareBtn';
   shareBtn.textContent = 'Share';
-  shareBtn.style.cssText =
-    'padding:8px 16px; margin-top:8px; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; width:100%;';
+  shareBtn.style.cssText = 'padding:8px 16px; margin-top:8px; color:white; background-color: var(--accent-color); border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; width:100%;';
   shareBtn.onclick = shareStructure;
 
   const container =

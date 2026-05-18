@@ -1,4 +1,4 @@
-import { app, groups, fileBrowser, general,mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../store.js';
+import { app, groups, fileBrowser, general,mode, polyStyle} from '../store.js';
 import { Structure} from '../classes/Structure.js';
 import { Atom} from '../classes/Atom.js';
 import { StructureContainer} from '../classes/StructureContainer.js';

@@ -6,9 +6,11 @@ import * as THREE from './external/three/three.module.js';
 //  with the proper classes. However, this already solved some problems with camera and controls getting redefined as a side effect of some functions of the viewing angle
 //  control. The rest of the singletons should be preserved.
 // .........................................................................................................
-import { structureShip,highlightHover,app, groups, general,measurements,
-         mode,defaultPOSCAR, polyStyle, defaultColorMap, jmolColorMap, atomicRadii,getAtomVisSettings,
-         getBondVisSettings,getLatticeVisSettings} from './store.js';
+
+import {structureShip, measurements,app, groups,fileBrowser, general, mode, highlightHover} from './store.js';
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from './defaults/color_texture_defaults.js'
+import {defaultPOSCAR,defaultPOSCAR2,defaultPOSCAR3,defaultPOSCAR4} from './defaults/structure_defaults.js'
+
 
 //this needs to life somewhere else! only for testing
 const tableBody = document.querySelector("#objectTable tbody");
@@ -19,6 +21,7 @@ import { setupSecondStructureInput } from './modules/SecondStructureModule.js';
 import { parseOUTCAR} from './modules/ReadOutcarModule.js';
 import { parsePWSCFout} from './modules/ReadPWSCFoutModule.js';
 import { parsePWSCFin} from './modules/ReadPWSCFinModule.js';
+import {parseXYZFile} from './modules/ReadeXYZModule.js';
 import { setupStructureInput, parsePOSCAR} from './modules/StructureInputModule.js';
 
 // ........................................................................................................
@@ -30,8 +33,9 @@ import { setupStructureInput, parsePOSCAR} from './modules/StructureInputModule.
 import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleControl.js';
 import { createColorPicker } from './modules/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
-import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js'
-import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter} from './modules/BondsFracUpdateModule.js'
+import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js';
+import {loadFromFilePath} from './modules/FileURLLoader.js';
+import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter,disposeBondsMesh} from './modules/BondsFracUpdateModule.js'
 import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './modules/CompBondsFracUpdateModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from './modules/LatticeModule.js'
 import {updatePolyhedra} from './modules/PolyhedraModule.js'
@@ -49,7 +53,7 @@ import {addAtomVacuumPanel} from './modules/addToStructureModule/AddVacuumModule
 import {addCameraPanel} from './panels/CameraPanel.js'
 import {addColorPanel} from './panels/ColorPanel.js'
 
-import { updateField, parseCHGCARFile, parseCubeFile } from './modules/Render3DFieldModule.js';
+import { updateField, parseCHGCARFile, parseCubeFile, clearField } from './modules/Render3DFieldModule.js';
 //import {addAtomPanel} from './modules/addToStructureModule/addAtomPanel.js'
 
 // .........................................................................................................
@@ -62,11 +66,11 @@ import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
   initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView,collapseAllAtomExpansions
 } from './panels/WindowAndSceneControls.js'
 import {loadAboutContent, openAboutPanel, closeAboutPanel} from './panels/AboutPanel.js';
-import {addSpinPanel,createSpinControls} from './panels/SpinPanel.js';
+import {addSpinPanel} from './panels/SpinPanel.js';
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
 import {renderComposition} from './panels/StructureInfoPanel/General.js';
 import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
-import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch} from './panels/ControlPanel.js';
+import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch, updateControlSpinForcePanel} from './panels/ControlPanel.js';
 import {addHistogramPanel} from  './panels/AnalysisPanels/BondAnalysisPanel.js';
 import {addBackendModeSwitch} from './panels/BackendPanel/BackendSwitchPanel.js';
 
@@ -87,7 +91,6 @@ import {
 // file browser test
 //
 //
-import {fileBrowser} from './store.js';
 import {createRow} from './panels/FileBrowswerPanel.js'
 
 
@@ -107,8 +110,8 @@ import { resetMathBackend } from './modules/math/index.js';
 // Nothing should be defined here. Use store, classes, panels or modules for new definitions!
 // ........................................................................................................
 
-console.log = () => {};
-console.warn = () => {};
+//console.log = () => {};
+//console.warn = () => {};
 
 const view = document.getElementById('view');
 const status = document.getElementById('status');
@@ -332,11 +335,15 @@ export function updateVisualization(options = {}) {
   }
 
   if (reRenderBonds) {
-    console.warn("Calling rebuildBonds")
-    rebuildBonds(mOpacity)
+    if (general.showBonds) {
+      console.warn("Calling rebuildBonds")
+      rebuildBonds(mOpacity)
+    } else {
+      disposeBondsMesh(true);
+    }
   }
 
-  if (!reRenderBonds && bondsUpdate) {
+  if (!reRenderBonds && bondsUpdate && general.showBonds) {
     console.warn("Calling updateBonds")
     updateBonds(mOpacity)
   }
@@ -369,8 +376,13 @@ export function updateVisualization(options = {}) {
   }
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
   if (reRenderOther) updateOther();
-  if (reRenderField && fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
-    updateField();
+  if (reRenderField) {
+    if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
+      updateField();
+    }
+    else {
+      clearField();
+    }
   }
 
   if (measurements.measureLines.length > 0) {
@@ -379,7 +391,7 @@ export function updateVisualization(options = {}) {
 }
 
 
-async function loadStructure(content, fileName = '', isDefault = false) {
+export async function loadStructure(content, fileName = '', isDefault = false) {
   try {
 
     const lower = (fileName || '').toLowerCase();
@@ -418,7 +430,14 @@ async function loadStructure(content, fileName = '', isDefault = false) {
      const treatAsPWSCFin = lower.endsWith(".scf.in") ||
                             lower.endsWith(".vcrx.in");
 
-    if (treatAsCube) {
+     const treatAsEXZY = lower.endsWith(".xyz") ||
+                          lower.endsWith(".exyz");  
+
+    if (treatAsEXZY){
+      await parseXYZFile(content, fileName)
+    }
+
+    else if (treatAsCube) {
       await parseCubeFile(contentString, fileName);
     }
     else if (treatAsCHGCAR) {
@@ -440,12 +459,6 @@ async function loadStructure(content, fileName = '', isDefault = false) {
 
     else if (treatAsOUTCAR){
         await parseOUTCAR(contentString,fileName);
-
-        if (fileBrowser.selectedStructure.spin != null) {
-         addSpinPanel();
-         createSpinControls();
-        }
-
     }
     else {
       parsePOSCAR(contentString,fileName);
@@ -460,12 +473,13 @@ async function loadStructure(content, fileName = '', isDefault = false) {
     //loadColorOverrides();
     //loadIndividualAtomColors();
 
-    document.getElementById('structureControls').style.display = 'block';
-    document.getElementById('structureControls2').style.display = 'block';
+   document.getElementById('structureControls').style.display = 'block';
+   document.getElementById('structureControls2').style.display = 'block';
 
     //createBondLengthControls();
     createShareButton();
-    updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true});
+    updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true,reRenderField:true});
+    updateControlSpinForcePanel();
     console.warn(fileBrowser.selectedStructure)
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();
@@ -489,7 +503,7 @@ async function loadDefaultStructure() {
   }
 
   setStatus('Loading default NaCl structure...');
-  loadStructure(defaultPOSCAR, 'defaultYBCO.vasp', true);
+  loadStructure(defaultPOSCAR4, 'C3N4', true);
       // Create a new Structure instance
 
 }
@@ -963,27 +977,21 @@ function resetControlsTouch() {
   document.getElementById('viewC').onclick = () => {app.controls.reset(); const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
 
-setupStructureInput({
-  onLoadStructure: async (content, name) => {
-    setStatus('Loading structure...');
-    try {
-      // Wait for the structure to load
-      await loadStructure(content, name);
-      setStatus('Structure loaded!');
-    } catch (error) {
-      console.error('Error loading structure:', error);
-      setStatus('Error loading structure.');
-    }
-  },
-  setStatus,
-});
-//setupSecondStructureInput({
-//    onLoadStructure: (content, name) => loadSecondStructure(content, name),
-//    setStatus,
-//  });
+ setupStructureInput({
+   onLoadStructure: async (content, name) => {
+     setStatus('Loading structure...');
+     try {
+       // Wait for the structure to load
+       await loadStructure(content, name);
+       setStatus('Structure loaded!');
+     } catch (error) {
+       console.error('Error loading structure:', error);
+       setStatus('Error loading structure.');
+     }
+   },
+   setStatus,
+ });
 
-  // Check for shared structure in URL
-  loadSharedStructure();
 
   // Control handlers
   document.getElementById('showAtoms').onchange = (e) => {
@@ -994,10 +1002,11 @@ setupStructureInput({
   // Control handlers
   document.getElementById('showBonds').onchange = (e) => {
     general.showBonds = e.target.checked;
-    if (groups.bondsMesh) {
-      groups.bondsMesh.visible = general.showBonds;
-  //  updateVisualization()
-    }
+    updateVisualization({
+      reRenderAtoms: !!general.showPBCBonds,
+      reRenderBonds: true,
+      bondsUpdate: false
+    });
   };
 
     // Control handlers
@@ -1010,20 +1019,6 @@ setupStructureInput({
     general.showLattice = e.target.checked;
     updateVisualization();
   };
-
- //document.getElementById('showSecond').onchange = (e) => {
- //   general.showSecond = e.target.checked;
- //   let slider = document.getElementById("structure2OpacityValue");
- //   general.structure2OpacityValue=0.5;
- //   slider.value=0.5;
- //   addSecondStructure();
- // };
-
- // document.getElementById('showComparisonInfo').onchange = (e) => {
- //   general.showComparisonInfo = e.target.checked;
- //   addSecondStructure();
- // }
-
 
 
   const PBCBondToggle = document.getElementById('PBCBondToggle');
@@ -1055,39 +1050,6 @@ setupStructureInput({
 
   };
 
-// former slider to compare two structure. Should be added to new panel
-
-// document.getElementById('structure2OpacityValue').oninput = (e) => {
-//   general.structure2OpacityValue = parseFloat(e.target.value);
-//   document.getElementById('structure2OpacityValue').textContent = general.structure2OpacityValue.toFixed(1);
-//    general.mainOpacity = 2*structure2OpacityValue
-//    general.secondOpacity = 1.0
-//
-//   if (general.structure2OpacityValue < 0.5){
-//          general.secondOpacity = 2*general.structure2OpacityValue
-//    general.mainOpacity = 1.0
-//     }
-//   else if (general.structure2OpacityValue > 0.5){
-//     general.mainOpacity = 1-2 * (general.structure2OpacityValue - 0.5)
-//     general.secondOpacity = 1.0
-//     addSecondStructure(1.0)
-//     updateAtoms(1-2 * (general.structure2OpacityValue - 0.5))
-//     }
-//   else {
-//     general.secondOpacity =1.0
-//     general.mainOpacity = 1.0
-//   }
-//   updateVisualization(general.mainOpacity,general.secondOpacity);
-//
-//   updateVisualization({
-//         reRenderAtoms: false,
-//         reRenderBonds: false,
-//         reRenderLattice: false,
-//         reRenderOther: true
-//       });
-//
-//
-// };
 
   // Bond width control
   const bondWidthSlider = document.getElementById('bondWidth');
@@ -1279,7 +1241,17 @@ setupStructureInput({
   app.controls.update();
 
   // Load default structure after everything is initialized
-  loadDefaultStructure();
+    loadSharedStructure();
+
+  if (!general.sharedStructureLoaded) {
+    console.log("loadFromFilePath...")
+    loadFromFilePath()
+    console.log("loaded:",fileBrowser.selectedStructure)
+  }
+  console.error("after load shared")
+  if (!general.sharedStructureLoaded) {
+    loadDefaultStructure();
+  }
 
 
   function handleVisibilityChange() {

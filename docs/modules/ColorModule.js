@@ -1,4 +1,6 @@
-import { general, defaultColorMap, jmolColorMap, fileBrowser } from '../store.js';
+import {app, groups,fileBrowser, general} from '../store.js';
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
+
 
 // Get the color for an atom (custom or default)
 export function getAtomColor(index) {
@@ -70,7 +72,7 @@ export function createPieDot(colors, size = 200) {
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
-  drawPieDot(canvas, colors);
+  updatePieDot(canvas, colors);
   canvas.style.borderRadius = "50%";
   canvas.style.border = "1px solid #666";
   canvas.style.display = "inline-block";
@@ -78,16 +80,16 @@ export function createPieDot(colors, size = 200) {
   return canvas;
 }
 
-// Helper: draw pie dot (unchanged)
-function drawPieDot(canvas, colors) {
+export function updatePieDot(canvas, colors) {
   const ctx = canvas.getContext("2d");
   const size = canvas.width;
   const center = size / 2;
   const radius = center;
-  const slice = (2 * Math.PI) / colors.length;
+  const normalizedColors = Array.isArray(colors) && colors.length ? colors : ['#808080'];
+  const slice = (2 * Math.PI) / normalizedColors.length;
 
   ctx.clearRect(0, 0, size, size);
-  colors.forEach((color, i) => {
+  normalizedColors.forEach((color, i) => {
     const start = i * slice;
     const end = start + slice;
     ctx.beginPath();
@@ -97,6 +99,7 @@ function drawPieDot(canvas, colors) {
     ctx.fillStyle = color;
     ctx.fill();
   });
+  canvas._colors = normalizedColors;
 }
 
 // Helper: convert hex number to CSS string
@@ -115,4 +118,3 @@ export function hexToRgba(color, alpha = 1) {
   const b = parseInt(computed.substr(5, 2), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
-

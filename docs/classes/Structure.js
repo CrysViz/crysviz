@@ -1,10 +1,6 @@
-import { general, defaultColorMap, jmolColorMap } from '../store.js';
-import { Spin } from './Spin.js';
-import { Force } from './Force.js';
-import { Polyhedra } from './Polyhedra.js';
-import { Symmetry } from './Symmetry.js';
-import { Stress } from './Stress.js';
-import { Atom } from './Atom.js';
+import {general} from '../store.js';
+import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
+import { colorHexToCss } from '../modules/ColorModule.js';
 
 // Helper function to deep freeze objects
 function deepFreeze(object) {
@@ -40,10 +36,10 @@ export class Structure {
     forces = [],
     stress = null,
     polyhedra = null,
-    colors = [],
-    bondMapping = {},
-    bondObjectMapping = {},
-    atomImages = {},
+    bondMapping = {}, // Mapping from bond index number to the indices in the THREE mesh object.
+    bondObjectMapping = {},     // Lookup table from bondHalf to the actual bond objects stored in the structure.  Mainly necessary for color changes . 
+    atomImages = {}, // stores all images in the visualisation for each object. Meaning the index of the atom maps to all indices in the THREE mesh
+    bondhalfToAtom={}, //  Mapping from the index of a bond half to the index of the respective atom. Neccessary for color updates. 
     periodic = {}, // Accept periodic as an input
     volumetricFields = null,
   } = {}) {
@@ -58,7 +54,6 @@ export class Structure {
     this.forces = forces;         // list of forces
     this.stress = stress;
     this.polyhedra = polyhedra;
-    this.colors = colors;
     this.bondMapping={};
     this.bondObjectMapping={};
     this.bonds = bonds;           // list of bonds
@@ -81,7 +76,6 @@ export class Structure {
       forces: deepCopyArrayOfObjects(forces), // deep copy of force objects
       stress: stress ? { ...stress } : null,  // deep copy of stress object if it exists
       polyhedra: polyhedra ? { ...polyhedra } : null,
-      colors: [...colors],
       bonds: deepCopyArrayOfObjects(this.bonds), // deep copy of bond objects
     });
 
@@ -94,10 +88,27 @@ export class Structure {
     const elementColors = {};
     this.atoms.forEach((atom, index) => {
       const element = this.elements[index];
-      if (!element || elementColors[element] !== undefined) return;
-      elementColors[element] = atom.getColor();
+      if (!element) return;
+      elementColors[element] ||= [];
+      const color = colorHexToCss(atom.getColor());
+      if (!elementColors[element].includes(color)) {
+        elementColors[element].push(color);
+      }
     });
     return elementColors;
   }
-}  
 
+  getElementOpacities() {
+    const elementOpacities = {};
+    this.atoms.forEach((atom, index) => {
+      const element = this.elements[index];
+      if (!element) return;
+      elementOpacities[element] ||= [];
+      const opacity = atom.getOpacity?.() ?? atom.opacity ?? 1;
+      if (!elementOpacities[element].includes(opacity)) {
+        elementOpacities[element].push(opacity);
+      }
+    });
+    return elementOpacities;
+  }
+}  

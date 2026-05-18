@@ -192,7 +192,7 @@ export function parseOUTCAR(content, fileName) {
         const structures = steps.map(step => {
           const frac = convertCartesianToFractional(step.positions, step.lattice);
           const atoms = frac.map((pos, i) => ({ position: pos, element: elements[i] }));
-          const spins = step.spins.map(vector => ({ vector, scaling: 1.0 }));
+          const spins = step.spins.map(vector => ({ vector, scaling: 1.0, color:"#008080" }));
           const forces = step.forces.map(vector => ({ vector, scaling: 1.0 }));
 
           return {

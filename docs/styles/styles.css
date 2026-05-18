@@ -23,7 +23,7 @@ body {
   --border-color:rgba(6,90,50,0.5);
 }
 
-.theme-ai {
+.theme-ase {
   --bg-color: rgba(81,0,0,0.8);
   --highlight-color: rgba(159,52,52,1.0);
   --accent-color: rgba(159,52,52,0.9);
@@ -39,12 +39,12 @@ body {
   --border-color: rgba(17, 71, 129, 0.5);
 }
 
-.theme-nep {
-  --bg-color: rgba(58, 48, 0, 0.85);
-  --highlight-color: rgba(212, 170, 0, 1.0);
-  --accent-color: rgba(212, 170, 0, 0.9);
-  --hover-color: rgba(212, 170, 0, 0.25);
-  --border-color: rgba(160, 132, 0, 0.55);
+.theme-locked-ase {
+  --bg-color: rgba(66, 24, 81, 0.84);
+  --highlight-color: rgba(187, 98, 214, 1.0);
+  --accent-color: rgba(167, 92, 214, 0.9);
+  --hover-color: rgba(187, 98, 214, 0.24);
+  --border-color: rgba(183, 117, 221, 0.5);
 }
 :root {
   --ui-width: 380px;      /* Panel content width */
@@ -373,7 +373,6 @@ body.panel-hidden #axesLegend {
 
 #saveButton {
   margin-bottom: 12px;
-  margin-top: 12px;
   width: 100%;
   padding: 12px 16px;
   background: var( --bg-color);
@@ -1077,7 +1076,7 @@ justify-content: center;
   border-radius: 3px;
 }
 
-.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:600px; margin: 10px 0 20px 0;}
+.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:650px; margin: 10px 0 20px 0;}
 #composition { color:#d7eef6; line-height:1.4; }
 #composition [hidden] { display: none !important; }
 #measure { margin-top:8px; }
@@ -1202,6 +1201,14 @@ z-index:1000; pointer-events:none;
   transform-origin: top right;
 }
 
+
+.button-icon {
+  max-width: 40px;
+  max-height: 40px; /* Optional: Set a max height */
+  height: auto;
+  width: auto;
+}
+
 /* --- Camera Tools (Desktop: Top Left beside panel, Fullscreen: aligned with hamburger) --- */
 #cameraTools {
   position: fixed;
@@ -1230,8 +1237,33 @@ z-index:1000; pointer-events:none;
 }
 
 
+.camerae-tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 8px;
+  background: var(--bg-color);
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 45px;
+  min-height: 45px;
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+
 /* Camera buttons for desktop - compact style like original vbtn */
-#cameraTools .measure-tool-btn {
+#cameraTools .camera-tool-btn {
   padding: 6px 10px;
   font-size: 14px;
   color: #fff;
@@ -1245,7 +1277,7 @@ z-index:1000; pointer-events:none;
   gap: 0;
 }
 
-#cameraTools .measure-tool-reset-btn {
+#cameraTools .camera-tool-reset-btn {
   padding: 6px 10px;
   font-size: 14px;
   color: #fff;
@@ -1259,32 +1291,38 @@ z-index:1000; pointer-events:none;
   gap: 0;
 }
 
-#cameraTools .measure-tool-btn:hover {
+#cameraTools .camera-tool-btn:hover {
   background: var(--bg-color);
   border-color: var(--highlight-color);
   transform: translateY(-2px);
   box-shadow:0px 0px 4px 2px  rgba(6, 100, 50, 1);
 }
 
-#cameraTools .measure-tool-reset-btn:hover {
+#cameraTools .camera-tool-reset-btn:hover {
   background: rgba(240, 132, 18,0.90);
   border-color: white;
   transform: translateY(-1px);
   box-shadow: 0px 0px 2px 1px  var(--highlight-color);
 }
 
-#cameraTools .measure-tool-btn .tool-icon {
+#cameraTools .camera-tool-btn .tool-icon {
   font-size: 14px;
   margin: 0;
 }
 
-#cameraTools .measure-tool-btn .reset-icon {
+#cameraTools .camera-tool-btn .reset-icon {
   font-size: 14px;
   margin: 0;
 }
 
-#cameraTools .measure-tool-btn span {
+#cameraTools .camera-tool-btn span {
   display: none;
+}
+
+.camera-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Separator for camera controls */
@@ -1314,7 +1352,7 @@ z-index:1000; pointer-events:none;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 8px;
+  padding: 6px 6px;
   background: var(--bg-color);
   border: 2px solid var(--border-color);
   border-radius: 12px;
@@ -1363,11 +1401,18 @@ z-index:1000; pointer-events:none;
 }
 
 .tool-icon {
-  font-size: 24px;
-  line-height: 1;
-  pointer-events: none;
+  width: 32px;
+  height: 24px; /* Set a fixed height to match your tallest icon */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
+.tool-icon img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain; /* Ensures the SVG scales proportionally and is never cropped */
+}
 .scale-icon {
   transform: rotate(45deg);
 }
@@ -1446,6 +1491,7 @@ body {
 
   /* Mobile-friendly measurement tools */
   #measurementTools {
+    max-height: 60px;
     top: 30px;
     right: 10px;
     padding: 0;
@@ -1457,7 +1503,7 @@ body {
     flex-direction: row;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 0 8px;
   }
 
   /* Mobile-friendly camera tools - positioned below measurement tools */
@@ -1477,7 +1523,7 @@ body {
     flex-direction: row;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 0 8px;
   }
 
   /* Hide separators on mobile */
@@ -1688,8 +1734,8 @@ body {
 
   /* Adjust control group spacing for mobile */
   .control-group {
-    margin: 20px 0;
-    padding: 16px;
+    margin: 0 0 16px 0;
+    padding: 20px;
   }
 
   #ui h2 {
