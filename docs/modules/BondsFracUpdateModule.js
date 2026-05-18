@@ -30,7 +30,11 @@ export function initBondsLengths(){
   // Generate all unique pairs
   for (let i = 0; i < uniqueElements.length; i++) {
     for (let j = i; j < uniqueElements.length; j++) {
-      const pair = uniqueElements[i] + '-' + uniqueElements[j];
+
+      const pair = uniqueElements[i] < uniqueElements[j]
+        ? `${uniqueElements[i]}-${uniqueElements[j]}`
+        : `${uniqueElements[j]}-${uniqueElements[i]}`;
+
       pairs.push(pair);
 
       if (!general.bondLengths[pair]) {
@@ -41,7 +45,7 @@ export function initBondsLengths(){
         general.bondLengths[pair]["min"] = 0.0;
         general.defaultBondLengths[pair]={};
         general.defaultBondLengths[pair]["max"] = defaultValue; // Store default
-        general.defaultBondLengths[pair][Min] = 0.0; // Store default
+        general.defaultBondLengths[pair]["min"] = 0.0; // Store default
       }
 
       // Initialize bond visibility if not set

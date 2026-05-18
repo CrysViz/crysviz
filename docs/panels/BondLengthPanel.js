@@ -152,7 +152,9 @@ export function createBondLengthControls(targetPanel = 'bondControls') {
   // Generate all unique pairs
   for (let i = 0; i < uniqueElements.length; i++) {
     for (let j = i; j < uniqueElements.length; j++) {
-      const pair = uniqueElements[i] + '-' + uniqueElements[j];
+      const pair = uniqueElements[i] < uniqueElements[j]
+        ? `${uniqueElements[i]}-${uniqueElements[j]}`
+        : `${uniqueElements[j]}-${uniqueElements[i]}`;
       pairs.push(pair);
 
       // Initialize bondLengths as { min: 0, max: defaultValue }
