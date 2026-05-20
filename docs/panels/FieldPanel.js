@@ -318,10 +318,10 @@ export function removeFieldPanel(target = "SpinForceFieldContainer") {
     }
     
     // Clear the controls content and hide the group
-    if (fieldControlsGroup) {
-      fieldControlsGroup.innerHTML = '';
-    }
-    fieldControlsGroup.style.display = "none";
+    //if (fieldControlsGroup) {
+      //fieldControlsGroup.innerHTML = '';
+    //}
+    //fieldControlsGroup.style.display = "none";
   }
 }
 
@@ -382,7 +382,7 @@ function setupFieldControlEvents(fields, container) {
       }
       return false;
     }
-
+n
     return isInScene(groups.isosurfaceGroup);
   }
 

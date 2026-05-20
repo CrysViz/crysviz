@@ -356,16 +356,19 @@ export function updateControlSpinForcePanel(mode = general.spinForceState) {
       removeSpinPanel();
       removeFieldPanel();
       removePlanesPanel();
+
       addForcePanel();
       updateForces();
     }
     else if (general.spinForceState == "Spins") {
-      addSpinPanel();
-      updateSpins();
       removeForcePanel();
       removeFieldPanel();
       removePlanesPanel();
       removeForces();
+
+      addSpinPanel();
+      console.log("Spins Clicked!!")
+      updateSpins();
     }
     else if (general.spinForceState == "Field") {
       removeSpinPanel();
@@ -373,6 +376,7 @@ export function updateControlSpinForcePanel(mode = general.spinForceState) {
       removeForces();
       removeSpins();
       removePlanesPanel();
+
       addFieldPanel();
     }
     else if (general.spinForceState == "Planes") {
@@ -381,6 +385,7 @@ export function updateControlSpinForcePanel(mode = general.spinForceState) {
       removeFieldPanel();
       removeForces();
       removeSpins();
+
       addPlanesPanel();
     }
     else {

@@ -10,6 +10,7 @@ import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
 import {setAtomColor}  from './ColorModule.js';
+import {updateAtomColorsByForce} from '../panels/ColorPanel.js'
 
 import {generateID} from './UUIDModule.js' 
 
@@ -109,14 +110,24 @@ export function rebuildAtoms(opacity) {
     groups.atomsMesh = null;
   }
   fileBrowser.selectedStructure.atomImages={}
+  let structure = fileBrowser.selectedStructure
   console.log("Rebuilding periodic")
-  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
-  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-  let elements = [...fileBrowser.selectedStructure.elements];
-  let _ = runPeriodicWrapped(fileBrowser.selectedStructure.periodic, positions, elements,lattice)
+  let positions = structure.atoms.map(a => a.position);
+  let lattice = structure.lattice.map(r => [...r]);
+  let elements = [...structure.elements];
+  let _ = runPeriodicWrapped(structure.periodic, positions, elements,lattice)
 
-  console.log("Building atoms")
+  console.error("Building atoms")
   buildAtoms();
+  
+
+  if (general.atomsColor === "force" && structure.forces) {
+    console.error("settings color to force map. general.atomsColor=",general.atomsColor)
+    updateAtomColorsByForce(); 
+  }
+  else{
+    console.error("Keeping atom colors..., general.atomsColor=",general.atomsColor)
+  }   
   console.log("updating atoms")
   let ok = updateAtoms(opacity);
   console.log("status updateAtoms", ok)
@@ -356,7 +367,7 @@ export function updateSingleAtomColor(originalIndex, index, element, hex=null,us
       setAtomColor(atom, userColor);
     }
   }
-  // console.log(`Element: ${element}, Hex: ${hex}, RGB: [${((hex >> 16) & 0xFF) / 255}, ${((hex >> 8) & 0xFF) / 255}, ${(hex & 0xFF) / 255}]`);
+  console.log(`Element: ${element}, Hex: ${hex}, RGB: [${((hex >> 16) & 0xFF) / 255}, ${((hex >> 8) & 0xFF) / 255}, ${(hex & 0xFF) / 255}]`);
   groups.atomsMesh.setColorAt(index, new THREE.Color(hex));
   groups.atomsMesh.instanceColor.needsUpdate = true;
 }

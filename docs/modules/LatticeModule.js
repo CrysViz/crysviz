@@ -152,7 +152,7 @@ function periodicWrappedJS(general, frac, elements, lattice) {
       const c = fracToCart([f], lattice)[0];
       return new THREE.Vector3(c[0], c[1], c[2]);
     });
-    const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || { dummy: 0.0 }));
+    const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths.max || { dummy: 0.0 }));
     const a = new THREE.Vector3(...lattice[0]);
     const b = new THREE.Vector3(...lattice[1]);
     const c = new THREE.Vector3(...lattice[2]);
@@ -230,7 +230,7 @@ async function workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,s
 
 export function runPeriodicWrapped(periodic, frac, elements,lattice) {
 
-    let bondLenghts = general.bondLengths
+    let bondLenghts = general.bondLengths.max
     let showPBCBonds = general.showBonds && general.showPBCBonds
     let showPeriodic = general.showPeriodic
 

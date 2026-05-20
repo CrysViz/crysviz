@@ -39,7 +39,6 @@ export function deleteSpins() {
 
 
 
-
 export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpins = [], colorMap = "none") {
   const structure = fileBrowser.selectedStructure;
   if (!structure?.periodic?.wrapped) { disposeSpinMeshes(); return; }
@@ -55,8 +54,7 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
   } else {
     spins = structure.spins;
   }
-
-  if (!spins?.length) { disposeSpinMeshes(); return; }
+  // if (!spins?.length) { disposeSpinMeshes(); return; }
 
   // Update spin colors based on colormap
   const minValue = general.spinMin || 0;

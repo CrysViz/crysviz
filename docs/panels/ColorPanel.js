@@ -248,7 +248,9 @@ export function bondLengthToColor(bondLength, minVal = general.BondMin, maxVal =
   return `#${(colors[bin].r * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].g * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].b * 255 | 0).toString(16).padStart(2, '0')}`;
 }
 
-function updateAtomColorsByForce() {
+
+
+export function updateAtomColorsByForce() {
   const structure = fileBrowser.selectedStructure;
   if (!structure || !structure.atoms) {
     alert("No atoms data available for force coloring. Using element colors instead.");
@@ -257,6 +259,7 @@ function updateAtomColorsByForce() {
 
   // Check if forces exist and match atom count
   if (!structure.forces || structure.forces.length !== structure.atoms.length) {
+    console.log(structure)
     alert("No force data available for this structure. Using element colors instead.");
     return false;
   }
@@ -438,7 +441,7 @@ export function addColorPanel(target = "colorContainer") {
     // Explicitly update all atom colors with the new scheme
     const structure = fileBrowser.selectedStructure;
 
-    if (structure && general.atomsColor === "elements") {
+    if (structure.forces && general.atomsColor === "elements") {
       structure.atoms.forEach((atom, atomIndex) => {
         const element = structure.elements[atomIndex];
         atom.color = structure.getDefaultElementColor(element);
@@ -540,7 +543,7 @@ function onAtomsModeChange() {
       updateVisualization({reRenderAtoms: true, reRenderBonds: true, updateOther: true});
       return;
     }
-    // ✅ FIX: Use the same update flags as element mode
+    // FIX: Use the same update flags as element mode
     updateAtoms();
     updateVisualization({reRenderAtoms: true, reRenderBonds: true, updateOther: true});
   } else if (isElements) {

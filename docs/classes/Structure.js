@@ -42,7 +42,7 @@ export class Structure {
     bondhalfToAtom={}, //  Mapping from the index of a bond half to the index of the respective atom. Neccessary for color updates. 
     periodic = {}, // Accept periodic as an input
     volumetricFields = null,
-    elementColor={}
+    elementColor={},
     planes = [],
   } = {}) {
     // Mutable instance properties

@@ -122,6 +122,8 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     structureShip.len += 1;
     structureShip.container.splice(rowIndex + 1, 0, newObj);
     selectLastAddedRow();
+
+    console.warn("new selected structure", fileBrowser.selectedStructure)
     return;
   }
 
