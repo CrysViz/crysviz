@@ -2,13 +2,14 @@
 import * as THREE from '../external/three/three.module.js';
 
 import {updateAngleDisplays} from './cameraAngleControl.js';
-import { app, general,mode, groups} from '../store.js';
+import { fileBrowser,app, general,mode, groups} from '../store.js';
 import {updateLattice,recomputeLatticeDirs,latticeDirsNorm} from './LatticeModule.js'
 
 import {updateRandomColors} from './DiscoModule.js'
-
+import {structureShip} from '../store.js'
 
 let isRendering = true;
+
 
 export function pauseRendering() {
   if (!general.powerMode) {
@@ -43,6 +44,7 @@ function getCurrentTime() {
 let targetFPS = 80;           // desired max FPS
 let lastFrameTime = 0;
 let lastTime = performance.now();
+let lastTimeStorage = lastTime
 let frames = 0;
 let fps = 0;
 let keyState={};
@@ -82,6 +84,17 @@ export function animation_update(time = 0) {
     frames = 0;
     lastTime = time;
   }
+
+  const deltaStorage = time - lastTimeStorage;
+  if (deltaStorage >= 5000) { 
+   console.log(`Current Size of StructureShip: ~${(JSON.stringify(structureShip).length * 2 / 1024 / 1024).toFixed(2)} MB`);
+   console.log(`Current Size of app: ~${(JSON.stringify(app).length * 2 / 1024 / 1024).toFixed(2)} MB`);
+   console.log(`Current Size of general: ~${(JSON.stringify(general).length * 2 / 1024 / 1024).toFixed(2)} MB`);
+   console.log(`Current Size of fileBrowser: ~${(JSON.stringify(fileBrowser).length * 2 / 1024 / 1024).toFixed(2)} MB`);
+   console.log(`Current Size of groups: ~${(JSON.stringify(groups).length * 2 / 1024 / 1024).toFixed(2)} MB`);
+   lastTimeStorage = time;
+  }
+
 
   app.controls.update();
   //if (_counter%60 === 0 || _counter=== 1) {
