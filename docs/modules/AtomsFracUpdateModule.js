@@ -421,6 +421,25 @@ export function updateSingleAtomDiameter(index, element) {
 }
 
 
+export function updateAllAtomOpacities(opacity = general.mainOpacity){
+  let atoms = [...fileBrowser.selectedStructure.atoms];
+  let periodic = fileBrowser.selectedStructure.periodic;
+  let wrapped = periodic.wrapped
+  let wrappedCart = wrapped.cart
+  const mesh = groups.atomsMesh;
+  mesh.material.opacity = opacity;
+  syncAtomMaterialTransparency(opacity);
+  for (let i = 0; i < wrappedCart.length; i++) {
+    const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    updateSingleAtomOpacity(i, atoms[originalIndex].getOpacity?.() ?? atoms[originalIndex].opacity ?? 1)
+
+  }
+  groups.atomsMesh.geometry.attributes.instanceOpacity.needsUpdate = true;
+  groups.atomsMesh.material.needsUpdate = true;
+
+}
+
+
 export function updateAtoms(opacity = 1.0) {
   //console.error("Update main opacity", opacity)
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);

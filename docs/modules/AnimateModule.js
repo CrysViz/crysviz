@@ -87,11 +87,11 @@ export function animation_update(time = 0) {
 
   const deltaStorage = time - lastTimeStorage;
   if (deltaStorage >= 5000) { 
-   console.log(`Current Size of StructureShip: ~${(JSON.stringify(structureShip).length * 2 / 1024 / 1024).toFixed(2)} MB`);
-   console.log(`Current Size of app: ~${(JSON.stringify(app).length * 2 / 1024 / 1024).toFixed(2)} MB`);
-   console.log(`Current Size of general: ~${(JSON.stringify(general).length * 2 / 1024 / 1024).toFixed(2)} MB`);
-   console.log(`Current Size of fileBrowser: ~${(JSON.stringify(fileBrowser).length * 2 / 1024 / 1024).toFixed(2)} MB`);
-   console.log(`Current Size of groups: ~${(JSON.stringify(groups).length * 2 / 1024 / 1024).toFixed(2)} MB`);
+   //console.log(`Current Size of StructureShip: ~${(JSON.stringify(structureShip).length * 2 / 1024 / 1024).toFixed(2)} MB`);
+   //console.log(`Current Size of app: ~${(JSON.stringify(app).length * 2 / 1024 / 1024).toFixed(2)} MB`);
+   //console.log(`Current Size of general: ~${(JSON.stringify(general).length * 2 / 1024 / 1024).toFixed(2)} MB`);
+   //console.log(`Current Size of fileBrowser: ~${(JSON.stringify(fileBrowser).length * 2 / 1024 / 1024).toFixed(2)} MB`);
+   //console.log(`Current Size of groups: ~${(JSON.stringify(groups).length * 2 / 1024 / 1024).toFixed(2)} MB`);
    lastTimeStorage = time;
   }
 

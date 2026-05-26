@@ -1,16 +1,18 @@
 import { general,bondLengths,fileBrowser} from '../store.js';
 import { addTrajectoryPlayer,removeTrajectoryPlayer} from './TrajectoryPanel.js';
-import {removeLatticeComparisonPopup, createLatticeComparisonPopup, updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
+import { removeLatticeComparisonPopup, createLatticeComparisonPopup, updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import { removeSpins,updateSpins } from '../modules/SpinModule.js';
 import { removeForces,updateForces } from '../modules/ForceModule.js';
 import { removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
-import {addSpinPanel,removeSpinPanel} from './SpinPanel.js';
-import {addForcePanel,removeForcePanel} from './ForcePanel.js';
-import {addBondPanel,removeBondPanel} from './BondPanel.js';
-import {addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
-import {addFieldPanel, removeFieldPanel} from './FieldPanel.js';
-import {addPlanesPanel, removePlanesPanel} from './PlanesPanel.js';
+import { addSpinPanel,removeSpinPanel} from './SpinPanel.js';
+import { addForcePanel,removeForcePanel} from './ForcePanel.js';
+import { addBondPanel,removeBondPanel} from './BondPanel.js';
+import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
+import { addFieldPanel, removeFieldPanel} from './FieldPanel.js';
+import { addPlanesPanel, removePlanesPanel} from './PlanesPanel.js';
 import { addCutPlanePanel, removeCutPlanePanel } from './CutPlanePanel.js';
+import {updateSecondAllAtomOpacities} from '../modules/CompAtomsFracUpdateModule.js'
+import {updateAllAtomOpacities} from '../modules/AtomsFracUpdateModule.js'
 import {updateVisualization} from '../crystal-viewer.js';
 
 /**
@@ -233,12 +235,16 @@ export function addCompPanel() {
       general.mainOpacity = 1.0
     }
 
-    updateVisualization({
-      atomsUpdate: true,
-      bondsUpdate: true,
-      SecondBondsUpdate: true,
-      SecondAtomsUpdate: true,
-    });
+    updateAllAtomOpacities();
+    updateSecondAllAtomOpacities();
+
+
+    //updateVisualization({
+    //  atomsUpdate: true,
+    //  bondsUpdate: true,
+    //  SecondBondsUpdate: true,
+    //  SecondAtomsUpdate: true,
+    //});
   });
 }
 

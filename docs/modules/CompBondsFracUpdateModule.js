@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 
 import {structureShip, app, groups,fileBrowser, general,mode} from '../store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
-import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings,getColorFromMap,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 
 import {Atom} from '../classes/Atom.js';
 import {Bond} from '../classes/Bond.js';
@@ -19,6 +19,8 @@ import {generateID} from './UUIDModule.js'
 import {periodic} from '../store.js'
 //import {getBondCutoff} from './BondsModule.js'
 //
+//
+//
 export function initBondsLengths(){
   if (!fileBrowser.selectedStructure) {
     console.warn("Could not init bonds!")
@@ -32,14 +34,22 @@ export function initBondsLengths(){
   // Generate all unique pairs
   for (let i = 0; i < uniqueElements.length; i++) {
     for (let j = i; j < uniqueElements.length; j++) {
-      const pair = uniqueElements[i] + '-' + uniqueElements[j];
+
+      const pair = uniqueElements[i] < uniqueElements[j]
+        ? `${uniqueElements[i]}-${uniqueElements[j]}`
+        : `${uniqueElements[j]}-${uniqueElements[i]}`;
+
       pairs.push(pair);
 
       if (!general.bondLengths[pair]) {
         const defaultRadius = (atomicRadii[uniqueElements[i]] || 1.0) + (atomicRadii[uniqueElements[j]] || 1.0);
         const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
-        general.bondLengths[pair] = defaultValue;
-        general.defaultBondLengths[pair] = defaultValue; // Store default
+        general.bondLengths[pair] = {};
+        general.bondLengths[pair]["max"] = defaultValue;
+        general.bondLengths[pair]["min"] = 0.0;
+        general.defaultBondLengths[pair]={};
+        general.defaultBondLengths[pair]["max"] = defaultValue; // Store default
+        general.defaultBondLengths[pair]["min"] = 0.0; // Store default
       }
 
       // Initialize bond visibility if not set
@@ -70,40 +80,53 @@ export function rebuildSecondBonds(structure, opacity) {
   }
 }
 
+
 export function getBondCutoff(elem1, elem2) {
-  const pair1 = elem1 + '-' + elem2;
-  const pair2 = elem2 + '-' + elem1;
-  const isVisible = general.bondVisibility[pair1] !== false && general.bondVisibility[pair2] !== false;
+  const pair = elem1 < elem2 ? `${elem1}-${elem2}` : `${elem2}-${elem1}`;
+  const isVisible = general.bondVisibility[pair] !== false;
   if (!isVisible) return 0.0;
-  return general.bondLengths[pair1] || general.bondLengths[pair2] || 0.0;
+  return general.bondLengths[pair]?.max || 0.0;
 }
+
+export function getBondMinCutoff(elem1, elem2) {
+  const pair = elem1 < elem2 ? `${elem1}-${elem2}` : `${elem2}-${elem1}`;
+  const isVisible = general.bondVisibility[pair] !== false;
+  if (!isVisible) return 0.0;
+  return general.bondLengths[pair]?.min || 0.0;
+}
+
 
 export function buildSecondBondObjects(structure){
   structure.bonds = [];
-  structure.bondMapping ={};
+  structure.bondMapping = {};
+  structure.bondObjectMapping = {};
 
   const wrapped = structure.periodic.wrapped;
   const wrappedCart = wrapped.cart;
+  const atoms = fileBrowser.selectedStructure?.atoms;
 
+  // First pass: create all bonds
   for (let i = 0; i < wrappedCart.length; i++) {
     for (let j = i + 1; j < wrappedCart.length; j++) {
-
       const ei = wrapped.elements[i];
       const ej = wrapped.elements[j];
 
       const cutoff = getBondCutoff(ei, ej);
+      const minCutoff = getBondMinCutoff(ei, ej);
       if (cutoff <= 0.01) {
-        console.log("Bond Cutoff too small for",ei,ej, cutoff)
+        console.log("Bond Cutoff too small for", ei, ej, cutoff)
         continue;
       }
+
+
       const p1 = new THREE.Vector3(...wrappedCart[i]);
       const p2 = new THREE.Vector3(...wrappedCart[j]);
 
       const dist = p1.distanceTo(p2);
-      if (dist > cutoff || dist < 0.005) {
-        // console.log("Skipping bond with dist",dist, "due to cutoff", cutoff)
+      if (dist > cutoff || dist < 0.005 || dist < minCutoff) {
         continue;
       }
+
       const bond = new Bond({
         elements: [ei, ej],
         length: dist,
@@ -112,12 +135,75 @@ export function buildSecondBondObjects(structure){
         srcIndices: [wrapped.srcIndex[i], wrapped.srcIndex[j]],
         indices: [i, j]
       });
+
+      // Set bond colors based on current color mode
+      if (general.bondsColor === "white") {
+        bond.color = ["#ffffff", "#ffffff"];
+      } else if (general.bondsColor === "solid") {
+        bond.color = [general.solidBondColor || "#ffffff", general.solidBondColor || "#ffffff"];
+      } else if (general.bondsColor === "length") {
+        // Temporary color, will be updated in second pass
+        bond.color = bond.defaultColor;
+      } else {
+        // Default to element colors or atom colors
+        if (atoms && bond.srcIndices[0] < atoms.length && bond.srcIndices[1] < atoms.length) {
+          bond.color = [atoms[bond.srcIndices[0]].color, atoms[bond.srcIndices[1]].color];
+        } else {
+          bond.color = bond.defaultColor;
+        }
+      }
+
       structure.bonds.push(bond);
     }
   }
-  console.warn(structure.bonds)
-}
 
+  // Second pass: handle length-based coloring if in length mode
+  if (general.bondsColor === "length" && structure.bonds.length > 0) {
+    // Calculate min/max bond lengths if not already set
+    let minLength = general.BondMin;
+    let maxLength = general.BondMax;
+
+    if (minLength >= maxLength) {
+      // Auto-calculate range from actual bond lengths
+      minLength = Infinity;
+      maxLength = -Infinity;
+      structure.bonds.forEach(bond => {
+        if (bond.dist < minLength) minLength = bond.dist;
+        if (bond.dist > maxLength) maxLength = bond.dist;
+      });
+      // Ensure we don't have division by zero
+      if (minLength === maxLength) {
+        maxLength = minLength + 1;
+      }
+      general.BondMin = minLength;
+      general.BondMax = maxLength;
+    }
+
+    // Apply color mapping based on bond lengths
+    const colorMap = general.bondsColorMap || "heatmap";
+    let colors;
+    switch (colorMap) {
+      case "batlow": colors = getBatlowColors(); break;
+      case "hawaii": colors = getHawaiiColors(); break;
+      case "managua": colors = getManaguaColors(); break;
+      case "viridis": colors = getViridisColors(); break;
+      case "plasma": colors = getPlasmaColors(); break;
+      case "spectralR": colors = getSpectralRColors(); break;
+      default: colors = getHeatMapColors();
+    }
+
+    if (colors && colors.length > 0) {
+      const nBins = colors.length;
+      structure.bonds.forEach(bond => {
+        const clamped = Math.max(minLength, Math.min(maxLength, bond.dist));
+        const t = (maxLength > minLength) ? (clamped - minLength) / (maxLength - minLength) : 0.5;
+        const bin = Math.min(Math.max(0, Math.floor(t * nBins)), nBins - 1);
+        const color = `#${(colors[bin].r * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].g * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].b * 255 | 0).toString(16).padStart(2, '0')}`;
+        bond.color = [color, color];
+      });
+    }
+  }
+}
 export function renderSecondBonds(structure) {
   const bonds = structure.bonds;
   const validBonds = bonds.filter(b => b.visibleLen > 1e-3);

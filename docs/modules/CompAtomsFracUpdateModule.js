@@ -67,9 +67,11 @@ export function buildSecondAtoms(structure) {
       attribute vec3 instanceEmissive;
       attribute float instanceEmissiveIntensity;
       attribute float instanceElementIndex;
+      attribute float instanceOpacity;
       varying vec3 vInstanceEmissive;
       varying float vInstanceEmissiveIntensity;
       varying float vInstanceElementIndex;
+      varying float vInstanceOpacity;
     ` + shader.vertexShader;
 
     shader.vertexShader = shader.vertexShader.replace(
@@ -80,22 +82,20 @@ export function buildSecondAtoms(structure) {
         vInstanceEmissiveIntensity = instanceEmissiveIntensity;
         vInstanceUUID = instanceUUID;
         vInstanceElementIndex = instanceElementIndex;
+        vInstanceOpacity = instanceOpacity;
       `
     );
 
     shader.fragmentShader = `
+      precision highp float;
       varying vec3 vInstanceEmissive;
       varying float vInstanceEmissiveIntensity;
       varying vec4 vInstanceUUID;
       varying float vInstanceElementIndex;
+      varying float vInstanceOpacity;
     ` + shader.fragmentShader;
 
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <emissivemap_fragment>',
-      ` 
-        totalEmissiveRadiance += vInstanceEmissive * vInstanceEmissiveIntensity;
-      `
-    );
+    material.userData.shader = shader;
   };
 
   // Instanced mesh
@@ -167,10 +167,17 @@ export function buildSecondAtoms(structure) {
     'instanceEmissive',
     new THREE.InstancedBufferAttribute(new Float32Array(atomCount * 3), 3)
   );
+
   mesh.geometry.setAttribute(
     'instanceEmissiveIntensity',
     new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1)
   );
+
+    mesh.geometry.setAttribute(
+    'instanceOpacity',
+    new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1)
+  );
+
 
   // Mark buffers as dynamic
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -217,6 +224,43 @@ export function updateSecondSingleAtomDiameter(index, element) {
   a[mOffset + 0] = radius;
   a[mOffset + 5] = radius;
   a[mOffset + 10] = radius;
+}
+
+
+
+export function updateSecondSingleAtomOpacity(index, opacity = 1.0) {
+  const normalizedOpacity = Math.max(0, Math.min(1, Number(opacity) || 0));
+  groups.secondAtomsMesh.geometry.attributes.instanceOpacity.setX(index, normalizedOpacity);
+  groups.secondAtomsMesh.geometry.attributes.instanceOpacity.needsUpdate = true;
+  syncAtomMaterialTransparency(general.compOpacity);
+}
+
+function syncAtomMaterialTransparency(baseOpacity = 1.0) {
+  const mesh = groups.secondAtomsMesh;
+  if (!mesh?.material) return;
+  const hasTransparentInstances = fileBrowser.comparisonStructure?.atoms?.some((atom) => (atom.getOpacity?.() ?? atom.opacity ?? 1) < 0.999) ?? false;
+  const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances;
+  mesh.material.transparent = needsTransparency;
+  mesh.material.depthWrite = !needsTransparency;
+  mesh.material.needsUpdate = true;
+}
+
+export function updateSecondAllAtomOpacities(opacity = general.compOpacity){
+  let atoms = [...fileBrowser.comparisonStructure.atoms];
+  let periodic = fileBrowser.comparisonStructure.periodic;
+  let wrapped = periodic.wrapped
+  let wrappedCart = wrapped.cart
+  const mesh = groups.secondAtomsMesh;
+  mesh.material.opacity = opacity;
+  syncAtomMaterialTransparency(opacity);
+  for (let i = 0; i < wrappedCart.length; i++) {
+    const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
+    updateSecondSingleAtomOpacity(i, atoms[originalIndex].getOpacity?.() ?? atoms[originalIndex].opacity ?? 1)
+
+  }
+  groups.secondAtomsMesh.geometry.attributes.instanceOpacity.needsUpdate = true;
+  groups.secondAtomsMesh.material.needsUpdate = true;
+
 }
 
 
