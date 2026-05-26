@@ -236,27 +236,70 @@ function getContrastingBorder(hex) {
   });
 
   // --- Reset button behavior ---
+//
   resetBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    closePicker();
-    const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-   if (isDarkMode )
-    {
-    app.scene.background = new THREE.Color(0x090A09)
-    general.currentLatticeColor = 0xE7E7E7;
-    dot.style.border = `2px solid #E7E7E7`
-    updateLattice()
-   }
-   else if (!isDarkMode )
-   {
-    app.scene.background = new THREE.Color(0xE7E7E7)
-    general.currentLatticeColor = 0x090A09;
-    dot.style.border = `2px solid #090A09`
-    updateLattice()
-   }
+  e.stopPropagation();
+  closePicker();
 
-  });
+  // Get current theme from storage or active button
+  const currentTheme = localStorage.getItem('theme') ||
+                       document.querySelector('.theme-btn.active')?.dataset.themeOption ||
+                       (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+
+  const theme = themes[currentTheme];
+  if (theme) {
+    app.scene.background = new THREE.Color(theme.background);
+    general.currentLatticeColor = theme.latticeColor;
+    const hexColor = theme.latticeColor.toString(16).padStart(6, '0');
+    dot.style.border = `2px solid #${hexColor}`;
+    updateLattice();
+  }
+});
 }
+
+
+
+  function applyTheme(themeName) {
+    const theme = themes[themeName];
+    if (!theme) return;
+
+    app.scene.background = new THREE.Color(theme.background);
+    general.defaultBackgroundColor = theme.defaultBackground;
+    general.currentLatticeColor = theme.latticeColor;
+
+    // Update background dot border
+    const dot = document.getElementById("backgroundDot");
+    if (dot) {
+      const hexColor = theme.latticeColor.toString(16).padStart(6, '0');
+      dot.style.border = `2px solid #${hexColor}`;
+      updateLattice();
+    }
+
+    // Update active button
+    document.querySelectorAll('.theme-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.themeOption === themeName);
+    });
+
+    // Save user's choice to override system preference
+    localStorage.setItem('theme', themeName);
+  }
+
+  // Initialize theme (user choice > system preference)
+  function initializeTheme() {
+    const userTheme = localStorage.getItem('theme');
+    const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const initialTheme = userTheme || (isDarkMode ? 'dark' : 'light');
+    applyTheme(initialTheme);
+  }
+
+  // Setup theme button controls
+  function addBackgroundThemeControl() {
+    document.querySelectorAll('.theme-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        applyTheme(btn.dataset.themeOption);
+      });
+    });
+  }
 
 
 function createBackgroundControl() {
@@ -1346,7 +1389,7 @@ function setupMobileMenu() {
       closePanel();
     });
   }
-
+  addBackgroundThemeControl
   createBackgroundControl();
   addControlPanelModeSwitch();
   addControlPanelSpinForceSwitch();
