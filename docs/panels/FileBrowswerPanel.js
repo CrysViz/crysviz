@@ -1,7 +1,7 @@
 import {groups,app, general, structureShip, fileBrowser} from '../store.js';
 import {updateVisualization} from '../crystal-viewer.js';
 import {resetView} from './WindowAndSceneControls.js';
-import {resetModeSwitch, resetSpinForceSwitch, updateControlSpinForcePanel} from './ControlPanel.js';
+import {resetModeSwitch, resetSpinForceSwitch} from './ControlPanel.js';
 import {createBondLengthControls} from './BondLengthPanel.js';
 import {updateSpins} from '../modules/SpinModule.js';
 import {updateForces} from '../modules/ForceModule.js';
@@ -81,7 +81,6 @@ export function createRow(obj) {
     updateStructureFromRowAndStep(rowIndex);
 
     //resetView(); // do we want to reset it to a specific view per structure selection? Save view state?
-    updateControlSpinForcePanel();
   });
 
 

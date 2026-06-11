@@ -1,0 +1,116 @@
+/* Camera Wheel Styles */
+.camera-wheel-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.camera-wheel-viewport {
+  width: calc(200px * 0.7);
+  height: 200px;
+  overflow: hidden;
+  position: relative;
+}
+
+.camera-wheel {
+  width: 200px;
+  height: 200px;
+  position: relative;
+  left: calc(-200px * 0.15);
+}
+
+.camera-wheel-outer-ring {
+  position: absolute;
+  inset: 0;
+  border: 8px solid rgba(6, 70, 50, 0.8);
+  border-radius: 50%;
+  background: #000;
+  background-image: radial-gradient(circle at center, #222 1px, transparent 1px);
+  background-size: 4px 4px;
+}
+
+#camera-wheel {
+  transform-origin: center;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  cursor: grab;
+}
+
+#camera-wheel * {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+.camera-wheel-inner {
+  position: absolute;
+  border-radius: 50%;
+  background: #000;
+  border: 4px solid rgba(6, 140, 50, 1.0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.camera-wheel-inner span {
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  white-space: normal;
+  word-break: break-word;
+  text-align: center;
+  line-height: 1.2;
+  max-width: 90%;
+}
+
+.camera-wheel-indicator {
+  position: absolute;
+  top: 50%;
+  right: -8px;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 8px;
+  background: #fff;
+  z-index: 20;
+}
+
+.camera-wheel-triangle {
+  position: absolute;
+  left: 75%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-left: 10px solid rgba(6, 140, 50, 1.0);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  transform: translate(-50%, -50%);
+  z-index: 15;
+}
+
+.camera-wheel-icon {
+  position: absolute;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.camera-wheel-icon svg,
+.camera-wheel-icon img {
+  width: 24px;
+  height: 24px;
+  display: block;
+  transition: transform 0.2s ease;
+  transform-origin: center;
+}
+
+.camera-wheel-icon:hover svg,
+.camera-wheel-icon:hover img {
+  transform: scale(1.2);
+}

@@ -1,0 +1,48 @@
+<svg
+   xmlns="http://www.w3.org/2000/svg"
+   viewBox="0 0 832.28 823.63"
+   width="24"
+   height="24"
+>
+  <g transform="translate(31.412 -58.572)">
+    <g id="g3794">
+      <g id="g3784">
+        <path
+           style="stroke-linejoin:bevel;stroke:#ffffff;stroke-dasharray:16, 8;stroke-width:8;fill:none"
+           d="m-27.412 384.07 320.42 494.11 74.64-465.58-395.06-28.53z"
+        />
+        <path
+           sodipodi:nodetypes="ccc"
+           style="stroke-linejoin:bevel;stroke:#ffffff;stroke-dasharray:16, 8;stroke-width:8;fill:none"
+           d="m367.65 412.6 429.22 168.9-503.89 296.71"
+        />
+        <path
+           sodipodi:nodetypes="ccc"
+           style="stroke-linejoin:bevel;stroke:#ffffff;stroke-dasharray:16, 8;stroke-width:8;fill:none"
+           d="m-27.412 384.07 535.11-321.5-140.05 350.03"
+        />
+        <path
+           sodipodi:nodetypes="ccc"
+           style="stroke-linejoin:bevel;stroke:#ffffff;stroke-dasharray:16, 8;stroke-width:8;fill:none"
+           d="m367.65 412.6 429.18 168.9-289.13-518.93"
+        />
+        <path
+           style="stroke-linejoin:round;stroke:#ffffff;stroke-width:8;fill:none"
+           d="m-27.412 384.07 535.11-321.5-69.05 534.03-466.06-212.53z"
+        />
+        <path
+           style="stroke-linejoin:round;stroke:#ffffff;stroke-width:8;fill:none"
+           d="m-27.412 384.07 320.42 494.11 145.64-281.58-466.06-212.53z"
+        />
+        <path
+           style="stroke-linejoin:round;stroke:#ffffff;stroke-width:8;fill:none"
+           d="m796.87 581.5-503.89 296.71 145.67-281.61 358.22-15.1z"
+        />
+        <path
+           style="stroke-linejoin:round;stroke:#ffffff;stroke-width:8;fill:none"
+           d="m796.83 581.5-289.13-518.93-69.05 534.03 358.18-15.1z"
+        />
+      </g>
+    </g>
+  </g>
+</svg>

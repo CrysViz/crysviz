@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="./styles/toggle_styles.css">
     <link rel="stylesheet" href="./styles/BondAtomColorPanel.css">
     <link rel="stylesheet" href="./styles/info_button_styles.css">
+    <link rel="stylesheet" href="./styles/wheel_styles.css">
 
 
     <script type="importmap">
@@ -114,22 +115,10 @@
         </div>
         <div id="TrajectoryComparisonContainer"></div>
 
-        <div class="segmented-control" id="ControlPanelSpinForceSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="Forces">Forces</button>
-          <button data-mode="Spins">Spins</button>
-          <button data-mode="Field">Field</button>
-          <button data-mode="Planes">Planes</button>
-         </div>
-         <div id="SpinForceFieldContainer"></div>
-         <div id="PlanesContainer" style="display:none;"></div>
+         <div id="ControlWheel"></div>
 
-        <div class="segmented-control" id="ControlPanelAnalysisSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="Bonds">Bonds</button>
-          <button data-mode="Lattice">Cell</button>
-          <button data-mode="Polyhedra">Polyhedra</button>
-        </div>
+        <div id="SpinForceFieldContainer"></div>
+        <div id="PlanesContainer" style="display:none;"></div>
         <div id="BondLatticeContainer"></div>
 
     </div>

@@ -270,10 +270,10 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
   setupFieldControlEvents(fields, container);
 
   // Setup delete field button
-  //const deleteButton = document.getElementById("deleteField");
-  //if (deleteButton) {
-  //  deleteButton.onclick = removeFieldPanel;
-  //}
+  const deleteButton = document.getElementById("deleteField");
+  if (deleteButton) {
+    deleteButton.onclick = removeFieldPanel;
+  }
 }
 
 function showNoFieldsMessage(target = "SpinForceFieldContainer") {
@@ -318,10 +318,10 @@ export function removeFieldPanel(target = "SpinForceFieldContainer") {
     }
     
     // Clear the controls content and hide the group
-    //if (fieldControlsGroup) {
-      //fieldControlsGroup.innerHTML = '';
-    //}
-    //fieldControlsGroup.style.display = "none";
+    if (fieldControlsGroup) {
+      fieldControlsGroup.innerHTML = '';
+    }
+    fieldControlsGroup.style.display = "none";
   }
 }
 

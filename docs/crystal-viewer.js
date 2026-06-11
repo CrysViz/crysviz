@@ -23,6 +23,7 @@ import { parsePWSCFout} from './modules/ReadPWSCFoutModule.js';
 import { parsePWSCFin} from './modules/ReadPWSCFinModule.js';
 import {parseXYZFile} from './modules/ReadeXYZModule.js';
 import { setupStructureInput, parsePOSCAR} from './modules/StructureInputModule.js';
+import {addControlWheel} from './panels/wheelControlPanel.js';
 
 // ........................................................................................................
 // Import Modules
@@ -54,6 +55,8 @@ import {addCameraPanel} from './panels/CameraPanel.js'
 import {addColorPanel} from './panels/ColorPanel.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, clearField } from './modules/Render3DFieldModule.js';
+import {parseResFile} from './modules/ReadResModule.js'
+import {parseASETrajectory} from './modules/ReadASETrajectoryModule.js'
 //import {addAtomPanel} from './modules/addToStructureModule/addAtomPanel.js'
 
 // .........................................................................................................
@@ -70,7 +73,7 @@ import {addSpinPanel} from './panels/SpinPanel.js';
 import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
 import {renderComposition} from './panels/StructureInfoPanel/General.js';
 import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
-import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch, updateControlSpinForcePanel} from './panels/ControlPanel.js';
+import {addControlPanelModeSwitch,addControlWheelListener} from './panels/ControlPanel.js';
 import {addHistogramPanel} from  './panels/AnalysisPanels/BondAnalysisPanel.js';
 import {addBackendModeSwitch} from './panels/BackendPanel/BackendSwitchPanel.js';
 
@@ -271,7 +274,20 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
      const treatAsEXZY = lower.endsWith(".xyz") ||
                           lower.endsWith(".exyz");  
 
-    if (treatAsEXZY){
+
+     const treatAsRes = lower.endsWith(".res");
+
+     const treatAsASETraj = lower.endsWith(".traj");
+
+    if (treatAsASETraj) {
+      await parseASETrajectory(content, fileName)
+    }
+
+    else if (treatAsRes) {
+     await parseResFile(content, fileName)
+    }
+
+    else if (treatAsEXZY){
       await parseXYZFile(content, fileName)
     }
 
@@ -317,7 +333,6 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
     //createBondLengthControls();
     createShareButton();
     updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true,reRenderField:true});
-    updateControlSpinForcePanel();
     console.warn(fileBrowser.selectedStructure)
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();
@@ -1172,14 +1187,14 @@ function setupMobileMenu() {
   }
   setupThemeSystem();
   createBackgroundControl();
+  addControlWheel('ControlWheel')
+  addControlWheelListener('ControlWheel')
   addControlPanelModeSwitch();
-  addControlPanelSpinForceSwitch();
   addBackendModeSwitch();
   addSavePanel();
   addCameraPanel();
   addColorPanel();
   addAtomVacuumPanel();
-  addControlPanelAnalysisSwitch();
   addStorageInfoPanel();
   addAnalysisInfoPanel();
   addUploadInfoPanel();

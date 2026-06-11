@@ -336,118 +336,107 @@ export function addControlPanelModeSwitch() {
 }
 
 
-const ControlPanelSpinForceSwitch = document.getElementById("ControlPanelSpinForceSwitch");
-export function addControlPanelSpinForceSwitch() {
+// Add this to your main file (after importing wheelControlPanel.js)
+export function addControlWheelListener(containerId) {
 
-  ControlPanelSpinForceSwitch.addEventListener("click", (e) => {
-    const btn = e.target.closest("button");
-    if (!btn || !btn.dataset.mode) return;
+  // Get the wheel container
+  const wheelContainer = document.getElementById(containerId);
 
-    const mode = btn.dataset.mode;
-    general.spinForceState = mode;
+  // Add mode change listener
+  wheelContainer.addEventListener('modeChange', (e) => {
+    const mode = e.detail.mode;
 
-    // Update UI
-    ControlPanelSpinForceSwitch.querySelectorAll("button").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
+    // Handle SpinForce modes
+    if (['none', 'Forces', 'Spins', 'Field', 'Planes'].includes(mode)) {
+      general.spinForceState = mode;
 
-    
-    updateControlSpinForcePanel(mode);
-  });
-}
+      // Reset analysis state and panels when switching to SpinForce modes
+      if (mode !== 'none' && general.analysisState !== 'none') {
+        general.analysisState = 'none';
+        removeHistogramPanel();
+        removeBondPanel();
+        removeLatticeAndSupercellPanel();
+      }
 
-export function updateControlSpinForcePanel(mode = general.spinForceState) {
-  // Handle different modes
-    if (general.spinForceState == "Forces") {
-      removeSpins();
-      removeSpinPanel();
-      removeFieldPanel();
-      removePlanesPanel();
-
-      addForcePanel();
-      updateForces();
+      // Update SpinForce panels
+      if (mode === 'Forces') {
+        removeSpins();
+        removeSpinPanel();
+        removeFieldPanel();
+        removePlanesPanel();
+        addForcePanel();
+        updateForces();
+      }
+      else if (mode === 'Spins') {
+        removeForcePanel();
+        removeFieldPanel();
+        removePlanesPanel();
+        removeForces();
+        addSpinPanel();
+        updateSpins();
+      }
+      else if (mode === 'Field') {
+        removeSpinPanel();
+        removeForcePanel();
+        removeForces();
+        removeSpins();
+        removePlanesPanel();
+        addFieldPanel();
+      }
+      else if (mode === 'Planes') {
+        removeSpinPanel();
+        removeForcePanel();
+        removeFieldPanel();
+        removeForces();
+        removeSpins();
+        addPlanesPanel();
+      }
+      else { // none
+        removeSpins();
+        removeSpinPanel();
+        removeForcePanel();
+        removeFieldPanel();
+        removePlanesPanel();
+        removeForces();
+      }
     }
-    else if (general.spinForceState == "Spins") {
-      removeForcePanel();
-      removeFieldPanel();
-      removePlanesPanel();
-      removeForces();
+    // Handle Analysis modes
+    else if (['Bonds', 'Lattice', 'Polyhedra'].includes(mode)) {
+      general.analysisState = mode;
 
-      addSpinPanel();
-      console.log("Spins Clicked!!")
-      updateSpins();
-    }
-    else if (general.spinForceState == "Field") {
-      removeSpinPanel();
-      removeForcePanel();
-      removeForces();
-      removeSpins();
-      removePlanesPanel();
+      // Reset spinForce state and panels when switching to Analysis modes
+      if (mode !== 'none' && general.spinForceState !== 'none') {
+        general.spinForceState = 'none';
+        removeSpins();
+        removeSpinPanel();
+        removeForcePanel();
+        removeFieldPanel();
+        removePlanesPanel();
+        removeForces();
+      }
 
-      addFieldPanel();
-    }
-    else if (general.spinForceState == "Planes") {
-      removeSpinPanel();
-      removeForcePanel();
-      removeFieldPanel();
-      removeForces();
-      removeSpins();
-
-      addPlanesPanel();
-    }
-    else {
-      //removeForces
-      removeSpins();
-      removeSpinPanel();
-      removeForcePanel();
-      removeFieldPanel();
-      removePlanesPanel();
-      removeForces();
-      //remove  vectorFieldPanel();
-    }
-}
-
-export function addControlPanelAnalysisSwitch() {
-  ControlPanelAnalysisSwitch.addEventListener("click", (e) => {
-    const btn = e.target.closest("button");
-    if (!btn || !btn.dataset.mode) return;
-
-    const mode = btn.dataset.mode;
-    general.analysisState = mode;
-
-    // Update UI
-    ControlPanelAnalysisSwitch.querySelectorAll("button").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-
-    // Handle different modes
-    if (general.analysisState == "Lattice") {
-      console.warn("Lattice analysis not yet implemented!")
-      
-      removeHistogramPanel()
-      
-      removeBondPanel()
-      
-      removeCutPlanePanel()
-      addLatticeAndSupercellPanel()
-    }
-    else if (general.analysisState == "Bonds") {
-      removeBondPanel()
-      addBondPanel()
-      removeCutPlanePanel()
-      removeLatticeAndSupercellPanel()
-     }
-    else if (general.analysisState == "Polyhedra") {
-      removeBondPanel()
-      console.warn("Polyhedera analysis not yet implemented!")
-      removeHistogramPanel()
-      removeLatticeAndSupercellPanel()
-    }
-    else {
-      removeHistogramPanel()
-      removeBondPanel()
-      removeLatticeAndSupercellPanel()
+      // Update Analysis panels
+      if (mode === 'Lattice') {
+        removeHistogramPanel();
+        removeBondPanel();
+        removeCutPlanePanel();
+        addLatticeAndSupercellPanel();
+      }
+      else if (mode === 'Bonds') {
+        removeBondPanel();
+        addBondPanel();
+        removeCutPlanePanel();
+        removeLatticeAndSupercellPanel();
+      }
+      else if (mode === 'Polyhedra') {
+        removeBondPanel();
+        removeHistogramPanel();
+        removeLatticeAndSupercellPanel();
+      }
     }
   });
 }
+
 
 export function resetSwitch(switchContainer, stateKey, defaultMode = "None") {
   // Update internal state

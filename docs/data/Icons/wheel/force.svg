@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 34.9 57.24">
+  <defs>
+    <style>
+      .cls-1 {
+        font-family: MyriadPro-Regular, 'Myriad Pro';
+        font-size: 48px;
+      }
+
+      .cls-1, .cls-2 {
+        stroke: #fff;
+        stroke-miterlimit: 10;
+      }
+
+      .cls-1, .cls-3 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        fill: none;
+        stroke-width: 4px;
+      }
+    </style>
+  </defs>
+  <text class="cls-1" transform="translate(.5 44.74)"><tspan x="0" y="0">F</tspan></text>
+  <g>
+    <line class="cls-2" x1="3.16" y1="7.18" x2="24.56" y2="7.18"/>
+    <polygon class="cls-3" points="22.46 14.36 34.9 7.18 22.46 0 22.46 14.36"/>
+  </g>
+</svg>
