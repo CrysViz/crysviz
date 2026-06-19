@@ -4,7 +4,11 @@
 
 import * as THREE from "three";
 
+<<<<<<< Updated upstream
 import { initializeUIOnLoad, readPOSCAR, initializeWithPOSCAR } from '../modules/StructureInputModule.js';
+=======
+import { initializeUIOnLoad, readPOSCAR, initializeWithPOSCAR } from '../ui/StructureInputModule.js';
+>>>>>>> Stashed changes
 import { fieldBrowser, updateFieldPanel } from "../ui/FieldPanel.js";
 import { app, fileBrowser, groups } from '../store.js';
 import { readCHGCAR } from "../io/ReadChgcarModule.js";

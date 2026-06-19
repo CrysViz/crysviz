@@ -1,6 +1,10 @@
 import { app, general, measurements, fileBrowser } from '../store.js';
 import * as THREE from '../external/three/three.module.js';
+<<<<<<< Updated upstream
 import { parsePOSCAR } from '../modules/StructureInputModule.js';
+=======
+import { parsePOSCAR } from './StructureInputModule.js';
+>>>>>>> Stashed changes
 import { updateAtoms } from '../render/AtomsFracUpdateModule.js';
 import { rebuildBonds } from '../render/BondsFracUpdateModule.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from './MeasurementModule.js';

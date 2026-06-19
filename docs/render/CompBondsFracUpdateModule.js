@@ -15,7 +15,11 @@ import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
 
 import {updateAtoms} from './AtomsFracUpdateModule.js'
+<<<<<<< Updated upstream
 import {generateID} from '../modules/UUIDModule.js'
+=======
+import {generateID} from '../utils/UUIDModule.js'
+>>>>>>> Stashed changes
 import {periodic} from '../store.js'
 //import {getBondCutoff} from './BondsModule.js'
 //

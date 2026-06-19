@@ -4,7 +4,11 @@ import { updateVisualization } from '../../crystal-viewer.js';
 
 
 import { createColorPicker } from '../ColorPickerModule.js';
+<<<<<<< Updated upstream
 import { createSupercell} from '../../modules/SuperCellModule.js';
+=======
+import { createSupercell} from '../SuperCellModule.js';
+>>>>>>> Stashed changes
 import { resetView,collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { createCompositionRow, createWyckoffCompositionRow} from './Species.js'
 import { createSpecificBondControl} from './Bonds.js'

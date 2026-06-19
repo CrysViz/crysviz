@@ -8,7 +8,7 @@ import {
   isWyckoffModeActive,
   symmetrizeCartesianPositions,
   symmetrizeCartesianVectors,
-} from '../modules/SymmetryEditModule.js';
+} from '../ui/SymmetryEditModule.js';
 
 const KB_EV_PER_K = 8.617333262e-5;
 const ACCEL_AFS2_PER_EVAA_AMU = 0.00964853399;

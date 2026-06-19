@@ -10,7 +10,11 @@ import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './Lattic
 
 import {setAtomColor}  from '../ui/ColorModule.js';
 
+<<<<<<< Updated upstream
 import {generateID} from '../modules/UUIDModule.js' 
+=======
+import {generateID} from '../utils/UUIDModule.js' 
+>>>>>>> Stashed changes
 
 const MAX_CUT_PLANES = 8;
 

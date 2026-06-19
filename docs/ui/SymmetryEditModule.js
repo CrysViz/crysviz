@@ -1,7 +1,11 @@
 import init, { analyze_cell } from '../external/moyo-test/moyo_wasm.js';
 import { fileBrowser, general, structureShip } from '../store.js';
 import { updateVisualization } from '../crystal-viewer.js';
+<<<<<<< Updated upstream:docs/modules/SymmetryEditModule.js
 import { PT_INVERTED } from '../ui/BackendPanel/MoyoWASM.js';
+=======
+import { PT_INVERTED } from './BackendPanel/MoyoWASM.js';
+>>>>>>> Stashed changes:docs/ui/SymmetryEditModule.js
 import { cartToFrac, fracToCart, invert3x3, transpose3x3 } from '../math/index.js';
 
 let moyoReady = null;

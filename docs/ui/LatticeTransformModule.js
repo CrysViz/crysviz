@@ -1,6 +1,10 @@
 // LatticeTransformModule.js
 import { updateVisualization } from '../crystal-viewer.js';
+<<<<<<< Updated upstream:docs/modules/LatticeTransformModule.js
 import { resetView } from '../ui/WindowAndSceneControls.js';
+=======
+import { resetView } from './WindowAndSceneControls.js';
+>>>>>>> Stashed changes:docs/ui/LatticeTransformModule.js
 import {fileBrowser} from '../store.js'
 
 export function applyLatticeTransformation(matrix) {

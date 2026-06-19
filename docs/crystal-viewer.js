@@ -17,12 +17,20 @@ const tableBody = document.querySelector("#objectTable tbody");
 
 
 // import from the old file structure that need to be combined and ported to the new structure
+<<<<<<< Updated upstream
 import { setupSecondStructureInput } from './modules/SecondStructureModule.js';
+=======
+import { setupSecondStructureInput } from './ui/SecondStructureModule.js';
+>>>>>>> Stashed changes
 import { parseOUTCAR} from './io/ReadOutcarModule.js';
 import { parsePWSCFout} from './io/ReadPWSCFoutModule.js';
 import { parsePWSCFin} from './io/ReadPWSCFinModule.js';
 import {parseXYZFile} from './io/ReadeXYZModule.js';
+<<<<<<< Updated upstream
 import { setupStructureInput, parsePOSCAR} from './modules/StructureInputModule.js';
+=======
+import { setupStructureInput, parsePOSCAR} from './ui/StructureInputModule.js';
+>>>>>>> Stashed changes
 
 // ........................................................................................................
 // Import Modules
@@ -43,13 +51,17 @@ import {rebuildAtoms,updateAtoms,updateSingleAtomDiameter} from './render/AtomsF
 import {rebuildSecondAtoms,updateSecondAtoms,updateSecondSingleAtomDiameter} from './render/CompAtomsFracUpdateModule.js';
 
 
-import {createSupercell} from './modules/SuperCellModule.js';
+import {createSupercell} from './ui/SuperCellModule.js';
 import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,
         addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './ui/MeasurementModule.js' // not all imports might be needed in this file
 
 import {highlightBondInfoInStructurePanel,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './ui/SelectAndHighlightModule.js';
 
+<<<<<<< Updated upstream
 import {addAtomVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
+=======
+import {addAtomVacuumPanel} from './ui/addToStructureModule/AddVacuumModule.js'
+>>>>>>> Stashed changes
 import {addCameraPanel} from './ui/CameraPanel.js'
 import {addColorPanel} from './ui/ColorPanel.js'
 
@@ -100,7 +112,11 @@ import {Structure} from './model/Structure.js'
 
 // New imports (which go here, because they need initializations that happen above until things are refactored)
 import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from './io/index.js';
+<<<<<<< Updated upstream
 import { initializeUIOnLoad } from './modules/StructureInputModule.js';
+=======
+import { initializeUIOnLoad } from './ui/StructureInputModule.js';
+>>>>>>> Stashed changes
 import { fieldBrowser } from './ui/FieldPanel.js';
 import { resetMathBackend } from './math/index.js';
 

@@ -5,7 +5,11 @@ import {updateAngleDisplays} from './cameraAngleControl.js';
 import { app, general,mode, groups} from '../store.js';
 import {updateLattice,recomputeLatticeDirs,latticeDirsNorm} from './LatticeModule.js'
 
+<<<<<<< Updated upstream
 import {updateRandomColors} from '../modules/DiscoModule.js'
+=======
+import {updateRandomColors} from '../ui/DiscoModule.js'
+>>>>>>> Stashed changes
 
 
 let isRendering = true;

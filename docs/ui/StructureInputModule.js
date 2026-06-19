@@ -7,8 +7,13 @@ import { Structure } from '../model/Structure.js';
 import { Atom } from '../model/Atom.js';
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser,structureShip} from '../store.js';
+<<<<<<< Updated upstream:docs/modules/StructureInputModule.js
 import {createRow,selectLastAddedRow} from '../ui/FileBrowswerPanel.js';
 import {generateID} from './UUIDModule.js';
+=======
+import {createRow,selectLastAddedRow} from './FileBrowswerPanel.js';
+import {generateID} from '../utils/UUIDModule.js';
+>>>>>>> Stashed changes:docs/ui/StructureInputModule.js
 import {buildBondObjects} from '../render/BondsFracUpdateModule.js';
 import {runPeriodicWrapped} from '../render/LatticeModule.js';
 import {

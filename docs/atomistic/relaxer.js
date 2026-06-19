@@ -7,7 +7,7 @@ import {
   matVec,
   normalizeFractionalPositions,
 } from './math.js';
-import { symmetrizeCartesianPositions, symmetrizeCartesianVectors, isWyckoffModeActive } from '../modules/SymmetryEditModule.js';
+import { symmetrizeCartesianPositions, symmetrizeCartesianVectors, isWyckoffModeActive } from '../ui/SymmetryEditModule.js';
 
 function symbolCase(sym) {
   const s = String(sym ?? '').trim();
