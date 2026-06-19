@@ -1,2 +1,10 @@
 *~
 \#*
+.DS_Store
+*.swp
+*.swo
+*.back
+node_modules/
+.env
+.env.local
+*.log
