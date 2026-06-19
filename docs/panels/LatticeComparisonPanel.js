@@ -1,4 +1,4 @@
-import { latticeParameters } from '../modules/math/index.js';
+import { latticeParameters } from '../math/index.js';
 
 function percentDiff(v1, v2) { return Math.abs(v2 - v1) / v1; }
 

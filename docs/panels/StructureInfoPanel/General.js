@@ -9,7 +9,7 @@ import { resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneC
 import { createCompositionRow, createWyckoffCompositionRow} from './Species.js'
 import { createSpecificBondControl} from './Bonds.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'
-import { latticeVolume } from '../../modules/math/index.js';
+import { latticeVolume } from '../../math/index.js';
 
 
 // Function to handle structure panel toggle

@@ -6,9 +6,9 @@ export {
   normalizeFractional,
   normalizeFractionalPoint,
   normalizeFractionalPositions,
-} from '../modules/math/index.js';
+} from '../math/index.js';
 
-import { cartToFrac as cartToFractional } from '../modules/math/index.js';
+import { cartToFrac as cartToFractional } from '../math/index.js';
 
 export function cartToFrac(cart, lattice) {
   return cart.map((point) => cartToFractional(point, lattice));

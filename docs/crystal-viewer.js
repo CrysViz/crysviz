@@ -102,7 +102,7 @@ import {Structure} from './classes/Structure.js'
 import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from './modules/io.js';
 import { initializeUIOnLoad } from './modules/StructureInputModule.js';
 import { fieldBrowser } from './panels/FieldPanel.js';
-import { resetMathBackend } from './modules/math/index.js';
+import { resetMathBackend } from './math/index.js';
 
 // ........................................................................................................
 //
@@ -1273,7 +1273,7 @@ async function initializeMathBackend() {
   }
 
   try {
-    const { initMathWasmBackend, installMathWasmBackend } = await import('./modules/math/backend-wasm.js');
+    const { initMathWasmBackend, installMathWasmBackend } = await import('./math/backend-wasm.js');
     const backend = await initMathWasmBackend(new URL('./compiled/math_backend.wasm', import.meta.url));
     installMathWasmBackend(backend);
   } catch (error) {

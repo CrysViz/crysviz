@@ -4,7 +4,7 @@ import {
   cartToFrac,
   transpose3x3,
   invert3x3,
-} from './math/index.js';
+} from '../math/index.js';
 
 //imports in worker are relative to index!!
 

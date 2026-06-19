@@ -3,7 +3,7 @@
 // Exports: readCubeFile(), updateField()
 //
 import { Structure } from '../classes/Structure.js';
-import { invert3x3, transpose3x3, cartToFractional, normalizeFractional } from './math/index.js';
+import { invert3x3, transpose3x3, cartToFractional, normalizeFractional } from '../math/index.js';
 import { runPeriodicWrapped } from './LatticeModule.js';
 import { Field } from '../classes/Field.js';
 import { FieldContainer } from '../classes/FieldContainer.js';

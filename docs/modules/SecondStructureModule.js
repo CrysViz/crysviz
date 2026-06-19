@@ -9,7 +9,7 @@ import {
   normalizeFractional,
   latticeFromCell,
   cartToFractional,
-} from './math/index.js';
+} from '../math/index.js';
 
 export {
   invert3x3,

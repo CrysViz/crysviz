@@ -2,7 +2,7 @@ import init, { analyze_cell } from '../external/moyo-test/moyo_wasm.js';
 import { fileBrowser, general, structureShip } from '../store.js';
 import { updateVisualization } from '../crystal-viewer.js';
 import { PT_INVERTED } from '../panels/BackendPanel/MoyoWASM.js';
-import { cartToFrac, fracToCart, invert3x3, transpose3x3 } from './math/index.js';
+import { cartToFrac, fracToCart, invert3x3, transpose3x3 } from '../math/index.js';
 
 let moyoReady = null;
 

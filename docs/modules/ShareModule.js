@@ -5,7 +5,7 @@ import { updateAtoms } from './AtomsFracUpdateModule.js';
 import { rebuildBonds } from './BondsFracUpdateModule.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from './MeasurementModule.js';
 import { createBondLengthControls } from '../panels/BondLengthPanel.js';
-import { fracToCart } from './math/index.js';
+import { fracToCart } from '../math/index.js';
 
 const URL_WARN_CHARS = 4000;
 const URL_HARD_CHARS = 10000;

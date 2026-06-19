@@ -18,7 +18,7 @@ import {
   normalizeFractional,
   latticeFromCell,
   cartToFractional,
-} from './math/index.js';
+} from '../math/index.js';
 
 export {
   transpose3x3,

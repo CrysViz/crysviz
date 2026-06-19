@@ -6,7 +6,7 @@ import { createBondLengthControls } from '../panels/BondLengthPanel.js';
 import { createShareButton} from './ShareModule.js';
 import {loadStructure, updateVisualization} from '../crystal-viewer.js';
 import {clearMeasure} from './MeasurementModule.js';
-import { fracToCart } from './math/index.js';
+import { fracToCart } from '../math/index.js';
 import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
   initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView,collapseAllAtomExpansions
 } from '../panels/WindowAndSceneControls.js'

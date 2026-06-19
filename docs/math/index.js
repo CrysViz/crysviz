@@ -4,7 +4,7 @@
  * Design:
  * - `backend-js.js` provides the default pure-JavaScript implementation.
  * - This file is the stable import surface for the rest of the app.
- * - Callers should import math helpers from `modules/math/index.js` rather than
+ * - Callers should import math helpers from `math/index.js` rather than
  *   directly from a concrete backend.
  *
  * Backend switching:
@@ -22,7 +22,7 @@
  * - Add a WASM backend module with the same function names/signatures.
  * - Install it here once loaded, for example:
  *   `setMathBackend({ invert3x3: wasmInvert3x3, fracToCart: wasmFracToCart })`
- * - In this repository, `modules/math/backend-wasm.js` is the adapter layer for
+ * - In this repository, `math/backend-wasm.js` is the adapter layer for
  *   the Emscripten build in `docs/compiled/math_backend.c`.
  */
 import * as jsMath from './backend-js.js';

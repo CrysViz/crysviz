@@ -9,7 +9,7 @@ import {
   dot3,
   acosDeg,
   latticeVolume,
-} from '../modules/math/index.js';
+} from '../math/index.js';
 
 export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
   const targetPanel = document.getElementById(target);

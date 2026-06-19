@@ -11,7 +11,7 @@ import {
   transpose3x3,
   invert3x3,
   multiplyMatVec,
-} from './math/index.js';
+} from '../math/index.js';
 
 import init, { periodic_wrapped } from '../compiled/periodic_wasm.js';
 import { initPeriodicWasm, periodicWrapped as wasmPeriodicWrapped } from '../compiled/periodicWasm.js';
@@ -29,7 +29,7 @@ export {
   transpose3x3,
   invert3x3,
   multiplyMatVec,
-} from './math/index.js';
+} from '../math/index.js';
 
 export function periodicWrapped(general, frac, elements, lattice) {
   if (general.useWasmPeriodic) {

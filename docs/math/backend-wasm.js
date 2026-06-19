@@ -1,4 +1,4 @@
-import createMathModule from '../../compiled/math_backend.js';
+import createMathModule from '../compiled/math_backend.js';
 import { jsMath, setMathBackend } from './index.js';
 
 /**
@@ -171,7 +171,7 @@ function createMathWasmBackend(module) {
   };
 }
 
-export async function initMathWasmBackend(wasmUrl = new URL('../../compiled/math_backend.wasm', import.meta.url)) {
+export async function initMathWasmBackend(wasmUrl = new URL('../compiled/math_backend.wasm', import.meta.url)) {
   const module = await createMathModule({ locateFile: () => wasmUrl.href });
   return createMathWasmBackend(module);
 }

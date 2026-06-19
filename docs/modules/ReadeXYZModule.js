@@ -11,7 +11,7 @@ import { Force } from "../classes/Force.js";
 import { Spin } from "../classes/Spin.js";
 import { structureShip, fileBrowser } from '../store.js';
 import { createRow, selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
-import { transpose3x3, multiplyMatVec, invert3x3 } from './math/backend-js.js';
+import { transpose3x3, multiplyMatVec, invert3x3 } from '../math/backend-js.js';
 
 
 /**
