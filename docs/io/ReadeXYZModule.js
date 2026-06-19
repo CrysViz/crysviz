@@ -10,7 +10,7 @@ import { Atom } from "../model/Atom.js";
 import { Force } from "../model/Force.js";
 import { Spin } from "../model/Spin.js";
 import { structureShip, fileBrowser } from '../store.js';
-import { createRow, selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
+import { createRow, selectLastAddedRow } from '../ui/FileBrowswerPanel.js';
 import { transpose3x3, multiplyMatVec, invert3x3 } from '../math/backend-js.js';
 
 

@@ -5,7 +5,7 @@ import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getL
 
 
 
-import { createColorPicker } from '../../modules/ColorPickerModule.js';
+import { createColorPicker } from '../ColorPickerModule.js';
 import * as THREE from '../../external/three/three.module.js';
 import {fracToCart} from '../../render/LatticeModule.js'
 
@@ -13,7 +13,7 @@ import {fracToCart} from '../../render/LatticeModule.js'
 
 
 
-import {clearAllHighlights} from '../../modules/SelectAndHighlightModule.js';
+import {clearAllHighlights} from '../SelectAndHighlightModule.js';
 
 
 let placeholderMessage;

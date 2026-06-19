@@ -11,8 +11,8 @@ import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
 
 import {updateAtoms} from './AtomsFracUpdateModule.js'
-//import {bondLengthToColor} from '../panels/ColorPanel.js'
-import {refreshHistogram} from '../panels/AnalysisPanels/BondAnalysisPanel.js'
+//import {bondLengthToColor} from '../ui/ColorPanel.js'
+import {refreshHistogram} from '../ui/AnalysisPanels/BondAnalysisPanel.js'
 import {generateID} from '../modules/UUIDModule.js'
 import {periodic} from '../store.js'
 //import {getBondCutoff} from './BondsModule.js'

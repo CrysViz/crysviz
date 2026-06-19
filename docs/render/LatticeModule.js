@@ -3,7 +3,7 @@ import * as THREE from '../external/three/three.module.js';
 import {app, groups,periodic, fileBrowser, general,mode} from '../store.js';
 import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
 
-import {disposeGroup} from '../panels/WindowAndSceneControls.js'
+import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import {getBondCutoff} from './BondsFracUpdateModule.js'
 import {
   fracToCart,

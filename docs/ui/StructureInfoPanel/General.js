@@ -3,9 +3,9 @@ import { defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,get
 import { updateVisualization } from '../../crystal-viewer.js';
 
 
-import { createColorPicker } from '../../modules/ColorPickerModule.js';
+import { createColorPicker } from '../ColorPickerModule.js';
 import { createSupercell} from '../../modules/SuperCellModule.js';
-import { resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
+import { resetView,collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { createCompositionRow, createWyckoffCompositionRow} from './Species.js'
 import { createSpecificBondControl} from './Bonds.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'

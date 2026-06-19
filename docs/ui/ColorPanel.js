@@ -1,10 +1,10 @@
 import * as THREE from '../external/three/three.module.js'
-import { createColorPicker } from '../modules/ColorPickerModule.js';
+import { createColorPicker } from './ColorPickerModule.js';
 import {updateVisualization} from '../crystal-viewer.js';  
 import {app, groups,fileBrowser, general,mode} from '../store.js';
 import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings,getColorFromMap,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 
-import { switchCameraType } from '../panels/WindowAndSceneControls.js';
+import { switchCameraType } from '../ui/WindowAndSceneControls.js';
 import { updateBonds } from '../render/BondsFracUpdateModule.js'
 import { updateAtoms } from '../render/AtomsFracUpdateModule.js'
 import { updateSingleBondColor } from '../render/BondsFracUpdateModule.js'

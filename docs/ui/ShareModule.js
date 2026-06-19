@@ -1,10 +1,10 @@
 import { app, general, measurements, fileBrowser } from '../store.js';
 import * as THREE from '../external/three/three.module.js';
-import { parsePOSCAR } from './StructureInputModule.js';
+import { parsePOSCAR } from '../modules/StructureInputModule.js';
 import { updateAtoms } from '../render/AtomsFracUpdateModule.js';
 import { rebuildBonds } from '../render/BondsFracUpdateModule.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from './MeasurementModule.js';
-import { createBondLengthControls } from '../panels/BondLengthPanel.js';
+import { createBondLengthControls } from './BondLengthPanel.js';
 import { fracToCart } from '../math/index.js';
 
 const URL_WARN_CHARS = 4000;

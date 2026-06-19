@@ -1,6 +1,6 @@
 import {groups,highlightHover,fileBrowser} from '../store.js';
-import {collapseAllAtomExpansions} from '../panels/WindowAndSceneControls.js';
-import {updateBondControlPanel} from '../panels/StructureInfoPanel/Bonds.js';
+import {collapseAllAtomExpansions} from './WindowAndSceneControls.js';
+import {updateBondControlPanel} from './StructureInfoPanel/Bonds.js';
 import * as THREE from '../external/three/three.module.js';
 import {updateAtoms} from '../render/AtomsFracUpdateModule.js'
 import {updateBonds} from '../render/BondsFracUpdateModule.js'

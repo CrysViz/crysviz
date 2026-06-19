@@ -1,6 +1,6 @@
 const tableBody = document.querySelector("#objectTable tbody");
 import { structureShip, fileBrowser } from '../store.js';
-import { createRow, selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
+import { createRow, selectLastAddedRow } from '../ui/FileBrowswerPanel.js';
 import { StructureContainer } from "../model/StructureContainer.js";
 import { Structure } from "../model/Structure.js";
 import { Spin } from "../model/Spin.js";

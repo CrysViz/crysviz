@@ -8,7 +8,7 @@ import {Atom} from '../model/Atom.js';
 import {Bond} from '../model/Bond.js';
 
 
-import {disposeGroup} from '../panels/WindowAndSceneControls.js'
+import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 
 
 import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'

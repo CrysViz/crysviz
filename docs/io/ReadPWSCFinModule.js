@@ -3,7 +3,7 @@ import { Atom } from "../model/Atom.js";
 import { StructureContainer } from "../model/StructureContainer.js";
 import {runPeriodicWrapped} from "../render/LatticeModule.js";
 import { structureShip,fileBrowser } from '../store.js';
-import { createRow,selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
+import { createRow,selectLastAddedRow } from '../ui/FileBrowswerPanel.js';
 import {
   transpose3x3,
   invert3x3,

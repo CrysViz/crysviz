@@ -1,6 +1,6 @@
 import {general,app} from '../store.js'
 import * as THREE from '../external/three/three.module.js';
-import {switchCameraType} from  '../panels/WindowAndSceneControls.js'
+import {switchCameraType} from  '../ui/WindowAndSceneControls.js'
 
 export function addCameraPanel(target = "cameraContainer") {
 

@@ -1,15 +1,15 @@
 import { app, general, measurements, fileBrowser } from '../store.js';
 import * as THREE from '../external/three/three.module.js';
 import { parsePOSCAR } from '../modules/StructureInputModule.js';
-import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../modules/MeasurementModule.js';
-import { createBondLengthControls } from '../panels/BondLengthPanel.js';
-import { createShareButton} from '../modules/ShareModule.js';
+import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../ui/MeasurementModule.js';
+import { createBondLengthControls } from '../ui/BondLengthPanel.js';
+import { createShareButton} from '../ui/ShareModule.js';
 import {loadStructure, updateVisualization} from '../crystal-viewer.js';
-import {clearMeasure} from '../modules/MeasurementModule.js';
+import {clearMeasure} from '../ui/MeasurementModule.js';
 import { fracToCart } from '../math/index.js';
 import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
   initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView,collapseAllAtomExpansions
-} from '../panels/WindowAndSceneControls.js'
+} from '../ui/WindowAndSceneControls.js'
 
 
 

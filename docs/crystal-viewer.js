@@ -31,9 +31,9 @@ import { setupStructureInput, parsePOSCAR} from './modules/StructureInputModule.
 //
 // .........................................................................................................
 import { updateAngleDisplays, setupAxisControls} from './render/cameraAngleControl.js';
-import { createColorPicker } from './modules/ColorPickerModule.js';
+import { createColorPicker } from './ui/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from './render/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
-import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js';
+import { shareStructure,createShareButton,loadSharedStructure} from './ui/ShareModule.js';
 import {loadFromFilePath} from './io/FileURLLoader.js';
 import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter,disposeBondsMesh} from './render/BondsFracUpdateModule.js'
 import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './render/CompBondsFracUpdateModule.js'
@@ -45,13 +45,13 @@ import {rebuildSecondAtoms,updateSecondAtoms,updateSecondSingleAtomDiameter} fro
 
 import {createSupercell} from './modules/SuperCellModule.js';
 import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,
-        addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './modules/MeasurementModule.js' // not all imports might be needed in this file
+        addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './ui/MeasurementModule.js' // not all imports might be needed in this file
 
-import {highlightBondInfoInStructurePanel,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './modules/SelectAndHighlightModule.js';
+import {highlightBondInfoInStructurePanel,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './ui/SelectAndHighlightModule.js';
 
 import {addAtomVacuumPanel} from './modules/addToStructureModule/AddVacuumModule.js'
-import {addCameraPanel} from './panels/CameraPanel.js'
-import {addColorPanel} from './panels/ColorPanel.js'
+import {addCameraPanel} from './ui/CameraPanel.js'
+import {addColorPanel} from './ui/ColorPanel.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, clearField } from './render/Render3DFieldModule.js';
 //import {addAtomPanel} from './modules/addToStructureModule/addAtomPanel.js'
@@ -64,18 +64,18 @@ import { updateField, parseCHGCARFile, parseCubeFile, clearField } from './rende
 // // .........................................................................................................
 import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
   initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView,collapseAllAtomExpansions
-} from './panels/WindowAndSceneControls.js'
-import {loadAboutContent, openAboutPanel, closeAboutPanel} from './panels/AboutPanel.js';
-import {addSpinPanel} from './panels/SpinPanel.js';
-import {resetBondLengths, createBondLengthControls} from './panels/BondLengthPanel.js';
-import {renderComposition} from './panels/StructureInfoPanel/General.js';
-import {addTrajectoryPlayer} from './panels/TrajectoryPanel.js';
-import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch, updateControlSpinForcePanel} from './panels/ControlPanel.js';
-import {addHistogramPanel} from  './panels/AnalysisPanels/BondAnalysisPanel.js';
-import {addBackendModeSwitch} from './panels/BackendPanel/BackendSwitchPanel.js';
+} from './ui/WindowAndSceneControls.js'
+import {loadAboutContent, openAboutPanel, closeAboutPanel} from './ui/AboutPanel.js';
+import {addSpinPanel} from './ui/SpinPanel.js';
+import {resetBondLengths, createBondLengthControls} from './ui/BondLengthPanel.js';
+import {renderComposition} from './ui/StructureInfoPanel/General.js';
+import {addTrajectoryPlayer} from './ui/TrajectoryPanel.js';
+import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch, updateControlSpinForcePanel} from './ui/ControlPanel.js';
+import {addHistogramPanel} from  './ui/AnalysisPanels/BondAnalysisPanel.js';
+import {addBackendModeSwitch} from './ui/BackendPanel/BackendSwitchPanel.js';
 
-import {addSavePanel} from './panels/SavePanel.js'
-import {addAnalysisInfoPanel,addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from './panels/InfoPanel.js'
+import {addSavePanel} from './ui/SavePanel.js'
+import {addAnalysisInfoPanel,addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from './ui/InfoPanel.js'
 
 // .........................................................................................................
 // import utils needs to moce to the "share" functionality. This is currently broken.
@@ -91,7 +91,7 @@ import {
 // file browser test
 //
 //
-import {createRow} from './panels/FileBrowswerPanel.js'
+import {createRow} from './ui/FileBrowswerPanel.js'
 
 
 // Class Structure
@@ -101,7 +101,7 @@ import {Structure} from './model/Structure.js'
 // New imports (which go here, because they need initializations that happen above until things are refactored)
 import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from './io/index.js';
 import { initializeUIOnLoad } from './modules/StructureInputModule.js';
-import { fieldBrowser } from './panels/FieldPanel.js';
+import { fieldBrowser } from './ui/FieldPanel.js';
 import { resetMathBackend } from './math/index.js';
 
 // ........................................................................................................

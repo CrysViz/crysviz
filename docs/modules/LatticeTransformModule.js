@@ -1,6 +1,6 @@
 // LatticeTransformModule.js
 import { updateVisualization } from '../crystal-viewer.js';
-import { resetView } from '../panels/WindowAndSceneControls.js';
+import { resetView } from '../ui/WindowAndSceneControls.js';
 import {fileBrowser} from '../store.js'
 
 export function applyLatticeTransformation(matrix) {

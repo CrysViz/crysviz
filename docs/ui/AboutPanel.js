@@ -14,7 +14,7 @@ export async function loadAboutContent() {
   aboutLoading = true;
   aboutContent.innerHTML = '<p id="aboutLoading">Loading About content…</p>';
   try {
-    const response = await fetch('./panels/about.md', { cache: 'no-store' });
+    const response = await fetch('./ui/about.md', { cache: 'no-store' });
     if (!response.ok) {
       throw new Error(`Request failed (${response.status})`);
     }
