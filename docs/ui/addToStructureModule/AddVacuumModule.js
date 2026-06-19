@@ -1,10 +1,6 @@
 // AddVacuumModule.js
 import { fileBrowser } from '../../store.js';
-<<<<<<< Updated upstream:docs/modules/addToStructureModule/AddVacuumModule.js
-import { createBondLengthControls } from '../../ui/BondLengthPanel.js';
-=======
 import { createBondLengthControls } from '../BondLengthPanel.js';
->>>>>>> Stashed changes:docs/ui/addToStructureModule/AddVacuumModule.js
 import { updateVisualization } from '../../crystal-viewer.js';
 
 

@@ -8,11 +8,7 @@ import { runPeriodicWrapped } from '../render/LatticeModule.js';
 import { Field } from '../model/Field.js';
 import { FieldContainer } from '../model/FieldContainer.js';
 import { Atom } from '../model/Atom.js';
-<<<<<<< Updated upstream
-import { generateID } from '../modules/UUIDModule.js';
-=======
 import { generateID } from '../utils/UUIDModule.js';
->>>>>>> Stashed changes
 
 
 //------------------------------------------------------------

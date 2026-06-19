@@ -6,11 +6,7 @@ import { Structure } from "../model/Structure.js";
 import { Spin } from "../model/Spin.js";
 import { Atom } from "../model/Atom.js";
 import { Force } from "../model/Force.js";
-<<<<<<< Updated upstream
-import {generateID} from '../modules/UUIDModule.js'
-=======
 import {generateID} from '../utils/UUIDModule.js'
->>>>>>> Stashed changes
 import {
   transpose3x3,
   multiplyMatVec,

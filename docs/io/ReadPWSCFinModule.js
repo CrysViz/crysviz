@@ -9,11 +9,7 @@ import {
   invert3x3,
   cartToFractional,
 } from "../math/index.js";
-<<<<<<< Updated upstream
-import {generateID} from '../modules/UUIDModule.js'
-=======
 import {generateID} from '../utils/UUIDModule.js'
->>>>>>> Stashed changes
 
 
 

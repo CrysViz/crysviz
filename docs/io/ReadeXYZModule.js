@@ -3,11 +3,7 @@
  * Auto-detects file format, provides default lattice, and integrates with StructureContainer
  */
 
-<<<<<<< Updated upstream
-import { generateID } from '../modules/UUIDModule.js';
-=======
 import { generateID } from '../utils/UUIDModule.js';
->>>>>>> Stashed changes
 import { StructureContainer } from "../model/StructureContainer.js";
 import { Structure } from "../model/Structure.js";
 import { Atom } from "../model/Atom.js";

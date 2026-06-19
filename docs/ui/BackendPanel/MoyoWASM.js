@@ -5,13 +5,8 @@ import init, { analyze_cell } from '../../external/moyo-test/moyo_wasm.js';
 import { Structure } from "../../model/Structure.js";
 import { Atom } from "../../model/Atom.js";
 import { StructureContainer } from "../../model/StructureContainer.js";
-<<<<<<< Updated upstream
-import { generateID } from "../../modules/UUIDModule.js";
-import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive } from '../../modules/SymmetryEditModule.js';
-=======
 import { generateID } from "../../utils/UUIDModule.js";
 import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive } from '../SymmetryEditModule.js';
->>>>>>> Stashed changes
 import { renderComposition } from '../StructureInfoPanel/General.js';
 import { refreshBackendTheme } from './BackendTheme.js';
 

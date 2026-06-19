@@ -1,10 +1,6 @@
 import { app, general, measurements, fileBrowser } from '../store.js';
 import * as THREE from '../external/three/three.module.js';
-<<<<<<< Updated upstream
-import { parsePOSCAR } from '../modules/StructureInputModule.js';
-=======
 import { parsePOSCAR } from '../ui/StructureInputModule.js';
->>>>>>> Stashed changes
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../ui/MeasurementModule.js';
 import { createBondLengthControls } from '../ui/BondLengthPanel.js';
 import { createShareButton} from '../ui/ShareModule.js';

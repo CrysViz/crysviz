@@ -8,15 +8,9 @@ import {setAtomColor,getAtomColor,colorHexToCss,hexToRgba,createPieDot,updatePie
 import { createColorPicker } from '../ColorPickerModule.js';
 import { updateBonds,updateSingleBondColor } from '../../render/BondsFracUpdateModule.js'
 import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomCutPlaneImmunity} from '../../render/AtomsFracUpdateModule.js'
-<<<<<<< Updated upstream
-import {createSupercell} from '../../modules/SuperCellModule.js';
-import {resetView,collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
-import { applyWyckoffOrbitPosition } from '../../modules/SymmetryEditModule.js';
-=======
 import {createSupercell} from '../SuperCellModule.js';
 import {resetView,collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { applyWyckoffOrbitPosition } from '../SymmetryEditModule.js';
->>>>>>> Stashed changes
 
 function clampOpacity(value) {
   const opacity = Number(value);

@@ -13,11 +13,7 @@ import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 import {updateAtoms} from './AtomsFracUpdateModule.js'
 //import {bondLengthToColor} from '../ui/ColorPanel.js'
 import {refreshHistogram} from '../ui/AnalysisPanels/BondAnalysisPanel.js'
-<<<<<<< Updated upstream
-import {generateID} from '../modules/UUIDModule.js'
-=======
 import {generateID} from '../utils/UUIDModule.js'
->>>>>>> Stashed changes
 import {periodic} from '../store.js'
 //import {getBondCutoff} from './BondsModule.js'
 //
