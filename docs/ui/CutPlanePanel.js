@@ -1,5 +1,5 @@
 import { general, fileBrowser } from '../state/store.js';
-import { updateAtomCutPlaneState } from '../render/AtomsFracUpdateModule.js';
+import { updateAtomCutPlaneState } from '../render/index.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 
 export function addCutPlanePanel(target = "TrajectoryComparisonContainer") {

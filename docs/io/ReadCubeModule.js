@@ -4,7 +4,7 @@
 //
 import { Structure } from '../model/Structure.js';
 import { invert3x3, transpose3x3, cartToFractional, normalizeFractional } from '../math/index.js';
-import { runPeriodicWrapped } from '../render/LatticeModule.js';
+import { runPeriodicWrapped } from '../render/index.js';
 import { Field } from '../model/Field.js';
 import { FieldContainer } from '../model/FieldContainer.js';
 import { Atom } from '../model/Atom.js';

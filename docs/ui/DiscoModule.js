@@ -1,5 +1,5 @@
-import { updateSingleBondColor } from '../render/BondsFracUpdateModule.js'
-import { updateSingleAtomColor } from '../render/AtomsFracUpdateModule.js'
+import { updateSingleBondColor } from '../render/index.js'
+import { updateSingleAtomColor } from '../render/index.js'
 import { app,groups, general,mode,fileBrowser} from '../state/store.js';
 
 

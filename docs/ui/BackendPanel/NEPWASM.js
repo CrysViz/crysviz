@@ -16,7 +16,7 @@ import {
   createCosineAnnealingSchedule,
   createVelocityRescaleThermostat,
 } from '../../atomistic/MD.js';
-import { updateForces } from '../../render/ForceModule.js';
+import { updateForces } from '../../render/index.js';
 import { updateRow, createRow } from '../FileBrowswerPanel.js';
 import { StructureContainer } from '../../model/StructureContainer.js';
 import { Atom } from '../../model/Atom.js';

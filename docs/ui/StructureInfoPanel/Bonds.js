@@ -7,7 +7,7 @@ import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getL
 
 import { createColorPicker } from '../ColorPickerModule.js';
 import * as THREE from '../../external/three/three.module.js';
-import {fracToCart} from '../../render/LatticeModule.js'
+import {fracToCart} from '../../render/index.js'
 
 
 

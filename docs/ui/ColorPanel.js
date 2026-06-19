@@ -5,9 +5,9 @@ import {app, groups,fileBrowser, general,mode} from '../state/store.js';
 import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings,getColorFromMap,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 
 import { switchCameraType } from '../ui/WindowAndSceneControls.js';
-import { updateBonds } from '../render/BondsFracUpdateModule.js'
-import { updateAtoms } from '../render/AtomsFracUpdateModule.js'
-import { updateSingleBondColor } from '../render/BondsFracUpdateModule.js'
+import { updateBonds } from '../render/index.js'
+import { updateAtoms } from '../render/index.js'
+import { updateSingleBondColor } from '../render/index.js'
 
 
 
