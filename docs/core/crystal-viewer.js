@@ -18,10 +18,10 @@ const tableBody = document.querySelector("#objectTable tbody");
 
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupSecondStructureInput } from '../ui/SecondStructureModule.js';
-import { parseOUTCAR} from '../io/ReadOutcarModule.js';
-import { parsePWSCFout} from '../io/ReadPWSCFoutModule.js';
-import { parsePWSCFin} from '../io/ReadPWSCFinModule.js';
-import {parseXYZFile} from '../io/ReadeXYZModule.js';
+import { parseOUTCAR} from '../io/index.js';
+import { parsePWSCFout} from '../io/index.js';
+import { parsePWSCFin} from '../io/index.js';
+import {parseXYZFile} from '../io/index.js';
 import { setupStructureInput, parsePOSCAR} from '../ui/StructureInputModule.js';
 
 // ........................................................................................................
@@ -34,7 +34,7 @@ import { updateAngleDisplays, setupAxisControls} from '../render/index.js';
 import { createColorPicker } from '../ui/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from '../ui/ShareModule.js';
-import {loadFromFilePath} from '../io/FileURLLoader.js';
+import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter,disposeBondsMesh} from '../render/index.js'
 import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from '../render/index.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../render/index.js'
