@@ -18,10 +18,10 @@ const tableBody = document.querySelector("#objectTable tbody");
 
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupSecondStructureInput } from './modules/SecondStructureModule.js';
-import { parseOUTCAR} from './modules/ReadOutcarModule.js';
-import { parsePWSCFout} from './modules/ReadPWSCFoutModule.js';
-import { parsePWSCFin} from './modules/ReadPWSCFinModule.js';
-import {parseXYZFile} from './modules/ReadeXYZModule.js';
+import { parseOUTCAR} from './io/ReadOutcarModule.js';
+import { parsePWSCFout} from './io/ReadPWSCFoutModule.js';
+import { parsePWSCFin} from './io/ReadPWSCFinModule.js';
+import {parseXYZFile} from './io/ReadeXYZModule.js';
 import { setupStructureInput, parsePOSCAR} from './modules/StructureInputModule.js';
 
 // ........................................................................................................
@@ -34,7 +34,7 @@ import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleCont
 import { createColorPicker } from './modules/ColorPickerModule.js';
 import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js';
-import {loadFromFilePath} from './modules/FileURLLoader.js';
+import {loadFromFilePath} from './io/FileURLLoader.js';
 import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter,disposeBondsMesh} from './modules/BondsFracUpdateModule.js'
 import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './modules/CompBondsFracUpdateModule.js'
 import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from './modules/LatticeModule.js'
@@ -99,7 +99,7 @@ import {createRow} from './panels/FileBrowswerPanel.js'
 import {Structure} from './model/Structure.js'
 
 // New imports (which go here, because they need initializations that happen above until things are refactored)
-import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from './modules/io.js';
+import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from './io/index.js';
 import { initializeUIOnLoad } from './modules/StructureInputModule.js';
 import { fieldBrowser } from './panels/FieldPanel.js';
 import { resetMathBackend } from './math/index.js';

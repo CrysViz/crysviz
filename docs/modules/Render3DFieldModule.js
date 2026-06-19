@@ -7,8 +7,8 @@ import * as THREE from "three";
 import { initializeUIOnLoad, readPOSCAR, initializeWithPOSCAR } from './StructureInputModule.js';
 import { fieldBrowser, updateFieldPanel } from "../panels/FieldPanel.js";
 import { app, fileBrowser, groups } from '../store.js';
-import { readCHGCAR } from "./ReadChgcarModule.js";
-import { readCubeFile } from "./ReadCubeModule.js";
+import { readCHGCAR } from "../io/ReadChgcarModule.js";
+import { readCubeFile } from "../io/ReadCubeModule.js";
 import { Isosurface } from "../model/Isosurface.js";
 
 

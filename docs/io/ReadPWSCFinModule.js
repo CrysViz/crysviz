@@ -1,7 +1,7 @@
 import { Structure } from "../model/Structure.js";
 import { Atom } from "../model/Atom.js";
 import { StructureContainer } from "../model/StructureContainer.js";
-import {runPeriodicWrapped} from "./LatticeModule.js";
+import {runPeriodicWrapped} from "../modules/LatticeModule.js";
 import { structureShip,fileBrowser } from '../store.js';
 import { createRow,selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
 import {
@@ -9,7 +9,7 @@ import {
   invert3x3,
   cartToFractional,
 } from "../math/index.js";
-import {generateID} from './UUIDModule.js'
+import {generateID} from '../modules/UUIDModule.js'
 
 
 

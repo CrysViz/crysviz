@@ -7,7 +7,7 @@ import { StructureContainer } from "../model/StructureContainer.js";
 const tableBody = document.querySelector("#objectTable tbody");
 import { structureShip,fileBrowser } from "../store.js";
 import { createRow,selectLastAddedRow } from "../panels/FileBrowswerPanel.js";
-import {generateID} from './UUIDModule.js'
+import {generateID} from '../modules/UUIDModule.js'
 
 const BOHR_TO_ANG = 0.52917721092;
 

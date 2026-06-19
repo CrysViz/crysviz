@@ -4,11 +4,11 @@
 //
 import { Structure } from '../model/Structure.js';
 import { invert3x3, transpose3x3, cartToFractional, normalizeFractional } from '../math/index.js';
-import { runPeriodicWrapped } from './LatticeModule.js';
+import { runPeriodicWrapped } from '../modules/LatticeModule.js';
 import { Field } from '../model/Field.js';
 import { FieldContainer } from '../model/FieldContainer.js';
 import { Atom } from '../model/Atom.js';
-import { generateID } from './UUIDModule.js';
+import { generateID } from '../modules/UUIDModule.js';
 
 
 //------------------------------------------------------------
