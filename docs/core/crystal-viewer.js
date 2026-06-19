@@ -32,6 +32,7 @@ import { setupStructureInput, parsePOSCAR} from '../ui/StructureInputModule.js';
 // .........................................................................................................
 import { updateAngleDisplays, setupAxisControls} from '../render/index.js';
 import { createBackgroundControl } from '../ui/BackgroundPicker.js';
+import { setupMobileMenu } from '../ui/MobileMenu.js';
 import { pauseRendering, resumeRendering,animation_update} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
@@ -1131,63 +1132,7 @@ async function initializeMathBackend() {
   window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
 
 // Panel toggle functionality for all screen sizes
-function setupMobileMenu() {
-  const hamburger = document.getElementById('mobileMenuToggle');
-  const overlay = document.getElementById('mobileOverlay');
-  const ui = document.getElementById('ui');
-
-  function togglePanel() {
-    if (!ui) return;
-
-    if (window.innerWidth > 1024) {
-      // Desktop: toggle panel-hidden
-      ui.classList.toggle('panel-hidden');
-      document.body.classList.toggle('panel-hidden');
-    } else {
-      // Mobile: toggle panel-open
-      ui.classList.toggle('panel-open');
-      if (overlay) overlay.classList.toggle('active');
-    }
-
-    // Refresh renderer immediately after layout change
-    if (typeof resizeRenderer === 'function') {
-      resizeRenderer(app.orthographicFrustumSize);
-    }
-  }
-
-  function closePanel() {
-    if (!ui) return;
-    ui.classList.remove('panel-open', 'panel-hidden');
-    document.body.classList.remove('panel-hidden');
-    if (overlay) overlay.classList.remove('active');
-  }
-
-  if (hamburger) {
-    hamburger.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      togglePanel();
-    });
-
-    hamburger.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      togglePanel();
-    });
-  }
-
-  if (overlay) {
-    overlay.addEventListener('click', (e) => {
-      e.preventDefault();
-      closePanel();
-    });
-
-    overlay.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      closePanel();
-    });
-  }
-
+function initUIPanels() {
   createBackgroundControl();
   addControlPanelModeSwitch();
   addControlPanelSpinForceSwitch();
@@ -1216,6 +1161,7 @@ function setupMobileMenu() {
 init()
   .then(() => {
     setupMobileMenu();
+    initUIPanels();
   })
   .catch((error) => {
     setStatus(`Error: ${error.message}`);
