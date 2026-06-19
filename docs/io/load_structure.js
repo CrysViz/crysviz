@@ -1,6 +1,6 @@
-import { Structure } from "../model/Structure.js";
-import { StructureContainer } from '../model/StructureContainer.js';
-import { Atom } from '../model/Atom.js';
+import { Structure } from "../model/index.js";
+import { StructureContainer } from '../model/index.js';
+import { Atom } from '../model/index.js';
 import { cif_to_struct, mcif_to_magstruct } from './cif.js';
 import {generateID} from '../utils/index.js'
 

@@ -1,4 +1,4 @@
-import {StructureShip} from '../model/StructureShip.js'
+import {StructureShip} from '../model/index.js'
 import * as THREE from '../external/three/three.module.js';
 
 export const bondLengths = {}

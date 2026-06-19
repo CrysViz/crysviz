@@ -15,3 +15,13 @@ export { Wyckoff } from './Wyckoff.js';
 export { Field } from './Field.js';
 export { FieldContainer } from './FieldContainer.js';
 export { ColoredObject } from './ColoredObject.js';
+
+// Instanced-mesh helper (default export re-exported as a name):
+export { default as InstanceMeshManager } from './InstanceMeshManager.js';
+
+// Isosurface class + render-material settings helpers:
+export {
+  Isosurface, getIsosurfaceMaterialSettings, setIsosurfaceMaterialSettings,
+  getIsosurfaceTriangleSortingEnabled, setIsosurfaceTriangleSortingEnabled,
+  applyMaterialSettingsToStoredIsosurfaces, updateStoredIsosurfaceRenderOrder,
+} from './Isosurface.js';

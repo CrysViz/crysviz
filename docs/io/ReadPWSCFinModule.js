@@ -1,6 +1,6 @@
-import { Structure } from "../model/Structure.js";
-import { Atom } from "../model/Atom.js";
-import { StructureContainer } from "../model/StructureContainer.js";
+import { Structure } from "../model/index.js";
+import { Atom } from "../model/index.js";
+import { StructureContainer } from "../model/index.js";
 import {runPeriodicWrapped} from "../render/index.js";
 import { structureShip,fileBrowser } from '../state/store.js';
 import { createRow,selectLastAddedRow } from '../ui/FileBrowswerPanel.js';

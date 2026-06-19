@@ -8,7 +8,7 @@ import {updateForces} from '../render/index.js';
 import {fieldBrowser} from './FieldPanel.js';
 import {toggleFieldVisibility, setActiveField, updateField, clearField, deleteField} from '../render/index.js';
 import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
-import {Structure} from '../model/Structure.js';
+import {Structure} from '../model/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import {removeLatticeAndSupercellPanel, addLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
 

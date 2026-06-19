@@ -19,11 +19,11 @@ import {
 } from '../../atomistic/MD.js';
 import { updateForces } from '../../render/index.js';
 import { updateRow, createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
-import { StructureContainer } from '../../model/StructureContainer.js';
-import { Atom } from '../../model/Atom.js';
-import { Force } from '../../model/Force.js';
-import { Stress } from '../../model/Stress.js';
-import { Structure } from '../../model/Structure.js';
+import { StructureContainer } from '../../model/index.js';
+import { Atom } from '../../model/index.js';
+import { Force } from '../../model/index.js';
+import { Stress } from '../../model/index.js';
+import { Structure } from '../../model/index.js';
 import { refreshBackendTheme } from './BackendTheme.js';
 
 const tableBody = document.querySelector('#objectTable tbody');

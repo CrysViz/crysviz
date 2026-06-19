@@ -3,8 +3,8 @@ import * as THREE from '../external/three/three.module.js';
 import {bondLengths,structureShip, app, groups,fileBrowser, general,mode} from '../state/store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
 import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings,getColorFromMap,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
-import {Atom} from '../model/Atom.js';
-import {Bond} from '../model/Bond.js';
+import {Atom} from '../model/index.js';
+import {Bond} from '../model/index.js';
 
 
 import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'

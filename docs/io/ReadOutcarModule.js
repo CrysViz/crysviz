@@ -1,11 +1,11 @@
 const tableBody = document.querySelector("#objectTable tbody");
 import { structureShip, fileBrowser } from '../state/store.js';
 import { createRow, selectLastAddedRow } from '../ui/FileBrowswerPanel.js';
-import { StructureContainer } from "../model/StructureContainer.js";
-import { Structure } from "../model/Structure.js";
-import { Spin } from "../model/Spin.js";
-import { Atom } from "../model/Atom.js";
-import { Force } from "../model/Force.js";
+import { StructureContainer } from "../model/index.js";
+import { Structure } from "../model/index.js";
+import { Spin } from "../model/index.js";
+import { Atom } from "../model/index.js";
+import { Force } from "../model/index.js";
 import {generateID} from '../utils/index.js'
 import {
   transpose3x3,

@@ -2,12 +2,12 @@
 // Parser for Gaussian .cube volumetric files + Marching Cubes isosurface extraction
 // Exports: readCubeFile(), updateField()
 //
-import { Structure } from '../model/Structure.js';
+import { Structure } from '../model/index.js';
 import { invert3x3, transpose3x3, cartToFractional, normalizeFractional } from '../math/index.js';
 import { runPeriodicWrapped } from '../render/index.js';
-import { Field } from '../model/Field.js';
-import { FieldContainer } from '../model/FieldContainer.js';
-import { Atom } from '../model/Atom.js';
+import { Field } from '../model/index.js';
+import { FieldContainer } from '../model/index.js';
+import { Atom } from '../model/index.js';
 import { generateID } from '../utils/index.js';
 
 

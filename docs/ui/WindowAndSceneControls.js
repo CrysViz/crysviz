@@ -4,7 +4,7 @@ import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups } from '../state/store.js';
 import { updateAngleDisplays, setupAxisControls} from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
-import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/Isosurface.js';
+import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 
 function disposeRendererInstance(renderer, host = null) {
   if (!renderer) return;

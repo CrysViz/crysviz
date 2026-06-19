@@ -26,10 +26,10 @@
  */
 
 import { fileBrowser, structureShip, general, groups } from '../../state/store.js';
-import { Structure } from '../../model/Structure.js';
-import { StructureContainer } from '../../model/StructureContainer.js';
-import { Atom } from '../../model/Atom.js';
-import { Force } from '../../model/Force.js';
+import { Structure } from '../../model/index.js';
+import { StructureContainer } from '../../model/index.js';
+import { Atom } from '../../model/index.js';
+import { Force } from '../../model/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { updateForces, removeForces } from '../../render/index.js';
 import { updateLattice } from '../../render/index.js';

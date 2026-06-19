@@ -1,9 +1,9 @@
-import { Structure } from "../model/Structure.js";
-import { Atom } from "../model/Atom.js";
-import { Force } from "../model/Force.js";
-import { Spin } from "../model/Spin.js";
-import { Stress } from "../model/Stress.js";
-import { StructureContainer } from "../model/StructureContainer.js";
+import { Structure } from "../model/index.js";
+import { Atom } from "../model/index.js";
+import { Force } from "../model/index.js";
+import { Spin } from "../model/index.js";
+import { Stress } from "../model/index.js";
+import { StructureContainer } from "../model/index.js";
 const tableBody = document.querySelector("#objectTable tbody");
 import { structureShip,fileBrowser } from "../state/store.js";
 import { createRow,selectLastAddedRow } from "../ui/FileBrowswerPanel.js";

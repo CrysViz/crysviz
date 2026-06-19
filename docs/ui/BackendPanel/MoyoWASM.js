@@ -2,9 +2,9 @@ import {structureShip,fileBrowser} from '../../state/store.js'
 import { createRow,selectLastAddedRow } from '../FileBrowswerPanel.js';
 import {updateVisualization} from '../../core/crystal-viewer.js'
 import init, { analyze_cell } from '../../external/moyo-test/moyo_wasm.js';
-import { Structure } from "../../model/Structure.js";
-import { Atom } from "../../model/Atom.js";
-import { StructureContainer } from "../../model/StructureContainer.js";
+import { Structure } from "../../model/index.js";
+import { Atom } from "../../model/index.js";
+import { StructureContainer } from "../../model/index.js";
 import { generateID } from "../../utils/index.js";
 import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive } from '../SymmetryEditModule.js';
 import { renderComposition } from '../StructureInfoPanel/General.js';

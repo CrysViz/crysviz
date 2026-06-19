@@ -6,7 +6,7 @@ import {
   setIsosurfaceMaterialSettings,
   setIsosurfaceTriangleSortingEnabled,
   applyMaterialSettingsToStoredIsosurfaces,
-} from '../model/Isosurface.js';
+} from '../model/index.js';
 
 export let useLogSliderScale = false; // Global variable to track log scale state for iso slider
 

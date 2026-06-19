@@ -1,5 +1,5 @@
-import { Field } from '../model/Field.js'; // Adjust path as needed
-import { FieldContainer } from '../model/FieldContainer.js'; // Adjust path as needed
+import { Field } from '../model/index.js'; // Adjust path as needed
+import { FieldContainer } from '../model/index.js'; // Adjust path as needed
 import { readPOSCAR } from '../ui/StructureInputModule.js'; // Also used in your code
 
 

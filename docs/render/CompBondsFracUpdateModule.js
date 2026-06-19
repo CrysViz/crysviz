@@ -4,8 +4,8 @@ import {structureShip, app, groups,fileBrowser, general,mode} from '../state/sto
 import {atomicRadii} from '../defaults/radii_defaults.js'
 import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
 
-import {Atom} from '../model/Atom.js';
-import {Bond} from '../model/Bond.js';
+import {Atom} from '../model/index.js';
+import {Bond} from '../model/index.js';
 
 
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
