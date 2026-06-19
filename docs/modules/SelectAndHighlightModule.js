@@ -4,7 +4,7 @@ import {updateBondControlPanel} from '../panels/StructureInfoPanel/Bonds.js';
 import * as THREE from '../external/three/three.module.js';
 import {updateAtoms} from './AtomsFracUpdateModule.js'
 import {updateBonds} from './BondsFracUpdateModule.js'
-import InstanceMeshManager from '../classes/InstanceMeshManager.js'
+import InstanceMeshManager from '../model/InstanceMeshManager.js'
 import {getUUIDFromGeometry} from './AtomsFracUpdateModule.js'
 
 const ATOM_HIGHLIGHT_FADE_MS = 1200;

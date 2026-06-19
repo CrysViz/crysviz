@@ -9,7 +9,7 @@ import { fieldBrowser, updateFieldPanel } from "../panels/FieldPanel.js";
 import { app, fileBrowser, groups } from '../store.js';
 import { readCHGCAR } from "./ReadChgcarModule.js";
 import { readCubeFile } from "./ReadCubeModule.js";
-import { Isosurface } from "../classes/Isosurface.js";
+import { Isosurface } from "../model/Isosurface.js";
 
 
 

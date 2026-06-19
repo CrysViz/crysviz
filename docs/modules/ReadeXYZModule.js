@@ -4,11 +4,11 @@
  */
 
 import { generateID } from './UUIDModule.js';
-import { StructureContainer } from "../classes/StructureContainer.js";
-import { Structure } from "../classes/Structure.js";
-import { Atom } from "../classes/Atom.js";
-import { Force } from "../classes/Force.js";
-import { Spin } from "../classes/Spin.js";
+import { StructureContainer } from "../model/StructureContainer.js";
+import { Structure } from "../model/Structure.js";
+import { Atom } from "../model/Atom.js";
+import { Force } from "../model/Force.js";
+import { Spin } from "../model/Spin.js";
 import { structureShip, fileBrowser } from '../store.js';
 import { createRow, selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
 import { transpose3x3, multiplyMatVec, invert3x3 } from '../math/backend-js.js';

@@ -4,7 +4,7 @@ import {structureShip, app, groups,fileBrowser, general,mode} from '../store.js'
 import {atomicRadii} from '../defaults/radii_defaults.js'
 import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
 
-import {Atom} from '../classes/Atom.js';
+import {Atom} from '../model/Atom.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 

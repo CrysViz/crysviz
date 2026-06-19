@@ -2,9 +2,9 @@ const NUMBER_PRECISION = 6;
 const MATERIALS_PROJECT_OPTIMADE_BASE = 'https://optimade.materialsproject.org/v1/structures/';
 const ALEXANDRIA_OPTIMADE_BASE = 'https://alexandria.icams.rub.de/pbe/v1/structures/';
 
-import { StructureContainer } from '../classes/StructureContainer.js';
-import { Structure } from '../classes/Structure.js';
-import { Atom } from '../classes/Atom.js';
+import { StructureContainer } from '../model/StructureContainer.js';
+import { Structure } from '../model/Structure.js';
+import { Atom } from '../model/Atom.js';
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser,structureShip} from '../store.js';
 import {createRow,selectLastAddedRow} from '../panels/FileBrowswerPanel.js';

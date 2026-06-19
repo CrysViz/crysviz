@@ -96,7 +96,7 @@ import {createRow} from './panels/FileBrowswerPanel.js'
 
 // Class Structure
 //
-import {Structure} from './classes/Structure.js'
+import {Structure} from './model/Structure.js'
 
 // New imports (which go here, because they need initializations that happen above until things are refactored)
 import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from './modules/io.js';

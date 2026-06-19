@@ -1,7 +1,7 @@
 import { app, groups, fileBrowser, general,mode, polyStyle} from '../store.js';
-import { Structure} from '../classes/Structure.js';
-import { Atom} from '../classes/Atom.js';
-import { StructureContainer} from '../classes/StructureContainer.js';
+import { Structure} from '../model/Structure.js';
+import { Atom} from '../model/Atom.js';
+import { StructureContainer} from '../model/StructureContainer.js';
 import {updateVisualization} from '../crystal-viewer.js'
 import {generateID} from './UUIDModule.js'
 

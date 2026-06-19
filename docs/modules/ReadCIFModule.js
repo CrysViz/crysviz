@@ -1,5 +1,5 @@
-import { Structure } from "../classes/Structure.js";
-import { StructureContainer } from "../classes/StructureContainer.js";
+import { Structure } from "../model/Structure.js";
+import { StructureContainer } from "../model/StructureContainer.js";
 import { fileBrowser } from '../store.js';
 import { createRow,selectLastAddedRow } from '../panels/FileBrowswerPanel.js';
 import { invert3x3, matVec, latticeFromCell } from '../math/index.js';

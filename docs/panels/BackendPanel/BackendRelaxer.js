@@ -6,11 +6,11 @@ import {createSpinControls} from '../SpinPanel.js'
 import {updateRow} from '../FileBrowswerPanel.js'
 import { createRow,selectLastAddedRow } from '../FileBrowswerPanel.js';
 import {structureShip,fileBrowser} from '../../store.js'
-import { Structure } from "../../classes/Structure.js";
-import { StructureContainer } from "../../classes/StructureContainer.js";
-import { Force } from "../../classes/Force.js";
-import { Atom } from "../../classes/Atom.js";
-import { Stress } from "../../classes/Stress.js";
+import { Structure } from "../../model/Structure.js";
+import { StructureContainer } from "../../model/StructureContainer.js";
+import { Force } from "../../model/Force.js";
+import { Atom } from "../../model/Atom.js";
+import { Stress } from "../../model/Stress.js";
 let socket = null;
 let backendConnected = false
 

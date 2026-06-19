@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { updateSpins, deleteSpins } from '../modules/SpinModule.js';
 import { app, groups, fileBrowser, general } from '../store.js';
 import {getColorFromMap,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
-import { Spin } from '../classes/Spin.js'; // Update path
+import { Spin } from '../model/Spin.js'; // Update path
 
 
 // Helper function to create elements

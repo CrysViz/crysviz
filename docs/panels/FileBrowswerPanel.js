@@ -8,7 +8,7 @@ import {updateForces} from '../modules/ForceModule.js';
 import {fieldBrowser} from './FieldPanel.js';
 import {toggleFieldVisibility, setActiveField, updateField, clearField, deleteField} from '../modules/Render3DFieldModule.js';
 import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
-import {Structure} from '../classes/Structure.js';
+import {Structure} from '../model/Structure.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import {removeLatticeAndSupercellPanel, addLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
 
