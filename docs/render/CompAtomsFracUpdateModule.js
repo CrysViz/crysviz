@@ -8,7 +8,7 @@ import {Atom} from '../model/Atom.js';
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 import {getAtomColor} from '../ui/ColorModule.js'
-import {generateID} from '../utils/UUIDModule.js' 
+import {generateID} from '../utils/index.js' 
 
 
 export function rebuildSecondAtoms(structure, opacity) {

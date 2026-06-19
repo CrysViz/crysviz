@@ -8,7 +8,7 @@ import { Atom } from '../model/Atom.js';
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser,structureShip} from '../state/store.js';
 import {createRow,selectLastAddedRow} from './FileBrowswerPanel.js';
-import {generateID} from '../utils/UUIDModule.js';
+import {generateID} from '../utils/index.js';
 import {buildBondObjects} from '../render/index.js';
 import {runPeriodicWrapped} from '../render/index.js';
 import {

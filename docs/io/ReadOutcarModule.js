@@ -6,7 +6,7 @@ import { Structure } from "../model/Structure.js";
 import { Spin } from "../model/Spin.js";
 import { Atom } from "../model/Atom.js";
 import { Force } from "../model/Force.js";
-import {generateID} from '../utils/UUIDModule.js'
+import {generateID} from '../utils/index.js'
 import {
   transpose3x3,
   multiplyMatVec,

@@ -5,7 +5,7 @@ import init, { analyze_cell } from '../../external/moyo-test/moyo_wasm.js';
 import { Structure } from "../../model/Structure.js";
 import { Atom } from "../../model/Atom.js";
 import { StructureContainer } from "../../model/StructureContainer.js";
-import { generateID } from "../../utils/UUIDModule.js";
+import { generateID } from "../../utils/index.js";
 import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive } from '../SymmetryEditModule.js';
 import { renderComposition } from '../StructureInfoPanel/General.js';
 import { refreshBackendTheme } from './BackendTheme.js';

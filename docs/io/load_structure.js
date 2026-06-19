@@ -2,7 +2,7 @@ import { Structure } from "../model/Structure.js";
 import { StructureContainer } from '../model/StructureContainer.js';
 import { Atom } from '../model/Atom.js';
 import { cif_to_struct, mcif_to_magstruct } from './cif.js';
-import {generateID} from '../utils/UUIDModule.js'
+import {generateID} from '../utils/index.js'
 
 /*
  * The idea is that parse_any will eventually take over all parsing

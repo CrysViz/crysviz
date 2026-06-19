@@ -36,7 +36,7 @@ import { updateLattice } from '../../render/index.js';
 import { rebuildAtoms } from '../../render/index.js';
 import { createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
 import { transpose3x3, invert3x3, matVec } from '../../atomistic/math.js';
-import { generateCompactTimeUUID } from '../../utils/UUIDModule.js';
+import { generateCompactTimeUUID } from '../../utils/index.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

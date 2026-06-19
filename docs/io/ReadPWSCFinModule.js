@@ -9,7 +9,7 @@ import {
   invert3x3,
   cartToFractional,
 } from "../math/index.js";
-import {generateID} from '../utils/UUIDModule.js'
+import {generateID} from '../utils/index.js'
 
 
 

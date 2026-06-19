@@ -8,7 +8,7 @@ import { runPeriodicWrapped } from '../render/index.js';
 import { Field } from '../model/Field.js';
 import { FieldContainer } from '../model/FieldContainer.js';
 import { Atom } from '../model/Atom.js';
-import { generateID } from '../utils/UUIDModule.js';
+import { generateID } from '../utils/index.js';
 
 
 //------------------------------------------------------------

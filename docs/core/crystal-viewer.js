@@ -86,7 +86,7 @@ import {
   createLegacyShareableURL,
   restoreCompleteState,
   generatePOSCARString,
-} from '../utils/shareutils.js';
+} from '../utils/index.js';
 
 // file browser test
 //
