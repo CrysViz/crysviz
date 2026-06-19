@@ -1,6 +1,6 @@
 import { ColoredObject } from './ColoredObject.js';
 
-import {general} from '../store.js';
+import {general} from '../state/store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
 import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
 

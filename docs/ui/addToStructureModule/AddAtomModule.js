@@ -1,7 +1,7 @@
 // AddVacuumModule.js
-import { structureData } from '../../store.js';
+import { structureData } from '../../state/store.js';
 import {createBondLengthControls} from '../BondLengthPanel.js'
-import {updateVisualization} from '../../crystal-viewer.js'
+import {updateVisualization} from '../../core/crystal-viewer.js'
 
 
 

@@ -1,6 +1,6 @@
 import * as THREE from '../external/three/three.module.js';
 import { ConvexGeometry } from '../external/three/ConvexGeometry.js';
-import {app,general,groups, fileBrowser} from '../store.js'
+import {app,general,groups, fileBrowser} from '../state/store.js'
 import {periodicWrapped,fracToCart} from '../render/LatticeModule.js'
 import { getBondCutoff} from '../render/BondsFracUpdateModule.js'
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'

@@ -5,7 +5,7 @@ import { Spin } from "../model/Spin.js";
 import { Stress } from "../model/Stress.js";
 import { StructureContainer } from "../model/StructureContainer.js";
 const tableBody = document.querySelector("#objectTable tbody");
-import { structureShip,fileBrowser } from "../store.js";
+import { structureShip,fileBrowser } from "../state/store.js";
 import { createRow,selectLastAddedRow } from "../ui/FileBrowswerPanel.js";
 import {generateID} from '../utils/UUIDModule.js'
 

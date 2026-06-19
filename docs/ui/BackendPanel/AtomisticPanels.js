@@ -1,5 +1,5 @@
 import { io } from 'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.esm.min.js';
-import { fileBrowser, structureShip, general } from '../../store.js';
+import { fileBrowser, structureShip, general } from '../../state/store.js';
 import {
   buildNEPStructure,
   relaxUntilConverged,

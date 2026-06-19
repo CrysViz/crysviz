@@ -1,5 +1,5 @@
 import * as THREE from '../external/three/three.module.js';
-import { app, fileBrowser, groups, general } from '../store.js';
+import { app, fileBrowser, groups, general } from '../state/store.js';
 import { disposeGroup } from '../ui/WindowAndSceneControls.js';
 import {
   getHeatMapColors,

@@ -1,4 +1,4 @@
-import { fileBrowser, structureShip, general } from '../../store.js';
+import { fileBrowser, structureShip, general } from '../../state/store.js';
 import {
   buildNEPStructure,
   relaxUntilConverged,

@@ -2,7 +2,7 @@
 import * as THREE from '../external/three/three.module.js';
 
 import {updateAngleDisplays} from './cameraAngleControl.js';
-import { app, general,mode, groups} from '../store.js';
+import { app, general,mode, groups} from '../state/store.js';
 import {updateLattice,recomputeLatticeDirs,latticeDirsNorm} from './LatticeModule.js'
 
 import {updateRandomColors} from '../ui/DiscoModule.js'

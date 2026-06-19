@@ -1,11 +1,11 @@
-import { app, groups, fileBrowser,general,mode, polyStyle } from '../store.js';
+import { app, groups, fileBrowser,general,mode, polyStyle } from '../state/store.js';
 
 import {atomicRadii} from '../defaults/radii_defaults.js'
 
 
 
 import {getBondCutoff} from '../render/BondsFracUpdateModule.js';
-import { updateVisualization } from '../crystal-viewer.js';
+import { updateVisualization } from '../core/crystal-viewer.js';
 import {createPieDot} from './ColorModule.js';
 import {clearAllHighlights} from './SelectAndHighlightModule.js';
 import {updateBondControlPanel} from './StructureInfoPanel/Bonds.js'

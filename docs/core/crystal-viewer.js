@@ -1,4 +1,4 @@
-import * as THREE from './external/three/three.module.js';
+import * as THREE from '../external/three/three.module.js';
 // .........................................................................................................
 // store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
 //
@@ -7,9 +7,9 @@ import * as THREE from './external/three/three.module.js';
 //  control. The rest of the singletons should be preserved.
 // .........................................................................................................
 
-import {structureShip, measurements,app, groups,fileBrowser, general, mode, highlightHover} from './store.js';
-import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from './defaults/color_texture_defaults.js'
-import {defaultPOSCAR,defaultPOSCAR2,defaultPOSCAR3,defaultPOSCAR4} from './defaults/structure_defaults.js'
+import {structureShip, measurements,app, groups,fileBrowser, general, mode, highlightHover} from '../state/store.js';
+import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
+import {defaultPOSCAR,defaultPOSCAR2,defaultPOSCAR3,defaultPOSCAR4} from '../defaults/structure_defaults.js'
 
 
 //this needs to life somewhere else! only for testing
@@ -17,12 +17,12 @@ const tableBody = document.querySelector("#objectTable tbody");
 
 
 // import from the old file structure that need to be combined and ported to the new structure
-import { setupSecondStructureInput } from './ui/SecondStructureModule.js';
-import { parseOUTCAR} from './io/ReadOutcarModule.js';
-import { parsePWSCFout} from './io/ReadPWSCFoutModule.js';
-import { parsePWSCFin} from './io/ReadPWSCFinModule.js';
-import {parseXYZFile} from './io/ReadeXYZModule.js';
-import { setupStructureInput, parsePOSCAR} from './ui/StructureInputModule.js';
+import { setupSecondStructureInput } from '../ui/SecondStructureModule.js';
+import { parseOUTCAR} from '../io/ReadOutcarModule.js';
+import { parsePWSCFout} from '../io/ReadPWSCFoutModule.js';
+import { parsePWSCFin} from '../io/ReadPWSCFinModule.js';
+import {parseXYZFile} from '../io/ReadeXYZModule.js';
+import { setupStructureInput, parsePOSCAR} from '../ui/StructureInputModule.js';
 
 // ........................................................................................................
 // Import Modules
@@ -30,31 +30,31 @@ import { setupStructureInput, parsePOSCAR} from './ui/StructureInputModule.js';
 // These modules should contain all the functions related to specific functionalities
 //
 // .........................................................................................................
-import { updateAngleDisplays, setupAxisControls} from './render/cameraAngleControl.js';
-import { createColorPicker } from './ui/ColorPickerModule.js';
-import { pauseRendering, resumeRendering,animation_update} from './render/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
-import { shareStructure,createShareButton,loadSharedStructure} from './ui/ShareModule.js';
-import {loadFromFilePath} from './io/FileURLLoader.js';
-import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter,disposeBondsMesh} from './render/BondsFracUpdateModule.js'
-import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './render/CompBondsFracUpdateModule.js'
-import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from './render/LatticeModule.js'
-import {updatePolyhedra} from './render/PolyhedraModule.js'
-import {rebuildAtoms,updateAtoms,updateSingleAtomDiameter} from './render/AtomsFracUpdateModule.js';
-import {rebuildSecondAtoms,updateSecondAtoms,updateSecondSingleAtomDiameter} from './render/CompAtomsFracUpdateModule.js';
+import { updateAngleDisplays, setupAxisControls} from '../render/cameraAngleControl.js';
+import { createColorPicker } from '../ui/ColorPickerModule.js';
+import { pauseRendering, resumeRendering,animation_update} from '../render/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
+import { shareStructure,createShareButton,loadSharedStructure} from '../ui/ShareModule.js';
+import {loadFromFilePath} from '../io/FileURLLoader.js';
+import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter,disposeBondsMesh} from '../render/BondsFracUpdateModule.js'
+import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from '../render/CompBondsFracUpdateModule.js'
+import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../render/LatticeModule.js'
+import {updatePolyhedra} from '../render/PolyhedraModule.js'
+import {rebuildAtoms,updateAtoms,updateSingleAtomDiameter} from '../render/AtomsFracUpdateModule.js';
+import {rebuildSecondAtoms,updateSecondAtoms,updateSecondSingleAtomDiameter} from '../render/CompAtomsFracUpdateModule.js';
 
 
-import {createSupercell} from './ui/SuperCellModule.js';
+import {createSupercell} from '../ui/SuperCellModule.js';
 import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,
-        addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from './ui/MeasurementModule.js' // not all imports might be needed in this file
+        addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from '../ui/MeasurementModule.js' // not all imports might be needed in this file
 
-import {highlightBondInfoInStructurePanel,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from './ui/SelectAndHighlightModule.js';
+import {highlightBondInfoInStructurePanel,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from '../ui/SelectAndHighlightModule.js';
 
-import {addAtomVacuumPanel} from './ui/addToStructureModule/AddVacuumModule.js'
-import {addCameraPanel} from './ui/CameraPanel.js'
-import {addColorPanel} from './ui/ColorPanel.js'
+import {addAtomVacuumPanel} from '../ui/addToStructureModule/AddVacuumModule.js'
+import {addCameraPanel} from '../ui/CameraPanel.js'
+import {addColorPanel} from '../ui/ColorPanel.js'
 
-import { updateField, parseCHGCARFile, parseCubeFile, clearField } from './render/Render3DFieldModule.js';
-//import {addAtomPanel} from './modules/addToStructureModule/addAtomPanel.js'
+import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../render/Render3DFieldModule.js';
+//import {addAtomPanel} from '../modules/addToStructureModule/addAtomPanel.js'
 
 // .........................................................................................................
 // Import Panels
@@ -64,18 +64,18 @@ import { updateField, parseCHGCARFile, parseCubeFile, clearField } from './rende
 // // .........................................................................................................
 import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
   initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView,collapseAllAtomExpansions
-} from './ui/WindowAndSceneControls.js'
-import {loadAboutContent, openAboutPanel, closeAboutPanel} from './ui/AboutPanel.js';
-import {addSpinPanel} from './ui/SpinPanel.js';
-import {resetBondLengths, createBondLengthControls} from './ui/BondLengthPanel.js';
-import {renderComposition} from './ui/StructureInfoPanel/General.js';
-import {addTrajectoryPlayer} from './ui/TrajectoryPanel.js';
-import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch, updateControlSpinForcePanel} from './ui/ControlPanel.js';
-import {addHistogramPanel} from  './ui/AnalysisPanels/BondAnalysisPanel.js';
-import {addBackendModeSwitch} from './ui/BackendPanel/BackendSwitchPanel.js';
+} from '../ui/WindowAndSceneControls.js'
+import {loadAboutContent, openAboutPanel, closeAboutPanel} from '../ui/AboutPanel.js';
+import {addSpinPanel} from '../ui/SpinPanel.js';
+import {resetBondLengths, createBondLengthControls} from '../ui/BondLengthPanel.js';
+import {renderComposition} from '../ui/StructureInfoPanel/General.js';
+import {addTrajectoryPlayer} from '../ui/TrajectoryPanel.js';
+import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch, updateControlSpinForcePanel} from '../ui/ControlPanel.js';
+import {addHistogramPanel} from  '../ui/AnalysisPanels/BondAnalysisPanel.js';
+import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
 
-import {addSavePanel} from './ui/SavePanel.js'
-import {addAnalysisInfoPanel,addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from './ui/InfoPanel.js'
+import {addSavePanel} from '../ui/SavePanel.js'
+import {addAnalysisInfoPanel,addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from '../ui/InfoPanel.js'
 
 // .........................................................................................................
 // import utils needs to moce to the "share" functionality. This is currently broken.
@@ -86,23 +86,23 @@ import {
   createLegacyShareableURL,
   restoreCompleteState,
   generatePOSCARString,
-} from './utils/shareutils.js';
+} from '../utils/shareutils.js';
 
 // file browser test
 //
 //
-import {createRow} from './ui/FileBrowswerPanel.js'
+import {createRow} from '../ui/FileBrowswerPanel.js'
 
 
 // Class Structure
 //
-import {Structure} from './model/Structure.js'
+import {Structure} from '../model/Structure.js'
 
 // New imports (which go here, because they need initializations that happen above until things are refactored)
-import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from './io/index.js';
-import { initializeUIOnLoad } from './ui/StructureInputModule.js';
-import { fieldBrowser } from './ui/FieldPanel.js';
-import { resetMathBackend } from './math/index.js';
+import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from '../io/index.js';
+import { initializeUIOnLoad } from '../ui/StructureInputModule.js';
+import { fieldBrowser } from '../ui/FieldPanel.js';
+import { resetMathBackend } from '../math/index.js';
 
 // ........................................................................................................
 //
@@ -1273,8 +1273,8 @@ async function initializeMathBackend() {
   }
 
   try {
-    const { initMathWasmBackend, installMathWasmBackend } = await import('./math/backend-wasm.js');
-    const backend = await initMathWasmBackend(new URL('./compiled/math_backend.wasm', import.meta.url));
+    const { initMathWasmBackend, installMathWasmBackend } = await import('../math/backend-wasm.js');
+    const backend = await initMathWasmBackend(new URL('../compiled/math_backend.wasm', import.meta.url));
     installMathWasmBackend(backend);
   } catch (error) {
     resetMathBackend();

@@ -1,6 +1,6 @@
 import * as THREE from '../external/three/three.module.js';
 import {getCellCenterAndDist} from './LatticeModule.js'
-import { app } from '../store.js';
+import { app } from '../state/store.js';
 
 let currentX = 0;
 let currentY = 0;

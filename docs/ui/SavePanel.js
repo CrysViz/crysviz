@@ -1,4 +1,4 @@
-import { fileBrowser } from '../store.js';
+import { fileBrowser } from '../state/store.js';
 
 export function poscartoFile() {
   const structure = fileBrowser.selectedStructure;

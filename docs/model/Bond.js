@@ -1,4 +1,4 @@
-import {general,fileBrowser} from '../store.js';
+import {general,fileBrowser} from '../state/store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
 import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
 

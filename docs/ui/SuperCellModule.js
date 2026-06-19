@@ -1,8 +1,8 @@
-import { app, groups, fileBrowser, general,mode, polyStyle} from '../store.js';
+import { app, groups, fileBrowser, general,mode, polyStyle} from '../state/store.js';
 import { Structure} from '../model/Structure.js';
 import { Atom} from '../model/Atom.js';
 import { StructureContainer} from '../model/StructureContainer.js';
-import {updateVisualization} from '../crystal-viewer.js'
+import {updateVisualization} from '../core/crystal-viewer.js'
 import {generateID} from '../utils/UUIDModule.js'
 
 export function createSupercell(nx = 1, ny = 1, nz = 1) {

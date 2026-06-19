@@ -1,4 +1,4 @@
-import {groups,highlightHover,fileBrowser} from '../store.js';
+import {groups,highlightHover,fileBrowser} from '../state/store.js';
 import {collapseAllAtomExpansions} from './WindowAndSceneControls.js';
 import {updateBondControlPanel} from './StructureInfoPanel/Bonds.js';
 import * as THREE from '../external/three/three.module.js';

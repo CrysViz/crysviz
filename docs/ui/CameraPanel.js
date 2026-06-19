@@ -1,4 +1,4 @@
-import {general,app} from '../store.js'
+import {general,app} from '../state/store.js'
 import * as THREE from '../external/three/three.module.js';
 import {switchCameraType} from  '../ui/WindowAndSceneControls.js'
 

@@ -6,7 +6,7 @@ import { StructureContainer } from '../model/StructureContainer.js';
 import { Structure } from '../model/Structure.js';
 import { Atom } from '../model/Atom.js';
 const tableBody = document.querySelector("#objectTable tbody");
-import {fileBrowser,structureShip} from '../store.js';
+import {fileBrowser,structureShip} from '../state/store.js';
 import {createRow,selectLastAddedRow} from './FileBrowswerPanel.js';
 import {generateID} from '../utils/UUIDModule.js';
 import {buildBondObjects} from '../render/BondsFracUpdateModule.js';

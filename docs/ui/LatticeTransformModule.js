@@ -1,7 +1,7 @@
 // LatticeTransformModule.js
-import { updateVisualization } from '../crystal-viewer.js';
+import { updateVisualization } from '../core/crystal-viewer.js';
 import { resetView } from './WindowAndSceneControls.js';
-import {fileBrowser} from '../store.js'
+import {fileBrowser} from '../state/store.js'
 
 export function applyLatticeTransformation(matrix) {
   // Clone the lattice to avoid modifying the original directly

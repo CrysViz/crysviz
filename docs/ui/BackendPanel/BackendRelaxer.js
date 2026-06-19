@@ -1,11 +1,11 @@
 //import { io } from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
 import { io } from "https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.esm.min.js";
-import {updateVisualization} from '../../crystal-viewer.js'
+import {updateVisualization} from '../../core/crystal-viewer.js'
 import {createBondLengthControls} from '../BondLengthPanel.js'
 import {createSpinControls} from '../SpinPanel.js'
 import {updateRow} from '../FileBrowswerPanel.js'
 import { createRow,selectLastAddedRow } from '../FileBrowswerPanel.js';
-import {structureShip,fileBrowser} from '../../store.js'
+import {structureShip,fileBrowser} from '../../state/store.js'
 import { Structure } from "../../model/Structure.js";
 import { StructureContainer } from "../../model/StructureContainer.js";
 import { Force } from "../../model/Force.js";

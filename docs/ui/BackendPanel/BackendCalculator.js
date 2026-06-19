@@ -1,6 +1,6 @@
 //import { io } from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
 
-import {fileBrowser} from '../../store.js'
+import {fileBrowser} from '../../state/store.js'
 let socket = null;
 let backendConnected = false
 

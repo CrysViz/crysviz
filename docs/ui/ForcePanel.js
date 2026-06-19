@@ -1,4 +1,4 @@
-import { general, fileBrowser } from '../store.js';
+import { general, fileBrowser } from '../state/store.js';
 import { updateForces, removeForces } from '../render/ForceModule.js';
 
 

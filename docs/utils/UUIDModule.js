@@ -1,4 +1,4 @@
-import { usedIDs } from '../store.js';
+import { usedIDs } from '../state/store.js';
 import * as THREE from 'three';
 
 /**

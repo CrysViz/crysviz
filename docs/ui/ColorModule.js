@@ -1,4 +1,4 @@
-import {app, groups,fileBrowser, general} from '../store.js';
+import {app, groups,fileBrowser, general} from '../state/store.js';
 import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
 
 

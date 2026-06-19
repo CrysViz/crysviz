@@ -1,5 +1,5 @@
 import * as THREE from '../external/three/three.module.js';
-import {general} from '../store.js';
+import {general} from '../state/store.js';
 
 export const jmolColorMap = {
   H: 0xffffff, He: 0xd9ffff, Li: 0xcc80ff, Be: 0xc2ff00, B: 0xffb5b5, C: 0x909090, N: 0x3050f8, O: 0xff0d0d,

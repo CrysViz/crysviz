@@ -25,12 +25,12 @@
  *     opacity     float32[nAtoms]    (if hasOpacity)
  */
 
-import { fileBrowser, structureShip, general, groups } from '../../store.js';
+import { fileBrowser, structureShip, general, groups } from '../../state/store.js';
 import { Structure } from '../../model/Structure.js';
 import { StructureContainer } from '../../model/StructureContainer.js';
 import { Atom } from '../../model/Atom.js';
 import { Force } from '../../model/Force.js';
-import { updateVisualization } from '../../crystal-viewer.js';
+import { updateVisualization } from '../../core/crystal-viewer.js';
 import { updateForces, removeForces } from '../../render/ForceModule.js';
 import { updateLattice } from '../../render/LatticeModule.js';
 import { rebuildAtoms } from '../../render/AtomsFracUpdateModule.js';

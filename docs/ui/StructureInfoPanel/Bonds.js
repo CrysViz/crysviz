@@ -1,6 +1,6 @@
-import { updateVisualization } from '../../crystal-viewer.js';
+import { updateVisualization } from '../../core/crystal-viewer.js';
 
-import {app, groups,fileBrowser, general, mode, highlightHover} from '../../store.js';
+import {app, groups,fileBrowser, general, mode, highlightHover} from '../../state/store.js';
 import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../defaults/color_texture_defaults.js'
 
 

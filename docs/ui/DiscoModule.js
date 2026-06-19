@@ -1,6 +1,6 @@
 import { updateSingleBondColor } from '../render/BondsFracUpdateModule.js'
 import { updateSingleAtomColor } from '../render/AtomsFracUpdateModule.js'
-import { app,groups, general,mode,fileBrowser} from '../store.js';
+import { app,groups, general,mode,fileBrowser} from '../state/store.js';
 
 
 function getRandomColor() {

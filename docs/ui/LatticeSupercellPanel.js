@@ -1,7 +1,7 @@
 import { applyLatticeTransformation } from './LatticeTransformModule.js';
 
-import { app, groups, general, fileBrowser, mode } from '../store.js';
-import { updateVisualization } from '../crystal-viewer.js';
+import { app, groups, general, fileBrowser, mode } from '../state/store.js';
+import { updateVisualization } from '../core/crystal-viewer.js';
 import { createSupercell } from './SuperCellModule.js';
 import { resetView } from './WindowAndSceneControls.js';
 import {

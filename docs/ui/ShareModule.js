@@ -1,4 +1,4 @@
-import { app, general, measurements, fileBrowser } from '../store.js';
+import { app, general, measurements, fileBrowser } from '../state/store.js';
 import * as THREE from '../external/three/three.module.js';
 import { parsePOSCAR } from './StructureInputModule.js';
 import { updateAtoms } from '../render/AtomsFracUpdateModule.js';

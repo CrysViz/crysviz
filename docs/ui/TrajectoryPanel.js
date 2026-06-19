@@ -1,5 +1,5 @@
-import { updateVisualization } from '../crystal-viewer.js';
-import { general, structureShip, fileBrowser } from '../store.js';
+import { updateVisualization } from '../core/crystal-viewer.js';
+import { general, structureShip, fileBrowser } from '../state/store.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { updateSpins, removeSpins } from '../render/SpinModule.js';
 import { updateForces, removeForces } from '../render/ForceModule.js';

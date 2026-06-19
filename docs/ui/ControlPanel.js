@@ -1,4 +1,4 @@
-import { general,bondLengths,fileBrowser} from '../store.js';
+import { general,bondLengths,fileBrowser} from '../state/store.js';
 import { addTrajectoryPlayer,removeTrajectoryPlayer} from './TrajectoryPanel.js';
 import {removeLatticeComparisonPopup, createLatticeComparisonPopup, updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import { removeSpins,updateSpins } from '../render/SpinModule.js';
@@ -10,7 +10,7 @@ import {addBondPanel,removeBondPanel} from './BondPanel.js';
 import {addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
 import {addFieldPanel, removeFieldPanel} from './FieldPanel.js';
 import { addCutPlanePanel, removeCutPlanePanel } from './CutPlanePanel.js';
-import {updateVisualization} from '../crystal-viewer.js';
+import {updateVisualization} from '../core/crystal-viewer.js';
 
 /**
  * Adds the comparison panel to the TrajectoryComparisonContainer.

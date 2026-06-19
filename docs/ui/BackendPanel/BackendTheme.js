@@ -1,4 +1,4 @@
-import { fileBrowser, general } from '../../store.js';
+import { fileBrowser, general } from '../../state/store.js';
 
 function setLogoForTheme(themeName) {
   const figure = document.getElementById('aboutTrigger');

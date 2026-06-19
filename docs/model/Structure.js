@@ -1,4 +1,4 @@
-import {general} from '../store.js';
+import {general} from '../state/store.js';
 import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
 import { colorHexToCss } from '../ui/ColorModule.js';
 

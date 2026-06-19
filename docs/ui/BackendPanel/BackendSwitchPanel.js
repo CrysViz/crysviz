@@ -1,4 +1,4 @@
-import { general } from '../../store.js';
+import { general } from '../../state/store.js';
 import { removeAtomisticPanel, addRelaxPanel, addMDPanel } from './AtomisticPanels.js';
 import {addMoyoPanel} from './MoyoWASM.js';
 import { refreshBackendTheme } from './BackendTheme.js';

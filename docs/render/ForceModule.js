@@ -1,5 +1,5 @@
 import * as THREE from '../external/three/three.module.js';
-import { app, fileBrowser, groups, general } from '../store.js';
+import { app, fileBrowser, groups, general } from '../state/store.js';
 
 const SHAFT_SEGS = 12;
 const TIP_SEGS = 12;
