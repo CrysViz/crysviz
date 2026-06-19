@@ -1,8 +1,8 @@
 import { updateVisualization } from '../crystal-viewer.js';
 import { general, structureShip, fileBrowser } from '../store.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
-import { updateSpins, removeSpins } from '../modules/SpinModule.js';
-import { updateForces, removeForces } from '../modules/ForceModule.js';
+import { updateSpins, removeSpins } from '../render/SpinModule.js';
+import { updateForces, removeForces } from '../render/ForceModule.js';
 
 let trajectoryPlayerElements = {};
 let currentFrame = 0;

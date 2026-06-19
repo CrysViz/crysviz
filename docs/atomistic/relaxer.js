@@ -1,6 +1,6 @@
 import { fileBrowser } from '../store.js';
 import { updateVisualization } from '../crystal-viewer.js';
-import { runPeriodicWrapped } from '../modules/LatticeModule.js';
+import { runPeriodicWrapped } from '../render/LatticeModule.js';
 import {
   fracToCart,
   cartToFrac,

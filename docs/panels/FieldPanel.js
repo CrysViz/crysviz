@@ -1,5 +1,5 @@
 import { fileBrowser, app, general, groups } from '../store.js';
-import { updateField, setActiveField, toggleFieldVisibility } from '../modules/Render3DFieldModule.js';
+import { updateField, setActiveField, toggleFieldVisibility } from '../render/Render3DFieldModule.js';
 import {
   getIsosurfaceMaterialSettings,
   getIsosurfaceTriangleSortingEnabled,

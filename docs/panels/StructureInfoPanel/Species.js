@@ -6,8 +6,8 @@ import { updateVisualization } from '../../crystal-viewer.js';
 
 import {setAtomColor,getAtomColor,colorHexToCss,hexToRgba,createPieDot,updatePieDot} from '../../modules/ColorModule.js'
 import { createColorPicker } from '../../modules/ColorPickerModule.js';
-import { updateBonds,updateSingleBondColor } from '../../modules/BondsFracUpdateModule.js'
-import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomCutPlaneImmunity} from '../../modules/AtomsFracUpdateModule.js'
+import { updateBonds,updateSingleBondColor } from '../../render/BondsFracUpdateModule.js'
+import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomCutPlaneImmunity} from '../../render/AtomsFracUpdateModule.js'
 import {createSupercell} from '../../modules/SuperCellModule.js';
 import {resetView,collapseAllAtomExpansions} from '../../panels/WindowAndSceneControls.js'
 import { applyWyckoffOrbitPosition } from '../../modules/SymmetryEditModule.js';

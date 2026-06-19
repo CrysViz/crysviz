@@ -205,7 +205,7 @@ function periodicWrappedJS(general, frac, elements, lattice) {
 async function workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
-       new URL('./wrapWorker.js', import.meta.url),
+       new URL('../modules/wrapWorker.js', import.meta.url),
        { type: 'module' }
     );
     worker.onmessage = (e) => {

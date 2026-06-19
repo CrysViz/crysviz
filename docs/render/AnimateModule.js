@@ -5,7 +5,7 @@ import {updateAngleDisplays} from './cameraAngleControl.js';
 import { app, general,mode, groups} from '../store.js';
 import {updateLattice,recomputeLatticeDirs,latticeDirsNorm} from './LatticeModule.js'
 
-import {updateRandomColors} from './DiscoModule.js'
+import {updateRandomColors} from '../modules/DiscoModule.js'
 
 
 let isRendering = true;

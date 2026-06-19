@@ -4,7 +4,7 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 
 
 
-import {getBondCutoff} from '../modules/BondsFracUpdateModule.js';
+import {getBondCutoff} from '../render/BondsFracUpdateModule.js';
 import { updateVisualization } from '../crystal-viewer.js';
 import {createPieDot} from '../modules/ColorModule.js';
 import {clearAllHighlights} from '../modules/SelectAndHighlightModule.js';

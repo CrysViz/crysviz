@@ -1,8 +1,8 @@
 import { general,bondLengths,fileBrowser} from '../store.js';
 import { addTrajectoryPlayer,removeTrajectoryPlayer} from './TrajectoryPanel.js';
 import {removeLatticeComparisonPopup, createLatticeComparisonPopup, updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
-import { removeSpins,updateSpins } from '../modules/SpinModule.js';
-import { removeForces,updateForces } from '../modules/ForceModule.js';
+import { removeSpins,updateSpins } from '../render/SpinModule.js';
+import { removeForces,updateForces } from '../render/ForceModule.js';
 import { removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
 import {addSpinPanel,removeSpinPanel} from './SpinPanel.js';
 import {addForcePanel,removeForcePanel} from './ForcePanel.js';

@@ -1,5 +1,5 @@
 import { general, fileBrowser } from '../store.js';
-import { updateForces, removeForces } from '../modules/ForceModule.js';
+import { updateForces, removeForces } from '../render/ForceModule.js';
 
 
 export function removeForcePanel() {

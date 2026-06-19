@@ -30,17 +30,17 @@ import { setupStructureInput, parsePOSCAR} from './modules/StructureInputModule.
 // These modules should contain all the functions related to specific functionalities
 //
 // .........................................................................................................
-import { updateAngleDisplays, setupAxisControls} from './modules/cameraAngleControl.js';
+import { updateAngleDisplays, setupAxisControls} from './render/cameraAngleControl.js';
 import { createColorPicker } from './modules/ColorPickerModule.js';
-import { pauseRendering, resumeRendering,animation_update} from './modules/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
+import { pauseRendering, resumeRendering,animation_update} from './render/AnimateModule.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from './modules/ShareModule.js';
 import {loadFromFilePath} from './io/FileURLLoader.js';
-import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter,disposeBondsMesh} from './modules/BondsFracUpdateModule.js'
-import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './modules/CompBondsFracUpdateModule.js'
-import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from './modules/LatticeModule.js'
-import {updatePolyhedra} from './modules/PolyhedraModule.js'
-import {rebuildAtoms,updateAtoms,updateSingleAtomDiameter} from './modules/AtomsFracUpdateModule.js';
-import {rebuildSecondAtoms,updateSecondAtoms,updateSecondSingleAtomDiameter} from './modules/CompAtomsFracUpdateModule.js';
+import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter,disposeBondsMesh} from './render/BondsFracUpdateModule.js'
+import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from './render/CompBondsFracUpdateModule.js'
+import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from './render/LatticeModule.js'
+import {updatePolyhedra} from './render/PolyhedraModule.js'
+import {rebuildAtoms,updateAtoms,updateSingleAtomDiameter} from './render/AtomsFracUpdateModule.js';
+import {rebuildSecondAtoms,updateSecondAtoms,updateSecondSingleAtomDiameter} from './render/CompAtomsFracUpdateModule.js';
 
 
 import {createSupercell} from './modules/SuperCellModule.js';
@@ -53,7 +53,7 @@ import {addAtomVacuumPanel} from './modules/addToStructureModule/AddVacuumModule
 import {addCameraPanel} from './panels/CameraPanel.js'
 import {addColorPanel} from './panels/ColorPanel.js'
 
-import { updateField, parseCHGCARFile, parseCubeFile, clearField } from './modules/Render3DFieldModule.js';
+import { updateField, parseCHGCARFile, parseCubeFile, clearField } from './render/Render3DFieldModule.js';
 //import {addAtomPanel} from './modules/addToStructureModule/addAtomPanel.js'
 
 // .........................................................................................................

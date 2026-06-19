@@ -7,8 +7,8 @@ import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getL
 import {Atom} from '../model/Atom.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
-import {getAtomColor} from './ColorModule.js'
-import {generateID} from './UUIDModule.js' 
+import {getAtomColor} from '../modules/ColorModule.js'
+import {generateID} from '../modules/UUIDModule.js' 
 
 
 export function rebuildSecondAtoms(structure, opacity) {

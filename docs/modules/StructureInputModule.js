@@ -9,8 +9,8 @@ const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser,structureShip} from '../store.js';
 import {createRow,selectLastAddedRow} from '../panels/FileBrowswerPanel.js';
 import {generateID} from './UUIDModule.js';
-import {buildBondObjects} from './BondsFracUpdateModule.js';
-import {runPeriodicWrapped} from './LatticeModule.js';
+import {buildBondObjects} from '../render/BondsFracUpdateModule.js';
+import {runPeriodicWrapped} from '../render/LatticeModule.js';
 import {
   transpose3x3,
   invert3x3,

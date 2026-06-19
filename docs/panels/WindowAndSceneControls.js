@@ -2,8 +2,8 @@ import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer, CSS2DObject } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups } from '../store.js';
-import { updateAngleDisplays, setupAxisControls} from '../modules/cameraAngleControl.js';
-import { getCellCenterAndDist} from '../modules/LatticeModule.js'
+import { updateAngleDisplays, setupAxisControls} from '../render/cameraAngleControl.js';
+import { getCellCenterAndDist} from '../render/LatticeModule.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/Isosurface.js';
 
 function disposeRendererInstance(renderer, host = null) {

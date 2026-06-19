@@ -8,9 +8,9 @@ import {Atom} from '../model/Atom.js';
 import {disposeGroup} from '../panels/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
-import {setAtomColor}  from './ColorModule.js';
+import {setAtomColor}  from '../modules/ColorModule.js';
 
-import {generateID} from './UUIDModule.js' 
+import {generateID} from '../modules/UUIDModule.js' 
 
 const MAX_CUT_PLANES = 8;
 

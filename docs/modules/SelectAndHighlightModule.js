@@ -2,10 +2,10 @@ import {groups,highlightHover,fileBrowser} from '../store.js';
 import {collapseAllAtomExpansions} from '../panels/WindowAndSceneControls.js';
 import {updateBondControlPanel} from '../panels/StructureInfoPanel/Bonds.js';
 import * as THREE from '../external/three/three.module.js';
-import {updateAtoms} from './AtomsFracUpdateModule.js'
-import {updateBonds} from './BondsFracUpdateModule.js'
+import {updateAtoms} from '../render/AtomsFracUpdateModule.js'
+import {updateBonds} from '../render/BondsFracUpdateModule.js'
 import InstanceMeshManager from '../model/InstanceMeshManager.js'
-import {getUUIDFromGeometry} from './AtomsFracUpdateModule.js'
+import {getUUIDFromGeometry} from '../render/AtomsFracUpdateModule.js'
 
 const ATOM_HIGHLIGHT_FADE_MS = 1200;
 let clearAtomHighlightTimer = null;
