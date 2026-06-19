@@ -11,7 +11,7 @@ import {
   transpose3x3,
   multiplyMatVec,
   invert3x3,
-} from '../math/backend-js.js';
+} from '../math/index.js';
 
 // Function to show progress bar
 function showProgressBar() {
