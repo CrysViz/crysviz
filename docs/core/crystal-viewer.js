@@ -885,7 +885,6 @@ function resetControlsTouch() {
     loadFromFilePath()
     console.log("loaded:",fileBrowser.selectedStructure)
   }
-  console.error("after load shared")
   if (!general.sharedStructureLoaded) {
     loadDefaultStructure();
   }
