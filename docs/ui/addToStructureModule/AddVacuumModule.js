@@ -31,7 +31,9 @@ export function addVacuumPanel(container) {
     const vacX = parseFloat(container.querySelector('#vacX').value) || 0;
     const vacY = parseFloat(container.querySelector('#vacY').value) || 0;
     const vacZ = parseFloat(container.querySelector('#vacZ').value) || 0;
-    addVacuum(vacX, vacY, vacZ);
+    // TODO: not implemented — addVacuum() was never written. Stubbed so the
+    // (live) Apply button no-ops with a warning instead of throwing.
+    console.warn('Add vacuum is not implemented yet', { vacX, vacY, vacZ });
   });
 }
 
@@ -207,9 +209,9 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
       }
     });
 
-    atomsToAdd.forEach(atom => {
-      addAtom(atom.element, atom.x, atom.y, atom.z, false);
-    });
+    // TODO: not implemented — addAtom() was never written. Stubbed so the
+    // (live) "Add to Structure" button no-ops with a warning instead of throwing.
+    console.warn('Add atom is not implemented yet', atomsToAdd);
     atomsToAdd.length = 0;
   });
 
@@ -230,9 +232,9 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
       }
     });
 
-    atomsToAdd.forEach(atom => {
-      addAtom(atom.element, atom.x, atom.y, atom.z, true);
-    });
+    // TODO: not implemented — addAtom() was never written. Stubbed so the
+    // (live) "Add to New Structure" button no-ops with a warning instead of throwing.
+    console.warn('Add atom is not implemented yet', atomsToAdd);
     atomsToAdd.length = 0;
   });
 }

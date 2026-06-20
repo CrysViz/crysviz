@@ -38,7 +38,7 @@ export function periodicWrapped(general, frac, elements, lattice) {
   return periodicWrappedJS(general, frac, elements, lattice);
 }
 
-export function createLatticeLines(color = currentLatticeColor) {
+export function createLatticeLines(color = general.currentLatticeColor) {
   const group = new THREE.Group();
   const material = new THREE.LineBasicMaterial(getLatticeVisSettings(color));
 

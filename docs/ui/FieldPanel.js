@@ -543,9 +543,12 @@ function setupFieldControlEvents(fields, container) {
     });
   }
 
-  fieldToggles.forEach((toggle) => {
-    toggle.addEventListener('change', updateAllIsosurfaces);
-  });
+  // NOTE: updateAllIsosurfaces was never implemented (its init call below is also
+  // commented out), so this listener referenced an undefined function and would
+  // throw. Disabled until a real handler exists (e.g. () => updateField()).
+  // fieldToggles.forEach((toggle) => {
+  //   toggle.addEventListener('change', updateAllIsosurfaces);
+  // });
 
   // Initialize with first field visible
   //updateAllIsosurfaces();

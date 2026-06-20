@@ -3,6 +3,7 @@
  * A utility for managing UUID ↔ instance index mappings in Three.js InstancedMesh objects.
  */
 
+import * as THREE from '../external/three/three.module.js';
 import {usedIDs} from '../state/store.js'
 
 function generateCompactTimeUUID() {

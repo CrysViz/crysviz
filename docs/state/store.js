@@ -94,7 +94,6 @@ export const general = {
   powerMode: true,
   currentLatticeColor:null,
   defaultBackgroundColor:null,
-  currentLatticeColor:null,
   useDefaultColors:true,
   //defaultSpinColor:'#ff3366',
   //defaultSpinLength:1.0,

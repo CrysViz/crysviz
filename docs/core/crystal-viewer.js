@@ -213,7 +213,9 @@ export function updateVisualization(options = {}) {
     updateSecondBonds(fileBrowser.comparisonStructure,sOpacity)
   }
 
-  if (SecondReRenderLattice) updateSecondLattice(general.secondLatticeColor);
+  // TODO: comparison-structure lattice re-render is not implemented
+  // (updateSecondLattice does not exist). Left disabled rather than throwing.
+  // if (SecondReRenderLattice) updateSecondLattice(general.secondLatticeColor);
 
   // Panels
   if (reRenderComposition != false) {
