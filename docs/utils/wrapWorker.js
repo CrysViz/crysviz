@@ -97,7 +97,7 @@ function periodicWrapped(frac, elements, bondLengths, showPeriodic,showPBCBonds,
   });
 
   // Maximum bond cutoff from settings
-  const maxCutoff = Math.max(0.0, ...Object.values(bondLengths || { dummy: 0.0 }));
+  const maxCutoff = Math.max(0.0, ...Object.values(bondLengths || {}).map(v => (typeof v === 'number' ? v : (v?.max ?? 0))), 0.0);
 
   const a = new THREE.Vector3(...lattice[0]);
   const b = new THREE.Vector3(...lattice[1]);
@@ -191,7 +191,7 @@ export function isOutsideUnitCell(cart, lattice, eps = 1e-6) {
 
 
 export function getBondCutoff(elem1, elem2, bondLengths) {
-  const pair1 = elem1 + '-' + elem2;
-  const pair2 = elem2 + '-' + elem1;
-  return bondLengths[pair1] || bondLengths[pair2] || 0.0;
+  const pair = elem1 < elem2 ? `${elem1}-${elem2}` : `${elem2}-${elem1}`;
+  const v = bondLengths[pair];
+  return (typeof v === 'number' ? v : (v?.max ?? 0)) || 0.0;
 }

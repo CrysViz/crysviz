@@ -152,7 +152,7 @@ function periodicWrappedJS(general, frac, elements, lattice) {
       const c = fracToCart([f], lattice)[0];
       return new THREE.Vector3(c[0], c[1], c[2]);
     });
-    const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || { dummy: 0.0 }));
+    const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || {}).map(v => (typeof v === 'number' ? v : (v?.max ?? 0))), 0.0);
     const a = new THREE.Vector3(...lattice[0]);
     const b = new THREE.Vector3(...lattice[1]);
     const c = new THREE.Vector3(...lattice[2]);
@@ -320,7 +320,10 @@ function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showP
   for (const row of lattice) { mixF(row[0]); mixF(row[1]); mixF(row[2]); }
   mix(showPeriodic ? 1 : 0);
   mix(showPBCBonds ? 1 : 0);
-  if (bondLengths) for (const v of Object.values(bondLengths)) mixF(v);
+  if (bondLengths) for (const v of Object.values(bondLengths)) {
+    if (typeof v === 'number') { mixF(v); }
+    else { mixF(v?.max ?? 0); mixF(v?.min ?? 0); }
+  }
   return h;
 }
 

@@ -441,7 +441,7 @@ function minVertexDegreeForCageSize(N) {
   const b = new THREE.Vector3(lattice[1][0], lattice[1][1], lattice[1][2]);
   const c = new THREE.Vector3(lattice[2][0], lattice[2][1], lattice[2][2]);
 
-  const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || { dummy: 0.0 }));
+  const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || {}).map(v => (typeof v === 'number' ? v : (v?.max ?? 0))), 0.0);
   const ax = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(a.length(), 1e-6))));
   const by = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(b.length(), 1e-6))));
   const cz = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(c.length(), 1e-6))));

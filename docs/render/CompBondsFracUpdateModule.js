@@ -33,14 +33,16 @@ export function initBondsLengths(){
   // Generate all unique pairs
   for (let i = 0; i < uniqueElements.length; i++) {
     for (let j = i; j < uniqueElements.length; j++) {
-      const pair = uniqueElements[i] + '-' + uniqueElements[j];
+      const pair = uniqueElements[i] < uniqueElements[j]
+        ? `${uniqueElements[i]}-${uniqueElements[j]}`
+        : `${uniqueElements[j]}-${uniqueElements[i]}`;
       pairs.push(pair);
 
       if (!general.bondLengths[pair]) {
         const defaultRadius = (atomicRadii[uniqueElements[i]] || 1.0) + (atomicRadii[uniqueElements[j]] || 1.0);
         const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
-        general.bondLengths[pair] = defaultValue;
-        general.defaultBondLengths[pair] = defaultValue; // Store default
+        general.bondLengths[pair] = { min: 0.0, max: defaultValue };
+        general.defaultBondLengths[pair] = { min: 0.0, max: defaultValue }; // Store default
       }
 
       // Initialize bond visibility if not set
@@ -72,11 +74,17 @@ export function rebuildSecondBonds(structure, opacity) {
 }
 
 export function getBondCutoff(elem1, elem2) {
-  const pair1 = elem1 + '-' + elem2;
-  const pair2 = elem2 + '-' + elem1;
-  const isVisible = general.bondVisibility[pair1] !== false && general.bondVisibility[pair2] !== false;
+  const pair = elem1 < elem2 ? `${elem1}-${elem2}` : `${elem2}-${elem1}`;
+  const isVisible = general.bondVisibility[pair] !== false;
   if (!isVisible) return 0.0;
-  return general.bondLengths[pair1] || general.bondLengths[pair2] || 0.0;
+  return general.bondLengths[pair]?.max || 0.0;
+}
+
+export function getBondMinCutoff(elem1, elem2) {
+  const pair = elem1 < elem2 ? `${elem1}-${elem2}` : `${elem2}-${elem1}`;
+  const isVisible = general.bondVisibility[pair] !== false;
+  if (!isVisible) return 0.0;
+  return general.bondLengths[pair]?.min || 0.0;
 }
 
 export function buildSecondBondObjects(structure){
@@ -93,6 +101,7 @@ export function buildSecondBondObjects(structure){
       const ej = wrapped.elements[j];
 
       const cutoff = getBondCutoff(ei, ej);
+      const minCutoff = getBondMinCutoff(ei, ej);
       if (cutoff <= 0.01) {
         console.log("Bond Cutoff too small for",ei,ej, cutoff)
         continue;
@@ -101,7 +110,7 @@ export function buildSecondBondObjects(structure){
       const p2 = new THREE.Vector3(...wrappedCart[j]);
 
       const dist = p1.distanceTo(p2);
-      if (dist > cutoff || dist < 0.005) {
+      if (dist > cutoff || dist < 0.005 || dist < minCutoff) {
         // console.log("Skipping bond with dist",dist, "due to cutoff", cutoff)
         continue;
       }

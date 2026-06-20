@@ -46,8 +46,10 @@ export function buildBondTable(elements, bondLengths) {
         const ia = seen.get(a);
         const ib = seen.get(b);
         if (ia !== undefined && ib !== undefined) {
-          table[ia * nElem + ib] = cutoff;
-          table[ib * nElem + ia] = cutoff;
+          // bondLengths values are { min, max } objects (legacy: plain number)
+          const maxCutoff = (typeof cutoff === 'number') ? cutoff : (cutoff?.max ?? 0);
+          table[ia * nElem + ib] = maxCutoff;
+          table[ib * nElem + ia] = maxCutoff;
         }
       }
     }
