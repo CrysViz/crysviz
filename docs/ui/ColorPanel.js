@@ -224,7 +224,7 @@ function updateBondColorsByLength() {
   }
 }
 
-function bondLengthToColor(bondLength, minVal = general.BondMin, maxVal = general.BondMax) {
+export function bondLengthToColor(bondLength, minVal = general.BondMin, maxVal = general.BondMax) {
   let colors;
   switch (general.bondsColorMap) {
     case "batlow": colors = getBatlowColors(); break;
