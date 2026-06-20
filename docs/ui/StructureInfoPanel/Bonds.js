@@ -14,6 +14,7 @@ import {fracToCart} from '../../render/index.js'
 
 
 import {clearAllHighlights} from '../SelectAndHighlightModule.js';
+import { getAtomColor, createPieDot, updatePieDot } from '../ColorModule.js';
 
 
 let placeholderMessage;
@@ -154,20 +155,49 @@ export function updateBondControlPanel(selectedBond) {
   detailsContainer.appendChild(controlWrapper);
 }
 
-// Helper: get unique colors of bonds
+// Helper: ensure color is always a valid CSS hex string
+function safeColor(color) {
+  if (!color || color === '#') return '#808080';
+  if (typeof color === 'number') return `#${color.toString(16).padStart(6, '0')}`;
+  if (typeof color === 'string' && !color.startsWith('#')) return `#${color}`;
+  return color;
+}
+
+// Helper: get bond colors based on atom species.
+// Shows the element colour only for a same-species bond whose atoms all share
+// one colour; otherwise white (mixed species or multiple colours).
 function getBondColors(bondMeshes) {
-  if (!Array.isArray(bondMeshes)) return [];
+  if (!Array.isArray(bondMeshes) || bondMeshes.length === 0) {
+    return ["#ffffff"]; // Default to white
+  }
 
-  const colorsSet = new Set();
+  const firstBond = bondMeshes[0];
+  const [i, j] = firstBond.name.split("-").map(Number);
+  const structure = fileBrowser.selectedStructure;
+  const elements = structure.elements;
 
-  bondMeshes.forEach((bond) => {
-    if (bond?.material?.color) {
-      const hex = `#${bond.material.color.getHexString()}`;
-      colorsSet.add(hex);
+  const el1 = elements[i];
+  const el2 = elements[j];
+
+  if (el1 === el2) {
+    const atomIndices = elements
+      .map((el, idx) => el === el1 ? idx : -1)
+      .filter(idx => idx !== -1);
+
+    if (atomIndices.length > 0) {
+      const firstColor = safeColor(getAtomColor(atomIndices[0]));
+      const allSameColor = atomIndices.every(idx =>
+        safeColor(getAtomColor(idx)) === firstColor
+      );
+
+      if (allSameColor) {
+        return [firstColor]; // Single colour for same species
+      }
     }
-  });
+  }
 
-  return Array.from(colorsSet);
+  // Different species, or same species with multiple colours
+  return ["#ffffff"];
 }
 
 // Helper: update color of all selected bonds
