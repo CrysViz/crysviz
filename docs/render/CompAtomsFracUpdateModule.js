@@ -8,7 +8,8 @@ import {Atom} from '../model/index.js';
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 import {getAtomColor} from '../ui/ColorModule.js'
-import {generateID} from '../utils/index.js' 
+import {generateID} from '../utils/index.js'
+import {finishAtomsMesh} from './AtomsFracUpdateModule.js'
 
 
 export function rebuildSecondAtoms(structure, opacity) {
@@ -98,92 +99,7 @@ export function buildSecondAtoms(structure) {
     );
   };
 
-  // Instanced mesh
-  const mesh = new THREE.InstancedMesh(geometry, material, atomCount);
-
-  // Initialize instance color buffer with a default color (e.g., grey)
-  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(atomCount * 3), 3, false);
-
-  for (let i = 0; i < atomCount; i++) {
-    mesh.setColorAt(i, new THREE.Color(0x808080)); // Default grey color
-  }
-
-  const instanceElementIndices = new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1);
-
-  // Store UUIDs in mesh.userData as an array
-  mesh.userData.uuids = [];
-  const uuidToIndex = new Map();
-
-  wrapped.elements.forEach((element, index) => {
-    //console.log("index",index)
-    //console.log("srcIndex",wrapped.srcIndex)
-    const atom = atoms[wrapped.srcIndex[index]];
-    mesh.userData.uuids.push(atom.uuid);
-    uuidToIndex.set(atom.uuid, index);
-    instanceElementIndices.setX(index, index);
-  });
-
-  // Store the lookup table in mesh.userData
-  mesh.userData.uuidToIndex = uuidToIndex;
-
-  // Encode UUIDs as a vec4 and store them in the geometry
-  const uuidByteLength = 16; // 16 bytes = 4 floats
-  const uuidAttributeData = new Float32Array(atomCount * 4); // 4 floats per UUID
-  wrapped.elements.forEach((element, index) => {
-    let key = wrapped.srcIndex[index]
-    if (!structure.atomImages[key]) {
-        structure.atomImages[key] = []; // Initialize with an empty array
-    }
-    structure.atomImages[key].push(index)
-
-
-
-    const atom = atoms[wrapped.srcIndex[index]];
-    const cleanedUUID = atom.uuid.replace(/-/g, '');
-
-    const encoder = new TextEncoder();
-    const encodedUUID = encoder.encode(cleanedUUID);
-
-    if (encodedUUID.length > 16) {
-      console.warn("UUID too long, will be truncated:", atom.uuid);
-    }
-
-    const padded = new Uint8Array(16);
-    padded.set(encodedUUID.subarray(0, 16));
-
-    const floatView = new Float32Array(padded.buffer);
-    uuidAttributeData.set(floatView, index * 4);
-  });
-
-
-  // Add the UUID attribute to the geometry
-  const instanceUUIDs = new THREE.InstancedBufferAttribute(uuidAttributeData, 4);
-
-  mesh.geometry.setAttribute('instanceUUID', instanceUUIDs);
-  mesh.geometry.setAttribute('instanceElementIndex', instanceElementIndices);
-
-  // Existing attributes
-  mesh.geometry.setAttribute(
-    'instanceEmissive',
-    new THREE.InstancedBufferAttribute(new Float32Array(atomCount * 3), 3)
-  );
-  mesh.geometry.setAttribute(
-    'instanceEmissiveIntensity',
-    new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1)
-  );
-
-  // Mark buffers as dynamic
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
-
-
-  // Mark instanceColor as needing update
-  mesh.instanceColor.needsUpdate = true;
-
-  // Add to scene & store reference
-  app.scene.add(mesh);
-  groups.secondAtomsMesh = mesh;
-  groups.secondAtomsMesh.userData.elementNames = wrapped.elements;
+  finishAtomsMesh({ geometry, material, structure, wrapped, atoms, meshKey: 'secondAtomsMesh', cutPlanes: false });
 }
 
 
