@@ -42,6 +42,7 @@ export class Structure {
     bondhalfToAtom={}, //  Mapping from the index of a bond half to the index of the respective atom. Neccessary for color updates. 
     periodic = {}, // Accept periodic as an input
     volumetricFields = null,
+    planes = [],
   } = {}) {
     // Mutable instance properties
     this.elements = elements;
@@ -59,6 +60,7 @@ export class Structure {
     this.bonds = bonds;           // list of bonds
     this.periodic = periodic;     // Initialize periodic
     this.atomImages = {};
+    this.planes = planes;
 
     // Calculate periodic wrapped positions for atoms in-place
 
@@ -77,6 +79,7 @@ export class Structure {
       stress: stress ? { ...stress } : null,  // deep copy of stress object if it exists
       polyhedra: polyhedra ? { ...polyhedra } : null,
       bonds: deepCopyArrayOfObjects(this.bonds), // deep copy of bond objects
+      planes: deepCopyArrayOfObjects(planes),
     });
 
   }

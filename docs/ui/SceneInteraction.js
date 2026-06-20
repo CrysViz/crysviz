@@ -14,8 +14,9 @@ import * as THREE from '../external/three/three.module.js';
 import { app, groups, mode, fileBrowser, measurements, highlightHover } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import {
-  clearHighlightAtom, highlightAtomIn3D, highlightAtomInStructurePanel,
+  clearHighlightAtom, clearHighlightBond, highlightAtomIn3D,
   highlightBondIn3D, clearAllHighlights,
+  clearSelectedAtoms, updateAtomSelectionFrom3DHit,
 } from './SelectAndHighlightModule.js';
 import {
   clearMeasureGraphics, addDistanceMeasurement, addAngleMeasurement, drawMeasureGraphics,
@@ -190,18 +191,18 @@ export function setupSceneInteraction() {
 
   if (atomHits.length > 0) {
     hit = atomHits[0];
-    const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
-    const instanceId = hit.instanceId;
-    const sourceIndex = wrapped?.srcIndex ? wrapped.srcIndex[instanceId] : instanceId;
-    const elementName = wrapped?.elements?.[instanceId]
-      || groups.atomsMesh.userData.elementNames?.[instanceId]
-      || fileBrowser.selectedStructure?.elements?.[sourceIndex]
-      || '?';
-
-    highlightAtomInStructurePanel(elementName, sourceIndex);
-    highlightAtomIn3D(instanceId);
+    clearHighlightBond();
+    updateAtomSelectionFrom3DHit(hit, {
+      selectionMode: (event.ctrlKey || event.metaKey) ? 'toggle' : (event.shiftKey ? 'add' : 'replace'),
+      sourceEvent: event,
+      scrollToSelection: true,
+    });
 
   } else if (bondHits.length > 0) {
+    clearSelectedAtoms({
+      sourceEvent: event,
+      reason: 'bond-select',
+    });
     let id2;
     if (hit.instanceId%2 == 0){
       id2 = hit.instanceId+1
@@ -216,7 +217,10 @@ export function setupSceneInteraction() {
 
   }
   else  {
-     clearAllHighlights();
+     clearAllHighlights({
+       sourceEvent: event,
+       reason: 'empty-space',
+     });
   }
 
 

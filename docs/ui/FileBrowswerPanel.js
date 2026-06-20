@@ -8,6 +8,7 @@ import {updateForces} from '../render/index.js';
 import {fieldBrowser} from './FieldPanel.js';
 import {toggleFieldVisibility, setActiveField, updateField, clearField, deleteField} from '../render/index.js';
 import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
+import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import {Structure} from '../model/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import {removeLatticeAndSupercellPanel, addLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
@@ -557,6 +558,7 @@ function updateStructureFromRowAndStep(rowIndex) {
     return;
   }
   fileBrowser.selectedStructure = container.structures[step];
+  syncPlanesForSelectedStructure();
   refreshBackendTheme();
   let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
   if (spins != null && general.spinForceState === "Spins") updateSpins();

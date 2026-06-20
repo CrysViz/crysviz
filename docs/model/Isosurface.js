@@ -12,9 +12,9 @@ export let surface_options = {
     side: THREE.DoubleSide,
     opacity:0.6,
     transparent: true,
-    //depthWrite: false,
-    //depthTest: true,
-  } 
+    depthWrite: false,
+    //depthTest: false,
+  }
 
 
 
@@ -234,7 +234,9 @@ export class Isosurface extends THREE.Group{
             negative: new THREE.Mesh(negativeGeom, materialNeg)
         };
         this.meshes.positive.name = 'isosurface_pos';
+        this.meshes.positive.renderOrder = 1; // render after opaque structures to reduce blending artifacts
         this.meshes.negative.name = 'isosurface_neg';
+        this.meshes.negative.renderOrder = 1; // render after opaque structures to reduce blending artifacts
 
         this.applyMaterialSettings(getIsosurfaceMaterialSettings());
 
