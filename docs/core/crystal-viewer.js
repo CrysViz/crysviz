@@ -64,7 +64,7 @@ import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../rend
 // Panel files should contain all the functions related to a specific panels
 //
 // // .........................................................................................................
-import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
+import {setupScene, initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
   initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView,collapseAllAtomExpansions
 } from '../ui/WindowAndSceneControls.js'
 import {loadAboutContent, openAboutPanel, closeAboutPanel} from '../ui/AboutPanel.js';
@@ -360,52 +360,7 @@ function init() {
 
 async function initApp() {
   await initializeMathBackend();
-  document.body.classList.add(`theme-standard`);
-  app.scene = new THREE.Scene();
-
-  const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  if (isDarkMode) {
-    app.scene.background = new THREE.Color(0x090A09)
-    general.defaultBackgroundColor = 0x090A09
-    general.currentLatticeColor = 0xE7E7E7
-   } else {
-    app.scene.background = new THREE.Color(0xE7E7E7);
-    general.defaultBackgroundColor = 0xE7E7E7
-    general.currentLatticeColor = 0x090A09
-   };
-
-  //
-  //
-
-
-  //get all things related to the main view window from WindowAndSceneControls.js
-  initCamera(app.useOrthographicCamera);
-
-  initRenderer();
-
-  initLabelRenderer();
-
-  initControls();
-
-  resizeRenderer(app.orthographicFrustumSize);
-
-
-  // init Angle display windows
-
-  ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis));
-
-  updateAngleDisplays();
-
-
-  initAxesGizmo();
-
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-  app.scene.add(ambientLight);
-
-  // Single main directional light - positioned relative to camera
-  app.keyLight = new THREE.DirectionalLight(0xffffff, 5.0);
-  app.keyLight.castShadow = false;
-  app.scene.add(app.keyLight);
+  setupScene();
 
   // Click Atom
 

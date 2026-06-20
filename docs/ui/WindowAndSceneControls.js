@@ -1,10 +1,61 @@
 import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer, CSS2DObject } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
-import { app, groups } from '../state/store.js';
+import { app, groups, general } from '../state/store.js';
 import { updateAngleDisplays, setupAxisControls} from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
+
+// Build the three.js scene: renderer/camera/controls/gizmo + lights + theme.
+// Extracted from crystal-viewer.js initApp() (Stage 3).
+export function setupScene() {
+  document.body.classList.add(`theme-standard`);
+  app.scene = new THREE.Scene();
+
+  const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (isDarkMode) {
+    app.scene.background = new THREE.Color(0x090A09)
+    general.defaultBackgroundColor = 0x090A09
+    general.currentLatticeColor = 0xE7E7E7
+   } else {
+    app.scene.background = new THREE.Color(0xE7E7E7);
+    general.defaultBackgroundColor = 0xE7E7E7
+    general.currentLatticeColor = 0x090A09
+   };
+
+  //
+  //
+
+
+  //get all things related to the main view window from WindowAndSceneControls.js
+  initCamera(app.useOrthographicCamera);
+
+  initRenderer();
+
+  initLabelRenderer();
+
+  initControls();
+
+  resizeRenderer(app.orthographicFrustumSize);
+
+
+  // init Angle display windows
+
+  ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis));
+
+  updateAngleDisplays();
+
+
+  initAxesGizmo();
+
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+  app.scene.add(ambientLight);
+
+  // Single main directional light - positioned relative to camera
+  app.keyLight = new THREE.DirectionalLight(0xffffff, 5.0);
+  app.keyLight.castShadow = false;
+  app.scene.add(app.keyLight);
+}
 
 function disposeRendererInstance(renderer, host = null) {
   if (!renderer) return;
