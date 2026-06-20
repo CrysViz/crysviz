@@ -2,9 +2,23 @@ import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer, CSS2DObject } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups, general } from '../state/store.js';
-import { updateAngleDisplays, setupAxisControls} from '../render/index.js';
+import { updateAngleDisplays, setupAxisControls, latticeDirs} from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
+
+// Wire the camera view buttons (x/y/z + a/b/c lattice axes + reset).
+// Extracted from crystal-viewer.js initApp() (Stage 6).
+export function setupCameraButtons() {
+  document.getElementById('viewX').onclick = () => {app.controls.reset(); setViewDirection(new THREE.Vector3( 1., 0., 0.))};
+  document.getElementById('viewY').onclick = () => {app.controls.reset(); setViewDirection(new THREE.Vector3( 0., 1., 0.))};
+  document.getElementById('viewZ').onclick = () => {app.controls.reset(); setViewDirection(new THREE.Vector3( 0., 0., 1.))};
+
+
+  document.getElementById('viewA').onclick = () => {app.controls.reset(); const {a} = latticeDirs(); setViewDirection(a); };
+  document.getElementById('viewB').onclick = () => {app.controls.reset(); const {b} = latticeDirs(); setViewDirection(b); };
+  document.getElementById('viewC').onclick = () => {app.controls.reset(); const {c} = latticeDirs(); setViewDirection(c); };
+  document.getElementById('resetView').onclick = () => resetView();
+}
 
 // Build the three.js scene: renderer/camera/controls/gizmo + lights + theme.
 // Extracted from crystal-viewer.js initApp() (Stage 3).

@@ -36,6 +36,7 @@ import { setupMobileMenu } from '../ui/MobileMenu.js';
 import { setupAtomTooltip } from '../ui/AtomTooltip.js';
 import { setupControlsWiring } from '../ui/ControlsWiring.js';
 import { setupSceneInteraction } from '../ui/SceneInteraction.js';
+import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
 import { pauseRendering, resumeRendering,animation_update} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
@@ -66,7 +67,7 @@ import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../rend
 // Panel files should contain all the functions related to a specific panels
 //
 // // .........................................................................................................
-import {setupScene, initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
+import {setupScene, setupCameraButtons, initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
   initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView,collapseAllAtomExpansions
 } from '../ui/WindowAndSceneControls.js'
 import {loadAboutContent, openAboutPanel, closeAboutPanel} from '../ui/AboutPanel.js';
@@ -371,15 +372,7 @@ async function initApp() {
 
 
 
-  document.getElementById('viewX').onclick = () => {app.controls.reset(); setViewDirection(new THREE.Vector3( 1., 0., 0.))};
-  document.getElementById('viewY').onclick = () => {app.controls.reset(); setViewDirection(new THREE.Vector3( 0., 1., 0.))};
-  document.getElementById('viewZ').onclick = () => {app.controls.reset(); setViewDirection(new THREE.Vector3( 0., 0., 1.))};
-
-
-  document.getElementById('viewA').onclick = () => {app.controls.reset(); const {a} = latticeDirs(); setViewDirection(a); };
-  document.getElementById('viewB').onclick = () => {app.controls.reset(); const {b} = latticeDirs(); setViewDirection(b); };
-  document.getElementById('viewC').onclick = () => {app.controls.reset(); const {c} = latticeDirs(); setViewDirection(c); };
-  document.getElementById('resetView').onclick = () => resetView();
+  setupCameraButtons();
 
  setupStructureInput({
    onLoadStructure: async (content, name) => {
@@ -398,134 +391,7 @@ async function initApp() {
 
 
   setupControlsWiring();
-
-  // Mobile measurement toggle functionality
-  document.getElementById('measurementToggle').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const panel = document.getElementById('measurementPanel');
-    panel.classList.toggle('expanded');
-  });
-
-  // Mobile camera toggle functionality
-  document.getElementById('cameraToggle').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const panel = document.getElementById('cameraPanel');
-    panel.classList.toggle('expanded');
-  });
-
-  // New measurement tool handlers with improved click handling
-  document.getElementById('distanceModeBtn').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const button = document.getElementById('distanceModeBtn');
-    const wasActive = mode.measureMode === 'distance';
-
-    // Clear previous mode
-    document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
-    measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-    measurements.selectedAtoms = [];
-    clearMeasureGraphics();
-
-    if (wasActive) {
-      mode.measureMode = 'none';
-    } else {
-      mode.measureMode = 'distance';
-      button.classList.add('active');
-    }
-  });
-
-  document.getElementById('angleModeBtn').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const button = document.getElementById('angleModeBtn');
-    const wasActive = mode.measureMode === 'angle';
-
-    // Clear previous mode
-    document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
-    measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-    measurements.selectedAtoms = [];
-    clearMeasureGraphics();
-
-    if (wasActive) {
-      mode.measureMode = 'none';
-    } else {
-      mode.measureMode = 'angle';
-      button.classList.add('active');
-    }
-  });
-
-  // Delete atom mode
-  document.getElementById('deleteModeBtn').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const button = document.getElementById('deleteModeBtn');
-    const wasActive = mode.measureMode === 'delete';
-
-    document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
-    measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
-    measurements.selectedAtoms = [];
-    clearMeasureGraphics();
-
-    if (wasActive) {
-      mode.measureMode = 'none';
-    } else {
-      mode.measureMode = 'delete';
-      button.classList.add('active');
-    }
-  });
-
-  document.getElementById('clearAllMeasurements').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    clearAllMeasurements();
-    // Also clear active measurement mode
-    document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
-    mode.measureMode = 'none';
-
-
-     // Ensure the fields exist and are the right typed arrays
-      //
-    structureData.positions = parsed.positions ?? null;
-    structureData.elements  = parsed.elements  ?? null;
-    structureData.lattice   = parsed.lattice   ?? null;
-    structureData.supercell = parsed.supercell ?? null;
-    if (general.modifiedLattice != null){
-        structureData.lattice = general.modifiedLattice
-      }
-    if (general.currentSupercell != null){
-          createSupercell(currentSupercell.nx,currentSupercell.ny,currentSupercell.nz)
-          }
-      createBackgroundControl();
-      updateVisualization();
-      clearMeasure();
-    }
-  );
-
-  // Add touch event handlers for better mobile support
-  document.getElementById('distanceModeBtn').addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    document.getElementById('distanceModeBtn').click();
-  });
-
-  document.getElementById('angleModeBtn').addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    document.getElementById('angleModeBtn').click();
-  });
-
-  document.getElementById('clearAllMeasurements').addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    document.getElementById('clearAllMeasurements').click();
-  });
-
+  setupMeasurementToolbar();
 
   // Initialize atomSize from the UI slider so the initial view respects the slider value
   (function initAtomSizeFromSlider(){
