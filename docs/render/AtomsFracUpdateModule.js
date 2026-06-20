@@ -9,7 +9,7 @@ import { getCutPlaneMaskSign } from '../model/Plane.js';
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
-import {setAtomColor}  from '../ui/ColorModule.js';
+import {setAtomColor}  from '../utils/ColorModule.js';
 
 import {generateID} from '../utils/index.js' 
 

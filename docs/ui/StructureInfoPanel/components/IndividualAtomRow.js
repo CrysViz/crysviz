@@ -1,5 +1,5 @@
 import { fileBrowser, groups, general } from '../../../state/store.js';
-import { colorHexToCss, getAtomColor, hexToRgba } from '../../ColorModule.js';
+import { colorHexToCss, getAtomColor, hexToRgba } from '../../../utils/ColorModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity } from '../../../render/AtomsFracUpdateModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';

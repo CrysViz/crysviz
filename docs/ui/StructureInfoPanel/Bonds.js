@@ -14,7 +14,7 @@ import {fracToCart} from '../../render/index.js'
 
 
 import {clearAllHighlights} from '../SelectAndHighlightModule.js';
-import { getAtomColor, createPieDot, updatePieDot } from '../ColorModule.js';
+import { getAtomColor, createPieDot, updatePieDot } from '../../utils/ColorModule.js';
 
 
 let placeholderMessage;

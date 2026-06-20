@@ -1,11 +1,11 @@
 import { app, general, measurements, fileBrowser } from '../state/store.js';
 import * as THREE from '../external/three/three.module.js';
 import { parsePOSCAR } from '../ui/StructureInputModule.js';
-import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../ui/MeasurementModule.js';
+import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from '../ui/BondLengthPanel.js';
 import { createShareButton} from '../ui/ShareModule.js';
 import {loadStructure, updateVisualization} from '../core/crystal-viewer.js';
-import {clearMeasure} from '../ui/MeasurementModule.js';
+import {clearMeasure} from '../render/MeasurementModule.js';
 import { fracToCart } from '../math/index.js';
 import {initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
   initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView,collapseAllAtomExpansions

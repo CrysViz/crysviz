@@ -1,5 +1,5 @@
-import { colorHexToCss } from '../../ColorModule.js';
-import { getAtomColor } from '../../ColorModule.js';
+import { colorHexToCss } from '../../../utils/ColorModule.js';
+import { getAtomColor } from '../../../utils/ColorModule.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 
 export function createSpinForceEditor(atomIndex, element, dot) {

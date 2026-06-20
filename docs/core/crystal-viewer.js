@@ -46,7 +46,7 @@ import {rebuildSecondAtoms,updateSecondAtoms,updateSecondSingleAtomDiameter} fro
 
 import {createSupercell} from '../ui/SuperCellModule.js';
 import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,
-        addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from '../ui/MeasurementModule.js' // not all imports might be needed in this file
+        addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from '../render/MeasurementModule.js' // not all imports might be needed in this file
 
 import {highlightBondInfoInStructurePanel,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from '../ui/SelectAndHighlightModule.js';
 

@@ -6,7 +6,7 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 
 import {getBondCutoff} from '../render/index.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import {createPieDot} from './ColorModule.js';
+import {createPieDot} from '../utils/ColorModule.js';
 import {clearAllHighlights} from './SelectAndHighlightModule.js';
 import {updateBondControlPanel} from './StructureInfoPanel/Bonds.js'
 import { openDoublePeriodicTable } from './PeriodicTableSelectTwoPanel.js';

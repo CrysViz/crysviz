@@ -7,7 +7,7 @@ import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getL
 import {Atom} from '../model/index.js';
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
-import {getAtomColor} from '../ui/ColorModule.js'
+import {getAtomColor} from '../utils/ColorModule.js'
 import {generateID} from '../utils/index.js'
 import {finishAtomsMesh} from './AtomsFracUpdateModule.js'
 

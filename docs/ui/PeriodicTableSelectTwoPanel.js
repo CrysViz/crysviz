@@ -1,7 +1,7 @@
 import { fileBrowser } from '../state/store.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { getAtomColor } from './ColorModule.js';
+import { getAtomColor } from '../utils/ColorModule.js';
 
 // Helper: Normalize color to hex string
 function normalizeColor(color) {

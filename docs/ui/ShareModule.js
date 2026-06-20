@@ -3,7 +3,7 @@ import * as THREE from '../external/three/three.module.js';
 import { parsePOSCAR } from './StructureInputModule.js';
 import { updateAtoms } from '../render/index.js';
 import { rebuildBonds } from '../render/index.js';
-import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from './MeasurementModule.js';
+import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { fracToCart } from '../math/index.js';
 

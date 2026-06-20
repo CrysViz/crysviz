@@ -9,7 +9,7 @@
 import { general, groups, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter } from '../render/index.js';
-import { updateMeasurementMarkers } from './MeasurementModule.js';
+import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
 
 export function setupControlsWiring() {
   // Control handlers

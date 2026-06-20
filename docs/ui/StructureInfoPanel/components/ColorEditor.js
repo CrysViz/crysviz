@@ -1,5 +1,5 @@
 import { fileBrowser, groups, general, structureShip } from '../../../state/store.js';
-import { colorHexToCss, hexToRgba, getAtomColor } from '../../ColorModule.js';
+import { colorHexToCss, hexToRgba, getAtomColor } from '../../../utils/ColorModule.js';
 import { getElementAtomIndices, clampOpacity, setSwatchOpacity } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity } from '../../../render/AtomsFracUpdateModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';

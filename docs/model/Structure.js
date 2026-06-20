@@ -1,6 +1,6 @@
 import {general} from '../state/store.js';
 import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
-import { colorHexToCss } from '../ui/ColorModule.js';
+import { colorHexToCss } from '../utils/ColorModule.js';
 
 // Helper function to deep freeze objects
 function deepFreeze(object) {

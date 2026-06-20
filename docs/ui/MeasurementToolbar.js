@@ -4,7 +4,7 @@
 
 import { mode, measurements } from '../state/store.js';
 import { clearHighlightAtom } from './SelectAndHighlightModule.js';
-import { clearMeasureGraphics, clearAllMeasurements, clearMeasure } from './MeasurementModule.js';
+import { clearMeasureGraphics, clearAllMeasurements, clearMeasure } from '../render/MeasurementModule.js';
 
 export function setupMeasurementToolbar() {
   // Mobile measurement toggle functionality

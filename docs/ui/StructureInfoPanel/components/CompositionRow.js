@@ -1,5 +1,5 @@
 import { fileBrowser, groups, general, structureShip } from '../../../state/store.js';
-import { colorHexToCss, createPieDot, updatePieDot, getAtomColor } from '../../ColorModule.js';
+import { colorHexToCss, createPieDot, updatePieDot, getAtomColor } from '../../../utils/ColorModule.js';
 import { getElementAtomIndices, getElementOpacityValues, setSwatchOpacity, clampOpacity } from './utils.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createIndividualAtomRow } from './IndividualAtomRow.js';

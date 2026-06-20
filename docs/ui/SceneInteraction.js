@@ -14,7 +14,7 @@ import {
 } from './SelectAndHighlightModule.js';
 import {
   clearMeasureGraphics, addDistanceMeasurement, addAngleMeasurement, drawMeasureGraphics,
-} from './MeasurementModule.js';
+} from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 
 export function setupSceneInteraction() {
