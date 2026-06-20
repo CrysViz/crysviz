@@ -484,8 +484,6 @@ export function createMDMonitorPanel() {
     const n = tSeries.length;
     const xmin = 0;
     const xmax = Math.max(1, n - 1);
-    const tmin = Math.min(...tSeries);
-    const tmax = Math.max(...tSeries);
     const allTemps = [...tSeries, ...targetSeries.filter(Number.isFinite)];
     const emin = Math.min(...eSeries);
     const emax = Math.max(...eSeries);

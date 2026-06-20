@@ -1,6 +1,5 @@
 import {structureShip,fileBrowser} from '../../state/store.js'
 import { createRow,selectLastAddedRow } from '../FileBrowswerPanel.js';
-import {updateVisualization} from '../../core/crystal-viewer.js'
 import init, { analyze_cell } from '../../external/moyo-test/moyo_wasm.js';
 import { Structure } from "../../model/index.js";
 import { Atom } from "../../model/index.js";
@@ -63,9 +62,8 @@ export const PT_INVERTED = {
 };
 
 
-let wasmReady;
 async function initMoyo() {
-  wasmReady = await init(); // no-arg: moyo_wasm.js resolves the .wasm via import.meta.url
+  const _wasmReady = await init(); // no-arg: moyo_wasm.js resolves the .wasm via import.meta.url
 }
 
 export async function addMoyoPanel() {
@@ -218,7 +216,6 @@ function callMoyo(calcType="getSymmetryInfo", tolerance="1e-2") {
 
 
 function newContainerFromSymmetrisation(primConv,positions,lattice,elements){
-  let newTraj =  1
   let fileName = structureShip.container[fileBrowser.selectedRowIndex].fileName
   let atoms = [];
   const container = new StructureContainer({fileName:fileName})

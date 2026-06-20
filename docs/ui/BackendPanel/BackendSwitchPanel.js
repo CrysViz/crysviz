@@ -72,7 +72,7 @@ export function removeErrorPanel() {
 
 export function showWarning(message) {
   return new Promise(resolve => {
-    const { panel, acceptBtn, denyBtn } = addErrorPanel(message);
+    const { panel: _panel, acceptBtn, denyBtn } = addErrorPanel(message);
 
     function accept() {
       cleanup();

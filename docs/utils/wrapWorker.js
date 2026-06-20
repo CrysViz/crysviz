@@ -32,7 +32,6 @@ function periodicWrapped(frac, elements, bondLengths, showPeriodic,showPBCBonds,
   const eps = 1e-6;
   const newElements = [];
   const newFcrds = [];
-  const newCcrds = [];
   const srcIndex = [];
   const latticeInverse = invert3x3(transpose3x3(lattice));
 
@@ -121,7 +120,6 @@ function periodicWrapped(frac, elements, bondLengths, showPeriodic,showPBCBonds,
   for (let i = 0; i < wrappedCart.length; i++) {
     const pi = wrappedCart[i];
     const ei = newElements[i];
-    const atomIndex_i = srcIndex[i];
 
     // Loop over original atoms
     for (let j = 0; j < frac.length; j++) {

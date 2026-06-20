@@ -30,7 +30,6 @@ import { Structure } from '../../model/index.js';
 import { StructureContainer } from '../../model/index.js';
 import { Atom } from '../../model/index.js';
 import { Force } from '../../model/index.js';
-import { updateVisualization } from '../../core/crystal-viewer.js';
 import { updateForces, removeForces } from '../../render/index.js';
 import { updateLattice } from '../../render/index.js';
 import { rebuildAtoms } from '../../render/index.js';
@@ -63,7 +62,6 @@ const ELEMENT_BY_Z = [
 // ── Module state ──────────────────────────────────────────────────────────────
 
 let ws              = null;
-let connected       = false;
 let pendingFrame    = null;
 let renderScheduled = false;
 let liveContainer   = null;
@@ -332,7 +330,6 @@ function connectWS() {
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = () => {
-    connected = true;
     setStatus('connected', `Connected to ${WS_URL}`);
   };
 
@@ -342,19 +339,16 @@ function connectWS() {
   };
 
   ws.onclose = () => {
-    connected = false;
     setStatus('disconnected', 'Disconnected');
   };
 
   ws.onerror = () => {
-    connected = false;
     setStatus('error', 'Cannot connect — is example_md.py running?');
   };
 }
 
 function disconnectWS() {
   if (ws) { ws.close(); ws = null; }
-  connected    = false;
   pendingFrame = null;
   setStatus('disconnected', 'Disconnected');
   // Keep liveStructure/liveContainer so the last frame stays visible

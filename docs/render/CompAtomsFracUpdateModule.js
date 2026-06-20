@@ -1,14 +1,11 @@
 import * as THREE from '../external/three/three.module.js';
 
-import {structureShip, app, groups,fileBrowser, general,mode} from '../state/store.js';
+import { app, groups, general} from '../state/store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
-import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
+import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
-import {Atom} from '../model/index.js';
-import {disposeGroup} from '../ui/WindowAndSceneControls.js'
-import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
+import {runPeriodicWrapped} from './LatticeModule.js'
 import {getAtomColor} from '../utils/ColorModule.js'
-import {generateID} from '../utils/index.js'
 import {finishAtomsMesh} from './AtomsFracUpdateModule.js'
 
 
@@ -30,22 +27,17 @@ export function rebuildSecondAtoms(structure, opacity) {
   let _ = runPeriodicWrapped(structure.periodic, positions, elements,lattice)
 
   buildSecondAtoms(structure);
-  let ok = updateSecondAtoms(structure,opacity);
+  updateSecondAtoms(structure,opacity);
  }
 
 export function buildSecondAtoms(structure) {
   if (!structure) return;
 
-  let positions = structure.atoms.map(a => a.position);
-  let lattice = structure.lattice.map(r => [...r]);
-  let elements = [...structure.elements];
   let atoms= structure.atoms
 
   //perdic.wrapped
 
   let wrapped = structure.periodic.wrapped
-
-  const atomCount = wrapped.elements.length;
 
   // Geometry: unit sphere, scaled per instance
   const geometry = new THREE.SphereGeometry(1, 32, 24);
@@ -138,10 +130,6 @@ export function updateSecondSingleAtomDiameter(index, element) {
 
 export function updateSecondAtoms(structure, opacity = 1.0) {
   console.error("Update comp  opacity", opacity)
-  let positions = structure.atoms.map(a => a.position);
-  let lattice = structure.lattice.map(r => [...r]);
-  let elements = [...structure.elements];
-  let atoms= structure.atoms
   let periodic = structure.periodic;
 
   let wrapped;

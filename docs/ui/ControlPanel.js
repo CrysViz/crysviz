@@ -1,6 +1,6 @@
-import { general,bondLengths,fileBrowser} from '../state/store.js';
+import { general,fileBrowser} from '../state/store.js';
 import { addTrajectoryPlayer,removeTrajectoryPlayer} from './TrajectoryPanel.js';
-import {removeLatticeComparisonPopup, createLatticeComparisonPopup, updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
+import {removeLatticeComparisonPopup, updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import { removeSpins,updateSpins } from '../render/index.js';
 import { removeForces,updateForces } from '../render/index.js';
 import { removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
@@ -193,7 +193,6 @@ export function addCompPanel() {
 
   // Add event listeners
   document.getElementById('showComparisonBonds').addEventListener('change', function() {
-    const isChecked = this.checked;
     general.showSecondBond = this.checked;
     updateVisualization({
       SecondBondsUpdate: true,

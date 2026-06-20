@@ -1,7 +1,5 @@
-import { updateVisualization } from '../../core/crystal-viewer.js';
 
-import {app, groups,fileBrowser, general, mode, highlightHover} from '../../state/store.js';
-import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../defaults/color_texture_defaults.js'
+import {fileBrowser, highlightHover} from '../../state/store.js';
 
 
 
@@ -13,7 +11,6 @@ import {fracToCart} from '../../render/index.js'
 
 
 
-import {clearAllHighlights} from '../SelectAndHighlightModule.js';
 import { getAtomColor, createPieDot, updatePieDot } from '../../utils/ColorModule.js';
 
 
@@ -117,7 +114,6 @@ export function updateBondControlPanel(selectedBond) {
   const dot = createPieDot(colors, 20);
   dot.style.cursor = "pointer";
 
-  const placeholderText = document.createElement("div");
 
   BondInfo.appendChild(dot);
   BondInfo.appendChild(Info);

@@ -1,11 +1,7 @@
-import { app, groups,fileBrowser, general, mode, highlightHover} from '../../state/store.js';
-import { defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../../defaults/color_texture_defaults.js'
-import { updateVisualization } from '../../core/crystal-viewer.js';
+import {fileBrowser, general} from '../../state/store.js';
 
 
-import { createColorPicker } from '../ColorPickerModule.js';
-import { createSupercell} from '../SuperCellModule.js';
-import { resetView,collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
+import {collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { createCompositionRow, createWyckoffCompositionRow} from './Species.js'
 import { createSpecificBondControl} from './Bonds.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'
@@ -78,7 +74,6 @@ export function renderComposition(panelState="closed") {
 
   const compDiv = document.getElementById('composition');
   compDiv.innerHTML = '';
-  const compString = document.createElement('div');
   const compWrapper = document.createElement('div');
     compWrapper.style.cssText = `
     display: flex;
@@ -386,7 +381,6 @@ function createSegmentedControl(containerId, includeWyckoff = false) {
       this.classList.add('active');
 
       // You can add additional logic here to handle mode changes
-      const selectedMode = this.dataset.mode;
       // For example, you might want to call a function to handle the mode change
       // handleModeChange(selectedMode);
     });

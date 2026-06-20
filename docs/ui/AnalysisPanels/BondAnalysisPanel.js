@@ -7,18 +7,6 @@ export function refreshHistogram(newDatasets, newLabels) {
 }
 
 // ---- Utility: Color palette ----
-const AUTO_COLORS1 = [
-"#ef2f27",
-"#ff5f00",
-"#f5e502",
-"#519f50",
-"#0aaeb3",
-"#11e3df",
-"#2c78bf",
-"#c7428f",
-"#e02c6d",
-"#f096b6"
-];
 
 
 
@@ -114,7 +102,6 @@ export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabe
   document.body.appendChild(panel);
 
   const header = panel.querySelector("#histHeader");
-  const body = panel.querySelector("#histBody");
   const canvas = panel.querySelector("#histCanvas");
   const legendBox = panel.querySelector("#histLegend");
   const foldToggle = panel.querySelector("#histFoldToggle");
@@ -303,7 +290,6 @@ canvas.addEventListener("mousemove", e => {
       tooltip.style.display = "block";
 
 
-      const tooltipRect = tooltip.getBoundingClientRect();
       tooltip.style.left = "80px";
       tooltip.style.top = "80px";
 

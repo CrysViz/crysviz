@@ -1,4 +1,3 @@
-import * as THREE from '../external/three/three.module.js';
 // .........................................................................................................
 // store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
 //
@@ -7,18 +6,18 @@ import * as THREE from '../external/three/three.module.js';
 //  control. The rest of the singletons should be preserved.
 // .........................................................................................................
 
-import {structureShip, measurements,app, groups,fileBrowser, general, mode, highlightHover} from '../state/store.js';
-import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
-import {defaultPOSCAR,defaultPOSCAR2,defaultPOSCAR3,defaultPOSCAR4} from '../defaults/structure_defaults.js'
+import { measurements,app,fileBrowser, general} from '../state/store.js';
+import {defaultPOSCAR4} from '../defaults/structure_defaults.js'
 
 
 //this needs to life somewhere else! only for testing
-const tableBody = document.querySelector("#objectTable tbody");
 
 
 // import from the old file structure that need to be combined and ported to the new structure
-import { setupSecondStructureInput } from '../ui/SecondStructureModule.js';
 import { setupStructureInput } from '../ui/StructureInputModule.js';
+// Side-effect import: AboutPanel wires the "about" trigger at module load.
+// (Its named exports are unused, so keep it as a bare import.)
+import '../ui/AboutPanel.js';
 
 // ........................................................................................................
 // Import Modules
@@ -26,7 +25,6 @@ import { setupStructureInput } from '../ui/StructureInputModule.js';
 // These modules should contain all the functions related to specific functionalities
 //
 // .........................................................................................................
-import { updateAngleDisplays, setupAxisControls} from '../render/index.js';
 import { createBackgroundControl, setupThemeSystem } from '../ui/BackgroundPicker.js';
 import { setupMobileMenu } from '../ui/MobileMenu.js';
 import { setupAtomTooltip } from '../ui/AtomTooltip.js';
@@ -34,21 +32,17 @@ import { setupControlsWiring } from '../ui/ControlsWiring.js';
 import { setupSceneInteraction } from '../ui/SceneInteraction.js';
 import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
 import { pauseRendering, resumeRendering,animation_update} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
-import { shareStructure,createShareButton,loadSharedStructure} from '../ui/ShareModule.js';
+import {createShareButton,loadSharedStructure} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
-import {updateBonds,rebuildBonds,buildBondObjects,updateSingleBondDiameter,disposeBondsMesh} from '../render/index.js'
-import {updateSecondBonds,rebuildSecondBonds,buildSecondBondObjects,updateSecondSingleBondDiameter} from '../render/index.js'
-import { periodicWrapped, updateLattice,recomputeLatticeDirs,latticeDirsNorm,fracToCart,cartToFrac,latticeDirs} from '../render/index.js'
-import {updatePolyhedra} from '../render/index.js'
-import {rebuildAtoms,updateAtoms,updateSingleAtomDiameter} from '../render/index.js';
-import {rebuildSecondAtoms,updateSecondAtoms,updateSecondSingleAtomDiameter} from '../render/index.js';
+import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
+import {updateSecondBonds,rebuildSecondBonds} from '../render/index.js'
+import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
+import {rebuildAtoms,updateAtoms} from '../render/index.js';
+import {rebuildSecondAtoms,updateSecondAtoms} from '../render/index.js';
 
 
-import {createSupercell} from '../ui/SuperCellModule.js';
-import {updateAllMeasurements, addAngleMeasurement, clearAllMeasurements,drawMeasureGraphics,
-        addDistanceMeasurement, updateMeasurementMarkers,clearMeasureGraphics,clearMeasure} from '../render/MeasurementModule.js' // not all imports might be needed in this file
+import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render/MeasurementModule.js' // not all imports might be needed in this file
 
-import {highlightBondInfoInStructurePanel,clearHighlightAtom,highlightBondIn3D,highlightAtomIn3D,clearAllHighlights,highlightAtomInStructurePanel } from '../ui/SelectAndHighlightModule.js';
 
 import {addAtomVacuumPanel} from '../ui/addToStructureModule/AddVacuumModule.js'
 import {addCameraPanel} from '../ui/CameraPanel.js'
@@ -63,16 +57,10 @@ import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../rend
 // Panel files should contain all the functions related to a specific panels
 //
 // // .........................................................................................................
-import {setupScene, setupCameraButtons, initCamera, initRenderer, initLabelRenderer,initControls,resizeRenderer,
-  initAxesGizmo, disposeGroup, switchCameraType, setViewDirection,resetView,collapseAllAtomExpansions
+import {setupScene, setupCameraButtons,resizeRenderer, switchCameraType
 } from '../ui/WindowAndSceneControls.js'
-import {loadAboutContent, openAboutPanel, closeAboutPanel} from '../ui/AboutPanel.js';
-import {addSpinPanel} from '../ui/SpinPanel.js';
-import {resetBondLengths, createBondLengthControls} from '../ui/BondLengthPanel.js';
 import {renderComposition} from '../ui/StructureInfoPanel/General.js';
-import {addTrajectoryPlayer} from '../ui/TrajectoryPanel.js';
 import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch, updateControlSpinForcePanel} from '../ui/ControlPanel.js';
-import {addHistogramPanel} from  '../ui/AnalysisPanels/BondAnalysisPanel.js';
 import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
 
 import {addSavePanel} from '../ui/SavePanel.js'
@@ -81,23 +69,16 @@ import {addAnalysisInfoPanel,addStorageInfoPanel,addBackendInfoPanel,addUploadIn
 // .........................................................................................................
 // import utils needs to moce to the "share" functionality. This is currently broken.
 // .........................................................................................................
-import {
-  captureCompleteState,
-  createCompleteShareableURL,
-  createLegacyShareableURL,
-  restoreCompleteState,
-  generatePOSCARString,
-} from '../utils/index.js';
+
+
 
 // file browser test
 //
 //
-import {createRow} from '../ui/FileBrowswerPanel.js'
 
 
 // Class Structure
 //
-import {Structure} from '../model/index.js'
 
 // New imports (which go here, because they need initializations that happen above until things are refactored)
 import { parse_any } from '../io/index.js';
@@ -114,7 +95,6 @@ import { resetMathBackend } from '../math/index.js';
 //console.log = () => {};
 //console.warn = () => {};
 
-const view = document.getElementById('view');
 const status = document.getElementById('status');
 const setStatus = (s) => {
   if (status) status.textContent = s;
@@ -153,7 +133,6 @@ export function updateVisualization(options = {}) {
     SecondReRenderAtoms = false,
     SecondBondsUpdate = false,
     SecondReRenderBonds = false,
-    SecondReRenderLattice = false,
 
     // Panels
     reRenderOther = true,
@@ -438,7 +417,6 @@ function initUIPanels() {
   addUploadInfoPanel();
   addBackendInfoPanel();
   //addAtomPanel();
-  const errorPanel = document.getElementById("errorPanel");
 
   // Add viewport meta tag if not present for proper mobile scaling
   if (!document.querySelector('meta[name="viewport"]')) {

@@ -2,11 +2,8 @@ import { Structure } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { StructureContainer } from "../model/index.js";
 import {runPeriodicWrapped} from "../render/index.js";
-import {
-  transpose3x3,
-  invert3x3,
-  cartToFractional,
-} from "../math/index.js";
+
+
 import {generateID} from '../utils/index.js'
 
 

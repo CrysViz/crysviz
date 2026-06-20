@@ -310,20 +310,6 @@ export function getPlaneDefinitionNormalAndD(planeDef, lattice) {
  * Return the 8 corner vertices of the cell parallelepiped (origin at 0,0,0).
  * @param {Array} cell – [a, b, c], each a THREE.Vector3 or [x,y,z]
  */
-function getCellCorners(cell) {
-  const [a, b, c] = cell.map(toVec3);
-  const corners = [];
-  for (let i = 0; i < 2; i++)
-    for (let j = 0; j < 2; j++)
-      for (let k = 0; k < 2; k++) {
-        const p = new THREE.Vector3();
-        if (i) p.add(a);
-        if (j) p.add(b);
-        if (k) p.add(c);
-        corners.push(p);
-      }
-  return corners;
-}
 
 ///////////////////////////////////////////////
 //              Cubes convention             //
@@ -360,9 +346,6 @@ let cube_vertex_pos = [
 	[0,0,1], [0,1,1], [1,1,1], [1,0,1]
 ];
 
-let edge_vector_inds = [
-    1, 0, 1, 0, 1, 0, 1, 0, 2, 2, 2, 2
-]
 
 /**
  * Compute the convex polygon formed by the intersection of the plane n·x = d

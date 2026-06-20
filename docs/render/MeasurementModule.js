@@ -328,7 +328,6 @@ export function addDistanceMeasurement(atom1, atom2) {
   const pa = atom1.position.clone(), pb = atom2.position.clone();
   const distance = pa.distanceTo(pb);
   const direction = new THREE.Vector3().subVectors(pb, pa);
-  const midpoint = new THREE.Vector3().addVectors(pa, pb).multiplyScalar(0.5);
 
   // Create multiple cylinder segments for dashed effect
   const dashLength = 0.3;
@@ -402,7 +401,6 @@ export function addDistanceMeasurement(atom1, atom2) {
   div.style.textShadow = '1px 1px 2px rgba(255,255,255,0.8)';
   div.style.boxShadow = '0 3px 8px rgba(0,0,0,0.4)';
   div.style.borderRadius = '4px';
-  const a = atom1.userData.element, b = atom2.userData.element;
   const d = pa.distanceTo(pb);
   //div.textContent = `${a}—${b}: ${formatÅ(d)} Å`;
   div.textContent = `${formatÅ(d)} Å`;

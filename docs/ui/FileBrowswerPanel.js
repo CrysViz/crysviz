@@ -1,12 +1,11 @@
 import {groups,app, general, structureShip, fileBrowser} from '../state/store.js';
 import {updateVisualization} from '../core/crystal-viewer.js';
-import {resetView} from './WindowAndSceneControls.js';
-import {resetModeSwitch, resetSpinForceSwitch, updateControlSpinForcePanel} from './ControlPanel.js';
+import { updateControlSpinForcePanel} from './ControlPanel.js';
 import {createBondLengthControls} from './BondLengthPanel.js';
 import {updateSpins} from '../render/index.js';
 import {updateForces} from '../render/index.js';
 import {fieldBrowser} from './FieldPanel.js';
-import {toggleFieldVisibility, setActiveField, updateField, clearField, deleteField} from '../render/index.js';
+import { setActiveField, updateField, deleteField} from '../render/index.js';
 import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import {Structure} from '../model/index.js';

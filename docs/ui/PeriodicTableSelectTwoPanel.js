@@ -1,6 +1,4 @@
 import { fileBrowser } from '../state/store.js';
-import { createBondLengthControls } from './BondLengthPanel.js';
-import { updateVisualization } from '../core/crystal-viewer.js';
 import { getAtomColor } from '../utils/ColorModule.js';
 
 // Helper: Normalize color to hex string
@@ -15,14 +13,6 @@ function normalizeColor(color) {
 }
 
 // Helper: Determine if a color is light (needs dark text)
-function isLightColor(hex) {
-  if (hex === '#ffffff') return true;
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5;
-}
 
 export function openDoublePeriodicTable(callback) {
   // Get element color, returns white if multiple colors exist for the element
@@ -66,98 +56,6 @@ export function openDoublePeriodicTable(callback) {
   `;
 
   // Element data
-  const elementData = {
-    H: { name: "Hydrogen", number: 1, mass: "1.008" },
-    He: { name: "Helium", number: 2, mass: "4.0026" },
-    Li: { name: "Lithium", number: 3, mass: "6.94" },
-    Be: { name: "Beryllium", number: 4, mass: "9.0122" },
-    B: { name: "Boron", number: 5, mass: "10.81" },
-    C: { name: "Carbon", number: 6, mass: "12.011" },
-    N: { name: "Nitrogen", number: 7, mass: "14.007" },
-    O: { name: "Oxygen", number: 8, mass: "15.999" },
-    F: { name: "Fluorine", number: 9, mass: "18.998" },
-    Ne: { name: "Neon", number: 10, mass: "20.180" },
-    Na: { name: "Sodium", number: 11, mass: "22.990" },
-    Mg: { name: "Magnesium", number: 12, mass: "24.305" },
-    Al: { name: "Aluminum", number: 13, mass: "26.982" },
-    Si: { name: "Silicon", number: 14, mass: "28.085" },
-    P: { name: "Phosphorus", number: 15, mass: "30.974" },
-    S: { name: "Sulfur", number: 16, mass: "32.06" },
-    Cl: { name: "Chlorine", number: 17, mass: "35.45" },
-    Ar: { name: "Argon", number: 18, mass: "39.948" },
-    K: { name: "Potassium", number: 19, mass: "39.098" },
-    Ca: { name: "Calcium", number: 20, mass: "40.078" },
-    Sc: { name: "Scandium", number: 21, mass: "44.956" },
-    Ti: { name: "Titanium", number: 22, mass: "47.867" },
-    V: { name: "Vanadium", number: 23, mass: "50.942" },
-    Cr: { name: "Chromium", number: 24, mass: "51.996" },
-    Mn: { name: "Manganese", number: 25, mass: "54.938" },
-    Fe: { name: "Iron", number: 26, mass: "55.845" },
-    Co: { name: "Cobalt", number: 27, mass: "58.933" },
-    Ni: { name: "Nickel", number: 28, mass: "58.693" },
-    Cu: { name: "Copper", number: 29, mass: "63.546" },
-    Zn: { name: "Zinc", number: 30, mass: "65.38" },
-    Ga: { name: "Gallium", number: 31, mass: "69.723" },
-    Ge: { name: "Germanium", number: 32, mass: "72.63" },
-    As: { name: "Arsenic", number: 33, mass: "74.922" },
-    Se: { name: "Selenium", number: 34, mass: "78.971" },
-    Br: { name: "Bromine", number: 35, mass: "79.904" },
-    Kr: { name: "Krypton", number: 36, mass: "83.798" },
-    Rb: { name: "Rubidium", number: 37, mass: "85.468" },
-    Sr: { name: "Strontium", number: 38, mass: "87.62" },
-    Y: { name: "Yttrium", number: 39, mass: "88.906" },
-    Zr: { name: "Zirconium", number: 40, mass: "91.224" },
-    Nb: { name: "Niobium", number: 41, mass: "92.906" },
-    Mo: { name: "Molybdenum", number: 42, mass: "95.95" },
-    Tc: { name: "Technetium", number: 43, mass: "98" },
-    Ru: { name: "Ruthenium", number: 44, mass: "101.07" },
-    Rh: { name: "Rhodium", number: 45, mass: "102.91" },
-    Pd: { name: "Palladium", number: 46, mass: "106.42" },
-    Ag: { name: "Silver", number: 47, mass: "107.87" },
-    Cd: { name: "Cadmium", number: 48, mass: "112.41" },
-    In: { name: "Indium", number: 49, mass: "114.82" },
-    Sn: { name: "Tin", number: 50, mass: "118.71" },
-    Sb: { name: "Antimony", number: 51, mass: "121.76" },
-    Te: { name: "Tellurium", number: 52, mass: "127.60" },
-    I: { name: "Iodine", number: 53, mass: "126.90" },
-    Xe: { name: "Xenon", number: 54, mass: "131.29" },
-    Cs: { name: "Cesium", number: 55, mass: "132.91" },
-    Ba: { name: "Barium", number: 56, mass: "137.33" },
-    La: { name: "Lanthanum", number: 57, mass: "138.91" },
-    Hf: { name: "Hafnium", number: 72, mass: "178.49" },
-    Ta: { name: "Tantalum", number: 73, mass: "180.95" },
-    W: { name: "Tungsten", number: 74, mass: "183.84" },
-    Re: { name: "Rhenium", number: 75, mass: "186.21" },
-    Os: { name: "Osmium", number: 76, mass: "190.23" },
-    Ir: { name: "Iridium", number: 77, mass: "192.22" },
-    Pt: { name: "Platinum", number: 78, mass: "195.08" },
-    Au: { name: "Gold", number: 79, mass: "196.97" },
-    Hg: { name: "Mercury", number: 80, mass: "200.59" },
-    Tl: { name: "Thallium", number: 81, mass: "204.38" },
-    Pb: { name: "Lead", number: 82, mass: "207.2" },
-    Bi: { name: "Bismuth", number: 83, mass: "208.98" },
-    Po: { name: "Polonium", number: 84, mass: "209" },
-    At: { name: "Astatine", number: 85, mass: "210" },
-    Rn: { name: "Radon", number: 86, mass: "222" },
-    Fr: { name: "Francium", number: 87, mass: "223" },
-    Ra: { name: "Radium", number: 88, mass: "226" },
-    Ac: { name: "Actinium", number: 89, mass: "227" },
-    Rf: { name: "Rutherfordium", number: 104, mass: "267" },
-    Db: { name: "Dubnium", number: 105, mass: "270" },
-    Sg: { name: "Seaborgium", number: 106, mass: "271" },
-    Bh: { name: "Bohrium", number: 107, mass: "270" },
-    Hs: { name: "Hassium", number: 108, mass: "277" },
-    Mt: { name: "Meitnerium", number: 109, mass: "276" },
-    Ds: { name: "Darmstadtium", number: 110, mass: "281" },
-    Rg: { name: "Roentgenium", number: 111, mass: "280" },
-    Cn: { name: "Copernicium", number: 112, mass: "285" },
-    Nh: { name: "Nihonium", number: 113, mass: "284" },
-    Fl: { name: "Flerovium", number: 114, mass: "289" },
-    Mc: { name: "Moscovium", number: 115, mass: "288" },
-    Lv: { name: "Livermorium", number: 116, mass: "293" },
-    Ts: { name: "Tennessine", number: 117, mass: "294" },
-    Og: { name: "Oganesson", number: 118, mass: "294" }
-  };
 
   // Main periodic table layout
   const tableLayout = [
@@ -203,7 +101,6 @@ export function openDoublePeriodicTable(callback) {
     selectedElements.forEach((symbol, index) => {
       const color = getElementColor(symbol);
       const isWhite = color === '#ffffff';
-      const textColor = isLightColor(color) ? '#000000' : '#ffffff';
 
       const elementDiv = document.createElement('div');
       elementDiv.style.cssText = `
@@ -245,7 +142,6 @@ export function openDoublePeriodicTable(callback) {
       } else {
         const isPresent = presentElements.has(symbol);
         const color = getElementColor(symbol);
-        const isWhite = color === '#ffffff';
         const isSelected = selectedElements.includes(symbol);
 
         rowHTML += `

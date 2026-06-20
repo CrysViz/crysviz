@@ -13,24 +13,6 @@ const MarchingCubesBackend = Object.freeze({
     WASM: 'wasm'
 });
 
-function reorderArrayByPermutation(array, permutation, stride) {
-    if (!array || !permutation || permutation.length <= 1) return array;
-
-    const vertexCount = permutation.length;
-    const expectedLength = vertexCount * stride;
-    if (array.length < expectedLength) return array;
-
-    const temp = ArrayBuffer.isView(array) ? new array.constructor(array) : array.slice();
-    for (let i = 0; i < vertexCount; i++) {
-        const srcBase = permutation[i] * stride;
-        const dstBase = i * stride;
-        for (let j = 0; j < stride; j++) {
-            array[dstBase + j] = temp[srcBase + j];
-        }
-    }
-
-    return array;
-}
 
 function buildTriangleDistancePermutation(positions, point) {
     if (!positions || !point) return [];

@@ -4,10 +4,9 @@
 
 import * as THREE from "three";
 
-import { initializeUIOnLoad, initializeWithPOSCAR } from '../ui/StructureInputModule.js';
-import { readPOSCAR } from '../io/ReadPOSCARModule.js';
+import { initializeWithPOSCAR } from '../ui/StructureInputModule.js';
 import { fieldBrowser, updateFieldPanel } from "../ui/FieldPanel.js";
-import { app, fileBrowser, groups } from '../state/store.js';
+import { app, groups } from '../state/store.js';
 import { readCHGCAR } from "../io/ReadChgcarModule.js";
 import { readCubeFile } from "../io/ReadCubeModule.js";
 import { Isosurface } from "../model/index.js";
@@ -36,7 +35,7 @@ function updateIsosurface(iso, useAbsoluteIsoValue = false) {
 }
 
 export function createSlice(field, axis = "z", index = null) {
-  const { nx, ny, nz, values, origin, voxel } = field;
+  const { nx, ny, nz, values, origin: _origin, voxel: _voxel } = field;
 
   let w, h, slice;
 

@@ -3,62 +3,15 @@ import { colorHexToCss, getAtomColor, hexToRgba } from '../../../utils/ColorModu
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity } from '../../../render/AtomsFracUpdateModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
-import { clampOpacity, getElementAtomIndices, updateAtomCoordinates } from './utils.js';
+import { clampOpacity, updateAtomCoordinates } from './utils.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createSpinForceEditor } from './SpinForceEditor.js';
-import { applyWyckoffOrbitPosition } from '../../SymmetryEditModule.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { bondLengthToColor } from '../../ColorPanel.js';
 
-import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings,getColorFromMap,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../../../defaults/color_texture_defaults.js'
 
 
 // Helper to get the current color for an atom based on the active color mode
-function getCurrentColorForAtom(atomIndex, structure = fileBrowser.selectedStructure) {
-  const element = structure.elements[atomIndex];
-
-  // If in force mode, calculate force-based color
-  if (general.atomsColor === "force") {
-    const forceObj = structure.forces?.[atomIndex];
-    if (forceObj?.vector?.length >= 3) {
-      const magnitude = Math.sqrt(
-        forceObj.vector[0] ** 2 +
-        forceObj.vector[1] ** 2 +
-        forceObj.vector[2] ** 2
-      );
-      // Inline bondLengthToColor logic (avoids import dependency)
-      let colors;
-      switch (general.atomColorMap) {
-        case "batlow": colors = getBatlowColors(); break;
-        case "hawaii": colors = getHawaiiColors(); break;
-        case "managua": colors = getManaguaColors(); break;
-        case "viridis": colors = getViridisColors(); break;
-        case "plasma": colors = getPlasmaColors(); break;
-        case "spectralR": colors = getSpectralRColors(); break;
-        default: colors = getHeatMapColors();
-      }
-
-      if (!colors || colors.length === 0) return structure.getDefaultElementColor(element);
-
-      const nBins = colors.length;
-      const min = general.ForceMin;
-      const max = general.ForceMax;
-      const clamped = Math.max(min, Math.min(max, magnitude));
-      const t = (max > min) ? (clamped - min) / (max - min) : 0.5;
-      const bin = Math.min(Math.max(0, Math.floor(t * nBins)), nBins - 1);
-
-      if (bin >= colors.length || !colors[bin]) {
-        return structure.getDefaultElementColor(element);
-      }
-
-      const colorObj = colors[bin];
-      return `#${(colorObj.r * 255 | 0).toString(16).padStart(2, '0')}${(colorObj.g * 255 | 0).toString(16).padStart(2, '0')}${(colorObj.b * 255 | 0).toString(16).padStart(2, '0')}`;
-    }
-    return structure.getDefaultElementColor(element);
-  }
-  // For elements mode or any other mode, use the element's current color
-  return safeColor(getAtomColor(atomIndex));
-}
 
 
 // Helper: Ensure color is always a valid CSS hex string

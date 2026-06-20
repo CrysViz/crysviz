@@ -1,7 +1,6 @@
 import { fileBrowser, structureShip } from '../../../state/store.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
-import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomCutPlaneImmunity } from '../../../render/AtomsFracUpdateModule.js';
-import { updateSingleBondColor, updateBonds } from '../../../render/BondsFracUpdateModule.js';
+import { updateSingleAtomCutPlaneImmunity } from '../../../render/AtomsFracUpdateModule.js';
 import { applyWyckoffOrbitPosition } from '../../SymmetryEditModule.js';
 
 export function clampOpacity(value) {

@@ -12,7 +12,6 @@ export function parsePWSCFout(content, fileName) {
   const lines = content.split("\n");
   const n = lines.length;
   const steps = [];
-  let finalSCF = false;
 
   function findIndexInRange(start, end, predicate) {
     for (let i = start; i < end; i++) {
@@ -178,7 +177,6 @@ export function parsePWSCFout(content, fileName) {
           stressTensor
         });
 
-        finalSCF = true;
       }
     }
 
@@ -227,7 +225,6 @@ export function parsePWSCFout(content, fileName) {
           forces,
           stressTensor,
         });
-        finalSCF = true;
       }
     }
   }
@@ -259,7 +256,6 @@ export function parsePWSCFout(content, fileName) {
        );
     });}
     else{
-      const spins = null;
     }
     const forces = [];
     s.forces.forEach((vector,i) =>{

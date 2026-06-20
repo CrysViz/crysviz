@@ -1,7 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
 
-import {app, groups,periodic, fileBrowser, general,mode} from '../state/store.js';
-import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
+import {app, groups, fileBrowser, general} from '../state/store.js';
+import {getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
 
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import {getBondCutoff} from './BondsFracUpdateModule.js'
@@ -10,7 +10,6 @@ import {
   cartToFrac,
   transpose3x3,
   invert3x3,
-  multiplyMatVec,
 } from '../math/index.js';
 
 import init, { periodic_wrapped } from '../compiled/periodic_wasm.js';
@@ -310,22 +309,6 @@ function hashInput(map) {
 
 // Alternative faster hash — no string allocation, O(N) over raw numbers.
 // Replace hashInput(map) with hashInputFast(...) in runPeriodicWrapped to use this.
-function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showPBCBonds) {
-  let h = 5381;
-  const mix = (n) => { h = (Math.imul(h, 33) ^ (n | 0)) >>> 0; };
-  const mixF = (f) => mix((f * 1e5) | 0);
-
-  for (const f of frac) { mixF(f[0]); mixF(f[1]); mixF(f[2]); }
-  for (const e of elements) { for (let i = 0; i < e.length; i++) mix(e.charCodeAt(i)); }
-  for (const row of lattice) { mixF(row[0]); mixF(row[1]); mixF(row[2]); }
-  mix(showPeriodic ? 1 : 0);
-  mix(showPBCBonds ? 1 : 0);
-  if (bondLengths) for (const v of Object.values(bondLengths)) {
-    if (typeof v === 'number') { mixF(v); }
-    else { mixF(v?.max ?? 0); mixF(v?.min ?? 0); }
-  }
-  return h;
-}
 
 
 

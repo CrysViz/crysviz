@@ -1,5 +1,5 @@
 import * as THREE from '../external/three/three.module.js';
-import { CSS2DRenderer, CSS2DObject } from '../external/three/CSS2DRenderer.js';
+import { CSS2DRenderer } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups, general } from '../state/store.js';
 import { updateAngleDisplays, setupAxisControls, latticeDirs} from '../render/index.js';
@@ -292,7 +292,7 @@ export function switchCameraType() {
 
   if (app.useOrthographicCamera) {
     // Switch to orthographic camera
-    const { center, dist } = getCellCenterAndDist();
+    const { center: _center, dist } = getCellCenterAndDist();
     app.orthographicFrustumSize = dist * 0.5; // Adjust this multiplier as needed
     const aspect = w / h;
     app.camera = new THREE.OrthographicCamera(

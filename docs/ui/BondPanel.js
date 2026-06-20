@@ -1,5 +1,5 @@
-import { app,bondLengths, groups, general, fileBrowser, mode} from '../state/store.js';
-import { addHistogramPanel,removeHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
+import {bondLengths} from '../state/store.js';
+import { addHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
 
 export function addBondPanel(target = "BondLatticeContainer") {
   const targetPanel = document.getElementById(target);

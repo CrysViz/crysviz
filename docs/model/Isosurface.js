@@ -1,7 +1,6 @@
 import * as THREE from '../external/three/three.module.js';
 // import { MarchCubes } from '../external/marching_cubes_wasm/MarchCubes.js';
 
-import { mergeVertices } from '../external/three/BufferGeometryUtils.js';
 import { groups } from '../state/store.js';
 
 import { MarchingCubesWrapper, MarchingCubesBackend } from './MarchingCubesWrapper.js';

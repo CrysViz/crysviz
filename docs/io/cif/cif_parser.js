@@ -653,7 +653,7 @@ export function _basis_from_lengths_angles(a, b, c, alpha, beta, gamma) {
 export function parse_asu_cell(cifblock) {
   const [a, b, c, alpha, beta, gamma] = _parse_uc(cifblock);
   const basis = _basis_from_lengths_angles(a, b, c, alpha, beta, gamma);
-  const [symbols, labels, positions, occs, res] = _parse_atoms(cifblock, true);
+  const [symbols, labels, positions, _occs, res] = _parse_atoms(cifblock, true);
 
   // equivalent atoms based on labels
   const labels_map = new Map();

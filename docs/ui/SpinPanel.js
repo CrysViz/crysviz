@@ -1,7 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
-import { updateSpins, deleteSpins } from '../render/index.js';
-import { app, groups, fileBrowser, general } from '../state/store.js';
-import {getColorFromMap,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
+import { updateSpins } from '../render/index.js';
+import { fileBrowser, general } from '../state/store.js';
+import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 import { Spin } from '../model/index.js'; // Update path
 
 
@@ -436,7 +436,6 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
   dropdownsWrapper.appendChild(colorMapWrapper);
   content.appendChild(dropdownsWrapper);
 
-  let colorBar = null;
 
   // --- Current Spins/Forces list ---
   const currentSpinsLabel = document.createElement("div");
@@ -682,7 +681,7 @@ colorMapSelect.addEventListener("change", () => {
     general.spinMax = maxValue;
 
     // Show the color bar with calculated values
-    colorBar = createColorBar(
+    createColorBar(
       colorBarContainer,
       cmap,
       minValue,
@@ -693,7 +692,6 @@ colorMapSelect.addEventListener("change", () => {
 
   } else {
     colorBarContainer.style.display = "none";
-    colorBar = null;
 
     // When "none" is selected, reset all spins to their original color or teal
     if (cmap === "none") {

@@ -1,6 +1,6 @@
 import { fileBrowser, groups, general, structureShip } from '../../../state/store.js';
-import { colorHexToCss, hexToRgba, getAtomColor } from '../../../utils/ColorModule.js';
-import { getElementAtomIndices, clampOpacity, setSwatchOpacity } from './utils.js';
+import { colorHexToCss, getAtomColor } from '../../../utils/ColorModule.js';
+import { clampOpacity } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity } from '../../../render/AtomsFracUpdateModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
@@ -8,29 +8,6 @@ import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { bondLengthToColor } from '../../ColorPanel.js';
 
 // Helper function to get the current color for an atom based on the active mode
-function getCurrentColorForAtom(atomIndex, structure) {
-  const element = structure.elements[atomIndex];
-
-  // If in force mode, return the force-based color
-  if (general.atomsColor === "force") {
-    const forceObj = structure.forces?.[atomIndex];
-    if (forceObj?.vector?.length >= 3) {
-      const magnitude = Math.sqrt(
-        forceObj.vector[0]**2 +
-        forceObj.vector[1]**2 +
-        forceObj.vector[2]**2
-      );
-      return bondLengthToColor(magnitude, general.ForceMin, general.ForceMax);
-    }
-    return structure.getDefaultElementColor(element);
-  }
-  // If in elements mode, return the element color
-  else if (general.atomsColor === "elements") {
-    return structure.getDefaultElementColor(element);
-  }
-  // Default case
-  return structure.getDefaultElementColor(element);
-}
 
 // Helper: Ensure color is always a valid CSS hex string
 function safeColor(color) {

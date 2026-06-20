@@ -1,4 +1,4 @@
-import { measurements, app, fileBrowser, general } from '../state/store.js';
+import { app, fileBrowser, general } from '../state/store.js';
 import { Plane, CutModes, DEFAULT_COLORMAP_RESOLUTION, getCutPlaneSideLabel, getPlaneCutModeLabel, getPlaneDefinitionNormalAndD, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../model/Plane.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { updateAtomCutPlaneState } from '../render/AtomsFracUpdateModule.js';

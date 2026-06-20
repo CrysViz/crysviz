@@ -1,11 +1,5 @@
 import {
-	BufferAttribute,
-	BufferGeometry,
-	Color,
-	DynamicDrawUsage,
-	Mesh,
-	Sphere,
-	Vector3
+	Color
 } from 'three';
 
 /**

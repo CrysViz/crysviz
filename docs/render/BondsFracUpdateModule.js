@@ -1,21 +1,17 @@
 import * as THREE from '../external/three/three.module.js';
 
-import {bondLengths,structureShip, app, groups,fileBrowser, general,mode} from '../state/store.js';
+import {bondLengths, app, groups,fileBrowser, general} from '../state/store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
-import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings,getColorFromMap,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
-import {Atom} from '../model/index.js';
+import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
 
 
-import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
 
-import {updateAtoms} from './AtomsFracUpdateModule.js'
 //import {bondLengthToColor} from '../ui/ColorPanel.js'
 import {refreshHistogram} from '../ui/AnalysisPanels/BondAnalysisPanel.js'
 import {generateID} from '../utils/index.js'
-import {periodic} from '../state/store.js'
 //import {getBondCutoff} from './BondsModule.js'
 //
 export function initBondsLengths(){

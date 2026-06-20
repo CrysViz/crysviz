@@ -1,11 +1,9 @@
 import { ColoredObject } from './ColoredObject.js';
 
 import {general} from '../state/store.js';
-import {atomicRadii} from '../defaults/radii_defaults.js'
 import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
 
 
-import { Wyckoff } from './Wyckoff.js';
 
 export class Atom extends ColoredObject {
   constructor({

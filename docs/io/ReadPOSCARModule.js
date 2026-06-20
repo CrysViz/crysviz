@@ -10,7 +10,7 @@ export function readPOSCAR(content, fileName) {
   const lines = content.trim().split('\n').filter(l => l.trim());
   let i = 0;
 
-  const comment = lines[i++]?.trim() || 'POSCAR Structure';
+  i++; // skip the comment line
   const scale = parseFloat(lines[i++]);
   if (!Number.isFinite(scale)) throw new Error('POSCAR: missing scale factor');
 

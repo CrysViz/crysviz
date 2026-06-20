@@ -249,14 +249,6 @@ function showProgressBar() {
  * Update progress bar
  * @param {number} progress - Progress percentage
  */
-function updateProgressBar(progress) {
-  const progressBar = document.getElementById("progressBar");
-  const progressText = document.getElementById("progressText");
-  if (progressBar && progressText) {
-    progressBar.style.width = `${progress}%`;
-    progressText.textContent = `${Math.round(progress)}% complete`;
-  }
-}
 
 /**
  * Hide progress bar

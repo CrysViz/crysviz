@@ -192,7 +192,6 @@ export function expand_asu(
   opts = {}
 ) {
   const grid_dens = opts.grid_dens !== undefined ? opts.grid_dens : 16384;
-  const tol = opts.tol !== undefined ? opts.tol : 1e-6;
   const mag_grid_dens = opts.mag_grid_dens !== undefined ? opts.mag_grid_dens : 16384;
 
   const posSeeds = Array.from(positions_frac);
@@ -383,7 +382,7 @@ export function expand_asu(
           } else if (Math.abs(Math.abs(m) - Math.abs(m_prev)) < 1e-6) {
             m = m_prev;
             // keep previous class
-            // eslint-disable-next-line no-unused-vars
+             
             const _ = m_prev_class;
           } else {
             throw new Error(

@@ -1,6 +1,6 @@
 import { applyLatticeTransformation } from './LatticeTransformModule.js';
 
-import { app, groups, general, fileBrowser, mode } from '../state/store.js';
+import { general, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { createSupercell } from './SuperCellModule.js';
 import { resetView } from './WindowAndSceneControls.js';
@@ -169,7 +169,6 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
   let supercell = fileBrowser.selectedStructure;
 
   if (!supercell) fileBrowser.selectedStructure = { nx: 1, ny: 1, nz: 1 };
-  const { nx, ny, nz } = fileBrowser.selectedStructure;
 
   const supercellInputRow = document.createElement("div");
   supercellInputRow.style.cssText = `

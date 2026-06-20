@@ -1,16 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
 import { app, fileBrowser, groups, general } from '../state/store.js';
-import { disposeGroup } from '../ui/WindowAndSceneControls.js';
-import {
-  getHeatMapColors,
-  getBatlowColors,
-  getHawaiiColors,
-  getManaguaColors,
-  getViridisColors,
-  getPlasmaColors,
-  getSpectralRColors,
-  getColorFromMap
-} from '../defaults/color_texture_defaults.js'; 
+
+
 
 const SHAFT_SEGS = 20;
 const TIP_SEGS = 20;

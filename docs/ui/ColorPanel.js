@@ -1,10 +1,8 @@
-import * as THREE from '../external/three/three.module.js'
 import { createColorPicker } from './ColorPickerModule.js';
 import {updateVisualization} from '../core/crystal-viewer.js';  
-import {app, groups,fileBrowser, general,mode} from '../state/store.js';
-import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings,getColorFromMap,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
+import { groups,fileBrowser, general} from '../state/store.js';
+import {getAtomVisSettings,getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 
-import { switchCameraType } from '../ui/WindowAndSceneControls.js';
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'

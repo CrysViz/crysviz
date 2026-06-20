@@ -1,6 +1,6 @@
 import { updateSingleBondColor } from '../render/index.js'
 import { updateSingleAtomColor } from '../render/index.js'
-import { app,groups, general,mode,fileBrowser} from '../state/store.js';
+import {groups,fileBrowser} from '../state/store.js';
 
 
 function getRandomColor() {
@@ -16,7 +16,6 @@ export function updateRandomColors() {
   console.log("Disco!!!")
   fileBrowser.selectedStructure.atoms.forEach((atom, atomIndex) => {
     const element = fileBrowser.selectedStructure.elements[atomIndex]; // Assuming `atom` has an `element` property
-    const hex = getRandomColor();
     // Update atom color
  //   let ok = setIndividualAtomColor(element, atomIndex, hex);
 

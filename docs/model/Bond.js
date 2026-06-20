@@ -1,6 +1,6 @@
-import {general,fileBrowser} from '../state/store.js';
+import {general} from '../state/store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
-import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
+import {defaultColorMap} from '../defaults/color_texture_defaults.js'
 
 import * as THREE from '../external/three/three.module.js';
 

@@ -188,7 +188,6 @@ export function addCameraPanel(target = "cameraContainer") {
   };
 
 // Variable to track random rotation interval
-let pushInterval = null;
 
 // Toggle logic
 document.getElementById("pushRandom").addEventListener("change", (e) => {

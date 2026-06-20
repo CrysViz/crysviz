@@ -24,7 +24,6 @@ export function readCHGCAR(text, fileName) {
   const fields = [];
   let fill_ind = 0;
   let currentValues = null;
-  let voxel;
   let i = 0;
 
   let line;

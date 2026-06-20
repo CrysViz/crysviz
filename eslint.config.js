@@ -4,6 +4,7 @@
 // duplicate object keys, unreachable code) rather than style — so `make lint`
 // stays high-signal on this established codebase. Tighten over time as desired.
 import globals from "globals";
+import unusedImports from "eslint-plugin-unused-imports";
 
 export default [
   {
@@ -32,12 +33,30 @@ export default [
         ControlPanelAnalysisSwitch: "readonly",
       },
     },
+    plugins: {
+      "unused-imports": unusedImports,
+    },
     rules: {
       "no-undef": "error",
       "no-dupe-keys": "error",
       "no-unreachable": "warn",
       "no-redeclare": "warn",
-      "no-unused-vars": ["warn", { args: "none", varsIgnorePattern: "^_" }],
+      // unused-imports owns dead-binding detection: the import rule is
+      // auto-fixable (`make lint-fix` removes unused imports); the vars rule
+      // warns on genuinely-unused locals (underscore-prefixed = intentional).
+      "no-unused-vars": "off",
+      "unused-imports/no-unused-imports": "warn",
+      "unused-imports/no-unused-vars": [
+        "warn",
+        {
+          vars: "all",
+          varsIgnorePattern: "^_",
+          args: "none",
+          argsIgnorePattern: "^_",
+          // Catching-but-not-inspecting an error is idiomatic, not dead code.
+          caughtErrors: "none",
+        },
+      ],
     },
   },
 ];

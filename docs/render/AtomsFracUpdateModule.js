@@ -1,17 +1,14 @@
 import * as THREE from '../external/three/three.module.js';
 
-import {structureShip, app, groups,fileBrowser, general,mode} from '../state/store.js';
+import { app, groups,fileBrowser, general} from '../state/store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
-import {defaultColorMap, jmolColorMap,getAtomVisSettings,getBondVisSettings,getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
+import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
-import {Atom} from '../model/index.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
-import {disposeGroup} from '../ui/WindowAndSceneControls.js'
-import {periodicWrapped,runPeriodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
+import {runPeriodicWrapped} from './LatticeModule.js'
 
 import {setAtomColor}  from '../utils/ColorModule.js';
 
-import {generateID} from '../utils/index.js' 
 
 const MAX_CUT_PLANES = 8;
 
@@ -227,9 +224,6 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
 }
 
 export function buildAtoms() {
-  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
-  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-  let elements = [...fileBrowser.selectedStructure.elements];
   let atoms=fileBrowser.selectedStructure.atoms
   let structure = fileBrowser.selectedStructure
   //perdic.wrapped
@@ -423,10 +417,7 @@ export function updateSingleAtomDiameter(index, element) {
 
 export function updateAtoms(opacity = 1.0) {
   //console.error("Update main opacity", opacity)
-  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
-  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   let atoms = [...fileBrowser.selectedStructure.atoms];
-  let elements = [...fileBrowser.selectedStructure.elements];
   let periodic = fileBrowser.selectedStructure.periodic;
 
   let wrapped;

@@ -5,7 +5,7 @@
 // unit. Wires its listeners onto app.renderer.domElement.
 
 import * as THREE from '../external/three/three.module.js';
-import { app, groups, mode, fileBrowser, measurements, highlightHover } from '../state/store.js';
+import { app, groups, mode, fileBrowser, measurements } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import {
   clearHighlightAtom, clearHighlightBond, highlightAtomIn3D,

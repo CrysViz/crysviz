@@ -1,7 +1,4 @@
 // AddVacuumModule.js
-import { fileBrowser } from '../../state/store.js';
-import { createBondLengthControls } from '../BondLengthPanel.js';
-import { updateVisualization } from '../../core/crystal-viewer.js';
 import { openPeriodicTable } from '../PeriodicTableSelectPanel.js';
 
 export function addVacuumPanel(container) {

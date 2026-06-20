@@ -332,9 +332,7 @@ function setupFieldControlEvents(fields, container) {
   const absoluteValueCheckbox = document.getElementById('FieldAbsoluteValueToggle');
   const logScaleCheckbox = document.getElementById('LogSliderScaleToggle');
   const triangleSortCheckbox = document.getElementById('FieldTriangleSortToggle');
-  const fieldToggles = document.querySelectorAll('.fieldToggle');
   const fieldPrimaryRadios = document.querySelectorAll('.fieldPrimary');
-  const selectedFieldName = document.getElementById('selectedFieldName');
   const fieldColorToggle = document.getElementById('fieldColorToggle');
   const fieldColorToggleIcon = document.getElementById('fieldColorToggleIcon');
   const fieldColorContent = document.getElementById('fieldColorContent');
@@ -434,35 +432,6 @@ function setupFieldControlEvents(fields, container) {
   }
 
 
-  function updateSliderRange() {
-    if (!fieldBrowser.selectedField) return;
-
-    const selectedField = fieldBrowser.selectedField;
-    const fieldMin = selectedField.minValue;
-    const fieldMax = selectedField.maxValue;
-    const absMinLog = Math.log10(Math.abs(fieldMin));
-    const absMaxLog = Math.log10(Math.abs(fieldMax));
-    const absMax = Math.max(Math.abs(fieldMin), Math.abs(fieldMax));
-    
-    const logMin = Math.log10(absMax * 0.001);
-    const logMax = Math.log10(absMax);
-
-    container.dataset.logMin = logMin;
-    container.dataset.logMax = logMax;
-
-    // Update range display
-    const rangeLabel = container.querySelector('.control-group:nth-child(6) label');
-    if (rangeLabel) {
-      rangeLabel.textContent = `Range: ${(absMax * 0.001).toExponential(2)} to ${absMax.toExponential(2)}`;
-    }
-
-    // Update current iso value display
-    const sliderValue = parseFloat(slider.value);
-    const t = sliderValue / 100;
-    const logVal = logMin + t * (logMax - logMin);
-    const isoValue = Math.pow(10, logVal);
-    valueDisplay.textContent = isoValue.toExponential(3);
-  }
 
   // Event listeners
 

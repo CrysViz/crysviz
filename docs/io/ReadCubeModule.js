@@ -55,7 +55,6 @@ export function readCubeFile(content,fileName) {
 
   let line = lines[i].trim().split(/\s+/);
   const natoms = parseInt(line[0]);
-  const origin = line.slice(1, 4).map(parseFloat);
 
   const density_lines = lines.slice(5 + natoms + 1, lines.length);
   const structure_lines = lines.slice(0, 5 + natoms + 1);
