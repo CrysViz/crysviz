@@ -3,12 +3,6 @@
 // Extracted verbatim from crystal-viewer.js initApp() (Stage 6). The handlers
 // share a single raycaster/mouse and the long-press state, so they move as one
 // unit. Wires its listeners onto app.renderer.domElement.
-//
-// NOTE: the delete-atom branch references bare `elements` and `createSpinControls`,
-// neither of which is defined/imported anywhere — pre-existing latent bugs
-// (it also splices a local copy of `positions`, so it never actually edits the
-// structure). Preserved as-is; delete-atom is broken independently of this
-// extraction. (`createSpinControls` is likewise a dead import in BackendRelaxer.js.)
 
 import * as THREE from '../external/three/three.module.js';
 import { app, groups, mode, fileBrowser, measurements, highlightHover } from '../state/store.js';
@@ -120,20 +114,22 @@ export function setupSceneInteraction() {
       clearMeasureGraphics();
       resetControlsTouch();
     } else if (mode.measureMode === 'delete') {
-      const idx = hit.userData.sourceIndex;
-      let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
-      if (idx !== undefined && idx >= 0 && idx < positions.length) {
-        // Remove atom from structure
-        positions.splice(idx, 1);
-        elements.splice(idx, 1);
+      const idx = hit.userData.atomIndex;
+      const structure = fileBrowser.selectedStructure;
+      if (structure && idx !== undefined && idx >= 0 && idx < structure.atoms.length) {
+        // Remove the atom (and any parallel per-atom data) from the structure
+        structure.atoms.splice(idx, 1);
+        structure.elements.splice(idx, 1);
+        structure.uniqueElements = [...new Set(structure.elements)];
+        if (Array.isArray(structure.spins) && structure.spins.length > idx) structure.spins.splice(idx, 1);
+        if (Array.isArray(structure.forces) && structure.forces.length > idx) structure.forces.splice(idx, 1);
         // Clean selections and graphics
         measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
         measurements.selectedAtoms = [];
         clearMeasureGraphics();
-        // Rebuild controls and view
+        // Atom count changed, so rebuild the meshes (not just update them)
         createBondLengthControls();
-        createSpinControls();
-        updateVisualization();
+        updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
       }
       return; // nothing else to do in delete mode
     }
