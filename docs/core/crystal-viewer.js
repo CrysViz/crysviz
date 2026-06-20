@@ -33,6 +33,7 @@ import { setupStructureInput, parsePOSCAR} from '../ui/StructureInputModule.js';
 import { updateAngleDisplays, setupAxisControls} from '../render/index.js';
 import { createBackgroundControl } from '../ui/BackgroundPicker.js';
 import { setupMobileMenu } from '../ui/MobileMenu.js';
+import { setupAtomTooltip } from '../ui/AtomTooltip.js';
 import { pauseRendering, resumeRendering,animation_update} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
 import { shareStructure,createShareButton,loadSharedStructure} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
@@ -389,13 +390,6 @@ async function initApp() {
   resizeRenderer(app.orthographicFrustumSize);
 
 
-  // not even sure what this does??
-
-  const atomTooltip = document.createElement('div');
-  atomTooltip.className = 'atom-tooltip';
-  atomTooltip.setAttribute('aria-hidden', 'true');
-  view.appendChild(atomTooltip);
-
   // init Angle display windows
 
   ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis));
@@ -418,78 +412,7 @@ async function initApp() {
   let raycaster = new THREE.Raycaster();
   let mouse = new THREE.Vector2();
 
-  function hideAtomTooltip() {
-    if (!atomTooltip) return;
-    atomTooltip.classList.remove('visible');
-    atomTooltip.setAttribute('aria-hidden', 'true');
-    highlightHover.hoveredAtom = null;
-  }
-
-  function updateAtomTooltip(event) {
-    if (!groups.atomsGroup || !groups.atomsGroup.children.length || !atomTooltip) {
-      hideAtomTooltip();
-      return;
-    }
-
-    const rect = app.renderer.domElement.getBoundingClientRect();
-    const clientX = event.clientX;
-    const clientY = event.clientY;
-    if (clientX == null || clientY == null) {
-      hideAtomTooltip();
-      return;
-    }
-
-    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
-    const y = -((clientY - rect.top) / rect.height) * 2 + 1;
-    mouse.set(x, y);
-    raycaster.setFromCamera(mouse, app.camera);
-
-    const hits = raycaster.intersectObjects(groups.atomsGroup.children, true);
-    if (!hits.length) {
-      hideAtomTooltip();
-      return;
-    }
-    const hit = hits[0].object;
-    const element = hit?.userData?.element || hit?.parent?.userData?.element || null;
-    const sourceIndex = hit?.userData?.sourceIndex ?? hit?.parent?.userData?.sourceIndex ?? null;
-
-    if (!element) {
-      hideAtomTooltip();
-      return;
-    }
-
-    // Build list of all atom indices for this element
-    const elementAtomIndices = [];
-    let elements = [...fileBrowser.selectedStructure.elements];
-    for (let i = 0; i < elements.length; i++) {
-      if (elements[i] === element) {
-        elementAtomIndices.push(i);
-      }
-    }
-
-    if (highlightHover.hoveredAtom !== hit) {
-      highlightHover.hoveredAtom = hit;
-
-      if (sourceIndex == null) {
-        atomTooltip.textContent = `${element}`;
-      } else {
-        // compute atom number within this element type
-        const elementLocalIndex = elementAtomIndices.indexOf(sourceIndex) + 1; // +1 for 1-based display
-        const displayIndex = elementLocalIndex || sourceIndex; // fallback if not found
-        atomTooltip.textContent = `${element} ${displayIndex}`;
-      }
-    }
-
-
-    atomTooltip.style.left = `${clientX - rect.left}px`;
-    atomTooltip.style.top = `${clientY - rect.top}px`;
-    atomTooltip.classList.add('visible');
-    atomTooltip.setAttribute('aria-hidden', 'false');
-  }
-
-  app.renderer.domElement.addEventListener('mousemove', updateAtomTooltip);
-  app.renderer.domElement.addEventListener('mouseleave', hideAtomTooltip);
-  app.renderer.domElement.addEventListener('touchstart', hideAtomTooltip, { passive: true });
+  setupAtomTooltip();
 
   function onClickPick(event){
     // Only handle clicks if a mode is enabled
