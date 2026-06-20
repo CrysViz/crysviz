@@ -9,8 +9,6 @@ import { Structure } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
 import { Spin } from "../model/index.js";
-import { structureShip, fileBrowser } from '../state/store.js';
-import { createRow, selectLastAddedRow } from '../ui/FileBrowswerPanel.js';
 import { transpose3x3, multiplyMatVec, invert3x3 } from '../math/index.js';
 
 
@@ -360,20 +358,10 @@ export function parseXYZFile(content, fileName) {
           });
         });
 
-        // Update UI and store
-        const traj = structureObjects.length;
-        const step = traj;
-        const tableBody = document.querySelector("#objectTable tbody");
-        const row = createRow({ name: fileName, traj, step });
-        tableBody.appendChild(row);
-        fileBrowser.fileData.push({ idx: -1, name: fileName, traj, step });
-
         const container = new StructureContainer({ fileName, structures: structureObjects });
-        structureShip.container.push(container);
-        selectLastAddedRow();
 
         hideProgressBar();
-        resolve(structureObjects);
+        resolve(container);
       } else if (event.data.type === 'error') {
         hideProgressBar();
         reject(new Error(event.data.error));

@@ -1,6 +1,3 @@
-const tableBody = document.querySelector("#objectTable tbody");
-import { structureShip, fileBrowser } from '../state/store.js';
-import { createRow, selectLastAddedRow } from '../ui/FileBrowswerPanel.js';
 import { StructureContainer } from "../model/index.js";
 import { Structure } from "../model/index.js";
 import { Spin } from "../model/index.js";
@@ -236,20 +233,11 @@ export function parseOUTCAR(content, fileName) {
           });
         });
 
-        // Update UI
-        const traj = structureObjects.length;
-        const step = traj;
-        const row = createRow({ name: fileName, traj, step });
-        tableBody.appendChild(row);
-        fileBrowser.fileData.push({ idx: -1, name: fileName, traj, step });
-
         const container = new StructureContainer({ fileName, structures: structureObjects });
-        structureShip.container.push(container);
-        selectLastAddedRow();
 
         // Hide progress bar once parsing is complete
         hideProgressBar();
-        resolve(structureObjects);
+        resolve(container);
       }
     };
 

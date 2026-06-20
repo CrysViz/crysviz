@@ -18,9 +18,6 @@ const tableBody = document.querySelector("#objectTable tbody");
 
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupSecondStructureInput } from '../ui/SecondStructureModule.js';
-import { parseOUTCAR} from '../io/index.js';
-import { parsePWSCFout} from '../io/index.js';
-import {parseXYZFile} from '../io/index.js';
 import { setupStructureInput, parsePOSCAR} from '../ui/StructureInputModule.js';
 
 // ........................................................................................................
@@ -281,37 +278,23 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
      const treatAsEXZY = lower.endsWith(".xyz") ||
                           lower.endsWith(".exyz");  
 
-    if (treatAsEXZY){
-      await parseXYZFile(content, fileName)
-    }
-
-    else if (treatAsCube) {
+    if (treatAsCube) {
       await parseCubeFile(contentString, fileName);
     }
     else if (treatAsCHGCAR) {
       await parseCHGCARFile(contentString, fileName);
     }
 
-    else if (treatAsCIF || treatAsmagCIF) {
-        const structureContainer = await parse_any(contentString,fileName);
-        initializeUIOnLoad(structureContainer);
-    }
-
-   else if (treatAsPWSCFin) {
+    // All structure formats route through the single pure pipeline:
+    // parse_any returns a StructureContainer (or null), and registration
+    // happens in one place via initializeUIOnLoad.
+    else if (treatAsCIF || treatAsmagCIF || treatAsPWSCFin || treatAsPWSCFout || treatAsOUTCAR || treatAsEXZY) {
         const structureContainer = await parse_any(contentString, fileName);
-        if (structureContainer) initializeUIOnLoad(structureContainer);
+        if (structureContainer && structureContainer.structures) initializeUIOnLoad(structureContainer);
     }
 
-    else if (treatAsPWSCFout) {
-        parsePWSCFout(content,fileName);
-    }
-
-    else if (treatAsOUTCAR){
-        await parseOUTCAR(contentString,fileName);
-    }
     else {
-      parsePOSCAR(contentString,fileName);
-
+      parsePOSCAR(contentString, fileName);
     }
 
   // Ensure the fields exist and are the right typed arrays

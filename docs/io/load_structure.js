@@ -3,6 +3,9 @@ import { StructureContainer } from '../model/index.js';
 import { Atom } from '../model/index.js';
 import { cif_to_struct, mcif_to_magstruct } from './cif.js';
 import { parsePWSCFin } from './ReadPWSCFinModule.js';
+import { parsePWSCFout } from './ReadPWSCFoutModule.js';
+import { parseOUTCAR } from './ReadOutcarModule.js';
+import { parseXYZFile } from './ReadeXYZModule.js';
 import {generateID} from '../utils/index.js'
 
 /*
@@ -39,6 +42,9 @@ export async function parse_any(content, fileName = '', isDefault = false) {
   const treatAsPWSCFin = lower.endsWith(".scf.in") ||
         lower.endsWith(".vcrx.in");
 
+  const treatAsEXZY = lower.endsWith(".xyz") ||
+        lower.endsWith(".exyz");
+
 
   if (treatAsCIF) {
     console.log("This is probably a CIF file")
@@ -57,23 +63,19 @@ export async function parse_any(content, fileName = '', isDefault = false) {
 
   else if (treatAsPWSCFout) {
     console.log("This is probably a QE output file");
-    console.warn("Not implemented yet.")
-    //parsePWSCFout(content,fileName);
-    return null;
+    return parsePWSCFout(content, fileName);
   }
 
   else if (treatAsOUTCAR){
     console.log("This is probably an OUTCAR file");
-    console.warn("Not implemented yet.")
-    //parseOUTCAR(contentString,fileName);
-
-    //if (fileBrowser.selectedStructure.spin != null) {
-    // addSpinPanel();
-    // createSpinControls();
-    //}
-    return null;
-
+    return parseOUTCAR(content, fileName);
   }
+
+  else if (treatAsEXZY) {
+    console.log("This is probably an (e)XYZ file");
+    return parseXYZFile(content, fileName);
+  }
+
   else {
     console.log("This is probably a POSCAR file")
     console.warn("Not implemented yet.")
