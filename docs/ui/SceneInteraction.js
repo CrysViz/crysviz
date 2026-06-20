@@ -4,10 +4,11 @@
 // share a single raycaster/mouse and the long-press state, so they move as one
 // unit. Wires its listeners onto app.renderer.domElement.
 //
-// NOTE: the delete-atom branch references a bare `elements` that is undefined in
-// scope — a pre-existing latent bug (delete-atom also splices a local copy of
-// `positions`, so it never actually edits the structure). Preserved as-is;
-// delete-atom is broken independently of this extraction.
+// NOTE: the delete-atom branch references bare `elements` and `createSpinControls`,
+// neither of which is defined/imported anywhere — pre-existing latent bugs
+// (it also splices a local copy of `positions`, so it never actually edits the
+// structure). Preserved as-is; delete-atom is broken independently of this
+// extraction. (`createSpinControls` is likewise a dead import in BackendRelaxer.js.)
 
 import * as THREE from '../external/three/three.module.js';
 import { app, groups, mode, fileBrowser, measurements, highlightHover } from '../state/store.js';
@@ -20,7 +21,6 @@ import {
   clearMeasureGraphics, addDistanceMeasurement, addAngleMeasurement, drawMeasureGraphics,
 } from './MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
-import { createSpinControls } from './SpinPanel.js';
 
 export function setupSceneInteraction() {
   let raycaster = new THREE.Raycaster();
