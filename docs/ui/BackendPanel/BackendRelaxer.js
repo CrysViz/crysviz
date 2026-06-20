@@ -2,7 +2,6 @@
 import { io } from "https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.esm.min.js";
 import {updateVisualization} from '../../core/crystal-viewer.js'
 import {createBondLengthControls} from '../BondLengthPanel.js'
-import {createSpinControls} from '../SpinPanel.js'
 import {updateRow} from '../FileBrowswerPanel.js'
 import { createRow,selectLastAddedRow } from '../FileBrowswerPanel.js';
 import {structureShip,fileBrowser} from '../../state/store.js'
@@ -207,7 +206,6 @@ export function connectBackend() {
      //structureData.positions = [...data.positions];
      
      createBondLengthControls();
-     createSpinControls();
      updateVisualization();
    });
 }
