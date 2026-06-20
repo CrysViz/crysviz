@@ -31,7 +31,7 @@ import { setupStructureInput, parsePOSCAR} from '../ui/StructureInputModule.js';
 //
 // .........................................................................................................
 import { updateAngleDisplays, setupAxisControls} from '../render/index.js';
-import { createBackgroundControl } from '../ui/BackgroundPicker.js';
+import { createBackgroundControl, setupThemeSystem } from '../ui/BackgroundPicker.js';
 import { setupMobileMenu } from '../ui/MobileMenu.js';
 import { setupAtomTooltip } from '../ui/AtomTooltip.js';
 import { setupControlsWiring } from '../ui/ControlsWiring.js';
@@ -471,6 +471,7 @@ async function initializeMathBackend() {
 // Panel toggle functionality for all screen sizes
 function initUIPanels() {
   createBackgroundControl();
+  setupThemeSystem();
   addControlPanelModeSwitch();
   addControlPanelSpinForceSwitch();
   addBackendModeSwitch();
