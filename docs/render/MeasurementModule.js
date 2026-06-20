@@ -3,6 +3,7 @@ import { measurements,app, general, fileBrowser, mode} from '../state/store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
 import { CSS2DObject } from '../external/three/CSS2DRenderer.js';
 import { fracToCart } from '../math/index.js';
+import { updateAtoms } from './AtomsFracUpdateModule.js';
 
 let measureLabel = null;
 
@@ -465,7 +466,9 @@ export function drawMeasureGraphics(){
 }
 
 export function clearMeasure(){
-  measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+  // Reset any measurement atom highlights (clearHighlightAtom just calls
+  // updateAtoms(1.0); use it directly to avoid a render→ui dependency).
+  if (measurements.selectedAtoms.length) updateAtoms(1.0);
   measurements.selectedAtoms = [];
   clearMeasureGraphics();
 }
