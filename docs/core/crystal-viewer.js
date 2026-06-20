@@ -20,7 +20,6 @@ const tableBody = document.querySelector("#objectTable tbody");
 import { setupSecondStructureInput } from '../ui/SecondStructureModule.js';
 import { parseOUTCAR} from '../io/index.js';
 import { parsePWSCFout} from '../io/index.js';
-import { parsePWSCFin} from '../io/index.js';
 import {parseXYZFile} from '../io/index.js';
 import { setupStructureInput, parsePOSCAR} from '../ui/StructureInputModule.js';
 
@@ -299,7 +298,8 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
     }
 
    else if (treatAsPWSCFin) {
-        parsePWSCFin(content,fileName);
+        const structureContainer = await parse_any(contentString, fileName);
+        if (structureContainer) initializeUIOnLoad(structureContainer);
     }
 
     else if (treatAsPWSCFout) {

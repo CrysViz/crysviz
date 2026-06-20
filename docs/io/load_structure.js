@@ -2,6 +2,7 @@ import { Structure } from "../model/index.js";
 import { StructureContainer } from '../model/index.js';
 import { Atom } from '../model/index.js';
 import { cif_to_struct, mcif_to_magstruct } from './cif.js';
+import { parsePWSCFin } from './ReadPWSCFinModule.js';
 import {generateID} from '../utils/index.js'
 
 /*
@@ -51,9 +52,7 @@ export async function parse_any(content, fileName = '', isDefault = false) {
 
   else if (treatAsPWSCFin) {
     console.log("This is probably a QE input file");
-    console.warn("Not implemented yet.")
-    //parsePWSCFin(content,fileName);
-    return null;
+    return parsePWSCFin(content, fileName);
   }
 
   else if (treatAsPWSCFout) {

@@ -2,8 +2,6 @@ import { Structure } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { StructureContainer } from "../model/index.js";
 import {runPeriodicWrapped} from "../render/index.js";
-import { structureShip,fileBrowser } from '../state/store.js';
-import { createRow,selectLastAddedRow } from '../ui/FileBrowswerPanel.js';
 import {
   transpose3x3,
   invert3x3,
@@ -112,18 +110,8 @@ export function parsePWSCFin(content, fileName) {
     })
   ];
 
-  // ----------------------
-  // UI updates
-  // ----------------------
-  const row = createRow({ name: fileName, traj: structures.length, step: structures.length });
-  document.querySelector("#objectTable tbody").appendChild(row);
-  fileBrowser.fileData.push({ name: fileName, traj: structures.length, step: structures.length });
-
-  const container = new StructureContainer({
-  fileName: fileName,
-  structures: structures,
+  return new StructureContainer({
+    fileName: fileName,
+    structures: structures,
   });
-  structureShip.container.push(container)
-
-  selectLastAddedRow();
 }
