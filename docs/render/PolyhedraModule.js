@@ -227,6 +227,16 @@ export function updatePolyhedra() {
     return; // IMPORTANT: nothing drawn when hidden
   }
 
+  // Nothing to build without an active structure + lattice (e.g. polyhedra
+  // toggled/restored on before a structure is loaded). Without this guard the
+  // code below calls fracToCart on an undefined lattice, which hard-crashes the
+  // WASM math backend (the JS backend would silently produce NaN).
+  const _activeStructure = fileBrowser.selectedStructure;
+  if (!_activeStructure || !_activeStructure.lattice || !_activeStructure.atoms) {
+    app.scene.add(groups.polyhedraGroup);
+    return;
+  }
+
   // ---------- STYLE ----------
   const FACE_OPACITY = 0.80;
   const EDGE_OPACITY = Math.min(1, FACE_OPACITY + 0.35);
