@@ -15,6 +15,7 @@ import {periodicWrapped,cartToFrac,fracToCart} from './LatticeModule.js'
 
 
 import {updateAtoms} from './AtomsFracUpdateModule.js'
+import {createBondsMesh} from './BondsFracUpdateModule.js'
 import {generateID} from '../utils/index.js'
 import {periodic} from '../state/store.js'
 //import {getBondCutoff} from './BondsModule.js'
@@ -124,79 +125,7 @@ export function renderSecondBonds(structure) {
   const bondCount = validBonds.length;
   console.log("Rendering", bondCount, "bonds");
 
-  // Geometry: unit cylinder along +Y
-  const geometry = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true);
-
-  // Material: copy atom material logic
-  const bondVisSettings = getBondVisSettings()
-  const material = new THREE.MeshPhysicalMaterial({
-    transparent: false,
-    opacity: 1.0,
-    roughness: bondVisSettings.roughness,
-    metalness: bondVisSettings.metalness,
-    clearcoat: bondVisSettings.clearcoat,
-    clearcoatRoughness: bondVisSettings.clearcoatRoughness,
-  });
-
-  material.onBeforeCompile = (shader) => {
-    shader.vertexShader = `
-      attribute vec4 instanceUUID;
-      varying vec4 vInstanceUUID;
-      attribute vec3 instanceEmissive;
-      attribute float instanceEmissiveIntensity;
-      attribute float instanceElementIndex;
-      varying vec3 vInstanceEmissive;
-      varying float vInstanceEmissiveIntensity;
-      varying float vInstanceElementIndex;
-    ` + shader.vertexShader;
-
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      `
-        #include <begin_vertex>
-        vInstanceEmissive = instanceEmissive;
-        vInstanceEmissiveIntensity = instanceEmissiveIntensity;
-        vInstanceUUID = instanceUUID;
-        vInstanceElementIndex = instanceElementIndex;
-      `
-    );
-
-    shader.fragmentShader = `
-      varying vec3 vInstanceEmissive;
-      varying float vInstanceEmissiveIntensity;
-      varying vec4 vInstanceUUID;
-      varying float vInstanceElementIndex;
-    ` + shader.fragmentShader;
-
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <emissivemap_fragment>',
-      `
-        totalEmissiveRadiance += vInstanceEmissive * vInstanceEmissiveIntensity;
-      `
-    );
-  };
-
-  // Instanced mesh: 2 halves per bond
-  const mesh = new THREE.InstancedMesh(geometry, material, bondCount * 2);
-
-  // Instance colors
-  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2*3), 3, false);
-
-  // Emissive attributes
-  mesh.geometry.setAttribute(
-    'instanceEmissive',
-    new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2*3), 3)
-  );
-  mesh.geometry.setAttribute(
-    'instanceEmissiveIntensity',
-    new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2), 1)
-  );
-
-  // Element index per half (optional, can be 0 for all)
-  mesh.geometry.setAttribute(
-    'instanceElementIndex',
-    new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2), 1)
-  );
+  const mesh = createBondsMesh(bondCount);
 
   // UUIDs
   const uuidAttr = new Float32Array(bondCount*2*4);

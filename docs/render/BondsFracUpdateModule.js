@@ -208,14 +208,11 @@ export function buildBondObjects(structure){
     bondLengths[key].push(bond.dist);
   }
 }
-export function renderBonds() {
-  const structure = fileBrowser.selectedStructure;
-  const bonds = fileBrowser.selectedStructure.bonds;
-  const validBonds = bonds.filter(b => b.visibleLen > 1e-3);
- // console.warn("bonds",bonds,"validBonds",validBonds)
-  const bondCount = validBonds.length;
- // console.log("Rendering", bondCount, "bonds");
-
+// Shared bonds InstancedMesh setup (geometry + material + emissive/UUID shader +
+// per-half instance attributes), 2 halves per bond. Identical for the main and
+// comparison ("second") bond meshes; the caller fills the instances in its own
+// loop and stores the mesh at groups[...]. Returns the InstancedMesh.
+export function createBondsMesh(bondCount) {
   // Geometry: unit cylinder along +Y
   const geometry = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true);
 
@@ -289,6 +286,19 @@ export function renderBonds() {
     'instanceElementIndex',
     new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2), 1)
   );
+
+  return mesh;
+}
+
+export function renderBonds() {
+  const structure = fileBrowser.selectedStructure;
+  const bonds = fileBrowser.selectedStructure.bonds;
+  const validBonds = bonds.filter(b => b.visibleLen > 1e-3);
+ // console.warn("bonds",bonds,"validBonds",validBonds)
+  const bondCount = validBonds.length;
+ // console.log("Rendering", bondCount, "bonds");
+
+  const mesh = createBondsMesh(bondCount);
 
   // UUIDs
   const uuidAttr = new Float32Array(bondCount*2*4);
