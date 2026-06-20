@@ -1,0 +1,25 @@
+{
+  "//": "Type-checking config for CrysViz (plain JS via tsc --checkJs). Emits nothing.",
+  "//2": "Intentionally lenient: this is an established, mostly-untyped codebase, so `make typecheck` is INFORMATIONAL (not a CI gate). Add // @ts-check / JSDoc types per file to opt into stricter checking over time.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": false,
+    "types": []
+  },
+  "include": ["docs/**/*.js"],
+  "exclude": [
+    "docs/external/**",
+    "docs/compiled/**",
+    "old/**",
+    "node_modules"
+  ]
+}
