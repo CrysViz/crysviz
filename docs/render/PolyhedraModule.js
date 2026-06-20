@@ -5,6 +5,15 @@ import {periodicWrapped,fracToCart} from '../render/LatticeModule.js'
 import { getBondCutoff} from '../render/BondsFracUpdateModule.js'
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 
+// Face color for a coordination polyhedron: the central element's atom color
+// (falls back to the default blue if unavailable). Previously referenced via a
+// `typeof getElementColor === 'function'` guard but never actually defined, so
+// polyhedra always rendered with the fallback color.
+function getElementColor(element) {
+  const colors = fileBrowser.selectedStructure?.getElementColors?.()[element];
+  return (colors && colors.length) ? colors[0] : 0x00aaff;
+}
+
 function NewupdatePolyhedra() {
   const DEBUG = true;
 
@@ -33,7 +42,7 @@ function NewupdatePolyhedra() {
   const MIN_THICKNESS_RATIO = 0.08;
 
   const ConvexGeomCtor = (typeof ConvexGeometry !== 'undefined') ? ConvexGeometry : (THREE.ConvexGeometry || null);
-  if (!ConvexGeomCtor) { console.error('[updatePolyhedra] ConvexGeometry missing'); scene.add(groups.polyhedraGroup); return; }
+  if (!ConvexGeomCtor) { console.error('[updatePolyhedra] ConvexGeometry missing'); app.scene.add(groups.polyhedraGroup); return; }
 
   // --- Helpers ---
   function thicknessRatio(points) {
@@ -638,6 +647,7 @@ function minVertexDegreeForCageSize(N) {
 
           // Build candidate hull on selected N verts
           const posList = verts.map(o=>o.pos);
+          const selSrcs = verts.map(o=>o.src);   // source atom index per selected vertex (parallel to vertexWrappedIdxList)
           let geom;
           try { geom = new ConvexGeomCtor(posList); } catch { geom = null; }
           if (!geom) { geomBand.dispose(); continue; }
