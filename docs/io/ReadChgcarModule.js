@@ -1,6 +1,6 @@
 import { Field } from '../model/index.js'; // Adjust path as needed
 import { FieldContainer } from '../model/index.js'; // Adjust path as needed
-import { readPOSCAR } from '../ui/StructureInputModule.js'; // Also used in your code
+import { readPOSCAR } from './ReadPOSCARModule.js';
 
 
 

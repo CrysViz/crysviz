@@ -4,7 +4,8 @@
 
 import * as THREE from "three";
 
-import { initializeUIOnLoad, readPOSCAR, initializeWithPOSCAR } from '../ui/StructureInputModule.js';
+import { initializeUIOnLoad, initializeWithPOSCAR } from '../ui/StructureInputModule.js';
+import { readPOSCAR } from '../io/ReadPOSCARModule.js';
 import { fieldBrowser, updateFieldPanel } from "../ui/FieldPanel.js";
 import { app, fileBrowser, groups } from '../state/store.js';
 import { readCHGCAR } from "../io/ReadChgcarModule.js";

@@ -18,7 +18,7 @@ const tableBody = document.querySelector("#objectTable tbody");
 
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupSecondStructureInput } from '../ui/SecondStructureModule.js';
-import { setupStructureInput, parsePOSCAR} from '../ui/StructureInputModule.js';
+import { setupStructureInput } from '../ui/StructureInputModule.js';
 
 // ........................................................................................................
 // Import Modules
@@ -100,7 +100,7 @@ import {createRow} from '../ui/FileBrowswerPanel.js'
 import {Structure} from '../model/index.js'
 
 // New imports (which go here, because they need initializations that happen above until things are refactored)
-import { parse_any, isLikelyCIFContent, isLikelymagCIFContent } from '../io/index.js';
+import { parse_any } from '../io/index.js';
 import { initializeUIOnLoad } from '../ui/StructureInputModule.js';
 import { fieldBrowser } from '../ui/FieldPanel.js';
 import { resetMathBackend } from '../math/index.js';
@@ -242,41 +242,13 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
     const lower = (fileName || '').toLowerCase();
     const contentString = typeof content === 'string' ? content : '';
     
-    // Add these new file type detections
+    // Field files are handled directly; every other format is dispatched by
+    // parse_any (which owns all the structure-format sniffing).
     const treatAsCube = lower.endsWith('.cube') ||
                        lower.includes('.cube');
-                       
+
     const treatAsCHGCAR = lower.includes('chgcar') ||
                          lower.endsWith('.chgcar');
-
-    const treatAsCIF = lower.endsWith('.cif') ||
-                      lower.includes('.cif') ||
-                      /(^|\W)cif(\W|$)/.test(lower) ||
-          isLikelyCIFContent(contentString);
-    const treatAsmagCIF = lower.endsWith('.mcif') ||
-        lower.includes('.mcif') ||
-      /(^|\W)mcif(\W|$)/.test(lower) ||
-          isLikelymagCIFContent(contentString);
-
-    const treatAsOUTCAR = lower.endsWith('.vasp.out') ||
-                      lower.includes('.vasp.out') ||
-                      lower.includes('outcar');
-
-    const treatAsPWSCFout = lower.endsWith(".scf.out") ||
-                            lower.endsWith(".scf.in.out") ||
-                            lower.endsWith(".vcrx.out") ||
-                            lower.endsWith(".vcrx.in.out") ||
-                            lower.includes('.scf.out') ||
-                            lower.includes('.scf.in.out') ||
-                            lower.includes(".vcrx.out") ||
-                            lower.includes(".vcrx.in.out");
-
-
-     const treatAsPWSCFin = lower.endsWith(".scf.in") ||
-                            lower.endsWith(".vcrx.in");
-
-     const treatAsEXZY = lower.endsWith(".xyz") ||
-                          lower.endsWith(".exyz");  
 
     if (treatAsCube) {
       await parseCubeFile(contentString, fileName);
@@ -285,16 +257,12 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
       await parseCHGCARFile(contentString, fileName);
     }
 
-    // All structure formats route through the single pure pipeline:
-    // parse_any returns a StructureContainer (or null), and registration
-    // happens in one place via initializeUIOnLoad.
-    else if (treatAsCIF || treatAsmagCIF || treatAsPWSCFin || treatAsPWSCFout || treatAsOUTCAR || treatAsEXZY) {
+    // Everything else is a structure file and goes through the single pure
+    // pipeline. parse_any picks the format (POSCAR is its fallback) and returns
+    // a StructureContainer; registration happens once via initializeUIOnLoad.
+    else {
         const structureContainer = await parse_any(contentString, fileName);
         if (structureContainer && structureContainer.structures) initializeUIOnLoad(structureContainer);
-    }
-
-    else {
-      parsePOSCAR(contentString, fileName);
     }
 
   // Ensure the fields exist and are the right typed arrays

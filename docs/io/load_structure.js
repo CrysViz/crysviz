@@ -6,6 +6,7 @@ import { parsePWSCFin } from './ReadPWSCFinModule.js';
 import { parsePWSCFout } from './ReadPWSCFoutModule.js';
 import { parseOUTCAR } from './ReadOutcarModule.js';
 import { parseXYZFile } from './ReadeXYZModule.js';
+import { readPOSCAR } from './ReadPOSCARModule.js';
 import {generateID} from '../utils/index.js'
 
 /*
@@ -78,9 +79,11 @@ export async function parse_any(content, fileName = '', isDefault = false) {
 
   else {
     console.log("This is probably a POSCAR file")
-    console.warn("Not implemented yet.")
-    //parsePOSCAR(contentString,fileName);
-    return null;
+    const structure = readPOSCAR(content, fileName);
+    return new StructureContainer({
+      fileName,
+      structures: [structure],
+    });
   }
 }
 
