@@ -9,6 +9,7 @@ import { updateVisualization } from '../core/crystal-viewer.js';
 import {createPieDot} from './ColorModule.js';
 import {clearAllHighlights} from './SelectAndHighlightModule.js';
 import {updateBondControlPanel} from './StructureInfoPanel/Bonds.js'
+import { openDoublePeriodicTable } from './PeriodicTableSelectTwoPanel.js';
 
 // Inject CSS for the double slider
 function injectDoubleSliderCSS() {
@@ -115,7 +116,33 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
    };
 
+  const addCustomBondBtn = document.createElement("button");
+  addCustomBondBtn.id = "addCustomBond";
+  addCustomBondBtn.className = "reset-btn";
+  addCustomBondBtn.textContent = "Add Custom Bond";
+  addCustomBondBtn.style.fontSize = "12px";
+  addCustomBondBtn.style.height = "22px";
+  addCustomBondBtn.onclick = () => {
+    openDoublePeriodicTable((pair) => {
+      if (!general.bondLengths[pair]) {
+        const [el1, el2] = pair.split('-');
+        const defaultRadius = (atomicRadii[el1] || 1.0) + (atomicRadii[el2] || 1.0);
+        const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
+        general.bondLengths[pair] = { min: 0, max: defaultValue };
+        general.defaultBondLengths[pair] = { min: 0, max: defaultValue };
+        general.bondVisibility[pair] = true;
+        createBondLengthControls(targetPanel);
+        updateVisualization({
+          reRenderBonds: true,
+          reRenderOther: false,
+          reRenderComposition: false,
+        });
+      }
+    });
+  };
+
   resetWrapper.appendChild(resetBtn);
+  resetWrapper.appendChild(addCustomBondBtn);
 
   bondControls.appendChild(resetWrapper);
   let elements = [...fileBrowser.selectedStructure.elements];
