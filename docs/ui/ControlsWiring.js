@@ -2,9 +2,9 @@
 // atom-size / bond-width sliders + initial control states.
 // Extracted from crystal-viewer.js initApp() (Stage 3).
 //
-// NOTE: line "isNaN(v) ? bondRadius : v" references a bare `bondRadius` that is
-// not defined in scope — a pre-existing latent bug (only reachable if a slider
-// value parses to NaN). Preserved verbatim to keep behavior identical.
+// NOTE: the bond-width NaN fallback uses `general.bondRadius`. The original code
+// referenced a bare, undefined `bondRadius` here — a latent bug (only reachable
+// if a slider value parses to NaN) fixed during this extraction.
 
 import { general, groups, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
@@ -77,7 +77,7 @@ export function setupControlsWiring() {
     bondWidthSlider.oninput = (e) => {
       const v = parseFloat(e.target.value);
       // clamp defensively
-      general.bondRadius = Math.max(0.005, Math.min(1.0, isNaN(v) ? bondRadius : v));
+      general.bondRadius = Math.max(0.005, Math.min(1.0, isNaN(v) ? general.bondRadius : v));
       bondWidthValue.textContent = general.bondRadius.toFixed(2);
       for (let i = 0; i < groups.bondsMesh.count; i++) {
         updateSingleBondDiameter(i,  general.bondRadius)
