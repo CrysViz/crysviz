@@ -233,7 +233,7 @@ export function parsePWSCFout(content, fileName) {
   // Convert to Structure objects
   // -----------------------------
   //
-  const structures = steps.map(s => {
+  const structures = steps.map((/** @type {any} */ s) => {
   const atoms = [];
 
 
@@ -272,7 +272,7 @@ export function parsePWSCFout(content, fileName) {
     lattice: s.lattice,
     forces: forces,
     polyhedra: [],
-    stresses: new Stress( {tensor:s.stressTensor}),
+    stress: new Stress( {tensor:s.stressTensor}),
     atoms: atoms,
     spins: spins ?? []
   });
@@ -282,7 +282,6 @@ export function parsePWSCFout(content, fileName) {
   return new StructureContainer({
     fileName,
     structures,
-    symmetries: [],
   });
 
 }

@@ -75,7 +75,7 @@ export function createPieDot(colors, size = 200) {
   canvas.style.borderRadius = "50%";
   canvas.style.border = "1px solid #666";
   canvas.style.display = "inline-block";
-  canvas._colors = colors;
+  /** @type {any} */ (canvas)._colors = colors;
   return canvas;
 }
 
@@ -111,7 +111,7 @@ export function colorHexToCss(hex) {
 export function hexToRgba(color, alpha = 1) {
   const ctx = document.createElement("canvas").getContext("2d");
   ctx.fillStyle = color;
-  const computed = ctx.fillStyle;
+  const computed = /** @type {string} */ (ctx.fillStyle);
   const r = parseInt(computed.substr(1, 2), 16);
   const g = parseInt(computed.substr(3, 2), 16);
   const b = parseInt(computed.substr(5, 2), 16);

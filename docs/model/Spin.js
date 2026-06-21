@@ -4,9 +4,10 @@ import * as THREE from '../external/three/three.module.js';
 
 
 export class Spin extends ColoredObject {
+  /** @param {{vector?:any, scaling?:any, color?:any, atomIndex?:any, element?:any, position?:any}} [opts] */
   constructor({ vector = [], scaling = null, color = [], atomIndex = null, element = null, position = null } = {}) {
         const colorObj = color ?
-      (color instanceof THREE.Color ? color : new THREE.Color(color)) :
+      (color instanceof THREE.Color ? color : new THREE.Color(/** @type {any} */ (color))) :
       new THREE.Color("#008080");
 
     super({ color: colorObj, defaultColor: colorObj });

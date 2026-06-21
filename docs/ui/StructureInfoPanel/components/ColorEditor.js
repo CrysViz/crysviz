@@ -128,8 +128,8 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     });
   }
 
-  alphaSlider.oninput = (e) => applyElementOpacity(e.target.value);
-  alphaValue.oninput = (e) => applyElementOpacity(e.target.value);
+  alphaSlider.oninput = (e) => applyElementOpacity(/** @type {any} */ (e.target).value);
+  alphaValue.oninput = (e) => applyElementOpacity(/** @type {any} */ (e.target).value);
 
 
   resetBtn.onclick = () => {

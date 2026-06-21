@@ -181,7 +181,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     checkbox.type = 'checkbox';
     checkbox.checked = general.bondVisibility[pair];
     checkbox.onchange = (e) => {
-      general.bondVisibility[pair] = e.target.checked;
+      general.bondVisibility[pair] = /** @type {any} */ (e.target).checked;
       updateVisualization({
         reRenderBonds: true,
         reRenderOther: false,
@@ -255,7 +255,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     sliderContainer.appendChild(track);
 
     // Min slider
-    const minSlider = document.createElement('input');
+    const minSlider = /** @type {any} */ (document.createElement('input'));
     minSlider.type = 'range';
     minSlider.min = '0';
     minSlider.max = '6';
@@ -265,7 +265,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     sliderContainer.appendChild(minSlider);
 
     // Max slider
-    const maxSlider = document.createElement('input');
+    const maxSlider = /** @type {any} */ (document.createElement('input'));
     maxSlider.type = 'range';
     maxSlider.min = '0';
     maxSlider.max = '6';

@@ -1,3 +1,4 @@
+// @ts-nocheck -- vendored third-party; not type-checked
 import {
 	Matrix4,
 	Object3D,

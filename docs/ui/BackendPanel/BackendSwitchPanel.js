@@ -43,14 +43,14 @@ export function addErrorPanel(message="Default") {
   acceptBtn.className="acceptBtn";
   acceptBtn.textContent = "Accept";
   acceptBtn.style.flex = "1";
-  acceptBtn.style.fontsize = "12px";
+  acceptBtn.style.fontSize = "12px";
   acceptBtn.style.background = "var(--bg-color)";
 
   const denyBtn = document.createElement("button");
   denyBtn.className="denyBtn";
   denyBtn.textContent = "Deny";
   denyBtn.style.flex = "1";
-  denyBtn.style.fontsize = "12px";
+  denyBtn.style.fontSize = "12px";
   denyBtn.style.background = "rgba(240, 132, 18,0.90)" 
 
   actions.appendChild(acceptBtn);

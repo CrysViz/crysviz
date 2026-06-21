@@ -84,7 +84,7 @@ export function createSpinForceEditor(atomIndex, element, dot) {
   xSpinInput.step = '0.001';
   xSpinInput.style.cssText = 'width: 60px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px;';
   xSpinInput.style.webkitAppearance = "none";
-  xSpinInput.style.MozAppearance = "textfield";
+  xSpinInput.style.setProperty('-moz-appearance', 'textfield');
   xSpinInput.placeholder = 'x';
 
   const ySpinInput = document.createElement('input');
@@ -93,7 +93,7 @@ export function createSpinForceEditor(atomIndex, element, dot) {
   ySpinInput.step = '0.001';
   ySpinInput.style.cssText = 'width: 60px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px;';
   ySpinInput.style.webkitAppearance = "none";
-  ySpinInput.style.MozAppearance = "textfield";
+  ySpinInput.style.setProperty('-moz-appearance', 'textfield');
   ySpinInput.placeholder = 'y';
 
   const zSpinInput = document.createElement('input');
@@ -102,7 +102,7 @@ export function createSpinForceEditor(atomIndex, element, dot) {
   zSpinInput.step = '0.001';
   zSpinInput.style.cssText = 'width: 60px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px;';
   zSpinInput.style.webkitAppearance = "none";
-  zSpinInput.style.MozAppearance = "textfield";
+  zSpinInput.style.setProperty('-moz-appearance', 'textfield');
   zSpinInput.placeholder = 'z';
 
   const scaleSpinInput = document.createElement('input');

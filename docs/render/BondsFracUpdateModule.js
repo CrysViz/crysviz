@@ -169,7 +169,6 @@ export function buildBondObjects(structure){
 
       const bond = new Bond({
         elements: [ei, ej],
-        length: dist,
         positions: [p1.toArray(), p2.toArray()],
         uuid: generateID([ei, ej]),
         srcIndices: [wrapped.srcIndex[i], wrapped.srcIndex[j]],

@@ -33,7 +33,7 @@ export function setupMeasurementToolbar() {
 
     // Clear previous mode
     document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
-    measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+    measurements.selectedAtoms.forEach(atom => clearHighlightAtom());
     measurements.selectedAtoms = [];
     clearMeasureGraphics();
 
@@ -54,7 +54,7 @@ export function setupMeasurementToolbar() {
 
     // Clear previous mode
     document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
-    measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+    measurements.selectedAtoms.forEach(atom => clearHighlightAtom());
     measurements.selectedAtoms = [];
     clearMeasureGraphics();
 
@@ -75,7 +75,7 @@ export function setupMeasurementToolbar() {
     const wasActive = mode.measureMode === 'delete';
 
     document.querySelectorAll('.measure-tool-btn').forEach(btn => btn.classList.remove('active'));
-    measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+    measurements.selectedAtoms.forEach(atom => clearHighlightAtom());
     measurements.selectedAtoms = [];
     clearMeasureGraphics();
 

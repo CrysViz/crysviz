@@ -89,7 +89,7 @@ export function _compose_ops_with_centerings(ops, centerings) {
       composed.push([R, t_new, time_new]);
     }
   }
-  return composed;
+  return /** @type {any} */ (composed);
 }
 
 /** @param {any} A @param {any} B */
@@ -275,6 +275,7 @@ export function _parse_linear_expr_algebraic(expr, opts = {}) {
   const coeffs = {};
   for (const v of allowed_vars) coeffs[v] = 0;
 
+  /** @type {any} */
   let constTerm = use_fractions ? new Fraction(0) : 0.0;
 
   let pos = 0;
@@ -428,7 +429,7 @@ export function crystal_to_cartesian(moments_cryst, basis) {
 
     result.push([x, y, z]);
   }
-  return result;
+  return /** @type {any} */ (result);
 }
 
 /**
@@ -517,7 +518,7 @@ export function extract_parent_q_basis(cifblock) {
       parse_cif_float(r[2], { meta: false }),
     ]);
   }
-  return basis;
+  return /** @type {any} */ (basis);
 }
 
 /**
@@ -829,7 +830,7 @@ export function _parse_modulation(cifblock) {
  * @returns {boolean}
  */
 export function is_rational_component(x, max_den = 12, tol = 1e-6) {
-  const xv = (x instanceof Fraction) ? x.toNumber() : x;
+  const xv = (/** @type {any} */ (x) instanceof Fraction) ? x.toNumber() : x;
   const fx = _limitDenominator(xv, max_den);
   return Math.abs(fx.toNumber() - xv) < tol;
 }

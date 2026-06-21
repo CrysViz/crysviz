@@ -144,13 +144,13 @@ export async function parse_cif(content, fileName = '', mcif = false) {
       start(controller) {
         controller.enqueue(new TextEncoder().encode(content));
         controller.close();
-      },}), fileName);
+      },}));
   } else {
     cif_struct = await mcif_to_magstruct(new ReadableStream({
       start(controller) {
         controller.enqueue(new TextEncoder().encode(content));
         controller.close();
-      },}), fileName);
+      },}));
   }
 
   const elements = cif_struct["species_full"];

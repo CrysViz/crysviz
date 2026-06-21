@@ -107,7 +107,7 @@ export function updateBondControlPanel(selectedBond) {
   const Info = document.createElement("div");
   Info.textContent = getBondInfo(bonds[0].name);
   Info.className = "BondInfoText"
-  Info.Id = "BondInfoText"
+  Info.id = "BondInfoText"
   Info.style.fontSize="14px";
   Info.style.marginTop= "3px";
 

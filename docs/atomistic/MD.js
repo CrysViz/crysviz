@@ -222,6 +222,10 @@ function syncStateSymmetryConstraint(state, structure = fileBrowser.selectedStru
   state.forces = symmetrizeCartesianVectors(state.forces, state.lattice, structure);
 }
 
+/**
+ * @param {{nepRunner?:any, structure?:any, temperatureTargetK?:number,
+ *   zeroMomentum?:boolean, forceEvaluator?:any}} [opts]
+ */
 export async function initializeMDState({
   nepRunner,
   structure = fileBrowser.selectedStructure,
@@ -288,6 +292,10 @@ function createTimingProfile(label) {
   };
 }
 
+/**
+ * @param {{state?:any, steps?:number, dtFs?:number, forceEvaluator?:any,
+ *   integrator?:any, thermostat?:any, onStep?:any, shouldStop?:any}} [opts]
+ */
 export async function runMDSimulation({
   state,
   steps = 500,
@@ -434,11 +442,11 @@ export function createMDMonitorPanel() {
   document.body.appendChild(panel);
 
   const header = panel.querySelector('#mdHeader');
-  const body = panel.querySelector('#mdBody');
+  const body = /** @type {HTMLElement} */ (panel.querySelector('#mdBody'));
   const fold = panel.querySelector('#mdFoldToggle');
   const closeBtn = panel.querySelector('#mdCloseBtn');
   const text = panel.querySelector('#mdText');
-  const canvas = panel.querySelector('#mdCanvas');
+  const canvas = /** @type {HTMLCanvasElement} */ (panel.querySelector('#mdCanvas'));
   const ctx = canvas.getContext('2d');
 
   closeBtn.addEventListener('click', () => panel.remove());

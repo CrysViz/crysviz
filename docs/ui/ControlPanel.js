@@ -272,8 +272,7 @@ export function addControlPanelModeSwitch() {
       removeCompPanel()
       removeLatticeComparisonPopup();
       console.log("Calling addTrajectoryPlayer()");
-      const frames = Array.from({ length: 200 }, (_, i) => i * 0.05);
-      addTrajectoryPlayer(frames);
+      addTrajectoryPlayer();
 
     }
     else if (mode === "comparison") {

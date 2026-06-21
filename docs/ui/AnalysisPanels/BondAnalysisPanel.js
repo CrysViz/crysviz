@@ -67,7 +67,7 @@ export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabe
   panel.style.border = "1px solid #555";
   panel.style.boxShadow = "0px 0px 8px rgba(0,0,0,0.6)";
   panel.style.borderRadius = "6px";
-  panel.style.zIndex = 9999;
+  panel.style.zIndex = "9999";
   panel.style.userSelect = "none";
   panel.style.color = "#eee";
 

@@ -329,7 +329,7 @@ export function updateLatticeComparisonPanel(L1_matrix, L2_matrix) {
 
   // If the popup doesn't exist, create it
   if (!popup) {
-    const { popup: _popup, canvas: _canvas, table: _table, content: _content, toggleBtn: _toggleBtn } = createLatticeComparisonPopup();
+    const { popup: _popup, canvas, table, content, toggleBtn } = createLatticeComparisonPopup();
     renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, content, toggleBtn);
     return;
   }

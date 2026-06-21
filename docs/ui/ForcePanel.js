@@ -53,7 +53,7 @@ export function addForcePanel(target = "SpinForceFieldContainer") {
   const sliderValue = document.createElement("span");
   sliderValue.textContent = (general.forceScale ?? 1.0).toFixed(2);
   sliderValue.style.marginRight = "8px";
-  const slider = document.createElement("input");
+  const slider = /** @type {any} */ (document.createElement("input"));
   slider.type = "range";
   slider.min = 0.1; slider.max = 10; slider.step = 0.1;
   slider.value = general.forceScale ?? 1.0;
@@ -70,7 +70,7 @@ export function addForcePanel(target = "SpinForceFieldContainer") {
   const widthValue = document.createElement("span");
   widthValue.textContent = (general.forceRadius ?? 0.1).toFixed(2);
   widthValue.style.marginRight = "8px";
-  const widthSlider = document.createElement("input");
+  const widthSlider = /** @type {any} */ (document.createElement("input"));
   widthSlider.type = "range";
   widthSlider.min = 0.01; widthSlider.max = 0.15; widthSlider.step = 0.01;
   widthSlider.value = general.forceRadius ?? 0.1;

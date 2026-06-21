@@ -92,6 +92,6 @@ export default InstanceMeshManager;
 
 // For browser globals
 if (typeof window !== 'undefined') {
-  window.InstanceMeshManager = InstanceMeshManager;
+  /** @type {any} */ (window).InstanceMeshManager = InstanceMeshManager;
 }
 

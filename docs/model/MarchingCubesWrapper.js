@@ -49,7 +49,7 @@ function reorderTriangleArrayByPermutation(array, permutation, itemSize) {
     const expectedLength = triangleCount * triangleStride;
     if (array.length < expectedLength) return array;
 
-    const temp = ArrayBuffer.isView(array) ? new array.constructor(array) : array.slice();
+    const temp = ArrayBuffer.isView(array) ? new (/** @type {any} */ (array.constructor))(array) : array.slice();
     for (let i = 0; i < triangleCount; i++) {
         const srcBase = permutation[i] * triangleStride;
         const dstBase = i * triangleStride;
@@ -84,7 +84,7 @@ class MarchingCubesWrapper {
             console.log("Using WASM-based Marching Cubes");
         } else if (backend === MarchingCubesBackend.THREE) {
             backend_MC = new ThreeMarchingCubes.MarchingCubes([field.nx, field.ny, field.nz], false, false, field.nx*field.ny*field.nz);
-            backend_MC.field = field.values;
+            /** @type {any} */ (backend_MC).field = field.values;
             console.log("Using Three.js built-in Marching Cubes");
         }
         this.marchingCubes = backend_MC;

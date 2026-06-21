@@ -346,6 +346,7 @@ function syncDerivedPlaneInputs(params, lattice) {
       return;
     }
 
+    /** @type {any} */
     const derived = CartesianParamsToMillerInds([u, v, w], d, lattice) || {};
     setNumericInputValue('planeH', derived.h ?? 0);
     setNumericInputValue('planeK', derived.k ?? 0);
@@ -1146,8 +1147,9 @@ function renderPlanesTable() {
     `;
 
     tr.addEventListener('click', e => {
-      if (e.target.classList.contains('plane-enable-cb') ||
-          e.target.classList.contains('plane-delete-btn')) return;
+      const t = /** @type {any} */ (e.target);
+      if (t.classList.contains('plane-enable-cb') ||
+          t.classList.contains('plane-delete-btn')) return;
       selectedPlaneIndex = idx;
       renderPlanesTable();
       loadSelectedPlaneParameters();

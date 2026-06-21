@@ -1,4 +1,10 @@
 export class Field {
+  /**
+   * @param {{nx?:number, ny?:number, nz?:number, origin?:number[], voxel?:any,
+   *   values?:any, component?:number, isoValue?:number, absMinValue?:any,
+   *   absMaxValue?:any, minValue?:any, maxValue?:any, label?:string,
+   *   useAbsoluteIsoValue?:any, isVisible?:boolean}} [opts]
+   */
   constructor({
     nx, // number of grid points along x
     ny, // number of grid points along y

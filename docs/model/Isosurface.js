@@ -172,6 +172,7 @@ export class Isosurface extends THREE.Group{
     constructor(field) {
         super();
         this.field = field;
+        /** @type {string} */
         this.backend = MarchingCubesBackend.WASM;
         this.lastCameraPosition = new THREE.Vector3();
 
@@ -228,6 +229,7 @@ export class Isosurface extends THREE.Group{
         const positiveGeom = new THREE.BufferGeometry();
         const negativeGeom = new THREE.BufferGeometry();
         
+        /** @type {{positive: any, negative: any}} */
         this.meshes = {
             positive: new THREE.Mesh(positiveGeom, materialPos),
             negative: new THREE.Mesh(negativeGeom, materialNeg)

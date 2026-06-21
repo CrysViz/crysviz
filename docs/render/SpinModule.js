@@ -95,7 +95,7 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
   const checkboxes = document.querySelectorAll('#speciesVisibilityContainer input[type="checkbox"]');
   checkboxes.forEach(checkbox => {
     const element = checkbox.id.replace('species-', '');
-    speciesVisibility[element] = checkbox.checked;
+    speciesVisibility[element] = /** @type {HTMLInputElement} */ (checkbox).checked;
   });
 
   for (let i = 0; i < wrapped.cart.length; i++) {

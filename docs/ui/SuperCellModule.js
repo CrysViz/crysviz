@@ -46,7 +46,7 @@ export function createSupercell(nx = 1, ny = 1, nz = 1) {
     atoms.push(new Atom({
       position: pos,
       element: newElements[i],
-      uuid: generateID([newElements[i]], "Atom-")
+      uuid: generateID([newElements[i]])
     }));
   });
   fileBrowser.selectedStructure.elements = newElements;

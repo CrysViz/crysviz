@@ -265,7 +265,7 @@ function minVertexDegreeForCageSize(N) {
         bonded.push({ pos: q, srcJ, shift:[dx,dy,dz], d });
       }
     }
-    perCenterImages.set(i, bonded);
+    perCenterImages.set(i, /** @type {any} */ (bonded));
   }
 
   // Map src -> list of wrapped indices (to identify cage vertex images)

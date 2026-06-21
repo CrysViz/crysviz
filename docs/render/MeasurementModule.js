@@ -5,6 +5,7 @@ import { CSS2DObject } from '../external/three/CSS2DRenderer.js';
 import { fracToCart } from '../math/index.js';
 import { updateAtoms } from './AtomsFracUpdateModule.js';
 
+/** @type {any} */
 let measureLabel = null;
 
 // Helper function for creating measurement markers.
@@ -305,7 +306,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
   const elements = [atom1.userData.element, atom2.userData.element, atom3.userData.element];
   div.textContent = `∠${elements[0]}-${elements[1]}-${elements[2]}: ${angle.toFixed(1)}°`;
 
-  const label = new CSS2DObject(div);
+  const label = /** @type {any} */ (new CSS2DObject(div));
   label.position.copy(p2);
 
   // Store atom indices for dynamic updates
@@ -404,7 +405,7 @@ export function addDistanceMeasurement(atom1, atom2) {
   const d = pa.distanceTo(pb);
   //div.textContent = `${a}—${b}: ${formatÅ(d)} Å`;
   div.textContent = `${formatÅ(d)} Å`;
-  const label = new CSS2DObject(div);
+  const label = /** @type {any} */ (new CSS2DObject(div));
   label.position.copy(mid);
 
   // Store atom indices for dynamic updates

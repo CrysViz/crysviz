@@ -11,7 +11,7 @@ export function addCameraPanel(target = "cameraContainer") {
     return;
   }
   if (!targetPanel){
-    console.wanr("CamaraContainer does not exists!")
+    console.warn("CamaraContainer does not exists!")
     return;
   }
 

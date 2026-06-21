@@ -1,3 +1,4 @@
+// @ts-nocheck -- vendored third-party; not type-checked
 import {
 	BufferGeometry,
 	Float32BufferAttribute

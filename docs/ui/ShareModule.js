@@ -418,7 +418,7 @@ export function loadSharedStructure() {
   restoreMeasurements(state.measurements);
 
   // Clean URL
-  const newUrl = new URL(window.location);
+  const newUrl = new URL(window.location.href);
   newUrl.searchParams.delete('state');
   window.history.replaceState({}, document.title, newUrl.toString());
 }

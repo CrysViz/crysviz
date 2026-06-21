@@ -1,3 +1,4 @@
+// @ts-nocheck -- port of three.js MarchingCubes addon; not type-checked
 import {
 	Color
 } from 'three';

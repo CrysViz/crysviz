@@ -180,7 +180,6 @@ function bindASEHandlers(bound) {
         elements,
         uniqueElements: [...new Set(elements)],
         lattice: data.result.lattices[i],
-        positions: data.result.positions[i],
         atoms,
         forces,
         stress: new Stress({ tensor: convertStressEvA3ToGPa(data.result.stresses[i]) }),
@@ -220,7 +219,6 @@ function bindASEHandlers(bound) {
         elements,
         uniqueElements: [...new Set(elements)],
         lattice: data.result.lattices[i],
-        positions: data.result.positions[i],
         atoms,
         forces,
         stress: new Stress({ tensor: convertStressEvA3ToGPa(data.result.stresses[i]) }),
@@ -239,14 +237,18 @@ function bindASEHandlers(bound) {
   const onGetEFS = (data) => {
     setASEStatus(bound, data.log ?? 'ASE EFS finished.');
     const elements = [...fileBrowser.selectedStructure.elements];
-    const structure = new Structure({
+    // FIXME (latent bug, pre-existing): unlike the relax/MD paths above, this
+    // EFS path passes `positions` (ignored by Structure, which reads `atoms`)
+    // and a single malformed Force instead of building `atoms` + a forces array.
+    // Cast keeps existing runtime behavior; the structure ends up without atoms.
+    const structure = new Structure(/** @type {any} */ ({
       elements,
       uniqueElements: [...new Set(elements)],
       lattice: data.result.lattice,
       positions: data.result.positions,
-      forces: new Force({ vectors: data.result.forces }),
+      forces: new Force({ vector: data.result.forces }),
       stress: new Stress({ tensor: convertStressEvA3ToGPa(data.result.stress) }),
-    });
+    }));
     const pressure = structure.stress.pressure;
     if (bound.efsMetricsEl) {
       bound.efsMetricsEl.innerHTML = `
@@ -699,7 +701,7 @@ function bindMDBody(panel, shell, potential) {
           })
         : startTemperatureK;
       const thermostat = createVelocityRescaleThermostat({
-        targetTemperatureK: targetTemperatureSchedule,
+        targetTemperatureK: /** @type {any} */ (targetTemperatureSchedule),
         tauFs: 20,
       });
 

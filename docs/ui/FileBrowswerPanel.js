@@ -68,14 +68,15 @@ export function createRow(obj) {
 
   // Row click handler (to select the row)
   row.addEventListener("click", (e) => {
-    if (e.target.tagName === "INPUT" || e.target.classList.contains("icon") || e.target.tagName === "IMG") return;
+    const t = /** @type {any} */ (e.target);
+    if (t.tagName === "INPUT" || t.classList.contains("icon") || t.tagName === "IMG") return;
 
     if (fileBrowser.selectedRow) fileBrowser.selectedRow.classList.remove("selected");
     row.classList.add("selected");
     fileBrowser.selectedRow = row;
 
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
-    row.dataset.index = rowIndex;
+    row.dataset.index = String(rowIndex);
     fileBrowser.selectedRowIndex = rowIndex;
     updateStructureFromRowAndStep(rowIndex);
 

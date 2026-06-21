@@ -183,7 +183,7 @@ function buildAflowLabel(spgNumber, wyckoffs, elements) {
   return `${spgNumber}_${orbitParts.join('_')}:${elemOrder.join('-')}`;
 }
 
-function callMoyo(calcType="getSymmetryInfo", tolerance="1e-2") {
+function callMoyo(calcType="getSymmetryInfo", tolerance=1e-2) {
   let elements = [...fileBrowser.selectedStructure.elements];
   const numbers = elements.map(el => PT_INVERTED[el]);
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)

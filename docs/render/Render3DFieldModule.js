@@ -2,7 +2,7 @@
 // Parser for Gaussian .cube volumetric files + Marching Cubes isosurface extraction
 // Exports: readCubeFile(), updateField()
 
-import * as THREE from "three";
+import * as THREE from "../external/three/three.module.js";
 
 import { initializeWithPOSCAR } from '../ui/StructureInputModule.js';
 import { fieldBrowser, updateFieldPanel } from "../ui/FieldPanel.js";

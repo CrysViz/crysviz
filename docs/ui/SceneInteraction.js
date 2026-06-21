@@ -64,7 +64,7 @@ export function setupSceneInteraction() {
     const hits = raycaster.intersectObject(groups.atomsMesh);
     if (!hits.length) {
       // Clicked on empty space - reset selection
-      measurements.selectedAtoms.forEach(a => clearHighlightAtom(a));
+      measurements.selectedAtoms.forEach(a => clearHighlightAtom());
       measurements.selectedAtoms = [];
       clearMeasureGraphics();
       return;
@@ -100,7 +100,7 @@ export function setupSceneInteraction() {
       addDistanceMeasurement(measurements.selectedAtoms[0], measurements.selectedAtoms[1]);
 
       // Clear selection
-      measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+      measurements.selectedAtoms.forEach(atom => clearHighlightAtom());
       measurements.selectedAtoms = [];
       clearMeasureGraphics();
       resetControlsTouch();
@@ -109,7 +109,7 @@ export function setupSceneInteraction() {
       addAngleMeasurement(measurements.selectedAtoms[0], measurements.selectedAtoms[1], measurements.selectedAtoms[2]);
 
       // Clear selection
-      measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+      measurements.selectedAtoms.forEach(atom => clearHighlightAtom());
       measurements.selectedAtoms = [];
       clearMeasureGraphics();
       resetControlsTouch();
@@ -124,7 +124,7 @@ export function setupSceneInteraction() {
         if (Array.isArray(structure.spins) && structure.spins.length > idx) structure.spins.splice(idx, 1);
         if (Array.isArray(structure.forces) && structure.forces.length > idx) structure.forces.splice(idx, 1);
         // Clean selections and graphics
-        measurements.selectedAtoms.forEach(atom => clearHighlightAtom(atom));
+        measurements.selectedAtoms.forEach(atom => clearHighlightAtom());
         measurements.selectedAtoms = [];
         clearMeasureGraphics();
         // Atom count changed, so rebuild the meshes (not just update them)

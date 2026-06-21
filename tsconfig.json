@@ -15,7 +15,7 @@
     "allowImportingTsExtensions": false,
     "types": []
   },
-  "include": ["docs/**/*.js"],
+  "include": ["docs/**/*.js", "docs/globals.d.ts"],
   "exclude": [
     "docs/external/**",
     "docs/compiled/**",

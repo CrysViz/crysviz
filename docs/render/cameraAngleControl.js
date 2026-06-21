@@ -22,9 +22,9 @@ export function updateAngleDisplays() {
   if ( zAngleDeg=== 180 || zAngleDeg=== -180 ) { zAngleDeg=180 }
 
 
-  document.getElementById('xAngle').value = xAngleDeg.toFixed(1);
-  document.getElementById('yAngle').value = yAngleDeg.toFixed(1);
-  document.getElementById('zAngle').value = zAngleDeg.toFixed(1);
+  /** @type {HTMLInputElement} */ (document.getElementById('xAngle')).value = xAngleDeg.toFixed(1);
+  /** @type {HTMLInputElement} */ (document.getElementById('yAngle')).value = yAngleDeg.toFixed(1);
+  /** @type {HTMLInputElement} */ (document.getElementById('zAngle')).value = zAngleDeg.toFixed(1);
 
 }
 
@@ -73,6 +73,6 @@ export function setupAxisControls(axis, controls, addOpts = {}) {
   const upBtn   = document.getElementById(`${axis}Up`);
   const downBtn = document.getElementById(`${axis}Down`);
 
-  if (upBtn)   upBtn.addEventListener('click', () => applyRotationFromUI(+1,axis, controls));
-  if (downBtn) downBtn.addEventListener('click', () => applyRotationFromUI(-1,axis,controls));
+  if (upBtn)   upBtn.addEventListener('click', () => applyRotationFromUI(+1,axis));
+  if (downBtn) downBtn.addEventListener('click', () => applyRotationFromUI(-1,axis));
 }

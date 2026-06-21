@@ -1,3 +1,4 @@
+// @ts-nocheck -- vendored three.js addon; not type-checked
 import {
 	Color,
 	LinearSRGBColorSpace,

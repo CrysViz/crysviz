@@ -14,8 +14,8 @@ static front-end that GitHub Pages serves; it is run separately by the user.
 - `server.py` — Flask + Flask-SocketIO server. Exposes Socket.IO events for
   symmetry (`spglib`, `httk_symgen`) and structure relaxation via ASE + a MACE
   MLIP calculator.
-- `demo.html`, `backendModule.js` — minimal standalone demos of connecting to
-  the backend (reference only; the real client lives in `docs/ui/BackendPanel/`).
+- `demo.html` — a minimal standalone demo of connecting to the backend
+  (reference only; the real client lives in `docs/ui/BackendPanel/`).
 
 The MACE model weights `server.py` loads live (as vendored third-party data)
 under `docs/external/MACE/mace-mpa-0-medium.model`; `server.py` resolves that

@@ -286,6 +286,7 @@ function syncSelectedAtomRows(options = {}) {
     return;
   }
 
+  /** @type {any} */
   let lastRow = null;
   atomSelection.selectedAtoms.forEach((atom) => {
     const row = findAtomRow(atom.element, atom.sourceIndex);

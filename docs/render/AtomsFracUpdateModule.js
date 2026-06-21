@@ -76,7 +76,7 @@ export function updateAtomByUUID(mesh, uuid, newPosition, newColor) {
   const index = mesh.userData.uuidToIndex.get(uuid);
   if (index !== undefined) {
     // Get the UUID from the geometry
-    const geometryUUID = getUUIDFromGeometry(mesh, index);
+    const geometryUUID = getUUIDFromGeometry(index);
 
     // Failsafe: Check that the UUID in the geometry matches the lookup
     if (geometryUUID === uuid) {

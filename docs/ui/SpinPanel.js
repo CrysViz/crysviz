@@ -258,7 +258,7 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
   lengthValue.style.marginRight = "8px";
   lengthValue.style.color = "white";
 
-  const lengthSlider = document.createElement("input");
+  const lengthSlider = /** @type {any} */ (document.createElement("input"));
   lengthSlider.type = "range";
   lengthSlider.min = 0.1;
   lengthSlider.max = 10;
@@ -283,7 +283,7 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
   sizeValue.style.marginRight = "8px";
   sizeValue.style.color = "white";
 
-  const sizeSlider = document.createElement("input");
+  const sizeSlider = /** @type {any} */ (document.createElement("input"));
   sizeSlider.type = "range";
   sizeSlider.min = 0.01;
   sizeSlider.max = 0.15;
@@ -554,7 +554,7 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
       scale = parseFloat(p[3]);
       if (p.length > 4) {
         // Convert string color to THREE.Color if needed
-        color = p[4] instanceof THREE.Color ?
+        color = /** @type {any} */ (p[4]) instanceof THREE.Color ?
           p[4] :
           new THREE.Color(p[4] || "#008080");
       }

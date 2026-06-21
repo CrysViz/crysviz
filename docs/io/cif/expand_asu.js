@@ -143,6 +143,7 @@ export function species_to_numbers(species) {
  */
 export function asu_data_to_numbers_by_labels(asu_data) {
   const labels_map = new Map();
+  /** @type {Record<number,string>} */
   const numbers_to_species = {};
   const numbers = [];
   let next_id = 1;
@@ -284,7 +285,7 @@ export function expand_asu(
     };
 
     // attach helper to outer scope
-    expand_asu._get_snapped_magdir = get_snapped_magdir;
+    /** @type {any} */ (expand_asu)._get_snapped_magdir = get_snapped_magdir;
   }
 
   for (let seed_idx = 0; seed_idx < posSeeds.length; seed_idx++) {
@@ -297,7 +298,7 @@ export function expand_asu(
 
     if (momentsIn != null) {
       m0 = momentsIn[seed_idx];
-      const [m0dir, m0dir_sign] = expand_asu._get_snapped_magdir(m0, mag_grid_dens, spin_basis, {
+      const [m0dir, m0dir_sign] = /** @type {any} */ (expand_asu)._get_snapped_magdir(m0, mag_grid_dens, spin_basis, {
         int_mult_of_grid: true,
       });
 
@@ -333,7 +334,7 @@ export function expand_asu(
       const k = pos_key(g, grid_dens, 1e-8);
       const kf = find_adjacent_key_wrap(k, seen_by_pos_mag, grid_dens);
 
-      const [mdir, mdir_sign] = expand_asu._get_snapped_magdir(m, mag_grid_dens, spin_basis, {
+      const [mdir, mdir_sign] = /** @type {any} */ (expand_asu)._get_snapped_magdir(m, mag_grid_dens, spin_basis, {
         int_mult_of_grid: true,
       });
 
@@ -701,7 +702,7 @@ export async function mcif_to_magstruct(stream, opts = {}) {
 
     const out = expand_asu(
       mag_asu_data.positions,
-      asu_numbers,
+      /** @type {any} */ (asu_numbers),
       mag_asu_data.symops,
       {
         grid_dens,

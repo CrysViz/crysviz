@@ -19,7 +19,7 @@ let _periodic_wrapped = null;
  * Initialise the WASM module.
  *
  * @param {Function} init              – default export from periodic_wasm.js (wasm-bindgen init)
- * @param {Function} periodic_wrapped  – named export from periodic_wasm.js
+ * @param {Function} periodic_wrapped_fn  named export from periodic_wasm.js
  * @param {URL|string} wasmUrl         – URL to the .wasm binary
  */
 export async function initPeriodicWasm(init, periodic_wrapped_fn, wasmUrl) {

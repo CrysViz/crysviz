@@ -56,7 +56,7 @@ export const DEFAULT_COLORMAP_RESOLUTION = 256;
 // ---------------------------------------------------------------------------
 
 function createPlaneLut(colormap = 'cooltowarm') {
-  return new Lut(colormap, 256);
+  return new Lut(/** @type {any} */ (colormap), 256);
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +308,7 @@ export function getPlaneDefinitionNormalAndD(planeDef, lattice) {
 
 /**
  * Return the 8 corner vertices of the cell parallelepiped (origin at 0,0,0).
- * @param {Array} cell – [a, b, c], each a THREE.Vector3 or [x,y,z]
+ * @param {Array} cell - [a, b, c], each a THREE.Vector3 or [x,y,z]
  */
 
 ///////////////////////////////////////////////
@@ -352,9 +352,9 @@ let cube_vertex_pos = [
  * with the cell parallelepiped.  Returns a CCW-sorted array of THREE.Vector3,
  * or an empty array when there is no intersection.
  *
- * @param {THREE.Vector3} n – unit plane normal
- * @param {number}        d – plane offset (n·x = d)
- * @param {Array}         cell – lattice vectors [a, b, c]
+ * @param {THREE.Vector3} n - unit plane normal
+ * @param {number}        d - plane offset (n·x = d)
+ * @param {Array}         cell - lattice vectors [a, b, c]
  */
 function planePolygon(n, d, cell) {
   const pts = [];
@@ -418,9 +418,9 @@ function planePolygon(n, d, cell) {
  * The resulting rectangle is guaranteed to contain all polygon vertices and is
  * cell-clipped via material.clippingPlanes.
  *
- * @param {THREE.Vector3[]} polygon    – convex polygon vertices in Cartesian space
- * @param {THREE.Vector3}   n          – unit plane normal
- * @param {Array}           [cell]     – lattice vectors [a, b, c] for clipping planes
+ * @param {THREE.Vector3[]} polygon    - convex polygon vertices in Cartesian space
+ * @param {THREE.Vector3}   n          - unit plane normal
+ * @param {Array}           [cell]     - lattice vectors [a, b, c] for clipping planes
  * @param {number}          [resolution=DEFAULT_COLORMAP_RESOLUTION]
  * @returns {{ geometry, uAxis, vAxis, centroid, clippingPlanes }}
  */
@@ -475,7 +475,7 @@ function buildPolygonGeometry(polygon, n, cell, resolution = DEFAULT_COLORMAP_RE
  * Assign these to `material.clippingPlanes` and set
  * `renderer.localClippingEnabled = true` for clipping to take effect.
  *
- * @param {Array} cell – lattice vectors [a, b, c]
+ * @param {Array} cell - lattice vectors [a, b, c]
  * @returns {THREE.Plane[]}
  */
 function makeCellClippingPlanes(cell) {
@@ -524,16 +524,16 @@ function makeCellClippingPlanes(cell) {
 export class Plane extends THREE.Group {
   /**
    * @param {object}               opts
-   * @param {Array|THREE.Vector3}  opts.normal      – plane normal in Cartesian space
-   * @param {number}               [opts.d=0]       – plane offset so that n·x = d (Cartesian)
-   * @param {Array}                opts.cell        – lattice vectors [[ax,ay,az],[bx,by,bz],[cx,cy,cz]]
+   * @param {Array|THREE.Vector3}  [opts.normal]    - plane normal in Cartesian space
+   * @param {number}               [opts.d=0]       - plane offset so that n·x = d (Cartesian)
+   * @param {Array}                [opts.cell]      - lattice vectors [[ax,ay,az],[bx,by,bz],[cx,cy,cz]]
    *                                                  or array of THREE.Vector3
-   * @param {number}               [opts.resolution=256] – colormap texture resolution
-   * @param {string}               [opts.mode]      – initial vis mode ('None' | 'Field')
-  * @param {object}               [opts.field]     – initial field data for 'Field' mode
-  * @param {string}               [opts.colormap]  – LUT name for field coloring
-  * @param {number}               [opts.colormapMin] – LUT lower bound override
-  * @param {number}               [opts.colormapMax] – LUT upper bound override
+   * @param {number}               [opts.resolution=256] - colormap texture resolution
+   * @param {string}               [opts.mode]      - initial vis mode ('None' | 'Field')
+  * @param {object}               [opts.field]     - initial field data for 'Field' mode
+  * @param {string}               [opts.colormap]  - LUT name for field coloring
+  * @param {number}               [opts.colormapMin] - LUT lower bound override
+  * @param {number}               [opts.colormapMax] - LUT upper bound override
   */
   constructor({ normal, d = 0, cell, resolution = DEFAULT_COLORMAP_RESOLUTION, mode, field, colormap = 'cooltowarm', colormapMin = null, colormapMax = null } = {}) {
     // ── Normalise the plane normal ──────────────────────────────────────────
@@ -684,7 +684,7 @@ export class Plane extends THREE.Group {
 
   /**
    * Switch the visualization mode.
-   * @param {string} mode  – 'None' | 'Field'
+   * @param {string} mode  - 'None' | 'Field'
    */
   setMode(mode) {
     if (mode === this._mode) return;
@@ -746,9 +746,7 @@ export class Plane extends THREE.Group {
    * colormap's midpoint (t = 0.5) always represents the zero level.
    * Fill in `divergingColormap()` with your preferred palette.
    *
-   * @param {Float32Array} zValues     – row-major grid, length = resolution²
-   * @param {number}       [resolution] – side length of the grid; defaults to
-   *                                      the constructor resolution
+   * Operates on the plane's stored `_field` / resolution (no parameters).
    */
   updateColorMap() {
 

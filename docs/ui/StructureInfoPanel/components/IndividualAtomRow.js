@@ -252,8 +252,8 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     });
   }
 
-  atomAlphaSlider.oninput = (e) => applyIndividualOpacity(e.target.value);
-  atomAlphaValue.oninput = (e) => applyIndividualOpacity(e.target.value);
+  atomAlphaSlider.oninput = (e) => applyIndividualOpacity(/** @type {any} */ (e.target).value);
+  atomAlphaValue.oninput = (e) => applyIndividualOpacity(/** @type {any} */ (e.target).value);
 
   colorBtn.onclick = (e) => {
     e.stopPropagation();

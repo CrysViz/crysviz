@@ -12,9 +12,9 @@ export class Force extends ColoredObject {
   // NEW: get length of each vector
   getLength() {
     return this.vector.map((_, i) => {
-      const x = this.vectors[i];
-      const y = this.vectors[i];
-      const z = this.vectors[i];
+      const x = this.vector[i];
+      const y = this.vector[i];
+      const z = this.vector[i];
       return Math.sqrt(x*x + y*y + z*z);
     });
   }

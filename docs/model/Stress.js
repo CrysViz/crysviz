@@ -21,7 +21,7 @@ export class Stress extends ColoredObject {
 
   setTensor(tensor) {
     this.tensor = Stress._validateTensor(tensor);
-    this._pressure = Stress._computePressure(this.tensor);
+    this._pressure = this._computePressure(this.tensor);
   }
 
   _computePressure(tensor) {

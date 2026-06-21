@@ -391,6 +391,7 @@ export function parse_linear_expr(expr, use_fractions = false) {
     ? { x: new Fraction(0), y: new Fraction(0), z: new Fraction(0) }
     : { x: 0, y: 0, z: 0 };
 
+  /** @type {any} */
   let constTerm = use_fractions ? new Fraction(0) : 0.0;
 
   // Python token_re:
@@ -414,6 +415,7 @@ export function parse_linear_expr(expr, use_fractions = false) {
 
     if (variable != null) {
       // variable term ± (coef or 1) * var
+      /** @type {any} */
       let coef_val;
       if (coef_str == null || coef_str === "") {
         coef_val = use_fractions ? new Fraction(1) : 1;
