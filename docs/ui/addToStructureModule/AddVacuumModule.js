@@ -1,5 +1,111 @@
 // AddVacuumModule.js
 import { openPeriodicTable } from '../PeriodicTableSelectPanel.js';
+import { Atom, Structure, StructureContainer } from '../../model/index.js';
+import { fileBrowser, structureShip } from '../../state/store.js';
+import { createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
+import { fracToCart, cartToFrac } from '../../render/index.js';
+import { updateVisualization } from '../../core/crystal-viewer.js';
+
+// Parse a "#rrggbb" string to a numeric color, or undefined (=> element default).
+function parseColorHexToInt(hex) {
+  if (typeof hex !== 'string') return undefined;
+  const h = hex.trim().replace(/^#/, '');
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return undefined;
+  return parseInt(h, 16);
+}
+
+// Build a brand-new boxed structure from atoms entered in the Add-atoms panel.
+// The panel's x/y/z are Cartesian Å; we wrap them in an orthorhombic cell sized
+// to the bounding box plus vacuum padding, convert to fractional coordinates,
+// then register the structure as a new file-browser row and select it.
+function makeNewStructureFromAtoms(atomsToAdd) {
+  if (!atomsToAdd.length) {
+    console.warn('Make New Structure: no atoms entered.');
+    return;
+  }
+
+  const PAD = 5.0; // Å of vacuum padding around the bounding box
+
+  const xs = atomsToAdd.map(a => a.x);
+  const ys = atomsToAdd.map(a => a.y);
+  const zs = atomsToAdd.map(a => a.z);
+  const min = [Math.min(...xs), Math.min(...ys), Math.min(...zs)];
+  const max = [Math.max(...xs), Math.max(...ys), Math.max(...zs)];
+  // Each cell length is the extent + padding on both sides (≥ 2·PAD), so a
+  // single atom or a flat axis still gets a real box.
+  const L = [0, 1, 2].map(i => (max[i] - min[i]) + 2 * PAD);
+  const lattice = [[L[0], 0, 0], [0, L[1], 0], [0, 0, L[2]]];
+
+  const elements = atomsToAdd.map(a => a.element);
+  const atoms = atomsToAdd.map(a => new Atom({
+    // Shift so the min corner sits at PAD, then normalise to fractional.
+    position: [
+      (a.x - min[0] + PAD) / L[0],
+      (a.y - min[1] + PAD) / L[1],
+      (a.z - min[2] + PAD) / L[2],
+    ],
+    element: a.element,
+    color: parseColorHexToInt(a.color),
+  }));
+
+  const structure = new Structure({
+    elements,
+    uniqueElements: [...new Set(elements)],
+    lattice,
+    atoms,
+  });
+
+  const container = new StructureContainer({ fileName: 'new_structure', structures: [structure] });
+  structureShip.container.push(container);
+
+  const row = createRow({ name: 'new_structure', traj: 1, step: 1 });
+  document.querySelector('#objectTable tbody').appendChild(row);
+  fileBrowser.fileData.push({ name: 'new_structure', traj: 1, step: 1 });
+  selectLastAddedRow(); // selects the row and triggers a render
+}
+
+// Grow the current structure's cell by the requested vacuum (Å) along each
+// lattice vector, keeping the atoms' Cartesian positions fixed and recentering
+// the content in the enlarged cell.
+function applyVacuumToStructure(vacX, vacY, vacZ) {
+  const s = fileBrowser.selectedStructure;
+  if (!s) {
+    console.warn('Add vacuum: no structure selected.');
+    return;
+  }
+  if (!vacX && !vacY && !vacZ) return;
+
+  const lattice = s.lattice;
+  const vac = [vacX, vacY, vacZ];
+
+  // Cartesian positions to preserve.
+  const carts = fracToCart(s.atoms.map(a => a.position), lattice);
+
+  // Scale each lattice vector's length by its added vacuum.
+  const newLattice = lattice.map((row, i) => {
+    const len = Math.hypot(row[0], row[1], row[2]);
+    const k = (len > 0 && vac[i]) ? (len + vac[i]) / len : 1;
+    return [row[0] * k, row[1] * k, row[2] * k];
+  });
+
+  // Recenter by half of each added lattice vector.
+  const shift = [0, 0, 0];
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) {
+      shift[j] += 0.5 * (newLattice[i][j] - lattice[i][j]);
+    }
+  }
+
+  s.atoms.forEach((atom, idx) => {
+    const c = carts[idx];
+    atom.position = cartToFrac([c[0] + shift[0], c[1] + shift[1], c[2] + shift[2]], newLattice);
+  });
+
+  s.lattice = newLattice;
+  s.periodic = { wrapped: null, hash: null }; // force periodic-wrap recompute
+
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+}
 
 export function addVacuumPanel(container) {
   container.innerHTML = `
@@ -28,9 +134,7 @@ export function addVacuumPanel(container) {
     const vacX = parseFloat(container.querySelector('#vacX').value) || 0;
     const vacY = parseFloat(container.querySelector('#vacY').value) || 0;
     const vacZ = parseFloat(container.querySelector('#vacZ').value) || 0;
-    // TODO: not implemented — addVacuum() was never written. Stubbed so the
-    // (live) Apply button no-ops with a warning instead of throwing.
-    console.warn('Add vacuum is not implemented yet', { vacX, vacY, vacZ });
+    applyVacuumToStructure(vacX, vacY, vacZ);
   });
 }
 
@@ -206,9 +310,10 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
       }
     });
 
-    // TODO: not implemented — addAtom() was never written. Stubbed so the
-    // (live) "Add to Structure" button no-ops with a warning instead of throwing.
-    console.warn('Add atom is not implemented yet', atomsToAdd);
+    // TODO (deferred): inserting atoms into the *existing* structure also needs
+    // the bond / atom-image mappings rebuilt (model on SuperCellModule). For now
+    // only "Make New Structure" is implemented; this path no-ops with a warning.
+    console.warn('Add to existing structure is not implemented yet', atomsToAdd);
     atomsToAdd.length = 0;
   });
 
@@ -229,9 +334,7 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
       }
     });
 
-    // TODO: not implemented — addAtom() was never written. Stubbed so the
-    // (live) "Add to New Structure" button no-ops with a warning instead of throwing.
-    console.warn('Add atom is not implemented yet', atomsToAdd);
+    makeNewStructureFromAtoms(atomsToAdd);
     atomsToAdd.length = 0;
   });
 }

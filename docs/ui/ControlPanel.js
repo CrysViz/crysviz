@@ -407,8 +407,6 @@ export function addControlPanelAnalysisSwitch() {
 
     // Handle different modes
     if (general.analysisState == "Lattice") {
-      console.warn("Lattice analysis not yet implemented!")
-      
       removeHistogramPanel()
       
       removeBondPanel()
