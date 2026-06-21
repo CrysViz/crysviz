@@ -28,9 +28,9 @@ const STORAGE_KEY = 'theme';
 // the periodic table, add-atoms/vacuum — are intentionally NOT listed; they stay
 // floating in every theme.)
 const DOCKABLE = [
-  { id: 'infoPanel',        afterId: 'saveButton' }, // composition / atoms readout
-  { id: 'TrajControlPanel', afterId: null },         // trajectory controls
-  { id: 'mdMonitorPanel',   afterId: null },         // MD monitor
+  { id: 'infoPanel',        afterId: 'saveButton' },         // composition/atoms readout
+  { id: 'TrajControlPanel', afterId: 'structureControls2' }, // below the Trajectory selector box
+  { id: 'mdMonitorPanel',   afterId: 'backendControlGroup' },// below the backend/MD box
 ];
 const DOCK_THEMES = new Set(['docked']);
 

@@ -39,18 +39,21 @@ function cameraButton(letter, title, className) {
   return b;
 }
 
-// Mirrors a floating .measure-tool-btn: a .tool-icon (icon via CSS var) + a label.
-function measureButton(label, title, iconKey) {
+// Mirrors a floating .measure-tool-btn. `iconKey` draws an icon via CSS var;
+// `glyph` (e.g. ❌) is used instead for buttons that have no image icon.
+function measureButton({ label, title, iconKey = null, glyph = null, extraClass = '', onClick = null }) {
   const b = document.createElement('button');
   b.type = 'button';
   b.title = title;
-  b.className = 'measure-tool-btn';
+  b.className = `measure-tool-btn ${extraClass}`.trim();
   const ico = document.createElement('div');
   ico.className = 'tool-icon';
-  ico.dataset.icon = iconKey;
+  if (iconKey) ico.dataset.icon = iconKey;
+  if (glyph) ico.textContent = glyph;
   const span = document.createElement('span');
   span.textContent = label;
   b.append(ico, span);
+  if (onClick) b.addEventListener('click', onClick);
   return b;
 }
 
@@ -72,31 +75,44 @@ export function addPanelToolbars(target = 'panelToolsContainer') {
     ['b', () => latticeDirs().b],
     ['c', () => latticeDirs().c],
   ];
-  axes.forEach(([letter, dirFn]) => {
+  axes.forEach(([letter, dirFn], i) => {
+    if (i === 3) {
+      // Spacer between z and a, like the floating panel's .camera-separator.
+      const sep = document.createElement('div');
+      sep.className = 'camera-separator';
+      view.row.appendChild(sep);
+    }
     const btn = cameraButton(letter, `View ${letter} axis`, 'camera-tool-btn');
     btn.addEventListener('click', () => { app.controls.reset(); setViewDirection(dirFn()); });
     view.row.appendChild(btn);
   });
-  const resetBtn = cameraButton('⟲', 'Reset camera view', 'camera-tool-reset-btn');
+  // Reset button: empty .reset-icon + a "Reset" label (mirrors the floating one).
+  const resetBtn = document.createElement('button');
+  resetBtn.type = 'button';
+  resetBtn.title = 'Reset Camera View';
+  resetBtn.className = 'camera-tool-reset-btn';
+  const resetIco = document.createElement('div');
+  resetIco.className = 'reset-icon';
+  const resetSpan = document.createElement('span');
+  resetSpan.textContent = 'Reset';
+  resetBtn.append(resetIco, resetSpan);
   resetBtn.addEventListener('click', () => resetView());
   view.row.appendChild(resetBtn);
 
-  // --- Measurement (mirrors #measurementTools) ---
+  // --- Measurement (mirrors #measurementTools exactly: order, icons, labels) ---
   const measure = makeGroup();
-  /** @type {[string, string, string][]} */ // [label, mode, icon key]
-  const modes = [
-    ['Distance', 'distance', 'distance'],
-    ['Angle', 'angle', 'angle'],
-    ['Delete', 'delete', 'delete'],
-  ];
-  modes.forEach(([label, m, icon]) => {
-    const btn = measureButton(label, `${label} measurement`, icon);
-    btn.addEventListener('click', () => setMeasureMode(m, btn));
-    measure.row.appendChild(btn);
-  });
-  const clearBtn = measureButton('Clear', 'Clear all measurements', 'clear');
-  clearBtn.addEventListener('click', () => clearAllMeasureMode());
-  measure.row.appendChild(clearBtn);
+  const distanceBtn = measureButton({ label: 'Distance', title: 'Distance Measurement', iconKey: 'distance' });
+  distanceBtn.addEventListener('click', () => setMeasureMode('distance', distanceBtn));
+  const angleBtn = measureButton({ label: 'Angle', title: 'Angle Measurement', iconKey: 'angle' });
+  angleBtn.addEventListener('click', () => setMeasureMode('angle', angleBtn));
+  const clearBtn = measureButton({ label: 'Clear', title: 'Clear All Measurements', iconKey: 'clear',
+    onClick: () => clearAllMeasureMode() });
+  const deleteBtn = measureButton({ label: 'Delete', title: 'Delete Atom', glyph: '❌' });
+  deleteBtn.addEventListener('click', () => setMeasureMode('delete', deleteBtn));
+  // Restore mirrors the floating button (icon + clear-btn styling); the floating
+  // one has no click handler either, so neither does this.
+  const restoreBtn = measureButton({ label: 'Restore', title: 'Restore Atom', iconKey: 'restore', extraClass: 'clear-btn' });
+  measure.row.append(distanceBtn, angleBtn, clearBtn, deleteBtn, restoreBtn);
 
   section.appendChild(view.group);
   section.appendChild(measure.group);

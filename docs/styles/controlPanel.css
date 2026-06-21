@@ -157,8 +157,8 @@ font-size: 16px;
 }
 .panel-tools-group .tool-icon[data-icon="distance"] { background-image: var(--icon-measure-distance); }
 .panel-tools-group .tool-icon[data-icon="angle"]    { background-image: var(--icon-measure-angle); }
-.panel-tools-group .tool-icon[data-icon="delete"]   { background-image: var(--icon-measure-delete); }
 .panel-tools-group .tool-icon[data-icon="clear"]    { background-image: var(--icon-measure-clear); }
+.panel-tools-group .tool-icon[data-icon="restore"]  { background-image: var(--icon-measure-restore); }
 
 /* Docked view buttons mimic the floating camera tools (whose styling is scoped
    to #cameraTools). Same look, just reachable inside the panel. */
@@ -192,9 +192,9 @@ font-size: 16px;
 .panel-tools-group .camera-tool-reset-btn:hover {
   border-color: #fff;
 }
-/* Only the .camera-icon letter shows, like the floating buttons. */
-.panel-tools-group .camera-tool-btn span,
-.panel-tools-group .camera-tool-reset-btn span {
+/* Axis buttons show only the .camera-icon letter (span hidden), like the
+   floating ones. The reset button keeps its "Reset" label. */
+.panel-tools-group .camera-tool-btn span {
   display: none;
 }
 

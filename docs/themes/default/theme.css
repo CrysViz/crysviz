@@ -56,5 +56,6 @@
   --icon-measure-distance: url('../../data/icons/measure-icon2.svg');
   --icon-measure-angle:    url('../../data/icons/angle-icon2.svg');
   --icon-measure-clear:    url('../../data/icons/delete-icon2.svg');
-  --icon-measure-delete:   url('../../data/icons/delete-icon.svg');
+  --icon-measure-restore:  url('../../data/icons/restore-icon.svg');
+  /* Delete uses a ❌ glyph (like the floating panel), not an icon image. */
 }
