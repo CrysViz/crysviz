@@ -5,7 +5,7 @@ library (space-group detection / Wyckoff analysis), used by the in-browser
 symmetry features (`ui/BackendPanel/MoyoWASM.js`, `ui/SymmetryEditModule.js`).
 
 - Upstream: https://github.com/spglib/moyo
-- License: **MIT / Apache-2.0** — see `LICENSE-moyo` at the repo root.
+- License: **MIT / Apache-2.0** — see `LICENSE` in this directory.
 
 ## Files
 - `moyo_wasm.js`, `moyo_wasm_bg.wasm` — wasm-bindgen output + JS glue.

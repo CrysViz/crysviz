@@ -6,7 +6,7 @@ implementation in `../nep_wasm/`.
 
 - Related upstream: GPUMD / NEP — https://github.com/brucefan1983/GPUMD
 - The NEP89 weights originate from GPUMD and are **GPL-3.0**; see `LICENSE-GPUMD`
-  and `LICENSE-NEP_CPU` at the repo root.
+  and `LICENSE-NEP_CPU` in `../nep_wasm/`.
 
 ## Files
 - `NEP89.rs` — Rust source.

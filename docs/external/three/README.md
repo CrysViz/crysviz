@@ -5,7 +5,7 @@ uses for all 3D rendering.
 
 - Upstream: https://github.com/mrdoob/three.js
 - Version: **r182dev** (see `REVISION` in `three.core.js`)
-- License: **MIT** — see `LICENSE-THREE` at the repo root.
+- License: **MIT** — see `LICENSE` in this directory.
 
 ## Files
 - `three.module.js` / `three.core.js` — the core library (ES modules). App code
