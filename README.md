@@ -2,6 +2,8 @@
 
 # CrysViz - Crystal Structure Visualisation & Analysis
 
+[![Checks](https://github.com/ftrybel/CrysViz_hot_develop/actions/workflows/check.yml/badge.svg)](https://github.com/ftrybel/CrysViz_hot_develop/actions/workflows/check.yml)
+
 ## Light-weight browser-based crystal structure visualisation with on-device rendering.
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).

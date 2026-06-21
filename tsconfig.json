@@ -1,6 +1,6 @@
 {
   "//": "Type-checking config for CrysViz (plain JS via tsc --checkJs). Emits nothing.",
-  "//2": "Intentionally lenient: this is an established, mostly-untyped codebase, so `make typecheck` is INFORMATIONAL (not a CI gate). Add // @ts-check / JSDoc types per file to opt into stricter checking over time.",
+  "//2": "Intentionally lenient (strict:false) for this mostly-untyped codebase, but kept at ZERO errors and enforced as a CI gate via `make check` (.github/workflows/check.yml). Tighten per file with JSDoc types over time; see docs/globals.d.ts and the three.module.d.ts/CSS2DRenderer.d.ts stubs for the project-wide relaxations.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",

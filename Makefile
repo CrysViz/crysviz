@@ -1,4 +1,4 @@
-.PHONY: serve install lint lint-fix typecheck check-imports check
+.PHONY: serve install_devtools lint lint-fix typecheck check-imports check
 
 serve:
 	echo "Open:"
@@ -17,7 +17,7 @@ lint:
 lint-fix:
 	npx eslint docs --fix
 
-# Type-check plain JS via tsc --checkJs (informational; lenient, not a gate).
+# Type-check plain JS via tsc --checkJs (lenient config; kept at zero errors).
 typecheck:
 	npx tsc --noEmit -p tsconfig.json
 
@@ -26,5 +26,6 @@ typecheck:
 check-imports:
 	python3 tools/check_imports.py
 
-# The reliable gate: lint + import checks (typecheck is separate/informational).
-check: lint check-imports
+# The CI gate: lint + typecheck + import checks. Run on pull requests
+# (see .github/workflows/check.yml). Any failure fails the build.
+check: lint typecheck check-imports

@@ -9,7 +9,7 @@
     "lint:fix": "eslint docs --fix",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check-imports": "python3 tools/check_imports.py",
-    "check": "npm run lint && npm run check-imports"
+    "check": "npm run lint && npm run typecheck && npm run check-imports"
   },
   "devDependencies": {
     "eslint": "^9.13.0",
