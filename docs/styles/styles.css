@@ -2,7 +2,7 @@ html,
 body {
   height: 100%;
   margin: 0;
-  background-color: #002121; 
+  background-color: var(--surface-bg);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -46,21 +46,9 @@ body {
   --hover-color: rgba(187, 98, 214, 0.24);
   --border-color: rgba(183, 117, 221, 0.5);
 }
-:root {
-  --ui-width: 380px;      /* Panel content width */
-  --ui-border: 1px;       /* Panel border width */
-  --ui-padding: 20px;     /* Panel padding */
-  
-  /* Correct total width calculation */
-  --ui-total-width: calc(var(--ui-width) + 2 * var(--ui-border) + 2 * var(--ui-padding));
+/* Design tokens (geometry, surfaces, scene) live in themes/default.css, which
+   the theme loader always loads first. Theme overrides redefine those tokens. */
 
-  /* Gizmo positioning variables */
-  --gizmo-size: 90px;
-  --gizmo-bottom: 20px;
-  --gizmo-left: calc(var(--ui-total-width) + 10px); /* Panel width + gap */
-  --camera-tools-left: calc(var(--ui-total-width) + 10px);
-  --popup-left: calc(var(--ui-total-width) + 10px);
-}
 #ui {
   height: 98dvh;
   min-width: var(--ui-width);
@@ -68,10 +56,10 @@ body {
   max-width:var(--ui-width);
   overflow: auto;
   padding: var(--ui-padding);
-  background: rgba(26, 26, 26, 1);
-  color: #fff;
-  backdrop-filter: blur(20px);
-  border-right: var(--ui-border) solid rgba(255, 255, 255, 0.1);
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  backdrop-filter: blur(var(--panel-blur));
+  border-right: var(--ui-border) solid var(--panel-border);
 }
 
 /* Desktop panel hide state */

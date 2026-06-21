@@ -1,0 +1,24 @@
+/* Minimal theme — collapse everything into the single hamburger-toggled side
+   panel (#ui).
+
+   Hides the floating "mini-menus" and reveals their in-panel equivalents
+   (ui/PanelToolbars.js, the #panelToolsContainer section). When #ui is collapsed
+   via the hamburger (.panel-hidden, wired in ui/MobileMenu.js), the existing
+   `body.panel-hidden` rules make the view fullscreen — so the hamburger
+   (#mobileMenuToggle) is the only on-screen UI.
+
+   Inherits the default (light) palette + scene; this theme only changes layout.
+   Loaded last in the cascade, so these rules win without !important. */
+
+/* Hide the floating mini-menus / widgets. */
+#cameraTools,
+#measurementTools,
+#backgroundDot,
+#axesGizmo {
+  display: none;
+}
+
+/* Reveal the in-panel view/measure tools inside the side panel. */
+#panelToolsContainer {
+  display: block;
+}

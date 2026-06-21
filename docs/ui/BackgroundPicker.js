@@ -1,13 +1,13 @@
-// Scene background color picker + theme system.
+// Scene background color picker.
 // `createBackgroundControl` wires the "backgroundDot" element to open a color
 // picker that live-previews and applies the three.js scene background (and keeps
-// the lattice color readable). `setupThemeSystem` wires the dark/twilight/light
-// theme buttons (.theme-btn) and applies the saved/system theme on startup.
-// (Theme support retrofitted from newmain's BackgroundThemeControlModule.)
+// the lattice color readable). The theme system itself lives in
+// ui/ThemeManager.js; the picker's Reset restores the active theme's scene color
+// via `applySceneFromCSS`.
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general } from '../state/store.js';
-import { themes } from '../defaults/color_texture_defaults.js';
+import { applySceneFromCSS } from './ThemeManager.js';
 import { createColorPicker } from './ColorPickerModule.js';
 import { updateLattice } from '../render/index.js';
 
@@ -22,41 +22,6 @@ export function getLuminance(hex) {
 export function getContrastingBorder(hex) {
   const lum = getLuminance(hex);
   return lum > 0.5 ? "#333333" : "#ffffff";
-}
-
-export function applyTheme(themeName) {
-  const theme = themes[themeName];
-  if (!theme) return;
-  app.scene.background = new THREE.Color(theme.background);
-  general.defaultBackgroundColor = theme.background;
-  general.currentLatticeColor = theme.latticeColor;
-
-  const dot = document.getElementById("backgroundDot");
-  if (dot) {
-    dot.style.border = `2px solid ${theme.latticeColor}`;
-    updateLattice();
-  }
-
-  document.querySelectorAll('.theme-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.themeOption === themeName);
-  });
-
-  localStorage.setItem('theme', themeName);
-}
-
-export function setupThemeSystem() {
-  const userTheme = localStorage.getItem('theme');
-  const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  applyTheme(userTheme || (isDarkMode ? 'dark' : 'light'));
-
-  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  mediaQuery.addEventListener('change', (e) => {
-    applyTheme(e.matches ? 'dark' : 'twilight');
-  });
-
-  document.querySelectorAll('.theme-btn').forEach(btn => {
-    btn.addEventListener('click', () => applyTheme(btn.dataset.themeOption));
-  });
 }
 
 function openBackgroundColorPicker(dot) {
@@ -139,10 +104,8 @@ function openBackgroundColorPicker(dot) {
   resetBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     closePicker();
-    const currentTheme = localStorage.getItem('theme') ||
-                       document.querySelector('.theme-btn.active')?.dataset.themeOption ||
-                       (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    applyTheme(currentTheme);
+    // Restore the scene background to the active theme's default.
+    applySceneFromCSS();
   });
 }
 

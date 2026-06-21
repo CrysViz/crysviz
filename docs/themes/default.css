@@ -1,0 +1,51 @@
+/* ===========================================================================
+   CrysViz base theme  ("default")
+   ---------------------------------------------------------------------------
+   This is the base layer every other theme builds on. The theme loader
+   (ui/ThemeManager.js, driven by themes/themes.json) always loads this file
+   first, then layers the selected theme's override file on top.
+
+   It defines the full design-token vocabulary as CSS custom properties:
+   surfaces/text, layout geometry, and the 3D scene colors. To re-skin the app,
+   a theme override only needs to redefine the tokens (and/or rules) it changes.
+
+   The default look = the app's historical appearance: dark UI panels over a
+   light 3D scene. Override files (dark.css, twilight.css, …) change the scene
+   and/or surfaces; minimal.css changes the layout.
+
+   NOTE: the accent tokens (--bg-color / --highlight-color / --accent-color /
+   --hover-color / --border-color) are intentionally NOT defined here — they are
+   owned by the backend-mode classes (.theme-standard / .theme-ase / …) in
+   styles/styles.css so the accent follows the active compute backend. A theme
+   MAY override them, but by default leaves them to backend mode.
+   =========================================================================== */
+
+:root {
+  /* ---- Surfaces & text -------------------------------------------------- */
+  --surface-bg: #002121;             /* page background behind the canvas/panel */
+  --panel-bg: rgba(26, 26, 26, 1);   /* #ui side panel */
+  --panel-fg: #ffffff;               /* primary text on panels */
+  --muted-fg: #f9f9f9;               /* secondary text */
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --panel-blur: 20px;                /* #ui backdrop blur */
+  --popup-bg: rgba(26, 26, 26, 0.9); /* floating popups / pickers */
+  --popup-border: rgba(255, 255, 255, 0.3);
+  --input-bg: rgba(26, 26, 26, 0.9);
+  --danger: rgba(240, 132, 18, 0.9);
+  --radius: 8px;
+
+  /* ---- Layout geometry (single source of truth) ------------------------- */
+  --ui-width: 380px;                 /* panel content width */
+  --ui-border: 1px;                  /* panel border width */
+  --ui-padding: 20px;                /* panel padding */
+  --ui-total-width: calc(var(--ui-width) + 2 * var(--ui-border) + 2 * var(--ui-padding));
+  --gizmo-size: 90px;
+  --gizmo-bottom: 20px;
+  --gizmo-left: calc(var(--ui-total-width) + 10px);   /* beside the panel */
+  --camera-tools-left: calc(var(--ui-total-width) + 10px);
+  --popup-left: calc(var(--ui-total-width) + 10px);
+
+  /* ---- 3D scene (read by ThemeManager → three.js) ----------------------- */
+  --scene-bg: #ffffff;               /* WebGL canvas clear color */
+  --lattice-color: #090a09;          /* unit-cell lines */
+}

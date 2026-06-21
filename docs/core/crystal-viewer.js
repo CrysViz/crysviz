@@ -21,7 +21,8 @@ import '../ui/AboutPanel.js';
 // These modules should contain all the functions related to specific functionalities
 //
 // .........................................................................................................
-import { createBackgroundControl, setupThemeSystem } from '../ui/BackgroundPicker.js';
+import { createBackgroundControl } from '../ui/BackgroundPicker.js';
+import { setupThemeSystem } from '../ui/ThemeManager.js';
 import { setupMobileMenu } from '../ui/MobileMenu.js';
 import { setupAtomTooltip } from '../ui/AtomTooltip.js';
 import { setupControlsWiring } from '../ui/ControlsWiring.js';
@@ -43,6 +44,7 @@ import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render
 import {addAtomVacuumPanel} from '../ui/addToStructureModule/AddVacuumModule.js'
 import {addCameraPanel} from '../ui/CameraPanel.js'
 import {addColorPanel} from '../ui/ColorPanel.js'
+import {addPanelToolbars} from '../ui/PanelToolbars.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../render/index.js';
 
@@ -393,6 +395,7 @@ function initUIPanels() {
   addSavePanel();
   addCameraPanel();
   addColorPanel();
+  addPanelToolbars();
   addAtomVacuumPanel();
   addControlPanelAnalysisSwitch();
   addStorageInfoPanel();

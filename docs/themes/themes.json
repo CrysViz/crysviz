@@ -1,0 +1,10 @@
+{
+  "//": "CrysViz theme registry. The loader (ui/ThemeManager.js) always applies `base` first, then the selected theme's `css` (null = base only). To add a theme: drop a CSS file in this directory and add one entry below.",
+  "base": "default.css",
+  "themes": [
+    { "id": "light",    "name": "Light",    "css": null },
+    { "id": "dark",     "name": "Dark",     "css": "dark.css" },
+    { "id": "twilight", "name": "Twilight", "css": "twilight.css" },
+    { "id": "minimal",  "name": "Minimal",  "css": "minimal.css" }
+  ]
+}

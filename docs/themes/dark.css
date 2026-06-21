@@ -1,0 +1,6 @@
+/* Dark theme — dark 3D scene (the default UI panels are already dark).
+   Layered on top of default.css; only redefines what differs. */
+:root {
+  --scene-bg: #090a09;
+  --lattice-color: #e7e7e7;
+}
