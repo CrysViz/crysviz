@@ -45,31 +45,54 @@ font-size: 16px;
 .theme-switch {
   position: absolute;
   top: 10px;
-  left: 300px; /* Adjust based on your logo width */
+  left: 286px; /* Adjust based on your logo width */
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
   z-index: 10;
+  border: solid 1px var(--panel-border, rgba(255, 255, 255, 0.25));
+  border-radius: 40px;
 }
 
-/* Theme picker dropdown (built by ui/ThemeManager.js) */
-.theme-menu-toggle {
+/* dark/twilight/light icon toggle */
+.theme-btn {
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--popup-bg, rgba(26, 26, 26, 0.9));
-  color: var(--panel-fg, #fff);
-  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.25));
-  border-radius: 40px;
-  padding: 4px 10px;
-  font-size: 12px;
+  background: none;
+  border: none;
+  padding: 0.25rem;
   cursor: pointer;
+  border-radius: 40px;
+}
+
+.theme-btn:hover {
+  background: var(--hover-color);
+}
+
+.theme-btn.active {
+  background: var(--highlight-color);
+}
+
+.theme-icon {
+  width: 18px;
+  height: 18px;
+  filter: invert(1);
+}
+
+/* Small dropdown arrow that opens the full theme list (ui/ThemeManager.js) */
+.theme-menu-toggle {
+  background: none;
+  border: none;
+  border-left: 1px solid var(--panel-border, rgba(255, 255, 255, 0.2));
+  color: var(--panel-fg, #fff);
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 0 40px 40px 0;
 }
 
 .theme-menu-toggle:hover {
   background: var(--hover-color);
-}
-
-.theme-menu-arrow {
-  font-size: 10px;
-  opacity: 0.8;
 }
 
 .theme-menu {

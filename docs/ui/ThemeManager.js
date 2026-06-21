@@ -2,9 +2,17 @@
 //
 // Loads themes/themes.json, always applies the base theme (default.css) plus an
 // optional override file for the selected theme, and drives the 3D scene colors
-// (--scene-bg / --lattice-color, defined in the theme CSS) into three.js. Also
-// builds the theme dropdown in the side panel. To add a theme, drop a CSS file
-// in docs/themes/ and add one entry to themes.json — no JS changes needed.
+// (--scene-bg / --lattice-color, defined in the theme CSS) into three.js.
+//
+// UI: the existing dark/twilight/light icon toggle (.theme-btn) is kept and works
+// as before; a small dropdown arrow (#themeMenuToggle) lists ALL installed themes
+// (including minimal). Selecting dark/twilight/light highlights the matching
+// toggle button; selecting any other theme leaves the toggle un-highlighted.
+//
+// "Docked" themes (e.g. minimal) also pull the floating composition panel
+// (#infoPanel) into the side panel (#ui); other themes restore it to the body.
+//
+// To add a theme: drop a CSS file in docs/themes/ and add one entry to themes.json.
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general } from '../state/store.js';
@@ -12,6 +20,10 @@ import { updateLattice } from '../render/index.js';
 
 const THEMES_DIR = './themes/';
 const STORAGE_KEY = 'theme';
+
+// Floating panels pulled into #ui for docked themes, then restored to <body>.
+const DOCKABLE_IDS = ['infoPanel'];
+const DOCK_THEMES = new Set(['minimal']);
 
 /** @type {{base?:string, themes:{id:string,name:string,css:?string}[]}|null} */
 let manifest = null;
@@ -24,7 +36,6 @@ function ensureBaseLink(baseCss) {
     link.rel = 'stylesheet';
     document.head.appendChild(link);
   }
-  // index.html may already point this at default.css; only set if missing.
   if (!link.getAttribute('href')) link.setAttribute('href', THEMES_DIR + baseCss);
 }
 
@@ -39,9 +50,8 @@ function getActiveLink() {
   return link;
 }
 
-// Read the scene colors the active theme CSS resolved to and push them into the
-// three.js scene + lattice. Exported so the background color-picker can use it
-// to reset the scene background back to the current theme's default.
+// Push the active theme's scene colors into three.js. Exported so the background
+// color-picker can reset the scene background to the current theme default.
 export function applySceneFromCSS() {
   const root = getComputedStyle(document.documentElement);
   const sceneBg = root.getPropertyValue('--scene-bg').trim();
@@ -59,29 +69,48 @@ export function applySceneFromCSS() {
   }
 }
 
+function applyToggleState(id) {
+  // Highlight the matching dark/twilight/light toggle button (or none).
+  document.querySelectorAll('.theme-btn').forEach(btn =>
+    btn.classList.toggle('active', /** @type {HTMLElement} */ (btn).dataset.themeOption === id));
+  document.querySelectorAll('.theme-menu-item').forEach(el =>
+    el.classList.toggle('active', /** @type {HTMLElement} */ (el).dataset.themeId === id));
+}
+
+function applyDocking(id) {
+  const dock = document.getElementById('ui');
+  const docked = DOCK_THEMES.has(id);
+  DOCKABLE_IDS.forEach(elId => {
+    const el = document.getElementById(elId);
+    if (!el || !dock) return;
+    if (docked) {
+      if (el.parentElement !== dock) dock.appendChild(el);
+    } else if (el.parentElement === dock) {
+      document.body.appendChild(el);
+    }
+  });
+}
+
 export function applyTheme(id) {
   if (!manifest) return;
   const theme = manifest.themes.find(t => t.id === id) || manifest.themes[0];
   const link = getActiveLink();
 
   if (theme.css) {
-    // Apply the scene colors only once the override stylesheet has loaded, so
-    // getComputedStyle sees the new --scene-bg / --lattice-color values.
+    // Apply scene colors once the override stylesheet has loaded so
+    // getComputedStyle sees the new --scene-bg / --lattice-color.
     const onLoad = () => { link.removeEventListener('load', onLoad); applySceneFromCSS(); };
     link.addEventListener('load', onLoad);
     link.setAttribute('href', THEMES_DIR + theme.css);
   } else {
-    // Base-only theme (e.g. "light"): drop any override and apply immediately.
     link.removeAttribute('href');
     applySceneFromCSS();
   }
 
-  localStorage.setItem(STORAGE_KEY, id);
-
-  document.querySelectorAll('.theme-menu-item').forEach(el =>
-    el.classList.toggle('active', el.dataset.themeId === id));
-  const label = document.getElementById('themeMenuLabel');
-  if (label) label.textContent = theme.name;
+  localStorage.setItem(STORAGE_KEY, theme.id);
+  document.documentElement.setAttribute('data-theme', theme.id);
+  applyToggleState(theme.id);
+  applyDocking(theme.id);
 }
 
 function resolveInitialTheme() {
@@ -92,24 +121,17 @@ function resolveInitialTheme() {
   return manifest.themes[0].id;
 }
 
-function buildDropdown() {
-  const host = document.getElementById('themeSwitch');
-  if (!host) return;
+function wireThemeControls() {
+  // Existing dark/twilight/light icon toggle.
+  document.querySelectorAll('.theme-btn[data-theme-option]').forEach(btn =>
+    btn.addEventListener('click', () => applyTheme(/** @type {HTMLElement} */ (btn).dataset.themeOption)));
 
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.id = 'themeMenuToggle';
-  toggle.className = 'theme-menu-toggle';
-  toggle.setAttribute('aria-haspopup', 'true');
-  toggle.setAttribute('aria-expanded', 'false');
-  toggle.innerHTML = '<span id="themeMenuLabel">Theme</span><span class="theme-menu-arrow" aria-hidden="true">▾</span>';
+  // Dropdown arrow + menu listing every installed theme.
+  const toggle = document.getElementById('themeMenuToggle');
+  const menu = document.getElementById('themeMenu');
+  if (!toggle || !menu) return;
 
-  const menu = document.createElement('ul');
-  menu.id = 'themeMenu';
-  menu.className = 'theme-menu';
-  menu.setAttribute('role', 'menu');
-  menu.hidden = true;
-
+  menu.replaceChildren();
   manifest.themes.forEach(t => {
     const item = document.createElement('li');
     item.className = 'theme-menu-item';
@@ -133,10 +155,9 @@ function buildDropdown() {
     if (menu.hidden) openMenu(); else closeMenu();
   });
   document.addEventListener('click', (e) => {
-    if (!host.contains(/** @type {Node} */ (e.target))) closeMenu();
+    const sw = document.getElementById('themeSwitch');
+    if (sw && !sw.contains(/** @type {Node} */ (e.target))) closeMenu();
   });
-
-  host.replaceChildren(toggle, menu);
 }
 
 export async function setupThemeSystem() {
@@ -148,6 +169,6 @@ export async function setupThemeSystem() {
     return;
   }
   ensureBaseLink(manifest.base || 'default.css');
-  buildDropdown();
+  wireThemeControls();
   applyTheme(resolveInitialTheme());
 }

@@ -22,3 +22,16 @@
 #panelToolsContainer {
   display: block;
 }
+
+/* The composition/atoms readout (#infoPanel) is reparented into #ui by
+   ThemeManager in docked themes; restyle it to flow inside the panel instead of
+   floating in the lower-right corner. */
+#infoPanel {
+  position: static;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  max-width: none;
+  margin-top: 12px;
+  z-index: auto;
+}
