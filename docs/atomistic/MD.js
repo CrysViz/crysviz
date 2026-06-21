@@ -1,6 +1,7 @@
 import { fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { runPeriodicWrapped } from '../render/index.js';
+import { refreshDocking } from '../ui/ThemeManager.js';
 import { buildNEPStructure } from './relaxer.js';
 import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart, normalizeFractionalPositions } from './math.js';
 import {
@@ -440,6 +441,7 @@ export function createMDMonitorPanel() {
     </div>
   `;
   document.body.appendChild(panel);
+  refreshDocking(); // dock into #ui if a docked theme is active
 
   const header = panel.querySelector('#mdHeader');
   const body = /** @type {HTMLElement} */ (panel.querySelector('#mdBody'));

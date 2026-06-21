@@ -4,6 +4,7 @@ import { createBondLengthControls } from './BondLengthPanel.js';
 import { updateSpins, removeSpins } from '../render/index.js';
 import { updateForces, removeForces } from '../render/index.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
+import { refreshDocking } from './ThemeManager.js';
 
 let trajectoryPlayerElements = {};
 let currentFrame = 0;
@@ -108,6 +109,7 @@ export function addTrajectoryPlayer() {
     </div>
   `;
   document.body.appendChild(trajControlPanel);
+  refreshDocking(); // dock into #ui if a docked theme is active
 
   trajectoryPlayerElements = {
     trajControlPanel,

@@ -132,17 +132,11 @@ font-size: 16px;
 
 /* ---------------------------------------------------------------------------
    In-panel view/measure tools (ui/PanelToolbars.js). Hidden by default; a theme
-   that hides the floating toolbars (e.g. themes/minimal.css) reveals these.
+   that hides the floating toolbars (e.g. themes/docked/theme.css) reveals these.
+   They reuse the floating button markup/classes so they look the same.
    --------------------------------------------------------------------------- */
 #panelToolsContainer {
   display: none;
-}
-
-/* Each tool set (View / Measure) is a grey .control-group; keep its inner
-   heading compact. */
-.panel-tools-group h3 {
-  margin: 0 0 8px 0;
-  font-size: 13px;
 }
 
 .panel-tools-row {
@@ -152,46 +146,56 @@ font-size: 16px;
   gap: 6px;
 }
 
-.panel-tool-btn {
-  min-width: 30px;
-  padding: 4px 8px;
-  font-size: 12px;
-  color: var(--panel-fg, #fff);
-  background: var(--popup-bg, rgba(26, 26, 26, 0.9));
-  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.2));
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.panel-tool-btn:hover {
-  background: var(--hover-color);
-}
-
-.panel-tool-btn.active {
-  background: var(--highlight-color);
-}
-
-/* Measure buttons: icon + label. Icons come from CSS variables so a theme can
-   swap them (see themes/default/theme.css --icon-measure-*). */
-.panel-tool-btn-icon {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.panel-tool-ico {
-  display: inline-block;
-  width: 15px;
-  height: 15px;
+/* Docked measure buttons reuse the global .measure-tool-btn look; their icons
+   come from CSS variables so a theme can swap them (themes/default/theme.css
+   --icon-measure-*). The floating panel uses <img>; here the .tool-icon box
+   carries the icon as a background so the same SVG renders at the same size. */
+.panel-tools-group .tool-icon[data-icon] {
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
-  flex: none;
 }
+.panel-tools-group .tool-icon[data-icon="distance"] { background-image: var(--icon-measure-distance); }
+.panel-tools-group .tool-icon[data-icon="angle"]    { background-image: var(--icon-measure-angle); }
+.panel-tools-group .tool-icon[data-icon="delete"]   { background-image: var(--icon-measure-delete); }
+.panel-tools-group .tool-icon[data-icon="clear"]    { background-image: var(--icon-measure-clear); }
 
-.panel-tool-ico[data-icon="distance"] { background-image: var(--icon-measure-distance); }
-.panel-tool-ico[data-icon="angle"]    { background-image: var(--icon-measure-angle); }
-.panel-tool-ico[data-icon="delete"]   { background-image: var(--icon-measure-delete); }
-.panel-tool-ico[data-icon="clear"]    { background-image: var(--icon-measure-clear); }
+/* Docked view buttons mimic the floating camera tools (whose styling is scoped
+   to #cameraTools). Same look, just reachable inside the panel. */
+.panel-tools-group .camera-tool-btn,
+.panel-tools-group .camera-tool-reset-btn {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 6px 10px;
+  min-width: 32px;
+  min-height: 32px;
+  font-size: 14px;
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.panel-tools-group .camera-tool-btn {
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+}
+.panel-tools-group .camera-tool-reset-btn {
+  background: rgba(240, 132, 18, 0.90);
+  border: 1px solid rgba(250, 132, 18, 1);
+}
+.panel-tools-group .camera-tool-btn:hover {
+  border-color: var(--highlight-color);
+  transform: translateY(-2px);
+}
+.panel-tools-group .camera-tool-reset-btn:hover {
+  border-color: #fff;
+}
+/* Only the .camera-icon letter shows, like the floating buttons. */
+.panel-tools-group .camera-tool-btn span,
+.panel-tools-group .camera-tool-reset-btn span {
+  display: none;
+}
 
 

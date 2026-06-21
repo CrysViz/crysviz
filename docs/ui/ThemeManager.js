@@ -6,11 +6,12 @@
 //
 // UI: the existing dark/twilight/light icon toggle (.theme-btn) is kept and works
 // as before; a small dropdown arrow (#themeMenuToggle) lists ALL installed themes
-// (including minimal). Selecting dark/twilight/light highlights the matching
+// (including "docked"). Selecting dark/twilight/light highlights the matching
 // toggle button; selecting any other theme leaves the toggle un-highlighted.
 //
-// "Docked" themes (e.g. minimal) also pull the floating composition panel
-// (#infoPanel) into the side panel (#ui); other themes restore it to the body.
+// Themes in DOCK_THEMES (e.g. "docked") also pull persistent floating panels
+// (composition, trajectory controls, MD monitor) into #ui; other themes restore
+// them to the body.
 //
 // To add a theme: drop a CSS file in docs/themes/ and add one entry to themes.json.
 
@@ -21,13 +22,21 @@ import { updateLattice } from '../render/index.js';
 const THEMES_DIR = './themes/';
 const STORAGE_KEY = 'theme';
 
-// Floating panels pulled into the side panel for docked themes (placed right
-// after `afterId`), then restored to <body> for other themes.
-const DOCKABLE = [{ id: 'infoPanel', afterId: 'saveButton' }];
-const DOCK_THEMES = new Set(['minimal']);
+// Persistent floating panels pulled into the side panel for docked themes, then
+// restored to <body> for other themes. `afterId` places the panel right after
+// that element; null appends it to the end of #ui. (Modal/transient dialogs —
+// the periodic table, add-atoms/vacuum — are intentionally NOT listed; they stay
+// floating in every theme.)
+const DOCKABLE = [
+  { id: 'infoPanel',        afterId: 'saveButton' }, // composition / atoms readout
+  { id: 'TrajControlPanel', afterId: null },         // trajectory controls
+  { id: 'mdMonitorPanel',   afterId: null },         // MD monitor
+];
+const DOCK_THEMES = new Set(['docked']);
 
 /** @type {{base?:string, themes:{id:string,name:string,css:?string}[]}|null} */
 let manifest = null;
+let currentThemeId = null;
 
 function ensureBaseLink(baseCss) {
   let link = document.getElementById('theme-base');
@@ -80,18 +89,28 @@ function applyToggleState(id) {
 
 function applyDocking(id) {
   const docked = DOCK_THEMES.has(id);
+  const ui = document.getElementById('ui');
   DOCKABLE.forEach(({ id: elId, afterId }) => {
     const el = document.getElementById(elId);
     if (!el) return;
-    if (docked) {
-      const anchor = document.getElementById(afterId);
-      if (anchor && el.previousElementSibling !== anchor) {
-        anchor.insertAdjacentElement('afterend', el);
+    if (docked && ui) {
+      const anchor = afterId ? document.getElementById(afterId) : null;
+      if (anchor) {
+        if (el.previousElementSibling !== anchor) anchor.insertAdjacentElement('afterend', el);
+      } else if (el.parentElement !== ui) {
+        ui.appendChild(el);
       }
     } else if (el.parentElement !== document.body) {
       document.body.appendChild(el);
     }
   });
+}
+
+// Re-run docking for the active theme. Call after creating a dockable panel that
+// did not exist when the theme was applied (e.g. the MD monitor, trajectory
+// controls), so it docks immediately while a docked theme is active.
+export function refreshDocking() {
+  if (currentThemeId) applyDocking(currentThemeId);
 }
 
 export function applyTheme(id) {
@@ -110,6 +129,7 @@ export function applyTheme(id) {
     applySceneFromCSS();
   }
 
+  currentThemeId = theme.id;
   localStorage.setItem(STORAGE_KEY, theme.id);
   document.documentElement.setAttribute('data-theme', theme.id);
   applyToggleState(theme.id);
