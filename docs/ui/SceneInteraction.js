@@ -168,15 +168,16 @@ export function setupSceneInteraction() {
 
   let hit = null;
 
-  // Handle atom hits
+  // Pick the hit object. If both an atom and a bond are under the cursor, the
+  // bond wins because it is assigned last (it overwrites the atom hit here).
+  // Note: this compares first-hit-per-mesh, not true nearest object across the
+  // two meshes, so the chosen hit isn't necessarily the closest to the camera.
   if (atomHits.length > 0) {
     hit = atomHits[0];
   }
-
-  // Handle bond hits
   if (bondHits.length > 0) {
     hit = bondHits[0];
-  }    
+  }
 
 
 

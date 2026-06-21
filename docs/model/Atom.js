@@ -23,6 +23,9 @@ export class Atom extends ColoredObject {
   } = {}) {
     super({ color, defaultColor });
     this.position = position;
+    // NOTE: the `coordination` constructor argument is intentionally ignored
+    // here. Coordination is not known at construction time; it is filled in
+    // later by neighbour/bond analysis, so the field just starts as null.
     this.coordination = null;
     const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
     this.defaultColor = colorScheme[element] || 0x808080;

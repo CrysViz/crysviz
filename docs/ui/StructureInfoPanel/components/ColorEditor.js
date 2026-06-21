@@ -28,7 +28,6 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
   const picker = createColorPicker(currentAtomColors[0], (hex) => {
     const structure = fileBrowser.selectedStructure;
     const parsedHex = parseInt(hex.replace('#', ''), 16);
-    structure.elementColors[el] = parsedHex;
 
     atomIndices.forEach(atomIndex => {
       const atom = structure.atoms[atomIndex];
@@ -178,12 +177,6 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
       updateSingleAtomOpacity(imageIndex, atom.getOpacity());
     });
   });
-
-  // update element default color (for elements mode)
-  const defaultColor = structure.getDefaultElementColors()[el];
-  structure.elementColors[el] = typeof defaultColor === 'number'
-    ? defaultColor
-    : parseInt(defaultColor.replace('#', ''), 16);
 
   updatePieDotCallback();
   applyElementOpacity(1);

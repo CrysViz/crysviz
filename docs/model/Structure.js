@@ -47,6 +47,8 @@ export class Structure {
     // Mutable instance properties
     this.elements = elements;
     this.supercell = supercell;
+    // NOTE: uniqueElements is always derived from `elements`; the
+    // `uniqueElements` constructor argument is intentionally ignored.
     this.uniqueElements = [...new Set(elements)];
     this.lattice = lattice;       // 3×3
     this.atoms = atoms;           // list of atoms
@@ -55,6 +57,11 @@ export class Structure {
     this.forces = forces;         // list of forces
     this.stress = stress;
     this.polyhedra = polyhedra;
+    // NOTE: the bond/atom-image lookup maps are populated later by the bonds/
+    // atoms render-update modules, so they always start empty here and the
+    // matching constructor arguments (bondMapping, bondObjectMapping,
+    // atomImages, bondhalfToAtom) are intentionally ignored. bondhalfToAtom is
+    // not stored on the instance at all until those modules build it.
     this.bondMapping={};
     this.bondObjectMapping={};
     this.bonds = bonds;           // list of bonds
