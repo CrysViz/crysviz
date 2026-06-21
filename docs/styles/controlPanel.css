@@ -103,7 +103,7 @@ font-size: 16px;
   padding: 4px;
   list-style: none;
   min-width: 130px;
-  background: var(--popup-bg, rgba(26, 26, 26, 0.95));
+  background: var(--menu-bg);
   border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.2));
   border-radius: 8px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);

@@ -58,7 +58,7 @@ border: 2px solid rgba(255, 255, 255, 0.1);
   max-width: 360px;
   margin: 0 0 16px 0;
   padding: 20px;
-  background: rgba(42, 42, 42, 0.8);
+  background: var(--group-bg);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);

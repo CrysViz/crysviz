@@ -45,7 +45,7 @@
   z-index: auto;
   /* match the other side-panel groups (.control-group) */
   margin: 0 0 16px 0;
-  background: rgba(42, 42, 42, 0.8);
+  background: var(--group-bg);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);

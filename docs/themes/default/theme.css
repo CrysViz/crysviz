@@ -28,6 +28,8 @@
   --muted-fg: #f9f9f9;               /* secondary text */
   --panel-border: rgba(255, 255, 255, 0.1);
   --panel-blur: 20px;                /* #ui backdrop blur */
+  --group-bg: rgba(42, 42, 42, 0.8); /* .control-group boxes (the grey panels) */
+  --menu-bg: rgba(26, 26, 26, 0.95); /* dropdown menus / near-opaque floaters */
   --popup-bg: rgba(26, 26, 26, 0.9); /* floating popups / pickers */
   --popup-border: rgba(255, 255, 255, 0.3);
   --input-bg: rgba(26, 26, 26, 0.9);
@@ -58,4 +60,40 @@
   --icon-measure-clear:    url('../../data/icons/delete-icon2.svg');
   --icon-measure-restore:  url('../../data/icons/restore-icon.svg');
   /* Delete uses a ❌ glyph (like the floating panel), not an icon image. */
+}
+
+/* ---- Accent palette (changes with the active backend mode) ----------------
+   These classes are toggled on <body> by ui/BackendPanel/BackendTheme.js. A
+   theme can recolor the whole app's accents by redefining these in its own
+   theme.css (which loads after this base, so it wins the cascade). */
+.theme-standard {
+  --bg-color: rgba(6, 70, 50, 0.8);
+  --highlight-color: rgba(6, 140, 50, 1.0);
+  --accent-color: rgba(6, 140, 50, 0.8);
+  --hover-color: rgba(6, 140, 50, 0.3);
+  --border-color: rgba(6, 90, 50, 0.5);
+}
+
+.theme-ase {
+  --bg-color: rgba(81, 0, 0, 0.8);
+  --highlight-color: rgba(159, 52, 52, 1.0);
+  --accent-color: rgba(159, 52, 52, 0.9);
+  --hover-color: rgba(159, 52, 52, 0.3);
+  --border-color: rgba(255, 118, 118, 0.3);
+}
+
+.theme-symmetry {
+  --bg-color: rgba(15, 3, 56, 0.8);
+  --highlight-color: rgba(18, 141, 204, 1.0);
+  --accent-color: rgba(18, 141, 204, 0.8);
+  --hover-color: rgba(18, 141, 204, 0.2);
+  --border-color: rgba(17, 71, 129, 0.5);
+}
+
+.theme-locked-ase {
+  --bg-color: rgba(66, 24, 81, 0.84);
+  --highlight-color: rgba(187, 98, 214, 1.0);
+  --accent-color: rgba(167, 92, 214, 0.9);
+  --hover-color: rgba(187, 98, 214, 0.24);
+  --border-color: rgba(183, 117, 221, 0.5);
 }
