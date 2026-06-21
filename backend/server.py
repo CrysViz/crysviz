@@ -13,8 +13,8 @@ from ase.filters import FrechetCellFilter
 from mace.calculators import mace_mp
 from ase.io import read 
 
-# Vendored MACE-MPA-0 (medium) weights live under docs/external/MACE/.
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "external", "MACE", "mace-mpa-0-medium.model")
+# Vendored MACE-MPA-0 (medium) weights live under backend/external/MACE/.
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "external", "MACE", "mace-mpa-0-medium.model")
 calc = mace_mp(model=MODEL_PATH, dispersion=False, default_dtype="float64", device='cpu')
 from ase import  Atoms
 

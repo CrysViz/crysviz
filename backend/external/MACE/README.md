@@ -1,7 +1,7 @@
 # MACE-MPA-0 (medium) foundation model
 
 Pretrained machine-learned interatomic potential weights used by the optional
-CrysViz compute backend (`docs/backend/server.py`, via `mace_mp(...)`) for
+CrysViz compute backend (`backend/server.py`, via `mace_mp(...)`) for
 structure relaxation / MD.
 
 - File: `mace-mpa-0-medium.model` (~79 MB).
@@ -11,9 +11,9 @@ structure relaxation / MD.
 - License / terms: governed by the upstream MACE model release — **verify the
   current terms upstream before redistributing.**
 
-This is third-party model data, so it lives under `docs/external/`. It is *not*
-part of the static front-end (the GitHub-Pages deploy serves `docs/`, but this
-model is only loaded server-side by the backend).
+This is third-party model data used only by the backend, so it lives under
+`backend/external/` (outside the served `docs/` app) and is never published to
+GitHub Pages — the deploy serves only `docs/`.
 
 > Note: at ~79 MB this is a large binary in git history. It is kept tracked by
 > choice; if repo size becomes a concern, consider Git LFS or fetching it

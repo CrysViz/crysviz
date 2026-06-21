@@ -8,7 +8,7 @@
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
-Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall and Rickard Armiento 
+Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, and Rickard Armiento 
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published
