@@ -48,4 +48,13 @@
   /* ---- 3D scene (read by ThemeManager → three.js) ----------------------- */
   --scene-bg: #ffffff;               /* WebGL canvas clear color */
   --lattice-color: #090a09;          /* unit-cell lines */
+
+  /* ---- Icons (in-panel "docked" measure tools) -------------------------- */
+  /* These default to the app's shared icons. A theme can re-skin them by
+     dropping its own files in themes/<id>/icons/ and overriding these vars
+     (url(...) is resolved relative to that theme's theme.css). */
+  --icon-measure-distance: url('../../data/icons/measure-icon2.svg');
+  --icon-measure-angle:    url('../../data/icons/angle-icon2.svg');
+  --icon-measure-clear:    url('../../data/icons/delete-icon2.svg');
+  --icon-measure-delete:   url('../../data/icons/delete-icon.svg');
 }

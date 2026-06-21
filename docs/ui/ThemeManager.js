@@ -21,8 +21,9 @@ import { updateLattice } from '../render/index.js';
 const THEMES_DIR = './themes/';
 const STORAGE_KEY = 'theme';
 
-// Floating panels pulled into #ui for docked themes, then restored to <body>.
-const DOCKABLE_IDS = ['infoPanel'];
+// Floating panels pulled into the side panel for docked themes (placed right
+// after `afterId`), then restored to <body> for other themes.
+const DOCKABLE = [{ id: 'infoPanel', afterId: 'saveButton' }];
 const DOCK_THEMES = new Set(['minimal']);
 
 /** @type {{base?:string, themes:{id:string,name:string,css:?string}[]}|null} */
@@ -78,14 +79,16 @@ function applyToggleState(id) {
 }
 
 function applyDocking(id) {
-  const dock = document.getElementById('ui');
   const docked = DOCK_THEMES.has(id);
-  DOCKABLE_IDS.forEach(elId => {
+  DOCKABLE.forEach(({ id: elId, afterId }) => {
     const el = document.getElementById(elId);
-    if (!el || !dock) return;
+    if (!el) return;
     if (docked) {
-      if (el.parentElement !== dock) dock.appendChild(el);
-    } else if (el.parentElement === dock) {
+      const anchor = document.getElementById(afterId);
+      if (anchor && el.previousElementSibling !== anchor) {
+        anchor.insertAdjacentElement('afterend', el);
+      }
+    } else if (el.parentElement !== document.body) {
       document.body.appendChild(el);
     }
   });

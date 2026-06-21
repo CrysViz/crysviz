@@ -24,15 +24,22 @@
   display: block;
 }
 
-/* The composition/atoms readout (#infoPanel) is reparented into #ui by
-   ThemeManager in docked themes; restyle it to flow inside the panel instead of
-   floating in the lower-right corner. */
+/* The composition/atoms readout (#infoPanel) is reparented into #ui (just below
+   "Download POSCAR") by ThemeManager in docked themes; restyle it to flow inside
+   the panel as a grey .control-group instead of floating in the lower-right. */
 #infoPanel {
   position: static;
   right: auto;
   bottom: auto;
-  width: 100%;
+  width: auto;
+  min-width: 0;
   max-width: none;
-  margin-top: 12px;
   z-index: auto;
+  /* match the other side-panel groups (.control-group) */
+  margin: 0 0 16px 0;
+  padding: 20px;
+  background: rgba(42, 42, 42, 0.8);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
 }

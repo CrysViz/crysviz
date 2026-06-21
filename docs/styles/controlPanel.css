@@ -138,11 +138,11 @@ font-size: 16px;
   display: none;
 }
 
-.panel-tools-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 10px 0;
+/* Each tool set (View / Measure) is a grey .control-group; keep its inner
+   heading compact. */
+.panel-tools-group h3 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
 }
 
 .panel-tools-row {
@@ -150,12 +150,6 @@ font-size: 16px;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-}
-
-.panel-tools-label {
-  width: 56px;
-  font-size: 12px;
-  color: var(--muted-fg, #ddd);
 }
 
 .panel-tool-btn {
@@ -176,5 +170,28 @@ font-size: 16px;
 .panel-tool-btn.active {
   background: var(--highlight-color);
 }
+
+/* Measure buttons: icon + label. Icons come from CSS variables so a theme can
+   swap them (see themes/default/theme.css --icon-measure-*). */
+.panel-tool-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.panel-tool-ico {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  flex: none;
+}
+
+.panel-tool-ico[data-icon="distance"] { background-image: var(--icon-measure-distance); }
+.panel-tool-ico[data-icon="angle"]    { background-image: var(--icon-measure-angle); }
+.panel-tool-ico[data-icon="delete"]   { background-image: var(--icon-measure-delete); }
+.panel-tool-ico[data-icon="clear"]    { background-image: var(--icon-measure-clear); }
 
 
