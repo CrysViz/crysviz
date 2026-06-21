@@ -1,4 +1,4 @@
-<img src="old/CrysViz_logo_clear_back.png" width="400">
+<img src="docs/data/CrysViz_logo_clear_back.png" width="400">
 
 # CrysViz - Crystal Structure Visualisation & Analysis
 
