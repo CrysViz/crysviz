@@ -39,6 +39,23 @@ export function setupControlsWiring() {
     updateVisualization();
   };
 
+  // Show / hide the a,b,c cell-vector gizmo (#axesGizmo) and its legend
+  // (#axesLegend) together. Uses inline display so it overrides any theme CSS.
+  const applyAxesVisibility = (visible) => {
+    const gizmo = document.getElementById('axesGizmo');
+    const legend = document.getElementById('axesLegend');
+    if (gizmo) gizmo.style.display = visible ? '' : 'none';
+    if (legend) legend.style.display = visible ? '' : 'none';
+  };
+  const showAxesToggle = document.getElementById('showAxes');
+  if (showAxesToggle) {
+    showAxesToggle.onchange = (e) => {
+      general.showAxes = e.target.checked;
+      applyAxesVisibility(general.showAxes);
+    };
+    applyAxesVisibility(general.showAxes); // sync DOM with the default flag
+  }
+
 
   const PBCBondToggle = document.getElementById('PBCBondToggle');
   if (PBCBondToggle) {

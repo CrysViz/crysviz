@@ -5,16 +5,17 @@
    (ui/PanelToolbars.js, the #panelToolsContainer section). When #ui is collapsed
    via the hamburger (.panel-hidden, wired in ui/MobileMenu.js), the existing
    `body.panel-hidden` rules make the view fullscreen — so the hamburger
-   (#mobileMenuToggle) is the only on-screen UI.
+   (#mobileMenuToggle), plus the a,b,c orientation gizmo + legend, are the only
+   on-screen UI.
 
    Inherits the default (light) palette + scene; this theme only changes layout.
    Loaded last in the cascade, so these rules win without !important. */
 
-/* Hide the floating mini-menus / widgets. */
+/* Hide the floating mini-menus / widgets. The a,b,c cell-vector gizmo
+   (#axesGizmo) and its legend (#axesLegend) are kept as orientation aids. */
 #cameraTools,
 #measurementTools,
-#backgroundDot,
-#axesGizmo {
+#backgroundDot {
   display: none;
 }
 

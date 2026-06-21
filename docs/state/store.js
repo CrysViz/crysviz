@@ -102,6 +102,7 @@ export const general = {
   showBonds:true,
   showLattice:true,
   showPolyhedra:false,
+  showAxes:true,
   showSecond:false,
   showSecondBonds:false,
   showComparisonInfo:false,
