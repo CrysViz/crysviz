@@ -317,17 +317,17 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
 AtomColorResetBtn.onclick = () => {
   const structure = fileBrowser.selectedStructure;
-  const currentMode = general.atomsColor; // ✅ Get current color mode
+  const currentMode = general.atomsColor; // current color mode
 
   linkedAtomIndices.forEach((linkedAtomIndex) => {
     const atom = structure.atoms[linkedAtomIndex];
     const element = structure.elements[linkedAtomIndex];
 
-    // ✅ CLEAR USER COLOR FLAG ONLY FOR THESE ATOMS
+    // clear user-color flag only for these atoms
     if (atom.userColor !== undefined) delete atom.userColor;
     if (atom.forceColor !== undefined) delete atom.forceColor;
 
-    // ✅ SET COLOR BASED ON CURRENT MODE
+    // set color based on current mode
     if (currentMode === "force") {
       const forceObj = structure.forces?.[linkedAtomIndex];
       if (forceObj?.vector?.length >= 3) {
@@ -362,7 +362,7 @@ AtomColorResetBtn.onclick = () => {
     });
   });
 
-  // ✅ UPDATE BUTTON TO SHOW RESET COLOR
+  // update button to show reset color
   const resetColor = currentMode === "force"
     ? bondLengthToColor(
         Math.sqrt(

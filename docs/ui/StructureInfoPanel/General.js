@@ -379,10 +379,6 @@ function createSegmentedControl(containerId, includeWyckoff = false) {
 
       // Add active class to the clicked button
       this.classList.add('active');
-
-      // You can add additional logic here to handle mode changes
-      // For example, you might want to call a function to handle the mode change
-      // handleModeChange(selectedMode);
     });
   });
 

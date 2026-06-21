@@ -5,7 +5,6 @@ export class Wyckoff {
     multiplier = null,
     generator =[],
   } = {}) {
-    // Call parent constructor
     this.element = element;
     this.dof= dof;
     this.multiplier = multiplier;

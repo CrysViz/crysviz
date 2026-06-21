@@ -25,14 +25,6 @@ export class Bond {
     this.uuid = uuid; 
     this.color=color;
     this.userColor=[null, null];
-    //if (fileBrowser.selectedStructure.atoms){
-    //  let atoms = fileBrowser.selectedStructure.atoms
-    //  this.color = [atoms[this.srcIndices[0]].color,atoms[this.srcIndices[1]].color];
-    //}
-    //else{
-    //  this.color = this.defaultColor
-    //}
-
 
     // Compute positions, direction, distance
     if (positions.length === 2) {

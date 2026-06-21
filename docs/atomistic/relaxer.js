@@ -14,7 +14,7 @@ function symbolCase(sym) {
   return s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s;
 }
 
-//todo : everything here is implemented elsewhere. WE NEED TO REFACTOR INTO A MATH MODULE
+// TODO: everything here is implemented elsewhere; refactor into a math module.
 
 const EV_A3_TO_GPA = 160.21766208;
 

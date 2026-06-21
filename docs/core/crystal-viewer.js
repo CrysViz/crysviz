@@ -9,10 +9,6 @@
 import { measurements,app,fileBrowser, general} from '../state/store.js';
 import {defaultPOSCAR4} from '../defaults/structure_defaults.js'
 
-
-//this needs to life somewhere else! only for testing
-
-
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupStructureInput } from '../ui/StructureInputModule.js';
 // Side-effect import: AboutPanel wires the "about" trigger at module load.
@@ -49,7 +45,6 @@ import {addCameraPanel} from '../ui/CameraPanel.js'
 import {addColorPanel} from '../ui/ColorPanel.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../render/index.js';
-//import {addAtomPanel} from '../modules/addToStructureModule/addAtomPanel.js'
 
 // .........................................................................................................
 // Import Panels
@@ -66,9 +61,7 @@ import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
 import {addSavePanel} from '../ui/SavePanel.js'
 import {addAnalysisInfoPanel,addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from '../ui/InfoPanel.js'
 
-// .........................................................................................................
-// import utils needs to moce to the "share" functionality. This is currently broken.
-// .........................................................................................................
+// NOTE: share-related import utils still need to move into the "share" module.
 
 
 
@@ -246,25 +239,15 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
         if (structureContainer && structureContainer.structures) initializeUIOnLoad(structureContainer);
     }
 
-  // Ensure the fields exist and are the right typed arrays
-    //
-
-
-
-    //loadColorOverrides();
-    //loadIndividualAtomColors();
-
    document.getElementById('structureControls').style.display = 'block';
    document.getElementById('structureControls2').style.display = 'block';
 
-    //createBondLengthControls();
     createShareButton();
     updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true,reRenderField:true});
     updateControlSpinForcePanel();
     console.warn(fileBrowser.selectedStructure)
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();
-    //resetView();
     clearMeasure();
     resizeRenderer(app.orthographicFrustumSize);
 
@@ -416,7 +399,6 @@ function initUIPanels() {
   addAnalysisInfoPanel();
   addUploadInfoPanel();
   addBackendInfoPanel();
-  //addAtomPanel();
 
   // Add viewport meta tag if not present for proper mobile scaling
   if (!document.querySelector('meta[name="viewport"]')) {

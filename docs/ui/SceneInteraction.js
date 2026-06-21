@@ -171,13 +171,11 @@ export function setupSceneInteraction() {
   // Handle atom hits
   if (atomHits.length > 0) {
     hit = atomHits[0];
-    // You can now use hit.instanceId to identify the specific atom
   }
 
-  // Handle atom hits
+  // Handle bond hits
   if (bondHits.length > 0) {
     hit = bondHits[0];
-    // You can now use hit.instanceId to identify the specific atom
   }    
 
 

@@ -7,8 +7,6 @@ export const periodic ={
   hash:null
 }
 
-//export const allAtoms=[]
-
 export const usedIDs = new Set();
 
 export const fileBrowser = { 
@@ -44,8 +42,6 @@ export const measurements ={
 };
 
 
-//export const spinsData = [];
-
 export const app = {
   clock:null,
   angularVelocity:null,
@@ -65,10 +61,7 @@ export const app = {
 
 export const groups = {
   polyhedraGroup:null,
- // bondsGroup:null,
- // atomsGroup:null,
   latticeGroup:null,
- // spinGroup:null,
   atomsMesh: null,
   bondsMesh: null,
   forcesShaftMesh: null,
@@ -94,10 +87,6 @@ export const general = {
   currentLatticeColor:null,
   defaultBackgroundColor:null,
   useDefaultColors:true,
-  //defaultSpinColor:'#ff3366',
-  //defaultSpinLength:1.0,
-  //spinCoordSpace:'cart',
-  //spinTextInput:'',
   bondLengths:{},
   defaultBondLengths:{},
   bondVisibility:{},

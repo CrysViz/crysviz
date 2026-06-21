@@ -134,17 +134,17 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
 
   resetBtn.onclick = () => {
   const structure = fileBrowser.selectedStructure;
-  const currentMode = general.atomsColor; // ✅ Get current color mode
+  const currentMode = general.atomsColor; // current color mode
 
   atomIndices.forEach((atomIndex) => {
     const atom = structure.atoms[atomIndex];
     const element = structure.elements[atomIndex];
 
-    // ✅ CLEAR USER COLOR FLAG ONLY FOR THESE ATOMS
+    // clear user-color flag only for these atoms
     if (atom.userColor !== undefined) delete atom.userColor;
     if (atom.forceColor !== undefined) delete atom.forceColor;
 
-    // ✅ SET COLOR BASED ON CURRENT MODE
+    // set color based on current mode
     if (currentMode === "force") {
       // For force mode: calculate force-based color
       const forceObj = structure.forces?.[atomIndex];
@@ -179,7 +179,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     });
   });
 
-  // ✅ UPDATE ELEMENT DEFAULT COLOR (for elements mode)
+  // update element default color (for elements mode)
   const defaultColor = structure.getDefaultElementColors()[el];
   structure.elementColors[el] = typeof defaultColor === 'number'
     ? defaultColor

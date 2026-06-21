@@ -61,13 +61,9 @@ export class Structure {
     this.periodic = periodic;     // Initialize periodic
     this.atomImages = {};
     this.planes = planes;
-
-    // Calculate periodic wrapped positions for atoms in-place
-
-    // Build bond objects if not provided
-    this.bonds = bonds
     this.volumetricFields = volumetricFields;
-        // Create an immutable snapshot of the original data
+
+    // Create an immutable snapshot of the original data
     this.original = deepFreeze({
       elements: [...elements],
       supercell: { ...supercell },
