@@ -85,19 +85,35 @@ export function updatePieDot(canvas, colors) {
   const center = size / 2;
   const radius = center;
   const normalizedColors = Array.isArray(colors) && colors.length ? colors : ['#808080'];
-  const slice = (2 * Math.PI) / normalizedColors.length;
 
   ctx.clearRect(0, 0, size, size);
-  normalizedColors.forEach((color, i) => {
-    const start = i * slice;
-    const end = start + slice;
+
+  // Most atoms of an element share a single color, so draw one wedge per
+  // *unique* color (angle proportional to its count) rather than one sub-pixel
+  // slice per atom. For the common single-color case this is one fill instead
+  // of thousands, which matters for large structures.
+  const counts = new Map();
+  for (const c of normalizedColors) counts.set(c, (counts.get(c) || 0) + 1);
+
+  if (counts.size === 1) {
     ctx.beginPath();
-    ctx.moveTo(center, center);
-    ctx.arc(center, center, radius, start, end);
-    ctx.closePath();
-    ctx.fillStyle = color;
+    ctx.arc(center, center, radius, 0, 2 * Math.PI);
+    ctx.fillStyle = normalizedColors[0];
     ctx.fill();
-  });
+  } else {
+    const total = normalizedColors.length;
+    let start = 0;
+    for (const [color, count] of counts) {
+      const end = start + (2 * Math.PI * count) / total;
+      ctx.beginPath();
+      ctx.moveTo(center, center);
+      ctx.arc(center, center, radius, start, end);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+      start = end;
+    }
+  }
   canvas._colors = normalizedColors;
 }
 
