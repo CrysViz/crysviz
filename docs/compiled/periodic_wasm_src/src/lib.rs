@@ -188,9 +188,14 @@ pub fn periodic_wrapped(
             .fold(0.0_f64, f64::max);
 
         if max_cutoff > 1e-6 {
-            let a = Vec3::new(lattice.data[0][0], lattice.data[0][1], lattice.data[0][2]);
-            let b = Vec3::new(lattice.data[1][0], lattice.data[1][1], lattice.data[1][2]);
-            let c = Vec3::new(lattice.data[2][0], lattice.data[2][1], lattice.data[2][2]);
+            // NOTE: `lattice` here is Lᵀ — periodicWasm.js sends the lattice
+            // transposed so `mul_vec` yields correct Cartesian coords. The real
+            // lattice vectors a/b/c are therefore the *columns* of `lattice.data`,
+            // not its rows. (The JS reference uses the untransposed rows directly.)
+            let real = lattice.transpose();
+            let a = Vec3::new(real.data[0][0], real.data[0][1], real.data[0][2]);
+            let b = Vec3::new(real.data[1][0], real.data[1][1], real.data[1][2]);
+            let c = Vec3::new(real.data[2][0], real.data[2][1], real.data[2][2]);
 
             let ax = (max_cutoff / a.norm().max(1e-6)).ceil().clamp(1.0, 2.0) as i32;
             let by = (max_cutoff / b.norm().max(1e-6)).ceil().clamp(1.0, 2.0) as i32;
