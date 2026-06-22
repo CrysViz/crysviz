@@ -114,7 +114,7 @@ export const general = {
   periodicFaceTol:1e-3,
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
   useWasmMath:true, // Use compiled WASM for selected math kernels (false = pure JS fallback)
-  useWasmPeriodic:false, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
+  useWasmPeriodic:true, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
   backendViewerUpdateStride:4, // Update the viewer every N backend/NEP steps during relax/MD
   playerModeState: "none", 
   spinForceState: "none",

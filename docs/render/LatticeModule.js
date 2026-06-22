@@ -229,32 +229,6 @@ function periodicWrappedJS(general, frac, elements, lattice) {
   };
 }
 
-async function workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice, faceTol) {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(
-       new URL('../utils/wrapWorker.js', import.meta.url),
-       { type: 'module' }
-    );
-    worker.onmessage = (e) => {
-      if (e.data.error) {
-        reject(new Error(e.data.error));
-      } else {
-        resolve(e.data);
-      }
-      worker.terminate();
-    };
-
-    worker.onerror = (e) => {
-      console.error("Worker reports error:", e);
-      reject(e);
-      worker.terminate();
-    };
-    worker.postMessage({ functionName: "periodicWrapped", args: [frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice, faceTol] });
-  });
-}
-
-
-
 export function runPeriodicWrapped(periodic, frac, elements,lattice) {
 
     let bondLenghts = general.bondLengths
@@ -273,30 +247,11 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
     ]);
     let inputHash = hashInput(map)
 
-    console.warn("hashes",inputHash,periodic.hash)
-    let result = null
     if (periodic.hash != inputHash){
-      if(1==1){ //#(periodic.hash==="None") {
-        console.warn("Calling sync periodicWrapped")
-        result = periodicWrapped({ ...general, showPBCBonds }, frac, elements,lattice)
-        periodic.wrapped = result
-      }
-      else{
-        try {
-          result = workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice, faceTol);
-          periodic.wrapped = result
-        } catch (error) {
-          console.error('Error in worker:', error);
-          throw error;
-        }
-      }
+      periodic.wrapped = periodicWrapped({ ...general, showPBCBonds }, frac, elements,lattice)
       periodic.hash = inputHash
-      periodic.wrapped = result
-      return periodic
     }
-    else{
-      return periodic
-    }
+    return periodic
 }
 
 
