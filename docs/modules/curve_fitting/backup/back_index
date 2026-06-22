@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Birch-Murnaghan EOS Fitter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        h1, h2, h3 { color: #ffffff; }
+        #unit-controls {
+            margin: 15px 0;
+            padding: 15px;
+            background-color: #1e1e1e;
+            border-radius: 8px;
+            display: block;
+        }
+        #drop-zone {
+            border: 2px dashed #444;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            background-color: #1e1e1e;
+            cursor: pointer;
+            color: #aaaaaa;
+        }
+        #drop-zone.highlight {
+            border-color: #00bcd4;
+            background-color: #2a2a2a;
+        }
+        #results, #plots {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #1e1e1e;
+            border-radius: 8px;
+            display: none;
+        }
+        .plot-container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .plot-wrapper {
+            flex: 1;
+            min-width: 450px;
+            position: relative;
+        }
+        canvas {
+            background: #121212;
+            border: 1px solid #444;
+            border-radius: 4px;
+            cursor: crosshair;
+            max-width: 100%;
+        }
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .result-table th, .result-table td {
+            border: 1px solid #444;
+            padding: 8px;
+            text-align: left;
+            color: #e0e0e0;
+        }
+        .result-table th {
+            background-color: #2d2d2d;
+        }
+        .status, .fit-stats, .column-info {
+            margin-top: 10px;
+            color: #aaaaaa;
+            font-size: 0.9em;
+        }
+        .fit-stats, .column-info {
+            padding: 10px;
+            background-color: #2d2d2d;
+            border-radius: 5px;
+        }
+        .selection-rect {
+            position: absolute;
+            border: 1px dashed #ffffff;
+            background-color: rgba(255, 255, 255, 0.2);
+            pointer-events: none;
+            display: none;
+        }
+        select {
+            background: #2d2d2d;
+            color: #e0e0e0;
+            border: 1px solid #444;
+        }
+        label {
+            color: #e0e0e0;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Birch-Murnaghan EOS Fitter</h1>
+    <p>Drop a file with any columns. The tool will automatically detect:</p>
+    <p><code>Pressure</code>, <code>Energy</code>, <code>Volume</code></p>
+
+    <div id="unit-controls">
+        <h3 style="margin-top: 0;">Unit Settings (Select your INPUT units)</h3>
+        <div style="display: flex; gap: 20px; margin-top: 10px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <label for="energy-units">Energy:</label>
+                <select id="energy-units">
+                    <option value="eV">eV</option>
+                    <option value="Ry">Ry</option>
+                </select>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <label for="pressure-units">Pressure:</label>
+                <select id="pressure-units">
+                    <option value="GPa">GPa</option>
+                    <option value="kBar">kBar</option>
+                </select>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <label for="volume-units">Volume:</label>
+                <select id="volume-units">
+                    <option value="Å³">Å³</option>
+                    <option value="Bohr³">Bohr³</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div id="drop-zone">
+        <p>Drag & drop your file here, or click to select</p>
+        <input type="file" id="file-input" accept=".txt,.dat,.csv" style="display: none;">
+    </div>
+    <div id="status"></div>
+    <div id="column-info"></div>
+
+    <div id="results">
+        <h2>Fitting Results</h2>
+
+        <h3>P-V Fit (Birch-Murnaghan EOS)</h3>
+        <table class="result-table">
+            <tr><th>Parameter</th><th>Value (SI)</th><th>Value (Selected Units)</th></tr>
+            <tr><td>V₀</td><td id="pv-V0-SI"></td><td id="pv-V0"></td></tr>
+            <tr><td>K₀</td><td id="pv-K0-SI"></td><td id="pv-K0"></td></tr>
+            <tr><td>K₀′</td><td id="pv-K0Prime-SI"></td><td id="pv-K0Prime"></td></tr>
+        </table>
+        <div class="fit-stats">
+            <strong>Fit Statistics:</strong><br>
+            RMS Error: <span id="pv-rms"></span><br>
+            Max Residual: <span id="pv-maxres"></span><br>
+            Points: <span id="pv-points"></span>
+        </div>
+
+        <h3>E-V Fit (Birch-Murnaghan EOS)</h3>
+        <table class="result-table">
+            <tr><th>Parameter</th><th>Value (SI)</th><th>Value (Selected Units)</th></tr>
+            <tr><td>E₀</td><td id="ev-E0-SI"></td><td id="ev-E0"></td></tr>
+            <tr><td>V₀</td><td id="ev-V0-SI"></td><td id="ev-V0"></td></tr>
+            <tr><td>K₀</td><td id="ev-K0-SI"></td><td id="ev-K0"></td></tr>
+            <tr><td>K₀′</td><td id="ev-K0Prime-SI"></td><td id="ev-K0Prime"></td></tr>
+        </table>
+        <div class="fit-stats">
+            <strong>Fit Statistics:</strong><br>
+            RMS Error: <span id="ev-rms"></span><br>
+            Max Residual: <span id="ev-maxres"></span><br>
+            Points: <span id="ev-points"></span>
+        </div>
+    </div>
+
+    <div id="plots">
+        <div class="plot-container">
+            <div class="plot-wrapper">
+                <h3>E vs V</h3>
+                <canvas id="ev-plot" width="900" height="800" style="width: 450px; height: 400px;"></canvas>
+                <div class="selection-rect" id="ev-plot-selection"></div>
+            </div>
+            <div class="plot-wrapper">
+                <h3>P vs V</h3>
+                <canvas id="pv-plot" width="900" height="800" style="width: 450px; height: 400px;"></canvas>
+                <div class="selection-rect" id="pv-plot-selection"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="fit.js"></script>
+    <script src="plot.js"></script>
+    <script>
+        // =============================================
+        // UNIT CONTROLS
+        // =============================================
+        window.initUnitControls = function() {
+            document.getElementById('energy-units').value = window.unitSettings.energy;
+            document.getElementById('pressure-units').value = window.unitSettings.pressure;
+            document.getElementById('volume-units').value = window.unitSettings.volume;
+            window.updateUnits();
+        };
+
+        // Initialize plot states for zoom/selection
+        window.plotStates = {
+            'ev-plot': { original: null, current: { xMin: null, xMax: null, yMin: null, yMax: null } },
+            'pv-plot': { original: null, current: { xMin: null, xMax: null, yMin: null, yMax: null } }
+        };
+
+        // Store original data for reprocessing
+        window.globalData = null;
+
+        // Reprocess data when units change
+        window.reprocessData = function() {
+            if (!window.globalData || !window.globalData.originalColumnData) return;
+
+            const columnData = window.globalData.originalColumnData;
+            window.updateUnits();
+
+            // Get current unit selections from dropdowns
+            const selectedVolUnit = document.getElementById('volume-units').value;
+            const selectedEnergyUnit = document.getElementById('energy-units').value;
+            const selectedPressureUnit = document.getElementById('pressure-units').value;
+
+            // Convert to SI units (Å³, GPa, eV) for internal processing
+            const volumes_SI = columnData.volumes.map(d => {
+                return selectedVolUnit === 'Bohr³' ? d * 0.1481847124 : d;
+            });
+            const energies_SI = columnData.energies.map(d => {
+                return selectedEnergyUnit === 'Ry' ? d * 13.605693 : d;
+            });
+            const pressures_SI = columnData.pressures.map(d => {
+                return selectedPressureUnit === 'kBar' ? d * 0.1 : d;
+            });
+
+            // Sort data by volume
+            const combinedData = volumes_SI.map((v, i) => ({
+                volume: v,
+                energy: energies_SI[i],
+                pressure: pressures_SI[i]
+            }));
+            combinedData.sort((a, b) => a.volume - b.volume);
+            const sortedVolumes = combinedData.map(d => d.volume);
+            const sortedEnergies = combinedData.map(d => d.energy);
+            const sortedPressures = combinedData.map(d => d.pressure);
+
+            // Re-fit with SI units
+            const minEnergy = Math.min(...sortedEnergies);
+            const minEnergyIndex = sortedEnergies.indexOf(minEnergy);
+            const evV0 = sortedVolumes[minEnergyIndex];
+
+            let minPressure = Infinity, pvV0Index = 0;
+            for (let i = 0; i < sortedPressures.length; i++) {
+                if (Math.abs(sortedPressures[i]) < Math.abs(minPressure)) {
+                    minPressure = sortedPressures[i];
+                    pvV0Index = i;
+                }
+            }
+            const pvV0 = sortedVolumes[pvV0Index];
+
+            const v0Offset = 1e-10 * Math.max(pvV0, evV0);
+            const pvV0Initial = pvV0 + v0Offset;
+            const evV0Initial = evV0 - v0Offset;
+            const pvK0Estimate = window.estimateK0FromPV(sortedVolumes, sortedPressures).k0 || 300;
+
+            const pvResult = window.levenbergMarquardt(
+                sortedVolumes, sortedPressures, window.birchMurnaghanPressure,
+                [pvV0Initial, pvK0Estimate, 4.0], 5000
+            );
+
+            const evResult = window.levenbergMarquardt(
+                sortedVolumes, sortedEnergies, window.birchMurnaghanEnergy,
+                [minEnergy, pvResult.params[0], pvResult.params[1], pvResult.params[2]],
+                5000, window.penaltyK0Prime
+            );
+
+            // Update global data with plot.js expected names
+            window.globalData = {
+                originalColumnData: columnData,
+                volumes_A3: sortedVolumes,
+                energies_eV: sortedEnergies,
+                pressures_GPa: sortedPressures,
+                pvResult: pvResult,
+                evResult: evResult,
+                minEnergy: minEnergy
+            };
+
+            // Display P-V results (SI and user units)
+            const pvV0_SI = pvResult.params[0];
+            const pvK0_SI = pvResult.params[1];
+            document.getElementById('pv-V0-SI').textContent = `${pvV0_SI.toFixed(10)} Å³`;
+            document.getElementById('pv-K0-SI').textContent = `${pvK0_SI.toFixed(10)} GPa`;
+            document.getElementById('pv-K0Prime-SI').textContent = window.formatParam(pvResult.params[2], pvResult.errors?.[2]);
+
+            document.getElementById('pv-V0').textContent = window.formatParam(
+                pvV0_SI / (selectedVolUnit === 'Bohr³' ? 0.1481847124 : 1),
+                pvResult.errors?.[0] / (selectedVolUnit === 'Bohr³' ? 0.1481847124 : 1)
+            ) + ` ${selectedVolUnit}`;
+            document.getElementById('pv-K0').textContent = window.formatParam(
+                pvK0_SI / (selectedPressureUnit === 'kBar' ? 10 : 1),
+                pvResult.errors?.[1] / (selectedPressureUnit === 'kBar' ? 10 : 1)
+            ) + ` ${selectedPressureUnit}`;
+            document.getElementById('pv-K0Prime').textContent = window.formatParam(pvResult.params[2], pvResult.errors?.[2]);
+            document.getElementById('pv-rms').textContent = (pvResult.fitStats.rms / (selectedPressureUnit === 'kBar' ? 10 : 1)).toFixed(10) + ` ${selectedPressureUnit}`;
+            document.getElementById('pv-maxres').textContent = (pvResult.fitStats.maxRes / (selectedPressureUnit === 'kBar' ? 10 : 1)).toFixed(10) + ` ${selectedPressureUnit}`;
+            document.getElementById('pv-points').textContent = pvResult.fitStats.nPoints;
+
+            // Display E-V results (SI and user units)
+            const evE0_SI = evResult.params[0] + minEnergy;
+            const evV0_SI = evResult.params[1];
+            const evK0_SI = evResult.params[2];
+            document.getElementById('ev-E0-SI').textContent = `${evE0_SI.toFixed(10)} eV`;
+            document.getElementById('ev-V0-SI').textContent = `${evV0_SI.toFixed(10)} Å³`;
+            document.getElementById('ev-K0-SI').textContent = `${evK0_SI.toFixed(10)} GPa`;
+            document.getElementById('ev-K0Prime-SI').textContent = window.formatParam(evResult.params[3], evResult.errors?.[3]);
+
+            document.getElementById('ev-E0').textContent = window.formatParam(
+                evE0_SI / (selectedEnergyUnit === 'Ry' ? 13.605693 : 1),
+                evResult.errors?.[0] / (selectedEnergyUnit === 'Ry' ? 13.605693 : 1)
+            ) + ` ${selectedEnergyUnit}`;
+            document.getElementById('ev-V0').textContent = window.formatParam(
+                evV0_SI / (selectedVolUnit === 'Bohr³' ? 0.1481847124 : 1),
+                evResult.errors?.[1] / (selectedVolUnit === 'Bohr³' ? 0.1481847124 : 1)
+            ) + ` ${selectedVolUnit}`;
+            document.getElementById('ev-K0').textContent = window.formatParam(
+                evK0_SI / (selectedPressureUnit === 'kBar' ? 10 : 1),
+                evResult.errors?.[2] / (selectedPressureUnit === 'kBar' ? 10 : 1)
+            ) + ` ${selectedPressureUnit}`;
+            document.getElementById('ev-K0Prime').textContent = window.formatParam(evResult.params[3], evResult.errors?.[3]);
+            document.getElementById('ev-rms').textContent = (evResult.fitStats.rms / (selectedEnergyUnit === 'Ry' ? 13.605693 : 1)).toFixed(10) + ` ${selectedEnergyUnit}`;
+            document.getElementById('ev-maxres').textContent = (evResult.fitStats.maxRes / (selectedEnergyUnit === 'Ry' ? 13.605693 : 1)).toFixed(10) + ` ${selectedEnergyUnit}`;
+            document.getElementById('ev-points').textContent = evResult.fitStats.nPoints;
+
+            // Redraw plots (with safety check)
+            if (typeof window.redrawPlot === 'function') {
+                window.redrawPlot('ev-plot');
+                window.redrawPlot('pv-plot');
+            } else {
+                console.error('plot.js not loaded or redrawPlot function not found');
+            }
+        };
+
+        window.addEventListener('DOMContentLoaded', function() {
+            window.updateUnits();
+            window.initUnitControls();
+
+            // Add event listeners for unit changes
+            document.getElementById('energy-units').addEventListener('change', window.reprocessData);
+            document.getElementById('pressure-units').addEventListener('change', window.reprocessData);
+            document.getElementById('volume-units').addEventListener('change', window.reprocessData);
+
+            const dropZone = document.getElementById('drop-zone');
+            const fileInput = document.getElementById('file-input');
+            const resultsDiv = document.getElementById('results');
+            const plotsDiv = document.getElementById('plots');
+            const statusDiv = document.getElementById('status');
+            const columnInfoDiv = document.getElementById('column-info');
+
+            dropZone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                dropZone.classList.add('highlight');
+            });
+
+            dropZone.addEventListener('dragleave', function() {
+                dropZone.classList.remove('highlight');
+            });
+
+            dropZone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                dropZone.classList.remove('highlight');
+                if (e.dataTransfer.files.length) {
+                    handleFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            dropZone.addEventListener('click', function() {
+                fileInput.click();
+            });
+
+            fileInput.addEventListener('change', function() {
+                if (fileInput.files.length) {
+                    handleFile(fileInput.files[0]);
+                }
+            });
+
+            function handleFile(file) {
+                window.updateUnits();
+                statusDiv.textContent = "Processing...";
+                resultsDiv.style.display = 'none';
+                plotsDiv.style.display = 'none';
+                columnInfoDiv.innerHTML = '';
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const content = e.target.result;
+                        const lines = content.trim().split('\n').filter(line => line.trim() !== '');
+
+                        const columnData = window.detectColumns(lines);
+
+                        const columnInfoText = document.createElement('div');
+                        columnInfoText.className = 'column-info';
+                        columnInfoText.innerHTML = `
+                            <strong>Detected Columns:</strong><br>
+                            Pressure: Column ${columnData.columnInfo.p + 1} ${columnData.columnInfo.hasHeaders ? `("${columnData.columnInfo.headers[columnData.columnInfo.p]}")` : ''}<br>
+                            Energy: Column ${columnData.columnInfo.e + 1} ${columnData.columnInfo.hasHeaders ? `("${columnData.columnInfo.headers[columnData.columnInfo.e]}")` : ''}<br>
+                            Volume: Column ${columnData.columnInfo.v + 1} ${columnData.columnInfo.hasHeaders ? `("${columnData.columnInfo.headers[columnData.columnInfo.v]}")` : ''}<br>
+                            Total columns: ${columnData.columnInfo.headers.length}
+                        `;
+                        columnInfoDiv.appendChild(columnInfoText);
+
+                        // Get current unit selections from dropdowns
+                        const selectedVolUnit = document.getElementById('volume-units').value;
+                        const selectedEnergyUnit = document.getElementById('energy-units').value;
+                        const selectedPressureUnit = document.getElementById('pressure-units').value;
+
+                        // Convert to SI units (Å³, GPa, eV) for internal processing
+                        const volumes_SI = columnData.volumes.map(d => {
+                            return selectedVolUnit === 'Bohr³' ? d * 0.1481847124 : d;
+                        });
+                        const energies_SI = columnData.energies.map(d => {
+                            return selectedEnergyUnit === 'Ry' ? d * 13.605693 : d;
+                        });
+                        const pressures_SI = columnData.pressures.map(d => {
+                            return selectedPressureUnit === 'kBar' ? d * 0.1 : d;
+                        });
+
+                        // Sort data by volume
+                        const combinedData = volumes_SI.map((v, i) => ({
+                            volume: v,
+                            energy: energies_SI[i],
+                            pressure: pressures_SI[i]
+                        }));
+                        combinedData.sort((a, b) => a.volume - b.volume);
+                        const sortedVolumes = combinedData.map(d => d.volume);
+                        const sortedEnergies = combinedData.map(d => d.energy);
+                        const sortedPressures = combinedData.map(d => d.pressure);
+
+                        // Find V0 from sorted data
+                        const minEnergy = Math.min(...sortedEnergies);
+                        const minEnergyIndex = sortedEnergies.indexOf(minEnergy);
+                        const evV0 = sortedVolumes[minEnergyIndex];
+
+                        // Find V0 for P-V fit (volume at min pressure)
+                        let minPressure = Infinity, pvV0Index = 0;
+                        for (let i = 0; i < sortedPressures.length; i++) {
+                            if (Math.abs(sortedPressures[i]) < Math.abs(minPressure)) {
+                                minPressure = sortedPressures[i];
+                                pvV0Index = i;
+                            }
+                        }
+                        const pvV0 = sortedVolumes[pvV0Index];
+
+                        // Add tiny offsets to ensure distinct V0
+                        const v0Offset = 1e-10 * Math.max(pvV0, evV0);
+                        const pvV0Initial = pvV0 + v0Offset;
+                        const evV0Initial = evV0 - v0Offset;
+
+                        // Estimate K0 for P-V fit
+                        const pvK0Estimate = window.estimateK0FromPV(sortedVolumes, sortedPressures).k0 || 300;
+
+                        statusDiv.textContent = "Fitting P-V data...";
+                        const pvResult = window.levenbergMarquardt(
+                            sortedVolumes,
+                            sortedPressures,
+                            window.birchMurnaghanPressure,
+                            [pvV0Initial, pvK0Estimate, 4.0],
+                            5000
+                        );
+
+                        // Fit E-V with absolute energies
+                        statusDiv.textContent = "Fitting E-V data...";
+                        const evResult = window.levenbergMarquardt(
+                            sortedVolumes,
+                            sortedEnergies,
+                            window.birchMurnaghanEnergy,
+                            [minEnergy, pvResult.params[0], pvResult.params[1], pvResult.params[2]],
+                            5000,
+                            window.penaltyK0Prime
+                        );
+
+                        // Store data for plot.js and reprocessing
+                        window.globalData = {
+                            originalColumnData: columnData,
+                            volumes_A3: sortedVolumes,
+                            energies_eV: sortedEnergies,
+                            pressures_GPa: sortedPressures,
+                            pvResult: pvResult,
+                            evResult: evResult,
+                            minEnergy: minEnergy
+                        };
+
+                        // Display P-V results (SI and user units)
+                        const pvV0_SI = pvResult.params[0];
+                        const pvK0_SI = pvResult.params[1];
+                        document.getElementById('pv-V0-SI').textContent = `${pvV0_SI.toFixed(10)} Å³`;
+                        document.getElementById('pv-K0-SI').textContent = `${pvK0_SI.toFixed(10)} GPa`;
+                        document.getElementById('pv-K0Prime-SI').textContent = window.formatParam(pvResult.params[2], pvResult.errors?.[2]);
+
+                        document.getElementById('pv-V0').textContent = window.formatParam(
+                            pvV0_SI / (selectedVolUnit === 'Bohr³' ? 0.1481847124 : 1),
+                            pvResult.errors?.[0] / (selectedVolUnit === 'Bohr³' ? 0.1481847124 : 1)
+                        ) + ` ${selectedVolUnit}`;
+                        document.getElementById('pv-K0').textContent = window.formatParam(
+                            pvK0_SI / (selectedPressureUnit === 'kBar' ? 10 : 1),
+                            pvResult.errors?.[1] / (selectedPressureUnit === 'kBar' ? 10 : 1)
+                        ) + ` ${selectedPressureUnit}`;
+                        document.getElementById('pv-K0Prime').textContent = window.formatParam(pvResult.params[2], pvResult.errors?.[2]);
+                        document.getElementById('pv-rms').textContent = (pvResult.fitStats.rms / (selectedPressureUnit === 'kBar' ? 10 : 1)).toFixed(10) + ` ${selectedPressureUnit}`;
+                        document.getElementById('pv-maxres').textContent = (pvResult.fitStats.maxRes / (selectedPressureUnit === 'kBar' ? 10 : 1)).toFixed(10) + ` ${selectedPressureUnit}`;
+                        document.getElementById('pv-points').textContent = pvResult.fitStats.nPoints;
+
+                        // Display E-V results (SI and user units)
+                        const evE0_SI = evResult.params[0] + minEnergy;
+                        const evV0_SI = evResult.params[1];
+                        const evK0_SI = evResult.params[2];
+                        document.getElementById('ev-E0-SI').textContent = `${evE0_SI.toFixed(10)} eV`;
+                        document.getElementById('ev-V0-SI').textContent = `${evV0_SI.toFixed(10)} Å³`;
+                        document.getElementById('ev-K0-SI').textContent = `${evK0_SI.toFixed(10)} GPa`;
+                        document.getElementById('ev-K0Prime-SI').textContent = window.formatParam(evResult.params[3], evResult.errors?.[3]);
+
+                        document.getElementById('ev-E0').textContent = window.formatParam(
+                            evE0_SI / (selectedEnergyUnit === 'Ry' ? 13.605693 : 1),
+                            evResult.errors?.[0] / (selectedEnergyUnit === 'Ry' ? 13.605693 : 1)
+                        ) + ` ${selectedEnergyUnit}`;
+                        document.getElementById('ev-V0').textContent = window.formatParam(
+                            evV0_SI / (selectedVolUnit === 'Bohr³' ? 0.1481847124 : 1),
+                            evResult.errors?.[1] / (selectedVolUnit === 'Bohr³' ? 0.1481847124 : 1)
+                        ) + ` ${selectedVolUnit}`;
+                        document.getElementById('ev-K0').textContent = window.formatParam(
+                            evK0_SI / (selectedPressureUnit === 'kBar' ? 10 : 1),
+                            evResult.errors?.[2] / (selectedPressureUnit === 'kBar' ? 10 : 1)
+                        ) + ` ${selectedPressureUnit}`;
+                        document.getElementById('ev-K0Prime').textContent = window.formatParam(evResult.params[3], evResult.errors?.[3]);
+                        document.getElementById('ev-rms').textContent = (evResult.fitStats.rms / (selectedEnergyUnit === 'Ry' ? 13.605693 : 1)).toFixed(10) + ` ${selectedEnergyUnit}`;
+                        document.getElementById('ev-maxres').textContent = (evResult.fitStats.maxRes / (selectedEnergyUnit === 'Ry' ? 13.605693 : 1)).toFixed(10) + ` ${selectedEnergyUnit}`;
+                        document.getElementById('ev-points').textContent = evResult.fitStats.nPoints;
+
+                        // Redraw plots (with safety check)
+                        if (typeof window.redrawPlot === 'function') {
+                            window.redrawPlot('ev-plot');
+                            window.redrawPlot('pv-plot');
+                        } else {
+                            console.error('plot.js not loaded or redrawPlot function not found');
+                        }
+
+                        statusDiv.textContent = "Fitting completed!";
+                        resultsDiv.style.display = 'block';
+                        plotsDiv.style.display = 'block';
+
+                    } catch (error) {
+                        statusDiv.textContent = "Error: " + error.message;
+                        console.error(error);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Birch-Murnaghan EOS Fitter</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Birch-Murnaghan EOS Fitter</h1>
+    <p>Drop a file with any columns. The tool will automatically detect:</p>
+    <p><code>Pressure</code> (kBar), <code>Energy</code> (Ry), <code>Volume</code> (Bohr³)</p>
+    <p>Results in: <code>Pressure (GPa), Energy (eV), Volume (Å³)</code></p>
+
+    <div id="drop-zone">
+        <p>Drag & drop your file here, or click to select</p>
+        <input type="file" id="file-input" accept=".txt,.dat,.csv" style="display: none;">
+    </div>
+    <div id="status"></div>
+    <div id="column-info"></div>
+
+    <div id="results" style="display: none;">
+        <h2>Fitting Results</h2>
+
+        <h3>P-V Fit (Birch-Murnaghan EOS)</h3>
+        <table class="result-table">
+            <tr><th>Parameter</th><th>Value</th></tr>
+            <tr><td>V₀ (Å³)</td><td id="pv-V0"></td></tr>
+            <tr><td>K₀ (GPa)</td><td id="pv-K0"></td></tr>
+            <tr><td>K₀′</td><td id="pv-K0Prime"></td></tr>
+        </table>
+        <div class="fit-stats">
+            <strong>Fit Statistics:</strong><br>
+            RMS Error: <span id="pv-rms"></span> GPa<br>
+            Max Residual: <span id="pv-maxres"></span> GPa<br>
+            Points: <span id="pv-points"></span>
+        </div>
+
+        <h3>E-V Fit (Birch-Murnaghan EOS)</h3>
+        <table class="result-table">
+            <tr><th>Parameter</th><th>Value</th></tr>
+            <tr><td>E₀ (eV)</td><td id="ev-E0"></td></tr>
+            <tr><td>V₀ (Å³)</td><td id="ev-V0"></td></tr>
+            <tr><td>K₀ (GPa)</td><td id="ev-K0"></td></tr>
+            <tr><td>K₀′</td><td id="ev-K0Prime"></td></tr>
+        </table>
+        <div class="fit-stats">
+            <strong>Fit Statistics:</strong><br>
+            RMS Error: <span id="ev-rms"></span> eV<br>
+            Max Residual: <span id="ev-maxres"></span> eV<br>
+            Points: <span id="ev-points"></span>
+        </div>
+    </div>
+
+    <div id="plots" style="display: none;">
+        <div class="plot-container">
+            <div class="plot-wrapper">
+                <h3>E vs V</h3>
+                <canvas id="ev-plot" width="450" height="400"></canvas>
+                <div class="selection-rect" id="ev-plot-selection"></div>
+                <div class="zoom-controls">
+                    <button class="zoom-btn" onclick="window.resetZoom('ev-plot')">Reset View</button>
+                </div>
+            </div>
+            <div class="plot-wrapper">
+                <h3>P vs V</h3>
+                <canvas id="pv-plot" width="450" height="400"></canvas>
+                <div class="selection-rect" id="pv-plot-selection"></div>
+                <div class="zoom-controls">
+                    <button class="zoom-btn" onclick="window.resetZoom('pv-plot')">Reset View</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="fit.js"></script>
+    <script src="plot.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const dropZone = document.getElementById('drop-zone');
+            const fileInput = document.getElementById('file-input');
+            const resultsDiv = document.getElementById('results');
+            const plotsDiv = document.getElementById('plots');
+            const statusDiv = document.getElementById('status');
+            const columnInfoDiv = document.getElementById('column-info');
+
+            window.setupCanvasInteractions('ev-plot');
+            window.setupCanvasInteractions('pv-plot');
+
+            dropZone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                dropZone.classList.add('highlight');
+            });
+
+            dropZone.addEventListener('dragleave', function() {
+                dropZone.classList.remove('highlight');
+            });
+
+            dropZone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                dropZone.classList.remove('highlight');
+                if (e.dataTransfer.files.length) {
+                    handleFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            dropZone.addEventListener('click', function() {
+                fileInput.click();
+            });
+
+            fileInput.addEventListener('change', function() {
+                if (fileInput.files.length) {
+                    handleFile(fileInput.files[0]);
+                }
+            });
+
+            function handleFile(file) {
+                statusDiv.textContent = "Processing...";
+                resultsDiv.style.display = 'none';
+                plotsDiv.style.display = 'none';
+                columnInfoDiv.innerHTML = '';
+
+                window.plotStates['ev-plot'].current = { xMin: null, xMax: null, yMin: null, yMax: null };
+                window.plotStates['pv-plot'].current = { xMin: null, xMax: null, yMin: null, yMax: null };
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const content = e.target.result;
+                        const lines = content.trim().split('\n').filter(line => line.trim() !== '');
+
+                        const columnData = window.detectColumns(lines);
+
+                        const columnInfoText = document.createElement('div');
+                        columnInfoText.className = 'column-info';
+                        columnInfoText.innerHTML = `
+                            <strong>Detected Columns:</strong><br>
+                            Pressure: Column ${columnData.columnInfo.p + 1} ${columnData.columnInfo.hasHeaders ? `("${columnData.columnInfo.headers[columnData.columnInfo.p]}")` : ''}<br>
+                            Energy: Column ${columnData.columnInfo.e + 1} ${columnData.columnInfo.hasHeaders ? `("${columnData.columnInfo.headers[columnData.columnInfo.e]}")` : ''}<br>
+                            Volume: Column ${columnData.columnInfo.v + 1} ${columnData.columnInfo.hasHeaders ? `("${columnData.columnInfo.headers[columnData.columnInfo.v]}")` : ''}<br>
+                            Total columns: ${columnData.columnInfo.headers.length}
+                        `;
+                        columnInfoDiv.appendChild(columnInfoText);
+
+                        const volumes_A3 = columnData.volumes.map(d => d * window.UNITS.BOHR3_TO_ANGSTROM3);
+                        let energies_eV = columnData.energies.map(d => d * window.UNITS.RY_TO_EV);
+                        const pressures_GPa = columnData.pressures.map(d => d * window.UNITS.KBAR_TO_GPA);
+
+                        const minEnergy = Math.min(...energies_eV);
+                        const normalizedEnergies = energies_eV.map(e => e - minEnergy);
+
+                        // Find V0 from data
+                        const evV0 = volumes_A3[normalizedEnergies.indexOf(0)];
+                        let minPressure = Infinity, pvV0Index = 0;
+                        for (let i = 0; i < pressures_GPa.length; i++) {
+                            if (Math.abs(pressures_GPa[i]) < Math.abs(minPressure)) {
+                                minPressure = pressures_GPa[i];
+                                pvV0Index = i;
+                            }
+                        }
+                        const pvV0 = volumes_A3[pvV0Index];
+
+                        // Add deterministic offsets to ensure distinct V0
+                        const v0Offset = 1e-10 * Math.max(pvV0, evV0);
+                        const pvV0Initial = pvV0 + v0Offset;
+                        const evV0Initial = evV0 - v0Offset;
+
+                        // Estimate K0 for P-V fit
+                        const pvK0Estimate = window.estimateK0FromPV(volumes_A3, pressures_GPa).k0;
+
+                        // Use hardcoded initial guesses for E-V fit (as in SciPy)
+                        const evK0Initial = 200;
+                        const evK0PrimeInitial = 4;
+
+                        statusDiv.textContent = "Fitting P-V data...";
+                        const pvResult = window.levenbergMarquardt(
+                            volumes_A3,
+                            pressures_GPa,
+                            window.birchMurnaghanPressure,
+                            [pvV0Initial, pvK0Estimate, 4],
+                            20000
+                        );
+
+                        statusDiv.textContent = "Fitting E-V data...";
+                        const evResult = window.levenbergMarquardt(
+                            volumes_A3,
+                            normalizedEnergies,
+                            window.birchMurnaghanEnergy,
+                            [0, evV0Initial, evK0Initial, evK0PrimeInitial],
+                            20000
+                        );
+
+                        // Display P-V results
+                        document.getElementById('pv-V0').textContent = window.formatParam(pvResult.params[0], pvResult.errors?.[0]);
+                        document.getElementById('pv-K0').textContent = window.formatParam(pvResult.params[1], pvResult.errors?.[1]);
+                        document.getElementById('pv-K0Prime').textContent = window.formatParam(pvResult.params[2], pvResult.errors?.[2]);
+                        document.getElementById('pv-rms').textContent = pvResult.fitStats.rms.toFixed(10);
+                        document.getElementById('pv-maxres').textContent = pvResult.fitStats.maxRes.toFixed(10);
+                        document.getElementById('pv-points').textContent = pvResult.fitStats.nPoints;
+
+                        // Display E-V results
+                        const evE0 = evResult.params[0] + minEnergy;
+                        document.getElementById('ev-E0').textContent = window.formatParam(evE0, evResult.errors?.[0]);
+                        document.getElementById('ev-V0').textContent = window.formatParam(evResult.params[1], evResult.errors?.[1]);
+                        document.getElementById('ev-K0').textContent = window.formatParam(evResult.params[2], evResult.errors?.[2]);
+                        document.getElementById('ev-K0Prime').textContent = window.formatParam(evResult.params[3], evResult.errors?.[3]);
+                        document.getElementById('ev-rms').textContent = evResult.fitStats.rms.toFixed(10);
+                        document.getElementById('ev-maxres').textContent = evResult.fitStats.maxRes.toFixed(10);
+                        document.getElementById('ev-points').textContent = evResult.fitStats.nPoints;
+
+                        // Store data for redraw
+                        window.globalData = {
+                            volumes_A3: volumes_A3,
+                            energies_eV: energies_eV,
+                            pressures_GPa: pressures_GPa,
+                            pvResult: pvResult,
+                            evResult: evResult,
+                            minEnergy: minEnergy
+                        };
+
+                        // Create plots
+                        window.plotEV(volumes_A3, energies_eV, window.birchMurnaghanEnergy, evResult.params, minEnergy, 'ev-plot');
+                        window.plotPV(volumes_A3, pressures_GPa, pvResult.params, evResult.params, 'pv-plot');
+
+                        statusDiv.textContent = "Fitting completed!";
+                        resultsDiv.style.display = 'block';
+                        plotsDiv.style.display = 'block';
+
+                    } catch (error) {
+                        statusDiv.textContent = "Error: " + error.message;
+                        console.error(error);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+    </script>
+</body>
+</html>

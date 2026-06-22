@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Birch-Murnaghan EOS Fitter</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+        h1 { color: #333; }
+        #drop-zone {
+            border: 2px dashed #ccc; border-radius: 8px; padding: 40px; text-align: center;
+            margin: 20px 0; background-color: #f9f9f9; cursor: pointer;
+        }
+        #drop-zone.highlight { border-color: #4CAF50; background-color: #f0fff0; }
+        #results { margin-top: 20px; padding: 15px; background-color: #f0f8ff; border-radius: 8px; display: none; }
+        .result-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .result-table th, .result-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        .result-table th { background-color: #f2f2f2; }
+        .status { margin-top: 10px; color: #666; font-size: 0.9em; }
+        .fit-stats { margin-top: 15px; padding: 10px; background-color: #e8f5e9; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Birch-Murnaghan EOS Fitter</h1>
+    <p>Drop a file with columns: <code>Pressure (kBar) Energy (Ry) Volume (Bohr³)</code></p>
+    <p>Results in: <code>Pressure (GPa), Energy (eV), Volume (Å³)</code></p>
+
+    <div id="drop-zone">
+        <p>Drag & drop your file here, or click to select</p>
+        <input type="file" id="file-input" accept=".txt,.dat" style="display: none;">
+    </div>
+    <div id="status"></div>
+
+    <div id="results">
+        <h2>Fitting Results</h2>
+
+        <h3>P-V Fit (Birch-Murnaghan EOS)</h3>
+        <table class="result-table">
+            <tr><th>Parameter</th><th>Value</th></tr>
+            <tr><td>V₀ (Å³)</td><td id="pv-V0"></td></tr>
+            <tr><td>B₀ (GPa)</td><td id="pv-B0"></td></tr>
+            <tr><td>B₀′</td><td id="pv-B0Prime"></td></tr>
+        </table>
+        <div class="fit-stats">
+            <strong>Fit Statistics:</strong><br>
+            RMS Error: <span id="pv-rms"></span> GPa<br>
+            Max Residual: <span id="pv-maxres"></span> GPa<br>
+            Points: <span id="pv-points"></span>
+        </div>
+
+        <h3>E-V Fit (Birch-Murnaghan EOS)</h3>
+        <table class="result-table">
+            <tr><th>Parameter</th><th>Value</th></tr>
+            <tr><td>E₀ (eV)</td><td id="ev-E0"></td></tr>
+            <tr><td>V₀ (Å³)</td><td id="ev-V0"></td></tr>
+            <tr><td>B₀ (GPa)</td><td id="ev-B0"></td></tr>
+            <tr><td>B₀′</td><td id="ev-B0Prime"></td></tr>
+        </table>
+        <div class="fit-stats">
+            <strong>Fit Statistics:</strong><br>
+            RMS Error: <span id="ev-rms"></span> eV<br>
+            Max Residual: <span id="ev-maxres"></span> eV<br>
+            Points: <span id="ev-points"></span>
+        </div>
+    </div>
+
+    <script>
+        // === Unit Conversion Constants ===
+        const BOHR_TO_ANGSTROM = 0.529177210903;
+        const BOHR3_TO_ANGSTROM3 = Math.pow(BOHR_TO_ANGSTROM, 3);
+        const KBAR_TO_GPA = 0.1;
+        const RY_TO_EV = 13.605693;
+        const A3_GPA_TO_EV = 0.006241509; // 1 Å³·GPa = 0.006241509 eV
+
+        // === Birch-Murnaghan Functions with Correct Units ===
+        function birchMurnaghanEnergy(V, E0, V0, B0, B0Prime) {
+            const ratio = V0 / V;
+            const r23 = Math.pow(ratio, 2/3);
+            const term = r23 - 1;
+            return E0 + (9 * V0 * B0 / 16) * A3_GPA_TO_EV * (
+                Math.pow(term, 3) * B0Prime +
+                Math.pow(term, 2) * (6 - 4 * r23)
+            );
+        }
+
+        function birchMurnaghanPressure(V, V0, B0, B0Prime) {
+            const ratio = V0 / V;
+            const r53 = Math.pow(ratio, 5/3);
+            const r73 = Math.pow(ratio, 7/3);
+            const r23 = Math.pow(ratio, 2/3);
+            const term3 = 1 + (3/4) * (B0Prime - 4) * (r23 - 1);
+            return (3 * B0 / 2) * (r73 - r53) * term3;
+        }
+
+        // === Calculate Fit Statistics ===
+        function calculateFitStats(x, y, func, params) {
+            const residuals = x.map((xi, i) => y[i] - func(xi, ...params));
+            const rms = Math.sqrt(residuals.reduce((sum, r) => sum + r * r, 0) / x.length);
+            const maxRes = Math.max(...residuals.map(r => Math.abs(r)));
+            return { rms, maxRes, nPoints: x.length };
+        }
+
+        // === Estimate B0 from P-V data ===
+        function estimateB0FromPV(volumes, pressures) {
+            let minPressure = Infinity;
+            let v0Index = 0;
+            for (let i = 0; i < pressures.length; i++) {
+                if (Math.abs(pressures[i]) < Math.abs(minPressure)) {
+                    minPressure = pressures[i];
+                    v0Index = i;
+                }
+            }
+            const v0 = volumes[v0Index];
+
+            let sumNumerator = 0;
+            let sumDenominator = 0;
+
+            for (let i = 0; i < volumes.length; i++) {
+                const dV = volumes[i] - v0;
+                if (Math.abs(dV) / v0 < 0.05) {
+                    sumNumerator += (pressures[i] - minPressure) * dV;
+                    sumDenominator += dV * dV;
+                }
+            }
+
+            if (sumDenominator === 0) return 350;
+            const slope = sumNumerator / sumDenominator;
+            return -v0 * slope;
+        }
+
+        // === Robust Numerical Jacobian ===
+        function numericalJacobian(x, y, func, params) {
+            const n = params.length;
+            const m = x.length;
+            const J = Array(m).fill().map(() => Array(n).fill(0));
+            const eps = 1e-5;
+
+            for (let i = 0; i < m; i++) {
+                for (let j = 0; j < n; j++) {
+                    const delta = eps * (Math.abs(params[j]) + 1e-10);
+                    const paramsPlus = [...params];
+                    const paramsMinus = [...params];
+                    paramsPlus[j] += delta;
+                    paramsMinus[j] -= delta;
+
+                    const fPlus = func(x[i], ...paramsPlus);
+                    const fMinus = func(x[i], ...paramsMinus);
+
+                    J[i][j] = (fPlus - fMinus) / (2 * delta);
+                }
+            }
+            return J;
+        }
+
+        // === Levenberg-Marquardt ===
+        function levenbergMarquardt(x, y, func, initialParams, maxIterations = 5000) {
+            let params = [...initialParams];
+            let prevError = Infinity;
+            const nParams = initialParams.length;
+            const nData = x.length;
+            let lambda = 100.0;
+
+            for (let iter = 0; iter < maxIterations; iter++) {
+                const residuals = x.map((xi, i) => y[i] - func(xi, ...params));
+                const J = numericalJacobian(x, y, func, params);
+                const error = residuals.reduce((sum, r) => sum + r * r, 0);
+
+                if (iter > 0 && Math.abs(prevError - error) < 1e-10) break;
+                prevError = error;
+
+                const JtJ = Array(nParams).fill().map(() => Array(nParams).fill(0));
+                const Jtr = Array(nParams).fill(0);
+
+                for (let i = 0; i < nData; i++) {
+                    for (let j = 0; j < nParams; j++) {
+                        for (let k = 0; k < nParams; k++) {
+                            JtJ[j][k] += J[i][j] * J[i][k];
+                        }
+                        Jtr[j] += J[i][j] * residuals[i];
+                    }
+                }
+
+                for (let i = 0; i < nParams; i++) {
+                    JtJ[i][i] *= (1 + lambda);
+                }
+
+                const delta = solveLinearSystem(JtJ, Jtr);
+                const paramsTry = params.map((p, i) => p + delta[i]);
+                const errorTry = x.reduce((sum, xi, i) => {
+                    const r = y[i] - func(xi, ...paramsTry);
+                    return sum + r * r;
+                }, 0);
+
+                if (errorTry < error) {
+                    params = paramsTry;
+                    lambda /= 10;
+                } else {
+                    lambda *= 10;
+                }
+            }
+            return params;
+        }
+
+        // === Gaussian Elimination ===
+        function solveLinearSystem(A, b) {
+            const n = A.length;
+            const x = Array(n).fill(0);
+            const Amat = A.map(row => [...row]);
+
+            for (let i = 0; i < n; i++) {
+                let maxRow = i;
+                for (let k = i + 1; k < n; k++) {
+                    if (Math.abs(Amat[k][i]) > Math.abs(Amat[maxRow][i])) maxRow = k;
+                }
+                [Amat[i], Amat[maxRow]] = [Amat[maxRow], Amat[i]];
+                [b[i], b[maxRow]] = [b[maxRow], b[i]];
+
+                for (let k = i + 1; k < n; k++) {
+                    const factor = Amat[k][i] / Amat[i][i];
+                    for (let j = i; j < n; j++) {
+                        Amat[k][j] -= factor * Amat[i][j];
+                    }
+                    b[k] -= factor * b[i];
+                }
+            }
+
+            for (let i = n - 1; i >= 0; i--) {
+                x[i] = b[i];
+                for (let j = i + 1; j < n; j++) {
+                    x[i] -= Amat[i][j] * x[j];
+                }
+                x[i] /= Amat[i][i];
+            }
+            return x;
+        }
+
+        // === File Handling ===
+        function setupFileHandlers() {
+            const dropZone = document.getElementById('drop-zone');
+            const fileInput = document.getElementById('file-input');
+            const resultsDiv = document.getElementById('results');
+            const statusDiv = document.getElementById('status');
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('highlight');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('highlight');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('highlight');
+                if (e.dataTransfer.files.length) {
+                    handleFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            dropZone.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            fileInput.addEventListener('change', () => {
+                if (fileInput.files.length) {
+                    handleFile(fileInput.files[0]);
+                }
+            });
+
+            function handleFile(file) {
+                statusDiv.textContent = "Processing...";
+                resultsDiv.style.display = 'none';
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const content = e.target.result;
+                        const lines = content.trim().split('\n').filter(line => line.trim() !== '');
+                        const data = lines.map(line => {
+                            const [pressure, energy, volume] = line.trim().split(/\s+/).map(Number);
+                            return { pressure, energy, volume };
+                        });
+
+                        // Convert ALL data to GPa, eV, Å³
+                        const volumes = data.map(d => d.volume * BOHR3_TO_ANGSTROM3);
+                        let energies = data.map(d => d.energy * RY_TO_EV);
+                        const pressures = data.map(d => d.pressure * KBAR_TO_GPA);
+
+                        // NORMALIZE ENERGIES
+                        const minEnergy = Math.min(...energies);
+                        const normalizedEnergies = energies.map(e => e - minEnergy);
+
+                        // Find volume at minimum energy
+                        const minEnergyIndex = normalizedEnergies.indexOf(0);
+                        const minEnergyVolume = volumes[minEnergyIndex];
+
+                        // === INDEPENDENT FITS ===
+
+                        // P-V Fit with estimated B0
+                        statusDiv.textContent = "Fitting P-V data...";
+                        const estimatedB0 = estimateB0FromPV(volumes, pressures);
+                        const initialPV = [minEnergyVolume, estimatedB0, 4];
+                        const fittedPV = levenbergMarquardt(
+                            volumes, pressures,
+                            (V, V0, B0, B0Prime) => birchMurnaghanPressure(V, V0, B0, B0Prime),
+                            initialPV,
+                            5000
+                        );
+
+                        // E-V Fit with estimated B0 from P-V
+                        statusDiv.textContent = "Fitting E-V data...";
+                        const initialEV = [0, minEnergyVolume, estimatedB0, 4];
+                        const fittedEV = levenbergMarquardt(
+                            volumes, normalizedEnergies,
+                            (V, E0, V0, B0, B0Prime) => birchMurnaghanEnergy(V, E0, V0, B0, B0Prime),
+                            initialEV,
+                            5000
+                        );
+
+                        // Calculate fit statistics
+                        const pvStats = calculateFitStats(
+                            volumes, pressures,
+                            (V, V0, B0, B0Prime) => birchMurnaghanPressure(V, V0, B0, B0Prime),
+                            fittedPV
+                        );
+                        const evStats = calculateFitStats(
+                            volumes, normalizedEnergies,
+                            (V, E0, V0, B0, B0Prime) => birchMurnaghanEnergy(V, E0, V0, B0, B0Prime),
+                            fittedEV
+                        );
+
+                        // Convert results to display units
+                        const evE0 = fittedEV[0] + minEnergy;
+
+                        // Display results
+                        document.getElementById('pv-V0').textContent = fittedPV[0].toFixed(4);
+                        document.getElementById('pv-B0').textContent = fittedPV[1].toFixed(2);
+                        document.getElementById('pv-B0Prime').textContent = fittedPV[2].toFixed(4);
+                        document.getElementById('pv-rms').textContent = pvStats.rms.toFixed(4);
+                        document.getElementById('pv-maxres').textContent = pvStats.maxRes.toFixed(4);
+                        document.getElementById('pv-points').textContent = pvStats.nPoints;
+
+                        document.getElementById('ev-E0').textContent = evE0.toFixed(2);
+                        document.getElementById('ev-V0').textContent = fittedEV[1].toFixed(4);
+                        document.getElementById('ev-B0').textContent = fittedEV[2].toFixed(2);
+                        document.getElementById('ev-B0Prime').textContent = fittedEV[3].toFixed(4);
+                        document.getElementById('ev-rms').textContent = evStats.rms.toFixed(4);
+                        document.getElementById('ev-maxres').textContent = evStats.maxRes.toFixed(4);
+                        document.getElementById('ev-points').textContent = evStats.nPoints;
+
+                        statusDiv.textContent = `Fitting completed! (Estimated B0: ${estimatedB0.toFixed(2)} GPa)`;
+                        resultsDiv.style.display = 'block';
+                    } catch (error) {
+                        statusDiv.textContent = "Error: " + error.message;
+                        console.error(error);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        // Initialize when page loads
+        window.addEventListener('DOMContentLoaded', setupFileHandlers);
+    </script>
+</body>
+</html>
