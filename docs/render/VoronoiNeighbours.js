@@ -75,11 +75,15 @@ function intersect3Planes(p0, p1, p2) {
  * @param {THREE.Vector3} center
  * @param {Array<{pos:THREE.Vector3, srcJ:number, shift:[number,number,number], elem:string, radius:number, d:number}>} candidates
  *        all nearby atom images (any species) — needed so closer atoms can shadow farther ones.
- * @param {{radical?:boolean, relMin?:number, absMin?:number, centerRadius?:number}} [opts]
+ * @param {{radical?:boolean, relMin?:number, absMin?:number, centerRadius?:number, accept?:(cand:any)=>boolean}} [opts]
  *        radical: use power/radical planes from atomic radii (default true);
- *        relMin: keep faces with solid angle ≥ relMin × largest face (default 0.10);
+ *        relMin: keep faces with solid angle ≥ relMin × largest *accepted* face (default 0.10);
  *        absMin: also require solid angle / 4π ≥ absMin (default 0);
- *        centerRadius: radius of the central atom (for radical planes).
+ *        centerRadius: radius of the central atom (for radical planes);
+ *        accept: chemical/cutoff filter deciding which candidates may be vertices.
+ *          The cell is always built from ALL candidates (so shadowing is correct),
+ *          but only accepted faces become vertices and set the solid-angle scale —
+ *          this keeps a cation's large face from suppressing the real ligand faces.
  * @returns {Array<{cand:any, solidAngle:number}>} accepted neighbours with their face solid angle.
  */
 export function voronoiNeighbours(center, candidates, opts = {}) {
@@ -87,6 +91,7 @@ export function voronoiNeighbours(center, candidates, opts = {}) {
   const relMin = opts.relMin ?? 0.10;
   const absMin = opts.absMin ?? 0.0;
   const rc = opts.centerRadius ?? 1.0;
+  const accept = opts.accept ?? (() => true);
 
   // Half-space n_k·x ≤ c_k per candidate, in the centre-origin frame.
   /** @type {Array<{n:THREE.Vector3, c:number, k:number}>} */
@@ -136,14 +141,18 @@ export function voronoiNeighbours(center, candidates, opts = {}) {
     }
   }
 
-  // Solid angle per neighbour face.
+  // Solid angle per neighbour face. Only candidates passing `accept` are eligible
+  // to be vertices, and only those set the solid-angle scale (so e.g. a cation's
+  // large Voronoi face cannot suppress the genuine anion faces of the shell).
   const weighed = [];
   let maxOmega = 0;
   for (const [idx, verts] of cellVertsByPlane) {
     if (verts.length < 3) continue;
+    const cand = candidates[planes[idx].k];
+    if (!accept(cand)) continue;
     const omega = polygonSolidAngle(orderAroundNormal(verts, planes[idx].n));
     if (omega <= 0) continue;
-    weighed.push({ k: planes[idx].k, omega });
+    weighed.push({ cand, omega });
     if (omega > maxOmega) maxOmega = omega;
   }
   if (maxOmega <= 0) return [];
@@ -151,7 +160,7 @@ export function voronoiNeighbours(center, candidates, opts = {}) {
   const accepted = [];
   for (const r of weighed) {
     if (r.omega >= relMin * maxOmega && r.omega / FOUR_PI >= absMin) {
-      accepted.push({ cand: candidates[r.k], solidAngle: r.omega });
+      accepted.push({ cand: r.cand, solidAngle: r.omega });
     }
   }
   return accepted;

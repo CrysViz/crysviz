@@ -8,6 +8,7 @@ import { Polyhedra } from '../model/Polyhedra.js'
 import { Polyhedron } from '../model/Polyhedron.js'
 import { voronoiNeighbours } from '../render/VoronoiNeighbours.js'
 import { atomicRadii } from '../defaults/radii_defaults.js'
+import { electronegativity } from '../defaults/electronegativity_defaults.js'
 
 // ---------- STYLE (render) ----------
 const FACE_OPACITY = 0.80;
@@ -41,6 +42,20 @@ const VORONOI_SOLID_ANGLE_REL = 0.10; // keep faces ≥ this fraction of the lar
 // ignores far atoms. Clamped so it stays cheap.
 function searchRadius(maxCutoff) {
   return Math.min(8.0, Math.max(4.0, 2.5 * maxCutoff));
+}
+
+// Chemical filter: a polyhedron vertex must be MORE electronegative than the
+// centre, i.e. the anion/ligand coordinates the cation (and a cation never
+// coordinates another cation, nor does an anion-centred polyhedron form). When an
+// electronegativity value is missing for either element, fall back to requiring a
+// different species (which at least blocks the Ti-around-Ti case).
+function isLigandOf(nbrElem, centerElem) {
+  const enN = electronegativity[nbrElem];
+  const enC = electronegativity[centerElem];
+  if (enN === undefined || enC === undefined || enN === 0 || enC === 0) {
+    return nbrElem !== centerElem;
+  }
+  return enN > enC + 1e-6;
 }
 
 // ConvexGeometry constructor (vendored addon; fall back to THREE.ConvexGeometry if present)
@@ -324,18 +339,24 @@ export function computePolyhedra(structure) {
     // species so closer atoms can shadow farther ones.
     const cands = gatherWithin(centerPos);
     if (cands.length < 4) continue;
+    // A vertex must be (a) chemically a ligand of the centre and (b) within the
+    // configured visible bond cutoff. The cell is still built from all candidates
+    // inside voronoiNeighbours, so shadowing stays correct.
+    const accept = (/** @type {any} */ cand) => {
+      if (!isLigandOf(cand.elem, centerElem)) return false;
+      const cutoff = getBondCutoff(centerElem, cand.elem);
+      return cutoff > 1e-3 && cand.d <= cutoff;
+    };
     const vor = voronoiNeighbours(centerPos, cands, {
       radical: VORONOI_RADICAL,
       relMin: VORONOI_SOLID_ANGLE_REL,
       centerRadius: atomicRadii[centerElem] || 1.0,
+      accept,
     });
 
-    // Outer bound: a vertex must also be within the configured (visible) bond
-    // cutoff for the pair. Dedup to the nearest image per coordinating source atom.
+    // Dedup to the nearest image per coordinating source atom.
     const bySrc = new Map();
     for (const { cand } of vor) {
-      const cutoff = getBondCutoff(centerElem, cand.elem);
-      if (cutoff <= 1e-3 || cand.d > cutoff) continue;
       const prev = bySrc.get(cand.srcJ);
       if (!prev || cand.d < prev.d) bySrc.set(cand.srcJ, cand);
     }
