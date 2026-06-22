@@ -242,6 +242,10 @@ function findAtomRow(element, sourceIndex) {
   const expandIcon = targetContainer.querySelector('.comp-left span:last-child');
   if (!atomsContainer) return null;
 
+  // Individual atom rows are populated lazily on first expand (see
+  // CompositionRow.js). We expand programmatically here, so ensure they exist.
+  /** @type {any} */ (atomsContainer)._populateAtomRows?.();
+
   if (atomsContainer.style.display === 'none') {
     atomsContainer.style.display = 'block';
     if (expandIcon) {

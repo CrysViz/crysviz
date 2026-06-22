@@ -103,15 +103,21 @@ const setStatus = (s) => {
 
 
 function updateOther() {
+  console.time("other:renderComposition");
   renderComposition();
+  console.timeEnd("other:renderComposition");
   clearMeasureGraphics();
 
   measurements.measureLines.forEach(line => app.scene.add(line));
   measurements.measureLabels.forEach(label => app.scene.add(label));
 
   recomputeLatticeDirs();
+  console.time("other:updateAllMeasurements");
   updateAllMeasurements();
+  console.timeEnd("other:updateAllMeasurements");
+  console.time("other:addAtomVacuumPanel");
   addAtomVacuumPanel();
+  console.timeEnd("other:addAtomVacuumPanel");
 }
 
 export function updateVisualization(options = {}) {
@@ -195,8 +201,12 @@ export function updateVisualization(options = {}) {
   if (reRenderComposition != false) {
     renderComposition(reRenderComposition);
   }
+  console.time("uv:updateLattice");
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
+  console.timeEnd("uv:updateLattice");
+  console.time("uv:updateOther");
   if (reRenderOther) updateOther();
+  console.timeEnd("uv:updateOther");
   if (reRenderField) {
     if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
       updateField();
