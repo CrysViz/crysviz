@@ -73,6 +73,7 @@ function captureState() {
       showBonds: general.showBonds,
       showLattice: general.showLattice,
       showPeriodic: general.showPeriodic,
+      periodicFaceTol: general.periodicFaceTol,
       showPBCBonds: general.showPBCBonds,
       bondLengths: { ...general.bondLengths },
       bondVisibility: { ...general.bondVisibility },
@@ -181,6 +182,7 @@ function applyDisplaySettings(display) {
   if (display.showBonds != null)   { general.showBonds   = display.showBonds;   setToggle('showBonds', display.showBonds); }
   if (display.showLattice != null) { general.showLattice = display.showLattice; setToggle('showLattice', display.showLattice); }
   if (display.showPeriodic != null){ general.showPeriodic= display.showPeriodic;setToggle('showPeriodic', display.showPeriodic); }
+  if (display.periodicFaceTol != null){ general.periodicFaceTol = display.periodicFaceTol; }
   if (display.showPBCBonds != null){ general.showPBCBonds= display.showPBCBonds;setToggle('PBCBondToggle', display.showPBCBonds); }
   if (display.bondLengths)    Object.assign(general.bondLengths, display.bondLengths);
   if (display.bondVisibility) Object.assign(general.bondVisibility, display.bondVisibility);

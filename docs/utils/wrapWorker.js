@@ -26,10 +26,9 @@ self.onmessage = function(e) {
   }
 };
 
-function periodicWrapped(frac, elements, bondLengths, showPeriodic,showPBCBonds, lattice) {
+function periodicWrapped(frac, elements, bondLengths, showPeriodic,showPBCBonds, lattice, faceTol = 1e-3) {
   // Default options
 
-  const eps = 1e-6;
   const newElements = [];
   const newFcrds = [];
   const srcIndex = [];
@@ -41,33 +40,27 @@ function periodicWrapped(frac, elements, bondLengths, showPeriodic,showPBCBonds,
       const f = frac[i];
       const atm = elements[i];
 
+      // Detect which cell faces this atom sits on (within faceTol, fractional),
+      // then emit every mirror combination unconditionally so corner/edge/face
+      // atoms land on all the positions they belong to. Mirrors are placed at
+      // the true periodic position (f ± 1), with no re-detection / clamping.
       const offX = [0];
       const offY = [0];
       const offZ = [0];
 
-      if (f[0] < eps) offX.push(1 - eps);
-      if (f[0] > 1 - eps) offX.push(-1 + eps);
-      if (f[1] < eps) offY.push(1 - eps);
-      if (f[1] > 1 - eps) offY.push(-1 + eps);
-      if (f[2] < eps) offZ.push(1 - eps);
-      if (f[2] > 1 - eps) offZ.push(-1 + eps);
+      if (f[0] < faceTol) offX.push(1);
+      if (f[0] > 1 - faceTol) offX.push(-1);
+      if (f[1] < faceTol) offY.push(1);
+      if (f[1] > 1 - faceTol) offY.push(-1);
+      if (f[2] < faceTol) offZ.push(1);
+      if (f[2] > 1 - faceTol) offZ.push(-1);
 
       for (const dx of offX) {
         for (const dy of offY) {
           for (const dz of offZ) {
-            const nx = f[0] + dx;
-            const ny = f[1] + dy;
-            const nz = f[2] + dz;
-            if (nx >= -eps && nx < 1 - eps + eps &&
-                ny >= -eps && ny < 1 - eps + eps &&
-                nz >= -eps && nz < 1 - eps + eps) {
-              const cx = Math.min(Math.max(nx, 0), 1 - eps);
-              const cy = Math.min(Math.max(ny, 0), 1 - eps);
-              const cz = Math.min(Math.max(nz, 0), 1 - eps);
-              newElements.push(atm);
-              newFcrds.push([cx, cy, cz]);
-              srcIndex.push(i);
-            }
+            newElements.push(atm);
+            newFcrds.push([f[0] + dx, f[1] + dy, f[2] + dz]);
+            srcIndex.push(i);
           }
         }
       }

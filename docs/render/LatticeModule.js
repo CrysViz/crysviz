@@ -100,7 +100,6 @@ export function latticeDirsNorm() { return cachedLatticeDirs; }
 
 
 function periodicWrappedJS(general, frac, elements, lattice) {
-  const eps = 1e-6;
   const newElements = [];
   const newFcrds = [];
   const newCcrds = [];
@@ -115,31 +114,34 @@ function periodicWrappedJS(general, frac, elements, lattice) {
     };
   }
 
+  const faceTol = general.periodicFaceTol ?? 1e-3;
+
   for (let i = 0; i < frac.length; i++) {
     const f = frac[i];
     const atm = elements[i];
+    // Detect which cell faces this atom sits on (within faceTol, fractional).
+    // Each detected face contributes a mirror offset; we then emit *every*
+    // combination unconditionally — a corner atom lands on all 8 corners, an
+    // edge atom on all 4 edges, a face atom on both faces. The mirror is placed
+    // at the true periodic position (f ± 1), with no re-detection / clamping of
+    // the mirrored coordinate.
     const offX = [0];
     const offY = [0];
     const offZ = [0];
-    if (f[0] < eps) offX.push(1 - eps);
-    if (f[0] > 1 - eps) offX.push(-1 + eps);
-    if (f[1] < eps) offY.push(1 - eps);
-    if (f[1] > 1 - eps) offY.push(-1 + eps);
-    if (f[2] < eps) offZ.push(1 - eps);
-    if (f[2] > 1 - eps) offZ.push(-1 + eps);
+    if (f[0] < faceTol) offX.push(1);
+    if (f[0] > 1 - faceTol) offX.push(-1);
+    if (f[1] < faceTol) offY.push(1);
+    if (f[1] > 1 - faceTol) offY.push(-1);
+    if (f[2] < faceTol) offZ.push(1);
+    if (f[2] > 1 - faceTol) offZ.push(-1);
     for (const dx of offX) {
       for (const dy of offY) {
         for (const dz of offZ) {
-          const nx = f[0] + dx, ny = f[1] + dy, nz = f[2] + dz;
-          if (nx >= -eps && nx < 1 + eps && ny >= -eps && ny < 1 + eps && nz >= -eps && nz < 1 + eps) {
-            const cx = Math.min(Math.max(nx, 0), 1 - eps);
-            const cy = Math.min(Math.max(ny, 0), 1 - eps);
-            const cz = Math.min(Math.max(nz, 0), 1 - eps);
-            newElements.push(atm);
-            newFcrds.push([cx, cy, cz]);
-            newCcrds.push(fracToCart([[cx, cy, cz]], lattice)[0]);
-            newSrcIndex.push(i);
-          }
+          const m = [f[0] + dx, f[1] + dy, f[2] + dz];
+          newElements.push(atm);
+          newFcrds.push(m);
+          newCcrds.push(fracToCart([m], lattice)[0]);
+          newSrcIndex.push(i);
         }
       }
     }
@@ -201,7 +203,7 @@ function periodicWrappedJS(general, frac, elements, lattice) {
   };
 }
 
-async function workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice) {
+async function workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice, faceTol) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
        new URL('../utils/wrapWorker.js', import.meta.url),
@@ -221,7 +223,7 @@ async function workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,s
       reject(e);
       worker.terminate();
     };
-    worker.postMessage({ functionName: "periodicWrapped", args: [frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice] });
+    worker.postMessage({ functionName: "periodicWrapped", args: [frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice, faceTol] });
   });
 }
 
@@ -232,6 +234,7 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
     let bondLenghts = general.bondLengths
     let showPBCBonds = general.showBonds && general.showPBCBonds
     let showPeriodic = general.showPeriodic
+    let faceTol = general.periodicFaceTol
 
     const map = new Map([
       ["frac", frac],
@@ -239,7 +242,8 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
       ["bondLenghts", bondLenghts],
       ["lattice", lattice],
       ["showPeriodic",showPeriodic],
-      ["showPBCBonds",showPBCBonds]
+      ["showPBCBonds",showPBCBonds],
+      ["faceTol",faceTol]
     ]);
     let inputHash = hashInput(map)
 
@@ -253,7 +257,7 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
       }
       else{
         try {
-          result = workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice);
+          result = workerPeriodicWrapped(frac, elements, bondLenghts, showPeriodic,showPBCBonds, lattice, faceTol);
           periodic.wrapped = result
         } catch (error) {
           console.error('Error in worker:', error);
