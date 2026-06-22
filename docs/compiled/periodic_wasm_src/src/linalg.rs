@@ -110,6 +110,13 @@ impl Vec3 {
     pub fn dist(self, other: Vec3) -> f64 {
         self.sub(other).norm()
     }
+
+    /// Squared distance — avoids the sqrt in hot loops (compare against cutoff²).
+    #[inline]
+    pub fn dist2(self, other: Vec3) -> f64 {
+        let d = self.sub(other);
+        d.dot(d)
+    }
 }
 
 /// Build a lattice Matrix33 from a flat 9-element JS array [a0,a1,a2, b0,b1,b2, c0,c1,c2].

@@ -1,7 +1,7 @@
 mod linalg;
 
-use linalg::{cart_to_frac, frac_to_cart_flat, lattice_from_flat, Matrix33, Vec3};
-use std::collections::HashSet;
+use linalg::{cart_to_frac, lattice_from_flat, Vec3};
+use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 // ---------------------------------------------------------------------------
@@ -201,25 +201,24 @@ pub fn periodic_wrapped(
             let by = (max_cutoff / b.norm().max(1e-6)).ceil().clamp(1.0, 2.0) as i32;
             let cz = (max_cutoff / c.norm().max(1e-6)).ceil().clamp(1.0, 2.0) as i32;
 
-            // Pre-build shift vectors (exclude zero shift)
-            let shifts: Vec<(i32, i32, i32, Vec3)> = {
-                let mut s = Vec::new();
-                for dx in -ax..=ax {
-                    for dy in -by..=by {
-                        for dz in -cz..=cz {
-                            if dx == 0 && dy == 0 && dz == 0 {
-                                continue;
-                            }
-                            let sv = a
-                                .scale(dx as f64)
-                                .add(b.scale(dy as f64))
-                                .add(c.scale(dz as f64));
-                            s.push((dx, dy, dz, sv));
+            // Pre-build shift vectors (exclude zero shift). The packed dedup key
+            // is no longer needed: with the j/shift loops outer, each candidate
+            // (j, shift) is visited exactly once.
+            let mut shifts: Vec<Vec3> = Vec::new();
+            for dx in -ax..=ax {
+                for dy in -by..=by {
+                    for dz in -cz..=cz {
+                        if dx == 0 && dy == 0 && dz == 0 {
+                            continue;
                         }
+                        shifts.push(
+                            a.scale(dx as f64)
+                                .add(b.scale(dy as f64))
+                                .add(c.scale(dz as f64)),
+                        );
                     }
                 }
-                s
-            };
+            }
 
             // Snapshot the wrapped atoms before we start appending ghosts
             let wrapped_len = new_cart.len();
@@ -232,45 +231,75 @@ pub fn periodic_wrapped(
                 })
                 .collect();
 
-            // Encode ghost key as (j, dx+2, dy+2, dz+2) packed into a u32.
-            // dx,dy,dz ∈ [-2,2] → offset by 2 → [0,4] → fits 3 bits each.
-            // j fits in the upper bits if n < 2^23.
-            let encode_key = |j: usize, dx: i32, dy: i32, dz: i32| -> u64 {
-                let dx = (dx + 4) as u64; // offset so always >= 0
-                let dy = (dy + 4) as u64;
-                let dz = (dz + 4) as u64;
-                ((j as u64) << 12) | (dx << 8) | (dy << 4) | dz
+            // Per-element max cutoff, to cheaply skip species that never bond.
+            let elem_max: Vec<f64> = (0..n_elem)
+                .map(|e| (0..n_elem).map(|f| bond_table[e * n_elem + f]).fold(0.0, f64::max))
+                .collect();
+
+            // Spatial grid (cell list) over the wrapped atoms. Cell size =
+            // max_cutoff, so any atom within a pair's cutoff of a query point
+            // lives in the query cell or one of its 26 neighbours. This turns
+            // the ghost search from O(wrapped × atoms × shifts) into roughly
+            // O(atoms × shifts × neighbours-per-cell).
+            let inv_cell = 1.0 / max_cutoff;
+            let cell_of = |p: Vec3| -> (i32, i32, i32) {
+                (
+                    (p.x * inv_cell).floor() as i32,
+                    (p.y * inv_cell).floor() as i32,
+                    (p.z * inv_cell).floor() as i32,
+                )
             };
-
-            let mut ghost_added: HashSet<u64> = HashSet::new();
-
+            let mut grid: HashMap<(i32, i32, i32), Vec<u32>> = HashMap::new();
             for i in 0..wrapped_len {
-                let pi = new_cart[i];
-                let ei = new_elements[i] as usize;
+                grid.entry(cell_of(new_cart[i])).or_default().push(i as u32);
+            }
 
-                for j in 0..n {
-                    let ej = elements_in[j] as usize;
-                    let cutoff = get_bond_cutoff(bond_table, n_elem, ei, ej);
-                    if cutoff <= 0.01 {
-                        continue;
-                    }
+            let min_d2 = 0.005 * 0.005;
 
-                    let fj_cart = orig_cart[j];
+            // For each original atom's periodic images, add a ghost iff the
+            // image bonds to at least one wrapped atom. Each (j, shift) is
+            // visited once, so a single match (then break) is enough.
+            for j in 0..n {
+                let ej = elements_in[j] as usize;
+                if ej < n_elem && elem_max[ej] <= 0.01 {
+                    continue;
+                }
+                let fj_cart = orig_cart[j];
 
-                    for &(dx, dy, dz, sv) in &shifts {
-                        let candidate = fj_cart.add(sv);
-                        let d = pi.dist(candidate);
+                for &sv in &shifts {
+                    let candidate = fj_cart.add(sv);
+                    let (cx, cy, cz0) = cell_of(candidate);
 
-                        if d <= cutoff && d >= 0.005 {
-                            let key = encode_key(j, dx, dy, dz);
-                            if ghost_added.insert(key) {
-                                let cf = cart_to_frac(candidate, &lat_inv);
-                                new_elements.push(elements_in[j]);
-                                new_frac.push(cf);
-                                new_cart.push(candidate);
-                                new_src.push(j as u32);
+                    let mut bonded = false;
+                    'search: for gx in (cx - 1)..=(cx + 1) {
+                        for gy in (cy - 1)..=(cy + 1) {
+                            for gz in (cz0 - 1)..=(cz0 + 1) {
+                                if let Some(list) = grid.get(&(gx, gy, gz)) {
+                                    for &iu in list {
+                                        let i = iu as usize;
+                                        let ei = new_elements[i] as usize;
+                                        let cutoff =
+                                            get_bond_cutoff(bond_table, n_elem, ei, ej);
+                                        if cutoff <= 0.01 {
+                                            continue;
+                                        }
+                                        let d2 = new_cart[i].dist2(candidate);
+                                        if d2 <= cutoff * cutoff && d2 >= min_d2 {
+                                            bonded = true;
+                                            break 'search;
+                                        }
+                                    }
+                                }
                             }
                         }
+                    }
+
+                    if bonded {
+                        let cf = cart_to_frac(candidate, &lat_inv);
+                        new_elements.push(elements_in[j]);
+                        new_frac.push(cf);
+                        new_cart.push(candidate);
+                        new_src.push(j as u32);
                     }
                 }
             }
