@@ -287,15 +287,15 @@ export function computePolyhedra(structure) {
       if (!prev || o.d < prev.d) bySrc.set(o.srcJ, o);
     }
     const entries = Array.from(bySrc.values());
-    if (entries.length < 3) continue; // cannot form a polyhedron
+    if (entries.length < 4) continue; // need ≥4 non-coplanar points for a closed hull
 
+    // The bond cutoff defines the coordination shell, so we do NOT apply a
+    // distortion (edge-spread) filter here — that would wrongly drop a complete
+    // but distorted/over-coordinated shell (e.g. a stretched TiO6). The only
+    // skip reason is geometric degeneracy: a (near-)planar set has no volume.
     const posList = entries.map(o => o.pos);
-    let geom;
-    try { geom = new ConvexGeomCtor(posList); } catch { continue; }
-    const okThick = thicknessRatio(posList) >= MIN_THICKNESS_RATIO;
-    const okSpread = edgeSpreadOK(geom);
-    geom.dispose();
-    if (!okThick || !okSpread) continue; // full-or-none: skip, never downgrade
+    try { new ConvexGeomCtor(posList).dispose(); } catch { continue; }
+    if (thicknessRatio(posList) < MIN_THICKNESS_RATIO) continue; // degenerate / planar
 
     candidates.push({
       kind: 'centered',
