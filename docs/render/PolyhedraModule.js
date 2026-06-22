@@ -6,6 +6,8 @@ import { getBondCutoff} from '../render/BondsFracUpdateModule.js'
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import { Polyhedra } from '../model/Polyhedra.js'
 import { Polyhedron } from '../model/Polyhedron.js'
+import { voronoiNeighbours } from '../render/VoronoiNeighbours.js'
+import { atomicRadii } from '../defaults/radii_defaults.js'
 
 // ---------- STYLE (render) ----------
 const FACE_OPACITY = 0.80;
@@ -25,11 +27,21 @@ const ALLOW_CAGES = true;
 const CAGE_TARGET_NS_DESC = [20, 12, 10, 8, 6, 4]; // 20 first for dodecahedron cages
 const CAGE_BFS_DEPTH = 5; // a bit deeper to ensure we hit full N=20 shells
 
-// Distortion tolerance (applies to both centered and cages). Centered now uses
-// the full coordination shell (no CN-downgrade), so this is only a skip gate —
-// kept loose so genuinely distorted-but-complete shells are not dropped.
+// Distortion tolerance (cages only — see centered note below). Kept loose so
+// genuinely distorted-but-complete shells are not dropped.
 const MAX_EDGE_SPREAD = 1.60;      // max(edge)/min(edge) ≤ 1.60
 const MIN_THICKNESS_RATIO = 0.08;  // very lenient anti-flatness (e_min / e_max)
+
+// Centered neighbour selection: radical Voronoi + solid-angle (see VoronoiNeighbours.js).
+// There is no universal "official" cutoff — these are the tunables.
+const VORONOI_RADICAL = true;       // weight planes by atomic radii (power/radical Voronoi)
+const VORONOI_SOLID_ANGLE_REL = 0.10; // keep faces ≥ this fraction of the largest face
+// Candidate-gather radius around a centre (all species, so closer atoms can shadow
+// farther ones). Generous enough to bound the Voronoi cell; the cell math then
+// ignores far atoms. Clamped so it stays cheap.
+function searchRadius(maxCutoff) {
+  return Math.min(8.0, Math.max(4.0, 2.5 * maxCutoff));
+}
 
 // ConvexGeometry constructor (vendored addon; fall back to THREE.ConvexGeometry if present)
 const ConvexGeomCtor = (typeof ConvexGeometry !== 'undefined')
@@ -245,8 +257,39 @@ export function computePolyhedra(structure) {
     return out;
   }
 
-  // Source-level adjacency (for the cage induced-degree test) + the complete
-  // first-coordination shell of each primary atom (reused for centered hulls).
+  // All atom images (any species) within `radius` of point P — used to gather
+  // Voronoi candidates for a centre. Unlike neighborImages this is NOT limited to
+  // bonded pairs, because a closer non-bonded atom must still be able to shadow a
+  // farther one for the Voronoi cell to be correct.
+  const R = searchRadius(maxCutoff);
+  const mA = Math.max(1, Math.ceil(R / Math.max(widthA, 1e-6)));
+  const mB = Math.max(1, Math.ceil(R / Math.max(widthB, 1e-6)));
+  const mC = Math.max(1, Math.ceil(R / Math.max(widthC, 1e-6)));
+  /**
+   * @param {THREE.Vector3} P
+   * @returns {Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number, elem:string, radius:number}>}
+   */
+  function gatherWithin(P) {
+    const fp = cartToFrac([P.x, P.y, P.z], lattice, latInv);
+    const out = [];
+    for (let j = 0; j < nAtoms; j++) {
+      const fj = positions[j];
+      const c0 = Math.round(fp[0] - fj[0]);
+      const c1 = Math.round(fp[1] - fj[1]);
+      const c2 = Math.round(fp[2] - fj[2]);
+      for (let dx = c0 - mA; dx <= c0 + mA; dx++)
+        for (let dy = c1 - mB; dy <= c1 + mB; dy++)
+          for (let dz = c2 - mC; dz <= c2 + mC; dz++) {
+            const q = baseCart[j].clone().addScaledVector(a, dx).addScaledVector(b, dy).addScaledVector(c, dz);
+            const d = q.distanceTo(P);
+            if (d > R || d < 1e-4) continue;
+            out.push({ srcJ: j, shift: /** @type {[number,number,number]} */ ([dx, dy, dz]), pos: q, d, elem: elements[j], radius: atomicRadii[elements[j]] || 1.0 });
+          }
+    }
+    return out;
+  }
+
+  // Source-level adjacency for the cage induced-degree test (uses bonded images).
   /** @type {Map<number, Set<number>>} */
   const adjacency = new Map();
   function addBond(u, v) {
@@ -254,12 +297,8 @@ export function computePolyhedra(structure) {
     if (!adjacency.has(v)) adjacency.set(v, new Set());
     adjacency.get(u).add(v); adjacency.get(v).add(u);
   }
-  /** @type {Map<number, Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>>} */
-  const primaryShell = new Map();
   for (let i = 0; i < nAtoms; i++) {
-    const shell = neighborImages(baseCart[i], elements[i]);
-    primaryShell.set(i, shell);
-    for (const o of shell) addBond(i, o.srcJ);
+    for (const o of neighborImages(baseCart[i], elements[i])) addBond(i, o.srcJ);
   }
 
   // ---------- Build candidates ----------
@@ -275,24 +314,37 @@ export function computePolyhedra(structure) {
    * }>} */
   const candidates = [];
 
-  // ---- Centered: one full-shell polyhedron per primary atom (no CN downgrade) ----
+  // ---- Centered: one polyhedron per primary atom, neighbours by radical Voronoi ----
   for (let i=0; i<nAtoms; i++) {
     const centerPos = baseCart[i];
     const centerElem = elements[i];
 
-    // Complete first-coordination shell: nearest image per coordinating source atom.
+    // Radical-Voronoi + solid-angle neighbour selection (distance-independent:
+    // keeps elongated bonds, rejects shadowed far atoms). Candidates include all
+    // species so closer atoms can shadow farther ones.
+    const cands = gatherWithin(centerPos);
+    if (cands.length < 4) continue;
+    const vor = voronoiNeighbours(centerPos, cands, {
+      radical: VORONOI_RADICAL,
+      relMin: VORONOI_SOLID_ANGLE_REL,
+      centerRadius: atomicRadii[centerElem] || 1.0,
+    });
+
+    // Outer bound: a vertex must also be within the configured (visible) bond
+    // cutoff for the pair. Dedup to the nearest image per coordinating source atom.
     const bySrc = new Map();
-    for (const o of (primaryShell.get(i) || [])) {
-      const prev = bySrc.get(o.srcJ);
-      if (!prev || o.d < prev.d) bySrc.set(o.srcJ, o);
+    for (const { cand } of vor) {
+      const cutoff = getBondCutoff(centerElem, cand.elem);
+      if (cutoff <= 1e-3 || cand.d > cutoff) continue;
+      const prev = bySrc.get(cand.srcJ);
+      if (!prev || cand.d < prev.d) bySrc.set(cand.srcJ, cand);
     }
     const entries = Array.from(bySrc.values());
     if (entries.length < 4) continue; // need ≥4 non-coplanar points for a closed hull
 
-    // The bond cutoff defines the coordination shell, so we do NOT apply a
-    // distortion (edge-spread) filter here — that would wrongly drop a complete
-    // but distorted/over-coordinated shell (e.g. a stretched TiO6). The only
-    // skip reason is geometric degeneracy: a (near-)planar set has no volume.
+    // Only remaining skip reason is geometric degeneracy: a (near-)planar set has
+    // no volume. No distortion filter — the neighbour set is already the genuine
+    // coordination shell.
     const posList = entries.map(o => o.pos);
     try { new ConvexGeomCtor(posList).dispose(); } catch { continue; }
     if (thicknessRatio(posList) < MIN_THICKNESS_RATIO) continue; // degenerate / planar
