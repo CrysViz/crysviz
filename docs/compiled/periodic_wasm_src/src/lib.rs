@@ -88,6 +88,9 @@ fn get_bond_cutoff(bond_table: &[f64], n_elem: usize, ei: usize, ej: usize) -> f
 /// * `lattice_flat`– flat f64 array, row-major 3×3 lattice matrix [a; b; c].
 /// * `bond_table`  – flat f64 cutoff matrix, length n_elem × n_elem.
 /// * `n_elem`      – number of element species.
+/// * `face_tol`    – tolerance (fractional coords) for treating an atom as
+///   sitting on a cell face/edge/corner. Real structures carry small offsets
+///   from 0/1, so this must be looser than machine eps (default ~1e-3).
 #[wasm_bindgen]
 pub fn periodic_wrapped(
     show_periodic: bool,
@@ -97,6 +100,7 @@ pub fn periodic_wrapped(
     lattice_flat: &[f64],
     bond_table: &[f64],
     n_elem: usize,
+    face_tol: f64,
 ) -> PeriodicResult {
     let n = elements_in.len();
     assert_eq!(frac_in.len(), 3 * n);
@@ -134,8 +138,12 @@ pub fn periodic_wrapped(
     // ------------------------------------------------------------------
     // showPeriodic = true  →  wrap atoms and duplicate boundary atoms
     // ------------------------------------------------------------------
-    const EPS: f64 = 1e-6;
-
+    // Detect which cell faces an atom sits on within `face_tol` (fractional);
+    // each detected face contributes a mirror offset. Every combination is
+    // emitted unconditionally — a corner atom lands on all 8 corners, an edge
+    // atom on all 4 edges, a face atom on both faces. Mirrors are placed at the
+    // true periodic position (f ± 1), with no re-detection or clamping of the
+    // mirrored coordinate. Mirrors the JS implementation (periodicWrappedJS).
     let mut new_elements: Vec<u32> = Vec::with_capacity(n * 2);
     let mut new_frac: Vec<Vec3> = Vec::with_capacity(n * 2);
     let mut new_cart: Vec<Vec3> = Vec::with_capacity(n * 2);
@@ -145,12 +153,12 @@ pub fn periodic_wrapped(
         let f = Vec3::new(frac_in[3 * i], frac_in[3 * i + 1], frac_in[3 * i + 2]);
         let atm = elements_in[i];
 
-        // Offsets to try on each axis: always include 0; add ±1 if near boundary.
+        // Offsets to try on each axis: always include 0; add ±1 if near a face.
         let offs = |coord: f64| -> &'static [f64] {
-            if coord < EPS {
-                &[0.0, 1.0]          // near 0 edge → also show at +1
-            } else if coord > 1.0 - EPS {
-                &[0.0, -1.0]         // near 1 edge → also show at -1
+            if coord < face_tol {
+                &[0.0, 1.0]          // near 0 face → also mirror to +1
+            } else if coord > 1.0 - face_tol {
+                &[0.0, -1.0]         // near 1 face → also mirror to -1
             } else {
                 &[0.0]
             }
@@ -159,29 +167,12 @@ pub fn periodic_wrapped(
         for &dx in offs(f.x) {
             for &dy in offs(f.y) {
                 for &dz in offs(f.z) {
-                    let nx = f.x + dx;
-                    let ny = f.y + dy;
-                    let nz = f.z + dz;
-
-                    // Accept if inside [0, 1) with EPS tolerance
-                    if nx >= -EPS
-                        && nx < 1.0 + EPS
-                        && ny >= -EPS
-                        && ny < 1.0 + EPS
-                        && nz >= -EPS
-                        && nz < 1.0 + EPS
-                    {
-                        let fw = Vec3::new(
-                            nx.clamp(0.0, 1.0 - EPS),
-                            ny.clamp(0.0, 1.0 - EPS),
-                            nz.clamp(0.0, 1.0 - EPS),
-                        );
-                        let c = lattice.mul_vec(fw);
-                        new_elements.push(atm);
-                        new_frac.push(fw);
-                        new_cart.push(c);
-                        new_src.push(i as u32);
-                    }
+                    let fw = Vec3::new(f.x + dx, f.y + dy, f.z + dz);
+                    let c = lattice.mul_vec(fw);
+                    new_elements.push(atm);
+                    new_frac.push(fw);
+                    new_cart.push(c);
+                    new_src.push(i as u32);
                 }
             }
         }
