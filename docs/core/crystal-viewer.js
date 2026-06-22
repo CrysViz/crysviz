@@ -245,7 +245,10 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
    document.getElementById('structureControls2').style.display = 'block';
 
     createShareButton();
-    updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true,reRenderField:true});
+    // NOTE: do not call updateVisualization() here. Every load path above funnels
+    // through initializeUIOnLoad() -> selectLastAddedRow() -> updateStructureFromRowAndStep(),
+    // which already performs a full atoms+bonds+field+other re-render. Re-rendering here
+    // doubled the (expensive, O(n^2)) bond build on every load.
     updateControlSpinForcePanel();
     console.warn(fileBrowser.selectedStructure)
     // Rebuild camera with size/distance based on structure and zoom scale
