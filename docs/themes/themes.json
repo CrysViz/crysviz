@@ -1,7 +1,8 @@
 {
-  "//": "CrysViz theme registry. Each theme is a directory under themes/ holding a theme.css (and optionally an icons/ folder). The loader (ui/ThemeManager.js) always applies `base` first, then the selected theme's `css` (null = base only). To add a theme: create themes/<id>/theme.css (+ icons if you want to override the defaults) and add one entry below.",
+  "//": "CrysViz theme registry. Each theme is a directory under themes/ holding a theme.css (and optionally an icons/ folder). The loader (ui/ThemeManager.js) always applies `base` first, then the selected theme's `css` (null = base only). To add a theme: create themes/<id>/theme.css (+ icons if you want to override the defaults) and add one entry below. The special `auto` entry follows the OS prefers-color-scheme: its `auto` is [light-side theme, dark-side theme]; selecting it tracks the system, and the dark/twilight/light toggle reflects whichever is in effect.",
   "base": "default/theme.css",
   "themes": [
+    { "id": "auto",     "name": "Auto (light/dark)", "css": null, "auto": ["twilight", "dark"] },
     { "id": "light",    "name": "Light",    "css": null },
     { "id": "dark",     "name": "Dark",     "css": "dark/theme.css" },
     { "id": "twilight", "name": "Twilight", "css": "twilight/theme.css" },

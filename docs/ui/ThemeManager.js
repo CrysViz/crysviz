@@ -1,17 +1,22 @@
 // CSS-file-based theme system.
 //
 // Loads themes/themes.json, always applies the base theme (default.css) plus an
-// optional override file for the selected theme, and drives the 3D scene colors
-// (--scene-bg / --lattice-color, defined in the theme CSS) into three.js.
+// optional override file for the *effective* theme, and drives the 3D scene
+// colors (--scene-bg / --lattice-color, defined in the theme CSS) into three.js.
 //
-// UI: the existing dark/twilight/light icon toggle (.theme-btn) is kept and works
-// as before; a small dropdown arrow (#themeMenuToggle) lists ALL installed themes
-// (including "docked"). Selecting dark/twilight/light highlights the matching
-// toggle button; selecting any other theme leaves the toggle un-highlighted.
+// Auto mode: the special "auto" theme follows the OS prefers-color-scheme (its
+// `auto` field is [light-side, dark-side]). It is the default. While auto is
+// selected the app re-applies the matching theme whenever the system flips, and
+// the dark/twilight/light icon toggle highlights whichever is in effect. Picking
+// a concrete theme (via the toggle icons or the dropdown) leaves auto and the
+// app stops tracking the system until "Auto" is chosen again.
+//
+// UI: the dark/twilight/light icon toggle (.theme-btn) reflects the *effective*
+// theme; the dropdown arrow (#themeMenuToggle) lists every theme (incl. Auto and
+// Docked) and highlights the *selected* one.
 //
 // Themes in DOCK_THEMES (e.g. "docked") also pull persistent floating panels
-// (composition, trajectory controls, MD monitor) into #ui; other themes restore
-// them to the body.
+// (composition, trajectory controls, MD monitor) into #ui; others restore them.
 //
 // To add a theme: drop a CSS file in docs/themes/ and add one entry to themes.json.
 
@@ -34,9 +39,10 @@ const DOCKABLE = [
 ];
 const DOCK_THEMES = new Set(['docked']);
 
-/** @type {{base?:string, themes:{id:string,name:string,css:?string}[]}|null} */
+/** @type {{base?:string, themes:{id:string,name:string,css:?string,auto?:string[]}[]}|null} */
 let manifest = null;
-let currentThemeId = null;
+let currentSelection = null; // the chosen entry id (may be "auto"); persisted
+let currentEffective = null; // the concrete theme actually applied to the page
 
 function ensureBaseLink(baseCss) {
   let link = document.getElementById('theme-base');
@@ -60,6 +66,17 @@ function getActiveLink() {
   return link;
 }
 
+const prefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+// Resolve a selection entry to the concrete theme to display. For an "auto"
+// entry (auto: [lightId, darkId]) that follows the OS; otherwise it's itself.
+function effectiveTheme(entry) {
+  if (entry && Array.isArray(entry.auto) && entry.auto.length === 2) {
+    return prefersDark() ? entry.auto[1] : entry.auto[0];
+  }
+  return entry ? entry.id : null;
+}
+
 // Push the active theme's scene colors into three.js. Exported so the background
 // color-picker can reset the scene background to the current theme default.
 export function applySceneFromCSS() {
@@ -79,12 +96,32 @@ export function applySceneFromCSS() {
   }
 }
 
-function applyToggleState(id) {
-  // Highlight the matching dark/twilight/light toggle button (or none).
+// Swap the active theme-override stylesheet to the given concrete theme.
+function applyConcreteVisuals(themeId) {
+  const theme = manifest.themes.find(t => t.id === themeId);
+  const link = getActiveLink();
+  if (theme && theme.css) {
+    // Apply scene colors once the override stylesheet has loaded so
+    // getComputedStyle sees the new --scene-bg / --lattice-color.
+    const onLoad = () => { link.removeEventListener('load', onLoad); applySceneFromCSS(); };
+    link.addEventListener('load', onLoad);
+    link.setAttribute('href', THEMES_DIR + theme.css);
+  } else {
+    link.removeAttribute('href');
+    applySceneFromCSS();
+  }
+}
+
+// The dark/twilight/light icons reflect the EFFECTIVE theme (or none).
+function applyToggleHighlight(effId) {
   document.querySelectorAll('.theme-btn').forEach(btn =>
-    btn.classList.toggle('active', /** @type {HTMLElement} */ (btn).dataset.themeOption === id));
+    btn.classList.toggle('active', /** @type {HTMLElement} */ (btn).dataset.themeOption === effId));
+}
+
+// The dropdown menu highlights the SELECTED entry (which may be "auto").
+function applyMenuHighlight(selId) {
   document.querySelectorAll('.theme-menu-item').forEach(el =>
-    el.classList.toggle('active', /** @type {HTMLElement} */ (el).dataset.themeId === id));
+    el.classList.toggle('active', /** @type {HTMLElement} */ (el).dataset.themeId === selId));
 }
 
 function applyDocking(id) {
@@ -106,50 +143,44 @@ function applyDocking(id) {
   });
 }
 
-// Re-run docking for the active theme. Call after creating a dockable panel that
-// did not exist when the theme was applied (e.g. the MD monitor, trajectory
-// controls), so it docks immediately while a docked theme is active.
+// Re-run docking for the active (effective) theme. Call after creating a dockable
+// panel that did not exist when the theme was applied (e.g. the MD monitor,
+// trajectory controls), so it docks immediately while a docked theme is active.
 export function refreshDocking() {
-  if (currentThemeId) applyDocking(currentThemeId);
+  if (currentEffective) applyDocking(currentEffective);
 }
 
-export function applyTheme(id) {
+// Select a theme by entry id ("auto" or a concrete theme). Persists the
+// selection; applies whichever concrete theme is in effect.
+export function applyTheme(selectionId) {
   if (!manifest) return;
-  const theme = manifest.themes.find(t => t.id === id) || manifest.themes[0];
-  const link = getActiveLink();
+  const entry = manifest.themes.find(t => t.id === selectionId) || manifest.themes[0];
+  const eff = effectiveTheme(entry);
 
-  if (theme.css) {
-    // Apply scene colors once the override stylesheet has loaded so
-    // getComputedStyle sees the new --scene-bg / --lattice-color.
-    const onLoad = () => { link.removeEventListener('load', onLoad); applySceneFromCSS(); };
-    link.addEventListener('load', onLoad);
-    link.setAttribute('href', THEMES_DIR + theme.css);
-  } else {
-    link.removeAttribute('href');
-    applySceneFromCSS();
-  }
+  currentSelection = entry.id;
+  currentEffective = eff;
 
-  currentThemeId = theme.id;
-  localStorage.setItem(STORAGE_KEY, theme.id);
-  document.documentElement.setAttribute('data-theme', theme.id);
-  applyToggleState(theme.id);
-  applyDocking(theme.id);
+  applyConcreteVisuals(eff);
+  localStorage.setItem(STORAGE_KEY, entry.id);
+  document.documentElement.setAttribute('data-theme', eff);
+  applyToggleHighlight(eff);   // icons show what's actually displayed
+  applyMenuHighlight(entry.id); // menu shows the selection (incl. Auto)
+  applyDocking(eff);
 }
 
 function resolveInitialTheme() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved && manifest.themes.some(t => t.id === saved)) return saved;
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  if (prefersDark && manifest.themes.some(t => t.id === 'dark')) return 'dark';
-  return manifest.themes[0].id;
+  // Default to Auto (follow the system) when available.
+  return manifest.themes.some(t => t.id === 'auto') ? 'auto' : manifest.themes[0].id;
 }
 
 function wireThemeControls() {
-  // Existing dark/twilight/light icon toggle.
+  // dark/twilight/light icon toggle — picking one drops to that concrete theme.
   document.querySelectorAll('.theme-btn[data-theme-option]').forEach(btn =>
     btn.addEventListener('click', () => applyTheme(/** @type {HTMLElement} */ (btn).dataset.themeOption)));
 
-  // Dropdown arrow + menu listing every installed theme.
+  // Dropdown arrow + menu listing every installed theme (incl. Auto).
   const toggle = document.getElementById('themeMenuToggle');
   const menu = document.getElementById('themeMenu');
   if (!toggle || !menu) return;
@@ -193,5 +224,12 @@ export async function setupThemeSystem() {
   }
   ensureBaseLink(manifest.base || 'default.css');
   wireThemeControls();
+
+  // While "Auto" is selected, follow the OS light/dark setting live.
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    const entry = manifest.themes.find(t => t.id === currentSelection);
+    if (entry && Array.isArray(entry.auto)) applyTheme(currentSelection);
+  });
+
   applyTheme(resolveInitialTheme());
 }
