@@ -7,6 +7,7 @@ import { parsePWSCFout } from './ReadPWSCFoutModule.js';
 import { parseOUTCAR } from './ReadOutcarModule.js';
 import { parseXYZFile } from './ReadeXYZModule.js';
 import { readPOSCAR } from './ReadPOSCARModule.js';
+import { parseResFile } from './ReadResModule.js';
 import {generateID} from '../utils/index.js'
 
 /*
@@ -46,6 +47,8 @@ export async function parse_any(content, fileName = '', isDefault = false) {
   const treatAsEXZY = lower.endsWith(".xyz") ||
         lower.endsWith(".exyz");
 
+  const treatAsRes = lower.endsWith(".res");
+
 
   if (treatAsCIF) {
     console.log("This is probably a CIF file")
@@ -75,6 +78,11 @@ export async function parse_any(content, fileName = '', isDefault = false) {
   else if (treatAsEXZY) {
     console.log("This is probably an (e)XYZ file");
     return parseXYZFile(content, fileName);
+  }
+
+  else if (treatAsRes) {
+    console.log("This is probably a Res file");
+    return parseResFile(content, fileName);
   }
 
   else {
