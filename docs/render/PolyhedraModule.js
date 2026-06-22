@@ -1,7 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
 import { ConvexGeometry } from '../external/three/ConvexGeometry.js';
 import {app,general,groups, fileBrowser} from '../state/store.js'
-import {periodicWrapped} from '../render/LatticeModule.js'
+import { fracToCart, cartToFrac, invert3x3, transpose3x3 } from '../math/index.js'
 import { getBondCutoff} from '../render/BondsFracUpdateModule.js'
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import { Polyhedra } from '../model/Polyhedra.js'
@@ -20,16 +20,15 @@ const POLY_OFFSET_FACTOR = 1;
 const POLY_OFFSET_UNITS = 1;
 
 // ---------- BEHAVIOR (compute) ----------
-// Centered CNs (largest-first prioritization is achieved later via candidate sort)
-const CENTERED_CNs_DESC = [12, 10, 8, 7, 6, 5, 4];
-
 // Cages (uncentered): **includes N = 20 dodecahedra**
 const ALLOW_CAGES = true;
 const CAGE_TARGET_NS_DESC = [20, 12, 10, 8, 6, 4]; // 20 first for dodecahedron cages
 const CAGE_BFS_DEPTH = 5; // a bit deeper to ensure we hit full N=20 shells
 
-// Mild distortion tolerance (applies to both centered and cages)
-const MAX_EDGE_SPREAD = 1.30;      // max(edge)/min(edge) ≤ 1.30  (~30%)
+// Distortion tolerance (applies to both centered and cages). Centered now uses
+// the full coordination shell (no CN-downgrade), so this is only a skip gate —
+// kept loose so genuinely distorted-but-complete shells are not dropped.
+const MAX_EDGE_SPREAD = 1.60;      // max(edge)/min(edge) ≤ 1.60
 const MIN_THICKNESS_RATIO = 0.08;  // very lenient anti-flatness (e_min / e_max)
 
 // ConvexGeometry constructor (vendored addon; fall back to THREE.ConvexGeometry if present)
@@ -129,20 +128,6 @@ function pointInsideConvexGeometry(p, geom, eps=1e-6) {
   return true;
 }
 
-function bfs(adjacency, srcStart, depthMax) {
-  const visited = new Map(); // src -> depth
-  const q = [[srcStart, 0]];
-  visited.set(srcStart, 0);
-  while (q.length) {
-    const [u,d] = q.shift();
-    if (d === depthMax) continue;
-    for (const v of (adjacency.get(u) || [])) {
-      if (!visited.has(v)) { visited.set(v, d+1); q.push([v,d+1]); }
-    }
-  }
-  return visited;
-}
-
 // Spherical farthest-point sampling: pick N vertices well spread (angle-based)
 function pickSpreadSubset(points, N) {
   if (points.length < N) return null;
@@ -204,36 +189,64 @@ export function computePolyhedra(structure) {
     return new Polyhedra({ polyhedra: [] });
   }
 
-  // ---------- Build bond graph + per-center bonded images (with shifts) ----------
-  const positions = structure.atoms.map(a => a.position);
+  // ---------- Periodic-image neighbour graph ----------
+  const positions = structure.atoms.map(a => a.position); // fractional
   const elements = [...structure.elements];
   const lattice = structure.lattice.map(r => [...r]);
 
-  // periodicWrapped duplicates boundary atoms so coordination spheres are complete.
-  // NOTE: signature is (general, frac, elements, lattice) and it returns Cartesian
-  // coords in `.cart`. Force showPeriodic on so boundary atoms are replicated even
-  // when the user has periodic display off (otherwise surface atoms get partial
-  // coordination); the algorithm finds out-of-cell neighbours via its own shifts.
-  const wrapped = periodicWrapped({ ...general, showPeriodic: true }, positions, elements, lattice);
-
-  const Wpos  = wrapped.cart.map(p => new THREE.Vector3(p[0], p[1], p[2]));
-  const Welem = wrapped.elements;
-  const Wsrc  = wrapped.srcIndex;
-
+  // Lattice vectors + primary-cell Cartesian positions of every atom.
   const a = new THREE.Vector3(lattice[0][0], lattice[0][1], lattice[0][2]);
   const b = new THREE.Vector3(lattice[1][0], lattice[1][1], lattice[1][2]);
   const c = new THREE.Vector3(lattice[2][0], lattice[2][1], lattice[2][2]);
+  const baseCart = fracToCart(positions, lattice).map(p => new THREE.Vector3(p[0], p[1], p[2]));
+  const nAtoms = baseCart.length;
+  const latInv = invert3x3(transpose3x3(lattice));
 
+  // Guaranteed-complete image range per axis: how many cells (in each lattice
+  // direction) the largest bond cutoff can reach, using the cell's perpendicular
+  // widths d = V/|b×c| so no neighbour image is ever missed, even for skewed cells.
   const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || {}).map(v => (typeof v === 'number' ? v : (v?.max ?? 0))), 0.0);
-  const ax = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(a.length(), 1e-6))));
-  const by = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(b.length(), 1e-6))));
-  const cz = Math.max(1, Math.min(2, Math.ceil(maxCutoff / Math.max(c.length(), 1e-6))));
-  const shifts = [];
-  for (let dx=-ax; dx<=ax; dx++)
-    for (let dy=-by; dy<=by; dy++)
-      for (let dz=-cz; dz<=cz; dz++)
-        shifts.push([dx,dy,dz]);
+  const cellVol = Math.abs(a.dot(new THREE.Vector3().crossVectors(b, c)));
+  const widthA = cellVol / Math.max(new THREE.Vector3().crossVectors(b, c).length(), 1e-9);
+  const widthB = cellVol / Math.max(new THREE.Vector3().crossVectors(c, a).length(), 1e-9);
+  const widthC = cellVol / Math.max(new THREE.Vector3().crossVectors(a, b).length(), 1e-9);
+  const nA = Math.max(1, Math.ceil(maxCutoff / Math.max(widthA, 1e-6)));
+  const nB = Math.max(1, Math.ceil(maxCutoff / Math.max(widthB, 1e-6)));
+  const nC = Math.max(1, Math.ceil(maxCutoff / Math.max(widthC, 1e-6)));
 
+  /**
+   * Every periodic image of any atom that lies within its bond cutoff of point P
+   * (which may sit anywhere, not only in the primary cell). Searches the ±n image
+   * ring around the cell containing P, so it stays complete even far from origin.
+   * @param {THREE.Vector3} P
+   * @param {string} elem element symbol at P (for the cutoff lookup)
+   * @returns {Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>}
+   */
+  function neighborImages(P, elem) {
+    const fp = cartToFrac([P.x, P.y, P.z], lattice, latInv);
+    const out = [];
+    for (let j = 0; j < nAtoms; j++) {
+      const ej = elements[j];
+      const cutoff = getBondCutoff(elem, ej);
+      if (cutoff <= 1e-3) continue;
+      const fj = positions[j];
+      const c0 = Math.round(fp[0] - fj[0]);
+      const c1 = Math.round(fp[1] - fj[1]);
+      const c2 = Math.round(fp[2] - fj[2]);
+      for (let dx = c0 - nA; dx <= c0 + nA; dx++)
+        for (let dy = c1 - nB; dy <= c1 + nB; dy++)
+          for (let dz = c2 - nC; dz <= c2 + nC; dz++) {
+            const q = baseCart[j].clone().addScaledVector(a, dx).addScaledVector(b, dy).addScaledVector(c, dz);
+            const d = q.distanceTo(P);
+            if (d > cutoff || d < 1e-4) continue;
+            out.push({ srcJ: j, shift: /** @type {[number,number,number]} */ ([dx, dy, dz]), pos: q, d });
+          }
+    }
+    return out;
+  }
+
+  // Source-level adjacency (for the cage induced-degree test) + the complete
+  // first-coordination shell of each primary atom (reused for centered hulls).
   /** @type {Map<number, Set<number>>} */
   const adjacency = new Map();
   function addBond(u, v) {
@@ -241,130 +254,95 @@ export function computePolyhedra(structure) {
     if (!adjacency.has(v)) adjacency.set(v, new Set());
     adjacency.get(u).add(v); adjacency.get(v).add(u);
   }
-
-  /** @type {Map<number, Array<{pos:THREE.Vector3, srcJ:number, shift:[number,number,number], d:number}>>} */
-  const perCenterImages = new Map();
-  for (let i=0; i<Wpos.length; i++) {
-    const pi = Wpos[i], ei = Welem[i], srcI = Wsrc[i];
-    const bonded = [];
-    for (let j=0; j<Wpos.length; j++) {
-      if (j === i) continue;
-      const pj = Wpos[j], ej = Welem[j], srcJ = Wsrc[j];
-      const cutoff = getBondCutoff(ei, ej);
-      if (cutoff <= 1e-3) continue;
-      for (const [dx,dy,dz] of shifts) {
-        const shiftVec = new THREE.Vector3().addScaledVector(a,dx).addScaledVector(b,dy).addScaledVector(c,dz);
-        const q = pj.clone().add(shiftVec);
-        const d = q.distanceTo(pi);
-        if (d > cutoff || d < 1e-4) continue;
-        addBond(srcI, srcJ);
-        bonded.push({ pos: q, srcJ, shift:[dx,dy,dz], d });
-      }
-    }
-    perCenterImages.set(i, /** @type {any} */ (bonded));
-  }
-
-  // Map src -> list of wrapped indices (to identify cage vertex images)
-  const wrappedIdxBySrc = new Map();
-  for (let wi=0; wi<Wsrc.length; wi++) {
-    const s = Wsrc[wi];
-    if (!wrappedIdxBySrc.has(s)) wrappedIdxBySrc.set(s, []);
-    wrappedIdxBySrc.get(s).push(wi);
+  /** @type {Map<number, Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>>} */
+  const primaryShell = new Map();
+  for (let i = 0; i < nAtoms; i++) {
+    const shell = neighborImages(baseCart[i], elements[i]);
+    primaryShell.set(i, shell);
+    for (const o of shell) addBond(i, o.srcJ);
   }
 
   // ---------- Build candidates ----------
   /** @type {Array<{
    *   kind: 'centered'|'cage',
    *   colorElem: string,
-   *   centerWrappedIdx?: number,
    *   centerSrc?: number,
    *   centerPos?: THREE.Vector3,
    *   posList: THREE.Vector3[],
    *   vertexSrcList: number[],
-   *   vertexWrappedIdxList?: number[],              // cages
-   *   vertexImageList?: Array<{src:number, shift:[number,number,number]}>, // centered
+   *   vertexImageList: Array<{src:number, shift:[number,number,number]}>,
    *   refPoint: THREE.Vector3,
    * }>} */
   const candidates = [];
 
-  // ---- Centered (one per center; try largest CNs first) ----
-  for (let i=0; i<Wpos.length; i++) {
-    const centerPos = Wpos[i], centerElem = Welem[i], centerSrc = Wsrc[i];
-    const imgs = perCenterImages.get(i) || [];
-    if (imgs.length < 3) continue;
+  // ---- Centered: one full-shell polyhedron per primary atom (no CN downgrade) ----
+  for (let i=0; i<nAtoms; i++) {
+    const centerPos = baseCart[i];
+    const centerElem = elements[i];
 
-    for (const N of CENTERED_CNs_DESC) {
-      if (imgs.length < N) continue;
-
-      const nearest = imgs.slice().sort((u,v)=>u.d - v.d).slice(0, N);
-      const allPos = imgs.map(o=>o.pos);
-      const spreadPos = (imgs.length > N) ? (pickSpreadSubset(allPos, N) || []) : nearest.map(o=>o.pos);
-
-      const variants = [];
-      variants.push(nearest);
-      if (spreadPos.length === N) {
-        // map spread positions back to entries
-        const spreadEntries = spreadPos.map(p => {
-          let best=null, bestD=Infinity;
-          for (const o of imgs) {
-            const dd = p.distanceToSquared(o.pos);
-            if (dd < bestD) { bestD = dd; best = o; }
-          }
-          return best;
-        });
-        const nearestSet = new Set(nearest.map(o=>o.pos));
-        if (spreadEntries.some(o => !nearestSet.has(o.pos))) variants.push(spreadEntries);
-      }
-
-      let acceptedVariant = null;
-      for (const variant of variants) {
-        const posList = variant.map(o=>o.pos);
-        let geom;
-        try { geom = new ConvexGeomCtor(posList); } catch { continue; }
-        const okSpread = edgeSpreadOK(geom);
-        const okThick  = thicknessRatio(posList) >= MIN_THICKNESS_RATIO;
-        if (okSpread && okThick) { acceptedVariant = { posList, variant }; geom.dispose(); break; }
-        geom.dispose();
-      }
-   if (acceptedVariant) {
-        candidates.push({
-          kind: 'centered',
-          colorElem: centerElem,
-          centerWrappedIdx: i,
-          centerSrc,
-          centerPos,
-          posList: acceptedVariant.posList,
-          vertexSrcList: acceptedVariant.variant.map(o=>o.srcJ),
-          vertexImageList: acceptedVariant.variant.map(o=>({ src:o.srcJ, shift:o.shift })),
-          refPoint: centerPos.clone(),
-        });
-        break; // only one centered candidate per center (largest-first)
-      }
+    // Complete first-coordination shell: nearest image per coordinating source atom.
+    const bySrc = new Map();
+    for (const o of (primaryShell.get(i) || [])) {
+      const prev = bySrc.get(o.srcJ);
+      if (!prev || o.d < prev.d) bySrc.set(o.srcJ, o);
     }
+    const entries = Array.from(bySrc.values());
+    if (entries.length < 3) continue; // cannot form a polyhedron
+
+    const posList = entries.map(o => o.pos);
+    let geom;
+    try { geom = new ConvexGeomCtor(posList); } catch { continue; }
+    const okThick = thicknessRatio(posList) >= MIN_THICKNESS_RATIO;
+    const okSpread = edgeSpreadOK(geom);
+    geom.dispose();
+    if (!okThick || !okSpread) continue; // full-or-none: skip, never downgrade
+
+    candidates.push({
+      kind: 'centered',
+      colorElem: centerElem,
+      centerSrc: i,
+      centerPos,
+      posList,
+      vertexSrcList: entries.map(o => o.srcJ),
+      vertexImageList: entries.map(o => ({ src: o.srcJ, shift: o.shift })),
+      refPoint: centerPos.clone(),
+    });
   }
 
   // ---- Cages (uncentered): includes N=20 dodecahedra; largest-first ----
   if (ALLOW_CAGES) {
-    function buildPoolForSeed(seedSrc, depthMax) {
-      const reach = bfs(adjacency, seedSrc, depthMax);
-      const pool = [];
-      for (const s of reach.keys()) {
-        const idxs = wrappedIdxBySrc.get(s) || [];
-        for (const wi of idxs) pool.push({ wi, pos: Wpos[wi], src: Wsrc[wi] });
+    // BFS in image space: each node is a concrete periodic image keyed by
+    // (src, shift), so a boundary-straddling shell stays spatially contiguous
+    // (the old in-cell pool was the main source of partial cages).
+    function buildPoolForSeed(seedI, depthMax) {
+      const startKey = `${seedI}:0,0,0`;
+      /** @type {Map<string, {pos:THREE.Vector3, src:number, shift:[number,number,number], depth:number}>} */
+      const visited = new Map();
+      visited.set(startKey, { pos: baseCart[seedI], src: seedI, shift: [0,0,0], depth: 0 });
+      const queue = [startKey];
+      while (queue.length) {
+        const node = visited.get(queue.shift());
+        if (!node || node.depth === depthMax) continue;
+        for (const o of neighborImages(node.pos, elements[node.src])) {
+          const k = `${o.srcJ}:${o.shift[0]},${o.shift[1]},${o.shift[2]}`;
+          if (!visited.has(k)) {
+            visited.set(k, { pos: o.pos, src: o.srcJ, shift: o.shift, depth: node.depth + 1 });
+            queue.push(k);
+          }
+        }
       }
-      return pool;
+      return Array.from(visited.values()); // [{pos, src, shift, depth}]
     }
 
-    for (let seedWi=0; seedWi<Wpos.length; seedWi++) {
-      const seedSrc = Wsrc[seedWi];
-      const seedElem = Welem[seedWi];
+    for (let seedI=0; seedI<nAtoms; seedI++) {
+      const seedElem = elements[seedI];
 
       // expand pool up to depth until we have plenty of candidates for N=20
       let depth = 3;
-      let pool = buildPoolForSeed(seedSrc, depth);
+      let pool = buildPoolForSeed(seedI, depth);
       while (pool.length < 40 && depth < CAGE_BFS_DEPTH) { // heuristic ≥2×N
         depth++;
-        pool = buildPoolForSeed(seedSrc, depth);
+        pool = buildPoolForSeed(seedI, depth);
       }
       if (pool.length < 4) continue;
 
@@ -430,7 +408,7 @@ export function computePolyhedra(structure) {
 
           // Build candidate hull on selected N verts
           const posList = verts.map(o=>o.pos);
-          const selSrcs = verts.map(o=>o.src);   // source atom index per selected vertex (parallel to vertexWrappedIdxList)
+          const selSrcs = verts.map(o=>o.src);   // source atom index per selected vertex
           let geom;
           try { geom = new ConvexGeomCtor(posList); } catch { geom = null; }
           if (!geom) { geomBand.dispose(); continue; }
@@ -457,7 +435,7 @@ export function computePolyhedra(structure) {
             colorElem: seedElem,
             posList,
             vertexSrcList: selSrcs,
-            vertexWrappedIdxList: verts.map(o=>o.wi),
+            vertexImageList: verts.map(o=>({ src:o.src, shift:o.shift })),
             refPoint: posList.reduce((acc,p)=>acc.add(p), new THREE.Vector3()).multiplyScalar(1/posList.length),
           });
 
@@ -474,8 +452,8 @@ export function computePolyhedra(structure) {
 
   // ---------- Global constraints & accept into model ----------
   // Image-level center-not-corner:
-  //  - The exact wrapped center image cannot appear as a vertex image elsewhere.
-  const acceptedCenterWrappedKeys = new Set(); // 'wi:<wrappedIndex>'
+  //  - An accepted center image (src, shift) cannot appear as a cage vertex.
+  const acceptedCenterImageKeys = new Set(); // '<src>:<dx>,<dy>,<dz>'
   const acceptedHulls = []; // transient geometries kept only for inside tests
  // Priority: larger N first; then centered over cages
 
@@ -499,9 +477,11 @@ export function computePolyhedra(structure) {
 
   for (const cand of candidates) {
     // Image-level center-not-corner
-    if (cand.kind === 'cage' && cand.vertexWrappedIdxList) {
+    if (cand.kind === 'cage' && cand.vertexImageList) {
       // A cage must not use an already-accepted center image as a vertex
-      const conflict = cand.vertexWrappedIdxList.some(wi => acceptedCenterWrappedKeys.has(`wi:${wi}`));
+      const conflict = cand.vertexImageList.some(
+        v => acceptedCenterImageKeys.has(`${v.src}:${v.shift[0]},${v.shift[1]},${v.shift[2]}`)
+      );
       if (conflict) continue;
     }
 
@@ -528,9 +508,9 @@ export function computePolyhedra(structure) {
       vertexSrcList: cand.vertexSrcList,
     }));
 
-    // Update constraint sets
-    if (cand.kind === 'centered' && typeof cand.centerWrappedIdx === 'number') {
-      acceptedCenterWrappedKeys.add(`wi:${cand.centerWrappedIdx}`);
+    // Update constraint sets — the center sits at its primary cell (shift 0,0,0)
+    if (cand.kind === 'centered' && typeof cand.centerSrc === 'number') {
+      acceptedCenterImageKeys.add(`${cand.centerSrc}:0,0,0`);
     }
     acceptedHulls.push(geom); // keep for future inside tests (disposed below)
   }
