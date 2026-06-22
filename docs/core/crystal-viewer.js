@@ -247,7 +247,10 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
     // pipeline. parse_any picks the format (POSCAR is its fallback) and returns
     // a StructureContainer; registration happens once via initializeUIOnLoad.
     else {
-        const structureContainer = await parse_any(contentString, fileName);
+        // Pass the raw `content` (not contentString): most formats are text, but
+        // binary formats like ASE .traj arrive as an ArrayBuffer and parse_any
+        // dispatches them by extension.
+        const structureContainer = await parse_any(content, fileName);
         if (structureContainer && structureContainer.structures) initializeUIOnLoad(structureContainer);
     }
 
