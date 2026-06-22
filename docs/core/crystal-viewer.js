@@ -34,6 +34,7 @@ import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
 import {updateSecondBonds,rebuildSecondBonds} from '../render/index.js'
 import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
+import { updatePolyhedra} from '../render/index.js'
 import {rebuildAtoms,updateAtoms} from '../render/index.js';
 import {rebuildSecondAtoms,updateSecondAtoms} from '../render/index.js';
 
@@ -197,6 +198,9 @@ export function updateVisualization(options = {}) {
   }
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
   if (reRenderOther) updateOther();
+  // Polyhedra depend on atoms/bonds/lattice, so refresh them whenever the scene
+  // re-renders and the feature is on (persists across structure & frame changes).
+  if (general.showPolyhedra) updatePolyhedra();
   if (reRenderField) {
     if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
       updateField();

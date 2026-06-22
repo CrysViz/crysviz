@@ -106,7 +106,7 @@ export function setupControlsWiring() {
     };
   }
     let checkbox_polyhedra = document.getElementById("showPolyhedra");
-      checkbox_polyhedra.checked = false; // explicitly untick
+      checkbox_polyhedra.checked = general.showPolyhedra; // persist across structure loads
 
  //     let checkbox_showComparisonInfo = document.getElementById("showComparisonInfo");
  //     checkbox_showComparisonInfo.checked = false; // explicitly untick

@@ -1,9 +1,41 @@
 import * as THREE from '../external/three/three.module.js';
 import { ConvexGeometry } from '../external/three/ConvexGeometry.js';
 import {app,general,groups, fileBrowser} from '../state/store.js'
-import {periodicWrapped,fracToCart} from '../render/LatticeModule.js'
+import {periodicWrapped} from '../render/LatticeModule.js'
 import { getBondCutoff} from '../render/BondsFracUpdateModule.js'
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
+import { Polyhedra } from '../model/Polyhedra.js'
+import { Polyhedron } from '../model/Polyhedron.js'
+
+// ---------- STYLE (render) ----------
+const FACE_OPACITY = 0.80;
+const EDGE_OPACITY = Math.min(1, FACE_OPACITY + 0.35);
+const FACE_FALLBACK_COLOR = 0x00aaff;
+const EDGE_COLOR = 0x006c99;
+const EDGE_ANGLE = 18;
+const DOUBLE_SIDE = true;
+const DEPTH_WRITE = false;
+const POLY_OFFSET = true;
+const POLY_OFFSET_FACTOR = 1;
+const POLY_OFFSET_UNITS = 1;
+
+// ---------- BEHAVIOR (compute) ----------
+// Centered CNs (largest-first prioritization is achieved later via candidate sort)
+const CENTERED_CNs_DESC = [12, 10, 8, 7, 6, 5, 4];
+
+// Cages (uncentered): **includes N = 20 dodecahedra**
+const ALLOW_CAGES = true;
+const CAGE_TARGET_NS_DESC = [20, 12, 10, 8, 6, 4]; // 20 first for dodecahedron cages
+const CAGE_BFS_DEPTH = 5; // a bit deeper to ensure we hit full N=20 shells
+
+// Mild distortion tolerance (applies to both centered and cages)
+const MAX_EDGE_SPREAD = 1.30;      // max(edge)/min(edge) ≤ 1.30  (~30%)
+const MIN_THICKNESS_RATIO = 0.08;  // very lenient anti-flatness (e_min / e_max)
+
+// ConvexGeometry constructor (vendored addon; fall back to THREE.ConvexGeometry if present)
+const ConvexGeomCtor = (typeof ConvexGeometry !== 'undefined')
+  ? ConvexGeometry
+  : (THREE && THREE.ConvexGeometry ? THREE.ConvexGeometry : null);
 
 // Face color for a coordination polyhedron: the central element's atom color
 // (falls back to the default blue if unavailable). Previously referenced via a
@@ -11,54 +43,10 @@ import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 // polyhedra always rendered with the fallback color.
 function getElementColor(element) {
   const colors = fileBrowser.selectedStructure?.getElementColors?.()[element];
-  return (colors && colors.length) ? colors[0] : 0x00aaff;
+  return (colors && colors.length) ? colors[0] : FACE_FALLBACK_COLOR;
 }
 
-export function updatePolyhedra() {
-  // ---------- TOGGLE ----------
-  if (groups.polyhedraGroup) disposeGroup(groups.polyhedraGroup);
-  groups.polyhedraGroup = new THREE.Group();
-  if (!general.showPolyhedra) {
-    app.scene.add(groups.polyhedraGroup);
-    return; // IMPORTANT: nothing drawn when hidden
-  }
-
-  // Nothing to build without an active structure + lattice (e.g. polyhedra
-  // toggled/restored on before a structure is loaded). Without this guard the
-  // code below calls fracToCart on an undefined lattice, which hard-crashes the
-  // WASM math backend (the JS backend would silently produce NaN).
-  const _activeStructure = fileBrowser.selectedStructure;
-  if (!_activeStructure || !_activeStructure.lattice || !_activeStructure.atoms) {
-    app.scene.add(groups.polyhedraGroup);
-    return;
-  }
-
-  // ---------- STYLE ----------
-  const FACE_OPACITY = 0.80;
-  const EDGE_OPACITY = Math.min(1, FACE_OPACITY + 0.35);
-  const FACE_FALLBACK_COLOR = 0x00aaff;
-  const EDGE_COLOR = 0x006c99;
-  const EDGE_ANGLE = 18;
-  const DOUBLE_SIDE = true;
-  const DEPTH_WRITE = false;
-  const POLY_OFFSET = true;
-  const POLY_OFFSET_FACTOR = 1;
-  const POLY_OFFSET_UNITS = 1;
-
-  // ---------- BEHAVIOR ----------
-  // Centered CNs (largest-first prioritization is achieved later via candidate sort)
-  const CENTERED_CNs_DESC = [12, 10, 8, 7, 6, 5, 4];
-
-  // Cages (uncentered): **includes N = 20 dodecahedra**
-  const ALLOW_CAGES = true;
-  const CAGE_TARGET_NS_DESC = [20, 12, 10, 8, 6, 4]; // 20 first for dodecahedron cages
-  const CAGE_BFS_DEPTH = 5; // a bit deeper to ensure we hit full N=20 shells
-
-  // Mild distortion tolerance (applies to both centered and cages)
-  const MAX_EDGE_SPREAD = 1.30;      // max(edge)/min(edge) ≤ 1.30  (~30%)
-  const MIN_THICKNESS_RATIO = 0.08;  // very lenient anti-flatness (e_min / e_max)
-
-  // Minimal induced degree per cage size (tune as needed)
+// Minimal induced degree per cage size (tune as needed)
 function minVertexDegreeForCageSize(N) {
   if (N === 12) return 5; // B12 icosahedral cage in boron carbide
   if (N === 20) return 3; // 20-vertex dodecahedron (degree 3)
@@ -68,159 +56,167 @@ function minVertexDegreeForCageSize(N) {
   if (N === 4)  return 2;
   return 3;
 }
- // ---------- SAFETY ----------
-  const ConvexGeomCtor = (typeof ConvexGeometry !== 'undefined')
-    ? ConvexGeometry
-    : (THREE && THREE.ConvexGeometry ? THREE.ConvexGeometry : null);
+
+// ---------- Helpers ----------
+function thicknessRatio(points) {
+  const mean = points.reduce((acc,p)=>acc.add(p), new THREE.Vector3()).multiplyScalar(1/points.length);
+  const rel  = points.map(p=>p.clone().sub(mean));
+  let xx=0,xy=0,xz=0, yy=0,yz=0, zz=0;
+  for (const v of rel) { const x=v.x,y=v.y,z=v.z; xx+=x*x; xy+=x*y; xz+=x*z; yy+=y*y; yz+=y*z; zz+=z*z; }
+  const n = Math.max(1, rel.length);
+  xx/=n; xy/=n; xz/=n; yy/=n; yz/=n; zz/=n;
+  const m00=xx, m01=xy, m02=xz, m11=yy, m12=yz, m22=zz;
+  const p1 = m01*m01 + m02*m02 + m12*m12;
+  let eMin=0,eMax=0;
+  if (p1 <= 1e-18) { const e=[m00,m11,m22].sort((a,b)=>a-b); eMin=e[0]; eMax=e[2]; }
+  else {
+    const q=(m00+m11+m22)/3;
+    let p2=(m00-q)*(m00-q)+(m11-q)*(m11-q)+(m22-q)*(m22-q)+2*p1;
+    const p=Math.sqrt(p2/6);
+    const b00=(m00-q)/p, b01=m01/p,   b02=m02/p;
+    const b10=m01/p,   b11=(m11-q)/p, b12=m12/p;
+    const b20=m02/p,   b21=m12/p,     b22=(m22-q)/p;
+    const detB = b00*(b11*b22-b12*b21)-b01*(b10*b22-b12*b20)+b02*(b10*b21-b11*b20);
+    const r = Math.max(-1, Math.min(1, detB/2));
+    const phi = Math.acos(r)/3;
+    const eig1 = q + 2*p*Math.cos(phi);
+    const eig3 = q + 2*p*Math.cos(phi + 2*Math.PI/3);
+    const eig2 = 3*q - eig1 - eig3;
+    const ev=[eig1,eig2,eig3].sort((a,b)=>a-b);
+    eMin=ev[0]; eMax=ev[2];
+  }
+  return eMin / Math.max(1e-12, eMax);
+}
+
+function edgeSpreadOK(geom) {
+  const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
+  const pos = egeom.getAttribute('position');
+  let minL = Infinity, maxL = 0;
+  for (let i=0; i<pos.count; i+=2) {
+    const a = new THREE.Vector3().fromBufferAttribute(pos, i);
+    const b = new THREE.Vector3().fromBufferAttribute(pos, i+1);
+    const L = a.distanceTo(b);
+    if (L < minL) minL = L;
+    if (L > maxL) maxL = L;
+  }
+  egeom.dispose();
+  if (!isFinite(minL) || minL <= 1e-9) return false;
+  return (maxL / minL) <= MAX_EDGE_SPREAD;
+}
+
+function pointInsideConvexGeometry(p, geom, eps=1e-6) {
+  const pos = geom.getAttribute('position');
+  const idx = geom.getIndex();
+  if (!pos) return false;
+  const pc = new THREE.Vector3();
+  for (let i=0;i<pos.count;i++) pc.add(new THREE.Vector3().fromBufferAttribute(pos, i));
+  pc.multiplyScalar(1/pos.count);
+  const triCount = idx ? idx.count/3 : pos.count/3;
+  for (let t=0; t<triCount; t++) {
+    const i0 = idx ? idx.getX(3*t+0) : 3*t+0;
+    const i1 = idx ? idx.getX(3*t+1) : 3*t+1;
+    const i2 = idx ? idx.getX(3*t+2) : 3*t+2;
+    const a = new THREE.Vector3().fromBufferAttribute(pos, i0);
+    const b = new THREE.Vector3().fromBufferAttribute(pos, i1);
+    const c = new THREE.Vector3().fromBufferAttribute(pos, i2);
+    const n = b.clone().sub(a).cross(c.clone().sub(a));
+    if (n.lengthSq() < 1e-18) continue;
+    const outward = Math.sign(n.dot(a.clone().sub(pc))) || 1;
+    n.multiplyScalar(outward);
+    const s = n.dot(new THREE.Vector3().subVectors(p, a));
+    if (s > eps) return false;
+  }
+  return true;
+}
+
+function bfs(adjacency, srcStart, depthMax) {
+  const visited = new Map(); // src -> depth
+  const q = [[srcStart, 0]];
+  visited.set(srcStart, 0);
+  while (q.length) {
+    const [u,d] = q.shift();
+    if (d === depthMax) continue;
+    for (const v of (adjacency.get(u) || [])) {
+      if (!visited.has(v)) { visited.set(v, d+1); q.push([v,d+1]); }
+    }
+  }
+  return visited;
+}
+
+// Spherical farthest-point sampling: pick N vertices well spread (angle-based)
+function pickSpreadSubset(points, N) {
+  if (points.length < N) return null;
+  let aIdx = 0, bIdx = 1, best = -1;
+  for (let i=0;i<points.length;i++) for (let j=i+1;j<points.length;j++) {
+    const d = points[i].distanceToSquared(points[j]);
+    if (d > best) { best = d; aIdx=i; bIdx=j; }
+  }
+  const chosenIdx = [aIdx, bIdx];
+  while (chosenIdx.length < N) {
+    let bestIdx=-1, bestScore=-Infinity;
+    for (let i=0;i<points.length;i++) {
+      if (chosenIdx.includes(i)) continue;
+      let minD = Infinity;
+      for (const j of chosenIdx) {
+        const d = points[i].distanceToSquared(points[j]);
+        if (d < minD) minD = d;
+      }
+      if (minD > bestScore) { bestScore = minD; bestIdx = i; }
+    }
+    if (bestIdx < 0) break;
+    chosenIdx.push(bestIdx);
+  }
+  if (chosenIdx.length < N) return null;
+  return chosenIdx.map(k => points[k]);
+}
+
+function quantile(sortedArr, q) {
+  if (!sortedArr.length) return 0;
+  const i = (sortedArr.length - 1) * q;
+  const i0 = Math.floor(i), i1 = Math.min(sortedArr.length - 1, i0 + 1);
+  const t = i - i0;
+  return sortedArr[i0] * (1 - t) + sortedArr[i1] * t;
+}
+
+function inducedDegreeOK(adjacency, selSrcs, minDeg) {
+  const set = new Set(selSrcs);
+  for (const u of selSrcs) {
+    const nb = adjacency.get(u) || new Set();
+    let deg = 0;
+    for (const v of nb) if (set.has(v) && v !== u) deg++;
+    if (deg < minDeg) return false;
+  }
+  return true;
+}
+
+/**
+ * Compute coordination polyhedra for a structure and return them as a model
+ * `Polyhedra` (plain data; no GPU resources). ConvexGeometry is used transiently
+ * here only to validate shape and test nesting; the hull is rebuilt for display
+ * in {@link renderPolyhedra}.
+ *
+ * @param {any} structure active Structure (needs `atoms`, `elements`, `lattice`)
+ * @returns {Polyhedra}
+ */
+export function computePolyhedra(structure) {
   if (!ConvexGeomCtor) {
-    console.error('[updatePolyhedra] ConvexGeometry missing. Load examples/jsm/geometries/ConvexGeometry.js');
-    app.scene.add(groups.polyhedraGroup);
-    return;
-  }
-
-  // ---------- Helpers ----------
-  function thicknessRatio(points) {
-    const mean = points.reduce((acc,p)=>acc.add(p), new THREE.Vector3()).multiplyScalar(1/points.length);
-    const rel  = points.map(p=>p.clone().sub(mean));
-    let xx=0,xy=0,xz=0, yy=0,yz=0, zz=0;
-    for (const v of rel) { const x=v.x,y=v.y,z=v.z; xx+=x*x; xy+=x*y; xz+=x*z; yy+=y*y; yz+=y*z; zz+=z*z; }
-    const n = Math.max(1, rel.length);
-    xx/=n; xy/=n; xz/=n; yy/=n; yz/=n; zz/=n;
-    const m00=xx, m01=xy, m02=xz, m11=yy, m12=yz, m22=zz;
-    const p1 = m01*m01 + m02*m02 + m12*m12;
-    let eMin=0,eMax=0;
-    if (p1 <= 1e-18) { const e=[m00,m11,m22].sort((a,b)=>a-b); eMin=e[0]; eMax=e[2]; }
-    else {
-      const q=(m00+m11+m22)/3;
-      let p2=(m00-q)*(m00-q)+(m11-q)*(m11-q)+(m22-q)*(m22-q)+2*p1;
-      const p=Math.sqrt(p2/6);
-      const b00=(m00-q)/p, b01=m01/p,   b02=m02/p;
-      const b10=m01/p,   b11=(m11-q)/p, b12=m12/p;
-      const b20=m02/p,   b21=m12/p,     b22=(m22-q)/p;
-      const detB = b00*(b11*b22-b12*b21)-b01*(b10*b22-b12*b20)+b02*(b10*b21-b11*b20);
-      const r = Math.max(-1, Math.min(1, detB/2));
-      const phi = Math.acos(r)/3;
-      const eig1 = q + 2*p*Math.cos(phi);
-      const eig3 = q + 2*p*Math.cos(phi + 2*Math.PI/3);
-      const eig2 = 3*q - eig1 - eig3;
-      const ev=[eig1,eig2,eig3].sort((a,b)=>a-b);
-      eMin=ev[0]; eMax=ev[2];
-    }
-    return eMin / Math.max(1e-12, eMax);
-  }
-
-  function edgeSpreadOK(geom) {
-    const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
-    const pos = egeom.getAttribute('position');
-    let minL = Infinity, maxL = 0;
-    for (let i=0; i<pos.count; i+=2) {
-      const a = new THREE.Vector3().fromBufferAttribute(pos, i);
-      const b = new THREE.Vector3().fromBufferAttribute(pos, i+1);
-      const L = a.distanceTo(b);
-      if (L < minL) minL = L;
-      if (L > maxL) maxL = L;
-    }
-    egeom.dispose();
-    if (!isFinite(minL) || minL <= 1e-9) return false;
-    return (maxL / minL) <= MAX_EDGE_SPREAD;
-  }
-
-  function pointInsideConvexGeometry(p, geom, eps=1e-6) {
-    const pos = geom.getAttribute('position');
-    const idx = geom.getIndex();
-    if (!pos) return false;
-    const pc = new THREE.Vector3();
-    for (let i=0;i<pos.count;i++) pc.add(new THREE.Vector3().fromBufferAttribute(pos, i));
-    pc.multiplyScalar(1/pos.count);
-    const triCount = idx ? idx.count/3 : pos.count/3;
-    for (let t=0; t<triCount; t++) {
-      const i0 = idx ? idx.getX(3*t+0) : 3*t+0;
-      const i1 = idx ? idx.getX(3*t+1) : 3*t+1;
-      const i2 = idx ? idx.getX(3*t+2) : 3*t+2;
-      const a = new THREE.Vector3().fromBufferAttribute(pos, i0);
-      const b = new THREE.Vector3().fromBufferAttribute(pos, i1);
-      const c = new THREE.Vector3().fromBufferAttribute(pos, i2);
-      const n = b.clone().sub(a).cross(c.clone().sub(a));
-      if (n.lengthSq() < 1e-18) continue;
-      const outward = Math.sign(n.dot(a.clone().sub(pc))) || 1;
-      n.multiplyScalar(outward);
-      const s = n.dot(new THREE.Vector3().subVectors(p, a));
-      if (s > eps) return false;
-    }
-    return true;
-  }
-
-  function bfs(adjacency, srcStart, depthMax) {
-    const visited = new Map(); // src -> depth
-    const q = [[srcStart, 0]];
-    visited.set(srcStart, 0);
-    while (q.length) {
-      const [u,d] = q.shift();
-      if (d === depthMax) continue;
-      for (const v of (adjacency.get(u) || [])) {
-        if (!visited.has(v)) { visited.set(v, d+1); q.push([v,d+1]); }
-      }
-    }
-    return visited;
-  }
-
-  // Spherical farthest-point sampling: pick N vertices well spread (angle-based)
-  function pickSpreadSubset(points, N) {
-    if (points.length < N) return null;
-    let aIdx = 0, bIdx = 1, best = -1;
-    for (let i=0;i<points.length;i++) for (let j=i+1;j<points.length;j++) {
-      const d = points[i].distanceToSquared(points[j]);
-      if (d > best) { best = d; aIdx=i; bIdx=j; }
-    }
-    const chosenIdx = [aIdx, bIdx];
-    while (chosenIdx.length < N) {
-      let bestIdx=-1, bestScore=-Infinity;
-      for (let i=0;i<points.length;i++) {
-        if (chosenIdx.includes(i)) continue;
-        let minD = Infinity;
-        for (const j of chosenIdx) {
-          const d = points[i].distanceToSquared(points[j]);
-          if (d < minD) minD = d;
-        }
-        if (minD > bestScore) { bestScore = minD; bestIdx = i; }
-      }
-      if (bestIdx < 0) break;
-      chosenIdx.push(bestIdx);
-    }
-    if (chosenIdx.length < N) return null;
-    return chosenIdx.map(k => points[k]);
-  }
-
-  function quantile(sortedArr, q) {
-    if (!sortedArr.length) return 0;
-    const i = (sortedArr.length - 1) * q;
-    const i0 = Math.floor(i), i1 = Math.min(sortedArr.length - 1, i0 + 1);
-    const t = i - i0;
-    return sortedArr[i0] * (1 - t) + sortedArr[i1] * t;
-  }
-
-
-  function inducedDegreeOK(selSrcs, minDeg) {
-    const set = new Set(selSrcs);
-    for (const u of selSrcs) {
-      const nb = adjacency.get(u) || new Set();
-      let deg = 0;
-      for (const v of nb) if (set.has(v) && v !== u) deg++;
-      if (deg < minDeg) return false;
-    }
-    return true;
+    console.error('[computePolyhedra] ConvexGeometry missing. Load examples/jsm/geometries/ConvexGeometry.js');
+    return new Polyhedra({ polyhedra: [] });
   }
 
   // ---------- Build bond graph + per-center bonded images (with shifts) ----------
+  const positions = structure.atoms.map(a => a.position);
+  const elements = [...structure.elements];
+  const lattice = structure.lattice.map(r => [...r]);
 
-  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
-  let elements = [...fileBrowser.selectedStructure.elements];
-  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+  // periodicWrapped duplicates boundary atoms so coordination spheres are complete.
+  // NOTE: signature is (general, frac, elements, lattice) and it returns Cartesian
+  // coords in `.cart`. Force showPeriodic on so boundary atoms are replicated even
+  // when the user has periodic display off (otherwise surface atoms get partial
+  // coordination); the algorithm finds out-of-cell neighbours via its own shifts.
+  const wrapped = periodicWrapped({ ...general, showPeriodic: true }, positions, elements, lattice);
 
-  let  wrapped = periodicWrapped(positions, elements);
-  let  wrappedCart = fracToCart(wrapped.frac, lattice); 
-
-  const Wpos  = wrappedCart.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+  const Wpos  = wrapped.cart.map(p => new THREE.Vector3(p[0], p[1], p[2]));
   const Welem = wrapped.elements;
   const Wsrc  = wrapped.srcIndex;
 
@@ -449,7 +445,7 @@ function minVertexDegreeForCageSize(N) {
 
           // 2) Induced-degree in the selected vertex set (B12 needs 5)
           const minDeg = minVertexDegreeForCageSize(posList.length);
-          if (!inducedDegreeOK(selSrcs, minDeg)) {
+          if (!inducedDegreeOK(adjacency, selSrcs, minDeg)) {
             geom.dispose(); continue;
           }
           // 3) Accept cage candidate (push into candidates with posList/selSrcs/refPoint as you already do)
@@ -476,11 +472,11 @@ function minVertexDegreeForCageSize(N) {
     } // seeds
   } // cages enabled
 
-  // ---------- Global constraints & render ----------
+  // ---------- Global constraints & accept into model ----------
   // Image-level center-not-corner:
   //  - The exact wrapped center image cannot appear as a vertex image elsewhere.
   const acceptedCenterWrappedKeys = new Set(); // 'wi:<wrappedIndex>'
-  const acceptedHulls = []; // keep geometries for inside tests (do not dispose)
+  const acceptedHulls = []; // transient geometries kept only for inside tests
  // Priority: larger N first; then centered over cages
 
   candidates.sort((A, B) => {
@@ -498,10 +494,8 @@ function minVertexDegreeForCageSize(N) {
     return 0;
   });
 
-
-  const sharedEdgeMat = new THREE.LineBasicMaterial({
-    color: EDGE_COLOR, transparent: true, opacity: EDGE_OPACITY,
-  });
+  /** @type {Polyhedron[]} */
+  const accepted = [];
 
   for (const cand of candidates) {
     // Image-level center-not-corner
@@ -511,7 +505,7 @@ function minVertexDegreeForCageSize(N) {
       if (conflict) continue;
     }
 
-    // Build final hull
+    // Build hull for shape + nesting tests
     let geom;
     try { geom = new ConvexGeomCtor(cand.posList); } catch { continue; }
     geom.computeVertexNormals();
@@ -523,8 +517,52 @@ function minVertexDegreeForCageSize(N) {
     }
     if (inside) { geom.dispose(); continue; }
 
-    // Render
-    const faceColor = (typeof getElementColor === 'function') ? getElementColor(cand.colorElem) : FACE_FALLBACK_COLOR;
+    // Accept → record as plain-data model Polyhedron
+    accepted.push(new Polyhedron({
+      name: `${cand.colorElem}${cand.kind === 'centered' ? '' : '-cage'}-CN${cand.posList.length}`,
+      type: cand.kind,
+      centerIndex: (cand.kind === 'centered') ? (cand.centerSrc ?? null) : null,
+      centerElement: (cand.kind === 'centered') ? cand.colorElem : null,
+      colorElem: cand.colorElem,
+      vertices: cand.posList.map(p => [p.x, p.y, p.z]),
+      vertexSrcList: cand.vertexSrcList,
+    }));
+
+    // Update constraint sets
+    if (cand.kind === 'centered' && typeof cand.centerWrappedIdx === 'number') {
+      acceptedCenterWrappedKeys.add(`wi:${cand.centerWrappedIdx}`);
+    }
+    acceptedHulls.push(geom); // keep for future inside tests (disposed below)
+  }
+
+  // Dispose the transient validation hulls — render rebuilds its own.
+  for (const g of acceptedHulls) g.dispose();
+
+  return new Polyhedra({ polyhedra: accepted });
+}
+
+/**
+ * Build three.js meshes for the polyhedra stored on `structure.polyhedra` and
+ * add them to `groups.polyhedraGroup` (which the caller has already reset).
+ *
+ * @param {any} structure active Structure with a populated `polyhedra` model
+ */
+export function renderPolyhedra(structure) {
+  const model = structure.polyhedra;
+  if (!model || !model.polyhedra || !model.polyhedra.length) return;
+  if (!ConvexGeomCtor) return;
+
+  const sharedEdgeMat = new THREE.LineBasicMaterial({
+    color: EDGE_COLOR, transparent: true, opacity: EDGE_OPACITY,
+  });
+
+  for (const poly of model.polyhedra) {
+    const posList = poly.vertices.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+    let geom;
+    try { geom = new ConvexGeomCtor(posList); } catch { continue; }
+    geom.computeVertexNormals();
+
+    const faceColor = getElementColor(poly.colorElem);
     const mat = new THREE.MeshStandardMaterial({
       color: faceColor,
       transparent: true,
@@ -540,25 +578,44 @@ function minVertexDegreeForCageSize(N) {
     const mesh = new THREE.Mesh(geom, mat);
     mesh.userData = {
       type: 'polyhedron',
-      mode: cand.kind,
-      cn: cand.posList.length,
-      centerWrappedIdx: (cand.kind === 'centered') ? cand.centerWrappedIdx : undefined,
-      centerSrcIndex:   (cand.kind === 'centered') ? cand.centerSrc : undefined,
-      centerElement:    (cand.kind === 'centered') ? cand.colorElem : undefined,
-      vertexSrcs: cand.vertexSrcList,
+      mode: poly.type,
+      cn: posList.length,
+      centerSrcIndex: (poly.type === 'centered') ? poly.centerIndex : undefined,
+      centerElement:  (poly.type === 'centered') ? poly.centerElement : undefined,
+      vertexSrcs: poly.vertexSrcList,
     };
 
     const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
     mesh.add(new THREE.LineSegments(egeom, sharedEdgeMat));
     groups.polyhedraGroup.add(mesh);
-
-    // Update constraint sets
-    if (cand.kind === 'centered' && typeof cand.centerWrappedIdx === 'number') {
-      acceptedCenterWrappedKeys.add(`wi:${cand.centerWrappedIdx}`);
-    }
-    acceptedHulls.push(geom); // keep for future inside tests
   }
+}
+
+/**
+ * Toggle/refresh entry point. Recomputes `structure.polyhedra` (so the model
+ * mirrors the scene and bond-cutoff edits take effect) and renders it.
+ */
+export function updatePolyhedra() {
+  // ---------- TOGGLE ----------
+  if (groups.polyhedraGroup) disposeGroup(groups.polyhedraGroup);
+  groups.polyhedraGroup = new THREE.Group();
+  if (!general.showPolyhedra) {
+    app.scene.add(groups.polyhedraGroup);
+    return; // IMPORTANT: nothing drawn when hidden
+  }
+
+  // Nothing to build without an active structure + lattice (e.g. polyhedra
+  // toggled/restored on before a structure is loaded). Without this guard the
+  // code below calls fracToCart on an undefined lattice, which hard-crashes the
+  // WASM math backend (the JS backend would silently produce NaN).
+  const structure = fileBrowser.selectedStructure;
+  if (!structure || !structure.lattice || !structure.atoms) {
+    app.scene.add(groups.polyhedraGroup);
+    return;
+  }
+
+  structure.polyhedra = computePolyhedra(structure);
+  renderPolyhedra(structure);
 
   app.scene.add(groups.polyhedraGroup);
 }
-
