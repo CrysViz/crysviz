@@ -72,14 +72,24 @@ export function rebuildBonds(opacity=1.0) {
     return;
   }
   disposeBondsMesh(true);
+  console.time("bond:buildBondObjects");
   buildBondObjects(fileBrowser.selectedStructure)
+  console.timeEnd("bond:buildBondObjects");
+  console.log("bond: bondCount =", fileBrowser.selectedStructure.bonds.length,
+              "wrappedCart =", fileBrowser.selectedStructure.periodic?.wrapped?.cart?.length);
+  console.time("bond:renderBonds");
   renderBonds();
+  console.timeEnd("bond:renderBonds");
+  console.time("bond:updateBonds");
   updateBonds(opacity);
+  console.timeEnd("bond:updateBonds");
   if (groups.bondsMesh) {
     groups.bondsMesh.visible = !!general.showBonds;
   }
   // Refresh histogram if it's open
+  console.time("bond:refreshHistogram");
   refreshHistogram(Object.values(bondLengths), Object.keys(bondLengths));
+  console.timeEnd("bond:refreshHistogram");
 }
 
 export function getBondCutoff(elem1, elem2) {
