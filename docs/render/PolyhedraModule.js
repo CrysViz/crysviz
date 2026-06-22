@@ -321,6 +321,7 @@ export function computePolyhedra(structure) {
    *   kind: 'centered'|'cage',
    *   colorElem: string,
    *   centerSrc?: number,
+   *   centerShift?: [number,number,number],
    *   centerPos?: THREE.Vector3,
    *   posList: THREE.Vector3[],
    *   vertexSrcList: number[],
@@ -329,19 +330,20 @@ export function computePolyhedra(structure) {
    * }>} */
   const candidates = [];
 
-  // ---- Centered: one polyhedron per primary atom, neighbours by radical Voronoi ----
+  // ---- Centered: compute once per primary atom (neighbours by radical Voronoi),
+  //      then replicate onto every displayed atom image (see below). ----
+  /** @type {Map<number, {posList:THREE.Vector3[], vertexSrcList:number[], centerPos:THREE.Vector3, colorElem:string}>} */
+  const primaryCentered = new Map();
   for (let i=0; i<nAtoms; i++) {
     const centerPos = baseCart[i];
     const centerElem = elements[i];
 
     // Radical-Voronoi + solid-angle neighbour selection (distance-independent:
     // keeps elongated bonds, rejects shadowed far atoms). Candidates include all
-    // species so closer atoms can shadow farther ones.
+    // species so closer atoms can shadow farther ones; a vertex must additionally
+    // be a chemical ligand of the centre and within the visible bond cutoff.
     const cands = gatherWithin(centerPos);
     if (cands.length < 4) continue;
-    // A vertex must be (a) chemically a ligand of the centre and (b) within the
-    // configured visible bond cutoff. The cell is still built from all candidates
-    // inside voronoiNeighbours, so shadowing stays correct.
     const accept = (/** @type {any} */ cand) => {
       if (!isLigandOf(cand.elem, centerElem)) return false;
       const cutoff = getBondCutoff(centerElem, cand.elem);
@@ -363,22 +365,47 @@ export function computePolyhedra(structure) {
     const entries = Array.from(bySrc.values());
     if (entries.length < 4) continue; // need ≥4 non-coplanar points for a closed hull
 
-    // Only remaining skip reason is geometric degeneracy: a (near-)planar set has
-    // no volume. No distortion filter — the neighbour set is already the genuine
-    // coordination shell.
+    // Only remaining skip reason is geometric degeneracy (a near-planar set has no
+    // volume). No distortion filter — the neighbour set is the genuine shell.
     const posList = entries.map(o => o.pos);
     try { new ConvexGeomCtor(posList).dispose(); } catch { continue; }
-    if (thicknessRatio(posList) < MIN_THICKNESS_RATIO) continue; // degenerate / planar
+    if (thicknessRatio(posList) < MIN_THICKNESS_RATIO) continue;
 
+    primaryCentered.set(i, { posList, vertexSrcList: entries.map(o => o.srcJ), centerPos, colorElem: centerElem });
+  }
+
+  // Replicate each centered polyhedron onto every displayed atom image, so they
+  // appear around periodic-image atoms when "show periodic images" is on. The
+  // displayed set is structure.periodic.wrapped (exactly what the atom renderer
+  // draws); when periodic display is off it is just the primary atoms (shift 0).
+  // The environment of an image is identical to its primary, so we translate the
+  // precomputed hull rather than recomputing the Voronoi cell.
+  const dispWrapped = structure.periodic?.wrapped;
+  /** @type {Array<{cart:any, src:number}>} */
+  let displayCenters;
+  if (dispWrapped?.cart?.length && dispWrapped.srcIndex) {
+    displayCenters = dispWrapped.cart.map((/** @type {any} */ c, /** @type {number} */ i) => ({ cart: c, src: dispWrapped.srcIndex[i] }));
+  } else {
+    displayCenters = [];
+    for (const i of primaryCentered.keys()) displayCenters.push({ cart: baseCart[i], src: i });
+  }
+  for (const dc of displayCenters) {
+    const base = primaryCentered.get(dc.src);
+    if (!base) continue;
+    const cpos = (dc.cart instanceof THREE.Vector3) ? dc.cart.clone() : new THREE.Vector3(dc.cart[0], dc.cart[1], dc.cart[2]);
+    const delta = cpos.clone().sub(base.centerPos);
+    const fs = cartToFrac([delta.x, delta.y, delta.z], lattice, latInv);
+    const centerShift = /** @type {[number,number,number]} */ ([Math.round(fs[0]), Math.round(fs[1]), Math.round(fs[2])]);
     candidates.push({
       kind: 'centered',
-      colorElem: centerElem,
-      centerSrc: i,
-      centerPos,
-      posList,
-      vertexSrcList: entries.map(o => o.srcJ),
-      vertexImageList: entries.map(o => ({ src: o.srcJ, shift: o.shift })),
-      refPoint: centerPos.clone(),
+      colorElem: base.colorElem,
+      centerSrc: dc.src,
+      centerShift,
+      centerPos: cpos,
+      posList: base.posList.map(p => p.clone().add(delta)),
+      vertexSrcList: base.vertexSrcList,
+      vertexImageList: [],
+      refPoint: cpos.clone(),
     });
   }
 
@@ -581,9 +608,10 @@ export function computePolyhedra(structure) {
       vertexSrcList: cand.vertexSrcList,
     }));
 
-    // Update constraint sets — the center sits at its primary cell (shift 0,0,0)
+    // Update constraint sets — key the centre by its (src, image shift)
     if (cand.kind === 'centered' && typeof cand.centerSrc === 'number') {
-      acceptedCenterImageKeys.add(`${cand.centerSrc}:0,0,0`);
+      const cs = cand.centerShift || [0, 0, 0];
+      acceptedCenterImageKeys.add(`${cand.centerSrc}:${cs[0]},${cs[1]},${cs[2]}`);
     }
     acceptedHulls.push(geom); // keep for future inside tests (disposed below)
   }
