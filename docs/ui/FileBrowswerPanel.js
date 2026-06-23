@@ -9,6 +9,7 @@ import { setActiveField, updateField, deleteField} from '../render/index.js';
 import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import {Structure} from '../model/index.js';
+import { refreshPolyhedraPanel } from './PolyhedraPanel.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import {removeLatticeAndSupercellPanel, addLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
 
@@ -583,6 +584,7 @@ function updateStructureFromRowAndStep(rowIndex) {
    removeLatticeAndSupercellPanel();
    addLatticeAndSupercellPanel();
   }
+  refreshPolyhedraPanel();
   if (
     fileBrowser.comparisonStructure &&
     fileBrowser.selectedStructure &&

@@ -49,10 +49,10 @@ function searchRadius(maxCutoff) {
 // coordinates another cation, nor does an anion-centred polyhedron form). When an
 // electronegativity value is missing for either element, fall back to requiring a
 // different species (which at least blocks the Ti-around-Ti case).
-function isLigandOf(nbrElem, centerElem) {
+function isLigandOf(nbrElem, centerElem, filterByElectronegativity = true) {
   const enN = electronegativity[nbrElem];
   const enC = electronegativity[centerElem];
-  if (enN === undefined || enC === undefined || enN === 0 || enC === 0) {
+  if (enN === undefined || enC === undefined || enN === 0 || enC === 0 || !filterByElectronegativity) {
     return nbrElem !== centerElem;
   }
   return enN > enC + 1e-6;
@@ -216,6 +216,8 @@ export function computePolyhedra(structure) {
     return new Polyhedra({ polyhedra: [] });
   }
 
+  const useChemicalFilter = structure?.polyhedraSettings?.useChemicalFilter !== false;
+
   // ---------- Periodic-image neighbour graph ----------
   const positions = structure.atoms.map(a => a.position); // fractional
   const elements = [...structure.elements];
@@ -345,7 +347,7 @@ export function computePolyhedra(structure) {
     const cands = gatherWithin(centerPos);
     if (cands.length < 4) continue;
     const accept = (/** @type {any} */ cand) => {
-      if (!isLigandOf(cand.elem, centerElem)) return false;
+      if (!isLigandOf(cand.elem, centerElem, useChemicalFilter)) return false;
       const cutoff = getBondCutoff(centerElem, cand.elem);
       return cutoff > 1e-3 && cand.d <= cutoff;
     };
@@ -680,22 +682,24 @@ export function updatePolyhedra() {
   // ---------- TOGGLE ----------
   if (groups.polyhedraGroup) disposeGroup(groups.polyhedraGroup);
   groups.polyhedraGroup = new THREE.Group();
-  if (!general.showPolyhedra) {
-    app.scene.add(groups.polyhedraGroup);
-    return; // IMPORTANT: nothing drawn when hidden
-  }
+  const structure = fileBrowser.selectedStructure;
 
   // Nothing to build without an active structure + lattice (e.g. polyhedra
   // toggled/restored on before a structure is loaded). Without this guard the
   // code below calls fracToCart on an undefined lattice, which hard-crashes the
   // WASM math backend (the JS backend would silently produce NaN).
-  const structure = fileBrowser.selectedStructure;
   if (!structure || !structure.lattice || !structure.atoms) {
     app.scene.add(groups.polyhedraGroup);
     return;
   }
 
   structure.polyhedra = computePolyhedra(structure);
+
+  if (!general.showPolyhedra) {
+    app.scene.add(groups.polyhedraGroup);
+    return; // IMPORTANT: hidden state still rebuilds the stored model
+  }
+
   renderPolyhedra(structure);
 
   app.scene.add(groups.polyhedraGroup);

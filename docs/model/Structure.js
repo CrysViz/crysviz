@@ -23,6 +23,12 @@ function deepCopyArrayOfObjects(array) {
   return array.map(item => ({ ...item }));
 }
 
+function normalizePolyhedraSettings(settings = null) {
+  return {
+    useChemicalFilter: settings?.useChemicalFilter !== false,
+  };
+}
+
 export class Structure {
   constructor({
     elements = [],
@@ -36,6 +42,7 @@ export class Structure {
     forces = [],
     stress = null,
     polyhedra = null,
+    polyhedraSettings = null,
     bondMapping = {}, // Mapping from bond index number to the indices in the THREE mesh object.
     bondObjectMapping = {},     // Lookup table from bondHalf to the actual bond objects stored in the structure.  Mainly necessary for color changes . 
     atomImages = {}, // stores all images in the visualisation for each object. Meaning the index of the atom maps to all indices in the THREE mesh
@@ -57,6 +64,7 @@ export class Structure {
     this.forces = forces;         // list of forces
     this.stress = stress;
     this.polyhedra = polyhedra;
+    this.polyhedraSettings = normalizePolyhedraSettings(polyhedraSettings);
     // NOTE: the bond/atom-image lookup maps are populated later by the bonds/
     // atoms render-update modules, so they always start empty here and the
     // matching constructor arguments (bondMapping, bondObjectMapping,
@@ -81,6 +89,7 @@ export class Structure {
       forces: deepCopyArrayOfObjects(forces), // deep copy of force objects
       stress: stress ? { ...stress } : null,  // deep copy of stress object if it exists
       polyhedra: polyhedra ? { ...polyhedra } : null,
+      polyhedraSettings: { ...this.polyhedraSettings },
       bonds: deepCopyArrayOfObjects(this.bonds), // deep copy of bond objects
       planes: deepCopyArrayOfObjects(planes),
     });
