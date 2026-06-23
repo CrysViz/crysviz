@@ -11,7 +11,7 @@ import { atomicRadii } from '../defaults/radii_defaults.js'
 import { electronegativity } from '../defaults/electronegativity_defaults.js'
 
 // ---------- STYLE (render) ----------
-const FACE_OPACITY = 0.80;
+const FACE_OPACITY = 0.50;
 const EDGE_OPACITY = Math.min(1, FACE_OPACITY + 0.35);
 const FACE_FALLBACK_COLOR = 0x00aaff;
 const EDGE_COLOR = 0x006c99;
