@@ -595,51 +595,59 @@ export function computePolyhedra(structure) {
       const q25 = quantile(dists, 0.25), q75 = quantile(dists, 0.75);
       const q20 = quantile(dists, 0.20), q80 = quantile(dists, 0.80);
 
+      // Per-band hull vertex sets are N-independent: the 3 distance bands are the
+      // same for every target N, and the band hull + its hull→band-entry mapping
+      // depend only on the band, not on N. Build them ONCE per seed (narrow → wide)
+      // instead of rebuilding inside the N loop — this collapses up to 18
+      // ConvexGeometry builds per seed (3 bands × 6 N) down to 3. Only the
+      // reduce-to-N step and acceptance below stay inside the N loop.
+      const bands = [
+        [q30, q70],
+        [q25, q75],
+        [q20, q80],
+      ];
+      const bandHulls = bands.map(([lo, hi]) => {
+        const band = pool.filter(o => {
+          const r = o.pos.distanceTo(centroid);
+          return r >= lo && r <= hi;
+        });
+        if (band.length < 4) return { band, baseVerts: [] };
+        let geomBand;
+        try { geomBand = new ConvexGeomCtor(band.map(o => o.pos)); } catch { geomBand = null; }
+        if (!geomBand) return { band, baseVerts: [] };
+
+        const posAttr = geomBand.getAttribute('position');
+        const hullPts = [];
+        for (let k = 0; k < posAttr.count; k++) hullPts.push(new THREE.Vector3().fromBufferAttribute(posAttr, k));
+        geomBand.dispose();
+
+        // Unique nearest mapping back to band entries
+        const chosenMap = new Map(); // band index -> band entry
+        for (const hp of hullPts) {
+          let bi = -1, best = Infinity;
+          for (let j = 0; j < band.length; j++) {
+            const dd = hp.distanceToSquared(band[j].pos);
+            if (dd < best) { best = dd; bi = j; }
+          }
+          if (bi >= 0 && !chosenMap.has(bi)) chosenMap.set(bi, band[bi]);
+        }
+        return { band, baseVerts: Array.from(chosenMap.values()) }; // {pos,src,shift}[]
+      });
+
       for (const N of CAGE_TARGET_NS_DESC) {
-        // band widths (narrow → wide)
-        const bands = [
-          [q30, q70],
-          [q25, q75],
-          [q20, q80],
-        ];
         let builtThisN = false;
 
-        for (const [lo, hi] of bands) {
-          const band = pool.filter(o => {
-            const r = o.pos.distanceTo(centroid);
-            return r >= lo && r <= hi;
-          });
+        for (const { band, baseVerts } of bandHulls) {
           if (band.length < N) continue;
+          if (baseVerts.length < N) continue; // hull too small (or failed to build)
 
-          // Hull of band → extract hull vertices → possibly reduce to N by spread
-          let geomBand;
-          try { geomBand = new ConvexGeomCtor(band.map(o=>o.pos)); } catch { geomBand = null; }
-          if (!geomBand) continue;
-          geomBand.computeVertexNormals();
-
-          const posAttr = geomBand.getAttribute('position');
-          const hullPts = [];
-          for (let k=0;k<posAttr.count;k++) hullPts.push(new THREE.Vector3().fromBufferAttribute(posAttr, k));
-
-          // Unique nearest mapping back to band entries
-          const chosenMap = new Map(); // band index -> band entry
-          for (const hp of hullPts) {
-            let bi=-1, best=Infinity;
-            for (let j=0; j<band.length; j++) {
-              const dd = hp.distanceToSquared(band[j].pos);
-              if (dd < best) { best=dd; bi=j; }
-            }
-            if (bi>=0 && !chosenMap.has(bi)) chosenMap.set(bi, band[bi]);
-          }
-          let verts = Array.from(chosenMap.values()); // {wi,pos,src}[]
-
+          // Reduce to N by spread when the hull has more than N vertices.
+          let verts = baseVerts;
           if (verts.length !== N) {
-            if (verts.length < N) { geomBand.dispose(); continue; }
-            // reduce to N by spread
-            const subset = pickSpreadSubset(verts.map(o=>o.pos), N);
-            if (!subset) { geomBand.dispose(); continue; }
+            const subset = pickSpreadSubset(verts.map(o => o.pos), N);
+            if (!subset) continue;
             verts = subset.map(p => {
-              let best=null, bestD=Infinity;
+              let best = null, bestD = Infinity;
               for (const o of band) {
                 const dd = p.distanceToSquared(o.pos);
                 if (dd < bestD) { bestD = dd; best = o; }
@@ -653,7 +661,7 @@ export function computePolyhedra(structure) {
           const selSrcs = verts.map(o=>o.src);   // source atom index per selected vertex
           let geom;
           try { geom = new ConvexGeomCtor(posList); } catch { geom = null; }
-          if (!geom) { geomBand.dispose(); continue; }
+          if (!geom) continue;
 
           geom.computeVertexNormals();
           // ---- CAGE acceptance: induced-degree rule instead of hull-edges-as-bonds ----
@@ -668,8 +676,6 @@ export function computePolyhedra(structure) {
           if (!inducedDegreeOK(adjacency, selSrcs, minDeg)) {
             geom.dispose(); continue;
           }
-          // 3) Accept cage candidate (push into candidates with posList/selSrcs/refPoint as you already do)
-
 
           // Accept candidate cage
           candidates.push({
@@ -682,11 +688,9 @@ export function computePolyhedra(structure) {
           });
 
           geom.dispose();
-          geomBand.dispose();
           builtThisN = true;
           break; // move to next N (largest-first, one per band here)
         } // bands
-        // (optionally keep building more cages per seed/N; current strategy keeps it moderate)
         if (builtThisN) continue;
       } // Ns
     } // seeds
