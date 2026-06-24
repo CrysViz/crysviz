@@ -149,6 +149,7 @@ function isBondCutByPlanes(bond, cutPlanes) {
 }
 
 export function buildBondObjects(structure){
+  const _t0 = performance.now();
   structure.bonds = [];
   structure.bondMapping = {};
   structure.bondObjectMapping = {};
@@ -197,8 +198,11 @@ export function buildBondObjects(structure){
   const atomElemIdx = new Int32Array(n);
   for (let i = 0; i < n; i++) atomElemIdx[i] = elemIndexOf.get(wrappedElements[i]);
 
+  const _tSetup = performance.now();
+
   // ---- Find bonding pairs (i<j): WASM cell list (O(n)) with JS O(n²) fallback ----
   let pairI = null, pairJ = null;
+  let bondPath = 'js';
   if (general.useWasmBonds && maxCutoff > 0.01) {
     try {
       const cartFlat = new Float64Array(3 * n);
@@ -214,6 +218,7 @@ export function buildBondObjects(structure){
         nElem: nu, minDistSq, maxCutoff,
       });
       pairI = pi; pairJ = pj;
+      bondPath = 'wasm';
     } catch (err) {
       console.warn('[buildBondObjects] WASM bonds failed; falling back to JS:', err);
       pairI = null;
@@ -239,6 +244,8 @@ export function buildBondObjects(structure){
     }
     pairI = ii; pairJ = jj;
   }
+
+  const _tPairs = performance.now();
 
   // ---- Build Bond objects from the pairs (colour / id logic; O(bonds)) ----
   for (let k = 0; k < pairI.length; k++) {
@@ -273,6 +280,13 @@ export function buildBondObjects(structure){
 
     structure.bonds.push(bond);
   }
+
+  const _ms = (x) => x.toFixed(1);
+  console.log(
+    `[bonds] n=${n} pairs=${pairI.length} path=${bondPath} | ` +
+    `setup=${_ms(_tSetup - _t0)} find=${_ms(_tPairs - _tSetup)} build=${_ms(performance.now() - _tPairs)} ` +
+    `total=${_ms(performance.now() - _t0)}ms`
+  );
 
   // Second pass: handle length-based coloring if in length mode
   if (general.bondsColor === "length" && structure.bonds.length > 0) {
