@@ -18,62 +18,13 @@ import init, { compute_candidates } from '../compiled/periodic_wasm.js';
 // module worker). Resolving `ready` is what the warm-up task awaits.
 const ready = init(new URL('../compiled/periodic_wasm_bg.wasm', import.meta.url));
 
-// A tiny synthetic structure (a cation octahedrally coordinated by 6 anions in a roomy
-// 20 Å cell) used only to warm the JIT: running the real compute paths a handful of times
-// tiers up the hot functions (convex_hull, voronoi, gather_within, the cage path) so the
-// first real job runs optimized code instead of slow baseline code. The optimization is
-// per-function on type feedback, so warming on 7 atoms transfers to any size.
-const WARM = (() => {
-  const frac = new Float64Array([
-    0.5, 0.5, 0.5, 0.6, 0.5, 0.5, 0.4, 0.5, 0.5,
-    0.5, 0.6, 0.5, 0.5, 0.4, 0.5, 0.5, 0.5, 0.6, 0.5, 0.5, 0.4,
-  ]);
-  const n = 7;
-  const L = 20;
-  const centerCart = new Float64Array(3 * n);
-  for (let i = 0; i < 3 * n; i++) centerCart[i] = frac[i] * L;
-  const visibleKeys = new Int32Array(4 * n);
-  for (let i = 0; i < n; i++) visibleKeys[4 * i] = i;
-  return {
-    frac,
-    elem: new Uint32Array([0, 1, 1, 1, 1, 1, 1]),
-    lattice: new Float64Array([L, 0, 0, 0, L, 0, 0, 0, L]),
-    cutoff: new Float64Array([0, 2.5, 2.5, 0]),
-    electroneg: new Float64Array([1, 3]),
-    radii: new Float64Array([1, 1]),
-    centerSrc: new Uint32Array([0, 1, 2, 3, 4, 5, 6]),
-    centerShift: new Int32Array(3 * n),
-    centerCart,
-    visibleKeys,
-    seedVisible: new Uint8Array([1, 1, 1, 1, 1, 1, 1]),
-    n,
-  };
-})();
-
-function warmCompute() {
-  const W = WARM;
-  // A few dozen iterations is enough to make the inner hot functions tier up, and it's
-  // sub-millisecond on 7 atoms.
-  for (let it = 0; it < 24; it++) {
-    const r = compute_candidates(
-      W.frac, W.elem, W.lattice, W.cutoff, 2, W.electroneg, W.radii, 2.5, true, true,
-      W.centerSrc, W.centerShift, W.centerCart, W.visibleKeys, W.seedVisible,
-      0, W.n, 0, W.n,
-    );
-    r.free();
-  }
-}
-
 /**
  * Each handler returns `{ result, transfer }`. `result` is posted back; `transfer` lists
  * its ArrayBuffers to hand over zero-copy.
  */
 const handlers = {
-  // Forces wasm init and tiers up the compute paths; used by the pool to pre-warm.
-  warmup: () => {
-    warmCompute();
-    return { result: { ok: true }, transfer: [] };
-  },
+  // Forces wasm instantiation in the background (the onmessage `await ready` does it).
+  warmup: () => ({ result: { ok: true }, transfer: [] }),
 
   // Polyhedra candidate generation for a centre/seed partition.
   polyhedraCandidates: (payload) => {
