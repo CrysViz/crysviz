@@ -174,6 +174,15 @@ pub fn convex_hull(pts: &[Vec3]) -> Option<Hull> {
         faces.push(make_face(i, j, k, pts, interior)?);
     }
 
+    // Reused scratch buffers — cleared (not reallocated) each insertion, which
+    // matters a lot: a hull of m points does ~m insertions, so fresh allocations
+    // per insertion would be O(m) allocations of O(m) structures per hull, and
+    // these hulls are built hundreds of times per coordination centre.
+    let mut vis: Vec<bool> = Vec::new();
+    let mut edges: HashSet<(usize, usize)> = HashSet::new();
+    let mut horizon: Vec<(usize, usize)> = Vec::new();
+    let mut next_faces: Vec<Face> = Vec::new();
+
     let seed = [a, b, c, d];
     for pi in 0..n {
         if seed.contains(&pi) {
@@ -182,7 +191,8 @@ pub fn convex_hull(pts: &[Vec3]) -> Option<Hull> {
         let p = pts[pi];
 
         // Faces this point can "see" (lies outside of).
-        let mut vis = vec![false; faces.len()];
+        vis.clear();
+        vis.resize(faces.len(), false);
         let mut any = false;
         for (fi, f) in faces.iter().enumerate() {
             if Hull::face_distance(f, p) > tol {
@@ -195,7 +205,7 @@ pub fn convex_hull(pts: &[Vec3]) -> Option<Hull> {
         }
 
         // Horizon = directed edges of visible faces whose twin is not visible.
-        let mut edges: HashSet<(usize, usize)> = HashSet::new();
+        edges.clear();
         for (fi, f) in faces.iter().enumerate() {
             if vis[fi] {
                 edges.insert((f.v[0], f.v[1]));
@@ -203,23 +213,24 @@ pub fn convex_hull(pts: &[Vec3]) -> Option<Hull> {
                 edges.insert((f.v[2], f.v[0]));
             }
         }
-        let horizon: Vec<(usize, usize)> = edges
-            .iter()
-            .filter(|&&(x, y)| !edges.contains(&(y, x)))
-            .cloned()
-            .collect();
-
-        // Drop visible faces, then cone the horizon to the new point.
-        let mut kept: Vec<Face> = Vec::with_capacity(faces.len());
-        for (fi, f) in faces.iter().enumerate() {
-            if !vis[fi] {
-                kept.push(*f);
+        horizon.clear();
+        for &(x, y) in &edges {
+            if !edges.contains(&(y, x)) {
+                horizon.push((x, y));
             }
         }
-        for (x, y) in horizon {
-            kept.push(make_face(x, y, pi, pts, interior)?);
+
+        // Drop visible faces, then cone the horizon to the new point.
+        next_faces.clear();
+        for (fi, f) in faces.iter().enumerate() {
+            if !vis[fi] {
+                next_faces.push(*f);
+            }
         }
-        faces = kept;
+        for &(x, y) in &horizon {
+            next_faces.push(make_face(x, y, pi, pts, interior)?);
+        }
+        std::mem::swap(&mut faces, &mut next_faces);
     }
 
     // Collect unique hull vertices.

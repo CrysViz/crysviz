@@ -75,12 +75,28 @@ pub struct PolyhedraResult {
     vert_counts: Vec<u32>,
     vertices: Vec<f64>,
     vertex_srcs: Vec<u32>,
+    setup_ms: f64,
+    centered_ms: f64,
+    cages_ms: f64,
+    accept_ms: f64,
 }
 
 #[wasm_bindgen]
 impl PolyhedraResult {
     pub fn kinds(&self) -> Vec<u32> {
         self.kinds.clone()
+    }
+    pub fn setup_ms(&self) -> f64 {
+        self.setup_ms
+    }
+    pub fn centered_ms(&self) -> f64 {
+        self.centered_ms
+    }
+    pub fn cages_ms(&self) -> f64 {
+        self.cages_ms
+    }
+    pub fn accept_ms(&self) -> f64 {
+        self.accept_ms
     }
     pub fn color_elem(&self) -> Vec<u32> {
         self.color_elem.clone()
@@ -147,6 +163,10 @@ pub fn compute_polyhedra(
         vert_counts: r.vert_counts,
         vertices: r.vertices,
         vertex_srcs: r.vertex_srcs,
+        setup_ms: r.setup_ms,
+        centered_ms: r.centered_ms,
+        cages_ms: r.cages_ms,
+        accept_ms: r.accept_ms,
     }
 }
 

@@ -32,7 +32,8 @@ await init(new URL('./periodic_wasm_bg.wasm', import.meta.url));
  *   seedVisible: Uint8Array,
  *   getBondCutoff: (a:string, b:string) => number,
  * }} prep
- * @returns {Array<Object>} plain objects ready for `new Polyhedron(...)`
+ * @returns {{polyhedra: Array<Object>, timing: {setup:number,centered:number,cages:number,accept:number}}}
+ *          `polyhedra`: plain objects ready for `new Polyhedron(...)`.
  */
 export function computePolyhedraWasm(prep) {
   const {
@@ -119,6 +120,12 @@ export function computePolyhedraWasm(prep) {
   const vertCounts = result.vert_counts();
   const verts = result.vertices();
   const vsrcs = result.vertex_srcs();
+  const timing = {
+    setup: result.setup_ms(),
+    centered: result.centered_ms(),
+    cages: result.cages_ms(),
+    accept: result.accept_ms(),
+  };
   result.free();
 
   const out = [];
@@ -145,5 +152,5 @@ export function computePolyhedraWasm(prep) {
       vertexSrcList,
     });
   }
-  return out;
+  return { polyhedra: out, timing };
 }

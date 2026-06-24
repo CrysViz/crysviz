@@ -7,7 +7,15 @@
 
 use crate::convex_hull::{convex_hull, cross, Hull};
 use crate::linalg::{Matrix33, Vec3};
+use js_sys::Date;
 use std::collections::{HashMap, HashSet};
+
+/// Cap on candidates fed to the radical-Voronoi cell per centre. The cell of a
+/// centre is bounded entirely by its closest atoms; an atom farther than the
+/// nearest ~100 (which already surround the centre in every direction) is always
+/// shadowed and never contributes a face, so truncating to the nearest N leaves
+/// the accepted coordination identical while keeping the dual hull small.
+const VORONOI_MAX_CANDS: usize = 100;
 
 // ---- Behaviour constants (mirror the JS module) ----
 const CAGE_TARGET_NS_DESC: [usize; 6] = [20, 12, 10, 8, 6, 4];
@@ -84,6 +92,10 @@ pub struct ComputedPolyhedra {
     pub vert_counts: Vec<u32>,
     pub vertices: Vec<f64>,    // flat cart, sum(N)*3
     pub vertex_srcs: Vec<u32>, // flat, sum(N)
+    pub setup_ms: f64,
+    pub centered_ms: f64,
+    pub cages_ms: f64,
+    pub accept_ms: f64,
 }
 
 // ---------------------------------------------------------------------------
@@ -539,6 +551,7 @@ pub fn compute_polyhedra(
     visible_keys: &[i32],
     seed_visible: &[u8],
 ) -> ComputedPolyhedra {
+    let t0 = Date::now();
     let n_atoms = elem_idx.len();
     let cutoff = |ei: usize, ej: usize| -> f64 {
         if ei < n_elem && ej < n_elem {
@@ -693,6 +706,7 @@ pub fn compute_polyhedra(
         }
     }
 
+    let t_setup = Date::now();
     let mut candidates: Vec<Candidate> = Vec::new();
 
     // ---- Centered ----
@@ -703,9 +717,15 @@ pub fn compute_polyhedra(
         let center_pos = Vec3::new(center_cart[3 * ci], center_cart[3 * ci + 1], center_cart[3 * ci + 2]);
         let center_elem = elem_idx[src as usize] as usize;
 
-        let cands = gather_within(&mut grid, &mut scratch, center_pos);
+        let mut cands = gather_within(&mut grid, &mut scratch, center_pos);
         if cands.len() < 4 {
             continue;
+        }
+        // Keep only the nearest VORONOI_MAX_CANDS (farther atoms are shadowed and
+        // never form a cell face) so the dual hull stays small.
+        if cands.len() > VORONOI_MAX_CANDS {
+            cands.sort_by(|x, y| x.d.partial_cmp(&y.d).unwrap_or(std::cmp::Ordering::Equal));
+            cands.truncate(VORONOI_MAX_CANDS);
         }
         let center_radius = if center_elem < n_elem { radii[center_elem] } else { 1.0 };
         let accept = |cand: &Cand| -> bool {
@@ -759,6 +779,8 @@ pub fn compute_polyhedra(
             pos_list,
         });
     }
+
+    let t_centered = Date::now();
 
     // ---- Cages ----
     if detect_cages {
@@ -939,6 +961,8 @@ pub fn compute_polyhedra(
         }
     }
 
+    let t_cages = Date::now();
+
     // ---- Global acceptance (sort, nesting, center-not-corner) ----
     candidates.sort_by(|x, y| {
         let (na, nb) = (x.pos_list.len(), y.pos_list.len());
@@ -973,6 +997,10 @@ pub fn compute_polyhedra(
         vert_counts: Vec::new(),
         vertices: Vec::new(),
         vertex_srcs: Vec::new(),
+        setup_ms: t_setup - t0,
+        centered_ms: t_centered - t_setup,
+        cages_ms: t_cages - t_centered,
+        accept_ms: 0.0,
     };
 
     for cand in &candidates {
@@ -1013,5 +1041,6 @@ pub fn compute_polyhedra(
         accepted_hulls.push(hull);
     }
 
+    out.accept_ms = Date::now() - t_cages;
     out
 }

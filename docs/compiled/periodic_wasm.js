@@ -96,6 +96,20 @@ export class PolyhedraResult {
         wasm.__wbg_polyhedraresult_free(ptr, 0);
     }
     /**
+     * @returns {number}
+     */
+    accept_ms() {
+        const ret = wasm.polyhedraresult_accept_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    cages_ms() {
+        const ret = wasm.polyhedraresult_cages_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * @returns {Int32Array}
      */
     center_src() {
@@ -103,6 +117,13 @@ export class PolyhedraResult {
         var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    centered_ms() {
+        const ret = wasm.polyhedraresult_centered_ms(this.__wbg_ptr);
+        return ret;
     }
     /**
      * @returns {Uint32Array}
@@ -128,6 +149,13 @@ export class PolyhedraResult {
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    setup_ms() {
+        const ret = wasm.polyhedraresult_setup_ms(this.__wbg_ptr);
+        return ret;
     }
     /**
      * @returns {Uint32Array}
@@ -248,6 +276,10 @@ function __wbg_get_imports() {
         __proto__: null,
         __wbg___wbindgen_throw_6ddd609b62940d55: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
+        },
+        __wbg_now_16f0c993d5dd6c27: function() {
+            const ret = Date.now();
+            return ret;
         },
         __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;

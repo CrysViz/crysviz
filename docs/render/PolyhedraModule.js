@@ -353,14 +353,17 @@ export function computePolyhedra(structure) {
       for (let i = 0; i < nAtoms; i++) {
         seedVisible[i] = isAtomImageVisible(baseCart[i].toArray(), structure.atoms[i], activeCutPlanes) ? 1 : 0;
       }
-      const wasmPolys = computePolyhedraWasm({
+      const { polyhedra: wasmPolys, timing } = computePolyhedraWasm({
         positions, elements, lattice, maxCutoff,
         useChemicalFilter, detectCages,
         displayCenters, visibleImageKeys, seedVisible, getBondCutoff,
       });
       const accepted = wasmPolys.map(p => new Polyhedron(p));
+      const ms = (x) => x.toFixed(1);
       console.log(
-        `[polyhedra] WASM total=${(performance.now() - _t0).toFixed(1)}ms ` +
+        `[polyhedra] WASM total=${ms(performance.now() - _t0)}ms ` +
+        `(setup=${ms(timing.setup)} centered=${ms(timing.centered)} ` +
+        `cages=${ms(timing.cages)} accept=${ms(timing.accept)}) | ` +
         `atoms=${nAtoms} centers=${displayCenters.length} ` +
         `accepted=${accepted.length} detectCages=${detectCages}`
       );
