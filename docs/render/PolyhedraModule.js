@@ -635,30 +635,19 @@ export function computePolyhedra(structure) {
       accept,
     });
 
-    // Centered-shell image handling follows the current display state rather than a
-    // purely source-level notion of coordination:
-    //
-    // - When the same source atom appears multiple times in the current wrapped
-    //   display (for example because periodic images / neighbour-bond ghosts are
-    //   visible), each visible image is allowed to survive as a distinct shell
-    //   vertex, keyed by (src, lattice shift).
-    // - Candidate images that exist geometrically but are not currently displayed
-    //   are discarded here, so polyhedra do not gain vertices from hidden ghosts.
-    // - If a source atom only has its primary image visible, the old behaviour is
-    //   preserved in practice: there is still only one surviving candidate for that
-    //   source.
-    //
-    // This is the intentional "as the user currently sees it" rule for periodic
-    // images in centered polyhedra. Cages remain source/image-agnostic in their
-    // own path below.
-    const byVisibleImage = new Map();
+    // Vertices are the centre's TRUE coordination shell — every accepted Voronoi
+    // neighbour (at its nearest-image position), regardless of whether that neighbour
+    // is currently displayed or hidden by a cut plane. So any displayed centre always
+    // gets its complete polyhedron, even for an edge atom whose ligands sit on periodic
+    // images that aren't shown as spheres. (We still dedupe per (src, shift) image,
+    // keeping the nearest, in case the candidate set repeats one.)
+    const byImage = new Map();
     for (const { cand } of vor) {
       const key = imageKey(cand.srcJ, cand.shift);
-      if (!visibleImageKeys.has(key)) continue;
-      const prev = byVisibleImage.get(key);
-      if (!prev || cand.d < prev.d) byVisibleImage.set(key, cand);
+      const prev = byImage.get(key);
+      if (!prev || cand.d < prev.d) byImage.set(key, cand);
     }
-    const entries = Array.from(byVisibleImage.values());
+    const entries = Array.from(byImage.values());
     if (entries.length < 4) continue; // need ≥4 non-coplanar points for a closed hull
 
     // Only remaining skip reason is geometric degeneracy (a near-planar set has no
@@ -729,14 +718,14 @@ export function computePolyhedra(structure) {
         frontier = next;
         depth++;
       };
-      const visiblePool = () => Array.from(visited.values())
-        .filter((e) => visibleImageKeys.has(imageKey(e.src, e.shift)));
-
+      // The pool is the seed's TRUE bonded cluster (all reached images), not just the
+      // displayed ones — so a cage is found whenever a displayed seed participates in
+      // one, even if some cage atoms sit on periodic images that aren't shown.
       while (depth < 3 && frontier.length) expand(); // always reach depth 3
-      let pool = visiblePool();
+      let pool = Array.from(visited.values());
       while (pool.length < 40 && depth < CAGE_BFS_DEPTH && frontier.length) { // heuristic ≥2×N
         expand();
-        pool = visiblePool();
+        pool = Array.from(visited.values());
       }
       return pool;
     }

@@ -604,7 +604,7 @@ pub fn build_candidates(
     center_src: &[u32],
     center_shift: &[i32],
     center_cart: &[f64],
-    visible_keys: &[i32],
+    _visible_keys: &[i32], // kept for FFI stability; vertices now use full coordination
     seed_visible: &[u8],
     center_start: usize,
     center_end: usize,
@@ -673,11 +673,6 @@ pub fn build_candidates(
         (r_search / bin_wc).floor() as i32 + 1,
     );
 
-    // Visible image set + per-source counts not needed beyond membership here.
-    let mut visible: HashSet<Key> = HashSet::new();
-    for chunk in visible_keys.chunks_exact(4) {
-        visible.insert((chunk[0] as u32, chunk[1], chunk[2], chunk[3]));
-    }
 
     let mut scratch: Vec<usize> = Vec::new();
 
@@ -803,15 +798,15 @@ pub fn build_candidates(
         };
         let vor = voronoi_neighbours(center_pos, &cands, center_radius, &accept);
 
-        // Keep one entry per visible image (nearest), discard non-displayed ghosts.
+        // Vertices are the centre's TRUE coordination shell: every accepted Voronoi
+        // neighbour, regardless of whether its image is displayed or hidden by a cut
+        // plane — so a displayed centre always gets its complete polyhedron. Dedupe per
+        // (src, shift) image, keeping the nearest.
         let mut by_image: HashMap<Key, usize> = HashMap::new();
         let mut order: Vec<Key> = Vec::new();
         for &k in &vor {
             let cand = &cands[k];
             let key = image_key(cand.src_j, cand.shift);
-            if !visible.contains(&key) {
-                continue;
-            }
             match by_image.get(&key) {
                 Some(&prev) if cands[prev].d <= cand.d => {}
                 Some(_) => {
@@ -878,12 +873,14 @@ pub fn build_candidates(
             order.push(start.clone());
             frontier.push(start);
             let mut depth = 0;
-            let mut visible_count =
-                if visible.contains(&image_key(seed as u32, [0, 0, 0])) { 1 } else { 0 };
 
+            // Expand the TRUE bonded cluster (all reached images, not just displayed
+            // ones): always to depth 3, then until ≥40 atoms or CAGE_BFS_DEPTH. The pool
+            // is the whole cluster so a cage is found even if some of its atoms sit on
+            // images that aren't displayed.
             while !frontier.is_empty()
                 && depth < CAGE_BFS_DEPTH
-                && (depth < 3 || visible_count < 40)
+                && (depth < 3 || order.len() < 40)
             {
                 next_frontier.clear();
                 for node in frontier.iter() {
@@ -896,9 +893,6 @@ pub fn build_candidates(
                                 .add(a.scale(nshift[0] as f64))
                                 .add(b.scale(nshift[1] as f64))
                                 .add(c.scale(nshift[2] as f64));
-                            if visible.contains(&key) {
-                                visible_count += 1;
-                            }
                             let e = PoolEntry { pos, src: o.src_j, shift: nshift };
                             order.push(e.clone());
                             next_frontier.push(e);
@@ -909,11 +903,7 @@ pub fn build_candidates(
                 depth += 1;
             }
 
-            let mut pool: Vec<PoolEntry> = order
-                .iter()
-                .filter(|e| visible.contains(&image_key(e.src, e.shift)))
-                .cloned()
-                .collect();
+            let mut pool: Vec<PoolEntry> = order.clone();
             cage_pool_ms += now() - tp;
             if pool.len() < 4 {
                 continue;
