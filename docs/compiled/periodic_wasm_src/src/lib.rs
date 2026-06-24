@@ -82,6 +82,10 @@ pub struct PolyhedraResult {
     cage_band_ms: f64,
     cage_nloop_ms: f64,
     accept_ms: f64,
+    centered_voronoi_ms: f64,
+    band_kcore_ms: f64,
+    bands_built: u32,
+    bands_skipped: u32,
 }
 
 #[wasm_bindgen]
@@ -109,6 +113,18 @@ impl PolyhedraResult {
     }
     pub fn accept_ms(&self) -> f64 {
         self.accept_ms
+    }
+    pub fn centered_voronoi_ms(&self) -> f64 {
+        self.centered_voronoi_ms
+    }
+    pub fn band_kcore_ms(&self) -> f64 {
+        self.band_kcore_ms
+    }
+    pub fn bands_built(&self) -> u32 {
+        self.bands_built
+    }
+    pub fn bands_skipped(&self) -> u32 {
+        self.bands_skipped
     }
     pub fn color_elem(&self) -> Vec<u32> {
         self.color_elem.clone()
@@ -182,6 +198,10 @@ pub fn compute_polyhedra(
         cage_band_ms: r.cage_band_ms,
         cage_nloop_ms: r.cage_nloop_ms,
         accept_ms: r.accept_ms,
+        centered_voronoi_ms: r.centered_voronoi_ms,
+        band_kcore_ms: r.band_kcore_ms,
+        bands_built: r.bands_built,
+        bands_skipped: r.bands_skipped,
     }
 }
 

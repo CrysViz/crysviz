@@ -362,8 +362,8 @@ export function computePolyhedra(structure) {
       const ms = (x) => x.toFixed(1);
       console.log(
         `[polyhedra] WASM total=${ms(performance.now() - _t0)}ms ` +
-        `(setup=${ms(timing.setup)} centered=${ms(timing.centered)} ` +
-        `cages=${ms(timing.cages)}(pool=${ms(timing.cagePool)} band=${ms(timing.cageBand)} nloop=${ms(timing.cageNloop)}) ` +
+        `(setup=${ms(timing.setup)} centered=${ms(timing.centered)}[voronoi=${ms(timing.centeredVoronoi)}] ` +
+        `cages=${ms(timing.cages)}(pool=${ms(timing.cagePool)} band=${ms(timing.cageBand)}[kcore=${ms(timing.bandKcore)} built=${timing.bandsBuilt} skip=${timing.bandsSkipped}] nloop=${ms(timing.cageNloop)}) ` +
         `accept=${ms(timing.accept)}) | ` +
         `atoms=${nAtoms} centers=${displayCenters.length} ` +
         `accepted=${accepted.length} detectCages=${detectCages}`

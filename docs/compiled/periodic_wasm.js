@@ -105,6 +105,27 @@ export class PolyhedraResult {
     /**
      * @returns {number}
      */
+    band_kcore_ms() {
+        const ret = wasm.polyhedraresult_band_kcore_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    bands_built() {
+        const ret = wasm.polyhedraresult_bands_built(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    bands_skipped() {
+        const ret = wasm.polyhedraresult_bands_skipped(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
     cage_band_ms() {
         const ret = wasm.polyhedraresult_cage_band_ms(this.__wbg_ptr);
         return ret;
@@ -144,6 +165,13 @@ export class PolyhedraResult {
      */
     centered_ms() {
         const ret = wasm.polyhedraresult_centered_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    centered_voronoi_ms() {
+        const ret = wasm.polyhedraresult_centered_voronoi_ms(this.__wbg_ptr);
         return ret;
     }
     /**

@@ -107,6 +107,10 @@ pub struct ComputedPolyhedra {
     pub cage_band_ms: f64,
     pub cage_nloop_ms: f64,
     pub accept_ms: f64,
+    pub centered_voronoi_ms: f64,
+    pub band_kcore_ms: f64,
+    pub bands_built: u32,
+    pub bands_skipped: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -766,6 +770,11 @@ pub fn compute_polyhedra(
 
     let t_setup = Date::now();
     let mut candidates: Vec<Candidate> = Vec::new();
+    // Diagnostics.
+    let mut centered_voronoi_ms = 0.0_f64;
+    let mut band_kcore_ms = 0.0_f64;
+    let mut bands_built: u32 = 0;
+    let mut bands_skipped: u32 = 0;
 
     // ---- Centered ----
     let n_centers = center_src.len();
@@ -793,7 +802,9 @@ pub fn compute_polyhedra(
             let cut = cutoff(center_elem, cand.elem);
             cut > 1e-3 && cand.d <= cut
         };
+        let tv = Date::now();
         let vor = voronoi_neighbours(center_pos, &cands, center_radius, &accept);
+        centered_voronoi_ms += Date::now() - tv;
 
         // Keep one entry per visible image (nearest), discard non-displayed ghosts.
         let mut by_image: HashMap<Key, usize> = HashMap::new();
@@ -945,41 +956,46 @@ pub fn compute_polyhedra(
                 spread_order: Vec<usize>,
             }
             let tb = Date::now();
-            let band_hulls: Vec<BandHull> = bands
-                .iter()
-                .map(|&(lo, hi)| {
-                    let band: Vec<PoolEntry> = pool
-                        .iter()
-                        .filter(|e| {
-                            let r = e.pos.dist(centroid);
-                            r >= lo && r <= hi
-                        })
-                        .cloned()
-                        .collect();
-                    if band.len() < 4 {
-                        return BandHull { band, base_verts: Vec::new(), spread_order: Vec::new() };
-                    }
-                    // Necessary condition: a cage needs ≥4 atoms each bonded to ≥2 others
-                    // in the set, so a band whose induced bond 2-core is smaller can never
-                    // yield a cage — skip its (expensive) convex hull. Coordination shells
-                    // (no ligand–ligand bonds) have an empty 2-core and are skipped here.
-                    if band_two_core_size(&band, &adjacency) < 4 {
-                        return BandHull { band, base_verts: Vec::new(), spread_order: Vec::new() };
-                    }
-                    let pts: Vec<Vec3> = band.iter().map(|e| e.pos).collect();
-                    let base_verts: Vec<PoolEntry> = match convex_hull(&pts) {
-                        Some(h) => h.vertices.iter().map(|&vi| band[vi].clone()).collect(),
-                        None => Vec::new(),
-                    };
-                    let spread_order = if base_verts.len() >= 2 {
-                        let bv_pts: Vec<Vec3> = base_verts.iter().map(|e| e.pos).collect();
-                        pick_spread_subset(&bv_pts, base_verts.len()).unwrap_or_default()
-                    } else {
-                        Vec::new()
-                    };
-                    BandHull { band, base_verts, spread_order }
-                })
-                .collect();
+            let mut band_hulls: Vec<BandHull> = Vec::with_capacity(bands.len());
+            for &(lo, hi) in &bands {
+                let band: Vec<PoolEntry> = pool
+                    .iter()
+                    .filter(|e| {
+                        let r = e.pos.dist(centroid);
+                        r >= lo && r <= hi
+                    })
+                    .cloned()
+                    .collect();
+                if band.len() < 4 {
+                    band_hulls.push(BandHull { band, base_verts: Vec::new(), spread_order: Vec::new() });
+                    continue;
+                }
+                // Necessary condition: a cage needs ≥4 atoms each bonded to ≥2 others
+                // in the set, so a band whose induced bond 2-core is smaller can never
+                // yield a cage — skip its (expensive) convex hull. Coordination shells
+                // (no ligand–ligand bonds) have an empty 2-core and are skipped here.
+                let tk = Date::now();
+                let core = band_two_core_size(&band, &adjacency);
+                band_kcore_ms += Date::now() - tk;
+                if core < 4 {
+                    bands_skipped += 1;
+                    band_hulls.push(BandHull { band, base_verts: Vec::new(), spread_order: Vec::new() });
+                    continue;
+                }
+                bands_built += 1;
+                let pts: Vec<Vec3> = band.iter().map(|e| e.pos).collect();
+                let base_verts: Vec<PoolEntry> = match convex_hull(&pts) {
+                    Some(h) => h.vertices.iter().map(|&vi| band[vi].clone()).collect(),
+                    None => Vec::new(),
+                };
+                let spread_order = if base_verts.len() >= 2 {
+                    let bv_pts: Vec<Vec3> = base_verts.iter().map(|e| e.pos).collect();
+                    pick_spread_subset(&bv_pts, base_verts.len()).unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                band_hulls.push(BandHull { band, base_verts, spread_order });
+            }
             cage_band_ms += Date::now() - tb;
 
             let tn = Date::now();
@@ -1090,6 +1106,10 @@ pub fn compute_polyhedra(
         cage_band_ms,
         cage_nloop_ms,
         accept_ms: 0.0,
+        centered_voronoi_ms,
+        band_kcore_ms,
+        bands_built,
+        bands_skipped,
     };
 
     for cand in &candidates {
