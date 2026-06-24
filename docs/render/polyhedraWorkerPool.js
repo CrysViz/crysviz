@@ -13,30 +13,11 @@
  */
 
 import { marshalPolyhedraInputs, callAcceptCandidates } from '../compiled/polyhedraWasm.js';
-
-const MAX_WORKERS = 16;
-
-/** @type {{workers: Worker[], n: number} | null} */
-let pool = null;
-let reqCounter = 0;
+import { runOnAll, available, size } from '../workers/workerPool.js';
 
 /** True if Web Workers (and thus the parallel path) are usable in this environment. */
 export function parallelAvailable() {
-  return typeof Worker !== 'undefined';
-}
-
-function getPool() {
-  if (pool) return pool;
-  const n = Math.max(1, Math.min(MAX_WORKERS, navigator.hardwareConcurrency || 4));
-  const workers = [];
-  for (let i = 0; i < n; i++) {
-    workers.push(new Worker(
-      new URL('../compiled/polyhedraWorker.js', import.meta.url),
-      { type: 'module' },
-    ));
-  }
-  pool = { workers, n };
-  return pool;
+  return available() && size() > 0;
 }
 
 /** Partition [0,total) into `k` contiguous ranges [start,end). */
@@ -127,33 +108,21 @@ function mergeCandidates(results) {
 export async function computePolyhedraParallel(prep) {
   const _t0 = performance.now();
   const { idxToElem, inputs } = marshalPolyhedraInputs(prep);
-  const cold = !pool;
-  const { workers, n } = getPool();
-  const reqId = ++reqCounter;
+  const n = size();
   const _tMarshal = performance.now();
 
   const centerRanges = partition(inputs.nCenters, n);
   const seedRanges = partition(inputs.nAtoms, n);
+  const payloads = [];
+  for (let i = 0; i < n; i++) {
+    payloads.push({
+      inputs,
+      cs: centerRanges[i][0], ce: centerRanges[i][1],
+      ss: seedRanges[i][0], se: seedRanges[i][1],
+    });
+  }
 
-  const results = await Promise.all(workers.map((w, i) => new Promise((resolve, reject) => {
-    const onMsg = (e) => {
-      if (e.data.reqId !== reqId) return; // not ours
-      w.removeEventListener('message', onMsg);
-      w.removeEventListener('error', onErr);
-      if (e.data.error) reject(new Error(e.data.error));
-      else resolve(e.data);
-    };
-    const onErr = (err) => {
-      w.removeEventListener('message', onMsg);
-      w.removeEventListener('error', onErr);
-      reject(err instanceof Error ? err : new Error('polyhedra worker error'));
-    };
-    w.addEventListener('message', onMsg);
-    w.addEventListener('error', onErr);
-    const [cs, ce] = centerRanges[i];
-    const [ss, se] = seedRanges[i];
-    w.postMessage({ reqId, inputs, cs, ce, ss, se });
-  })));
+  const results = await runOnAll('polyhedraCandidates', payloads);
 
   const _tDispatch = performance.now();
   const merged = mergeCandidates(results);
@@ -163,7 +132,7 @@ export async function computePolyhedraParallel(prep) {
 
   const ms = (x) => x.toFixed(1);
   console.log(
-    `[polyhedra] parallel workers=${n}${cold ? ' (COLD: worker+wasm init included)' : ''} ` +
+    `[polyhedra] parallel workers=${n} ` +
     `marshal=${ms(_tMarshal - _t0)} dispatch+compute=${ms(_tDispatch - _tMarshal)} ` +
     `merge=${ms(_tMerge - _tDispatch)} accept=${ms(_tAccept - _tMerge)}`
   );
