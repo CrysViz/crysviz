@@ -125,9 +125,12 @@ function mergeCandidates(results) {
  * @returns {Promise<Array<Object>>}
  */
 export async function computePolyhedraParallel(prep) {
+  const _t0 = performance.now();
   const { idxToElem, inputs } = marshalPolyhedraInputs(prep);
+  const cold = !pool;
   const { workers, n } = getPool();
   const reqId = ++reqCounter;
+  const _tMarshal = performance.now();
 
   const centerRanges = partition(inputs.nCenters, n);
   const seedRanges = partition(inputs.nAtoms, n);
@@ -152,6 +155,17 @@ export async function computePolyhedraParallel(prep) {
     w.postMessage({ reqId, inputs, cs, ce, ss, se });
   })));
 
+  const _tDispatch = performance.now();
   const merged = mergeCandidates(results);
-  return callAcceptCandidates(merged, idxToElem);
+  const _tMerge = performance.now();
+  const polyhedra = callAcceptCandidates(merged, idxToElem);
+  const _tAccept = performance.now();
+
+  const ms = (x) => x.toFixed(1);
+  console.log(
+    `[polyhedra] parallel workers=${n}${cold ? ' (COLD: worker+wasm init included)' : ''} ` +
+    `marshal=${ms(_tMarshal - _t0)} dispatch+compute=${ms(_tDispatch - _tMarshal)} ` +
+    `merge=${ms(_tMerge - _tDispatch)} accept=${ms(_tAccept - _tMerge)}`
+  );
+  return polyhedra;
 }
