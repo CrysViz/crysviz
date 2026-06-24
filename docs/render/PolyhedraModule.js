@@ -378,7 +378,7 @@ export function computePolyhedra(structure) {
     const fp = cartToFrac([P.x, P.y, P.z], lattice, latInv);
     const out = [];
     const cuts = cutoffRow(elem);
-    for (let j = 0; j < nAtoms; j++) {
+    for (const j of cellCandidates(fp, nbHaloX, nbHaloY, nbHaloZ)) {
       const cutoff = cuts[j];
       if (cutoff <= 1e-3) continue;
       const fj = positions[j];
@@ -412,7 +412,7 @@ export function computePolyhedra(structure) {
   function gatherWithin(P) {
     const fp = cartToFrac([P.x, P.y, P.z], lattice, latInv);
     const out = [];
-    for (let j = 0; j < nAtoms; j++) {
+    for (const j of cellCandidates(fp, gwHaloX, gwHaloY, gwHaloZ)) {
       const fj = positions[j];
       const c0 = Math.round(fp[0] - fj[0]);
       const c1 = Math.round(fp[1] - fj[1]);
@@ -429,24 +429,100 @@ export function computePolyhedra(structure) {
     return out;
   }
 
-  // Base-cell neighbour images per source atom, computed once. Every periodic
-  // image of an atom is just a lattice translation of its base cell, so its
-  // neighbour images are this list shifted by the image's lattice offset — which
-  // lets the cage BFS below avoid re-scanning all atoms for every visited node.
-  /** @type {Array<Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>>} */
-  const baseNeighbors = new Array(nAtoms);
-  for (let i = 0; i < nAtoms; i++) baseNeighbors[i] = neighborImages(baseCart[i], elements[i]);
+  // ---------- Spatial cell list (shared neighbour acceleration) ----------
+  // Both scans above are O(atoms) per query → O(atoms²) overall, which dominates
+  // large structures. Bin every atom by its wrapped fractional cell into a grid,
+  // then a query only inspects atoms in the surrounding ±halo bins (with periodic
+  // wrap) instead of all of them. The grid is sized by the smaller (bond) radius so
+  // the per-atom periodic-image distance test below is still run unchanged on each
+  // candidate — so emitted neighbours are byte-for-byte identical, just far fewer
+  // atoms are visited. The halo is computed from each query's own radius, so the
+  // wide gatherWithin radius scans more bins than the tight neighborImages radius.
+  const binRadius = Math.max(maxCutoff, 1.5);
+  const Gx = Math.max(1, Math.floor(widthA / binRadius));
+  const Gy = Math.max(1, Math.floor(widthB / binRadius));
+  const Gz = Math.max(1, Math.floor(widthC / binRadius));
+  const binWA = widthA / Gx, binWB = widthB / Gy, binWC = widthC / Gz;
+  // Per-axis halo (in bins) for the two query radii. floor(ρ/binW)+1 is the exact
+  // worst-case bin span (the +1 absorbs the floor-binning offset of the two points,
+  // which a bare ceil would miss at integer ratios). For the tight bond radius this
+  // is just 1, so the hot setup scan pays nothing extra.
+  const nbHaloX = Math.floor(maxCutoff / binWA) + 1; // neighborImages (bond cutoff)
+  const nbHaloY = Math.floor(maxCutoff / binWB) + 1;
+  const nbHaloZ = Math.floor(maxCutoff / binWC) + 1;
+  const gwHaloX = Math.floor(R / binWA) + 1;         // gatherWithin (search radius)
+  const gwHaloY = Math.floor(R / binWB) + 1;
+  const gwHaloZ = Math.floor(R / binWC) + 1;
+  /** @type {number[][]} */
+  const cellBins = new Array(Gx * Gy * Gz);
+  for (let bi = 0; bi < cellBins.length; bi++) cellBins[bi] = [];
+  const wrapBin = (f, G) => {
+    let g = Math.floor((f - Math.floor(f)) * G);
+    if (g >= G) g = G - 1; else if (g < 0) g = 0;
+    return g;
+  };
+  for (let j = 0; j < nAtoms; j++) {
+    const gx = wrapBin(positions[j][0], Gx);
+    const gy = wrapBin(positions[j][1], Gy);
+    const gz = wrapBin(positions[j][2], Gz);
+    cellBins[(gx * Gy + gy) * Gz + gz].push(j);
+  }
+  // Per-query dedup via a stamp array (avoids allocating a Set per query).
+  const _cellStamp = new Int32Array(nAtoms).fill(-1);
+  let _cellQueryId = 0;
+  const axisRange = (g, halo, G) => {
+    if (2 * halo + 1 >= G) { const r = new Array(G); for (let i = 0; i < G; i++) r[i] = i; return r; }
+    const r = new Array(2 * halo + 1);
+    for (let d = -halo, k = 0; d <= halo; d++, k++) r[k] = ((g + d) % G + G) % G;
+    return r;
+  };
+  /**
+   * Atom indices whose nearest periodic image could lie within `halo` bins of
+   * fractional point `fp`. Superset-correct: contains every true neighbour for the
+   * radius the halo was derived from.
+   * @param {number[]} fp fractional coordinates of the query point
+   * @returns {number[]}
+   */
+  function cellCandidates(fp, hx, hy, hz) {
+    const qid = _cellQueryId++;
+    const xs = axisRange(wrapBin(fp[0], Gx), hx, Gx);
+    const ys = axisRange(wrapBin(fp[1], Gy), hy, Gy);
+    const zs = axisRange(wrapBin(fp[2], Gz), hz, Gz);
+    const out = [];
+    for (const gx of xs) for (const gy of ys) for (const gz of zs) {
+      const bin = cellBins[(gx * Gy + gy) * Gz + gz];
+      for (const j of bin) {
+        if (_cellStamp[j] === qid) continue;
+        _cellStamp[j] = qid;
+        out.push(j);
+      }
+    }
+    return out;
+  }
 
-  // Source-level adjacency for the cage induced-degree test (uses bonded images).
+  // Base-cell neighbour images per source atom + source-level adjacency. Both are
+  // used ONLY by the cage path (the BFS pool and the induced-degree test), and
+  // building them is the O(atoms²) neighbour scan — so skip it entirely when cage
+  // detection is off (this is also the toggle you'd flip for speed).
+  /** @type {Array<Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>>} */
+  let baseNeighbors = [];
   /** @type {Map<number, Set<number>>} */
   const adjacency = new Map();
-  function addBond(u, v) {
-    if (!adjacency.has(u)) adjacency.set(u, new Set());
-    if (!adjacency.has(v)) adjacency.set(v, new Set());
-    adjacency.get(u).add(v); adjacency.get(v).add(u);
-  }
-  for (let i = 0; i < nAtoms; i++) {
-    for (const o of baseNeighbors[i]) addBond(i, o.srcJ);
+  if (ALLOW_CAGES && detectCages) {
+    // Every periodic image of an atom is just a lattice translation of its base
+    // cell, so its neighbour images are this list shifted by the image's lattice
+    // offset — letting the cage BFS avoid re-scanning all atoms for every node.
+    baseNeighbors = new Array(nAtoms);
+    for (let i = 0; i < nAtoms; i++) baseNeighbors[i] = neighborImages(baseCart[i], elements[i]);
+
+    const addBond = (u, v) => {
+      if (!adjacency.has(u)) adjacency.set(u, new Set());
+      if (!adjacency.has(v)) adjacency.set(v, new Set());
+      adjacency.get(u).add(v); adjacency.get(v).add(u);
+    };
+    for (let i = 0; i < nAtoms; i++) {
+      for (const o of baseNeighbors[i]) addBond(i, o.srcJ);
+    }
   }
   _tSetup = performance.now();
 
