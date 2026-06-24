@@ -656,26 +656,29 @@ export function computePolyhedra(structure) {
             });
           }
 
-          // Build candidate hull on selected N verts
           const posList = verts.map(o=>o.pos);
           const selSrcs = verts.map(o=>o.src);   // source atom index per selected vertex
+
+          // ---- CAGE acceptance: cheap necessary conditions FIRST, so the
+          // expensive hull / EdgesGeometry is only built for candidates that can
+          // actually be accepted. Both checks are necessary (combined with the
+          // edge-spread test via AND), so ordering them first doesn't change which
+          // cages pass — it just skips the geometry for the common rejections
+          // (e.g. a coordination shell whose ligands aren't bonded to each other).
+
+          // 1) Anti-flatness — operates on the point set, no hull needed.
+          if (thicknessRatio(posList) < 0.08) continue;          // very lenient
+
+          // 2) Induced-degree in the selected vertex set (B12 needs 5) — combinatorial.
+          const minDeg = minVertexDegreeForCageSize(posList.length);
+          if (!inducedDegreeOK(adjacency, selSrcs, minDeg)) continue;
+
+          // 3) Build the candidate hull only now, and run the edge-spread sanity.
           let geom;
           try { geom = new ConvexGeomCtor(posList); } catch { geom = null; }
           if (!geom) continue;
-
           geom.computeVertexNormals();
-          // ---- CAGE acceptance: induced-degree rule instead of hull-edges-as-bonds ----
-
-          // 1) Mild shape sanity (keep your existing checks)
-          const okSpread = edgeSpreadOK(geom);                   // max(edge)/min(edge) ≤ 1.30
-          const okThick  = thicknessRatio(posList) >= 0.08;      // very lenient anti-flatness
-          if (!(okSpread && okThick)) { geom.dispose(); continue; }
-
-          // 2) Induced-degree in the selected vertex set (B12 needs 5)
-          const minDeg = minVertexDegreeForCageSize(posList.length);
-          if (!inducedDegreeOK(adjacency, selSrcs, minDeg)) {
-            geom.dispose(); continue;
-          }
+          if (!edgeSpreadOK(geom)) { geom.dispose(); continue; } // max(edge)/min(edge) ≤ 1.30
 
           // Accept candidate cage
           candidates.push({
