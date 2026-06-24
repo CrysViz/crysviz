@@ -505,51 +505,93 @@ fn induced_degree_ok(adjacency: &[HashSet<u32>], sel: &[u32], min_deg: usize) ->
     true
 }
 
-/// Size of the 2-core of a band's induced bond subgraph (source-level). Any accepted
-/// cage's vertices form a min-degree-≥minDeg(N)≥2 subgraph of their band, so they lie in
-/// the band's 2-core; a band whose 2-core has < 4 atoms therefore cannot yield any cage
-/// and its convex hull can be skipped entirely. (Cheap necessary condition — the precise
-/// per-N `induced_degree_ok` still runs on the selected vertices.)
-fn band_two_core_size(band: &[PoolEntry], adjacency: &[HashSet<u32>]) -> usize {
-    let mut srcs: Vec<u32> = band.iter().map(|e| e.src).collect();
-    srcs.sort_unstable();
-    srcs.dedup();
-    let n = srcs.len();
-    if n < 4 {
-        return n;
+/// Reusable scratch for the band 2-core test, so the per-band gate allocates nothing
+/// on the hot path (`local` is sized once to n_atoms; the rest are cleared, not freed).
+struct KCore {
+    local: Vec<i32>, // src -> local band index, else -1; restored to -1 after each call
+    srcs: Vec<u32>,
+    deg: Vec<usize>,
+    removed: Vec<bool>,
+    stack: Vec<usize>,
+}
+
+impl KCore {
+    fn new(n_atoms: usize) -> KCore {
+        KCore {
+            local: vec![-1; n_atoms],
+            srcs: Vec::new(),
+            deg: Vec::new(),
+            removed: Vec::new(),
+            stack: Vec::new(),
+        }
     }
-    let pos: HashMap<u32, usize> = srcs.iter().enumerate().map(|(i, &s)| (s, i)).collect();
-    // Induced neighbour lists within the band's source set.
-    let mut nbrs: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for (i, &s) in srcs.iter().enumerate() {
-        for &t in &adjacency[s as usize] {
-            if let Some(&j) = pos.get(&t) {
-                if j != i {
-                    nbrs[i].push(j);
+
+    /// Size of the 2-core of the band's induced bond subgraph (source-level). Any accepted
+    /// cage's vertices form a min-degree-≥minDeg(N)≥2 subgraph of their band, so they lie
+    /// in the band's 2-core; a band whose 2-core has < 4 atoms cannot yield any cage and
+    /// its convex hull can be skipped. (Necessary condition — the precise per-N
+    /// `induced_degree_ok` still runs on the selected vertices.)
+    fn two_core_size(&mut self, band: &[PoolEntry], adjacency: &[HashSet<u32>]) -> usize {
+        self.srcs.clear();
+        for e in band {
+            let s = e.src as usize;
+            if self.local[s] < 0 {
+                self.local[s] = self.srcs.len() as i32;
+                self.srcs.push(e.src);
+            }
+        }
+        let m = self.srcs.len();
+        if m < 4 {
+            for &s in &self.srcs {
+                self.local[s as usize] = -1;
+            }
+            return m;
+        }
+        self.deg.clear();
+        self.deg.resize(m, 0);
+        self.removed.clear();
+        self.removed.resize(m, false);
+        for i in 0..m {
+            let mut d = 0;
+            for &t in &adjacency[self.srcs[i] as usize] {
+                let li = self.local[t as usize];
+                if li >= 0 && li as usize != i {
+                    d += 1;
+                }
+            }
+            self.deg[i] = d;
+        }
+        self.stack.clear();
+        for i in 0..m {
+            if self.deg[i] < 2 {
+                self.stack.push(i);
+            }
+        }
+        let mut alive = m;
+        while let Some(u) = self.stack.pop() {
+            if self.removed[u] {
+                continue;
+            }
+            self.removed[u] = true;
+            alive -= 1;
+            for &t in &adjacency[self.srcs[u] as usize] {
+                let li = self.local[t as usize];
+                if li >= 0 {
+                    let v = li as usize;
+                    if v != u && !self.removed[v] {
+                        self.deg[v] = self.deg[v].saturating_sub(1);
+                        if self.deg[v] < 2 {
+                            self.stack.push(v);
+                        }
+                    }
                 }
             }
         }
-    }
-    let mut deg: Vec<usize> = nbrs.iter().map(|v| v.len()).collect();
-    let mut removed = vec![false; n];
-    let mut stack: Vec<usize> = (0..n).filter(|&i| deg[i] < 2).collect();
-    let mut alive = n;
-    while let Some(u) = stack.pop() {
-        if removed[u] {
-            continue;
+        for &s in &self.srcs {
+            self.local[s as usize] = -1;
         }
-        removed[u] = true;
-        alive -= 1;
-        for &v in &nbrs[u] {
-            if !removed[v] {
-                deg[v] = deg[v].saturating_sub(1);
-                if deg[v] < 2 {
-                    stack.push(v);
-                }
-            }
-        }
+        alive
     }
-    alive
 }
 
 fn centered_hull_acceptable(center: Vec3, center_radius: f64, pos_list: &[Vec3]) -> bool {
@@ -861,6 +903,7 @@ pub fn compute_polyhedra(
         let mut order: Vec<PoolEntry> = Vec::new();
         let mut frontier: Vec<PoolEntry> = Vec::new();
         let mut next_frontier: Vec<PoolEntry> = Vec::new();
+        let mut kcore = KCore::new(n_atoms);
 
         for seed in 0..n_atoms {
             if seed_visible[seed] == 0 {
@@ -975,7 +1018,7 @@ pub fn compute_polyhedra(
                 // yield a cage — skip its (expensive) convex hull. Coordination shells
                 // (no ligand–ligand bonds) have an empty 2-core and are skipped here.
                 let tk = Date::now();
-                let core = band_two_core_size(&band, &adjacency);
+                let core = kcore.two_core_size(&band, &adjacency);
                 band_kcore_ms += Date::now() - tk;
                 if core < 4 {
                     bands_skipped += 1;
