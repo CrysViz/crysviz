@@ -2,6 +2,18 @@
 /* eslint-disable */
 
 /**
+ * Bonding pairs (i, j) with i < j, as two parallel index arrays.
+ */
+export class BondPairsResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    count(): number;
+    i(): Uint32Array;
+    j(): Uint32Array;
+}
+
+/**
  * Flattened candidate polyhedra for one worker partition (before acceptance). Centred
  * candidates precede cage candidates; `n_centered` records the split so the main thread
  * can regroup all workers' results into serial order. Layout mirrors
@@ -77,6 +89,13 @@ export class PolyhedraResult {
 export function accept_candidates(is_cage: Uint8Array, color_elem: Uint32Array, center_src: Int32Array, center_shift: Int32Array, ref_point: Float64Array, vert_counts: Uint32Array, vertices: Float64Array, vertex_srcs: Uint32Array, vertex_shifts: Int32Array): PolyhedraResult;
 
 /**
+ * Find bonding pairs in the wrapped atom set via the shared Cartesian cell list. See
+ * `bonds::compute_bond_pairs`; `i_start`/`i_end` allow worker partitioning later (use
+ * `0`/`n` for the serial path).
+ */
+export function compute_bond_pairs(cart: Float64Array, elem_idx: Uint32Array, cutoff_sq: Float64Array, min_cutoff_sq: Float64Array, n_elem: number, min_dist_sq: number, max_cutoff: number, i_start: number, i_end: number): BondPairsResult;
+
+/**
  * Parallel entry, part 1: generate the candidates for centre range
  * `[center_start,center_end)` and seed range `[seed_start,seed_end)`. Runs in a worker.
  */
@@ -109,10 +128,14 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_bondpairsresult_free: (a: number, b: number) => void;
     readonly __wbg_candidateresult_free: (a: number, b: number) => void;
     readonly __wbg_periodicresult_free: (a: number, b: number) => void;
     readonly __wbg_polyhedraresult_free: (a: number, b: number) => void;
     readonly accept_candidates: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number) => number;
+    readonly bondpairsresult_count: (a: number) => number;
+    readonly bondpairsresult_i: (a: number) => [number, number];
+    readonly bondpairsresult_j: (a: number) => [number, number];
     readonly candidateresult_center_shift: (a: number) => [number, number];
     readonly candidateresult_center_src: (a: number) => [number, number];
     readonly candidateresult_color_elem: (a: number) => [number, number];
@@ -124,13 +147,13 @@ export interface InitOutput {
     readonly candidateresult_vertex_shifts: (a: number) => [number, number];
     readonly candidateresult_vertex_srcs: (a: number) => [number, number];
     readonly candidateresult_vertices: (a: number) => [number, number];
+    readonly compute_bond_pairs: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => number;
     readonly compute_candidates: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number) => number;
     readonly compute_polyhedra: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number) => number;
     readonly periodic_wrapped: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => number;
     readonly periodicresult_cart: (a: number) => [number, number];
     readonly periodicresult_elements: (a: number) => [number, number];
     readonly periodicresult_frac: (a: number) => [number, number];
-    readonly periodicresult_len: (a: number) => number;
     readonly periodicresult_src_index: (a: number) => [number, number];
     readonly polyhedraresult_accept_ms: (a: number) => number;
     readonly polyhedraresult_bands_built: (a: number) => number;
@@ -148,6 +171,7 @@ export interface InitOutput {
     readonly polyhedraresult_vert_counts: (a: number) => [number, number];
     readonly polyhedraresult_vertex_srcs: (a: number) => [number, number];
     readonly polyhedraresult_vertices: (a: number) => [number, number];
+    readonly periodicresult_len: (a: number) => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;

@@ -1,3 +1,5 @@
+mod bonds;
+mod cell_list;
 mod convex_hull;
 mod linalg;
 mod polyhedra;
@@ -332,6 +334,52 @@ pub fn accept_candidates(
         bands_built: 0,
         bands_skipped: 0,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Neighbour-bond pair finder
+// ---------------------------------------------------------------------------
+
+/// Bonding pairs (i, j) with i < j, as two parallel index arrays.
+#[wasm_bindgen]
+pub struct BondPairsResult {
+    i: Vec<u32>,
+    j: Vec<u32>,
+}
+
+#[wasm_bindgen]
+impl BondPairsResult {
+    pub fn i(&self) -> Vec<u32> {
+        self.i.clone()
+    }
+    pub fn j(&self) -> Vec<u32> {
+        self.j.clone()
+    }
+    pub fn count(&self) -> usize {
+        self.i.len()
+    }
+}
+
+/// Find bonding pairs in the wrapped atom set via the shared Cartesian cell list. See
+/// `bonds::compute_bond_pairs`; `i_start`/`i_end` allow worker partitioning later (use
+/// `0`/`n` for the serial path).
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn compute_bond_pairs(
+    cart: &[f64],
+    elem_idx: &[u32],
+    cutoff_sq: &[f64],
+    min_cutoff_sq: &[f64],
+    n_elem: usize,
+    min_dist_sq: f64,
+    max_cutoff: f64,
+    i_start: usize,
+    i_end: usize,
+) -> BondPairsResult {
+    let r = bonds::compute_bond_pairs(
+        cart, elem_idx, cutoff_sq, min_cutoff_sq, n_elem, min_dist_sq, max_cutoff, i_start, i_end,
+    );
+    BondPairsResult { i: r.i, j: r.j }
 }
 
 // ---------------------------------------------------------------------------

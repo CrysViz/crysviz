@@ -5,6 +5,7 @@
 //! cage detection, and the global acceptance/nesting pass. Output is a flat set
 //! of accepted polyhedra (vertices in Cartesian) that JS turns into the model.
 
+use crate::cell_list::{BinMode, CellList};
 use crate::convex_hull::{convex_hull, cross, Hull};
 use crate::linalg::{Matrix33, Vec3};
 /// Millisecond clock — `js_sys::Date::now()` on wasm, 0.0 under native `cargo test`
@@ -122,85 +123,8 @@ pub struct ComputedPolyhedra {
     pub bands_skipped: u32,
 }
 
-// ---------------------------------------------------------------------------
-// Spatial cell list (mirrors the JS grid)
-// ---------------------------------------------------------------------------
-
-struct Grid {
-    gx: i32,
-    gy: i32,
-    gz: i32,
-    bins: Vec<Vec<u32>>,
-    stamp: Vec<i32>,
-    qid: i32,
-}
-
-#[inline]
-fn wrap_bin(f: f64, g: i32) -> i32 {
-    let mut b = ((f - f.floor()) * g as f64).floor() as i32;
-    if b >= g {
-        b = g - 1;
-    } else if b < 0 {
-        b = 0;
-    }
-    b
-}
-
-fn axis_range(g: i32, halo: i32, total: i32) -> Vec<i32> {
-    if 2 * halo + 1 >= total {
-        (0..total).collect()
-    } else {
-        (-halo..=halo).map(|d| ((g + d) % total + total) % total).collect()
-    }
-}
-
-impl Grid {
-    fn build(positions: &[Vec3], widths: (f64, f64, f64), bin_radius: f64) -> Grid {
-        let gx = 1.max((widths.0 / bin_radius).floor() as i32);
-        let gy = 1.max((widths.1 / bin_radius).floor() as i32);
-        let gz = 1.max((widths.2 / bin_radius).floor() as i32);
-        let mut bins = vec![Vec::new(); (gx * gy * gz) as usize];
-        for (j, p) in positions.iter().enumerate() {
-            let bx = wrap_bin(p.x, gx);
-            let by = wrap_bin(p.y, gy);
-            let bz = wrap_bin(p.z, gz);
-            bins[((bx * gy + by) * gz + bz) as usize].push(j as u32);
-        }
-        Grid {
-            gx,
-            gy,
-            gz,
-            bins,
-            stamp: vec![-1; positions.len()],
-            qid: 0,
-        }
-    }
-
-    /// Candidate atom indices whose nearest image could lie within `halo` bins.
-    fn candidates(&mut self, fp: Vec3, hx: i32, hy: i32, hz: i32, out: &mut Vec<usize>) {
-        out.clear();
-        let qid = self.qid;
-        self.qid += 1;
-        let xs = axis_range(wrap_bin(fp.x, self.gx), hx, self.gx);
-        let ys = axis_range(wrap_bin(fp.y, self.gy), hy, self.gy);
-        let zs = axis_range(wrap_bin(fp.z, self.gz), hz, self.gz);
-        for &bx in &xs {
-            for &by in &ys {
-                for &bz in &zs {
-                    let bin = &self.bins[((bx * self.gy + by) * self.gz + bz) as usize];
-                    for &ju in bin {
-                        let j = ju as usize;
-                        if self.stamp[j] == qid {
-                            continue;
-                        }
-                        self.stamp[j] = qid;
-                        out.push(j);
-                    }
-                }
-            }
-        }
-    }
-}
+// The neighbour search uses the shared CellList in periodic (fractional) mode; see
+// `cell_list.rs`. Grid dimensions are derived from the cell widths and bond radius below.
 
 // ---------------------------------------------------------------------------
 // Voronoi (port of VoronoiNeighbours.js)
@@ -728,9 +652,13 @@ pub fn build_candidates(
     let mb = 1.max((r_search / width_b.max(1e-6)).ceil() as i32);
     let mc = 1.max((r_search / width_c.max(1e-6)).ceil() as i32);
 
-    // Spatial grid sized by the bond radius; per-radius halos.
+    // Spatial grid sized by the bond radius; per-radius halos. Periodic (fractional) mode:
+    // positions are fractional and the query wraps across cell boundaries.
     let bin_radius = max_cutoff.max(1.5);
-    let mut grid = Grid::build(&positions, (width_a, width_b, width_c), bin_radius);
+    let grid_gx = 1.max((width_a / bin_radius).floor() as i32);
+    let grid_gy = 1.max((width_b / bin_radius).floor() as i32);
+    let grid_gz = 1.max((width_c / bin_radius).floor() as i32);
+    let mut grid = CellList::new(&positions, grid_gx, grid_gy, grid_gz, BinMode::Frac);
     let bin_wa = width_a / grid.gx as f64;
     let bin_wb = width_b / grid.gy as f64;
     let bin_wc = width_c / grid.gz as f64;
@@ -754,7 +682,7 @@ pub fn build_candidates(
     let mut scratch: Vec<usize> = Vec::new();
 
     // neighborImages(P, elem) — bonded images within cutoff.
-    let neighbor_images = |grid: &mut Grid, scratch: &mut Vec<usize>, p: Vec3, ei: usize| -> Vec<Neighbor> {
+    let neighbor_images = |grid: &mut CellList, scratch: &mut Vec<usize>, p: Vec3, ei: usize| -> Vec<Neighbor> {
         let fp = cart_to_frac(p);
         grid.candidates(fp, nb_halo.0, nb_halo.1, nb_halo.2, scratch);
         let mut out = Vec::new();
@@ -791,7 +719,7 @@ pub fn build_candidates(
     };
 
     // gatherWithin(P) — all images within the search radius (any species).
-    let gather_within = |grid: &mut Grid, scratch: &mut Vec<usize>, p: Vec3| -> Vec<Cand> {
+    let gather_within = |grid: &mut CellList, scratch: &mut Vec<usize>, p: Vec3| -> Vec<Cand> {
         let fp = cart_to_frac(p);
         grid.candidates(fp, gw_halo.0, gw_halo.1, gw_halo.2, scratch);
         let mut out = Vec::new();

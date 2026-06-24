@@ -12,6 +12,7 @@ import { getCutPlaneMaskSign } from '../model/Plane.js';
 //import {bondLengthToColor} from '../ui/ColorPanel.js'
 import {refreshHistogram} from '../ui/AnalysisPanels/BondAnalysisPanel.js'
 import {generateID} from '../utils/index.js'
+import {computeBondPairsWasm} from '../compiled/bondsWasm.js'
 //import {getBondCutoff} from './BondsModule.js'
 //
 export function initBondsLengths(){
@@ -172,21 +173,22 @@ export function buildBondObjects(structure){
   const wrappedSrcIndex = wrapped.srcIndex;
   const minDistSq = 0.005 * 0.005;
 
-  // Map atoms -> small element index, and build symmetric cutoff^2 / minCutoff^2
-  // matrices over the unique elements present in the wrapped set.
+  // Map atoms -> small element index, and build flat symmetric cutoff^2 / minCutoff^2
+  // matrices over the unique elements present in the wrapped set (flat so the same arrays
+  // serve the WASM pair finder and the JS fallback).
   const uniqueElems = [...new Set(wrappedElements)];
   const elemIndexOf = new Map(uniqueElems.map((e, k) => [e, k]));
   const nu = uniqueElems.length;
-  const cutoffSq = [];
-  const minCutoffSq = [];
+  const cutoffSqFlat = new Float64Array(nu * nu);
+  const minCutoffSqFlat = new Float64Array(nu * nu);
+  let maxCutoff = 0;
   for (let a = 0; a < nu; a++) {
-    cutoffSq[a] = new Float64Array(nu);
-    minCutoffSq[a] = new Float64Array(nu);
     for (let b = 0; b < nu; b++) {
       const c = getBondCutoff(uniqueElems[a], uniqueElems[b]);
       const mc = getBondMinCutoff(uniqueElems[a], uniqueElems[b]);
-      cutoffSq[a][b] = c * c;
-      minCutoffSq[a][b] = mc * mc;
+      cutoffSqFlat[a * nu + b] = c * c;
+      minCutoffSqFlat[a * nu + b] = mc * mc;
+      if (c > maxCutoff) maxCutoff = c;
       if (b >= a && c <= 0.01) {
         console.log("Bond Cutoff too small for", uniqueElems[a], uniqueElems[b], c);
       }
@@ -195,53 +197,81 @@ export function buildBondObjects(structure){
   const atomElemIdx = new Int32Array(n);
   for (let i = 0; i < n; i++) atomElemIdx[i] = elemIndexOf.get(wrappedElements[i]);
 
-  for (let i = 0; i < n; i++) {
-    const pi = wrappedCart[i];
-    const xi = pi[0], yi = pi[1], zi = pi[2];
-    const ai = atomElemIdx[i];
-    const cutRow = cutoffSq[ai];
-    const minRow = minCutoffSq[ai];
-    for (let j = i + 1; j < n; j++) {
-      const bj = atomElemIdx[j];
-      const cutSq = cutRow[bj];
-      if (cutSq <= 0.0001) continue; // cutoff <= 0.01: no bond / hidden pair
-
-      const pj = wrappedCart[j];
-      const dx = xi - pj[0];
-      const dy = yi - pj[1];
-      const dz = zi - pj[2];
-      const distSq = dx * dx + dy * dy + dz * dz;
-      if (distSq > cutSq || distSq < minDistSq || distSq < minRow[bj]) continue;
-
-      const ei = uniqueElems[ai];
-      const ej = uniqueElems[bj];
-      const bond = new Bond({
-        elements: [ei, ej],
-        positions: [[xi, yi, zi], [pj[0], pj[1], pj[2]]],
-        uuid: generateID([ei, ej]),
-        srcIndices: [wrappedSrcIndex[i], wrappedSrcIndex[j]],
-        indices: [i, j]
-      });
-
-      // Set bond colors based on current color mode
-      if (general.bondsColor === "white") {
-        bond.color = ["#ffffff", "#ffffff"];
-      } else if (general.bondsColor === "solid") {
-        bond.color = [general.solidBondColor || "#ffffff", general.solidBondColor || "#ffffff"];
-      } else if (general.bondsColor === "length") {
-        // Temporary color, will be updated in second pass
-        bond.color = bond.defaultColor;
-      } else {
-        // Default to element colors or atom colors
-        if (atoms && bond.srcIndices[0] < atoms.length && bond.srcIndices[1] < atoms.length) {
-          bond.color = [atoms[bond.srcIndices[0]].color, atoms[bond.srcIndices[1]].color];
-        } else {
-          bond.color = bond.defaultColor;
-        }
+  // ---- Find bonding pairs (i<j): WASM cell list (O(n)) with JS O(n²) fallback ----
+  let pairI = null, pairJ = null;
+  if (general.useWasmBonds && maxCutoff > 0.01) {
+    try {
+      const cartFlat = new Float64Array(3 * n);
+      for (let i = 0; i < n; i++) {
+        cartFlat[3 * i] = wrappedCart[i][0];
+        cartFlat[3 * i + 1] = wrappedCart[i][1];
+        cartFlat[3 * i + 2] = wrappedCart[i][2];
       }
-
-      structure.bonds.push(bond);
+      const elemIdxU32 = new Uint32Array(n);
+      for (let i = 0; i < n; i++) elemIdxU32[i] = atomElemIdx[i];
+      const { i: pi, j: pj } = computeBondPairsWasm({
+        cartFlat, elemIdx: elemIdxU32, cutoffSqFlat, minCutoffSqFlat,
+        nElem: nu, minDistSq, maxCutoff,
+      });
+      pairI = pi; pairJ = pj;
+    } catch (err) {
+      console.warn('[buildBondObjects] WASM bonds failed; falling back to JS:', err);
+      pairI = null;
     }
+  }
+  if (!pairI) {
+    const ii = [], jj = [];
+    for (let i = 0; i < n; i++) {
+      const pi = wrappedCart[i];
+      const xi = pi[0], yi = pi[1], zi = pi[2];
+      const ai = atomElemIdx[i];
+      const cutBase = ai * nu;
+      for (let j = i + 1; j < n; j++) {
+        const bj = atomElemIdx[j];
+        const cutSq = cutoffSqFlat[cutBase + bj];
+        if (cutSq <= 0.0001) continue;
+        const pj = wrappedCart[j];
+        const dx = xi - pj[0], dy = yi - pj[1], dz = zi - pj[2];
+        const distSq = dx * dx + dy * dy + dz * dz;
+        if (distSq > cutSq || distSq < minDistSq || distSq < minCutoffSqFlat[cutBase + bj]) continue;
+        ii.push(i); jj.push(j);
+      }
+    }
+    pairI = ii; pairJ = jj;
+  }
+
+  // ---- Build Bond objects from the pairs (colour / id logic; O(bonds)) ----
+  for (let k = 0; k < pairI.length; k++) {
+    const i = pairI[k], j = pairJ[k];
+    const pi = wrappedCart[i], pj = wrappedCart[j];
+    const ei = uniqueElems[atomElemIdx[i]];
+    const ej = uniqueElems[atomElemIdx[j]];
+    const bond = new Bond({
+      elements: [ei, ej],
+      positions: [[pi[0], pi[1], pi[2]], [pj[0], pj[1], pj[2]]],
+      uuid: generateID([ei, ej]),
+      srcIndices: [wrappedSrcIndex[i], wrappedSrcIndex[j]],
+      indices: [i, j]
+    });
+
+    // Set bond colors based on current color mode
+    if (general.bondsColor === "white") {
+      bond.color = ["#ffffff", "#ffffff"];
+    } else if (general.bondsColor === "solid") {
+      bond.color = [general.solidBondColor || "#ffffff", general.solidBondColor || "#ffffff"];
+    } else if (general.bondsColor === "length") {
+      // Temporary color, will be updated in second pass
+      bond.color = bond.defaultColor;
+    } else {
+      // Default to element colors or atom colors
+      if (atoms && bond.srcIndices[0] < atoms.length && bond.srcIndices[1] < atoms.length) {
+        bond.color = [atoms[bond.srcIndices[0]].color, atoms[bond.srcIndices[1]].color];
+      } else {
+        bond.color = bond.defaultColor;
+      }
+    }
+
+    structure.bonds.push(bond);
   }
 
   // Second pass: handle length-based coloring if in length mode

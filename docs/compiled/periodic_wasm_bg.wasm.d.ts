@@ -1,10 +1,14 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const __wbg_bondpairsresult_free: (a: number, b: number) => void;
 export const __wbg_candidateresult_free: (a: number, b: number) => void;
 export const __wbg_periodicresult_free: (a: number, b: number) => void;
 export const __wbg_polyhedraresult_free: (a: number, b: number) => void;
 export const accept_candidates: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number) => number;
+export const bondpairsresult_count: (a: number) => number;
+export const bondpairsresult_i: (a: number) => [number, number];
+export const bondpairsresult_j: (a: number) => [number, number];
 export const candidateresult_center_shift: (a: number) => [number, number];
 export const candidateresult_center_src: (a: number) => [number, number];
 export const candidateresult_color_elem: (a: number) => [number, number];
@@ -16,13 +20,13 @@ export const candidateresult_vert_counts: (a: number) => [number, number];
 export const candidateresult_vertex_shifts: (a: number) => [number, number];
 export const candidateresult_vertex_srcs: (a: number) => [number, number];
 export const candidateresult_vertices: (a: number) => [number, number];
+export const compute_bond_pairs: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => number;
 export const compute_candidates: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number) => number;
 export const compute_polyhedra: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number) => number;
 export const periodic_wrapped: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => number;
 export const periodicresult_cart: (a: number) => [number, number];
 export const periodicresult_elements: (a: number) => [number, number];
 export const periodicresult_frac: (a: number) => [number, number];
-export const periodicresult_len: (a: number) => number;
 export const periodicresult_src_index: (a: number) => [number, number];
 export const polyhedraresult_accept_ms: (a: number) => number;
 export const polyhedraresult_bands_built: (a: number) => number;
@@ -40,6 +44,7 @@ export const polyhedraresult_setup_ms: (a: number) => number;
 export const polyhedraresult_vert_counts: (a: number) => [number, number];
 export const polyhedraresult_vertex_srcs: (a: number) => [number, number];
 export const polyhedraresult_vertices: (a: number) => [number, number];
+export const periodicresult_len: (a: number) => number;
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;

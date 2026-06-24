@@ -1,6 +1,55 @@
 /* @ts-self-types="./periodic_wasm.d.ts" */
 
 /**
+ * Bonding pairs (i, j) with i < j, as two parallel index arrays.
+ */
+export class BondPairsResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(BondPairsResult.prototype);
+        obj.__wbg_ptr = ptr;
+        BondPairsResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        BondPairsResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_bondpairsresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    count() {
+        const ret = wasm.bondpairsresult_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    i() {
+        const ret = wasm.bondpairsresult_i(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    j() {
+        const ret = wasm.bondpairsresult_j(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+}
+if (Symbol.dispose) BondPairsResult.prototype[Symbol.dispose] = BondPairsResult.prototype.free;
+
+/**
  * Flattened candidate polyhedra for one worker partition (before acceptance). Centred
  * candidates precede cage candidates; `n_centered` records the split so the main thread
  * can regroup all workers' results into serial order. Layout mirrors
@@ -382,6 +431,34 @@ export function accept_candidates(is_cage, color_elem, center_src, center_shift,
 }
 
 /**
+ * Find bonding pairs in the wrapped atom set via the shared Cartesian cell list. See
+ * `bonds::compute_bond_pairs`; `i_start`/`i_end` allow worker partitioning later (use
+ * `0`/`n` for the serial path).
+ * @param {Float64Array} cart
+ * @param {Uint32Array} elem_idx
+ * @param {Float64Array} cutoff_sq
+ * @param {Float64Array} min_cutoff_sq
+ * @param {number} n_elem
+ * @param {number} min_dist_sq
+ * @param {number} max_cutoff
+ * @param {number} i_start
+ * @param {number} i_end
+ * @returns {BondPairsResult}
+ */
+export function compute_bond_pairs(cart, elem_idx, cutoff_sq, min_cutoff_sq, n_elem, min_dist_sq, max_cutoff, i_start, i_end) {
+    const ptr0 = passArrayF64ToWasm0(cart, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray32ToWasm0(elem_idx, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArrayF64ToWasm0(cutoff_sq, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArrayF64ToWasm0(min_cutoff_sq, wasm.__wbindgen_malloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.compute_bond_pairs(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, min_dist_sq, max_cutoff, i_start, i_end);
+    return BondPairsResult.__wrap(ret);
+}
+
+/**
  * Parallel entry, part 1: generate the candidates for centre range
  * `[center_start,center_end)` and seed range `[seed_start,seed_end)`. Runs in a worker.
  * @param {Float64Array} frac
@@ -542,6 +619,9 @@ function __wbg_get_imports() {
     };
 }
 
+const BondPairsResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_bondpairsresult_free(ptr >>> 0, 1));
 const CandidateResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_candidateresult_free(ptr >>> 0, 1));
