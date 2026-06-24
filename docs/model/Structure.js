@@ -26,6 +26,7 @@ function deepCopyArrayOfObjects(array) {
 function normalizePolyhedraSettings(settings = null) {
   return {
     useChemicalFilter: settings?.useChemicalFilter !== false,
+    detectCages: settings?.detectCages !== false,
   };
 }
 

@@ -267,6 +267,11 @@ export function computePolyhedra(structure) {
   }
 
   const useChemicalFilter = structure?.polyhedraSettings?.useChemicalFilter !== false;
+  const detectCages = structure?.polyhedraSettings?.detectCages !== false;
+
+  // ---------- Perf timing ----------
+  const _t0 = performance.now();
+  let _tSetup = _t0, _tCentered = _t0, _tCages = _t0;
 
   // ---------- Periodic-image neighbour graph ----------
   const positions = structure.atoms.map(a => a.position); // fractional
@@ -353,12 +358,27 @@ export function computePolyhedra(structure) {
    * @param {string} elem element symbol at P (for the cutoff lookup)
    * @returns {Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>}
    */
+  // Per-center-element bond-cutoff rows, memoized. `getBondCutoff` rebuilds a
+  // string key on every call and sits in the hottest neighbour loops, so cache
+  // an nAtoms-long row of cutoffs for each distinct centre element.
+  /** @type {Map<string, Float64Array>} */
+  const cutoffRowCache = new Map();
+  function cutoffRow(elem) {
+    let row = cutoffRowCache.get(elem);
+    if (!row) {
+      row = new Float64Array(nAtoms);
+      for (let j = 0; j < nAtoms; j++) row[j] = getBondCutoff(elem, elements[j]);
+      cutoffRowCache.set(elem, row);
+    }
+    return row;
+  }
+
   function neighborImages(P, elem) {
     const fp = cartToFrac([P.x, P.y, P.z], lattice, latInv);
     const out = [];
+    const cuts = cutoffRow(elem);
     for (let j = 0; j < nAtoms; j++) {
-      const ej = elements[j];
-      const cutoff = getBondCutoff(elem, ej);
+      const cutoff = cuts[j];
       if (cutoff <= 1e-3) continue;
       const fj = positions[j];
       const c0 = Math.round(fp[0] - fj[0]);
@@ -408,6 +428,14 @@ export function computePolyhedra(structure) {
     return out;
   }
 
+  // Base-cell neighbour images per source atom, computed once. Every periodic
+  // image of an atom is just a lattice translation of its base cell, so its
+  // neighbour images are this list shifted by the image's lattice offset — which
+  // lets the cage BFS below avoid re-scanning all atoms for every visited node.
+  /** @type {Array<Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>>} */
+  const baseNeighbors = new Array(nAtoms);
+  for (let i = 0; i < nAtoms; i++) baseNeighbors[i] = neighborImages(baseCart[i], elements[i]);
+
   // Source-level adjacency for the cage induced-degree test (uses bonded images).
   /** @type {Map<number, Set<number>>} */
   const adjacency = new Map();
@@ -417,8 +445,9 @@ export function computePolyhedra(structure) {
     adjacency.get(u).add(v); adjacency.get(v).add(u);
   }
   for (let i = 0; i < nAtoms; i++) {
-    for (const o of neighborImages(baseCart[i], elements[i])) addBond(i, o.srcJ);
+    for (const o of baseNeighbors[i]) addBond(i, o.srcJ);
   }
+  _tSetup = performance.now();
 
   // ---------- Build candidates ----------
   /** @type {Array<{
@@ -488,10 +517,15 @@ export function computePolyhedra(structure) {
 
     // Only remaining skip reason is geometric degeneracy (a near-planar set has no
     // volume). No distortion filter — the neighbour set is the genuine shell.
+    // `centeredHullIsAcceptable` builds the (only) hull here; a non-constructible
+    // point set throws and is skipped, so no separate constructibility probe is
+    // needed (avoids an extra ConvexGeometry build per centre).
     const posList = entries.map(o => o.pos);
-    try { new ConvexGeomCtor(posList).dispose(); } catch { continue; }
     if (thicknessRatio(posList) < MIN_THICKNESS_RATIO) continue;
-    if (!centeredHullIsAcceptable(centerPos, atomicRadii[centerElem] || 1.0, posList)) continue;
+    let centeredOK = false;
+    try { centeredOK = centeredHullIsAcceptable(centerPos, atomicRadii[centerElem] || 1.0, posList); }
+    catch { continue; }
+    if (!centeredOK) continue;
 
     candidates.push({
       kind: 'centered',
@@ -506,8 +540,10 @@ export function computePolyhedra(structure) {
     });
   }
 
+  _tCentered = performance.now();
+
   // ---- Cages (uncentered): includes N=20 dodecahedra; largest-first ----
-  if (ALLOW_CAGES) {
+  if (ALLOW_CAGES && detectCages) {
     // BFS in image space: each node is a concrete periodic image keyed by
     // (src, shift), so a boundary-straddling shell stays spatially contiguous
     // (the old in-cell pool was the main source of partial cages).
@@ -517,13 +553,21 @@ export function computePolyhedra(structure) {
       const visited = new Map();
       visited.set(startKey, { pos: baseCart[seedI], src: seedI, shift: [0,0,0], depth: 0 });
       const queue = [startKey];
-      while (queue.length) {
-        const node = visited.get(queue.shift());
+      // Head pointer instead of Array.shift() (which is O(n), making the BFS
+      // O(n^2)); the neighbour images of a node are its source atom's cached base
+      // neighbours translated by the node's own lattice shift — no atom rescan.
+      let head = 0;
+      while (head < queue.length) {
+        const node = visited.get(queue[head++]);
         if (!node || node.depth === depthMax) continue;
-        for (const o of neighborImages(node.pos, elements[node.src])) {
-          const k = `${o.srcJ}:${o.shift[0]},${o.shift[1]},${o.shift[2]}`;
+        const sx = node.shift[0], sy = node.shift[1], sz = node.shift[2];
+        for (const o of baseNeighbors[node.src]) {
+          const ndx = o.shift[0] + sx, ndy = o.shift[1] + sy, ndz = o.shift[2] + sz;
+          const k = `${o.srcJ}:${ndx},${ndy},${ndz}`;
           if (!visited.has(k)) {
-            visited.set(k, { pos: o.pos, src: o.srcJ, shift: o.shift, depth: node.depth + 1 });
+            const pos = baseCart[o.srcJ].clone()
+              .addScaledVector(a, ndx).addScaledVector(b, ndy).addScaledVector(c, ndz);
+            visited.set(k, { pos, src: o.srcJ, shift: [ndx, ndy, ndz], depth: node.depth + 1 });
             queue.push(k);
           }
         }
@@ -647,6 +691,7 @@ export function computePolyhedra(structure) {
       } // Ns
     } // seeds
   } // cages enabled
+  _tCages = performance.now();
 
   // ---------- Global constraints & accept into model ----------
   // Image-level center-not-corner:
@@ -716,6 +761,17 @@ export function computePolyhedra(structure) {
 
   // Dispose the transient validation hulls — render rebuilds its own.
   for (const g of acceptedHulls) g.dispose();
+
+  const _tEnd = performance.now();
+  const ms = (x) => x.toFixed(1);
+  console.log(
+    `[polyhedra] total=${ms(_tEnd - _t0)}ms ` +
+    `setup=${ms(_tSetup - _t0)} centered=${ms(_tCentered - _tSetup)} ` +
+    `cages=${ms(_tCages - _tCentered)} accept=${ms(_tEnd - _tCages)} | ` +
+    `atoms=${nAtoms} centers=${displayCenters.length} ` +
+    `candidates=${candidates.length} accepted=${accepted.length} ` +
+    `detectCages=${detectCages}`
+  );
 
   return new Polyhedra({ polyhedra: accepted });
 }
@@ -793,8 +849,11 @@ export function updatePolyhedra() {
     return;
   }
 
+  const _tc = performance.now();
   structure.polyhedra = computePolyhedra(structure);
+  const _tr = performance.now();
   renderPolyhedra(structure);
+  console.log(`[polyhedra] render=${(performance.now() - _tr).toFixed(1)}ms (compute+render=${(performance.now() - _tc).toFixed(1)}ms)`);
 
   app.scene.add(groups.polyhedraGroup);
 }

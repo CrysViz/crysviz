@@ -4,9 +4,12 @@ import { updatePolyhedra } from '../render/index.js';
 function getSelectedStructureSettings() {
   const structure = fileBrowser.selectedStructure;
   if (!structure) return null;
-  structure.polyhedraSettings ||= { useChemicalFilter: true };
+  structure.polyhedraSettings ||= { useChemicalFilter: true, detectCages: true };
   if (structure.polyhedraSettings.useChemicalFilter === undefined) {
     structure.polyhedraSettings.useChemicalFilter = true;
+  }
+  if (structure.polyhedraSettings.detectCages === undefined) {
+    structure.polyhedraSettings.detectCages = true;
   }
   return structure.polyhedraSettings;
 }
@@ -89,6 +92,15 @@ export function addPolyhedraPanel(target = 'BondLatticeContainer') {
       checked: settings.useChemicalFilter !== false,
       onChange: (e) => {
         structure.polyhedraSettings.useChemicalFilter = e.target.checked;
+        updatePolyhedra();
+      },
+    }));
+    body.appendChild(createToggleRow({
+      id: 'polyhedraDetectCagesToggle',
+      label: 'Detect Cages (slower)',
+      checked: settings.detectCages !== false,
+      onChange: (e) => {
+        structure.polyhedraSettings.detectCages = e.target.checked;
         updatePolyhedra();
       },
     }));
