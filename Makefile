@@ -1,4 +1,4 @@
-.PHONY: serve install_devtools lint lint-fix typecheck check-imports check
+.PHONY: serve install_devtools lint lint-fix typecheck check-imports check periodic-wasm
 
 serve:
 	echo "Open:"
@@ -29,3 +29,16 @@ check-imports:
 # The CI gate: lint + typecheck + import checks. Run on pull requests
 # (see .github/workflows/check.yml). Any failure fails the build.
 check: lint typecheck check-imports
+
+# Rebuild the periodic_wasm module from its Rust source
+# (docs/compiled/periodic_wasm_src/). Requires wasm-pack and the
+# wasm32-unknown-unknown target. The generated glue + binary are copied into
+# docs/compiled/ (committed; loaded by docs/compiled/periodicWasm.js). The
+# hand-written periodicWasm.js wrapper is NOT touched.
+PERIODIC_WASM_SRC := docs/compiled/periodic_wasm_src
+periodic-wasm:
+	cd $(PERIODIC_WASM_SRC) && wasm-pack build --target web --release
+	cp $(PERIODIC_WASM_SRC)/pkg/periodic_wasm.js            docs/compiled/periodic_wasm.js
+	cp $(PERIODIC_WASM_SRC)/pkg/periodic_wasm_bg.wasm       docs/compiled/periodic_wasm_bg.wasm
+	cp $(PERIODIC_WASM_SRC)/pkg/periodic_wasm.d.ts          docs/compiled/periodic_wasm.d.ts
+	cp $(PERIODIC_WASM_SRC)/pkg/periodic_wasm_bg.wasm.d.ts  docs/compiled/periodic_wasm_bg.wasm.d.ts

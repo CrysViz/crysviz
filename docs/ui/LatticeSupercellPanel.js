@@ -605,12 +605,11 @@ transformContent.appendChild(transformMatrixContainer);
     const newA = Math.max(1, parseInt(supercellInputs.nx.value));
     const newB = Math.max(1, parseInt(supercellInputs.ny.value));
     const newC = Math.max(1, parseInt(supercellInputs.nz.value));
-    fileBrowser.selectedStructure.supercell = { nx: newA, ny: newB, nz: newC };
 
-    fileBrowser.selectedStructure.atoms = structuredClone(fileBrowser.selectedStructure.original.atoms);
-    fileBrowser.selectedStructure.lattice = structuredClone(fileBrowser.selectedStructure.original.lattice);
-    fileBrowser.selectedStructure.elements = structuredClone(fileBrowser.selectedStructure.original.elements);
-
+    // Note: do NOT reset atoms/lattice/elements from `.original` here.
+    // createSupercell() derives the base unit cell from the live (user-modified)
+    // structure and re-tiles it to the requested factors, so modifications
+    // (colour, opacity, moved atoms, …) are preserved across supercell changes.
     createSupercell(newA, newB, newC);
     updateVisualization({
       reRenderAtoms: true,

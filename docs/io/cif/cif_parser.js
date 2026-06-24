@@ -562,25 +562,23 @@ export function _parse_atoms(block, resolution = true) {
 
     const eps = data_resolution > 0.0 ? (data_resolution / 10.0) : 1e-12;
 
-    const deltas_x = [];
-    const deltas_y = [];
-    const deltas_z = [];
+    // Track the smallest above-eps periodic delta per axis directly, instead of
+    // materialising the O(n^2) delta arrays (which also overflows Math.min's
+    // argument-count limit via spread for large structures).
+    let sep_x = Infinity;
+    let sep_y = Infinity;
+    let sep_z = Infinity;
 
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
-        deltas_x.push(periodic_delta(positions[i][0], positions[j][0]));
-        deltas_y.push(periodic_delta(positions[i][1], positions[j][1]));
-        deltas_z.push(periodic_delta(positions[i][2], positions[j][2]));
+        const dx = periodic_delta(positions[i][0], positions[j][0]);
+        const dy = periodic_delta(positions[i][1], positions[j][1]);
+        const dz = periodic_delta(positions[i][2], positions[j][2]);
+        if (dx > eps && dx < sep_x) sep_x = dx;
+        if (dy > eps && dy < sep_y) sep_y = dy;
+        if (dz > eps && dz < sep_z) sep_z = dz;
       }
     }
-
-    const pos_x = deltas_x.filter((d) => d > eps);
-    const pos_y = deltas_y.filter((d) => d > eps);
-    const pos_z = deltas_z.filter((d) => d > eps);
-
-    const sep_x = pos_x.length ? Math.min(...pos_x) : Infinity;
-    const sep_y = pos_y.length ? Math.min(...pos_y) : Infinity;
-    const sep_z = pos_z.length ? Math.min(...pos_z) : Infinity;
 
     const min_sep = Math.min(sep_x, sep_y, sep_z);
     separation_resolution = Number.isFinite(min_sep) ? (min_sep / 2.0) : Infinity;

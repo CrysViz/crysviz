@@ -205,7 +205,13 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
               }
             };
             reader.onerror = (error) => reject(error);
-            reader.readAsText(file);
+            // ASE .traj files are binary ULM; read them as an ArrayBuffer so the
+            // raw float64 data survives. Everything else is text.
+            if (file.name.toLowerCase().endsWith('.traj')) {
+              reader.readAsArrayBuffer(file);
+            } else {
+              reader.readAsText(file);
+            }
           });
         }
         setStatus(`${files.length} structure(s) loaded!`);
@@ -261,7 +267,13 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
               }
             };
             reader.onerror = (error) => reject(error);
-            reader.readAsText(file);
+            // ASE .traj files are binary ULM; read them as an ArrayBuffer so the
+            // raw float64 data survives. Everything else is text.
+            if (file.name.toLowerCase().endsWith('.traj')) {
+              reader.readAsArrayBuffer(file);
+            } else {
+              reader.readAsText(file);
+            }
           });
         }
         setStatus(`${files.length} structure(s) loaded!`);

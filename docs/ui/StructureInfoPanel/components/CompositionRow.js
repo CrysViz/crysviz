@@ -161,14 +161,25 @@ export function createCompositionRow(el, count, total) {
     padding-left: 8px;
   `;
 
-  // Create individual atom rows
-  for (let i = 0; i < elementAtomIndices.length; i++) {
-    const atomIndex = elementAtomIndices[i];
-    const atomRow = createIndividualAtomRow(el, atomIndex, i + 1, {
-      onColorChange: updatePieDotForRow  // Pass callback to update pie dot
-    });
-    atomsContainer.appendChild(atomRow);
+  // The individual atom rows are expensive to build (one DOM subtree per atom)
+  // and stay hidden until the row is expanded. Eagerly building thousands of
+  // them on every load dominated load time for large structures, so populate
+  // lazily on first expand instead. The populate fn is also exposed on the
+  // container so code that expands it programmatically (e.g. highlight/scroll
+  // to a specific atom) can ensure the rows exist first.
+  let atomsPopulated = false;
+  function populateAtomRows() {
+    if (atomsPopulated) return;
+    atomsPopulated = true;
+    for (let i = 0; i < elementAtomIndices.length; i++) {
+      const atomIndex = elementAtomIndices[i];
+      const atomRow = createIndividualAtomRow(el, atomIndex, i + 1, {
+        onColorChange: updatePieDotForRow  // Pass callback to update pie dot
+      });
+      atomsContainer.appendChild(atomRow);
+    }
   }
+  /** @type {any} */ (atomsContainer)._populateAtomRows = populateAtomRows;
 
   // =========================================
   // EVENT HANDLERS
@@ -185,6 +196,7 @@ export function createCompositionRow(el, count, total) {
   row.addEventListener('click', (e) => {
     e.stopPropagation();
     const isExpanded = atomsContainer.style.display !== 'none';
+    if (!isExpanded) populateAtomRows(); // build rows lazily on first expand
     atomsContainer.style.display = isExpanded ? 'none' : 'block';
     expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
     updatePieDotForRow(); // Update pie dot when expanded/collapsed

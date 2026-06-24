@@ -72,14 +72,24 @@ export function rebuildBonds(opacity=1.0) {
     return;
   }
   disposeBondsMesh(true);
+  console.time("bond:buildBondObjects");
   buildBondObjects(fileBrowser.selectedStructure)
+  console.timeEnd("bond:buildBondObjects");
+  console.log("bond: bondCount =", fileBrowser.selectedStructure.bonds.length,
+              "wrappedCart =", fileBrowser.selectedStructure.periodic?.wrapped?.cart?.length);
+  console.time("bond:renderBonds");
   renderBonds();
+  console.timeEnd("bond:renderBonds");
+  console.time("bond:updateBonds");
   updateBonds(opacity);
+  console.timeEnd("bond:updateBonds");
   if (groups.bondsMesh) {
     groups.bondsMesh.visible = !!general.showBonds;
   }
   // Refresh histogram if it's open
+  console.time("bond:refreshHistogram");
   refreshHistogram(Object.values(bondLengths), Object.keys(bondLengths));
+  console.timeEnd("bond:refreshHistogram");
 }
 
 export function getBondCutoff(elem1, elem2) {
@@ -146,32 +156,70 @@ export function buildBondObjects(structure){
   const wrappedCart = wrapped.cart;
   const atoms = fileBrowser.selectedStructure?.atoms;
 
-  // First pass: create all bonds
-  for (let i = 0; i < wrappedCart.length; i++) {
-    for (let j = i + 1; j < wrappedCart.length; j++) {
-      const ei = wrapped.elements[i];
-      const ej = wrapped.elements[j];
+  // First pass: create all bonds.
+  //
+  // This is the hot path for large structures: it is O(N^2) over the wrapped
+  // atom set. To keep the inner loop cheap we (1) precompute the per-element-pair
+  // cutoffs once (they don't depend on position), keyed by a small integer
+  // element index so the inner loop avoids string building and Map/object
+  // lookups; (2) compare *squared* distances so the rejected majority of pairs
+  // never pay a sqrt; and (3) only allocate (the Bond, which recomputes the real
+  // distance from positions) for pairs that actually bond. Previously each pair
+  // allocated two THREE.Vector3, called distanceTo (sqrt), and rebuilt the cutoff
+  // strings — and pairs with cutoff <= 0.01 hit a per-pair console.log.
+  const n = wrappedCart.length;
+  const wrappedElements = wrapped.elements;
+  const wrappedSrcIndex = wrapped.srcIndex;
+  const minDistSq = 0.005 * 0.005;
 
-      const cutoff = getBondCutoff(ei, ej);
-      const minCutoff = getBondMinCutoff(ei, ej);
-      if (cutoff <= 0.01) {
-        console.log("Bond Cutoff too small for", ei, ej, cutoff)
-        continue;
+  // Map atoms -> small element index, and build symmetric cutoff^2 / minCutoff^2
+  // matrices over the unique elements present in the wrapped set.
+  const uniqueElems = [...new Set(wrappedElements)];
+  const elemIndexOf = new Map(uniqueElems.map((e, k) => [e, k]));
+  const nu = uniqueElems.length;
+  const cutoffSq = [];
+  const minCutoffSq = [];
+  for (let a = 0; a < nu; a++) {
+    cutoffSq[a] = new Float64Array(nu);
+    minCutoffSq[a] = new Float64Array(nu);
+    for (let b = 0; b < nu; b++) {
+      const c = getBondCutoff(uniqueElems[a], uniqueElems[b]);
+      const mc = getBondMinCutoff(uniqueElems[a], uniqueElems[b]);
+      cutoffSq[a][b] = c * c;
+      minCutoffSq[a][b] = mc * mc;
+      if (b >= a && c <= 0.01) {
+        console.log("Bond Cutoff too small for", uniqueElems[a], uniqueElems[b], c);
       }
+    }
+  }
+  const atomElemIdx = new Int32Array(n);
+  for (let i = 0; i < n; i++) atomElemIdx[i] = elemIndexOf.get(wrappedElements[i]);
 
-      const p1 = new THREE.Vector3(...wrappedCart[i]);
-      const p2 = new THREE.Vector3(...wrappedCart[j]);
+  for (let i = 0; i < n; i++) {
+    const pi = wrappedCart[i];
+    const xi = pi[0], yi = pi[1], zi = pi[2];
+    const ai = atomElemIdx[i];
+    const cutRow = cutoffSq[ai];
+    const minRow = minCutoffSq[ai];
+    for (let j = i + 1; j < n; j++) {
+      const bj = atomElemIdx[j];
+      const cutSq = cutRow[bj];
+      if (cutSq <= 0.0001) continue; // cutoff <= 0.01: no bond / hidden pair
 
-      const dist = p1.distanceTo(p2);
-      if (dist > cutoff || dist < 0.005 || dist < minCutoff) {
-        continue;
-      }
+      const pj = wrappedCart[j];
+      const dx = xi - pj[0];
+      const dy = yi - pj[1];
+      const dz = zi - pj[2];
+      const distSq = dx * dx + dy * dy + dz * dz;
+      if (distSq > cutSq || distSq < minDistSq || distSq < minRow[bj]) continue;
 
+      const ei = uniqueElems[ai];
+      const ej = uniqueElems[bj];
       const bond = new Bond({
         elements: [ei, ej],
-        positions: [p1.toArray(), p2.toArray()],
+        positions: [[xi, yi, zi], [pj[0], pj[1], pj[2]]],
         uuid: generateID([ei, ej]),
-        srcIndices: [wrapped.srcIndex[i], wrapped.srcIndex[j]],
+        srcIndices: [wrappedSrcIndex[i], wrappedSrcIndex[j]],
         indices: [i, j]
       });
 

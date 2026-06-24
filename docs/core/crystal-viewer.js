@@ -104,15 +104,18 @@ const setStatus = (s) => {
 
 
 function updateOther() {
-  //renderComposition(); //This is now called in updateVisualization() with a parameter to avoid unnecessary re-rendering of the composition panel
   clearMeasureGraphics();
 
   measurements.measureLines.forEach(line => app.scene.add(line));
   measurements.measureLabels.forEach(label => app.scene.add(label));
 
   recomputeLatticeDirs();
+  console.time("other:updateAllMeasurements");
   updateAllMeasurements();
+  console.timeEnd("other:updateAllMeasurements");
+  console.time("other:addAtomVacuumPanel");
   addAtomVacuumPanel();
+  console.timeEnd("other:addAtomVacuumPanel");
 }
 
 export function updateVisualization(options = {}) {
@@ -196,11 +199,15 @@ export function updateVisualization(options = {}) {
   if (reRenderComposition != false) {
     renderComposition(reRenderComposition);
   }
+  console.time("uv:updateLattice");
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
+  console.timeEnd("uv:updateLattice");
+  console.time("uv:updateOther");
   if (reRenderOther) updateOther();
   // Polyhedra depend on atoms/bonds/lattice, so refresh them whenever the scene
   // re-renders and the feature is on (persists across structure & frame changes).
   if (general.showPolyhedra) updatePolyhedra();
+  console.timeEnd("uv:updateOther");
   if (reRenderField) {
     if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
       updateField();
@@ -241,7 +248,10 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
     // pipeline. parse_any picks the format (POSCAR is its fallback) and returns
     // a StructureContainer; registration happens once via initializeUIOnLoad.
     else {
-        const structureContainer = await parse_any(contentString, fileName);
+        // Pass the raw `content` (not contentString): most formats are text, but
+        // binary formats like ASE .traj arrive as an ArrayBuffer and parse_any
+        // dispatches them by extension.
+        const structureContainer = await parse_any(content, fileName);
         if (structureContainer && structureContainer.structures) initializeUIOnLoad(structureContainer);
     }
 
@@ -249,7 +259,10 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
    document.getElementById('structureControls2').style.display = 'block';
 
     createShareButton();
-    updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true,reRenderComposition:true,reRenderField:true});
+    // NOTE: do not call updateVisualization() here. Every load path above funnels
+    // through initializeUIOnLoad() -> selectLastAddedRow() -> updateStructureFromRowAndStep(),
+    // which already performs a full atoms+bonds+field+other re-render. Re-rendering here
+    // doubled the (expensive, O(n^2)) bond build on every load.
     updateControlSpinForcePanel();
     console.warn(fileBrowser.selectedStructure)
     // Rebuild camera with size/distance based on structure and zoom scale

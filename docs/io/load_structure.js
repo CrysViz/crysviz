@@ -7,6 +7,7 @@ import { parsePWSCFout } from './ReadPWSCFoutModule.js';
 import { parseOUTCAR } from './ReadOutcarModule.js';
 import { parseXYZFile } from './ReadeXYZModule.js';
 import { readPOSCAR } from './ReadPOSCARModule.js';
+import { parseASETrajectory } from './ReadASETrajectoryModule.js';
 import {generateID} from '../utils/index.js'
 
 /*
@@ -46,6 +47,15 @@ export async function parse_any(content, fileName = '', isDefault = false) {
   const treatAsEXZY = lower.endsWith(".xyz") ||
         lower.endsWith(".exyz");
 
+  // ASE ULM trajectories are binary; `content` arrives as an ArrayBuffer here
+  // (the loader reads .traj with readAsArrayBuffer).
+  const treatAsTraj = lower.endsWith(".traj");
+
+
+  if (treatAsTraj) {
+    console.log("This is probably an ASE trajectory file");
+    return parseASETrajectory(content, fileName);
+  }
 
   if (treatAsCIF) {
     console.log("This is probably a CIF file")

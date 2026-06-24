@@ -107,9 +107,14 @@ export const general = {
   showSecondBonds:false,
   showComparisonInfo:false,
   showPeriodic:true,
+  // Tolerance (fractional coords) for treating an atom as sitting on a cell
+  // face/edge/corner when generating periodic image copies. Real (e.g. relaxed
+  // / DFT-output) structures carry small numerical offsets from 0/1, so this
+  // must be much looser than machine eps or boundary atoms get missed.
+  periodicFaceTol:1e-3,
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
   useWasmMath:true, // Use compiled WASM for selected math kernels (false = pure JS fallback)
-  useWasmPeriodic:false, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
+  useWasmPeriodic:true, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
   backendViewerUpdateStride:4, // Update the viewer every N backend/NEP steps during relax/MD
   playerModeState: "none", 
   spinForceState: "none",

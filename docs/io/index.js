@@ -19,6 +19,7 @@ export { parseOUTCAR } from "./ReadOutcarModule.js";
 export { parsePWSCFout } from "./ReadPWSCFoutModule.js";
 export { parsePWSCFin } from "./ReadPWSCFinModule.js";
 export { parseXYZFile } from "./ReadeXYZModule.js";
+export { parseASETrajectory } from "./ReadASETrajectoryModule.js";
 export { readCHGCAR } from "./ReadChgcarModule.js";
 export { readCubeFile } from "./ReadCubeModule.js";
 

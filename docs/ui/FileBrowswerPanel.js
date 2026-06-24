@@ -12,6 +12,7 @@ import {Structure} from '../model/index.js';
 import { refreshPolyhedraPanel } from './PolyhedraPanel.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import {removeLatticeAndSupercellPanel, addLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
+import { resetView } from './WindowAndSceneControls.js';
 
 export function showError(message) {
   errorPanel.textContent = message;
@@ -81,7 +82,7 @@ export function createRow(obj) {
     fileBrowser.selectedRowIndex = rowIndex;
     updateStructureFromRowAndStep(rowIndex);
 
-    //resetView(); // do we want to reset it to a specific view per structure selection? Save view state?
+    resetView(); // do we want to reset it to a specific view per structure selection? Save view state?
     updateControlSpinForcePanel();
   });
 
