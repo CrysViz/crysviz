@@ -17,6 +17,14 @@ use std::collections::{HashMap, HashSet};
 /// the accepted coordination identical while keeping the dual hull small.
 const VORONOI_MAX_CANDS: usize = 100;
 
+/// Cap on the per-seed cage pool. The frontier BFS overshoots the "≥40 visible"
+/// target by a whole depth level, which can leave hundreds of atoms in the pool;
+/// the band hull + spread sampling are O(pool²), so trimming to the nearest ~64
+/// (well above 2×20 for dodecahedra) restores the intended cost without dropping
+/// any real coordination shell. Kept generous (≈5× the largest cage) so a sparse
+/// cage interior or a clathrate guest atom can't push a shell atom out of range.
+const POOL_CAP: usize = 96;
+
 // ---- Behaviour constants (mirror the JS module) ----
 const CAGE_TARGET_NS_DESC: [usize; 6] = [20, 12, 10, 8, 6, 4];
 const CAGE_BFS_DEPTH: i32 = 5;
@@ -96,6 +104,8 @@ pub struct ComputedPolyhedra {
     pub centered_ms: f64,
     pub cages_ms: f64,
     pub cage_pool_ms: f64,
+    pub cage_band_ms: f64,
+    pub cage_nloop_ms: f64,
     pub accept_ms: f64,
 }
 
@@ -785,6 +795,8 @@ pub fn compute_polyhedra(
 
     // ---- Cages ----
     let mut cage_pool_ms = 0.0_f64;
+    let mut cage_band_ms = 0.0_f64;
+    let mut cage_nloop_ms = 0.0_f64;
     if detect_cages {
         // Buffers reused across seeds (cleared, not reallocated).
         let mut visited_set: HashSet<Key> = HashSet::new();
@@ -841,7 +853,7 @@ pub fn compute_polyhedra(
                 depth += 1;
             }
 
-            let pool: Vec<PoolEntry> = order
+            let mut pool: Vec<PoolEntry> = order
                 .iter()
                 .filter(|e| visible.contains(&image_key(e.src, e.shift)))
                 .cloned()
@@ -851,10 +863,22 @@ pub fn compute_polyhedra(
                 continue;
             }
 
-            let centroid = pool
-                .iter()
-                .fold(Vec3::new(0.0, 0.0, 0.0), |acc, e| acc.add(e.pos))
-                .scale(1.0 / pool.len() as f64);
+            let mean = |p: &[PoolEntry]| {
+                p.iter()
+                    .fold(Vec3::new(0.0, 0.0, 0.0), |acc, e| acc.add(e.pos))
+                    .scale(1.0 / p.len() as f64)
+            };
+            let mut centroid = mean(&pool);
+            if pool.len() > POOL_CAP {
+                pool.sort_by(|x, y| {
+                    x.pos
+                        .dist2(centroid)
+                        .partial_cmp(&y.pos.dist2(centroid))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                pool.truncate(POOL_CAP);
+                centroid = mean(&pool);
+            }
             let mut dists: Vec<f64> = pool.iter().map(|e| e.pos.dist(centroid)).collect();
             dists.sort_by(|x, y| x.partial_cmp(y).unwrap());
             let bands = [
@@ -868,6 +892,7 @@ pub fn compute_polyhedra(
                 band: Vec<PoolEntry>,
                 base_verts: Vec<PoolEntry>,
             }
+            let tb = Date::now();
             let band_hulls: Vec<BandHull> = bands
                 .iter()
                 .map(|&(lo, hi)| {
@@ -890,7 +915,9 @@ pub fn compute_polyhedra(
                     BandHull { band, base_verts }
                 })
                 .collect();
+            cage_band_ms += Date::now() - tb;
 
+            let tn = Date::now();
             for &target in &CAGE_TARGET_NS_DESC {
                 let mut built = false;
                 for bh in &band_hulls {
@@ -962,6 +989,7 @@ pub fn compute_polyhedra(
                 }
                 let _ = built;
             }
+            cage_nloop_ms += Date::now() - tn;
         }
     }
 
@@ -1005,6 +1033,8 @@ pub fn compute_polyhedra(
         centered_ms: t_centered - t_setup,
         cages_ms: t_cages - t_centered,
         cage_pool_ms,
+        cage_band_ms,
+        cage_nloop_ms,
         accept_ms: 0.0,
     };
 

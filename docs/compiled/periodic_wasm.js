@@ -105,6 +105,20 @@ export class PolyhedraResult {
     /**
      * @returns {number}
      */
+    cage_band_ms() {
+        const ret = wasm.polyhedraresult_cage_band_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    cage_nloop_ms() {
+        const ret = wasm.polyhedraresult_cage_nloop_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
     cage_pool_ms() {
         const ret = wasm.polyhedraresult_cage_pool_ms(this.__wbg_ptr);
         return ret;

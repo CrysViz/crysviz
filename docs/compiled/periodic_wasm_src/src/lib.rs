@@ -79,6 +79,8 @@ pub struct PolyhedraResult {
     centered_ms: f64,
     cages_ms: f64,
     cage_pool_ms: f64,
+    cage_band_ms: f64,
+    cage_nloop_ms: f64,
     accept_ms: f64,
 }
 
@@ -98,6 +100,12 @@ impl PolyhedraResult {
     }
     pub fn cage_pool_ms(&self) -> f64 {
         self.cage_pool_ms
+    }
+    pub fn cage_band_ms(&self) -> f64 {
+        self.cage_band_ms
+    }
+    pub fn cage_nloop_ms(&self) -> f64 {
+        self.cage_nloop_ms
     }
     pub fn accept_ms(&self) -> f64 {
         self.accept_ms
@@ -171,6 +179,8 @@ pub fn compute_polyhedra(
         centered_ms: r.centered_ms,
         cages_ms: r.cages_ms,
         cage_pool_ms: r.cage_pool_ms,
+        cage_band_ms: r.cage_band_ms,
+        cage_nloop_ms: r.cage_nloop_ms,
         accept_ms: r.accept_ms,
     }
 }
