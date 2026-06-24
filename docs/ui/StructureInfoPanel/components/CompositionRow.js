@@ -40,6 +40,7 @@ const compositionRowUpdateFunctions = {};
 export function createCompositionRow(el, count, total) {
   const container = document.createElement('div');
   container.className = 'comp-container';
+  container.dataset.element = el;
 
   const row = document.createElement('div');
   row.className = 'comp-row';
@@ -217,6 +218,7 @@ export function createCompositionRow(el, count, total) {
 export function createWyckoffCompositionRow(el, entries, total) {
   const container = document.createElement('div');
   container.className = 'comp-container';
+  container.dataset.element = el;
 
   const row = document.createElement('div');
   row.className = 'comp-row';

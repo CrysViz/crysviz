@@ -23,6 +23,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
   const currentOpacity = fileBrowser.selectedStructure.atoms[atomIndices[0]]?.getOpacity?.() ?? 1;
 
   const editor = document.createElement('div');
+  editor.className = 'element-color-editor';
   editor.style.cssText = 'display:none; grid-column:2; padding:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px;';
 
   const picker = createColorPicker(currentAtomColors[0], (hex) => {

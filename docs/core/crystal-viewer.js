@@ -104,7 +104,7 @@ const setStatus = (s) => {
 
 
 function updateOther() {
-  renderComposition();
+  //renderComposition(); //This is now called in updateVisualization() with a parameter to avoid unnecessary re-rendering of the composition panel
   clearMeasureGraphics();
 
   measurements.measureLines.forEach(line => app.scene.add(line));
@@ -249,7 +249,7 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
    document.getElementById('structureControls2').style.display = 'block';
 
     createShareButton();
-    updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true,reRenderField:true});
+    updateVisualization({reRenderAtoms:true,reRenderBonds:true,updateOther:true,reRenderComposition:true,reRenderField:true});
     updateControlSpinForcePanel();
     console.warn(fileBrowser.selectedStructure)
     // Rebuild camera with size/distance based on structure and zoom scale

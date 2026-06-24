@@ -682,24 +682,22 @@ export function updatePolyhedra() {
   // ---------- TOGGLE ----------
   if (groups.polyhedraGroup) disposeGroup(groups.polyhedraGroup);
   groups.polyhedraGroup = new THREE.Group();
-  const structure = fileBrowser.selectedStructure;
+  if (!general.showPolyhedra) {
+    app.scene.add(groups.polyhedraGroup);
+    return; // IMPORTANT: nothing drawn when hidden
+  }
 
   // Nothing to build without an active structure + lattice (e.g. polyhedra
   // toggled/restored on before a structure is loaded). Without this guard the
   // code below calls fracToCart on an undefined lattice, which hard-crashes the
   // WASM math backend (the JS backend would silently produce NaN).
+  const structure = fileBrowser.selectedStructure;
   if (!structure || !structure.lattice || !structure.atoms) {
     app.scene.add(groups.polyhedraGroup);
     return;
   }
 
   structure.polyhedra = computePolyhedra(structure);
-
-  if (!general.showPolyhedra) {
-    app.scene.add(groups.polyhedraGroup);
-    return; // IMPORTANT: hidden state still rebuilds the stored model
-  }
-
   renderPolyhedra(structure);
 
   app.scene.add(groups.polyhedraGroup);

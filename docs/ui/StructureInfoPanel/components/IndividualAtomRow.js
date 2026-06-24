@@ -66,9 +66,15 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = 'display: flex; gap: 10px;';
 
+  const inactiveButtonBorder = '1px solid rgba(255,255,255,0.2)';
+  const activeButtonBorder = '1px solid rgba(125, 206, 160, 0.95)';
+  const activeButtonShadow = '0 0 0 1px rgba(125, 206, 160, 0.35), inset 0 0 0 1px rgba(125, 206, 160, 0.15)';
+
   // Color picker button
   const colorBtn = document.createElement('button');
   colorBtn.textContent = 'Color';
+  colorBtn.className = 'atom-editor-button';
+  colorBtn.dataset.editorButton = 'color';
   colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;';
   colorBtn.style.background = hexToRgba(currentColor, 0.8);
   colorBtn.title = `Change color for ${element}${displayNumber}`;
@@ -76,6 +82,8 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // Coordinate edit button
   const coordBtn = document.createElement('button');
   coordBtn.textContent = 'Position';
+  coordBtn.className = 'atom-editor-button';
+  coordBtn.dataset.editorButton = 'coord';
   coordBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; cursor: pointer; font-size: 10px;';
   coordBtn.title = `Edit coordinates for ${element}${displayNumber}`;
   if (!positionEditable) {
@@ -88,6 +96,8 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // Spin Edit button
   const spinBtn = document.createElement('button');
   spinBtn.textContent = 'Spin/Force';
+  spinBtn.className = 'atom-editor-button';
+  spinBtn.dataset.editorButton = 'spin';
   spinBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; cursor: pointer; font-size: 10px;';
   spinBtn.title = `Edit Spin for ${element}${displayNumber}`;
 
@@ -102,6 +112,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   // --- Editors ---
   const editor = document.createElement('div');
+  editor.className = 'atom-color-editor';
   editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
 
   const mom_color = safeColor(getAtomColor(atomIndex));
@@ -179,6 +190,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   // Coordinate editor
   const coordEditor = document.createElement('div');
+  coordEditor.className = 'atom-coord-editor';
   coordEditor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
 
   const coordTitle = document.createElement('div');
@@ -239,6 +251,33 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const spinEditor = createSpinForceEditor(atomIndex, element);
 
   // --- Event Handlers ---
+  function setButtonActive(button, isActive) {
+    button.style.border = isActive ? activeButtonBorder : inactiveButtonBorder;
+    button.style.boxShadow = isActive ? activeButtonShadow : 'none';
+  }
+
+  function setActiveEditor(editorType = null) {
+    const editorMap = {
+      color: editor,
+      coord: coordEditor,
+      spin: spinEditor,
+    };
+
+    const buttonMap = {
+      color: colorBtn,
+      coord: coordBtn,
+      spin: spinBtn,
+    };
+
+    Object.entries(editorMap).forEach(([type, panel]) => {
+      panel.style.display = type === editorType ? 'block' : 'none';
+    });
+
+    Object.entries(buttonMap).forEach(([type, button]) => {
+      setButtonActive(button, type === editorType);
+    });
+  }
+
   function applyIndividualOpacity(rawValue) {
     const value = clampOpacity(rawValue);
     atomAlphaSlider.value = String(value);
@@ -257,24 +296,21 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   colorBtn.onclick = (e) => {
     e.stopPropagation();
-    coordEditor.style.display = 'none';
-    spinEditor.style.display = 'none';
-    editor.style.display = (editor.style.display === 'none') ? 'block' : 'none';
+    const shouldOpen = editor.style.display === 'none';
+    setActiveEditor(shouldOpen ? 'color' : null);
   };
 
   coordBtn.onclick = (e) => {
     if (!positionEditable) return;
     e.stopPropagation();
-    editor.style.display = 'none';
-    spinEditor.style.display = 'none';
-    coordEditor.style.display = (coordEditor.style.display === 'none') ? 'block' : 'none';
+    const shouldOpen = coordEditor.style.display === 'none';
+    setActiveEditor(shouldOpen ? 'coord' : null);
   };
 
   spinBtn.onclick = (e) => {
     e.stopPropagation();
-    editor.style.display = 'none';
-    coordEditor.style.display = 'none';
-    spinEditor.style.display = (spinEditor.style.display === 'none') ? 'block' : 'none';
+    const shouldOpen = spinEditor.style.display === 'none';
+    setActiveEditor(shouldOpen ? 'spin' : null);
   };
 
   coordApplyBtn.onclick = () => {
@@ -284,7 +320,6 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     if (!isNaN(newX) && !isNaN(newY) && !isNaN(newZ)) {
       positionUpdater([newX, newY, newZ]);
       coordsDisplay.textContent = `(${newX.toFixed(3)}, ${newY.toFixed(3)}, ${newZ.toFixed(3)})`;
-      coordEditor.style.display = 'none';
     }
   };
 
@@ -296,14 +331,14 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       zInput.value = originalCoords[2].toFixed(6);
       positionUpdater([...originalCoords]);
       coordsDisplay.textContent = `(${originalCoords[0].toFixed(3)}, ${originalCoords[1].toFixed(3)}, ${originalCoords[2].toFixed(3)})`;
-      coordEditor.style.display = 'none';
+      setActiveEditor(null);
     }
   };
 
   AtomColorApplyBtn.onclick = () => {
     const currentColor = safeColor(getAtomColor(atomIndex));
     colorBtn.style.background = hexToRgba(currentColor, 0.8);
-    editor.style.display = 'none';
+    setActiveEditor(null);
     onColorChange(); // Notify parent to update pie dot
     updateVisualization({
       bondsUpdate: false,
@@ -387,7 +422,7 @@ AtomColorResetBtn.onclick = () => {
     reRenderOther: false,
     reRenderComposition: "open",
   });
-  editor.style.display = 'none';
+  setActiveEditor(null);
 };
   row.appendChild(editor);
   row.appendChild(coordEditor);
