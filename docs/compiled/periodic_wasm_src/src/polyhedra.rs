@@ -501,6 +501,53 @@ fn induced_degree_ok(adjacency: &[HashSet<u32>], sel: &[u32], min_deg: usize) ->
     true
 }
 
+/// Size of the 2-core of a band's induced bond subgraph (source-level). Any accepted
+/// cage's vertices form a min-degree-≥minDeg(N)≥2 subgraph of their band, so they lie in
+/// the band's 2-core; a band whose 2-core has < 4 atoms therefore cannot yield any cage
+/// and its convex hull can be skipped entirely. (Cheap necessary condition — the precise
+/// per-N `induced_degree_ok` still runs on the selected vertices.)
+fn band_two_core_size(band: &[PoolEntry], adjacency: &[HashSet<u32>]) -> usize {
+    let mut srcs: Vec<u32> = band.iter().map(|e| e.src).collect();
+    srcs.sort_unstable();
+    srcs.dedup();
+    let n = srcs.len();
+    if n < 4 {
+        return n;
+    }
+    let pos: HashMap<u32, usize> = srcs.iter().enumerate().map(|(i, &s)| (s, i)).collect();
+    // Induced neighbour lists within the band's source set.
+    let mut nbrs: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, &s) in srcs.iter().enumerate() {
+        for &t in &adjacency[s as usize] {
+            if let Some(&j) = pos.get(&t) {
+                if j != i {
+                    nbrs[i].push(j);
+                }
+            }
+        }
+    }
+    let mut deg: Vec<usize> = nbrs.iter().map(|v| v.len()).collect();
+    let mut removed = vec![false; n];
+    let mut stack: Vec<usize> = (0..n).filter(|&i| deg[i] < 2).collect();
+    let mut alive = n;
+    while let Some(u) = stack.pop() {
+        if removed[u] {
+            continue;
+        }
+        removed[u] = true;
+        alive -= 1;
+        for &v in &nbrs[u] {
+            if !removed[v] {
+                deg[v] = deg[v].saturating_sub(1);
+                if deg[v] < 2 {
+                    stack.push(v);
+                }
+            }
+        }
+    }
+    alive
+}
+
 fn centered_hull_acceptable(center: Vec3, center_radius: f64, pos_list: &[Vec3]) -> bool {
     let hull = match convex_hull(pos_list) {
         Some(h) => h,
@@ -910,6 +957,13 @@ pub fn compute_polyhedra(
                         .cloned()
                         .collect();
                     if band.len() < 4 {
+                        return BandHull { band, base_verts: Vec::new(), spread_order: Vec::new() };
+                    }
+                    // Necessary condition: a cage needs ≥4 atoms each bonded to ≥2 others
+                    // in the set, so a band whose induced bond 2-core is smaller can never
+                    // yield a cage — skip its (expensive) convex hull. Coordination shells
+                    // (no ligand–ligand bonds) have an empty 2-core and are skipped here.
+                    if band_two_core_size(&band, &adjacency) < 4 {
                         return BandHull { band, base_verts: Vec::new(), spread_order: Vec::new() };
                     }
                     let pts: Vec<Vec3> = band.iter().map(|e| e.pos).collect();
