@@ -363,7 +363,7 @@ export function computePolyhedra(structure) {
       console.log(
         `[polyhedra] WASM total=${ms(performance.now() - _t0)}ms ` +
         `(setup=${ms(timing.setup)} centered=${ms(timing.centered)} ` +
-        `cages=${ms(timing.cages)} accept=${ms(timing.accept)}) | ` +
+        `cages=${ms(timing.cages)}(pool=${ms(timing.cagePool)}) accept=${ms(timing.accept)}) | ` +
         `atoms=${nAtoms} centers=${displayCenters.length} ` +
         `accepted=${accepted.length} detectCages=${detectCages}`
       );

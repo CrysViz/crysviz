@@ -95,6 +95,7 @@ pub struct ComputedPolyhedra {
     pub setup_ms: f64,
     pub centered_ms: f64,
     pub cages_ms: f64,
+    pub cage_pool_ms: f64,
     pub accept_ms: f64,
 }
 
@@ -783,66 +784,69 @@ pub fn compute_polyhedra(
     let t_centered = Date::now();
 
     // ---- Cages ----
+    let mut cage_pool_ms = 0.0_f64;
     if detect_cages {
+        // Buffers reused across seeds (cleared, not reallocated).
+        let mut visited_set: HashSet<Key> = HashSet::new();
+        let mut order: Vec<PoolEntry> = Vec::new();
+        let mut frontier: Vec<PoolEntry> = Vec::new();
+        let mut next_frontier: Vec<PoolEntry> = Vec::new();
+
         for seed in 0..n_atoms {
             if seed_visible[seed] == 0 {
                 continue;
             }
             let seed_elem = elem_idx[seed] as u32;
 
-            // Frontier BFS in image space, expanding to depth ≥3, then until ≥40
-            // visible images or CAGE_BFS_DEPTH.
-            let mut visited_set: HashSet<Key> = HashSet::new();
-            let mut order: Vec<PoolEntry> = Vec::new();
+            // Frontier BFS in image space: always reach depth 3, then keep going
+            // until ≥40 visible images or CAGE_BFS_DEPTH. The visible count is
+            // tracked incrementally, so we never re-scan/clone the pool mid-expand.
+            let tp = Date::now();
+            visited_set.clear();
+            order.clear();
+            frontier.clear();
             let start = PoolEntry { pos: base_cart[seed], src: seed as u32, shift: [0, 0, 0] };
             visited_set.insert(image_key(seed as u32, [0, 0, 0]));
             order.push(start.clone());
-            let mut frontier: Vec<PoolEntry> = vec![start];
+            frontier.push(start);
             let mut depth = 0;
+            let mut visible_count =
+                if visible.contains(&image_key(seed as u32, [0, 0, 0])) { 1 } else { 0 };
 
-            let mut expand = |frontier: &mut Vec<PoolEntry>,
-                              visited_set: &mut HashSet<Key>,
-                              order: &mut Vec<PoolEntry>| {
-                let mut next = Vec::new();
+            while !frontier.is_empty()
+                && depth < CAGE_BFS_DEPTH
+                && (depth < 3 || visible_count < 40)
+            {
+                next_frontier.clear();
                 for node in frontier.iter() {
+                    let (sx, sy, sz) = (node.shift[0], node.shift[1], node.shift[2]);
                     for o in &base_neighbors[node.src as usize] {
-                        let nshift = [
-                            o.shift[0] + node.shift[0],
-                            o.shift[1] + node.shift[1],
-                            o.shift[2] + node.shift[2],
-                        ];
+                        let nshift = [o.shift[0] + sx, o.shift[1] + sy, o.shift[2] + sz];
                         let key = image_key(o.src_j, nshift);
                         if visited_set.insert(key) {
                             let pos = base_cart[o.src_j as usize]
                                 .add(a.scale(nshift[0] as f64))
                                 .add(b.scale(nshift[1] as f64))
                                 .add(c.scale(nshift[2] as f64));
+                            if visible.contains(&key) {
+                                visible_count += 1;
+                            }
                             let e = PoolEntry { pos, src: o.src_j, shift: nshift };
                             order.push(e.clone());
-                            next.push(e);
+                            next_frontier.push(e);
                         }
                     }
                 }
-                *frontier = next;
-            };
+                std::mem::swap(&mut frontier, &mut next_frontier);
+                depth += 1;
+            }
 
-            while depth < 3 && !frontier.is_empty() {
-                expand(&mut frontier, &mut visited_set, &mut order);
-                depth += 1;
-            }
-            let visible_pool = |order: &Vec<PoolEntry>| -> Vec<PoolEntry> {
-                order
-                    .iter()
-                    .filter(|e| visible.contains(&image_key(e.src, e.shift)))
-                    .cloned()
-                    .collect()
-            };
-            let mut pool = visible_pool(&order);
-            while pool.len() < 40 && depth < CAGE_BFS_DEPTH && !frontier.is_empty() {
-                expand(&mut frontier, &mut visited_set, &mut order);
-                depth += 1;
-                pool = visible_pool(&order);
-            }
+            let pool: Vec<PoolEntry> = order
+                .iter()
+                .filter(|e| visible.contains(&image_key(e.src, e.shift)))
+                .cloned()
+                .collect();
+            cage_pool_ms += Date::now() - tp;
             if pool.len() < 4 {
                 continue;
             }
@@ -1000,6 +1004,7 @@ pub fn compute_polyhedra(
         setup_ms: t_setup - t0,
         centered_ms: t_centered - t_setup,
         cages_ms: t_cages - t_centered,
+        cage_pool_ms,
         accept_ms: 0.0,
     };
 

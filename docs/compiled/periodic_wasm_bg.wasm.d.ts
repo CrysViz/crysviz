@@ -11,6 +11,7 @@ export const periodicresult_frac: (a: number) => [number, number];
 export const periodicresult_len: (a: number) => number;
 export const periodicresult_src_index: (a: number) => [number, number];
 export const polyhedraresult_accept_ms: (a: number) => number;
+export const polyhedraresult_cage_pool_ms: (a: number) => number;
 export const polyhedraresult_cages_ms: (a: number) => number;
 export const polyhedraresult_center_src: (a: number) => [number, number];
 export const polyhedraresult_centered_ms: (a: number) => number;

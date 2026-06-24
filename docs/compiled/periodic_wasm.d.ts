@@ -30,6 +30,7 @@ export class PolyhedraResult {
     free(): void;
     [Symbol.dispose](): void;
     accept_ms(): number;
+    cage_pool_ms(): number;
     cages_ms(): number;
     center_src(): Int32Array;
     centered_ms(): number;
@@ -79,6 +80,7 @@ export interface InitOutput {
     readonly periodicresult_len: (a: number) => number;
     readonly periodicresult_src_index: (a: number) => [number, number];
     readonly polyhedraresult_accept_ms: (a: number) => number;
+    readonly polyhedraresult_cage_pool_ms: (a: number) => number;
     readonly polyhedraresult_cages_ms: (a: number) => number;
     readonly polyhedraresult_center_src: (a: number) => [number, number];
     readonly polyhedraresult_centered_ms: (a: number) => number;
