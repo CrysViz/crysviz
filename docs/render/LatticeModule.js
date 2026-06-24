@@ -243,12 +243,16 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
       ["lattice", lattice],
       ["showPeriodic",showPeriodic],
       ["showPBCBonds",showPBCBonds],
+      ["completePolyhedra", general.completePolyhedra], // toggling it invalidates the cache
       ["faceTol",faceTol]
     ]);
     let inputHash = hashInput(map)
 
     if (periodic.hash != inputHash){
       periodic.wrapped = periodicWrapped({ ...general, showPBCBonds }, frac, elements,lattice)
+      // Number of base atoms (periodic-image + PBC-bond ghosts), before any "Complete
+      // Polyhedra" atoms which updatePolyhedra() appends. Polyhedra centers use only these.
+      periodic.wrapped.baseCount = periodic.wrapped.elements.length
       periodic.hash = inputHash
     }
     return periodic

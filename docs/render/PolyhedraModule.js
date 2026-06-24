@@ -13,6 +13,8 @@ import { atomicRadii } from '../defaults/radii_defaults.js'
 import { electronegativity } from '../defaults/electronegativity_defaults.js'
 import { computePolyhedraWasm } from '../compiled/polyhedraWasm.js'
 import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedraWorkerPool.js'
+import { rebuildAtoms } from '../render/AtomsFracUpdateModule.js'
+import { rebuildBonds } from '../render/BondsFracUpdateModule.js'
 
 // Bumped on every updatePolyhedra() call so a stale async compute result is discarded.
 let polyhedraToken = 0;
@@ -310,8 +312,14 @@ export function computePolyhedra(structure) {
   const visibleImageCountsBySource = new Map();
   /** @type {Array<{cart:THREE.Vector3, src:number, shift:[number,number,number]}>} */
   let displayCenters = [];
+  // Only the BASE atoms are polyhedra centers. "Complete Polyhedra" appends extra atoms to
+  // `wrapped` (after `baseCount`); excluding them here keeps the completion exactly one level
+  // deep (completing atoms are shown but never seed their own polyhedra).
+  const baseCount = (typeof dispWrapped?.baseCount === 'number')
+    ? dispWrapped.baseCount
+    : (dispWrapped?.frac?.length ?? 0);
   if (dispWrapped?.frac?.length && dispWrapped?.srcIndex?.length) {
-    for (let i = 0; i < dispWrapped.frac.length; i++) {
+    for (let i = 0; i < baseCount; i++) {
       const src = dispWrapped.srcIndex[i];
       if (!Number.isInteger(src) || src < 0 || src >= positions.length) continue;
       const frac = dispWrapped.frac[i];
@@ -999,8 +1007,9 @@ export async function updatePolyhedra() {
   const group = new THREE.Group();
   groups.polyhedraGroup = group;
   app.scene.add(group);
-  if (!general.showPolyhedra) {
-    return; // IMPORTANT: nothing drawn when hidden
+  // Compute whenever faces OR completing atoms are wanted; nothing drawn when neither.
+  if (!general.showPolyhedra && !general.completePolyhedra) {
+    return;
   }
 
   // Nothing to build without an active structure + lattice (e.g. polyhedra
@@ -1019,10 +1028,106 @@ export async function updatePolyhedra() {
     const model = await computePolyhedra(structure);
     if (token !== polyhedraToken) return; // superseded — group already replaced/disposed
     structure.polyhedra = model;
-    const _tr = performance.now();
-    renderPolyhedra(structure); // renders into groups.polyhedraGroup (=== group while current)
-    console.log(`[polyhedra] render=${(performance.now() - _tr).toFixed(1)}ms (compute+render=${(performance.now() - _tc).toFixed(1)}ms)`);
+
+    // "Complete Polyhedra": append the out-of-cell vertex atoms to the displayed set so
+    // every polyhedron has an atom (with bonds) at each vertex. Only re-renders atoms/bonds
+    // when the completing set actually changes (see syncCompletingAtoms).
+    if (general.completePolyhedra) {
+      syncCompletingAtoms(structure, model);
+    }
+
+    if (general.showPolyhedra) {
+      const _tr = performance.now();
+      renderPolyhedra(structure); // into groups.polyhedraGroup (=== group while current)
+      console.log(`[polyhedra] render=${(performance.now() - _tr).toFixed(1)}ms (compute+render=${(performance.now() - _tc).toFixed(1)}ms)`);
+    }
   } catch (err) {
     console.error('[updatePolyhedra] compute failed:', err);
   }
+}
+
+/**
+ * Append the atoms needed to complete the polyhedra (vertices on periodic images that
+ * aren't in the base displayed set) into `structure.periodic.wrapped`, then re-render atoms
+ * and bonds — but only when that set has changed since the last sync (tracked by a signature
+ * on `wrapped`). The appended atoms carry `srcIndex = primary atom`, so they inherit the
+ * right colour/UUID, and they sit AFTER `wrapped.baseCount` so they never become polyhedra
+ * centers.
+ * @param {any} structure
+ * @param {Polyhedra} model
+ */
+function syncCompletingAtoms(structure, model) {
+  const wrapped = structure.periodic?.wrapped;
+  if (!wrapped) return;
+
+  const positions = structure.atoms.map(a => a.position); // fractional
+  const elements = [...structure.elements];
+  const lattice = structure.lattice;
+  const latInv = invert3x3(transpose3x3(lattice));
+  const baseCount = (typeof wrapped.baseCount === 'number')
+    ? wrapped.baseCount
+    : (wrapped.elements?.length ?? 0);
+
+  // Base displayed image keys (src, shift) of the atoms already shown.
+  const baseKeys = new Set();
+  for (let i = 0; i < baseCount; i++) {
+    const src = wrapped.srcIndex?.[i];
+    if (!Number.isInteger(src) || src < 0 || src >= positions.length) continue;
+    const f = wrapped.frac?.[i];
+    if (!Array.isArray(f) || f.length < 3) continue;
+    baseKeys.add(imageKey(src, [
+      Math.round(f[0] - positions[src][0]),
+      Math.round(f[1] - positions[src][1]),
+      Math.round(f[2] - positions[src][2]),
+    ]));
+  }
+
+  // Every accepted polyhedron vertex whose image isn't already displayed → a completing atom.
+  const seen = new Set();
+  const add = { elements: [], frac: [], cart: [], srcIndex: [] };
+  for (const poly of (model?.polyhedra ?? [])) {
+    const verts = poly.vertices || [];
+    const srcs = poly.vertexSrcList || [];
+    for (let v = 0; v < verts.length; v++) {
+      const src = srcs[v];
+      if (!Number.isInteger(src) || src < 0 || src >= positions.length) continue;
+      const cart = verts[v];
+      const fr = cartToFrac(cart, lattice, latInv);
+      const shift = [
+        Math.round(fr[0] - positions[src][0]),
+        Math.round(fr[1] - positions[src][1]),
+        Math.round(fr[2] - positions[src][2]),
+      ];
+      const key = imageKey(src, shift);
+      if (baseKeys.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      add.elements.push(elements[src]);
+      add.frac.push([positions[src][0] + shift[0], positions[src][1] + shift[1], positions[src][2] + shift[2]]);
+      add.cart.push([cart[0], cart[1], cart[2]]);
+      add.srcIndex.push(src);
+    }
+  }
+
+  const sig = Array.from(seen).sort().join('|');
+  // Unchanged since last sync (treat a fresh wrapped's missing sig as "" so a structure with
+  // no completing atoms doesn't trigger a needless atom/bond rebuild).
+  if (sig === (wrapped.completingSig ?? '')) return;
+
+  // Rebuild wrapped = base + completing (truncate any previous completing first).
+  wrapped.elements.length = baseCount;
+  wrapped.frac.length = baseCount;
+  wrapped.cart.length = baseCount;
+  wrapped.srcIndex.length = baseCount;
+  for (let i = 0; i < add.elements.length; i++) {
+    wrapped.elements.push(add.elements[i]);
+    wrapped.frac.push(add.frac[i]);
+    wrapped.cart.push(add.cart[i]);
+    wrapped.srcIndex.push(add.srcIndex[i]);
+  }
+  wrapped.completingSig = sig;
+
+  // Re-render atoms + bonds against the augmented set (runPeriodicWrapped sees the unchanged
+  // hash and reuses this mutated `wrapped`, so it isn't rebuilt back to base).
+  rebuildAtoms();
+  rebuildBonds();
 }

@@ -113,6 +113,7 @@ export const general = {
   // must be much looser than machine eps or boundary atoms get missed.
   periodicFaceTol:1e-3,
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
+  completePolyhedra:false, // Show the out-of-cell atoms needed to complete the polyhedra
   useWasmMath:true, // Use compiled WASM for selected math kernels (false = pure JS fallback)
   useWasmPeriodic:true, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
   useWasmPolyhedra:true, // Use compiled WASM for computePolyhedra (false = pure JS fallback)

@@ -212,7 +212,9 @@ export function updateVisualization(options = {}) {
   if (reRenderOther) updateOther();
   // Polyhedra depend on atoms/bonds/lattice, so refresh them whenever the scene
   // re-renders and the feature is on (persists across structure & frame changes).
-  if (general.showPolyhedra) updatePolyhedra();
+  // Also run when "Complete Polyhedra" is on (faces hidden) so the completing atoms are
+  // computed and shown.
+  if (general.showPolyhedra || general.completePolyhedra) updatePolyhedra();
   console.timeEnd("uv:updateOther");
   if (reRenderField) {
     if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
