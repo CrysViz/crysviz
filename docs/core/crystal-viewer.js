@@ -104,6 +104,12 @@ const setStatus = (s) => {
 
 
 function updateOther() {
+  // Rebuilds the Structure (composition/species/bonds) panel. Default updates
+  // (structure load, frame change) reach here via reRenderOther=true and rely on
+  // this to populate the panel. Callers that want the panel left *open* instead
+  // pass reRenderComposition:"open" with reRenderOther:false, so the guarded call
+  // in updateVisualization handles them and this one is skipped (no re-collapse).
+  renderComposition();
   clearMeasureGraphics();
 
   measurements.measureLines.forEach(line => app.scene.add(line));
