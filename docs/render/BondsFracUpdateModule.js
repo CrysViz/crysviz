@@ -443,97 +443,54 @@ export function renderBonds() {
   const encoder = new TextEncoder();
   const paddedUUID = new Uint8Array(16);
 
-  const dummy = new THREE.Object3D();
-
+  // Per-instance matrices, colours and emissive are written by updateBonds() — which
+  // runs immediately after this in rebuildBonds(), with the precise quaternion alignment
+  // and cut-plane culling, and would overwrite anything set here. So renderBonds only
+  // does the work updateBonds does NOT: create the mesh, build the picking/lookup tables,
+  // and fill the UUID attribute. This removes a full redundant matrix/colour pass over
+  // every bond (the dominant cost on large structures).
   validBonds.forEach((bond, i) => {
     if (!bond.center1 || !bond.center2) return;
 
-    const dirNorm = bond.dir.clone().normalize();
-
     // ---- first half ----
-    dummy.position.copy(bond.center1);
-    dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
-    dummy.lookAt(bond.center1.clone().add(dirNorm));
-    dummy.rotateX(Math.PI / 2);
-    dummy.updateMatrix();
-    mesh.setMatrixAt(i*2 , dummy.matrix);
-
     if (!structure.bondhalfToAtom) structure.bondhalfToAtom = {};
-      structure.bondhalfToAtom[i * 2] = bond.srcIndices[0];
+    structure.bondhalfToAtom[i * 2] = bond.srcIndices[0];
 
     let key = bond.indices[0];
     if (!structure.bondMapping[key]) {
-        structure.bondMapping[key] = []; // Initialize with an empty array
+      structure.bondMapping[key] = [];
     }
-    structure.bondMapping[key].push(i * 2);    
+    structure.bondMapping[key].push(i * 2);
 
-
-    // Lookup table from bondHalf to the actual bond objects stored in the structure
-    //  mainly necessary for color changes
-    key = i*2
-    if (!structure.bondObjectMapping[key]){
-      structure.bondObjectMapping[key] = [];
+    // Lookup table from bondHalf to the actual bond objects (used for colour changes).
+    if (!structure.bondObjectMapping[i * 2]) {
+      structure.bondObjectMapping[i * 2] = [];
     }
-    structure.bondObjectMapping[key] = [i,0]
+    structure.bondObjectMapping[i * 2] = [i, 0];
 
-    // color
-    mesh.instanceColor.setXYZ(i*2,
-      new THREE.Color(bond.color[0]).r,
-      new THREE.Color(bond.color[0]).g,
-      new THREE.Color(bond.color[0]).b
-    );
-
-    // emissive
-    mesh.geometry.attributes.instanceEmissive.setXYZ(i*2, 0, 0, 0);
-    mesh.geometry.attributes.instanceEmissiveIntensity.setX(i*2, 0);
-    mesh.geometry.attributes.instanceElementIndex.setX(i*2, 0);
-
-    const uuid1 = `1${bond.uuid}`.replace(/-/g,'');
+    const uuid1 = `1${bond.uuid}`.replace(/-/g, '');
     paddedUUID.fill(0);
-    paddedUUID.set(encoder.encode(uuid1).subarray(0,16));
-    uuidAttr.set(new Float32Array(paddedUUID.buffer), i*8+0);
+    paddedUUID.set(encoder.encode(uuid1).subarray(0, 16));
+    uuidAttr.set(new Float32Array(paddedUUID.buffer), i * 8 + 0);
 
     // ---- second half ----
-    dummy.position.copy(bond.center2);
-    dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
-    dummy.lookAt(bond.center2.clone().add(dirNorm));
-    dummy.rotateX(Math.PI / 2);
-    dummy.updateMatrix();
-    mesh.setMatrixAt(i*2 + 1, dummy.matrix);
-
     structure.bondhalfToAtom[i * 2 + 1] = bond.srcIndices[1];
 
     key = bond.indices[1];
     if (!structure.bondMapping[key]) {
-        structure.bondMapping[key] = []; // Initialize with an empty array
+      structure.bondMapping[key] = [];
     }
     structure.bondMapping[key].push(i * 2 + 1);
 
-    // Lookup table from bondHalf to the actual bond objects stored in the structure
-    //  mainly necessary for color changes
-
-    key = i*2+1
-    if (!structure.bondObjectMapping[key]){
-      structure.bondObjectMapping[key] = [];
+    if (!structure.bondObjectMapping[i * 2 + 1]) {
+      structure.bondObjectMapping[i * 2 + 1] = [];
     }
-    structure.bondObjectMapping[key]=[i,1];
+    structure.bondObjectMapping[i * 2 + 1] = [i, 1];
 
-    // color
-    mesh.instanceColor.setXYZ(i*2 + 1,
-      new THREE.Color(bond.color[1]).r,
-      new THREE.Color(bond.color[1]).g,
-      new THREE.Color(bond.color[1]).b
-    );
-
-    // emissive
-    mesh.geometry.attributes.instanceEmissive.setXYZ(i*2+1, 0,0,0);
-    mesh.geometry.attributes.instanceEmissiveIntensity.setX(i*2+1, 0);
-    mesh.geometry.attributes.instanceElementIndex.setX(i*2+1, 0);
-
-    const uuid2 = `2${bond.uuid}`.replace(/-/g,'');
+    const uuid2 = `2${bond.uuid}`.replace(/-/g, '');
     paddedUUID.fill(0);
-    paddedUUID.set(encoder.encode(uuid2).subarray(0,16));
-    uuidAttr.set(new Float32Array(paddedUUID.buffer), i*8+4);
+    paddedUUID.set(encoder.encode(uuid2).subarray(0, 16));
+    uuidAttr.set(new Float32Array(paddedUUID.buffer), i * 8 + 4);
   });
 
   // Assign UUID attribute
