@@ -12,6 +12,10 @@ import { voronoiNeighbours } from '../render/VoronoiNeighbours.js'
 import { atomicRadii } from '../defaults/radii_defaults.js'
 import { electronegativity } from '../defaults/electronegativity_defaults.js'
 import { computePolyhedraWasm } from '../compiled/polyhedraWasm.js'
+import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedraWorkerPool.js'
+
+// Bumped on every updatePolyhedra() call so a stale async compute result is discarded.
+let polyhedraToken = 0;
 
 // ---------- STYLE (render) ----------
 const FACE_OPACITY = 0.50;
@@ -259,7 +263,8 @@ function inducedDegreeOK(adjacency, selSrcs, minDeg) {
  * in {@link renderPolyhedra}.
  *
  * @param {any} structure active Structure (needs `atoms`, `elements`, `lattice`)
- * @returns {Polyhedra}
+ * @returns {Polyhedra | Promise<Polyhedra>} serial paths return synchronously; the
+ *   parallel (Web Worker) path returns a Promise. `updatePolyhedra` awaits either.
  */
 export function computePolyhedra(structure) {
   if (!ConvexGeomCtor) {
@@ -343,37 +348,67 @@ export function computePolyhedra(structure) {
   // Largest configured bond cutoff — bounds the neighbour-image search range.
   const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || {}).map(v => (typeof v === 'number' ? v : (v?.max ?? 0))), 0.0);
 
-  // ---------- WASM compute path (toggle; falls back to JS below) ----------
-  // The display-coupled prep above (displayCenters, visibleImageKeys, maxCutoff)
-  // is shared; everything below is the heavy geometry, which the Rust port does
-  // in one call. On any failure we fall through to the pure-JS implementation.
-  if (general.useWasmPolyhedra) {
-    try {
-      const seedVisible = new Uint8Array(nAtoms);
-      for (let i = 0; i < nAtoms; i++) {
-        seedVisible[i] = isAtomImageVisible(baseCart[i].toArray(), structure.atoms[i], activeCutPlanes) ? 1 : 0;
-      }
-      const { polyhedra: wasmPolys, timing } = computePolyhedraWasm({
-        positions, elements, lattice, maxCutoff,
-        useChemicalFilter, detectCages,
-        displayCenters, visibleImageKeys, seedVisible, getBondCutoff,
-      });
-      const accepted = wasmPolys.map(p => new Polyhedron(p));
-      const ms = (x) => x.toFixed(1);
-      console.log(
-        `[polyhedra] WASM total=${ms(performance.now() - _t0)}ms ` +
-        `(setup=${ms(timing.setup)} centered=${ms(timing.centered)}[voronoi=${ms(timing.centeredVoronoi)}] ` +
-        `cages=${ms(timing.cages)}(pool=${ms(timing.cagePool)} band=${ms(timing.cageBand)}[kcore=${ms(timing.bandKcore)} built=${timing.bandsBuilt} skip=${timing.bandsSkipped}] nloop=${ms(timing.cageNloop)}) ` +
-        `accept=${ms(timing.accept)}) | ` +
-        `atoms=${nAtoms} centers=${displayCenters.length} ` +
-        `accepted=${accepted.length} detectCages=${detectCages}`
-      );
-      return new Polyhedra({ polyhedra: accepted });
-    } catch (err) {
-      console.warn('[computePolyhedra] WASM path failed; falling back to JS:', err);
-    }
+  // ---------- Compute-path dispatch (parallel WASM → serial WASM → pure JS) ----------
+  // The display-coupled prep above (displayCenters, visibleImageKeys, maxCutoff) is
+  // shared. `prep` is the input bundle for the WASM paths; the pure-JS implementation
+  // (runJsPath) stays as the final fallback.
+  const seedVisible = new Uint8Array(nAtoms);
+  for (let i = 0; i < nAtoms; i++) {
+    seedVisible[i] = isAtomImageVisible(baseCart[i].toArray(), structure.atoms[i], activeCutPlanes) ? 1 : 0;
   }
+  const prep = {
+    positions, elements, lattice, maxCutoff,
+    useChemicalFilter, detectCages,
+    displayCenters, visibleImageKeys, seedVisible, getBondCutoff,
+  };
 
+  // Serial WASM (one call) → model.
+  const runWasmSerial = () => {
+    const { polyhedra, timing } = computePolyhedraWasm(prep);
+    const ms = (x) => x.toFixed(1);
+    console.log(
+      `[polyhedra] WASM total=${ms(performance.now() - _t0)}ms ` +
+      `(setup=${ms(timing.setup)} centered=${ms(timing.centered)} ` +
+      `cages=${ms(timing.cages)}(pool=${ms(timing.cagePool)} band=${ms(timing.cageBand)}[built=${timing.bandsBuilt} skip=${timing.bandsSkipped}] nloop=${ms(timing.cageNloop)}) ` +
+      `accept=${ms(timing.accept)}) | ` +
+      `atoms=${nAtoms} centers=${displayCenters.length} ` +
+      `accepted=${polyhedra.length} detectCages=${detectCages}`
+    );
+    return new Polyhedra({ polyhedra: polyhedra.map(p => new Polyhedron(p)) });
+  };
+
+  // Serial path: WASM if enabled (JS on failure), else pure JS.
+  const serialModel = () => {
+    if (general.useWasmPolyhedra) {
+      try { return runWasmSerial(); }
+      catch (err) { console.warn('[computePolyhedra] WASM path failed; falling back to JS:', err); }
+    }
+    return runJsPath();
+  };
+
+  // Parallel over Web Workers when enabled, available, and the system is large enough to
+  // amortise worker overhead; falls back to the serial model on any failure.
+  const PARALLEL_MIN = 1000; // combined centers + atoms
+  if (general.useWasmPolyhedra && !general.serialPolyhedraAlgorithm
+      && parallelAvailable() && (displayCenters.length + nAtoms) >= PARALLEL_MIN) {
+    return computePolyhedraParallel(prep)
+      .then((polys) => {
+        const accepted = polys.map(p => new Polyhedron(p));
+        console.log(
+          `[polyhedra] WASM-parallel total=${(performance.now() - _t0).toFixed(1)}ms ` +
+          `atoms=${nAtoms} centers=${displayCenters.length} accepted=${accepted.length} detectCages=${detectCages}`
+        );
+        return new Polyhedra({ polyhedra: accepted });
+      })
+      .catch((err) => {
+        console.warn('[computePolyhedra] parallel path failed; falling back to serial:', err);
+        return serialModel();
+      });
+  }
+  return serialModel();
+
+  // ---------- Pure-JS implementation (final fallback) ----------
+  function runJsPath() {
   // Guaranteed-complete image range per axis (JS path): how many cells the largest
   // bond cutoff can reach, using the cell's perpendicular widths d = V/|b×c| so no
   // neighbour image is ever missed, even for skewed cells.
@@ -908,6 +943,7 @@ export function computePolyhedra(structure) {
   );
 
   return new Polyhedra({ polyhedra: accepted });
+  } // runJsPath
 }
 
 /**
@@ -964,12 +1000,17 @@ export function renderPolyhedra(structure) {
  * Toggle/refresh entry point. Recomputes `structure.polyhedra` (so the model
  * mirrors the scene and bond-cutoff edits take effect) and renders it.
  */
-export function updatePolyhedra() {
+export async function updatePolyhedra() {
   // ---------- TOGGLE ----------
+  // The compute may be async (parallel WASM), so each call takes a token: a newer
+  // call (rapid toggle / structure or frame change) bumps it, and a stale compute
+  // result is discarded instead of rendering into a superseded group.
+  const token = ++polyhedraToken;
   if (groups.polyhedraGroup) disposeGroup(groups.polyhedraGroup);
-  groups.polyhedraGroup = new THREE.Group();
+  const group = new THREE.Group();
+  groups.polyhedraGroup = group;
+  app.scene.add(group);
   if (!general.showPolyhedra) {
-    app.scene.add(groups.polyhedraGroup);
     return; // IMPORTANT: nothing drawn when hidden
   }
 
@@ -979,15 +1020,20 @@ export function updatePolyhedra() {
   // WASM math backend (the JS backend would silently produce NaN).
   const structure = fileBrowser.selectedStructure;
   if (!structure || !structure.lattice || !structure.atoms) {
-    app.scene.add(groups.polyhedraGroup);
     return;
   }
 
-  const _tc = performance.now();
-  structure.polyhedra = computePolyhedra(structure);
-  const _tr = performance.now();
-  renderPolyhedra(structure);
-  console.log(`[polyhedra] render=${(performance.now() - _tr).toFixed(1)}ms (compute+render=${(performance.now() - _tc).toFixed(1)}ms)`);
-
-  app.scene.add(groups.polyhedraGroup);
+  try {
+    const _tc = performance.now();
+    // computePolyhedra returns a Polyhedra (serial) or a Promise<Polyhedra> (parallel);
+    // awaiting handles both. A sync result just resolves on the next microtask.
+    const model = await computePolyhedra(structure);
+    if (token !== polyhedraToken) return; // superseded — group already replaced/disposed
+    structure.polyhedra = model;
+    const _tr = performance.now();
+    renderPolyhedra(structure); // renders into groups.polyhedraGroup (=== group while current)
+    console.log(`[polyhedra] render=${(performance.now() - _tr).toFixed(1)}ms (compute+render=${(performance.now() - _tc).toFixed(1)}ms)`);
+  } catch (err) {
+    console.error('[updatePolyhedra] compute failed:', err);
+  }
 }

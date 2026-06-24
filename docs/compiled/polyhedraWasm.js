@@ -3,15 +3,16 @@
  *
  * The JS caller (render/PolyhedraModule.js) prepares the cheap, display-coupled
  * inputs (visible centre images, visible image keys, seed visibility, the bond
- * cutoff lookup) and this module marshals them into flat typed arrays, calls the
- * Rust `compute_polyhedra`, and unpacks the accepted polyhedra back into the
- * plain objects the `Polyhedron` model constructor expects.
+ * cutoff lookup); `marshalPolyhedraInputs` packs them into flat typed arrays.
+ * `computePolyhedraWasm` runs the whole thing serially; the worker pool instead
+ * sends those same inputs to workers (which call `compute_candidates`) and then
+ * calls `callAcceptCandidates` here on the main thread to finish.
  *
  * The wasm module is shared with periodicWrapped; its wasm-bindgen `init` guard
  * is idempotent, so initialising here is a no-op if LatticeModule already did it.
  */
 
-import init, { compute_polyhedra } from './periodic_wasm.js';
+import init, { compute_polyhedra, accept_candidates } from './periodic_wasm.js';
 import { electronegativity } from '../defaults/electronegativity_defaults.js';
 import { atomicRadii } from '../defaults/radii_defaults.js';
 
@@ -20,22 +21,18 @@ import { atomicRadii } from '../defaults/radii_defaults.js';
 await init(new URL('./periodic_wasm_bg.wasm', import.meta.url));
 
 /**
+ * Marshal the display-coupled `prep` into flat typed-array WASM inputs. Shared by the
+ * serial path and the worker pool (which posts `inputs` to each worker).
+ *
  * @param {{
- *   positions: number[][],
- *   elements: string[],
- *   lattice: number[][],
- *   maxCutoff: number,
- *   useChemicalFilter: boolean,
- *   detectCages: boolean,
- *   displayCenters: Array<{cart: {x:number,y:number,z:number}, src:number, shift:[number,number,number]}>,
- *   visibleImageKeys: Set<string>,
- *   seedVisible: Uint8Array,
- *   getBondCutoff: (a:string, b:string) => number,
+ *   positions: number[][], elements: string[], lattice: number[][], maxCutoff: number,
+ *   useChemicalFilter: boolean, detectCages: boolean,
+ *   displayCenters: Array<{cart:{x:number,y:number,z:number}, src:number, shift:[number,number,number]}>,
+ *   visibleImageKeys: Set<string>, seedVisible: Uint8Array, getBondCutoff:(a:string,b:string)=>number,
  * }} prep
- * @returns {{polyhedra: Array<Object>, timing: {setup:number,centered:number,cages:number,cagePool:number,cageBand:number,cageNloop:number,accept:number,centeredVoronoi:number,bandKcore:number,bandsBuilt:number,bandsSkipped:number}}}
- *          `polyhedra`: plain objects ready for `new Polyhedron(...)`.
+ * @returns {{idxToElem: string[], inputs: Object}}
  */
-export function computePolyhedraWasm(prep) {
+export function marshalPolyhedraInputs(prep) {
   const {
     positions, elements, lattice, maxCutoff,
     useChemicalFilter, detectCages,
@@ -107,12 +104,26 @@ export function computePolyhedraWasm(prep) {
   }
   const visibleKeys = Int32Array.from(keyVals);
 
-  const result = compute_polyhedra(
-    fracFlat, elemIdx, latticeFlat, cutoffMatrix, nElem,
-    electroneg, radii, maxCutoff, !!useChemicalFilter, !!detectCages,
-    centerSrc, centerShift, centerCart, visibleKeys, seedVisible,
-  );
+  return {
+    idxToElem,
+    inputs: {
+      fracFlat, elemIdx, latticeFlat, cutoffMatrix, nElem,
+      electroneg, radii, maxCutoff: +maxCutoff,
+      useChemicalFilter: !!useChemicalFilter, detectCages: !!detectCages,
+      centerSrc, centerShift, centerCart, visibleKeys, seedVisible,
+      nCenters: nC, nAtoms,
+    },
+  };
+}
 
+/**
+ * Turn a WASM `PolyhedraResult` into the plain objects `new Polyhedron(...)` expects.
+ * Does not free `result` — the caller owns it.
+ * @param {any} result
+ * @param {string[]} idxToElem
+ * @returns {Array<Object>}
+ */
+function unpackAccepted(result, idxToElem) {
   const count = result.count();
   const kinds = result.kinds();
   const colorElemArr = result.color_elem();
@@ -120,20 +131,6 @@ export function computePolyhedraWasm(prep) {
   const vertCounts = result.vert_counts();
   const verts = result.vertices();
   const vsrcs = result.vertex_srcs();
-  const timing = {
-    setup: result.setup_ms(),
-    centered: result.centered_ms(),
-    cages: result.cages_ms(),
-    cagePool: result.cage_pool_ms(),
-    cageBand: result.cage_band_ms(),
-    cageNloop: result.cage_nloop_ms(),
-    accept: result.accept_ms(),
-    centeredVoronoi: result.centered_voronoi_ms(),
-    bandKcore: result.band_kcore_ms(),
-    bandsBuilt: result.bands_built(),
-    bandsSkipped: result.bands_skipped(),
-  };
-  result.free();
 
   const out = [];
   let vOff = 0, sOff = 0;
@@ -159,5 +156,50 @@ export function computePolyhedraWasm(prep) {
       vertexSrcList,
     });
   }
-  return { polyhedra: out, timing };
+  return out;
+}
+
+/**
+ * Serial path: marshal, run the full Rust `compute_polyhedra`, unpack.
+ * @returns {{polyhedra: Array<Object>, timing: Object}}
+ */
+export function computePolyhedraWasm(prep) {
+  const { idxToElem, inputs: I } = marshalPolyhedraInputs(prep);
+  const result = compute_polyhedra(
+    I.fracFlat, I.elemIdx, I.latticeFlat, I.cutoffMatrix, I.nElem,
+    I.electroneg, I.radii, I.maxCutoff, I.useChemicalFilter, I.detectCages,
+    I.centerSrc, I.centerShift, I.centerCart, I.visibleKeys, I.seedVisible,
+  );
+  const timing = {
+    setup: result.setup_ms(),
+    centered: result.centered_ms(),
+    cages: result.cages_ms(),
+    cagePool: result.cage_pool_ms(),
+    cageBand: result.cage_band_ms(),
+    cageNloop: result.cage_nloop_ms(),
+    accept: result.accept_ms(),
+    bandsBuilt: result.bands_built(),
+    bandsSkipped: result.bands_skipped(),
+  };
+  const polyhedra = unpackAccepted(result, idxToElem);
+  result.free();
+  return { polyhedra, timing };
+}
+
+/**
+ * Parallel path, part 2 (main thread): accept the merged candidate arrays.
+ * @param {{isCage:Uint8Array, colorElem:Uint32Array, centerSrc:Int32Array,
+ *   centerShift:Int32Array, refPoint:Float64Array, vertCounts:Uint32Array,
+ *   vertices:Float64Array, vertexSrcs:Uint32Array, vertexShifts:Int32Array}} merged
+ * @param {string[]} idxToElem
+ * @returns {Array<Object>}
+ */
+export function callAcceptCandidates(merged, idxToElem) {
+  const result = accept_candidates(
+    merged.isCage, merged.colorElem, merged.centerSrc, merged.centerShift, merged.refPoint,
+    merged.vertCounts, merged.vertices, merged.vertexSrcs, merged.vertexShifts,
+  );
+  const polyhedra = unpackAccepted(result, idxToElem);
+  result.free();
+  return polyhedra;
 }

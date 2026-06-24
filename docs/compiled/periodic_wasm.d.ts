@@ -2,6 +2,29 @@
 /* eslint-disable */
 
 /**
+ * Flattened candidate polyhedra for one worker partition (before acceptance). Centred
+ * candidates precede cage candidates; `n_centered` records the split so the main thread
+ * can regroup all workers' results into serial order. Layout mirrors
+ * `polyhedra::CandidateFlat`.
+ */
+export class CandidateResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    center_shift(): Int32Array;
+    center_src(): Int32Array;
+    color_elem(): Uint32Array;
+    count(): number;
+    is_cage(): Uint8Array;
+    n_centered(): number;
+    ref_point(): Float64Array;
+    vert_counts(): Uint32Array;
+    vertex_shifts(): Int32Array;
+    vertex_srcs(): Uint32Array;
+    vertices(): Float64Array;
+}
+
+/**
  * The flat arrays returned to JavaScript.
  * Each atom occupies one slot:
  *   elements[i]         – element index (u32, mirrors the input u32 array)
@@ -30,7 +53,6 @@ export class PolyhedraResult {
     free(): void;
     [Symbol.dispose](): void;
     accept_ms(): number;
-    band_kcore_ms(): number;
     bands_built(): number;
     bands_skipped(): number;
     cage_band_ms(): number;
@@ -39,7 +61,6 @@ export class PolyhedraResult {
     cages_ms(): number;
     center_src(): Int32Array;
     centered_ms(): number;
-    centered_voronoi_ms(): number;
     color_elem(): Uint32Array;
     count(): number;
     kinds(): Uint32Array;
@@ -48,6 +69,18 @@ export class PolyhedraResult {
     vertex_srcs(): Uint32Array;
     vertices(): Float64Array;
 }
+
+/**
+ * Parallel entry, part 2: accept the merged candidates (already in serial order) on the
+ * main thread. Inputs are the concatenated `CandidateResult` arrays. Timing fields are 0.
+ */
+export function accept_candidates(is_cage: Uint8Array, color_elem: Uint32Array, center_src: Int32Array, center_shift: Int32Array, ref_point: Float64Array, vert_counts: Uint32Array, vertices: Float64Array, vertex_srcs: Uint32Array, vertex_shifts: Int32Array): PolyhedraResult;
+
+/**
+ * Parallel entry, part 1: generate the candidates for centre range
+ * `[center_start,center_end)` and seed range `[seed_start,seed_end)`. Runs in a worker.
+ */
+export function compute_candidates(frac: Float64Array, elem_idx: Uint32Array, lattice_flat: Float64Array, cutoff_matrix: Float64Array, n_elem: number, electroneg: Float64Array, radii: Float64Array, max_cutoff: number, use_chem_filter: boolean, detect_cages: boolean, center_src: Uint32Array, center_shift: Int32Array, center_cart: Float64Array, visible_keys: Int32Array, seed_visible: Uint8Array, center_start: number, center_end: number, seed_start: number, seed_end: number): CandidateResult;
 
 /**
  * Compute coordination polyhedra. See `polyhedra::compute_polyhedra` for the
@@ -76,8 +109,22 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_candidateresult_free: (a: number, b: number) => void;
     readonly __wbg_periodicresult_free: (a: number, b: number) => void;
     readonly __wbg_polyhedraresult_free: (a: number, b: number) => void;
+    readonly accept_candidates: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number) => number;
+    readonly candidateresult_center_shift: (a: number) => [number, number];
+    readonly candidateresult_center_src: (a: number) => [number, number];
+    readonly candidateresult_color_elem: (a: number) => [number, number];
+    readonly candidateresult_count: (a: number) => number;
+    readonly candidateresult_is_cage: (a: number) => [number, number];
+    readonly candidateresult_n_centered: (a: number) => number;
+    readonly candidateresult_ref_point: (a: number) => [number, number];
+    readonly candidateresult_vert_counts: (a: number) => [number, number];
+    readonly candidateresult_vertex_shifts: (a: number) => [number, number];
+    readonly candidateresult_vertex_srcs: (a: number) => [number, number];
+    readonly candidateresult_vertices: (a: number) => [number, number];
+    readonly compute_candidates: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number) => number;
     readonly compute_polyhedra: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number) => number;
     readonly periodic_wrapped: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => number;
     readonly periodicresult_cart: (a: number) => [number, number];
@@ -86,7 +133,6 @@ export interface InitOutput {
     readonly periodicresult_len: (a: number) => number;
     readonly periodicresult_src_index: (a: number) => [number, number];
     readonly polyhedraresult_accept_ms: (a: number) => number;
-    readonly polyhedraresult_band_kcore_ms: (a: number) => number;
     readonly polyhedraresult_bands_built: (a: number) => number;
     readonly polyhedraresult_bands_skipped: (a: number) => number;
     readonly polyhedraresult_cage_band_ms: (a: number) => number;
@@ -95,7 +141,6 @@ export interface InitOutput {
     readonly polyhedraresult_cages_ms: (a: number) => number;
     readonly polyhedraresult_center_src: (a: number) => [number, number];
     readonly polyhedraresult_centered_ms: (a: number) => number;
-    readonly polyhedraresult_centered_voronoi_ms: (a: number) => number;
     readonly polyhedraresult_color_elem: (a: number) => [number, number];
     readonly polyhedraresult_count: (a: number) => number;
     readonly polyhedraresult_kinds: (a: number) => [number, number];

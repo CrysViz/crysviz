@@ -82,8 +82,6 @@ pub struct PolyhedraResult {
     cage_band_ms: f64,
     cage_nloop_ms: f64,
     accept_ms: f64,
-    centered_voronoi_ms: f64,
-    band_kcore_ms: f64,
     bands_built: u32,
     bands_skipped: u32,
 }
@@ -113,12 +111,6 @@ impl PolyhedraResult {
     }
     pub fn accept_ms(&self) -> f64 {
         self.accept_ms
-    }
-    pub fn centered_voronoi_ms(&self) -> f64 {
-        self.centered_voronoi_ms
-    }
-    pub fn band_kcore_ms(&self) -> f64 {
-        self.band_kcore_ms
     }
     pub fn bands_built(&self) -> u32 {
         self.bands_built
@@ -198,10 +190,147 @@ pub fn compute_polyhedra(
         cage_band_ms: r.cage_band_ms,
         cage_nloop_ms: r.cage_nloop_ms,
         accept_ms: r.accept_ms,
-        centered_voronoi_ms: r.centered_voronoi_ms,
-        band_kcore_ms: r.band_kcore_ms,
         bands_built: r.bands_built,
         bands_skipped: r.bands_skipped,
+    }
+}
+
+/// Flattened candidate polyhedra for one worker partition (before acceptance). Centred
+/// candidates precede cage candidates; `n_centered` records the split so the main thread
+/// can regroup all workers' results into serial order. Layout mirrors
+/// `polyhedra::CandidateFlat`.
+#[wasm_bindgen]
+pub struct CandidateResult {
+    is_cage: Vec<u8>,
+    color_elem: Vec<u32>,
+    center_src: Vec<i32>,
+    center_shift: Vec<i32>,
+    ref_point: Vec<f64>,
+    vert_counts: Vec<u32>,
+    vertices: Vec<f64>,
+    vertex_srcs: Vec<u32>,
+    vertex_shifts: Vec<i32>,
+    n_centered: u32,
+}
+
+#[wasm_bindgen]
+impl CandidateResult {
+    pub fn is_cage(&self) -> Vec<u8> {
+        self.is_cage.clone()
+    }
+    pub fn color_elem(&self) -> Vec<u32> {
+        self.color_elem.clone()
+    }
+    pub fn center_src(&self) -> Vec<i32> {
+        self.center_src.clone()
+    }
+    pub fn center_shift(&self) -> Vec<i32> {
+        self.center_shift.clone()
+    }
+    pub fn ref_point(&self) -> Vec<f64> {
+        self.ref_point.clone()
+    }
+    pub fn vert_counts(&self) -> Vec<u32> {
+        self.vert_counts.clone()
+    }
+    pub fn vertices(&self) -> Vec<f64> {
+        self.vertices.clone()
+    }
+    pub fn vertex_srcs(&self) -> Vec<u32> {
+        self.vertex_srcs.clone()
+    }
+    pub fn vertex_shifts(&self) -> Vec<i32> {
+        self.vertex_shifts.clone()
+    }
+    pub fn n_centered(&self) -> u32 {
+        self.n_centered
+    }
+    pub fn count(&self) -> usize {
+        self.vert_counts.len()
+    }
+}
+
+/// Parallel entry, part 1: generate the candidates for centre range
+/// `[center_start,center_end)` and seed range `[seed_start,seed_end)`. Runs in a worker.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn compute_candidates(
+    frac: &[f64],
+    elem_idx: &[u32],
+    lattice_flat: &[f64],
+    cutoff_matrix: &[f64],
+    n_elem: usize,
+    electroneg: &[f64],
+    radii: &[f64],
+    max_cutoff: f64,
+    use_chem_filter: bool,
+    detect_cages: bool,
+    center_src: &[u32],
+    center_shift: &[i32],
+    center_cart: &[f64],
+    visible_keys: &[i32],
+    seed_visible: &[u8],
+    center_start: usize,
+    center_end: usize,
+    seed_start: usize,
+    seed_end: usize,
+) -> CandidateResult {
+    let (cands, _timing) = polyhedra::build_candidates(
+        frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, radii, max_cutoff,
+        use_chem_filter, detect_cages, center_src, center_shift, center_cart, visible_keys,
+        seed_visible, center_start, center_end, seed_start, seed_end,
+    );
+    let f = polyhedra::flatten_candidates(&cands);
+    CandidateResult {
+        is_cage: f.is_cage,
+        color_elem: f.color_elem,
+        center_src: f.center_src,
+        center_shift: f.center_shift,
+        ref_point: f.ref_point,
+        vert_counts: f.vert_counts,
+        vertices: f.vertices,
+        vertex_srcs: f.vertex_srcs,
+        vertex_shifts: f.vertex_shifts,
+        n_centered: f.n_centered,
+    }
+}
+
+/// Parallel entry, part 2: accept the merged candidates (already in serial order) on the
+/// main thread. Inputs are the concatenated `CandidateResult` arrays. Timing fields are 0.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn accept_candidates(
+    is_cage: &[u8],
+    color_elem: &[u32],
+    center_src: &[i32],
+    center_shift: &[i32],
+    ref_point: &[f64],
+    vert_counts: &[u32],
+    vertices: &[f64],
+    vertex_srcs: &[u32],
+    vertex_shifts: &[i32],
+) -> PolyhedraResult {
+    let cands = polyhedra::unflatten_candidates(
+        is_cage, color_elem, center_src, center_shift, ref_point, vert_counts, vertices,
+        vertex_srcs, vertex_shifts,
+    );
+    let acc = polyhedra::accept(cands);
+    PolyhedraResult {
+        kinds: acc.kinds,
+        color_elem: acc.color_elem,
+        center_src: acc.center_src,
+        vert_counts: acc.vert_counts,
+        vertices: acc.vertices,
+        vertex_srcs: acc.vertex_srcs,
+        setup_ms: 0.0,
+        centered_ms: 0.0,
+        cages_ms: 0.0,
+        cage_pool_ms: 0.0,
+        cage_band_ms: 0.0,
+        cage_nloop_ms: 0.0,
+        accept_ms: 0.0,
+        bands_built: 0,
+        bands_skipped: 0,
     }
 }
 

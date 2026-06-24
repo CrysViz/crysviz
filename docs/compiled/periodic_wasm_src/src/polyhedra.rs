@@ -7,8 +7,19 @@
 
 use crate::convex_hull::{convex_hull, cross, Hull};
 use crate::linalg::{Matrix33, Vec3};
-use js_sys::Date;
-use std::collections::{HashMap, HashSet};
+/// Millisecond clock — `js_sys::Date::now()` on wasm, 0.0 under native `cargo test`
+/// (where there is no JS host and it would panic). Timing is only used for the log.
+#[cfg(target_arch = "wasm32")]
+#[inline]
+fn now() -> f64 {
+    js_sys::Date::now()
+}
+#[cfg(not(target_arch = "wasm32"))]
+#[inline]
+fn now() -> f64 {
+    0.0
+}
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Cap on candidates fed to the radical-Voronoi cell per centre. The cell of a
 /// centre is bounded entirely by its closest atoms; an atom farther than the
@@ -82,7 +93,7 @@ struct PoolEntry {
     shift: [i32; 3],
 }
 
-struct Candidate {
+pub struct Candidate {
     is_cage: bool,
     color_elem: u32,
     center_src: i32,
@@ -107,8 +118,6 @@ pub struct ComputedPolyhedra {
     pub cage_band_ms: f64,
     pub cage_nloop_ms: f64,
     pub accept_ms: f64,
-    pub centered_voronoi_ms: f64,
-    pub band_kcore_ms: f64,
     pub bands_built: u32,
     pub bands_skipped: u32,
 }
@@ -300,7 +309,9 @@ fn voronoi_neighbours(
     };
 
     // Each hull facet ↔ a Voronoi-cell vertex (meeting of that facet's planes).
-    let mut cell_verts: HashMap<usize, Vec<Vec3>> = HashMap::new();
+    // BTreeMap (not HashMap) so iteration is by plane index — deterministic vertex
+    // order, independent of hasher seed, so serial and parallel results are identical.
+    let mut cell_verts: BTreeMap<usize, Vec<Vec3>> = BTreeMap::new();
     for f in &hull.faces {
         let idxs = [f.v[0], f.v[1], f.v[2]];
         if let Some(v) = intersect_3_planes(&planes[idxs[0]], &planes[idxs[1]], &planes[idxs[2]]) {
@@ -637,8 +648,25 @@ fn is_ligand_of(nbr: usize, center: usize, electroneg: &[f64], filter: bool) -> 
 // Main compute
 // ---------------------------------------------------------------------------
 
+/// Phase timings produced while building candidates (the serial path keeps them for
+/// the diagnostic log; the parallel path ignores them).
+pub struct BuildTiming {
+    pub setup_ms: f64,
+    pub centered_ms: f64,
+    pub cages_ms: f64,
+    pub cage_pool_ms: f64,
+    pub cage_band_ms: f64,
+    pub cage_nloop_ms: f64,
+    pub bands_built: u32,
+    pub bands_skipped: u32,
+}
+
+/// Generate the (unfiltered) candidate polyhedra for the centre range
+/// `[center_start,center_end)` and the seed range `[seed_start,seed_end)`. Centred
+/// candidates are pushed before cage candidates, so concatenating workers' results in
+/// ascending range order reproduces the serial insertion order exactly.
 #[allow(clippy::too_many_arguments)]
-pub fn compute_polyhedra(
+pub fn build_candidates(
     frac: &[f64],
     elem_idx: &[u32],
     lat: &[f64],
@@ -654,8 +682,12 @@ pub fn compute_polyhedra(
     center_cart: &[f64],
     visible_keys: &[i32],
     seed_visible: &[u8],
-) -> ComputedPolyhedra {
-    let t0 = Date::now();
+    center_start: usize,
+    center_end: usize,
+    seed_start: usize,
+    seed_end: usize,
+) -> (Vec<Candidate>, BuildTiming) {
+    let t0 = now();
     let n_atoms = elem_idx.len();
     let cutoff = |ei: usize, ej: usize| -> f64 {
         if ei < n_elem && ej < n_elem {
@@ -810,17 +842,14 @@ pub fn compute_polyhedra(
         }
     }
 
-    let t_setup = Date::now();
+    let t_setup = now();
     let mut candidates: Vec<Candidate> = Vec::new();
-    // Diagnostics.
-    let mut centered_voronoi_ms = 0.0_f64;
-    let mut band_kcore_ms = 0.0_f64;
+    // Diagnostics (cheap counters; the gate's effectiveness on this structure).
     let mut bands_built: u32 = 0;
     let mut bands_skipped: u32 = 0;
 
     // ---- Centered ----
-    let n_centers = center_src.len();
-    for ci in 0..n_centers {
+    for ci in center_start..center_end {
         let src = center_src[ci];
         let shift = [center_shift[3 * ci], center_shift[3 * ci + 1], center_shift[3 * ci + 2]];
         let center_pos = Vec3::new(center_cart[3 * ci], center_cart[3 * ci + 1], center_cart[3 * ci + 2]);
@@ -844,9 +873,7 @@ pub fn compute_polyhedra(
             let cut = cutoff(center_elem, cand.elem);
             cut > 1e-3 && cand.d <= cut
         };
-        let tv = Date::now();
         let vor = voronoi_neighbours(center_pos, &cands, center_radius, &accept);
-        centered_voronoi_ms += Date::now() - tv;
 
         // Keep one entry per visible image (nearest), discard non-displayed ghosts.
         let mut by_image: HashMap<Key, usize> = HashMap::new();
@@ -891,7 +918,7 @@ pub fn compute_polyhedra(
         });
     }
 
-    let t_centered = Date::now();
+    let t_centered = now();
 
     // ---- Cages ----
     let mut cage_pool_ms = 0.0_f64;
@@ -905,7 +932,7 @@ pub fn compute_polyhedra(
         let mut next_frontier: Vec<PoolEntry> = Vec::new();
         let mut kcore = KCore::new(n_atoms);
 
-        for seed in 0..n_atoms {
+        for seed in seed_start..seed_end {
             if seed_visible[seed] == 0 {
                 continue;
             }
@@ -914,7 +941,7 @@ pub fn compute_polyhedra(
             // Frontier BFS in image space: always reach depth 3, then keep going
             // until ≥40 visible images or CAGE_BFS_DEPTH. The visible count is
             // tracked incrementally, so we never re-scan/clone the pool mid-expand.
-            let tp = Date::now();
+            let tp = now();
             visited_set.clear();
             order.clear();
             frontier.clear();
@@ -959,7 +986,7 @@ pub fn compute_polyhedra(
                 .filter(|e| visible.contains(&image_key(e.src, e.shift)))
                 .cloned()
                 .collect();
-            cage_pool_ms += Date::now() - tp;
+            cage_pool_ms += now() - tp;
             if pool.len() < 4 {
                 continue;
             }
@@ -998,7 +1025,7 @@ pub fn compute_polyhedra(
                 base_verts: Vec<PoolEntry>,
                 spread_order: Vec<usize>,
             }
-            let tb = Date::now();
+            let tb = now();
             let mut band_hulls: Vec<BandHull> = Vec::with_capacity(bands.len());
             for &(lo, hi) in &bands {
                 let band: Vec<PoolEntry> = pool
@@ -1017,9 +1044,7 @@ pub fn compute_polyhedra(
                 // in the set, so a band whose induced bond 2-core is smaller can never
                 // yield a cage — skip its (expensive) convex hull. Coordination shells
                 // (no ligand–ligand bonds) have an empty 2-core and are skipped here.
-                let tk = Date::now();
                 let core = kcore.two_core_size(&band, &adjacency);
-                band_kcore_ms += Date::now() - tk;
                 if core < 4 {
                     bands_skipped += 1;
                     band_hulls.push(BandHull { band, base_verts: Vec::new(), spread_order: Vec::new() });
@@ -1039,9 +1064,9 @@ pub fn compute_polyhedra(
                 };
                 band_hulls.push(BandHull { band, base_verts, spread_order });
             }
-            cage_band_ms += Date::now() - tb;
+            cage_band_ms += now() - tb;
 
-            let tn = Date::now();
+            let tn = now();
             for &target in &CAGE_TARGET_NS_DESC {
                 let mut built = false;
                 for bh in &band_hulls {
@@ -1102,13 +1127,39 @@ pub fn compute_polyhedra(
                 }
                 let _ = built;
             }
-            cage_nloop_ms += Date::now() - tn;
+            cage_nloop_ms += now() - tn;
         }
     }
 
-    let t_cages = Date::now();
+    let t_cages = now();
 
-    // ---- Global acceptance (sort, nesting, center-not-corner) ----
+    let timing = BuildTiming {
+        setup_ms: t_setup - t0,
+        centered_ms: t_centered - t_setup,
+        cages_ms: t_cages - t_centered,
+        cage_pool_ms,
+        cage_band_ms,
+        cage_nloop_ms,
+        bands_built,
+        bands_skipped,
+    };
+    (candidates, timing)
+}
+
+/// The bare accepted-polyhedra output (no timing).
+pub struct AcceptOutput {
+    pub kinds: Vec<u32>,
+    pub color_elem: Vec<u32>,
+    pub center_src: Vec<i32>,
+    pub vert_counts: Vec<u32>,
+    pub vertices: Vec<f64>,
+    pub vertex_srcs: Vec<u32>,
+}
+
+/// Global acceptance: sort (larger-first, with the centred/cage tie rules), then keep a
+/// candidate only if it isn't nested in an already-accepted hull and (for cages) uses no
+/// already-accepted centre image. Order-sensitive — `candidates` must be in serial order.
+pub fn accept(mut candidates: Vec<Candidate>) -> AcceptOutput {
     candidates.sort_by(|x, y| {
         let (na, nb) = (x.pos_list.len(), y.pos_list.len());
         if na != nb {
@@ -1135,24 +1186,13 @@ pub fn compute_polyhedra(
 
     let mut accepted_center_keys: HashSet<Key> = HashSet::new();
     let mut accepted_hulls: Vec<Hull> = Vec::new();
-    let mut out = ComputedPolyhedra {
+    let mut out = AcceptOutput {
         kinds: Vec::new(),
         color_elem: Vec::new(),
         center_src: Vec::new(),
         vert_counts: Vec::new(),
         vertices: Vec::new(),
         vertex_srcs: Vec::new(),
-        setup_ms: t_setup - t0,
-        centered_ms: t_centered - t_setup,
-        cages_ms: t_cages - t_centered,
-        cage_pool_ms,
-        cage_band_ms,
-        cage_nloop_ms,
-        accept_ms: 0.0,
-        centered_voronoi_ms,
-        band_kcore_ms,
-        bands_built,
-        bands_skipped,
     };
 
     for cand in &candidates {
@@ -1193,6 +1233,317 @@ pub fn compute_polyhedra(
         accepted_hulls.push(hull);
     }
 
-    out.accept_ms = Date::now() - t_cages;
     out
+}
+
+/// Serial entry: build all candidates then accept, with full timing for the diagnostic log.
+#[allow(clippy::too_many_arguments)]
+pub fn compute_polyhedra(
+    frac: &[f64],
+    elem_idx: &[u32],
+    lat: &[f64],
+    cutoff_matrix: &[f64],
+    n_elem: usize,
+    electroneg: &[f64],
+    radii: &[f64],
+    max_cutoff: f64,
+    use_chem_filter: bool,
+    detect_cages: bool,
+    center_src: &[u32],
+    center_shift: &[i32],
+    center_cart: &[f64],
+    visible_keys: &[i32],
+    seed_visible: &[u8],
+) -> ComputedPolyhedra {
+    let n_atoms = elem_idx.len();
+    let n_centers = center_src.len();
+    let (candidates, bt) = build_candidates(
+        frac, elem_idx, lat, cutoff_matrix, n_elem, electroneg, radii, max_cutoff,
+        use_chem_filter, detect_cages, center_src, center_shift, center_cart, visible_keys,
+        seed_visible, 0, n_centers, 0, n_atoms,
+    );
+    let ta = now();
+    let acc = accept(candidates);
+    let accept_ms = now() - ta;
+    ComputedPolyhedra {
+        kinds: acc.kinds,
+        color_elem: acc.color_elem,
+        center_src: acc.center_src,
+        vert_counts: acc.vert_counts,
+        vertices: acc.vertices,
+        vertex_srcs: acc.vertex_srcs,
+        setup_ms: bt.setup_ms,
+        centered_ms: bt.centered_ms,
+        cages_ms: bt.cages_ms,
+        cage_pool_ms: bt.cage_pool_ms,
+        cage_band_ms: bt.cage_band_ms,
+        cage_nloop_ms: bt.cage_nloop_ms,
+        accept_ms,
+        bands_built: bt.bands_built,
+        bands_skipped: bt.bands_skipped,
+    }
+}
+
+/// Flat, JS-marshallable form of a candidate list. Centred candidates precede cage ones;
+/// `n_centered` records the split so workers' results can be regrouped in serial order.
+pub struct CandidateFlat {
+    pub is_cage: Vec<u8>,
+    pub color_elem: Vec<u32>,
+    pub center_src: Vec<i32>,
+    pub center_shift: Vec<i32>, // 3 per candidate
+    pub ref_point: Vec<f64>,    // 3 per candidate
+    pub vert_counts: Vec<u32>,
+    pub vertices: Vec<f64>,     // 3 per vertex
+    pub vertex_srcs: Vec<u32>,  // 1 per vertex
+    pub vertex_shifts: Vec<i32>, // 3 per vertex (meaningful for cages)
+    pub n_centered: u32,
+}
+
+pub fn flatten_candidates(candidates: &[Candidate]) -> CandidateFlat {
+    let mut f = CandidateFlat {
+        is_cage: Vec::new(),
+        color_elem: Vec::new(),
+        center_src: Vec::new(),
+        center_shift: Vec::new(),
+        ref_point: Vec::new(),
+        vert_counts: Vec::new(),
+        vertices: Vec::new(),
+        vertex_srcs: Vec::new(),
+        vertex_shifts: Vec::new(),
+        n_centered: 0,
+    };
+    for c in candidates {
+        if !c.is_cage {
+            f.n_centered += 1;
+        }
+        f.is_cage.push(c.is_cage as u8);
+        f.color_elem.push(c.color_elem);
+        f.center_src.push(c.center_src);
+        f.center_shift.extend_from_slice(&c.center_shift);
+        f.ref_point.extend_from_slice(&[c.ref_point.x, c.ref_point.y, c.ref_point.z]);
+        f.vert_counts.push(c.pos_list.len() as u32);
+        for (vi, p) in c.pos_list.iter().enumerate() {
+            f.vertices.extend_from_slice(&[p.x, p.y, p.z]);
+            f.vertex_srcs.push(c.vertex_src_list[vi]);
+            // Per-vertex shift: present for cages (center-not-corner needs it), 0 otherwise.
+            let sh = c.vertex_image_list.get(vi).map(|&(_, s)| s).unwrap_or([0, 0, 0]);
+            f.vertex_shifts.extend_from_slice(&sh);
+        }
+    }
+    f
+}
+
+/// Inverse of `flatten_candidates` over a concatenation of worker results (already in
+/// serial order). Slices are the flat arrays defined on `CandidateFlat`.
+#[allow(clippy::too_many_arguments)]
+pub fn unflatten_candidates(
+    is_cage: &[u8],
+    color_elem: &[u32],
+    center_src: &[i32],
+    center_shift: &[i32],
+    ref_point: &[f64],
+    vert_counts: &[u32],
+    vertices: &[f64],
+    vertex_srcs: &[u32],
+    vertex_shifts: &[i32],
+) -> Vec<Candidate> {
+    let mut out = Vec::with_capacity(vert_counts.len());
+    let mut voff = 0usize; // vertex offset
+    for ci in 0..vert_counts.len() {
+        let cage = is_cage[ci] != 0;
+        let n = vert_counts[ci] as usize;
+        let mut pos_list = Vec::with_capacity(n);
+        let mut vertex_src_list = Vec::with_capacity(n);
+        let mut vertex_image_list = Vec::new();
+        for k in 0..n {
+            let v = voff + k;
+            pos_list.push(Vec3::new(vertices[3 * v], vertices[3 * v + 1], vertices[3 * v + 2]));
+            vertex_src_list.push(vertex_srcs[v]);
+            if cage {
+                vertex_image_list.push((
+                    vertex_srcs[v],
+                    [vertex_shifts[3 * v], vertex_shifts[3 * v + 1], vertex_shifts[3 * v + 2]],
+                ));
+            }
+        }
+        voff += n;
+        out.push(Candidate {
+            is_cage: cage,
+            color_elem: color_elem[ci],
+            center_src: center_src[ci],
+            center_shift: [center_shift[3 * ci], center_shift[3 * ci + 1], center_shift[3 * ci + 2]],
+            pos_list,
+            vertex_src_list,
+            vertex_image_list,
+            ref_point: Vec3::new(ref_point[3 * ci], ref_point[3 * ci + 1], ref_point[3 * ci + 2]),
+        });
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A cation octahedrally coordinated by 6 anions in a roomy 20 Å cell (no periodic
+    /// images in range). Produces exactly one centred CN-6 polyhedron.
+    struct Inputs {
+        frac: Vec<f64>,
+        elem: Vec<u32>,
+        lat: Vec<f64>,
+        cutoff: Vec<f64>,
+        n_elem: usize,
+        electroneg: Vec<f64>,
+        radii: Vec<f64>,
+        max_cutoff: f64,
+        center_src: Vec<u32>,
+        center_shift: Vec<i32>,
+        center_cart: Vec<f64>,
+        visible_keys: Vec<i32>,
+        seed_visible: Vec<u8>,
+    }
+
+    fn octahedron() -> Inputs {
+        let l = 20.0;
+        // cation at centre, 6 anions ±2 Å along each axis.
+        let frac = vec![
+            0.5, 0.5, 0.5, // cation
+            0.6, 0.5, 0.5, 0.4, 0.5, 0.5, // ±x
+            0.5, 0.6, 0.5, 0.5, 0.4, 0.5, // ±y
+            0.5, 0.5, 0.6, 0.5, 0.5, 0.4, // ±z
+        ];
+        let n = 7;
+        let elem = vec![0u32, 1, 1, 1, 1, 1, 1];
+        let lat = vec![l, 0.0, 0.0, 0.0, l, 0.0, 0.0, 0.0, l];
+        // cutoff matrix 2×2: only cation(0)-anion(1) bond.
+        let cutoff = vec![0.0, 2.5, 2.5, 0.0];
+        let electroneg = vec![1.0, 3.0];
+        let radii = vec![1.0, 1.0];
+        let mut center_cart = vec![0.0; 3 * n];
+        for i in 0..n {
+            for d in 0..3 {
+                center_cart[3 * i + d] = frac[3 * i + d] * l;
+            }
+        }
+        let center_src: Vec<u32> = (0..n as u32).collect();
+        let center_shift = vec![0i32; 3 * n];
+        let mut visible_keys = Vec::new();
+        for i in 0..n as i32 {
+            visible_keys.extend_from_slice(&[i, 0, 0, 0]);
+        }
+        Inputs {
+            frac,
+            elem,
+            lat,
+            cutoff,
+            n_elem: 2,
+            electroneg,
+            radii,
+            max_cutoff: 2.5,
+            center_src,
+            center_shift,
+            center_cart,
+            visible_keys,
+            seed_visible: vec![1u8; n],
+        }
+    }
+
+    fn build(inp: &Inputs, cs: usize, ce: usize, ss: usize, se: usize) -> Vec<Candidate> {
+        build_candidates(
+            &inp.frac, &inp.elem, &inp.lat, &inp.cutoff, inp.n_elem, &inp.electroneg, &inp.radii,
+            inp.max_cutoff, true, true, &inp.center_src, &inp.center_shift, &inp.center_cart,
+            &inp.visible_keys, &inp.seed_visible, cs, ce, ss, se,
+        )
+        .0
+    }
+
+    fn assert_same(a: &AcceptOutput, b: &AcceptOutput) {
+        assert_eq!(a.kinds, b.kinds, "kinds");
+        assert_eq!(a.color_elem, b.color_elem, "color_elem");
+        assert_eq!(a.center_src, b.center_src, "center_src");
+        assert_eq!(a.vert_counts, b.vert_counts, "vert_counts");
+        assert_eq!(a.vertex_srcs, b.vertex_srcs, "vertex_srcs");
+        assert_eq!(a.vertices, b.vertices, "vertices");
+    }
+
+    /// Merge partitioned candidates into serial order (all centred, then all cage).
+    fn merge_serial(parts: Vec<Vec<Candidate>>) -> Vec<Candidate> {
+        let mut centered = Vec::new();
+        let mut cage = Vec::new();
+        for p in parts {
+            for c in p {
+                if c.is_cage {
+                    cage.push(c);
+                } else {
+                    centered.push(c);
+                }
+            }
+        }
+        centered.extend(cage);
+        centered
+    }
+
+    #[test]
+    fn octahedron_is_found() {
+        let inp = octahedron();
+        let out = accept(build(&inp, 0, 7, 0, 7));
+        assert_eq!(out.kinds, vec![0]); // one centred polyhedron
+        assert_eq!(out.center_src, vec![0]); // around the cation
+        assert_eq!(out.vert_counts, vec![6]); // CN-6
+    }
+
+    #[test]
+    fn partitioned_matches_serial() {
+        let inp = octahedron();
+        let full = accept(build(&inp, 0, 7, 0, 7));
+        // Split centres and seeds into two ranges.
+        let p0 = build(&inp, 0, 3, 0, 3);
+        let p1 = build(&inp, 3, 7, 3, 7);
+        let merged = accept(merge_serial(vec![p0, p1]));
+        assert_same(&full, &merged);
+    }
+
+    #[test]
+    fn flatten_roundtrip_matches() {
+        let inp = octahedron();
+        let cands = build(&inp, 0, 7, 0, 7);
+        let full = accept(build(&inp, 0, 7, 0, 7));
+        let f = flatten_candidates(&cands);
+        let restored = unflatten_candidates(
+            &f.is_cage, &f.color_elem, &f.center_src, &f.center_shift, &f.ref_point,
+            &f.vert_counts, &f.vertices, &f.vertex_srcs, &f.vertex_shifts,
+        );
+        assert_same(&full, &accept(restored));
+    }
+
+    #[test]
+    fn flatten_roundtrip_preserves_cage_shifts() {
+        // A hand-built cage candidate with non-zero per-vertex shifts must survive the
+        // flatten/unflatten marshalling (the center-not-corner test depends on it).
+        let cand = Candidate {
+            is_cage: true,
+            color_elem: 5,
+            center_src: -1,
+            center_shift: [0, 0, 0],
+            pos_list: vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+                Vec3::new(0.0, 0.0, 1.0),
+            ],
+            vertex_src_list: vec![3, 7, 2, 9],
+            vertex_image_list: vec![(3, [1, 0, 0]), (7, [0, -1, 0]), (2, [0, 0, 1]), (9, [1, 1, -1])],
+            ref_point: Vec3::new(0.25, 0.25, 0.25),
+        };
+        let f = flatten_candidates(std::slice::from_ref(&cand));
+        let r = unflatten_candidates(
+            &f.is_cage, &f.color_elem, &f.center_src, &f.center_shift, &f.ref_point,
+            &f.vert_counts, &f.vertices, &f.vertex_srcs, &f.vertex_shifts,
+        );
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].vertex_image_list, cand.vertex_image_list);
+        assert_eq!(r[0].vertex_src_list, cand.vertex_src_list);
+        assert_eq!(r[0].color_elem, cand.color_elem);
+        assert!(r[0].is_cage);
+    }
 }
