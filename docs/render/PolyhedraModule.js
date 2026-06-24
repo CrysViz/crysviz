@@ -272,6 +272,7 @@ export function computePolyhedra(structure) {
   // ---------- Perf timing ----------
   const _t0 = performance.now();
   let _tSetup = _t0, _tCentered = _t0, _tCages = _t0;
+  let _cagePoolMs = 0; // time spent building per-seed BFS pools (subset of cages)
 
   // ---------- Periodic-image neighbour graph ----------
   const positions = structure.atoms.map(a => a.position); // fractional
@@ -547,45 +548,61 @@ export function computePolyhedra(structure) {
     // BFS in image space: each node is a concrete periodic image keyed by
     // (src, shift), so a boundary-straddling shell stays spatially contiguous
     // (the old in-cell pool was the main source of partial cages).
-    function buildPoolForSeed(seedI, depthMax) {
+    //
+    // Expanded a single depth-level at a time (frontier BFS) and stopped at the
+    // same depth as before (always ≥3, then deeper until ≥40 visible images or
+    // CAGE_BFS_DEPTH). This visits each image once instead of rebuilding the whole
+    // BFS from scratch for depth 3, then 4, then 5. The returned pool (visible
+    // images only) is identical to the old code's final iteration.
+    //
+    // The neighbour images of a node are its source atom's cached base neighbours
+    // translated by the node's own lattice shift — no per-node atom rescan.
+    function buildPoolForSeed(seedI) {
       const startKey = `${seedI}:0,0,0`;
       /** @type {Map<string, {pos:THREE.Vector3, src:number, shift:[number,number,number], depth:number}>} */
       const visited = new Map();
-      visited.set(startKey, { pos: baseCart[seedI], src: seedI, shift: [0,0,0], depth: 0 });
-      const queue = [startKey];
-      // Head pointer instead of Array.shift() (which is O(n), making the BFS
-      // O(n^2)); the neighbour images of a node are its source atom's cached base
-      // neighbours translated by the node's own lattice shift — no atom rescan.
-      let head = 0;
-      while (head < queue.length) {
-        const node = visited.get(queue[head++]);
-        if (!node || node.depth === depthMax) continue;
-        const sx = node.shift[0], sy = node.shift[1], sz = node.shift[2];
-        for (const o of baseNeighbors[node.src]) {
-          const ndx = o.shift[0] + sx, ndy = o.shift[1] + sy, ndz = o.shift[2] + sz;
-          const k = `${o.srcJ}:${ndx},${ndy},${ndz}`;
-          if (!visited.has(k)) {
-            const pos = baseCart[o.srcJ].clone()
-              .addScaledVector(a, ndx).addScaledVector(b, ndy).addScaledVector(c, ndz);
-            visited.set(k, { pos, src: o.srcJ, shift: [ndx, ndy, ndz], depth: node.depth + 1 });
-            queue.push(k);
+      const start = { pos: baseCart[seedI], src: seedI, shift: /** @type {[number,number,number]} */ ([0, 0, 0]), depth: 0 };
+      visited.set(startKey, start);
+      let frontier = [start];
+      let depth = 0;
+      const expand = () => {
+        const next = [];
+        for (const node of frontier) {
+          const sx = node.shift[0], sy = node.shift[1], sz = node.shift[2];
+          for (const o of baseNeighbors[node.src]) {
+            const ndx = o.shift[0] + sx, ndy = o.shift[1] + sy, ndz = o.shift[2] + sz;
+            const k = `${o.srcJ}:${ndx},${ndy},${ndz}`;
+            if (!visited.has(k)) {
+              const pos = baseCart[o.srcJ].clone()
+                .addScaledVector(a, ndx).addScaledVector(b, ndy).addScaledVector(c, ndz);
+              const nn = { pos, src: o.srcJ, shift: /** @type {[number,number,number]} */ ([ndx, ndy, ndz]), depth: depth + 1 };
+              visited.set(k, nn);
+              next.push(nn);
+            }
           }
         }
+        frontier = next;
+        depth++;
+      };
+      const visiblePool = () => Array.from(visited.values())
+        .filter((e) => visibleImageKeys.has(imageKey(e.src, e.shift)));
+
+      while (depth < 3 && frontier.length) expand(); // always reach depth 3
+      let pool = visiblePool();
+      while (pool.length < 40 && depth < CAGE_BFS_DEPTH && frontier.length) { // heuristic ≥2×N
+        expand();
+        pool = visiblePool();
       }
-      return Array.from(visited.values()); // [{pos, src, shift, depth}]
+      return pool;
     }
 
     for (let seedI=0; seedI<nAtoms; seedI++) {
       if (!isAtomImageVisible(baseCart[seedI].toArray(), structure.atoms[seedI], activeCutPlanes)) continue;
       const seedElem = elements[seedI];
 
-      // expand pool up to depth until we have plenty of candidates for N=20
-      let depth = 3;
-      let pool = buildPoolForSeed(seedI, depth).filter((entry) => visibleImageKeys.has(imageKey(entry.src, entry.shift)));
-      while (pool.length < 40 && depth < CAGE_BFS_DEPTH) { // heuristic ≥2×N
-        depth++;
-        pool = buildPoolForSeed(seedI, depth).filter((entry) => visibleImageKeys.has(imageKey(entry.src, entry.shift)));
-      }
+      const _p0 = performance.now();
+      const pool = buildPoolForSeed(seedI);
+      _cagePoolMs += performance.now() - _p0;
       if (pool.length < 4) continue;
 
       // reference: centroid of pool (better shell center)
@@ -774,7 +791,7 @@ export function computePolyhedra(structure) {
   console.log(
     `[polyhedra] total=${ms(_tEnd - _t0)}ms ` +
     `setup=${ms(_tSetup - _t0)} centered=${ms(_tCentered - _tSetup)} ` +
-    `cages=${ms(_tCages - _tCentered)} accept=${ms(_tEnd - _tCages)} | ` +
+    `cages=${ms(_tCages - _tCentered)}(pool=${ms(_cagePoolMs)}) accept=${ms(_tEnd - _tCages)} | ` +
     `atoms=${nAtoms} centers=${displayCenters.length} ` +
     `candidates=${candidates.length} accepted=${accepted.length} ` +
     `detectCages=${detectCages}`
