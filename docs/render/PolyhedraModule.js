@@ -7,6 +7,7 @@ import { getBondCutoff} from '../render/BondsFracUpdateModule.js'
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import { Polyhedra } from '../model/Polyhedra.js'
 import { Polyhedron } from '../model/Polyhedron.js'
+import { getCutPlaneMaskSign } from '../model/Plane.js'
 import { voronoiNeighbours } from '../render/VoronoiNeighbours.js'
 import { atomicRadii } from '../defaults/radii_defaults.js'
 import { electronegativity } from '../defaults/electronegativity_defaults.js'
@@ -175,6 +176,35 @@ function imageKey(src, shift) {
   return `${src}:${shift[0]},${shift[1]},${shift[2]}`;
 }
 
+function getActiveCutPlanes() {
+  return (general.atomCutPlanes || []).filter((plane) => plane?.enabled);
+}
+
+function normalizeCutPlaneNormal(x = 1, y = 0, z = 0) {
+  const nx = Number(x) || 0;
+  const ny = Number(y) || 0;
+  const nz = Number(z) || 0;
+  const length = Math.hypot(nx, ny, nz);
+  if (length < 1e-8) return [1, 0, 0];
+  return [nx / length, ny / length, nz / length];
+}
+
+function isPointCutByPlanes(position, cutPlanes) {
+  if (!Array.isArray(position) || position.length < 3) return false;
+  return cutPlanes.some((plane) => {
+    const [nx, ny, nz] = normalizeCutPlaneNormal(plane.x, plane.y, plane.z);
+    const maskSign = getCutPlaneMaskSign(plane.side);
+    const planeSide = ((position[0] * nx) + (position[1] * ny) + (position[2] * nz) - (Number(plane.r) || 0)) * maskSign;
+    return planeSide > 0;
+  });
+}
+
+function isAtomImageVisible(position, atom, cutPlanes) {
+  if (!cutPlanes.length) return true;
+  if (atom?.cutPlaneImmune) return true;
+  return !isPointCutByPlanes(position, cutPlanes);
+}
+
 // Spherical farthest-point sampling: pick N vertices well spread (angle-based)
 function pickSpreadSubset(points, N) {
   if (points.length < N) return null;
@@ -251,6 +281,7 @@ export function computePolyhedra(structure) {
   const nAtoms = baseCart.length;
   const latInv = invert3x3(transpose3x3(lattice));
   const dispWrapped = structure.periodic?.wrapped;
+  const activeCutPlanes = getActiveCutPlanes();
 
   // Build the set of atom images that are actually visible to the user right now.
   // This comes only from `structure.periodic.wrapped`, which is the shared display
@@ -265,12 +296,23 @@ export function computePolyhedra(structure) {
   // - If there is no wrapped data at all, fall back to the primary-cell view only.
   const visibleImageKeys = new Set();
   const visibleImageCountsBySource = new Map();
+  /** @type {Array<{cart:THREE.Vector3, src:number, shift:[number,number,number]}>} */
+  let displayCenters = [];
   if (dispWrapped?.frac?.length && dispWrapped?.srcIndex?.length) {
     for (let i = 0; i < dispWrapped.frac.length; i++) {
       const src = dispWrapped.srcIndex[i];
       if (!Number.isInteger(src) || src < 0 || src >= positions.length) continue;
       const frac = dispWrapped.frac[i];
       if (!Array.isArray(frac) || frac.length < 3) continue;
+      const cart = dispWrapped?.cart?.[i];
+      const cartVec = cart instanceof THREE.Vector3
+        ? cart.clone()
+        : new THREE.Vector3(
+            Number(cart?.[0] ?? frac[0]) || 0,
+            Number(cart?.[1] ?? frac[1]) || 0,
+            Number(cart?.[2] ?? frac[2]) || 0,
+          );
+      if (!isAtomImageVisible(cartVec.toArray(), structure.atoms[src], activeCutPlanes)) continue;
       const shift = /** @type {[number,number,number]} */ ([
         Math.round(frac[0] - positions[src][0]),
         Math.round(frac[1] - positions[src][1]),
@@ -279,12 +321,15 @@ export function computePolyhedra(structure) {
       const key = imageKey(src, shift);
       visibleImageKeys.add(key);
       visibleImageCountsBySource.set(src, (visibleImageCountsBySource.get(src) || 0) + 1);
+      displayCenters.push({ cart: cartVec, src, shift });
     }
   }
   if (!visibleImageKeys.size) {
     for (let i = 0; i < nAtoms; i++) {
+      if (!isAtomImageVisible(baseCart[i].toArray(), structure.atoms[i], activeCutPlanes)) continue;
       visibleImageKeys.add(imageKey(i, [0, 0, 0]));
       visibleImageCountsBySource.set(i, 1);
+      displayCenters.push({ cart: baseCart[i].clone(), src: i, shift: [0, 0, 0] });
     }
   }
 
@@ -389,13 +434,13 @@ export function computePolyhedra(structure) {
    * }>} */
   const candidates = [];
 
-  // ---- Centered: compute once per primary atom (neighbours by radical Voronoi),
-  //      then replicate onto every displayed atom image (see below). ----
-  /** @type {Map<number, {posList:THREE.Vector3[], vertexSrcList:number[], centerPos:THREE.Vector3, colorElem:string}>} */
-  const primaryCentered = new Map();
-  for (let i=0; i<nAtoms; i++) {
-    const centerPos = baseCart[i];
-    const centerElem = elements[i];
+  // ---- Centered: compute directly on the visible displayed center images. ----
+  // This keeps plane-cut visibility and periodic-image visibility in the same
+  // coordinate frame as the user-visible atoms, instead of computing once on the
+  // primary atom and translating the result afterwards.
+  for (const dc of displayCenters) {
+    const centerPos = dc.cart;
+    const centerElem = elements[dc.src];
 
     // Radical-Voronoi + solid-angle neighbour selection (distance-independent:
     // keeps elongated bonds, rejects shadowed far atoms). Candidates include all
@@ -434,12 +479,9 @@ export function computePolyhedra(structure) {
     const byVisibleImage = new Map();
     for (const { cand } of vor) {
       const key = imageKey(cand.srcJ, cand.shift);
-      const sourceVisibleCount = visibleImageCountsBySource.get(cand.srcJ) || 0;
-      if (sourceVisibleCount > 0 && !visibleImageKeys.has(key)) continue;
-
-      const dedupKey = visibleImageKeys.has(key) ? key : `${cand.srcJ}`;
-      const prev = byVisibleImage.get(dedupKey);
-      if (!prev || cand.d < prev.d) byVisibleImage.set(dedupKey, cand);
+      if (!visibleImageKeys.has(key)) continue;
+      const prev = byVisibleImage.get(key);
+      if (!prev || cand.d < prev.d) byVisibleImage.set(key, cand);
     }
     const entries = Array.from(byVisibleImage.values());
     if (entries.length < 4) continue; // need ≥4 non-coplanar points for a closed hull
@@ -451,40 +493,16 @@ export function computePolyhedra(structure) {
     if (thicknessRatio(posList) < MIN_THICKNESS_RATIO) continue;
     if (!centeredHullIsAcceptable(centerPos, atomicRadii[centerElem] || 1.0, posList)) continue;
 
-    primaryCentered.set(i, { posList, vertexSrcList: entries.map(o => o.srcJ), centerPos, colorElem: centerElem });
-  }
-
-  // Replicate each centered polyhedron onto every displayed atom image, so they
-  // appear around periodic-image atoms when "show periodic images" is on. The
-  // displayed set is structure.periodic.wrapped (exactly what the atom renderer
-  // draws); when periodic display is off it is just the primary atoms (shift 0).
-  // The environment of an image is identical to its primary, so we translate the
-  // precomputed hull rather than recomputing the Voronoi cell.
-  /** @type {Array<{cart:any, src:number}>} */
-  let displayCenters;
-  if (dispWrapped?.cart?.length && dispWrapped.srcIndex) {
-    displayCenters = dispWrapped.cart.map((/** @type {any} */ c, /** @type {number} */ i) => ({ cart: c, src: dispWrapped.srcIndex[i] }));
-  } else {
-    displayCenters = [];
-    for (const i of primaryCentered.keys()) displayCenters.push({ cart: baseCart[i], src: i });
-  }
-  for (const dc of displayCenters) {
-    const base = primaryCentered.get(dc.src);
-    if (!base) continue;
-    const cpos = (dc.cart instanceof THREE.Vector3) ? dc.cart.clone() : new THREE.Vector3(dc.cart[0], dc.cart[1], dc.cart[2]);
-    const delta = cpos.clone().sub(base.centerPos);
-    const fs = cartToFrac([delta.x, delta.y, delta.z], lattice, latInv);
-    const centerShift = /** @type {[number,number,number]} */ ([Math.round(fs[0]), Math.round(fs[1]), Math.round(fs[2])]);
     candidates.push({
       kind: 'centered',
-      colorElem: base.colorElem,
+      colorElem: centerElem,
       centerSrc: dc.src,
-      centerShift,
-      centerPos: cpos,
-      posList: base.posList.map(p => p.clone().add(delta)),
-      vertexSrcList: base.vertexSrcList,
+      centerShift: dc.shift,
+      centerPos: centerPos.clone(),
+      posList,
+      vertexSrcList: entries.map(o => o.srcJ),
       vertexImageList: [],
-      refPoint: cpos.clone(),
+      refPoint: centerPos.clone(),
     });
   }
 
@@ -514,14 +532,15 @@ export function computePolyhedra(structure) {
     }
 
     for (let seedI=0; seedI<nAtoms; seedI++) {
+      if (!isAtomImageVisible(baseCart[seedI].toArray(), structure.atoms[seedI], activeCutPlanes)) continue;
       const seedElem = elements[seedI];
 
       // expand pool up to depth until we have plenty of candidates for N=20
       let depth = 3;
-      let pool = buildPoolForSeed(seedI, depth);
+      let pool = buildPoolForSeed(seedI, depth).filter((entry) => visibleImageKeys.has(imageKey(entry.src, entry.shift)));
       while (pool.length < 40 && depth < CAGE_BFS_DEPTH) { // heuristic ≥2×N
         depth++;
-        pool = buildPoolForSeed(seedI, depth);
+        pool = buildPoolForSeed(seedI, depth).filter((entry) => visibleImageKeys.has(imageKey(entry.src, entry.shift)));
       }
       if (pool.length < 4) continue;
 
