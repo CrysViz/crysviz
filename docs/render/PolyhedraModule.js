@@ -1,5 +1,6 @@
 import * as THREE from '../external/three/three.module.js';
 import { ConvexGeometry } from '../external/three/ConvexGeometry.js';
+import { ConvexHull } from '../external/three/ConvexHull.js';
 import {app,general,groups, fileBrowser} from '../state/store.js'
 import { fracToCart, cartToFrac, invert3x3, transpose3x3 } from '../math/index.js'
 import { getBondCutoff} from '../render/BondsFracUpdateModule.js'
@@ -32,6 +33,7 @@ const CAGE_BFS_DEPTH = 5; // a bit deeper to ensure we hit full N=20 shells
 // genuinely distorted-but-complete shells are not dropped.
 const MAX_EDGE_SPREAD = 1.60;      // max(edge)/min(edge) ≤ 1.60
 const MIN_THICKNESS_RATIO = 0.08;  // very lenient anti-flatness (e_min / e_max)
+const MIN_CENTER_FACE_CLEARANCE_REL = 0.10; // min portion of atomic radius between center and any face (to avoid near-degenerate centered polyhedra)
 
 // Centered neighbour selection: radical Voronoi + solid-angle (see VoronoiNeighbours.js).
 // There is no universal "official" cutoff — these are the tunables.
@@ -152,6 +154,20 @@ function pointInsideConvexGeometry(p, geom, eps=1e-6) {
     const s = n.dot(new THREE.Vector3().subVectors(p, a));
     if (s > eps) return false;
   }
+  return true;
+}
+
+function centeredHullIsAcceptable(centerPos, centerRadius, posList, eps = 1e-6) {
+  const hull = new ConvexHull().setFromPoints(posList);
+  if (!hull.containsPoint(centerPos)) return false;
+
+  const minClearance = MIN_CENTER_FACE_CLEARANCE_REL * Math.max(centerRadius, 0);
+  for (const face of hull.faces) {
+    const signedDistance = face.distanceToPoint(centerPos);
+    if (signedDistance > eps) return false;
+    if (-signedDistance < minClearance - eps) return false;
+  }
+
   return true;
 }
 
@@ -372,6 +388,7 @@ export function computePolyhedra(structure) {
     const posList = entries.map(o => o.pos);
     try { new ConvexGeomCtor(posList).dispose(); } catch { continue; }
     if (thicknessRatio(posList) < MIN_THICKNESS_RATIO) continue;
+    if (!centeredHullIsAcceptable(centerPos, atomicRadii[centerElem] || 1.0, posList)) continue;
 
     primaryCentered.set(i, { posList, vertexSrcList: entries.map(o => o.srcJ), centerPos, colorElem: centerElem });
   }
