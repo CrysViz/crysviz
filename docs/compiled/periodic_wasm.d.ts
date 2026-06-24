@@ -21,6 +21,30 @@ export class PeriodicResult {
 }
 
 /**
+ * Flat arrays describing the accepted polyhedra. One slot per polyhedron in
+ * `kinds`/`color_elem`/`center_src`/`vert_counts`; `vertices` and `vertex_srcs`
+ * are concatenated per-polyhedron (use `vert_counts` to split them).
+ */
+export class PolyhedraResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    center_src(): Int32Array;
+    color_elem(): Uint32Array;
+    count(): number;
+    kinds(): Uint32Array;
+    vert_counts(): Uint32Array;
+    vertex_srcs(): Uint32Array;
+    vertices(): Float64Array;
+}
+
+/**
+ * Compute coordination polyhedra. See `polyhedra::compute_polyhedra` for the
+ * argument contract; the JS wrapper (`polyhedraWasm.js`) packs these arrays.
+ */
+export function compute_polyhedra(frac: Float64Array, elem_idx: Uint32Array, lattice_flat: Float64Array, cutoff_matrix: Float64Array, n_elem: number, electroneg: Float64Array, radii: Float64Array, max_cutoff: number, use_chem_filter: boolean, detect_cages: boolean, center_src: Uint32Array, center_shift: Int32Array, center_cart: Float64Array, visible_keys: Int32Array, seed_visible: Uint8Array): PolyhedraResult;
+
+/**
  * Rust implementation of `periodicWrapped`.
  *
  * # Arguments
@@ -42,12 +66,21 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_periodicresult_free: (a: number, b: number) => void;
+    readonly __wbg_polyhedraresult_free: (a: number, b: number) => void;
+    readonly compute_polyhedra: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number) => number;
     readonly periodic_wrapped: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => number;
     readonly periodicresult_cart: (a: number) => [number, number];
     readonly periodicresult_elements: (a: number) => [number, number];
     readonly periodicresult_frac: (a: number) => [number, number];
     readonly periodicresult_len: (a: number) => number;
     readonly periodicresult_src_index: (a: number) => [number, number];
+    readonly polyhedraresult_center_src: (a: number) => [number, number];
+    readonly polyhedraresult_color_elem: (a: number) => [number, number];
+    readonly polyhedraresult_kinds: (a: number) => [number, number];
+    readonly polyhedraresult_vert_counts: (a: number) => [number, number];
+    readonly polyhedraresult_vertex_srcs: (a: number) => [number, number];
+    readonly polyhedraresult_vertices: (a: number) => [number, number];
+    readonly polyhedraresult_count: (a: number) => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;

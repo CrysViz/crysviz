@@ -1,4 +1,4 @@
-import { fileBrowser } from '../state/store.js';
+import { fileBrowser, general } from '../state/store.js';
 import { updatePolyhedra } from '../render/index.js';
 
 function getSelectedStructureSettings() {
@@ -101,6 +101,15 @@ export function addPolyhedraPanel(target = 'BondLatticeContainer') {
       checked: settings.detectCages !== false,
       onChange: (e) => {
         structure.polyhedraSettings.detectCages = e.target.checked;
+        updatePolyhedra();
+      },
+    }));
+    body.appendChild(createToggleRow({
+      id: 'polyhedraUseWasmToggle',
+      label: 'Use WASM (faster)',
+      checked: general.useWasmPolyhedra !== false,
+      onChange: (e) => {
+        general.useWasmPolyhedra = e.target.checked;
         updatePolyhedra();
       },
     }));

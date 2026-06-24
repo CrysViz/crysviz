@@ -73,6 +73,140 @@ export class PeriodicResult {
 if (Symbol.dispose) PeriodicResult.prototype[Symbol.dispose] = PeriodicResult.prototype.free;
 
 /**
+ * Flat arrays describing the accepted polyhedra. One slot per polyhedron in
+ * `kinds`/`color_elem`/`center_src`/`vert_counts`; `vertices` and `vertex_srcs`
+ * are concatenated per-polyhedron (use `vert_counts` to split them).
+ */
+export class PolyhedraResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(PolyhedraResult.prototype);
+        obj.__wbg_ptr = ptr;
+        PolyhedraResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PolyhedraResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_polyhedraresult_free(ptr, 0);
+    }
+    /**
+     * @returns {Int32Array}
+     */
+    center_src() {
+        const ret = wasm.polyhedraresult_center_src(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    color_elem() {
+        const ret = wasm.polyhedraresult_color_elem(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    count() {
+        const ret = wasm.polyhedraresult_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    kinds() {
+        const ret = wasm.polyhedraresult_kinds(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    vert_counts() {
+        const ret = wasm.polyhedraresult_vert_counts(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    vertex_srcs() {
+        const ret = wasm.polyhedraresult_vertex_srcs(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    vertices() {
+        const ret = wasm.polyhedraresult_vertices(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+}
+if (Symbol.dispose) PolyhedraResult.prototype[Symbol.dispose] = PolyhedraResult.prototype.free;
+
+/**
+ * Compute coordination polyhedra. See `polyhedra::compute_polyhedra` for the
+ * argument contract; the JS wrapper (`polyhedraWasm.js`) packs these arrays.
+ * @param {Float64Array} frac
+ * @param {Uint32Array} elem_idx
+ * @param {Float64Array} lattice_flat
+ * @param {Float64Array} cutoff_matrix
+ * @param {number} n_elem
+ * @param {Float64Array} electroneg
+ * @param {Float64Array} radii
+ * @param {number} max_cutoff
+ * @param {boolean} use_chem_filter
+ * @param {boolean} detect_cages
+ * @param {Uint32Array} center_src
+ * @param {Int32Array} center_shift
+ * @param {Float64Array} center_cart
+ * @param {Int32Array} visible_keys
+ * @param {Uint8Array} seed_visible
+ * @returns {PolyhedraResult}
+ */
+export function compute_polyhedra(frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, radii, max_cutoff, use_chem_filter, detect_cages, center_src, center_shift, center_cart, visible_keys, seed_visible) {
+    const ptr0 = passArrayF64ToWasm0(frac, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray32ToWasm0(elem_idx, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArrayF64ToWasm0(lattice_flat, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArrayF64ToWasm0(cutoff_matrix, wasm.__wbindgen_malloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ptr4 = passArrayF64ToWasm0(electroneg, wasm.__wbindgen_malloc);
+    const len4 = WASM_VECTOR_LEN;
+    const ptr5 = passArrayF64ToWasm0(radii, wasm.__wbindgen_malloc);
+    const len5 = WASM_VECTOR_LEN;
+    const ptr6 = passArray32ToWasm0(center_src, wasm.__wbindgen_malloc);
+    const len6 = WASM_VECTOR_LEN;
+    const ptr7 = passArray32ToWasm0(center_shift, wasm.__wbindgen_malloc);
+    const len7 = WASM_VECTOR_LEN;
+    const ptr8 = passArrayF64ToWasm0(center_cart, wasm.__wbindgen_malloc);
+    const len8 = WASM_VECTOR_LEN;
+    const ptr9 = passArray32ToWasm0(visible_keys, wasm.__wbindgen_malloc);
+    const len9 = WASM_VECTOR_LEN;
+    const ptr10 = passArray8ToWasm0(seed_visible, wasm.__wbindgen_malloc);
+    const len10 = WASM_VECTOR_LEN;
+    const ret = wasm.compute_polyhedra(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, ptr4, len4, ptr5, len5, max_cutoff, use_chem_filter, detect_cages, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10);
+    return PolyhedraResult.__wrap(ret);
+}
+
+/**
  * Rust implementation of `periodicWrapped`.
  *
  * # Arguments
@@ -134,10 +268,18 @@ function __wbg_get_imports() {
 const PeriodicResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_periodicresult_free(ptr >>> 0, 1));
+const PolyhedraResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_polyhedraresult_free(ptr >>> 0, 1));
 
 function getArrayF64FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getFloat64ArrayMemory0().subarray(ptr / 8, ptr / 8 + len);
+}
+
+function getArrayI32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getInt32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
 function getArrayU32FromWasm0(ptr, len) {
@@ -151,6 +293,14 @@ function getFloat64ArrayMemory0() {
         cachedFloat64ArrayMemory0 = new Float64Array(wasm.memory.buffer);
     }
     return cachedFloat64ArrayMemory0;
+}
+
+let cachedInt32ArrayMemory0 = null;
+function getInt32ArrayMemory0() {
+    if (cachedInt32ArrayMemory0 === null || cachedInt32ArrayMemory0.byteLength === 0) {
+        cachedInt32ArrayMemory0 = new Int32Array(wasm.memory.buffer);
+    }
+    return cachedInt32ArrayMemory0;
 }
 
 function getStringFromWasm0(ptr, len) {
@@ -177,6 +327,13 @@ function getUint8ArrayMemory0() {
 function passArray32ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 4, 4) >>> 0;
     getUint32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
     WASM_VECTOR_LEN = arg.length;
     return ptr;
 }
@@ -209,6 +366,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedFloat64ArrayMemory0 = null;
+    cachedInt32ArrayMemory0 = null;
     cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();

@@ -1,4 +1,6 @@
+mod convex_hull;
 mod linalg;
+mod polyhedra;
 
 use linalg::{cart_to_frac, lattice_from_flat, Vec3};
 use std::collections::HashMap;
@@ -55,6 +57,96 @@ impl PeriodicResult {
     }
     pub fn len(&self) -> usize {
         self.elements.len()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Polyhedra: flat result + wasm entry point
+// ---------------------------------------------------------------------------
+
+/// Flat arrays describing the accepted polyhedra. One slot per polyhedron in
+/// `kinds`/`color_elem`/`center_src`/`vert_counts`; `vertices` and `vertex_srcs`
+/// are concatenated per-polyhedron (use `vert_counts` to split them).
+#[wasm_bindgen]
+pub struct PolyhedraResult {
+    kinds: Vec<u32>,
+    color_elem: Vec<u32>,
+    center_src: Vec<i32>,
+    vert_counts: Vec<u32>,
+    vertices: Vec<f64>,
+    vertex_srcs: Vec<u32>,
+}
+
+#[wasm_bindgen]
+impl PolyhedraResult {
+    pub fn kinds(&self) -> Vec<u32> {
+        self.kinds.clone()
+    }
+    pub fn color_elem(&self) -> Vec<u32> {
+        self.color_elem.clone()
+    }
+    pub fn center_src(&self) -> Vec<i32> {
+        self.center_src.clone()
+    }
+    pub fn vert_counts(&self) -> Vec<u32> {
+        self.vert_counts.clone()
+    }
+    pub fn vertices(&self) -> Vec<f64> {
+        self.vertices.clone()
+    }
+    pub fn vertex_srcs(&self) -> Vec<u32> {
+        self.vertex_srcs.clone()
+    }
+    pub fn count(&self) -> usize {
+        self.kinds.len()
+    }
+}
+
+/// Compute coordination polyhedra. See `polyhedra::compute_polyhedra` for the
+/// argument contract; the JS wrapper (`polyhedraWasm.js`) packs these arrays.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn compute_polyhedra(
+    frac: &[f64],
+    elem_idx: &[u32],
+    lattice_flat: &[f64],
+    cutoff_matrix: &[f64],
+    n_elem: usize,
+    electroneg: &[f64],
+    radii: &[f64],
+    max_cutoff: f64,
+    use_chem_filter: bool,
+    detect_cages: bool,
+    center_src: &[u32],
+    center_shift: &[i32],
+    center_cart: &[f64],
+    visible_keys: &[i32],
+    seed_visible: &[u8],
+) -> PolyhedraResult {
+    let r = polyhedra::compute_polyhedra(
+        frac,
+        elem_idx,
+        lattice_flat,
+        cutoff_matrix,
+        n_elem,
+        electroneg,
+        radii,
+        max_cutoff,
+        use_chem_filter,
+        detect_cages,
+        center_src,
+        center_shift,
+        center_cart,
+        visible_keys,
+        seed_visible,
+    );
+    PolyhedraResult {
+        kinds: r.kinds,
+        color_elem: r.color_elem,
+        center_src: r.center_src,
+        vert_counts: r.vert_counts,
+        vertices: r.vertices,
+        vertex_srcs: r.vertex_srcs,
     }
 }
 

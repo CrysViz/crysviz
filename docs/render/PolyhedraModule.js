@@ -11,6 +11,7 @@ import { getCutPlaneMaskSign } from '../model/Plane.js'
 import { voronoiNeighbours } from '../render/VoronoiNeighbours.js'
 import { atomicRadii } from '../defaults/radii_defaults.js'
 import { electronegativity } from '../defaults/electronegativity_defaults.js'
+import { computePolyhedraWasm } from '../compiled/polyhedraWasm.js'
 
 // ---------- STYLE (render) ----------
 const FACE_OPACITY = 0.50;
@@ -339,10 +340,39 @@ export function computePolyhedra(structure) {
     }
   }
 
-  // Guaranteed-complete image range per axis: how many cells (in each lattice
-  // direction) the largest bond cutoff can reach, using the cell's perpendicular
-  // widths d = V/|b×c| so no neighbour image is ever missed, even for skewed cells.
+  // Largest configured bond cutoff — bounds the neighbour-image search range.
   const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || {}).map(v => (typeof v === 'number' ? v : (v?.max ?? 0))), 0.0);
+
+  // ---------- WASM compute path (toggle; falls back to JS below) ----------
+  // The display-coupled prep above (displayCenters, visibleImageKeys, maxCutoff)
+  // is shared; everything below is the heavy geometry, which the Rust port does
+  // in one call. On any failure we fall through to the pure-JS implementation.
+  if (general.useWasmPolyhedra) {
+    try {
+      const seedVisible = new Uint8Array(nAtoms);
+      for (let i = 0; i < nAtoms; i++) {
+        seedVisible[i] = isAtomImageVisible(baseCart[i].toArray(), structure.atoms[i], activeCutPlanes) ? 1 : 0;
+      }
+      const wasmPolys = computePolyhedraWasm({
+        positions, elements, lattice, maxCutoff,
+        useChemicalFilter, detectCages,
+        displayCenters, visibleImageKeys, seedVisible, getBondCutoff,
+      });
+      const accepted = wasmPolys.map(p => new Polyhedron(p));
+      console.log(
+        `[polyhedra] WASM total=${(performance.now() - _t0).toFixed(1)}ms ` +
+        `atoms=${nAtoms} centers=${displayCenters.length} ` +
+        `accepted=${accepted.length} detectCages=${detectCages}`
+      );
+      return new Polyhedra({ polyhedra: accepted });
+    } catch (err) {
+      console.warn('[computePolyhedra] WASM path failed; falling back to JS:', err);
+    }
+  }
+
+  // Guaranteed-complete image range per axis (JS path): how many cells the largest
+  // bond cutoff can reach, using the cell's perpendicular widths d = V/|b×c| so no
+  // neighbour image is ever missed, even for skewed cells.
   const cellVol = Math.abs(a.dot(new THREE.Vector3().crossVectors(b, c)));
   const widthA = cellVol / Math.max(new THREE.Vector3().crossVectors(b, c).length(), 1e-9);
   const widthB = cellVol / Math.max(new THREE.Vector3().crossVectors(c, a).length(), 1e-9);
