@@ -171,6 +171,10 @@ function centeredHullIsAcceptable(centerPos, centerRadius, posList, eps = 1e-6) 
   return true;
 }
 
+function imageKey(src, shift) {
+  return `${src}:${shift[0]},${shift[1]},${shift[2]}`;
+}
+
 // Spherical farthest-point sampling: pick N vertices well spread (angle-based)
 function pickSpreadSubset(points, N) {
   if (points.length < N) return null;
@@ -246,6 +250,43 @@ export function computePolyhedra(structure) {
   const baseCart = fracToCart(positions, lattice).map(p => new THREE.Vector3(p[0], p[1], p[2]));
   const nAtoms = baseCart.length;
   const latInv = invert3x3(transpose3x3(lattice));
+  const dispWrapped = structure.periodic?.wrapped;
+
+  // Build the set of atom images that are actually visible to the user right now.
+  // This comes only from `structure.periodic.wrapped`, which is the shared display
+  // surface used by the atom renderer and is already expanded by the periodic-image
+  // and neighbour-bond toggles upstream.
+  //
+  // Consequence for centered polyhedra:
+  // - If a periodic image is present in `wrapped`, that image is allowed to act as
+  //   its own vertex in a centered shell.
+  // - If a periodic image is NOT present in `wrapped`, it is treated as invisible
+  //   and is not allowed to create an extra shell vertex here.
+  // - If there is no wrapped data at all, fall back to the primary-cell view only.
+  const visibleImageKeys = new Set();
+  const visibleImageCountsBySource = new Map();
+  if (dispWrapped?.frac?.length && dispWrapped?.srcIndex?.length) {
+    for (let i = 0; i < dispWrapped.frac.length; i++) {
+      const src = dispWrapped.srcIndex[i];
+      if (!Number.isInteger(src) || src < 0 || src >= positions.length) continue;
+      const frac = dispWrapped.frac[i];
+      if (!Array.isArray(frac) || frac.length < 3) continue;
+      const shift = /** @type {[number,number,number]} */ ([
+        Math.round(frac[0] - positions[src][0]),
+        Math.round(frac[1] - positions[src][1]),
+        Math.round(frac[2] - positions[src][2]),
+      ]);
+      const key = imageKey(src, shift);
+      visibleImageKeys.add(key);
+      visibleImageCountsBySource.set(src, (visibleImageCountsBySource.get(src) || 0) + 1);
+    }
+  }
+  if (!visibleImageKeys.size) {
+    for (let i = 0; i < nAtoms; i++) {
+      visibleImageKeys.add(imageKey(i, [0, 0, 0]));
+      visibleImageCountsBySource.set(i, 1);
+    }
+  }
 
   // Guaranteed-complete image range per axis: how many cells (in each lattice
   // direction) the largest bond cutoff can reach, using the cell's perpendicular
@@ -374,13 +415,33 @@ export function computePolyhedra(structure) {
       accept,
     });
 
-    // Dedup to the nearest image per coordinating source atom.
-    const bySrc = new Map();
+    // Centered-shell image handling follows the current display state rather than a
+    // purely source-level notion of coordination:
+    //
+    // - When the same source atom appears multiple times in the current wrapped
+    //   display (for example because periodic images / neighbour-bond ghosts are
+    //   visible), each visible image is allowed to survive as a distinct shell
+    //   vertex, keyed by (src, lattice shift).
+    // - Candidate images that exist geometrically but are not currently displayed
+    //   are discarded here, so polyhedra do not gain vertices from hidden ghosts.
+    // - If a source atom only has its primary image visible, the old behaviour is
+    //   preserved in practice: there is still only one surviving candidate for that
+    //   source.
+    //
+    // This is the intentional "as the user currently sees it" rule for periodic
+    // images in centered polyhedra. Cages remain source/image-agnostic in their
+    // own path below.
+    const byVisibleImage = new Map();
     for (const { cand } of vor) {
-      const prev = bySrc.get(cand.srcJ);
-      if (!prev || cand.d < prev.d) bySrc.set(cand.srcJ, cand);
+      const key = imageKey(cand.srcJ, cand.shift);
+      const sourceVisibleCount = visibleImageCountsBySource.get(cand.srcJ) || 0;
+      if (sourceVisibleCount > 0 && !visibleImageKeys.has(key)) continue;
+
+      const dedupKey = visibleImageKeys.has(key) ? key : `${cand.srcJ}`;
+      const prev = byVisibleImage.get(dedupKey);
+      if (!prev || cand.d < prev.d) byVisibleImage.set(dedupKey, cand);
     }
-    const entries = Array.from(bySrc.values());
+    const entries = Array.from(byVisibleImage.values());
     if (entries.length < 4) continue; // need ≥4 non-coplanar points for a closed hull
 
     // Only remaining skip reason is geometric degeneracy (a near-planar set has no
@@ -399,7 +460,6 @@ export function computePolyhedra(structure) {
   // draws); when periodic display is off it is just the primary atoms (shift 0).
   // The environment of an image is identical to its primary, so we translate the
   // precomputed hull rather than recomputing the Voronoi cell.
-  const dispWrapped = structure.periodic?.wrapped;
   /** @type {Array<{cart:any, src:number}>} */
   let displayCenters;
   if (dispWrapped?.cart?.length && dispWrapped.srcIndex) {
