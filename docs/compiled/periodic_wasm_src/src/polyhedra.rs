@@ -887,10 +887,15 @@ pub fn compute_polyhedra(
                 (quantile(&dists, 0.20), quantile(&dists, 0.80)),
             ];
 
-            // Per-band hull vertex sets (N-independent), built once.
+            // Per-band hull vertex sets (N-independent), built once. `spread_order`
+            // is the full farthest-first ordering of the hull vertices; since that
+            // traversal is prefix-stable, the reduce-to-N step for every target N
+            // is just a prefix of it — so it's computed once here instead of being
+            // recomputed per N below.
             struct BandHull {
                 band: Vec<PoolEntry>,
                 base_verts: Vec<PoolEntry>,
+                spread_order: Vec<usize>,
             }
             let tb = Date::now();
             let band_hulls: Vec<BandHull> = bands
@@ -905,14 +910,20 @@ pub fn compute_polyhedra(
                         .cloned()
                         .collect();
                     if band.len() < 4 {
-                        return BandHull { band, base_verts: Vec::new() };
+                        return BandHull { band, base_verts: Vec::new(), spread_order: Vec::new() };
                     }
                     let pts: Vec<Vec3> = band.iter().map(|e| e.pos).collect();
-                    let base_verts = match convex_hull(&pts) {
+                    let base_verts: Vec<PoolEntry> = match convex_hull(&pts) {
                         Some(h) => h.vertices.iter().map(|&vi| band[vi].clone()).collect(),
                         None => Vec::new(),
                     };
-                    BandHull { band, base_verts }
+                    let spread_order = if base_verts.len() >= 2 {
+                        let bv_pts: Vec<Vec3> = base_verts.iter().map(|e| e.pos).collect();
+                        pick_spread_subset(&bv_pts, base_verts.len()).unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+                    BandHull { band, base_verts, spread_order }
                 })
                 .collect();
             cage_band_ms += Date::now() - tb;
@@ -924,30 +935,19 @@ pub fn compute_polyhedra(
                     if bh.band.len() < target || bh.base_verts.len() < target {
                         continue;
                     }
-                    // Reduce to N by spread if needed.
+                    // Reduce to N by spread if needed — a prefix of the band's
+                    // precomputed farthest-first ordering. The ordering indexes
+                    // base_verts directly (which are band entries), so no nearest
+                    // remapping is needed.
                     let verts: Vec<PoolEntry> = if bh.base_verts.len() == target {
                         bh.base_verts.clone()
                     } else {
-                        let bv_pts: Vec<Vec3> = bh.base_verts.iter().map(|e| e.pos).collect();
-                        let subset = match pick_spread_subset(&bv_pts, target) {
-                            Some(s) => s,
-                            None => continue,
-                        };
-                        subset
+                        if bh.spread_order.len() < target {
+                            continue;
+                        }
+                        bh.spread_order[0..target]
                             .iter()
-                            .map(|&si| {
-                                let p = bv_pts[si];
-                                let mut best = &bh.band[0];
-                                let mut best_d = f64::INFINITY;
-                                for o in &bh.band {
-                                    let dd = p.dist2(o.pos);
-                                    if dd < best_d {
-                                        best_d = dd;
-                                        best = o;
-                                    }
-                                }
-                                best.clone()
-                            })
+                            .map(|&si| bh.base_verts[si].clone())
                             .collect()
                     };
 
