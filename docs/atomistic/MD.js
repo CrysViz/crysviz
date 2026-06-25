@@ -1,6 +1,7 @@
-import { fileBrowser } from '../store.js';
-import { updateVisualization } from '../crystal-viewer.js';
-import { runPeriodicWrapped } from '../modules/LatticeModule.js';
+import { fileBrowser } from '../state/store.js';
+import { updateVisualization } from '../core/crystal-viewer.js';
+import { runPeriodicWrapped } from '../render/index.js';
+import { refreshDocking } from '../ui/ThemeManager.js';
 import { buildNEPStructure } from './relaxer.js';
 import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart, normalizeFractionalPositions } from './math.js';
 import {
@@ -8,7 +9,7 @@ import {
   isWyckoffModeActive,
   symmetrizeCartesianPositions,
   symmetrizeCartesianVectors,
-} from '../modules/SymmetryEditModule.js';
+} from '../ui/SymmetryEditModule.js';
 
 const KB_EV_PER_K = 8.617333262e-5;
 const ACCEL_AFS2_PER_EVAA_AMU = 0.00964853399;
@@ -222,6 +223,10 @@ function syncStateSymmetryConstraint(state, structure = fileBrowser.selectedStru
   state.forces = symmetrizeCartesianVectors(state.forces, state.lattice, structure);
 }
 
+/**
+ * @param {{nepRunner?:any, structure?:any, temperatureTargetK?:number,
+ *   zeroMomentum?:boolean, forceEvaluator?:any}} [opts]
+ */
 export async function initializeMDState({
   nepRunner,
   structure = fileBrowser.selectedStructure,
@@ -288,6 +293,10 @@ function createTimingProfile(label) {
   };
 }
 
+/**
+ * @param {{state?:any, steps?:number, dtFs?:number, forceEvaluator?:any,
+ *   integrator?:any, thermostat?:any, onStep?:any, shouldStop?:any}} [opts]
+ */
 export async function runMDSimulation({
   state,
   steps = 500,
@@ -432,13 +441,14 @@ export function createMDMonitorPanel() {
     </div>
   `;
   document.body.appendChild(panel);
+  refreshDocking(); // dock into #ui if a docked theme is active
 
   const header = panel.querySelector('#mdHeader');
-  const body = panel.querySelector('#mdBody');
+  const body = /** @type {HTMLElement} */ (panel.querySelector('#mdBody'));
   const fold = panel.querySelector('#mdFoldToggle');
   const closeBtn = panel.querySelector('#mdCloseBtn');
   const text = panel.querySelector('#mdText');
-  const canvas = panel.querySelector('#mdCanvas');
+  const canvas = /** @type {HTMLCanvasElement} */ (panel.querySelector('#mdCanvas'));
   const ctx = canvas.getContext('2d');
 
   closeBtn.addEventListener('click', () => panel.remove());
@@ -484,8 +494,6 @@ export function createMDMonitorPanel() {
     const n = tSeries.length;
     const xmin = 0;
     const xmax = Math.max(1, n - 1);
-    const tmin = Math.min(...tSeries);
-    const tmax = Math.max(...tSeries);
     const allTemps = [...tSeries, ...targetSeries.filter(Number.isFinite)];
     const emin = Math.min(...eSeries);
     const emax = Math.max(...eSeries);

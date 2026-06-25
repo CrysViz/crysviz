@@ -1,0 +1,99 @@
+/* ===========================================================================
+   CrysViz base theme  ("default")
+   ---------------------------------------------------------------------------
+   This is the base layer every other theme builds on. The theme loader
+   (ui/ThemeManager.js, driven by themes/themes.json) always loads this file
+   first, then layers the selected theme's override file on top.
+
+   It defines the full design-token vocabulary as CSS custom properties:
+   surfaces/text, layout geometry, and the 3D scene colors. To re-skin the app,
+   a theme override only needs to redefine the tokens (and/or rules) it changes.
+
+   The default look = the app's historical appearance: dark UI panels over a
+   light 3D scene. Override files (dark.css, twilight.css, …) change the scene
+   and/or surfaces; minimal.css changes the layout.
+
+   NOTE: the accent tokens (--bg-color / --highlight-color / --accent-color /
+   --hover-color / --border-color) are intentionally NOT defined here — they are
+   owned by the backend-mode classes (.theme-standard / .theme-ase / …) in
+   styles/styles.css so the accent follows the active compute backend. A theme
+   MAY override them, but by default leaves them to backend mode.
+   =========================================================================== */
+
+:root {
+  /* ---- Surfaces & text -------------------------------------------------- */
+  --surface-bg: #002121;             /* page background behind the canvas/panel */
+  --panel-bg: rgba(26, 26, 26, 1);   /* #ui side panel */
+  --panel-fg: #ffffff;               /* primary text on panels */
+  --muted-fg: #f9f9f9;               /* secondary text */
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --panel-blur: 20px;                /* #ui backdrop blur */
+  --group-bg: rgba(42, 42, 42, 0.8); /* .control-group boxes (the grey panels) */
+  --menu-bg: rgba(26, 26, 26, 0.95); /* dropdown menus / near-opaque floaters */
+  --popup-bg: rgba(26, 26, 26, 0.9); /* floating popups / pickers */
+  --popup-border: rgba(255, 255, 255, 0.3);
+  --input-bg: rgba(26, 26, 26, 0.9);
+  --danger: rgba(240, 132, 18, 0.9);
+  --radius: 8px;
+
+  /* ---- Layout geometry (single source of truth) ------------------------- */
+  --ui-width: 380px;                 /* panel content width */
+  --ui-border: 1px;                  /* panel border width */
+  --ui-padding: 20px;                /* panel padding */
+  --ui-total-width: calc(var(--ui-width) + 2 * var(--ui-border) + 2 * var(--ui-padding));
+  --gizmo-size: 90px;
+  --gizmo-bottom: 20px;
+  --gizmo-left: calc(var(--ui-total-width) + 10px);   /* beside the panel */
+  --camera-tools-left: calc(var(--ui-total-width) + 10px);
+  --popup-left: calc(var(--ui-total-width) + 10px);
+
+  /* ---- 3D scene (read by ThemeManager → three.js) ----------------------- */
+  --scene-bg: #ffffff;               /* WebGL canvas clear color */
+  --lattice-color: #090a09;          /* unit-cell lines */
+
+  /* ---- Icons (in-panel "docked" measure tools) -------------------------- */
+  /* These default to the app's shared icons. A theme can re-skin them by
+     dropping its own files in themes/<id>/icons/ and overriding these vars
+     (url(...) is resolved relative to that theme's theme.css). */
+  --icon-measure-distance: url('../../data/icons/measure-icon2.svg');
+  --icon-measure-angle:    url('../../data/icons/angle-icon2.svg');
+  --icon-measure-clear:    url('../../data/icons/delete-icon2.svg');
+  --icon-measure-restore:  url('../../data/icons/restore-icon.svg');
+  /* Delete uses a ❌ glyph (like the floating panel), not an icon image. */
+}
+
+/* ---- Accent palette (changes with the active backend mode) ----------------
+   These classes are toggled on <body> by ui/BackendPanel/BackendTheme.js. A
+   theme can recolor the whole app's accents by redefining these in its own
+   theme.css (which loads after this base, so it wins the cascade). */
+.theme-standard {
+  --bg-color: rgba(6, 70, 50, 0.8);
+  --highlight-color: rgba(6, 140, 50, 1.0);
+  --accent-color: rgba(6, 140, 50, 0.8);
+  --hover-color: rgba(6, 140, 50, 0.3);
+  --border-color: rgba(6, 90, 50, 0.5);
+}
+
+.theme-ase {
+  --bg-color: rgba(81, 0, 0, 0.8);
+  --highlight-color: rgba(159, 52, 52, 1.0);
+  --accent-color: rgba(159, 52, 52, 0.9);
+  --hover-color: rgba(159, 52, 52, 0.3);
+  --border-color: rgba(255, 118, 118, 0.3);
+}
+
+.theme-symmetry {
+  --bg-color: rgba(15, 3, 56, 0.8);
+  --highlight-color: rgba(18, 141, 204, 1.0);
+  --accent-color: rgba(18, 141, 204, 0.8);
+  --hover-color: rgba(18, 141, 204, 0.2);
+  --border-color: rgba(17, 71, 129, 0.5);
+}
+
+.theme-locked-ase {
+  --bg-color: rgba(66, 24, 81, 0.84);
+  --highlight-color: rgba(187, 98, 214, 1.0);
+  --accent-color: rgba(167, 92, 214, 0.9);
+  --hover-color: rgba(187, 98, 214, 0.24);
+  --border-color: rgba(183, 117, 221, 0.5);
+}

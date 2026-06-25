@@ -1,12 +1,14 @@
-<img src="old/CrysViz_logo_clear_back.png" width="400">
+<img src="docs/data/CrysViz_logo_clear_back.png" width="400">
 
 # CrysViz - Crystal Structure Visualisation & Analysis
+
+[![Checks](https://github.com/ftrybel/CrysViz_hot_develop/actions/workflows/check.yml/badge.svg)](https://github.com/ftrybel/CrysViz_hot_develop/actions/workflows/check.yml)
 
 ## Light-weight browser-based crystal structure visualisation with on-device rendering.
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
-Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall and Rickard Armiento 
+Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, and Rickard Armiento 
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published
@@ -62,29 +64,29 @@ Third-Party Libraries and Attribution:
    - Repository: https://github.com/spglib/moyo
    - License: MIT or Apache-2.0
    - Copyright: Kohei Shinohara
-   - See LICENSE-moyo for the full license text.
+   - See docs/external/moyo-test/LICENSE for the full license text.
    - Explicitly moyo-wasm is used.
-   - License and code can be found in /docs/backend/moyo
+   - License and code can be found in docs/external/moyo-test/
 
 2. NEP_CPU
    - Repository: https://github.com/brucefan1983/NEP_CPU
    - License: GPL-3.0
    - Copyright: NEP_CPU authors
-   - See LICENSE-NEP_CPU for the full license text.
+   - See docs/external/nep_wasm/LICENSE-NEP_CPU for the full license text.
    - Explicitly NEP_CPU is compliled into a WASM module. 
-   - License and code can be found in  /docs/backend/nep_wasm/
+   - License and code can be found in docs/external/nep_wasm/
 
 3. THREE.js
    - Repository: https://github.com/mrdoob/three.js/
    - License: MIT
    - Copyright: THREE.js authors
-   - See LICENSE-THREEjs for the full license text.
-   - License and code can be found in /docs/backend/thee
+   - See docs/external/three/LICENSE for the full license text.
+   - License and code can be found in docs/external/three/
 
 4. NEP89 Weights (from GPUMD)
    - Repository: https://github.com/brucefan1983/GPUMD
    - License: GPL-3.0
    - Copyright: GPUMD authors
-   - The weights can be found in /docs/backend/nep_wasm/
-   - See LICENSE-GPUMD for the full license text.
+   - The weights can be found in docs/external/nep_wasm/
+   - See docs/external/nep_wasm/LICENSE-GPUMD for the full license text.
 

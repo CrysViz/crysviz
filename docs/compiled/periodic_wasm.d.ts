@@ -31,15 +31,18 @@ export class PeriodicResult {
  * * `lattice_flat`– flat f64 array, row-major 3×3 lattice matrix [a; b; c].
  * * `bond_table`  – flat f64 cutoff matrix, length n_elem × n_elem.
  * * `n_elem`      – number of element species.
+ * * `face_tol`    – tolerance (fractional coords) for treating an atom as
+ *   sitting on a cell face/edge/corner. Real structures carry small offsets
+ *   from 0/1, so this must be looser than machine eps (default ~1e-3).
  */
-export function periodic_wrapped(show_periodic: boolean, show_pbc_bonds: boolean, elements_in: Uint32Array, frac_in: Float64Array, lattice_flat: Float64Array, bond_table: Float64Array, n_elem: number): PeriodicResult;
+export function periodic_wrapped(show_periodic: boolean, show_pbc_bonds: boolean, elements_in: Uint32Array, frac_in: Float64Array, lattice_flat: Float64Array, bond_table: Float64Array, n_elem: number, face_tol: number): PeriodicResult;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_periodicresult_free: (a: number, b: number) => void;
-    readonly periodic_wrapped: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
+    readonly periodic_wrapped: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => number;
     readonly periodicresult_cart: (a: number) => [number, number];
     readonly periodicresult_elements: (a: number) => [number, number];
     readonly periodicresult_frac: (a: number) => [number, number];

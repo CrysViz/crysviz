@@ -1,3 +1,4 @@
+// @ts-nocheck -- vendored third-party; not type-checked
 let wasm;
 
 let cachedUint8ArrayMemory0 = null;

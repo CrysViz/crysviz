@@ -42,4 +42,842 @@ font-size: 16px;
   background: var(--border-color);
 }
 
+.theme-switch {
+  position: absolute;
+  top: 10px;
+  left: 286px; /* Adjust based on your logo width */
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  z-index: 10;
+  border: solid 1px var(--panel-border, rgba(255, 255, 255, 0.25));
+  border-radius: 40px;
+}
 
+/* dark/twilight/light icon toggle */
+.theme-btn {
+  display: inline-flex;
+  background: none;
+  border: none;
+  padding: 0.25rem;
+  cursor: pointer;
+  border-radius: 40px;
+}
+
+.theme-btn:hover {
+  background: var(--hover-color);
+}
+
+.theme-btn.active {
+  background: var(--highlight-color);
+}
+
+.theme-icon {
+  width: 18px;
+  height: 18px;
+  filter: invert(1);
+}
+
+/* Small dropdown arrow that opens the full theme list (ui/ThemeManager.js) */
+.theme-menu-toggle {
+  background: none;
+  border: none;
+  border-left: 1px solid var(--panel-border, rgba(255, 255, 255, 0.2));
+  color: var(--panel-fg, #fff);
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 0 40px 40px 0;
+}
+
+.theme-menu-toggle:hover {
+  background: var(--hover-color);
+}
+
+.theme-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 130px;
+  background: var(--menu-bg);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.2));
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  z-index: 1000;
+}
+
+.theme-menu[hidden] {
+  display: none;
+}
+
+.theme-menu-item {
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--panel-fg, #fff);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.theme-menu-item:hover {
+  background: var(--hover-color);
+}
+
+.theme-menu-item.active {
+  background: var(--highlight-color);
+}
+
+/* ---------------------------------------------------------------------------
+   In-panel view/measure tools (ui/PanelToolbars.js). Hidden by default; a theme
+   that hides the floating toolbars (e.g. themes/docked/theme.css) reveals these.
+   They reuse the floating button markup/classes so they look the same.
+   --------------------------------------------------------------------------- */
+#panelToolsContainer {
+  display: none;
+}
+
+.panel-tools-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Docked measure buttons reuse the global .measure-tool-btn look; their icons
+   come from CSS variables so a theme can swap them (themes/default/theme.css
+   --icon-measure-*). The floating panel uses <img>; here the .tool-icon box
+   carries the icon as a background so the same SVG renders at the same size. */
+.panel-tools-group .tool-icon[data-icon] {
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+.panel-tools-group .tool-icon[data-icon="distance"] { background-image: var(--icon-measure-distance); }
+.panel-tools-group .tool-icon[data-icon="angle"]    { background-image: var(--icon-measure-angle); }
+.panel-tools-group .tool-icon[data-icon="clear"]    { background-image: var(--icon-measure-clear); }
+.panel-tools-group .tool-icon[data-icon="restore"]  { background-image: var(--icon-measure-restore); }
+
+/* Docked view buttons mimic the floating camera tools (whose styling is scoped
+   to #cameraTools). Same look, just reachable inside the panel. */
+.panel-tools-group .camera-tool-btn,
+.panel-tools-group .camera-tool-reset-btn {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 6px 10px;
+  min-width: 32px;
+  min-height: 32px;
+  font-size: 14px;
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.panel-tools-group .camera-tool-btn {
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+}
+.panel-tools-group .camera-tool-reset-btn {
+  background: rgba(240, 132, 18, 0.90);
+  border: 1px solid rgba(250, 132, 18, 1);
+}
+.panel-tools-group .camera-tool-btn:hover {
+  border-color: var(--highlight-color);
+  transform: translateY(-2px);
+}
+.panel-tools-group .camera-tool-reset-btn:hover {
+  border-color: #fff;
+}
+/* Axis buttons show only the .camera-icon letter (span hidden), like the
+   floating ones. The reset button keeps its "Reset" label. */
+.panel-tools-group .camera-tool-btn span {
+  display: none;
+}
+
+
+
+/* ===========================================================================
+   Planes panel styling — restored from the newmain branch. The retrofit ported
+   ui/PlanesPanel.js but not its CSS, so the Planes box rendered unstyled. These
+   .planes-* / #hklInputs / .plane-delete-btn rules follow the rest of the UI
+   (accent via --accent-color / --highlight-color).
+   =========================================================================== */
+/* ── Planes Panel ─────────────────────────────────────── */
+.planes-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.planes-input-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.planes-radio-label {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 100%;
+}
+
+.planes-radio-label input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+
+.planes-row-inputs {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* uvwd layout: uvw cluster + d cluster separated */
+.planes-uvwd-layout {
+  grid-template-columns: none;
+}
+
+.planes-uvw-cluster {
+  display: contents;
+}
+
+.planes-d-cluster {
+  display: contents;
+}
+
+#hklInputs {
+  grid-template-columns: none;
+}
+
+.planes-labeled-input {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.planes-input-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  text-transform: lowercase;
+  letter-spacing: 0.03em;
+  text-align: left;
+  min-width: 14px;
+}
+
+.planes-num-input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  text-align: center;
+  box-sizing: border-box;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.planes-num-input::-webkit-inner-spin-button,
+.planes-num-input::-webkit-outer-spin-button {
+  opacity: 0.4;
+}
+
+.planes-num-input:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.planes-num-input:focus:not(:disabled) {
+  outline: none;
+  border-color: var(--accent-color);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.planes-viz-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.planes-viz-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+}
+
+.planes-select,
+.planes-select-sm {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.planes-select-sm {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.planes-buttons-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.planes-action-btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 7px 10px;
+  background: var(--accent-color);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.planes-action-btn:hover {
+  background: var(--highlight-color);
+}
+
+/* Table */
+.planes-table-wrapper {
+  overflow-x: auto;
+}
+
+.planes-empty-msg {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 12px;
+  text-align: center;
+  margin: 6px 0 0;
+}
+
+.planes-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.planes-th {
+  padding: 5px 8px;
+  text-align: left;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.planes-td {
+  padding: 5px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: middle;
+}
+
+.planes-params-cell {
+  font-family: monospace;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.plane-delete-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 80, 80, 0.75);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.plane-delete-btn:hover {
+  color: rgba(255, 80, 80, 1);
+}
+
+/* New Planes Panel Layout Styles */
+.planes-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.planes-header h3 {
+  margin: 0;
+  flex: 1;
+}
+
+.planes-top-btn {
+  flex: 0 0 auto;
+  min-width: 90px;
+  padding: 5px 12px;
+  background: var(--accent-color);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.planes-top-btn:hover {
+  background: var(--highlight-color);
+}
+
+/* Table container with visible border */
+.planes-table-wrapper {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  overflow: auto;
+  margin-bottom: 8px;
+  background: rgba(0, 0, 0, 0.15);
+  max-height: 240px;
+}
+
+.planes-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  table-layout: auto;
+}
+
+.planes-th {
+  padding: 5px 6px;
+  text-align: left;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 500;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+}
+
+.planes-th-narrow {
+  width: 24px;
+  padding: 5px 3px;
+  text-align: center;
+}
+
+.planes-td {
+  padding: 5px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: middle;
+}
+
+.planes-table tbody tr:last-child .planes-td {
+  border-bottom: none;
+}
+
+/* Column-specific td styles */
+.planes-td-cb {
+  width: 24px;
+  text-align: center;
+  padding: 5px 3px;
+}
+
+.planes-td-mono {
+  font-family: monospace;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.88);
+  white-space: nowrap;
+}
+
+.planes-td-vector {
+  min-width: 54px;
+}
+
+.planes-td-field {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+  max-width: 90px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.planes-td-cut {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+}
+
+.planes-td-del {
+  width: 24px;
+  text-align: center;
+  padding: 5px 3px;
+}
+
+.planes-td-del-sticky,
+.planes-th-del-sticky {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: rgba(14, 18, 24, 0.96);
+  box-shadow: -1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
+.planes-th-del-sticky {
+  z-index: 3;
+}
+
+.planes-vector {
+  display: inline-grid;
+  grid-template-columns: auto auto auto;
+  align-items: stretch;
+  column-gap: 2px;
+}
+
+.planes-vector-tight {
+  min-width: 38px;
+}
+
+.planes-vector-bracket {
+  display: flex;
+  align-items: center;
+  font-size: 3em;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.planes-vector-values {
+  display: grid;
+  grid-auto-rows: minmax(0, auto);
+  justify-items: center;
+  row-gap: 1px;
+  line-height: 1.05;
+}
+
+.planes-uvwd-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.planes-d-inline {
+  font-size: 10px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.64);
+  white-space: nowrap;
+}
+
+/* Row interaction */
+.planes-table tbody tr {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.planes-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.planes-row-selected {
+  background: rgba(100, 150, 255, 0.12) !important;
+}
+
+.planes-row-selected .planes-td-mono {
+  color: rgba(255, 255, 255, 1);
+}
+
+.planes-row-selected .planes-td-del-sticky {
+  background: rgba(22, 33, 56, 0.98);
+}
+
+/* Centered calculate button row */
+.planes-center-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.planes-calc-btn {
+  padding: 6px 16px;
+  background: var(--accent-color);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.planes-calc-btn:hover:not(:disabled) {
+  background: var(--highlight-color);
+}
+
+.planes-calc-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Parameter / field sections */
+.planes-section-title {
+  margin: 0 0 8px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.planes-params-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.planes-field-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Grouped field + colormap card */
+.planes-field-colormap-container {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.planes-field-colormap-disabled {
+  opacity: 0.55;
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+.planes-field-colormap-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.planes-field-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.planes-field-control label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.planes-field-colormap-disabled .planes-field-control label,
+.planes-field-colormap-disabled #planesRangeDisplay {
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.planes-field-range-control {
+  gap: 6px;
+}
+
+.planes-field-resolution-control {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.planes-field-resolution-control label {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.planes-field-resolution-control input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.planes-full-width {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Cut mode row */
+.planes-cut-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.planes-cut-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.planes-range-container {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.planes-dual-slider {
+  position: relative;
+  height: 18px;
+}
+
+.planes-dual-slider-track,
+.planes-dual-slider-fill {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  border-radius: 999px;
+  transform: translateY(-50%);
+}
+
+.planes-dual-slider-track {
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.planes-field-colormap-disabled .planes-dual-slider-track {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.planes-dual-slider-fill {
+  background: var(--accent-color);
+}
+
+.planes-field-colormap-disabled .planes-dual-slider-fill {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.planes-slider {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  flex: 1;
+  margin: 0;
+  height: 4px;
+  transform: translateY(-50%);
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  outline: none;
+  pointer-events: none;
+}
+
+.planes-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+
+.planes-slider::-moz-range-track {
+  height: 4px;
+  background: transparent;
+  border: none;
+}
+
+.planes-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--accent-color);
+  border-radius: 50%;
+  cursor: pointer;
+  pointer-events: auto;
+  border: 2px solid rgba(15, 18, 30, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+  transition: background 0.15s;
+}
+
+.planes-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--accent-color);
+  border-radius: 50%;
+  cursor: pointer;
+  pointer-events: auto;
+  border: 2px solid rgba(15, 18, 30, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+  transition: background 0.15s;
+}
+
+.planes-slider::-webkit-slider-thumb:hover {
+  background: var(--highlight-color);
+}
+
+.planes-slider::-moz-range-thumb:hover {
+  background: var(--highlight-color);
+}
+
+.planes-slider:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.planes-select:disabled {
+  opacity: 0.55;
+  color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+  cursor: not-allowed;
+}
+
+.planes-slider-min {
+  z-index: 2;
+}
+
+.planes-slider-max {
+  z-index: 3;
+}
+
+#planesRangeDisplay {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .planes-field-colormap-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.planes-table tbody tr .planes-params-cell {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}

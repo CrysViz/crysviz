@@ -1,2 +1,19 @@
 *~
 \#*
+.DS_Store
+*.swp
+*.swo
+*.back
+node_modules/
+.env
+.env.local
+*.log
+
+# Rust/wasm build artifacts for the periodic_wasm crate (source kept; the
+# committed build outputs live directly in docs/compiled/, see `make periodic-wasm`)
+docs/compiled/periodic_wasm_src/target/
+docs/compiled/periodic_wasm_src/pkg/
+
+# Project-local Rust toolchain (rustup + cargo home), analogous to a Python venv.
+# Activate with: source rust-env/activate
+rust-env/

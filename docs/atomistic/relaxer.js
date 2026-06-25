@@ -1,20 +1,20 @@
-import { fileBrowser } from '../store.js';
-import { updateVisualization } from '../crystal-viewer.js';
-import { runPeriodicWrapped } from '../modules/LatticeModule.js';
+import { fileBrowser } from '../state/store.js';
+import { updateVisualization } from '../core/crystal-viewer.js';
+import { runPeriodicWrapped } from '../render/index.js';
 import {
   fracToCart,
   cartToFrac,
   matVec,
   normalizeFractionalPositions,
 } from './math.js';
-import { symmetrizeCartesianPositions, symmetrizeCartesianVectors, isWyckoffModeActive } from '../modules/SymmetryEditModule.js';
+import { symmetrizeCartesianPositions, symmetrizeCartesianVectors, isWyckoffModeActive } from '../ui/SymmetryEditModule.js';
 
 function symbolCase(sym) {
   const s = String(sym ?? '').trim();
   return s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s;
 }
 
-//todo : everything here is implemented elsewhere. WE NEED TO REFACTOR INTO A MATH MODULE
+// TODO: everything here is implemented elsewhere; refactor into a math module.
 
 const EV_A3_TO_GPA = 160.21766208;
 

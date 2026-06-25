@@ -83,6 +83,9 @@ if (Symbol.dispose) PeriodicResult.prototype[Symbol.dispose] = PeriodicResult.pr
  * * `lattice_flat`– flat f64 array, row-major 3×3 lattice matrix [a; b; c].
  * * `bond_table`  – flat f64 cutoff matrix, length n_elem × n_elem.
  * * `n_elem`      – number of element species.
+ * * `face_tol`    – tolerance (fractional coords) for treating an atom as
+ *   sitting on a cell face/edge/corner. Real structures carry small offsets
+ *   from 0/1, so this must be looser than machine eps (default ~1e-3).
  * @param {boolean} show_periodic
  * @param {boolean} show_pbc_bonds
  * @param {Uint32Array} elements_in
@@ -90,9 +93,10 @@ if (Symbol.dispose) PeriodicResult.prototype[Symbol.dispose] = PeriodicResult.pr
  * @param {Float64Array} lattice_flat
  * @param {Float64Array} bond_table
  * @param {number} n_elem
+ * @param {number} face_tol
  * @returns {PeriodicResult}
  */
-export function periodic_wrapped(show_periodic, show_pbc_bonds, elements_in, frac_in, lattice_flat, bond_table, n_elem) {
+export function periodic_wrapped(show_periodic, show_pbc_bonds, elements_in, frac_in, lattice_flat, bond_table, n_elem, face_tol) {
     const ptr0 = passArray32ToWasm0(elements_in, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArrayF64ToWasm0(frac_in, wasm.__wbindgen_malloc);
@@ -101,7 +105,7 @@ export function periodic_wrapped(show_periodic, show_pbc_bonds, elements_in, fra
     const len2 = WASM_VECTOR_LEN;
     const ptr3 = passArrayF64ToWasm0(bond_table, wasm.__wbindgen_malloc);
     const len3 = WASM_VECTOR_LEN;
-    const ret = wasm.periodic_wrapped(show_periodic, show_pbc_bonds, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem);
+    const ret = wasm.periodic_wrapped(show_periodic, show_pbc_bonds, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, face_tol);
     return PeriodicResult.__wrap(ret);
 }
 

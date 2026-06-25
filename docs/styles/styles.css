@@ -2,7 +2,7 @@ html,
 body {
   height: 100%;
   margin: 0;
-  background-color: #002121; 
+  background-color: var(--surface-bg);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -11,56 +11,11 @@ body {
   overflow: hidden;
 }
 
-:root {
-  /* optional: fallback colors */
-}
+/* Design tokens (surfaces, geometry, scene) AND the backend-mode accent classes
+   (.theme-standard / .theme-ase / .theme-symmetry / .theme-locked-ase) live in
+   themes/default/theme.css, which the loader loads first; a theme override can
+   redefine any of them. */
 
-.theme-standard {
-  --bg-color: rgba(6,70,50,0.8);
-  --highlight-color: rgba(6,140,50, 1.0);
-  --accent-color: rgba(6,140,50,0.8);
-  --hover-color:rgba(6,140,50,0.3);
-  --border-color:rgba(6,90,50,0.5);
-}
-
-.theme-ase {
-  --bg-color: rgba(81,0,0,0.8);
-  --highlight-color: rgba(159,52,52,1.0);
-  --accent-color: rgba(159,52,52,0.9);
-  --hover-color:rgba(159,52,52,0.3);
-  --border-color:rgba(255,118,118,0.3);
-}
-
-.theme-symmetry {
-  --bg-color: rgba(15, 3, 56,0.8);
-  --highlight-color: rgba(18, 141, 204,1.0);
-  --accent-color: rgba(18, 141, 204,0.8);
-  --hover-color: rgba(18, 141, 204,0.2);
-  --border-color: rgba(17, 71, 129, 0.5);
-}
-
-.theme-locked-ase {
-  --bg-color: rgba(66, 24, 81, 0.84);
-  --highlight-color: rgba(187, 98, 214, 1.0);
-  --accent-color: rgba(167, 92, 214, 0.9);
-  --hover-color: rgba(187, 98, 214, 0.24);
-  --border-color: rgba(183, 117, 221, 0.5);
-}
-:root {
-  --ui-width: 380px;      /* Panel content width */
-  --ui-border: 1px;       /* Panel border width */
-  --ui-padding: 20px;     /* Panel padding */
-  
-  /* Correct total width calculation */
-  --ui-total-width: calc(var(--ui-width) + 2 * var(--ui-border) + 2 * var(--ui-padding));
-
-  /* Gizmo positioning variables */
-  --gizmo-size: 90px;
-  --gizmo-bottom: 20px;
-  --gizmo-left: calc(var(--ui-total-width) + 10px); /* Panel width + gap */
-  --camera-tools-left: calc(var(--ui-total-width) + 10px);
-  --popup-left: calc(var(--ui-total-width) + 10px);
-}
 #ui {
   height: 98dvh;
   min-width: var(--ui-width);
@@ -68,10 +23,10 @@ body {
   max-width:var(--ui-width);
   overflow: auto;
   padding: var(--ui-padding);
-  background: rgba(26, 26, 26, 1);
-  color: #fff;
-  backdrop-filter: blur(20px);
-  border-right: var(--ui-border) solid rgba(255, 255, 255, 0.1);
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  backdrop-filter: blur(var(--panel-blur));
+  border-right: var(--ui-border) solid var(--panel-border);
 }
 
 /* Desktop panel hide state */
@@ -102,9 +57,9 @@ body {
   font-size: 10px;
   padding: 5px 10px;
   cursor: pointer;
-  background:rgba(26,26,26,0.9);
+  background:var(--popup-bg);
   color:#f9f9f9;
-  border-radius: 10px; 
+  border-radius: 10px;
   border: 1px solid rgba(128,128,128,1.0);
 }
 .angle-btn:hover {
@@ -119,7 +74,7 @@ body {
   font-size: 12px;
   border: 1px solid #ccc;
   border-radius: 5px;
-  background-color: rgba(26,26,26,0.9);
+  background-color: var(--input-bg);
   color:#f9f9f9;
 }
 /*------*/
@@ -173,7 +128,7 @@ body.panel-hidden #axesLegend {
   top: 120px;
   left: 120px;
   overflow: auto;
-  background: rgba(26,26,26,0.9);
+  background: var(--popup-bg);
   border: 1px solid #444;
   border-radius: 12px;
   box-shadow: 0px 0px 4px 2px  rgba(0,0,0,0.5);
@@ -243,7 +198,7 @@ body.panel-hidden #axesLegend {
 .control-group {
   margin: 0 0 16px 0;
   padding: 20px;
-  background: rgba(42, 42, 42, 0.8);
+  background: var(--group-bg);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
@@ -534,7 +489,6 @@ input[type="range"] {
   background: rgba(255, 255, 255, 0.1);
   outline: none;
   -webkit-appearance: none;
-  margin: 10px 0;
 }
 
 input[type="range"]::-webkit-slider-thumb {
@@ -983,7 +937,7 @@ justify-content: center;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background-color: rgba(42,42,42,0.8);
+    background-color: var(--group-bg);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 8px;
     padding: 0.6em 1em;
@@ -1192,7 +1146,7 @@ z-index:1000; pointer-events:none;
   top: 20px;
   right: 20px;
   z-index: 1000;
-  background: rgba(26, 26, 26, 0.95);
+  background: var(--menu-bg);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 8px;
@@ -1594,7 +1548,7 @@ body {
   .measurement-group.expanded {
     max-height: 44px;
     padding: 12px;
-    background: rgba(26, 26, 26, 0.95);
+    background: var(--menu-bg);
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
@@ -1619,7 +1573,7 @@ body {
   #cameraPanel.expanded {
     max-height: 200px !important;
     padding: 8px !important;
-    background: rgba(26, 26, 26, 0.95) !important;
+    background: var(--menu-bg) !important;
     backdrop-filter: blur(12px) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
     display: flex !important;
@@ -1750,7 +1704,7 @@ body {
 
   input[type="range"] {
     height: 8px;
-    margin: 15px 0;
+    margin:  0;
   }
 
   input[type="range"]::-webkit-slider-thumb {

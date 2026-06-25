@@ -1,3 +1,4 @@
+// @ts-nocheck -- vendored third-party; not type-checked
 /**
  * @license
  * Copyright 2010-2025 Three.js Authors

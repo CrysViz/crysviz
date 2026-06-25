@@ -5,6 +5,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>CrysViz Crystal Structure Viewer</title>
+    <!-- Theme base (design tokens) loads first so component CSS can use the
+         tokens; the active theme override (#theme-active) loads LAST so a theme
+         can override component rules. Both managed by ui/ThemeManager.js. -->
+    <link rel="stylesheet" id="theme-base" href="./themes/default/theme.css">
     <link rel="stylesheet" href="./styles/styles.css">
     <link rel="stylesheet" href="./styles/styles_file_browswer.css">
     <link rel="stylesheet" href="./styles/trajectoryPanel.css">
@@ -13,6 +17,8 @@
     <link rel="stylesheet" href="./styles/toggle_styles.css">
     <link rel="stylesheet" href="./styles/BondAtomColorPanel.css">
     <link rel="stylesheet" href="./styles/info_button_styles.css">
+    <!-- Active theme override — keep last so theme rules win the cascade. -->
+    <link rel="stylesheet" id="theme-active">
 
 
     <script type="importmap">
@@ -32,7 +38,25 @@
     <div id="backgroundDot" class="background-dot"></div>
     <div id="ui">
       <img src="./data/CrysViz_logo_clear_back_beta.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
-      <div class="backend-control-group">
+      <!-- Theme toggle (dark/twilight/light, with icons) + a small dropdown arrow
+           that lists all installed themes. Wired by ui/ThemeManager.js. -->
+      <div class="theme-switch" id="themeSwitch" role="group" aria-label="Theme">
+        <button type="button" class="theme-btn" data-theme-option="dark" aria-label="Use dark theme" title="Dark mode">
+          <img class="theme-icon" src="./data/icons/Hicon_Pack_1/moon.svg" alt="" aria-hidden="true" />
+        </button>
+        <button type="button" class="theme-btn" data-theme-option="twilight" aria-label="Use twilight theme" title="Twilight mode">
+          <img class="theme-icon" src="./data/icons/Hicon_Pack_1/sun-half.svg" alt="" aria-hidden="true" />
+        </button>
+        <button type="button" class="theme-btn" data-theme-option="light" aria-label="Use light theme" title="Light mode">
+          <img class="theme-icon" src="./data/icons/Hicon_Pack_1/sun.svg" alt="" aria-hidden="true" />
+        </button>
+        <button type="button" class="theme-menu-toggle" id="themeMenuToggle" aria-haspopup="true" aria-expanded="false" aria-label="More themes" title="More themes">&#9662;</button>
+        <ul class="theme-menu" id="themeMenu" role="menu" hidden></ul>
+      </div>
+      <!-- In-panel view/measure tools (ui/PanelToolbars.js). Hidden by default;
+           revealed by themes that hide the floating toolbars (e.g. docked). -->
+      <div id="panelToolsContainer"></div>
+      <div class="backend-control-group" id="backendControlGroup">
          <div class="info-button-panel">
             <button class="info-button" id="backendInfoButton">i</button>
          </div>  
@@ -99,7 +123,7 @@
           <button data-mode="none" class="active">None</button>
           <button data-mode="trajectory">Trajectory</button>
           <button data-mode="comparison">Comparison</button>
-          <button data-mode="cutplanes">Cut</button>
+          <!-- <button data-mode="cutplanes">Cut</button> -->
         </div>
         <div id="TrajectoryComparisonContainer"></div>
 
@@ -108,8 +132,10 @@
           <button data-mode="Forces">Forces</button>
           <button data-mode="Spins">Spins</button>
           <button data-mode="Field">Field</button>
+          <button data-mode="Planes">Planes</button>
          </div>
          <div id="SpinForceFieldContainer"></div>
+         <div id="PlanesContainer" style="display:none;"></div>
 
         <div class="segmented-control" id="ControlPanelAnalysisSwitch">
           <button data-mode="none" class="active">None</button>
@@ -177,6 +203,14 @@
               <span class="toggle_slider"></span>
             </span>
             <span class="toggle_text">Show Polyhedra</span>
+          </label>
+
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="showAxes" checked>
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Show Cell Axes</span>
           </label>
         </div>
        <!-- Color Settings -->
@@ -383,7 +417,7 @@
 
 
 
-   <script type="module" src="./crystal-viewer.js"></script> 
+   <script type="module" src="./core/crystal-viewer.js"></script> 
 
 
     <div id="infoPanel">

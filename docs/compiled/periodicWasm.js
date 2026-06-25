@@ -19,7 +19,7 @@ let _periodic_wrapped = null;
  * Initialise the WASM module.
  *
  * @param {Function} init              – default export from periodic_wasm.js (wasm-bindgen init)
- * @param {Function} periodic_wrapped  – named export from periodic_wasm.js
+ * @param {Function} periodic_wrapped_fn  named export from periodic_wasm.js
  * @param {URL|string} wasmUrl         – URL to the .wasm binary
  */
 export async function initPeriodicWasm(init, periodic_wrapped_fn, wasmUrl) {
@@ -46,8 +46,10 @@ export function buildBondTable(elements, bondLengths) {
         const ia = seen.get(a);
         const ib = seen.get(b);
         if (ia !== undefined && ib !== undefined) {
-          table[ia * nElem + ib] = cutoff;
-          table[ib * nElem + ia] = cutoff;
+          // bondLengths values are { min, max } objects (legacy: plain number)
+          const maxCutoff = (typeof cutoff === 'number') ? cutoff : (cutoff?.max ?? 0);
+          table[ia * nElem + ib] = maxCutoff;
+          table[ib * nElem + ia] = maxCutoff;
         }
       }
     }
@@ -67,6 +69,7 @@ export function periodicWrapped(general, frac, elements, lattice) {
   const n = elements.length;
   const showPeriodic = !!general.showPeriodic;
   const showPBCBonds = !!general.showPBCBonds;
+  const faceTol = general.periodicFaceTol ?? 1e-3;
 
   const { table: bondTable, nElem, elementToIdx } = buildBondTable(
     elements,
@@ -101,7 +104,8 @@ export function periodicWrapped(general, frac, elements, lattice) {
     fracFlat,
     latticeFlat,
     bondTable,
-    nElem
+    nElem,
+    faceTol
   );
 
   const m = result.len();

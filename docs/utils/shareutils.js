@@ -102,7 +102,7 @@ export function createCompleteShareableURL(structureData, globalState) {
   const base64Data = btoa(stateJSON);
 
   // Create URL with complete state parameter
-  const currentURL = new URL(window.location);
+  const currentURL = new URL(window.location.href);
   currentURL.searchParams.set('state', base64Data);
 
   return currentURL.toString();
@@ -157,7 +157,7 @@ export function createLegacyShareableURL(structureData) {
   const base64Data = btoa(poscarString);
 
   // Create URL with structure parameter
-  const currentURL = new URL(window.location);
+  const currentURL = new URL(window.location.href);
   currentURL.searchParams.set('structure', base64Data);
 
   return currentURL.toString();
@@ -181,8 +181,8 @@ export function restoreCompleteState(state, globalSetters) {
     setUseOrthographicCamera,
     setBondLengths,
     setBondVisibility,
-    loadColorOverrides,
-    loadIndividualAtomColors,
+    loadColorOverrides: _loadColorOverrides,
+    loadIndividualAtomColors: _loadIndividualAtomColors,
     updateVisualization,
     createBondLengthControls,
     createShareButton,

@@ -1,3 +1,4 @@
+// @ts-nocheck -- vendored third-party; not type-checked
 import {
 	Line3,
 	Plane,

@@ -1,0 +1,6 @@
+/* Twilight theme — warm parchment 3D scene.
+   Layered on top of default.css; only redefines what differs. */
+:root {
+  --scene-bg: #fcf2dd;
+  --lattice-color: #090a09;
+}

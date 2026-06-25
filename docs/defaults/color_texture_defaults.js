@@ -1,5 +1,20 @@
 import * as THREE from '../external/three/three.module.js';
-import {general} from '../store.js';
+import {general} from '../state/store.js';
+
+export const themes = {
+  dark: {
+    background: "#090a09",
+    latticeColor: "#e7e7e7"
+  },
+  light: {
+    background: "#FFFFFF",
+    latticeColor: "#090a09"
+  },
+  twilight: {
+    background: "#FCF2DD",
+    latticeColor: "#090a09"
+  }
+};
 
 export const jmolColorMap = {
   H: 0xffffff, He: 0xd9ffff, Li: 0xcc80ff, Be: 0xc2ff00, B: 0xffb5b5, C: 0x909090, N: 0x3050f8, O: 0xff0d0d,
