@@ -16,8 +16,19 @@ import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedra
 import { rebuildAtoms } from '../render/AtomsFracUpdateModule.js'
 import { rebuildBonds } from '../render/BondsFracUpdateModule.js'
 
-// Bumped on every updatePolyhedra() call so a stale async compute result is discarded.
-let polyhedraToken = 0;
+// Single-flight guard for the async compute. Only one compute runs at a time; any
+// updatePolyhedra() request that arrives while one is in flight sets `polyhedraDirty`
+// instead of starting another, so the in-flight loop re-runs and always finishes by
+// reflecting the LATEST state (bond lengths, colours, toggles, selected structure) — and
+// the workers are never flooded with superseded jobs.
+let polyhedraBusy = false;
+let polyhedraDirty = false;
+
+function clearPolyhedraGroup() {
+  if (groups.polyhedraGroup) disposeGroup(groups.polyhedraGroup);
+  groups.polyhedraGroup = new THREE.Group();
+  app.scene.add(groups.polyhedraGroup);
+}
 
 // ---------- STYLE (render) ----------
 const FACE_OPACITY = 0.50;
@@ -998,51 +1009,80 @@ export function renderPolyhedra(structure) {
  * mirrors the scene and bond-cutoff edits take effect) and renders it.
  */
 export async function updatePolyhedra() {
-  // ---------- TOGGLE ----------
-  // The compute may be async (parallel WASM), so each call takes a token: a newer
-  // call (rapid toggle / structure or frame change) bumps it, and a stale compute
-  // result is discarded instead of rendering into a superseded group.
-  const token = ++polyhedraToken;
-  if (groups.polyhedraGroup) disposeGroup(groups.polyhedraGroup);
-  const group = new THREE.Group();
-  groups.polyhedraGroup = group;
-  app.scene.add(group);
-  // Compute whenever faces OR completing atoms are wanted; nothing drawn when neither.
+  // Turning the feature off takes effect immediately (clear the group now), even if a
+  // compute is in flight — flag it dirty so that in-flight loop also stops/settles.
   if (!general.showPolyhedra && !general.completePolyhedra) {
+    clearPolyhedraGroup();
+    if (polyhedraBusy) polyhedraDirty = true;
     return;
   }
 
-  // Nothing to build without an active structure + lattice (e.g. polyhedra
-  // toggled/restored on before a structure is loaded). Without this guard the
-  // code below calls fracToCart on an undefined lattice, which hard-crashes the
-  // WASM math backend (the JS backend would silently produce NaN).
-  const structure = fileBrowser.selectedStructure;
-  if (!structure || !structure.lattice || !structure.atoms) {
-    return;
-  }
-
+  // Coalesce concurrent requests into the single in-flight loop below. A request that
+  // arrives mid-compute just flags `dirty` so the loop recomputes once more with the
+  // latest state — guaranteeing the last change is always reflected, without spawning a
+  // pile of superseded compute jobs.
+  if (polyhedraBusy) { polyhedraDirty = true; return; }
+  polyhedraBusy = true;
   try {
-    const _tc = performance.now();
-    // computePolyhedra returns a Polyhedra (serial) or a Promise<Polyhedra> (parallel);
-    // awaiting handles both. A sync result just resolves on the next microtask.
-    const model = await computePolyhedra(structure);
-    if (token !== polyhedraToken) return; // superseded — group already replaced/disposed
-    structure.polyhedra = model;
+    do {
+      polyhedraDirty = false;
 
-    // "Complete Polyhedra": append the out-of-cell vertex atoms to the displayed set so
-    // every polyhedron has an atom (with bonds) at each vertex. Only re-renders atoms/bonds
-    // when the completing set actually changes (see syncCompletingAtoms).
-    if (general.completePolyhedra) {
-      syncCompletingAtoms(structure, model);
-    }
+      // Compute whenever faces OR completing atoms are wanted; nothing drawn when neither.
+      if (!general.showPolyhedra && !general.completePolyhedra) {
+        clearPolyhedraGroup();
+        continue;
+      }
+      // Nothing to build without an active structure + lattice (e.g. polyhedra
+      // toggled/restored on before a structure is loaded). Without this guard the code
+      // below calls fracToCart on an undefined lattice, which hard-crashes the WASM math
+      // backend (the JS backend would silently produce NaN).
+      const structure = fileBrowser.selectedStructure;
+      if (!structure || !structure.lattice || !structure.atoms) {
+        clearPolyhedraGroup();
+        continue;
+      }
 
-    if (general.showPolyhedra) {
-      const _tr = performance.now();
-      renderPolyhedra(structure); // into groups.polyhedraGroup (=== group while current)
-      console.log(`[polyhedra] render=${(performance.now() - _tr).toFixed(1)}ms (compute+render=${(performance.now() - _tc).toFixed(1)}ms)`);
-    }
+      const _tc = performance.now();
+      // computePolyhedra returns a Polyhedra (serial) or a Promise<Polyhedra> (parallel);
+      // awaiting handles both. A newer request during the await sets `polyhedraDirty`.
+      const model = await computePolyhedra(structure);
+
+      // A newer request arrived while computing → this result is stale; loop and recompute.
+      if (polyhedraDirty) continue;
+      // Toggled off, or the selected structure switched, during the compute.
+      if ((!general.showPolyhedra && !general.completePolyhedra)
+          || fileBrowser.selectedStructure !== structure) {
+        if (!general.showPolyhedra && !general.completePolyhedra) clearPolyhedraGroup();
+        continue;
+      }
+
+      structure.polyhedra = model;
+
+      // "Complete Polyhedra": append the out-of-cell vertex atoms to the displayed set so
+      // every polyhedron has an atom (with bonds) at each vertex. Only re-renders atoms/bonds
+      // when the completing set actually changes (see syncCompletingAtoms).
+      if (general.completePolyhedra) {
+        syncCompletingAtoms(structure, model);
+      }
+
+      // Build into a fresh group and swap atomically, keeping the previous polyhedra on
+      // screen during the compute (no flicker / disappearance while recomputing).
+      const prev = groups.polyhedraGroup;
+      const newGroup = new THREE.Group();
+      groups.polyhedraGroup = newGroup;
+      app.scene.add(newGroup);
+      if (general.showPolyhedra) {
+        const _tr = performance.now();
+        renderPolyhedra(structure); // renders into groups.polyhedraGroup (=== newGroup)
+        console.log(`[polyhedra] render=${(performance.now() - _tr).toFixed(1)}ms (compute+render=${(performance.now() - _tc).toFixed(1)}ms)`);
+      }
+      if (prev) disposeGroup(prev);
+    } while (polyhedraDirty);
   } catch (err) {
     console.error('[updatePolyhedra] compute failed:', err);
+    polyhedraDirty = false;
+  } finally {
+    polyhedraBusy = false;
   }
 }
 
