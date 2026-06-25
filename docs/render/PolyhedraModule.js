@@ -15,6 +15,7 @@ import { computePolyhedraWasm } from '../compiled/polyhedraWasm.js'
 import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedraWorkerPool.js'
 import { rebuildAtoms } from '../render/AtomsFracUpdateModule.js'
 import { rebuildBonds } from '../render/BondsFracUpdateModule.js'
+import { runPeriodicWrapped } from '../render/LatticeModule.js'
 
 // Single-flight guard for the async compute. Only one compute runs at a time; any
 // updatePolyhedra() request that arrives while one is in flight sets `polyhedraDirty`
@@ -1114,12 +1115,21 @@ export async function updatePolyhedra() {
  * @param {Polyhedra} model
  */
 function syncCompletingAtoms(structure, model) {
-  const wrapped = structure.periodic?.wrapped;
-  if (!wrapped) return;
-
   const positions = structure.atoms.map(a => a.position); // fractional
   const elements = [...structure.elements];
   const lattice = structure.lattice;
+
+  // Settle the base `wrapped` (and its hash) for the CURRENT state FIRST. If a hashed input
+  // changed — most importantly the bond lengths — runPeriodicWrapped rebuilds `wrapped` from
+  // base right here, before we append the completing atoms. That matters because the
+  // rebuildAtoms()/rebuildBonds() at the end each call runPeriodicWrapped again: doing the
+  // rebuild now means those see a MATCHING hash and reuse the augmented `wrapped`, instead of
+  // rebuilding it back to base and dropping the completing atoms (the bug when bond distance
+  // changed).
+  runPeriodicWrapped(structure.periodic, positions, elements, lattice);
+  const wrapped = structure.periodic?.wrapped;
+  if (!wrapped) return;
+
   const latInv = invert3x3(transpose3x3(lattice));
   const baseCount = (typeof wrapped.baseCount === 'number')
     ? wrapped.baseCount
@@ -1183,8 +1193,8 @@ function syncCompletingAtoms(structure, model) {
   }
   wrapped.completingSig = sig;
 
-  // Re-render atoms + bonds against the augmented set (runPeriodicWrapped sees the unchanged
-  // hash and reuses this mutated `wrapped`, so it isn't rebuilt back to base).
+  // Re-render atoms + bonds against the augmented set. The hash was settled above, so
+  // rebuildAtoms()'s runPeriodicWrapped reuses this mutated `wrapped` (no rebuild back to base).
   rebuildAtoms();
   rebuildBonds();
 }
