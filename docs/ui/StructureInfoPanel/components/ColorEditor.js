@@ -3,6 +3,7 @@ import { colorHexToCss, getAtomColor } from '../../../utils/ColorModule.js';
 import { clampOpacity } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity } from '../../../render/AtomsFracUpdateModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
+import { updatePolyhedraColors } from '../../../render/index.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { bondLengthToColor } from '../../ColorPanel.js';
@@ -50,6 +51,10 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     groups.atomsMesh.instanceColor.needsUpdate = true;
     groups.bondsMesh.instanceColor.needsUpdate = true;
     updatePieDotCallback(); // Update the pie dot
+    // Polyhedra faces are coloured by element; recolour them in place to match (cheap,
+    // no geometry recompute). The picker updates atom/bond meshes directly and otherwise
+    // never triggers a polyhedra update.
+    updatePolyhedraColors();
   });
 
   // --- Editor UI ---

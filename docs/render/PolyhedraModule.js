@@ -995,12 +995,29 @@ export function renderPolyhedra(structure) {
       cn: posList.length,
       centerSrcIndex: (poly.type === 'centered') ? poly.centerIndex : undefined,
       centerElement:  (poly.type === 'centered') ? poly.centerElement : undefined,
+      colorElem: poly.colorElem, // for in-place recolour (updatePolyhedraColors)
       vertexSrcs: poly.vertexSrcList,
     };
 
     const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
     mesh.add(new THREE.LineSegments(egeom, sharedEdgeMat));
     groups.polyhedraGroup.add(mesh);
+  }
+}
+
+/**
+ * Recolour the existing polyhedra faces from the current element colours, in place —
+ * no geometry recompute. Use after an element-colour change that only updates atom/bond
+ * meshes directly (e.g. the colour picker), so the polyhedra match without a full
+ * (async) `updatePolyhedra`. No-op when no polyhedra are drawn.
+ */
+export function updatePolyhedraColors() {
+  const grp = groups.polyhedraGroup;
+  if (!grp) return;
+  for (const mesh of grp.children) {
+    const colorElem = mesh.userData?.colorElem;
+    if (!colorElem || !mesh.material?.color) continue;
+    mesh.material.color.set(getElementColor(colorElem));
   }
 }
 
