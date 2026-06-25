@@ -595,5 +595,5 @@ function updateStructureFromRowAndStep(rowIndex) {
     const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
     updateLatticeComparisonPanel(L1, L2);
   }
-  updateVisualization({reRenderAtoms: true, reRenderBonds: true, reRenderField: true});
+  updateVisualization({reRenderAtoms: true, reRenderBonds: true, reRenderField: true, reRenderComposition: true});
 }

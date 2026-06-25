@@ -112,17 +112,21 @@ function captureCompositionUiState() {
 function restoreCompositionUiState(state) {
   if (!state) return;
 
+  const compDiv = document.getElementById('composition');
+  if (!compDiv) return;
+
   for (const element of state.expandedElements || []) {
-    const container = document.querySelector(`.comp-container[data-element="${element}"]`);
+    const container = compDiv.querySelector(`.comp-container[data-element="${element}"]`);
     if (!container) continue;
     const atomsContainer = container.querySelector('.individual-atoms');
     const expandIcon = container.querySelector('.comp-left span:last-child');
+    atomsContainer?._populateAtomRows?.();
     if (atomsContainer) atomsContainer.style.display = 'block';
     if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
   }
 
   for (const element of state.elementEditorsOpen || []) {
-    const container = document.querySelector(`.comp-container[data-element="${element}"]`);
+    const container = compDiv.querySelector(`.comp-container[data-element="${element}"]`);
     const editor = container?.querySelector('.element-color-editor');
     if (!editor) continue;
     editor.style.display = 'flex';
@@ -130,7 +134,7 @@ function restoreCompositionUiState(state) {
   }
 
   for (const entry of state.atomEditorsOpen || []) {
-    const row = document.querySelector(`.individual-atom-row[data-atom-index="${entry.atomIndex}"]`);
+    const row = compDiv.querySelector(`.individual-atom-row[data-atom-index="${entry.atomIndex}"]`);
     if (!row) continue;
 
     const editors = {
@@ -256,6 +260,20 @@ export function renderComposition(panelState="closed") {
     if (structureToggle) {
       structureToggle.setAttribute('aria-expanded', 'false');
       // Rebind listener cleanly
+      structureToggle.removeEventListener('click', handleStructurePanelToggle);
+      structureToggle.addEventListener('click', handleStructurePanelToggle);
+    }
+  } else {
+    compDiv.classList.add('open');
+    compDiv.setAttribute('aria-hidden', 'false');
+    const toggleIcon = document.getElementById('structureToggleIcon');
+    if (toggleIcon) {
+      toggleIcon.textContent = '-';
+      toggleIcon.classList.add('open');
+    }
+    const structureToggle = document.getElementById('structureToggle');
+    if (structureToggle) {
+      structureToggle.setAttribute('aria-expanded', 'true');
       structureToggle.removeEventListener('click', handleStructurePanelToggle);
       structureToggle.addEventListener('click', handleStructurePanelToggle);
     }
