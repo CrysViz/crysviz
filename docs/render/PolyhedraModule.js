@@ -1126,9 +1126,14 @@ function syncCompletingAtoms(structure, model) {
   // rebuild now means those see a MATCHING hash and reuse the augmented `wrapped`, instead of
   // rebuilding it back to base and dropping the completing atoms (the bug when bond distance
   // changed).
+  const hashBefore = structure.periodic?.hash;
   runPeriodicWrapped(structure.periodic, positions, elements, lattice);
   const wrapped = structure.periodic?.wrapped;
   if (!wrapped) return;
+  // Did the settle rebuild `wrapped` to base-only? If so the atom/bond meshes still show the
+  // PREVIOUS set (the bond-length edit used reRenderAtoms:false), so the sig-based skip below
+  // is unsafe — we must refresh the meshes even if the new completing set is empty/unchanged.
+  const baseRebuilt = structure.periodic?.hash !== hashBefore;
 
   const latInv = invert3x3(transpose3x3(lattice));
   const baseCount = (typeof wrapped.baseCount === 'number')
@@ -1176,9 +1181,12 @@ function syncCompletingAtoms(structure, model) {
   }
 
   const sig = Array.from(seen).sort().join('|');
-  // Unchanged since last sync (treat a fresh wrapped's missing sig as "" so a structure with
-  // no completing atoms doesn't trigger a needless atom/bond rebuild).
-  if (sig === (wrapped.completingSig ?? '')) return;
+  // Skip the (expensive) mesh rebuild only when the base wasn't rebuilt this call AND the
+  // completing set is unchanged — i.e. the meshes already show exactly this set. When the
+  // base WAS rebuilt, the meshes are stale relative to `wrapped`, so we must refresh even if
+  // the new completing set is empty (otherwise old completing atoms linger — the bug when
+  // bond distance was decreased).
+  if (!baseRebuilt && sig === (wrapped.completingSig ?? '')) return;
 
   // Rebuild wrapped = base + completing (truncate any previous completing first).
   wrapped.elements.length = baseCount;
