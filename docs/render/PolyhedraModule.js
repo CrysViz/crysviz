@@ -11,6 +11,7 @@ import { getCutPlaneMaskSign } from '../model/Plane.js'
 import { voronoiNeighbours } from '../render/VoronoiNeighbours.js'
 import { atomicRadii } from '../defaults/radii_defaults.js'
 import { electronegativity } from '../defaults/electronegativity_defaults.js'
+import { colorHexToCss } from '../utils/ColorModule.js'
 import { computePolyhedraWasm } from '../compiled/polyhedraWasm.js'
 import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedraWorkerPool.js'
 import { rebuildAtoms } from '../render/AtomsFracUpdateModule.js'
@@ -92,6 +93,18 @@ const ConvexGeomCtor = (typeof ConvexGeometry !== 'undefined')
 function getElementColor(element) {
   const colors = fileBrowser.selectedStructure?.getElementColors?.()[element];
   return (colors && colors.length) ? colors[0] : FACE_FALLBACK_COLOR;
+}
+
+// Face colour for a polyhedron. A CENTERED polyhedron takes its centre ATOM's colour, so
+// editing one atom's colour recolours just its polyhedron — and an element-wide change (which
+// recolours every atom of the element) still works. Cages have no centre atom → element colour.
+// Returns a CSS string or a hex number; THREE.Color.set accepts either.
+function polyhedronFaceColor(type, centerIndex, colorElem) {
+  if (type === 'centered' && Number.isInteger(centerIndex)) {
+    const atom = fileBrowser.selectedStructure?.atoms?.[centerIndex];
+    if (atom) return colorHexToCss(atom.getColor());
+  }
+  return getElementColor(colorElem);
 }
 
 // Minimal induced degree per cage size (tune as needed)
@@ -976,7 +989,7 @@ export function renderPolyhedra(structure) {
     try { geom = new ConvexGeomCtor(posList); } catch { continue; }
     geom.computeVertexNormals();
 
-    const faceColor = getElementColor(poly.colorElem);
+    const faceColor = polyhedronFaceColor(poly.type, poly.centerIndex, poly.colorElem);
     const mat = new THREE.MeshStandardMaterial({
       color: faceColor,
       transparent: true,
@@ -1016,9 +1029,9 @@ export function updatePolyhedraColors() {
   const grp = groups.polyhedraGroup;
   if (!grp) return;
   for (const mesh of grp.children) {
-    const colorElem = mesh.userData?.colorElem;
-    if (!colorElem || !mesh.material?.color) continue;
-    mesh.material.color.set(getElementColor(colorElem));
+    const ud = mesh.userData;
+    if (ud?.type !== 'polyhedron' || !mesh.material?.color) continue;
+    mesh.material.color.set(polyhedronFaceColor(ud.mode, ud.centerSrcIndex, ud.colorElem));
   }
 }
 

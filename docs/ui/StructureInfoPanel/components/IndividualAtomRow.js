@@ -3,6 +3,7 @@ import { colorHexToCss, getAtomColor, hexToRgba } from '../../../utils/ColorModu
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity } from '../../../render/AtomsFracUpdateModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
+import { updatePolyhedraColors } from '../../../render/index.js';
 import { clampOpacity, updateAtomCoordinates } from './utils.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createSpinForceEditor } from './SpinForceEditor.js';
@@ -136,6 +137,9 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     groups.bondsMesh.instanceColor.needsUpdate = true;
     colorBtn.style.background = hexToRgba(hex, 0.8);
     onColorChange(); // Notify parent to update pie dot
+    // A centered polyhedron is coloured by its centre atom, so recolour in place (cheap, no
+    // geometry recompute) — the polyhedron of the edited atom matches its new colour.
+    updatePolyhedraColors();
   });
 
   const AtomColorApplyBtn = document.createElement('button');
