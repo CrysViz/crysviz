@@ -134,7 +134,9 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       });
     });
     groups.atomsMesh.instanceColor.needsUpdate = true;
-    groups.bondsMesh.instanceColor.needsUpdate = true;
+    if (groups.bondsMesh) {
+      groups.bondsMesh.instanceColor.needsUpdate = true;
+    }
     colorBtn.style.background = hexToRgba(hex, 0.8);
     onColorChange(); // Notify parent to update pie dot
     // A centered polyhedron is coloured by its centre atom, so recolour in place (cheap, no

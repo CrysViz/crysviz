@@ -49,7 +49,9 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     });
 
     groups.atomsMesh.instanceColor.needsUpdate = true;
-    groups.bondsMesh.instanceColor.needsUpdate = true;
+    if (groups.bondsMesh) {
+      groups.bondsMesh.instanceColor.needsUpdate = true;
+    }      
     updatePieDotCallback(); // Update the pie dot
     // Polyhedra faces are coloured by element; recolour them in place to match (cheap,
     // no geometry recompute). The picker updates atom/bond meshes directly and otherwise
