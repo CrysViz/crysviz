@@ -158,8 +158,11 @@ pub fn compute_polyhedra(
     center_src: &[u32],
     center_shift: &[i32],
     center_cart: &[f64],
-    visible_keys: &[i32],
+    center_keys: &[i32],
     seed_visible: &[u8],
+    cut_plane_immune: &[u8],
+    cut_planes: &[f64],
+    cut_plane_count: usize,
 ) -> PolyhedraResult {
     let r = polyhedra::compute_polyhedra(
         frac,
@@ -175,8 +178,11 @@ pub fn compute_polyhedra(
         center_src,
         center_shift,
         center_cart,
-        visible_keys,
+        center_keys,
         seed_visible,
+        cut_plane_immune,
+        cut_planes,
+        cut_plane_count,
     );
     PolyhedraResult {
         kinds: r.kinds,
@@ -270,8 +276,11 @@ pub fn compute_candidates(
     center_src: &[u32],
     center_shift: &[i32],
     center_cart: &[f64],
-    visible_keys: &[i32],
+    center_keys: &[i32],
     seed_visible: &[u8],
+    cut_plane_immune: &[u8],
+    cut_planes: &[f64],
+    cut_plane_count: usize,
     center_start: usize,
     center_end: usize,
     seed_start: usize,
@@ -279,8 +288,9 @@ pub fn compute_candidates(
 ) -> CandidateResult {
     let (cands, _timing) = polyhedra::build_candidates(
         frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, radii, max_cutoff,
-        use_chem_filter, detect_cages, center_src, center_shift, center_cart, visible_keys,
-        seed_visible, center_start, center_end, seed_start, seed_end,
+        use_chem_filter, detect_cages, center_src, center_shift, center_cart, center_keys,
+        seed_visible, cut_plane_immune, cut_planes, cut_plane_count,
+        center_start, center_end, seed_start, seed_end,
     );
     let f = polyhedra::flatten_candidates(&cands);
     CandidateResult {

@@ -70,6 +70,40 @@ fn image_key(src: u32, shift: [i32; 3]) -> Key {
     (src, shift[0], shift[1], shift[2])
 }
 
+#[inline]
+fn point_cut_by_planes(position: Vec3, cut_planes: &[f64], cut_plane_count: usize) -> bool {
+    for i in 0..cut_plane_count {
+        let off = 5 * i;
+        let nx = cut_planes[off];
+        let ny = cut_planes[off + 1];
+        let nz = cut_planes[off + 2];
+        let r = cut_planes[off + 3];
+        let mask_sign = cut_planes[off + 4];
+        let plane_side = ((position.x * nx) + (position.y * ny) + (position.z * nz) - r) * mask_sign;
+        if plane_side > 0.0 {
+            return true;
+        }
+    }
+    false
+}
+
+#[inline]
+fn atom_image_visible(
+    position: Vec3,
+    src: u32,
+    cut_plane_immune: &[u8],
+    cut_planes: &[f64],
+    cut_plane_count: usize,
+) -> bool {
+    if cut_plane_count == 0 {
+        return true;
+    }
+    if cut_plane_immune.get(src as usize).copied().unwrap_or(0) != 0 {
+        return true;
+    }
+    !point_cut_by_planes(position, cut_planes, cut_plane_count)
+}
+
 #[derive(Clone)]
 struct Neighbor {
     src_j: u32,
@@ -604,8 +638,11 @@ pub fn build_candidates(
     center_src: &[u32],
     center_shift: &[i32],
     center_cart: &[f64],
-    _visible_keys: &[i32], // kept for FFI stability; vertices now use full coordination
+    center_keys: &[i32],
     seed_visible: &[u8],
+    cut_plane_immune: &[u8],
+    cut_planes: &[f64],
+    cut_plane_count: usize,
     center_start: usize,
     center_end: usize,
     seed_start: usize,
@@ -633,6 +670,11 @@ pub fn build_candidates(
     let mt_inv = mt.inverse().unwrap_or(Matrix33::new([[0.0; 3]; 3]));
     let frac_to_cart = |f: Vec3| a.scale(f.x).add(b.scale(f.y)).add(c.scale(f.z));
     let cart_to_frac = |p: Vec3| mt_inv.mul_vec(p);
+
+    let center_image_keys: HashSet<Key> = center_keys
+        .chunks_exact(4)
+        .map(|chunk| (chunk[0] as u32, chunk[1], chunk[2], chunk[3]))
+        .collect();
 
     let positions: Vec<Vec3> = (0..n_atoms)
         .map(|i| Vec3::new(frac[3 * i], frac[3 * i + 1], frac[3 * i + 2]))
@@ -775,6 +817,9 @@ pub fn build_candidates(
     for ci in center_start..center_end {
         let src = center_src[ci];
         let shift = [center_shift[3 * ci], center_shift[3 * ci + 1], center_shift[3 * ci + 2]];
+        if !center_image_keys.contains(&image_key(src, shift)) {
+            continue;
+        }
         let center_pos = Vec3::new(center_cart[3 * ci], center_cart[3 * ci + 1], center_cart[3 * ci + 2]);
         let center_elem = elem_idx[src as usize] as usize;
 
@@ -798,15 +843,16 @@ pub fn build_candidates(
         };
         let vor = voronoi_neighbours(center_pos, &cands, center_radius, &accept);
 
-        // Vertices are the centre's TRUE coordination shell: every accepted Voronoi
-        // neighbour, regardless of whether its image is displayed or hidden by a cut
-        // plane — so a displayed centre always gets its complete polyhedron. Dedupe per
-        // (src, shift) image, keeping the nearest.
+        // Cut-plane visibility is tested directly on the candidate image,
+        // independent of whether that periodic image exists in `wrapped`.
         let mut by_image: HashMap<Key, usize> = HashMap::new();
         let mut order: Vec<Key> = Vec::new();
         for &k in &vor {
             let cand = &cands[k];
             let key = image_key(cand.src_j, cand.shift);
+            if !atom_image_visible(cand.pos, cand.src_j, cut_plane_immune, cut_planes, cut_plane_count) {
+                continue;
+            }
             match by_image.get(&key) {
                 Some(&prev) if cands[prev].d <= cand.d => {}
                 Some(_) => {
@@ -862,8 +908,10 @@ pub fn build_candidates(
             let seed_elem = elem_idx[seed] as u32;
 
             // Frontier BFS in image space: always reach depth 3, then keep going
-            // until ≥40 visible images or CAGE_BFS_DEPTH. The visible count is
-            // tracked incrementally, so we never re-scan/clone the pool mid-expand.
+            // until ≥40 cut-visible images or CAGE_BFS_DEPTH. Hidden-by-plane
+            // images may still be traversed to preserve connectivity, but only
+            // visible images are retained in the pool and counted toward the stop
+            // condition.
             let tp = now();
             visited_set.clear();
             order.clear();
@@ -873,11 +921,6 @@ pub fn build_candidates(
             order.push(start.clone());
             frontier.push(start);
             let mut depth = 0;
-
-            // Expand the TRUE bonded cluster (all reached images, not just displayed
-            // ones): always to depth 3, then until ≥40 atoms or CAGE_BFS_DEPTH. The pool
-            // is the whole cluster so a cage is found even if some of its atoms sit on
-            // images that aren't displayed.
             while !frontier.is_empty()
                 && depth < CAGE_BFS_DEPTH
                 && (depth < 3 || order.len() < 40)
@@ -894,7 +937,9 @@ pub fn build_candidates(
                                 .add(b.scale(nshift[1] as f64))
                                 .add(c.scale(nshift[2] as f64));
                             let e = PoolEntry { pos, src: o.src_j, shift: nshift };
-                            order.push(e.clone());
+                            if atom_image_visible(pos, o.src_j, cut_plane_immune, cut_planes, cut_plane_count) {
+                                order.push(e.clone());
+                            }
                             next_frontier.push(e);
                         }
                     }
@@ -1170,15 +1215,18 @@ pub fn compute_polyhedra(
     center_src: &[u32],
     center_shift: &[i32],
     center_cart: &[f64],
-    visible_keys: &[i32],
+    center_keys: &[i32],
     seed_visible: &[u8],
+    cut_plane_immune: &[u8],
+    cut_planes: &[f64],
+    cut_plane_count: usize,
 ) -> ComputedPolyhedra {
     let n_atoms = elem_idx.len();
     let n_centers = center_src.len();
     let (candidates, bt) = build_candidates(
         frac, elem_idx, lat, cutoff_matrix, n_elem, electroneg, radii, max_cutoff,
-        use_chem_filter, detect_cages, center_src, center_shift, center_cart, visible_keys,
-        seed_visible, 0, n_centers, 0, n_atoms,
+        use_chem_filter, detect_cages, center_src, center_shift, center_cart, center_keys,
+        seed_visible, cut_plane_immune, cut_planes, cut_plane_count, 0, n_centers, 0, n_atoms,
     );
     let ta = now();
     let acc = accept(candidates);
@@ -1317,8 +1365,11 @@ mod tests {
         center_src: Vec<u32>,
         center_shift: Vec<i32>,
         center_cart: Vec<f64>,
-        visible_keys: Vec<i32>,
+        center_keys: Vec<i32>,
         seed_visible: Vec<u8>,
+        cut_plane_immune: Vec<u8>,
+        cut_planes: Vec<f64>,
+        cut_plane_count: usize,
     }
 
     fn octahedron() -> Inputs {
@@ -1345,9 +1396,9 @@ mod tests {
         }
         let center_src: Vec<u32> = (0..n as u32).collect();
         let center_shift = vec![0i32; 3 * n];
-        let mut visible_keys = Vec::new();
+        let mut center_keys = Vec::new();
         for i in 0..n as i32 {
-            visible_keys.extend_from_slice(&[i, 0, 0, 0]);
+            center_keys.extend_from_slice(&[i, 0, 0, 0]);
         }
         Inputs {
             frac,
@@ -1361,8 +1412,11 @@ mod tests {
             center_src,
             center_shift,
             center_cart,
-            visible_keys,
+            center_keys,
             seed_visible: vec![1u8; n],
+            cut_plane_immune: vec![0u8; n],
+            cut_planes: Vec::new(),
+            cut_plane_count: 0,
         }
     }
 
@@ -1370,7 +1424,8 @@ mod tests {
         build_candidates(
             &inp.frac, &inp.elem, &inp.lat, &inp.cutoff, inp.n_elem, &inp.electroneg, &inp.radii,
             inp.max_cutoff, true, true, &inp.center_src, &inp.center_shift, &inp.center_cart,
-            &inp.visible_keys, &inp.seed_visible, cs, ce, ss, se,
+            &inp.center_keys, &inp.seed_visible, &inp.cut_plane_immune, &inp.cut_planes,
+            inp.cut_plane_count, cs, ce, ss, se,
         )
         .0
     }

@@ -2,8 +2,9 @@
  * computePolyhedra – WASM-backed implementation of the polyhedra compute core.
  *
  * The JS caller (render/PolyhedraModule.js) prepares the cheap, display-coupled
- * inputs (visible centre images, visible image keys, seed visibility, the bond
- * cutoff lookup); `marshalPolyhedraInputs` packs them into flat typed arrays.
+ * inputs (visible centre images, centre image keys, seed visibility, cut-plane
+ * metadata, the bond cutoff lookup); `marshalPolyhedraInputs` packs them into
+ * flat typed arrays.
  * `computePolyhedraWasm` runs the whole thing serially; the worker pool instead
  * sends those same inputs to workers (which call `compute_candidates`) and then
  * calls `callAcceptCandidates` here on the main thread to finish.
@@ -28,7 +29,8 @@ await init(new URL('./periodic_wasm_bg.wasm', import.meta.url));
  *   positions: number[][], elements: string[], lattice: number[][], maxCutoff: number,
  *   useChemicalFilter: boolean, detectCages: boolean,
  *   displayCenters: Array<{cart:{x:number,y:number,z:number}, src:number, shift:[number,number,number]}>,
- *   visibleImageKeys: Set<string>, seedVisible: Uint8Array, getBondCutoff:(a:string,b:string)=>number,
+ *   centerImageKeys: Set<string>, seedVisible: Uint8Array, cutPlaneImmune: Uint8Array,
+ *   cutPlaneData: number[][], getBondCutoff:(a:string,b:string)=>number,
  * }} prep
  * @returns {{idxToElem: string[], inputs: Object}}
  */
@@ -36,7 +38,7 @@ export function marshalPolyhedraInputs(prep) {
   const {
     positions, elements, lattice, maxCutoff,
     useChemicalFilter, detectCages,
-    displayCenters, visibleImageKeys, seedVisible, getBondCutoff,
+    displayCenters, centerImageKeys, seedVisible, cutPlaneImmune, cutPlaneData, getBondCutoff,
   } = prep;
 
   const nAtoms = elements.length;
@@ -94,15 +96,25 @@ export function marshalPolyhedraInputs(prep) {
     centerCart[3 * i + 2] = dc.cart.z;
   }
 
-  // Visible image keys "<src>:<dx>,<dy>,<dz>" → flat [src,dx,dy,dz,...].
+  // Centre image keys "<src>:<dx>,<dy>,<dz>" → flat [src,dx,dy,dz,...].
   const keyVals = [];
-  for (const k of visibleImageKeys) {
+  for (const k of centerImageKeys) {
     const colon = k.indexOf(':');
     const src = Number(k.slice(0, colon));
     const parts = k.slice(colon + 1).split(',');
     keyVals.push(src, Number(parts[0]), Number(parts[1]), Number(parts[2]));
   }
-  const visibleKeys = Int32Array.from(keyVals);
+  const centerKeys = Int32Array.from(keyVals);
+
+  const cutPlanesFlat = new Float64Array(5 * cutPlaneData.length);
+  for (let i = 0; i < cutPlaneData.length; i++) {
+    const plane = cutPlaneData[i];
+    cutPlanesFlat[5 * i] = plane[0];
+    cutPlanesFlat[5 * i + 1] = plane[1];
+    cutPlanesFlat[5 * i + 2] = plane[2];
+    cutPlanesFlat[5 * i + 3] = plane[3];
+    cutPlanesFlat[5 * i + 4] = plane[4];
+  }
 
   return {
     idxToElem,
@@ -110,7 +122,8 @@ export function marshalPolyhedraInputs(prep) {
       fracFlat, elemIdx, latticeFlat, cutoffMatrix, nElem,
       electroneg, radii, maxCutoff: +maxCutoff,
       useChemicalFilter: !!useChemicalFilter, detectCages: !!detectCages,
-      centerSrc, centerShift, centerCart, visibleKeys, seedVisible,
+      centerSrc, centerShift, centerCart, centerKeys, seedVisible,
+      cutPlaneImmune, cutPlanesFlat, cutPlaneCount: cutPlaneData.length,
       nCenters: nC, nAtoms,
     },
   };
@@ -168,7 +181,8 @@ export function computePolyhedraWasm(prep) {
   const result = compute_polyhedra(
     I.fracFlat, I.elemIdx, I.latticeFlat, I.cutoffMatrix, I.nElem,
     I.electroneg, I.radii, I.maxCutoff, I.useChemicalFilter, I.detectCages,
-    I.centerSrc, I.centerShift, I.centerCart, I.visibleKeys, I.seedVisible,
+    I.centerSrc, I.centerShift, I.centerCart, I.centerKeys, I.seedVisible,
+    I.cutPlaneImmune, I.cutPlanesFlat, I.cutPlaneCount,
   );
   const timing = {
     setup: result.setup_ms(),

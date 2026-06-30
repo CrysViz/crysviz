@@ -99,13 +99,13 @@ export function compute_bond_pairs(cart: Float64Array, elem_idx: Uint32Array, cu
  * Parallel entry, part 1: generate the candidates for centre range
  * `[center_start,center_end)` and seed range `[seed_start,seed_end)`. Runs in a worker.
  */
-export function compute_candidates(frac: Float64Array, elem_idx: Uint32Array, lattice_flat: Float64Array, cutoff_matrix: Float64Array, n_elem: number, electroneg: Float64Array, radii: Float64Array, max_cutoff: number, use_chem_filter: boolean, detect_cages: boolean, center_src: Uint32Array, center_shift: Int32Array, center_cart: Float64Array, visible_keys: Int32Array, seed_visible: Uint8Array, center_start: number, center_end: number, seed_start: number, seed_end: number): CandidateResult;
+export function compute_candidates(frac: Float64Array, elem_idx: Uint32Array, lattice_flat: Float64Array, cutoff_matrix: Float64Array, n_elem: number, electroneg: Float64Array, radii: Float64Array, max_cutoff: number, use_chem_filter: boolean, detect_cages: boolean, center_src: Uint32Array, center_shift: Int32Array, center_cart: Float64Array, center_keys: Int32Array, seed_visible: Uint8Array, cut_plane_immune: Uint8Array, cut_planes: Float64Array, cut_plane_count: number, center_start: number, center_end: number, seed_start: number, seed_end: number): CandidateResult;
 
 /**
  * Compute coordination polyhedra. See `polyhedra::compute_polyhedra` for the
  * argument contract; the JS wrapper (`polyhedraWasm.js`) packs these arrays.
  */
-export function compute_polyhedra(frac: Float64Array, elem_idx: Uint32Array, lattice_flat: Float64Array, cutoff_matrix: Float64Array, n_elem: number, electroneg: Float64Array, radii: Float64Array, max_cutoff: number, use_chem_filter: boolean, detect_cages: boolean, center_src: Uint32Array, center_shift: Int32Array, center_cart: Float64Array, visible_keys: Int32Array, seed_visible: Uint8Array): PolyhedraResult;
+export function compute_polyhedra(frac: Float64Array, elem_idx: Uint32Array, lattice_flat: Float64Array, cutoff_matrix: Float64Array, n_elem: number, electroneg: Float64Array, radii: Float64Array, max_cutoff: number, use_chem_filter: boolean, detect_cages: boolean, center_src: Uint32Array, center_shift: Int32Array, center_cart: Float64Array, center_keys: Int32Array, seed_visible: Uint8Array, cut_plane_immune: Uint8Array, cut_planes: Float64Array, cut_plane_count: number): PolyhedraResult;
 
 /**
  * Rust implementation of `periodicWrapped`.
@@ -148,8 +148,8 @@ export interface InitOutput {
     readonly candidateresult_vertex_srcs: (a: number) => [number, number];
     readonly candidateresult_vertices: (a: number) => [number, number];
     readonly compute_bond_pairs: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => number;
-    readonly compute_candidates: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number) => number;
-    readonly compute_polyhedra: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number) => number;
+    readonly compute_candidates: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number) => number;
+    readonly compute_polyhedra: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number) => number;
     readonly periodic_wrapped: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => number;
     readonly periodicresult_cart: (a: number) => [number, number];
     readonly periodicresult_elements: (a: number) => [number, number];

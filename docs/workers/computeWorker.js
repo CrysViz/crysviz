@@ -32,7 +32,8 @@ const handlers = {
     const r = compute_candidates(
       I.fracFlat, I.elemIdx, I.latticeFlat, I.cutoffMatrix, I.nElem,
       I.electroneg, I.radii, I.maxCutoff, I.useChemicalFilter, I.detectCages,
-      I.centerSrc, I.centerShift, I.centerCart, I.visibleKeys, I.seedVisible,
+      I.centerSrc, I.centerShift, I.centerCart, I.centerKeys, I.seedVisible,
+      I.cutPlaneImmune, I.cutPlanesFlat, I.cutPlaneCount,
       cs, ce, ss, se,
     );
     const result = {

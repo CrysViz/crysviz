@@ -322,19 +322,12 @@ export function computePolyhedra(structure) {
   const dispWrapped = structure.periodic?.wrapped;
   const activeCutPlanes = getActiveCutPlanes();
 
-  // Build the set of atom images that are actually visible to the user right now.
-  // This comes only from `structure.periodic.wrapped`, which is the shared display
-  // surface used by the atom renderer and is already expanded by the periodic-image
-  // and neighbour-bond toggles upstream.
-  //
-  // Consequence for centered polyhedra:
-  // - If a periodic image is present in `wrapped`, that image is allowed to act as
-  //   its own vertex in a centered shell.
-  // - If a periodic image is NOT present in `wrapped`, it is treated as invisible
-  //   and is not allowed to create an extra shell vertex here.
-  // - If there is no wrapped data at all, fall back to the primary-cell view only.
-  const visibleImageKeys = new Set();
-  const visibleImageCountsBySource = new Map();
+  // Build the set of wrapped base images eligible to act as displayed centres.
+  // This follows the shared atom display surface (`periodic.wrapped`) so the
+  // periodic-image toggles still control which centre images exist. Candidate
+  // vertices are cut-plane filtered separately and are not required to already
+  // exist in `wrapped`.
+  const centerImageKeys = new Set();
   /** @type {Array<{cart:THREE.Vector3, src:number, shift:[number,number,number]}>} */
   let displayCenters = [];
   // Only the BASE atoms are polyhedra centers. "Complete Polyhedra" appends extra atoms to
@@ -364,16 +357,14 @@ export function computePolyhedra(structure) {
         Math.round(frac[2] - positions[src][2]),
       ]);
       const key = imageKey(src, shift);
-      visibleImageKeys.add(key);
-      visibleImageCountsBySource.set(src, (visibleImageCountsBySource.get(src) || 0) + 1);
+      centerImageKeys.add(key);
       displayCenters.push({ cart: cartVec, src, shift });
     }
   }
-  if (!visibleImageKeys.size) {
+  if (!centerImageKeys.size) {
     for (let i = 0; i < nAtoms; i++) {
       if (!isAtomImageVisible(baseCart[i].toArray(), structure.atoms[i], activeCutPlanes)) continue;
-      visibleImageKeys.add(imageKey(i, [0, 0, 0]));
-      visibleImageCountsBySource.set(i, 1);
+      centerImageKeys.add(imageKey(i, [0, 0, 0]));
       displayCenters.push({ cart: baseCart[i].clone(), src: i, shift: [0, 0, 0] });
     }
   }
@@ -382,17 +373,23 @@ export function computePolyhedra(structure) {
   const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || {}).map(v => (typeof v === 'number' ? v : (v?.max ?? 0))), 0.0);
 
   // ---------- Compute-path dispatch (parallel WASM → serial WASM → pure JS) ----------
-  // The display-coupled prep above (displayCenters, visibleImageKeys, maxCutoff) is
+  // The display-coupled prep above (displayCenters, centerImageKeys, maxCutoff) is
   // shared. `prep` is the input bundle for the WASM paths; the pure-JS implementation
   // (runJsPath) stays as the final fallback.
   const seedVisible = new Uint8Array(nAtoms);
+  const cutPlaneImmune = new Uint8Array(nAtoms);
   for (let i = 0; i < nAtoms; i++) {
     seedVisible[i] = isAtomImageVisible(baseCart[i].toArray(), structure.atoms[i], activeCutPlanes) ? 1 : 0;
+    cutPlaneImmune[i] = structure.atoms[i]?.cutPlaneImmune ? 1 : 0;
   }
+  const cutPlaneData = activeCutPlanes.map((plane) => {
+    const [nx, ny, nz] = normalizeCutPlaneNormal(plane.x, plane.y, plane.z);
+    return [nx, ny, nz, Number(plane.r) || 0, getCutPlaneMaskSign(plane.side)];
+  });
   const prep = {
     positions, elements, lattice, maxCutoff,
     useChemicalFilter, detectCages,
-    displayCenters, visibleImageKeys, seedVisible, getBondCutoff,
+    displayCenters, centerImageKeys, seedVisible, cutPlaneImmune, cutPlaneData, getBondCutoff,
   };
 
   // Serial WASM (one call) → model.
@@ -668,15 +665,12 @@ export function computePolyhedra(structure) {
       accept,
     });
 
-    // Vertices are the centre's TRUE coordination shell — every accepted Voronoi
-    // neighbour (at its nearest-image position), regardless of whether that neighbour
-    // is currently displayed or hidden by a cut plane. So any displayed centre always
-    // gets its complete polyhedron, even for an edge atom whose ligands sit on periodic
-    // images that aren't shown as spheres. (We still dedupe per (src, shift) image,
-    // keeping the nearest, in case the candidate set repeats one.)
+    // Cut-plane visibility is tested directly on the candidate image, independent
+    // of whether that periodic image exists in `wrapped`.
     const byImage = new Map();
     for (const { cand } of vor) {
       const key = imageKey(cand.srcJ, cand.shift);
+      if (!isAtomImageVisible(cand.pos.toArray(), structure.atoms[cand.srcJ], activeCutPlanes)) continue;
       const prev = byImage.get(key);
       if (!prev || cand.d < prev.d) byImage.set(key, cand);
     }
@@ -717,19 +711,23 @@ export function computePolyhedra(structure) {
     // (the old in-cell pool was the main source of partial cages).
     //
     // Expanded a single depth-level at a time (frontier BFS) and stopped at the
-    // same depth as before (always ≥3, then deeper until ≥40 visible images or
+    // same depth as before (always ≥3, then deeper until ≥40 cut-visible images or
     // CAGE_BFS_DEPTH). This visits each image once instead of rebuilding the whole
-    // BFS from scratch for depth 3, then 4, then 5. The returned pool (visible
-    // images only) is identical to the old code's final iteration.
+    // BFS from scratch for depth 3, then 4, then 5. Hidden-by-plane images may still be
+    // traversed to keep connectivity intact, but only visible images are retained
+    // in the returned pool.
     //
     // The neighbour images of a node are its source atom's cached base neighbours
     // translated by the node's own lattice shift — no per-node atom rescan.
     function buildPoolForSeed(seedI) {
       const startKey = `${seedI}:0,0,0`;
-      /** @type {Map<string, {pos:THREE.Vector3, src:number, shift:[number,number,number], depth:number}>} */
-      const visited = new Map();
+      /** @type {Set<string>} */
+      const visited = new Set();
+      /** @type {Array<{pos:THREE.Vector3, src:number, shift:[number,number,number], depth:number}>} */
+      const visiblePool = [];
       const start = { pos: baseCart[seedI], src: seedI, shift: /** @type {[number,number,number]} */ ([0, 0, 0]), depth: 0 };
-      visited.set(startKey, start);
+      visited.add(startKey);
+      visiblePool.push(start);
       let frontier = [start];
       let depth = 0;
       const expand = () => {
@@ -743,7 +741,8 @@ export function computePolyhedra(structure) {
               const pos = baseCart[o.srcJ].clone()
                 .addScaledVector(a, ndx).addScaledVector(b, ndy).addScaledVector(c, ndz);
               const nn = { pos, src: o.srcJ, shift: /** @type {[number,number,number]} */ ([ndx, ndy, ndz]), depth: depth + 1 };
-              visited.set(k, nn);
+              visited.add(k);
+              if (isAtomImageVisible(pos.toArray(), structure.atoms[o.srcJ], activeCutPlanes)) visiblePool.push(nn);
               next.push(nn);
             }
           }
@@ -751,16 +750,11 @@ export function computePolyhedra(structure) {
         frontier = next;
         depth++;
       };
-      // The pool is the seed's TRUE bonded cluster (all reached images), not just the
-      // displayed ones — so a cage is found whenever a displayed seed participates in
-      // one, even if some cage atoms sit on periodic images that aren't shown.
       while (depth < 3 && frontier.length) expand(); // always reach depth 3
-      let pool = Array.from(visited.values());
-      while (pool.length < 40 && depth < CAGE_BFS_DEPTH && frontier.length) { // heuristic ≥2×N
+      while (visiblePool.length < 40 && depth < CAGE_BFS_DEPTH && frontier.length) { // heuristic ≥2×N
         expand();
-        pool = Array.from(visited.values());
       }
-      return pool;
+      return visiblePool;
     }
 
     for (let seedI=0; seedI<nAtoms; seedI++) {
