@@ -1,6 +1,5 @@
 import { general } from '../../state/store.js';
 import { removeAtomisticPanel, addRelaxPanel, addMDPanel } from './AtomisticPanels.js';
-import {addMoyoPanel} from './MoyoWASM.js';
 import { refreshBackendTheme } from './BackendTheme.js';
 import { addMDStreamPanel, removeMDStreamPanel } from './MDStreamPanel.js';
 
@@ -108,19 +107,10 @@ export function addBackendModeSwitch() {
 
     // Reset UI
     BackendModeSwitch.querySelectorAll("button").forEach(b => {
-      b.classList.remove("active", "symmetry", "relax", "md");
+      b.classList.remove("active", "relax", "md");
     });
 
-    if (mode === "symmetry") {
-            btn.classList.add("symmetry");
-            general.backendState = "symmetry";
-            general.atomisticPotential = "nep";
-            refreshBackendTheme();
-            setUploadVisible(false);
-            removeMDStreamPanel();
-            addMoyoPanel();
-        }
-    else if (mode === "relax") {
+    if (mode === "relax") {
             btn.classList.add("relax");
             general.backendState = "relax";
             general.atomisticPotential = general.atomisticPotential || "nep";
@@ -161,7 +151,6 @@ export function resetSwitch(defaultMode = "None") {
   // Remove active class from all buttons
   const buttons = BackendModeSwitch.querySelectorAll("button");
   buttons.forEach(btn => btn.classList.remove("active"));
-  buttons.forEach(btn => btn.classList.remove("symmetry"));
   buttons.forEach(btn => btn.classList.remove("relax"));
   buttons.forEach(btn => btn.classList.remove("md"));
 

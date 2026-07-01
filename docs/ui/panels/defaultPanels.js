@@ -19,6 +19,7 @@ import { addBondPanel, removeBondPanel } from '../BondPanel.js';
 import { removeHistogramPanel } from '../AnalysisPanels/BondAnalysisPanel.js';
 import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../LatticeSupercellPanel.js';
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
+import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
 
 export function registerDefaultPanels() {
   // ---- floating trio: measure / view / structure info -----------------------
@@ -234,6 +235,17 @@ export function registerDefaultPanels() {
     buildContent(body) { addLatticeAndSupercellPanel(body.id); },
     onDestroyContent() { removeLatticeAndSupercellPanel(); },
     defaults: { docked: true, order: 80, collapsed: true },
+  });
+
+  registerPanel({
+    id: 'symmetry',
+    title: 'Symmetry',
+    lifecycle: 'rebuild',
+    hiddenUntilStructure: true,
+    available() { return !!fileBrowser.selectedStructure; },
+    // async builder: fills the body once the Moyo WASM module is ready.
+    buildContent(body) { addMoyoPanel(body.id); },
+    defaults: { docked: true, order: 85, collapsed: true },
   });
 
   registerPanel({
