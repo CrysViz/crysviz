@@ -17,17 +17,16 @@
   display: none !important;
 }
 
-/* ---- docked: matches the .control-group grey boxes ---- */
+/* The .cv-panel container itself is chrome-less: collapsed, a panel is just
+   its title bar; expanded, the body hangs below the bar as the window
+   surface. */
+
+/* ---- docked: title bars stack with a small gap ---- */
 .cv-panel.cv-docked {
-  margin: 0 0 12px 0;
-  padding: 8px;
-  background: var(--group-bg);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
+  margin: 0 0 8px 0;
 }
 
-/* ---- floating: matches the current floating popups ---- */
+/* ---- floating ---- */
 .cv-panel.cv-floating {
   position: fixed;
   z-index: 1200;
@@ -36,18 +35,17 @@
   max-height: calc(100dvh - 16px);
   display: flex;
   flex-direction: column;
-  padding: 8px;
-  background: var(--popup-bg);
   color: var(--panel-fg);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 0 4px 2px rgba(0, 0, 0, 0.3);
 }
 
 .cv-panel.cv-floating > .cv-panel-body {
   overflow-y: auto;
   min-height: 0;
+}
+
+.cv-panel.cv-floating > .cv-panel-titlebar,
+.cv-panel.cv-floating > .cv-panel-body {
+  box-shadow: 0 0 4px 2px rgba(0, 0, 0, 0.3);
 }
 
 /* ---- title bar ---- */
@@ -62,7 +60,13 @@
   border-radius: 8px;
   background: var(--bg-color);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
   color: var(--panel-fg);
+}
+
+/* Expanded: the bar sits flush on the body surface below it. */
+.cv-panel:not(.cv-collapsed) > .cv-panel-titlebar {
+  border-radius: 8px 8px 0 0;
 }
 
 .cv-panel-titlebar:active,
@@ -118,8 +122,22 @@
 }
 
 /* ---- body / collapse ---- */
+/* The body is the window surface: it carries the box the old .control-group /
+   floating popups had, minus the top edge where the title bar sits. */
 .cv-panel-body {
-  padding: 8px 4px 2px 4px;
+  padding: 10px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  backdrop-filter: blur(10px);
+}
+
+.cv-panel.cv-docked > .cv-panel-body {
+  background: var(--group-bg);
+}
+
+.cv-panel.cv-floating > .cv-panel-body {
+  background: var(--popup-bg);
 }
 
 .cv-panel.cv-collapsed > .cv-panel-body {
@@ -133,9 +151,9 @@
 
 .cv-dock-placeholder {
   box-sizing: border-box;
-  margin: 0 0 12px 0;
+  margin: 0 0 8px 0;
   border: 1px dashed var(--accent-color);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--hover-color);
 }
 
