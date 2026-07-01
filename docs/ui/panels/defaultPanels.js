@@ -64,13 +64,21 @@ export function registerDefaultPanels() {
     defaults: { docked: false, anchor: { right: 20, bottom: 20 }, collapsed: true },
   });
 
-  // A restored share URL may ask for the structure panel to start open
-  // (utils/shareutils.js runs before the panels exist and leaves a marker).
+  // Structure loading and share-URL restore can run before the panels exist;
+  // both leave markers on #composition: the formula title for the info panel's
+  // title bar (StructureInfoPanel/General.js) and the panel-open request
+  // (utils/shareutils.js).
   const comp = document.getElementById('composition');
-  if (comp && comp.dataset.restoreOpen === '1') {
-    delete comp.dataset.restoreOpen;
-    const info = getPanel('info');
-    if (info) info.expand();
+  const info = getPanel('info');
+  if (comp && info) {
+    if (comp.dataset.pendingTitle) {
+      info.setTitle(comp.dataset.pendingTitle);
+      delete comp.dataset.pendingTitle;
+    }
+    if (comp.dataset.restoreOpen === '1') {
+      delete comp.dataset.restoreOpen;
+      info.expand();
+    }
   }
 
   // ---- docked panels ---------------------------------------------------------

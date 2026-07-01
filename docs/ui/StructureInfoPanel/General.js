@@ -34,10 +34,16 @@ export function getCompositionString() {
     }
   }
 
-  // The chemical formula is the info panel window's title.
+  // The chemical formula is the info panel window's title. The first
+  // structure load runs before the panel windows exist, so stash the title on
+  // #composition for ui/panels/defaultPanels.js to pick up at registration.
+  const panelTitle = formula + ` (${total} Atoms)`;
   const infoPanel = getPanel('info');
   if (infoPanel) {
-    infoPanel.setTitle(formula + ` (${total} Atoms)`);
+    infoPanel.setTitle(panelTitle);
+  } else {
+    const compEl = document.getElementById('composition');
+    if (compEl) compEl.dataset.pendingTitle = panelTitle;
   }
 
   // Display the chemical formula and the total number of atoms
