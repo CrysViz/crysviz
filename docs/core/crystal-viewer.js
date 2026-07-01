@@ -255,7 +255,6 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
         if (structureContainer && structureContainer.structures) initializeUIOnLoad(structureContainer);
     }
 
-   document.getElementById('structureControls').style.display = 'block';
    revealFeaturePanels();
 
     createShareButton();

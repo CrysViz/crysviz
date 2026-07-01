@@ -82,6 +82,43 @@ export function registerDefaultPanels() {
   }
 
   // ---- docked panels ---------------------------------------------------------
+
+  registerPanel({
+    id: 'files',
+    title: 'Files',
+    lifecycle: 'persistent',
+    buildContent(body) {
+      // Adopt the statically-defined upload section (file/paste tabs) and the
+      // structure table (moving preserves listeners and ids; the backend mode
+      // switch keeps hiding #uploadSection by id in non-Viz modes).
+      const upload = document.getElementById('uploadSection');
+      if (upload) body.appendChild(upload);
+      const table = document.getElementById('structureTablePanel');
+      if (table) body.appendChild(table);
+    },
+    defaults: { docked: true, order: 0, collapsed: false },
+  });
+
+  registerPanel({
+    id: 'storage',
+    title: 'Storage',
+    lifecycle: 'persistent',
+    hiddenUntilStructure: true,
+    buildContent(body) {
+      const info = document.getElementById('storageInfoButton');
+      const infoWrap = info && info.closest('.info-button-panel');
+      if (infoWrap) body.appendChild(infoWrap);
+      const sw = document.getElementById('StorageOptionSwitch');
+      if (sw) body.appendChild(sw);
+      // The Share button may already exist (created on the first structure
+      // load, before the panels); adopt it, otherwise createShareButton()
+      // targets this body directly.
+      const shareBtn = document.getElementById('shareBtn');
+      if (shareBtn) body.appendChild(shareBtn);
+    },
+    defaults: { docked: true, order: 95, collapsed: false },
+  });
+
   //
   // Feature panels are lifecycle 'rebuild': their content is built lazily on
   // first expand and rebuilt when the selected structure changes. Expanding

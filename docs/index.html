@@ -90,8 +90,9 @@
         </div>
         <div class="backend-control-group" id="BackendCalcPanel"></div>
       </div>
-      <div class="control-group">
-        <div class="panel">
+      <!-- Structure list; adopted into the "Files" panel window together with
+           #uploadSection (ui/panels/defaultPanels.js). -->
+      <div class="panel" id="structureTablePanel">
           <table id="objectTable">
           <thead>
             <th class="fth" colspan="1"></th>
@@ -110,17 +111,19 @@
          Only two structures can be compared
        </div>
     </div>
-    </div>
     <button type="button" id="saveButton">Download POSCAR</button>
     
     <!-- Unified panel dock (ui/panels/PanelManager.js). Docked panel windows
          stack inside; feature panels stay hidden until a structure loads. -->
     <div id="dock"></div>
 
-      <div class="control-group" id="structureControls" style="display: none;">
+      <!-- Hidden staging area: everything inside is adopted into unified panel
+           windows at startup (Storage panel: info button + switch; Display
+           panel: toggles + sliders). Never revealed. -->
+      <div id="structureControls" style="display: none;">
          <div class="info-button-panel">
             <button class="info-button" id="storageInfoButton">i</button>
-         </div> 
+         </div>
          <div class="segmented-control" id="StorageOptionSwitch">
           <button data-mode="Nothing">None</button>
           <button data-mode="Minimal"class="active"> Minimal</button>

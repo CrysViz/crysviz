@@ -401,8 +401,6 @@ export function loadSharedStructure() {
   // before applying any per-atom state that relies on stable indices.
   restoreAtomOrder(state.structure, structure);
 
-  const structureControls = document.getElementById('structureControls');
-  if (structureControls) structureControls.style.display = 'block';
   revealFeaturePanels();
   createBondLengthControls();
 
@@ -436,7 +434,11 @@ export function createShareButton() {
   shareBtn.style.cssText = 'padding:8px 16px; margin-top:8px; color:white; background-color: var(--accent-color); border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; width:100%;';
   shareBtn.onclick = shareStructure;
 
+  // The Share button lives in the Storage panel window. On the very first
+  // structure load the panel may not exist yet — fall back to the hidden
+  // staging area; the Storage panel adopts #shareBtn when it is built.
   const container =
+    document.getElementById('cvPanelBody-storage') ||
     document.getElementById('structureControls') ||
     document.getElementById('composition')?.parentElement;
   if (container) container.appendChild(shareBtn);

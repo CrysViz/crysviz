@@ -227,8 +227,7 @@ export function restoreCompleteState(state, globalSetters) {
   // 5. Update UI controls to match restored state
   updateUIControlsFromState(state);
 
-  // 6. Show structure controls and recreate interface
-  document.getElementById('structureControls').style.display = 'block';
+  // 6. Recreate interface
   createBondLengthControls();
   createShareButton();
 
