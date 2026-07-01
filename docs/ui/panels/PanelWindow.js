@@ -102,6 +102,11 @@ export class PanelWindow {
     bar.addEventListener('pointerdown', (e) => this._onTitlebarPointerDown(e));
     // Raise a floating window on any press inside it.
     el.addEventListener('pointerdown', () => { if (!this.docked) this.raise(); });
+
+    // Content swaps can grow a floating window at runtime (e.g. the structure
+    // panel's Bonds tab widening it); re-anchor so it grows into the viewport.
+    this._sizeObserver = new ResizeObserver(() => this._keepInViewport());
+    this._sizeObserver.observe(el);
   }
 
   setTitle(html) {
@@ -158,6 +163,7 @@ export class PanelWindow {
   }
 
   remove() {
+    this._sizeObserver.disconnect();
     this.el.remove();
   }
 
@@ -229,6 +235,30 @@ export class PanelWindow {
     const bottomAnchored = s.bottom && s.bottom !== 'auto';
     if (bottomAnchored) return; // already grows upward
     if (rect.top + fullH > window.innerHeight - VIEWPORT_MARGIN) {
+      s.bottom = `${Math.max(VIEWPORT_MARGIN, window.innerHeight - rect.bottom)}px`;
+      s.top = 'auto';
+    }
+  }
+
+  /**
+   * Called by a ResizeObserver whenever this window's size changes. If a
+   * floating window has grown past the right or bottom viewport edge, flip it
+   * to right/bottom anchoring: the far edge is pulled back to the viewport
+   * margin and stays fixed there, so the window extends left/up instead.
+   * (Anchoring flips back to left/top when the user drags the window.)
+   */
+  _keepInViewport() {
+    if (this.docked || this.el.hidden || !this.el.isConnected) return;
+    const rect = this.el.getBoundingClientRect();
+    if (!rect.width) return;
+    const s = this.el.style;
+    const leftAnchored = !s.right || s.right === 'auto';
+    if (leftAnchored && rect.right > window.innerWidth - VIEWPORT_MARGIN) {
+      s.right = `${Math.max(VIEWPORT_MARGIN, window.innerWidth - rect.right)}px`;
+      s.left = 'auto';
+    }
+    const topAnchored = !s.bottom || s.bottom === 'auto';
+    if (topAnchored && rect.bottom > window.innerHeight - VIEWPORT_MARGIN) {
       s.bottom = `${Math.max(VIEWPORT_MARGIN, window.innerHeight - rect.bottom)}px`;
       s.top = 'auto';
     }
