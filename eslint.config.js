@@ -30,7 +30,6 @@ export default [
         // actually "undefined". Declared here to keep no-undef high-signal.
         view: "readonly",
         errorPanel: "readonly",
-        ControlPanelAnalysisSwitch: "readonly",
       },
     },
     plugins: {

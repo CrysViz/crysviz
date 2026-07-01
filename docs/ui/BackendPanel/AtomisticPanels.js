@@ -90,7 +90,7 @@ function setCurrentEFS(out) {
     tensor: out.stress.matrix3x3.map((row) => [...row]),
   });
 
-  if (general.spinForceState === 'Forces') {
+  if (general.forcesActive) {
     updateForces();
   }
 }

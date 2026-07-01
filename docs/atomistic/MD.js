@@ -1,7 +1,7 @@
 import { fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { runPeriodicWrapped } from '../render/index.js';
-import { refreshDocking } from '../ui/ThemeManager.js';
+import { registerPanel, removePanel } from '../ui/panels/PanelManager.js';
 import { buildNEPStructure } from './relaxer.js';
 import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart, normalizeFractionalPositions } from './math.js';
 import {
@@ -408,75 +408,39 @@ export function applyMDStateToViewer(
 }
 
 export function createMDMonitorPanel() {
-  const existing = document.getElementById('mdMonitorPanel');
-  if (existing) existing.remove();
+  // A previous run's monitor may still be around — replace it.
+  removePanel('mdMonitor');
 
-  const panel = document.createElement('div');
-  panel.id = 'mdMonitorPanel';
   const isMobile = window.innerWidth <= 1024;
-  panel.style.position = 'fixed';
-  panel.style.left = isMobile ? '8px' : '430px';
-  panel.style.top  = isMobile ? '56px' : '110px';
-  panel.style.width = isMobile ? Math.min(360, window.innerWidth - 16) + 'px' : '360px';
-  panel.style.background = 'rgba(20,20,20,0.9)';
-  panel.style.color = '#fff';
-  panel.style.borderRadius = '12px';
-  panel.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4)';
-  panel.style.backdropFilter = 'blur(6px)';
-  panel.style.zIndex = '9999';
+  const panel = registerPanel({
+    id: 'mdMonitor',
+    title: 'MD Monitor',
+    lifecycle: 'persistent',
+    closable: true,
+    persist: false,
+    buildContent(body) {
+      body.innerHTML = `
+        <div class="panelBody" id="mdBody">
+          <canvas id="mdCanvas" width="330" height="170" style="border:1px solid #444; border-radius:6px; background:#111;"></canvas>
+          <div style="display:flex; gap:12px; font-size:11px; margin-top:6px;">
+            <span style="color:#53c7ff;">Blue: Temperature (K)</span>
+            <span style="color:#95efff;">Dashed: Target T (K)</span>
+            <span style="color:#ffb347;">Orange: Total Energy (eV)</span>
+          </div>
+          <div id="mdText" style="font-size:12px;"></div>
+        </div>
+      `;
+    },
+    defaults: {
+      docked: false,
+      collapsed: false,
+      anchor: isMobile ? { left: 8, top: 56 } : { left: 430, top: 110 },
+    },
+  });
 
-  panel.innerHTML = `
-    <div class="panelHeader" id="mdHeader">
-      MD Monitor <span id="mdFoldToggle">▼</span>
-      <span id="mdCloseBtn" style="float:right; cursor:pointer; margin-left:8px; font-size:14px;">✖</span>
-    </div>
-    <div class="panelBody" id="mdBody">
-      <canvas id="mdCanvas" width="330" height="170" style="border:1px solid #444; border-radius:6px; background:#111;"></canvas>
-      <div style="display:flex; gap:12px; font-size:11px; margin-top:6px;">
-        <span style="color:#53c7ff;">Blue: Temperature (K)</span>
-        <span style="color:#95efff;">Dashed: Target T (K)</span>
-        <span style="color:#ffb347;">Orange: Total Energy (eV)</span>
-      </div>
-      <div id="mdText" style="font-size:12px;"></div>
-    </div>
-  `;
-  document.body.appendChild(panel);
-  refreshDocking(); // dock into #ui if a docked theme is active
-
-  const header = panel.querySelector('#mdHeader');
-  const body = /** @type {HTMLElement} */ (panel.querySelector('#mdBody'));
-  const fold = panel.querySelector('#mdFoldToggle');
-  const closeBtn = panel.querySelector('#mdCloseBtn');
-  const text = panel.querySelector('#mdText');
-  const canvas = /** @type {HTMLCanvasElement} */ (panel.querySelector('#mdCanvas'));
+  const text = panel.body.querySelector('#mdText');
+  const canvas = /** @type {HTMLCanvasElement} */ (panel.body.querySelector('#mdCanvas'));
   const ctx = canvas.getContext('2d');
-
-  closeBtn.addEventListener('click', () => panel.remove());
-
-  let dragging = false;
-  let dx = 0;
-  let dy = 0;
-  header.addEventListener('mousedown', (e) => {
-    if (e.target === fold || e.target === closeBtn) return;
-    dragging = true;
-    dx = e.clientX - panel.offsetLeft;
-    dy = e.clientY - panel.offsetTop;
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    panel.style.left = `${e.clientX - dx}px`;
-    panel.style.top = `${e.clientY - dy}px`;
-  });
-  document.addEventListener('mouseup', () => { dragging = false; });
-  fold.addEventListener('click', () => {
-    if (body.style.display === 'none') {
-      body.style.display = 'flex';
-      fold.textContent = '▼';
-    } else {
-      body.style.display = 'none';
-      fold.textContent = '▲';
-    }
-  });
 
   const tSeries = [];
   const targetSeries = [];
@@ -558,7 +522,7 @@ export function createMDMonitorPanel() {
       text.textContent = `step=${step} | T=${temperatureK.toFixed(1)} K${targetText} | Etot=${etotEv.toFixed(4)} eV | Epot=${epotEv.toFixed(4)} eV | Ekin=${ekinEv.toFixed(4)} eV`;
     },
     remove() {
-      panel.remove();
+      removePanel('mdMonitor');
     },
   };
 }

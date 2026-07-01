@@ -1,6 +1,6 @@
 import {groups,app, general, structureShip, fileBrowser} from '../state/store.js';
 import {updateVisualization} from '../core/crystal-viewer.js';
-import { updateControlSpinForcePanel} from './ControlPanel.js';
+import { refreshActivePanels, refreshPanelAvailability, rebuildPanel } from './panels/PanelManager.js';
 import {createBondLengthControls} from './BondLengthPanel.js';
 import {updateSpins} from '../render/index.js';
 import {updateForces} from '../render/index.js';
@@ -9,9 +9,7 @@ import { setActiveField, updateField, deleteField} from '../render/index.js';
 import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import {Structure} from '../model/index.js';
-import { refreshPolyhedraPanel } from './PolyhedraPanel.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
-import {removeLatticeAndSupercellPanel, addLatticeAndSupercellPanel} from './LatticeSupercellPanel.js';
 import { resetView } from './WindowAndSceneControls.js';
 
 export function showError(message) {
@@ -83,7 +81,7 @@ export function createRow(obj) {
     updateStructureFromRowAndStep(rowIndex);
 
     resetView(); // do we want to reset it to a specific view per structure selection? Save view state?
-    updateControlSpinForcePanel();
+    refreshActivePanels();
   });
 
 
@@ -445,11 +443,11 @@ export function updateComparisonStructure(row, isChecked) {
           SecondReRenderLattice: false
         });
 
-        // Update lattice comparison panel if in comparison mode
+        // Update lattice comparison panel if the popup is active
         if (
           fileBrowser.comparisonStructure &&
           fileBrowser.selectedStructure &&
-          general.playerModeState === "comparison"
+          general.comparisonActive
         ) {
           const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
           const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
@@ -458,16 +456,18 @@ export function updateComparisonStructure(row, isChecked) {
       }
     });
 
-    // Update lattice comparison panel if in comparison mode
+    // Update lattice comparison panel if the popup is active
     if (
       fileBrowser.comparisonStructure &&
       fileBrowser.selectedStructure &&
-      general.playerModeState === "comparison"
+      general.comparisonActive
     ) {
       const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
       const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
       updateLatticeComparisonPanel(L1, L2);
     }
+    // A comparison structure now exists — the Comparison panel becomes usable.
+    refreshPanelAvailability();
   }
   else {
     // If unchecked, clear the comparison structure if this row was the comparison row
@@ -496,6 +496,8 @@ export function updateComparisonStructure(row, isChecked) {
         SecondReRenderLattice: false
       });
     }
+    // No comparison structure anymore — grey out the Comparison panel.
+    refreshPanelAvailability();
   }
 }
 
@@ -563,9 +565,9 @@ function updateStructureFromRowAndStep(rowIndex) {
   syncPlanesForSelectedStructure();
   refreshBackendTheme();
   let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
-  if (spins != null && general.spinForceState === "Spins") updateSpins();
+  if (spins != null && general.spinsActive) updateSpins();
   let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
-  if (forces != null && general.spinForceState === "Forces") updateForces();
+  if (forces != null && general.forcesActive) updateForces();
   let fields = fileBrowser.selectedStructure.volumetricFields?.fields ?? null;
   if (fields && fields.length > 0) {
     fieldBrowser.setAvailableFields(fileBrowser.selectedStructure.volumetricFields.fields);
@@ -581,15 +583,12 @@ function updateStructureFromRowAndStep(rowIndex) {
   }
   //if (fileBrowser.selectedStructure.stress != null) stress = fileBrowser.selectedStructure.stress.map(r => r.tensor);
   createBondLengthControls();
-  if (document.getElementById('latticeParametersPanel')) {
-   removeLatticeAndSupercellPanel();
-   addLatticeAndSupercellPanel();
-  }
-  refreshPolyhedraPanel();
+  rebuildPanel('cell'); // lattice inputs follow the selected frame
+  rebuildPanel('polyhedra');
   if (
     fileBrowser.comparisonStructure &&
     fileBrowser.selectedStructure &&
-    general.playerModeState === "comparison" // Only update if in comparison mode
+    general.comparisonActive // Only update if the lattice comparison popup is on
   ) {
     const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
     const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);

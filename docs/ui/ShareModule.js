@@ -5,6 +5,7 @@ import { updateAtoms } from '../render/index.js';
 import { rebuildBonds } from '../render/index.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
+import { revealFeaturePanels } from './panels/PanelManager.js';
 import { fracToCart } from '../math/index.js';
 
 const URL_WARN_CHARS = 4000;
@@ -402,10 +403,7 @@ export function loadSharedStructure() {
 
   const structureControls = document.getElementById('structureControls');
   if (structureControls) structureControls.style.display = 'block';
-  const structureControls2 = document.getElementById('structureControls2');
-  if (structureControls2) structureControls2.style.display = 'block';
-  const bondControlsGroup = document.getElementById('bondControlsGroup');
-  if (bondControlsGroup) bondControlsGroup.style.display = 'block';
+  revealFeaturePanels();
   createBondLengthControls();
 
   // Apply colors on top of loaded structure, then push to GPU
@@ -440,7 +438,6 @@ export function createShareButton() {
 
   const container =
     document.getElementById('structureControls') ||
-    document.getElementById('bondControlsGroup') ||
     document.getElementById('composition')?.parentElement;
   if (container) container.appendChild(shareBtn);
 }

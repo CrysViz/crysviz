@@ -120,10 +120,12 @@ export const general = {
   useWasmBonds:true, // Use compiled WASM (cell list) for neighbour-bond pair finding (false = JS O(n²))
   serialPolyhedraAlgorithm:false, // true = single-threaded WASM; false = parallel over Web Workers
   backendViewerUpdateStride:4, // Update the viewer every N backend/NEP steps during relax/MD
-  playerModeState: "none", 
-  spinForceState: "none",
+  // Feature activation flags, set by the explicit controls inside the unified
+  // feature panels (ui/panels/defaultPanels.js) — NOT by panel expand state.
+  forcesActive: false, // "Show Forces" toggle draws force arrows
+  spinsActive: false, // "Show Spins" toggle draws spin arrows
+  comparisonActive: false, // "Show Lattice Comparison" keeps the popup synced
   structurePanelMode: "atoms",
-  analysisState:"none",
   backendState:"none",
   atomisticPotential:"nep",
   currentSupercell: null,

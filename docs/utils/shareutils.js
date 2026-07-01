@@ -63,9 +63,11 @@ export function captureCompleteState(structureData, globalState) {
       zoom: camera ? (camera.zoom || null) : null
     },
 
-    // UI state
+    // UI state. The structure panel is a unified panel window (ui/panels/);
+    // "open" = its .cv-panel host is not collapsed. Read via the DOM so this
+    // low-layer util does not import from ui/.
     ui: {
-      structurePanelOpen: document.getElementById('composition')?.classList.contains('open') || false,
+      structurePanelOpen: !!document.querySelector('.cv-panel[data-panel-id="info"]:not(.cv-collapsed)'),
       expandedElements: getExpandedElements(),
       measurementMode: measureMode || 'none'
     }
@@ -227,7 +229,6 @@ export function restoreCompleteState(state, globalSetters) {
 
   // 6. Show structure controls and recreate interface
   document.getElementById('structureControls').style.display = 'block';
-  document.getElementById('bondControlsGroup').style.display = 'block';
   createBondLengthControls();
   createShareButton();
 
@@ -299,21 +300,12 @@ function updateUIControlsFromState(state) {
 
 // Helper function to restore UI panel states
 function restoreUIPanelStates(uiState) {
-  // Restore structure panel state
-  const composition = document.getElementById('composition');
-  const structureToggle = document.getElementById('structureToggle');
-  const toggleIcon = document.getElementById('structureToggleIcon');
-
+  // Shared-structure restore runs before the unified panel windows exist, so
+  // leave a marker on #composition; ui/panels/defaultPanels.js expands the
+  // info panel when it registers it.
   if (uiState.structurePanelOpen) {
-    composition?.classList.add('open');
-    composition?.setAttribute('aria-hidden', 'false');
-    if (toggleIcon) {
-      toggleIcon.textContent = '−';
-      toggleIcon.classList.add('open');
-    }
-    if (structureToggle) {
-      structureToggle.setAttribute('aria-expanded', 'true');
-    }
+    const composition = document.getElementById('composition');
+    if (composition) composition.dataset.restoreOpen = '1';
   }
 
   // Note: Element expansions will be restored when renderComposition() is called

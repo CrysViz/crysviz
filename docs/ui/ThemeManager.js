@@ -12,11 +12,11 @@
 // app stops tracking the system until "Auto" is chosen again.
 //
 // UI: the dark/twilight/light icon toggle (.theme-btn) reflects the *effective*
-// theme; the dropdown arrow (#themeMenuToggle) lists every theme (incl. Auto and
-// Docked) and highlights the *selected* one.
+// theme; the dropdown arrow (#themeMenuToggle) lists every theme (incl. Auto)
+// and highlights the *selected* one.
 //
-// Themes in DOCK_THEMES (e.g. "docked") also pull persistent floating panels
-// (composition, trajectory controls, MD monitor) into #ui; others restore them.
+// Panel docking is no longer a theme concern: every panel window carries its
+// own dock/undock toggle (ui/panels/), in every theme.
 //
 // To add a theme: drop a CSS file in docs/themes/ and add one entry to themes.json.
 
@@ -27,22 +27,9 @@ import { updateLattice } from '../render/index.js';
 const THEMES_DIR = './themes/';
 const STORAGE_KEY = 'theme';
 
-// Persistent floating panels pulled into the side panel for docked themes, then
-// restored to <body> for other themes. `afterId` places the panel right after
-// that element; null appends it to the end of #ui. (Modal/transient dialogs —
-// the periodic table, add-atoms/vacuum — are intentionally NOT listed; they stay
-// floating in every theme.)
-const DOCKABLE = [
-  { id: 'infoPanel',        afterId: 'saveButton' },         // composition/atoms readout
-  { id: 'TrajControlPanel', afterId: 'structureControls2' }, // below the Trajectory selector box
-  { id: 'mdMonitorPanel',   afterId: 'backendControlGroup' },// below the backend/MD box
-];
-const DOCK_THEMES = new Set(['docked']);
-
 /** @type {{base?:string, themes:{id:string,name:string,css:?string,auto?:string[]}[]}|null} */
 let manifest = null;
 let currentSelection = null; // the chosen entry id (may be "auto"); persisted
-let currentEffective = null; // the concrete theme actually applied to the page
 
 function ensureBaseLink(baseCss) {
   let link = document.getElementById('theme-base');
@@ -124,32 +111,6 @@ function applyMenuHighlight(selId) {
     el.classList.toggle('active', /** @type {HTMLElement} */ (el).dataset.themeId === selId));
 }
 
-function applyDocking(id) {
-  const docked = DOCK_THEMES.has(id);
-  const ui = document.getElementById('ui');
-  DOCKABLE.forEach(({ id: elId, afterId }) => {
-    const el = document.getElementById(elId);
-    if (!el) return;
-    if (docked && ui) {
-      const anchor = afterId ? document.getElementById(afterId) : null;
-      if (anchor) {
-        if (el.previousElementSibling !== anchor) anchor.insertAdjacentElement('afterend', el);
-      } else if (el.parentElement !== ui) {
-        ui.appendChild(el);
-      }
-    } else if (el.parentElement !== document.body) {
-      document.body.appendChild(el);
-    }
-  });
-}
-
-// Re-run docking for the active (effective) theme. Call after creating a dockable
-// panel that did not exist when the theme was applied (e.g. the MD monitor,
-// trajectory controls), so it docks immediately while a docked theme is active.
-export function refreshDocking() {
-  if (currentEffective) applyDocking(currentEffective);
-}
-
 // Select a theme by entry id ("auto" or a concrete theme). Persists the
 // selection; applies whichever concrete theme is in effect.
 export function applyTheme(selectionId) {
@@ -158,14 +119,12 @@ export function applyTheme(selectionId) {
   const eff = effectiveTheme(entry);
 
   currentSelection = entry.id;
-  currentEffective = eff;
 
   applyConcreteVisuals(eff);
   localStorage.setItem(STORAGE_KEY, entry.id);
   document.documentElement.setAttribute('data-theme', eff);
   applyToggleHighlight(eff);   // icons show what's actually displayed
   applyMenuHighlight(entry.id); // menu shows the selection (incl. Auto)
-  applyDocking(eff);
 }
 
 function resolveInitialTheme() {

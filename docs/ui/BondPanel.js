@@ -1,7 +1,8 @@
 import {bondLengths} from '../state/store.js';
 import { addHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
+import { createBondLengthControls } from './BondLengthPanel.js';
 
-export function addBondPanel(target = "BondLatticeContainer") {
+export function addBondPanel(target = "cvPanelBody-bonds") {
   const targetPanel = document.getElementById(target);
 
   //if (document.getElementById("bondControlsGroup")) {
@@ -172,6 +173,8 @@ export function addBondPanel(target = "BondLatticeContainer") {
   drawBondsPanel.appendChild(drawBondsContent);
 
   // --- Bond Length Controls Panel ---
+  // (Previously a static block in index.html; ui/BondLengthPanel.js populates
+  // the #bondControls div.)
   const bondLengthPanel = document.createElement("div");
   bondLengthPanel.id = "bondLengthPanel";
 
@@ -183,7 +186,56 @@ export function addBondPanel(target = "BondLatticeContainer") {
   bondLengthToggle.setAttribute("aria-expanded", "false");
   bondLengthToggle.setAttribute("aria-controls", "bondLengthContent");
 
+  const bondLengthTitle = document.createElement("h4");
+  bondLengthTitle.textContent = "Bond Length Controls";
 
+  const bondLengthIcon = document.createElement("div");
+  bondLengthIcon.id = "bondLengthToggleIcon";
+  bondLengthIcon.className = "toggle-icon";
+  bondLengthIcon.textContent = "+";
+
+  bondLengthToggle.appendChild(bondLengthTitle);
+  bondLengthToggle.appendChild(bondLengthIcon);
+
+  const bondLengthContent = document.createElement("div");
+  bondLengthContent.id = "bondLengthContent";
+  bondLengthContent.className = "collapsible-content";
+  bondLengthContent.setAttribute("aria-hidden", "true");
+
+  const bondControls = document.createElement("div");
+  bondControls.id = "bondControls";
+  bondLengthContent.appendChild(bondControls);
+
+  bondLengthPanel.appendChild(bondLengthToggle);
+  bondLengthPanel.appendChild(bondLengthContent);
+
+  // --- Toggle logic for Bond Length Controls ---
+  function setBondLengthOpen(open) {
+    if (open) {
+      bondLengthContent.classList.add("open");
+      bondLengthContent.setAttribute("aria-hidden", "false");
+      bondLengthIcon.textContent = "−";
+      bondLengthToggle.setAttribute("aria-expanded", "true");
+    } else {
+      bondLengthContent.classList.remove("open");
+      bondLengthContent.setAttribute("aria-hidden", "true");
+      bondLengthIcon.textContent = "+";
+      bondLengthToggle.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  setBondLengthOpen(false);
+
+  bondLengthToggle.addEventListener("click", () =>
+    setBondLengthOpen(!bondLengthContent.classList.contains("open"))
+  );
+
+  bondLengthToggle.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      setBondLengthOpen(!bondLengthContent.classList.contains("open"));
+    }
+  });
 
   // --- Toggle logic for Histograms ---
   function setHistogramsOpen(open) {
@@ -243,6 +295,7 @@ export function addBondPanel(target = "BondLatticeContainer") {
   // --- Build structure ---
   group.appendChild(histogramsPanel);
   group.appendChild(drawBondsPanel);
+  group.appendChild(bondLengthPanel);
   targetPanel.appendChild(group);
 
   // Open histograms immediately — bypass CSS transition by setting inline style
@@ -250,6 +303,7 @@ export function addBondPanel(target = "BondLatticeContainer") {
   histogramsContent.style.maxHeight = "600px";
 
   // --- Create bond controls ---
+  createBondLengthControls();
 }
 
 

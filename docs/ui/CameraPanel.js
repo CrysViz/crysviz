@@ -15,39 +15,13 @@ export function addCameraPanel(target = "cameraContainer") {
     return;
   }
 
-  // --- Outer wrapper ---
+  // Outer wrapper. Collapse/expand is handled by the unified panel window
+  // (ui/panels/) hosting this content, so no header/toggle is built here.
   const group = document.createElement("div");
   group.id = "cameraControlsGroup";
 
-  // --- Panel ---
-  const panel = document.createElement("div");
-  panel.id = "cameraSettingsPanel";
-
-  // --- Toggle ---
-  const toggle = document.createElement("div");
-  toggle.id = "cameraSettingsToggle";
-  toggle.className = "spin-toggle"; // Reuse the same class for consistency
-  toggle.setAttribute("role", "button");
-  toggle.setAttribute("tabindex", "0");
-  toggle.setAttribute("aria-expanded", "false");
-  toggle.setAttribute("aria-controls", "cameraControlsContent");
-
-  const title = document.createElement("h4");
-  title.textContent = "Camera Settings";
-
-  const icon = document.createElement("div");
-  icon.id = "cameraToggleIcon";
-  icon.className = "toggle-icon";
-  icon.textContent = "+";
-
-  toggle.appendChild(title);
-  toggle.appendChild(icon);
-
-  // --- Collapsible content ---
   const content = document.createElement("div");
   content.id = "cameraControlsContent";
-  content.className = "collapsible-content";
-  content.setAttribute("aria-hidden", "true");
 
   // --- Camera Toggles ---
   // Perspective/Parallel Toggle
@@ -145,41 +119,10 @@ export function addCameraPanel(target = "cameraContainer") {
   content.appendChild(pushToggle);
 
   // Build hierarchy
-  panel.appendChild(toggle);
-  panel.appendChild(content);
-  group.appendChild(panel);
+  group.appendChild(content);
 
   // Insert into DOM
   targetPanel.appendChild(group);
-
-  // --- Toggle logic ---
-  function setOpen(open) {
-    if (open) {
-      content.classList.add("open");
-      content.setAttribute("aria-hidden", "false");
-      icon.textContent = "−";
-      toggle.setAttribute("aria-expanded", "true");
-    } else {
-      content.classList.remove("open");
-      content.setAttribute("aria-hidden", "true");
-      icon.textContent = "+";
-      toggle.setAttribute("aria-expanded", "false");
-    }
-  }
-
-  // Default is closed
-  setOpen(false);
-
-  // Click to toggle
-  toggle.addEventListener("click", () => setOpen(!content.classList.contains("open")));
-
-  // Keyboard support
-  toggle.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      setOpen(!content.classList.contains("open"));
-    }
-  });
 
    // New control handlers
   document.getElementById('orthographicCamera').onchange = (e) => {

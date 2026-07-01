@@ -11,7 +11,7 @@ import {
   latticeVolume,
 } from '../math/index.js';
 
-export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
+export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   const targetPanel = document.getElementById(target);
   if (!targetPanel) {
     console.warn(`target container "${target}" not found.`);

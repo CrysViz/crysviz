@@ -102,11 +102,6 @@ body.panel-hidden #view canvas {
 
 
 /* === Panel Hidden Overrides === */
-body.panel-hidden #cameraTools {
-  left: 68px;  /* Decent separation from hamburger menu */
-  top: 12px;   /* Same Y level as hamburger menu */
-}
-
 body.panel-hidden #axesLegend {
   left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px);  /* Stick to gizmo */
 }
@@ -977,39 +972,9 @@ justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* compositions and clicked element (bottom right) */
+/* compositions and clicked element (composition content lives inside the
+   unified "info" panel window, which provides the chrome/positioning) */
 
-#infoPanel {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  min-width: 200px;
-  max-width: 600px;
-  background: rgba(0,0,0,0.7);
-  color: #fff;
-  padding: 12px 14px;
-  border-radius: 14px;
-  font-size: 16px;
-  line-height: 1.4;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255,255,255,0.1);
-  z-index: 1000;
-  overflow-y: visible;
-  max-height: 800px;
-}
-#infoPanel .structure-toggle { 
-  display:flex;
-  align-items:center; 
-  justify-content:space-between; 
-  cursor:pointer; user-select:none; 
-  padding:6px 8px; border-radius:8px; 
-  background: var( --bg-color);
-  border:1px solid rgba(255,255,255,0.1); 
-
-}
-
-
-#infoPanel .structure-toggle h4 { margin-top: 5px; margin-left: 20px; margin-right: 20px; font-size:14px; font-weight:800; line-height:1.0; color:rgba(255,255,255,0.8) }
 .section-heading { margin-top:10px; margin-bottom:6px; font-size:14px; font-weight:600; padding-left:8px; }
 .toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(0,0,0,0.5); color:var(--accent-color); font-weight:1000; transition:transform .18s ease, background .18s ease, color .18s ease; }
 
@@ -1086,7 +1051,7 @@ justify-content: center;
 .btn-mini.highlight { background:var(--bg-color); border-color:rgba(0,0,0,0.15); color:#fff; }
 .btn-mini.highlight:hover { transform: translateY(-1px);filter:brightness(1.03); border: 1px solid var(--accent-color);}
 
-#infoPanel h4 {
+#composition h4 {
   margin: 0 0 8px 0;
   font-weight: 600;
   color: rgba(255, 255, 255, 1);
@@ -1140,46 +1105,20 @@ z-index:1000; pointer-events:none;
 
 
 
-/* --- Measurement Tools (Top Right) --- */
+/* --- Measurement tools --- (hosted by the unified "Measure" panel window,
+   which provides positioning + chrome; this is just the content layout) */
 #measurementTools {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 1000;
-  background: var(--menu-bg);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 8px;
-  backdrop-filter: blur(20px);
-  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.3);
-  transform-origin: top right;
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
-
-.button-icon {
-  max-width: 40px;
-  max-height: 40px; /* Optional: Set a max height */
-  height: auto;
-  width: auto;
-}
-
-/* --- Camera Tools (Desktop: Top Left beside panel, Fullscreen: aligned with hamburger) --- */
+/* --- Camera view tools --- (hosted by the unified "View" panel window) */
 #cameraTools {
-  position: fixed;
-  left: var(--camera-tools-left);  /* Default: beside panel */
-  top: 20px;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  background: rgba(26, 26, 26, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 8px;
-  z-index: 1000;
-  backdrop-filter: blur(8px);
   max-width: 320px;
-  overflow-y:hidden;
-  overflow-x: hidden;
 }
 
 /* Camera panel for desktop - horizontal layout */
@@ -1285,11 +1224,6 @@ z-index:1000; pointer-events:none;
   height: 22px;
   background: rgba(255, 255, 255, 0.12);
   margin: 0 2px;
-}
-
-/* Hide toggle button on desktop */
-.measurement-toggle {
-  display: none;
 }
 
 .measurement-group {
@@ -1430,7 +1364,7 @@ body {
 #ui label,
 #ui h2,
 #ui h3,
-#infoPanel,
+#composition,
 #status {
   -webkit-user-select: text;
   -moz-user-select: text;
@@ -1442,43 +1376,6 @@ body {
 
 
 @media screen and (max-width: 1320px) {
-
-  /* Mobile-friendly measurement tools */
-  #measurementTools {
-    max-height: 60px;
-    top: 30px;
-    right: 10px;
-    padding: 0;
-    background: transparent;
-    border: none;
-    backdrop-filter: none;
-    box-shadow: none;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0 8px;
-  }
-
-  /* Mobile-friendly camera tools - positioned below measurement tools */
-  #cameraTools {
-    overflow: visible;
-    max-width: 400px; !important;
-    position: fixed !important;
-    top: 110px !important;
-    right: 10px !important;
-    left: auto !important;
-    padding: 0;
-    background: transparent;
-    border: none;
-    backdrop-filter: none;
-    box-shadow: none;
-    display: flex !important;
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0 8px;
-  }
 
   /* Hide separators on mobile */
   .camera-separator {
@@ -1505,112 +1402,10 @@ body {
   }
 
 
-  /* Mobile toggle button - compact and unobtrusive */
-  .measurement-toggle {
-    display: flex !important;
-    width: 60px;
-    height: 60px;
-    background: rgba(44, 44, 44, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 50%;
-    color: white;
-    font-size: 30px;
-    padding: 0;
-    margin: 0;
-    cursor: pointer;
-    backdrop-filter: blur(10px);
-    transition: all 0.2s ease;
-    align-items: center;
-    justify-content: center;
-  }
-
-
-  .measurement-toggle:hover,
-  .measurement-toggle:active {
-    background: rgba(64, 64, 64, 0.95);
-    transform: scale(1.05);
-  }
-
-  /* Collapsible measurement and camera panels */
-  .measurement-group {
-    padding: 8px;
-    display: flex;
-    max-height: 0;
-    overflow: hidden;
-    transition: opacity 0.1s ease-out, border 0.1s ease-out;
-    background: transparent;
-    border-radius: 12px;
-    padding: 0;
-    backdrop-filter: none;
-    border: none;
-  }
-
-  .measurement-group.expanded {
-    max-height: 44px;
-    padding: 12px;
-    background: var(--menu-bg);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    display: flex;
-    flex-direction: row;
-    gap: 6px;
-    justify-content: center;
-  }
-
-  /* Mobile camera panel - collapsible */
+  /* Mobile camera panel - wrap buttons in the narrower window */
   #cameraPanel {
-    max-height: 0 !important;
-    overflow: hidden !important;
-    transition: opacity 0.1s ease-out, border 0.1s ease-out;
-    background: transparent !important;
-    border-radius: 12px;
-    padding: 0 !important;
-    backdrop-filter: none !important;
-    border: none !important;
     flex-wrap: wrap;
   }
-
-  #cameraPanel.expanded {
-    max-height: 200px !important;
-    padding: 8px !important;
-    background: var(--menu-bg) !important;
-    backdrop-filter: blur(12px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    display: flex !important;
-    flex-direction: row;
-    gap: 4px;
-    justify-content: center;
-    max-width: 285px;
-  }
-
-  /* Mobile buttons - override desktop styles */
-  #cameraTools .measure-tool-btn {
-    padding: 6px !important;
-    min-width: 32px !important;
-    min-height: 32px !important;
-    font-size: 9px !important;
-    gap: 1px !important;
-    flex-direction: column !important;
-  }
-
-  #cameraTools .measure-tool-btn .tool-icon {
-    font-size: 14px !important;
-    margin-bottom: 1px !important;
-  }
-
-  #cameraTools .measure-tool-btn span {
-    display: none !important;
-  }
-
-  /* Compact mobile buttons for measurement tools 
-  .measure-tool-btn {
-    padding: 6px;
-    min-width: 40px;
-    min-height: 40px;
-    font-size: 9px;
-    gap: 1px;
-    flex-direction: column;
-  }*/
 
   .tool-icon {
     font-size: 14px;
@@ -1729,26 +1524,8 @@ body {
     margin-bottom: 8px;
   }
 
-  /* Info panel adjustments - much smaller on mobile */
-  #infoPanel {
-    overflow-y: visible;
-    right: 10px;
-    bottom: 10px;
-    min-width: 200px;
-    max-width: 400px;
-    font-size: 12px;
-    background: rgba(0, 0, 0, 0.85);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    padding: 8px 10px;
-  }
   .collapsible-content.open { padding-top:8px;
     min-height: auto;}
-
-  #infoPanel .structure-toggle h4 {
-    font-size: 11px;
-    margin: 2px 2px 0px 10px;
-  }
 
   .comp-row {
     padding: 2px 0;
@@ -1796,49 +1573,10 @@ body {
     height: 90dvh;
   }
 
-  /* Ensure measurement tools are properly positioned on very small screens */
-  #measurementTools {
-    top: 16px;
-    right: 5px;
-  }
-
-  /* Ensure camera tools are properly positioned on very small screens */
-  #cameraTools {
-    top: 86px !important;
-    right: 5px !important;
-    left: auto !important;
-    position: fixed !important;
-    display: flex !important;
-  }
-
-  /* Ensure both toggle buttons are visible and properly sized */
-  .measurement-toggle {
-    display: flex !important;
-    width: 50px;
-    height: 50px;
-    font-size: 18px;
-  }
-
-
-  #cameraToggle {
-    display: flex !important;
-  }
-
-  #infoPanel {
-    overflow-y: visible;
-    right: 5px;
-    bottom: 5px;
-    padding: 6px 8px;
-    max-height: 300px;
-    min-width: 200px;
-    max-width: 400px;
-    font-size: 11px;
-  }
-
   .collapsible-content.open { padding-top:8px;max-height: 230px;
     min-height: auto}
 
-  #infoPanel h4 {
+  #composition h4 {
     font-size: 11px;
     margin: 0 0 3px 0;
   }
@@ -1900,21 +1638,6 @@ body {
     width: 280px;
   }
 
-  /* Ensure measurement tools are properly positioned on very small screens */
-  #measurementTools {
-    top: 16px;
-    right: 5px;
-  }
-
-  /* Ensure camera tools are properly positioned on very small screens */
-  #cameraTools {
-    top: 86px !important;
-    right: 5px !important;
-    left: auto !important;
-    position: fixed !important;
-    display: flex !important;
-  }
-
  .background-dot {
   position: fixed;
   width: 40px;
@@ -1926,37 +1649,7 @@ body {
   z-index: 999;
 }
 
-  /* Ensure both toggle buttons are visible and properly sized */
-  .measurement-toggle {
-    display: flex !important;
-    width: 55px;
-    height: 55px;
-    font-size: 18px;
-    z-index: 1003;
-  }
-
-  /* Ensure measurement toggle is above camera toggle */
-  #measurementToggle {
-    z-index: 1004;
-  }
-
-  #cameraToggle {
-    display: flex !important;
-    z-index: 1003;
-  }
-
-  #infoPanel {
-    right: 5px;
-    bottom: 5px;
-    padding: 6px 8px;
-    max-height: 300px;
-    min-width: 200px;
-    max-width: 400px;
-    font-size: 11px;
-    overflow-y: visible;
-  }
-
-  #infoPanel h4 {
+  #composition h4 {
     font-size: 11px;
     margin: 0 0 3px 0;
   }

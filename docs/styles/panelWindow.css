@@ -1,0 +1,164 @@
+/* Unified panel/window component (ui/panels/PanelWindow.js).
+   Docked panels stack inside #dock in the side panel; floating panels are
+   fixed windows over the canvas. Built on the design tokens from
+   themes/default/theme.css. */
+
+#dock {
+  position: relative; /* absolute reference for drag-to-reorder */
+}
+
+.cv-panel {
+  box-sizing: border-box;
+}
+
+/* Feature panels are hidden until a structure loads; the attribute must win
+   over .cv-floating's display:flex. */
+.cv-panel[hidden] {
+  display: none !important;
+}
+
+/* ---- docked: matches the .control-group grey boxes ---- */
+.cv-panel.cv-docked {
+  margin: 0 0 12px 0;
+  padding: 8px;
+  background: var(--group-bg);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+/* ---- floating: matches the current floating popups ---- */
+.cv-panel.cv-floating {
+  position: fixed;
+  z-index: 1200;
+  min-width: 220px;
+  max-width: min(600px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  background: var(--popup-bg);
+  color: var(--panel-fg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 4px 2px rgba(0, 0, 0, 0.3);
+}
+
+.cv-panel.cv-floating > .cv-panel-body {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ---- title bar ---- */
+.cv-panel-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  border-radius: 8px;
+  background: var(--bg-color);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--panel-fg);
+}
+
+.cv-panel-titlebar:active,
+.cv-panel.cv-dragging .cv-panel-titlebar,
+.cv-panel.cv-drag-moving .cv-panel-titlebar {
+  cursor: grabbing;
+}
+
+.cv-panel-grip {
+  opacity: 0.45;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.cv-panel-fold,
+.cv-panel-dock,
+.cv-panel-close {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  color: var(--panel-fg);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.cv-panel-fold:hover,
+.cv-panel-dock:hover,
+.cv-panel-close:hover {
+  background: var(--hover-color);
+}
+
+.cv-panel-fold:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cv-panel-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.85);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-panel-dock,
+.cv-panel-close {
+  font-size: 14px;
+}
+
+/* ---- body / collapse ---- */
+.cv-panel-body {
+  padding: 8px 4px 2px 4px;
+}
+
+.cv-panel.cv-collapsed > .cv-panel-body {
+  display: none;
+}
+
+/* ---- states ---- */
+.cv-panel.cv-unavailable > .cv-panel-titlebar {
+  opacity: 0.45;
+}
+
+.cv-dock-placeholder {
+  box-sizing: border-box;
+  margin: 0 0 12px 0;
+  border: 1px dashed var(--accent-color);
+  border-radius: 12px;
+  background: var(--hover-color);
+}
+
+.cv-panel.cv-dragging {
+  z-index: 10;
+  width: 100%;
+  opacity: 0.95;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- formula variant (structure info panel): taller bar, larger title ---- */
+.cv-panel--formula > .cv-panel-titlebar {
+  padding: 8px 8px;
+}
+
+.cv-panel--formula > .cv-panel-titlebar > .cv-panel-title {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+/* ---- mobile ---- */
+@media (max-width: 1024px) {
+  .cv-panel.cv-floating {
+    max-width: calc(100vw - 16px);
+  }
+}

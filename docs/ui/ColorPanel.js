@@ -179,30 +179,6 @@ function createDropdown(id, labelText, options, onChange) {
   return block;
 }
 
-// --- Toggle Logic ---
-function setupToggle(toggle, content) {
-  let isOpen = false;
-  const icon = toggle.querySelector(".toggle-icon");
-
-  function setOpen(open) {
-    isOpen = open;
-    content.classList.toggle("open", open);
-    content.setAttribute("aria-hidden", !open);
-    icon.textContent = open ? "−" : "+";
-    toggle.setAttribute("aria-expanded", open);
-  }
-
-  toggle.addEventListener("click", () => setOpen(!isOpen));
-  toggle.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      setOpen(!isOpen);
-    }
-  });
-
-  setOpen(false);
-}
-
 // --- Color Mapping Functions ---
 function updateBondColorsByLength() {
   const bonds = fileBrowser.selectedStructure.bonds;
@@ -339,26 +315,13 @@ export function addColorPanel(target = "colorContainer") {
   const targetPanel = document.getElementById(target);
   if (!targetPanel || document.getElementById("colorControlsGroup")) return;
 
+  // Collapse/expand is handled by the unified panel window (ui/panels/)
+  // hosting this content, so no header/toggle is built here.
   const group = createElement("div", { id: "colorControlsGroup" });
   const panel = createElement("div", { id: "colorSettingsPanel" });
 
-  // --- Toggle ---
-  const toggle = createElement("div", {
-    id: "colorSettingsToggle",
-    class: "spin-toggle",
-    role: "button",
-    tabindex: "0",
-    "aria-expanded": "false",
-    "aria-controls": "colorControlsContent"
-  });
-
-  toggle.appendChild(createElement("h4", {}, { margin: "0" }, "Color Map Settings"));
-  toggle.appendChild(createElement("div", { class: "toggle-icon" }, {}, "+"));
-
   const content = createElement("div", {
-    id: "colorControlsContent",
-    class: "collapsible-content",
-    "aria-hidden": "true"
+    id: "colorControlsContent"
   });
 
   // Matte/Metallic Toggle
@@ -731,10 +694,7 @@ export function addColorPanel(target = "colorContainer") {
   menusWrapper.appendChild(bondsMenuBlock);
 
   content.appendChild(menusWrapper);
-  panel.appendChild(toggle);
   panel.appendChild(content);
   group.appendChild(panel);
   targetPanel.appendChild(group);
-
-  setupToggle(toggle, content);
 }

@@ -5,7 +5,6 @@
     { "id": "auto",     "name": "Auto (light/dark)", "css": null, "auto": ["twilight", "dark"] },
     { "id": "light",    "name": "Light",    "css": null },
     { "id": "dark",     "name": "Dark",     "css": "dark/theme.css" },
-    { "id": "twilight", "name": "Twilight", "css": "twilight/theme.css" },
-    { "id": "docked",   "name": "Docked",   "css": "docked/theme.css" }
+    { "id": "twilight", "name": "Twilight", "css": "twilight/theme.css" }
   ]
 }

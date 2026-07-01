@@ -43,9 +43,8 @@ import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render
 
 
 import {addAtomVacuumPanel} from '../ui/addToStructureModule/AddVacuumModule.js'
-import {addCameraPanel} from '../ui/CameraPanel.js'
-import {addColorPanel} from '../ui/ColorPanel.js'
-import {addPanelToolbars} from '../ui/PanelToolbars.js'
+import {initPanelSystem, revealFeaturePanels} from '../ui/panels/PanelManager.js'
+import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../render/index.js';
 
@@ -58,11 +57,10 @@ import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../rend
 import {setupScene, setupCameraButtons,resizeRenderer, switchCameraType
 } from '../ui/WindowAndSceneControls.js'
 import {renderComposition} from '../ui/StructureInfoPanel/General.js';
-import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch, updateControlSpinForcePanel} from '../ui/ControlPanel.js';
 import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
 
 import {addSavePanel} from '../ui/SavePanel.js'
-import {addAnalysisInfoPanel,addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from '../ui/InfoPanel.js'
+import {addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from '../ui/InfoPanel.js'
 
 // NOTE: share-related import utils still need to move into the "share" module.
 
@@ -258,14 +256,13 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
     }
 
    document.getElementById('structureControls').style.display = 'block';
-   document.getElementById('structureControls2').style.display = 'block';
+   revealFeaturePanels();
 
     createShareButton();
     // NOTE: do not call updateVisualization() here. Every load path above funnels
     // through initializeUIOnLoad() -> selectLastAddedRow() -> updateStructureFromRowAndStep(),
     // which already performs a full atoms+bonds+field+other re-render. Re-rendering here
     // doubled the (expensive, O(n^2)) bond build on every load.
-    updateControlSpinForcePanel();
     console.warn(fileBrowser.selectedStructure)
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();
@@ -408,17 +405,12 @@ async function initializeMathBackend() {
 function initUIPanels() {
   createBackgroundControl();
   setupThemeSystem();
-  addControlPanelModeSwitch();
-  addControlPanelSpinForceSwitch();
+  initPanelSystem();
+  registerDefaultPanels();
   addBackendModeSwitch();
   addSavePanel();
-  addCameraPanel();
-  addColorPanel();
-  addPanelToolbars();
   addAtomVacuumPanel();
-  addControlPanelAnalysisSwitch();
   addStorageInfoPanel();
-  addAnalysisInfoPanel();
   addUploadInfoPanel();
   addBackendInfoPanel();
 

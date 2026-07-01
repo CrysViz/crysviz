@@ -1,21 +1,11 @@
 import {fileBrowser, general} from '../../state/store.js';
 
 
-import {collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { createCompositionRow, createWyckoffCompositionRow} from './Species.js'
 import { createSpecificBondControl} from './Bonds.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'
+import { getPanel } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
-
-
-// Function to handle structure panel toggle
-export function handleStructurePanelToggle() {
-  const composition = document.getElementById('composition');
-  if (composition && !composition.classList.contains('open')) {
-    // Structure panel is being collapsed, so collapse all atom expansions
-    collapseAllAtomExpansions();
-  }
-};
 
 export function getCompositionString() {
   function computeComposition() {
@@ -44,10 +34,10 @@ export function getCompositionString() {
     }
   }
 
-  // Set the composition string in the 'h4' of the #structureToggle
-  const structureToggleHeading = document.querySelector('#structureToggle h4');
-  if (structureToggleHeading) {
-    structureToggleHeading.innerHTML = formula + ` (${total} Atoms)`; // Use innerHTML to allow HTML tags
+  // The chemical formula is the info panel window's title.
+  const infoPanel = getPanel('info');
+  if (infoPanel) {
+    infoPanel.setTitle(formula + ` (${total} Atoms)`);
   }
 
   // Display the chemical formula and the total number of atoms
@@ -247,35 +237,14 @@ export function renderComposition(panelState="closed") {
   }
 
 
-  // Ensure structure panel starts collapsed by default
-  if (panelState != "open") {
-    compDiv.classList.remove('open');
-    compDiv.style.maxHeight = ''; // reset
-    const toggleIcon = document.getElementById('structureToggleIcon');
-    if (toggleIcon) {
-      toggleIcon.textContent = '+';
-      toggleIcon.classList.remove('open');
-    }
-    const structureToggle = document.getElementById('structureToggle');
-    if (structureToggle) {
-      structureToggle.setAttribute('aria-expanded', 'false');
-      // Rebind listener cleanly
-      structureToggle.removeEventListener('click', handleStructurePanelToggle);
-      structureToggle.addEventListener('click', handleStructurePanelToggle);
-    }
-  } else {
-    compDiv.classList.add('open');
-    compDiv.setAttribute('aria-hidden', 'false');
-    const toggleIcon = document.getElementById('structureToggleIcon');
-    if (toggleIcon) {
-      toggleIcon.textContent = '-';
-      toggleIcon.classList.add('open');
-    }
-    const structureToggle = document.getElementById('structureToggle');
-    if (structureToggle) {
-      structureToggle.setAttribute('aria-expanded', 'true');
-      structureToggle.removeEventListener('click', handleStructurePanelToggle);
-      structureToggle.addEventListener('click', handleStructurePanelToggle);
+  // Collapse/expand is owned by the info panel window; "open" keeps/forces it
+  // expanded, anything else collapses it (matching the old default-closed
+  // behavior on re-render).
+  {
+    const panel = getPanel('info');
+    if (panel) {
+      if (panelState === "open") panel.expand();
+      else panel.collapse();
     }
   }
 

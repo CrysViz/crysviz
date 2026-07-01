@@ -1,5 +1,6 @@
 import {groups,highlightHover,fileBrowser,atomSelection} from '../state/store.js';
 import {collapseAllAtomExpansions} from './WindowAndSceneControls.js';
+import {getPanel} from './panels/PanelManager.js';
 import * as THREE from '../external/three/three.module.js';
 import {updateAtoms} from '../render/index.js';
 import {updateBonds} from '../render/index.js';
@@ -157,21 +158,10 @@ function showPanel(panelId) {
 }
 
 export function highlightBondInfoInStructurePanel() {
-  const structureToggle = document.getElementById('structureToggle');
   const composition = document.getElementById('composition');
   if (!composition) return;
 
-  if (composition.classList.contains('collapsible-content') && !composition.classList.contains('open')) {
-    const toggleIcon = document.getElementById('structureToggleIcon');
-    composition.classList.add('open');
-    if (toggleIcon) {
-      toggleIcon.textContent = '−';
-      toggleIcon.classList.add('open');
-    }
-    if (structureToggle) {
-      structureToggle.setAttribute('aria-expanded', 'true');
-    }
-  }
+  getPanel('info')?.expand();
 
   const panelSwitch = document.getElementById('atomBondControlSwitch');
   panelSwitch?.querySelectorAll('button').forEach((btn) => {
@@ -195,21 +185,10 @@ function getTargetAtomDetails(sourceIndex) {
 }
 
 function ensureAtomPanelVisible(targetMode, targetPanelId) {
-  const structureToggle = document.getElementById('structureToggle');
   const composition = document.getElementById('composition');
   if (!composition) return null;
 
-  if (composition.classList.contains('collapsible-content') && !composition.classList.contains('open')) {
-    const toggleIcon = document.getElementById('structureToggleIcon');
-    composition.classList.add('open');
-    if (toggleIcon) {
-      toggleIcon.textContent = '−';
-      toggleIcon.classList.add('open');
-    }
-    if (structureToggle) {
-      structureToggle.setAttribute('aria-expanded', 'true');
-    }
-  }
+  getPanel('info')?.expand();
 
   const panelSwitch = document.getElementById('atomBondControlSwitch');
   panelSwitch?.querySelectorAll('button').forEach((btn) => {

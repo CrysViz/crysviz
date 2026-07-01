@@ -404,20 +404,18 @@ function updateRangeDisplayAndPlane(changedInput = null) {
   replacePlaneMesh(structure, plane);
 }
 
-export function addPlanesPanel(target = "PlanesContainer") {
+export function addPlanesPanel(target = "cvPanelBody-planes") {
   const container = document.getElementById(target);
   if (!container) {
     console.error(`${target} not found`);
     return;
   }
 
-  container.style.display = "block";
   bindPanelStateToSelectedStructure();
   ensureAtomSelectionSubscription();
   container.innerHTML = `
     <div class="control-group">
       <div class="planes-header">
-        <h3>Crystal Planes</h3>
         <button id="addPlaneBtn" class="planes-action-btn planes-top-btn">Add Plane</button>
       </div>
 
@@ -1202,11 +1200,10 @@ function renderPlanesTable() {
   });
 }
 
-export function removePlanesPanel(target = "PlanesContainer") {
+export function removePlanesPanel(target = "cvPanelBody-planes") {
   const container = document.getElementById(target);
   if (container) {
     container.innerHTML = '';
-    container.style.display = 'none';
   }
 
   if (atomSelectionUnsubscribe) {

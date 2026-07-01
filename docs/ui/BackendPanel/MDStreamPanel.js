@@ -203,7 +203,7 @@ function fastUpdatePositions(cartPositions, lattice, elements, forces) {
   }
 
   // Forces (optional — only if user has enabled the Forces toggle)
-  if (forces && general.spinForceState === 'Forces') {
+  if (forces && general.forcesActive) {
     liveStructure.forces = forces.map(v => new Force({ vector: v }));
     updateForces();
   }
@@ -276,7 +276,7 @@ function fullRebuild(nAtoms, lattice, cartPositions, elements, forces) {
   prevCellKey = cellKey(lattice);
   updateLattice();
 
-  if (forces && general.spinForceState === 'Forces') {
+  if (forces && general.forcesActive) {
     liveStructure.forces = forces.map(v => new Force({ vector: [...v] }));
     updateForces();
   } else {

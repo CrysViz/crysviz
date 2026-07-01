@@ -128,7 +128,7 @@ export const fieldBrowser = {
   }
 };
 
-export function addFieldPanel(target = "SpinForceFieldContainer") {
+export function addFieldPanel(target = "cvPanelBody-field") {
   const fieldControlsGroup = document.getElementById(target);
   if (!fieldControlsGroup) {
     console.error(`${target} not found`);
@@ -164,16 +164,11 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
     return;
   }
 
-  // Show the field controls group
-  container.style.display = "block";
-
   const isoValue = fieldBrowser.selectedField.isoValue || sliderToIsoValue(55, fieldBrowser.selectedField);
   const sliderVal = isoValueToSlider(isoValue, fieldBrowser.selectedField);
   const materialSettings = getIsosurfaceMaterialSettings();
 
   container.innerHTML = `
-    <h3>Volumetric Field Controls</h3>
-    
     <div class="field-info">
       <p><strong>Source:</strong> ${structure.volumetricFields.source}</p>
     </div>
@@ -276,18 +271,14 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
   //}
 }
 
-function showNoFieldsMessage(target = "SpinForceFieldContainer") {
+function showNoFieldsMessage(target = "cvPanelBody-field") {
   const container = document.getElementById(target);
   if (!container) {
     console.error(`${target} not found`);
     return;
   }
 
-  // Show the field controls group
-  container.style.display = "block";
-
   container.innerHTML = `
-    <h3>Volumetric Field Controls</h3>
     <div class="no-fields-message">
       <p>No volumetric fields available for the current structure.</p>
       <p>Load a CHGCAR or .cube file to visualize volumetric data.</p>
@@ -295,7 +286,7 @@ function showNoFieldsMessage(target = "SpinForceFieldContainer") {
   `;
 }
 
-export function removeFieldPanel(target = "SpinForceFieldContainer") {
+export function removeFieldPanel(target = "cvPanelBody-field") {
   const fieldControlsGroup = document.getElementById(target);
   
   if (fieldControlsGroup) {
@@ -317,11 +308,8 @@ export function removeFieldPanel(target = "SpinForceFieldContainer") {
       });
     }
     
-    // Clear the controls content and hide the group
-    if (fieldControlsGroup) {
-      fieldControlsGroup.innerHTML = '';
-    }
-    fieldControlsGroup.style.display = "none";
+    // Clear the controls content
+    fieldControlsGroup.innerHTML = '';
   }
 }
 
