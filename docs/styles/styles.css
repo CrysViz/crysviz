@@ -1113,6 +1113,17 @@ z-index:1000; pointer-events:none;
   align-items: center;
 }
 
+/* Until ui/panels/defaultPanels.js adopts them into their floating panel
+   windows, these start as direct <body> children. <body> is display:flex, so
+   keep them out of the layout — otherwise they steal width from #view and the
+   renderer sizes its canvas to the squeezed width at startup. The selectors
+   stop matching once the elements are reparented into a panel body. */
+body > #measurementTools,
+body > #cameraTools,
+body > #composition {
+  display: none;
+}
+
 /* --- Camera view tools --- (hosted by the unified "View" panel window) */
 #cameraTools {
   display: flex;
