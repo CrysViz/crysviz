@@ -34,6 +34,7 @@ import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
 import {updateSecondBonds,rebuildSecondBonds} from '../render/index.js'
 import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
+import { updatePolyhedra} from '../render/index.js'
 import {rebuildAtoms,updateAtoms} from '../render/index.js';
 import {rebuildSecondAtoms,updateSecondAtoms} from '../render/index.js';
 
@@ -103,9 +104,6 @@ const setStatus = (s) => {
 
 
 function updateOther() {
-  console.time("other:renderComposition");
-  renderComposition();
-  console.timeEnd("other:renderComposition");
   clearMeasureGraphics();
 
   measurements.measureLines.forEach(line => app.scene.add(line));
@@ -206,6 +204,11 @@ export function updateVisualization(options = {}) {
   console.timeEnd("uv:updateLattice");
   console.time("uv:updateOther");
   if (reRenderOther) updateOther();
+  // Polyhedra depend on atoms/bonds/lattice, so refresh them whenever the scene
+  // re-renders and the feature is on (persists across structure & frame changes).
+  // Also run when "Complete Polyhedra" is on (faces hidden) so the completing atoms are
+  // computed and shown.
+  if (general.showPolyhedra || general.completePolyhedra) updatePolyhedra();
   console.timeEnd("uv:updateOther");
   if (reRenderField) {
     if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {

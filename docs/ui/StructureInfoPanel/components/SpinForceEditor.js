@@ -3,6 +3,7 @@ import { getAtomColor } from '../../../utils/ColorModule.js';
 
 export function createSpinForceEditor(atomIndex, element, dot) {
   const spinEditor = document.createElement('div');
+  spinEditor.className = 'atom-spin-editor';
   spinEditor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
 
   const switchWrapper = document.createElement('div');

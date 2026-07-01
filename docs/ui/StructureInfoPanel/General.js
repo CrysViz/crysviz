@@ -62,8 +62,111 @@ export function getCompositionString() {
   return { elements, counts, total };
 }
 
+function captureCompositionUiState() {
+  const compDiv = document.getElementById('composition');
+  if (!compDiv) {
+    return { expandedElements: [], elementEditorsOpen: [], atomEditorsOpen: [] };
+  }
+
+  const expandedElements = [];
+  const elementEditorsOpen = [];
+  const atomEditorsOpen = [];
+
+  compDiv.querySelectorAll('.comp-container').forEach((container) => {
+    const element = container.dataset.element;
+    if (!element) return;
+
+    const atomsContainer = container.querySelector('.individual-atoms');
+    if (atomsContainer && atomsContainer.style.display !== 'none') {
+      expandedElements.push(element);
+    }
+
+    const elementEditor = container.querySelector('.element-color-editor');
+    if (elementEditor && elementEditor.style.display !== 'none') {
+      elementEditorsOpen.push(element);
+    }
+  });
+
+  compDiv.querySelectorAll('.individual-atom-row').forEach((row) => {
+    const atomIndex = row.dataset.atomIndex;
+    if (!atomIndex) return;
+
+    const editorTypes = [
+      ['color', '.atom-color-editor'],
+      ['coord', '.atom-coord-editor'],
+      ['spin', '.atom-spin-editor'],
+    ];
+
+    for (const [type, selector] of editorTypes) {
+      const editor = row.querySelector(selector);
+      if (editor && editor.style.display !== 'none') {
+        atomEditorsOpen.push({ atomIndex, type });
+        break;
+      }
+    }
+  });
+
+  return { expandedElements, elementEditorsOpen, atomEditorsOpen };
+}
+
+function restoreCompositionUiState(state) {
+  if (!state) return;
+
+  const compDiv = document.getElementById('composition');
+  if (!compDiv) return;
+
+  for (const element of state.expandedElements || []) {
+    const container = compDiv.querySelector(`.comp-container[data-element="${element}"]`);
+    if (!container) continue;
+    const atomsContainer = container.querySelector('.individual-atoms');
+    const expandIcon = container.querySelector('.comp-left span:last-child');
+    atomsContainer?._populateAtomRows?.();
+    if (atomsContainer) atomsContainer.style.display = 'block';
+    if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
+  }
+
+  for (const element of state.elementEditorsOpen || []) {
+    const container = compDiv.querySelector(`.comp-container[data-element="${element}"]`);
+    const editor = container?.querySelector('.element-color-editor');
+    if (!editor) continue;
+    editor.style.display = 'flex';
+    editor.style.flexDirection = 'column';
+  }
+
+  for (const entry of state.atomEditorsOpen || []) {
+    const row = compDiv.querySelector(`.individual-atom-row[data-atom-index="${entry.atomIndex}"]`);
+    if (!row) continue;
+
+    const editors = {
+      color: row.querySelector('.atom-color-editor'),
+      coord: row.querySelector('.atom-coord-editor'),
+      spin: row.querySelector('.atom-spin-editor'),
+    };
+
+    Object.values(editors).forEach((editor) => {
+      if (editor) editor.style.display = 'none';
+    });
+
+    row.querySelectorAll('.atom-editor-button').forEach((button) => {
+      button.style.border = '1px solid rgba(255,255,255,0.2)';
+      button.style.boxShadow = 'none';
+    });
+
+    const target = editors[entry.type];
+    if (target) target.style.display = 'block';
+
+    const activeButton = row.querySelector(`.atom-editor-button[data-editor-button="${entry.type}"]`);
+    if (activeButton) {
+      activeButton.style.border = '1px solid rgba(125, 206, 160, 0.95)';
+      activeButton.style.boxShadow = '0 0 0 1px rgba(125, 206, 160, 0.35), inset 0 0 0 1px rgba(125, 206, 160, 0.15)';
+    }
+  }
+}
+
 
 export function renderComposition(panelState="closed") {
+
+  const priorUiState = captureCompositionUiState();
 
   const {elements, counts, total}=getCompositionString()
   const hasWyckoffPanel = fileBrowser.selectedStructure?.symmetry?.mode === 'wyckoff'
@@ -157,6 +260,20 @@ export function renderComposition(panelState="closed") {
     if (structureToggle) {
       structureToggle.setAttribute('aria-expanded', 'false');
       // Rebind listener cleanly
+      structureToggle.removeEventListener('click', handleStructurePanelToggle);
+      structureToggle.addEventListener('click', handleStructurePanelToggle);
+    }
+  } else {
+    compDiv.classList.add('open');
+    compDiv.setAttribute('aria-hidden', 'false');
+    const toggleIcon = document.getElementById('structureToggleIcon');
+    if (toggleIcon) {
+      toggleIcon.textContent = '-';
+      toggleIcon.classList.add('open');
+    }
+    const structureToggle = document.getElementById('structureToggle');
+    if (structureToggle) {
+      structureToggle.setAttribute('aria-expanded', 'true');
       structureToggle.removeEventListener('click', handleStructurePanelToggle);
       structureToggle.addEventListener('click', handleStructurePanelToggle);
     }
@@ -300,6 +417,8 @@ if (hasWyckoffPanel) {
   });
 }
 showPanel(initialMode === 'bonds' ? 'infoBondControls' : (initialMode === 'wyckoff' ? 'wyckoffPanel' : 'atomPanel'))
+
+  restoreCompositionUiState(priorUiState);
 
 // CSS for the panels
 const style = document.createElement('style');

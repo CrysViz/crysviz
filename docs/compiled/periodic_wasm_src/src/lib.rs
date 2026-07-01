@@ -1,4 +1,8 @@
+mod bonds;
+mod cell_list;
+mod convex_hull;
 mod linalg;
+mod polyhedra;
 
 use linalg::{cart_to_frac, lattice_from_flat, Vec3};
 use std::collections::HashMap;
@@ -56,6 +60,336 @@ impl PeriodicResult {
     pub fn len(&self) -> usize {
         self.elements.len()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Polyhedra: flat result + wasm entry point
+// ---------------------------------------------------------------------------
+
+/// Flat arrays describing the accepted polyhedra. One slot per polyhedron in
+/// `kinds`/`color_elem`/`center_src`/`vert_counts`; `vertices` and `vertex_srcs`
+/// are concatenated per-polyhedron (use `vert_counts` to split them).
+#[wasm_bindgen]
+pub struct PolyhedraResult {
+    kinds: Vec<u32>,
+    color_elem: Vec<u32>,
+    center_src: Vec<i32>,
+    vert_counts: Vec<u32>,
+    vertices: Vec<f64>,
+    vertex_srcs: Vec<u32>,
+    setup_ms: f64,
+    centered_ms: f64,
+    cages_ms: f64,
+    cage_pool_ms: f64,
+    cage_band_ms: f64,
+    cage_nloop_ms: f64,
+    accept_ms: f64,
+    bands_built: u32,
+    bands_skipped: u32,
+}
+
+#[wasm_bindgen]
+impl PolyhedraResult {
+    pub fn kinds(&self) -> Vec<u32> {
+        self.kinds.clone()
+    }
+    pub fn setup_ms(&self) -> f64 {
+        self.setup_ms
+    }
+    pub fn centered_ms(&self) -> f64 {
+        self.centered_ms
+    }
+    pub fn cages_ms(&self) -> f64 {
+        self.cages_ms
+    }
+    pub fn cage_pool_ms(&self) -> f64 {
+        self.cage_pool_ms
+    }
+    pub fn cage_band_ms(&self) -> f64 {
+        self.cage_band_ms
+    }
+    pub fn cage_nloop_ms(&self) -> f64 {
+        self.cage_nloop_ms
+    }
+    pub fn accept_ms(&self) -> f64 {
+        self.accept_ms
+    }
+    pub fn bands_built(&self) -> u32 {
+        self.bands_built
+    }
+    pub fn bands_skipped(&self) -> u32 {
+        self.bands_skipped
+    }
+    pub fn color_elem(&self) -> Vec<u32> {
+        self.color_elem.clone()
+    }
+    pub fn center_src(&self) -> Vec<i32> {
+        self.center_src.clone()
+    }
+    pub fn vert_counts(&self) -> Vec<u32> {
+        self.vert_counts.clone()
+    }
+    pub fn vertices(&self) -> Vec<f64> {
+        self.vertices.clone()
+    }
+    pub fn vertex_srcs(&self) -> Vec<u32> {
+        self.vertex_srcs.clone()
+    }
+    pub fn count(&self) -> usize {
+        self.kinds.len()
+    }
+}
+
+/// Compute coordination polyhedra. See `polyhedra::compute_polyhedra` for the
+/// argument contract; the JS wrapper (`polyhedraWasm.js`) packs these arrays.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn compute_polyhedra(
+    frac: &[f64],
+    elem_idx: &[u32],
+    lattice_flat: &[f64],
+    cutoff_matrix: &[f64],
+    n_elem: usize,
+    electroneg: &[f64],
+    radii: &[f64],
+    max_cutoff: f64,
+    use_chem_filter: bool,
+    detect_cages: bool,
+    center_src: &[u32],
+    center_shift: &[i32],
+    center_cart: &[f64],
+    center_keys: &[i32],
+    seed_visible: &[u8],
+    cut_plane_immune: &[u8],
+    cut_planes: &[f64],
+    cut_plane_count: usize,
+) -> PolyhedraResult {
+    let r = polyhedra::compute_polyhedra(
+        frac,
+        elem_idx,
+        lattice_flat,
+        cutoff_matrix,
+        n_elem,
+        electroneg,
+        radii,
+        max_cutoff,
+        use_chem_filter,
+        detect_cages,
+        center_src,
+        center_shift,
+        center_cart,
+        center_keys,
+        seed_visible,
+        cut_plane_immune,
+        cut_planes,
+        cut_plane_count,
+    );
+    PolyhedraResult {
+        kinds: r.kinds,
+        color_elem: r.color_elem,
+        center_src: r.center_src,
+        vert_counts: r.vert_counts,
+        vertices: r.vertices,
+        vertex_srcs: r.vertex_srcs,
+        setup_ms: r.setup_ms,
+        centered_ms: r.centered_ms,
+        cages_ms: r.cages_ms,
+        cage_pool_ms: r.cage_pool_ms,
+        cage_band_ms: r.cage_band_ms,
+        cage_nloop_ms: r.cage_nloop_ms,
+        accept_ms: r.accept_ms,
+        bands_built: r.bands_built,
+        bands_skipped: r.bands_skipped,
+    }
+}
+
+/// Flattened candidate polyhedra for one worker partition (before acceptance). Centred
+/// candidates precede cage candidates; `n_centered` records the split so the main thread
+/// can regroup all workers' results into serial order. Layout mirrors
+/// `polyhedra::CandidateFlat`.
+#[wasm_bindgen]
+pub struct CandidateResult {
+    is_cage: Vec<u8>,
+    color_elem: Vec<u32>,
+    center_src: Vec<i32>,
+    center_shift: Vec<i32>,
+    ref_point: Vec<f64>,
+    vert_counts: Vec<u32>,
+    vertices: Vec<f64>,
+    vertex_srcs: Vec<u32>,
+    vertex_shifts: Vec<i32>,
+    n_centered: u32,
+}
+
+#[wasm_bindgen]
+impl CandidateResult {
+    pub fn is_cage(&self) -> Vec<u8> {
+        self.is_cage.clone()
+    }
+    pub fn color_elem(&self) -> Vec<u32> {
+        self.color_elem.clone()
+    }
+    pub fn center_src(&self) -> Vec<i32> {
+        self.center_src.clone()
+    }
+    pub fn center_shift(&self) -> Vec<i32> {
+        self.center_shift.clone()
+    }
+    pub fn ref_point(&self) -> Vec<f64> {
+        self.ref_point.clone()
+    }
+    pub fn vert_counts(&self) -> Vec<u32> {
+        self.vert_counts.clone()
+    }
+    pub fn vertices(&self) -> Vec<f64> {
+        self.vertices.clone()
+    }
+    pub fn vertex_srcs(&self) -> Vec<u32> {
+        self.vertex_srcs.clone()
+    }
+    pub fn vertex_shifts(&self) -> Vec<i32> {
+        self.vertex_shifts.clone()
+    }
+    pub fn n_centered(&self) -> u32 {
+        self.n_centered
+    }
+    pub fn count(&self) -> usize {
+        self.vert_counts.len()
+    }
+}
+
+/// Parallel entry, part 1: generate the candidates for centre range
+/// `[center_start,center_end)` and seed range `[seed_start,seed_end)`. Runs in a worker.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn compute_candidates(
+    frac: &[f64],
+    elem_idx: &[u32],
+    lattice_flat: &[f64],
+    cutoff_matrix: &[f64],
+    n_elem: usize,
+    electroneg: &[f64],
+    radii: &[f64],
+    max_cutoff: f64,
+    use_chem_filter: bool,
+    detect_cages: bool,
+    center_src: &[u32],
+    center_shift: &[i32],
+    center_cart: &[f64],
+    center_keys: &[i32],
+    seed_visible: &[u8],
+    cut_plane_immune: &[u8],
+    cut_planes: &[f64],
+    cut_plane_count: usize,
+    center_start: usize,
+    center_end: usize,
+    seed_start: usize,
+    seed_end: usize,
+) -> CandidateResult {
+    let (cands, _timing) = polyhedra::build_candidates(
+        frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, radii, max_cutoff,
+        use_chem_filter, detect_cages, center_src, center_shift, center_cart, center_keys,
+        seed_visible, cut_plane_immune, cut_planes, cut_plane_count,
+        center_start, center_end, seed_start, seed_end,
+    );
+    let f = polyhedra::flatten_candidates(&cands);
+    CandidateResult {
+        is_cage: f.is_cage,
+        color_elem: f.color_elem,
+        center_src: f.center_src,
+        center_shift: f.center_shift,
+        ref_point: f.ref_point,
+        vert_counts: f.vert_counts,
+        vertices: f.vertices,
+        vertex_srcs: f.vertex_srcs,
+        vertex_shifts: f.vertex_shifts,
+        n_centered: f.n_centered,
+    }
+}
+
+/// Parallel entry, part 2: accept the merged candidates (already in serial order) on the
+/// main thread. Inputs are the concatenated `CandidateResult` arrays. Timing fields are 0.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn accept_candidates(
+    is_cage: &[u8],
+    color_elem: &[u32],
+    center_src: &[i32],
+    center_shift: &[i32],
+    ref_point: &[f64],
+    vert_counts: &[u32],
+    vertices: &[f64],
+    vertex_srcs: &[u32],
+    vertex_shifts: &[i32],
+) -> PolyhedraResult {
+    let cands = polyhedra::unflatten_candidates(
+        is_cage, color_elem, center_src, center_shift, ref_point, vert_counts, vertices,
+        vertex_srcs, vertex_shifts,
+    );
+    let acc = polyhedra::accept(cands);
+    PolyhedraResult {
+        kinds: acc.kinds,
+        color_elem: acc.color_elem,
+        center_src: acc.center_src,
+        vert_counts: acc.vert_counts,
+        vertices: acc.vertices,
+        vertex_srcs: acc.vertex_srcs,
+        setup_ms: 0.0,
+        centered_ms: 0.0,
+        cages_ms: 0.0,
+        cage_pool_ms: 0.0,
+        cage_band_ms: 0.0,
+        cage_nloop_ms: 0.0,
+        accept_ms: 0.0,
+        bands_built: 0,
+        bands_skipped: 0,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Neighbour-bond pair finder
+// ---------------------------------------------------------------------------
+
+/// Bonding pairs (i, j) with i < j, as two parallel index arrays.
+#[wasm_bindgen]
+pub struct BondPairsResult {
+    i: Vec<u32>,
+    j: Vec<u32>,
+}
+
+#[wasm_bindgen]
+impl BondPairsResult {
+    pub fn i(&self) -> Vec<u32> {
+        self.i.clone()
+    }
+    pub fn j(&self) -> Vec<u32> {
+        self.j.clone()
+    }
+    pub fn count(&self) -> usize {
+        self.i.len()
+    }
+}
+
+/// Find bonding pairs in the wrapped atom set via the shared Cartesian cell list. See
+/// `bonds::compute_bond_pairs`; `i_start`/`i_end` allow worker partitioning later (use
+/// `0`/`n` for the serial path).
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn compute_bond_pairs(
+    cart: &[f64],
+    elem_idx: &[u32],
+    cutoff_sq: &[f64],
+    min_cutoff_sq: &[f64],
+    n_elem: usize,
+    min_dist_sq: f64,
+    max_cutoff: f64,
+    i_start: usize,
+    i_end: usize,
+) -> BondPairsResult {
+    let r = bonds::compute_bond_pairs(
+        cart, elem_idx, cutoff_sq, min_cutoff_sq, n_elem, min_dist_sq, max_cutoff, i_start, i_end,
+    );
+    BondPairsResult { i: r.i, j: r.j }
 }
 
 // ---------------------------------------------------------------------------

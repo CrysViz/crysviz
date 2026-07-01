@@ -34,6 +34,16 @@ export function setupControlsWiring() {
     updatePolyhedra();
   };
 
+  const completePolyToggle = document.getElementById('completePolyhedraToggle');
+  if (completePolyToggle) {
+    completePolyToggle.onchange = (e) => {
+      general.completePolyhedra = e.target.checked;
+      // The displayed atom set changes (completing atoms added/removed), so rebuild atoms +
+      // bonds; updateVisualization also runs updatePolyhedra, which appends the atoms.
+      updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+    };
+  }
+
   document.getElementById('showLattice').onchange = (e) => {
     general.showLattice = e.target.checked;
     updateVisualization();
@@ -106,7 +116,10 @@ export function setupControlsWiring() {
     };
   }
     let checkbox_polyhedra = document.getElementById("showPolyhedra");
-      checkbox_polyhedra.checked = false; // explicitly untick
+      checkbox_polyhedra.checked = general.showPolyhedra; // persist across structure loads
+
+    let checkbox_completePolyhedra = document.getElementById("completePolyhedraToggle");
+      if (checkbox_completePolyhedra) checkbox_completePolyhedra.checked = general.completePolyhedra;
 
  //     let checkbox_showComparisonInfo = document.getElementById("showComparisonInfo");
  //     checkbox_showComparisonInfo.checked = false; // explicitly untick

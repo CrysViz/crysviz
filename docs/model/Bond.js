@@ -48,9 +48,14 @@ export class Bond {
       this.radius = general.bondRadius;
 
       if (this.visibleLen > 1e-3) {
-        const dirNorm = this.dir.clone().normalize();
-        this.center1 = this.p1.clone().add(dirNorm.clone().multiplyScalar(this.r1 + this.halfLen / 2));
-        this.center2 = this.p2.clone().add(dirNorm.clone().multiplyScalar(-this.r2 - this.halfLen / 2));
+        // Scalar math instead of clone()/normalize() temporaries: this constructor runs
+        // once per bond (100k+ on large structures) and each clone allocated a Vector3.
+        const inv = this.dist > 1e-9 ? 1 / this.dist : 0;
+        const ux = this.dir.x * inv, uy = this.dir.y * inv, uz = this.dir.z * inv;
+        const a1 = this.r1 + this.halfLen / 2;
+        const a2 = -this.r2 - this.halfLen / 2;
+        this.center1 = new THREE.Vector3(this.p1.x + ux * a1, this.p1.y + uy * a1, this.p1.z + uz * a1);
+        this.center2 = new THREE.Vector3(this.p2.x + ux * a2, this.p2.y + uy * a2, this.p2.z + uz * a2);
       } else {
         this.center1 = this.center2 = null;
       }

@@ -11,6 +11,7 @@ import {addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel} from './Lat
 import {addFieldPanel, removeFieldPanel} from './FieldPanel.js';
 import { addPlanesPanel, removePlanesPanel} from './PlanesPanel.js';
 import { addCutPlanePanel, removeCutPlanePanel } from './CutPlanePanel.js';
+import { addPolyhedraPanel, removePolyhedraPanel } from './PolyhedraPanel.js';
 import {updateVisualization} from '../core/crystal-viewer.js';
 
 /**
@@ -410,6 +411,7 @@ export function addControlPanelAnalysisSwitch() {
       removeHistogramPanel()
       
       removeBondPanel()
+      removePolyhedraPanel()
       
       removeCutPlanePanel()
       addLatticeAndSupercellPanel()
@@ -417,16 +419,19 @@ export function addControlPanelAnalysisSwitch() {
     else if (general.analysisState == "Bonds") {
       removeBondPanel()
       addBondPanel()
+      removePolyhedraPanel()
       removeCutPlanePanel()
       removeLatticeAndSupercellPanel()
      }
     else if (general.analysisState == "Polyhedra") {
       removeBondPanel()
-      console.warn("Polyhedera analysis not yet implemented!")
+      addPolyhedraPanel()
       removeHistogramPanel()
       removeLatticeAndSupercellPanel()
+      removeCutPlanePanel()
     }
     else {
+      removePolyhedraPanel()
       removeHistogramPanel()
       removeBondPanel()
       removeLatticeAndSupercellPanel()

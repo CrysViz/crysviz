@@ -1,5 +1,5 @@
 import { app, fileBrowser, general } from '../state/store.js';
-import { Plane, CutModes, DEFAULT_COLORMAP_RESOLUTION, getCutPlaneSideLabel, getPlaneCutModeLabel, getPlaneDefinitionNormalAndD, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../model/Plane.js';
+import { Plane, CutModes, DEFAULT_COLORMAP_RESOLUTION, getPlaneDefinitionNormalAndD, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../model/Plane.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { updateAtomCutPlaneState } from '../render/AtomsFracUpdateModule.js';
 import { getSelectedAtoms, subscribeToAtomSelection } from './SelectAndHighlightModule.js';
@@ -1092,6 +1092,13 @@ function getPlaneTableDisplayParams(plane, lattice) {
   return { hklStr, uvwdStr };
 }
 
+function getPlaneFilterDisplayLabel(plane) {
+  const cutMode = normalizePlaneCutMode(plane?.cutMode);
+  if (cutMode === CutModes.ALONGN) return 'Along N';
+  if (cutMode === CutModes.OPPOSITEN) return 'Opposite N';
+  return '-';
+}
+
 function renderPlanesTable() {
   const tbody = document.getElementById('planesTableBody');
   const noMsg = document.getElementById('noPlanesMsg');
@@ -1124,9 +1131,7 @@ function renderPlanesTable() {
     const fieldDisplay = rawField !== '—' && rawField.length > 15
       ? rawField.slice(0, 14) + '…'
       : rawField;
-    const cutMode = plane.source === 'structure-plane'
-      ? getPlaneCutModeLabel(plane.cutMode)
-      : getCutPlaneSideLabel(plane.side);
+    const cutMode = getPlaneFilterDisplayLabel(plane);
 
     tr.innerHTML = `
       <td class="planes-td planes-td-cb">

@@ -220,6 +220,10 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
   app.scene.add(mesh);
   groups[meshKey] = mesh;
   groups[meshKey].userData.elementNames = wrapped.elements;
+  // Honour the "Show Atoms" toggle on (re)build — the toggle only flips visibility on the
+  // live mesh, so a rebuild (e.g. Complete Polyhedra appending atoms) would otherwise
+  // reset the main atoms to visible. Comparison atoms keep their own visibility logic.
+  if (meshKey === 'atomsMesh') mesh.visible = general.showAtoms !== false;
   return mesh;
 }
 

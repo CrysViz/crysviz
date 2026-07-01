@@ -119,7 +119,19 @@ export function updatePieDot(canvas, colors) {
 
 // Helper: convert hex number to CSS string
 export function colorHexToCss(hex) {
-  const s = hex.toString(16).padStart(6, '0');
+  // Atom colours are stored inconsistently: `atom.color` / default colours are numeric
+  // hex, but `atom.userColor` (set by the colour picker) is a CSS string. getColor() can
+  // return either, so normalise both to a valid `#rrggbb` here — otherwise a string input
+  // hit `"#0000ff".toString(16)` → `"##0000ff"`, an invalid colour that rendered grey.
+  if (typeof hex === 'string') {
+    const t = hex.trim();
+    if (t.startsWith('#')) return t;                 // already CSS hex
+    if (/^[0-9a-fA-F]{6}$/.test(t)) return `#${t}`;  // bare 6-digit hex
+    const n = Number(t);
+    if (!Number.isFinite(n)) return t;               // named colour / rgb(...) — pass through
+    hex = n;                                         // numeric string → fall through
+  }
+  const s = (Number(hex) >>> 0).toString(16).padStart(6, '0').slice(-6);
   return `#${s}`;
 }
 

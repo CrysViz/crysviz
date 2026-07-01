@@ -149,6 +149,7 @@ export function initRenderer(){
   app.renderer.outputColorSpace = THREE.SRGBColorSpace;
   app.renderer.toneMapping = THREE.ACESFilmicToneMapping;
   app.renderer.toneMappingExposure = 1.2;
+  app.renderer.localClippingEnabled = true;
   view.appendChild(app.renderer.domElement);
 }
 
