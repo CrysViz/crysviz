@@ -68,8 +68,6 @@ export function registerPanel(def) {
 
   if (def.hiddenUntilStructure && !revealed) panel.el.hidden = true;
 
-  if (def.lifecycle !== 'rebuild') buildContent(panel);
-
   if (docked) {
     // A panel remembered as docked but with no remembered slot (e.g. an MD
     // monitor docked in a past run) goes to the top, like the dock button.
@@ -78,6 +76,11 @@ export function registerPanel(def) {
   } else {
     floatPanel(panel, panel.floatPos);
   }
+
+  // Build persistent content only after the panel is attached: builders
+  // resolve their target container by id (document.getElementById), which
+  // fails on a detached panel body.
+  if (def.lifecycle !== 'rebuild') buildContent(panel);
 
   if (!collapsed && panel.collapsed) {
     if (def.lifecycle === 'rebuild' && !revealed) panel.wantExpanded = true;
