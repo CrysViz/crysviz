@@ -22,6 +22,44 @@ import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
 
+// ---- static-row adoption ------------------------------------------------------
+//
+// The visibility toggles and size sliders are static <label> rows in the
+// hidden #structureControls staging block, wired once by ControlsWiring.js.
+// Feature windows adopt "their" rows into the top of their body; rebuild
+// panels must stash them back before their body is cleared on rebuild, or the
+// rows (and their listeners) would be destroyed.
+
+/** Move the rows containing the given input ids into a .toggle_group at the
+ *  top of the panel body. Works for checkbox rows and bare slider labels. */
+function adoptStaticRows(body, inputIds) {
+  const group = document.createElement('div');
+  group.className = 'toggle_group';
+  for (const id of inputIds) {
+    const input = document.getElementById(id);
+    const row = input && input.closest('label');
+    if (row) group.appendChild(row);
+  }
+  body.insertBefore(group, body.firstChild);
+}
+
+/** Return adopted rows to the staging block (called from onDestroyContent,
+ *  before the panel body is cleared). */
+function stashStaticRows(inputIds) {
+  const staging = document.querySelector('#structureControls .toggle_group')
+    || document.getElementById('structureControls');
+  if (!staging) return;
+  for (const id of inputIds) {
+    const input = document.getElementById(id);
+    const row = input && input.closest('label');
+    if (row) staging.appendChild(row);
+  }
+}
+
+const BOND_ROWS = ['showBonds', 'PBCBondToggle', 'bondWidth'];
+const CELL_ROWS = ['showLattice', 'showAxes', 'showPeriodic'];
+const POLYHEDRA_ROWS = ['showPolyhedra', 'completePolyhedraToggle'];
+
 export function registerDefaultPanels() {
   // ---- floating trio: measure / view / structure info -----------------------
 
@@ -115,16 +153,8 @@ export function registerDefaultPanels() {
       if (table) body.appendChild(table);
       const save = document.getElementById('saveButton');
       if (save) body.appendChild(save);
-    },
-    defaults: { docked: true, order: 0, collapsed: false, barCollapsed: true },
-  });
-
-  registerPanel({
-    id: 'storage',
-    title: 'Storage',
-    lifecycle: 'persistent',
-    hiddenUntilStructure: true,
-    buildContent(body) {
+      // Sharing/storage belongs with the files: the storage-option switch
+      // (what a share URL serializes), its info button, and the Share button.
       const info = document.getElementById('storageInfoButton');
       const infoWrap = info && info.closest('.info-button-panel');
       if (infoWrap) body.appendChild(infoWrap);
@@ -136,7 +166,7 @@ export function registerDefaultPanels() {
       const shareBtn = document.getElementById('shareBtn');
       if (shareBtn) body.appendChild(shareBtn);
     },
-    defaults: { docked: true, order: 95, collapsed: false },
+    defaults: { docked: true, order: 0, collapsed: false, barCollapsed: true },
   });
 
   //
@@ -233,12 +263,16 @@ export function registerDefaultPanels() {
 
   registerPanel({
     id: 'bonds',
-    title: 'Bond Analysis',
+    title: 'Bonds',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     available() { return !!fileBrowser.selectedStructure; },
-    buildContent(body) { addBondPanel(body.id); },
+    buildContent(body) {
+      addBondPanel(body.id);
+      adoptStaticRows(body, BOND_ROWS);
+    },
     onDestroyContent() {
+      stashStaticRows(BOND_ROWS);
       removeBondPanel();
       removeHistogramPanel();
     },
@@ -251,8 +285,14 @@ export function registerDefaultPanels() {
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     available() { return !!fileBrowser.selectedStructure; },
-    buildContent(body) { addLatticeAndSupercellPanel(body.id); },
-    onDestroyContent() { removeLatticeAndSupercellPanel(); },
+    buildContent(body) {
+      addLatticeAndSupercellPanel(body.id);
+      adoptStaticRows(body, CELL_ROWS);
+    },
+    onDestroyContent() {
+      stashStaticRows(CELL_ROWS);
+      removeLatticeAndSupercellPanel();
+    },
     defaults: { docked: true, order: 80, collapsed: true },
   });
 
@@ -273,38 +313,29 @@ export function registerDefaultPanels() {
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     available() { return !!fileBrowser.selectedStructure; },
-    buildContent(body) { addPolyhedraPanel(body.id); },
-    onDestroyContent() { removePolyhedraPanel(); },
+    buildContent(body) {
+      addPolyhedraPanel(body.id);
+      adoptStaticRows(body, POLYHEDRA_ROWS);
+    },
+    onDestroyContent() {
+      stashStaticRows(POLYHEDRA_ROWS);
+      removePolyhedraPanel();
+    },
     defaults: { docked: true, order: 90, collapsed: true },
   });
 
   registerPanel({
-    id: 'display',
-    title: 'Display',
+    id: 'appearance',
+    title: 'Appearance',
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
     buildContent(body) {
-      // Reparent the statically-defined visibility toggles and size sliders
-      // (wired by ControlsWiring.js before the panels are built; moving the
-      // nodes preserves their listeners and ids).
-      const toggles = document.querySelector('#structureControls .toggle_group');
-      if (toggles) body.appendChild(toggles);
-      for (const sliderId of ['atomSize', 'bondWidth']) {
-        const slider = document.getElementById(sliderId);
-        const label = slider && slider.closest('label');
-        if (label) body.appendChild(label);
-      }
+      // Atom visibility/size plus the color-map settings; the per-feature
+      // toggles (bonds, cell, polyhedra) live in their feature windows.
+      addColorPanel(body.id);
+      adoptStaticRows(body, ['showAtoms', 'atomSize']);
     },
     defaults: { docked: true, order: 5, collapsed: false },
-  });
-
-  registerPanel({
-    id: 'color',
-    title: 'Color Map Settings',
-    lifecycle: 'persistent',
-    hiddenUntilStructure: true,
-    buildContent(body) { addColorPanel(body.id); },
-    defaults: { docked: true, order: 100, collapsed: true },
   });
 
   registerPanel({
