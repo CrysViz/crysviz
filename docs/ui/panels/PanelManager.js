@@ -20,6 +20,8 @@ let dockEl = null;
 let stored = { dockOrder: [], panels: {} };
 let revealed = false; // set once a structure is loaded (feature panels unhide)
 let saveTimer = 0;
+let dockOccupies = false; // side panel currently takes layout space
+let lastUiWidth = 0; // last known #ui width (it measures 0 while hidden)
 
 const hooks = {
   beforeExpand(panel) {
@@ -41,6 +43,16 @@ const hooks = {
 export function initPanelSystem() {
   dockEl = document.getElementById('dock');
   loadStoredLayout();
+
+  // Track the side panel's visibility: floating windows in the dock's column
+  // are displaced right while it occupies space and return to their base
+  // position when it is hidden (see refreshDockShift).
+  dockOccupies = dockOccupiesSpace();
+  measureUiWidth();
+  const observer = new MutationObserver(() => refreshDockShift());
+  observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  const ui = document.getElementById('ui');
+  if (ui) observer.observe(ui, { attributes: true, attributeFilter: ['class'] });
 }
 
 export function getPanel(id) {
@@ -197,7 +209,13 @@ export function saveLayout() {
       if (!panel.el.hidden && panel.el.isConnected) {
         panel.floatPos = panel.getFloatPosition();
       }
-      entry.pos = panel.floatPos;
+      let pos = panel.floatPos;
+      // Persist the BASE position: a dock-displaced window is stored where it
+      // sits with the dock hidden, and re-displaced on restore (floatPanel).
+      if (panel.dockShifted && pos && typeof pos.left === 'number') {
+        pos = { ...pos, left: Math.max(0, pos.left - lastUiWidth) };
+      }
+      entry.pos = pos;
     }
     data.panels[panel.id] = entry;
   }
@@ -278,7 +296,66 @@ function floatPanel(panel, pos) {
   panel.floatPos = pos;
   document.body.appendChild(panel.el);
   panel.markFloating(pos);
+  // A window whose base position lies in the dock's column is displaced to
+  // the dock's right edge while the dock occupies space.
+  if (dockOccupies && typeof pos.left === 'number' && pos.left < lastUiWidth) {
+    panel.applyFloatPosition({ ...pos, left: pos.left + lastUiWidth });
+    panel.dockShifted = true;
+  }
   resequenceSortKeys();
+  scheduleSave();
+}
+
+// ---- dock-visibility displacement of floating windows ------------------------
+
+/** Does the side panel currently reserve layout space? (On mobile it slides
+ *  OVER the canvas, so floating windows never need to make room for it.) */
+function dockOccupiesSpace() {
+  if (window.innerWidth <= 1024) return false;
+  const ui = document.getElementById('ui');
+  return !!ui && ui.getBoundingClientRect().width > 0;
+}
+
+function measureUiWidth() {
+  const ui = document.getElementById('ui');
+  const w = ui ? ui.getBoundingClientRect().width : 0;
+  if (w > 0) lastUiWidth = w;
+  return lastUiWidth;
+}
+
+/**
+ * Called when the side panel is hidden or shown. Left-anchored floating
+ * windows inside the dock's column move right by the dock width when it
+ * appears (so it doesn't cover them) and back to their remembered base
+ * position when it hides again.
+ */
+function refreshDockShift() {
+  const occupies = dockOccupiesSpace();
+  if (occupies === dockOccupies) return;
+  if (occupies) measureUiWidth();
+  dockOccupies = occupies;
+  const w = lastUiWidth;
+  if (!w) return;
+  for (const panel of panels.values()) {
+    if (panel.docked || panel.el.hidden || !panel.el.isConnected) continue;
+    const s = panel.el.style;
+    const leftAnchored = s.left && s.left !== 'auto';
+    if (!occupies) {
+      if (panel.dockShifted) {
+        panel.dockShifted = false;
+        if (leftAnchored) {
+          const rect = panel.el.getBoundingClientRect();
+          s.left = `${Math.max(0, Math.round(rect.left) - w)}px`;
+        }
+      }
+    } else if (leftAnchored) {
+      const rect = panel.el.getBoundingClientRect();
+      if (rect.left < w) {
+        s.left = `${Math.round(rect.left) + w}px`;
+        panel.dockShifted = true;
+      }
+    }
+  }
   scheduleSave();
 }
 

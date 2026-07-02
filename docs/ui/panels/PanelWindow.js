@@ -32,6 +32,9 @@ export class PanelWindow {
     this.collapsed = true;
     this.docked = true;
     this.barCollapsed = false; // title bar shrunk to a thin strip
+    // Floating window displaced right by the dock's width so the visible
+    // dock doesn't cover it; cleared when the user repositions the window.
+    this.dockShifted = false;
     // Lifecycle/layout bookkeeping maintained by PanelManager:
     this.built = false;        // content has been built into the body
     this.stale = false;        // built content refers to a previous structure
@@ -204,6 +207,7 @@ export class PanelWindow {
   /** Called by the manager after the element has been appended to #dock. */
   markDocked() {
     this.docked = true;
+    this.dockShifted = false;
     this.el.classList.add('cv-docked');
     this.el.classList.remove('cv-floating');
     this.dockBtn.textContent = '🗗';
@@ -364,6 +368,8 @@ export class PanelWindow {
         // strip of a hidden bar, where only double-click (restore) acts.
         if (!this.barCollapsed) this.toggleCollapsed();
       } else {
+        // A user-chosen position replaces any dock displacement.
+        if (!this.docked) this.dockShifted = false;
         this.hooks.onLayoutChange();
       }
     };

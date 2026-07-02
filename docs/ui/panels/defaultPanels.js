@@ -46,11 +46,10 @@ export function registerDefaultPanels() {
       const el = document.getElementById('cameraTools');
       if (el) body.appendChild(el);
     },
-    defaults: {
-      docked: false,
-      anchor: { left: 'var(--camera-tools-left)', top: 20 },
-      collapsed: false,
-    },
+    // Base position is the far left of the screen; while the dock occupies
+    // that column the window is displaced to sit just right of it, and it
+    // returns to the very left whenever the dock is hidden.
+    defaults: { docked: false, anchor: { left: 10, top: 20 }, collapsed: false },
   });
 
   registerPanel({
