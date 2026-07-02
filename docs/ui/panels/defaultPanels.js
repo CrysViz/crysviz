@@ -96,6 +96,8 @@ export function registerDefaultPanels() {
       if (upload) body.appendChild(upload);
       const table = document.getElementById('structureTablePanel');
       if (table) body.appendChild(table);
+      const save = document.getElementById('saveButton');
+      if (save) body.appendChild(save);
     },
     defaults: { docked: true, order: 0, collapsed: false },
   });

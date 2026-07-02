@@ -303,12 +303,15 @@ function beginDockReorder(panel, startEv) {
     const top = Math.min(Math.max(startTop + (ev.clientY - startY), 0), maxTop);
     el.style.top = `${top}px`;
 
-    // Move the placeholder to the slot whose midpoint the panel centre crossed.
-    const centre = top + elH / 2;
+    // Move the placeholder to the slot whose midpoint the POINTER crossed.
+    // (Comparing the dragged panel's centre instead would make the top slot
+    // unreachable: with the panel clamped at top 0, its centre can never rise
+    // above half its own height, i.e. never above the first bar's midpoint.)
+    const pointerY = ev.clientY - dockEl.getBoundingClientRect().top;
     let before = null;
     for (const sib of dockedPanels()) {
       if (sib === panel) continue;
-      if (centre < sib.el.offsetTop + sib.el.offsetHeight / 2) { before = sib.el; break; }
+      if (pointerY < sib.el.offsetTop + sib.el.offsetHeight / 2) { before = sib.el; break; }
     }
     if (placeholder.nextElementSibling !== before) dockEl.insertBefore(placeholder, before);
   };
