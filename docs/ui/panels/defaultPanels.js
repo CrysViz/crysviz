@@ -151,8 +151,6 @@ export function registerDefaultPanels() {
       if (upload) body.appendChild(upload);
       const table = document.getElementById('structureTablePanel');
       if (table) body.appendChild(table);
-      const save = document.getElementById('saveButton');
-      if (save) body.appendChild(save);
       // Sharing/storage belongs with the files: the storage-option switch
       // (what a share URL serializes), its info button, and the Share button.
       const info = document.getElementById('storageInfoButton');

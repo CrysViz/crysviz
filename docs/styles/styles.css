@@ -212,9 +212,10 @@ body.panel-hidden #axesLegend {
   font-weight: 500;
 }
 
-.input-mode-toggle {
+/* File actions row (Files window): Upload / Paste Text / Download */
+.file-actions {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin-bottom: 15px;
   background: rgba(255, 255, 255, 0.05);
@@ -222,64 +223,110 @@ body.panel-hidden #axesLegend {
   border-radius: 10px;
 }
 
-.input-mode-btn {
-  background: transparent;
-  color: #ddd;
-  border: none;
-  padding: 10px 12px;
+.file-action-btn {
+  width: 100%;
+  background: var(--bg-color);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 8px;
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  white-space: nowrap;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 
-.input-mode-btn:hover {
-  background: var(--bg-color);
-  color: #fff;
-}
-
-.input-mode-btn.active {
-  background: var(--highlight-color);
-  color: #fff;
-}
-
-.input-mode-panel {
-  margin: 0px 0px 15px 0px;
-  max-width: 100%;
-  display: block;
-}
-
-.input-mode-panel[hidden] {
-  display: none !important;
+.file-action-btn:hover {
+  box-shadow: 0px 0px 4px 2px var(--highlight-color);
 }
 
 #fileInput {
   display: none;
 }
 
-#fileLabel {
-  display: block;
-  padding: 15px 20px;
-  background: var(--bg-color);
-  color: white;
-  text-align: center;
+/* Download format dropdown */
+.download-dropdown {
+  position: relative;
+}
+
+.download-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 100%;
+  z-index: 20;
+  background: var(--menu-bg);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.download-menu button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: left;
   cursor: pointer;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  border: 2px dashed transparent;
+  white-space: nowrap;
 }
 
-#fileLabel:hover {
-  border: 1px solid rgba(255,255,255,0.1);
-  transform: translateY(-2px);
-  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
+.download-menu button:hover {
+  background: var(--hover-color);
 }
 
-#fileLabel.dragover {
-  border: 2px dashed var(--highlight-color);
-  background: var(--bg-color);
+/* Paste-text modal dialog */
+#pasteTextModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#pasteTextModal[hidden] {
+  display: none;
+}
+
+.paste-modal {
+  width: min(640px, calc(100vw - 32px));
+  padding: 16px;
+  background: var(--menu-bg);
+  color: var(--panel-fg);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+}
+
+.paste-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.paste-modal-actions #cancelTextButton {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* Drag&drop hover highlight on the drop targets (Files window / 3D view) */
+.cv-drop-hover {
+  outline: 2px dashed var(--highlight-color);
+  outline-offset: -2px;
 }
 
 #structureText {
@@ -321,26 +368,8 @@ body.panel-hidden #axesLegend {
   box-shadow: 0px 0px 4px 2px  var(--highlight-color);
 }
 
-#saveButton {
-  margin-bottom: 12px;
-  width: 100%;
-  padding: 12px 16px;
-  background: var( --bg-color);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-#saveButton:hover {
-  border: 1px solid rgba(255,255,255,0.1);
-  transform: translateY(-1px);
-  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
-
-}
+/* #saveButton is the "POSCAR" entry in the Download dropdown; it takes the
+   .download-menu button styling. */
 
 .comparison-group {
   backdrop-filter: blur(10px);
