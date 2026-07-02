@@ -417,7 +417,8 @@ export function createMDMonitorPanel() {
     title: 'MD Monitor',
     lifecycle: 'persistent',
     closable: true,
-    persist: false,
+    // Layout persists: the monitor re-opens docked/floating (and where)
+    // exactly as the user last left it.
     buildContent(body) {
       body.innerHTML = `
         <div class="panelBody" id="mdBody">

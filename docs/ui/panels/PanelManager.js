@@ -28,7 +28,7 @@ const hooks = {
   },
   onToggleDock(panel) {
     if (panel.docked) floatPanel(panel);
-    else dockPanel(panel);
+    else dockPanel(panel, true); // docking a floating window puts it on top
   },
   onClose(panel) {
     if (panel.def.onClose) panel.def.onClose(panel);
@@ -70,8 +70,14 @@ export function registerPanel(def) {
 
   if (def.lifecycle !== 'rebuild') buildContent(panel);
 
-  if (docked) dockPanel(panel);
-  else floatPanel(panel, panel.floatPos);
+  if (docked) {
+    // A panel remembered as docked but with no remembered slot (e.g. an MD
+    // monitor docked in a past run) goes to the top, like the dock button.
+    const atTop = !!persisted && !stored.dockOrder.includes(def.id);
+    dockPanel(panel, atTop);
+  } else {
+    floatPanel(panel, panel.floatPos);
+  }
 
   if (!collapsed && panel.collapsed) {
     if (def.lifecycle === 'rebuild' && !revealed) panel.wantExpanded = true;
@@ -164,6 +170,15 @@ export function saveLayout() {
   for (const p of dockedPanels()) {
     if (p.def.persist !== false) data.dockOrder.push(p.id);
   }
+  // Keep remembered dock positions of panels that are not currently
+  // registered (e.g. a closed MD monitor), roughly at their old slot, so they
+  // return there when re-created.
+  for (const id of stored.dockOrder) {
+    if (!panels.has(id) && !data.dockOrder.includes(id)) {
+      const oldIdx = stored.dockOrder.indexOf(id);
+      data.dockOrder.splice(Math.min(oldIdx, data.dockOrder.length), 0, id);
+    }
+  }
   for (const panel of panels.values()) {
     if (panel.def.persist === false) continue;
     const entry = { docked: panel.docked, collapsed: panel.collapsed };
@@ -175,6 +190,13 @@ export function saveLayout() {
     }
     data.panels[panel.id] = entry;
   }
+  // Keep remembered entries of currently-unregistered panels.
+  for (const [id, entry] of Object.entries(stored.panels)) {
+    if (!(id in data.panels) && !panels.has(id)) data.panels[id] = entry;
+  }
+  // Refresh the in-memory snapshot so panels registered later in the session
+  // (e.g. the MD monitor on its next run) resolve against the latest state.
+  stored = { dockOrder: data.dockOrder, panels: data.panels };
   try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch { /* storage unavailable */ }
 }
 
@@ -216,14 +238,20 @@ function dockSortKey(def) {
   return 100000 + ((def.defaults && def.defaults.order) || 0);
 }
 
-function dockPanel(panel) {
+function dockPanel(panel, atTop = false) {
   let before = null;
-  for (const sib of dockedPanels()) {
-    if (sib === panel) continue;
-    if (panel.sortKey < sib.sortKey) { before = sib.el; break; }
+  if (atTop) {
+    const first = dockedPanels().find((sib) => sib !== panel);
+    before = first ? first.el : null;
+  } else {
+    for (const sib of dockedPanels()) {
+      if (sib === panel) continue;
+      if (panel.sortKey < sib.sortKey) { before = sib.el; break; }
+    }
   }
   dockEl.insertBefore(panel.el, before);
   panel.markDocked();
+  resequenceSortKeys();
   scheduleSave();
 }
 
