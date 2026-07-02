@@ -972,8 +972,30 @@ justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* compositions and clicked element (composition content lives inside the
-   unified "info" panel window, which provides the chrome/positioning) */
+/* compositions and clicked element (content lives inside the unified
+   "Structure" panel window, which provides the chrome/positioning) */
+
+/* Formula header box: shows the chemical formula, expands (+/−) into the
+   composition details below it. */
+#structureInfoContent .structure-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--bg-color);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#structureInfoContent .structure-toggle h4 {
+  margin: 5px 20px 0 20px;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.0;
+  color: rgba(255, 255, 255, 0.8);
+}
 
 .section-heading { margin-top:10px; margin-bottom:6px; font-size:14px; font-weight:600; padding-left:8px; }
 .toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(0,0,0,0.5); color:var(--accent-color); font-weight:1000; transition:transform .18s ease, background .18s ease, color .18s ease; }
@@ -1120,7 +1142,7 @@ z-index:1000; pointer-events:none;
    stop matching once the elements are reparented into a panel body. */
 body > #measurementTools,
 body > #cameraTools,
-body > #composition {
+body > #structureInfoContent {
   display: none;
 }
 

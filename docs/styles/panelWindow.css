@@ -69,6 +69,27 @@
   border-radius: 8px 8px 0 0;
 }
 
+/* ---- hidden title bar (floating only): the ― button shrinks the bar to a
+   thin accent strip; double-clicking the strip restores it. ---- */
+.cv-panel.cv-docked .cv-panel-barhide {
+  display: none;
+}
+
+.cv-panel.cv-floating.cv-bar-collapsed > .cv-panel-titlebar {
+  height: 2px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: var(--highlight-color); /* green in the standard mode */
+  backdrop-filter: none;
+  overflow: hidden;
+}
+
+.cv-panel.cv-floating.cv-bar-collapsed > .cv-panel-titlebar > * {
+  display: none;
+}
+
 .cv-panel-titlebar:active,
 .cv-panel.cv-dragging .cv-panel-titlebar,
 .cv-panel.cv-drag-moving .cv-panel-titlebar {
@@ -173,16 +194,6 @@
   background: none;
   border: none;
   backdrop-filter: none;
-}
-
-/* ---- formula variant (structure info panel): taller bar, larger title ---- */
-.cv-panel--formula > .cv-panel-titlebar {
-  padding: 8px 8px;
-}
-
-.cv-panel--formula > .cv-panel-titlebar > .cv-panel-title {
-  font-size: 16px;
-  font-weight: 800;
 }
 
 /* ---- mobile ---- */

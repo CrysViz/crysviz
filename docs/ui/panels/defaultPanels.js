@@ -3,7 +3,8 @@
 // migration is concentrated here; the builders themselves only need to build
 // into the panel body they are given.
 
-import { registerPanel, getPanel } from './PanelManager.js';
+import { registerPanel } from './PanelManager.js';
+import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
 import { updateForces, removeForces, updateSpins, removeSpins } from '../../render/index.js';
 import { addCameraPanel } from '../CameraPanel.js';
@@ -56,30 +57,33 @@ export function registerDefaultPanels() {
     id: 'info',
     title: 'Structure',
     lifecycle: 'persistent',
-    variant: 'formula',
     onCollapse() { collapseAllAtomExpansions(); },
     buildContent(body) {
-      const el = document.getElementById('composition');
-      if (el) body.appendChild(el);
+      // Adopt the formula header box (+/− expandable) and the composition
+      // details it controls; wire the header (the old inline-script behavior).
+      const el = document.getElementById('structureInfoContent');
+      if (!el) return;
+      body.appendChild(el);
+      const toggle = document.getElementById('structureToggle');
+      if (toggle) {
+        toggle.addEventListener('click', handleStructurePanelToggle);
+        toggle.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleStructurePanelToggle();
+          }
+        });
+      }
     },
-    defaults: { docked: false, anchor: { right: 20, bottom: 20 }, collapsed: true },
+    defaults: { docked: false, anchor: { right: 20, bottom: 20 }, collapsed: false },
   });
 
-  // Structure loading and share-URL restore can run before the panels exist;
-  // both leave markers on #composition: the formula title for the info panel's
-  // title bar (StructureInfoPanel/General.js) and the panel-open request
-  // (utils/shareutils.js).
+  // A restored share URL may ask for the formula box to start open
+  // (utils/shareutils.js runs before the panels exist and leaves a marker).
   const comp = document.getElementById('composition');
-  const info = getPanel('info');
-  if (comp && info) {
-    if (comp.dataset.pendingTitle) {
-      info.setTitle(comp.dataset.pendingTitle);
-      delete comp.dataset.pendingTitle;
-    }
-    if (comp.dataset.restoreOpen === '1') {
-      delete comp.dataset.restoreOpen;
-      info.expand();
-    }
+  if (comp && comp.dataset.restoreOpen === '1') {
+    delete comp.dataset.restoreOpen;
+    setStructurePanelOpen(true);
   }
 
   // ---- docked panels ---------------------------------------------------------

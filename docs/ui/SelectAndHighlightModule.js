@@ -1,6 +1,6 @@
 import {groups,highlightHover,fileBrowser,atomSelection} from '../state/store.js';
 import {collapseAllAtomExpansions} from './WindowAndSceneControls.js';
-import {getPanel} from './panels/PanelManager.js';
+import {setStructurePanelOpen} from './StructureInfoPanel/General.js';
 import * as THREE from '../external/three/three.module.js';
 import {updateAtoms} from '../render/index.js';
 import {updateBonds} from '../render/index.js';
@@ -161,7 +161,7 @@ export function highlightBondInfoInStructurePanel() {
   const composition = document.getElementById('composition');
   if (!composition) return;
 
-  getPanel('info')?.expand();
+  setStructurePanelOpen(true);
 
   const panelSwitch = document.getElementById('atomBondControlSwitch');
   panelSwitch?.querySelectorAll('button').forEach((btn) => {
@@ -188,7 +188,7 @@ function ensureAtomPanelVisible(targetMode, targetPanelId) {
   const composition = document.getElementById('composition');
   if (!composition) return null;
 
-  getPanel('info')?.expand();
+  setStructurePanelOpen(true);
 
   const panelSwitch = document.getElementById('atomBondControlSwitch');
   panelSwitch?.querySelectorAll('button').forEach((btn) => {

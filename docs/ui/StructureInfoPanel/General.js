@@ -1,11 +1,43 @@
 import {fileBrowser, general} from '../../state/store.js';
 
 
+import {collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { createCompositionRow, createWyckoffCompositionRow} from './Species.js'
 import { createSpecificBondControl} from './Bonds.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'
 import { getPanel } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
+
+/**
+ * Open/close the formula box inside the Structure window (the +/− expandable
+ * composition details). Opening also expands the hosting panel window.
+ */
+export function setStructurePanelOpen(open) {
+  const composition = document.getElementById('composition');
+  if (!composition) return;
+  composition.classList.toggle('open', open);
+  composition.setAttribute('aria-hidden', String(!open));
+  const icon = document.getElementById('structureToggleIcon');
+  if (icon) {
+    icon.textContent = open ? '−' : '+';
+    icon.classList.toggle('open', open);
+  }
+  const toggle = document.getElementById('structureToggle');
+  if (toggle) toggle.setAttribute('aria-expanded', String(open));
+  if (open) {
+    const panel = getPanel('info');
+    if (panel) panel.expand();
+  } else {
+    collapseAllAtomExpansions();
+  }
+}
+
+/** Click/keyboard handler for the formula box header. */
+export function handleStructurePanelToggle() {
+  const composition = document.getElementById('composition');
+  if (!composition) return;
+  setStructurePanelOpen(!composition.classList.contains('open'));
+}
 
 export function getCompositionString() {
   function computeComposition() {
@@ -34,16 +66,10 @@ export function getCompositionString() {
     }
   }
 
-  // The chemical formula is the info panel window's title. The first
-  // structure load runs before the panel windows exist, so stash the title on
-  // #composition for ui/panels/defaultPanels.js to pick up at registration.
-  const panelTitle = formula + ` (${total} Atoms)`;
-  const infoPanel = getPanel('info');
-  if (infoPanel) {
-    infoPanel.setTitle(panelTitle);
-  } else {
-    const compEl = document.getElementById('composition');
-    if (compEl) compEl.dataset.pendingTitle = panelTitle;
+  // The chemical formula heads the +/− expandable box inside the window.
+  const structureToggleHeading = document.querySelector('#structureToggle h4');
+  if (structureToggleHeading) {
+    structureToggleHeading.innerHTML = formula + ` (${total} Atoms)`; // Use innerHTML to allow HTML tags
   }
 
   // Display the chemical formula and the total number of atoms
@@ -243,16 +269,10 @@ export function renderComposition(panelState="closed") {
   }
 
 
-  // Collapse/expand is owned by the info panel window; "open" keeps/forces it
-  // expanded, anything else collapses it (matching the old default-closed
-  // behavior on re-render).
-  {
-    const panel = getPanel('info');
-    if (panel) {
-      if (panelState === "open") panel.expand();
-      else panel.collapse();
-    }
-  }
+  // Sync the formula box: "open" keeps/forces it (and the hosting window)
+  // expanded, anything else closes the box (matching the old default-closed
+  // behavior on re-render). The window itself stays as the user left it.
+  setStructurePanelOpen(panelState === "open");
 
 // Create a new div element for the segmented control
 const atomBondControl = document.createElement('div');

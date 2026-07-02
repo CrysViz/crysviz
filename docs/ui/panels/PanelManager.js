@@ -68,6 +68,12 @@ export function registerPanel(def) {
 
   if (def.hiddenUntilStructure && !revealed) panel.el.hidden = true;
 
+  // Floating-by-default windows start with their title bar shrunk to the
+  // thin strip; otherwise restore the remembered state.
+  if (persisted ? !!persisted.bar : defaults.docked === false) {
+    panel.collapseBar();
+  }
+
   if (docked) {
     // A panel remembered as docked but with no remembered slot (e.g. an MD
     // monitor docked in a past run) goes to the top, like the dock button.
@@ -184,7 +190,7 @@ export function saveLayout() {
   }
   for (const panel of panels.values()) {
     if (panel.def.persist === false) continue;
-    const entry = { docked: panel.docked, collapsed: panel.collapsed };
+    const entry = { docked: panel.docked, collapsed: panel.collapsed, bar: panel.barCollapsed };
     if (!panel.docked) {
       if (!panel.el.hidden && panel.el.isConnected) {
         panel.floatPos = panel.getFloatPosition();

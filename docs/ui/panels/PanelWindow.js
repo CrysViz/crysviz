@@ -31,6 +31,7 @@ export class PanelWindow {
     this.available = true;
     this.collapsed = true;
     this.docked = true;
+    this.barCollapsed = false; // floating only: title bar shrunk to a thin strip
     // Lifecycle/layout bookkeeping maintained by PanelManager:
     this.built = false;        // content has been built into the body
     this.stale = false;        // built content refers to a previous structure
@@ -41,7 +42,6 @@ export class PanelWindow {
     const el = document.createElement('section');
     el.className = 'cv-panel cv-docked cv-collapsed';
     el.dataset.panelId = def.id;
-    if (def.variant === 'formula') el.classList.add('cv-panel--formula');
 
     const bar = document.createElement('header');
     bar.className = 'cv-panel-titlebar';
@@ -62,6 +62,12 @@ export class PanelWindow {
     title.className = 'cv-panel-title';
     title.innerHTML = def.title || '';
 
+    const barBtn = document.createElement('button');
+    barBtn.type = 'button';
+    barBtn.className = 'cv-panel-barhide';
+    barBtn.title = 'Hide title bar (double-click the strip to restore)';
+    barBtn.textContent = '―';
+
     const dockBtn = document.createElement('button');
     dockBtn.type = 'button';
     dockBtn.className = 'cv-panel-dock';
@@ -78,6 +84,7 @@ export class PanelWindow {
     bar.appendChild(grip);
     bar.appendChild(fold);
     bar.appendChild(title);
+    bar.appendChild(barBtn);
     bar.appendChild(dockBtn);
     bar.appendChild(closeBtn);
 
@@ -96,10 +103,15 @@ export class PanelWindow {
     this.body = body;
 
     fold.addEventListener('click', () => this.toggleCollapsed());
+    barBtn.addEventListener('click', () => this.collapseBar());
     dockBtn.addEventListener('click', () => this.hooks.onToggleDock(this));
     closeBtn.addEventListener('click', () => this.hooks.onClose(this));
 
     bar.addEventListener('pointerdown', (e) => this._onTitlebarPointerDown(e));
+    // A shrunk title bar is restored by double-clicking the thin strip.
+    bar.addEventListener('dblclick', () => {
+      if (this.barCollapsed && !this.docked) this.expandBar();
+    });
     // Raise a floating window on any press inside it.
     el.addEventListener('pointerdown', () => { if (!this.docked) this.raise(); });
 
@@ -147,6 +159,21 @@ export class PanelWindow {
     this.foldBtn.title = 'Expand';
     this.foldBtn.setAttribute('aria-expanded', 'false');
     if (this.def.onCollapse) this.def.onCollapse(this);
+    this.hooks.onLayoutChange();
+  }
+
+  /** Shrink a floating window's title bar to a thin strip (dblclick restores). */
+  collapseBar() {
+    if (this.barCollapsed) return;
+    this.barCollapsed = true;
+    this.el.classList.add('cv-bar-collapsed');
+    this.hooks.onLayoutChange();
+  }
+
+  expandBar() {
+    if (!this.barCollapsed) return;
+    this.barCollapsed = false;
+    this.el.classList.remove('cv-bar-collapsed');
     this.hooks.onLayoutChange();
   }
 
@@ -328,8 +355,9 @@ export class PanelWindow {
       bar.removeEventListener('pointercancel', onUp);
       this.el.classList.remove('cv-drag-moving');
       if (!dragging) {
-        // Plain click on the title bar toggles collapse.
-        this.toggleCollapsed();
+        // Plain click on the title bar toggles collapse — except on the thin
+        // strip of a hidden bar, where only double-click (restore) acts.
+        if (!(this.barCollapsed && !this.docked)) this.toggleCollapsed();
       } else {
         this.hooks.onLayoutChange();
       }

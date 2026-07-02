@@ -63,11 +63,10 @@ export function captureCompleteState(structureData, globalState) {
       zoom: camera ? (camera.zoom || null) : null
     },
 
-    // UI state. The structure panel is a unified panel window (ui/panels/);
-    // "open" = its .cv-panel host is not collapsed. Read via the DOM so this
-    // low-layer util does not import from ui/.
+    // UI state. "open" = the formula box inside the Structure window is
+    // expanded (its details visible).
     ui: {
-      structurePanelOpen: !!document.querySelector('.cv-panel[data-panel-id="info"]:not(.cv-collapsed)'),
+      structurePanelOpen: document.getElementById('composition')?.classList.contains('open') || false,
       expandedElements: getExpandedElements(),
       measurementMode: measureMode || 'none'
     }

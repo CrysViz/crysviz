@@ -347,10 +347,17 @@
    <script type="module" src="./core/crystal-viewer.js"></script> 
 
 
-    <!-- Composition readout: populated by ui/StructureInfoPanel/, hosted by the
-         unified "info" panel window (ui/panels/defaultPanels.js), whose title
-         bar shows the chemical formula. -->
-    <div id="composition">
+    <!-- Structure info: adopted into the "Structure" panel window
+         (ui/panels/defaultPanels.js). The header box shows the chemical
+         formula and expands (+/−) into the composition details populated by
+         ui/StructureInfoPanel/. -->
+    <div id="structureInfoContent">
+      <div id="structureToggle" class="structure-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="composition">
+        <h4>Structure</h4>
+        <div id="structureToggleIcon" class="toggle-icon">+</div>
+      </div>
+      <div id="composition" class="collapsible-content" aria-hidden="true">
+      </div>
     </div>
 
 
