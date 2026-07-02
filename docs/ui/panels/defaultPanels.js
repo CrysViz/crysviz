@@ -31,8 +31,9 @@ import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
 // rows (and their listeners) would be destroyed.
 
 /** Move the rows containing the given input ids into a .toggle_group at the
- *  top of the panel body. Works for checkbox rows and bare slider labels. */
-function adoptStaticRows(body, inputIds) {
+ *  top of the panel body (or appended, with atTop=false). Works for checkbox
+ *  rows and bare slider labels. */
+function adoptStaticRows(body, inputIds, atTop = true) {
   const group = document.createElement('div');
   group.className = 'toggle_group';
   for (const id of inputIds) {
@@ -40,7 +41,8 @@ function adoptStaticRows(body, inputIds) {
     const row = input && input.closest('label');
     if (row) group.appendChild(row);
   }
-  body.insertBefore(group, body.firstChild);
+  if (atTop) body.insertBefore(group, body.firstChild);
+  else body.appendChild(group);
 }
 
 /** Return adopted rows to the staging block (called from onDestroyContent,
@@ -151,13 +153,6 @@ export function registerDefaultPanels() {
       if (upload) body.appendChild(upload);
       const table = document.getElementById('structureTablePanel');
       if (table) body.appendChild(table);
-      // Sharing/storage belongs with the files: the storage-option switch
-      // (what a share URL serializes), its info button, and the Share button.
-      const info = document.getElementById('storageInfoButton');
-      const infoWrap = info && info.closest('.info-button-panel');
-      if (infoWrap) body.appendChild(infoWrap);
-      const sw = document.getElementById('StorageOptionSwitch');
-      if (sw) body.appendChild(sw);
       // The Share button may already exist (created on the first structure
       // load, before the panels); adopt it, otherwise createShareButton()
       // targets this body directly.
@@ -323,25 +318,23 @@ export function registerDefaultPanels() {
   });
 
   registerPanel({
-    id: 'appearance',
-    title: 'Appearance',
+    id: 'settings',
+    title: 'Settings',
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
     buildContent(body) {
-      // Atom visibility/size plus the color-map settings; the per-feature
+      // Storage/share-URL options on top (with their info button), then atom
+      // visibility/size, color-map settings and camera settings. Per-feature
       // toggles (bonds, cell, polyhedra) live in their feature windows.
+      const info = document.getElementById('storageInfoButton');
+      const infoWrap = info && info.closest('.info-button-panel');
+      if (infoWrap) body.appendChild(infoWrap);
+      const sw = document.getElementById('StorageOptionSwitch');
+      if (sw) body.appendChild(sw);
+      adoptStaticRows(body, ['showAtoms', 'atomSize'], false);
       addColorPanel(body.id);
-      adoptStaticRows(body, ['showAtoms', 'atomSize']);
+      addCameraPanel(body.id);
     },
     defaults: { docked: true, order: 5, collapsed: false },
-  });
-
-  registerPanel({
-    id: 'cameraSettings',
-    title: 'Camera Settings',
-    lifecycle: 'persistent',
-    hiddenUntilStructure: true,
-    buildContent(body) { addCameraPanel(body.id); },
-    defaults: { docked: true, order: 110, collapsed: true },
   });
 }
