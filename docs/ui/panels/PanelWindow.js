@@ -32,9 +32,11 @@ export class PanelWindow {
     this.collapsed = true;
     this.docked = true;
     this.barCollapsed = false; // title bar shrunk to a thin strip
-    // Floating window displaced right by the dock's width so the visible
-    // dock doesn't cover it; cleared when the user repositions the window.
+    // Floating window displaced to the dock's right edge so the visible dock
+    // doesn't cover it; cleared when the user repositions the window.
+    // dockShiftBase remembers the pre-displacement left position.
     this.dockShifted = false;
+    this.dockShiftBase = 0;
     this._moving = false; // a floating drag is in progress
     // Lifecycle/layout bookkeeping maintained by PanelManager:
     this.built = false;        // content has been built into the body

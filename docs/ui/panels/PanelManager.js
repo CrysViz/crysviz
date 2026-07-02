@@ -13,6 +13,7 @@ import { PanelWindow } from './PanelWindow.js';
 const LS_KEY = 'panelLayout';
 const LAYOUT_VERSION = 1;
 const SAVE_DEBOUNCE_MS = 250;
+const DOCK_GAP = 10; // gap between the dock's right edge and displaced windows
 
 /** @type {Map<string, PanelWindow>} */
 const panels = new Map();
@@ -213,7 +214,7 @@ export function saveLayout() {
       // Persist the BASE position: a dock-displaced window is stored where it
       // sits with the dock hidden, and re-displaced on restore (floatPanel).
       if (panel.dockShifted && pos && typeof pos.left === 'number') {
-        pos = { ...pos, left: Math.max(0, pos.left - lastUiWidth) };
+        pos = { ...pos, left: Math.max(0, panel.dockShiftBase) };
       }
       entry.pos = pos;
     }
@@ -296,11 +297,12 @@ function floatPanel(panel, pos) {
   panel.floatPos = pos;
   document.body.appendChild(panel.el);
   panel.markFloating(pos);
-  // A window whose base position lies in the dock's column is displaced to
-  // the dock's right edge while the dock occupies space.
-  if (dockOccupies && typeof pos.left === 'number' && pos.left < lastUiWidth) {
-    panel.applyFloatPosition({ ...pos, left: pos.left + lastUiWidth });
+  // A window whose base position would be covered by the dock is displaced
+  // just past its right edge (only as far as needed) while it occupies space.
+  if (dockOccupies && typeof pos.left === 'number' && pos.left < lastUiWidth + DOCK_GAP) {
+    panel.applyFloatPosition({ ...pos, left: lastUiWidth + DOCK_GAP });
     panel.dockShifted = true;
+    panel.dockShiftBase = pos.left;
   }
   resequenceSortKeys();
   scheduleSave();
@@ -343,15 +345,13 @@ function refreshDockShift() {
     if (!occupies) {
       if (panel.dockShifted) {
         panel.dockShifted = false;
-        if (leftAnchored) {
-          const rect = panel.el.getBoundingClientRect();
-          s.left = `${Math.max(0, Math.round(rect.left) - w)}px`;
-        }
+        if (leftAnchored) s.left = `${Math.max(0, panel.dockShiftBase)}px`;
       }
     } else if (leftAnchored) {
       const rect = panel.el.getBoundingClientRect();
-      if (rect.left < w) {
-        s.left = `${Math.round(rect.left) + w}px`;
+      if (rect.left < w + DOCK_GAP) {
+        panel.dockShiftBase = Math.round(rect.left);
+        s.left = `${w + DOCK_GAP}px`;
         panel.dockShifted = true;
       }
     }
