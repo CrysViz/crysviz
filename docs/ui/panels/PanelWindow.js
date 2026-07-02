@@ -35,6 +35,7 @@ export class PanelWindow {
     // Floating window displaced right by the dock's width so the visible
     // dock doesn't cover it; cleared when the user repositions the window.
     this.dockShifted = false;
+    this._moving = false; // a floating drag is in progress
     // Lifecycle/layout bookkeeping maintained by PanelManager:
     this.built = false;        // content has been built into the body
     this.stale = false;        // built content refers to a previous structure
@@ -284,7 +285,11 @@ export class PanelWindow {
    * (Anchoring flips back to left/top when the user drags the window.)
    */
   _keepInViewport() {
-    if (this.docked || this.el.hidden || !this.el.isConnected) return;
+    // Never re-anchor mid-drag: near the right edge the window's shrink-to-fit
+    // width changes (firing this observer), and pinning `right` while the drag
+    // keeps setting `left` over-constrains the box, stretching it toward its
+    // max-width as it is dragged back left.
+    if (this._moving || this.docked || this.el.hidden || !this.el.isConnected) return;
     const rect = this.el.getBoundingClientRect();
     if (!rect.width) return;
     const s = this.el.style;
@@ -342,6 +347,7 @@ export class PanelWindow {
           return;
         }
         this._anchorTopLeft();
+        this._moving = true;
         const rect = this.el.getBoundingClientRect();
         grabDX = ev.clientX - rect.left;
         grabDY = ev.clientY - rect.top;
@@ -363,6 +369,7 @@ export class PanelWindow {
       bar.removeEventListener('pointerup', onUp);
       bar.removeEventListener('pointercancel', onUp);
       this.el.classList.remove('cv-drag-moving');
+      this._moving = false;
       if (!dragging) {
         // Plain click on the title bar toggles collapse — except on the thin
         // strip of a hidden bar, where only double-click (restore) acts.
