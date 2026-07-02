@@ -86,10 +86,11 @@ export function registerDefaultPanels() {
       const el = document.getElementById('cameraTools');
       if (el) body.appendChild(el);
     },
-    // Base position is the far left of the screen; while the dock occupies
-    // that column the window is displaced to sit just right of it, and it
-    // returns to the very left whenever the dock is hidden.
-    defaults: { docked: false, anchor: { left: 10, top: 20 }, collapsed: false },
+    // Base position (dock hidden) clears the dock-unhide menu button
+    // (#mobileMenuToggle: left 12px + 44px wide) with the same 12px margin the
+    // button keeps to the screen edge. While the dock occupies that column the
+    // window is displaced to sit just right of it.
+    defaults: { docked: false, anchor: { left: 68, top: 20 }, collapsed: false },
   });
 
   registerPanel({
