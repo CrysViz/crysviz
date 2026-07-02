@@ -31,7 +31,7 @@ export class PanelWindow {
     this.available = true;
     this.collapsed = true;
     this.docked = true;
-    this.barCollapsed = false; // floating only: title bar shrunk to a thin strip
+    this.barCollapsed = false; // title bar shrunk to a thin strip
     // Lifecycle/layout bookkeeping maintained by PanelManager:
     this.built = false;        // content has been built into the body
     this.stale = false;        // built content refers to a previous structure
@@ -103,14 +103,19 @@ export class PanelWindow {
     this.body = body;
 
     fold.addEventListener('click', () => this.toggleCollapsed());
-    barBtn.addEventListener('click', () => this.collapseBar());
+    barBtn.addEventListener('click', () => {
+      // Hiding the bar of a collapsed window would leave only the thin
+      // strip — open the body along with it.
+      if (this.collapsed) this.expand();
+      this.collapseBar();
+    });
     dockBtn.addEventListener('click', () => this.hooks.onToggleDock(this));
     closeBtn.addEventListener('click', () => this.hooks.onClose(this));
 
     bar.addEventListener('pointerdown', (e) => this._onTitlebarPointerDown(e));
     // A shrunk title bar is restored by double-clicking the thin strip.
     bar.addEventListener('dblclick', () => {
-      if (this.barCollapsed && !this.docked) this.expandBar();
+      if (this.barCollapsed) this.expandBar();
     });
     // Raise a floating window on any press inside it.
     el.addEventListener('pointerdown', () => { if (!this.docked) this.raise(); });
@@ -162,7 +167,7 @@ export class PanelWindow {
     this.hooks.onLayoutChange();
   }
 
-  /** Shrink a floating window's title bar to a thin strip (dblclick restores). */
+  /** Shrink the title bar to a thin strip (dblclick restores). */
   collapseBar() {
     if (this.barCollapsed) return;
     this.barCollapsed = true;
@@ -357,7 +362,7 @@ export class PanelWindow {
       if (!dragging) {
         // Plain click on the title bar toggles collapse — except on the thin
         // strip of a hidden bar, where only double-click (restore) acts.
-        if (!(this.barCollapsed && !this.docked)) this.toggleCollapsed();
+        if (!this.barCollapsed) this.toggleCollapsed();
       } else {
         this.hooks.onLayoutChange();
       }

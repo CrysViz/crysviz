@@ -99,7 +99,7 @@ export function registerDefaultPanels() {
       const group = document.getElementById('backendControlGroup');
       if (group) body.appendChild(group);
     },
-    defaults: { docked: true, order: -10, collapsed: false },
+    defaults: { docked: true, order: -10, collapsed: false, barCollapsed: true },
   });
 
   registerPanel({
@@ -117,7 +117,7 @@ export function registerDefaultPanels() {
       const save = document.getElementById('saveButton');
       if (save) body.appendChild(save);
     },
-    defaults: { docked: true, order: 0, collapsed: false },
+    defaults: { docked: true, order: 0, collapsed: false, barCollapsed: true },
   });
 
   registerPanel({

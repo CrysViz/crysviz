@@ -68,11 +68,13 @@ export function registerPanel(def) {
 
   if (def.hiddenUntilStructure && !revealed) panel.el.hidden = true;
 
-  // Floating-by-default windows start with their title bar shrunk to the
-  // thin strip; otherwise restore the remembered state.
-  if (persisted ? !!persisted.bar : defaults.docked === false) {
-    panel.collapseBar();
-  }
+  // Title-bar strip state: remembered, or per-panel default; floating-by-
+  // default windows start with the bar shrunk unless the default says
+  // otherwise.
+  const barCollapsed = persisted
+    ? !!persisted.bar
+    : (defaults.barCollapsed !== undefined ? !!defaults.barCollapsed : defaults.docked === false);
+  if (barCollapsed) panel.collapseBar();
 
   if (docked) {
     // A panel remembered as docked but with no remembered slot (e.g. an MD

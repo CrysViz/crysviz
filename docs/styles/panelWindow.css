@@ -69,13 +69,9 @@
   border-radius: 8px 8px 0 0;
 }
 
-/* ---- hidden title bar (floating only): the ― button shrinks the bar to a
-   thin accent strip; double-clicking the strip restores it. ---- */
-.cv-panel.cv-docked .cv-panel-barhide {
-  display: none;
-}
-
-.cv-panel.cv-floating.cv-bar-collapsed > .cv-panel-titlebar {
+/* ---- hidden title bar: the ― button shrinks the bar to a thin accent
+   strip; double-clicking the strip restores it. ---- */
+.cv-panel.cv-bar-collapsed > .cv-panel-titlebar {
   height: 2px;
   min-height: 0;
   padding: 0;
@@ -86,7 +82,7 @@
   overflow: hidden;
 }
 
-.cv-panel.cv-floating.cv-bar-collapsed > .cv-panel-titlebar > * {
+.cv-panel.cv-bar-collapsed > .cv-panel-titlebar > * {
   display: none;
 }
 
@@ -103,6 +99,7 @@
 }
 
 .cv-panel-fold,
+.cv-panel-barhide,
 .cv-panel-dock,
 .cv-panel-close {
   background: none;
@@ -116,6 +113,7 @@
 }
 
 .cv-panel-fold:hover,
+.cv-panel-barhide:hover,
 .cv-panel-dock:hover,
 .cv-panel-close:hover {
   background: var(--hover-color);
