@@ -326,6 +326,10 @@ export function registerDefaultPanels() {
       const info = document.getElementById('storageInfoButton');
       const infoWrap = info && info.closest('.info-button-panel');
       if (infoWrap) body.appendChild(infoWrap);
+      // A <label> renders with the same font as the "Atom Size" etc. labels.
+      const storageHeader = document.createElement('label');
+      storageHeader.textContent = 'Local storage';
+      body.appendChild(storageHeader);
       const sw = document.getElementById('StorageOptionSwitch');
       if (sw) body.appendChild(sw);
       adoptStaticRows(body, ['showAtoms', 'atomSize'], false);
