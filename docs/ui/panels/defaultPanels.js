@@ -85,6 +85,20 @@ export function registerDefaultPanels() {
   // ---- docked panels ---------------------------------------------------------
 
   registerPanel({
+    id: 'backend',
+    title: 'Backend',
+    lifecycle: 'persistent',
+    buildContent(body) {
+      // Adopt the backend mode selector (Viz/Relax/MD), its info button and
+      // the calc panel the modes build into. (#uploadSection starts inside
+      // this group in the HTML but is adopted by the Files panel.)
+      const group = document.getElementById('backendControlGroup');
+      if (group) body.appendChild(group);
+    },
+    defaults: { docked: true, order: -10, collapsed: false },
+  });
+
+  registerPanel({
     id: 'files',
     title: 'Files',
     lifecycle: 'persistent',

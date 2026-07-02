@@ -164,6 +164,17 @@
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
 }
 
+/* Adopted wrappers keep their ids/classes for the JS wiring, but the panel
+   body already provides the grey box — strip theirs to avoid nesting. */
+.cv-panel-body > .backend-control-group {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  backdrop-filter: none;
+}
+
 /* ---- formula variant (structure info panel): taller bar, larger title ---- */
 .cv-panel--formula > .cv-panel-titlebar {
   padding: 8px 8px;
