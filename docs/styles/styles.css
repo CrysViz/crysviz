@@ -212,10 +212,12 @@ body.panel-hidden #axesLegend {
   font-weight: 500;
 }
 
-/* File actions row (Files window): Upload / Paste Text / Download */
+/* File actions row (Files window): Upload / Paste Text / Download (+ Share,
+   added once a structure loads — the columns adapt to the button count). */
 .file-actions {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: 8px;
   margin-bottom: 15px;
   background: rgba(255, 255, 255, 0.05);

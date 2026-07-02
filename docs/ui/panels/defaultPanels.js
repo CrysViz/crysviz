@@ -153,11 +153,8 @@ export function registerDefaultPanels() {
       if (upload) body.appendChild(upload);
       const table = document.getElementById('structureTablePanel');
       if (table) body.appendChild(table);
-      // The Share button may already exist (created on the first structure
-      // load, before the panels); adopt it, otherwise createShareButton()
-      // targets this body directly.
-      const shareBtn = document.getElementById('shareBtn');
-      if (shareBtn) body.appendChild(shareBtn);
+      // (The Share button lives in #uploadSection's action row and moves with
+      // it; see ShareModule.createShareButton.)
     },
     defaults: { docked: true, order: 0, collapsed: false, barCollapsed: true },
   });
