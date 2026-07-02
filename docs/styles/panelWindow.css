@@ -69,11 +69,14 @@
   border-radius: 8px 8px 0 0;
 }
 
-/* ---- hidden title bar: the ― button shrinks the bar to a thin accent
-   strip; double-clicking the strip restores it. ---- */
+/* ---- hidden title bar: the ― button shrinks the bar to a short, centered
+   accent strip (a "handle"); double-clicking it restores the bar. ---- */
 .cv-panel.cv-bar-collapsed > .cv-panel-titlebar {
   height: 2px;
   min-height: 0;
+  width: 64px;
+  max-width: 50%;
+  margin: 0 auto 3px auto;
   padding: 0;
   border: none;
   border-radius: 2px;
@@ -84,6 +87,13 @@
 
 .cv-panel.cv-bar-collapsed > .cv-panel-titlebar > * {
   display: none;
+}
+
+/* With only the handle above it, the body is a free-standing box again:
+   round all corners and restore its top edge. */
+.cv-panel.cv-bar-collapsed > .cv-panel-body {
+  border-radius: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .cv-panel-titlebar:active,
