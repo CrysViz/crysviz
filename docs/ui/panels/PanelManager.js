@@ -38,8 +38,56 @@ const hooks = {
     removePanel(panel.id);
   },
   onLayoutChange: scheduleSave,
+  onResetPanel(panel) {
+    applyPanelDefaults(panel);
+  },
   beginDockReorder,
 };
+
+/**
+ * Restore one panel's default placement: docked/floating state, dock slot or
+ * floating anchor, and title-bar (strip) state. The body's collapsed state is
+ * left as the user has it.
+ */
+function applyPanelDefaults(panel) {
+  const defaults = panel.def.defaults || {};
+  panel.dockShifted = false;
+  if (defaults.docked !== false) {
+    dockPanelAtDefaultOrder(panel);
+  } else {
+    floatPanel(panel, clampPos({ ...(defaults.anchor || { left: 40, top: 40 }) }));
+  }
+  const barCollapsed = defaults.barCollapsed !== undefined
+    ? !!defaults.barCollapsed
+    : defaults.docked === false;
+  if (barCollapsed) panel.collapseBar();
+  else panel.expandBar();
+}
+
+/** Insert a panel into the dock at the slot its DEFAULT order dictates,
+ *  relative to the other docked panels' default orders. */
+function dockPanelAtDefaultOrder(panel) {
+  const orderOf = (p) => (p.def.defaults && p.def.defaults.order) || 0;
+  let before = null;
+  for (const sib of dockedPanels()) {
+    if (sib === panel) continue;
+    if (orderOf(panel) < orderOf(sib)) { before = sib.el; break; }
+  }
+  dockEl.insertBefore(panel.el, before);
+  panel.markDocked();
+  resequenceSortKeys();
+  scheduleSave();
+}
+
+/** Restore every window to its defaults and forget the remembered layout. */
+export function resetAllPanels() {
+  stored = { dockOrder: [], panels: {} };
+  // Reset in default-order sequence so each dock insertion lands correctly.
+  const all = [...panels.values()].sort(
+    (a, b) => ((a.def.defaults?.order) || 0) - ((b.def.defaults?.order) || 0));
+  for (const panel of all) applyPanelDefaults(panel);
+  saveLayout();
+}
 
 export function initPanelSystem() {
   dockEl = document.getElementById('dock');

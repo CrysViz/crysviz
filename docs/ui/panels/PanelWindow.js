@@ -68,6 +68,12 @@ export class PanelWindow {
     title.className = 'cv-panel-title';
     title.innerHTML = def.title || '';
 
+    const homeBtn = document.createElement('button');
+    homeBtn.type = 'button';
+    homeBtn.className = 'cv-panel-home';
+    homeBtn.title = 'Restore default position';
+    homeBtn.textContent = '⌂';
+
     const barBtn = document.createElement('button');
     barBtn.type = 'button';
     barBtn.className = 'cv-panel-barhide';
@@ -90,6 +96,7 @@ export class PanelWindow {
     bar.appendChild(grip);
     bar.appendChild(fold);
     bar.appendChild(title);
+    bar.appendChild(homeBtn);
     bar.appendChild(barBtn);
     bar.appendChild(dockBtn);
     bar.appendChild(closeBtn);
@@ -109,6 +116,7 @@ export class PanelWindow {
     this.body = body;
 
     fold.addEventListener('click', () => this.toggleCollapsed());
+    homeBtn.addEventListener('click', () => this.hooks.onResetPanel(this));
     barBtn.addEventListener('click', () => {
       // Hiding the bar of a collapsed window would leave only the thin
       // strip — open the body along with it.

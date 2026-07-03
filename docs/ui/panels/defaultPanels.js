@@ -3,7 +3,7 @@
 // migration is concentrated here; the builders themselves only need to build
 // into the panel body they are given.
 
-import { registerPanel } from './PanelManager.js';
+import { registerPanel, resetAllPanels } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
 import { updateForces, removeForces, updateSpins, removeSpins } from '../../render/index.js';
@@ -336,6 +336,14 @@ export function registerDefaultPanels() {
       adoptStaticRows(body, ['showAtoms', 'atomSize'], false);
       addColorPanel(body.id);
       addCameraPanel(body.id);
+      // Restore every window to its default placement.
+      const resetBtn = document.createElement('button');
+      resetBtn.id = 'resetUiButton';
+      resetBtn.type = 'button';
+      resetBtn.className = 'reset-btn';
+      resetBtn.textContent = 'Reset UI';
+      resetBtn.addEventListener('click', () => resetAllPanels());
+      body.appendChild(resetBtn);
     },
     defaults: { docked: true, order: 5, collapsed: false },
   });

@@ -109,6 +109,7 @@
 }
 
 .cv-panel-fold,
+.cv-panel-home,
 .cv-panel-barhide,
 .cv-panel-dock,
 .cv-panel-close {
@@ -123,6 +124,7 @@
 }
 
 .cv-panel-fold:hover,
+.cv-panel-home:hover,
 .cv-panel-barhide:hover,
 .cv-panel-dock:hover,
 .cv-panel-close:hover {
