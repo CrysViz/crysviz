@@ -86,6 +86,39 @@
       this.module = null;
       this.handle = 0;
       this.modelInfo = null;
+      // Cached scratch buffers for compute(), keyed by atom count. Reused
+      // across calls to avoid a malloc/free storm every step (see freeBuffers).
+      this.buffers = null;
+    }
+
+    ensureBuffers(nAtoms) {
+      const b = this.buffers;
+      if (b && b.nAtoms === nAtoms) return b;
+      this.freeBuffers();
+      const next = {
+        nAtoms,
+        ptrTypes: this.module._malloc(nAtoms * 4),
+        ptrBox: this.module._malloc(9 * 8),
+        ptrPos: this.module._malloc(nAtoms * 3 * 8),
+        ptrForces: this.module._malloc(nAtoms * 3 * 8),
+        ptrVirial: this.module._malloc(9 * 8),
+      };
+      this.buffers = next;
+      return next;
+    }
+
+    freeBuffers() {
+      const b = this.buffers;
+      if (!b || !this.module) {
+        this.buffers = null;
+        return;
+      }
+      this.module._free(b.ptrTypes);
+      this.module._free(b.ptrBox);
+      this.module._free(b.ptrPos);
+      this.module._free(b.ptrForces);
+      this.module._free(b.ptrVirial);
+      this.buffers = null;
     }
 
     async init() {
@@ -173,11 +206,7 @@
       const box = latticeToBox(s.lattice);
       const pos = positionsToNEP(s.positions);
 
-      const ptrTypes = this.module._malloc(nAtoms * 4);
-      const ptrBox = this.module._malloc(9 * 8);
-      const ptrPos = this.module._malloc(nAtoms * 3 * 8);
-      const ptrForces = this.module._malloc(nAtoms * 3 * 8);
-      const ptrVirial = this.module._malloc(9 * 8);
+      const { ptrTypes, ptrBox, ptrPos, ptrForces, ptrVirial } = this.ensureBuffers(nAtoms);
 
       try {
         this.module.HEAP32.set(Int32Array.from(types), ptrTypes / 4);
@@ -199,15 +228,15 @@
           stress: stressFromVirial(Array.from(v), s.lattice),
         };
       } finally {
-        this.module._free(ptrTypes);
-        this.module._free(ptrBox);
-        this.module._free(ptrPos);
-        this.module._free(ptrForces);
-        this.module._free(ptrVirial);
+        // Buffers persist on the instance (cached, keyed by nAtoms) and are
+        // freed in freeBuffers()/destroy(); nothing to release here. Leaving
+        // them allocated on an exception path is safe — the next call reuses
+        // them (same nAtoms) or reallocs (freeing the old ones first).
       }
     }
 
     destroy() {
+      this.freeBuffers();
       if (this.module && this.handle) {
         this.module._nep_destroy(this.handle);
       }

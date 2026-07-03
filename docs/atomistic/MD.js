@@ -314,6 +314,13 @@ export async function runMDSimulation({
   const startStep = state.step;
   const timing = createTimingProfile('MD');
   const totalStart = performance.now();
+  // Run consecutive steps without yielding to the render loop until this many
+  // ms have elapsed since the last rAF yield, then yield once. Keeps fast
+  // integration off the ~60 fps cap while still letting the browser paint; slow
+  // (async MLIP) force evals exceed the budget every step and degrade to one
+  // yield per step (prior behavior).
+  const FRAME_BUDGET_MS = 12;
+  let lastYield = performance.now();
 
   for (let i = 1; i <= steps; i += 1) {
     if (stop()) {
@@ -364,9 +371,12 @@ export async function runMDSimulation({
       stopped = true;
       break;
     }
-    t0 = performance.now();
-    await nextFrame();
-    timing.waitMs += performance.now() - t0;
+    if (performance.now() - lastYield >= FRAME_BUDGET_MS) {
+      t0 = performance.now();
+      await nextFrame();
+      timing.waitMs += performance.now() - t0;
+      lastYield = performance.now();
+    }
   }
   timing.totalMs = performance.now() - totalStart;
 

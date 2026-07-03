@@ -159,6 +159,13 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
   const onStep = opts.onStep ?? (() => {});
   const timing = createTimingProfile('Relax');
   const totalStart = performance.now();
+  // Run consecutive steps without yielding to the render loop until this many
+  // ms have elapsed since the last rAF yield, then yield once. This keeps
+  // throughput off the ~60 fps cap when steps are fast, while still letting the
+  // browser paint. For slow (e.g. async MLIP) computes the budget is exceeded
+  // every step, degrading gracefully to one yield per step (prior behavior).
+  const FRAME_BUDGET_MS = 12;
+  let lastYield = performance.now();
 
   let current = {
     lattice: initial.lattice.map((r) => [...r]),
@@ -173,7 +180,9 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
 
   for (step = 1; step <= maxSteps; step += 1) {
     let t0 = performance.now();
-    out = nepRunner.compute(current);
+    // NEP's compute is synchronous; MLIPRunner's is async. Awaiting a plain
+    // value is a no-op, so this supports both runners.
+    out = await nepRunner.compute(current);
     timing.computeMs += performance.now() - t0;
     mF = maxForce(out.forces);
     pGPa = pressureGPaFromStress(out.stress.matrix3x3);
@@ -191,9 +200,12 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
     current = applyRelaxStep(current, out, atomStep, cellStep, targetPressureEvA3);
     timing.updateMs += performance.now() - t0;
 
-    t0 = performance.now();
-    await nextFrame();
-    timing.waitMs += performance.now() - t0;
+    if (performance.now() - lastYield >= FRAME_BUDGET_MS) {
+      t0 = performance.now();
+      await nextFrame();
+      timing.waitMs += performance.now() - t0;
+      lastYield = performance.now();
+    }
   }
   timing.totalMs = performance.now() - totalStart;
 
