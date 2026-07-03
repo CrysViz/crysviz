@@ -433,7 +433,10 @@ export function createMDMonitorPanel() {
       `;
     },
     defaults: {
-      docked: false,
+      // Docked just below the Backend window (order -10), expanded; the
+      // anchor is where it opens if undocked without a remembered position.
+      docked: true,
+      order: -5,
       collapsed: false,
       anchor: isMobile ? { left: 8, top: 56 } : { left: 430, top: 110 },
     },

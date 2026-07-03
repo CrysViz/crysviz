@@ -1,5 +1,6 @@
 import { general } from '../../state/store.js';
 import { removeAtomisticPanel, addRelaxPanel, addMDPanel } from './AtomisticPanels.js';
+import { createMDMonitorPanel } from '../../atomistic/MD.js';
 import { refreshBackendTheme } from './BackendTheme.js';
 import { addMDStreamPanel, removeMDStreamPanel } from './MDStreamPanel.js';
 
@@ -125,6 +126,9 @@ export function addBackendModeSwitch() {
             setUploadVisible(false);
             removeMDStreamPanel();
             addMDPanel();
+            // Open the monitor right away (a starting run re-creates it with
+            // a fresh plot; AtomisticPanels holds the update handle).
+            createMDMonitorPanel();
     } else if (mode === "live") {
             btn.classList.add("md");
             general.backendState = "live";
