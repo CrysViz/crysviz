@@ -119,7 +119,8 @@ export const general = {
   useWasmPolyhedra:true, // Use compiled WASM for computePolyhedra (false = pure JS fallback)
   useWasmBonds:true, // Use compiled WASM (cell list) for neighbour-bond pair finding (false = JS O(n²))
   serialPolyhedraAlgorithm:false, // true = single-threaded WASM; false = parallel over Web Workers
-  backendViewerUpdateStride:4, // Update the viewer every N backend/NEP steps during relax/MD
+  backendViewerUpdateStride:1, // Update the viewer every N backend/NEP steps during relax/MD
+  backendTrajectorySaveStride:4, // Save a trajectory snapshot every N steps during relax/MD
   playerModeState: "none", 
   spinForceState: "none",
   structurePanelMode: "atoms",

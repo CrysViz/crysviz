@@ -658,7 +658,8 @@ async function runLocalRelax(shell, params, potential) {
   const runner = await ensureCalculatorReady(potential, shell);
   const noStress = runner.supportsStress === false;
   const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
-  const saveStride = 1;
+  const saveStride = Math.max(1, Number(general.backendTrajectorySaveStride || 1));
+  let lastSavedStep = 0;
   const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
   const relaxLabel = `Relax_${srcContainer?.fileName ?? 'run'}`;
   const relaxContainer = new StructureContainer({ fileName: relaxLabel, structures: [snapshotCurrentStructure()] });
@@ -678,14 +679,18 @@ async function runLocalRelax(shell, params, potential) {
     targetPressureGPa: params.targetPressure,
     pressureTolGPa: params.stressTol,
     onStep: (step, current, out, mF) => {
-      const shouldUpdateViewer = step === 1 || step % viewerStride === 0;
+      // snapshotCurrentStructure copies the viewer structure, so a save-step must
+      // also apply the current state to the viewer first.
+      const shouldSave = step % saveStride === 0;
+      const shouldUpdateViewer = step === 1 || shouldSave || step % viewerStride === 0;
       if (shouldUpdateViewer) {
         applyStructureToViewer(current, fileBrowser.selectedStructure);
         setCurrentEFS(out);
       }
 
-      if (step % saveStride === 0) {
+      if (shouldSave) {
         relaxContainer.structures.push(snapshotCurrentStructure());
+        lastSavedStep = step;
       }
 
       const pressureText = noStress
@@ -704,6 +709,11 @@ async function runLocalRelax(shell, params, potential) {
 
   applyStructureToViewer(relaxed.structure, fileBrowser.selectedStructure, { full: true });
   setCurrentEFS(relaxed.result);
+
+  // Always keep the final state in the trajectory, even off-stride.
+  if (relaxed.steps !== lastSavedStep) {
+    relaxContainer.structures.push(snapshotCurrentStructure());
+  }
 
   const stepsSaved = relaxContainer.structures.length;
   updateRow(relaxRow, { name: relaxLabel, traj: stepsSaved, step: stepsSaved });
@@ -837,6 +847,8 @@ function bindMDBody(panel, shell, potential) {
       const maxTemperatureK = Number(shell.bodyEl.querySelector('#mdAnnealMaxInput')?.value || 1200);
       const peakFraction = Math.max(0.01, Math.min(0.99, Number(shell.bodyEl.querySelector('#mdAnnealPeakPctInput')?.value || 30) / 100));
       const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
+      const saveStride = Math.max(1, Number(general.backendTrajectorySaveStride || 1));
+      let lastSavedStep = 0;
       const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
       const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
       const mdContainer = new StructureContainer({ fileName: mdLabel, structures: [snapshotCurrentStructure()] });
@@ -877,17 +889,24 @@ function bindMDBody(panel, shell, potential) {
         thermostat,
         shouldStop: () => mdStopRequested,
         onStep: ({ step, timeFs, temperatureK, targetTemperatureK, epotEv, ekinEv, etotEv, state: mdState }) => {
-          const shouldUpdateViewer = step === 1 || step % viewerStride === 0;
+          // snapshotCurrentStructure copies the viewer structure, so a save-step
+          // must also apply the current state to the viewer first. Bond-topology
+          // refresh is handled inside applyMDStateToViewer (BOND_TOPOLOGY_STRIDE);
+          // the old forceRerender-every-5-steps full rebuild is gone.
+          const shouldSave = step % saveStride === 0;
+          const shouldUpdateViewer = step === 1 || shouldSave || step % viewerStride === 0;
           if (shouldUpdateViewer) {
-            const forceRerender = step % Math.max(5, viewerStride) === 0;
-            applyMDStateToViewer(mdState, fileBrowser.selectedStructure, { forceRerender });
+            applyMDStateToViewer(mdState, fileBrowser.selectedStructure);
             setCurrentEFS({
               forces: mdState.forces,
               stress: { matrix3x3: mdState.stress },
             });
           }
 
-          mdContainer.structures.push(snapshotCurrentStructure());
+          if (shouldSave) {
+            mdContainer.structures.push(snapshotCurrentStructure());
+            lastSavedStep = step;
+          }
           const tLabel = Number.isFinite(targetTemperatureK)
             ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`
             : `T=${temperatureK.toFixed(0)} K`;
@@ -902,6 +921,11 @@ function bindMDBody(panel, shell, potential) {
         forces: state.forces,
         stress: { matrix3x3: state.stress },
       });
+
+      // Always keep the final state in the trajectory, even off-stride.
+      if (state.step !== lastSavedStep) {
+        mdContainer.structures.push(snapshotCurrentStructure());
+      }
 
       const count = mdContainer.structures.length;
       updateRow(mdRow, { name: mdLabel, traj: count, step: count });
