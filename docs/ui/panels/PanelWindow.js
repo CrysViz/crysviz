@@ -305,6 +305,18 @@ export class PanelWindow {
       s.bottom = `${Math.max(VIEWPORT_MARGIN, window.innerHeight - rect.bottom)}px`;
       s.top = 'auto';
     }
+    // Growth must never push the title bar out of reach: an upward-growing
+    // (bottom-anchored) window is moved down so its top stays on screen, and
+    // a leftward-growing (right-anchored) window is moved right likewise.
+    if (rect.top < VIEWPORT_MARGIN && s.bottom && s.bottom !== 'auto') {
+      s.bottom = `${Math.max(0, window.innerHeight - VIEWPORT_MARGIN - rect.height)}px`;
+    }
+    if (rect.left < VIEWPORT_MARGIN && s.right && s.right !== 'auto') {
+      s.right = `${Math.max(0, window.innerWidth - VIEWPORT_MARGIN - rect.width)}px`;
+    }
+    if (rect.top < VIEWPORT_MARGIN && (!s.bottom || s.bottom === 'auto')) {
+      s.top = `${VIEWPORT_MARGIN}px`;
+    }
   }
 
   /** Freeze the current rect as left/top anchoring (used at drag start). */
@@ -355,11 +367,16 @@ export class PanelWindow {
         grabDY = ev.clientY - rect.top;
         this.el.classList.add('cv-drag-moving');
       }
-      // Floating move, clamped so the title bar stays reachable.
-      const w = this.el.offsetWidth;
+      // Floating move, clamped so the title bar (or the collapsed handle,
+      // which is a short centered strip) stays reachable: its top never goes
+      // above the viewport, and at least 40px of it stays visible
+      // horizontally.
+      const barLeft = bar.offsetLeft;
+      const barW = Math.max(bar.offsetWidth, 40);
       const barH = bar.offsetHeight;
-      const left = Math.min(Math.max(ev.clientX - grabDX, VIEWPORT_MARGIN - w + 60),
-        window.innerWidth - 60);
+      const left = Math.min(
+        Math.max(ev.clientX - grabDX, 40 - (barLeft + barW)),
+        window.innerWidth - 40 - barLeft);
       const top = Math.min(Math.max(ev.clientY - grabDY, 0),
         window.innerHeight - barH);
       this.el.style.left = `${left}px`;
