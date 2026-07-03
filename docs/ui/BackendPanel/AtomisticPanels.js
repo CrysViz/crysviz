@@ -702,7 +702,7 @@ async function runLocalRelax(shell, params, potential) {
     },
   });
 
-  applyStructureToViewer(relaxed.structure, fileBrowser.selectedStructure);
+  applyStructureToViewer(relaxed.structure, fileBrowser.selectedStructure, { full: true });
   setCurrentEFS(relaxed.result);
 
   const stepsSaved = relaxContainer.structures.length;
@@ -894,6 +894,13 @@ function bindMDBody(panel, shell, potential) {
           shell.statusEl.textContent = `step ${step} / ${steps}  ·  t=${timeFs.toFixed(1)} fs  ·  ${tLabel}`;
           monitor.update({ step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv });
         },
+      });
+
+      // Run-end full apply: rebuild bond topology + refresh polyhedra one last time.
+      applyMDStateToViewer(state, fileBrowser.selectedStructure, { full: true });
+      setCurrentEFS({
+        forces: state.forces,
+        stress: { matrix3x3: state.stress },
       });
 
       const count = mdContainer.structures.length;

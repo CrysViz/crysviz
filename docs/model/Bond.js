@@ -25,6 +25,9 @@ export class Bond {
     this.uuid = uuid; 
     this.color=color;
     this.userColor=[null, null];
+    // Element-pair max bond cutoff squared; assigned by buildBondObjects so the
+    // fast frame path can hide a bond that stretches past breaking. 0 = unknown.
+    this.cutoffSq = 0;
 
     // Compute positions, direction, distance
     if (positions.length === 2) {
@@ -64,6 +67,52 @@ export class Bond {
       this.r1 = this.r2 = this.visibleLen = this.halfLen = this.radius = null;
       this.center1 = this.center2 = null;
     }
+  }
+
+  // Fast in-place endpoint update for the render fast path (MD/relax frames).
+  // Reuses the fixed per-element radii r1/r2 computed once in the constructor and
+  // recomputes only the position-dependent geometry (dir, dist, visibleLen,
+  // halfLen, center1/center2, positions/p1/p2/midpoint). Mirrors the constructor's
+  // clipped-bond math exactly so a freshly constructed Bond at the same endpoints
+  // is identical. p1/p2 are [x, y, z] cartesian arrays.
+  updateEndpoints(p1, p2) {
+    // radius may change between frames (bondRadius slider); r1/r2 stay fixed.
+    this.radius = general.bondRadius;
+
+    if (!this.p1) this.p1 = new THREE.Vector3();
+    if (!this.p2) this.p2 = new THREE.Vector3();
+    if (!this.midpoint) this.midpoint = new THREE.Vector3();
+    if (!this.dir) this.dir = new THREE.Vector3();
+
+    this.p1.set(p1[0], p1[1], p1[2]);
+    this.p2.set(p2[0], p2[1], p2[2]);
+    this.positions = [[p1[0], p1[1], p1[2]], [p2[0], p2[1], p2[2]]];
+    this.midpoint.set((p1[0] + p2[0]) * 0.5, (p1[1] + p2[1]) * 0.5, (p1[2] + p2[2]) * 0.5);
+    this.dir.set(p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]);
+    this.dist = this.dir.length();
+
+    if (this.r1 == null || this.r2 == null) {
+      this.visibleLen = this.halfLen = null;
+      this.center1 = this.center2 = null;
+      return this;
+    }
+
+    this.visibleLen = Math.max(this.dist - (this.r1 + this.r2), 0);
+    this.halfLen = this.visibleLen * 0.5;
+
+    if (this.visibleLen > 1e-3) {
+      const inv = this.dist > 1e-9 ? 1 / this.dist : 0;
+      const ux = this.dir.x * inv, uy = this.dir.y * inv, uz = this.dir.z * inv;
+      const a1 = this.r1 + this.halfLen / 2;
+      const a2 = -this.r2 - this.halfLen / 2;
+      if (!this.center1) this.center1 = new THREE.Vector3();
+      if (!this.center2) this.center2 = new THREE.Vector3();
+      this.center1.set(this.p1.x + ux * a1, this.p1.y + uy * a1, this.p1.z + uz * a1);
+      this.center2.set(this.p2.x + ux * a2, this.p2.y + uy * a2, this.p2.z + uz * a2);
+    } else {
+      this.center1 = this.center2 = null;
+    }
+    return this;
   }
 }
 

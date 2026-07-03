@@ -15,6 +15,15 @@ import {generateID} from '../utils/index.js'
 import {computeBondPairsWasm} from '../compiled/bondsWasm.js'
 //import {getBondCutoff} from './BondsModule.js'
 //
+
+// Module-scope scratch objects reused by the per-bond matrix/colour writers
+// (updateSingleBond / updateSingleBondPosition). three.js setMatrixAt / setXYZ
+// copy their inputs, so reuse is safe and avoids allocating an Object3D +
+// Vector3 (×2) + Color per bond per frame.
+const _bondDummy = new THREE.Object3D();
+const _bondDir = new THREE.Vector3();
+const _bondUp = new THREE.Vector3(0, 1, 0);
+const _bondColor = new THREE.Color();
 export function initBondsLengths(){
   if (!fileBrowser.selectedStructure) {
     console.warn("Could not init bonds!")
@@ -107,7 +116,7 @@ export function getBondMinCutoff(elem1, elem2) {
   return general.bondLengths[pair]?.min || 0.0;
 }
 
-function getActiveCutPlanes() {
+export function getActiveCutPlanes() {
   return (general.atomCutPlanes || []).filter((plane) => plane?.enabled);
 }
 
@@ -133,7 +142,7 @@ function isPointCutByPlanes(position, cutPlanes) {
   });
 }
 
-function isBondCutByPlanes(bond, cutPlanes) {
+export function isBondCutByPlanes(bond, cutPlanes) {
   if (!cutPlanes.length || !bond?.srcIndices || !Array.isArray(bond.positions)) return false;
 
   const atoms = fileBrowser.selectedStructure?.atoms;
@@ -260,6 +269,9 @@ export function buildBondObjects(structure){
       srcIndices: [wrappedSrcIndex[i], wrappedSrcIndex[j]],
       indices: [i, j]
     });
+    // Element-pair cutoff (squared) so the fast frame path can hide a bond that
+    // stretches past breaking without re-running pair finding.
+    bond.cutoffSq = cutoffSqFlat[atomElemIdx[i] * nu + atomElemIdx[j]];
 
     // Set bond colors based on current color mode
     if (general.bondsColor === "white") {
@@ -452,6 +464,12 @@ export function renderBonds() {
   validBonds.forEach((bond, i) => {
     if (!bond.center1 || !bond.center2) return;
 
+    // Stable instance-index tag for the render fast path (applyFrameFast). Filtering
+    // structure.bonds by the live visibleLen across frames is unsafe because
+    // updateEndpoints mutates visibleLen; this fixed index (assigned once per
+    // rebuild) is the authoritative bond -> instance-slot mapping the fast path uses.
+    bond.renderIndex = i;
+
     // ---- first half ----
     if (!structure.bondhalfToAtom) structure.bondhalfToAtom = {};
     structure.bondhalfToAtom[i * 2] = bond.srcIndices[0];
@@ -530,9 +548,9 @@ export function updateSingleBondColor(bondMeshIndex, color, overwriteAtom = fals
 
   //console.log(bondMeshIndex,atom.userColor, overwriteAtom, targetColor)
 
-  // Update bond half color
-  const threeColor = new THREE.Color(targetColor);
-  mesh.instanceColor.setXYZ(bondMeshIndex, threeColor.r, threeColor.g, threeColor.b);
+  // Update bond half color (reuse module scratch THREE.Color; setXYZ copies).
+  _bondColor.set(targetColor);
+  mesh.instanceColor.setXYZ(bondMeshIndex, _bondColor.r, _bondColor.g, _bondColor.b);
   mesh.instanceColor.needsUpdate = true;
 
 }
@@ -540,22 +558,21 @@ export function updateSingleBondColor(bondMeshIndex, color, overwriteAtom = fals
 
 export function updateSingleBondPosition(index, bond) {
   const mesh = groups.bondsMesh;
-  const dummy = new THREE.Object3D();
-  const dirNorm = bond.dir.clone().normalize();
+  _bondDir.copy(bond.dir).normalize();
 
   // First half position and orientation
-  dummy.position.copy(bond.center1);
-  dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
-  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirNorm);
-  dummy.updateMatrix();
-  mesh.setMatrixAt(index * 2, dummy.matrix);
+  _bondDummy.position.copy(bond.center1);
+  _bondDummy.scale.set(bond.radius, bond.halfLen, bond.radius);
+  _bondDummy.quaternion.setFromUnitVectors(_bondUp, _bondDir);
+  _bondDummy.updateMatrix();
+  mesh.setMatrixAt(index * 2, _bondDummy.matrix);
 
   // Second half position and orientation
-  dummy.position.copy(bond.center2);
-  dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
-  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirNorm);
-  dummy.updateMatrix();
-  mesh.setMatrixAt(index * 2 + 1, dummy.matrix);
+  _bondDummy.position.copy(bond.center2);
+  _bondDummy.scale.set(bond.radius, bond.halfLen, bond.radius);
+  _bondDummy.quaternion.setFromUnitVectors(_bondUp, _bondDir);
+  _bondDummy.updateMatrix();
+  mesh.setMatrixAt(index * 2 + 1, _bondDummy.matrix);
 }
 
 export function updateSingleBondDiameter(instanceIndex, newRadius) {
@@ -593,15 +610,14 @@ export function updateSingleBondDiameter(instanceIndex, newRadius) {
 
 export function updateSingleBond(index, bond, overwriteAtom=false){
   const mesh = groups.bondsMesh;
-  const dummy = new THREE.Object3D();
-  const dirNorm = bond.dir.clone().normalize();
+  _bondDir.copy(bond.dir).normalize();
 
   // ---- first half ----
-  dummy.position.copy(bond.center1);
-  dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
-  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dirNorm); // precise alignment
-  dummy.updateMatrix();
-  mesh.setMatrixAt(index*2, dummy.matrix);
+  _bondDummy.position.copy(bond.center1);
+  _bondDummy.scale.set(bond.radius, bond.halfLen, bond.radius);
+  _bondDummy.quaternion.setFromUnitVectors(_bondUp, _bondDir); // precise alignment
+  _bondDummy.updateMatrix();
+  mesh.setMatrixAt(index*2, _bondDummy.matrix);
 
   updateSingleBondColor(index*2, bond.color[0],overwriteAtom)
 
@@ -610,11 +626,11 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
   mesh.geometry.attributes.instanceElementIndex.setX(index*2, 0);
 
   // ---- second half ----
-  dummy.position.copy(bond.center2);
-  dummy.scale.set(bond.radius, bond.halfLen, bond.radius);
-  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dirNorm);
-  dummy.updateMatrix();
-  mesh.setMatrixAt(index*2 + 1, dummy.matrix);
+  _bondDummy.position.copy(bond.center2);
+  _bondDummy.scale.set(bond.radius, bond.halfLen, bond.radius);
+  _bondDummy.quaternion.setFromUnitVectors(_bondUp, _bondDir);
+  _bondDummy.updateMatrix();
+  mesh.setMatrixAt(index*2 + 1, _bondDummy.matrix);
 
   updateSingleBondColor(index*2+1, bond.color[1],overwriteAtom)
 
@@ -623,17 +639,17 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
   mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, 0);
 }
 
-function hideSingleBond(index) {
+export function hideSingleBond(index) {
   const mesh = groups.bondsMesh;
   if (!mesh) return;
 
-  const dummy = new THREE.Object3D();
-  dummy.position.set(0, 0, 0);
-  dummy.scale.set(0, 0, 0);
-  dummy.updateMatrix();
+  _bondDummy.position.set(0, 0, 0);
+  _bondDummy.scale.set(0, 0, 0);
+  _bondDummy.quaternion.set(0, 0, 0, 1);
+  _bondDummy.updateMatrix();
 
-  mesh.setMatrixAt(index * 2, dummy.matrix);
-  mesh.setMatrixAt(index * 2 + 1, dummy.matrix);
+  mesh.setMatrixAt(index * 2, _bondDummy.matrix);
+  mesh.setMatrixAt(index * 2 + 1, _bondDummy.matrix);
 }
 
 export async function updateBonds(opacity=1.0) {
@@ -653,15 +669,14 @@ export async function updateBonds(opacity=1.0) {
     updateSingleBond(i, bond);
   });
   mesh.material.opacity = opacity;
-  if (opacity === 1) {
-    //console.log("Switching of transparency for comp bonds")
-    mesh.material.transparent = false;
-    mesh.material.depthWrite = true;
+  // Only flag material.needsUpdate (shader recompile) when the transparency flag
+  // actually flips — otherwise the per-frame recompile was pure overhead.
+  const wantTransparent = opacity !== 1;
+  if (mesh.material.transparent !== wantTransparent) {
+    mesh.material.transparent = wantTransparent;
+    mesh.material.needsUpdate = true;
   }
-  else {
-    mesh.material.transparent = true;
-    mesh.material.depthWrite = true;
-  }
+  mesh.material.depthWrite = true;
 
   // mark all attributes as needing update
   mesh.instanceMatrix.needsUpdate = true;
@@ -669,6 +684,8 @@ export async function updateBonds(opacity=1.0) {
   mesh.geometry.attributes.instanceEmissive.needsUpdate = true;
   mesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
   mesh.geometry.attributes.instanceElementIndex.needsUpdate = true;
-  mesh.material.needsUpdate = true;
+  // NOTE: material.needsUpdate is intentionally NOT set here — this loop only writes
+  // per-instance matrices/colours/attributes, none of which require a shader recompile.
+  // (Transparency/depthWrite are set above via mesh.material.opacity handling.)
 }
 

@@ -12,6 +12,11 @@ import {setAtomColor}  from '../utils/ColorModule.js';
 
 const MAX_CUT_PLANES = 8;
 
+// Module-scope scratch colour reused across the per-atom colour loop in updateAtoms
+// (three.js setColorAt copies the colour, so reuse is safe) — avoids allocating a
+// THREE.Color per atom per frame.
+const _scratchColor = new THREE.Color();
+
 function normalizePlaneNormal(x = 1, y = 0, z = 0) {
   const nx = Number(x) || 0;
   const ny = Number(y) || 0;
@@ -421,40 +426,55 @@ export function updateSingleAtomDiameter(index, element) {
 
 export function updateAtoms(opacity = 1.0) {
   //console.error("Update main opacity", opacity)
-  let atoms = [...fileBrowser.selectedStructure.atoms];
-  let periodic = fileBrowser.selectedStructure.periodic;
+  const atoms = fileBrowser.selectedStructure.atoms;
+  const periodic = fileBrowser.selectedStructure.periodic;
 
-  let wrapped;
-  let wrappedCart;
+  const wrapped = periodic.wrapped;
+  const wrappedCart = wrapped.cart;
+  const mesh = groups.atomsMesh;
 
-  wrapped = periodic.wrapped
-  wrappedCart = wrapped.cart
-  const mesh = groups.atomsMesh
+  // Keep the instance -> element mapping current: FastFrameModule's compatibility
+  // check compares against it, and a count-preserving membership change that lands
+  // here (updateAtoms, not rebuildAtoms) would otherwise leave it stale forever.
+  mesh.userData.elementNames = wrapped.elements;
 
   mesh.material.opacity = opacity;
+  // Once per call (not per atom): syncAtomMaterialTransparency scans all atoms, so
+  // calling it inside the loop was O(N^2). It handles transparency/depthWrite and
+  // flags material.needsUpdate, which is why no separate material.needsUpdate is
+  // needed at the end of this function.
   syncAtomMaterialTransparency(opacity);
+
+  const emissiveAttr = mesh.geometry.attributes.instanceEmissive;
+  const emissiveIntensityAttr = mesh.geometry.attributes.instanceEmissiveIntensity;
+  const opacityAttr = mesh.geometry.attributes.instanceOpacity;
+  const immuneAttr = mesh.geometry.attributes.instanceCutPlaneImmune;
 
   for (let i = 0; i < wrappedCart.length; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    updateSingleAtomPosition(i, wrappedCart[i])
-    updateSingleAtomColor(originalIndex,i, wrapped.elements[i])
-    updateSingleAtomDiameter(i,wrapped.elements[i])    
-    updateSingleAtomOpacity(i, atoms[originalIndex].getOpacity?.() ?? atoms[originalIndex].opacity ?? 1)
-    updateSingleAtomCutPlaneImmunity(i, atoms[originalIndex].cutPlaneImmune)
+    const atom = atoms[originalIndex];
+    updateSingleAtomPosition(i, wrappedCart[i]);
+    // Colour: reuse one scratch THREE.Color instead of allocating per atom.
+    _scratchColor.set(atom.getColor(originalIndex));
+    mesh.setColorAt(i, _scratchColor);
+    updateSingleAtomDiameter(i, wrapped.elements[i]);
+    // Opacity + cut-plane immunity written inline (the per-atom helpers each flag
+    // needsUpdate / re-sync transparency; done once after the loop instead).
+    const op = atom.getOpacity?.() ?? atom.opacity ?? 1;
+    opacityAttr.setX(i, Math.max(0, Math.min(1, Number(op) || 0)));
+    immuneAttr.setX(i, atom.cutPlaneImmune ? 1 : 0);
 
-    groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);
-    groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.setX(i, 0.0);
+    emissiveAttr.setXYZ(i, 0, 0, 0);
+    emissiveIntensityAttr.setX(i, 0.0);
   }
 
   // Mark attributes as needing update
-  groups.atomsMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
-  groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
-  groups.atomsMesh.geometry.attributes.instanceOpacity.needsUpdate = true;
-  groups.atomsMesh.geometry.attributes.instanceCutPlaneImmune.needsUpdate = true;
+  emissiveAttr.needsUpdate = true;
+  emissiveIntensityAttr.needsUpdate = true;
+  opacityAttr.needsUpdate = true;
+  immuneAttr.needsUpdate = true;
   applyAtomCutPlaneUniforms(mesh.material);
 
-  groups.atomsMesh.instanceMatrix.needsUpdate = true;
-  groups.atomsMesh.instanceColor.needsUpdate = true;
-  groups.atomsMesh.material.needsUpdate = true;
-  
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.instanceColor.needsUpdate = true;
 }

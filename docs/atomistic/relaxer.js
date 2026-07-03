@@ -1,6 +1,8 @@
-import { fileBrowser } from '../state/store.js';
+import { fileBrowser, groups, general } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { runPeriodicWrapped } from '../render/index.js';
+import { runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE } from '../render/index.js';
+
+let _viewerUpdateCount = 0;
 import {
   fracToCart,
   cartToFrac,
@@ -112,23 +114,38 @@ export function applyRelaxStep(structure, efs, atomStep = 0.02, cellStep = 0.002
   return { lattice: newLattice, positions: newPositions, types: structure.types };
 }
 
-export function applyStructureToViewer(nepStruct, structure = fileBrowser.selectedStructure) {
+export function applyStructureToViewer(nepStruct, structure = fileBrowser.selectedStructure, { full = false } = {}) {
   const frac = normalizeFractionalPositions(cartToFrac(nepStruct.positions, nepStruct.lattice));
   structure.lattice = nepStruct.lattice.map((r) => [...r]);
   structure.atoms.forEach((atom, i) => {
     atom.position = [...frac[i]];
   });
 
-  runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
+  _viewerUpdateCount += 1;
+  const strideDue = _viewerUpdateCount % BOND_TOPOLOGY_STRIDE === 0;
 
+  // Fast in-place update; skipped on the run-end full apply and on the periodic
+  // bond-topology refresh. Returns false when topology changed -> fall through.
+  if (!full && !strideDue && applyFrameFast(structure)) {
+    return;
+  }
+
+  // Full path: re-establishes topology (fast path resumes on the next frame).
+  runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
+  const wrappedCount = structure.periodic.wrapped?.elements?.length ?? 0;
+  const needAtomRebuild = full || !groups.atomsMesh || groups.atomsMesh.count !== wrappedCount;
   updateVisualization({
     atomsUpdate: true,
     bondsUpdate: true,
-    reRenderAtoms: false,
+    reRenderAtoms: needAtomRebuild,
     reRenderBonds: true,
     reRenderLattice: true,
     reRenderOther: false,
     reRenderComposition: false,
+    // Polyhedra track the moving atoms whenever the feature is visible (the fast
+    // path bails in that mode, so every frame lands here); otherwise only refresh
+    // them on the run-end full apply (P6).
+    reRenderPolyhedra: full || general.showPolyhedra || general.completePolyhedra,
   });
 }
 
