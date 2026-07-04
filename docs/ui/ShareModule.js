@@ -7,7 +7,7 @@ import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } 
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { revealFeaturePanels } from './panels/PanelManager.js';
 import { fracToCart } from '../math/index.js';
-import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
+import { updateAxesGizmoWidth, switchCameraType, resizeRenderer } from './WindowAndSceneControls.js';
 import { getContrastingBorder } from './BackgroundPicker.js';
 
 const URL_WARN_CHARS = 4000;
@@ -120,7 +120,14 @@ export function captureState() {
       target: app.controls
         ? [app.controls.target.x, app.controls.target.y, app.controls.target.z]
         : null,
+      // The trackball controls roll the camera's up vector freely — without
+      // it, position+target restore the view direction but not the rotation.
+      up: app.camera
+        ? [app.camera.up.x, app.camera.up.y, app.camera.up.z]
+        : null,
       zoom: app.camera?.zoom ?? null,
+      orthographic: !!app.useOrthographicCamera,
+      frustumSize: app.orthographicFrustumSize ?? null,
     },
     measurements: measurementData,
   };
@@ -349,7 +356,20 @@ function restoreAtomOrder(savedStructure, loadedStructure) {
 function restoreCamera(camState) {
   if (!camState?.position || !camState?.target) return;
   setTimeout(() => {
+    // Camera type first: switching rebuilds app.camera at a default pose, so
+    // it must precede the pose restore.
+    if (camState.orthographic != null && camState.orthographic !== app.useOrthographicCamera) {
+      app.useOrthographicCamera = camState.orthographic;
+      const toggle = document.getElementById('orthographicCamera');
+      if (toggle) /** @type {HTMLInputElement} */ (toggle).checked = camState.orthographic;
+      switchCameraType();
+    }
+    if (camState.orthographic && camState.frustumSize != null) {
+      app.orthographicFrustumSize = camState.frustumSize;
+      resizeRenderer(camState.frustumSize); // re-derives the ortho frustum planes
+    }
     app.camera.position.set(...camState.position);
+    if (camState.up) app.camera.up.set(...camState.up);
     app.controls.target.set(...camState.target);
     if (camState.zoom != null) {
       app.camera.zoom = camState.zoom;

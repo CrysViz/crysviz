@@ -217,6 +217,17 @@ async function expandPanel(page, id) {
     JSON.stringify(restored));
 
   // --- .crysviz load: save the state, change settings, load the file back ------
+  // Rotate/zoom the camera first: orientation (incl. the trackball-rolled up
+  // vector) and zoom must survive the save -> load round trip.
+  await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    app.camera.position.set(12, 7, 25);
+    app.camera.up.set(0, 0, 1);
+    app.controls.target.set(2, 1, 3);
+    app.camera.zoom = 1.7;
+    app.camera.updateProjectionMatrix();
+    app.controls.update();
+  });
   const crysvizContent = await page.evaluate(async () => {
     const { captureState } = await import('./ui/ShareModule.js');
     return JSON.stringify({ format: 'crysviz', ...captureState() }, null, 2);
@@ -236,16 +247,29 @@ async function expandPanel(page, id) {
   }, crysvizContent);
   await page.waitForTimeout(1000); // camera/measurement restore timers
   const loaded = await page.evaluate(async () => {
-    const { general, fileBrowser } = await import('./state/store.js');
+    const { general, fileBrowser, app } = await import('./state/store.js');
     return {
       latticeLineWidth: general.latticeLineWidth,
       atom0Scale: fileBrowser.selectedStructure.atoms[0].getRadiusScale(),
+      camera: {
+        position: [app.camera.position.x, app.camera.position.y, app.camera.position.z],
+        up: [app.camera.up.x, app.camera.up.y, app.camera.up.z],
+        target: [app.controls.target.x, app.controls.target.y, app.controls.target.z],
+        zoom: app.camera.zoom,
+      },
       rowNames: [...document.querySelectorAll('#structureTablePanel tbody tr')]
         .map((r) => { try { return JSON.parse(/** @type {HTMLElement} */ (r).dataset.obj).name; } catch { return null; } }),
     };
   });
   H.check('.crysviz load restores the saved visual state',
     loaded.latticeLineWidth === 0.06 && loaded.atom0Scale === 2, JSON.stringify(loaded));
+  const vecNear = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-2);
+  H.check('.crysviz load restores camera orientation, rotation and zoom',
+    vecNear(loaded.camera.position, [12, 7, 25])
+      && vecNear(loaded.camera.up, [0, 0, 1])
+      && vecNear(loaded.camera.target, [2, 1, 3])
+      && Math.abs(loaded.camera.zoom - 1.7) < 1e-3,
+    JSON.stringify(loaded.camera));
   H.check('.crysviz load adds a structure row under its file name',
     loaded.rowNames.includes('saved-session.crysviz'), JSON.stringify(loaded.rowNames));
 
