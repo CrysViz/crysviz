@@ -5,7 +5,8 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
 import { getCutPlaneMaskSign } from '../model/Plane.js';
-import {createStyledMaterial, addCelOutline, MAX_CUT_PLANES} from './MaterialStyles.js'
+import {createStyledMaterial, MAX_CUT_PLANES} from './MaterialStyles.js'
+import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import {runPeriodicWrapped} from './LatticeModule.js'
 
 import {setAtomColor}  from '../utils/ColorModule.js';
@@ -45,11 +46,6 @@ function applyCutPlaneUniformsToShader(shader) {
 
 function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
   applyCutPlaneUniformsToShader(material?.userData?.shader);
-  // The cel-shading outline hull discards by the same planes.
-  if (!material || material === groups.atomsMesh?.material) {
-    const outline = groups.atomsMesh?.userData?.celOutline;
-    if (outline) applyCutPlaneUniformsToShader(outline.material?.userData?.shader);
-  }
 }
 
 
@@ -223,19 +219,14 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
   // Mark instanceColor as needing update
   mesh.instanceColor.needsUpdate = true;
 
+  // Participate in the screen-space cel outline pass (active only in cel
+  // style; the extra layer bit is free otherwise).
+  mesh.layers.enable(CEL_OUTLINE_LAYER);
+
   // Add to scene & store reference
   app.scene.add(mesh);
   groups[meshKey] = mesh;
   groups[meshKey].userData.elementNames = wrapped.elements;
-
-  if (general.renderStyle === 'cel') {
-    // The outline shader compiles lazily on first render; seed its cut-plane
-    // uniforms from the current plane state once it exists.
-    addCelOutline(mesh, {
-      cutPlanes,
-      onCompiled: cutPlanes ? () => applyAtomCutPlaneUniforms() : undefined,
-    });
-  }
   // Honour the "Show Atoms" toggle on (re)build — the toggle only flips visibility on the
   // live mesh, so a rebuild (e.g. Complete Polyhedra appending atoms) would otherwise
   // reset the main atoms to visible. Comparison atoms keep their own visibility logic.

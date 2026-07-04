@@ -4,7 +4,7 @@ import { ConvexHull } from '../external/three/ConvexHull.js';
 import {app,general,groups, fileBrowser} from '../state/store.js'
 import { fracToCart, cartToFrac, invert3x3, transpose3x3 } from '../math/index.js'
 import { getBondCutoff} from '../render/BondsFracUpdateModule.js'
-import { addCelPolyOutline } from './MaterialStyles.js'
+import { CEL_OUTLINE_LAYER } from './CelOutlinePass.js'
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import { Polyhedra } from '../model/Polyhedra.js'
 import { Polyhedron } from '../model/Polyhedron.js'
@@ -977,6 +977,10 @@ export function renderPolyhedra(structure) {
   const sharedEdgeMat = new THREE.LineBasicMaterial({
     color: EDGE_COLOR, transparent: true, opacity: EDGE_OPACITY,
   });
+  // Depth proxy material for the screen-space cel outline pass: the faces are
+  // transparent (no depth write), so an opaque copy on the outline-only layer
+  // provides the polyhedron silhouette there. Invisible in the main render.
+  const sharedDepthProxyMat = new THREE.MeshBasicMaterial();
 
   for (const poly of model.polyhedra) {
     const posList = poly.vertices.map(p => new THREE.Vector3(p[0], p[1], p[2]));
@@ -1011,12 +1015,10 @@ export function renderPolyhedra(structure) {
     const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
     mesh.add(new THREE.LineSegments(egeom, sharedEdgeMat));
 
-    if (general.renderStyle === 'cel') {
-      const center = new THREE.Vector3();
-      for (const p of posList) center.add(p);
-      center.multiplyScalar(1 / posList.length);
-      addCelPolyOutline(mesh, center);
-    }
+    const depthProxy = new THREE.Mesh(geom, sharedDepthProxyMat);
+    depthProxy.layers.set(CEL_OUTLINE_LAYER); // outline pass only
+    depthProxy.raycast = () => {};
+    mesh.add(depthProxy);
 
     groups.polyhedraGroup.add(mesh);
   }

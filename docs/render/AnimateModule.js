@@ -4,6 +4,7 @@ import * as THREE from '../external/three/three.module.js';
 import {updateAngleDisplays} from './cameraAngleControl.js';
 import { app, general} from '../state/store.js';
 import {updateLattice,latticeDirsNorm} from './LatticeModule.js'
+import {renderCelOutlinePass} from './CelOutlinePass.js'
 
 import {updateRandomColors} from '../ui/DiscoModule.js'
 
@@ -115,6 +116,7 @@ export function animation_update(time = 0) {
   );
 
   app.renderer.render(app.scene, app.camera);
+  renderCelOutlinePass(app.renderer, app.scene, app.camera);
   if (app.gizmoRenderer && app.gizmoScene && app.gizmoCamera) {
     const invCamQ = app.camera.quaternion.clone().invert();
     const { a, b, c } = latticeDirsNorm();
