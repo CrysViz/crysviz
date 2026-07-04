@@ -67,6 +67,18 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
   H.check('boot: saved pos is the inherent default, not the displaced one',
     s.saved && s.saved.left === 68, JSON.stringify(s.saved));
 
+  // -- right-edge default windows track the edge without ever being dragged ---
+  let info = await panelState(page, 'info');
+  H.check('boot: info window sits at its right/bottom default anchor',
+    near(info.rightGap, 20) && near(info.bottomGap, 20),
+    `rightGap=${info.rightGap} bottomGap=${info.bottomGap}`);
+  await setViewport(page, 1000, 700);
+  info = await panelState(page, 'info');
+  H.check('resize: default-anchored info window tracks the right/bottom edges',
+    near(info.rightGap, 20) && near(info.bottomGap, 20),
+    `rightGap=${info.rightGap} bottomGap=${info.bottomGap}`);
+  await setViewport(page, 1400, 900);
+
   // -- corner park: nearest-edge capture, edge tracked through resize ---------
   let target = await panelState(page, PANEL);
   await dragPanelTo(page, PANEL, 1400 - target.width - 60, 900 - target.height - 60);
@@ -137,6 +149,21 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
   H.check('reload: inherent position survives (dock visible again -> displaced)',
     s.saved && near(s.saved.left, 150) && near(s.saved.top, 100) && s.left >= uiWidth + 9,
     `left=${s.left} saved=${JSON.stringify(s.saved)}`);
+
+  // -- a remembered dock order differing from registration order is restored --
+  await page.evaluate(() => {
+    localStorage.setItem('panelLayout', JSON.stringify({
+      version: 2,
+      dockOrder: ['files', 'backend'], // swapped vs registration order
+      panels: {},
+    }));
+  });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(5000);
+  const domOrder = await page.evaluate(() => Array.from(
+    document.querySelectorAll('#dock > .cv-panel')).map((el) => el.dataset.panelId));
+  H.check('remembered dock order restored', domOrder[0] === 'files' && domOrder[1] === 'backend',
+    JSON.stringify(domOrder.slice(0, 3)));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

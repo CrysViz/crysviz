@@ -11,7 +11,10 @@
 import { PanelWindow } from './PanelWindow.js';
 
 const LS_KEY = 'panelLayout';
-const LAYOUT_VERSION = 1;
+// v2: pos is the INHERENT position, per axis anchored to the nearest viewport
+// edge at capture time (v1 stored absolute left/top rect readings; no
+// migration — a v1 blob is simply discarded).
+const LAYOUT_VERSION = 2;
 const SAVE_DEBOUNCE_MS = 250;
 const DOCK_GAP = 10; // gap between the dock's right edge and displaced windows
 // How far past the dock's right edge a dock-drag must travel before the panel
@@ -372,17 +375,27 @@ function dockSortKey(def) {
   return 100000 + ((def.defaults && def.defaults.order) || 0);
 }
 
+/** Initial-registration dock insertion. Unlike the mutation paths (reorder
+ *  drop, undock, dock-at-pointer) this must NOT resequence: panels register
+ *  one by one carrying their stored-order sort keys, and resequencing the
+ *  already-docked ones to DOM indices would make later stored keys compare
+ *  against the wrong scale — a remembered dock order that differs from the
+ *  registration order would not be restored. */
 function dockPanel(panel, atTop = false) {
   let before = null;
+  const siblings = dockedPanels().filter((sib) => sib !== panel);
   if (atTop) {
-    const first = dockedPanels().find((sib) => sib !== panel);
-    before = first ? first.el : null;
+    before = siblings.length ? siblings[0].el : null;
+    // The top slot means the smallest sort key, so panels still to register
+    // sort consistently against this one.
+    if (siblings.length) {
+      panel.sortKey = Math.min(...siblings.map((sib) => sib.sortKey)) - 1;
+    }
   } else {
     before = sortKeyBefore(panel);
   }
   dockEl.insertBefore(panel.el, before);
   panel.markDocked();
-  resequenceSortKeys();
   scheduleSave();
 }
 
