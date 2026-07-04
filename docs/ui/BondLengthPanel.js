@@ -9,6 +9,7 @@ import {createPieDot} from '../utils/ColorModule.js';
 import {clearAllHighlights} from './SelectAndHighlightModule.js';
 import { openDoublePeriodicTable } from './PeriodicTableSelectTwoPanel.js';
 import { createIndividualBondRow } from './StructureInfoPanel/components/IndividualBondRow.js';
+import { bondGroupKey } from '../render/index.js';
 
 // Re-populate the individual-bond lists of any *expanded* category rows after a
 // bonds rebuild (slider drag / visibility toggle). Collapsed lists refresh
@@ -262,13 +263,31 @@ export function createBondLengthControls(targetPanel='bondControls') {
       if (builtForBuildId === general.bondsBuildCounter) return;
       builtForBuildId = general.bondsBuildCounter;
       bondsContainer.innerHTML = '';
-      const bonds = fileBrowser.selectedStructure?.bonds ?? [];
+      const structure = fileBrowser.selectedStructure;
+      const bonds = structure?.bonds ?? [];
+      // "Link periodic copies" on: one row per physical bond — periodic-image
+      // copies grouped by bondGroupKey, edits/selection fan out to all copies.
+      const linking = general.linkPeriodicCopies !== false;
+      const groupsMap = linking ? new Map() : null; // groupKey -> member indices (insertion order)
       bonds.forEach((bond, bondIndex) => {
         const [e1, e2] = bond.elements;
         const bondPair = e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`;
         if (bondPair !== pair) return;
-        bondsContainer.appendChild(createIndividualBondRow(bond, bondIndex));
+        if (!linking) {
+          bondsContainer.appendChild(createIndividualBondRow(bond, bondIndex));
+          return;
+        }
+        const gk = bondGroupKey(structure, bond);
+        let members = groupsMap.get(gk);
+        if (!members) { members = []; groupsMap.set(gk, members); }
+        members.push(bondIndex);
       });
+      if (linking) {
+        for (const [gk, members] of groupsMap) {
+          bondsContainer.appendChild(createIndividualBondRow(
+            bonds[members[0]], members[0], { linkedBondIndexes: members, groupKey: gk }));
+        }
+      }
       if (!bondsContainer.children.length) {
         const empty = document.createElement('div');
         empty.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.5); padding: 4px 0;';

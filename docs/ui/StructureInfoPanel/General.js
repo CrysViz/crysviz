@@ -399,6 +399,24 @@ export function renderComposition(panelState="closed") {
   // behavior on re-render). The window itself stays as the user left it.
   setStructurePanelOpen(panelState === "open");
 
+// "Link periodic copies": governs the per-copy vs grouped behavior of ALL tabs
+// below — Atoms per-image rows, Bonds/Poly grouped rows (general.linkPeriodicCopies).
+// Wyckoff orbit rows are unaffected, but the toggle still applies to Bonds/Poly
+// in wyckoff mode, so it is shown unconditionally above the tab selector.
+const linkCopiesRow = createToggleRow({
+  id: 'linkPeriodicCopiesToggle',
+  label: 'Link periodic copies',
+  checked: general.linkPeriodicCopies !== false,
+  onChange: (e) => {
+    general.linkPeriodicCopies = /** @type {any} */ (e.target).checked;
+    // Selection rows go stale across the list rebuilds.
+    clearAllHighlights({ reason: 'link-copies-toggle' });
+    renderComposition("open");
+  },
+});
+linkCopiesRow.style.margin = '6px 0 8px 0';
+compDiv.appendChild(linkCopiesRow);
+
 // Create a new div element for the segmented control
 const atomBondControl = document.createElement('div');
 atomBondControl.id = 'atomBondControl';
@@ -422,24 +440,6 @@ if (!hasWyckoffPanel) {
     const row = createCompositionRow(el, counts[el], total);
     atomPanel.appendChild(row);
   });
-}
-
-// "Link periodic copies": when off, the per-element lists show one row per
-// on-screen copy and edits apply per copy (general.linkPeriodicCopies).
-if (!hasWyckoffPanel) {
-  const linkCopiesRow = createToggleRow({
-    id: 'linkPeriodicCopiesToggle',
-    label: 'Link periodic copies',
-    checked: general.linkPeriodicCopies !== false,
-    onChange: (e) => {
-      general.linkPeriodicCopies = /** @type {any} */ (e.target).checked;
-      // Selection rows go stale across the list rebuild.
-      clearAllHighlights({ reason: 'link-copies-toggle' });
-      renderComposition("open");
-    },
-  });
-  linkCopiesRow.style.marginTop = '12px';
-  atomPanel.appendChild(linkCopiesRow);
 }
 
 const ResetColorAtomsButtonRow = document.createElement('div');

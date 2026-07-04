@@ -18,19 +18,31 @@ function safeColor(color) {
  * category (the polyhedron analog of createIndividualBondRow): label like
  * "CuO6 #3" with the center atom (or cage info), a per-polyhedron color/alpha
  * editor, and click-to-highlight in the 3D view.
- * @param {any} poly - the Polyhedron object (from structure.polyhedra.polyhedra)
+ * @param {any} poly - the Polyhedron object (from structure.polyhedra.polyhedra);
+ *   the group's representative when options.linkedPolyIndexes is given
  * @param {number} polyIndex - its index into structure.polyhedra.polyhedra
  * @param {number} displayNumber - 1-based position within its category
+ * @param {{linkedPolyIndexes?: number[], groupKey?: string}} [options] -
+ *   linked mode ("Link periodic copies" on): linkedPolyIndexes lists ALL
+ *   periodic-image copies of this physical polyhedron (incl. polyIndex);
+ *   edits and Reset then fan out to every member.
  * @returns {HTMLElement}
  */
-export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber) {
+export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, options = {}) {
   const structure = fileBrowser.selectedStructure;
   const key = poly.key;
   const catKey = poly.catKey;
+  const linked = Array.isArray(options.linkedPolyIndexes) && options.linkedPolyIndexes.length
+    ? options.linkedPolyIndexes : null;
+  const groupKey = linked ? (options.groupKey ?? null) : null;
+  const memberKeys = (linked ?? [polyIndex])
+    .map((i) => structure.polyhedra?.polyhedra?.[i]?.key)
+    .filter(Boolean);
 
   const row = document.createElement('div');
   row.className = 'individual-polyhedron-row';
-  row.dataset.polyKey = key;
+  row.dataset.polyKey = key; // representative's key (capture/restore keeps working)
+  if (groupKey) row.dataset.polyGroupKey = groupKey;
   row.dataset.catKey = catKey;
   row.style.cssText = 'display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 12px; padding: 4px 0; font-size: 11px; cursor: pointer; transition: background-color 0.2s ease;';
 
@@ -44,20 +56,27 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber) {
 
   const metaDisplay = document.createElement('span');
   metaDisplay.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.8); font-family: monospace;';
+  const copySuffix = linked && linked.length > 1 ? ` · ×${linked.length}` : '';
   if (poly.type === 'centered' && Number.isInteger(poly.centerIndex)) {
     const n = getElementAtomIndices(poly.centerElement).indexOf(poly.centerIndex) + 1;
-    metaDisplay.textContent = `center ${poly.centerElement}${n}`;
+    metaDisplay.textContent = `center ${poly.centerElement}${n}${copySuffix}`;
   } else {
-    metaDisplay.textContent = `cage · CN ${poly.numVertices}`;
+    metaDisplay.textContent = `cage · CN ${poly.numVertices}${copySuffix}`;
+  }
+  if (copySuffix) {
+    metaDisplay.title = `${linked.length} periodic copies — edits apply to all`;
   }
 
   nameContainer.appendChild(name);
   nameContainer.appendChild(metaDisplay);
   row.appendChild(nameContainer);
 
-  // Get-or-create this polyhedron's persistent style record (survives rebuilds).
-  function stylesEntry() {
-    return structure.polyhedraUserStyles[key] ??= {};
+  // Write style fields into every member's persistent record (survives
+  // rebuilds). In linked mode this fans the edit out to all periodic copies.
+  function setMemberStyles(patch) {
+    for (const k of memberKeys) {
+      Object.assign(structure.polyhedraUserStyles[k] ??= {}, patch);
+    }
   }
 
   const resolved = resolvePolyhedronStyle(
@@ -87,7 +106,7 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber) {
   const picker = createColorPicker(currentColor, (hex) => {
     // Persist across polyhedra rebuilds (structure.polyhedraUserStyles survives
     // them); restyle in place — no geometry recompute needed.
-    stylesEntry().color = hex;
+    setMemberStyles({ color: hex });
     updatePolyhedraColors();
     colorBtn.style.background = hexToRgba(hex, 0.8);
   });
@@ -120,7 +139,7 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber) {
     const value = clampOpacity(rawValue);
     alphaSlider.value = String(value);
     alphaValue.value = value.toFixed(2);
-    stylesEntry().alpha = value;
+    setMemberStyles({ alpha: value });
     updatePolyhedraColors();
   }
   alphaSlider.oninput = (e) => applyPolyAlpha(/** @type {any} */ (e.target).value);
@@ -142,7 +161,7 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber) {
   resetBtn.title = `Remove the custom color and alpha for ${poly.catLabel} #${displayNumber}`;
   resetBtn.onclick = (e) => {
     e.stopPropagation();
-    delete structure.polyhedraUserStyles[key];
+    for (const k of memberKeys) delete structure.polyhedraUserStyles[k];
     updatePolyhedraColors(); // in-place restyle; no rebuild needed
     // Refresh the (expanded) list so swatches reflect the reverted style.
     /** @type {any} */ (row.closest('.individual-polyhedra'))?._populatePolyhedronRows?.(true);
@@ -165,7 +184,11 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber) {
   };
 
   // --- Selection / hover ---
-  const isSelected = () => highlightHover.currentlyHighlightedPolyhedron?.key === key;
+  const isSelected = () => {
+    const s = highlightHover.currentlyHighlightedPolyhedron;
+    if (!s) return false;
+    return groupKey ? s.groupKey === groupKey : s.key === key;
+  };
   row.addEventListener('mouseenter', () => {
     if (!isSelected()) row.style.backgroundColor = 'rgba(255,255,255,0.03)';
   });

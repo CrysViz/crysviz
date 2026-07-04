@@ -19,11 +19,20 @@ function safeColor(color) {
  * (the bond analog of createIndividualAtomRow): label like "Cu1–O3" with the
  * bond length, a per-bond color/alpha/size editor, and click-to-highlight in
  * the 3D view.
- * @param {any} bond - the Bond object (from structure.bonds)
+ * @param {any} bond - the Bond object (from structure.bonds); the group's
+ *   representative when options.linkedBondIndexes is given
  * @param {number} bondIndex - its index into structure.bonds
+ * @param {{linkedBondIndexes?: number[], groupKey?: string}} [options] -
+ *   linked mode ("Link periodic copies" on): linkedBondIndexes lists ALL
+ *   periodic-image copies of this physical bond (incl. bondIndex); edits,
+ *   Reset and selection then fan out to every member.
  * @returns {HTMLElement}
  */
-export function createIndividualBondRow(bond, bondIndex) {
+export function createIndividualBondRow(bond, bondIndex, options = {}) {
+  const linked = Array.isArray(options.linkedBondIndexes) && options.linkedBondIndexes.length
+    ? options.linkedBondIndexes : null;
+  const groupKey = linked ? (options.groupKey ?? null) : null;
+  const memberIndexes = linked ?? [bondIndex];
   const key = bondKey(bond.indices);
   const [el1, el2] = bond.elements;
   const pair = el1 < el2 ? `${el1}-${el2}` : `${el2}-${el1}`;
@@ -35,7 +44,8 @@ export function createIndividualBondRow(bond, bondIndex) {
 
   const row = document.createElement('div');
   row.className = 'individual-bond-row';
-  row.dataset.bondKey = key;
+  row.dataset.bondKey = key; // representative's key (capture/restore keeps working)
+  if (groupKey) row.dataset.groupKey = groupKey;
   row.dataset.pair = pair;
   row.style.cssText = 'display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 12px; padding: 4px 0; font-size: 11px; cursor: pointer; transition: background-color 0.2s ease;';
 
@@ -49,7 +59,10 @@ export function createIndividualBondRow(bond, bondIndex) {
 
   const distDisplay = document.createElement('span');
   distDisplay.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.8); font-family: monospace;';
-  distDisplay.textContent = `${bond.dist.toFixed(3)} Å`;
+  distDisplay.textContent = `${bond.dist.toFixed(3)} Å${linked && linked.length > 1 ? ` · ×${linked.length}` : ''}`;
+  if (linked && linked.length > 1) {
+    distDisplay.title = `${linked.length} periodic copies — edits apply to all`;
+  }
 
   nameContainer.appendChild(name);
   nameContainer.appendChild(distDisplay);
@@ -79,22 +92,28 @@ export function createIndividualBondRow(bond, bondIndex) {
 
   const structure = fileBrowser.selectedStructure;
 
-  // Get-or-create this bond's persistent style record (survives rebuilds).
-  function stylesEntry() {
-    return structure.bondUserStyles[key] ??= { elements: [...bond.elements] };
+  // Get-or-create a bond's persistent style record (survives rebuilds). In
+  // linked mode edits fan out to every periodic copy's own record.
+  function stylesEntryFor(b) {
+    return structure.bondUserStyles[bondKey(b.indices)] ??= { elements: [...b.elements] };
+  }
+  function memberBonds() {
+    return memberIndexes.map((i) => structure.bonds[i]).filter(Boolean);
   }
 
   const picker = createColorPicker(currentColor, (hex) => {
     // Persist across bond rebuilds (structure.bondUserStyles survives them),
-    // and apply live to both half-cylinders of this bond only.
-    stylesEntry().color = hex;
-    bond.color = [hex, hex];
-    bond.userColor = [hex, hex];
-    if (bond.instanceIds && groups.bondsMesh) {
-      updateSingleBondColor(bond.instanceIds[0], hex, true);
-      updateSingleBondColor(bond.instanceIds[1], hex, true);
-      groups.bondsMesh.instanceColor.needsUpdate = true;
+    // and apply live to both half-cylinders of every member copy.
+    for (const b of memberBonds()) {
+      stylesEntryFor(b).color = hex;
+      b.color = [hex, hex];
+      b.userColor = [hex, hex];
+      if (b.instanceIds && groups.bondsMesh) {
+        updateSingleBondColor(b.instanceIds[0], hex, true);
+        updateSingleBondColor(b.instanceIds[1], hex, true);
+      }
     }
+    if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
     colorBtn.style.background = hexToRgba(hex, 0.8);
   });
 
@@ -127,11 +146,13 @@ export function createIndividualBondRow(bond, bondIndex) {
     const value = clampOpacity(rawValue);
     alphaSlider.value = String(value);
     alphaValue.value = value.toFixed(2);
-    stylesEntry().alpha = value;
-    bond.alpha = value;
-    if (bond.instanceIds) {
-      updateSingleBondOpacity(bond.instanceIds[0], value);
-      updateSingleBondOpacity(bond.instanceIds[1], value);
+    for (const b of memberBonds()) {
+      stylesEntryFor(b).alpha = value;
+      b.alpha = value;
+      if (b.instanceIds) {
+        updateSingleBondOpacity(b.instanceIds[0], value);
+        updateSingleBondOpacity(b.instanceIds[1], value);
+      }
     }
   }
   alphaSlider.oninput = (e) => applyBondAlpha(/** @type {any} */ (e.target).value);
@@ -166,13 +187,15 @@ export function createIndividualBondRow(bond, bondIndex) {
     const value = clampRadiusScale(rawValue);
     sizeSlider.value = String(value);
     sizeValue.value = value.toFixed(2);
-    stylesEntry().radiusScale = value;
-    // bond.radius drives every repaint (updateSingleBond), so the live change
-    // sticks; buildBondObjects re-derives it from the persisted scale.
-    bond.radius = general.bondRadius * value;
-    if (bond.instanceIds && groups.bondsMesh) {
-      updateSingleBondDiameter(bond.instanceIds[0], bond.radius);
-      updateSingleBondDiameter(bond.instanceIds[1], bond.radius);
+    for (const b of memberBonds()) {
+      stylesEntryFor(b).radiusScale = value;
+      // b.radius drives every repaint (updateSingleBond), so the live change
+      // sticks; buildBondObjects re-derives it from the persisted scale.
+      b.radius = general.bondRadius * value;
+      if (b.instanceIds && groups.bondsMesh) {
+        updateSingleBondDiameter(b.instanceIds[0], b.radius);
+        updateSingleBondDiameter(b.instanceIds[1], b.radius);
+      }
     }
   }
   sizeSlider.oninput = (e) => applyBondRadiusScale(/** @type {any} */ (e.target).value);
@@ -194,7 +217,7 @@ export function createIndividualBondRow(bond, bondIndex) {
   resetBtn.title = `Remove the custom color, alpha and size for ${bondName}`;
   resetBtn.onclick = (e) => {
     e.stopPropagation();
-    delete structure.bondUserStyles[key];
+    for (const b of memberBonds()) delete structure.bondUserStyles[bondKey(b.indices)];
     // Rebuild bonds so the mode coloring (element/solid/length/...) reapplies.
     updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
     // The rebuild invalidated every Bond object this list references — refresh
@@ -220,12 +243,17 @@ export function createIndividualBondRow(bond, bondIndex) {
   };
 
   // --- Selection / hover ---
-  if (!bond.instanceIds) {
+  const hasRenderable = () => memberBonds().some((b) => b.instanceIds);
+  if (!hasRenderable()) {
     row.title = 'Bond too short to render — cannot highlight in 3D';
     row.style.cursor = 'default';
   }
 
-  const isSelected = () => highlightHover.currentlyHighlightedBond?.bondIndex === bondIndex;
+  const isSelected = () => {
+    const s = highlightHover.currentlyHighlightedBond;
+    if (!s) return false;
+    return groupKey ? s.groupKey === groupKey : s.bondIndex === bondIndex;
+  };
   row.addEventListener('mouseenter', () => {
     if (!isSelected()) row.style.backgroundColor = 'rgba(255,255,255,0.03)';
   });
@@ -235,8 +263,8 @@ export function createIndividualBondRow(bond, bondIndex) {
 
   row.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (!bond.instanceIds) return;
-    selectBondFromRow(bondIndex, row);
+    if (!hasRenderable()) return;
+    selectBondFromRow(bondIndex, row, linked);
   });
 
   return row;

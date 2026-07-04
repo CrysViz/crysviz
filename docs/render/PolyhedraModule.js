@@ -145,7 +145,7 @@ function vertexComposition(structure, poly) {
  *   category = center element + vertex composition (label "CuO6").
  * - cage: key = sorted vertex source indices + centroid cell (disambiguates
  *   periodic image copies); category = composition + coordination number.
- * @returns {{key: string, catKey: string, label: string}}
+ * @returns {{key: string, groupKey: string, catKey: string, label: string}}
  */
 function polyhedronIdentity(structure, poly, latInv) {
   let cx = 0, cy = 0, cz = 0;
@@ -158,6 +158,7 @@ function polyhedronIdentity(structure, poly, latInv) {
     const shift = [0, 1, 2].map((i) => Math.round(frac[i] - center[i])).join(',');
     return {
       key: `c:${poly.centerIndex}:${shift}`,
+      groupKey: `c:${poly.centerIndex}`, // all periodic-image copies of this center
       catKey: `c:${poly.centerElement}:${comp}`,
       label: `${poly.centerElement}${comp}`,
     };
@@ -166,9 +167,17 @@ function polyhedronIdentity(structure, poly, latInv) {
   const cell = [0, 1, 2].map((i) => Math.floor(frac[i])).join(',');
   return {
     key: `g:${srcs}:${cell}`,
+    groupKey: `g:${srcs}`, // all periodic-image copies of this cage
     catKey: `g:${comp}:${poly.numVertices}`,
     label: `${comp} cage · CN ${poly.numVertices}`,
   };
+}
+
+/** Strip the periodic-image segment from a polyhedron key ("c:5:0,0,1" -> "c:5"). */
+export function polyhedronGroupKey(key) {
+  const s = String(key);
+  const i = s.lastIndexOf(':');
+  return i > 0 ? s.slice(0, i) : s;
 }
 
 /** Stamp poly.key / poly.catKey / poly.catLabel onto every model polyhedron. */
@@ -178,6 +187,7 @@ function assignPolyhedraKeys(structure, model) {
   for (const poly of model.polyhedra) {
     const id = polyhedronIdentity(structure, poly, latInv);
     poly.key = id.key;
+    poly.groupKey = id.groupKey;
     poly.catKey = id.catKey;
     poly.catLabel = id.label;
   }
@@ -1131,9 +1141,10 @@ export function renderPolyhedra(structure) {
       centerElement:  (poly.type === 'centered') ? poly.centerElement : undefined,
       colorElem: poly.colorElem, // for in-place recolour (updatePolyhedraColors)
       vertexSrcs: poly.vertexSrcList,
-      key: poly.key,       // stable identity (persistence + selection)
-      catKey: poly.catKey, // category (Poly tab grouping)
-      polyIndex,           // index into structure.polyhedra.polyhedra
+      key: poly.key,           // stable identity (persistence + selection)
+      groupKey: poly.groupKey, // periodic-copy group ("Link periodic copies")
+      catKey: poly.catKey,     // category (Poly tab grouping)
+      polyIndex,               // index into structure.polyhedra.polyhedra
     };
 
     const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);

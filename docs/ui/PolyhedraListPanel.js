@@ -250,11 +250,33 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
       if (!force && builtForBuildId === general.polyhedraBuildCounter) return;
       builtForBuildId = general.polyhedraBuildCounter;
       listContainer.innerHTML = '';
-      entry.indices.forEach((polyIndex, pos) => {
-        const poly = model.polyhedra[polyIndex];
-        if (!poly) return;
-        listContainer.appendChild(createIndividualPolyhedronRow(poly, polyIndex, pos + 1));
-      });
+      // "Link periodic copies" on: one row per physical polyhedron — periodic
+      // image copies grouped by poly.groupKey, edits/selection fan out to all.
+      const linking = general.linkPeriodicCopies !== false;
+      if (!linking) {
+        entry.indices.forEach((polyIndex, pos) => {
+          const poly = model.polyhedra[polyIndex];
+          if (!poly) return;
+          listContainer.appendChild(createIndividualPolyhedronRow(poly, polyIndex, pos + 1));
+        });
+      } else {
+        const groupsMap = new Map(); // groupKey -> member poly indices (insertion order)
+        for (const polyIndex of entry.indices) {
+          const poly = model.polyhedra[polyIndex];
+          if (!poly) continue;
+          const gk = poly.groupKey ?? poly.key;
+          let members = groupsMap.get(gk);
+          if (!members) { members = []; groupsMap.set(gk, members); }
+          members.push(polyIndex);
+        }
+        let pos = 0;
+        for (const [gk, members] of groupsMap) {
+          pos += 1;
+          listContainer.appendChild(createIndividualPolyhedronRow(
+            model.polyhedra[members[0]], members[0], pos,
+            { linkedPolyIndexes: members, groupKey: gk }));
+        }
+      }
       if (!listContainer.children.length) {
         const empty = document.createElement('div');
         empty.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.5); padding: 4px 0;';

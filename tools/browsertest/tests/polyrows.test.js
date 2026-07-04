@@ -9,6 +9,11 @@ const H = require('../harness');
   const { browser, page, errors } = await H.launchApp();
   await H.loadDefaultStructure(page); // YBCO — produces polyhedra
 
+  // Pin per-copy mode (the default now groups periodic copies); grouped
+  // behavior is covered by linkedgroups.test.js.
+  await H.clickById(page, 'linkPeriodicCopiesToggle');
+  await page.waitForTimeout(300);
+
   // --- Enable polyhedra via the real checkbox; compute is async -----------------
   await H.clickById(page, 'showPolyhedra');
   await H.waitFor(page, async () => {

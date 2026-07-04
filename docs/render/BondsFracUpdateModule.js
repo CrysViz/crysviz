@@ -156,6 +156,38 @@ export function bondKey(indices) {
   return indices[0] <= indices[1] ? `${indices[0]}_${indices[1]}` : `${indices[1]}_${indices[0]}`;
 }
 
+/**
+ * Group key identifying all periodic-image copies of one physical bond: the
+ * sorted source-atom pair plus the (canonicalized, quantized) fractional bond
+ * vector. Copies are whole-bond integer-lattice translations, so the vector is
+ * invariant across copies (to fp noise, far below the 1e-3 quantum). Used by
+ * the Bonds tab when "Link periodic copies" is on.
+ * @param {any} structure
+ * @param {any} bond
+ * @returns {string}
+ */
+export function bondGroupKey(structure, bond) {
+  const frac = structure?.periodic?.wrapped?.frac;
+  const fi = frac?.[bond.indices[0]];
+  const fj = frac?.[bond.indices[1]];
+  if (!fi || !fj) return `nofrac:${bondKey(bond.indices)}`; // degrades to per-copy
+  let [sa, sb] = bond.srcIndices;
+  let v = [fj[0] - fi[0], fj[1] - fi[1], fj[2] - fi[2]];
+  let flip = false;
+  if (sa > sb) {
+    const t = sa; sa = sb; sb = t;
+    flip = true;
+  } else if (sa === sb) {
+    // Self-image bond: canonicalize the vector's sign.
+    for (const c of v) {
+      if (Math.abs(c) > 1e-6) { flip = c < 0; break; }
+    }
+  }
+  if (flip) v = [-v[0], -v[1], -v[2]];
+  const q = v.map((x) => Math.round(x * 1000) || 0); // `|| 0` normalizes -0
+  return `${sa}_${sb}:${q.join(',')}`;
+}
+
 export function buildBondObjects(structure){
   const _t0 = performance.now();
   structure.bonds = [];

@@ -1,12 +1,18 @@
 // Bonds tab parity feature: expandable per-pair categories with lazy individual
 // bond rows, per-bond persistent user colors, and two-way highlight sync
 // (3D dblclick -> panel row; panel row click -> 3D orange highlight).
+// This test pins "Link periodic copies" OFF and asserts the per-copy behavior;
+// the grouped (linked, default) behavior is covered by linkedgroups.test.js.
 'use strict';
 const H = require('../harness');
 
 (async () => {
   const { browser, page, errors } = await H.launchApp();
   await H.loadDefaultStructure(page); // YBCO — plenty of bonds
+
+  // Pin per-copy mode (the default now groups periodic copies).
+  await H.clickById(page, 'linkPeriodicCopiesToggle');
+  await page.waitForTimeout(300);
 
   // --- Open the Structure window on the Bonds tab -------------------------------
   await page.evaluate(async () => {

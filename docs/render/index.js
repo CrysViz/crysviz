@@ -20,7 +20,7 @@ export {
 export {
   getBondCutoff, updateBonds, rebuildBonds, buildBondObjects,
   updateSingleBondDiameter, disposeBondsMesh, updateSingleBondColor,
-  updateSingleBondOpacity, bondKey,
+  updateSingleBondOpacity, bondKey, bondGroupKey,
 } from './BondsFracUpdateModule.js';
 
 export {
@@ -41,7 +41,7 @@ export {
 
 export {
   updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory,
-  resolvePolyhedronStyle,
+  resolvePolyhedronStyle, polyhedronGroupKey,
 } from './PolyhedraModule.js';
 
 export {

@@ -3,7 +3,7 @@ import {collapseAllAtomExpansions} from './WindowAndSceneControls.js';
 import {setStructurePanelOpen} from './StructureInfoPanel/General.js';
 import * as THREE from '../external/three/three.module.js';
 import {updateAtoms} from '../render/index.js';
-import {updateBonds, bondKey} from '../render/index.js';
+import {updateBonds, bondKey, bondGroupKey, polyhedronGroupKey} from '../render/index.js';
 
 const ATOM_HIGHLIGHT_COLOR = new THREE.Color(0xFF8C00);
 
@@ -174,8 +174,9 @@ export function clearBondSelection() {
   highlightHover.currentlyHighlightedBond = null;
 }
 
-/** Locate (and if needed lazily build + expand) the Bonds-tab row for a bond. */
-function findBondRow(pair, key) {
+/** Locate (and if needed lazily build + expand) the Bonds-tab row for a bond
+ *  (its group row when a groupKey is given — linked mode). */
+function findBondRow(pair, key, groupKey = null) {
   const composition = ensureAtomPanelVisible('bonds', 'infoBondControls');
   if (!composition) return null;
   general.structurePanelMode = 'bonds';
@@ -197,8 +198,9 @@ function findBondRow(pair, key) {
   }
 
   for (const row of bondsContainer.querySelectorAll('.individual-bond-row')) {
-    if (/** @type {HTMLElement} */ (row).dataset.bondKey === key) {
-      return /** @type {HTMLElement} */ (row);
+    const el = /** @type {HTMLElement} */ (row);
+    if (groupKey ? el.dataset.groupKey === groupKey : el.dataset.bondKey === key) {
+      return el;
     }
   }
   return null;
@@ -216,28 +218,51 @@ function selectBondByIndex(bondIndex, options = {}) {
   const bond = structure?.bonds?.[bondIndex];
   if (!bond) return;
 
-  if (highlightHover.currentlyHighlightedBond?.bondIndex === bondIndex) {
+  // "Link periodic copies" on: the selection unit is the whole group of
+  // periodic-image copies of this physical bond — all copies glow, and the
+  // grouped panel row is the target.
+  const linking = general.linkPeriodicCopies !== false;
+  let groupKey = null;
+  let memberIndexes = [bondIndex];
+  if (linking) {
+    groupKey = bondGroupKey(structure, bond);
+    memberIndexes = options.linkedBondIndexes
+      ?? structure.bonds.reduce((acc, b, i) => {
+        if (bondGroupKey(structure, b) === groupKey) acc.push(i);
+        return acc;
+      }, []);
+  }
+
+  const cur = highlightHover.currentlyHighlightedBond;
+  if (cur && (linking ? cur.groupKey === groupKey : cur.bondIndex === bondIndex)) {
     clearBondSelection();
     return;
   }
-  if (!bond.instanceIds) return; // filtered out of the mesh (too short to render)
+  const instanceIds = memberIndexes.flatMap((i) => structure.bonds[i]?.instanceIds ?? []);
+  if (!instanceIds.length) return; // nothing renderable (too short / filtered)
 
   clearSelectedAtoms({ reason: 'bond-select' });
   clearPolyhedronSelection();
   clearUIHighlight();
 
-  highlightBondIn3D(bond.instanceIds); // clears prior 3D atom+bond highlights first
+  highlightBondIn3D(instanceIds); // clears prior 3D atom+bond highlights first
   highlightHover.currentlyHighlightedBond = {
-    bondIndex,
+    bondIndex, // the clicked/representative member
     key: bondKey(bond.indices),
     pair: bondPairKeyOf(bond),
-    instanceIds: [...bond.instanceIds],
+    instanceIds,
+    groupKey, // null when unlinked
+    bondIndexes: linking ? memberIndexes : null,
   };
 
   let row = options.row ?? null;
   if (!row && options.openPanel) {
     collapseAllAtomExpansions();
-    row = findBondRow(highlightHover.currentlyHighlightedBond.pair, highlightHover.currentlyHighlightedBond.key);
+    row = findBondRow(
+      highlightHover.currentlyHighlightedBond.pair,
+      highlightHover.currentlyHighlightedBond.key,
+      groupKey,
+    );
   }
   if (row) {
     highlightAtomRow(row);
@@ -257,9 +282,10 @@ export function selectBondFromInstance(instanceId, options = {}) {
   });
 }
 
-/** Panel→3D: select a bond from a click on its own row in the Bonds tab. */
-export function selectBondFromRow(bondIndex, rowEl) {
-  selectBondByIndex(bondIndex, { row: rowEl });
+/** Panel→3D: select a bond from a click on its own row in the Bonds tab.
+ *  Grouped rows pass their member list so the group needn't be recomputed. */
+export function selectBondFromRow(bondIndex, rowEl, linkedBondIndexes = null) {
+  selectBondByIndex(bondIndex, { row: rowEl, linkedBondIndexes });
 }
 
 // =============================================
@@ -270,22 +296,34 @@ function findPolyhedronMesh(key) {
   return groups.polyhedraGroup?.children?.find((m) => m.userData?.key === key) ?? null;
 }
 
+/** All meshes belonging to a periodic-copy group of polyhedra. */
+function findPolyhedronGroupMeshes(groupKey) {
+  return (groups.polyhedraGroup?.children ?? []).filter((m) =>
+    m.userData?.type === 'polyhedron'
+    && (m.userData.groupKey ?? polyhedronGroupKey(m.userData.key ?? '')) === groupKey);
+}
+
 export function clearPolyhedronSelection() {
   const sel = highlightHover.currentlyHighlightedPolyhedron;
   if (sel) {
-    // The mesh may already be gone after an async polyhedra rebuild — fine.
-    const mesh = findPolyhedronMesh(sel.key);
-    if (mesh?.material?.emissive) {
-      mesh.material.emissive.set(0x000000);
-      mesh.material.emissiveIntensity = 1;
+    // The meshes may already be gone after an async polyhedra rebuild — fine.
+    const targets = sel.groupKey
+      ? findPolyhedronGroupMeshes(sel.groupKey)
+      : [findPolyhedronMesh(sel.key)].filter(Boolean);
+    for (const mesh of targets) {
+      if (mesh?.material?.emissive) {
+        mesh.material.emissive.set(0x000000);
+        mesh.material.emissiveIntensity = 1;
+      }
     }
   }
   clearUIHighlight();
   highlightHover.currentlyHighlightedPolyhedron = null;
 }
 
-/** Locate (and if needed lazily build + expand) the Poly-tab row for a polyhedron. */
-function findPolyhedronRow(catKey, key) {
+/** Locate (and if needed lazily build + expand) the Poly-tab row for a
+ *  polyhedron (its group row when a groupKey is given — linked mode). */
+function findPolyhedronRow(catKey, key, groupKey = null) {
   const composition = ensureAtomPanelVisible('polyhedra', 'infoPolyControls');
   if (!composition) return null;
   general.structurePanelMode = 'polyhedra';
@@ -306,8 +344,11 @@ function findPolyhedronRow(catKey, key) {
   }
 
   for (const row of listContainer.querySelectorAll('.individual-polyhedron-row')) {
-    if (/** @type {HTMLElement} */ (row).dataset.polyKey === key) {
-      return /** @type {HTMLElement} */ (row);
+    const el = /** @type {HTMLElement} */ (row);
+    // In linked mode a 3D pick may land on a non-representative copy — its
+    // group row is matched by data-poly-group-key, not by the member key.
+    if (groupKey ? el.dataset.polyGroupKey === groupKey : el.dataset.polyKey === key) {
+      return el;
     }
   }
   return null;
@@ -318,25 +359,35 @@ function findPolyhedronRow(catKey, key) {
  * amber panel-row highlight. Selecting the already-selected one deselects.
  */
 function selectPolyhedronByKey(key, catKey, options = {}) {
-  if (highlightHover.currentlyHighlightedPolyhedron?.key === key) {
+  // "Link periodic copies" on: the selection unit is the whole group of
+  // periodic-image copies — all copies glow, and the grouped row is the target.
+  const linking = general.linkPeriodicCopies !== false;
+  const groupKey = linking ? polyhedronGroupKey(key) : null;
+
+  const cur = highlightHover.currentlyHighlightedPolyhedron;
+  if (cur && (linking ? cur.groupKey === groupKey : cur.key === key)) {
     clearPolyhedronSelection();
     return;
   }
-  const mesh = findPolyhedronMesh(key);
-  if (!mesh?.material?.emissive) return;
+  const meshes = linking
+    ? findPolyhedronGroupMeshes(groupKey)
+    : [findPolyhedronMesh(key)].filter(Boolean);
+  if (!meshes.length || !meshes[0]?.material?.emissive) return;
 
   clearSelectedAtoms({ reason: 'polyhedron-select' });
   clearBondSelection();
   clearPolyhedronSelection(); // restores any previous polyhedron glow
 
-  mesh.material.emissive.set(0xFF8C00);
-  mesh.material.emissiveIntensity = 1.0;
-  highlightHover.currentlyHighlightedPolyhedron = { key, catKey };
+  for (const mesh of meshes) {
+    mesh.material.emissive.set(0xFF8C00);
+    mesh.material.emissiveIntensity = 1.0;
+  }
+  highlightHover.currentlyHighlightedPolyhedron = { key, catKey, groupKey };
 
   let row = options.row ?? null;
   if (!row && options.openPanel) {
     collapseAllAtomExpansions();
-    row = findPolyhedronRow(catKey, key);
+    row = findPolyhedronRow(catKey, key, groupKey);
   }
   if (row) {
     highlightAtomRow(row);
