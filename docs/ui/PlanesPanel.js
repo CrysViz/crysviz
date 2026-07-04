@@ -111,6 +111,16 @@ function refreshCurrentStructurePlanesInScene() {
   structure.planes.forEach(planeDef => replacePlaneMesh(structure, planeDef));
 }
 
+/**
+ * Global "Show Planes" master (the Features window). Gates the visibility of
+ * every plane mesh (see replacePlaneMesh, which ANDs planesData.showPlanes
+ * with each plane's own `enabled`).
+ */
+export function setPlanesVisible(visible) {
+  planesData.showPlanes = !!visible;
+  refreshCurrentStructurePlanesInScene();
+}
+
 function syncAtomCutPlanesFromSelectedStructure() {
   const structure = getSelectedStructure();
   const retainedPlanes = (general.atomCutPlanes || []).filter(

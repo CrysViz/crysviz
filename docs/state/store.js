@@ -120,10 +120,12 @@ export const general = {
   useWasmBonds:true, // Use compiled WASM (cell list) for neighbour-bond pair finding (false = JS O(n²))
   serialPolyhedraAlgorithm:false, // true = single-threaded WASM; false = parallel over Web Workers
   backendViewerUpdateStride:4, // Update the viewer every N backend/NEP steps during relax/MD
-  // Feature activation flags, set by the explicit controls inside the unified
-  // feature panels (ui/panels/defaultPanels.js) — NOT by panel expand state.
+  // Feature activation flags, set by the toggles in the unified "Features"
+  // window (ui/panels/defaultPanels.js) — NOT by panel expand state. When a
+  // flag is off the corresponding feature panel is greyed out.
   forcesActive: false, // "Show Forces" toggle draws force arrows
   spinsActive: false, // "Show Spins" toggle draws spin arrows
+  fieldActive: true, // "Show Volumetric Field" toggle draws the isosurface
   comparisonActive: false, // "Show Lattice Comparison" keeps the popup synced
   structurePanelMode: "atoms",
   backendState:"none",

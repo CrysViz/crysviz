@@ -1,5 +1,5 @@
 import * as THREE from '../external/three/three.module.js';
-import { updateSpins, removeSpins } from '../render/index.js';
+import { updateSpins } from '../render/index.js';
 import { fileBrowser, general } from '../state/store.js';
 import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 import { Spin } from '../model/index.js'; // Update path
@@ -210,41 +210,8 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   content.style.overflowY = "visible";
   content.style.overflowX = "hidden";
 
-  // Master activation toggle: expanding the panel only shows the controls;
-  // drawing the spin arrows is this explicit switch.
-  const showWrapper = document.createElement("label");
-  showWrapper.className = "toggle_row toggle_container";
-
-  const showSwitch = document.createElement("span");
-  showSwitch.className = "toggle_switch";
-
-  const showCheckbox = document.createElement("input");
-  showCheckbox.type = "checkbox";
-  showCheckbox.id = "showSpinsToggle";
-  showCheckbox.checked = !!general.spinsActive;
-
-  const showSlider = document.createElement("span");
-  showSlider.className = "toggle_slider";
-
-  showSwitch.appendChild(showCheckbox);
-  showSwitch.appendChild(showSlider);
-
-  const showText = document.createElement("span");
-  showText.className = "toggle_text";
-  showText.textContent = "Show Spins";
-
-  showWrapper.appendChild(showSwitch);
-  showWrapper.appendChild(showText);
-  content.appendChild(showWrapper);
-
-  showCheckbox.addEventListener("change", () => {
-    general.spinsActive = showCheckbox.checked;
-    if (showCheckbox.checked && fileBrowser.selectedStructure?.spins?.length) {
-      updateSpins(general.spinScale ?? 1.0);
-    } else {
-      removeSpins();
-    }
-  });
+  // Activation ("Show Spins") lives in the Features window; this panel only
+  // configures how the spins are drawn.
 
   // --- Global Scaling slider ---
   const lengthWrapper = document.createElement("div");

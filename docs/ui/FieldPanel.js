@@ -1,5 +1,5 @@
 import { fileBrowser, app, general, groups } from '../state/store.js';
-import { updateField, setActiveField, toggleFieldVisibility } from '../render/index.js';
+import { updateField, setActiveField } from '../render/index.js';
 import {
   getIsosurfaceMaterialSettings,
   getIsosurfaceTriangleSortingEnabled,
@@ -176,13 +176,6 @@ export function addFieldPanel(target = "cvPanelBody-field") {
     <div class="control-group">
       <label class="toggle_row toggle_container">
         <span class="toggle_switch">
-          <input type="checkbox" id="ShowFieldToggle" ${fieldBrowser.selectedField.isVisible ? 'checked' : ''}>
-          <span class="toggle_slider"></span>
-        </span>
-        <span class="toggle_text"> Show Field </span>
-      </label>
-      <label class="toggle_row toggle_container">
-        <span class="toggle_switch">
           <input type="checkbox" id="FieldAbsoluteValueToggle" ${fieldBrowser.selectedField.useAbsoluteIsoValue ? 'checked' : ''}>
           <span class="toggle_slider"></span>
         </span>
@@ -316,7 +309,6 @@ export function removeFieldPanel(target = "cvPanelBody-field") {
 function setupFieldControlEvents(fields, container) {
   const slider = document.getElementById('isoSlider');
   const valueDisplay = document.getElementById('isoValue');
-  const showFieldToggle = document.getElementById('ShowFieldToggle');
   const absoluteValueCheckbox = document.getElementById('FieldAbsoluteValueToggle');
   const logScaleCheckbox = document.getElementById('LogSliderScaleToggle');
   const triangleSortCheckbox = document.getElementById('FieldTriangleSortToggle');
@@ -455,17 +447,6 @@ function setupFieldControlEvents(fields, container) {
     fieldBrowser.selectedField.isoValue = isoValue; // Update the isoValue on the selected field for memory
   });
 
-  showFieldToggle.addEventListener('change', function () {
-    if (!fieldBrowser.selectedField) return;
-
-    fieldBrowser.selectedField.isVisible = showFieldToggle.checked;
-
-    // Re-render the field with the updated visibility setting
-    toggleFieldVisibility(showFieldToggle.checked);
-
-    updateField(fieldBrowser.selectedField.isoValue);
-  });
-
   absoluteValueCheckbox.addEventListener('change', function () {
     if (!fieldBrowser.selectedField) return;
 
@@ -520,7 +501,6 @@ function setupFieldControlEvents(fields, container) {
         valueDisplay.textContent = isoValue.toExponential(3);
         // Update the Absolute Iso Value toggle state based on the newly selected field
         absoluteValueCheckbox.checked = fieldBrowser.selectedField.useAbsoluteIsoValue;
-        showFieldToggle.checked = fieldBrowser.selectedField.isVisible; // default to visible if not set
 
         // Update field with iso value for newly selected field
         updateField(isoValue);

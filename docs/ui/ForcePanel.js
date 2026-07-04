@@ -24,32 +24,8 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   const content = document.createElement("div");
   content.id = "forceControlsContent";
 
-  // Master activation toggle: expanding the panel only shows the controls;
-  // drawing the force arrows is this explicit switch.
-  const showWrapper = document.createElement("label");
-  showWrapper.className = "toggle_row toggle_container";
-
-  const showSwitch = document.createElement("span");
-  showSwitch.className = "toggle_switch";
-
-  const showCheckbox = document.createElement("input");
-  showCheckbox.type = "checkbox";
-  showCheckbox.id = "showForcesToggle";
-  showCheckbox.checked = !!general.forcesActive;
-
-  const showSlider = document.createElement("span");
-  showSlider.className = "toggle_slider";
-
-  showSwitch.appendChild(showCheckbox);
-  showSwitch.appendChild(showSlider);
-
-  const showText = document.createElement("span");
-  showText.className = "toggle_text";
-  showText.textContent = "Show Forces";
-
-  showWrapper.appendChild(showSwitch);
-  showWrapper.appendChild(showText);
-  content.appendChild(showWrapper);
+  // Activation ("Show Forces") lives in the Features window; this panel only
+  // configures how the forces are drawn.
 
   // Force Length Scale slider
   const sliderWrapper = document.createElement("div");
@@ -124,15 +100,6 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   targetPanel.appendChild(group);
 
   // --- Events ---
-  showCheckbox.addEventListener("change", () => {
-    general.forcesActive = showCheckbox.checked;
-    if (showCheckbox.checked && fileBrowser.selectedStructure?.forces?.length) {
-      updateForces(general.forceScale ?? 1.0);
-    } else {
-      removeForces();
-    }
-  });
-
   slider.addEventListener("input", () => {
     let val = parseFloat(slider.value);
     if (Math.abs(val - 1) < 0.05) val = 1;

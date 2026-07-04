@@ -3,10 +3,10 @@
 // migration is concentrated here; the builders themselves only need to build
 // into the panel body they are given.
 
-import { registerPanel, resetAllPanels } from './PanelManager.js';
+import { registerPanel, resetAllPanels, refreshPanelAvailability } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
-import { updateForces, removeForces, updateSpins, removeSpins } from '../../render/index.js';
+import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility } from '../../render/index.js';
 import { addCameraPanel } from '../CameraPanel.js';
 import { addColorPanel } from '../ColorPanel.js';
 import { collapseAllAtomExpansions } from '../WindowAndSceneControls.js';
@@ -14,8 +14,8 @@ import { addTrajectoryPlayer, removeTrajectoryPlayer } from '../TrajectoryPanel.
 import { addCompPanel, removeCompPanel } from '../ComparisonPanel.js';
 import { addForcePanel, removeForcePanel } from '../ForcePanel.js';
 import { addSpinPanel, removeSpinPanel } from '../SpinPanel.js';
-import { addFieldPanel } from '../FieldPanel.js';
-import { addPlanesPanel, removePlanesPanel } from '../PlanesPanel.js';
+import { addFieldPanel, fieldBrowser } from '../FieldPanel.js';
+import { addPlanesPanel, removePlanesPanel, setPlanesVisible, planesData } from '../PlanesPanel.js';
 import { addBondPanel, removeBondPanel } from '../BondPanel.js';
 import { removeHistogramPanel } from '../AnalysisPanels/BondAnalysisPanel.js';
 import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../LatticeSupercellPanel.js';
@@ -58,9 +58,100 @@ function stashStaticRows(inputIds) {
   }
 }
 
-const BOND_ROWS = ['showBonds', 'PBCBondToggle', 'bondWidth'];
+const BOND_ROWS = ['PBCBondToggle', 'bondWidth'];
 const CELL_ROWS = ['showLattice', 'showAxes', 'showPeriodic'];
-const POLYHEDRA_ROWS = ['showPolyhedra', 'completePolyhedraToggle'];
+
+// ---- Features window toggle rows ---------------------------------------------
+
+/** The static toggle row (label) containing the given input id, detached from
+ *  the staging block. Returns null if absent. */
+function detachStaticRow(inputId) {
+  const input = document.getElementById(inputId);
+  return input ? input.closest('label') : null;
+}
+
+/** Build a checkbox toggle row matching the static ones (toggle_styles.css). */
+function makeToggleRow(id, labelText, checked, onChange) {
+  const row = document.createElement('label');
+  row.className = 'toggle_row toggle_container';
+  const sw = document.createElement('span');
+  sw.className = 'toggle_switch';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.id = id;
+  cb.checked = checked;
+  const slider = document.createElement('span');
+  slider.className = 'toggle_slider';
+  sw.appendChild(cb);
+  sw.appendChild(slider);
+  const text = document.createElement('span');
+  text.className = 'toggle_text';
+  text.textContent = labelText;
+  row.appendChild(sw);
+  row.appendChild(text);
+  cb.addEventListener('change', () => onChange(cb.checked));
+  return row;
+}
+
+/** Build the Features window body: master show-toggles for each feature, in a
+ *  single toggle group. Static rows (atoms/bonds/polyhedra/complete) are moved
+ *  from the staging block; the rest are new toggles driving the same state the
+ *  in-panel toggles used to. */
+function buildFeaturesBody(body) {
+  const group = document.createElement('div');
+  group.className = 'toggle_group';
+
+  const showAtoms = detachStaticRow('showAtoms');
+  if (showAtoms) group.appendChild(showAtoms);
+
+  const showBonds = detachStaticRow('showBonds');
+  if (showBonds) group.appendChild(showBonds);
+
+  group.appendChild(makeToggleRow('showForcesToggle', 'Show Forces', !!general.forcesActive, (on) => {
+    general.forcesActive = on;
+    if (on && fileBrowser.selectedStructure?.forces?.length) updateForces(general.forceScale ?? 1.0);
+    else removeForces();
+    refreshPanelAvailability();
+  }));
+
+  group.appendChild(makeToggleRow('showSpinsToggle', 'Show Spins', !!general.spinsActive, (on) => {
+    general.spinsActive = on;
+    if (on && fileBrowser.selectedStructure?.spins?.length) updateSpins(general.spinScale ?? 1.0);
+    else removeSpins();
+    refreshPanelAvailability();
+  }));
+
+  const showPolyhedra = detachStaticRow('showPolyhedra');
+  if (showPolyhedra) group.appendChild(showPolyhedra);
+
+  const completePolyhedra = detachStaticRow('completePolyhedraToggle');
+  if (completePolyhedra) group.appendChild(completePolyhedra);
+
+  group.appendChild(makeToggleRow('showFieldToggle', 'Show Volumetric Field', general.fieldActive !== false, (on) => {
+    general.fieldActive = on;
+    if (fieldBrowser.selectedField) {
+      fieldBrowser.selectedField.isVisible = on;
+      toggleFieldVisibility(on);
+      updateField();
+    }
+    refreshPanelAvailability();
+  }));
+
+  group.appendChild(makeToggleRow('showPlanesMasterToggle', 'Show Planes', planesData.showPlanes !== false, (on) => {
+    setPlanesVisible(on);
+    refreshPanelAvailability();
+  }));
+
+  body.appendChild(group);
+
+  // The moved static toggles (Show Bonds / Show Polyhedra) also grey their
+  // feature panel; a second listener re-evaluates availability without
+  // disturbing ControlsWiring's own onchange handler.
+  for (const id of ['showBonds', 'showPolyhedra']) {
+    const cb = document.getElementById(id);
+    if (cb) cb.addEventListener('change', () => refreshPanelAvailability());
+  }
+}
 
 export function registerDefaultPanels() {
   // ---- floating trio: measure / view / structure info -----------------------
@@ -160,12 +251,20 @@ export function registerDefaultPanels() {
     defaults: { docked: true, order: 0, collapsed: false, barCollapsed: true },
   });
 
+  registerPanel({
+    id: 'features',
+    title: 'Features',
+    lifecycle: 'persistent',
+    hiddenUntilStructure: true,
+    buildContent: buildFeaturesBody,
+    defaults: { docked: true, order: 2, collapsed: false },
+  });
+
   //
   // Feature panels are lifecycle 'rebuild': their content is built lazily on
-  // first expand and rebuilt when the selected structure changes. Expanding
-  // only shows the controls — heavy features are activated by explicit
-  // controls inside each panel (Show Forces/Spins/Field toggles, the play
-  // button, Add Plane, ...).
+  // first expand and rebuilt when the selected structure changes. Each is
+  // greyed out (available()=false) when its structure lacks the data OR its
+  // "Show ..." master toggle in the Features window is off.
 
   registerPanel({
     id: 'trajectory',
@@ -197,7 +296,9 @@ export function registerDefaultPanels() {
     title: 'Forces',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
-    available() { return (fileBrowser.selectedStructure?.forces?.length ?? 0) > 0; },
+    available() {
+      return (fileBrowser.selectedStructure?.forces?.length ?? 0) > 0 && !!general.forcesActive;
+    },
     buildContent(body) {
       addForcePanel(body.id);
       // Re-apply the activation state after a rebuild (structure switch).
@@ -215,7 +316,9 @@ export function registerDefaultPanels() {
     title: 'Spins',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
-    available() { return (fileBrowser.selectedStructure?.spins?.length ?? 0) > 0; },
+    available() {
+      return (fileBrowser.selectedStructure?.spins?.length ?? 0) > 0 && !!general.spinsActive;
+    },
     buildContent(body) {
       addSpinPanel(body.id);
       if (general.spinsActive) {
@@ -233,10 +336,11 @@ export function registerDefaultPanels() {
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     available() {
-      return (fileBrowser.selectedStructure?.volumetricFields?.fields?.length ?? 0) > 0;
+      return (fileBrowser.selectedStructure?.volumetricFields?.fields?.length ?? 0) > 0
+        && general.fieldActive !== false;
     },
-    // Field meshes are managed by the Show Field toggle and the row/step
-    // switch logic (FileBrowswerPanel), not by panel teardown.
+    // Field meshes are managed by the Features "Show Volumetric Field" toggle
+    // and the row/step switch logic (FileBrowswerPanel), not by panel teardown.
     buildContent(body) { addFieldPanel(body.id); },
     defaults: { docked: true, order: 50, collapsed: true },
   });
@@ -246,7 +350,7 @@ export function registerDefaultPanels() {
     title: 'Crystal Planes',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
-    available() { return !!fileBrowser.selectedStructure; },
+    available() { return !!fileBrowser.selectedStructure && planesData.showPlanes !== false; },
     buildContent(body) { addPlanesPanel(body.id); },
     onDestroyContent() { removePlanesPanel(); },
     defaults: { docked: true, order: 60, collapsed: true },
@@ -257,7 +361,7 @@ export function registerDefaultPanels() {
     title: 'Bonds',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
-    available() { return !!fileBrowser.selectedStructure; },
+    available() { return !!fileBrowser.selectedStructure && general.showBonds !== false; },
     buildContent(body) {
       addBondPanel(body.id);
       adoptStaticRows(body, BOND_ROWS);
@@ -303,15 +407,9 @@ export function registerDefaultPanels() {
     title: 'Polyhedra',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
-    available() { return !!fileBrowser.selectedStructure; },
-    buildContent(body) {
-      addPolyhedraPanel(body.id);
-      adoptStaticRows(body, POLYHEDRA_ROWS);
-    },
-    onDestroyContent() {
-      stashStaticRows(POLYHEDRA_ROWS);
-      removePolyhedraPanel();
-    },
+    available() { return !!fileBrowser.selectedStructure && general.showPolyhedra !== false; },
+    buildContent(body) { addPolyhedraPanel(body.id); },
+    onDestroyContent() { removePolyhedraPanel(); },
     defaults: { docked: true, order: 90, collapsed: true },
   });
 
@@ -333,7 +431,8 @@ export function registerDefaultPanels() {
       body.appendChild(storageHeader);
       const sw = document.getElementById('StorageOptionSwitch');
       if (sw) body.appendChild(sw);
-      adoptStaticRows(body, ['showAtoms', 'atomSize'], false);
+      // Atom size (Show Atoms lives in the Features window).
+      adoptStaticRows(body, ['atomSize'], false);
       addColorPanel(body.id);
       addCameraPanel(body.id);
       // Restore every window to its default placement.

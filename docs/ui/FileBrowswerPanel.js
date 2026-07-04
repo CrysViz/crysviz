@@ -573,6 +573,8 @@ function updateStructureFromRowAndStep(rowIndex) {
     fieldBrowser.setAvailableFields(fileBrowser.selectedStructure.volumetricFields.fields);
     fieldBrowser.setSelectedField(0);
     const selectedField = fieldBrowser.selectedField;
+    // Honor the global "Show Volumetric Field" toggle (Features window).
+    selectedField.isVisible = general.fieldActive;
     setActiveField(selectedField);
     updateField();
   }
