@@ -37,6 +37,10 @@ export class PanelWindow {
     // dockShiftBase remembers the pre-displacement left position.
     this.dockShifted = false;
     this.dockShiftBase = 0;
+    // Remembered dock slot: the id of the panel this one sat above when it was
+    // last undocked, so re-docking can restore that position (null = was last).
+    this.redockBeforeId = null;
+    this.redockRemembered = false;
     this._moving = false; // a floating drag is in progress
     // Lifecycle/layout bookkeeping maintained by PanelManager:
     this.built = false;        // content has been built into the body

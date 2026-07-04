@@ -31,7 +31,7 @@ const hooks = {
   },
   onToggleDock(panel) {
     if (panel.docked) floatPanel(panel);
-    else dockPanel(panel, true); // docking a floating window puts it on top
+    else redockPanel(panel); // restore the dock slot it last occupied
   },
   onClose(panel) {
     if (panel.def.onClose) panel.def.onClose(panel);
@@ -335,10 +335,41 @@ function dockPanel(panel, atTop = false) {
     const first = dockedPanels().find((sib) => sib !== panel);
     before = first ? first.el : null;
   } else {
-    for (const sib of dockedPanels()) {
-      if (sib === panel) continue;
-      if (panel.sortKey < sib.sortKey) { before = sib.el; break; }
+    before = sortKeyBefore(panel);
+  }
+  dockEl.insertBefore(panel.el, before);
+  panel.markDocked();
+  resequenceSortKeys();
+  scheduleSave();
+}
+
+/** The docked-sibling element this panel should be inserted before to honor
+ *  its sort key (null → append at the end). */
+function sortKeyBefore(panel) {
+  for (const sib of dockedPanels()) {
+    if (sib === panel) continue;
+    if (panel.sortKey < sib.sortKey) return sib.el;
+  }
+  return null;
+}
+
+/**
+ * Re-dock a floating panel into the slot it last occupied (remembered on
+ * undock). If the panel it sat above is gone, fall back to sort-key order.
+ */
+function redockPanel(panel) {
+  let before;
+  if (panel.redockRemembered) {
+    if (panel.redockBeforeId === null) {
+      before = null; // was the last docked panel
+    } else {
+      const anchor = panels.get(panel.redockBeforeId);
+      before = (anchor && anchor.docked && anchor.el.parentElement === dockEl)
+        ? anchor.el
+        : sortKeyBefore(panel);
     }
+  } else {
+    before = sortKeyBefore(panel);
   }
   dockEl.insertBefore(panel.el, before);
   panel.markDocked();
@@ -347,6 +378,14 @@ function dockPanel(panel, atTop = false) {
 }
 
 function floatPanel(panel, pos) {
+  // Remember the dock slot (the panel it sits above) so re-docking restores it.
+  if (panel.docked) {
+    const siblings = dockedPanels();
+    const idx = siblings.indexOf(panel);
+    const after = idx >= 0 ? siblings[idx + 1] : null;
+    panel.redockBeforeId = after ? after.id : null;
+    panel.redockRemembered = true;
+  }
   if (!pos) {
     // Undocking: open near the panel's current on-screen spot so the
     // transition reads as "popping out", then remember it as the float pos.
