@@ -134,7 +134,7 @@ export const defaultColorMap = {
 
 export function getAtomVisSettings(opacity=1.0) {
   // Convert to THREE.Color
-  if (general.matte) {
+  if (general.renderStyle === 'matte') {
     return {
       transparent: opacity !== 1.0,
       roughness: 1.0,
@@ -155,7 +155,7 @@ export function getAtomVisSettings(opacity=1.0) {
 };
 
 export function  getBondVisSettings(color,opacity=1) {
-    if (general.matte){
+    if (general.renderStyle === 'matte'){
      return {
       color,
       opacity,

@@ -76,8 +76,8 @@ export const groups = {
 };
 
 
-export const general = {  
-  matte:false,
+export const general = {
+  renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
   ForceMin:1e-4,
   ForceMax:2.5,
   BondMin:1.1,

@@ -5,6 +5,7 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
+import {createStyledMaterial} from './MaterialStyles.js'
 
 
 
@@ -356,13 +357,10 @@ export function createBondsMesh(bondCount) {
 
   // Material: copy atom material logic
   const bondVisSettings = getBondVisSettings()
-  const material = new THREE.MeshPhysicalMaterial({
+  const material = createStyledMaterial({
+    ...bondVisSettings,
     transparent: false,
     opacity: 1.0,
-    roughness: bondVisSettings.roughness,
-    metalness: bondVisSettings.metalness,
-    clearcoat: bondVisSettings.clearcoat,
-    clearcoatRoughness: bondVisSettings.clearcoatRoughness,
   });
 
   material.onBeforeCompile = (shader) => {

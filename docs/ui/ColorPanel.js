@@ -1,7 +1,7 @@
 import { createColorPicker } from './ColorPickerModule.js';
 import {updateVisualization} from '../core/crystal-viewer.js';  
 import { groups,fileBrowser, general} from '../state/store.js';
-import {getAtomVisSettings,getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
+import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
@@ -324,54 +324,25 @@ export function addColorPanel(target = "colorContainer") {
     id: "colorControlsContent"
   });
 
-  // Matte/Metallic Toggle
-  const matteToggle = document.createElement("label");
-  matteToggle.className = "camera_toggle";
-
-  const metallicLabel = document.createElement("span");
-  metallicLabel.className = "camera_label";
-  metallicLabel.textContent = "Metallic";
-
-  const matteSwitch = document.createElement("span");
-  matteSwitch.className = "toggle_switch";
-
-  const matteCheckbox = document.createElement("input");
-  matteCheckbox.type = "checkbox";
-  matteCheckbox.id = "matteColors";
-
-  const matteSlider = document.createElement("span");
-  matteSlider.className = "toggle_slider_dual";
-
-  matteSwitch.appendChild(matteCheckbox);
-  matteSwitch.appendChild(matteSlider);
-
-  const matteLabel = document.createElement("span");
-  matteLabel.className = "camera_label_r";
-  matteLabel.textContent = "Matte";
-
-  matteToggle.appendChild(metallicLabel);
-  matteToggle.appendChild(matteSwitch);
-  matteToggle.appendChild(matteLabel);
-
-  content.appendChild(matteToggle);
-
-  matteCheckbox.addEventListener("change", () => {
-    general.matte = !general.matte;
-    let atomVisSettings = getAtomVisSettings();
-    groups.atomsMesh.material.clearcoatRoughness = atomVisSettings.clearcoatRoughness;
-    groups.atomsMesh.material.clearcoat = atomVisSettings.clearcoat;
-    groups.atomsMesh.material.metalness = atomVisSettings.metalness;
-    groups.atomsMesh.material.roughness = atomVisSettings.roughness;
-    groups.atomsMesh.material.needsUpdate = true;
-
-    let bondsVisSettings = getBondVisSettings();
-    groups.bondsMesh.material.clearcoatRoughness = bondsVisSettings.clearcoatRoughness;
-    groups.bondsMesh.material.clearcoat = bondsVisSettings.clearcoat;
-    groups.bondsMesh.material.metalness = bondsVisSettings.metalness;
-    groups.bondsMesh.material.roughness = bondsVisSettings.roughness;
-    groups.bondsMesh.material.needsUpdate = true;
-    updateBonds();
+  // Render style (material) dropdown. Switching style rebuilds the meshes:
+  // cel shading uses a different material class (MeshToonMaterial), so the
+  // materials cannot just be re-parameterized in place.
+  const renderStyleMenu = createDropdown("renderStyleMenu", "Render Style", [
+    { value: "metallic", text: "Metallic", selected: general.renderStyle === "metallic" },
+    { value: "matte", text: "Matte", selected: general.renderStyle === "matte" },
+    { value: "cel", text: "Cel shading", selected: general.renderStyle === "cel" },
+  ], () => {
+    general.renderStyle = renderStyleMenu.querySelector("select").value;
+    const hasComparison = !!fileBrowser.comparisonStructure;
+    updateVisualization({
+      reRenderAtoms: true,
+      reRenderBonds: true,
+      SecondReRenderAtoms: hasComparison,
+      SecondReRenderBonds: hasComparison,
+    });
   });
+
+  content.appendChild(renderStyleMenu);
 
   const menusWrapper = createElement("div", { class: "menus_wrapper" });
 

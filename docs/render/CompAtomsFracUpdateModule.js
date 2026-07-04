@@ -7,6 +7,7 @@ import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 import {runPeriodicWrapped} from './LatticeModule.js'
 import {getAtomColor} from '../utils/ColorModule.js'
 import {finishAtomsMesh} from './AtomsFracUpdateModule.js'
+import {createStyledMaterial} from './MaterialStyles.js'
 
 
 export function rebuildSecondAtoms(structure, opacity) {
@@ -44,13 +45,10 @@ export function buildSecondAtoms(structure) {
 
   // Material: visualization-mode dependent
   const atomVisSettings = getAtomVisSettings();
-  const material = new THREE.MeshPhysicalMaterial({
+  const material = createStyledMaterial({
+    ...atomVisSettings,
     transparent: false,
     opacity: 1.0,
-    roughness: atomVisSettings.roughness,
-    metalness: atomVisSettings.metalness,
-    clearcoat: atomVisSettings.clearcoat,
-    clearcoatRoughness: atomVisSettings.clearcoatRoughness,
   });
 
   material.onBeforeCompile = (shader) => {

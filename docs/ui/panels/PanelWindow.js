@@ -92,7 +92,7 @@ export class PanelWindow {
     dockBtn.type = 'button';
     dockBtn.className = 'cv-panel-dock';
     dockBtn.title = 'Undock';
-    dockBtn.textContent = '🗗';
+    dockBtn.textContent = '↦';
 
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
@@ -229,7 +229,7 @@ export class PanelWindow {
     this.dockShifted = false;
     this.el.classList.add('cv-docked');
     this.el.classList.remove('cv-floating');
-    this.dockBtn.textContent = '🗗';
+    this.dockBtn.textContent = '↦';
     this.dockBtn.title = 'Undock';
     // Clear floating geometry.
     const s = this.el.style;

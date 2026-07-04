@@ -5,6 +5,7 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
 import { getCutPlaneMaskSign } from '../model/Plane.js';
+import {createStyledMaterial} from './MaterialStyles.js'
 import {runPeriodicWrapped} from './LatticeModule.js'
 
 import {setAtomColor}  from '../utils/ColorModule.js';
@@ -242,13 +243,10 @@ export function buildAtoms() {
 
   // Material: visualization-mode dependent
   const atomVisSettings = getAtomVisSettings();
-  const material = new THREE.MeshPhysicalMaterial({
+  const material = createStyledMaterial({
+    ...atomVisSettings,
     transparent: false,
     opacity: 1.0,
-    roughness: atomVisSettings.roughness,
-    metalness: atomVisSettings.metalness,
-    clearcoat: atomVisSettings.clearcoat,
-    clearcoatRoughness: atomVisSettings.clearcoatRoughness,
   });
 
   material.onBeforeCompile = (shader) => {
