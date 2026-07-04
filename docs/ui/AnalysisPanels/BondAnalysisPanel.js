@@ -61,7 +61,6 @@ export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabe
     title: 'Histogram',
     lifecycle: 'persistent',
     closable: true,
-    persist: false,
     onClose() { activeUpdate = null; },
     buildContent(body) {
       body.innerHTML = `
@@ -92,6 +91,10 @@ export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabe
     defaults: {
       docked: false,
       collapsed: false,
+      // Show the full title bar (floating windows default to the shrunk
+      // strip, which hides the title and the ✕ close button — a transient
+      // analysis window must look closable, like the MD monitor).
+      barCollapsed: false,
       anchor: isMobile ? { left: 4, top: 10 } : { left: 20, top: 20 },
     },
   });

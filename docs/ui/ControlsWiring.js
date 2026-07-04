@@ -10,6 +10,7 @@ import { general, groups, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter } from '../render/index.js';
 import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
+import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
 
 export function setupControlsWiring() {
   // Control handlers
@@ -87,8 +88,9 @@ export function setupControlsWiring() {
     general.atomSize = parseFloat(e.target.value);
     document.getElementById('atomSizeValue').textContent = general.atomSize.toFixed(1);
     fileBrowser.selectedStructure.elements.forEach((element, index) => {
+      const scale = fileBrowser.selectedStructure.atoms[index]?.getRadiusScale?.() ?? 1;
       fileBrowser.selectedStructure.atomImages[index].forEach(imageIndex => {
-        updateSingleAtomDiameter(imageIndex, element)
+        updateSingleAtomDiameter(imageIndex, element, scale)
        });
     });
     groups.atomsMesh.instanceMatrix.needsUpdate = true;
@@ -115,6 +117,18 @@ export function setupControlsWiring() {
       //updateVisualization();
     };
   }
+  // Axes gizmo line width control
+  const axesWidthSlider = document.getElementById('axesWidth');
+  const axesWidthValue = document.getElementById('axesWidthValue');
+  if (axesWidthSlider && axesWidthValue) {
+    axesWidthSlider.oninput = (e) => {
+      const v = parseFloat(/** @type {HTMLInputElement} */ (e.target).value);
+      if (isFinite(v)) general.axesLineWidth = v;
+      axesWidthValue.textContent = general.axesLineWidth.toFixed(3);
+      updateAxesGizmoWidth();
+    };
+  }
+
     let checkbox_polyhedra = document.getElementById("showPolyhedra");
       checkbox_polyhedra.checked = general.showPolyhedra; // persist across structure loads
 

@@ -85,10 +85,10 @@ export function resetBondLengths() {
 
 export function createBondLengthControls(targetPanel='bondControls') {
   const bondControls = document.getElementById(targetPanel);
-  if (!bondControls) { 
-    console.warn(`Could not find ${targetPanel}`)
-    return;
-  }
+  // No target is an expected state now: the Bonds window no longer hosts a
+  // #bondControls copy (the controls live in the Structure window's Bonds
+  // tab, #infoBondControls), so legacy refresh calls simply no-op.
+  if (!bondControls) return;
 
   if (!fileBrowser.selectedStructure) return;
 

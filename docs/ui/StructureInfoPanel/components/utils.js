@@ -9,6 +9,13 @@ export function clampOpacity(value) {
   return Math.max(0, Math.min(1, opacity));
 }
 
+/** Clamp a per-atom/per-species radius multiplier to the slider range. */
+export function clampRadiusScale(value) {
+  const scale = Number(value);
+  if (!Number.isFinite(scale) || scale <= 0) return 1;
+  return Math.max(0.2, Math.min(3, scale));
+}
+
 export function getElementAtomIndices(element) {
   const atomIndices = [];
   fileBrowser.selectedStructure.elements.forEach((currentElement, index) => {

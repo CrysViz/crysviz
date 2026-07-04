@@ -114,11 +114,11 @@ export function updateSecondSingleAtomColor(originalIndex, index, element, opaci
   groups.secondAtomsMesh.instanceColor.needsUpdate = true;
 }
 
-export function updateSecondSingleAtomDiameter(index, element) {
+export function updateSecondSingleAtomDiameter(index, element, scale = 1) {
   const mesh = groups.secondAtomsMesh;
   const a = mesh.instanceMatrix.array;
   const atomSize = general.atomSize;
-  const radius = (atomicRadii[element] || 1.0) * atomSize;
+  const radius = (atomicRadii[element] || 1.0) * atomSize * scale;
   const mOffset = index * 16;
   a[mOffset + 0] = radius;
   a[mOffset + 5] = radius;
@@ -152,7 +152,8 @@ export function updateSecondAtoms(structure, opacity = 1.0) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     updateSecondSingleAtomPosition(i, wrappedCart[i])
     updateSecondSingleAtomColor(originalIndex,i, wrapped.elements[i], opacity)
-    updateSecondSingleAtomDiameter(i,wrapped.elements[i])    
+    updateSecondSingleAtomDiameter(i, wrapped.elements[i],
+      structure.atoms?.[originalIndex]?.getRadiusScale?.() ?? 1)
 
     mesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);
     mesh.geometry.attributes.instanceEmissiveIntensity.setX(i, 0.0);

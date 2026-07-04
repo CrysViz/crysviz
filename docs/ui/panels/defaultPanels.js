@@ -21,6 +21,7 @@ import { removeHistogramPanel } from '../AnalysisPanels/BondAnalysisPanel.js';
 import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../LatticeSupercellPanel.js';
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
+import { makeSectionHeadline } from './sectionHeadline.js';
 
 // ---- static-row adoption ------------------------------------------------------
 //
@@ -58,8 +59,10 @@ function stashStaticRows(inputIds) {
   }
 }
 
-const BOND_ROWS = ['PBCBondToggle', 'bondWidth'];
-const CELL_ROWS = ['showLattice', 'showAxes', 'showPeriodic'];
+// (The size sliders and the cell/axes visibility toggles live in the Visual
+// window; feature windows keep only their feature-specific rows.)
+const BOND_ROWS = ['PBCBondToggle'];
+const CELL_ROWS = ['showPeriodic'];
 
 // ---- Features window toggle rows ---------------------------------------------
 
@@ -422,31 +425,41 @@ export function registerDefaultPanels() {
   });
 
   registerPanel({
+    id: 'visual',
+    title: 'Visual',
+    lifecycle: 'persistent',
+    hiddenUntilStructure: true,
+    buildContent(body) {
+      // All appearance settings in one window, grouped by concern. The
+      // feature-specific controls stay in their feature windows.
+      body.appendChild(makeSectionHeadline('Sizes'));
+      adoptStaticRows(body, ['atomSize', 'bondWidth'], false);
+      body.appendChild(makeSectionHeadline('Unit Cell'));
+      adoptStaticRows(body, ['showLattice', 'showAxes', 'axesWidth'], false);
+      body.appendChild(makeSectionHeadline('Colors & Style'));
+      addColorPanel(body.id);
+      body.appendChild(makeSectionHeadline('Camera'));
+      addCameraPanel(body.id);
+    },
+    defaults: { docked: true, order: 5, collapsed: false },
+  });
+
+  registerPanel({
     id: 'settings',
     title: 'Settings',
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
     buildContent(body) {
-      // Storage/share-URL options on top (with their info button), then atom
-      // visibility/size, color-map settings and camera settings. Per-feature
-      // toggles (bonds, cell, polyhedra) live in their feature windows.
+      // Storage/share-URL options (with their info button), then window drag
+      // behavior. Visual settings live in the Visual window.
       const info = document.getElementById('storageInfoButton');
       const infoWrap = info && info.closest('.info-button-panel');
       if (infoWrap) body.appendChild(infoWrap);
-      // A <label> renders with the same font as the "Atom Size" etc. labels.
-      const storageHeader = document.createElement('label');
-      storageHeader.textContent = 'Local storage';
-      body.appendChild(storageHeader);
+      body.appendChild(makeSectionHeadline('Local storage'));
       const sw = document.getElementById('StorageOptionSwitch');
       if (sw) body.appendChild(sw);
-      // Atom size (Show Atoms lives in the Features window).
-      adoptStaticRows(body, ['atomSize'], false);
-      addColorPanel(body.id);
-      addCameraPanel(body.id);
       // Window drag behavior: dragging across the dock boundary docks/undocks.
-      const winHeader = document.createElement('label');
-      winHeader.textContent = 'Windows';
-      body.appendChild(winHeader);
+      body.appendChild(makeSectionHeadline('Windows'));
       const dragGroup = document.createElement('div');
       dragGroup.className = 'toggle_group';
       dragGroup.appendChild(makeToggleRow('dragIntoDockToggle', 'Drag into dock',
@@ -463,6 +476,7 @@ export function registerDefaultPanels() {
       resetBtn.addEventListener('click', () => resetAllPanels());
       body.appendChild(resetBtn);
     },
-    defaults: { docked: true, order: 5, collapsed: false },
+    // The very last window in the dock.
+    defaults: { docked: true, order: 100, collapsed: false },
   });
 }

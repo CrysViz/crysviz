@@ -425,11 +425,11 @@ function syncAtomMaterialTransparency(baseOpacity = 1.0) {
   mesh.material.needsUpdate = true;
 }
 
-export function updateSingleAtomDiameter(index, element) {
+export function updateSingleAtomDiameter(index, element, scale = 1) {
   const mesh = groups.atomsMesh;
   const a = mesh.instanceMatrix.array;
   const atomSize = general.atomSize;
-  const radius = (atomicRadii[element] || 1.0) * atomSize;
+  const radius = (atomicRadii[element] || 1.0) * atomSize * scale;
   const mOffset = index * 16;
   a[mOffset + 0] = radius;
   a[mOffset + 5] = radius;
@@ -456,7 +456,7 @@ export function updateAtoms(opacity = 1.0) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     updateSingleAtomPosition(i, wrappedCart[i])
     updateSingleAtomColor(originalIndex,i, wrapped.elements[i])
-    updateSingleAtomDiameter(i,wrapped.elements[i])    
+    updateSingleAtomDiameter(i, wrapped.elements[i], atoms[originalIndex].getRadiusScale?.() ?? 1)
     updateSingleAtomOpacity(i, atoms[originalIndex].getOpacity?.() ?? atoms[originalIndex].opacity ?? 1)
     updateSingleAtomCutPlaneImmunity(i, atoms[originalIndex].cutPlaneImmune)
 

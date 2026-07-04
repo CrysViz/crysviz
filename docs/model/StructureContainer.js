@@ -31,6 +31,7 @@ export class StructureContainer {
           atom.opacity = targetStructure.atoms[atomIndex].opacity;
           atom.elementColor = targetStructure.atoms[atomIndex].elementColor;
           atom.elementOpacity = targetStructure.atoms[atomIndex].elementOpacity;
+          atom.radiusScale = targetStructure.atoms[atomIndex].radiusScale ?? 1;
         }
       });
 

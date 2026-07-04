@@ -1,10 +1,11 @@
 import { fileBrowser, groups, general } from '../../../state/store.js';
 import { colorHexToCss, getAtomColor, hexToRgba } from '../../../utils/ColorModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
-import { updateSingleAtomColor, updateSingleAtomOpacity } from '../../../render/AtomsFracUpdateModule.js';
+import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter } from '../../../render/AtomsFracUpdateModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
 import { updatePolyhedraColors } from '../../../render/index.js';
-import { clampOpacity, updateAtomCoordinates } from './utils.js';
+import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
+import { clampOpacity, clampRadiusScale, updateAtomCoordinates } from './utils.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createSpinForceEditor } from './SpinForceEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
@@ -38,6 +39,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   const currentColor = safeColor(getAtomColor(atomIndex));
   const currentOpacity = fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? fileBrowser.selectedStructure.atoms[atomIndex].opacity ?? 1;
+  const currentRadiusScale = fileBrowser.selectedStructure.atoms[atomIndex].getRadiusScale?.() ?? 1;
 
   // Atom name and coordinates container
   const nameContainer = document.createElement('div');
@@ -190,8 +192,33 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   atomAlphaRow.appendChild(atomAlphaSlider);
   atomAlphaRow.appendChild(atomAlphaValue);
 
+  // Size (per-atom radius multiplier), same row layout as Alpha.
+  const atomSizeRow = document.createElement('div');
+  atomSizeRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:6px;';
+  const atomSizeLabel = document.createElement('span');
+  atomSizeLabel.textContent = 'Size';
+  atomSizeLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+  const atomSizeSlider = document.createElement('input');
+  atomSizeSlider.type = 'range';
+  atomSizeSlider.min = '0.2';
+  atomSizeSlider.max = '3';
+  atomSizeSlider.step = '0.05';
+  atomSizeSlider.value = String(currentRadiusScale);
+  atomSizeSlider.style.cssText = 'flex:1;';
+  const atomSizeValue = document.createElement('input');
+  atomSizeValue.type = 'number';
+  atomSizeValue.min = '0.2';
+  atomSizeValue.max = '3';
+  atomSizeValue.step = '0.05';
+  atomSizeValue.value = currentRadiusScale.toFixed(2);
+  atomSizeValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+  atomSizeRow.appendChild(atomSizeLabel);
+  atomSizeRow.appendChild(atomSizeSlider);
+  atomSizeRow.appendChild(atomSizeValue);
+
   editor.appendChild(topRowIndiv);
   editor.appendChild(atomAlphaRow);
+  editor.appendChild(atomSizeRow);
   editor.appendChild(buttonRowIndiv);
 
   // Coordinate editor
@@ -300,6 +327,24 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   atomAlphaSlider.oninput = (e) => applyIndividualOpacity(/** @type {any} */ (e.target).value);
   atomAlphaValue.oninput = (e) => applyIndividualOpacity(/** @type {any} */ (e.target).value);
 
+  function applyIndividualRadiusScale(rawValue) {
+    const value = clampRadiusScale(rawValue);
+    atomSizeSlider.value = String(value);
+    atomSizeValue.value = value.toFixed(2);
+    const structure = fileBrowser.selectedStructure;
+    linkedAtomIndices.forEach((linkedAtomIndex) => {
+      structure.atoms[linkedAtomIndex].setRadiusScale(value);
+      structure.atomImages[linkedAtomIndex]?.forEach((imageIndex) => {
+        updateSingleAtomDiameter(imageIndex, structure.elements[linkedAtomIndex], value);
+      });
+    });
+    groups.atomsMesh.instanceMatrix.needsUpdate = true;
+    updateMeasurementMarkers();
+  }
+
+  atomSizeSlider.oninput = (e) => applyIndividualRadiusScale(/** @type {any} */ (e.target).value);
+  atomSizeValue.oninput = (e) => applyIndividualRadiusScale(/** @type {any} */ (e.target).value);
+
   colorBtn.onclick = (e) => {
     e.stopPropagation();
     const shouldOpen = editor.style.display === 'none';
@@ -386,6 +431,7 @@ AtomColorResetBtn.onclick = () => {
     }
 
     atom.resetToElementOpacity();
+    atom.resetRadiusScale?.();
 
     structure.atomImages[linkedAtomIndex]?.forEach((imageIndex) => {
       if (general.bondsColor == "elements") {
@@ -419,6 +465,7 @@ AtomColorResetBtn.onclick = () => {
   colorBtn.style.background = hexToRgba(resetColor, 0.8);
 
   applyIndividualOpacity(fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? 1);
+  applyIndividualRadiusScale(fileBrowser.selectedStructure.atoms[atomIndex].getRadiusScale?.() ?? 1);
   onColorChange();
   updateVisualization({
     bondsUpdate: false,
