@@ -20,7 +20,15 @@ function symbolCase(sym) {
 
 const EV_A3_TO_GPA = 160.21766208;
 
-function deformationFromStress(stress, cellStep, targetPressureEvA3 = 0) {
+// Cell relaxation: FIRE on the 6 Voigt strain components, independent of the
+// atomic FIRE state (no combined atom+cell vector, so no ASE-style cell-factor
+// norm balancing is needed). Generalized force on strain is
+// g = -(sym(σ) + P_target·I); the first step reproduces the legacy fixed step
+// dε = -cellStep·g, and velocity accumulation grows it adaptively from there.
+// That matters: a sensible strain step is ~σ/B (B = bulk modulus, ~0.6 eV/Å³
+// for Si), i.e. an effective cellStep of ~1/B ≈ 1.6 — the legacy 0.002 was
+// ~800× under-stepped. dtMax is chosen so dtMax² ≈ 900·cellStep ≈ 1/B.
+function deformationFromStress(stress, cellFire, targetPressureEvA3 = 0) {
   const sym = [
     [0, 0, 0],
     [0, 0, 0],
@@ -38,18 +46,45 @@ function deformationFromStress(stress, cellStep, targetPressureEvA3 = 0) {
     sym[i][i] += targetPressureEvA3;
   }
 
+  // Voigt [xx, yy, zz, yz, xz, xy]
+  const g = [-sym[0][0], -sym[1][1], -sym[2][2], -sym[1][2], -sym[0][2], -sym[0][1]];
+  const v = cellFire.v;
+  let power = 0;
+  let v2 = 0;
+  let g2 = 0;
+  for (let i = 0; i < 6; i += 1) {
+    power += g[i] * v[i];
+    v2 += v[i] * v[i];
+    g2 += g[i] * g[i];
+  }
+  if (power > 0) {
+    const scale = g2 > 0 ? Math.sqrt(v2 / g2) : 0;
+    for (let i = 0; i < 6; i += 1) {
+      v[i] = (1 - cellFire.alpha) * v[i] + cellFire.alpha * scale * g[i];
+    }
+    cellFire.nPos += 1;
+    if (cellFire.nPos > FIRE_N_MIN) {
+      cellFire.dt = Math.min(cellFire.dt * FIRE_F_INC, cellFire.dtMax);
+      cellFire.alpha *= FIRE_F_ALPHA;
+    }
+  } else {
+    v.fill(0);
+    cellFire.alpha = FIRE_ALPHA_START;
+    cellFire.dt *= FIRE_F_DEC;
+    cellFire.nPos = 0;
+  }
+  for (let i = 0; i < 6; i += 1) v[i] += cellFire.dt * g[i];
+  const e = v.map((c) => cellFire.dt * c);
+
   const M = [
-    [1, 0, 0],
-    [0, 1, 0],
-    [0, 0, 1],
+    [1 + e[0], e[5], e[4]],
+    [e[5], 1 + e[1], e[3]],
+    [e[4], e[3], 1 + e[2]],
   ];
 
-  for (let i = 0; i < 3; i += 1) {
-    for (let j = 0; j < 3; j += 1) {
-      M[i][j] -= cellStep * sym[i][j];
-    }
-  }
-
+  // Trust region (unchanged): at most 4% axial / 3% shear strain per step.
+  // Clamping decouples the realized strain from v·dt for that step; FIRE's
+  // power sign still catches the overshoot on the next evaluation.
   for (let i = 0; i < 3; i += 1) {
     M[i][i] = Math.max(0.96, Math.min(1.04, M[i][i]));
   }
@@ -92,18 +127,97 @@ export function pressureGPaFromStress(stress) {
   return pressureFromStress(stress) * EV_A3_TO_GPA;
 }
 
-export function applyRelaxStep(structure, efs, atomStep = 0.02, cellStep = 0.002, targetPressureEvA3 = 0) {
+// FIRE — Fast Inertial Relaxation Engine (Bitzek et al., PRL 97, 170201
+// (2006)), semi-implicit Euler variant with the ASE update order. Unit atomic
+// mass, so dt² carries units of Å²/(eV/Å): the first step's displacement is
+// dt²·F, and dt is seeded from the legacy atomStep knob so the previous step
+// size keeps its meaning as the starting (pre-acceleration) step.
+const FIRE_N_MIN = 5;        // uphill-free steps before dt may grow
+const FIRE_F_INC = 1.1;      // dt growth factor
+const FIRE_F_DEC = 0.5;      // dt cut on overshoot (power <= 0)
+const FIRE_ALPHA_START = 0.1;
+const FIRE_F_ALPHA = 0.99;   // alpha decay while descending
+const FIRE_MAX_STEP_A = 0.2; // per-atom displacement cap (Å)
+
+function createFireState(atomStep, cellStep, nAtoms) {
+  const dt = Math.sqrt(Math.max(Number(atomStep) || 0.02, 1e-4));
+  const cellDt = Math.sqrt(Math.max(Number(cellStep) || 0.002, 1e-6));
+  return {
+    dt,
+    dtMax: 10 * dt,
+    alpha: FIRE_ALPHA_START,
+    nPos: 0,
+    velocities: Array.from({ length: nAtoms }, () => [0, 0, 0]),
+    cell: {
+      dt: cellDt,
+      dtMax: 30 * cellDt,
+      alpha: FIRE_ALPHA_START,
+      nPos: 0,
+      v: new Float64Array(6),
+    },
+  };
+}
+
+export function applyRelaxStep(structure, efs, fire, targetPressureEvA3 = 0) {
   const activeForces = isWyckoffModeActive(fileBrowser.selectedStructure)
     ? symmetrizeCartesianVectors(efs.forces, structure.lattice, fileBrowser.selectedStructure)
     : efs.forces;
+  const v = fire.velocities;
+  const n = structure.positions.length;
 
-  const moved = structure.positions.map((r, i) => [
-    r[0] + atomStep * activeForces[i][0],
-    r[1] + atomStep * activeForces[i][1],
-    r[2] + atomStep * activeForces[i][2],
-  ]);
+  // Power with the incoming velocities (ASE order: mix, then accelerate).
+  let power = 0;
+  let vNorm2 = 0;
+  let fNorm2 = 0;
+  for (let i = 0; i < n; i += 1) {
+    for (let k = 0; k < 3; k += 1) {
+      power += activeForces[i][k] * v[i][k];
+      vNorm2 += v[i][k] * v[i][k];
+      fNorm2 += activeForces[i][k] * activeForces[i][k];
+    }
+  }
 
-  const M = deformationFromStress(efs.stress.matrix3x3, cellStep, targetPressureEvA3);
+  if (power > 0) {
+    const scale = fNorm2 > 0 ? Math.sqrt(vNorm2 / fNorm2) : 0;
+    for (let i = 0; i < n; i += 1) {
+      for (let k = 0; k < 3; k += 1) {
+        v[i][k] = (1 - fire.alpha) * v[i][k] + fire.alpha * scale * activeForces[i][k];
+      }
+    }
+    fire.nPos += 1;
+    if (fire.nPos > FIRE_N_MIN) {
+      fire.dt = Math.min(fire.dt * FIRE_F_INC, fire.dtMax);
+      fire.alpha *= FIRE_F_ALPHA;
+    }
+  } else {
+    // Overshot: kill inertia, restart cautiously.
+    for (let i = 0; i < n; i += 1) {
+      v[i][0] = 0; v[i][1] = 0; v[i][2] = 0;
+    }
+    fire.alpha = FIRE_ALPHA_START;
+    fire.dt *= FIRE_F_DEC;
+    fire.nPos = 0;
+  }
+
+  // v += dt·F (unit mass), then move with a per-atom displacement cap so a
+  // late dt growth cannot fling atoms through the cell.
+  const moved = structure.positions.map((r, i) => {
+    let dx = 0; let dy = 0; let dz = 0;
+    v[i][0] += fire.dt * activeForces[i][0];
+    v[i][1] += fire.dt * activeForces[i][1];
+    v[i][2] += fire.dt * activeForces[i][2];
+    dx = fire.dt * v[i][0];
+    dy = fire.dt * v[i][1];
+    dz = fire.dt * v[i][2];
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d > FIRE_MAX_STEP_A) {
+      const s = FIRE_MAX_STEP_A / d;
+      dx *= s; dy *= s; dz *= s;
+    }
+    return [r[0] + dx, r[1] + dy, r[2] + dz];
+  });
+
+  const M = deformationFromStress(efs.stress.matrix3x3, fire.cell, targetPressureEvA3);
 
   let newPositions = moved.map((r) => matVec(M, r));
   const newLattice = structure.lattice.map((row) => matVec(M, row));
@@ -194,6 +308,7 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
   let mF = Infinity;
   let pGPa = Infinity;
   let step = 0;
+  const fire = createFireState(atomStep, cellStep, current.positions.length);
 
   for (step = 1; step <= maxSteps; step += 1) {
     let t0 = performance.now();
@@ -214,7 +329,7 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
     if ((forceOK && pressureOK) || step === maxSteps) break;
 
     t0 = performance.now();
-    current = applyRelaxStep(current, out, atomStep, cellStep, targetPressureEvA3);
+    current = applyRelaxStep(current, out, fire, targetPressureEvA3);
     timing.updateMs += performance.now() - t0;
 
     if (performance.now() - lastYield >= FRAME_BUDGET_MS) {
