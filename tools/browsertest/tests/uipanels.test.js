@@ -162,6 +162,60 @@ async function expandPanel(page, id) {
 
   await page.screenshot({ path: path.join(ARTIFACTS, 'uipanels-dock.png'), fullPage: false });
 
+  // --- .crysviz save: menu entry + captured state contents ---------------------
+  H.check('Download menu has a CrysViz entry', await page.evaluate(() => {
+    const btn = document.getElementById('saveCrysvizButton');
+    return !!btn && !!btn.closest('#downloadMenu');
+  }));
+  const state = await page.evaluate(async () => {
+    const { captureState } = await import('./ui/ShareModule.js');
+    return captureState();
+  });
+  H.check('captured state has the new visual keys (v2.1)',
+    state.version === '2.1'
+      && state.display.latticeLineWidth === 0.06
+      && state.display.axesLineWidth === 0.05
+      && typeof state.display.bondRadius === 'number'
+      && typeof state.display.showAxes === 'boolean'
+      && state.style && typeof state.style.renderStyle === 'string'
+      && /^#[0-9a-f]{6}$/.test(state.style.background || ''),
+    JSON.stringify({ version: state.version, display: state.display, style: state.style }).slice(0, 300));
+  H.check('captured state includes the per-atom size override',
+    state.colors.atomRadiusScales && state.colors.atomRadiusScales['0'] === 2,
+    JSON.stringify(state.colors.atomRadiusScales));
+  H.check('captured state has no window placements',
+    !JSON.stringify(state).includes('panelLayout') && !('panels' in state));
+
+  // --- round-trip: restore the captured state through the ?state= loader -------
+  const encoded = await page.evaluate(async () => {
+    const { captureState } = await import('./ui/ShareModule.js');
+    const bytes = new TextEncoder().encode(JSON.stringify(captureState()));
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  });
+  const baseUrl = process.env.CRYSVIZ_URL || 'http://localhost:8123/index.html';
+  await page.goto(`${baseUrl}?state=${encoded}`, { waitUntil: 'load', timeout: 90000 });
+  await page.waitForTimeout(6000);
+  const restored = await page.evaluate(async () => {
+    const { general, app, fileBrowser } = await import('./state/store.js');
+    return {
+      latticeLineWidth: general.latticeLineWidth,
+      axesLineWidth: general.axesLineWidth,
+      shaftScale: app.gizmoScene.userData.aArrow.userData.shaft.scale.x,
+      atom0Scale: fileBrowser.selectedStructure.atoms[0].getRadiusScale(),
+      latticeSlider: /** @type {HTMLInputElement} */ (document.getElementById('latticeWidth')).value,
+      cylinderRadius: (await import('./state/store.js')).groups.latticeGroup?.children?.[0]?.geometry?.parameters?.radiusTop,
+    };
+  });
+  H.check('round-trip restores widths, per-atom size and slider positions',
+    restored.latticeLineWidth === 0.06 && restored.axesLineWidth === 0.05
+      && Math.abs(restored.shaftScale - 0.05) < 1e-6
+      && restored.atom0Scale === 2
+      && Number(restored.latticeSlider) === 0.06
+      && Math.abs(restored.cylinderRadius - 0.06) < 1e-6,
+    JSON.stringify(restored));
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

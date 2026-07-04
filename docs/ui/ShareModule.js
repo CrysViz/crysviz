@@ -7,6 +7,8 @@ import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } 
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { revealFeaturePanels } from './panels/PanelManager.js';
 import { fracToCart } from '../math/index.js';
+import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
+import { getContrastingBorder } from './BackgroundPicker.js';
 
 const URL_WARN_CHARS = 4000;
 const URL_HARD_CHARS = 10000;
@@ -15,7 +17,13 @@ const URL_HARD_CHARS = 10000;
 // Capture
 // ---------------------------------------------------------------------------
 
-function captureState() {
+/**
+ * Collect the full visual state (structure, colors, display settings, style,
+ * camera, measurements) — everything EXCEPT window placements, which live in
+ * the panel system's own localStorage. Shared by the Share-URL feature and
+ * the .crysviz file download (SavePanel).
+ */
+export function captureState() {
   const structure = fileBrowser.selectedStructure;
   if (!structure) return null;
 
@@ -23,6 +31,16 @@ function captureState() {
   const atomColors = {};
   structure.atoms.forEach((atom, i) => {
     if (atom.color !== atom.elementColor) atomColors[i] = atom.color;
+  });
+
+  // Per-atom opacity / size overrides (sparse: only non-default values)
+  const atomOpacities = {};
+  const atomRadiusScales = {};
+  structure.atoms.forEach((atom, i) => {
+    const opacity = atom.getOpacity?.() ?? atom.opacity ?? 1;
+    if (opacity < 0.999) atomOpacities[i] = opacity;
+    const radiusScale = atom.getRadiusScale?.() ?? 1;
+    if (Math.abs(radiusScale - 1) > 1e-9) atomRadiusScales[i] = radiusScale;
   });
 
   // Per-element color overrides — first occurrence per element
@@ -57,7 +75,7 @@ function captureState() {
     .filter(d => d && d.type);
 
   return {
-    version: '2.0',
+    version: '2.1',
     structure: {
       elements: [...structure.elements],
       lattice: structure.lattice.map(r => [...r]),
@@ -67,17 +85,33 @@ function captureState() {
       atomColors,
       elementColors,
       useDefaultColors: general.useDefaultColors,
+      atomOpacities,
+      atomRadiusScales,
     },
     display: {
       atomSize: general.atomSize,
+      bondRadius: general.bondRadius,
       showAtoms: general.showAtoms,
       showBonds: general.showBonds,
       showLattice: general.showLattice,
       showPeriodic: general.showPeriodic,
       periodicFaceTol: general.periodicFaceTol,
       showPBCBonds: general.showPBCBonds,
+      showAxes: general.showAxes,
+      showPolyhedra: general.showPolyhedra,
+      completePolyhedra: general.completePolyhedra,
+      axesLineWidth: general.axesLineWidth,
+      latticeLineWidth: general.latticeLineWidth,
       bondLengths: { ...general.bondLengths },
       bondVisibility: { ...general.bondVisibility },
+    },
+    style: {
+      renderStyle: general.renderStyle,
+      celOutlineWidth: general.celOutlineWidth,
+      celHullWidth: general.celHullWidth,
+      atomsColor: general.atomsColor,
+      bondsColor: general.bondsColor,
+      background: app.scene?.background ? '#' + app.scene.background.getHexString() : null,
     },
     camera: {
       position: app.camera
@@ -171,13 +205,31 @@ function applyDisplaySettings(display) {
     const el = document.getElementById(id);
     if (el) el.checked = val;
   };
+  const setSlider = (id, valueId, val, decimals) => {
+    const s = document.getElementById(id);
+    const sv = document.getElementById(valueId);
+    if (s) s.value = val;
+    if (sv) sv.textContent = Number(val).toFixed(decimals);
+  };
 
   if (display.atomSize != null) {
     general.atomSize = display.atomSize;
-    const s = document.getElementById('atomSize');
-    const sv = document.getElementById('atomSizeValue');
-    if (s) s.value = display.atomSize;
-    if (sv) sv.textContent = Number(display.atomSize).toFixed(2);
+    setSlider('atomSize', 'atomSizeValue', display.atomSize, 2);
+  }
+  if (display.bondRadius != null) {
+    general.bondRadius = display.bondRadius;
+    setSlider('bondWidth', 'bondWidthValue', display.bondRadius, 2);
+  }
+  if (display.axesLineWidth != null) {
+    general.axesLineWidth = display.axesLineWidth;
+    setSlider('axesWidth', 'axesWidthValue', display.axesLineWidth, 3);
+    updateAxesGizmoWidth();
+  }
+  if (display.latticeLineWidth != null) {
+    // The lattice outline is (re)built after the structure loads, so setting
+    // the width here is enough.
+    general.latticeLineWidth = display.latticeLineWidth;
+    setSlider('latticeWidth', 'latticeWidthValue', display.latticeLineWidth, 3);
   }
   if (display.showAtoms != null)   { general.showAtoms   = display.showAtoms;   setToggle('showAtoms', display.showAtoms); }
   if (display.showBonds != null)   { general.showBonds   = display.showBonds;   setToggle('showBonds', display.showBonds); }
@@ -185,8 +237,36 @@ function applyDisplaySettings(display) {
   if (display.showPeriodic != null){ general.showPeriodic= display.showPeriodic;setToggle('showPeriodic', display.showPeriodic); }
   if (display.periodicFaceTol != null){ general.periodicFaceTol = display.periodicFaceTol; }
   if (display.showPBCBonds != null){ general.showPBCBonds= display.showPBCBonds;setToggle('PBCBondToggle', display.showPBCBonds); }
+  if (display.showAxes != null) {
+    setToggle('showAxes', display.showAxes);
+    // The change handler owns the gizmo/legend visibility (ControlsWiring).
+    document.getElementById('showAxes')?.dispatchEvent(new Event('change'));
+  }
+  if (display.showPolyhedra != null) { general.showPolyhedra = display.showPolyhedra; setToggle('showPolyhedra', display.showPolyhedra); }
+  if (display.completePolyhedra != null) { general.completePolyhedra = display.completePolyhedra; setToggle('completePolyhedraToggle', display.completePolyhedra); }
   if (display.bondLengths)    Object.assign(general.bondLengths, display.bondLengths);
   if (display.bondVisibility) Object.assign(general.bondVisibility, display.bondVisibility);
+}
+
+/** Render style, color modes and scene background. Runs BEFORE the structure
+ *  loads: the initial render then picks these up directly. */
+function applyStyleSettings(style) {
+  if (!style) return;
+  const setSelect = (id, val) => {
+    const el = document.getElementById(id);
+    if (el && val != null) el.value = val;
+  };
+  if (style.renderStyle) { general.renderStyle = style.renderStyle; setSelect('renderStyleMenu', style.renderStyle); }
+  if (style.celOutlineWidth != null) general.celOutlineWidth = style.celOutlineWidth;
+  if (style.celHullWidth != null) general.celHullWidth = style.celHullWidth;
+  if (style.atomsColor) { general.atomsColor = style.atomsColor; setSelect('atomsMenu', style.atomsColor); }
+  if (style.bondsColor) { general.bondsColor = style.bondsColor; setSelect('bondsMenu', style.bondsColor); }
+  if (style.background && app?.scene) {
+    app.scene.background = new THREE.Color(style.background);
+    // Keep the lattice readable against the restored background, like the
+    // background picker does (the lattice is built after this runs).
+    general.currentLatticeColor = getContrastingBorder(style.background);
+  }
 }
 
 function applyAtomColors(colors, structure) {
@@ -208,6 +288,19 @@ function applyAtomColors(colors, structure) {
     Object.entries(colors.atomColors).forEach(([idx, color]) => {
       const atom = structure.atoms[parseInt(idx)];
       if (atom) atom.color = color;
+    });
+  }
+
+  // Per-atom opacity/size overrides; updateAtoms() (run by the caller) pushes
+  // both to the instanced mesh.
+  if (colors.atomOpacities) {
+    Object.entries(colors.atomOpacities).forEach(([idx, value]) => {
+      structure.atoms[parseInt(idx)]?.setOpacity?.(value);
+    });
+  }
+  if (colors.atomRadiusScales) {
+    Object.entries(colors.atomRadiusScales).forEach(([idx, value]) => {
+      structure.atoms[parseInt(idx)]?.setRadiusScale?.(value);
     });
   }
 }
@@ -383,8 +476,9 @@ export function loadSharedStructure() {
     return;
   }
 
-  // Apply display settings before loading so parsePOSCAR renders with them
+  // Apply display/style settings before loading so parsePOSCAR renders with them
   applyDisplaySettings(state.display);
+  applyStyleSettings(state.style);
 
   // Load structure (synchronous — triggers updateVisualization internally)
   try {
@@ -410,6 +504,12 @@ export function loadSharedStructure() {
 
   // Rebuild bonds to reflect any bondLength / bondVisibility changes
   rebuildBonds();
+
+  // Cel style: re-fire the dropdown so its dependent controls (outline block)
+  // appear; the handler re-renders, which is only paid for cel states.
+  if (state.style?.renderStyle === 'cel') {
+    document.getElementById('renderStyleMenu')?.dispatchEvent(new Event('change'));
+  }
 
   // Camera and measurements need the render to have settled
   restoreCamera(state.camera);
