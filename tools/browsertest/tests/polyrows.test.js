@@ -203,6 +203,26 @@ const H = require('../harness');
   H.check('re-selecting the same polyhedron deselects (state null, glow cleared)',
     desel.state === null && desel.emissive === 0x000000, JSON.stringify(desel));
 
+  // --- Polyhedra follow bond-length settings, not bond visibility -----------------
+  const bondsHidden = await page.evaluate(async () => {
+    const { general, groups } = await import('./state/store.js');
+    const { updateVisualization } = await import('./core/crystal-viewer.js');
+    Object.keys(general.bondVisibility).forEach((p) => { general.bondVisibility[p] = false; });
+    general.showBonds = false;
+    const before = general.polyhedraBuildCounter;
+    await updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
+    for (let i = 0; i < 100 && general.polyhedraBuildCounter === before; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return {
+      polys: groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron').length,
+      bondsDrawn: !!groups.bondsMesh,
+    };
+  });
+  H.check('polyhedra persist when bonds are hidden (per-pair visibility and global toggle)',
+    bondsHidden.polys > 0 && bondsHidden.bondsDrawn === false,
+    JSON.stringify(bondsHidden));
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

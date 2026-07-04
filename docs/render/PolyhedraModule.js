@@ -3,7 +3,9 @@ import { ConvexGeometry } from '../external/three/ConvexGeometry.js';
 import { ConvexHull } from '../external/three/ConvexHull.js';
 import {app,general,groups, fileBrowser, highlightHover} from '../state/store.js'
 import { fracToCart, cartToFrac, invert3x3, transpose3x3 } from '../math/index.js'
-import { getBondCutoff} from '../render/BondsFracUpdateModule.js'
+// Polyhedra use the length-only cutoff: hiding bonds (per-pair visibility)
+// must not remove polyhedra — they follow the configured bond distances.
+import { getBondLengthCutoff } from '../render/BondsFracUpdateModule.js'
 import { CEL_OUTLINE_LAYER } from './CelOutlinePass.js'
 import { addCelPolyOutline } from './MaterialStyles.js'
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
@@ -513,7 +515,8 @@ export function computePolyhedra(structure) {
   const prep = {
     positions, elements, lattice, maxCutoff,
     useChemicalFilter, detectCages,
-    displayCenters, centerImageKeys, seedVisible, cutPlaneImmune, cutPlaneData, getBondCutoff,
+    displayCenters, centerImageKeys, seedVisible, cutPlaneImmune, cutPlaneData,
+    getBondCutoff: getBondLengthCutoff, // length-only (visibility-independent)
   };
 
   // Serial WASM (one call) → model.
@@ -582,16 +585,17 @@ export function computePolyhedra(structure) {
    * @param {string} elem element symbol at P (for the cutoff lookup)
    * @returns {Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>}
    */
-  // Per-center-element bond-cutoff rows, memoized. `getBondCutoff` rebuilds a
-  // string key on every call and sits in the hottest neighbour loops, so cache
-  // an nAtoms-long row of cutoffs for each distinct centre element.
+  // Per-center-element bond-cutoff rows, memoized. `getBondLengthCutoff`
+  // rebuilds a string key on every call and sits in the hottest neighbour
+  // loops, so cache an nAtoms-long row of cutoffs for each distinct centre
+  // element.
   /** @type {Map<string, Float64Array>} */
   const cutoffRowCache = new Map();
   function cutoffRow(elem) {
     let row = cutoffRowCache.get(elem);
     if (!row) {
       row = new Float64Array(nAtoms);
-      for (let j = 0; j < nAtoms; j++) row[j] = getBondCutoff(elem, elements[j]);
+      for (let j = 0; j < nAtoms; j++) row[j] = getBondLengthCutoff(elem, elements[j]);
       cutoffRowCache.set(elem, row);
     }
     return row;
@@ -779,7 +783,7 @@ export function computePolyhedra(structure) {
     if (cands.length < 4) continue;
     const accept = (/** @type {any} */ cand) => {
       if (!isLigandOf(cand.elem, centerElem, useChemicalFilter)) return false;
-      const cutoff = getBondCutoff(centerElem, cand.elem);
+      const cutoff = getBondLengthCutoff(centerElem, cand.elem);
       return cutoff > 1e-3 && cand.d <= cutoff;
     };
     const vor = voronoiNeighbours(centerPos, cands, {

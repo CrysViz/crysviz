@@ -102,6 +102,15 @@ export function getBondCutoff(elem1, elem2) {
   return general.bondLengths[pair]?.max || 0.0;
 }
 
+// The configured pair cutoff by bond LENGTH settings only — ignores the
+// per-pair visibility checkbox (and the global Show Bonds toggle, which never
+// enters here). Used by the polyhedra compute: polyhedra follow the configured
+// bond distances regardless of whether the bonds are drawn.
+export function getBondLengthCutoff(elem1, elem2) {
+  const pair = elem1 < elem2 ? `${elem1}-${elem2}` : `${elem2}-${elem1}`;
+  return general.bondLengths[pair]?.max || 0.0;
+}
+
 export function getBondMinCutoff(elem1, elem2) {
   const pair = elem1 < elem2 ? `${elem1}-${elem2}` : `${elem2}-${elem1}`;
   const isVisible = general.bondVisibility[pair] !== false;

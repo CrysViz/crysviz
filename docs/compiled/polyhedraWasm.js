@@ -67,8 +67,9 @@ export function marshalPolyhedraInputs(prep) {
     for (let cc = 0; cc < 3; cc++) latticeFlat[r * 3 + cc] = lattice[r][cc];
   }
 
-  // Symmetric bond-cutoff matrix over the distinct species (respects the same
-  // visibility/length rules as the JS path, since it goes through getBondCutoff).
+  // Symmetric bond-cutoff matrix over the distinct species (same rules as the
+  // JS path, since it goes through the prep's cutoff function — length-only,
+  // independent of bond visibility).
   const cutoffMatrix = new Float64Array(nElem * nElem);
   const electroneg = new Float64Array(nElem);
   const radii = new Float64Array(nElem);
