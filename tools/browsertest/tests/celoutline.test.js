@@ -47,11 +47,11 @@ const H = require('../harness');
   H.check('polyhedra depth proxies exist', cel.proxies > 0, `count=${cel.proxies}`);
 
   // Outline visibility: near-black pixel coverage must grow with the slider
-  // (width is in world units).
+  // (quadratic slider in 0..1; 1 = max world-unit width).
   await H.setSlider(page, 'celOutlineWidth', 0);
   await page.waitForTimeout(600);
   const dark0 = H.darkFraction(await H.shotCanvas(page, 'cel_outline_off'));
-  await H.setSlider(page, 'celOutlineWidth', 0.15);
+  await H.setSlider(page, 'celOutlineWidth', 1);
   await page.waitForTimeout(600);
   const dark4 = H.darkFraction(await H.shotCanvas(page, 'cel_outline_wide'));
   H.check('outlines draw (dark coverage grows)',
@@ -85,7 +85,7 @@ const H = require('../harness');
   H.check('screen mode: hulls removed after switch back', !!noHulls);
 
   // Back to metallic: physical material again, outline pass inert.
-  await H.setSlider(page, 'celOutlineWidth', 0.05);
+  await H.setSlider(page, 'celOutlineWidth', 0.7); // ~default width
   await H.setSelect(page, 'renderStyleMenu', 'metallic');
   await page.waitForTimeout(2000);
   const metallic = await page.evaluate(async () => {

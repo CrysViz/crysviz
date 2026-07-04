@@ -384,12 +384,16 @@ export function addColorPanel(target = "colorContainer") {
   const screenControls = createElement("div", {},
     { display: general.celOutlineMode === "screen" ? "block" : "none" });
   const outlineLabel = createElement("label", { for: "celOutlineWidth" }, sliderLabelStyle, "Outline");
+  // Quadratic slider response: most of the travel controls thin widths, where
+  // the differences matter; the top end caps at a moderate max thickness.
+  const CEL_OUTLINE_MAX = 0.1; // world units at slider max
   const outlineSlider = createElement("input", {
-    type: "range", id: "celOutlineWidth", min: "0", max: "0.2", step: "0.005",
-    value: String(general.celOutlineWidth),
+    type: "range", id: "celOutlineWidth", min: "0", max: "1", step: "0.01",
+    value: String(Math.sqrt(Math.min(general.celOutlineWidth, CEL_OUTLINE_MAX) / CEL_OUTLINE_MAX)),
   }, sliderStyle);
   outlineSlider.addEventListener("input", () => {
-    general.celOutlineWidth = parseFloat(outlineSlider.value);
+    const v = parseFloat(outlineSlider.value);
+    general.celOutlineWidth = CEL_OUTLINE_MAX * v * v;
   });
   screenControls.appendChild(outlineLabel);
   screenControls.appendChild(outlineSlider);
