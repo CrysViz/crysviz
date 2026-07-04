@@ -70,6 +70,12 @@ let plainOutlineMaterial = null; // comparison atoms + bonds
 
 function makeOutlineMaterial(withDiscards, onCompiled) {
   const material = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide });
+  // Three keys custom shader programs by onBeforeCompile.toString(); both
+  // variants share that source text (withDiscards is closed-over, invisible to
+  // toString), so without a distinct key the second variant silently reuses
+  // the first one's program — and the discards program discards everything on
+  // geometry that lacks the instanceOpacity attribute (the bonds).
+  material.customProgramCacheKey = () => `cv-cel-outline-${withDiscards ? 'discards' : 'plain'}`;
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uOutlineWidth = { value: general.celOutlineWidth };
 
