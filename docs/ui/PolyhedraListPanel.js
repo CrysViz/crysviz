@@ -230,6 +230,54 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     alphaRow.appendChild(alphaSlider);
     alphaRow.appendChild(alphaValue);
 
+    // --- Edge styling (color + alpha for the edge lines of the whole category) ---
+    const p0 = model.polyhedra[entry.indices[0]];
+    const resolvedEdge = resolvePolyhedronStyle(
+      structure, null, catKey, p0.type, p0.centerIndex, p0.colorElem);
+
+    const edgeHeader = document.createElement('div');
+    edgeHeader.textContent = 'Edge';
+    edgeHeader.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); margin-top: 8px;';
+
+    const edgePicker = createColorPicker(safeColor(resolvedEdge.edgeColor), (hex) => {
+      catStyle().edgeColor = hex;
+      updatePolyhedraColors();
+    });
+
+    const currentEdgeAlpha = clampOpacity(
+      structure.polyhedraCategoryStyles[catKey]?.edgeAlpha ?? resolvedEdge.edgeOpacity);
+    const edgeAlphaRow = document.createElement('div');
+    edgeAlphaRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin: 6px 0;';
+    const edgeAlphaLabel = document.createElement('span');
+    edgeAlphaLabel.textContent = 'Edge alpha';
+    edgeAlphaLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 58px;';
+    const edgeAlphaSlider = document.createElement('input');
+    edgeAlphaSlider.type = 'range';
+    edgeAlphaSlider.min = '0.05';
+    edgeAlphaSlider.max = '1';
+    edgeAlphaSlider.step = '0.01';
+    edgeAlphaSlider.value = String(currentEdgeAlpha);
+    edgeAlphaSlider.style.cssText = 'flex:1;';
+    const edgeAlphaValue = document.createElement('input');
+    edgeAlphaValue.type = 'number';
+    edgeAlphaValue.min = '0.05';
+    edgeAlphaValue.max = '1';
+    edgeAlphaValue.step = '0.01';
+    edgeAlphaValue.value = currentEdgeAlpha.toFixed(2);
+    edgeAlphaValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+    function applyCatEdgeAlpha(rawValue) {
+      const value = clampOpacity(rawValue);
+      edgeAlphaSlider.value = String(value);
+      edgeAlphaValue.value = value.toFixed(2);
+      catStyle().edgeAlpha = value;
+      updatePolyhedraColors();
+    }
+    edgeAlphaSlider.oninput = (e) => applyCatEdgeAlpha(/** @type {any} */ (e.target).value);
+    edgeAlphaValue.oninput = (e) => applyCatEdgeAlpha(/** @type {any} */ (e.target).value);
+    edgeAlphaRow.appendChild(edgeAlphaLabel);
+    edgeAlphaRow.appendChild(edgeAlphaSlider);
+    edgeAlphaRow.appendChild(edgeAlphaValue);
+
     const catResetBtn = document.createElement('button');
     catResetBtn.textContent = 'Reset';
     catResetBtn.className = 'btn-mini';
@@ -250,6 +298,9 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
     catEditor.appendChild(catPicker.element);
     catEditor.appendChild(alphaRow);
+    catEditor.appendChild(edgeHeader);
+    catEditor.appendChild(edgePicker.element);
+    catEditor.appendChild(edgeAlphaRow);
     catEditor.appendChild(catButtonRow);
     div.appendChild(catEditor);
 

@@ -88,8 +88,8 @@ export class Structure {
     this.bondCategoryStyles = {};
     // Per-polyhedron / per-polyhedron-category user style overrides, keyed by
     // the stable keys computed in render/PolyhedraModule.js (assignPolyhedraKeys):
-    // polyhedraUserStyles[polyKey] -> { color?, alpha? } and
-    // polyhedraCategoryStyles[catKey] -> { color?, alpha?, visible? }.
+    // polyhedraUserStyles[polyKey] -> { color?, alpha?, edgeColor?, edgeAlpha? } and
+    // polyhedraCategoryStyles[catKey] -> { color?, alpha?, edgeColor?, edgeAlpha?, visible? }.
     // Like bondUserStyles these intentionally SURVIVE the (frequent, async)
     // polyhedra rebuilds; keys go stale if atoms/lattice change and stale
     // entries are simply ignored.

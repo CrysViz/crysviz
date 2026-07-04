@@ -1,4 +1,4 @@
-import {fileBrowser, general} from '../../state/store.js';
+import {fileBrowser, general, structureShip} from '../../state/store.js';
 
 
 import {collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
@@ -8,6 +8,58 @@ import { createPolyhedraListControls } from '../PolyhedraListPanel.js'
 import { clearAllHighlights } from '../SelectAndHighlightModule.js'
 import { getPanel } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
+import { updateVisualization } from '../../core/crystal-viewer.js';
+import { bondLengthToColor } from '../ColorPanel.js';
+
+// The per-structure style-override stores (all survive rebuilds; see Structure.js).
+const ALL_STYLE_STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
+                          'polyhedraUserStyles', 'polyhedraCategoryStyles'];
+
+/** Reset every COLOR customization; alpha/size/visibility overrides survive. */
+function resetAllColorStyling(structure) {
+  const forceMode = general.atomsColor === 'force';
+  structure.atoms.forEach((atom, i) => {
+    delete atom.forceColor;
+    atom.resetToDefaultColor(); // color + elementColor -> map default, userColor = null
+    if (forceMode) {
+      // Force-color mode repaints from force magnitudes (mirrors ColorEditor's reset).
+      const f = structure.forces?.[i]?.vector;
+      if (f?.length >= 3) {
+        atom.color = bondLengthToColor(Math.hypot(f[0], f[1], f[2]), general.ForceMin, general.ForceMax);
+      }
+    }
+  });
+  for (const storeName of ALL_STYLE_STORES) {
+    const store = structure[storeName] ?? {};
+    for (const [key, entry] of Object.entries(store)) {
+      delete entry.color;
+      delete entry.edgeColor;
+      // Drop entries with no remaining overrides (element/elements are metadata;
+      // keep visible-only category entries).
+      if (entry.alpha == null && entry.edgeAlpha == null
+          && entry.radiusScale == null && entry.visible == null) {
+        delete store[key];
+      }
+    }
+  }
+}
+
+/** Reset everything the tabs can set — colors, alpha/size, per-element
+ *  visibility, cut-plane immunities, category styles. Never touches positions.
+ *  Per-pair bondVisibility/bondLengths are intentionally kept (the Bonds tab
+ *  has its own "Reset to Defaults" for those). */
+function resetAllStyling(structure) {
+  resetAllColorStyling(structure);
+  structure.atoms.forEach((atom) => {
+    atom.setElementOpacity(1);
+    atom.setOpacity(1);
+    atom.resetRadiusScale();
+    atom.setCutPlaneImmune(false);
+  });
+  for (const storeName of ALL_STYLE_STORES) structure[storeName] = {};
+  general.atomVisibility = {};
+  general.bondCutImmunity = {};
+}
 
 // Small switch row, same markup/classes as the toggles in PolyhedraPanel.js.
 function createToggleRow({ id, label, checked, onChange }) {
@@ -417,6 +469,27 @@ const linkCopiesRow = createToggleRow({
 linkCopiesRow.style.margin = '6px 0 8px 0';
 compDiv.appendChild(linkCopiesRow);
 
+// One-click propagation of the current frame's styling to every trajectory
+// frame (multi-frame files only). Mirrors the element editor's "Apply to
+// Trajectory" but covers ALL style stores.
+const trajContainer = structureShip.container[fileBrowser.selectedRowIndex];
+if (trajContainer?.structures?.length > 1) {
+  const applyStylesBtn = document.createElement('button');
+  applyStylesBtn.id = 'applyStylesToTrajectoryBtn';
+  applyStylesBtn.textContent = 'Apply styles to trajectory';
+  applyStylesBtn.className = 'reset-btn';
+  applyStylesBtn.title = 'Copy all atom/bond/polyhedra styling from this frame to every frame';
+  applyStylesBtn.style.cssText = 'height: 28px; padding: 0 10px; font-size: 11px; margin: 0 0 8px 0;';
+  applyStylesBtn.onclick = () => {
+    trajContainer.flushStylesToAllStructures(fileBrowser.selectedStructure);
+    trajContainer.flushColorToAllStructures(fileBrowser.selectedStructure); // atom model colors travel too
+    const prior = applyStylesBtn.textContent;
+    applyStylesBtn.textContent = 'Applied ✓';
+    setTimeout(() => { if (applyStylesBtn.isConnected) applyStylesBtn.textContent = prior; }, 1200);
+  };
+  compDiv.appendChild(applyStylesBtn);
+}
+
 // Create a new div element for the segmented control
 const atomBondControl = document.createElement('div');
 atomBondControl.id = 'atomBondControl';
@@ -454,12 +527,23 @@ resetAllColorsBtn.id="resetAllColorsBtn"
 resetAllColorsBtn.textContent = 'Reset Colors';
 resetAllColorsBtn.className = 'reset-btn';
 resetAllColorsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
+resetAllColorsBtn.title = 'Reset every color customization (atoms, per-copy, bond and polyhedra colors) to element defaults';
+resetAllColorsBtn.onclick = () => {
+  resetAllColorStyling(fileBrowser.selectedStructure);
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+};
 
+// Historic id kept (never rename ids); label describes the actual behavior.
 const resetAtomsBtn = document.createElement('button');
 resetAtomsBtn.id = "resetAtomsBtn"
-resetAtomsBtn.textContent = 'Reset Atoms';
+resetAtomsBtn.textContent = 'Reset Styling';
 resetAtomsBtn.className = 'reset-btn';
 resetAtomsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
+resetAtomsBtn.title = 'Reset all atom/bond/polyhedra styling (colors, transparency, sizes, visibility, cut immunity). Bond lengths/visibility keep their own reset in the Bonds tab.';
+resetAtomsBtn.onclick = () => {
+  resetAllStyling(fileBrowser.selectedStructure);
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+};
 
 ResetColorAtomsButtonRow.appendChild(resetAllColorsBtn)
 ResetColorAtomsButtonRow.appendChild(resetAtomsBtn)

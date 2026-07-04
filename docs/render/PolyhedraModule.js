@@ -217,9 +217,11 @@ export function groupPolyhedraByCategory(structure) {
 
 /**
  * Resolve the effective style for one polyhedron: individual override >
- * category override > default (center-atom/element color, FACE_OPACITY).
+ * category override > default (center-atom/element color, FACE_OPACITY,
+ * EDGE_COLOR/EDGE_OPACITY for the edge lines).
  * `visible` is a category-level setting only.
- * @returns {{color: string|number, opacity: number, visible: boolean}}
+ * @returns {{color: string|number, opacity: number, visible: boolean,
+ *            edgeColor: string|number, edgeOpacity: number}}
  */
 export function resolvePolyhedronStyle(structure, key, catKey, type, centerIndex, colorElem) {
   structure.polyhedraUserStyles ??= {}; // defensive: pre-existing structures
@@ -230,6 +232,8 @@ export function resolvePolyhedronStyle(structure, key, catKey, type, centerIndex
     color: ind?.color ?? cat?.color ?? polyhedronFaceColor(type, centerIndex, colorElem),
     opacity: clamp01(ind?.alpha ?? cat?.alpha ?? FACE_OPACITY),
     visible: cat?.visible !== false,
+    edgeColor: ind?.edgeColor ?? cat?.edgeColor ?? EDGE_COLOR,
+    edgeOpacity: clamp01(ind?.edgeAlpha ?? cat?.edgeAlpha ?? EDGE_OPACITY),
   };
 }
 
@@ -1101,9 +1105,6 @@ export function renderPolyhedra(structure) {
   if (!model || !model.polyhedra || !model.polyhedra.length) return;
   if (!ConvexGeomCtor) return;
 
-  const sharedEdgeMat = new THREE.LineBasicMaterial({
-    color: EDGE_COLOR, transparent: true, opacity: EDGE_OPACITY,
-  });
   // Depth proxy material for the screen-space cel outline pass: the faces are
   // transparent (no depth write), so an opaque copy on the outline-only layer
   // provides the polyhedron silhouette there. Invisible in the main render.
@@ -1151,8 +1152,14 @@ export function renderPolyhedra(structure) {
       polyIndex,               // index into structure.polyhedra.polyhedra
     };
 
+    // Per-polyhedron edge material so edge color/alpha are styleable via the
+    // same store precedence as the faces (disposeGroup disposes it with the rest).
     const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
-    mesh.add(new THREE.LineSegments(egeom, sharedEdgeMat));
+    const edgeLines = new THREE.LineSegments(egeom, new THREE.LineBasicMaterial({
+      color: style.edgeColor, transparent: true, opacity: style.edgeOpacity,
+    }));
+    edgeLines.userData.type = 'polyhedron-edges';
+    mesh.add(edgeLines);
 
     const depthProxy = new THREE.Mesh(geom, sharedDepthProxyMat);
     depthProxy.layers.set(CEL_OUTLINE_LAYER); // outline pass only
@@ -1190,6 +1197,11 @@ export function updatePolyhedraColors() {
     mesh.material.color.set(style.color);
     mesh.material.opacity = style.opacity;
     mesh.visible = style.visible;
+    const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
+    if (edge?.material) {
+      edge.material.color.set(style.edgeColor);
+      edge.material.opacity = style.edgeOpacity;
+    }
   }
 }
 

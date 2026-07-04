@@ -145,6 +145,49 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   alphaSlider.oninput = (e) => applyPolyAlpha(/** @type {any} */ (e.target).value);
   alphaValue.oninput = (e) => applyPolyAlpha(/** @type {any} */ (e.target).value);
 
+  // --- Edge styling (color + alpha for this polyhedron's edge lines) ---
+  const edgeHeader = document.createElement('div');
+  edgeHeader.textContent = 'Edge';
+  edgeHeader.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); margin-top: 8px;';
+
+  const edgePicker = createColorPicker(safeColor(resolved.edgeColor), (hex) => {
+    setMemberStyles({ edgeColor: hex });
+    updatePolyhedraColors();
+  });
+
+  const currentEdgeAlpha = clampOpacity(resolved.edgeOpacity);
+  const edgeAlphaRow = document.createElement('div');
+  edgeAlphaRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:6px;';
+  const edgeAlphaLabel = document.createElement('span');
+  edgeAlphaLabel.textContent = 'Edge alpha';
+  edgeAlphaLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 58px;';
+  const edgeAlphaSlider = document.createElement('input');
+  edgeAlphaSlider.type = 'range';
+  edgeAlphaSlider.min = '0.05';
+  edgeAlphaSlider.max = '1';
+  edgeAlphaSlider.step = '0.01';
+  edgeAlphaSlider.value = String(currentEdgeAlpha);
+  edgeAlphaSlider.style.cssText = 'flex:1;';
+  const edgeAlphaValue = document.createElement('input');
+  edgeAlphaValue.type = 'number';
+  edgeAlphaValue.min = '0.05';
+  edgeAlphaValue.max = '1';
+  edgeAlphaValue.step = '0.01';
+  edgeAlphaValue.value = currentEdgeAlpha.toFixed(2);
+  edgeAlphaValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+  function applyPolyEdgeAlpha(rawValue) {
+    const value = clampOpacity(rawValue);
+    edgeAlphaSlider.value = String(value);
+    edgeAlphaValue.value = value.toFixed(2);
+    setMemberStyles({ edgeAlpha: value });
+    updatePolyhedraColors();
+  }
+  edgeAlphaSlider.oninput = (e) => applyPolyEdgeAlpha(/** @type {any} */ (e.target).value);
+  edgeAlphaValue.oninput = (e) => applyPolyEdgeAlpha(/** @type {any} */ (e.target).value);
+  edgeAlphaRow.appendChild(edgeAlphaLabel);
+  edgeAlphaRow.appendChild(edgeAlphaSlider);
+  edgeAlphaRow.appendChild(edgeAlphaValue);
+
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
   applyBtn.className = 'btn-mini highlight';
@@ -174,6 +217,9 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
 
   editor.appendChild(picker.element);
   editor.appendChild(alphaRow);
+  editor.appendChild(edgeHeader);
+  editor.appendChild(edgePicker.element);
+  editor.appendChild(edgeAlphaRow);
   editor.appendChild(editorButtonRow);
   editor.onclick = (e) => e.stopPropagation();
   row.appendChild(editor);

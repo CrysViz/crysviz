@@ -1,8 +1,14 @@
 import { app, general, measurements, fileBrowser } from '../state/store.js';
+
+/** Deep copy of a sparse style-store object, or undefined when empty/absent
+ *  (keeps captured sessions small). */
+function nonEmptyDeepCopy(obj) {
+  return obj && Object.keys(obj).length ? JSON.parse(JSON.stringify(obj)) : undefined;
+}
 import * as THREE from '../external/three/three.module.js';
 import { parsePOSCAR } from './StructureInputModule.js';
 import { updateAtoms } from '../render/index.js';
-import { rebuildBonds } from '../render/index.js';
+import { rebuildBonds, updatePolyhedra } from '../render/index.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { revealFeaturePanels } from './panels/PanelManager.js';
@@ -75,7 +81,7 @@ export function captureState() {
     .filter(d => d && d.type);
 
   return {
-    version: '2.1',
+    version: '2.2',
     structure: {
       elements: [...structure.elements],
       lattice: structure.lattice.map(r => [...r]),
@@ -87,11 +93,13 @@ export function captureState() {
       useDefaultColors: general.useDefaultColors,
       atomOpacities,
       atomRadiusScales,
-      // Per-periodic-copy overrides (Atoms tab with "Link periodic copies" off);
-      // stably keyed by "srcIndex:dx,dy,dz" so they re-attach after rebuilds.
-      atomImageStyles: structure.atomImageStyles && Object.keys(structure.atomImageStyles).length
-        ? JSON.parse(JSON.stringify(structure.atomImageStyles))
-        : undefined,
+      // The per-item / per-category style stores (all stably keyed, so they
+      // re-attach after the load-time rebuilds; sparse — only saved when set).
+      atomImageStyles: nonEmptyDeepCopy(structure.atomImageStyles),
+      bondUserStyles: nonEmptyDeepCopy(structure.bondUserStyles),
+      bondCategoryStyles: nonEmptyDeepCopy(structure.bondCategoryStyles),
+      polyhedraUserStyles: nonEmptyDeepCopy(structure.polyhedraUserStyles),
+      polyhedraCategoryStyles: nonEmptyDeepCopy(structure.polyhedraCategoryStyles),
     },
     display: {
       atomSize: general.atomSize,
@@ -112,9 +120,6 @@ export function captureState() {
       bondVisibility: { ...general.bondVisibility },
       atomVisibility: { ...general.atomVisibility },
       bondCutImmunity: { ...general.bondCutImmunity },
-      // NOTE: the per-item/category style stores (bondUserStyles,
-      // bondCategoryStyles, polyhedraUserStyles, polyhedraCategoryStyles) are
-      // not captured yet — only atomImageStyles is (see colors above).
     },
     style: {
       renderStyle: general.renderStyle,
@@ -331,6 +336,14 @@ function applyAtomColors(colors, structure) {
   // the caller's updateAtoms() applies them.
   if (colors.atomImageStyles) {
     structure.atomImageStyles = JSON.parse(JSON.stringify(colors.atomImageStyles));
+  }
+
+  // Per-bond / per-polyhedron style stores. This runs after restoreAtomOrder
+  // (see applySharedState), so the wrapped-index bondUserStyles keys match the
+  // corrected atom order when the caller's rebuildBonds() re-applies them;
+  // stale keys are silently ignored by the stores' element/geometry checks.
+  for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles', 'polyhedraCategoryStyles']) {
+    if (colors[k]) structure[k] = JSON.parse(JSON.stringify(colors[k]));
   }
 }
 
@@ -561,6 +574,12 @@ export function applySharedState(state, fileName = 'shared.vasp') {
 
   // Rebuild bonds to reflect any bondLength / bondVisibility changes
   rebuildBonds();
+
+  // parsePOSCAR's updateVisualization kicked off the (async) polyhedra compute
+  // BEFORE restoreAtomOrder and the style-store restore above; re-run it so
+  // keys derive from the corrected atom order and restored styles render.
+  // (updatePolyhedra coalesces with any in-flight compute.)
+  if (general.showPolyhedra || general.completePolyhedra) updatePolyhedra();
 
   // Cel style: re-fire the dropdown so its dependent controls (outline block)
   // appear; the handler re-renders, which is only paid for cel states.
