@@ -1,15 +1,28 @@
-import { fileBrowser,general } from '../state/store.js';
+import { fileBrowser, general, groups } from '../state/store.js';
 
 import {atomicRadii} from '../defaults/radii_defaults.js'
 
 
 
 import { updateVisualization } from '../core/crystal-viewer.js';
-import {createPieDot} from '../utils/ColorModule.js';
+import { createPieDot, colorHexToCss } from '../utils/ColorModule.js';
 import {clearAllHighlights} from './SelectAndHighlightModule.js';
 import { openDoublePeriodicTable } from './PeriodicTableSelectTwoPanel.js';
+import { createColorPicker } from './ColorPickerModule.js';
 import { createIndividualBondRow } from './StructureInfoPanel/components/IndividualBondRow.js';
-import { bondGroupKey } from '../render/index.js';
+import { createTinyToggle } from './StructureInfoPanel/components/Immunity.js';
+import { clampOpacity, clampRadiusScale } from './StructureInfoPanel/components/utils.js';
+import {
+  bondGroupKey, bondKey, updateSingleBondColor, updateSingleBondOpacity,
+  updateSingleBondDiameter,
+} from '../render/index.js';
+
+function safeColor(color) {
+  if (!color || color === '#') return '#808080';
+  if (typeof color === 'number') return colorHexToCss(color);
+  if (typeof color === 'string' && !color.startsWith('#')) return `#${color}`;
+  return color;
+}
 
 // Re-populate the individual-bond lists of any *expanded* category rows after a
 // bonds rebuild (slider drag / visibility toggle). Collapsed lists refresh
@@ -19,6 +32,14 @@ function refreshExpandedBondLists(panelRoot) {
     if (/** @type {HTMLElement} */ (container).style.display !== 'none') {
       /** @type {any} */ (container)._populateBondRows?.();
     }
+  });
+}
+
+// Refresh every category header (pie dot colors + count/percentage) after an
+// in-place rebuild; full panel re-creations go through renderComposition.
+function refreshBondHeaders(panelRoot) {
+  panelRoot.querySelectorAll('.bond-control').forEach((control) => {
+    /** @type {any} */ (control)._refreshBondHeader?.();
   });
 }
 
@@ -194,6 +215,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.checked = general.bondVisibility[pair];
+    checkbox.title = `Show/hide ${pair} bonds`;
     checkbox.onchange = (e) => {
       general.bondVisibility[pair] = /** @type {any} */ (e.target).checked;
       updateVisualization({
@@ -202,10 +224,12 @@ export function createBondLengthControls(targetPanel='bondControls') {
         reRenderComposition: false,
       });
       refreshExpandedBondLists(bondControls);
+      refreshBondHeaders(bondControls);
     };
 
     const checkboxLabel = document.createElement('label');
-    checkboxLabel.textContent = `Show ${pair} bonds`;
+    checkboxLabel.textContent = pair; // compact, matching the Atoms/Poly headers
+    checkboxLabel.title = `Show/hide ${pair} bonds`;
     checkboxLabel.style.fontSize = '12px';
     checkboxLabel.style.color = '#ccc';
     checkboxLabel.style.margin = '0';
@@ -225,21 +249,196 @@ export function createBondLengthControls(targetPanel='bondControls') {
       cursor: pointer;
     `;
 
-    let dot
-    let curr_bond_colors = ["#ccc","#fff"]
-    if (curr_bond_colors.length > 1) {
-      dot = createPieDot(curr_bond_colors, 50);
-      dot.classList.add('dot');
-    } else {
-      dot = document.createElement('span');
-      dot.className = 'dot';
-      dot.style.background = curr_bond_colors[0];
-    }
+    // --- Live header: pie dot (opens the category editor) + count(pct%) ---
+    const structure = () => fileBrowser.selectedStructure;
+    const pairOf = (b) => (b.elements[0] < b.elements[1]
+      ? `${b.elements[0]}-${b.elements[1]}` : `${b.elements[1]}-${b.elements[0]}`);
+    const memberBonds = () => (structure()?.bonds ?? []).filter((b) => pairOf(b) === pair);
+    const catStyle = () => (structure().bondCategoryStyles ??= {})[pair] ??= {};
 
+    /** @type {HTMLElement} */
+    let dotEl = document.createElement('span');
+    const countLabel = document.createElement('span');
+    countLabel.className = 'bond-count';
+    countLabel.style.cssText = 'font-size: 11px; color: #ccc; margin-left: auto;';
+
+    function refreshHeader() {
+      const members = memberBonds();
+      const colors = members.length
+        ? members.map((b) => safeColor(b.color?.[0]))
+        : [safeColor(structure()?.bondCategoryStyles?.[pair]?.color ?? '#808080')];
+      const dot = createPieDot(colors, 20);
+      dot.classList.add('dot');
+      dot.style.cursor = 'pointer';
+      dot.title = `Customize color/alpha/size for all ${pair} bonds`;
+      dot.onclick = (e) => {
+        e.stopPropagation();
+        catEditor.style.display = catEditor.style.display === 'none' ? 'block' : 'none';
+      };
+      dotEl.replaceWith(dot);
+      dotEl = dot;
+      const total = structure()?.bonds?.length ?? 0;
+      countLabel.textContent = `${members.length} (${total ? (100 * members.length / total).toFixed(1) : '0.0'}%)`;
+    }
+    /** @type {any} */ (div)._refreshBondHeader = refreshHeader;
+
+    // --- Per-pair cut-plane immunity toggle (parity with the Atoms header) ---
+    const keepToggle = createTinyToggle({
+      title: `Keep ${pair} bonds visible across cut planes`,
+      checked: !!general.bondCutImmunity[pair],
+      onChange: (on) => {
+        general.bondCutImmunity[pair] = on;
+        updateVisualization({
+          atomsUpdate: false,
+          bondsUpdate: true,
+          reRenderAtoms: false,
+          reRenderBonds: false,
+          reRenderLattice: false,
+          reRenderOther: false,
+          reRenderComposition: false,
+        });
+      },
+    });
+
+    // --- Category style editor (color + alpha + size for the whole pair) ---
+    const catEditor = document.createElement('div');
+    catEditor.className = 'bond-cat-editor';
+    catEditor.style.cssText = 'display: none; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
+
+    // Live edits fan out to every bond of the pair, but SKIP members that have
+    // a per-copy override for the same field so individual > category holds
+    // live as well as after rebuilds (buildBondObjects re-applies both).
+    const currentCatColor = safeColor(structure()?.bondCategoryStyles?.[pair]?.color ?? '#808080');
+    const catPicker = createColorPicker(currentCatColor, (hex) => {
+      catStyle().color = hex;
+      for (const b of memberBonds()) {
+        if (structure().bondUserStyles?.[bondKey(b.indices)]?.color != null) continue;
+        b.color = [hex, hex];
+        b.userColor = [hex, hex];
+        if (b.instanceIds && groups.bondsMesh) {
+          updateSingleBondColor(b.instanceIds[0], hex, true);
+          updateSingleBondColor(b.instanceIds[1], hex, true);
+        }
+      }
+      if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
+      refreshHeader();
+      refreshExpandedBondLists(bondControls);
+    });
+
+    const currentCatAlpha = clampOpacity(structure()?.bondCategoryStyles?.[pair]?.alpha ?? 1);
+    const catAlphaRow = document.createElement('div');
+    catAlphaRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin: 6px 0;';
+    const catAlphaLabel = document.createElement('span');
+    catAlphaLabel.textContent = 'Alpha';
+    catAlphaLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+    const catAlphaSlider = document.createElement('input');
+    catAlphaSlider.type = 'range';
+    catAlphaSlider.min = '0.05';
+    catAlphaSlider.max = '1';
+    catAlphaSlider.step = '0.01';
+    catAlphaSlider.value = String(currentCatAlpha);
+    catAlphaSlider.style.cssText = 'flex:1;';
+    const catAlphaValue = document.createElement('input');
+    catAlphaValue.type = 'number';
+    catAlphaValue.min = '0.05';
+    catAlphaValue.max = '1';
+    catAlphaValue.step = '0.01';
+    catAlphaValue.value = currentCatAlpha.toFixed(2);
+    catAlphaValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+    function applyCatAlpha(rawValue) {
+      const value = clampOpacity(rawValue);
+      catAlphaSlider.value = String(value);
+      catAlphaValue.value = value.toFixed(2);
+      catStyle().alpha = value;
+      for (const b of memberBonds()) {
+        if (structure().bondUserStyles?.[bondKey(b.indices)]?.alpha != null) continue;
+        b.alpha = value;
+        if (b.instanceIds) {
+          updateSingleBondOpacity(b.instanceIds[0], value);
+          updateSingleBondOpacity(b.instanceIds[1], value);
+        }
+      }
+    }
+    catAlphaSlider.oninput = (e) => applyCatAlpha(/** @type {any} */ (e.target).value);
+    catAlphaValue.oninput = (e) => applyCatAlpha(/** @type {any} */ (e.target).value);
+    catAlphaRow.appendChild(catAlphaLabel);
+    catAlphaRow.appendChild(catAlphaSlider);
+    catAlphaRow.appendChild(catAlphaValue);
+
+    const currentCatScale = clampRadiusScale(structure()?.bondCategoryStyles?.[pair]?.radiusScale ?? 1);
+    const catSizeRow = document.createElement('div');
+    catSizeRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin: 6px 0;';
+    const catSizeLabel = document.createElement('span');
+    catSizeLabel.textContent = 'Size';
+    catSizeLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+    const catSizeSlider = document.createElement('input');
+    catSizeSlider.type = 'range';
+    catSizeSlider.min = '0.2';
+    catSizeSlider.max = '3';
+    catSizeSlider.step = '0.05';
+    catSizeSlider.value = String(currentCatScale);
+    catSizeSlider.style.cssText = 'flex:1;';
+    const catSizeValue = document.createElement('input');
+    catSizeValue.type = 'number';
+    catSizeValue.min = '0.2';
+    catSizeValue.max = '3';
+    catSizeValue.step = '0.05';
+    catSizeValue.value = currentCatScale.toFixed(2);
+    catSizeValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+    function applyCatSize(rawValue) {
+      const value = clampRadiusScale(rawValue);
+      catSizeSlider.value = String(value);
+      catSizeValue.value = value.toFixed(2);
+      catStyle().radiusScale = value;
+      for (const b of memberBonds()) {
+        if (structure().bondUserStyles?.[bondKey(b.indices)]?.radiusScale != null) continue;
+        b.radius = general.bondRadius * value;
+        if (b.instanceIds && groups.bondsMesh) {
+          updateSingleBondDiameter(b.instanceIds[0], b.radius);
+          updateSingleBondDiameter(b.instanceIds[1], b.radius);
+        }
+      }
+    }
+    catSizeSlider.oninput = (e) => applyCatSize(/** @type {any} */ (e.target).value);
+    catSizeValue.oninput = (e) => applyCatSize(/** @type {any} */ (e.target).value);
+    catSizeRow.appendChild(catSizeLabel);
+    catSizeRow.appendChild(catSizeSlider);
+    catSizeRow.appendChild(catSizeValue);
+
+    const catResetBtn = document.createElement('button');
+    catResetBtn.textContent = 'Reset';
+    catResetBtn.className = 'btn-mini';
+    catResetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
+    catResetBtn.title = `Reset ${pair} bonds: removes the group style AND every individual override`;
+    catResetBtn.onclick = (e) => {
+      e.stopPropagation();
+      delete structure().bondCategoryStyles[pair];
+      for (const b of memberBonds()) delete structure().bondUserStyles[bondKey(b.indices)];
+      updateVisualization({
+        reRenderBonds: true,
+        reRenderOther: false,
+        reRenderComposition: false,
+      });
+      refreshExpandedBondLists(bondControls);
+      refreshBondHeaders(bondControls);
+    };
+    const catButtonRow = document.createElement('div');
+    catButtonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';
+    catButtonRow.appendChild(catResetBtn);
+
+    catEditor.appendChild(catPicker.element);
+    catEditor.appendChild(catAlphaRow);
+    catEditor.appendChild(catSizeRow);
+    catEditor.appendChild(catButtonRow);
+
+    // Uniform header order across tabs: checkbox, dot, label, caret, count, immunity.
     checkboxDiv.appendChild(checkbox);
+    checkboxDiv.appendChild(dotEl);
     checkboxDiv.appendChild(checkboxLabel);
     checkboxDiv.appendChild(expandIcon);
-    checkboxDiv.appendChild(dot);
+    checkboxDiv.appendChild(countLabel);
+    checkboxDiv.appendChild(keepToggle.wrapper);
+    refreshHeader();
 
     // --- Individual bond list (expandable, lazily built) ---
     const bondsContainer = document.createElement('div');
@@ -416,6 +615,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
         reRenderComposition: false,
       });
       refreshExpandedBondLists(bondControls);
+      refreshBondHeaders(bondControls);
     }
 
     minSlider.oninput = updateBondRange;
@@ -432,6 +632,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     controlsRow.appendChild(maxValueSpan);
 
     div.appendChild(checkboxDiv);
+    div.appendChild(catEditor);
     div.appendChild(label);
     div.appendChild(controlsRow);
     div.appendChild(bondsContainer);

@@ -82,6 +82,10 @@ export class Structure {
     // atom edits); the stored elements pair guards against misapplication and
     // stale entries are simply ignored.
     this.bondUserStyles = {};
+    // bondCategoryStyles["El1-El2"] -> { color?, alpha?, radiusScale? }.
+    // Category-level styling from the Bonds tab header dot; per-copy
+    // bondUserStyles win over these. Survives bond rebuilds like bondUserStyles.
+    this.bondCategoryStyles = {};
     // Per-polyhedron / per-polyhedron-category user style overrides, keyed by
     // the stable keys computed in render/PolyhedraModule.js (assignPolyhedraKeys):
     // polyhedraUserStyles[polyKey] -> { color?, alpha? } and

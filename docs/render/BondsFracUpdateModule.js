@@ -147,6 +147,10 @@ function isPointCutByPlanes(position, cutPlanes) {
 function isBondCutByPlanes(bond, cutPlanes) {
   if (!cutPlanes.length || !bond?.srcIndices || !Array.isArray(bond.positions)) return false;
 
+  // Per-pair cut immunity (Bonds tab header toggle).
+  const [e1, e2] = bond.elements;
+  if (general.bondCutImmunity?.[e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`]) return false;
+
   const atoms = fileBrowser.selectedStructure?.atoms;
   if (!atoms) return false;
 
@@ -205,6 +209,7 @@ export function buildBondObjects(structure){
   // Per-bond user styles (structure.bondUserStyles) intentionally survive rebuilds;
   // the mesh and any bond selection do not.
   structure.bondUserStyles ??= {};
+  structure.bondCategoryStyles ??= {};
   general.bondsBuildCounter = (general.bondsBuildCounter || 0) + 1;
   highlightHover.currentlyHighlightedBond = null;
 
@@ -386,6 +391,22 @@ export function buildBondObjects(structure){
         const color = `#${(colors[bin].r * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].g * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].b * 255 | 0).toString(16).padStart(2, '0')}`;
         bond.color = [color, color];
       });
+    }
+  }
+
+  // Category styles (Bonds-tab header dot) — applied after mode coloring and
+  // BEFORE the per-copy bondUserStyles pass below, so individual overrides win.
+  if (Object.keys(structure.bondCategoryStyles).length) {
+    for (const bond of structure.bonds) {
+      const [e1, e2] = bond.elements;
+      const cs = structure.bondCategoryStyles[e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`];
+      if (!cs) continue;
+      if (cs.color) {
+        bond.color = [cs.color, cs.color];
+        bond.userColor = [cs.color, cs.color]; // survives updateSingleBond repaints
+      }
+      if (cs.alpha != null) bond.alpha = cs.alpha;
+      if (cs.radiusScale != null) bond.radius = general.bondRadius * cs.radiusScale;
     }
   }
 

@@ -95,6 +95,12 @@ export const general = {
   bondLengths:{},
   defaultBondLengths:{},
   bondVisibility:{},
+  // Per-element atom visibility (Atoms tab header checkbox): element -> bool;
+  // undefined/true = shown. Hidden elements are zero-scaled (also unpickable).
+  atomVisibility:{},
+  // Per-pair bond cut-plane immunity (Bonds tab header toggle): "El1-El2" ->
+  // bool; true = the pair's bonds are never culled by cut planes.
+  bondCutImmunity:{},
   // Incremented on every buildBondObjects() run; expanded per-bond row lists in the
   // Bonds tab compare against it to know their cached rows are stale.
   bondsBuildCounter:0,

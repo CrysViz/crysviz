@@ -517,7 +517,12 @@ export function updateSingleAtomDiameter(index, element, scale = 1) {
   const mesh = groups.atomsMesh;
   const a = mesh.instanceMatrix.array;
   const atomSize = general.atomSize;
-  const radius = (atomicRadii[element] || 1.0) * atomSize * scale;
+  // Per-element visibility (Atoms tab header checkbox): hidden elements are
+  // zero-scaled — renders nothing AND produces no raycast hits (unlike the
+  // cut-plane shader discard). Checked here so no other diameter writer
+  // (global size slider, per-atom/per-element size edits) can un-hide them.
+  const hidden = general.atomVisibility?.[element] === false;
+  const radius = hidden ? 0 : (atomicRadii[element] || 1.0) * atomSize * scale;
   const mOffset = index * 16;
   a[mOffset + 0] = radius;
   a[mOffset + 5] = radius;

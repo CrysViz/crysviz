@@ -36,6 +36,7 @@ const H = require('../harness');
       withCatKey: controls.filter((c) => c.dataset.catKey).length,
       carets: document.querySelectorAll('#infoPolyControls .poly-expand-icon').length,
       labels: controls.map((c) => c.querySelector('label')?.textContent ?? ''),
+      counts: controls.map((c) => c.querySelector('.poly-count')?.textContent ?? ''),
       rowsBeforeExpand: document.querySelectorAll('#infoPolyControls .individual-polyhedron-row').length,
     };
   });
@@ -45,9 +46,10 @@ const H = require('../harness');
       && panelShape.carets === panelShape.controls
       && panelShape.rowsBeforeExpand === 0,
     JSON.stringify(panelShape));
-  H.check('category labels look like composition + count, e.g. "CuO5 (2)"',
-    panelShape.labels.some((l) => /^[A-Z][a-z]?([A-Z][a-z]?\d*)+ \(\d+\)$/.test(l)),
-    JSON.stringify(panelShape.labels));
+  H.check('category labels are composition only with a separate count (pct%) span',
+    panelShape.labels.some((l) => /^[A-Z][a-z]?([A-Z][a-z]?\d*)+$/.test(l))
+      && panelShape.counts.every((c) => /^\d+ \(\d+\.\d%\)$/.test(c)),
+    JSON.stringify({ labels: panelShape.labels, counts: panelShape.counts }));
 
   // --- Expand all categories -----------------------------------------------------
   const expanded = await page.evaluate(() => {

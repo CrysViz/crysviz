@@ -10,8 +10,10 @@ import { colorHexToCss, createPieDot } from '../utils/ColorModule.js';
 import { createColorPicker } from './ColorPickerModule.js';
 import {
   groupPolyhedraByCategory, updatePolyhedraColors, resolvePolyhedronStyle,
+  updatePolyhedra,
 } from '../render/index.js';
 import { createIndividualPolyhedronRow } from './StructureInfoPanel/components/IndividualPolyhedronRow.js';
+import { createTinyImmunityToggle } from './StructureInfoPanel/components/Immunity.js';
 import { clampOpacity } from './StructureInfoPanel/components/utils.js';
 
 function safeColor(color) {
@@ -127,8 +129,30 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     };
 
     const label = document.createElement('label');
-    label.textContent = `${entry.label} (${entry.indices.length})`;
+    label.textContent = entry.label;
     label.style.cssText = 'font-size: 12px; color: #ccc; margin: 0; cursor: pointer;';
+
+    // Count + percentage, matching the Atoms/Bonds headers.
+    const totalPolys = model.polyhedra.length || 1;
+    const countLabel = document.createElement('span');
+    countLabel.className = 'poly-count';
+    countLabel.style.cssText = 'font-size: 11px; color: #ccc; margin-left: auto;';
+    countLabel.textContent = `${entry.indices.length} (${(100 * entry.indices.length / totalPolys).toFixed(1)}%)`;
+
+    // Cut-plane immunity (parity with the Atoms header): the compute drops
+    // polyhedra whose center OR vertex atoms are cut, so immunity is applied
+    // to ALL of the category's member atoms (center + vertex sources) via the
+    // existing atom mechanism — shared state with the Atoms tab toggles, and
+    // the polyhedron stays visually complete (its atoms survive the cut too).
+    const memberAtomIndices = [...new Set(entry.indices.flatMap((i) => {
+      const p = model.polyhedra[i];
+      return p ? [p.centerIndex, ...(p.vertexSrcList ?? [])] : [];
+    }).filter(Number.isInteger))];
+    const keepToggle = createTinyImmunityToggle(memberAtomIndices,
+      `Keep ${entry.label} polyhedra visible across cut planes (marks their atoms immune)`);
+    // Runs after the component's own listener (registration order): the
+    // immunity flags are set first, then the polyhedra recompute picks them up.
+    keepToggle.toggle.addEventListener('change', () => updatePolyhedra());
 
     // Expand caret (same style as the Bonds tab)
     const expandIcon = document.createElement('span');
@@ -150,10 +174,13 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     dot.style.cursor = 'pointer';
     dot.title = `Customize color/alpha for all ${entry.label} polyhedra`;
 
+    // Uniform header order across tabs: checkbox, dot, label, caret, count, immunity.
     headerDiv.appendChild(checkbox);
+    headerDiv.appendChild(dot);
     headerDiv.appendChild(label);
     headerDiv.appendChild(expandIcon);
-    headerDiv.appendChild(dot);
+    headerDiv.appendChild(countLabel);
+    headerDiv.appendChild(keepToggle.wrapper);
     div.appendChild(headerDiv);
 
     // --- Group editor (color + alpha for the whole category) ---

@@ -450,8 +450,9 @@ function findAtomRow(element, sourceIndex, instanceId = null) {
   let targetContainer = null;
 
   for (const container of elementContainers) {
-    const elementName = container.querySelector('.comp-left span:nth-child(2)');
-    if (elementName && elementName.textContent === element) {
+    // Match by the data attribute — positional span selectors broke when the
+    // header gained the visibility checkbox.
+    if (/** @type {HTMLElement} */ (container).dataset.element === element) {
       targetContainer = container;
       break;
     }

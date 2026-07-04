@@ -110,6 +110,11 @@ export function captureState() {
       latticeLineWidth: general.latticeLineWidth,
       bondLengths: { ...general.bondLengths },
       bondVisibility: { ...general.bondVisibility },
+      atomVisibility: { ...general.atomVisibility },
+      bondCutImmunity: { ...general.bondCutImmunity },
+      // NOTE: the per-item/category style stores (bondUserStyles,
+      // bondCategoryStyles, polyhedraUserStyles, polyhedraCategoryStyles) are
+      // not captured yet — only atomImageStyles is (see colors above).
     },
     style: {
       renderStyle: general.renderStyle,
@@ -261,6 +266,8 @@ function applyDisplaySettings(display) {
   if (display.completePolyhedra != null) { general.completePolyhedra = display.completePolyhedra; setToggle('completePolyhedraToggle', display.completePolyhedra); }
   if (display.bondLengths)    Object.assign(general.bondLengths, display.bondLengths);
   if (display.bondVisibility) Object.assign(general.bondVisibility, display.bondVisibility);
+  if (display.atomVisibility) Object.assign(general.atomVisibility, display.atomVisibility);
+  if (display.bondCutImmunity) Object.assign(general.bondCutImmunity, display.bondCutImmunity);
 }
 
 /** Render style, color modes and scene background. Runs BEFORE the structure

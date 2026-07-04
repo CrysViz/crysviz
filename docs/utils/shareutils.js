@@ -81,8 +81,9 @@ function getExpandedElements() {
   const atomContainers = document.querySelectorAll('.individual-atoms');
   atomContainers.forEach((container, index) => {
     if (container.style.display !== 'none') {
-      // Find the element name from the parent container
-      const elementName = container.parentElement?.querySelector('.comp-left span:nth-child(2)')?.textContent;
+      // Find the element from the parent container's data attribute (positional
+      // span selectors broke when the header gained the visibility checkbox).
+      const elementName = /** @type {HTMLElement} */ (container.parentElement)?.dataset?.element;
       if (elementName) {
         expanded.push(elementName);
       }

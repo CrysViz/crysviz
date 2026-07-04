@@ -1,6 +1,7 @@
 import { fileBrowser, general } from '../../../state/store.js';
 import { colorHexToCss, createPieDot, getAtomColor } from '../../../utils/ColorModule.js';
 import { getAtomImageColor } from '../../../render/AtomsFracUpdateModule.js';
+import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { getElementAtomIndices, getElementOpacityValues, setSwatchOpacity } from './utils.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createIndividualAtomRow } from './IndividualAtomRow.js';
@@ -58,6 +59,28 @@ export function createCompositionRow(el, count, total) {
   const left = document.createElement('div');
   left.className = 'comp-left';
 
+  // Per-element visibility (parity with the Bonds/Poly tab headers): hides
+  // only this element's atom spheres (zero-scaled, also unpickable); bonds and
+  // polyhedra keep their own visibility toggles.
+  const visCheckbox = document.createElement('input');
+  visCheckbox.type = 'checkbox';
+  visCheckbox.checked = general.atomVisibility[el] !== false;
+  visCheckbox.title = `Show/hide all ${el} atoms`;
+  visCheckbox.addEventListener('click', (e) => e.stopPropagation()); // row click still expands
+  visCheckbox.onchange = (e) => {
+    general.atomVisibility[el] = /** @type {any} */ (e.target).checked;
+    updateVisualization({
+      atomsUpdate: true,
+      bondsUpdate: false,
+      reRenderAtoms: false,
+      reRenderBonds: false,
+      reRenderLattice: false,
+      reRenderOther: false,
+      reRenderComposition: false,
+    });
+  };
+  left.appendChild(visCheckbox);
+
   // Get all atom indices for this element
   const elementAtomIndices = getElementAtomIndices(el);
 
@@ -95,7 +118,8 @@ export function createCompositionRow(el, count, total) {
       cursor: pointer;
     `;
     setSwatchOpacity(dot, currentOpacity);
-    left.insertBefore(dot, left.firstChild);
+    // Keep DOM order checkbox -> dot -> name -> caret across repaints.
+    left.insertBefore(dot, visCheckbox.nextSibling);
 
     // Make the dot clickable to open the color editor
     dot.title = `Customize color for all ${el} atoms`;
