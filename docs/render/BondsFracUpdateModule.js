@@ -5,7 +5,7 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
-import {createStyledMaterial} from './MaterialStyles.js'
+import {createStyledMaterial, addCelOutline} from './MaterialStyles.js'
 
 
 
@@ -422,6 +422,10 @@ export function createBondsMesh(bondCount) {
     'instanceElementIndex',
     new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2), 1)
   );
+
+  // Bonds are culled by zero-scaling their instance matrices, which the
+  // outline follows via the shared instanceMatrix — no discard variant needed.
+  if (general.renderStyle === 'cel') addCelOutline(mesh);
 
   return mesh;
 }

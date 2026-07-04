@@ -6,6 +6,7 @@ import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getVi
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
+import { setCelOutlineWidth } from '../render/index.js'
 
 
 
@@ -333,6 +334,7 @@ export function addColorPanel(target = "colorContainer") {
     { value: "cel", text: "Cel shading", selected: general.renderStyle === "cel" },
   ], () => {
     general.renderStyle = renderStyleMenu.querySelector("select").value;
+    outlineBlock.style.display = general.renderStyle === "cel" ? "block" : "none";
     const hasComparison = !!fileBrowser.comparisonStructure;
     updateVisualization({
       reRenderAtoms: true,
@@ -343,6 +345,23 @@ export function addColorPanel(target = "colorContainer") {
   });
 
   content.appendChild(renderStyleMenu);
+
+  // Outline thickness for cel shading (0 = no outline). Live uniform update,
+  // no rebuild needed.
+  const outlineBlock = createElement("div", { class: "menu_block" },
+    { display: general.renderStyle === "cel" ? "block" : "none" });
+  const outlineLabel = createElement("label", { for: "celOutlineWidth" },
+    { display: "block", textAlign: "center", marginBottom: "5px", width: "100%" }, "Outline");
+  const outlineSlider = createElement("input", {
+    type: "range", id: "celOutlineWidth", min: "0", max: "0.2", step: "0.005",
+    value: String(general.celOutlineWidth),
+  }, { width: "100%", maxWidth: "120px", margin: "0 auto", display: "block" });
+  outlineSlider.addEventListener("input", () => {
+    setCelOutlineWidth(parseFloat(outlineSlider.value));
+  });
+  outlineBlock.appendChild(outlineLabel);
+  outlineBlock.appendChild(outlineSlider);
+  content.appendChild(outlineBlock);
 
   const menusWrapper = createElement("div", { class: "menus_wrapper" });
 

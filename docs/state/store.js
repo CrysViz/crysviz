@@ -78,6 +78,7 @@ export const groups = {
 
 export const general = {
   renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
+  celOutlineWidth: 0.05, // world-units black outline around atoms/bonds in cel style (0 = off)
   ForceMin:1e-4,
   ForceMax:2.5,
   BondMin:1.1,

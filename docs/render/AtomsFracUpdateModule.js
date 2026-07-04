@@ -5,13 +5,11 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
 import { getCutPlaneMaskSign } from '../model/Plane.js';
-import {createStyledMaterial} from './MaterialStyles.js'
+import {createStyledMaterial, addCelOutline, MAX_CUT_PLANES} from './MaterialStyles.js'
 import {runPeriodicWrapped} from './LatticeModule.js'
 
 import {setAtomColor}  from '../utils/ColorModule.js';
 
-
-const MAX_CUT_PLANES = 8;
 
 function normalizePlaneNormal(x = 1, y = 0, z = 0) {
   const nx = Number(x) || 0;
@@ -30,8 +28,7 @@ function getActiveCutPlanes() {
     .slice(0, MAX_CUT_PLANES);
 }
 
-function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
-  const shader = material?.userData?.shader;
+function applyCutPlaneUniformsToShader(shader) {
   if (!shader?.uniforms?.uCutPlanes || !shader.uniforms.uCutPlaneCount || !shader.uniforms.uCutPlaneMaskSide) return;
   const activePlanes = getActiveCutPlanes();
   shader.uniforms.uCutPlaneCount.value = activePlanes.length;
@@ -43,6 +40,15 @@ function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
   for (let index = activePlanes.length; index < MAX_CUT_PLANES; index++) {
     shader.uniforms.uCutPlanes.value[index].set(0, 0, 0, 0);
     shader.uniforms.uCutPlaneMaskSide.value[index] = 0;
+  }
+}
+
+function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
+  applyCutPlaneUniformsToShader(material?.userData?.shader);
+  // The cel-shading outline hull discards by the same planes.
+  if (!material || material === groups.atomsMesh?.material) {
+    const outline = groups.atomsMesh?.userData?.celOutline;
+    if (outline) applyCutPlaneUniformsToShader(outline.material?.userData?.shader);
   }
 }
 
@@ -221,6 +227,15 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
   app.scene.add(mesh);
   groups[meshKey] = mesh;
   groups[meshKey].userData.elementNames = wrapped.elements;
+
+  if (general.renderStyle === 'cel') {
+    // The outline shader compiles lazily on first render; seed its cut-plane
+    // uniforms from the current plane state once it exists.
+    addCelOutline(mesh, {
+      cutPlanes,
+      onCompiled: cutPlanes ? () => applyAtomCutPlaneUniforms() : undefined,
+    });
+  }
   // Honour the "Show Atoms" toggle on (re)build — the toggle only flips visibility on the
   // live mesh, so a rebuild (e.g. Complete Polyhedra appending atoms) would otherwise
   // reset the main atoms to visible. Comparison atoms keep their own visibility logic.
