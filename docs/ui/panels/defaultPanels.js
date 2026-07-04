@@ -3,7 +3,7 @@
 // migration is concentrated here; the builders themselves only need to build
 // into the panel body they are given.
 
-import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel } from './PanelManager.js';
+import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
 import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility } from '../../render/index.js';
@@ -443,6 +443,17 @@ export function registerDefaultPanels() {
       adoptStaticRows(body, ['atomSize'], false);
       addColorPanel(body.id);
       addCameraPanel(body.id);
+      // Window drag behavior: dragging across the dock boundary docks/undocks.
+      const winHeader = document.createElement('label');
+      winHeader.textContent = 'Windows';
+      body.appendChild(winHeader);
+      const dragGroup = document.createElement('div');
+      dragGroup.className = 'toggle_group';
+      dragGroup.appendChild(makeToggleRow('dragIntoDockToggle', 'Drag into dock',
+        !!getPanelPref('dragIntoDock'), (on) => setPanelPref('dragIntoDock', on)));
+      dragGroup.appendChild(makeToggleRow('dragOutOfDockToggle', 'Drag out of dock',
+        !!getPanelPref('dragOutOfDock'), (on) => setPanelPref('dragOutOfDock', on)));
+      body.appendChild(dragGroup);
       // Restore every window to its default placement.
       const resetBtn = document.createElement('button');
       resetBtn.id = 'resetUiButton';

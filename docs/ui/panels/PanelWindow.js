@@ -14,6 +14,10 @@
 //   onClose(panel)                   close button pressed (closable panels)
 //   onLayoutChange()                 any persistable state changed
 //   beginDockReorder(panel, event)   drag started on a docked panel's title bar
+//   wantsDockDrop(event) -> boolean  floating drag is over the dock and the
+//                                    drag-into-dock setting is enabled
+//   dockAtPointer(panel, event)      commit a drag-into-dock; the manager
+//                                    continues the gesture as a reorder drag
 
 const VIEWPORT_MARGIN = 8;
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
@@ -351,33 +355,73 @@ export class PanelWindow {
 
     const startX = e.clientX;
     const startY = e.clientY;
-    let dragging = false;
-    let grabDX = 0;
-    let grabDY = 0;
 
     const bar = this.titlebar;
     bar.setPointerCapture(e.pointerId);
 
     const onMove = (ev) => {
-      if (!dragging) {
-        if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD &&
-            Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
-        dragging = true;
-        if (this.docked) {
-          // Hand the whole gesture over to the manager's reorder logic.
-          bar.releasePointerCapture(e.pointerId);
-          bar.removeEventListener('pointermove', onMove);
-          bar.removeEventListener('pointerup', onUp);
-          bar.removeEventListener('pointercancel', onUp);
-          this.hooks.beginDockReorder(this, ev);
-          return;
-        }
-        this._anchorTopLeft();
-        this._moving = true;
-        const rect = this.el.getBoundingClientRect();
-        grabDX = ev.clientX - rect.left;
-        grabDY = ev.clientY - rect.top;
-        this.el.classList.add('cv-drag-moving');
+      if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD &&
+          Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
+      bar.removeEventListener('pointermove', onMove);
+      bar.removeEventListener('pointerup', onUp);
+      bar.removeEventListener('pointercancel', onUp);
+      if (this.docked) {
+        // Hand the whole gesture over to the manager's reorder logic.
+        bar.releasePointerCapture(e.pointerId);
+        this.hooks.beginDockReorder(this, ev);
+        return;
+      }
+      this._startFloatMove(ev, e.pointerId);
+    };
+
+    const onUp = () => {
+      bar.removeEventListener('pointermove', onMove);
+      bar.removeEventListener('pointerup', onUp);
+      bar.removeEventListener('pointercancel', onUp);
+      // Plain click on the title bar toggles collapse — except on the thin
+      // strip of a hidden bar, where only double-click (restore) acts.
+      if (!this.barCollapsed) this.toggleCollapsed();
+    };
+
+    bar.addEventListener('pointermove', onMove);
+    bar.addEventListener('pointerup', onUp);
+    bar.addEventListener('pointercancel', onUp);
+  }
+
+  /** Public entry used by PanelManager after pulling a panel out of the dock:
+   *  continue the still-active pointer gesture as a floating move. */
+  beginFloatDrag(ev) {
+    this._startFloatMove(ev, ev.pointerId);
+  }
+
+  /** Run a floating title-bar drag (threshold already crossed). */
+  _startFloatMove(ev, pointerId) {
+    const bar = this.titlebar;
+    bar.setPointerCapture(pointerId); // no-op if already captured
+    this._anchorTopLeft();
+    this._moving = true;
+    const rect = this.el.getBoundingClientRect();
+    const grabDX = ev.clientX - rect.left;
+    const grabDY = ev.clientY - rect.top;
+    this.el.classList.add('cv-drag-moving');
+
+    const teardown = () => {
+      bar.removeEventListener('pointermove', onMove);
+      bar.removeEventListener('pointerup', onUp);
+      bar.removeEventListener('pointercancel', onUp);
+      this.el.classList.remove('cv-drag-moving');
+      this._moving = false;
+    };
+
+    const onMove = (mv) => {
+      if (this.hooks.wantsDockDrop && this.hooks.wantsDockDrop(mv)) {
+        // Dragged over the dock: dock at the pointer slot and continue the
+        // gesture as a reorder drag. Capture is released explicitly (the
+        // reparent into #dock would drop it anyway).
+        teardown();
+        bar.releasePointerCapture(pointerId);
+        this.hooks.dockAtPointer(this, mv);
+        return;
       }
       // Floating move, clamped so the title bar (or the collapsed handle,
       // which is a short centered strip) stays reachable: its top never goes
@@ -387,29 +431,19 @@ export class PanelWindow {
       const barW = Math.max(bar.offsetWidth, 40);
       const barH = bar.offsetHeight;
       const left = Math.min(
-        Math.max(ev.clientX - grabDX, 40 - (barLeft + barW)),
+        Math.max(mv.clientX - grabDX, 40 - (barLeft + barW)),
         window.innerWidth - 40 - barLeft);
-      const top = Math.min(Math.max(ev.clientY - grabDY, 0),
+      const top = Math.min(Math.max(mv.clientY - grabDY, 0),
         window.innerHeight - barH);
       this.el.style.left = `${left}px`;
       this.el.style.top = `${top}px`;
     };
 
     const onUp = () => {
-      bar.removeEventListener('pointermove', onMove);
-      bar.removeEventListener('pointerup', onUp);
-      bar.removeEventListener('pointercancel', onUp);
-      this.el.classList.remove('cv-drag-moving');
-      this._moving = false;
-      if (!dragging) {
-        // Plain click on the title bar toggles collapse — except on the thin
-        // strip of a hidden bar, where only double-click (restore) acts.
-        if (!this.barCollapsed) this.toggleCollapsed();
-      } else {
-        // A user-chosen position replaces any dock displacement.
-        if (!this.docked) this.dockShifted = false;
-        this.hooks.onLayoutChange();
-      }
+      teardown();
+      // A user-chosen position replaces any dock displacement.
+      this.dockShifted = false;
+      this.hooks.onLayoutChange();
     };
 
     bar.addEventListener('pointermove', onMove);

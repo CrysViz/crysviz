@@ -14,6 +14,37 @@ const LS_KEY = 'panelLayout';
 const LAYOUT_VERSION = 1;
 const SAVE_DEBOUNCE_MS = 250;
 const DOCK_GAP = 10; // gap between the dock's right edge and displaced windows
+// How far past the dock's right edge a dock-drag must travel before the panel
+// is pulled out. Also the hysteresis gap against wantsDockDrop (which triggers
+// at the edge itself), so a pulled-out panel doesn't immediately re-dock.
+const DRAG_OUT_PX = 24;
+
+// Behavior preferences (the drag-into/out-of-dock toggles in Settings). Kept
+// in their own localStorage key, NOT in the versioned panelLayout blob: they
+// must survive both Reset UI (which clears LS_KEY) and layout version bumps.
+const PREFS_KEY = 'panelPrefs';
+const panelPrefs = { dragIntoDock: true, dragOutOfDock: true };
+
+function loadPanelPrefs() {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      if (typeof parsed.dragIntoDock === 'boolean') panelPrefs.dragIntoDock = parsed.dragIntoDock;
+      if (typeof parsed.dragOutOfDock === 'boolean') panelPrefs.dragOutOfDock = parsed.dragOutOfDock;
+    }
+  } catch { /* corrupted prefs -> defaults */ }
+}
+
+export function getPanelPref(name) {
+  return panelPrefs[name];
+}
+
+export function setPanelPref(name, value) {
+  panelPrefs[name] = !!value;
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(panelPrefs)); } catch { /* storage unavailable */ }
+}
 
 /** @type {Map<string, PanelWindow>} */
 const panels = new Map();
@@ -42,6 +73,8 @@ const hooks = {
     applyPanelDefaults(panel);
   },
   beginDockReorder,
+  wantsDockDrop,
+  dockAtPointer,
 };
 
 /**
@@ -92,6 +125,7 @@ export function resetAllPanels() {
 export function initPanelSystem() {
   dockEl = document.getElementById('dock');
   loadStoredLayout();
+  loadPanelPrefs();
 
   // Track the side panel's visibility: floating windows in the dock's column
   // are displaced right while it occupies space and return to their base
@@ -377,7 +411,39 @@ function redockPanel(panel) {
   scheduleSave();
 }
 
-function floatPanel(panel, pos) {
+/** Is a floating title-bar drag currently over the visible side panel (and
+ *  drag-into-dock enabled)? Queried by PanelWindow on every drag move. */
+function wantsDockDrop(ev) {
+  if (!panelPrefs.dragIntoDock || !dockEl || !dockOccupiesSpace()) return false;
+  const ui = document.getElementById('ui');
+  if (!ui) return false;
+  const r = ui.getBoundingClientRect();
+  return ev.clientX >= r.left && ev.clientX < r.right
+      && ev.clientY >= r.top && ev.clientY <= r.bottom;
+}
+
+/**
+ * Commit a drag-into-dock: insert the floating panel at the dock slot under
+ * the pointer, then hand the still-active gesture to the reorder drag so the
+ * user can keep positioning it. Caller (PanelWindow) has already torn down
+ * its move listeners and released pointer capture.
+ */
+function dockAtPointer(panel, ev) {
+  panel.floatPos = panel.getFloatPosition(); // last float pos, before styles clear
+  const pointerY = ev.clientY - dockEl.getBoundingClientRect().top;
+  let before = null;
+  for (const sib of dockedPanels()) {
+    if (pointerY < sib.el.offsetTop + sib.el.offsetHeight / 2) { before = sib.el; break; }
+  }
+  dockEl.insertBefore(panel.el, before);
+  panel.markDocked();
+  resequenceSortKeys();
+  beginDockReorder(panel, ev); // re-captures the pointer, gesture continues
+}
+
+/** @param {{noDockShift?: boolean}} [opts] noDockShift skips the displacement
+ *  past the dock (used when a drag-out must keep the panel under the pointer). */
+function floatPanel(panel, pos, opts = {}) {
   // Remember the dock slot (the panel it sits above) so re-docking restores it.
   if (panel.docked) {
     const siblings = dockedPanels();
@@ -399,7 +465,8 @@ function floatPanel(panel, pos) {
   panel.markFloating(pos);
   // A window whose base position would be covered by the dock is displaced
   // just past its right edge (only as far as needed) while it occupies space.
-  if (dockOccupies && typeof pos.left === 'number' && pos.left < lastUiWidth + DOCK_GAP) {
+  if (!opts.noDockShift && dockOccupies
+      && typeof pos.left === 'number' && pos.left < lastUiWidth + DOCK_GAP) {
     panel.applyFloatPosition({ ...pos, left: lastUiWidth + DOCK_GAP });
     panel.dockShifted = true;
     panel.dockShiftBase = pos.left;
@@ -472,6 +539,9 @@ function beginDockReorder(panel, startEv) {
   const elH = el.offsetHeight;
   const startTop = el.offsetTop; // #dock is position:relative
   const startY = startEv.clientY;
+  const grabDX = startEv.clientX - el.getBoundingClientRect().left;
+  // The side panel doesn't move mid-drag, so its edge can be captured once.
+  const uiRect = (document.getElementById('ui') || dockEl).getBoundingClientRect();
 
   const placeholder = document.createElement('div');
   placeholder.className = 'cv-dock-placeholder';
@@ -487,6 +557,34 @@ function beginDockReorder(panel, startEv) {
   bar.setPointerCapture(startEv.pointerId);
 
   const onMove = (ev) => {
+    // Dragged far enough right of the dock: pull the panel out and continue
+    // the same gesture as a floating move.
+    if (panelPrefs.dragOutOfDock && dockOccupiesSpace()
+        && ev.clientX > uiRect.right + DRAG_OUT_PX) {
+      bar.removeEventListener('pointermove', onMove);
+      bar.removeEventListener('pointerup', onUp);
+      bar.removeEventListener('pointercancel', onUp);
+      bar.releasePointerCapture(startEv.pointerId);
+      // Land in the placeholder slot FIRST so floatPanel records that slot as
+      // redockBeforeId (panel.docked is still true) — the dock button then
+      // restores the panel to where it was pulled from.
+      dockEl.insertBefore(el, placeholder);
+      placeholder.remove();
+      el.classList.remove('cv-dragging');
+      el.style.position = '';
+      el.style.top = '';
+      el.style.left = '';
+      el.style.right = '';
+      const barH = bar.offsetHeight || 24;
+      const pos = clampPos({
+        left: ev.clientX - Math.min(grabDX, 180), // keep the grip near the pointer
+        top: ev.clientY - Math.round(barH / 2),
+      });
+      floatPanel(panel, pos, { noDockShift: true });
+      panel.beginFloatDrag(ev); // gesture continues as a floating move
+      return;
+    }
+
     const maxTop = Math.max(dockEl.scrollHeight - elH, 0);
     const top = Math.min(Math.max(startTop + (ev.clientY - startY), 0), maxTop);
     el.style.top = `${top}px`;
