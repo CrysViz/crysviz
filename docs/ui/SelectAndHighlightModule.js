@@ -518,6 +518,28 @@ export function updateAtomSelectionFrom3DHit(hit, options = {}) {
   );
 }
 
+/**
+ * Panel→3D: select an atom from a click on its row in the Atoms/Wyckoff tab.
+ * Runs through the same selection machinery as double-clicking the atom in the
+ * 3D view (same modifier semantics: ctrl/cmd toggles, shift adds, plain click
+ * replaces; clicking the sole selected atom deselects).
+ */
+export function selectAtomFromRow(atomIndex, sourceEvent = null) {
+  const structure = fileBrowser.selectedStructure;
+  const instanceId = structure?.atomImages?.[atomIndex]?.[0];
+  if (instanceId === undefined || !groups.atomsMesh) return;
+  clearBondSelection();
+  updateAtomSelectionFrom3DHit(
+    { instanceId, object: groups.atomsMesh },
+    {
+      selectionMode: (sourceEvent?.ctrlKey || sourceEvent?.metaKey) ? 'toggle' : (sourceEvent?.shiftKey ? 'add' : 'replace'),
+      sourceEvent,
+      scrollToSelection: false, // the user is already looking at the row
+      reason: 'row-click',
+    },
+  );
+}
+
 export function clearAllHighlights(options = {}) {
   clearSelectedAtoms({
     sourceEvent: options.sourceEvent ?? null,

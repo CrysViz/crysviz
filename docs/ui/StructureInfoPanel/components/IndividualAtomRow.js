@@ -6,6 +6,7 @@ import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js'
 import { updatePolyhedraColors } from '../../../render/index.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { clampOpacity, clampRadiusScale, updateAtomCoordinates } from './utils.js';
+import { selectAtomFromRow } from '../../SelectAndHighlightModule.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createSpinForceEditor } from './SpinForceEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
@@ -64,6 +65,25 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   nameContainer.appendChild(coordsDisplay);
 
   row.appendChild(nameContainer);
+
+  // Panel→3D: clicking the row (its background or the name/coords area, NOT
+  // the editor buttons/panels) highlights this atom in the 3D view — the
+  // mirror of double-clicking the atom in 3D highlighting this row.
+  nameContainer.style.cursor = 'pointer';
+  nameContainer.title = `Highlight ${element}${displayNumber} in the 3D view`;
+  row.addEventListener('click', (e) => {
+    if (e.target !== row && !nameContainer.contains(/** @type {Node} */ (e.target))) return;
+    e.stopPropagation();
+    selectAtomFromRow(atomIndex, e);
+  });
+  // Hover feedback, skipped while the row carries the amber selection styling
+  // (highlightAtomRow sets dataset.selectionOrder on selected rows).
+  row.addEventListener('mouseenter', () => {
+    if (!row.dataset.selectionOrder) row.style.backgroundColor = 'rgba(255,255,255,0.03)';
+  });
+  row.addEventListener('mouseleave', () => {
+    if (!row.dataset.selectionOrder) row.style.backgroundColor = '';
+  });
 
   // Button container
   const buttonContainer = document.createElement('div');
