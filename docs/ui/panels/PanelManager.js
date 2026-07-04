@@ -231,6 +231,19 @@ export function refreshPanelAvailability() {
   }
 }
 
+/**
+ * Bring a panel fully into view: restore its title bar (if shrunk to the thin
+ * handle) and expand its body. Called when a Features master toggle turns its
+ * feature on, so the panel "reappears" instead of staying a greyed handle or a
+ * collapsed bar. No-op if the panel is unavailable or not yet revealed.
+ */
+export function revealPanel(id) {
+  const panel = panels.get(id);
+  if (!panel || !panel.available || panel.el.hidden) return;
+  panel.expandBar();
+  panel.expand();
+}
+
 export function resetLayout() {
   try { localStorage.removeItem(LS_KEY); } catch { /* storage unavailable */ }
   stored = { dockOrder: [], panels: {} };

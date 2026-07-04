@@ -3,7 +3,7 @@
 // migration is concentrated here; the builders themselves only need to build
 // into the panel body they are given.
 
-import { registerPanel, resetAllPanels, refreshPanelAvailability } from './PanelManager.js';
+import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
 import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility } from '../../render/index.js';
@@ -107,18 +107,26 @@ function buildFeaturesBody(body) {
   const showBonds = detachStaticRow('showBonds');
   if (showBonds) group.appendChild(showBonds);
 
+  // Turning a master toggle on re-greys/un-greys its feature panel; on ON it
+  // also reveals that panel (restores a shrunk title bar + expands the body)
+  // so the feature reappears rather than lingering as a greyed handle.
+  const onToggle = (panelId, on) => {
+    refreshPanelAvailability();
+    if (on) revealPanel(panelId);
+  };
+
   group.appendChild(makeToggleRow('showForcesToggle', 'Show Forces', !!general.forcesActive, (on) => {
     general.forcesActive = on;
     if (on && fileBrowser.selectedStructure?.forces?.length) updateForces(general.forceScale ?? 1.0);
     else removeForces();
-    refreshPanelAvailability();
+    onToggle('forces', on);
   }));
 
   group.appendChild(makeToggleRow('showSpinsToggle', 'Show Spins', !!general.spinsActive, (on) => {
     general.spinsActive = on;
     if (on && fileBrowser.selectedStructure?.spins?.length) updateSpins(general.spinScale ?? 1.0);
     else removeSpins();
-    refreshPanelAvailability();
+    onToggle('spins', on);
   }));
 
   const showPolyhedra = detachStaticRow('showPolyhedra');
@@ -134,22 +142,22 @@ function buildFeaturesBody(body) {
       toggleFieldVisibility(on);
       updateField();
     }
-    refreshPanelAvailability();
+    onToggle('field', on);
   }));
 
   group.appendChild(makeToggleRow('showPlanesMasterToggle', 'Show Planes', planesData.showPlanes !== false, (on) => {
     setPlanesVisible(on);
-    refreshPanelAvailability();
+    onToggle('planes', on);
   }));
 
   body.appendChild(group);
 
-  // The moved static toggles (Show Bonds / Show Polyhedra) also grey their
-  // feature panel; a second listener re-evaluates availability without
-  // disturbing ControlsWiring's own onchange handler.
-  for (const id of ['showBonds', 'showPolyhedra']) {
+  // The moved static toggles (Show Bonds / Show Polyhedra) also grey/reveal
+  // their feature panel; a second listener runs alongside ControlsWiring's own
+  // onchange handler (which does the scene update).
+  for (const [id, panelId] of [['showBonds', 'bonds'], ['showPolyhedra', 'polyhedra']]) {
     const cb = document.getElementById(id);
-    if (cb) cb.addEventListener('change', () => refreshPanelAvailability());
+    if (cb) cb.addEventListener('change', () => onToggle(panelId, cb.checked));
   }
 }
 
