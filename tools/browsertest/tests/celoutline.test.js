@@ -46,16 +46,17 @@ const H = require('../harness');
   H.check('atoms on outline layer', cel.atomsOnOutlineLayer);
   H.check('polyhedra depth proxies exist', cel.proxies > 0, `count=${cel.proxies}`);
 
-  // Outline visibility: near-black pixel coverage must grow with the slider.
+  // Outline visibility: near-black pixel coverage must grow with the slider
+  // (width is in world units).
   await H.setSlider(page, 'celOutlineWidth', 0);
   await page.waitForTimeout(600);
   const dark0 = H.darkFraction(await H.shotCanvas(page, 'cel_outline_off'));
-  await H.setSlider(page, 'celOutlineWidth', 4);
+  await H.setSlider(page, 'celOutlineWidth', 0.15);
   await page.waitForTimeout(600);
-  const dark4 = H.darkFraction(await H.shotCanvas(page, 'cel_outline_w4'));
+  const dark4 = H.darkFraction(await H.shotCanvas(page, 'cel_outline_wide'));
   H.check('outlines draw (dark coverage grows)',
     dark4 > dark0 * 1.3 && dark4 - dark0 > 0.002,
-    `off=${dark0.toFixed(4)} w4=${dark4.toFixed(4)}`);
+    `off=${dark0.toFixed(4)} wide=${dark4.toFixed(4)}`);
 
   // Hull outline mode: switching rebuilds meshes with inverted-hull children.
   await H.setSelect(page, 'celOutlineModeMenu', 'hull');
@@ -84,7 +85,7 @@ const H = require('../harness');
   H.check('screen mode: hulls removed after switch back', !!noHulls);
 
   // Back to metallic: physical material again, outline pass inert.
-  await H.setSlider(page, 'celOutlineWidth', 2);
+  await H.setSlider(page, 'celOutlineWidth', 0.05);
   await H.setSelect(page, 'renderStyleMenu', 'metallic');
   await page.waitForTimeout(2000);
   const metallic = await page.evaluate(async () => {

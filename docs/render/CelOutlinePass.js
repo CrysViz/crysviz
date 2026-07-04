@@ -15,8 +15,13 @@
 // invisible in the main render). The depth pass renders those meshes with
 // their real materials, so per-instance opacity discards and cut planes are
 // respected. The pass runs from the animation loop, right after the main
-// render, and only when general.renderStyle === 'cel' with a width > 0
-// (general.celOutlineWidth, in CSS pixels).
+// render, and only when general.renderStyle === 'cel' with a width > 0.
+//
+// The width (general.celOutlineWidth) is in WORLD units and is converted to
+// pixels per fragment from the depth buffer, so outlines keep a constant
+// thickness relative to the atoms while zooming — mimicking fixed-width 3D
+// outlines (near objects get proportionally thicker lines than far ones),
+// but drawn as clean screen-space contours.
 
 import * as THREE from '../external/three/three.module.js';
 import { general } from '../state/store.js';
@@ -50,11 +55,12 @@ const EDGE_FRAGMENT = /* glsl */`
   #include <packing>
   uniform sampler2D tDepth;
   uniform vec2 uTexelSize;
-  uniform float uWidth;     // device pixels
+  uniform float uWidthWorld; // outline width in world units
+  uniform float uPxPerWorld; // perspective: device px per world unit AT DISTANCE 1; ortho: absolute
   uniform float uNear;
   uniform float uFar;
-  uniform float uOrtho;     // 1.0 for an orthographic camera
-  uniform float uThreshold; // relative depth-discontinuity threshold
+  uniform float uOrtho;      // 1.0 for an orthographic camera
+  uniform float uThreshold;  // relative depth-discontinuity threshold
   varying vec2 vUv;
 
   float viewDist(vec2 uv) {
@@ -68,8 +74,14 @@ const EDGE_FRAGMENT = /* glsl */`
   }
 
   void main() {
-    vec2 o = uTexelSize * uWidth;
     float dc = viewDist(vUv);
+    // World width -> pixels at this fragment's depth (constant for ortho).
+    // Upper clamp: beyond ~10px sampling radius the Laplacian stops being a
+    // sane edge detector (it fires across whole thin features like bonds),
+    // so line growth saturates rather than smearing at extreme zoom-in.
+    float wpx = uWidthWorld * (uOrtho > 0.5 ? uPxPerWorld : uPxPerWorld / dc);
+    wpx = clamp(wpx, 0.75, 10.0);
+    vec2 o = uTexelSize * wpx;
     vec2 diag = o * 0.70710678; // same euclidean radius as the axis taps
     float lap = axisLap(vec2(o.x, 0.0), dc);
     lap = max(lap, axisLap(vec2(0.0, o.y), dc));
@@ -100,7 +112,8 @@ function ensureResources(renderer) {
       uniforms: {
         tDepth: { value: null },
         uTexelSize: { value: new THREE.Vector2() },
-        uWidth: { value: 2 },
+        uWidthWorld: { value: 0.05 },
+        uPxPerWorld: { value: 1000 },
         uNear: { value: 0.1 },
         uFar: { value: 1000 },
         uOrtho: { value: 0 },
@@ -145,7 +158,13 @@ export function renderCelOutlinePass(renderer, scene, camera) {
   const u = quadMaterial.uniforms;
   u.tDepth.value = target.depthTexture;
   u.uTexelSize.value.set(1 / target.width, 1 / target.height);
-  u.uWidth.value = general.celOutlineWidth * renderer.getPixelRatio();
+  u.uWidthWorld.value = general.celOutlineWidth;
+  // Device px per world unit: at distance 1 for perspective (the shader
+  // divides by each fragment's view distance), absolute for orthographic
+  // (where OrbitControls zooming changes camera.zoom, not distance).
+  u.uPxPerWorld.value = camera.isOrthographicCamera
+    ? (target.height * camera.zoom) / (camera.top - camera.bottom)
+    : target.height / (2 * Math.tan((camera.fov * Math.PI / 180) / 2));
   u.uNear.value = camera.near;
   u.uFar.value = camera.far;
   u.uOrtho.value = camera.isOrthographicCamera ? 1 : 0;

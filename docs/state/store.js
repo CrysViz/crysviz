@@ -79,7 +79,7 @@ export const groups = {
 export const general = {
   renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
   celOutlineMode: 'screen', // cel outlines: 'screen' (post-process) | 'hull' (inverted-hull geometry)
-  celOutlineWidth: 2, // screen-space outline width in px (0 = off)
+  celOutlineWidth: 0.05, // screen-space outline width in world units (0 = off)
   celHullWidth: 0.05, // hull outline width in world units, atoms/bonds (0 = off)
   celHullPolyWidth: 0.05, // hull outline width in world units, polyhedra
   ForceMin:1e-4,

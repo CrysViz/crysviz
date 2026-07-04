@@ -350,11 +350,12 @@ export function addColorPanel(target = "colorContainer") {
   content.appendChild(renderStyleMenu);
 
   // Cel outline controls: mode selector plus mode-specific width sliders.
-  // 'Screen space' = post-process, uniform pixel width, clean shared contours
-  // (general.celOutlineWidth, read live each frame). '3D hull' = the classic
-  // inverted-hull geometry, world-space width that fades with distance
-  // (general.celHullWidth / celHullPolyWidth, live uniform updates; switching
-  // MODE rebuilds the meshes since hulls are created at build time).
+  // Both widths are world units. 'Screen space' = post-process with clean
+  // shared contours, thickness converted from world units per fragment so it
+  // tracks zoom (general.celOutlineWidth, read live each frame). '3D hull' =
+  // the classic inverted-hull geometry (general.celHullWidth /
+  // celHullPolyWidth, live uniform updates; switching MODE rebuilds the
+  // meshes since hulls are created at build time).
   const outlineBlock = createElement("div", { class: "menu_block" },
     { display: general.renderStyle === "cel" ? "block" : "none" });
 
@@ -384,7 +385,7 @@ export function addColorPanel(target = "colorContainer") {
     { display: general.celOutlineMode === "screen" ? "block" : "none" });
   const outlineLabel = createElement("label", { for: "celOutlineWidth" }, sliderLabelStyle, "Outline");
   const outlineSlider = createElement("input", {
-    type: "range", id: "celOutlineWidth", min: "0", max: "6", step: "0.5",
+    type: "range", id: "celOutlineWidth", min: "0", max: "0.2", step: "0.005",
     value: String(general.celOutlineWidth),
   }, sliderStyle);
   outlineSlider.addEventListener("input", () => {
