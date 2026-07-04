@@ -57,6 +57,32 @@ const H = require('../harness');
     dark4 > dark0 * 1.3 && dark4 - dark0 > 0.002,
     `off=${dark0.toFixed(4)} w4=${dark4.toFixed(4)}`);
 
+  // Hull outline mode: switching rebuilds meshes with inverted-hull children.
+  await H.setSelect(page, 'celOutlineModeMenu', 'hull');
+  const hulls = await H.waitFor(page, async () => {
+    const { groups } = await import('./state/store.js');
+    let polyHulls = 0;
+    groups.polyhedraGroup?.traverse((o) => { if (o.name === 'celOutline') polyHulls++; });
+    const atomHull = !!groups.atomsMesh?.userData?.celOutline;
+    const bondHull = !!groups.bondsMesh?.userData?.celOutline;
+    return (atomHull && bondHull && polyHulls > 0) ? { atomHull, bondHull, polyHulls } : null;
+  });
+  H.check('hull mode: outline hulls created', !!hulls, JSON.stringify(hulls));
+  await page.waitForTimeout(800);
+  const darkHull = H.darkFraction(await H.shotCanvas(page, 'cel_outline_hull'));
+  H.check('hull mode: outlines draw', darkHull > dark0 * 1.3 && darkHull - dark0 > 0.002,
+    `off=${dark0.toFixed(4)} hull=${darkHull.toFixed(4)}`);
+
+  // Back to screen mode: hulls removed on rebuild.
+  await H.setSelect(page, 'celOutlineModeMenu', 'screen');
+  const noHulls = await H.waitFor(page, async () => {
+    const { groups } = await import('./state/store.js');
+    let polyHulls = 0;
+    groups.polyhedraGroup?.traverse((o) => { if (o.name === 'celOutline') polyHulls++; });
+    return (!groups.atomsMesh?.userData?.celOutline && polyHulls === 0) ? true : null;
+  });
+  H.check('screen mode: hulls removed after switch back', !!noHulls);
+
   // Back to metallic: physical material again, outline pass inert.
   await H.setSlider(page, 'celOutlineWidth', 2);
   await H.setSelect(page, 'renderStyleMenu', 'metallic');

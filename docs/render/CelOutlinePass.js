@@ -112,7 +112,8 @@ function ensureResources(renderer) {
  * renderer.render() with the same scene/camera. No-op outside cel style.
  */
 export function renderCelOutlinePass(renderer, scene, camera) {
-  if (general.renderStyle !== 'cel' || !(general.celOutlineWidth > 0)) return;
+  if (general.renderStyle !== 'cel' || general.celOutlineMode !== 'screen'
+    || !(general.celOutlineWidth > 0)) return;
   ensureResources(renderer);
 
   // Depth pass: only the outline layer, real materials (color is irrelevant,

@@ -5,7 +5,7 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
-import {createStyledMaterial} from './MaterialStyles.js'
+import {createStyledMaterial, addCelOutline} from './MaterialStyles.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 
 
@@ -427,6 +427,10 @@ export function createBondsMesh(bondCount) {
   // Participate in the screen-space cel outline pass (culled bonds are
   // zero-scaled, so they contribute no depth).
   mesh.layers.enable(CEL_OUTLINE_LAYER);
+
+  // Hull mode: culled bonds are zero-scaled, which the hull follows via the
+  // shared instanceMatrix — no discard variant needed.
+  if (general.renderStyle === 'cel' && general.celOutlineMode === 'hull') addCelOutline(mesh);
 
   return mesh;
 }

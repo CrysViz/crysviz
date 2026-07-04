@@ -6,6 +6,7 @@ import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getVi
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
+import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
 
 
 
@@ -341,25 +342,83 @@ export function addColorPanel(target = "colorContainer") {
       SecondReRenderAtoms: hasComparison,
       SecondReRenderBonds: hasComparison,
     });
+    // Hull outlines are children created at polyhedra build time — rebuild so
+    // they appear/disappear with the style (no-op when polyhedra are off).
+    if (general.celOutlineMode === "hull") updatePolyhedra();
   });
 
   content.appendChild(renderStyleMenu);
 
-  // Outline width for cel shading, in screen pixels (0 = no outline). The
-  // screen-space pass reads general.celOutlineWidth every frame — no rebuild.
+  // Cel outline controls: mode selector plus mode-specific width sliders.
+  // 'Screen space' = post-process, uniform pixel width, clean shared contours
+  // (general.celOutlineWidth, read live each frame). '3D hull' = the classic
+  // inverted-hull geometry, world-space width that fades with distance
+  // (general.celHullWidth / celHullPolyWidth, live uniform updates; switching
+  // MODE rebuilds the meshes since hulls are created at build time).
   const outlineBlock = createElement("div", { class: "menu_block" },
     { display: general.renderStyle === "cel" ? "block" : "none" });
-  const outlineLabel = createElement("label", { for: "celOutlineWidth" },
-    { display: "block", textAlign: "center", marginBottom: "5px", width: "100%" }, "Outline");
+
+  const sliderStyle = { width: "100%", maxWidth: "120px", margin: "0 auto", display: "block" };
+  const sliderLabelStyle = { display: "block", textAlign: "center", marginBottom: "5px", width: "100%" };
+
+  const outlineModeMenu = createDropdown("celOutlineModeMenu", "Outline Mode", [
+    { value: "screen", text: "Screen space", selected: general.celOutlineMode === "screen" },
+    { value: "hull", text: "3D hull", selected: general.celOutlineMode === "hull" },
+  ], () => {
+    general.celOutlineMode = outlineModeMenu.querySelector("select").value;
+    const isHull = general.celOutlineMode === "hull";
+    screenControls.style.display = isHull ? "none" : "block";
+    hullControls.style.display = isHull ? "block" : "none";
+    const hasComparison = !!fileBrowser.comparisonStructure;
+    updateVisualization({
+      reRenderAtoms: true,
+      reRenderBonds: true,
+      SecondReRenderAtoms: hasComparison,
+      SecondReRenderBonds: hasComparison,
+    });
+    updatePolyhedra(); // add/remove polyhedra hull children
+  });
+  outlineBlock.appendChild(outlineModeMenu);
+
+  const screenControls = createElement("div", {},
+    { display: general.celOutlineMode === "screen" ? "block" : "none" });
+  const outlineLabel = createElement("label", { for: "celOutlineWidth" }, sliderLabelStyle, "Outline");
   const outlineSlider = createElement("input", {
     type: "range", id: "celOutlineWidth", min: "0", max: "6", step: "0.5",
     value: String(general.celOutlineWidth),
-  }, { width: "100%", maxWidth: "120px", margin: "0 auto", display: "block" });
+  }, sliderStyle);
   outlineSlider.addEventListener("input", () => {
     general.celOutlineWidth = parseFloat(outlineSlider.value);
   });
-  outlineBlock.appendChild(outlineLabel);
-  outlineBlock.appendChild(outlineSlider);
+  screenControls.appendChild(outlineLabel);
+  screenControls.appendChild(outlineSlider);
+  outlineBlock.appendChild(screenControls);
+
+  const hullControls = createElement("div", {},
+    { display: general.celOutlineMode === "hull" ? "block" : "none" });
+  const hullLabel = createElement("label", { for: "celHullWidth" }, sliderLabelStyle, "Outline");
+  const hullSlider = createElement("input", {
+    type: "range", id: "celHullWidth", min: "0", max: "0.2", step: "0.005",
+    value: String(general.celHullWidth),
+  }, sliderStyle);
+  hullSlider.addEventListener("input", () => {
+    setCelHullWidth(parseFloat(hullSlider.value));
+  });
+  const hullPolyLabel = createElement("label", { for: "celHullPolyWidth" },
+    { ...sliderLabelStyle, margin: "8px 0 5px" }, "Polyhedra Outline");
+  const hullPolySlider = createElement("input", {
+    type: "range", id: "celHullPolyWidth", min: "0", max: "0.2", step: "0.005",
+    value: String(general.celHullPolyWidth),
+  }, sliderStyle);
+  hullPolySlider.addEventListener("input", () => {
+    setCelHullPolyWidth(parseFloat(hullPolySlider.value));
+  });
+  hullControls.appendChild(hullLabel);
+  hullControls.appendChild(hullSlider);
+  hullControls.appendChild(hullPolyLabel);
+  hullControls.appendChild(hullPolySlider);
+  outlineBlock.appendChild(hullControls);
+
   content.appendChild(outlineBlock);
 
   const menusWrapper = createElement("div", { class: "menus_wrapper" });
