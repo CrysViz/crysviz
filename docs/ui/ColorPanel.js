@@ -6,7 +6,7 @@ import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getVi
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
-import { setCelOutlineWidth } from '../render/index.js'
+import { setCelOutlineWidth, setCelPolyOutlineWidth, updatePolyhedra } from '../render/index.js'
 
 
 
@@ -342,6 +342,9 @@ export function addColorPanel(target = "colorContainer") {
       SecondReRenderAtoms: hasComparison,
       SecondReRenderBonds: hasComparison,
     });
+    // Polyhedra meshes carry their own outline children — rebuild them so the
+    // outlines appear/disappear with the style (no-op when polyhedra are off).
+    updatePolyhedra();
   });
 
   content.appendChild(renderStyleMenu);
@@ -361,6 +364,18 @@ export function addColorPanel(target = "colorContainer") {
   });
   outlineBlock.appendChild(outlineLabel);
   outlineBlock.appendChild(outlineSlider);
+
+  const polyOutlineLabel = createElement("label", { for: "celPolyOutlineWidth" },
+    { display: "block", textAlign: "center", margin: "8px 0 5px", width: "100%" }, "Polyhedra Outline");
+  const polyOutlineSlider = createElement("input", {
+    type: "range", id: "celPolyOutlineWidth", min: "0", max: "0.2", step: "0.005",
+    value: String(general.celOutlinePolyWidth),
+  }, { width: "100%", maxWidth: "120px", margin: "0 auto", display: "block" });
+  polyOutlineSlider.addEventListener("input", () => {
+    setCelPolyOutlineWidth(parseFloat(polyOutlineSlider.value));
+  });
+  outlineBlock.appendChild(polyOutlineLabel);
+  outlineBlock.appendChild(polyOutlineSlider);
   content.appendChild(outlineBlock);
 
   const menusWrapper = createElement("div", { class: "menus_wrapper" });

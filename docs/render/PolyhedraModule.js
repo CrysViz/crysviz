@@ -4,6 +4,7 @@ import { ConvexHull } from '../external/three/ConvexHull.js';
 import {app,general,groups, fileBrowser} from '../state/store.js'
 import { fracToCart, cartToFrac, invert3x3, transpose3x3 } from '../math/index.js'
 import { getBondCutoff} from '../render/BondsFracUpdateModule.js'
+import { addCelPolyOutline } from './MaterialStyles.js'
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import { Polyhedra } from '../model/Polyhedra.js'
 import { Polyhedron } from '../model/Polyhedron.js'
@@ -1009,6 +1010,14 @@ export function renderPolyhedra(structure) {
 
     const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
     mesh.add(new THREE.LineSegments(egeom, sharedEdgeMat));
+
+    if (general.renderStyle === 'cel') {
+      const center = new THREE.Vector3();
+      for (const p of posList) center.add(p);
+      center.multiplyScalar(1 / posList.length);
+      addCelPolyOutline(mesh, center);
+    }
+
     groups.polyhedraGroup.add(mesh);
   }
 }

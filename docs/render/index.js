@@ -47,4 +47,4 @@ export { removeSpins, updateSpins, deleteSpins } from './SpinModule.js';
 
 export { updateAngleDisplays, setupAxisControls } from './cameraAngleControl.js';
 
-export { setCelOutlineWidth } from './MaterialStyles.js';
+export { setCelOutlineWidth, setCelPolyOutlineWidth } from './MaterialStyles.js';

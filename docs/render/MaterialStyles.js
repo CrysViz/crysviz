@@ -203,3 +203,79 @@ export function setCelOutlineWidth(width) {
     if (outline) outline.visible = width > 0;
   }
 }
+
+// ---- polyhedra outline -------------------------------------------------------
+//
+// Polyhedra are plain (non-instanced) convex-hull meshes with FLAT normals —
+// inflating along those would split the hull open at every edge. Instead the
+// displacement direction is baked per vertex as an `outlineDir` attribute
+// pointing radially away from the polyhedron centre: duplicated flat-shaded
+// vertices at the same position get the same direction, so the hull stays
+// watertight. The singleton material survives disposeGroup()'s dispose (three
+// just recompiles it on next use, re-seeding the width from `general`).
+
+let polyOutlineMaterial = null;
+
+function makePolyOutlineMaterial() {
+  const material = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide });
+  material.customProgramCacheKey = () => 'cv-cel-outline-poly';
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uOutlineWidth = { value: general.celOutlinePolyWidth };
+    shader.vertexShader = `
+      uniform float uOutlineWidth;
+      attribute vec3 outlineDir;
+    ` + shader.vertexShader;
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `
+      vec4 outlinePos = vec4( transformed + outlineDir * uOutlineWidth, 1.0 );
+      vec4 mvPosition = modelViewMatrix * outlinePos;
+      gl_Position = projectionMatrix * mvPosition;
+      `
+    );
+    material.userData.shader = shader;
+  };
+  return material;
+}
+
+/**
+ * Attach a black outline hull to one polyhedron mesh (call only when
+ * general.renderStyle === 'cel'). `center` is the polyhedron centre the
+ * per-vertex displacement directions point away from.
+ * @param {any} mesh
+ * @param {any} center THREE.Vector3
+ */
+export function addCelPolyOutline(mesh, center) {
+  if (!polyOutlineMaterial) polyOutlineMaterial = makePolyOutlineMaterial();
+  const pos = mesh.geometry.attributes.position;
+  const dirs = new Float32Array(pos.count * 3);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.set(pos.getX(i) - center.x, pos.getY(i) - center.y, pos.getZ(i) - center.z);
+    const len = v.length();
+    if (len > 0) v.multiplyScalar(1 / len);
+    dirs[i * 3] = v.x;
+    dirs[i * 3 + 1] = v.y;
+    dirs[i * 3 + 2] = v.z;
+  }
+  mesh.geometry.setAttribute('outlineDir', new THREE.BufferAttribute(dirs, 3));
+
+  const outline = new THREE.Mesh(mesh.geometry, polyOutlineMaterial);
+  outline.raycast = () => {}; // never intercept picking
+  outline.visible = general.celOutlinePolyWidth > 0;
+  outline.name = 'celOutline';
+  mesh.add(outline);
+  return outline;
+}
+
+/** Live-update the polyhedra outline width; 0 hides the outlines. */
+export function setCelPolyOutlineWidth(width) {
+  general.celOutlinePolyWidth = width;
+  const shader = polyOutlineMaterial?.userData?.shader;
+  if (shader) shader.uniforms.uOutlineWidth.value = width;
+  if (groups.polyhedraGroup) {
+    groups.polyhedraGroup.traverse((obj) => {
+      if (obj.name === 'celOutline') obj.visible = width > 0;
+    });
+  }
+}
