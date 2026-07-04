@@ -531,8 +531,29 @@ function syncSelectedAtomRows(options = {}) {
   }
 }
 
+// "Link periodic copies" on: an atom-selection entry represents ALL periodic
+// copies of its source atom — identity is by source atom (selecting any copy
+// of a selected atom toggles it off) and the 3D glow covers every copy, in
+// parity with grouped bonds/polyhedra. Off: strictly per-instance.
+function atomSelectionLinked() {
+  return general.linkPeriodicCopies !== false;
+}
+
+function sameSelectionAtom(a, b) {
+  return atomSelectionLinked()
+    ? a.sourceIndex === b.sourceIndex
+    : a.instanceId === b.instanceId;
+}
+
+/** The mesh instances an atom-selection entry should glow (all copies when linked). */
+function instancesForSelectedAtom(atom) {
+  if (!atomSelectionLinked()) return [atom.instanceId];
+  const images = fileBrowser.selectedStructure?.atomImages?.[atom.sourceIndex];
+  return images?.length ? images : [atom.instanceId];
+}
+
 function syncSelectedAtomHighlights(options = {}) {
-  applyAtomHighlightIndices(atomSelection.selectedAtoms.map((atom) => atom.instanceId));
+  applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
   syncSelectedAtomRows(options);
 }
 
@@ -602,7 +623,7 @@ export function updateAtomSelectionFrom3DHit(hit, options = {}) {
 
   const previousSelection = snapshotSelectedAtoms();
   const existingIndex = atomSelection.selectedAtoms.findIndex(
-    (atom) => atom.instanceId === selectionAtom.instanceId,
+    (atom) => sameSelectionAtom(atom, selectionAtom),
   );
   const existingAtom = existingIndex >= 0 ? cloneSelectionAtom(atomSelection.selectedAtoms[existingIndex]) : null;
   const selectionMode = options.selectionMode ?? 'replace';
@@ -647,7 +668,7 @@ export function updateAtomSelectionFrom3DHit(hit, options = {}) {
     }
 
     const keptAtom = existingAtom ?? selectionAtom;
-    removedAtoms = previousSelection.filter((atom) => atom.instanceId !== keptAtom.instanceId);
+    removedAtoms = previousSelection.filter((atom) => !sameSelectionAtom(atom, keptAtom));
     nextSelection = [keptAtom];
     action = previousSelection.length ? 'replaced' : 'selected';
   }
@@ -655,9 +676,9 @@ export function updateAtomSelectionFrom3DHit(hit, options = {}) {
   nextSelection = reindexSelection(nextSelection);
 
   const addedAtoms = nextSelection
-    .filter((atom) => !previousSelection.some((selectedAtom) => selectedAtom.instanceId === atom.instanceId))
+    .filter((atom) => !previousSelection.some((selectedAtom) => sameSelectionAtom(selectedAtom, atom)))
     .map(cloneSelectionAtom);
-  const focusedAtom = nextSelection.find((atom) => atom.instanceId === selectionAtom.instanceId) ?? null;
+  const focusedAtom = nextSelection.find((atom) => sameSelectionAtom(atom, selectionAtom)) ?? null;
   const concernedAtoms = [...addedAtoms, ...removedAtoms];
 
   return commitSelection(

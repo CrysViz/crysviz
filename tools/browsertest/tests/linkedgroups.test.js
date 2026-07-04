@@ -26,6 +26,40 @@ const H = require('../harness');
     placement.exists && !placement.inAtomPanel && placement.precedesTabs,
     JSON.stringify(placement));
 
+  // --- Atoms: linked selection glows ALL periodic copies --------------------------
+  const atomSel = await page.evaluate(async () => {
+    const { fileBrowser, groups, atomSelection } = await import('./state/store.js');
+    const { updateAtomSelectionFrom3DHit } = await import('./ui/SelectAndHighlightModule.js');
+    const s = fileBrowser.selectedStructure;
+    // Source atom with several on-screen copies (YBCO corner/face atoms).
+    const srcIndex = Number(Object.keys(s.atomImages)
+      .reduce((a, b) => (s.atomImages[a].length >= s.atomImages[b].length ? a : b)));
+    const images = s.atomImages[srcIndex];
+    const glowAt = (i) => groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.getX(i);
+    updateAtomSelectionFrom3DHit(
+      { instanceId: images[0], object: groups.atomsMesh }, { scrollToSelection: false });
+    const glows = images.map(glowAt);
+    const selectedCount = atomSelection.selectedAtoms.length;
+    // Parity with bonds/poly: picking a DIFFERENT copy of the same atom deselects.
+    updateAtomSelectionFrom3DHit(
+      { instanceId: images[1], object: groups.atomsMesh }, { scrollToSelection: false });
+    return {
+      srcIndex,
+      copies: images.length,
+      glows,
+      selectedCount,
+      deselected: atomSelection.selectedAtoms.length === 0,
+      glowsAfter: images.map(glowAt),
+    };
+  });
+  H.check('linked atom selection glows ALL periodic copies of the atom',
+    atomSel.copies >= 2 && atomSel.selectedCount === 1
+      && atomSel.glows.every((g) => g === 2.0),
+    JSON.stringify(atomSel));
+  H.check('picking a different copy of the selected atom toggles it off (all glows cleared)',
+    atomSel.deselected && atomSel.glowsAfter.every((g) => g === 0),
+    JSON.stringify({ deselected: atomSel.deselected, glowsAfter: atomSel.glowsAfter }));
+
   // --- Bonds: grouped rows -------------------------------------------------------
   const bondGroups = await page.evaluate(async () => {
     const { fileBrowser } = await import('./state/store.js');
