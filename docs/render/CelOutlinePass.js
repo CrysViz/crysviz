@@ -40,6 +40,12 @@ const EDGE_VERTEX = /* glsl */`
 // Edge metric: second derivative (Laplacian) of view-space distance, so
 // smoothly sloped surfaces don't trigger, plus a threshold relative to the
 // centre distance so line sensitivity is stable across zoom levels.
+//
+// Samples are taken along FOUR axis pairs (horizontal, vertical, both
+// diagonals), all at the same euclidean pixel radius, and combined with max.
+// Axis-only sampling would make a thick outline the union of a horizontal and
+// a vertical dilation of the silhouette — visibly "two overlaid ellipses"
+// around a lone atom instead of a circular ring.
 const EDGE_FRAGMENT = /* glsl */`
   #include <packing>
   uniform sampler2D tDepth;
@@ -57,14 +63,18 @@ const EDGE_FRAGMENT = /* glsl */`
     return -perspectiveDepthToViewZ(d, uNear, uFar);
   }
 
+  float axisLap(vec2 offset, float dc) {
+    return abs(viewDist(vUv + offset) + viewDist(vUv - offset) - 2.0 * dc);
+  }
+
   void main() {
     vec2 o = uTexelSize * uWidth;
     float dc = viewDist(vUv);
-    float dl = viewDist(vUv - vec2(o.x, 0.0));
-    float dr = viewDist(vUv + vec2(o.x, 0.0));
-    float du = viewDist(vUv + vec2(0.0, o.y));
-    float dd = viewDist(vUv - vec2(0.0, o.y));
-    float lap = abs(dl + dr - 2.0 * dc) + abs(du + dd - 2.0 * dc);
+    vec2 diag = o * 0.70710678; // same euclidean radius as the axis taps
+    float lap = axisLap(vec2(o.x, 0.0), dc);
+    lap = max(lap, axisLap(vec2(0.0, o.y), dc));
+    lap = max(lap, axisLap(diag, dc));
+    lap = max(lap, axisLap(vec2(diag.x, -diag.y), dc));
     float t = uThreshold * min(dc, uFar * 0.5);
     float edge = smoothstep(t, 2.0 * t, lap);
     if (edge <= 0.0) discard;
