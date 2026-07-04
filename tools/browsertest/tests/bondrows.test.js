@@ -127,41 +127,82 @@ const H = require('../harness');
       && rowClick.glow.every((g) => g === 2.0),
     JSON.stringify(rowClick));
 
-  // --- per-bond user color: applied, precedent, and persistent across rebuilds ---
-  const colored = await page.evaluate(async () => {
-    const { fileBrowser, groups } = await import('./state/store.js');
+  // --- per-bond user styles: applied, precedent, and persistent across rebuilds --
+  const styled = await page.evaluate(async () => {
+    const { fileBrowser, groups, general } = await import('./state/store.js');
     const { updateVisualization } = await import('./core/crystal-viewer.js');
     const { bondKey } = await import('./render/index.js');
     const s = fileBrowser.selectedStructure;
     const bond = s.bonds.find((b) => b.instanceIds);
     const key = bondKey(bond.indices);
-    // What the row's color picker onChange does:
-    s.bondUserColors[key] = { color: '#ff0000', elements: [...bond.elements] };
-    // Rebuild bonds twice (as a length-slider drag would) — the color must survive.
+    // What the row's Edit controls (color picker + Alpha + Size) persist:
+    s.bondUserStyles[key] = { color: '#ff0000', alpha: 0.4, radiusScale: 2, elements: [...bond.elements] };
+    // Rebuild bonds twice (as a length-slider drag would) — the styles must survive.
     await updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
     await updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
     const rebuilt = s.bonds.find((b) => bondKey(b.indices) === key);
     const otherBond = s.bonds.find((b) => b.instanceIds && bondKey(b.indices) !== key);
+    const attrs = groups.bondsMesh.geometry.attributes;
     const rgbAt = (i) => [
       groups.bondsMesh.instanceColor.getX(i),
       groups.bondsMesh.instanceColor.getY(i),
       groups.bondsMesh.instanceColor.getZ(i),
     ];
+    // The instance matrix composes rotation*scale, so the x-scale (bond radius)
+    // is the norm of the first column, not the raw [0] element.
+    const xScaleAt = (i) => {
+      const a = groups.bondsMesh.instanceMatrix.array;
+      const o = i * 16;
+      return Math.hypot(a[o], a[o + 1], a[o + 2]);
+    };
     return {
       modelColor: rebuilt.color,
       userColor: rebuilt.userColor,
+      alpha: rebuilt.alpha,
+      radius: rebuilt.radius,
+      expectedRadius: general.bondRadius * 2,
       meshRGB: rebuilt.instanceIds.map(rgbAt),
+      meshOpacity: rebuilt.instanceIds.map((i) => attrs.instanceOpacity.getX(i)),
+      otherOpacity: attrs.instanceOpacity.getX(otherBond.instanceIds[0]),
       otherRGB: rgbAt(otherBond.instanceIds[0]),
+      xScale: xScaleAt(rebuilt.instanceIds[0]),
+      otherXScale: xScaleAt(otherBond.instanceIds[0]),
+      materialTransparent: groups.bondsMesh.material.transparent,
     };
   });
   H.check('per-bond user color survives bond rebuilds on model and mesh (both halves red)',
-    colored.modelColor[0] === '#ff0000' && colored.modelColor[1] === '#ff0000'
-      && colored.userColor[0] === '#ff0000'
-      && colored.meshRGB.every(([r, g, b]) => r === 1 && g === 0 && b === 0),
-    JSON.stringify(colored));
+    styled.modelColor[0] === '#ff0000' && styled.modelColor[1] === '#ff0000'
+      && styled.userColor[0] === '#ff0000'
+      && styled.meshRGB.every(([r, g, b]) => r === 1 && g === 0 && b === 0),
+    JSON.stringify({ modelColor: styled.modelColor, meshRGB: styled.meshRGB }));
   H.check('other bonds keep their mode color (only the recolored bond is red)',
-    !(colored.otherRGB[0] === 1 && colored.otherRGB[1] === 0 && colored.otherRGB[2] === 0),
-    JSON.stringify(colored.otherRGB));
+    !(styled.otherRGB[0] === 1 && styled.otherRGB[1] === 0 && styled.otherRGB[2] === 0),
+    JSON.stringify(styled.otherRGB));
+  H.check('per-bond alpha survives rebuilds (instanceOpacity 0.4, material transparent, others opaque)',
+    styled.alpha === 0.4
+      && styled.meshOpacity.every((o) => Math.abs(o - 0.4) < 1e-6)
+      && styled.otherOpacity === 1
+      && styled.materialTransparent === true,
+    JSON.stringify({ alpha: styled.alpha, meshOpacity: styled.meshOpacity, otherOpacity: styled.otherOpacity, transparent: styled.materialTransparent }));
+  H.check('per-bond size survives rebuilds (radius doubled on the instance matrix)',
+    Math.abs(styled.radius - styled.expectedRadius) < 1e-9
+      && Math.abs(styled.xScale - styled.expectedRadius) < 1e-6
+      && Math.abs(styled.otherXScale - styled.expectedRadius / 2) < 1e-6,
+    JSON.stringify({ radius: styled.radius, expected: styled.expectedRadius, xScale: styled.xScale, otherXScale: styled.otherXScale }));
+
+  // --- the bond editor exposes Alpha and Size ranges ------------------------------
+  const editorRows = await page.evaluate(() => {
+    const row = document.querySelector('#infoBondControls .individual-bond-row');
+    const btn = /** @type {HTMLElement} */ (row.querySelector('button[data-editor-button="color"]'));
+    const labels = [...row.querySelectorAll('.bond-color-editor span')].map((s) => s.textContent);
+    const ranges = row.querySelectorAll('.bond-color-editor input[type="range"]').length;
+    return { buttonLabel: btn.textContent, labels, ranges };
+  });
+  H.check('bond rows have an "Edit" button whose editor holds Alpha and Size ranges',
+    editorRows.buttonLabel === 'Edit'
+      && editorRows.labels.includes('Alpha') && editorRows.labels.includes('Size')
+      && editorRows.ranges >= 2,
+    JSON.stringify(editorRows));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

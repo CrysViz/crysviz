@@ -161,9 +161,9 @@ export function buildBondObjects(structure){
   structure.bonds = [];
   structure.bondMapping = {};
   structure.bondObjectMapping = {};
-  // Per-bond user colors (structure.bondUserColors) intentionally survive rebuilds;
+  // Per-bond user styles (structure.bondUserStyles) intentionally survive rebuilds;
   // the mesh and any bond selection do not.
-  structure.bondUserColors ??= {};
+  structure.bondUserStyles ??= {};
   general.bondsBuildCounter = (general.bondsBuildCounter || 0) + 1;
   highlightHover.currentlyHighlightedBond = null;
 
@@ -348,16 +348,20 @@ export function buildBondObjects(structure){
     }
   }
 
-  // Re-apply persisted per-bond user colors. Must run after ALL mode coloring
+  // Re-apply persisted per-bond user styles. Must run after ALL mode coloring
   // (including the length second pass above) so user colors win over any mode.
   // Note the asymmetry with atom recoloring: the per-atom color editor tints
-  // attached bond halves via bond.userColor without persisting; per-bond colors
-  // set here persist in structure.bondUserColors and take precedence.
+  // attached bond halves via bond.userColor without persisting; per-bond styles
+  // set here persist in structure.bondUserStyles and take precedence.
   for (const bond of structure.bonds) {
-    const saved = structure.bondUserColors[bondKey(bond.indices)];
+    const saved = structure.bondUserStyles[bondKey(bond.indices)];
     if (saved && saved.elements[0] === bond.elements[0] && saved.elements[1] === bond.elements[1]) {
-      bond.color = [saved.color, saved.color]; // one color for both halves
-      bond.userColor = [saved.color, saved.color];
+      if (saved.color) {
+        bond.color = [saved.color, saved.color]; // one color for both halves
+        bond.userColor = [saved.color, saved.color];
+      }
+      if (saved.alpha != null) bond.alpha = saved.alpha;
+      if (saved.radiusScale != null) bond.radius = general.bondRadius * saved.radiusScale;
     }
   }
 
@@ -395,9 +399,11 @@ export function createBondsMesh(bondCount) {
       attribute vec3 instanceEmissive;
       attribute float instanceEmissiveIntensity;
       attribute float instanceElementIndex;
+      attribute float instanceOpacity;
       varying vec3 vInstanceEmissive;
       varying float vInstanceEmissiveIntensity;
       varying float vInstanceElementIndex;
+      varying float vInstanceOpacity;
     ` + shader.vertexShader;
 
     shader.vertexShader = shader.vertexShader.replace(
@@ -408,6 +414,7 @@ export function createBondsMesh(bondCount) {
         vInstanceEmissiveIntensity = instanceEmissiveIntensity;
         vInstanceUUID = instanceUUID;
         vInstanceElementIndex = instanceElementIndex;
+        vInstanceOpacity = instanceOpacity;
       `
     );
 
@@ -416,7 +423,13 @@ export function createBondsMesh(bondCount) {
       varying float vInstanceEmissiveIntensity;
       varying vec4 vInstanceUUID;
       varying float vInstanceElementIndex;
+      varying float vInstanceOpacity;
     ` + shader.fragmentShader;
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      'vec4 diffuseColor = vec4( diffuse, opacity );',
+      'vec4 diffuseColor = vec4( diffuse, opacity * vInstanceOpacity );'
+    );
 
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <emissivemap_fragment>',
@@ -446,6 +459,13 @@ export function createBondsMesh(bondCount) {
   mesh.geometry.setAttribute(
     'instanceElementIndex',
     new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2), 1)
+  );
+
+  // Per-half opacity, default fully opaque. Initialized to 1 (not 0) because
+  // the comparison bonds mesh shares this setup but never writes the attribute.
+  mesh.geometry.setAttribute(
+    'instanceOpacity',
+    new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2).fill(1), 1)
   );
 
   // Participate in the screen-space cel outline pass (culled bonds are
@@ -573,6 +593,24 @@ export function updateSingleBondColor(bondMeshIndex, color, overwriteAtom = fals
 }
 
 
+export function updateSingleBondOpacity(bondMeshIndex, opacity = 1.0) {
+  const mesh = groups.bondsMesh;
+  if (!mesh) return;
+  const normalizedOpacity = Math.max(0, Math.min(1, Number(opacity) || 0));
+  mesh.geometry.attributes.instanceOpacity.setX(bondMeshIndex, normalizedOpacity);
+  mesh.geometry.attributes.instanceOpacity.needsUpdate = true;
+  syncBondMaterialTransparency(general.mainOpacity);
+}
+
+function syncBondMaterialTransparency(baseOpacity = 1.0) {
+  const mesh = groups.bondsMesh;
+  if (!mesh?.material) return;
+  const hasTransparentInstances = fileBrowser.selectedStructure?.bonds?.some((bond) => (bond.alpha ?? 1) < 0.999) ?? false;
+  mesh.material.transparent = baseOpacity < 0.999 || hasTransparentInstances;
+  mesh.material.depthWrite = true;
+  mesh.material.needsUpdate = true;
+}
+
 export function updateSingleBondPosition(index, bond) {
   const mesh = groups.bondsMesh;
   const dummy = new THREE.Object3D();
@@ -645,6 +683,7 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
   mesh.geometry.attributes.instanceEmissive.setXYZ(index*2, 0,0,0);
   mesh.geometry.attributes.instanceEmissiveIntensity.setX(index*2, 0);
   mesh.geometry.attributes.instanceElementIndex.setX(index*2, 0);
+  mesh.geometry.attributes.instanceOpacity.setX(index*2, Math.max(0, Math.min(1, bond.alpha ?? 1)));
 
   // ---- second half ----
   dummy.position.copy(bond.center2);
@@ -658,6 +697,7 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
   mesh.geometry.attributes.instanceEmissive.setXYZ(index*2 + 1, 0,0,0);
   mesh.geometry.attributes.instanceEmissiveIntensity.setX(index*2 + 1, 0);
   mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, 0);
+  mesh.geometry.attributes.instanceOpacity.setX(index*2 + 1, Math.max(0, Math.min(1, bond.alpha ?? 1)));
 }
 
 function hideSingleBond(index) {
@@ -690,15 +730,8 @@ export async function updateBonds(opacity=1.0) {
     updateSingleBond(i, bond);
   });
   mesh.material.opacity = opacity;
-  if (opacity === 1) {
-    //console.log("Switching of transparency for comp bonds")
-    mesh.material.transparent = false;
-    mesh.material.depthWrite = true;
-  }
-  else {
-    mesh.material.transparent = true;
-    mesh.material.depthWrite = true;
-  }
+  // Transparency also accounts for per-bond alpha overrides (instanceOpacity).
+  syncBondMaterialTransparency(opacity);
 
   // mark all attributes as needing update
   mesh.instanceMatrix.needsUpdate = true;
@@ -706,6 +739,7 @@ export async function updateBonds(opacity=1.0) {
   mesh.geometry.attributes.instanceEmissive.needsUpdate = true;
   mesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
   mesh.geometry.attributes.instanceElementIndex.needsUpdate = true;
+  mesh.geometry.attributes.instanceOpacity.needsUpdate = true;
   mesh.material.needsUpdate = true;
 }
 

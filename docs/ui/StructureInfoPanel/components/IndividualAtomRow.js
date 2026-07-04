@@ -93,14 +93,15 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const activeButtonBorder = '1px solid rgba(125, 206, 160, 0.95)';
   const activeButtonShadow = '0 0 0 1px rgba(125, 206, 160, 0.35), inset 0 0 0 1px rgba(125, 206, 160, 0.15)';
 
-  // Color picker button
+  // Color/alpha/size editor button (labeled "Edit" — the editor holds more
+  // than color; the swatch background still previews the atom color)
   const colorBtn = document.createElement('button');
-  colorBtn.textContent = 'Color';
+  colorBtn.textContent = 'Edit';
   colorBtn.className = 'atom-editor-button';
   colorBtn.dataset.editorButton = 'color';
   colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;';
   colorBtn.style.background = hexToRgba(currentColor, 0.8);
-  colorBtn.title = `Change color for ${element}${displayNumber}`;
+  colorBtn.title = `Edit color, alpha and size for ${element}${displayNumber}`;
 
   // Coordinate edit button
   const coordBtn = document.createElement('button');

@@ -74,13 +74,14 @@ export class Structure {
     this.bondMapping={};
     this.bondObjectMapping={};
     this.bonds = bonds;           // list of bonds
-    // Per-bond user color overrides, keyed by bondKey(bond.indices)
-    // ("min_max" of the wrapped-index pair) -> { color, elements }. Unlike the
-    // maps above this intentionally SURVIVES bond rebuilds so user-picked bond
-    // colors persist across length-slider changes and re-renders. Keys go stale
-    // if the wrapped set changes (supercell/PBC/atom edits); the stored elements
-    // pair guards against misapplication and stale entries are simply ignored.
-    this.bondUserColors = {};
+    // Per-bond user style overrides, keyed by bondKey(bond.indices)
+    // ("min_max" of the wrapped-index pair) -> { color?, alpha?, radiusScale?,
+    // elements }. Unlike the maps above this intentionally SURVIVES bond
+    // rebuilds so user-picked bond styles persist across length-slider changes
+    // and re-renders. Keys go stale if the wrapped set changes (supercell/PBC/
+    // atom edits); the stored elements pair guards against misapplication and
+    // stale entries are simply ignored.
+    this.bondUserStyles = {};
     this.periodic = periodic;     // Initialize periodic
     this.atomImages = {};
     this.planes = planes;

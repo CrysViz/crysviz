@@ -1,9 +1,9 @@
-import { fileBrowser, groups, highlightHover } from '../../../state/store.js';
+import { fileBrowser, groups, highlightHover, general } from '../../../state/store.js';
 import { colorHexToCss, hexToRgba } from '../../../utils/ColorModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
-import { updateSingleBondColor, bondKey } from '../../../render/BondsFracUpdateModule.js';
+import { updateSingleBondColor, updateSingleBondOpacity, updateSingleBondDiameter, bondKey } from '../../../render/BondsFracUpdateModule.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
-import { getElementAtomIndices } from './utils.js';
+import { getElementAtomIndices, clampOpacity, clampRadiusScale } from './utils.js';
 import { selectBondFromRow } from '../../SelectAndHighlightModule.js';
 
 // Helper: Ensure color is always a valid CSS hex string
@@ -17,7 +17,8 @@ function safeColor(color) {
 /**
  * Creates a row for one individual bond inside an expanded Bonds-tab category
  * (the bond analog of createIndividualAtomRow): label like "Cu1–O3" with the
- * bond length, a per-bond color editor, and click-to-highlight in the 3D view.
+ * bond length, a per-bond color/alpha/size editor, and click-to-highlight in
+ * the 3D view.
  * @param {any} bond - the Bond object (from structure.bonds)
  * @param {number} bondIndex - its index into structure.bonds
  * @returns {HTMLElement}
@@ -54,16 +55,17 @@ export function createIndividualBondRow(bond, bondIndex) {
   nameContainer.appendChild(distDisplay);
   row.appendChild(nameContainer);
 
-  // --- Color editor button ---
+  // --- Color/alpha/size editor button (labeled "Edit", swatch previews the
+  // bond color, matching the atom rows) ---
   const currentColor = safeColor(bond.userColor?.[0] ?? bond.color?.[0] ?? bond.defaultColor?.[0]);
 
   const colorBtn = document.createElement('button');
-  colorBtn.textContent = 'Color';
+  colorBtn.textContent = 'Edit';
   colorBtn.className = 'atom-editor-button';
   colorBtn.dataset.editorButton = 'color';
   colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;';
   colorBtn.style.background = hexToRgba(currentColor, 0.8);
-  colorBtn.title = `Change color for bond ${bondName}`;
+  colorBtn.title = `Edit color, alpha and size for bond ${bondName}`;
 
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = 'display: flex; gap: 10px;';
@@ -77,10 +79,15 @@ export function createIndividualBondRow(bond, bondIndex) {
 
   const structure = fileBrowser.selectedStructure;
 
+  // Get-or-create this bond's persistent style record (survives rebuilds).
+  function stylesEntry() {
+    return structure.bondUserStyles[key] ??= { elements: [...bond.elements] };
+  }
+
   const picker = createColorPicker(currentColor, (hex) => {
-    // Persist across bond rebuilds (structure.bondUserColors survives them),
+    // Persist across bond rebuilds (structure.bondUserStyles survives them),
     // and apply live to both half-cylinders of this bond only.
-    structure.bondUserColors[key] = { color: hex, elements: [...bond.elements] };
+    stylesEntry().color = hex;
     bond.color = [hex, hex];
     bond.userColor = [hex, hex];
     if (bond.instanceIds && groups.bondsMesh) {
@@ -90,6 +97,86 @@ export function createIndividualBondRow(bond, bondIndex) {
     }
     colorBtn.style.background = hexToRgba(hex, 0.8);
   });
+
+  // --- Alpha row (same layout as the atom editor) ---
+  const currentAlpha = clampOpacity(structure.bondUserStyles[key]?.alpha ?? bond.alpha ?? 1);
+  const alphaRow = document.createElement('div');
+  alphaRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:6px;';
+  const alphaLabel = document.createElement('span');
+  alphaLabel.textContent = 'Alpha';
+  alphaLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+  const alphaSlider = document.createElement('input');
+  alphaSlider.type = 'range';
+  alphaSlider.min = '0.05';
+  alphaSlider.max = '1';
+  alphaSlider.step = '0.01';
+  alphaSlider.value = String(currentAlpha);
+  alphaSlider.style.cssText = 'flex:1;';
+  const alphaValue = document.createElement('input');
+  alphaValue.type = 'number';
+  alphaValue.min = '0.05';
+  alphaValue.max = '1';
+  alphaValue.step = '0.01';
+  alphaValue.value = currentAlpha.toFixed(2);
+  alphaValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+  alphaRow.appendChild(alphaLabel);
+  alphaRow.appendChild(alphaSlider);
+  alphaRow.appendChild(alphaValue);
+
+  function applyBondAlpha(rawValue) {
+    const value = clampOpacity(rawValue);
+    alphaSlider.value = String(value);
+    alphaValue.value = value.toFixed(2);
+    stylesEntry().alpha = value;
+    bond.alpha = value;
+    if (bond.instanceIds) {
+      updateSingleBondOpacity(bond.instanceIds[0], value);
+      updateSingleBondOpacity(bond.instanceIds[1], value);
+    }
+  }
+  alphaSlider.oninput = (e) => applyBondAlpha(/** @type {any} */ (e.target).value);
+  alphaValue.oninput = (e) => applyBondAlpha(/** @type {any} */ (e.target).value);
+
+  // --- Size row (per-bond radius multiplier on the global bond diameter) ---
+  const currentRadiusScale = clampRadiusScale(structure.bondUserStyles[key]?.radiusScale ?? 1);
+  const sizeRow = document.createElement('div');
+  sizeRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:6px;';
+  const sizeLabel = document.createElement('span');
+  sizeLabel.textContent = 'Size';
+  sizeLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+  const sizeSlider = document.createElement('input');
+  sizeSlider.type = 'range';
+  sizeSlider.min = '0.2';
+  sizeSlider.max = '3';
+  sizeSlider.step = '0.05';
+  sizeSlider.value = String(currentRadiusScale);
+  sizeSlider.style.cssText = 'flex:1;';
+  const sizeValue = document.createElement('input');
+  sizeValue.type = 'number';
+  sizeValue.min = '0.2';
+  sizeValue.max = '3';
+  sizeValue.step = '0.05';
+  sizeValue.value = currentRadiusScale.toFixed(2);
+  sizeValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+  sizeRow.appendChild(sizeLabel);
+  sizeRow.appendChild(sizeSlider);
+  sizeRow.appendChild(sizeValue);
+
+  function applyBondRadiusScale(rawValue) {
+    const value = clampRadiusScale(rawValue);
+    sizeSlider.value = String(value);
+    sizeValue.value = value.toFixed(2);
+    stylesEntry().radiusScale = value;
+    // bond.radius drives every repaint (updateSingleBond), so the live change
+    // sticks; buildBondObjects re-derives it from the persisted scale.
+    bond.radius = general.bondRadius * value;
+    if (bond.instanceIds && groups.bondsMesh) {
+      updateSingleBondDiameter(bond.instanceIds[0], bond.radius);
+      updateSingleBondDiameter(bond.instanceIds[1], bond.radius);
+    }
+  }
+  sizeSlider.oninput = (e) => applyBondRadiusScale(/** @type {any} */ (e.target).value);
+  sizeValue.oninput = (e) => applyBondRadiusScale(/** @type {any} */ (e.target).value);
 
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
@@ -104,10 +191,10 @@ export function createIndividualBondRow(bond, bondIndex) {
   resetBtn.textContent = 'Reset';
   resetBtn.className = 'btn-mini';
   resetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
-  resetBtn.title = `Remove the custom color for ${bondName} (revert to the bond color mode)`;
+  resetBtn.title = `Remove the custom color, alpha and size for ${bondName}`;
   resetBtn.onclick = (e) => {
     e.stopPropagation();
-    delete structure.bondUserColors[key];
+    delete structure.bondUserStyles[key];
     // Rebuild bonds so the mode coloring (element/solid/length/...) reapplies.
     updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
     // The rebuild invalidated every Bond object this list references — refresh
@@ -121,6 +208,8 @@ export function createIndividualBondRow(bond, bondIndex) {
   editorButtonRow.appendChild(applyBtn);
 
   editor.appendChild(picker.element);
+  editor.appendChild(alphaRow);
+  editor.appendChild(sizeRow);
   editor.appendChild(editorButtonRow);
   editor.onclick = (e) => e.stopPropagation();
   row.appendChild(editor);
