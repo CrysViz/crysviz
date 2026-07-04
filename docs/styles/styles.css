@@ -700,23 +700,11 @@ input[type="checkbox"] {
   }
 
   /* Flat, non-interactive section headline inside a panel window body (see
-     ui/panels/sectionHeadline.js) — the bond-toggle look without the
-     clickable affordances. */
+     ui/panels/sectionHeadline.js): a plain label, only spacing added. */
   .panel-headline {
-    display: flex;
-    align-items: center;
-    background-color: var( --bg-color);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px;
-    padding: 0.4em 1em;
-    margin: 0.8em 0 0.5em 0;
+    display: block;
+    margin: 0.9em 0 0.3em 0;
     user-select: none;
-  }
-
-  .panel-headline h4 {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
   }
 
   .bond-toggle:hover,

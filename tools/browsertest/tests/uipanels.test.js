@@ -34,10 +34,14 @@ async function expandPanel(page, id) {
     dockOrder[dockOrder.length - 1] === 'settings', JSON.stringify(dockOrder));
 
   // --- Visual window contents --------------------------------------------------
-  for (const id of ['atomSize', 'bondWidth', 'showLattice', 'showAxes', 'axesWidth',
-    'colorControlsGroup', 'cameraControlsGroup']) {
+  for (const id of ['atomSize', 'bondWidth', 'showLattice', 'latticeWidth', 'showAxes', 'axesWidth',
+    'backgroundDotToggle', 'backgroundSwatch', 'colorControlsGroup', 'cameraControlsGroup']) {
     H.check(`Visual window hosts #${id}`, await inBody(page, 'visual', id));
   }
+  H.check('headlines are plain labels', await page.evaluate(() => {
+    const heads = document.querySelectorAll('#cvPanelBody-visual .panel-headline');
+    return heads.length === 4 && [...heads].every((h) => h.tagName === 'LABEL');
+  }));
   H.check('Settings keeps the storage switch', await inBody(page, 'settings', 'StorageOptionSwitch'));
   H.check('Settings keeps the drag toggles', await inBody(page, 'settings', 'dragIntoDockToggle'));
 
@@ -49,6 +53,32 @@ async function expandPanel(page, id) {
   });
   H.check('axes width slider drives the gizmo arrow shafts',
     Math.abs(shaftScale - 0.05) < 1e-6, `scale.x=${shaftScale}`);
+
+  // --- unit-cell outline width slider -------------------------------------------
+  await H.setSlider(page, 'latticeWidth', 0.06);
+  const lattice = await page.evaluate(async () => {
+    const { groups } = await import('./state/store.js');
+    const child = groups.latticeGroup?.children?.[0];
+    return {
+      edges: groups.latticeGroup?.children?.length ?? 0,
+      type: child?.geometry?.type,
+      radius: child?.geometry?.parameters?.radiusTop,
+    };
+  });
+  H.check('cell line width slider drives the outline cylinders',
+    lattice.edges === 12 && lattice.type === 'CylinderGeometry' && Math.abs(lattice.radius - 0.06) < 1e-6,
+    JSON.stringify(lattice));
+
+  // --- background picker toggle + in-panel swatch --------------------------------
+  await H.clickById(page, 'backgroundDotToggle');
+  const dotHidden = await page.evaluate(() => document.getElementById('backgroundDot').style.display === 'none');
+  await H.clickById(page, 'backgroundDotToggle');
+  const dotBack = await page.evaluate(() => document.getElementById('backgroundDot').style.display !== 'none');
+  H.check('toggle hides and restores the on-canvas background dot', dotHidden && dotBack);
+  await H.clickById(page, 'backgroundSwatch');
+  const pickerOpen = await page.evaluate(() => !!document.querySelector('.spin-color-picker'));
+  await page.evaluate(() => document.querySelector('.spin-color-picker')?.remove());
+  H.check('in-panel swatch opens the background color picker', pickerOpen);
 
   // --- Bonds window ------------------------------------------------------------
   await expandPanel(page, 'bonds');

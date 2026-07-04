@@ -45,6 +45,7 @@ function openBackgroundColorPicker(dot) {
     selectedHex = hex;
     const contrastColor = getContrastingBorder(selectedHex);
     dot.style.border = `2px solid ${contrastColor}`;
+    if (dot.dataset.bgSwatch) dot.style.background = hex;
     general.currentLatticeColor = contrastColor;
     updateLattice(contrastColor);
     if (app?.scene) app.scene.background = new THREE.Color(hex);
@@ -80,7 +81,9 @@ function openBackgroundColorPicker(dot) {
   let bottomSpace = window.innerHeight - (rect.top + window.scrollY + 24 + pickerPanel.offsetHeight);
   if (bottomSpace < 40) topPosition = window.innerHeight - pickerPanel.offsetHeight - 65;
 
-  pickerPanel.style.left = `${rect.left + window.scrollX - 200}px`;
+  // Keep the panel on screen for anchors near the left edge (the Visual
+  // window's swatch sits in the dock column).
+  pickerPanel.style.left = `${Math.max(8, rect.left + window.scrollX - 200)}px`;
   pickerPanel.style.top = `${topPosition}px`;
 
   const closePicker = () => {
@@ -121,4 +124,37 @@ export function createBackgroundControl() {
   dot.style.borderRadius = "50%";
   dot.style.cursor = "pointer";
   dot.addEventListener("click", () => openBackgroundColorPicker(dot));
+}
+
+/** Show/hide the on-canvas picker dot (the Visual window's toggle). */
+export function setBackgroundDotVisible(visible) {
+  const dot = document.getElementById('backgroundDot');
+  if (dot) dot.style.display = visible ? '' : 'none';
+}
+
+export function isBackgroundDotVisible() {
+  const dot = document.getElementById('backgroundDot');
+  return !!dot && dot.style.display !== 'none';
+}
+
+/** A small round swatch button that opens the same background color picker,
+ *  for use inside a panel body (Visual window). Its fill tracks the picked
+ *  scene background. */
+export function createBackgroundSwatch() {
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.id = 'backgroundSwatch';
+  dot.title = 'Pick background color';
+  dot.dataset.bgSwatch = '1';
+  dot.style.cssText = 'width:26px; height:26px; border-radius:50%; cursor:pointer;'
+    + ' border:2px solid rgba(255,255,255,0.5); padding:0; flex:none;';
+  const syncFill = () => {
+    if (app?.scene?.background) dot.style.background = '#' + app.scene.background.getHexString();
+  };
+  syncFill();
+  dot.addEventListener('click', () => {
+    syncFill(); // the background may have changed via the canvas dot or theme
+    openBackgroundColorPicker(dot);
+  });
+  return dot;
 }

@@ -110,6 +110,9 @@ export const general = {
   // Shaft radius of the a/b/c axes-gizmo arrows, in gizmo-scene units
   // (WindowAndSceneControls.initAxesGizmo; arrow length is 1).
   axesLineWidth:0.015,
+  // Cylinder radius of the unit-cell outline edges, in world units (Å)
+  // (LatticeModule.createLatticeLines).
+  latticeLineWidth:0.015,
   showSecond:false,
   showSecondBonds:false,
   showComparisonInfo:false,

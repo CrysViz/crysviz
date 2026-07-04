@@ -22,6 +22,7 @@ import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
+import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
 
 // ---- static-row adoption ------------------------------------------------------
 //
@@ -435,8 +436,22 @@ export function registerDefaultPanels() {
       body.appendChild(makeSectionHeadline('Sizes'));
       adoptStaticRows(body, ['atomSize', 'bondWidth'], false);
       body.appendChild(makeSectionHeadline('Unit Cell'));
-      adoptStaticRows(body, ['showLattice', 'showAxes', 'axesWidth'], false);
+      adoptStaticRows(body, ['showLattice', 'latticeWidth', 'showAxes', 'axesWidth'], false);
       body.appendChild(makeSectionHeadline('Colors & Style'));
+      // Background: toggle for the on-canvas picker dot, plus an in-panel
+      // swatch opening the same picker (outside the toggle's label, so
+      // clicking the swatch doesn't flip the checkbox).
+      const bgGroup = document.createElement('div');
+      bgGroup.className = 'toggle_group';
+      const bgRow = document.createElement('div');
+      bgRow.style.cssText = 'display:flex; align-items:center; gap:8px;';
+      const bgToggle = makeToggleRow('backgroundDotToggle', 'Background picker on canvas',
+        isBackgroundDotVisible(), (on) => setBackgroundDotVisible(on));
+      bgToggle.style.flex = '1';
+      bgRow.appendChild(bgToggle);
+      bgRow.appendChild(createBackgroundSwatch());
+      bgGroup.appendChild(bgRow);
+      body.appendChild(bgGroup);
       addColorPanel(body.id);
       body.appendChild(makeSectionHeadline('Camera'));
       addCameraPanel(body.id);

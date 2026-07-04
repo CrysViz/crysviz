@@ -8,7 +8,7 @@
 
 import { general, groups, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter } from '../render/index.js';
+import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice } from '../render/index.js';
 import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
 import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
 
@@ -117,6 +117,18 @@ export function setupControlsWiring() {
       //updateVisualization();
     };
   }
+  // Unit-cell outline line width control (rebuilds the 12 outline cylinders)
+  const latticeWidthSlider = document.getElementById('latticeWidth');
+  const latticeWidthValue = document.getElementById('latticeWidthValue');
+  if (latticeWidthSlider && latticeWidthValue) {
+    latticeWidthSlider.oninput = (e) => {
+      const v = parseFloat(/** @type {HTMLInputElement} */ (e.target).value);
+      if (isFinite(v)) general.latticeLineWidth = v;
+      latticeWidthValue.textContent = general.latticeLineWidth.toFixed(3);
+      if (fileBrowser.selectedStructure) updateLattice();
+    };
+  }
+
   // Axes gizmo line width control
   const axesWidthSlider = document.getElementById('axesWidth');
   const axesWidthValue = document.getElementById('axesWidthValue');
