@@ -3,7 +3,6 @@ import {fileBrowser, general} from '../../state/store.js';
 
 import {collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { createCompositionRow, createWyckoffCompositionRow} from './Species.js'
-import { createSpecificBondControl} from './Bonds.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'
 import { getPanel } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
@@ -87,12 +86,14 @@ export function getCompositionString() {
 function captureCompositionUiState() {
   const compDiv = document.getElementById('composition');
   if (!compDiv) {
-    return { expandedElements: [], elementEditorsOpen: [], atomEditorsOpen: [] };
+    return { expandedElements: [], elementEditorsOpen: [], atomEditorsOpen: [], expandedBondPairs: [], bondEditorsOpen: [] };
   }
 
   const expandedElements = [];
   const elementEditorsOpen = [];
   const atomEditorsOpen = [];
+  const expandedBondPairs = [];
+  const bondEditorsOpen = [];
 
   compDiv.querySelectorAll('.comp-container').forEach((container) => {
     const element = container.dataset.element;
@@ -128,7 +129,25 @@ function captureCompositionUiState() {
     }
   });
 
-  return { expandedElements, elementEditorsOpen, atomEditorsOpen };
+  compDiv.querySelectorAll('.bond-control').forEach((control) => {
+    const pair = control.dataset.pair;
+    if (!pair) return;
+    const bondsContainer = control.querySelector('.individual-bonds');
+    if (bondsContainer && bondsContainer.style.display !== 'none') {
+      expandedBondPairs.push(pair);
+    }
+  });
+
+  compDiv.querySelectorAll('.individual-bond-row').forEach((row) => {
+    const bondRowKey = row.dataset.bondKey;
+    if (!bondRowKey) return;
+    const editor = row.querySelector('.bond-color-editor');
+    if (editor && editor.style.display !== 'none') {
+      bondEditorsOpen.push(bondRowKey);
+    }
+  });
+
+  return { expandedElements, elementEditorsOpen, atomEditorsOpen, expandedBondPairs, bondEditorsOpen };
 }
 
 function restoreCompositionUiState(state) {
@@ -145,6 +164,21 @@ function restoreCompositionUiState(state) {
     atomsContainer?._populateAtomRows?.();
     if (atomsContainer) atomsContainer.style.display = 'block';
     if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
+  }
+
+  for (const pair of state.expandedBondPairs || []) {
+    const control = compDiv.querySelector(`.bond-control[data-pair="${pair}"]`);
+    if (!control) continue;
+    const bondsContainer = control.querySelector('.individual-bonds');
+    const expandIcon = control.querySelector('.bond-expand-icon');
+    bondsContainer?._populateBondRows?.();
+    if (bondsContainer) bondsContainer.style.display = 'block';
+    if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
+  }
+
+  for (const bondRowKey of state.bondEditorsOpen || []) {
+    const editor = compDiv.querySelector(`.individual-bond-row[data-bond-key="${bondRowKey}"] .bond-color-editor`);
+    if (editor) editor.style.display = 'block';
   }
 
   for (const element of state.elementEditorsOpen || []) {
@@ -350,7 +384,6 @@ if (!hasWyckoffPanel) compDiv.appendChild(atomPanel);
 compDiv.appendChild(bondsPanel);
 if (hasWyckoffPanel) compDiv.appendChild(wyckoffPanel);
 
-createSpecificBondControl("infoBondControls");
 createBondLengthControls("infoBondControls"); // Make sure to pass the panel element
 
 // Function to show the selected panel and hide others

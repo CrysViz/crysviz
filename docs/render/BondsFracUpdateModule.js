@@ -1,6 +1,6 @@
 import * as THREE from '../external/three/three.module.js';
 
-import {bondLengths, app, groups,fileBrowser, general} from '../state/store.js';
+import {bondLengths, app, groups,fileBrowser, general, highlightHover} from '../state/store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
@@ -150,11 +150,22 @@ function isBondCutByPlanes(bond, cutPlanes) {
   return firstCut || secondCut;
 }
 
+// Canonical persistent key for a bond within a fixed wrapped set: the sorted
+// wrapped-index pair. bond.uuid is NOT usable (random suffix, changes per rebuild).
+export function bondKey(indices) {
+  return indices[0] <= indices[1] ? `${indices[0]}_${indices[1]}` : `${indices[1]}_${indices[0]}`;
+}
+
 export function buildBondObjects(structure){
   const _t0 = performance.now();
   structure.bonds = [];
   structure.bondMapping = {};
   structure.bondObjectMapping = {};
+  // Per-bond user colors (structure.bondUserColors) intentionally survive rebuilds;
+  // the mesh and any bond selection do not.
+  structure.bondUserColors ??= {};
+  general.bondsBuildCounter = (general.bondsBuildCounter || 0) + 1;
+  highlightHover.currentlyHighlightedBond = null;
 
   const wrapped = structure.periodic.wrapped;
   const wrappedCart = wrapped.cart;
@@ -337,6 +348,19 @@ export function buildBondObjects(structure){
     }
   }
 
+  // Re-apply persisted per-bond user colors. Must run after ALL mode coloring
+  // (including the length second pass above) so user colors win over any mode.
+  // Note the asymmetry with atom recoloring: the per-atom color editor tints
+  // attached bond halves via bond.userColor without persisting; per-bond colors
+  // set here persist in structure.bondUserColors and take precedence.
+  for (const bond of structure.bonds) {
+    const saved = structure.bondUserColors[bondKey(bond.indices)];
+    if (saved && saved.elements[0] === bond.elements[0] && saved.elements[1] === bond.elements[1]) {
+      bond.color = [saved.color, saved.color]; // one color for both halves
+      bond.userColor = [saved.color, saved.color];
+    }
+  }
+
   // Populate global bondLengths for histogram
   for (const key in bondLengths) delete bondLengths[key];
   for (const bond of structure.bonds) {
@@ -456,8 +480,18 @@ export function renderBonds() {
   // does the work updateBonds does NOT: create the mesh, build the picking/lookup tables,
   // and fill the UUID attribute. This removes a full redundant matrix/colour pass over
   // every bond (the dominant cost on large structures).
+  // bondObjectMapping must hold indices into the UNFILTERED structure.bonds array
+  // (all consumers do structure.bonds[mapping[0]]), while the instance index i
+  // runs over validBonds only.
+  const bondsIndexOf = new Map();
+  bonds.forEach((b, k) => bondsIndexOf.set(b, k));
+
   validBonds.forEach((bond, i) => {
     if (!bond.center1 || !bond.center2) return;
+
+    // Reverse map bond -> its two half-cylinder instance ids (used by the Bonds
+    // tab rows and the highlight code). Filtered-out bonds keep it undefined.
+    bond.instanceIds = [i * 2, i * 2 + 1];
 
     // ---- first half ----
     if (!structure.bondhalfToAtom) structure.bondhalfToAtom = {};
@@ -470,10 +504,7 @@ export function renderBonds() {
     structure.bondMapping[key].push(i * 2);
 
     // Lookup table from bondHalf to the actual bond objects (used for colour changes).
-    if (!structure.bondObjectMapping[i * 2]) {
-      structure.bondObjectMapping[i * 2] = [];
-    }
-    structure.bondObjectMapping[i * 2] = [i, 0];
+    structure.bondObjectMapping[i * 2] = [bondsIndexOf.get(bond), 0];
 
     const uuid1 = `1${bond.uuid}`.replace(/-/g, '');
     paddedUUID.fill(0);
@@ -489,10 +520,7 @@ export function renderBonds() {
     }
     structure.bondMapping[key].push(i * 2 + 1);
 
-    if (!structure.bondObjectMapping[i * 2 + 1]) {
-      structure.bondObjectMapping[i * 2 + 1] = [];
-    }
-    structure.bondObjectMapping[i * 2 + 1] = [i, 1];
+    structure.bondObjectMapping[i * 2 + 1] = [bondsIndexOf.get(bond), 1];
 
     const uuid2 = `2${bond.uuid}`.replace(/-/g, '');
     paddedUUID.fill(0);
@@ -610,7 +638,9 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
   dummy.updateMatrix();
   mesh.setMatrixAt(index*2, dummy.matrix);
 
-  updateSingleBondColor(index*2, bond.color[0],overwriteAtom)
+  // A per-bond user color must survive repaints even when the atom has a
+  // userColor (bond userColor > atom userColor > mode color).
+  updateSingleBondColor(index*2, bond.color[0], overwriteAtom || bond.userColor?.[0] != null)
 
   mesh.geometry.attributes.instanceEmissive.setXYZ(index*2, 0,0,0);
   mesh.geometry.attributes.instanceEmissiveIntensity.setX(index*2, 0);
@@ -623,7 +653,7 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
   dummy.updateMatrix();
   mesh.setMatrixAt(index*2 + 1, dummy.matrix);
 
-  updateSingleBondColor(index*2+1, bond.color[1],overwriteAtom)
+  updateSingleBondColor(index*2+1, bond.color[1], overwriteAtom || bond.userColor?.[1] != null)
 
   mesh.geometry.attributes.instanceEmissive.setXYZ(index*2 + 1, 0,0,0);
   mesh.geometry.attributes.instanceEmissiveIntensity.setX(index*2 + 1, 0);

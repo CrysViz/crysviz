@@ -17,7 +17,7 @@ export {
 
 export {
   getBondCutoff, updateBonds, rebuildBonds, buildBondObjects,
-  updateSingleBondDiameter, disposeBondsMesh, updateSingleBondColor,
+  updateSingleBondDiameter, disposeBondsMesh, updateSingleBondColor, bondKey,
 } from './BondsFracUpdateModule.js';
 
 export {

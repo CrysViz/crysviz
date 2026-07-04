@@ -94,6 +94,9 @@ export const general = {
   bondLengths:{},
   defaultBondLengths:{},
   bondVisibility:{},
+  // Incremented on every buildBondObjects() run; expanded per-bond row lists in the
+  // Bonds tab compare against it to know their cached rows are stale.
+  bondsBuildCounter:0,
   bondRadius:0.08,
   forceScale: 1.0,
   forceRadius: 0.08,

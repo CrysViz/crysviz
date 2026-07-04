@@ -1,9 +1,9 @@
-import {groups,highlightHover,fileBrowser,atomSelection} from '../state/store.js';
+import {groups,highlightHover,fileBrowser,atomSelection,general} from '../state/store.js';
 import {collapseAllAtomExpansions} from './WindowAndSceneControls.js';
 import {setStructurePanelOpen} from './StructureInfoPanel/General.js';
 import * as THREE from '../external/three/three.module.js';
 import {updateAtoms} from '../render/index.js';
-import {updateBonds} from '../render/index.js';
+import {updateBonds, bondKey} from '../render/index.js';
 
 const ATOM_HIGHLIGHT_COLOR = new THREE.Color(0xFF8C00);
 
@@ -157,18 +157,108 @@ function showPanel(panelId) {
   }
 }
 
-export function highlightBondInfoInStructurePanel() {
-  const composition = document.getElementById('composition');
-  if (!composition) return;
+// =============================================
+// BOND SELECTION (single-select)
+// =============================================
 
-  setStructurePanelOpen(true);
+/** Category key of a bond's species pair, matching the Bonds-tab row keys
+ *  (alphabetical "ElA-ElB", same ordering as BondLengthPanel pair generation). */
+function bondPairKeyOf(bond) {
+  const [e1, e2] = bond.elements;
+  return e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`;
+}
 
-  const panelSwitch = document.getElementById('atomBondControlSwitch');
-  panelSwitch?.querySelectorAll('button').forEach((btn) => {
-    btn.classList.remove('active');
+export function clearBondSelection() {
+  clearHighlightBond();
+  clearUIHighlight();
+  highlightHover.currentlyHighlightedBond = null;
+}
+
+/** Locate (and if needed lazily build + expand) the Bonds-tab row for a bond. */
+function findBondRow(pair, key) {
+  const composition = ensureAtomPanelVisible('bonds', 'infoBondControls');
+  if (!composition) return null;
+  general.structurePanelMode = 'bonds';
+
+  const control = composition.querySelector(`.bond-control[data-pair="${pair}"]`);
+  if (!control) return null;
+
+  const bondsContainer = /** @type {HTMLElement} */ (control.querySelector('.individual-bonds'));
+  if (!bondsContainer) return null;
+
+  // Individual bond rows are populated lazily on first expand (see
+  // BondLengthPanel.js). We expand programmatically here, so ensure they exist.
+  /** @type {any} */ (bondsContainer)._populateBondRows?.();
+
+  if (bondsContainer.style.display === 'none') {
+    bondsContainer.style.display = 'block';
+    const expandIcon = /** @type {HTMLElement} */ (control.querySelector('.bond-expand-icon'));
+    if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
+  }
+
+  for (const row of bondsContainer.querySelectorAll('.individual-bond-row')) {
+    if (/** @type {HTMLElement} */ (row).dataset.bondKey === key) {
+      return /** @type {HTMLElement} */ (row);
+    }
+  }
+  return null;
+}
+
+/**
+ * Select a bond by its index into structure.bonds: orange 3D highlight +
+ * amber panel-row highlight. Selecting the already-selected bond deselects.
+ * options.row — the caller's own panel row (panel→3D path; skips panel lookup)
+ * options.openPanel — open the Structure window / Bonds tab and find the row
+ * options.scrollToSelection — scroll the row into view
+ */
+function selectBondByIndex(bondIndex, options = {}) {
+  const structure = fileBrowser.selectedStructure;
+  const bond = structure?.bonds?.[bondIndex];
+  if (!bond) return;
+
+  if (highlightHover.currentlyHighlightedBond?.bondIndex === bondIndex) {
+    clearBondSelection();
+    return;
+  }
+  if (!bond.instanceIds) return; // filtered out of the mesh (too short to render)
+
+  clearSelectedAtoms({ reason: 'bond-select' });
+  clearUIHighlight();
+
+  highlightBondIn3D(bond.instanceIds); // clears prior 3D atom+bond highlights first
+  highlightHover.currentlyHighlightedBond = {
+    bondIndex,
+    key: bondKey(bond.indices),
+    pair: bondPairKeyOf(bond),
+    instanceIds: [...bond.instanceIds],
+  };
+
+  let row = options.row ?? null;
+  if (!row && options.openPanel) {
+    collapseAllAtomExpansions();
+    row = findBondRow(highlightHover.currentlyHighlightedBond.pair, highlightHover.currentlyHighlightedBond.key);
+  }
+  if (row) {
+    highlightAtomRow(row);
+    if (options.scrollToSelection) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+}
+
+/** 3D→panel: select the bond owning a picked bond-half instance id. */
+export function selectBondFromInstance(instanceId, options = {}) {
+  const mapping = fileBrowser.selectedStructure?.bondObjectMapping?.[instanceId];
+  if (!mapping) return;
+  selectBondByIndex(mapping[0], {
+    openPanel: true,
+    scrollToSelection: options.scrollToSelection !== false,
   });
-  panelSwitch?.querySelectorAll('button')[1]?.classList.add('active');
-  showPanel('bondControls');
+}
+
+/** Panel→3D: select a bond from a click on its own row in the Bonds tab. */
+export function selectBondFromRow(bondIndex, rowEl) {
+  selectBondByIndex(bondIndex, { row: rowEl });
 }
 
 function getTargetAtomDetails(sourceIndex) {
@@ -434,6 +524,7 @@ export function clearAllHighlights(options = {}) {
     reason: options.reason ?? 'clear-all',
     silent: options.silent ?? false,
   });
+  highlightHover.currentlyHighlightedBond = null;
   clear3DHighlights();
 }
 

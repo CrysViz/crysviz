@@ -8,8 +8,8 @@ import * as THREE from '../external/three/three.module.js';
 import { app, groups, mode, fileBrowser, measurements } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import {
-  clearHighlightAtom, clearHighlightBond, highlightAtomIn3D,
-  highlightBondIn3D, clearAllHighlights,
+  clearHighlightAtom, highlightAtomIn3D,
+  clearAllHighlights, clearBondSelection, selectBondFromInstance,
   clearSelectedAtoms, updateAtomSelectionFrom3DHit,
 } from './SelectAndHighlightModule.js';
 import {
@@ -186,7 +186,7 @@ export function setupSceneInteraction() {
 
   if (atomHits.length > 0) {
     hit = atomHits[0];
-    clearHighlightBond();
+    clearBondSelection();
     updateAtomSelectionFrom3DHit(hit, {
       selectionMode: (event.ctrlKey || event.metaKey) ? 'toggle' : (event.shiftKey ? 'add' : 'replace'),
       sourceEvent: event,
@@ -198,18 +198,9 @@ export function setupSceneInteraction() {
       sourceEvent: event,
       reason: 'bond-select',
     });
-    let id2;
-    if (hit.instanceId%2 == 0){
-      id2 = hit.instanceId+1
-    }
-    else{
-      id2 = hit.instanceId-1
-    }
-    //highlightBondInStructurePanel(bondIndex);
-    highlightBondIn3D([hit.instanceId,id2]);
-    //highlightBondInfoInStructurePanel()
-
-
+    // Orange 3D highlight + open/expand/scroll to the bond's row in the
+    // Structure window's Bonds tab (double-click same bond deselects).
+    selectBondFromInstance(hit.instanceId, { scrollToSelection: true });
   }
   else  {
      clearAllHighlights({

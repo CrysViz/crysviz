@@ -402,10 +402,10 @@ export function resetView() { app.controls.reset(); setViewDirection(new THREE.V
 
 
 
-// Function to collapse all individual atom expansions
+// Function to collapse all individual atom (and bond) expansions
 export function collapseAllAtomExpansions() {
-  const atomsContainers = document.querySelectorAll('.individual-atoms');
-  const expandIcons = document.querySelectorAll('.comp-left span:last-child');
+  const atomsContainers = document.querySelectorAll('.individual-atoms, .individual-bonds');
+  const expandIcons = document.querySelectorAll('.comp-left span:last-child, .bond-expand-icon');
 
   atomsContainers.forEach(container => {
     container.style.display = 'none';

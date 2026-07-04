@@ -8,6 +8,18 @@ import { updateVisualization } from '../core/crystal-viewer.js';
 import {createPieDot} from '../utils/ColorModule.js';
 import {clearAllHighlights} from './SelectAndHighlightModule.js';
 import { openDoublePeriodicTable } from './PeriodicTableSelectTwoPanel.js';
+import { createIndividualBondRow } from './StructureInfoPanel/components/IndividualBondRow.js';
+
+// Re-populate the individual-bond lists of any *expanded* category rows after a
+// bonds rebuild (slider drag / visibility toggle). Collapsed lists refresh
+// lazily on next expand via general.bondsBuildCounter.
+function refreshExpandedBondLists(panelRoot) {
+  panelRoot.querySelectorAll('.individual-bonds').forEach((container) => {
+    if (/** @type {HTMLElement} */ (container).style.display !== 'none') {
+      /** @type {any} */ (container)._populateBondRows?.();
+    }
+  });
+}
 
 // Inject CSS for the double slider
 function injectDoubleSliderCSS() {
@@ -172,6 +184,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
   pairs.forEach(pair => {
     const div = document.createElement('div');
     div.className = 'bond-control';
+    div.dataset.pair = pair;
 
     // Add checkbox for bond visibility
     const checkboxDiv = document.createElement('div');
@@ -187,6 +200,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
         reRenderOther: false,
         reRenderComposition: false,
       });
+      refreshExpandedBondLists(bondControls);
     };
 
     const checkboxLabel = document.createElement('label');
@@ -194,6 +208,21 @@ export function createBondLengthControls(targetPanel='bondControls') {
     checkboxLabel.style.fontSize = '12px';
     checkboxLabel.style.color = '#ccc';
     checkboxLabel.style.margin = '0';
+    checkboxLabel.style.cursor = 'pointer';
+
+    // Expand caret toggling the individual-bond list (same style as the
+    // Atoms-tab composition rows).
+    const expandIcon = document.createElement('span');
+    expandIcon.textContent = '▶';
+    expandIcon.className = 'bond-expand-icon';
+    expandIcon.style.cssText = `
+      margin-left: 4px;
+      font-size: 14px;
+      transition: transform 0.2s ease;
+      color: rgba(255,255,255,0.8);
+      transform: rotate(0deg);
+      cursor: pointer;
+    `;
 
     let dot
     let curr_bond_colors = ["#ccc","#fff"]
@@ -208,7 +237,56 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
     checkboxDiv.appendChild(checkbox);
     checkboxDiv.appendChild(checkboxLabel);
+    checkboxDiv.appendChild(expandIcon);
     checkboxDiv.appendChild(dot);
+
+    // --- Individual bond list (expandable, lazily built) ---
+    const bondsContainer = document.createElement('div');
+    bondsContainer.className = 'individual-bonds';
+    bondsContainer.style.cssText = `
+      display: none;
+      margin-left: 20px;
+      margin-top: 8px;
+      border-left: 2px solid rgba(255,255,255,0.1);
+      padding-left: 8px;
+    `;
+
+    // One row per bond is expensive and hidden until expanded, so build lazily
+    // on first expand (mirrors the Atoms tab). structure.bonds is recreated by
+    // every bonds rebuild, so cached rows are refreshed whenever
+    // general.bondsBuildCounter has moved on. Exposed on the container so code
+    // that expands programmatically (highlight/scroll to a bond) can ensure
+    // the rows exist first.
+    let builtForBuildId = -1;
+    function populateBondRows() {
+      if (builtForBuildId === general.bondsBuildCounter) return;
+      builtForBuildId = general.bondsBuildCounter;
+      bondsContainer.innerHTML = '';
+      const bonds = fileBrowser.selectedStructure?.bonds ?? [];
+      bonds.forEach((bond, bondIndex) => {
+        const [e1, e2] = bond.elements;
+        const bondPair = e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`;
+        if (bondPair !== pair) return;
+        bondsContainer.appendChild(createIndividualBondRow(bond, bondIndex));
+      });
+      if (!bondsContainer.children.length) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.5); padding: 4px 0;';
+        empty.textContent = 'No bonds in the current length range';
+        bondsContainer.appendChild(empty);
+      }
+    }
+    /** @type {any} */ (bondsContainer)._populateBondRows = populateBondRows;
+
+    function toggleBondList(e) {
+      e.stopPropagation();
+      const isExpanded = bondsContainer.style.display !== 'none';
+      if (!isExpanded) populateBondRows(); // build rows lazily on first expand
+      bondsContainer.style.display = isExpanded ? 'none' : 'block';
+      expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
+    }
+    expandIcon.onclick = toggleBondList;
+    checkboxLabel.onclick = toggleBondList;
 
     const label = document.createElement('div');
     label.className = 'bond-label';
@@ -318,6 +396,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
         reRenderOther: false,
         reRenderComposition: false,
       });
+      refreshExpandedBondLists(bondControls);
     }
 
     minSlider.oninput = updateBondRange;
@@ -336,6 +415,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     div.appendChild(checkboxDiv);
     div.appendChild(label);
     div.appendChild(controlsRow);
+    div.appendChild(bondsContainer);
     bondControls.appendChild(div);
   });
 }
