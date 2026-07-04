@@ -37,10 +37,11 @@ export class PanelWindow {
     this.docked = true;
     this.barCollapsed = false; // title bar shrunk to a thin strip
     // Floating window displaced to the dock's right edge so the visible dock
-    // doesn't cover it; cleared when the user repositions the window.
-    // dockShiftBase remembers the pre-displacement left position.
+    // doesn't cover it; cleared when the user repositions the window. The
+    // pre-displacement position stays in floatPos (displacement and clamping
+    // are derived at apply time and never written back), so hiding the dock
+    // restores it exactly.
     this.dockShifted = false;
-    this.dockShiftBase = 0;
     // Remembered dock slot: the id of the panel this one sat above when it was
     // last undocked, so re-docking can restore that position (null = was last).
     this.redockBeforeId = null;
@@ -50,7 +51,11 @@ export class PanelWindow {
     this.built = false;        // content has been built into the body
     this.stale = false;        // built content refers to a previous structure
     this.wantExpanded = false; // persisted-expanded, waiting for first structure
-    this.floatPos = null;      // last known floating position
+    /** Inherent floating position (user/system chosen), per axis anchored to
+     *  one edge. Never overwritten by displacement/clamping (derived at apply
+     *  time), so it is what dock-hide and window-grow restore.
+     *  @type {{left?: number, right?: number, top?: number, bottom?: number}|null} */
+    this.floatPos = null;
     this.sortKey = 0;          // dock ordering key
 
     const el = document.createElement('section');
@@ -144,6 +149,7 @@ export class PanelWindow {
 
     // Content swaps can grow a floating window at runtime (e.g. the structure
     // panel's Bonds tab widening it); re-anchor so it grows into the viewport.
+    this._lastSize = { w: 0, h: 0 }; // for _keepInViewport's growth detection
     this._sizeObserver = new ResizeObserver(() => this._keepInViewport());
     this._sizeObserver.observe(el);
   }
@@ -257,13 +263,58 @@ export class PanelWindow {
     s.bottom = pos.bottom !== undefined ? css(pos.bottom) : 'auto';
   }
 
-  /** Current persistable floating position (left/top after drags, or bottom-anchored). */
-  getFloatPosition() {
+  /**
+   * Read the current on-screen rect as a new inherent floating position,
+   * anchored per axis to the nearest viewport edge: a window parked near the
+   * right or bottom edge keeps hugging that edge when the browser window is
+   * resized (position:fixed right/bottom track it natively).
+   */
+  captureFloatPosition() {
     const rect = this.el.getBoundingClientRect();
-    if (this.el.style.bottom && this.el.style.bottom !== 'auto') {
-      return { left: Math.round(rect.left), bottom: Math.round(window.innerHeight - rect.bottom) };
+    const pos = {};
+    const rightGap = window.innerWidth - rect.right;
+    if (rect.left <= rightGap) pos.left = Math.round(rect.left);
+    else pos.right = Math.round(rightGap);
+    const bottomGap = window.innerHeight - rect.bottom;
+    if (rect.top <= bottomGap) pos.top = Math.round(rect.top);
+    else pos.bottom = Math.round(bottomGap);
+    return pos;
+  }
+
+  /**
+   * Clamp a floating position into the current viewport, returning a new
+   * object (the inherent position is never mutated). Uses exactly the
+   * drag-move constraints (>=40px of the title bar reachable horizontally,
+   * the bar's top row on screen), so every position the user can drag to is a
+   * fixed point at the viewport size it was chosen in — a window only moves
+   * once shrinking the browser window would put its bar out of reach, and it
+   * returns to the inherent position when the window grows back.
+   */
+  clampToViewport(pos) {
+    const out = { ...pos };
+    const elW = this.el.offsetWidth;
+    const elH = this.el.offsetHeight;
+    if (!elW) return out; // not measurable (hidden/detached): leave untouched
+    const bar = this.titlebar;
+    const barLeft = bar.offsetLeft;
+    const barW = Math.max(bar.offsetWidth, 40);
+    const barH = bar.offsetHeight;
+    const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+    if (typeof out.left === 'number') {
+      out.left = clamp(out.left, 40 - (barLeft + barW), window.innerWidth - 40 - barLeft);
     }
-    return { left: Math.round(rect.left), top: Math.round(rect.top) };
+    if (typeof out.right === 'number') {
+      // The same two bar-reachability bounds, expressed from the right edge.
+      out.right = clamp(out.right, 40 + barLeft - elW,
+        window.innerWidth - elW + (barLeft + barW) - 40);
+    }
+    if (typeof out.top === 'number') {
+      out.top = clamp(out.top, 0, window.innerHeight - barH);
+    }
+    if (typeof out.bottom === 'number') {
+      out.bottom = clamp(out.bottom, barH - elH, window.innerHeight - elH);
+    }
+    return out;
   }
 
   // ---- expand-upward near the bottom edge ---------------------------------
@@ -310,14 +361,21 @@ export class PanelWindow {
     if (this._moving || this.docked || this.el.hidden || !this.el.isConnected) return;
     const rect = this.el.getBoundingClientRect();
     if (!rect.width) return;
+    // Only own-size GROWTH may re-anchor. Shrinking must not: when the
+    // browser window shrinks, the viewport-relative max-width/max-height can
+    // shrink the element too, and flipping anchors then would visibly move a
+    // window whose position was not the problem. Window-resize reactions are
+    // handled by PanelManager's updateFloatPlacements instead.
+    const grew = rect.width > this._lastSize.w + 1 || rect.height > this._lastSize.h + 1;
+    this._lastSize = { w: rect.width, h: rect.height };
     const s = this.el.style;
     const leftAnchored = !s.right || s.right === 'auto';
-    if (leftAnchored && rect.right > window.innerWidth - VIEWPORT_MARGIN) {
+    if (grew && leftAnchored && rect.right > window.innerWidth - VIEWPORT_MARGIN) {
       s.right = `${Math.max(VIEWPORT_MARGIN, window.innerWidth - rect.right)}px`;
       s.left = 'auto';
     }
     const topAnchored = !s.bottom || s.bottom === 'auto';
-    if (topAnchored && rect.bottom > window.innerHeight - VIEWPORT_MARGIN) {
+    if (grew && topAnchored && rect.bottom > window.innerHeight - VIEWPORT_MARGIN) {
       s.bottom = `${Math.max(VIEWPORT_MARGIN, window.innerHeight - rect.bottom)}px`;
       s.top = 'auto';
     }
@@ -441,8 +499,11 @@ export class PanelWindow {
 
     const onUp = () => {
       teardown();
-      // A user-chosen position replaces any dock displacement.
+      // A user-chosen position replaces any dock displacement, and becomes
+      // the new inherent position, anchored to the nearest viewport edges.
       this.dockShifted = false;
+      this.floatPos = this.captureFloatPosition();
+      this.applyFloatPosition(this.floatPos);
       this.hooks.onLayoutChange();
     };
 

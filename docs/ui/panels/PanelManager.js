@@ -84,7 +84,6 @@ const hooks = {
  */
 function applyPanelDefaults(panel) {
   const defaults = panel.def.defaults || {};
-  panel.dockShifted = false;
   if (defaults.docked !== false) {
     dockPanelAtDefaultOrder(panel);
   } else {
@@ -127,15 +126,23 @@ export function initPanelSystem() {
   loadStoredLayout();
   loadPanelPrefs();
 
-  // Track the side panel's visibility: floating windows in the dock's column
-  // are displaced right while it occupies space and return to their base
-  // position when it is hidden (see refreshDockShift).
+  // Floating windows react to the layout changing around them through one
+  // derivation (see updateFloatPlacements): windows in the dock's column are
+  // displaced right while it occupies space, and every window is kept
+  // reachable in the viewport — both reversibly, returning to the inherent
+  // position (floatPos) when the dock hides or the browser window grows back.
   dockOccupies = dockOccupiesSpace();
   measureUiWidth();
-  const observer = new MutationObserver(() => refreshDockShift());
+  const observer = new MutationObserver(() => updateFloatPlacements());
   observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
   const ui = document.getElementById('ui');
   if (ui) observer.observe(ui, { attributes: true, attributeFilter: ['class'] });
+  let resizePending = false;
+  window.addEventListener('resize', () => {
+    if (resizePending) return;
+    resizePending = true;
+    requestAnimationFrame(() => { resizePending = false; updateFloatPlacements(); });
+  });
 }
 
 export function getPanel(id) {
@@ -158,7 +165,11 @@ export function registerPanel(def) {
   const defaults = def.defaults || {};
   const docked = persisted ? !!persisted.docked : defaults.docked !== false;
   const collapsed = persisted ? !!persisted.collapsed : defaults.collapsed !== false;
-  panel.floatPos = clampPos((persisted && persisted.pos) || defaults.anchor || { left: 40, top: 40 });
+  // The remembered position is taken verbatim (a layout saved on a larger
+  // screen must survive a session in a small window); floatPanel derives an
+  // on-screen placement from it without modifying it.
+  panel.floatPos = sanitizePos(persisted && persisted.pos)
+    || sanitizePos(defaults.anchor) || { left: 40, top: 40 };
   panel.sortKey = dockSortKey(def);
 
   if (def.hiddenUntilStructure && !revealed) panel.el.hidden = true;
@@ -225,6 +236,12 @@ export function revealFeaturePanels() {
   revealed = true;
   for (const panel of panels.values()) {
     if (panel.def.hiddenUntilStructure) panel.el.hidden = false;
+  }
+  // Newly unhidden windows become measurable only now: derive their on-screen
+  // placement (viewport clamp) before any wantExpanded expansion below
+  // decides its grow-upward anchoring from the applied position.
+  updateFloatPlacements();
+  for (const panel of panels.values()) {
     if (panel.wantExpanded) {
       panel.wantExpanded = false;
       panel.expand();
@@ -301,18 +318,10 @@ export function saveLayout() {
   for (const panel of panels.values()) {
     if (panel.def.persist === false) continue;
     const entry = { docked: panel.docked, collapsed: panel.collapsed, bar: panel.barCollapsed };
-    if (!panel.docked) {
-      if (!panel.el.hidden && panel.el.isConnected) {
-        panel.floatPos = panel.getFloatPosition();
-      }
-      let pos = panel.floatPos;
-      // Persist the BASE position: a dock-displaced window is stored where it
-      // sits with the dock hidden, and re-displaced on restore (floatPanel).
-      if (panel.dockShifted && pos && typeof pos.left === 'number') {
-        pos = { ...pos, left: Math.max(0, panel.dockShiftBase) };
-      }
-      entry.pos = pos;
-    }
+    // The inherent position is persisted verbatim: dock displacement and
+    // viewport clamping are derived at apply time (updateFloatPlacements)
+    // and must never leak into the stored layout.
+    if (!panel.docked) entry.pos = panel.floatPos;
     data.panels[panel.id] = entry;
   }
   // Keep remembered entries of currently-unregistered panels.
@@ -429,7 +438,7 @@ function wantsDockDrop(ev) {
  * its move listeners and released pointer capture.
  */
 function dockAtPointer(panel, ev) {
-  panel.floatPos = panel.getFloatPosition(); // last float pos, before styles clear
+  panel.floatPos = panel.captureFloatPosition(); // last float pos, before styles clear
   const pointerY = ev.clientY - dockEl.getBoundingClientRect().top;
   let before = null;
   for (const sib of dockedPanels()) {
@@ -461,16 +470,15 @@ function floatPanel(panel, pos, opts = {}) {
       : panel.floatPos;
   }
   panel.floatPos = pos;
-  document.body.appendChild(panel.el);
-  panel.markFloating(pos);
   // A window whose base position would be covered by the dock is displaced
   // just past its right edge (only as far as needed) while it occupies space.
-  if (!opts.noDockShift && dockOccupies
-      && typeof pos.left === 'number' && pos.left < lastUiWidth + DOCK_GAP) {
-    panel.applyFloatPosition({ ...pos, left: lastUiWidth + DOCK_GAP });
-    panel.dockShifted = true;
-    panel.dockShiftBase = pos.left;
-  }
+  panel.dockShifted = !opts.noDockShift && dockOccupies
+    && typeof pos.left === 'number' && pos.left < lastUiWidth + DOCK_GAP;
+  document.body.appendChild(panel.el);
+  panel.markFloating(pos);
+  // Re-apply once the floating styles are in effect: the derived placement
+  // (dock displacement + viewport clamp) measures the element's floated size.
+  panel.applyFloatPosition(derivedFloatPos(panel));
   resequenceSortKeys();
   scheduleSave();
 }
@@ -493,37 +501,41 @@ function measureUiWidth() {
 }
 
 /**
- * Called when the side panel is hidden or shown. Left-anchored floating
- * windows inside the dock's column move right by the dock width when it
- * appears (so it doesn't cover them) and back to their remembered base
- * position when it hides again.
+ * The single derivation from a window's inherent position (floatPos) to its
+ * applied on-screen position: dock displacement first (a window in the
+ * visible dock's column moves just past its right edge), then the viewport
+ * clamp (title bar kept reachable). Pure — floatPos is never modified, so
+ * hiding the dock or growing the browser window back restores the window
+ * exactly.
  */
-function refreshDockShift() {
+function derivedFloatPos(panel) {
+  const pos = { ...panel.floatPos };
+  if (panel.dockShifted && dockOccupies && typeof pos.left === 'number') {
+    pos.left = Math.max(pos.left, lastUiWidth + DOCK_GAP);
+  }
+  return panel.clampToViewport(pos);
+}
+
+/**
+ * Re-derive every floating window's placement. Called when the side panel is
+ * hidden/shown and when the browser window is resized. The dockShifted flag
+ * is sticky: it is (re)decided only when the dock's occupancy actually
+ * changes (and at float time), so a window the user deliberately parked over
+ * the visible dock is not re-displaced by unrelated resizes.
+ */
+function updateFloatPlacements() {
   const occupies = dockOccupiesSpace();
-  if (occupies === dockOccupies) return;
+  const occupancyChanged = occupies !== dockOccupies;
   if (occupies) measureUiWidth();
   dockOccupies = occupies;
-  const w = lastUiWidth;
-  if (!w) return;
   for (const panel of panels.values()) {
     if (panel.docked || panel.el.hidden || !panel.el.isConnected) continue;
-    const s = panel.el.style;
-    const leftAnchored = s.left && s.left !== 'auto';
-    if (!occupies) {
-      if (panel.dockShifted) {
-        panel.dockShifted = false;
-        if (leftAnchored) s.left = `${Math.max(0, panel.dockShiftBase)}px`;
-      }
-    } else if (leftAnchored) {
-      const rect = panel.el.getBoundingClientRect();
-      if (rect.left < w + DOCK_GAP) {
-        panel.dockShiftBase = Math.round(rect.left);
-        s.left = `${w + DOCK_GAP}px`;
-        panel.dockShifted = true;
-      }
+    if (occupancyChanged) {
+      panel.dockShifted = occupies && typeof panel.floatPos.left === 'number'
+        && panel.floatPos.left < lastUiWidth + DOCK_GAP;
     }
+    panel.applyFloatPosition(derivedFloatPos(panel));
   }
-  scheduleSave();
 }
 
 /** After any dock mutation, docked panels' sort keys follow their DOM order. */
@@ -643,7 +655,28 @@ function scheduleSave() {
   saveTimer = setTimeout(() => { saveTimer = 0; saveLayout(); }, SAVE_DEBOUNCE_MS);
 }
 
-/** Keep a restored floating position reachable in the current viewport. */
+/**
+ * Validate a stored/default floating position without altering its values:
+ * per axis keep one anchor key if it is a plausible finite px number, else
+ * return null so the caller falls back. Unlike clampPos this never rewrites
+ * an off-viewport position — clamping is derived at apply time instead.
+ */
+function sanitizePos(pos) {
+  if (!pos || typeof pos !== 'object') return null;
+  const ok = (v) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 20000;
+  const out = {};
+  if (ok(pos.left)) out.left = pos.left;
+  else if (ok(pos.right)) out.right = pos.right;
+  if (ok(pos.top)) out.top = pos.top;
+  else if (ok(pos.bottom)) out.bottom = pos.bottom;
+  if ((out.left === undefined && out.right === undefined)
+      || (out.top === undefined && out.bottom === undefined)) return null;
+  return out;
+}
+
+/** Keep a NEW floating position (undock spot, drag-out, defaults) reachable
+ *  in the current viewport. Remembered positions are NOT clamped with this —
+ *  they stay verbatim and are clamped only at apply time (derivedFloatPos). */
 function clampPos(pos) {
   const out = { ...pos };
   if (typeof out.left === 'number') {
