@@ -17,3 +17,8 @@ docs/compiled/periodic_wasm_src/pkg/
 # Project-local Rust toolchain (rustup + cargo home), analogous to a Python venv.
 # Activate with: source rust-env/activate
 rust-env/
+
+# Browser-test environment (playwright Firefox + Xvfb, ~180 MB; recreate with
+# `make browsertest-setup`) and test screenshots.
+tools/browsertest/env/
+tools/browsertest/artifacts/

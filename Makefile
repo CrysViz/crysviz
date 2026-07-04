@@ -1,4 +1,4 @@
-.PHONY: serve install_devtools lint lint-fix typecheck check-imports check periodic-wasm
+.PHONY: serve install_devtools lint lint-fix typecheck check-imports check periodic-wasm browsertest browsertest-setup
 
 serve:
 	echo "Open:"
@@ -29,6 +29,17 @@ check-imports:
 # The CI gate: lint + typecheck + import checks. Run on pull requests
 # (see .github/workflows/check.yml). Any failure fails the build.
 check: lint typecheck check-imports
+
+# Browser end-to-end tests: real app in playwright-Firefox under a private
+# Xvfb (works headless-less and root-less, incl. sandboxed agent
+# environments). See tools/browsertest/README.md. Setup downloads ~180 MB
+# into tools/browsertest/env/ (gitignored). Run one test with:
+#   tools/browsertest/run.sh tests/<name>.test.js
+browsertest-setup:
+	tools/browsertest/setup.sh
+
+browsertest:
+	tools/browsertest/run.sh
 
 # Rebuild the periodic_wasm module from its Rust source
 # (docs/compiled/periodic_wasm_src/). Requires wasm-pack and the
