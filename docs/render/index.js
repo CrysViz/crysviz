@@ -37,7 +37,10 @@ export {
   recomputeLatticeDirs, latticeDirsNorm, latticeDirs, getCellCenterAndDist,
 } from './LatticeModule.js';
 
-export { updatePolyhedra, updatePolyhedraColors } from './PolyhedraModule.js';
+export {
+  updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory,
+  resolvePolyhedronStyle,
+} from './PolyhedraModule.js';
 
 export {
   updateField, setActiveField, toggleFieldVisibility, clearField, deleteField,

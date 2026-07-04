@@ -223,6 +223,7 @@ function selectBondByIndex(bondIndex, options = {}) {
   if (!bond.instanceIds) return; // filtered out of the mesh (too short to render)
 
   clearSelectedAtoms({ reason: 'bond-select' });
+  clearPolyhedronSelection();
   clearUIHighlight();
 
   highlightBondIn3D(bond.instanceIds); // clears prior 3D atom+bond highlights first
@@ -259,6 +260,106 @@ export function selectBondFromInstance(instanceId, options = {}) {
 /** Panel→3D: select a bond from a click on its own row in the Bonds tab. */
 export function selectBondFromRow(bondIndex, rowEl) {
   selectBondByIndex(bondIndex, { row: rowEl });
+}
+
+// =============================================
+// POLYHEDRON SELECTION (single-select)
+// =============================================
+
+function findPolyhedronMesh(key) {
+  return groups.polyhedraGroup?.children?.find((m) => m.userData?.key === key) ?? null;
+}
+
+export function clearPolyhedronSelection() {
+  const sel = highlightHover.currentlyHighlightedPolyhedron;
+  if (sel) {
+    // The mesh may already be gone after an async polyhedra rebuild — fine.
+    const mesh = findPolyhedronMesh(sel.key);
+    if (mesh?.material?.emissive) {
+      mesh.material.emissive.set(0x000000);
+      mesh.material.emissiveIntensity = 1;
+    }
+  }
+  clearUIHighlight();
+  highlightHover.currentlyHighlightedPolyhedron = null;
+}
+
+/** Locate (and if needed lazily build + expand) the Poly-tab row for a polyhedron. */
+function findPolyhedronRow(catKey, key) {
+  const composition = ensureAtomPanelVisible('polyhedra', 'infoPolyControls');
+  if (!composition) return null;
+  general.structurePanelMode = 'polyhedra';
+
+  const control = composition.querySelector(`.poly-control[data-cat-key="${catKey}"]`);
+  if (!control) return null;
+
+  const listContainer = /** @type {HTMLElement} */ (control.querySelector('.individual-polyhedra'));
+  if (!listContainer) return null;
+
+  // Rows are populated lazily on first expand (see PolyhedraListPanel.js).
+  /** @type {any} */ (listContainer)._populatePolyhedronRows?.();
+
+  if (listContainer.style.display === 'none') {
+    listContainer.style.display = 'block';
+    const expandIcon = /** @type {HTMLElement} */ (control.querySelector('.poly-expand-icon'));
+    if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
+  }
+
+  for (const row of listContainer.querySelectorAll('.individual-polyhedron-row')) {
+    if (/** @type {HTMLElement} */ (row).dataset.polyKey === key) {
+      return /** @type {HTMLElement} */ (row);
+    }
+  }
+  return null;
+}
+
+/**
+ * Select a polyhedron by its stable key: orange emissive glow on its mesh +
+ * amber panel-row highlight. Selecting the already-selected one deselects.
+ */
+function selectPolyhedronByKey(key, catKey, options = {}) {
+  if (highlightHover.currentlyHighlightedPolyhedron?.key === key) {
+    clearPolyhedronSelection();
+    return;
+  }
+  const mesh = findPolyhedronMesh(key);
+  if (!mesh?.material?.emissive) return;
+
+  clearSelectedAtoms({ reason: 'polyhedron-select' });
+  clearBondSelection();
+  clearPolyhedronSelection(); // restores any previous polyhedron glow
+
+  mesh.material.emissive.set(0xFF8C00);
+  mesh.material.emissiveIntensity = 1.0;
+  highlightHover.currentlyHighlightedPolyhedron = { key, catKey };
+
+  let row = options.row ?? null;
+  if (!row && options.openPanel) {
+    collapseAllAtomExpansions();
+    row = findPolyhedronRow(catKey, key);
+  }
+  if (row) {
+    highlightAtomRow(row);
+    if (options.scrollToSelection) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+}
+
+/** 3D→panel: select the polyhedron owning a picked face mesh. */
+export function selectPolyhedronFromMesh(mesh, options = {}) {
+  const ud = mesh?.userData;
+  if (ud?.type !== 'polyhedron' || !ud.key) return;
+  selectPolyhedronByKey(ud.key, ud.catKey, {
+    openPanel: true,
+    scrollToSelection: options.scrollToSelection !== false,
+  });
+}
+
+/** Panel→3D: select a polyhedron from a click on its own row in the Poly tab. */
+export function selectPolyhedronFromRow(key, rowEl) {
+  const catKey = rowEl?.dataset?.catKey ?? findPolyhedronMesh(key)?.userData?.catKey;
+  selectPolyhedronByKey(key, catKey, { row: rowEl });
 }
 
 function getTargetAtomDetails(sourceIndex) {
@@ -529,6 +630,7 @@ export function selectAtomFromRow(atomIndex, sourceEvent = null) {
   const instanceId = structure?.atomImages?.[atomIndex]?.[0];
   if (instanceId === undefined || !groups.atomsMesh) return;
   clearBondSelection();
+  clearPolyhedronSelection();
   updateAtomSelectionFrom3DHit(
     { instanceId, object: groups.atomsMesh },
     {
@@ -547,6 +649,7 @@ export function clearAllHighlights(options = {}) {
     silent: options.silent ?? false,
   });
   highlightHover.currentlyHighlightedBond = null;
+  clearPolyhedronSelection(); // also restores the emissive before nulling
   clear3DHighlights();
 }
 

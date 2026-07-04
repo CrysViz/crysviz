@@ -82,6 +82,15 @@ export class Structure {
     // atom edits); the stored elements pair guards against misapplication and
     // stale entries are simply ignored.
     this.bondUserStyles = {};
+    // Per-polyhedron / per-polyhedron-category user style overrides, keyed by
+    // the stable keys computed in render/PolyhedraModule.js (assignPolyhedraKeys):
+    // polyhedraUserStyles[polyKey] -> { color?, alpha? } and
+    // polyhedraCategoryStyles[catKey] -> { color?, alpha?, visible? }.
+    // Like bondUserStyles these intentionally SURVIVE the (frequent, async)
+    // polyhedra rebuilds; keys go stale if atoms/lattice change and stale
+    // entries are simply ignored.
+    this.polyhedraUserStyles = {};
+    this.polyhedraCategoryStyles = {};
     this.periodic = periodic;     // Initialize periodic
     this.atomImages = {};
     this.planes = planes;

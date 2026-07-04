@@ -4,6 +4,7 @@ import {fileBrowser, general} from '../../state/store.js';
 import {collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { createCompositionRow, createWyckoffCompositionRow} from './Species.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'
+import { createPolyhedraListControls } from '../PolyhedraListPanel.js'
 import { getPanel } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
 
@@ -94,6 +95,9 @@ function captureCompositionUiState() {
   const atomEditorsOpen = [];
   const expandedBondPairs = [];
   const bondEditorsOpen = [];
+  const expandedPolyCategories = [];
+  const polyEditorsOpen = [];
+  const polyCatEditorsOpen = [];
 
   compDiv.querySelectorAll('.comp-container').forEach((container) => {
     const element = container.dataset.element;
@@ -147,7 +151,33 @@ function captureCompositionUiState() {
     }
   });
 
-  return { expandedElements, elementEditorsOpen, atomEditorsOpen, expandedBondPairs, bondEditorsOpen };
+  compDiv.querySelectorAll('.poly-control').forEach((control) => {
+    const catKey = control.dataset.catKey;
+    if (!catKey) return;
+    const listContainer = control.querySelector('.individual-polyhedra');
+    if (listContainer && listContainer.style.display !== 'none') {
+      expandedPolyCategories.push(catKey);
+    }
+    const catEditor = control.querySelector('.poly-cat-editor');
+    if (catEditor && catEditor.style.display !== 'none') {
+      polyCatEditorsOpen.push(catKey);
+    }
+  });
+
+  compDiv.querySelectorAll('.individual-polyhedron-row').forEach((row) => {
+    const polyKey = row.dataset.polyKey;
+    if (!polyKey) return;
+    const editor = row.querySelector('.poly-color-editor');
+    if (editor && editor.style.display !== 'none') {
+      polyEditorsOpen.push(polyKey);
+    }
+  });
+
+  return {
+    expandedElements, elementEditorsOpen, atomEditorsOpen,
+    expandedBondPairs, bondEditorsOpen,
+    expandedPolyCategories, polyEditorsOpen, polyCatEditorsOpen,
+  };
 }
 
 function restoreCompositionUiState(state) {
@@ -178,6 +208,26 @@ function restoreCompositionUiState(state) {
 
   for (const bondRowKey of state.bondEditorsOpen || []) {
     const editor = compDiv.querySelector(`.individual-bond-row[data-bond-key="${bondRowKey}"] .bond-color-editor`);
+    if (editor) editor.style.display = 'block';
+  }
+
+  for (const catKey of state.expandedPolyCategories || []) {
+    const control = compDiv.querySelector(`.poly-control[data-cat-key="${catKey}"]`);
+    if (!control) continue;
+    const listContainer = control.querySelector('.individual-polyhedra');
+    const expandIcon = control.querySelector('.poly-expand-icon');
+    listContainer?._populatePolyhedronRows?.();
+    if (listContainer) listContainer.style.display = 'block';
+    if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
+  }
+
+  for (const catKey of state.polyCatEditorsOpen || []) {
+    const editor = compDiv.querySelector(`.poly-control[data-cat-key="${catKey}"] .poly-cat-editor`);
+    if (editor) editor.style.display = 'block';
+  }
+
+  for (const polyKey of state.polyEditorsOpen || []) {
+    const editor = compDiv.querySelector(`.individual-polyhedron-row[data-poly-key="${polyKey}"] .poly-color-editor`);
     if (editor) editor.style.display = 'block';
   }
 
@@ -227,7 +277,13 @@ export function renderComposition(panelState="closed") {
   const {elements, counts, total}=getCompositionString()
   const hasWyckoffPanel = fileBrowser.selectedStructure?.symmetry?.mode === 'wyckoff'
     && (fileBrowser.selectedStructure.symmetry.orbitGroups?.length ?? 0) > 0;
-  if (!hasWyckoffPanel || general.structurePanelMode === 'atoms') {
+  // Keep the user's tab across re-renders; only fall back when the stored mode
+  // isn't valid for this structure (e.g. 'atoms' in wyckoff mode, or an
+  // unloaded state). This intentionally also lets Bonds/Poly persist.
+  const validModes = hasWyckoffPanel
+    ? ['wyckoff', 'bonds', 'polyhedra']
+    : ['atoms', 'bonds', 'polyhedra'];
+  if (!validModes.includes(general.structurePanelMode)) {
     general.structurePanelMode = hasWyckoffPanel ? 'wyckoff' : 'atoms';
   }
 
@@ -379,12 +435,19 @@ if (hasWyckoffPanel) {
     wyckoffPanel.appendChild(createWyckoffCompositionRow(element, groupedByElement[element], totalOrbits));
   });
 }
+// Create polyhedra panel
+const polyPanel = document.createElement("div");
+polyPanel.id = "infoPolyControls";
+polyPanel.className = "atomBondClass";
+
 // Append panels to compDiv
 if (!hasWyckoffPanel) compDiv.appendChild(atomPanel);
 compDiv.appendChild(bondsPanel);
+compDiv.appendChild(polyPanel);
 if (hasWyckoffPanel) compDiv.appendChild(wyckoffPanel);
 
 createBondLengthControls("infoBondControls"); // Make sure to pass the panel element
+createPolyhedraListControls("infoPolyControls");
 
 // Function to show the selected panel and hide others
 function showPanel(panelId) {
@@ -419,15 +482,22 @@ segmentedControl.querySelectorAll('button').forEach(button => {
     } else if (selectedMode === 'bonds') {
       general.structurePanelMode = 'bonds';
       showPanel('infoBondControls');
+    } else if (selectedMode === 'polyhedra') {
+      general.structurePanelMode = 'polyhedra';
+      showPanel('infoPolyControls');
     } else if (selectedMode === 'wyckoff' && hasWyckoffPanel) {
       general.structurePanelMode = 'wyckoff';
       showPanel('wyckoffPanel');
     }
   });
 });
-const initialMode = hasWyckoffPanel
-  ? (general.structurePanelMode === 'bonds' ? 'bonds' : 'wyckoff')
-  : (general.structurePanelMode === 'bonds' ? 'bonds' : 'atoms');
+const modePanelIds = {
+  atoms: 'atomPanel',
+  bonds: 'infoBondControls',
+  polyhedra: 'infoPolyControls',
+  wyckoff: 'wyckoffPanel',
+};
+const initialMode = general.structurePanelMode; // validated above
 const initialButton = Array.from(segmentedControl.querySelectorAll('button'))
   .find((button) => button.dataset.mode === initialMode)
   || segmentedControl.querySelector(hasWyckoffPanel ? 'button[data-mode="wyckoff"]' : 'button[data-mode="atoms"]');
@@ -444,7 +514,7 @@ if (hasWyckoffPanel) {
     }
   });
 }
-showPanel(initialMode === 'bonds' ? 'infoBondControls' : (initialMode === 'wyckoff' ? 'wyckoffPanel' : 'atomPanel'))
+showPanel(modePanelIds[initialMode] ?? 'atomPanel')
 
   restoreCompositionUiState(priorUiState);
 
@@ -504,6 +574,11 @@ function createSegmentedControl(containerId, includeWyckoff = false) {
   BondsButton.textContent = 'Bonds';
   BondsButton.dataset.mode = 'bonds';
 
+  const PolyButton = document.createElement('button');
+  PolyButton.textContent = 'Poly';
+  PolyButton.title = 'Polyhedra';
+  PolyButton.dataset.mode = 'polyhedra';
+
   const WyckoffButton = document.createElement('button');
   WyckoffButton.textContent = 'Wyckoff';
   WyckoffButton.dataset.mode = 'wyckoff';
@@ -511,9 +586,11 @@ function createSegmentedControl(containerId, includeWyckoff = false) {
   if (includeWyckoff) {
     container.appendChild(WyckoffButton);
     container.appendChild(BondsButton);
+    container.appendChild(PolyButton);
   } else {
     container.appendChild(AtomsButton);
     container.appendChild(BondsButton);
+    container.appendChild(PolyButton);
   }
 
    // Add event listeners for the buttons

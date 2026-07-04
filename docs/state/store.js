@@ -27,7 +27,8 @@ export const highlightHover ={
    currentlyHighlightedAtom:null,
    currentlyHighlightedRow:null,
    currentlyHighlightedRows:[],
-   currentlyHighlightedBond:null
+   currentlyHighlightedBond:null,
+   currentlyHighlightedPolyhedron:null
 };
 
 export const atomSelection = {
@@ -97,6 +98,9 @@ export const general = {
   // Incremented on every buildBondObjects() run; expanded per-bond row lists in the
   // Bonds tab compare against it to know their cached rows are stale.
   bondsBuildCounter:0,
+  // Same for polyhedra: incremented whenever the displayed polyhedra group is
+  // replaced (async rebuild swap or clear), used by the Poly tab's lazy lists.
+  polyhedraBuildCounter:0,
   bondRadius:0.08,
   forceScale: 1.0,
   forceRadius: 0.08,
