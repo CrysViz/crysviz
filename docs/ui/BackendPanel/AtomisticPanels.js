@@ -558,13 +558,6 @@ function readRelaxParams(bodyEl) {
 }
 
 function renderRelaxBody(bodyEl, potential) {
-  // PET-MAD (mlip) provides no stress: keep the cell fixed and disable the
-  // stress-driven controls so the UI doesn't imply cell relaxation.
-  const noStress = potential === 'mlip';
-  const stressDisabledAttr = noStress
-    ? ' disabled title="PET-MAD build provides no stress; cell is kept fixed"'
-    : '';
-  const stressLabelClass = noStress ? ' class="atomistic-label-disabled"' : '';
   bodyEl.innerHTML = `
     <button type="button" class="atomistic-card atomistic-efs-card" id="relaxEfsCard">
       <div class="atomistic-card-title-row">
@@ -592,12 +585,12 @@ function renderRelaxBody(bodyEl, potential) {
           <input type="number" class="atomistic-input-sm" id="relaxForceTolInput" value="0.01" step="0.001" min="0">
         </label>
         <label>
-          <span${stressLabelClass}>target P</span>
-          <input type="number" class="atomistic-input-sm" id="relaxTargetPressureInput" value="0" step="0.1"${stressDisabledAttr}>
+          <span>target P</span>
+          <input type="number" class="atomistic-input-sm" id="relaxTargetPressureInput" value="0" step="0.1">
         </label>
         <label>
-          <span${stressLabelClass}>stress tol</span>
-          <input type="number" class="atomistic-input-sm" id="relaxStressTolInput" value="0.2" step="0.1" min="0"${stressDisabledAttr}>
+          <span>stress tol</span>
+          <input type="number" class="atomistic-input-sm" id="relaxStressTolInput" value="0.2" step="0.1" min="0">
         </label>
       </div>
       <div class="atomistic-button-row atomistic-button-row-compact">
