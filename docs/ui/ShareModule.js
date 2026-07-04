@@ -471,9 +471,24 @@ export function loadSharedStructure() {
     return;
   }
 
-  if (!state.version?.startsWith('2')) {
-    console.warn('Shared state version not supported:', state.version);
-    return;
+  if (!applySharedState(state, 'shared.vasp')) return;
+
+  // Clean URL
+  const newUrl = new URL(window.location.href);
+  newUrl.searchParams.delete('state');
+  window.history.replaceState({}, document.title, newUrl.toString());
+}
+
+/**
+ * Apply a captured state (see captureState): load its structure and restore
+ * colors, display/style settings, camera and measurements. Shared by the
+ * ?state= share-URL loader and the .crysviz file loader.
+ * @returns {boolean} whether the state was applied
+ */
+export function applySharedState(state, fileName = 'shared.vasp') {
+  if (!state?.version?.startsWith('2')) {
+    console.warn('State version not supported:', state?.version);
+    return false;
   }
 
   // Apply display/style settings before loading so parsePOSCAR renders with them
@@ -482,14 +497,14 @@ export function loadSharedStructure() {
 
   // Load structure (synchronous — triggers updateVisualization internally)
   try {
-    parsePOSCAR(buildPOSCAR(state), 'shared.vasp');
+    parsePOSCAR(buildPOSCAR(state), fileName);
   } catch (e) {
-    console.error('Failed to load shared structure:', e);
-    return;
+    console.error('Failed to load structure from state:', e);
+    return false;
   }
 
   const structure = fileBrowser.selectedStructure;
-  if (!structure) return;
+  if (!structure) return false;
 
   // buildPOSCAR() groups atoms by element, so restore the saved atom ordering
   // before applying any per-atom state that relies on stable indices.
@@ -514,11 +529,26 @@ export function loadSharedStructure() {
   // Camera and measurements need the render to have settled
   restoreCamera(state.camera);
   restoreMeasurements(state.measurements);
+  return true;
+}
 
-  // Clean URL
-  const newUrl = new URL(window.location.href);
-  newUrl.searchParams.delete('state');
-  window.history.replaceState({}, document.title, newUrl.toString());
+// ---------------------------------------------------------------------------
+// Load from a .crysviz file (the Download menu's save format)
+// ---------------------------------------------------------------------------
+
+export function loadCrysvizFile(content, fileName = 'file.crysviz') {
+  let state;
+  try {
+    state = JSON.parse(content);
+  } catch {
+    throw new Error(`${fileName} is not a valid .crysviz file (JSON expected).`);
+  }
+  if (state?.format !== 'crysviz') {
+    throw new Error(`${fileName} is not a CrysViz state file.`);
+  }
+  if (!applySharedState(state, fileName)) {
+    throw new Error(`Could not apply the state in ${fileName} (unsupported version?).`);
+  }
 }
 
 // ---------------------------------------------------------------------------

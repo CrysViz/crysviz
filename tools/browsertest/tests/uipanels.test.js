@@ -216,6 +216,39 @@ async function expandPanel(page, id) {
       && Math.abs(restored.cylinderRadius - 0.06) < 1e-6,
     JSON.stringify(restored));
 
+  // --- .crysviz load: save the state, change settings, load the file back ------
+  const crysvizContent = await page.evaluate(async () => {
+    const { captureState } = await import('./ui/ShareModule.js');
+    return JSON.stringify({ format: 'crysviz', ...captureState() }, null, 2);
+  });
+  await H.setSlider(page, 'latticeWidth', 0.02); // diverge from the saved state
+  await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const { updateSingleAtomDiameter } = await import('./render/AtomsFracUpdateModule.js');
+    const s = fileBrowser.selectedStructure;
+    s.atoms[0].setRadiusScale(1);
+    updateSingleAtomDiameter(s.atomImages[0][0], s.elements[0], 1);
+    groups.atomsMesh.instanceMatrix.needsUpdate = true;
+  });
+  await page.evaluate(async (content) => {
+    const cv = await import('./core/crystal-viewer.js');
+    await cv.loadStructure(content, 'saved-session.crysviz');
+  }, crysvizContent);
+  await page.waitForTimeout(1000); // camera/measurement restore timers
+  const loaded = await page.evaluate(async () => {
+    const { general, fileBrowser } = await import('./state/store.js');
+    return {
+      latticeLineWidth: general.latticeLineWidth,
+      atom0Scale: fileBrowser.selectedStructure.atoms[0].getRadiusScale(),
+      rowNames: [...document.querySelectorAll('#structureTablePanel tbody tr')]
+        .map((r) => { try { return JSON.parse(/** @type {HTMLElement} */ (r).dataset.obj).name; } catch { return null; } }),
+    };
+  });
+  H.check('.crysviz load restores the saved visual state',
+    loaded.latticeLineWidth === 0.06 && loaded.atom0Scale === 2, JSON.stringify(loaded));
+  H.check('.crysviz load adds a structure row under its file name',
+    loaded.rowNames.includes('saved-session.crysviz'), JSON.stringify(loaded.rowNames));
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

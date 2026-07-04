@@ -29,7 +29,7 @@ import { setupControlsWiring } from '../ui/ControlsWiring.js';
 import { setupSceneInteraction } from '../ui/SceneInteraction.js';
 import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
 import { pauseRendering, resumeRendering,animation_update} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
-import {createShareButton,loadSharedStructure} from '../ui/ShareModule.js';
+import {createShareButton,loadSharedStructure,loadCrysvizFile} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
 import {updateSecondBonds,rebuildSecondBonds} from '../render/index.js'
@@ -229,15 +229,23 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
     const lower = (fileName || '').toLowerCase();
     const contentString = typeof content === 'string' ? content : '';
     
-    // Field files are handled directly; every other format is dispatched by
-    // parse_any (which owns all the structure-format sniffing).
+    // Field files and .crysviz state files are handled directly; every other
+    // format is dispatched by parse_any (which owns the structure-format
+    // sniffing).
+    const treatAsCrysviz = lower.endsWith('.crysviz');
+
     const treatAsCube = lower.endsWith('.cube') ||
                        lower.includes('.cube');
 
     const treatAsCHGCAR = lower.includes('chgcar') ||
                          lower.endsWith('.chgcar');
 
-    if (treatAsCube) {
+    if (treatAsCrysviz) {
+      // A saved CrysViz session: structure + full visual state (ShareModule).
+      // Loads its own structure via parsePOSCAR -> initializeUIOnLoad.
+      loadCrysvizFile(contentString, fileName);
+    }
+    else if (treatAsCube) {
       await parseCubeFile(contentString, fileName);
     }
     else if (treatAsCHGCAR) {
