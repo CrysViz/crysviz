@@ -17,7 +17,12 @@ export interface Vec3 { x: number; y: number; z: number; }
 
 export interface PredictionResult {
     energy: number;
+    /** Flat row-major [fx0,fy0,fz0, ...]. NOTE: at runtime this is actually a
+     *  Float32Array (native f32); declared Float64Array here to match upstream's
+     *  d.ts and existing consumers — element access is interchangeable. */
     forces: Float64Array;
+    /** Voigt [xx, yy, zz, yz, xz, xy], eV/A^3, tension-positive; present for
+     *  periodic systems (local compute_stress patch). Runtime: Float32Array. */
     stress?: Float64Array;
 }
 
@@ -48,6 +53,8 @@ export interface Model {
     predictEnergy(system: AtomicSystem): number;
     predict(system: AtomicSystem): PredictionResult;
     predictWithOptions(system: AtomicSystem, useNcForces: boolean): PredictionResult;
+    /** New in 0.1.2: energy + per-node activation capture for visualisation (untyped here; unused by CrysViz). */
+    predictWithActivations(system: AtomicSystem): unknown;
     /** embind-owned WASM heap handle; frees the native allocation. */
     delete(): void;
 }

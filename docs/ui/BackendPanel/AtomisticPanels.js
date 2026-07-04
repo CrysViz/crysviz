@@ -137,7 +137,22 @@ async function ensureMLIPReady(shell) {
     mlipState = state;
   }
   const state = mlipState;
-  const runner = await state.initPromise;
+  let runner;
+  try {
+    runner = await state.initPromise;
+  } catch (error) {
+    // WebGPU (or 'auto' resolving to it) can fail on adapter/device request;
+    // fall back to the CPU build instead of leaving the panel dead. The
+    // rejection handler above has already cleared mlipState, so the retry
+    // builds a fresh cpu runner.
+    if (backend !== 'cpu' && shell.mlipBackendSelect) {
+      console.warn(`PET-MAD ${backend} backend failed; falling back to cpu:`, error);
+      shell.mlipBackendSelect.value = 'cpu';
+      setMLIPStatus(shell, `${backend} init failed (${error.message || error}) — falling back to cpu`);
+      return ensureMLIPReady(shell);
+    }
+    throw error;
+  }
   if (mlipState !== state) return ensureMLIPReady(shell);
 
   const modelKey = localFile
