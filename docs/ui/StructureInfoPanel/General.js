@@ -5,8 +5,38 @@ import {collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { createCompositionRow, createWyckoffCompositionRow} from './Species.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'
 import { createPolyhedraListControls } from '../PolyhedraListPanel.js'
+import { clearAllHighlights } from '../SelectAndHighlightModule.js'
 import { getPanel } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
+
+// Small switch row, same markup/classes as the toggles in PolyhedraPanel.js.
+function createToggleRow({ id, label, checked, onChange }) {
+  const row = document.createElement('label');
+  row.className = 'toggle_row toggle_container';
+
+  const switchWrap = document.createElement('span');
+  switchWrap.className = 'toggle_switch';
+
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.id = id;
+  input.checked = checked;
+
+  const slider = document.createElement('span');
+  slider.className = 'toggle_slider';
+
+  const text = document.createElement('span');
+  text.className = 'toggle_text';
+  text.textContent = label;
+
+  input.addEventListener('change', onChange);
+
+  switchWrap.appendChild(input);
+  switchWrap.appendChild(slider);
+  row.appendChild(switchWrap);
+  row.appendChild(text);
+  return row;
+}
 
 /**
  * Open/close the formula box inside the Structure window (the +/− expandable
@@ -127,7 +157,7 @@ function captureCompositionUiState() {
     for (const [type, selector] of editorTypes) {
       const editor = row.querySelector(selector);
       if (editor && editor.style.display !== 'none') {
-        atomEditorsOpen.push({ atomIndex, type });
+        atomEditorsOpen.push({ atomIndex, imageIndex: row.dataset.imageIndex ?? null, type });
         break;
       }
     }
@@ -240,7 +270,12 @@ function restoreCompositionUiState(state) {
   }
 
   for (const entry of state.atomEditorsOpen || []) {
-    const row = compDiv.querySelector(`.individual-atom-row[data-atom-index="${entry.atomIndex}"]`);
+    // Per-image rows are keyed by atom + image; fall back to the plain
+    // per-atom selector (cross-mode restores simply miss, which is fine).
+    const row = (entry.imageIndex != null
+      ? compDiv.querySelector(`.individual-atom-row[data-atom-index="${entry.atomIndex}"][data-image-index="${entry.imageIndex}"]`)
+      : null)
+      ?? compDiv.querySelector(`.individual-atom-row[data-atom-index="${entry.atomIndex}"]`);
     if (!row) continue;
 
     const editors = {
@@ -387,6 +422,24 @@ if (!hasWyckoffPanel) {
     const row = createCompositionRow(el, counts[el], total);
     atomPanel.appendChild(row);
   });
+}
+
+// "Link periodic copies": when off, the per-element lists show one row per
+// on-screen copy and edits apply per copy (general.linkPeriodicCopies).
+if (!hasWyckoffPanel) {
+  const linkCopiesRow = createToggleRow({
+    id: 'linkPeriodicCopiesToggle',
+    label: 'Link periodic copies',
+    checked: general.linkPeriodicCopies !== false,
+    onChange: (e) => {
+      general.linkPeriodicCopies = /** @type {any} */ (e.target).checked;
+      // Selection rows go stale across the list rebuild.
+      clearAllHighlights({ reason: 'link-copies-toggle' });
+      renderComposition("open");
+    },
+  });
+  linkCopiesRow.style.marginTop = '12px';
+  atomPanel.appendChild(linkCopiesRow);
 }
 
 const ResetColorAtomsButtonRow = document.createElement('div');

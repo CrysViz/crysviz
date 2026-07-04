@@ -390,7 +390,7 @@ function ensureAtomPanelVisible(targetMode, targetPanelId) {
   return composition;
 }
 
-function findAtomRow(element, sourceIndex) {
+function findAtomRow(element, sourceIndex, instanceId = null) {
   const {targetAtomIndex, targetPanelId, targetMode} = getTargetAtomDetails(sourceIndex);
   const composition = ensureAtomPanelVisible(targetMode, targetPanelId);
   if (!composition) return null;
@@ -424,9 +424,15 @@ function findAtomRow(element, sourceIndex) {
   }
 
   for (const row of atomsContainer.querySelectorAll('.individual-atom-row')) {
-    if (Number(row.dataset.atomIndex) === targetAtomIndex) {
-      return row;
+    if (Number(row.dataset.atomIndex) !== targetAtomIndex) continue;
+    // Per-image rows ("Link periodic copies" off) carry data-image-index —
+    // match the exact on-screen copy when the caller knows the instance;
+    // otherwise fall back to the first row of the source atom.
+    if (row.dataset.imageIndex != null && instanceId != null
+        && Number(row.dataset.imageIndex) !== instanceId) {
+      continue;
     }
+    return row;
   }
 
   return null;
@@ -463,7 +469,7 @@ function syncSelectedAtomRows(options = {}) {
   /** @type {any} */
   let lastRow = null;
   atomSelection.selectedAtoms.forEach((atom) => {
-    const row = findAtomRow(atom.element, atom.sourceIndex);
+    const row = findAtomRow(atom.element, atom.sourceIndex, atom.instanceId);
     if (!row) return;
     highlightAtomRow(row, atom.selectionOrder);
     lastRow = row;
@@ -625,9 +631,11 @@ export function updateAtomSelectionFrom3DHit(hit, options = {}) {
  * 3D view (same modifier semantics: ctrl/cmd toggles, shift adds, plain click
  * replaces; clicking the sole selected atom deselects).
  */
-export function selectAtomFromRow(atomIndex, sourceEvent = null) {
+export function selectAtomFromRow(atomIndex, sourceEvent = null, imageIndex = null) {
   const structure = fileBrowser.selectedStructure;
-  const instanceId = structure?.atomImages?.[atomIndex]?.[0];
+  // Per-image rows pass their own instance; linked rows use the canonical
+  // first image of the source atom.
+  const instanceId = imageIndex ?? structure?.atomImages?.[atomIndex]?.[0];
   if (instanceId === undefined || !groups.atomsMesh) return;
   clearBondSelection();
   clearPolyhedronSelection();

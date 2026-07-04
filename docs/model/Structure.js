@@ -91,6 +91,12 @@ export class Structure {
     // entries are simply ignored.
     this.polyhedraUserStyles = {};
     this.polyhedraCategoryStyles = {};
+    // Per-periodic-copy atom style overrides, keyed by atomImageKey()
+    // ("srcIndex:dx,dy,dz", computed in render/AtomsFracUpdateModule.js
+    // finishAtomsMesh) -> { element, color?, alpha?, radiusScale? }. Used by the
+    // Atoms tab when "Link periodic copies" is off. SURVIVES atom rebuilds;
+    // stale keys (changed wrapped set) are ignored via the element check.
+    this.atomImageStyles = {};
     this.periodic = periodic;     // Initialize periodic
     this.atomImages = {};
     this.planes = planes;

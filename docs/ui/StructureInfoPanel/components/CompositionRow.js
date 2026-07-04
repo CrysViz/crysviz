@@ -1,5 +1,6 @@
-import { fileBrowser } from '../../../state/store.js';
+import { fileBrowser, general } from '../../../state/store.js';
 import { colorHexToCss, createPieDot, getAtomColor } from '../../../utils/ColorModule.js';
+import { getAtomImageColor } from '../../../render/AtomsFracUpdateModule.js';
 import { getElementAtomIndices, getElementOpacityValues, setSwatchOpacity } from './utils.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createIndividualAtomRow } from './IndividualAtomRow.js';
@@ -69,8 +70,14 @@ export function createCompositionRow(el, count, total) {
    * Recreates the dot with current atom colors
    */
   function updatePieDotForRow() {
-    // Get current colors for all atoms of this element
-    const atomColors = elementAtomIndices.map(index => safeColor(getAtomColor(index)));
+    // Get current colors for all atoms of this element. When periodic-copy
+    // linking is off, aggregate the resolved per-copy colors instead so the
+    // dot reflects individually recolored copies.
+    const structure = fileBrowser.selectedStructure;
+    const atomColors = (!general.linkPeriodicCopies && structure?.atomImages)
+      ? elementAtomIndices.flatMap((index) =>
+          (structure.atomImages[index] ?? []).map((img) => safeColor(getAtomImageColor(structure, img))))
+      : elementAtomIndices.map(index => safeColor(getAtomColor(index)));
     const currentOpacity = getElementOpacityValues(el)[0] ?? 1;
 
     // Remove old dot if it exists
@@ -171,6 +178,29 @@ export function createCompositionRow(el, count, total) {
   function populateAtomRows() {
     if (atomsPopulated) return;
     atomsPopulated = true;
+    const structure = fileBrowser.selectedStructure;
+    // "Link periodic copies" off: one row per DISPLAYED atom (per periodic
+    // image), so boundary copies can be styled individually. The toggle
+    // rebuilds the whole composition DOM, so no extra staleness handling is
+    // needed here. (This function is never reached in wyckoff mode.)
+    if (!general.linkPeriodicCopies && structure?.atomImages) {
+      elementAtomIndices.forEach((atomIndex, i) => {
+        const images = structure.atomImages[atomIndex] ?? [];
+        images.forEach((imageIndex, j) => {
+          const frac = structure.periodic?.wrapped?.frac?.[imageIndex];
+          const off = frac
+            ? [0, 1, 2].map((a) => Math.round(frac[a] - structure.atoms[atomIndex].position[a]))
+            : [0, 0, 0];
+          atomsContainer.appendChild(createIndividualAtomRow(el, atomIndex, i + 1, {
+            imageIndex,
+            displayCoords: frac,
+            metaText: `copy ${j + 1}/${images.length}  (${off.join(',')})`,
+            onColorChange: updatePieDotForRow,
+          }));
+        });
+      });
+      return;
+    }
     for (let i = 0; i < elementAtomIndices.length; i++) {
       const atomIndex = elementAtomIndices[i];
       const atomRow = createIndividualAtomRow(el, atomIndex, i + 1, {

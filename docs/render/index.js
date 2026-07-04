@@ -13,6 +13,8 @@ export {
   rebuildAtoms, updateAtoms, updateSingleAtomDiameter, updateSingleAtomColor,
   updateAtomCutPlaneState, getUUIDFromGeometry, updateSingleAtomOpacity,
   updateSingleAtomCutPlaneImmunity,
+  atomImageKey, getAtomImageStyle, setAtomImageStyle, clearAtomImageStyle,
+  clearAtomImageStylesForAtom, getAtomImageColor, updateSingleAtomImageColor,
 } from './AtomsFracUpdateModule.js';
 
 export {

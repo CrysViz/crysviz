@@ -124,6 +124,10 @@ export const general = {
   showSecondBonds:false,
   showComparisonInfo:false,
   showPeriodic:true,
+  // Atoms tab: edit all periodic-image copies of an atom together. When false
+  // the list shows one row per on-screen copy and edits apply per copy
+  // (structure.atomImageStyles). Wyckoff mode is unaffected.
+  linkPeriodicCopies:true,
   // Tolerance (fractional coords) for treating an atom as sitting on a cell
   // face/edge/corner when generating periodic image copies. Real (e.g. relaxed
   // / DFT-output) structures carry small numerical offsets from 0/1, so this

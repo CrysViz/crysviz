@@ -87,6 +87,11 @@ export function captureState() {
       useDefaultColors: general.useDefaultColors,
       atomOpacities,
       atomRadiusScales,
+      // Per-periodic-copy overrides (Atoms tab with "Link periodic copies" off);
+      // stably keyed by "srcIndex:dx,dy,dz" so they re-attach after rebuilds.
+      atomImageStyles: structure.atomImageStyles && Object.keys(structure.atomImageStyles).length
+        ? JSON.parse(JSON.stringify(structure.atomImageStyles))
+        : undefined,
     },
     display: {
       atomSize: general.atomSize,
@@ -95,6 +100,7 @@ export function captureState() {
       showBonds: general.showBonds,
       showLattice: general.showLattice,
       showPeriodic: general.showPeriodic,
+      linkPeriodicCopies: general.linkPeriodicCopies,
       periodicFaceTol: general.periodicFaceTol,
       showPBCBonds: general.showPBCBonds,
       showAxes: general.showAxes,
@@ -243,6 +249,8 @@ function applyDisplaySettings(display) {
   if (display.showLattice != null) { general.showLattice = display.showLattice; setToggle('showLattice', display.showLattice); }
   if (display.showPeriodic != null){ general.showPeriodic= display.showPeriodic;setToggle('showPeriodic', display.showPeriodic); }
   if (display.periodicFaceTol != null){ general.periodicFaceTol = display.periodicFaceTol; }
+  // The Atoms-tab toggle is rebuilt from `general` on the next renderComposition.
+  if (display.linkPeriodicCopies != null){ general.linkPeriodicCopies = display.linkPeriodicCopies; }
   if (display.showPBCBonds != null){ general.showPBCBonds= display.showPBCBonds;setToggle('PBCBondToggle', display.showPBCBonds); }
   if (display.showAxes != null) {
     setToggle('showAxes', display.showAxes);
@@ -309,6 +317,13 @@ function applyAtomColors(colors, structure) {
     Object.entries(colors.atomRadiusScales).forEach(([idx, value]) => {
       structure.atoms[parseInt(idx)]?.setRadiusScale?.(value);
     });
+  }
+
+  // Per-periodic-copy overrides: keys are stable ("srcIndex:dx,dy,dz") and the
+  // element sanity check in getAtomImageStyle drops any that no longer match;
+  // the caller's updateAtoms() applies them.
+  if (colors.atomImageStyles) {
+    structure.atomImageStyles = JSON.parse(JSON.stringify(colors.atomImageStyles));
   }
 }
 

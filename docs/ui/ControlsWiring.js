@@ -8,7 +8,7 @@
 
 import { general, groups, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice } from '../render/index.js';
+import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle } from '../render/index.js';
 import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
 import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
 
@@ -90,7 +90,9 @@ export function setupControlsWiring() {
     fileBrowser.selectedStructure.elements.forEach((element, index) => {
       const scale = fileBrowser.selectedStructure.atoms[index]?.getRadiusScale?.() ?? 1;
       fileBrowser.selectedStructure.atomImages[index].forEach(imageIndex => {
-        updateSingleAtomDiameter(imageIndex, element, scale)
+        // The global size is a multiplier — keep per-copy size overrides intact.
+        const imageScale = getAtomImageStyle(fileBrowser.selectedStructure, imageIndex)?.radiusScale ?? scale;
+        updateSingleAtomDiameter(imageIndex, element, imageScale)
        });
     });
     groups.atomsMesh.instanceMatrix.needsUpdate = true;

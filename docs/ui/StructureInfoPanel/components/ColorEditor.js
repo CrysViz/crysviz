@@ -1,7 +1,7 @@
 import { fileBrowser, groups, general, structureShip } from '../../../state/store.js';
 import { colorHexToCss, getAtomColor } from '../../../utils/ColorModule.js';
 import { clampOpacity, clampRadiusScale } from './utils.js';
-import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter } from '../../../render/AtomsFracUpdateModule.js';
+import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom } from '../../../render/AtomsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
 import { updatePolyhedraColors } from '../../../render/index.js';
@@ -36,6 +36,8 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     atomIndices.forEach(atomIndex => {
       const atom = structure.atoms[atomIndex];
       atom.elementColor = parsedHex;
+      // Newest edit wins: an element recolor overrides earlier per-copy colors.
+      clearAtomImageStylesForAtom(structure, atomIndex, 'color');
       structure.atomImages[atomIndex]?.forEach(imageIndex => {
         if (general.bondsColor == "elements") {
           if (structure.bondMapping[imageIndex]) {
@@ -156,6 +158,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     atomIndices.forEach((atomIndex) => {
       fileBrowser.selectedStructure.atoms[atomIndex].setElementOpacity(value);
       fileBrowser.selectedStructure.atoms[atomIndex].setOpacity(value);
+      clearAtomImageStylesForAtom(fileBrowser.selectedStructure, atomIndex, 'alpha');
       fileBrowser.selectedStructure.atomImages[atomIndex]?.forEach((imageIndex) => {
         updateSingleAtomOpacity(imageIndex, value);
       });
@@ -172,6 +175,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     const structure = fileBrowser.selectedStructure;
     atomIndices.forEach((atomIndex) => {
       structure.atoms[atomIndex].setRadiusScale(value);
+      clearAtomImageStylesForAtom(structure, atomIndex, 'radiusScale');
       structure.atomImages[atomIndex]?.forEach((imageIndex) => {
         updateSingleAtomDiameter(imageIndex, el, value);
       });
@@ -192,9 +196,10 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     const atom = structure.atoms[atomIndex];
     const element = structure.elements[atomIndex];
 
-    // clear user-color flag only for these atoms
+    // clear user-color flag only for these atoms (incl. per-copy overrides)
     if (atom.userColor !== undefined) delete atom.userColor;
     if (atom.forceColor !== undefined) delete atom.forceColor;
+    clearAtomImageStylesForAtom(structure, atomIndex);
 
     // set color based on current mode
     if (currentMode === "force") {
