@@ -28,7 +28,7 @@ import { setupAtomTooltip } from '../ui/AtomTooltip.js';
 import { setupControlsWiring } from '../ui/ControlsWiring.js';
 import { setupSceneInteraction } from '../ui/SceneInteraction.js';
 import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
-import { pauseRendering, resumeRendering,animation_update} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
+import { pauseRendering, resumeRendering,animation_update,requestRender} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
 import {createShareButton,loadSharedStructure,loadCrysvizFile} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
@@ -220,6 +220,9 @@ export function updateVisualization(options = {}) {
   if (measurements.measureLines.length > 0) {
     updateAllMeasurements();
   }
+
+  // Everything above mutated the scene; schedule a frame (rendering is on-demand).
+  requestRender();
 }
 
 

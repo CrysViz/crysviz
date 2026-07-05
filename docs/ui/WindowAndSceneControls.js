@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups, general } from '../state/store.js';
-import { updateAngleDisplays, setupAxisControls, latticeDirs} from '../render/index.js';
+import { updateAngleDisplays, setupAxisControls, latticeDirs, requestRender} from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 
@@ -182,9 +182,14 @@ export function initControls(){
     RIGHT: THREE.MOUSE.PAN
     };
 
+  // update() fires 'change' whenever the camera actually moved (user input,
+  // damping coast-down, or programmatic moves) — the trigger for on-demand rendering.
+  app.controls.addEventListener('change', requestRender);
+
   app.controls.addEventListener('end', () => {
     if (getIsosurfaceTriangleSortingEnabled() && groups.activeField?.isVisible !== false) {
       updateStoredIsosurfaceRenderOrder(app.camera, groups.isosurfaceGroup);
+      requestRender();
     }
   });
 
@@ -227,6 +232,7 @@ export function resizeRenderer(orthographicFrustumSize) {
       app.gizmoCamera.updateProjectionMatrix();
     }
   }
+  requestRender();
 }
 
 

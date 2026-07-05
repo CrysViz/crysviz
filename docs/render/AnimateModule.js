@@ -11,6 +11,40 @@ import {updateRandomColors} from '../ui/DiscoModule.js'
 
 let isRendering = true;
 
+// On-demand rendering: the rAF loop always runs (controls damping needs it),
+// but the actual renderer/gizmo/label passes only happen when something
+// invalidated the frame. Anything that changes what's on screen must call
+// requestRender() — camera motion is covered by the TrackballControls 'change'
+// event, scene changes by updateVisualization(), and synchronous UI-driven
+// changes by the document-level catch-all listeners wired below.
+let needsRender = true;
+
+export function requestRender() {
+  needsRender = true;
+}
+
+let renderOnDemandWired = false;
+
+function wireRenderOnDemand() {
+  if (renderOnDemandWired) return;
+  renderOnDemandWired = true;
+
+  // Catch-all: any user interaction that could change the scene arrives
+  // through one of these. Capture phase so the flag is set even if a handler
+  // stops propagation; the render itself happens on the next rAF tick, after
+  // all handlers of the event have run.
+  ['pointerup', 'click', 'input', 'change', 'keydown'].forEach((type) =>
+    document.addEventListener(type, requestRender, { capture: true, passive: true }));
+
+  // Hover effects (tooltip, atom/bond highlight) react to moves over the canvas.
+  app.renderer?.domElement?.addEventListener('pointermove', requestRender, { passive: true });
+
+  window.addEventListener('resize', requestRender);
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', requestRender);
+  }
+}
+
 export function pauseRendering() {
   if (!general.powerMode) {
     let now = getCurrentTime()
@@ -27,6 +61,7 @@ export function resumeRendering() {
   if (!isRendering) {
     let now = getCurrentTime()
     isRendering = true;
+    needsRender = true;
     console.warn(`Resume rendering ${now}`)
     animation_update(); // restart loop
   }
@@ -66,6 +101,7 @@ window.addEventListener('keyup', (event) => {
 export function animation_update(time = 0) {
   if (_counter == 1){
      app.clock = new THREE.Clock();
+     wireRenderOnDemand();
   }
   if (!isRendering) return;
   requestAnimationFrame(animation_update);
@@ -73,7 +109,28 @@ export function animation_update(time = 0) {
   if (time - lastFrameTime < interval) return;
   lastFrameTime = time;
 
+  // Always update controls: damping needs to keep progressing, and update()
+  // fires the 'change' event (-> requestRender) whenever the camera actually
+  // moved — including programmatic moves and the damping coast-down.
+  app.controls.update();
+  //if (_counter%60 === 0 || _counter=== 1) {
+  //  console.log('[animate] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
+  //}
 
+  // Continuous animations hold the render flag high while active.
+  isKeyComboActive = keyState['ControlLeft'] && keyState['KeyD'];
+  const autoRotating = app.angularVelocity != null &&
+    general.autoRandomEnabled && app.angularVelocity.lengthSq() > 0;
+  if (autoRotating || isKeyComboActive) needsRender = true;
+
+  if (!needsRender) {
+    // Idle: skip all render work; restart the FPS window so the counter only
+    // measures continuously rendered stretches.
+    frames = 0;
+    lastTime = time;
+    return;
+  }
+  needsRender = false;
 
   frames++;
   const delta = time - lastTime;
@@ -83,11 +140,6 @@ export function animation_update(time = 0) {
     frames = 0;
     lastTime = time;
   }
-
-  app.controls.update();
-  //if (_counter%60 === 0 || _counter=== 1) {
-  //  console.log('[animate] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
-  //}
 
   _counter = _counter+1;
   updateAngleDisplays();
@@ -126,8 +178,7 @@ export function animation_update(time = 0) {
     app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
   }
   app.labelRenderer.render(app.scene, app.camera);
-  if( app.angularVelocity != null ){
-    if (general.autoRandomEnabled && app.angularVelocity.lengthSq() > 0) {
+  if (autoRotating) {
       const delta = app.clock.getDelta(); // seconds since last frame
       const axis = app.angularVelocity.clone().normalize();
       const angle = app.angularVelocity.length() * delta;
@@ -144,11 +195,8 @@ export function animation_update(time = 0) {
 
       // Optionally add decay
       //app.angularVelocity.multiplyScalar(0.98); // damping if desired
-      }
     }
 
-  // Check if Ctrl+Z is pressed
-  isKeyComboActive = keyState['ControlLeft'] && keyState['KeyD'];
   //console.log(keyState)
   if (isKeyComboActive) {
     // Update colors every 20th timestep

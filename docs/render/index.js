@@ -7,7 +7,7 @@
 // This is a *curated* surface: only the symbols actually consumed by other
 // domains are re-exported. Add to it when a new cross-domain function is needed.
 
-export { pauseRendering, resumeRendering, animation_update } from './AnimateModule.js';
+export { pauseRendering, resumeRendering, animation_update, requestRender } from './AnimateModule.js';
 
 export {
   rebuildAtoms, updateAtoms, updateSingleAtomDiameter, updateSingleAtomColor,

@@ -22,7 +22,7 @@
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general } from '../state/store.js';
-import { updateLattice } from '../render/index.js';
+import { updateLattice, requestRender } from '../render/index.js';
 
 const THEMES_DIR = './themes/';
 const STORAGE_KEY = 'theme';
@@ -81,6 +81,8 @@ export function applySceneFromCSS() {
     if (dot) dot.style.border = `2px solid ${latticeColor}`;
     updateLattice();
   }
+  // Theme CSS loads async, so this can run after the triggering click's frame.
+  requestRender();
 }
 
 // Swap the active theme-override stylesheet to the given concrete theme.
