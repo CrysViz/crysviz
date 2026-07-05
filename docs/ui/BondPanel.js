@@ -46,56 +46,11 @@ export function addBondPanel(target = "cvPanelBody-bonds") {
   histogramsPanel.appendChild(histogramButtonsRow);
 
   // --- Draw Bonds ---
-  const drawBondsPanel = document.createElement("div");
-  drawBondsPanel.id = "drawBondsPanel";
-  drawBondsPanel.style.marginBottom = "10px";
-  drawBondsPanel.appendChild(makeSectionHeadline("Draw Bonds"));
-
-  const drawBondWrapper = document.createElement("div");
-  drawBondWrapper.id = "drawBondWrapper";
-  drawBondWrapper.className = "drawBondWrapper";
-  drawBondWrapper.style.display = "flex";
-  drawBondWrapper.style.gap = "8px";
-  drawBondWrapper.style.justifyContent = "center";
-
-  const drawBondsBtn = document.createElement("button");
-  drawBondsBtn.id = "drawBondBtn";
-  drawBondsBtn.className = "btn-mini highlight";
-  drawBondsBtn.textContent = "🖋️";
-  drawBondsBtn.style.fontSize = "24px";
-
-  drawBondsBtn.onclick = () => {
-    console.warn("Clicked draw bonds button");
-  };
-
-  const undoDrawBtn = document.createElement("button");
-  undoDrawBtn.id = "undoDrawBtn";
-  undoDrawBtn.className = "btn-mini highlight";
-  undoDrawBtn.textContent = "↩";
-  undoDrawBtn.style.fontSize = "24px";
-
-  undoDrawBtn.onclick = () => {
-    console.warn("Clicked undo draw bonds button");
-  };
-
-  const deleteDrawBtn = document.createElement("button");
-  deleteDrawBtn.id = "deleteDrawBtn";
-  deleteDrawBtn.className = "btn-mini highlight";
-  deleteDrawBtn.textContent = "🗑️";
-  deleteDrawBtn.style.fontSize = "24px";
-
-  deleteDrawBtn.onclick = () => {
-    console.warn("Clicked delete draw bonds button");
-  };
-
-  drawBondWrapper.appendChild(drawBondsBtn);
-  drawBondWrapper.appendChild(undoDrawBtn);
-  drawBondWrapper.appendChild(deleteDrawBtn);
-  drawBondsPanel.appendChild(drawBondWrapper);
+  // Hidden for now: the draw/undo/delete-bond buttons are non-functional stubs
+  // (they only console.warn). Re-enable this section once the feature exists.
 
   // --- Build structure ---
   group.appendChild(histogramsPanel);
-  group.appendChild(drawBondsPanel);
   targetPanel.appendChild(group);
 }
 

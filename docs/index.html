@@ -272,78 +272,60 @@
 <div id="cameraTools">
   <!-- Camera panel -->
   <div id="cameraPanel" class="measurement-group">
-    <!-- First row of rotation buttons (X, Y, Z, A, B, C, Reset) -->
-    <button class="camera-tool-btn" id="viewX" title="View X axis">
-      <div class="camera-icon">x</div>
-      <span>x</span>
-    </button>
-    <button class="camera-tool-btn" id="viewY" title="View Y axis">
-      <div class="camera-icon">y</div>
-      <span>y</span>
-    </button>
-    <button class="camera-tool-btn" id="viewZ" title="View Z axis">
-      <div class="camera-icon">z</div>
-      <span>z</span>
-    </button>
+    <!-- Each axis button carries an up/down arrow above and below that
+         step-rotate the camera about that axis (world x/y/z, lattice a/b/c);
+         clicking the letter views along the axis. -->
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="xUp" title="Rotate about X (+)">▲</button>
+      <button class="camera-tool-btn" id="viewX" title="View X axis">
+        <div class="camera-icon">x</div><span>x</span>
+      </button>
+      <button class="angle-btn axis-step" id="xDown" title="Rotate about X (−)">▼</button>
+    </div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="yUp" title="Rotate about Y (+)">▲</button>
+      <button class="camera-tool-btn" id="viewY" title="View Y axis">
+        <div class="camera-icon">y</div><span>y</span>
+      </button>
+      <button class="angle-btn axis-step" id="yDown" title="Rotate about Y (−)">▼</button>
+    </div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="zUp" title="Rotate about Z (+)">▲</button>
+      <button class="camera-tool-btn" id="viewZ" title="View Z axis">
+        <div class="camera-icon">z</div><span>z</span>
+      </button>
+      <button class="angle-btn axis-step" id="zDown" title="Rotate about Z (−)">▼</button>
+    </div>
     <div class="camera-separator"></div>
-    <button class="camera-tool-btn" id="viewA" title="View A axis">
-      <div class="camera-icon">a</div>
-      <span>a</span>
-    </button>
-    <button class="camera-tool-btn" id="viewB" title="View B axis">
-      <div class="camera-icon">b</div>
-      <span>b</span>
-    </button>
-    <button class="camera-tool-btn" id="viewC" title="View C axis">
-      <div class="camera-icon">c</div>
-      <span>c</span>
-    </button>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="aUp" title="Rotate about a (+)">▲</button>
+      <button class="camera-tool-btn" id="viewA" title="View A axis">
+        <div class="camera-icon">a</div><span>a</span>
+      </button>
+      <button class="angle-btn axis-step" id="aDown" title="Rotate about a (−)">▼</button>
+    </div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="bUp" title="Rotate about b (+)">▲</button>
+      <button class="camera-tool-btn" id="viewB" title="View B axis">
+        <div class="camera-icon">b</div><span>b</span>
+      </button>
+      <button class="angle-btn axis-step" id="bDown" title="Rotate about b (−)">▼</button>
+    </div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="cUp" title="Rotate about c (+)">▲</button>
+      <button class="camera-tool-btn" id="viewC" title="View C axis">
+        <div class="camera-icon">c</div><span>c</span>
+      </button>
+      <button class="angle-btn axis-step" id="cDown" title="Rotate about c (−)">▼</button>
+    </div>
+
+    <div class="camera-separator"></div>
 
     <!-- Reset button -->
     <button class="camera-tool-reset-btn" id="resetView" title="Reset Camera View">
       <div class="reset-icon"></div>
       <span>Reset</span>
     </button>
-
-    <!-- Separator -->
-    <div class="camera-separator"></div>
-      <!-- Second row of angle adjustment controls (for X, Y, Z) -->
-        <div class="measurement-group">
-          <!-- X Axis Angle Controls -->
-          <div class="rotation-axis">
-            <div class="angle-controls">
-              <input type="text" id="xAngle" class="angle-input" value="0" readonly />
-              <div class="angle-buttons">
-                <button class="angle-btn" id="xUp" title="Increase X Axis Angle">↑</button>
-                <button class="angle-btn" id="xDown" title="Decrease X Axis Angle">↓</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Y Axis Angle Controls -->
-          <div class="rotation-axis">
-            <div class="angle-controls">
-              <input type="text" id="yAngle" class="angle-input" value="0" readonly />
-              <div class="angle-buttons">
-                <button class="angle-btn" id="yUp" title="Increase Y Axis Angle">↑</button>
-                <button class="angle-btn" id="yDown" title="Decrease Y Axis Angle">↓</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Z Axis Angle Controls -->
-          <div class="rotation-axis">
-            <div class="angle-controls">
-              <input type="text" id="zAngle" class="angle-input" value="0" readonly />
-              <div class="angle-buttons">
-                <button class="angle-btn" id="zUp" title="Increase Z Axis Angle">↑</button>
-                <button class="angle-btn" id="zDown" title="Decrease Z Axis Angle">↓</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-
     </div>
    </div>
 </div>

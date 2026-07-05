@@ -1,7 +1,6 @@
 
 import * as THREE from '../external/three/three.module.js';
 
-import {updateAngleDisplays} from './cameraAngleControl.js';
 import { app, general} from '../state/store.js';
 import {updateLattice,latticeDirsNorm} from './LatticeModule.js'
 import {renderCelOutlinePass} from './CelOutlinePass.js'
@@ -145,7 +144,6 @@ export function animation_update(time = 0) {
   }
 
   _counter = _counter+1;
-  updateAngleDisplays();
 
   const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
    if (isDarkMode && general.currentLatticeColor === 0x090A09){

@@ -43,8 +43,9 @@ import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render
 
 
 import {addAtomVacuumPanel} from '../ui/addToStructureModule/AddVacuumModule.js'
-import {initPanelSystem, revealFeaturePanels} from '../ui/panels/PanelManager.js'
+import {initPanelSystem, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
 import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
+import {initFontScale} from '../ui/FontScaleModule.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../render/index.js';
 
@@ -414,10 +415,16 @@ async function initializeMathBackend() {
 
 // Panel toggle functionality for all screen sizes
 function initUIPanels() {
+  initFontScale();
   createBackgroundControl();
   setupThemeSystem();
   initPanelSystem();
   registerDefaultPanels();
+  // Apply availability (grey-out) once now that panels exist. On first load the
+  // default structure is loaded before panels are registered, so its own
+  // revealFeaturePanels() refresh ran against no panels; this makes the initial
+  // greyed/available state match what a file-selector click would produce.
+  refreshActivePanels();
   addBackendModeSwitch();
   addSavePanel();
   initImageExportPanel();

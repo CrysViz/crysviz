@@ -1,4 +1,4 @@
-import { app, general, measurements, fileBrowser } from '../state/store.js';
+import { app, general, measurements, fileBrowser, structureShip } from '../state/store.js';
 
 /** Deep copy of a sparse style-store object, or undefined when empty/absent
  *  (keeps captured sessions small). */
@@ -6,7 +6,9 @@ function nonEmptyDeepCopy(obj) {
   return obj && Object.keys(obj).length ? JSON.parse(JSON.stringify(obj)) : undefined;
 }
 import * as THREE from '../external/three/three.module.js';
-import { parsePOSCAR } from './StructureInputModule.js';
+import { parsePOSCAR, initializeUIOnLoad } from './StructureInputModule.js';
+import { readPOSCAR } from '../io/ReadPOSCARModule.js';
+import { StructureContainer } from '../model/index.js';
 import { updateAtoms } from '../render/index.js';
 import { rebuildBonds, updatePolyhedra } from '../render/index.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
@@ -29,7 +31,7 @@ const URL_HARD_CHARS = 10000;
  * the panel system's own localStorage. Shared by the Share-URL feature and
  * the .crysviz file download (SavePanel).
  */
-export function captureState() {
+export function captureState({ includeFrames = false } = {}) {
   const structure = fileBrowser.selectedStructure;
   if (!structure) return null;
 
@@ -80,8 +82,24 @@ export function captureState() {
     })
     .filter(d => d && d.type);
 
+  // Whole-trajectory frames (all steps of the active container), so saving an
+  // MD/relaxation run preserves every frame — not just the viewed one. Each
+  // frame is stored in its native atom order. Only the .crysviz file save opts
+  // in (includeFrames); the share-URL omits them to keep the URL small. The
+  // single `structure` field below always carries the viewed frame (back-compat).
+  let frames;
+  if (includeFrames) {
+    const activeContainer = structureShip.container?.[fileBrowser.selectedRowIndex];
+    frames = (activeContainer?.structures ?? [structure]).map(frame => ({
+      elements: [...frame.elements],
+      lattice: frame.lattice.map(r => [...r]),
+      positions: frame.atoms.map(a => [...a.position]),
+    }));
+  }
+
   return {
-    version: '2.2',
+    version: '2.3',
+    ...(frames ? { frames } : {}),
     structure: {
       elements: [...structure.elements],
       lattice: structure.lattice.map(r => [...r]),
@@ -550,9 +568,27 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   applyDisplaySettings(state.display);
   applyStyleSettings(state.style);
 
+  // A saved trajectory carries every frame in `frames`; older single-frame
+  // files (and the share-URL) carry only `structure`.
+  const frames = Array.isArray(state.frames) ? state.frames : null;
+  const multiFrame = !!(frames && frames.length > 1);
+  let trajectoryContainer = null;
+
   // Load structure (synchronous — triggers updateVisualization internally)
   try {
-    parsePOSCAR(buildPOSCAR(state), fileName);
+    if (multiFrame) {
+      // Rebuild each frame's Structure, restoring its native atom order (buildPOSCAR
+      // groups by element) so per-atom indices stay stable across the trajectory.
+      const structures = frames.map((f) => {
+        const s = readPOSCAR(buildPOSCAR({ structure: f }), fileName);
+        restoreAtomOrder(f, s);
+        return s;
+      });
+      trajectoryContainer = new StructureContainer({ fileName, structures });
+      initializeUIOnLoad(trajectoryContainer);
+    } else {
+      parsePOSCAR(buildPOSCAR(state), fileName);
+    }
   } catch (e) {
     console.error('Failed to load structure from state:', e);
     return false;
@@ -561,15 +597,19 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   const structure = fileBrowser.selectedStructure;
   if (!structure) return false;
 
-  // buildPOSCAR() groups atoms by element, so restore the saved atom ordering
-  // before applying any per-atom state that relies on stable indices.
-  restoreAtomOrder(state.structure, structure);
+  // Single-frame: buildPOSCAR() groups atoms by element, so restore the saved
+  // atom ordering before applying any per-atom state that relies on stable
+  // indices. (Multi-frame frames were already restored above.)
+  if (!multiFrame) restoreAtomOrder(state.structure, structure);
 
   revealFeaturePanels();
   createBondLengthControls();
 
   // Apply colors on top of loaded structure, then push to GPU
   applyAtomColors(state.colors, structure);
+  // Propagate the restored colors to every other frame so scrubbing the
+  // trajectory keeps the saved appearance (indices align — all frames restored).
+  if (multiFrame) trajectoryContainer.flushColorToAllStructures(structure);
   updateAtoms();
 
   // Rebuild bonds to reflect any bondLength / bondVisibility changes

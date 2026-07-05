@@ -903,6 +903,11 @@ justify-content: center;
   border: 1px solid rgba(255,255,255,0.5);
 }
 
+/* Destructive variant: "Clear local data" wipes all persisted settings. */
+.reset-btn-danger {
+  background: rgba(200, 35, 35, 0.92);
+}
+
 .bond-checkbox {
   display: flex;
   align-items: center;
@@ -1397,6 +1402,22 @@ body > #structureInfoContent {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Vertical stack: up-arrow / view-along-axis button / down-arrow. */
+.camera-axis-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The small step-rotation arrows flanking each axis button. */
+#cameraTools .camera-axis-stack .axis-step {
+  padding: 1px 6px;
+  font-size: 9px;
+  line-height: 1;
+  min-width: 32px;
 }
 
 /* Separator for camera controls */

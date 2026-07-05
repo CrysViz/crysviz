@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups, general } from '../state/store.js';
-import { updateAngleDisplays, setupAxisControls, latticeDirs, requestRender} from '../render/index.js';
+import { setupAxisControls, latticeDirs, requestRender} from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 
@@ -55,9 +55,7 @@ export function setupScene() {
 
   // init Angle display windows
 
-  ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis));
-
-  updateAngleDisplays();
+  ['x', 'y', 'z', 'a', 'b', 'c'].forEach(axis => setupAxisControls(axis));
 
 
   initAxesGizmo();
@@ -353,7 +351,7 @@ export function switchCameraType() {
     app.orthographicFrustumSize = null;
   }
   app.controls.object = app.camera;
-  ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis));
+  ['x', 'y', 'z', 'a', 'b', 'c'].forEach(axis => setupAxisControls(axis));
 
   const { center, dist } = getCellCenterAndDist();
   app.camera.position.copy(center.clone().add(new THREE.Vector3(1,1,1).normalize().multiplyScalar(dist)));

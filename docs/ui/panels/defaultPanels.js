@@ -22,6 +22,7 @@ import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
+import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
 import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
 
 // ---- static-row adoption ------------------------------------------------------
@@ -311,9 +312,9 @@ export function registerDefaultPanels() {
     title: 'Forces',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
-    available() {
-      return (fileBrowser.selectedStructure?.forces?.length ?? 0) > 0 && !!general.forcesActive;
-    },
+    // Stays available even without force data: the window is where the user
+    // enters/enables forces, so it must not grey out when a structure has none.
+    available() { return true; },
     buildContent(body) {
       addForcePanel(body.id);
       // Re-apply the activation state after a rebuild (structure switch).
@@ -331,9 +332,9 @@ export function registerDefaultPanels() {
     title: 'Spins',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
-    available() {
-      return (fileBrowser.selectedStructure?.spins?.length ?? 0) > 0 && !!general.spinsActive;
-    },
+    // Stays available even without spin data: the window is where the user
+    // enters/enables spins, so it must not grey out when a structure has none.
+    available() { return true; },
     buildContent(body) {
       addSpinPanel(body.id);
       if (general.spinsActive) {
@@ -471,9 +472,9 @@ export function registerDefaultPanels() {
       const info = document.getElementById('storageInfoButton');
       const infoWrap = info && info.closest('.info-button-panel');
       if (infoWrap) body.appendChild(infoWrap);
-      body.appendChild(makeSectionHeadline('Local storage'));
-      const sw = document.getElementById('StorageOptionSwitch');
-      if (sw) body.appendChild(sw);
+      // The None/Minimal/All-Settings storage-granularity toggle
+      // (#StorageOptionSwitch in index.html) is hidden for now — it has no
+      // wiring. Left in the DOM, just not adopted here, so it can return later.
       // Window drag behavior: dragging across the dock boundary docks/undocks.
       body.appendChild(makeSectionHeadline('Windows'));
       const dragGroup = document.createElement('div');
@@ -483,14 +484,50 @@ export function registerDefaultPanels() {
       dragGroup.appendChild(makeToggleRow('dragOutOfDockToggle', 'Drag out of dock',
         !!getPanelPref('dragOutOfDock'), (on) => setPanelPref('dragOutOfDock', on)));
       body.appendChild(dragGroup);
+      // Overall font scale: multiplies the window fonts (title bars, headlines,
+      // labels) live via --cv-font-scale; persisted across sessions.
+      body.appendChild(makeSectionHeadline('Text'));
+      const fsRow = document.createElement('label');
+      fsRow.className = 'toggle_row toggle_container';
+      fsRow.style.gap = '8px';
+      const fsText = document.createElement('span');
+      fsText.className = 'toggle_text';
+      fsText.textContent = 'Overall font scale';
+      const fsSlider = document.createElement('input');
+      fsSlider.type = 'range';
+      fsSlider.id = 'fontScaleSlider';
+      fsSlider.min = String(FONT_SCALE_MIN);
+      fsSlider.max = String(FONT_SCALE_MAX);
+      fsSlider.step = '0.05';
+      fsSlider.value = String(getFontScale());
+      fsSlider.style.flex = '1';
+      fsSlider.addEventListener('input', () => setFontScale(parseFloat(fsSlider.value)));
+      fsRow.appendChild(fsText);
+      fsRow.appendChild(fsSlider);
+      body.appendChild(fsRow);
       // Restore every window to its default placement.
+      const resetRow = document.createElement('div');
+      resetRow.style.display = 'flex';
+      resetRow.style.gap = '8px';
       const resetBtn = document.createElement('button');
       resetBtn.id = 'resetUiButton';
       resetBtn.type = 'button';
       resetBtn.className = 'reset-btn';
       resetBtn.textContent = 'Reset UI';
       resetBtn.addEventListener('click', () => resetAllPanels());
-      body.appendChild(resetBtn);
+      resetRow.appendChild(resetBtn);
+      // Wipe every localStorage key the app uses (layout, prefs, theme, colors,
+      // export prefs, font scale). No reload — changes take effect next load.
+      const clearBtn = document.createElement('button');
+      clearBtn.id = 'clearLocalDataButton';
+      clearBtn.type = 'button';
+      clearBtn.className = 'reset-btn reset-btn-danger';
+      clearBtn.textContent = 'Clear local data';
+      clearBtn.addEventListener('click', () => {
+        if (confirm('Clear all saved local data?')) localStorage.clear();
+      });
+      resetRow.appendChild(clearBtn);
+      body.appendChild(resetRow);
     },
     // The very last window in the dock.
     defaults: { docked: true, order: 100, collapsed: false },
