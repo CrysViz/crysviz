@@ -14,6 +14,19 @@ const PRESET_ASPECTS = {
 
 const DEFAULT_LONG_EDGE = 3840; // 4K on the long edge by default
 
+// Remembered across sessions so re-opening the dialog restores the last choice.
+const PREFS_KEY = 'crysviz.pngExportPrefs.v1';
+
+function loadPrefs() {
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; }
+  catch { return {}; }
+}
+
+function savePrefs(prefs) {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }
+  catch { /* storage unavailable */ }
+}
+
 function viewAspect() {
   const v = document.getElementById('view');
   const w = (v && v.clientWidth) || 16;
@@ -89,19 +102,50 @@ export function initImageExportPanel() {
     }
   }
 
+  function currentPrefs() {
+    return {
+      aspect: aspectSelect.value,
+      lock: lockInput.checked,
+      width: Math.round(Number(widthInput.value) || 0),
+      height: Math.round(Number(heightInput.value) || 0),
+      margin: Math.max(0, Math.round(Number(marginInput.value) || 0)),
+      transparent: transparentInput.checked,
+    };
+  }
+
   function openModal() {
     const menu = document.getElementById('downloadMenu');
     if (menu) menu.hidden = true;
-    aspectSelect.value = 'view';
-    aspectRatio = viewAspect();
-    lockInput.checked = true;
-    lockInput.disabled = false;
-    marginInput.value = '0';
-    fillFromAspect(DEFAULT_LONG_EDGE);
+
+    const p = loadPrefs();
+    const aspect = p.aspect || 'view';
+    const free = aspect === 'free';
+    aspectSelect.value = aspect;
+    // Assigning an unknown value leaves the select on its first option ('view').
+    if (aspectSelect.value !== aspect) aspectSelect.value = 'view';
+    lockInput.disabled = free;
+    lockInput.checked = free ? false : (p.lock !== false);
+    marginInput.value = String(p.margin != null ? p.margin : 0);
+    transparentInput.checked = !!p.transparent;
+
+    const longEdge = Math.max(Number(p.width) || 0, Number(p.height) || 0) || DEFAULT_LONG_EDGE;
+    if (aspectSelect.value === 'free') {
+      widthInput.value = String(Math.round(Number(p.width) || DEFAULT_LONG_EDGE));
+      heightInput.value = String(Math.round(Number(p.height) || Math.round(DEFAULT_LONG_EDGE * 9 / 16)));
+    } else if (aspectSelect.value === 'view') {
+      aspectRatio = viewAspect();
+      fillFromAspect(longEdge);
+    } else {
+      aspectRatio = PRESET_ASPECTS[aspectSelect.value] || 1;
+      fillFromAspect(longEdge);
+    }
     modal.hidden = false;
   }
 
-  function closeModal() { modal.hidden = true; }
+  function closeModal() {
+    savePrefs(currentPrefs());
+    modal.hidden = true;
+  }
 
   aspectSelect.addEventListener('change', () => {
     if (isFree()) {

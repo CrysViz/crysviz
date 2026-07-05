@@ -92,6 +92,33 @@ const H = require('../harness');
     res.restoredW === res.viewW && res.restoredH === res.viewH,
     `renderer=${res.restoredW}x${res.restoredH} view=${res.viewW}x${res.viewH}`);
 
+  // Settings persistence: tweak the modal, close it, reopen it, and the
+  // choices must be restored (from localStorage).
+  const prefs = await page.evaluate(() => {
+    document.getElementById('savePngButton').click(); // open
+    const aspect = document.getElementById('pngAspect');
+    aspect.value = '1:1';
+    aspect.dispatchEvent(new Event('change'));
+    document.getElementById('pngMargin').value = '77';
+    document.getElementById('pngTransparent').checked = true;
+    document.getElementById('pngCancelBtn').click();  // close -> saves prefs
+
+    document.getElementById('savePngButton').click(); // reopen -> loads prefs
+    const out = {
+      aspect: document.getElementById('pngAspect').value,
+      margin: document.getElementById('pngMargin').value,
+      transparent: document.getElementById('pngTransparent').checked,
+      width: document.getElementById('pngWidth').value,
+      height: document.getElementById('pngHeight').value,
+    };
+    document.getElementById('pngCancelBtn').click();
+    return out;
+  });
+  H.check('prefs: aspect restored', prefs.aspect === '1:1', prefs.aspect);
+  H.check('prefs: margin restored', prefs.margin === '77', prefs.margin);
+  H.check('prefs: transparent restored', prefs.transparent === true, String(prefs.transparent));
+  H.check('prefs: 1:1 dimensions', prefs.width === prefs.height, `${prefs.width}x${prefs.height}`);
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);
