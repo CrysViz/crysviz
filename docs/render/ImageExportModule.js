@@ -132,17 +132,19 @@ function drawMeasurementLabels(octx, map) {
   }
 }
 
-// Render the axis gizmo at high resolution and place it in the output's
-// bottom-left corner (matching #axesGizmo's on-screen position), sized
-// proportionally to the output. Returns the previous gizmo pixel ratio so the
-// caller can restore it.
-function drawGizmo(octx, width, height, margin) {
+// Render the axis gizmo at high resolution and place it in the inner canvas's
+// bottom-left corner (matching #axesGizmo's on-screen position), with the a/b/c
+// legend next to it (matching #axesLegend). Included ONLY when the user has the
+// gizmo showing (general.showAxes / #axesGizmo not display:none). Returns the
+// previous gizmo pixel ratio so the caller can restore it (null if skipped).
+function drawGizmoAndLegend(ictx, innerW, innerH) {
   const gizmoDiv = document.getElementById('axesGizmo');
   if (!app.gizmoRenderer || !app.gizmoScene || !app.gizmoCamera) return null;
+  if (!general.showAxes) return null;
   if (gizmoDiv && gizmoDiv.style.display === 'none') return null;
 
   const prevGizmoPR = app.gizmoRenderer.getPixelRatio();
-  const gsize = Math.max(24, Math.round(Math.min(width, height) * 0.14));
+  const gsize = Math.max(24, Math.round(Math.min(innerW, innerH) * 0.14));
   app.gizmoRenderer.setPixelRatio(1);
   app.gizmoRenderer.setSize(gsize, gsize, false);
   app.gizmoCamera.aspect = 1;
@@ -155,8 +157,55 @@ function drawGizmo(octx, width, height, margin) {
   app.gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
   app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
 
-  octx.drawImage(app.gizmoRenderer.domElement, margin, height - gsize - margin, gsize, gsize);
+  const gy = innerH - gsize;
+  ictx.drawImage(app.gizmoRenderer.domElement, 0, gy, gsize, gsize);
+  drawAxesLegend(ictx, gsize + Math.round(gsize * 0.07), innerH, gsize);
   return prevGizmoPR;
+}
+
+// The a/b/c legend box (mirrors #axesLegend), bottom-aligned with the gizmo and
+// sized proportionally to it. Colours match the gizmo arrows / .dot-a/b/c CSS.
+function drawAxesLegend(ictx, x, bottomY, gsize) {
+  const rows = [['a', '#ff3333'], ['b', '#33cc33'], ['c', '#3366ff']];
+  const font = Math.max(8, gsize * 0.16);
+  const dot = font * 0.85;
+  const padX = font * 0.6;
+  const padY = font * 0.5;
+  const gap = font * 0.5;
+  const rowGap = font * 0.45;
+  const rowH = Math.max(font, dot);
+
+  ictx.font = `600 ${font}px sans-serif`;
+  ictx.textBaseline = 'middle';
+  ictx.textAlign = 'left';
+  let letterW = 0;
+  for (const [ch] of rows) letterW = Math.max(letterW, ictx.measureText(ch).width);
+
+  const boxW = padX * 2 + dot + gap + letterW;
+  const boxH = padY * 2 + rowH * 3 + rowGap * 2;
+  const boxX = x;
+  const boxY = bottomY - boxH; // bottom-aligned with the gizmo bottom
+
+  roundRectPath(ictx, boxX, boxY, boxW, boxH, font * 0.5);
+  ictx.fillStyle = 'rgba(0,0,0,0.8)';
+  ictx.fill();
+  ictx.lineWidth = Math.max(1, font * 0.06);
+  ictx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ictx.stroke();
+
+  for (let i = 0; i < rows.length; i++) {
+    const [ch, color] = rows[i];
+    const cy = boxY + padY + rowH / 2 + i * (rowH + rowGap);
+    ictx.beginPath();
+    ictx.arc(boxX + padX + dot / 2, cy, dot / 2, 0, Math.PI * 2);
+    ictx.fillStyle = color;
+    ictx.fill();
+    ictx.lineWidth = Math.max(1, dot * 0.08);
+    ictx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ictx.stroke();
+    ictx.fillStyle = '#fff';
+    ictx.fillText(ch, boxX + padX + dot + gap, cy);
+  }
 }
 
 /**
@@ -209,13 +258,18 @@ export async function captureSceneToPng(opts) {
     const fracW = nx1 - nx0;
     const fracH = ny1 - ny0;
 
+    // The margin is excluded up front: content and every overlay are composited
+    // into an inner canvas of size innerW x innerH, which is stamped onto the
+    // full output at (margin, margin) at the end. That way the margin is honoured
+    // by ALL elements (content, gizmo, legend, labels), not just the content.
+    const innerW = Math.max(1, width - 2 * margin);
+    const innerH = Math.max(1, height - 2 * margin);
+
     // --- Choose the source render size so the content maps ~1:1 (slightly
-    //     super-sampled for AA) to the target content box, clamped to GPU limits.
-    const targetW = Math.max(1, width - 2 * margin);
-    const targetH = Math.max(1, height - 2 * margin);
+    //     super-sampled for AA) to the inner content box, clamped to GPU limits.
     const SS = 1.25;
-    const scaleToFillW = targetW / Math.max(fracW, 1e-3);
-    const scaleToFillH = targetH / Math.max(fracH, 1e-3);
+    const scaleToFillW = innerW / Math.max(fracW, 1e-3);
+    const scaleToFillH = innerH / Math.max(fracH, 1e-3);
     let srcW = Math.ceil(Math.max(scaleToFillW, scaleToFillH * aspect) * SS);
     let srcH = Math.ceil(srcW / aspect);
 
@@ -245,35 +299,42 @@ export async function captureSceneToPng(opts) {
     const cropW = Math.max(1, Math.min(srcW - cropX, Math.ceil(fracW * srcW)));
     const cropH = Math.max(1, Math.min(srcH - cropY, Math.ceil(fracH * srcH)));
 
-    // Contain-fit the crop into the target box, centred within the margins.
-    const scale = Math.min(targetW / cropW, targetH / cropH);
+    // Contain-fit the crop into the inner box, centred.
+    const scale = Math.min(innerW / cropW, innerH / cropH);
     const drawW = cropW * scale;
     const drawH = cropH * scale;
-    const dx = margin + (targetW - drawW) / 2;
-    const dy = margin + (targetH - drawH) / 2;
+    const cdx = (innerW - drawW) / 2;
+    const cdy = (innerH - drawH) / 2;
 
-    // --- Compose the output. ---
-    const out = document.createElement('canvas');
-    out.width = width;
-    out.height = height;
-    const octx = /** @type {CanvasRenderingContext2D} */ (out.getContext('2d'));
-    octx.imageSmoothingEnabled = true;
-    octx.imageSmoothingQuality = 'high';
-    if (!transparent) {
-      octx.fillStyle = bgCss;
-      octx.fillRect(0, 0, width, height);
-    }
-    octx.drawImage(srcCanvas, cropX, cropY, cropW, cropH, dx, dy, drawW, drawH);
+    // --- Compose the inner canvas (no margin), then stamp onto the output. ---
+    const inner = document.createElement('canvas');
+    inner.width = innerW;
+    inner.height = innerH;
+    const ictx = /** @type {CanvasRenderingContext2D} */ (inner.getContext('2d'));
+    ictx.imageSmoothingEnabled = true;
+    ictx.imageSmoothingQuality = 'high';
+    ictx.drawImage(srcCanvas, cropX, cropY, cropW, cropH, cdx, cdy, drawW, drawH);
 
-    // Overlays: labels track content; the gizmo goes in the output corner.
+    // Overlays (in inner coordinates): labels track content; the gizmo + its
+    // legend go in the inner bottom-left corner.
     const map = {
-      srcW, srcH, cropX, cropY, dx, dy, scale,
+      srcW, srcH, cropX, cropY, dx: cdx, dy: cdy, scale,
       // font/label size relative to the on-screen view (content px on screen
       // = frac * view px; content px in output = crop px * scale).
       fontScale: (cropH * scale) / Math.max(1, fracH * vh),
     };
-    drawMeasurementLabels(octx, map);
-    prevGizmoPR = drawGizmo(octx, width, height, margin);
+    drawMeasurementLabels(ictx, map);
+    prevGizmoPR = drawGizmoAndLegend(ictx, innerW, innerH);
+
+    const out = document.createElement('canvas');
+    out.width = width;
+    out.height = height;
+    const octx = /** @type {CanvasRenderingContext2D} */ (out.getContext('2d'));
+    if (!transparent) {
+      octx.fillStyle = bgCss;
+      octx.fillRect(0, 0, width, height);
+    }
+    octx.drawImage(inner, margin, margin);
 
     return await new Promise((resolve, reject) => {
       out.toBlob((blob) => {
