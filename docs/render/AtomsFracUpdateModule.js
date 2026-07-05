@@ -111,7 +111,11 @@ export function updateAtomByUUID(mesh, uuid, newPosition, newColor) {
 
 export function rebuildAtoms(opacity) {
   if (groups.atomsMesh) {
-    groups.atomsMesh.userData.transparentOverlay?.material.dispose();
+    const overlay = groups.atomsMesh.userData.transparentOverlay;
+    if (overlay) {
+      overlay.geometry.dispose(); // shares vertex buffers with the main geometry, disposed below anyway
+      overlay.material.dispose();
+    }
     groups.atomsMesh.geometry.dispose();
     groups.atomsMesh.material.dispose();
     app.scene.remove(groups.atomsMesh);
@@ -524,32 +528,116 @@ export function updateAtomCutPlaneState() {
   applyAtomCutPlaneUniforms(mesh.material);
 }
 
-// Second render pass for per-instance transparency: a child InstancedMesh
-// sharing the main mesh's geometry and instance buffers (the addCelOutline
-// pattern — visibility toggles, scene removal, and all attribute updates carry
-// over for free). It draws ONLY the transparent instances (uAlphaPass 2),
-// blended and depth-TESTED against the opaque instances the main pass drew
-// with depth writes on. Instances inside one InstancedMesh render in index
-// order — three.js cannot depth-sort them — so a single blended pass with
-// depthWrite off lets any later-indexed atom paint over a nearer one; the
-// split resolves opaque↔transparent occlusion per pixel instead. Only
-// transparent-over-transparent overlap remains order-dependent.
+// Second render pass for per-instance transparency: a compact, depth-SORTED
+// child InstancedMesh holding private copies of ONLY the transparent
+// instances, blended and depth-TESTED against the opaque instances the main
+// pass drew with depth writes on. Instances inside one InstancedMesh render
+// in index order — three.js cannot depth-sort them — so the overlay's buffers
+// are rewritten back-to-front relative to the camera on every rendered frame
+// (syncTransparentOverlayInstances), which makes transparent-over-transparent
+// blending order-correct too. The main mesh's buffers are never permuted:
+// instance indices are stable atom ids for picking / per-atom edits /
+// selection, so the sort only touches the overlay's private copies, and
+// re-copying from the live main buffers each frame keeps every write path
+// (trajectory positions, colors, emissive highlights) in sync for free.
+//
+// The sort runs from scene.onBeforeRender — NOT the overlay's own
+// onBeforeRender: the renderer uploads needsUpdate'd attributes during
+// projectObject (WebGLObjects.update), which happens BEFORE per-object
+// onBeforeRender fires, so buffers mutated there would draw one frame stale.
+// scene.onBeforeRender fires after the camera matrices update and before
+// projectObject — same-frame, current camera, and it covers every
+// renderer.render() caller (main loop, PNG export).
+
+// Per-instance attributes mirrored into the overlay: geometry-level ones
+// here, plus instanceMatrix / instanceColor which live on the mesh.
+/** @type {Array<[string, number]>} */
+const OVERLAY_INSTANCED_ATTRS = [
+  ['instanceOpacity', 1],
+  ['instanceCutPlaneImmune', 1],
+  ['instanceEmissive', 3],
+  ['instanceEmissiveIntensity', 1],
+  ['instanceUUID', 4],
+  ['instanceElementIndex', 1],
+];
+
 function ensureTransparentAtomsOverlay(mesh) {
   let overlay = mesh.userData.transparentOverlay;
   if (overlay) return overlay;
   const material = createAtomsMaterial();
   material.transparent = true;
   material.depthWrite = false;
-  material.userData.alphaPass = 2;
-  overlay = new THREE.InstancedMesh(mesh.geometry, material, mesh.count);
-  overlay.instanceMatrix = mesh.instanceMatrix; // shared — follows all updates
-  overlay.instanceColor = mesh.instanceColor;
+  material.userData.alphaPass = 2; // no-op safety net: buffers only hold transparent instances
+
+  const capacity = mesh.count;
+  // Own geometry: sphere vertex data shared by reference, instance data private
+  // (the sort permutes it, so it cannot alias the main mesh's attributes).
+  const geometry = new THREE.BufferGeometry();
+  geometry.setIndex(mesh.geometry.getIndex());
+  geometry.setAttribute('position', mesh.geometry.attributes.position);
+  geometry.setAttribute('normal', mesh.geometry.attributes.normal);
+  geometry.setAttribute('uv', mesh.geometry.attributes.uv);
+  for (const [name, itemSize] of OVERLAY_INSTANCED_ATTRS) {
+    const attribute = new THREE.InstancedBufferAttribute(new Float32Array(capacity * itemSize), itemSize);
+    attribute.setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute(name, attribute);
+  }
+
+  overlay = new THREE.InstancedMesh(geometry, material, capacity);
+  overlay.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  overlay.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
+  overlay.instanceColor.setUsage(THREE.DynamicDrawUsage);
   overlay.raycast = () => {}; // never intercept picking
-  overlay.frustumCulled = mesh.frustumCulled;
+  overlay.frustumCulled = false; // contents are rewritten per frame; skip stale culling
   overlay.name = 'transparentAtomsOverlay';
   mesh.userData.transparentOverlay = overlay;
   mesh.add(overlay);
+
+  // Reads groups.atomsMesh live, so one assignment survives atom rebuilds.
+  app.scene.onBeforeRender = (renderer, scene, camera) => {
+    const atomsMesh = groups.atomsMesh;
+    const liveOverlay = atomsMesh?.userData.transparentOverlay;
+    if (liveOverlay?.visible) syncTransparentOverlayInstances(atomsMesh, liveOverlay, camera);
+  };
   return overlay;
+}
+
+/** Rewrite the overlay's instance buffers with the transparent instances of
+ *  the main atoms mesh, sorted back-to-front in view space. */
+function syncTransparentOverlayInstances(mesh, overlay, camera) {
+  const srcAttrs = mesh.geometry.attributes;
+  const srcOpacity = srcAttrs.instanceOpacity.array;
+  const srcMatrix = mesh.instanceMatrix.array;
+  // View-space depth from row 3 of the inverse world matrix — valid for both
+  // the perspective and the default orthographic camera.
+  const e = camera.matrixWorldInverse.elements;
+  /** @type {Array<[number, number]>} */
+  const order = [];
+  for (let i = 0; i < mesh.count; i++) {
+    if (srcOpacity[i] >= 0.999) continue;
+    const o = i * 16;
+    const z = e[2] * srcMatrix[o + 12] + e[6] * srcMatrix[o + 13] + e[10] * srcMatrix[o + 14] + e[14];
+    order.push([z, i]);
+  }
+  order.sort((a, b) => a[0] - b[0]); // most negative z = farthest = drawn first
+
+  const dstAttrs = overlay.geometry.attributes;
+  const srcColor = mesh.instanceColor.array;
+  const dstMatrix = overlay.instanceMatrix.array;
+  const dstColor = overlay.instanceColor.array;
+  for (let k = 0; k < order.length; k++) {
+    const i = order[k][1];
+    dstMatrix.set(srcMatrix.subarray(i * 16, i * 16 + 16), k * 16);
+    dstColor.set(srcColor.subarray(i * 3, i * 3 + 3), k * 3);
+    for (const [name, itemSize] of OVERLAY_INSTANCED_ATTRS) {
+      dstAttrs[name].array.set(
+        srcAttrs[name].array.subarray(i * itemSize, i * itemSize + itemSize), k * itemSize);
+    }
+  }
+  overlay.count = order.length;
+  overlay.instanceMatrix.needsUpdate = true;
+  overlay.instanceColor.needsUpdate = true;
+  for (const [name] of OVERLAY_INSTANCED_ATTRS) dstAttrs[name].needsUpdate = true;
 }
 
 function syncAtomMaterialTransparency(baseOpacity = 1.0) {

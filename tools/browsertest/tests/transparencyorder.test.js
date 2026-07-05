@@ -160,7 +160,22 @@ function redCentroid(file) {
   H.check('opaque front atom fully covers a transparent back atom',
     s3.r > s3.b + 50 && s3.b < s1.b + 25, JSON.stringify({ s1, s3 }));
 
+  // --- BOTH transparent: blend must still be back-to-front ------------------------
+  // The front red atom has the lower instance index, so unsorted index-order
+  // drawing blends blue OVER red; the depth-sorted overlay draws the back atom
+  // first and blends red last. Measured disk averages: sorted r-b ~ +89,
+  // unsorted ~ +14 (lighting bleeds red into the blue sphere) — threshold 50
+  // sits comfortably between.
+  await setOpacity(src.front, 0.5);
+  await page.waitForTimeout(500);
+  const s4 = await shoot('transparencyorder-both-transparent');
+  H.check('two transparent atoms blend back-to-front (front red dominates)',
+    s4.r > s4.b + 50, JSON.stringify({ s1, s4 }));
+  H.check('two transparent atoms: back atom shows through the front one',
+    s4.b > s1.b + 20, JSON.stringify({ s1, s4 }));
+
   // --- All opaque again -> overlay pass deactivates -------------------------------
+  await setOpacity(src.front, 1.0);
   await setOpacity(src.back, 1.0);
   const off = await page.evaluate(async () => {
     const { groups } = await import('./state/store.js');
