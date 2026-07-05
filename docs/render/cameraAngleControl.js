@@ -7,7 +7,13 @@ import { app } from '../state/store.js';
 const STEP_DEG = 5;
 
 /**
- * Orbit the camera a small step around an axis.
+ * Rigidly rotate the camera a small step around an axis through the cell
+ * center. Both the center→camera offset and camera.up get the same rotation:
+ * only then is the move a rigid rotation, which keeps the chosen axis fixed
+ * on screen (its view-space direction R′ᵀn = RᵀQᵀn = Rᵀn since Q fixes its
+ * own axis) while everything else precesses around it. Rotating the position
+ * alone lets the subsequent lookAt re-roll the camera to the stale up vector,
+ * so the axis drifts.
  * @param {number} directionDeg signed step in degrees
  * @param {'x'|'y'|'z'|THREE.Vector3} axis world axis by name, or an explicit
  *   direction vector (used for the a/b/c crystallographic axes).
@@ -43,8 +49,10 @@ export function applyRotationFromUI(directionDeg, axis) {
   const radius = dist ?? v.length();
   if (radius > 0) v.setLength(radius);
 
-  // 5) commit: position camera on rotated vector, look at center
+  // 5) commit: position camera on rotated vector, rotate up in lockstep,
+  //    look at center
   app.camera.position.copy(center).add(v);
+  app.camera.up.applyQuaternion(q).normalize();
   app.controls.target.copy(center);
 
   // 6) update controls/camera
@@ -61,7 +69,14 @@ export function setupAxisControls(axis) {
   const upBtn   = document.getElementById(`${axis}Up`);
   const downBtn = document.getElementById(`${axis}Down`);
   const isLattice = axis === 'a' || axis === 'b' || axis === 'c';
-  const rotAxis = () => (isLattice ? (latticeDirs()?.[axis] ?? axis) : axis);
+  // latticeDirs() returns plain [x,y,z] arrays; applyRotationFromUI wants a
+  // THREE.Vector3 (an array would silently fail its axis check and fall back
+  // to world z).
+  const rotAxis = () => {
+    if (!isLattice) return axis;
+    const d = latticeDirs()?.[axis];
+    return Array.isArray(d) ? new THREE.Vector3(d[0], d[1], d[2]) : axis;
+  };
 
   // The buttons persist across camera switches, so guard against re-wiring
   // (this is called from both setupScene and switchCameraType).
