@@ -46,10 +46,13 @@ function applyCutPlaneUniformsToShader(shader) {
 
 function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
   applyCutPlaneUniformsToShader(material?.userData?.shader);
-  // In hull outline mode the outline shell discards by the same planes.
+  // In hull outline mode the outline shell discards by the same planes, and the
+  // transparent-instance overlay pass carries the same shader uniforms.
   if (!material || material === groups.atomsMesh?.material) {
     const outline = groups.atomsMesh?.userData?.celOutline;
     if (outline) applyCutPlaneUniformsToShader(outline.material?.userData?.shader);
+    const overlay = groups.atomsMesh?.userData?.transparentOverlay;
+    if (overlay) applyCutPlaneUniformsToShader(overlay.material?.userData?.shader);
   }
 }
 
@@ -108,6 +111,7 @@ export function updateAtomByUUID(mesh, uuid, newPosition, newColor) {
 
 export function rebuildAtoms(opacity) {
   if (groups.atomsMesh) {
+    groups.atomsMesh.userData.transparentOverlay?.material.dispose();
     groups.atomsMesh.geometry.dispose();
     groups.atomsMesh.material.dispose();
     app.scene.remove(groups.atomsMesh);
@@ -261,20 +265,11 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
   return mesh;
 }
 
-export function buildAtoms() {
-  let atoms=fileBrowser.selectedStructure.atoms
-  let structure = fileBrowser.selectedStructure
-  //perdic.wrapped
-
-  let wrapped = fileBrowser.selectedStructure.periodic.wrapped
-
-  const atomCount = wrapped.elements.length;
-  console.log("Building mesh for",atomCount,"atoms")
-
-  // Geometry: unit sphere, scaled per instance
-  const geometry = new THREE.SphereGeometry(1, 32, 24);
-
-  // Material: visualization-mode dependent
+// Material for the main atoms mesh and its transparent-instance overlay pass
+// (see syncAtomMaterialTransparency). uAlphaPass splits instances by their
+// effective alpha: 0 = draw all (single-pass), 1 = opaque instances only,
+// 2 = transparent instances only.
+function createAtomsMaterial() {
   const atomVisSettings = getAtomVisSettings();
   const material = createStyledMaterial({
     ...atomVisSettings,
@@ -315,6 +310,7 @@ export function buildAtoms() {
     );
 
     shader.fragmentShader = `
+      uniform int uAlphaPass;
       uniform int uCutPlaneCount;
       uniform vec4 uCutPlanes[${MAX_CUT_PLANES}];
       uniform float uCutPlaneMaskSide[${MAX_CUT_PLANES}];
@@ -331,6 +327,8 @@ export function buildAtoms() {
       'vec4 diffuseColor = vec4( diffuse, opacity );',
       `
       vec4 diffuseColor = vec4( diffuse, opacity * vInstanceOpacity );
+      if (uAlphaPass == 1 && diffuseColor.a < 0.999) discard;
+      if (uAlphaPass == 2 && diffuseColor.a >= 0.999) discard;
       if (vInstanceCutPlaneImmune < 0.5) {
         for (int i = 0; i < ${MAX_CUT_PLANES}; i++) {
           if (i >= uCutPlaneCount) break;
@@ -351,6 +349,7 @@ export function buildAtoms() {
       `
     );
 
+    shader.uniforms.uAlphaPass = { value: material.userData.alphaPass ?? 0 };
     shader.uniforms.uCutPlaneCount = { value: 0 };
     shader.uniforms.uCutPlanes = {
       value: Array.from({ length: MAX_CUT_PLANES }, () => new THREE.Vector4(0, 0, 0, 0)),
@@ -361,6 +360,30 @@ export function buildAtoms() {
     material.userData.shader = shader;
     applyAtomCutPlaneUniforms(material);
   };
+  return material;
+}
+
+function setAtomAlphaPass(material, pass) {
+  material.userData.alphaPass = pass;
+  const uniform = material.userData.shader?.uniforms?.uAlphaPass;
+  if (uniform) uniform.value = pass;
+}
+
+export function buildAtoms() {
+  let atoms=fileBrowser.selectedStructure.atoms
+  let structure = fileBrowser.selectedStructure
+  //perdic.wrapped
+
+  let wrapped = fileBrowser.selectedStructure.periodic.wrapped
+
+  const atomCount = wrapped.elements.length;
+  console.log("Building mesh for",atomCount,"atoms")
+
+  // Geometry: unit sphere, scaled per instance
+  const geometry = new THREE.SphereGeometry(1, 32, 24);
+
+  // Material: visualization-mode dependent
+  const material = createAtomsMaterial();
 
   finishAtomsMesh({ geometry, material, structure, wrapped, atoms, meshKey: 'atomsMesh', cutPlanes: true });
 }
@@ -501,16 +524,55 @@ export function updateAtomCutPlaneState() {
   applyAtomCutPlaneUniforms(mesh.material);
 }
 
+// Second render pass for per-instance transparency: a child InstancedMesh
+// sharing the main mesh's geometry and instance buffers (the addCelOutline
+// pattern — visibility toggles, scene removal, and all attribute updates carry
+// over for free). It draws ONLY the transparent instances (uAlphaPass 2),
+// blended and depth-TESTED against the opaque instances the main pass drew
+// with depth writes on. Instances inside one InstancedMesh render in index
+// order — three.js cannot depth-sort them — so a single blended pass with
+// depthWrite off lets any later-indexed atom paint over a nearer one; the
+// split resolves opaque↔transparent occlusion per pixel instead. Only
+// transparent-over-transparent overlap remains order-dependent.
+function ensureTransparentAtomsOverlay(mesh) {
+  let overlay = mesh.userData.transparentOverlay;
+  if (overlay) return overlay;
+  const material = createAtomsMaterial();
+  material.transparent = true;
+  material.depthWrite = false;
+  material.userData.alphaPass = 2;
+  overlay = new THREE.InstancedMesh(mesh.geometry, material, mesh.count);
+  overlay.instanceMatrix = mesh.instanceMatrix; // shared — follows all updates
+  overlay.instanceColor = mesh.instanceColor;
+  overlay.raycast = () => {}; // never intercept picking
+  overlay.frustumCulled = mesh.frustumCulled;
+  overlay.name = 'transparentAtomsOverlay';
+  mesh.userData.transparentOverlay = overlay;
+  mesh.add(overlay);
+  return overlay;
+}
+
 function syncAtomMaterialTransparency(baseOpacity = 1.0) {
   const mesh = groups.atomsMesh;
   if (!mesh?.material) return;
   const structure = fileBrowser.selectedStructure;
   const hasTransparentInstances = (structure?.atoms?.some((atom) => (atom.getOpacity?.() ?? atom.opacity ?? 1) < 0.999) ?? false)
     || Object.values(structure?.atomImageStyles ?? {}).some((entry) => (entry?.alpha ?? 1) < 0.999);
-  const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances;
-  mesh.material.transparent = needsTransparency;
-  mesh.material.depthWrite = !needsTransparency;
+  // Whole-structure transparency (opacity slider) keeps the legacy single
+  // blended pass: every atom blends, so per-pair order errors are much less
+  // visible than losing the see-through-everything look.
+  const globalTransparency = baseOpacity < 0.999;
+  const splitPasses = !globalTransparency && hasTransparentInstances;
+  mesh.material.transparent = globalTransparency;
+  mesh.material.depthWrite = !globalTransparency;
+  setAtomAlphaPass(mesh.material, splitPasses ? 1 : 0);
   mesh.material.needsUpdate = true;
+
+  const overlay = splitPasses ? ensureTransparentAtomsOverlay(mesh) : mesh.userData.transparentOverlay;
+  if (overlay) {
+    overlay.visible = splitPasses;
+    overlay.material.opacity = baseOpacity;
+  }
 }
 
 export function updateSingleAtomDiameter(index, element, scale = 1) {
