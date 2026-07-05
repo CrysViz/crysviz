@@ -74,6 +74,9 @@ export function applySceneFromCSS() {
   if (sceneBg && app?.scene) {
     app.scene.background = new THREE.Color(sceneBg);
     general.defaultBackgroundColor = sceneBg;
+    // Keep the Visual window's background swatch in sync with theme/reset.
+    const swatch = document.getElementById('backgroundSwatch');
+    if (swatch) swatch.style.background = '#' + app.scene.background.getHexString();
   }
   if (latticeColor) {
     general.currentLatticeColor = latticeColor;

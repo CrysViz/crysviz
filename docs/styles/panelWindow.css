@@ -16,6 +16,13 @@
   font-size: calc(1rem * var(--cv-font-scale, 1));
 }
 
+/* Panel buttons don't inherit font-size (form-control UA reset) and are set at
+   assorted px sizes across windows — pin them to one scalable size so the font
+   scale reaches the Features/Visual/… button texts uniformly. */
+.cv-panel-body button {
+  font-size: calc(13px * var(--cv-font-scale, 1));
+}
+
 /* Feature panels are hidden until a structure loads; the attribute must win
    over .cv-floating's display:flex. */
 .cv-panel[hidden] {

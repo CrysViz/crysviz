@@ -40,15 +40,49 @@ const H = require('../harness');
   H.check('Draw Bonds stub button is gone (Histograms section still present)',
     bonds.drawBtn === false && bonds.histogram === true, JSON.stringify(bonds));
 
-  // --- (d) Overall font scale sets --cv-font-scale ---------------------------------
-  const fs = await page.evaluate(async () => {
+  // --- (d) Overall font scale actually resizes headlines, labels, buttons ----------
+  const fscale = await page.evaluate(async () => {
+    const { revealPanel } = await import('./ui/panels/PanelManager.js');
+    try { revealPanel('visual'); revealPanel('settings'); } catch { /* */ }
     const m = await import('./ui/FontScaleModule.js');
-    m.applyFontScale(1.4);
-    const applied = getComputedStyle(document.documentElement).getPropertyValue('--cv-font-scale').trim();
+    const px = (sel) => {
+      const el = document.querySelector(sel);
+      return el ? parseFloat(getComputedStyle(el).fontSize) : null;
+    };
+    const measure = () => ({
+      headline: px('.cv-panel-body .panel-headline'),
+      label: px('.cv-panel-body label'),
+      button: px('.cv-panel-body button'),
+    });
+    m.applyFontScale(1); const at1 = measure();
+    m.applyFontScale(2); const at2 = measure();
     m.applyFontScale(1); // restore
-    return { applied };
+    return { at1, at2 };
   });
-  H.check('font scale writes --cv-font-scale', fs.applied === '1.4', JSON.stringify(fs));
+  const scaled = (a, b) => a && b && Math.abs(b - a * 2) < 0.6;
+  H.check('font scale resizes headline, label, and button text (2x)',
+    scaled(fscale.at1.headline, fscale.at2.headline)
+      && scaled(fscale.at1.label, fscale.at2.label)
+      && scaled(fscale.at1.button, fscale.at2.button),
+    JSON.stringify(fscale));
+
+  // --- (f) Visual background swatch mirrors the scene background --------------------
+  const swatch = await page.evaluate(async () => {
+    const { revealPanel } = await import('./ui/panels/PanelManager.js');
+    try { revealPanel('visual'); } catch { /* */ }
+    const THREE = await import('./external/three/three.module.js');
+    const { app } = await import('./state/store.js');
+    const { syncBackgroundSwatch } = await import('./ui/BackgroundPicker.js');
+    const el = document.getElementById('backgroundSwatch');
+    if (!el) return { present: false };
+    // Simulate a background change made elsewhere (e.g. the canvas dot picker).
+    app.scene.background = new THREE.Color('#123456');
+    syncBackgroundSwatch();
+    const bg = getComputedStyle(el).backgroundColor;
+    return { present: true, bg };
+  });
+  H.check('background swatch tracks scene background changes made elsewhere',
+    swatch.present === true && swatch.bg === 'rgb(18, 52, 86)', JSON.stringify(swatch));
 
   // --- (a) .crysviz whole-trajectory round-trip ------------------------------------
   const TRAJ = [

@@ -24,6 +24,16 @@ export function getContrastingBorder(hex) {
   return lum > 0.5 ? "#333333" : "#ffffff";
 }
 
+/** Repaint the Visual window's background swatch from the current scene
+ *  background, so it mirrors changes made anywhere (canvas dot, Apply, theme,
+ *  Reset) — not just when the swatch itself was clicked. */
+export function syncBackgroundSwatch() {
+  const swatch = document.getElementById('backgroundSwatch');
+  if (swatch && app?.scene?.background) {
+    swatch.style.background = '#' + app.scene.background.getHexString();
+  }
+}
+
 function openBackgroundColorPicker(dot) {
   document.querySelectorAll(".spin-color-picker").forEach(p => p.remove());
   let currentHex = app.scene.background ? "#" + app.scene.background.getHexString() : "#090A09";
@@ -45,10 +55,12 @@ function openBackgroundColorPicker(dot) {
     selectedHex = hex;
     const contrastColor = getContrastingBorder(selectedHex);
     dot.style.border = `2px solid ${contrastColor}`;
-    if (dot.dataset.bgSwatch) dot.style.background = hex;
     general.currentLatticeColor = contrastColor;
     updateLattice(contrastColor);
     if (app?.scene) app.scene.background = new THREE.Color(hex);
+    // Mirror the change onto the Visual swatch regardless of which dot opened
+    // the picker (canvas dot or the swatch itself).
+    syncBackgroundSwatch();
   });
 
   const buttonRow = document.createElement("div");
@@ -101,6 +113,7 @@ function openBackgroundColorPicker(dot) {
     e.stopPropagation();
     dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`;
     if (app?.scene) app.scene.background = new THREE.Color(selectedHex);
+    syncBackgroundSwatch();
     closePicker();
   });
 

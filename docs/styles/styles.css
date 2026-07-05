@@ -613,7 +613,10 @@ label {
   display: block;
   margin: 15px 0 8px 0;
   color: #ccc;
-  font-size: 14px;
+  /* Multiplied by the Overall font scale (Settings). This is the single source
+     for label sizing, so it carries section headlines (.panel-headline) and
+     slider labels along with it. */
+  font-size: calc(14px * var(--cv-font-scale, 1));
   font-weight: 500;
 }
 
