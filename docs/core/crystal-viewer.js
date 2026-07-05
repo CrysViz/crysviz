@@ -60,6 +60,7 @@ import {renderComposition} from '../ui/StructureInfoPanel/General.js';
 import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
 
 import {addSavePanel} from '../ui/SavePanel.js'
+import {initImageExportPanel} from '../ui/ImageExportPanel.js'
 import {addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from '../ui/InfoPanel.js'
 
 // NOTE: share-related import utils still need to move into the "share" module.
@@ -419,6 +420,7 @@ function initUIPanels() {
   registerDefaultPanels();
   addBackendModeSwitch();
   addSavePanel();
+  initImageExportPanel();
   addAtomVacuumPanel();
   addStorageInfoPanel();
   addUploadInfoPanel();

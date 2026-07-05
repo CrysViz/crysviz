@@ -129,9 +129,13 @@ export function initRenderer(){
   disposeRendererInstance(app.renderer, view);
   app.renderer = null;
   try {
+    // alpha:true gives the drawing buffer an alpha channel. On screen nothing
+    // changes (an opaque scene.background Color still fills the frame); it lets
+    // the PNG export (render/ImageExportModule.js) capture a transparent frame
+    // by temporarily setting scene.background = null.
     app.renderer = createRendererWithFallback(
-      { antialias: true, powerPreference: 'high-performance' },
-      { antialias: false, powerPreference: 'default' }
+      { antialias: true, alpha: true, powerPreference: 'high-performance' },
+      { antialias: false, alpha: true, powerPreference: 'default' }
     );
   } catch (_) {
     throw new Error('WebGL could not be initialized. Close GPU-heavy tabs or restart the browser, then reload.');

@@ -46,15 +46,15 @@ export function poscartoFile() {
 
 
 /** Base name of the selected structure's file (extension stripped). */
-function currentBaseName() {
+export function currentBaseName() {
   const rawName = fileBrowser.selectedRow
     ? JSON.parse(fileBrowser.selectedRow.dataset.obj).name
     : 'structure';
   return rawName.replace(/\.[^.]+$/, '');
 }
 
-function downloadTextFile(fileName, content) {
-  const blob = new Blob([content], { type: 'text/plain' });
+/** Trigger a browser download of a Blob under the given file name. */
+export function downloadBlob(fileName, blob) {
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = fileName;
@@ -62,6 +62,10 @@ function downloadTextFile(fileName, content) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(link.href);
+}
+
+function downloadTextFile(fileName, content) {
+  downloadBlob(fileName, new Blob([content], { type: 'text/plain' }));
 }
 
 export function addSavePanel() {
