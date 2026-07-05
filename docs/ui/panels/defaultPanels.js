@@ -61,8 +61,8 @@ function stashStaticRows(inputIds) {
 }
 
 // (The size sliders and the cell/axes visibility toggles live in the Visual
-// window; feature windows keep only their feature-specific rows.)
-const BOND_ROWS = ['PBCBondToggle'];
+// window; feature windows keep only their feature-specific rows. The Neighbour
+// Bonds toggle lives in the Features window, next to Show Bonds.)
 const CELL_ROWS = ['showPeriodic'];
 
 // ---- Features window toggle rows ---------------------------------------------
@@ -110,6 +110,9 @@ function buildFeaturesBody(body) {
 
   const showBonds = detachStaticRow('showBonds');
   if (showBonds) group.appendChild(showBonds);
+
+  const neighbourBonds = detachStaticRow('PBCBondToggle');
+  if (neighbourBonds) group.appendChild(neighbourBonds);
 
   // Turning a master toggle on re-greys/un-greys its feature panel; on ON it
   // also reveals that panel (restores a shrunk title bar + expands the body)
@@ -376,10 +379,8 @@ export function registerDefaultPanels() {
     available() { return !!fileBrowser.selectedStructure && general.showBonds !== false; },
     buildContent(body) {
       addBondPanel(body.id);
-      adoptStaticRows(body, BOND_ROWS);
     },
     onDestroyContent() {
-      stashStaticRows(BOND_ROWS);
       removeBondPanel();
       removeHistogramPanel();
     },

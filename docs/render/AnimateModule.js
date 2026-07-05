@@ -36,8 +36,11 @@ function wireRenderOnDemand() {
   ['pointerup', 'click', 'input', 'change', 'keydown'].forEach((type) =>
     document.addEventListener(type, requestRender, { capture: true, passive: true }));
 
-  // Hover effects (tooltip, atom/bond highlight) react to moves over the canvas.
-  app.renderer?.domElement?.addEventListener('pointermove', requestRender, { passive: true });
+  // Deliberately NO pointermove listener: mice emit micro-move events almost
+  // continuously while the cursor rests on the canvas, which would keep the
+  // renderer hot. Plain hover only drives the DOM tooltip (no scene change);
+  // camera drags are covered by the controls 'change' event. A future
+  // hover-reactive *scene* effect must call requestRender() itself.
 
   window.addEventListener('resize', requestRender);
   if (window.matchMedia) {
@@ -136,7 +139,7 @@ export function animation_update(time = 0) {
   const delta = time - lastTime;
   if (delta >= 1000) { // every 1 second
     fps = (frames / delta) * 1000;
-    console.log('FPS:', Math.round(fps));
+    console.debug('FPS:', Math.round(fps));
     frames = 0;
     lastTime = time;
   }

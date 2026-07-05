@@ -89,7 +89,8 @@ async function expandPanel(page, id) {
     await page.evaluate(() => !document.getElementById('bondControls') && !document.getElementById('bondLengthPanel')));
   H.check('Bonds: no collapsible flip-outs left',
     await page.evaluate(() => !document.querySelector('#cvPanelBody-bonds .bond-toggle')));
-  H.check('Bonds keeps Neighbour Bonds row', await inBody(page, 'bonds', 'PBCBondToggle'));
+  H.check('Neighbour Bonds moved to Features',
+    (await inBody(page, 'features', 'PBCBondToggle')) && !(await inBody(page, 'bonds', 'PBCBondToggle')));
   H.check('Bond Diameter moved out of Bonds', !(await inBody(page, 'bonds', 'bondWidth')));
 
   // --- Histogram window: normal closable floating window -----------------------
