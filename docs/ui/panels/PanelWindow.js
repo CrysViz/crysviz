@@ -247,7 +247,7 @@ export class PanelWindow {
     this.docked = false;
     this.el.classList.add('cv-floating');
     this.el.classList.remove('cv-docked');
-    this.dockBtn.textContent = '⭰';
+    this.dockBtn.textContent = '⇤';
     this.dockBtn.title = 'Dock into side panel';
     this.applyFloatPosition(pos);
     this.raise();
