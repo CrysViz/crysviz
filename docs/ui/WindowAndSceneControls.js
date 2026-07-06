@@ -225,6 +225,13 @@ export function resizeRenderer(orthographicFrustumSize) {
   app.renderer.setSize(w, h);
   app.pipeline?.setSize(w, h);
 
+  // Fat-line materials (polyhedra edges) carry a screen-resolution uniform.
+  if (groups.polyhedraGroup) {
+    groups.polyhedraGroup.traverse((obj) => {
+      if (obj.material?.isLineMaterial) obj.material.resolution.set(w, h);
+    });
+  }
+
   if (app.labelRenderer) {
     app.labelRenderer.setSize(w, h);
   }

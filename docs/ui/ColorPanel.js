@@ -6,7 +6,7 @@ import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getVi
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
-import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
+import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth, setPolyEdgeWidth } from '../render/index.js'
 import { listPipelines, setActivePipeline, requestRender } from '../render/index.js'
 
 
@@ -455,6 +455,28 @@ export function addColorPanel(target = "colorContainer") {
   hullControls.appendChild(hullSlider);
   hullControls.appendChild(hullPolyLabel);
   hullControls.appendChild(hullPolySlider);
+
+  // Hull outlines are opaque inverted-hull shells; on a transparent object
+  // they would black out everything behind it, so transparent objects are
+  // skipped. Thicker polyhedra edges give a practically similar look.
+  const hullNote = createElement("div", { id: "celHullTransparencyNote" }, {
+    fontSize: "11px", opacity: "0.75", textAlign: "center",
+    margin: "8px 4px 4px", lineHeight: "1.3",
+  }, "Note: transparent objects do not get outlines");
+  hullControls.appendChild(hullNote);
+
+  const polyEdgeLabel = createElement("label", { for: "polyEdgeWidth" },
+    { ...sliderLabelStyle, margin: "8px 0 5px" }, "Polyhedra edge thickness");
+  const polyEdgeSlider = createElement("input", {
+    type: "range", id: "polyEdgeWidth", min: "1", max: "10", step: "0.5",
+    value: String(general.polyEdgeWidth),
+  }, sliderStyle);
+  polyEdgeSlider.addEventListener("input", () => {
+    setPolyEdgeWidth(parseFloat(polyEdgeSlider.value));
+  });
+  hullControls.appendChild(polyEdgeLabel);
+  hullControls.appendChild(polyEdgeSlider);
+
   outlineBlock.appendChild(hullControls);
 
   content.appendChild(outlineBlock);

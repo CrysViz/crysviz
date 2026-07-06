@@ -5,7 +5,7 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
-import {createStyledMaterial, addCelOutline} from './MaterialStyles.js'
+import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression} from './MaterialStyles.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
@@ -563,8 +563,9 @@ export function createBondsMesh(bondCount) {
   mesh.layers.enable(CEL_OUTLINE_LAYER);
 
   // Hull mode: culled bonds are zero-scaled, which the hull follows via the
-  // shared instanceMatrix — no discard variant needed.
-  if (general.renderStyle === 'cel' && general.celOutlineMode === 'hull') addCelOutline(mesh);
+  // shared instanceMatrix. The opacity-discard variant drops the hull on
+  // transparent bond halves (transparent objects get no outlines).
+  if (general.renderStyle === 'cel' && general.celOutlineMode === 'hull') addCelOutline(mesh, { opacityDiscard: true });
 
   return mesh;
 }
@@ -700,6 +701,7 @@ function syncBondMaterialTransparency(baseOpacity = 1.0) {
   applyTransparency(mesh.material, {
     kind: 'bonds', opacity: baseOpacity, needsTransparency, perInstanceOpacity: true, mesh,
   });
+  syncCelHullOpacitySuppression(mesh, baseOpacity);
 }
 
 export function updateSingleBondPosition(index, bond) {

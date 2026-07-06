@@ -7,7 +7,7 @@ import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 import {runPeriodicWrapped} from './LatticeModule.js'
 import {getAtomColor} from '../utils/ColorModule.js'
 import {finishAtomsMesh} from './AtomsFracUpdateModule.js'
-import {createStyledMaterial} from './MaterialStyles.js'
+import {createStyledMaterial, syncCelHullOpacitySuppression} from './MaterialStyles.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
 
@@ -140,6 +140,7 @@ export function updateSecondAtoms(structure, opacity = 1.0) {
  
   mesh.material.opacity = opacity;
   applyTransparency(mesh.material, { kind: 'compAtoms', opacity, mesh });
+  syncCelHullOpacitySuppression(mesh, opacity);
 
   for (let i = 0; i < groups.atomsMesh.count; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;

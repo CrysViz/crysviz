@@ -145,6 +145,7 @@ export function captureState({ includeFrames = false } = {}) {
       depthPeelLayers: general.depthPeelLayers,
       celOutlineWidth: general.celOutlineWidth,
       celHullWidth: general.celHullWidth,
+      polyEdgeWidth: general.polyEdgeWidth,
       atomsColor: general.atomsColor,
       bondsColor: general.bondsColor,
       background: app.scene?.background ? '#' + app.scene.background.getHexString() : null,
@@ -315,6 +316,10 @@ function applyStyleSettings(style) {
   }
   if (style.celOutlineWidth != null) general.celOutlineWidth = style.celOutlineWidth;
   if (style.celHullWidth != null) general.celHullWidth = style.celHullWidth;
+  if (style.polyEdgeWidth != null) {
+    general.polyEdgeWidth = style.polyEdgeWidth;
+    setSelect('polyEdgeWidth', style.polyEdgeWidth);
+  }
   if (style.atomsColor) { general.atomsColor = style.atomsColor; setSelect('atomsMenu', style.atomsColor); }
   if (style.bondsColor) { general.bondsColor = style.bondsColor; setSelect('bondsMenu', style.bondsColor); }
   if (style.background && app?.scene) {

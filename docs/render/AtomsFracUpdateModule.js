@@ -5,7 +5,7 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
 import { getCutPlaneMaskSign } from '../model/Plane.js';
-import {createStyledMaterial, addCelOutline, MAX_CUT_PLANES} from './MaterialStyles.js'
+import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression, MAX_CUT_PLANES} from './MaterialStyles.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import {runPeriodicWrapped} from './LatticeModule.js'
 
@@ -540,6 +540,7 @@ function syncAtomMaterialTransparency(baseOpacity = 1.0) {
   applyTransparency(mesh.material, {
     kind: 'atoms', opacity: baseOpacity, needsTransparency, perInstanceOpacity: true, mesh,
   });
+  syncCelHullOpacitySuppression(mesh, baseOpacity);
 }
 
 export function updateSingleAtomDiameter(index, element, scale = 1) {

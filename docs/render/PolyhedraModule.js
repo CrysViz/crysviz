@@ -17,6 +17,9 @@ import { atomicRadii } from '../defaults/radii_defaults.js'
 import { electronegativity } from '../defaults/electronegativity_defaults.js'
 import { colorHexToCss } from '../utils/ColorModule.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js'
+import { LineSegments2 } from '../external/three/LineSegments2.js'
+import { LineSegmentsGeometry } from '../external/three/LineSegmentsGeometry.js'
+import { LineMaterial } from '../external/three/LineMaterial.js'
 import { computePolyhedraWasm } from '../compiled/polyhedraWasm.js'
 import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedraWorkerPool.js'
 import { rebuildAtoms } from '../render/AtomsFracUpdateModule.js'
@@ -1149,10 +1152,24 @@ export function renderPolyhedra(structure) {
 
     // Per-polyhedron edge material so edge color/alpha are styleable via the
     // same store precedence as the faces (disposeGroup disposes it with the rest).
+    // Edges as "fat lines" (LineSegments2) so their thickness is adjustable
+    // (plain LineSegments linewidth is capped at 1px in WebGL). Pixel units:
+    // polyEdgeWidth = 1 reproduces the classic hairline look.
     const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
-    const edgeMat = new THREE.LineBasicMaterial({ color: style.edgeColor, opacity: style.edgeOpacity });
+    const edgeGeom = new LineSegmentsGeometry().setPositions(
+      Array.from(/** @type {any} */ (egeom.attributes.position).array));
+    egeom.dispose();
+    const edgeMat = new LineMaterial({
+      color: style.edgeColor, opacity: style.edgeOpacity,
+      linewidth: general.polyEdgeWidth ?? 1,
+    });
+    if (app.renderer) {
+      const size = app.renderer.getSize(new THREE.Vector2());
+      edgeMat.resolution.set(size.x, size.y);
+    }
     applyTransparency(edgeMat, { kind: 'polyhedraEdge', opacity: style.edgeOpacity });
-    const edgeLines = new THREE.LineSegments(egeom, edgeMat);
+    const edgeLines = new LineSegments2(edgeGeom, edgeMat);
+    edgeLines.raycast = () => {}; // never intercept picking
     edgeLines.userData.type = 'polyhedron-edges';
     mesh.add(edgeLines);
 
@@ -1199,6 +1216,23 @@ export function updatePolyhedraColors() {
       edge.material.opacity = style.edgeOpacity;
       applyTransparency(edge.material, { kind: 'polyhedraEdge', opacity: style.edgeOpacity, mesh: edge });
     }
+    // Cel hull outlines are suppressed on transparent objects (the opaque
+    // inverted-hull shell would black out the background behind a transparent
+    // polyhedron) — keep the shell's visibility in sync with alpha edits.
+    const hull = mesh.children.find((c) => c.name === 'celOutline');
+    if (hull) hull.visible = general.celHullPolyWidth > 0 && style.opacity >= 0.999;
+  }
+}
+
+/** Live-update the polyhedra edge thickness (fat-line pixels; 1 = hairline). */
+export function setPolyEdgeWidth(width) {
+  general.polyEdgeWidth = width;
+  if (groups.polyhedraGroup) {
+    groups.polyhedraGroup.traverse((obj) => {
+      if (obj.userData?.type === 'polyhedron-edges' && obj.material) {
+        obj.material.linewidth = width;
+      }
+    });
   }
 }
 

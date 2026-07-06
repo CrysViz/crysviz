@@ -41,7 +41,7 @@ export {
 
 export {
   updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory,
-  resolvePolyhedronStyle, polyhedronGroupKey,
+  resolvePolyhedronStyle, polyhedronGroupKey, setPolyEdgeWidth,
 } from './PolyhedraModule.js';
 
 export {

@@ -14,4 +14,6 @@ uses for all 3D rendering.
 - Add-ons (from three.js `examples/jsm/`): `BufferGeometryUtils.js`,
   `ConvexGeometry.js`, `ConvexHull.js`, `CSS2DRenderer.js`, `Lut.js`,
   `TrackballControls.js`, `Pass.js`, `ShaderPass.js` (postprocessing base
-  classes used by the vendored `three-wboit`).
+  classes used by the vendored `three-wboit`), `LineSegments2.js`,
+  `LineSegmentsGeometry.js`, `LineMaterial.js` ("fat lines" used for the
+  adjustable-thickness polyhedra edges).

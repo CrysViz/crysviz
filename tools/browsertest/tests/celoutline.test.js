@@ -69,17 +69,50 @@ const H = require('../harness');
     return (atomHull && bondHull && polyHulls > 0) ? { atomHull, bondHull, polyHulls } : null;
   });
   H.check('hull mode: outline hulls created', !!hulls, JSON.stringify(hulls));
+  // Measure at a wide hull width for a robust signal (only atoms/bonds hulls
+  // contribute — the default polyhedra are transparent and get no hulls).
+  await H.setSlider(page, 'celHullWidth', 0.2);
   await page.waitForTimeout(800);
   const darkHull = H.darkFraction(await H.shotCanvas(page, 'cel_outline_hull'));
+  await H.setSlider(page, 'celHullWidth', 0.025); // restore default
   H.check('hull mode: outlines draw', darkHull > dark0 * 1.3 && darkHull - dark0 > 0.002,
     `off=${dark0.toFixed(4)} hull=${darkHull.toFixed(4)}`);
 
-  // Hull outlines under the staged pipelines: the polyhedron hull shells are
-  // OPAQUE CHILDREN of the TRANSPARENT face meshes — visibility-based stage
-  // switching hid them in every stage (parent hidden in the opaque stage,
-  // shell hidden in the transparent stages). The "Polyhedra Outline" width
-  // slider drives ONLY the poly hulls, so dark coverage must respond to it.
-  for (const id of ['wboit', 'depthpeel']) {
+  // Transparent objects get NO hull outlines (the opaque inverted-hull shell
+  // would black out everything behind them): with the default semi-transparent
+  // polyhedra, the "Polyhedra Outline" slider must have no visible effect.
+  await H.setSlider(page, 'celHullPolyWidth', 0);
+  await page.waitForTimeout(600);
+  const transpOff = H.darkFraction(await H.shotCanvas(page, 'cel_hull_transp_off'));
+  await H.setSlider(page, 'celHullPolyWidth', 0.2);
+  await page.waitForTimeout(600);
+  const transpOn = H.darkFraction(await H.shotCanvas(page, 'cel_hull_transp_on'));
+  H.check('hull mode: transparent polyhedra get no hull outline (slider inert)',
+    Math.abs(transpOn - transpOff) < 0.0015,
+    `off=${transpOff.toFixed(4)} on=${transpOn.toFixed(4)}`);
+
+  // The note explaining this + the edge-thickness substitute exist in the UI.
+  H.check('hull controls carry the transparency note and edge-thickness slider',
+    await page.evaluate(() =>
+      !!document.getElementById('celHullTransparencyNote')
+      && !!document.getElementById('polyEdgeWidth')));
+
+  // Opaque (alpha=1) polyhedra DO get hull outlines — including under the
+  // staged pipelines, where the shells are opaque children of the (policy-
+  // transparent) face meshes and rely on layer-mask stage gating.
+  await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const { updatePolyhedraColors, requestRender } = await import('./render/index.js');
+    const s = fileBrowser.selectedStructure;
+    s.polyhedraCategoryStyles ??= {};
+    for (const mesh of groups.polyhedraGroup.children) {
+      if (mesh.userData?.type !== 'polyhedron') continue;
+      s.polyhedraCategoryStyles[mesh.userData.catKey] = { alpha: 1.0, edgeColor: '#000000' };
+    }
+    updatePolyhedraColors();
+    requestRender();
+  });
+  for (const id of ['forward', 'wboit', 'depthpeel']) {
     await page.evaluate(async (id) => {
       const { setActivePipeline } = await import('./render/index.js');
       setActivePipeline(id);
@@ -90,7 +123,7 @@ const H = require('../harness');
     await H.setSlider(page, 'celHullPolyWidth', 0.2);
     await page.waitForTimeout(600);
     const polyOn = H.darkFraction(await H.shotCanvas(page, `cel_hull_${id}_on`));
-    H.check(`hull mode under ${id}: polyhedra hull outlines draw`,
+    H.check(`hull mode under ${id}: opaque polyhedra hull outlines draw`,
       polyOn - polyOff > 0.002,
       `off=${polyOff.toFixed(4)} on=${polyOn.toFixed(4)}`);
   }
@@ -98,6 +131,20 @@ const H = require('../harness');
     const { setActivePipeline } = await import('./render/index.js');
     setActivePipeline('forward');
   });
+
+  // "Polyhedra edge thickness" (fat lines): dark coverage grows with width
+  // (edges were restyled black above; hulls off to isolate the edges).
+  await H.setSlider(page, 'celHullPolyWidth', 0);
+  await H.setSlider(page, 'polyEdgeWidth', 1);
+  await page.waitForTimeout(600);
+  const edgeThin = H.darkFraction(await H.shotCanvas(page, 'cel_edges_thin'));
+  await H.setSlider(page, 'polyEdgeWidth', 8);
+  await page.waitForTimeout(600);
+  const edgeThick = H.darkFraction(await H.shotCanvas(page, 'cel_edges_thick'));
+  H.check('polyhedra edge thickness slider fattens the edges',
+    edgeThick - edgeThin > 0.002,
+    `thin=${edgeThin.toFixed(4)} thick=${edgeThick.toFixed(4)}`);
+  await H.setSlider(page, 'polyEdgeWidth', 1);
   await H.setSlider(page, 'celHullPolyWidth', 0.025); // restore default
 
   // Back to screen mode: hulls removed on rebuild.
