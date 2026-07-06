@@ -112,11 +112,13 @@ export function updateAtomByUUID(mesh, uuid, newPosition, newColor) {
 
 export function rebuildAtoms(opacity) {
   if (groups.atomsMesh) {
-    // A pipeline-owned transparent-instance overlay (child mesh at
-    // userData.transparentOverlay) goes down with the mesh; dispose its own
-    // resources here (its geometry may be shared with the main mesh).
+    // A pipeline-owned transparent-instance overlay (userData.transparentOverlay)
+    // goes down with the mesh; remove it from its parent (it may be a scene-root
+    // sibling rather than a child — the WBOIT pipeline parents it to the scene)
+    // and dispose its own resources (its geometry may be shared with the mesh).
     const overlay = groups.atomsMesh.userData.transparentOverlay;
     if (overlay) {
+      overlay.parent?.remove(overlay);
       if (overlay.geometry !== groups.atomsMesh.geometry) overlay.geometry.dispose();
       overlay.material.dispose();
     }
@@ -278,7 +280,7 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
 // capability that splits instances by their effective alpha: 0 = draw all
 // (single-pass; the forward pipeline never changes it), 1 = opaque instances
 // only, 2 = transparent instances only. Pipelines drive it via
-// setAtomAlphaPass; see render/pipeline/SplitAtomsPipeline.js.
+// setAlphaPass (render/MaterialStyles.js); see render/pipeline/SplitAtomsPipeline.js.
 export function createAtomsMaterial() {
   const atomVisSettings = getAtomVisSettings();
   const material = createStyledMaterial({
@@ -371,14 +373,6 @@ export function createAtomsMaterial() {
     applyAtomCutPlaneUniforms(material);
   };
   return material;
-}
-
-/** Set which uAlphaPass an atoms material draws (0 all / 1 opaque / 2
- *  transparent instances) — works before and after shader compile. */
-export function setAtomAlphaPass(material, pass) {
-  material.userData.alphaPass = pass;
-  const uniform = material.userData.shader?.uniforms?.uAlphaPass;
-  if (uniform) uniform.value = pass;
 }
 
 export function buildAtoms() {

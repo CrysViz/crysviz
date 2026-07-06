@@ -32,8 +32,8 @@ const H = require('../harness');
     Array.isArray(boot.menuOptions) && boot.menuOptions.join(',') === boot.registry.map((p) => p.id).join(',')
       && boot.menuValue === 'forward',
     JSON.stringify({ menu: boot.menuOptions, registry: boot.registry }));
-  H.check('registry holds the three pipelines',
-    boot.registry.map((p) => p.id).join(',') === 'forward,split-atoms,sorted-atoms',
+  H.check('registry holds the four pipelines',
+    boot.registry.map((p) => p.id).join(',') === 'forward,split-atoms,sorted-atoms,wboit',
     JSON.stringify(boot.registry));
   H.check('pipeline dropdown lives in the Visual window', await page.evaluate(() =>
     !!document.getElementById('renderPipelineMenu')?.closest('#cvPanelBody-visual')));
@@ -96,6 +96,33 @@ const H = require('../harness');
   const shot = await H.shotCanvas(page, 'pipeline-forward');
   H.check('pipeline renders a non-empty frame', H.nonUniformFraction(shot) > 0.02,
     `nonUniform=${H.nonUniformFraction(shot).toFixed(4)}`);
+
+  // --- WBOIT: renders and exports through its multi-target pass -------------------
+  const wboit = await page.evaluate(async () => {
+    const { setActivePipeline, captureSceneToPng } = await import('./render/index.js');
+    setActivePipeline('wboit');
+    const blob = await captureSceneToPng({ width: 512, height: 512, margin: 10, transparent: true });
+    const bmp = await createImageBitmap(blob);
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(bmp, 0, 0);
+    const d = ctx.getImageData(0, 0, bmp.width, bmp.height).data;
+    let transparentPx = 0, contentPx = 0;
+    for (let i = 0; i < d.length; i += 4 * 331) {
+      if (d[i + 3] === 0) transparentPx++;
+      if (d[i + 3] > 128) contentPx++;
+    }
+    setActivePipeline('forward');
+    return { type: blob.type, w: bmp.width, transparentPx, contentPx };
+  });
+  await page.waitForTimeout(500);
+  const wboitShot = await H.shotCanvas(page, 'pipeline-after-wboit');
+  H.check('wboit pipeline exports a transparent PNG with content',
+    wboit.type === 'image/png' && wboit.w === 512 && wboit.transparentPx > 0 && wboit.contentPx > 0,
+    JSON.stringify(wboit));
+  H.check('forward still renders after a wboit round-trip',
+    H.nonUniformFraction(wboitShot) > 0.02, `nonUniform=${H.nonUniformFraction(wboitShot).toFixed(4)}`);
 
   // --- Persistence round-trip ------------------------------------------------------
   const persisted = await page.evaluate(async () => {

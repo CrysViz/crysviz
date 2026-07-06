@@ -62,6 +62,16 @@ export function createStyledMaterial(settings = {}) {
   });
 }
 
+/** Set which uAlphaPass an instanced atoms/bonds material draws (0 all /
+ *  1 opaque-only / 2 transparent-only instances) — works before and after
+ *  shader compile. The uniform is declared by the material factories in
+ *  Atoms/BondsFracUpdateModule; pipelines drive it (render/pipeline/). */
+export function setAlphaPass(material, pass) {
+  material.userData.alphaPass = pass;
+  const uniform = material.userData.shader?.uniforms?.uAlphaPass;
+  if (uniform) uniform.value = pass;
+}
+
 // ---- 'hull' outline mode (inverted hull) -------------------------------------
 //
 // A second InstancedMesh per atoms/bonds mesh: same geometry, SHARED

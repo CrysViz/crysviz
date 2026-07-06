@@ -24,7 +24,8 @@
 
 import * as THREE from '../../external/three/three.module.js';
 import { groups } from '../../state/store.js';
-import { createAtomsMaterial, setAtomAlphaPass } from '../AtomsFracUpdateModule.js';
+import { createAtomsMaterial } from '../AtomsFracUpdateModule.js';
+import { setAlphaPass } from '../MaterialStyles.js';
 import { ForwardPipeline } from './ForwardPipeline.js';
 
 export class SplitAtomsPipeline extends ForwardPipeline {
@@ -45,7 +46,7 @@ export class SplitAtomsPipeline extends ForwardPipeline {
     const splitPasses = !globalTransparency && !!spec.needsTransparency;
     material.transparent = globalTransparency;
     material.depthWrite = !globalTransparency;
-    setAtomAlphaPass(material, splitPasses ? 1 : 0);
+    setAlphaPass(material, splitPasses ? 1 : 0);
     material.needsUpdate = true;
 
     const overlay = splitPasses ? this._ensureOverlay(mesh) : mesh.userData.transparentOverlay;
@@ -55,20 +56,35 @@ export class SplitAtomsPipeline extends ForwardPipeline {
     }
   }
 
-  /** Lazily create the transparent-pass overlay child of the atoms mesh. */
-  _ensureOverlay(mesh) {
+  /** Lazily create the transparent-pass overlay for an instanced mesh.
+   *  `makeMaterial` builds a shader-compatible material (atoms by default;
+   *  WboitPipeline reuses this for bonds with createBondsMaterial). */
+  _ensureOverlay(mesh, makeMaterial = createAtomsMaterial) {
     let overlay = mesh.userData.transparentOverlay;
     if (overlay) return overlay;
-    const material = createAtomsMaterial();
+    const material = makeMaterial();
     material.transparent = true;
     material.depthWrite = false;
     material.userData.alphaPass = 2;
+    this._patchOverlayMaterial(material);
     overlay = this._createOverlayMesh(mesh, material);
     overlay.raycast = () => {}; // never intercept picking
-    overlay.name = 'transparentAtomsOverlay';
+    overlay.name = 'transparentInstancesOverlay';
     mesh.userData.transparentOverlay = overlay;
-    mesh.add(overlay);
+    this._attachOverlay(mesh, overlay);
     return overlay;
+  }
+
+  /** Hook: extra treatment of a freshly created overlay material (WBOIT patch). */
+  _patchOverlayMaterial(_material) {}
+
+  /** Hook: where the overlay lives. Default: child of its source mesh, so
+   *  visibility toggles and scene removal carry over for free. (WboitPipeline
+   *  parents it to the scene instead — WboitPass drives its render stages by
+   *  toggling mesh.visible, which would hide a child overlay along with its
+   *  opaque parent.) */
+  _attachOverlay(mesh, overlay) {
+    mesh.add(overlay);
   }
 
   /** Overlay mesh construction — overridden by SortedAtomsPipeline. */
@@ -80,17 +96,22 @@ export class SplitAtomsPipeline extends ForwardPipeline {
     return overlay;
   }
 
-  /** Undo everything this pipeline attached to the atoms mesh, so the next
-   *  pipeline starts from clean forward state. */
+  /** The meshes this pipeline may have attached overlays/alpha passes to. */
+  _overlaySources() {
+    return [groups.atomsMesh].filter(Boolean);
+  }
+
+  /** Undo everything this pipeline attached, so the next pipeline starts from
+   *  clean forward state. */
   dispose() {
-    const mesh = groups.atomsMesh;
-    if (!mesh) return;
-    setAtomAlphaPass(mesh.material, 0);
-    const overlay = mesh.userData.transparentOverlay;
-    if (!overlay) return;
-    mesh.remove(overlay);
-    if (overlay.geometry !== mesh.geometry) overlay.geometry.dispose();
-    overlay.material.dispose();
-    delete mesh.userData.transparentOverlay;
+    for (const mesh of this._overlaySources()) {
+      setAlphaPass(mesh.material, 0);
+      const overlay = mesh.userData.transparentOverlay;
+      if (!overlay) continue;
+      overlay.parent?.remove(overlay);
+      if (overlay.geometry !== mesh.geometry) overlay.geometry.dispose();
+      overlay.material.dispose();
+      delete mesh.userData.transparentOverlay;
+    }
   }
 }

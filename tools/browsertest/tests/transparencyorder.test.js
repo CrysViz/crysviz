@@ -196,6 +196,105 @@ function redCentroid(file) {
     sortedState.overlayVisible && sortedState.overlayOwnBuffers && sortedState.alphaPass === 1,
     JSON.stringify(sortedState));
 
+  // ============================ wboit pipeline ==================================
+  // Order-independent weighted blending (vendored three-wboit). Both atoms are
+  // still transparent from the sorted section.
+  await setPipeline('wboit');
+  await page.waitForTimeout(500);
+  const s5File = await shootFile('transparencyorder-wboit-both');
+  const s5 = sampleDisk(s5File, spot.x, spot.y, R);
+  const s5bg = sampleDisk(s5File, 700, 170, 5); // empty background reference
+  // WBOIT is a weighted average, not compositing: with this scene's shallow
+  // ortho depth range the depth weights saturate, so the honest property is
+  // that BOTH atoms contribute order-independently. Measured ~(254,206,255)
+  // over beige bg. Failure modes excluded: front-red vanished -> blue-dominant
+  // (~156,128,246, r-b=-90); content invisible/washed -> ~= background;
+  // back-blue missing -> baseline red (b~48).
+  const s5DistFromBg = Math.hypot(s5.r - s5bg.r, s5.g - s5bg.g, s5.b - s5bg.b);
+  H.check('wboit: two transparent atoms both contribute to the blend',
+    s5.r > s5.b - 30 && s5.b > s1.b + 100 && s5DistFromBg > 25,
+    JSON.stringify({ s1, s5, s5bg, dist: Math.round(s5DistFromBg) }));
+
+  const wboitState = await page.evaluate(async () => {
+    const { app, groups } = await import('./state/store.js');
+    const { getActivePipeline } = await import('./render/index.js');
+    const mesh = groups.atomsMesh;
+    const overlay = mesh.userData.transparentOverlay;
+    return {
+      mainTransparent: mesh.material.transparent,
+      mainDepthWrite: mesh.material.depthWrite,
+      alphaPass: mesh.material.userData.alphaPass ?? 0,
+      overlayVisible: !!overlay?.visible,
+      overlayInScene: overlay?.parent === app.scene,
+      overlayPatched: overlay?.material?.wboitEnabled === true,
+      needsCpuTriangleSort: getActivePipeline().needsCpuTriangleSort,
+    };
+  });
+  H.check('wboit: split main pass opaque, WBOIT-patched overlay parented to the scene',
+    !wboitState.mainTransparent && wboitState.mainDepthWrite && wboitState.alphaPass === 1
+      && wboitState.overlayVisible && wboitState.overlayInScene && wboitState.overlayPatched
+      && wboitState.needsCpuTriangleSort === false,
+    JSON.stringify(wboitState));
+
+  // Transparent front over opaque back: red persists, blue shows through.
+  await setOpacity(src.back, 1.0);
+  await page.waitForTimeout(500);
+  const s6 = await shoot('transparencyorder-wboit-front');
+  H.check('wboit: transparent front atom blends over the opaque back atom',
+    s6.r > s6.b && s6.b > s1.b + 20, JSON.stringify({ s1, s6 }));
+
+  // Opaque front over transparent back: opaque pass covers fully.
+  await setOpacity(src.front, 1.0);
+  await setOpacity(src.back, 0.5);
+  await page.waitForTimeout(500);
+  const s7 = await shoot('transparencyorder-wboit-back');
+  H.check('wboit: opaque front atom fully covers a transparent back atom',
+    s7.r > s7.b + 50 && s7.b < s1.b + 25, JSON.stringify({ s1, s7 }));
+
+  // Transparent BONDS get the same split treatment under wboit. The staging
+  // hid the bonds mesh — unhide it, since the overlay's visibility follows it.
+  const bondState = await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const { updateSingleBondOpacity, requestRender } = await import('./render/index.js');
+    if (groups.bondsMesh) groups.bondsMesh.visible = true;
+    const bond = fileBrowser.selectedStructure.bonds.find((b) => b.visibleLen > 1e-3);
+    const index = fileBrowser.selectedStructure.bonds.indexOf(bond);
+    bond.alpha = 0.5;
+    updateSingleBondOpacity(index * 2, 0.5);
+    updateSingleBondOpacity(index * 2 + 1, 0.5);
+    requestRender();
+    const mesh = groups.bondsMesh;
+    const overlay = mesh.userData.transparentOverlay;
+    return {
+      index,
+      mainTransparent: mesh.material.transparent,
+      mainDepthWrite: mesh.material.depthWrite,
+      alphaPass: mesh.material.userData.alphaPass ?? 0,
+      overlayVisible: !!overlay?.visible,
+      overlayPatched: overlay?.material?.wboitEnabled === true,
+    };
+  });
+  H.check('wboit: transparent bond splits the bonds mesh with a patched overlay',
+    !bondState.mainTransparent && bondState.mainDepthWrite && bondState.alphaPass === 1
+      && bondState.overlayVisible && bondState.overlayPatched,
+    JSON.stringify(bondState));
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {}); // flush a frame with the bond overlay drawn
+  H.check('wboit: no page errors after bond overlay render', errors.length === 0, errors.join(' | '));
+
+  // Reset the bond and re-enter the both-transparent atom state for the
+  // forward hand-off below.
+  await page.evaluate(async (index) => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const { updateSingleBondOpacity, requestRender } = await import('./render/index.js');
+    fileBrowser.selectedStructure.bonds[index].alpha = 1;
+    updateSingleBondOpacity(index * 2, 1);
+    updateSingleBondOpacity(index * 2 + 1, 1);
+    if (groups.bondsMesh) groups.bondsMesh.visible = false; // re-hide (staging)
+    requestRender();
+  }, bondState.index);
+  await setOpacity(src.front, 0.5);
+
   // ============================ back to forward =================================
   // Dispose must remove the overlay and reset uAlphaPass; forward re-applies
   // its legacy flags from the stamped specs.

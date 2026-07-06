@@ -22,6 +22,7 @@ import { requestRender } from '../AnimateModule.js';
 import { ForwardPipeline } from './ForwardPipeline.js';
 import { SplitAtomsPipeline } from './SplitAtomsPipeline.js';
 import { SortedAtomsPipeline } from './SortedAtomsPipeline.js';
+import { WboitPipeline } from './WboitPipeline.js';
 
 /** @type {Map<string, any>} pipeline id -> class */
 const registry = new Map();
@@ -76,3 +77,4 @@ function reapplyTransparencyToScene(pipeline) {
 registerPipeline(ForwardPipeline);
 registerPipeline(SplitAtomsPipeline);
 registerPipeline(SortedAtomsPipeline);
+registerPipeline(WboitPipeline);

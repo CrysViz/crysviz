@@ -49,3 +49,10 @@ Third-Party Libraries and Attribution:
    - the weights can be found in docs/external/nep_wasm/
    - See docs/external/nep_wasm/LICENSE-GPUMD for the full license text.
 
+5. three-wboit
+   - Repository: https://github.com/stevinz/three-wboit
+   - License: MIT
+   - Copyright: Stephens Nunnally (@stevinz); portions mrdoob and three.js authors, Alexander Rose
+   - See docs/external/three-wboit/LICENSE for the full license text.
+   - Used by the optional "Weighted blended (WBOIT)" rendering pipeline.
+
