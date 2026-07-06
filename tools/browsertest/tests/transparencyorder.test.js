@@ -295,6 +295,54 @@ function redCentroid(file) {
   }, bondState.index);
   await setOpacity(src.front, 0.5);
 
+  // ============================ depthpeel pipeline ==============================
+  // Exact per-pixel compositing (adapted gkjohnson demo) — must meet the same
+  // STRICT expectations as the sorted pipeline, since peeling composites truly
+  // back-to-front. Entering with both atoms transparent.
+  await setPipeline('depthpeel');
+  await page.waitForTimeout(500);
+  const s8 = await shoot('transparencyorder-depthpeel-both');
+  H.check('depthpeel: two transparent atoms composite back-to-front exactly (red dominates)',
+    s8.r > s8.b + 50 && s8.b > s1.b + 20, JSON.stringify({ s1, s8 }));
+
+  const peelState = await page.evaluate(async () => {
+    const { app, groups } = await import('./state/store.js');
+    const { getActivePipeline } = await import('./render/index.js');
+    const mesh = groups.atomsMesh;
+    const overlay = mesh.userData.transparentOverlay;
+    return {
+      alphaPass: mesh.material.userData.alphaPass ?? 0,
+      overlayVisible: !!overlay?.visible,
+      overlayInScene: overlay?.parent === app.scene,
+      overlayPeelPatched: overlay?.material?.depthPeelEnabled === true,
+      needsCpuTriangleSort: getActivePipeline().needsCpuTriangleSort,
+    };
+  });
+  H.check('depthpeel: split main pass with a peel-patched scene-root overlay',
+    peelState.alphaPass === 1 && peelState.overlayVisible && peelState.overlayInScene
+      && peelState.overlayPeelPatched && peelState.needsCpuTriangleSort === false,
+    JSON.stringify(peelState));
+
+  // Transparent front over opaque back — expect the exact split-pipeline blend.
+  await setOpacity(src.back, 1.0);
+  await page.waitForTimeout(500);
+  const s9 = await shoot('transparencyorder-depthpeel-front');
+  H.check('depthpeel: transparent front atom blends over the opaque back atom (blue rises)',
+    s9.b > s1.b + 30, JSON.stringify({ s1, s9 }));
+  H.check('depthpeel: transparent front atom stays in front (red persists)',
+    s9.r > s9.b - 15 && s9.r > s1.b + 30, JSON.stringify({ s1, s9 }));
+
+  // Opaque front over transparent back: covered exactly.
+  await setOpacity(src.front, 1.0);
+  await setOpacity(src.back, 0.5);
+  await page.waitForTimeout(500);
+  const s10 = await shoot('transparencyorder-depthpeel-back');
+  H.check('depthpeel: opaque front atom fully covers a transparent back atom',
+    s10.r > s10.b + 50 && s10.b < s1.b + 25, JSON.stringify({ s1, s10 }));
+
+  // Re-enter the both-transparent state for the forward hand-off below.
+  await setOpacity(src.front, 0.5);
+
   // ============================ back to forward =================================
   // Dispose must remove the overlay and reset uAlphaPass; forward re-applies
   // its legacy flags from the stamped specs.

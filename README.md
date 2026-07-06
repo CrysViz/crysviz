@@ -98,3 +98,12 @@ Third-Party Libraries and Attribution:
    - Used by the optional "Weighted blended (WBOIT)" rendering pipeline.
    - License and code can be found in docs/external/three-wboit/
 
+6. three-depthpeeling-demo
+   - Repository: https://github.com/gkjohnson/three-depthpeeling-demo
+   - License: MIT
+   - Copyright: Garrett Johnson
+   - See docs/external/three-depthpeeling/LICENSE for the full license text.
+   - Adapted (not verbatim) for the optional "Depth peeling" rendering pipeline;
+     see docs/external/three-depthpeeling/README.md for the divergences.
+   - License and code can be found in docs/external/three-depthpeeling/
+

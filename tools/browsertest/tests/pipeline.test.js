@@ -32,9 +32,26 @@ const H = require('../harness');
     Array.isArray(boot.menuOptions) && boot.menuOptions.join(',') === boot.registry.map((p) => p.id).join(',')
       && boot.menuValue === 'forward',
     JSON.stringify({ menu: boot.menuOptions, registry: boot.registry }));
-  H.check('registry holds the four pipelines',
-    boot.registry.map((p) => p.id).join(',') === 'forward,split-atoms,sorted-atoms,wboit',
+  H.check('registry holds the five pipelines',
+    boot.registry.map((p) => p.id).join(',') === 'forward,split-atoms,sorted-atoms,wboit,depthpeel',
     JSON.stringify(boot.registry));
+
+  // --- Depth-peel "Peel layers" slider follows the dropdown ----------------------
+  const slider = await page.evaluate(() => {
+    const block = document.getElementById('depthPeelLayersSlider')?.parentElement;
+    const hiddenUnderForward = block ? getComputedStyle(block).display === 'none' : null;
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
+    select.value = 'depthpeel';
+    select.dispatchEvent(new Event('change'));
+    const shownUnderDepthPeel = getComputedStyle(block).display !== 'none';
+    select.value = 'forward';
+    select.dispatchEvent(new Event('change'));
+    const hiddenAgain = getComputedStyle(block).display === 'none';
+    return { hiddenUnderForward, shownUnderDepthPeel, hiddenAgain };
+  });
+  H.check('peel-layers slider only shows for the depthpeel pipeline',
+    slider.hiddenUnderForward === true && slider.shownUnderDepthPeel && slider.hiddenAgain,
+    JSON.stringify(slider));
   H.check('pipeline dropdown lives in the Visual window', await page.evaluate(() =>
     !!document.getElementById('renderPipelineMenu')?.closest('#cvPanelBody-visual')));
 
@@ -97,10 +114,10 @@ const H = require('../harness');
   H.check('pipeline renders a non-empty frame', H.nonUniformFraction(shot) > 0.02,
     `nonUniform=${H.nonUniformFraction(shot).toFixed(4)}`);
 
-  // --- WBOIT: renders and exports through its multi-target pass -------------------
-  const wboit = await page.evaluate(async () => {
+  // --- WBOIT + depth peeling: render and export through their target passes ------
+  const offscreenExport = async (id) => page.evaluate(async (id) => {
     const { setActivePipeline, captureSceneToPng } = await import('./render/index.js');
-    setActivePipeline('wboit');
+    setActivePipeline(id);
     const blob = await captureSceneToPng({ width: 512, height: 512, margin: 10, transparent: true });
     const bmp = await createImageBitmap(blob);
     const c = document.createElement('canvas');
@@ -115,23 +132,31 @@ const H = require('../harness');
     }
     setActivePipeline('forward');
     return { type: blob.type, w: bmp.width, transparentPx, contentPx };
-  });
+  }, id);
+  for (const id of ['wboit', 'depthpeel']) {
+    const res = await offscreenExport(id);
+    H.check(`${id} pipeline exports a transparent PNG with content`,
+      res.type === 'image/png' && res.w === 512 && res.transparentPx > 0 && res.contentPx > 0,
+      JSON.stringify(res));
+  }
   await page.waitForTimeout(500);
-  const wboitShot = await H.shotCanvas(page, 'pipeline-after-wboit');
-  H.check('wboit pipeline exports a transparent PNG with content',
-    wboit.type === 'image/png' && wboit.w === 512 && wboit.transparentPx > 0 && wboit.contentPx > 0,
-    JSON.stringify(wboit));
-  H.check('forward still renders after a wboit round-trip',
-    H.nonUniformFraction(wboitShot) > 0.02, `nonUniform=${H.nonUniformFraction(wboitShot).toFixed(4)}`);
+  const roundTripShot = await H.shotCanvas(page, 'pipeline-after-offscreen');
+  H.check('forward still renders after offscreen-pipeline round-trips',
+    H.nonUniformFraction(roundTripShot) > 0.02, `nonUniform=${H.nonUniformFraction(roundTripShot).toFixed(4)}`);
 
   // --- Persistence round-trip ------------------------------------------------------
   const persisted = await page.evaluate(async () => {
     const { captureState } = await import('./ui/ShareModule.js');
     const state = captureState();
-    return { version: state.version, renderPipeline: state.style.renderPipeline };
+    return {
+      version: state.version,
+      renderPipeline: state.style.renderPipeline,
+      depthPeelLayers: state.style.depthPeelLayers,
+    };
   });
-  H.check('captureState persists the pipeline id (v2.4)',
-    persisted.version === '2.4' && persisted.renderPipeline === 'forward', JSON.stringify(persisted));
+  H.check('captureState persists the pipeline id + peel layers (v2.4)',
+    persisted.version === '2.4' && persisted.renderPipeline === 'forward'
+      && typeof persisted.depthPeelLayers === 'number', JSON.stringify(persisted));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);

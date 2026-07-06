@@ -7,7 +7,7 @@ import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
 import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
-import { listPipelines, setActivePipeline } from '../render/index.js'
+import { listPipelines, setActivePipeline, requestRender } from '../render/index.js'
 
 
 
@@ -357,8 +357,30 @@ export function addColorPanel(target = "colorContainer") {
       value: p.id, text: p.label, selected: general.renderPipeline === p.id,
     })), () => {
       setActivePipeline(renderPipelineMenu.querySelector("select").value);
+      depthPeelBlock.style.display = general.renderPipeline === "depthpeel" ? "block" : "none";
     });
   content.appendChild(renderPipelineMenu);
+
+  // Depth-peeling quality/performance knob: number of peel passes per frame
+  // (transparent surfaces deeper than this many layers are dropped). Shown
+  // only while the depthpeel pipeline is selected.
+  const depthPeelBlock = createElement("div", { class: "menu_block" },
+    { display: general.renderPipeline === "depthpeel" ? "block" : "none" });
+  const depthPeelLabel = createElement("label", { for: "depthPeelLayersSlider" },
+    { display: "block", textAlign: "center", marginBottom: "5px", width: "100%" },
+    `Peel layers: ${general.depthPeelLayers}`);
+  const depthPeelSlider = createElement("input", {
+    type: "range", id: "depthPeelLayersSlider", min: "1", max: "10", step: "1",
+    value: String(general.depthPeelLayers),
+  }, { width: "100%", maxWidth: "120px", margin: "0 auto", display: "block" });
+  depthPeelSlider.addEventListener("input", () => {
+    general.depthPeelLayers = parseInt(depthPeelSlider.value, 10);
+    depthPeelLabel.textContent = `Peel layers: ${general.depthPeelLayers}`;
+    requestRender();
+  });
+  depthPeelBlock.appendChild(depthPeelLabel);
+  depthPeelBlock.appendChild(depthPeelSlider);
+  content.appendChild(depthPeelBlock);
 
   // Cel outline controls: mode selector plus mode-specific width sliders.
   // Both widths are world units. 'Screen space' = post-process with clean

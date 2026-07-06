@@ -142,6 +142,7 @@ export function captureState({ includeFrames = false } = {}) {
     style: {
       renderStyle: general.renderStyle,
       renderPipeline: general.renderPipeline,
+      depthPeelLayers: general.depthPeelLayers,
       celOutlineWidth: general.celOutlineWidth,
       celHullWidth: general.celHullWidth,
       atomsColor: general.atomsColor,
@@ -307,6 +308,10 @@ function applyStyleSettings(style) {
     // Unknown ids fall back to 'forward' inside setActivePipeline.
     setActivePipeline(style.renderPipeline);
     setSelect('renderPipelineMenu', general.renderPipeline);
+  }
+  if (style.depthPeelLayers != null) {
+    general.depthPeelLayers = style.depthPeelLayers;
+    setSelect('depthPeelLayersSlider', style.depthPeelLayers);
   }
   if (style.celOutlineWidth != null) general.celOutlineWidth = style.celOutlineWidth;
   if (style.celHullWidth != null) general.celHullWidth = style.celHullWidth;
@@ -631,6 +636,10 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   // appear; the handler re-renders, which is only paid for cel states.
   if (state.style?.renderStyle === 'cel') {
     document.getElementById('renderStyleMenu')?.dispatchEvent(new Event('change'));
+  }
+  // Depth peeling: same re-fire so the "Peel layers" block becomes visible.
+  if (state.style?.renderPipeline === 'depthpeel') {
+    document.getElementById('renderPipelineMenu')?.dispatchEvent(new Event('change'));
   }
 
   // Camera and measurements need the render to have settled
