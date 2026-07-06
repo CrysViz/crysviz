@@ -42,7 +42,12 @@ async function expandPanel(page, id) {
     const heads = document.querySelectorAll('#cvPanelBody-visual .panel-headline');
     return heads.length === 4 && [...heads].every((h) => h.tagName === 'LABEL');
   }));
-  H.check('Settings keeps the storage switch', await inBody(page, 'settings', 'StorageOptionSwitch'));
+  // The storage-granularity switch is deliberately NOT adopted into Settings
+  // (no wiring yet) but stays in the DOM so it can return later — see
+  // ui/panels/defaultPanels.js buildContent for the settings panel.
+  H.check('storage switch stays out of Settings but in the DOM',
+    !(await inBody(page, 'settings', 'StorageOptionSwitch'))
+      && await page.evaluate(() => !!document.getElementById('StorageOptionSwitch')));
   H.check('Settings keeps the drag toggles', await inBody(page, 'settings', 'dragIntoDockToggle'));
 
   // --- axes gizmo line width slider -------------------------------------------
@@ -172,13 +177,14 @@ async function expandPanel(page, id) {
     const { captureState } = await import('./ui/ShareModule.js');
     return captureState();
   });
-  H.check('captured state has the new visual keys (v2.2)',
-    state.version === '2.2'
+  H.check('captured state has the new visual keys (v2.4)',
+    state.version === '2.4'
       && state.display.latticeLineWidth === 0.06
       && state.display.axesLineWidth === 0.05
       && typeof state.display.bondRadius === 'number'
       && typeof state.display.showAxes === 'boolean'
       && state.style && typeof state.style.renderStyle === 'string'
+      && typeof state.style.renderPipeline === 'string'
       && /^#[0-9a-f]{6}$/.test(state.style.background || ''),
     JSON.stringify({ version: state.version, display: state.display, style: state.style }).slice(0, 300));
   H.check('captured state includes the per-atom size override',

@@ -16,6 +16,7 @@ import { voronoiNeighbours } from '../render/VoronoiNeighbours.js'
 import { atomicRadii } from '../defaults/radii_defaults.js'
 import { electronegativity } from '../defaults/electronegativity_defaults.js'
 import { colorHexToCss } from '../utils/ColorModule.js'
+import { applyTransparency } from '../utils/TransparencyPolicy.js'
 import { computePolyhedraWasm } from '../compiled/polyhedraWasm.js'
 import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedraWorkerPool.js'
 import { rebuildAtoms } from '../render/AtomsFracUpdateModule.js'
@@ -54,10 +55,8 @@ const FACE_FALLBACK_COLOR = 0x00aaff;
 const EDGE_COLOR = 0x006c99;
 const EDGE_ANGLE = 18;
 const DOUBLE_SIDE = true;
-const DEPTH_WRITE = false;
-const POLY_OFFSET = true;
-const POLY_OFFSET_FACTOR = 1;
-const POLY_OFFSET_UNITS = 1;
+// Transparency-related face flags (depthWrite, polygonOffset) moved to the
+// rendering pipeline policy: 'polyhedraFace' in render/pipeline/ForwardPipeline.js.
 
 // ---------- BEHAVIOR (compute) ----------
 // Cages (uncentered): **includes N = 20 dodecahedra**
@@ -1126,16 +1125,12 @@ export function renderPolyhedra(structure) {
       structure, poly.key, poly.catKey, poly.type, poly.centerIndex, poly.colorElem);
     const mat = new THREE.MeshStandardMaterial({
       color: style.color,
-      transparent: true,
       opacity: style.opacity,
       metalness: 0.0,
       roughness: 1.0,
       side: DOUBLE_SIDE ? THREE.DoubleSide : THREE.FrontSide,
-      depthWrite: DEPTH_WRITE,
-      polygonOffset: POLY_OFFSET,
-      polygonOffsetFactor: POLY_OFFSET ? POLY_OFFSET_FACTOR : 0,
-      polygonOffsetUnits: POLY_OFFSET ? POLY_OFFSET_UNITS : 0,
     });
+    applyTransparency(mat, { kind: 'polyhedraFace', opacity: style.opacity });
     const mesh = new THREE.Mesh(geom, mat);
     mesh.visible = style.visible; // category-level show/hide
     mesh.userData = {
@@ -1155,9 +1150,9 @@ export function renderPolyhedra(structure) {
     // Per-polyhedron edge material so edge color/alpha are styleable via the
     // same store precedence as the faces (disposeGroup disposes it with the rest).
     const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
-    const edgeLines = new THREE.LineSegments(egeom, new THREE.LineBasicMaterial({
-      color: style.edgeColor, transparent: true, opacity: style.edgeOpacity,
-    }));
+    const edgeMat = new THREE.LineBasicMaterial({ color: style.edgeColor, opacity: style.edgeOpacity });
+    applyTransparency(edgeMat, { kind: 'polyhedraEdge', opacity: style.edgeOpacity });
+    const edgeLines = new THREE.LineSegments(egeom, edgeMat);
     edgeLines.userData.type = 'polyhedron-edges';
     mesh.add(edgeLines);
 
@@ -1196,11 +1191,13 @@ export function updatePolyhedraColors() {
       structure, ud.key, ud.catKey, ud.mode, ud.centerSrcIndex, ud.colorElem);
     mesh.material.color.set(style.color);
     mesh.material.opacity = style.opacity;
+    applyTransparency(mesh.material, { kind: 'polyhedraFace', opacity: style.opacity, mesh });
     mesh.visible = style.visible;
     const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
     if (edge?.material) {
       edge.material.color.set(style.edgeColor);
       edge.material.opacity = style.edgeOpacity;
+      applyTransparency(edge.material, { kind: 'polyhedraEdge', opacity: style.edgeOpacity, mesh: edge });
     }
   }
 }

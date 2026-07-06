@@ -10,7 +10,7 @@ import { parsePOSCAR, initializeUIOnLoad } from './StructureInputModule.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
 import { StructureContainer } from '../model/index.js';
 import { updateAtoms } from '../render/index.js';
-import { rebuildBonds, updatePolyhedra } from '../render/index.js';
+import { rebuildBonds, updatePolyhedra, setActivePipeline } from '../render/index.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { revealFeaturePanels } from './panels/PanelManager.js';
@@ -98,7 +98,7 @@ export function captureState({ includeFrames = false } = {}) {
   }
 
   return {
-    version: '2.3',
+    version: '2.4',
     ...(frames ? { frames } : {}),
     structure: {
       elements: [...structure.elements],
@@ -141,6 +141,7 @@ export function captureState({ includeFrames = false } = {}) {
     },
     style: {
       renderStyle: general.renderStyle,
+      renderPipeline: general.renderPipeline,
       celOutlineWidth: general.celOutlineWidth,
       celHullWidth: general.celHullWidth,
       atomsColor: general.atomsColor,
@@ -302,6 +303,11 @@ function applyStyleSettings(style) {
     if (el && val != null) el.value = val;
   };
   if (style.renderStyle) { general.renderStyle = style.renderStyle; setSelect('renderStyleMenu', style.renderStyle); }
+  if (style.renderPipeline) {
+    // Unknown ids fall back to 'forward' inside setActivePipeline.
+    setActivePipeline(style.renderPipeline);
+    setSelect('renderPipelineMenu', general.renderPipeline);
+  }
   if (style.celOutlineWidth != null) general.celOutlineWidth = style.celOutlineWidth;
   if (style.celHullWidth != null) general.celHullWidth = style.celHullWidth;
   if (style.atomsColor) { general.atomsColor = style.atomsColor; setSelect('atomsMenu', style.atomsColor); }

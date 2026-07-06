@@ -1,5 +1,5 @@
 import { fileBrowser, app, general, groups } from '../state/store.js';
-import { updateField, setActiveField } from '../render/index.js';
+import { updateField, setActiveField, requestRender } from '../render/index.js';
 import {
   getIsosurfaceMaterialSettings,
   getIsosurfaceTriangleSortingEnabled,
@@ -378,8 +378,10 @@ function setupFieldControlEvents(fields, container) {
     setIsosurfaceMaterialSettings(settings);
     applyMaterialSettingsToStoredIsosurfaces(groups.isosurfaceGroup, settings);
 
-    if (isAnyStoredIsosurfaceInScene() && app.renderer && app.camera) {
-      app.renderer.render(app.scene, app.camera);
+    if (isAnyStoredIsosurfaceInScene()) {
+      // Render through the pipeline on the next rAF tick instead of an
+      // out-of-band renderer.render() that would bypass it.
+      requestRender();
     }
   }
 

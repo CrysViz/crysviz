@@ -7,6 +7,7 @@ import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
 import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
+import { listPipelines, setActivePipeline } from '../render/index.js'
 
 
 
@@ -348,6 +349,16 @@ export function addColorPanel(target = "colorContainer") {
   });
 
   content.appendChild(renderStyleMenu);
+
+  // Rendering pipeline (how transparent content is drawn). Switching pipelines
+  // re-applies the transparency policy over the live scene — no mesh rebuild.
+  const renderPipelineMenu = createDropdown("renderPipelineMenu", "Rendering pipeline",
+    listPipelines().map((p) => ({
+      value: p.id, text: p.label, selected: general.renderPipeline === p.id,
+    })), () => {
+      setActivePipeline(renderPipelineMenu.querySelector("select").value);
+    });
+  content.appendChild(renderPipelineMenu);
 
   // Cel outline controls: mode selector plus mode-specific width sliders.
   // Both widths are world units. 'Screen space' = post-process with clean

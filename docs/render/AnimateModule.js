@@ -3,7 +3,6 @@ import * as THREE from '../external/three/three.module.js';
 
 import { app, general} from '../state/store.js';
 import {updateLattice,latticeDirsNorm} from './LatticeModule.js'
-import {renderCelOutlinePass} from './CelOutlinePass.js'
 
 import {updateRandomColors} from '../ui/DiscoModule.js'
 
@@ -168,8 +167,9 @@ export function animation_update(time = 0) {
     new THREE.Vector3(3, 4, 3).applyQuaternion(app.camera.quaternion)
   );
 
-  app.renderer.render(app.scene, app.camera);
-  renderCelOutlinePass(app.renderer, app.scene, app.camera);
+  // The active rendering pipeline owns the full frame (passes + composite);
+  // read from app.pipeline (not an import) to avoid a render-layer cycle.
+  app.pipeline?.render({ renderer: app.renderer, scene: app.scene, camera: app.camera });
   if (app.gizmoRenderer && app.gizmoScene && app.gizmoCamera) {
     const invCamQ = app.camera.quaternion.clone().invert();
     const { a, b, c } = latticeDirsNorm();

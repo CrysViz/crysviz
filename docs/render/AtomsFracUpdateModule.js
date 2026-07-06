@@ -10,6 +10,7 @@ import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import {runPeriodicWrapped} from './LatticeModule.js'
 
 import {setAtomColor}  from '../utils/ColorModule.js';
+import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
 
 function normalizePlaneNormal(x = 1, y = 0, z = 0) {
@@ -508,9 +509,9 @@ function syncAtomMaterialTransparency(baseOpacity = 1.0) {
   const hasTransparentInstances = (structure?.atoms?.some((atom) => (atom.getOpacity?.() ?? atom.opacity ?? 1) < 0.999) ?? false)
     || Object.values(structure?.atomImageStyles ?? {}).some((entry) => (entry?.alpha ?? 1) < 0.999);
   const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances;
-  mesh.material.transparent = needsTransparency;
-  mesh.material.depthWrite = !needsTransparency;
-  mesh.material.needsUpdate = true;
+  applyTransparency(mesh.material, {
+    kind: 'atoms', opacity: baseOpacity, needsTransparency, perInstanceOpacity: true, mesh,
+  });
 }
 
 export function updateSingleAtomDiameter(index, element, scale = 1) {

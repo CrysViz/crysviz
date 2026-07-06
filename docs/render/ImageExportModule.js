@@ -21,7 +21,6 @@
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general, measurements } from '../state/store.js';
-import { renderCelOutlinePass } from './CelOutlinePass.js';
 import { latticeDirsNorm } from './LatticeModule.js';
 import { requestRender } from './AnimateModule.js';
 
@@ -32,14 +31,14 @@ function getViewEl() {
   return /** @type {HTMLElement} */ (document.getElementById('view'));
 }
 
-// Render the main scene + cel outline into an offscreen 2D canvas of exactly
-// w x h device pixels. Caller must have set pixelRatio 1, scene.background and
-// clearAlpha for a transparent capture. Reads the drawing buffer synchronously.
+// Render one frame through the active pipeline into an offscreen 2D canvas of
+// exactly w x h device pixels. Caller must have set pixelRatio 1,
+// scene.background and clearAlpha for a transparent capture. Reads the drawing
+// buffer synchronously.
 function renderMainToCanvas(w, h) {
   app.renderer.setSize(w, h, false);
-  if (app.wboitPass) app.wboitPass.setSize(w, h);
-  app.renderer.render(app.scene, app.camera);
-  renderCelOutlinePass(app.renderer, app.scene, app.camera);
+  app.pipeline?.setSize(w, h);
+  app.pipeline?.render({ renderer: app.renderer, scene: app.scene, camera: app.camera });
 
   const canvas = document.createElement('canvas');
   canvas.width = w;
@@ -348,7 +347,7 @@ export async function captureSceneToPng(opts) {
     app.renderer.setClearAlpha(prevClearAlpha);
     app.renderer.setPixelRatio(prevPixelRatio);
     app.renderer.setSize(vw, vh, false);
-    if (app.wboitPass) app.wboitPass.setSize(vw, vh);
+    app.pipeline?.setSize(vw, vh);
 
     const gizmoDiv = document.getElementById('axesGizmo');
     if (app.gizmoRenderer && prevGizmoPR != null) {

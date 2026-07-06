@@ -7,6 +7,7 @@ import {Bond} from '../model/index.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
 import {createStyledMaterial, addCelOutline} from './MaterialStyles.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
+import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
 
 
@@ -668,9 +669,10 @@ function syncBondMaterialTransparency(baseOpacity = 1.0) {
   const mesh = groups.bondsMesh;
   if (!mesh?.material) return;
   const hasTransparentInstances = fileBrowser.selectedStructure?.bonds?.some((bond) => (bond.alpha ?? 1) < 0.999) ?? false;
-  mesh.material.transparent = baseOpacity < 0.999 || hasTransparentInstances;
-  mesh.material.depthWrite = true;
-  mesh.material.needsUpdate = true;
+  const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances;
+  applyTransparency(mesh.material, {
+    kind: 'bonds', opacity: baseOpacity, needsTransparency, perInstanceOpacity: true, mesh,
+  });
 }
 
 export function updateSingleBondPosition(index, bond) {

@@ -8,6 +8,7 @@ import {runPeriodicWrapped} from './LatticeModule.js'
 import {getAtomColor} from '../utils/ColorModule.js'
 import {finishAtomsMesh} from './AtomsFracUpdateModule.js'
 import {createStyledMaterial} from './MaterialStyles.js'
+import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
 
 export function rebuildSecondAtoms(structure, opacity) {
@@ -138,15 +139,7 @@ export function updateSecondAtoms(structure, opacity = 1.0) {
   const mesh = groups.secondAtomsMesh;
  
   mesh.material.opacity = opacity;
-  if (opacity === 1) {
-    mesh.material.transparent = false;
-    mesh.material.depthWrite = true;
-  }
-  else {
-    mesh.material.transparent = true;
-    mesh.material.depthWrite = false;
-  }
-  mesh.material.needsUpdate = true; 
+  applyTransparency(mesh.material, { kind: 'compAtoms', opacity, mesh });
 
   for (let i = 0; i < groups.atomsMesh.count; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;

@@ -37,8 +37,8 @@ const H = require('../harness');
       state,
     };
   });
-  H.check('captureState v2.3 includes all four style-store blocks',
-    captured.version === '2.3' && captured.hasAll,
+  H.check('captureState v2.4 includes all four style-store blocks',
+    captured.version === '2.4' && captured.hasAll,
     JSON.stringify({ version: captured.version, hasAll: captured.hasAll }));
 
   // --- Round-trip: apply the captured state (fresh structure) ---------------------

@@ -47,6 +47,7 @@ export const app = {
   clock:null,
   angularVelocity:null,
   renderer: null,
+  pipeline: null, // active rendering pipeline instance (render/pipeline/index.js)
   scene: null,
   camera: null,
   controls: null,
@@ -79,6 +80,7 @@ export const groups = {
 
 export const general = {
   renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
+  renderPipeline: 'forward', // active rendering pipeline id (render/pipeline/index.js registry)
   celOutlineMode: 'screen', // cel outlines: 'screen' (post-process) | 'hull' (inverted-hull geometry)
   celOutlineWidth: 0.025, // screen-space outline width in world units (0 = off)
   celHullWidth: 0.025, // hull outline width in world units, atoms/bonds (0 = off)
