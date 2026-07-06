@@ -185,8 +185,18 @@ class WboitPass extends Pass {
 		this.compositePass.material.transparent = true;
 		this.compositePass.material.blending = CustomBlending;
 		this.compositePass.material.blendEquation = AddEquation;
-		this.compositePass.material.blendSrc = OneMinusSrcAlphaFactor;
-		this.compositePass.material.blendDst = SrcAlphaFactor;
+		// LOCAL MODIFICATION (CrysViz): the composite shader now outputs
+		// COVERAGE (1 - revealage) as its alpha (see WboitCompositeShader.js),
+		// so the color blend uses standard over factors, and separate alpha
+		// factors keep the DRAWING BUFFER alpha a correct "over" composite.
+		// Upstream wrote alpha = revealage and blended the canvas alpha down
+		// towards ~0 wherever WBOIT content covered — invisible on an opaque
+		// canvas, but on an alpha:true canvas (used here for transparent PNG
+		// export) the page background bled through all WBOIT content.
+		this.compositePass.material.blendSrc = SrcAlphaFactor;
+		this.compositePass.material.blendDst = OneMinusSrcAlphaFactor;
+		this.compositePass.material.blendSrcAlpha = OneFactor;
+		this.compositePass.material.blendDstAlpha = OneMinusSrcAlphaFactor;
 
 		const testPass = new ShaderPass( FillShader );
 		const testR = 1.0;

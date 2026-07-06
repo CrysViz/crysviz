@@ -50,8 +50,14 @@ const WboitCompositeShader = {
 
 			vec4 accum = texture2D( tAccumulation, vUv );
 
-			vec4 composite = vec4( accum.rgb / clamp( accum.a, 0.0001, 50000.0 ), reveal );
-			vec4 color = clamp( composite, 0.01, 300.0 );
+			// LOCAL MODIFICATION (CrysViz): output COVERAGE (1 - revealage) as
+			// alpha; the pass blends with standard over factors + separate
+			// alpha factors (see WboitPass.js). Upstream output
+			// alpha = revealage, which the blend also wrote into the drawing
+			// buffer's alpha channel — wrong on an alpha:true canvas (the page
+			// background bled through all WBOIT-covered pixels).
+			vec3 average = accum.rgb / clamp( accum.a, 0.0001, 50000.0 );
+			vec4 color = vec4( clamp( average, 0.01, 300.0 ), clamp( 1.0 - reveal, 0.0, 1.0 ) );
 
 			// LinearTosRGB( color );
 			if (uGamma > 0.0) {

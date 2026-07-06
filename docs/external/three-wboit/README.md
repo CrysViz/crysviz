@@ -63,7 +63,17 @@ All marked with `LOCAL MODIFICATION (CrysViz)` comments in the sources:
    `gl_FragCoord.z`; over such a shallow depth range it saturates, so depth
    discrimination between overlapping transparent surfaces is weak (the blend
    approaches an alpha-weighted average — inherent to WBOIT here).
-7. **`WboitPass.js`: tone mapping / color space for three r152+.** Modern
+7. **Composite preserves the drawing buffer's alpha.** Upstream's composite
+   shader output `alpha = revealage` and blended it into the canvas alpha,
+   driving it towards ~0 wherever WBOIT content covered — invisible on an
+   opaque canvas, but this app's canvas is `alpha:true` (transparent PNG
+   export), so the page background bled through all WBOIT content (dark
+   polyhedra picked up the dark-green page theme and looked translucent even
+   at alpha 1). The composite now outputs COVERAGE (`1 - revealage`) with
+   standard over color factors and separate alpha blend factors
+   (`blendSrcAlpha = One`, `blendDstAlpha = OneMinusSrcAlpha`), which also
+   makes the exported PNG alpha correct for WBOIT-only content.
+8. **`WboitPass.js`: tone mapping / color space for three r152+.** Modern
    three forces `NoToneMapping` + linear output when rendering into offscreen
    targets, so the scene stages lost the renderer's ACES tone mapping and
    washed out. `baseTarget` is marked `isXRRenderTarget` with the renderer's
