@@ -209,7 +209,7 @@ function drawAxesLegend(ictx, x, bottomY, gsize) {
 
 /**
  * Capture the current scene to a high-resolution PNG Blob.
- * @param {{width:number, height:number, margin?:number, transparent?:boolean}} opts
+ * @param {{width:number, height:number, margin?:number, transparent?:boolean, rtSamples?:number}} opts
  * @returns {Promise<Blob>}
  */
 export async function captureSceneToPng(opts) {
@@ -220,6 +220,9 @@ export async function captureSceneToPng(opts) {
   const height = Math.max(1, Math.round(opts.height));
   const margin = Math.max(0, Math.round(opts.margin || 0));
   const transparent = !!opts.transparent;
+  // Ray/path tracing: accumulation samples for the final pass (the resize
+  // reset would otherwise leave the export at a barely-converged 16 samples).
+  const rtSamples = Math.max(0, Math.round(opts.rtSamples || 0));
 
   const viewEl = getViewEl();
   const vw = Math.max(1, (viewEl && viewEl.clientWidth) || window.innerWidth);
@@ -290,6 +293,8 @@ export async function captureSceneToPng(opts) {
     }
 
     // --- Final high-res pass. ---
+    // Tracer pipelines: converge the accumulation within this render call.
+    if (rtSamples > 0) app.pipeline?.requestBoost?.(rtSamples);
     const srcCanvas = renderMainToCanvas(srcW, srcH);
 
     // Crop rect in source pixels, from the (accurate enough) probe fractions.

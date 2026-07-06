@@ -97,6 +97,44 @@ function changedPixelCount(fileA, fileB) {
   H.check('emissive/metal materials visibly change the ray-traced structure',
     changed > 1000, JSON.stringify({ changedPixels: changed }));
 
+  // --- Accumulation progress bar --------------------------------------------------
+  const barState = await page.evaluate(() => {
+    const bar = document.getElementById('tracerProgress');
+    const fill = document.getElementById('tracerProgressFill');
+    return {
+      exists: !!bar && !!fill,
+      inView: !!bar?.closest('#view'),
+      visible: bar ? getComputedStyle(bar).opacity !== '0' : false,
+      fillWidth: fill ? parseFloat(fill.style.width) : 0,
+    };
+  });
+  H.check('accumulation progress bar shows while the tracer refines',
+    barState.exists && barState.inView && barState.visible && barState.fillWidth > 5,
+    JSON.stringify(barState));
+
+  // Force convergence: the bar must fill and fade out.
+  await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    app.pipeline._uniforms.uSampleCounter.value = app.pipeline._cfg.targetSamples - 1;
+    requestRender();
+  });
+  await page.waitForTimeout(2500);
+  const barDone = await page.evaluate(() => {
+    const bar = document.getElementById('tracerProgress');
+    return { opacity: bar ? getComputedStyle(bar).opacity : null };
+  });
+  H.check('progress bar fades out once converged', barDone.opacity === '0', JSON.stringify(barDone));
+
+  // --- PNG export boost API --------------------------------------------------------
+  const boost = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    app.pipeline.requestBoost(200);
+    return { boostSamples: app.pipeline._boostSamples };
+  });
+  H.check('requestBoost arms the export accumulation burst',
+    boost.boostSamples === 200, JSON.stringify(boost));
+
   // --- Materials persist (species map + category stores in captureState) ---------
   const persisted = await page.evaluate(async () => {
     const { captureState } = await import('./ui/ShareModule.js');

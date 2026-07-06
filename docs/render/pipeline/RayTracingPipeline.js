@@ -32,6 +32,7 @@ import { ScreenCopy_Fragment } from '../../external/three-raytracing/ScreenCopy_
 import { ScreenOutput_Fragment } from '../../external/three-raytracing/ScreenOutput_Fragment.js';
 import { FullScreenQuad } from '../../external/three/Pass.js';
 import { requestRender } from '../AnimateModule.js';
+import { updateTracerProgress, hideTracerProgress } from '../TracerProgressModule.js';
 import { ForwardPipeline } from './ForwardPipeline.js';
 import { sceneFragment } from './raytrace/sceneFragment.js';
 import { SceneEncoder } from './raytrace/SceneEncoder.js';
@@ -189,6 +190,14 @@ export class RayTracingPipeline extends ForwardPipeline {
     this._uniforms.uFrameCounter.value = 0;
   }
 
+  /** Ask the next render() call to accumulate at least `samples` inner
+   *  iterations before presenting — used by the PNG export so tracer images
+   *  are converged, not single-sample (render() takes the max with its own
+   *  resize boost). */
+  requestBoost(samples) {
+    this._boostSamples = Math.max(this._boostSamples, Math.max(1, Math.round(samples)));
+  }
+
   render({ renderer, scene, camera }) {
     if (!this._initialized) this._init(renderer);
     const u = this._uniforms;
@@ -204,7 +213,8 @@ export class RayTracingPipeline extends ForwardPipeline {
       u.uResolution.value.set(w, h);
       this._outputQuad.material.uniforms.uOutputResolution.value.copy(bufferSize);
       this._lastScale = scale;
-      this._boostSamples = RESIZE_BOOST_SAMPLES; // e.g. PNG export: converge within this call
+      // converge within this call after a resize (a requestBoost may ask for more)
+      this._boostSamples = Math.max(this._boostSamples, RESIZE_BOOST_SAMPLES);
       this.resetAccumulation();
     }
     this._outputQuad.material.uniforms.uOutputResolution.value.copy(bufferSize);
@@ -287,6 +297,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     renderer.autoClear = oldAutoClear;
 
     // --- progressive refinement under render-on-demand ----------------------
+    updateTracerProgress(u.uSampleCounter.value, this._cfg.targetSamples);
     if (u.uSampleCounter.value < this._cfg.targetSamples) requestRender();
   }
 
@@ -300,6 +311,7 @@ export class RayTracingPipeline extends ForwardPipeline {
   }
 
   dispose() {
+    hideTracerProgress();
     if (!this._initialized) return;
     this._accumTarget.dispose();
     this._previousTarget.dispose();
