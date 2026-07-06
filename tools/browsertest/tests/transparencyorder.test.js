@@ -421,7 +421,39 @@ function redCentroid(file) {
     (rt2.b > rt1.b + 15) || (rt2.r < rt1.r - 30), JSON.stringify({ rt1, rt2 }));
   H.check('raytrace: no page errors during ray-traced frames', errors.length === 0, errors.join(' | '));
 
-  // Hand back to forward: RT targets disposed, raster flags re-applied.
+  // ============================ pathtrace pipeline ==============================
+  // Monte-Carlo path tracing (vendored erichlof pathtracing chunks); shares the
+  // SceneEncoder with raytrace, so the staged pair carries over. Stochastic
+  // pixels + denoiser: only coarse ordering/visibility is asserted, with wide
+  // margins. Entering with the front atom back at full opacity.
+  await setOpacity(src.front, 1.0);
+  await setPipeline('pathtrace');
+  await page.waitForTimeout(6000); // stochastic accumulation, software GL
+  const ptInfo = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const u = app.pipeline?._uniforms;
+    return {
+      id: app.pipeline?.id,
+      samples: u?.uSampleCounter.value ?? 0,
+      atomCount: u?.uAtomCount.value ?? 0,
+    };
+  });
+  H.check('pathtrace: accumulation progressed and the staged atoms were encoded',
+    ptInfo.id === 'pathtrace' && ptInfo.samples > 4 && ptInfo.atomCount === 2,
+    JSON.stringify(ptInfo));
+
+  const pt1 = await shoot('transparencyorder-pathtrace-opaque');
+  H.check('pathtrace: opaque front red atom covers the back blue atom',
+    pt1.r > pt1.b + 20, JSON.stringify(pt1));
+
+  await setOpacity(src.front, 0.4);
+  await page.waitForTimeout(6000);
+  const pt2 = await shoot('transparencyorder-pathtrace-transparent');
+  H.check('pathtrace: transparent front atom is refractive (back atom influences the disk)',
+    (pt2.b > pt1.b + 10) || (pt2.r < pt1.r - 20), JSON.stringify({ pt1, pt2 }));
+  H.check('pathtrace: no page errors during path-traced frames', errors.length === 0, errors.join(' | '));
+
+  // Hand back to forward: tracer targets disposed, raster flags re-applied.
   await setOpacity(src.front, 1.0);
   await setPipeline('forward');
   await page.waitForTimeout(300);

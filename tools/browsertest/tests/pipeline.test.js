@@ -32,8 +32,8 @@ const H = require('../harness');
     Array.isArray(boot.menuOptions) && boot.menuOptions.join(',') === boot.registry.map((p) => p.id).join(',')
       && boot.menuValue === 'forward',
     JSON.stringify({ menu: boot.menuOptions, registry: boot.registry }));
-  H.check('registry holds the six pipelines',
-    boot.registry.map((p) => p.id).join(',') === 'forward,split-atoms,sorted-atoms,wboit,depthpeel,raytrace',
+  H.check('registry holds the seven pipelines',
+    boot.registry.map((p) => p.id).join(',') === 'forward,split-atoms,sorted-atoms,wboit,depthpeel,raytrace,pathtrace',
     JSON.stringify(boot.registry));
 
   // --- Depth-peel "Peel layers" slider follows the dropdown ----------------------
@@ -71,6 +71,30 @@ const H = require('../harness');
     rtSliders.hasBoth && rtSliders.hiddenUnderForward === true
       && rtSliders.shownUnderRaytrace && rtSliders.hiddenAgain,
     JSON.stringify(rtSliders));
+
+  // --- Path-tracing controls: RT sliders shared + PT-only block -------------------
+  const ptControls = await page.evaluate(() => {
+    const rtBlock = document.getElementById('rtResolutionScale')?.parentElement?.parentElement;
+    const ptBlock = document.getElementById('ptLightSoftness')?.parentElement?.parentElement;
+    const hasBoth = !!document.getElementById('ptDenoiseToggle') && !!document.getElementById('ptLightSoftness');
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
+    select.value = 'pathtrace';
+    select.dispatchEvent(new Event('change'));
+    const rtSharedUnderPathtrace = getComputedStyle(rtBlock).display !== 'none';
+    const ptShownUnderPathtrace = getComputedStyle(ptBlock).display !== 'none';
+    select.value = 'raytrace';
+    select.dispatchEvent(new Event('change'));
+    const ptHiddenUnderRaytrace = getComputedStyle(ptBlock).display === 'none';
+    select.value = 'forward';
+    select.dispatchEvent(new Event('change'));
+    const allHiddenUnderForward = getComputedStyle(rtBlock).display === 'none'
+      && getComputedStyle(ptBlock).display === 'none';
+    return { hasBoth, rtSharedUnderPathtrace, ptShownUnderPathtrace, ptHiddenUnderRaytrace, allHiddenUnderForward };
+  });
+  H.check('PT controls follow the dropdown; RT sliders are shared by both tracers',
+    ptControls.hasBoth && ptControls.rtSharedUnderPathtrace && ptControls.ptShownUnderPathtrace
+      && ptControls.ptHiddenUnderRaytrace && ptControls.allHiddenUnderForward,
+    JSON.stringify(ptControls));
   H.check('pipeline dropdown lives in the Visual window', await page.evaluate(() =>
     !!document.getElementById('renderPipelineMenu')?.closest('#cvPanelBody-visual')));
 
@@ -173,13 +197,17 @@ const H = require('../harness');
       depthPeelLayers: state.style.depthPeelLayers,
       rtResolutionScale: state.style.rtResolutionScale,
       rtReflectivity: state.style.rtReflectivity,
+      ptDenoise: state.style.ptDenoise,
+      ptLightSoftness: state.style.ptLightSoftness,
     };
   });
-  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.5)',
-    persisted.version === '2.5' && persisted.renderPipeline === 'forward'
+  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.6)',
+    persisted.version === '2.6' && persisted.renderPipeline === 'forward'
       && typeof persisted.depthPeelLayers === 'number'
       && typeof persisted.rtResolutionScale === 'number'
-      && typeof persisted.rtReflectivity === 'number', JSON.stringify(persisted));
+      && typeof persisted.rtReflectivity === 'number'
+      && typeof persisted.ptDenoise === 'boolean'
+      && typeof persisted.ptLightSoftness === 'number', JSON.stringify(persisted));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);

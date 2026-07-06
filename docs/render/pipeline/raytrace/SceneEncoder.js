@@ -42,6 +42,7 @@ export class SceneEncoder {
   atomCount = 0;
   cylinderCount = 0;
   polyCount = 0;
+  boundingRadius = 10; // max atom distance from the origin (light placement)
   _fingerprint = '';
 
   dispose() {
@@ -109,6 +110,7 @@ export class SceneEncoder {
     const texture = this._ensureCapacity('atomsTexture', mesh.count * 2);
     const data = texture.image.data;
     let n = 0;
+    let maxR2 = 25;
     for (let i = 0; i < mesh.count; i++) {
       const o = i * 16;
       const radius = matrices[o]; // uniform scale; 0 = hidden instance
@@ -118,6 +120,8 @@ export class SceneEncoder {
       data[d + 1] = matrices[o + 13];
       data[d + 2] = matrices[o + 14];
       data[d + 3] = radius;
+      const r2 = data[d] * data[d] + data[d + 1] * data[d + 1] + data[d + 2] * data[d + 2];
+      if (r2 > maxR2) maxR2 = r2;
       data[d + 4] = colors[i * 3];
       data[d + 5] = colors[i * 3 + 1];
       data[d + 6] = colors[i * 3 + 2];
@@ -125,6 +129,7 @@ export class SceneEncoder {
       n++;
     }
     this.atomCount = n;
+    this.boundingRadius = Math.sqrt(maxR2) + 3;
     texture.needsUpdate = true;
   }
 

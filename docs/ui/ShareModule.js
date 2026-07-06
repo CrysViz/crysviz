@@ -98,7 +98,7 @@ export function captureState({ includeFrames = false } = {}) {
   }
 
   return {
-    version: '2.5',
+    version: '2.6',
     ...(frames ? { frames } : {}),
     structure: {
       elements: [...structure.elements],
@@ -145,6 +145,8 @@ export function captureState({ includeFrames = false } = {}) {
       depthPeelLayers: general.depthPeelLayers,
       rtResolutionScale: general.rtResolutionScale,
       rtReflectivity: general.rtReflectivity,
+      ptDenoise: general.ptDenoise,
+      ptLightSoftness: general.ptLightSoftness,
       celOutlineWidth: general.celOutlineWidth,
       celHullWidth: general.celHullWidth,
       polyEdgeWidth: general.polyEdgeWidth,
@@ -323,6 +325,15 @@ function applyStyleSettings(style) {
   if (style.rtReflectivity != null) {
     general.rtReflectivity = style.rtReflectivity;
     setSelect('rtReflectivity', style.rtReflectivity);
+  }
+  if (style.ptDenoise != null) {
+    general.ptDenoise = style.ptDenoise;
+    const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('ptDenoiseToggle'));
+    if (toggle) toggle.checked = style.ptDenoise;
+  }
+  if (style.ptLightSoftness != null) {
+    general.ptLightSoftness = style.ptLightSoftness;
+    setSelect('ptLightSoftness', style.ptLightSoftness);
   }
   if (style.celOutlineWidth != null) general.celOutlineWidth = style.celOutlineWidth;
   if (style.celHullWidth != null) general.celHullWidth = style.celHullWidth;
@@ -653,7 +664,7 @@ export function applySharedState(state, fileName = 'shared.vasp') {
     document.getElementById('renderStyleMenu')?.dispatchEvent(new Event('change'));
   }
   // Depth peeling / ray tracing: same re-fire so their control blocks show.
-  if (state.style?.renderPipeline === 'depthpeel' || state.style?.renderPipeline === 'raytrace') {
+  if (['depthpeel', 'raytrace', 'pathtrace'].includes(state.style?.renderPipeline)) {
     document.getElementById('renderPipelineMenu')?.dispatchEvent(new Event('change'));
   }
 

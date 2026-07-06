@@ -361,7 +361,9 @@ export function addColorPanel(target = "colorContainer") {
     })), () => {
       setActivePipeline(renderPipelineMenu.querySelector("select").value);
       depthPeelBlock.style.display = general.renderPipeline === "depthpeel" ? "grid" : "none";
-      rtControlsBlock.style.display = general.renderPipeline === "raytrace" ? "block" : "none";
+      const isTracer = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
+      rtControlsBlock.style.display = isTracer ? "block" : "none";
+      ptControlsBlock.style.display = general.renderPipeline === "pathtrace" ? "block" : "none";
     });
   content.appendChild(renderPipelineMenu);
 
@@ -385,11 +387,13 @@ export function addColorPanel(target = "colorContainer") {
   depthPeelBlock.appendChild(depthPeelSlider);
   content.appendChild(depthPeelBlock);
 
-  // Ray-tracing controls: internal render resolution (quality/perf knob) and
-  // extra mirror reflectivity. Shown only for the raytrace pipeline; changes
-  // take effect on the next accumulated frame (the pipeline reads `general`).
+  // Ray/path-tracing controls: internal render resolution (quality/perf knob)
+  // and extra mirror reflectivity, shared by the raytrace + pathtrace
+  // pipelines so the two can be compared apples to apples; changes take
+  // effect on the next accumulated frame (the pipelines read `general`).
+  const isTracerPipeline = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
   const rtControlsBlock = createElement("div", {},
-    { display: general.renderPipeline === "raytrace" ? "block" : "none" });
+    { display: isTracerPipeline ? "block" : "none" });
   const rtResRow = createElement("div", { class: "control-row" });
   const rtResLabel = createElement("label", { for: "rtResolutionScale" }, {},
     `RT resolution: ${Math.round((general.rtResolutionScale ?? 0.75) * 100)}%`);
@@ -423,6 +427,40 @@ export function addColorPanel(target = "colorContainer") {
   rtReflRow.appendChild(rtReflSlider);
   rtControlsBlock.appendChild(rtReflRow);
   content.appendChild(rtControlsBlock);
+
+  // Path-tracing-only controls: denoiser toggle + area-light softness.
+  const ptControlsBlock = createElement("div", {},
+    { display: general.renderPipeline === "pathtrace" ? "block" : "none" });
+  const ptDenoiseRow = createElement("div", { class: "control-row" });
+  const ptDenoiseLabel = createElement("label", { for: "ptDenoiseToggle" }, {}, "Denoiser");
+  const ptDenoiseToggle = createElement("input", { type: "checkbox", id: "ptDenoiseToggle" },
+    { justifySelf: "start", width: "auto" });
+  ptDenoiseToggle.checked = general.ptDenoise !== false;
+  ptDenoiseToggle.addEventListener("change", () => {
+    general.ptDenoise = ptDenoiseToggle.checked;
+    requestRender();
+  });
+  ptDenoiseRow.appendChild(ptDenoiseLabel);
+  ptDenoiseRow.appendChild(ptDenoiseToggle);
+  ptControlsBlock.appendChild(ptDenoiseRow);
+
+  const ptSoftRow = createElement("div", { class: "control-row" });
+  const ptSoftLabel = createElement("label", { for: "ptLightSoftness" }, {},
+    `Light softness: ${(general.ptLightSoftness ?? 0.3).toFixed(2)}`);
+  const ptSoftSlider = createElement("input", {
+    type: "range", id: "ptLightSoftness", min: "0", max: "1", step: "0.05",
+    value: String(general.ptLightSoftness),
+  });
+  ptSoftSlider.addEventListener("input", () => {
+    general.ptLightSoftness = parseFloat(ptSoftSlider.value);
+    ptSoftLabel.textContent = `Light softness: ${general.ptLightSoftness.toFixed(2)}`;
+    app.pipeline?.resetAccumulation?.();
+    requestRender();
+  });
+  ptSoftRow.appendChild(ptSoftLabel);
+  ptSoftRow.appendChild(ptSoftSlider);
+  ptControlsBlock.appendChild(ptSoftRow);
+  content.appendChild(ptControlsBlock);
 
   // Cel outline controls: mode selector plus mode-specific width sliders.
   // Both widths are world units. 'Screen space' = post-process with clean

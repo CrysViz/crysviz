@@ -36,7 +36,6 @@ import { ForwardPipeline } from './ForwardPipeline.js';
 import { sceneFragment } from './raytrace/sceneFragment.js';
 import { SceneEncoder } from './raytrace/SceneEncoder.js';
 
-const ACCUMULATION_TARGET = 64; // samples to converge to before going idle
 const RESIZE_BOOST_SAMPLES = 16; // inner samples after a size change (PNG export)
 
 export class RayTracingPipeline extends ForwardPipeline {
@@ -52,7 +51,37 @@ export class RayTracingPipeline extends ForwardPipeline {
   _sceneDirty = true;
   _boostSamples = 0;
 
+  // ---- subclass hooks (PathTracingPipeline overrides these) ---------------
+  /** Shader sources + uniform-name conventions + tuning for this tracer. */
+  _config() {
+    return {
+      vertexShader: CommonRayTracing_Vertex,
+      sceneFragment,
+      copyFragment: ScreenCopy_Fragment,
+      outputFragment: ScreenOutput_Fragment,
+      copyTexUniform: 'uRayTracedImageTexture',
+      outputTexUniform: 'uRayTracedImageTexture',
+      previousTexUniform: 'uPreviousTexture',
+      blueNoiseTexUniform: 'uBlueNoiseTexture',
+      blueNoiseUrl: 'external/three-raytracing/BlueNoise_R_128.png',
+      targetSamples: 64, // samples to converge to before going idle
+    };
+  }
+
+  /** Additional uniforms for the scene (tracing) pass. */
+  _extraSceneUniforms() { return {}; }
+
+  /** Additional uniforms for the screen-output pass. */
+  _extraOutputUniforms() { return {}; }
+
+  /** Per-frame update hook for subclass uniforms (scene pass). */
+  _updateSceneUniforms(_u) {}
+
+  /** Per-frame update hook for subclass uniforms (output pass). */
+  _updateOutputUniforms(_out) {}
+
   _init(renderer) {
+    this._cfg = this._config();
     this._encoder = new SceneEncoder();
 
     const makeTarget = () => {
@@ -70,7 +99,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     this._previousTarget = makeTarget(); // read as uPreviousTexture
 
     this._blueNoise = new THREE.TextureLoader().load(
-      'external/three-raytracing/BlueNoise_R_128.png', (tex) => {
+      this._cfg.blueNoiseUrl, (tex) => {
         tex.minFilter = THREE.NearestFilter;
         tex.magFilter = THREE.NearestFilter;
         tex.generateMipmaps = false;
@@ -80,8 +109,8 @@ export class RayTracingPipeline extends ForwardPipeline {
       });
 
     this._uniforms = {
-      uPreviousTexture: { value: this._previousTarget.texture },
-      uBlueNoiseTexture: { value: this._blueNoise },
+      [this._cfg.previousTexUniform]: { value: this._previousTarget.texture },
+      [this._cfg.blueNoiseTexUniform]: { value: this._blueNoise },
       uCameraMatrix: { value: new THREE.Matrix4() },
       uResolution: { value: new THREE.Vector2(4, 4) },
       uRandomVec2: { value: new THREE.Vector2() },
@@ -107,14 +136,15 @@ export class RayTracingPipeline extends ForwardPipeline {
       uLightColor: { value: new THREE.Color(1, 1, 1) },
       uBackgroundColor: { value: new THREE.Color(0.9, 0.9, 0.9) },
       uReflectivity: { value: general.rtReflectivity ?? 0.15 },
+      ...this._extraSceneUniforms(),
     };
 
     // The ray-trace pass is rendered with the APP camera (fullscreen triangle
     // in clip space, frustum culling off) so built-in uniforms follow it.
     const material = new THREE.ShaderMaterial({
       uniforms: this._uniforms,
-      vertexShader: CommonRayTracing_Vertex,
-      fragmentShader: sceneFragment,
+      vertexShader: this._cfg.vertexShader,
+      fragmentShader: this._cfg.sceneFragment,
       depthTest: false,
       depthWrite: false,
     });
@@ -127,21 +157,22 @@ export class RayTracingPipeline extends ForwardPipeline {
     this._rtScene.add(this._rtMesh);
 
     this._copyQuad = new FullScreenQuad(new THREE.ShaderMaterial({
-      uniforms: { uRayTracedImageTexture: { value: this._accumTarget.texture } },
-      vertexShader: CommonRayTracing_Vertex,
-      fragmentShader: ScreenCopy_Fragment,
+      uniforms: { [this._cfg.copyTexUniform]: { value: this._accumTarget.texture } },
+      vertexShader: this._cfg.vertexShader,
+      fragmentShader: this._cfg.copyFragment,
       depthTest: false,
       depthWrite: false,
     }));
     this._outputQuad = new FullScreenQuad(new THREE.ShaderMaterial({
       uniforms: {
-        uRayTracedImageTexture: { value: this._accumTarget.texture },
+        [this._cfg.outputTexUniform]: { value: this._accumTarget.texture },
         uOutputResolution: { value: new THREE.Vector2(4, 4) },
         uOneOverSampleCounter: { value: 1 },
         uUseToneMapping: { value: true },
+        ...this._extraOutputUniforms(),
       },
-      vertexShader: CommonRayTracing_Vertex,
-      fragmentShader: ScreenOutput_Fragment,
+      vertexShader: this._cfg.vertexShader,
+      fragmentShader: this._cfg.outputFragment,
       depthTest: false,
       depthWrite: false,
     }));
@@ -221,6 +252,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     }
     if (scene.background?.isColor) u.uBackgroundColor.value.copy(scene.background);
     u.uReflectivity.value = general.rtReflectivity ?? 0.15;
+    this._updateSceneUniforms(u);
 
     // --- accumulate one (or, after a resize, several) samples ---------------
     const samplesThisCall = Math.max(1, this._boostSamples);
@@ -232,13 +264,13 @@ export class RayTracingPipeline extends ForwardPipeline {
       u.uFrameCounter.value += 1;
       u.uTime.value += 1 / 60;
       u.uRandomVec2.value.set(Math.random(), Math.random());
-      u.uPreviousTexture.value = this._previousTarget.texture;
+      u[this._cfg.previousTexUniform].value = this._previousTarget.texture;
 
       renderer.setRenderTarget(this._accumTarget);
       renderer.render(this._rtScene, camera);
 
       // ping-pong copy: accumulated image -> previous
-      this._copyQuad.material.uniforms.uRayTracedImageTexture.value = this._accumTarget.texture;
+      this._copyQuad.material.uniforms[this._cfg.copyTexUniform].value = this._accumTarget.texture;
       renderer.setRenderTarget(this._previousTarget);
       this._copyQuad.render(renderer);
 
@@ -247,14 +279,15 @@ export class RayTracingPipeline extends ForwardPipeline {
 
     // --- averaged, tone-mapped output to the canvas -------------------------
     const out = this._outputQuad.material.uniforms;
-    out.uRayTracedImageTexture.value = this._accumTarget.texture;
+    out[this._cfg.outputTexUniform].value = this._accumTarget.texture;
     out.uOneOverSampleCounter.value = 1 / Math.max(1, u.uSampleCounter.value);
+    this._updateOutputUniforms(out);
     renderer.setRenderTarget(null);
     this._outputQuad.render(renderer);
     renderer.autoClear = oldAutoClear;
 
     // --- progressive refinement under render-on-demand ----------------------
-    if (u.uSampleCounter.value < ACCUMULATION_TARGET) requestRender();
+    if (u.uSampleCounter.value < this._cfg.targetSamples) requestRender();
   }
 
   setSize(_width, _height) {

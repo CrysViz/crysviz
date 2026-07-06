@@ -116,3 +116,12 @@ Third-Party Libraries and Attribution:
      pipeline; see docs/external/three-raytracing/README.md for the adaptations.
    - License and code can be found in docs/external/three-raytracing/
 
+8. THREE.js-PathTracing-Renderer
+   - Repository: https://github.com/erichlof/THREE.js-PathTracing-Renderer
+   - License: CC0 1.0 (public domain; attribution given as a courtesy)
+   - Author: Erich Loftis (@erichlof)
+   - See docs/external/three-pathtracing/LICENSE for the full license text.
+   - GLSL chunk library adapted for the optional "Path tracing" rendering
+     pipeline; see docs/external/three-pathtracing/README.md for the adaptations.
+   - License and code can be found in docs/external/three-pathtracing/
+
