@@ -36,8 +36,12 @@ to this app's rendering-pipeline architecture:
    ifs (GLSL need not short-circuit `&&`, and `nearDepth` is null on the first
    peel). `customProgramCacheKey` is composed (appended to), not replaced.
 3. **Mesh gathering by material flags** (`depthPeelEnabled && transparent`)
-   with cached visibility/blending/depth/forceSinglePass state restored after
-   the frame — the demo used two fixed scene groups instead.
+   with cached blending/depth/forceSinglePass state restored after the frame —
+   the demo used two fixed scene groups instead. Stage gating uses **layer
+   masks rather than `visible`**: hiding a mesh would also hide its children,
+   so an opaque child of a transparent mesh (e.g. a cel-shading hull-outline
+   shell on a transparent polyhedron) could never render in any stage; a
+   zeroed `layers.mask` skips only the object itself.
 4. **`scene.background` handled once** (same fix as the vendored three-wboit):
    stages render with no background; it arrives via the opaque stage's clear
    color. A null background stays a transparent capture (PNG export).

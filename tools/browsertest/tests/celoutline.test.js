@@ -74,6 +74,32 @@ const H = require('../harness');
   H.check('hull mode: outlines draw', darkHull > dark0 * 1.3 && darkHull - dark0 > 0.002,
     `off=${dark0.toFixed(4)} hull=${darkHull.toFixed(4)}`);
 
+  // Hull outlines under the staged pipelines: the polyhedron hull shells are
+  // OPAQUE CHILDREN of the TRANSPARENT face meshes — visibility-based stage
+  // switching hid them in every stage (parent hidden in the opaque stage,
+  // shell hidden in the transparent stages). The "Polyhedra Outline" width
+  // slider drives ONLY the poly hulls, so dark coverage must respond to it.
+  for (const id of ['wboit', 'depthpeel']) {
+    await page.evaluate(async (id) => {
+      const { setActivePipeline } = await import('./render/index.js');
+      setActivePipeline(id);
+    }, id);
+    await H.setSlider(page, 'celHullPolyWidth', 0);
+    await page.waitForTimeout(600);
+    const polyOff = H.darkFraction(await H.shotCanvas(page, `cel_hull_${id}_off`));
+    await H.setSlider(page, 'celHullPolyWidth', 0.2);
+    await page.waitForTimeout(600);
+    const polyOn = H.darkFraction(await H.shotCanvas(page, `cel_hull_${id}_on`));
+    H.check(`hull mode under ${id}: polyhedra hull outlines draw`,
+      polyOn - polyOff > 0.002,
+      `off=${polyOff.toFixed(4)} on=${polyOn.toFixed(4)}`);
+  }
+  await page.evaluate(async () => {
+    const { setActivePipeline } = await import('./render/index.js');
+    setActivePipeline('forward');
+  });
+  await H.setSlider(page, 'celHullPolyWidth', 0.025); // restore default
+
   // Back to screen mode: hulls removed on rebuild.
   await H.setSelect(page, 'celOutlineModeMenu', 'screen');
   const noHulls = await H.waitFor(page, async () => {

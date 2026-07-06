@@ -247,15 +247,21 @@ class DepthPeelPass {
 
 			}
 
-			visibilityCache.set( object, object.visible );
+			// Stage gating uses layer masks instead of `visible` (the cache
+			// stores the mask): hiding a mesh via `visible` also hides its
+			// CHILDREN, so an opaque child of a transparent mesh (e.g. a
+			// cel-shading hull-outline shell on a transparent polyhedron)
+			// could never render in any stage. A zeroed layer mask skips the
+			// object itself but still traverses its children.
+			visibilityCache.set( object, object.layers.mask );
 
 		} );
 
 		const setVisible = ( opaqueVisible, transparentVisible, peelVisible ) => {
 
-			opaqueMeshes.forEach( ( mesh ) => mesh.visible = opaqueVisible );
-			otherTransparentMeshes.forEach( ( mesh ) => mesh.visible = transparentVisible );
-			peelMeshes.forEach( ( mesh ) => mesh.visible = peelVisible );
+			opaqueMeshes.forEach( ( mesh ) => mesh.layers.mask = opaqueVisible ? visibilityCache.get( mesh ) : 0 );
+			otherTransparentMeshes.forEach( ( mesh ) => mesh.layers.mask = transparentVisible ? visibilityCache.get( mesh ) : 0 );
+			peelMeshes.forEach( ( mesh ) => mesh.layers.mask = peelVisible ? visibilityCache.get( mesh ) : 0 );
 
 		};
 
@@ -350,7 +356,7 @@ class DepthPeelPass {
 
 		}
 
-		for ( const [ object, visible ] of visibilityCache ) object.visible = visible;
+		for ( const [ object, layersMask ] of visibilityCache ) object.layers.mask = layersMask;
 
 		renderer.setRenderTarget( oldRenderTarget );
 		renderer.setClearColor( this._oldClearColor, oldClearAlpha );

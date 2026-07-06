@@ -421,7 +421,14 @@ class WboitPass extends Pass {
 
 				}
 
-				cache.set( object, object.visible );
+				// LOCAL MODIFICATION (CrysViz): stage gating uses layer masks
+				// instead of `visible` (cache stores the mask). Hiding a mesh via
+				// `visible` also hides its CHILDREN, so an opaque child of a
+				// transparent mesh (e.g. a cel-shading hull-outline shell on a
+				// transparent polyhedron) could never render in any stage. A
+				// zeroed layer mask skips the object itself but still traverses
+				// its children.
+				cache.set( object, object.layers.mask );
 
 			} );
 
@@ -429,9 +436,10 @@ class WboitPass extends Pass {
 
 		function changeVisible( opaqueVisible = true, transparentVisible = true, wboitVisible = true ) {
 
-			opaqueMeshes.forEach( mesh => mesh.visible = opaqueVisible );
-			transparentMeshes.forEach( mesh => mesh.visible = transparentVisible );
-			wboitMeshes.forEach( mesh => mesh.visible = wboitVisible );
+			// LOCAL MODIFICATION (CrysViz): see note in gatherMeshes.
+			opaqueMeshes.forEach( mesh => mesh.layers.mask = opaqueVisible ? cache.get( mesh ) : 0 );
+			transparentMeshes.forEach( mesh => mesh.layers.mask = transparentVisible ? cache.get( mesh ) : 0 );
+			wboitMeshes.forEach( mesh => mesh.layers.mask = wboitVisible ? cache.get( mesh ) : 0 );
 
 		}
 
@@ -439,7 +447,9 @@ class WboitPass extends Pass {
 
 			for ( const [ key, value ] of cache ) {
 
-				key.visible = value;
+				// LOCAL MODIFICATION (CrysViz): restore the layer mask (see
+				// gatherMeshes); `visible` is never touched by the stages.
+				key.layers.mask = value;
 
 				if ( key.material ) {
 

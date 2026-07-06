@@ -52,14 +52,21 @@ All marked with `LOCAL MODIFICATION (CrysViz)` comments in the sources:
 4. **`WboitPass.js`: fixed swapped depth-flag restoration** in
    `resetVisible()` — upstream restored `depthWrite` from the `depthTest`
    cache and vice versa, corrupting any material whose two flags differ.
-5. **`WboitPass.js`: scene.background handled once.** Upstream repainted a
+5. **`WboitPass.js`: stage gating via layer masks instead of `visible`.**
+   Hiding a mesh with `visible = false` also hides its children, so an opaque
+   child of a transparent mesh (e.g. a cel-shading hull-outline shell on a
+   transparent polyhedron) could never render in any stage — the parent was
+   hidden during the opaque stage and the child during the WBOIT stages.
+   Zeroing `object.layers.mask` skips only the object itself while its
+   children are still traversed; the cache stores/restores the mask.
+6. **`WboitPass.js`: scene.background handled once.** Upstream repainted a
    `scene.background` in every stage render, and the stage blits force
    alpha=1 wherever anything was drawn — so later stages blitted the
    full-screen background over the opaque stage's content and polluted the
    accumulation buffer. Stages now render with `scene.background = null`; the
    background arrives via the opaque stage's clear color (null background
    stays a transparent capture, as the PNG export relies on).
-6. **`WboitUtils.js`: revealage without the `gl_FragCoord.z` factor.** The
+7. **`WboitUtils.js`: revealage without the `gl_FragCoord.z` factor.** The
    paper's revealage term is the plain product of `(1 - alpha)`; upstream
    multiplied alpha by `gl_FragCoord.z`, which with this app's orthographic
    camera (far plane 1000, content at z≈0.02–0.04) collapsed transparent
@@ -67,7 +74,7 @@ All marked with `LOCAL MODIFICATION (CrysViz)` comments in the sources:
    `gl_FragCoord.z`; over such a shallow depth range it saturates, so depth
    discrimination between overlapping transparent surfaces is weak (the blend
    approaches an alpha-weighted average — inherent to WBOIT here).
-7. **Composite preserves the drawing buffer's alpha.** Upstream's composite
+8. **Composite preserves the drawing buffer's alpha.** Upstream's composite
    shader output `alpha = revealage` and blended it into the canvas alpha,
    driving it towards ~0 wherever WBOIT content covered — invisible on an
    opaque canvas, but this app's canvas is `alpha:true` (transparent PNG
@@ -77,14 +84,14 @@ All marked with `LOCAL MODIFICATION (CrysViz)` comments in the sources:
    standard over color factors and separate alpha blend factors
    (`blendSrcAlpha = One`, `blendDstAlpha = OneMinusSrcAlpha`), which also
    makes the exported PNG alpha correct for WBOIT-only content.
-8. **`WboitPass.js`: explicit `EXT_float_blend`.** The accumulation stage
+9. **`WboitPass.js`: explicit `EXT_float_blend`.** The accumulation stage
    blends into the render target; blending with 32-bit float color buffers
    requires `EXT_float_blend`, which the upstream render-target probe never
    requested (browsers warn about the implicit enable, and `FloatType` could
    be selected on hardware without float blending). The extension is now
    requested explicitly and `FloatType` is only considered when it is present
    (half-float blending is core WebGL2).
-9. **`WboitPass.js`: tone mapping / color space for three r152+.** Modern
+10. **`WboitPass.js`: tone mapping / color space for three r152+.** Modern
    three forces `NoToneMapping` + linear output when rendering into offscreen
    targets, so the scene stages lost the renderer's ACES tone mapping and
    washed out. `baseTarget` is marked `isXRRenderTarget` with the renderer's
