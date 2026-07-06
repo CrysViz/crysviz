@@ -383,6 +383,49 @@ function redCentroid(file) {
   H.check('forward: opaque again once no atom is transparent',
     !opaqueState.mainTransparent && opaqueState.mainDepthWrite, JSON.stringify(opaqueState));
 
+  // ============================ raytrace pipeline ===============================
+  // Whitted ray tracing from data textures (vendored erichlof chunks). The
+  // encoder reads the same instance buffers this test stages, so the red/blue
+  // pair carries over. Colors are NOT compared against raster blends — RT has
+  // its own shading (Reinhard + refraction) — only ordering/visibility, at a
+  // low internal resolution so Mesa software GL keeps up.
+  await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    general.rtResolutionScale = 0.25;
+  });
+  await setPipeline('raytrace');
+  await page.waitForTimeout(4000); // progressive accumulation, software GL
+  const rtInfo = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const u = app.pipeline?._uniforms;
+    return {
+      samples: u?.uSampleCounter.value ?? 0,
+      atomCount: u?.uAtomCount.value ?? 0,
+      cylinderCount: u?.uCylinderCount.value ?? 0,
+    };
+  });
+  H.check('raytrace: accumulation progressed and the staged atoms were encoded',
+    rtInfo.samples > 4 && rtInfo.atomCount === 2 && rtInfo.cylinderCount === 0,
+    JSON.stringify(rtInfo));
+
+  const rt1 = await shoot('transparencyorder-raytrace-opaque');
+  H.check('raytrace: opaque front red atom covers the back blue atom',
+    rt1.r > rt1.b + 30, JSON.stringify(rt1));
+
+  // Transparent front atom becomes refractive glass: the disk must change
+  // substantially (red mask drops and/or refracted blue shows through).
+  await setOpacity(src.front, 0.4);
+  await page.waitForTimeout(4000);
+  const rt2 = await shoot('transparencyorder-raytrace-transparent');
+  H.check('raytrace: transparent front atom is refractive (back atom influences the disk)',
+    (rt2.b > rt1.b + 15) || (rt2.r < rt1.r - 30), JSON.stringify({ rt1, rt2 }));
+  H.check('raytrace: no page errors during ray-traced frames', errors.length === 0, errors.join(' | '));
+
+  // Hand back to forward: RT targets disposed, raster flags re-applied.
+  await setOpacity(src.front, 1.0);
+  await setPipeline('forward');
+  await page.waitForTimeout(300);
+
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);
 })().catch(H.crash);

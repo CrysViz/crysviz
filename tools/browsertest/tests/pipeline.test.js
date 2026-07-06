@@ -32,8 +32,8 @@ const H = require('../harness');
     Array.isArray(boot.menuOptions) && boot.menuOptions.join(',') === boot.registry.map((p) => p.id).join(',')
       && boot.menuValue === 'forward',
     JSON.stringify({ menu: boot.menuOptions, registry: boot.registry }));
-  H.check('registry holds the five pipelines',
-    boot.registry.map((p) => p.id).join(',') === 'forward,split-atoms,sorted-atoms,wboit,depthpeel',
+  H.check('registry holds the six pipelines',
+    boot.registry.map((p) => p.id).join(',') === 'forward,split-atoms,sorted-atoms,wboit,depthpeel,raytrace',
     JSON.stringify(boot.registry));
 
   // --- Depth-peel "Peel layers" slider follows the dropdown ----------------------
@@ -52,6 +52,25 @@ const H = require('../harness');
   H.check('peel-layers slider only shows for the depthpeel pipeline',
     slider.hiddenUnderForward === true && slider.shownUnderDepthPeel && slider.hiddenAgain,
     JSON.stringify(slider));
+
+  // --- Ray-tracing sliders follow the dropdown the same way ----------------------
+  const rtSliders = await page.evaluate(() => {
+    const block = document.getElementById('rtResolutionScale')?.parentElement?.parentElement;
+    const hasBoth = !!document.getElementById('rtResolutionScale') && !!document.getElementById('rtReflectivity');
+    const hiddenUnderForward = block ? getComputedStyle(block).display === 'none' : null;
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
+    select.value = 'raytrace';
+    select.dispatchEvent(new Event('change'));
+    const shownUnderRaytrace = getComputedStyle(block).display !== 'none';
+    select.value = 'forward';
+    select.dispatchEvent(new Event('change'));
+    const hiddenAgain = getComputedStyle(block).display === 'none';
+    return { hasBoth, hiddenUnderForward, shownUnderRaytrace, hiddenAgain };
+  });
+  H.check('RT sliders only show for the raytrace pipeline',
+    rtSliders.hasBoth && rtSliders.hiddenUnderForward === true
+      && rtSliders.shownUnderRaytrace && rtSliders.hiddenAgain,
+    JSON.stringify(rtSliders));
   H.check('pipeline dropdown lives in the Visual window', await page.evaluate(() =>
     !!document.getElementById('renderPipelineMenu')?.closest('#cvPanelBody-visual')));
 
@@ -152,11 +171,15 @@ const H = require('../harness');
       version: state.version,
       renderPipeline: state.style.renderPipeline,
       depthPeelLayers: state.style.depthPeelLayers,
+      rtResolutionScale: state.style.rtResolutionScale,
+      rtReflectivity: state.style.rtReflectivity,
     };
   });
-  H.check('captureState persists the pipeline id + peel layers (v2.4)',
-    persisted.version === '2.4' && persisted.renderPipeline === 'forward'
-      && typeof persisted.depthPeelLayers === 'number', JSON.stringify(persisted));
+  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.5)',
+    persisted.version === '2.5' && persisted.renderPipeline === 'forward'
+      && typeof persisted.depthPeelLayers === 'number'
+      && typeof persisted.rtResolutionScale === 'number'
+      && typeof persisted.rtReflectivity === 'number', JSON.stringify(persisted));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);

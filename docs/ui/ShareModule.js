@@ -98,7 +98,7 @@ export function captureState({ includeFrames = false } = {}) {
   }
 
   return {
-    version: '2.4',
+    version: '2.5',
     ...(frames ? { frames } : {}),
     structure: {
       elements: [...structure.elements],
@@ -143,6 +143,8 @@ export function captureState({ includeFrames = false } = {}) {
       renderStyle: general.renderStyle,
       renderPipeline: general.renderPipeline,
       depthPeelLayers: general.depthPeelLayers,
+      rtResolutionScale: general.rtResolutionScale,
+      rtReflectivity: general.rtReflectivity,
       celOutlineWidth: general.celOutlineWidth,
       celHullWidth: general.celHullWidth,
       polyEdgeWidth: general.polyEdgeWidth,
@@ -313,6 +315,14 @@ function applyStyleSettings(style) {
   if (style.depthPeelLayers != null) {
     general.depthPeelLayers = style.depthPeelLayers;
     setSelect('depthPeelLayersSlider', style.depthPeelLayers);
+  }
+  if (style.rtResolutionScale != null) {
+    general.rtResolutionScale = style.rtResolutionScale;
+    setSelect('rtResolutionScale', style.rtResolutionScale);
+  }
+  if (style.rtReflectivity != null) {
+    general.rtReflectivity = style.rtReflectivity;
+    setSelect('rtReflectivity', style.rtReflectivity);
   }
   if (style.celOutlineWidth != null) general.celOutlineWidth = style.celOutlineWidth;
   if (style.celHullWidth != null) general.celHullWidth = style.celHullWidth;
@@ -642,8 +652,8 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   if (state.style?.renderStyle === 'cel') {
     document.getElementById('renderStyleMenu')?.dispatchEvent(new Event('change'));
   }
-  // Depth peeling: same re-fire so the "Peel layers" block becomes visible.
-  if (state.style?.renderPipeline === 'depthpeel') {
+  // Depth peeling / ray tracing: same re-fire so their control blocks show.
+  if (state.style?.renderPipeline === 'depthpeel' || state.style?.renderPipeline === 'raytrace') {
     document.getElementById('renderPipelineMenu')?.dispatchEvent(new Event('change'));
   }
 

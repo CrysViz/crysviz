@@ -82,6 +82,8 @@ export const general = {
   renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
   renderPipeline: 'forward', // active rendering pipeline id (render/pipeline/index.js registry)
   depthPeelLayers: 5, // peel passes for the 'depthpeel' pipeline (1-10; more = deeper transparency, slower)
+  rtResolutionScale: 0.75, // 'raytrace' pipeline internal resolution as a fraction of the canvas
+  rtReflectivity: 0.15, // 'raytrace' pipeline: extra mirror reflectivity on opaque surfaces (0-1)
   celOutlineMode: 'screen', // cel outlines: 'screen' (post-process) | 'hull' (inverted-hull geometry)
   celOutlineWidth: 0.025, // screen-space outline width in world units (0 = off)
   celHullWidth: 0.025, // hull outline width in world units, atoms/bonds (0 = off)

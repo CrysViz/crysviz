@@ -107,3 +107,12 @@ Third-Party Libraries and Attribution:
      see docs/external/three-depthpeeling/README.md for the divergences.
    - License and code can be found in docs/external/three-depthpeeling/
 
+7. THREE.js-RayTracing-Renderer
+   - Repository: https://github.com/erichlof/THREE.js-RayTracing-Renderer
+   - License: CC0 1.0 (public domain; attribution given as a courtesy)
+   - Author: Erich Loftis (@erichlof)
+   - See docs/external/three-raytracing/LICENSE for the full license text.
+   - GLSL chunk library adapted for the optional "Ray tracing" rendering
+     pipeline; see docs/external/three-raytracing/README.md for the adaptations.
+   - License and code can be found in docs/external/three-raytracing/
+

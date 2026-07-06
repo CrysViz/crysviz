@@ -24,6 +24,7 @@ import { SplitAtomsPipeline } from './SplitAtomsPipeline.js';
 import { SortedAtomsPipeline } from './SortedAtomsPipeline.js';
 import { WboitPipeline } from './WboitPipeline.js';
 import { DepthPeelPipeline } from './DepthPeelPipeline.js';
+import { RayTracingPipeline } from './RayTracingPipeline.js';
 
 /** @type {Map<string, any>} pipeline id -> class */
 const registry = new Map();
@@ -80,3 +81,4 @@ registerPipeline(SplitAtomsPipeline);
 registerPipeline(SortedAtomsPipeline);
 registerPipeline(WboitPipeline);
 registerPipeline(DepthPeelPipeline);
+registerPipeline(RayTracingPipeline);

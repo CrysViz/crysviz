@@ -1,6 +1,6 @@
 import { createColorPicker } from './ColorPickerModule.js';
 import {updateVisualization} from '../core/crystal-viewer.js';  
-import { groups,fileBrowser, general} from '../state/store.js';
+import { app, groups,fileBrowser, general} from '../state/store.js';
 import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 
 import { updateBonds } from '../render/index.js'
@@ -361,6 +361,7 @@ export function addColorPanel(target = "colorContainer") {
     })), () => {
       setActivePipeline(renderPipelineMenu.querySelector("select").value);
       depthPeelBlock.style.display = general.renderPipeline === "depthpeel" ? "grid" : "none";
+      rtControlsBlock.style.display = general.renderPipeline === "raytrace" ? "block" : "none";
     });
   content.appendChild(renderPipelineMenu);
 
@@ -383,6 +384,45 @@ export function addColorPanel(target = "colorContainer") {
   depthPeelBlock.appendChild(depthPeelLabel);
   depthPeelBlock.appendChild(depthPeelSlider);
   content.appendChild(depthPeelBlock);
+
+  // Ray-tracing controls: internal render resolution (quality/perf knob) and
+  // extra mirror reflectivity. Shown only for the raytrace pipeline; changes
+  // take effect on the next accumulated frame (the pipeline reads `general`).
+  const rtControlsBlock = createElement("div", {},
+    { display: general.renderPipeline === "raytrace" ? "block" : "none" });
+  const rtResRow = createElement("div", { class: "control-row" });
+  const rtResLabel = createElement("label", { for: "rtResolutionScale" }, {},
+    `RT resolution: ${Math.round((general.rtResolutionScale ?? 0.75) * 100)}%`);
+  const rtResSlider = createElement("input", {
+    type: "range", id: "rtResolutionScale", min: "0.25", max: "1", step: "0.05",
+    value: String(general.rtResolutionScale),
+  });
+  rtResSlider.addEventListener("input", () => {
+    general.rtResolutionScale = parseFloat(rtResSlider.value);
+    rtResLabel.textContent = `RT resolution: ${Math.round(general.rtResolutionScale * 100)}%`;
+    requestRender();
+  });
+  rtResRow.appendChild(rtResLabel);
+  rtResRow.appendChild(rtResSlider);
+  rtControlsBlock.appendChild(rtResRow);
+
+  const rtReflRow = createElement("div", { class: "control-row" });
+  const rtReflLabel = createElement("label", { for: "rtReflectivity" }, {},
+    `Reflectivity: ${(general.rtReflectivity ?? 0.15).toFixed(2)}`);
+  const rtReflSlider = createElement("input", {
+    type: "range", id: "rtReflectivity", min: "0", max: "1", step: "0.05",
+    value: String(general.rtReflectivity),
+  });
+  rtReflSlider.addEventListener("input", () => {
+    general.rtReflectivity = parseFloat(rtReflSlider.value);
+    rtReflLabel.textContent = `Reflectivity: ${general.rtReflectivity.toFixed(2)}`;
+    app.pipeline?.resetAccumulation?.();
+    requestRender();
+  });
+  rtReflRow.appendChild(rtReflLabel);
+  rtReflRow.appendChild(rtReflSlider);
+  rtControlsBlock.appendChild(rtReflRow);
+  content.appendChild(rtControlsBlock);
 
   // Cel outline controls: mode selector plus mode-specific width sliders.
   // Both widths are world units. 'Screen space' = post-process with clean
