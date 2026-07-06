@@ -667,24 +667,6 @@ input[type="checkbox"] {
   overflow: hidden;
 }
 
-.atom-tooltip {
-  position: absolute;
-  pointer-events: none;
-  background: rgba(12, 30, 24, 0.9);
-  color: #f6fff9;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.35);
-  transform: translate(-50%, -120%);
-  opacity: 0;
-  transition: opacity 0.12s ease;
-  white-space: nowrap;
-  z-index: 10;
-}
-
 #aboutOverlay {
   position: fixed;
   inset: 0;
@@ -792,10 +774,6 @@ input[type="checkbox"] {
 
 #aboutOverlay[hidden] {
   display: none;
-}
-
-.atom-tooltip.visible {
-  opacity: 1;
 }
 
 .bond-toggle {

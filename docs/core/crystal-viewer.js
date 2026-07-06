@@ -24,7 +24,6 @@ import '../ui/AboutPanel.js';
 import { createBackgroundControl } from '../ui/BackgroundPicker.js';
 import { setupThemeSystem } from '../ui/ThemeManager.js';
 import { setupMobileMenu } from '../ui/MobileMenu.js';
-import { setupAtomTooltip } from '../ui/AtomTooltip.js';
 import { setupControlsWiring } from '../ui/ControlsWiring.js';
 import { setupSceneInteraction } from '../ui/SceneInteraction.js';
 import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
@@ -311,7 +310,6 @@ async function initApp() {
   setupScene();
 
   // Click Atom
-  setupAtomTooltip();
   setupSceneInteraction();
 
 

@@ -163,9 +163,11 @@ export function setupSceneInteraction() {
   // Raycast for atoms
   raycaster.setFromCamera(mouse, app.camera);
 
-  // Raycast against InstancedMesh objects
-  const atomHits = raycaster.intersectObject(groups.atomsMesh);
-  const bondHits = raycaster.intersectObject(groups.bondsMesh);
+  // Raycast against InstancedMesh objects. Both meshes can be absent: atoms
+  // before the first structure loads, bonds whenever "Show Bonds" is off
+  // (disposeBondsMesh nulls groups.bondsMesh rather than hiding the mesh).
+  const atomHits = groups.atomsMesh ? raycaster.intersectObject(groups.atomsMesh) : [];
+  const bondHits = groups.bondsMesh ? raycaster.intersectObject(groups.bondsMesh) : [];
   // Polyhedron faces, lowest pick priority (an atom/bond hit wins). Non-recursive
   // so the edge lines / outline proxies never participate; the visible filter is
   // required because THREE.Raycaster does NOT skip invisible meshes (hidden
