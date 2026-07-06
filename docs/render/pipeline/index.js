@@ -20,6 +20,8 @@ import { app, general } from '../../state/store.js';
 import { setTransparencyPolicyDelegate } from '../../utils/TransparencyPolicy.js';
 import { requestRender } from '../AnimateModule.js';
 import { ForwardPipeline } from './ForwardPipeline.js';
+import { SplitAtomsPipeline } from './SplitAtomsPipeline.js';
+import { SortedAtomsPipeline } from './SortedAtomsPipeline.js';
 
 /** @type {Map<string, any>} pipeline id -> class */
 const registry = new Map();
@@ -72,3 +74,5 @@ function reapplyTransparencyToScene(pipeline) {
 }
 
 registerPipeline(ForwardPipeline);
+registerPipeline(SplitAtomsPipeline);
+registerPipeline(SortedAtomsPipeline);

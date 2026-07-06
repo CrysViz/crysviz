@@ -32,6 +32,11 @@ const H = require('../harness');
     Array.isArray(boot.menuOptions) && boot.menuOptions.join(',') === boot.registry.map((p) => p.id).join(',')
       && boot.menuValue === 'forward',
     JSON.stringify({ menu: boot.menuOptions, registry: boot.registry }));
+  H.check('registry holds the three pipelines',
+    boot.registry.map((p) => p.id).join(',') === 'forward,split-atoms,sorted-atoms',
+    JSON.stringify(boot.registry));
+  H.check('pipeline dropdown lives in the Visual window', await page.evaluate(() =>
+    !!document.getElementById('renderPipelineMenu')?.closest('#cvPanelBody-visual')));
 
   // --- Transparency intents are stamped and applied by the pipeline --------------
   // Fade the main structure the way the ComparisonPanel crossfade slider does

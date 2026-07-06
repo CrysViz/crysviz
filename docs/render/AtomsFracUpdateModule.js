@@ -47,10 +47,13 @@ function applyCutPlaneUniformsToShader(shader) {
 
 function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
   applyCutPlaneUniformsToShader(material?.userData?.shader);
-  // In hull outline mode the outline shell discards by the same planes.
+  // In hull outline mode the outline shell discards by the same planes, and a
+  // pipeline's transparent-instance overlay pass carries the same uniforms.
   if (!material || material === groups.atomsMesh?.material) {
     const outline = groups.atomsMesh?.userData?.celOutline;
     if (outline) applyCutPlaneUniformsToShader(outline.material?.userData?.shader);
+    const overlay = groups.atomsMesh?.userData?.transparentOverlay;
+    if (overlay) applyCutPlaneUniformsToShader(overlay.material?.userData?.shader);
   }
 }
 
@@ -109,6 +112,14 @@ export function updateAtomByUUID(mesh, uuid, newPosition, newColor) {
 
 export function rebuildAtoms(opacity) {
   if (groups.atomsMesh) {
+    // A pipeline-owned transparent-instance overlay (child mesh at
+    // userData.transparentOverlay) goes down with the mesh; dispose its own
+    // resources here (its geometry may be shared with the main mesh).
+    const overlay = groups.atomsMesh.userData.transparentOverlay;
+    if (overlay) {
+      if (overlay.geometry !== groups.atomsMesh.geometry) overlay.geometry.dispose();
+      overlay.material.dispose();
+    }
     groups.atomsMesh.geometry.dispose();
     groups.atomsMesh.material.dispose();
     app.scene.remove(groups.atomsMesh);
@@ -262,20 +273,13 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
   return mesh;
 }
 
-export function buildAtoms() {
-  let atoms=fileBrowser.selectedStructure.atoms
-  let structure = fileBrowser.selectedStructure
-  //perdic.wrapped
-
-  let wrapped = fileBrowser.selectedStructure.periodic.wrapped
-
-  const atomCount = wrapped.elements.length;
-  console.log("Building mesh for",atomCount,"atoms")
-
-  // Geometry: unit sphere, scaled per instance
-  const geometry = new THREE.SphereGeometry(1, 32, 24);
-
-  // Material: visualization-mode dependent
+// Material for the main atoms mesh and (in the split/sorted pipelines) its
+// transparent-instance overlay pass. The shader carries a generic uAlphaPass
+// capability that splits instances by their effective alpha: 0 = draw all
+// (single-pass; the forward pipeline never changes it), 1 = opaque instances
+// only, 2 = transparent instances only. Pipelines drive it via
+// setAtomAlphaPass; see render/pipeline/SplitAtomsPipeline.js.
+export function createAtomsMaterial() {
   const atomVisSettings = getAtomVisSettings();
   const material = createStyledMaterial({
     ...atomVisSettings,
@@ -316,6 +320,7 @@ export function buildAtoms() {
     );
 
     shader.fragmentShader = `
+      uniform int uAlphaPass;
       uniform int uCutPlaneCount;
       uniform vec4 uCutPlanes[${MAX_CUT_PLANES}];
       uniform float uCutPlaneMaskSide[${MAX_CUT_PLANES}];
@@ -332,6 +337,8 @@ export function buildAtoms() {
       'vec4 diffuseColor = vec4( diffuse, opacity );',
       `
       vec4 diffuseColor = vec4( diffuse, opacity * vInstanceOpacity );
+      if (uAlphaPass == 1 && diffuseColor.a < 0.999) discard;
+      if (uAlphaPass == 2 && diffuseColor.a >= 0.999) discard;
       if (vInstanceCutPlaneImmune < 0.5) {
         for (int i = 0; i < ${MAX_CUT_PLANES}; i++) {
           if (i >= uCutPlaneCount) break;
@@ -352,6 +359,7 @@ export function buildAtoms() {
       `
     );
 
+    shader.uniforms.uAlphaPass = { value: material.userData.alphaPass ?? 0 };
     shader.uniforms.uCutPlaneCount = { value: 0 };
     shader.uniforms.uCutPlanes = {
       value: Array.from({ length: MAX_CUT_PLANES }, () => new THREE.Vector4(0, 0, 0, 0)),
@@ -362,6 +370,32 @@ export function buildAtoms() {
     material.userData.shader = shader;
     applyAtomCutPlaneUniforms(material);
   };
+  return material;
+}
+
+/** Set which uAlphaPass an atoms material draws (0 all / 1 opaque / 2
+ *  transparent instances) — works before and after shader compile. */
+export function setAtomAlphaPass(material, pass) {
+  material.userData.alphaPass = pass;
+  const uniform = material.userData.shader?.uniforms?.uAlphaPass;
+  if (uniform) uniform.value = pass;
+}
+
+export function buildAtoms() {
+  let atoms=fileBrowser.selectedStructure.atoms
+  let structure = fileBrowser.selectedStructure
+  //perdic.wrapped
+
+  let wrapped = fileBrowser.selectedStructure.periodic.wrapped
+
+  const atomCount = wrapped.elements.length;
+  console.log("Building mesh for",atomCount,"atoms")
+
+  // Geometry: unit sphere, scaled per instance
+  const geometry = new THREE.SphereGeometry(1, 32, 24);
+
+  // Material: visualization-mode dependent
+  const material = createAtomsMaterial();
 
   finishAtomsMesh({ geometry, material, structure, wrapped, atoms, meshKey: 'atomsMesh', cutPlanes: true });
 }
