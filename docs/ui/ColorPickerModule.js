@@ -1,3 +1,5 @@
+import { requestRender } from '../render/index.js';
+
 export function createColorPicker(initialHex, onChange) {
   // --- Utility Functions ---
   function rgbToString({ r, g, b }) {
@@ -223,6 +225,9 @@ export function createColorPicker(initialHex, onChange) {
     rgb = hsvToRgb(hsv.h, hsv.s, hsv.v);
     updateInputsFromRGB(rgb);
     onChange(rgbToHex(rgb));
+    // The on-demand renderer skips pointermove, so consumers that mutate scene
+    // colors on every drag step wouldn't repaint until release — force a frame.
+    requestRender();
   }
 
   function updateInputsFromRGB(rgb) {

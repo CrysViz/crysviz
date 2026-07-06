@@ -1,4 +1,5 @@
 import { fileBrowser } from '../state/store.js';
+import { captureState } from './ShareModule.js';
 
 export function poscartoFile() {
   const structure = fileBrowser.selectedStructure;
@@ -44,33 +45,53 @@ export function poscartoFile() {
 
 
 
+/** Base name of the selected structure's file (extension stripped). */
+export function currentBaseName() {
+  const rawName = fileBrowser.selectedRow
+    ? JSON.parse(fileBrowser.selectedRow.dataset.obj).name
+    : 'structure';
+  return rawName.replace(/\.[^.]+$/, '');
+}
+
+/** Trigger a browser download of a Blob under the given file name. */
+export function downloadBlob(fileName, blob) {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+}
+
+function downloadTextFile(fileName, content) {
+  downloadBlob(fileName, new Blob([content], { type: 'text/plain' }));
+}
+
 export function addSavePanel() {
   const button = document.getElementById('saveButton');
-
   if (!button) {
     console.warn('No element with id "saveButton" found.');
     return;
   }
   button.addEventListener('click', () => {
     try {
-      const rawName = fileBrowser.selectedRow
-        ? JSON.parse(fileBrowser.selectedRow.dataset.obj).name
-        : 'structure';
-      const baseName = rawName.replace(/\.[^.]+$/, '');
-      const fileName = baseName + '.vasp';
-
-      const content = poscartoFile();
-      const blob = new Blob([content], { type: 'text/plain' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(link.href);
+      downloadTextFile(currentBaseName() + '.vasp', poscartoFile());
     } catch (e) {
       alert(e.message);
     }
   });
+
+  // .crysviz: the structure plus the complete visual state (ShareModule's
+  // captureState — everything except window placements), as readable JSON.
+  const crysvizButton = document.getElementById('saveCrysvizButton');
+  if (crysvizButton) {
+    crysvizButton.addEventListener('click', () => {
+      const state = captureState({ includeFrames: true });
+      if (!state) { alert('No structure loaded.'); return; }
+      downloadTextFile(currentBaseName() + '.crysviz',
+        JSON.stringify({ format: 'crysviz', ...state }, null, 2));
+    });
+  }
 }
 

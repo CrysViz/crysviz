@@ -4,19 +4,16 @@ import { updateForces, removeForces } from '../render/index.js';
 
 export function removeForcePanel() {
   const el = document.getElementById("forceControlsGroup");
-  if (el) {
-    const container = document.getElementById("SpinForceFieldContainer");
-    if (container) container.style.display = "none";
-    el.remove();
-  }
+  if (el) el.remove();
 }
 
-export function addForcePanel(target = "SpinForceFieldContainer") {
+export function addForcePanel(target = "cvPanelBody-forces") {
   if (document.getElementById("forceControlsGroup")) return;
   const targetPanel = document.getElementById(target);
   if (!targetPanel) { console.warn("ForcePanel: target not found:", target); return; }
 
-  // --- Outer wrapper ---
+  // Outer wrapper. The hosting panel window (ui/panels/) provides the title
+  // bar and collapse, so no header is built here.
   const group = document.createElement("div");
   group.id = "forceControlsGroup";
 
@@ -24,26 +21,11 @@ export function addForcePanel(target = "SpinForceFieldContainer") {
   const panel = document.createElement("div");
   panel.id = "forcePanel";
 
-  // --- Toggle header ---
-  const toggle = document.createElement("div");
-  toggle.className = "spin-toggle";
-  toggle.setAttribute("role", "button");
-  toggle.setAttribute("tabindex", "0");
-
-  const title = document.createElement("h4");
-  title.textContent = "Force Controls";
-
-  const icon = document.createElement("div");
-  icon.className = "toggle-icon";
-  icon.textContent = "−";
-
-  toggle.appendChild(title);
-  toggle.appendChild(icon);
-
-  // --- Collapsible content ---
   const content = document.createElement("div");
   content.id = "forceControlsContent";
-  content.className = "collapsible-content";
+
+  // Activation ("Show Forces") lives in the Features window; this panel only
+  // configures how the forces are drawn.
 
   // Force Length Scale slider
   const sliderWrapper = document.createElement("div");
@@ -113,33 +95,9 @@ export function addForcePanel(target = "SpinForceFieldContainer") {
   content.appendChild(drawBtn);
 
   // Build hierarchy
-  panel.appendChild(toggle);
   panel.appendChild(content);
   group.appendChild(panel);
-
-  // Insert into DOM — ensure container is visible
-  targetPanel.style.display = "block";
   targetPanel.appendChild(group);
-
-  // Open immediately — bypass CSS display:none
-  content.classList.add('open');
-  content.style.display = 'block';
-  content.style.maxHeight = '600px';
-
-  // Toggle open/close
-  toggle.addEventListener('click', () => {
-    const isOpen = content.classList.contains('open');
-    if (isOpen) {
-      content.classList.remove('open');
-      content.style.display = 'none';
-      icon.textContent = '+';
-    } else {
-      content.classList.add('open');
-      content.style.display = 'block';
-      content.style.maxHeight = '600px';
-      icon.textContent = '−';
-    }
-  });
 
   // --- Events ---
   slider.addEventListener("input", () => {

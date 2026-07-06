@@ -1,5 +1,5 @@
 import { fileBrowser, app, general, groups } from '../state/store.js';
-import { updateField, setActiveField, toggleFieldVisibility } from '../render/index.js';
+import { updateField, setActiveField } from '../render/index.js';
 import {
   getIsosurfaceMaterialSettings,
   getIsosurfaceTriangleSortingEnabled,
@@ -128,7 +128,7 @@ export const fieldBrowser = {
   }
 };
 
-export function addFieldPanel(target = "SpinForceFieldContainer") {
+export function addFieldPanel(target = "cvPanelBody-field") {
   const fieldControlsGroup = document.getElementById(target);
   if (!fieldControlsGroup) {
     console.error(`${target} not found`);
@@ -164,28 +164,16 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
     return;
   }
 
-  // Show the field controls group
-  container.style.display = "block";
-
   const isoValue = fieldBrowser.selectedField.isoValue || sliderToIsoValue(55, fieldBrowser.selectedField);
   const sliderVal = isoValueToSlider(isoValue, fieldBrowser.selectedField);
   const materialSettings = getIsosurfaceMaterialSettings();
 
   container.innerHTML = `
-    <h3>Volumetric Field Controls</h3>
-    
     <div class="field-info">
       <p><strong>Source:</strong> ${structure.volumetricFields.source}</p>
     </div>
 
     <div class="control-group">
-      <label class="toggle_row toggle_container">
-        <span class="toggle_switch">
-          <input type="checkbox" id="ShowFieldToggle" ${fieldBrowser.selectedField.isVisible ? 'checked' : ''}>
-          <span class="toggle_slider"></span>
-        </span>
-        <span class="toggle_text"> Show Field </span>
-      </label>
       <label class="toggle_row toggle_container">
         <span class="toggle_switch">
           <input type="checkbox" id="FieldAbsoluteValueToggle" ${fieldBrowser.selectedField.useAbsoluteIsoValue ? 'checked' : ''}>
@@ -276,18 +264,14 @@ export function addFieldPanel(target = "SpinForceFieldContainer") {
   //}
 }
 
-function showNoFieldsMessage(target = "SpinForceFieldContainer") {
+function showNoFieldsMessage(target = "cvPanelBody-field") {
   const container = document.getElementById(target);
   if (!container) {
     console.error(`${target} not found`);
     return;
   }
 
-  // Show the field controls group
-  container.style.display = "block";
-
   container.innerHTML = `
-    <h3>Volumetric Field Controls</h3>
     <div class="no-fields-message">
       <p>No volumetric fields available for the current structure.</p>
       <p>Load a CHGCAR or .cube file to visualize volumetric data.</p>
@@ -295,7 +279,7 @@ function showNoFieldsMessage(target = "SpinForceFieldContainer") {
   `;
 }
 
-export function removeFieldPanel(target = "SpinForceFieldContainer") {
+export function removeFieldPanel(target = "cvPanelBody-field") {
   const fieldControlsGroup = document.getElementById(target);
   
   if (fieldControlsGroup) {
@@ -317,18 +301,14 @@ export function removeFieldPanel(target = "SpinForceFieldContainer") {
       });
     }
     
-    // Clear the controls content and hide the group
-    if (fieldControlsGroup) {
-      fieldControlsGroup.innerHTML = '';
-    }
-    fieldControlsGroup.style.display = "none";
+    // Clear the controls content
+    fieldControlsGroup.innerHTML = '';
   }
 }
 
 function setupFieldControlEvents(fields, container) {
   const slider = document.getElementById('isoSlider');
   const valueDisplay = document.getElementById('isoValue');
-  const showFieldToggle = document.getElementById('ShowFieldToggle');
   const absoluteValueCheckbox = document.getElementById('FieldAbsoluteValueToggle');
   const logScaleCheckbox = document.getElementById('LogSliderScaleToggle');
   const triangleSortCheckbox = document.getElementById('FieldTriangleSortToggle');
@@ -467,17 +447,6 @@ function setupFieldControlEvents(fields, container) {
     fieldBrowser.selectedField.isoValue = isoValue; // Update the isoValue on the selected field for memory
   });
 
-  showFieldToggle.addEventListener('change', function () {
-    if (!fieldBrowser.selectedField) return;
-
-    fieldBrowser.selectedField.isVisible = showFieldToggle.checked;
-
-    // Re-render the field with the updated visibility setting
-    toggleFieldVisibility(showFieldToggle.checked);
-
-    updateField(fieldBrowser.selectedField.isoValue);
-  });
-
   absoluteValueCheckbox.addEventListener('change', function () {
     if (!fieldBrowser.selectedField) return;
 
@@ -532,7 +501,6 @@ function setupFieldControlEvents(fields, container) {
         valueDisplay.textContent = isoValue.toExponential(3);
         // Update the Absolute Iso Value toggle state based on the newly selected field
         absoluteValueCheckbox.checked = fieldBrowser.selectedField.useAbsoluteIsoValue;
-        showFieldToggle.checked = fieldBrowser.selectedField.isVisible; // default to visible if not set
 
         // Update field with iso value for newly selected field
         updateField(isoValue);

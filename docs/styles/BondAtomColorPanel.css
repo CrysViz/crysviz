@@ -5,19 +5,6 @@
   width: 100%;
 }
 
-/* Toggle */
-#colorSettingsToggle {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-#colorSettingsToggle h4 {
-  width: 100%;
-  margin: 0;
-}
-
 .toggle-icon {
   font-size: 18px;
   margin-left: 5px;

@@ -8,8 +8,9 @@ import * as THREE from '../external/three/three.module.js';
 import { app, groups, mode, fileBrowser, measurements } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import {
-  clearHighlightAtom, clearHighlightBond, highlightAtomIn3D,
-  highlightBondIn3D, clearAllHighlights,
+  clearHighlightAtom, highlightAtomIn3D,
+  clearAllHighlights, clearBondSelection, selectBondFromInstance,
+  clearPolyhedronSelection, selectPolyhedronFromMesh,
   clearSelectedAtoms, updateAtomSelectionFrom3DHit,
 } from './SelectAndHighlightModule.js';
 import {
@@ -165,6 +166,13 @@ export function setupSceneInteraction() {
   // Raycast against InstancedMesh objects
   const atomHits = raycaster.intersectObject(groups.atomsMesh);
   const bondHits = raycaster.intersectObject(groups.bondsMesh);
+  // Polyhedron faces, lowest pick priority (an atom/bond hit wins). Non-recursive
+  // so the edge lines / outline proxies never participate; the visible filter is
+  // required because THREE.Raycaster does NOT skip invisible meshes (hidden
+  // categories must not be pickable).
+  const polyHits = groups.polyhedraGroup
+    ? raycaster.intersectObjects(groups.polyhedraGroup.children, false).filter((h) => h.object.visible)
+    : [];
 
   let hit = null;
 
@@ -186,7 +194,8 @@ export function setupSceneInteraction() {
 
   if (atomHits.length > 0) {
     hit = atomHits[0];
-    clearHighlightBond();
+    clearBondSelection();
+    clearPolyhedronSelection();
     updateAtomSelectionFrom3DHit(hit, {
       selectionMode: (event.ctrlKey || event.metaKey) ? 'toggle' : (event.shiftKey ? 'add' : 'replace'),
       sourceEvent: event,
@@ -198,18 +207,18 @@ export function setupSceneInteraction() {
       sourceEvent: event,
       reason: 'bond-select',
     });
-    let id2;
-    if (hit.instanceId%2 == 0){
-      id2 = hit.instanceId+1
-    }
-    else{
-      id2 = hit.instanceId-1
-    }
-    //highlightBondInStructurePanel(bondIndex);
-    highlightBondIn3D([hit.instanceId,id2]);
-    //highlightBondInfoInStructurePanel()
-
-
+    clearPolyhedronSelection();
+    // Orange 3D highlight + open/expand/scroll to the bond's row in the
+    // Structure window's Bonds tab (double-click same bond deselects).
+    selectBondFromInstance(hit.instanceId, { scrollToSelection: true });
+  } else if (polyHits.length > 0) {
+    clearSelectedAtoms({
+      sourceEvent: event,
+      reason: 'polyhedron-select',
+    });
+    // Emissive glow + open/expand/scroll to the polyhedron's row in the
+    // Structure window's Poly tab (double-click same polyhedron deselects).
+    selectPolyhedronFromMesh(polyHits[0].object, { scrollToSelection: true });
   }
   else  {
      clearAllHighlights({

@@ -1,10 +1,16 @@
 import { fileBrowser, groups, general } from '../../../state/store.js';
 import { colorHexToCss, getAtomColor, hexToRgba } from '../../../utils/ColorModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
-import { updateSingleAtomColor, updateSingleAtomOpacity } from '../../../render/AtomsFracUpdateModule.js';
+import {
+  updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter,
+  getAtomImageStyle, setAtomImageStyle, clearAtomImageStyle,
+  clearAtomImageStylesForAtom, getAtomImageColor, updateSingleAtomImageColor,
+} from '../../../render/AtomsFracUpdateModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
 import { updatePolyhedraColors } from '../../../render/index.js';
-import { clampOpacity, updateAtomCoordinates } from './utils.js';
+import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
+import { clampOpacity, clampRadiusScale, updateAtomCoordinates } from './utils.js';
+import { selectAtomFromRow } from '../../SelectAndHighlightModule.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createSpinForceEditor } from './SpinForceEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
@@ -29,15 +35,27 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const resetCoordsProvider = options.resetCoordsProvider ?? (() => fileBrowser.selectedStructure?.original?.atoms?.[atomIndex]?.position ?? null);
   const positionEditable = options.positionEditable ?? true;
   const onColorChange = options.onColorChange ?? (() => {}); // Callback for color changes
+  // Per-image mode ("Link periodic copies" off): this row represents ONE
+  // on-screen copy (options.imageIndex = mesh instance id). Color/Alpha/Size
+  // then edit only that copy via structure.atomImageStyles. Position, Spin and
+  // cut-plane immunity keep source-atom semantics (a position edit moves all
+  // copies — they are the same physical atom).
+  const imageIndex = options.imageIndex ?? null;
+  const perImage = imageIndex != null;
 
   const row = document.createElement('div');
   row.className = 'individual-atom-row';
   row.dataset.atomIndex = String(atomIndex);
+  if (perImage) row.dataset.imageIndex = String(imageIndex);
   row.dataset.element = element;
   row.style.cssText = 'display: grid; grid-template-columns: 1fr auto auto; align-items: center; column-gap: 12px; padding: 4px 0; font-size: 11px;';
 
-  const currentColor = safeColor(getAtomColor(atomIndex));
-  const currentOpacity = fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? fileBrowser.selectedStructure.atoms[atomIndex].opacity ?? 1;
+  const imageStyle = perImage ? getAtomImageStyle(fileBrowser.selectedStructure, imageIndex) : null;
+  const currentColor = perImage
+    ? safeColor(getAtomImageColor(fileBrowser.selectedStructure, imageIndex))
+    : safeColor(getAtomColor(atomIndex));
+  const currentOpacity = imageStyle?.alpha ?? fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? fileBrowser.selectedStructure.atoms[atomIndex].opacity ?? 1;
+  const currentRadiusScale = imageStyle?.radiusScale ?? fileBrowser.selectedStructure.atoms[atomIndex].getRadiusScale?.() ?? 1;
 
   // Atom name and coordinates container
   const nameContainer = document.createElement('div');
@@ -47,7 +65,9 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   name.textContent = options.label ?? `${element}${displayNumber}`;
   name.style.color = '#ddd';
 
-  const coords = fileBrowser.selectedStructure.atoms.map(a => a.position)[atomIndex];
+  // Per-image rows show the copy's own (wrapped) coords; the Position editor
+  // below still edits the source atom's coords.
+  const coords = options.displayCoords ?? fileBrowser.selectedStructure.atoms.map(a => a.position)[atomIndex];
   const coordsDisplay = document.createElement('span');
   coordsDisplay.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.8); font-family: monospace;';
   coordsDisplay.textContent = `(${coords[0].toFixed(3)}, ${coords[1].toFixed(3)}, ${coords[2].toFixed(3)})`;
@@ -63,6 +83,25 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   row.appendChild(nameContainer);
 
+  // Panel→3D: clicking the row (its background or the name/coords area, NOT
+  // the editor buttons/panels) highlights this atom in the 3D view — the
+  // mirror of double-clicking the atom in 3D highlighting this row.
+  nameContainer.style.cursor = 'pointer';
+  nameContainer.title = `Highlight ${element}${displayNumber} in the 3D view`;
+  row.addEventListener('click', (e) => {
+    if (e.target !== row && !nameContainer.contains(/** @type {Node} */ (e.target))) return;
+    e.stopPropagation();
+    selectAtomFromRow(atomIndex, e, perImage ? imageIndex : null);
+  });
+  // Hover feedback, skipped while the row carries the amber selection styling
+  // (highlightAtomRow sets dataset.selectionOrder on selected rows).
+  row.addEventListener('mouseenter', () => {
+    if (!row.dataset.selectionOrder) row.style.backgroundColor = 'rgba(255,255,255,0.03)';
+  });
+  row.addEventListener('mouseleave', () => {
+    if (!row.dataset.selectionOrder) row.style.backgroundColor = '';
+  });
+
   // Button container
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = 'display: flex; gap: 10px;';
@@ -71,14 +110,15 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const activeButtonBorder = '1px solid rgba(125, 206, 160, 0.95)';
   const activeButtonShadow = '0 0 0 1px rgba(125, 206, 160, 0.35), inset 0 0 0 1px rgba(125, 206, 160, 0.15)';
 
-  // Color picker button
+  // Color/alpha/size editor button (labeled "Edit" — the editor holds more
+  // than color; the swatch background still previews the atom color)
   const colorBtn = document.createElement('button');
-  colorBtn.textContent = 'Color';
+  colorBtn.textContent = 'Edit';
   colorBtn.className = 'atom-editor-button';
   colorBtn.dataset.editorButton = 'color';
   colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;';
   colorBtn.style.background = hexToRgba(currentColor, 0.8);
-  colorBtn.title = `Change color for ${element}${displayNumber}`;
+  colorBtn.title = `Edit color, alpha and size for ${element}${displayNumber}`;
 
   // Coordinate edit button
   const coordBtn = document.createElement('button');
@@ -116,23 +156,37 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   editor.className = 'atom-color-editor';
   editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
 
-  const mom_color = safeColor(getAtomColor(atomIndex));
+  // Recolor the bond halves attached to one mesh instance (transient across
+  // bond rebuilds, same lifetime as the linked path's bond tint).
+  function tintBondHalvesOfImage(structure, imgIndex, hex) {
+    if (!structure.bondMapping[imgIndex]) return;
+    structure.bondMapping[imgIndex].forEach(bondHalvIndex => {
+      updateSingleBondColor(bondHalvIndex, hex, true);
+      const indexset = structure.bondObjectMapping[bondHalvIndex];
+      structure.bonds[indexset[0]].color[indexset[1]] = hex;
+      structure.bonds[indexset[0]].userColor[indexset[1]] = hex;
+    });
+  }
+
+  const mom_color = currentColor;
   const picker = createColorPicker(mom_color, (hex) => {
     let structure = fileBrowser.selectedStructure;
-    let indexset;
-    linkedAtomIndices.forEach((linkedAtomIndex) => {
-      structure.atomImages[linkedAtomIndex]?.forEach(imageIndex => {
-        if (structure.bondMapping[imageIndex]) {
-          structure.bondMapping[imageIndex].forEach(bondHalvIndex => {
-            updateSingleBondColor(bondHalvIndex, hex,true);
-            indexset = structure.bondObjectMapping[bondHalvIndex];
-            structure.bonds[indexset[0]].color[indexset[1]] = hex;
-            structure.bonds[indexset[0]].userColor[indexset[1]] = hex;
-          });
-        }
-        updateSingleAtomColor(linkedAtomIndex, imageIndex, structure.elements[linkedAtomIndex], hex, hex);
+    if (perImage) {
+      // Only this on-screen copy: persist in the per-image store and paint the
+      // one instance — never mutate the shared source atom.
+      setAtomImageStyle(structure, imageIndex, { color: hex });
+      updateSingleAtomImageColor(imageIndex, hex);
+      tintBondHalvesOfImage(structure, imageIndex, hex);
+    } else {
+      linkedAtomIndices.forEach((linkedAtomIndex) => {
+        // Newest edit wins: a linked recolor overrides earlier per-copy colors.
+        clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'color');
+        structure.atomImages[linkedAtomIndex]?.forEach(imgIndex => {
+          tintBondHalvesOfImage(structure, imgIndex, hex);
+          updateSingleAtomColor(linkedAtomIndex, imgIndex, structure.elements[linkedAtomIndex], hex, hex);
+        });
       });
-    });
+    }
     groups.atomsMesh.instanceColor.needsUpdate = true;
     if (groups.bondsMesh) {
       groups.bondsMesh.instanceColor.needsUpdate = true;
@@ -190,8 +244,33 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   atomAlphaRow.appendChild(atomAlphaSlider);
   atomAlphaRow.appendChild(atomAlphaValue);
 
+  // Size (per-atom radius multiplier), same row layout as Alpha.
+  const atomSizeRow = document.createElement('div');
+  atomSizeRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:6px;';
+  const atomSizeLabel = document.createElement('span');
+  atomSizeLabel.textContent = 'Size';
+  atomSizeLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+  const atomSizeSlider = document.createElement('input');
+  atomSizeSlider.type = 'range';
+  atomSizeSlider.min = '0.2';
+  atomSizeSlider.max = '3';
+  atomSizeSlider.step = '0.05';
+  atomSizeSlider.value = String(currentRadiusScale);
+  atomSizeSlider.style.cssText = 'flex:1;';
+  const atomSizeValue = document.createElement('input');
+  atomSizeValue.type = 'number';
+  atomSizeValue.min = '0.2';
+  atomSizeValue.max = '3';
+  atomSizeValue.step = '0.05';
+  atomSizeValue.value = currentRadiusScale.toFixed(2);
+  atomSizeValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+  atomSizeRow.appendChild(atomSizeLabel);
+  atomSizeRow.appendChild(atomSizeSlider);
+  atomSizeRow.appendChild(atomSizeValue);
+
   editor.appendChild(topRowIndiv);
   editor.appendChild(atomAlphaRow);
+  editor.appendChild(atomSizeRow);
   editor.appendChild(buttonRowIndiv);
 
   // Coordinate editor
@@ -288,17 +367,47 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     const value = clampOpacity(rawValue);
     atomAlphaSlider.value = String(value);
     atomAlphaValue.value = value.toFixed(2);
+    if (perImage) {
+      setAtomImageStyle(fileBrowser.selectedStructure, imageIndex, { alpha: value });
+      updateSingleAtomOpacity(imageIndex, value);
+      return;
+    }
     linkedAtomIndices.forEach((linkedAtomIndex) => {
       const atom = fileBrowser.selectedStructure.atoms[linkedAtomIndex];
       atom.setOpacity(value);
-      fileBrowser.selectedStructure.atomImages[linkedAtomIndex]?.forEach((imageIndex) => {
-        updateSingleAtomOpacity(imageIndex, value);
+      clearAtomImageStylesForAtom(fileBrowser.selectedStructure, linkedAtomIndex, 'alpha');
+      fileBrowser.selectedStructure.atomImages[linkedAtomIndex]?.forEach((imgIndex) => {
+        updateSingleAtomOpacity(imgIndex, value);
       });
     });
   }
 
   atomAlphaSlider.oninput = (e) => applyIndividualOpacity(/** @type {any} */ (e.target).value);
   atomAlphaValue.oninput = (e) => applyIndividualOpacity(/** @type {any} */ (e.target).value);
+
+  function applyIndividualRadiusScale(rawValue) {
+    const value = clampRadiusScale(rawValue);
+    atomSizeSlider.value = String(value);
+    atomSizeValue.value = value.toFixed(2);
+    const structure = fileBrowser.selectedStructure;
+    if (perImage) {
+      setAtomImageStyle(structure, imageIndex, { radiusScale: value });
+      updateSingleAtomDiameter(imageIndex, element, value);
+    } else {
+      linkedAtomIndices.forEach((linkedAtomIndex) => {
+        structure.atoms[linkedAtomIndex].setRadiusScale(value);
+        clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'radiusScale');
+        structure.atomImages[linkedAtomIndex]?.forEach((imgIndex) => {
+          updateSingleAtomDiameter(imgIndex, structure.elements[linkedAtomIndex], value);
+        });
+      });
+    }
+    groups.atomsMesh.instanceMatrix.needsUpdate = true;
+    updateMeasurementMarkers();
+  }
+
+  atomSizeSlider.oninput = (e) => applyIndividualRadiusScale(/** @type {any} */ (e.target).value);
+  atomSizeValue.oninput = (e) => applyIndividualRadiusScale(/** @type {any} */ (e.target).value);
 
   colorBtn.onclick = (e) => {
     e.stopPropagation();
@@ -360,7 +469,38 @@ AtomColorResetBtn.onclick = () => {
   const structure = fileBrowser.selectedStructure;
   const currentMode = general.atomsColor; // current color mode
 
+  if (perImage) {
+    // Reset only this copy: drop its style entry and repaint from the source
+    // atom's model values (the hex==null repaint path resolves them now that
+    // the override is gone).
+    const atom = structure.atoms[atomIndex];
+    clearAtomImageStyle(structure, imageIndex);
+    updateSingleAtomColor(atomIndex, imageIndex, element);
+    updateSingleAtomOpacity(imageIndex, atom.getOpacity?.() ?? atom.opacity ?? 1);
+    updateSingleAtomDiameter(imageIndex, element, atom.getRadiusScale?.() ?? 1);
+    groups.atomsMesh.instanceMatrix.needsUpdate = true;
+    if (general.bondsColor == "elements") {
+      tintBondHalvesOfImage(structure, imageIndex, safeColor(atom.getColor()));
+      if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
+    }
+    // Sync the editor controls without re-writing the store.
+    const srcOpacity = clampOpacity(atom.getOpacity?.() ?? atom.opacity ?? 1);
+    atomAlphaSlider.value = String(srcOpacity);
+    atomAlphaValue.value = srcOpacity.toFixed(2);
+    const srcScale = clampRadiusScale(atom.getRadiusScale?.() ?? 1);
+    atomSizeSlider.value = String(srcScale);
+    atomSizeValue.value = srcScale.toFixed(2);
+    colorBtn.style.background = hexToRgba(safeColor(atom.getColor()), 0.8);
+    updateMeasurementMarkers();
+    onColorChange();
+    updatePolyhedraColors();
+    setActiveEditor(null);
+    return;
+  }
+
   linkedAtomIndices.forEach((linkedAtomIndex) => {
+    // Also drop any per-copy overrides of this atom (newest edit wins).
+    clearAtomImageStylesForAtom(structure, linkedAtomIndex);
     const atom = structure.atoms[linkedAtomIndex];
     const element = structure.elements[linkedAtomIndex];
 
@@ -386,6 +526,7 @@ AtomColorResetBtn.onclick = () => {
     }
 
     atom.resetToElementOpacity();
+    atom.resetRadiusScale?.();
 
     structure.atomImages[linkedAtomIndex]?.forEach((imageIndex) => {
       if (general.bondsColor == "elements") {
@@ -419,6 +560,7 @@ AtomColorResetBtn.onclick = () => {
   colorBtn.style.background = hexToRgba(resetColor, 0.8);
 
   applyIndividualOpacity(fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? 1);
+  applyIndividualRadiusScale(fileBrowser.selectedStructure.atoms[atomIndex].getRadiusScale?.() ?? 1);
   onColorChange();
   updateVisualization({
     bondsUpdate: false,

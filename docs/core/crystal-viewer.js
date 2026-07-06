@@ -28,8 +28,8 @@ import { setupAtomTooltip } from '../ui/AtomTooltip.js';
 import { setupControlsWiring } from '../ui/ControlsWiring.js';
 import { setupSceneInteraction } from '../ui/SceneInteraction.js';
 import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
-import { pauseRendering, resumeRendering,animation_update} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
-import {createShareButton,loadSharedStructure} from '../ui/ShareModule.js';
+import { pauseRendering, resumeRendering,animation_update,requestRender} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
+import {createShareButton,loadSharedStructure,loadCrysvizFile} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
 import {updateSecondBonds,rebuildSecondBonds} from '../render/index.js'
@@ -43,9 +43,9 @@ import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render
 
 
 import {addAtomVacuumPanel} from '../ui/addToStructureModule/AddVacuumModule.js'
-import {addCameraPanel} from '../ui/CameraPanel.js'
-import {addColorPanel} from '../ui/ColorPanel.js'
-import {addPanelToolbars} from '../ui/PanelToolbars.js'
+import {initPanelSystem, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
+import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
+import {initFontScale} from '../ui/FontScaleModule.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../render/index.js';
 
@@ -58,11 +58,11 @@ import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../rend
 import {setupScene, setupCameraButtons,resizeRenderer, switchCameraType
 } from '../ui/WindowAndSceneControls.js'
 import {renderComposition} from '../ui/StructureInfoPanel/General.js';
-import {addControlPanelModeSwitch,addControlPanelSpinForceSwitch,addControlPanelAnalysisSwitch, updateControlSpinForcePanel} from '../ui/ControlPanel.js';
 import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
 
 import {addSavePanel} from '../ui/SavePanel.js'
-import {addAnalysisInfoPanel,addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from '../ui/InfoPanel.js'
+import {initImageExportPanel} from '../ui/ImageExportPanel.js'
+import {addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from '../ui/InfoPanel.js'
 
 // NOTE: share-related import utils still need to move into the "share" module.
 
@@ -222,6 +222,9 @@ export function updateVisualization(options = {}) {
   if (measurements.measureLines.length > 0) {
     updateAllMeasurements();
   }
+
+  // Everything above mutated the scene; schedule a frame (rendering is on-demand).
+  requestRender();
 }
 
 
@@ -231,15 +234,23 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
     const lower = (fileName || '').toLowerCase();
     const contentString = typeof content === 'string' ? content : '';
     
-    // Field files are handled directly; every other format is dispatched by
-    // parse_any (which owns all the structure-format sniffing).
+    // Field files and .crysviz state files are handled directly; every other
+    // format is dispatched by parse_any (which owns the structure-format
+    // sniffing).
+    const treatAsCrysviz = lower.endsWith('.crysviz');
+
     const treatAsCube = lower.endsWith('.cube') ||
                        lower.includes('.cube');
 
     const treatAsCHGCAR = lower.includes('chgcar') ||
                          lower.endsWith('.chgcar');
 
-    if (treatAsCube) {
+    if (treatAsCrysviz) {
+      // A saved CrysViz session: structure + full visual state (ShareModule).
+      // Loads its own structure via parsePOSCAR -> initializeUIOnLoad.
+      loadCrysvizFile(contentString, fileName);
+    }
+    else if (treatAsCube) {
       await parseCubeFile(contentString, fileName);
     }
     else if (treatAsCHGCAR) {
@@ -257,15 +268,13 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
         if (structureContainer && structureContainer.structures) initializeUIOnLoad(structureContainer);
     }
 
-   document.getElementById('structureControls').style.display = 'block';
-   document.getElementById('structureControls2').style.display = 'block';
+   revealFeaturePanels();
 
     createShareButton();
     // NOTE: do not call updateVisualization() here. Every load path above funnels
     // through initializeUIOnLoad() -> selectLastAddedRow() -> updateStructureFromRowAndStep(),
     // which already performs a full atoms+bonds+field+other re-render. Re-rendering here
     // doubled the (expensive, O(n^2)) bond build on every load.
-    updateControlSpinForcePanel();
     console.warn(fileBrowser.selectedStructure)
     // Rebuild camera with size/distance based on structure and zoom scale
     switchCameraType();
@@ -406,19 +415,21 @@ async function initializeMathBackend() {
 
 // Panel toggle functionality for all screen sizes
 function initUIPanels() {
+  initFontScale();
   createBackgroundControl();
   setupThemeSystem();
-  addControlPanelModeSwitch();
-  addControlPanelSpinForceSwitch();
+  initPanelSystem();
+  registerDefaultPanels();
+  // Apply availability (grey-out) once now that panels exist. On first load the
+  // default structure is loaded before panels are registered, so its own
+  // revealFeaturePanels() refresh ran against no panels; this makes the initial
+  // greyed/available state match what a file-selector click would produce.
+  refreshActivePanels();
   addBackendModeSwitch();
   addSavePanel();
-  addCameraPanel();
-  addColorPanel();
-  addPanelToolbars();
+  initImageExportPanel();
   addAtomVacuumPanel();
-  addControlPanelAnalysisSwitch();
   addStorageInfoPanel();
-  addAnalysisInfoPanel();
   addUploadInfoPanel();
   addBackendInfoPanel();
 

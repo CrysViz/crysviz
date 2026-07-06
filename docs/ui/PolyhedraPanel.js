@@ -42,7 +42,7 @@ function createToggleRow({ id, label, checked, onChange }) {
   return row;
 }
 
-export function addPolyhedraPanel(target = 'BondLatticeContainer') {
+export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
   const targetPanel = document.getElementById(target);
   if (!targetPanel) return;
 
@@ -51,35 +51,17 @@ export function addPolyhedraPanel(target = 'BondLatticeContainer') {
   const structure = fileBrowser.selectedStructure;
   const settings = getSelectedStructureSettings();
 
+  // The hosting panel window (ui/panels/) provides the title bar and
+  // collapse, so no header is built here.
   const group = document.createElement('div');
   group.id = 'polyhedraSettingsGroup';
-  group.style.padding = '10px';
 
   const panel = document.createElement('div');
   panel.id = 'polyhedraSettingsPanel';
   panel.style.marginBottom = '10px';
 
-  const toggle = document.createElement('div');
-  toggle.className = 'bond-toggle';
-  toggle.setAttribute('role', 'button');
-  toggle.setAttribute('tabindex', '0');
-  toggle.setAttribute('aria-expanded', 'true');
-  toggle.setAttribute('aria-controls', 'polyhedraSettingsContent');
-
-  const title = document.createElement('h4');
-  title.textContent = 'Calculation Settings';
-
-  const icon = document.createElement('div');
-  icon.className = 'toggle-icon';
-  icon.textContent = '−';
-
-  toggle.appendChild(title);
-  toggle.appendChild(icon);
-
   const content = document.createElement('div');
   content.id = 'polyhedraSettingsContent';
-  content.className = 'collapsible-content open';
-  content.setAttribute('aria-hidden', 'false');
 
   const body = document.createElement('div');
   body.className = 'toggle_group';
@@ -120,36 +102,13 @@ export function addPolyhedraPanel(target = 'BondLatticeContainer') {
     body.appendChild(empty);
   }
 
-  function setOpen(open) {
-    if (open) {
-      content.classList.add('open');
-      content.setAttribute('aria-hidden', 'false');
-      icon.textContent = '−';
-      toggle.setAttribute('aria-expanded', 'true');
-    } else {
-      content.classList.remove('open');
-      content.setAttribute('aria-hidden', 'true');
-      icon.textContent = '+';
-      toggle.setAttribute('aria-expanded', 'false');
-    }
-  }
-
-  toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
-  toggle.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setOpen(!content.classList.contains('open'));
-    }
-  });
-
   content.appendChild(body);
-  panel.appendChild(toggle);
   panel.appendChild(content);
   group.appendChild(panel);
   targetPanel.appendChild(group);
 }
 
-export function removePolyhedraPanel(target = 'BondLatticeContainer') {
+export function removePolyhedraPanel(target = 'cvPanelBody-polyhedra') {
   const targetPanel = document.getElementById(target);
   const existing = document.getElementById('polyhedraSettingsGroup');
   if (targetPanel && existing && existing.parentNode === targetPanel) {
@@ -159,7 +118,7 @@ export function removePolyhedraPanel(target = 'BondLatticeContainer') {
   }
 }
 
-export function refreshPolyhedraPanel(target = 'BondLatticeContainer') {
+export function refreshPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
   if (!document.getElementById('polyhedraSettingsGroup')) return;
   addPolyhedraPanel(target);
 }

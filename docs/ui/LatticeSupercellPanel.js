@@ -1,5 +1,6 @@
 import { applyLatticeTransformation } from './LatticeTransformModule.js';
 
+import { makeSectionHeadline } from './panels/sectionHeadline.js';
 import { general, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { createSupercell } from './SuperCellModule.js';
@@ -11,7 +12,7 @@ import {
   latticeVolume,
 } from '../math/index.js';
 
-export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
+export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   const targetPanel = document.getElementById(target);
   if (!targetPanel) {
     console.warn(`target container "${target}" not found.`);
@@ -31,34 +32,14 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
     padding: 10px;
   `;
 
-  // --- Lattice Parameters Panel (collapsible) ---
+  // --- Lattice Parameters section (flat headline + content; the whole
+  // window is collapsible, so the sections are not) ---
   const latticePanel = document.createElement("div");
   latticePanel.id = "latticeParametersPanel";
   latticePanel.style.marginBottom = "10px";
 
-  const latticeToggle = document.createElement("div");
-  latticeToggle.id = "latticeToggle";
-  latticeToggle.className = "bond-toggle";
-  latticeToggle.setAttribute("role", "button");
-  latticeToggle.setAttribute("tabindex", "0");
-  latticeToggle.setAttribute("aria-expanded", "false");
-  latticeToggle.setAttribute("aria-controls", "latticeContent");
-
-  const latticeTitle = document.createElement("h4");
-  latticeTitle.textContent = "Lattice Parameters";
-
-  const latticeIcon = document.createElement("div");
-  latticeIcon.id = "latticeToggleIcon";
-  latticeIcon.className = "toggle-icon";
-  latticeIcon.textContent = "+";
-
-  latticeToggle.appendChild(latticeTitle);
-  latticeToggle.appendChild(latticeIcon);
-
   const latticeContent = document.createElement("div");
   latticeContent.id = "latticeContent";
-  latticeContent.className = "collapsible-content";
-  latticeContent.setAttribute("aria-hidden", "true");
 
   // --- Lattice Reset Button ---
   const latticeResetBtnWrapper = document.createElement("div");
@@ -133,37 +114,16 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
   `;
   latticeContent.appendChild(volumeDiv);
 
-  latticePanel.appendChild(latticeToggle);
+  latticePanel.appendChild(makeSectionHeadline("Lattice Parameters"));
   latticePanel.appendChild(latticeContent);
 
-  // --- Supercell Panel (collapsible) ---
+  // --- Supercell section ---
   const supercellPanel = document.createElement("div");
   supercellPanel.id = "supercellPanel";
   supercellPanel.style.marginBottom = "10px";
 
-  const supercellToggle = document.createElement("div");
-  supercellToggle.id = "supercellToggle";
-  supercellToggle.className = "bond-toggle";
-  supercellToggle.setAttribute("role", "button");
-  supercellToggle.setAttribute("tabindex", "0");
-  supercellToggle.setAttribute("aria-expanded", "false");
-  supercellToggle.setAttribute("aria-controls", "supercellContent");
-
-  const supercellTitle = document.createElement("h4");
-  supercellTitle.textContent = "Supercell";
-
-  const supercellIcon = document.createElement("div");
-  supercellIcon.id = "supercellToggleIcon";
-  supercellIcon.className = "toggle-icon";
-  supercellIcon.textContent = "+";
-
-  supercellToggle.appendChild(supercellTitle);
-  supercellToggle.appendChild(supercellIcon);
-
   const supercellContent = document.createElement("div");
   supercellContent.id = "supercellContent";
-  supercellContent.className = "collapsible-content";
-  supercellContent.setAttribute("aria-hidden", "true");
 
   // --- Supercell Input Row ---
   let supercell = fileBrowser.selectedStructure;
@@ -234,36 +194,15 @@ export function addLatticeAndSupercellPanel(target = "BondLatticeContainer") {
   supercellBtnRow.appendChild(supercellResetBtn);
   supercellContent.appendChild(supercellBtnRow);
 
-  supercellPanel.appendChild(supercellToggle);
+  supercellPanel.appendChild(makeSectionHeadline("Supercell"));
   supercellPanel.appendChild(supercellContent);
 
-  // --- Transformation Panel (collapsible) ---
+  // --- Transformation section ---
   const transformPanel = document.createElement("div");
   transformPanel.id = "transformPanel";
 
-  const transformToggle = document.createElement("div");
-  transformToggle.id = "transformToggle";
-  transformToggle.className = "bond-toggle";
-  transformToggle.setAttribute("role", "button");
-  transformToggle.setAttribute("tabindex", "0");
-  transformToggle.setAttribute("aria-expanded", "false");
-  transformToggle.setAttribute("aria-controls", "transformContent");
-
-  const transformTitle = document.createElement("h4");
-  transformTitle.textContent = "Lattice Transformation";
-
-  const transformIcon = document.createElement("div");
-  transformIcon.id = "transformToggleIcon";
-  transformIcon.className = "toggle-icon";
-  transformIcon.textContent = "+";
-
-  transformToggle.appendChild(transformTitle);
-  transformToggle.appendChild(transformIcon);
-
   const transformContent = document.createElement("div");
   transformContent.id = "transformContent";
-  transformContent.className = "collapsible-content";
-  transformContent.setAttribute("aria-hidden", "true");
 
 
   // --- Transformation Matrix Input ---
@@ -357,92 +296,8 @@ transformContent.appendChild(transformMatrixContainer);
   transformBtnRow.appendChild(transformResetBtn);
   transformContent.appendChild(transformBtnRow);
 
-  transformPanel.appendChild(transformToggle);
+  transformPanel.appendChild(makeSectionHeadline("Lattice Transformation"));
   transformPanel.appendChild(transformContent);
-
-  // --- Toggle Logic for Lattice ---
-  function setLatticeOpen(open) {
-    if (open) {
-      latticeContent.classList.add("open");
-      latticeContent.setAttribute("aria-hidden", "false");
-      latticeIcon.textContent = "−";
-      latticeToggle.setAttribute("aria-expanded", "true");
-    } else {
-      latticeContent.classList.remove("open");
-      latticeContent.setAttribute("aria-hidden", "true");
-      latticeIcon.textContent = "+";
-      latticeToggle.setAttribute("aria-expanded", "false");
-    }
-  }
-
-  setLatticeOpen(false);
-
-  latticeToggle.addEventListener("click", () =>
-    setLatticeOpen(!latticeContent.classList.contains("open"))
-  );
-
-  latticeToggle.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      setLatticeOpen(!latticeContent.classList.contains("open"));
-    }
-  });
-
-  // --- Toggle Logic for Supercell ---
-  function setSupercellOpen(open) {
-    if (open) {
-      supercellContent.classList.add("open");
-      supercellContent.setAttribute("aria-hidden", "false");
-      supercellIcon.textContent = "−";
-      supercellToggle.setAttribute("aria-expanded", "true");
-    } else {
-      supercellContent.classList.remove("open");
-      supercellContent.setAttribute("aria-hidden", "true");
-      supercellIcon.textContent = "+";
-      supercellToggle.setAttribute("aria-expanded", "false");
-    }
-  }
-
-  setSupercellOpen(false);
-
-  supercellToggle.addEventListener("click", () =>
-    setSupercellOpen(!supercellContent.classList.contains("open"))
-  );
-
-  supercellToggle.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      setSupercellOpen(!supercellContent.classList.contains("open"));
-    }
-  });
-
-  // --- Toggle Logic for Transformation ---
-  function setTransformOpen(open) {
-    if (open) {
-      transformContent.classList.add("open");
-      transformContent.setAttribute("aria-hidden", "false");
-      transformIcon.textContent = "−";
-      transformToggle.setAttribute("aria-expanded", "true");
-    } else {
-      transformContent.classList.remove("open");
-      transformContent.setAttribute("aria-hidden", "true");
-      transformIcon.textContent = "+";
-      transformToggle.setAttribute("aria-expanded", "false");
-    }
-  }
-
-  setTransformOpen(false);
-
-  transformToggle.addEventListener("click", () =>
-    setTransformOpen(!transformContent.classList.contains("open"))
-  );
-
-  transformToggle.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      setTransformOpen(!transformContent.classList.contains("open"));
-    }
-  });
 
   const deg2rad = (deg) => (deg * Math.PI) / 180;
 

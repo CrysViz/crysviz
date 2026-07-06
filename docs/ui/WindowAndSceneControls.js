@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups, general } from '../state/store.js';
-import { updateAngleDisplays, setupAxisControls, latticeDirs} from '../render/index.js';
+import { setupAxisControls, latticeDirs, requestRender} from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 
@@ -55,9 +55,7 @@ export function setupScene() {
 
   // init Angle display windows
 
-  ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis));
-
-  updateAngleDisplays();
+  ['x', 'y', 'z', 'a', 'b', 'c'].forEach(axis => setupAxisControls(axis));
 
 
   initAxesGizmo();
@@ -129,9 +127,13 @@ export function initRenderer(){
   disposeRendererInstance(app.renderer, view);
   app.renderer = null;
   try {
+    // alpha:true gives the drawing buffer an alpha channel. On screen nothing
+    // changes (an opaque scene.background Color still fills the frame); it lets
+    // the PNG export (render/ImageExportModule.js) capture a transparent frame
+    // by temporarily setting scene.background = null.
     app.renderer = createRendererWithFallback(
-      { antialias: true, powerPreference: 'high-performance' },
-      { antialias: false, powerPreference: 'default' }
+      { antialias: true, alpha: true, powerPreference: 'high-performance' },
+      { antialias: false, alpha: true, powerPreference: 'default' }
     );
   } catch (_) {
     throw new Error('WebGL could not be initialized. Close GPU-heavy tabs or restart the browser, then reload.');
@@ -182,9 +184,14 @@ export function initControls(){
     RIGHT: THREE.MOUSE.PAN
     };
 
+  // update() fires 'change' whenever the camera actually moved (user input,
+  // damping coast-down, or programmatic moves) — the trigger for on-demand rendering.
+  app.controls.addEventListener('change', requestRender);
+
   app.controls.addEventListener('end', () => {
     if (getIsosurfaceTriangleSortingEnabled() && groups.activeField?.isVisible !== false) {
       updateStoredIsosurfaceRenderOrder(app.camera, groups.isosurfaceGroup);
+      requestRender();
     }
   });
 
@@ -227,6 +234,7 @@ export function resizeRenderer(orthographicFrustumSize) {
       app.gizmoCamera.updateProjectionMatrix();
     }
   }
+  requestRender();
 }
 
 
@@ -260,9 +268,28 @@ export function initAxesGizmo(){
   app.gizmoCamera.lookAt(0, 0, 0);
 
   const arrowLen = 1., headLen = 0.35, headWidth = 0.22;
-  const makeArrow = (color) => new THREE.ArrowHelper(
-  new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), arrowLen, color, headLen, headWidth
-  );
+  // Cylinder-shaft arrows instead of THREE.ArrowHelper: the helper's shaft is
+  // a 1px THREE.Line (linewidth is inert in WebGL), while a cylinder radius
+  // gives the user-adjustable axes line width (general.axesLineWidth).
+  const UP = new THREE.Vector3(0, 1, 0);
+  const makeArrow = (color) => {
+    const material = new THREE.MeshBasicMaterial({ color });
+    const shaftLen = arrowLen - headLen;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 8), material);
+    shaft.scale.set(general.axesLineWidth, shaftLen, general.axesLineWidth);
+    shaft.position.y = shaftLen / 2;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(headWidth / 2, headLen, 12), material);
+    head.position.y = arrowLen - headLen / 2;
+    const arrow = new THREE.Group();
+    arrow.add(shaft);
+    arrow.add(head);
+    arrow.userData.shaft = shaft;
+    // Same call signature the animate loop uses on ArrowHelper.
+    arrow.setDirection = (dir) => {
+      arrow.quaternion.setFromUnitVectors(UP, dir.clone().normalize());
+    };
+    return arrow;
+  };
   const aArrow = makeArrow(0xff3333);
   const bArrow = makeArrow(0x33cc33);
   const cArrow = makeArrow(0x3366ff);
@@ -283,6 +310,20 @@ function sizeGizmo(){
   app.gizmoCamera.updateProjectionMatrix();
 }
   sizeGizmo();
+}
+
+/** Re-apply general.axesLineWidth to the gizmo arrows' shaft radii (the
+ *  slider handler in ControlsWiring calls this on input). */
+export function updateAxesGizmoWidth() {
+  const scene = app.gizmoScene;
+  if (!scene) return;
+  for (const key of ['aArrow', 'bArrow', 'cArrow']) {
+    const shaft = scene.userData[key]?.userData?.shaft;
+    if (shaft) {
+      shaft.scale.x = general.axesLineWidth;
+      shaft.scale.z = general.axesLineWidth;
+    }
+  }
 }
 
 
@@ -310,7 +351,7 @@ export function switchCameraType() {
     app.orthographicFrustumSize = null;
   }
   app.controls.object = app.camera;
-  ['x', 'y', 'z'].forEach(axis => setupAxisControls(axis));
+  ['x', 'y', 'z', 'a', 'b', 'c'].forEach(axis => setupAxisControls(axis));
 
   const { center, dist } = getCellCenterAndDist();
   app.camera.position.copy(center.clone().add(new THREE.Vector3(1,1,1).normalize().multiplyScalar(dist)));
@@ -369,10 +410,10 @@ export function resetView() { app.controls.reset(); setViewDirection(new THREE.V
 
 
 
-// Function to collapse all individual atom expansions
+// Function to collapse all individual atom (and bond/polyhedron) expansions
 export function collapseAllAtomExpansions() {
-  const atomsContainers = document.querySelectorAll('.individual-atoms');
-  const expandIcons = document.querySelectorAll('.comp-left span:last-child');
+  const atomsContainers = document.querySelectorAll('.individual-atoms, .individual-bonds, .individual-polyhedra');
+  const expandIcons = document.querySelectorAll('.comp-left span:last-child, .bond-expand-icon, .poly-expand-icon');
 
   atomsContainers.forEach(container => {
     container.style.display = 'none';

@@ -31,6 +31,7 @@ export class StructureContainer {
           atom.opacity = targetStructure.atoms[atomIndex].opacity;
           atom.elementColor = targetStructure.atoms[atomIndex].elementColor;
           atom.elementOpacity = targetStructure.atoms[atomIndex].elementOpacity;
+          atom.radiusScale = targetStructure.atoms[atomIndex].radiusScale ?? 1;
         }
       });
 
@@ -43,6 +44,23 @@ export class StructureContainer {
     });
   }
 
-
+  /**
+   * Deep-copy every per-structure style store from targetStructure (the
+   * current frame) to all other frames. Keys are index/geometry-derived and
+   * assume frames share atom count/order (true for OUTCAR/eXYZ trajectories);
+   * entries that go stale on a frame (e.g. atoms drifting across cell
+   * boundaries change wrapped-index keys) are ignored by the stores'
+   * element/geometry sanity checks at apply time.
+   */
+  flushStylesToAllStructures(targetStructure) {
+    const STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
+                    'polyhedraUserStyles', 'polyhedraCategoryStyles'];
+    this.structures.forEach(structure => {
+      if (structure === targetStructure) return;
+      for (const k of STORES) {
+        structure[k] = JSON.parse(JSON.stringify(targetStructure[k] ?? {}));
+      }
+    });
+  }
 
 }

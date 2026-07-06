@@ -24,7 +24,7 @@ export class Bond {
     this.srcIndices = srcIndices;
     this.uuid = uuid; 
     this.color=color;
-    this.userColor=[null, null];
+    this.userColor = (Array.isArray(userColor) && userColor.length === 2) ? userColor : [null, null];
 
     // Compute positions, direction, distance
     if (positions.length === 2) {

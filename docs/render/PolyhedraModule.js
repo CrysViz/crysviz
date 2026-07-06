@@ -1,9 +1,13 @@
 import * as THREE from '../external/three/three.module.js';
 import { ConvexGeometry } from '../external/three/ConvexGeometry.js';
 import { ConvexHull } from '../external/three/ConvexHull.js';
-import {app,general,groups, fileBrowser} from '../state/store.js'
+import {app,general,groups, fileBrowser, highlightHover} from '../state/store.js'
 import { fracToCart, cartToFrac, invert3x3, transpose3x3 } from '../math/index.js'
-import { getBondCutoff} from '../render/BondsFracUpdateModule.js'
+// Polyhedra use the length-only cutoff: hiding bonds (per-pair visibility)
+// must not remove polyhedra — they follow the configured bond distances.
+import { getBondLengthCutoff } from '../render/BondsFracUpdateModule.js'
+import { CEL_OUTLINE_LAYER } from './CelOutlinePass.js'
+import { addCelPolyOutline } from './MaterialStyles.js'
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import { Polyhedra } from '../model/Polyhedra.js'
 import { Polyhedron } from '../model/Polyhedron.js'
@@ -26,10 +30,21 @@ import { runPeriodicWrapped } from '../render/LatticeModule.js'
 let polyhedraBusy = false;
 let polyhedraDirty = false;
 
+// Bookkeeping for every path that replaces the displayed polyhedra group:
+// invalidate the Poly tab's lazy row lists (build counter), drop the (now
+// mesh-less) selection, and tell the panel to re-render. A DOM CustomEvent is
+// used instead of a render→ui import to respect the layering.
+function notifyPolyhedraRebuilt() {
+  general.polyhedraBuildCounter = (general.polyhedraBuildCounter || 0) + 1;
+  highlightHover.currentlyHighlightedPolyhedron = null;
+  document.dispatchEvent(new CustomEvent('crysviz:polyhedra-rebuilt'));
+}
+
 function clearPolyhedraGroup() {
   if (groups.polyhedraGroup) disposeGroup(groups.polyhedraGroup);
   groups.polyhedraGroup = new THREE.Group();
   app.scene.add(groups.polyhedraGroup);
+  notifyPolyhedraRebuilt();
 }
 
 // ---------- STYLE (render) ----------
@@ -105,6 +120,121 @@ function polyhedronFaceColor(type, centerIndex, colorElem) {
     if (atom) return colorHexToCss(atom.getColor());
   }
   return getElementColor(colorElem);
+}
+
+// ---------- IDENTITY / CATEGORIES / USER STYLES ----------
+
+function clamp01(v) { return Math.max(0, Math.min(1, Number(v) || 0)); }
+
+/** Alphabetical composition string of a polyhedron's vertex elements, e.g. "O6", "N2O4". */
+function vertexComposition(structure, poly) {
+  const counts = {};
+  for (const src of poly.vertexSrcList ?? []) {
+    const el = structure.elements[src];
+    if (el) counts[el] = (counts[el] || 0) + 1;
+  }
+  return Object.keys(counts).sort()
+    .map((el) => `${el}${counts[el] > 1 ? counts[el] : ''}`)
+    .join('');
+}
+
+/**
+ * Stable identity + category for one polyhedron, derived post-hoc from the model
+ * geometry so it is identical across all three compute paths (JS / WASM serial /
+ * result-reordering parallel workers), which do not surface the image shift.
+ * - centered: key = center source index + periodic image shift of the shell
+ *   (vertex centroid rounds to the correct image since the center sits inside);
+ *   category = center element + vertex composition (label "CuO6").
+ * - cage: key = sorted vertex source indices + centroid cell (disambiguates
+ *   periodic image copies); category = composition + coordination number.
+ * @returns {{key: string, groupKey: string, catKey: string, label: string}}
+ */
+function polyhedronIdentity(structure, poly, latInv) {
+  let cx = 0, cy = 0, cz = 0;
+  for (const p of poly.vertices) { cx += p[0]; cy += p[1]; cz += p[2]; }
+  const n = poly.vertices.length || 1;
+  const frac = cartToFrac([cx / n, cy / n, cz / n], structure.lattice, latInv);
+  const comp = vertexComposition(structure, poly);
+  if (poly.type === 'centered' && Number.isInteger(poly.centerIndex)) {
+    const center = structure.atoms[poly.centerIndex]?.position ?? [0, 0, 0];
+    const shift = [0, 1, 2].map((i) => Math.round(frac[i] - center[i])).join(',');
+    return {
+      key: `c:${poly.centerIndex}:${shift}`,
+      groupKey: `c:${poly.centerIndex}`, // all periodic-image copies of this center
+      catKey: `c:${poly.centerElement}:${comp}`,
+      label: `${poly.centerElement}${comp}`,
+    };
+  }
+  const srcs = [...(poly.vertexSrcList ?? [])].sort((a, b) => a - b).join(',');
+  const cell = [0, 1, 2].map((i) => Math.floor(frac[i])).join(',');
+  return {
+    key: `g:${srcs}:${cell}`,
+    groupKey: `g:${srcs}`, // all periodic-image copies of this cage
+    catKey: `g:${comp}:${poly.numVertices}`,
+    label: `${comp} cage · CN ${poly.numVertices}`,
+  };
+}
+
+/** Strip the periodic-image segment from a polyhedron key ("c:5:0,0,1" -> "c:5"). */
+export function polyhedronGroupKey(key) {
+  const s = String(key);
+  const i = s.lastIndexOf(':');
+  return i > 0 ? s.slice(0, i) : s;
+}
+
+/** Stamp poly.key / poly.catKey / poly.catLabel onto every model polyhedron. */
+function assignPolyhedraKeys(structure, model) {
+  if (!model?.polyhedra?.length || !structure?.lattice) return;
+  const latInv = invert3x3(transpose3x3(structure.lattice));
+  for (const poly of model.polyhedra) {
+    const id = polyhedronIdentity(structure, poly, latInv);
+    poly.key = id.key;
+    poly.groupKey = id.groupKey;
+    poly.catKey = id.catKey;
+    poly.catLabel = id.label;
+  }
+}
+
+/**
+ * Group the current structure's polyhedra for the Poly tab.
+ * @returns {Map<string, {label: string, type: string, cn: number, indices: number[]}>}
+ *   indices index into structure.polyhedra.polyhedra.
+ */
+export function groupPolyhedraByCategory(structure) {
+  const map = new Map();
+  const polys = structure?.polyhedra?.polyhedra ?? [];
+  polys.forEach((poly, i) => {
+    if (!poly.catKey) return; // keys not assigned yet (no lattice / stale model)
+    let entry = map.get(poly.catKey);
+    if (!entry) {
+      entry = { label: poly.catLabel, type: poly.type, cn: poly.numVertices, indices: [] };
+      map.set(poly.catKey, entry);
+    }
+    entry.indices.push(i);
+  });
+  return map;
+}
+
+/**
+ * Resolve the effective style for one polyhedron: individual override >
+ * category override > default (center-atom/element color, FACE_OPACITY,
+ * EDGE_COLOR/EDGE_OPACITY for the edge lines).
+ * `visible` is a category-level setting only.
+ * @returns {{color: string|number, opacity: number, visible: boolean,
+ *            edgeColor: string|number, edgeOpacity: number}}
+ */
+export function resolvePolyhedronStyle(structure, key, catKey, type, centerIndex, colorElem) {
+  structure.polyhedraUserStyles ??= {}; // defensive: pre-existing structures
+  structure.polyhedraCategoryStyles ??= {};
+  const ind = key ? structure.polyhedraUserStyles[key] : null;
+  const cat = catKey ? structure.polyhedraCategoryStyles[catKey] : null;
+  return {
+    color: ind?.color ?? cat?.color ?? polyhedronFaceColor(type, centerIndex, colorElem),
+    opacity: clamp01(ind?.alpha ?? cat?.alpha ?? FACE_OPACITY),
+    visible: cat?.visible !== false,
+    edgeColor: ind?.edgeColor ?? cat?.edgeColor ?? EDGE_COLOR,
+    edgeOpacity: clamp01(ind?.edgeAlpha ?? cat?.edgeAlpha ?? EDGE_OPACITY),
+  };
 }
 
 // Minimal induced degree per cage size (tune as needed)
@@ -389,7 +519,8 @@ export function computePolyhedra(structure) {
   const prep = {
     positions, elements, lattice, maxCutoff,
     useChemicalFilter, detectCages,
-    displayCenters, centerImageKeys, seedVisible, cutPlaneImmune, cutPlaneData, getBondCutoff,
+    displayCenters, centerImageKeys, seedVisible, cutPlaneImmune, cutPlaneData,
+    getBondCutoff: getBondLengthCutoff, // length-only (visibility-independent)
   };
 
   // Serial WASM (one call) → model.
@@ -458,16 +589,17 @@ export function computePolyhedra(structure) {
    * @param {string} elem element symbol at P (for the cutoff lookup)
    * @returns {Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>}
    */
-  // Per-center-element bond-cutoff rows, memoized. `getBondCutoff` rebuilds a
-  // string key on every call and sits in the hottest neighbour loops, so cache
-  // an nAtoms-long row of cutoffs for each distinct centre element.
+  // Per-center-element bond-cutoff rows, memoized. `getBondLengthCutoff`
+  // rebuilds a string key on every call and sits in the hottest neighbour
+  // loops, so cache an nAtoms-long row of cutoffs for each distinct centre
+  // element.
   /** @type {Map<string, Float64Array>} */
   const cutoffRowCache = new Map();
   function cutoffRow(elem) {
     let row = cutoffRowCache.get(elem);
     if (!row) {
       row = new Float64Array(nAtoms);
-      for (let j = 0; j < nAtoms; j++) row[j] = getBondCutoff(elem, elements[j]);
+      for (let j = 0; j < nAtoms; j++) row[j] = getBondLengthCutoff(elem, elements[j]);
       cutoffRowCache.set(elem, row);
     }
     return row;
@@ -655,7 +787,7 @@ export function computePolyhedra(structure) {
     if (cands.length < 4) continue;
     const accept = (/** @type {any} */ cand) => {
       if (!isLigandOf(cand.elem, centerElem, useChemicalFilter)) return false;
-      const cutoff = getBondCutoff(centerElem, cand.elem);
+      const cutoff = getBondLengthCutoff(centerElem, cand.elem);
       return cutoff > 1e-3 && cand.d <= cutoff;
     };
     const vor = voronoiNeighbours(centerPos, cands, {
@@ -973,21 +1105,29 @@ export function renderPolyhedra(structure) {
   if (!model || !model.polyhedra || !model.polyhedra.length) return;
   if (!ConvexGeomCtor) return;
 
-  const sharedEdgeMat = new THREE.LineBasicMaterial({
-    color: EDGE_COLOR, transparent: true, opacity: EDGE_OPACITY,
-  });
+  // Depth proxy material for the screen-space cel outline pass: the faces are
+  // transparent (no depth write), so an opaque copy on the outline-only layer
+  // provides the polyhedron silhouette there. Invisible in the main render.
+  const sharedDepthProxyMat = new THREE.MeshBasicMaterial();
 
+  // Keys are normally stamped in updatePolyhedra right after the compute;
+  // stamp defensively for any model that predates that (e.g. restored sessions).
+  if (model.polyhedra.some((p) => !p.key)) assignPolyhedraKeys(structure, model);
+
+  let polyIndex = -1;
   for (const poly of model.polyhedra) {
+    polyIndex++;
     const posList = poly.vertices.map(p => new THREE.Vector3(p[0], p[1], p[2]));
     let geom;
     try { geom = new ConvexGeomCtor(posList); } catch { continue; }
     geom.computeVertexNormals();
 
-    const faceColor = polyhedronFaceColor(poly.type, poly.centerIndex, poly.colorElem);
+    const style = resolvePolyhedronStyle(
+      structure, poly.key, poly.catKey, poly.type, poly.centerIndex, poly.colorElem);
     const mat = new THREE.MeshStandardMaterial({
-      color: faceColor,
+      color: style.color,
       transparent: true,
-      opacity: FACE_OPACITY,
+      opacity: style.opacity,
       metalness: 0.0,
       roughness: 1.0,
       side: DOUBLE_SIDE ? THREE.DoubleSide : THREE.FrontSide,
@@ -997,6 +1137,7 @@ export function renderPolyhedra(structure) {
       polygonOffsetUnits: POLY_OFFSET ? POLY_OFFSET_UNITS : 0,
     });
     const mesh = new THREE.Mesh(geom, mat);
+    mesh.visible = style.visible; // category-level show/hide
     mesh.userData = {
       type: 'polyhedron',
       mode: poly.type,
@@ -1005,27 +1146,62 @@ export function renderPolyhedra(structure) {
       centerElement:  (poly.type === 'centered') ? poly.centerElement : undefined,
       colorElem: poly.colorElem, // for in-place recolour (updatePolyhedraColors)
       vertexSrcs: poly.vertexSrcList,
+      key: poly.key,           // stable identity (persistence + selection)
+      groupKey: poly.groupKey, // periodic-copy group ("Link periodic copies")
+      catKey: poly.catKey,     // category (Poly tab grouping)
+      polyIndex,               // index into structure.polyhedra.polyhedra
     };
 
+    // Per-polyhedron edge material so edge color/alpha are styleable via the
+    // same store precedence as the faces (disposeGroup disposes it with the rest).
     const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
-    mesh.add(new THREE.LineSegments(egeom, sharedEdgeMat));
+    const edgeLines = new THREE.LineSegments(egeom, new THREE.LineBasicMaterial({
+      color: style.edgeColor, transparent: true, opacity: style.edgeOpacity,
+    }));
+    edgeLines.userData.type = 'polyhedron-edges';
+    mesh.add(edgeLines);
+
+    const depthProxy = new THREE.Mesh(geom, sharedDepthProxyMat);
+    depthProxy.layers.set(CEL_OUTLINE_LAYER); // outline pass only
+    depthProxy.raycast = () => {};
+    mesh.add(depthProxy);
+
+    if (general.renderStyle === 'cel' && general.celOutlineMode === 'hull') {
+      const center = new THREE.Vector3();
+      for (const p of posList) center.add(p);
+      center.multiplyScalar(1 / posList.length);
+      addCelPolyOutline(mesh, center);
+    }
+
     groups.polyhedraGroup.add(mesh);
   }
 }
 
 /**
- * Recolour the existing polyhedra faces from the current element colours, in place —
- * no geometry recompute. Use after an element-colour change that only updates atom/bond
- * meshes directly (e.g. the colour picker), so the polyhedra match without a full
- * (async) `updatePolyhedra`. No-op when no polyhedra are drawn.
+ * Restyle the existing polyhedra faces in place — no geometry recompute. Applies
+ * the full resolved style (color, opacity, category visibility) with user
+ * overrides taking precedence over the default atom/element colours. Use after
+ * an element-colour change or a Poly-tab style edit, so the polyhedra match
+ * without a full (async) `updatePolyhedra`. Never touches material.emissive —
+ * that channel is owned by the selection highlight. No-op when nothing drawn.
  */
 export function updatePolyhedraColors() {
   const grp = groups.polyhedraGroup;
-  if (!grp) return;
+  const structure = fileBrowser.selectedStructure;
+  if (!grp || !structure) return;
   for (const mesh of grp.children) {
     const ud = mesh.userData;
     if (ud?.type !== 'polyhedron' || !mesh.material?.color) continue;
-    mesh.material.color.set(polyhedronFaceColor(ud.mode, ud.centerSrcIndex, ud.colorElem));
+    const style = resolvePolyhedronStyle(
+      structure, ud.key, ud.catKey, ud.mode, ud.centerSrcIndex, ud.colorElem);
+    mesh.material.color.set(style.color);
+    mesh.material.opacity = style.opacity;
+    mesh.visible = style.visible;
+    const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
+    if (edge?.material) {
+      edge.material.color.set(style.edgeColor);
+      edge.material.opacity = style.edgeOpacity;
+    }
   }
 }
 
@@ -1082,6 +1258,9 @@ export async function updatePolyhedra() {
       }
 
       structure.polyhedra = model;
+      // Stamp stable keys on the model side too (not just at render time), so the
+      // Poly tab can list/group polyhedra even before/without faces being drawn.
+      assignPolyhedraKeys(structure, model);
 
       // "Complete Polyhedra": append the out-of-cell vertex atoms to the displayed set so
       // every polyhedron has an atom (with bonds) at each vertex. Only re-renders atoms/bonds
@@ -1102,6 +1281,7 @@ export async function updatePolyhedra() {
         console.log(`[polyhedra] render=${(performance.now() - _tr).toFixed(1)}ms (compute+render=${(performance.now() - _tc).toFixed(1)}ms)`);
       }
       if (prev) disposeGroup(prev);
+      notifyPolyhedraRebuilt();
     } while (polyhedraDirty);
   } catch (err) {
     console.error('[updatePolyhedra] compute failed:', err);

@@ -1,11 +1,22 @@
-import { app, general, measurements, fileBrowser } from '../state/store.js';
+import { app, general, measurements, fileBrowser, structureShip } from '../state/store.js';
+
+/** Deep copy of a sparse style-store object, or undefined when empty/absent
+ *  (keeps captured sessions small). */
+function nonEmptyDeepCopy(obj) {
+  return obj && Object.keys(obj).length ? JSON.parse(JSON.stringify(obj)) : undefined;
+}
 import * as THREE from '../external/three/three.module.js';
-import { parsePOSCAR } from './StructureInputModule.js';
+import { parsePOSCAR, initializeUIOnLoad } from './StructureInputModule.js';
+import { readPOSCAR } from '../io/ReadPOSCARModule.js';
+import { StructureContainer } from '../model/index.js';
 import { updateAtoms } from '../render/index.js';
-import { rebuildBonds } from '../render/index.js';
+import { rebuildBonds, updatePolyhedra } from '../render/index.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
+import { revealFeaturePanels } from './panels/PanelManager.js';
 import { fracToCart } from '../math/index.js';
+import { updateAxesGizmoWidth, switchCameraType, resizeRenderer } from './WindowAndSceneControls.js';
+import { getContrastingBorder } from './BackgroundPicker.js';
 
 const URL_WARN_CHARS = 4000;
 const URL_HARD_CHARS = 10000;
@@ -14,7 +25,13 @@ const URL_HARD_CHARS = 10000;
 // Capture
 // ---------------------------------------------------------------------------
 
-function captureState() {
+/**
+ * Collect the full visual state (structure, colors, display settings, style,
+ * camera, measurements) — everything EXCEPT window placements, which live in
+ * the panel system's own localStorage. Shared by the Share-URL feature and
+ * the .crysviz file download (SavePanel).
+ */
+export function captureState({ includeFrames = false } = {}) {
   const structure = fileBrowser.selectedStructure;
   if (!structure) return null;
 
@@ -22,6 +39,16 @@ function captureState() {
   const atomColors = {};
   structure.atoms.forEach((atom, i) => {
     if (atom.color !== atom.elementColor) atomColors[i] = atom.color;
+  });
+
+  // Per-atom opacity / size overrides (sparse: only non-default values)
+  const atomOpacities = {};
+  const atomRadiusScales = {};
+  structure.atoms.forEach((atom, i) => {
+    const opacity = atom.getOpacity?.() ?? atom.opacity ?? 1;
+    if (opacity < 0.999) atomOpacities[i] = opacity;
+    const radiusScale = atom.getRadiusScale?.() ?? 1;
+    if (Math.abs(radiusScale - 1) > 1e-9) atomRadiusScales[i] = radiusScale;
   });
 
   // Per-element color overrides — first occurrence per element
@@ -55,8 +82,24 @@ function captureState() {
     })
     .filter(d => d && d.type);
 
+  // Whole-trajectory frames (all steps of the active container), so saving an
+  // MD/relaxation run preserves every frame — not just the viewed one. Each
+  // frame is stored in its native atom order. Only the .crysviz file save opts
+  // in (includeFrames); the share-URL omits them to keep the URL small. The
+  // single `structure` field below always carries the viewed frame (back-compat).
+  let frames;
+  if (includeFrames) {
+    const activeContainer = structureShip.container?.[fileBrowser.selectedRowIndex];
+    frames = (activeContainer?.structures ?? [structure]).map(frame => ({
+      elements: [...frame.elements],
+      lattice: frame.lattice.map(r => [...r]),
+      positions: frame.atoms.map(a => [...a.position]),
+    }));
+  }
+
   return {
-    version: '2.0',
+    version: '2.3',
+    ...(frames ? { frames } : {}),
     structure: {
       elements: [...structure.elements],
       lattice: structure.lattice.map(r => [...r]),
@@ -66,17 +109,43 @@ function captureState() {
       atomColors,
       elementColors,
       useDefaultColors: general.useDefaultColors,
+      atomOpacities,
+      atomRadiusScales,
+      // The per-item / per-category style stores (all stably keyed, so they
+      // re-attach after the load-time rebuilds; sparse — only saved when set).
+      atomImageStyles: nonEmptyDeepCopy(structure.atomImageStyles),
+      bondUserStyles: nonEmptyDeepCopy(structure.bondUserStyles),
+      bondCategoryStyles: nonEmptyDeepCopy(structure.bondCategoryStyles),
+      polyhedraUserStyles: nonEmptyDeepCopy(structure.polyhedraUserStyles),
+      polyhedraCategoryStyles: nonEmptyDeepCopy(structure.polyhedraCategoryStyles),
     },
     display: {
       atomSize: general.atomSize,
+      bondRadius: general.bondRadius,
       showAtoms: general.showAtoms,
       showBonds: general.showBonds,
       showLattice: general.showLattice,
       showPeriodic: general.showPeriodic,
+      linkPeriodicCopies: general.linkPeriodicCopies,
       periodicFaceTol: general.periodicFaceTol,
       showPBCBonds: general.showPBCBonds,
+      showAxes: general.showAxes,
+      showPolyhedra: general.showPolyhedra,
+      completePolyhedra: general.completePolyhedra,
+      axesLineWidth: general.axesLineWidth,
+      latticeLineWidth: general.latticeLineWidth,
       bondLengths: { ...general.bondLengths },
       bondVisibility: { ...general.bondVisibility },
+      atomVisibility: { ...general.atomVisibility },
+      bondCutImmunity: { ...general.bondCutImmunity },
+    },
+    style: {
+      renderStyle: general.renderStyle,
+      celOutlineWidth: general.celOutlineWidth,
+      celHullWidth: general.celHullWidth,
+      atomsColor: general.atomsColor,
+      bondsColor: general.bondsColor,
+      background: app.scene?.background ? '#' + app.scene.background.getHexString() : null,
     },
     camera: {
       position: app.camera
@@ -85,7 +154,14 @@ function captureState() {
       target: app.controls
         ? [app.controls.target.x, app.controls.target.y, app.controls.target.z]
         : null,
+      // The trackball controls roll the camera's up vector freely — without
+      // it, position+target restore the view direction but not the rotation.
+      up: app.camera
+        ? [app.camera.up.x, app.camera.up.y, app.camera.up.z]
+        : null,
       zoom: app.camera?.zoom ?? null,
+      orthographic: !!app.useOrthographicCamera,
+      frustumSize: app.orthographicFrustumSize ?? null,
     },
     measurements: measurementData,
   };
@@ -170,22 +246,72 @@ function applyDisplaySettings(display) {
     const el = document.getElementById(id);
     if (el) el.checked = val;
   };
+  const setSlider = (id, valueId, val, decimals) => {
+    const s = document.getElementById(id);
+    const sv = document.getElementById(valueId);
+    if (s) s.value = val;
+    if (sv) sv.textContent = Number(val).toFixed(decimals);
+  };
 
   if (display.atomSize != null) {
     general.atomSize = display.atomSize;
-    const s = document.getElementById('atomSize');
-    const sv = document.getElementById('atomSizeValue');
-    if (s) s.value = display.atomSize;
-    if (sv) sv.textContent = Number(display.atomSize).toFixed(2);
+    setSlider('atomSize', 'atomSizeValue', display.atomSize, 2);
+  }
+  if (display.bondRadius != null) {
+    general.bondRadius = display.bondRadius;
+    setSlider('bondWidth', 'bondWidthValue', display.bondRadius, 2);
+  }
+  if (display.axesLineWidth != null) {
+    general.axesLineWidth = display.axesLineWidth;
+    setSlider('axesWidth', 'axesWidthValue', display.axesLineWidth, 3);
+    updateAxesGizmoWidth();
+  }
+  if (display.latticeLineWidth != null) {
+    // The lattice outline is (re)built after the structure loads, so setting
+    // the width here is enough.
+    general.latticeLineWidth = display.latticeLineWidth;
+    setSlider('latticeWidth', 'latticeWidthValue', display.latticeLineWidth, 3);
   }
   if (display.showAtoms != null)   { general.showAtoms   = display.showAtoms;   setToggle('showAtoms', display.showAtoms); }
   if (display.showBonds != null)   { general.showBonds   = display.showBonds;   setToggle('showBonds', display.showBonds); }
   if (display.showLattice != null) { general.showLattice = display.showLattice; setToggle('showLattice', display.showLattice); }
   if (display.showPeriodic != null){ general.showPeriodic= display.showPeriodic;setToggle('showPeriodic', display.showPeriodic); }
   if (display.periodicFaceTol != null){ general.periodicFaceTol = display.periodicFaceTol; }
+  // The Atoms-tab toggle is rebuilt from `general` on the next renderComposition.
+  if (display.linkPeriodicCopies != null){ general.linkPeriodicCopies = display.linkPeriodicCopies; }
   if (display.showPBCBonds != null){ general.showPBCBonds= display.showPBCBonds;setToggle('PBCBondToggle', display.showPBCBonds); }
+  if (display.showAxes != null) {
+    setToggle('showAxes', display.showAxes);
+    // The change handler owns the gizmo/legend visibility (ControlsWiring).
+    document.getElementById('showAxes')?.dispatchEvent(new Event('change'));
+  }
+  if (display.showPolyhedra != null) { general.showPolyhedra = display.showPolyhedra; setToggle('showPolyhedra', display.showPolyhedra); }
+  if (display.completePolyhedra != null) { general.completePolyhedra = display.completePolyhedra; setToggle('completePolyhedraToggle', display.completePolyhedra); }
   if (display.bondLengths)    Object.assign(general.bondLengths, display.bondLengths);
   if (display.bondVisibility) Object.assign(general.bondVisibility, display.bondVisibility);
+  if (display.atomVisibility) Object.assign(general.atomVisibility, display.atomVisibility);
+  if (display.bondCutImmunity) Object.assign(general.bondCutImmunity, display.bondCutImmunity);
+}
+
+/** Render style, color modes and scene background. Runs BEFORE the structure
+ *  loads: the initial render then picks these up directly. */
+function applyStyleSettings(style) {
+  if (!style) return;
+  const setSelect = (id, val) => {
+    const el = document.getElementById(id);
+    if (el && val != null) el.value = val;
+  };
+  if (style.renderStyle) { general.renderStyle = style.renderStyle; setSelect('renderStyleMenu', style.renderStyle); }
+  if (style.celOutlineWidth != null) general.celOutlineWidth = style.celOutlineWidth;
+  if (style.celHullWidth != null) general.celHullWidth = style.celHullWidth;
+  if (style.atomsColor) { general.atomsColor = style.atomsColor; setSelect('atomsMenu', style.atomsColor); }
+  if (style.bondsColor) { general.bondsColor = style.bondsColor; setSelect('bondsMenu', style.bondsColor); }
+  if (style.background && app?.scene) {
+    app.scene.background = new THREE.Color(style.background);
+    // Keep the lattice readable against the restored background, like the
+    // background picker does (the lattice is built after this runs).
+    general.currentLatticeColor = getContrastingBorder(style.background);
+  }
 }
 
 function applyAtomColors(colors, structure) {
@@ -208,6 +334,34 @@ function applyAtomColors(colors, structure) {
       const atom = structure.atoms[parseInt(idx)];
       if (atom) atom.color = color;
     });
+  }
+
+  // Per-atom opacity/size overrides; updateAtoms() (run by the caller) pushes
+  // both to the instanced mesh.
+  if (colors.atomOpacities) {
+    Object.entries(colors.atomOpacities).forEach(([idx, value]) => {
+      structure.atoms[parseInt(idx)]?.setOpacity?.(value);
+    });
+  }
+  if (colors.atomRadiusScales) {
+    Object.entries(colors.atomRadiusScales).forEach(([idx, value]) => {
+      structure.atoms[parseInt(idx)]?.setRadiusScale?.(value);
+    });
+  }
+
+  // Per-periodic-copy overrides: keys are stable ("srcIndex:dx,dy,dz") and the
+  // element sanity check in getAtomImageStyle drops any that no longer match;
+  // the caller's updateAtoms() applies them.
+  if (colors.atomImageStyles) {
+    structure.atomImageStyles = JSON.parse(JSON.stringify(colors.atomImageStyles));
+  }
+
+  // Per-bond / per-polyhedron style stores. This runs after restoreAtomOrder
+  // (see applySharedState), so the wrapped-index bondUserStyles keys match the
+  // corrected atom order when the caller's rebuildBonds() re-applies them;
+  // stale keys are silently ignored by the stores' element/geometry checks.
+  for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles', 'polyhedraCategoryStyles']) {
+    if (colors[k]) structure[k] = JSON.parse(JSON.stringify(colors[k]));
   }
 }
 
@@ -255,7 +409,20 @@ function restoreAtomOrder(savedStructure, loadedStructure) {
 function restoreCamera(camState) {
   if (!camState?.position || !camState?.target) return;
   setTimeout(() => {
+    // Camera type first: switching rebuilds app.camera at a default pose, so
+    // it must precede the pose restore.
+    if (camState.orthographic != null && camState.orthographic !== app.useOrthographicCamera) {
+      app.useOrthographicCamera = camState.orthographic;
+      const toggle = document.getElementById('orthographicCamera');
+      if (toggle) /** @type {HTMLInputElement} */ (toggle).checked = camState.orthographic;
+      switchCameraType();
+    }
+    if (camState.orthographic && camState.frustumSize != null) {
+      app.orthographicFrustumSize = camState.frustumSize;
+      resizeRenderer(camState.frustumSize); // re-derives the ortho frustum planes
+    }
     app.camera.position.set(...camState.position);
+    if (camState.up) app.camera.up.set(...camState.up);
     app.controls.target.set(...camState.target);
     if (camState.zoom != null) {
       app.camera.zoom = camState.zoom;
@@ -377,52 +544,112 @@ export function loadSharedStructure() {
     return;
   }
 
-  if (!state.version?.startsWith('2')) {
-    console.warn('Shared state version not supported:', state.version);
-    return;
-  }
-
-  // Apply display settings before loading so parsePOSCAR renders with them
-  applyDisplaySettings(state.display);
-
-  // Load structure (synchronous — triggers updateVisualization internally)
-  try {
-    parsePOSCAR(buildPOSCAR(state), 'shared.vasp');
-  } catch (e) {
-    console.error('Failed to load shared structure:', e);
-    return;
-  }
-
-  const structure = fileBrowser.selectedStructure;
-  if (!structure) return;
-
-  // buildPOSCAR() groups atoms by element, so restore the saved atom ordering
-  // before applying any per-atom state that relies on stable indices.
-  restoreAtomOrder(state.structure, structure);
-
-  const structureControls = document.getElementById('structureControls');
-  if (structureControls) structureControls.style.display = 'block';
-  const structureControls2 = document.getElementById('structureControls2');
-  if (structureControls2) structureControls2.style.display = 'block';
-  const bondControlsGroup = document.getElementById('bondControlsGroup');
-  if (bondControlsGroup) bondControlsGroup.style.display = 'block';
-  createBondLengthControls();
-
-  // Apply colors on top of loaded structure, then push to GPU
-  applyAtomColors(state.colors, structure);
-  updateAtoms();
-
-  // Rebuild bonds to reflect any bondLength / bondVisibility changes
-  rebuildBonds();
-
-  // Camera and measurements need the render to have settled
-  restoreCamera(state.camera);
-  restoreMeasurements(state.measurements);
+  if (!applySharedState(state, 'shared.vasp')) return;
 
   // Clean URL
   const newUrl = new URL(window.location.href);
   newUrl.searchParams.delete('state');
   window.history.replaceState({}, document.title, newUrl.toString());
+}
+
+/**
+ * Apply a captured state (see captureState): load its structure and restore
+ * colors, display/style settings, camera and measurements. Shared by the
+ * ?state= share-URL loader and the .crysviz file loader.
+ * @returns {boolean} whether the state was applied
+ */
+export function applySharedState(state, fileName = 'shared.vasp') {
+  if (!state?.version?.startsWith('2')) {
+    console.warn('State version not supported:', state?.version);
+    return false;
+  }
+
+  // Apply display/style settings before loading so parsePOSCAR renders with them
+  applyDisplaySettings(state.display);
+  applyStyleSettings(state.style);
+
+  // A saved trajectory carries every frame in `frames`; older single-frame
+  // files (and the share-URL) carry only `structure`.
+  const frames = Array.isArray(state.frames) ? state.frames : null;
+  const multiFrame = !!(frames && frames.length > 1);
+  let trajectoryContainer = null;
+
+  // Load structure (synchronous — triggers updateVisualization internally)
+  try {
+    if (multiFrame) {
+      // Rebuild each frame's Structure, restoring its native atom order (buildPOSCAR
+      // groups by element) so per-atom indices stay stable across the trajectory.
+      const structures = frames.map((f) => {
+        const s = readPOSCAR(buildPOSCAR({ structure: f }), fileName);
+        restoreAtomOrder(f, s);
+        return s;
+      });
+      trajectoryContainer = new StructureContainer({ fileName, structures });
+      initializeUIOnLoad(trajectoryContainer);
+    } else {
+      parsePOSCAR(buildPOSCAR(state), fileName);
+    }
+  } catch (e) {
+    console.error('Failed to load structure from state:', e);
+    return false;
+  }
+
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return false;
+
+  // Single-frame: buildPOSCAR() groups atoms by element, so restore the saved
+  // atom ordering before applying any per-atom state that relies on stable
+  // indices. (Multi-frame frames were already restored above.)
+  if (!multiFrame) restoreAtomOrder(state.structure, structure);
+
+  revealFeaturePanels();
+  createBondLengthControls();
+
+  // Apply colors on top of loaded structure, then push to GPU
+  applyAtomColors(state.colors, structure);
+  // Propagate the restored colors to every other frame so scrubbing the
+  // trajectory keeps the saved appearance (indices align — all frames restored).
+  if (multiFrame) trajectoryContainer.flushColorToAllStructures(structure);
+  updateAtoms();
+
+  // Rebuild bonds to reflect any bondLength / bondVisibility changes
+  rebuildBonds();
+
+  // parsePOSCAR's updateVisualization kicked off the (async) polyhedra compute
+  // BEFORE restoreAtomOrder and the style-store restore above; re-run it so
+  // keys derive from the corrected atom order and restored styles render.
+  // (updatePolyhedra coalesces with any in-flight compute.)
+  if (general.showPolyhedra || general.completePolyhedra) updatePolyhedra();
+
+  // Cel style: re-fire the dropdown so its dependent controls (outline block)
+  // appear; the handler re-renders, which is only paid for cel states.
+  if (state.style?.renderStyle === 'cel') {
+    document.getElementById('renderStyleMenu')?.dispatchEvent(new Event('change'));
+  }
+
+  // Camera and measurements need the render to have settled
+  restoreCamera(state.camera);
+  restoreMeasurements(state.measurements);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Load from a .crysviz file (the Download menu's save format)
+// ---------------------------------------------------------------------------
+
+export function loadCrysvizFile(content, fileName = 'file.crysviz') {
+  let state;
+  try {
+    state = JSON.parse(content);
+  } catch {
+    throw new Error(`${fileName} is not a valid .crysviz file (JSON expected).`);
+  }
+  if (state?.format !== 'crysviz') {
+    throw new Error(`${fileName} is not a CrysViz state file.`);
+  }
+  if (!applySharedState(state, fileName)) {
+    throw new Error(`Could not apply the state in ${fileName} (unsupported version?).`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -434,13 +661,18 @@ export function createShareButton() {
 
   const shareBtn = document.createElement('button');
   shareBtn.id = 'shareBtn';
+  shareBtn.type = 'button';
   shareBtn.textContent = 'Share';
-  shareBtn.style.cssText = 'padding:8px 16px; margin-top:8px; color:white; background-color: var(--accent-color); border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; width:100%;';
+  shareBtn.className = 'file-action-btn';
   shareBtn.onclick = shareStructure;
 
+  // The Share button joins the Upload / Paste Text / Download action row in
+  // the Files window (#uploadSection exists from startup, so this works even
+  // before the panel windows are built).
   const container =
+    document.querySelector('#uploadSection .file-actions') ||
+    document.getElementById('cvPanelBody-files') ||
     document.getElementById('structureControls') ||
-    document.getElementById('bondControlsGroup') ||
     document.getElementById('composition')?.parentElement;
   if (container) container.appendChild(shareBtn);
 }

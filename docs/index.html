@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="./styles/styles_file_browswer.css">
     <link rel="stylesheet" href="./styles/trajectoryPanel.css">
     <link rel="stylesheet" href="./styles/controlPanel.css">
+    <link rel="stylesheet" href="./styles/panelWindow.css">
     <link rel="stylesheet" href="./styles/backendPanel.css">
     <link rel="stylesheet" href="./styles/toggle_styles.css">
     <link rel="stylesheet" href="./styles/BondAtomColorPanel.css">
@@ -53,47 +54,43 @@
         <button type="button" class="theme-menu-toggle" id="themeMenuToggle" aria-haspopup="true" aria-expanded="false" aria-label="More themes" title="More themes">&#9662;</button>
         <ul class="theme-menu" id="themeMenu" role="menu" hidden></ul>
       </div>
-      <!-- In-panel view/measure tools (ui/PanelToolbars.js). Hidden by default;
-           revealed by themes that hide the floating toolbars (e.g. docked). -->
-      <div id="panelToolsContainer"></div>
       <div class="backend-control-group" id="backendControlGroup">
          <div class="info-button-panel">
             <button class="info-button" id="backendInfoButton">i</button>
          </div>  
         <div class="segmented-backend-control" id="BackendModeSwitch">
           <button data-mode="none"class="active">Viz</button>
-          <button data-mode="symmetry">Symmetry</button>
           <button data-mode="relax">Relax</button>
           <button data-mode="md">MD</button>
-          <!-- <!button data-mode="live">Live</button!>  not sufficiently tested. For now disabled.--> 
+          <!-- <!button data-mode="live">Live</button!>  not sufficiently tested. For now disabled.-->
         </div>
         <div id="uploadSection">
           <div class="info-button-panel">
             <button class="info-button" id="uploadInfoButton">i</button>
           </div>
-          <div class="input-mode-toggle" role="tablist" aria-label="Structure input mode">
-            <button type="button" class="input-mode-btn active" data-mode="file" role="tab" id="fileInputTab" aria-selected="true" aria-controls="fileInputContainer">
-              Upload File
-            </button>
-            <button type="button" class="input-mode-btn" data-mode="text" role="tab" id="textInputTab" aria-selected="false" aria-controls="textInputContainer">
-              Paste Text
-            </button>
+          <!-- File actions (wired by ui/StructureInputModule.js): Upload opens
+               the file dialog directly, Paste Text opens a modal, Download is
+               a dropdown of export formats. Files can also be dropped onto the
+               Files window or the 3D view. -->
+          <div class="file-actions">
+            <button type="button" id="uploadButton" class="file-action-btn">📁 Upload</button>
+            <button type="button" id="pasteTextButton" class="file-action-btn">Paste Text</button>
+            <div class="download-dropdown">
+              <button type="button" id="downloadButton" class="file-action-btn">Download ▾</button>
+              <div class="download-menu" id="downloadMenu" hidden>
+                <button type="button" id="saveButton">POSCAR</button>
+                <button type="button" id="saveCrysvizButton">CrysViz</button>
+                <button type="button" id="savePngButton">PNG Image…</button>
+              </div>
+            </div>
           </div>
-          <div id="fileInputContainer" class="input-mode-panel" role="tabpanel" aria-labelledby="fileInputTab">
-            <input type="file" id="fileInput" multiple>
-            <label for="fileInput" id="fileLabel" tabindex="0">
-              📁 Choose Files or Drag & Drop
-            </label>
-          </div>
-          <div id="textInputContainer" class="input-mode-panel" role="tabpanel" hidden aria-labelledby="textInputTab">
-            <textarea id="structureText" placeholder="Paste POSCAR/CIF content, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id"></textarea>
-            <button type="button" id="loadTextButton">Load Structure</button>
-          </div>
+          <input type="file" id="fileInput" multiple>
         </div>
         <div class="backend-control-group" id="BackendCalcPanel"></div>
       </div>
-      <div class="control-group">
-        <div class="panel">
+      <!-- Structure list; adopted into the "Files" panel window together with
+           #uploadSection (ui/panels/defaultPanels.js). -->
+      <div class="panel" id="structureTablePanel">
           <table id="objectTable">
           <thead>
             <th class="fth" colspan="1"></th>
@@ -112,45 +109,18 @@
          Only two structures can be compared
        </div>
     </div>
-    </div>
-    <button type="button" id="saveButton">Download POSCAR</button>
     
-    <div class="control-group" id="structureControls2" style="display: none;">
-         <div class="info-button-panel">
-            <button class="info-button" id="analysisInfoButton">i</button>
-         </div>
-        <div class="segmented-control" id="ControlPanelModeSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="trajectory">Trajectory</button>
-          <button data-mode="comparison">Comparison</button>
-          <!-- <button data-mode="cutplanes">Cut</button> -->
-        </div>
-        <div id="TrajectoryComparisonContainer"></div>
+    <!-- Unified panel dock (ui/panels/PanelManager.js). Docked panel windows
+         stack inside; feature panels stay hidden until a structure loads. -->
+    <div id="dock"></div>
 
-        <div class="segmented-control" id="ControlPanelSpinForceSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="Forces">Forces</button>
-          <button data-mode="Spins">Spins</button>
-          <button data-mode="Field">Field</button>
-          <button data-mode="Planes">Planes</button>
-         </div>
-         <div id="SpinForceFieldContainer"></div>
-         <div id="PlanesContainer" style="display:none;"></div>
-
-        <div class="segmented-control" id="ControlPanelAnalysisSwitch">
-          <button data-mode="none" class="active">None</button>
-          <button data-mode="Bonds">Bonds</button>
-          <button data-mode="Lattice">Cell</button>
-          <button data-mode="Polyhedra">Polyhedra</button>
-        </div>
-        <div id="BondLatticeContainer"></div>
-
-    </div>
-
-      <div class="control-group" id="structureControls" style="display: none;">
+      <!-- Hidden staging area: everything inside is adopted into unified panel
+           windows at startup (Storage panel: info button + switch; Display
+           panel: toggles + sliders). Never revealed. -->
+      <div id="structureControls" style="display: none;">
          <div class="info-button-panel">
             <button class="info-button" id="storageInfoButton">i</button>
-         </div> 
+         </div>
          <div class="segmented-control" id="StorageOptionSwitch">
           <button data-mode="Nothing">None</button>
           <button data-mode="Minimal"class="active"> Minimal</button>
@@ -221,12 +191,6 @@
             <span class="toggle_text">Show Cell Axes</span>
           </label>
         </div>
-       <!-- Color Settings -->
-       <div id="colorContainer"></div>
-        <!-- Camera Settings -->
-       <div id="cameraContainer"></div>
-
-
         <label>
           Atom Size: <span id="atomSizeValue" class="slider-value">0.40</span>
           <input type="range" id="atomSize" min="0.30" max="0.80" step="0.1" value="0.40">
@@ -235,44 +199,16 @@
           Bond Diameter: <span id="bondWidthValue" class="slider-value">0.12</span>
           <input type="range" id="bondWidth" min="0.02" max="0.20" step="0.01" value="0.1">
         </label>
+        <label>
+          Axes Line Width: <span id="axesWidthValue" class="slider-value">0.015</span>
+          <input type="range" id="axesWidth" min="0.005" max="0.06" step="0.005" value="0.015">
+        </label>
+        <label>
+          Cell Line Width: <span id="latticeWidthValue" class="slider-value">0.015</span>
+          <input type="range" id="latticeWidth" min="0.005" max="0.08" step="0.005" value="0.015">
+        </label>
     </div>
 
-
-      <!-- Bond controls group -->
-      <div id="bondControlsGroup" style="display: none;">
-        <div id="bondPanel">
-          <div id="bondToggle" class="bond-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="bondControlsContent">
-            <h4>Bond Length Controls</h4>
-            <div id="bondToggleIcon" class="toggle-icon">+</div>
-          </div>
-
-          <div id="bondControlsContent" class="collapsible-content" aria-hidden="true">
-            <div id="resetBondLenghtsWrapper" class="bottonWrapper" aria-hidden="true">
-              <button id="resetBondLengths" class="reset-btn">Reset to Defaults</button>
-            </div>
-            <div id="bondControls"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Spin controls group -->
-      <div id="spinControlsGroup" style="display: none;">
-        <div id="spinPanel">
-          <div id="spinToggle" class="spin-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="spinControlsContent">
-            <h4>Spin Controls</h4>
-            <div id="spinToggleIcon" class="toggle-icon">+</div>
-          </div>
-
-          <div id="spinControlsContent" class="collapsible-content" aria-hidden="true">
-            
-            <div id="resetSpinLenghtsWrapper" class="bottonWrapper" aria-hidden="true">
-              <button id="deleteSpins" class="reset-btn">Delete Spins</button>
-            </div>
-
-            <div id="spinControls"></div>
-          </div>
-        </div>
-      </div>
 
     </div>
     <div id="view"></div>
@@ -331,95 +267,66 @@
 
         </button>
       </div>
-
-
-        <!-- Mobile toggle button (shows only on mobile) -->
-      <button id="measurementToggle" class="measurement-toggle" title="Toggle Measurement">
-        <img src="./data/icons/tool-icon.svg" alt="Tool" class="button-icon">
-     </button> 
-    </div>   
+    </div>
 
 <div id="cameraTools">
   <!-- Camera panel -->
   <div id="cameraPanel" class="measurement-group">
-    <!-- First row of rotation buttons (X, Y, Z, A, B, C, Reset) -->
-    <button class="camera-tool-btn" id="viewX" title="View X axis">
-      <div class="camera-icon">x</div>
-      <span>x</span>
-    </button>
-    <button class="camera-tool-btn" id="viewY" title="View Y axis">
-      <div class="camera-icon">y</div>
-      <span>y</span>
-    </button>
-    <button class="camera-tool-btn" id="viewZ" title="View Z axis">
-      <div class="camera-icon">z</div>
-      <span>z</span>
-    </button>
+    <!-- Each axis button carries an up/down arrow above and below that
+         step-rotate the camera about that axis (world x/y/z, lattice a/b/c);
+         clicking the letter views along the axis. -->
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="xUp" title="Rotate about X (+)">▲</button>
+      <button class="camera-tool-btn" id="viewX" title="View X axis">
+        <div class="camera-icon">x</div><span>x</span>
+      </button>
+      <button class="angle-btn axis-step" id="xDown" title="Rotate about X (−)">▼</button>
+    </div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="yUp" title="Rotate about Y (+)">▲</button>
+      <button class="camera-tool-btn" id="viewY" title="View Y axis">
+        <div class="camera-icon">y</div><span>y</span>
+      </button>
+      <button class="angle-btn axis-step" id="yDown" title="Rotate about Y (−)">▼</button>
+    </div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="zUp" title="Rotate about Z (+)">▲</button>
+      <button class="camera-tool-btn" id="viewZ" title="View Z axis">
+        <div class="camera-icon">z</div><span>z</span>
+      </button>
+      <button class="angle-btn axis-step" id="zDown" title="Rotate about Z (−)">▼</button>
+    </div>
     <div class="camera-separator"></div>
-    <button class="camera-tool-btn" id="viewA" title="View A axis">
-      <div class="camera-icon">a</div>
-      <span>a</span>
-    </button>
-    <button class="camera-tool-btn" id="viewB" title="View B axis">
-      <div class="camera-icon">b</div>
-      <span>b</span>
-    </button>
-    <button class="camera-tool-btn" id="viewC" title="View C axis">
-      <div class="camera-icon">c</div>
-      <span>c</span>
-    </button>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="aUp" title="Rotate about a (+)">▲</button>
+      <button class="camera-tool-btn" id="viewA" title="View A axis">
+        <div class="camera-icon">a</div><span>a</span>
+      </button>
+      <button class="angle-btn axis-step" id="aDown" title="Rotate about a (−)">▼</button>
+    </div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="bUp" title="Rotate about b (+)">▲</button>
+      <button class="camera-tool-btn" id="viewB" title="View B axis">
+        <div class="camera-icon">b</div><span>b</span>
+      </button>
+      <button class="angle-btn axis-step" id="bDown" title="Rotate about b (−)">▼</button>
+    </div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="cUp" title="Rotate about c (+)">▲</button>
+      <button class="camera-tool-btn" id="viewC" title="View C axis">
+        <div class="camera-icon">c</div><span>c</span>
+      </button>
+      <button class="angle-btn axis-step" id="cDown" title="Rotate about c (−)">▼</button>
+    </div>
+
+    <div class="camera-separator"></div>
 
     <!-- Reset button -->
     <button class="camera-tool-reset-btn" id="resetView" title="Reset Camera View">
       <div class="reset-icon"></div>
       <span>Reset</span>
     </button>
-
-    <!-- Separator -->
-    <div class="camera-separator"></div>
-      <!-- Second row of angle adjustment controls (for X, Y, Z) -->
-        <div class="measurement-group">
-          <!-- X Axis Angle Controls -->
-          <div class="rotation-axis">
-            <div class="angle-controls">
-              <input type="text" id="xAngle" class="angle-input" value="0" readonly />
-              <div class="angle-buttons">
-                <button class="angle-btn" id="xUp" title="Increase X Axis Angle">↑</button>
-                <button class="angle-btn" id="xDown" title="Decrease X Axis Angle">↓</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Y Axis Angle Controls -->
-          <div class="rotation-axis">
-            <div class="angle-controls">
-              <input type="text" id="yAngle" class="angle-input" value="0" readonly />
-              <div class="angle-buttons">
-                <button class="angle-btn" id="yUp" title="Increase Y Axis Angle">↑</button>
-                <button class="angle-btn" id="yDown" title="Decrease Y Axis Angle">↓</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Z Axis Angle Controls -->
-          <div class="rotation-axis">
-            <div class="angle-controls">
-              <input type="text" id="zAngle" class="angle-input" value="0" readonly />
-              <div class="angle-buttons">
-                <button class="angle-btn" id="zUp" title="Increase Z Axis Angle">↑</button>
-                <button class="angle-btn" id="zDown" title="Decrease Z Axis Angle">↓</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-
     </div>
-
-  <!-- Mobile toggle button (shows only on mobile) -->
-      <button id="cameraToggle" class="measurement-toggle" title="Toggle Camera Controls">
-        <img src="./data/icons/camera-icon.svg" alt="Camera" class="button-icon">
-     </button>
    </div>
 </div>
 
@@ -428,51 +335,18 @@
    <script type="module" src="./core/crystal-viewer.js"></script> 
 
 
-    <div id="infoPanel">
+    <!-- Structure info: adopted into the "Structure" panel window
+         (ui/panels/defaultPanels.js). The header box shows the chemical
+         formula and expands (+/−) into the composition details populated by
+         ui/StructureInfoPanel/. -->
+    <div id="structureInfoContent">
       <div id="structureToggle" class="structure-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="composition">
         <h4>Structure</h4>
         <div id="structureToggleIcon" class="toggle-icon">+</div>
       </div>
-
-      <div id="composition" class="collapsible-content" aria-exanded="false">
-        <!-- Composition will be populated by JS. Hidden by default; expands when the header is toggled -->
+      <div id="composition" class="collapsible-content" aria-hidden="true">
       </div>
     </div>
-
-    <script>
-      (function(){
-        const toggle = document.getElementById('structureToggle');
-        const icon = document.getElementById('structureToggleIcon');
-        const content = document.getElementById('composition');
-
-        function setOpen(open) {
-          if (open) {
-            content.classList.add('open');
-            content.setAttribute('aria-hidden', 'false');
-            icon.textContent = '−';
-            icon.classList.add('open');
-            toggle.setAttribute('aria-expanded', 'true');
-          } else {
-            content.classList.remove('open');
-            content.setAttribute('aria-hidden', 'true');
-            icon.textContent = '+';
-            icon.classList.remove('open');
-            toggle.setAttribute('aria-expanded', 'false');
-          }
-        }
-
-        // initialize closed
-        setOpen(false);
-
-        toggle.addEventListener('click', () => setOpen(!content.classList.contains('open')));
-        toggle.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setOpen(!content.classList.contains('open'));
-          }
-        });
-      })();
-    </script>
 
 
     <div id="axesGizmo"></div>

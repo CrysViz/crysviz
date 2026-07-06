@@ -63,7 +63,8 @@ export function captureCompleteState(structureData, globalState) {
       zoom: camera ? (camera.zoom || null) : null
     },
 
-    // UI state
+    // UI state. "open" = the formula box inside the Structure window is
+    // expanded (its details visible).
     ui: {
       structurePanelOpen: document.getElementById('composition')?.classList.contains('open') || false,
       expandedElements: getExpandedElements(),
@@ -80,8 +81,9 @@ function getExpandedElements() {
   const atomContainers = document.querySelectorAll('.individual-atoms');
   atomContainers.forEach((container, index) => {
     if (container.style.display !== 'none') {
-      // Find the element name from the parent container
-      const elementName = container.parentElement?.querySelector('.comp-left span:nth-child(2)')?.textContent;
+      // Find the element from the parent container's data attribute (positional
+      // span selectors broke when the header gained the visibility checkbox).
+      const elementName = /** @type {HTMLElement} */ (container.parentElement)?.dataset?.element;
       if (elementName) {
         expanded.push(elementName);
       }
@@ -225,9 +227,7 @@ export function restoreCompleteState(state, globalSetters) {
   // 5. Update UI controls to match restored state
   updateUIControlsFromState(state);
 
-  // 6. Show structure controls and recreate interface
-  document.getElementById('structureControls').style.display = 'block';
-  document.getElementById('bondControlsGroup').style.display = 'block';
+  // 6. Recreate interface
   createBondLengthControls();
   createShareButton();
 
@@ -299,21 +299,12 @@ function updateUIControlsFromState(state) {
 
 // Helper function to restore UI panel states
 function restoreUIPanelStates(uiState) {
-  // Restore structure panel state
-  const composition = document.getElementById('composition');
-  const structureToggle = document.getElementById('structureToggle');
-  const toggleIcon = document.getElementById('structureToggleIcon');
-
+  // Shared-structure restore runs before the unified panel windows exist, so
+  // leave a marker on #composition; ui/panels/defaultPanels.js expands the
+  // info panel when it registers it.
   if (uiState.structurePanelOpen) {
-    composition?.classList.add('open');
-    composition?.setAttribute('aria-hidden', 'false');
-    if (toggleIcon) {
-      toggleIcon.textContent = '−';
-      toggleIcon.classList.add('open');
-    }
-    if (structureToggle) {
-      structureToggle.setAttribute('aria-expanded', 'true');
-    }
+    const composition = document.getElementById('composition');
+    if (composition) composition.dataset.restoreOpen = '1';
   }
 
   // Note: Element expansions will be restored when renderComposition() is called

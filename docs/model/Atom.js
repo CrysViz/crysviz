@@ -17,6 +17,7 @@ export class Atom extends ColoredObject {
     defaultColor = null,
     elementColor = null,
     cutPlaneImmune = false,
+    radiusScale = 1,
     hash = null,
     wyckoff = null,
     uuid = null,
@@ -36,6 +37,8 @@ export class Atom extends ColoredObject {
     this.color = color || this.elementColor;
     this.opacity = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : this.elementOpacity;
     this.cutPlaneImmune = !!cutPlaneImmune;
+    // Per-atom size multiplier on the element's default radius (1 = default).
+    this.radiusScale = Number.isFinite(radiusScale) && radiusScale > 0 ? radiusScale : 1;
     this.uuid = uuid;
     this.original = Object.freeze({
       element,
@@ -44,6 +47,7 @@ export class Atom extends ColoredObject {
       opacity: this.opacity,
       elementOpacity: this.elementOpacity,
       cutPlaneImmune: this.cutPlaneImmune,
+      radiusScale: this.radiusScale,
     });
   }
 
@@ -89,6 +93,22 @@ export class Atom extends ColoredObject {
 
   resetToElementOpacity() {
     this.opacity = this.elementOpacity ?? 1;
+    return true;
+  }
+
+  getRadiusScale() {
+    return this.radiusScale ?? 1;
+  }
+
+  setRadiusScale(value) {
+    const scale = Number(value);
+    if (!Number.isFinite(scale) || scale <= 0) return false;
+    this.radiusScale = Math.min(scale, 10);
+    return true;
+  }
+
+  resetRadiusScale() {
+    this.radiusScale = this.original.radiusScale ?? 1;
     return true;
   }
 

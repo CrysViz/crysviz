@@ -102,11 +102,6 @@ body.panel-hidden #view canvas {
 
 
 /* === Panel Hidden Overrides === */
-body.panel-hidden #cameraTools {
-  left: 68px;  /* Decent separation from hamburger menu */
-  top: 12px;   /* Same Y level as hamburger menu */
-}
-
 body.panel-hidden #axesLegend {
   left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px);  /* Stick to gizmo */
 }
@@ -217,9 +212,12 @@ body.panel-hidden #axesLegend {
   font-weight: 500;
 }
 
-.input-mode-toggle {
+/* File actions row (Files window): Upload / Paste Text / Download (+ Share,
+   added once a structure loads — the columns adapt to the button count). */
+.file-actions {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: 8px;
   margin-bottom: 15px;
   background: rgba(255, 255, 255, 0.05);
@@ -227,64 +225,219 @@ body.panel-hidden #axesLegend {
   border-radius: 10px;
 }
 
-.input-mode-btn {
-  background: transparent;
-  color: #ddd;
-  border: none;
-  padding: 10px 12px;
+.file-action-btn {
+  width: 100%;
+  background: var(--bg-color);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 8px;
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  white-space: nowrap;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 
-.input-mode-btn:hover {
-  background: var(--bg-color);
-  color: #fff;
-}
-
-.input-mode-btn.active {
-  background: var(--highlight-color);
-  color: #fff;
-}
-
-.input-mode-panel {
-  margin: 0px 0px 15px 0px;
-  max-width: 100%;
-  display: block;
-}
-
-.input-mode-panel[hidden] {
-  display: none !important;
+.file-action-btn:hover {
+  box-shadow: 0px 0px 4px 2px var(--highlight-color);
 }
 
 #fileInput {
   display: none;
 }
 
-#fileLabel {
-  display: block;
-  padding: 15px 20px;
-  background: var(--bg-color);
-  color: white;
-  text-align: center;
+/* Download format dropdown */
+.download-dropdown {
+  position: relative;
+}
+
+.download-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 100%;
+  z-index: 20;
+  background: var(--menu-bg);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.download-menu button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: left;
   cursor: pointer;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  border: 2px dashed transparent;
+  white-space: nowrap;
 }
 
-#fileLabel:hover {
-  border: 1px solid rgba(255,255,255,0.1);
-  transform: translateY(-2px);
-  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
+.download-menu button:hover {
+  background: var(--hover-color);
 }
 
-#fileLabel.dragover {
-  border: 2px dashed var(--highlight-color);
+/* Paste-text modal dialog */
+#pasteTextModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#pasteTextModal[hidden] {
+  display: none;
+}
+
+.paste-modal {
+  width: min(640px, calc(100vw - 32px));
+  padding: 16px;
+  background: var(--menu-bg);
+  color: var(--panel-fg);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+}
+
+.paste-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.paste-modal-actions #cancelTextButton {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* PNG image export modal dialog */
+#pngExportModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#pngExportModal[hidden] {
+  display: none;
+}
+
+.png-export-modal {
+  width: min(460px, calc(100vw - 32px));
+  padding: 16px 18px;
+  background: var(--menu-bg);
+  color: var(--panel-fg);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+}
+
+.png-export-modal h3 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.png-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.png-row > label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.png-row label.png-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.png-row input[type="number"],
+.png-row select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  color: #f5f5f5;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.png-row label.png-check input {
+  width: auto;
+}
+
+.png-note {
+  margin: 0 0 12px 0;
+  font-size: 11.5px;
+  opacity: 0.7;
+  line-height: 1.35;
+}
+
+.png-export-modal .paste-modal-actions #pngDownloadBtn {
+  flex: 1;
+  margin-top: 4px;
+  padding: 12px 16px;
   background: var(--bg-color);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.png-export-modal .paste-modal-actions #pngDownloadBtn:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+
+.png-export-modal .paste-modal-actions #pngDownloadBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  box-shadow: none;
+}
+
+.png-export-modal .paste-modal-actions #pngCancelBtn {
+  margin-top: 4px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* Drag&drop hover highlight on the drop targets (Files window / 3D view) */
+.cv-drop-hover {
+  outline: 2px dashed var(--highlight-color);
+  outline-offset: -2px;
 }
 
 #structureText {
@@ -326,26 +479,8 @@ body.panel-hidden #axesLegend {
   box-shadow: 0px 0px 4px 2px  var(--highlight-color);
 }
 
-#saveButton {
-  margin-bottom: 12px;
-  width: 100%;
-  padding: 12px 16px;
-  background: var( --bg-color);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-#saveButton:hover {
-  border: 1px solid rgba(255,255,255,0.1);
-  transform: translateY(-1px);
-  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
-
-}
+/* #saveButton is the "POSCAR" entry in the Download dropdown; it takes the
+   .download-menu button styling. */
 
 .comparison-group {
   backdrop-filter: blur(10px);
@@ -478,7 +613,10 @@ label {
   display: block;
   margin: 15px 0 8px 0;
   color: #ccc;
-  font-size: 14px;
+  /* Multiplied by the Overall font scale (Settings). This is the single source
+     for label sizing, so it carries section headlines (.panel-headline) and
+     slider labels along with it. */
+  font-size: calc(14px * var(--cv-font-scale, 1));
   font-weight: 500;
 }
 
@@ -673,6 +811,14 @@ input[type="checkbox"] {
     transition: background-color 0.2s, box-shadow 0.2s;
   }
 
+  /* Flat, non-interactive section headline inside a panel window body (see
+     ui/panels/sectionHeadline.js): a plain label, only spacing added. */
+  .panel-headline {
+    display: block;
+    margin: 0.9em 0 0.3em 0;
+    user-select: none;
+  }
+
   .bond-toggle:hover,
   .bond-toggle:focus {
     background-color: var( --bg-color);
@@ -758,6 +904,11 @@ justify-content: center;
   transform: translateY(-1px);
   box-shadow: 0px 0px 4px 2px  rgba(255, 107, 107, 0.1);
   border: 1px solid rgba(255,255,255,0.5);
+}
+
+/* Destructive variant: "Clear local data" wipes all persisted settings. */
+.reset-btn-danger {
+  background: rgba(200, 35, 35, 0.92);
 }
 
 .bond-checkbox {
@@ -977,39 +1128,31 @@ justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* compositions and clicked element (bottom right) */
+/* compositions and clicked element (content lives inside the unified
+   "Structure" panel window, which provides the chrome/positioning) */
 
-#infoPanel {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  min-width: 200px;
-  max-width: 600px;
-  background: rgba(0,0,0,0.7);
-  color: #fff;
-  padding: 12px 14px;
-  border-radius: 14px;
-  font-size: 16px;
-  line-height: 1.4;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255,255,255,0.1);
-  z-index: 1000;
-  overflow-y: visible;
-  max-height: 800px;
-}
-#infoPanel .structure-toggle { 
-  display:flex;
-  align-items:center; 
-  justify-content:space-between; 
-  cursor:pointer; user-select:none; 
-  padding:6px 8px; border-radius:8px; 
-  background: var( --bg-color);
-  border:1px solid rgba(255,255,255,0.1); 
-
+/* Formula header box: shows the chemical formula, expands (+/−) into the
+   composition details below it. */
+#structureInfoContent .structure-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--bg-color);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+#structureInfoContent .structure-toggle h4 {
+  margin: 5px 20px 0 20px;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.0;
+  color: rgba(255, 255, 255, 0.8);
+}
 
-#infoPanel .structure-toggle h4 { margin-top: 5px; margin-left: 20px; margin-right: 20px; font-size:14px; font-weight:800; line-height:1.0; color:rgba(255,255,255,0.8) }
 .section-heading { margin-top:10px; margin-bottom:6px; font-size:14px; font-weight:600; padding-left:8px; }
 .toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(0,0,0,0.5); color:var(--accent-color); font-weight:1000; transition:transform .18s ease, background .18s ease, color .18s ease; }
 
@@ -1086,7 +1229,7 @@ justify-content: center;
 .btn-mini.highlight { background:var(--bg-color); border-color:rgba(0,0,0,0.15); color:#fff; }
 .btn-mini.highlight:hover { transform: translateY(-1px);filter:brightness(1.03); border: 1px solid var(--accent-color);}
 
-#infoPanel h4 {
+#composition h4 {
   margin: 0 0 8px 0;
   font-weight: 600;
   color: rgba(255, 255, 255, 1);
@@ -1140,46 +1283,31 @@ z-index:1000; pointer-events:none;
 
 
 
-/* --- Measurement Tools (Top Right) --- */
+/* --- Measurement tools --- (hosted by the unified "Measure" panel window,
+   which provides positioning + chrome; this is just the content layout) */
 #measurementTools {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 1000;
-  background: var(--menu-bg);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 8px;
-  backdrop-filter: blur(20px);
-  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.3);
-  transform-origin: top right;
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
-
-.button-icon {
-  max-width: 40px;
-  max-height: 40px; /* Optional: Set a max height */
-  height: auto;
-  width: auto;
+/* Until ui/panels/defaultPanels.js adopts them into their floating panel
+   windows, these start as direct <body> children. <body> is display:flex, so
+   keep them out of the layout — otherwise they steal width from #view and the
+   renderer sizes its canvas to the squeezed width at startup. The selectors
+   stop matching once the elements are reparented into a panel body. */
+body > #measurementTools,
+body > #cameraTools,
+body > #structureInfoContent {
+  display: none;
 }
 
-/* --- Camera Tools (Desktop: Top Left beside panel, Fullscreen: aligned with hamburger) --- */
+/* --- Camera view tools --- (hosted by the unified "View" panel window) */
 #cameraTools {
-  position: fixed;
-  left: var(--camera-tools-left);  /* Default: beside panel */
-  top: 20px;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  background: rgba(26, 26, 26, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 8px;
-  z-index: 1000;
-  backdrop-filter: blur(8px);
   max-width: 320px;
-  overflow-y:hidden;
-  overflow-x: hidden;
 }
 
 /* Camera panel for desktop - horizontal layout */
@@ -1279,17 +1407,28 @@ z-index:1000; pointer-events:none;
   justify-content: center;
 }
 
+/* Vertical stack: up-arrow / view-along-axis button / down-arrow. */
+.camera-axis-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The small step-rotation arrows flanking each axis button. */
+#cameraTools .camera-axis-stack .axis-step {
+  padding: 1px 6px;
+  font-size: 9px;
+  line-height: 1;
+  min-width: 32px;
+}
+
 /* Separator for camera controls */
 .camera-separator {
   width: 1px;
   height: 22px;
   background: rgba(255, 255, 255, 0.12);
   margin: 0 2px;
-}
-
-/* Hide toggle button on desktop */
-.measurement-toggle {
-  display: none;
 }
 
 .measurement-group {
@@ -1430,7 +1569,7 @@ body {
 #ui label,
 #ui h2,
 #ui h3,
-#infoPanel,
+#composition,
 #status {
   -webkit-user-select: text;
   -moz-user-select: text;
@@ -1442,43 +1581,6 @@ body {
 
 
 @media screen and (max-width: 1320px) {
-
-  /* Mobile-friendly measurement tools */
-  #measurementTools {
-    max-height: 60px;
-    top: 30px;
-    right: 10px;
-    padding: 0;
-    background: transparent;
-    border: none;
-    backdrop-filter: none;
-    box-shadow: none;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0 8px;
-  }
-
-  /* Mobile-friendly camera tools - positioned below measurement tools */
-  #cameraTools {
-    overflow: visible;
-    max-width: 400px; !important;
-    position: fixed !important;
-    top: 110px !important;
-    right: 10px !important;
-    left: auto !important;
-    padding: 0;
-    background: transparent;
-    border: none;
-    backdrop-filter: none;
-    box-shadow: none;
-    display: flex !important;
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0 8px;
-  }
 
   /* Hide separators on mobile */
   .camera-separator {
@@ -1505,112 +1607,10 @@ body {
   }
 
 
-  /* Mobile toggle button - compact and unobtrusive */
-  .measurement-toggle {
-    display: flex !important;
-    width: 60px;
-    height: 60px;
-    background: rgba(44, 44, 44, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 50%;
-    color: white;
-    font-size: 30px;
-    padding: 0;
-    margin: 0;
-    cursor: pointer;
-    backdrop-filter: blur(10px);
-    transition: all 0.2s ease;
-    align-items: center;
-    justify-content: center;
-  }
-
-
-  .measurement-toggle:hover,
-  .measurement-toggle:active {
-    background: rgba(64, 64, 64, 0.95);
-    transform: scale(1.05);
-  }
-
-  /* Collapsible measurement and camera panels */
-  .measurement-group {
-    padding: 8px;
-    display: flex;
-    max-height: 0;
-    overflow: hidden;
-    transition: opacity 0.1s ease-out, border 0.1s ease-out;
-    background: transparent;
-    border-radius: 12px;
-    padding: 0;
-    backdrop-filter: none;
-    border: none;
-  }
-
-  .measurement-group.expanded {
-    max-height: 44px;
-    padding: 12px;
-    background: var(--menu-bg);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    display: flex;
-    flex-direction: row;
-    gap: 6px;
-    justify-content: center;
-  }
-
-  /* Mobile camera panel - collapsible */
+  /* Mobile camera panel - wrap buttons in the narrower window */
   #cameraPanel {
-    max-height: 0 !important;
-    overflow: hidden !important;
-    transition: opacity 0.1s ease-out, border 0.1s ease-out;
-    background: transparent !important;
-    border-radius: 12px;
-    padding: 0 !important;
-    backdrop-filter: none !important;
-    border: none !important;
     flex-wrap: wrap;
   }
-
-  #cameraPanel.expanded {
-    max-height: 200px !important;
-    padding: 8px !important;
-    background: var(--menu-bg) !important;
-    backdrop-filter: blur(12px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    display: flex !important;
-    flex-direction: row;
-    gap: 4px;
-    justify-content: center;
-    max-width: 285px;
-  }
-
-  /* Mobile buttons - override desktop styles */
-  #cameraTools .measure-tool-btn {
-    padding: 6px !important;
-    min-width: 32px !important;
-    min-height: 32px !important;
-    font-size: 9px !important;
-    gap: 1px !important;
-    flex-direction: column !important;
-  }
-
-  #cameraTools .measure-tool-btn .tool-icon {
-    font-size: 14px !important;
-    margin-bottom: 1px !important;
-  }
-
-  #cameraTools .measure-tool-btn span {
-    display: none !important;
-  }
-
-  /* Compact mobile buttons for measurement tools 
-  .measure-tool-btn {
-    padding: 6px;
-    min-width: 40px;
-    min-height: 40px;
-    font-size: 9px;
-    gap: 1px;
-    flex-direction: column;
-  }*/
 
   .tool-icon {
     font-size: 14px;
@@ -1729,26 +1729,8 @@ body {
     margin-bottom: 8px;
   }
 
-  /* Info panel adjustments - much smaller on mobile */
-  #infoPanel {
-    overflow-y: visible;
-    right: 10px;
-    bottom: 10px;
-    min-width: 200px;
-    max-width: 400px;
-    font-size: 12px;
-    background: rgba(0, 0, 0, 0.85);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    padding: 8px 10px;
-  }
   .collapsible-content.open { padding-top:8px;
     min-height: auto;}
-
-  #infoPanel .structure-toggle h4 {
-    font-size: 11px;
-    margin: 2px 2px 0px 10px;
-  }
 
   .comp-row {
     padding: 2px 0;
@@ -1796,49 +1778,10 @@ body {
     height: 90dvh;
   }
 
-  /* Ensure measurement tools are properly positioned on very small screens */
-  #measurementTools {
-    top: 16px;
-    right: 5px;
-  }
-
-  /* Ensure camera tools are properly positioned on very small screens */
-  #cameraTools {
-    top: 86px !important;
-    right: 5px !important;
-    left: auto !important;
-    position: fixed !important;
-    display: flex !important;
-  }
-
-  /* Ensure both toggle buttons are visible and properly sized */
-  .measurement-toggle {
-    display: flex !important;
-    width: 50px;
-    height: 50px;
-    font-size: 18px;
-  }
-
-
-  #cameraToggle {
-    display: flex !important;
-  }
-
-  #infoPanel {
-    overflow-y: visible;
-    right: 5px;
-    bottom: 5px;
-    padding: 6px 8px;
-    max-height: 300px;
-    min-width: 200px;
-    max-width: 400px;
-    font-size: 11px;
-  }
-
   .collapsible-content.open { padding-top:8px;max-height: 230px;
     min-height: auto}
 
-  #infoPanel h4 {
+  #composition h4 {
     font-size: 11px;
     margin: 0 0 3px 0;
   }
@@ -1900,21 +1843,6 @@ body {
     width: 280px;
   }
 
-  /* Ensure measurement tools are properly positioned on very small screens */
-  #measurementTools {
-    top: 16px;
-    right: 5px;
-  }
-
-  /* Ensure camera tools are properly positioned on very small screens */
-  #cameraTools {
-    top: 86px !important;
-    right: 5px !important;
-    left: auto !important;
-    position: fixed !important;
-    display: flex !important;
-  }
-
  .background-dot {
   position: fixed;
   width: 40px;
@@ -1926,37 +1854,7 @@ body {
   z-index: 999;
 }
 
-  /* Ensure both toggle buttons are visible and properly sized */
-  .measurement-toggle {
-    display: flex !important;
-    width: 55px;
-    height: 55px;
-    font-size: 18px;
-    z-index: 1003;
-  }
-
-  /* Ensure measurement toggle is above camera toggle */
-  #measurementToggle {
-    z-index: 1004;
-  }
-
-  #cameraToggle {
-    display: flex !important;
-    z-index: 1003;
-  }
-
-  #infoPanel {
-    right: 5px;
-    bottom: 5px;
-    padding: 6px 8px;
-    max-height: 300px;
-    min-width: 200px;
-    max-width: 400px;
-    font-size: 11px;
-    overflow-y: visible;
-  }
-
-  #infoPanel h4 {
+  #composition h4 {
     font-size: 11px;
     margin: 0 0 3px 0;
   }

@@ -1,10 +1,10 @@
 // Measurement-tool toolbar wiring: distance/angle/delete mode buttons, the
-// clear-all button, their touch handlers, and the mobile measurement/camera
-// panel expand toggles. Extracted from crystal-viewer.js initApp() (Stage 6).
+// clear-all button, and their touch handlers. The toolbar itself lives inside
+// the unified "Measure" panel window (ui/panels/defaultPanels.js); mobile
+// visibility is handled by that panel's collapse, not a dedicated toggle.
 //
 // The mode toggle + clear logic is exposed as setMeasureMode / clearAllMeasureMode
-// so the in-panel tools section (ui/PanelToolbars.js, used by the "minimal" theme)
-// can reuse the exact same behavior as the floating toolbar.
+// so other UI (e.g. keyboard shortcuts) can reuse the exact same behavior.
 
 import { mode, measurements } from '../state/store.js';
 import { clearHighlightAtom } from './SelectAndHighlightModule.js';
@@ -38,20 +38,6 @@ export function clearAllMeasureMode() {
 }
 
 export function setupMeasurementToolbar() {
-  // Mobile measurement toggle
-  document.getElementById('measurementToggle').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    document.getElementById('measurementPanel').classList.toggle('expanded');
-  });
-
-  // Mobile camera toggle
-  document.getElementById('cameraToggle').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    document.getElementById('cameraPanel').classList.toggle('expanded');
-  });
-
   const distanceBtn = document.getElementById('distanceModeBtn');
   const angleBtn = document.getElementById('angleModeBtn');
   const deleteBtn = document.getElementById('deleteModeBtn');
