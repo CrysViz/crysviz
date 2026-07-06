@@ -39,8 +39,9 @@ async function expandPanel(page, id) {
     H.check(`Visual window hosts #${id}`, await inBody(page, 'visual', id));
   }
   H.check('headlines are plain labels', await page.evaluate(() => {
+    // Sizes / Scene / Rendering / Colors / Camera
     const heads = document.querySelectorAll('#cvPanelBody-visual .panel-headline');
-    return heads.length === 4 && [...heads].every((h) => h.tagName === 'LABEL');
+    return heads.length === 5 && [...heads].every((h) => h.tagName === 'LABEL');
   }));
   // The storage-granularity switch is deliberately NOT adopted into Settings
   // (no wiring yet) but stays in the DOM so it can return later — see

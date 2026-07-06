@@ -220,3 +220,59 @@ margin: 15px 0px 5px 0px;
   padding: 3px 5px;
 }
 
+
+/* ---- Full-width control rows (Visual window) ------------------------------
+   One control per row: label (optionally with a value span) on the left,
+   the control filling the rest. Replaces the centered narrow .menu_block
+   idiom inside the Visual window; .menu_block stays for other panels. */
+.control-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 45%) 1fr;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  width: 100%;
+}
+
+.control-row > label {
+  font-size: 0.85em;
+  text-align: left;
+  margin: 0;
+}
+
+.control-row > select,
+.control-row > input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 3px 5px;
+}
+
+/* Two adopted rows sharing one line (Scene: show-toggle + width slider). */
+.control-row-pair {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.control-row-pair > label:first-child {
+  flex: 0 0 auto;
+}
+
+.control-row-pair > label:last-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.control-row-pair > label:last-child input[type="range"] {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Small explanatory note under a control group. */
+.control-note {
+  font-size: 11px;
+  opacity: 0.75;
+  margin: 6px 2px;
+  line-height: 1.3;
+}

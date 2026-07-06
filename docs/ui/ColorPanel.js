@@ -6,8 +6,9 @@ import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getVi
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
-import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth, setPolyEdgeWidth } from '../render/index.js'
+import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
 import { listPipelines, setActivePipeline, requestRender } from '../render/index.js'
+import { makeSectionHeadline } from './panels/sectionHeadline.js'
 
 
 
@@ -30,12 +31,12 @@ function createColorBar(container, colormap, minValue, maxValue, type) {
   });
 
   const barContainer = createElement("div", {}, {
-    width: "120px",
+    width: "100%",
     borderRadius: "3px",
     overflow: "hidden"
   });
 
-  const canvas = createElement("canvas");
+  const canvas = createElement("canvas", {}, { width: "100%", display: "block" });
   canvas.width = 100;
   canvas.height = 20;
   barContainer.appendChild(canvas);
@@ -164,10 +165,12 @@ function createColorBar(container, colormap, minValue, maxValue, type) {
 }
 
 // --- Dropdown Creation ---
+// One full-width row: label left, select filling the rest (.control-row in
+// styles/toggle_styles.css).
 function createDropdown(id, labelText, options, onChange) {
-  const block = createElement("div", { class: "menu_block" });
-  const label = createElement("label", { for: id }, { display: "block", textAlign: "center", marginBottom: "5px", width: "100%" }, labelText);
-  const select = createElement("select", { id }, { width: "100%", maxWidth: "120px", margin: "0 auto" });
+  const block = createElement("div", { class: "control-row" });
+  const label = createElement("label", { for: id }, {}, labelText);
+  const select = createElement("select", { id });
 
   options.forEach((opt) => {
     const option = createElement("option", { value: opt.value }, {}, opt.text);
@@ -357,22 +360,21 @@ export function addColorPanel(target = "colorContainer") {
       value: p.id, text: p.label, selected: general.renderPipeline === p.id,
     })), () => {
       setActivePipeline(renderPipelineMenu.querySelector("select").value);
-      depthPeelBlock.style.display = general.renderPipeline === "depthpeel" ? "block" : "none";
+      depthPeelBlock.style.display = general.renderPipeline === "depthpeel" ? "grid" : "none";
     });
   content.appendChild(renderPipelineMenu);
 
   // Depth-peeling quality/performance knob: number of peel passes per frame
   // (transparent surfaces deeper than this many layers are dropped). Shown
   // only while the depthpeel pipeline is selected.
-  const depthPeelBlock = createElement("div", { class: "menu_block" },
-    { display: general.renderPipeline === "depthpeel" ? "block" : "none" });
-  const depthPeelLabel = createElement("label", { for: "depthPeelLayersSlider" },
-    { display: "block", textAlign: "center", marginBottom: "5px", width: "100%" },
+  const depthPeelBlock = createElement("div", { class: "control-row" },
+    { display: general.renderPipeline === "depthpeel" ? "grid" : "none" });
+  const depthPeelLabel = createElement("label", { for: "depthPeelLayersSlider" }, {},
     `Peel layers: ${general.depthPeelLayers}`);
   const depthPeelSlider = createElement("input", {
     type: "range", id: "depthPeelLayersSlider", min: "1", max: "10", step: "1",
     value: String(general.depthPeelLayers),
-  }, { width: "100%", maxWidth: "120px", margin: "0 auto", display: "block" });
+  });
   depthPeelSlider.addEventListener("input", () => {
     general.depthPeelLayers = parseInt(depthPeelSlider.value, 10);
     depthPeelLabel.textContent = `Peel layers: ${general.depthPeelLayers}`;
@@ -389,11 +391,15 @@ export function addColorPanel(target = "colorContainer") {
   // the classic inverted-hull geometry (general.celHullWidth /
   // celHullPolyWidth, live uniform updates; switching MODE rebuilds the
   // meshes since hulls are created at build time).
-  const outlineBlock = createElement("div", { class: "menu_block" },
+  const outlineBlock = createElement("div", {},
     { display: general.renderStyle === "cel" ? "block" : "none" });
 
-  const sliderStyle = { width: "100%", maxWidth: "120px", margin: "0 auto", display: "block" };
-  const sliderLabelStyle = { display: "block", textAlign: "center", marginBottom: "5px", width: "100%" };
+  const makeSliderRow = (labelText, forId, input) => {
+    const row = createElement("div", { class: "control-row" });
+    row.appendChild(createElement("label", { for: forId }, {}, labelText));
+    row.appendChild(input);
+    return row;
+  };
 
   const outlineModeMenu = createDropdown("celOutlineModeMenu", "Outline Mode", [
     { value: "screen", text: "Screen space", selected: general.celOutlineMode === "screen" },
@@ -416,72 +422,50 @@ export function addColorPanel(target = "colorContainer") {
 
   const screenControls = createElement("div", {},
     { display: general.celOutlineMode === "screen" ? "block" : "none" });
-  const outlineLabel = createElement("label", { for: "celOutlineWidth" }, sliderLabelStyle, "Outline");
   // Quadratic slider response: most of the travel controls thin widths, where
   // the differences matter; the top end caps at a moderate max thickness.
   const CEL_OUTLINE_MAX = 0.1; // world units at slider max
   const outlineSlider = createElement("input", {
     type: "range", id: "celOutlineWidth", min: "0", max: "1", step: "0.01",
     value: String(Math.sqrt(Math.min(general.celOutlineWidth, CEL_OUTLINE_MAX) / CEL_OUTLINE_MAX)),
-  }, sliderStyle);
+  });
   outlineSlider.addEventListener("input", () => {
     const v = parseFloat(outlineSlider.value);
     general.celOutlineWidth = CEL_OUTLINE_MAX * v * v;
   });
-  screenControls.appendChild(outlineLabel);
-  screenControls.appendChild(outlineSlider);
+  screenControls.appendChild(makeSliderRow("Outline", "celOutlineWidth", outlineSlider));
   outlineBlock.appendChild(screenControls);
 
   const hullControls = createElement("div", {},
     { display: general.celOutlineMode === "hull" ? "block" : "none" });
-  const hullLabel = createElement("label", { for: "celHullWidth" }, sliderLabelStyle, "Outline");
   const hullSlider = createElement("input", {
     type: "range", id: "celHullWidth", min: "0", max: "0.2", step: "0.005",
     value: String(general.celHullWidth),
-  }, sliderStyle);
+  });
   hullSlider.addEventListener("input", () => {
     setCelHullWidth(parseFloat(hullSlider.value));
   });
-  const hullPolyLabel = createElement("label", { for: "celHullPolyWidth" },
-    { ...sliderLabelStyle, margin: "8px 0 5px" }, "Polyhedra Outline");
   const hullPolySlider = createElement("input", {
     type: "range", id: "celHullPolyWidth", min: "0", max: "0.2", step: "0.005",
     value: String(general.celHullPolyWidth),
-  }, sliderStyle);
+  });
   hullPolySlider.addEventListener("input", () => {
     setCelHullPolyWidth(parseFloat(hullPolySlider.value));
   });
-  hullControls.appendChild(hullLabel);
-  hullControls.appendChild(hullSlider);
-  hullControls.appendChild(hullPolyLabel);
-  hullControls.appendChild(hullPolySlider);
+  hullControls.appendChild(makeSliderRow("Outline", "celHullWidth", hullSlider));
+  hullControls.appendChild(makeSliderRow("Polyhedra Outline", "celHullPolyWidth", hullPolySlider));
 
   // Hull outlines are opaque inverted-hull shells; on a transparent object
   // they would black out everything behind it, so transparent objects are
-  // skipped. Thicker polyhedra edges give a practically similar look.
-  const hullNote = createElement("div", { id: "celHullTransparencyNote" }, {
-    fontSize: "11px", opacity: "0.75", textAlign: "center",
-    margin: "8px 4px 4px", lineHeight: "1.3",
-  }, "Note: transparent objects do not get outlines");
+  // skipped. Thicker polyhedra edges ("Polyhedra Edge Width" under Sizes)
+  // give a practically similar look.
+  const hullNote = createElement("div", { id: "celHullTransparencyNote", class: "control-note" },
+    {}, "Note: transparent objects do not get outlines");
   hullControls.appendChild(hullNote);
-
-  const polyEdgeLabel = createElement("label", { for: "polyEdgeWidth" },
-    { ...sliderLabelStyle, margin: "8px 0 5px" }, "Polyhedra edge thickness");
-  const polyEdgeSlider = createElement("input", {
-    type: "range", id: "polyEdgeWidth", min: "1", max: "10", step: "0.5",
-    value: String(general.polyEdgeWidth),
-  }, sliderStyle);
-  polyEdgeSlider.addEventListener("input", () => {
-    setPolyEdgeWidth(parseFloat(polyEdgeSlider.value));
-  });
-  hullControls.appendChild(polyEdgeLabel);
-  hullControls.appendChild(polyEdgeSlider);
 
   outlineBlock.appendChild(hullControls);
 
   content.appendChild(outlineBlock);
-
-  const menusWrapper = createElement("div", { class: "menus_wrapper" });
 
   // =========================
   // ATOMS
@@ -489,13 +473,13 @@ export function addColorPanel(target = "colorContainer") {
   let atomsColorBar = null;
   let atomsMenu; // Declare for access in fallback
 
-  const atomsMenuBlock = createElement("div", { class: "menu_block" });
+  const atomsMenuBlock = createElement("div", {});
   atomsMenu = createDropdown("atomsMenu", "Atoms", [
     { value: "elements", text: "Element", selected: true },
     { value: "force", text: "Force" }
   ], onAtomsModeChange);
 
-  const atomsElementColorMapBlock = createElement("div", { class: "menu_block" });
+  const atomsElementColorMapBlock = createElement("div", {});
 
   const atomsElementColorMapMenu = createDropdown("atomsElementColorMapMenu", "Element Color Map", [
     { value: "default", text: "CrysViz Default", selected: true },
@@ -518,7 +502,7 @@ export function addColorPanel(target = "colorContainer") {
     }
   });
 
-  const atomsColorMapBlock = createElement("div", { class: "menu_block", style: "display:none;" });
+  const atomsColorMapBlock = createElement("div", { style: "display:none;" });
 
   const atomsColorMapMenu = createDropdown("atomsColorMapMenu", "Color Map", [
     { value: "heatmap", text: "Heatmap", selected: true },
@@ -666,7 +650,7 @@ export function addColorPanel(target = "colorContainer") {
   let bondsColorBar = null;
   let bondsSolidColorPicker = null;
 
-  const bondsMenuBlock = createElement("div", { class: "menu_block" });
+  const bondsMenuBlock = createElement("div", {});
   const bondsMenu = createDropdown("bondsMenu", "Bonds", [
     { value: "elements", text: "Elements", selected: true },
     { value: "white", text: "White" },
@@ -675,7 +659,7 @@ export function addColorPanel(target = "colorContainer") {
   ], onBondsModeChange);
 
   // Color map section (for Length mode)
-  const bondsColorMapBlock = createElement("div", { class: "menu_block", style: "display:none;" });
+  const bondsColorMapBlock = createElement("div", { style: "display:none;" });
   const bondsColorMapMenu = createDropdown("bondsColorMapMenu", "Color Map", [
     { value: "heatmap", text: "Heatmap", selected: true },
     { value: "batlow", text: "Batlow" },
@@ -697,7 +681,7 @@ export function addColorPanel(target = "colorContainer") {
   bondsColorMapBlock.appendChild(bondsColorBarContainer);
 
   // Solid color picker section (separate block)
-  const bondsSolidColorBlock = createElement("div", { class: "menu_block", style: "display:none;" });
+  const bondsSolidColorBlock = createElement("div", { style: "display:none;" });
   const bondsSolidColorContainer = createElement("div", {}, { marginTop: "8px" });
   bondsSolidColorBlock.appendChild(bondsSolidColorContainer);
 
@@ -798,10 +782,10 @@ export function addColorPanel(target = "colorContainer") {
   // =========================
   // ASSEMBLE
   // =========================
-  menusWrapper.appendChild(atomsMenuBlock);
-  menusWrapper.appendChild(bondsMenuBlock);
+  content.appendChild(makeSectionHeadline('Colors'));
+  content.appendChild(atomsMenuBlock);
+  content.appendChild(bondsMenuBlock);
 
-  content.appendChild(menusWrapper);
   panel.appendChild(content);
   group.appendChild(panel);
   targetPanel.appendChild(group);

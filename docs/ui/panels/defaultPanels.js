@@ -6,7 +6,7 @@
 import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
-import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility } from '../../render/index.js';
+import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender } from '../../render/index.js';
 import { addCameraPanel } from '../CameraPanel.js';
 import { addColorPanel } from '../ColorPanel.js';
 import { collapseAllAtomExpansions } from '../WindowAndSceneControls.js';
@@ -46,6 +46,43 @@ function adoptStaticRows(body, inputIds, atTop = true) {
   }
   if (atTop) body.insertBefore(group, body.firstChild);
   else body.appendChild(group);
+}
+
+/** Adopt two static rows (a show-toggle and its width slider) onto ONE line. */
+function makeAdoptedPairRow(toggleId, sliderId) {
+  const pair = document.createElement('div');
+  pair.className = 'control-row-pair';
+  for (const id of [toggleId, sliderId]) {
+    const input = document.getElementById(id);
+    const row = input && input.closest('label');
+    if (row) pair.appendChild(row);
+  }
+  return pair;
+}
+
+/** "Polyhedra Edge Width" slider row in the same idiom as the static size
+ *  sliders (label text + live value span above a full-width range input). */
+function makePolyEdgeSliderRow() {
+  const label = document.createElement('label');
+  label.append('Polyhedra Edge Width: ');
+  const value = document.createElement('span');
+  value.className = 'slider-value';
+  value.textContent = String(general.polyEdgeWidth);
+  label.appendChild(value);
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.id = 'polyEdgeWidth';
+  input.min = '1';
+  input.max = '10';
+  input.step = '0.5';
+  input.value = String(general.polyEdgeWidth);
+  input.addEventListener('input', () => {
+    value.textContent = input.value;
+    setPolyEdgeWidth(parseFloat(input.value));
+    requestRender();
+  });
+  label.appendChild(input);
+  return label;
 }
 
 /** Return adopted rows to the staging block (called from onDestroyContent,
@@ -433,28 +470,38 @@ export function registerDefaultPanels() {
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
     buildContent(body) {
-      // All appearance settings in one window, grouped by concern. The
-      // feature-specific controls stay in their feature windows.
+      // All appearance settings in one window, grouped by concern (Sizes /
+      // Scene / Rendering / Colors / Camera). The feature-specific controls
+      // stay in their feature windows.
       body.appendChild(makeSectionHeadline('Sizes'));
       adoptStaticRows(body, ['atomSize', 'bondWidth'], false);
-      body.appendChild(makeSectionHeadline('Unit Cell'));
-      adoptStaticRows(body, ['showLattice', 'latticeWidth', 'showAxes', 'axesWidth'], false);
-      body.appendChild(makeSectionHeadline('Colors & Style'));
+      // Polyhedra edge thickness belongs with the other size controls: since
+      // the fat-lines change it applies in every render style, not only to
+      // the cel hull-outline substitute it was introduced as.
+      body.lastElementChild.appendChild(makePolyEdgeSliderRow());
+
+      // Scene furniture: unit cell, cell axes (each show-toggle sharing a row
+      // with its width slider) and the background picker.
+      body.appendChild(makeSectionHeadline('Scene'));
+      const sceneGroup = document.createElement('div');
+      sceneGroup.className = 'toggle_group';
+      sceneGroup.appendChild(makeAdoptedPairRow('showLattice', 'latticeWidth'));
+      sceneGroup.appendChild(makeAdoptedPairRow('showAxes', 'axesWidth'));
       // Background: toggle for the on-canvas picker dot, plus an in-panel
       // swatch opening the same picker (outside the toggle's label, so
       // clicking the swatch doesn't flip the checkbox).
-      const bgGroup = document.createElement('div');
-      bgGroup.className = 'toggle_group';
       const bgRow = document.createElement('div');
-      bgRow.style.cssText = 'display:flex; align-items:center; gap:8px;';
+      bgRow.className = 'control-row-pair';
       const bgToggle = makeToggleRow('backgroundDotToggle', 'Background picker on canvas',
         isBackgroundDotVisible(), (on) => setBackgroundDotVisible(on));
       bgToggle.style.flex = '1';
       bgRow.appendChild(bgToggle);
       bgRow.appendChild(createBackgroundSwatch());
-      bgGroup.appendChild(bgRow);
-      body.appendChild(bgGroup);
-      addColorPanel(body.id);
+      sceneGroup.appendChild(bgRow);
+      body.appendChild(sceneGroup);
+
+      body.appendChild(makeSectionHeadline('Rendering'));
+      addColorPanel(body.id); // rendering rows + its own 'Colors' section
       body.appendChild(makeSectionHeadline('Camera'));
       addCameraPanel(body.id);
     },
