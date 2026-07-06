@@ -13,6 +13,7 @@ import { updateAtoms } from '../render/index.js';
 import { rebuildBonds, updatePolyhedra, setActivePipeline } from '../render/index.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
+import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE } from './ControlsWiring.js';
 import { revealFeaturePanels } from './panels/PanelManager.js';
 import { fracToCart } from '../math/index.js';
 import { updateAxesGizmoWidth, switchCameraType, resizeRenderer } from './WindowAndSceneControls.js';
@@ -98,7 +99,7 @@ export function captureState({ includeFrames = false } = {}) {
   }
 
   return {
-    version: '2.6',
+    version: '2.7',
     ...(frames ? { frames } : {}),
     structure: {
       elements: [...structure.elements],
@@ -118,6 +119,9 @@ export function captureState({ includeFrames = false } = {}) {
       bondCategoryStyles: nonEmptyDeepCopy(structure.bondCategoryStyles),
       polyhedraUserStyles: nonEmptyDeepCopy(structure.polyhedraUserStyles),
       polyhedraCategoryStyles: nonEmptyDeepCopy(structure.polyhedraCategoryStyles),
+      // Per-species ray/path-tracing materials (bond/poly materials ride in
+      // their category stores above).
+      atomMaterials: nonEmptyDeepCopy(structure.atomMaterials),
     },
     display: {
       atomSize: general.atomSize,
@@ -260,13 +264,19 @@ function applyDisplaySettings(display) {
     if (sv) sv.textContent = Number(val).toFixed(decimals);
   };
 
+  // The size sliders hold [0,1] positions with a quadratic value mapping —
+  // write the inverse-mapped position, but show the real value in the span.
   if (display.atomSize != null) {
     general.atomSize = display.atomSize;
-    setSlider('atomSize', 'atomSizeValue', display.atomSize, 2);
+    setSlider('atomSize', 'atomSizeValue', sizeValueToSlider(display.atomSize, ATOM_SIZE_RANGE), 2);
+    const span = document.getElementById('atomSizeValue');
+    if (span) span.textContent = Number(display.atomSize).toFixed(2);
   }
   if (display.bondRadius != null) {
     general.bondRadius = display.bondRadius;
-    setSlider('bondWidth', 'bondWidthValue', display.bondRadius, 2);
+    setSlider('bondWidth', 'bondWidthValue', sizeValueToSlider(display.bondRadius, BOND_RADIUS_RANGE), 2);
+    const span = document.getElementById('bondWidthValue');
+    if (span) span.textContent = Number(display.bondRadius).toFixed(2);
   }
   if (display.axesLineWidth != null) {
     general.axesLineWidth = display.axesLineWidth;
@@ -397,7 +407,7 @@ function applyAtomColors(colors, structure) {
   // (see applySharedState), so the wrapped-index bondUserStyles keys match the
   // corrected atom order when the caller's rebuildBonds() re-applies them;
   // stale keys are silently ignored by the stores' element/geometry checks.
-  for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles', 'polyhedraCategoryStyles']) {
+  for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles', 'polyhedraCategoryStyles', 'atomMaterials']) {
     if (colors[k]) structure[k] = JSON.parse(JSON.stringify(colors[k]));
   }
 }

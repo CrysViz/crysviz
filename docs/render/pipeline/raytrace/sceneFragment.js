@@ -2,18 +2,25 @@
 // scene (atom spheres, bond/cell-edge cylinders, convex polyhedra) on top of
 // the vendored docs/external/three-raytracing/ GLSL chunks (CC0, Erich
 // Loftis). The RayTrace() loop structure is adapted from the upstream demos
-// (InstanceMapping_Fragment.glsl), simplified to two material types:
-//   - MAT_OPAQUE: Blinn-Phong diffuse + specular with a hard shadow ray, plus a
-//     mirror reflection ray weighted by Fresnel + the "Reflectivity" slider;
-//   - TRANSPARENT (alpha < 1): Fresnel-split reflection/refraction (glass-like,
-//     IoR 1.5) with color-tinted transmission.
+// (InstanceMapping_Fragment.glsl), with four material types (per-object,
+// from the Structure-window material editors):
+//   - MAT_OPAQUE (standard): Blinn-Phong diffuse + specular with a hard
+//     shadow ray, plus a mirror reflection ray weighted by Fresnel + the
+//     "Reflectivity" slider;
+//   - MAT_TRANSP (glass, or any alpha < 1): Fresnel-split reflection/
+//     refraction with per-object IoR and color-tinted transmission;
+//   - MAT_METAL: tinted mirror, roughness blurs the reflection lobe;
+//   - MAT_EMISSIVE: additive glow (color x intensity) in this Whitted tracer.
 // Scene data arrives in RGBA32F data textures (see SceneEncoder.js):
-//   atoms      2 texels/atom:  (pos.xyz, radius), (rgb, alpha)
-//   cylinders  5 texels/cyl:   4 rows of the inverse object matrix (unit
+//   atoms      3 texels/atom:  (pos.xyz, radius), (rgb, alpha),
+//              (matType, roughness, ior, intensity)
+//   cylinders  6 texels/cyl:   4 columns of the inverse object matrix (unit
 //              cylinder y in [-1,1]; direction NOT renormalized in object
-//              space so t stays world-valid), (rgb, alpha)
-//   polyhedra  header (planeOffset, planeCount, colorTexel, 0), (rgb, alpha),
-//              (aabbMin, 0), (aabbMax, 0), then planeCount (normal.xyz, d)
+//              space so t stays world-valid), (rgb, alpha),
+//              (matType, roughness, ior, intensity)
+//   polyhedra  header (planeOffset, planeCount, matType, roughness),
+//              (rgb, alpha), (aabbMin, ior), (aabbMax, intensity),
+//              then planeCount (normal.xyz, d)
 // The single light is directional (the app's camera-relative key light);
 // shadow-ray success = the ray escaping to the sky.
 
@@ -44,11 +51,27 @@ vec3 rayOrigin, rayDirection;
 vec3 intersectionNormal;
 vec3 intersectionColor;
 float intersectionAlpha;
+float intersectionRoughness;
+float intersectionIor;
+float intersectionIntensity;
 int intersectionShapeIsClosed;
 
 #define MAT_OPAQUE 0
 #define MAT_TRANSP 1
+#define MAT_METAL 2
+#define MAT_EMISSIVE 3
 int intersectionMaterialType;
+
+// encoded material texel + surface alpha -> tracer material type
+// (codes from SceneEncoder MATERIAL_CODES: 0 std, 1 metal, 2 glass, 3 emissive)
+int resolveMaterialType(float matCode, float alpha)
+{
+	int code = int(matCode + 0.5);
+	if (code == 3) return MAT_EMISSIVE;
+	if (code == 2 || alpha < 0.999) return MAT_TRANSP; // alpha wins for std/metal
+	if (code == 1) return MAT_METAL;
+	return MAT_OPAQUE;
+}
 
 #include <raytracing_core_functions>
 #include <raytracing_sphere_intersect>
@@ -71,16 +94,20 @@ float SceneIntersect( int isShadowRay )
 	// ---- atoms: spheres --------------------------------------------------
 	for (int i = 0; i < uAtomCount; i++)
 	{
-		vec4 posRad = fetchData(uAtomsDataTexture, i * 2);
+		vec4 posRad = fetchData(uAtomsDataTexture, i * 3);
 		d = SphereIntersect(posRad.w, posRad.xyz, rayOrigin, rayDirection);
 		if (d < t)
 		{
 			t = d;
-			vec4 colA = fetchData(uAtomsDataTexture, (i * 2) + 1);
+			vec4 colA = fetchData(uAtomsDataTexture, (i * 3) + 1);
+			vec4 mat = fetchData(uAtomsDataTexture, (i * 3) + 2);
 			intersectionNormal = (rayOrigin + (t * rayDirection)) - posRad.xyz;
 			intersectionColor = colA.rgb;
 			intersectionAlpha = colA.a;
-			intersectionMaterialType = colA.a < 0.999 ? MAT_TRANSP : MAT_OPAQUE;
+			intersectionMaterialType = resolveMaterialType(mat.x, colA.a);
+			intersectionRoughness = mat.y;
+			intersectionIor = mat.z;
+			intersectionIntensity = mat.w;
 			intersectionShapeIsClosed = TRUE;
 		}
 	}
@@ -88,7 +115,7 @@ float SceneIntersect( int isShadowRay )
 	// ---- bonds + unit-cell edges: unit cylinders via inverse matrices ----
 	for (int i = 0; i < uCylinderCount; i++)
 	{
-		int o = i * 5;
+		int o = i * 6;
 		mat4 invM = mat4(
 			fetchData(uCylindersDataTexture, o),
 			fetchData(uCylindersDataTexture, o + 1),
@@ -103,10 +130,14 @@ float SceneIntersect( int isShadowRay )
 		{
 			t = d;
 			vec4 colA = fetchData(uCylindersDataTexture, o + 4);
+			vec4 mat = fetchData(uCylindersDataTexture, o + 5);
 			intersectionNormal = transpose(mat3(invM)) * n;
 			intersectionColor = colA.rgb;
 			intersectionAlpha = colA.a;
-			intersectionMaterialType = colA.a < 0.999 ? MAT_TRANSP : MAT_OPAQUE;
+			intersectionMaterialType = resolveMaterialType(mat.x, colA.a);
+			intersectionRoughness = mat.y;
+			intersectionIor = mat.z;
+			intersectionIntensity = mat.w;
 			intersectionShapeIsClosed = FALSE;
 		}
 	}
@@ -136,7 +167,11 @@ float SceneIntersect( int isShadowRay )
 			intersectionNormal = n;
 			intersectionColor = colA.rgb;
 			intersectionAlpha = colA.a;
-			intersectionMaterialType = colA.a < 0.999 ? MAT_TRANSP : MAT_OPAQUE;
+			// material packed into the spare header/AABB w slots
+			intersectionMaterialType = resolveMaterialType(header.z, colA.a);
+			intersectionRoughness = header.w;
+			intersectionIor = fetchData(uPolyDataTexture, o + 2).w;
+			intersectionIntensity = fetchData(uPolyDataTexture, o + 3).w;
 			intersectionShapeIsClosed = TRUE;
 		}
 	}
@@ -250,9 +285,40 @@ vec3 RayTrace()
 			continue;
 		}
 
+		if (intersectionMaterialType == MAT_EMISSIVE)
+		{
+			// additive glow: the object is its own light source; a small diffuse
+			// term keeps the shape readable at low intensities
+			accumulatedColor += rayColorMask * intersectionColor * (intersectionIntensity * 0.5 + 0.25);
+			if (willNeedReflectionRay == TRUE)
+			{
+				rayColorMask = reflectionRayColorMask;
+				rayOrigin = reflectionRayOrigin;
+				rayDirection = reflectionRayDirection;
+				willNeedReflectionRay = FALSE;
+				isShadowRay = FALSE;
+				continue;
+			}
+			break;
+		}
+
+		if (intersectionMaterialType == MAT_METAL)
+		{
+			// tinted mirror (upstream METAL): no diffuse/shadow, keep reflecting;
+			// roughness blurs the reflection lobe (resolved by accumulation)
+			rayColorMask *= intersectionColor;
+			specularContribution = doBlinnPhongSpecularLighting(rayColorMask, shadingNormal, halfwayVector, uLightColor, intersectionRoughness, diffuseIntensity);
+			accumulatedColor += specularContribution;
+			rayColorMask *= (1.0 - intersectionRoughness);
+			rayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
+			rayDirection = reflect(rayDirection, shadingNormal);
+			rayDirection = randomDirectionInSpecularLobe(rayDirection, intersectionRoughness * intersectionRoughness);
+			continue;
+		}
+
 		if (intersectionMaterialType == MAT_TRANSP)
 		{
-			reflectance = calcFresnelReflectance(rayDirection, geometryNormal, 1.0, 1.5, IoR_ratio);
+			reflectance = calcFresnelReflectance(rayDirection, geometryNormal, 1.0, intersectionIor, IoR_ratio);
 			transmittance = 1.0 - reflectance;
 
 			specularContribution = doBlinnPhongSpecularLighting(rayColorMask, shadingNormal, halfwayVector, uLightColor, 0.1, diffuseIntensity);

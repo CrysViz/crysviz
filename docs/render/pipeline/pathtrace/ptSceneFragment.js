@@ -2,15 +2,19 @@
 // illumination, soft area-light shadows) of the crystal scene on top of the
 // vendored docs/external/three-pathtracing/ GLSL chunks (CC0, Erich Loftis).
 // The CalculateRadiance() loop is adapted from the upstream demos
-// (Geometry_Showcase_Fragment.glsl), reduced to one spherical area light and
-// three material types:
-//   - LIGHT: the area light itself;
-//   - REFR (alpha < 1): Fresnel-split glass with tinted transmission;
-//   - COAT/SPEC (opaque): clear-coated diffuse; uReflectivity stochastically
-//     blends towards an ideal mirror.
+// (Geometry_Showcase_Fragment.glsl), with one spherical area light and
+// per-object materials (from the Structure-window material editors):
+//   - LIGHT: the main area light AND any emissive object (implicit area
+//     lights — they glow and illuminate the scene through GI, but are not
+//     directly sampled, so they converge slower than the main light);
+//   - REFR: glass material, or any alpha < 1 (per-object IoR, tinted);
+//   - SPEC: metal material (tinted mirror, roughness blurs the lobe);
+//   - COAT: standard material; uReflectivity stochastically blends toward
+//     an ideal mirror.
 // The scene data comes from the SAME data textures as the raytrace pipeline
 // (render/pipeline/raytrace/SceneEncoder.js) — see sceneFragment.js there for
-// the texel layouts. The area light sits along the app key-light direction at
+// the texel layouts (3 texels/atom, 6/cylinder, material in the poly header/
+// AABB w slots). The area light sits along the app key-light direction at
 // uLightPosition with radius uLightRadius (the "Light softness" slider).
 
 import { DATA_TEX_WIDTH } from '../raytrace/sceneFragment.js';
@@ -41,7 +45,27 @@ uniform float uLightRadius;  // area-light radius (world; soft-shadow spread)
 vec3 rayOrigin, rayDirection;
 vec3 hitNormal, hitEmission, hitColor;
 float hitObjectID = -INFINITY;
+float hitRoughness = 0.0;
+float hitIor = 1.5;
 int hitType = -100;
+
+// encoded material texel + surface alpha -> path-tracer hit type; also sets
+// hitEmission/hitRoughness/hitIor (codes: 0 std, 1 metal, 2 glass, 3 emissive)
+int resolveHitType(vec4 mat, vec3 color, float alpha)
+{
+	hitRoughness = mat.y;
+	hitIor = mat.z;
+	hitEmission = vec3(0);
+	int code = int(mat.x + 0.5);
+	if (code == 3)
+	{
+		hitEmission = color * mat.w; // emissive: an implicit area light
+		return LIGHT;
+	}
+	if (code == 2 || alpha < 0.999) return REFR; // alpha wins for std/metal
+	if (code == 1) return SPEC;
+	return COAT;
+}
 
 struct Sphere { float radius; vec3 position; vec3 emission; vec3 color; int type; };
 Sphere lightSphere;
@@ -82,16 +106,16 @@ float SceneIntersect( out int isRayExiting )
 	// ---- atoms: spheres ---------------------------------------------------
 	for (int i = 0; i < uAtomCount; i++)
 	{
-		vec4 posRad = fetchData(uAtomsDataTexture, i * 2);
+		vec4 posRad = fetchData(uAtomsDataTexture, i * 3);
 		d = SphereIntersect(posRad.w, posRad.xyz, rayOrigin, rayDirection);
 		if (d < t)
 		{
 			t = d;
-			vec4 colA = fetchData(uAtomsDataTexture, (i * 2) + 1);
+			vec4 colA = fetchData(uAtomsDataTexture, (i * 3) + 1);
+			vec4 mat = fetchData(uAtomsDataTexture, (i * 3) + 2);
 			hitNormal = (rayOrigin + (t * rayDirection)) - posRad.xyz;
-			hitEmission = vec3(0);
 			hitColor = colA.rgb;
-			hitType = colA.a < 0.999 ? REFR : COAT;
+			hitType = resolveHitType(mat, colA.rgb, colA.a);
 			hitObjectID = float(1 + i);
 			isRayExiting = dot(hitNormal, rayDirection) > 0.0 ? TRUE : FALSE;
 		}
@@ -100,7 +124,7 @@ float SceneIntersect( out int isRayExiting )
 	// ---- bonds + unit-cell edges: unit cylinders via inverse matrices ------
 	for (int i = 0; i < uCylinderCount; i++)
 	{
-		int o = i * 5;
+		int o = i * 6;
 		mat4 invM = mat4(
 			fetchData(uCylindersDataTexture, o),
 			fetchData(uCylindersDataTexture, o + 1),
@@ -114,10 +138,10 @@ float SceneIntersect( out int isRayExiting )
 		{
 			t = d;
 			vec4 colA = fetchData(uCylindersDataTexture, o + 4);
+			vec4 mat = fetchData(uCylindersDataTexture, o + 5);
 			hitNormal = transpose(mat3(invM)) * n;
-			hitEmission = vec3(0);
 			hitColor = colA.rgb;
-			hitType = colA.a < 0.999 ? REFR : COAT;
+			hitType = resolveHitType(mat, colA.rgb, colA.a);
 			hitObjectID = float(1 + uAtomCount + i);
 			isRayExiting = FALSE; // open cylinders are not closed shapes
 		}
@@ -146,9 +170,11 @@ float SceneIntersect( out int isRayExiting )
 		{
 			t = d;
 			hitNormal = n;
-			hitEmission = vec3(0);
 			hitColor = colA.rgb;
-			hitType = colA.a < 0.999 ? REFR : COAT;
+			// material packed into the spare header/AABB w slots
+			hitType = resolveHitType(
+				vec4(header.z, header.w, fetchData(uPolyDataTexture, o + 2).w, fetchData(uPolyDataTexture, o + 3).w),
+				colA.rgb, colA.a);
 			hitObjectID = float(1 + uAtomCount + uCylinderCount + p);
 			isRayExiting = dot(n, rayDirection) > 0.0 ? TRUE : FALSE;
 		}
@@ -316,18 +342,19 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 			break;
 		}
 
-		if (hitType == SPEC) // ideal mirror
+		if (hitType == SPEC) // metal: tinted mirror, roughness blurs the lobe
 		{
 			mask *= hitColor;
-			rayDirection = reflect(rayDirection, nl);
+			mask *= (1.0 - (hitRoughness * 0.8));
+			rayDirection = randomDirectionInSpecularLobe(nl, reflect(rayDirection, nl), hitRoughness);
 			rayOrigin = x + (nl * uEPS_intersect);
 			continue;
 		}
 
-		if (hitType == REFR) // glass (transparent objects)
+		if (hitType == REFR) // glass (glass material, or transparent objects)
 		{
 			nc = 1.0;
-			nt = 1.5;
+			nt = hitIor;
 			Re = calcFresnelReflectance(rayDirection, n, nc, nt, ratioIoR);
 			Tr = 1.0 - Re;
 

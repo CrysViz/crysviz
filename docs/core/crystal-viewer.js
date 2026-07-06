@@ -24,7 +24,7 @@ import '../ui/AboutPanel.js';
 import { createBackgroundControl } from '../ui/BackgroundPicker.js';
 import { setupThemeSystem } from '../ui/ThemeManager.js';
 import { setupMobileMenu } from '../ui/MobileMenu.js';
-import { setupControlsWiring } from '../ui/ControlsWiring.js';
+import { setupControlsWiring, sizeSliderToValue, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE } from '../ui/ControlsWiring.js';
 import { setupSceneInteraction } from '../ui/SceneInteraction.js';
 import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
 import { pauseRendering, resumeRendering,animation_update,requestRender} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
@@ -336,15 +336,17 @@ async function initApp() {
   setupControlsWiring();
   setupMeasurementToolbar();
 
-  // Initialize atomSize from the UI slider so the initial view respects the slider value
+  // Initialize atomSize from the UI slider so the initial view respects the
+  // slider value. The sliders hold [0,1] positions with a quadratic mapping
+  // into the value range (ui/ControlsWiring.js).
   (function initAtomSizeFromSlider(){
     const slider = document.getElementById('atomSize');
     const span = document.getElementById('atomSizeValue');
     if (slider) {
-      const v = parseFloat(slider.value);
-      if (!isNaN(v)) {
-        general.atomSize = v; // apply slider value to internal scale
-        if (span) span.textContent = general.atomSize.toFixed(1);
+      const pos = parseFloat(slider.value);
+      if (!isNaN(pos)) {
+        general.atomSize = sizeSliderToValue(pos, ATOM_SIZE_RANGE);
+        if (span) span.textContent = general.atomSize.toFixed(2);
       }
     }
   })();
@@ -354,9 +356,9 @@ async function initApp() {
     const slider = document.getElementById('bondWidth');
     const span = document.getElementById('bondWidthValue');
     if (slider) {
-      const v = parseFloat(slider.value);
-      if (!isNaN(v)) {
-        general.bondRadius = v;
+      const pos = parseFloat(slider.value);
+      if (!isNaN(pos)) {
+        general.bondRadius = sizeSliderToValue(pos, BOND_RADIUS_RANGE);
         if (span) span.textContent = general.bondRadius.toFixed(2);
       }
     }

@@ -9,6 +9,7 @@ import { createPieDot, colorHexToCss } from '../utils/ColorModule.js';
 import {clearAllHighlights} from './SelectAndHighlightModule.js';
 import { openDoublePeriodicTable } from './PeriodicTableSelectTwoPanel.js';
 import { createColorPicker } from './ColorPickerModule.js';
+import { createMaterialEditor } from './StructureInfoPanel/components/MaterialEditor.js';
 import { createIndividualBondRow } from './StructureInfoPanel/components/IndividualBondRow.js';
 import { createTinyToggle } from './StructureInfoPanel/components/Immunity.js';
 import { clampOpacity, clampRadiusScale } from './StructureInfoPanel/components/utils.js';
@@ -426,9 +427,18 @@ export function createBondLengthControls(targetPanel='bondControls') {
     catButtonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';
     catButtonRow.appendChild(catResetBtn);
 
+    // Per-pair ray/path-tracing material (bondCategoryStyles[pair].material).
+    const catMaterialEditor = createMaterialEditor(
+      () => structure()?.bondCategoryStyles?.[pair]?.material,
+      (material) => {
+        if (material) catStyle().material = material;
+        else delete catStyle().material;
+      });
+
     catEditor.appendChild(catPicker.element);
     catEditor.appendChild(catAlphaRow);
     catEditor.appendChild(catSizeRow);
+    catEditor.appendChild(catMaterialEditor);
     catEditor.appendChild(catButtonRow);
 
     // Uniform header order across tabs: checkbox, dot, label, caret, count, immunity.

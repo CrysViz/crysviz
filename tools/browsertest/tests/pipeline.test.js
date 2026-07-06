@@ -95,6 +95,37 @@ const H = require('../harness');
     ptControls.hasBoth && ptControls.rtSharedUnderPathtrace && ptControls.ptShownUnderPathtrace
       && ptControls.ptHiddenUnderRaytrace && ptControls.allHiddenUnderForward,
     JSON.stringify(ptControls));
+
+  // --- Dependency tree: Render Style (and cel outlines) only for raster pipelines --
+  const styleTree = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const styleRow = document.getElementById('renderStyleMenu')?.closest('.control-row');
+    const outlineBlock = document.getElementById('celOutlineModeMenu')?.closest('.control-row')?.parentElement;
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
+    const styleSelect = /** @type {HTMLSelectElement} */ (document.getElementById('renderStyleMenu'));
+    const shownUnderForward = getComputedStyle(styleRow).display !== 'none';
+    styleSelect.value = 'cel';
+    styleSelect.dispatchEvent(new Event('change'));
+    const outlineShownForwardCel = getComputedStyle(outlineBlock).display !== 'none';
+    select.value = 'raytrace';
+    select.dispatchEvent(new Event('change'));
+    const hiddenUnderRaytrace = getComputedStyle(styleRow).display === 'none';
+    const outlineHiddenUnderRaytrace = getComputedStyle(outlineBlock).display === 'none';
+    select.value = 'forward';
+    select.dispatchEvent(new Event('change'));
+    const outlineBackUnderForward = getComputedStyle(outlineBlock).display !== 'none';
+    styleSelect.value = 'metallic';
+    styleSelect.dispatchEvent(new Event('change'));
+    const pipelineFirst = document.getElementById('renderPipelineMenu').closest('.control-row')
+      .compareDocumentPosition(styleRow) & Node.DOCUMENT_POSITION_FOLLOWING;
+    return { generalStyle: general.renderStyle, shownUnderForward, outlineShownForwardCel,
+      hiddenUnderRaytrace, outlineHiddenUnderRaytrace, outlineBackUnderForward, pipelineFirst: !!pipelineFirst };
+  });
+  H.check('Render Style + cel outlines only show for raster pipelines; pipeline row first',
+    styleTree.shownUnderForward && styleTree.outlineShownForwardCel
+      && styleTree.hiddenUnderRaytrace && styleTree.outlineHiddenUnderRaytrace
+      && styleTree.outlineBackUnderForward && styleTree.pipelineFirst,
+    JSON.stringify(styleTree));
   H.check('pipeline dropdown lives in the Visual window', await page.evaluate(() =>
     !!document.getElementById('renderPipelineMenu')?.closest('#cvPanelBody-visual')));
 
@@ -201,8 +232,8 @@ const H = require('../harness');
       ptLightSoftness: state.style.ptLightSoftness,
     };
   });
-  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.6)',
-    persisted.version === '2.6' && persisted.renderPipeline === 'forward'
+  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.7)',
+    persisted.version === '2.7' && persisted.renderPipeline === 'forward'
       && typeof persisted.depthPeelLayers === 'number'
       && typeof persisted.rtResolutionScale === 'number'
       && typeof persisted.rtReflectivity === 'number'

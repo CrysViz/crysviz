@@ -329,6 +329,23 @@ export function addColorPanel(target = "colorContainer") {
     id: "colorControlsContent"
   });
 
+  // The Rendering section is a dependency tree: the pipeline comes first and
+  // decides which of the remaining controls make sense — per-pipeline knobs
+  // (peel layers / tracer sliders), then Render Style (raster pipelines only:
+  // the tracers have their own material model), then the cel outline block
+  // (raster + cel only). One helper computes ALL visibility from state so the
+  // dropdown handlers and share-restore stay consistent.
+  const RASTER_PIPELINES = ["forward", "split-atoms", "sorted-atoms", "wboit", "depthpeel"];
+  function updateRenderingControlsVisibility() {
+    const isRaster = RASTER_PIPELINES.includes(general.renderPipeline);
+    const isTracer = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
+    depthPeelBlock.style.display = general.renderPipeline === "depthpeel" ? "grid" : "none";
+    rtControlsBlock.style.display = isTracer ? "block" : "none";
+    ptControlsBlock.style.display = general.renderPipeline === "pathtrace" ? "block" : "none";
+    renderStyleMenu.style.display = isRaster ? "grid" : "none";
+    outlineBlock.style.display = isRaster && general.renderStyle === "cel" ? "block" : "none";
+  }
+
   // Render style (material) dropdown. Switching style rebuilds the meshes:
   // cel shading uses a different material class (MeshToonMaterial), so the
   // materials cannot just be re-parameterized in place.
@@ -338,7 +355,7 @@ export function addColorPanel(target = "colorContainer") {
     { value: "cel", text: "Cel shading", selected: general.renderStyle === "cel" },
   ], () => {
     general.renderStyle = renderStyleMenu.querySelector("select").value;
-    outlineBlock.style.display = general.renderStyle === "cel" ? "block" : "none";
+    updateRenderingControlsVisibility();
     const hasComparison = !!fileBrowser.comparisonStructure;
     updateVisualization({
       reRenderAtoms: true,
@@ -351,19 +368,13 @@ export function addColorPanel(target = "colorContainer") {
     if (general.celOutlineMode === "hull") updatePolyhedra();
   });
 
-  content.appendChild(renderStyleMenu);
-
-  // Rendering pipeline (how transparent content is drawn). Switching pipelines
-  // re-applies the transparency policy over the live scene — no mesh rebuild.
+  // Rendering pipeline (how a frame is drawn) — the top of the tree.
   const renderPipelineMenu = createDropdown("renderPipelineMenu", "Rendering pipeline",
     listPipelines().map((p) => ({
       value: p.id, text: p.label, selected: general.renderPipeline === p.id,
     })), () => {
       setActivePipeline(renderPipelineMenu.querySelector("select").value);
-      depthPeelBlock.style.display = general.renderPipeline === "depthpeel" ? "grid" : "none";
-      const isTracer = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
-      rtControlsBlock.style.display = isTracer ? "block" : "none";
-      ptControlsBlock.style.display = general.renderPipeline === "pathtrace" ? "block" : "none";
+      updateRenderingControlsVisibility();
     });
   content.appendChild(renderPipelineMenu);
 
@@ -462,6 +473,9 @@ export function addColorPanel(target = "colorContainer") {
   ptControlsBlock.appendChild(ptSoftRow);
   content.appendChild(ptControlsBlock);
 
+  // Render Style follows the per-pipeline knobs (raster pipelines only).
+  content.appendChild(renderStyleMenu);
+
   // Cel outline controls: mode selector plus mode-specific width sliders.
   // Both widths are world units. 'Screen space' = post-process with clean
   // shared contours, thickness converted from world units per fragment so it
@@ -544,6 +558,7 @@ export function addColorPanel(target = "colorContainer") {
   outlineBlock.appendChild(hullControls);
 
   content.appendChild(outlineBlock);
+  updateRenderingControlsVisibility();
 
   // =========================
   // ATOMS
