@@ -199,7 +199,30 @@ function redCentroid(file) {
   // ============================ wboit pipeline ==================================
   // Order-independent weighted blending (vendored three-wboit). Both atoms are
   // still transparent from the sorted section.
-  await setPipeline('wboit');
+  //
+  // FIRST-FRAME regression: the pipeline switch creates a freshly patched
+  // overlay material. On the very first render its accumulation stage must
+  // already run with the correct renderStage (upstream defined the stage
+  // property only at first shader compile, so frame 1 accumulated plain
+  // additive colors — a garbage frame that stuck under render-on-demand).
+  // Weighted accumulation alpha is ~w*a (hundreds); plain alpha would be ~1.
+  const firstFrame = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const { setActivePipeline } = await import('./render/index.js');
+    setActivePipeline('wboit'); // fresh pipeline + freshly patched overlay material
+    const pipeline = app.pipeline;
+    pipeline.render({ renderer: app.renderer, scene: app.scene, camera: app.camera }); // FIRST frame
+    const pass = pipeline._pass;
+    const w = pass.accumulationTarget.width, h = pass.accumulationTarget.height;
+    // Scan a horizontal band through the staged spheres for the max accum alpha.
+    const buf = new Float32Array(4 * w);
+    app.renderer.readRenderTargetPixels(pass.accumulationTarget, 0, Math.floor(h / 2), w, 1, buf);
+    let maxAlpha = 0;
+    for (let i = 3; i < buf.length; i += 4) maxAlpha = Math.max(maxAlpha, buf[i]);
+    return { maxAlpha };
+  });
+  H.check('wboit: first frame accumulates with the correct render stage (weighted alpha)',
+    firstFrame.maxAlpha > 50, JSON.stringify(firstFrame));
   await page.waitForTimeout(500);
   const s5File = await shootFile('transparencyorder-wboit-both');
   const s5 = sampleDisk(s5File, spot.x, spot.y, R);

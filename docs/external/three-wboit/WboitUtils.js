@@ -25,6 +25,31 @@ class WboitUtils {
 			// mesh until the first shader compile).
 			material.wboitEnabled = true;
 
+			// LOCAL MODIFICATION (CrysViz): define the renderStage property
+			// immediately too. Upstream defined it inside onBeforeCompile, so on
+			// the FIRST frame after patching, WboitPass.prepareWboitBlending
+			// could not set the stage: the accumulation pass then rendered with
+			// the stage uniform at its 0.5 default — plain colors under additive
+			// blending — producing one garbage frame (visible on always-
+			// transparent content like polyhedra, and sticky under
+			// render-on-demand). The shared _stage uniform is bound at first
+			// compile mid-frame and already carries the correct value.
+			Object.defineProperty( material, 'renderStage', {
+
+				get: function() {
+
+					return _stage;
+
+				},
+
+				set: function( stage ) {
+
+					_stage.value = parseFloat( stage );
+
+				}
+
+			} );
+
 			const existingOnBeforeCompile = material.onBeforeCompile;
 
 			material.onBeforeCompile = function( shader, renderer ) {
@@ -84,28 +109,6 @@ class WboitUtils {
 				const mainEnd = shader.fragmentShader.lastIndexOf( '}' );
 				shader.fragmentShader =
 					shader.fragmentShader.slice( 0, mainEnd ) + wboitOutput + '\n}';
-
-				// LOCAL MODIFICATION (CrysViz): guard the defineProperty so the
-				// every-compile body stays idempotent.
-				if ( ! Object.getOwnPropertyDescriptor( material, 'renderStage' ) ) {
-
-					Object.defineProperty( material, 'renderStage', {
-
-						get: function() {
-
-							return _stage;
-
-						},
-
-						set: function( stage ) {
-
-							_stage.value = parseFloat( stage );
-
-						}
-
-					} );
-
-				}
 
 			}
 

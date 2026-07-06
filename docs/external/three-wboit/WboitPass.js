@@ -230,9 +230,20 @@ class WboitPass extends Pass {
 		const targetBuffers = [ new Float32Array( 4 ), new Uint16Array( 4 ), new Uint8Array( 4 ) ];
 		const targetDivisor = [ 1, 15360, 255 ];
 
+		// LOCAL MODIFICATION (CrysViz): the accumulation stage BLENDS into the
+		// target, and blending with 32-bit float color buffers requires
+		// EXT_float_blend — the upstream probe only tested renderability, so
+		// FloatType could be picked where float blending is unsupported, and
+		// browsers warn about the implicitly enabled extension otherwise.
+		// Request it explicitly and only consider FloatType when present
+		// (16-bit float blending is core WebGL2 and needs no extension).
+		const floatBlend = gl.getExtension( 'EXT_float_blend' );
+
 		let targetType;
 
 		for ( let i = 0; i < targetTypes.length; i ++ ) {
+
+			if ( targetTypes[ i ] === FloatType && ! floatBlend ) continue;
 
 			const testTarget = new WebGLRenderTarget( 1, 1, {
 				minFilter: NearestFilter,

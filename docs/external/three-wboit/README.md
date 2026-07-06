@@ -41,10 +41,14 @@ All marked with `LOCAL MODIFICATION (CrysViz)` comments in the sources:
    (the app's instanced atom/bond shader patches).
 3. **`WboitUtils.js`: patch body runs on every shader compile.** Upstream ran
    it once (guarded by `wboitEnabled`), so any later program rebuild dropped
-   both the chained `onBeforeCompile` and the WBOIT outputs. `wboitEnabled` is
-   now set immediately in `patch()` (also fixes the mesh being misclassified by
-   `WboitPass.gatherMeshes` until the first compile), and the `renderStage`
-   property definition is guarded to keep the body idempotent.
+   both the chained `onBeforeCompile` and the WBOIT outputs. `wboitEnabled` and
+   the `renderStage` property are now set immediately in `patch()` — upstream
+   defined both lazily at first compile, so (a) `WboitPass.gatherMeshes`
+   misclassified the mesh until then, and (b) on the first frame after
+   patching, `prepareWboitBlending` could not set the render stage, making the
+   accumulation pass render plain additive colors — one garbage frame (visible
+   on always-transparent content such as polyhedra, and sticky under
+   on-demand rendering).
 4. **`WboitPass.js`: fixed swapped depth-flag restoration** in
    `resetVisible()` — upstream restored `depthWrite` from the `depthTest`
    cache and vice versa, corrupting any material whose two flags differ.
@@ -73,7 +77,14 @@ All marked with `LOCAL MODIFICATION (CrysViz)` comments in the sources:
    standard over color factors and separate alpha blend factors
    (`blendSrcAlpha = One`, `blendDstAlpha = OneMinusSrcAlpha`), which also
    makes the exported PNG alpha correct for WBOIT-only content.
-8. **`WboitPass.js`: tone mapping / color space for three r152+.** Modern
+8. **`WboitPass.js`: explicit `EXT_float_blend`.** The accumulation stage
+   blends into the render target; blending with 32-bit float color buffers
+   requires `EXT_float_blend`, which the upstream render-target probe never
+   requested (browsers warn about the implicit enable, and `FloatType` could
+   be selected on hardware without float blending). The extension is now
+   requested explicitly and `FloatType` is only considered when it is present
+   (half-float blending is core WebGL2).
+9. **`WboitPass.js`: tone mapping / color space for three r152+.** Modern
    three forces `NoToneMapping` + linear output when rendering into offscreen
    targets, so the scene stages lost the renderer's ACES tone mapping and
    washed out. `baseTarget` is marked `isXRRenderTarget` with the renderer's
