@@ -13,14 +13,16 @@
 //   - MAT_EMISSIVE: additive glow (color x intensity) in this Whitted tracer.
 // Scene data arrives in RGBA32F data textures (see SceneEncoder.js):
 //   atoms      3 texels/atom:  (pos.xyz, radius), (rgb, alpha),
-//              (matType, roughness, ior, intensity)
+//              (matType, roughness, typeParam, reflectivity)
 //   cylinders  6 texels/cyl:   4 columns of the inverse object matrix (unit
 //              cylinder y in [-1,1]; direction NOT renormalized in object
 //              space so t stays world-valid), (rgb, alpha),
-//              (matType, roughness, ior, intensity)
+//              (matType, roughness, typeParam, reflectivity)
 //   polyhedra  header (planeOffset, planeCount, matType, roughness),
-//              (rgb, alpha), (aabbMin, ior), (aabbMax, intensity),
+//              (rgb, alpha), (aabbMin, typeParam), (aabbMax, reflectivity),
 //              then planeCount (normal.xyz, d)
+// typeParam = IoR for glass / intensity for emissive; reflectivity < 0 means
+// "use the global uReflectivity slider".
 // The single light is directional (the app's camera-relative key light);
 // shadow-ray success = the ray escaping to the sky.
 
@@ -52,8 +54,8 @@ vec3 intersectionNormal;
 vec3 intersectionColor;
 float intersectionAlpha;
 float intersectionRoughness;
-float intersectionIor;
-float intersectionIntensity;
+float intersectionTypeParam; // IoR (glass) or intensity (emissive)
+float intersectionReflectivity; // < 0 = use uReflectivity
 int intersectionShapeIsClosed;
 
 #define MAT_OPAQUE 0
@@ -106,8 +108,8 @@ float SceneIntersect( int isShadowRay )
 			intersectionAlpha = colA.a;
 			intersectionMaterialType = resolveMaterialType(mat.x, colA.a);
 			intersectionRoughness = mat.y;
-			intersectionIor = mat.z;
-			intersectionIntensity = mat.w;
+			intersectionTypeParam = mat.z;
+			intersectionReflectivity = mat.w;
 			intersectionShapeIsClosed = TRUE;
 		}
 	}
@@ -136,8 +138,8 @@ float SceneIntersect( int isShadowRay )
 			intersectionAlpha = colA.a;
 			intersectionMaterialType = resolveMaterialType(mat.x, colA.a);
 			intersectionRoughness = mat.y;
-			intersectionIor = mat.z;
-			intersectionIntensity = mat.w;
+			intersectionTypeParam = mat.z;
+			intersectionReflectivity = mat.w;
 			intersectionShapeIsClosed = FALSE;
 		}
 	}
@@ -170,8 +172,8 @@ float SceneIntersect( int isShadowRay )
 			// material packed into the spare header/AABB w slots
 			intersectionMaterialType = resolveMaterialType(header.z, colA.a);
 			intersectionRoughness = header.w;
-			intersectionIor = fetchData(uPolyDataTexture, o + 2).w;
-			intersectionIntensity = fetchData(uPolyDataTexture, o + 3).w;
+			intersectionTypeParam = fetchData(uPolyDataTexture, o + 2).w;
+			intersectionReflectivity = fetchData(uPolyDataTexture, o + 3).w;
 			intersectionShapeIsClosed = TRUE;
 		}
 	}
@@ -270,7 +272,8 @@ vec3 RayTrace()
 
 			// mirror reflections, weighted by Fresnel + the Reflectivity slider
 			reflectance = calcFresnelReflectance(rayDirection, shadingNormal, 1.0, 1.4, IoR_ratio);
-			float reflectWeight = clamp((reflectance * 0.5) + uReflectivity, 0.0, 1.0);
+			float effReflectivity = intersectionReflectivity < 0.0 ? uReflectivity : intersectionReflectivity;
+			float reflectWeight = clamp((reflectance * 0.5) + effReflectivity, 0.0, 1.0);
 			if (bounces == 0 && reflectWeight > 0.01)
 			{
 				willNeedReflectionRay = TRUE;
@@ -289,7 +292,7 @@ vec3 RayTrace()
 		{
 			// additive glow: the object is its own light source; a small diffuse
 			// term keeps the shape readable at low intensities
-			accumulatedColor += rayColorMask * intersectionColor * (intersectionIntensity * 0.5 + 0.25);
+			accumulatedColor += rayColorMask * intersectionColor * (intersectionTypeParam * 0.5 + 0.25);
 			if (willNeedReflectionRay == TRUE)
 			{
 				rayColorMask = reflectionRayColorMask;
@@ -318,7 +321,10 @@ vec3 RayTrace()
 
 		if (intersectionMaterialType == MAT_TRANSP)
 		{
-			reflectance = calcFresnelReflectance(rayDirection, geometryNormal, 1.0, intersectionIor, IoR_ratio);
+			// per-object IoR travels in typeParam (0 when the material is not glass
+			// but alpha routed us here -> fall back to the classic 1.5)
+			float ior = intersectionTypeParam > 1.0 ? intersectionTypeParam : 1.5;
+			reflectance = calcFresnelReflectance(rayDirection, geometryNormal, 1.0, ior, IoR_ratio);
 			transmittance = 1.0 - reflectance;
 
 			specularContribution = doBlinnPhongSpecularLighting(rayColorMask, shadingNormal, halfwayVector, uLightColor, 0.1, diffuseIntensity);

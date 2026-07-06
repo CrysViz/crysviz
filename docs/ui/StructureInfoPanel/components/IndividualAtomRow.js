@@ -8,6 +8,7 @@ import {
 } from '../../../render/AtomsFracUpdateModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
 import { updatePolyhedraColors } from '../../../render/index.js';
+import { createMaterialEditor } from './MaterialEditor.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { clampOpacity, clampRadiusScale, updateAtomCoordinates } from './utils.js';
 import { selectAtomFromRow } from '../../SelectAndHighlightModule.js';
@@ -268,9 +269,21 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   atomSizeRow.appendChild(atomSizeSlider);
   atomSizeRow.appendChild(atomSizeValue);
 
+  // Per-atom ray/path-tracing material override (wins over the species entry).
+  const materialEditor = createMaterialEditor(
+    () => fileBrowser.selectedStructure?.atomUserMaterials?.[atomIndex],
+    (material) => {
+      const structure = fileBrowser.selectedStructure;
+      if (!structure) return;
+      structure.atomUserMaterials = structure.atomUserMaterials ?? {};
+      if (material) structure.atomUserMaterials[atomIndex] = material;
+      else delete structure.atomUserMaterials[atomIndex];
+    });
+
   editor.appendChild(topRowIndiv);
   editor.appendChild(atomAlphaRow);
   editor.appendChild(atomSizeRow);
+  editor.appendChild(materialEditor);
   editor.appendChild(buttonRowIndiv);
 
   // Coordinate editor

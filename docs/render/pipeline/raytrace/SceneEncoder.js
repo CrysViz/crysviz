@@ -11,22 +11,28 @@
 import * as THREE from '../../../external/three/three.module.js';
 import { ConvexHull } from '../../../external/three/ConvexHull.js';
 import { groups, fileBrowser, general } from '../../../state/store.js';
+import { bondKey } from '../../BondsFracUpdateModule.js';
 import { DATA_TEX_WIDTH } from './sceneFragment.js';
 
 const MAX_PLANES = 20; // ConvexPolyhedronIntersect limit (vendored chunk)
 
-// Ray/path-tracing material encoding: one texel (type, roughness, ior,
-// intensity). Type codes match MAT_* in both scene shaders.
+// Ray/path-tracing material encoding: one texel (type, roughness, typeParam,
+// reflectivity). typeParam carries the per-type knob — IoR for glass,
+// intensity for emissive (they are mutually exclusive). reflectivity is -1
+// when unset, meaning "use the global Reflectivity slider". Type codes match
+// MAT_* in both scene shaders.
 const MATERIAL_CODES = { standard: 0, metal: 1, glass: 2, emissive: 3 };
-const DEFAULT_MATERIAL_TEXEL = [0, 0.2, 1.5, 5];
+const DEFAULT_MATERIAL_TEXEL = [0, 0.2, 0, -1];
 
 function materialTexel(mat) {
   if (!mat) return DEFAULT_MATERIAL_TEXEL;
+  const typeParam = mat.type === 'glass' ? (mat.ior ?? 1.5)
+    : mat.type === 'emissive' ? (mat.intensity ?? 5) : 0;
   return [
     MATERIAL_CODES[mat.type] ?? 0,
     mat.roughness ?? 0.2,
-    mat.ior ?? 1.5,
-    mat.intensity ?? 5,
+    typeParam,
+    mat.reflectivity ?? -1,
   ];
 }
 
@@ -92,13 +98,16 @@ export class SceneEncoder {
       parts.push('l', String(fileBrowser.selectedStructure.lattice.flat()),
         general.latticeLineWidth, String(general.currentLatticeColor));
     }
-    // material edits (small sparse maps; category stores also carry colors,
+    // material edits (small sparse maps; the style stores also carry colors,
     // whose mesh-side changes are already covered above — harmless overlap)
     const structure = fileBrowser.selectedStructure;
     if (structure) {
       parts.push('m', JSON.stringify(structure.atomMaterials ?? {}),
+        JSON.stringify(structure.atomUserMaterials ?? {}),
         JSON.stringify(structure.bondCategoryStyles ?? {}),
-        JSON.stringify(structure.polyhedraCategoryStyles ?? {}));
+        JSON.stringify(structure.bondUserStyles ?? {}),
+        JSON.stringify(structure.polyhedraCategoryStyles ?? {}),
+        JSON.stringify(structure.polyhedraUserStyles ?? {}));
     }
     const fingerprint = parts.join('|');
     if (fingerprint === this._fingerprint) return false;
@@ -129,6 +138,7 @@ export class SceneEncoder {
     const structure = fileBrowser.selectedStructure;
     const srcIndex = structure?.periodic?.wrapped?.srcIndex;
     const atomMaterials = structure?.atomMaterials ?? {};
+    const atomUserMaterials = structure?.atomUserMaterials ?? {};
     const matrices = mesh.instanceMatrix.array;
     const colors = mesh.instanceColor.array;
     const opacities = mesh.geometry.attributes.instanceOpacity?.array;
@@ -152,9 +162,11 @@ export class SceneEncoder {
       data[d + 5] = colors[i * 3 + 1];
       data[d + 6] = colors[i * 3 + 2];
       data[d + 7] = (opacities ? opacities[i] : 1) * baseOpacity;
-      // per-species material (instance -> source atom -> element)
-      const element = structure?.elements?.[srcIndex ? srcIndex[i] : i];
-      data.set(materialTexel(element ? atomMaterials[element] : null), d + 8);
+      // per-atom override > per-species material (instance -> source atom)
+      const src = srcIndex ? srcIndex[i] : i;
+      const element = structure?.elements?.[src];
+      data.set(materialTexel(
+        atomUserMaterials[src] ?? (element ? atomMaterials[element] : null)), d + 8);
       n++;
     }
     this.atomCount = n;
@@ -198,12 +210,16 @@ export class SceneEncoder {
         // the ray-traced unit cylinder spans y in [-1, 1] — pre-scale by 0.5
         _m.multiply(_halfY);
         _mInv.copy(_m).invert();
-        // per-pair material (instance i -> bond floor(i/2) -> sorted pair key)
-        const elements = structure?.bonds?.[Math.floor(i / 2)]?.elements;
+        // per-bond override > per-pair material (instance i -> bond floor(i/2))
+        const bond = structure?.bonds?.[Math.floor(i / 2)];
         let material = null;
-        if (elements) {
-          const [e1, e2] = elements;
-          material = bondCategoryStyles[e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`]?.material;
+        if (bond) {
+          material = (bond.indices
+            ? structure.bondUserStyles?.[bondKey(bond.indices)]?.material : null) ?? null;
+          if (!material && bond.elements) {
+            const [e1, e2] = bond.elements;
+            material = bondCategoryStyles[e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`]?.material;
+          }
         }
         writeCylinder(_mInv, colors[i * 3], colors[i * 3 + 1], colors[i * 3 + 2],
           (opacities ? opacities[i] : 1) * baseOpacity, materialTexel(material));
@@ -263,20 +279,21 @@ export class SceneEncoder {
     meshes.forEach((mesh, p) => {
       const planes = mesh.userData.rtPlanes;
       const aabb = mesh.userData.rtAabb;
-      // per-category material, packed into the spare header/AABB w slots
-      // (poly.catKey is stamped by PolyhedraModule.assignPolyhedraKeys; when
-      // absent — list panel never built — the default material applies)
+      // per-polyhedron override > per-category material, packed into the
+      // spare header/AABB w slots (poly.key/catKey are stamped by
+      // PolyhedraModule.assignPolyhedraKeys; when absent — list panel never
+      // built — the default material applies)
       const poly = structure?.polyhedra?.polyhedra?.[mesh.userData.polyIndex];
-      const material = poly?.catKey
-        ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null;
-      const [matType, roughness, ior, intensity] = materialTexel(material);
+      const material = (poly?.key ? structure?.polyhedraUserStyles?.[poly.key]?.material : null)
+        ?? (poly?.catKey ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null);
+      const [matType, roughness, typeParam, reflectivity] = materialTexel(material);
       const d = p * 16;
       data[d] = planeOffset; data[d + 1] = planes.length; data[d + 2] = matType; data[d + 3] = roughness;
       _color.copy(mesh.material.color);
       data[d + 4] = _color.r; data[d + 5] = _color.g; data[d + 6] = _color.b;
       data[d + 7] = mesh.material.opacity ?? 1;
-      data[d + 8] = aabb.min.x; data[d + 9] = aabb.min.y; data[d + 10] = aabb.min.z; data[d + 11] = ior;
-      data[d + 12] = aabb.max.x; data[d + 13] = aabb.max.y; data[d + 14] = aabb.max.z; data[d + 15] = intensity;
+      data[d + 8] = aabb.min.x; data[d + 9] = aabb.min.y; data[d + 10] = aabb.min.z; data[d + 11] = typeParam;
+      data[d + 12] = aabb.max.x; data[d + 13] = aabb.max.y; data[d + 14] = aabb.max.z; data[d + 15] = reflectivity;
       for (const plane of planes) {
         data.set(plane, planeOffset * 4);
         planeOffset++;

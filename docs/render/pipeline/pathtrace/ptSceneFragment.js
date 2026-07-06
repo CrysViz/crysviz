@@ -47,21 +47,26 @@ vec3 hitNormal, hitEmission, hitColor;
 float hitObjectID = -INFINITY;
 float hitRoughness = 0.0;
 float hitIor = 1.5;
+float hitReflectivity = -1.0; // < 0 = use the global uReflectivity
 int hitType = -100;
 
-// encoded material texel + surface alpha -> path-tracer hit type; also sets
-// hitEmission/hitRoughness/hitIor (codes: 0 std, 1 metal, 2 glass, 3 emissive)
+// encoded material texel (type, roughness, typeParam, reflectivity) + surface
+// alpha -> path-tracer hit type; also sets hitEmission/hitRoughness/hitIor/
+// hitReflectivity (codes: 0 std, 1 metal, 2 glass, 3 emissive; typeParam is
+// the IoR for glass or the intensity for emissive)
 int resolveHitType(vec4 mat, vec3 color, float alpha)
 {
 	hitRoughness = mat.y;
-	hitIor = mat.z;
+	hitReflectivity = mat.w;
 	hitEmission = vec3(0);
 	int code = int(mat.x + 0.5);
 	if (code == 3)
 	{
-		hitEmission = color * mat.w; // emissive: an implicit area light
+		hitEmission = color * mat.z; // emissive: an implicit area light
 		return LIGHT;
 	}
+	// per-object IoR only travels for glass; alpha-routed objects use 1.5
+	hitIor = code == 2 && mat.z > 1.0 ? mat.z : 1.5;
 	if (code == 2 || alpha < 0.999) return REFR; // alpha wins for std/metal
 	if (code == 1) return SPEC;
 	return COAT;
@@ -396,8 +401,9 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 
 		if (hitType == COAT) // clear-coated diffuse (opaque objects)
 		{
-			// uReflectivity stochastically upgrades the surface to a mirror
-			if (rng() < uReflectivity)
+			// reflectivity stochastically upgrades the surface to a mirror
+			// (per-object value wins over the global slider when set)
+			if (rng() < (hitReflectivity < 0.0 ? uReflectivity : hitReflectivity))
 			{
 				mask *= hitColor;
 				rayDirection = reflect(rayDirection, nl);

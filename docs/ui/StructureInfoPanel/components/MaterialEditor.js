@@ -7,9 +7,13 @@
 // intentionally inert (the label says so).
 //
 // Material object shape (see model/Structure.js atomMaterials):
-//   { type: 'standard'|'metal'|'glass'|'emissive', roughness?, ior?, intensity? }
-// Selecting "Standard" clears the stored entry (standard is the default).
+//   { type: 'standard'|'metal'|'glass'|'emissive', roughness?, ior?,
+//     intensity?, reflectivity? }
+// reflectivity (standard type) overrides the global "Reflectivity" slider for
+// the object once touched. Selecting "Standard" with an untouched reflectivity
+// clears the stored entry (that IS the default).
 
+import { general } from '../../../state/store.js';
 import { requestRender } from '../../../render/index.js';
 
 const TYPES = [
@@ -20,7 +24,7 @@ const TYPES = [
 ];
 
 /**
- * @param {() => ({type?: string, roughness?: number, ior?: number, intensity?: number} | null | undefined)} getMaterial
+ * @param {() => ({type?: string, roughness?: number, ior?: number, intensity?: number, reflectivity?: number} | null | undefined)} getMaterial
  * @param {(material: object | null) => void} setMaterial write to the owning store (null = clear)
  */
 export function createMaterialEditor(getMaterial, setMaterial) {
@@ -34,6 +38,7 @@ export function createMaterialEditor(getMaterial, setMaterial) {
     roughness: current.roughness ?? 0.2,
     ior: current.ior ?? 1.5,
     intensity: current.intensity ?? 5,
+    reflectivity: current.reflectivity ?? null, // null = follow the global slider
   };
 
   const header = document.createElement('div');
@@ -89,14 +94,15 @@ export function createMaterialEditor(getMaterial, setMaterial) {
   };
 
   const commit = () => {
-    if (state.type === 'standard') {
-      setMaterial(null); // standard is the default — clear the entry
+    if (state.type === 'standard' && state.reflectivity == null) {
+      setMaterial(null); // fully default — clear the entry
     } else {
       setMaterial({
         type: state.type,
         roughness: state.roughness,
         ior: state.ior,
         intensity: state.intensity,
+        ...(state.reflectivity != null ? { reflectivity: state.reflectivity } : {}),
       });
     }
     requestRender();
@@ -108,14 +114,21 @@ export function createMaterialEditor(getMaterial, setMaterial) {
     (v) => { state.ior = v; commit(); });
   const intensityRow = makePropRow('Glow', 'material-intensity-row', 0, 20, 0.5, state.intensity,
     (v) => { state.intensity = v; commit(); });
+  // Per-object reflectivity (standard surfaces): shown at the global slider
+  // value until touched; once moved it overrides the global for this object.
+  const reflectRow = makePropRow('Reflect', 'material-reflectivity-row', 0, 1, 0.05,
+    state.reflectivity ?? general.rtReflectivity ?? 0.15,
+    (v) => { state.reflectivity = v; commit(); });
   block.appendChild(roughRow);
   block.appendChild(iorRow);
   block.appendChild(intensityRow);
+  block.appendChild(reflectRow);
 
   const syncPropVisibility = () => {
     roughRow.style.display = state.type === 'metal' ? 'flex' : 'none';
     iorRow.style.display = state.type === 'glass' ? 'flex' : 'none';
     intensityRow.style.display = state.type === 'emissive' ? 'flex' : 'none';
+    reflectRow.style.display = state.type === 'standard' ? 'flex' : 'none';
   };
   syncPropVisibility();
 

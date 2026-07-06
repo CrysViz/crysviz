@@ -55,7 +55,26 @@ function changedPixelCount(fileA, fileB) {
   });
   H.check('#atomSize at full travel drives general.atomSize to 3.0',
     Math.abs(atFull.atomSize - 3.0) < 1e-6 && atFull.span === '3.00', JSON.stringify(atFull));
+
+  // --- Bond lengths recalculate when the atom size changes (debounced) -----------
+  // Bond.visibleLen is clipped by the atom radii; bigger atoms => shorter bonds.
+  const bondBefore = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const b = fileBrowser.selectedStructure.bonds.find((x) => x.halfLen > 1e-3);
+    return b ? b.halfLen : null;
+  });
+  await page.waitForTimeout(600); // let the atomSize=3.0 rebuild from above settle
+  const bondAfter = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const lens = fileBrowser.selectedStructure.bonds.map((x) => x.halfLen);
+    return { max: Math.max(...lens, 0) };
+  });
+  H.check('bond visible lengths recalc after an atom-size change',
+    bondBefore !== null && bondAfter.max < bondBefore - 1e-6,
+    JSON.stringify({ bondBefore, bondAfter }));
+
   await H.setSlider(page, 'atomSize', 0.3444); // back to the default 0.40
+  await page.waitForTimeout(600); // debounced bond rebuild at the default size
 
   // --- Material editors exist in the Structure window ----------------------------
   const editors = await page.evaluate(() => ({
@@ -96,6 +115,34 @@ function changedPixelCount(fileA, fileB) {
     encoded.id === 'raytrace' && encoded.samples > 2 && encoded.atoms > 0, JSON.stringify(encoded));
   H.check('emissive/metal materials visibly change the ray-traced structure',
     changed > 1000, JSON.stringify({ changedPixels: changed }));
+
+  // --- Per-atom override + per-material reflectivity encode into the texels ------
+  const texels = await page.evaluate(async () => {
+    const { fileBrowser, groups, app } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    const structure = fileBrowser.selectedStructure;
+    const cuIndex = structure.elements.findIndex((e) => e === 'Cu');
+    structure.atomUserMaterials = structure.atomUserMaterials ?? {};
+    structure.atomUserMaterials[cuIndex] = { type: 'glass', ior: 2.0 }; // beats emissive species entry
+    structure.atomMaterials['Y'] = { type: 'standard', reflectivity: 0.8 };
+    requestRender();
+    await new Promise((r) => setTimeout(r, 1200)); // one frame re-encodes
+    const data = app.pipeline._encoder.atomsTexture.image.data;
+    const srcIndex = structure.periodic.wrapped.srcIndex;
+    const mesh = groups.atomsMesh;
+    let cu = null, y = null;
+    for (let i = 0; i < mesh.count; i++) {
+      const src = srcIndex ? srcIndex[i] : i;
+      const d = i * 12;
+      if (src === cuIndex && !cu) cu = { type: data[d + 8], typeParam: data[d + 10] };
+      if (structure.elements[src] === 'Y' && !y) y = { type: data[d + 8], reflectivity: data[d + 11] };
+    }
+    return { cu, y };
+  });
+  H.check('per-atom override (glass beats emissive species) + reflectivity texel',
+    texels.cu?.type === 2 && Math.abs(texels.cu?.typeParam - 2.0) < 1e-6
+      && texels.y?.type === 0 && Math.abs(texels.y?.reflectivity - 0.8) < 1e-6,
+    JSON.stringify(texels));
 
   // --- Accumulation progress bar --------------------------------------------------
   const barState = await page.evaluate(() => {
@@ -139,11 +186,17 @@ function changedPixelCount(fileA, fileB) {
   const persisted = await page.evaluate(async () => {
     const { captureState } = await import('./ui/ShareModule.js');
     const state = captureState();
-    return { version: state.version, atomMaterials: state.colors.atomMaterials };
+    return {
+      version: state.version,
+      atomMaterials: state.colors.atomMaterials,
+      atomUserMaterials: state.colors.atomUserMaterials,
+    };
   });
-  H.check('captureState persists atomMaterials (v2.7)',
-    persisted.version === '2.7' && persisted.atomMaterials?.Cu?.type === 'emissive'
-      && persisted.atomMaterials?.Ba?.type === 'metal', JSON.stringify(persisted));
+  H.check('captureState persists atomMaterials + per-atom overrides (v2.8)',
+    persisted.version === '2.8' && persisted.atomMaterials?.Cu?.type === 'emissive'
+      && persisted.atomMaterials?.Ba?.type === 'metal'
+      && Object.values(persisted.atomUserMaterials ?? {}).some((m) => m?.type === 'glass'),
+    JSON.stringify(persisted));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);

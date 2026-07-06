@@ -232,8 +232,8 @@ const H = require('../harness');
       ptLightSoftness: state.style.ptLightSoftness,
     };
   });
-  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.7)',
-    persisted.version === '2.7' && persisted.renderPipeline === 'forward'
+  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.8)',
+    persisted.version === '2.8' && persisted.renderPipeline === 'forward'
       && typeof persisted.depthPeelLayers === 'number'
       && typeof persisted.rtResolutionScale === 'number'
       && typeof persisted.rtReflectivity === 'number'

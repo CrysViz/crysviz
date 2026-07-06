@@ -8,7 +8,7 @@
 
 import { general, groups, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle } from '../render/index.js';
+import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle, rebuildBonds } from '../render/index.js';
 import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
 import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
 
@@ -105,6 +105,19 @@ export function setupControlsWiring() {
     };
   }
 
+  // Bond visible lengths are clipped by the atom radii (Bond.r1/r2 include
+  // general.atomSize), so a size change must rebuild the bond geometry too.
+  // Debounced: the per-instance diameter updates give live feedback while
+  // dragging; the (heavier) bond rebuild runs once the slider settles.
+  let bondRecalcTimer = null;
+  const scheduleBondRecalc = () => {
+    if (bondRecalcTimer) clearTimeout(bondRecalcTimer);
+    bondRecalcTimer = setTimeout(() => {
+      bondRecalcTimer = null;
+      rebuildBonds(general.mainOpacity ?? 1);
+    }, 200);
+  };
+
   document.getElementById('atomSize').oninput = (e) => {
     general.atomSize = sizeSliderToValue(parseFloat(e.target.value), ATOM_SIZE_RANGE);
     document.getElementById('atomSizeValue').textContent = general.atomSize.toFixed(2);
@@ -118,7 +131,7 @@ export function setupControlsWiring() {
     });
     groups.atomsMesh.instanceMatrix.needsUpdate = true;
     updateMeasurementMarkers(); // Update ring markers when atom size changes
-
+    scheduleBondRecalc();
   };
 
 
