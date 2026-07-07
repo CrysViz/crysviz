@@ -1153,15 +1153,19 @@ export function renderPolyhedra(structure) {
     // Per-polyhedron edge material so edge color/alpha are styleable via the
     // same store precedence as the faces (disposeGroup disposes it with the rest).
     // Edges as "fat lines" (LineSegments2) so their thickness is adjustable
-    // (plain LineSegments linewidth is capped at 1px in WebGL). Pixel units:
-    // polyEdgeWidth = 1 reproduces the classic hairline look.
+    // (plain LineSegments linewidth is capped at 1px in WebGL). WORLD units
+    // (LineMaterial.worldUnits) so the edges scale with the structure when
+    // zooming, instead of staying N pixels wide (which read as THICKER edges
+    // when zoomed out). polyEdgeWidth 1 = the unit-cell line thickness
+    // (0.03 A diameter), matching the tracers' edge cylinders (0.015 radius).
     const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
     const edgeSegments = Array.from(/** @type {any} */ (egeom.attributes.position).array);
     const edgeGeom = new LineSegmentsGeometry().setPositions(edgeSegments);
     egeom.dispose();
     const edgeMat = new LineMaterial({
       color: style.edgeColor, opacity: style.edgeOpacity,
-      linewidth: general.polyEdgeWidth ?? 1,
+      linewidth: 0.03 * (general.polyEdgeWidth ?? 1),
+      worldUnits: true,
     });
     if (app.renderer) {
       const size = app.renderer.getSize(new THREE.Vector2());
@@ -1228,14 +1232,14 @@ export function updatePolyhedraColors() {
   }
 }
 
-/** Live-update the polyhedra edge thickness (fat-line pixels; 1 = hairline;
- *  0 hides the edges entirely). */
+/** Live-update the polyhedra edge thickness (world units: width 1 = the
+ *  unit-cell line thickness; 0 hides the edges entirely). */
 export function setPolyEdgeWidth(width) {
   general.polyEdgeWidth = width;
   if (groups.polyhedraGroup) {
     groups.polyhedraGroup.traverse((obj) => {
       if (obj.userData?.type === 'polyhedron-edges' && obj.material) {
-        obj.material.linewidth = Math.max(width, 0.001);
+        obj.material.linewidth = Math.max(0.03 * width, 1e-5); // world units
         obj.visible = width > 0;
       }
     });
