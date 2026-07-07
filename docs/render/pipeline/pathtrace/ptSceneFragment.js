@@ -102,6 +102,12 @@ int resolveHitType(vec4 mat, vec3 color, float alpha)
 
 struct Sphere { float radius; vec3 position; vec3 emission; vec3 color; int type; };
 Sphere lightSphere;
+// TRUE while the current ray is an unredirected camera ray: the key light is
+// a FIXTURE — it lights the scene, casts soft shadows and appears in mirror
+// reflections, but is never directly visible (matching the raster key light,
+// and keeping the sphere out of view in perspective mode when the camera is
+// farther out than the light distance).
+int gCameraRay = TRUE;
 
 #include <pathtracing_random_functions>
 #include <pathtracing_calc_fresnel_reflectance>
@@ -144,8 +150,9 @@ float SceneIntersect( out int isRayExiting )
 	float t = INFINITY;
 	isRayExiting = FALSE;
 
-	// ---- the area light ---------------------------------------------------
-	d = SphereIntersect(lightSphere.radius, lightSphere.position, rayOrigin, rayDirection);
+	// ---- the area light (a fixture: invisible to camera rays) --------------
+	d = gCameraRay == TRUE ? INFINITY
+		: SphereIntersect(lightSphere.radius, lightSphere.position, rayOrigin, rayDirection);
 	if (d < t)
 	{
 		t = d;
@@ -297,6 +304,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 	{
 		previousObjectID = hitObjectID;
 
+		gCameraRay = isPrimaryRay;
 		t = SceneIntersect(isRayExiting);
 
 		if (t == INFINITY) // ray escaped into the background

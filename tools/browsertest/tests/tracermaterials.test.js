@@ -591,6 +591,31 @@ function changedPixelCount(fileA, fileB) {
       && Object.values(persisted.atomUserMaterials ?? {}).some((m) => m?.type === 'glass'),
     JSON.stringify(persisted));
 
+  // --- PT key light is a fixture: never directly visible ---------------------------
+  // Perspective camera pulled past the light distance (max(40, 4*radius)):
+  // the light sphere would sit dead-center between camera and structure.
+  await page.evaluate(async () => {
+    const { app, general } = await import('./state/store.js');
+    general.rtResolutionScale = 0.25;
+    const toggle = /** @type {HTMLInputElement} */ (document.getElementById('orthographicCamera'));
+    toggle.checked = false;
+    toggle.onchange({ target: toggle });
+    const dir = app.camera.position.clone().sub(app.controls.target).normalize();
+    app.camera.position.copy(app.controls.target).addScaledVector(dir, 130);
+    app.camera.updateProjectionMatrix();
+  });
+  await page.waitForTimeout(400);
+  await H.setSelect(page, 'renderPipelineMenu', 'pathtrace');
+  await page.waitForTimeout(6000);
+  const fixtureShot = await H.shotCanvas(page, 'tracermaterials-light-fixture');
+  const fixturePng = PNG.sync.read(fs.readFileSync(fixtureShot));
+  let whitePixels = 0;
+  for (let i = 0; i < fixturePng.data.length; i += 4) {
+    if (fixturePng.data[i] > 240 && fixturePng.data[i + 1] > 240 && fixturePng.data[i + 2] > 240) whitePixels++;
+  }
+  H.check('path-tracer key light sphere is not directly visible (perspective, far camera)',
+    whitePixels < 2000, JSON.stringify({ whitePixels }));
+
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);
 })().catch(H.crash);
