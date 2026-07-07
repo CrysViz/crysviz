@@ -512,7 +512,11 @@ function setupFieldControlEvents(fields, container) {
 }
 
 export function updateFieldPanel() {
-  if (general.SpinForceState != "Fields") {
+  // Gated on the pre-refactor `general.SpinForceState`, which no longer
+  // exists anywhere — the condition was always true, so this function has
+  // been a no-op since the panel regroup. Kept as an explicit no-op to
+  // preserve behavior; revisit if the Field panel needs live refreshes.
+  if (true) {
     return;
   }
 

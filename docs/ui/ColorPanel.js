@@ -1,6 +1,6 @@
 import { createColorPicker } from './ColorPickerModule.js';
 import {updateVisualization} from '../core/crystal-viewer.js';  
-import { app, groups,fileBrowser, general} from '../state/store.js';
+import { app, groups,fileBrowser, general, RENDERING_DEFAULTS} from '../state/store.js';
 import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 
 import { updateBonds } from '../render/index.js'
@@ -602,6 +602,56 @@ export function addColorPanel(target = "colorContainer") {
   outlineBlock.appendChild(hullControls);
 
   content.appendChild(outlineBlock);
+
+  // Reset every Rendering-section setting to its default (RENDERING_DEFAULTS
+  // in state/store.js — the same values `general` boots with). Routed through
+  // the real controls' events so labels, visibility, pipeline switching and
+  // mesh rebuilds all follow; no-op dispatches are skipped.
+  function resetRenderingSettings() {
+    const D = RENDERING_DEFAULTS;
+    // Sliders/checkboxes fire unconditionally (their handlers are cheap and
+    // idempotent, and `general` may diverge from the DOM value); only the
+    // selects are guarded, since their handlers rebuild meshes/pipelines.
+    const fire = (id, value, event) => {
+      const el = /** @type {HTMLInputElement|null} */ (document.getElementById(id));
+      if (!el) return;
+      el.value = String(value);
+      el.dispatchEvent(new Event(event));
+    };
+    const fireCheck = (id, checked) => {
+      const el = /** @type {HTMLInputElement|null} */ (document.getElementById(id));
+      if (!el) return;
+      el.checked = checked;
+      el.dispatchEvent(new Event('change'));
+    };
+    // pipeline + style first: they drive the visibility tree and rebuilds
+    if (general.renderPipeline !== D.renderPipeline) fire('renderPipelineMenu', D.renderPipeline, 'change');
+    if (general.renderStyle !== D.renderStyle) fire('renderStyleMenu', D.renderStyle, 'change');
+    if (general.celOutlineMode !== D.celOutlineMode) fire('celOutlineModeMenu', D.celOutlineMode, 'change');
+    fire('depthPeelLayersSlider', D.depthPeelLayers, 'input');
+    fire('celOutlineWidth', Math.sqrt(D.celOutlineWidth / CEL_OUTLINE_MAX), 'input'); // quadratic slider
+    fire('celHullWidth', D.celHullWidth, 'input');
+    fire('celHullPolyWidth', D.celHullPolyWidth, 'input');
+    fire('rtResolutionScale', D.rtResolutionScale, 'input');
+    fire('rtReflectivity', D.rtReflectivity, 'input');
+    fire('ptLightSoftness', D.ptLightSoftness, 'input');
+    fire('rtLightIntensity', D.rtLightIntensity, 'input');
+    fire('rtAmbient', D.rtAmbient, 'input');
+    fire('rtDofAperture', D.rtDofAperture, 'input');
+    fire('rtDofFocus', D.rtDofFocus, 'input');
+    fireCheck('rtGroundToggle', D.rtGroundPlane);
+    fireCheck('ptDenoiseToggle', D.ptDenoise);
+    requestRender();
+  }
+
+  const resetRenderingRow = createElement("div", {}, { margin: "8px 0 4px" });
+  const resetRenderingBtn = createElement("button",
+    { id: "resetRenderingBtn", type: "button", class: "btn-mini" },
+    { padding: "3px 10px", fontSize: "0.85em" }, "Reset rendering settings");
+  resetRenderingBtn.addEventListener('click', resetRenderingSettings);
+  resetRenderingRow.appendChild(resetRenderingBtn);
+  content.appendChild(resetRenderingRow);
+
   updateRenderingControlsVisibility();
 
   // =========================

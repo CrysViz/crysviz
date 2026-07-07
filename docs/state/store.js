@@ -78,7 +78,10 @@ export const groups = {
 };
 
 
-export const general = {
+// Defaults for everything the Visual window's Rendering section controls —
+// the single source for both `general`'s initial values (spread below) and
+// the "Reset rendering" button (ui/ColorPanel.js resetRenderingSettings).
+export const RENDERING_DEFAULTS = {
   renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
   renderPipeline: 'forward', // active rendering pipeline id (render/pipeline/index.js registry)
   depthPeelLayers: 5, // peel passes for the 'depthpeel' pipeline (1-10; more = deeper transparency, slower)
@@ -95,6 +98,10 @@ export const general = {
   celOutlineWidth: 0.025, // screen-space outline width in world units (0 = off)
   celHullWidth: 0.025, // hull outline width in world units, atoms/bonds (0 = off)
   celHullPolyWidth: 0.025, // hull outline width in world units, polyhedra
+};
+
+export const general = {
+  ...RENDERING_DEFAULTS,
   polyEdgeWidth: 1, // polyhedra edge line thickness in pixels (fat lines; 1 = classic hairline)
   ForceMin:1e-4,
   ForceMax:2.5,
@@ -111,6 +118,9 @@ export const general = {
   // Per-element atom visibility (Atoms tab header checkbox): element -> bool;
   // undefined/true = shown. Hidden elements are zero-scaled (also unpickable).
   atomVisibility:{},
+  // Per-element spin-arrow visibility (Spins panel toggles): element -> bool.
+  // Was written by SpinPanel without ever being initialized (latent crash).
+  speciesVisibility:{},
   // Per-pair bond cut-plane immunity (Bonds tab header toggle): "El1-El2" ->
   // bool; true = the pair's bonds are never culled by cut planes.
   bondCutImmunity:{},
@@ -125,6 +135,9 @@ export const general = {
   forceRadius: 0.08,
   spinScale: 1.0,
   spinRadius: 0.08,
+  // Spin colormap range (Spins panel min/max inputs; read with ||-defaults).
+  spinMin: 0,
+  spinMax: 2,
   atomSize:1.0,
   mainOpacity:1.0,
   compOpacity:1.0,
@@ -140,7 +153,7 @@ export const general = {
   // (LatticeModule.createLatticeLines).
   latticeLineWidth:0.015,
   showSecond:false,
-  showSecondBonds:false,
+  showSecondBond:false, // comparison-structure bonds visibility (was misspelled `showSecondBonds`)
   showComparisonInfo:false,
   showPeriodic:true,
   // Atoms tab: edit all periodic-image copies of an atom together. When false
@@ -174,9 +187,10 @@ export const general = {
   modifiedLattice: null, // this needs to be part of the structure object 
   sharedStructureLoaded:false,
   bondsColor: "elements",
-  abondsColorMap: null,
+  solidBondColor: "#ffffff", // Bonds "Solid Color" mode picker value
+  bondsColorMap: null, // Bonds "Length" mode colormap id (was misspelled `abondsColorMap`)
   atomsColor: "elements",
-  atomsColorMaps: null,
+  atomColorMap: null, // Atoms "Force" mode colormap id (was misspelled `atomsColorMaps`)
   atomCutPlanes: [],
 };
 

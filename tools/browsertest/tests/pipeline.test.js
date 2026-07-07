@@ -134,6 +134,40 @@ const H = require('../harness');
       && styleTree.hiddenUnderRaytrace && styleTree.outlineHiddenUnderRaytrace
       && styleTree.outlineBackUnderForward && styleTree.pipelineFirst,
     JSON.stringify(styleTree));
+
+  // --- "Reset rendering settings" button ------------------------------------------
+  const reset = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    // scramble a representative spread of rendering settings
+    const pipeSelect = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
+    pipeSelect.value = 'raytrace';
+    pipeSelect.dispatchEvent(new Event('change'));
+    general.rtReflectivity = 0.9;
+    general.rtAmbient = 0.9;
+    general.rtGroundPlane = true;
+    general.depthPeelLayers = 9;
+    general.celHullWidth = 0.1;
+    document.getElementById('resetRenderingBtn').click();
+    await new Promise((r) => setTimeout(r, 300));
+    const styleRow = document.getElementById('renderStyleMenu')?.closest('.control-row');
+    return {
+      pipeline: general.renderPipeline,
+      style: general.renderStyle,
+      reflectivity: general.rtReflectivity,
+      ambient: general.rtAmbient,
+      ground: general.rtGroundPlane,
+      peel: general.depthPeelLayers,
+      hull: general.celHullWidth,
+      menuValue: pipeSelect.value,
+      styleRowVisible: getComputedStyle(styleRow).display !== 'none',
+    };
+  });
+  H.check('Reset rendering settings restores every default (pipeline back to forward)',
+    reset.pipeline === 'forward' && reset.style === 'metallic'
+      && Math.abs(reset.reflectivity - 0.15) < 1e-9 && Math.abs(reset.ambient - 0.3) < 1e-9
+      && reset.ground === false && reset.peel === 5 && Math.abs(reset.hull - 0.025) < 1e-9
+      && reset.menuValue === 'forward' && reset.styleRowVisible,
+    JSON.stringify(reset));
   H.check('pipeline dropdown lives in the Visual window', await page.evaluate(() =>
     !!document.getElementById('renderPipelineMenu')?.closest('#cvPanelBody-visual')));
 
