@@ -324,6 +324,28 @@ function changedPixelCount(fileA, fileB) {
     Math.abs(corner[0] - 32) <= 6 && Math.abs(corner[1] - 64) <= 6 && Math.abs(corner[2] - 96) <= 6,
     JSON.stringify({ corner }));
 
+  // ... and stays pinned when the Saturation slider grades the scene.
+  await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    general.rtSaturation = 1.7;
+    requestRender();
+  });
+  await page.waitForTimeout(2000); // saturation change re-accumulates now
+  const satShot = await H.shotCanvas(page, 'tracermaterials-bgsat');
+  const satPng = PNG.sync.read(fs.readFileSync(satShot));
+  const satCorner = ((x, y) => {
+    const o = (y * satPng.width + x) * 4;
+    return [satPng.data[o], satPng.data[o + 1], satPng.data[o + 2]];
+  })(12, satPng.height - 12);
+  H.check('background stays pinned under a cranked Saturation slider',
+    Math.abs(satCorner[0] - 32) <= 8 && Math.abs(satCorner[1] - 64) <= 8 && Math.abs(satCorner[2] - 96) <= 8,
+    JSON.stringify({ satCorner }));
+  await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    general.rtSaturation = 1;
+  });
+
   // --- Light sliders exist and rewire the uniforms ----------------------------------
   const lights = await page.evaluate(async () => {
     const { app, general } = await import('./state/store.js');

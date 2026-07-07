@@ -88,11 +88,18 @@ function rrtFitInverse(y) {
 
 const sRGB_OETF = (x) => (x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055);
 
-/** Radiance whose displayed value (exposure -> ACES -> sqrt) equals the
- *  raster-displayed background color. bg is a linear-space THREE.Color. */
-function compensateBackground(bg, exposure, out) {
+/** Radiance whose displayed value (exposure -> ACES -> saturation -> sqrt)
+ *  equals the raster-displayed background color, so the backdrop stays pinned
+ *  to the user's pick regardless of the Saturation slider. bg is a
+ *  linear-space THREE.Color. The luma mix is invertible for saturation >~0
+ *  (clamped below; at extreme settings the inversion saturates gracefully). */
+function compensateBackground(bg, exposure, saturation, out) {
   const display = [sRGB_OETF(bg.r), sRGB_OETF(bg.g), sRGB_OETF(bg.b)];
-  const X = display.map((v) => v * v); // undo the output sqrt
+  let X = display.map((v) => v * v); // undo the output sqrt
+  // undo the saturation grade (mix(luma, c, s) preserves luma)
+  const sat = Math.max(saturation, 0.05);
+  const luma = 0.2126 * X[0] + 0.7152 * X[1] + 0.0722 * X[2];
+  X = X.map((v) => Math.max(0, luma + (v - luma) / sat));
   const v1 = mul3(ACES_OUT_INV, X).map(rrtFitInverse);
   const L = mul3(ACES_IN_INV, v1).map((v) => Math.max(0, (v * 0.6) / Math.max(exposure, 1e-4)));
   out.setRGB(L[0], L[1], L[2]);
@@ -366,6 +373,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     // rays keep the RAW color — a bright backdrop must not become a light source)
     compensateBackground(u.uBackgroundColor.value,
       (renderer.toneMappingExposure ?? 1) * (this._outputQuad?.material.uniforms.uExposure.value ?? 1),
+      general.rtSaturation ?? 1,
       u.uBackgroundDisplay.value);
     u.uReflectivity.value = general.rtReflectivity ?? 0.15;
     u.uLightSoftness.value = general.ptLightSoftness ?? 0.3;
@@ -385,6 +393,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     // invisible once converged).
     const lookKey = `${u.uBackgroundColor.value.getHex()}|${u.uLightColor.value.getHex()}`
       + `|${u.uReflectivity.value}|${u.uLightSoftness.value}|${u.uAmbientStrength.value}`
+      + `|${general.rtSaturation ?? 1}`
       + `|${u.uGroundEnabled.value}|${u.uApertureSize.value}|${(general.rtDofFocus ?? 1)}`;
     if (this._lastLookKey !== undefined && lookKey !== this._lastLookKey) this.resetAccumulation();
     this._lastLookKey = lookKey;
