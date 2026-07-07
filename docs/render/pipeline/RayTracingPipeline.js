@@ -137,6 +137,9 @@ export class RayTracingPipeline extends ForwardPipeline {
       uLightColor: { value: new THREE.Color(1, 1, 1) },
       uBackgroundColor: { value: new THREE.Color(0.9, 0.9, 0.9) },
       uReflectivity: { value: general.rtReflectivity ?? 0.15 },
+      uLightSoftness: { value: general.ptLightSoftness ?? 0.3 },
+      uGroundEnabled: { value: false },
+      uGroundY: { value: -5 },
       ...this._extraSceneUniforms(),
     };
 
@@ -286,6 +289,14 @@ export class RayTracingPipeline extends ForwardPipeline {
     }
     if (scene.background?.isColor) u.uBackgroundColor.value.copy(scene.background);
     u.uReflectivity.value = general.rtReflectivity ?? 0.15;
+    u.uLightSoftness.value = general.ptLightSoftness ?? 0.3;
+    u.uGroundEnabled.value = !!general.rtGroundPlane;
+    u.uGroundY.value = this._encoder.groundY;
+    // Depth of field: aperture in world units; focus follows the orbit target
+    // scaled by the "Focus distance" factor (1 = focus exactly on the target).
+    u.uApertureSize.value = general.rtDofAperture ?? 0;
+    u.uFocusDistance.value = camera.position.distanceTo(
+      app.controls?.target ?? this._rtScene.position) * (general.rtDofFocus ?? 1);
     this._updateSceneUniforms(u);
 
     // --- accumulate one (or, after a resize, several) samples ---------------

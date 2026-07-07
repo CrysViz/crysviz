@@ -38,6 +38,8 @@ uniform vec3 uBackgroundColor;
 uniform float uReflectivity;
 uniform vec3 uLightPosition; // area-light centre (world)
 uniform float uLightRadius;  // area-light radius (world; soft-shadow spread)
+uniform bool uGroundEnabled; // background-colored ground plane (shadow catcher)
+uniform float uGroundY;
 
 #define DATA_W ${DATA_TEX_WIDTH}
 
@@ -45,30 +47,44 @@ uniform float uLightRadius;  // area-light radius (world; soft-shadow spread)
 vec3 rayOrigin, rayDirection;
 vec3 hitNormal, hitEmission, hitColor;
 float hitObjectID = -INFINITY;
-float hitRoughness = 0.0;
+float hitRoughness = 0.0;  // metal roughness / glass frost
 float hitIor = 1.5;
 float hitReflectivity = -1.0; // < 0 = use the global uReflectivity
+float hitGloss = 0.6;      // standard: coat reflection tightness
+float hitTintDepth = 0.2;  // glass: Beer's-law strength
+float hitScatter = 0.5;    // translucent: scatter depth
 int hitType = -100;
 
-// encoded material texel (type, roughness, typeParam, reflectivity) + surface
-// alpha -> path-tracer hit type; also sets hitEmission/hitRoughness/hitIor/
-// hitReflectivity (codes: 0 std, 1 metal, 2 glass, 3 emissive; typeParam is
-// the IoR for glass or the intensity for emissive)
+// encoded material texel with TYPE-MULTIPLEXED slots (see SceneEncoder
+// materialTexel) + surface alpha -> path-tracer hit type; also fills the
+// per-type hit globals above. Codes: 0 std, 1 metal, 2 glass, 3 emissive,
+// 4 translucent.
 int resolveHitType(vec4 mat, vec3 color, float alpha)
 {
 	hitRoughness = mat.y;
 	hitReflectivity = mat.w;
+	hitGloss = 0.6;
+	hitTintDepth = 0.2;
+	hitScatter = 0.5;
 	hitEmission = vec3(0);
 	int code = int(mat.x + 0.5);
+	if (code == 4)
+	{
+		hitScatter = mat.z;
+		return TRANSLUCENT;
+	}
 	if (code == 3)
 	{
 		hitEmission = color * mat.z; // emissive: an implicit area light
 		return LIGHT;
 	}
-	// per-object IoR only travels for glass; alpha-routed objects use 1.5
+	// per-object IoR/tintDepth only travel for glass; alpha-routed objects
+	// use the classic defaults (their reflectivity slot is NOT a tint depth)
 	hitIor = code == 2 && mat.z > 1.0 ? mat.z : 1.5;
+	if (code == 2) { hitTintDepth = mat.w; hitReflectivity = -1.0; }
 	if (code == 2 || alpha < 0.999) return REFR; // alpha wins for std/metal
 	if (code == 1) return SPEC;
+	hitGloss = clamp(mat.z, 0.0, 1.0); // standard
 	return COAT;
 }
 
@@ -81,6 +97,7 @@ Sphere lightSphere;
 #include <pathtracing_unit_cylinder_intersect>
 #include <pathtracing_boundingbox_intersect>
 #include <pathtracing_convexpolyhedron_intersect>
+#include <pathtracing_plane_intersect>
 #include <pathtracing_sample_sphere_light>
 
 vec4 fetchData(sampler2D tex, int index)
@@ -182,6 +199,24 @@ float SceneIntersect( out int isRayExiting )
 				colA.rgb, colA.a);
 			hitObjectID = float(1 + uAtomCount + uCylinderCount + p);
 			isRayExiting = dot(n, rayDirection) > 0.0 ? TRUE : FALSE;
+		}
+	}
+
+	// ---- optional ground plane (background-colored matte shadow catcher) ---
+	if (uGroundEnabled)
+	{
+		d = PlaneIntersect(vec4(0.0, 1.0, 0.0, uGroundY), rayOrigin, rayDirection);
+		if (d < t)
+		{
+			t = d;
+			hitNormal = vec3(0, 1, 0);
+			hitEmission = vec3(0);
+			hitColor = uBackgroundColor;
+			hitType = COAT;
+			hitGloss = 1.0;          // sharp (faint) fresnel floor reflections
+			hitReflectivity = 0.0;   // no stochastic mirror
+			hitObjectID = -2.0;
+			isRayExiting = FALSE;
 		}
 	}
 
@@ -349,10 +384,32 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 
 		if (hitType == SPEC) // metal: tinted mirror, roughness blurs the lobe
 		{
+			// reflectivity = mirrored fraction (unset/-1 = 1.0, ideal mirror);
+			// the rest of the energy shades as a diffuse surface (brushed metal)
+			float metalReflect = hitReflectivity < 0.0 ? 1.0 : hitReflectivity;
+			if (rng() < metalReflect)
+			{
+				mask *= hitColor;
+				mask *= (1.0 - (hitRoughness * 0.8));
+				rayDirection = randomDirectionInSpecularLobe(nl, reflect(rayDirection, nl), hitRoughness);
+				rayOrigin = x + (nl * uEPS_intersect);
+				continue;
+			}
+			// diffuse fraction: same bookkeeping as COAT's diffuse part
+			diffuseCount++;
 			mask *= hitColor;
-			mask *= (1.0 - (hitRoughness * 0.8));
-			rayDirection = randomDirectionInSpecularLobe(nl, reflect(rayDirection, nl), hitRoughness);
+			bounceIsSpecular = FALSE;
 			rayOrigin = x + (nl * uEPS_intersect);
+			if (diffuseCount == 1)
+			{
+				diffuseBounceMask = mask;
+				diffuseBounceRayOrigin = rayOrigin;
+				diffuseBounceRayDirection = randomCosWeightedDirectionInHemisphere(nl);
+				willNeedDiffuseBounceRay = TRUE;
+			}
+			rayDirection = sampleSphereLight(x, nl, lightSphere, weight);
+			mask *= weight;
+			sampleLight = TRUE;
 			continue;
 		}
 
@@ -378,12 +435,13 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				willNeedReflectionRay = TRUE;
 			}
 
-			// tint towards the object color by the inverse of its alpha
+			// tint towards the object color by the inverse of its alpha;
+			// tintDepth (glass slot) scales the Beer's-law saturation
 			vec3 tintColor = mix(vec3(1), hitColor, 0.7);
 			if (isRayExiting == TRUE)
 			{
 				isRayExiting = FALSE;
-				mask *= exp(log(clamp(tintColor, 0.01, 0.99)) * thickness * t);
+				mask *= exp(log(clamp(tintColor, 0.01, 0.99)) * hitTintDepth * t);
 			}
 			else
 				mask *= tintColor;
@@ -391,6 +449,9 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 			mask *= Tr;
 
 			rayDirection = refract(rayDirection, nl, ratioIoR);
+			// frost (glass roughness slot) blurs the transmission lobe
+			if (hitRoughness > 0.0)
+				rayDirection = randomDirectionInSpecularLobe(-nl, rayDirection, hitRoughness);
 			rayOrigin = x - (nl * uEPS_intersect);
 
 			if (diffuseCount == 1 && isDiffuseBounceTime == TRUE)
@@ -418,10 +479,12 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 
 			if (diffuseCount == 0 && hitObjectID != previousObjectID)
 			{
-				reflectionMask = mask * Re;
-				reflectionRayDirection = reflect(rayDirection, nl);
+				// gloss (standard slot, default 0.6) sets how tight the coat
+				// reflection is; 0 = fully blurred (matte), 1 = mirror-sharp
+				reflectionMask = mask * Re * clamp(hitGloss * 1.4, 0.0, 1.0);
+				reflectionRayDirection = randomDirectionInSpecularLobe(nl, reflect(rayDirection, nl), 1.0 - hitGloss);
 				reflectionRayOrigin = x + (nl * uEPS_intersect);
-				willNeedReflectionRay = TRUE;
+				willNeedReflectionRay = hitGloss > 0.02 ? TRUE : FALSE;
 			}
 
 			diffuseCount++;
@@ -443,6 +506,31 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 			sampleLight = TRUE;
 			continue;
 		} // end COAT
+
+		if (hitType == TRANSLUCENT) // waxy diffuse transmitter (subsurface look)
+		{
+			diffuseCount++;
+			mask *= hitColor;
+			bounceIsSpecular = FALSE;
+			// scatter into the front OR back hemisphere (diffuse both ways);
+			// transmitted energy is attenuated by the scatter depth
+			int transmit = rng() < 0.5 ? TRUE : FALSE;
+			vec3 sideN = transmit == TRUE ? -nl : nl;
+			if (transmit == TRUE)
+				mask *= exp(log(clamp(hitColor, 0.2, 0.99)) * hitScatter);
+			rayOrigin = x + (sideN * uEPS_intersect);
+			if (diffuseCount == 1)
+			{
+				diffuseBounceMask = mask;
+				diffuseBounceRayOrigin = rayOrigin;
+				diffuseBounceRayDirection = randomCosWeightedDirectionInHemisphere(sideN);
+				willNeedDiffuseBounceRay = TRUE;
+			}
+			rayDirection = sampleSphereLight(x, sideN, lightSphere, weight);
+			mask *= weight;
+			sampleLight = TRUE;
+			continue;
+		} // end TRANSLUCENT
 
 	} // end bounces loop
 

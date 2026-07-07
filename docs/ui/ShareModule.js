@@ -99,7 +99,7 @@ export function captureState({ includeFrames = false } = {}) {
   }
 
   return {
-    version: '2.8',
+    version: '2.9',
     ...(frames ? { frames } : {}),
     structure: {
       elements: [...structure.elements],
@@ -152,6 +152,9 @@ export function captureState({ includeFrames = false } = {}) {
       rtReflectivity: general.rtReflectivity,
       ptDenoise: general.ptDenoise,
       ptLightSoftness: general.ptLightSoftness,
+      rtDofAperture: general.rtDofAperture,
+      rtDofFocus: general.rtDofFocus,
+      rtGroundPlane: general.rtGroundPlane,
       celOutlineWidth: general.celOutlineWidth,
       celHullWidth: general.celHullWidth,
       polyEdgeWidth: general.polyEdgeWidth,
@@ -345,6 +348,19 @@ function applyStyleSettings(style) {
   if (style.ptLightSoftness != null) {
     general.ptLightSoftness = style.ptLightSoftness;
     setSelect('ptLightSoftness', style.ptLightSoftness);
+  }
+  if (style.rtDofAperture != null) {
+    general.rtDofAperture = style.rtDofAperture;
+    setSelect('rtDofAperture', style.rtDofAperture);
+  }
+  if (style.rtDofFocus != null) {
+    general.rtDofFocus = style.rtDofFocus;
+    setSelect('rtDofFocus', style.rtDofFocus);
+  }
+  if (style.rtGroundPlane != null) {
+    general.rtGroundPlane = style.rtGroundPlane;
+    const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtGroundToggle'));
+    if (toggle) toggle.checked = style.rtGroundPlane;
   }
   if (style.celOutlineWidth != null) general.celOutlineWidth = style.celOutlineWidth;
   if (style.celHullWidth != null) general.celHullWidth = style.celHullWidth;

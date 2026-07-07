@@ -7,11 +7,14 @@
 // intentionally inert (the label says so).
 //
 // Material object shape (see model/Structure.js atomMaterials):
-//   { type: 'standard'|'metal'|'glass'|'emissive', roughness?, ior?,
-//     intensity?, reflectivity? }
-// reflectivity (standard type) overrides the global "Reflectivity" slider for
-// the object once touched. Selecting "Standard" with an untouched reflectivity
-// clears the stored entry (that IS the default).
+//   { type: 'standard'|'metal'|'glass'|'emissive'|'translucent',
+//     gloss?, roughness?, frost?, ior?, tintDepth?, intensity?,
+//     scatterDepth?, reflectivity? }
+// Per-type knobs: standard = Gloss + Reflect; metal = Rough + Reflect;
+// glass = Frost + IoR + Tint depth; emissive = Glow; translucent = Depth.
+// reflectivity overrides the global "Reflectivity" slider (standard) or is
+// the mirrored fraction (metal). Selecting "Standard" with every knob
+// untouched clears the stored entry (that IS the default).
 
 import { general } from '../../../state/store.js';
 import { requestRender } from '../../../render/index.js';
@@ -21,10 +24,11 @@ const TYPES = [
   { value: 'metal', label: 'Metal' },
   { value: 'glass', label: 'Glass' },
   { value: 'emissive', label: 'Emissive (light)' },
+  { value: 'translucent', label: 'Translucent (waxy)' },
 ];
 
 /**
- * @param {() => ({type?: string, roughness?: number, ior?: number, intensity?: number, reflectivity?: number} | null | undefined)} getMaterial
+ * @param {() => ({type?: string, gloss?: number, roughness?: number, frost?: number, ior?: number, tintDepth?: number, intensity?: number, scatterDepth?: number, reflectivity?: number} | null | undefined)} getMaterial
  * @param {(material: object | null) => void} setMaterial write to the owning store (null = clear)
  */
 export function createMaterialEditor(getMaterial, setMaterial) {
@@ -35,10 +39,14 @@ export function createMaterialEditor(getMaterial, setMaterial) {
   const current = getMaterial() ?? {};
   const state = {
     type: current.type ?? 'standard',
+    gloss: current.gloss ?? 0.6,
     roughness: current.roughness ?? 0.2,
+    frost: current.frost ?? 0,
     ior: current.ior ?? 1.5,
+    tintDepth: current.tintDepth ?? 0.2,
     intensity: current.intensity ?? 5,
-    reflectivity: current.reflectivity ?? null, // null = follow the global slider
+    scatterDepth: current.scatterDepth ?? 0.5,
+    reflectivity: current.reflectivity ?? null, // null = follow the type default
   };
 
   const header = document.createElement('div');
@@ -94,41 +102,72 @@ export function createMaterialEditor(getMaterial, setMaterial) {
   };
 
   const commit = () => {
-    if (state.type === 'standard' && state.reflectivity == null) {
+    if (state.type === 'standard' && state.reflectivity == null
+        && Math.abs(state.gloss - 0.6) < 1e-9) {
       setMaterial(null); // fully default — clear the entry
     } else {
       setMaterial({
         type: state.type,
+        gloss: state.gloss,
         roughness: state.roughness,
+        frost: state.frost,
         ior: state.ior,
+        tintDepth: state.tintDepth,
         intensity: state.intensity,
+        scatterDepth: state.scatterDepth,
         ...(state.reflectivity != null ? { reflectivity: state.reflectivity } : {}),
       });
     }
     requestRender();
   };
 
+  const glossRow = makePropRow('Gloss', 'material-gloss-row', 0, 1, 0.05, state.gloss,
+    (v) => { state.gloss = v; commit(); });
   const roughRow = makePropRow('Rough', 'material-roughness-row', 0, 1, 0.05, state.roughness,
     (v) => { state.roughness = v; commit(); });
+  const frostRow = makePropRow('Frost', 'material-frost-row', 0, 1, 0.05, state.frost,
+    (v) => { state.frost = v; commit(); });
   const iorRow = makePropRow('IoR', 'material-ior-row', 1.0, 2.5, 0.05, state.ior,
     (v) => { state.ior = v; commit(); });
+  const tintRow = makePropRow('Tint', 'material-tintdepth-row', 0, 2, 0.05, state.tintDepth,
+    (v) => { state.tintDepth = v; commit(); });
   const intensityRow = makePropRow('Glow', 'material-intensity-row', 0, 20, 0.5, state.intensity,
     (v) => { state.intensity = v; commit(); });
-  // Per-object reflectivity (standard surfaces): shown at the global slider
-  // value until touched; once moved it overrides the global for this object.
+  const scatterRow = makePropRow('Depth', 'material-scatter-row', 0.05, 2, 0.05, state.scatterDepth,
+    (v) => { state.scatterDepth = v; commit(); });
+  // Per-object reflectivity: for STANDARD surfaces it overrides the global
+  // "Reflectivity" slider once touched (shown at the global value until then);
+  // for METAL it is the mirrored fraction (1 = ideal mirror, lower blends
+  // toward diffuse — brushed/dull metal).
+  const defaultReflectivity = () => (state.type === 'metal' ? 1 : (general.rtReflectivity ?? 0.15));
   const reflectRow = makePropRow('Reflect', 'material-reflectivity-row', 0, 1, 0.05,
-    state.reflectivity ?? general.rtReflectivity ?? 0.15,
+    state.reflectivity ?? defaultReflectivity(),
     (v) => { state.reflectivity = v; commit(); });
+  block.appendChild(glossRow);
   block.appendChild(roughRow);
+  block.appendChild(frostRow);
   block.appendChild(iorRow);
+  block.appendChild(tintRow);
   block.appendChild(intensityRow);
+  block.appendChild(scatterRow);
   block.appendChild(reflectRow);
 
   const syncPropVisibility = () => {
+    glossRow.style.display = state.type === 'standard' ? 'flex' : 'none';
     roughRow.style.display = state.type === 'metal' ? 'flex' : 'none';
+    frostRow.style.display = state.type === 'glass' ? 'flex' : 'none';
     iorRow.style.display = state.type === 'glass' ? 'flex' : 'none';
+    tintRow.style.display = state.type === 'glass' ? 'flex' : 'none';
     intensityRow.style.display = state.type === 'emissive' ? 'flex' : 'none';
-    reflectRow.style.display = state.type === 'standard' ? 'flex' : 'none';
+    scatterRow.style.display = state.type === 'translucent' ? 'flex' : 'none';
+    reflectRow.style.display = (state.type === 'standard' || state.type === 'metal') ? 'flex' : 'none';
+    // an untouched Reflect slider tracks the type's default (global / mirror)
+    if (state.reflectivity == null) {
+      const slider = reflectRow.querySelector('input');
+      const span = reflectRow.querySelector('span:last-child');
+      if (slider) slider.value = String(defaultReflectivity());
+      if (span) span.textContent = defaultReflectivity().toFixed(2);
+    }
   };
   syncPropVisibility();
 

@@ -16,24 +16,33 @@ import { DATA_TEX_WIDTH } from './sceneFragment.js';
 
 const MAX_PLANES = 20; // ConvexPolyhedronIntersect limit (vendored chunk)
 
-// Ray/path-tracing material encoding: one texel (type, roughness, typeParam,
-// reflectivity). typeParam carries the per-type knob — IoR for glass,
-// intensity for emissive (they are mutually exclusive). reflectivity is -1
-// when unset, meaning "use the global Reflectivity slider". Type codes match
-// MAT_* in both scene shaders.
-const MATERIAL_CODES = { standard: 0, metal: 1, glass: 2, emissive: 3 };
-const DEFAULT_MATERIAL_TEXEL = [0, 0.2, 0, -1];
+// Ray/path-tracing material encoding: one texel with TYPE-MULTIPLEXED slots
+// (the per-type knobs are mutually exclusive, so no layout growth needed):
+//   standard:    (0, 0,          gloss,        reflectivity | -1)
+//   metal:       (1, roughness,  0,            reflectivity | -1)
+//   glass:       (2, frost,      ior,          tintDepth)
+//   emissive:    (3, 0,          intensity,    0)
+//   translucent: (4, 0,          scatterDepth, 0)
+// reflectivity -1 = "use the global Reflectivity slider" (standard) / ideal
+// mirror (metal). Codes/slots must match resolveMaterialType/resolveHitType
+// in BOTH scene shaders.
+const MATERIAL_CODES = { standard: 0, metal: 1, glass: 2, emissive: 3, translucent: 4 };
+const DEFAULT_MATERIAL_TEXEL = [0, 0, 0.6, -1]; // standard, gloss 0.6 = classic look
 
 function materialTexel(mat) {
   if (!mat) return DEFAULT_MATERIAL_TEXEL;
-  const typeParam = mat.type === 'glass' ? (mat.ior ?? 1.5)
-    : mat.type === 'emissive' ? (mat.intensity ?? 5) : 0;
-  return [
-    MATERIAL_CODES[mat.type] ?? 0,
-    mat.roughness ?? 0.2,
-    typeParam,
-    mat.reflectivity ?? -1,
-  ];
+  switch (mat.type) {
+    case 'metal':
+      return [1, mat.roughness ?? 0.2, 0, mat.reflectivity ?? -1];
+    case 'glass':
+      return [2, mat.frost ?? 0, mat.ior ?? 1.5, mat.tintDepth ?? 0.2];
+    case 'emissive':
+      return [3, 0, mat.intensity ?? 5, 0];
+    case 'translucent':
+      return [4, 0, mat.scatterDepth ?? 0.5, 0];
+    default: // standard
+      return [0, 0, mat.gloss ?? 0.6, mat.reflectivity ?? -1];
+  }
 }
 
 const _pos = new THREE.Vector3();
@@ -64,6 +73,7 @@ export class SceneEncoder {
   cylinderCount = 0;
   polyCount = 0;
   boundingRadius = 10; // max atom distance from the origin (light placement)
+  groundY = -5; // just below the lowest atom (optional ground plane height)
   _fingerprint = '';
 
   dispose() {
@@ -147,6 +157,7 @@ export class SceneEncoder {
     const data = texture.image.data;
     let n = 0;
     let maxR2 = 25;
+    let minY = Infinity;
     for (let i = 0; i < mesh.count; i++) {
       const o = i * 16;
       const radius = matrices[o]; // uniform scale; 0 = hidden instance
@@ -158,6 +169,7 @@ export class SceneEncoder {
       data[d + 3] = radius;
       const r2 = data[d] * data[d] + data[d + 1] * data[d + 1] + data[d + 2] * data[d + 2];
       if (r2 > maxR2) maxR2 = r2;
+      if (data[d + 1] - radius < minY) minY = data[d + 1] - radius;
       data[d + 4] = colors[i * 3];
       data[d + 5] = colors[i * 3 + 1];
       data[d + 6] = colors[i * 3 + 2];
@@ -171,6 +183,7 @@ export class SceneEncoder {
     }
     this.atomCount = n;
     this.boundingRadius = Math.sqrt(maxR2) + 3;
+    this.groundY = (Number.isFinite(minY) ? minY : -5) - 0.75;
     texture.needsUpdate = true;
   }
 

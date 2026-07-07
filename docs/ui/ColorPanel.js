@@ -437,9 +437,61 @@ export function addColorPanel(target = "colorContainer") {
   rtReflRow.appendChild(rtReflLabel);
   rtReflRow.appendChild(rtReflSlider);
   rtControlsBlock.appendChild(rtReflRow);
+
+  // helper for the remaining tracer rows: label+slider updating a `general`
+  // key, resetting the accumulation so the change takes effect immediately
+  const makeTracerSliderRow = (id, labelFor, min, max, step, value, fmt, onSet) => {
+    const rowEl = createElement("div", { class: "control-row" });
+    const labelEl = createElement("label", { for: id }, {}, fmt(value));
+    const sliderEl = createElement("input", {
+      type: "range", id, min: String(min), max: String(max), step: String(step),
+      value: String(value),
+    });
+    sliderEl.addEventListener("input", () => {
+      const v = parseFloat(sliderEl.value);
+      onSet(v);
+      labelEl.textContent = fmt(v);
+      app.pipeline?.resetAccumulation?.();
+      requestRender();
+    });
+    rowEl.appendChild(labelEl);
+    rowEl.appendChild(sliderEl);
+    return rowEl;
+  };
+
+  // Light softness is shared by both tracers (PT area-light radius, RT
+  // shadow-ray cone); DoF and the ground plane apply to both as well.
+  rtControlsBlock.appendChild(makeTracerSliderRow('ptLightSoftness', 'ptLightSoftness',
+    0, 1, 0.05, general.ptLightSoftness ?? 0.3,
+    (v) => `Light softness: ${v.toFixed(2)}`,
+    (v) => { general.ptLightSoftness = v; }));
+  rtControlsBlock.appendChild(makeTracerSliderRow('rtDofAperture', 'rtDofAperture',
+    0, 2, 0.02, general.rtDofAperture ?? 0,
+    (v) => `DoF aperture: ${v.toFixed(2)}`,
+    (v) => { general.rtDofAperture = v; }));
+  rtControlsBlock.appendChild(makeTracerSliderRow('rtDofFocus', 'rtDofFocus',
+    0.2, 3, 0.05, general.rtDofFocus ?? 1,
+    (v) => `Focus distance: ×${v.toFixed(2)}`,
+    (v) => { general.rtDofFocus = v; }));
+
+  const groundRow = createElement("div", { class: "control-row" });
+  const groundLabel = createElement("label", { for: "rtGroundToggle" }, {}, "Ground plane");
+  const groundToggle = createElement("input", { type: "checkbox", id: "rtGroundToggle" },
+    { justifySelf: "start", width: "auto" });
+  groundToggle.checked = !!general.rtGroundPlane;
+  groundToggle.addEventListener("change", () => {
+    general.rtGroundPlane = groundToggle.checked;
+    app.pipeline?.resetAccumulation?.();
+    requestRender();
+  });
+  groundRow.appendChild(groundLabel);
+  groundRow.appendChild(groundToggle);
+  rtControlsBlock.appendChild(groundRow);
+
   content.appendChild(rtControlsBlock);
 
-  // Path-tracing-only controls: denoiser toggle + area-light softness.
+  // Path-tracing-only controls: the denoiser toggle (light softness moved to
+  // the shared tracer block above — it drives both tracers' soft shadows).
   const ptControlsBlock = createElement("div", {},
     { display: general.renderPipeline === "pathtrace" ? "block" : "none" });
   const ptDenoiseRow = createElement("div", { class: "control-row" });
@@ -455,22 +507,6 @@ export function addColorPanel(target = "colorContainer") {
   ptDenoiseRow.appendChild(ptDenoiseToggle);
   ptControlsBlock.appendChild(ptDenoiseRow);
 
-  const ptSoftRow = createElement("div", { class: "control-row" });
-  const ptSoftLabel = createElement("label", { for: "ptLightSoftness" }, {},
-    `Light softness: ${(general.ptLightSoftness ?? 0.3).toFixed(2)}`);
-  const ptSoftSlider = createElement("input", {
-    type: "range", id: "ptLightSoftness", min: "0", max: "1", step: "0.05",
-    value: String(general.ptLightSoftness),
-  });
-  ptSoftSlider.addEventListener("input", () => {
-    general.ptLightSoftness = parseFloat(ptSoftSlider.value);
-    ptSoftLabel.textContent = `Light softness: ${general.ptLightSoftness.toFixed(2)}`;
-    app.pipeline?.resetAccumulation?.();
-    requestRender();
-  });
-  ptSoftRow.appendChild(ptSoftLabel);
-  ptSoftRow.appendChild(ptSoftSlider);
-  ptControlsBlock.appendChild(ptSoftRow);
   content.appendChild(ptControlsBlock);
 
   // Render Style follows the per-pipeline knobs (raster pipelines only).

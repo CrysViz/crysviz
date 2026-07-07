@@ -144,6 +144,44 @@ function changedPixelCount(fileA, fileB) {
       && texels.y?.type === 0 && Math.abs(texels.y?.reflectivity - 0.8) < 1e-6,
     JSON.stringify(texels));
 
+  // --- Illustration features: ground plane + DoF + translucent + frosted glass ----
+  const plainShot = await H.shotCanvas(page, 'tracermaterials-plain');
+  await page.evaluate(async () => {
+    const { general, fileBrowser } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    general.rtGroundPlane = true;
+    general.rtDofAperture = 0.6;
+    general.ptLightSoftness = 0.6;
+    const structure = fileBrowser.selectedStructure;
+    structure.atomMaterials['O'] = { type: 'translucent', scatterDepth: 0.8 };
+    structure.atomMaterials['Y'] = { type: 'glass', frost: 0.5, ior: 1.5, tintDepth: 0.8 };
+    requestRender();
+  });
+  await page.waitForTimeout(4000);
+  const featShot = await H.shotCanvas(page, 'tracermaterials-illustration');
+  const featChanged = changedPixelCount(plainShot, featShot);
+  H.check('ground plane + DoF + translucent + frost render under raytrace',
+    featChanged > 1000, JSON.stringify({ featChanged }));
+
+  await H.setSelect(page, 'renderPipelineMenu', 'pathtrace');
+  await page.waitForTimeout(5000);
+  const ptFeat = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    return { id: app.pipeline.id, samples: app.pipeline._uniforms.uSampleCounter.value };
+  });
+  H.check('pathtrace renders with all illustration features (shader compiles + accumulates)',
+    ptFeat.id === 'pathtrace' && ptFeat.samples > 2, JSON.stringify(ptFeat));
+  H.check('no page errors with illustration features', errors.length === 0, errors.join(' | '));
+
+  // back to raytrace with the extras off for the remaining checks
+  await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    general.rtGroundPlane = false;
+    general.rtDofAperture = 0;
+  });
+  await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
+  await page.waitForTimeout(800);
+
   // --- Accumulation progress bar --------------------------------------------------
   const barState = await page.evaluate(() => {
     const bar = document.getElementById('tracerProgress');
@@ -254,8 +292,8 @@ function changedPixelCount(fileA, fileB) {
       atomUserMaterials: state.colors.atomUserMaterials,
     };
   });
-  H.check('captureState persists atomMaterials + per-atom overrides (v2.8)',
-    persisted.version === '2.8' && persisted.atomMaterials?.Cu?.type === 'emissive'
+  H.check('captureState persists atomMaterials + per-atom overrides (v2.9)',
+    persisted.version === '2.9' && persisted.atomMaterials?.Cu?.type === 'emissive'
       && persisted.atomMaterials?.Ba?.type === 'metal'
       && Object.values(persisted.atomUserMaterials ?? {}).some((m) => m?.type === 'glass'),
     JSON.stringify(persisted));

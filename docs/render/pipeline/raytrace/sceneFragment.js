@@ -45,6 +45,9 @@ uniform vec3 uLightDirection; // world space, points from the scene TOWARDS the 
 uniform vec3 uLightColor;
 uniform vec3 uBackgroundColor;
 uniform float uReflectivity;
+uniform float uLightSoftness; // 0 = hard shadows; >0 jitters shadow rays (penumbra via accumulation)
+uniform bool uGroundEnabled;  // background-colored ground plane (shadow catcher)
+uniform float uGroundY;
 
 #define DATA_W ${DATA_TEX_WIDTH}
 
@@ -62,13 +65,18 @@ int intersectionShapeIsClosed;
 #define MAT_TRANSP 1
 #define MAT_METAL 2
 #define MAT_EMISSIVE 3
+#define MAT_TRANSLUCENT 4
 int intersectionMaterialType;
+int intersectionMatCode; // raw encoder code (slot meanings are per-type)
 
 // encoded material texel + surface alpha -> tracer material type
-// (codes from SceneEncoder MATERIAL_CODES: 0 std, 1 metal, 2 glass, 3 emissive)
+// (codes from SceneEncoder MATERIAL_CODES: 0 std, 1 metal, 2 glass,
+//  3 emissive, 4 translucent)
 int resolveMaterialType(float matCode, float alpha)
 {
 	int code = int(matCode + 0.5);
+	intersectionMatCode = code;
+	if (code == 4) return MAT_TRANSLUCENT;
 	if (code == 3) return MAT_EMISSIVE;
 	if (code == 2 || alpha < 0.999) return MAT_TRANSP; // alpha wins for std/metal
 	if (code == 1) return MAT_METAL;
@@ -80,6 +88,7 @@ int resolveMaterialType(float matCode, float alpha)
 #include <raytracing_unit_cylinder_intersect>
 #include <raytracing_boundingbox_intersect>
 #include <raytracing_convexpolyhedron_intersect>
+#include <raytracing_plane_intersect>
 
 vec4 fetchData(sampler2D tex, int index)
 {
@@ -178,6 +187,25 @@ float SceneIntersect( int isShadowRay )
 		}
 	}
 
+	// ---- optional ground plane (background-colored matte shadow catcher) --
+	if (uGroundEnabled)
+	{
+		d = PlaneIntersect(vec4(0.0, 1.0, 0.0, uGroundY), rayOrigin, rayDirection);
+		if (d < t)
+		{
+			t = d;
+			intersectionNormal = vec3(0, 1, 0);
+			intersectionColor = uBackgroundColor;
+			intersectionAlpha = 1.0;
+			intersectionMaterialType = MAT_OPAQUE;
+			intersectionMatCode = 0;
+			intersectionRoughness = 0.0;
+			intersectionTypeParam = 0.0; // gloss 0: pure matte, shadows only
+			intersectionReflectivity = 0.0;
+			intersectionShapeIsClosed = FALSE;
+		}
+	}
+
 	return t;
 } // end SceneIntersect
 
@@ -266,9 +294,12 @@ vec3 RayTrace()
 
 		if (intersectionMaterialType == MAT_OPAQUE)
 		{
+			// gloss (typeParam, default 0.6 = the classic look) sets the Blinn
+			// highlight tightness; 0 = pure matte Lambert
+			float gloss = clamp(intersectionTypeParam, 0.0, 1.0);
 			accumulatedColor += doAmbientLighting(rayColorMask, intersectionColor, ambientIntensity);
 			diffuseContribution = doDiffuseDirectLighting(rayColorMask, intersectionColor, uLightColor, diffuseIntensity);
-			specularContribution = doBlinnPhongSpecularLighting(rayColorMask, shadingNormal, halfwayVector, uLightColor, 0.4, diffuseIntensity);
+			specularContribution = doBlinnPhongSpecularLighting(rayColorMask, shadingNormal, halfwayVector, uLightColor, 1.0 - gloss, diffuseIntensity) * step(0.01, gloss);
 
 			// mirror reflections, weighted by Fresnel + the Reflectivity slider
 			reflectance = calcFresnelReflectance(rayDirection, shadingNormal, 1.0, 1.4, IoR_ratio);
@@ -281,10 +312,32 @@ vec3 RayTrace()
 				reflectionRayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
 				reflectionRayDirection = reflect(rayDirection, shadingNormal);
 			}
-			// shadow ray towards the (directional) light
+			// shadow ray towards the (directional) light; jittered inside a cone
+			// when Light softness > 0 (accumulation averages into a penumbra)
 			isShadowRay = TRUE;
 			rayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
-			rayDirection = directionToLight;
+			rayDirection = uLightSoftness > 0.0
+				? randomDirectionInSpecularLobe(directionToLight, uLightSoftness * 0.5)
+				: directionToLight;
+			continue;
+		}
+
+		if (intersectionMaterialType == MAT_TRANSLUCENT)
+		{
+			// waxy/jade approximation: wrapped (soft) diffuse plus light bleeding
+			// through from behind; scatterDepth (typeParam) sets how much of the
+			// back-light survives. No specular, no reflections.
+			float scatterDepth = max(intersectionTypeParam, 0.05);
+			float wrapDiffuse = clamp((dot(shadingNormal, directionToLight) + 0.6) / 1.6, 0.0, 1.0);
+			float backLight = max(0.0, dot(-shadingNormal, directionToLight)) * clamp(1.0 - (scatterDepth * 0.5), 0.1, 1.0);
+			accumulatedColor += doAmbientLighting(rayColorMask, intersectionColor, ambientIntensity * 1.6);
+			diffuseContribution = doDiffuseDirectLighting(rayColorMask, intersectionColor, uLightColor, wrapDiffuse + backLight);
+			specularContribution = vec3(0);
+			isShadowRay = TRUE;
+			rayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
+			rayDirection = uLightSoftness > 0.0
+				? randomDirectionInSpecularLobe(directionToLight, uLightSoftness * 0.5)
+				: directionToLight;
 			continue;
 		}
 
@@ -307,12 +360,21 @@ vec3 RayTrace()
 
 		if (intersectionMaterialType == MAT_METAL)
 		{
-			// tinted mirror (upstream METAL): no diffuse/shadow, keep reflecting;
-			// roughness blurs the reflection lobe (resolved by accumulation)
+			// tinted mirror (upstream METAL): roughness blurs the reflection lobe
+			// (resolved by accumulation); reflectivity is the mirrored fraction
+			// (unset/-1 = 1.0, an ideal mirror) — the remainder shades as diffuse
+			// (no shadow ray, keeping metal single-bounce cheap)
+			float metalReflect = intersectionReflectivity < 0.0 ? 1.0 : intersectionReflectivity;
 			rayColorMask *= intersectionColor;
+			if (metalReflect < 1.0)
+			{
+				accumulatedColor += doAmbientLighting(rayColorMask, vec3(1), ambientIntensity) * (1.0 - metalReflect);
+				accumulatedColor += doDiffuseDirectLighting(rayColorMask, vec3(1), uLightColor, diffuseIntensity) * (1.0 - metalReflect);
+			}
 			specularContribution = doBlinnPhongSpecularLighting(rayColorMask, shadingNormal, halfwayVector, uLightColor, intersectionRoughness, diffuseIntensity);
 			accumulatedColor += specularContribution;
 			rayColorMask *= (1.0 - intersectionRoughness);
+			rayColorMask *= metalReflect;
 			rayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
 			rayDirection = reflect(rayDirection, shadingNormal);
 			rayDirection = randomDirectionInSpecularLobe(rayDirection, intersectionRoughness * intersectionRoughness);
@@ -348,19 +410,24 @@ vec3 RayTrace()
 			}
 
 			// transmitted (refracted) portion, tinted towards the object color
-			// by the inverse of its alpha (alpha 1 would be fully colored glass)
+			// by the inverse of its alpha (alpha 1 would be fully colored glass);
+			// tintDepth (glass slot, default 0.2) sets how strongly color
+			// saturates with the path length through the medium
+			float tintDepth = intersectionMatCode == 2 ? intersectionReflectivity : 0.2;
 			vec3 tintColor = mix(vec3(1), intersectionColor, clamp(1.0 - intersectionAlpha, 0.05, 0.95));
 			if (intersectionShapeIsClosed == FALSE)
 				rayColorMask *= tintColor;
 			else if (distance(geometryNormal, shadingNormal) > 0.1) // exiting a closed shape
-				rayColorMask *= exp(log(clamp(tintColor, 0.01, 0.99)) * 0.2 * t); // Beer's law
+				rayColorMask *= exp(log(clamp(tintColor, 0.01, 0.99)) * tintDepth * t); // Beer's law
 
 			rayColorMask *= transmittance;
 
-			if (isShadowRay == FALSE) // refract
-			{
+			if (isShadowRay == FALSE) // refract; frost (glass roughness slot)
+			{                         // blurs the transmission lobe
 				rayOrigin = intersectionPoint - (uEPS_intersect * shadingNormal);
 				rayDirection = refract(rayDirection, shadingNormal, IoR_ratio);
+				if (intersectionRoughness > 0.0)
+					rayDirection = randomDirectionInSpecularLobe(rayDirection, intersectionRoughness * intersectionRoughness);
 			}
 			else // shadow rays pass through transparent surfaces (tinted)
 			{

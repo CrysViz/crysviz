@@ -85,7 +85,10 @@ export const general = {
   rtResolutionScale: 0.75, // raytrace/pathtrace pipelines: internal resolution as a fraction of the canvas
   rtReflectivity: 0.15, // raytrace/pathtrace pipelines: extra mirror reflectivity on opaque surfaces (0-1)
   ptDenoise: true, // 'pathtrace' pipeline: edge-aware denoiser on the screen output
-  ptLightSoftness: 0.3, // 'pathtrace' pipeline: area-light radius factor (0 = hard shadows, 1 = very soft)
+  ptLightSoftness: 0.3, // both tracers: light softness (0 = hard shadows, 1 = very soft; PT area-light radius / RT shadow-ray cone)
+  rtDofAperture: 0, // both tracers: depth-of-field aperture in world units (0 = off)
+  rtDofFocus: 1, // both tracers: focus distance as a factor of the camera->target distance
+  rtGroundPlane: false, // both tracers: background-colored ground plane (shadow catcher)
   celOutlineMode: 'screen', // cel outlines: 'screen' (post-process) | 'hull' (inverted-hull geometry)
   celOutlineWidth: 0.025, // screen-space outline width in world units (0 = off)
   celHullWidth: 0.025, // hull outline width in world units, atoms/bonds (0 = off)

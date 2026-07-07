@@ -72,11 +72,16 @@ const H = require('../harness');
       && rtSliders.shownUnderRaytrace && rtSliders.hiddenAgain,
     JSON.stringify(rtSliders));
 
-  // --- Path-tracing controls: RT sliders shared + PT-only block -------------------
+  // --- Path-tracing controls: shared tracer block + PT-only denoiser ---------------
+  // Light softness/DoF/ground live in the SHARED tracer block (both tracers);
+  // only the Denoiser stays pathtrace-only.
   const ptControls = await page.evaluate(() => {
     const rtBlock = document.getElementById('rtResolutionScale')?.parentElement?.parentElement;
-    const ptBlock = document.getElementById('ptLightSoftness')?.parentElement?.parentElement;
-    const hasBoth = !!document.getElementById('ptDenoiseToggle') && !!document.getElementById('ptLightSoftness');
+    const ptBlock = document.getElementById('ptDenoiseToggle')?.parentElement?.parentElement;
+    const softnessInRtBlock = document.getElementById('ptLightSoftness')?.parentElement?.parentElement === rtBlock;
+    const dofInRtBlock = document.getElementById('rtDofAperture')?.parentElement?.parentElement === rtBlock
+      && document.getElementById('rtDofFocus')?.parentElement?.parentElement === rtBlock
+      && document.getElementById('rtGroundToggle')?.parentElement?.parentElement === rtBlock;
     const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
     select.value = 'pathtrace';
     select.dispatchEvent(new Event('change'));
@@ -85,15 +90,18 @@ const H = require('../harness');
     select.value = 'raytrace';
     select.dispatchEvent(new Event('change'));
     const ptHiddenUnderRaytrace = getComputedStyle(ptBlock).display === 'none';
+    const sharedShownUnderRaytrace = getComputedStyle(rtBlock).display !== 'none';
     select.value = 'forward';
     select.dispatchEvent(new Event('change'));
     const allHiddenUnderForward = getComputedStyle(rtBlock).display === 'none'
       && getComputedStyle(ptBlock).display === 'none';
-    return { hasBoth, rtSharedUnderPathtrace, ptShownUnderPathtrace, ptHiddenUnderRaytrace, allHiddenUnderForward };
+    return { softnessInRtBlock, dofInRtBlock, rtSharedUnderPathtrace, ptShownUnderPathtrace,
+      ptHiddenUnderRaytrace, sharedShownUnderRaytrace, allHiddenUnderForward };
   });
-  H.check('PT controls follow the dropdown; RT sliders are shared by both tracers',
-    ptControls.hasBoth && ptControls.rtSharedUnderPathtrace && ptControls.ptShownUnderPathtrace
-      && ptControls.ptHiddenUnderRaytrace && ptControls.allHiddenUnderForward,
+  H.check('shared tracer controls (softness/DoF/ground) + PT-only denoiser follow the dropdown',
+    ptControls.softnessInRtBlock && ptControls.dofInRtBlock && ptControls.rtSharedUnderPathtrace
+      && ptControls.ptShownUnderPathtrace && ptControls.ptHiddenUnderRaytrace
+      && ptControls.sharedShownUnderRaytrace && ptControls.allHiddenUnderForward,
     JSON.stringify(ptControls));
 
   // --- Dependency tree: Render Style (and cel outlines) only for raster pipelines --
@@ -232,8 +240,8 @@ const H = require('../harness');
       ptLightSoftness: state.style.ptLightSoftness,
     };
   });
-  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.8)',
-    persisted.version === '2.8' && persisted.renderPipeline === 'forward'
+  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.9)',
+    persisted.version === '2.9' && persisted.renderPipeline === 'forward'
       && typeof persisted.depthPeelLayers === 'number'
       && typeof persisted.rtResolutionScale === 'number'
       && typeof persisted.rtReflectivity === 'number'
