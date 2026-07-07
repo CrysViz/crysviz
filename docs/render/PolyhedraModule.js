@@ -1261,6 +1261,14 @@ export async function updatePolyhedra() {
   // pile of superseded compute jobs.
   if (polyhedraBusy) { polyhedraDirty = true; return; }
   polyhedraBusy = true;
+  // "Complete Polyhedra" is a FIXED-POINT iteration: the completing atoms are
+  // appended to the periodic `wrapped` set, which is exactly where the next
+  // compute draws its polyhedron centers/candidates from — so appending them
+  // can reveal MORE polyhedra (e.g. cages around boundary-image centers).
+  // Interactive use converges incidentally (every edit re-triggers), but a
+  // session restore runs only one pass and came up short. Budget-capped so a
+  // pathological oscillation can't loop forever.
+  let completingPasses = 0;
   try {
     do {
       polyhedraDirty = false;
@@ -1301,9 +1309,11 @@ export async function updatePolyhedra() {
 
       // "Complete Polyhedra": append the out-of-cell vertex atoms to the displayed set so
       // every polyhedron has an atom (with bonds) at each vertex. Only re-renders atoms/bonds
-      // when the completing set actually changes (see syncCompletingAtoms).
+      // when the completing set actually changes (see syncCompletingAtoms). When it DID
+      // change, the compute inputs changed too — loop for the fixed point (see above).
       if (general.completePolyhedra) {
-        syncCompletingAtoms(structure, model);
+        const completingChanged = syncCompletingAtoms(structure, model);
+        if (completingChanged && ++completingPasses <= 4) polyhedraDirty = true;
       }
 
       // Build into a fresh group and swap atomically, keeping the previous polyhedra on
@@ -1338,6 +1348,8 @@ export async function updatePolyhedra() {
  * @param {any} structure
  * @param {Polyhedra} model
  */
+/** @returns {boolean} whether the displayed/wrapped atom set changed (the
+ *  caller then recomputes — the wrapped set feeds back into the compute). */
 function syncCompletingAtoms(structure, model) {
   const positions = structure.atoms.map(a => a.position); // fractional
   const elements = [...structure.elements];
@@ -1353,7 +1365,7 @@ function syncCompletingAtoms(structure, model) {
   const hashBefore = structure.periodic?.hash;
   runPeriodicWrapped(structure.periodic, positions, elements, lattice);
   const wrapped = structure.periodic?.wrapped;
-  if (!wrapped) return;
+  if (!wrapped) return false;
   // Did the settle rebuild `wrapped` to base-only? If so the atom/bond meshes still show the
   // PREVIOUS set (the bond-length edit used reRenderAtoms:false), so the sig-based skip below
   // is unsafe — we must refresh the meshes even if the new completing set is empty/unchanged.
@@ -1410,7 +1422,7 @@ function syncCompletingAtoms(structure, model) {
   // base WAS rebuilt, the meshes are stale relative to `wrapped`, so we must refresh even if
   // the new completing set is empty (otherwise old completing atoms linger — the bug when
   // bond distance was decreased).
-  if (!baseRebuilt && sig === (wrapped.completingSig ?? '')) return;
+  if (!baseRebuilt && sig === (wrapped.completingSig ?? '')) return false;
 
   // Rebuild wrapped = base + completing (truncate any previous completing first).
   wrapped.elements.length = baseCount;
@@ -1429,4 +1441,5 @@ function syncCompletingAtoms(structure, model) {
   // rebuildAtoms()'s runPeriodicWrapped reuses this mutated `wrapped` (no rebuild back to base).
   rebuildAtoms();
   rebuildBonds();
+  return true;
 }
