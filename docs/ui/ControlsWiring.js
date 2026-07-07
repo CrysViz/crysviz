@@ -8,7 +8,8 @@
 
 import { general, groups, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle, rebuildBonds } from '../render/index.js';
+import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle, scheduleBondRebuild } from '../render/index.js';
+import { bondKey } from '../render/BondsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
 import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
 
@@ -105,19 +106,6 @@ export function setupControlsWiring() {
     };
   }
 
-  // Bond visible lengths are clipped by the atom radii (Bond.r1/r2 include
-  // general.atomSize), so a size change must rebuild the bond geometry too.
-  // Debounced: the per-instance diameter updates give live feedback while
-  // dragging; the (heavier) bond rebuild runs once the slider settles.
-  let bondRecalcTimer = null;
-  const scheduleBondRecalc = () => {
-    if (bondRecalcTimer) clearTimeout(bondRecalcTimer);
-    bondRecalcTimer = setTimeout(() => {
-      bondRecalcTimer = null;
-      rebuildBonds(general.mainOpacity ?? 1);
-    }, 200);
-  };
-
   document.getElementById('atomSize').oninput = (e) => {
     general.atomSize = sizeSliderToValue(parseFloat(e.target.value), ATOM_SIZE_RANGE);
     document.getElementById('atomSizeValue').textContent = general.atomSize.toFixed(2);
@@ -131,7 +119,8 @@ export function setupControlsWiring() {
     });
     groups.atomsMesh.instanceMatrix.needsUpdate = true;
     updateMeasurementMarkers(); // Update ring markers when atom size changes
-    scheduleBondRecalc();
+    // Bond visible lengths bake the atom radii in — refresh once settled.
+    scheduleBondRebuild();
   };
 
 
@@ -144,10 +133,23 @@ export function setupControlsWiring() {
       // clamp defensively
       general.bondRadius = Math.max(0.005, Math.min(1.0, isNaN(v) ? general.bondRadius : v));
       bondWidthValue.textContent = general.bondRadius.toFixed(2);
-      for (let i = 0; i < groups.bondsMesh.count; i++) {
-        updateSingleBondDiameter(i,  general.bondRadius)
-       }
-      groups.bondsMesh.instanceColor.needsUpdate = true;
+      // Update BOTH the Bond objects and the mesh instances: everything that
+      // repaints later (double-click atom expansion, updateBonds, …) re-derives
+      // matrices from bond.radius — instance-only updates would be reverted.
+      // Per-bond/per-pair size scales stay respected.
+      const structure = fileBrowser.selectedStructure;
+      for (const bond of structure?.bonds ?? []) {
+        const [e1, e2] = bond.elements;
+        const scale = structure.bondUserStyles?.[bondKey(bond.indices)]?.radiusScale
+          ?? structure.bondCategoryStyles?.[e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`]?.radiusScale
+          ?? 1;
+        bond.radius = general.bondRadius * scale;
+        if (bond.instanceIds && groups.bondsMesh) {
+          updateSingleBondDiameter(bond.instanceIds[0], bond.radius);
+          updateSingleBondDiameter(bond.instanceIds[1], bond.radius);
+        }
+      }
+      if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
     };
   }
   // Unit-cell outline line width control (rebuilds the 12 outline cylinders)

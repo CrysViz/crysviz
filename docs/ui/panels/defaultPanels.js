@@ -530,6 +530,8 @@ export function registerDefaultPanels() {
         !!getPanelPref('dragIntoDock'), (on) => setPanelPref('dragIntoDock', on)));
       dragGroup.appendChild(makeToggleRow('dragOutOfDockToggle', 'Drag out of dock',
         !!getPanelPref('dragOutOfDock'), (on) => setPanelPref('dragOutOfDock', on)));
+      dragGroup.appendChild(makeToggleRow('dragByHandleToggle', 'Only drag windows by handle',
+        !!getPanelPref('dragByHandleOnly'), (on) => setPanelPref('dragByHandleOnly', on)));
       body.appendChild(dragGroup);
       // Overall font scale: multiplies the window fonts (title bars, headlines,
       // labels) live via --cv-font-scale; persisted across sessions.

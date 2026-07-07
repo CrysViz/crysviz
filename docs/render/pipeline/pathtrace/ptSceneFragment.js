@@ -38,6 +38,7 @@ uniform vec3 uBackgroundColor;
 uniform float uReflectivity;
 uniform vec3 uLightPosition; // area-light centre (world)
 uniform float uLightRadius;  // area-light radius (world; soft-shadow spread)
+uniform float uAmbientStrength; // scales the sky/ambient bounce term
 uniform bool uGroundEnabled; // background-colored ground plane (shadow catcher)
 uniform float uGroundY;
 
@@ -234,7 +235,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 	vec3 diffuseBounceMask = vec3(1);
 	vec3 diffuseBounceRayOrigin = vec3(0);
 	vec3 diffuseBounceRayDirection = vec3(0);
-	vec3 skyColor = uBackgroundColor * 1.2;
+	vec3 skyColor = uBackgroundColor * (uAmbientStrength * 4.0); // 0.3 default = the classic 1.2
 	vec3 x, n, nl;
 
 	float t;

@@ -50,6 +50,15 @@ async function expandPanel(page, id) {
     !(await inBody(page, 'settings', 'StorageOptionSwitch'))
       && await page.evaluate(() => !!document.getElementById('StorageOptionSwitch')));
   H.check('Settings keeps the drag toggles', await inBody(page, 'settings', 'dragIntoDockToggle'));
+  H.check('Settings hosts the drag-by-handle toggle', await inBody(page, 'settings', 'dragByHandleToggle'));
+  H.check('drag-by-handle pref round-trips', await page.evaluate(async () => {
+    const { getPanelPref, setPanelPref } = await import('./ui/panels/PanelManager.js');
+    setPanelPref('dragByHandleOnly', true);
+    const on = getPanelPref('dragByHandleOnly') === true
+      && JSON.parse(localStorage.getItem('panelPrefs')).dragByHandleOnly === true;
+    setPanelPref('dragByHandleOnly', false);
+    return on && getPanelPref('dragByHandleOnly') === false;
+  }));
 
   // --- axes gizmo line width slider -------------------------------------------
   await H.setSlider(page, 'axesWidth', 0.05);

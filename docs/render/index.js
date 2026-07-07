@@ -18,7 +18,7 @@ export {
 } from './AtomsFracUpdateModule.js';
 
 export {
-  getBondCutoff, updateBonds, rebuildBonds, buildBondObjects,
+  getBondCutoff, updateBonds, rebuildBonds, buildBondObjects, scheduleBondRebuild,
   updateSingleBondDiameter, disposeBondsMesh, updateSingleBondColor,
   updateSingleBondOpacity, bondKey, bondGroupKey,
 } from './BondsFracUpdateModule.js';

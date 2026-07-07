@@ -76,6 +76,49 @@ function changedPixelCount(fileA, fileB) {
   await H.setSlider(page, 'atomSize', 0.3444); // back to the default 0.40
   await page.waitForTimeout(600); // debounced bond rebuild at the default size
 
+  // --- Bond diameter survives a repaint (the double-click-reset bug) --------------
+  await H.setSlider(page, 'bondWidth', 0.8); // thick bonds via the Visual slider
+  const bondRadius = await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const { updateBonds } = await import('./render/index.js');
+    const bond = fileBrowser.selectedStructure.bonds.find((b) => b.instanceIds);
+    const before = groups.bondsMesh.instanceMatrix.array[bond.instanceIds[0] * 16];
+    await updateBonds(1); // the repaint that used to revert slider-only updates
+    const after = groups.bondsMesh.instanceMatrix.array[bond.instanceIds[0] * 16];
+    return { modelRadius: bond.radius, before, after };
+  });
+  H.check('bond diameter sticks in the Bond model and survives updateBonds',
+    Math.abs(bondRadius.modelRadius - bondRadius.before) < 1e-6
+      && Math.abs(bondRadius.after - bondRadius.before) < 1e-6
+      && bondRadius.before > 0.5,
+    JSON.stringify(bondRadius));
+  await H.setSlider(page, 'bondWidth', 0.3090); // back to the default 0.10
+
+  // --- Bond endpoints respect per-species atom radius scales ----------------------
+  const bondEndpoints = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const { scheduleBondRebuild } = await import('./render/index.js');
+    const structure = fileBrowser.selectedStructure;
+    const before = structure.bonds.find((b) => b.elements.includes('Cu'))?.r1;
+    structure.atoms.forEach((atom, i) => {
+      if (structure.elements[i] === 'Cu') atom.setRadiusScale(0.4);
+    });
+    scheduleBondRebuild(0);
+    await new Promise((r) => setTimeout(r, 400));
+    const bond = structure.bonds.find((b) => b.elements[0] === 'Cu');
+    const scaled = bond ? bond.r1 : null;
+    // restore
+    structure.atoms.forEach((atom, i) => {
+      if (structure.elements[i] === 'Cu') atom.setRadiusScale(1);
+    });
+    scheduleBondRebuild(0);
+    await new Promise((r) => setTimeout(r, 400));
+    return { before, scaled };
+  });
+  H.check('bond clip radii include per-atom radius scales after rebuild',
+    bondEndpoints.scaled !== null && bondEndpoints.scaled < bondEndpoints.before * 0.6,
+    JSON.stringify(bondEndpoints));
+
   // --- Material editors exist in the Structure window ----------------------------
   const editors = await page.evaluate(() => ({
     materialEditors: document.querySelectorAll('.material-editor').length,
@@ -248,6 +291,49 @@ function changedPixelCount(fileA, fileB) {
   });
   H.check('trackball damping tail snaps to exactly zero',
     settled.gap === 0 && settled.lastAngle === 0, JSON.stringify(settled));
+
+  // --- Background change restarts the accumulation ---------------------------------
+  // (a converged image would otherwise keep showing the OLD background forever)
+  const bgReset = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    const THREE = await import('./external/three/three.module.js');
+    const u = app.pipeline._uniforms;
+    const target = app.pipeline._cfg.targetSamples;
+    u.uSampleCounter.value = target; // simulate a converged, idle image
+    app.scene.background = new THREE.Color('#204060');
+    requestRender();
+    await new Promise((r) => setTimeout(r, 1500));
+    const after = u.uSampleCounter.value;
+    return { target, after, bg: u.uBackgroundColor.value.getHexString() };
+  });
+  H.check('background change resets the tracer accumulation',
+    bgReset.after < bgReset.target && bgReset.after > 0 && bgReset.bg === '204060',
+    JSON.stringify(bgReset));
+
+  // --- Light sliders exist and rewire the uniforms ----------------------------------
+  const lights = await page.evaluate(async () => {
+    const { app, general } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    general.rtLightIntensity = 2.5;
+    general.rtAmbient = 0.8;
+    requestRender();
+    await new Promise((r) => setTimeout(r, 800));
+    const u = app.pipeline._uniforms;
+    return {
+      hasSliders: !!document.getElementById('rtLightIntensity') && !!document.getElementById('rtAmbient'),
+      ambient: u.uAmbientStrength.value,
+      lightHex: u.uLightColor.value.r, // key light white x 2.5 -> r 2.5
+    };
+  });
+  H.check('light intensity + ambient sliders drive the tracer uniforms',
+    lights.hasSliders && Math.abs(lights.ambient - 0.8) < 1e-6 && lights.lightHex > 2.0,
+    JSON.stringify(lights));
+  await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    general.rtLightIntensity = 1.2;
+    general.rtAmbient = 0.3;
+  });
 
   // --- PNG export boost API --------------------------------------------------------
   const boost = await page.evaluate(async () => {

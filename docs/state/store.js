@@ -89,6 +89,8 @@ export const general = {
   rtDofAperture: 0, // both tracers: depth-of-field aperture in world units (0 = off)
   rtDofFocus: 1, // both tracers: focus distance as a factor of the camera->target distance
   rtGroundPlane: false, // both tracers: background-colored ground plane (shadow catcher)
+  rtLightIntensity: 1.2, // both tracers: key-light intensity multiplier
+  rtAmbient: 0.3, // both tracers: ambient/fill light strength (RT ambient term / PT sky bounce)
   celOutlineMode: 'screen', // cel outlines: 'screen' (post-process) | 'hull' (inverted-hull geometry)
   celOutlineWidth: 0.025, // screen-space outline width in world units (0 = off)
   celHullWidth: 0.025, // hull outline width in world units, atoms/bonds (0 = off)

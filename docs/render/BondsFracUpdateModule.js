@@ -6,6 +6,7 @@ import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getM
 import {Bond} from '../model/index.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
 import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression} from './MaterialStyles.js'
+import {getAtomImageStyle} from './AtomsFracUpdateModule.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
@@ -102,6 +103,20 @@ export function rebuildBonds(opacity=1.0) {
   console.time("bond:refreshHistogram");
   refreshHistogram(Object.values(bondLengths), Object.keys(bondLengths));
   console.timeEnd("bond:refreshHistogram");
+}
+
+// Debounced bond-geometry refresh: anything that changes RENDERED atom radii
+// (the global Atom Size slider, per-species/per-atom/per-copy Size edits)
+// invalidates the clipped bond lengths (Bond.r1/r2 bake the radii in).
+// Cheap live feedback stays with the caller; the heavier rebuild runs once
+// the edits settle.
+let bondRebuildTimer = null;
+export function scheduleBondRebuild(delayMs = 200) {
+  if (bondRebuildTimer) clearTimeout(bondRebuildTimer);
+  bondRebuildTimer = setTimeout(() => {
+    bondRebuildTimer = null;
+    rebuildBonds(general.mainOpacity ?? 1);
+  }, delayMs);
 }
 
 export function getBondCutoff(elem1, elem2) {
@@ -316,6 +331,11 @@ export function buildBondObjects(structure){
   const _tPairs = performance.now();
 
   // ---- Build Bond objects from the pairs (colour / id logic; O(bonds)) ----
+  // The clipped bond geometry must meet each endpoint at its RENDERED radius:
+  // per-copy Size overrides win over the source atom's radiusScale.
+  const endpointScale = (imageIndex, srcIndex) =>
+    getAtomImageStyle(structure, imageIndex)?.radiusScale
+      ?? structure.atoms?.[srcIndex]?.getRadiusScale?.() ?? 1;
   for (let k = 0; k < pairI.length; k++) {
     const i = pairI[k], j = pairJ[k];
     const pi = wrappedCart[i], pj = wrappedCart[j];
@@ -326,7 +346,8 @@ export function buildBondObjects(structure){
       positions: [[pi[0], pi[1], pi[2]], [pj[0], pj[1], pj[2]]],
       uuid: generateID([ei, ej]),
       srcIndices: [wrappedSrcIndex[i], wrappedSrcIndex[j]],
-      indices: [i, j]
+      indices: [i, j],
+      radiusScales: [endpointScale(i, wrappedSrcIndex[i]), endpointScale(j, wrappedSrcIndex[j])],
     });
 
     // Set bond colors based on current color mode

@@ -4,7 +4,7 @@ import { clampOpacity, clampRadiusScale } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom } from '../../../render/AtomsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
-import { updatePolyhedraColors } from '../../../render/index.js';
+import { updatePolyhedraColors, scheduleBondRebuild } from '../../../render/index.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { bondLengthToColor } from '../../ColorPanel.js';
@@ -195,6 +195,8 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     });
     groups.atomsMesh.instanceMatrix.needsUpdate = true;
     updateMeasurementMarkers();
+    // Bond visible lengths bake the atom radii in — refresh once settled.
+    scheduleBondRebuild();
   }
 
   sizeSlider.oninput = (e) => applyElementRadiusScale(/** @type {any} */ (e.target).value);

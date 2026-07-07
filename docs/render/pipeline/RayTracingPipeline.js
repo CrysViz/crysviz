@@ -138,6 +138,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       uBackgroundColor: { value: new THREE.Color(0.9, 0.9, 0.9) },
       uReflectivity: { value: general.rtReflectivity ?? 0.15 },
       uLightSoftness: { value: general.ptLightSoftness ?? 0.3 },
+      uAmbientStrength: { value: general.rtAmbient ?? 0.3 },
       uGroundEnabled: { value: false },
       uGroundY: { value: -5 },
       ...this._extraSceneUniforms(),
@@ -285,11 +286,13 @@ export class RayTracingPipeline extends ForwardPipeline {
     if (app.keyLight) {
       const target = app.controls?.target ?? this._rtScene.position;
       u.uLightDirection.value.copy(app.keyLight.position).sub(target).normalize();
-      u.uLightColor.value.copy(app.keyLight.color);
+      u.uLightColor.value.copy(app.keyLight.color)
+        .multiplyScalar(general.rtLightIntensity ?? 1.2);
     }
     if (scene.background?.isColor) u.uBackgroundColor.value.copy(scene.background);
     u.uReflectivity.value = general.rtReflectivity ?? 0.15;
     u.uLightSoftness.value = general.ptLightSoftness ?? 0.3;
+    u.uAmbientStrength.value = general.rtAmbient ?? 0.3;
     u.uGroundEnabled.value = !!general.rtGroundPlane;
     u.uGroundY.value = this._encoder.groundY;
     // Depth of field: aperture in world units; focus follows the orbit target
@@ -298,6 +301,16 @@ export class RayTracingPipeline extends ForwardPipeline {
     u.uFocusDistance.value = camera.position.distanceTo(
       app.controls?.target ?? this._rtScene.position) * (general.rtDofFocus ?? 1);
     this._updateSceneUniforms(u);
+
+    // Any "look" change (background color, lighting knobs, DoF, ground …)
+    // must restart the accumulation — otherwise a converged, idle image
+    // keeps averaging in the OLD look (e.g. a background-color change was
+    // invisible once converged).
+    const lookKey = `${u.uBackgroundColor.value.getHex()}|${u.uLightColor.value.getHex()}`
+      + `|${u.uReflectivity.value}|${u.uLightSoftness.value}|${u.uAmbientStrength.value}`
+      + `|${u.uGroundEnabled.value}|${u.uApertureSize.value}|${(general.rtDofFocus ?? 1)}`;
+    if (this._lastLookKey !== undefined && lookKey !== this._lastLookKey) this.resetAccumulation();
+    this._lastLookKey = lookKey;
 
     // --- accumulate one (or, after a resize, several) samples ---------------
     const samplesThisCall = Math.max(1, this._boostSamples);

@@ -155,6 +155,8 @@ export function captureState({ includeFrames = false } = {}) {
       rtDofAperture: general.rtDofAperture,
       rtDofFocus: general.rtDofFocus,
       rtGroundPlane: general.rtGroundPlane,
+      rtLightIntensity: general.rtLightIntensity,
+      rtAmbient: general.rtAmbient,
       celOutlineWidth: general.celOutlineWidth,
       celHullWidth: general.celHullWidth,
       polyEdgeWidth: general.polyEdgeWidth,
@@ -361,6 +363,14 @@ function applyStyleSettings(style) {
     general.rtGroundPlane = style.rtGroundPlane;
     const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtGroundToggle'));
     if (toggle) toggle.checked = style.rtGroundPlane;
+  }
+  if (style.rtLightIntensity != null) {
+    general.rtLightIntensity = style.rtLightIntensity;
+    setSelect('rtLightIntensity', style.rtLightIntensity);
+  }
+  if (style.rtAmbient != null) {
+    general.rtAmbient = style.rtAmbient;
+    setSelect('rtAmbient', style.rtAmbient);
   }
   if (style.celOutlineWidth != null) general.celOutlineWidth = style.celOutlineWidth;
   if (style.celHullWidth != null) general.celHullWidth = style.celHullWidth;

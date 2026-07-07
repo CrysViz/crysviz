@@ -465,6 +465,14 @@ export function addColorPanel(target = "colorContainer") {
     0, 1, 0.05, general.ptLightSoftness ?? 0.3,
     (v) => `Light softness: ${v.toFixed(2)}`,
     (v) => { general.ptLightSoftness = v; }));
+  rtControlsBlock.appendChild(makeTracerSliderRow('rtLightIntensity', 'rtLightIntensity',
+    0, 3, 0.05, general.rtLightIntensity ?? 1.2,
+    (v) => `Light intensity: ${v.toFixed(2)}`,
+    (v) => { general.rtLightIntensity = v; }));
+  rtControlsBlock.appendChild(makeTracerSliderRow('rtAmbient', 'rtAmbient',
+    0, 1, 0.02, general.rtAmbient ?? 0.3,
+    (v) => `Ambient light: ${v.toFixed(2)}`,
+    (v) => { general.rtAmbient = v; }));
   rtControlsBlock.appendChild(makeTracerSliderRow('rtDofAperture', 'rtDofAperture',
     0, 2, 0.02, general.rtDofAperture ?? 0,
     (v) => `DoF aperture: ${v.toFixed(2)}`,

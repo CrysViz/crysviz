@@ -26,7 +26,7 @@ const DRAG_OUT_PX = 24;
 // in their own localStorage key, NOT in the versioned panelLayout blob: they
 // must survive both Reset UI (which clears LS_KEY) and layout version bumps.
 const PREFS_KEY = 'panelPrefs';
-const panelPrefs = { dragIntoDock: true, dragOutOfDock: true };
+const panelPrefs = { dragIntoDock: true, dragOutOfDock: true, dragByHandleOnly: false };
 
 function loadPanelPrefs() {
   try {
@@ -36,6 +36,7 @@ function loadPanelPrefs() {
     if (parsed && typeof parsed === 'object') {
       if (typeof parsed.dragIntoDock === 'boolean') panelPrefs.dragIntoDock = parsed.dragIntoDock;
       if (typeof parsed.dragOutOfDock === 'boolean') panelPrefs.dragOutOfDock = parsed.dragOutOfDock;
+      if (typeof parsed.dragByHandleOnly === 'boolean') panelPrefs.dragByHandleOnly = parsed.dragByHandleOnly;
     }
   } catch { /* corrupted prefs -> defaults */ }
 }
@@ -78,6 +79,7 @@ const hooks = {
   beginDockReorder,
   wantsDockDrop,
   dockAtPointer,
+  getPref: getPanelPref,
 };
 
 /**

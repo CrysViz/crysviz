@@ -12,6 +12,7 @@ import * as THREE from '../../../external/three/three.module.js';
 import { ConvexHull } from '../../../external/three/ConvexHull.js';
 import { groups, fileBrowser, general } from '../../../state/store.js';
 import { bondKey } from '../../BondsFracUpdateModule.js';
+import { getAtomImageStyle } from '../../AtomsFracUpdateModule.js';
 import { DATA_TEX_WIDTH } from './sceneFragment.js';
 
 const MAX_PLANES = 20; // ConvexPolyhedronIntersect limit (vendored chunk)
@@ -114,6 +115,7 @@ export class SceneEncoder {
     if (structure) {
       parts.push('m', JSON.stringify(structure.atomMaterials ?? {}),
         JSON.stringify(structure.atomUserMaterials ?? {}),
+        JSON.stringify(structure.atomImageStyles ?? {}),
         JSON.stringify(structure.bondCategoryStyles ?? {}),
         JSON.stringify(structure.bondUserStyles ?? {}),
         JSON.stringify(structure.polyhedraCategoryStyles ?? {}),
@@ -174,11 +176,14 @@ export class SceneEncoder {
       data[d + 5] = colors[i * 3 + 1];
       data[d + 6] = colors[i * 3 + 2];
       data[d + 7] = (opacities ? opacities[i] : 1) * baseOpacity;
-      // per-atom override > per-species material (instance -> source atom)
+      // per-copy override > per-atom override > per-species material
+      // (per-copy = "Link periodic copies" off, stored in atomImageStyles)
       const src = srcIndex ? srcIndex[i] : i;
       const element = structure?.elements?.[src];
       data.set(materialTexel(
-        atomUserMaterials[src] ?? (element ? atomMaterials[element] : null)), d + 8);
+        getAtomImageStyle(structure, i)?.material
+          ?? atomUserMaterials[src]
+          ?? (element ? atomMaterials[element] : null)), d + 8);
       n++;
     }
     this.atomCount = n;

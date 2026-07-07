@@ -46,6 +46,7 @@ uniform vec3 uLightColor;
 uniform vec3 uBackgroundColor;
 uniform float uReflectivity;
 uniform float uLightSoftness; // 0 = hard shadows; >0 jitters shadow rays (penumbra via accumulation)
+uniform float uAmbientStrength; // ambient/fill light level (classic look: 0.25)
 uniform bool uGroundEnabled;  // background-colored ground plane (shadow catcher)
 uniform float uGroundY;
 
@@ -232,7 +233,7 @@ vec3 RayTrace()
 	vec3 skyColor;
 
 	float t;
-	float ambientIntensity = 0.25;
+	float ambientIntensity = uAmbientStrength;
 	float diffuseIntensity;
 	float reflectance, transmittance, IoR_ratio;
 
