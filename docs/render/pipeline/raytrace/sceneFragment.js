@@ -7,8 +7,10 @@
 //   - MAT_OPAQUE (standard): Blinn-Phong diffuse + specular with a hard
 //     shadow ray, plus a mirror reflection ray weighted by Fresnel + the
 //     "Reflectivity" slider;
-//   - MAT_TRANSP (glass, or any alpha < 1): Fresnel-split reflection/
-//     refraction with per-object IoR and color-tinted transmission;
+//   - MAT_TRANSP (the GLASS material): Fresnel-split reflection/refraction
+//     with per-object IoR and color-tinted transmission. Alpha < 1 on any
+//     OTHER material is non-refractive stochastic transparency (raster-like
+//     see-through, resolved by the accumulation);
 //   - MAT_METAL: tinted mirror, roughness blurs the reflection lobe;
 //   - MAT_EMISSIVE: additive glow (color x intensity) in this Whitted tracer.
 // Scene data arrives in RGBA32F data textures (see SceneEncoder.js):
@@ -79,9 +81,9 @@ int resolveMaterialType(float matCode, float alpha)
 	intersectionMatCode = code;
 	if (code == 4) return MAT_TRANSLUCENT;
 	if (code == 3) return MAT_EMISSIVE;
-	if (code == 2 || alpha < 0.999) return MAT_TRANSP; // alpha wins for std/metal
-	if (code == 1) return MAT_METAL;
-	return MAT_OPAQUE;
+	if (code == 2) return MAT_TRANSP; // refraction is for the GLASS material only;
+	if (code == 1) return MAT_METAL;  // alpha < 1 on other materials is handled
+	return MAT_OPAQUE;                // as stochastic (non-refractive) transparency
 }
 
 #include <raytracing_core_functions>
@@ -270,6 +272,17 @@ vec3 RayTrace()
 				continue;
 			}
 			break;
+		}
+
+		// Non-refractive alpha transparency (raster-like "see-through"): any
+		// non-glass surface with alpha < 1 lets the ray pass STRAIGHT through
+		// with probability (1 - alpha). The accumulation averages this into
+		// the classic alpha blend; shadow rays inherit partial shadows.
+		if (intersectionMaterialType != MAT_TRANSP && intersectionAlpha < 0.999
+			&& rand() >= intersectionAlpha)
+		{
+			rayOrigin = rayOrigin + ((t + uEPS_intersect) * rayDirection);
+			continue;
 		}
 
 		// shadow ray hit an occluder: surface stays in ambient shadow

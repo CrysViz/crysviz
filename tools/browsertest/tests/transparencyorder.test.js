@@ -412,12 +412,12 @@ function redCentroid(file) {
   H.check('raytrace: opaque front red atom covers the back blue atom',
     rt1.r > rt1.b + 30, JSON.stringify(rt1));
 
-  // Transparent front atom becomes refractive glass: the disk must change
-  // substantially (red mask drops and/or refracted blue shows through).
+  // Transparent front atom = stochastic (non-refractive) alpha blend under
+  // the tracers: red contribution drops, the blue behind shows through.
   await setOpacity(src.front, 0.4);
   await page.waitForTimeout(4000);
   const rt2 = await shoot('transparencyorder-raytrace-transparent');
-  H.check('raytrace: transparent front atom is refractive (back atom influences the disk)',
+  H.check('raytrace: alpha-transparent front atom blends (back atom shows through)',
     (rt2.b > rt1.b + 15) || (rt2.r < rt1.r - 30), JSON.stringify({ rt1, rt2 }));
   H.check('raytrace: no page errors during ray-traced frames', errors.length === 0, errors.join(' | '));
 
@@ -449,7 +449,7 @@ function redCentroid(file) {
   await setOpacity(src.front, 0.4);
   await page.waitForTimeout(6000);
   const pt2 = await shoot('transparencyorder-pathtrace-transparent');
-  H.check('pathtrace: transparent front atom is refractive (back atom influences the disk)',
+  H.check('pathtrace: alpha-transparent front atom blends (back atom shows through)',
     (pt2.b > pt1.b + 10) || (pt2.r < pt1.r - 20), JSON.stringify({ pt1, pt2 }));
   H.check('pathtrace: no page errors during path-traced frames', errors.length === 0, errors.join(' | '));
 

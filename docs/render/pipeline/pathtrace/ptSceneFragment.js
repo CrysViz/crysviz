@@ -54,6 +54,7 @@ float hitReflectivity = -1.0; // < 0 = use the global uReflectivity
 float hitGloss = 0.6;      // standard: coat reflection tightness
 float hitTintDepth = 0.2;  // glass: Beer's-law strength
 float hitScatter = 0.5;    // translucent: scatter depth
+float hitAlpha = 1.0;      // surface alpha (non-glass: stochastic see-through)
 int hitType = -100;
 
 // encoded material texel with TYPE-MULTIPLEXED slots (see SceneEncoder
@@ -62,6 +63,7 @@ int hitType = -100;
 // 4 translucent.
 int resolveHitType(vec4 mat, vec3 color, float alpha)
 {
+	hitAlpha = alpha;
 	hitRoughness = mat.y;
 	hitReflectivity = mat.w;
 	hitGloss = 0.6;
@@ -79,11 +81,11 @@ int resolveHitType(vec4 mat, vec3 color, float alpha)
 		hitEmission = color * mat.z; // emissive: an implicit area light
 		return LIGHT;
 	}
-	// per-object IoR/tintDepth only travel for glass; alpha-routed objects
-	// use the classic defaults (their reflectivity slot is NOT a tint depth)
+	// refraction is for the GLASS material only; alpha < 1 on other
+	// materials is handled as stochastic (non-refractive) transparency in
+	// CalculateRadiance
 	hitIor = code == 2 && mat.z > 1.0 ? mat.z : 1.5;
-	if (code == 2) { hitTintDepth = mat.w; hitReflectivity = -1.0; }
-	if (code == 2 || alpha < 0.999) return REFR; // alpha wins for std/metal
+	if (code == 2) { hitTintDepth = mat.w; hitReflectivity = -1.0; return REFR; }
 	if (code == 1) return SPEC;
 	hitGloss = clamp(mat.z, 0.0, 1.0); // standard
 	return COAT;
@@ -123,6 +125,7 @@ float SceneIntersect( out int isRayExiting )
 		hitEmission = lightSphere.emission;
 		hitColor = lightSphere.color;
 		hitType = LIGHT;
+		hitAlpha = 1.0;
 		hitObjectID = 0.0;
 	}
 
@@ -214,6 +217,7 @@ float SceneIntersect( out int isRayExiting )
 			hitEmission = vec3(0);
 			hitColor = uBackgroundColor;
 			hitType = COAT;
+			hitAlpha = 1.0;
 			hitGloss = 1.0;          // sharp (faint) fresnel floor reflections
 			hitReflectivity = 0.0;   // no stochastic mirror
 			hitObjectID = -2.0;
@@ -314,6 +318,15 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 		{
 			objectNormal += n;
 			objectColor += hitColor;
+		}
+
+		// Non-refractive alpha transparency (raster-like "see-through"): any
+		// non-glass surface with alpha < 1 lets the ray (including light-
+		// sample rays) pass STRAIGHT through with probability (1 - alpha).
+		if (hitType != REFR && hitAlpha < 0.999 && rng() >= hitAlpha)
+		{
+			rayOrigin = x + (rayDirection * uEPS_intersect);
+			continue;
 		}
 
 		if (hitType == LIGHT)
