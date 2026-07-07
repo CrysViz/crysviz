@@ -1,13 +1,20 @@
 import { areAllAtomsCutPlaneImmune, setCutPlaneImmunityForAtoms } from './utils.js';
 
-export function createTinyImmunityToggle(atomIndices, title = 'Keep visible across cut planes') {
+/**
+ * The small round on/off toggle used in the tab category headers (visual core
+ * of the cut-plane immunity toggles; also reused with other state stores,
+ * e.g. the Bonds tab's per-pair cut immunity).
+ * @param {{title?: string, checked?: boolean, onChange?: ((on: boolean) => void)|null}} [options]
+ * @returns {{wrapper: HTMLElement, toggle: HTMLInputElement}}
+ */
+export function createTinyToggle({ title = '', checked = false, onChange = null } = {}) {
   const wrapper = document.createElement('label');
   wrapper.style.cssText = 'display:inline-flex; align-items:center; justify-content:center; cursor:pointer; width:10px; height:10px; flex:0 0 auto;';
   wrapper.title = title;
 
   const toggle = document.createElement('input');
   toggle.type = 'checkbox';
-  toggle.checked = areAllAtomsCutPlaneImmune(atomIndices);
+  toggle.checked = checked;
   toggle.style.cssText = `
     width:10px;
     height:10px;
@@ -35,10 +42,18 @@ export function createTinyImmunityToggle(atomIndices, title = 'Keep visible acro
   toggle.addEventListener('click', (e) => e.stopPropagation());
   toggle.addEventListener('change', (e) => {
     e.stopPropagation();
-    setCutPlaneImmunityForAtoms(atomIndices, toggle.checked);
+    onChange?.(toggle.checked);
     updateVisual();
   });
 
   wrapper.appendChild(toggle);
   return { wrapper, toggle };
+}
+
+export function createTinyImmunityToggle(atomIndices, title = 'Keep visible across cut planes') {
+  return createTinyToggle({
+    title,
+    checked: areAllAtomsCutPlaneImmune(atomIndices),
+    onChange: (on) => setCutPlaneImmunityForAtoms(atomIndices, on),
+  });
 }

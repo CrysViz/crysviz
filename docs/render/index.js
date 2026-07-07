@@ -7,17 +7,20 @@
 // This is a *curated* surface: only the symbols actually consumed by other
 // domains are re-exported. Add to it when a new cross-domain function is needed.
 
-export { pauseRendering, resumeRendering, animation_update } from './AnimateModule.js';
+export { pauseRendering, resumeRendering, animation_update, requestRender } from './AnimateModule.js';
 
 export {
   rebuildAtoms, updateAtoms, updateSingleAtomDiameter, updateSingleAtomColor,
   updateAtomCutPlaneState, getUUIDFromGeometry, updateSingleAtomOpacity,
   updateSingleAtomCutPlaneImmunity,
+  atomImageKey, getAtomImageStyle, setAtomImageStyle, clearAtomImageStyle,
+  clearAtomImageStylesForAtom, getAtomImageColor, updateSingleAtomImageColor,
 } from './AtomsFracUpdateModule.js';
 
 export {
   getBondCutoff, updateBonds, rebuildBonds, buildBondObjects,
   updateSingleBondDiameter, disposeBondsMesh, updateSingleBondColor,
+  updateSingleBondOpacity, bondKey, bondGroupKey,
 } from './BondsFracUpdateModule.js';
 
 export {
@@ -38,7 +41,10 @@ export {
   recomputeLatticeDirs, latticeDirsNorm, latticeDirs, getCellCenterAndDist,
 } from './LatticeModule.js';
 
-export { updatePolyhedra, updatePolyhedraColors } from './PolyhedraModule.js';
+export {
+  updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory,
+  resolvePolyhedronStyle, polyhedronGroupKey,
+} from './PolyhedraModule.js';
 
 export {
   updateField, setActiveField, toggleFieldVisibility, clearField, deleteField,
@@ -47,4 +53,8 @@ export {
 
 export { removeSpins, updateSpins, deleteSpins } from './SpinModule.js';
 
-export { updateAngleDisplays, setupAxisControls } from './cameraAngleControl.js';
+export { setupAxisControls } from './cameraAngleControl.js';
+
+export { setCelHullWidth, setCelHullPolyWidth } from './MaterialStyles.js';
+
+export { captureSceneToPng } from './ImageExportModule.js';

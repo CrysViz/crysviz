@@ -148,12 +148,6 @@ font-size: 12px;
   color: white;
   font-weight: 500;
 }
-.segmented-backend-control button.symmetry {
-  background: var(--accent-color);
-  color: white;
-  font-weight: 500;
-}
-
 .segmented-backend-control button.relax {
   background: var(--accent-color);
   color: white;

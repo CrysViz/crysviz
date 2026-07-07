@@ -5,12 +5,12 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
 import { getCutPlaneMaskSign } from '../model/Plane.js';
+import {createStyledMaterial, addCelOutline, MAX_CUT_PLANES} from './MaterialStyles.js'
+import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import {runPeriodicWrapped} from './LatticeModule.js'
 
 import {setAtomColor}  from '../utils/ColorModule.js';
 
-
-const MAX_CUT_PLANES = 8;
 
 // Module-scope scratch colour reused across the per-atom colour loop in updateAtoms
 // (three.js setColorAt copies the colour, so reuse is safe) — avoids allocating a
@@ -34,8 +34,7 @@ function getActiveCutPlanes() {
     .slice(0, MAX_CUT_PLANES);
 }
 
-function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
-  const shader = material?.userData?.shader;
+function applyCutPlaneUniformsToShader(shader) {
   if (!shader?.uniforms?.uCutPlanes || !shader.uniforms.uCutPlaneCount || !shader.uniforms.uCutPlaneMaskSide) return;
   const activePlanes = getActiveCutPlanes();
   shader.uniforms.uCutPlaneCount.value = activePlanes.length;
@@ -47,6 +46,15 @@ function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
   for (let index = activePlanes.length; index < MAX_CUT_PLANES; index++) {
     shader.uniforms.uCutPlanes.value[index].set(0, 0, 0, 0);
     shader.uniforms.uCutPlaneMaskSide.value[index] = 0;
+  }
+}
+
+function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
+  applyCutPlaneUniformsToShader(material?.userData?.shader);
+  // In hull outline mode the outline shell discards by the same planes.
+  if (!material || material === groups.atomsMesh?.material) {
+    const outline = groups.atomsMesh?.userData?.celOutline;
+    if (outline) applyCutPlaneUniformsToShader(outline.material?.userData?.shader);
   }
 }
 
@@ -111,6 +119,7 @@ export function rebuildAtoms(opacity) {
     groups.atomsMesh = null;
   }
   fileBrowser.selectedStructure.atomImages={}
+  fileBrowser.selectedStructure.atomImageKeys=[] // rebuilt by finishAtomsMesh
   console.log("Rebuilding periodic")
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
@@ -168,6 +177,18 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
     }
     structure.atomImages[key].push(index)
 
+    // Stable per-image identity for the per-copy style store: source index +
+    // integer periodic image offset (derived from the wrapped fractional coords;
+    // main atoms mesh only). See atomImageKey()/getAtomImageStyle() below.
+    if (meshKey === 'atomsMesh') {
+      const srcPos = atoms[key]?.position;
+      const frac = wrapped.frac?.[index];
+      const off = (srcPos && frac)
+        ? [0, 1, 2].map((a) => Math.round(frac[a] - srcPos[a])).join(',')
+        : '0,0,0';
+      (structure.atomImageKeys ??= [])[index] = `${key}:${off}`;
+    }
+
     const atom = atoms[wrapped.srcIndex[index]];
     const cleanedUUID = atom.uuid.replace(/-/g, '');
 
@@ -221,10 +242,23 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
   // Mark instanceColor as needing update
   mesh.instanceColor.needsUpdate = true;
 
+  // Participate in the screen-space cel outline pass (active only in cel
+  // style with 'screen' outline mode; the extra layer bit is free otherwise).
+  mesh.layers.enable(CEL_OUTLINE_LAYER);
+
   // Add to scene & store reference
   app.scene.add(mesh);
   groups[meshKey] = mesh;
   groups[meshKey].userData.elementNames = wrapped.elements;
+
+  if (general.renderStyle === 'cel' && general.celOutlineMode === 'hull') {
+    // The hull shader compiles lazily on first render; seed its cut-plane
+    // uniforms from the current plane state once it exists.
+    addCelOutline(mesh, {
+      cutPlanes,
+      onCompiled: cutPlanes ? () => applyAtomCutPlaneUniforms() : undefined,
+    });
+  }
   // Honour the "Show Atoms" toggle on (re)build — the toggle only flips visibility on the
   // live mesh, so a rebuild (e.g. Complete Polyhedra appending atoms) would otherwise
   // reset the main atoms to visible. Comparison atoms keep their own visibility logic.
@@ -247,13 +281,10 @@ export function buildAtoms() {
 
   // Material: visualization-mode dependent
   const atomVisSettings = getAtomVisSettings();
-  const material = new THREE.MeshPhysicalMaterial({
+  const material = createStyledMaterial({
+    ...atomVisSettings,
     transparent: false,
     opacity: 1.0,
-    roughness: atomVisSettings.roughness,
-    metalness: atomVisSettings.metalness,
-    clearcoat: atomVisSettings.clearcoat,
-    clearcoatRoughness: atomVisSettings.clearcoatRoughness,
   });
 
   material.onBeforeCompile = (shader) => {
@@ -354,12 +385,85 @@ export function updateSingleAtomPosition(index, position) {
  // console.log("Expected length:", 16 * groups.atomsMesh.count);
 }
 
+// ---------- PER-IMAGE (per periodic copy) STYLE OVERRIDES ----------
+// When "Link periodic copies" is off, the Atoms tab edits individual on-screen
+// copies. Styles live in structure.atomImageStyles keyed by atomImageKey()
+// (srcIndex + integer image offset — stable across rebuilds for a fixed
+// wrapped set) and ALWAYS win over the source atom's model values at
+// repaint-from-model time, regardless of the toggle. The stored element is a
+// stale-key sanity check (same policy as bondUserStyles).
+
+/** Stable per-image key of a mesh instance, or null. */
+export function atomImageKey(structure, instanceId) {
+  return structure?.atomImageKeys?.[instanceId] ?? null;
+}
+
+/** The per-image style entry for an instance, or null (stale keys ignored). */
+export function getAtomImageStyle(structure, instanceId) {
+  const key = atomImageKey(structure, instanceId);
+  const entry = key ? structure.atomImageStyles?.[key] : null;
+  if (!entry) return null;
+  return entry.element === structure.periodic?.wrapped?.elements?.[instanceId] ? entry : null;
+}
+
+/** Upsert per-image style fields for an instance; returns the entry (or null). */
+export function setAtomImageStyle(structure, instanceId, patch) {
+  const key = atomImageKey(structure, instanceId);
+  if (!key) return null;
+  structure.atomImageStyles ??= {};
+  const entry = structure.atomImageStyles[key]
+    ??= { element: structure.periodic?.wrapped?.elements?.[instanceId] };
+  Object.assign(entry, patch);
+  return entry;
+}
+
+/** Remove one style field (or the whole entry when field is null / emptied). */
+export function clearAtomImageStyle(structure, instanceId, field = null) {
+  const key = atomImageKey(structure, instanceId);
+  const entry = key ? structure.atomImageStyles?.[key] : null;
+  if (!entry) return;
+  if (field) {
+    delete entry[field];
+    if (entry.color == null && entry.alpha == null && entry.radiusScale == null) {
+      delete structure.atomImageStyles[key];
+    }
+  } else {
+    delete structure.atomImageStyles[key];
+  }
+}
+
+/** Clear a field (or everything) on every image of a source atom — used by
+ *  linked-row and element-level edits so the newest edit wins. */
+export function clearAtomImageStylesForAtom(structure, srcIndex, field = null) {
+  (structure.atomImages?.[srcIndex] ?? []).forEach((imageIndex) => {
+    clearAtomImageStyle(structure, imageIndex, field);
+  });
+}
+
+/** Resolved face color of one on-screen copy (override ?? source atom color). */
+export function getAtomImageColor(structure, instanceId) {
+  const override = getAtomImageStyle(structure, instanceId)?.color;
+  if (override != null) return override;
+  const srcIndex = structure.periodic?.wrapped?.srcIndex?.[instanceId] ?? instanceId;
+  return structure.atoms[srcIndex]?.getColor();
+}
+
+/** Paint one instance only — no source-atom model mutation. */
+export function updateSingleAtomImageColor(instanceId, hex) {
+  if (!groups.atomsMesh) return;
+  groups.atomsMesh.setColorAt(instanceId, new THREE.Color(hex));
+  groups.atomsMesh.instanceColor.needsUpdate = true;
+}
+
 export function updateSingleAtomColor(originalIndex, index, element, hex=null,userColor=null) {
   //console.log("Updating color of atom",index)
   let structure = fileBrowser.selectedStructure
   let atom = structure.atoms[originalIndex]
   if (hex == null){
     hex = structure.atoms[originalIndex].getColor(originalIndex)
+    // Repaint-from-model path: a per-image override wins over the source color.
+    const imageColor = getAtomImageStyle(structure, index)?.color;
+    if (imageColor != null) hex = imageColor;
   }
   else{
     if (userColor==null){
@@ -405,18 +509,25 @@ export function updateAtomCutPlaneState() {
 function syncAtomMaterialTransparency(baseOpacity = 1.0) {
   const mesh = groups.atomsMesh;
   if (!mesh?.material) return;
-  const hasTransparentInstances = fileBrowser.selectedStructure?.atoms?.some((atom) => (atom.getOpacity?.() ?? atom.opacity ?? 1) < 0.999) ?? false;
+  const structure = fileBrowser.selectedStructure;
+  const hasTransparentInstances = (structure?.atoms?.some((atom) => (atom.getOpacity?.() ?? atom.opacity ?? 1) < 0.999) ?? false)
+    || Object.values(structure?.atomImageStyles ?? {}).some((entry) => (entry?.alpha ?? 1) < 0.999);
   const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances;
   mesh.material.transparent = needsTransparency;
   mesh.material.depthWrite = !needsTransparency;
   mesh.material.needsUpdate = true;
 }
 
-export function updateSingleAtomDiameter(index, element) {
+export function updateSingleAtomDiameter(index, element, scale = 1) {
   const mesh = groups.atomsMesh;
   const a = mesh.instanceMatrix.array;
   const atomSize = general.atomSize;
-  const radius = (atomicRadii[element] || 1.0) * atomSize;
+  // Per-element visibility (Atoms tab header checkbox): hidden elements are
+  // zero-scaled — renders nothing AND produces no raycast hits (unlike the
+  // cut-plane shader discard). Checked here so no other diameter writer
+  // (global size slider, per-atom/per-element size edits) can un-hide them.
+  const hidden = general.atomVisibility?.[element] === false;
+  const radius = hidden ? 0 : (atomicRadii[element] || 1.0) * atomSize * scale;
   const mOffset = index * 16;
   a[mOffset + 0] = radius;
   a[mOffset + 5] = radius;
@@ -449,18 +560,23 @@ export function updateAtoms(opacity = 1.0) {
   const emissiveIntensityAttr = mesh.geometry.attributes.instanceEmissiveIntensity;
   const opacityAttr = mesh.geometry.attributes.instanceOpacity;
   const immuneAttr = mesh.geometry.attributes.instanceCutPlaneImmune;
+  const structure = fileBrowser.selectedStructure;
 
   for (let i = 0; i < wrappedCart.length; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     const atom = atoms[originalIndex];
+    const imageStyle = getAtomImageStyle(structure, i);
     updateSingleAtomPosition(i, wrappedCart[i]);
-    // Colour: reuse one scratch THREE.Color instead of allocating per atom.
-    _scratchColor.set(atom.getColor(originalIndex));
+
+    // Per-image overrides win over the source atom model; reuse one THREE.Color
+    // instead of allocating per atom.
+    _scratchColor.set(imageStyle?.color ?? atom.getColor(originalIndex));
     mesh.setColorAt(i, _scratchColor);
-    updateSingleAtomDiameter(i, wrapped.elements[i]);
+    updateSingleAtomDiameter(i, wrapped.elements[i], imageStyle?.radiusScale ?? atom.getRadiusScale?.() ?? 1);
+
     // Opacity + cut-plane immunity written inline (the per-atom helpers each flag
     // needsUpdate / re-sync transparency; done once after the loop instead).
-    const op = atom.getOpacity?.() ?? atom.opacity ?? 1;
+    const op = imageStyle?.alpha ?? atom.getOpacity?.() ?? atom.opacity ?? 1;
     opacityAttr.setX(i, Math.max(0, Math.min(1, Number(op) || 0)));
     immuneAttr.setX(i, atom.cutPlaneImmune ? 1 : 0);
 

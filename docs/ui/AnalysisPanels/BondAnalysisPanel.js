@@ -1,3 +1,5 @@
+import { registerPanel, removePanel } from '../panels/PanelManager.js';
+
 // Module-level ref — set when panel is open, null when closed
 let activeUpdate = null;
 
@@ -22,9 +24,6 @@ const AUTO_COLORS = ["#00202e",
 
 // ==================== Dark Histogram Panel Module ====================
 
-let histogramPanelElements = {};
-
-
 function computeHistogram(data, binCount = 10, minVal = null, maxVal = null) {
   if (!data || data.length === 0) return null;
   const minX = minVal !== null ? minVal : Math.min(...data);
@@ -42,70 +41,67 @@ function computeHistogram(data, binCount = 10, minVal = null, maxVal = null) {
 
 export function removeHistogramPanel() {
   activeUpdate = null;
-  const panel = document.getElementById("histogramPanel");
-  if (panel) panel.remove();
-  if (histogramPanelElements.histogramPanel)
-    histogramPanelElements.histogramPanel.remove();
+  removePanel('histogram');
 }
 
 
 export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabel="Bond length in Å", yAxisLabel="Count") {
-  if (histogramPanelElements.histogramPanel)
-    histogramPanelElements.histogramPanel.remove();
+  removeHistogramPanel();
 
   let datasets = initialDatasets;
   let labels = (!initialLabels || initialLabels.length !== initialDatasets.length)
     ? initialDatasets.map((_, i) => "Dataset " + (i + 1))
     : initialLabels;
 
-  const panel = document.createElement("div");
-  panel.id = "HistogramPanel";
-  panel.style.position = "absolute";
-  panel.style.left = "20px";
-  panel.style.top = "20px";
-  panel.style.background = "#222";
-  panel.style.border = "1px solid #555";
-  panel.style.boxShadow = "0px 0px 8px rgba(0,0,0,0.6)";
-  panel.style.borderRadius = "6px";
-  panel.style.zIndex = "9999";
-  panel.style.userSelect = "none";
-  panel.style.color = "#eee";
+  // Responsive canvas: shrink on small screens
+  const isMobile = window.innerWidth < 700;
 
-  panel.innerHTML = `
-    <div id="histHeader" style="padding:6px 10px; background:#333; cursor:move; font-weight:bold; border-bottom:1px solid #555; color:#fff;">
-      Histogram 
-      <span id="histCloseBtn" style="float:right; cursor:pointer; margin-left:20px;">✖</span>
-    </div>
-    <div id="histBody" style="padding:10px; display:block;">
-      <canvas id="histCanvas" width="600" height="300" style="border:1px solid #444; border-radius:4px; background:#111;padding-bottom: 10px;} "></canvas>
-      <div id="histTooltip" style="position:absolute; pointer-events:none; padding:4px 6px; background:#000; color:#fff; border-radius:4px; font-size:12px; display:none; z-index:10000;"></div>
-      <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-top:8px;">
-        <div id="histLegend" style="font-size:12px; color:#ddd; display:flex; flex-wrap:wrap; gap:8px; max-width:300px;"></div>
-        <div style="color:#ddd; font-size:12px; display:flex; flex-direction:column; gap:4px;">
+  const histPanel = registerPanel({
+    id: 'histogram',
+    title: 'Histogram',
+    lifecycle: 'persistent',
+    closable: true,
+    onClose() { activeUpdate = null; },
+    buildContent(body) {
+      body.innerHTML = `
+        <div id="histBody" style="padding:4px; display:block;">
+          <canvas id="histCanvas" width="600" height="300" style="border:1px solid #444; border-radius:4px; background:#111;padding-bottom: 10px;} "></canvas>
+          <div id="histTooltip" style="position:absolute; pointer-events:none; padding:4px 6px; background:#000; color:#fff; border-radius:4px; font-size:12px; display:none; z-index:10000;"></div>
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-top:8px;">
+            <div id="histLegend" style="font-size:12px; color:#ddd; display:flex; flex-wrap:wrap; gap:8px; max-width:300px;"></div>
+            <div style="color:#ddd; font-size:12px; display:flex; flex-direction:column; gap:4px;">
 
-          <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
-            <label for="binSlider" style="width:70px; text-align:right;">Bins:</label>
-            <input type="range" id="binSlider" min="2" max="30" value="5" style="flex:1;">
-            <span id="binCountLabel" style="min-width:30px; text-align:right;">30</span>
+              <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+                <label for="binSlider" style="width:70px; text-align:right;">Bins:</label>
+                <input type="range" id="binSlider" min="2" max="30" value="5" style="flex:1;">
+                <span id="binCountLabel" style="min-width:30px; text-align:right;">30</span>
+              </div>
+
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label for="maxSlider" style="width:70px; text-align:right;">Max Dist:</label>
+                <input type="range" id="maxSlider" min="2" max="8" value="6" style="flex:1;">
+                <span id="maxValLabel" style="min-width:30px; text-align:right;">6</span>
+              </div>
+
+            </div>
           </div>
-
-          <div style="display:flex; align-items:center; gap:6px;">
-            <label for="maxSlider" style="width:70px; text-align:right;">Max Dist:</label>
-            <input type="range" id="maxSlider" min="2" max="8" value="6" style="flex:1;">
-            <span id="maxValLabel" style="min-width:30px; text-align:right;">6</span>
-          </div>
-
         </div>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(panel);
+      `;
+    },
+    defaults: {
+      docked: false,
+      collapsed: false,
+      // Show the full title bar (floating windows default to the shrunk
+      // strip, which hides the title and the ✕ close button — a transient
+      // analysis window must look closable, like the MD monitor).
+      barCollapsed: false,
+      anchor: isMobile ? { left: 4, top: 10 } : { left: 20, top: 20 },
+    },
+  });
 
-  const header = panel.querySelector("#histHeader");
+  const panel = histPanel.body;
   const canvas = panel.querySelector("#histCanvas");
   const legendBox = panel.querySelector("#histLegend");
-  const foldToggle = panel.querySelector("#histFoldToggle");
-  const closeBtn = panel.querySelector("#histCloseBtn");
   const tooltip = panel.querySelector("#histTooltip");
   const binSlider = panel.querySelector("#binSlider");
   const binCountLabel = panel.querySelector("#binCountLabel");
@@ -113,21 +109,12 @@ export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabe
   const maxValLabel = panel.querySelector("#maxValLabel");
   const ctx = canvas.getContext("2d");
 
-  histogramPanelElements = { histogramPanel: panel };
-
-  // Responsive canvas: shrink on small screens
-  const isMobile = window.innerWidth < 700;
   const canvasW = Math.min(600, window.innerWidth - (isMobile ? 20 : 40));
   const canvasH = Math.round(canvasW * 0.5);
   canvas.width = canvasW;
   canvas.height = canvasH;
   canvas.style.width = canvasW + "px";
   canvas.style.height = canvasH + "px";
-  if (isMobile) {
-    panel.style.left = "4px";
-    panel.style.top = "10px";
-    panel.style.maxWidth = (window.innerWidth - 8) + "px";
-  }
 
   // High-DPI scaling
   const dpr = window.devicePixelRatio || 1;
@@ -304,11 +291,6 @@ canvas.addEventListener("mousemove", e => {
   if (!found) tooltip.style.display = "none";
 });
 
-closeBtn.addEventListener("click", () => {
-  activeUpdate = null;
-  removeHistogramPanel();
-});
-
 // Click selection
 canvas.addEventListener("click", e => {
   const rect = canvas.getBoundingClientRect();
@@ -320,13 +302,6 @@ canvas.addEventListener("click", e => {
 
 
   canvas.addEventListener("mouseleave", ()=>tooltip.style.display="none");
-
-
-  let dragging=false, offsetX=0, offsetY=0;
-  header.addEventListener("mousedown", e => { if(e.target!==foldToggle){dragging=true; offsetX=e.clientX-panel.offsetLeft; offsetY=e.clientY-panel.offsetTop;}});
-  document.addEventListener("mousemove", e => { if(dragging){panel.style.left=(e.clientX-offsetX)+"px"; panel.style.top=(e.clientY-offsetY)+"px";}});
-  document.addEventListener("mouseup", ()=>dragging=false);
-
 }
 
 

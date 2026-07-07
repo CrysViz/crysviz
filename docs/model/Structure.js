@@ -74,6 +74,33 @@ export class Structure {
     this.bondMapping={};
     this.bondObjectMapping={};
     this.bonds = bonds;           // list of bonds
+    // Per-bond user style overrides, keyed by bondKey(bond.indices)
+    // ("min_max" of the wrapped-index pair) -> { color?, alpha?, radiusScale?,
+    // elements }. Unlike the maps above this intentionally SURVIVES bond
+    // rebuilds so user-picked bond styles persist across length-slider changes
+    // and re-renders. Keys go stale if the wrapped set changes (supercell/PBC/
+    // atom edits); the stored elements pair guards against misapplication and
+    // stale entries are simply ignored.
+    this.bondUserStyles = {};
+    // bondCategoryStyles["El1-El2"] -> { color?, alpha?, radiusScale? }.
+    // Category-level styling from the Bonds tab header dot; per-copy
+    // bondUserStyles win over these. Survives bond rebuilds like bondUserStyles.
+    this.bondCategoryStyles = {};
+    // Per-polyhedron / per-polyhedron-category user style overrides, keyed by
+    // the stable keys computed in render/PolyhedraModule.js (assignPolyhedraKeys):
+    // polyhedraUserStyles[polyKey] -> { color?, alpha?, edgeColor?, edgeAlpha? } and
+    // polyhedraCategoryStyles[catKey] -> { color?, alpha?, edgeColor?, edgeAlpha?, visible? }.
+    // Like bondUserStyles these intentionally SURVIVE the (frequent, async)
+    // polyhedra rebuilds; keys go stale if atoms/lattice change and stale
+    // entries are simply ignored.
+    this.polyhedraUserStyles = {};
+    this.polyhedraCategoryStyles = {};
+    // Per-periodic-copy atom style overrides, keyed by atomImageKey()
+    // ("srcIndex:dx,dy,dz", computed in render/AtomsFracUpdateModule.js
+    // finishAtomsMesh) -> { element, color?, alpha?, radiusScale? }. Used by the
+    // Atoms tab when "Link periodic copies" is off. SURVIVES atom rebuilds;
+    // stale keys (changed wrapped set) are ignored via the element check.
+    this.atomImageStyles = {};
     this.periodic = periodic;     // Initialize periodic
     this.atomImages = {};
     this.planes = planes;

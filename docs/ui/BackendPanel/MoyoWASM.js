@@ -66,8 +66,11 @@ async function initMoyo() {
   const _wasmReady = await init(); // no-arg: moyo_wasm.js resolves the .wasm via import.meta.url
 }
 
-export async function addMoyoPanel() {
-    const panel = document.getElementById("BackendCalcPanel");
+// Builds the Moyo symmetry tools into the given container (the unified
+// "Symmetry" panel window's body).
+export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
+    const panel = document.getElementById(target);
+    if (!panel) return;
 
     await initMoyo(); // call once on page load
 
@@ -77,16 +80,15 @@ export async function addMoyoPanel() {
     panel.innerHTML = `
     <div id="panel">
 <div style="margin-bottom: 1em; text-align: center;">
-  <h2 style="margin: 0;">Analyse Symmetry with Moyo</h2>
-  <p style="margin: 0;">(Data stays on your device!)</p>
+  <p style="margin: 0; font-size: 12px;">Analyse symmetry with Moyo</p>
 </div>
   <div style="margin-bottom: 1em;">
-    <p>Get symmetry information:</p>
+    <p style="font-size: 12px;">Get symmetry information:</p>
     <button class="calcButton" id="getSymBtn">Get Symmetry Info</button>
   </div>
 
   <div style="margin-bottom: 1em;">
-    <p>Symmetrize cell:</p>
+    <p style="font-size: 12px;">Symmetrize cell:</p>
     <div style="display: flex; gap: 0.5em;">
       <button class="calcButton" id="getPrimBtn">Prim. Cell</button>
       <button class="calcButton" id="getConvBtn">Conv. Cell</button>
@@ -94,7 +96,7 @@ export async function addMoyoPanel() {
   </div>
 
   <div style="margin-bottom: 1em;">
-    <p>Operate on Wyckoff positions:</p>
+    <p style="font-size: 12px;">Operate on Wyckoff positions:</p>
     <button class="calcButton" id="getWyckoffBtn">Enable Wyckoff Editor</button>
   </div>
 

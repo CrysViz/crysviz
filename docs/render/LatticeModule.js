@@ -39,7 +39,17 @@ export function periodicWrapped(general, frac, elements, lattice) {
 
 export function createLatticeLines(color = general.currentLatticeColor) {
   const group = new THREE.Group();
-  const material = new THREE.LineBasicMaterial(getLatticeVisSettings(color));
+  // The outline is drawn as thin cylinders instead of THREE.Line: WebGL
+  // ignores LineBasicMaterial.linewidth, while the cylinder radius gives the
+  // user-adjustable cell line width (general.latticeLineWidth, world units).
+  const settings = getLatticeVisSettings(color);
+  const radius = general.latticeLineWidth ?? 0.015;
+  const material = new THREE.MeshBasicMaterial({
+    color: settings.color,
+    transparent: settings.transparent,
+    opacity: settings.opacity,
+  });
+  const UP = new THREE.Vector3(0, 1, 0);
 
   const lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
 
@@ -61,11 +71,13 @@ export function createLatticeLines(color = general.currentLatticeColor) {
   ];
 
   edges.forEach(edge => {
-    const geometry = new THREE.BufferGeometry().setFromPoints([
-      vertices[edge[0]], vertices[edge[1]]
-    ]);
-    const line = new THREE.Line(geometry, material);
-    group.add(line);
+    const start = vertices[edge[0]];
+    const dir = new THREE.Vector3().subVectors(vertices[edge[1]], start);
+    const length = dir.length();
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 8), material);
+    cyl.position.copy(start).addScaledVector(dir, 0.5);
+    cyl.quaternion.setFromUnitVectors(UP, dir.normalize());
+    group.add(cyl);
   });
 
   return group;

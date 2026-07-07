@@ -22,7 +22,6 @@ interface Element {
 // listed as globals in eslint.config.js). Declared here so tsc resolves them.
 declare var view: any;
 declare var errorPanel: any;
-declare var ControlPanelAnalysisSwitch: any;
 
 // Remote ESM imported directly by URL (resolved by the browser, not tsc).
 declare module "https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.esm.min.js";

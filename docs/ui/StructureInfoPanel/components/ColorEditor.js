@@ -1,7 +1,8 @@
 import { fileBrowser, groups, general, structureShip } from '../../../state/store.js';
 import { colorHexToCss, getAtomColor } from '../../../utils/ColorModule.js';
-import { clampOpacity } from './utils.js';
-import { updateSingleAtomColor, updateSingleAtomOpacity } from '../../../render/AtomsFracUpdateModule.js';
+import { clampOpacity, clampRadiusScale } from './utils.js';
+import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom } from '../../../render/AtomsFracUpdateModule.js';
+import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
 import { updatePolyhedraColors } from '../../../render/index.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
@@ -22,6 +23,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
   // Get the current colors of all atoms for this element
   const currentAtomColors = atomIndices.map(index => safeColor(getAtomColor(index)));
   const currentOpacity = fileBrowser.selectedStructure.atoms[atomIndices[0]]?.getOpacity?.() ?? 1;
+  const currentRadiusScale = fileBrowser.selectedStructure.atoms[atomIndices[0]]?.getRadiusScale?.() ?? 1;
 
   const editor = document.createElement('div');
   editor.className = 'element-color-editor';
@@ -34,6 +36,8 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     atomIndices.forEach(atomIndex => {
       const atom = structure.atoms[atomIndex];
       atom.elementColor = parsedHex;
+      // Newest edit wins: an element recolor overrides earlier per-copy colors.
+      clearAtomImageStylesForAtom(structure, atomIndex, 'color');
       structure.atomImages[atomIndex]?.forEach(imageIndex => {
         if (general.bondsColor == "elements") {
           if (structure.bondMapping[imageIndex]) {
@@ -102,8 +106,33 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
   alphaRow.appendChild(alphaSlider);
   alphaRow.appendChild(alphaValue);
 
+  // Size (per-species radius multiplier), same row layout as Alpha.
+  const sizeRow = document.createElement('div');
+  sizeRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:8px;';
+  const sizeLabel = document.createElement('span');
+  sizeLabel.textContent = 'Size';
+  sizeLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+  const sizeSlider = document.createElement('input');
+  sizeSlider.type = 'range';
+  sizeSlider.min = '0.2';
+  sizeSlider.max = '3';
+  sizeSlider.step = '0.05';
+  sizeSlider.value = String(currentRadiusScale);
+  sizeSlider.style.cssText = 'flex:1;';
+  const sizeValue = document.createElement('input');
+  sizeValue.type = 'number';
+  sizeValue.min = '0.2';
+  sizeValue.max = '3';
+  sizeValue.step = '0.05';
+  sizeValue.value = currentRadiusScale.toFixed(2);
+  sizeValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+  sizeRow.appendChild(sizeLabel);
+  sizeRow.appendChild(sizeSlider);
+  sizeRow.appendChild(sizeValue);
+
   editor.appendChild(topRow);
   editor.appendChild(alphaRow);
+  editor.appendChild(sizeRow);
   editor.appendChild(buttonRow);
 
   function textColorForBg(cssHex) {
@@ -129,6 +158,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     atomIndices.forEach((atomIndex) => {
       fileBrowser.selectedStructure.atoms[atomIndex].setElementOpacity(value);
       fileBrowser.selectedStructure.atoms[atomIndex].setOpacity(value);
+      clearAtomImageStylesForAtom(fileBrowser.selectedStructure, atomIndex, 'alpha');
       fileBrowser.selectedStructure.atomImages[atomIndex]?.forEach((imageIndex) => {
         updateSingleAtomOpacity(imageIndex, value);
       });
@@ -137,6 +167,25 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
 
   alphaSlider.oninput = (e) => applyElementOpacity(/** @type {any} */ (e.target).value);
   alphaValue.oninput = (e) => applyElementOpacity(/** @type {any} */ (e.target).value);
+
+  function applyElementRadiusScale(rawValue) {
+    const value = clampRadiusScale(rawValue);
+    sizeSlider.value = String(value);
+    sizeValue.value = value.toFixed(2);
+    const structure = fileBrowser.selectedStructure;
+    atomIndices.forEach((atomIndex) => {
+      structure.atoms[atomIndex].setRadiusScale(value);
+      clearAtomImageStylesForAtom(structure, atomIndex, 'radiusScale');
+      structure.atomImages[atomIndex]?.forEach((imageIndex) => {
+        updateSingleAtomDiameter(imageIndex, el, value);
+      });
+    });
+    groups.atomsMesh.instanceMatrix.needsUpdate = true;
+    updateMeasurementMarkers();
+  }
+
+  sizeSlider.oninput = (e) => applyElementRadiusScale(/** @type {any} */ (e.target).value);
+  sizeValue.oninput = (e) => applyElementRadiusScale(/** @type {any} */ (e.target).value);
 
 
   resetBtn.onclick = () => {
@@ -147,9 +196,10 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     const atom = structure.atoms[atomIndex];
     const element = structure.elements[atomIndex];
 
-    // clear user-color flag only for these atoms
+    // clear user-color flag only for these atoms (incl. per-copy overrides)
     if (atom.userColor !== undefined) delete atom.userColor;
     if (atom.forceColor !== undefined) delete atom.forceColor;
+    clearAtomImageStylesForAtom(structure, atomIndex);
 
     // set color based on current mode
     if (currentMode === "force") {
@@ -188,6 +238,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
 
   updatePieDotCallback();
   applyElementOpacity(1);
+  applyElementRadiusScale(1);
   updateVisualization({
     bondsUpdate: false,
     reRenderAtoms: false,

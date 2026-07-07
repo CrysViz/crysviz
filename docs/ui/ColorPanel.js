@@ -1,11 +1,12 @@
 import { createColorPicker } from './ColorPickerModule.js';
 import {updateVisualization} from '../core/crystal-viewer.js';  
 import { groups,fileBrowser, general} from '../state/store.js';
-import {getAtomVisSettings,getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
+import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
+import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
 
 
 
@@ -179,30 +180,6 @@ function createDropdown(id, labelText, options, onChange) {
   return block;
 }
 
-// --- Toggle Logic ---
-function setupToggle(toggle, content) {
-  let isOpen = false;
-  const icon = toggle.querySelector(".toggle-icon");
-
-  function setOpen(open) {
-    isOpen = open;
-    content.classList.toggle("open", open);
-    content.setAttribute("aria-hidden", !open);
-    icon.textContent = open ? "−" : "+";
-    toggle.setAttribute("aria-expanded", open);
-  }
-
-  toggle.addEventListener("click", () => setOpen(!isOpen));
-  toggle.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      setOpen(!isOpen);
-    }
-  });
-
-  setOpen(false);
-}
-
 // --- Color Mapping Functions ---
 function updateBondColorsByLength() {
   const bonds = fileBrowser.selectedStructure.bonds;
@@ -339,76 +316,115 @@ export function addColorPanel(target = "colorContainer") {
   const targetPanel = document.getElementById(target);
   if (!targetPanel || document.getElementById("colorControlsGroup")) return;
 
+  // Collapse/expand is handled by the unified panel window (ui/panels/)
+  // hosting this content, so no header/toggle is built here.
   const group = createElement("div", { id: "colorControlsGroup" });
   const panel = createElement("div", { id: "colorSettingsPanel" });
 
-  // --- Toggle ---
-  const toggle = createElement("div", {
-    id: "colorSettingsToggle",
-    class: "spin-toggle",
-    role: "button",
-    tabindex: "0",
-    "aria-expanded": "false",
-    "aria-controls": "colorControlsContent"
-  });
-
-  toggle.appendChild(createElement("h4", {}, { margin: "0" }, "Color Map Settings"));
-  toggle.appendChild(createElement("div", { class: "toggle-icon" }, {}, "+"));
-
   const content = createElement("div", {
-    id: "colorControlsContent",
-    class: "collapsible-content",
-    "aria-hidden": "true"
+    id: "colorControlsContent"
   });
 
-  // Matte/Metallic Toggle
-  const matteToggle = document.createElement("label");
-  matteToggle.className = "camera_toggle";
-
-  const metallicLabel = document.createElement("span");
-  metallicLabel.className = "camera_label";
-  metallicLabel.textContent = "Metallic";
-
-  const matteSwitch = document.createElement("span");
-  matteSwitch.className = "toggle_switch";
-
-  const matteCheckbox = document.createElement("input");
-  matteCheckbox.type = "checkbox";
-  matteCheckbox.id = "matteColors";
-
-  const matteSlider = document.createElement("span");
-  matteSlider.className = "toggle_slider_dual";
-
-  matteSwitch.appendChild(matteCheckbox);
-  matteSwitch.appendChild(matteSlider);
-
-  const matteLabel = document.createElement("span");
-  matteLabel.className = "camera_label_r";
-  matteLabel.textContent = "Matte";
-
-  matteToggle.appendChild(metallicLabel);
-  matteToggle.appendChild(matteSwitch);
-  matteToggle.appendChild(matteLabel);
-
-  content.appendChild(matteToggle);
-
-  matteCheckbox.addEventListener("change", () => {
-    general.matte = !general.matte;
-    let atomVisSettings = getAtomVisSettings();
-    groups.atomsMesh.material.clearcoatRoughness = atomVisSettings.clearcoatRoughness;
-    groups.atomsMesh.material.clearcoat = atomVisSettings.clearcoat;
-    groups.atomsMesh.material.metalness = atomVisSettings.metalness;
-    groups.atomsMesh.material.roughness = atomVisSettings.roughness;
-    groups.atomsMesh.material.needsUpdate = true;
-
-    let bondsVisSettings = getBondVisSettings();
-    groups.bondsMesh.material.clearcoatRoughness = bondsVisSettings.clearcoatRoughness;
-    groups.bondsMesh.material.clearcoat = bondsVisSettings.clearcoat;
-    groups.bondsMesh.material.metalness = bondsVisSettings.metalness;
-    groups.bondsMesh.material.roughness = bondsVisSettings.roughness;
-    groups.bondsMesh.material.needsUpdate = true;
-    updateBonds();
+  // Render style (material) dropdown. Switching style rebuilds the meshes:
+  // cel shading uses a different material class (MeshToonMaterial), so the
+  // materials cannot just be re-parameterized in place.
+  const renderStyleMenu = createDropdown("renderStyleMenu", "Render Style", [
+    { value: "metallic", text: "Metallic", selected: general.renderStyle === "metallic" },
+    { value: "matte", text: "Matte", selected: general.renderStyle === "matte" },
+    { value: "cel", text: "Cel shading", selected: general.renderStyle === "cel" },
+  ], () => {
+    general.renderStyle = renderStyleMenu.querySelector("select").value;
+    outlineBlock.style.display = general.renderStyle === "cel" ? "block" : "none";
+    const hasComparison = !!fileBrowser.comparisonStructure;
+    updateVisualization({
+      reRenderAtoms: true,
+      reRenderBonds: true,
+      SecondReRenderAtoms: hasComparison,
+      SecondReRenderBonds: hasComparison,
+    });
+    // Hull outlines are children created at polyhedra build time — rebuild so
+    // they appear/disappear with the style (no-op when polyhedra are off).
+    if (general.celOutlineMode === "hull") updatePolyhedra();
   });
+
+  content.appendChild(renderStyleMenu);
+
+  // Cel outline controls: mode selector plus mode-specific width sliders.
+  // Both widths are world units. 'Screen space' = post-process with clean
+  // shared contours, thickness converted from world units per fragment so it
+  // tracks zoom (general.celOutlineWidth, read live each frame). '3D hull' =
+  // the classic inverted-hull geometry (general.celHullWidth /
+  // celHullPolyWidth, live uniform updates; switching MODE rebuilds the
+  // meshes since hulls are created at build time).
+  const outlineBlock = createElement("div", { class: "menu_block" },
+    { display: general.renderStyle === "cel" ? "block" : "none" });
+
+  const sliderStyle = { width: "100%", maxWidth: "120px", margin: "0 auto", display: "block" };
+  const sliderLabelStyle = { display: "block", textAlign: "center", marginBottom: "5px", width: "100%" };
+
+  const outlineModeMenu = createDropdown("celOutlineModeMenu", "Outline Mode", [
+    { value: "screen", text: "Screen space", selected: general.celOutlineMode === "screen" },
+    { value: "hull", text: "3D hull", selected: general.celOutlineMode === "hull" },
+  ], () => {
+    general.celOutlineMode = outlineModeMenu.querySelector("select").value;
+    const isHull = general.celOutlineMode === "hull";
+    screenControls.style.display = isHull ? "none" : "block";
+    hullControls.style.display = isHull ? "block" : "none";
+    const hasComparison = !!fileBrowser.comparisonStructure;
+    updateVisualization({
+      reRenderAtoms: true,
+      reRenderBonds: true,
+      SecondReRenderAtoms: hasComparison,
+      SecondReRenderBonds: hasComparison,
+    });
+    updatePolyhedra(); // add/remove polyhedra hull children
+  });
+  outlineBlock.appendChild(outlineModeMenu);
+
+  const screenControls = createElement("div", {},
+    { display: general.celOutlineMode === "screen" ? "block" : "none" });
+  const outlineLabel = createElement("label", { for: "celOutlineWidth" }, sliderLabelStyle, "Outline");
+  // Quadratic slider response: most of the travel controls thin widths, where
+  // the differences matter; the top end caps at a moderate max thickness.
+  const CEL_OUTLINE_MAX = 0.1; // world units at slider max
+  const outlineSlider = createElement("input", {
+    type: "range", id: "celOutlineWidth", min: "0", max: "1", step: "0.01",
+    value: String(Math.sqrt(Math.min(general.celOutlineWidth, CEL_OUTLINE_MAX) / CEL_OUTLINE_MAX)),
+  }, sliderStyle);
+  outlineSlider.addEventListener("input", () => {
+    const v = parseFloat(outlineSlider.value);
+    general.celOutlineWidth = CEL_OUTLINE_MAX * v * v;
+  });
+  screenControls.appendChild(outlineLabel);
+  screenControls.appendChild(outlineSlider);
+  outlineBlock.appendChild(screenControls);
+
+  const hullControls = createElement("div", {},
+    { display: general.celOutlineMode === "hull" ? "block" : "none" });
+  const hullLabel = createElement("label", { for: "celHullWidth" }, sliderLabelStyle, "Outline");
+  const hullSlider = createElement("input", {
+    type: "range", id: "celHullWidth", min: "0", max: "0.2", step: "0.005",
+    value: String(general.celHullWidth),
+  }, sliderStyle);
+  hullSlider.addEventListener("input", () => {
+    setCelHullWidth(parseFloat(hullSlider.value));
+  });
+  const hullPolyLabel = createElement("label", { for: "celHullPolyWidth" },
+    { ...sliderLabelStyle, margin: "8px 0 5px" }, "Polyhedra Outline");
+  const hullPolySlider = createElement("input", {
+    type: "range", id: "celHullPolyWidth", min: "0", max: "0.2", step: "0.005",
+    value: String(general.celHullPolyWidth),
+  }, sliderStyle);
+  hullPolySlider.addEventListener("input", () => {
+    setCelHullPolyWidth(parseFloat(hullPolySlider.value));
+  });
+  hullControls.appendChild(hullLabel);
+  hullControls.appendChild(hullSlider);
+  hullControls.appendChild(hullPolyLabel);
+  hullControls.appendChild(hullPolySlider);
+  outlineBlock.appendChild(hullControls);
+
+  content.appendChild(outlineBlock);
 
   const menusWrapper = createElement("div", { class: "menus_wrapper" });
 
@@ -731,10 +747,7 @@ export function addColorPanel(target = "colorContainer") {
   menusWrapper.appendChild(bondsMenuBlock);
 
   content.appendChild(menusWrapper);
-  panel.appendChild(toggle);
   panel.appendChild(content);
   group.appendChild(panel);
   targetPanel.appendChild(group);
-
-  setupToggle(toggle, content);
 }

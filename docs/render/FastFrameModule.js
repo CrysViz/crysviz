@@ -4,6 +4,7 @@ import { groups, general } from '../state/store.js';
 import { periodicWrapped, updateLattice } from './LatticeModule.js';
 import { updateForces } from './ForceModule.js';
 import { getActiveCutPlanes, isBondCutByPlanes, hideSingleBond } from './BondsFracUpdateModule.js';
+import { requestRender } from './AnimateModule.js';
 
 // ── Render fast path for MD / relax frames ────────────────────────────────────
 //
@@ -156,9 +157,10 @@ export function applyFrameFast(structure) {
   }
 
   // ---- Forces overlay: only when the toggle is on ----
-  if (general.spinForceState === 'Forces') {
+  if (general.forcesActive) {
     updateForces();
   }
 
+  requestRender();
   return true;
 }

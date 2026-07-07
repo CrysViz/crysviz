@@ -96,12 +96,10 @@ export function initializeUIOnLoad(structureContainer) {
 
 export function setupStructureInput({ onLoadStructure, setStatus }) {
   const fileInput = document.getElementById('fileInput');
-  const fileLabel = document.getElementById('fileLabel');
-  const inputModeButtons = Array.from(document.querySelectorAll('.input-mode-btn'));
-  const fileInputContainer = document.getElementById('fileInputContainer');
-  const textInputContainer = document.getElementById('textInputContainer');
-  const structureText = document.getElementById('structureText');
-  const loadTextButton = document.getElementById('loadTextButton');
+  const uploadButton = document.getElementById('uploadButton');
+  const pasteTextButton = document.getElementById('pasteTextButton');
+  const downloadButton = document.getElementById('downloadButton');
+  const downloadMenu = document.getElementById('downloadMenu');
 
   if (typeof onLoadStructure !== 'function') {
     throw new Error('setupStructureInput requires an onLoadStructure callback');
@@ -110,62 +108,104 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
     throw new Error('setupStructureInput requires a setStatus callback');
   }
 
-  let currentInputMode = 'file';
+  // ---- shared file loader (file dialog + drag&drop) ----
 
-  function setInputMode(mode) {
-    if (!fileInputContainer || !textInputContainer) return;
-    currentInputMode = mode === 'text' ? 'text' : 'file';
-    const showText = currentInputMode === 'text';
+  async function loadFiles(files) {
+    if (!files || files.length === 0) return;
+    setStatus(`Loading ${files.length} structure(s)...`);
+    let loadedCount = 0;
 
-    inputModeButtons.forEach(btn => {
-      const isActive = btn.dataset.mode === currentInputMode;
-      btn.classList.toggle('active', isActive);
-      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-      const controls = btn.getAttribute('aria-controls');
-      if (controls) {
-        const panel = document.getElementById(controls);
-        if (panel) panel.setAttribute('tabindex', isActive ? '0' : '-1');
+    try {
+      for (const file of files) {
+        setStatus(`Loading ${file.name} (${++loadedCount}/${files.length})...`);
+        const reader = new FileReader();
+        await new Promise((resolve, reject) => {
+          reader.onload = (event) => {
+            try {
+              onLoadStructure(event.target.result, file.name);
+              resolve();
+            } catch (err) {
+              reject(err);
+            }
+          };
+          reader.onerror = (error) => reject(error);
+          // ASE .traj files are binary ULM; read them as an ArrayBuffer so the
+          // raw float64 data survives. Everything else is text.
+          if (file.name.toLowerCase().endsWith('.traj')) {
+            reader.readAsArrayBuffer(file);
+          } else {
+            reader.readAsText(file);
+          }
+        });
       }
-    });
-
-    if (showText) {
-      fileInputContainer.setAttribute('hidden', '');
-      fileInputContainer.setAttribute('aria-hidden', 'true');
-      textInputContainer.removeAttribute('hidden');
-      textInputContainer.setAttribute('aria-hidden', 'false');
-      if (structureText && typeof structureText.focus === 'function') {
-        setTimeout(() => structureText.focus({ preventScroll: true }), 0);
-      }
-    } else {
-      textInputContainer.setAttribute('hidden', '');
-      textInputContainer.setAttribute('aria-hidden', 'true');
-      fileInputContainer.removeAttribute('hidden');
-      fileInputContainer.setAttribute('aria-hidden', 'false');
+      setStatus(`${files.length} structure(s) loaded!`);
+    } catch (error) {
+      console.error('Error loading structures:', error);
+      setStatus('Error loading structures.');
     }
   }
 
-  if (inputModeButtons.length > 0) {
-    inputModeButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const mode = btn.dataset.mode;
-        if (mode) setInputMode(mode);
-      });
-    });
+  // ---- Upload: open the file dialog directly ----
+
+  if (fileInput) {
+    fileInput.onchange = async (e) => {
+      await loadFiles(Array.from(e.target.files));
+      fileInput.value = '';
+    };
   }
 
-  setInputMode('file');
+  if (uploadButton && fileInput) {
+    uploadButton.addEventListener('click', () => fileInput.click());
+  }
+
+  // ---- Paste Text: modal dialog with the paste field ----
+
+  const pasteModal = document.createElement('div');
+  pasteModal.id = 'pasteTextModal';
+  pasteModal.hidden = true;
+  pasteModal.innerHTML = `
+    <div class="paste-modal" role="dialog" aria-modal="true" aria-label="Paste structure text">
+      <textarea id="structureText" placeholder="Paste POSCAR/CIF content, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id"></textarea>
+      <div class="paste-modal-actions">
+        <button type="button" id="loadTextButton">Load Structure</button>
+        <button type="button" id="cancelTextButton">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(pasteModal);
+  const structureText = /** @type {HTMLTextAreaElement} */ (pasteModal.querySelector('#structureText'));
+  const loadTextButton = pasteModal.querySelector('#loadTextButton');
+  const cancelTextButton = pasteModal.querySelector('#cancelTextButton');
+
+  function openPasteModal() {
+    pasteModal.hidden = false;
+    setTimeout(() => structureText.focus({ preventScroll: true }), 0);
+  }
+
+  function closePasteModal() {
+    pasteModal.hidden = true;
+  }
 
   async function loadStructureFromText() {
-    if (!structureText) return;
     const raw = structureText.value.trim();
     if (!raw) {
       setStatus('Paste POSCAR, CIF, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id before loading.');
       structureText.focus({ preventScroll: true });
       return;
     }
-
-    // ... (rest of your existing loadStructureFromText function)
+    closePasteModal();
+    await onLoadStructure(raw, 'pasted');
+    structureText.value = '';
   }
+
+  if (pasteTextButton) pasteTextButton.addEventListener('click', openPasteModal);
+  if (cancelTextButton) cancelTextButton.addEventListener('click', closePasteModal);
+  pasteModal.addEventListener('click', (e) => {
+    if (e.target === pasteModal) closePasteModal(); // backdrop click
+  });
+  pasteModal.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closePasteModal();
+  });
 
   if (loadTextButton) {
     loadTextButton.addEventListener('click', (event) => {
@@ -174,133 +214,68 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
     });
   }
 
-  if (structureText) {
-    structureText.addEventListener('keydown', (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-        event.preventDefault();
-        loadStructureFromText();
-      }
-    });
-  }
-
-  if (fileInput) {
-    fileInput.onchange = async (e) => {
-      const files = Array.from(e.target.files);
-      if (files.length === 0) return;
-
-      setStatus(`Loading ${files.length} structure(s)...`);
-      let loadedCount = 0;
-
-      try {
-        for (const file of files) {
-          setStatus(`Loading ${file.name} (${++loadedCount}/${files.length})...`);
-          const reader = new FileReader();
-          await new Promise((resolve, reject) => {
-            reader.onload = (event) => {
-              try {
-                onLoadStructure(event.target.result, file.name);
-                resolve();
-              } catch (err) {
-                reject(err);
-              }
-            };
-            reader.onerror = (error) => reject(error);
-            // ASE .traj files are binary ULM; read them as an ArrayBuffer so the
-            // raw float64 data survives. Everything else is text.
-            if (file.name.toLowerCase().endsWith('.traj')) {
-              reader.readAsArrayBuffer(file);
-            } else {
-              reader.readAsText(file);
-            }
-          });
-        }
-        setStatus(`${files.length} structure(s) loaded!`);
-      } catch (error) {
-        console.error('Error loading structures:', error);
-        setStatus('Error loading structures.');
-      } finally {
-        fileInput.value = '';
-      }
-    };
-  }
-
-  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    document.body.addEventListener(eventName, preventDefaults, false);
-    if (fileLabel) fileLabel.addEventListener(eventName, preventDefaults, false);
+  structureText.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      event.preventDefault();
+      loadStructureFromText();
+    }
   });
 
-  if (fileLabel) {
-    ['dragenter', 'dragover'].forEach(eventName => {
-      fileLabel.addEventListener(eventName, highlight, false);
+  // ---- Download: dropdown of export formats (#saveButton = POSCAR, wired
+  //      by ui/SavePanel.js) ----
+
+  if (downloadButton && downloadMenu) {
+    downloadButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      downloadMenu.hidden = !downloadMenu.hidden;
     });
-
-    ['dragleave', 'drop'].forEach(eventName => {
-      fileLabel.addEventListener(eventName, unhighlight, false);
-    });
-
-    fileLabel.addEventListener('drop', async (e) => {
-      preventDefaults(e);
-      unhighlight();
-
-      const dt = e.dataTransfer;
-      const files = Array.from(dt.files);
-      if (files.length === 0) return;
-
-      if (currentInputMode !== 'file') {
-        setInputMode('file');
-      }
-
-      setStatus(`Loading ${files.length} structure(s)...`);
-      let loadedCount = 0;
-
-      try {
-        for (const file of files) {
-          setStatus(`Loading ${file.name} (${++loadedCount}/${files.length})...`);
-          const reader = new FileReader();
-          await new Promise((resolve, reject) => {
-            reader.onload = (event) => {
-              try {
-                onLoadStructure(event.target.result, file.name);
-                resolve();
-              } catch (err) {
-                reject(err);
-              }
-            };
-            reader.onerror = (error) => reject(error);
-            // ASE .traj files are binary ULM; read them as an ArrayBuffer so the
-            // raw float64 data survives. Everything else is text.
-            if (file.name.toLowerCase().endsWith('.traj')) {
-              reader.readAsArrayBuffer(file);
-            } else {
-              reader.readAsText(file);
-            }
-          });
-        }
-        setStatus(`${files.length} structure(s) loaded!`);
-      } catch (error) {
-        console.error('Error loading structures:', error);
-        setStatus('Error loading structures.');
+    downloadMenu.addEventListener('click', () => { downloadMenu.hidden = true; });
+    document.addEventListener('click', (e) => {
+      if (!downloadMenu.hidden && !downloadButton.contains(/** @type {Node} */ (e.target))) {
+        downloadMenu.hidden = true;
       }
     });
   }
+
+  // ---- Drag & drop: the Files window and the 3D view are drop targets ----
 
   function preventDefaults(e) {
     e.preventDefault();
     e.stopPropagation();
   }
 
-  function highlight() {
-    if (!fileLabel || currentInputMode !== 'file') return;
-    fileLabel.classList.add('dragover');
+  /** The drop target under the pointer: the Files panel window or #view. */
+  function dropTargetFor(eventTarget) {
+    if (!(eventTarget instanceof Element)) return null;
+    return eventTarget.closest('.cv-panel[data-panel-id="files"]')
+      || eventTarget.closest('#view');
   }
 
-  function unhighlight() {
-    if (!fileLabel) return;
-    fileLabel.classList.remove('dragover');
+  let dropHoverEl = null;
+  function setDropHover(el) {
+    if (dropHoverEl === el) return;
+    if (dropHoverEl) dropHoverEl.classList.remove('cv-drop-hover');
+    dropHoverEl = el;
+    if (dropHoverEl) dropHoverEl.classList.add('cv-drop-hover');
   }
 
-  return {
-    getCurrentInputMode: () => currentInputMode,
-    setInputMode,
-  };
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    document.body.addEventListener(eventName, preventDefaults, false);
+  });
+
+  document.body.addEventListener('dragover', (e) => {
+    setDropHover(dropTargetFor(e.target));
+  });
+
+  document.body.addEventListener('dragleave', (e) => {
+    // Pointer left the window (or moved to browser chrome).
+    if (!e.relatedTarget) setDropHover(null);
+  });
+
+  document.body.addEventListener('drop', async (e) => {
+    const target = dropTargetFor(e.target);
+    setDropHover(null);
+    if (!target) return;
+    await loadFiles(Array.from(e.dataTransfer.files));
+  });
 }

@@ -4,7 +4,6 @@ import { createBondLengthControls } from './BondLengthPanel.js';
 import { updateSpins, removeSpins } from '../render/index.js';
 import { updateForces, removeForces } from '../render/index.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
-import { refreshDocking } from './ThemeManager.js';
 
 let trajectoryPlayerElements = {};
 let currentFrame = 0;
@@ -27,13 +26,13 @@ function updateStructureFromFrame(frame, container) {
   // Forces and spins must be updated AFTER updateVisualization so periodic.wrapped is ready
   const structure = fileBrowser.selectedStructure;
 
-  if (general.spinForceState === "Forces" && structure.forces?.length > 0) {
+  if (general.forcesActive && structure.forces?.length > 0) {
     updateForces(general.forceScale ?? 1.0);
   } else {
     removeForces();
   }
 
-  if (general.spinForceState === "Spins" && structure.spins?.length > 0) {
+  if (general.spinsActive && structure.spins?.length > 0) {
     updateSpins(general.spinScale ?? 1.0);
   } else {
     removeSpins();
@@ -74,17 +73,19 @@ function stopAutoPlay() {
 }
 
 // --- Main function to add panel ---
-export function addTrajectoryPlayer() {
+// Builds the trajectory controls into the given container (the unified
+// "Trajectory" panel window's body); the window provides the title bar,
+// dragging and collapse.
+export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
   if (trajectoryPlayerElements.trajControlPanel) return;
   removeTrajectoryPlayer();
 
+  const targetPanel = document.getElementById(target);
+  if (!targetPanel) return;
+
   const trajControlPanel = document.createElement('div');
   trajControlPanel.id = 'TrajControlPanel';
-  trajControlPanel.style.display = 'inline'; // visible
   trajControlPanel.innerHTML = `
-    <div class="panelHeader" id="panelHeader">
-      Trajectory Controls <span id="foldToggle">▼</span>
-    </div>
     <div class="panelBody" id="panelBody">
       <div class="controlsRow">
         <button id="stepBackBtn" className="control-button">⏮️</button>
@@ -108,12 +109,10 @@ export function addTrajectoryPlayer() {
       <div id="frameIndicator">Frame: 0</div>
     </div>
   `;
-  document.body.appendChild(trajControlPanel);
-  refreshDocking(); // dock into #ui if a docked theme is active
+  targetPanel.appendChild(trajControlPanel);
 
   trajectoryPlayerElements = {
     trajControlPanel,
-    panelHeader: trajControlPanel.querySelector('#panelHeader'),
     panelBody: trajControlPanel.querySelector('#panelBody'),
     playPauseBtn: trajControlPanel.querySelector('#playPauseBtn'),
     stepBackBtn: trajControlPanel.querySelector('#stepBackBtn'),
@@ -121,8 +120,7 @@ export function addTrajectoryPlayer() {
     speedSelect: trajControlPanel.querySelector('#speedSelect'),
     frameStepInput: trajControlPanel.querySelector('#frameStepInput'),
     frameSlider: trajControlPanel.querySelector('#frameSlider'),
-    frameIndicator: trajControlPanel.querySelector('#frameIndicator'),
-    foldToggle: trajControlPanel.querySelector('#foldToggle')
+    frameIndicator: trajControlPanel.querySelector('#frameIndicator')
   };
 
   const container = structureShip.container[fileBrowser.selectedRowIndex];
@@ -176,38 +174,6 @@ export function addTrajectoryPlayer() {
     const val = parseInt(trajectoryPlayerElements.frameStepInput.value);
     frameStep = val > 0 ? val : 1;
   };
-
-  // --- Dragging ---
-  let isDragging = false;
-  let dragOffsetX = 0;
-  let dragOffsetY = 0;
-
-  trajectoryPlayerElements.panelHeader.addEventListener('mousedown', (e) => {
-    if (e.target === trajectoryPlayerElements.foldToggle) return;
-    isDragging = true;
-    dragOffsetX = e.clientX - trajControlPanel.offsetLeft;
-    dragOffsetY = e.clientY - trajControlPanel.offsetTop;
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (isDragging) {
-      trajControlPanel.style.left = e.clientX - dragOffsetX + 'px';
-      trajControlPanel.style.top = e.clientY - dragOffsetY + 'px';
-    }
-  });
-
-  document.addEventListener('mouseup', () => { isDragging = false; });
-
-  // --- Fold toggle ---
-  trajectoryPlayerElements.foldToggle.addEventListener('click', () => {
-    if (trajectoryPlayerElements.panelBody.style.display === 'none') {
-      trajectoryPlayerElements.panelBody.style.display = 'flex';
-      trajectoryPlayerElements.foldToggle.textContent = '▼';
-    } else {
-      trajectoryPlayerElements.panelBody.style.display = 'none';
-      trajectoryPlayerElements.foldToggle.textContent = '▲';
-    }
-  });
 }
 
 // --- Remove panel ---

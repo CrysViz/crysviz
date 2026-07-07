@@ -27,7 +27,8 @@ export const highlightHover ={
    currentlyHighlightedAtom:null,
    currentlyHighlightedRow:null,
    currentlyHighlightedRows:[],
-   currentlyHighlightedBond:null
+   currentlyHighlightedBond:null,
+   currentlyHighlightedPolyhedron:null
 };
 
 export const atomSelection = {
@@ -76,8 +77,12 @@ export const groups = {
 };
 
 
-export const general = {  
-  matte:false,
+export const general = {
+  renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
+  celOutlineMode: 'screen', // cel outlines: 'screen' (post-process) | 'hull' (inverted-hull geometry)
+  celOutlineWidth: 0.025, // screen-space outline width in world units (0 = off)
+  celHullWidth: 0.025, // hull outline width in world units, atoms/bonds (0 = off)
+  celHullPolyWidth: 0.025, // hull outline width in world units, polyhedra
   ForceMin:1e-4,
   ForceMax:2.5,
   BondMin:1.1,
@@ -90,6 +95,18 @@ export const general = {
   bondLengths:{},
   defaultBondLengths:{},
   bondVisibility:{},
+  // Per-element atom visibility (Atoms tab header checkbox): element -> bool;
+  // undefined/true = shown. Hidden elements are zero-scaled (also unpickable).
+  atomVisibility:{},
+  // Per-pair bond cut-plane immunity (Bonds tab header toggle): "El1-El2" ->
+  // bool; true = the pair's bonds are never culled by cut planes.
+  bondCutImmunity:{},
+  // Incremented on every buildBondObjects() run; expanded per-bond row lists in the
+  // Bonds tab compare against it to know their cached rows are stale.
+  bondsBuildCounter:0,
+  // Same for polyhedra: incremented whenever the displayed polyhedra group is
+  // replaced (async rebuild swap or clear), used by the Poly tab's lazy lists.
+  polyhedraBuildCounter:0,
   bondRadius:0.08,
   forceScale: 1.0,
   forceRadius: 0.08,
@@ -103,10 +120,20 @@ export const general = {
   showLattice:true,
   showPolyhedra:false,
   showAxes:true,
+  // Shaft radius of the a/b/c axes-gizmo arrows, in gizmo-scene units
+  // (WindowAndSceneControls.initAxesGizmo; arrow length is 1).
+  axesLineWidth:0.015,
+  // Cylinder radius of the unit-cell outline edges, in world units (Å)
+  // (LatticeModule.createLatticeLines).
+  latticeLineWidth:0.015,
   showSecond:false,
   showSecondBonds:false,
   showComparisonInfo:false,
   showPeriodic:true,
+  // Atoms tab: edit all periodic-image copies of an atom together. When false
+  // the list shows one row per on-screen copy and edits apply per copy
+  // (structure.atomImageStyles). Wyckoff mode is unaffected.
+  linkPeriodicCopies:true,
   // Tolerance (fractional coords) for treating an atom as sitting on a cell
   // face/edge/corner when generating periodic image copies. Real (e.g. relaxed
   // / DFT-output) structures carry small numerical offsets from 0/1, so this
@@ -121,10 +148,14 @@ export const general = {
   serialPolyhedraAlgorithm:false, // true = single-threaded WASM; false = parallel over Web Workers
   backendViewerUpdateStride:1, // Update the viewer every N backend/NEP steps during relax/MD
   backendTrajectorySaveStride:4, // Save a trajectory snapshot every N steps during relax/MD
-  playerModeState: "none", 
-  spinForceState: "none",
+  // Feature activation flags, set by the toggles in the unified "Features"
+  // window (ui/panels/defaultPanels.js) — NOT by panel expand state. When a
+  // flag is off the corresponding feature panel is greyed out.
+  forcesActive: false, // "Show Forces" toggle draws force arrows
+  spinsActive: false, // "Show Spins" toggle draws spin arrows
+  fieldActive: true, // "Show Volumetric Field" toggle draws the isosurface
+  comparisonActive: false, // "Show Lattice Comparison" keeps the popup synced
   structurePanelMode: "atoms",
-  analysisState:"none",
   backendState:"none",
   atomisticPotential:"nep",
   currentSupercell: null,

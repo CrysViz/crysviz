@@ -181,14 +181,10 @@ function createColorBar(container, colormap, minValue, maxValue, sourceSelect, p
 
 export function removeSpinPanel() {
   const panel = document.getElementById("spinControlsGroup");
-  if (panel) {
-    const container = document.getElementById("SpinForceFieldContainer");
-    if (container) container.style.display = "none";
-    panel.remove();
-  }
+  if (panel) panel.remove();
 }
 
-export function addSpinPanel(target = "SpinForceFieldContainer") {
+export function addSpinPanel(target = "cvPanelBody-spins") {
   // Remove existing panel if any
   removeSpinPanel();
 
@@ -198,13 +194,10 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
     return;
   }
 
-  // Force the container to be visible
-  targetPanel.style.display = "block";
-
-  // --- Outer wrapper ---
+  // Outer wrapper. The hosting panel window (ui/panels/) provides the title
+  // bar and collapse, so no header is built here.
   const group = document.createElement("div");
   group.id = "spinControlsGroup";
-  group.style.padding = "10px";
   group.style.color = "white";
   group.style.overflowX = "hidden";
 
@@ -212,38 +205,13 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
   const panel = document.createElement("div");
   panel.id = "spinPanel";
 
-  // --- Toggle header ---
-  const toggle = document.createElement("div");
-  toggle.className = "spin-toggle";
-  toggle.setAttribute("role", "button");
-  toggle.setAttribute("tabindex", "0");
-  toggle.style.cursor = "pointer";
-  toggle.style.display = "flex";
-  toggle.style.alignItems = "center";
-  toggle.style.justifyContent = "space-between";
-  toggle.style.padding = "4px 8px";
-
-  const title = document.createElement("h4");
-  title.textContent = "Spin Controls";
-  title.style.margin = "0";
-  title.style.color = "white";
-
-  const icon = document.createElement("div");
-  icon.className = "toggle-icon";
-  icon.textContent = "−";
-  icon.style.color = "white";
-
-  toggle.appendChild(title);
-  toggle.appendChild(icon);
-
-  // --- Collapsible content ---
   const content = document.createElement("div");
   content.id = "spinControlsContent";
-  content.className = "collapsible-content";
-  content.style.padding = "8px";
-  content.style.backgroundColor = "#222";
   content.style.overflowY = "visible";
   content.style.overflowX = "hidden";
+
+  // Activation ("Show Spins") lives in the Features window; this panel only
+  // configures how the spins are drawn.
 
   // --- Global Scaling slider ---
   const lengthWrapper = document.createElement("div");
@@ -510,28 +478,9 @@ export function addSpinPanel(target = "SpinForceFieldContainer") {
   content.appendChild(buttonWrapper);
 
   // --- Build hierarchy ---
-  panel.appendChild(toggle);
   panel.appendChild(content);
   group.appendChild(panel);
   targetPanel.appendChild(group);
-
-  // --- Open immediately ---
-  content.classList.add("open");
-  content.style.display = "block";
-
-  // --- Toggle open/close ---
-  toggle.addEventListener("click", () => {
-    const isOpen = content.classList.contains("open");
-    if (isOpen) {
-      content.classList.remove("open");
-      content.style.display = "none";
-      icon.textContent = "+";
-    } else {
-      content.classList.add("open");
-      content.style.display = "block";
-      icon.textContent = "−";
-    }
-  });
 
   function parseManualSpins() {
   const input = textarea.value.trim().split("\n").filter(Boolean);

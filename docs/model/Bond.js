@@ -24,7 +24,7 @@ export class Bond {
     this.srcIndices = srcIndices;
     this.uuid = uuid; 
     this.color=color;
-    this.userColor=[null, null];
+    this.userColor = (Array.isArray(userColor) && userColor.length === 2) ? userColor : [null, null];
     // Element-pair max bond cutoff squared; assigned by buildBondObjects so the
     // fast frame path can hide a bond that stretches past breaking. 0 = unknown.
     this.cutoffSq = 0;
@@ -120,4 +120,3 @@ export class Bond {
 function getAtomRadius(element) {
   return (atomicRadii[element] || 1.0) * general.atomSize;
 }
-

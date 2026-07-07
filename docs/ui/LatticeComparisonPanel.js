@@ -1,4 +1,6 @@
 import { latticeParameters } from '../math/index.js';
+import { registerPanel, removePanel } from './panels/PanelManager.js';
+import { general } from '../state/store.js';
 
 function percentDiff(v1, v2) { return Math.abs(v2 - v1) / v1; }
 
@@ -127,60 +129,39 @@ function renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, con
 
 export function createLatticeComparisonPopup() {
   // Remove existing popup (if any)
-  let existing = document.getElementById("latticeComparisonPopup");
-  if (existing) {
-    existing.remove();
-  }
+  removePanel('latticeComparison');
 
-  // Create popup
+  // Roughly centered default position (the panel window is freely draggable).
+  const anchor = {
+    left: Math.max(8, Math.round(window.innerWidth / 2 - 220)),
+    top: Math.max(8, Math.round(window.innerHeight / 2 - 280)),
+  };
+
+  const panelWindow = registerPanel({
+    id: 'latticeComparison',
+    title: 'Lattice Comparison',
+    lifecycle: 'persistent',
+    closable: true,
+    persist: false,
+    onClose() {
+      // Closing the window also turns the comparison-panel toggle off, so
+      // structure/frame changes stop re-creating the popup.
+      general.comparisonActive = false;
+      const cb = /** @type {HTMLInputElement|null} */ (document.getElementById('showLatticeComparison'));
+      if (cb) cb.checked = false;
+    },
+    defaults: { docked: false, collapsed: false, anchor },
+  });
+
+  // Inner wrapper keeps the historical id so update/remove lookups work.
   const popup = document.createElement("div");
   popup.id = "latticeComparisonPopup";
-  popup.className = "popup";
-  popup.style.display = "block";
-  popup.style.position = "fixed";
-  popup.style.top = "50%";
-  popup.style.left = "50%";
-  popup.style.transform = "translate(-50%, -50%)";
-  popup.style.zIndex = "9999";
   popup.style.backgroundColor = "#222";
   popup.style.color = "#fff";
-  popup.style.opacity = "1";
-  popup.style.pointerEvents = "auto";
-  popup.style.border = "1px solid #555";
   popup.style.padding = "10px";
   popup.style.maxHeight = "80vh";
   popup.style.overflowY = "auto";
-
-  // Append to body
-  document.body.appendChild(popup);
-
-  // --- Create header ---
-  const header = document.createElement("div");
-  header.style.height = "30px";
-  header.style.borderBottom = "1px solid #444";
-  header.style.cursor = "move";
-  header.style.display = "flex";
-  header.style.justifyContent = "space-between";
-  header.style.alignItems = "center";
-  header.style.padding = "0 30px";
-  popup.appendChild(header);
-
-  const title = document.createElement("span");
-  title.textContent = "Lattice Comparison";
-  title.style.color = "#fff";
-  header.appendChild(title);
-
-  const closeBtn = document.createElement("button");
-  closeBtn.textContent = "✖";
-  closeBtn.style.cursor = "pointer";
-  closeBtn.style.border = "none";
-  closeBtn.style.background = "transparent";
-  closeBtn.style.fontSize = "16px";
-  closeBtn.style.color = "#fff";
-  closeBtn.addEventListener("click", () => {
-    removeLatticeComparisonPopup();
-  });
-  header.appendChild(closeBtn);
+  panelWindow.body.appendChild(popup);
 
   // --- Create canvas ---
   const canvas = document.createElement("canvas");
@@ -253,68 +234,6 @@ export function createLatticeComparisonPopup() {
       content.style.display = "none";
       toggleBtn.textContent = "Show details ▼";
     }
-
-    // Update popup position to ensure it stays in view
-    const popupRect = popup.getBoundingClientRect();
-    const halfWidth = popupRect.width / 2;
-    const halfHeight = popupRect.height / 2;
-
-    // Current center position
-    let newCenterX = parseInt(popup.style.left) || window.innerWidth / 2;
-    let newCenterY = parseInt(popup.style.top) || window.innerHeight / 2;
-
-    // Compute viewport bounds for the popup's center
-    const maxCenterX = window.innerWidth - halfWidth;
-    const maxCenterY = window.innerHeight - halfHeight;
-
-    // Clamp the center position so the entire popup stays in view
-    newCenterX = Math.max(halfWidth, Math.min(newCenterX, maxCenterX));
-    newCenterY = Math.max(halfHeight, Math.min(newCenterY, maxCenterY));
-
-    // Set the popup's position (center-based)
-    popup.style.left = `${newCenterX}px`;
-    popup.style.top = `${newCenterY}px`;
-  });
-
-  // --- Dragging logic ---
-  let offsetX, offsetY, dragging = false;
-  header.addEventListener("mousedown", (e) => {
-    dragging = true;
-    // Use the popup's center for offset calculation
-    const popupRect = popup.getBoundingClientRect();
-    offsetX = e.clientX - (popupRect.left + popupRect.width / 2);
-    offsetY = e.clientY - (popupRect.top + popupRect.height / 2);
-    header.style.cursor = "grabbing";
-  });
-
-  document.addEventListener("mouseup", () => {
-    dragging = false;
-    header.style.cursor = "move";
-  });
-
-  document.addEventListener("mousemove", (e) => {
-    if (!dragging) return;
-
-    // Calculate new center position
-    let newCenterX = e.clientX - offsetX;
-    let newCenterY = e.clientY - offsetY;
-
-    // Get the popup's dimensions
-    const popupRect = popup.getBoundingClientRect();
-    const halfWidth = popupRect.width / 2;
-    const halfHeight = popupRect.height / 2;
-
-    // Compute viewport bounds for the popup's center
-    const maxCenterX = window.innerWidth - halfWidth;
-    const maxCenterY = window.innerHeight - halfHeight;
-
-    // Clamp the center position so the entire popup stays in view
-    newCenterX = Math.max(halfWidth, Math.min(newCenterX, maxCenterX));
-    newCenterY = Math.max(halfHeight, Math.min(newCenterY, maxCenterY));
-
-    // Set the popup's position (center-based)
-    popup.style.left = `${newCenterX}px`;
-    popup.style.top = `${newCenterY}px`;
   });
 
   return { popup, canvas, table, content, toggleBtn };
@@ -351,11 +270,8 @@ export function updateLatticeComparisonPanel(L1_matrix, L2_matrix) {
 }
 
 /**
- * Removes the lattice comparison popup from the DOM.
+ * Removes the lattice comparison popup (its unified panel window).
  *  */
   export function removeLatticeComparisonPopup() {
-      const popup = document.getElementById("latticeComparisonPopup");
-      if (popup) {
-            popup.remove();
-          }
+      removePanel('latticeComparison');
   }

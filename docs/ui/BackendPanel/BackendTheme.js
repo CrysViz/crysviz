@@ -16,12 +16,16 @@ function setLogoForTheme(themeName) {
 export function resolveBackendTheme() {
   const structure = fileBrowser.selectedStructure;
   const symmetryLocked = structure?.symmetry?.mode === 'wyckoff';
-  const atomisticMode = general.backendState === 'relax' || general.backendState === 'md';
-  const usingASE = atomisticMode && general.atomisticPotential === 'ase';
+  // Any atomistic compute mode tints the UI red, so switching Viz <-> Relax/MD
+  // is an immediate whole-interface color change (the original behavior of the
+  // mode switch). The Wyckoff lock keeps its blue / purple overlays.
+  const atomisticMode = general.backendState === 'relax'
+    || general.backendState === 'md'
+    || general.backendState === 'live';
 
-  if (symmetryLocked && usingASE) return 'locked-ase';
+  if (symmetryLocked && atomisticMode) return 'locked-ase';
   if (symmetryLocked) return 'symmetry';
-  if (usingASE) return 'ase';
+  if (atomisticMode) return 'ase';
   return 'standard';
 }
 

@@ -24,6 +24,16 @@ export function getContrastingBorder(hex) {
   return lum > 0.5 ? "#333333" : "#ffffff";
 }
 
+/** Repaint the Visual window's background swatch from the current scene
+ *  background, so it mirrors changes made anywhere (canvas dot, Apply, theme,
+ *  Reset) — not just when the swatch itself was clicked. */
+export function syncBackgroundSwatch() {
+  const swatch = document.getElementById('backgroundSwatch');
+  if (swatch && app?.scene?.background) {
+    swatch.style.background = '#' + app.scene.background.getHexString();
+  }
+}
+
 function openBackgroundColorPicker(dot) {
   document.querySelectorAll(".spin-color-picker").forEach(p => p.remove());
   let currentHex = app.scene.background ? "#" + app.scene.background.getHexString() : "#090A09";
@@ -48,6 +58,9 @@ function openBackgroundColorPicker(dot) {
     general.currentLatticeColor = contrastColor;
     updateLattice(contrastColor);
     if (app?.scene) app.scene.background = new THREE.Color(hex);
+    // Mirror the change onto the Visual swatch regardless of which dot opened
+    // the picker (canvas dot or the swatch itself).
+    syncBackgroundSwatch();
   });
 
   const buttonRow = document.createElement("div");
@@ -80,7 +93,9 @@ function openBackgroundColorPicker(dot) {
   let bottomSpace = window.innerHeight - (rect.top + window.scrollY + 24 + pickerPanel.offsetHeight);
   if (bottomSpace < 40) topPosition = window.innerHeight - pickerPanel.offsetHeight - 65;
 
-  pickerPanel.style.left = `${rect.left + window.scrollX - 200}px`;
+  // Keep the panel on screen for anchors near the left edge (the Visual
+  // window's swatch sits in the dock column).
+  pickerPanel.style.left = `${Math.max(8, rect.left + window.scrollX - 200)}px`;
   pickerPanel.style.top = `${topPosition}px`;
 
   const closePicker = () => {
@@ -98,6 +113,7 @@ function openBackgroundColorPicker(dot) {
     e.stopPropagation();
     dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`;
     if (app?.scene) app.scene.background = new THREE.Color(selectedHex);
+    syncBackgroundSwatch();
     closePicker();
   });
 
@@ -121,4 +137,37 @@ export function createBackgroundControl() {
   dot.style.borderRadius = "50%";
   dot.style.cursor = "pointer";
   dot.addEventListener("click", () => openBackgroundColorPicker(dot));
+}
+
+/** Show/hide the on-canvas picker dot (the Visual window's toggle). */
+export function setBackgroundDotVisible(visible) {
+  const dot = document.getElementById('backgroundDot');
+  if (dot) dot.style.display = visible ? '' : 'none';
+}
+
+export function isBackgroundDotVisible() {
+  const dot = document.getElementById('backgroundDot');
+  return !!dot && dot.style.display !== 'none';
+}
+
+/** A small round swatch button that opens the same background color picker,
+ *  for use inside a panel body (Visual window). Its fill tracks the picked
+ *  scene background. */
+export function createBackgroundSwatch() {
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.id = 'backgroundSwatch';
+  dot.title = 'Pick background color';
+  dot.dataset.bgSwatch = '1';
+  dot.style.cssText = 'width:26px; height:26px; border-radius:50%; cursor:pointer;'
+    + ' border:2px solid rgba(255,255,255,0.5); padding:0; flex:none;';
+  const syncFill = () => {
+    if (app?.scene?.background) dot.style.background = '#' + app.scene.background.getHexString();
+  };
+  syncFill();
+  dot.addEventListener('click', () => {
+    syncFill(); // the background may have changed via the canvas dot or theme
+    openBackgroundColorPicker(dot);
+  });
+  return dot;
 }
