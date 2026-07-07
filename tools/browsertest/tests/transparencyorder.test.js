@@ -21,6 +21,19 @@ const fs = require('fs');
 const H = require('../harness');
 const { PNG } = require('pngjs');
 
+/** Pixels whose summed RGB difference exceeds `thresh` between two shots. */
+function changedPixelCount(fileA, fileB, thresh = 40) {
+  const a = PNG.sync.read(fs.readFileSync(fileA));
+  const b = PNG.sync.read(fs.readFileSync(fileB));
+  let n = 0;
+  for (let i = 0; i < a.data.length; i += 4) {
+    const d = Math.abs(a.data[i] - b.data[i]) + Math.abs(a.data[i + 1] - b.data[i + 1])
+      + Math.abs(a.data[i + 2] - b.data[i + 2]);
+    if (d > thresh) n++;
+  }
+  return n;
+}
+
 /** Average RGB over a disk of radius R around (x, y) of a page screenshot. */
 function sampleDisk(file, x, y, R) {
   const png = PNG.sync.read(fs.readFileSync(file));
@@ -455,6 +468,59 @@ function redCentroid(file) {
 
   // Hand back to forward: tracer targets disposed, raster flags re-applied.
   await setOpacity(src.front, 1.0);
+  await setPipeline('forward');
+  await page.waitForTimeout(300);
+
+  // ---- Opaque polyhedra: alpha=1 faces/edges must be genuinely opaque ------------
+  // (Legacy bug: polyhedraFace was always transparent+no-depthWrite, so a
+  // poly's own hidden edges showed through its faces under forward/split/
+  // sorted, and WBOIT washed out fully opaque polyhedra.)
+  const polyFlags = await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const { updatePolyhedra, updatePolyhedraColors } =
+      await import('./render/PolyhedraModule.js');
+    const { general } = await import('./state/store.js');
+    general.showPolyhedra = true;
+    await updatePolyhedra();
+    const structure = fileBrowser.selectedStructure;
+    structure.polyhedraCategoryStyles = structure.polyhedraCategoryStyles || {};
+    const setAlpha = (alpha) => {
+      for (const mesh of groups.polyhedraGroup.children) {
+        const catKey = mesh.userData?.catKey;
+        if (!catKey) continue;
+        structure.polyhedraCategoryStyles[catKey] =
+          { ...(structure.polyhedraCategoryStyles[catKey] || {}), alpha };
+      }
+      updatePolyhedraColors();
+    };
+    const firstPoly = () => groups.polyhedraGroup.children.find(
+      (c) => c.userData?.type === 'polyhedron');
+    setAlpha(1);
+    const m1 = firstPoly()?.material;
+    const opaque = m1 && { transparent: m1.transparent, depthWrite: m1.depthWrite };
+    setAlpha(0.5);
+    const m2 = firstPoly()?.material;
+    const translucent = m2 && { transparent: m2.transparent, depthWrite: m2.depthWrite };
+    setAlpha(1);
+    return { opaque, translucent, hasPoly: !!m1 };
+  });
+  H.check('alpha=1 polyhedra are opaque (depth-writing); alpha<1 keep legacy flags',
+    polyFlags.hasPoly
+      && polyFlags.opaque.transparent === false && polyFlags.opaque.depthWrite === true
+      && polyFlags.translucent.transparent === true && polyFlags.translucent.depthWrite === false,
+    JSON.stringify(polyFlags));
+
+  await page.waitForTimeout(600);
+  const polyShots = {};
+  for (const pid of ['forward', 'wboit', 'depthpeel']) {
+    await setPipeline(pid);
+    await page.waitForTimeout(900);
+    polyShots[pid] = await H.shotCanvas(page, `transparencyorder-polyopaque-${pid}`);
+  }
+  const fwdVsPeel = changedPixelCount(polyShots.forward, polyShots.depthpeel);
+  const wboitVsPeel = changedPixelCount(polyShots.wboit, polyShots.depthpeel);
+  H.check('opaque polyhedra render identically across forward/wboit/depthpeel',
+    fwdVsPeel < 15000 && wboitVsPeel < 2000, JSON.stringify({ fwdVsPeel, wboitVsPeel }));
   await setPipeline('forward');
   await page.waitForTimeout(300);
 

@@ -47,6 +47,10 @@ export class ForwardPipeline {
    * The pre-refactor per-module transparency flags, keyed by spec.kind.
    * Behavior-preserving: each case matches what its module used to set
    * directly — do not "clean up" the inconsistencies here.
+   * (One deliberate exception: polyhedra faces/edges are opacity-aware —
+   * alpha = 1 renders opaque. The legacy always-transparent flags let a
+   * poly's hidden edges show through its faces and made WBOIT wash out
+   * fully opaque polyhedra.)
    * @param {any} material
    * @param {{kind?: string, opacity?: number, needsTransparency?: boolean, mesh?: any}} spec
    */
@@ -76,14 +80,23 @@ export class ForwardPipeline {
         material.transparent = opacity !== 1;
         material.depthWrite = true;
         break;
-      case 'polyhedraFace':
-        material.transparent = true;
-        material.depthWrite = false;
+      case 'polyhedraFace': {
+        // Opacity-aware: alpha = 1 polyhedra are genuinely OPAQUE (write
+        // depth, skip the blend/OIT passes) so their own hidden edges and
+        // objects behind them are properly occluded; alpha < 1 keeps the
+        // legacy always-transparent flags verbatim.
+        const isTransparent = opacity < 1;
+        material.transparent = isTransparent;
+        material.depthWrite = !isTransparent;
         material.polygonOffset = true;
         material.polygonOffsetFactor = 1;
         material.polygonOffsetUnits = 1;
         break;
+      }
       case 'polyhedraEdge':
+        // Same: fully opaque edges depth-test/write like opaque geometry.
+        material.transparent = opacity < 1;
+        break;
       case 'planeBorder':
         material.transparent = true;
         break;
