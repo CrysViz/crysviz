@@ -48,6 +48,8 @@ uniform vec3 uGroundColor2;
 uniform int uGroundPattern;  // 0 solid, 1 checker, 2 grid
 uniform float uGroundScale;  // pattern tile size (world units)
 uniform float uGroundReflect; // 0 matte ... 1 mirror floor
+uniform vec3 uGroundCenter;   // disc center reference (structure center)
+uniform float uGroundRadius;  // finite disc radius (background shows as sky beyond)
 
 #define DATA_W ${DATA_TEX_WIDTH}
 
@@ -236,7 +238,10 @@ float SceneIntersect( out int isRayExiting )
 	if (uGroundEnabled)
 	{
 		d = PlaneIntersect(vec4(uGroundNormal, uGroundD), rayOrigin, rayDirection);
-		if (d < t)
+		// finite disc: skip hits beyond the ground radius (sky shows around it)
+		vec3 gRel = (rayOrigin + (d * rayDirection)) - uGroundCenter;
+		gRel -= uGroundNormal * dot(gRel, uGroundNormal);
+		if (d < t && dot(gRel, gRel) < (uGroundRadius * uGroundRadius))
 		{
 			t = d;
 			hitNormal = uGroundNormal;

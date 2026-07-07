@@ -344,6 +344,10 @@ export function addColorPanel(target = "colorContainer") {
     ptControlsBlock.style.display = general.renderPipeline === "pathtrace" ? "block" : "none";
     renderStyleMenu.style.display = isRaster ? "grid" : "none";
     outlineBlock.style.display = isRaster && general.renderStyle === "cel" ? "block" : "none";
+    // Structure-window tracer-only blocks (material editors) hide under the
+    // raster pipelines via this body class (see styles.css). The underlying
+    // material stores are always persisted regardless.
+    document.body.classList.toggle("tracer-pipeline", isTracer);
   }
 
   // Render style (material) dropdown. Switching style rebuilds the meshes:
@@ -556,6 +560,14 @@ export function addColorPanel(target = "colorContainer") {
   groundOptions.appendChild(groundColorRow('rtGroundColor1', 'Ground color 1', 'rtGroundColor1'));
   groundOptions.appendChild(groundColorRow('rtGroundColor2', 'Ground color 2', 'rtGroundColor2'));
 
+  groundOptions.appendChild(makeTracerSliderRow('rtGroundOffset', 'rtGroundOffset',
+    0, 10, 0.25, general.rtGroundOffset ?? 0.75,
+    (v) => `Ground distance: ${v.toFixed(2)}`,
+    (v) => { general.rtGroundOffset = v; }));
+  groundOptions.appendChild(makeTracerSliderRow('rtGroundSize', 'rtGroundSize',
+    1, 10, 0.25, general.rtGroundSize ?? 2.5,
+    (v) => `Ground size: ${v.toFixed(2)}x`,
+    (v) => { general.rtGroundSize = v; }));
   groundOptions.appendChild(makeTracerSliderRow('rtGroundScale', 'rtGroundScale',
     0.5, 10, 0.25, general.rtGroundScale ?? 2,
     (v) => `Tile size: ${v.toFixed(2)}`,
@@ -713,6 +725,8 @@ export function addColorPanel(target = "colorContainer") {
     fireCheck('rtGroundToggle', D.rtGroundPlane);
     fire('rtGroundMode', D.rtGroundMode, 'change');
     fire('rtGroundPattern', D.rtGroundPattern, 'change');
+    fire('rtGroundOffset', D.rtGroundOffset, 'input');
+    fire('rtGroundSize', D.rtGroundSize, 'input');
     fire('rtGroundScale', D.rtGroundScale, 'input');
     fire('rtGroundReflect', D.rtGroundReflect, 'input');
     // ground colors: default = null (follow the background)

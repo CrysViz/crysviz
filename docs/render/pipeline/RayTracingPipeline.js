@@ -210,6 +210,8 @@ export class RayTracingPipeline extends ForwardPipeline {
       uGroundEnabled: { value: false },
       uGroundNormal: { value: new THREE.Vector3(0, 1, 0) },
       uGroundD: { value: -5 }, // plane: dot(normal, p) = d
+      uGroundCenter: { value: new THREE.Vector3() }, // disc center reference
+      uGroundRadius: { value: 50 }, // finite disc so the background shows as sky
       uGroundColor1: { value: new THREE.Color(0.9, 0.9, 0.9) },
       uGroundColor2: { value: new THREE.Color(0.7, 0.7, 0.7) },
       uGroundPattern: { value: 0 }, // 0 solid, 1 checker, 2 grid
@@ -390,14 +392,23 @@ export class RayTracingPipeline extends ForwardPipeline {
     // structure's bounding sphere, so orbiting reads as rotating the
     // structure above a fixed floor. (Reorientation coincides with camera
     // moves, which already reset the accumulation.)
+    // The ground is a large finite DISC (not an infinite plane) so the
+    // background stays visible as "sky" around it — essential under the
+    // parallel camera, where an infinite plane can never show a horizon.
+    // "Ground distance" (rtGroundOffset) applies in both modes.
+    const groundOffset = general.rtGroundOffset ?? 0.75;
+    const center = this._encoder.structureCenter;
     if (general.rtGroundMode === 'horizon') {
-      const target = app.controls?.target ?? this._rtScene.position;
       u.uGroundNormal.value.copy(camera.up).normalize();
-      u.uGroundD.value = u.uGroundNormal.value.dot(target) - (this._encoder.boundingRadius + 1);
+      u.uGroundD.value = u.uGroundNormal.value.dot(center)
+        - (this._encoder.structureRadius + groundOffset);
     } else {
       u.uGroundNormal.value.set(0, 1, 0);
-      u.uGroundD.value = this._encoder.groundY;
+      u.uGroundD.value = this._encoder.minY - groundOffset;
     }
+    u.uGroundCenter.value.copy(center);
+    u.uGroundRadius.value = Math.max(
+      (general.rtGroundSize ?? 2.5) * this._encoder.structureRadius, 5);
     // Ground colors/pattern/material: colors default to the background (and a
     // darkened variant) until customized.
     if (general.rtGroundColor1) u.uGroundColor1.value.set(general.rtGroundColor1);
@@ -424,7 +435,8 @@ export class RayTracingPipeline extends ForwardPipeline {
       + `|${general.rtSaturation ?? 1}`
       + `|${u.uGroundEnabled.value}|${u.uApertureSize.value}|${(general.rtDofFocus ?? 1)}`
       + `|${general.rtGroundMode}|${u.uGroundPattern.value}|${u.uGroundColor1.value.getHex()}`
-      + `|${u.uGroundColor2.value.getHex()}|${u.uGroundScale.value}|${u.uGroundReflect.value}`;
+      + `|${u.uGroundColor2.value.getHex()}|${u.uGroundScale.value}|${u.uGroundReflect.value}`
+      + `|${general.rtGroundOffset ?? 0.75}|${general.rtGroundSize ?? 2.5}`;
     if (this._lastLookKey !== undefined && lookKey !== this._lastLookKey) this.resetAccumulation();
     this._lastLookKey = lookKey;
 

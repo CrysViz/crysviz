@@ -280,6 +280,34 @@ function changedPixelCount(fileA, fileB) {
   const groundDelta = changedPixelCount(groundSolid, groundChecker);
   H.check('checkerboard/horizon/reflect ground renders differently from solid',
     groundDelta > 2000, JSON.stringify({ groundDelta }));
+
+  // Ground distance slider + placement math + finite disc (both modes):
+  // horizon d = dot(up, center) - (structureRadius + offset);
+  // structure d = minY - offset; disc radius = rtGroundSize * structureRadius (min 5).
+  const groundGeom = await page.evaluate(async () => {
+    const { app, general } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    const u = app.pipeline._uniforms;
+    const enc = app.pipeline._encoder;
+    const render = () => app.pipeline.render(
+      { renderer: app.renderer, scene: app.scene, camera: app.camera });
+    general.rtGroundOffset = 1.5;
+    render();
+    const n = u.uGroundNormal.value;
+    const expectedHorizon = n.dot(enc.structureCenter) - (enc.structureRadius + 1.5);
+    const horizonOk = Math.abs(u.uGroundD.value - expectedHorizon) < 1e-3;
+    general.rtGroundMode = 'structure';
+    general.rtGroundOffset = 4;
+    render();
+    const structureOk = Math.abs(u.uGroundD.value - (enc.minY - 4)) < 1e-3;
+    const discOk = Math.abs(u.uGroundRadius.value
+      - Math.max((general.rtGroundSize ?? 2.5) * enc.structureRadius, 5)) < 1e-3;
+    requestRender();
+    return { horizonOk, structureOk, discOk, d: u.uGroundD.value, r: u.uGroundRadius.value };
+  });
+  H.check('ground distance applies in both modes and the ground is a finite disc',
+    groundGeom.horizonOk && groundGeom.structureOk && groundGeom.discOk,
+    JSON.stringify(groundGeom));
   await page.evaluate(async () => {
     const { general } = await import('./state/store.js');
     const { requestRender } = await import('./render/index.js');
@@ -289,11 +317,33 @@ function changedPixelCount(fileA, fileB) {
     general.rtGroundColor1 = null;
     general.rtGroundColor2 = null;
     general.rtGroundReflect = 0;
+    general.rtGroundOffset = 0.75;
+    general.rtGroundSize = 2.5;
     const toggle = /** @type {HTMLInputElement} */ (document.getElementById('rtGroundToggle'));
     toggle.checked = false;
     requestRender();
   });
   await page.waitForTimeout(800);
+
+  // --- Structure-window tracer options hide under raster pipelines ----------------
+  const gating = await page.evaluate(() => {
+    const editor = document.querySelector('.material-editor');
+    if (!editor) return { editor: false };
+    const visibleUnderTracer = getComputedStyle(editor).display !== 'none'
+      && document.body.classList.contains('tracer-pipeline');
+    return { editor: true, visibleUnderTracer };
+  });
+  await H.setSelect(page, 'renderPipelineMenu', 'forward');
+  await page.waitForTimeout(400);
+  const gatingRaster = await page.evaluate(() => ({
+    hiddenUnderRaster: getComputedStyle(document.querySelector('.material-editor')).display === 'none'
+      && !document.body.classList.contains('tracer-pipeline'),
+  }));
+  await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
+  await page.waitForTimeout(600);
+  H.check('material editors show under tracers and hide under raster pipelines',
+    gating.editor && gating.visibleUnderTracer && gatingRaster.hiddenUnderRaster,
+    JSON.stringify({ gating, gatingRaster }));
 
   // --- Accumulation progress bar --------------------------------------------------
   const barState = await page.evaluate(() => {

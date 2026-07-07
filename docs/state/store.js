@@ -97,6 +97,8 @@ export const RENDERING_DEFAULTS = {
   rtGroundColor1: null, // hex or null = follow the background color
   rtGroundColor2: null, // hex or null = auto (darkened color1)
   rtGroundScale: 2, // pattern tile size in world units (Å)
+  rtGroundOffset: 0.75, // distance from the structure bottom to the plane (both modes)
+  rtGroundSize: 2.5, // ground disc radius in multiples of the structure radius
   rtGroundReflect: 0, // ground mirror fraction (0 = matte ... 1 = mirror floor)
   rtLightIntensity: 1.2, // both tracers: key-light intensity multiplier
   rtAmbient: 0.3, // both tracers: ambient/fill light strength (RT ambient term / PT sky bounce)

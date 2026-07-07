@@ -160,6 +160,8 @@ export function captureState({ includeFrames = false } = {}) {
       rtGroundColor1: general.rtGroundColor1,
       rtGroundColor2: general.rtGroundColor2,
       rtGroundScale: general.rtGroundScale,
+      rtGroundOffset: general.rtGroundOffset,
+      rtGroundSize: general.rtGroundSize,
       rtGroundReflect: general.rtGroundReflect,
       rtLightIntensity: general.rtLightIntensity,
       rtAmbient: general.rtAmbient,
@@ -385,6 +387,8 @@ function applyStyleSettings(style) {
     if (style.rtGroundColor2) setSelect('rtGroundColor2', style.rtGroundColor2);
   }
   if (style.rtGroundScale != null) { general.rtGroundScale = style.rtGroundScale; setSelect('rtGroundScale', style.rtGroundScale); }
+  if (style.rtGroundOffset != null) { general.rtGroundOffset = style.rtGroundOffset; setSelect('rtGroundOffset', style.rtGroundOffset); }
+  if (style.rtGroundSize != null) { general.rtGroundSize = style.rtGroundSize; setSelect('rtGroundSize', style.rtGroundSize); }
   if (style.rtGroundReflect != null) { general.rtGroundReflect = style.rtGroundReflect; setSelect('rtGroundReflect', style.rtGroundReflect); }
   if (style.rtLightIntensity != null) {
     general.rtLightIntensity = style.rtLightIntensity;

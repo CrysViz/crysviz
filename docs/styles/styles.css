@@ -1888,3 +1888,11 @@ body {
     padding: 4px 6px;
   }
 }
+
+/* Tracer-only controls (e.g. the ray/path-tracing material editors in the
+   Structure window) show only while a tracer pipeline is active. The body
+   class is driven by ui/ColorPanel.js updateRenderingControlsVisibility().
+   The material data itself is always persisted, pipeline regardless. */
+body:not(.tracer-pipeline) .material-editor {
+  display: none;
+}

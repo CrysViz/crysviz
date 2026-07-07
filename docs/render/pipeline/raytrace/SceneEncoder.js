@@ -75,7 +75,9 @@ export class SceneEncoder {
   cylinderCount = 0;
   polyCount = 0;
   boundingRadius = 10; // max atom distance from the origin (light placement)
-  groundY = -5; // just below the lowest atom (optional ground plane height)
+  minY = -5; // lowest atom point (ground plane placement; driver adds the offset)
+  structureCenter = new THREE.Vector3(); // atom bounding-box center
+  structureRadius = 5; // half-diagonal of the atom bounding box (from the center)
   _fingerprint = '';
 
   dispose() {
@@ -166,7 +168,8 @@ export class SceneEncoder {
     const data = texture.image.data;
     let n = 0;
     let maxR2 = 25;
-    let minY = Infinity;
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
     for (let i = 0; i < mesh.count; i++) {
       const o = i * 16;
       const radius = matrices[o]; // uniform scale; 0 = hidden instance
@@ -178,7 +181,12 @@ export class SceneEncoder {
       data[d + 3] = radius;
       const r2 = data[d] * data[d] + data[d + 1] * data[d + 1] + data[d + 2] * data[d + 2];
       if (r2 > maxR2) maxR2 = r2;
+      if (data[d] - radius < minX) minX = data[d] - radius;
+      if (data[d] + radius > maxX) maxX = data[d] + radius;
       if (data[d + 1] - radius < minY) minY = data[d + 1] - radius;
+      if (data[d + 1] + radius > maxY) maxY = data[d + 1] + radius;
+      if (data[d + 2] - radius < minZ) minZ = data[d + 2] - radius;
+      if (data[d + 2] + radius > maxZ) maxZ = data[d + 2] + radius;
       data[d + 4] = colors[i * 3];
       data[d + 5] = colors[i * 3 + 1];
       data[d + 6] = colors[i * 3 + 2];
@@ -195,7 +203,14 @@ export class SceneEncoder {
     }
     this.atomCount = n;
     this.boundingRadius = Math.sqrt(maxR2) + 3;
-    this.groundY = (Number.isFinite(minY) ? minY : -5) - 0.75;
+    this.minY = Number.isFinite(minY) ? minY : -5;
+    if (Number.isFinite(minX)) {
+      this.structureCenter.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+      this.structureRadius = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2 + (maxZ - minZ) ** 2) / 2;
+    } else {
+      this.structureCenter.set(0, 0, 0);
+      this.structureRadius = 5;
+    }
     texture.needsUpdate = true;
   }
 
