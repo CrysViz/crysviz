@@ -178,7 +178,8 @@ export class RayTracingPipeline extends ForwardPipeline {
       depthWrite: false,
     }));
 
-    this._lastCameraKey = '';
+    this._lastCameraState = null; // Float64Array(16) snapshot at the last reset
+    this._lastZoom = 1;
     this._lastScale = 0;
     this._initialized = true;
   }
@@ -191,11 +192,18 @@ export class RayTracingPipeline extends ForwardPipeline {
   }
 
   /** Ask the next render() call to accumulate at least `samples` inner
-   *  iterations before presenting — used by the PNG export so tracer images
-   *  are converged, not single-sample (render() takes the max with its own
-   *  resize boost). */
+   *  iterations before presenting (render() takes the max with its own
+   *  resize boost). Used by the PNG export's render-to-completion loop. */
   requestBoost(samples) {
     this._boostSamples = Math.max(this._boostSamples, Math.max(1, Math.round(samples)));
+  }
+
+  /** True once the accumulation has reached this tracer's convergence target
+   *  (the image no longer changes). The PNG export loops render() until this
+   *  holds at the export size. */
+  isConverged() {
+    if (!this._uniforms) return false;
+    return this._uniforms.uSampleCounter.value >= this._cfg.targetSamples;
   }
 
   render({ renderer, scene, camera }) {
@@ -232,11 +240,27 @@ export class RayTracingPipeline extends ForwardPipeline {
       this.resetAccumulation();
     }
 
+    // Camera-motion detection with a tolerance: the damped trackball controls
+    // coast down exponentially after release, drifting the matrix by
+    // sub-pixel amounts for seconds — an exact comparison would keep
+    // resetting the accumulation the whole time ("the bar never starts").
+    // The snapshot only advances on a detected move, so slow creep still
+    // accumulates against the last reset point and cannot ghost unboundedly.
     camera.updateMatrixWorld();
-    const cameraKey = camera.matrixWorld.elements.join(',') + '|' + (camera.zoom ?? 1);
-    const cameraIsMoving = cameraKey !== this._lastCameraKey;
-    this._lastCameraKey = cameraKey;
-    if (cameraIsMoving) this.resetAccumulation();
+    const elements = camera.matrixWorld.elements;
+    const zoom = camera.zoom ?? 1;
+    let cameraIsMoving = !this._lastCameraState || Math.abs(zoom - this._lastZoom) > 1e-5;
+    if (!cameraIsMoving) {
+      for (let i = 0; i < 16; i++) {
+        if (Math.abs(elements[i] - this._lastCameraState[i]) > 1e-4) { cameraIsMoving = true; break; }
+      }
+    }
+    if (cameraIsMoving) {
+      if (!this._lastCameraState) this._lastCameraState = new Float64Array(16);
+      this._lastCameraState.set(elements);
+      this._lastZoom = zoom;
+      this.resetAccumulation();
+    }
 
     // --- camera uniforms ----------------------------------------------------
     u.uCameraMatrix.value.copy(camera.matrixWorld);

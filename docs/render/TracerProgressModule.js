@@ -32,8 +32,13 @@ function ensureBar() {
 export function updateTracerProgress(samples, target) {
   const bar = ensureBar();
   if (!bar) return;
+  // Perceptual mapping: Monte-Carlo error falls off as 1/sqrt(N), so most of
+  // the visible quality arrives early — a linear bar would crawl through its
+  // last half while the image looks done. sqrt makes bar motion track the
+  // perceived refinement; the bar's END is still the exact point where the
+  // accumulator stops (nothing changes after that).
   const fraction = Math.min(1, Math.max(0, samples / Math.max(1, target)));
-  fillEl.style.width = `${(fraction * 100).toFixed(1)}%`;
+  fillEl.style.width = `${(Math.sqrt(fraction) * 100).toFixed(1)}%`;
   if (fraction < 1) {
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
     bar.style.opacity = '1';

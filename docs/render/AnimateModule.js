@@ -99,6 +99,27 @@ window.addEventListener('keyup', (event) => {
   //console.log('Key released:', event.code, keyState);
 });
 
+/** Zero the TrackballControls damping momentum once it is sub-perceptual.
+ *  The residuals live in the (private) gap vectors `_moveCurr - _movePrev`,
+ *  `_zoomEnd - _zoomStart`, `_panEnd - _panStart` and the decaying
+ *  `_lastAngle`; each shrinks by dynamicDampingFactor per frame and only
+ *  approaches zero asymptotically. Thresholds are chosen at the sub-pixel
+ *  level (screen-normalized units / radians). No-op for staticMoving. */
+function settleControlsMomentum(controls) {
+  if (!controls || controls.staticMoving || !controls._moveCurr) return;
+  const GAP2 = 1e-8; // squared length of a ~1e-4 screen-units residual
+  const ANGLE = 1e-4; // radians — sub-pixel rotation at typical view sizes
+  if (controls._moveCurr.distanceToSquared(controls._movePrev) < GAP2
+      && Math.abs(controls._lastAngle ?? 0) < ANGLE
+      && controls._zoomEnd.distanceToSquared(controls._zoomStart) < GAP2
+      && controls._panEnd.distanceToSquared(controls._panStart) < GAP2) {
+    controls._movePrev.copy(controls._moveCurr);
+    controls._zoomStart.copy(controls._zoomEnd);
+    controls._panStart.copy(controls._panEnd);
+    controls._lastAngle = 0;
+  }
+}
+
 export function animation_update(time = 0) {
   if (_counter == 1){
      app.clock = new THREE.Clock();
@@ -114,6 +135,12 @@ export function animation_update(time = 0) {
   // fires the 'change' event (-> requestRender) whenever the camera actually
   // moved — including programmatic moves and the damping coast-down.
   app.controls.update();
+  // Snap out the damping tail: TrackballControls' momentum decays
+  // exponentially and never reaches zero on its own, so 'change' events (and
+  // thus render-on-demand frames + tracer accumulation resets) trail on for
+  // seconds at sub-pixel amplitude. Once every residual is below perception,
+  // zero it EXACTLY so the camera is strictly static from then on.
+  settleControlsMomentum(app.controls);
   //if (_counter%60 === 0 || _counter=== 1) {
   //  console.log('[animate] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
   //}

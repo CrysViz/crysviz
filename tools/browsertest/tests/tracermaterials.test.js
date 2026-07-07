@@ -173,14 +173,76 @@ function changedPixelCount(fileA, fileB) {
   });
   H.check('progress bar fades out once converged', barDone.opacity === '0', JSON.stringify(barDone));
 
+  // --- Camera-motion tolerance ------------------------------------------------------
+  // Damped-controls coast-down drifts the matrix by sub-pixel amounts; that
+  // must NOT reset the accumulation (the "bar never starts" bug), while a
+  // real camera move must.
+  const motion = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    const u = app.pipeline._uniforms;
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const before = u.uSampleCounter.value; // converged at target from the bar check
+    app.camera.position.x += 1e-6; // damping-tail-scale drift
+    requestRender();
+    await wait(1200);
+    const afterTiny = u.uSampleCounter.value;
+    app.camera.position.x += 0.5; // a real move
+    requestRender();
+    await wait(1200);
+    const afterBig = u.uSampleCounter.value;
+    app.camera.position.x -= 0.5 + 1e-6;
+    return { before, afterTiny, afterBig };
+  });
+  H.check('camera tolerance: sub-pixel drift keeps accumulating, real moves reset',
+    motion.afterTiny >= motion.before && motion.afterBig < motion.afterTiny,
+    JSON.stringify(motion));
+
+  // --- Damping momentum settles to strict zero --------------------------------------
+  const settled = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const c = app.controls;
+    // plant a sub-perceptual damping residue (as the coast-down tail leaves)
+    c._moveCurr.set(c._movePrev.x + 5e-5, c._movePrev.y);
+    c._lastAngle = 5e-5;
+    await new Promise((r) => setTimeout(r, 400)); // a few animate frames
+    return { gap: c._moveCurr.distanceTo(c._movePrev), lastAngle: c._lastAngle };
+  });
+  H.check('trackball damping tail snaps to exactly zero',
+    settled.gap === 0 && settled.lastAngle === 0, JSON.stringify(settled));
+
   // --- PNG export boost API --------------------------------------------------------
   const boost = await page.evaluate(async () => {
     const { app } = await import('./state/store.js');
     app.pipeline.requestBoost(200);
-    return { boostSamples: app.pipeline._boostSamples };
+    const armed = app.pipeline._boostSamples;
+    app.pipeline._boostSamples = 0; // disarm: don't burst inside this test
+    return { boostSamples: armed };
   });
   H.check('requestBoost arms the export accumulation burst',
     boost.boostSamples === 200, JSON.stringify(boost));
+
+  // --- PNG export renders tracers to full convergence --------------------------------
+  const exported = await page.evaluate(async () => {
+    const { captureSceneToPng } = await import('./render/index.js');
+    const { app } = await import('./state/store.js');
+    const target = app.pipeline._cfg.targetSamples;
+    let maxSamplesSeen = 0;
+    const origRender = app.pipeline.render.bind(app.pipeline);
+    app.pipeline.render = (ctx) => {
+      origRender(ctx);
+      maxSamplesSeen = Math.max(maxSamplesSeen, app.pipeline._uniforms.uSampleCounter.value);
+    };
+    try {
+      const blob = await captureSceneToPng({ width: 320, height: 240, margin: 0, transparent: true });
+      return { size: blob?.size ?? 0, type: blob?.type, target, maxSamplesSeen };
+    } finally {
+      app.pipeline.render = origRender;
+    }
+  });
+  H.check('PNG export accumulates the tracer to its convergence target',
+    exported.size > 0 && exported.type === 'image/png' && exported.maxSamplesSeen >= exported.target,
+    JSON.stringify(exported));
 
   // --- Materials persist (species map + category stores in captureState) ---------
   const persisted = await page.evaluate(async () => {

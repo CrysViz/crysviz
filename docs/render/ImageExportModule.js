@@ -48,6 +48,32 @@ function renderMainToCanvas(w, h) {
   return canvas;
 }
 
+// Like renderMainToCanvas, but for progressive tracer pipelines: keeps
+// accumulating in small batches — yielding to the browser between them so the
+// on-screen progress bar (render/TracerProgressModule.js, driven from
+// pipeline.render()) stays live — until the pipeline reports convergence.
+// Non-tracer pipelines (no isConverged) capture after the single frame.
+async function renderMainToCanvasConverged(w, h) {
+  app.renderer.setSize(w, h, false);
+  app.pipeline?.setSize(w, h);
+  const renderCtx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
+  app.pipeline?.render(renderCtx); // first call: resize reset + initial burst
+  if (app.pipeline?.isConverged) {
+    while (!app.pipeline.isConverged()) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      app.pipeline.requestBoost?.(4); // small batches keep the UI responsive
+      app.pipeline.render(renderCtx);
+    }
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
+  ctx.drawImage(app.renderer.domElement, 0, 0, w, h);
+  return canvas;
+}
+
 // Bounding box of pixels with alpha > threshold. Returns null if fully empty.
 function contentBBox(canvas) {
   const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
@@ -209,7 +235,7 @@ function drawAxesLegend(ictx, x, bottomY, gsize) {
 
 /**
  * Capture the current scene to a high-resolution PNG Blob.
- * @param {{width:number, height:number, margin?:number, transparent?:boolean, rtSamples?:number}} opts
+ * @param {{width:number, height:number, margin?:number, transparent?:boolean}} opts
  * @returns {Promise<Blob>}
  */
 export async function captureSceneToPng(opts) {
@@ -220,9 +246,6 @@ export async function captureSceneToPng(opts) {
   const height = Math.max(1, Math.round(opts.height));
   const margin = Math.max(0, Math.round(opts.margin || 0));
   const transparent = !!opts.transparent;
-  // Ray/path tracing: accumulation samples for the final pass (the resize
-  // reset would otherwise leave the export at a barely-converged 16 samples).
-  const rtSamples = Math.max(0, Math.round(opts.rtSamples || 0));
 
   const viewEl = getViewEl();
   const vw = Math.max(1, (viewEl && viewEl.clientWidth) || window.innerWidth);
@@ -292,10 +315,9 @@ export async function captureSceneToPng(opts) {
       console.warn(`[png-export] source render clamped to ${srcW}x${srcH}; content may upscale.`);
     }
 
-    // --- Final high-res pass. ---
-    // Tracer pipelines: converge the accumulation within this render call.
-    if (rtSamples > 0) app.pipeline?.requestBoost?.(rtSamples);
-    const srcCanvas = renderMainToCanvas(srcW, srcH);
+    // --- Final high-res pass (tracer pipelines render to full convergence,
+    //     with the on-screen progress bar tracking the accumulation). ---
+    const srcCanvas = await renderMainToCanvasConverged(srcW, srcH);
 
     // Crop rect in source pixels, from the (accurate enough) probe fractions.
     const cropX = Math.max(0, Math.floor(nx0 * srcW));
