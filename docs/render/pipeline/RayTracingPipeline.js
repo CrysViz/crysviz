@@ -208,7 +208,13 @@ export class RayTracingPipeline extends ForwardPipeline {
       uAmbientStrength: { value: general.rtAmbient ?? 0.3 },
       uBackgroundDisplay: { value: new THREE.Color(0.9, 0.9, 0.9) }, // pre-compensated (primary miss)
       uGroundEnabled: { value: false },
-      uGroundY: { value: -5 },
+      uGroundNormal: { value: new THREE.Vector3(0, 1, 0) },
+      uGroundD: { value: -5 }, // plane: dot(normal, p) = d
+      uGroundColor1: { value: new THREE.Color(0.9, 0.9, 0.9) },
+      uGroundColor2: { value: new THREE.Color(0.7, 0.7, 0.7) },
+      uGroundPattern: { value: 0 }, // 0 solid, 1 checker, 2 grid
+      uGroundScale: { value: 2 },
+      uGroundReflect: { value: 0 },
       ...this._extraSceneUniforms(),
     };
 
@@ -379,7 +385,29 @@ export class RayTracingPipeline extends ForwardPipeline {
     u.uLightSoftness.value = general.ptLightSoftness ?? 0.3;
     u.uAmbientStrength.value = general.rtAmbient ?? 0.3;
     u.uGroundEnabled.value = !!general.rtGroundPlane;
-    u.uGroundY.value = this._encoder.groundY;
+    // Ground orientation: 'structure' = world-fixed below the cell;
+    // 'horizon' = perpendicular to the camera's up vector and below the
+    // structure's bounding sphere, so orbiting reads as rotating the
+    // structure above a fixed floor. (Reorientation coincides with camera
+    // moves, which already reset the accumulation.)
+    if (general.rtGroundMode === 'horizon') {
+      const target = app.controls?.target ?? this._rtScene.position;
+      u.uGroundNormal.value.copy(camera.up).normalize();
+      u.uGroundD.value = u.uGroundNormal.value.dot(target) - (this._encoder.boundingRadius + 1);
+    } else {
+      u.uGroundNormal.value.set(0, 1, 0);
+      u.uGroundD.value = this._encoder.groundY;
+    }
+    // Ground colors/pattern/material: colors default to the background (and a
+    // darkened variant) until customized.
+    if (general.rtGroundColor1) u.uGroundColor1.value.set(general.rtGroundColor1);
+    else u.uGroundColor1.value.copy(u.uBackgroundColor.value);
+    if (general.rtGroundColor2) u.uGroundColor2.value.set(general.rtGroundColor2);
+    else u.uGroundColor2.value.copy(u.uGroundColor1.value).multiplyScalar(0.7);
+    u.uGroundPattern.value = general.rtGroundPattern === 'checker' ? 1
+      : general.rtGroundPattern === 'grid' ? 2 : 0;
+    u.uGroundScale.value = Math.max(0.25, general.rtGroundScale ?? 2);
+    u.uGroundReflect.value = general.rtGroundReflect ?? 0;
     // Depth of field: aperture in world units; focus follows the orbit target
     // scaled by the "Focus distance" factor (1 = focus exactly on the target).
     u.uApertureSize.value = general.rtDofAperture ?? 0;
@@ -394,7 +422,9 @@ export class RayTracingPipeline extends ForwardPipeline {
     const lookKey = `${u.uBackgroundColor.value.getHex()}|${u.uLightColor.value.getHex()}`
       + `|${u.uReflectivity.value}|${u.uLightSoftness.value}|${u.uAmbientStrength.value}`
       + `|${general.rtSaturation ?? 1}`
-      + `|${u.uGroundEnabled.value}|${u.uApertureSize.value}|${(general.rtDofFocus ?? 1)}`;
+      + `|${u.uGroundEnabled.value}|${u.uApertureSize.value}|${(general.rtDofFocus ?? 1)}`
+      + `|${general.rtGroundMode}|${u.uGroundPattern.value}|${u.uGroundColor1.value.getHex()}`
+      + `|${u.uGroundColor2.value.getHex()}|${u.uGroundScale.value}|${u.uGroundReflect.value}`;
     if (this._lastLookKey !== undefined && lookKey !== this._lastLookKey) this.resetAccumulation();
     this._lastLookKey = lookKey;
 

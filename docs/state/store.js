@@ -91,7 +91,13 @@ export const RENDERING_DEFAULTS = {
   ptLightSoftness: 0.3, // both tracers: light softness (0 = hard shadows, 1 = very soft; PT area-light radius / RT shadow-ray cone)
   rtDofAperture: 0, // both tracers: depth-of-field aperture in world units (0 = off)
   rtDofFocus: 1, // both tracers: focus distance as a factor of the camera->target distance
-  rtGroundPlane: false, // both tracers: background-colored ground plane (shadow catcher)
+  rtGroundPlane: false, // both tracers: ground plane (shadow catcher)
+  rtGroundMode: 'structure', // 'structure' = world-fixed below the cell | 'horizon' = follows the view (always down)
+  rtGroundPattern: 'solid', // 'solid' | 'checker' | 'grid'
+  rtGroundColor1: null, // hex or null = follow the background color
+  rtGroundColor2: null, // hex or null = auto (darkened color1)
+  rtGroundScale: 2, // pattern tile size in world units (Å)
+  rtGroundReflect: 0, // ground mirror fraction (0 = matte ... 1 = mirror floor)
   rtLightIntensity: 1.2, // both tracers: key-light intensity multiplier
   rtAmbient: 0.3, // both tracers: ambient/fill light strength (RT ambient term / PT sky bounce)
   rtSaturation: 1, // both tracers: post-tone-map saturation grade (output pass; 1 = neutral)

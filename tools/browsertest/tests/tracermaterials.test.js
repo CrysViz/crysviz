@@ -209,13 +209,13 @@ function changedPixelCount(fileA, fileB) {
     featChanged > 500, JSON.stringify({ featChanged })); // smoke: features change the image at all
 
   await H.setSelect(page, 'renderPipelineMenu', 'pathtrace');
-  await page.waitForTimeout(5000);
+  await page.waitForTimeout(10000); // PT + polys + edges + ground is slow under software GL
   const ptFeat = await page.evaluate(async () => {
     const { app } = await import('./state/store.js');
     return { id: app.pipeline.id, samples: app.pipeline._uniforms.uSampleCounter.value };
   });
   H.check('pathtrace renders with all illustration features (shader compiles + accumulates)',
-    ptFeat.id === 'pathtrace' && ptFeat.samples > 2, JSON.stringify(ptFeat));
+    ptFeat.id === 'pathtrace' && ptFeat.samples > 1, JSON.stringify(ptFeat));
   H.check('no page errors with illustration features', errors.length === 0, errors.join(' | '));
 
   // back to raytrace with the extras off for the remaining checks
@@ -240,6 +240,60 @@ function changedPixelCount(fileA, fileB) {
   await H.setSlider(page, 'polyEdgeWidth', 1); // back to the default hairline
   await page.waitForTimeout(800); // let the re-encode/reset settle (the bar
   // section below forces convergence and must not race a pending reset)
+
+  // --- Ground plane options (orientation / pattern / colors / reflect) ------------
+  const groundUi = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    const toggle = /** @type {HTMLInputElement} */ (document.getElementById('rtGroundToggle'));
+    const options = document.getElementById('rtGroundMode')?.closest('.control-row')?.parentElement;
+    const hiddenWhenOff = getComputedStyle(options).display === 'none';
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change'));
+    const shownWhenOn = getComputedStyle(options).display !== 'none';
+    general.rtGroundPattern = 'solid';
+    requestRender();
+    return {
+      hiddenWhenOff, shownWhenOn,
+      hasControls: !!document.getElementById('rtGroundPattern')
+        && !!document.getElementById('rtGroundColor1') && !!document.getElementById('rtGroundColor2')
+        && !!document.getElementById('rtGroundScale') && !!document.getElementById('rtGroundReflect'),
+    };
+  });
+  H.check('ground options reveal with the toggle and all controls exist',
+    groundUi.hiddenWhenOff && groundUi.shownWhenOn && groundUi.hasControls, JSON.stringify(groundUi));
+
+  await page.waitForTimeout(2500);
+  const groundSolid = await H.shotCanvas(page, 'tracermaterials-ground-solid');
+  await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    general.rtGroundPattern = 'checker';
+    general.rtGroundColor1 = '#c8b060';
+    general.rtGroundColor2 = '#404040';
+    general.rtGroundMode = 'horizon';
+    general.rtGroundReflect = 0.3;
+    requestRender();
+  });
+  await page.waitForTimeout(2500);
+  const groundChecker = await H.shotCanvas(page, 'tracermaterials-ground-checker');
+  const groundDelta = changedPixelCount(groundSolid, groundChecker);
+  H.check('checkerboard/horizon/reflect ground renders differently from solid',
+    groundDelta > 2000, JSON.stringify({ groundDelta }));
+  await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    general.rtGroundPlane = false;
+    general.rtGroundMode = 'structure';
+    general.rtGroundPattern = 'solid';
+    general.rtGroundColor1 = null;
+    general.rtGroundColor2 = null;
+    general.rtGroundReflect = 0;
+    const toggle = /** @type {HTMLInputElement} */ (document.getElementById('rtGroundToggle'));
+    toggle.checked = false;
+    requestRender();
+  });
+  await page.waitForTimeout(800);
 
   // --- Accumulation progress bar --------------------------------------------------
   const barState = await page.evaluate(() => {

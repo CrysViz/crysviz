@@ -40,8 +40,14 @@ uniform float uReflectivity;
 uniform vec3 uLightPosition; // area-light centre (world)
 uniform float uLightRadius;  // area-light radius (world; soft-shadow spread)
 uniform float uAmbientStrength; // scales the sky/ambient bounce term
-uniform bool uGroundEnabled; // background-colored ground plane (shadow catcher)
-uniform float uGroundY;
+uniform bool uGroundEnabled; // ground plane (shadow catcher)
+uniform vec3 uGroundNormal;  // plane: dot(normal, p) = uGroundD
+uniform float uGroundD;
+uniform vec3 uGroundColor1;
+uniform vec3 uGroundColor2;
+uniform int uGroundPattern;  // 0 solid, 1 checker, 2 grid
+uniform float uGroundScale;  // pattern tile size (world units)
+uniform float uGroundReflect; // 0 matte ... 1 mirror floor
 
 #define DATA_W ${DATA_TEX_WIDTH}
 
@@ -107,6 +113,25 @@ Sphere lightSphere;
 vec4 fetchData(sampler2D tex, int index)
 {
 	return texelFetch(tex, ivec2(index % DATA_W, index / DATA_W), 0);
+}
+
+// Ground surface color at a plane point: solid / checkerboard / grid of the
+// two ground colors, in a tangent frame of the plane (world-unit tiles).
+vec3 groundPatternColor(vec3 p)
+{
+	if (uGroundPattern == 0) return uGroundColor1;
+	vec3 tangent = normalize(abs(uGroundNormal.y) < 0.9
+		? cross(uGroundNormal, vec3(0, 1, 0)) : cross(uGroundNormal, vec3(1, 0, 0)));
+	vec3 bitangent = cross(uGroundNormal, tangent);
+	vec2 uv = vec2(dot(p, tangent), dot(p, bitangent)) / uGroundScale;
+	if (uGroundPattern == 1) // checkerboard
+	{
+		float ck = mod(floor(uv.x) + floor(uv.y), 2.0);
+		return ck < 0.5 ? uGroundColor1 : uGroundColor2;
+	}
+	// grid: thin lines of color2 on color1
+	vec2 f = abs(fract(uv) - 0.5);
+	return min(f.x, f.y) < 0.03 ? uGroundColor2 : uGroundColor1;
 }
 
 //---------------------------------------------------------------------------
@@ -207,20 +232,20 @@ float SceneIntersect( out int isRayExiting )
 		}
 	}
 
-	// ---- optional ground plane (background-colored matte shadow catcher) ---
+	// ---- optional ground plane (patterned shadow catcher) ------------------
 	if (uGroundEnabled)
 	{
-		d = PlaneIntersect(vec4(0.0, 1.0, 0.0, uGroundY), rayOrigin, rayDirection);
+		d = PlaneIntersect(vec4(uGroundNormal, uGroundD), rayOrigin, rayDirection);
 		if (d < t)
 		{
 			t = d;
-			hitNormal = vec3(0, 1, 0);
+			hitNormal = uGroundNormal;
 			hitEmission = vec3(0);
-			hitColor = uBackgroundColor;
+			hitColor = groundPatternColor(rayOrigin + (d * rayDirection));
 			hitType = COAT;
 			hitAlpha = 1.0;
-			hitGloss = 1.0;          // sharp (faint) fresnel floor reflections
-			hitReflectivity = 0.0;   // no stochastic mirror
+			hitGloss = 1.0;          // sharp fresnel floor reflections
+			hitReflectivity = uGroundReflect; // stochastic mirror fraction
 			hitObjectID = -2.0;
 			isRayExiting = FALSE;
 		}

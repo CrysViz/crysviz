@@ -155,6 +155,12 @@ export function captureState({ includeFrames = false } = {}) {
       rtDofAperture: general.rtDofAperture,
       rtDofFocus: general.rtDofFocus,
       rtGroundPlane: general.rtGroundPlane,
+      rtGroundMode: general.rtGroundMode,
+      rtGroundPattern: general.rtGroundPattern,
+      rtGroundColor1: general.rtGroundColor1,
+      rtGroundColor2: general.rtGroundColor2,
+      rtGroundScale: general.rtGroundScale,
+      rtGroundReflect: general.rtGroundReflect,
       rtLightIntensity: general.rtLightIntensity,
       rtAmbient: general.rtAmbient,
       rtSaturation: general.rtSaturation,
@@ -363,8 +369,23 @@ function applyStyleSettings(style) {
   if (style.rtGroundPlane != null) {
     general.rtGroundPlane = style.rtGroundPlane;
     const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtGroundToggle'));
-    if (toggle) toggle.checked = style.rtGroundPlane;
+    if (toggle) {
+      toggle.checked = style.rtGroundPlane;
+      toggle.dispatchEvent(new Event('change')); // also shows/hides the ground options
+    }
   }
+  if (style.rtGroundMode != null) { general.rtGroundMode = style.rtGroundMode; setSelect('rtGroundMode', style.rtGroundMode); }
+  if (style.rtGroundPattern != null) { general.rtGroundPattern = style.rtGroundPattern; setSelect('rtGroundPattern', style.rtGroundPattern); }
+  if (style.rtGroundColor1 !== undefined) {
+    general.rtGroundColor1 = style.rtGroundColor1;
+    if (style.rtGroundColor1) setSelect('rtGroundColor1', style.rtGroundColor1);
+  }
+  if (style.rtGroundColor2 !== undefined) {
+    general.rtGroundColor2 = style.rtGroundColor2;
+    if (style.rtGroundColor2) setSelect('rtGroundColor2', style.rtGroundColor2);
+  }
+  if (style.rtGroundScale != null) { general.rtGroundScale = style.rtGroundScale; setSelect('rtGroundScale', style.rtGroundScale); }
+  if (style.rtGroundReflect != null) { general.rtGroundReflect = style.rtGroundReflect; setSelect('rtGroundReflect', style.rtGroundReflect); }
   if (style.rtLightIntensity != null) {
     general.rtLightIntensity = style.rtLightIntensity;
     setSelect('rtLightIntensity', style.rtLightIntensity);

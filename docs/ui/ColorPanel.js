@@ -496,12 +496,75 @@ export function addColorPanel(target = "colorContainer") {
   groundToggle.checked = !!general.rtGroundPlane;
   groundToggle.addEventListener("change", () => {
     general.rtGroundPlane = groundToggle.checked;
+    groundOptions.style.display = groundToggle.checked ? "block" : "none";
     app.pipeline?.resetAccumulation?.();
     requestRender();
   });
   groundRow.appendChild(groundLabel);
   groundRow.appendChild(groundToggle);
   rtControlsBlock.appendChild(groundRow);
+
+  // Ground options (shown while the plane is enabled): orientation, pattern,
+  // the two pattern colors (default: follow the background), tile size and
+  // the mirror fraction. All changes restart the accumulation via the
+  // pipeline's look key; the handlers also reset explicitly for snappiness.
+  const groundOptions = createElement("div", {},
+    { display: general.rtGroundPlane ? "block" : "none" });
+  const groundSelectRow = (id, labelText, options, current, onChange) => {
+    const rowEl = createElement("div", { class: "control-row" });
+    rowEl.appendChild(createElement("label", { for: id }, {}, labelText));
+    const select = createElement("select", { id });
+    for (const [value, text] of options) {
+      const opt = createElement("option", { value }, {}, text);
+      if (value === current) opt.setAttribute("selected", "selected");
+      select.appendChild(opt);
+    }
+    select.addEventListener("change", () => {
+      onChange(/** @type {HTMLSelectElement} */ (select).value);
+      app.pipeline?.resetAccumulation?.();
+      requestRender();
+    });
+    rowEl.appendChild(select);
+    return rowEl;
+  };
+  groundOptions.appendChild(groundSelectRow('rtGroundMode', 'Ground orientation', [
+    ['structure', 'Follows structure'],
+    ['horizon', 'Always below (view)'],
+  ], general.rtGroundMode ?? 'structure', (v) => { general.rtGroundMode = v; }));
+  groundOptions.appendChild(groundSelectRow('rtGroundPattern', 'Ground pattern', [
+    ['solid', 'Solid'],
+    ['checker', 'Checkerboard'],
+    ['grid', 'Grid'],
+  ], general.rtGroundPattern ?? 'solid', (v) => { general.rtGroundPattern = v; }));
+
+  const groundColorRow = (id, labelText, key) => {
+    const rowEl = createElement("div", { class: "control-row" });
+    rowEl.appendChild(createElement("label", { for: id }, {}, labelText));
+    const input = createElement("input", { type: "color", id },
+      { justifySelf: "start", width: "48px", height: "24px", padding: "0" });
+    const bg = app.scene?.background;
+    input.value = general[key]
+      ?? (bg?.isColor ? `#${bg.getHexString()}` : '#e8e8e8');
+    input.addEventListener("input", () => {
+      general[key] = input.value;
+      app.pipeline?.resetAccumulation?.();
+      requestRender();
+    });
+    rowEl.appendChild(input);
+    return rowEl;
+  };
+  groundOptions.appendChild(groundColorRow('rtGroundColor1', 'Ground color 1', 'rtGroundColor1'));
+  groundOptions.appendChild(groundColorRow('rtGroundColor2', 'Ground color 2', 'rtGroundColor2'));
+
+  groundOptions.appendChild(makeTracerSliderRow('rtGroundScale', 'rtGroundScale',
+    0.5, 10, 0.25, general.rtGroundScale ?? 2,
+    (v) => `Tile size: ${v.toFixed(2)}`,
+    (v) => { general.rtGroundScale = v; }));
+  groundOptions.appendChild(makeTracerSliderRow('rtGroundReflect', 'rtGroundReflect',
+    0, 1, 0.05, general.rtGroundReflect ?? 0,
+    (v) => `Ground reflect: ${v.toFixed(2)}`,
+    (v) => { general.rtGroundReflect = v; }));
+  rtControlsBlock.appendChild(groundOptions);
 
   content.appendChild(rtControlsBlock);
 
@@ -648,6 +711,13 @@ export function addColorPanel(target = "colorContainer") {
     fire('rtDofAperture', D.rtDofAperture, 'input');
     fire('rtDofFocus', D.rtDofFocus, 'input');
     fireCheck('rtGroundToggle', D.rtGroundPlane);
+    fire('rtGroundMode', D.rtGroundMode, 'change');
+    fire('rtGroundPattern', D.rtGroundPattern, 'change');
+    fire('rtGroundScale', D.rtGroundScale, 'input');
+    fire('rtGroundReflect', D.rtGroundReflect, 'input');
+    // ground colors: default = null (follow the background)
+    general.rtGroundColor1 = D.rtGroundColor1;
+    general.rtGroundColor2 = D.rtGroundColor2;
     fireCheck('ptDenoiseToggle', D.ptDenoise);
     requestRender();
   }
