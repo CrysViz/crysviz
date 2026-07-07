@@ -420,23 +420,39 @@ function changedPixelCount(fileA, fileB) {
   // --- PNG export renders tracers to full convergence --------------------------------
   const exported = await page.evaluate(async () => {
     const { captureSceneToPng } = await import('./render/index.js');
-    const { app } = await import('./state/store.js');
+    const { app, general } = await import('./state/store.js');
     const target = app.pipeline._cfg.targetSamples;
     let maxSamplesSeen = 0;
+    let maxAccumW = 0;
+    let lastAccumW = 0;
     const origRender = app.pipeline.render.bind(app.pipeline);
     app.pipeline.render = (ctx) => {
       origRender(ctx);
       maxSamplesSeen = Math.max(maxSamplesSeen, app.pipeline._uniforms.uSampleCounter.value);
+      maxAccumW = Math.max(maxAccumW, app.pipeline._accumTarget.width);
+      lastAccumW = app.pipeline._accumTarget.width;
     };
     try {
       const blob = await captureSceneToPng({ width: 320, height: 240, margin: 0, transparent: true });
-      return { size: blob?.size ?? 0, type: blob?.type, target, maxSamplesSeen };
+      return {
+        size: blob?.size ?? 0, type: blob?.type, target, maxSamplesSeen, maxAccumW, lastAccumW,
+        scaleRestored: general.rtResolutionScale,
+      };
     } finally {
       app.pipeline.render = origRender;
     }
   });
   H.check('PNG export accumulates the tracer to its convergence target',
     exported.size > 0 && exported.type === 'image/png' && exported.maxSamplesSeen >= exported.target,
+    JSON.stringify(exported));
+  // 100% internal resolution during export (interactive scale is 0.25 here,
+  // which would cap the final pass at ~80px), the source render stays capped
+  // near the requested output size (the 8192-blowup crash guard; the fixed
+  // 1024 probe pass is the max), and the interactive scale is restored.
+  H.check('PNG export traces at 100% resolution within the output-size cap',
+    exported.lastAccumW >= 300 && exported.lastAccumW <= 400
+      && exported.maxAccumW <= 1100
+      && Math.abs(exported.scaleRestored - 0.25) < 1e-9,
     JSON.stringify(exported));
 
   // --- Materials persist (species map + category stores in captureState) ---------
