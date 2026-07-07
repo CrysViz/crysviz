@@ -157,6 +157,7 @@ export function captureState({ includeFrames = false } = {}) {
       rtGroundPlane: general.rtGroundPlane,
       rtLightIntensity: general.rtLightIntensity,
       rtAmbient: general.rtAmbient,
+      rtSaturation: general.rtSaturation,
       celOutlineWidth: general.celOutlineWidth,
       celHullWidth: general.celHullWidth,
       polyEdgeWidth: general.polyEdgeWidth,
@@ -371,6 +372,10 @@ function applyStyleSettings(style) {
   if (style.rtAmbient != null) {
     general.rtAmbient = style.rtAmbient;
     setSelect('rtAmbient', style.rtAmbient);
+  }
+  if (style.rtSaturation != null) {
+    general.rtSaturation = style.rtSaturation;
+    setSelect('rtSaturation', style.rtSaturation);
   }
   if (style.celOutlineWidth != null) general.celOutlineWidth = style.celOutlineWidth;
   if (style.celHullWidth != null) general.celHullWidth = style.celHullWidth;

@@ -311,9 +311,13 @@ vec3 RayTrace()
 			// gloss (typeParam, default 0.6 = the classic look) sets the Blinn
 			// highlight tightness; 0 = pure matte Lambert
 			float gloss = clamp(intersectionTypeParam, 0.0, 1.0);
+			// specular + reflections are TINTED by the surface color (like the
+			// raster metallic style's metalness) — an untinted white sheen +
+			// background reflections wash the saturation out
+			vec3 specularTint = mix(vec3(1), intersectionColor, 0.6);
 			accumulatedColor += doAmbientLighting(rayColorMask, intersectionColor, ambientIntensity);
 			diffuseContribution = doDiffuseDirectLighting(rayColorMask, intersectionColor, uLightColor, diffuseIntensity);
-			specularContribution = doBlinnPhongSpecularLighting(rayColorMask, shadingNormal, halfwayVector, uLightColor, 1.0 - gloss, diffuseIntensity) * step(0.01, gloss);
+			specularContribution = doBlinnPhongSpecularLighting(rayColorMask * specularTint, shadingNormal, halfwayVector, uLightColor, 1.0 - gloss, diffuseIntensity) * step(0.01, gloss);
 
 			// mirror reflections, weighted by Fresnel + the Reflectivity slider
 			reflectance = calcFresnelReflectance(rayDirection, shadingNormal, 1.0, 1.4, IoR_ratio);
@@ -322,7 +326,7 @@ vec3 RayTrace()
 			if (bounces == 0 && reflectWeight > 0.01)
 			{
 				willNeedReflectionRay = TRUE;
-				reflectionRayColorMask = rayColorMask * reflectWeight;
+				reflectionRayColorMask = rayColorMask * reflectWeight * specularTint;
 				reflectionRayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
 				reflectionRayDirection = reflect(rayDirection, shadingNormal);
 			}

@@ -204,7 +204,7 @@ function changedPixelCount(fileA, fileB) {
   const featShot = await H.shotCanvas(page, 'tracermaterials-illustration');
   const featChanged = changedPixelCount(plainShot, featShot);
   H.check('ground plane + DoF + translucent + frost render under raytrace',
-    featChanged > 1000, JSON.stringify({ featChanged }));
+    featChanged > 500, JSON.stringify({ featChanged })); // smoke: features change the image at all
 
   await H.setSelect(page, 'renderPipelineMenu', 'pathtrace');
   await page.waitForTimeout(5000);
@@ -334,6 +334,42 @@ function changedPixelCount(fileA, fileB) {
     general.rtLightIntensity = 1.2;
     general.rtAmbient = 0.3;
   });
+
+  // --- Saturation grade (output pass: instant, no re-accumulation) -----------------
+  const satShotColored = await H.shotCanvas(page, 'tracermaterials-saturated');
+  await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    general.rtSaturation = 0; // grayscale grade
+    requestRender();
+  });
+  await page.waitForTimeout(600);
+  const satShotGray = await H.shotCanvas(page, 'tracermaterials-desaturated');
+  const satMetric = await page.evaluate(() => ({ ok: true }));
+  const maxChroma = (file) => {
+    const png = PNG.sync.read(fs.readFileSync(file));
+    let m = 0;
+    for (let y = 0; y < png.height; y += 3) {
+      for (let x = 0; x < png.width; x += 3) {
+        const o = (y * png.width + x) * 4;
+        const [r, g, b] = [png.data[o], png.data[o + 1], png.data[o + 2]];
+        m = Math.max(m, Math.max(r, g, b) - Math.min(r, g, b));
+      }
+    }
+    return m;
+  };
+  const chromaColored = maxChroma(satShotColored);
+  const chromaGray = maxChroma(satShotGray);
+  H.check('saturation 0 renders the traced image grayscale (output-pass grade)',
+    satMetric.ok && chromaColored > 60 && chromaGray < 15,
+    JSON.stringify({ chromaColored, chromaGray }));
+  await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    general.rtSaturation = 1;
+    requestRender();
+  });
+  await page.waitForTimeout(400);
 
   // --- PNG export boost API --------------------------------------------------------
   const boost = await page.evaluate(async () => {

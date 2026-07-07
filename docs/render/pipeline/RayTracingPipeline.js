@@ -174,6 +174,8 @@ export class RayTracingPipeline extends ForwardPipeline {
         uOutputResolution: { value: new THREE.Vector2(4, 4) },
         uOneOverSampleCounter: { value: 1 },
         uUseToneMapping: { value: true },
+        uExposure: { value: 1.2 }, // matches the raster renderer's toneMappingExposure
+        uSaturation: { value: general.rtSaturation ?? 1 },
         ...this._extraOutputUniforms(),
       },
       vertexShader: this._cfg.vertexShader,
@@ -286,8 +288,12 @@ export class RayTracingPipeline extends ForwardPipeline {
     if (app.keyLight) {
       const target = app.controls?.target ?? this._rtScene.position;
       u.uLightDirection.value.copy(app.keyLight.position).sub(target).normalize();
+      // Include the key light's actual intensity (the raster scene runs it at
+      // 5.0), normalized by PI to match three's physically-based diffuse —
+      // without it the traced shading is ambient-dominated and washed out.
       u.uLightColor.value.copy(app.keyLight.color)
-        .multiplyScalar(general.rtLightIntensity ?? 1.2);
+        .multiplyScalar(((app.keyLight.intensity ?? Math.PI) / Math.PI)
+          * (general.rtLightIntensity ?? 1.2));
     }
     if (scene.background?.isColor) u.uBackgroundColor.value.copy(scene.background);
     u.uReflectivity.value = general.rtReflectivity ?? 0.15;
@@ -339,6 +345,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     const out = this._outputQuad.material.uniforms;
     out[this._cfg.outputTexUniform].value = this._accumTarget.texture;
     out.uOneOverSampleCounter.value = 1 / Math.max(1, u.uSampleCounter.value);
+    out.uSaturation.value = general.rtSaturation ?? 1; // output-pass grade: no reset needed
     this._updateOutputUniforms(out);
     renderer.setRenderTarget(null);
     this._outputQuad.render(renderer);

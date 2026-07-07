@@ -21,6 +21,12 @@ uniform float uEdgeSharpenSpeed;
 uniform bool uCameraIsMoving;
 uniform bool uSceneIsDynamic;
 uniform bool uUseToneMapping;
+// LOCAL ADAPTATION (CrysViz): ACES grade matching the raster pipelines
+// (renderer uses ACESFilmicToneMapping at exposure 1.2 — the upstream
+// Reinhard operator desaturates midtones noticeably), plus a post-tone-map
+// saturation control (output-pass only: changing it needs no re-accumulation).
+uniform float uExposure;
+uniform float uSaturation;
 // LOCAL ADAPTATION (CrysViz): resolution-scale mapping + denoiser bypass
 uniform vec2 uOutputResolution;
 uniform vec2 uAccumResolution;
@@ -53,7 +59,10 @@ void main()
 	{
 		vec3 rawColor = texelFetch(tPathTracedImageTexture, ivec2(glFragCoord_xy), 0).rgb;
 		rawColor *= uOneOverSampleCounter;
-		rawColor = uUseToneMapping ? ReinhardToneMapping(rawColor) : rawColor;
+		rawColor *= uExposure;
+		rawColor = uUseToneMapping ? ACESFilmicToneMapping(rawColor) : rawColor;
+		float rawLuma = dot(rawColor, vec3(0.2126, 0.7152, 0.0722));
+		rawColor = mix(vec3(rawLuma), rawColor, uSaturation);
 		pc_fragColor = vec4(sqrt(clamp(rawColor, 0.0, 1.0)), 1.0);
 		return;
 	}
@@ -376,7 +385,11 @@ void main()
 	filteredPixelColor *= uOneOverSampleCounter;
 
 	// apply tone mapping (brings pixel into 0.0-1.0 rgb color range)
-	filteredPixelColor = uUseToneMapping ? ReinhardToneMapping(filteredPixelColor) : filteredPixelColor;
+	// LOCAL ADAPTATION (CrysViz): exposure + ACES + saturation grade
+	filteredPixelColor *= uExposure;
+	filteredPixelColor = uUseToneMapping ? ACESFilmicToneMapping(filteredPixelColor) : filteredPixelColor;
+	float luma = dot(filteredPixelColor, vec3(0.2126, 0.7152, 0.0722));
+	filteredPixelColor = mix(vec3(luma), filteredPixelColor, uSaturation);
 
 	// lastly, apply gamma correction (gives more intensity/brightness range where it's needed)
 	pc_fragColor = vec4(sqrt(filteredPixelColor), 1.0);

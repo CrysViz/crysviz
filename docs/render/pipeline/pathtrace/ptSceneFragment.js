@@ -494,8 +494,10 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 			if (diffuseCount == 0 && hitObjectID != previousObjectID)
 			{
 				// gloss (standard slot, default 0.6) sets how tight the coat
-				// reflection is; 0 = fully blurred (matte), 1 = mirror-sharp
-				reflectionMask = mask * Re * clamp(hitGloss * 1.4, 0.0, 1.0);
+				// reflection is; 0 = fully blurred (matte), 1 = mirror-sharp.
+				// Tinted by the surface color (raster-metalness parity: an
+				// untinted background reflection washes saturation out).
+				reflectionMask = mask * Re * clamp(hitGloss * 1.4, 0.0, 1.0) * mix(vec3(1), hitColor, 0.6);
 				reflectionRayDirection = randomDirectionInSpecularLobe(nl, reflect(rayDirection, nl), 1.0 - hitGloss);
 				reflectionRayOrigin = x + (nl * uEPS_intersect);
 				willNeedReflectionRay = hitGloss > 0.02 ? TRUE : FALSE;

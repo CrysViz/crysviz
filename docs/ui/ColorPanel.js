@@ -473,6 +473,25 @@ export function addColorPanel(target = "colorContainer") {
     0, 1, 0.02, general.rtAmbient ?? 0.3,
     (v) => `Ambient light: ${v.toFixed(2)}`,
     (v) => { general.rtAmbient = v; }));
+  // Saturation is an OUTPUT-pass grade: it re-presents the accumulated image
+  // immediately, so unlike the other tracer knobs it needs no reset.
+  {
+    const satRow = createElement("div", { class: "control-row" });
+    const satLabel = createElement("label", { for: "rtSaturation" }, {},
+      `Saturation: ${(general.rtSaturation ?? 1).toFixed(2)}`);
+    const satSlider = createElement("input", {
+      type: "range", id: "rtSaturation", min: "0", max: "2", step: "0.05",
+      value: String(general.rtSaturation ?? 1),
+    });
+    satSlider.addEventListener("input", () => {
+      general.rtSaturation = parseFloat(satSlider.value);
+      satLabel.textContent = `Saturation: ${general.rtSaturation.toFixed(2)}`;
+      requestRender();
+    });
+    satRow.appendChild(satLabel);
+    satRow.appendChild(satSlider);
+    rtControlsBlock.appendChild(satRow);
+  }
   rtControlsBlock.appendChild(makeTracerSliderRow('rtDofAperture', 'rtDofAperture',
     0, 2, 0.02, general.rtDofAperture ?? 0,
     (v) => `DoF aperture: ${v.toFixed(2)}`,
@@ -637,6 +656,7 @@ export function addColorPanel(target = "colorContainer") {
     fire('ptLightSoftness', D.ptLightSoftness, 'input');
     fire('rtLightIntensity', D.rtLightIntensity, 'input');
     fire('rtAmbient', D.rtAmbient, 'input');
+    fire('rtSaturation', D.rtSaturation, 'input');
     fire('rtDofAperture', D.rtDofAperture, 'input');
     fire('rtDofFocus', D.rtDofFocus, 'input');
     fireCheck('rtGroundToggle', D.rtGroundPlane);

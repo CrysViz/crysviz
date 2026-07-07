@@ -94,6 +94,7 @@ export const RENDERING_DEFAULTS = {
   rtGroundPlane: false, // both tracers: background-colored ground plane (shadow catcher)
   rtLightIntensity: 1.2, // both tracers: key-light intensity multiplier
   rtAmbient: 0.3, // both tracers: ambient/fill light strength (RT ambient term / PT sky bounce)
+  rtSaturation: 1, // both tracers: post-tone-map saturation grade (output pass; 1 = neutral)
   celOutlineMode: 'screen', // cel outlines: 'screen' (post-process) | 'hull' (inverted-hull geometry)
   celOutlineWidth: 0.025, // screen-space outline width in world units (0 = off)
   celHullWidth: 0.025, // hull outline width in world units, atoms/bonds (0 = off)

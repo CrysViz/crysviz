@@ -17,6 +17,12 @@ uniform sampler2D uRayTracedImageTexture;
 uniform vec2 uOutputResolution;
 uniform float uOneOverSampleCounter;
 uniform bool uUseToneMapping;
+// LOCAL ADAPTATION (CrysViz): ACES grade matching the raster pipelines
+// (renderer uses ACESFilmicToneMapping at exposure 1.2 — the upstream
+// Reinhard operator desaturates midtones noticeably), plus a post-tone-map
+// saturation control (output-pass only: changing it needs no re-accumulation).
+uniform float uExposure;
+uniform float uSaturation;
 
 
 void main()
@@ -28,8 +34,11 @@ void main()
 	// take the average of all the samples from accumulation buffer
 	pixelColor *= uOneOverSampleCounter;
 
-	// apply tone mapping (brings pixel into 0.0-1.0 rgb color range)
-	pixelColor = uUseToneMapping ? ReinhardToneMapping(pixelColor) : pixelColor;
+	// LOCAL ADAPTATION (CrysViz): exposure + ACES + saturation grade
+	pixelColor *= uExposure;
+	pixelColor = uUseToneMapping ? ACESFilmicToneMapping(pixelColor) : pixelColor;
+	float luma = dot(pixelColor, vec3(0.2126, 0.7152, 0.0722));
+	pixelColor = mix(vec3(luma), pixelColor, uSaturation);
 
 	// lastly, apply gamma correction (gives more intensity/brightness range where it's needed)
 	pc_fragColor = clamp(vec4( sqrt(pixelColor), 1.0 ), 0.0, 1.0);
