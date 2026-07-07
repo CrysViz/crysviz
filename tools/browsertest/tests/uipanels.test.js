@@ -42,7 +42,7 @@ async function expandPanel(page, id) {
     const heads = document.querySelectorAll('#cvPanelBody-visual .panel-headline');
     return heads.length === 4 && [...heads].every((h) => h.tagName === 'LABEL');
   }));
-  H.check('Settings keeps the storage switch', await inBody(page, 'settings', 'StorageOptionSwitch'));
+  H.check('Settings does not adopt the unwired storage switch', !(await inBody(page, 'settings', 'StorageOptionSwitch')));
   H.check('Settings keeps the drag toggles', await inBody(page, 'settings', 'dragIntoDockToggle'));
 
   // --- axes gizmo line width slider -------------------------------------------
@@ -172,8 +172,8 @@ async function expandPanel(page, id) {
     const { captureState } = await import('./ui/ShareModule.js');
     return captureState();
   });
-  H.check('captured state has the new visual keys (v2.2)',
-    state.version === '2.2'
+  H.check('captured state has the new visual keys (v2.3)',
+    state.version === '2.3'
       && state.display.latticeLineWidth === 0.06
       && state.display.axesLineWidth === 0.05
       && typeof state.display.bondRadius === 'number'
