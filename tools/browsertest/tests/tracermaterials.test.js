@@ -188,6 +188,8 @@ function changedPixelCount(fileA, fileB) {
     JSON.stringify(texels));
 
   // --- Illustration features: ground plane + DoF + translucent + frosted glass ----
+  await H.clickById(page, 'showPolyhedra'); // also needed for the edge checks below
+  await page.waitForTimeout(3000);
   const plainShot = await H.shotCanvas(page, 'tracermaterials-plain');
   await page.evaluate(async () => {
     const { general, fileBrowser } = await import('./state/store.js');
@@ -224,6 +226,20 @@ function changedPixelCount(fileA, fileB) {
   });
   await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
   await page.waitForTimeout(800);
+
+  // --- Polyhedra edges render in the tracers (encoded as thin cylinders) ----------
+  await H.setSlider(page, 'polyEdgeWidth', 0); // 0 = no edges (new slider minimum)
+  await page.waitForTimeout(2500);
+  const edgesOffShot = await H.shotCanvas(page, 'tracermaterials-edges-off');
+  await H.setSlider(page, 'polyEdgeWidth', 6);
+  await page.waitForTimeout(2500);
+  const edgesOnShot = await H.shotCanvas(page, 'tracermaterials-edges-on');
+  const edgeDelta = changedPixelCount(edgesOffShot, edgesOnShot);
+  H.check('polyhedra edges appear in the ray tracer and width 0 hides them',
+    edgeDelta > 300, JSON.stringify({ edgeDelta }));
+  await H.setSlider(page, 'polyEdgeWidth', 1); // back to the default hairline
+  await page.waitForTimeout(800); // let the re-encode/reset settle (the bar
+  // section below forces convergence and must not race a pending reset)
 
   // --- Accumulation progress bar --------------------------------------------------
   const barState = await page.evaluate(() => {

@@ -47,6 +47,7 @@ function materialTexel(mat) {
 }
 
 const _pos = new THREE.Vector3();
+const _pos2 = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
 const _scale = new THREE.Vector3();
 const _m = new THREE.Matrix4();
@@ -98,10 +99,16 @@ export class SceneEncoder {
     }
     const polyGroup = groups.polyhedraGroup;
     if (polyGroup) {
+      parts.push('pe', general.polyEdgeWidth ?? 1);
       for (const mesh of polyGroup.children) {
         if (mesh.userData?.type !== 'polyhedron') continue;
         parts.push('p', mesh.id, mesh.visible ? 1 : 0,
           mesh.material.color.getHex(), mesh.material.opacity);
+        const edgeLines = mesh.children?.find((c) => c.userData?.type === 'polyhedron-edges');
+        if (edgeLines?.material) {
+          parts.push(edgeLines.visible ? 1 : 0,
+            edgeLines.material.color.getHex(), edgeLines.material.opacity);
+        }
       }
     }
     if (general.showLattice && fileBrowser.selectedStructure?.lattice
@@ -193,10 +200,12 @@ export class SceneEncoder {
   }
 
   _encodeCylinders() {
-    // bonds + unit-cell edges share the cylinder encoding (6 texels each)
+    // bonds + unit-cell edges + polyhedra edges share the cylinder encoding
+    // (6 texels each)
     const bonds = (groups.bondsMesh && groups.bondsMesh.visible) ? groups.bondsMesh : null;
     const edges = this._latticeEdges();
-    const total = (bonds ? bonds.count : 0) + edges.length;
+    const polyEdges = this._polyEdges();
+    const total = (bonds ? bonds.count : 0) + edges.length + polyEdges.length;
     const texture = this._ensureCapacity('cylindersTexture', Math.max(1, total * 6));
     const data = texture.image.data;
     let n = 0;
@@ -246,9 +255,48 @@ export class SceneEncoder {
     for (const edge of edges) {
       writeCylinder(edge.invM, edge.r, edge.g, edge.b, 1, DEFAULT_MATERIAL_TEXEL);
     }
+    for (const edge of polyEdges) {
+      writeCylinder(edge.invM, edge.r, edge.g, edge.b, edge.a, DEFAULT_MATERIAL_TEXEL);
+    }
 
     this.cylinderCount = n;
     texture.needsUpdate = true;
+  }
+
+  /** Polyhedra edge segments as thin cylinders. The raster edges are fat
+   *  lines in PIXEL units; here the width maps to world units pinned to the
+   *  unit-cell line thickness (polyEdgeWidth 1 ~ a 0.015-radius cell edge). */
+  _polyEdges() {
+    const width = general.polyEdgeWidth ?? 1;
+    if (!(width > 0)) return [];
+    const group = groups.polyhedraGroup;
+    if (!group) return [];
+    const radius = 0.015 * width;
+    const result = [];
+    for (const mesh of group.children) {
+      if (mesh.userData?.type !== 'polyhedron' || !mesh.visible) continue;
+      const edgeLines = mesh.children?.find((c) => c.userData?.type === 'polyhedron-edges');
+      const segments = edgeLines?.userData?.segments;
+      if (!edgeLines?.visible || !segments) continue;
+      const alpha = edgeLines.material?.opacity ?? 1;
+      if (alpha <= 0.01) continue;
+      _color.copy(edgeLines.material.color);
+      for (let s = 0; s + 5 < segments.length; s += 6) {
+        const dx = segments[s + 3] - segments[s];
+        const dy = segments[s + 4] - segments[s + 1];
+        const dz = segments[s + 5] - segments[s + 2];
+        const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 1e-6) continue;
+        _pos.set((segments[s] + segments[s + 3]) / 2,
+          (segments[s + 1] + segments[s + 4]) / 2,
+          (segments[s + 2] + segments[s + 5]) / 2);
+        _scale.set(radius, len / 2, radius); // unit cylinder y in [-1,1]
+        _quat.setFromUnitVectors(_yAxis, _pos2.set(dx / len, dy / len, dz / len));
+        _m.compose(_pos, _quat, _scale);
+        result.push({ invM: _m.clone().invert(), r: _color.r, g: _color.g, b: _color.b, a: alpha });
+      }
+    }
+    return result;
   }
 
   _latticeEdges() {

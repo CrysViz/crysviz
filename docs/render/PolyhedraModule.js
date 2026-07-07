@@ -1156,8 +1156,8 @@ export function renderPolyhedra(structure) {
     // (plain LineSegments linewidth is capped at 1px in WebGL). Pixel units:
     // polyEdgeWidth = 1 reproduces the classic hairline look.
     const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
-    const edgeGeom = new LineSegmentsGeometry().setPositions(
-      Array.from(/** @type {any} */ (egeom.attributes.position).array));
+    const edgeSegments = Array.from(/** @type {any} */ (egeom.attributes.position).array);
+    const edgeGeom = new LineSegmentsGeometry().setPositions(edgeSegments);
     egeom.dispose();
     const edgeMat = new LineMaterial({
       color: style.edgeColor, opacity: style.edgeOpacity,
@@ -1171,6 +1171,10 @@ export function renderPolyhedra(structure) {
     const edgeLines = new LineSegments2(edgeGeom, edgeMat);
     edgeLines.raycast = () => {}; // never intercept picking
     edgeLines.userData.type = 'polyhedron-edges';
+    // flat [x1,y1,z1,x2,y2,z2,...] world segments — the ray/path-tracing
+    // SceneEncoder re-encodes the edges as thin cylinders from these
+    edgeLines.userData.segments = edgeSegments;
+    edgeLines.visible = (general.polyEdgeWidth ?? 1) > 0; // width 0 = no edges
     mesh.add(edgeLines);
 
     const depthProxy = new THREE.Mesh(geom, sharedDepthProxyMat);
@@ -1224,13 +1228,15 @@ export function updatePolyhedraColors() {
   }
 }
 
-/** Live-update the polyhedra edge thickness (fat-line pixels; 1 = hairline). */
+/** Live-update the polyhedra edge thickness (fat-line pixels; 1 = hairline;
+ *  0 hides the edges entirely). */
 export function setPolyEdgeWidth(width) {
   general.polyEdgeWidth = width;
   if (groups.polyhedraGroup) {
     groups.polyhedraGroup.traverse((obj) => {
       if (obj.userData?.type === 'polyhedron-edges' && obj.material) {
-        obj.material.linewidth = width;
+        obj.material.linewidth = Math.max(width, 0.001);
+        obj.visible = width > 0;
       }
     });
   }

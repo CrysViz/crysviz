@@ -72,7 +72,7 @@ function makePolyEdgeSliderRow() {
   const input = document.createElement('input');
   input.type = 'range';
   input.id = 'polyEdgeWidth';
-  input.min = '1';
+  input.min = '0'; // 0 = no edges
   input.max = '10';
   input.step = '0.5';
   input.value = String(general.polyEdgeWidth);
