@@ -46,6 +46,7 @@ uniform int uPolyCount;
 uniform vec3 uLightDirection; // world space, points from the scene TOWARDS the light
 uniform vec3 uLightColor;
 uniform vec3 uBackgroundColor;
+uniform vec3 uBackgroundDisplay; // pre-compensated: primary-miss rays only (see driver)
 uniform float uReflectivity;
 uniform float uLightSoftness; // 0 = hard shadows; >0 jitters shadow rays (penumbra via accumulation)
 uniform float uAmbientStrength; // ambient/fill light level (classic look: 0.25)
@@ -241,6 +242,10 @@ vec3 RayTrace()
 
 	int isShadowRay = FALSE;
 	int willNeedReflectionRay = FALSE;
+	// TRUE until the ray is redirected (reflection/refraction/shadow); alpha
+	// pass-throughs keep it — so the backdrop seen through transparent
+	// objects blends against the same display-exact background color.
+	int isPrimaryRay = TRUE;
 
 	for (int bounces = 0; bounces < 6; bounces++)
 	{
@@ -248,9 +253,10 @@ vec3 RayTrace()
 
 		if (t == INFINITY) // ray escaped the scene
 		{
-			if (bounces == 0)
+			if (isPrimaryRay == TRUE && isShadowRay == FALSE)
 			{
-				accumulatedColor = uBackgroundColor; // camera ray: flat background
+				// unredirected camera ray: the display-exact background
+				accumulatedColor += rayColorMask * uBackgroundDisplay;
 				break;
 			}
 			if (isShadowRay == TRUE) // directional light: escaping = light visible
@@ -269,6 +275,7 @@ vec3 RayTrace()
 				rayDirection = reflectionRayDirection;
 				willNeedReflectionRay = FALSE;
 				isShadowRay = FALSE;
+				isPrimaryRay = FALSE;
 				continue;
 			}
 			break;
@@ -295,6 +302,7 @@ vec3 RayTrace()
 				rayDirection = reflectionRayDirection;
 				willNeedReflectionRay = FALSE;
 				isShadowRay = FALSE;
+				isPrimaryRay = FALSE;
 				continue;
 			}
 			break;
@@ -333,6 +341,7 @@ vec3 RayTrace()
 			// shadow ray towards the (directional) light; jittered inside a cone
 			// when Light softness > 0 (accumulation averages into a penumbra)
 			isShadowRay = TRUE;
+			isPrimaryRay = FALSE;
 			rayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
 			rayDirection = uLightSoftness > 0.0
 				? randomDirectionInSpecularLobe(directionToLight, uLightSoftness * 0.5)
@@ -352,6 +361,7 @@ vec3 RayTrace()
 			diffuseContribution = doDiffuseDirectLighting(rayColorMask, intersectionColor, uLightColor, wrapDiffuse + backLight);
 			specularContribution = vec3(0);
 			isShadowRay = TRUE;
+			isPrimaryRay = FALSE;
 			rayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
 			rayDirection = uLightSoftness > 0.0
 				? randomDirectionInSpecularLobe(directionToLight, uLightSoftness * 0.5)
@@ -371,6 +381,7 @@ vec3 RayTrace()
 				rayDirection = reflectionRayDirection;
 				willNeedReflectionRay = FALSE;
 				isShadowRay = FALSE;
+				isPrimaryRay = FALSE;
 				continue;
 			}
 			break;
@@ -396,6 +407,7 @@ vec3 RayTrace()
 			rayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
 			rayDirection = reflect(rayDirection, shadingNormal);
 			rayDirection = randomDirectionInSpecularLobe(rayDirection, intersectionRoughness * intersectionRoughness);
+			isPrimaryRay = FALSE;
 			continue;
 		}
 
@@ -424,6 +436,7 @@ vec3 RayTrace()
 				rayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
 				rayDirection = reflect(rayDirection, shadingNormal);
 				willNeedReflectionRay = FALSE;
+				isPrimaryRay = FALSE;
 				continue;
 			}
 
@@ -440,6 +453,7 @@ vec3 RayTrace()
 
 			rayColorMask *= transmittance;
 
+			isPrimaryRay = FALSE;
 			if (isShadowRay == FALSE) // refract; frost (glass roughness slot)
 			{                         // blurs the transmission lobe
 				rayOrigin = intersectionPoint - (uEPS_intersect * shadingNormal);

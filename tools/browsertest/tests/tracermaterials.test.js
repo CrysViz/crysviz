@@ -311,6 +311,19 @@ function changedPixelCount(fileA, fileB) {
     bgReset.after < bgReset.target && bgReset.after > 0 && bgReset.bg === '204060',
     JSON.stringify(bgReset));
 
+  // The traced backdrop must match the picked color EXACTLY (display-transform
+  // pre-compensation: three never tone-maps a plain-color background).
+  await page.waitForTimeout(1500);
+  const bgShot = await H.shotCanvas(page, 'tracermaterials-bgmatch');
+  const bgPng = PNG.sync.read(fs.readFileSync(bgShot));
+  const corner = ((x, y) => {
+    const o = (y * bgPng.width + x) * 4;
+    return [bgPng.data[o], bgPng.data[o + 1], bgPng.data[o + 2]];
+  })(12, bgPng.height - 12);
+  H.check('traced background matches the picked color (#204060 = rgb(32,64,96))',
+    Math.abs(corner[0] - 32) <= 6 && Math.abs(corner[1] - 64) <= 6 && Math.abs(corner[2] - 96) <= 6,
+    JSON.stringify({ corner }));
+
   // --- Light sliders exist and rewire the uniforms ----------------------------------
   const lights = await page.evaluate(async () => {
     const { app, general } = await import('./state/store.js');

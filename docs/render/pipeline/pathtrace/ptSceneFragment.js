@@ -35,6 +35,7 @@ uniform int uPolyCount;
 uniform vec3 uLightDirection; // updated by the shared driver (unused directly)
 uniform vec3 uLightColor;
 uniform vec3 uBackgroundColor;
+uniform vec3 uBackgroundDisplay; // pre-compensated: primary-miss rays only (see driver)
 uniform float uReflectivity;
 uniform vec3 uLightPosition; // area-light centre (world)
 uniform float uLightRadius;  // area-light radius (world; soft-shadow spread)
@@ -258,6 +259,9 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 	int isReflectionTime = FALSE;
 	int willNeedDiffuseBounceRay = FALSE;
 	int isDiffuseBounceTime = FALSE;
+	// TRUE until the ray is redirected; alpha pass-throughs keep it, so the
+	// backdrop behind transparent objects uses the same display-exact color.
+	int isPrimaryRay = TRUE;
 
 	for (int bounces = 0; bounces < 8; bounces++)
 	{
@@ -267,10 +271,11 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 
 		if (t == INFINITY) // ray escaped into the background
 		{
-			if (bounces == 0)
+			if (isPrimaryRay == TRUE)
 			{
+				// unredirected camera ray: the display-exact background
 				pixelSharpness = 1.0;
-				accumCol = uBackgroundColor;
+				accumCol += mask * uBackgroundDisplay;
 				break;
 			}
 			// diffuse/reflection rays that miss pick up a soft sky/ambient term
@@ -288,6 +293,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				isDiffuseBounceTime = TRUE;
 				isReflectionTime = FALSE;
 				diffuseCount = 1;
+				isPrimaryRay = FALSE;
 				continue;
 			}
 			if (willNeedReflectionRay == TRUE)
@@ -300,6 +306,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				sampleLight = FALSE;
 				isReflectionTime = TRUE;
 				isDiffuseBounceTime = FALSE;
+				isPrimaryRay = FALSE;
 				continue;
 			}
 			break;
@@ -348,6 +355,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				isDiffuseBounceTime = TRUE;
 				isReflectionTime = FALSE;
 				diffuseCount = 1;
+				isPrimaryRay = FALSE;
 				continue;
 			}
 			if (willNeedReflectionRay == TRUE)
@@ -360,6 +368,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				sampleLight = FALSE;
 				isReflectionTime = TRUE;
 				isDiffuseBounceTime = FALSE;
+				isPrimaryRay = FALSE;
 				continue;
 			}
 			break;
@@ -379,6 +388,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				isDiffuseBounceTime = TRUE;
 				isReflectionTime = FALSE;
 				diffuseCount = 1;
+				isPrimaryRay = FALSE;
 				continue;
 			}
 			if (willNeedReflectionRay == TRUE)
@@ -391,6 +401,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				sampleLight = FALSE;
 				isReflectionTime = TRUE;
 				isDiffuseBounceTime = FALSE;
+				isPrimaryRay = FALSE;
 				continue;
 			}
 			break;
@@ -407,6 +418,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				mask *= (1.0 - (hitRoughness * 0.8));
 				rayDirection = randomDirectionInSpecularLobe(nl, reflect(rayDirection, nl), hitRoughness);
 				rayOrigin = x + (nl * uEPS_intersect);
+				isPrimaryRay = FALSE;
 				continue;
 			}
 			// diffuse fraction: same bookkeeping as COAT's diffuse part
@@ -424,6 +436,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 			rayDirection = sampleSphereLight(x, nl, lightSphere, weight);
 			mask *= weight;
 			sampleLight = TRUE;
+			isPrimaryRay = FALSE;
 			continue;
 		}
 
@@ -438,6 +451,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 			{
 				rayDirection = reflect(rayDirection, nl);
 				rayOrigin = x + (nl * uEPS_intersect);
+				isPrimaryRay = FALSE;
 				continue;
 			}
 
@@ -462,6 +476,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 
 			mask *= Tr;
 
+			isPrimaryRay = FALSE;
 			rayDirection = refract(rayDirection, nl, ratioIoR);
 			// frost (glass roughness slot) blurs the transmission lobe
 			if (hitRoughness > 0.0)
@@ -520,6 +535,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 			rayDirection = sampleSphereLight(x, nl, lightSphere, weight);
 			mask *= weight;
 			sampleLight = TRUE;
+			isPrimaryRay = FALSE;
 			continue;
 		} // end COAT
 
@@ -545,6 +561,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 			rayDirection = sampleSphereLight(x, sideN, lightSphere, weight);
 			mask *= weight;
 			sampleLight = TRUE;
+			isPrimaryRay = FALSE;
 			continue;
 		} // end TRANSLUCENT
 

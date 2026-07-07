@@ -39,6 +39,66 @@ import { SceneEncoder } from './raytrace/SceneEncoder.js';
 
 const RESIZE_BOOST_SAMPLES = 16; // inner samples after a size change (PNG export)
 
+// ---- background display-transform inverse ----------------------------------
+// three does NOT tone-map a plain-color scene.background (it is cleared
+// display-referred: sRGB-encoded only), while the tracers tone-map everything
+// they render. To make the traced backdrop match the user's picked color
+// EXACTLY, primary rays that miss the scene return a pre-compensated radiance
+// L such that sqrt(ACESFilmic(exposure * L)) == the raster-displayed color.
+// three's ACES fit (tonemapping_pars_fragment) is closed-form invertible:
+// two 3x3 matrices around a per-channel rational curve.
+const ACES_IN = [
+  [0.59719, 0.35458, 0.04823],
+  [0.07600, 0.90834, 0.01566],
+  [0.02840, 0.13383, 0.83777],
+];
+const ACES_OUT = [
+  [1.60475, -0.53108, -0.07367],
+  [-0.10208, 1.10813, -0.00605],
+  [-0.00327, -0.07276, 1.07602],
+];
+
+function invert3x3(m) {
+  const [[a, b, c], [d, e, f], [g, h, i]] = m;
+  const A = e * i - f * h, B = f * g - d * i, C = d * h - e * g;
+  const det = a * A + b * B + c * C;
+  return [
+    [A / det, (c * h - b * i) / det, (b * f - c * e) / det],
+    [B / det, (a * i - c * g) / det, (c * d - a * f) / det],
+    [C / det, (b * g - a * h) / det, (a * e - b * d) / det],
+  ];
+}
+const ACES_IN_INV = invert3x3(ACES_IN);
+const ACES_OUT_INV = invert3x3(ACES_OUT);
+const mul3 = (m, v) => [
+  m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+  m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+  m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+];
+
+/** Inverse of three's RRTAndODTFit rational curve (per channel). */
+function rrtFitInverse(y) {
+  const yc = Math.min(Math.max(y, 0), 0.995); // fit asymptote ~1.0165
+  const a = 0.983729 * yc - 1;
+  const b = 0.4329510 * yc - 0.0245786;
+  const c = 0.238081 * yc + 0.000090537;
+  const disc = Math.max(0, b * b - 4 * a * c);
+  return (-b - Math.sqrt(disc)) / (2 * a);
+}
+
+const sRGB_OETF = (x) => (x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055);
+
+/** Radiance whose displayed value (exposure -> ACES -> sqrt) equals the
+ *  raster-displayed background color. bg is a linear-space THREE.Color. */
+function compensateBackground(bg, exposure, out) {
+  const display = [sRGB_OETF(bg.r), sRGB_OETF(bg.g), sRGB_OETF(bg.b)];
+  const X = display.map((v) => v * v); // undo the output sqrt
+  const v1 = mul3(ACES_OUT_INV, X).map(rrtFitInverse);
+  const L = mul3(ACES_IN_INV, v1).map((v) => Math.max(0, (v * 0.6) / Math.max(exposure, 1e-4)));
+  out.setRGB(L[0], L[1], L[2]);
+  return out;
+}
+
 export class RayTracingPipeline extends ForwardPipeline {
   static id = 'raytrace';
   static label = 'Ray tracing (experimental)';
@@ -139,6 +199,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       uReflectivity: { value: general.rtReflectivity ?? 0.15 },
       uLightSoftness: { value: general.ptLightSoftness ?? 0.3 },
       uAmbientStrength: { value: general.rtAmbient ?? 0.3 },
+      uBackgroundDisplay: { value: new THREE.Color(0.9, 0.9, 0.9) }, // pre-compensated (primary miss)
       uGroundEnabled: { value: false },
       uGroundY: { value: -5 },
       ...this._extraSceneUniforms(),
@@ -174,7 +235,11 @@ export class RayTracingPipeline extends ForwardPipeline {
         uOutputResolution: { value: new THREE.Vector2(4, 4) },
         uOneOverSampleCounter: { value: 1 },
         uUseToneMapping: { value: true },
-        uExposure: { value: 1.2 }, // matches the raster renderer's toneMappingExposure
+        // NOTE: three's ACESFilmicToneMapping already applies the renderer's
+        // toneMappingExposure (1.2) via the prelude uniform — uExposure is an
+        // EXTRA multiplier on top (1.0 = renderer parity; the old 1.2 here
+        // double-exposed the tracers).
+        uExposure: { value: 1.0 },
         uSaturation: { value: general.rtSaturation ?? 1 },
         ...this._extraOutputUniforms(),
       },
@@ -296,6 +361,12 @@ export class RayTracingPipeline extends ForwardPipeline {
           * (general.rtLightIntensity ?? 1.2));
     }
     if (scene.background?.isColor) u.uBackgroundColor.value.copy(scene.background);
+    // primary-miss rays return the display-transform-inverted background so
+    // the traced backdrop matches the raster clear color exactly (secondary
+    // rays keep the RAW color — a bright backdrop must not become a light source)
+    compensateBackground(u.uBackgroundColor.value,
+      (renderer.toneMappingExposure ?? 1) * (this._outputQuad?.material.uniforms.uExposure.value ?? 1),
+      u.uBackgroundDisplay.value);
     u.uReflectivity.value = general.rtReflectivity ?? 0.15;
     u.uLightSoftness.value = general.ptLightSoftness ?? 0.3;
     u.uAmbientStrength.value = general.rtAmbient ?? 0.3;

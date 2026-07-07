@@ -48,7 +48,9 @@ than the blue noise, loaders/BVH builders (triangle-model support — unused).
    when false the 37-tap edge-aware kernel is bypassed and the plain averaged
    sample is output (raw-convergence comparison, the "Denoiser" toggle).
 4. **`ScreenOutput_Fragment` tone-mapping grade**: the upstream Reinhard
-   operator is replaced by exposure (1.2) + `ACESFilmicToneMapping` (both from
-   three's ShaderMaterial tone-mapping prelude) plus a post-tone-map
-   `uSaturation` control, so the traced image matches the raster pipelines'
-   ACES color grade instead of Reinhard's desaturated midtones.
+   operator is replaced by `ACESFilmicToneMapping` (from three's
+   ShaderMaterial tone-mapping prelude, which already applies the renderer's
+   toneMappingExposure) plus a `uExposure` extra multiplier (default 1) and a
+   post-tone-map `uSaturation` control, so the traced image matches the
+   raster pipelines' ACES color grade instead of Reinhard's desaturated
+   midtones.
