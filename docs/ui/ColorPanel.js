@@ -9,6 +9,7 @@ import { updateSingleBondColor } from '../render/index.js'
 import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
 import { listPipelines, setActivePipeline, requestRender } from '../render/index.js'
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
+import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js'
 
 
 
@@ -444,15 +445,22 @@ export function addColorPanel(target = "colorContainer") {
 
   // helper for the remaining tracer rows: label+slider updating a `general`
   // key, resetting the accumulation so the change takes effect immediately
-  const makeTracerSliderRow = (id, labelFor, min, max, step, value, fmt, onSet) => {
+  // With `quadRange` set, the slider element holds a [0,1] position with the
+  // size-sliders' quadratic mapping (fine control near the minimum, large
+  // reach at the top); every writer of the ELEMENT value must then write the
+  // inverse-mapped position (reset button below, ShareModule restore).
+  const makeTracerSliderRow = (id, labelFor, min, max, step, value, fmt, onSet, quadRange) => {
     const rowEl = createElement("div", { class: "control-row" });
     const labelEl = createElement("label", { for: id }, {}, fmt(value));
-    const sliderEl = createElement("input", {
-      type: "range", id, min: String(min), max: String(max), step: String(step),
-      value: String(value),
-    });
+    const sliderEl = createElement("input", quadRange
+      ? { type: "range", id, min: "0", max: "1", step: "any",
+          value: String(sizeValueToSlider(value, quadRange)) }
+      : { type: "range", id, min: String(min), max: String(max), step: String(step),
+          value: String(value) });
     sliderEl.addEventListener("input", () => {
-      const v = parseFloat(sliderEl.value);
+      const v = quadRange
+        ? sizeSliderToValue(parseFloat(sliderEl.value), quadRange)
+        : parseFloat(sliderEl.value);
       onSet(v);
       labelEl.textContent = fmt(v);
       app.pipeline?.resetAccumulation?.();
@@ -531,10 +539,6 @@ export function addColorPanel(target = "colorContainer") {
     rowEl.appendChild(select);
     return rowEl;
   };
-  groundOptions.appendChild(groundSelectRow('rtGroundMode', 'Ground orientation', [
-    ['structure', 'Follows structure'],
-    ['horizon', 'Always below (view)'],
-  ], general.rtGroundMode ?? 'structure', (v) => { general.rtGroundMode = v; }));
   groundOptions.appendChild(groundSelectRow('rtGroundPattern', 'Ground pattern', [
     ['solid', 'Solid'],
     ['checker', 'Checkerboard'],
@@ -561,13 +565,13 @@ export function addColorPanel(target = "colorContainer") {
   groundOptions.appendChild(groundColorRow('rtGroundColor2', 'Ground color 2', 'rtGroundColor2'));
 
   groundOptions.appendChild(makeTracerSliderRow('rtGroundOffset', 'rtGroundOffset',
-    0, 10, 0.25, general.rtGroundOffset ?? 0.75,
+    0, 1, 'any', general.rtGroundOffset ?? 0.75,
     (v) => `Ground distance: ${v.toFixed(2)}`,
-    (v) => { general.rtGroundOffset = v; }));
+    (v) => { general.rtGroundOffset = v; }, GROUND_OFFSET_RANGE));
   groundOptions.appendChild(makeTracerSliderRow('rtGroundSize', 'rtGroundSize',
-    1, 10, 0.25, general.rtGroundSize ?? 2.5,
+    0, 1, 'any', general.rtGroundSize ?? 2.5,
     (v) => `Ground size: ${v.toFixed(2)}x`,
-    (v) => { general.rtGroundSize = v; }));
+    (v) => { general.rtGroundSize = v; }, GROUND_SIZE_RANGE));
   groundOptions.appendChild(makeTracerSliderRow('rtGroundScale', 'rtGroundScale',
     0.5, 10, 0.25, general.rtGroundScale ?? 2,
     (v) => `Tile size: ${v.toFixed(2)}`,
@@ -723,10 +727,10 @@ export function addColorPanel(target = "colorContainer") {
     fire('rtDofAperture', D.rtDofAperture, 'input');
     fire('rtDofFocus', D.rtDofFocus, 'input');
     fireCheck('rtGroundToggle', D.rtGroundPlane);
-    fire('rtGroundMode', D.rtGroundMode, 'change');
     fire('rtGroundPattern', D.rtGroundPattern, 'change');
-    fire('rtGroundOffset', D.rtGroundOffset, 'input');
-    fire('rtGroundSize', D.rtGroundSize, 'input');
+    // quadratic sliders: the ELEMENT holds a [0,1] position
+    fire('rtGroundOffset', sizeValueToSlider(D.rtGroundOffset, GROUND_OFFSET_RANGE), 'input');
+    fire('rtGroundSize', sizeValueToSlider(D.rtGroundSize, GROUND_SIZE_RANGE), 'input');
     fire('rtGroundScale', D.rtGroundScale, 'input');
     fire('rtGroundReflect', D.rtGroundReflect, 'input');
     // ground colors: default = null (follow the background)

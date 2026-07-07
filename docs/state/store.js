@@ -92,7 +92,6 @@ export const RENDERING_DEFAULTS = {
   rtDofAperture: 0, // both tracers: depth-of-field aperture in world units (0 = off)
   rtDofFocus: 1, // both tracers: focus distance as a factor of the camera->target distance
   rtGroundPlane: false, // both tracers: ground plane (shadow catcher)
-  rtGroundMode: 'structure', // 'structure' = world-fixed below the cell | 'horizon' = follows the view (always down)
   rtGroundPattern: 'solid', // 'solid' | 'checker' | 'grid'
   rtGroundColor1: null, // hex or null = follow the background color
   rtGroundColor2: null, // hex or null = auto (darkened color1)

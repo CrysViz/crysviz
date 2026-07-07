@@ -35,8 +35,8 @@ const H = require('../harness');
     catEdge.memberEdges.length > 0
       && catEdge.memberEdges.every(([c, o]) => c === 'ff0000' && Math.abs(o - 0.9) < 1e-6),
     JSON.stringify(catEdge.memberEdges));
-  H.check('non-member edges keep the default edge style (006c99 / 0.85)',
-    catEdge.otherEdges.every(([c, o]) => c === '006c99' && Math.abs(o - 0.85) < 1e-6),
+  H.check('non-member edges keep the default edge style (black / opaque)',
+    catEdge.otherEdges.every(([c, o]) => c === '000000' && Math.abs(o - 1) < 1e-6),
     JSON.stringify(catEdge.otherEdges));
 
   // --- Individual override wins; both survive an async rebuild --------------------

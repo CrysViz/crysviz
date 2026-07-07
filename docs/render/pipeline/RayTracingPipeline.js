@@ -393,20 +393,12 @@ export class RayTracingPipeline extends ForwardPipeline {
     // structure above a fixed floor. (Reorientation coincides with camera
     // moves, which already reset the accumulation.)
     // The ground is a large finite DISC (not an infinite plane) so the
-    // background stays visible as "sky" around it — essential under the
-    // parallel camera, where an infinite plane can never show a horizon.
-    // "Ground distance" (rtGroundOffset) applies in both modes.
+    // background stays visible as "sky" around it, world-fixed just below
+    // the structure ("Ground distance" sets the gap).
     const groundOffset = general.rtGroundOffset ?? 0.75;
-    const center = this._encoder.structureCenter;
-    if (general.rtGroundMode === 'horizon') {
-      u.uGroundNormal.value.copy(camera.up).normalize();
-      u.uGroundD.value = u.uGroundNormal.value.dot(center)
-        - (this._encoder.structureRadius + groundOffset);
-    } else {
-      u.uGroundNormal.value.set(0, 1, 0);
-      u.uGroundD.value = this._encoder.minY - groundOffset;
-    }
-    u.uGroundCenter.value.copy(center);
+    u.uGroundNormal.value.set(0, 1, 0);
+    u.uGroundD.value = this._encoder.minY - groundOffset;
+    u.uGroundCenter.value.copy(this._encoder.structureCenter);
     u.uGroundRadius.value = Math.max(
       (general.rtGroundSize ?? 2.5) * this._encoder.structureRadius, 5);
     // Ground colors/pattern/material: colors default to the background (and a
@@ -434,7 +426,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       + `|${u.uReflectivity.value}|${u.uLightSoftness.value}|${u.uAmbientStrength.value}`
       + `|${general.rtSaturation ?? 1}`
       + `|${u.uGroundEnabled.value}|${u.uApertureSize.value}|${(general.rtDofFocus ?? 1)}`
-      + `|${general.rtGroundMode}|${u.uGroundPattern.value}|${u.uGroundColor1.value.getHex()}`
+      + `|${u.uGroundPattern.value}|${u.uGroundColor1.value.getHex()}`
       + `|${u.uGroundColor2.value.getHex()}|${u.uGroundScale.value}|${u.uGroundReflect.value}`
       + `|${general.rtGroundOffset ?? 0.75}|${general.rtGroundSize ?? 2.5}`;
     if (this._lastLookKey !== undefined && lookKey !== this._lastLookKey) this.resetAccumulation();

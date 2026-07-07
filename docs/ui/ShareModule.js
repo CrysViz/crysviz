@@ -13,7 +13,7 @@ import { updateAtoms } from '../render/index.js';
 import { rebuildBonds, updatePolyhedra, setActivePipeline } from '../render/index.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
-import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE } from './ControlsWiring.js';
+import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
 import { revealFeaturePanels } from './panels/PanelManager.js';
 import { fracToCart } from '../math/index.js';
 import { updateAxesGizmoWidth, switchCameraType, resizeRenderer } from './WindowAndSceneControls.js';
@@ -155,7 +155,6 @@ export function captureState({ includeFrames = false } = {}) {
       rtDofAperture: general.rtDofAperture,
       rtDofFocus: general.rtDofFocus,
       rtGroundPlane: general.rtGroundPlane,
-      rtGroundMode: general.rtGroundMode,
       rtGroundPattern: general.rtGroundPattern,
       rtGroundColor1: general.rtGroundColor1,
       rtGroundColor2: general.rtGroundColor2,
@@ -376,7 +375,6 @@ function applyStyleSettings(style) {
       toggle.dispatchEvent(new Event('change')); // also shows/hides the ground options
     }
   }
-  if (style.rtGroundMode != null) { general.rtGroundMode = style.rtGroundMode; setSelect('rtGroundMode', style.rtGroundMode); }
   if (style.rtGroundPattern != null) { general.rtGroundPattern = style.rtGroundPattern; setSelect('rtGroundPattern', style.rtGroundPattern); }
   if (style.rtGroundColor1 !== undefined) {
     general.rtGroundColor1 = style.rtGroundColor1;
@@ -387,8 +385,8 @@ function applyStyleSettings(style) {
     if (style.rtGroundColor2) setSelect('rtGroundColor2', style.rtGroundColor2);
   }
   if (style.rtGroundScale != null) { general.rtGroundScale = style.rtGroundScale; setSelect('rtGroundScale', style.rtGroundScale); }
-  if (style.rtGroundOffset != null) { general.rtGroundOffset = style.rtGroundOffset; setSelect('rtGroundOffset', style.rtGroundOffset); }
-  if (style.rtGroundSize != null) { general.rtGroundSize = style.rtGroundSize; setSelect('rtGroundSize', style.rtGroundSize); }
+  if (style.rtGroundOffset != null) { general.rtGroundOffset = style.rtGroundOffset; setSelect('rtGroundOffset', sizeValueToSlider(style.rtGroundOffset, GROUND_OFFSET_RANGE)); }
+  if (style.rtGroundSize != null) { general.rtGroundSize = style.rtGroundSize; setSelect('rtGroundSize', sizeValueToSlider(style.rtGroundSize, GROUND_SIZE_RANGE)); }
   if (style.rtGroundReflect != null) { general.rtGroundReflect = style.rtGroundReflect; setSelect('rtGroundReflect', style.rtGroundReflect); }
   if (style.rtLightIntensity != null) {
     general.rtLightIntensity = style.rtLightIntensity;

@@ -53,9 +53,9 @@ function clearPolyhedraGroup() {
 
 // ---------- STYLE (render) ----------
 const FACE_OPACITY = 0.50;
-const EDGE_OPACITY = Math.min(1, FACE_OPACITY + 0.35);
+const EDGE_OPACITY = 1;
 const FACE_FALLBACK_COLOR = 0x00aaff;
-const EDGE_COLOR = 0x006c99;
+const EDGE_COLOR = 0x000000;
 const EDGE_ANGLE = 18;
 const DOUBLE_SIDE = true;
 // Transparency-related face flags (depthWrite, polygonOffset) moved to the

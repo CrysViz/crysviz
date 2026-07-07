@@ -21,6 +21,9 @@ import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
 // ui/ShareModule.js) must go through these mappings.
 export const ATOM_SIZE_RANGE = { min: 0.05, max: 3.0 };
 export const BOND_RADIUS_RANGE = { min: 0.005, max: 1.0 };
+// Tracer ground-plane sliders (ColorPanel), same quadratic mapping:
+export const GROUND_OFFSET_RANGE = { min: 0, max: 50 }; // structure->plane distance (A)
+export const GROUND_SIZE_RANGE = { min: 0.5, max: 30 }; // disc radius in structure radii
 
 /** Slider position [0,1] -> value (quadratic). */
 export function sizeSliderToValue(pos, range) {

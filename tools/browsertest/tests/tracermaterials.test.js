@@ -246,7 +246,7 @@ function changedPixelCount(fileA, fileB) {
     const { general } = await import('./state/store.js');
     const { requestRender } = await import('./render/index.js');
     const toggle = /** @type {HTMLInputElement} */ (document.getElementById('rtGroundToggle'));
-    const options = document.getElementById('rtGroundMode')?.closest('.control-row')?.parentElement;
+    const options = document.getElementById('rtGroundPattern')?.closest('.control-row')?.parentElement;
     const hiddenWhenOff = getComputedStyle(options).display === 'none';
     toggle.checked = true;
     toggle.dispatchEvent(new Event('change'));
@@ -255,13 +255,39 @@ function changedPixelCount(fileA, fileB) {
     requestRender();
     return {
       hiddenWhenOff, shownWhenOn,
-      hasControls: !!document.getElementById('rtGroundPattern')
+      hasControls: !document.getElementById('rtGroundMode') // orientation control removed
+        && !!document.getElementById('rtGroundPattern')
         && !!document.getElementById('rtGroundColor1') && !!document.getElementById('rtGroundColor2')
         && !!document.getElementById('rtGroundScale') && !!document.getElementById('rtGroundReflect'),
     };
   });
   H.check('ground options reveal with the toggle and all controls exist',
     groundUi.hiddenWhenOff && groundUi.shownWhenOn && groundUi.hasControls, JSON.stringify(groundUi));
+
+  // Ground distance/size sliders: [0,1] positions with the QUADRATIC mapping
+  // (position 1 = range max 50 A / 30x; position 0.5 = quarter of the range).
+  const quadSliders = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const set = (id, pos) => {
+      const el = /** @type {HTMLInputElement} */ (document.getElementById(id));
+      el.value = String(pos);
+      el.dispatchEvent(new Event('input'));
+    };
+    set('rtGroundOffset', 1);
+    const offMax = general.rtGroundOffset;
+    set('rtGroundOffset', 0.5);
+    const offMid = general.rtGroundOffset;
+    set('rtGroundOffset', Math.sqrt(0.75 / 50)); // back to the default 0.75
+    set('rtGroundSize', 1);
+    const sizeMax = general.rtGroundSize;
+    set('rtGroundSize', Math.sqrt((2.5 - 0.5) / 29.5)); // back to the default 2.5x
+    return { offMax, offMid, sizeMax, offRestored: general.rtGroundOffset, sizeRestored: general.rtGroundSize };
+  });
+  H.check('ground distance/size sliders are quadratic with the larger ranges',
+    Math.abs(quadSliders.offMax - 50) < 1e-6 && Math.abs(quadSliders.offMid - 12.5) < 1e-6
+      && Math.abs(quadSliders.sizeMax - 30) < 1e-6
+      && Math.abs(quadSliders.offRestored - 0.75) < 0.01 && Math.abs(quadSliders.sizeRestored - 2.5) < 0.01,
+    JSON.stringify(quadSliders));
 
   await page.waitForTimeout(2500);
   const groundSolid = await H.shotCanvas(page, 'tracermaterials-ground-solid');
@@ -271,19 +297,17 @@ function changedPixelCount(fileA, fileB) {
     general.rtGroundPattern = 'checker';
     general.rtGroundColor1 = '#c8b060';
     general.rtGroundColor2 = '#404040';
-    general.rtGroundMode = 'horizon';
     general.rtGroundReflect = 0.3;
     requestRender();
   });
   await page.waitForTimeout(2500);
   const groundChecker = await H.shotCanvas(page, 'tracermaterials-ground-checker');
   const groundDelta = changedPixelCount(groundSolid, groundChecker);
-  H.check('checkerboard/horizon/reflect ground renders differently from solid',
+  H.check('checkerboard/reflect ground renders differently from solid',
     groundDelta > 2000, JSON.stringify({ groundDelta }));
 
-  // Ground distance slider + placement math + finite disc (both modes):
-  // horizon d = dot(up, center) - (structureRadius + offset);
-  // structure d = minY - offset; disc radius = rtGroundSize * structureRadius (min 5).
+  // Ground distance slider + placement math + finite disc:
+  // d = minY - offset; disc radius = rtGroundSize * structureRadius (min 5).
   const groundGeom = await page.evaluate(async () => {
     const { app, general } = await import('./state/store.js');
     const { requestRender } = await import('./render/index.js');
@@ -291,28 +315,20 @@ function changedPixelCount(fileA, fileB) {
     const enc = app.pipeline._encoder;
     const render = () => app.pipeline.render(
       { renderer: app.renderer, scene: app.scene, camera: app.camera });
-    general.rtGroundOffset = 1.5;
-    render();
-    const n = u.uGroundNormal.value;
-    const expectedHorizon = n.dot(enc.structureCenter) - (enc.structureRadius + 1.5);
-    const horizonOk = Math.abs(u.uGroundD.value - expectedHorizon) < 1e-3;
-    general.rtGroundMode = 'structure';
     general.rtGroundOffset = 4;
     render();
     const structureOk = Math.abs(u.uGroundD.value - (enc.minY - 4)) < 1e-3;
     const discOk = Math.abs(u.uGroundRadius.value
       - Math.max((general.rtGroundSize ?? 2.5) * enc.structureRadius, 5)) < 1e-3;
     requestRender();
-    return { horizonOk, structureOk, discOk, d: u.uGroundD.value, r: u.uGroundRadius.value };
+    return { structureOk, discOk, d: u.uGroundD.value, r: u.uGroundRadius.value };
   });
-  H.check('ground distance applies in both modes and the ground is a finite disc',
-    groundGeom.horizonOk && groundGeom.structureOk && groundGeom.discOk,
-    JSON.stringify(groundGeom));
+  H.check('ground distance applies and the ground is a finite disc',
+    groundGeom.structureOk && groundGeom.discOk, JSON.stringify(groundGeom));
   await page.evaluate(async () => {
     const { general } = await import('./state/store.js');
     const { requestRender } = await import('./render/index.js');
     general.rtGroundPlane = false;
-    general.rtGroundMode = 'structure';
     general.rtGroundPattern = 'solid';
     general.rtGroundColor1 = null;
     general.rtGroundColor2 = null;
