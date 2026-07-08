@@ -25,13 +25,33 @@ const H = require('../harness');
       menuValue: select?.value,
     };
   });
-  H.check('forward pipeline active after boot (app.pipeline + general in sync)',
-    boot.activeId === 'forward' && boot.appPipelineMatches && boot.generalId === 'forward',
+  H.check('depthpeel pipeline active after boot (app.pipeline + general in sync)',
+    boot.activeId === 'depthpeel' && boot.appPipelineMatches && boot.generalId === 'depthpeel',
     JSON.stringify(boot));
   H.check('rendering-pipeline dropdown lists the registry',
     Array.isArray(boot.menuOptions) && boot.menuOptions.join(',') === boot.registry.map((p) => p.id).join(',')
-      && boot.menuValue === 'forward',
+      && boot.menuValue === 'depthpeel',
     JSON.stringify({ menu: boot.menuOptions, registry: boot.registry }));
+  // --- Opaque-scene fast path (default depthpeel renders like forward) -----------
+  const fastPath = await page.evaluate(async () => {
+    const { app, general } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    const { updateVisualization } = await import('./core/crystal-viewer.js');
+    const ctx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
+    app.pipeline.render(ctx);
+    const opaque = app.pipeline._pass?.lastFrameFastPath;
+    general.mainOpacity = 0.5; // transparency appears -> peeling engages next frame
+    updateVisualization({ atomsUpdate: true, bondsUpdate: true });
+    app.pipeline.render(ctx);
+    const transp = app.pipeline._pass?.lastFrameFastPath;
+    general.mainOpacity = 1.0;
+    updateVisualization({ atomsUpdate: true, bondsUpdate: true });
+    requestRender();
+    return { opaque, transp };
+  });
+  H.check('depthpeel fast path: plain single pass when nothing is transparent',
+    fastPath.opaque === true && fastPath.transp === false, JSON.stringify(fastPath));
+
   H.check('registry holds the seven pipelines',
     boot.registry.map((p) => p.id).join(',') === 'forward,split-atoms,sorted-atoms,wboit,depthpeel,raytrace,pathtrace',
     JSON.stringify(boot.registry));
@@ -39,8 +59,11 @@ const H = require('../harness');
   // --- Depth-peel "Peel layers" slider follows the dropdown ----------------------
   const slider = await page.evaluate(() => {
     const block = document.getElementById('depthPeelLayersSlider')?.parentElement;
-    const hiddenUnderForward = block ? getComputedStyle(block).display === 'none' : null;
     const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
+    // Boot default is depthpeel now — establish the forward baseline explicitly.
+    select.value = 'forward';
+    select.dispatchEvent(new Event('change'));
+    const hiddenUnderForward = block ? getComputedStyle(block).display === 'none' : null;
     select.value = 'depthpeel';
     select.dispatchEvent(new Event('change'));
     const shownUnderDepthPeel = getComputedStyle(block).display !== 'none';
@@ -162,11 +185,11 @@ const H = require('../harness');
       styleRowVisible: getComputedStyle(styleRow).display !== 'none',
     };
   });
-  H.check('Reset rendering settings restores every default (pipeline back to forward)',
-    reset.pipeline === 'forward' && reset.style === 'metallic'
+  H.check('Reset rendering settings restores every default (pipeline back to depthpeel)',
+    reset.pipeline === 'depthpeel' && reset.style === 'metallic'
       && Math.abs(reset.reflectivity - 0.15) < 1e-9 && Math.abs(reset.ambient - 0.3) < 1e-9
       && reset.ground === false && reset.peel === 5 && Math.abs(reset.hull - 0.025) < 1e-9
-      && reset.menuValue === 'forward' && reset.styleRowVisible,
+      && reset.menuValue === 'depthpeel' && reset.styleRowVisible,
     JSON.stringify(reset));
   H.check('pipeline dropdown lives in the Visual window', await page.evaluate(() =>
     !!document.getElementById('renderPipelineMenu')?.closest('#cvPanelBody-visual')));

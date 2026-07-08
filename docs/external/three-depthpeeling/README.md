@@ -57,3 +57,9 @@ to this app's rendering-pipeline architecture:
    `renderer.getDrawingBufferSize()` inside `render()` (covers window resize
    and the PNG export's temporary size changes); peel layer targets grow/trim
    to `layerCount` (driven by the app's "Peel layers" slider).
+- **Opaque-scene fast path (CrysViz)**: when the per-frame gather finds no
+  transparent meshes at all, `DepthPeelPass.render()` renders one plain direct
+  pass (identical to the forward pipeline) and skips the opaque-target, peel
+  and composite passes entirely (`lastFrameFastPath` flags which path ran).
+  This lets depth peeling be the app's default pipeline without taxing
+  all-opaque scenes.

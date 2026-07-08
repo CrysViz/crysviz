@@ -83,7 +83,7 @@ export const groups = {
 // the "Reset rendering" button (ui/ColorPanel.js resetRenderingSettings).
 export const RENDERING_DEFAULTS = {
   renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
-  renderPipeline: 'forward', // active rendering pipeline id (render/pipeline/index.js registry)
+  renderPipeline: 'depthpeel', // active rendering pipeline id; depthpeel self-optimizes to a plain forward pass when the scene has no transparency (DepthPeelPass fast path)
   depthPeelLayers: 5, // peel passes for the 'depthpeel' pipeline (1-10; more = deeper transparency, slower)
   rtResolutionScale: 0.75, // raytrace/pathtrace pipelines: internal resolution as a fraction of the canvas
   rtReflectivity: 0.15, // raytrace/pathtrace pipelines: extra mirror reflectivity on opaque surfaces (0-1)

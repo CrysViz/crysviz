@@ -257,6 +257,31 @@ class DepthPeelPass {
 
 		} );
 
+		// LOCAL ADAPTATION (CrysViz): FAST PATH — when the scene contains no
+		// transparent material at all there is nothing to peel, so render one
+		// plain direct pass (identical cost and pixels to the forward
+		// pipeline) and skip the opaque-target/peel/composite machinery.
+		// This makes 'depthpeel' safe as the app default: all-opaque scenes
+		// pay a forward frame; transparency re-engages peeling next frame.
+		// (Nothing was mutated yet at this point — the caches were only
+		// filled with saved state, and no layer mask was touched.)
+		this.lastFrameFastPath = peelMeshes.length === 0 && otherTransparentMeshes.length === 0;
+		if ( this.lastFrameFastPath ) {
+
+			renderer.setRenderTarget( oldRenderTarget );
+			renderer.setClearColor( this._oldClearColor, oldClearAlpha );
+			scene.overrideMaterial = oldOverrideMaterial;
+			scene.background = oldBackground;
+			renderer.autoClear = oldAutoClear;
+			visibilityCache.clear();
+			materialCache.clear();
+
+			renderer.clear();
+			renderer.render( scene, camera );
+			return;
+
+		}
+
 		const setVisible = ( opaqueVisible, transparentVisible, peelVisible ) => {
 
 			opaqueMeshes.forEach( ( mesh ) => mesh.layers.mask = opaqueVisible ? visibilityCache.get( mesh ) : 0 );
