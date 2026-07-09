@@ -100,9 +100,14 @@ const hooks = {
 /**
  * Restore one panel's default placement: docked/floating state, dock slot or
  * floating anchor, and title-bar (strip) state. The body's collapsed state is
- * left as the user has it.
+ * left as the user has it, UNLESS `resetCollapsed` is set (used by "Reset
+ * UI"): a panel whose default is a collapsed title bar (e.g. Atomistic,
+ * Files) combined with a body the user had folded shrinks to an unlabeled
+ * 3px strip with no visible content or title — indistinguishable from the
+ * panel being gone. A full reset restores the body's default open/closed
+ * state too, so every panel stays discoverable.
  */
-function applyPanelDefaults(panel) {
+function applyPanelDefaults(panel, { resetCollapsed = false } = {}) {
   const defaults = panel.def.defaults || {};
   if (defaults.docked !== false) {
     dockPanelAtDefaultOrder(panel);
@@ -114,6 +119,13 @@ function applyPanelDefaults(panel) {
     : defaults.docked === false;
   if (barCollapsed) panel.collapseBar();
   else panel.expandBar();
+
+  if (resetCollapsed) {
+    // Same convention registerPanel uses: collapsed by default unless the
+    // panel explicitly opts out with `collapsed: false`.
+    if (defaults.collapsed !== false) panel.collapse();
+    else panel.expand();
+  }
 }
 
 /** Insert a panel into the dock at the slot its DEFAULT order dictates,
@@ -137,7 +149,7 @@ export function resetAllPanels() {
   // Reset in default-order sequence so each dock insertion lands correctly.
   const all = [...panels.values()].sort(
     (a, b) => ((a.def.defaults?.order) || 0) - ((b.def.defaults?.order) || 0));
-  for (const panel of all) applyPanelDefaults(panel);
+  for (const panel of all) applyPanelDefaults(panel, { resetCollapsed: true });
   refreshCompactFloatingPanels();
   saveLayout();
 }
