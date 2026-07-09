@@ -210,32 +210,33 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
 
 /* Base look, shared by both forms; each form overrides orientation/shape. */
 .split-pane-tab {
-  background: var(--panel-bg);
-  color: var(--panel-fg);
-  border: 1px solid var(--panel-border);
   cursor: pointer;
   font-size: 12px;
   letter-spacing: 0.04em;
-  opacity: 0.72;
+  color: var(--panel-fg);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
 }
 
-.split-pane-tab:hover {
-  opacity: 1;
+.split-pane-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.split-pane-tab.active {
-  opacity: 1;
-  color: var(--highlight-color, #00bcd4);
-  border-color: var(--highlight-color, #00bcd4);
-}
-
-/* ---- header strip (open) --------------------------------------------------*/
+/* ---- header strip (open): browser-style tabs ------------------------------*/
 .split-pane-header-tabs {
   display: none;
   flex: 1;
   min-width: 0;
-  gap: 4px;
-  overflow-x: auto;
+  gap: 11px;                /* room for the active tab's bottom flares */
+  overflow: visible;        /* let the flare pseudo-elements spill out */
+  align-self: stretch;      /* fill the header height … */
+  align-items: flex-end;    /* … so tabs sit on the bottom edge, like a browser */
+  /* pull the strip down so the active tab's bottom flares meet the header's
+     bottom border, giving the "tab connected to the pane" look */
+  margin-bottom: -9px;
+  padding-top: 4px;
 }
 
 #viewArea.split-multi:not(.split-pane-collapsed) .split-pane-header-tabs {
@@ -248,15 +249,81 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
 }
 
 .split-pane-header-tabs .split-pane-tab {
+  position: relative;
   writing-mode: horizontal-tb;
-  border-radius: 6px;
-  padding: 3px 10px;
-  white-space: nowrap;
-  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 190px;
+  padding: 5px 6px 7px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 9px 9px 0 0;
+  color: var(--muted-fg, #9aa0a6);
 }
 
+.split-pane-header-tabs .split-pane-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--panel-fg);
+}
+
+/* Active tab: filled + raised, outlined, its bottom flaring into the strip.
+   --split-tab-bg is the shared fill used by the tab body and its flares. */
 .split-pane-header-tabs .split-pane-tab.active {
-  background: rgba(255, 255, 255, 0.06);
+  --split-tab-bg: var(--group-bg, rgba(255, 255, 255, 0.10));
+  background: var(--split-tab-bg);
+  border: 1px solid var(--panel-border);
+  border-bottom: none;
+  color: var(--panel-fg);
+}
+
+/* Browser-style bottom flares: a quarter-disc of the tab colour on each side
+   with a concave arc cut out of its inner corner, so the active tab curves
+   outward into the strip instead of ending on a square edge. */
+.split-pane-header-tabs .split-pane-tab.active::before,
+.split-pane-header-tabs .split-pane-tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 11px;
+  height: 11px;
+  pointer-events: none;
+}
+
+.split-pane-header-tabs .split-pane-tab.active::before {
+  left: -11px;
+  background: radial-gradient(circle at top left, transparent 11px, var(--split-tab-bg) 11px);
+}
+
+.split-pane-header-tabs .split-pane-tab.active::after {
+  right: -11px;
+  background: radial-gradient(circle at top right, transparent 11px, var(--split-tab-bg) 11px);
+}
+
+/* Per-tab close button (browser-style ✕ that appears on the tab). */
+.split-pane-tab-close {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.split-pane-tab-close:hover {
+  background: rgba(255, 255, 255, 0.18);
+  opacity: 1;
 }
 
 /* ---- edge pull-tab stack (collapsed) --------------------------------------*/
@@ -280,6 +347,14 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
   border-right: none;
   border-radius: 8px 0 0 8px;
   padding: 12px 6px;
+  opacity: 0.75;
+}
+
+.split-pane-tabs .split-pane-tab:hover,
+.split-pane-tabs .split-pane-tab.active {
+  opacity: 1;
+  color: var(--highlight-color, #00bcd4);
+  border-color: var(--highlight-color, #00bcd4);
 }
 
 /* Expanded (fullscreen) single-item view, toggled from the ⛶ button. Above

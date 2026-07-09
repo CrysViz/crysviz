@@ -33,6 +33,7 @@ function handleClose() {
 
 const owner = {
   title: 'Energy Landscape',
+  panelId: 'landscape', // lets the split-view tab's ✕ collapse this dock panel
   render: renderContent,
   onResize: handleResize,
   onClose: handleClose,

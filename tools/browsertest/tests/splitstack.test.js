@@ -29,17 +29,20 @@ function snap(page) {
     const edge = [...document.querySelectorAll('#splitPaneTabs .split-pane-tab')];
     const header = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')];
     const shown = (el) => el && getComputedStyle(el).display !== 'none';
+    const lbl = (t) => clean(t.querySelector('.split-pane-tab-label')?.textContent || '');
+    const activeEl = header.find((t) => t.classList.contains('active'));
     return {
       active: va.classList.contains('split-active'),
       multi: va.classList.contains('split-multi'),
       collapsed: va.classList.contains('split-pane-collapsed'),
       title: document.getElementById('splitPaneTitle').textContent,
       ownerPanes: document.querySelectorAll('#splitPaneBody .split-owner-pane').length,
-      tabLabels: edge.map((t) => clean(t.textContent)),
-      headerLabels: header.map((t) => clean(t.textContent)),
+      tabLabels: edge.map(lbl),
+      headerLabels: header.map(lbl),
       headerShown: shown(document.getElementById('splitPaneHeaderTabs')),
       edgeShown: shown(document.getElementById('splitPaneTabs')),
-      activeTab: header.find((t) => t.classList.contains('active'))?.textContent.trim() || '',
+      headerHasClose: header.every((t) => !!t.querySelector('.split-pane-tab-close')),
+      activeTab: activeEl ? lbl(activeEl) : '',
     };
   });
 }
@@ -67,6 +70,7 @@ function snap(page) {
     s.headerLabels.includes('EOS Fit') && s.headerLabels.includes('Energy Landscape'),
     `shown ${s.headerShown} ${JSON.stringify(s.headerLabels)}`);
   H.check('edge stack hidden while open', s.edgeShown === false);
+  H.check('each header tab has a close ✕', s.headerHasClose);
   H.check('Landscape is front (just opened)', s.title === 'Energy Landscape' &&
     s.activeTab === 'Energy Landscape', `${s.title} / ${s.activeTab}`);
 
@@ -101,14 +105,26 @@ function snap(page) {
   H.check('tab reopens pane on that owner', !s.collapsed && s.title === 'Energy Landscape',
     `${s.collapsed} / ${s.title}`);
 
-  // ---- collapse EOS's dock panel: only EOS's slot is released ------------
-  await collapsePanel(page, 'eos');
+  // ---- close EOS from its tab ✕: removes only EOS ------------------------
+  await page.evaluate(() => {
+    const tab = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
+      .find((t) => /EOS Fit/.test(t.textContent));
+    tab?.querySelector('.split-pane-tab-close')?.click();
+  });
+  await page.waitForTimeout(300);
   s = await snap(page);
-  H.check('collapsing EOS panel removes only EOS (1 owner left)', s.ownerPanes === 1 &&
+  H.check('tab ✕ removes only EOS (1 owner left)', s.ownerPanes === 1 &&
     s.title === 'Energy Landscape', `${s.ownerPanes} / ${s.title}`);
   H.check('.split-multi cleared back to one owner', s.multi === false);
 
-  // ---- collapse Landscape's dock panel: pane fully closes ----------------
+  // ---- the ✕ collapsed EOS's dock panel: re-expanding re-adds it ---------
+  await expandPanel(page, 'eos');
+  s = await snap(page);
+  H.check('re-expanding EOS re-adds it (its dock panel really collapsed)',
+    s.ownerPanes === 2, String(s.ownerPanes));
+
+  // ---- collapse both dock panels: pane fully closes ---------------------
+  await collapsePanel(page, 'eos');
   await collapsePanel(page, 'landscape');
   s = await snap(page);
   H.check('closing last owner closes the pane', !s.active && s.ownerPanes === 0,

@@ -39,6 +39,7 @@ function handleAction(action) {
 
 const owner = {
   title: 'Split View Demo',
+  panelId: 'splitDemo', // lets the split-view tab's ✕ collapse this dock panel
   render: renderSplitContent,
   onAction: handleAction,
 };

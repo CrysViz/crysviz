@@ -15,7 +15,7 @@
 // built once (into a per-owner container) and only shown/hidden, so transient
 // state (a loaded file, scroll position) survives a tab switch.
 
-import { setRightReserve } from './PanelManager.js';
+import { setRightReserve, getPanel } from './PanelManager.js';
 import { resizeRenderer } from '../WindowAndSceneControls.js';
 import { requestRender } from '../../render/index.js';
 import { app } from '../../state/store.js';
@@ -80,29 +80,59 @@ function syncSceneAndSidePanels() {
  *  keep their open order in both (tabs don't jump on switch); the front owner's
  *  tab is marked active. The pane's `.split-multi` class (owners > 1) drives
  *  whether the header strip shows in CSS. */
-function fillTabs(container, suffix) {
+function fillTabs(container, { suffix = '', withClose = false } = {}) {
   container.innerHTML = '';
   for (const owner of owners) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'split-pane-tab' + (owner === front ? ' active' : '');
-    btn.textContent = `${owner.title || ''}${suffix}`;
-    btn.title = owner.title || 'Show panel';
-    btn.addEventListener('click', () => {
+    const tab = document.createElement('div');
+    tab.className = 'split-pane-tab' + (owner === front ? ' active' : '');
+    tab.setAttribute('role', 'tab');
+    tab.tabIndex = 0;
+    tab.title = owner.title || 'Show panel';
+
+    const label = document.createElement('span');
+    label.className = 'split-pane-tab-label';
+    label.textContent = `${owner.title || ''}${suffix}`;
+    tab.appendChild(label);
+
+    const activate = () => {
       collapsed = false;
       applyPaneWidth();
       setFront(owner);
       syncSceneAndSidePanels();
+    };
+    tab.addEventListener('click', activate);
+    tab.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); activate(); }
     });
-    container.appendChild(btn);
+
+    if (withClose) {
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'split-pane-tab-close';
+      close.textContent = '×';
+      close.title = `Close ${owner.title || ''}`;
+      close.addEventListener('click', (ev) => { ev.stopPropagation(); requestClose(owner); });
+      tab.appendChild(close);
+    }
+
+    container.appendChild(tab);
   }
+}
+
+/** Close an owner from its tab. Prefer collapsing its dock panel (so the panel's
+ *  expand state stays in sync and its own onCollapse releases the slot); fall
+ *  back to a direct release if the owner didn't declare a panelId. */
+function requestClose(owner) {
+  const panel = owner.panelId ? getPanel(owner.panelId) : null;
+  if (panel) panel.collapse();
+  else closeSplitView(owner);
 }
 
 function renderTabs() {
   const { viewArea, tabs, headerTabs } = els();
-  if (headerTabs) fillTabs(headerTabs, '');
+  if (headerTabs) fillTabs(headerTabs, { withClose: true });
   if (tabs) {
-    fillTabs(tabs, ' ▸');
+    fillTabs(tabs, { suffix: ' ▸' });
     tabs.hidden = owners.length === 0;
   }
   if (viewArea) viewArea.classList.toggle('split-multi', owners.length > 1);

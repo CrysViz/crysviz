@@ -93,6 +93,7 @@ function handleExpandChange(itemId, expanded) {
 
 const owner = {
   title: 'EOS Fit',
+  panelId: 'eos', // lets the split-view tab's ✕ collapse this dock panel
   render: renderContent,
   onAction: handleAction,
   onExpandChange: handleExpandChange,
