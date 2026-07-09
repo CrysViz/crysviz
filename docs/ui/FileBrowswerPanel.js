@@ -122,7 +122,17 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     row.insertAdjacentElement("afterend", newRow);
     structureShip.len += 1;
     structureShip.container.splice(rowIndex + 1, 0, newObj);
-    selectLastAddedRow();
+
+    // Select the row just created (inserted right after the source row, not
+    // necessarily last in the table) — selectLastAddedRow() would pick
+    // whatever row is currently last instead.
+    const newRowIndex = Array.from(newRow.parentElement.children).indexOf(newRow);
+    if (fileBrowser.selectedRow) fileBrowser.selectedRow.classList.remove("selected");
+    newRow.classList.add("selected");
+    fileBrowser.selectedRow = newRow;
+    newRow.dataset.index = String(newRowIndex);
+    fileBrowser.selectedRowIndex = newRowIndex;
+    updateStructureFromRowAndStep(newRowIndex);
     return;
   }
 
