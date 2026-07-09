@@ -35,8 +35,8 @@ const H = require('../harness');
     catEdge.memberEdges.length > 0
       && catEdge.memberEdges.every(([c, o]) => c === 'ff0000' && Math.abs(o - 0.9) < 1e-6),
     JSON.stringify(catEdge.memberEdges));
-  H.check('non-member edges keep the default edge style (006c99 / 0.85)',
-    catEdge.otherEdges.every(([c, o]) => c === '006c99' && Math.abs(o - 0.85) < 1e-6),
+  H.check('non-member edges keep the default edge style (black / opaque)',
+    catEdge.otherEdges.every(([c, o]) => c === '000000' && Math.abs(o - 1) < 1e-6),
     JSON.stringify(catEdge.otherEdges));
 
   // --- Individual override wins; both survive an async rebuild --------------------
@@ -94,6 +94,26 @@ const H = require('../harness');
     editorUi.catVisible && editorUi.catPickers === 2 && editorUi.catHasEdgeAlpha
       && editorUi.rowPickers === 2 && editorUi.rowHasEdgeAlpha,
     JSON.stringify(editorUi));
+
+  // --- Edge thickness is in WORLD units (scales with zoom, not pixel-fixed) -------
+  const worldUnits = await page.evaluate(async () => {
+    const { groups, general } = await import('./state/store.js');
+    const { setPolyEdgeWidth } = await import('./render/PolyhedraModule.js');
+    setPolyEdgeWidth(4);
+    const edge = groups.polyhedraGroup.children
+      .find((m) => m.userData?.type === 'polyhedron')?.children
+      .find((c) => c.userData?.type === 'polyhedron-edges');
+    const result = {
+      worldUnits: edge?.material?.worldUnits === true,
+      linewidth: edge?.material?.linewidth,
+      expected: 0.03 * general.polyEdgeWidth,
+    };
+    setPolyEdgeWidth(1);
+    return result;
+  });
+  H.check('poly edges use world-unit fat lines (0.03 A per width unit)',
+    worldUnits.worldUnits && Math.abs(worldUnits.linewidth - worldUnits.expected) < 1e-9,
+    JSON.stringify(worldUnits));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

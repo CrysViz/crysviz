@@ -4,15 +4,16 @@ import * as THREE from '../external/three/three.module.js';
 import { groups } from '../state/store.js';
 
 import { MarchingCubesWrapper, MarchingCubesBackend } from './MarchingCubesWrapper.js';
+import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
 
+// Transparency flags (transparent, depthWrite, renderOrder) are owned by the
+// rendering pipeline policy ('isosurface' in render/pipeline/ForwardPipeline.js)
+// and applied via applyIsosurfaceMaterialSettings below.
 export let surface_options = {
     //transmission: 0.95,
     side: THREE.DoubleSide,
     opacity:0.6,
-    transparent: true,
-    depthWrite: false,
-    //depthTest: false,
   }
 
 
@@ -65,30 +66,21 @@ export function applyIsosurfaceMaterialSettings(isosurface, settings = {}) {
     if (!isosurface || !isosurface.meshes) return;
 
     const { positiveColor, negativeColor, opacity } = settings;
-    const positiveMat = isosurface.meshes.positive?.material;
-    const negativeMat = isosurface.meshes.negative?.material;
 
-    if (positiveMat) {
-        if (positiveColor !== undefined) {
-            positiveMat.color.set(positiveColor);
+    const applyToMesh = (mesh, color) => {
+        const material = mesh?.material;
+        if (!material) return;
+        if (color !== undefined) {
+            material.color.set(color);
         }
         if (opacity !== undefined) {
-            positiveMat.opacity = clampOpacity(opacity);
-            positiveMat.transparent = positiveMat.opacity < 1;
+            material.opacity = clampOpacity(opacity);
         }
-        positiveMat.needsUpdate = true;
-    }
+        applyTransparency(material, { kind: 'isosurface', opacity: material.opacity, mesh });
+    };
 
-    if (negativeMat) {
-        if (negativeColor !== undefined) {
-            negativeMat.color.set(negativeColor);
-        }
-        if (opacity !== undefined) {
-            negativeMat.opacity = clampOpacity(opacity);
-            negativeMat.transparent = negativeMat.opacity < 1;
-        }
-        negativeMat.needsUpdate = true;
-    }
+    applyToMesh(isosurface.meshes.positive, positiveColor);
+    applyToMesh(isosurface.meshes.negative, negativeColor);
 }
 
 export function applyMaterialSettingsToStoredIsosurfaces(isosurfaceGroup, settings = {}) {
@@ -235,10 +227,9 @@ export class Isosurface extends THREE.Group{
             negative: new THREE.Mesh(negativeGeom, materialNeg)
         };
         this.meshes.positive.name = 'isosurface_pos';
-        this.meshes.positive.renderOrder = 1; // render after opaque structures to reduce blending artifacts
         this.meshes.negative.name = 'isosurface_neg';
-        this.meshes.negative.renderOrder = 1; // render after opaque structures to reduce blending artifacts
 
+        // Applies the pipeline transparency policy too (incl. renderOrder).
         this.applyMaterialSettings(getIsosurfaceMaterialSettings());
 
         this.add(this.meshes.positive);

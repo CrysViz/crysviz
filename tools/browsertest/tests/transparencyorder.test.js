@@ -1,0 +1,529 @@
+// Per-atom transparency draw order across the three rendering pipelines:
+// - 'forward'       legacy single blended pass (order-dependent; not asserted
+//                   on pixels — only that its state is legacy and no overlay
+//                   exists)
+// - 'split-atoms'   opaque/transparent two-pass split: a semi-transparent atom
+//                   in front of an opaque atom stays in front (blends over it)
+//                   instead of vanishing behind it
+// - 'sorted-atoms'  additionally sorts transparent instances back-to-front, so
+//                   transparent-over-transparent atom overlap blends correctly
+// Also exercises pipeline switching mid-scene: dispose must remove the
+// overlay and reset uAlphaPass; re-activation must rebuild from stamped specs.
+//
+// Setup: stage a small red sphere (low instance index) directly in front of a
+// big blue sphere (higher instance index — the order that triggered the bug)
+// on the camera->target axis, zero-scale all other atoms, hide bonds/lattice,
+// and average the pixels over the front sphere's disk. Red vs blue keeps the
+// channels separable under the white key light (a green sphere picks up too
+// much red from lighting to give clean margins).
+'use strict';
+const fs = require('fs');
+const H = require('../harness');
+const { PNG } = require('pngjs');
+
+/** Pixels whose summed RGB difference exceeds `thresh` between two shots. */
+function changedPixelCount(fileA, fileB, thresh = 40) {
+  const a = PNG.sync.read(fs.readFileSync(fileA));
+  const b = PNG.sync.read(fs.readFileSync(fileB));
+  let n = 0;
+  for (let i = 0; i < a.data.length; i += 4) {
+    const d = Math.abs(a.data[i] - b.data[i]) + Math.abs(a.data[i + 1] - b.data[i + 1])
+      + Math.abs(a.data[i + 2] - b.data[i + 2]);
+    if (d > thresh) n++;
+  }
+  return n;
+}
+
+/** Average RGB over a disk of radius R around (x, y) of a page screenshot. */
+function sampleDisk(file, x, y, R) {
+  const png = PNG.sync.read(fs.readFileSync(file));
+  let sr = 0, sg = 0, sb = 0, n = 0;
+  for (let dy = -R; dy <= R; dy++) {
+    for (let dx = -R; dx <= R; dx++) {
+      if (dx * dx + dy * dy > R * R) continue;
+      const px = Math.round(x + dx), py = Math.round(y + dy);
+      if (px < 0 || py < 0 || px >= png.width || py >= png.height) continue;
+      const o = (py * png.width + px) * 4;
+      sr += png.data[o]; sg += png.data[o + 1]; sb += png.data[o + 2]; n++;
+    }
+  }
+  return { r: Math.round(sr / n), g: Math.round(sg / n), b: Math.round(sb / n) };
+}
+
+/** Centroid + count of strongly red pixels — locates the front sphere. Scans
+ *  only the pure-3D-canvas region (harness CANVAS_CLIP) so red/orange UI
+ *  elements (toolbar buttons, logo) cannot pull the centroid off the sphere. */
+function redCentroid(file) {
+  const png = PNG.sync.read(fs.readFileSync(file));
+  let X = 0, Y = 0, n = 0;
+  for (let y = 120; y < Math.min(780, png.height); y++) {
+    for (let x = 460; x < Math.min(1380, png.width); x++) {
+      const o = (y * png.width + x) * 4;
+      if (png.data[o] > 120 && png.data[o] > png.data[o + 1] + 60 && png.data[o] > png.data[o + 2] + 60) {
+        X += x; Y += y; n++;
+      }
+    }
+  }
+  return n ? { x: X / n, y: Y / n, count: n } : null;
+}
+
+(async () => {
+  const { browser, page, errors } = await H.launchApp();
+  H.check('webgl available', await H.webglAvailable(page));
+  await H.loadDefaultStructure(page); // YBCO
+
+  // --- Stage the scene; returns the two staged source-atom indices ---------------
+  const src = await page.evaluate(async () => {
+    const { app, groups, fileBrowser } = await import('./state/store.js');
+    const THREE = await import('./external/three/three.module.js');
+    const { requestRender } = await import('./render/index.js');
+    const mesh = groups.atomsMesh;
+    const srcIndex = fileBrowser.selectedStructure.periodic.wrapped.srcIndex;
+    const srcOf = (i) => (srcIndex ? srcIndex[i] : i);
+    // Front = instance 0; back = first LATER instance of a DIFFERENT source atom
+    // (periodic copies share their source atom's opacity, so the pair must not
+    // be two copies of the same atom).
+    const iF = 0;
+    let iB = 1;
+    while (iB < mesh.count && srcOf(iB) === srcOf(iF)) iB++;
+
+    const cam = app.camera;
+    const target = app.controls.target.clone();
+    const dir = target.clone().sub(cam.position).normalize();
+    const backPos = target;                                             // big blue sphere
+    const frontPos = target.clone().sub(dir.clone().multiplyScalar(5)); // small red sphere, 5 units nearer
+    const a = mesh.instanceMatrix.array;
+    for (let i = 0; i < mesh.count; i++) {
+      const o = i * 16;
+      const s = i === iF ? 1.2 : i === iB ? 3.5 : 0.0; // zero-scale = hidden
+      a[o] = s; a[o + 5] = s; a[o + 10] = s;
+      const p = i === iF ? frontPos : backPos;
+      a[o + 12] = p.x; a[o + 13] = p.y; a[o + 14] = p.z;
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.setColorAt(iF, new THREE.Color(0xff0000));
+    mesh.setColorAt(iB, new THREE.Color(0x0000ff));
+    mesh.instanceColor.needsUpdate = true;
+    if (groups.bondsMesh) groups.bondsMesh.visible = false;
+    if (groups.latticeGroup) groups.latticeGroup.visible = false;
+    if (groups.polyhedraGroup) groups.polyhedraGroup.visible = false;
+    requestRender();
+    return { front: srcOf(iF), back: srcOf(iB) };
+  });
+  await page.waitForTimeout(500);
+
+  const shootFile = async (name) => {
+    const file = `${__dirname}/../artifacts/${name}.png`;
+    await page.screenshot({ path: file });
+    return file;
+  };
+
+  // Locate the front (red) sphere in the opaque baseline; average over ~55% of
+  // its disk (the same fixed region in every later shot) so the small white
+  // specular hotspot at its centre cannot dominate a point sample.
+  const baselineFile = await shootFile('transparencyorder-opaque');
+  const spot = redCentroid(baselineFile);
+  H.check('staging: front red atom visible over the back blue atom',
+    !!spot && spot.count > 500 && src.front !== src.back, JSON.stringify({ spot, src }));
+  if (!spot) { H.check('no page errors', errors.length === 0, errors.join(' | ')); await H.finish(browser); return; }
+  const R = Math.max(3, Math.floor(0.55 * Math.sqrt(spot.count / Math.PI)));
+
+  const shoot = async (name) => sampleDisk(await shootFile(name), spot.x, spot.y, R);
+
+  /** Set one source atom's opacity the way the UI editors do (model + mesh). */
+  const setOpacity = (srcIdx, value) => page.evaluate(async ({ srcIdx, value }) => {
+    const { fileBrowser } = await import('./state/store.js');
+    const { updateSingleAtomOpacity, requestRender } = await import('./render/index.js');
+    const structure = fileBrowser.selectedStructure;
+    structure.atoms[srcIdx].setOpacity(value);
+    structure.atomImages[srcIdx]?.forEach((imageIndex) => updateSingleAtomOpacity(imageIndex, value));
+    requestRender();
+  }, { srcIdx, value });
+
+  const setPipeline = (id) => page.evaluate(async (id) => {
+    const { setActivePipeline } = await import('./render/index.js');
+    setActivePipeline(id);
+  }, id);
+
+  const atomsState = () => page.evaluate(async () => {
+    const { groups } = await import('./state/store.js');
+    const mesh = groups.atomsMesh;
+    const overlay = mesh.userData.transparentOverlay;
+    return {
+      mainTransparent: mesh.material.transparent,
+      mainDepthWrite: mesh.material.depthWrite,
+      alphaPass: mesh.material.userData.alphaPass ?? 0,
+      hasOverlay: !!overlay,
+      overlayVisible: !!overlay?.visible,
+      overlayOwnBuffers: !!overlay && overlay.instanceMatrix !== mesh.instanceMatrix,
+    };
+  });
+
+  const s1 = sampleDisk(baselineFile, spot.x, spot.y, R);
+  H.check('opaque baseline: front red atom covers the back blue atom',
+    s1.r > s1.b + 50, JSON.stringify(s1));
+
+  // ============================ split-atoms pipeline ============================
+  await setPipeline('split-atoms');
+
+  // Transparent front atom must BLEND over the opaque back atom (under forward
+  // the later-indexed blue instance overpainted it -> pure blue disk).
+  await setOpacity(src.front, 0.5);
+  await page.waitForTimeout(500);
+  const s2 = await shoot('transparencyorder-split-front');
+  H.check('split: transparent front atom lets the back atom show through (blue rises)',
+    s2.b > s1.b + 30, JSON.stringify({ s1, s2 }));
+  H.check('split: transparent front atom stays in front (red persists in the blend)',
+    s2.r > s2.b - 15 && s2.r > s1.b + 30, JSON.stringify({ s1, s2 }));
+
+  const splitState = await atomsState();
+  H.check('split: main pass stays opaque with depth writes, shared-buffer overlay visible',
+    !splitState.mainTransparent && splitState.mainDepthWrite && splitState.alphaPass === 1
+      && splitState.overlayVisible && !splitState.overlayOwnBuffers,
+    JSON.stringify(splitState));
+
+  // Opaque front over transparent back: front must fully cover again.
+  await setOpacity(src.front, 1.0);
+  await setOpacity(src.back, 0.5);
+  await page.waitForTimeout(500);
+  const s3 = await shoot('transparencyorder-split-back');
+  H.check('split: opaque front atom fully covers a transparent back atom',
+    s3.r > s3.b + 50 && s3.b < s1.b + 25, JSON.stringify({ s1, s3 }));
+
+  // ============================ sorted-atoms pipeline ===========================
+  // BOTH transparent: the front red atom has the lower instance index, so
+  // unsorted drawing blends blue OVER red; the depth-sorted overlay draws the
+  // back atom first and blends red last. Measured disk averages: sorted
+  // r-b ~ +89, unsorted ~ +14 — threshold 50 sits comfortably between.
+  await setPipeline('sorted-atoms');
+  await setOpacity(src.front, 0.5);
+  await page.waitForTimeout(500);
+  const s4 = await shoot('transparencyorder-sorted-both');
+  H.check('sorted: two transparent atoms blend back-to-front (front red dominates)',
+    s4.r > s4.b + 50, JSON.stringify({ s1, s4 }));
+  H.check('sorted: back atom shows through the front one',
+    s4.b > s1.b + 20, JSON.stringify({ s1, s4 }));
+
+  const sortedState = await atomsState();
+  H.check('sorted: overlay uses private (sorted) instance buffers',
+    sortedState.overlayVisible && sortedState.overlayOwnBuffers && sortedState.alphaPass === 1,
+    JSON.stringify(sortedState));
+
+  // ============================ wboit pipeline ==================================
+  // Order-independent weighted blending (vendored three-wboit). Both atoms are
+  // still transparent from the sorted section.
+  //
+  // FIRST-FRAME regression: the pipeline switch creates a freshly patched
+  // overlay material. On the very first render its accumulation stage must
+  // already run with the correct renderStage (upstream defined the stage
+  // property only at first shader compile, so frame 1 accumulated plain
+  // additive colors — a garbage frame that stuck under render-on-demand).
+  // Weighted accumulation alpha is ~w*a (hundreds); plain alpha would be ~1.
+  const firstFrame = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const { setActivePipeline } = await import('./render/index.js');
+    setActivePipeline('wboit'); // fresh pipeline + freshly patched overlay material
+    const pipeline = app.pipeline;
+    pipeline.render({ renderer: app.renderer, scene: app.scene, camera: app.camera }); // FIRST frame
+    const pass = pipeline._pass;
+    const w = pass.accumulationTarget.width, h = pass.accumulationTarget.height;
+    // Scan a horizontal band through the staged spheres for the max accum alpha.
+    const buf = new Float32Array(4 * w);
+    app.renderer.readRenderTargetPixels(pass.accumulationTarget, 0, Math.floor(h / 2), w, 1, buf);
+    let maxAlpha = 0;
+    for (let i = 3; i < buf.length; i += 4) maxAlpha = Math.max(maxAlpha, buf[i]);
+    return { maxAlpha };
+  });
+  H.check('wboit: first frame accumulates with the correct render stage (weighted alpha)',
+    firstFrame.maxAlpha > 50, JSON.stringify(firstFrame));
+  await page.waitForTimeout(500);
+  const s5File = await shootFile('transparencyorder-wboit-both');
+  const s5 = sampleDisk(s5File, spot.x, spot.y, R);
+  const s5bg = sampleDisk(s5File, 700, 170, 5); // empty background reference
+  // WBOIT is a weighted average, not compositing: with this scene's shallow
+  // ortho depth range the depth weights saturate, so the honest property is
+  // that BOTH atoms contribute order-independently. Measured ~(254,206,255)
+  // over beige bg. Failure modes excluded: front-red vanished -> blue-dominant
+  // (~156,128,246, r-b=-90); content invisible/washed -> ~= background;
+  // back-blue missing -> baseline red (b~48).
+  const s5DistFromBg = Math.hypot(s5.r - s5bg.r, s5.g - s5bg.g, s5.b - s5bg.b);
+  H.check('wboit: two transparent atoms both contribute to the blend',
+    s5.r > s5.b - 30 && s5.b > s1.b + 100 && s5DistFromBg > 25,
+    JSON.stringify({ s1, s5, s5bg, dist: Math.round(s5DistFromBg) }));
+
+  const wboitState = await page.evaluate(async () => {
+    const { app, groups } = await import('./state/store.js');
+    const { getActivePipeline } = await import('./render/index.js');
+    const mesh = groups.atomsMesh;
+    const overlay = mesh.userData.transparentOverlay;
+    return {
+      mainTransparent: mesh.material.transparent,
+      mainDepthWrite: mesh.material.depthWrite,
+      alphaPass: mesh.material.userData.alphaPass ?? 0,
+      overlayVisible: !!overlay?.visible,
+      overlayInScene: overlay?.parent === app.scene,
+      overlayPatched: overlay?.material?.wboitEnabled === true,
+      needsCpuTriangleSort: getActivePipeline().needsCpuTriangleSort,
+    };
+  });
+  H.check('wboit: split main pass opaque, WBOIT-patched overlay parented to the scene',
+    !wboitState.mainTransparent && wboitState.mainDepthWrite && wboitState.alphaPass === 1
+      && wboitState.overlayVisible && wboitState.overlayInScene && wboitState.overlayPatched
+      && wboitState.needsCpuTriangleSort === false,
+    JSON.stringify(wboitState));
+
+  // Transparent front over opaque back: red persists, blue shows through.
+  await setOpacity(src.back, 1.0);
+  await page.waitForTimeout(500);
+  const s6 = await shoot('transparencyorder-wboit-front');
+  H.check('wboit: transparent front atom blends over the opaque back atom',
+    s6.r > s6.b && s6.b > s1.b + 20, JSON.stringify({ s1, s6 }));
+
+  // Opaque front over transparent back: opaque pass covers fully.
+  await setOpacity(src.front, 1.0);
+  await setOpacity(src.back, 0.5);
+  await page.waitForTimeout(500);
+  const s7 = await shoot('transparencyorder-wboit-back');
+  H.check('wboit: opaque front atom fully covers a transparent back atom',
+    s7.r > s7.b + 50 && s7.b < s1.b + 25, JSON.stringify({ s1, s7 }));
+
+  // Transparent BONDS get the same split treatment under wboit. The staging
+  // hid the bonds mesh — unhide it, since the overlay's visibility follows it.
+  const bondState = await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const { updateSingleBondOpacity, requestRender } = await import('./render/index.js');
+    if (groups.bondsMesh) groups.bondsMesh.visible = true;
+    const bond = fileBrowser.selectedStructure.bonds.find((b) => b.visibleLen > 1e-3);
+    const index = fileBrowser.selectedStructure.bonds.indexOf(bond);
+    bond.alpha = 0.5;
+    updateSingleBondOpacity(index * 2, 0.5);
+    updateSingleBondOpacity(index * 2 + 1, 0.5);
+    requestRender();
+    const mesh = groups.bondsMesh;
+    const overlay = mesh.userData.transparentOverlay;
+    return {
+      index,
+      mainTransparent: mesh.material.transparent,
+      mainDepthWrite: mesh.material.depthWrite,
+      alphaPass: mesh.material.userData.alphaPass ?? 0,
+      overlayVisible: !!overlay?.visible,
+      overlayPatched: overlay?.material?.wboitEnabled === true,
+    };
+  });
+  H.check('wboit: transparent bond splits the bonds mesh with a patched overlay',
+    !bondState.mainTransparent && bondState.mainDepthWrite && bondState.alphaPass === 1
+      && bondState.overlayVisible && bondState.overlayPatched,
+    JSON.stringify(bondState));
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {}); // flush a frame with the bond overlay drawn
+  H.check('wboit: no page errors after bond overlay render', errors.length === 0, errors.join(' | '));
+
+  // Reset the bond and re-enter the both-transparent atom state for the
+  // forward hand-off below.
+  await page.evaluate(async (index) => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const { updateSingleBondOpacity, requestRender } = await import('./render/index.js');
+    fileBrowser.selectedStructure.bonds[index].alpha = 1;
+    updateSingleBondOpacity(index * 2, 1);
+    updateSingleBondOpacity(index * 2 + 1, 1);
+    if (groups.bondsMesh) groups.bondsMesh.visible = false; // re-hide (staging)
+    requestRender();
+  }, bondState.index);
+  await setOpacity(src.front, 0.5);
+
+  // ============================ depthpeel pipeline ==============================
+  // Exact per-pixel compositing (adapted gkjohnson demo) — must meet the same
+  // STRICT expectations as the sorted pipeline, since peeling composites truly
+  // back-to-front. Entering with both atoms transparent.
+  await setPipeline('depthpeel');
+  await page.waitForTimeout(500);
+  const s8 = await shoot('transparencyorder-depthpeel-both');
+  H.check('depthpeel: two transparent atoms composite back-to-front exactly (red dominates)',
+    s8.r > s8.b + 50 && s8.b > s1.b + 20, JSON.stringify({ s1, s8 }));
+
+  const peelState = await page.evaluate(async () => {
+    const { app, groups } = await import('./state/store.js');
+    const { getActivePipeline } = await import('./render/index.js');
+    const mesh = groups.atomsMesh;
+    const overlay = mesh.userData.transparentOverlay;
+    return {
+      alphaPass: mesh.material.userData.alphaPass ?? 0,
+      overlayVisible: !!overlay?.visible,
+      overlayInScene: overlay?.parent === app.scene,
+      overlayPeelPatched: overlay?.material?.depthPeelEnabled === true,
+      needsCpuTriangleSort: getActivePipeline().needsCpuTriangleSort,
+    };
+  });
+  H.check('depthpeel: split main pass with a peel-patched scene-root overlay',
+    peelState.alphaPass === 1 && peelState.overlayVisible && peelState.overlayInScene
+      && peelState.overlayPeelPatched && peelState.needsCpuTriangleSort === false,
+    JSON.stringify(peelState));
+
+  // Transparent front over opaque back — expect the exact split-pipeline blend.
+  await setOpacity(src.back, 1.0);
+  await page.waitForTimeout(500);
+  const s9 = await shoot('transparencyorder-depthpeel-front');
+  H.check('depthpeel: transparent front atom blends over the opaque back atom (blue rises)',
+    s9.b > s1.b + 30, JSON.stringify({ s1, s9 }));
+  H.check('depthpeel: transparent front atom stays in front (red persists)',
+    s9.r > s9.b - 15 && s9.r > s1.b + 30, JSON.stringify({ s1, s9 }));
+
+  // Opaque front over transparent back: covered exactly.
+  await setOpacity(src.front, 1.0);
+  await setOpacity(src.back, 0.5);
+  await page.waitForTimeout(500);
+  const s10 = await shoot('transparencyorder-depthpeel-back');
+  H.check('depthpeel: opaque front atom fully covers a transparent back atom',
+    s10.r > s10.b + 50 && s10.b < s1.b + 25, JSON.stringify({ s1, s10 }));
+
+  // Re-enter the both-transparent state for the forward hand-off below.
+  await setOpacity(src.front, 0.5);
+
+  // ============================ back to forward =================================
+  // Dispose must remove the overlay and reset uAlphaPass; forward re-applies
+  // its legacy flags from the stamped specs.
+  await setPipeline('forward');
+  const forwardState = await atomsState();
+  H.check('forward: overlay removed and alpha pass reset on switch',
+    !forwardState.hasOverlay && forwardState.alphaPass === 0
+      && forwardState.mainTransparent && !forwardState.mainDepthWrite,
+    JSON.stringify(forwardState));
+
+  // All opaque again -> forward returns to plain opaque state.
+  await setOpacity(src.front, 1.0);
+  await setOpacity(src.back, 1.0);
+  const opaqueState = await atomsState();
+  H.check('forward: opaque again once no atom is transparent',
+    !opaqueState.mainTransparent && opaqueState.mainDepthWrite, JSON.stringify(opaqueState));
+
+  // ============================ raytrace pipeline ===============================
+  // Whitted ray tracing from data textures (vendored erichlof chunks). The
+  // encoder reads the same instance buffers this test stages, so the red/blue
+  // pair carries over. Colors are NOT compared against raster blends — RT has
+  // its own shading (Reinhard + refraction) — only ordering/visibility, at a
+  // low internal resolution so Mesa software GL keeps up.
+  await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    general.rtResolutionScale = 0.25;
+  });
+  await setPipeline('raytrace');
+  await page.waitForTimeout(4000); // progressive accumulation, software GL
+  const rtInfo = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const u = app.pipeline?._uniforms;
+    return {
+      samples: u?.uSampleCounter.value ?? 0,
+      atomCount: u?.uAtomCount.value ?? 0,
+      cylinderCount: u?.uCylinderCount.value ?? 0,
+    };
+  });
+  H.check('raytrace: accumulation progressed and the staged atoms were encoded',
+    rtInfo.samples > 4 && rtInfo.atomCount === 2 && rtInfo.cylinderCount === 0,
+    JSON.stringify(rtInfo));
+
+  const rt1 = await shoot('transparencyorder-raytrace-opaque');
+  H.check('raytrace: opaque front red atom covers the back blue atom',
+    rt1.r > rt1.b + 30, JSON.stringify(rt1));
+
+  // Transparent front atom = stochastic (non-refractive) alpha blend under
+  // the tracers: red contribution drops, the blue behind shows through.
+  await setOpacity(src.front, 0.4);
+  await page.waitForTimeout(4000);
+  const rt2 = await shoot('transparencyorder-raytrace-transparent');
+  H.check('raytrace: alpha-transparent front atom blends (back atom shows through)',
+    (rt2.b > rt1.b + 15) || (rt2.r < rt1.r - 30), JSON.stringify({ rt1, rt2 }));
+  H.check('raytrace: no page errors during ray-traced frames', errors.length === 0, errors.join(' | '));
+
+  // ============================ pathtrace pipeline ==============================
+  // Monte-Carlo path tracing (vendored erichlof pathtracing chunks); shares the
+  // SceneEncoder with raytrace, so the staged pair carries over. Stochastic
+  // pixels + denoiser: only coarse ordering/visibility is asserted, with wide
+  // margins. Entering with the front atom back at full opacity.
+  await setOpacity(src.front, 1.0);
+  await setPipeline('pathtrace');
+  await page.waitForTimeout(6000); // stochastic accumulation, software GL
+  const ptInfo = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const u = app.pipeline?._uniforms;
+    return {
+      id: app.pipeline?.id,
+      samples: u?.uSampleCounter.value ?? 0,
+      atomCount: u?.uAtomCount.value ?? 0,
+    };
+  });
+  H.check('pathtrace: accumulation progressed and the staged atoms were encoded',
+    ptInfo.id === 'pathtrace' && ptInfo.samples > 4 && ptInfo.atomCount === 2,
+    JSON.stringify(ptInfo));
+
+  const pt1 = await shoot('transparencyorder-pathtrace-opaque');
+  H.check('pathtrace: opaque front red atom covers the back blue atom',
+    pt1.r > pt1.b + 20, JSON.stringify(pt1));
+
+  await setOpacity(src.front, 0.4);
+  await page.waitForTimeout(6000);
+  const pt2 = await shoot('transparencyorder-pathtrace-transparent');
+  H.check('pathtrace: alpha-transparent front atom blends (back atom shows through)',
+    (pt2.b > pt1.b + 10) || (pt2.r < pt1.r - 20), JSON.stringify({ pt1, pt2 }));
+  H.check('pathtrace: no page errors during path-traced frames', errors.length === 0, errors.join(' | '));
+
+  // Hand back to forward: tracer targets disposed, raster flags re-applied.
+  await setOpacity(src.front, 1.0);
+  await setPipeline('forward');
+  await page.waitForTimeout(300);
+
+  // ---- Opaque polyhedra: alpha=1 faces/edges must be genuinely opaque ------------
+  // (Legacy bug: polyhedraFace was always transparent+no-depthWrite, so a
+  // poly's own hidden edges showed through its faces under forward/split/
+  // sorted, and WBOIT washed out fully opaque polyhedra.)
+  const polyFlags = await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const { updatePolyhedra, updatePolyhedraColors } =
+      await import('./render/PolyhedraModule.js');
+    const { general } = await import('./state/store.js');
+    general.showPolyhedra = true;
+    await updatePolyhedra();
+    const structure = fileBrowser.selectedStructure;
+    structure.polyhedraCategoryStyles = structure.polyhedraCategoryStyles || {};
+    const setAlpha = (alpha) => {
+      for (const mesh of groups.polyhedraGroup.children) {
+        const catKey = mesh.userData?.catKey;
+        if (!catKey) continue;
+        structure.polyhedraCategoryStyles[catKey] =
+          { ...(structure.polyhedraCategoryStyles[catKey] || {}), alpha };
+      }
+      updatePolyhedraColors();
+    };
+    const firstPoly = () => groups.polyhedraGroup.children.find(
+      (c) => c.userData?.type === 'polyhedron');
+    setAlpha(1);
+    const m1 = firstPoly()?.material;
+    const opaque = m1 && { transparent: m1.transparent, depthWrite: m1.depthWrite };
+    setAlpha(0.5);
+    const m2 = firstPoly()?.material;
+    const translucent = m2 && { transparent: m2.transparent, depthWrite: m2.depthWrite };
+    setAlpha(1);
+    return { opaque, translucent, hasPoly: !!m1 };
+  });
+  H.check('alpha=1 polyhedra are opaque (depth-writing); alpha<1 keep legacy flags',
+    polyFlags.hasPoly
+      && polyFlags.opaque.transparent === false && polyFlags.opaque.depthWrite === true
+      && polyFlags.translucent.transparent === true && polyFlags.translucent.depthWrite === false,
+    JSON.stringify(polyFlags));
+
+  await page.waitForTimeout(600);
+  const polyShots = {};
+  for (const pid of ['forward', 'wboit', 'depthpeel']) {
+    await setPipeline(pid);
+    await page.waitForTimeout(900);
+    polyShots[pid] = await H.shotCanvas(page, `transparencyorder-polyopaque-${pid}`);
+  }
+  const fwdVsPeel = changedPixelCount(polyShots.forward, polyShots.depthpeel);
+  const wboitVsPeel = changedPixelCount(polyShots.wboit, polyShots.depthpeel);
+  H.check('opaque polyhedra render identically across forward/wboit/depthpeel',
+    fwdVsPeel < 15000 && wboitVsPeel < 2000, JSON.stringify({ fwdVsPeel, wboitVsPeel }));
+  await setPipeline('forward');
+  await page.waitForTimeout(300);
+
+  H.check('no page errors', errors.length === 0, errors.join(' | '));
+  await H.finish(browser);
+})().catch(H.crash);

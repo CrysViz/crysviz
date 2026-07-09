@@ -1,12 +1,15 @@
 import { createColorPicker } from './ColorPickerModule.js';
 import {updateVisualization} from '../core/crystal-viewer.js';  
-import { groups,fileBrowser, general} from '../state/store.js';
+import { app, groups,fileBrowser, general, RENDERING_DEFAULTS} from '../state/store.js';
 import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
 import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
+import { listPipelines, setActivePipeline, requestRender } from '../render/index.js'
+import { makeSectionHeadline } from './panels/sectionHeadline.js'
+import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js'
 
 
 
@@ -29,12 +32,12 @@ function createColorBar(container, colormap, minValue, maxValue, type) {
   });
 
   const barContainer = createElement("div", {}, {
-    width: "120px",
+    width: "100%",
     borderRadius: "3px",
     overflow: "hidden"
   });
 
-  const canvas = createElement("canvas");
+  const canvas = createElement("canvas", {}, { width: "100%", display: "block" });
   canvas.width = 100;
   canvas.height = 20;
   barContainer.appendChild(canvas);
@@ -163,10 +166,12 @@ function createColorBar(container, colormap, minValue, maxValue, type) {
 }
 
 // --- Dropdown Creation ---
+// One full-width row: label left, select filling the rest (.control-row in
+// styles/toggle_styles.css).
 function createDropdown(id, labelText, options, onChange) {
-  const block = createElement("div", { class: "menu_block" });
-  const label = createElement("label", { for: id }, { display: "block", textAlign: "center", marginBottom: "5px", width: "100%" }, labelText);
-  const select = createElement("select", { id }, { width: "100%", maxWidth: "120px", margin: "0 auto" });
+  const block = createElement("div", { class: "control-row" });
+  const label = createElement("label", { for: id }, {}, labelText);
+  const select = createElement("select", { id });
 
   options.forEach((opt) => {
     const option = createElement("option", { value: opt.value }, {}, opt.text);
@@ -325,6 +330,27 @@ export function addColorPanel(target = "colorContainer") {
     id: "colorControlsContent"
   });
 
+  // The Rendering section is a dependency tree: the pipeline comes first and
+  // decides which of the remaining controls make sense — per-pipeline knobs
+  // (peel layers / tracer sliders), then Render Style (raster pipelines only:
+  // the tracers have their own material model), then the cel outline block
+  // (raster + cel only). One helper computes ALL visibility from state so the
+  // dropdown handlers and share-restore stay consistent.
+  const RASTER_PIPELINES = ["forward", "split-atoms", "sorted-atoms", "wboit", "depthpeel"];
+  function updateRenderingControlsVisibility() {
+    const isRaster = RASTER_PIPELINES.includes(general.renderPipeline);
+    const isTracer = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
+    depthPeelBlock.style.display = general.renderPipeline === "depthpeel" ? "grid" : "none";
+    rtControlsBlock.style.display = isTracer ? "block" : "none";
+    ptControlsBlock.style.display = general.renderPipeline === "pathtrace" ? "block" : "none";
+    renderStyleMenu.style.display = isRaster ? "grid" : "none";
+    outlineBlock.style.display = isRaster && general.renderStyle === "cel" ? "block" : "none";
+    // Structure-window tracer-only blocks (material editors) hide under the
+    // raster pipelines via this body class (see styles.css). The underlying
+    // material stores are always persisted regardless.
+    document.body.classList.toggle("tracer-pipeline", isTracer);
+  }
+
   // Render style (material) dropdown. Switching style rebuilds the meshes:
   // cel shading uses a different material class (MeshToonMaterial), so the
   // materials cannot just be re-parameterized in place.
@@ -334,7 +360,7 @@ export function addColorPanel(target = "colorContainer") {
     { value: "cel", text: "Cel shading", selected: general.renderStyle === "cel" },
   ], () => {
     general.renderStyle = renderStyleMenu.querySelector("select").value;
-    outlineBlock.style.display = general.renderStyle === "cel" ? "block" : "none";
+    updateRenderingControlsVisibility();
     const hasComparison = !!fileBrowser.comparisonStructure;
     updateVisualization({
       reRenderAtoms: true,
@@ -347,6 +373,237 @@ export function addColorPanel(target = "colorContainer") {
     if (general.celOutlineMode === "hull") updatePolyhedra();
   });
 
+  // Rendering pipeline (how a frame is drawn) — the top of the tree.
+  const renderPipelineMenu = createDropdown("renderPipelineMenu", "Rendering pipeline",
+    listPipelines().map((p) => ({
+      value: p.id, text: p.label, selected: general.renderPipeline === p.id,
+    })), () => {
+      setActivePipeline(renderPipelineMenu.querySelector("select").value);
+      updateRenderingControlsVisibility();
+    });
+  content.appendChild(renderPipelineMenu);
+
+  // Depth-peeling quality/performance knob: number of peel passes per frame
+  // (transparent surfaces deeper than this many layers are dropped). Shown
+  // only while the depthpeel pipeline is selected.
+  const depthPeelBlock = createElement("div", { class: "control-row" },
+    { display: general.renderPipeline === "depthpeel" ? "grid" : "none" });
+  const depthPeelLabel = createElement("label", { for: "depthPeelLayersSlider" }, {},
+    `Peel layers: ${general.depthPeelLayers}`);
+  const depthPeelSlider = createElement("input", {
+    type: "range", id: "depthPeelLayersSlider", min: "1", max: "10", step: "1",
+    value: String(general.depthPeelLayers),
+  });
+  depthPeelSlider.addEventListener("input", () => {
+    general.depthPeelLayers = parseInt(depthPeelSlider.value, 10);
+    depthPeelLabel.textContent = `Peel layers: ${general.depthPeelLayers}`;
+    requestRender();
+  });
+  depthPeelBlock.appendChild(depthPeelLabel);
+  depthPeelBlock.appendChild(depthPeelSlider);
+  content.appendChild(depthPeelBlock);
+
+  // Ray/path-tracing controls: internal render resolution (quality/perf knob)
+  // and extra mirror reflectivity, shared by the raytrace + pathtrace
+  // pipelines so the two can be compared apples to apples; changes take
+  // effect on the next accumulated frame (the pipelines read `general`).
+  const isTracerPipeline = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
+  const rtControlsBlock = createElement("div", {},
+    { display: isTracerPipeline ? "block" : "none" });
+  const rtResRow = createElement("div", { class: "control-row" });
+  const rtResLabel = createElement("label", { for: "rtResolutionScale" }, {},
+    `RT resolution: ${Math.round((general.rtResolutionScale ?? 0.75) * 100)}%`);
+  const rtResSlider = createElement("input", {
+    type: "range", id: "rtResolutionScale", min: "0.25", max: "1", step: "0.05",
+    value: String(general.rtResolutionScale),
+  });
+  rtResSlider.addEventListener("input", () => {
+    general.rtResolutionScale = parseFloat(rtResSlider.value);
+    rtResLabel.textContent = `RT resolution: ${Math.round(general.rtResolutionScale * 100)}%`;
+    requestRender();
+  });
+  rtResRow.appendChild(rtResLabel);
+  rtResRow.appendChild(rtResSlider);
+  rtControlsBlock.appendChild(rtResRow);
+
+  const rtReflRow = createElement("div", { class: "control-row" });
+  const rtReflLabel = createElement("label", { for: "rtReflectivity" }, {},
+    `Reflectivity: ${(general.rtReflectivity ?? 0.15).toFixed(2)}`);
+  const rtReflSlider = createElement("input", {
+    type: "range", id: "rtReflectivity", min: "0", max: "1", step: "0.05",
+    value: String(general.rtReflectivity),
+  });
+  rtReflSlider.addEventListener("input", () => {
+    general.rtReflectivity = parseFloat(rtReflSlider.value);
+    rtReflLabel.textContent = `Reflectivity: ${general.rtReflectivity.toFixed(2)}`;
+    app.pipeline?.resetAccumulation?.();
+    requestRender();
+  });
+  rtReflRow.appendChild(rtReflLabel);
+  rtReflRow.appendChild(rtReflSlider);
+  rtControlsBlock.appendChild(rtReflRow);
+
+  // helper for the remaining tracer rows: label+slider updating a `general`
+  // key, resetting the accumulation so the change takes effect immediately
+  // With `quadRange` set, the slider element holds a [0,1] position with the
+  // size-sliders' quadratic mapping (fine control near the minimum, large
+  // reach at the top); every writer of the ELEMENT value must then write the
+  // inverse-mapped position (reset button below, ShareModule restore).
+  const makeTracerSliderRow = (id, labelFor, min, max, step, value, fmt, onSet, quadRange) => {
+    const rowEl = createElement("div", { class: "control-row" });
+    const labelEl = createElement("label", { for: id }, {}, fmt(value));
+    const sliderEl = createElement("input", quadRange
+      ? { type: "range", id, min: "0", max: "1", step: "any",
+          value: String(sizeValueToSlider(value, quadRange)) }
+      : { type: "range", id, min: String(min), max: String(max), step: String(step),
+          value: String(value) });
+    sliderEl.addEventListener("input", () => {
+      const v = quadRange
+        ? sizeSliderToValue(parseFloat(sliderEl.value), quadRange)
+        : parseFloat(sliderEl.value);
+      onSet(v);
+      labelEl.textContent = fmt(v);
+      app.pipeline?.resetAccumulation?.();
+      requestRender();
+    });
+    rowEl.appendChild(labelEl);
+    rowEl.appendChild(sliderEl);
+    return rowEl;
+  };
+
+  // Light softness is shared by both tracers (PT area-light radius, RT
+  // shadow-ray cone); DoF and the ground plane apply to both as well.
+  rtControlsBlock.appendChild(makeTracerSliderRow('ptLightSoftness', 'ptLightSoftness',
+    0, 1, 0.05, general.ptLightSoftness ?? 0.3,
+    (v) => `Light softness: ${v.toFixed(2)}`,
+    (v) => { general.ptLightSoftness = v; }));
+  rtControlsBlock.appendChild(makeTracerSliderRow('rtLightIntensity', 'rtLightIntensity',
+    0, 3, 0.05, general.rtLightIntensity ?? 1.2,
+    (v) => `Light intensity: ${v.toFixed(2)}`,
+    (v) => { general.rtLightIntensity = v; }));
+  rtControlsBlock.appendChild(makeTracerSliderRow('rtAmbient', 'rtAmbient',
+    0, 1, 0.02, general.rtAmbient ?? 0.3,
+    (v) => `Ambient light: ${v.toFixed(2)}`,
+    (v) => { general.rtAmbient = v; }));
+  // Saturation grades the scene but leaves the BACKGROUND pinned to the
+  // picked color (the pipeline bakes the inverse grade into the primary-miss
+  // background), so changing it restarts the accumulation like other knobs.
+  rtControlsBlock.appendChild(makeTracerSliderRow('rtSaturation', 'rtSaturation',
+    0, 2, 0.05, general.rtSaturation ?? 1,
+    (v) => `Saturation: ${v.toFixed(2)}`,
+    (v) => { general.rtSaturation = v; }));
+  rtControlsBlock.appendChild(makeTracerSliderRow('rtDofAperture', 'rtDofAperture',
+    0, 2, 0.02, general.rtDofAperture ?? 0,
+    (v) => `DoF aperture: ${v.toFixed(2)}`,
+    (v) => { general.rtDofAperture = v; }));
+  rtControlsBlock.appendChild(makeTracerSliderRow('rtDofFocus', 'rtDofFocus',
+    0.2, 3, 0.05, general.rtDofFocus ?? 1,
+    (v) => `Focus distance: ×${v.toFixed(2)}`,
+    (v) => { general.rtDofFocus = v; }));
+
+  const groundRow = createElement("div", { class: "control-row" });
+  const groundLabel = createElement("label", { for: "rtGroundToggle" }, {}, "Ground plane");
+  const groundToggle = createElement("input", { type: "checkbox", id: "rtGroundToggle" },
+    { justifySelf: "start", width: "auto" });
+  groundToggle.checked = !!general.rtGroundPlane;
+  groundToggle.addEventListener("change", () => {
+    general.rtGroundPlane = groundToggle.checked;
+    groundOptions.style.display = groundToggle.checked ? "block" : "none";
+    app.pipeline?.resetAccumulation?.();
+    requestRender();
+  });
+  groundRow.appendChild(groundLabel);
+  groundRow.appendChild(groundToggle);
+  rtControlsBlock.appendChild(groundRow);
+
+  // Ground options (shown while the plane is enabled): orientation, pattern,
+  // the two pattern colors (default: follow the background), tile size and
+  // the mirror fraction. All changes restart the accumulation via the
+  // pipeline's look key; the handlers also reset explicitly for snappiness.
+  const groundOptions = createElement("div", {},
+    { display: general.rtGroundPlane ? "block" : "none" });
+  const groundSelectRow = (id, labelText, options, current, onChange) => {
+    const rowEl = createElement("div", { class: "control-row" });
+    rowEl.appendChild(createElement("label", { for: id }, {}, labelText));
+    const select = createElement("select", { id });
+    for (const [value, text] of options) {
+      const opt = createElement("option", { value }, {}, text);
+      if (value === current) opt.setAttribute("selected", "selected");
+      select.appendChild(opt);
+    }
+    select.addEventListener("change", () => {
+      onChange(/** @type {HTMLSelectElement} */ (select).value);
+      app.pipeline?.resetAccumulation?.();
+      requestRender();
+    });
+    rowEl.appendChild(select);
+    return rowEl;
+  };
+  groundOptions.appendChild(groundSelectRow('rtGroundPattern', 'Ground pattern', [
+    ['solid', 'Solid'],
+    ['checker', 'Checkerboard'],
+    ['grid', 'Grid'],
+  ], general.rtGroundPattern ?? 'solid', (v) => { general.rtGroundPattern = v; }));
+
+  const groundColorRow = (id, labelText, key) => {
+    const rowEl = createElement("div", { class: "control-row" });
+    rowEl.appendChild(createElement("label", { for: id }, {}, labelText));
+    const input = createElement("input", { type: "color", id },
+      { justifySelf: "start", width: "48px", height: "24px", padding: "0" });
+    const bg = app.scene?.background;
+    input.value = general[key]
+      ?? (bg?.isColor ? `#${bg.getHexString()}` : '#e8e8e8');
+    input.addEventListener("input", () => {
+      general[key] = input.value;
+      app.pipeline?.resetAccumulation?.();
+      requestRender();
+    });
+    rowEl.appendChild(input);
+    return rowEl;
+  };
+  groundOptions.appendChild(groundColorRow('rtGroundColor1', 'Ground color 1', 'rtGroundColor1'));
+  groundOptions.appendChild(groundColorRow('rtGroundColor2', 'Ground color 2', 'rtGroundColor2'));
+
+  groundOptions.appendChild(makeTracerSliderRow('rtGroundOffset', 'rtGroundOffset',
+    0, 1, 'any', general.rtGroundOffset ?? 0.75,
+    (v) => `Ground distance: ${v.toFixed(2)}`,
+    (v) => { general.rtGroundOffset = v; }, GROUND_OFFSET_RANGE));
+  groundOptions.appendChild(makeTracerSliderRow('rtGroundSize', 'rtGroundSize',
+    0, 1, 'any', general.rtGroundSize ?? 2.5,
+    (v) => `Ground size: ${v.toFixed(2)}x`,
+    (v) => { general.rtGroundSize = v; }, GROUND_SIZE_RANGE));
+  groundOptions.appendChild(makeTracerSliderRow('rtGroundScale', 'rtGroundScale',
+    0.5, 10, 0.25, general.rtGroundScale ?? 2,
+    (v) => `Tile size: ${v.toFixed(2)}`,
+    (v) => { general.rtGroundScale = v; }));
+  groundOptions.appendChild(makeTracerSliderRow('rtGroundReflect', 'rtGroundReflect',
+    0, 1, 0.05, general.rtGroundReflect ?? 0,
+    (v) => `Ground reflect: ${v.toFixed(2)}`,
+    (v) => { general.rtGroundReflect = v; }));
+  rtControlsBlock.appendChild(groundOptions);
+
+  content.appendChild(rtControlsBlock);
+
+  // Path-tracing-only controls: the denoiser toggle (light softness moved to
+  // the shared tracer block above — it drives both tracers' soft shadows).
+  const ptControlsBlock = createElement("div", {},
+    { display: general.renderPipeline === "pathtrace" ? "block" : "none" });
+  const ptDenoiseRow = createElement("div", { class: "control-row" });
+  const ptDenoiseLabel = createElement("label", { for: "ptDenoiseToggle" }, {}, "Denoiser");
+  const ptDenoiseToggle = createElement("input", { type: "checkbox", id: "ptDenoiseToggle" },
+    { justifySelf: "start", width: "auto" });
+  ptDenoiseToggle.checked = general.ptDenoise !== false;
+  ptDenoiseToggle.addEventListener("change", () => {
+    general.ptDenoise = ptDenoiseToggle.checked;
+    requestRender();
+  });
+  ptDenoiseRow.appendChild(ptDenoiseLabel);
+  ptDenoiseRow.appendChild(ptDenoiseToggle);
+  ptControlsBlock.appendChild(ptDenoiseRow);
+
+  content.appendChild(ptControlsBlock);
+
+  // Render Style follows the per-pipeline knobs (raster pipelines only).
   content.appendChild(renderStyleMenu);
 
   // Cel outline controls: mode selector plus mode-specific width sliders.
@@ -356,11 +613,15 @@ export function addColorPanel(target = "colorContainer") {
   // the classic inverted-hull geometry (general.celHullWidth /
   // celHullPolyWidth, live uniform updates; switching MODE rebuilds the
   // meshes since hulls are created at build time).
-  const outlineBlock = createElement("div", { class: "menu_block" },
+  const outlineBlock = createElement("div", {},
     { display: general.renderStyle === "cel" ? "block" : "none" });
 
-  const sliderStyle = { width: "100%", maxWidth: "120px", margin: "0 auto", display: "block" };
-  const sliderLabelStyle = { display: "block", textAlign: "center", marginBottom: "5px", width: "100%" };
+  const makeSliderRow = (labelText, forId, input) => {
+    const row = createElement("div", { class: "control-row" });
+    row.appendChild(createElement("label", { for: forId }, {}, labelText));
+    row.appendChild(input);
+    return row;
+  };
 
   const outlineModeMenu = createDropdown("celOutlineModeMenu", "Outline Mode", [
     { value: "screen", text: "Screen space", selected: general.celOutlineMode === "screen" },
@@ -383,50 +644,111 @@ export function addColorPanel(target = "colorContainer") {
 
   const screenControls = createElement("div", {},
     { display: general.celOutlineMode === "screen" ? "block" : "none" });
-  const outlineLabel = createElement("label", { for: "celOutlineWidth" }, sliderLabelStyle, "Outline");
   // Quadratic slider response: most of the travel controls thin widths, where
   // the differences matter; the top end caps at a moderate max thickness.
   const CEL_OUTLINE_MAX = 0.1; // world units at slider max
   const outlineSlider = createElement("input", {
     type: "range", id: "celOutlineWidth", min: "0", max: "1", step: "0.01",
     value: String(Math.sqrt(Math.min(general.celOutlineWidth, CEL_OUTLINE_MAX) / CEL_OUTLINE_MAX)),
-  }, sliderStyle);
+  });
   outlineSlider.addEventListener("input", () => {
     const v = parseFloat(outlineSlider.value);
     general.celOutlineWidth = CEL_OUTLINE_MAX * v * v;
   });
-  screenControls.appendChild(outlineLabel);
-  screenControls.appendChild(outlineSlider);
+  screenControls.appendChild(makeSliderRow("Outline", "celOutlineWidth", outlineSlider));
   outlineBlock.appendChild(screenControls);
 
   const hullControls = createElement("div", {},
     { display: general.celOutlineMode === "hull" ? "block" : "none" });
-  const hullLabel = createElement("label", { for: "celHullWidth" }, sliderLabelStyle, "Outline");
   const hullSlider = createElement("input", {
     type: "range", id: "celHullWidth", min: "0", max: "0.2", step: "0.005",
     value: String(general.celHullWidth),
-  }, sliderStyle);
+  });
   hullSlider.addEventListener("input", () => {
     setCelHullWidth(parseFloat(hullSlider.value));
   });
-  const hullPolyLabel = createElement("label", { for: "celHullPolyWidth" },
-    { ...sliderLabelStyle, margin: "8px 0 5px" }, "Polyhedra Outline");
   const hullPolySlider = createElement("input", {
     type: "range", id: "celHullPolyWidth", min: "0", max: "0.2", step: "0.005",
     value: String(general.celHullPolyWidth),
-  }, sliderStyle);
+  });
   hullPolySlider.addEventListener("input", () => {
     setCelHullPolyWidth(parseFloat(hullPolySlider.value));
   });
-  hullControls.appendChild(hullLabel);
-  hullControls.appendChild(hullSlider);
-  hullControls.appendChild(hullPolyLabel);
-  hullControls.appendChild(hullPolySlider);
+  hullControls.appendChild(makeSliderRow("Outline", "celHullWidth", hullSlider));
+  hullControls.appendChild(makeSliderRow("Polyhedra Outline", "celHullPolyWidth", hullPolySlider));
+
+  // Hull outlines are opaque inverted-hull shells; on a transparent object
+  // they would black out everything behind it, so transparent objects are
+  // skipped. Thicker polyhedra edges ("Polyhedra Edge Width" under Sizes)
+  // give a practically similar look.
+  const hullNote = createElement("div", { id: "celHullTransparencyNote", class: "control-note" },
+    {}, "Note: transparent objects do not get outlines");
+  hullControls.appendChild(hullNote);
+
   outlineBlock.appendChild(hullControls);
 
   content.appendChild(outlineBlock);
 
-  const menusWrapper = createElement("div", { class: "menus_wrapper" });
+  // Reset every Rendering-section setting to its default (RENDERING_DEFAULTS
+  // in state/store.js — the same values `general` boots with). Routed through
+  // the real controls' events so labels, visibility, pipeline switching and
+  // mesh rebuilds all follow; no-op dispatches are skipped.
+  function resetRenderingSettings() {
+    const D = RENDERING_DEFAULTS;
+    // Sliders/checkboxes fire unconditionally (their handlers are cheap and
+    // idempotent, and `general` may diverge from the DOM value); only the
+    // selects are guarded, since their handlers rebuild meshes/pipelines.
+    const fire = (id, value, event) => {
+      const el = /** @type {HTMLInputElement|null} */ (document.getElementById(id));
+      if (!el) return;
+      el.value = String(value);
+      el.dispatchEvent(new Event(event));
+    };
+    const fireCheck = (id, checked) => {
+      const el = /** @type {HTMLInputElement|null} */ (document.getElementById(id));
+      if (!el) return;
+      el.checked = checked;
+      el.dispatchEvent(new Event('change'));
+    };
+    // pipeline + style first: they drive the visibility tree and rebuilds
+    if (general.renderPipeline !== D.renderPipeline) fire('renderPipelineMenu', D.renderPipeline, 'change');
+    if (general.renderStyle !== D.renderStyle) fire('renderStyleMenu', D.renderStyle, 'change');
+    if (general.celOutlineMode !== D.celOutlineMode) fire('celOutlineModeMenu', D.celOutlineMode, 'change');
+    fire('depthPeelLayersSlider', D.depthPeelLayers, 'input');
+    fire('celOutlineWidth', Math.sqrt(D.celOutlineWidth / CEL_OUTLINE_MAX), 'input'); // quadratic slider
+    fire('celHullWidth', D.celHullWidth, 'input');
+    fire('celHullPolyWidth', D.celHullPolyWidth, 'input');
+    fire('rtResolutionScale', D.rtResolutionScale, 'input');
+    fire('rtReflectivity', D.rtReflectivity, 'input');
+    fire('ptLightSoftness', D.ptLightSoftness, 'input');
+    fire('rtLightIntensity', D.rtLightIntensity, 'input');
+    fire('rtAmbient', D.rtAmbient, 'input');
+    fire('rtSaturation', D.rtSaturation, 'input');
+    fire('rtDofAperture', D.rtDofAperture, 'input');
+    fire('rtDofFocus', D.rtDofFocus, 'input');
+    fireCheck('rtGroundToggle', D.rtGroundPlane);
+    fire('rtGroundPattern', D.rtGroundPattern, 'change');
+    // quadratic sliders: the ELEMENT holds a [0,1] position
+    fire('rtGroundOffset', sizeValueToSlider(D.rtGroundOffset, GROUND_OFFSET_RANGE), 'input');
+    fire('rtGroundSize', sizeValueToSlider(D.rtGroundSize, GROUND_SIZE_RANGE), 'input');
+    fire('rtGroundScale', D.rtGroundScale, 'input');
+    fire('rtGroundReflect', D.rtGroundReflect, 'input');
+    // ground colors: default = null (follow the background)
+    general.rtGroundColor1 = D.rtGroundColor1;
+    general.rtGroundColor2 = D.rtGroundColor2;
+    fireCheck('ptDenoiseToggle', D.ptDenoise);
+    requestRender();
+  }
+
+  const resetRenderingRow = createElement("div", {}, { margin: "8px 0 4px" });
+  const resetRenderingBtn = createElement("button",
+    { id: "resetRenderingBtn", type: "button", class: "btn-mini" },
+    { padding: "3px 10px", fontSize: "0.85em" }, "Reset rendering settings");
+  resetRenderingBtn.addEventListener('click', resetRenderingSettings);
+  resetRenderingRow.appendChild(resetRenderingBtn);
+  content.appendChild(resetRenderingRow);
+
+  updateRenderingControlsVisibility();
 
   // =========================
   // ATOMS
@@ -434,13 +756,13 @@ export function addColorPanel(target = "colorContainer") {
   let atomsColorBar = null;
   let atomsMenu; // Declare for access in fallback
 
-  const atomsMenuBlock = createElement("div", { class: "menu_block" });
+  const atomsMenuBlock = createElement("div", {});
   atomsMenu = createDropdown("atomsMenu", "Atoms", [
     { value: "elements", text: "Element", selected: true },
     { value: "force", text: "Force" }
   ], onAtomsModeChange);
 
-  const atomsElementColorMapBlock = createElement("div", { class: "menu_block" });
+  const atomsElementColorMapBlock = createElement("div", {});
 
   const atomsElementColorMapMenu = createDropdown("atomsElementColorMapMenu", "Element Color Map", [
     { value: "default", text: "CrysViz Default", selected: true },
@@ -463,7 +785,7 @@ export function addColorPanel(target = "colorContainer") {
     }
   });
 
-  const atomsColorMapBlock = createElement("div", { class: "menu_block", style: "display:none;" });
+  const atomsColorMapBlock = createElement("div", { style: "display:none;" });
 
   const atomsColorMapMenu = createDropdown("atomsColorMapMenu", "Color Map", [
     { value: "heatmap", text: "Heatmap", selected: true },
@@ -611,7 +933,7 @@ export function addColorPanel(target = "colorContainer") {
   let bondsColorBar = null;
   let bondsSolidColorPicker = null;
 
-  const bondsMenuBlock = createElement("div", { class: "menu_block" });
+  const bondsMenuBlock = createElement("div", {});
   const bondsMenu = createDropdown("bondsMenu", "Bonds", [
     { value: "elements", text: "Elements", selected: true },
     { value: "white", text: "White" },
@@ -620,7 +942,7 @@ export function addColorPanel(target = "colorContainer") {
   ], onBondsModeChange);
 
   // Color map section (for Length mode)
-  const bondsColorMapBlock = createElement("div", { class: "menu_block", style: "display:none;" });
+  const bondsColorMapBlock = createElement("div", { style: "display:none;" });
   const bondsColorMapMenu = createDropdown("bondsColorMapMenu", "Color Map", [
     { value: "heatmap", text: "Heatmap", selected: true },
     { value: "batlow", text: "Batlow" },
@@ -642,7 +964,7 @@ export function addColorPanel(target = "colorContainer") {
   bondsColorMapBlock.appendChild(bondsColorBarContainer);
 
   // Solid color picker section (separate block)
-  const bondsSolidColorBlock = createElement("div", { class: "menu_block", style: "display:none;" });
+  const bondsSolidColorBlock = createElement("div", { style: "display:none;" });
   const bondsSolidColorContainer = createElement("div", {}, { marginTop: "8px" });
   bondsSolidColorBlock.appendChild(bondsSolidColorContainer);
 
@@ -743,10 +1065,10 @@ export function addColorPanel(target = "colorContainer") {
   // =========================
   // ASSEMBLE
   // =========================
-  menusWrapper.appendChild(atomsMenuBlock);
-  menusWrapper.appendChild(bondsMenuBlock);
+  content.appendChild(makeSectionHeadline('Colors'));
+  content.appendChild(atomsMenuBlock);
+  content.appendChild(bondsMenuBlock);
 
-  content.appendChild(menusWrapper);
   panel.appendChild(content);
   group.appendChild(panel);
   targetPanel.appendChild(group);

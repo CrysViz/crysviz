@@ -35,9 +35,10 @@ function resetAllColorStyling(structure) {
       delete entry.color;
       delete entry.edgeColor;
       // Drop entries with no remaining overrides (element/elements are metadata;
-      // keep visible-only category entries).
+      // keep visible-only category entries and ray-tracing materials).
       if (entry.alpha == null && entry.edgeAlpha == null
-          && entry.radiusScale == null && entry.visible == null) {
+          && entry.radiusScale == null && entry.visible == null
+          && entry.material == null) {
         delete store[key];
       }
     }
@@ -57,6 +58,10 @@ function resetAllStyling(structure) {
     atom.setCutPlaneImmune(false);
   });
   for (const storeName of ALL_STYLE_STORES) structure[storeName] = {};
+  // Ray/path-tracing materials (species + per-atom) reset with everything else;
+  // bond/poly materials went with their user/category stores above.
+  structure.atomMaterials = {};
+  structure.atomUserMaterials = {};
   general.atomVisibility = {};
   general.bondCutImmunity = {};
 }

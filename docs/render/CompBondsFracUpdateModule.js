@@ -12,6 +12,7 @@ import {Bond} from '../model/index.js';
 
 import {createBondsMesh} from './BondsFracUpdateModule.js'
 import {generateID} from '../utils/index.js'
+import { applyTransparency } from '../utils/TransparencyPolicy.js';
 //import {getBondCutoff} from './BondsModule.js'
 //
 export function initBondsLengths(){
@@ -344,15 +345,7 @@ export function updateSecondBonds(structure, opacity) {
     updateSecondSingleBond(i, bond);
   });
   mesh.material.opacity = opacity;
-  if (opacity == 1.0) {
-    console.log("Switching of transparency for main bonds")
-    mesh.material.transparent = false;
-    mesh.material.depthWrite = true;
-  }
-  else {
-    mesh.material.transparent = true;
-    mesh.material.depthWrite = true;
-  } 
+  applyTransparency(mesh.material, { kind: 'compBonds', opacity, mesh });
   // mark all attributes as needing update
   mesh.instanceMatrix.needsUpdate = true;
   mesh.instanceColor.needsUpdate = true;

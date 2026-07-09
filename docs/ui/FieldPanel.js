@@ -1,5 +1,5 @@
 import { fileBrowser, app, general, groups } from '../state/store.js';
-import { updateField, setActiveField } from '../render/index.js';
+import { updateField, setActiveField, requestRender } from '../render/index.js';
 import {
   getIsosurfaceMaterialSettings,
   getIsosurfaceTriangleSortingEnabled,
@@ -378,8 +378,10 @@ function setupFieldControlEvents(fields, container) {
     setIsosurfaceMaterialSettings(settings);
     applyMaterialSettingsToStoredIsosurfaces(groups.isosurfaceGroup, settings);
 
-    if (isAnyStoredIsosurfaceInScene() && app.renderer && app.camera) {
-      app.renderer.render(app.scene, app.camera);
+    if (isAnyStoredIsosurfaceInScene()) {
+      // Render through the pipeline on the next rAF tick instead of an
+      // out-of-band renderer.render() that would bypass it.
+      requestRender();
     }
   }
 
@@ -510,7 +512,11 @@ function setupFieldControlEvents(fields, container) {
 }
 
 export function updateFieldPanel() {
-  if (general.SpinForceState != "Fields") {
+  // Gated on the pre-refactor `general.SpinForceState`, which no longer
+  // exists anywhere — the condition was always true, so this function has
+  // been a no-op since the panel regroup. Kept as an explicit no-op to
+  // preserve behavior; revisit if the Field panel needs live refreshes.
+  if (true) {
     return;
   }
 

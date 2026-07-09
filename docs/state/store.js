@@ -47,6 +47,7 @@ export const app = {
   clock:null,
   angularVelocity:null,
   renderer: null,
+  pipeline: null, // active rendering pipeline instance (render/pipeline/index.js)
   scene: null,
   camera: null,
   controls: null,
@@ -77,12 +78,39 @@ export const groups = {
 };
 
 
-export const general = {
+// Defaults for everything the Visual window's Rendering section controls —
+// the single source for both `general`'s initial values (spread below) and
+// the "Reset rendering" button (ui/ColorPanel.js resetRenderingSettings).
+export const RENDERING_DEFAULTS = {
   renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
+  renderPipeline: 'depthpeel', // active rendering pipeline id; depthpeel self-optimizes to a plain forward pass when the scene has no transparency (DepthPeelPass fast path)
+  depthPeelLayers: 5, // peel passes for the 'depthpeel' pipeline (1-10; more = deeper transparency, slower)
+  rtResolutionScale: 0.75, // raytrace/pathtrace pipelines: internal resolution as a fraction of the canvas
+  rtReflectivity: 0.15, // raytrace/pathtrace pipelines: extra mirror reflectivity on opaque surfaces (0-1)
+  ptDenoise: true, // 'pathtrace' pipeline: edge-aware denoiser on the screen output
+  ptLightSoftness: 0.3, // both tracers: light softness (0 = hard shadows, 1 = very soft; PT area-light radius / RT shadow-ray cone)
+  rtDofAperture: 0, // both tracers: depth-of-field aperture in world units (0 = off)
+  rtDofFocus: 1, // both tracers: focus distance as a factor of the camera->target distance
+  rtGroundPlane: false, // both tracers: ground plane (shadow catcher)
+  rtGroundPattern: 'solid', // 'solid' | 'checker' | 'grid'
+  rtGroundColor1: null, // hex or null = follow the background color
+  rtGroundColor2: null, // hex or null = auto (darkened color1)
+  rtGroundScale: 2, // pattern tile size in world units (Å)
+  rtGroundOffset: 0.75, // distance from the structure bottom to the plane (both modes)
+  rtGroundSize: 2.5, // ground disc radius in multiples of the structure radius
+  rtGroundReflect: 0, // ground mirror fraction (0 = matte ... 1 = mirror floor)
+  rtLightIntensity: 1.2, // both tracers: key-light intensity multiplier
+  rtAmbient: 0.3, // both tracers: ambient/fill light strength (RT ambient term / PT sky bounce)
+  rtSaturation: 1, // both tracers: post-tone-map saturation grade (output pass; 1 = neutral)
   celOutlineMode: 'screen', // cel outlines: 'screen' (post-process) | 'hull' (inverted-hull geometry)
   celOutlineWidth: 0.025, // screen-space outline width in world units (0 = off)
   celHullWidth: 0.025, // hull outline width in world units, atoms/bonds (0 = off)
   celHullPolyWidth: 0.025, // hull outline width in world units, polyhedra
+};
+
+export const general = {
+  ...RENDERING_DEFAULTS,
+  polyEdgeWidth: 1, // polyhedra edge line thickness in pixels (fat lines; 1 = classic hairline)
   ForceMin:1e-4,
   ForceMax:2.5,
   BondMin:1.1,
@@ -98,6 +126,9 @@ export const general = {
   // Per-element atom visibility (Atoms tab header checkbox): element -> bool;
   // undefined/true = shown. Hidden elements are zero-scaled (also unpickable).
   atomVisibility:{},
+  // Per-element spin-arrow visibility (Spins panel toggles): element -> bool.
+  // Was written by SpinPanel without ever being initialized (latent crash).
+  speciesVisibility:{},
   // Per-pair bond cut-plane immunity (Bonds tab header toggle): "El1-El2" ->
   // bool; true = the pair's bonds are never culled by cut planes.
   bondCutImmunity:{},
@@ -112,6 +143,9 @@ export const general = {
   forceRadius: 0.08,
   spinScale: 1.0,
   spinRadius: 0.08,
+  // Spin colormap range (Spins panel min/max inputs; read with ||-defaults).
+  spinMin: 0,
+  spinMax: 2,
   atomSize:1.0,
   mainOpacity:1.0,
   compOpacity:1.0,
@@ -127,7 +161,7 @@ export const general = {
   // (LatticeModule.createLatticeLines).
   latticeLineWidth:0.015,
   showSecond:false,
-  showSecondBonds:false,
+  showSecondBond:false, // comparison-structure bonds visibility (was misspelled `showSecondBonds`)
   showComparisonInfo:false,
   showPeriodic:true,
   // Atoms tab: edit all periodic-image copies of an atom together. When false
@@ -161,9 +195,10 @@ export const general = {
   modifiedLattice: null, // this needs to be part of the structure object 
   sharedStructureLoaded:false,
   bondsColor: "elements",
-  abondsColorMap: null,
+  solidBondColor: "#ffffff", // Bonds "Solid Color" mode picker value
+  bondsColorMap: null, // Bonds "Length" mode colormap id (was misspelled `abondsColorMap`)
   atomsColor: "elements",
-  atomsColorMaps: null,
+  atomColorMap: null, // Atoms "Force" mode colormap id (was misspelled `atomsColorMaps`)
   atomCutPlanes: [],
 };
 

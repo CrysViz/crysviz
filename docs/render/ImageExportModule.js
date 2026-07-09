@@ -21,7 +21,6 @@
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general, measurements } from '../state/store.js';
-import { renderCelOutlinePass } from './CelOutlinePass.js';
 import { latticeDirsNorm } from './LatticeModule.js';
 import { requestRender } from './AnimateModule.js';
 
@@ -32,14 +31,40 @@ function getViewEl() {
   return /** @type {HTMLElement} */ (document.getElementById('view'));
 }
 
-// Render the main scene + cel outline into an offscreen 2D canvas of exactly
-// w x h device pixels. Caller must have set pixelRatio 1, scene.background and
-// clearAlpha for a transparent capture. Reads the drawing buffer synchronously.
+// Render one frame through the active pipeline into an offscreen 2D canvas of
+// exactly w x h device pixels. Caller must have set pixelRatio 1,
+// scene.background and clearAlpha for a transparent capture. Reads the drawing
+// buffer synchronously.
 function renderMainToCanvas(w, h) {
   app.renderer.setSize(w, h, false);
-  if (app.wboitPass) app.wboitPass.setSize(w, h);
-  app.renderer.render(app.scene, app.camera);
-  renderCelOutlinePass(app.renderer, app.scene, app.camera);
+  app.pipeline?.setSize(w, h);
+  app.pipeline?.render({ renderer: app.renderer, scene: app.scene, camera: app.camera });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
+  ctx.drawImage(app.renderer.domElement, 0, 0, w, h);
+  return canvas;
+}
+
+// Like renderMainToCanvas, but for progressive tracer pipelines: keeps
+// accumulating in small batches — yielding to the browser between them so the
+// on-screen progress bar (render/TracerProgressModule.js, driven from
+// pipeline.render()) stays live — until the pipeline reports convergence.
+// Non-tracer pipelines (no isConverged) capture after the single frame.
+async function renderMainToCanvasConverged(w, h) {
+  app.renderer.setSize(w, h, false);
+  app.pipeline?.setSize(w, h);
+  const renderCtx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
+  app.pipeline?.render(renderCtx); // first call: resize reset + initial burst
+  if (app.pipeline?.isConverged) {
+    while (!app.pipeline.isConverged()) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      app.pipeline.requestBoost?.(4); // small batches keep the UI responsive
+      app.pipeline.render(renderCtx);
+    }
+  }
 
   const canvas = document.createElement('canvas');
   canvas.width = w;
@@ -132,19 +157,20 @@ function drawMeasurementLabels(octx, map) {
   }
 }
 
-// Render the axis gizmo at high resolution and place it in the inner canvas's
-// bottom-left corner (matching #axesGizmo's on-screen position), with the a/b/c
-// legend next to it (matching #axesLegend). Included ONLY when the user has the
-// gizmo showing (general.showAxes / #axesGizmo not display:none). Returns the
-// previous gizmo pixel ratio so the caller can restore it (null if skipped).
-function drawGizmoAndLegend(ictx, innerW, innerH) {
+// Render the axis gizmo at high resolution and place it in the output's
+// bottom-left corner inset by the margin (matching #axesGizmo's on-screen
+// position), with the a/b/c legend next to it (matching #axesLegend).
+// Included ONLY when the user has the gizmo showing (general.showAxes /
+// #axesGizmo not display:none). Returns the previous gizmo pixel ratio so
+// the caller can restore it (null if skipped).
+function drawGizmoAndLegend(octx, width, height, margin) {
   const gizmoDiv = document.getElementById('axesGizmo');
   if (!app.gizmoRenderer || !app.gizmoScene || !app.gizmoCamera) return null;
   if (!general.showAxes) return null;
   if (gizmoDiv && gizmoDiv.style.display === 'none') return null;
 
   const prevGizmoPR = app.gizmoRenderer.getPixelRatio();
-  const gsize = Math.max(24, Math.round(Math.min(innerW, innerH) * 0.14));
+  const gsize = Math.max(24, Math.round(Math.min(width - 2 * margin, height - 2 * margin) * 0.14));
   app.gizmoRenderer.setPixelRatio(1);
   app.gizmoRenderer.setSize(gsize, gsize, false);
   app.gizmoCamera.aspect = 1;
@@ -157,9 +183,10 @@ function drawGizmoAndLegend(ictx, innerW, innerH) {
   app.gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
   app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
 
-  const gy = innerH - gsize;
-  ictx.drawImage(app.gizmoRenderer.domElement, 0, gy, gsize, gsize);
-  drawAxesLegend(ictx, gsize + Math.round(gsize * 0.07), innerH, gsize);
+  const gx = margin;
+  const gy = height - gsize - margin;
+  octx.drawImage(app.gizmoRenderer.domElement, gx, gy, gsize, gsize);
+  drawAxesLegend(octx, gx + gsize + Math.round(gsize * 0.07), gy + gsize, gsize);
   return prevGizmoPR;
 }
 
@@ -235,11 +262,15 @@ export async function captureSceneToPng(opts) {
   const bgCss = colorToCss(prevBackground);
 
   let prevGizmoPR = null;
+  // Exports always trace at 100% internal resolution regardless of the
+  // interactive "RT resolution" setting.
+  const prevRtScale = general.rtResolutionScale;
 
   try {
     app.renderer.setPixelRatio(1);
     app.scene.background = null;
     app.renderer.setClearAlpha(0);
+    general.rtResolutionScale = 1;
 
     // --- Probe pass: find the content fraction of the view at low cost. ---
     const probeLong = 1024;
@@ -258,16 +289,21 @@ export async function captureSceneToPng(opts) {
     const fracW = nx1 - nx0;
     const fracH = ny1 - ny0;
 
-    // The margin is excluded up front: content and every overlay are composited
-    // into an inner canvas of size innerW x innerH, which is stamped onto the
-    // full output at (margin, margin) at the end. That way the margin is honoured
-    // by ALL elements (content, gizmo, legend, labels), not just the content.
+    // Margins simply inset the content/overlay placement in the output
+    // (the pre-inner-canvas composition — one less full-size allocation).
     const innerW = Math.max(1, width - 2 * margin);
     const innerH = Math.max(1, height - 2 * margin);
 
     // --- Choose the source render size so the content maps ~1:1 (slightly
-    //     super-sampled for AA) to the inner content box, clamped to GPU limits.
-    const SS = 1.25;
+    //     super-sampled for AA) to the inner content box, capped by BOTH the
+    //     GPU limits and the requested output size. The output-size cap is the
+    //     memory guard: auto-framing used to escalate the source render to
+    //     8192x8192 when the structure filled a small view fraction, which
+    //     (plus the tracers' float accumulation targets) OOM-crashed Firefox
+    //     on ~4K exports. Beyond the cap, small content upscales slightly
+    //     instead. Tracers skip the supersample: their AA comes from the
+    //     accumulation jitter.
+    const SS = app.pipeline?.isConverged ? 1.0 : 1.25;
     const scaleToFillW = innerW / Math.max(fracW, 1e-3);
     const scaleToFillH = innerH / Math.max(fracH, 1e-3);
     let srcW = Math.ceil(Math.max(scaleToFillW, scaleToFillH * aspect) * SS);
@@ -277,6 +313,7 @@ export async function captureSceneToPng(opts) {
     const maxDim = Math.min(
       gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) || 4096,
       gl.getParameter(gl.MAX_TEXTURE_SIZE) || 4096,
+      Math.ceil(Math.max(width, height) * SS),
       8192,
     );
     let clamped = false;
@@ -287,11 +324,12 @@ export async function captureSceneToPng(opts) {
       clamped = true;
     }
     if (clamped) {
-      console.warn(`[png-export] source render clamped to ${srcW}x${srcH}; content may upscale.`);
+      console.info(`[png-export] source render capped to ${srcW}x${srcH}; small content may upscale.`);
     }
 
-    // --- Final high-res pass. ---
-    const srcCanvas = renderMainToCanvas(srcW, srcH);
+    // --- Final high-res pass (tracer pipelines render to full convergence,
+    //     with the on-screen progress bar tracking the accumulation). ---
+    const srcCanvas = await renderMainToCanvasConverged(srcW, srcH);
 
     // Crop rect in source pixels, from the (accurate enough) probe fractions.
     const cropX = Math.max(0, Math.floor(nx0 * srcW));
@@ -299,42 +337,37 @@ export async function captureSceneToPng(opts) {
     const cropW = Math.max(1, Math.min(srcW - cropX, Math.ceil(fracW * srcW)));
     const cropH = Math.max(1, Math.min(srcH - cropY, Math.ceil(fracH * srcH)));
 
-    // Contain-fit the crop into the inner box, centred.
+    // Contain-fit the crop into the inner box, centred within the margins
+    // (composited DIRECTLY into the output canvas — no intermediate inner
+    // canvas; margins are plain offsets, matching the original implementation).
     const scale = Math.min(innerW / cropW, innerH / cropH);
     const drawW = cropW * scale;
     const drawH = cropH * scale;
-    const cdx = (innerW - drawW) / 2;
-    const cdy = (innerH - drawH) / 2;
-
-    // --- Compose the inner canvas (no margin), then stamp onto the output. ---
-    const inner = document.createElement('canvas');
-    inner.width = innerW;
-    inner.height = innerH;
-    const ictx = /** @type {CanvasRenderingContext2D} */ (inner.getContext('2d'));
-    ictx.imageSmoothingEnabled = true;
-    ictx.imageSmoothingQuality = 'high';
-    ictx.drawImage(srcCanvas, cropX, cropY, cropW, cropH, cdx, cdy, drawW, drawH);
-
-    // Overlays (in inner coordinates): labels track content; the gizmo + its
-    // legend go in the inner bottom-left corner.
-    const map = {
-      srcW, srcH, cropX, cropY, dx: cdx, dy: cdy, scale,
-      // font/label size relative to the on-screen view (content px on screen
-      // = frac * view px; content px in output = crop px * scale).
-      fontScale: (cropH * scale) / Math.max(1, fracH * vh),
-    };
-    drawMeasurementLabels(ictx, map);
-    prevGizmoPR = drawGizmoAndLegend(ictx, innerW, innerH);
+    const dx = margin + (innerW - drawW) / 2;
+    const dy = margin + (innerH - drawH) / 2;
 
     const out = document.createElement('canvas');
     out.width = width;
     out.height = height;
     const octx = /** @type {CanvasRenderingContext2D} */ (out.getContext('2d'));
+    octx.imageSmoothingEnabled = true;
+    octx.imageSmoothingQuality = 'high';
     if (!transparent) {
       octx.fillStyle = bgCss;
       octx.fillRect(0, 0, width, height);
     }
-    octx.drawImage(inner, margin, margin);
+    octx.drawImage(srcCanvas, cropX, cropY, cropW, cropH, dx, dy, drawW, drawH);
+
+    // Overlays (in output coordinates): labels track content; the gizmo + its
+    // legend go in the bottom-left corner, inset by the margin.
+    const map = {
+      srcW, srcH, cropX, cropY, dx, dy, scale,
+      // font/label size relative to the on-screen view (content px on screen
+      // = frac * view px; content px in output = crop px * scale).
+      fontScale: (cropH * scale) / Math.max(1, fracH * vh),
+    };
+    drawMeasurementLabels(octx, map);
+    prevGizmoPR = drawGizmoAndLegend(octx, width, height, margin);
 
     return await new Promise((resolve, reject) => {
       out.toBlob((blob) => {
@@ -344,11 +377,12 @@ export async function captureSceneToPng(opts) {
     });
   } finally {
     // Restore the live view. Camera projection was never changed.
+    general.rtResolutionScale = prevRtScale;
     app.scene.background = prevBackground;
     app.renderer.setClearAlpha(prevClearAlpha);
     app.renderer.setPixelRatio(prevPixelRatio);
     app.renderer.setSize(vw, vh, false);
-    if (app.wboitPass) app.wboitPass.setSize(vw, vh);
+    app.pipeline?.setSize(vw, vh);
 
     const gizmoDiv = document.getElementById('axesGizmo');
     if (app.gizmoRenderer && prevGizmoPR != null) {

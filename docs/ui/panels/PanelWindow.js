@@ -409,6 +409,9 @@ export class PanelWindow {
     const target = /** @type {HTMLElement} */ (e.target);
     if (target.closest('button')) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // "Only drag windows by handle" (Settings): restrict drag starts to the
+    // ⦀ grip so the rest of the title bar never grabs the window.
+    if (this.hooks.getPref?.('dragByHandleOnly') && !target.closest('.cv-panel-grip')) return;
     e.preventDefault();
 
     const startX = e.clientX;

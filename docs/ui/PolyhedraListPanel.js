@@ -13,6 +13,7 @@ import {
   updatePolyhedra,
 } from '../render/index.js';
 import { createIndividualPolyhedronRow } from './StructureInfoPanel/components/IndividualPolyhedronRow.js';
+import { createMaterialEditor } from './StructureInfoPanel/components/MaterialEditor.js';
 import { createTinyImmunityToggle } from './StructureInfoPanel/components/Immunity.js';
 import { clampOpacity } from './StructureInfoPanel/components/utils.js';
 
@@ -296,11 +297,20 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     catButtonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';
     catButtonRow.appendChild(catResetBtn);
 
+    // Per-category ray/path-tracing material (polyhedraCategoryStyles[catKey].material).
+    const catMaterialEditor = createMaterialEditor(
+      () => structure.polyhedraCategoryStyles?.[catKey]?.material,
+      (material) => {
+        if (material) catStyle().material = material;
+        else delete catStyle().material;
+      });
+
     catEditor.appendChild(catPicker.element);
     catEditor.appendChild(alphaRow);
     catEditor.appendChild(edgeHeader);
     catEditor.appendChild(edgePicker.element);
     catEditor.appendChild(edgeAlphaRow);
+    catEditor.appendChild(catMaterialEditor);
     catEditor.appendChild(catButtonRow);
     div.appendChild(catEditor);
 

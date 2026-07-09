@@ -10,9 +10,10 @@ import { parsePOSCAR, initializeUIOnLoad } from './StructureInputModule.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
 import { StructureContainer } from '../model/index.js';
 import { updateAtoms } from '../render/index.js';
-import { rebuildBonds, updatePolyhedra } from '../render/index.js';
+import { rebuildBonds, updatePolyhedra, setActivePipeline } from '../render/index.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
+import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
 import { revealFeaturePanels } from './panels/PanelManager.js';
 import { fracToCart } from '../math/index.js';
 import { updateAxesGizmoWidth, switchCameraType, resizeRenderer } from './WindowAndSceneControls.js';
@@ -98,7 +99,7 @@ export function captureState({ includeFrames = false } = {}) {
   }
 
   return {
-    version: '2.3',
+    version: '2.9',
     ...(frames ? { frames } : {}),
     structure: {
       elements: [...structure.elements],
@@ -118,6 +119,10 @@ export function captureState({ includeFrames = false } = {}) {
       bondCategoryStyles: nonEmptyDeepCopy(structure.bondCategoryStyles),
       polyhedraUserStyles: nonEmptyDeepCopy(structure.polyhedraUserStyles),
       polyhedraCategoryStyles: nonEmptyDeepCopy(structure.polyhedraCategoryStyles),
+      // Ray/path-tracing materials: per-species + per-atom overrides (bond/
+      // poly materials ride in their user/category stores above).
+      atomMaterials: nonEmptyDeepCopy(structure.atomMaterials),
+      atomUserMaterials: nonEmptyDeepCopy(structure.atomUserMaterials),
     },
     display: {
       atomSize: general.atomSize,
@@ -141,8 +146,28 @@ export function captureState({ includeFrames = false } = {}) {
     },
     style: {
       renderStyle: general.renderStyle,
+      renderPipeline: general.renderPipeline,
+      depthPeelLayers: general.depthPeelLayers,
+      rtResolutionScale: general.rtResolutionScale,
+      rtReflectivity: general.rtReflectivity,
+      ptDenoise: general.ptDenoise,
+      ptLightSoftness: general.ptLightSoftness,
+      rtDofAperture: general.rtDofAperture,
+      rtDofFocus: general.rtDofFocus,
+      rtGroundPlane: general.rtGroundPlane,
+      rtGroundPattern: general.rtGroundPattern,
+      rtGroundColor1: general.rtGroundColor1,
+      rtGroundColor2: general.rtGroundColor2,
+      rtGroundScale: general.rtGroundScale,
+      rtGroundOffset: general.rtGroundOffset,
+      rtGroundSize: general.rtGroundSize,
+      rtGroundReflect: general.rtGroundReflect,
+      rtLightIntensity: general.rtLightIntensity,
+      rtAmbient: general.rtAmbient,
+      rtSaturation: general.rtSaturation,
       celOutlineWidth: general.celOutlineWidth,
       celHullWidth: general.celHullWidth,
+      polyEdgeWidth: general.polyEdgeWidth,
       atomsColor: general.atomsColor,
       bondsColor: general.bondsColor,
       background: app.scene?.background ? '#' + app.scene.background.getHexString() : null,
@@ -253,13 +278,19 @@ function applyDisplaySettings(display) {
     if (sv) sv.textContent = Number(val).toFixed(decimals);
   };
 
+  // The size sliders hold [0,1] positions with a quadratic value mapping —
+  // write the inverse-mapped position, but show the real value in the span.
   if (display.atomSize != null) {
     general.atomSize = display.atomSize;
-    setSlider('atomSize', 'atomSizeValue', display.atomSize, 2);
+    setSlider('atomSize', 'atomSizeValue', sizeValueToSlider(display.atomSize, ATOM_SIZE_RANGE), 2);
+    const span = document.getElementById('atomSizeValue');
+    if (span) span.textContent = Number(display.atomSize).toFixed(2);
   }
   if (display.bondRadius != null) {
     general.bondRadius = display.bondRadius;
-    setSlider('bondWidth', 'bondWidthValue', display.bondRadius, 2);
+    setSlider('bondWidth', 'bondWidthValue', sizeValueToSlider(display.bondRadius, BOND_RADIUS_RANGE), 2);
+    const span = document.getElementById('bondWidthValue');
+    if (span) span.textContent = Number(display.bondRadius).toFixed(2);
   }
   if (display.axesLineWidth != null) {
     general.axesLineWidth = display.axesLineWidth;
@@ -302,8 +333,79 @@ function applyStyleSettings(style) {
     if (el && val != null) el.value = val;
   };
   if (style.renderStyle) { general.renderStyle = style.renderStyle; setSelect('renderStyleMenu', style.renderStyle); }
+  if (style.renderPipeline) {
+    // Unknown ids fall back to 'forward' inside setActivePipeline.
+    setActivePipeline(style.renderPipeline);
+    setSelect('renderPipelineMenu', general.renderPipeline);
+  }
+  if (style.depthPeelLayers != null) {
+    general.depthPeelLayers = style.depthPeelLayers;
+    setSelect('depthPeelLayersSlider', style.depthPeelLayers);
+  }
+  if (style.rtResolutionScale != null) {
+    general.rtResolutionScale = style.rtResolutionScale;
+    setSelect('rtResolutionScale', style.rtResolutionScale);
+  }
+  if (style.rtReflectivity != null) {
+    general.rtReflectivity = style.rtReflectivity;
+    setSelect('rtReflectivity', style.rtReflectivity);
+  }
+  if (style.ptDenoise != null) {
+    general.ptDenoise = style.ptDenoise;
+    const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('ptDenoiseToggle'));
+    if (toggle) toggle.checked = style.ptDenoise;
+  }
+  if (style.ptLightSoftness != null) {
+    general.ptLightSoftness = style.ptLightSoftness;
+    setSelect('ptLightSoftness', style.ptLightSoftness);
+  }
+  if (style.rtDofAperture != null) {
+    general.rtDofAperture = style.rtDofAperture;
+    setSelect('rtDofAperture', style.rtDofAperture);
+  }
+  if (style.rtDofFocus != null) {
+    general.rtDofFocus = style.rtDofFocus;
+    setSelect('rtDofFocus', style.rtDofFocus);
+  }
+  if (style.rtGroundPlane != null) {
+    general.rtGroundPlane = style.rtGroundPlane;
+    const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtGroundToggle'));
+    if (toggle) {
+      toggle.checked = style.rtGroundPlane;
+      toggle.dispatchEvent(new Event('change')); // also shows/hides the ground options
+    }
+  }
+  if (style.rtGroundPattern != null) { general.rtGroundPattern = style.rtGroundPattern; setSelect('rtGroundPattern', style.rtGroundPattern); }
+  if (style.rtGroundColor1 !== undefined) {
+    general.rtGroundColor1 = style.rtGroundColor1;
+    if (style.rtGroundColor1) setSelect('rtGroundColor1', style.rtGroundColor1);
+  }
+  if (style.rtGroundColor2 !== undefined) {
+    general.rtGroundColor2 = style.rtGroundColor2;
+    if (style.rtGroundColor2) setSelect('rtGroundColor2', style.rtGroundColor2);
+  }
+  if (style.rtGroundScale != null) { general.rtGroundScale = style.rtGroundScale; setSelect('rtGroundScale', style.rtGroundScale); }
+  if (style.rtGroundOffset != null) { general.rtGroundOffset = style.rtGroundOffset; setSelect('rtGroundOffset', sizeValueToSlider(style.rtGroundOffset, GROUND_OFFSET_RANGE)); }
+  if (style.rtGroundSize != null) { general.rtGroundSize = style.rtGroundSize; setSelect('rtGroundSize', sizeValueToSlider(style.rtGroundSize, GROUND_SIZE_RANGE)); }
+  if (style.rtGroundReflect != null) { general.rtGroundReflect = style.rtGroundReflect; setSelect('rtGroundReflect', style.rtGroundReflect); }
+  if (style.rtLightIntensity != null) {
+    general.rtLightIntensity = style.rtLightIntensity;
+    setSelect('rtLightIntensity', style.rtLightIntensity);
+  }
+  if (style.rtAmbient != null) {
+    general.rtAmbient = style.rtAmbient;
+    setSelect('rtAmbient', style.rtAmbient);
+  }
+  if (style.rtSaturation != null) {
+    general.rtSaturation = style.rtSaturation;
+    setSelect('rtSaturation', style.rtSaturation);
+  }
   if (style.celOutlineWidth != null) general.celOutlineWidth = style.celOutlineWidth;
   if (style.celHullWidth != null) general.celHullWidth = style.celHullWidth;
+  if (style.polyEdgeWidth != null) {
+    general.polyEdgeWidth = style.polyEdgeWidth;
+    setSelect('polyEdgeWidth', style.polyEdgeWidth);
+  }
   if (style.atomsColor) { general.atomsColor = style.atomsColor; setSelect('atomsMenu', style.atomsColor); }
   if (style.bondsColor) { general.bondsColor = style.bondsColor; setSelect('bondsMenu', style.bondsColor); }
   if (style.background && app?.scene) {
@@ -360,7 +462,7 @@ function applyAtomColors(colors, structure) {
   // (see applySharedState), so the wrapped-index bondUserStyles keys match the
   // corrected atom order when the caller's rebuildBonds() re-applies them;
   // stale keys are silently ignored by the stores' element/geometry checks.
-  for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles', 'polyhedraCategoryStyles']) {
+  for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles', 'polyhedraCategoryStyles', 'atomMaterials', 'atomUserMaterials']) {
     if (colors[k]) structure[k] = JSON.parse(JSON.stringify(colors[k]));
   }
 }
@@ -625,6 +727,10 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   // appear; the handler re-renders, which is only paid for cel states.
   if (state.style?.renderStyle === 'cel') {
     document.getElementById('renderStyleMenu')?.dispatchEvent(new Event('change'));
+  }
+  // Depth peeling / ray tracing: same re-fire so their control blocks show.
+  if (['depthpeel', 'raytrace', 'pathtrace'].includes(state.style?.renderPipeline)) {
+    document.getElementById('renderPipelineMenu')?.dispatchEvent(new Event('change'));
   }
 
   // Camera and measurements need the render to have settled

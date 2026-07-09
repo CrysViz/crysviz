@@ -2,6 +2,7 @@ import { fileBrowser, groups, highlightHover, general } from '../../../state/sto
 import { colorHexToCss, hexToRgba } from '../../../utils/ColorModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updateSingleBondColor, updateSingleBondOpacity, updateSingleBondDiameter, bondKey } from '../../../render/BondsFracUpdateModule.js';
+import { createMaterialEditor } from './MaterialEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { getElementAtomIndices, clampOpacity, clampRadiusScale } from './utils.js';
 import { selectBondFromRow } from '../../SelectAndHighlightModule.js';
@@ -230,9 +231,21 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
   editorButtonRow.appendChild(resetBtn);
   editorButtonRow.appendChild(applyBtn);
 
+  // Per-bond ray/path-tracing material override (wins over the pair entry);
+  // fans out to every member copy's style record like the other fields.
+  const materialEditor = createMaterialEditor(
+    () => structure.bondUserStyles?.[key]?.material,
+    (material) => {
+      for (const b of memberBonds()) {
+        if (material) stylesEntryFor(b).material = material;
+        else delete stylesEntryFor(b).material;
+      }
+    });
+
   editor.appendChild(picker.element);
   editor.appendChild(alphaRow);
   editor.appendChild(sizeRow);
+  editor.appendChild(materialEditor);
   editor.appendChild(editorButtonRow);
   editor.onclick = (e) => e.stopPropagation();
   row.appendChild(editor);

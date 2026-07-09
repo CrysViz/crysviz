@@ -39,11 +39,26 @@ async function expandPanel(page, id) {
     H.check(`Visual window hosts #${id}`, await inBody(page, 'visual', id));
   }
   H.check('headlines are plain labels', await page.evaluate(() => {
+    // Sizes / Scene / Rendering / Colors / Camera
     const heads = document.querySelectorAll('#cvPanelBody-visual .panel-headline');
-    return heads.length === 4 && [...heads].every((h) => h.tagName === 'LABEL');
+    return heads.length === 5 && [...heads].every((h) => h.tagName === 'LABEL');
   }));
-  H.check('Settings keeps the storage switch', await inBody(page, 'settings', 'StorageOptionSwitch'));
+  // The storage-granularity switch is deliberately NOT adopted into Settings
+  // (no wiring yet) but stays in the DOM so it can return later — see
+  // ui/panels/defaultPanels.js buildContent for the settings panel.
+  H.check('storage switch stays out of Settings but in the DOM',
+    !(await inBody(page, 'settings', 'StorageOptionSwitch'))
+      && await page.evaluate(() => !!document.getElementById('StorageOptionSwitch')));
   H.check('Settings keeps the drag toggles', await inBody(page, 'settings', 'dragIntoDockToggle'));
+  H.check('Settings hosts the drag-by-handle toggle', await inBody(page, 'settings', 'dragByHandleToggle'));
+  H.check('drag-by-handle pref round-trips', await page.evaluate(async () => {
+    const { getPanelPref, setPanelPref } = await import('./ui/panels/PanelManager.js');
+    setPanelPref('dragByHandleOnly', true);
+    const on = getPanelPref('dragByHandleOnly') === true
+      && JSON.parse(localStorage.getItem('panelPrefs')).dragByHandleOnly === true;
+    setPanelPref('dragByHandleOnly', false);
+    return on && getPanelPref('dragByHandleOnly') === false;
+  }));
 
   // --- axes gizmo line width slider -------------------------------------------
   await H.setSlider(page, 'axesWidth', 0.05);
@@ -172,13 +187,14 @@ async function expandPanel(page, id) {
     const { captureState } = await import('./ui/ShareModule.js');
     return captureState();
   });
-  H.check('captured state has the new visual keys (v2.2)',
-    state.version === '2.2'
+  H.check('captured state has the new visual keys (v2.9)',
+    state.version === '2.9'
       && state.display.latticeLineWidth === 0.06
       && state.display.axesLineWidth === 0.05
       && typeof state.display.bondRadius === 'number'
       && typeof state.display.showAxes === 'boolean'
       && state.style && typeof state.style.renderStyle === 'string'
+      && typeof state.style.renderPipeline === 'string'
       && /^#[0-9a-f]{6}$/.test(state.style.background || ''),
     JSON.stringify({ version: state.version, display: state.display, style: state.style }).slice(0, 300));
   H.check('captured state includes the per-atom size override',

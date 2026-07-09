@@ -8,9 +8,34 @@
 
 import { general, groups, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle } from '../render/index.js';
+import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle, scheduleBondRebuild } from '../render/index.js';
+import { bondKey } from '../render/BondsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
 import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
+
+// ---- size-slider mapping ---------------------------------------------------
+// The Atom Size / Bond Diameter sliders are continuous [0,1] positions with a
+// QUADRATIC response into a wide value range: fine control at the small end,
+// space-filling headroom at the top. All writers/readers of the slider
+// elements (handlers here, markup init in core/crystal-viewer.js, restore in
+// ui/ShareModule.js) must go through these mappings.
+export const ATOM_SIZE_RANGE = { min: 0.05, max: 3.0 };
+export const BOND_RADIUS_RANGE = { min: 0.005, max: 1.0 };
+// Tracer ground-plane sliders (ColorPanel), same quadratic mapping:
+export const GROUND_OFFSET_RANGE = { min: 0, max: 50 }; // structure->plane distance (A)
+export const GROUND_SIZE_RANGE = { min: 0.5, max: 30 }; // disc radius in structure radii
+
+/** Slider position [0,1] -> value (quadratic). */
+export function sizeSliderToValue(pos, range) {
+  const p = Math.min(1, Math.max(0, pos));
+  return range.min + (range.max - range.min) * p * p;
+}
+
+/** Value -> slider position [0,1] (inverse of sizeSliderToValue). */
+export function sizeValueToSlider(value, range) {
+  const v = Math.min(range.max, Math.max(range.min, value));
+  return Math.sqrt((v - range.min) / (range.max - range.min));
+}
 
 export function setupControlsWiring() {
   // Control handlers
@@ -85,8 +110,8 @@ export function setupControlsWiring() {
   }
 
   document.getElementById('atomSize').oninput = (e) => {
-    general.atomSize = parseFloat(e.target.value);
-    document.getElementById('atomSizeValue').textContent = general.atomSize.toFixed(1);
+    general.atomSize = sizeSliderToValue(parseFloat(e.target.value), ATOM_SIZE_RANGE);
+    document.getElementById('atomSizeValue').textContent = general.atomSize.toFixed(2);
     fileBrowser.selectedStructure.elements.forEach((element, index) => {
       const scale = fileBrowser.selectedStructure.atoms[index]?.getRadiusScale?.() ?? 1;
       fileBrowser.selectedStructure.atomImages[index].forEach(imageIndex => {
@@ -97,7 +122,8 @@ export function setupControlsWiring() {
     });
     groups.atomsMesh.instanceMatrix.needsUpdate = true;
     updateMeasurementMarkers(); // Update ring markers when atom size changes
-
+    // Bond visible lengths bake the atom radii in — refresh once settled.
+    scheduleBondRebuild();
   };
 
 
@@ -106,17 +132,27 @@ export function setupControlsWiring() {
   const bondWidthValue = document.getElementById('bondWidthValue');
   if (bondWidthSlider && bondWidthValue) {
     bondWidthSlider.oninput = (e) => {
-      const v = parseFloat(e.target.value);
+      const v = sizeSliderToValue(parseFloat(e.target.value), BOND_RADIUS_RANGE);
       // clamp defensively
       general.bondRadius = Math.max(0.005, Math.min(1.0, isNaN(v) ? general.bondRadius : v));
       bondWidthValue.textContent = general.bondRadius.toFixed(2);
-      for (let i = 0; i < groups.bondsMesh.count; i++) {
-        updateSingleBondDiameter(i,  general.bondRadius)
-        //updateSingleAtomColor(originalIndex=atomIndex, element=element, opacity = 1.0)
-       }
-      groups.bondsMesh.instanceColor.needsUpdate = true;
-
-      //updateVisualization();
+      // Update BOTH the Bond objects and the mesh instances: everything that
+      // repaints later (double-click atom expansion, updateBonds, …) re-derives
+      // matrices from bond.radius — instance-only updates would be reverted.
+      // Per-bond/per-pair size scales stay respected.
+      const structure = fileBrowser.selectedStructure;
+      for (const bond of structure?.bonds ?? []) {
+        const [e1, e2] = bond.elements;
+        const scale = structure.bondUserStyles?.[bondKey(bond.indices)]?.radiusScale
+          ?? structure.bondCategoryStyles?.[e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`]?.radiusScale
+          ?? 1;
+        bond.radius = general.bondRadius * scale;
+        if (bond.instanceIds && groups.bondsMesh) {
+          updateSingleBondDiameter(bond.instanceIds[0], bond.radius);
+          updateSingleBondDiameter(bond.instanceIds[1], bond.radius);
+        }
+      }
+      if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
     };
   }
   // Unit-cell outline line width control (rebuilds the 12 outline cylinders)

@@ -7,7 +7,8 @@ import {
   clearAtomImageStylesForAtom, getAtomImageColor, updateSingleAtomImageColor,
 } from '../../../render/AtomsFracUpdateModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
-import { updatePolyhedraColors } from '../../../render/index.js';
+import { updatePolyhedraColors, scheduleBondRebuild } from '../../../render/index.js';
+import { createMaterialEditor } from './MaterialEditor.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { clampOpacity, clampRadiusScale, updateAtomCoordinates } from './utils.js';
 import { selectAtomFromRow } from '../../SelectAndHighlightModule.js';
@@ -268,9 +269,36 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   atomSizeRow.appendChild(atomSizeSlider);
   atomSizeRow.appendChild(atomSizeValue);
 
+  // Per-atom ray/path-tracing material override (wins over the species
+  // entry). Follows the row's linking mode like Color/Alpha/Size: with "Link
+  // periodic copies" OFF the row is one on-screen copy and the material goes
+  // into its atomImageStyles entry ONLY; linked edits fan out to every linked
+  // atom and drop stale per-copy overrides (newest edit wins).
+  const materialEditor = createMaterialEditor(
+    () => {
+      const structure = fileBrowser.selectedStructure;
+      if (perImage) return getAtomImageStyle(structure, imageIndex)?.material;
+      return structure?.atomUserMaterials?.[atomIndex];
+    },
+    (material) => {
+      const structure = fileBrowser.selectedStructure;
+      if (!structure) return;
+      if (perImage) {
+        setAtomImageStyle(structure, imageIndex, { material: material ?? undefined });
+        return;
+      }
+      structure.atomUserMaterials = structure.atomUserMaterials ?? {};
+      linkedAtomIndices.forEach((linkedAtomIndex) => {
+        if (material) structure.atomUserMaterials[linkedAtomIndex] = material;
+        else delete structure.atomUserMaterials[linkedAtomIndex];
+        clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'material');
+      });
+    });
+
   editor.appendChild(topRowIndiv);
   editor.appendChild(atomAlphaRow);
   editor.appendChild(atomSizeRow);
+  editor.appendChild(materialEditor);
   editor.appendChild(buttonRowIndiv);
 
   // Coordinate editor
@@ -404,6 +432,8 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     }
     groups.atomsMesh.instanceMatrix.needsUpdate = true;
     updateMeasurementMarkers();
+    // Bond visible lengths bake the atom radii in — refresh once settled.
+    scheduleBondRebuild();
   }
 
   atomSizeSlider.oninput = (e) => applyIndividualRadiusScale(/** @type {any} */ (e.target).value);
@@ -499,8 +529,10 @@ AtomColorResetBtn.onclick = () => {
   }
 
   linkedAtomIndices.forEach((linkedAtomIndex) => {
-    // Also drop any per-copy overrides of this atom (newest edit wins).
+    // Also drop any per-copy overrides of this atom (newest edit wins) and
+    // its ray/path-tracing material override.
     clearAtomImageStylesForAtom(structure, linkedAtomIndex);
+    if (structure.atomUserMaterials) delete structure.atomUserMaterials[linkedAtomIndex];
     const atom = structure.atoms[linkedAtomIndex];
     const element = structure.elements[linkedAtomIndex];
 

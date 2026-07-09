@@ -95,6 +95,17 @@ export class Structure {
     // entries are simply ignored.
     this.polyhedraUserStyles = {};
     this.polyhedraCategoryStyles = {};
+    // Ray/path-tracing materials: { type: 'standard'|'metal'|'glass'|
+    // 'emissive', roughness?, ior?, intensity?, reflectivity? } — reflectivity
+    // (when set) overrides the global "Reflectivity" slider for that object.
+    // Per-SPECIES: atomMaterials[element]; per-ATOM override:
+    // atomUserMaterials[atomIndex] (wins over the species entry). Bond and
+    // polyhedra materials live as `material` sub-objects on
+    // bondCategoryStyles/bondUserStyles and polyhedraCategoryStyles/
+    // polyhedraUserStyles (individual wins over category). Only read by the
+    // raytrace/pathtrace pipelines (render/pipeline/raytrace/SceneEncoder.js).
+    this.atomMaterials = {};
+    this.atomUserMaterials = {};
     // Per-periodic-copy atom style overrides, keyed by atomImageKey()
     // ("srcIndex:dx,dy,dz", computed in render/AtomsFracUpdateModule.js
     // finishAtomsMesh) -> { element, color?, alpha?, radiusScale? }. Used by the

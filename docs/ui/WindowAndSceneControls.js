@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups, general } from '../state/store.js';
-import { setupAxisControls, latticeDirs, requestRender} from '../render/index.js';
+import { setupAxisControls, latticeDirs, requestRender, setActivePipeline } from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 
@@ -45,6 +45,10 @@ export function setupScene() {
   initCamera(app.useOrthographicCamera);
 
   initRenderer();
+
+  // Activate the rendering pipeline before any structure/mesh exists so every
+  // transparency intent is applied by a real pipeline (never the fallback).
+  setActivePipeline(general.renderPipeline);
 
   initLabelRenderer();
 
@@ -189,6 +193,9 @@ export function initControls(){
   app.controls.addEventListener('change', requestRender);
 
   app.controls.addEventListener('end', () => {
+    // The CPU triangle sort only helps order-dependent (forward) blending;
+    // order-independent pipelines opt out via needsCpuTriangleSort = false.
+    if (app.pipeline?.needsCpuTriangleSort === false) return;
     if (getIsosurfaceTriangleSortingEnabled() && groups.activeField?.isVisible !== false) {
       updateStoredIsosurfaceRenderOrder(app.camera, groups.isosurfaceGroup);
       requestRender();
@@ -216,8 +223,13 @@ export function resizeRenderer(orthographicFrustumSize) {
   }
   app.camera.updateProjectionMatrix();
   app.renderer.setSize(w, h);
-  if (app.wboitPass) {
-    app.wboitPass.setSize(w, h);
+  app.pipeline?.setSize(w, h);
+
+  // Fat-line materials (polyhedra edges) carry a screen-resolution uniform.
+  if (groups.polyhedraGroup) {
+    groups.polyhedraGroup.traverse((obj) => {
+      if (obj.material?.isLineMaterial) obj.material.resolution.set(w, h);
+    });
   }
 
   if (app.labelRenderer) {

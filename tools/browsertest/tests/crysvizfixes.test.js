@@ -119,6 +119,24 @@ const H = require('../harness');
   H.check('applySharedState rebuilds a 3-frame trajectory container',
     restored.frameCount === 3, JSON.stringify(restored));
 
+  // --- double-click with "Show Bonds" off must not throw ---------------------------
+  // Regression: disposeBondsMesh nulls groups.bondsMesh, and onDoubleClickAtom
+  // raycast it unguarded -> "can't access property 'layers', object is null"
+  // (which also aborted polyhedron double-click selection).
+  const bondsMeshGone = await page.evaluate(async () => {
+    const { groups } = await import('./state/store.js');
+    document.getElementById('showBonds').click(); // uncheck -> disposes the bonds mesh
+    await new Promise((r) => setTimeout(r, 300));
+    return groups.bondsMesh === null;
+  });
+  // Real input event (a synthetic dispatchEvent would not surface a listener
+  // exception as a pageerror), on the pure-canvas region.
+  await page.mouse.dblclick(900, 450);
+  await page.waitForTimeout(300);
+  await page.evaluate(() => document.getElementById('showBonds').click()); // restore
+  H.check('double-click with bonds hidden exercises the null-mesh path',
+    bondsMeshGone === true, `bondsMeshGone=${bondsMeshGone}`);
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

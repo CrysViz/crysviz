@@ -62,6 +62,16 @@ export function createStyledMaterial(settings = {}) {
   });
 }
 
+/** Set which uAlphaPass an instanced atoms/bonds material draws (0 all /
+ *  1 opaque-only / 2 transparent-only instances) — works before and after
+ *  shader compile. The uniform is declared by the material factories in
+ *  Atoms/BondsFracUpdateModule; pipelines drive it (render/pipeline/). */
+export function setAlphaPass(material, pass) {
+  material.userData.alphaPass = pass;
+  const uniform = material.userData.shader?.uniforms?.uAlphaPass;
+  if (uniform) uniform.value = pass;
+}
+
 // ---- 'hull' outline mode (inverted hull) -------------------------------------
 //
 // A second InstancedMesh per atoms/bonds mesh: same geometry, SHARED
@@ -73,26 +83,29 @@ export function createStyledMaterial(settings = {}) {
 // variant additionally replicates the main atom mesh's per-instance opacity
 // and cut-plane discards (those attributes only exist on that geometry).
 
-let atomsOutlineMaterial = null; // with opacity/cut-plane discards
-let plainOutlineMaterial = null; // comparison atoms + bonds
+let atomsOutlineMaterial = null; // opacity + cut-plane discards (main atoms)
+let bondsOutlineMaterial = null; // opacity discards only (main bonds)
+let plainOutlineMaterial = null; // comparison atoms (no instanceOpacity attribute)
 
-function makeOutlineMaterial(withDiscards, onCompiled) {
+/** @param {{opacityDiscard?: boolean, cutPlanes?: boolean, onCompiled?: (material: any) => void}} [opts] */
+function makeOutlineMaterial({ opacityDiscard = false, cutPlanes = false, onCompiled } = {}) {
   const material = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide });
-  // Three keys custom shader programs by onBeforeCompile.toString(); both
-  // variants share that source text (withDiscards is closed-over, invisible to
-  // toString), so without a distinct key the second variant silently reuses
-  // the first one's program — and the discards program discards everything on
-  // geometry that lacks the instanceOpacity attribute (the bonds).
-  material.customProgramCacheKey = () => `cv-cel-outline-${withDiscards ? 'discards' : 'plain'}`;
+  // Three keys custom shader programs by onBeforeCompile.toString(); the
+  // variants share that source text (the flags are closed-over, invisible to
+  // toString), so without a distinct key a variant silently reuses another's
+  // program — and a discard program discards everything on geometry that
+  // lacks the instanceOpacity attribute (the comparison atoms).
+  material.customProgramCacheKey = () => `cv-cel-outline-${opacityDiscard ? 'o' : ''}${cutPlanes ? 'c' : ''}`;
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uOutlineWidth = { value: general.celHullWidth };
 
     shader.vertexShader = `
       uniform float uOutlineWidth;
-      ${withDiscards ? `
+      ${opacityDiscard ? `
       attribute float instanceOpacity;
+      varying float vInstanceOpacity;` : ''}
+      ${cutPlanes ? `
       attribute float instanceCutPlaneImmune;
-      varying float vInstanceOpacity;
       varying float vInstanceCutPlaneImmune;
       varying vec3 vInstanceWorldCenter;` : ''}
     ` + shader.vertexShader;
@@ -106,10 +119,11 @@ function makeOutlineMaterial(withDiscards, onCompiled) {
       vec4 outlinePos = vec4( transformed, 1.0 );
       vec3 outlineNrm = normal;
       #ifdef USE_INSTANCING
-        ${withDiscards ? `
+        ${opacityDiscard ? `
+        vInstanceOpacity = instanceOpacity;` : ''}
+        ${cutPlanes ? `
         vec4 outlineWorldCenter = modelMatrix * instanceMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );
         vInstanceWorldCenter = outlineWorldCenter.xyz;
-        vInstanceOpacity = instanceOpacity;
         vInstanceCutPlaneImmune = instanceCutPlaneImmune;` : ''}
         outlinePos = instanceMatrix * outlinePos;
         outlineNrm = mat3( instanceMatrix ) * outlineNrm;
@@ -121,21 +135,26 @@ function makeOutlineMaterial(withDiscards, onCompiled) {
       `
     );
 
-    if (withDiscards) {
+    if (opacityDiscard || cutPlanes) {
       shader.fragmentShader = `
+        ${opacityDiscard ? 'varying float vInstanceOpacity;' : ''}
+        ${cutPlanes ? `
         uniform int uCutPlaneCount;
         uniform vec4 uCutPlanes[${MAX_CUT_PLANES}];
         uniform float uCutPlaneMaskSide[${MAX_CUT_PLANES}];
-        varying float vInstanceOpacity;
         varying float vInstanceCutPlaneImmune;
-        varying vec3 vInstanceWorldCenter;
+        varying vec3 vInstanceWorldCenter;` : ''}
       ` + shader.fragmentShader;
 
       shader.fragmentShader = shader.fragmentShader.replace(
         'vec4 diffuseColor = vec4( diffuse, opacity );',
         `
         vec4 diffuseColor = vec4( diffuse, opacity );
-        if (vInstanceOpacity < 0.05) discard;
+        ${opacityDiscard ? `
+        // Transparent instances get no hull outline: the opaque inverted-hull
+        // shell would otherwise black out everything behind them.
+        if (vInstanceOpacity < 0.999) discard;` : ''}
+        ${cutPlanes ? `
         if (vInstanceCutPlaneImmune < 0.5) {
           for (int i = 0; i < ${MAX_CUT_PLANES}; i++) {
             if (i >= uCutPlaneCount) break;
@@ -145,17 +164,19 @@ function makeOutlineMaterial(withDiscards, onCompiled) {
               discard;
             }
           }
-        }
+        }` : ''}
         `
       );
 
-      shader.uniforms.uCutPlaneCount = { value: 0 };
-      shader.uniforms.uCutPlanes = {
-        value: Array.from({ length: MAX_CUT_PLANES }, () => new THREE.Vector4(0, 0, 0, 0)),
-      };
-      shader.uniforms.uCutPlaneMaskSide = {
-        value: new Float32Array(MAX_CUT_PLANES),
-      };
+      if (cutPlanes) {
+        shader.uniforms.uCutPlaneCount = { value: 0 };
+        shader.uniforms.uCutPlanes = {
+          value: Array.from({ length: MAX_CUT_PLANES }, () => new THREE.Vector4(0, 0, 0, 0)),
+        };
+        shader.uniforms.uCutPlaneMaskSide = {
+          value: new Float32Array(MAX_CUT_PLANES),
+        };
+      }
     }
 
     material.userData.shader = shader;
@@ -172,22 +193,25 @@ function makeOutlineMaterial(withDiscards, onCompiled) {
  * that honours per-instance opacity + cut planes; `onCompiled` runs once that
  * variant's shader exists (used to seed the cut-plane uniforms).
  * @param {any} mesh
- * @param {{cutPlanes?: boolean, onCompiled?: (material: any) => void}} [opts]
+ * @param {{cutPlanes?: boolean, opacityDiscard?: boolean, onCompiled?: (material: any) => void}} [opts]
  */
-export function addCelOutline(mesh, { cutPlanes = false, onCompiled } = {}) {
+export function addCelOutline(mesh, { cutPlanes = false, opacityDiscard = false, onCompiled } = {}) {
   let material;
   if (cutPlanes) {
-    if (!atomsOutlineMaterial) atomsOutlineMaterial = makeOutlineMaterial(true, onCompiled);
+    if (!atomsOutlineMaterial) atomsOutlineMaterial = makeOutlineMaterial({ opacityDiscard: true, cutPlanes: true, onCompiled });
     material = atomsOutlineMaterial;
+  } else if (opacityDiscard) {
+    if (!bondsOutlineMaterial) bondsOutlineMaterial = makeOutlineMaterial({ opacityDiscard: true });
+    material = bondsOutlineMaterial;
   } else {
-    if (!plainOutlineMaterial) plainOutlineMaterial = makeOutlineMaterial(false);
+    if (!plainOutlineMaterial) plainOutlineMaterial = makeOutlineMaterial({});
     material = plainOutlineMaterial;
   }
   const outline = new THREE.InstancedMesh(mesh.geometry, material, mesh.count);
   outline.instanceMatrix = mesh.instanceMatrix; // shared — follows all updates
   outline.raycast = () => {}; // never intercept picking
   outline.frustumCulled = mesh.frustumCulled;
-  outline.visible = general.celHullWidth > 0;
+  outline.visible = general.celHullWidth > 0 && outline.userData.opacitySuppressed !== true;
   outline.name = 'celOutline';
   mesh.userData.celOutline = outline;
   mesh.add(outline);
@@ -250,22 +274,37 @@ export function addCelPolyOutline(mesh, center) {
 
   const outline = new THREE.Mesh(mesh.geometry, polyOutlineMaterial);
   outline.raycast = () => {}; // never intercept picking
-  outline.visible = general.celHullPolyWidth > 0;
+  // Transparent polyhedra get no hull outline (the opaque shell would black
+  // out everything behind them); alpha edits re-sync via updatePolyhedraColors.
+  outline.visible = general.celHullPolyWidth > 0 && (mesh.material?.opacity ?? 1) >= 0.999;
   outline.name = 'celOutline';
   mesh.add(outline);
   return outline;
 }
 
+/** Whole-mesh transparency (the opacity sliders) suppresses a mesh's cel hull
+ *  outline child — transparent objects get no outlines (the opaque shell
+ *  would black out everything behind them). Called from the atoms/bonds/
+ *  comparison transparency syncs, which know the base opacity. */
+export function syncCelHullOpacitySuppression(mesh, baseOpacity) {
+  const outline = mesh?.userData?.celOutline;
+  if (!outline) return;
+  outline.userData.opacitySuppressed = baseOpacity < 0.999;
+  outline.visible = general.celHullWidth > 0 && !outline.userData.opacitySuppressed;
+}
+
 /** Live-update the hull outline width (atoms/bonds); 0 hides those hulls. */
 export function setCelHullWidth(width) {
   general.celHullWidth = width;
-  for (const material of [atomsOutlineMaterial, plainOutlineMaterial]) {
+  for (const material of [atomsOutlineMaterial, bondsOutlineMaterial, plainOutlineMaterial]) {
     const shader = material?.userData?.shader;
     if (shader) shader.uniforms.uOutlineWidth.value = width;
   }
   for (const key of ['atomsMesh', 'secondAtomsMesh', 'bondsMesh', 'secondBondsMesh']) {
     const outline = groups[key]?.userData?.celOutline;
-    if (outline) outline.visible = width > 0;
+    // opacitySuppressed: whole-mesh transparency (opacity sliders) drops the
+    // hull — transparent objects get no outlines (see makeOutlineMaterial).
+    if (outline) outline.visible = width > 0 && outline.userData.opacitySuppressed !== true;
   }
 }
 
@@ -276,7 +315,11 @@ export function setCelHullPolyWidth(width) {
   if (shader) shader.uniforms.uOutlineWidth.value = width;
   if (groups.polyhedraGroup) {
     groups.polyhedraGroup.traverse((obj) => {
-      if (obj.name === 'celOutline') obj.visible = width > 0;
+      // Transparent polyhedra get no hull outline: the opaque inverted-hull
+      // shell would black out everything behind them.
+      if (obj.name === 'celOutline') {
+        obj.visible = width > 0 && (obj.parent?.material?.opacity ?? 1) >= 0.999;
+      }
     });
   }
 }

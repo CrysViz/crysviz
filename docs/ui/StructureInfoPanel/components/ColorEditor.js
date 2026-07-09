@@ -4,10 +4,11 @@ import { clampOpacity, clampRadiusScale } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom } from '../../../render/AtomsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
-import { updatePolyhedraColors } from '../../../render/index.js';
+import { updatePolyhedraColors, scheduleBondRebuild } from '../../../render/index.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { bondLengthToColor } from '../../ColorPanel.js';
+import { createMaterialEditor } from './MaterialEditor.js';
 
 // Helper function to get the current color for an atom based on the active mode
 
@@ -130,9 +131,21 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
   sizeRow.appendChild(sizeSlider);
   sizeRow.appendChild(sizeValue);
 
+  // Per-species ray/path-tracing material (structure.atomMaterials[el]).
+  const materialEditor = createMaterialEditor(
+    () => fileBrowser.selectedStructure?.atomMaterials?.[el],
+    (material) => {
+      const structure = fileBrowser.selectedStructure;
+      if (!structure) return;
+      structure.atomMaterials = structure.atomMaterials ?? {};
+      if (material) structure.atomMaterials[el] = material;
+      else delete structure.atomMaterials[el];
+    });
+
   editor.appendChild(topRow);
   editor.appendChild(alphaRow);
   editor.appendChild(sizeRow);
+  editor.appendChild(materialEditor);
   editor.appendChild(buttonRow);
 
   function textColorForBg(cssHex) {
@@ -182,6 +195,8 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     });
     groups.atomsMesh.instanceMatrix.needsUpdate = true;
     updateMeasurementMarkers();
+    // Bond visible lengths bake the atom radii in — refresh once settled.
+    scheduleBondRebuild();
   }
 
   sizeSlider.oninput = (e) => applyElementRadiusScale(/** @type {any} */ (e.target).value);
@@ -235,6 +250,13 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
       updateSingleAtomOpacity(imageIndex, atom.getOpacity());
     });
   });
+
+  // Reset also clears the per-species ray/path-tracing material.
+  if (fileBrowser.selectedStructure?.atomMaterials) {
+    delete fileBrowser.selectedStructure.atomMaterials[el];
+    const sel = materialEditor.querySelector('.material-type-select');
+    if (sel) { sel.value = 'standard'; sel.dispatchEvent(new Event('change')); }
+  }
 
   updatePieDotCallback();
   applyElementOpacity(1);

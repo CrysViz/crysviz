@@ -16,6 +16,10 @@ import { voronoiNeighbours } from '../render/VoronoiNeighbours.js'
 import { atomicRadii } from '../defaults/radii_defaults.js'
 import { electronegativity } from '../defaults/electronegativity_defaults.js'
 import { colorHexToCss } from '../utils/ColorModule.js'
+import { applyTransparency } from '../utils/TransparencyPolicy.js'
+import { LineSegments2 } from '../external/three/LineSegments2.js'
+import { LineSegmentsGeometry } from '../external/three/LineSegmentsGeometry.js'
+import { LineMaterial } from '../external/three/LineMaterial.js'
 import { computePolyhedraWasm } from '../compiled/polyhedraWasm.js'
 import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedraWorkerPool.js'
 import { rebuildAtoms } from '../render/AtomsFracUpdateModule.js'
@@ -49,15 +53,13 @@ function clearPolyhedraGroup() {
 
 // ---------- STYLE (render) ----------
 const FACE_OPACITY = 0.50;
-const EDGE_OPACITY = Math.min(1, FACE_OPACITY + 0.35);
+const EDGE_OPACITY = 1;
 const FACE_FALLBACK_COLOR = 0x00aaff;
-const EDGE_COLOR = 0x006c99;
+const EDGE_COLOR = 0x000000;
 const EDGE_ANGLE = 18;
 const DOUBLE_SIDE = true;
-const DEPTH_WRITE = false;
-const POLY_OFFSET = true;
-const POLY_OFFSET_FACTOR = 1;
-const POLY_OFFSET_UNITS = 1;
+// Transparency-related face flags (depthWrite, polygonOffset) moved to the
+// rendering pipeline policy: 'polyhedraFace' in render/pipeline/ForwardPipeline.js.
 
 // ---------- BEHAVIOR (compute) ----------
 // Cages (uncentered): **includes N = 20 dodecahedra**
@@ -1126,16 +1128,12 @@ export function renderPolyhedra(structure) {
       structure, poly.key, poly.catKey, poly.type, poly.centerIndex, poly.colorElem);
     const mat = new THREE.MeshStandardMaterial({
       color: style.color,
-      transparent: true,
       opacity: style.opacity,
       metalness: 0.0,
       roughness: 1.0,
       side: DOUBLE_SIDE ? THREE.DoubleSide : THREE.FrontSide,
-      depthWrite: DEPTH_WRITE,
-      polygonOffset: POLY_OFFSET,
-      polygonOffsetFactor: POLY_OFFSET ? POLY_OFFSET_FACTOR : 0,
-      polygonOffsetUnits: POLY_OFFSET ? POLY_OFFSET_UNITS : 0,
     });
+    applyTransparency(mat, { kind: 'polyhedraFace', opacity: style.opacity });
     const mesh = new THREE.Mesh(geom, mat);
     mesh.visible = style.visible; // category-level show/hide
     mesh.userData = {
@@ -1154,11 +1152,33 @@ export function renderPolyhedra(structure) {
 
     // Per-polyhedron edge material so edge color/alpha are styleable via the
     // same store precedence as the faces (disposeGroup disposes it with the rest).
+    // Edges as "fat lines" (LineSegments2) so their thickness is adjustable
+    // (plain LineSegments linewidth is capped at 1px in WebGL). WORLD units
+    // (LineMaterial.worldUnits) so the edges scale with the structure when
+    // zooming, instead of staying N pixels wide (which read as THICKER edges
+    // when zoomed out). polyEdgeWidth 1 = the unit-cell line thickness
+    // (0.03 A diameter), matching the tracers' edge cylinders (0.015 radius).
     const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
-    const edgeLines = new THREE.LineSegments(egeom, new THREE.LineBasicMaterial({
-      color: style.edgeColor, transparent: true, opacity: style.edgeOpacity,
-    }));
+    const edgeSegments = Array.from(/** @type {any} */ (egeom.attributes.position).array);
+    const edgeGeom = new LineSegmentsGeometry().setPositions(edgeSegments);
+    egeom.dispose();
+    const edgeMat = new LineMaterial({
+      color: style.edgeColor, opacity: style.edgeOpacity,
+      linewidth: 0.03 * (general.polyEdgeWidth ?? 1),
+      worldUnits: true,
+    });
+    if (app.renderer) {
+      const size = app.renderer.getSize(new THREE.Vector2());
+      edgeMat.resolution.set(size.x, size.y);
+    }
+    applyTransparency(edgeMat, { kind: 'polyhedraEdge', opacity: style.edgeOpacity });
+    const edgeLines = new LineSegments2(edgeGeom, edgeMat);
+    edgeLines.raycast = () => {}; // never intercept picking
     edgeLines.userData.type = 'polyhedron-edges';
+    // flat [x1,y1,z1,x2,y2,z2,...] world segments — the ray/path-tracing
+    // SceneEncoder re-encodes the edges as thin cylinders from these
+    edgeLines.userData.segments = edgeSegments;
+    edgeLines.visible = (general.polyEdgeWidth ?? 1) > 0; // width 0 = no edges
     mesh.add(edgeLines);
 
     const depthProxy = new THREE.Mesh(geom, sharedDepthProxyMat);
@@ -1196,12 +1216,33 @@ export function updatePolyhedraColors() {
       structure, ud.key, ud.catKey, ud.mode, ud.centerSrcIndex, ud.colorElem);
     mesh.material.color.set(style.color);
     mesh.material.opacity = style.opacity;
+    applyTransparency(mesh.material, { kind: 'polyhedraFace', opacity: style.opacity, mesh });
     mesh.visible = style.visible;
     const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
     if (edge?.material) {
       edge.material.color.set(style.edgeColor);
       edge.material.opacity = style.edgeOpacity;
+      applyTransparency(edge.material, { kind: 'polyhedraEdge', opacity: style.edgeOpacity, mesh: edge });
     }
+    // Cel hull outlines are suppressed on transparent objects (the opaque
+    // inverted-hull shell would black out the background behind a transparent
+    // polyhedron) — keep the shell's visibility in sync with alpha edits.
+    const hull = mesh.children.find((c) => c.name === 'celOutline');
+    if (hull) hull.visible = general.celHullPolyWidth > 0 && style.opacity >= 0.999;
+  }
+}
+
+/** Live-update the polyhedra edge thickness (world units: width 1 = the
+ *  unit-cell line thickness; 0 hides the edges entirely). */
+export function setPolyEdgeWidth(width) {
+  general.polyEdgeWidth = width;
+  if (groups.polyhedraGroup) {
+    groups.polyhedraGroup.traverse((obj) => {
+      if (obj.userData?.type === 'polyhedron-edges' && obj.material) {
+        obj.material.linewidth = Math.max(0.03 * width, 1e-5); // world units
+        obj.visible = width > 0;
+      }
+    });
   }
 }
 
@@ -1224,6 +1265,14 @@ export async function updatePolyhedra() {
   // pile of superseded compute jobs.
   if (polyhedraBusy) { polyhedraDirty = true; return; }
   polyhedraBusy = true;
+  // "Complete Polyhedra" is a FIXED-POINT iteration: the completing atoms are
+  // appended to the periodic `wrapped` set, which is exactly where the next
+  // compute draws its polyhedron centers/candidates from — so appending them
+  // can reveal MORE polyhedra (e.g. cages around boundary-image centers).
+  // Interactive use converges incidentally (every edit re-triggers), but a
+  // session restore runs only one pass and came up short. Budget-capped so a
+  // pathological oscillation can't loop forever.
+  let completingPasses = 0;
   try {
     do {
       polyhedraDirty = false;
@@ -1264,9 +1313,11 @@ export async function updatePolyhedra() {
 
       // "Complete Polyhedra": append the out-of-cell vertex atoms to the displayed set so
       // every polyhedron has an atom (with bonds) at each vertex. Only re-renders atoms/bonds
-      // when the completing set actually changes (see syncCompletingAtoms).
+      // when the completing set actually changes (see syncCompletingAtoms). When it DID
+      // change, the compute inputs changed too — loop for the fixed point (see above).
       if (general.completePolyhedra) {
-        syncCompletingAtoms(structure, model);
+        const completingChanged = syncCompletingAtoms(structure, model);
+        if (completingChanged && ++completingPasses <= 4) polyhedraDirty = true;
       }
 
       // Build into a fresh group and swap atomically, keeping the previous polyhedra on
@@ -1301,6 +1352,8 @@ export async function updatePolyhedra() {
  * @param {any} structure
  * @param {Polyhedra} model
  */
+/** @returns {boolean} whether the displayed/wrapped atom set changed (the
+ *  caller then recomputes — the wrapped set feeds back into the compute). */
 function syncCompletingAtoms(structure, model) {
   const positions = structure.atoms.map(a => a.position); // fractional
   const elements = [...structure.elements];
@@ -1316,7 +1369,7 @@ function syncCompletingAtoms(structure, model) {
   const hashBefore = structure.periodic?.hash;
   runPeriodicWrapped(structure.periodic, positions, elements, lattice);
   const wrapped = structure.periodic?.wrapped;
-  if (!wrapped) return;
+  if (!wrapped) return false;
   // Did the settle rebuild `wrapped` to base-only? If so the atom/bond meshes still show the
   // PREVIOUS set (the bond-length edit used reRenderAtoms:false), so the sig-based skip below
   // is unsafe — we must refresh the meshes even if the new completing set is empty/unchanged.
@@ -1373,7 +1426,7 @@ function syncCompletingAtoms(structure, model) {
   // base WAS rebuilt, the meshes are stale relative to `wrapped`, so we must refresh even if
   // the new completing set is empty (otherwise old completing atoms linger — the bug when
   // bond distance was decreased).
-  if (!baseRebuilt && sig === (wrapped.completingSig ?? '')) return;
+  if (!baseRebuilt && sig === (wrapped.completingSig ?? '')) return false;
 
   // Rebuild wrapped = base + completing (truncate any previous completing first).
   wrapped.elements.length = baseCount;
@@ -1392,4 +1445,5 @@ function syncCompletingAtoms(structure, model) {
   // rebuildAtoms()'s runPeriodicWrapped reuses this mutated `wrapped` (no rebuild back to base).
   rebuildAtoms();
   rebuildBonds();
+  return true;
 }

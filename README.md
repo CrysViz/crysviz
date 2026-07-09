@@ -90,3 +90,38 @@ Third-Party Libraries and Attribution:
    - The weights can be found in docs/external/nep_wasm/
    - See docs/external/nep_wasm/LICENSE-GPUMD for the full license text.
 
+5. three-wboit
+   - Repository: https://github.com/stevinz/three-wboit
+   - License: MIT
+   - Copyright: Stephens Nunnally (@stevinz); portions mrdoob and three.js authors, Alexander Rose
+   - See docs/external/three-wboit/LICENSE for the full license text.
+   - Used by the optional "Weighted blended (WBOIT)" rendering pipeline.
+   - License and code can be found in docs/external/three-wboit/
+
+6. three-depthpeeling-demo
+   - Repository: https://github.com/gkjohnson/three-depthpeeling-demo
+   - License: MIT
+   - Copyright: Garrett Johnson
+   - See docs/external/three-depthpeeling/LICENSE for the full license text.
+   - Adapted (not verbatim) for the optional "Depth peeling" rendering pipeline;
+     see docs/external/three-depthpeeling/README.md for the divergences.
+   - License and code can be found in docs/external/three-depthpeeling/
+
+7. THREE.js-RayTracing-Renderer
+   - Repository: https://github.com/erichlof/THREE.js-RayTracing-Renderer
+   - License: CC0 1.0 (public domain; attribution given as a courtesy)
+   - Author: Erich Loftis (@erichlof)
+   - See docs/external/three-raytracing/LICENSE for the full license text.
+   - GLSL chunk library adapted for the optional "Ray tracing" rendering
+     pipeline; see docs/external/three-raytracing/README.md for the adaptations.
+   - License and code can be found in docs/external/three-raytracing/
+
+8. THREE.js-PathTracing-Renderer
+   - Repository: https://github.com/erichlof/THREE.js-PathTracing-Renderer
+   - License: CC0 1.0 (public domain; attribution given as a courtesy)
+   - Author: Erich Loftis (@erichlof)
+   - See docs/external/three-pathtracing/LICENSE for the full license text.
+   - GLSL chunk library adapted for the optional "Path tracing" rendering
+     pipeline; see docs/external/three-pathtracing/README.md for the adaptations.
+   - License and code can be found in docs/external/three-pathtracing/
+

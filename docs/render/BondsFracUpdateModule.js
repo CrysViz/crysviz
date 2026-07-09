@@ -5,8 +5,10 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
-import {createStyledMaterial, addCelOutline} from './MaterialStyles.js'
+import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression} from './MaterialStyles.js'
+import {getAtomImageStyle} from './AtomsFracUpdateModule.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
+import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
 
 
@@ -52,6 +54,14 @@ export function initBondsLengths(){
 
 export function disposeBondsMesh(clearBondData = false) {
   if (groups.bondsMesh) {
+    // A pipeline-owned transparent-instance overlay (userData.transparentOverlay)
+    // goes down with the mesh — same handling as rebuildAtoms.
+    const overlay = groups.bondsMesh.userData.transparentOverlay;
+    if (overlay) {
+      overlay.parent?.remove(overlay);
+      if (overlay.geometry !== groups.bondsMesh.geometry) overlay.geometry.dispose();
+      overlay.material.dispose();
+    }
     groups.bondsMesh.geometry.dispose();
     groups.bondsMesh.material.dispose();
     app.scene.remove(groups.bondsMesh);
@@ -93,6 +103,20 @@ export function rebuildBonds(opacity=1.0) {
   console.time("bond:refreshHistogram");
   refreshHistogram(Object.values(bondLengths), Object.keys(bondLengths));
   console.timeEnd("bond:refreshHistogram");
+}
+
+// Debounced bond-geometry refresh: anything that changes RENDERED atom radii
+// (the global Atom Size slider, per-species/per-atom/per-copy Size edits)
+// invalidates the clipped bond lengths (Bond.r1/r2 bake the radii in).
+// Cheap live feedback stays with the caller; the heavier rebuild runs once
+// the edits settle.
+let bondRebuildTimer = null;
+export function scheduleBondRebuild(delayMs = 200) {
+  if (bondRebuildTimer) clearTimeout(bondRebuildTimer);
+  bondRebuildTimer = setTimeout(() => {
+    bondRebuildTimer = null;
+    rebuildBonds(general.mainOpacity ?? 1);
+  }, delayMs);
 }
 
 export function getBondCutoff(elem1, elem2) {
@@ -307,6 +331,11 @@ export function buildBondObjects(structure){
   const _tPairs = performance.now();
 
   // ---- Build Bond objects from the pairs (colour / id logic; O(bonds)) ----
+  // The clipped bond geometry must meet each endpoint at its RENDERED radius:
+  // per-copy Size overrides win over the source atom's radiusScale.
+  const endpointScale = (imageIndex, srcIndex) =>
+    getAtomImageStyle(structure, imageIndex)?.radiusScale
+      ?? structure.atoms?.[srcIndex]?.getRadiusScale?.() ?? 1;
   for (let k = 0; k < pairI.length; k++) {
     const i = pairI[k], j = pairJ[k];
     const pi = wrappedCart[i], pj = wrappedCart[j];
@@ -317,7 +346,8 @@ export function buildBondObjects(structure){
       positions: [[pi[0], pi[1], pi[2]], [pj[0], pj[1], pj[2]]],
       uuid: generateID([ei, ej]),
       srcIndices: [wrappedSrcIndex[i], wrappedSrcIndex[j]],
-      indices: [i, j]
+      indices: [i, j],
+      radiusScales: [endpointScale(i, wrappedSrcIndex[i]), endpointScale(j, wrappedSrcIndex[j])],
     });
 
     // Set bond colors based on current color mode
@@ -438,15 +468,13 @@ export function buildBondObjects(structure){
     bondLengths[key].push(bond.dist);
   }
 }
-// Shared bonds InstancedMesh setup (geometry + material + emissive/UUID shader +
-// per-half instance attributes), 2 halves per bond. Identical for the main and
-// comparison ("second") bond meshes; the caller fills the instances in its own
-// loop and stores the mesh at groups[...]. Returns the InstancedMesh.
-export function createBondsMesh(bondCount) {
-  // Geometry: unit cylinder along +Y
-  const geometry = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true);
-
-  // Material: copy atom material logic
+// Material for the bond InstancedMeshes and (in the WBOIT pipeline) their
+// transparent-instance overlay pass. Carries the same generic uAlphaPass
+// capability as createAtomsMaterial (0 = draw all — the default every
+// pipeline except WBOIT leaves untouched, 1 = opaque instances only,
+// 2 = transparent instances only); pipelines drive it via setAlphaPass
+// (render/MaterialStyles.js).
+export function createBondsMaterial() {
   const bondVisSettings = getBondVisSettings()
   const material = createStyledMaterial({
     ...bondVisSettings,
@@ -481,6 +509,7 @@ export function createBondsMesh(bondCount) {
     );
 
     shader.fragmentShader = `
+      uniform int uAlphaPass;
       varying vec3 vInstanceEmissive;
       varying float vInstanceEmissiveIntensity;
       varying vec4 vInstanceUUID;
@@ -490,7 +519,11 @@ export function createBondsMesh(bondCount) {
 
     shader.fragmentShader = shader.fragmentShader.replace(
       'vec4 diffuseColor = vec4( diffuse, opacity );',
-      'vec4 diffuseColor = vec4( diffuse, opacity * vInstanceOpacity );'
+      `
+      vec4 diffuseColor = vec4( diffuse, opacity * vInstanceOpacity );
+      if (uAlphaPass == 1 && diffuseColor.a < 0.999) discard;
+      if (uAlphaPass == 2 && diffuseColor.a >= 0.999) discard;
+      `
     );
 
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -499,7 +532,23 @@ export function createBondsMesh(bondCount) {
         totalEmissiveRadiance += vInstanceEmissive * vInstanceEmissiveIntensity;
       `
     );
+
+    shader.uniforms.uAlphaPass = { value: material.userData.alphaPass ?? 0 };
+    material.userData.shader = shader;
   };
+  return material;
+}
+
+// Shared bonds InstancedMesh setup (geometry + material + emissive/UUID shader +
+// per-half instance attributes), 2 halves per bond. Identical for the main and
+// comparison ("second") bond meshes; the caller fills the instances in its own
+// loop and stores the mesh at groups[...]. Returns the InstancedMesh.
+export function createBondsMesh(bondCount) {
+  // Geometry: unit cylinder along +Y
+  const geometry = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true);
+
+  // Material: copy atom material logic
+  const material = createBondsMaterial();
 
   // Instanced mesh: 2 halves per bond
   const mesh = new THREE.InstancedMesh(geometry, material, bondCount * 2);
@@ -535,8 +584,9 @@ export function createBondsMesh(bondCount) {
   mesh.layers.enable(CEL_OUTLINE_LAYER);
 
   // Hull mode: culled bonds are zero-scaled, which the hull follows via the
-  // shared instanceMatrix — no discard variant needed.
-  if (general.renderStyle === 'cel' && general.celOutlineMode === 'hull') addCelOutline(mesh);
+  // shared instanceMatrix. The opacity-discard variant drops the hull on
+  // transparent bond halves (transparent objects get no outlines).
+  if (general.renderStyle === 'cel' && general.celOutlineMode === 'hull') addCelOutline(mesh, { opacityDiscard: true });
 
   return mesh;
 }
@@ -668,9 +718,11 @@ function syncBondMaterialTransparency(baseOpacity = 1.0) {
   const mesh = groups.bondsMesh;
   if (!mesh?.material) return;
   const hasTransparentInstances = fileBrowser.selectedStructure?.bonds?.some((bond) => (bond.alpha ?? 1) < 0.999) ?? false;
-  mesh.material.transparent = baseOpacity < 0.999 || hasTransparentInstances;
-  mesh.material.depthWrite = true;
-  mesh.material.needsUpdate = true;
+  const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances;
+  applyTransparency(mesh.material, {
+    kind: 'bonds', opacity: baseOpacity, needsTransparency, perInstanceOpacity: true, mesh,
+  });
+  syncCelHullOpacitySuppression(mesh, baseOpacity);
 }
 
 export function updateSingleBondPosition(index, bond) {

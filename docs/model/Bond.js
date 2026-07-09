@@ -14,6 +14,9 @@ export class Bond {
     uuid = null,
     indices = null,
     srcIndices=null,
+    // per-endpoint atom radius multipliers (per-atom/per-copy Size edits) so
+    // the clipped bond geometry meets the atoms at their RENDERED radii
+    radiusScales = [1, 1],
   } = {}) {
     this.elements = elements;
     const dcolor1 = elements.length > 0 ? (defaultColorMap[elements[0]] || 0x6523b0) : 0x6523b0;
@@ -40,8 +43,11 @@ export class Bond {
 
     // Compute clipped bond geometry
     if (elements.length >= 2 && this.dist !== null) {
-      this.r1 = getAtomRadius(elements[0]) * 0.8; // 0.8 scaling like before
-      this.r2 = getAtomRadius(elements[1]) * 0.8;
+      // 0.8: the bond tip sits 20% inside the rendered atom surface so the
+      // cylinder end never peeks out. The per-endpoint radiusScales keep this
+      // true when atoms are resized per species/atom/copy.
+      this.r1 = getAtomRadius(elements[0]) * (radiusScales?.[0] ?? 1) * 0.8;
+      this.r2 = getAtomRadius(elements[1]) * (radiusScales?.[1] ?? 1) * 0.8;
 
       this.visibleLen = Math.max(this.dist - (this.r1 + this.r2), 0);
       this.halfLen = this.visibleLen * 0.5;

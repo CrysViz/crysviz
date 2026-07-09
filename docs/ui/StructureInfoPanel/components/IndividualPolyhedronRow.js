@@ -4,6 +4,7 @@ import { createColorPicker } from '../../ColorPickerModule.js';
 import { updatePolyhedraColors, resolvePolyhedronStyle } from '../../../render/index.js';
 import { getElementAtomIndices, clampOpacity } from './utils.js';
 import { selectPolyhedronFromRow } from '../../SelectAndHighlightModule.js';
+import { createMaterialEditor } from './MaterialEditor.js';
 
 // Helper: Ensure color is always a valid CSS hex string
 function safeColor(color) {
@@ -215,11 +216,24 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   editorButtonRow.appendChild(resetBtn);
   editorButtonRow.appendChild(applyBtn);
 
+  // Per-polyhedron ray/path-tracing material override (wins over the
+  // category entry); fans out to every linked member's style record.
+  const materialEditor = createMaterialEditor(
+    () => structure.polyhedraUserStyles?.[key]?.material,
+    (material) => {
+      for (const k of memberKeys) {
+        const entry = (structure.polyhedraUserStyles[k] ??= {});
+        if (material) entry.material = material;
+        else delete entry.material;
+      }
+    });
+
   editor.appendChild(picker.element);
   editor.appendChild(alphaRow);
   editor.appendChild(edgeHeader);
   editor.appendChild(edgePicker.element);
   editor.appendChild(edgeAlphaRow);
+  editor.appendChild(materialEditor);
   editor.appendChild(editorButtonRow);
   editor.onclick = (e) => e.stopPropagation();
   row.appendChild(editor);

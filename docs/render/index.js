@@ -18,7 +18,7 @@ export {
 } from './AtomsFracUpdateModule.js';
 
 export {
-  getBondCutoff, updateBonds, rebuildBonds, buildBondObjects,
+  getBondCutoff, updateBonds, rebuildBonds, buildBondObjects, scheduleBondRebuild,
   updateSingleBondDiameter, disposeBondsMesh, updateSingleBondColor,
   updateSingleBondOpacity, bondKey, bondGroupKey,
 } from './BondsFracUpdateModule.js';
@@ -41,7 +41,7 @@ export {
 
 export {
   updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory,
-  resolvePolyhedronStyle, polyhedronGroupKey,
+  resolvePolyhedronStyle, polyhedronGroupKey, setPolyEdgeWidth,
 } from './PolyhedraModule.js';
 
 export {
@@ -56,3 +56,5 @@ export { setupAxisControls } from './cameraAngleControl.js';
 export { setCelHullWidth, setCelHullPolyWidth } from './MaterialStyles.js';
 
 export { captureSceneToPng } from './ImageExportModule.js';
+
+export { registerPipeline, listPipelines, getActivePipeline, setActivePipeline } from './pipeline/index.js';

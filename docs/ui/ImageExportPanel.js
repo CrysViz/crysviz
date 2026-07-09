@@ -186,6 +186,8 @@ export function initImageExportPanel() {
     downloadBtn.disabled = true;
     downloadBtn.textContent = 'Rendering…';
     try {
+      // Tracer pipelines render to full convergence inside captureSceneToPng
+      // (the on-screen progress bar tracks the export accumulation).
       const blob = await captureSceneToPng({
         width, height, margin, transparent: transparentInput.checked,
       });

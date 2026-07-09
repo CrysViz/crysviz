@@ -1,6 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
 import { Lut } from '../external/three/Lut.js';
 import { Field } from './Field.js';
+import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
 // ---------------------------------------------------------------------------
 //  Visualization modes
@@ -568,8 +569,9 @@ export class Plane extends THREE.Group {
     super();
 
     /** The clipped planar surface mesh — first child of this Group. */
+    // renderOrder/blending policy is owned by the rendering pipeline
+    // ('plane' kind in render/pipeline/ForwardPipeline.js).
     this._planeMesh = new THREE.Mesh(geometry, Plane._makeNoneMaterial(clippingPlanes));
-    this._planeMesh.renderOrder = 0; // render after opaque structures to reduce blending artifacts
     this.add(this._planeMesh);
 
     this._resolution     = resolution;
@@ -626,15 +628,13 @@ export class Plane extends THREE.Group {
   static _makeNoneMaterial(clippingPlanes = []) {
     const mat = new THREE.MeshBasicMaterial({
       color:       0x8c8c99,
-      transparent: true,
-      depthWrite: false,
       opacity:     0.70,
-      depthTest: true,
       //alphaHash: true, // helps with sorting issues when multiple planes overlap
       side:        THREE.DoubleSide,
       clippingPlanes: clippingPlanes,
       //clipShadows: true,
     });
+    applyTransparency(mat, { kind: 'plane', opacity: 0.70 });
     return mat;
   }
 
@@ -671,9 +671,9 @@ export class Plane extends THREE.Group {
     const mat = new THREE.LineBasicMaterial({
       color:       0x9933ff,
       linewidth:   2, // note: >1 only works with WebGL2 + LineMaterial addon
-      transparent: true,
       opacity:     0.9,
     });
+    applyTransparency(mat, { kind: 'planeBorder', opacity: 0.9 });
     return new THREE.LineSegments(geom, mat);
   }
 

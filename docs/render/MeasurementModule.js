@@ -4,6 +4,7 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import { CSS2DObject } from '../external/three/CSS2DRenderer.js';
 import { fracToCart } from '../math/index.js';
 import { updateAtoms } from './AtomsFracUpdateModule.js';
+import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
 /** @type {any} */
 let measureLabel = null;
@@ -15,10 +16,9 @@ export function createAtomRings(position, radius, innerColor, outerColor, elemen
   const shellGeometry = new THREE.SphereGeometry(radius * 1.06, 18, 14);
   const shellMaterial = new THREE.MeshBasicMaterial({
     color: innerColor,
-    transparent: true,
     opacity: 0.32,
-    depthWrite: false,
   });
+  applyTransparency(shellMaterial, { kind: 'measureGhost', opacity: 0.32 });
   const shell = new THREE.Mesh(shellGeometry, shellMaterial);
   shellGroup.add(shell);
 
