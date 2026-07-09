@@ -297,7 +297,7 @@ export function registerDefaultPanels() {
       const group = document.getElementById('backendControlGroup');
       if (group) body.appendChild(group);
     },
-    defaults: { docked: true, order: -10, collapsed: false, barCollapsed: true },
+    defaults: { docked: true, order: -10, collapsed: true },
   });
 
   registerPanel({
