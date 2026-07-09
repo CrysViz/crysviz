@@ -512,6 +512,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       if (!isExpanded) populateBondRows(); // build rows lazily on first expand
       bondsContainer.style.display = isExpanded ? 'none' : 'block';
       expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
+      catEditor.style.display = 'none'; // expanding/collapsing closes the category color editor
     }
     expandIcon.onclick = toggleBondList;
     checkboxLabel.onclick = toggleBondList;

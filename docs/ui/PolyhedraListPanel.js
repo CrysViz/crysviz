@@ -380,6 +380,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
       if (!isExpanded) populatePolyhedronRows(); // build rows lazily on first expand
       listContainer.style.display = isExpanded ? 'none' : 'block';
       expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
+      catEditor.style.display = 'none'; // expanding/collapsing closes the category color editor
     }
     expandIcon.onclick = togglePolyList;
     label.onclick = togglePolyList;

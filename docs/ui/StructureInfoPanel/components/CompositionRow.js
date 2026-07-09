@@ -254,6 +254,7 @@ export function createCompositionRow(el, count, total) {
     atomsContainer.style.display = isExpanded ? 'none' : 'block';
     expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
     updatePieDotForRow(); // Update pie dot when expanded/collapsed
+    editor.style.display = 'none'; // expanding/collapsing closes the category color editor
   });
 
   container.appendChild(row);
@@ -435,6 +436,7 @@ export function createWyckoffCompositionRow(el, entries, total) {
     atomsContainer.style.display = isExpanded ? 'none' : 'block';
     expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
     updatePieDotForRow();
+    editor.style.display = 'none'; // expanding/collapsing closes the category color editor
   });
 
   container.appendChild(row);
