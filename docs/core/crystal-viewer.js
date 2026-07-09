@@ -7,7 +7,7 @@
 // .........................................................................................................
 
 import { measurements,app,fileBrowser, general} from '../state/store.js';
-import {defaultPOSCAR4} from '../defaults/structure_defaults.js'
+import {defaultPOSCAR5} from '../defaults/structure_defaults.js'
 
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupStructureInput } from '../ui/StructureInputModule.js';
@@ -304,7 +304,7 @@ async function loadDefaultStructure() {
   }
 
   setStatus('Loading default NaCl structure...');
-  loadStructure(defaultPOSCAR4, 'C3N4', true);
+  loadStructure(defaultPOSCAR5, 'Si', true);
       // Create a new Structure instance
 
 }
