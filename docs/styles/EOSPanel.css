@@ -1,0 +1,174 @@
+/* EOS fitting control panel (docs/ui/EOSPanel.js). Reuses the app's
+   .control-group / toggle_row tokens; only the pieces unique to this panel
+   (drop zones, result table, status lines) are defined here. */
+
+.eos-group-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--muted-fg);
+}
+
+.eos-unit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.eos-unit-row label {
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+
+.eos-unit-row select {
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+
+.eos-pyodide-status {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted-fg);
+}
+
+.eos-drop-zone {
+  border: 2px dashed var(--panel-border);
+  border-radius: 10px;
+  padding: 18px 12px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--muted-fg);
+  font-size: 12.5px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.eos-drop-zone:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.eos-drop-zone.highlight {
+  border-color: var(--highlight-color, #00bcd4);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.eos-drop-zone-ref {
+  padding: 12px;
+}
+
+.eos-primary-actions-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* Reference data is collapsible (<details>/<summary>) — most sessions don't
+   need it, so it starts closed. The summary reuses .eos-group-label's look,
+   just with the native disclosure marker kept for the expand/collapse cue. */
+.eos-collapsible summary.eos-group-label {
+  cursor: pointer;
+  margin-bottom: 0;
+}
+
+.eos-collapsible[open] summary.eos-group-label {
+  margin-bottom: 8px;
+}
+
+.eos-collapsible .eos-drop-zone-ref {
+  margin-top: 8px;
+}
+
+.eos-ref-divisor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+
+.eos-ref-divisor-row input[type="number"] {
+  width: 70px;
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+
+.eos-column-info {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--muted-fg);
+  line-height: 1.5;
+}
+
+.eos-status-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.eos-status-group .eos-pyodide-status {
+  margin-top: 0;
+}
+
+.eos-status {
+  font-size: 12px;
+  color: var(--muted-fg);
+  min-height: 1.2em;
+  margin: 4px 0;
+}
+
+.eos-copy-value {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.eos-copy-value:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.eos-copy-value.eos-copied {
+  background: rgba(46, 204, 113, 0.25);
+  color: #2ecc71;
+}
+
+.eos-result-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+
+.eos-result-table th,
+.eos-result-table td {
+  border: 1px solid var(--panel-border);
+  padding: 5px 8px;
+  text-align: left;
+}
+
+.eos-result-table th {
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 500;
+}
+
+.eos-fit-stats {
+  font-size: 11.5px;
+  color: var(--muted-fg);
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.eos-results h4 {
+  margin: 12px 0 4px 0;
+  font-size: 13px;
+}
+
+.eos-results h4:first-child {
+  margin-top: 0;
+}

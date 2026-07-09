@@ -58,6 +58,7 @@ let revealed = false; // set once a structure is loaded (feature panels unhide)
 let saveTimer = 0;
 let dockOccupies = false; // side panel currently takes layout space
 let lastUiWidth = 0; // last known #ui width (it measures 0 while hidden)
+let rightReservePx = 0; // width reserved on the right (e.g. the EOS split pane)
 
 const hooks = {
   beforeExpand(panel) {
@@ -528,7 +529,21 @@ function derivedFloatPos(panel) {
   if (panel.dockShifted && dockOccupies && typeof pos.left === 'number') {
     pos.left = Math.max(pos.left, lastUiWidth + DOCK_GAP);
   }
+  if (rightReservePx > 0 && typeof pos.right === 'number') {
+    pos.right += rightReservePx;
+  }
   return panel.clampToViewport(pos);
+}
+
+/**
+ * Reserve width on the right edge (e.g. the EOS split pane) so right-anchored
+ * floating windows (Structure info, ...) stay clear of it instead of sliding
+ * underneath. Pure additive offset on top of the panel's inherent floatPos —
+ * never mutates it, so it unwinds exactly when the reservation drops to 0.
+ */
+export function setRightReserve(px) {
+  rightReservePx = Math.max(0, px || 0);
+  updateFloatPlacements();
 }
 
 /**

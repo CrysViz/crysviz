@@ -21,6 +21,8 @@ import { removeHistogramPanel } from '../AnalysisPanels/BondAnalysisPanel.js';
 import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../LatticeSupercellPanel.js';
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
+import { addEOSPanel, removeEOSPanel } from '../EOSPanel.js';
+import { openEOSSplitView, closeEOSSplitView } from '../EOSSplitView.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
 import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
@@ -506,6 +508,21 @@ export function registerDefaultPanels() {
       addCameraPanel(body.id);
     },
     defaults: { docked: true, order: 5, collapsed: false },
+  });
+
+  registerPanel({
+    id: 'eos',
+    title: 'EOS Fitting',
+    lifecycle: 'rebuild',
+    hiddenUntilStructure: true,
+    available() { return true; },
+    buildContent(body) { addEOSPanel(body.id); },
+    onDestroyContent() { removeEOSPanel(); },
+    // The fit plots live in a split view on the right of the 3D scene, not in
+    // this docked window — it opens/closes with this panel's expand state.
+    onExpand() { openEOSSplitView(); },
+    onCollapse() { closeEOSSplitView(); },
+    defaults: { docked: true, order: 92, collapsed: true },
   });
 
   registerPanel({

@@ -18,6 +18,8 @@
     <link rel="stylesheet" href="./styles/toggle_styles.css">
     <link rel="stylesheet" href="./styles/BondAtomColorPanel.css">
     <link rel="stylesheet" href="./styles/info_button_styles.css">
+    <link rel="stylesheet" href="./styles/EOSPanel.css">
+    <link rel="stylesheet" href="./styles/EOSSplitView.css">
     <!-- Active theme override — keep last so theme rules win the cascade. -->
     <link rel="stylesheet" id="theme-active">
 
@@ -215,7 +217,49 @@
 
 
     </div>
-    <div id="view"></div>
+    <div id="viewArea">
+      <div id="view"></div>
+      <div id="eosSplitHandle" class="eos-split-handle" hidden title="Drag to resize"></div>
+      <aside id="eosPlotPane" class="eos-plot-pane" hidden aria-label="EOS fit plots">
+        <div class="eos-plot-pane-header">
+          <span>EOS Fit</span>
+          <button type="button" id="eosPaneCollapseBtn" class="eos-pane-btn" title="Hide plots (keeps a pull-tab)">»</button>
+        </div>
+        <div class="eos-plot-pane-body">
+          <div class="eos-plot-wrapper" id="ev-plot-wrapper">
+            <h4>E vs V</h4>
+            <div id="ev-plot" class="eos-plotly-chart"></div>
+            <button type="button" class="eos-plot-close-btn" data-plot-action="close" title="Close expanded view">✕</button>
+            <div class="eos-plot-actions">
+              <button type="button" class="eos-plot-action-btn" data-plot-action="theme" data-plot-id="ev-plot" title="Toggle light/dark">🌓</button>
+              <button type="button" class="eos-plot-action-btn" data-plot-action="export" data-plot-id="ev-plot" title="Export PNG">📥</button>
+              <button type="button" class="eos-plot-action-btn" data-plot-action="expand" data-plot-id="ev-plot" title="Expand">⛶</button>
+            </div>
+          </div>
+          <div class="eos-plot-wrapper" id="pv-plot-wrapper">
+            <h4>P vs V</h4>
+            <div id="pv-plot" class="eos-plotly-chart"></div>
+            <button type="button" class="eos-plot-close-btn" data-plot-action="close" title="Close expanded view">✕</button>
+            <div class="eos-plot-actions eos-plot-actions-split">
+              <label class="eos-mini-toggle toggle_row toggle_container">
+                <span class="toggle_switch">
+                  <input type="checkbox" id="eosErrorPlotsToggleMini" checked>
+                  <span class="toggle_slider"></span>
+                </span>
+                <span class="toggle_text">Show Error Plots</span>
+              </label>
+              <div class="eos-plot-actions-right">
+                <button type="button" class="eos-plot-action-btn" data-plot-action="theme" data-plot-id="pv-plot" title="Toggle light/dark">🌓</button>
+                <button type="button" class="eos-plot-action-btn" data-plot-action="export" data-plot-id="pv-plot" title="Export PNG">📥</button>
+                <button type="button" class="eos-plot-action-btn" data-plot-action="expand" data-plot-id="pv-plot" title="Expand">⛶</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+      <button type="button" id="eosPlotTab" class="eos-plot-tab" hidden title="Show EOS plots">EOS ▸</button>
+      <div class="eos-plot-overlay" id="eosPlotOverlay"></div>
+    </div>
 
     <div id="aboutOverlay" hidden>
       <div id="aboutModal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle" tabindex="-1">
