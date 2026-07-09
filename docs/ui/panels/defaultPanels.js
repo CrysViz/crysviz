@@ -278,10 +278,10 @@ export function registerDefaultPanels() {
 
   registerPanel({
     id: 'backend',
-    title: 'Backend',
+    title: 'Atomistic',
     lifecycle: 'persistent',
     buildContent(body) {
-      // Adopt the backend mode selector (Viz/Relax/MD), its info button and
+      // Adopt the backend mode selector (Relax/MD), its info button and
       // the calc panel the modes build into. (#uploadSection starts inside
       // this group in the HTML but is adopted by the Files panel.)
       const group = document.getElementById('backendControlGroup');
@@ -296,8 +296,9 @@ export function registerDefaultPanels() {
     lifecycle: 'persistent',
     buildContent(body) {
       // Adopt the statically-defined upload section (file/paste tabs) and the
-      // structure table (moving preserves listeners and ids; the backend mode
-      // switch keeps hiding #uploadSection by id in non-Viz modes).
+      // structure table (moving preserves listeners and ids). The upload
+      // section stays visible in every mode (upload/paste/download are always
+      // available from the Files panel).
       const upload = document.getElementById('uploadSection');
       if (upload) body.appendChild(upload);
       const table = document.getElementById('structureTablePanel');
@@ -305,7 +306,7 @@ export function registerDefaultPanels() {
       // (The Share button lives in #uploadSection's action row and moves with
       // it; see ShareModule.createShareButton.)
     },
-    defaults: { docked: true, order: 0, collapsed: false, barCollapsed: true },
+    defaults: { docked: true, order: -20, collapsed: false, barCollapsed: true },
   });
 
   registerPanel({
