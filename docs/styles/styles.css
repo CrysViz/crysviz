@@ -108,16 +108,20 @@ body.panel-hidden #axesLegend {
 
 .background-dot {
   position: fixed;
-  width: 55px;
-  height: 55px;
+  /* Same size + right-edge as the compact toolbar icons (compactAnchor
+     right:20). --compact-stack-bottom is published by PanelManager's
+     applyCompactPositions(): the dot drops below the compact icon stack when it
+     grows past the dot's default resting spot. */
+  width: 54px;
+  height: 54px;
   border-radius: 50%;
   border: 2px solid rgba(26,26,26,0.8);
   cursor: pointer;
-  top: 120px;
+  top: max(120px, calc(var(--compact-stack-bottom, 0px) + 20px));
   /* --split-reserve is kept in sync with the split view's pane width (see
      ui/panels/SplitView.js) so the dot stays clear of the pane instead of
      sliding underneath it. 0px when the pane is closed. */
-  right: calc(40px + var(--split-reserve, 0px));
+  right: calc(20px + var(--split-reserve, 0px));
   z-index: 999;
 }
 
@@ -1291,12 +1295,16 @@ body > #structureInfoContent {
   max-width: 320px;
 }
 
-/* Camera panel for desktop - horizontal layout */
+/* Camera panel for desktop - horizontal layout. Wrap is unconditional:
+   #cameraTools already caps its content at max-width:320px, so the panel wraps
+   consistently at every window size (a legacy 1320px breakpoint used to gate
+   this, which made the panel change appearance mid-width for no clear reason). */
 #cameraPanel {
   display: flex;
   gap: 8px;
   align-items: center;
   max-height: none;
+  flex-wrap: wrap;
 }
 
 
@@ -1404,8 +1412,10 @@ body > #structureInfoContent {
   min-width: 32px;
 }
 
-/* Separator for camera controls */
+/* Separator for camera controls. Hidden unconditionally (the panel wraps at
+   every width now — see #cameraPanel above). */
 .camera-separator {
+  display: none;
   width: 1px;
   height: 22px;
   background: rgba(255, 255, 255, 0.12);
@@ -1563,21 +1573,10 @@ body {
 
 @media screen and (max-width: 1320px) {
 
-  /* Hide separators on mobile */
-  .camera-separator {
-    display: none;
-  }
-
-  .background-dot {
-  position: fixed;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  cursor: pointer;
-  top: 190px;
-  right: calc(20px + var(--split-reserve, 0px));
-  z-index: 2000;
-}
+  /* .camera-separator, .background-dot and #cameraPanel wrap overrides removed:
+     they now live unconditionally in the base rules (and the dot's position is
+     driven by --compact-stack-bottom), so this legacy breakpoint no longer
+     fights them at in-between widths. */
 
   /* Mobile version*/
   .popup {
@@ -1585,12 +1584,6 @@ body {
     max-height: 300px;
     top: 50px;
     left: 50px
-  }
-
-
-  /* Mobile camera panel - wrap buttons in the narrower window */
-  #cameraPanel {
-    flex-wrap: wrap;
   }
 
   .tool-icon {
@@ -1826,11 +1819,11 @@ body {
 
  .background-dot {
   position: fixed;
-  width: 40px;
-  height: 40px;
+  width: 54px;
+  height: 54px;
   border-radius: 50%;
   cursor: pointer;
-  top: 155px;
+  top: max(155px, calc(var(--compact-stack-bottom, 0px) + 20px));
   right: calc(11px + var(--split-reserve, 0px));
   z-index: 999;
 }

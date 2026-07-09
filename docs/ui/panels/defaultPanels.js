@@ -217,6 +217,9 @@ export function registerDefaultPanels() {
     id: 'measure',
     title: 'Measure',
     lifecycle: 'persistent',
+    compactIcon: './data/icons/tool-icon.svg',
+    compactLabel: 'Toggle Measurement Tools',
+    compactAnchor: { right: 20, top: 20 }, // fixed anchor: top of the compact stack
     buildContent(body) {
       // Reparent the statically-defined toolbar (wired earlier by
       // MeasurementToolbar.js; moving the nodes preserves listeners and ids).
@@ -230,6 +233,9 @@ export function registerDefaultPanels() {
     id: 'view',
     title: 'View',
     lifecycle: 'persistent',
+    compactIcon: './data/icons/camera-icon.svg',
+    compactLabel: 'Toggle Camera Tools',
+    compactStackAfter: 'measure', // dynamic anchor: pinned below Measure's live height
     buildContent(body) {
       const el = document.getElementById('cameraTools');
       if (el) body.appendChild(el);

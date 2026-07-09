@@ -22,6 +22,13 @@ const DOCK_GAP = 10; // gap between the dock's right edge and displaced windows
 // at the edge itself), so a pulled-out panel doesn't immediately re-dock.
 const DRAG_OUT_PX = 24;
 
+// ---- compact round-icon mode --------------------------------------------
+// Extra scene width kept free before the floating toolbars collapse to icons,
+// so they compact slightly before literally touching.
+const COMPACT_SAFETY_GAP_PX = 24;
+// Vertical gap between stacked compact icons / their unfolded toolbars.
+const COMPACT_STACK_GAP_PX = 20;
+
 // Behavior preferences (the drag-into/out-of-dock toggles in Settings). Kept
 // in their own localStorage key, NOT in the versioned panelLayout blob: they
 // must survive both Reset UI (which clears LS_KEY) and layout version bumps.
@@ -68,6 +75,7 @@ const hooks = {
   onToggleDock(panel) {
     if (panel.docked) floatPanel(panel);
     else redockPanel(panel); // restore the dock slot it last occupied
+    refreshCompactFloatingPanels(); // dock occupancy changed
   },
   onClose(panel) {
     if (panel.def.onClose) panel.def.onClose(panel);
@@ -76,6 +84,12 @@ const hooks = {
   onLayoutChange: scheduleSave,
   onResetPanel(panel) {
     applyPanelDefaults(panel);
+    refreshCompactFloatingPanels();
+  },
+  // A compact panel's icon<->toolbar height change moves anything stacked
+  // below it; re-derive the stack the same frame.
+  onCompactResize(panel) {
+    if (panel.compact) applyCompactPositions();
   },
   beginDockReorder,
   wantsDockDrop,
@@ -124,6 +138,7 @@ export function resetAllPanels() {
   const all = [...panels.values()].sort(
     (a, b) => ((a.def.defaults?.order) || 0) - ((b.def.defaults?.order) || 0));
   for (const panel of all) applyPanelDefaults(panel);
+  refreshCompactFloatingPanels();
   saveLayout();
 }
 
@@ -139,7 +154,15 @@ export function initPanelSystem() {
   // position (floatPos) when the dock hides or the browser window grows back.
   dockOccupies = dockOccupiesSpace();
   measureUiWidth();
-  const observer = new MutationObserver(() => updateFloatPlacements());
+  const observer = new MutationObserver(() => {
+    const wasOccupying = dockOccupies;
+    updateFloatPlacements(); // general repositioning: always runs, both directions
+    // Only the dock APPEARING can crowd Measure/View enough to justify auto-
+    // compacting. The dock disappearing only grows the scene; popping the
+    // toolbars back open then reads as an unwanted surprise (hiding the dock is
+    // often done to reduce clutter, e.g. before a screenshot).
+    if (!wasOccupying && dockOccupies) refreshCompactFloatingPanels();
+  });
   observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
   const ui = document.getElementById('ui');
   if (ui) observer.observe(ui, { attributes: true, attributeFilter: ['class'] });
@@ -147,7 +170,12 @@ export function initPanelSystem() {
   window.addEventListener('resize', () => {
     if (resizePending) return;
     resizePending = true;
-    requestAnimationFrame(() => { resizePending = false; updateFloatPlacements(); });
+    // A real window resize is symmetric — recheck compaction both directions.
+    requestAnimationFrame(() => {
+      resizePending = false;
+      updateFloatPlacements();
+      refreshCompactFloatingPanels();
+    });
   });
 }
 
@@ -206,6 +234,9 @@ export function registerPanel(def) {
     if (def.lifecycle === 'rebuild' && !revealed) panel.wantExpanded = true;
     else panel.expand();
   }
+  // Once a compact-capable panel is attached, re-check crowding immediately so
+  // Measure/View compact as soon as both exist, not only on the next resize.
+  if (def.compactIcon) refreshCompactFloatingPanels();
   return panel;
 }
 
@@ -525,6 +556,17 @@ function measureUiWidth() {
  * exactly.
  */
 function derivedFloatPos(panel) {
+  // Compact panels ignore floatPos and dock displacement entirely: they stack
+  // in a fixed corner via compactAnchorFor. Split-view reserve still applies to
+  // a right-anchored one so it clears the pane.
+  if (panel.compact) {
+    const anchor = compactAnchorFor(panel);
+    if (anchor) {
+      const pos = { ...anchor };
+      if (rightReservePx > 0 && typeof pos.right === 'number') pos.right += rightReservePx;
+      return panel.clampToViewport(pos);
+    }
+  }
   const pos = { ...panel.floatPos };
   if (panel.dockShifted && dockOccupies && typeof pos.left === 'number') {
     pos.left = Math.max(pos.left, lastUiWidth + DOCK_GAP);
@@ -544,6 +586,13 @@ function derivedFloatPos(panel) {
 export function setRightReserve(px) {
   rightReservePx = Math.max(0, px || 0);
   updateFloatPlacements();
+  document.documentElement.style.setProperty('--compact-stack-bottom', `${compactStackBottomPx()}px`);
+  // Both directions, unlike the dock-hide observer: dragging the split-view
+  // separator is a live, continuous resize the user is performing right now
+  // (same category as a window resize), not a discrete "hide this UI" toggle.
+  // Gating it one-way would leave Measure/View stuck as icons after the pane
+  // shrinks back until some unrelated resize came along.
+  refreshCompactFloatingPanels();
 }
 
 /**
@@ -566,6 +615,94 @@ function updateFloatPlacements() {
     }
     panel.applyFloatPosition(derivedFloatPos(panel));
   }
+}
+
+// ---- compact round-icon mode ------------------------------------------------
+
+/** The 3D scene element's live rect — the ground truth for available width. */
+function sceneRect() {
+  const view = document.getElementById('view');
+  return view ? view.getBoundingClientRect() : null;
+}
+
+/**
+ * How far a compact-capable panel's expanded toolbar reaches in from the scene
+ * edge it anchors near (right-anchored: from the scene's left edge inward;
+ * left-anchored: from the scene's right edge inward). Measured once while the
+ * panel is expanded and non-compact (its toolbar is fixed-size) and cached.
+ */
+function sceneReach(panel) {
+  if (panel._sceneReach != null) return panel._sceneReach;
+  if (panel.compact) return 0; // not measurable mid-compact; retry once it isn't
+  const scene = sceneRect();
+  const rect = panel.el.getBoundingClientRect();
+  if (!scene || !rect.width) return 0;
+  const reach = typeof panel.floatPos?.left === 'number'
+    ? rect.right - scene.left
+    : scene.right - rect.left;
+  panel._sceneReach = reach;
+  return reach;
+}
+
+/** Scene width the two toolbars need before they crowd each other. */
+function requiredSceneWidthForCompact() {
+  let leftReach = 0;
+  let rightReach = 0;
+  for (const panel of panels.values()) {
+    if (!panel.compactBtn || panel.docked) continue;
+    if (typeof panel.floatPos?.left === 'number') leftReach = Math.max(leftReach, sceneReach(panel));
+    else rightReach = Math.max(rightReach, sceneReach(panel));
+  }
+  return leftReach + rightReach + COMPACT_SAFETY_GAP_PX;
+}
+
+/** Re-evaluate whether the compact-capable floating panels should be icons. */
+function refreshCompactFloatingPanels() {
+  const scene = sceneRect();
+  const available = scene ? scene.width : window.innerWidth;
+  const small = available < requiredSceneWidthForCompact();
+  for (const panel of panels.values()) {
+    if (panel.compactBtn) panel.setCompact(small && !panel.docked);
+  }
+  applyCompactPositions();
+}
+
+/**
+ * Resolve a compact panel's anchor: a fixed {left|right, top} for a stack head
+ * (compactAnchor), or, for a follower (compactStackAfter), the head's anchor
+ * pushed down by the previous panel's LIVE rendered height — recursively, so a
+ * follower sits below whatever the panel above currently is (icon or unfolded).
+ */
+function compactAnchorFor(panel) {
+  if (panel.def.compactAnchor) return panel.def.compactAnchor;
+  const prev = panel.def.compactStackAfter && panels.get(panel.def.compactStackAfter);
+  if (!prev) return null;
+  const prevAnchor = compactAnchorFor(prev);
+  if (!prevAnchor) return null;
+  const prevHeight = prev.el.getBoundingClientRect().height || 0;
+  return { ...prevAnchor, top: (prevAnchor.top || 0) + prevHeight + COMPACT_STACK_GAP_PX };
+}
+
+/** Re-apply every compact panel's stacked position and publish the stack's
+ *  bottom edge (read by the background dot in styles.css). */
+function applyCompactPositions() {
+  for (const panel of panels.values()) {
+    if (panel.compactBtn && !panel.docked) panel.applyFloatPosition(derivedFloatPos(panel));
+  }
+  document.documentElement.style.setProperty('--compact-stack-bottom', `${compactStackBottomPx()}px`);
+}
+
+/** Lowest bottom edge of any CURRENTLY-compact icon/toolbar. Checks
+ *  panel.compact explicitly: Measure is right-anchored in its normal toolbar
+ *  layout too, and reacting to that ordinary height would be wrong. */
+function compactStackBottomPx() {
+  let bottom = 0;
+  for (const panel of panels.values()) {
+    if (!panel.compactBtn || !panel.compact || panel.docked || !panel.el.isConnected) continue;
+    const rect = panel.el.getBoundingClientRect();
+    if (rect.height) bottom = Math.max(bottom, rect.bottom);
+  }
+  return bottom;
 }
 
 /** After any dock mutation, docked panels' sort keys follow their DOM order. */

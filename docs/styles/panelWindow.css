@@ -220,6 +220,77 @@
   backdrop-filter: none;
 }
 
+/* ---- compact round-icon mode ----
+   Ordered AFTER the bar-hide-strip rules above so it wins the equal-specificity
+   tie when both .cv-bar-collapsed and .cv-compact are on the same element (they
+   co-occur: barCollapsed is not cleared when entering compact mode). */
+.cv-panel.cv-compact {
+  /* .cv-floating's min-width:220px would otherwise leave the round icon flush-
+     left inside a much wider invisible box instead of at its anchored edge. */
+  min-width: 0;
+  width: max-content;
+}
+
+.cv-panel.cv-compact > .cv-panel-titlebar {
+  width: 54px;
+  height: 54px;
+  min-height: 54px;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.85);
+  backdrop-filter: none;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+.cv-panel.cv-compact > .cv-panel-titlebar > *:not(.cv-panel-compact-btn) {
+  display: none;
+}
+
+.cv-panel-compact-btn { display: none; }
+
+.cv-panel.cv-compact .cv-panel-compact-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.cv-panel.cv-compact .cv-panel-compact-btn:hover { background: var(--hover-color); }
+
+.cv-panel-compact-btn img {
+  width: 26px;
+  height: 26px;
+  pointer-events: none;
+}
+
+/* Expanded-while-compact: unfold to the icon's LEFT, not below it. The row is
+   reversed so the title bar (first in the DOM) lands on the right. align-items:
+   flex-start (NOT center) keeps the icon pinned exactly where it renders
+   collapsed; only the body recenters against it (via align-self). Centering the
+   row instead makes the icon jitter each time the toolbar toggles. */
+.cv-panel.cv-compact:not(.cv-collapsed) {
+  flex-direction: row-reverse;
+  align-items: flex-start;
+}
+
+.cv-panel.cv-compact:not(.cv-collapsed) > .cv-panel-body {
+  align-self: center;
+  margin-right: 10px;
+  border-radius: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 /* ---- mobile ---- */
 @media (max-width: 1024px) {
   .cv-panel.cv-floating {

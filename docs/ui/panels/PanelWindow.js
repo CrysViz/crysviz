@@ -57,6 +57,12 @@ export class PanelWindow {
      *  @type {{left?: number, right?: number, top?: number, bottom?: number}|null} */
     this.floatPos = null;
     this.sortKey = 0;          // dock ordering key
+    // Compact round-icon mode (only for panels that declare a compactIcon):
+    // when the scene is too narrow for the floating toolbars, the window
+    // shrinks to a 54px icon; clicking the icon unfolds the toolbar again.
+    this.compact = false;
+    this.compactBtn = null;
+    this._sceneReach = null; // cached toolbar reach into the scene (see manager)
 
     const el = document.createElement('section');
     el.className = 'cv-panel cv-docked cv-collapsed';
@@ -114,6 +120,23 @@ export class PanelWindow {
     bar.appendChild(dockBtn);
     bar.appendChild(closeBtn);
 
+    // Round compact-mode icon button (hidden until .cv-compact via CSS). Lives
+    // inside the same title bar; clicking it folds/unfolds the toolbar.
+    let compactBtn = null;
+    if (def.compactIcon) {
+      compactBtn = document.createElement('button');
+      compactBtn.type = 'button';
+      compactBtn.className = 'cv-panel-compact-btn';
+      compactBtn.title = def.compactLabel || def.title || '';
+      const cimg = document.createElement('img');
+      cimg.src = def.compactIcon;
+      cimg.alt = '';
+      compactBtn.appendChild(cimg);
+      compactBtn.addEventListener('click', () => this.toggleCollapsed());
+      bar.appendChild(compactBtn);
+      this.compactBtn = compactBtn;
+    }
+
     const body = document.createElement('div');
     body.className = 'cv-panel-body';
     body.id = this.bodyId;
@@ -140,9 +163,14 @@ export class PanelWindow {
     closeBtn.addEventListener('click', () => this.hooks.onClose(this));
 
     bar.addEventListener('pointerdown', (e) => this._onTitlebarPointerDown(e));
-    // A shrunk title bar is restored by double-clicking the thin strip.
-    bar.addEventListener('dblclick', () => {
-      if (this.barCollapsed) this.expandBar();
+    // A shrunk title bar is restored by double-clicking the thin strip — but
+    // NOT when the double-click landed on the compact round icon (an ordinary
+    // way to toggle the toolbar open/closed twice), which would otherwise flip
+    // barCollapsed off and persist the wrong bar state for the next compact
+    // cycle.
+    bar.addEventListener('dblclick', (e) => {
+      const onCompactBtn = compactBtn && e.target instanceof Node && compactBtn.contains(e.target);
+      if (this.barCollapsed && !onCompactBtn) this.expandBar();
     });
     // Raise a floating window on any press inside it.
     el.addEventListener('pointerdown', () => { if (!this.docked) this.raise(); });
@@ -171,10 +199,27 @@ export class PanelWindow {
     else this.collapse();
   }
 
+  /**
+   * Enter/leave compact round-icon mode. Compacting also collapses the body
+   * (icon-only = collapsed); leaving compact always re-expands it, because the
+   * fold button is hidden while compact (only the round icon shows), so a body
+   * left collapsed from a prior cycle would have no visible control to reopen.
+   */
+  setCompact(v) {
+    if (!this.compactBtn || this.compact === !!v) return;
+    this.compact = !!v;
+    this.el.classList.toggle('cv-compact', this.compact);
+    if (this.compact) this.collapse();
+    else this.expand();
+  }
+
   expand() {
     if (!this.collapsed || !this.available) return;
     if (this.hooks.beforeExpand && this.hooks.beforeExpand(this) === false) return;
-    if (!this.docked) this._anchorForExpansion();
+    // A compact panel's position is owned by the compact-stacking system
+    // (re-applied via onCompactResize below); skip the generic bottom-anchor
+    // safety net, which would fight it.
+    if (!this.docked && !this.compact) this._anchorForExpansion();
     this.collapsed = false;
     this.el.classList.remove('cv-collapsed');
     this.foldBtn.textContent = '▼';
@@ -182,6 +227,7 @@ export class PanelWindow {
     this.foldBtn.setAttribute('aria-expanded', 'true');
     if (this.def.onExpand) this.def.onExpand(this);
     this.hooks.onLayoutChange();
+    this.hooks.onCompactResize?.(this);
   }
 
   collapse() {
@@ -193,6 +239,7 @@ export class PanelWindow {
     this.foldBtn.setAttribute('aria-expanded', 'false');
     if (this.def.onCollapse) this.def.onCollapse(this);
     this.hooks.onLayoutChange();
+    this.hooks.onCompactResize?.(this);
   }
 
   /** Shrink the title bar to a thin strip (dblclick restores). */
@@ -354,6 +401,9 @@ export class PanelWindow {
    * (Anchoring flips back to left/top when the user drags the window.)
    */
   _keepInViewport() {
+    // Compact panels are positioned entirely by the compact-stacking system;
+    // this generic safety net would silently overwrite a correct compactAnchor.
+    if (this.compact) return;
     // Never re-anchor mid-drag: near the right edge the window's shrink-to-fit
     // width changes (firing this observer), and pinning `right` while the drag
     // keeps setting `left` over-constrains the box, stretching it toward its
