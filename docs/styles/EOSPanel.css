@@ -9,19 +9,29 @@
   color: var(--muted-fg);
 }
 
+/* Energy/Pressure/Volume selectors stacked one per row, rather than run
+   together inline — each row's label has a fixed width so the selects line
+   up under one another. */
+.eos-unit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .eos-unit-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
 }
 
 .eos-unit-row label {
+  flex: 0 0 60px;
   font-size: 12px;
   color: var(--muted-fg);
 }
 
 .eos-unit-row select {
+  flex: 1;
   background: var(--input-bg);
   color: var(--panel-fg);
   border: 1px solid var(--panel-border);
@@ -65,20 +75,61 @@
   margin-top: 8px;
 }
 
-/* Reference data is collapsible (<details>/<summary>) — most sessions don't
-   need it, so it starts closed. The summary reuses .eos-group-label's look,
-   just with the native disclosure marker kept for the expand/collapse cue. */
-.eos-collapsible summary.eos-group-label {
+.eos-pane-btn {
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 2px 8px;
   cursor: pointer;
-  margin-bottom: 0;
+  font-size: 13px;
 }
 
-.eos-collapsible[open] summary.eos-group-label {
-  margin-bottom: 8px;
+.eos-pane-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.eos-collapsible .eos-drop-zone-ref {
-  margin-top: 8px;
+/* Reference data is collapsible (<details>/<summary>) — most sessions don't
+   need it, so it starts closed. Styled like the app's own window-panel title
+   bars (panelWindow.css) rather than the browser's native disclosure widget:
+   a solid green header strip with a caret that rotates on expand (same idiom
+   as the Bonds/Polyhedra row carets). */
+.eos-collapsible {
+  padding: 0;
+  overflow: hidden;
+}
+
+.eos-collapsible-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 16px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--highlight-color, #00bcd4);
+}
+
+.eos-collapsible-summary::-webkit-details-marker {
+  display: none;
+}
+
+.eos-collapsible-arrow {
+  display: inline-block;
+  font-size: 11px;
+  color: #ffffff;
+  transition: transform 0.15s ease;
+}
+
+.eos-collapsible[open] .eos-collapsible-arrow {
+  transform: rotate(90deg);
+}
+
+.eos-collapsible-body {
+  padding: 16px;
 }
 
 .eos-ref-divisor-row {
@@ -171,4 +222,69 @@
 
 .eos-results h4:first-child {
   margin-top: 0;
+}
+
+/* EOS-specific split-pane content: the P-V plot's "Show Error Plots" mini
+   toggle. Generic pane chrome (including plot div sizing, via
+   .split-item-body) lives in SplitView.css. */
+
+/* P-V plot only: a mini "Show Error Plots" toggle on the left (empty space
+   there), action buttons kept on the right. */
+.eos-plot-actions-split {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.eos-plot-actions-right {
+  display: flex;
+  gap: 6px;
+}
+
+/* Reuses the app's .toggle_switch/.toggle_slider tokens (toggle_styles.css)
+   rather than a plain checkbox, scaled down to fit this corner. */
+.eos-mini-toggle.toggle_container {
+  margin: 0;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--muted-fg);
+}
+
+.eos-mini-toggle .toggle_switch {
+  width: 26px;
+  height: 14px;
+}
+
+.eos-mini-toggle .toggle_slider::before {
+  width: 10px;
+  height: 10px;
+  left: 2px;
+  top: 2px;
+}
+
+.eos-mini-toggle .toggle_switch input:checked + .toggle_slider::before {
+  transform: translateX(12px);
+}
+
+/* The expanded (fullscreen) view has far more room — scale the mini toggle
+   up to match the bigger action buttons/fonts used there (full size, same
+   as the toggle's other uses in the app). */
+.split-item.expanded .eos-mini-toggle.toggle_container {
+  font-size: 15px;
+  gap: 8px;
+}
+
+.split-item.expanded .eos-mini-toggle .toggle_switch {
+  width: 46px;
+  height: 24px;
+}
+
+.split-item.expanded .eos-mini-toggle .toggle_slider::before {
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+}
+
+.split-item.expanded .eos-mini-toggle .toggle_switch input:checked + .toggle_slider::before {
+  transform: translateX(22px);
 }

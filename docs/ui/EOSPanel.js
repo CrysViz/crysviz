@@ -6,7 +6,7 @@
 import { CONVERSION_FACTORS, detectColumns, parseReferenceData, formatParam } from '../eos/eosMath.js';
 import { fitEOS, fitReferencePV } from '../eos/eosFit.js';
 import { plotEV, plotPV, clearPlot } from '../eos/eosPlots.js';
-import { setRedrawHandler, setPlotVisible } from './EOSSplitView.js';
+import { setRedrawHandler, setPlotVisible, getShowErrorPlots } from './EOSSplitView.js';
 
 const state = {
   originalColumnData: null, // {volumes, energies, pressures, columnInfo} verbatim from file
@@ -19,7 +19,6 @@ const state = {
   referenceFit: null,
   minEnergy: null,
   units: { energy: 'eV', pressure: 'GPa', volume: 'Å³' },
-  showErrorPlots: true,
 };
 
 function toSI(columnData, units) {
@@ -45,28 +44,6 @@ function setPyodideStatus(container, text) {
   if (el) el.textContent = text;
 }
 
-// The "Show Error Plots" toggle lives inside the P-V plot wrapper
-// (docs/index.html, part of the always-present split-view pane), not inside
-// the control-panel body that addEOSPanel rebuilds — wire it once, not on
-// every rebuild.
-let miniErrorToggleWired = false;
-
-function setShowErrorPlots(container, checked) {
-  state.showErrorPlots = checked;
-  const mini = document.getElementById('eosErrorPlotsToggleMini');
-  if (mini) mini.checked = checked;
-  redraw('pv-plot').catch((error) => { setStatus(container, `Error: ${error.message}`); console.error(error); });
-}
-
-function wireMiniErrorToggle(container) {
-  const mini = document.getElementById('eosErrorPlotsToggleMini');
-  if (!mini) return;
-  mini.checked = state.showErrorPlots;
-  if (miniErrorToggleWired) return;
-  miniErrorToggleWired = true;
-  mini.addEventListener('change', (e) => setShowErrorPlots(container, e.target.checked));
-}
-
 function isPlotExpanded(plotId) {
   return !!document.getElementById(`${plotId}-wrapper`)?.classList.contains('expanded');
 }
@@ -83,7 +60,7 @@ async function redraw(plotId) {
       evParams: state.evResult?.params,
       referenceData: state.referenceRaw,
       referenceFit: state.referenceFit,
-      showErrorPlots: state.showErrorPlots,
+      showErrorPlots: getShowErrorPlots(),
     }, isExpanded);
   }
 }
@@ -273,23 +250,29 @@ export function addEOSPanel(target = 'cvPanelBody-eos') {
   container.innerHTML = `
     <div class="control-group eos-units-group">
       <label class="eos-group-label">Input Units (results always shown in Å³ / eV / GPa)</label>
-      <div class="eos-unit-row">
-        <label for="eosEnergyUnits">Energy</label>
-        <select id="eosEnergyUnits">
-          <option value="eV">eV</option>
-          <option value="Ry">Ry</option>
-          <option value="Hartree">Hartree</option>
-        </select>
-        <label for="eosPressureUnits">Pressure</label>
-        <select id="eosPressureUnits">
-          <option value="GPa">GPa</option>
-          <option value="kBar">kBar</option>
-        </select>
-        <label for="eosVolumeUnits">Volume</label>
-        <select id="eosVolumeUnits">
-          <option value="Å³">Å³</option>
-          <option value="Bohr³">Bohr³</option>
-        </select>
+      <div class="eos-unit-list">
+        <div class="eos-unit-row">
+          <label for="eosEnergyUnits">Energy</label>
+          <select id="eosEnergyUnits">
+            <option value="eV">eV</option>
+            <option value="Ry">Ry</option>
+            <option value="Hartree">Hartree</option>
+          </select>
+        </div>
+        <div class="eos-unit-row">
+          <label for="eosPressureUnits">Pressure</label>
+          <select id="eosPressureUnits">
+            <option value="GPa">GPa</option>
+            <option value="kBar">kBar</option>
+          </select>
+        </div>
+        <div class="eos-unit-row">
+          <label for="eosVolumeUnits">Volume</label>
+          <select id="eosVolumeUnits">
+            <option value="Å³">Å³</option>
+            <option value="Bohr³">Bohr³</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -303,13 +286,18 @@ export function addEOSPanel(target = 'cvPanelBody-eos') {
     </div>
 
     <details class="control-group eos-collapsible">
-      <summary class="eos-group-label">Reference data</summary>
-      <div class="eos-drop-zone eos-drop-zone-ref" id="eosRefDropZone">Drop reference file (P V error), or click to select</div>
-      <input type="file" id="eosRefFileInput" accept=".txt,.dat,.csv" hidden>
-      <div class="eos-ref-divisor-row">
-        <label for="eosRefVolumeDivisor">Divide reference volume by</label>
-        <input type="number" id="eosRefVolumeDivisor" value="1" min="0.0001" step="any">
-        <button type="button" id="eosRefResetBtn" class="eos-pane-btn">Reset</button>
+      <summary class="eos-collapsible-summary">
+        <span class="eos-collapsible-arrow">▶</span>
+        Reference data
+      </summary>
+      <div class="eos-collapsible-body">
+        <div class="eos-drop-zone eos-drop-zone-ref" id="eosRefDropZone">Drop reference file (P V error), or click to select</div>
+        <input type="file" id="eosRefFileInput" accept=".txt,.dat,.csv" hidden>
+        <div class="eos-ref-divisor-row">
+          <label for="eosRefVolumeDivisor">Divide reference volume by</label>
+          <input type="number" id="eosRefVolumeDivisor" value="1" min="0.0001" step="any">
+          <button type="button" id="eosRefResetBtn" class="eos-pane-btn">Reset</button>
+        </div>
       </div>
     </details>
 
@@ -364,8 +352,6 @@ export function addEOSPanel(target = 'cvPanelBody-eos') {
   energySel.addEventListener('change', onUnitsChange);
   pressureSel.addEventListener('change', onUnitsChange);
   volumeSel.addEventListener('change', onUnitsChange);
-
-  wireMiniErrorToggle(container);
 
   wireDropZone(
     container.querySelector('#eosDropZone'),

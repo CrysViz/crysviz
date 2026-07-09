@@ -114,10 +114,10 @@ body.panel-hidden #axesLegend {
   border: 2px solid rgba(26,26,26,0.8);
   cursor: pointer;
   top: 120px;
-  /* --eos-reserve is kept in sync with the EOS split pane's width (see
-     ui/EOSSplitView.js) so the dot stays clear of the pane instead of
+  /* --split-reserve is kept in sync with the split view's pane width (see
+     ui/panels/SplitView.js) so the dot stays clear of the pane instead of
      sliding underneath it. 0px when the pane is closed. */
-  right: calc(40px + var(--eos-reserve, 0px));
+  right: calc(40px + var(--split-reserve, 0px));
   z-index: 999;
 }
 
@@ -1575,7 +1575,7 @@ body {
   border-radius: 50%;
   cursor: pointer;
   top: 190px;
-  right: calc(20px + var(--eos-reserve, 0px));
+  right: calc(20px + var(--split-reserve, 0px));
   z-index: 2000;
 }
 
@@ -1831,7 +1831,7 @@ body {
   border-radius: 50%;
   cursor: pointer;
   top: 155px;
-  right: calc(11px + var(--eos-reserve, 0px));
+  right: calc(11px + var(--split-reserve, 0px));
   z-index: 999;
 }
 
