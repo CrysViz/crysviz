@@ -10,7 +10,7 @@ import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import {Structure} from '../model/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
-import { resetView } from './WindowAndSceneControls.js';
+import { recenterCamera } from './WindowAndSceneControls.js';
 import { notifyActiveStructureChange } from '../state/structures.js';
 
 export function showError(message) {
@@ -81,7 +81,7 @@ export function createRow(obj) {
     fileBrowser.selectedRowIndex = rowIndex;
     updateStructureFromRowAndStep(rowIndex);
 
-    resetView(); // do we want to reset it to a specific view per structure selection? Save view state?
+    recenterCamera(); // keep the user's rotation/zoom; only re-center on the new structure
     refreshActivePanels();
   });
 
