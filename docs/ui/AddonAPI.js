@@ -30,7 +30,7 @@ import { initializeUIOnLoad } from './StructureInputModule.js';
  * app's structure-switch path (the caller owns the subscriber list so it can
  * clear it when the addon is destroyed).
  *
- * @param {{ registerStructureChange: (cb: (structure:any)=>void) => void,
+ * @param {{ registerStructureChange?: (cb: (structure:any)=>void) => void,
  *           toolbar?: HTMLElement|null }} deps
  */
 export function createAddonAPI({ registerStructureChange, toolbar = null } = {}) {
