@@ -19,6 +19,8 @@
 //   dockAtPointer(panel, event)      commit a drag-into-dock; the manager
 //                                    continues the gesture as a reorder drag
 
+import { showInfoPanel } from '../InfoPanel.js';
+
 const VIEWPORT_MARGIN = 8;
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
 
@@ -87,6 +89,19 @@ export class PanelWindow {
     title.className = 'cv-panel-title';
     title.innerHTML = def.title || '';
 
+    // Optional "i" info button — opens a markdown blurb about this panel.
+    // Lives as a direct child of the title bar, so it hides along with the
+    // rest of the bar's controls when the bar is shrunk to its thin strip.
+    let infoBtn = null;
+    if (def.infoMd) {
+      infoBtn = document.createElement('button');
+      infoBtn.type = 'button';
+      infoBtn.className = 'cv-panel-info info-button';
+      infoBtn.title = 'About this panel';
+      infoBtn.textContent = 'i';
+      infoBtn.addEventListener('click', () => showInfoPanel(def.infoMd));
+    }
+
     const homeBtn = document.createElement('button');
     homeBtn.type = 'button';
     homeBtn.className = 'cv-panel-home';
@@ -115,6 +130,7 @@ export class PanelWindow {
     bar.appendChild(grip);
     bar.appendChild(fold);
     bar.appendChild(title);
+    if (infoBtn) bar.appendChild(infoBtn);
     bar.appendChild(homeBtn);
     bar.appendChild(barBtn);
     bar.appendChild(dockBtn);

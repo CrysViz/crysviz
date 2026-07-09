@@ -22,15 +22,6 @@
 }
 
 
-/* Panel to position the button */
-.info-button-panel {
-  position: fixed; /* Fixes the panel relative to the viewport */
-  transform: translateY(-18px);
-  right: 12px;
-  margin-right: -10px; /* Negative margin to push the button slightly outside */
-  z-index: 100; /* Ensures it stays above other content */
-}
-
 
 .info-panel-overlay {
   position: fixed;

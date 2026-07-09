@@ -286,10 +286,11 @@ export function registerDefaultPanels() {
     id: 'backend',
     title: 'Atomistic',
     lifecycle: 'persistent',
+    infoMd: './data/backendInfo.md',
     buildContent(body) {
-      // Adopt the backend mode selector (Relax/MD), its info button and
-      // the calc panel the modes build into. (#uploadSection starts inside
-      // this group in the HTML but is adopted by the Files panel.)
+      // Adopt the backend mode selector (Relax/MD) and the calc panel the
+      // modes build into. (#uploadSection starts inside this group in the
+      // HTML but is adopted by the Files panel.)
       const group = document.getElementById('backendControlGroup');
       if (group) body.appendChild(group);
     },
@@ -300,6 +301,7 @@ export function registerDefaultPanels() {
     id: 'files',
     title: 'Files',
     lifecycle: 'persistent',
+    infoMd: './data/uploadInfo.md',
     buildContent(body) {
       // Adopt the statically-defined upload section (file/paste tabs) and the
       // structure table (moving preserves listeners and ids). The upload
@@ -320,6 +322,7 @@ export function registerDefaultPanels() {
     title: 'Features',
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
+    infoMd: './data/analysisInfo.md',
     buildContent: buildFeaturesBody,
     defaults: { docked: true, order: 2, collapsed: false },
   });
@@ -565,12 +568,10 @@ export function registerDefaultPanels() {
     title: 'Settings',
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
+    infoMd: './data/storageInfo.md',
     buildContent(body) {
-      // Storage/share-URL options (with their info button), then window drag
-      // behavior. Visual settings live in the Visual window.
-      const info = document.getElementById('storageInfoButton');
-      const infoWrap = info && info.closest('.info-button-panel');
-      if (infoWrap) body.appendChild(infoWrap);
+      // Storage/share-URL options, then window drag behavior. Visual
+      // settings live in the Visual window.
       // The None/Minimal/All-Settings storage-granularity toggle
       // (#StorageOptionSwitch in index.html) is hidden for now — it has no
       // wiring. Left in the DOM, just not adopted here, so it can return later.

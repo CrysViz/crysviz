@@ -61,7 +61,6 @@ import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
 
 import {addSavePanel} from '../ui/SavePanel.js'
 import {initImageExportPanel} from '../ui/ImageExportPanel.js'
-import {addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from '../ui/InfoPanel.js'
 
 // NOTE: share-related import utils still need to move into the "share" module.
 
@@ -437,9 +436,6 @@ function initUIPanels() {
   addSavePanel();
   initImageExportPanel();
   addAtomVacuumPanel();
-  addStorageInfoPanel();
-  addUploadInfoPanel();
-  addBackendInfoPanel();
 
   // Add viewport meta tag if not present for proper mobile scaling
   if (!document.querySelector('meta[name="viewport"]')) {
