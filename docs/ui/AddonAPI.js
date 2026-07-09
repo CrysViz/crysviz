@@ -15,7 +15,8 @@
 //     when an interaction ENDS (pointer up / slider release) so bonds that were
 //     strided over during the fast path are rebuilt correctly.
 
-import { getActiveStructure } from '../state/structures.js';
+import { getActiveStructure, getContainers, onActiveStructureChange } from '../state/structures.js';
+import { selectStructure as fbSelectStructure } from './FileBrowswerPanel.js';
 import { general } from '../state/store.js';
 import { applyFrameFast } from '../render/FastFrameModule.js';
 import { runPeriodicWrapped } from '../render/index.js';
@@ -32,12 +33,42 @@ import { initializeUIOnLoad } from './StructureInputModule.js';
  * @param {{ registerStructureChange: (cb: (structure:any)=>void) => void,
  *           toolbar?: HTMLElement|null }} deps
  */
-export function createAddonAPI({ registerStructureChange, toolbar = null }) {
+export function createAddonAPI({ registerStructureChange, toolbar = null } = {}) {
+  // Every subscription this API hands out registers its teardown here, so
+  // dispose() can drop them all at once when the addon's pane closes.
+  const subs = new Set();
+
   const api = {
     // ---- read -------------------------------------------------------------
     /** The active (primary) structure shown in the main 3D viewer, or null. */
     getStructure() {
       return getActiveStructure();
+    },
+
+    // ---- file browser -----------------------------------------------------
+    /**
+     * The structures currently loaded in the file browser, one entry per row:
+     * `{ index, name, frames }` where `index` feeds selectStructure() and
+     * `frames` is how many frames/steps that entry holds (a trajectory has
+     * more than one). Read-only snapshot.
+     */
+    getStructures() {
+      return getContainers().map((c, i) => ({
+        index: i,
+        name: c.fileName,
+        frames: c.structures.length,
+      }));
+    },
+
+    /**
+     * Select a loaded structure — same as the user clicking its file-browser
+     * row. `index` is a row from getStructures(); `step` is the 0-based frame
+     * within it (default 0). Drives the browser highlight + 3D view and fires
+     * onStructureChange. Returns false if index/step is out of range. Use this
+     * to map an addon's own UI (e.g. an EOS E–V point) to a loaded structure.
+     */
+    selectStructure(index, step = 0) {
+      return fbSelectStructure(index, step);
     },
 
     // ---- drive positions --------------------------------------------------
@@ -103,12 +134,16 @@ export function createAddonAPI({ registerStructureChange, toolbar = null }) {
 
     // ---- subscriptions ----------------------------------------------------
     /**
-     * Subscribe to active-structure changes (structure switched in the file
-     * browser). The caller forwards these while the addon is active and drops
-     * them when it is destroyed.
+     * Subscribe to active-structure changes — fired whenever a different frame
+     * or row becomes active in the file browser (user click, step change,
+     * selectStructure(), or a load). The callback gets the new active
+     * structure. Returns an unsubscribe fn; dispose() also drops it.
      */
     onStructureChange(cb) {
-      if (typeof cb === 'function') registerStructureChange(cb);
+      if (typeof cb !== 'function') return () => {};
+      const off = onActiveStructureChange(cb);
+      subs.add(off);
+      return () => { subs.delete(off); off(); };
     },
 
     // ---- theme ------------------------------------------------------------
@@ -138,7 +173,19 @@ export function createAddonAPI({ registerStructureChange, toolbar = null }) {
       if (typeof cb !== 'function') return () => {};
       const obs = new MutationObserver(() => cb(api.getTheme()));
       obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-      return () => obs.disconnect();
+      const off = () => obs.disconnect();
+      subs.add(off);
+      return () => { subs.delete(off); off(); };
+    },
+
+    // ---- lifecycle --------------------------------------------------------
+    /**
+     * Drop every subscription this API handed out (structure + theme). Call it
+     * from your owner's onClose so listeners don't fire into a torn-down addon.
+     */
+    dispose() {
+      for (const off of [...subs]) { try { off(); } catch (err) { /* already gone */ } }
+      subs.clear();
     },
   };
   return api;

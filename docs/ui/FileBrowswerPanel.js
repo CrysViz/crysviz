@@ -11,6 +11,7 @@ import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import {Structure} from '../model/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import { resetView } from './WindowAndSceneControls.js';
+import { notifyActiveStructureChange } from '../state/structures.js';
 
 export function showError(message) {
   errorPanel.textContent = message;
@@ -597,4 +598,33 @@ function updateStructureFromRowAndStep(rowIndex) {
     updateLatticeComparisonPanel(L1, L2);
   }
   updateVisualization({reRenderAtoms: true, reRenderBonds: true, reRenderField: true, reRenderComposition: true});
+  // Single choke point for every selection path (row click, step change,
+  // programmatic selectStructure, load) — let subscribers (addons) react.
+  notifyActiveStructureChange();
+}
+
+/**
+ * Programmatically select a loaded structure — the same as a user clicking its
+ * file-browser row (and setting its step). `rowIndex` is the container index
+ * (see getContainers()/getStructures()); `step` is the 0-based frame within it.
+ * Updates the browser highlight + 3D view and fires the active-structure
+ * change. Returns false if the row/step is out of range. Intended for addons
+ * that map their own UI (e.g. an EOS E–V point) to a loaded structure.
+ */
+export function selectStructure(rowIndex, step = 0) {
+  const tbody = document.querySelector('#objectTable tbody');
+  const rows = tbody ? tbody.querySelectorAll('tr') : [];
+  const container = structureShip.container[rowIndex];
+  if (rowIndex < 0 || rowIndex >= rows.length || !container) return false;
+  const clampedStep = Math.max(0, Math.min(step, container.structures.length - 1));
+  const row = rows[rowIndex];
+  const stepInput = row.querySelector('input[type="number"]');
+  if (stepInput) stepInput.value = String(clampedStep + 1); // step is 1-based in the UI
+  if (fileBrowser.selectedRow) fileBrowser.selectedRow.classList.remove('selected');
+  row.classList.add('selected');
+  row.dataset.index = String(rowIndex);
+  fileBrowser.selectedRow = row;
+  fileBrowser.selectedRowIndex = rowIndex;
+  updateStructureFromRowAndStep(rowIndex);
+  return true;
 }

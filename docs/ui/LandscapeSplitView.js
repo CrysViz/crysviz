@@ -11,13 +11,10 @@ import { createAddonAPI } from './AddonAPI.js';
 import { createLandscape } from '../addons/landscape/landscape.js';
 
 let controller = null; // the landscape.js controller for the currently open pane
-let structureChangeCb = null; // registered by createLandscape via the addon API
+let api = null;        // the addon API for the current pane (disposed on close)
 
 function renderContent(body) {
-  const api = createAddonAPI({
-    registerStructureChange: (cb) => { structureChangeCb = cb; },
-    toolbar: null,
-  });
+  api = createAddonAPI();
   controller = createLandscape(body, api);
 }
 
@@ -29,8 +26,9 @@ function handleResize() {
 
 function handleClose() {
   controller?.destroy();
+  api?.dispose();
   controller = null;
-  structureChangeCb = null;
+  api = null;
 }
 
 const owner = {
