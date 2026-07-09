@@ -39,6 +39,7 @@ function els() {
     body: document.getElementById('splitPaneBody'),
     handle: document.getElementById('splitHandle'),
     tabs: document.getElementById('splitPaneTabs'),
+    headerTabs: document.getElementById('splitPaneHeaderTabs'),
     overlay: document.getElementById('splitPaneOverlay'),
   };
 }
@@ -73,21 +74,19 @@ function syncSceneAndSidePanels() {
   requestRender();
 }
 
-/** Rebuild the tab stack: one tab per open owner, the front owner's tab first
- *  (topmost) and marked active. The whole pane's `.split-multi` class (used by
- *  the CSS to decide when to show the stack while the pane is open) tracks
- *  whether more than one owner is open. */
-function renderTabs() {
-  const { viewArea, tabs } = els();
-  if (!tabs) return;
-  tabs.innerHTML = '';
-  // Front first so it sits on top of the stack; then the rest in open order.
-  const ordered = [front, ...owners.filter((o) => o !== front)].filter(Boolean);
-  for (const owner of ordered) {
+/** Rebuild both tab renderings from the same owner list: a horizontal strip in
+ *  the pane header (shown while open, so tabs sit on top) and the vertical
+ *  pull-tab stack on the pane edge (shown while collapsed, to reopen). Owners
+ *  keep their open order in both (tabs don't jump on switch); the front owner's
+ *  tab is marked active. The pane's `.split-multi` class (owners > 1) drives
+ *  whether the header strip shows in CSS. */
+function fillTabs(container, suffix) {
+  container.innerHTML = '';
+  for (const owner of owners) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'split-pane-tab' + (owner === front ? ' active' : '');
-    btn.textContent = `${owner.title || ''} ▸`;
+    btn.textContent = `${owner.title || ''}${suffix}`;
     btn.title = owner.title || 'Show panel';
     btn.addEventListener('click', () => {
       collapsed = false;
@@ -95,9 +94,17 @@ function renderTabs() {
       setFront(owner);
       syncSceneAndSidePanels();
     });
-    tabs.appendChild(btn);
+    container.appendChild(btn);
   }
-  tabs.hidden = owners.length === 0;
+}
+
+function renderTabs() {
+  const { viewArea, tabs, headerTabs } = els();
+  if (headerTabs) fillTabs(headerTabs, '');
+  if (tabs) {
+    fillTabs(tabs, ' ▸');
+    tabs.hidden = owners.length === 0;
+  }
   if (viewArea) viewArea.classList.toggle('split-multi', owners.length > 1);
 }
 
@@ -194,13 +201,14 @@ function removeOwner(owner) {
 
 /** Tear down all pane chrome once no owner is left. */
 function hidePaneChrome() {
-  const { viewArea, pane, body, handle, tabs } = els();
+  const { viewArea, pane, body, handle, tabs, headerTabs } = els();
   front = null;
   collapsed = false;
   if (viewArea) viewArea.classList.remove('split-active', 'split-pane-collapsed', 'split-multi');
   if (pane) pane.hidden = true;
   if (handle) handle.hidden = true;
   if (tabs) { tabs.innerHTML = ''; tabs.hidden = true; }
+  if (headerTabs) headerTabs.innerHTML = '';
   closeExpandedItem();
   if (body) body.innerHTML = '';
   syncSceneAndSidePanels();

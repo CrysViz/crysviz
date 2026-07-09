@@ -200,41 +200,19 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* Tab stack: one pull-tab per open owner, anchored to the pane's edge and
-   stacked top-down (front owner's tab first — see renderTabs()). Shown while
-   the pane is collapsed (all tabs, to reopen) or, while open, whenever more
-   than one owner is loaded (to switch between them). A single open owner shows
-   no tabs — the pane header already names it. */
-.split-pane-tabs {
-  display: none;
-  position: fixed;
-  top: 64px;
-  right: 0;
-  z-index: 1300;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-}
+/* Owner tabs come in two forms, both built from the same owner list
+   (renderTabs()):
+   - a horizontal strip in the pane HEADER, shown while the pane is open with
+     more than one owner (so the tabs sit on top, replacing the plain title);
+   - a vertical pull-tab stack on the pane EDGE, shown only while collapsed, to
+     reopen the pane on a chosen owner.
+   A single open owner shows neither — the header just names it. */
 
-/* While open, sit the stack just left of the pane's edge (not off-screen under
-   it); when collapsed the pane has no width, so the right:0 base is correct. */
-#viewArea.split-active:not(.split-pane-collapsed) .split-pane-tabs {
-  right: calc(var(--split-pane-fraction, 0.5) * 100vw);
-}
-
-#viewArea.split-active.split-pane-collapsed .split-pane-tabs,
-#viewArea.split-active.split-multi .split-pane-tabs {
-  display: flex;
-}
-
+/* Base look, shared by both forms; each form overrides orientation/shape. */
 .split-pane-tab {
-  writing-mode: vertical-rl;
   background: var(--panel-bg);
   color: var(--panel-fg);
   border: 1px solid var(--panel-border);
-  border-right: none;
-  border-radius: 8px 0 0 8px;
-  padding: 12px 6px;
   cursor: pointer;
   font-size: 12px;
   letter-spacing: 0.04em;
@@ -249,6 +227,59 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
   opacity: 1;
   color: var(--highlight-color, #00bcd4);
   border-color: var(--highlight-color, #00bcd4);
+}
+
+/* ---- header strip (open) --------------------------------------------------*/
+.split-pane-header-tabs {
+  display: none;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+#viewArea.split-multi:not(.split-pane-collapsed) .split-pane-header-tabs {
+  display: flex;
+}
+
+/* When the header shows tabs, the plain single-owner title is redundant. */
+#viewArea.split-multi:not(.split-pane-collapsed) #splitPaneTitle {
+  display: none;
+}
+
+.split-pane-header-tabs .split-pane-tab {
+  writing-mode: horizontal-tb;
+  border-radius: 6px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.split-pane-header-tabs .split-pane-tab.active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ---- edge pull-tab stack (collapsed) --------------------------------------*/
+.split-pane-tabs {
+  display: none;
+  position: fixed;
+  top: 64px;
+  right: 0;
+  z-index: 1300;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+#viewArea.split-active.split-pane-collapsed .split-pane-tabs {
+  display: flex;
+}
+
+.split-pane-tabs .split-pane-tab {
+  writing-mode: vertical-rl;
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  padding: 12px 6px;
 }
 
 /* Expanded (fullscreen) single-item view, toggled from the ⛶ button. Above

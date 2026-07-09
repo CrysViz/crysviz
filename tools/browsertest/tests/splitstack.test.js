@@ -25,15 +25,21 @@ async function collapsePanel(page, id) {
 function snap(page) {
   return page.evaluate(() => {
     const va = document.getElementById('viewArea');
-    const tabs = [...document.querySelectorAll('#splitPaneTabs .split-pane-tab')];
+    const clean = (s) => s.replace(/\s*▸\s*$/, '');
+    const edge = [...document.querySelectorAll('#splitPaneTabs .split-pane-tab')];
+    const header = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')];
+    const shown = (el) => el && getComputedStyle(el).display !== 'none';
     return {
       active: va.classList.contains('split-active'),
       multi: va.classList.contains('split-multi'),
       collapsed: va.classList.contains('split-pane-collapsed'),
       title: document.getElementById('splitPaneTitle').textContent,
       ownerPanes: document.querySelectorAll('#splitPaneBody .split-owner-pane').length,
-      tabLabels: tabs.map((t) => t.textContent.replace(/\s*▸\s*$/, '')),
-      activeTab: tabs.find((t) => t.classList.contains('active'))?.textContent.replace(/\s*▸\s*$/, '') || '',
+      tabLabels: edge.map((t) => clean(t.textContent)),
+      headerLabels: header.map((t) => clean(t.textContent)),
+      headerShown: shown(document.getElementById('splitPaneHeaderTabs')),
+      edgeShown: shown(document.getElementById('splitPaneTabs')),
+      activeTab: header.find((t) => t.classList.contains('active'))?.textContent.trim() || '',
     };
   });
 }
@@ -48,27 +54,27 @@ function snap(page) {
   let s = await snap(page);
   H.check('EOS opens the split pane', s.active && s.title === 'EOS Fit', s.title);
   H.check('one owner-pane after EOS', s.ownerPanes === 1, String(s.ownerPanes));
-  H.check('no tab stack for a single owner', s.multi === false && s.tabLabels.length <= 1,
-    JSON.stringify(s.tabLabels));
+  H.check('no tabs shown for a single owner', s.multi === false && !s.headerShown && !s.edgeShown,
+    `header ${s.headerShown} / edge ${s.edgeShown}`);
 
-  // ---- open Landscape too: EOS must survive; now two owners + tab stack ----
+  // ---- open Landscape too: EOS must survive; now two owners + header tabs --
   await expandPanel(page, 'landscape');
   s = await snap(page);
   H.check('opening Landscape keeps EOS open (2 owner-panes)', s.ownerPanes === 2,
     String(s.ownerPanes));
   H.check('.split-multi set with two owners', s.multi === true);
-  H.check('tab stack shows both owners', s.tabLabels.includes('EOS Fit') &&
-    s.tabLabels.includes('Energy Landscape'), JSON.stringify(s.tabLabels));
+  H.check('header tab strip shown on top while open', s.headerShown &&
+    s.headerLabels.includes('EOS Fit') && s.headerLabels.includes('Energy Landscape'),
+    `shown ${s.headerShown} ${JSON.stringify(s.headerLabels)}`);
+  H.check('edge stack hidden while open', s.edgeShown === false);
   H.check('Landscape is front (just opened)', s.title === 'Energy Landscape' &&
     s.activeTab === 'Energy Landscape', `${s.title} / ${s.activeTab}`);
-  H.check('front owner tab is first (on top)', s.tabLabels[0] === 'Energy Landscape',
-    JSON.stringify(s.tabLabels));
 
   await page.screenshot({ path: path.join(__dirname, '..', 'artifacts', 'splitstack-two-owners.png') });
 
-  // ---- click the EOS tab: front switches, nothing destroyed ---------------
+  // ---- click the EOS header tab: front switches, nothing destroyed --------
   await page.evaluate(() => {
-    [...document.querySelectorAll('#splitPaneTabs .split-pane-tab')]
+    [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
       .find((t) => /EOS Fit/.test(t.textContent))?.click();
   });
   await page.waitForTimeout(250);
@@ -77,12 +83,13 @@ function snap(page) {
     `${s.title} / ${s.activeTab}`);
   H.check('both owner-panes still present after switch', s.ownerPanes === 2, String(s.ownerPanes));
 
-  // ---- collapse the whole pane: tab stack still shown to reopen -----------
+  // ---- collapse the whole pane: edge stack shows to reopen ----------------
   await page.evaluate(() => document.getElementById('splitPaneCollapseBtn').click());
   await page.waitForTimeout(250);
   s = await snap(page);
-  H.check('collapse keeps the tab stack', s.collapsed && s.tabLabels.length === 2,
-    JSON.stringify(s.tabLabels));
+  H.check('collapse shows the edge stack, hides header tabs',
+    s.collapsed && s.edgeShown && !s.headerShown && s.tabLabels.length === 2,
+    `edge ${s.edgeShown} header ${s.headerShown} ${JSON.stringify(s.tabLabels)}`);
 
   // ---- reopen via the Landscape tab --------------------------------------
   await page.evaluate(() => {
