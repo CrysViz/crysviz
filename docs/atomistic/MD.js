@@ -444,6 +444,7 @@ export function createMDMonitorPanel() {
     id: 'mdMonitor',
     title: 'MD Monitor',
     lifecycle: 'persistent',
+    infoMd: './data/mdMonitorInfo.md',
     closable: true,
     // Layout persists: the monitor re-opens docked/floating (and where)
     // exactly as the user last left it.

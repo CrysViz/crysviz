@@ -217,6 +217,7 @@ export function registerDefaultPanels() {
     id: 'measure',
     title: 'Measure',
     lifecycle: 'persistent',
+    infoMd: './data/measureInfo.md',
     compactIcon: './data/icons/tool-icon.svg',
     compactLabel: 'Toggle Measurement Tools',
     compactAnchor: { right: 20, top: 20 }, // fixed anchor: top of the compact stack
@@ -233,6 +234,7 @@ export function registerDefaultPanels() {
     id: 'view',
     title: 'View',
     lifecycle: 'persistent',
+    infoMd: './data/viewInfo.md',
     compactIcon: './data/icons/camera-icon.svg',
     compactLabel: 'Toggle Camera Tools',
     compactStackAfter: 'measure', // dynamic anchor: pinned below Measure's live height
@@ -251,6 +253,7 @@ export function registerDefaultPanels() {
     id: 'info',
     title: 'Structure',
     lifecycle: 'persistent',
+    infoMd: './data/structureInfo.md',
     onCollapse() { collapseAllAtomExpansions(); },
     buildContent(body) {
       // Adopt the formula header box (+/− expandable) and the composition
@@ -338,6 +341,7 @@ export function registerDefaultPanels() {
     title: 'Trajectory',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/trajectoryInfo.md',
     available() {
       const container = structureShip.container[fileBrowser.selectedRowIndex];
       return !!container && container.structures.length > 1;
@@ -352,6 +356,7 @@ export function registerDefaultPanels() {
     title: 'Comparison',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/comparisonInfo.md',
     available() { return !!fileBrowser.comparisonStructure; },
     buildContent(body) { addCompPanel(body.id); },
     onDestroyContent() { removeCompPanel(); },
@@ -363,6 +368,7 @@ export function registerDefaultPanels() {
     title: 'Forces',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/forcesInfo.md',
     // Stays available even without force data: the window is where the user
     // enters/enables forces, so it must not grey out when a structure has none.
     available() { return true; },
@@ -383,6 +389,7 @@ export function registerDefaultPanels() {
     title: 'Spins',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/spinsInfo.md',
     // Stays available even without spin data: the window is where the user
     // enters/enables spins, so it must not grey out when a structure has none.
     available() { return true; },
@@ -402,6 +409,7 @@ export function registerDefaultPanels() {
     title: 'Volumetric Field',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/fieldInfo.md',
     available() {
       return (fileBrowser.selectedStructure?.volumetricFields?.fields?.length ?? 0) > 0
         && general.fieldActive !== false;
@@ -417,6 +425,7 @@ export function registerDefaultPanels() {
     title: 'Crystal Planes',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/planesInfo.md',
     available() { return !!fileBrowser.selectedStructure && planesData.showPlanes !== false; },
     buildContent(body) { addPlanesPanel(body.id); },
     onDestroyContent() { removePlanesPanel(); },
@@ -428,6 +437,7 @@ export function registerDefaultPanels() {
     title: 'Bonds',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/bondsInfo.md',
     available() { return !!fileBrowser.selectedStructure && general.showBonds !== false; },
     buildContent(body) {
       addBondPanel(body.id);
@@ -444,6 +454,7 @@ export function registerDefaultPanels() {
     title: 'Cell & Supercell',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/cellInfo.md',
     available() { return !!fileBrowser.selectedStructure; },
     buildContent(body) {
       addLatticeAndSupercellPanel(body.id);
@@ -461,6 +472,7 @@ export function registerDefaultPanels() {
     title: 'Symmetry',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/symmetryInfo.md',
     available() { return !!fileBrowser.selectedStructure; },
     // async builder: fills the body once the Moyo WASM module is ready.
     buildContent(body) { addMoyoPanel(body.id); },
@@ -472,6 +484,7 @@ export function registerDefaultPanels() {
     title: 'Polyhedra',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/polyhedraInfo.md',
     available() { return !!fileBrowser.selectedStructure && general.showPolyhedra !== false; },
     buildContent(body) { addPolyhedraPanel(body.id); },
     onDestroyContent() { removePolyhedraPanel(); },
@@ -483,6 +496,7 @@ export function registerDefaultPanels() {
     title: 'Visual',
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
+    infoMd: './data/visualInfo.md',
     buildContent(body) {
       // All appearance settings in one window, grouped by concern (Sizes /
       // Scene / Rendering / Colors / Camera). The feature-specific controls
@@ -527,6 +541,7 @@ export function registerDefaultPanels() {
     title: 'EOS Fitting',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/eosInfo.md',
     available() { return true; },
     buildContent(body) { addEOSPanel(body.id); },
     onDestroyContent() { removeEOSPanel(); },
@@ -541,6 +556,7 @@ export function registerDefaultPanels() {
     id: 'splitDemo',
     title: 'Split View Demo',
     lifecycle: 'rebuild',
+    infoMd: './data/splitDemoInfo.md',
     available() { return true; },
     buildContent(body) { addDummySplitPanel(body.id); },
     onDestroyContent() { removeDummySplitPanel(); },
@@ -555,6 +571,7 @@ export function registerDefaultPanels() {
     id: 'landscape',
     title: 'Energy Landscape',
     lifecycle: 'rebuild',
+    infoMd: './data/landscapeInfo.md',
     available() { return true; },
     buildContent(body) { addLandscapePanel(body.id); },
     onDestroyContent() { removeLandscapePanel(); },

@@ -60,6 +60,7 @@ export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabe
     id: 'histogram',
     title: 'Histogram',
     lifecycle: 'persistent',
+    infoMd: './data/histogramInfo.md',
     closable: true,
     onClose() { activeUpdate = null; resizeObserver?.disconnect(); },
     buildContent(body) {

@@ -166,6 +166,23 @@
   font-size: calc(14px * var(--cv-font-scale, 1));
 }
 
+/* The generic .info-button rule sizes it for a standalone corner badge
+   (18px); inside a titlebar it needs to sit flush with the other ~13px
+   icon buttons instead of towering over them. */
+.cv-panel-titlebar .cv-panel-info {
+  width: calc(13px * var(--cv-font-scale, 1));
+  height: calc(13px * var(--cv-font-scale, 1));
+  font-size: calc(8px * var(--cv-font-scale, 1));
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.6);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.cv-panel-titlebar .cv-panel-info:hover {
+  box-shadow: none;
+  background: var(--hover-color);
+}
+
 /* ---- body / collapse ---- */
 /* The body is the window surface: it carries the box the old .control-group /
    floating popups had, minus the top edge where the title bar sits. */
