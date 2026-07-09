@@ -330,14 +330,33 @@ function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showP
 
 export function getCellCenterAndDist() {
   const L = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-  const corner = new THREE.Vector3(
-    L[0][0]+L[1][0]+L[2][0],
-    L[0][1]+L[1][1]+L[2][1],
-    L[0][2]+L[1][2]+L[2][2]
-  );
+  const a = new THREE.Vector3(L[0][0], L[0][1], L[0][2]);
+  const b = new THREE.Vector3(L[1][0], L[1][1], L[1][2]);
+  const c = new THREE.Vector3(L[2][0], L[2][1], L[2][2]);
+  const corner = a.clone().add(b).add(c);
   const center = corner.clone().multiplyScalar(0.5);
-  const distBase = Math.max(corner.length()*2.5, 20);
-  const dist = distBase * app.defaultZoomScale;
+
+  // Bounding radius: the farthest of the 8 parallelepiped vertices from the
+  // center. Using just the diagonal corner (corner.length()/2) under-covers
+  // oblique/skewed cells, where e.g. a+b or a alone can reach farther than
+  // the main diagonal.
+  const vertices = [
+    new THREE.Vector3(0, 0, 0), a, b, c,
+    a.clone().add(b), a.clone().add(c), b.clone().add(c), corner,
+  ];
+  let radius = 0;
+  for (const v of vertices) radius = Math.max(radius, v.distanceTo(center));
+  radius = Math.max(radius, 1); // guard a degenerate/zero-size cell
+
+  // Distance so the bounding sphere fits entirely inside the perspective
+  // camera's frustum (45° vertical FOV, matching switchCameraType's
+  // PerspectiveCamera), with a small margin.
+  const halfFovRad = (45 / 2) * Math.PI / 180;
+  const fitDist = Math.max((radius / Math.sin(halfFovRad)) * 1.1, 20);
+  // defaultZoomScale is a user zoom preference: it may pull the camera
+  // further OUT, but never zooms in past the distance that guarantees the
+  // whole structure is visible.
+  const dist = fitDist * Math.max(1, app.defaultZoomScale);
   return { center, dist };
 }
 

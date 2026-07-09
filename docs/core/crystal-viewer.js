@@ -54,7 +54,7 @@ import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../rend
 // Panel files should contain all the functions related to a specific panels
 //
 // // .........................................................................................................
-import {setupScene, setupCameraButtons,resizeRenderer, switchCameraType
+import {setupScene, setupCameraButtons,resizeRenderer, switchCameraType, recenterCamera
 } from '../ui/WindowAndSceneControls.js'
 import {renderComposition} from '../ui/StructureInfoPanel/General.js';
 import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
@@ -88,6 +88,11 @@ import { resetMathBackend } from '../math/index.js';
 
 //console.log = () => {};
 //console.warn = () => {};
+
+// Only the very first structure shown gets a fresh fit-to-structure camera
+// (switchCameraType); every later load/switch re-centers on the new
+// structure but keeps the user's chosen rotation and zoom (recenterCamera).
+let cameraFitted = false;
 
 const status = document.getElementById('status');
 const setStatus = (s) => {
@@ -282,8 +287,15 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
     // which already performs a full atoms+bonds+field+other re-render. Re-rendering here
     // doubled the (expensive, O(n^2)) bond build on every load.
     console.warn(fileBrowser.selectedStructure)
-    // Rebuild camera with size/distance based on structure and zoom scale
-    switchCameraType();
+    // The first structure ever shown gets a fresh fit-to-structure camera;
+    // later loads/switches keep the user's rotation and zoom, only
+    // re-centering on the new structure (see `cameraFitted`).
+    if (!cameraFitted) {
+      switchCameraType();
+      cameraFitted = true;
+    } else {
+      recenterCamera();
+    }
     clearMeasure();
     resizeRenderer(app.orthographicFrustumSize);
 
