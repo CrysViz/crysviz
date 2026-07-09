@@ -629,6 +629,10 @@ function renderMDBody(bodyEl, potential) {
           <span class="atomistic-label-disabled">pressure</span>
           <input type="number" class="atomistic-input-sm" id="mdPressureInput" value="0" step="0.1" disabled>
         </label>
+        <label>
+          <span>Save every (steps)</span>
+          <input type="number" class="atomistic-input-sm" id="mdSaveStrideInput" value="${Math.max(1, Number(general.backendTrajectorySaveStride || 4))}" step="1" min="1">
+        </label>
       </div>
       <div class="atomistic-button-row atomistic-button-row-compact">
         <button type="button" class="calcButton" id="mdStartBtn"${potential === 'ase' ? ' disabled' : ''}>start</button>
@@ -855,7 +859,8 @@ function bindMDBody(panel, shell, potential) {
       const maxTemperatureK = Number(shell.bodyEl.querySelector('#mdAnnealMaxInput')?.value || 1200);
       const peakFraction = Math.max(0.01, Math.min(0.99, Number(shell.bodyEl.querySelector('#mdAnnealPeakPctInput')?.value || 30) / 100));
       const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
-      const saveStride = Math.max(1, Number(general.backendTrajectorySaveStride || 1));
+      const saveStride = Math.max(1, Number(shell.bodyEl.querySelector('#mdSaveStrideInput')?.value || general.backendTrajectorySaveStride || 4));
+      general.backendTrajectorySaveStride = saveStride;
       let lastSavedStep = 0;
       const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
       const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
