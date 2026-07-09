@@ -24,6 +24,7 @@ import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
 import { addEOSPanel, removeEOSPanel } from '../EOSPanel.js';
 import { openEOSSplitView, closeEOSSplitView } from '../EOSSplitView.js';
 import { addDummySplitPanel, removeDummySplitPanel, openDummySplitView, closeDummySplitView } from '../DummySplitPanel.js';
+import { addLandscapePanel, removeLandscapePanel, openLandscapeSplitView, closeLandscapeSplitView } from '../LandscapeSplitView.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
 import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
@@ -538,6 +539,18 @@ export function registerDefaultPanels() {
     onExpand() { openDummySplitView(); },
     onCollapse() { closeDummySplitView(); },
     defaults: { docked: true, order: 93, collapsed: true },
+  });
+
+  registerPanel({
+    id: 'landscape',
+    title: 'Energy Landscape',
+    lifecycle: 'rebuild',
+    available() { return true; },
+    buildContent(body) { addLandscapePanel(body.id); },
+    onDestroyContent() { removeLandscapePanel(); },
+    onExpand() { openLandscapeSplitView(); },
+    onCollapse() { closeLandscapeSplitView(); },
+    defaults: { docked: true, order: 94, collapsed: true },
   });
 
   registerPanel({

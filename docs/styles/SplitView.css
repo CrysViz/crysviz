@@ -123,16 +123,30 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* Items stack top to bottom, splitting the pane's height evenly by default —
-   an owner with a single item just gets the whole body. */
+/* The body holds one persistent container per open owner; only the front one
+   is shown (the rest keep their built content, hidden). Each owner-pane is the
+   flex column its items live in — an owner with a single item gets the whole
+   height; multiple items split it evenly. */
 .split-pane-body {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.split-owner-pane {
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 10px;
   overflow: auto;
+}
+
+.split-owner-pane[hidden] {
+  display: none;
 }
 
 .split-pane .split-item {
@@ -186,28 +200,55 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* Pull-tab shown only while the pane is collapsed. */
-.split-pane-tab {
+/* Tab stack: one pull-tab per open owner, anchored to the pane's edge and
+   stacked top-down (front owner's tab first — see renderTabs()). Shown while
+   the pane is collapsed (all tabs, to reopen) or, while open, whenever more
+   than one owner is loaded (to switch between them). A single open owner shows
+   no tabs — the pane header already names it. */
+.split-pane-tabs {
   display: none;
   position: fixed;
-  top: 50%;
+  top: 64px;
   right: 0;
-  transform: translateY(-50%);
+  z-index: 1300;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+/* While open, sit the stack just left of the pane's edge (not off-screen under
+   it); when collapsed the pane has no width, so the right:0 base is correct. */
+#viewArea.split-active:not(.split-pane-collapsed) .split-pane-tabs {
+  right: calc(var(--split-pane-fraction, 0.5) * 100vw);
+}
+
+#viewArea.split-active.split-pane-collapsed .split-pane-tabs,
+#viewArea.split-active.split-multi .split-pane-tabs {
+  display: flex;
+}
+
+.split-pane-tab {
   writing-mode: vertical-rl;
   background: var(--panel-bg);
   color: var(--panel-fg);
   border: 1px solid var(--panel-border);
   border-right: none;
   border-radius: 8px 0 0 8px;
-  padding: 14px 6px;
+  padding: 12px 6px;
   cursor: pointer;
   font-size: 12px;
   letter-spacing: 0.04em;
-  z-index: 1300;
+  opacity: 0.72;
 }
 
-#viewArea.split-active.split-pane-collapsed .split-pane-tab {
-  display: block;
+.split-pane-tab:hover {
+  opacity: 1;
+}
+
+.split-pane-tab.active {
+  opacity: 1;
+  color: var(--highlight-color, #00bcd4);
+  border-color: var(--highlight-color, #00bcd4);
 }
 
 /* Expanded (fullscreen) single-item view, toggled from the ⛶ button. Above
