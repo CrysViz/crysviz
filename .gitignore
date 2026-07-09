@@ -13,6 +13,7 @@ node_modules/
 # committed build outputs live directly in docs/compiled/, see `make periodic-wasm`)
 docs/compiled/periodic_wasm_src/target/
 docs/compiled/periodic_wasm_src/pkg/
+docs/report/
 
 # Project-local Rust toolchain (rustup + cargo home), analogous to a Python venv.
 # Activate with: source rust-env/activate

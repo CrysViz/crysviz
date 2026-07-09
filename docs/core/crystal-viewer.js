@@ -136,6 +136,14 @@ export function updateVisualization(options = {}) {
     reRenderOther = true,
     reRenderComposition = false,
 
+    // Polyhedra are expensive (per-atom hull recompute). Default on to preserve
+    // existing behavior for every panel/playback caller; the hot MD/relax paths
+    // pass false so a fallback frame doesn't pay for a polyhedra rebuild every step.
+    // Gated separately from reRenderOther because several reRenderOther:false
+    // callers (lattice transform, cut planes, bond-length edits) DO move geometry
+    // and rely on polyhedra refreshing.
+    reRenderPolyhedra = true,
+
     sOpacity = general.compOpacity,
     mOpacity = general.mainOpacity,
     reRenderField = false
@@ -207,7 +215,7 @@ export function updateVisualization(options = {}) {
   // re-renders and the feature is on (persists across structure & frame changes).
   // Also run when "Complete Polyhedra" is on (faces hidden) so the completing atoms are
   // computed and shown.
-  if (general.showPolyhedra || general.completePolyhedra) updatePolyhedra();
+  if (reRenderPolyhedra && (general.showPolyhedra || general.completePolyhedra)) updatePolyhedra();
   console.timeEnd("uv:updateOther");
   if (reRenderField) {
     if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
