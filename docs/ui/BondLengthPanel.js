@@ -18,6 +18,21 @@ import {
   updateSingleBondDiameter,
 } from '../render/index.js';
 
+// Must match the CSS below: the slider's fixed width and its thumb's
+// diameter. A range input's thumb travels from thumbWidth/2 to
+// width-thumbWidth/2 (it can never center past its own edge), so the colored
+// fill track has to be inset by that same half-thumb amount on each side —
+// lining it up as a plain 0-100% overlay (no inset) makes the fill's ends
+// drift away from the thumbs as they approach the min/max stops.
+const BOND_SLIDER_WIDTH = 200;
+const BOND_SLIDER_THUMB = 16;
+
+/** Pixel offset of a range input's thumb CENTER for value `v` in [0, max]. */
+function bondSliderThumbPos(v, max) {
+  const inset = BOND_SLIDER_THUMB / 2;
+  return inset + (v / max) * (BOND_SLIDER_WIDTH - 2 * inset);
+}
+
 function safeColor(color) {
   if (!color || color === '#') return '#808080';
   if (typeof color === 'number') return colorHexToCss(color);
@@ -50,7 +65,7 @@ function injectDoubleSliderCSS() {
   style.textContent = `
     .bond-range-slider {
       position: relative;
-      width: 200px;
+      width: ${BOND_SLIDER_WIDTH}px;
       height: 16px;
       margin: 0 8px;
     }
@@ -60,11 +75,10 @@ function injectDoubleSliderCSS() {
       background: rgba(150, 150, 150, 0.5);
       border-radius: 2px;
       top: 50%;
-      left: 0;
-      right: 0;
+      left: ${BOND_SLIDER_THUMB / 2}px;
+      right: ${BOND_SLIDER_THUMB / 2}px;
       transform: translateY(-50%);
       z-index: -2;
-      maring: 1px
     }
     .bond-range-slider .range-track {
       position: absolute;
@@ -87,8 +101,8 @@ function injectDoubleSliderCSS() {
     .bond-range-slider input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
-      width: 16px;
-      height: 16px;
+      width: ${BOND_SLIDER_THUMB}px;
+      height: ${BOND_SLIDER_THUMB}px;
       border-radius: 50%;
       background: #fff;
       border: 1px solid #ccc;
@@ -97,8 +111,8 @@ function injectDoubleSliderCSS() {
       margin-top: -6px;
     }
     .bond-range-slider input[type="range"]::-moz-range-thumb {
-      width: 16px;
-      height: 16px;
+      width: ${BOND_SLIDER_THUMB}px;
+      height: ${BOND_SLIDER_THUMB}px;
       border-radius: 50%;
       background: #fff;
       border: 1px solid #ccc;
@@ -608,10 +622,10 @@ export function createBondLengthControls(targetPanel='bondControls') {
         }
       }
 
-      const minPercent = (minVal / 6) * 100;
-      const maxPercent = (maxVal / 6) * 100;
-      track.style.left = `${minPercent}%`;
-      track.style.width = `${maxPercent - minPercent}%`;
+      const minPx = bondSliderThumbPos(minVal, 6);
+      const maxPx = bondSliderThumbPos(maxVal, 6);
+      track.style.left = `${minPx}px`;
+      track.style.width = `${maxPx - minPx}px`;
 
       minValueSpan.textContent = `${minVal.toFixed(2)} Å`;
       maxValueSpan.textContent = `${maxVal.toFixed(2)} Å`;
@@ -633,10 +647,10 @@ export function createBondLengthControls(targetPanel='bondControls') {
     maxSlider.oninput = updateBondRange;
 
     // Initialize track
-    const minPercent = (parseFloat(minSlider.value) / 6) * 100;
-    const maxPercent = (parseFloat(maxSlider.value) / 6) * 100;
-    track.style.left = `${minPercent}%`;
-    track.style.width = `${maxPercent - minPercent}%`;
+    const initMinPx = bondSliderThumbPos(parseFloat(minSlider.value), 6);
+    const initMaxPx = bondSliderThumbPos(parseFloat(maxSlider.value), 6);
+    track.style.left = `${initMinPx}px`;
+    track.style.width = `${initMaxPx - initMinPx}px`;
 
     controlsRow.appendChild(minValueSpan);
     controlsRow.appendChild(sliderContainer);
