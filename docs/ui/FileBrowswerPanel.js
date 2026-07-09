@@ -126,13 +126,7 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     // Select the row just created (inserted right after the source row, not
     // necessarily last in the table) — selectLastAddedRow() would pick
     // whatever row is currently last instead.
-    const newRowIndex = Array.from(newRow.parentElement.children).indexOf(newRow);
-    if (fileBrowser.selectedRow) fileBrowser.selectedRow.classList.remove("selected");
-    newRow.classList.add("selected");
-    fileBrowser.selectedRow = newRow;
-    newRow.dataset.index = String(newRowIndex);
-    fileBrowser.selectedRowIndex = newRowIndex;
-    updateStructureFromRowAndStep(newRowIndex);
+    selectRow(newRow);
     return;
   }
 
@@ -299,6 +293,7 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     const option = select.value;
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     const container = structureShip.container[rowIndex];
+    let newRow;
 
     if (option === "all") {
       // Copy all steps: create a new container with new Structure objects
@@ -319,7 +314,7 @@ row.querySelector(".copy").addEventListener("click", (e) => {
         traj: newStructures.length,
       };
 
-      const newRow = createRow(newObj);
+      newRow = createRow(newObj);
       row.insertAdjacentElement("afterend", newRow);
       structureShip.len += 1;
       structureShip.container.splice(rowIndex + 1, 0, newObj);
@@ -345,7 +340,7 @@ row.querySelector(".copy").addEventListener("click", (e) => {
         traj: 1,
       };
 
-      const newRow = createRow(newObj);
+      newRow = createRow(newObj);
       row.insertAdjacentElement("afterend", newRow);
       structureShip.len += 1;
       structureShip.container.splice(rowIndex + 1, 0, newObj);
@@ -373,14 +368,17 @@ row.querySelector(".copy").addEventListener("click", (e) => {
         traj: newStructures.length,
       };
 
-      const newRow = createRow(newObj);
+      newRow = createRow(newObj);
       row.insertAdjacentElement("afterend", newRow);
       structureShip.len += 1;
       structureShip.container.splice(rowIndex + 1, 0, newObj);
     }
 
     closePopup();
-    selectLastAddedRow();
+    // Select the row just created (inserted right after the source row, not
+    // necessarily last in the table) — selectLastAddedRow() would pick
+    // whatever row is currently last instead.
+    selectRow(newRow);
   };
 
   // Handle cancellation
@@ -404,6 +402,20 @@ row.querySelector(".copy").addEventListener("click", (e) => {
 
   row.dataset.obj = JSON.stringify(obj);
   return row;
+}
+
+/** Select a specific row element (its current position in the table decides
+ *  its index) — used after inserting a row that isn't necessarily last,
+ *  e.g. a copy inserted right after its source row. */
+function selectRow(row) {
+  if (!row) return;
+  const rowIndex = Array.from(row.parentElement.children).indexOf(row);
+  if (fileBrowser.selectedRow) fileBrowser.selectedRow.classList.remove("selected");
+  row.classList.add("selected");
+  fileBrowser.selectedRow = row;
+  row.dataset.index = String(rowIndex);
+  fileBrowser.selectedRowIndex = rowIndex;
+  updateStructureFromRowAndStep(rowIndex);
 }
 
 export function selectLastAddedRow() {
