@@ -156,6 +156,9 @@ document.getElementById("pushRandom").addEventListener("change", (e) => {
 document.getElementById("autoRotate").addEventListener("change", (e) => {
   // Optional: If you want to tie "Auto Rotation" to damping
    app.controls.dynamicDampingFactor = e.target.checked ? 0 : 0.2;
+   // No damping means no inertia to arrest a zoom drag, which reads as the
+   // scene lurching uncontrollably — disallow zoom while undamped.
+   app.controls.noZoom = e.target.checked;
 });
 
 // --- Push & Release Toggle ---
