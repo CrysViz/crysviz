@@ -23,6 +23,7 @@ import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
 import { addEOSPanel, removeEOSPanel } from '../EOSPanel.js';
 import { openEOSSplitView, closeEOSSplitView } from '../EOSSplitView.js';
+import { addDummySplitPanel, removeDummySplitPanel, openDummySplitView, closeDummySplitView } from '../DummySplitPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
 import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
@@ -523,6 +524,20 @@ export function registerDefaultPanels() {
     onExpand() { openEOSSplitView(); },
     onCollapse() { closeEOSSplitView(); },
     defaults: { docked: true, order: 92, collapsed: true },
+  });
+
+  registerPanel({
+    id: 'splitDemo',
+    title: 'Split View Demo',
+    lifecycle: 'rebuild',
+    available() { return true; },
+    buildContent(body) { addDummySplitPanel(body.id); },
+    onDestroyContent() { removeDummySplitPanel(); },
+    // Minimal example of a second feature reusing the same split view the EOS
+    // panel uses (docs/ui/panels/SplitView.js) for its own, unrelated content.
+    onExpand() { openDummySplitView(); },
+    onCollapse() { closeDummySplitView(); },
+    defaults: { docked: true, order: 93, collapsed: true },
   });
 
   registerPanel({

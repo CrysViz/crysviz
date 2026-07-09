@@ -1,0 +1,268 @@
+/* Generic right-side split view (docs/ui/panels/SplitView.js). #viewArea
+   replaces #view as the flex sibling of #ui; #view itself keeps all its
+   existing rules (this just adds a wrapper around it), so the 3D scene is
+   unaffected when no feature panel is using the split view.
+
+   The pane/handle/tab are viewport-anchored (position: fixed), NOT flex
+   children of #viewArea — #viewArea's own layout shifts when #ui is
+   hidden/shown (body drops out of flex entirely, see styles.css
+   body.panel-hidden), and a flex-based pane would visibly jump with it.
+   #view instead reserves space via a plain margin (--split-pane-fraction is
+   a vw-based fraction, independent of #ui's width), so the pane stays put on
+   screen regardless of the dock's state.
+
+   Content-specific styling (e.g. the EOS plots' mini toggle, or a dummy
+   panel's own markup) belongs in that feature's own stylesheet, layered on
+   top of the generic `.split-item` rules below. */
+
+#viewArea {
+  flex: 1;
+  position: relative;
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+}
+
+#viewArea #view {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-radius: 0 20px 20px 0;
+}
+
+/* Split only actually narrows the 3D view once some panel's split view is active. */
+#viewArea.split-active #view {
+  border-radius: 0;
+}
+
+#viewArea.split-active:not(.split-pane-collapsed) #view {
+  margin-right: calc(var(--split-pane-fraction, 0.5) * 100vw);
+}
+
+/* #ui hidden: #view normally goes fullscreen (styles.css) — keep it clear
+   of the pane instead, at the same width the pane itself is drawn at. */
+body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
+  width: calc(100dvw - (var(--split-pane-fraction, 0.5) * 100vw)) !important;
+}
+
+.split-handle {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: calc(var(--split-pane-fraction, 0.5) * 100vw);
+  width: 6px;
+  cursor: col-resize;
+  background: var(--panel-border);
+  z-index: 1301;
+}
+
+.split-handle:hover,
+.split-handle:active {
+  background: var(--highlight-color, #00bcd4);
+}
+
+.split-pane {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: calc(var(--split-pane-fraction, 0.5) * 100vw);
+  /* Must match MIN_PANE_PX in panels/SplitView.js, or dragging into that gap
+     computes a valid (smaller) fraction that this floor then silently
+     overrides — the pane visibly stops following the pointer. */
+  min-width: 220px;
+  max-width: 85vw;
+  z-index: 1300;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--panel-border);
+  overflow: hidden;
+}
+
+/* Not split (no panel's split view active): pane + handle take no space. */
+#viewArea:not(.split-active) .split-pane,
+#viewArea:not(.split-active) .split-handle {
+  display: none;
+}
+
+/* Pane collapsed to a pull-tab: give the 3D view the width back. */
+#viewArea.split-pane-collapsed .split-pane {
+  width: 0;
+  min-width: 0;
+  border: none;
+  overflow: hidden;
+}
+
+#viewArea.split-pane-collapsed .split-handle {
+  display: none;
+}
+
+.split-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--panel-fg);
+  border-bottom: 1px solid var(--panel-border);
+  flex: 0 0 auto;
+}
+
+.split-pane-btn {
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.split-pane-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Items stack top to bottom, splitting the pane's height evenly by default —
+   an owner with a single item just gets the whole body. */
+.split-pane-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  overflow: auto;
+}
+
+.split-pane .split-item {
+  flex: 1 1 50%;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  background: var(--group-bg);
+  border-radius: 10px;
+  padding: 8px;
+  position: relative;
+}
+
+/* Our own `display: flex` above otherwise outranks the UA [hidden] rule. */
+.split-pane .split-item[hidden] {
+  display: none;
+}
+
+.split-pane .split-item h4 {
+  margin: 0 0 4px 0;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted-fg);
+}
+
+.split-pane .split-item-body {
+  flex: 1;
+  min-height: 0;
+  border-radius: 6px;
+}
+
+.split-pane .split-item-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.split-pane .split-item-action-btn {
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.split-pane .split-item-action-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Pull-tab shown only while the pane is collapsed. */
+.split-pane-tab {
+  display: none;
+  position: fixed;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  padding: 14px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  z-index: 1300;
+}
+
+#viewArea.split-active.split-pane-collapsed .split-pane-tab {
+  display: block;
+}
+
+/* Expanded (fullscreen) single-item view, toggled from the ⛶ button. Above
+   the split handle (z-index 1301) so the handle doesn't float on top of it;
+   the handle is also hidden outright while expanded (see below). */
+.split-pane .split-item.expanded {
+  position: fixed !important;
+  top: 5vh !important;
+  left: 5vw !important;
+  width: 90vw !important;
+  height: 90vh !important;
+  z-index: 1400 !important;
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.5) !important;
+}
+
+.split-item-close-btn {
+  display: none;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 2px 7px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.split-item.expanded .split-item-close-btn {
+  display: block;
+}
+
+/* The resize handle otherwise sits on top of the expanded (fullscreen) item. */
+#viewArea.split-item-expanded .split-handle {
+  display: none;
+}
+
+/* .split-pane's own z-index otherwise caps its expanded child below the
+   overlay (a sibling) — z-index only ever wins fights within the stacking
+   context an ancestor establishes, no matter how high the child's own value
+   is. Raise the whole pane above the overlay while it holds an expanded item. */
+#viewArea.split-item-expanded .split-pane {
+  z-index: 1400;
+}
+
+.split-pane-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 1350;
+}
+
+.split-pane-overlay.active {
+  display: block;
+}

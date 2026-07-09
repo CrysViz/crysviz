@@ -1,0 +1,24 @@
+/* Split View Demo panel (docs/ui/DummySplitPanel.js) — a minimal example of a
+   second feature using the shared split view. Only the couple of rules
+   unique to it live here; the pane chrome is SplitView.css. */
+
+.dummy-docked-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.dummy-counter-item {
+  align-items: center;
+  justify-content: center;
+}
+
+.dummy-counter-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 64px;
+  font-weight: 600;
+  color: var(--panel-fg);
+}
