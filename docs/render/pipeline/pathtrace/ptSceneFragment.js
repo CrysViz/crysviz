@@ -13,13 +13,15 @@
 //     an ideal mirror.
 // The scene data comes from the SAME data textures as the raytrace pipeline
 // (render/pipeline/raytrace/SceneEncoder.js) — see sceneFragment.js there for
-// the texel layouts (3 texels/atom, 6/cylinder, material in the poly header/
-// AABB w slots). The area light sits along the app key-light direction at
+// the texel layouts (3 texels/atom, 8/cylinder with a leading bounding sphere,
+// material in the poly header/AABB w slots). The area light sits along the app
+// key-light direction at
 // uLightPosition with radius uLightRadius (the "Light softness" slider).
 
 import { DATA_TEX_WIDTH } from '../raytrace/sceneFragment.js';
 import { fieldChunk } from '../raytrace/fieldChunk.js';
 import { planeChunk } from '../raytrace/planeChunk.js';
+import { gridChunk } from '../raytrace/gridChunk.js';
 
 export const ptSceneFragment = /* glsl */`
 precision highp float;
@@ -34,6 +36,11 @@ uniform sampler2D uPolyDataTexture;
 uniform int uAtomCount;
 uniform int uCylinderCount;
 uniform int uPolyCount;
+uniform vec3 uSceneMin;      // whole-scene world AABB (interior early-out)
+uniform vec3 uSceneMax;
+uniform bool uSceneBoundValid; // false = empty scene
+uniform bool uShadowAnyHit;  // any-hit shadow early-out (false when the scene
+//   has emissive objects: they are LIGHTs a light-sample ray must still reach)
 uniform vec3 uLightDirection; // updated by the shared driver (unused directly)
 uniform vec3 uLightColor;
 uniform vec3 uBackgroundColor;
@@ -110,6 +117,12 @@ Sphere lightSphere;
 // and keeping the sphere out of view in perspective mode when the camera is
 // farther out than the light distance).
 int gCameraRay = TRUE;
+// TRUE while the current ray is a light-sample (shadow) ray — set from
+// sampleLight before each SceneIntersect. Enables the any-hit shadow early-out.
+int gShadowRay = FALSE;
+// "ray is leaving a closed shape" flag of the closest hit (was SceneIntersect's
+// out-param; a global so the grid's per-primitive tests can set it too).
+int gRayExiting = FALSE;
 
 #include <pathtracing_random_functions>
 #include <pathtracing_calc_fresnel_reflectance>
@@ -148,13 +161,84 @@ vec3 groundPatternColor(vec3 p)
 	return min(f.x, f.y) < 0.03 ? uGroundColor2 : uGroundColor1;
 }
 
+// Per-primitive tests shared by the brute loops, the any-hit shadow path and
+// (step 6) the uniform grid, so all callers run byte-identical per-primitive
+// code. Each updates the hit globals + t on a NEW CLOSEST hit and returns 1
+// only for a light-sample (shadow) ray, when uShadowAnyHit is set, whose new
+// closest hit DEFINITELY occludes the light: glass (code 2) OR opaque
+// (alpha>=1). In PT a light-sample ray that hits glass counts as occluded
+// (SceneIntersect's sampleLight branch precedes the type branches), so glass is
+// a valid early-out too. The light sphere is intersected first and seeds t, so
+// d<t already ignores anything beyond the light — free light-distance bounding.
+// uShadowAnyHit is false whenever the scene has emissive objects (they are
+// LIGHTs a light-sample ray must be able to add), which makes the early-out
+// exact. hitObjectID divergence from the early-out is inert: every consumer is
+// diffuseCount==0-gated and a sampleLight ray always follows a diffuseCount++.
+int testAtom(int i, inout float t)
+{
+	vec4 posRad = fetchData(uAtomsDataTexture, i * 3);
+	float d = SphereIntersect(posRad.w, posRad.xyz, rayOrigin, rayDirection);
+	if (d >= t) return 0;
+	t = d;
+	vec4 colA = fetchData(uAtomsDataTexture, (i * 3) + 1);
+	vec4 mat = fetchData(uAtomsDataTexture, (i * 3) + 2);
+	hitNormal = (rayOrigin + (t * rayDirection)) - posRad.xyz;
+	hitColor = colA.rgb;
+	hitType = resolveHitType(mat, colA.rgb, colA.a);
+	hitObjectID = float(1 + i);
+	gRayExiting = dot(hitNormal, rayDirection) > 0.0 ? TRUE : FALSE;
+	return (gShadowRay == TRUE && uShadowAnyHit
+		&& (int(mat.x + 0.5) == 2 || colA.a >= 0.999)) ? 1 : 0;
+}
+
+int testCylinder(int i, inout float t)
+{
+	int o = i * 8;
+	vec4 sph = fetchData(uCylindersDataTexture, o); // (center.xyz, radius)
+	vec3 L = sph.xyz - rayOrigin;
+	float tca = dot(L, rayDirection);
+	float r2 = sph.w * sph.w;
+	float d2 = dot(L, L) - tca * tca;
+	if (d2 > r2) return 0;            // ray line misses the sphere
+	float thc = sqrt(r2 - d2);
+	if (tca + thc <= 0.0) return 0;   // sphere fully behind (origin-inside passes)
+	if (tca - thc >= t) return 0;     // nearest possible entry can't beat best
+	mat4 invM = mat4(
+		fetchData(uCylindersDataTexture, o + 1),
+		fetchData(uCylindersDataTexture, o + 2),
+		fetchData(uCylindersDataTexture, o + 3),
+		fetchData(uCylindersDataTexture, o + 4));
+	vec3 ro = (invM * vec4(rayOrigin, 1.0)).xyz;
+	vec3 rd = (invM * vec4(rayDirection, 0.0)).xyz;
+	vec3 cn;
+	float d = UnitCylinderIntersect(ro, rd, cn);
+	if (d >= t) return 0;
+	t = d;
+	vec4 colA = fetchData(uCylindersDataTexture, o + 5);
+	vec4 mat = fetchData(uCylindersDataTexture, o + 6);
+	hitNormal = transpose(mat3(invM)) * cn;
+	hitColor = colA.rgb;
+	hitType = resolveHitType(mat, colA.rgb, colA.a);
+	hitObjectID = float(1 + uAtomCount + i);
+	gRayExiting = FALSE; // open cylinders are not closed shapes
+	return (gShadowRay == TRUE && uShadowAnyHit
+		&& (int(mat.x + 0.5) == 2 || colA.a >= 0.999)) ? 1 : 0;
+}
+
+// grid-chunk dispatch wrappers (uniform signature the shared GridTraverse calls;
+// PT ignores shadowFlag — the per-primitive tests read the gShadowRay global)
+int gridTestAtom(int i, int shadowFlag, inout float t) { return testAtom(i, t); }
+int gridTestCylinder(int i, int shadowFlag, inout float t) { return testCylinder(i, t); }
+
+${gridChunk}
+
 //---------------------------------------------------------------------------
-float SceneIntersect( out int isRayExiting )
+float SceneIntersect()
 {
 	vec3 n;
 	float d;
 	float t = INFINITY;
-	isRayExiting = FALSE;
+	gRayExiting = FALSE;
 
 	// ---- the area light (a fixture: invisible to camera rays) --------------
 	d = gCameraRay == TRUE ? INFINITY
@@ -170,62 +254,42 @@ float SceneIntersect( out int isRayExiting )
 		hitObjectID = 0.0;
 	}
 
-	// ---- atoms: spheres ---------------------------------------------------
-	for (int i = 0; i < uAtomCount; i++)
+	// Whole-scene AABB early-out (AFTER the light block — the light sits
+	// outside the structure and must never be gated): skip every interior
+	// primitive loop when the ray misses the structure box. Ground/background
+	// stay OUTSIDE. inverseDir is hoisted (the polyhedra AABB test reuses it).
+	vec3 inverseDir = 1.0 / rayDirection;
+	if (!uSceneBoundValid || BoundingBoxIntersect(uSceneMin, uSceneMax, rayOrigin, inverseDir) < INFINITY)
 	{
-		vec4 posRad = fetchData(uAtomsDataTexture, i * 3);
-		d = SphereIntersect(posRad.w, posRad.xyz, rayOrigin, rayDirection);
-		if (d < t)
-		{
-			t = d;
-			vec4 colA = fetchData(uAtomsDataTexture, (i * 3) + 1);
-			vec4 mat = fetchData(uAtomsDataTexture, (i * 3) + 2);
-			hitNormal = (rayOrigin + (t * rayDirection)) - posRad.xyz;
-			hitColor = colA.rgb;
-			hitType = resolveHitType(mat, colA.rgb, colA.a);
-			hitObjectID = float(1 + i);
-			isRayExiting = dot(hitNormal, rayDirection) > 0.0 ? TRUE : FALSE;
-		}
-	}
 
-	// ---- bonds + unit-cell edges: unit cylinders via inverse matrices ------
-	for (int i = 0; i < uCylinderCount; i++)
+	// ---- atoms + cylinders: uniform grid (>= GRID_MIN_PRIMS) or brute loops.
+	// Either path threads t into the polyhedra/field/plane tests below. A
+	// light-sample occluder early-out returns t.
+	if (uGridEnabled)
 	{
-		int o = i * 6;
-		mat4 invM = mat4(
-			fetchData(uCylindersDataTexture, o),
-			fetchData(uCylindersDataTexture, o + 1),
-			fetchData(uCylindersDataTexture, o + 2),
-			fetchData(uCylindersDataTexture, o + 3));
-		// direction NOT renormalized in object space: t stays world-valid
-		vec3 ro = (invM * vec4(rayOrigin, 1.0)).xyz;
-		vec3 rd = (invM * vec4(rayDirection, 0.0)).xyz;
-		d = UnitCylinderIntersect(ro, rd, n);
-		if (d < t)
-		{
-			t = d;
-			vec4 colA = fetchData(uCylindersDataTexture, o + 4);
-			vec4 mat = fetchData(uCylindersDataTexture, o + 5);
-			hitNormal = transpose(mat3(invM)) * n;
-			hitColor = colA.rgb;
-			hitType = resolveHitType(mat, colA.rgb, colA.a);
-			hitObjectID = float(1 + uAtomCount + i);
-			isRayExiting = FALSE; // open cylinders are not closed shapes
-		}
+		if (GridTraverse(rayOrigin, rayDirection, gShadowRay, t) == 1) return t;
+	}
+	else
+	{
+		for (int i = 0; i < uAtomCount; i++)
+			if (testAtom(i, t) == 1) return t;      // occluding shadow hit
+		for (int i = 0; i < uCylinderCount; i++)
+			if (testCylinder(i, t) == 1) return t;  // occluding shadow hit
 	}
 
 	// ---- polyhedra: convex plane sets with an AABB quick reject ------------
 	vec4 planes[20];
-	vec3 inverseDir = 1.0 / rayDirection;
 	for (int p = 0; p < uPolyCount; p++)
 	{
 		int o = p * 4;
-		vec4 header = fetchData(uPolyDataTexture, o);
-		vec4 colA = fetchData(uPolyDataTexture, o + 1);
-		vec3 aabbMin = fetchData(uPolyDataTexture, o + 2).xyz;
-		vec3 aabbMax = fetchData(uPolyDataTexture, o + 3).xyz;
-		if (BoundingBoxIntersect(aabbMin, aabbMax, rayOrigin, inverseDir) >= t)
+		// AABB texels FIRST: slab-reject before touching header/colA. The .w
+		// slots (typeParam/reflectivity) stay in registers for the hit block,
+		// so a hit needs no re-fetch and a miss skips 2 fetches (header+colA).
+		vec4 aabbMinT = fetchData(uPolyDataTexture, o + 2);
+		vec4 aabbMaxT = fetchData(uPolyDataTexture, o + 3);
+		if (BoundingBoxIntersect(aabbMinT.xyz, aabbMaxT.xyz, rayOrigin, inverseDir) >= t)
 			continue;
+		vec4 header = fetchData(uPolyDataTexture, o);
 		int planeOffset = int(header.x);
 		int planeCount = int(header.y);
 		for (int k = 0; k < 20; k++)
@@ -236,14 +300,15 @@ float SceneIntersect( out int isRayExiting )
 		if (d < t)
 		{
 			t = d;
+			vec4 colA = fetchData(uPolyDataTexture, o + 1);
 			hitNormal = n;
 			hitColor = colA.rgb;
 			// material packed into the spare header/AABB w slots
 			hitType = resolveHitType(
-				vec4(header.z, header.w, fetchData(uPolyDataTexture, o + 2).w, fetchData(uPolyDataTexture, o + 3).w),
+				vec4(header.z, header.w, aabbMinT.w, aabbMaxT.w),
 				colA.rgb, colA.a);
 			hitObjectID = float(1 + uAtomCount + uCylinderCount + p);
-			isRayExiting = dot(n, rayDirection) > 0.0 ? TRUE : FALSE;
+			gRayExiting = dot(n, rayDirection) > 0.0 ? TRUE : FALSE;
 		}
 	}
 
@@ -263,7 +328,7 @@ float SceneIntersect( out int isRayExiting )
 			hitReflectivity = -1.0;  // use the global Reflectivity slider
 			hitRoughness = 0.0;
 			hitObjectID = -3.0;      // distinct id (light 0, ground -2)
-			isRayExiting = FALSE;    // double-sided implicit surface
+			gRayExiting = FALSE;    // double-sided implicit surface
 		}
 	}
 
@@ -283,9 +348,11 @@ float SceneIntersect( out int isRayExiting )
 			hitReflectivity = -1.0;  // use the global Reflectivity slider
 			hitRoughness = 0.0;
 			hitObjectID = -4.0;      // distinct id (light 0, ground -2, field -3)
-			isRayExiting = FALSE;    // double-sided flat surface
+			gRayExiting = FALSE;    // double-sided flat surface
 		}
 	}
+
+	} // end whole-scene AABB gate
 
 	// ---- optional ground plane (patterned shadow catcher) ------------------
 	if (uGroundEnabled)
@@ -305,7 +372,7 @@ float SceneIntersect( out int isRayExiting )
 			hitGloss = 1.0;          // sharp fresnel floor reflections
 			hitReflectivity = uGroundReflect; // stochastic mirror fraction
 			hitObjectID = -2.0;
-			isRayExiting = FALSE;
+			gRayExiting = FALSE;
 		}
 	}
 
@@ -337,7 +404,6 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 
 	int bounceIsSpecular = TRUE;
 	int sampleLight = FALSE;
-	int isRayExiting = FALSE;
 	int willNeedReflectionRay = FALSE;
 	int isReflectionTime = FALSE;
 	int willNeedDiffuseBounceRay = FALSE;
@@ -351,7 +417,8 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 		previousObjectID = hitObjectID;
 
 		gCameraRay = isPrimaryRay;
-		t = SceneIntersect(isRayExiting);
+		gShadowRay = sampleLight; // enables the any-hit shadow early-out
+		t = SceneIntersect();
 
 		if (t == INFINITY) // ray escaped into the background
 		{
@@ -550,9 +617,9 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 			// tint towards the object color by the inverse of its alpha;
 			// tintDepth (glass slot) scales the Beer's-law saturation
 			vec3 tintColor = mix(vec3(1), hitColor, 0.7);
-			if (isRayExiting == TRUE)
+			if (gRayExiting == TRUE)
 			{
-				isRayExiting = FALSE;
+				gRayExiting = FALSE;
 				mask *= exp(log(clamp(tintColor, 0.01, 0.99)) * hitTintDepth * t);
 			}
 			else

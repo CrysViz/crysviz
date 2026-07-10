@@ -64,6 +64,47 @@ const _halfY = new THREE.Matrix4().makeScale(1, 0.5, 1);
 const _yAxis = new THREE.Vector3(0, 1, 0);
 const _color = new THREE.Color();
 
+// World-space geometry of a unit cylinder (object y in [-1,1], radius 1) under
+// its forward matrix m. Columns of the 3x3 are orthogonal for every cylinder
+// here (all built via Matrix4.compose = R*diag(scale)): center = translation,
+// axis half-vector = col1 (|col1| = the half-length along the axis), radial
+// extent rad = max(|col0|,|col2|). The tight bounding-sphere radius is then
+// sqrt(|col1|^2 + rad^2). Returns [cx,cy,cz, hx,hy,hz, rad, sphereR]: the sphere
+// feeds the shader pre-reject + steps 3/6; the segment (center +/- axisHalf) +
+// rad feed the grid's capsule-vs-cell insertion. A tiny pad keeps the sphere
+// strictly enclosing under float rounding (never clips a real grazing hit).
+function cylinderGeom(m) {
+  const e = m.elements;
+  const hx = e[4], hy = e[5], hz = e[6]; // col1 = axis half-vector
+  const col1 = Math.hypot(hx, hy, hz);
+  const rad = Math.max(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[8], e[9], e[10]));
+  const sphereR = Math.sqrt(col1 * col1 + rad * rad) + 1e-4;
+  return [e[12], e[13], e[14], hx, hy, hz, rad, sphereR];
+}
+
+// Squared distance between a line segment p0->p1 and an axis-aligned box
+// [bmin,bmax]. dist^2(P(u), box) is convex in u (distance to a convex set of an
+// affine path), so a ternary search converges to the global minimum; ~40 steps
+// shrink [0,1] below 1e-6. Used by the grid's cylinder insertion filter — the
+// caller pads the radius so numerical slack can only OVER-insert (never skip a
+// cell the capsule truly overlaps).
+function segBoxDist2(p0, p1, bmin, bmax) {
+  const dx = p1[0] - p0[0], dy = p1[1] - p0[1], dz = p1[2] - p0[2];
+  const distAt = (u) => {
+    const x = p0[0] + dx * u, y = p0[1] + dy * u, z = p0[2] + dz * u;
+    const ex = Math.max(bmin[0] - x, 0, x - bmax[0]);
+    const ey = Math.max(bmin[1] - y, 0, y - bmax[1]);
+    const ez = Math.max(bmin[2] - z, 0, z - bmax[2]);
+    return ex * ex + ey * ey + ez * ez;
+  };
+  let lo = 0, hi = 1;
+  for (let it = 0; it < 40; it++) {
+    const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+    if (distAt(m1) < distAt(m2)) hi = m2; else lo = m1;
+  }
+  return distAt((lo + hi) * 0.5);
+}
+
 function makeDataTexture(texelCount) {
   const height = Math.max(1, Math.ceil(texelCount / DATA_TEX_WIDTH));
   const texture = new THREE.DataTexture(
@@ -114,10 +155,39 @@ export class SceneEncoder {
   atomCount = 0;
   cylinderCount = 0;
   polyCount = 0;
+  _cylBounds = new Float32Array(4); // per-cylinder world bounding spheres (cx,cy,cz,r)
+  _cylSegs = new Float32Array(8);   // per-cylinder (cx,cy,cz, hx,hy,hz, rad, sphereR)
+  hasEmissive = false; // any emissive (code 3) material texel written this encode
+  //   (the PT any-hit shadow early-out is disabled when true: emissive objects
+  //   are LIGHTs a light-sample ray must still be able to reach and add)
+  // ---- uniform grid (3D-DDA accelerator over atoms + cylinders) -----------
+  // Built by _buildGrid() only when atomCount + cylinderCount >= gridMinPrims;
+  // the shaders swap the brute loops for a grid walk when gridEnabled. Cells
+  // texture: 1 texel/cell (offset, count, 0, 0); index texture: 4 entries/texel
+  // (primIndex*2 + typeBit). See gridChunk.js.
+  gridEnabled = false;
+  gridMin = new THREE.Vector3();
+  gridInvCellSize = new THREE.Vector3(1, 1, 1);
+  gridDims = [1, 1, 1];
+  gridMinPrims = 256; // GRID_MIN_PRIMS (instance field so tests can force 0/Infinity)
+  gridCellsTexture = makeDataTexture(1);
+  gridIndexTexture = makeDataTexture(1);
+  _gridWarned = false; // one-time entry-cap warning
   boundingRadius = 10; // max atom distance from the origin (light placement)
   minY = -5; // lowest atom point (ground plane placement; driver adds the offset)
   structureCenter = new THREE.Vector3(); // atom bounding-box center
   structureRadius = 5; // half-diagonal of the atom bounding box (from the center)
+  // whole-scene world AABB (atoms + cylinder spheres + poly AABBs + cell-clipped
+  // planes + field box), padded; the shaders early-out the interior primitive
+  // loops when a ray misses it. sceneBoundsValid=false => nothing to trace.
+  sceneBoundsMin = new THREE.Vector3();
+  sceneBoundsMax = new THREE.Vector3();
+  sceneBoundsValid = false;
+  _atomMin = [Infinity, Infinity, Infinity]; // atom-only AABB (for scene bounds)
+  _atomMax = [-Infinity, -Infinity, -Infinity];
+  _polyMin = [Infinity, Infinity, Infinity]; // poly-only AABB (for scene bounds)
+  _polyMax = [-Infinity, -Infinity, -Infinity];
+  _fieldForward = null; // forward field matrix (frac [0,1]^3 -> world), or null
   _coreFingerprint = '';   // atoms/cut/bonds/poly/lattice/field/planes + raster style fields
   _matFingerprint = '';    // per-species/per-atom tracer material maps
   lastChangeWasCoreScene = false; // set by fingerprintChanged(): was the last diff a CORE edit?
@@ -159,6 +229,8 @@ export class SceneEncoder {
     if (this._realAtlas) this._realAtlas.dispose();
     this._dummyFieldTexture.dispose();
     if (this._realFieldTexture) this._realFieldTexture.dispose();
+    this.gridCellsTexture.dispose();
+    this.gridIndexTexture.dispose();
   }
 
   /** Cheap change detector; true when the scene must be re-encoded. Splits the
@@ -291,11 +363,210 @@ export class SceneEncoder {
 
   /** Re-encode everything into the data textures. */
   encode() {
+    this.hasEmissive = false; // sub-encoders set it when an emissive texel is written
     this._encodeAtoms();
     this._encodeCylinders();
     this._encodePolyhedra();
     this._encodeField();
     this._encodePlanes();
+    this._computeSceneBounds();
+    this._buildGrid();
+  }
+
+  /** Build the uniform grid over atoms + cylinders (a counting-sort insertion
+   *  into a cells texture + an entry-index texture; see gridChunk.js). Skipped
+   *  (gridEnabled=false) below gridMinPrims, where the brute loops are already
+   *  cheap. Grid bounds are the union of atom AABBs + cylinder bounding spheres
+   *  (tighter than the whole-scene box); cell count targets ~2.5 prims/cell,
+   *  clamped to <= 64 per axis. Atoms insert into their center +/- radius cell
+   *  range; cylinders insert only into cells within `rad` of their segment
+   *  (exact point-segment-vs-cell-box distance), keeping long diagonal edges at
+   *  O(dims) cells instead of O(dims^3). Multi-cell entries are correct (the
+   *  first cell along a ray that holds a primitive finds its true hit). */
+  _buildGrid() {
+    const N = this.atomCount + this.cylinderCount;
+    if (N < this.gridMinPrims) { this.gridEnabled = false; return; }
+
+    // 1. grid bounds = union of atom AABBs + cylinder bounding spheres
+    const atomData = this.atomsTexture.image.data;
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (let i = 0; i < this.atomCount; i++) {
+      const o = i * 12;
+      const x = atomData[o], y = atomData[o + 1], z = atomData[o + 2], r = atomData[o + 3];
+      if (x - r < minX) minX = x - r; if (x + r > maxX) maxX = x + r;
+      if (y - r < minY) minY = y - r; if (y + r > maxY) maxY = y + r;
+      if (z - r < minZ) minZ = z - r; if (z + r > maxZ) maxZ = z + r;
+    }
+    for (let i = 0; i < this.cylinderCount; i++) {
+      const b = i * 4;
+      const cx = this._cylBounds[b], cy = this._cylBounds[b + 1], cz = this._cylBounds[b + 2];
+      const r = this._cylBounds[b + 3];
+      if (cx - r < minX) minX = cx - r; if (cx + r > maxX) maxX = cx + r;
+      if (cy - r < minY) minY = cy - r; if (cy + r > maxY) maxY = cy + r;
+      if (cz - r < minZ) minZ = cz - r; if (cz + r > maxZ) maxZ = cz + r;
+    }
+    if (!Number.isFinite(minX)) { this.gridEnabled = false; return; }
+    const pad = 1e-3;
+    minX -= pad; minY -= pad; minZ -= pad; maxX += pad; maxY += pad; maxZ += pad;
+
+    // 2. cell counts: ~2.5 prims/cell, near-cubic, <= 64 per axis
+    const ex = Math.max(maxX - minX, 1e-6);
+    const ey = Math.max(maxY - minY, 1e-6);
+    const ez = Math.max(maxZ - minZ, 1e-6);
+    const lambda = Math.cbrt(N / (2.5 * ex * ey * ez));
+    const clampDim = (e) => Math.max(1, Math.min(64, Math.round(e * lambda)));
+    const dx = clampDim(ex), dy = clampDim(ey), dz = clampDim(ez);
+    const numCells = dx * dy * dz;
+    const invX = dx / ex, invY = dy / ey, invZ = dz / ez;
+    const cellSx = ex / dx, cellSy = ey / dy, cellSz = ez / dz;
+    const cellIndex = (i, j, k) => (k * dy + j) * dx + i;
+    const clampI = (v, hi) => (v < 0 ? 0 : v > hi ? hi : v);
+
+    // 3a. counting-sort pass 1: per-cell entry counts
+    const counts = new Int32Array(numCells);
+    // reusable box scratch for the cylinder distance filter
+    const bmin = [0, 0, 0], bmax = [0, 0, 0];
+    const p0 = [0, 0, 0], p1 = [0, 0, 0];
+    let totalEntries = 0;
+    const forEachCell = (visit) => {
+      // atoms: whole center +/- radius cell range
+      for (let a = 0; a < this.atomCount; a++) {
+        const o = a * 12;
+        const x = atomData[o], y = atomData[o + 1], z = atomData[o + 2], r = atomData[o + 3];
+        const i0 = clampI(Math.floor((x - r - minX) * invX), dx - 1);
+        const i1 = clampI(Math.floor((x + r - minX) * invX), dx - 1);
+        const j0 = clampI(Math.floor((y - r - minY) * invY), dy - 1);
+        const j1 = clampI(Math.floor((y + r - minY) * invY), dy - 1);
+        const k0 = clampI(Math.floor((z - r - minZ) * invZ), dz - 1);
+        const k1 = clampI(Math.floor((z + r - minZ) * invZ), dz - 1);
+        const entry = a * 2; // typeBit 0 = atom
+        for (let k = k0; k <= k1; k++)
+          for (let j = j0; j <= j1; j++)
+            for (let i = i0; i <= i1; i++) visit(cellIndex(i, j, k), entry);
+      }
+      // cylinders: capsule-AABB cell range, kept only where the cell box is
+      // within rad of the segment (exact point-segment-vs-box distance)
+      for (let c = 0; c < this.cylinderCount; c++) {
+        const s = c * 8;
+        const cxx = this._cylSegs[s], cyy = this._cylSegs[s + 1], czz = this._cylSegs[s + 2];
+        const hx = this._cylSegs[s + 3], hy = this._cylSegs[s + 4], hz = this._cylSegs[s + 5];
+        const rad = this._cylSegs[s + 6];
+        p0[0] = cxx - hx; p0[1] = cyy - hy; p0[2] = czz - hz;
+        p1[0] = cxx + hx; p1[1] = cyy + hy; p1[2] = czz + hz;
+        const loX = Math.min(p0[0], p1[0]) - rad, hiX = Math.max(p0[0], p1[0]) + rad;
+        const loY = Math.min(p0[1], p1[1]) - rad, hiY = Math.max(p0[1], p1[1]) + rad;
+        const loZ = Math.min(p0[2], p1[2]) - rad, hiZ = Math.max(p0[2], p1[2]) + rad;
+        const i0 = clampI(Math.floor((loX - minX) * invX), dx - 1);
+        const i1 = clampI(Math.floor((hiX - minX) * invX), dx - 1);
+        const j0 = clampI(Math.floor((loY - minY) * invY), dy - 1);
+        const j1 = clampI(Math.floor((hiY - minY) * invY), dy - 1);
+        const k0 = clampI(Math.floor((loZ - minZ) * invZ), dz - 1);
+        const k1 = clampI(Math.floor((hiZ - minZ) * invZ), dz - 1);
+        const rad2 = (rad + 1e-4) * (rad + 1e-4); // tiny pad: never under-insert
+        const entry = c * 2 + 1; // typeBit 1 = cylinder
+        for (let k = k0; k <= k1; k++) {
+          bmin[2] = minZ + k * cellSz; bmax[2] = bmin[2] + cellSz;
+          for (let j = j0; j <= j1; j++) {
+            bmin[1] = minY + j * cellSy; bmax[1] = bmin[1] + cellSy;
+            for (let i = i0; i <= i1; i++) {
+              bmin[0] = minX + i * cellSx; bmax[0] = bmin[0] + cellSx;
+              if (segBoxDist2(p0, p1, bmin, bmax) <= rad2) visit(cellIndex(i, j, k), entry);
+            }
+          }
+        }
+      }
+    };
+    forEachCell((cell) => { counts[cell]++; totalEntries++; });
+
+    if (totalEntries > 4194304) { // 2^22 entry cap
+      if (!this._gridWarned) {
+        console.warn(`raytrace: uniform grid entry count ${totalEntries} exceeds `
+          + '2^22 — falling back to brute force for this scene');
+        this._gridWarned = true;
+      }
+      this.gridEnabled = false;
+      return;
+    }
+
+    // 3b. prefix-sum offsets, then pass 2 scatter into the index texture
+    const offsets = new Int32Array(numCells);
+    let acc = 0;
+    for (let c = 0; c < numCells; c++) { offsets[c] = acc; acc += counts[c]; }
+    const cursor = offsets.slice();
+
+    const cellsTex = this._ensureCapacity('gridCellsTexture', Math.max(1, numCells));
+    const cellsData = cellsTex.image.data;
+    for (let c = 0; c < numCells; c++) {
+      const o = c * 4;
+      cellsData[o] = offsets[c]; cellsData[o + 1] = counts[c];
+      cellsData[o + 2] = 0; cellsData[o + 3] = 0;
+    }
+    cellsTex.needsUpdate = true;
+
+    // 4 entries/texel -> ceil(totalEntries/4) texels
+    const indexTex = this._ensureCapacity('gridIndexTexture', Math.max(1, Math.ceil(totalEntries / 4)));
+    const indexData = indexTex.image.data;
+    forEachCell((cell, entry) => { indexData[cursor[cell]++] = entry; });
+    indexTex.needsUpdate = true;
+
+    this.gridMin.set(minX, minY, minZ);
+    this.gridInvCellSize.set(invX, invY, invZ);
+    this.gridDims = [dx, dy, dz];
+    this.gridEnabled = true;
+  }
+
+  /** Fold the whole-scene world AABB from every traced primitive group, so the
+   *  shaders can skip the interior loops when a ray misses the structure. Uses
+   *  the atom AABB, each cylinder bounding sphere, each poly AABB, the 8
+   *  unit-cell corners (planes are cell-clipped) and the field parallelepiped's
+   *  8 corners. Padded by a small epsilon; sceneBoundsValid=false when empty. */
+  _computeSceneBounds() {
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    const fold = (x, y, z) => {
+      if (x < minX) minX = x; if (y < minY) minY = y; if (z < minZ) minZ = z;
+      if (x > maxX) maxX = x; if (y > maxY) maxY = y; if (z > maxZ) maxZ = z;
+    };
+    if (this.atomCount > 0 && Number.isFinite(this._atomMin[0])) {
+      fold(this._atomMin[0], this._atomMin[1], this._atomMin[2]);
+      fold(this._atomMax[0], this._atomMax[1], this._atomMax[2]);
+    }
+    for (let i = 0; i < this.cylinderCount; i++) {
+      const b = i * 4;
+      const cx = this._cylBounds[b], cy = this._cylBounds[b + 1], cz = this._cylBounds[b + 2];
+      const r = this._cylBounds[b + 3];
+      fold(cx - r, cy - r, cz - r); fold(cx + r, cy + r, cz + r);
+    }
+    if (this.polyCount > 0 && Number.isFinite(this._polyMin[0])) {
+      fold(this._polyMin[0], this._polyMin[1], this._polyMin[2]);
+      fold(this._polyMax[0], this._polyMax[1], this._polyMax[2]);
+    }
+    if (this.planeCount > 0) {
+      const lattice = fileBrowser.selectedStructure?.lattice;
+      if (Array.isArray(lattice) && lattice.length === 3) {
+        const [a, b, c] = lattice;
+        for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) for (let k = 0; k < 2; k++) {
+          fold(i * a[0] + j * b[0] + k * c[0],
+            i * a[1] + j * b[1] + k * c[1],
+            i * a[2] + j * b[2] + k * c[2]);
+        }
+      }
+    }
+    if (this.fieldEnabled && this._fieldForward) {
+      for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) for (let k = 0; k < 2; k++) {
+        _pos.set(i, j, k).applyMatrix4(this._fieldForward);
+        fold(_pos.x, _pos.y, _pos.z);
+      }
+    }
+    if (minX === Infinity) {
+      this.sceneBoundsValid = false;
+      return;
+    }
+    const pad = 1e-3;
+    this.sceneBoundsMin.set(minX - pad, minY - pad, minZ - pad);
+    this.sceneBoundsMax.set(maxX + pad, maxY + pad, maxZ + pad);
+    this.sceneBoundsValid = true;
   }
 
   /** Visible crystallographic Plane groups in the scene (their `.visible`
@@ -390,15 +661,21 @@ export class SceneEncoder {
       // (per-copy = "Link periodic copies" off, stored in atomImageStyles)
       const src = srcIndex ? srcIndex[i] : i;
       const element = structure?.elements?.[src];
-      data.set(materialTexel(
+      const mt = materialTexel(
         getAtomImageStyle(structure, i)?.material
           ?? atomUserMaterials[src]
-          ?? (element ? atomMaterials[element] : null)), d + 8);
+          ?? (element ? atomMaterials[element] : null));
+      if (mt[0] === 3) this.hasEmissive = true;
+      data.set(mt, d + 8);
       n++;
     }
     this.atomCount = n;
     this.boundingRadius = Math.sqrt(maxR2) + 3;
     this.minY = Number.isFinite(minY) ? minY : -5;
+    // atom-only AABB for the whole-scene bound (kept separate from
+    // structureCenter/minY, which stay atoms-only for ground/light placement)
+    this._atomMin = [minX, minY, minZ];
+    this._atomMax = [maxX, maxY, maxZ];
     if (Number.isFinite(minX)) {
       this.structureCenter.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
       this.structureRadius = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2 + (maxZ - minZ) ** 2) / 2;
@@ -411,24 +688,40 @@ export class SceneEncoder {
 
   _encodeCylinders() {
     // bonds + unit-cell edges + polyhedra edges share the cylinder encoding
-    // (6 texels each)
+    // (8 texels each: bounding sphere, 4 inverse-matrix columns, colour,
+    // material, reserved — see sceneFragment.js layout comment)
     const bonds = (groups.bondsMesh && groups.bondsMesh.visible) ? groups.bondsMesh : null;
     const edges = this._latticeEdges();
     const polyEdges = this._polyEdges();
     const planeBorders = this._planeBorders();
     const total = (bonds ? bonds.count : 0) + edges.length + polyEdges.length + planeBorders.length;
-    const texture = this._ensureCapacity('cylindersTexture', Math.max(1, total * 6));
+    const texture = this._ensureCapacity('cylindersTexture', Math.max(1, total * 8));
     const data = texture.image.data;
+    // per-cylinder world bounding spheres (cx,cy,cz,r), reused by the whole-
+    // scene bound (step 3) and the uniform grid (step 6); sized to `total` but
+    // only [0, cylinderCount) is filled (culled bonds are skipped).
+    this._cylBounds = new Float32Array(Math.max(4, total * 4));
+    // per-cylinder segment geometry for the grid's capsule-vs-cell insertion:
+    // (cx,cy,cz, hx,hy,hz, rad, sphereR) — center, axis half-vector, radius.
+    this._cylSegs = new Float32Array(Math.max(8, total * 8));
     let n = 0;
 
-    const writeCylinder = (invM, r, g, b, a, matTexel) => {
-      const d = n * 24;
-      data.set(invM.elements.slice(0, 4), d);       // column-major elements become
-      data.set(invM.elements.slice(4, 8), d + 4);   // vec4 columns re-assembled by
-      data.set(invM.elements.slice(8, 12), d + 8);  // GLSL's column-major mat4()
-      data.set(invM.elements.slice(12, 16), d + 12);
-      data[d + 16] = r; data[d + 17] = g; data[d + 18] = b; data[d + 19] = a;
-      data.set(matTexel, d + 20);
+    const writeCylinder = (invM, geom, r, g, b, a, matTexel) => {
+      const d = n * 32;
+      data[d] = geom[0]; data[d + 1] = geom[1];      // texel 0: bounding sphere
+      data[d + 2] = geom[2]; data[d + 3] = geom[7];  // (center.xyz, radius)
+      data.set(invM.elements.slice(0, 4), d + 4);    // texels 1-4: column-major
+      data.set(invM.elements.slice(4, 8), d + 8);    // elements become vec4 columns
+      data.set(invM.elements.slice(8, 12), d + 12);  // re-assembled by GLSL's mat4()
+      data.set(invM.elements.slice(12, 16), d + 16);
+      data[d + 20] = r; data[d + 21] = g; data[d + 22] = b; data[d + 23] = a; // texel 5
+      if (matTexel[0] === 3) this.hasEmissive = true;
+      data.set(matTexel, d + 24);                    // texel 6: material
+      data[d + 28] = 0; data[d + 29] = 0; data[d + 30] = 0; data[d + 31] = 0; // texel 7: reserved
+      const cb = n * 4;
+      this._cylBounds[cb] = geom[0]; this._cylBounds[cb + 1] = geom[1];
+      this._cylBounds[cb + 2] = geom[2]; this._cylBounds[cb + 3] = geom[7];
+      this._cylSegs.set(geom, n * 8);
       n++;
     };
 
@@ -459,18 +752,18 @@ export class SceneEncoder {
             material = bondCategoryStyles[e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`]?.material;
           }
         }
-        writeCylinder(_mInv, colors[i * 3], colors[i * 3 + 1], colors[i * 3 + 2],
+        writeCylinder(_mInv, cylinderGeom(_m), colors[i * 3], colors[i * 3 + 1], colors[i * 3 + 2],
           (opacities ? opacities[i] : 1) * baseOpacity, materialTexel(material));
       }
     }
     for (const edge of edges) {
-      writeCylinder(edge.invM, edge.r, edge.g, edge.b, 1, DEFAULT_MATERIAL_TEXEL);
+      writeCylinder(edge.invM, edge.geom, edge.r, edge.g, edge.b, 1, DEFAULT_MATERIAL_TEXEL);
     }
     for (const edge of polyEdges) {
-      writeCylinder(edge.invM, edge.r, edge.g, edge.b, edge.a, DEFAULT_MATERIAL_TEXEL);
+      writeCylinder(edge.invM, edge.geom, edge.r, edge.g, edge.b, edge.a, DEFAULT_MATERIAL_TEXEL);
     }
     for (const edge of planeBorders) {
-      writeCylinder(edge.invM, edge.r, edge.g, edge.b, edge.a, DEFAULT_MATERIAL_TEXEL);
+      writeCylinder(edge.invM, edge.geom, edge.r, edge.g, edge.b, edge.a, DEFAULT_MATERIAL_TEXEL);
     }
 
     this.cylinderCount = n;
@@ -504,7 +797,7 @@ export class SceneEncoder {
         _scale.set(radius, len / 2, radius); // unit cylinder y in [-1,1]
         _quat.setFromUnitVectors(_yAxis, _pos2.set(dx / len, dy / len, dz / len));
         _m.compose(_pos, _quat, _scale);
-        result.push({ invM: _m.clone().invert(), r: _color.r, g: _color.g, b: _color.b, a: 1 });
+        result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m), r: _color.r, g: _color.g, b: _color.b, a: 1 });
       }
     }
     return result;
@@ -540,7 +833,7 @@ export class SceneEncoder {
         _scale.set(radius, len / 2, radius); // unit cylinder y in [-1,1]
         _quat.setFromUnitVectors(_yAxis, _pos2.set(dx / len, dy / len, dz / len));
         _m.compose(_pos, _quat, _scale);
-        result.push({ invM: _m.clone().invert(), r: _color.r, g: _color.g, b: _color.b, a: alpha });
+        result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m), r: _color.r, g: _color.g, b: _color.b, a: alpha });
       }
     }
     return result;
@@ -572,7 +865,7 @@ export class SceneEncoder {
         _quat.setFromUnitVectors(_yAxis, unit);
         _scale.set(radius, len / 2, radius); // unit cylinder y in [-1,1]
         _m.compose(_pos, _quat, _scale);
-        edges.push({ invM: _m.clone().invert(), r: _color.r, g: _color.g, b: _color.b });
+        edges.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m), r: _color.r, g: _color.g, b: _color.b });
       }
     }
     return edges;
@@ -589,9 +882,18 @@ export class SceneEncoder {
     const data = texture.image.data;
     let planeOffset = meshes.length * 4;
     const structure = fileBrowser.selectedStructure;
+    // poly-only AABB union for the whole-scene bound (step 3)
+    this._polyMin = [Infinity, Infinity, Infinity];
+    this._polyMax = [-Infinity, -Infinity, -Infinity];
     meshes.forEach((mesh, p) => {
       const planes = mesh.userData.rtPlanes;
       const aabb = mesh.userData.rtAabb;
+      if (aabb.min.x < this._polyMin[0]) this._polyMin[0] = aabb.min.x;
+      if (aabb.min.y < this._polyMin[1]) this._polyMin[1] = aabb.min.y;
+      if (aabb.min.z < this._polyMin[2]) this._polyMin[2] = aabb.min.z;
+      if (aabb.max.x > this._polyMax[0]) this._polyMax[0] = aabb.max.x;
+      if (aabb.max.y > this._polyMax[1]) this._polyMax[1] = aabb.max.y;
+      if (aabb.max.z > this._polyMax[2]) this._polyMax[2] = aabb.max.z;
       // per-polyhedron override > per-category material, packed into the
       // spare header/AABB w slots (poly.key/catKey are stamped by
       // PolyhedraModule.assignPolyhedraKeys; when absent — list panel never
@@ -600,6 +902,7 @@ export class SceneEncoder {
       const material = (poly?.key ? structure?.polyhedraUserStyles?.[poly.key]?.material : null)
         ?? (poly?.catKey ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null);
       const [matType, roughness, typeParam, reflectivity] = materialTexel(material);
+      if (matType === 3) this.hasEmissive = true;
       const d = p * 16;
       data[d] = planeOffset; data[d + 1] = planes.length; data[d + 2] = matType; data[d + 3] = roughness;
       _color.copy(mesh.material.color);
@@ -667,6 +970,7 @@ export class SceneEncoder {
     if (!field) {
       this.fieldEnabled = false;
       this.fieldTexture = this._dummyFieldTexture;
+      this._fieldForward = null;
       return;
     }
     const iso = groups.isosurfaceGroup;
@@ -683,6 +987,7 @@ export class SceneEncoder {
       0, 0, 0, 1);
     _m.scale(_scale.set(field.nx, field.ny, field.nz));
     this.fieldWorldToFrac.copy(_m).invert();
+    this._fieldForward = _m.clone(); // frac [0,1]^3 -> world (scene-bounds corners)
 
     this.fieldIso = Number.isFinite(field.isoValue) ? field.isoValue : 0;
     this.fieldAbsMode = !!field.useAbsoluteIsoValue;

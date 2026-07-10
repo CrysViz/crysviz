@@ -22,10 +22,12 @@
 // Atom cut planes ARE honored: the SceneEncoder drops whole atoms by their
 // world center at encode time, matching the raster shader's per-instance
 // discard (bonds/polyhedra are already CPU-filtered upstream, so they disappear
-// for free). Naive per-pixel primitive loop: fine for typical unit cells,
-// degrades beyond ~1-2k primitives (a BVH is the future upgrade). The "RT
-// resolution" slider renders internally at a fraction of the canvas;
-// "Reflectivity" adds mirror-like reflection.
+// for free). Acceleration: a whole-scene AABB early-out, per-cylinder bounding-
+// sphere pre-reject, any-hit shadow traversal, and a uniform grid (exact 3D-DDA
+// over atoms + cylinders, built above ~256 primitives with a brute-force
+// fallback below); polyhedra/planes/field stay analytic. The "RT resolution"
+// slider renders internally at a fraction of the canvas; "Reflectivity" adds
+// mirror-like reflection.
 //
 // Driver bookkeeping (counters, camera-motion damping) is a compact
 // reimplementation of the upstream demo scaffolding (InitCommon.js, not
@@ -295,6 +297,19 @@ export class RayTracingPipeline extends ForwardPipeline {
       uAtomCount: { value: 0 },
       uCylinderCount: { value: 0 },
       uPolyCount: { value: 0 },
+      // whole-scene world AABB early-out (skips the interior primitive loops
+      // when a ray misses the structure); invalid = empty scene
+      uSceneMin: { value: new THREE.Vector3() },
+      uSceneMax: { value: new THREE.Vector3() },
+      uSceneBoundValid: { value: false },
+      // uniform grid (3D-DDA accelerator over atoms + cylinders); disabled
+      // below GRID_MIN_PRIMS, where the brute loops run instead
+      uGridEnabled: { value: false },
+      uGridMin: { value: new THREE.Vector3() },
+      uGridInvCellSize: { value: new THREE.Vector3(1, 1, 1) },
+      uGridDims: { value: new THREE.Vector3(1, 1, 1) }, // ivec3 in the shader
+      uGridCellsTex: { value: this._encoder.gridCellsTexture },
+      uGridIndexTex: { value: this._encoder.gridIndexTexture },
       // volumetric field isosurface (ray-marched implicit surface)
       uFieldEnabled: { value: false },
       uFieldTex: { value: this._encoder.fieldTexture },
@@ -504,14 +519,16 @@ export class RayTracingPipeline extends ForwardPipeline {
     if (this._previousTarget) this._previousTarget.scissorTest = false;
   }
 
-  /** Copy the full accumulation target into the display snapshot (no scissor).
-   *  Called at round completion and after any untiled burst while tiling is on,
-   *  so the presented canvas only ever shows a whole, integer-sample-count
-   *  image (the source of the "update once per round" behavior). Must be called
-   *  with no tile scissor active on the display target. */
-  _snapshotDisplay(renderer) {
+  /** Copy the full accumulation target `source` into the display snapshot (no
+   *  scissor), so the presented canvas only ever shows a whole, integer-sample-
+   *  count image (the source of the "update once per round" behavior). Must be
+   *  called with no tile scissor active on the display target. The source is
+   *  explicit because the untiled burst leaves the newest sum in
+   *  _previousTarget (target swap), while the tiled round leaves it in
+   *  _accumTarget. */
+  _snapshotDisplay(renderer, source) {
     const prevTarget = renderer.getRenderTarget();
-    this._copyQuad.material.uniforms[this._cfg.copyTexUniform].value = this._accumTarget.texture;
+    this._copyQuad.material.uniforms[this._cfg.copyTexUniform].value = source.texture;
     renderer.setRenderTarget(this._displayTarget);
     this._copyQuad.render(renderer);
     renderer.setRenderTarget(prevTarget);
@@ -715,6 +732,16 @@ export class RayTracingPipeline extends ForwardPipeline {
       u.uAtomCount.value = this._encoder.atomCount;
       u.uCylinderCount.value = this._encoder.cylinderCount;
       u.uPolyCount.value = this._encoder.polyCount;
+      u.uSceneMin.value.copy(this._encoder.sceneBoundsMin);
+      u.uSceneMax.value.copy(this._encoder.sceneBoundsMax);
+      u.uSceneBoundValid.value = this._encoder.sceneBoundsValid;
+      u.uGridEnabled.value = this._encoder.gridEnabled;
+      u.uGridMin.value.copy(this._encoder.gridMin);
+      u.uGridInvCellSize.value.copy(this._encoder.gridInvCellSize);
+      u.uGridDims.value.set(
+        this._encoder.gridDims[0], this._encoder.gridDims[1], this._encoder.gridDims[2]);
+      u.uGridCellsTex.value = this._encoder.gridCellsTexture;
+      u.uGridIndexTex.value = this._encoder.gridIndexTexture;
       // volumetric field isosurface (iso/colour/opacity edits arrive via the
       // encoder fingerprint, which re-encodes and lands here)
       u.uFieldEnabled.value = this._encoder.fieldEnabled;
@@ -888,7 +915,8 @@ export class RayTracingPipeline extends ForwardPipeline {
         // snapshot's sample count at present time — the output pass divides by
         // it with no extra bookkeeping. Mid-round frames re-present this
         // unchanged snapshot, so the canvas never shows a partial-round seam.
-        this._snapshotDisplay(renderer);
+        // (Tiled rounds keep the newest sum in _accumTarget — no swap here.)
+        this._snapshotDisplay(renderer, this._accumTarget);
       } else {
         completedFraction = this._tileCursor / roundTiles;
       }
@@ -908,17 +936,23 @@ export class RayTracingPipeline extends ForwardPipeline {
         renderer.setRenderTarget(this._accumTarget);
         renderer.render(this._rtScene, camera);
 
-        // ping-pong copy: accumulated image -> previous
-        this._copyQuad.material.uniforms[this._cfg.copyTexUniform].value = this._accumTarget.texture;
-        renderer.setRenderTarget(this._previousTarget);
-        this._copyQuad.render(renderer);
+        // Target swap (replaces the per-sample full-frame RGBA32F ping-pong
+        // blit): the sum just written to _accumTarget becomes _previousTarget
+        // for the next sample and the post-burst consumers; _accumTarget takes
+        // the old previous buffer to overwrite next iteration. Bit-identical to
+        // the copy — the newest sum ends in _previousTarget, which is exactly
+        // the precondition a following tiled round reads (each tile re-traces
+        // against _previousTarget and fully overwrites _accumTarget).
+        const swap = this._previousTarget;
+        this._previousTarget = this._accumTarget;
+        this._accumTarget = swap;
 
         u.uCameraIsMoving.value = false; // only the first sample of a burst blurs
       }
       // When tiling is enabled, the output pass presents the DISPLAY snapshot;
       // the untiled path (sample 1, boosts, motion frames) must refresh it so
-      // it isn't stale/black. Full-frame copy (no scissor is active here).
-      if (tilingEnabled) this._snapshotDisplay(renderer);
+      // it isn't stale/black. The newest sum is now in _previousTarget (swap).
+      if (tilingEnabled) this._snapshotDisplay(renderer, this._previousTarget);
     }
 
     // --- averaged, tone-mapped output to the canvas -------------------------
@@ -927,12 +961,14 @@ export class RayTracingPipeline extends ForwardPipeline {
     // re-present an unchanged, seam-free picture. uSampleCounter equals the
     // snapshot's sample count (advanced at the same moment it was taken), so the
     // divide is exact. With tiling OFF this is byte-identical to the legacy
-    // present: read _accumTarget, divide by 1/max(1, uSampleCounter).
+    // present: read the newest sum (in _previousTarget since the burst swap),
+    // divide by 1/max(1, uSampleCounter).
     const out = this._outputQuad.material.uniforms;
     if (tilingEnabled) {
       out[this._cfg.outputTexUniform].value = this._displayTarget.texture;
     } else {
-      out[this._cfg.outputTexUniform].value = this._accumTarget.texture;
+      // untiled present: the burst swap leaves the newest sum in _previousTarget
+      out[this._cfg.outputTexUniform].value = this._previousTarget.texture;
     }
     out.uOneOverSampleCounter.value = 1 / Math.max(1, u.uSampleCounter.value);
     out.uSaturation.value = general.rtSaturation ?? 1; // output-pass grade: no reset needed

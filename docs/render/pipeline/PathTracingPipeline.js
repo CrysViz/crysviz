@@ -49,6 +49,9 @@ export class PathTracingPipeline extends RayTracingPipeline {
     return {
       uLightPosition: { value: new THREE.Vector3(0, 100, 0) },
       uLightRadius: { value: 10 },
+      // any-hit shadow early-out gate: disabled when the scene has emissive
+      // objects (they are implicit LIGHTs a light-sample ray must still reach)
+      uShadowAnyHit: { value: false },
     };
   }
 
@@ -74,6 +77,8 @@ export class PathTracingPipeline extends RayTracingPipeline {
       .multiplyScalar(distance).add(target);
     const softness = Math.min(1, Math.max(0, general.ptLightSoftness ?? 0.3));
     u.uLightRadius.value = Math.max(0.5, softness * distance * 0.35);
+    // exact any-hit shadows only when no emissive object could be masked
+    u.uShadowAnyHit.value = !this._encoder.hasEmissive;
   }
 
   _updateOutputUniforms(out) {

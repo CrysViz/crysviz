@@ -16,10 +16,11 @@
 // Scene data arrives in RGBA32F data textures (see SceneEncoder.js):
 //   atoms      3 texels/atom:  (pos.xyz, radius), (rgb, alpha),
 //              (matType, roughness, typeParam, reflectivity)
-//   cylinders  6 texels/cyl:   4 columns of the inverse object matrix (unit
+//   cylinders  8 texels/cyl:   (bounding sphere center.xyz, radius) for the
+//              pre-reject; 4 columns of the inverse object matrix (unit
 //              cylinder y in [-1,1]; direction NOT renormalized in object
-//              space so t stays world-valid), (rgb, alpha),
-//              (matType, roughness, typeParam, reflectivity)
+//              space so t stays world-valid); (rgb, alpha);
+//              (matType, roughness, typeParam, reflectivity); reserved (zeros)
 //   polyhedra  header (planeOffset, planeCount, matType, roughness),
 //              (rgb, alpha), (aabbMin, typeParam), (aabbMax, reflectivity),
 //              then planeCount (normal.xyz, d)
@@ -34,6 +35,7 @@
 
 import { fieldChunk } from './fieldChunk.js';
 import { planeChunk } from './planeChunk.js';
+import { gridChunk } from './gridChunk.js';
 
 export const DATA_TEX_WIDTH = 1024;
 
@@ -50,6 +52,9 @@ uniform sampler2D uPolyDataTexture;
 uniform int uAtomCount;
 uniform int uCylinderCount;
 uniform int uPolyCount;
+uniform vec3 uSceneMin;      // whole-scene world AABB (interior early-out)
+uniform vec3 uSceneMax;
+uniform bool uSceneBoundValid; // false = empty scene
 uniform vec3 uLightDirection; // world space, points from the scene TOWARDS the light
 uniform vec3 uLightColor;
 uniform vec3 uBackgroundColor;
@@ -137,6 +142,81 @@ vec3 groundPatternColor(vec3 p)
 	return min(f.x, f.y) < 0.03 ? uGroundColor2 : uGroundColor1;
 }
 
+// Per-primitive tests shared by the brute loops, the any-hit shadow path and
+// (step 6) the uniform grid, so all callers run byte-identical per-primitive
+// code. Each updates the intersection globals + t on a NEW CLOSEST hit and
+// returns 1 only for a SHADOW ray whose new closest hit is an opaque
+// (alpha>=1, non-glass) blocker — the caller treats that as "occluded" and
+// stops. Quality argument: an opaque blocker anywhere on the segment forces
+// occlusion regardless of what is in front of it (a stochastic surface either
+// blocks or passes through TO the blocker; a glass surface tints a
+// contribution the occluded branch never adds), and any opaque blocker skipped
+// here because it sits behind a closer transparent surface is re-found by the
+// shadow-march (re-invocation past that surface). So the OCCLUSION decision is
+// identical to the full closest-hit search; only the iid rand() stream shifts,
+// leaving converged images statistically (not bit-) identical.
+int testAtom(int i, int isShadowRay, inout float t)
+{
+	vec4 posRad = fetchData(uAtomsDataTexture, i * 3);
+	float d = SphereIntersect(posRad.w, posRad.xyz, rayOrigin, rayDirection);
+	if (d >= t) return 0;
+	t = d;
+	vec4 colA = fetchData(uAtomsDataTexture, (i * 3) + 1);
+	vec4 mat = fetchData(uAtomsDataTexture, (i * 3) + 2);
+	intersectionNormal = (rayOrigin + (t * rayDirection)) - posRad.xyz;
+	intersectionColor = colA.rgb;
+	intersectionAlpha = colA.a;
+	intersectionMaterialType = resolveMaterialType(mat.x, colA.a);
+	intersectionRoughness = mat.y;
+	intersectionTypeParam = mat.z;
+	intersectionReflectivity = mat.w;
+	intersectionShapeIsClosed = TRUE;
+	return (isShadowRay == TRUE && colA.a >= 0.999 && intersectionMaterialType != MAT_TRANSP) ? 1 : 0;
+}
+
+int testCylinder(int i, int isShadowRay, inout float t)
+{
+	int o = i * 8;
+	// bounding-sphere pre-reject (unit rayDirection) before the matrix fetch
+	vec4 sph = fetchData(uCylindersDataTexture, o); // (center.xyz, radius)
+	vec3 L = sph.xyz - rayOrigin;
+	float tca = dot(L, rayDirection);
+	float r2 = sph.w * sph.w;
+	float d2 = dot(L, L) - tca * tca;
+	if (d2 > r2) return 0;            // ray line misses the sphere
+	float thc = sqrt(r2 - d2);
+	if (tca + thc <= 0.0) return 0;   // sphere fully behind (origin-inside passes)
+	if (tca - thc >= t) return 0;     // nearest possible entry can't beat best
+	mat4 invM = mat4(
+		fetchData(uCylindersDataTexture, o + 1),
+		fetchData(uCylindersDataTexture, o + 2),
+		fetchData(uCylindersDataTexture, o + 3),
+		fetchData(uCylindersDataTexture, o + 4));
+	vec3 ro = (invM * vec4(rayOrigin, 1.0)).xyz;
+	vec3 rd = (invM * vec4(rayDirection, 0.0)).xyz;
+	vec3 cn;
+	float d = UnitCylinderIntersect(ro, rd, cn);
+	if (d >= t) return 0;
+	t = d;
+	vec4 colA = fetchData(uCylindersDataTexture, o + 5);
+	vec4 mat = fetchData(uCylindersDataTexture, o + 6);
+	intersectionNormal = transpose(mat3(invM)) * cn;
+	intersectionColor = colA.rgb;
+	intersectionAlpha = colA.a;
+	intersectionMaterialType = resolveMaterialType(mat.x, colA.a);
+	intersectionRoughness = mat.y;
+	intersectionTypeParam = mat.z;
+	intersectionReflectivity = mat.w;
+	intersectionShapeIsClosed = FALSE;
+	return (isShadowRay == TRUE && colA.a >= 0.999 && intersectionMaterialType != MAT_TRANSP) ? 1 : 0;
+}
+
+// grid-chunk dispatch wrappers (uniform signature the shared GridTraverse calls)
+int gridTestAtom(int i, int shadowFlag, inout float t) { return testAtom(i, shadowFlag, t); }
+int gridTestCylinder(int i, int shadowFlag, inout float t) { return testCylinder(i, shadowFlag, t); }
+
+${gridChunk}
+
 //---------------------------------------------------------------------------
 float SceneIntersect( int isShadowRay )
 {
@@ -144,69 +224,42 @@ float SceneIntersect( int isShadowRay )
 	float d;
 	float t = INFINITY;
 
-	// ---- atoms: spheres --------------------------------------------------
-	for (int i = 0; i < uAtomCount; i++)
+	// Whole-scene AABB early-out: when the ray misses the structure box, skip
+	// every interior primitive loop (atoms/cylinders/polyhedra/field/planes).
+	// The ground plane + background stay OUTSIDE this gate. inverseDir is
+	// hoisted here because the polyhedra AABB test reuses it.
+	vec3 inverseDir = 1.0 / rayDirection;
+	if (!uSceneBoundValid || BoundingBoxIntersect(uSceneMin, uSceneMax, rayOrigin, inverseDir) < INFINITY)
 	{
-		vec4 posRad = fetchData(uAtomsDataTexture, i * 3);
-		d = SphereIntersect(posRad.w, posRad.xyz, rayOrigin, rayDirection);
-		if (d < t)
-		{
-			t = d;
-			vec4 colA = fetchData(uAtomsDataTexture, (i * 3) + 1);
-			vec4 mat = fetchData(uAtomsDataTexture, (i * 3) + 2);
-			intersectionNormal = (rayOrigin + (t * rayDirection)) - posRad.xyz;
-			intersectionColor = colA.rgb;
-			intersectionAlpha = colA.a;
-			intersectionMaterialType = resolveMaterialType(mat.x, colA.a);
-			intersectionRoughness = mat.y;
-			intersectionTypeParam = mat.z;
-			intersectionReflectivity = mat.w;
-			intersectionShapeIsClosed = TRUE;
-		}
-	}
 
-	// ---- bonds + unit-cell edges: unit cylinders via inverse matrices ----
-	for (int i = 0; i < uCylinderCount; i++)
+	// ---- atoms + cylinders: uniform grid (>= GRID_MIN_PRIMS) or brute loops.
+	// Either path threads t into the polyhedra/field/plane tests below, so the
+	// rest of SceneIntersect is unchanged. A shadow-opaque early-out returns t.
+	if (uGridEnabled)
 	{
-		int o = i * 6;
-		mat4 invM = mat4(
-			fetchData(uCylindersDataTexture, o),
-			fetchData(uCylindersDataTexture, o + 1),
-			fetchData(uCylindersDataTexture, o + 2),
-			fetchData(uCylindersDataTexture, o + 3));
-		// transform ray into unit-cylinder object space; direction is NOT
-		// renormalized, which keeps t valid in world space
-		vec3 ro = (invM * vec4(rayOrigin, 1.0)).xyz;
-		vec3 rd = (invM * vec4(rayDirection, 0.0)).xyz;
-		d = UnitCylinderIntersect(ro, rd, n);
-		if (d < t)
-		{
-			t = d;
-			vec4 colA = fetchData(uCylindersDataTexture, o + 4);
-			vec4 mat = fetchData(uCylindersDataTexture, o + 5);
-			intersectionNormal = transpose(mat3(invM)) * n;
-			intersectionColor = colA.rgb;
-			intersectionAlpha = colA.a;
-			intersectionMaterialType = resolveMaterialType(mat.x, colA.a);
-			intersectionRoughness = mat.y;
-			intersectionTypeParam = mat.z;
-			intersectionReflectivity = mat.w;
-			intersectionShapeIsClosed = FALSE;
-		}
+		if (GridTraverse(rayOrigin, rayDirection, isShadowRay, t) == 1) return t;
+	}
+	else
+	{
+		for (int i = 0; i < uAtomCount; i++)
+			if (testAtom(i, isShadowRay, t) == 1) return t;      // opaque shadow blocker
+		for (int i = 0; i < uCylinderCount; i++)
+			if (testCylinder(i, isShadowRay, t) == 1) return t;  // opaque shadow blocker
 	}
 
 	// ---- polyhedra: convex plane sets with an AABB quick reject ----------
 	vec4 planes[20];
-	vec3 inverseDir = 1.0 / rayDirection;
 	for (int p = 0; p < uPolyCount; p++)
 	{
 		int o = p * 4;
-		vec4 header = fetchData(uPolyDataTexture, o);
-		vec4 colA = fetchData(uPolyDataTexture, o + 1);
-		vec3 aabbMin = fetchData(uPolyDataTexture, o + 2).xyz;
-		vec3 aabbMax = fetchData(uPolyDataTexture, o + 3).xyz;
-		if (BoundingBoxIntersect(aabbMin, aabbMax, rayOrigin, inverseDir) >= t)
+		// AABB texels FIRST: slab-reject before touching header/colA. The .w
+		// slots (typeParam/reflectivity) stay in registers for the hit block,
+		// so a hit needs no re-fetch and a miss skips 2 fetches (header+colA).
+		vec4 aabbMinT = fetchData(uPolyDataTexture, o + 2);
+		vec4 aabbMaxT = fetchData(uPolyDataTexture, o + 3);
+		if (BoundingBoxIntersect(aabbMinT.xyz, aabbMaxT.xyz, rayOrigin, inverseDir) >= t)
 			continue;
+		vec4 header = fetchData(uPolyDataTexture, o);
 		int planeOffset = int(header.x);
 		int planeCount = int(header.y);
 		for (int k = 0; k < 20; k++)
@@ -217,14 +270,15 @@ float SceneIntersect( int isShadowRay )
 		if (d < t)
 		{
 			t = d;
+			vec4 colA = fetchData(uPolyDataTexture, o + 1);
 			intersectionNormal = n;
 			intersectionColor = colA.rgb;
 			intersectionAlpha = colA.a;
 			// material packed into the spare header/AABB w slots
 			intersectionMaterialType = resolveMaterialType(header.z, colA.a);
 			intersectionRoughness = header.w;
-			intersectionTypeParam = fetchData(uPolyDataTexture, o + 2).w;
-			intersectionReflectivity = fetchData(uPolyDataTexture, o + 3).w;
+			intersectionTypeParam = aabbMinT.w;
+			intersectionReflectivity = aabbMaxT.w;
 			intersectionShapeIsClosed = TRUE;
 		}
 	}
@@ -266,6 +320,8 @@ float SceneIntersect( int isShadowRay )
 			intersectionShapeIsClosed = FALSE; // double-sided flat surface
 		}
 	}
+
+	} // end whole-scene AABB gate
 
 	// ---- optional ground plane (patterned shadow catcher) -----------------
 	if (uGroundEnabled)
