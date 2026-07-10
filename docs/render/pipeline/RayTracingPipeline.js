@@ -10,12 +10,22 @@
 // pipeline intentionally has its own look).
 //
 // v1 scope/limits (documented in the plan + vendor README): renders atoms,
-// bonds, polyhedra (<= 20 faces) and unit-cell edges only — isosurfaces,
-// lattice planes, measurement overlays and comparison structures are not
-// traced, and the cel outline pass is skipped. Naive per-pixel primitive loop:
-// fine for typical unit cells, degrades beyond ~1-2k primitives (a BVH is the
-// future upgrade). The "RT resolution" slider renders internally at a
-// fraction of the canvas; "Reflectivity" adds mirror-like reflection.
+// bonds, polyhedra (<= 20 faces), unit-cell edges, volumetric field
+// isosurfaces and crystallographic lattice planes — measurement overlays and
+// comparison structures are not traced, and the cel outline pass is skipped.
+// Field isosurfaces are traced as a RAY-MARCHED implicit surface (no
+// marching-cubes mesh) with the opaque/COAT material only (glass/refraction is
+// not supported on the field surface; alpha < 1 gives the usual stochastic
+// see-through). Lattice planes are traced analytically and cell-clipped, either
+// flat translucent grey ('None' mode, with their purple border as thin
+// cylinders) or coloured from a CPU-baked field colormap atlas ('Field' mode).
+// Atom cut planes ARE honored: the SceneEncoder drops whole atoms by their
+// world center at encode time, matching the raster shader's per-instance
+// discard (bonds/polyhedra are already CPU-filtered upstream, so they disappear
+// for free). Naive per-pixel primitive loop: fine for typical unit cells,
+// degrades beyond ~1-2k primitives (a BVH is the future upgrade). The "RT
+// resolution" slider renders internally at a fraction of the canvas;
+// "Reflectivity" adds mirror-like reflection.
 //
 // Driver bookkeeping (counters, camera-motion damping) is a compact
 // reimplementation of the upstream demo scaffolding (InitCommon.js, not
@@ -200,6 +210,21 @@ export class RayTracingPipeline extends ForwardPipeline {
       uAtomCount: { value: 0 },
       uCylinderCount: { value: 0 },
       uPolyCount: { value: 0 },
+      // volumetric field isosurface (ray-marched implicit surface)
+      uFieldEnabled: { value: false },
+      uFieldTex: { value: this._encoder.fieldTexture },
+      uFieldWorldToFrac: { value: new THREE.Matrix4() },
+      uFieldDims: { value: new THREE.Vector3(1, 1, 1) }, // ivec3 in the shader
+      uFieldIso: { value: 0 },
+      uFieldAbsMode: { value: false },
+      uFieldPosColor: { value: new THREE.Color(0x33aaff) },
+      uFieldNegColor: { value: new THREE.Color(0xff3333) },
+      uFieldAlpha: { value: 0.6 },
+      // crystallographic lattice planes (analytic, cell-clipped)
+      uPlaneCount: { value: 0 },
+      uPlanesDataTexture: { value: this._encoder.planesTexture },
+      uPlaneAtlasTex: { value: this._encoder.planeAtlasTexture },
+      uCellWorldToFrac: { value: new THREE.Matrix4() },
       uLightDirection: { value: new THREE.Vector3(0, 1, 0) },
       uLightColor: { value: new THREE.Color(1, 1, 1) },
       uBackgroundColor: { value: new THREE.Color(0.9, 0.9, 0.9) },
@@ -272,9 +297,42 @@ export class RayTracingPipeline extends ForwardPipeline {
 
   resetAccumulation() {
     if (!this._uniforms) return;
-    this._uniforms.uPreviousSampleCount.value = Math.max(1, this._uniforms.uSampleCounter.value);
+    // uPreviousSampleCount must always describe the SUM the previous target
+    // holds (the shader's frame-1 blend divides by it). A second reset before
+    // any new sample was taken (e.g. one out-of-render reset followed by an
+    // in-render one, or two reset sites firing in the same render() call)
+    // must NOT clobber it to 1 while the target still holds a multi-sample
+    // sum — the old image would be replayed at ~N/2 x strength and linger as
+    // a bright ghost that only decays as N/(2n).
+    if (this._uniforms.uSampleCounter.value > 0) {
+      this._uniforms.uPreviousSampleCount.value = this._uniforms.uSampleCounter.value;
+    }
     this._uniforms.uSampleCounter.value = 0;
     this._uniforms.uFrameCounter.value = 0;
+  }
+
+  /** Reset + CLEAR both accumulation targets. The plain reset intentionally
+   *  blends 50% of the old image into the first new frame (anti-flicker for
+   *  camera/look changes) — but when the scene CONTENT changed (re-encode:
+   *  atoms edited, cut plane added, field cleared ...) the old scene must not
+   *  ghost into the new image at all. uFrameCounter starts at 1 so the first
+   *  new sample takes the plain-accumulation branch (the flushed target is
+   *  black; the frame-1 "halve both" blend would only dim it). */
+  hardResetAccumulation(renderer) {
+    this.resetAccumulation();
+    if (!this._uniforms) return;
+    this._uniforms.uPreviousSampleCount.value = 1;
+    this._uniforms.uFrameCounter.value = 1;
+    const prevTarget = renderer.getRenderTarget();
+    const oldColor = renderer.getClearColor(new THREE.Color());
+    const oldAlpha = renderer.getClearAlpha();
+    renderer.setClearColor(0x000000, 0);
+    renderer.setRenderTarget(this._accumTarget);
+    renderer.clear(true, false, false);
+    renderer.setRenderTarget(this._previousTarget);
+    renderer.clear(true, false, false);
+    renderer.setRenderTarget(prevTarget);
+    renderer.setClearColor(oldColor, oldAlpha);
   }
 
   /** Ask the next render() call to accumulate at least `samples` inner
@@ -314,7 +372,12 @@ export class RayTracingPipeline extends ForwardPipeline {
     this._outputQuad.material.uniforms.uOutputResolution.value.copy(bufferSize);
 
     // --- scene + camera change detection ------------------------------------
-    if (this._sceneDirty || this._encoder.fingerprintChanged()) {
+    // ALWAYS evaluate the fingerprint (no short-circuit behind _sceneDirty):
+    // skipping it would leave the stored fingerprint stale, so the NEXT frame
+    // would detect the already-encoded change again — a spurious second
+    // re-encode + accumulation reset one frame after every _sceneDirty event.
+    const fingerprintChanged = this._encoder.fingerprintChanged();
+    if (this._sceneDirty || fingerprintChanged) {
       this._encoder.encode();
       u.uAtomsDataTexture.value = this._encoder.atomsTexture;
       u.uCylindersDataTexture.value = this._encoder.cylindersTexture;
@@ -322,8 +385,27 @@ export class RayTracingPipeline extends ForwardPipeline {
       u.uAtomCount.value = this._encoder.atomCount;
       u.uCylinderCount.value = this._encoder.cylinderCount;
       u.uPolyCount.value = this._encoder.polyCount;
+      // volumetric field isosurface (iso/colour/opacity edits arrive via the
+      // encoder fingerprint, which re-encodes and lands here)
+      u.uFieldEnabled.value = this._encoder.fieldEnabled;
+      u.uFieldTex.value = this._encoder.fieldTexture;
+      u.uFieldWorldToFrac.value.copy(this._encoder.fieldWorldToFrac);
+      u.uFieldDims.value.set(
+        this._encoder.fieldDims[0], this._encoder.fieldDims[1], this._encoder.fieldDims[2]);
+      u.uFieldIso.value = this._encoder.fieldIso;
+      u.uFieldAbsMode.value = this._encoder.fieldAbsMode;
+      u.uFieldPosColor.value.copy(this._encoder.fieldPosColor);
+      u.uFieldNegColor.value.copy(this._encoder.fieldNegColor);
+      u.uFieldAlpha.value = this._encoder.fieldAlpha;
+      // crystallographic lattice planes (plane edits arrive via the encoder
+      // fingerprint, which re-encodes + re-bakes the atlas and lands here)
+      u.uPlaneCount.value = this._encoder.planeCount;
+      u.uPlanesDataTexture.value = this._encoder.planesTexture;
+      u.uPlaneAtlasTex.value = this._encoder.planeAtlasTexture;
+      u.uCellWorldToFrac.value.copy(this._encoder.cellWorldToFrac);
       this._sceneDirty = false;
-      this.resetAccumulation();
+      // content changed: flush the accumulation so the old scene cannot ghost
+      this.hardResetAccumulation(renderer);
     }
 
     // Camera-motion detection with a tolerance: the damped trackball controls

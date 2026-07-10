@@ -23,10 +23,17 @@
 //   polyhedra  header (planeOffset, planeCount, matType, roughness),
 //              (rgb, alpha), (aabbMin, typeParam), (aabbMax, reflectivity),
 //              then planeCount (normal.xyz, d)
+//   planes     6 texels/plane: (normal.xyz, d), (flatColor.rgb, alpha),
+//              (centroid.xyz, mode), (uAxis.xyz, halfU), (vAxis.xyz, halfV),
+//              (atlas uMin, vMin, uSize, vSize). mode 0 = None (flat grey),
+//              1 = Field (colormap atlas). See raytrace/planeChunk.js.
 // typeParam = IoR for glass / intensity for emissive; reflectivity < 0 means
 // "use the global uReflectivity slider".
 // The single light is directional (the app's camera-relative key light);
 // shadow-ray success = the ray escaping to the sky.
+
+import { fieldChunk } from './fieldChunk.js';
+import { planeChunk } from './planeChunk.js';
 
 export const DATA_TEX_WIDTH = 1024;
 
@@ -106,6 +113,10 @@ vec4 fetchData(sampler2D tex, int index)
 {
 	return texelFetch(tex, ivec2(index % DATA_W, index / DATA_W), 0);
 }
+
+${fieldChunk}
+
+${planeChunk}
 
 // Ground surface color at a plane point: solid / checkerboard / grid of the
 // two ground colors, in a tangent frame of the plane (world-unit tiles).
@@ -215,6 +226,44 @@ float SceneIntersect( int isShadowRay )
 			intersectionTypeParam = fetchData(uPolyDataTexture, o + 2).w;
 			intersectionReflectivity = fetchData(uPolyDataTexture, o + 3).w;
 			intersectionShapeIsClosed = TRUE;
+		}
+	}
+
+	// ---- volumetric field isosurface: ray-marched implicit surface --------
+	if (uFieldEnabled)
+	{
+		float fT; vec3 fN, fCol;
+		if (intersectField(rayOrigin, rayDirection, t, fT, fN, fCol) && fT < t)
+		{
+			t = fT;
+			intersectionNormal = fN;
+			intersectionColor = fCol;
+			intersectionAlpha = uFieldAlpha;
+			intersectionMaterialType = MAT_OPAQUE;
+			intersectionMatCode = 0;
+			intersectionRoughness = 0.0;
+			intersectionTypeParam = 0.6;   // default gloss (matches DEFAULT_MATERIAL_TEXEL)
+			intersectionReflectivity = -1.0; // use the global Reflectivity slider
+			intersectionShapeIsClosed = FALSE; // double-sided implicit surface
+		}
+	}
+
+	// ---- crystallographic lattice planes: analytic, cell-clipped ----------
+	if (uPlaneCount > 0)
+	{
+		float pT; vec3 pN, pCol; float pAlpha;
+		if (intersectPlanes(rayOrigin, rayDirection, t, pT, pN, pCol, pAlpha) && pT < t)
+		{
+			t = pT;
+			intersectionNormal = pN;
+			intersectionColor = pCol;
+			intersectionAlpha = pAlpha; // None: 0.70 stochastic see-through; Field: 1
+			intersectionMaterialType = MAT_OPAQUE;
+			intersectionMatCode = 0;
+			intersectionRoughness = 0.0;
+			intersectionTypeParam = 0.6;   // default gloss (matches DEFAULT_MATERIAL_TEXEL)
+			intersectionReflectivity = -1.0; // use the global Reflectivity slider
+			intersectionShapeIsClosed = FALSE; // double-sided flat surface
 		}
 	}
 

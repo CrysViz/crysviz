@@ -10,9 +10,11 @@
 
 import * as THREE from '../../../external/three/three.module.js';
 import { ConvexHull } from '../../../external/three/ConvexHull.js';
-import { groups, fileBrowser, general } from '../../../state/store.js';
+import { groups, fileBrowser, general, app } from '../../../state/store.js';
 import { bondKey } from '../../BondsFracUpdateModule.js';
 import { getAtomImageStyle } from '../../AtomsFracUpdateModule.js';
+import { MAX_CUT_PLANES } from '../../MaterialStyles.js';
+import { getCutPlaneMaskSign, Plane } from '../../../model/index.js';
 import { DATA_TEX_WIDTH } from './sceneFragment.js';
 
 const MAX_PLANES = 20; // ConvexPolyhedronIntersect limit (vendored chunk)
@@ -67,6 +69,38 @@ function makeDataTexture(texelCount) {
   return texture;
 }
 
+const FIELD_TEXEL_CAP = 16777216; // 256^3: max voxels uploaded (downsample above)
+
+// A single-voxel R32F volume, bound to the sampler whenever no field is active
+// (the shader's uFieldEnabled=false branch never samples it, but the sampler
+// must still point at a valid texture).
+function makeVolumeTexture(values, nx, ny, nz) {
+  const texture = new THREE.Data3DTexture(values, nx, ny, nz);
+  texture.format = THREE.RedFormat;
+  texture.type = THREE.FloatType;
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.wrapS = texture.wrapT = texture.wrapR = THREE.ClampToEdgeWrapping;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+const PLANE_ATLAS_TILE = 256; // RGBA8 colormap-atlas region per Field-mode plane
+
+// An RGBA8 colour atlas for Field-mode lattice planes. LinearFilter so the
+// shader gets bilinear filtering for free; the encoder insets each tile's
+// sampling rect by half a texel so neighbouring tiles never bleed.
+function makeAtlasTexture(data, width, height) {
+  const texture = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 export class SceneEncoder {
   atomsTexture = makeDataTexture(1);
   cylindersTexture = makeDataTexture(1);
@@ -80,10 +114,43 @@ export class SceneEncoder {
   structureRadius = 5; // half-diagonal of the atom bounding box (from the center)
   _fingerprint = '';
 
+  // ---- volumetric field (isosurface) --------------------------------------
+  // fieldTexture always points at a valid Data3DTexture (a 1-voxel dummy when
+  // no field is active); the pipeline reads these into its uField* uniforms.
+  _dummyFieldTexture = makeVolumeTexture(new Float32Array([0]), 1, 1, 1);
+  _realFieldTexture = null; // the uploaded field volume (disposed on replace)
+  fieldTexture = this._dummyFieldTexture;
+  fieldEnabled = false;
+  fieldWorldToFrac = new THREE.Matrix4();
+  fieldDims = [1, 1, 1];
+  fieldIso = 0;
+  fieldAbsMode = false;
+  fieldPosColor = new THREE.Color(0x33aaff);
+  fieldNegColor = new THREE.Color(0xff3333);
+  fieldAlpha = 0.6;
+  _fieldValuesRef = null; // last uploaded field.values (re-upload on change)
+  _fieldDimsKey = '';
+
+  // ---- crystallographic lattice planes ------------------------------------
+  // planesTexture holds 6 texels/plane (see planeChunk.js); planeAtlasTexture
+  // is the shared RGBA8 colormap atlas for Field-mode planes (a 1x1 dummy when
+  // no Field plane is present). cellWorldToFrac clips planes to the unit cell.
+  planesTexture = makeDataTexture(1);
+  planeCount = 0;
+  cellWorldToFrac = new THREE.Matrix4();
+  _dummyAtlas = makeAtlasTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  _realAtlas = null; // the baked colormap atlas (disposed on replace)
+  planeAtlasTexture = this._dummyAtlas;
+
   dispose() {
     this.atomsTexture.dispose();
     this.cylindersTexture.dispose();
     this.polyTexture.dispose();
+    this.planesTexture.dispose();
+    this._dummyAtlas.dispose();
+    if (this._realAtlas) this._realAtlas.dispose();
+    this._dummyFieldTexture.dispose();
+    if (this._realFieldTexture) this._realFieldTexture.dispose();
   }
 
   /** Cheap change detector; true when the scene must be re-encoded. */
@@ -92,7 +159,15 @@ export class SceneEncoder {
     const atoms = groups.atomsMesh;
     if (atoms && atoms.visible) {
       parts.push('a', atoms.count, atoms.instanceMatrix.version, atoms.instanceColor?.version,
-        atoms.geometry.attributes.instanceOpacity?.version, atoms.material.opacity);
+        atoms.geometry.attributes.instanceOpacity?.version, atoms.material.opacity,
+        atoms.geometry.attributes.instanceCutPlaneImmune?.version);
+    }
+    // cut planes remove whole atoms at encode time; re-encode when they change
+    // (only the enabled-relevant fields matter — see _activeCutPlanes)
+    if (Array.isArray(general.atomCutPlanes)) {
+      parts.push('cut', JSON.stringify(general.atomCutPlanes
+        .filter((plane) => plane?.enabled)
+        .map((plane) => [plane.x, plane.y, plane.z, plane.r, plane.side])));
     }
     const bonds = groups.bondsMesh;
     if (bonds && bonds.visible) {
@@ -130,10 +205,52 @@ export class SceneEncoder {
         JSON.stringify(structure.polyhedraCategoryStyles ?? {}),
         JSON.stringify(structure.polyhedraUserStyles ?? {}));
     }
+    // volumetric field isosurface (same source the raster pipelines draw):
+    // presence/visibility, dims, iso, abs mode, pos/neg colours, opacity, and
+    // a cheap identity probe so a swapped field of the same dims re-encodes.
+    const field = this._activeField();
+    if (field) {
+      const iso = groups.isosurfaceGroup;
+      const vals = field.values;
+      parts.push('f', field.nx, field.ny, field.nz, field.isoValue,
+        field.useAbsoluteIsoValue ? 1 : 0,
+        iso.meshes?.positive?.material?.color?.getHexString(),
+        iso.meshes?.negative?.material?.color?.getHexString(),
+        iso.meshes?.positive?.material?.opacity,
+        vals?.length, vals ? vals[0] : 0, vals ? vals[(vals.length / 2) | 0] : 0);
+    }
+    // crystallographic lattice planes: geometry (n/d), mode, flat colour +
+    // opacity, colormap name + range, and a cheap field-identity probe so a
+    // field/colormap edit re-encodes (and re-bakes the atlas).
+    const planes = this._visiblePlanes();
+    for (const plane of planes) {
+      const n = plane.planeNormal;
+      const mat = plane.material;
+      const f = plane.field;
+      const vals = f?.values;
+      parts.push('pl', plane.mode, n.x, n.y, n.z, plane.planeD,
+        mat?.color?.getHex?.(), mat?.opacity,
+        plane.colormap, plane.colormapMin, plane.colormapMax,
+        f ? `${f.label}|${f.nx}|${f.ny}|${f.nz}|${f.minValue}|${f.maxValue}` : 'nofield',
+        vals?.length, vals ? vals[(vals.length / 2) | 0] : 0);
+    }
+    parts.push('plc', planes.length);
     const fingerprint = parts.join('|');
     if (fingerprint === this._fingerprint) return false;
     this._fingerprint = fingerprint;
     return true;
+  }
+
+  /** The live volumetric field to trace, or null. Same source as the raster
+   *  isosurface: the isosurfaceGroup, in the scene (clearField removes it) and
+   *  not hidden, carrying a field with values. */
+  _activeField() {
+    const iso = groups.isosurfaceGroup;
+    const field = iso?.field;
+    if (!field || !field.values || !(field.nx > 0) || !(field.ny > 0) || !(field.nz > 0)) return null;
+    if (!iso.parent) return null; // removed from the scene (clearField)
+    if (field.isVisible === false) return null;
+    return field;
   }
 
   /** Re-encode everything into the data textures. */
@@ -141,6 +258,16 @@ export class SceneEncoder {
     this._encodeAtoms();
     this._encodeCylinders();
     this._encodePolyhedra();
+    this._encodeField();
+    this._encodePlanes();
+  }
+
+  /** Visible crystallographic Plane groups in the scene (their `.visible`
+   *  already encodes planesData.showPlanes && planeDef.enabled). */
+  _visiblePlanes() {
+    const children = app.scene?.children;
+    if (!Array.isArray(children)) return [];
+    return children.filter((obj) => obj instanceof Plane && obj.visible);
   }
 
   _ensureCapacity(key, texelCount) {
@@ -148,6 +275,26 @@ export class SceneEncoder {
     if (texture.image.width * texture.image.height >= texelCount) return texture;
     texture.dispose();
     return (this[key] = makeDataTexture(texelCount));
+  }
+
+  /** Enabled atom cut planes as {nx,ny,nz,w,sign}, replicating the raster
+   *  semantics (AtomsFracUpdateModule.applyCutPlaneUniformsToShader):
+   *  normalized normal, w = r, sign = getCutPlaneMaskSign(side), degenerate
+   *  normals fall back to (1,0,0), capped at MAX_CUT_PLANES. */
+  _activeCutPlanes() {
+    const planes = general.atomCutPlanes;
+    if (!Array.isArray(planes) || planes.length === 0) return [];
+    const active = [];
+    for (const plane of planes) {
+      if (!plane?.enabled) continue;
+      let nx = Number(plane.x) || 0, ny = Number(plane.y) || 0, nz = Number(plane.z) || 0;
+      const len = Math.hypot(nx, ny, nz);
+      if (len < 1e-8) { nx = 1; ny = 0; nz = 0; } // raster normalizePlaneNormal fallback
+      else { nx /= len; ny /= len; nz /= len; }
+      active.push({ nx, ny, nz, w: Number(plane.r) || 0, sign: getCutPlaneMaskSign(plane.side) });
+      if (active.length >= MAX_CUT_PLANES) break;
+    }
+    return active;
   }
 
   _encodeAtoms() {
@@ -164,6 +311,10 @@ export class SceneEncoder {
     const colors = mesh.instanceColor.array;
     const opacities = mesh.geometry.attributes.instanceOpacity?.array;
     const baseOpacity = mesh.material.opacity ?? 1;
+    // whole-atom cut-plane removal by world CENTER, matching the raster shader
+    // discard (AtomsFracUpdateModule); per-atom "Keep" immunity is honored.
+    const cutPlanes = this._activeCutPlanes();
+    const immune = mesh.geometry.attributes.instanceCutPlaneImmune?.array;
     const texture = this._ensureCapacity('atomsTexture', mesh.count * 3);
     const data = texture.image.data;
     let n = 0;
@@ -174,6 +325,14 @@ export class SceneEncoder {
       const o = i * 16;
       const radius = matrices[o]; // uniform scale; 0 = hidden instance
       if (!(radius > 0)) continue;
+      if (cutPlanes.length && !(immune && immune[i] >= 0.5)) {
+        const cx = matrices[o + 12], cy = matrices[o + 13], cz = matrices[o + 14];
+        let cut = false;
+        for (const p of cutPlanes) {
+          if ((cx * p.nx + cy * p.ny + cz * p.nz - p.w) * p.sign > 0) { cut = true; break; }
+        }
+        if (cut) continue;
+      }
       const d = n * 12;
       data[d] = matrices[o + 12];
       data[d + 1] = matrices[o + 13];
@@ -220,7 +379,8 @@ export class SceneEncoder {
     const bonds = (groups.bondsMesh && groups.bondsMesh.visible) ? groups.bondsMesh : null;
     const edges = this._latticeEdges();
     const polyEdges = this._polyEdges();
-    const total = (bonds ? bonds.count : 0) + edges.length + polyEdges.length;
+    const planeBorders = this._planeBorders();
+    const total = (bonds ? bonds.count : 0) + edges.length + polyEdges.length + planeBorders.length;
     const texture = this._ensureCapacity('cylindersTexture', Math.max(1, total * 6));
     const data = texture.image.data;
     let n = 0;
@@ -273,9 +433,45 @@ export class SceneEncoder {
     for (const edge of polyEdges) {
       writeCylinder(edge.invM, edge.r, edge.g, edge.b, edge.a, DEFAULT_MATERIAL_TEXEL);
     }
+    for (const edge of planeBorders) {
+      writeCylinder(edge.invM, edge.r, edge.g, edge.b, edge.a, DEFAULT_MATERIAL_TEXEL);
+    }
 
     this.cylinderCount = n;
     texture.needsUpdate = true;
+  }
+
+  /** Purple perimeter borders of 'None'-mode lattice planes as thin cylinders
+   *  (appended to the cylinder bucket, exactly like polyhedra edges). The plane
+   *  Group sits at scene identity, so its border LineSegments positions are
+   *  already world-space. Radius pinned to the unit-cell line thickness. */
+  _planeBorders() {
+    const planes = this._visiblePlanes();
+    if (planes.length === 0) return [];
+    const radius = 0.02;
+    const result = [];
+    for (const plane of planes) {
+      if (plane.mode !== 'None') continue; // border shown only in None mode
+      const border = plane.border;
+      if (!border?.visible) continue;
+      const pos = border.geometry?.getAttribute?.('position');
+      const seg = pos?.array;
+      if (!seg) continue;
+      _color.copy(border.material.color);
+      for (let s = 0; s + 5 < seg.length; s += 6) {
+        const dx = seg[s + 3] - seg[s];
+        const dy = seg[s + 4] - seg[s + 1];
+        const dz = seg[s + 5] - seg[s + 2];
+        const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 1e-6) continue;
+        _pos.set((seg[s] + seg[s + 3]) / 2, (seg[s + 1] + seg[s + 4]) / 2, (seg[s + 2] + seg[s + 5]) / 2);
+        _scale.set(radius, len / 2, radius); // unit cylinder y in [-1,1]
+        _quat.setFromUnitVectors(_yAxis, _pos2.set(dx / len, dy / len, dz / len));
+        _m.compose(_pos, _quat, _scale);
+        result.push({ invM: _m.clone().invert(), r: _color.r, g: _color.g, b: _color.b, a: 1 });
+      }
+    }
+    return result;
   }
 
   /** Polyhedra edge segments as thin cylinders. The raster edges are fat
@@ -424,5 +620,157 @@ export class SceneEncoder {
     mesh.userData.rtPlanes = planes;
     mesh.userData.rtAabb = aabb;
     return true;
+  }
+
+  /** Encode the live isosurface field for the tracers: uploads field.values as
+   *  a Data3DTexture (only when the values reference / dims change) and derives
+   *  the world->fractional matrix, iso, abs-mode, lobe colours and opacity from
+   *  the same Isosurface the raster pipelines draw. */
+  _encodeField() {
+    const field = this._activeField();
+    if (!field) {
+      this.fieldEnabled = false;
+      this.fieldTexture = this._dummyFieldTexture;
+      return;
+    }
+    const iso = groups.isosurfaceGroup;
+    this.fieldEnabled = true;
+
+    // world -> fractional [0,1]^3: invert the SAME origin + voxel*dims mapping
+    // Isosurface builds for its group matrix (columns = lattice vectors).
+    const v = field.voxel;
+    const o = field.origin ?? [0, 0, 0];
+    _m.set(
+      v[0][0], v[1][0], v[2][0], o[0] ?? 0,
+      v[0][1], v[1][1], v[2][1], o[1] ?? 0,
+      v[0][2], v[1][2], v[2][2], o[2] ?? 0,
+      0, 0, 0, 1);
+    _m.scale(_scale.set(field.nx, field.ny, field.nz));
+    this.fieldWorldToFrac.copy(_m).invert();
+
+    this.fieldIso = Number.isFinite(field.isoValue) ? field.isoValue : 0;
+    this.fieldAbsMode = !!field.useAbsoluteIsoValue;
+    if (iso.meshes?.positive?.material?.color) this.fieldPosColor.copy(iso.meshes.positive.material.color);
+    if (iso.meshes?.negative?.material?.color) this.fieldNegColor.copy(iso.meshes.negative.material.color);
+    this.fieldAlpha = iso.meshes?.positive?.material?.opacity ?? 0.6;
+
+    const dimsKey = `${field.nx},${field.ny},${field.nz}`;
+    if (this._fieldValuesRef !== field.values || this._fieldDimsKey !== dimsKey) {
+      this._uploadFieldTexture(field);
+      this._fieldValuesRef = field.values;
+      this._fieldDimsKey = dimsKey;
+    }
+  }
+
+  /** (Re)build the Data3DTexture from field.values, downsampling by an integer
+   *  stride if the grid exceeds FIELD_TEXEL_CAP voxels. */
+  _uploadFieldTexture(field) {
+    let { nx, ny, nz } = field;
+    const src = field.values;
+    let data;
+    if (nx * ny * nz > FIELD_TEXEL_CAP) {
+      const stride = Math.max(2, Math.ceil(Math.cbrt((nx * ny * nz) / FIELD_TEXEL_CAP)));
+      const dnx = Math.ceil(nx / stride), dny = Math.ceil(ny / stride), dnz = Math.ceil(nz / stride);
+      console.warn(`raytrace: field ${nx}x${ny}x${nz} exceeds ${FIELD_TEXEL_CAP} voxels — `
+        + `downsampling by stride ${stride} to ${dnx}x${dny}x${dnz}`);
+      data = new Float32Array(dnx * dny * dnz);
+      let p = 0;
+      for (let k = 0; k < nz; k += stride)
+        for (let j = 0; j < ny; j += stride)
+          for (let i = 0; i < nx; i += stride)
+            data[p++] = src[i + nx * (j + ny * k)];
+      nx = dnx; ny = dny; nz = dnz;
+    } else {
+      data = (src instanceof Float32Array) ? new Float32Array(src) : new Float32Array(src);
+    }
+    if (this._realFieldTexture) this._realFieldTexture.dispose();
+    this._realFieldTexture = makeVolumeTexture(data, nx, ny, nz);
+    this.fieldTexture = this._realFieldTexture;
+    this.fieldDims = [nx, ny, nz];
+  }
+
+  /** Encode the visible crystallographic planes for the tracers: 6 texels per
+   *  plane (see planeChunk.js), the cell world->fractional matrix (from the
+   *  lattice basis, for exact cell clipping), and — for Field-mode planes — a
+   *  CPU-baked colormap atlas (each plane gets its own tile, so planes may
+   *  reference different fields). The bake reuses Plane.bakeFieldAtlasTile, the
+   *  same sampling path as the raster updateColorMap. */
+  _encodePlanes() {
+    const planes = this._visiblePlanes();
+    this.planeCount = planes.length;
+    if (planes.length === 0) {
+      this.planeAtlasTexture = this._dummyAtlas;
+      return;
+    }
+
+    // world -> fractional cell coords: invert the lattice-vector basis (columns
+    // = a, b, c; origin 0), matching makeCellClippingPlanes' cell faces.
+    const lattice = fileBrowser.selectedStructure?.lattice;
+    if (Array.isArray(lattice) && lattice.length === 3) {
+      _m.set(
+        lattice[0][0], lattice[1][0], lattice[2][0], 0,
+        lattice[0][1], lattice[1][1], lattice[2][1], 0,
+        lattice[0][2], lattice[1][2], lattice[2][2], 0,
+        0, 0, 0, 1);
+      this.cellWorldToFrac.copy(_m).invert();
+    } else {
+      this.cellWorldToFrac.identity();
+    }
+
+    // Field-mode planes that can actually bake (have a field with a voxel grid)
+    // get an atlas tile; index them into a square-ish grid.
+    const fieldPlanes = planes.filter((p) => p.mode === 'Field' && p.field?.voxel);
+    const nField = fieldPlanes.length;
+    const cols = Math.max(1, Math.ceil(Math.sqrt(nField)));
+    const rows = Math.max(1, Math.ceil(nField / cols));
+    const atlasW = nField > 0 ? cols * PLANE_ATLAS_TILE : 1;
+    const atlasH = nField > 0 ? rows * PLANE_ATLAS_TILE : 1;
+    const atlasData = new Uint8Array(atlasW * atlasH * 4);
+    const atlasRects = new Map(); // plane -> [uMin, vMin, uSize, vSize]
+    fieldPlanes.forEach((plane, j) => {
+      const cx = j % cols, cy = (j / cols) | 0;
+      const x0 = cx * PLANE_ATLAS_TILE, y0 = cy * PLANE_ATLAS_TILE;
+      plane.bakeFieldAtlasTile(atlasData, atlasW, x0, y0, PLANE_ATLAS_TILE);
+      // half-texel inset so bilinear filtering never bleeds across tiles
+      atlasRects.set(plane, [
+        (x0 + 0.5) / atlasW, (y0 + 0.5) / atlasH,
+        (PLANE_ATLAS_TILE - 1) / atlasW, (PLANE_ATLAS_TILE - 1) / atlasH,
+      ]);
+    });
+    if (this._realAtlas) this._realAtlas.dispose();
+    if (nField > 0) {
+      this._realAtlas = makeAtlasTexture(atlasData, atlasW, atlasH);
+      this.planeAtlasTexture = this._realAtlas;
+    } else {
+      this._realAtlas = null;
+      this.planeAtlasTexture = this._dummyAtlas;
+    }
+
+    const texture = this._ensureCapacity('planesTexture', planes.length * 6);
+    const data = texture.image.data;
+    planes.forEach((plane, p) => {
+      const d = p * 24;
+      const n = plane.planeNormal;
+      const isField = atlasRects.has(plane);
+      // texel 0: normal.xyz, d
+      data[d] = n.x; data[d + 1] = n.y; data[d + 2] = n.z; data[d + 3] = plane.planeD;
+      // texel 1: flat colour + alpha ('None' look; unused in Field mode)
+      const mat = plane.material;
+      if (plane.mode === 'None' && mat?.color) _color.copy(mat.color);
+      else _color.setHex(0x8c8c99);
+      const flatAlpha = (plane.mode === 'None' && Number.isFinite(mat?.opacity)) ? mat.opacity : 0.70;
+      data[d + 4] = _color.r; data[d + 5] = _color.g; data[d + 6] = _color.b; data[d + 7] = flatAlpha;
+      // texel 2: centroid.xyz, mode (0 None / 1 Field)
+      const c = plane.planeCentroid;
+      data[d + 8] = c.x; data[d + 9] = c.y; data[d + 10] = c.z; data[d + 11] = isField ? 1 : 0;
+      // texel 3/4: uAxis.xyz + halfU, vAxis.xyz + halfV (rect frame for atlas UV)
+      const u = plane.uAxis, v = plane.vAxis;
+      data[d + 12] = u.x; data[d + 13] = u.y; data[d + 14] = u.z; data[d + 15] = plane.halfU;
+      data[d + 16] = v.x; data[d + 17] = v.y; data[d + 18] = v.z; data[d + 19] = plane.halfV;
+      // texel 5: atlas rect (uMin, vMin, uSize, vSize)
+      const rect = atlasRects.get(plane) ?? [0, 0, 0, 0];
+      data[d + 20] = rect[0]; data[d + 21] = rect[1]; data[d + 22] = rect[2]; data[d + 23] = rect[3];
+    });
+    texture.needsUpdate = true;
   }
 }

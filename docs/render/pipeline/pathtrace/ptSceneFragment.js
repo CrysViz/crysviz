@@ -18,6 +18,8 @@
 // uLightPosition with radius uLightRadius (the "Light softness" slider).
 
 import { DATA_TEX_WIDTH } from '../raytrace/sceneFragment.js';
+import { fieldChunk } from '../raytrace/fieldChunk.js';
+import { planeChunk } from '../raytrace/planeChunk.js';
 
 export const ptSceneFragment = /* glsl */`
 precision highp float;
@@ -122,6 +124,10 @@ vec4 fetchData(sampler2D tex, int index)
 {
 	return texelFetch(tex, ivec2(index % DATA_W, index / DATA_W), 0);
 }
+
+${fieldChunk}
+
+${planeChunk}
 
 // Ground surface color at a plane point: solid / checkerboard / grid of the
 // two ground colors, in a tangent frame of the plane (world-unit tiles).
@@ -238,6 +244,46 @@ float SceneIntersect( out int isRayExiting )
 				colA.rgb, colA.a);
 			hitObjectID = float(1 + uAtomCount + uCylinderCount + p);
 			isRayExiting = dot(n, rayDirection) > 0.0 ? TRUE : FALSE;
+		}
+	}
+
+	// ---- volumetric field isosurface: ray-marched implicit surface ---------
+	if (uFieldEnabled)
+	{
+		float fT; vec3 fN, fCol;
+		if (intersectField(rayOrigin, rayDirection, t, fT, fN, fCol) && fT < t)
+		{
+			t = fT;
+			hitNormal = fN;
+			hitColor = fCol;
+			hitType = COAT;
+			hitAlpha = uFieldAlpha;
+			hitEmission = vec3(0);
+			hitGloss = 0.6;          // default coat reflection tightness
+			hitReflectivity = -1.0;  // use the global Reflectivity slider
+			hitRoughness = 0.0;
+			hitObjectID = -3.0;      // distinct id (light 0, ground -2)
+			isRayExiting = FALSE;    // double-sided implicit surface
+		}
+	}
+
+	// ---- crystallographic lattice planes: analytic, cell-clipped -----------
+	if (uPlaneCount > 0)
+	{
+		float pT; vec3 pN, pCol; float pAlpha;
+		if (intersectPlanes(rayOrigin, rayDirection, t, pT, pN, pCol, pAlpha) && pT < t)
+		{
+			t = pT;
+			hitNormal = pN;
+			hitColor = pCol;
+			hitType = COAT;
+			hitAlpha = pAlpha;       // None: 0.70 stochastic see-through; Field: 1
+			hitEmission = vec3(0);
+			hitGloss = 0.6;          // default coat reflection tightness
+			hitReflectivity = -1.0;  // use the global Reflectivity slider
+			hitRoughness = 0.0;
+			hitObjectID = -4.0;      // distinct id (light 0, ground -2, field -3)
+			isRayExiting = FALSE;    // double-sided flat surface
 		}
 	}
 
