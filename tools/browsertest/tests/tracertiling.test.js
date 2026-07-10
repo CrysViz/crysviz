@@ -27,6 +27,24 @@ function changedPixelCount(fileA, fileB) {
   return n;
 }
 
+/** Decode a `data:image/png;base64,...` URL captured from the canvas. */
+function decodeDataUrl(dataUrl) {
+  return PNG.sync.read(Buffer.from(dataUrl.split(',')[1], 'base64'));
+}
+
+/** Pixels whose summed RGB delta exceeds `thresh` between two decoded PNGs. */
+function changedPixelsPNG(a, b, thresh) {
+  let n = 0;
+  const total = Math.min(a.width * a.height, b.width * b.height);
+  for (let i = 0; i < total; i++) {
+    const o = i * 4;
+    const d = Math.abs(a.data[o] - b.data[o]) + Math.abs(a.data[o + 1] - b.data[o + 1])
+      + Math.abs(a.data[o + 2] - b.data[o + 2]);
+    if (d > thresh) n++;
+  }
+  return n;
+}
+
 (async () => {
   const { browser, page, errors } = await H.launchApp();
   H.check('webgl available', await H.webglAvailable(page));
@@ -121,6 +139,56 @@ function changedPixelCount(fileA, fileB) {
     JSON.stringify(round.done));
   H.check('tile scissors are cleared after every frame',
     round.scissorOff === true, JSON.stringify(round));
+
+  // --- (2b) Present-on-round-completion: the canvas is stable mid-round ------------
+  // Everything (render driving + canvas captures) happens in ONE synchronous
+  // evaluate so no RAF frame can advance the tiling between captures. The canvas
+  // is grabbed with toDataURL right after render() (same task = drawing buffer
+  // still intact, no preserveDrawingBuffer needed, as ImageExportModule does).
+  const stab = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const p = app.pipeline;
+    const ctx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
+    const canvas = app.renderer.domElement;
+    p.render(ctx); p.render(ctx); // settle
+    p._tilePixelBudget = 32 * 32;  // force a fine multi-tile grid
+    p._seedTileGrid(p._accumTarget.width, p._accumTarget.height);
+    p.resetAccumulation();
+    p.render(ctx); // untiled sample 1
+    // Complete one full round -> uSampleCounter becomes 2, display snapshot taken.
+    p.render(ctx); // starts the round (tile 0)
+    const roundTiles = p._roundGridX * p._roundGridY;
+    for (let i = 1; i < roundTiles; i++) p.render(ctx);
+    const afterRoundCounter = p._uniforms.uSampleCounter.value;
+    const shotA = canvas.toDataURL('image/png');
+    // Advance exactly ONE tile into the NEXT round: the display snapshot must
+    // NOT change (mid-round frames re-present the last completed round).
+    p.render(ctx);
+    const midCursor = p._tileCursor;
+    const midActive = p._roundActive;
+    const shotB = canvas.toDataURL('image/png');
+    // Drive the remaining tiles of this round to completion -> counter 3, a NEW
+    // display snapshot: the canvas is now expected to update.
+    const rt2 = p._roundGridX * p._roundGridY;
+    for (let i = p._tileCursor; i < rt2; i++) p.render(ctx);
+    const doneCounter = p._uniforms.uSampleCounter.value;
+    const shotC = canvas.toDataURL('image/png');
+    return { roundTiles, afterRoundCounter, midCursor, midActive, doneCounter,
+      shotA, shotB, shotC };
+  });
+  const pngA = decodeDataUrl(stab.shotA);
+  const pngB = decodeDataUrl(stab.shotB);
+  const pngC = decodeDataUrl(stab.shotC);
+  const midRoundDelta = changedPixelsPNG(pngA, pngB, 0);
+  const roundDoneDelta = changedPixelsPNG(pngA, pngC, 24);
+  H.check('mid-round advance leaves the canvas UNCHANGED (present-on-round-completion)',
+    stab.roundTiles > 1 && stab.afterRoundCounter === 2 && stab.midActive === true
+      && stab.midCursor === 1 && midRoundDelta === 0,
+    JSON.stringify({ roundTiles: stab.roundTiles, afterRoundCounter: stab.afterRoundCounter,
+      midCursor: stab.midCursor, midActive: stab.midActive, midRoundDelta }));
+  H.check('completing the next round DOES update the canvas',
+    stab.doneCounter === 3 && roundDoneDelta > 20,
+    JSON.stringify({ doneCounter: stab.doneCounter, roundDoneDelta }));
 
   // --- (5) Boost bypass abandons an in-flight round --------------------------------
   const boost = await page.evaluate(async () => {

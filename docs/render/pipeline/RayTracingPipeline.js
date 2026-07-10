@@ -46,11 +46,15 @@
 // from the measured frame interval (split when single tiles overrun ~2 vsyncs,
 // merge back on sustained headroom; 1x1..8x8). While the camera moves, tiling
 // gives way to untiled MOTION LOW-RES (half internal resolution, upsampled by
-// the target's linear filter). Two accepted cosmetic tradeoffs: (1) a faint
-// mid-round tile seam of (N+1)/N brightness that decays as 1/N, and (2) for
-// path tracing, denoiser reads that cross a seam may pick up one-sample-stale
-// neighbors — both self-heal at round completion. Bypasses (boost / motion /
-// toggle-off / 1x1 grid / sample 1) render full-frame exactly as before.
+// the target's linear filter). PRESENT-ON-ROUND-COMPLETION: the partially-tiled
+// accumulation is never shown. At round completion (and after each untiled
+// burst) the whole accumulation is snapshotted full-frame into a third DISPLAY
+// target, and the output pass presents THAT — so the canvas only updates once
+// per completed round (once per sample), with no mid-round tile seam and, for
+// path tracing, a denoiser that always reads a uniform-sample-count image. Only
+// the progress strip advances mid-round (fractional round count). Bypasses
+// (boost / motion / toggle-off / 1x1 grid / sample 1) render full-frame; with
+// the toggle OFF the present is byte-identical to the legacy accum-target path.
 
 import * as THREE from '../../external/three/three.module.js';
 import { app, general } from '../../state/store.js';
@@ -222,6 +226,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     };
     this._accumTarget = makeTarget();   // written by the ray-trace pass
     this._previousTarget = makeTarget(); // read as uPreviousTexture
+    this._displayTarget = makeTarget();  // full-frame snapshot presented while tiling
 
     this._blueNoise = new THREE.TextureLoader().load(
       this._cfg.blueNoiseUrl, (tex) => {
@@ -390,6 +395,10 @@ export class RayTracingPipeline extends ForwardPipeline {
     renderer.clear(true, false, false);
     renderer.setRenderTarget(this._previousTarget);
     renderer.clear(true, false, false);
+    // Also flush the display snapshot so a reset can never present a stale
+    // (old-scene) frame before the first new sample is snapshotted.
+    renderer.setRenderTarget(this._displayTarget);
+    renderer.clear(true, false, false);
     renderer.setRenderTarget(prevTarget);
     renderer.setClearColor(oldColor, oldAlpha);
   }
@@ -456,6 +465,19 @@ export class RayTracingPipeline extends ForwardPipeline {
   _clearTileScissor() {
     if (this._accumTarget) this._accumTarget.scissorTest = false;
     if (this._previousTarget) this._previousTarget.scissorTest = false;
+  }
+
+  /** Copy the full accumulation target into the display snapshot (no scissor).
+   *  Called at round completion and after any untiled burst while tiling is on,
+   *  so the presented canvas only ever shows a whole, integer-sample-count
+   *  image (the source of the "update once per round" behavior). Must be called
+   *  with no tile scissor active on the display target. */
+  _snapshotDisplay(renderer) {
+    const prevTarget = renderer.getRenderTarget();
+    this._copyQuad.material.uniforms[this._cfg.copyTexUniform].value = this._accumTarget.texture;
+    renderer.setRenderTarget(this._displayTarget);
+    this._copyQuad.render(renderer);
+    renderer.setRenderTarget(prevTarget);
   }
 
   /** Adaptive controller: measure the interval between consecutive tiled frames
@@ -538,6 +560,7 @@ export class RayTracingPipeline extends ForwardPipeline {
         && baseW === this._lastBaseW && baseH === this._lastBaseH;
       this._accumTarget.setSize(w, h);
       this._previousTarget.setSize(w, h);
+      this._displayTarget.setSize(w, h);
       u.uResolution.value.set(w, h);
       this._outputQuad.material.uniforms.uOutputResolution.value.copy(bufferSize);
       this._lastScale = effScale;
@@ -696,10 +719,10 @@ export class RayTracingPipeline extends ForwardPipeline {
     const oldAutoClear = renderer.autoClear;
     renderer.autoClear = false;
 
-    // Present divide is 1/(N + completedTiles/roundTiles): the output pass runs
-    // every frame (the canvas isn't preserved), so a fractional count keeps the
-    // mean brightness constant mid-round. The only artifact is a faint (N+1)/N
-    // seam sweeping the screen, decaying as 1/N.
+    // Fraction of the in-flight round that is done, used ONLY to advance the
+    // progress strip smoothly mid-round. The presented CANVAS does not use it:
+    // it shows the display snapshot from the last COMPLETED round, so no
+    // mid-round brightness seam ever reaches the screen.
     let completedFraction = 0;
 
     if (useTiling) {
@@ -736,6 +759,13 @@ export class RayTracingPipeline extends ForwardPipeline {
         this._roundActive = false;
         this._tileCursor = 0;
         completedFraction = 0;
+        // Present-on-round-completion: snapshot the freshly-completed
+        // accumulation (full-frame, scissors already cleared above) into the
+        // display target. uSampleCounter was just advanced, so it equals this
+        // snapshot's sample count at present time — the output pass divides by
+        // it with no extra bookkeeping. Mid-round frames re-present this
+        // unchanged snapshot, so the canvas never shows a partial-round seam.
+        this._snapshotDisplay(renderer);
       } else {
         completedFraction = this._tileCursor / roundTiles;
       }
@@ -762,13 +792,26 @@ export class RayTracingPipeline extends ForwardPipeline {
 
         u.uCameraIsMoving.value = false; // only the first sample of a burst blurs
       }
+      // When tiling is enabled, the output pass presents the DISPLAY snapshot;
+      // the untiled path (sample 1, boosts, motion frames) must refresh it so
+      // it isn't stale/black. Full-frame copy (no scissor is active here).
+      if (tilingEnabled) this._snapshotDisplay(renderer);
     }
 
     // --- averaged, tone-mapped output to the canvas -------------------------
-    const presentCount = u.uSampleCounter.value + completedFraction;
+    // With tiling ON the canvas is refreshed once per completed round from the
+    // DISPLAY snapshot (an integer-sample-count image), so mid-round frames
+    // re-present an unchanged, seam-free picture. uSampleCounter equals the
+    // snapshot's sample count (advanced at the same moment it was taken), so the
+    // divide is exact. With tiling OFF this is byte-identical to the legacy
+    // present: read _accumTarget, divide by 1/max(1, uSampleCounter).
     const out = this._outputQuad.material.uniforms;
-    out[this._cfg.outputTexUniform].value = this._accumTarget.texture;
-    out.uOneOverSampleCounter.value = 1 / Math.max(1, presentCount);
+    if (tilingEnabled) {
+      out[this._cfg.outputTexUniform].value = this._displayTarget.texture;
+    } else {
+      out[this._cfg.outputTexUniform].value = this._accumTarget.texture;
+    }
+    out.uOneOverSampleCounter.value = 1 / Math.max(1, u.uSampleCounter.value);
     out.uSaturation.value = general.rtSaturation ?? 1; // output-pass grade: no reset needed
     this._updateOutputUniforms(out);
     renderer.setRenderTarget(null);
@@ -776,10 +819,11 @@ export class RayTracingPipeline extends ForwardPipeline {
     renderer.autoClear = oldAutoClear;
 
     // --- progressive refinement under render-on-demand ----------------------
-    // The progress strip advances smoothly with the fractional round count, and
-    // an in-flight round keeps the counter below target so render() keeps
-    // self-perpetuating until convergence.
-    updateTracerProgress(presentCount, this._cfg.targetSamples);
+    // The canvas only refreshes per round, but the progress strip still advances
+    // smoothly with the fractional round count (completedFraction is kept ONLY
+    // for this). An in-flight round keeps the counter below target so render()
+    // keeps self-perpetuating until convergence.
+    updateTracerProgress(u.uSampleCounter.value + completedFraction, this._cfg.targetSamples);
     if (u.uSampleCounter.value < this._cfg.targetSamples) requestRender();
   }
 
@@ -797,6 +841,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     if (!this._initialized) return;
     this._accumTarget.dispose();
     this._previousTarget.dispose();
+    this._displayTarget.dispose();
     this._encoder.dispose();
     this._blueNoise.dispose();
     this._rtMesh.geometry.dispose();
