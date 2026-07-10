@@ -60,21 +60,12 @@ export function setActivePipeline(id) {
     const size = app.renderer.getDrawingBufferSize(new THREE.Vector2());
     pipeline.setSize(size.x, size.y);
   }
-  reapplyTransparencyToScene(pipeline);
+  // The scene graph is the registry of transparency intents: re-run the new
+  // pipeline's policy for every material that has declared one (method on
+  // ForwardPipeline so the tracers can reuse it without an import cycle).
+  pipeline.reapplyTransparencyToScene();
   requestRender();
   return pipeline;
-}
-
-// The scene graph is the registry of transparency intents: re-run the new
-// pipeline's policy for every material that has declared one.
-function reapplyTransparencyToScene(pipeline) {
-  app.scene?.traverse((obj) => {
-    const materials = Array.isArray(obj.material) ? obj.material : (obj.material ? [obj.material] : []);
-    for (const material of materials) {
-      const spec = material.userData?.transparencySpec;
-      if (spec) pipeline.applyTransparency(material, { ...spec, mesh: obj });
-    }
-  });
 }
 
 registerPipeline(ForwardPipeline);

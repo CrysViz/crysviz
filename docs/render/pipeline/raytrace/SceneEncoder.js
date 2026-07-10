@@ -6,7 +6,13 @@
 // with no coupling into other modules. Change detection is a cheap
 // fingerprint over the instanced-attribute `version` counters plus the
 // polyhedra/lattice style values; the pipeline re-encodes and resets the
-// progressive accumulation when it changes.
+// progressive accumulation when it changes. The fingerprint is split into two
+// strings so callers can tell WHICH kind of edit happened: a CORE part (atom
+// geometry/colors, cut planes, bonds, polyhedra, lattice, field, planes, plus
+// the raster-only fields of the mixed style maps) and a TRACER-MATERIAL part
+// (the per-species/per-atom tracer material maps). fingerprintChanged() returns
+// their union (unchanged external contract) and records lastChangeWasCoreScene
+// so the interactive raster preview can ignore tracer-only look edits.
 
 import * as THREE from '../../../external/three/three.module.js';
 import { ConvexHull } from '../../../external/three/ConvexHull.js';
@@ -112,7 +118,9 @@ export class SceneEncoder {
   minY = -5; // lowest atom point (ground plane placement; driver adds the offset)
   structureCenter = new THREE.Vector3(); // atom bounding-box center
   structureRadius = 5; // half-diagonal of the atom bounding box (from the center)
-  _fingerprint = '';
+  _coreFingerprint = '';   // atoms/cut/bonds/poly/lattice/field/planes + raster style fields
+  _matFingerprint = '';    // per-species/per-atom tracer material maps
+  lastChangeWasCoreScene = false; // set by fingerprintChanged(): was the last diff a CORE edit?
 
   // ---- volumetric field (isosurface) --------------------------------------
   // fieldTexture always points at a valid Data3DTexture (a 1-voxel dummy when
@@ -153,7 +161,12 @@ export class SceneEncoder {
     if (this._realFieldTexture) this._realFieldTexture.dispose();
   }
 
-  /** Cheap change detector; true when the scene must be re-encoded. */
+  /** Cheap change detector; true when the scene must be re-encoded. Splits the
+   *  probe into a CORE string (geometry/colors/planes/field + raster style
+   *  fields) and a TRACER-MATERIAL string (the tracer material maps). Returns
+   *  their union and records lastChangeWasCoreScene = whether the CORE part
+   *  changed (the raster preview keys triggers on that so tracer-only look
+   *  edits stay live-traced). */
   fingerprintChanged() {
     const parts = [];
     const atoms = groups.atomsMesh;
@@ -193,17 +206,21 @@ export class SceneEncoder {
       parts.push('l', String(fileBrowser.selectedStructure.lattice.flat()),
         general.latticeLineWidth, String(general.currentLatticeColor));
     }
-    // material edits (small sparse maps; the style stores also carry colors,
-    // whose mesh-side changes are already covered above — harmless overlap)
+    // CORE side of the mixed style maps: their RASTER fields (colors, radii,
+    // visibility ...) but NOT the tracer `material` sub-object — a replacer
+    // drops the 'material' key so a tracer-only material edit does not land in
+    // the core string (it belongs in the tracer-material part below). The two
+    // pure tracer maps (atomMaterials/atomUserMaterials) are values that ARE
+    // material objects, so they are excluded from core entirely.
     const structure = fileBrowser.selectedStructure;
+    const dropMaterialKey = (key, value) => (key === 'material' ? undefined : value);
     if (structure) {
-      parts.push('m', JSON.stringify(structure.atomMaterials ?? {}),
-        JSON.stringify(structure.atomUserMaterials ?? {}),
-        JSON.stringify(structure.atomImageStyles ?? {}),
-        JSON.stringify(structure.bondCategoryStyles ?? {}),
-        JSON.stringify(structure.bondUserStyles ?? {}),
-        JSON.stringify(structure.polyhedraCategoryStyles ?? {}),
-        JSON.stringify(structure.polyhedraUserStyles ?? {}));
+      parts.push('ms',
+        JSON.stringify(structure.atomImageStyles ?? {}, dropMaterialKey),
+        JSON.stringify(structure.bondCategoryStyles ?? {}, dropMaterialKey),
+        JSON.stringify(structure.bondUserStyles ?? {}, dropMaterialKey),
+        JSON.stringify(structure.polyhedraCategoryStyles ?? {}, dropMaterialKey),
+        JSON.stringify(structure.polyhedraUserStyles ?? {}, dropMaterialKey));
     }
     // volumetric field isosurface (same source the raster pipelines draw):
     // presence/visibility, dims, iso, abs mode, pos/neg colours, opacity, and
@@ -235,10 +252,29 @@ export class SceneEncoder {
         vals?.length, vals ? vals[(vals.length / 2) | 0] : 0);
     }
     parts.push('plc', planes.length);
-    const fingerprint = parts.join('|');
-    if (fingerprint === this._fingerprint) return false;
-    this._fingerprint = fingerprint;
-    return true;
+
+    // TRACER-MATERIAL side: today's 'm' block verbatim (all seven maps, full
+    // serialization) — a raster-field edit that flips BOTH parts is harmless
+    // since the preview trigger keys only on the core part.
+    const matParts = [];
+    if (structure) {
+      matParts.push('m', JSON.stringify(structure.atomMaterials ?? {}),
+        JSON.stringify(structure.atomUserMaterials ?? {}),
+        JSON.stringify(structure.atomImageStyles ?? {}),
+        JSON.stringify(structure.bondCategoryStyles ?? {}),
+        JSON.stringify(structure.bondUserStyles ?? {}),
+        JSON.stringify(structure.polyhedraCategoryStyles ?? {}),
+        JSON.stringify(structure.polyhedraUserStyles ?? {}));
+    }
+
+    const coreFp = parts.join('|');
+    const matFp = matParts.join('|');
+    const coreChanged = coreFp !== this._coreFingerprint;
+    const matChanged = matFp !== this._matFingerprint;
+    this._coreFingerprint = coreFp;
+    this._matFingerprint = matFp;
+    this.lastChangeWasCoreScene = coreChanged;
+    return coreChanged || matChanged;
   }
 
   /** The live volumetric field to trace, or null. Same source as the raster

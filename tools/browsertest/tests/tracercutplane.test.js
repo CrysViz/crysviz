@@ -66,6 +66,7 @@ const H = require('../harness');
   await page.evaluate(async () => {
     const { general } = await import('./state/store.js');
     general.rtResolutionScale = 0.25; // software-GL speed
+    general.rtRasterPreview = false; // trace every frame (no depth-peel preview stalling RAF assertions)
   });
 
   // Baseline traced image with NO cut plane.

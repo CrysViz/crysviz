@@ -196,7 +196,9 @@ export function animation_update(time = 0) {
 
   // The active rendering pipeline owns the full frame (passes + composite);
   // read from app.pipeline (not an import) to avoid a render-layer cycle.
-  app.pipeline?.render({ renderer: app.renderer, scene: app.scene, camera: app.camera });
+  // interactive:true marks a live animate-loop frame (only here) so the tracers'
+  // raster preview may kick in; PNG export / manual render() omit it and trace.
+  app.pipeline?.render({ renderer: app.renderer, scene: app.scene, camera: app.camera, interactive: true });
   if (app.gizmoRenderer && app.gizmoScene && app.gizmoCamera) {
     const invCamQ = app.camera.quaternion.clone().invert();
     const { a, b, c } = latticeDirsNorm();

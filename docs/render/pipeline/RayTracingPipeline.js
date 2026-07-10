@@ -55,6 +55,20 @@
 // the progress strip advances mid-round (fractional round count). Bypasses
 // (boost / motion / toggle-off / 1x1 grid / sample 1) render full-frame; with
 // the toggle OFF the present is byte-identical to the legacy accum-target path.
+//
+// Interactive raster preview (general.rtRasterPreview, default on): tracing
+// every interactive frame is expensive, so while the user drives the view the
+// pipeline renders cheap DEPTH-PEELED preview frames instead — it holds a
+// private, persistent DepthPeelPipeline instance (never re-created per gesture)
+// and routes its own transparency policy through it so preview frames blend
+// correctly. Triggers are CAMERA MOTION and CORE scene edits (geometry/colors/
+// planes/field) — tracer-only material/look edits stay live-traced since the
+// raster preview can't show them. After the scene has been at rest for
+// general.rtPreviewRestDelay seconds (a rearming timer wakes the loop with no
+// user input) the tracer resumes and accumulates. Preview frames are gated on
+// ctx.interactive (set ONLY by the animate loop) so PNG export and any manual
+// render() always trace. Auto-rotate keeps the preview active indefinitely
+// while enabled (intended). The preview<->traced visual "pop" is the contract.
 
 import * as THREE from '../../external/three/three.module.js';
 import { app, general } from '../../state/store.js';
@@ -66,6 +80,7 @@ import { FullScreenQuad } from '../../external/three/Pass.js';
 import { requestRender } from '../AnimateModule.js';
 import { updateTracerProgress, hideTracerProgress } from '../TracerProgressModule.js';
 import { ForwardPipeline } from './ForwardPipeline.js';
+import { DepthPeelPipeline } from './DepthPeelPipeline.js';
 import { sceneFragment } from './raytrace/sceneFragment.js';
 import { SceneEncoder } from './raytrace/SceneEncoder.js';
 
@@ -179,6 +194,21 @@ export class RayTracingPipeline extends ForwardPipeline {
   _motionScaleActive = false; // whether the current target is at the motion (low-res) scale
   _lastBaseW = 0;         // last still-camera internal size (to classify motion vs real resizes)
   _lastBaseH = 0;
+
+  // ---- interactive raster preview state -----------------------------------
+  _previewPipeline = null;   // private persistent DepthPeelPipeline (preview frames), or null
+  _previewActive = false;    // test-inspectable: this frame rendered a preview (not a trace)
+  _lastInteractionAt = 0;    // performance.now() of the last camera/core-scene interaction
+  _restTimer = null;         // rearming timer that wakes render() when the rest window elapses
+
+  constructor() {
+    super();
+    // Create the preview instance up front when enabled so activation's
+    // reapplyTransparencyToScene() (called by setActivePipeline right after the
+    // constructor) routes preview policy scene-wide from frame one. A toggle
+    // flip mid-session is reconciled by _syncPreviewLifecycle() in render().
+    if (general.rtRasterPreview !== false) this._previewPipeline = new DepthPeelPipeline();
+  }
 
   // ---- subclass hooks (PathTracingPipeline overrides these) ---------------
   /** Shader sources + uniform-name conventions + tuning for this tracer. */
@@ -507,8 +537,50 @@ export class RayTracingPipeline extends ForwardPipeline {
     this._prevTileTime = now;
   }
 
-  render({ renderer, scene, camera }) {
+  // ---- interactive raster preview helpers ---------------------------------
+  /** Reconcile the preview instance with the general.rtRasterPreview flag at
+   *  the top of every frame: create it (and reapply policy so its staged
+   *  split/overlays attach to existing materials) on enable, tear it down (and
+   *  reapply the plain tracer policy) on disable. */
+  _syncPreviewLifecycle() {
+    const want = general.rtRasterPreview !== false;
+    if (want && !this._previewPipeline) {
+      this._previewPipeline = new DepthPeelPipeline();
+      this.reapplyTransparencyToScene();
+    } else if (!want && this._previewPipeline) {
+      this._teardownPreview();
+      this.reapplyTransparencyToScene();
+    }
+  }
+
+  /** Dispose the preview instance (removes its scene-root overlays and resets
+   *  the atoms/bonds alpha-pass split) and clear the rest timer. Inert peel
+   *  patches left on other materials are harmless (the tracer never draws the
+   *  raster scene). */
+  _teardownPreview() {
+    if (this._restTimer) { clearTimeout(this._restTimer); this._restTimer = null; }
+    this._previewActive = false;
+    if (this._previewPipeline) {
+      this._previewPipeline.dispose();
+      this._previewPipeline = null;
+    }
+  }
+
+  /** Clear-and-rearm a one-shot timer that requests a render once the rest
+   *  window elapses — the resume frame needs no user input (the scheduleBondRebuild
+   *  idiom). A burst of interactive frames coalesces onto the latest deadline. */
+  _armRestTimer(delayMs) {
+    if (this._restTimer) clearTimeout(this._restTimer);
+    this._restTimer = setTimeout(() => {
+      this._restTimer = null;
+      requestRender();
+    }, Math.max(0, delayMs));
+  }
+
+  render(ctx) {
+    const { renderer, scene, camera } = ctx;
     if (!this._initialized) this._init(renderer);
+    this._syncPreviewLifecycle();
     const u = this._uniforms;
 
     // --- camera-motion detection (hoisted above sizing so motion low-res can
@@ -534,6 +606,38 @@ export class RayTracingPipeline extends ForwardPipeline {
       this._lastZoom = zoom;
       this.resetAccumulation();
     }
+
+    // --- sticky scene-change probe (evaluate BEFORE any preview early-return)
+    // fingerprintChanged() advances the stored strings, so it must run exactly
+    // once per frame regardless of the preview gate — otherwise a preview frame
+    // would swallow the one-shot signal and the resume frame would never
+    // re-encode. The flag is STICKY: it survives preview frames (which return
+    // before the encode block) and is consumed on the resume frame.
+    const fpChanged = this._encoder.fingerprintChanged();
+    if (fpChanged) this._sceneDirty = true;
+
+    // --- interactive raster preview -----------------------------------------
+    // While the user drives the view (camera motion OR a CORE scene edit) with
+    // a tracer active, render cheap depth-peeled preview frames instead of
+    // tracing; the tracer resumes once the scene has rested for the delay.
+    // Tracer-only look/material edits never trigger it (they change only the
+    // look part of the fingerprint). Gated on ctx.interactive so PNG export /
+    // manual render() always trace.
+    if (this._previewPipeline && ctx.interactive === true) {
+      const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      const triggered = cameraIsMoving || (fpChanged && this._encoder.lastChangeWasCoreScene);
+      if (triggered) this._lastInteractionAt = now;
+      const restMs = Math.max(0, (general.rtPreviewRestDelay ?? 2) * 1000);
+      const sinceInteraction = now - this._lastInteractionAt;
+      if (this._lastInteractionAt > 0 && sinceInteraction < restMs) {
+        this._previewActive = true;
+        hideTracerProgress();
+        this._armRestTimer(restMs - sinceInteraction + 30);
+        this._previewPipeline.render({ renderer, scene, camera });
+        return; // skip sizing/encode/accumulate/present — no motion-low-res coexists
+      }
+    }
+    this._previewActive = false;
 
     // --- sizing (drawing buffer x RT resolution scale) ----------------------
     // Motion low-res: while the camera moves AND tiling is enabled, render at a
@@ -578,13 +682,12 @@ export class RayTracingPipeline extends ForwardPipeline {
     this._lastBaseH = baseH;
     this._outputQuad.material.uniforms.uOutputResolution.value.copy(bufferSize);
 
-    // --- scene + camera change detection ------------------------------------
-    // ALWAYS evaluate the fingerprint (no short-circuit behind _sceneDirty):
-    // skipping it would leave the stored fingerprint stale, so the NEXT frame
-    // would detect the already-encoded change again — a spurious second
-    // re-encode + accumulation reset one frame after every _sceneDirty event.
-    const fingerprintChanged = this._encoder.fingerprintChanged();
-    if (this._sceneDirty || fingerprintChanged) {
+    // --- scene re-encode ----------------------------------------------------
+    // The fingerprint was already evaluated (sticky probe above), so this just
+    // consumes the _sceneDirty flag it set. _sceneDirty is sticky across
+    // preview frames, so a core edit made during the preview window is picked
+    // up here on the resume frame.
+    if (this._sceneDirty) {
       this._encoder.encode();
       u.uAtomsDataTexture.value = this._encoder.atomsTexture;
       u.uCylindersDataTexture.value = this._encoder.cylindersTexture;
@@ -832,11 +935,21 @@ export class RayTracingPipeline extends ForwardPipeline {
   }
 
   applyTransparency(material, spec = {}) {
-    super.applyTransparency(material, spec); // harmless: raster scene not drawn
+    // Route through the preview instance (when it exists) so materials carry
+    // the depth-peel staged-split/overlay/patch state and preview frames render
+    // correctly — including materials created later by mesh rebuilds. Keying on
+    // instance existence (not the raw flag) keeps routing and material state in
+    // sync across toggle flips. Without a preview instance the tracer never
+    // draws the raster scene, so the forward flags are harmless.
+    if (this._previewPipeline) this._previewPipeline.applyTransparency(material, spec);
+    else super.applyTransparency(material, spec);
     this._sceneDirty = true;
   }
 
   dispose() {
+    // Teardown BEFORE the _initialized guard: the preview instance (and its
+    // rest timer) can exist even if this tracer never rendered a traced frame.
+    this._teardownPreview();
     hideTracerProgress();
     if (!this._initialized) return;
     this._accumTarget.dispose();

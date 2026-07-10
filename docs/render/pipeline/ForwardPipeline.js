@@ -13,9 +13,12 @@
 //   dispose()                      free targets/materials on pipeline switch
 //   applyTransparency(mat, spec)   apply this pipeline's flags for a declared
 //                                  transparency intent (utils/TransparencyPolicy.js)
+//   reapplyTransparencyToScene()   re-run applyTransparency over every material
+//                                  in the live scene that carries a stamped spec
 //   needsCpuTriangleSort           whether the isosurface CPU triangle sort is
 //                                  needed for acceptable blending (OIT: false)
 
+import { app } from '../../state/store.js';
 import { renderCelOutlinePass } from '../CelOutlinePass.js';
 
 export class ForwardPipeline {
@@ -120,5 +123,21 @@ export class ForwardPipeline {
         material.transparent = opacity < 1;
     }
     material.needsUpdate = true;
+  }
+
+  /** The scene graph is the registry of transparency intents: re-run THIS
+   *  pipeline's policy for every material that carries a stamped spec. Used on
+   *  pipeline activation (index.js) and by the tracers' raster-preview toggle.
+   *  Lives here (not in pipeline/index.js) so RayTracingPipeline can call it
+   *  without importing the manager (which imports RayTracingPipeline — a cycle). */
+  reapplyTransparencyToScene() {
+    app.scene?.traverse((obj) => {
+      const materials = Array.isArray(obj.material)
+        ? obj.material : (obj.material ? [obj.material] : []);
+      for (const material of materials) {
+        const spec = material.userData?.transparencySpec;
+        if (spec) this.applyTransparency(material, { ...spec, mesh: obj });
+      }
+    });
   }
 }

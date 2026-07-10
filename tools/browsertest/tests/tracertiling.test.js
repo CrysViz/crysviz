@@ -62,6 +62,7 @@ function changedPixelsPNG(a, b, thresh) {
   await page.evaluate(async () => {
     const { general } = await import('./state/store.js');
     general.rtResolutionScale = 0.25; // software-GL speed
+    general.rtRasterPreview = false; // manual render(ctx) calls omit interactive anyway; keep the tracer live for the state-machine asserts
   });
 
   // --- Activate the ray tracer and wait for it to be fully up ---------------------

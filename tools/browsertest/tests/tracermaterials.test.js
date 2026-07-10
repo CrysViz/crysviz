@@ -132,6 +132,7 @@ function changedPixelCount(fileA, fileB) {
   await page.evaluate(async () => {
     const { general } = await import('./state/store.js');
     general.rtResolutionScale = 0.25; // software-GL speed
+    general.rtRasterPreview = false; // trace every frame (no depth-peel preview stalling RAF assertions)
   });
   await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
   await page.waitForTimeout(3500);
@@ -601,8 +602,8 @@ function changedPixelCount(fileA, fileB) {
       atomUserMaterials: state.colors.atomUserMaterials,
     };
   });
-  H.check('captureState persists atomMaterials + per-atom overrides (v2.10)',
-    persisted.version === '2.10' && persisted.atomMaterials?.Cu?.type === 'emissive'
+  H.check('captureState persists atomMaterials + per-atom overrides (v2.11)',
+    persisted.version === '2.11' && persisted.atomMaterials?.Cu?.type === 'emissive'
       && persisted.atomMaterials?.Ba?.type === 'metal'
       && Object.values(persisted.atomUserMaterials ?? {}).some((m) => m?.type === 'glass'),
     JSON.stringify(persisted));

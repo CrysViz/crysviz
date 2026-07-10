@@ -109,6 +109,11 @@ const H = require('../harness');
     const tiledInRtBlock = document.getElementById('rtTiledToggle')?.parentElement?.parentElement === rtBlock;
     const tiledDefaultChecked = /** @type {HTMLInputElement} */ (
       document.getElementById('rtTiledToggle'))?.checked === true;
+    // Interactive raster preview toggle + delay slider: same shared block, default ON.
+    const previewInRtBlock = document.getElementById('rtPreviewToggle')?.parentElement?.parentElement === rtBlock;
+    const previewDelayInRtBlock = rtBlock?.contains(document.getElementById('rtPreviewDelay')) === true;
+    const previewDefaultChecked = /** @type {HTMLInputElement} */ (
+      document.getElementById('rtPreviewToggle'))?.checked === true;
     const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
     select.value = 'pathtrace';
     select.dispatchEvent(new Event('change'));
@@ -123,6 +128,7 @@ const H = require('../harness');
     const allHiddenUnderForward = getComputedStyle(rtBlock).display === 'none'
       && getComputedStyle(ptBlock).display === 'none';
     return { softnessInRtBlock, dofInRtBlock, tiledInRtBlock, tiledDefaultChecked,
+      previewInRtBlock, previewDelayInRtBlock, previewDefaultChecked,
       rtSharedUnderPathtrace, ptShownUnderPathtrace,
       ptHiddenUnderRaytrace, sharedShownUnderRaytrace, allHiddenUnderForward };
   });
@@ -133,6 +139,9 @@ const H = require('../harness');
     JSON.stringify(ptControls));
   H.check('Tiled-rendering toggle is in the shared tracer block and defaults ON',
     ptControls.tiledInRtBlock && ptControls.tiledDefaultChecked, JSON.stringify(ptControls));
+  H.check('Interactive raster preview toggle + delay slider are in the shared tracer block; preview defaults ON',
+    ptControls.previewInRtBlock && ptControls.previewDelayInRtBlock && ptControls.previewDefaultChecked,
+    JSON.stringify(ptControls));
 
   // --- Dependency tree: Render Style (and cel outlines) only for raster pipelines --
   const styleTree = await page.evaluate(async () => {
@@ -176,11 +185,14 @@ const H = require('../harness');
     general.rtAmbient = 0.9;
     general.rtGroundPlane = true;
     general.rtTiledRender = false;
+    general.rtRasterPreview = false;
+    general.rtPreviewRestDelay = 4.5;
     general.depthPeelLayers = 9;
     general.celHullWidth = 0.1;
     document.getElementById('resetRenderingBtn').click();
     await new Promise((r) => setTimeout(r, 300));
     const styleRow = document.getElementById('renderStyleMenu')?.closest('.control-row');
+    const previewToggle = /** @type {HTMLInputElement} */ (document.getElementById('rtPreviewToggle'));
     return {
       pipeline: general.renderPipeline,
       style: general.renderStyle,
@@ -188,6 +200,9 @@ const H = require('../harness');
       ambient: general.rtAmbient,
       ground: general.rtGroundPlane,
       tiled: general.rtTiledRender,
+      preview: general.rtRasterPreview,
+      previewToggleChecked: previewToggle?.checked === true,
+      previewDelay: general.rtPreviewRestDelay,
       peel: general.depthPeelLayers,
       hull: general.celHullWidth,
       menuValue: pipeSelect.value,
@@ -198,6 +213,8 @@ const H = require('../harness');
     reset.pipeline === 'depthpeel' && reset.style === 'metallic'
       && Math.abs(reset.reflectivity - 0.15) < 1e-9 && Math.abs(reset.ambient - 0.3) < 1e-9
       && reset.ground === false && reset.tiled === true && reset.peel === 5
+      && reset.preview === true && reset.previewToggleChecked
+      && Math.abs(reset.previewDelay - 2) < 1e-9
       && Math.abs(reset.hull - 0.025) < 1e-9
       && reset.menuValue === 'depthpeel' && reset.styleRowVisible,
     JSON.stringify(reset));
@@ -306,16 +323,20 @@ const H = require('../harness');
       ptDenoise: state.style.ptDenoise,
       ptLightSoftness: state.style.ptLightSoftness,
       rtTiledRender: state.style.rtTiledRender,
+      rtRasterPreview: state.style.rtRasterPreview,
+      rtPreviewRestDelay: state.style.rtPreviewRestDelay,
     };
   });
-  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.10)',
-    persisted.version === '2.10' && persisted.renderPipeline === 'forward'
+  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.11)',
+    persisted.version === '2.11' && persisted.renderPipeline === 'forward'
       && typeof persisted.depthPeelLayers === 'number'
       && typeof persisted.rtResolutionScale === 'number'
       && typeof persisted.rtReflectivity === 'number'
       && typeof persisted.ptDenoise === 'boolean'
       && typeof persisted.ptLightSoftness === 'number'
-      && typeof persisted.rtTiledRender === 'boolean', JSON.stringify(persisted));
+      && typeof persisted.rtTiledRender === 'boolean'
+      && typeof persisted.rtRasterPreview === 'boolean'
+      && typeof persisted.rtPreviewRestDelay === 'number', JSON.stringify(persisted));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);

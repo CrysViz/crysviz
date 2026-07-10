@@ -99,7 +99,7 @@ export function captureState({ includeFrames = false } = {}) {
   }
 
   return {
-    version: '2.10',
+    version: '2.11',
     ...(frames ? { frames } : {}),
     structure: {
       elements: [...structure.elements],
@@ -150,6 +150,8 @@ export function captureState({ includeFrames = false } = {}) {
       depthPeelLayers: general.depthPeelLayers,
       rtResolutionScale: general.rtResolutionScale,
       rtTiledRender: general.rtTiledRender,
+      rtRasterPreview: general.rtRasterPreview,
+      rtPreviewRestDelay: general.rtPreviewRestDelay,
       rtReflectivity: general.rtReflectivity,
       ptDenoise: general.ptDenoise,
       ptLightSoftness: general.ptLightSoftness,
@@ -351,6 +353,18 @@ function applyStyleSettings(style) {
     general.rtTiledRender = style.rtTiledRender;
     const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtTiledToggle'));
     if (toggle) toggle.checked = style.rtTiledRender;
+  }
+  if (style.rtRasterPreview != null) {
+    general.rtRasterPreview = style.rtRasterPreview;
+    const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtPreviewToggle'));
+    if (toggle) {
+      toggle.checked = style.rtRasterPreview;
+      toggle.dispatchEvent(new Event('change')); // also shows/hides the delay row
+    }
+  }
+  if (style.rtPreviewRestDelay != null) {
+    general.rtPreviewRestDelay = style.rtPreviewRestDelay;
+    setSelect('rtPreviewDelay', style.rtPreviewRestDelay);
   }
   if (style.rtReflectivity != null) {
     general.rtReflectivity = style.rtReflectivity;

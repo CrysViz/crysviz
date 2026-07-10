@@ -443,6 +443,47 @@ export function addColorPanel(target = "colorContainer") {
   rtTiledRow.appendChild(rtTiledToggle);
   rtControlsBlock.appendChild(rtTiledRow);
 
+  // Interactive raster preview: while the user drives the view, render cheap
+  // depth-peeled frames instead of tracing, resuming the tracer after a rest
+  // delay (default ON). No accumulation reset on toggle — it changes only how
+  // interactive frames are drawn, not the converged image.
+  const rtPreviewRow = createElement("div", { class: "control-row" });
+  const rtPreviewLabel = createElement("label", { for: "rtPreviewToggle" }, {}, "Interactive raster preview");
+  const rtPreviewToggle = createElement("input", { type: "checkbox", id: "rtPreviewToggle" },
+    { justifySelf: "start", width: "auto" });
+  rtPreviewToggle.checked = general.rtRasterPreview !== false;
+  rtPreviewToggle.addEventListener("change", () => {
+    general.rtRasterPreview = rtPreviewToggle.checked;
+    rtPreviewOptions.style.display = rtPreviewToggle.checked ? "block" : "none";
+    requestRender();
+  });
+  rtPreviewRow.appendChild(rtPreviewLabel);
+  rtPreviewRow.appendChild(rtPreviewToggle);
+  rtControlsBlock.appendChild(rtPreviewRow);
+
+  // Rest delay (shown while the preview is enabled): seconds of no interaction
+  // before the tracer resumes accumulating. Hand-rolled (like rtResolutionScale)
+  // rather than makeTracerSliderRow, which would reset the accumulation on every
+  // step — this knob must not disturb the converged image.
+  const rtPreviewOptions = createElement("div", {},
+    { display: general.rtRasterPreview !== false ? "block" : "none" });
+  const rtPreviewDelayRow = createElement("div", { class: "control-row" });
+  const rtPreviewDelayLabel = createElement("label", { for: "rtPreviewDelay" }, {},
+    `Resume delay: ${(general.rtPreviewRestDelay ?? 2).toFixed(1)} s`);
+  const rtPreviewDelaySlider = createElement("input", {
+    type: "range", id: "rtPreviewDelay", min: "0.5", max: "5", step: "0.1",
+    value: String(general.rtPreviewRestDelay ?? 2),
+  });
+  rtPreviewDelaySlider.addEventListener("input", () => {
+    general.rtPreviewRestDelay = parseFloat(rtPreviewDelaySlider.value);
+    rtPreviewDelayLabel.textContent = `Resume delay: ${general.rtPreviewRestDelay.toFixed(1)} s`;
+    requestRender();
+  });
+  rtPreviewDelayRow.appendChild(rtPreviewDelayLabel);
+  rtPreviewDelayRow.appendChild(rtPreviewDelaySlider);
+  rtPreviewOptions.appendChild(rtPreviewDelayRow);
+  rtControlsBlock.appendChild(rtPreviewOptions);
+
   const rtReflRow = createElement("div", { class: "control-row" });
   const rtReflLabel = createElement("label", { for: "rtReflectivity" }, {},
     `Reflectivity: ${(general.rtReflectivity ?? 0.15).toFixed(2)}`);
@@ -737,6 +778,8 @@ export function addColorPanel(target = "colorContainer") {
     fire('celHullPolyWidth', D.celHullPolyWidth, 'input');
     fire('rtResolutionScale', D.rtResolutionScale, 'input');
     fireCheck('rtTiledToggle', D.rtTiledRender);
+    fireCheck('rtPreviewToggle', D.rtRasterPreview); // also shows/hides the delay row
+    fire('rtPreviewDelay', D.rtPreviewRestDelay, 'input');
     fire('rtReflectivity', D.rtReflectivity, 'input');
     fire('ptLightSoftness', D.ptLightSoftness, 'input');
     fire('rtLightIntensity', D.rtLightIntensity, 'input');
