@@ -22,6 +22,7 @@ async function panelState(page, id) {
       width: r.width, height: r.height,
       rightGap: window.innerWidth - r.right,
       bottomGap: window.innerHeight - r.bottom,
+      compact: el.classList.contains('cv-compact'),
       saved,
     };
   }, id);
@@ -107,22 +108,28 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
   H.check('drag to mid-canvas captures left/top anchors',
     s.saved && near(s.saved.left, 150) && near(s.saved.top, 100), JSON.stringify(s.saved));
 
-  await setViewport(page, 700, 500); // still reachable: untouched
+  // 'view' is compact-capable: a scene this narrow crowds the two toolbars, so
+  // it collapses to its round icon (pinned to the compact stack anchor, not its
+  // floatPos) — while the saved inherent pos is left untouched for restore.
+  await setViewport(page, 700, 500);
   s = await panelState(page, PANEL);
-  H.check('shrink while reachable: panel does not move', near(s.left, 150) && near(s.top, 100),
-    `left=${s.left} top=${s.top}`);
+  H.check('shrink to crowding width: view compacts to its icon', s.compact,
+    `compact=${s.compact} left=${s.left}`);
+  H.check('compacting does not touch the saved pos',
+    s.saved && near(s.saved.left, 150) && near(s.saved.top, 100), JSON.stringify(s.saved));
 
-  await setViewport(page, 300, 400); // bar would leave the viewport: clamped
+  await setViewport(page, 300, 400); // even narrower: compact icon clamped on screen
   s = await panelState(page, PANEL);
-  H.check('shrink past reach: bar pulled back on screen', s.left <= 260 && s.top >= 0,
+  H.check('shrink past reach: compact icon pulled back on screen', s.left <= 260 && s.top >= 0,
     `left=${s.left} top=${s.top}`);
   H.check('clamp does not touch the saved pos',
     s.saved && near(s.saved.left, 150) && near(s.saved.top, 100), JSON.stringify(s.saved));
 
   await setViewport(page, 1400, 900);
   s = await panelState(page, PANEL);
-  H.check('grow back: mid-canvas panel restored exactly', near(s.left, 150) && near(s.top, 100),
-    `left=${s.left} top=${s.top}`);
+  H.check('grow back: view un-compacts to its exact mid-canvas pos',
+    !s.compact && near(s.left, 150) && near(s.top, 100),
+    `compact=${s.compact} left=${s.left} top=${s.top}`);
 
   // -- dock displacement composes with resize ---------------------------------
   await H.clickById(page, 'mobileMenuToggle'); // show dock

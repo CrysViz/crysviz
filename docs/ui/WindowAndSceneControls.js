@@ -420,6 +420,23 @@ export function setViewDirection(dir, up) {
 
 export function resetView() { app.controls.reset(); setViewDirection(new THREE.Vector3(1,1,1)); } //CAMERA RESET
 
+/**
+ * Re-center the camera's existing view on the (possibly moved) structure
+ * center without touching rotation or zoom: only the target moves, and the
+ * camera keeps the exact same offset (direction + distance) from it. Used
+ * when the displayed structure changes (new upload, file-browser row/step
+ * switch) so the user's chosen view survives across structures — the initial
+ * fit-to-structure framing (switchCameraType) only runs once, for the very
+ * first structure shown.
+ */
+export function recenterCamera() {
+  const { center } = getCellCenterAndDist();
+  const offset = app.camera.position.clone().sub(app.controls.target);
+  app.controls.target.copy(center);
+  app.camera.position.copy(center.clone().add(offset));
+  app.controls.update();
+}
+
 
 
 // Function to collapse all individual atom (and bond/polyhedron) expansions

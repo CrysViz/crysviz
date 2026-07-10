@@ -60,8 +60,9 @@ export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabe
     id: 'histogram',
     title: 'Histogram',
     lifecycle: 'persistent',
+    infoMd: './data/histogramInfo.md',
     closable: true,
-    onClose() { activeUpdate = null; },
+    onClose() { activeUpdate = null; resizeObserver?.disconnect(); },
     buildContent(body) {
       body.innerHTML = `
         <div id="histBody" style="padding:4px; display:block;">
@@ -109,23 +110,29 @@ export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabe
   const maxValLabel = panel.querySelector("#maxValLabel");
   const ctx = canvas.getContext("2d");
 
-  const canvasW = Math.min(600, window.innerWidth - (isMobile ? 20 : 40));
-  const canvasH = Math.round(canvasW * 0.5);
-  canvas.width = canvasW;
-  canvas.height = canvasH;
-  canvas.style.width = canvasW + "px";
-  canvas.style.height = canvasH + "px";
-
-  // High-DPI scaling
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = canvas.width * dpr;
-  canvas.height = canvas.height * dpr;
-  canvas.style.width = (canvas.width / dpr) + "px";
-  canvas.style.height = (canvas.height / dpr) + "px";
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const margin = 50;
+  let W, H, plotW, plotH;
 
-  const W = canvas.width / dpr;
-  const H = canvas.height / dpr;
+  // Available width comes from the panel body — a floating window sizes off
+  // the viewport, but a docked panel is only as wide as the side dock, and
+  // that width changes (docking/undocking, sidebar resize, window resize).
+  function resizeCanvas() {
+    const available = panel.clientWidth || window.innerWidth;
+    const canvasW = Math.max(200, Math.min(600, available - (isMobile ? 20 : 40)));
+    const canvasH = Math.round(canvasW * 0.5);
+    canvas.width = canvasW * dpr;
+    canvas.height = canvasH * dpr;
+    canvas.style.width = canvasW + "px";
+    canvas.style.height = canvasH + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    W = canvasW;
+    H = canvasH;
+    plotW = W - margin*2;
+    plotH = H - margin*2;
+  }
+
+  resizeCanvas();
 
   const globalMin = 0.5;
   let maxXValue = parseInt(maxSlider.value);
@@ -136,10 +143,6 @@ export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabe
 
   const barRects = [];
   let selectedBar = null;
-
-  const margin = 50;
-  const plotW = W - margin*2;
-  const plotH = H - margin*2;
 
   function drawHistogram() {
     const validHistograms = histograms.filter(Boolean);
@@ -248,6 +251,17 @@ export function addHistogramPanel(initialDatasets, initialLabels = [], xAxisLabe
   drawHistogram();
 
   updateLegend();
+
+  // Re-fit the canvas whenever the panel's available width changes: dock/
+  // undock, side-dock resize, or a browser window resize.
+  let lastWidth = panel.clientWidth;
+  const resizeObserver = new ResizeObserver(() => {
+    if (panel.clientWidth === lastWidth || !panel.clientWidth) return;
+    lastWidth = panel.clientWidth;
+    resizeCanvas();
+    drawHistogram();
+  });
+  resizeObserver.observe(panel);
 
   binSlider.addEventListener("input", () => {
     BINCOUNT = parseInt(binSlider.value);

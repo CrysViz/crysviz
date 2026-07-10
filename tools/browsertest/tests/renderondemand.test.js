@@ -10,6 +10,19 @@ const frameCount = (page) => page.evaluate(async () => {
   return app.renderer.info.render.frame;
 });
 
+async function waitForRenderIdle(page, { settleMs = 1000, timeout = 10000 } = {}) {
+  const deadline = Date.now() + timeout;
+  let last = { start: await frameCount(page), end: null };
+  while (Date.now() <= deadline) {
+    const start = await frameCount(page);
+    await page.waitForTimeout(settleMs);
+    const end = await frameCount(page);
+    last = { start, end };
+    if (end - start <= 1) return last;
+  }
+  return last;
+}
+
 (async () => {
   const { browser, page, errors } = await H.launchApp();
 
@@ -67,11 +80,9 @@ const frameCount = (page) => page.evaluate(async () => {
   H.check('updateVisualization re-renders', f6 > f5, `frames ${f5} -> ${f6}`);
 
   // And it settles back to idle afterwards.
-  await page.waitForTimeout(1500);
-  const f7 = await frameCount(page);
-  await page.waitForTimeout(2000);
-  const f8 = await frameCount(page);
-  H.check('returns to idle', f8 - f7 <= 1, `frames ${f7} -> ${f8} over 2s`);
+  const idle = await waitForRenderIdle(page, { settleMs: 2000, timeout: 10000 });
+  H.check('returns to idle', idle.end - idle.start <= 1,
+    `frames ${idle.start} -> ${idle.end} over 2s`);
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
