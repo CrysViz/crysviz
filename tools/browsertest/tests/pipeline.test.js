@@ -95,53 +95,59 @@ const H = require('../harness');
       && rtSliders.shownUnderRaytrace && rtSliders.hiddenAgain,
     JSON.stringify(rtSliders));
 
-  // --- Path-tracing controls: shared tracer block + PT-only denoiser ---------------
-  // Light softness/DoF/ground live in the SHARED tracer block (both tracers);
-  // only the Denoiser stays pathtrace-only.
+  // --- Path-tracing controls: shared tracer block + Advanced section ----------------
+  // Light softness/DoF/ground live directly in the SHARED tracer block (both
+  // tracers); the tiled/preview/denoiser toggles live in a collapsible
+  // "Advanced" section inside that block (collapsed by default). Only the
+  // Denoiser ROW stays pathtrace-only (row-level display, not a separate block).
   const ptControls = await page.evaluate(() => {
     const rtBlock = document.getElementById('rtResolutionScale')?.parentElement?.parentElement;
-    const ptBlock = document.getElementById('ptDenoiseToggle')?.parentElement?.parentElement;
+    const advanced = document.getElementById('ptDenoiseToggle')?.closest('details.eos-collapsible');
+    const denoiseRow = document.getElementById('ptDenoiseToggle')?.closest('.control-row');
     const softnessInRtBlock = document.getElementById('ptLightSoftness')?.parentElement?.parentElement === rtBlock;
     const dofInRtBlock = document.getElementById('rtDofAperture')?.parentElement?.parentElement === rtBlock
       && document.getElementById('rtDofFocus')?.parentElement?.parentElement === rtBlock
       && document.getElementById('rtGroundToggle')?.parentElement?.parentElement === rtBlock;
-    // Tiled-rendering toggle lives in the shared tracer block and defaults ON.
-    const tiledInRtBlock = document.getElementById('rtTiledToggle')?.parentElement?.parentElement === rtBlock;
+    // Advanced section: exists inside the shared tracer block, collapsed by default.
+    const advancedExists = !!advanced && rtBlock?.contains(advanced) === true;
+    const advancedCollapsedByDefault = advanced?.open === false;
+    const tiledInAdvanced = advanced?.contains(document.getElementById('rtTiledToggle')) === true;
+    const previewInAdvanced = advanced?.contains(document.getElementById('rtPreviewToggle')) === true;
+    const denoiseInAdvanced = advanced?.contains(document.getElementById('ptDenoiseToggle')) === true;
     const tiledDefaultChecked = /** @type {HTMLInputElement} */ (
       document.getElementById('rtTiledToggle'))?.checked === true;
-    // Interactive raster preview toggle + delay slider: same shared block, default ON.
-    const previewInRtBlock = document.getElementById('rtPreviewToggle')?.parentElement?.parentElement === rtBlock;
-    const previewDelayInRtBlock = rtBlock?.contains(document.getElementById('rtPreviewDelay')) === true;
     const previewDefaultChecked = /** @type {HTMLInputElement} */ (
       document.getElementById('rtPreviewToggle'))?.checked === true;
+    // Expand the section so computed-visibility checks below see the rows.
+    if (advanced) advanced.open = true;
     const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
     select.value = 'pathtrace';
     select.dispatchEvent(new Event('change'));
     const rtSharedUnderPathtrace = getComputedStyle(rtBlock).display !== 'none';
-    const ptShownUnderPathtrace = getComputedStyle(ptBlock).display !== 'none';
+    const denoiseShownUnderPathtrace = getComputedStyle(denoiseRow).display !== 'none';
     select.value = 'raytrace';
     select.dispatchEvent(new Event('change'));
-    const ptHiddenUnderRaytrace = getComputedStyle(ptBlock).display === 'none';
+    const denoiseHiddenUnderRaytrace = getComputedStyle(denoiseRow).display === 'none';
     const sharedShownUnderRaytrace = getComputedStyle(rtBlock).display !== 'none';
     select.value = 'forward';
     select.dispatchEvent(new Event('change'));
-    const allHiddenUnderForward = getComputedStyle(rtBlock).display === 'none'
-      && getComputedStyle(ptBlock).display === 'none';
-    return { softnessInRtBlock, dofInRtBlock, tiledInRtBlock, tiledDefaultChecked,
-      previewInRtBlock, previewDelayInRtBlock, previewDefaultChecked,
-      rtSharedUnderPathtrace, ptShownUnderPathtrace,
-      ptHiddenUnderRaytrace, sharedShownUnderRaytrace, allHiddenUnderForward };
+    const allHiddenUnderForward = getComputedStyle(rtBlock).display === 'none';
+    return { softnessInRtBlock, dofInRtBlock, advancedExists, advancedCollapsedByDefault,
+      tiledInAdvanced, previewInAdvanced, denoiseInAdvanced, tiledDefaultChecked, previewDefaultChecked,
+      rtSharedUnderPathtrace, denoiseShownUnderPathtrace,
+      denoiseHiddenUnderRaytrace, sharedShownUnderRaytrace, allHiddenUnderForward };
   });
-  H.check('shared tracer controls (softness/DoF/ground/tiled) + PT-only denoiser follow the dropdown',
+  H.check('shared tracer controls (softness/DoF/ground) show for both tracers; PT-only denoiser ROW follows the dropdown',
     ptControls.softnessInRtBlock && ptControls.dofInRtBlock && ptControls.rtSharedUnderPathtrace
-      && ptControls.ptShownUnderPathtrace && ptControls.ptHiddenUnderRaytrace
+      && ptControls.denoiseShownUnderPathtrace && ptControls.denoiseHiddenUnderRaytrace
       && ptControls.sharedShownUnderRaytrace && ptControls.allHiddenUnderForward,
     JSON.stringify(ptControls));
-  H.check('Tiled-rendering toggle is in the shared tracer block and defaults ON',
-    ptControls.tiledInRtBlock && ptControls.tiledDefaultChecked, JSON.stringify(ptControls));
-  H.check('Interactive raster preview toggle + delay slider are in the shared tracer block; preview defaults ON',
-    ptControls.previewInRtBlock && ptControls.previewDelayInRtBlock && ptControls.previewDefaultChecked,
+  H.check('Advanced section exists in the shared tracer block, collapsed by default, holds tiled/preview/denoiser',
+    ptControls.advancedExists && ptControls.advancedCollapsedByDefault
+      && ptControls.tiledInAdvanced && ptControls.previewInAdvanced && ptControls.denoiseInAdvanced,
     JSON.stringify(ptControls));
+  H.check('Tiled-rendering toggle defaults ON', ptControls.tiledDefaultChecked, JSON.stringify(ptControls));
+  H.check('Interactive raster preview toggle defaults ON', ptControls.previewDefaultChecked, JSON.stringify(ptControls));
 
   // --- Dependency tree: Render Style (and cel outlines) only for raster pipelines --
   const styleTree = await page.evaluate(async () => {
@@ -186,7 +192,6 @@ const H = require('../harness');
     general.rtGroundPlane = true;
     general.rtTiledRender = false;
     general.rtRasterPreview = false;
-    general.rtPreviewRestDelay = 4.5;
     general.depthPeelLayers = 9;
     general.celHullWidth = 0.1;
     document.getElementById('resetRenderingBtn').click();
@@ -202,7 +207,6 @@ const H = require('../harness');
       tiled: general.rtTiledRender,
       preview: general.rtRasterPreview,
       previewToggleChecked: previewToggle?.checked === true,
-      previewDelay: general.rtPreviewRestDelay,
       peel: general.depthPeelLayers,
       hull: general.celHullWidth,
       menuValue: pipeSelect.value,
@@ -214,7 +218,6 @@ const H = require('../harness');
       && Math.abs(reset.reflectivity - 0.15) < 1e-9 && Math.abs(reset.ambient - 0.3) < 1e-9
       && reset.ground === false && reset.tiled === true && reset.peel === 5
       && reset.preview === true && reset.previewToggleChecked
-      && Math.abs(reset.previewDelay - 2) < 1e-9
       && Math.abs(reset.hull - 0.025) < 1e-9
       && reset.menuValue === 'depthpeel' && reset.styleRowVisible,
     JSON.stringify(reset));
@@ -324,10 +327,11 @@ const H = require('../harness');
       ptLightSoftness: state.style.ptLightSoftness,
       rtTiledRender: state.style.rtTiledRender,
       rtRasterPreview: state.style.rtRasterPreview,
-      rtPreviewRestDelay: state.style.rtPreviewRestDelay,
+      // rtPreviewRestDelay is a hidden config-only setting and is no longer persisted.
+      hasPreviewRestDelay: 'rtPreviewRestDelay' in state.style,
     };
   });
-  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.11)',
+  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.11), not the hidden rest delay',
     persisted.version === '2.11' && persisted.renderPipeline === 'forward'
       && typeof persisted.depthPeelLayers === 'number'
       && typeof persisted.rtResolutionScale === 'number'
@@ -336,7 +340,7 @@ const H = require('../harness');
       && typeof persisted.ptLightSoftness === 'number'
       && typeof persisted.rtTiledRender === 'boolean'
       && typeof persisted.rtRasterPreview === 'boolean'
-      && typeof persisted.rtPreviewRestDelay === 'number', JSON.stringify(persisted));
+      && persisted.hasPreviewRestDelay === false, JSON.stringify(persisted));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);

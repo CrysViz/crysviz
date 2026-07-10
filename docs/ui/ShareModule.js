@@ -151,7 +151,6 @@ export function captureState({ includeFrames = false } = {}) {
       rtResolutionScale: general.rtResolutionScale,
       rtTiledRender: general.rtTiledRender,
       rtRasterPreview: general.rtRasterPreview,
-      rtPreviewRestDelay: general.rtPreviewRestDelay,
       rtReflectivity: general.rtReflectivity,
       ptDenoise: general.ptDenoise,
       ptLightSoftness: general.ptLightSoftness,
@@ -359,13 +358,12 @@ function applyStyleSettings(style) {
     const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtPreviewToggle'));
     if (toggle) {
       toggle.checked = style.rtRasterPreview;
-      toggle.dispatchEvent(new Event('change')); // also shows/hides the delay row
+      toggle.dispatchEvent(new Event('change'));
     }
   }
-  if (style.rtPreviewRestDelay != null) {
-    general.rtPreviewRestDelay = style.rtPreviewRestDelay;
-    setSelect('rtPreviewDelay', style.rtPreviewRestDelay);
-  }
+  // rtPreviewRestDelay is a hidden config-only setting (no GUI) and is no longer
+  // persisted; older saves that still carry the key are simply ignored so they
+  // can't override the current default.
   if (style.rtReflectivity != null) {
     general.rtReflectivity = style.rtReflectivity;
     setSelect('rtReflectivity', style.rtReflectivity);

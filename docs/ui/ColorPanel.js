@@ -342,7 +342,10 @@ export function addColorPanel(target = "colorContainer") {
     const isTracer = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
     depthPeelBlock.style.display = general.renderPipeline === "depthpeel" ? "grid" : "none";
     rtControlsBlock.style.display = isTracer ? "block" : "none";
-    ptControlsBlock.style.display = general.renderPipeline === "pathtrace" ? "block" : "none";
+    // The denoiser lives in the shared tracer "Advanced" section (visible for
+    // both tracers), but is a path-tracing-only control, so its row is toggled
+    // individually here.
+    ptDenoiseRow.style.display = general.renderPipeline === "pathtrace" ? "grid" : "none";
     renderStyleMenu.style.display = isRaster ? "grid" : "none";
     outlineBlock.style.display = isRaster && general.renderStyle === "cel" ? "block" : "none";
     // Structure-window tracer-only blocks (material editors) hide under the
@@ -412,7 +415,7 @@ export function addColorPanel(target = "colorContainer") {
     { display: isTracerPipeline ? "block" : "none" });
   const rtResRow = createElement("div", { class: "control-row" });
   const rtResLabel = createElement("label", { for: "rtResolutionScale" }, {},
-    `RT resolution: ${Math.round((general.rtResolutionScale ?? 0.75) * 100)}%`);
+    `RT resolution: ${Math.round((general.rtResolutionScale ?? 0.95) * 100)}%`);
   const rtResSlider = createElement("input", {
     type: "range", id: "rtResolutionScale", min: "0.25", max: "1", step: "0.05",
     value: String(general.rtResolutionScale),
@@ -428,7 +431,8 @@ export function addColorPanel(target = "colorContainer") {
 
   // Tiled ("gentle") rendering: split each accumulation sample into scissored
   // tiles, one per frame, so the shared GPU stays responsive while the tracer
-  // converges (default ON). Toggling restarts the accumulation.
+  // converges (default ON). Toggling restarts the accumulation. Lives in the
+  // "Advanced" section built below.
   const rtTiledRow = createElement("div", { class: "control-row" });
   const rtTiledLabel = createElement("label", { for: "rtTiledToggle" }, {}, "Tiled rendering");
   const rtTiledToggle = createElement("input", { type: "checkbox", id: "rtTiledToggle" },
@@ -441,12 +445,12 @@ export function addColorPanel(target = "colorContainer") {
   });
   rtTiledRow.appendChild(rtTiledLabel);
   rtTiledRow.appendChild(rtTiledToggle);
-  rtControlsBlock.appendChild(rtTiledRow);
 
   // Interactive raster preview: while the user drives the view, render cheap
-  // depth-peeled frames instead of tracing, resuming the tracer after a rest
-  // delay (default ON). No accumulation reset on toggle — it changes only how
-  // interactive frames are drawn, not the converged image.
+  // depth-peeled frames instead of tracing, resuming the tracer after a hidden
+  // config-only rest delay (general.rtPreviewRestDelay; no GUI). Default ON. No
+  // accumulation reset on toggle — it changes only how interactive frames are
+  // drawn, not the converged image. Lives in the "Advanced" section below.
   const rtPreviewRow = createElement("div", { class: "control-row" });
   const rtPreviewLabel = createElement("label", { for: "rtPreviewToggle" }, {}, "Interactive raster preview");
   const rtPreviewToggle = createElement("input", { type: "checkbox", id: "rtPreviewToggle" },
@@ -454,35 +458,25 @@ export function addColorPanel(target = "colorContainer") {
   rtPreviewToggle.checked = general.rtRasterPreview !== false;
   rtPreviewToggle.addEventListener("change", () => {
     general.rtRasterPreview = rtPreviewToggle.checked;
-    rtPreviewOptions.style.display = rtPreviewToggle.checked ? "block" : "none";
     requestRender();
   });
   rtPreviewRow.appendChild(rtPreviewLabel);
   rtPreviewRow.appendChild(rtPreviewToggle);
-  rtControlsBlock.appendChild(rtPreviewRow);
 
-  // Rest delay (shown while the preview is enabled): seconds of no interaction
-  // before the tracer resumes accumulating. Hand-rolled (like rtResolutionScale)
-  // rather than makeTracerSliderRow, which would reset the accumulation on every
-  // step — this knob must not disturb the converged image.
-  const rtPreviewOptions = createElement("div", {},
-    { display: general.rtRasterPreview !== false ? "block" : "none" });
-  const rtPreviewDelayRow = createElement("div", { class: "control-row" });
-  const rtPreviewDelayLabel = createElement("label", { for: "rtPreviewDelay" }, {},
-    `Resume delay: ${(general.rtPreviewRestDelay ?? 2).toFixed(1)} s`);
-  const rtPreviewDelaySlider = createElement("input", {
-    type: "range", id: "rtPreviewDelay", min: "0.5", max: "5", step: "0.1",
-    value: String(general.rtPreviewRestDelay ?? 2),
-  });
-  rtPreviewDelaySlider.addEventListener("input", () => {
-    general.rtPreviewRestDelay = parseFloat(rtPreviewDelaySlider.value);
-    rtPreviewDelayLabel.textContent = `Resume delay: ${general.rtPreviewRestDelay.toFixed(1)} s`;
+  // Denoiser (path-tracing only): edge-aware denoiser on the screen output.
+  // Lives in the shared "Advanced" section (visible for both tracers) but its
+  // row is shown only under the pathtrace pipeline (updateRenderingControlsVisibility).
+  const ptDenoiseRow = createElement("div", { class: "control-row" });
+  const ptDenoiseLabel = createElement("label", { for: "ptDenoiseToggle" }, {}, "Denoiser");
+  const ptDenoiseToggle = createElement("input", { type: "checkbox", id: "ptDenoiseToggle" },
+    { justifySelf: "start", width: "auto" });
+  ptDenoiseToggle.checked = general.ptDenoise !== false;
+  ptDenoiseToggle.addEventListener("change", () => {
+    general.ptDenoise = ptDenoiseToggle.checked;
     requestRender();
   });
-  rtPreviewDelayRow.appendChild(rtPreviewDelayLabel);
-  rtPreviewDelayRow.appendChild(rtPreviewDelaySlider);
-  rtPreviewOptions.appendChild(rtPreviewDelayRow);
-  rtControlsBlock.appendChild(rtPreviewOptions);
+  ptDenoiseRow.appendChild(ptDenoiseLabel);
+  ptDenoiseRow.appendChild(ptDenoiseToggle);
 
   const rtReflRow = createElement("div", { class: "control-row" });
   const rtReflLabel = createElement("label", { for: "rtReflectivity" }, {},
@@ -640,26 +634,26 @@ export function addColorPanel(target = "colorContainer") {
     (v) => { general.rtGroundReflect = v; }));
   rtControlsBlock.appendChild(groundOptions);
 
+  // "Advanced" section: seldom-touched tracer toggles, collapsed by default.
+  // Reuses the app's native <details>/<summary> collapsible idiom (the same
+  // `eos-collapsible` styling used by the EOS panel's reference-data section:
+  // a green header strip with a caret that rotates on open). Shown for both
+  // tracers via rtControlsBlock; the Denoiser row inside is toggled to
+  // pathtrace-only by updateRenderingControlsVisibility. Collapse state is
+  // native <details> UI state — not persisted.
+  const rtAdvanced = createElement("details", { class: "eos-collapsible" });
+  const rtAdvancedSummary = createElement("summary", { class: "eos-collapsible-summary" });
+  rtAdvancedSummary.appendChild(createElement("span", { class: "eos-collapsible-arrow" }, {}, "▶"));
+  rtAdvancedSummary.appendChild(createElement("span", {}, {}, "Advanced"));
+  rtAdvanced.appendChild(rtAdvancedSummary);
+  const rtAdvancedBody = createElement("div", { class: "eos-collapsible-body" });
+  rtAdvancedBody.appendChild(rtTiledRow);
+  rtAdvancedBody.appendChild(rtPreviewRow);
+  rtAdvancedBody.appendChild(ptDenoiseRow);
+  rtAdvanced.appendChild(rtAdvancedBody);
+  rtControlsBlock.appendChild(rtAdvanced);
+
   content.appendChild(rtControlsBlock);
-
-  // Path-tracing-only controls: the denoiser toggle (light softness moved to
-  // the shared tracer block above — it drives both tracers' soft shadows).
-  const ptControlsBlock = createElement("div", {},
-    { display: general.renderPipeline === "pathtrace" ? "block" : "none" });
-  const ptDenoiseRow = createElement("div", { class: "control-row" });
-  const ptDenoiseLabel = createElement("label", { for: "ptDenoiseToggle" }, {}, "Denoiser");
-  const ptDenoiseToggle = createElement("input", { type: "checkbox", id: "ptDenoiseToggle" },
-    { justifySelf: "start", width: "auto" });
-  ptDenoiseToggle.checked = general.ptDenoise !== false;
-  ptDenoiseToggle.addEventListener("change", () => {
-    general.ptDenoise = ptDenoiseToggle.checked;
-    requestRender();
-  });
-  ptDenoiseRow.appendChild(ptDenoiseLabel);
-  ptDenoiseRow.appendChild(ptDenoiseToggle);
-  ptControlsBlock.appendChild(ptDenoiseRow);
-
-  content.appendChild(ptControlsBlock);
 
   // Render Style follows the per-pipeline knobs (raster pipelines only).
   content.appendChild(renderStyleMenu);
@@ -778,8 +772,7 @@ export function addColorPanel(target = "colorContainer") {
     fire('celHullPolyWidth', D.celHullPolyWidth, 'input');
     fire('rtResolutionScale', D.rtResolutionScale, 'input');
     fireCheck('rtTiledToggle', D.rtTiledRender);
-    fireCheck('rtPreviewToggle', D.rtRasterPreview); // also shows/hides the delay row
-    fire('rtPreviewDelay', D.rtPreviewRestDelay, 'input');
+    fireCheck('rtPreviewToggle', D.rtRasterPreview);
     fire('rtReflectivity', D.rtReflectivity, 'input');
     fire('ptLightSoftness', D.ptLightSoftness, 'input');
     fire('rtLightIntensity', D.rtLightIntensity, 'input');

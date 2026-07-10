@@ -44,7 +44,9 @@
 // accumulation blend is texel-local, so a scissored tile is bit-identical to
 // the untiled sample over the same rect. The tile grid is chosen ADAPTIVELY
 // from the measured frame interval (split when single tiles overrun ~2 vsyncs,
-// merge back on sustained headroom; 1x1..8x8). While the camera moves, tiling
+// merge back on sustained headroom). An axis is only split while the resulting
+// tile dimension stays >= _minTileSizePx (64 px) at the internal resolution,
+// which naturally bounds the grid (max per axis = floor(dim/64)). While the camera moves, tiling
 // gives way to untiled MOTION LOW-RES (half internal resolution, upsampled by
 // the target's linear filter). PRESENT-ON-ROUND-COMPLETION: the partially-tiled
 // accumulation is never shown. At round completion (and after each untiled
@@ -93,7 +95,7 @@ const RESIZE_BOOST_SAMPLES = 16; // inner samples after a size change (PNG expor
 // other apps while the tracer converges. Grid is chosen adaptively from the
 // measured frame interval.
 const TILE_PIXEL_BUDGET = 200_000; // seed grid target: pixels traced per frame
-const MAX_TILE_GRID = 8;           // per-axis tile cap (=> at most 8x8 = 64 tiles)
+const MIN_TILE_SIZE_PX = 64;       // an axis may split only while its tile dimension stays >= this (=> max per-axis grid = floor(dim/64); ~28x16 tiles at 1080p, far finer than the old 8x8 cap, but never so fine that fixed per-tile overhead dominates)
 const MOTION_RES_SCALE = 0.5;      // internal-resolution factor while the camera moves
 const FRAME_OVER_MS = 40;          // tile-frame interval judged "too slow" (>=2 missed vsyncs)
 const FRAME_UNDER_MS = 22;         // tile-frame interval judged to have headroom (~1 vsync)
@@ -188,6 +190,7 @@ export class RayTracingPipeline extends ForwardPipeline {
   _tileCursor = 0;        // index of the next tile to render in the current round
   _roundActive = false;   // true while a multi-tile sample is partway rendered
   _tilePixelBudget = TILE_PIXEL_BUDGET; // instance field so tests can force a fine grid
+  _minTileSizePx = MIN_TILE_SIZE_PX; // instance field (min tile dimension per axis, px) so tests can force a fine grid
   _prevTileTime = 0;      // performance.now() of the previous tiled frame (0 = none yet)
   _overStreak = 0;        // consecutive slow tile frames
   _underStreak = 0;       // consecutive fast tile frames
@@ -451,16 +454,20 @@ export class RayTracingPipeline extends ForwardPipeline {
   // ---- tiled progressive rendering helpers --------------------------------
   /** Pick a near-square tile grid so each tile is under the pixel budget.
    *  Splits the axis with the larger tile dimension until every tile fits or
-   *  the per-axis cap is reached. Called on every (re)size. */
+   *  splitting further would take a tile dimension below _minTileSizePx (so the
+   *  per-axis grid is bounded by floor(dim/minTile)). Called on every (re)size. */
   _seedTileGrid(w, h) {
     let gx = 1, gy = 1;
     const budget = Math.max(1, this._tilePixelBudget);
+    const minTile = Math.max(1, this._minTileSizePx);
+    const maxGx = Math.max(1, Math.floor(w / minTile));
+    const maxGy = Math.max(1, Math.floor(h / minTile));
     let guard = 0;
     while ((w / gx) * (h / gy) > budget
-      && (gx < MAX_TILE_GRID || gy < MAX_TILE_GRID) && guard++ < 256) {
-      if ((w / gx) >= (h / gy) && gx < MAX_TILE_GRID) gx += 1;
-      else if (gy < MAX_TILE_GRID) gy += 1;
-      else if (gx < MAX_TILE_GRID) gx += 1;
+      && (gx < maxGx || gy < maxGy) && guard++ < 256) {
+      if ((w / gx) >= (h / gy) && gx < maxGx) gx += 1;
+      else if (gy < maxGy) gy += 1;
+      else if (gx < maxGx) gx += 1;
       else break;
     }
     this._gridX = gx;
@@ -525,8 +532,11 @@ export class RayTracingPipeline extends ForwardPipeline {
       else { this._overStreak = 0; this._underStreak = 0; }
       if (this._overStreak >= OVER_STREAK_SPLIT) {
         const w = this._accumTarget.width, h = this._accumTarget.height;
-        if ((w / this._gridX) >= (h / this._gridY)) this._gridX = Math.min(MAX_TILE_GRID, this._gridX + 1);
-        else this._gridY = Math.min(MAX_TILE_GRID, this._gridY + 1);
+        const minTile = Math.max(1, this._minTileSizePx);
+        const maxGx = Math.max(1, Math.floor(w / minTile));
+        const maxGy = Math.max(1, Math.floor(h / minTile));
+        if ((w / this._gridX) >= (h / this._gridY)) this._gridX = Math.min(maxGx, this._gridX + 1);
+        else this._gridY = Math.min(maxGy, this._gridY + 1);
         this._overStreak = 0; this._underStreak = 0;
       } else if (this._underStreak >= UNDER_STREAK_MERGE) {
         if (this._gridX >= this._gridY) this._gridX = Math.max(1, this._gridX - 1);
@@ -559,7 +569,9 @@ export class RayTracingPipeline extends ForwardPipeline {
    *  raster scene). */
   _teardownPreview() {
     if (this._restTimer) { clearTimeout(this._restTimer); this._restTimer = null; }
-    this._previewActive = false;
+    // _previewActive is deliberately NOT cleared here: render()'s
+    // resume-from-preview check reads it to hard-flush the stale accumulation
+    // (ghost prevention), including when the toggle turned off mid-gesture.
     if (this._previewPipeline) {
       this._previewPipeline.dispose();
       this._previewPipeline = null;
@@ -627,7 +639,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
       const triggered = cameraIsMoving || (fpChanged && this._encoder.lastChangeWasCoreScene);
       if (triggered) this._lastInteractionAt = now;
-      const restMs = Math.max(0, (general.rtPreviewRestDelay ?? 2) * 1000);
+      const restMs = Math.max(0, (general.rtPreviewRestDelay ?? 0.5) * 1000);
       const sinceInteraction = now - this._lastInteractionAt;
       if (this._lastInteractionAt > 0 && sinceInteraction < restMs) {
         this._previewActive = true;
@@ -637,7 +649,15 @@ export class RayTracingPipeline extends ForwardPipeline {
         return; // skip sizing/encode/accumulate/present — no motion-low-res coexists
       }
     }
-    this._previewActive = false;
+    if (this._previewActive) {
+      // Resuming from preview (rest elapsed OR toggle turned off mid-gesture):
+      // the accumulation targets still hold the pre-gesture image from a
+      // potentially very different camera pose, and the soft frame-1 blend
+      // would replay it as a 50% ghost. Hard-flush so the tracer starts from
+      // a clean slate instead.
+      this.hardResetAccumulation(renderer);
+      this._previewActive = false;
+    }
 
     // --- sizing (drawing buffer x RT resolution scale) ----------------------
     // Motion low-res: while the camera moves AND tiling is enabled, render at a
@@ -646,7 +666,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     // the RT-resolution slider already uses). Tiling OFF => byte-identical
     // legacy sizing (userScale, no motion factor).
     const tilingEnabled = general.rtTiledRender !== false;
-    const userScale = Math.min(1, Math.max(0.1, general.rtResolutionScale ?? 0.75));
+    const userScale = Math.min(1, Math.max(0.1, general.rtResolutionScale ?? 0.95));
     const motionActive = tilingEnabled && cameraIsMoving;
     const effScale = motionActive ? userScale * MOTION_RES_SCALE : userScale;
     const bufferSize = renderer.getDrawingBufferSize(new THREE.Vector2());

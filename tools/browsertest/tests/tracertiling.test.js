@@ -91,7 +91,10 @@ function changedPixelsPNG(a, b, thresh) {
     // Settle any pending camera-motion / motion-low-res transition first.
     p.render(ctx); p.render(ctx);
     // Force a fine grid (instance budget) and re-seed from the live target size.
+    // Also drop the min-tile-size floor so the budget (not the 64px production
+    // floor) drives the grid on this small test buffer.
     p._tilePixelBudget = 32 * 32;
+    p._minTileSizePx = 32;
     p._seedTileGrid(p._accumTarget.width, p._accumTarget.height);
     const grid = [p._gridX, p._gridY];
     p.resetAccumulation();
@@ -153,6 +156,7 @@ function changedPixelsPNG(a, b, thresh) {
     const canvas = app.renderer.domElement;
     p.render(ctx); p.render(ctx); // settle
     p._tilePixelBudget = 32 * 32;  // force a fine multi-tile grid
+    p._minTileSizePx = 32;         // drop the 64px production floor for the small test buffer
     p._seedTileGrid(p._accumTarget.width, p._accumTarget.height);
     p.resetAccumulation();
     p.render(ctx); // untiled sample 1
@@ -198,6 +202,7 @@ function changedPixelsPNG(a, b, thresh) {
     const ctx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
     p.render(ctx); p.render(ctx); // settle
     p._tilePixelBudget = 32 * 32;
+    p._minTileSizePx = 32;         // drop the 64px production floor for the small test buffer
     p._seedTileGrid(p._accumTarget.width, p._accumTarget.height);
     p.resetAccumulation();
     p.render(ctx); // untiled sample 1

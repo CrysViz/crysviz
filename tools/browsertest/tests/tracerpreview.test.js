@@ -44,7 +44,6 @@ function contentFraction(png, thresh = 40) {
   const gui = await page.evaluate(async () => {
     const { general } = await import('./state/store.js');
     const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtPreviewToggle'));
-    const delay = /** @type {HTMLInputElement|null} */ (document.getElementById('rtPreviewDelay'));
     const rtBlock = document.getElementById('rtResolutionScale')?.parentElement?.parentElement;
     const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
     const disp = () => getComputedStyle(rtBlock).display;
@@ -54,16 +53,18 @@ function contentFraction(png, thresh = 40) {
     const shownUnderPathtrace = disp() !== 'none';
     select.value = 'forward'; select.dispatchEvent(new Event('change'));
     const hiddenUnderForward = disp() === 'none';
+    // The rest-delay slider is gone — rtPreviewRestDelay is now a hidden,
+    // config-only setting with no GUI.
+    const delayGone = !document.getElementById('rtPreviewDelay');
     return {
       setting: general.rtRasterPreview,
       toggleExists: !!toggle, toggleChecked: toggle?.checked === true,
-      delayExists: !!delay, delayValue: delay ? parseFloat(delay.value) : null,
+      delayGone,
       shownUnderRaytrace, shownUnderPathtrace, hiddenUnderForward,
     };
   });
-  H.check('raster preview defaults ON (general.rtRasterPreview + #rtPreviewToggle checked + #rtPreviewDelay=2)',
-    gui.setting === true && gui.toggleExists && gui.toggleChecked
-      && gui.delayExists && Math.abs(gui.delayValue - 2) < 1e-9, JSON.stringify(gui));
+  H.check('raster preview defaults ON (general.rtRasterPreview + #rtPreviewToggle checked); rest-delay slider removed',
+    gui.setting === true && gui.toggleExists && gui.toggleChecked && gui.delayGone, JSON.stringify(gui));
   H.check('preview controls show for both tracers and hide under forward',
     gui.shownUnderRaytrace && gui.shownUnderPathtrace && gui.hiddenUnderForward, JSON.stringify(gui));
 
@@ -224,44 +225,52 @@ function contentFraction(png, thresh = 40) {
   await page.waitForTimeout(1600); // > rest delay: the timer wakes the loop, which traces
   const after = await page.evaluate(async () => {
     const { app } = await import('./state/store.js');
-    return { previewActive: app.pipeline._previewActive, samples: app.pipeline._uniforms.uSampleCounter.value };
+    const u = app.pipeline._uniforms;
+    return {
+      previewActive: app.pipeline._previewActive,
+      samples: u.uSampleCounter.value,
+      prevCount: u.uPreviousSampleCount.value,
+    };
   });
   H.check('after the rest delay the tracer resumes and accumulates without user input',
     before.previewActive === true && before.samples === 0 && after.samples > 0,
     JSON.stringify({ before, after }));
+  // Ghost prevention: the resume must HARD-flush the stale pre-gesture
+  // accumulation (uPreviousSampleCount forced to 1 by hardResetAccumulation),
+  // not soft-blend it (which would leave the old multi-sample count here and
+  // replay the old pose at 50% for the first frames).
+  H.check('resuming from preview hard-flushes the stale accumulation (no ghost)',
+    after.prevCount === 1, JSON.stringify({ after }));
 
-  // --- (2) Persistence round trip (both keys, v2.11, DOM restore) ------------------
+  // --- (2) Persistence round trip (only rtRasterPreview, v2.11; delay ignored) ------
   const persist = await page.evaluate(async () => {
     const { general } = await import('./state/store.js');
     const { captureState, applySharedState } = await import('./ui/ShareModule.js');
     general.rtRasterPreview = true;
     general.rtPreviewRestDelay = 2;
     const saved = captureState();
-    const savedHasKeys = saved.style.rtRasterPreview === true
-      && typeof saved.style.rtPreviewRestDelay === 'number';
-    // Craft a restore with the preview OFF and a distinct delay, then apply it.
+    const savedPreviewKey = saved.style.rtRasterPreview === true;
+    // rtPreviewRestDelay is a hidden config-only setting and must NOT be captured.
+    const restDelayAbsent = !('rtPreviewRestDelay' in saved.style);
+    // Craft a restore with the preview OFF plus a stray legacy delay key that
+    // must be IGNORED on load (older saves carry it; it must not override the default).
     const restoreState = JSON.parse(JSON.stringify(saved));
     restoreState.style.rtRasterPreview = false;
-    restoreState.style.rtPreviewRestDelay = 3.5;
+    restoreState.style.rtPreviewRestDelay = 3.5; // legacy key: ignored
     applySharedState(restoreState);
     const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtPreviewToggle'));
-    const delay = /** @type {HTMLInputElement|null} */ (document.getElementById('rtPreviewDelay'));
-    const options = delay?.parentElement?.parentElement; // rtPreviewOptions wrapper
     return {
-      version: saved.version, savedHasKeys,
+      version: saved.version, savedPreviewKey, restDelayAbsent,
       generalPreview: general.rtRasterPreview,
       generalDelay: general.rtPreviewRestDelay,
       toggleChecked: toggle?.checked === true,
-      delayValue: delay ? parseFloat(delay.value) : null,
-      optionsHidden: options ? getComputedStyle(options).display === 'none' : null,
     };
   });
-  H.check('captureState persists both preview keys at v2.11',
-    persist.version === '2.11' && persist.savedHasKeys, JSON.stringify(persist));
-  H.check('applySharedState restores the preview toggle + delay to the DOM (row hidden when off)',
-    persist.generalPreview === false && Math.abs(persist.generalDelay - 3.5) < 1e-9
-      && persist.toggleChecked === false && Math.abs(persist.delayValue - 3.5) < 1e-9
-      && persist.optionsHidden === true, JSON.stringify(persist));
+  H.check('captureState persists rtRasterPreview at v2.11 but NOT the hidden rest delay',
+    persist.version === '2.11' && persist.savedPreviewKey && persist.restDelayAbsent, JSON.stringify(persist));
+  H.check('applySharedState restores the preview toggle; a legacy rest-delay key is ignored',
+    persist.generalPreview === false && persist.toggleChecked === false
+      && Math.abs(persist.generalDelay - 2) < 1e-9, JSON.stringify(persist));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);
