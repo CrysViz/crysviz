@@ -11,7 +11,7 @@ import { updatePolyhedraColors, scheduleBondRebuild } from '../../../render/inde
 import { createMaterialEditor } from './MaterialEditor.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { clampOpacity, clampRadiusScale, updateAtomCoordinates } from './utils.js';
-import { selectAtomFromRow } from '../../SelectAndHighlightModule.js';
+import { selectAtomFromRow, suppressSelectionHighlightFor3D, restoreSelectionHighlight } from '../../SelectAndHighlightModule.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createSpinForceEditor } from './SpinForceEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
@@ -381,6 +381,13 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       coord: coordBtn,
       spin: spinBtn,
     };
+
+    // The 3D selection glow overwrites the atom's real color — hide it while
+    // the color editor is open so a live color change is actually visible,
+    // and bring it back once the editor closes (or another editor opens).
+    const wasColorOpen = editor.style.display !== 'none';
+    if (editorType === 'color') suppressSelectionHighlightFor3D();
+    else if (wasColorOpen) restoreSelectionHighlight();
 
     Object.entries(editorMap).forEach(([type, panel]) => {
       panel.style.display = type === editorType ? 'block' : 'none';

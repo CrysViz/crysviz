@@ -7,7 +7,7 @@
 // .........................................................................................................
 
 import { measurements,app,fileBrowser, general} from '../state/store.js';
-import {defaultPOSCAR4} from '../defaults/structure_defaults.js'
+import {defaultPOSCAR5} from '../defaults/structure_defaults.js'
 
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupStructureInput } from '../ui/StructureInputModule.js';
@@ -54,14 +54,13 @@ import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../rend
 // Panel files should contain all the functions related to a specific panels
 //
 // // .........................................................................................................
-import {setupScene, setupCameraButtons,resizeRenderer, switchCameraType
+import {setupScene, setupCameraButtons,resizeRenderer, switchCameraType, recenterCamera
 } from '../ui/WindowAndSceneControls.js'
 import {renderComposition} from '../ui/StructureInfoPanel/General.js';
 import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
 
 import {addSavePanel} from '../ui/SavePanel.js'
 import {initImageExportPanel} from '../ui/ImageExportPanel.js'
-import {addStorageInfoPanel,addBackendInfoPanel,addUploadInfoPanel} from '../ui/InfoPanel.js'
 
 // NOTE: share-related import utils still need to move into the "share" module.
 
@@ -89,6 +88,11 @@ import { resetMathBackend } from '../math/index.js';
 
 //console.log = () => {};
 //console.warn = () => {};
+
+// Only the very first structure shown gets a fresh fit-to-structure camera
+// (switchCameraType); every later load/switch re-centers on the new
+// structure but keeps the user's chosen rotation and zoom (recenterCamera).
+let cameraFitted = false;
 
 const status = document.getElementById('status');
 const setStatus = (s) => {
@@ -135,6 +139,14 @@ export function updateVisualization(options = {}) {
     // Panels
     reRenderOther = true,
     reRenderComposition = false,
+
+    // Polyhedra are expensive (per-atom hull recompute). Default on to preserve
+    // existing behavior for every panel/playback caller; the hot MD/relax paths
+    // pass false so a fallback frame doesn't pay for a polyhedra rebuild every step.
+    // Gated separately from reRenderOther because several reRenderOther:false
+    // callers (lattice transform, cut planes, bond-length edits) DO move geometry
+    // and rely on polyhedra refreshing.
+    reRenderPolyhedra = true,
 
     sOpacity = general.compOpacity,
     mOpacity = general.mainOpacity,
@@ -207,7 +219,7 @@ export function updateVisualization(options = {}) {
   // re-renders and the feature is on (persists across structure & frame changes).
   // Also run when "Complete Polyhedra" is on (faces hidden) so the completing atoms are
   // computed and shown.
-  if (general.showPolyhedra || general.completePolyhedra) updatePolyhedra();
+  if (reRenderPolyhedra && (general.showPolyhedra || general.completePolyhedra)) updatePolyhedra();
   console.timeEnd("uv:updateOther");
   if (reRenderField) {
     if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
@@ -275,8 +287,15 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
     // which already performs a full atoms+bonds+field+other re-render. Re-rendering here
     // doubled the (expensive, O(n^2)) bond build on every load.
     console.warn(fileBrowser.selectedStructure)
-    // Rebuild camera with size/distance based on structure and zoom scale
-    switchCameraType();
+    // The first structure ever shown gets a fresh fit-to-structure camera;
+    // later loads/switches keep the user's rotation and zoom, only
+    // re-centering on the new structure (see `cameraFitted`).
+    if (!cameraFitted) {
+      switchCameraType();
+      cameraFitted = true;
+    } else {
+      recenterCamera();
+    }
     clearMeasure();
     resizeRenderer(app.orthographicFrustumSize);
 
@@ -296,7 +315,7 @@ async function loadDefaultStructure() {
   }
 
   setStatus('Loading default NaCl structure...');
-  loadStructure(defaultPOSCAR4, 'C3N4', true);
+  loadStructure(defaultPOSCAR5, 'Si', true);
       // Create a new Structure instance
 
 }
@@ -429,9 +448,6 @@ function initUIPanels() {
   addSavePanel();
   initImageExportPanel();
   addAtomVacuumPanel();
-  addStorageInfoPanel();
-  addUploadInfoPanel();
-  addBackendInfoPanel();
 
   // Add viewport meta tag if not present for proper mobile scaling
   if (!document.querySelector('meta[name="viewport"]')) {

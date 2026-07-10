@@ -21,6 +21,10 @@ import { removeHistogramPanel } from '../AnalysisPanels/BondAnalysisPanel.js';
 import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../LatticeSupercellPanel.js';
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
+import { addEOSPanel, removeEOSPanel } from '../EOSPanel.js';
+import { openEOSSplitView, closeEOSSplitView } from '../EOSSplitView.js';
+import { addDummySplitPanel, removeDummySplitPanel, openDummySplitView, closeDummySplitView } from '../DummySplitPanel.js';
+import { addLandscapePanel, removeLandscapePanel, openLandscapeSplitView, closeLandscapeSplitView } from '../LandscapeSplitView.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
 import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
@@ -213,6 +217,10 @@ export function registerDefaultPanels() {
     id: 'measure',
     title: 'Measure',
     lifecycle: 'persistent',
+    infoMd: './data/measureInfo.md',
+    compactIcon: './data/icons/tool-icon.svg',
+    compactLabel: 'Toggle Measurement Tools',
+    compactAnchor: { right: 20, top: 20 }, // fixed anchor: top of the compact stack
     buildContent(body) {
       // Reparent the statically-defined toolbar (wired earlier by
       // MeasurementToolbar.js; moving the nodes preserves listeners and ids).
@@ -226,6 +234,10 @@ export function registerDefaultPanels() {
     id: 'view',
     title: 'View',
     lifecycle: 'persistent',
+    infoMd: './data/viewInfo.md',
+    compactIcon: './data/icons/camera-icon.svg',
+    compactLabel: 'Toggle Camera Tools',
+    compactStackAfter: 'measure', // dynamic anchor: pinned below Measure's live height
     buildContent(body) {
       const el = document.getElementById('cameraTools');
       if (el) body.appendChild(el);
@@ -241,6 +253,7 @@ export function registerDefaultPanels() {
     id: 'info',
     title: 'Structure',
     lifecycle: 'persistent',
+    infoMd: './data/structureInfo.md',
     onCollapse() { collapseAllAtomExpansions(); },
     buildContent(body) {
       // Adopt the formula header box (+/− expandable) and the composition
@@ -274,26 +287,29 @@ export function registerDefaultPanels() {
 
   registerPanel({
     id: 'backend',
-    title: 'Backend',
+    title: 'Atomistic',
     lifecycle: 'persistent',
+    infoMd: './data/backendInfo.md',
     buildContent(body) {
-      // Adopt the backend mode selector (Viz/Relax/MD), its info button and
-      // the calc panel the modes build into. (#uploadSection starts inside
-      // this group in the HTML but is adopted by the Files panel.)
+      // Adopt the backend mode selector (Relax/MD) and the calc panel the
+      // modes build into. (#uploadSection starts inside this group in the
+      // HTML but is adopted by the Files panel.)
       const group = document.getElementById('backendControlGroup');
       if (group) body.appendChild(group);
     },
-    defaults: { docked: true, order: -10, collapsed: false, barCollapsed: true },
+    defaults: { docked: true, order: -10, collapsed: true },
   });
 
   registerPanel({
     id: 'files',
     title: 'Files',
     lifecycle: 'persistent',
+    infoMd: './data/uploadInfo.md',
     buildContent(body) {
       // Adopt the statically-defined upload section (file/paste tabs) and the
-      // structure table (moving preserves listeners and ids; the backend mode
-      // switch keeps hiding #uploadSection by id in non-Viz modes).
+      // structure table (moving preserves listeners and ids). The upload
+      // section stays visible in every mode (upload/paste/download are always
+      // available from the Files panel).
       const upload = document.getElementById('uploadSection');
       if (upload) body.appendChild(upload);
       const table = document.getElementById('structureTablePanel');
@@ -301,7 +317,7 @@ export function registerDefaultPanels() {
       // (The Share button lives in #uploadSection's action row and moves with
       // it; see ShareModule.createShareButton.)
     },
-    defaults: { docked: true, order: 0, collapsed: false, barCollapsed: true },
+    defaults: { docked: true, order: -20, collapsed: false, barCollapsed: true },
   });
 
   registerPanel({
@@ -309,6 +325,7 @@ export function registerDefaultPanels() {
     title: 'Features',
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
+    infoMd: './data/analysisInfo.md',
     buildContent: buildFeaturesBody,
     defaults: { docked: true, order: 2, collapsed: false },
   });
@@ -324,6 +341,7 @@ export function registerDefaultPanels() {
     title: 'Trajectory',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/trajectoryInfo.md',
     available() {
       const container = structureShip.container[fileBrowser.selectedRowIndex];
       return !!container && container.structures.length > 1;
@@ -338,6 +356,7 @@ export function registerDefaultPanels() {
     title: 'Comparison',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/comparisonInfo.md',
     available() { return !!fileBrowser.comparisonStructure; },
     buildContent(body) { addCompPanel(body.id); },
     onDestroyContent() { removeCompPanel(); },
@@ -349,6 +368,7 @@ export function registerDefaultPanels() {
     title: 'Forces',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/forcesInfo.md',
     // Stays available even without force data: the window is where the user
     // enters/enables forces, so it must not grey out when a structure has none.
     available() { return true; },
@@ -369,6 +389,7 @@ export function registerDefaultPanels() {
     title: 'Spins',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/spinsInfo.md',
     // Stays available even without spin data: the window is where the user
     // enters/enables spins, so it must not grey out when a structure has none.
     available() { return true; },
@@ -388,6 +409,7 @@ export function registerDefaultPanels() {
     title: 'Volumetric Field',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/fieldInfo.md',
     available() {
       return (fileBrowser.selectedStructure?.volumetricFields?.fields?.length ?? 0) > 0
         && general.fieldActive !== false;
@@ -403,6 +425,7 @@ export function registerDefaultPanels() {
     title: 'Crystal Planes',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/planesInfo.md',
     available() { return !!fileBrowser.selectedStructure && planesData.showPlanes !== false; },
     buildContent(body) { addPlanesPanel(body.id); },
     onDestroyContent() { removePlanesPanel(); },
@@ -414,6 +437,7 @@ export function registerDefaultPanels() {
     title: 'Bonds',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/bondsInfo.md',
     available() { return !!fileBrowser.selectedStructure && general.showBonds !== false; },
     buildContent(body) {
       addBondPanel(body.id);
@@ -430,6 +454,7 @@ export function registerDefaultPanels() {
     title: 'Cell & Supercell',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/cellInfo.md',
     available() { return !!fileBrowser.selectedStructure; },
     buildContent(body) {
       addLatticeAndSupercellPanel(body.id);
@@ -447,6 +472,7 @@ export function registerDefaultPanels() {
     title: 'Symmetry',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/symmetryInfo.md',
     available() { return !!fileBrowser.selectedStructure; },
     // async builder: fills the body once the Moyo WASM module is ready.
     buildContent(body) { addMoyoPanel(body.id); },
@@ -458,6 +484,7 @@ export function registerDefaultPanels() {
     title: 'Polyhedra',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
+    infoMd: './data/polyhedraInfo.md',
     available() { return !!fileBrowser.selectedStructure && general.showPolyhedra !== false; },
     buildContent(body) { addPolyhedraPanel(body.id); },
     onDestroyContent() { removePolyhedraPanel(); },
@@ -469,6 +496,7 @@ export function registerDefaultPanels() {
     title: 'Visual',
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
+    infoMd: './data/visualInfo.md',
     buildContent(body) {
       // All appearance settings in one window, grouped by concern (Sizes /
       // Scene / Rendering / Colors / Camera). The feature-specific controls
@@ -509,16 +537,58 @@ export function registerDefaultPanels() {
   });
 
   registerPanel({
+    id: 'eos',
+    title: 'EOS Fitting',
+    lifecycle: 'rebuild',
+    hiddenUntilStructure: true,
+    infoMd: './data/eosInfo.md',
+    available() { return true; },
+    buildContent(body) { addEOSPanel(body.id); },
+    onDestroyContent() { removeEOSPanel(); },
+    // The fit plots live in a split view on the right of the 3D scene, not in
+    // this docked window — it opens/closes with this panel's expand state.
+    onExpand() { openEOSSplitView(); },
+    onCollapse() { closeEOSSplitView(); },
+    defaults: { docked: true, order: 92, collapsed: true },
+  });
+
+  registerPanel({
+    id: 'splitDemo',
+    title: 'Split View Demo',
+    lifecycle: 'rebuild',
+    infoMd: './data/splitDemoInfo.md',
+    available() { return true; },
+    buildContent(body) { addDummySplitPanel(body.id); },
+    onDestroyContent() { removeDummySplitPanel(); },
+    // Minimal example of a second feature reusing the same split view the EOS
+    // panel uses (docs/ui/panels/SplitView.js) for its own, unrelated content.
+    onExpand() { openDummySplitView(); },
+    onCollapse() { closeDummySplitView(); },
+    defaults: { docked: true, order: 93, collapsed: true },
+  });
+
+  registerPanel({
+    id: 'landscape',
+    title: 'Energy Landscape',
+    lifecycle: 'rebuild',
+    infoMd: './data/landscapeInfo.md',
+    available() { return true; },
+    buildContent(body) { addLandscapePanel(body.id); },
+    onDestroyContent() { removeLandscapePanel(); },
+    onExpand() { openLandscapeSplitView(); },
+    onCollapse() { closeLandscapeSplitView(); },
+    defaults: { docked: true, order: 94, collapsed: true },
+  });
+
+  registerPanel({
     id: 'settings',
     title: 'Settings',
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
+    infoMd: './data/storageInfo.md',
     buildContent(body) {
-      // Storage/share-URL options (with their info button), then window drag
-      // behavior. Visual settings live in the Visual window.
-      const info = document.getElementById('storageInfoButton');
-      const infoWrap = info && info.closest('.info-button-panel');
-      if (infoWrap) body.appendChild(infoWrap);
+      // Storage/share-URL options, then window drag behavior. Visual
+      // settings live in the Visual window.
       // The None/Minimal/All-Settings storage-granularity toggle
       // (#StorageOptionSwitch in index.html) is hidden for now — it has no
       // wiring. Left in the DOM, just not adopted here, so it can return later.

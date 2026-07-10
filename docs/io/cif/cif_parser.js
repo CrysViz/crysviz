@@ -482,6 +482,29 @@ export function xyz_symops_to_matrix(symops_xyz, use_fractions = false) {
 }
 
 /**
+ * Extract a clean chemical element symbol from a CIF `_atom_site_type_symbol`
+ * value, stripping any oxidation-state / charge suffix that some writers
+ * (e.g. pymatgen) attach, such as "C0+" -> "C", "Fe2+" -> "Fe", "O2-" -> "O",
+ * "Na+" -> "Na". Falls back to the trimmed raw string if no leading
+ * element-like token (one uppercase letter optionally followed by one
+ * lowercase letter) is found, so unusual/custom symbols are preserved as-is
+ * rather than silently dropped.
+ *
+ * This is the single point where species symbols enter the pipeline, so
+ * cleaning here ensures Structure.elements (and everything downstream: Moyo
+ * symmetry analysis, element colors/composition, etc.) always sees valid
+ * periodic-table symbols instead of raw CIF oxidation-state notation.
+ *
+ * @param {string} raw
+ * @returns {string}
+ */
+export function clean_element_symbol(raw) {
+  const s = String(raw).trim();
+  const m = s.match(/^([A-Z][a-z]?)/);
+  return m ? m[1] : s;
+}
+
+/**
  * Internal: parse atoms from a cif block map.
  * Mirrors _parse_atoms.
  *
@@ -520,7 +543,7 @@ export function _parse_atoms(block, resolution = true) {
     }
   }
 
-  const symbols = syms.map((s) => String(s).trim());
+  const symbols = syms.map((s) => clean_element_symbol(s));
   const labels = lbs.map((l) => String(l).trim());
 
   if (!resolution) {

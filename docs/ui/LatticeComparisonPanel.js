@@ -141,6 +141,7 @@ export function createLatticeComparisonPopup() {
     id: 'latticeComparison',
     title: 'Lattice Comparison',
     lifecycle: 'persistent',
+    infoMd: './data/latticeComparisonInfo.md',
     closable: true,
     persist: false,
     onClose() {
