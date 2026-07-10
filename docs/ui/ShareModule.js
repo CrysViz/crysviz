@@ -99,7 +99,7 @@ export function captureState({ includeFrames = false } = {}) {
   }
 
   return {
-    version: '2.9',
+    version: '2.10',
     ...(frames ? { frames } : {}),
     structure: {
       elements: [...structure.elements],
@@ -149,6 +149,7 @@ export function captureState({ includeFrames = false } = {}) {
       renderPipeline: general.renderPipeline,
       depthPeelLayers: general.depthPeelLayers,
       rtResolutionScale: general.rtResolutionScale,
+      rtTiledRender: general.rtTiledRender,
       rtReflectivity: general.rtReflectivity,
       ptDenoise: general.ptDenoise,
       ptLightSoftness: general.ptLightSoftness,
@@ -345,6 +346,11 @@ function applyStyleSettings(style) {
   if (style.rtResolutionScale != null) {
     general.rtResolutionScale = style.rtResolutionScale;
     setSelect('rtResolutionScale', style.rtResolutionScale);
+  }
+  if (style.rtTiledRender != null) {
+    general.rtTiledRender = style.rtTiledRender;
+    const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtTiledToggle'));
+    if (toggle) toggle.checked = style.rtTiledRender;
   }
   if (style.rtReflectivity != null) {
     general.rtReflectivity = style.rtReflectivity;

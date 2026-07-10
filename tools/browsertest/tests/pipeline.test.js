@@ -105,6 +105,10 @@ const H = require('../harness');
     const dofInRtBlock = document.getElementById('rtDofAperture')?.parentElement?.parentElement === rtBlock
       && document.getElementById('rtDofFocus')?.parentElement?.parentElement === rtBlock
       && document.getElementById('rtGroundToggle')?.parentElement?.parentElement === rtBlock;
+    // Tiled-rendering toggle lives in the shared tracer block and defaults ON.
+    const tiledInRtBlock = document.getElementById('rtTiledToggle')?.parentElement?.parentElement === rtBlock;
+    const tiledDefaultChecked = /** @type {HTMLInputElement} */ (
+      document.getElementById('rtTiledToggle'))?.checked === true;
     const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
     select.value = 'pathtrace';
     select.dispatchEvent(new Event('change'));
@@ -118,14 +122,17 @@ const H = require('../harness');
     select.dispatchEvent(new Event('change'));
     const allHiddenUnderForward = getComputedStyle(rtBlock).display === 'none'
       && getComputedStyle(ptBlock).display === 'none';
-    return { softnessInRtBlock, dofInRtBlock, rtSharedUnderPathtrace, ptShownUnderPathtrace,
+    return { softnessInRtBlock, dofInRtBlock, tiledInRtBlock, tiledDefaultChecked,
+      rtSharedUnderPathtrace, ptShownUnderPathtrace,
       ptHiddenUnderRaytrace, sharedShownUnderRaytrace, allHiddenUnderForward };
   });
-  H.check('shared tracer controls (softness/DoF/ground) + PT-only denoiser follow the dropdown',
+  H.check('shared tracer controls (softness/DoF/ground/tiled) + PT-only denoiser follow the dropdown',
     ptControls.softnessInRtBlock && ptControls.dofInRtBlock && ptControls.rtSharedUnderPathtrace
       && ptControls.ptShownUnderPathtrace && ptControls.ptHiddenUnderRaytrace
       && ptControls.sharedShownUnderRaytrace && ptControls.allHiddenUnderForward,
     JSON.stringify(ptControls));
+  H.check('Tiled-rendering toggle is in the shared tracer block and defaults ON',
+    ptControls.tiledInRtBlock && ptControls.tiledDefaultChecked, JSON.stringify(ptControls));
 
   // --- Dependency tree: Render Style (and cel outlines) only for raster pipelines --
   const styleTree = await page.evaluate(async () => {
@@ -168,6 +175,7 @@ const H = require('../harness');
     general.rtReflectivity = 0.9;
     general.rtAmbient = 0.9;
     general.rtGroundPlane = true;
+    general.rtTiledRender = false;
     general.depthPeelLayers = 9;
     general.celHullWidth = 0.1;
     document.getElementById('resetRenderingBtn').click();
@@ -179,6 +187,7 @@ const H = require('../harness');
       reflectivity: general.rtReflectivity,
       ambient: general.rtAmbient,
       ground: general.rtGroundPlane,
+      tiled: general.rtTiledRender,
       peel: general.depthPeelLayers,
       hull: general.celHullWidth,
       menuValue: pipeSelect.value,
@@ -188,7 +197,8 @@ const H = require('../harness');
   H.check('Reset rendering settings restores every default (pipeline back to depthpeel)',
     reset.pipeline === 'depthpeel' && reset.style === 'metallic'
       && Math.abs(reset.reflectivity - 0.15) < 1e-9 && Math.abs(reset.ambient - 0.3) < 1e-9
-      && reset.ground === false && reset.peel === 5 && Math.abs(reset.hull - 0.025) < 1e-9
+      && reset.ground === false && reset.tiled === true && reset.peel === 5
+      && Math.abs(reset.hull - 0.025) < 1e-9
       && reset.menuValue === 'depthpeel' && reset.styleRowVisible,
     JSON.stringify(reset));
   H.check('pipeline dropdown lives in the Visual window', await page.evaluate(() =>
@@ -295,15 +305,17 @@ const H = require('../harness');
       rtReflectivity: state.style.rtReflectivity,
       ptDenoise: state.style.ptDenoise,
       ptLightSoftness: state.style.ptLightSoftness,
+      rtTiledRender: state.style.rtTiledRender,
     };
   });
-  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.9)',
-    persisted.version === '2.9' && persisted.renderPipeline === 'forward'
+  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.10)',
+    persisted.version === '2.10' && persisted.renderPipeline === 'forward'
       && typeof persisted.depthPeelLayers === 'number'
       && typeof persisted.rtResolutionScale === 'number'
       && typeof persisted.rtReflectivity === 'number'
       && typeof persisted.ptDenoise === 'boolean'
-      && typeof persisted.ptLightSoftness === 'number', JSON.stringify(persisted));
+      && typeof persisted.ptLightSoftness === 'number'
+      && typeof persisted.rtTiledRender === 'boolean', JSON.stringify(persisted));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);

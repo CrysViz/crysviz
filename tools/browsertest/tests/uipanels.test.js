@@ -187,8 +187,8 @@ async function expandPanel(page, id) {
     const { captureState } = await import('./ui/ShareModule.js');
     return captureState();
   });
-  H.check('captured state has the new visual keys (v2.9)',
-    state.version === '2.9'
+  H.check('captured state has the new visual keys (v2.10)',
+    state.version === '2.10'
       && state.display.latticeLineWidth === 0.06
       && state.display.axesLineWidth === 0.05
       && typeof state.display.bondRadius === 'number'

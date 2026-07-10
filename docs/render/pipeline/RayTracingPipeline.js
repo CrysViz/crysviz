@@ -33,6 +33,24 @@
 // with the APP camera so three's built-in cameraPosition uniform feeds the
 // vendored raytracing_main chunk; ortho frustum half-extents map to
 // uULen/uVLen divided by 100 (the chunk's convention).
+//
+// Tiled progressive rendering (general.rtTiledRender, default on): to keep the
+// shared GPU responsive on heavy scenes, each accumulation SAMPLE can be split
+// into scissored screen tiles rendered one-per-animation-frame ("round-based
+// tiling"). A ROUND = one sample index traced tile-by-tile across consecutive
+// render() calls: bookkeeping (frame counter, seed) is frozen at round start
+// and uSampleCounter advances only at round completion, so the vendored shader
+// is untouched and PathTracingPipeline inherits it verbatim. The per-pixel
+// accumulation blend is texel-local, so a scissored tile is bit-identical to
+// the untiled sample over the same rect. The tile grid is chosen ADAPTIVELY
+// from the measured frame interval (split when single tiles overrun ~2 vsyncs,
+// merge back on sustained headroom; 1x1..8x8). While the camera moves, tiling
+// gives way to untiled MOTION LOW-RES (half internal resolution, upsampled by
+// the target's linear filter). Two accepted cosmetic tradeoffs: (1) a faint
+// mid-round tile seam of (N+1)/N brightness that decays as 1/N, and (2) for
+// path tracing, denoiser reads that cross a seam may pick up one-sample-stale
+// neighbors — both self-heal at round completion. Bypasses (boost / motion /
+// toggle-off / 1x1 grid / sample 1) render full-frame exactly as before.
 
 import * as THREE from '../../external/three/three.module.js';
 import { app, general } from '../../state/store.js';
@@ -48,6 +66,20 @@ import { sceneFragment } from './raytrace/sceneFragment.js';
 import { SceneEncoder } from './raytrace/SceneEncoder.js';
 
 const RESIZE_BOOST_SAMPLES = 16; // inner samples after a size change (PNG export)
+
+// ---- tiled progressive rendering ("gentle" mode) ---------------------------
+// Bounds per-frame GPU work by rendering each accumulation SAMPLE as a series
+// of scissored screen tiles, one tile per animation frame (see the round-based
+// scheme in render()). Keeps the shared GPU responsive for the compositor and
+// other apps while the tracer converges. Grid is chosen adaptively from the
+// measured frame interval.
+const TILE_PIXEL_BUDGET = 200_000; // seed grid target: pixels traced per frame
+const MAX_TILE_GRID = 8;           // per-axis tile cap (=> at most 8x8 = 64 tiles)
+const MOTION_RES_SCALE = 0.5;      // internal-resolution factor while the camera moves
+const FRAME_OVER_MS = 40;          // tile-frame interval judged "too slow" (>=2 missed vsyncs)
+const FRAME_UNDER_MS = 22;         // tile-frame interval judged to have headroom (~1 vsync)
+const OVER_STREAK_SPLIT = 3;       // consecutive slow frames before splitting the grid
+const UNDER_STREAK_MERGE = 120;    // consecutive fast frames (~2s) before merging back
 
 // ---- background display-transform inverse ----------------------------------
 // three does NOT tone-map a plain-color scene.background (it is cleared
@@ -128,6 +160,21 @@ export class RayTracingPipeline extends ForwardPipeline {
   _initialized = false;
   _sceneDirty = true;
   _boostSamples = 0;
+
+  // ---- tiled progressive rendering state ----------------------------------
+  _gridX = 1;             // live (adaptive) tile grid, applied at the next round start
+  _gridY = 1;
+  _roundGridX = 1;        // grid frozen for the in-flight round (bookkeeping is per-round)
+  _roundGridY = 1;
+  _tileCursor = 0;        // index of the next tile to render in the current round
+  _roundActive = false;   // true while a multi-tile sample is partway rendered
+  _tilePixelBudget = TILE_PIXEL_BUDGET; // instance field so tests can force a fine grid
+  _prevTileTime = 0;      // performance.now() of the previous tiled frame (0 = none yet)
+  _overStreak = 0;        // consecutive slow tile frames
+  _underStreak = 0;       // consecutive fast tile frames
+  _motionScaleActive = false; // whether the current target is at the motion (low-res) scale
+  _lastBaseW = 0;         // last still-camera internal size (to classify motion vs real resizes)
+  _lastBaseH = 0;
 
   // ---- subclass hooks (PathTracingPipeline overrides these) ---------------
   /** Shader sources + uniform-name conventions + tuning for this tracer. */
@@ -309,6 +356,15 @@ export class RayTracingPipeline extends ForwardPipeline {
     }
     this._uniforms.uSampleCounter.value = 0;
     this._uniforms.uFrameCounter.value = 0;
+    // Abandon any in-flight tiled round: mixing a partly-updated sample into a
+    // fresh accumulation would bake in a permanent 1/N brightness step. This is
+    // the single funnel every reset site (and the GUI) routes through, so the
+    // round state and the adaptive-timing seed always clear together.
+    this._tileCursor = 0;
+    this._roundActive = false;
+    this._prevTileTime = 0; // idle gaps / boosts must not pollute the interval measure
+    this._overStreak = 0;
+    this._underStreak = 0;
   }
 
   /** Reset + CLEAR both accumulation targets. The plain reset intentionally
@@ -327,6 +383,9 @@ export class RayTracingPipeline extends ForwardPipeline {
     const oldColor = renderer.getClearColor(new THREE.Color());
     const oldAlpha = renderer.getClearAlpha();
     renderer.setClearColor(0x000000, 0);
+    // A live tile scissor would confine renderer.clear() to the tile rect,
+    // leaving the rest of the target holding a stale sum — defensively clear it.
+    this._clearTileScissor();
     renderer.setRenderTarget(this._accumTarget);
     renderer.clear(true, false, false);
     renderer.setRenderTarget(this._previousTarget);
@@ -350,25 +409,150 @@ export class RayTracingPipeline extends ForwardPipeline {
     return this._uniforms.uSampleCounter.value >= this._cfg.targetSamples;
   }
 
+  // ---- tiled progressive rendering helpers --------------------------------
+  /** Pick a near-square tile grid so each tile is under the pixel budget.
+   *  Splits the axis with the larger tile dimension until every tile fits or
+   *  the per-axis cap is reached. Called on every (re)size. */
+  _seedTileGrid(w, h) {
+    let gx = 1, gy = 1;
+    const budget = Math.max(1, this._tilePixelBudget);
+    let guard = 0;
+    while ((w / gx) * (h / gy) > budget
+      && (gx < MAX_TILE_GRID || gy < MAX_TILE_GRID) && guard++ < 256) {
+      if ((w / gx) >= (h / gy) && gx < MAX_TILE_GRID) gx += 1;
+      else if (gy < MAX_TILE_GRID) gy += 1;
+      else if (gx < MAX_TILE_GRID) gx += 1;
+      else break;
+    }
+    this._gridX = gx;
+    this._gridY = gy;
+    this._overStreak = 0;
+    this._underStreak = 0;
+  }
+
+  /** Row-major tile rectangle with an EXACT integer cover (floor(i*w/g)) so
+   *  the union of all tiles is the whole target with no gaps or overlaps. */
+  _tileRect(i, gx, gy, w, h) {
+    const col = i % gx;
+    const row = Math.floor(i / gx);
+    const x0 = Math.floor((col * w) / gx);
+    const x1 = Math.floor(((col + 1) * w) / gx);
+    const y0 = Math.floor((row * h) / gy);
+    const y1 = Math.floor(((row + 1) * h) / gy);
+    return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+  }
+
+  /** Scissor BOTH accumulation targets to a tile rect (the trace pass writes
+   *  _accumTarget, the ping-pong copy writes _previousTarget). Uses the render
+   *  TARGET's own scissor (snapshotted by setRenderTarget) — renderer.setScissor
+   *  only affects the default framebuffer. */
+  _setTileScissor(rect) {
+    this._accumTarget.scissor.set(rect.x, rect.y, rect.width, rect.height);
+    this._accumTarget.scissorTest = true;
+    this._previousTarget.scissor.set(rect.x, rect.y, rect.width, rect.height);
+    this._previousTarget.scissorTest = true;
+  }
+
+  _clearTileScissor() {
+    if (this._accumTarget) this._accumTarget.scissorTest = false;
+    if (this._previousTarget) this._previousTarget.scissorTest = false;
+  }
+
+  /** Adaptive controller: measure the interval between consecutive tiled frames
+   *  and split the grid when single tiles routinely overrun a couple of vsyncs,
+   *  merge it back when there is sustained headroom. Called only on tiled
+   *  frames; _prevTileTime is zeroed by resetAccumulation so idle gaps and
+   *  boosts never pollute the measurement. Grid changes apply at the next
+   *  round start (the round freezes _roundGridX/Y). */
+  _adaptTileGrid() {
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    if (this._prevTileTime > 0) {
+      const dt = now - this._prevTileTime;
+      if (dt > FRAME_OVER_MS) { this._overStreak += 1; this._underStreak = 0; }
+      else if (dt < FRAME_UNDER_MS) { this._underStreak += 1; this._overStreak = 0; }
+      else { this._overStreak = 0; this._underStreak = 0; }
+      if (this._overStreak >= OVER_STREAK_SPLIT) {
+        const w = this._accumTarget.width, h = this._accumTarget.height;
+        if ((w / this._gridX) >= (h / this._gridY)) this._gridX = Math.min(MAX_TILE_GRID, this._gridX + 1);
+        else this._gridY = Math.min(MAX_TILE_GRID, this._gridY + 1);
+        this._overStreak = 0; this._underStreak = 0;
+      } else if (this._underStreak >= UNDER_STREAK_MERGE) {
+        if (this._gridX >= this._gridY) this._gridX = Math.max(1, this._gridX - 1);
+        else this._gridY = Math.max(1, this._gridY - 1);
+        this._overStreak = 0; this._underStreak = 0;
+      }
+    }
+    this._prevTileTime = now;
+  }
+
   render({ renderer, scene, camera }) {
     if (!this._initialized) this._init(renderer);
     const u = this._uniforms;
 
+    // --- camera-motion detection (hoisted above sizing so motion low-res can
+    //     react this same frame) --------------------------------------------
+    // Tolerance-based: the damped trackball controls coast down exponentially
+    // after release, drifting the matrix by sub-pixel amounts for seconds — an
+    // exact comparison would keep resetting the accumulation the whole time
+    // ("the bar never starts"). The snapshot only advances on a detected move,
+    // so slow creep still accumulates against the last reset point and cannot
+    // ghost unboundedly.
+    camera.updateMatrixWorld();
+    const elements = camera.matrixWorld.elements;
+    const zoom = camera.zoom ?? 1;
+    let cameraIsMoving = !this._lastCameraState || Math.abs(zoom - this._lastZoom) > 1e-5;
+    if (!cameraIsMoving) {
+      for (let i = 0; i < 16; i++) {
+        if (Math.abs(elements[i] - this._lastCameraState[i]) > 1e-4) { cameraIsMoving = true; break; }
+      }
+    }
+    if (cameraIsMoving) {
+      if (!this._lastCameraState) this._lastCameraState = new Float64Array(16);
+      this._lastCameraState.set(elements);
+      this._lastZoom = zoom;
+      this.resetAccumulation();
+    }
+
     // --- sizing (drawing buffer x RT resolution scale) ----------------------
-    const scale = Math.min(1, Math.max(0.1, general.rtResolutionScale ?? 0.75));
+    // Motion low-res: while the camera moves AND tiling is enabled, render at a
+    // reduced internal resolution — cheaper single samples that the output pass
+    // upsamples through the target's linear filter (the same presentation path
+    // the RT-resolution slider already uses). Tiling OFF => byte-identical
+    // legacy sizing (userScale, no motion factor).
+    const tilingEnabled = general.rtTiledRender !== false;
+    const userScale = Math.min(1, Math.max(0.1, general.rtResolutionScale ?? 0.75));
+    const motionActive = tilingEnabled && cameraIsMoving;
+    const effScale = motionActive ? userScale * MOTION_RES_SCALE : userScale;
     const bufferSize = renderer.getDrawingBufferSize(new THREE.Vector2());
-    const w = Math.max(4, Math.round(bufferSize.x * scale));
-    const h = Math.max(4, Math.round(bufferSize.y * scale));
-    if (w !== this._accumTarget.width || h !== this._accumTarget.height || scale !== this._lastScale) {
+    const baseW = Math.max(4, Math.round(bufferSize.x * userScale));
+    const baseH = Math.max(4, Math.round(bufferSize.y * userScale));
+    const w = Math.max(4, Math.round(bufferSize.x * effScale));
+    const h = Math.max(4, Math.round(bufferSize.y * effScale));
+    if (w !== this._accumTarget.width || h !== this._accumTarget.height || effScale !== this._lastScale) {
+      // A size change whose STILL-camera size is unchanged is just the motion
+      // factor toggling: the targets were reallocated (zeroed), so hard-reset (a
+      // soft reset would half-brightness flash) and SKIP the resize boost — that
+      // GPU hitch is exactly what motion low-res exists to avoid. A genuine
+      // resize keeps today's boost + reset behavior.
+      const motionToggle = this._lastBaseW !== 0
+        && baseW === this._lastBaseW && baseH === this._lastBaseH;
       this._accumTarget.setSize(w, h);
       this._previousTarget.setSize(w, h);
       u.uResolution.value.set(w, h);
       this._outputQuad.material.uniforms.uOutputResolution.value.copy(bufferSize);
-      this._lastScale = scale;
-      // converge within this call after a resize (a requestBoost may ask for more)
-      this._boostSamples = Math.max(this._boostSamples, RESIZE_BOOST_SAMPLES);
-      this.resetAccumulation();
+      this._lastScale = effScale;
+      this._motionScaleActive = motionActive;
+      this._seedTileGrid(w, h);
+      if (motionToggle) {
+        this.hardResetAccumulation(renderer);
+      } else {
+        // converge within this call after a resize (a requestBoost may ask for more)
+        this._boostSamples = Math.max(this._boostSamples, RESIZE_BOOST_SAMPLES);
+        this.resetAccumulation();
+      }
     }
+    this._lastBaseW = baseW;
+    this._lastBaseH = baseH;
     this._outputQuad.material.uniforms.uOutputResolution.value.copy(bufferSize);
 
     // --- scene + camera change detection ------------------------------------
@@ -406,28 +590,6 @@ export class RayTracingPipeline extends ForwardPipeline {
       this._sceneDirty = false;
       // content changed: flush the accumulation so the old scene cannot ghost
       this.hardResetAccumulation(renderer);
-    }
-
-    // Camera-motion detection with a tolerance: the damped trackball controls
-    // coast down exponentially after release, drifting the matrix by
-    // sub-pixel amounts for seconds — an exact comparison would keep
-    // resetting the accumulation the whole time ("the bar never starts").
-    // The snapshot only advances on a detected move, so slow creep still
-    // accumulates against the last reset point and cannot ghost unboundedly.
-    camera.updateMatrixWorld();
-    const elements = camera.matrixWorld.elements;
-    const zoom = camera.zoom ?? 1;
-    let cameraIsMoving = !this._lastCameraState || Math.abs(zoom - this._lastZoom) > 1e-5;
-    if (!cameraIsMoving) {
-      for (let i = 0; i < 16; i++) {
-        if (Math.abs(elements[i] - this._lastCameraState[i]) > 1e-4) { cameraIsMoving = true; break; }
-      }
-    }
-    if (cameraIsMoving) {
-      if (!this._lastCameraState) this._lastCameraState = new Float64Array(16);
-      this._lastCameraState.set(elements);
-      this._lastZoom = zoom;
-      this.resetAccumulation();
     }
 
     // --- camera uniforms ----------------------------------------------------
@@ -514,33 +676,99 @@ export class RayTracingPipeline extends ForwardPipeline {
     if (this._lastLookKey !== undefined && lookKey !== this._lastLookKey) this.resetAccumulation();
     this._lastLookKey = lookKey;
 
-    // --- accumulate one (or, after a resize, several) samples ---------------
+    // --- accumulate ---------------------------------------------------------
+    // Either one scissored TILE of a round (tiled mode) or the full-frame
+    // sample burst (legacy). A round = one sample index rendered tile-by-tile
+    // across consecutive render() calls; the vendored per-pixel accumulation
+    // blend is texel-local, so a partial (scissored) update of a sample is
+    // bit-identical to the untiled sample over the same rect. All GLOBAL
+    // bookkeeping (uSampleCounter advance, the frame-1 ghost blend, the output
+    // divide) stays per-round, so isConverged()/PNG-export/progress semantics
+    // are unchanged (counter == samples fully accumulated at EVERY pixel).
     const samplesThisCall = Math.max(1, this._boostSamples);
     this._boostSamples = 0;
+    // Tiling gate. Sample 1 after any reset is always untiled full-frame: it
+    // confines the frame-1 ghost blend and uCameraIsMoving to the untiled path
+    // and avoids a near-white flash from a fractional divide against counter 0.
+    const gridTiles = this._gridX * this._gridY;
+    const useTiling = tilingEnabled && samplesThisCall === 1 && !cameraIsMoving
+      && u.uSampleCounter.value >= 1 && gridTiles > 1;
     const oldAutoClear = renderer.autoClear;
     renderer.autoClear = false;
-    for (let s = 0; s < samplesThisCall; s++) {
-      u.uSampleCounter.value += 1;
-      u.uFrameCounter.value += 1;
-      u.uTime.value += 1 / 60;
-      u.uRandomVec2.value.set(Math.random(), Math.random());
-      u[this._cfg.previousTexUniform].value = this._previousTarget.texture;
 
+    // Present divide is 1/(N + completedTiles/roundTiles): the output pass runs
+    // every frame (the canvas isn't preserved), so a fractional count keeps the
+    // mean brightness constant mid-round. The only artifact is a faint (N+1)/N
+    // seam sweeping the screen, decaying as 1/N.
+    let completedFraction = 0;
+
+    if (useTiling) {
+      if (!this._roundActive) {
+        // Start a round: freeze the grid and advance the per-sample bookkeeping
+        // ONCE for the whole round (every tile shares this frame index / seed).
+        this._roundGridX = this._gridX;
+        this._roundGridY = this._gridY;
+        this._tileCursor = 0;
+        this._roundActive = true;
+        u.uFrameCounter.value += 1;
+        u.uTime.value += 1 / 60;
+        u.uRandomVec2.value.set(Math.random(), Math.random());
+      }
+      u[this._cfg.previousTexUniform].value = this._previousTarget.texture;
+      u.uCameraIsMoving.value = false; // tiled path is still-camera only
+
+      const roundTiles = this._roundGridX * this._roundGridY;
+      const rect = this._tileRect(this._tileCursor, this._roundGridX, this._roundGridY,
+        this._accumTarget.width, this._accumTarget.height);
+      this._setTileScissor(rect);
       renderer.setRenderTarget(this._accumTarget);
       renderer.render(this._rtScene, camera);
-
-      // ping-pong copy: accumulated image -> previous
+      // ping-pong copy: accumulated image -> previous (same tile rect)
       this._copyQuad.material.uniforms[this._cfg.copyTexUniform].value = this._accumTarget.texture;
       renderer.setRenderTarget(this._previousTarget);
       this._copyQuad.render(renderer);
+      this._clearTileScissor();
 
-      u.uCameraIsMoving.value = false; // only the first sample of a burst blurs
+      this._tileCursor += 1;
+      if (this._tileCursor >= roundTiles) {
+        // Round complete: this sample index is now accumulated at every pixel.
+        u.uSampleCounter.value += 1;
+        this._roundActive = false;
+        this._tileCursor = 0;
+        completedFraction = 0;
+      } else {
+        completedFraction = this._tileCursor / roundTiles;
+      }
+      this._adaptTileGrid();
+    } else {
+      // Full-frame burst (legacy). A bypass (boost/motion/toggle-off/1x1) while
+      // a round is in flight would otherwise bake a mixed multi-sample sum into
+      // the accumulation as a permanent 1/N brightness step — abandon it first.
+      if (this._roundActive) this.resetAccumulation();
+      for (let s = 0; s < samplesThisCall; s++) {
+        u.uSampleCounter.value += 1;
+        u.uFrameCounter.value += 1;
+        u.uTime.value += 1 / 60;
+        u.uRandomVec2.value.set(Math.random(), Math.random());
+        u[this._cfg.previousTexUniform].value = this._previousTarget.texture;
+
+        renderer.setRenderTarget(this._accumTarget);
+        renderer.render(this._rtScene, camera);
+
+        // ping-pong copy: accumulated image -> previous
+        this._copyQuad.material.uniforms[this._cfg.copyTexUniform].value = this._accumTarget.texture;
+        renderer.setRenderTarget(this._previousTarget);
+        this._copyQuad.render(renderer);
+
+        u.uCameraIsMoving.value = false; // only the first sample of a burst blurs
+      }
     }
 
     // --- averaged, tone-mapped output to the canvas -------------------------
+    const presentCount = u.uSampleCounter.value + completedFraction;
     const out = this._outputQuad.material.uniforms;
     out[this._cfg.outputTexUniform].value = this._accumTarget.texture;
-    out.uOneOverSampleCounter.value = 1 / Math.max(1, u.uSampleCounter.value);
+    out.uOneOverSampleCounter.value = 1 / Math.max(1, presentCount);
     out.uSaturation.value = general.rtSaturation ?? 1; // output-pass grade: no reset needed
     this._updateOutputUniforms(out);
     renderer.setRenderTarget(null);
@@ -548,7 +776,10 @@ export class RayTracingPipeline extends ForwardPipeline {
     renderer.autoClear = oldAutoClear;
 
     // --- progressive refinement under render-on-demand ----------------------
-    updateTracerProgress(u.uSampleCounter.value, this._cfg.targetSamples);
+    // The progress strip advances smoothly with the fractional round count, and
+    // an in-flight round keeps the counter below target so render() keeps
+    // self-perpetuating until convergence.
+    updateTracerProgress(presentCount, this._cfg.targetSamples);
     if (u.uSampleCounter.value < this._cfg.targetSamples) requestRender();
   }
 

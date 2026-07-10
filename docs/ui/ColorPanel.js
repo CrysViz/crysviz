@@ -426,6 +426,23 @@ export function addColorPanel(target = "colorContainer") {
   rtResRow.appendChild(rtResSlider);
   rtControlsBlock.appendChild(rtResRow);
 
+  // Tiled ("gentle") rendering: split each accumulation sample into scissored
+  // tiles, one per frame, so the shared GPU stays responsive while the tracer
+  // converges (default ON). Toggling restarts the accumulation.
+  const rtTiledRow = createElement("div", { class: "control-row" });
+  const rtTiledLabel = createElement("label", { for: "rtTiledToggle" }, {}, "Tiled rendering");
+  const rtTiledToggle = createElement("input", { type: "checkbox", id: "rtTiledToggle" },
+    { justifySelf: "start", width: "auto" });
+  rtTiledToggle.checked = general.rtTiledRender !== false;
+  rtTiledToggle.addEventListener("change", () => {
+    general.rtTiledRender = rtTiledToggle.checked;
+    app.pipeline?.resetAccumulation?.();
+    requestRender();
+  });
+  rtTiledRow.appendChild(rtTiledLabel);
+  rtTiledRow.appendChild(rtTiledToggle);
+  rtControlsBlock.appendChild(rtTiledRow);
+
   const rtReflRow = createElement("div", { class: "control-row" });
   const rtReflLabel = createElement("label", { for: "rtReflectivity" }, {},
     `Reflectivity: ${(general.rtReflectivity ?? 0.15).toFixed(2)}`);
@@ -719,6 +736,7 @@ export function addColorPanel(target = "colorContainer") {
     fire('celHullWidth', D.celHullWidth, 'input');
     fire('celHullPolyWidth', D.celHullPolyWidth, 'input');
     fire('rtResolutionScale', D.rtResolutionScale, 'input');
+    fireCheck('rtTiledToggle', D.rtTiledRender);
     fire('rtReflectivity', D.rtReflectivity, 'input');
     fire('ptLightSoftness', D.ptLightSoftness, 'input');
     fire('rtLightIntensity', D.rtLightIntensity, 'input');

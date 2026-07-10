@@ -601,8 +601,8 @@ function changedPixelCount(fileA, fileB) {
       atomUserMaterials: state.colors.atomUserMaterials,
     };
   });
-  H.check('captureState persists atomMaterials + per-atom overrides (v2.9)',
-    persisted.version === '2.9' && persisted.atomMaterials?.Cu?.type === 'emissive'
+  H.check('captureState persists atomMaterials + per-atom overrides (v2.10)',
+    persisted.version === '2.10' && persisted.atomMaterials?.Cu?.type === 'emissive'
       && persisted.atomMaterials?.Ba?.type === 'metal'
       && Object.values(persisted.atomUserMaterials ?? {}).some((m) => m?.type === 'glass'),
     JSON.stringify(persisted));
