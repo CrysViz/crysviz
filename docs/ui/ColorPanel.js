@@ -412,13 +412,32 @@ export function addColorPanel(target = "colorContainer") {
     renderPipelineOptions(), () => {
       const pipelineValue = renderPipelineMenu.querySelector("select").value;
       const wasTracer = general.renderPipeline === 'raytrace' || general.renderPipeline === 'pathtrace';
-      setActivePipeline(pipelineValue);
-      updateRenderingControlsVisibility();
-      // Performance warning each time a (potentially slow) tracer mode is
-      // ENTERED from a raster mode — switching between the two tracers does
-      // not re-warn; "Don't show this again" suppresses it permanently.
       const isTracer = pipelineValue === 'raytrace' || pipelineValue === 'pathtrace';
-      if (isTracer && !wasTracer) maybeShowRaytraceWarning();
+      const doSwitch = () => {
+        setActivePipeline(pipelineValue);
+        updateRenderingControlsVisibility();
+      };
+      // Performance warning each time a (potentially slow) tracer mode is
+      // ENTERED from a raster mode — switching between the two tracers does not
+      // re-warn; "Don't show this again" suppresses it permanently. When the
+      // warning IS shown the switch is DEFERRED: the prior (raster) pipeline
+      // keeps rendering (responsive GUI) while the modal is open. Ok performs
+      // the switch; Cancel/Escape/backdrop reverts the dropdown to the pipeline
+      // that is still active (general.renderPipeline). updateRenderingControls-
+      // Visibility reads general.renderPipeline (not the select), so no tracer
+      // knobs flash while the modal is open.
+      if (isTracer && !wasTracer) {
+        const shown = maybeShowRaytraceWarning({
+          onConfirm: doSwitch,
+          onCancel: () => {
+            renderPipelineMenu.querySelector("select").value = general.renderPipeline;
+            updateRenderingControlsVisibility();
+          },
+        });
+        if (!shown) doSwitch(); // suppressed -> switch immediately as before
+      } else {
+        doSwitch();
+      }
     });
   content.appendChild(renderPipelineMenu);
 

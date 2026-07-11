@@ -1,16 +1,19 @@
 // First-run ray/path-tracing performance-warning modal (ui/RaytraceWarningModal.js).
 //
-// Deterministic single-page flow (order matters for the one-shot suppression
-// and the persisted pref):
+// The modal is a CONFIRM gate that DEFERS the pipeline switch: while it is open
+// the prior raster pipeline keeps rendering (responsive GUI). Deterministic flow:
 //   (0) suppressRaytraceWarningOnce() BEFORE any modal has shown -> the next
-//       tracer enable is silently consumed (models the ShareModule restore).
-//   (1) enabling a tracer again shows the modal, and the pipeline ALSO switches
-//       (the warning is non-blocking). Ok closes it.
-//   (2) tracer->tracer switches do not re-warn, but leaving to a raster mode
-//       and flipping back into a tracer shows the warning again.
-//   (3) showRaytraceWarning() + tick "Don't show again" + Ok -> pref persisted
-//       and the Settings-window toggle reflects it.
-//   (4) unchecking the Settings toggle clears the pref, so the next tracer
+//       tracer enable is silently consumed AND switches immediately (ShareModule
+//       session-restore path).
+//   (a) a fresh raster->tracer switch SHOWS the modal and does NOT switch yet
+//       (general.renderPipeline + app.pipeline.id still the prior raster id).
+//   (b) Ok -> the pipeline switches to the tracer.
+//   (c) leaving to a raster mode and flipping back re-shows the modal; Cancel
+//       keeps the raster pipeline AND reverts the dropdown select.
+//   (d) Escape and backdrop-click behave as Cancel.
+//   (e) "Don't show again" + Cancel persists the pref and does NOT switch; the
+//       next tracer selection then switches immediately with no modal.
+//   (g) unchecking the Settings toggle clears the pref, so the next tracer
 //       enable shows the modal again.
 'use strict';
 const H = require('../harness');
@@ -21,6 +24,13 @@ const pipelineId = (page) => page.evaluate(async () => {
   const { general } = await import('./state/store.js');
   return general.renderPipeline;
 });
+const activePipelineId = (page) => page.evaluate(async () => {
+  const { app } = await import('./state/store.js');
+  return app.pipeline?.id;
+});
+const selectValue = (page) => page.evaluate(() =>
+  /** @type {HTMLSelectElement|null} */ (
+    document.getElementById('renderPipelineMenu'))?.value);
 
 (async () => {
   const { browser, page, errors } = await H.launchApp();
@@ -43,7 +53,7 @@ const pipelineId = (page) => page.evaluate(async () => {
     !!document.getElementById('disableRaytraceWarningToggle'));
   H.check('Settings window hosts the raytracing-warning toggle', hasSettingsToggle);
 
-  // --- (0) One-shot suppression consumed by the next tracer enable ---------------
+  // --- (0)/(f) One-shot suppression: swallowed AND switches immediately ----------
   await page.evaluate(async () => {
     const { suppressRaytraceWarningOnce } = await import('./ui/RaytraceWarningModal.js');
     suppressRaytraceWarningOnce();
@@ -52,57 +62,100 @@ const pipelineId = (page) => page.evaluate(async () => {
   await page.waitForTimeout(300);
   H.check('suppressRaytraceWarningOnce() swallows the next tracer enable (modal hidden)',
     (await visible(page)) === false);
-  H.check('...but the pipeline still switched to raytrace', (await pipelineId(page)) === 'raytrace');
+  H.check('...and the pipeline switched immediately to raytrace',
+    (await pipelineId(page)) === 'raytrace');
 
-  // --- (1) Fresh enable now shows the modal AND switches the pipeline -------------
+  // --- (a) Fresh raster->tracer SHOWS the modal but DEFERS the switch ------------
   await H.setSelect(page, 'renderPipelineMenu', 'forward');
+  await page.waitForTimeout(150);
   await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
   await page.waitForTimeout(300);
-  H.check('first (non-suppressed) tracer enable shows the modal', (await visible(page)) === true);
-  H.check('pipeline switched to raytrace alongside the modal (non-blocking)',
-    (await pipelineId(page)) === 'raytrace');
+  H.check('fresh (non-suppressed) tracer enable shows the modal', (await visible(page)) === true);
+  H.check('...and the pipeline has NOT switched yet (general.renderPipeline still forward)',
+    (await pipelineId(page)) === 'forward');
+  H.check('...and app.pipeline is still the forward instance',
+    (await activePipelineId(page)) === 'forward');
+
+  // --- (b) Ok performs the deferred switch --------------------------------------
   await H.clickById(page, 'raytraceWarningOk');
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(200);
   H.check('Ok closes the modal', (await visible(page)) === false);
+  H.check('Ok performs the deferred switch to raytrace', (await pipelineId(page)) === 'raytrace');
+  H.check('...and app.pipeline is now the raytrace instance',
+    (await activePipelineId(page)) === 'raytrace');
 
-  // --- (2) Tracer -> tracer does not re-warn; leaving and re-entering does -------
-  await H.setSelect(page, 'renderPipelineMenu', 'pathtrace'); // raytrace -> pathtrace
-  await page.waitForTimeout(300);
-  H.check('switching between the two tracers does NOT re-show the modal',
-    (await visible(page)) === false);
-  H.check('pathtrace pipeline active', (await pipelineId(page)) === 'pathtrace');
+  // --- (c) Re-enter from raster, then Cancel keeps forward + reverts the select --
   await H.setSelect(page, 'renderPipelineMenu', 'forward');
-  await H.setSelect(page, 'renderPipelineMenu', 'pathtrace'); // re-entry from raster
-  await page.waitForTimeout(300);
-  H.check('flipping back into a tracer (raster -> tracer) shows the modal again',
-    (await visible(page)) === true);
-  await H.clickById(page, 'raytraceWarningOk');
   await page.waitForTimeout(150);
-  H.check('Ok closes the re-shown modal', (await visible(page)) === false);
+  await H.setSelect(page, 'renderPipelineMenu', 'pathtrace');
+  await page.waitForTimeout(300);
+  H.check('re-entry (raster -> tracer) shows the modal again', (await visible(page)) === true);
+  H.check('select shows the tentative tracer value while the modal is open',
+    (await selectValue(page)) === 'pathtrace');
+  await H.clickById(page, 'raytraceWarningCancel');
+  await page.waitForTimeout(200);
+  H.check('Cancel closes the modal', (await visible(page)) === false);
+  H.check('Cancel does NOT switch (pipeline stays forward)', (await pipelineId(page)) === 'forward');
+  H.check('Cancel reverts the dropdown select to forward', (await selectValue(page)) === 'forward');
 
-  // --- (3) "Don't show again" persists the pref + syncs the Settings toggle ------
-  const persisted = await page.evaluate(async () => {
-    const { showRaytraceWarning } = await import('./ui/RaytraceWarningModal.js');
+  // --- (d) Escape behaves as Cancel ---------------------------------------------
+  await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
+  await page.waitForTimeout(300);
+  H.check('modal shown before Escape', (await visible(page)) === true);
+  await page.evaluate(() => {
+    document.getElementById('raytraceWarningModal')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  });
+  await page.waitForTimeout(200);
+  H.check('Escape acts as Cancel (modal hidden)', (await visible(page)) === false);
+  H.check('Escape acts as Cancel (pipeline stays forward)', (await pipelineId(page)) === 'forward');
+  H.check('Escape reverts the dropdown select to forward', (await selectValue(page)) === 'forward');
+
+  // --- (d) Backdrop-click behaves as Cancel -------------------------------------
+  await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
+  await page.waitForTimeout(300);
+  H.check('modal shown before backdrop click', (await visible(page)) === true);
+  await page.evaluate(() => {
+    const m = document.getElementById('raytraceWarningModal');
+    // The modal root IS the backdrop; dispatch a click whose target is the root.
+    m?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  await page.waitForTimeout(200);
+  H.check('backdrop click acts as Cancel (modal hidden)', (await visible(page)) === false);
+  H.check('backdrop click acts as Cancel (pipeline stays forward)',
+    (await pipelineId(page)) === 'forward');
+
+  // --- (e) "Don't show again" + Cancel persists the pref and does NOT switch -----
+  await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
+  await page.waitForTimeout(300);
+  H.check('modal shown before "Don\'t show again" + Cancel', (await visible(page)) === true);
+  const afterDontShowCancel = await page.evaluate(async () => {
     const { getPanelPref } = await import('./ui/panels/PanelManager.js');
-    showRaytraceWarning();
-    const shown = document.getElementById('raytraceWarningModal')?.hidden === false;
     /** @type {HTMLInputElement} */
     (document.getElementById('raytraceWarningDontShow')).checked = true;
-    document.getElementById('raytraceWarningOk').click();
+    document.getElementById('raytraceWarningCancel').click();
     return {
-      shown,
       hiddenAfter: document.getElementById('raytraceWarningModal')?.hidden === true,
       pref: getPanelPref('hideRaytraceWarning') === true,
       settingsChecked: /** @type {HTMLInputElement} */ (
         document.getElementById('disableRaytraceWarningToggle'))?.checked === true,
     };
   });
-  H.check('showRaytraceWarning() shows the modal unconditionally', persisted.shown);
-  H.check('"Don\'t show again" + Ok closes the modal', persisted.hiddenAfter);
-  H.check('"Don\'t show again" persists hideRaytraceWarning=true', persisted.pref);
-  H.check('...and syncs the Settings-window toggle to checked', persisted.settingsChecked);
+  H.check('"Don\'t show again" + Cancel closes the modal', afterDontShowCancel.hiddenAfter);
+  H.check('"Don\'t show again" persists on Cancel too', afterDontShowCancel.pref);
+  H.check('...and syncs the Settings-window toggle to checked', afterDontShowCancel.settingsChecked);
+  H.check('Cancel with "Don\'t show again" did NOT switch (still forward)',
+    (await pipelineId(page)) === 'forward');
+  // Next tracer selection now switches immediately with no modal.
+  await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
+  await page.waitForTimeout(300);
+  H.check('with the pref set, the next tracer enable shows NO modal',
+    (await visible(page)) === false);
+  H.check('...and switches immediately to raytrace', (await pipelineId(page)) === 'raytrace');
 
-  // --- (4) Unchecking the Settings toggle re-enables it this same session --------
+  // --- (g) Unchecking the Settings toggle re-enables it this same session --------
+  await H.setSelect(page, 'renderPipelineMenu', 'forward');
+  await page.waitForTimeout(150);
   const reEnabled = await page.evaluate(async () => {
     const { getPanelPref } = await import('./ui/panels/PanelManager.js');
     const toggle = /** @type {HTMLInputElement} */ (
@@ -112,13 +165,12 @@ const pipelineId = (page) => page.evaluate(async () => {
     return { pref: getPanelPref('hideRaytraceWarning') };
   });
   H.check('unchecking the Settings toggle clears the pref', reEnabled.pref === false);
-  await H.setSelect(page, 'renderPipelineMenu', 'forward');
   await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
   await page.waitForTimeout(300);
   H.check('re-enabled warning shows again on the next tracer enable',
     (await visible(page)) === true);
   await H.clickById(page, 'raytraceWarningOk');
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(200);
 
   // Restore a benign pipeline for teardown.
   await H.setSelect(page, 'renderPipelineMenu', 'depthpeel');
