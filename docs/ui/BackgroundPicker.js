@@ -34,17 +34,18 @@ export function syncBackgroundSwatch() {
   }
 }
 
-// The dot that currently owns an open picker (null = none). Clicking the same
-// dot again closes its picker instead of rebuilding an identical one in place.
+/** Whichever dot (canvas dot or Visual-window swatch) currently has the
+ *  picker open, and how to close it — so a second click of that same dot
+ *  toggles the picker closed instead of just tearing it down and rebuilding
+ *  an identical one in place. */
 let activePicker = null;
 
 function openBackgroundColorPicker(dot) {
   if (activePicker) {
     const reopeningSameDot = activePicker.dot === dot;
     activePicker.close();
-    if (reopeningSameDot) return; // second click on the same dot: just close
+    if (reopeningSameDot) return;
   }
-  document.querySelectorAll(".spin-color-picker").forEach(p => p.remove());
   let currentHex = app.scene.background ? "#" + app.scene.background.getHexString() : "#090A09";
   let selectedHex = currentHex;
 
@@ -112,13 +113,13 @@ function openBackgroundColorPicker(dot) {
     document.removeEventListener("mousedown", outsideClick);
     if (activePicker && activePicker.dot === dot) activePicker = null;
   };
+  activePicker = { dot, close: closePicker };
 
   const outsideClick = (e) => {
     if (!pickerPanel.contains(e.target) && e.target !== dot) closePicker();
   };
   document.addEventListener("mousedown", outsideClick);
   pickerPanel.addEventListener("mousedown", (e) => e.stopPropagation());
-  activePicker = { dot, close: closePicker };
 
   applyBtn.addEventListener("click", (e) => {
     e.stopPropagation();

@@ -123,30 +123,16 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* The body holds one persistent container per open owner; only the front one
-   is shown (the rest keep their built content, hidden). Each owner-pane is the
-   flex column its items live in — an owner with a single item gets the whole
-   height; multiple items split it evenly. */
+/* Items stack top to bottom, splitting the pane's height evenly by default —
+   an owner with a single item just gets the whole body. */
 .split-pane-body {
   flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.split-owner-pane {
-  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 10px;
   overflow: auto;
-}
-
-.split-owner-pane[hidden] {
-  display: none;
 }
 
 .split-pane .split-item {
@@ -200,161 +186,28 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* Owner tabs come in two forms, both built from the same owner list
-   (renderTabs()):
-   - a horizontal strip in the pane HEADER, shown while the pane is open with
-     more than one owner (so the tabs sit on top, replacing the plain title);
-   - a vertical pull-tab stack on the pane EDGE, shown only while collapsed, to
-     reopen the pane on a chosen owner.
-   A single open owner shows neither — the header just names it. */
-
-/* Base look, shared by both forms; each form overrides orientation/shape. */
+/* Pull-tab shown only while the pane is collapsed. */
 .split-pane-tab {
+  display: none;
+  position: fixed;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  padding: 14px 6px;
   cursor: pointer;
   font-size: 12px;
   letter-spacing: 0.04em;
-  color: var(--panel-fg);
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-}
-
-.split-pane-tab-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ---- header strip (open): browser-style tabs ------------------------------*/
-.split-pane-header-tabs {
-  display: none;
-  flex: 1;
-  min-width: 0;
-  gap: 11px;                /* room for the active tab's bottom flares */
-  overflow: visible;        /* let the flare pseudo-elements spill out */
-  align-self: stretch;      /* fill the header height … */
-  align-items: flex-end;    /* … so tabs sit on the bottom edge, like a browser */
-  /* pull the strip down so the active tab's bottom flares meet the header's
-     bottom border, giving the "tab connected to the pane" look */
-  margin-bottom: -9px;
-  padding-top: 4px;
-}
-
-#viewArea.split-multi:not(.split-pane-collapsed) .split-pane-header-tabs {
-  display: flex;
-}
-
-/* When the header shows tabs, the plain single-owner title is redundant. */
-#viewArea.split-multi:not(.split-pane-collapsed) #splitPaneTitle {
-  display: none;
-}
-
-.split-pane-header-tabs .split-pane-tab {
-  position: relative;
-  writing-mode: horizontal-tb;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 190px;
-  padding: 5px 6px 7px 12px;
-  background: transparent;
-  border: none;
-  border-radius: 9px 9px 0 0;
-  color: var(--muted-fg, #9aa0a6);
-}
-
-.split-pane-header-tabs .split-pane-tab:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--panel-fg);
-}
-
-/* Active tab: filled + raised, outlined, its bottom flaring into the strip.
-   --split-tab-bg is the shared fill used by the tab body and its flares. */
-.split-pane-header-tabs .split-pane-tab.active {
-  --split-tab-bg: var(--group-bg, rgba(255, 255, 255, 0.10));
-  background: var(--split-tab-bg);
-  border: 1px solid var(--panel-border);
-  border-bottom: none;
-  color: var(--panel-fg);
-}
-
-/* Browser-style bottom flares: a quarter-disc of the tab colour on each side
-   with a concave arc cut out of its inner corner, so the active tab curves
-   outward into the strip instead of ending on a square edge. */
-.split-pane-header-tabs .split-pane-tab.active::before,
-.split-pane-header-tabs .split-pane-tab.active::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  width: 11px;
-  height: 11px;
-  pointer-events: none;
-}
-
-.split-pane-header-tabs .split-pane-tab.active::before {
-  left: -11px;
-  background: radial-gradient(circle at top left, transparent 11px, var(--split-tab-bg) 11px);
-}
-
-.split-pane-header-tabs .split-pane-tab.active::after {
-  right: -11px;
-  background: radial-gradient(circle at top right, transparent 11px, var(--split-tab-bg) 11px);
-}
-
-/* Per-tab close button (browser-style ✕ that appears on the tab). */
-.split-pane-tab-close {
-  flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  opacity: 0.55;
-}
-
-.split-pane-tab-close:hover {
-  background: rgba(255, 255, 255, 0.18);
-  opacity: 1;
-}
-
-/* ---- edge pull-tab stack (collapsed) --------------------------------------*/
-.split-pane-tabs {
-  display: none;
-  position: fixed;
-  top: 64px;
-  right: 0;
   z-index: 1300;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
 }
 
-#viewArea.split-active.split-pane-collapsed .split-pane-tabs {
-  display: flex;
-}
-
-.split-pane-tabs .split-pane-tab {
-  writing-mode: vertical-rl;
-  border-right: none;
-  border-radius: 8px 0 0 8px;
-  padding: 12px 6px;
-  opacity: 0.75;
-}
-
-.split-pane-tabs .split-pane-tab:hover,
-.split-pane-tabs .split-pane-tab.active {
-  opacity: 1;
-  color: var(--highlight-color, #00bcd4);
-  border-color: var(--highlight-color, #00bcd4);
+#viewArea.split-active.split-pane-collapsed .split-pane-tab {
+  display: block;
 }
 
 /* Expanded (fullscreen) single-item view, toggled from the ⛶ button. Above

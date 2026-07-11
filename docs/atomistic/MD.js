@@ -1,6 +1,6 @@
-import { fileBrowser, groups, general } from '../state/store.js';
+import { fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE } from '../render/index.js';
+import { runPeriodicWrapped } from '../render/index.js';
 import { registerPanel, removePanel } from '../ui/panels/PanelManager.js';
 import { buildNEPStructure } from './relaxer.js';
 import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart, normalizeFractionalPositions } from './math.js';
@@ -314,13 +314,6 @@ export async function runMDSimulation({
   const startStep = state.step;
   const timing = createTimingProfile('MD');
   const totalStart = performance.now();
-  // Run consecutive steps without yielding to the render loop until this many
-  // ms have elapsed since the last rAF yield, then yield once. Keeps fast
-  // integration off the ~60 fps cap while still letting the browser paint; slow
-  // (async MLIP) force evals exceed the budget every step and degrade to one
-  // yield per step (prior behavior).
-  const FRAME_BUDGET_MS = 12;
-  let lastYield = performance.now();
 
   for (let i = 1; i <= steps; i += 1) {
     if (stop()) {
@@ -371,12 +364,9 @@ export async function runMDSimulation({
       stopped = true;
       break;
     }
-    if (performance.now() - lastYield >= FRAME_BUDGET_MS) {
-      t0 = performance.now();
-      await nextFrame();
-      timing.waitMs += performance.now() - t0;
-      lastYield = performance.now();
-    }
+    t0 = performance.now();
+    await nextFrame();
+    timing.waitMs += performance.now() - t0;
   }
   timing.totalMs = performance.now() - totalStart;
 
@@ -387,12 +377,10 @@ export async function runMDSimulation({
   };
 }
 
-let _mdViewerUpdateCount = 0;
-
 export function applyMDStateToViewer(
   state,
   structure = fileBrowser.selectedStructure,
-  { forceRerender = false, full = false } = {},
+  { forceRerender = false } = {},
 ) {
   const invL = invert3x3(transpose3x3(state.lattice));
   const frac = state.positions.map((r) => {
@@ -406,32 +394,16 @@ export function applyMDStateToViewer(
   });
 
   if (!structure.periodic) structure.periodic = { hash: 'None', wrapped: null };
-
-  _mdViewerUpdateCount += 1;
-  const strideDue = _mdViewerUpdateCount % BOND_TOPOLOGY_STRIDE === 0;
-
-  // Fast in-place update; skipped on run-end full apply, caller-forced rebuilds,
-  // and the periodic bond-topology refresh. Returns false on topology change.
-  if (!full && !forceRerender && !strideDue && structure.periodic.wrapped && applyFrameFast(structure)) {
-    return;
-  }
-
-  // Full path: re-establishes topology (fast path resumes on the next frame).
   runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
-  const wrappedCount = structure.periodic.wrapped?.elements?.length ?? 0;
-  const needAtomRebuild = full || forceRerender || !groups.atomsMesh || groups.atomsMesh.count !== wrappedCount;
+
   updateVisualization({
     atomsUpdate: true,
     bondsUpdate: true,
-    reRenderAtoms: needAtomRebuild,
-    reRenderBonds: true,
+    reRenderAtoms: forceRerender,
+    reRenderBonds: forceRerender,
     reRenderLattice: true,
     reRenderOther: false,
     reRenderComposition: false,
-    // Polyhedra track the moving atoms whenever the feature is visible (the fast
-    // path bails in that mode, so every frame lands here); otherwise only refresh
-    // them on the run-end full apply (P6).
-    reRenderPolyhedra: full || general.showPolyhedra || general.completePolyhedra,
   });
 }
 
@@ -444,7 +416,6 @@ export function createMDMonitorPanel() {
     id: 'mdMonitor',
     title: 'MD Monitor',
     lifecycle: 'persistent',
-    infoMd: './data/mdMonitorInfo.md',
     closable: true,
     // Layout persists: the monitor re-opens docked/floating (and where)
     // exactly as the user last left it.

@@ -7,7 +7,6 @@ import {
   setIsosurfaceTriangleSortingEnabled,
   applyMaterialSettingsToStoredIsosurfaces,
 } from '../model/index.js';
-import { createColorPicker } from './ColorPickerModule.js';
 
 export let useLogSliderScale = false; // Global variable to track log scale state for iso slider
 
@@ -225,11 +224,11 @@ export function addFieldPanel(target = "cvPanelBody-field") {
     </div>
     <div id="fieldColorContent" class="collapsible-content" aria-hidden="true">
     <div style="display:flex; flex-direction:column; gap:8px;">
-        <label>Positive Isosurface Color:</label>
-        <div id="FieldPosColorPicker"></div>
+        <label for="FieldPosColorPicker">Positive Isosurface Color:</label>
+        <input type="color" id="FieldPosColorPicker" value="${materialSettings.positiveColor}">
 
-        <label>Negative Isosurface Color:</label>
-        <div id="FieldNegColorPicker"></div>
+        <label for="FieldNegColorPicker">Negative Isosurface Color:</label>
+        <input type="color" id="FieldNegColorPicker" value="${materialSettings.negativeColor}">
 
         <label for="FieldOpacitySlider">Isosurface Opacity:</label>
         <div style="display:flex; align-items:center; gap:8px;">
@@ -317,18 +316,10 @@ function setupFieldControlEvents(fields, container) {
   const fieldColorToggle = document.getElementById('fieldColorToggle');
   const fieldColorToggleIcon = document.getElementById('fieldColorToggleIcon');
   const fieldColorContent = document.getElementById('fieldColorContent');
-  const posColorPickerContainer = document.getElementById('FieldPosColorPicker');
-  const negColorPickerContainer = document.getElementById('FieldNegColorPicker');
+  const posColorPicker = document.getElementById('FieldPosColorPicker');
+  const negColorPicker = document.getElementById('FieldNegColorPicker');
   const opacitySlider = document.getElementById('FieldOpacitySlider');
   const opacityValue = document.getElementById('FieldOpacityValue');
-
-  // Custom color picker (matches the rest of the app) instead of the
-  // browser's native <input type="color"> swatch.
-  const currentMaterialSettings = getIsosurfaceMaterialSettings();
-  const posPicker = createColorPicker(currentMaterialSettings.positiveColor, () => applyFieldMaterialControls());
-  const negPicker = createColorPicker(currentMaterialSettings.negativeColor, () => applyFieldMaterialControls());
-  posColorPickerContainer?.appendChild(posPicker.element);
-  negColorPickerContainer?.appendChild(negPicker.element);
 
   function setColorPanelOpen(open) {
     if (!fieldColorContent || !fieldColorToggle || !fieldColorToggleIcon) return;
@@ -375,8 +366,8 @@ function setupFieldControlEvents(fields, container) {
 
   function applyFieldMaterialControls() {
     const settings = {
-      positiveColor: posPicker.getHex(),
-      negativeColor: negPicker.getHex(),
+      positiveColor: posColorPicker?.value,
+      negativeColor: negColorPicker?.value,
       opacity: parseFloat(opacitySlider?.value),
     };
 
@@ -409,6 +400,14 @@ function setupFieldControlEvents(fields, container) {
     });
   }
 
+  if (posColorPicker) {
+    posColorPicker.addEventListener('input', applyFieldMaterialControls);
+    posColorPicker.addEventListener('change', applyFieldMaterialControls);
+  }
+  if (negColorPicker) {
+    negColorPicker.addEventListener('input', applyFieldMaterialControls);
+    negColorPicker.addEventListener('change', applyFieldMaterialControls);
+  }
   if (opacitySlider) {
     opacitySlider.addEventListener('input', applyFieldMaterialControls);
     opacitySlider.addEventListener('change', applyFieldMaterialControls);

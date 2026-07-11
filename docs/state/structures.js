@@ -58,26 +58,3 @@ export function getContainers() {
 export function getContainerCount() {
   return structureShip.container.length;
 }
-
-// --- Active-structure change notifications ----------------------------------
-// A tiny pub/sub so features (e.g. addons) can react when the active structure
-// switches — a new frame/row is selected, or a structure is loaded. The file
-// browser (the one place that mutates the active structure) calls
-// notifyActiveStructureChange() from its selection path; subscribers get the
-// new active structure. Subscribers must unsubscribe (the returned fn) when
-// they go away.
-
-const activeChangeSubs = new Set();
-
-export function onActiveStructureChange(cb) {
-  if (typeof cb !== 'function') return () => {};
-  activeChangeSubs.add(cb);
-  return () => activeChangeSubs.delete(cb);
-}
-
-export function notifyActiveStructureChange() {
-  const structure = getActiveStructure();
-  for (const cb of [...activeChangeSubs]) {
-    try { cb(structure); } catch (err) { console.error('active-structure-change subscriber failed', err); }
-  }
-}

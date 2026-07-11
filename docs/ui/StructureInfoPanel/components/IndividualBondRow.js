@@ -5,7 +5,7 @@ import { updateSingleBondColor, updateSingleBondOpacity, updateSingleBondDiamete
 import { createMaterialEditor } from './MaterialEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { getElementAtomIndices, clampOpacity, clampRadiusScale } from './utils.js';
-import { selectBondFromRow, suppressSelectionHighlightFor3D, restoreSelectionHighlight } from '../../SelectAndHighlightModule.js';
+import { selectBondFromRow } from '../../SelectAndHighlightModule.js';
 
 // Helper: Ensure color is always a valid CSS hex string
 function safeColor(color) {
@@ -209,7 +209,6 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
   applyBtn.onclick = (e) => {
     e.stopPropagation();
     editor.style.display = 'none';
-    restoreSelectionHighlight();
   };
 
   const resetBtn = document.createElement('button');
@@ -253,12 +252,7 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
 
   colorBtn.onclick = (e) => {
     e.stopPropagation();
-    const shouldOpen = editor.style.display === 'none';
-    editor.style.display = shouldOpen ? 'block' : 'none';
-    // The 3D selection glow overwrites the bond's real color — hide it while
-    // the editor is open so a live color change is actually visible.
-    if (shouldOpen) suppressSelectionHighlightFor3D();
-    else restoreSelectionHighlight();
+    editor.style.display = (editor.style.display === 'none') ? 'block' : 'none';
   };
 
   // --- Selection / hover ---

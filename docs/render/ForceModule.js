@@ -4,11 +4,6 @@ import { app, fileBrowser, groups, general } from '../state/store.js';
 const SHAFT_SEGS = 12;
 const TIP_SEGS = 12;
 const UP = new THREE.Vector3(0, 1, 0);
-// Default arrow colour. Previously each arrow pushed `color: null`, then the
-// instanceColor writer read `color.r` → TypeError whenever any arrow rendered
-// (i.e. every time the Forces overlay was on with non-zero forces). There is no
-// user-facing force-colour control / store field, so use a fixed warm red.
-const DEFAULT_FORCE_COLOR = new THREE.Color('#cc4444');
 
 function computeArrowLength(magnitude, forceFactor) {
   if (magnitude < 1e-5) return 0;
@@ -65,7 +60,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0) {
       origin: new THREE.Vector3(...wrapped.cart[i]),
       dir: new THREE.Vector3(...v).normalize(),
       totalLen,
-      color: DEFAULT_FORCE_COLOR,
+      color: null,
     });
   }
 

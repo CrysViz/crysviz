@@ -74,10 +74,26 @@
   --border-color: rgba(6, 90, 50, 0.5);
 }
 
+.theme-ase {
+  --bg-color: rgba(81, 0, 0, 0.8);
+  --highlight-color: rgba(159, 52, 52, 1.0);
+  --accent-color: rgba(159, 52, 52, 0.9);
+  --hover-color: rgba(159, 52, 52, 0.3);
+  --border-color: rgba(255, 118, 118, 0.3);
+}
+
 .theme-symmetry {
   --bg-color: rgba(15, 3, 56, 0.8);
   --highlight-color: rgba(18, 141, 204, 1.0);
   --accent-color: rgba(18, 141, 204, 0.8);
   --hover-color: rgba(18, 141, 204, 0.2);
   --border-color: rgba(17, 71, 129, 0.5);
+}
+
+.theme-locked-ase {
+  --bg-color: rgba(66, 24, 81, 0.84);
+  --highlight-color: rgba(187, 98, 214, 1.0);
+  --accent-color: rgba(167, 92, 214, 0.9);
+  --hover-color: rgba(187, 98, 214, 0.24);
+  --border-color: rgba(183, 117, 221, 0.5);
 }

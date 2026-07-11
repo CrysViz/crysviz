@@ -94,50 +94,57 @@ export function showWarning(message) {
   });
 }
 
+function setUploadVisible(visible) {
+  const el = document.getElementById('uploadSection');
+  if (el) el.style.display = visible ? '' : 'none';
+}
+
 export function addBackendModeSwitch() {
   BackendModeSwitch.addEventListener("click", (e) => {
     const btn = e.target.closest("button");
     if (!btn || !btn.dataset.mode) return;
 
     const mode = btn.dataset.mode;
-    const alreadyActive = btn.classList.contains(mode);
 
     // Reset UI
     BackendModeSwitch.querySelectorAll("button").forEach(b => {
       b.classList.remove("active", "relax", "md");
     });
 
-    if (alreadyActive) {
-      general.backendState = "none";
-      refreshBackendTheme();
-      removeAtomisticPanel();
-      removeMDStreamPanel();
-      return;
-    }
-
     if (mode === "relax") {
             btn.classList.add("relax");
             general.backendState = "relax";
             general.atomisticPotential = general.atomisticPotential || "nep";
             refreshBackendTheme();
+            setUploadVisible(false);
             addRelaxPanel();
     } else if (mode === "md") {
             btn.classList.add("md");
             general.backendState = "md";
             general.atomisticPotential = general.atomisticPotential || "nep";
             refreshBackendTheme();
+            setUploadVisible(false);
             removeMDStreamPanel();
             addMDPanel();
             // Open the monitor right away (a starting run re-creates it with
             // a fresh plot; AtomisticPanels holds the update handle).
             createMDMonitorPanel();
+    } else if (mode === "live") {
+            btn.classList.add("md");
+            general.backendState = "live";
+            refreshBackendTheme();
+            setUploadVisible(false);
+            removeAtomisticPanel();
+            addMDStreamPanel();
+    } else {
+      btn.classList.add("active");
+      general.backendState = mode.toLowerCase();
+      refreshBackendTheme();
+      setUploadVisible(true);
+      removeAtomisticPanel();
+      removeMDStreamPanel();
     }
   });
-
-  // Default: open the panel in Relax mode (reuse the click handler so there is
-  // a single source of truth for what entering relax does).
-  const relaxBtn = BackendModeSwitch.querySelector('button[data-mode="relax"]');
-  if (relaxBtn) relaxBtn.click();
 }
 
 
@@ -158,6 +165,8 @@ export function resetSwitch(defaultMode = "None") {
 
   if (defaultBtn) {
     defaultBtn.classList.add("active");
+  } else {
+    console.warn(`No button with data-mode="${defaultMode}" found in`, BackendModeSwitch);
   }
 }
 

@@ -104,7 +104,6 @@ export function createSupercell(nx = 1, ny = 1, nz = 1) {
   updateVisualization({
     reRenderAtoms: true,
     reRenderBonds: true,
-    reRenderLattice: true,
-    reRenderComposition: true
+    reRenderLattice: true
   });
 }

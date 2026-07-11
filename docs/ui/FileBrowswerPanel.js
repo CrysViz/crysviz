@@ -10,8 +10,7 @@ import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import {Structure} from '../model/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
-import { recenterCamera } from './WindowAndSceneControls.js';
-import { notifyActiveStructureChange } from '../state/structures.js';
+import { resetView } from './WindowAndSceneControls.js';
 
 export function showError(message) {
   errorPanel.textContent = message;
@@ -81,7 +80,7 @@ export function createRow(obj) {
     fileBrowser.selectedRowIndex = rowIndex;
     updateStructureFromRowAndStep(rowIndex);
 
-    recenterCamera(); // keep the user's rotation/zoom; only re-center on the new structure
+    resetView(); // do we want to reset it to a specific view per structure selection? Save view state?
     refreshActivePanels();
   });
 
@@ -122,11 +121,7 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     row.insertAdjacentElement("afterend", newRow);
     structureShip.len += 1;
     structureShip.container.splice(rowIndex + 1, 0, newObj);
-
-    // Select the row just created (inserted right after the source row, not
-    // necessarily last in the table) — selectLastAddedRow() would pick
-    // whatever row is currently last instead.
-    selectRow(newRow);
+    selectLastAddedRow();
     return;
   }
 
@@ -293,7 +288,6 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     const option = select.value;
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     const container = structureShip.container[rowIndex];
-    let newRow;
 
     if (option === "all") {
       // Copy all steps: create a new container with new Structure objects
@@ -314,7 +308,7 @@ row.querySelector(".copy").addEventListener("click", (e) => {
         traj: newStructures.length,
       };
 
-      newRow = createRow(newObj);
+      const newRow = createRow(newObj);
       row.insertAdjacentElement("afterend", newRow);
       structureShip.len += 1;
       structureShip.container.splice(rowIndex + 1, 0, newObj);
@@ -340,7 +334,7 @@ row.querySelector(".copy").addEventListener("click", (e) => {
         traj: 1,
       };
 
-      newRow = createRow(newObj);
+      const newRow = createRow(newObj);
       row.insertAdjacentElement("afterend", newRow);
       structureShip.len += 1;
       structureShip.container.splice(rowIndex + 1, 0, newObj);
@@ -368,17 +362,14 @@ row.querySelector(".copy").addEventListener("click", (e) => {
         traj: newStructures.length,
       };
 
-      newRow = createRow(newObj);
+      const newRow = createRow(newObj);
       row.insertAdjacentElement("afterend", newRow);
       structureShip.len += 1;
       structureShip.container.splice(rowIndex + 1, 0, newObj);
     }
 
     closePopup();
-    // Select the row just created (inserted right after the source row, not
-    // necessarily last in the table) — selectLastAddedRow() would pick
-    // whatever row is currently last instead.
-    selectRow(newRow);
+    selectLastAddedRow();
   };
 
   // Handle cancellation
@@ -402,20 +393,6 @@ row.querySelector(".copy").addEventListener("click", (e) => {
 
   row.dataset.obj = JSON.stringify(obj);
   return row;
-}
-
-/** Select a specific row element (its current position in the table decides
- *  its index) — used after inserting a row that isn't necessarily last,
- *  e.g. a copy inserted right after its source row. */
-function selectRow(row) {
-  if (!row) return;
-  const rowIndex = Array.from(row.parentElement.children).indexOf(row);
-  if (fileBrowser.selectedRow) fileBrowser.selectedRow.classList.remove("selected");
-  row.classList.add("selected");
-  fileBrowser.selectedRow = row;
-  row.dataset.index = String(rowIndex);
-  fileBrowser.selectedRowIndex = rowIndex;
-  updateStructureFromRowAndStep(rowIndex);
 }
 
 export function selectLastAddedRow() {
@@ -620,33 +597,4 @@ function updateStructureFromRowAndStep(rowIndex) {
     updateLatticeComparisonPanel(L1, L2);
   }
   updateVisualization({reRenderAtoms: true, reRenderBonds: true, reRenderField: true, reRenderComposition: true});
-  // Single choke point for every selection path (row click, step change,
-  // programmatic selectStructure, load) — let subscribers (addons) react.
-  notifyActiveStructureChange();
-}
-
-/**
- * Programmatically select a loaded structure — the same as a user clicking its
- * file-browser row (and setting its step). `rowIndex` is the container index
- * (see getContainers()/getStructures()); `step` is the 0-based frame within it.
- * Updates the browser highlight + 3D view and fires the active-structure
- * change. Returns false if the row/step is out of range. Intended for addons
- * that map their own UI (e.g. an EOS E–V point) to a loaded structure.
- */
-export function selectStructure(rowIndex, step = 0) {
-  const tbody = document.querySelector('#objectTable tbody');
-  const rows = tbody ? tbody.querySelectorAll('tr') : [];
-  const container = structureShip.container[rowIndex];
-  if (rowIndex < 0 || rowIndex >= rows.length || !container) return false;
-  const clampedStep = Math.max(0, Math.min(step, container.structures.length - 1));
-  const row = rows[rowIndex];
-  const stepInput = row.querySelector('input[type="number"]');
-  if (stepInput) stepInput.value = String(clampedStep + 1); // step is 1-based in the UI
-  if (fileBrowser.selectedRow) fileBrowser.selectedRow.classList.remove('selected');
-  row.classList.add('selected');
-  row.dataset.index = String(rowIndex);
-  fileBrowser.selectedRow = row;
-  fileBrowser.selectedRowIndex = rowIndex;
-  updateStructureFromRowAndStep(rowIndex);
-  return true;
 }

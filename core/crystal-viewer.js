@@ -1,0 +1,477 @@
+// .........................................................................................................
+// store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
+//
+//  This is currently necessary as classes are not yet fully adapter. structureData, originalStructureData,spinsData are global variables for now and should be replaced
+//  with the proper classes. However, this already solved some problems with camera and controls getting redefined as a side effect of some functions of the viewing angle
+//  control. The rest of the singletons should be preserved.
+// .........................................................................................................
+
+import { measurements,app,fileBrowser, general} from '../state/store.js';
+import {defaultPOSCAR5} from '../defaults/structure_defaults.js'
+
+// import from the old file structure that need to be combined and ported to the new structure
+import { setupStructureInput } from '../ui/StructureInputModule.js';
+// Side-effect import: AboutPanel wires the "about" trigger at module load.
+// (Its named exports are unused, so keep it as a bare import.)
+import '../ui/AboutPanel.js';
+
+// ........................................................................................................
+// Import Modules
+//
+// These modules should contain all the functions related to specific functionalities
+//
+// .........................................................................................................
+import { createBackgroundControl } from '../ui/BackgroundPicker.js';
+import { setupThemeSystem } from '../ui/ThemeManager.js';
+import { setupMobileMenu } from '../ui/MobileMenu.js';
+import { setupControlsWiring, sizeSliderToValue, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE } from '../ui/ControlsWiring.js';
+import { setupSceneInteraction } from '../ui/SceneInteraction.js';
+import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
+import { pauseRendering, resumeRendering,animation_update,requestRender} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
+import {createShareButton,loadSharedStructure,loadCrysvizFile} from '../ui/ShareModule.js';
+import {loadFromFilePath} from '../io/index.js';
+import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
+import {updateSecondBonds,rebuildSecondBonds} from '../render/index.js'
+import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
+import { updatePolyhedra, notifyColorsChanged } from '../render/index.js'
+import {rebuildAtoms,updateAtoms} from '../render/index.js';
+import {rebuildSecondAtoms,updateSecondAtoms} from '../render/index.js';
+
+
+import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render/MeasurementModule.js' // not all imports might be needed in this file
+
+
+import {addAtomVacuumPanel} from '../ui/addToStructureModule/AddVacuumModule.js'
+import {initPanelSystem, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
+import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
+import {initFontScale} from '../ui/FontScaleModule.js'
+
+import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../render/index.js';
+
+// .........................................................................................................
+// Import Panels
+//
+// Panel files should contain all the functions related to a specific panels
+//
+// // .........................................................................................................
+import {setupScene, setupCameraButtons,resizeRenderer, switchCameraType, recenterCamera
+} from '../ui/WindowAndSceneControls.js'
+import {renderComposition} from '../ui/StructureInfoPanel/General.js';
+import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
+
+import {addSavePanel} from '../ui/SavePanel.js'
+import {initImageExportPanel} from '../ui/ImageExportPanel.js'
+
+// NOTE: share-related import utils still need to move into the "share" module.
+
+
+
+// file browser test
+//
+//
+
+
+// Class Structure
+//
+
+// New imports (which go here, because they need initializations that happen above until things are refactored)
+import { parse_any } from '../io/index.js';
+import { initializeUIOnLoad } from '../ui/StructureInputModule.js';
+import { fieldBrowser } from '../ui/FieldPanel.js';
+import { resetMathBackend } from '../math/index.js';
+
+// ........................................................................................................
+//
+// Some thing need to be globally defiend here. There should only be status variables left.
+// Nothing should be defined here. Use store, classes, panels or modules for new definitions!
+// ........................................................................................................
+
+//console.log = () => {};
+//console.warn = () => {};
+
+// Only the very first structure shown gets a fresh fit-to-structure camera
+// (switchCameraType); every later load/switch re-centers on the new
+// structure but keeps the user's chosen rotation and zoom (recenterCamera).
+let cameraFitted = false;
+
+const status = document.getElementById('status');
+const setStatus = (s) => {
+  if (status) status.textContent = s;
+};
+
+// ........................................................................................................
+//
+//These will not be kept as sson as classes and therefore trajectories are workgin
+// ........................................................................................................
+
+
+
+function updateOther() {
+  clearMeasureGraphics();
+
+  measurements.measureLines.forEach(line => app.scene.add(line));
+  measurements.measureLabels.forEach(label => app.scene.add(label));
+
+  recomputeLatticeDirs();
+  console.time("other:updateAllMeasurements");
+  updateAllMeasurements();
+  console.timeEnd("other:updateAllMeasurements");
+  console.time("other:addAtomVacuumPanel");
+  addAtomVacuumPanel();
+  console.timeEnd("other:addAtomVacuumPanel");
+}
+
+export function updateVisualization(options = {}) {
+  const {
+    // Main Structure
+    atomsUpdate = true,
+    reRenderAtoms = false,
+    bondsUpdate = true,
+    reRenderBonds = false,
+    reRenderLattice = true,
+
+    // Comparison Structure
+    SecondAtomsUpdate = false,
+    SecondReRenderAtoms = false,
+    SecondBondsUpdate = false,
+    SecondReRenderBonds = false,
+
+    // Panels
+    reRenderOther = true,
+    reRenderComposition = false,
+
+    // Polyhedra are expensive (per-atom hull recompute). Default on to preserve
+    // existing behavior for every panel/playback caller; the hot MD/relax paths
+    // pass false so a fallback frame doesn't pay for a polyhedra rebuild every step.
+    // Gated separately from reRenderOther because several reRenderOther:false
+    // callers (lattice transform, cut planes, bond-length edits) DO move geometry
+    // and rely on polyhedra refreshing.
+    reRenderPolyhedra = true,
+
+    sOpacity = general.compOpacity,
+    mOpacity = general.mainOpacity,
+    reRenderField = false
+  } = options;
+
+
+  if (!fileBrowser.selectedStructure) {
+    return;
+  }
+
+  // Main Structure
+  if (reRenderAtoms) {
+    console.warn("Calling rebuildAtoms")
+    rebuildAtoms(mOpacity);
+  }
+  if (!reRenderAtoms && atomsUpdate) {
+    console.warn("Calling updateAtoms with opacity")
+    updateAtoms(mOpacity);
+  }
+
+  if (reRenderBonds) {
+    if (general.showBonds) {
+      console.warn("Calling rebuildBonds")
+      rebuildBonds(mOpacity)
+    } else {
+      disposeBondsMesh(true);
+    }
+  }
+
+  if (!reRenderBonds && bondsUpdate && general.showBonds) {
+    console.warn("Calling updateBonds")
+    updateBonds(mOpacity)
+  }
+
+  // Comparison Structure
+  if (SecondReRenderAtoms) {
+    console.warn("Calling rebuildSecondAtoms")
+    rebuildSecondAtoms(fileBrowser.comparisonStructure, sOpacity);
+  }
+  if (!SecondReRenderAtoms && SecondAtomsUpdate) {
+    console.warn("Calling updateSecondAtoms")
+    updateSecondAtoms(fileBrowser.comparisonStructure, sOpacity);
+  }
+
+  if (SecondReRenderBonds) {
+    console.warn("Calling rebuildSecondBonds")
+    rebuildSecondBonds(fileBrowser.comparisonStructure,sOpacity)
+  }
+
+  if (!SecondReRenderBonds && SecondBondsUpdate) {
+    console.warn("Calling updateSecondBonds")
+    updateSecondBonds(fileBrowser.comparisonStructure,sOpacity)
+  }
+
+  // TODO: comparison-structure lattice re-render is not implemented
+  // (updateSecondLattice does not exist). Left disabled rather than throwing.
+  // if (SecondReRenderLattice) updateSecondLattice(general.secondLatticeColor);
+
+  // Panels
+  if (reRenderComposition != false) {
+    renderComposition(reRenderComposition);
+  }
+  console.time("uv:updateLattice");
+  if (reRenderLattice) updateLattice(general.currentLatticeColor);
+  console.timeEnd("uv:updateLattice");
+  console.time("uv:updateOther");
+  if (reRenderOther) updateOther();
+  // Polyhedra depend on atoms/bonds/lattice, so refresh them whenever the scene
+  // re-renders and the feature is on (persists across structure & frame changes).
+  // Also run when "Complete Polyhedra" is on (faces hidden) so the completing atoms are
+  // computed and shown.
+  if (reRenderPolyhedra && (general.showPolyhedra || general.completePolyhedra)) updatePolyhedra();
+  console.timeEnd("uv:updateOther");
+  // Broad safety net: every colour edit path (individual atom/bond/polyhedron,
+  // element/category bulk edits, force/length colour-mode switches) ends up
+  // calling updateVisualization() to make the change visible, even the ones
+  // that don't separately call updatePolyhedraColors() — so anything that
+  // needs to stay in sync with live colour edits (e.g. the Polyhedron
+  // Inspector's mini render) can listen for this instead of tracking down
+  // every individual call site.
+  notifyColorsChanged();
+  if (reRenderField) {
+    if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
+      updateField();
+    }
+    else {
+      clearField();
+    }
+  }
+
+  if (measurements.measureLines.length > 0) {
+    updateAllMeasurements();
+  }
+
+  // Everything above mutated the scene; schedule a frame (rendering is on-demand).
+  requestRender();
+}
+
+
+export async function loadStructure(content, fileName = '', isDefault = false) {
+  try {
+
+    const lower = (fileName || '').toLowerCase();
+    const contentString = typeof content === 'string' ? content : '';
+    
+    // Field files and .crysviz state files are handled directly; every other
+    // format is dispatched by parse_any (which owns the structure-format
+    // sniffing).
+    const treatAsCrysviz = lower.endsWith('.crysviz');
+
+    const treatAsCube = lower.endsWith('.cube') ||
+                       lower.includes('.cube');
+
+    const treatAsCHGCAR = lower.includes('chgcar') ||
+                         lower.endsWith('.chgcar');
+
+    if (treatAsCrysviz) {
+      // A saved CrysViz session: structure + full visual state (ShareModule).
+      // Loads its own structure via parsePOSCAR -> initializeUIOnLoad.
+      loadCrysvizFile(contentString, fileName);
+    }
+    else if (treatAsCube) {
+      await parseCubeFile(contentString, fileName);
+    }
+    else if (treatAsCHGCAR) {
+      await parseCHGCARFile(contentString, fileName);
+    }
+
+    // Everything else is a structure file and goes through the single pure
+    // pipeline. parse_any picks the format (POSCAR is its fallback) and returns
+    // a StructureContainer; registration happens once via initializeUIOnLoad.
+    else {
+        // Pass the raw `content` (not contentString): most formats are text, but
+        // binary formats like ASE .traj arrive as an ArrayBuffer and parse_any
+        // dispatches them by extension.
+        const structureContainer = await parse_any(content, fileName);
+        if (structureContainer && structureContainer.structures) initializeUIOnLoad(structureContainer);
+    }
+
+   revealFeaturePanels();
+
+    createShareButton();
+    // NOTE: do not call updateVisualization() here. Every load path above funnels
+    // through initializeUIOnLoad() -> selectLastAddedRow() -> updateStructureFromRowAndStep(),
+    // which already performs a full atoms+bonds+field+other re-render. Re-rendering here
+    // doubled the (expensive, O(n^2)) bond build on every load.
+    console.warn(fileBrowser.selectedStructure)
+    // The first structure ever shown gets a fresh fit-to-structure camera;
+    // later loads/switches keep the user's rotation and zoom, only
+    // re-centering on the new structure (see `cameraFitted`).
+    if (!cameraFitted) {
+      switchCameraType();
+      cameraFitted = true;
+    } else {
+      recenterCamera();
+    }
+    clearMeasure();
+    resizeRenderer(app.orthographicFrustumSize);
+
+
+
+  } catch (error) {
+    setStatus(`Error: ${error.message}`);
+    console.error(error);
+  }
+}
+
+
+async function loadDefaultStructure() {
+  // Don't load default structure if we've already loaded a shared structure
+  if (general.sharedStructureLoaded) {
+    return;
+  }
+
+  setStatus('Loading default NaCl structure...');
+  loadStructure(defaultPOSCAR5, 'Si', true);
+      // Create a new Structure instance
+
+}
+
+function init() {
+  return initApp();
+}
+
+async function initApp() {
+  await initializeMathBackend();
+  setupScene();
+
+  // Click Atom
+  setupSceneInteraction();
+
+
+
+
+  setupCameraButtons();
+
+ setupStructureInput({
+   onLoadStructure: async (content, name) => {
+     setStatus('Loading structure...');
+     try {
+       // Wait for the structure to load
+       await loadStructure(content, name);
+       setStatus('Structure loaded!');
+     } catch (error) {
+       console.error('Error loading structure:', error);
+       setStatus('Error loading structure.');
+     }
+   },
+   setStatus,
+ });
+
+
+  setupControlsWiring();
+  setupMeasurementToolbar();
+
+  // Initialize atomSize from the UI slider so the initial view respects the
+  // slider value. The sliders hold [0,1] positions with a quadratic mapping
+  // into the value range (ui/ControlsWiring.js).
+  (function initAtomSizeFromSlider(){
+    const slider = document.getElementById('atomSize');
+    const span = document.getElementById('atomSizeValue');
+    if (slider) {
+      const pos = parseFloat(slider.value);
+      if (!isNaN(pos)) {
+        general.atomSize = sizeSliderToValue(pos, ATOM_SIZE_RANGE);
+        if (span) span.textContent = general.atomSize.toFixed(2);
+      }
+    }
+  })();
+
+  // Initialize bond width from slider
+  (function initBondWidthFromSlider(){
+    const slider = document.getElementById('bondWidth');
+    const span = document.getElementById('bondWidthValue');
+    if (slider) {
+      const pos = parseFloat(slider.value);
+      if (!isNaN(pos)) {
+        general.bondRadius = sizeSliderToValue(pos, BOND_RADIUS_RANGE);
+        if (span) span.textContent = general.bondRadius.toFixed(2);
+      }
+    }
+  })();
+
+
+  app.camera.position.set(20, 20, 20);
+  app.controls.update();
+
+  // Load default structure after everything is initialized
+    loadSharedStructure();
+
+  if (!general.sharedStructureLoaded) {
+    console.log("loadFromFilePath...")
+    loadFromFilePath()
+    console.log("loaded:",fileBrowser.selectedStructure)
+  }
+  if (!general.sharedStructureLoaded) {
+    loadDefaultStructure();
+  }
+
+
+  function handleVisibilityChange() {
+  if (document.hidden) pauseRendering();
+    else resumeRendering();
+  }
+
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('blur', pauseRendering);
+  window.addEventListener('focus', resumeRendering);
+
+  animation_update();
+}
+
+async function initializeMathBackend() {
+  if (!general.useWasmMath) {
+    resetMathBackend();
+    return;
+  }
+
+  try {
+    const { initMathWasmBackend, installMathWasmBackend } = await import('../math/backend-wasm.js');
+    const backend = await initMathWasmBackend(new URL('../compiled/math_backend.wasm', import.meta.url));
+    installMathWasmBackend(backend);
+  } catch (error) {
+    resetMathBackend();
+    general.useWasmMath = false;
+    console.warn('[math] Failed to initialize WASM backend, falling back to JavaScript backend', error);
+  }
+}
+  window.addEventListener('resize', () => resizeRenderer(app.orthographicFrustumSize));
+  window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
+  window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
+
+// Panel toggle functionality for all screen sizes
+function initUIPanels() {
+  initFontScale();
+  createBackgroundControl();
+  setupThemeSystem();
+  initPanelSystem();
+  registerDefaultPanels();
+  // Apply availability (grey-out) once now that panels exist. On first load the
+  // default structure is loaded before panels are registered, so its own
+  // revealFeaturePanels() refresh ran against no panels; this makes the initial
+  // greyed/available state match what a file-selector click would produce.
+  refreshActivePanels();
+  addBackendModeSwitch();
+  addSavePanel();
+  initImageExportPanel();
+  addAtomVacuumPanel();
+
+  // Add viewport meta tag if not present for proper mobile scaling
+  if (!document.querySelector('meta[name="viewport"]')) {
+    const viewport = document.createElement('meta');
+    viewport.name = 'viewport';
+    viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=no';
+    document.head.appendChild(viewport);
+  }
+}
+
+init()
+  .then(() => {
+    setupMobileMenu();
+    initUIPanels();
+  })
+  .catch((error) => {
+    setStatus(`Error: ${error.message}`);
+    console.error(error);
+  });

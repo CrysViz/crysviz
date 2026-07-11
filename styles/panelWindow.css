@@ -1,0 +1,316 @@
+/* Unified panel/window component (ui/panels/PanelWindow.js).
+   Docked panels stack inside #dock in the side panel; floating panels are
+   fixed windows over the canvas. Built on the design tokens from
+   themes/default/theme.css. */
+
+#dock {
+  position: relative; /* absolute reference for drag-to-reorder */
+}
+
+.cv-panel {
+  box-sizing: border-box;
+  /* Overall UI font scale (Settings ▸ Overall font scale). Window body text
+     inherits this base; the explicit-px chrome below multiplies by the same
+     var so title bars/headlines/labels scale together. Default 1 = 16px, i.e.
+     no visual change until the user moves the slider. */
+  font-size: calc(1rem * var(--cv-font-scale, 1));
+}
+
+/* Panel buttons don't inherit font-size (form-control UA reset) and are set at
+   assorted px sizes across windows — pin them to one scalable size so the font
+   scale reaches the Features/Visual/… button texts uniformly. */
+.cv-panel-body button {
+  font-size: calc(13px * var(--cv-font-scale, 1));
+}
+
+/* Feature panels are hidden until a structure loads; the attribute must win
+   over .cv-floating's display:flex. */
+.cv-panel[hidden] {
+  display: none !important;
+}
+
+/* The .cv-panel container itself is chrome-less: collapsed, a panel is just
+   its title bar; expanded, the body hangs below the bar as the window
+   surface. */
+
+/* ---- docked: title bars stack with a small gap ---- */
+.cv-panel.cv-docked {
+  margin: 0 0 8px 0;
+}
+
+/* ---- floating ---- */
+.cv-panel.cv-floating {
+  position: fixed;
+  z-index: 1200;
+  min-width: 220px;
+  max-width: min(600px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  display: flex;
+  flex-direction: column;
+  color: var(--panel-fg);
+}
+
+.cv-panel.cv-floating > .cv-panel-body {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.cv-panel.cv-floating > .cv-panel-titlebar,
+.cv-panel.cv-floating > .cv-panel-body {
+  box-shadow: 0 0 4px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* ---- title bar ---- */
+.cv-panel-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  border-radius: 8px;
+  background: var(--bg-color);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  color: var(--panel-fg);
+}
+
+/* Expanded: the bar sits flush on the body surface below it. */
+.cv-panel:not(.cv-collapsed) > .cv-panel-titlebar {
+  border-radius: 8px 8px 0 0;
+}
+
+/* ---- hidden title bar: the ― button shrinks the bar to a short, centered
+   accent strip (a "handle"); double-clicking it restores the bar. ---- */
+.cv-panel.cv-bar-collapsed > .cv-panel-titlebar {
+  /* Sized in physical units so the handle stays clickable on hi-DPI displays,
+     with a 3px floor for low-DPI. */
+  height: max(3px, 0.6mm);
+  min-height: 3px;
+  width: 64px;
+  max-width: 50%;
+  margin: 0 auto 3px auto;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: var(--highlight-color); /* green in the standard mode */
+  backdrop-filter: none;
+  overflow: hidden;
+}
+
+.cv-panel.cv-bar-collapsed > .cv-panel-titlebar > * {
+  display: none;
+}
+
+/* With only the handle above it, the body is a free-standing box again:
+   round all corners and restore its top edge. */
+.cv-panel.cv-bar-collapsed > .cv-panel-body {
+  border-radius: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cv-panel-titlebar:active,
+.cv-panel.cv-dragging .cv-panel-titlebar,
+.cv-panel.cv-drag-moving .cv-panel-titlebar {
+  cursor: grabbing;
+}
+
+.cv-panel-grip {
+  opacity: 0.45;
+  font-size: calc(13px * var(--cv-font-scale, 1));
+  line-height: 1;
+}
+
+.cv-panel-fold,
+.cv-panel-home,
+.cv-panel-barhide,
+.cv-panel-dock,
+.cv-panel-close {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  color: var(--panel-fg);
+  font-size: calc(12px * var(--cv-font-scale, 1));
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.cv-panel-fold:hover,
+.cv-panel-home:hover,
+.cv-panel-barhide:hover,
+.cv-panel-dock:hover,
+.cv-panel-close:hover {
+  background: var(--hover-color);
+}
+
+.cv-panel-fold:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cv-panel-title {
+  flex: 1;
+  font-size: calc(13px * var(--cv-font-scale, 1));
+  font-weight: 700;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.85);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-panel-dock,
+.cv-panel-close {
+  font-size: calc(14px * var(--cv-font-scale, 1));
+}
+
+/* The generic .info-button rule sizes it for a standalone corner badge
+   (18px); inside a titlebar it needs to sit flush with the other ~13px
+   icon buttons instead of towering over them. */
+.cv-panel-titlebar .cv-panel-info {
+  width: calc(13px * var(--cv-font-scale, 1));
+  height: calc(13px * var(--cv-font-scale, 1));
+  font-size: calc(8px * var(--cv-font-scale, 1));
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.6);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.cv-panel-titlebar .cv-panel-info:hover {
+  box-shadow: none;
+  background: var(--hover-color);
+}
+
+/* ---- body / collapse ---- */
+/* The body is the window surface: it carries the box the old .control-group /
+   floating popups had, minus the top edge where the title bar sits. */
+.cv-panel-body {
+  padding: 10px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  backdrop-filter: blur(10px);
+}
+
+.cv-panel.cv-docked > .cv-panel-body {
+  background: var(--group-bg);
+}
+
+.cv-panel.cv-floating > .cv-panel-body {
+  background: var(--popup-bg);
+}
+
+.cv-panel.cv-collapsed > .cv-panel-body {
+  display: none;
+}
+
+/* ---- states ---- */
+.cv-panel.cv-unavailable > .cv-panel-titlebar {
+  opacity: 0.45;
+}
+
+.cv-dock-placeholder {
+  box-sizing: border-box;
+  margin: 0 0 8px 0;
+  border: 1px dashed var(--accent-color);
+  border-radius: 8px;
+  background: var(--hover-color);
+}
+
+.cv-panel.cv-dragging {
+  z-index: 10;
+  width: 100%;
+  opacity: 0.95;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+/* Adopted wrappers keep their ids/classes for the JS wiring, but the panel
+   body already provides the grey box — strip theirs to avoid nesting. */
+.cv-panel-body > .backend-control-group {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  backdrop-filter: none;
+}
+
+/* ---- compact round-icon mode ----
+   Ordered AFTER the bar-hide-strip rules above so it wins the equal-specificity
+   tie when both .cv-bar-collapsed and .cv-compact are on the same element (they
+   co-occur: barCollapsed is not cleared when entering compact mode). */
+.cv-panel.cv-compact {
+  /* .cv-floating's min-width:220px would otherwise leave the round icon flush-
+     left inside a much wider invisible box instead of at its anchored edge. */
+  min-width: 0;
+  width: max-content;
+}
+
+.cv-panel.cv-compact > .cv-panel-titlebar {
+  width: 54px;
+  height: 54px;
+  min-height: 54px;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.85);
+  backdrop-filter: none;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+.cv-panel.cv-compact > .cv-panel-titlebar > *:not(.cv-panel-compact-btn) {
+  display: none;
+}
+
+.cv-panel-compact-btn { display: none; }
+
+.cv-panel.cv-compact .cv-panel-compact-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.cv-panel.cv-compact .cv-panel-compact-btn:hover { background: var(--hover-color); }
+
+.cv-panel-compact-btn img {
+  width: 26px;
+  height: 26px;
+  pointer-events: none;
+}
+
+/* Expanded-while-compact: unfold to the icon's LEFT, not below it. The row is
+   reversed so the title bar (first in the DOM) lands on the right. align-items:
+   flex-start (NOT center) keeps the icon pinned exactly where it renders
+   collapsed; only the body recenters against it (via align-self). Centering the
+   row instead makes the icon jitter each time the toolbar toggles. */
+.cv-panel.cv-compact:not(.cv-collapsed) {
+  flex-direction: row-reverse;
+  align-items: flex-start;
+}
+
+.cv-panel.cv-compact:not(.cv-collapsed) > .cv-panel-body {
+  align-self: center;
+  margin-right: 10px;
+  border-radius: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ---- mobile ---- */
+@media (max-width: 1024px) {
+  .cv-panel.cv-floating {
+    max-width: calc(100vw - 16px);
+  }
+}

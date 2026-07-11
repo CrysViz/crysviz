@@ -1,0 +1,302 @@
+/* EOS fitting control panel (docs/ui/EOSPanel.js). Reuses the app's
+   .control-group / toggle_row tokens; only the pieces unique to this panel
+   (drop zones, result table, status lines) are defined here. */
+
+.eos-group-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--muted-fg);
+}
+
+/* Energy/Pressure/Volume selectors stacked one per row, rather than run
+   together inline — each row's label has a fixed width so the selects line
+   up under one another. */
+.eos-unit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eos-unit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eos-unit-row label {
+  flex: 0 0 60px;
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+
+.eos-unit-row select {
+  flex: 1;
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+
+.eos-pyodide-status {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted-fg);
+}
+
+.eos-drop-zone {
+  border: 2px dashed var(--panel-border);
+  border-radius: 10px;
+  padding: 18px 12px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--muted-fg);
+  font-size: 12.5px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.eos-drop-zone:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.eos-drop-zone.highlight {
+  border-color: var(--highlight-color, #00bcd4);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.eos-drop-zone-ref {
+  padding: 12px;
+}
+
+.eos-primary-actions-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.eos-pane-btn {
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.eos-pane-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Reference data is collapsible (<details>/<summary>) — most sessions don't
+   need it, so it starts closed. Styled like the app's own window-panel title
+   bars (panelWindow.css) rather than the browser's native disclosure widget:
+   a solid green header strip with a caret that rotates on expand (same idiom
+   as the Bonds/Polyhedra row carets). */
+.eos-collapsible {
+  padding: 0;
+  overflow: hidden;
+}
+
+.eos-collapsible-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 16px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--highlight-color, #00bcd4);
+}
+
+.eos-collapsible-summary::-webkit-details-marker {
+  display: none;
+}
+
+.eos-collapsible-arrow {
+  display: inline-block;
+  font-size: 11px;
+  color: #ffffff;
+  transition: transform 0.15s ease;
+}
+
+.eos-collapsible[open] .eos-collapsible-arrow {
+  transform: rotate(90deg);
+}
+
+.eos-collapsible-body {
+  padding: 16px;
+}
+
+.eos-ref-divisor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+
+.eos-ref-divisor-row input[type="number"] {
+  width: 70px;
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+
+.eos-column-info {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--muted-fg);
+  line-height: 1.5;
+}
+
+.eos-status-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.eos-status-group .eos-pyodide-status {
+  margin-top: 0;
+}
+
+.eos-status {
+  font-size: 12px;
+  color: var(--muted-fg);
+  min-height: 1.2em;
+  margin: 4px 0;
+}
+
+.eos-copy-value {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.eos-copy-value:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.eos-copy-value.eos-copied {
+  background: rgba(46, 204, 113, 0.25);
+  color: #2ecc71;
+}
+
+.eos-result-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+
+.eos-result-table th,
+.eos-result-table td {
+  border: 1px solid var(--panel-border);
+  padding: 5px 8px;
+  text-align: left;
+}
+
+.eos-result-table th {
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 500;
+}
+
+.eos-fit-stats {
+  font-size: 11.5px;
+  color: var(--muted-fg);
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.eos-results h4 {
+  margin: 12px 0 4px 0;
+  font-size: 13px;
+}
+
+.eos-results h4:first-child {
+  margin-top: 0;
+}
+
+/* EOS-specific split-pane content: the P-V plot's "Show Error Plots" mini
+   toggle. Generic pane chrome (including plot div sizing, via
+   .split-item-body) lives in SplitView.css. */
+
+/* Docked to the bottom, the pane is wide and short — lay the E-V and P-V
+   plots out side by side instead of stacked so each keeps useful height.
+   Only the container's axis flips; each .split-item's own layout (title,
+   buttons, toggle) is untouched. */
+#viewArea.split-dock-bottom .eos-split-owner {
+  flex-direction: row;
+}
+
+#viewArea.split-dock-bottom .eos-split-owner .split-item {
+  min-width: 0; /* let the two plots actually shrink to share the row */
+}
+
+/* P-V plot only: a mini "Show Error Plots" toggle on the left (empty space
+   there), action buttons kept on the right. */
+.eos-plot-actions-split {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.eos-plot-actions-right {
+  display: flex;
+  gap: 6px;
+}
+
+/* Reuses the app's .toggle_switch/.toggle_slider tokens (toggle_styles.css)
+   rather than a plain checkbox, scaled down to fit this corner. */
+.eos-mini-toggle.toggle_container {
+  margin: 0;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--muted-fg);
+}
+
+.eos-mini-toggle .toggle_switch {
+  width: 26px;
+  height: 14px;
+}
+
+.eos-mini-toggle .toggle_slider::before {
+  width: 10px;
+  height: 10px;
+  left: 2px;
+  top: 2px;
+}
+
+.eos-mini-toggle .toggle_switch input:checked + .toggle_slider::before {
+  transform: translateX(12px);
+}
+
+/* The expanded (fullscreen) view has far more room — scale the mini toggle
+   up to match the bigger action buttons/fonts used there (full size, same
+   as the toggle's other uses in the app). */
+.split-item.expanded .eos-mini-toggle.toggle_container {
+  font-size: 15px;
+  gap: 8px;
+}
+
+.split-item.expanded .eos-mini-toggle .toggle_switch {
+  width: 46px;
+  height: 24px;
+}
+
+.split-item.expanded .eos-mini-toggle .toggle_slider::before {
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+}
+
+.split-item.expanded .eos-mini-toggle .toggle_switch input:checked + .toggle_slider::before {
+  transform: translateX(22px);
+}

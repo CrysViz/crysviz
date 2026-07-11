@@ -166,23 +166,6 @@
   font-size: calc(14px * var(--cv-font-scale, 1));
 }
 
-/* The generic .info-button rule sizes it for a standalone corner badge
-   (18px); inside a titlebar it needs to sit flush with the other ~13px
-   icon buttons instead of towering over them. */
-.cv-panel-titlebar .cv-panel-info {
-  width: calc(13px * var(--cv-font-scale, 1));
-  height: calc(13px * var(--cv-font-scale, 1));
-  font-size: calc(8px * var(--cv-font-scale, 1));
-  flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.6);
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-.cv-panel-titlebar .cv-panel-info:hover {
-  box-shadow: none;
-  background: var(--hover-color);
-}
-
 /* ---- body / collapse ---- */
 /* The body is the window surface: it carries the box the old .control-group /
    floating popups had, minus the top edge where the title bar sits. */
@@ -237,13 +220,24 @@
   backdrop-filter: none;
 }
 
-/* ---- compact round-icon mode ----
-   Ordered AFTER the bar-hide-strip rules above so it wins the equal-specificity
-   tie when both .cv-bar-collapsed and .cv-compact are on the same element (they
-   co-occur: barCollapsed is not cleared when entering compact mode). */
+/* ---- mobile ---- */
+@media (max-width: 1024px) {
+  .cv-panel.cv-floating {
+    max-width: calc(100vw - 16px);
+  }
+}
+
+/* ---- compact (round icon-only) floating panels ----
+   Applied by PanelManager's refreshCompactFloatingPanels when the Measure and
+   View windows no longer both fit; see PanelWindow.setCompact. Overrides both
+   the normal titlebar and the bar-hide thin strip, so this is the only
+   special titlebar state in play while active — placed last so it wins the
+   equal-specificity tie against those rules. */
 .cv-panel.cv-compact {
-  /* .cv-floating's min-width:220px would otherwise leave the round icon flush-
-     left inside a much wider invisible box instead of at its anchored edge. */
+  /* .cv-panel.cv-floating's min-width:220px would otherwise leave the round
+     icon sitting flush-left inside a much wider invisible box instead of at
+     its actual anchored (right-edge) position, since the icon's explicit
+     54px width keeps it from stretching to fill that box. */
   min-width: 0;
   width: max-content;
 }
@@ -268,7 +262,9 @@
   display: none;
 }
 
-.cv-panel-compact-btn { display: none; }
+.cv-panel-compact-btn {
+  display: none;
+}
 
 .cv-panel.cv-compact .cv-panel-compact-btn {
   display: flex;
@@ -283,19 +279,20 @@
   cursor: pointer;
 }
 
-.cv-panel.cv-compact .cv-panel-compact-btn:hover { background: var(--hover-color); }
-
-.cv-panel-compact-btn img {
-  width: 26px;
-  height: 26px;
-  pointer-events: none;
+.cv-panel.cv-compact .cv-panel-compact-btn:hover {
+  background: var(--hover-color);
 }
 
-/* Expanded-while-compact: unfold to the icon's LEFT, not below it. The row is
-   reversed so the title bar (first in the DOM) lands on the right. align-items:
-   flex-start (NOT center) keeps the icon pinned exactly where it renders
-   collapsed; only the body recenters against it (via align-self). Centering the
-   row instead makes the icon jitter each time the toolbar toggles. */
+/* Expanded while compact: the toolbar unfolds to the icon's left (row,
+   reversed so the titlebar — first in the DOM — lands on the right) rather
+   than below it, and no longer needs the "flush under the titlebar" look.
+   align-items stays flex-start (not center): the icon is pinned at its
+   anchored top position — that's what the collapsed (icon-only) state
+   already renders as, since there the row's height IS the icon's height, so
+   there's nothing to center against — and only the body (which may well be
+   taller than the icon) is centered against IT via align-self. Centering the
+   whole row instead would re-center the icon relative to the body's height
+   too, moving it a few px every time the toolbar toggled open/closed. */
 .cv-panel.cv-compact:not(.cv-collapsed) {
   flex-direction: row-reverse;
   align-items: flex-start;
@@ -308,9 +305,8 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* ---- mobile ---- */
-@media (max-width: 1024px) {
-  .cv-panel.cv-floating {
-    max-width: calc(100vw - 16px);
-  }
+.cv-panel-compact-btn img {
+  width: 26px;
+  height: 26px;
+  pointer-events: none;
 }

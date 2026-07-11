@@ -8,8 +8,6 @@ import { generateID } from "../../utils/index.js";
 import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive } from '../SymmetryEditModule.js';
 import { renderComposition } from '../StructureInfoPanel/General.js';
 import { refreshBackendTheme } from './BackendTheme.js';
-import { normalizeFractional } from "../../math/index.js";
-import { runPeriodicWrapped } from "../../render/index.js";
 
 
 
@@ -86,9 +84,6 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
 </div>
   <div style="margin-bottom: 1em;">
     <p style="font-size: 12px;">Get symmetry information:</p>
-    <label style="font-size:12px; display:block; margin-bottom:0.4em;">Tolerance (Å):
-      <input type="number" id="symTolInput" value="0.01" min="0" step="0.001" style="width:6em;">
-    </label>
     <button class="calcButton" id="getSymBtn">Get Symmetry Info</button>
   </div>
 
@@ -105,30 +100,25 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
     <button class="calcButton" id="getWyckoffBtn">Enable Wyckoff Editor</button>
   </div>
 
-  <p id="calcResult" style="margin-top: 1em; font-weight: bold; user-select: text; -webkit-user-select: text; cursor: text;"></p>
+  <p id="calcResult" style="margin-top: 1em; font-weight: bold;"></p>
 </div>
     `;
 
-    const getTol = () => {
-      const v = parseFloat(document.getElementById("symTolInput")?.value);
-      return Number.isFinite(v) && v > 0 ? v : 0.01;
-    };
-
     document.getElementById("getSymBtn").onclick = () => {
-      const result = callMoyo("getSymmetryInfo", getTol());
+      const result = callMoyo("getSymmetryInfo", 1e-5);
       document.getElementById("calcResult").textContent =
         `${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
     }
 
     document.getElementById("getConvBtn").onclick = () => {
-      const result = callMoyo("getConvUnit", getTol());
+      const result = callMoyo("getConvUnit", 1e-5);
       document.getElementById("calcResult").textContent =
         `${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
       newContainerFromSymmetrisation("conv", result.positions, result.lattice, result.elements)
     }
 
     document.getElementById("getPrimBtn").onclick = () => {
-      const result = callMoyo("getPrimUnit", getTol());
+      const result = callMoyo("getPrimUnit", 1e-5);
       document.getElementById("calcResult").textContent =
         `${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
       newContainerFromSymmetrisation("prim", result.positions, result.lattice, result.elements)
@@ -157,8 +147,8 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
         return;
       }
 
-      const result = callMoyo("getSymmetryInfo", getTol());
-      await activateWyckoffMode(fileBrowser.selectedStructure, getTol());
+      const result = callMoyo("getSymmetryInfo", 1e-5);
+      await activateWyckoffMode(fileBrowser.selectedStructure, 1e-5);
       renderComposition('open');
       document.getElementById("calcResult").textContent =
         `Wyckoff editor active: ${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
@@ -195,16 +185,9 @@ function buildAflowLabel(spgNumber, wyckoffs, elements) {
   return `${spgNumber}_${orbitParts.join('_')}:${elemOrder.join('-')}`;
 }
 
-function callMoyo(calcType="getSymmetryInfo", tolerance=0.01) {
+function callMoyo(calcType="getSymmetryInfo", tolerance=1e-2) {
   let elements = [...fileBrowser.selectedStructure.elements];
-  const numbers = elements.map(el => {
-    const n = PT_INVERTED[el];
-    if (n === undefined) {
-      throw new Error(`Moyo: unknown element symbol "${el}" (not found in periodic table map). ` +
-        `Check that the structure's species were parsed as clean chemical symbols.`);
-    }
-    return n;
-  });
+  const numbers = elements.map(el => PT_INVERTED[el]);
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   const struct = { positions: positions, lattice:{basis:lattice.flat()}, numbers: numbers }
@@ -238,21 +221,18 @@ function newContainerFromSymmetrisation(primConv,positions,lattice,elements){
   let fileName = structureShip.container[fileBrowser.selectedRowIndex].fileName
   let atoms = [];
   const container = new StructureContainer({fileName:fileName})
-  const normPositions = positions.map(p => p.map(normalizeFractional));
-  normPositions.forEach((pos, i) => {
+  positions.forEach((pos, i) => {
     atoms.push(new Atom({
       position: pos,
       element: elements[i],
       uuid: generateID([elements[i]])
     }));
   });
-  let periodic = runPeriodicWrapped({ hash: "None", wrapped: {} }, normPositions, elements, lattice);
   let structure = new Structure({
          elements:elements,
          uniqueElements: [...new Set(elements)],
          lattice:lattice,
          atoms:atoms,
-         periodic: periodic,
      });
   container.structures.push(structure);
   structureShip.container.push(container)

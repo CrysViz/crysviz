@@ -132,28 +132,6 @@ export function highlightAtomIn3D(index) {
   applyAtomHighlightIndices([index]);
 }
 
-/**
- * Temporarily remove the 3D highlight glow/recolor from whatever is
- * currently selected, without touching the selection itself (row highlight,
- * atomSelection/currentlyHighlightedBond state) — so a color editor opened
- * for the selected atom/bond shows the real, live color underneath instead
- * of the orange highlight overlay. Pair with restoreSelectionHighlight().
- */
-export function suppressSelectionHighlightFor3D() {
-  clearHighlightAtom();
-  clearHighlightBond();
-}
-
-/** Undo suppressSelectionHighlightFor3D(): reapplies the 3D glow for the
- *  current atom or bond selection. */
-export function restoreSelectionHighlight() {
-  if (atomSelection.selectedAtoms.length) {
-    applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
-  } else if (highlightHover.currentlyHighlightedBond) {
-    highlightBondIn3D(highlightHover.currentlyHighlightedBond.instanceIds);
-  }
-}
-
 export function highlightBondIn3D(indexList) {
   clear3DHighlights();
 

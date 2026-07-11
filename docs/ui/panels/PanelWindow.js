@@ -19,8 +19,6 @@
 //   dockAtPointer(panel, event)      commit a drag-into-dock; the manager
 //                                    continues the gesture as a reorder drag
 
-import { showInfoPanel } from '../InfoPanel.js';
-
 const VIEWPORT_MARGIN = 8;
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
 
@@ -59,12 +57,6 @@ export class PanelWindow {
      *  @type {{left?: number, right?: number, top?: number, bottom?: number}|null} */
     this.floatPos = null;
     this.sortKey = 0;          // dock ordering key
-    // Compact round-icon mode (only for panels that declare a compactIcon):
-    // when the scene is too narrow for the floating toolbars, the window
-    // shrinks to a 54px icon; clicking the icon unfolds the toolbar again.
-    this.compact = false;
-    this.compactBtn = null;
-    this._sceneReach = null; // cached toolbar reach into the scene (see manager)
 
     const el = document.createElement('section');
     el.className = 'cv-panel cv-docked cv-collapsed';
@@ -88,19 +80,6 @@ export class PanelWindow {
     const title = document.createElement('span');
     title.className = 'cv-panel-title';
     title.innerHTML = def.title || '';
-
-    // Optional "i" info button — opens a markdown blurb about this panel.
-    // Lives as a direct child of the title bar, so it hides along with the
-    // rest of the bar's controls when the bar is shrunk to its thin strip.
-    let infoBtn = null;
-    if (def.infoMd) {
-      infoBtn = document.createElement('button');
-      infoBtn.type = 'button';
-      infoBtn.className = 'cv-panel-info info-button';
-      infoBtn.title = 'About this panel';
-      infoBtn.textContent = 'i';
-      infoBtn.addEventListener('click', () => showInfoPanel(def.infoMd));
-    }
 
     const homeBtn = document.createElement('button');
     homeBtn.type = 'button';
@@ -130,28 +109,34 @@ export class PanelWindow {
     bar.appendChild(grip);
     bar.appendChild(fold);
     bar.appendChild(title);
-    if (infoBtn) bar.appendChild(infoBtn);
     bar.appendChild(homeBtn);
     bar.appendChild(barBtn);
     bar.appendChild(dockBtn);
     bar.appendChild(closeBtn);
 
-    // Round compact-mode icon button (hidden until .cv-compact via CSS). Lives
-    // inside the same title bar; clicking it folds/unfolds the toolbar.
+    // Compact mode (def.compactIcon set): on a narrow viewport, a floating
+    // panel too small to fit alongside its siblings shrinks to just this
+    // round icon button — see PanelManager's refreshCompactFloatingPanels.
     let compactBtn = null;
     if (def.compactIcon) {
       compactBtn = document.createElement('button');
       compactBtn.type = 'button';
       compactBtn.className = 'cv-panel-compact-btn';
-      compactBtn.title = def.compactLabel || def.title || '';
-      const cimg = document.createElement('img');
-      cimg.src = def.compactIcon;
-      cimg.alt = '';
-      compactBtn.appendChild(cimg);
+      compactBtn.title = def.compactLabel || `Toggle ${def.title}`;
+      const icon = document.createElement('img');
+      icon.src = def.compactIcon;
+      icon.alt = '';
+      compactBtn.appendChild(icon);
       compactBtn.addEventListener('click', () => this.toggleCollapsed());
       bar.appendChild(compactBtn);
-      this.compactBtn = compactBtn;
     }
+    this.compactBtn = compactBtn;
+    this.compact = false;
+    // Cached reach into the scene, lazily measured and reused by
+    // PanelManager's sceneReach (this panel's toolbar content is fixed-size
+    // and anchored, so one measurement while expanded holds for the panel's
+    // whole lifetime).
+    this._sceneReach = null;
 
     const body = document.createElement('div');
     body.className = 'cv-panel-body';
@@ -179,11 +164,11 @@ export class PanelWindow {
     closeBtn.addEventListener('click', () => this.hooks.onClose(this));
 
     bar.addEventListener('pointerdown', (e) => this._onTitlebarPointerDown(e));
-    // A shrunk title bar is restored by double-clicking the thin strip — but
-    // NOT when the double-click landed on the compact round icon (an ordinary
-    // way to toggle the toolbar open/closed twice), which would otherwise flip
-    // barCollapsed off and persist the wrong bar state for the next compact
-    // cycle.
+    // A shrunk title bar is restored by double-clicking the thin strip —
+    // but not by double-clicking the compact icon button that also lives in
+    // this bar once compact (that's a normal way to toggle the toolbar
+    // open/closed twice quickly, not a request to restore the full bar; the
+    // dblclick would otherwise bubble up and flip barCollapsed permanently).
     bar.addEventListener('dblclick', (e) => {
       const onCompactBtn = compactBtn && e.target instanceof Node && compactBtn.contains(e.target);
       if (this.barCollapsed && !onCompactBtn) this.expandBar();
@@ -215,26 +200,12 @@ export class PanelWindow {
     else this.collapse();
   }
 
-  /**
-   * Enter/leave compact round-icon mode. Compacting also collapses the body
-   * (icon-only = collapsed); leaving compact always re-expands it, because the
-   * fold button is hidden while compact (only the round icon shows), so a body
-   * left collapsed from a prior cycle would have no visible control to reopen.
-   */
-  setCompact(v) {
-    if (!this.compactBtn || this.compact === !!v) return;
-    this.compact = !!v;
-    this.el.classList.toggle('cv-compact', this.compact);
-    if (this.compact) this.collapse();
-    else this.expand();
-  }
-
   expand() {
     if (!this.collapsed || !this.available) return;
     if (this.hooks.beforeExpand && this.hooks.beforeExpand(this) === false) return;
-    // A compact panel's position is owned by the compact-stacking system
-    // (re-applied via onCompactResize below); skip the generic bottom-anchor
-    // safety net, which would fight it.
+    // Same reason _keepInViewport opts a compact panel out entirely: its
+    // top/bottom is owned by compactAnchorFor, re-applied right below via
+    // onCompactResize — this generic upward-growth flip would fight that.
     if (!this.docked && !this.compact) this._anchorForExpansion();
     this.collapsed = false;
     this.el.classList.remove('cv-collapsed');
@@ -242,8 +213,11 @@ export class PanelWindow {
     this.foldBtn.title = 'Collapse';
     this.foldBtn.setAttribute('aria-expanded', 'true');
     if (this.def.onExpand) this.def.onExpand(this);
-    this.hooks.onLayoutChange();
+    // A compact panel's rendered height just changed (icon -> icon+toolbar),
+    // which can shift where anything stacked below it (in the same
+    // right-anchored column) belongs — see PanelManager's applyCompactPositions.
     this.hooks.onCompactResize?.(this);
+    this.hooks.onLayoutChange();
   }
 
   collapse() {
@@ -254,8 +228,8 @@ export class PanelWindow {
     this.foldBtn.title = 'Expand';
     this.foldBtn.setAttribute('aria-expanded', 'false');
     if (this.def.onCollapse) this.def.onCollapse(this);
-    this.hooks.onLayoutChange();
     this.hooks.onCompactResize?.(this);
+    this.hooks.onLayoutChange();
   }
 
   /** Shrink the title bar to a thin strip (dblclick restores). */
@@ -266,11 +240,36 @@ export class PanelWindow {
     this.hooks.onLayoutChange();
   }
 
+  /** Restore the title bar from its thin shrunk strip to the full bar. */
   expandBar() {
     if (!this.barCollapsed) return;
     this.barCollapsed = false;
     this.el.classList.remove('cv-bar-collapsed');
     this.hooks.onLayoutChange();
+  }
+
+  /**
+   * Shrink to (or restore from) a round icon-only button — used when a
+   * floating panel doesn't have room to sit alongside its siblings (see
+   * PanelManager's refreshCompactFloatingPanels). No-op if this panel wasn't
+   * given a def.compactIcon. Entering compact mode also collapses the body;
+   * barCollapsed is left exactly as it was (the CSS for .cv-compact fully
+   * overrides .cv-bar-collapsed's titlebar look on its own), so leaving
+   * compact mode again restores whichever titlebar style — full or the thin
+   * bar-hide strip — the panel had before, instead of always landing on the
+   * full titlebar.
+   *
+   * Leaving compact mode always re-expands the body, since while compact the
+   * fold button itself is hidden (only the round icon shows) — without this,
+   * a body left collapsed from compact mode would have no visible way back
+   * open, looking like the toolbar had simply vanished.
+   */
+  setCompact(v) {
+    if (!this.compactBtn || this.compact === !!v) return;
+    this.compact = !!v;
+    this.el.classList.toggle('cv-compact', this.compact);
+    if (this.compact) this.collapse();
+    else this.expand();
   }
 
   setAvailable(v) {
@@ -417,14 +416,20 @@ export class PanelWindow {
    * (Anchoring flips back to left/top when the user drags the window.)
    */
   _keepInViewport() {
-    // Compact panels are positioned entirely by the compact-stacking system;
-    // this generic safety net would silently overwrite a correct compactAnchor.
-    if (this.compact) return;
     // Never re-anchor mid-drag: near the right edge the window's shrink-to-fit
     // width changes (firing this observer), and pinning `right` while the drag
     // keeps setting `left` over-constrains the box, stretching it toward its
     // max-width as it is dragged back left.
     if (this._moving || this.docked || this.el.hidden || !this.el.isConnected) return;
+    // A compact panel's position is fully owned by PanelManager's
+    // compactAnchorFor/applyCompactPositions (explicitly re-applied on every
+    // state change that could move it). This generic safety net writes the
+    // same style.right/top/bottom properties independently of that, purely
+    // from its own rect — expanding a wide toolbar close enough to the left
+    // edge made it silently overwrite a correct compactAnchor position (e.g.
+    // right:20) with its own guess (e.g. right:8), instantly breaking the
+    // Measure/View stack's alignment. Compact panels opt out entirely.
+    if (this.compact) return;
     const rect = this.el.getBoundingClientRect();
     if (!rect.width) return;
     // Only own-size GROWTH may re-anchor. Shrinking must not: when the

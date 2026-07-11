@@ -58,12 +58,19 @@
         <ul class="theme-menu" id="themeMenu" role="menu" hidden></ul>
       </div>
       <div class="backend-control-group" id="backendControlGroup">
+         <div class="info-button-panel">
+            <button class="info-button" id="backendInfoButton">i</button>
+         </div>  
         <div class="segmented-backend-control" id="BackendModeSwitch">
+          <button data-mode="none"class="active">Viz</button>
           <button data-mode="relax">Relax</button>
           <button data-mode="md">MD</button>
           <!-- <!button data-mode="live">Live</button!>  not sufficiently tested. For now disabled.-->
         </div>
         <div id="uploadSection">
+          <div class="info-button-panel">
+            <button class="info-button" id="uploadInfoButton">i</button>
+          </div>
           <!-- File actions (wired by ui/StructureInputModule.js): Upload opens
                the file dialog directly, Paste Text opens a modal, Download is
                a dropdown of export formats. Files can also be dropped onto the
@@ -114,6 +121,9 @@
            windows at startup (Storage panel: info button + switch; Display
            panel: toggles + sliders). Never revealed. -->
       <div id="structureControls" style="display: none;">
+         <div class="info-button-panel">
+            <button class="info-button" id="storageInfoButton">i</button>
+         </div>
          <div class="segmented-control" id="StorageOptionSwitch">
           <button data-mode="Nothing">None</button>
           <button data-mode="Minimal"class="active"> Minimal</button>
@@ -217,12 +227,11 @@
       <aside id="splitPane" class="split-pane" hidden aria-label="Split view">
         <div class="split-pane-header">
           <span id="splitPaneTitle"></span>
-          <div id="splitPaneHeaderTabs" class="split-pane-header-tabs" role="tablist"></div>
           <button type="button" id="splitPaneCollapseBtn" class="split-pane-btn" title="Hide (keeps a pull-tab)">»</button>
         </div>
         <div class="split-pane-body" id="splitPaneBody"></div>
       </aside>
-      <div id="splitPaneTabs" class="split-pane-tabs" hidden aria-label="Open split views"></div>
+      <button type="button" id="splitPaneTab" class="split-pane-tab" hidden title="Show panel"></button>
       <div class="split-pane-overlay" id="splitPaneOverlay"></div>
     </div>
 

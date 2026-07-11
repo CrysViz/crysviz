@@ -248,10 +248,17 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
     let showPeriodic = general.showPeriodic
     let faceTol = general.periodicFaceTol
 
-    let inputHash = hashInputFast(
-      frac, elements, lattice, bondLenghts,
-      showPeriodic, showPBCBonds, general.completePolyhedra, faceTol
-    )
+    const map = new Map([
+      ["frac", frac],
+      ["elements", elements],
+      ["bondLenghts", bondLenghts],
+      ["lattice", lattice],
+      ["showPeriodic",showPeriodic],
+      ["showPBCBonds",showPBCBonds],
+      ["completePolyhedra", general.completePolyhedra], // toggling it invalidates the cache
+      ["faceTol",faceTol]
+    ]);
+    let inputHash = hashInput(map)
 
     if (periodic.hash != inputHash){
       periodic.wrapped = periodicWrapped({ ...general, showPBCBonds }, frac, elements,lattice)
@@ -263,100 +270,59 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
     return periodic
 }
 
-// ── Fast structural hash — no string / JSON allocation ────────────────────────
-//
-// Numeric djb2-style rolling hash (multiply-by-33 + XOR) over the raw inputs.
-// Replaces the old JSON.stringify(serializeMap(...)) path, which allocated a
-// multi-kB string over every frac position on every MD/relax step. Floats are
-// folded in via their exact 64-bit IEEE representation (two 32-bit words) so a
-// sub-ULP perturbation (e.g. 1e-6) changes the hash. MUST change whenever any of
-// the previous hashInput inputs change (frac, elements, lattice, bondLengths,
-// showPeriodic, showPBCBonds, completePolyhedra, faceTol).
-const _hashF64 = new Float64Array(1);
-const _hashU32 = new Uint32Array(_hashF64.buffer);
 
-function hashFloat(h, x) {
-  _hashF64[0] = x;
-  h = (Math.imul(h, 33) ^ _hashU32[0]) >>> 0;
-  h = (Math.imul(h, 33) ^ _hashU32[1]) >>> 0;
-  return h;
+
+// Simple fast hash for strings
+function simpleHash(str) {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i); // hash * 33 + c
+    hash |= 0; // convert to 32-bit integer
+  }
+  return hash >>> 0; // convert to unsigned
 }
 
-function hashString(h, s) {
-  for (let i = 0; i < s.length; i++) {
-    h = (Math.imul(h, 33) ^ s.charCodeAt(i)) >>> 0;
-  }
-  // Length-sensitive separator so ["ab","c"] != ["a","bc"].
-  return (Math.imul(h, 33) ^ 0x1f) >>> 0;
-}
-
-function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showPBCBonds, completePolyhedra, faceTol) {
-  let h = 5381 >>> 0;
-  h = (Math.imul(h, 33) ^ (showPeriodic ? 1 : 0)) >>> 0;
-  h = (Math.imul(h, 33) ^ (showPBCBonds ? 1 : 0)) >>> 0;
-  h = (Math.imul(h, 33) ^ (completePolyhedra ? 1 : 0)) >>> 0;
-  h = hashFloat(h, faceTol ?? 1e-3);
-
-  for (let i = 0; i < frac.length; i++) {
-    const f = frac[i];
-    h = hashFloat(h, f[0]); h = hashFloat(h, f[1]); h = hashFloat(h, f[2]);
-  }
-  for (let i = 0; i < elements.length; i++) {
-    h = hashString(h, elements[i]);
-  }
-  for (let i = 0; i < lattice.length; i++) {
-    const r = lattice[i];
-    h = hashFloat(h, r[0]); h = hashFloat(h, r[1]); h = hashFloat(h, r[2]);
-  }
-
-  // bondLengths: object keyed by "El-El" -> {min, max} (or a bare number). Hash in
-  // sorted-key order so it is deterministic regardless of insertion order.
-  const bl = bondLengths || {};
-  const keys = Object.keys(bl).sort();
-  for (let k = 0; k < keys.length; k++) {
-    const key = keys[k];
-    h = hashString(h, key);
-    const v = bl[key];
-    if (typeof v === 'number') {
-      h = hashFloat(h, v);
+// Serialize Map or nested Map/arrays into deterministic string
+function serializeMap(map) {
+  const obj = {};
+  for (const [key, value] of map) {
+    if (value instanceof Map) {
+      obj[key] = serializeMap(value); // recurse
+    } else if (Array.isArray(value)) {
+      obj[key] = value.map(v => (v instanceof Map ? serializeMap(v) : v));
     } else {
-      h = hashFloat(h, v?.min ?? 0);
-      h = hashFloat(h, v?.max ?? 0);
+      obj[key] = value;
     }
   }
-  return h >>> 0;
+  // Sort keys for deterministic order
+  const sortedObj = Object.keys(obj).sort().reduce((acc, k) => {
+    acc[k] = obj[k];
+    return acc;
+  }, {});
+  return JSON.stringify(sortedObj);
 }
+
+// Hash function for Map input
+function hashInput(map) {
+  const serialized = serializeMap(map);
+  return simpleHash(serialized); // returns fixed-length hash string
+}
+
+// Alternative faster hash — no string allocation, O(N) over raw numbers.
+// Replace hashInput(map) with hashInputFast(...) in runPeriodicWrapped to use this.
+
 
 
 export function getCellCenterAndDist() {
   const L = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-  const a = new THREE.Vector3(L[0][0], L[0][1], L[0][2]);
-  const b = new THREE.Vector3(L[1][0], L[1][1], L[1][2]);
-  const c = new THREE.Vector3(L[2][0], L[2][1], L[2][2]);
-  const corner = a.clone().add(b).add(c);
+  const corner = new THREE.Vector3(
+    L[0][0]+L[1][0]+L[2][0],
+    L[0][1]+L[1][1]+L[2][1],
+    L[0][2]+L[1][2]+L[2][2]
+  );
   const center = corner.clone().multiplyScalar(0.5);
-
-  // Bounding radius: the farthest of the 8 parallelepiped vertices from the
-  // center. Using just the diagonal corner (corner.length()/2) under-covers
-  // oblique/skewed cells, where e.g. a+b or a alone can reach farther than
-  // the main diagonal.
-  const vertices = [
-    new THREE.Vector3(0, 0, 0), a, b, c,
-    a.clone().add(b), a.clone().add(c), b.clone().add(c), corner,
-  ];
-  let radius = 0;
-  for (const v of vertices) radius = Math.max(radius, v.distanceTo(center));
-  radius = Math.max(radius, 1); // guard a degenerate/zero-size cell
-
-  // Distance so the bounding sphere fits entirely inside the perspective
-  // camera's frustum (45° vertical FOV, matching switchCameraType's
-  // PerspectiveCamera), with a small margin.
-  const halfFovRad = (45 / 2) * Math.PI / 180;
-  const fitDist = Math.max((radius / Math.sin(halfFovRad)) * 1.1, 20);
-  // defaultZoomScale is a user zoom preference: it may pull the camera
-  // further OUT, but never zooms in past the distance that guarantees the
-  // whole structure is visible.
-  const dist = fitDist * Math.max(1, app.defaultZoomScale);
+  const distBase = Math.max(corner.length()*2.5, 20);
+  const dist = distBase * app.defaultZoomScale;
   return { center, dist };
 }
 

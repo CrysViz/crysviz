@@ -1,0 +1,375 @@
+<!doctype html>
+<html>
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>CrysViz Crystal Structure Viewer</title>
+    <!-- Theme base (design tokens) loads first so component CSS can use the
+         tokens; the active theme override (#theme-active) loads LAST so a theme
+         can override component rules. Both managed by ui/ThemeManager.js. -->
+    <link rel="stylesheet" id="theme-base" href="./themes/default/theme.css">
+    <link rel="stylesheet" href="./styles/styles.css">
+    <link rel="stylesheet" href="./styles/styles_file_browswer.css">
+    <link rel="stylesheet" href="./styles/trajectoryPanel.css">
+    <link rel="stylesheet" href="./styles/controlPanel.css">
+    <link rel="stylesheet" href="./styles/panelWindow.css">
+    <link rel="stylesheet" href="./styles/backendPanel.css">
+    <link rel="stylesheet" href="./styles/toggle_styles.css">
+    <link rel="stylesheet" href="./styles/BondAtomColorPanel.css">
+    <link rel="stylesheet" href="./styles/info_button_styles.css">
+    <link rel="stylesheet" href="./styles/EOSPanel.css">
+    <link rel="stylesheet" href="./styles/SplitView.css">
+    <link rel="stylesheet" href="./styles/DummySplitPanel.css">
+    <!-- Active theme override — keep last so theme rules win the cascade. -->
+    <link rel="stylesheet" id="theme-active">
+
+
+    <script type="importmap">
+      {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+    </script>
+
+    <!-- All styles moved to styles.css -->
+  </head>
+
+  <body>
+    <div id="mobileMenuToggle">☰</div>
+    <div id="mobileOverlay"></div>
+    <div id="backgroundDot" class="background-dot"></div>
+    <div id="ui">
+      <img src="./data/CrysViz_logo_clear_back_beta.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
+      <!-- Theme toggle (dark/twilight/light, with icons) + a small dropdown arrow
+           that lists all installed themes. Wired by ui/ThemeManager.js. -->
+      <div class="theme-switch" id="themeSwitch" role="group" aria-label="Theme">
+        <button type="button" class="theme-btn" data-theme-option="dark" aria-label="Use dark theme" title="Dark mode">
+          <img class="theme-icon" src="./data/icons/Hicon_Pack_1/moon.svg" alt="" aria-hidden="true" />
+        </button>
+        <button type="button" class="theme-btn" data-theme-option="twilight" aria-label="Use twilight theme" title="Twilight mode">
+          <img class="theme-icon" src="./data/icons/Hicon_Pack_1/sun-half.svg" alt="" aria-hidden="true" />
+        </button>
+        <button type="button" class="theme-btn" data-theme-option="light" aria-label="Use light theme" title="Light mode">
+          <img class="theme-icon" src="./data/icons/Hicon_Pack_1/sun.svg" alt="" aria-hidden="true" />
+        </button>
+        <button type="button" class="theme-menu-toggle" id="themeMenuToggle" aria-haspopup="true" aria-expanded="false" aria-label="More themes" title="More themes">&#9662;</button>
+        <ul class="theme-menu" id="themeMenu" role="menu" hidden></ul>
+      </div>
+      <div class="backend-control-group" id="backendControlGroup">
+        <div class="segmented-backend-control" id="BackendModeSwitch">
+          <button data-mode="relax">Relax</button>
+          <button data-mode="md">MD</button>
+          <!-- <!button data-mode="live">Live</button!>  not sufficiently tested. For now disabled.-->
+        </div>
+        <div id="uploadSection">
+          <!-- File actions (wired by ui/StructureInputModule.js): Upload opens
+               the file dialog directly, Paste Text opens a modal, Download is
+               a dropdown of export formats. Files can also be dropped onto the
+               Files window or the 3D view. -->
+          <div class="file-actions">
+            <button type="button" id="uploadButton" class="file-action-btn">📁 Upload</button>
+            <button type="button" id="pasteTextButton" class="file-action-btn">Paste Text</button>
+            <div class="download-dropdown">
+              <button type="button" id="downloadButton" class="file-action-btn">Download ▾</button>
+              <div class="download-menu" id="downloadMenu" hidden>
+                <button type="button" id="saveButton">POSCAR</button>
+                <button type="button" id="saveCrysvizButton">CrysViz</button>
+                <button type="button" id="savePngButton">PNG Image…</button>
+              </div>
+            </div>
+          </div>
+          <input type="file" id="fileInput" multiple>
+        </div>
+        <div class="backend-control-group" id="BackendCalcPanel"></div>
+      </div>
+      <!-- Structure list; adopted into the "Files" panel window together with
+           #uploadSection (ui/panels/defaultPanels.js). -->
+      <div class="panel" id="structureTablePanel">
+          <table id="objectTable">
+          <thead>
+            <th class="fth" colspan="1"></th>
+            <th class="fth">Filename</th>
+            <th class="fth">Traj.</th>
+            <th class="fth">Step</th>
+            <th class="fth" colspan="2">
+              <button type="button" class="add-structure-button">+</button>
+            </th>
+          </thead>
+            <tbody>
+              <!-- JS-generated rows -->
+            </tbody>
+         </table>
+        <div id="errorPanel" class="error-panel">
+         Only two structures can be compared
+       </div>
+    </div>
+    
+    <!-- Unified panel dock (ui/panels/PanelManager.js). Docked panel windows
+         stack inside; feature panels stay hidden until a structure loads. -->
+    <div id="dock"></div>
+
+      <!-- Hidden staging area: everything inside is adopted into unified panel
+           windows at startup (Storage panel: info button + switch; Display
+           panel: toggles + sliders). Never revealed. -->
+      <div id="structureControls" style="display: none;">
+         <div class="segmented-control" id="StorageOptionSwitch">
+          <button data-mode="Nothing">None</button>
+          <button data-mode="Minimal"class="active"> Minimal</button>
+          <button data-mode="All Settings">All Settings</button>
+        </div>
+
+        <div class="toggle_group">
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="showAtoms" checked>
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Show Atoms</span>
+          </label>
+
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="showBonds" checked>
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Show Bonds</span>
+          </label>
+
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="showLattice" checked>
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Show Unit Cell</span>
+          </label>
+
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="showPeriodic">
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Show Periodic Images</span>
+          </label>
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="PBCBondToggle">
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text"> Neighbour Bonds</span>
+          </label>
+
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="showPolyhedra">
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Show Polyhedra</span>
+          </label>
+
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="completePolyhedraToggle">
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Complete Polyhedra</span>
+          </label>
+
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="showAxes" checked>
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Show Cell Axes</span>
+          </label>
+        </div>
+        <label>
+          Atom Size: <span id="atomSizeValue" class="slider-value">0.40</span>
+          <!-- Continuous [0,1] position, quadratic mapping into 0.05-3.0
+               (ui/ControlsWiring.js sizeSliderToValue); position 0.3444 = 0.40 -->
+          <input type="range" id="atomSize" min="0" max="1" step="any" value="0.3444">
+        </label>
+        <label>
+          Bond Diameter: <span id="bondWidthValue" class="slider-value">0.10</span>
+          <!-- Continuous [0,1] position, quadratic mapping into 0.005-1.0
+               (ui/ControlsWiring.js sizeSliderToValue); position 0.3090 = 0.10 -->
+          <input type="range" id="bondWidth" min="0" max="1" step="any" value="0.3090">
+        </label>
+        <label>
+          Axes Line Width: <span id="axesWidthValue" class="slider-value">0.015</span>
+          <input type="range" id="axesWidth" min="0.005" max="0.06" step="0.005" value="0.015">
+        </label>
+        <label>
+          Cell Line Width: <span id="latticeWidthValue" class="slider-value">0.015</span>
+          <input type="range" id="latticeWidth" min="0.005" max="0.08" step="0.005" value="0.015">
+        </label>
+    </div>
+
+
+    </div>
+    <div id="viewArea">
+      <div id="view"></div>
+      <!-- Generic split-view shell (docs/ui/panels/SplitView.js): whichever
+           feature panel is expanded (EOS fit, the split-view demo, ...) fills
+           #splitPaneBody with its own content when it opens the pane. -->
+      <div id="splitHandle" class="split-handle" hidden title="Drag to resize"></div>
+      <aside id="splitPane" class="split-pane" hidden aria-label="Split view">
+        <div class="split-pane-header">
+          <span id="splitPaneTitle"></span>
+          <div id="splitPaneHeaderTabs" class="split-pane-header-tabs" role="tablist"></div>
+          <button type="button" id="splitPaneCloseBtn" class="split-pane-btn" title="Close">✕</button>
+          <button type="button" id="splitPaneDockBtn" class="split-pane-btn" title="Dock to the bottom">⇩</button>
+          <button type="button" id="splitPaneCollapseBtn" class="split-pane-btn" title="Hide (keeps a pull-tab)">»</button>
+        </div>
+        <div class="split-pane-body" id="splitPaneBody"></div>
+      </aside>
+      <div id="splitPaneTabs" class="split-pane-tabs" hidden aria-label="Open split views"></div>
+      <div class="split-pane-overlay" id="splitPaneOverlay"></div>
+    </div>
+
+    <div id="aboutOverlay" hidden>
+      <div id="aboutModal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle" tabindex="-1">
+
+        <img src="./data/CrysViz_logo_clear_back.png" alt="Crystal Structure Viewer" class="logo">
+        <h1 id="aboutTitle" class="visually-hidden">About Crystal Structure Viewer</h1>
+        <button id="aboutClose" aria-label="Close About panel">×</button>
+        <div id="aboutContent" aria-live="polite">
+          <p id="aboutLoading">Loading About content…</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Measurement Tools UI -->
+    <div id="measurementTools">
+      <!-- Measurement panel -->
+      <div id="measurementPanel" class="measurement-group">
+        
+
+        <button id="distanceModeBtn" class="measure-tool-btn" title="Distance Measurement">
+          <div class="tool-icon">
+            <img src="./data/icons/measure-icon2.svg" alt="Ruler">
+          </div>
+          <span>Distance</span>
+        </button>
+
+        <button id="angleModeBtn" class="measure-tool-btn" title="Angle Measurement">
+          <div class="tool-icon">
+            <img src="./data/icons/angle-icon2.svg" alt="Angle">
+          </div>
+          <span>Angle</span>
+        
+        </button>
+
+        <button id="clearAllMeasurements" class="measure-tool-btn" title="Clear All Measurements">
+          <div class="tool-icon">
+            <img src="./data/icons/delete-icon2.svg" alt="Clear">
+          </div>
+          <span>Clear</span>
+
+        </button>
+
+        <button id="deleteModeBtn" class="measure-tool-btn" title="Delete Atom">
+          <div class="tool-icon">❌</div>
+          <span>Delete</span>
+        </button>
+
+        <button id="restoreBtn" class="measure-tool-btn clear-btn" title="Restore Atom">
+          <div class="tool-icon">
+            <img src="./data/icons/restore-icon.svg" alt="Restore">
+          </div>
+          <span>Restore</span>
+
+        </button>
+      </div>
+    </div>
+
+<div id="cameraTools">
+  <!-- Camera panel -->
+  <div id="cameraPanel" class="measurement-group">
+    <!-- Each axis button carries an up/down arrow above and below that
+         step-rotate the camera about that axis (world x/y/z, lattice a/b/c);
+         clicking the letter views along the axis. -->
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="xUp" title="Rotate about X (+)">▲</button>
+      <button class="camera-tool-btn" id="viewX" title="View X axis">
+        <div class="camera-icon">x</div><span>x</span>
+      </button>
+      <button class="angle-btn axis-step" id="xDown" title="Rotate about X (−)">▼</button>
+    </div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="yUp" title="Rotate about Y (+)">▲</button>
+      <button class="camera-tool-btn" id="viewY" title="View Y axis">
+        <div class="camera-icon">y</div><span>y</span>
+      </button>
+      <button class="angle-btn axis-step" id="yDown" title="Rotate about Y (−)">▼</button>
+    </div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="zUp" title="Rotate about Z (+)">▲</button>
+      <button class="camera-tool-btn" id="viewZ" title="View Z axis">
+        <div class="camera-icon">z</div><span>z</span>
+      </button>
+      <button class="angle-btn axis-step" id="zDown" title="Rotate about Z (−)">▼</button>
+    </div>
+    <div class="camera-separator"></div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="aUp" title="Rotate about a (+)">▲</button>
+      <button class="camera-tool-btn" id="viewA" title="View A axis">
+        <div class="camera-icon">a</div><span>a</span>
+      </button>
+      <button class="angle-btn axis-step" id="aDown" title="Rotate about a (−)">▼</button>
+    </div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="bUp" title="Rotate about b (+)">▲</button>
+      <button class="camera-tool-btn" id="viewB" title="View B axis">
+        <div class="camera-icon">b</div><span>b</span>
+      </button>
+      <button class="angle-btn axis-step" id="bDown" title="Rotate about b (−)">▼</button>
+    </div>
+    <div class="camera-axis-stack">
+      <button class="angle-btn axis-step" id="cUp" title="Rotate about c (+)">▲</button>
+      <button class="camera-tool-btn" id="viewC" title="View C axis">
+        <div class="camera-icon">c</div><span>c</span>
+      </button>
+      <button class="angle-btn axis-step" id="cDown" title="Rotate about c (−)">▼</button>
+    </div>
+
+    <div class="camera-separator"></div>
+
+    <!-- Reset button -->
+    <button class="camera-tool-reset-btn" id="resetView" title="Reset Camera View">
+      <div class="reset-icon"></div>
+      <span>Reset</span>
+    </button>
+    </div>
+   </div>
+</div>
+
+
+
+   <script type="module" src="./core/crystal-viewer.js"></script> 
+
+
+    <!-- Structure info: adopted into the "Structure" panel window
+         (ui/panels/defaultPanels.js). The header box shows the chemical
+         formula and expands (+/−) into the composition details populated by
+         ui/StructureInfoPanel/. -->
+    <div id="structureInfoContent">
+      <div id="structureToggle" class="structure-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="composition">
+        <h4>Structure</h4>
+        <div id="structureToggleIcon" class="toggle-icon">+</div>
+      </div>
+      <div id="composition" class="collapsible-content" aria-hidden="true">
+      </div>
+    </div>
+
+
+    <div id="axesGizmo"></div>
+    <div id="axesLegend"> 
+      <div class="legend-row"><span class="dot dot-a"></span>a</div>
+      <div class="legend-row"><span class="dot dot-b"></span>b</div>
+      <div class="legend-row"><span class="dot dot-c"></span>c</div>
+    </div>
+
+  </body>
+</html>

@@ -34,8 +34,6 @@ export {
 
 export { removeForces, updateForces } from './ForceModule.js';
 
-export { applyFrameFast, BOND_TOPOLOGY_STRIDE } from './FastFrameModule.js';
-
 export {
   runPeriodicWrapped, periodicWrapped, fracToCart, cartToFrac, updateLattice,
   recomputeLatticeDirs, latticeDirsNorm, latticeDirs, getCellCenterAndDist,

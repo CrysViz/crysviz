@@ -1,0 +1,1909 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background-color: var(--surface-bg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+  display: flex;
+  overflow: hidden;
+}
+
+/* Design tokens (surfaces, geometry, scene) AND the backend-mode accent classes
+   (.theme-standard / .theme-ase / .theme-symmetry / .theme-locked-ase) live in
+   themes/default/theme.css, which the loader loads first; a theme override can
+   redefine any of them. */
+
+#ui {
+  height: 98dvh;
+  min-width: var(--ui-width);
+  width:var(--ui-width);
+  max-width:var(--ui-width);
+  overflow: auto;
+  padding: var(--ui-padding);
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  backdrop-filter: blur(var(--panel-blur));
+  border-right: var(--ui-border) solid var(--panel-border);
+}
+
+/* Desktop panel hide state */
+#ui.panel-hidden {
+  display: none;
+}
+
+/*------*/
+.rotation-axis {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.angle-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.angle-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.angle-btn {
+  font-size: 10px;
+  padding: 5px 10px;
+  cursor: pointer;
+  background:var(--popup-bg);
+  color:#f9f9f9;
+  border-radius: 10px;
+  border: 1px solid rgba(128,128,128,1.0);
+}
+.angle-btn:hover {
+    transform: scale(1.05);
+    border: 1px solid white;
+}
+
+.angle-input {
+  width: 40px;
+  text-align: center;
+  padding: 2px;
+  font-size: 12px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background-color: var(--input-bg);
+  color:#f9f9f9;
+}
+/*------*/
+
+
+/* When panel hidden: disable flex and make view fullscreen */
+body.panel-hidden {
+  display: block;
+  --gizmo-left: 20px;
+}
+
+body.panel-hidden #view {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100dvw;
+  height: 100dvh;
+  border-radius: 0;
+}
+
+body.panel-hidden #view canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+
+/* === Panel Hidden Overrides === */
+body.panel-hidden #axesLegend {
+  left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px);  /* Stick to gizmo */
+}
+
+.background-dot {
+  position: fixed;
+  /* Same size + right-edge as the compact toolbar icons (compactAnchor
+     right:20). --compact-stack-bottom is published by PanelManager's
+     applyCompactPositions(): the dot drops below the compact icon stack when it
+     grows past the dot's default resting spot. */
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 2px solid rgba(26,26,26,0.8);
+  cursor: pointer;
+  top: max(120px, calc(var(--compact-stack-bottom, 0px) + 20px));
+  /* --split-reserve is kept in sync with the split view's pane width (see
+     ui/panels/SplitView.js) so the dot stays clear of the pane instead of
+     sliding underneath it. 0px when the pane is closed. */
+  right: calc(20px + var(--split-reserve, 0px));
+  z-index: 999;
+}
+
+.popup {
+  position: absolute;
+  top: 120px;
+  left: 120px;
+  overflow: auto;
+  background: var(--popup-bg);
+  border: 1px solid #444;
+  border-radius: 12px;
+  box-shadow: 0px 0px 4px 2px  rgba(0,0,0,0.5);
+  z-index: 999;
+  display: none;         /* initially hidden */
+  user-select: none;     /* prevent text selection while dragging */
+}
+.popup table * {
+  user-select: text !important;
+}
+
+@media (prefers-color-scheme: dark) {
+   .background-dot {
+     border: 2px solid rgba(255,255,255,0.8);
+   }
+ }
+
+.floating-comp-panel {
+      position: absolute;
+      top: 100px;
+      left: 100px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      box-shadow: 0px 0px 4px 2px  rgba(0,0,0,0.2);
+      cursor: move;
+      padding: 10px;
+      z-index: 1100;
+
+  #LatticeComparisonPopUp.show {
+    display: block;
+  }
+  /* Chart container */
+  #latticeCompPanel {
+    width: 100%;
+    height: 100%;
+  }
+
+}
+
+.logo {
+  margin: 0 0 25px 0;
+  width: 200px;
+  height: auto;
+  display: block;
+  margin: 1rem auto;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+.logo:hover{
+  transform: scale(1.05);
+  filter: drop-shadow(0 8px 25px var(--highlight-color));
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.control-group {
+  margin: 0 0 16px 0;
+  padding: 20px;
+  background: var(--group-bg);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.control-group h1 {
+  margin: 0 0 15px 0;
+  color: 	#FFBF00;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.control-group h3 {
+  margin: 0 0 15px 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* File actions row (Files window): Upload / Paste Text / Download (+ Share,
+   added once a structure loads — the columns adapt to the button count). */
+.file-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 8px;
+  margin-bottom: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 6px;
+  border-radius: 10px;
+}
+
+.file-action-btn {
+  width: 100%;
+  background: var(--bg-color);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.file-action-btn:hover {
+  box-shadow: 0px 0px 4px 2px var(--highlight-color);
+}
+
+#fileInput {
+  display: none;
+}
+
+/* Download format dropdown */
+.download-dropdown {
+  position: relative;
+}
+
+.download-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 100%;
+  z-index: 20;
+  background: var(--menu-bg);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.download-menu button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.download-menu button:hover {
+  background: var(--hover-color);
+}
+
+/* Paste-text modal dialog */
+#pasteTextModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#pasteTextModal[hidden] {
+  display: none;
+}
+
+.paste-modal {
+  width: min(640px, calc(100vw - 32px));
+  padding: 16px;
+  background: var(--menu-bg);
+  color: var(--panel-fg);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+}
+
+.paste-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.paste-modal-actions #cancelTextButton {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* PNG image export modal dialog */
+#pngExportModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#pngExportModal[hidden] {
+  display: none;
+}
+
+.png-export-modal {
+  width: min(460px, calc(100vw - 32px));
+  padding: 16px 18px;
+  background: var(--menu-bg);
+  color: var(--panel-fg);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+}
+
+.png-export-modal h3 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.png-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.png-row > label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.png-row label.png-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.png-row input[type="number"],
+.png-row select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  color: #f5f5f5;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.png-row label.png-check input {
+  width: auto;
+}
+
+.png-note {
+  margin: 0 0 12px 0;
+  font-size: 11.5px;
+  opacity: 0.7;
+  line-height: 1.35;
+}
+
+.png-export-modal .paste-modal-actions #pngDownloadBtn {
+  flex: 1;
+  margin-top: 4px;
+  padding: 12px 16px;
+  background: var(--bg-color);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.png-export-modal .paste-modal-actions #pngDownloadBtn:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+
+.png-export-modal .paste-modal-actions #pngDownloadBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  box-shadow: none;
+}
+
+.png-export-modal .paste-modal-actions #pngCancelBtn {
+  margin-top: 4px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* Drag&drop hover highlight on the drop targets (Files window / 3D view) */
+.cv-drop-hover {
+  outline: 2px dashed var(--highlight-color);
+  outline-offset: -2px;
+}
+
+#structureText {
+  width: 100%;
+  min-height: 160px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  color: #f5f5f5;
+  resize: vertical;
+  font-family: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+
+#structureText::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#loadTextButton {
+  margin-top: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  background: var( --bg-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#loadTextButton:hover {
+  border: 1px solid rgba(255,255,255,0.1);
+  transform: translateY(-1px);
+  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
+}
+
+/* #saveButton is the "POSCAR" entry in the Download dropdown; it takes the
+   .download-menu button styling. */
+
+.comparison-group {
+  backdrop-filter: blur(10px);
+}
+
+.comparison-group h1 {
+  margin: 0 0 15px 0;
+  color:  #FFBF00;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.comparison-group h3 {
+  margin: 0 0 15px 0;
+  color: #81c784;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.second-input-mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 6px;
+  border-radius: 10px;
+}
+
+.second-input-mode-btn {
+  background: transparent;
+  color: #ddd;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.second-input-mode-btn:hover {
+  background: var(--bg-color);
+  color: #fff;
+}
+
+.second-input-mode-btn.active {
+  background: var(--highlight-color);
+  color: #fff;
+}
+
+.second-input-mode-panel {
+
+  max-width: 270px;
+  display: block;
+}
+
+.second-input-mode-panel[hidden] {
+  display: none !important;
+}
+
+#secondFileInput {
+  display: none;
+}
+
+
+#secondFileLabel {
+  display: block;
+  padding: 15px 10px;
+  background: var(--bg-color);
+  color: white;
+  text-align: center;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  border: 2px dashed transparent;
+}
+
+#secondFileLabel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0px 0px 4px 2px  var(--hover-color);
+}
+
+#secondFileLabel.dragover {
+  border: 2px dashed var(--highlight-color);
+  background: var(--bg-color);
+}
+
+#secondStructureText {
+  width: 100%;
+  min-height: 160px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  color: #f5f5f5;
+  resize: vertical;
+  font-family: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+
+#secondStructureText::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#secondLoadTextButton {
+  margin-top: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  background: var( --bg-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#secondLoadTextButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0px 0px 4px 2px  rgba(54, 143, 110, 0.35);
+}
+
+
+label {
+  display: block;
+  margin: 15px 0 8px 0;
+  color: #ccc;
+  /* Multiplied by the Overall font scale (Settings). This is the single source
+     for label sizing, so it carries section headlines (.panel-headline) and
+     slider labels along with it. */
+  font-size: calc(14px * var(--cv-font-scale, 1));
+  font-weight: 500;
+}
+
+input[type="range"] {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+  -webkit-appearance: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--highlight-color);
+  cursor: pointer;
+  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.3);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--highlight-color);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.3);
+}
+
+input[type="checkbox"] {
+  margin-right: 10px;
+  transform: scale(1.2);
+  accent-color: var(--highlight-color);
+}
+
+.slider-value {
+  color: var(--highlight-color);
+  font-weight: 600;
+}
+
+#view {
+  flex: 1;
+  position: relative;
+  border-radius: 0 20px 20px 0;
+  overflow: hidden;
+}
+
+#aboutOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+#aboutOverlay.visible {
+  opacity: 1;
+}
+
+#aboutModal {
+  background: #0b1f1c;
+  color: #f5fffa;
+  max-width: 640px;
+  max-height: 80dvh;
+  overflow-y: auto;
+  padding: 28px 32px;
+  border-radius: 16px;
+  border: 1px solid rgba(129, 199, 132, 0.4);
+  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.45);
+  position: relative;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+#aboutClose {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: transparent;
+  border: none;
+  color: #81c784;
+  font-size: 24px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px;
+}
+
+#aboutClose:hover {
+  color: #a5d6a7;
+}
+
+#aboutContent h1,
+#aboutContent h2,
+#aboutContent h3 {
+  color: #81c784;
+  margin-top: 1.4em;
+  margin-bottom: 0.6em;
+  font-weight: 600;
+}
+
+#aboutContent h1 {
+  font-size: 1.6rem;
+}
+
+#aboutContent h2 {
+  font-size: 1.3rem;
+}
+
+#aboutContent h3 {
+  font-size: 1.1rem;
+}
+
+#aboutContent p {
+  margin: 0.8em 0;
+  color: #e8f5e9;
+}
+
+#aboutContent ul {
+  padding-left: 1.2em;
+  margin: 0.6em 0;
+}
+
+#aboutContent li {
+  margin: 0.35em 0;
+}
+
+#aboutContent a {
+  color: #4fc3f7;
+  text-decoration: underline;
+}
+
+#aboutContent a:hover {
+  color: #81d4fa;
+}
+
+#aboutContent code {
+  background: rgba(12, 45, 36, 0.7);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 0.92em;
+}
+
+#aboutContent .about-error {
+  color: #ff8a80;
+}
+
+#aboutOverlay[hidden] {
+  display: none;
+}
+
+.bond-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: var( --bg-color);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 0.6em 1em;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s, box-shadow 0.2s;
+  }
+
+  /* Flat, non-interactive section headline inside a panel window body (see
+     ui/panels/sectionHeadline.js): a plain label, only spacing added. */
+  .panel-headline {
+    display: block;
+    margin: 0.9em 0 0.3em 0;
+    user-select: none;
+  }
+
+  /* Visual panel (Sizes/Scene/Rendering/Colors/Camera): larger, centered
+     headlines make its several sections easier to tell apart at a glance. */
+  #cvPanelBody-visual .panel-headline {
+    font-size: calc(16px * var(--cv-font-scale, 1));
+    font-weight: 600;
+    text-align: center;
+  }
+
+  .bond-toggle:hover,
+  .bond-toggle:focus {
+    background-color: var( --bg-color);
+    box-shadow: 0px 0px 4px 2px  var( --bg-color);
+    border: 1px solid rgba(255,255,255,0.1);
+    outline: none;
+  }
+
+  .bond-toggle h4 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .toggle-icon {
+    font-size: 1.25rem;
+    margin-left: 0.5em;
+    transition: transform 0.2s;
+  }
+
+  .collapsible-content {
+    display: none;
+    margin-top: 0.5em;
+    padding: 0.5em 1em;
+  }
+
+  .collapsible-content.open {
+    display: block;
+  }
+
+
+#bondControls {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+#bondControls::-webkit-scrollbar {
+  width: 6px;
+}
+
+#bondControls::-webkit-scrollbar-track {
+  background: var( --bg-color);
+  border-radius: 3px;
+}
+
+#bondControls::-webkit-scrollbar-thumb {
+  background: var(--hover-color);
+  border-radius: 3px;
+}
+
+.bond-control {
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border-left: 3px solid var(--hover-color);
+}
+
+.bond-label {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+.bottonWrapper {
+padding: 0px 0px 10px 0px;
+display: flex;
+justify-content: center;
+}
+
+.reset-btn {
+  font-size: 14px;
+  background: rgba(240, 132, 18,0.90); /*rgba(60,60,60,0.8)*/
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.reset-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0px 0px 4px 2px  rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255,255,255,0.5);
+}
+
+/* Destructive variant: "Clear local data" wipes all persisted settings. */
+.reset-btn-danger {
+  background: rgba(200, 35, 35, 0.92);
+}
+
+.bond-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  padding: 4px 0;
+}
+
+.bond-checkbox input[type="checkbox"] {
+  margin: 0;
+}
+
+.spin-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: var( --bg-color);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 0.6em 1em;
+    cursor: pointer;
+    user-select: none;
+    margin: 15px 0;
+    transition: background-color 0.2s, box-shadow 0.2s;
+  }
+
+  .spin-toggle:hover,
+  .spin-toggle:focus {
+    background-color: var( --bg-color);
+    box-shadow: 0px 0px 4px 2px  var( --bg-color);
+    border: 1px solid rgba(255,255,255,0.1);
+    outline: none;
+  }
+
+  .spin-toggle h4 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .toggle-icon {
+    font-size: 1.25rem;
+    margin-left: 0.5em;
+    transition: transform 0.2s;
+  }
+
+  .collapsible-content {
+    display: none;
+    margin-top: 0.5em;
+    padding: 0.5em 1em;
+    border-radius: 8px;
+    border:1px solid rgba(255,255,255,0.3);
+  }
+
+  .collapsible-content.open {
+    display: block;
+  }
+
+
+#spinControls {
+  max-height: 450px;
+  overflow-y: auto;
+}
+
+#spinControls::-webkit-scrollbar {
+  width: 6px;
+}
+
+#spinControls::-webkit-scrollbar-track {
+  background: var( --bg-color);
+  border-radius: 3px;
+}
+
+#spinControls::-webkit-scrollbar-thumb {
+  background: var(--hover-color);
+  border-radius: 3px;
+}
+
+.spin-control {
+  justify-content: center;
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border-left: 3px solid var(--hover-color);
+}
+
+.spin-label {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+.spinInputWrapper {
+justify-content: center;
+display: grid; 
+padding: 6px;
+background: rgba(255, 255, 255, 0.05);
+border-radius: 10px;
+gap: 8px;
+
+}
+
+.spin-input-mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 6px;
+  border-radius: 10px;
+}
+
+.spin-input-mode-btn {
+  background: transparent;
+  color: #ddd;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.spin-input-mode-btn:hover {
+  background: var(--bg-color);
+  color: #fff;
+}
+
+.spin-input-mode-btn.active {
+  background: var(--highlight-color)
+  color: #fff;
+}
+
+.spin-input-mode-panel {
+  display: block;
+}
+
+.spin-input-mode-panel[hidden] {
+  display: none !important;
+}
+
+
+.bottonWrapper {
+padding: 0px 0px 10px 0px;
+display: flex;
+justify-content: center;
+}
+
+.reset-btn {
+  background: rgba(240, 132, 18,0.90); /*rgba(60,60,60,0.8)*/
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+
+.spin-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 4px 0;
+}
+
+.spin-checkbox input[type="checkbox"] {
+  margin: 0;
+}
+
+.comparison-toggle{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: var(--group-bg);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 0.6em 1em;
+    cursor: pointer;
+    user-select: none;
+    margin: 15px 0;
+    transition: background-color 0.2s, box-shadow 0.2s;
+  }
+
+  .comparison-toggle:hover,
+  .comparison-toggle:focus {
+    background-color: var( --bg-color);
+    box-shadow: 0px 0px 4px 2px  var( --bg-color);
+    border: 1px solid rgba(255,255,255,0.1);
+    outline: none;
+  }
+
+  .comparison-toggle h4 {
+    color: #81c784;
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+
+#status {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 10px 15px;
+  border-radius: 20px;
+  font-size: 12px;
+  z-index: 1000;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* compositions and clicked element (content lives inside the unified
+   "Structure" panel window, which provides the chrome/positioning) */
+
+/* Formula header box: shows the chemical formula, expands (+/−) into the
+   composition details below it. */
+#structureInfoContent .structure-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--bg-color);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#structureInfoContent .structure-toggle h4 {
+  margin: 5px 20px 0 20px;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.0;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.section-heading { margin-top:10px; margin-bottom:6px; font-size:14px; font-weight:600; padding-left:8px; }
+.toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(0,0,0,0.5); color:var(--accent-color); font-weight:1000; transition:transform .18s ease, background .18s ease, color .18s ease; }
+
+.toggle-icon.open { transform: background:var(--accent-color); color:var(--accent-color); }
+.collapsible-content { overflow-y:auto; max-height:0; transition:max-height .28s ease, padding .18s ease; }
+
+.collapsible-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.collapsible-content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.collapsible-content::-webkit-scrollbar-thumb {
+  background: var(--hover-color);
+  border-radius: 3px;
+}
+
+.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:650px; margin: 10px 0 20px 0;}
+#composition { color:#d7eef6; line-height:1.4; }
+#composition [hidden] { display: none !important; }
+#measure { margin-top:8px; }
+#measureRow { display:flex; justify-content:space-between; gap:8px; color:#cfeffb; }
+
+
+/* Custom color picker as a modifiable UI component*/
+
+
+.custom-color-picker {
+  width: 200px;
+  font-family: sans-serif;
+  user-select: none;
+}
+
+.custom-color-picker .sb-picker {
+  position: relative;
+  width: 100%;
+  height: 150px;
+  background: red;
+  cursor: crosshair;
+  margin-bottom: 10px;
+}
+
+.custom-color-picker .sb-picker::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to right, #fff, transparent),
+    linear-gradient(to top, #000, transparent);
+}
+
+.custom-color-picker .hue-slider {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.custom-color-picker .color-preview {
+  width: 100%;
+  height: 30px;
+  border: 1px solid #ccc;
+  background: red;
+}
+
+
+
+
+/* Small actions */
+.btn-mini { background:transparent; border:1px solid rgba(255,255,255,0.08); color:#cfeffb; padding:6px 10px; border-radius:6px; cursor:pointer; }
+.btn-mini:hover { transform: translateY(-1px);background:rgba(255,255,255,0.02); border: 1px solid var(--accent-color);}
+
+.btn-mini.highlight { background:var(--bg-color); border-color:rgba(0,0,0,0.15); color:#fff; }
+.btn-mini.highlight:hover { transform: translateY(-1px);filter:brightness(1.03); border: 1px solid var(--accent-color);}
+
+#composition h4 {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 1);
+  font-size: 14px;
+  letter-spacing: .3px;
+}
+
+.comp-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px dashed rgba(255,255,255,0.1);
+}
+.comp-row:last-child { border-bottom: 0; }
+.dot {
+  width: 10px; height: 10px; border-radius: 50%; margin-right: 8px;
+  border: 1px solid rgba(255,255,255,0.4);
+}
+.comp-left { display: inline-flex; align-items: center; gap: 6px; }
+#picked {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 8px; background: var(--bg-color);
+  border: 1px solid var(--accent-color); border-radius: 10px;
+}
+#view canvas { cursor: pointer; } /* for click affordance */
+
+
+#axesGizmo {
+/* --split-reserve-bottom is kept in sync with the split view's pane height
+   when it's docked to the bottom (see ui/panels/SplitView.js), so the gizmo
+   stays clear of the pane instead of sliding underneath it — same idea as
+   --split-reserve does for the background-dot's right offset. 0px when the
+   pane is closed or docked to the right. */
+position: fixed; left: var(--gizmo-left); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px)); width: var(--gizmo-size); height: var(--gizmo-size);
+border-radius: 10px; background: rgba(0,0,0,0.08); backdrop-filter: blur(6px);
+border: 1px solid rgba(255,255,255,0.15); z-index: 1000; overflow: hidden;
+pointer-events: none;
+}
+
+#axesLegend{
+position: fixed; left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px));
+background: rgba(0,0,0,0.8);
+border: 1px solid rgba(255,255,255,0.2);
+border-radius: 8px;
+padding: 6px 8px;
+font-size: 12px; color:#fff;
+backdrop-filter: blur(10px);
+z-index:1000; pointer-events:none;
+}
+.dot{display:inline-block;width:15px;height:15px;border-radius:50%;margin-right:6px;}
+.dot-a{width:10px;height:10px;background:#ff3333;} .dot-b{width:10px;height:10px;background:#33cc33;} .dot-c{width:10px;height:10px;background:#3366ff;}
+.legend-row{display:flex;align-items:center;gap:6px;line-height:1.2;}
+
+
+
+/* --- Measurement tools --- (hosted by the unified "Measure" panel window,
+   which provides positioning + chrome; this is just the content layout) */
+#measurementTools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Until ui/panels/defaultPanels.js adopts them into their floating panel
+   windows, these start as direct <body> children. <body> is display:flex, so
+   keep them out of the layout — otherwise they steal width from #view and the
+   renderer sizes its canvas to the squeezed width at startup. The selectors
+   stop matching once the elements are reparented into a panel body. */
+body > #measurementTools,
+body > #cameraTools,
+body > #structureInfoContent {
+  display: none;
+}
+
+/* --- Camera view tools --- (hosted by the unified "View" panel window) */
+#cameraTools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 320px;
+}
+
+/* Camera panel for desktop - horizontal layout. Wrap is unconditional:
+   #cameraTools already caps its content at max-width:320px, so the panel wraps
+   consistently at every window size (a legacy 1320px breakpoint used to gate
+   this, which made the panel change appearance mid-width for no clear reason). */
+#cameraPanel {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-height: none;
+  flex-wrap: wrap;
+}
+
+
+.camerae-tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 8px;
+  background: var(--bg-color);
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 45px;
+  min-height: 45px;
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+
+/* Camera buttons for desktop - compact style like original vbtn */
+#cameraTools .camera-tool-btn {
+  padding: 6px 10px;
+  font-size: 14px;
+  color: #fff;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 32px;
+  min-height: 32px;
+  flex-direction: row;
+  gap: 0;
+}
+
+#cameraTools .camera-tool-reset-btn {
+  padding: 6px 10px;
+  font-size: 14px;
+  color: #fff;
+  background: rgba(240, 132, 18,0.90);
+  border: 1px solid rgba(250, 132, 18,1);
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 32px;
+  min-height: 32px;
+  flex-direction: row;
+  gap: 0;
+}
+
+#cameraTools .camera-tool-btn:hover {
+  background: var(--bg-color);
+  border-color: var(--highlight-color);
+  transform: translateY(-2px);
+  box-shadow:0px 0px 4px 2px  rgba(6, 100, 50, 1);
+}
+
+#cameraTools .camera-tool-reset-btn:hover {
+  background: rgba(240, 132, 18,0.90);
+  border-color: white;
+  transform: translateY(-1px);
+  box-shadow: 0px 0px 2px 1px  var(--highlight-color);
+}
+
+#cameraTools .camera-tool-btn .tool-icon {
+  font-size: 14px;
+  margin: 0;
+}
+
+#cameraTools .camera-tool-btn .reset-icon {
+  font-size: 14px;
+  margin: 0;
+}
+
+#cameraTools .camera-tool-btn span {
+  display: none;
+}
+
+.camera-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Vertical stack: up-arrow / view-along-axis button / down-arrow. */
+.camera-axis-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The small step-rotation arrows flanking each axis button. */
+#cameraTools .camera-axis-stack .axis-step {
+  padding: 1px 6px;
+  font-size: 9px;
+  line-height: 1;
+  min-width: 32px;
+}
+
+/* Separator for camera controls. Hidden unconditionally (the panel wraps at
+   every width now — see #cameraPanel above). */
+.camera-separator {
+  display: none;
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 2px;
+}
+
+.measurement-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-height: none;
+  overflow: visible;
+}
+
+.measure-tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 6px;
+  background: var(--bg-color);
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 45px;
+  min-height: 45px;
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.measure-tool-btn:hover {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+  transform: translateY(-2px);
+  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
+}
+
+.measure-tool-btn.active {
+  background: var( --bg-color);
+  border-color: #ff6b35;
+  color: #fff;
+  box-shadow: 0px 0px 4px 2px  rgba(255, 107, 53, 0.4);
+}
+
+.measure-tool-btn.active:hover {
+  box-shadow: 0px 0px 4px 2px rgba(255, 107, 53, 0.5);
+  transform: translateY(-2px);
+}
+
+.measure-tool-btn.clear-btn {
+  background: rgba(231, 76, 60, 0.15);
+  border-color: rgba(231, 76, 60, 0.3);
+}
+
+.measure-tool-btn.clear-btn:hover {
+  background: rgba(231, 76, 60, 0.25);
+  border-color: rgba(231, 76, 60, 0.5);
+  box-shadow: 0px 0px 4px 2px  rgba(231, 76, 60, 0.3);
+}
+
+.tool-icon {
+  width: 32px;
+  height: 24px; /* Set a fixed height to match your tallest icon */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tool-icon img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain; /* Ensures the SVG scales proportionally and is never cropped */
+}
+.scale-icon {
+  transform: rotate(45deg);
+}
+
+.protractor-icon {
+  transform: rotate(-15deg);
+}
+
+/* --- Floating distance label in scene --- */
+.measure-label{
+  padding:6px 9px; border-radius:10px; font-size:14px; font-weight:700;
+  color:#fff; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.2);
+  backdrop-filter: blur(6px); white-space:nowrap;
+}
+
+/* Hamburger Menu - Always Top Left */
+#mobileMenuToggle {
+  display: flex;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 0;
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  font-size: 16px;
+  font-weight: 300;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0px 0px 4px 2px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
+}
+
+#mobileMenuToggle:hover,
+#mobileMenuToggle:active {
+  background: rgba(0, 0, 0, 0.9);
+  transform: scale(0.95);
+}
+
+/* Prevent text selection on touch devices */
+#view canvas,
+.vbtn,
+#mobileMenuToggle,
+body {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Allow text selection only where needed */
+#ui input[type="number"],
+#ui label,
+#ui h2,
+#ui h3,
+#composition,
+#status,
+#piSummary,
+#piSplitSummary {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Mobile and Tablet Responsive Styles */
+
+
+@media screen and (max-width: 1320px) {
+
+  /* .camera-separator, .background-dot and #cameraPanel wrap overrides removed:
+     they now live unconditionally in the base rules (and the dot's position is
+     driven by --compact-stack-bottom), so this legacy breakpoint no longer
+     fights them at in-between widths. */
+
+  /* Mobile version*/
+  .popup {
+    position: absolut;
+    max-height: 300px;
+    top: 50px;
+    left: 50px
+  }
+
+  .tool-icon {
+    font-size: 14px;
+    margin-bottom: 1px;
+  }
+
+}
+
+@media screen and (max-width: 1024px) {
+  /* Mobile: Panel positioning */
+  #ui {
+    position: fixed;
+    top: 0;
+    left: -120%;
+    height: 98dvh;
+    z-index: 1500;
+    transition: left 0.3s ease;
+  }
+
+  /* Panel open state for mobile */
+  #ui.panel-open {
+    left: 0;
+  }
+
+  /* Adjust axes gizmo position and size */
+  #axesGizmo {
+    left: 12px;
+    bottom: calc(12px + var(--split-reserve-bottom, 0px));
+    width: 60px;
+    height: 60px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  #axesLegend {
+    left: 12px;
+    transform: translateX(68px);
+    font-size: 11px;
+    padding: 4px 6px;
+    /*! border-radius: 4px; */
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(6px);
+    z-index: 1000;
+  }  
+
+  /* Mobile-specific adjustments */
+  body {
+    overflow-x: hidden;
+  }
+
+  #view {
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+  }
+
+  /* Mobile/Tablet overlay to close menu */
+  #mobileOverlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    background: rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+  }
+
+  #mobileOverlay.active {
+    display: block;
+    left: 0;
+    right: 0;
+    pointer-events: auto;
+  }
+
+  /* Adjust control group spacing for mobile */
+  .control-group {
+    margin: 0 0 16px 0;
+    padding: 20px;
+  }
+
+  #ui h2 {
+    font-size: 20px;
+    margin: 0 0 20px 0;
+  }
+
+  /* Make touch targets larger */
+  input[type="checkbox"] {
+    transform: scale(1.5);
+  }
+
+  input[type="range"] {
+    height: 8px;
+    margin:  0;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+
+  /* Adjust bond controls for mobile */
+  .bond-control {
+    padding: 16px;
+    margin: 16px 0;
+  }
+
+  .bond-label {
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+
+  .collapsible-content.open { padding-top:8px;
+    min-height: auto;}
+
+  .comp-row {
+    padding: 2px 0;
+    font-size: 11px;
+  }
+
+  #measureRow {
+    padding: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  #distanceValue {
+    font-size: 14px;
+  }
+
+  /* Status adjustments */
+  #status {
+    top: 10px;
+    right: 10px;
+    font-size: 12px;
+    max-width: calc(100vw - 100px);
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  /* Measure panel improvements */
+  .btn-mini {
+    padding: 12px 16px;
+    font-size: 16px;
+    align-self: stretch;
+    text-align: center;
+  }
+
+  /* Adjust scroll areas */
+  #bondControls {
+    max-height: 200px;
+  }
+}
+
+@media screen and (max-height: 480px) {
+  #ui {
+    height: 90dvh;
+  }
+
+  .collapsible-content.open { padding-top:8px;max-height: 230px;
+    min-height: auto}
+
+  #composition h4 {
+    font-size: 11px;
+    margin: 0 0 3px 0;
+  }
+
+  .comp-row {
+    padding: 1px 0;
+    font-size: 10px;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    margin-right: 4px;
+  }
+
+  #measureRow {
+    padding: 6px;
+    font-size: 11px;
+  }
+
+  #distanceValue {
+    font-size: 12px;
+  }
+
+  #status {
+    right: 5px;
+    top: 5px;
+    padding: 8px 12px;
+  }
+
+  #axesGizmo {
+    width: 50px;
+    height: 50px;
+    left: 8px;
+    bottom: calc(8px + var(--split-reserve-bottom, 0px));
+  }
+
+  #axesLegend {
+    transform: translateX(58px);
+    font-size: 10px;
+    bottom: calc(8px + var(--split-reserve-bottom, 0px));
+    padding: 3px 5px;
+    left: 8px;
+    background: rgba(0, 0, 0, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(8px);
+    color: #fff;
+  }
+
+  /* Smaller measure label for very small screens */
+  .measure-label {
+    font-size: 12px;
+    padding: 4px 6px;
+  }
+}
+
+ @media screen and (max-height: 390px) {
+  #ui {
+    width: 280px;
+  }
+
+ .background-dot {
+  position: fixed;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  cursor: pointer;
+  top: max(155px, calc(var(--compact-stack-bottom, 0px) + 20px));
+  right: calc(11px + var(--split-reserve, 0px));
+  z-index: 999;
+}
+
+  #composition h4 {
+    font-size: 11px;
+    margin: 0 0 3px 0;
+  }
+
+  .comp-row {
+    padding: 1px 0;
+    font-size: 10px;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    margin-right: 4px;
+  }
+
+  #measureRow {
+    padding: 6px;
+    font-size: 11px;
+  }
+
+  #distanceValue {
+    font-size: 12px;
+  }
+
+  #status {
+    right: 5px;
+    top: 5px;
+    padding: 8px 12px;
+  }
+
+  #axesGizmo {
+    width: 50px;
+    height: 50px;
+    left: 8px;
+    bottom: calc(8px + var(--split-reserve-bottom, 0px));
+  }
+
+  #axesLegend {
+    transform: translateX(58px);
+    font-size: 10px;
+    bottom: calc(8px + var(--split-reserve-bottom, 0px));
+    padding: 3px 5px;
+    left: 8px;
+    background: rgba(0, 0, 0, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(8px);
+    color: #fff;
+  }
+
+  /* Smaller measure label for very small screens */
+  .measure-label {
+    font-size: 12px;
+    padding: 4px 6px;
+  }
+}
+
+/* Tracer-only controls (e.g. the ray/path-tracing material editors in the
+   Structure window) show only while a tracer pipeline is active. The body
+   class is driven by ui/ColorPanel.js updateRenderingControlsVisibility().
+   The material data itself is always persisted, pipeline regardless. */
+body:not(.tracer-pipeline) .material-editor {
+  display: none;
+}

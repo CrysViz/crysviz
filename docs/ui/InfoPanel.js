@@ -1,3 +1,32 @@
+
+export function addAnalysisInfoPanel() {
+  const analysisInfoButton = document.getElementById("analysisInfoButton");
+  if (!analysisInfoButton) return;
+  analysisInfoButton.onclick = () => showInfoPanel("./data/analysisInfo.md");
+}
+
+
+export function addUploadInfoPanel() {
+  const InfoButton = document.getElementById("uploadInfoButton");
+  if (!InfoButton) return;
+  InfoButton.onclick = () => showInfoPanel("./data/uploadInfo.md");
+}
+
+
+export function addBackendInfoPanel() {
+  const InfoButton = document.getElementById("backendInfoButton");
+  if (!InfoButton) return;
+  InfoButton.onclick = () => showInfoPanel("./data/backendInfo.md");
+}
+
+
+
+export function addStorageInfoPanel() {
+  const storageInfoButton = document.getElementById("storageInfoButton");
+  if (!storageInfoButton) return;
+  storageInfoButton.onclick = () => showInfoPanel("./data/storageInfo.md");
+}
+
 // Simple markdown renderer (for basic formatting)
 function renderMarkdown(text) {
   return text
@@ -14,7 +43,7 @@ function renderMarkdown(text) {
 }
 
 // Show info panel with markdown content
-export async function showInfoPanel(mdFilePath) {
+async function showInfoPanel(mdFilePath) {
   // Create overlay
   const overlay = document.createElement('div');
   overlay.className = 'info-panel-overlay';
