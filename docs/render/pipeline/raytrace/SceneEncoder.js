@@ -30,13 +30,22 @@ const MAX_PLANES = 20; // ConvexPolyhedronIntersect limit (vendored chunk)
 //   standard:    (0, 0,          gloss,        reflectivity | -1)
 //   metal:       (1, roughness,  0,            reflectivity | -1)
 //   glass:       (2, frost,      ior,          tintDepth)
-//   emissive:    (3, 0,          intensity,    0)
+//   emissive:    (3, 0,          intensity,    listed)   // w = NEE "listed" bit
 //   translucent: (4, 0,          scatterDepth, 0)
 // reflectivity -1 = "use the global Reflectivity slider" (standard) / ideal
-// mirror (metal). Codes/slots must match resolveMaterialType/resolveHitType
-// in BOTH scene shaders.
+// mirror (metal). For emissive the reflectivity slot is unused, so B1/B2
+// repurpose it as the "listed" bit (1 = in the emissive NEE list; the PT shader
+// gates diffuse-arrival emission on it). Codes/slots must match
+// resolveMaterialType/resolveHitType in BOTH scene shaders.
 const MATERIAL_CODES = { standard: 0, metal: 1, glass: 2, emissive: 3, translucent: 4 };
 const DEFAULT_MATERIAL_TEXEL = [0, 0, 0.6, -1]; // standard, gloss 0.6 = classic look
+
+// Emissive next-event-estimation list cap (B1/B2): the path tracer directly
+// samples up to this many emissive primitives per frame (2 texels each in
+// emissiveTexture). Emitters beyond the cap keep the old implicit diffuse-
+// arrival lighting (their material texel's "listed" bit stays 0) so they never
+// go dark — see the LIGHT-branch gate in ptSceneFragment.js.
+const EMISSIVE_CAP = 64;
 
 function materialTexel(mat) {
   if (!mat) return DEFAULT_MATERIAL_TEXEL;
@@ -160,6 +169,16 @@ export class SceneEncoder {
   hasEmissive = false; // any emissive (code 3) material texel written this encode
   //   (the PT any-hit shadow early-out is disabled when true: emissive objects
   //   are LIGHTs a light-sample ray must still be able to reach and add)
+  // ---- emissive next-event-estimation list (B1) ---------------------------
+  // Up to EMISSIVE_CAP emissive primitives the path tracer samples directly
+  // (NEE). emissiveTexture: 2 texels/emitter — (cx,cy,cz,r) bounding sphere,
+  // (objectID, power, 0, 0). objectID matches the shader's per-primitive id
+  // (atoms 1+i, cylinders 1+atomCount+i, polys 1+atomCount+cylCount+p), so the
+  // NEE shadow ray's closest hit can be identity-checked against the pick.
+  emissiveTexture = makeDataTexture(1);
+  emissiveCount = 0;
+  _emissiveList = []; // {kind:0 atom|1 cyl|2 poly, encIndex, cx,cy,cz,r, power}
+  _emissiveWarned = false; // one-time overflow warning
   // ---- uniform grid (3D-DDA accelerator over atoms + cylinders) -----------
   // Built by _buildGrid() only when atomCount + cylinderCount >= gridMinPrims;
   // the shaders swap the brute loops for a grid walk when gridEnabled. Cells
@@ -231,6 +250,7 @@ export class SceneEncoder {
     if (this._realFieldTexture) this._realFieldTexture.dispose();
     this.gridCellsTexture.dispose();
     this.gridIndexTexture.dispose();
+    this.emissiveTexture.dispose();
   }
 
   /** Cheap change detector; true when the scene must be re-encoded. Splits the
@@ -364,13 +384,44 @@ export class SceneEncoder {
   /** Re-encode everything into the data textures. */
   encode() {
     this.hasEmissive = false; // sub-encoders set it when an emissive texel is written
+    this._emissiveList = [];  // sub-encoders push emissive prims (encode order)
     this._encodeAtoms();
     this._encodeCylinders();
     this._encodePolyhedra();
     this._encodeField();
     this._encodePlanes();
+    this._buildEmissiveList(); // resolves objectIDs (needs the final counts)
     this._computeSceneBounds();
     this._buildGrid();
+  }
+
+  /** Build emissiveTexture from the emissive primitives pushed by the atom /
+   *  cylinder / polyhedron encoders (in that encode order). Each emitter's
+   *  objectID is resolved now that atomCount / cylinderCount are final, and
+   *  must match the shader's per-primitive hitObjectID. Only the first
+   *  EMISSIVE_CAP are written (the "listed" ones); the rest keep the implicit
+   *  diffuse-arrival lighting via their material texel's listed bit = 0. */
+  _buildEmissiveList() {
+    const list = this._emissiveList;
+    if (list.length > EMISSIVE_CAP && !this._emissiveWarned) {
+      console.warn(`raytrace: ${list.length} emissive primitives exceed the `
+        + `${EMISSIVE_CAP}-emitter NEE cap — the overflow keeps implicit `
+        + '(slower-converging) lighting');
+      this._emissiveWarned = true;
+    }
+    this.emissiveCount = Math.min(list.length, EMISSIVE_CAP);
+    const texture = this._ensureCapacity('emissiveTexture', Math.max(1, this.emissiveCount * 2));
+    const data = texture.image.data;
+    for (let e = 0; e < this.emissiveCount; e++) {
+      const rec = list[e];
+      const objectID = rec.kind === 0 ? 1 + rec.encIndex
+        : rec.kind === 1 ? 1 + this.atomCount + rec.encIndex
+          : 1 + this.atomCount + this.cylinderCount + rec.encIndex;
+      const o = e * 8;
+      data[o] = rec.cx; data[o + 1] = rec.cy; data[o + 2] = rec.cz; data[o + 3] = rec.r;
+      data[o + 4] = objectID; data[o + 5] = rec.power; data[o + 6] = 0; data[o + 7] = 0;
+    }
+    texture.needsUpdate = true;
   }
 
   /** Build the uniform grid over atoms + cylinders (a counting-sort insertion
@@ -665,7 +716,15 @@ export class SceneEncoder {
         getAtomImageStyle(structure, i)?.material
           ?? atomUserMaterials[src]
           ?? (element ? atomMaterials[element] : null));
-      if (mt[0] === 3) this.hasEmissive = true;
+      if (mt[0] === 3) {
+        this.hasEmissive = true;
+        // listed bit into the free reflectivity slot (unused for emissive);
+        // the emitter's bounding sphere is its own atom sphere.
+        const listed = this._emissiveList.length < EMISSIVE_CAP;
+        mt[3] = listed ? 1 : 0;
+        this._emissiveList.push({ kind: 0, encIndex: n,
+          cx: data[d], cy: data[d + 1], cz: data[d + 2], r: radius, power: mt[2] });
+      }
       data.set(mt, d + 8);
       n++;
     }
@@ -715,7 +774,15 @@ export class SceneEncoder {
       data.set(invM.elements.slice(8, 12), d + 12);  // re-assembled by GLSL's mat4()
       data.set(invM.elements.slice(12, 16), d + 16);
       data[d + 20] = r; data[d + 21] = g; data[d + 22] = b; data[d + 23] = a; // texel 5
-      if (matTexel[0] === 3) this.hasEmissive = true;
+      if (matTexel[0] === 3) {
+        this.hasEmissive = true;
+        // listed bit into the free reflectivity slot; bounding sphere = the
+        // cylinder's own world bounding sphere (geom[0..2] center, geom[7] r).
+        const listed = this._emissiveList.length < EMISSIVE_CAP;
+        matTexel[3] = listed ? 1 : 0;
+        this._emissiveList.push({ kind: 1, encIndex: n,
+          cx: geom[0], cy: geom[1], cz: geom[2], r: geom[7], power: matTexel[2] });
+      }
       data.set(matTexel, d + 24);                    // texel 6: material
       data[d + 28] = 0; data[d + 29] = 0; data[d + 30] = 0; data[d + 31] = 0; // texel 7: reserved
       const cb = n * 4;
@@ -902,14 +969,26 @@ export class SceneEncoder {
       const material = (poly?.key ? structure?.polyhedraUserStyles?.[poly.key]?.material : null)
         ?? (poly?.catKey ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null);
       const [matType, roughness, typeParam, reflectivity] = materialTexel(material);
-      if (matType === 3) this.hasEmissive = true;
+      let listedReflect = reflectivity; // aabbMax.w slot (listed bit for emissive)
+      if (matType === 3) {
+        this.hasEmissive = true;
+        const listed = this._emissiveList.length < EMISSIVE_CAP;
+        listedReflect = listed ? 1 : 0;
+        // emitter bounding sphere from the poly AABB (center + half-diagonal)
+        const cx = (aabb.min.x + aabb.max.x) / 2;
+        const cy = (aabb.min.y + aabb.max.y) / 2;
+        const cz = (aabb.min.z + aabb.max.z) / 2;
+        const r = 0.5 * Math.hypot(
+          aabb.max.x - aabb.min.x, aabb.max.y - aabb.min.y, aabb.max.z - aabb.min.z);
+        this._emissiveList.push({ kind: 2, encIndex: p, cx, cy, cz, r, power: typeParam });
+      }
       const d = p * 16;
       data[d] = planeOffset; data[d + 1] = planes.length; data[d + 2] = matType; data[d + 3] = roughness;
       _color.copy(mesh.material.color);
       data[d + 4] = _color.r; data[d + 5] = _color.g; data[d + 6] = _color.b;
       data[d + 7] = mesh.material.opacity ?? 1;
       data[d + 8] = aabb.min.x; data[d + 9] = aabb.min.y; data[d + 10] = aabb.min.z; data[d + 11] = typeParam;
-      data[d + 12] = aabb.max.x; data[d + 13] = aabb.max.y; data[d + 14] = aabb.max.z; data[d + 15] = reflectivity;
+      data[d + 12] = aabb.max.x; data[d + 13] = aabb.max.y; data[d + 14] = aabb.max.z; data[d + 15] = listedReflect;
       for (const plane of planes) {
         data.set(plane, planeOffset * 4);
         planeOffset++;

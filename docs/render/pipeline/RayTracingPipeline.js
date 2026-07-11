@@ -564,6 +564,22 @@ export class RayTracingPipeline extends ForwardPipeline {
     this._prevTileTime = now;
   }
 
+  /** Deterministic low-discrepancy feed for uRandomVec2 (replaces the old
+   *  Math.random() pair). Returns the plastic-constant (R2) sequence pair keyed
+   *  on the frame counter n: fract(0.5 + n*alpha_i) with the two R2 basis
+   *  constants. uRandomVec2 is consumed ONLY by the vendored AA tent-filter
+   *  jitter at samples >= 50 (both tracers), so this is statistically identical
+   *  to the old white-noise pair but better stratified — and it makes renders
+   *  natively deterministic (no Math.random anywhere in the trace loop). Call
+   *  AFTER the frame-counter bump so consecutive samples get distinct pairs. */
+  _nextRandomVec2(u) {
+    const n = u.uFrameCounter.value;
+    const frac = (x) => x - Math.floor(x);
+    u.uRandomVec2.value.set(
+      frac(0.5 + n * 0.7548776662466927),
+      frac(0.5 + n * 0.5698402909980532));
+  }
+
   // ---- interactive raster preview helpers ---------------------------------
   /** Reconcile the preview instance with the general.rtRasterPreview flag at
    *  the top of every frame: create it (and reapply policy so its staged
@@ -885,7 +901,7 @@ export class RayTracingPipeline extends ForwardPipeline {
         this._roundActive = true;
         u.uFrameCounter.value += 1;
         u.uTime.value += 1 / 60;
-        u.uRandomVec2.value.set(Math.random(), Math.random());
+        this._nextRandomVec2(u); // deterministic R2 jitter feed (after the bump)
       }
       u[this._cfg.previousTexUniform].value = this._previousTarget.texture;
       u.uCameraIsMoving.value = false; // tiled path is still-camera only
@@ -930,7 +946,7 @@ export class RayTracingPipeline extends ForwardPipeline {
         u.uSampleCounter.value += 1;
         u.uFrameCounter.value += 1;
         u.uTime.value += 1 / 60;
-        u.uRandomVec2.value.set(Math.random(), Math.random());
+        this._nextRandomVec2(u); // deterministic R2 jitter feed (after the bump)
         u[this._cfg.previousTexUniform].value = this._previousTarget.texture;
 
         renderer.setRenderTarget(this._accumTarget);
