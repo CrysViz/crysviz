@@ -17,9 +17,13 @@ import { addSpinPanel, removeSpinPanel } from '../SpinPanel.js';
 import { addFieldPanel, fieldBrowser } from '../FieldPanel.js';
 import { addPlanesPanel, removePlanesPanel, setPlanesVisible, planesData } from '../PlanesPanel.js';
 import { addBondPanel, removeBondPanel } from '../BondPanel.js';
-import { removeHistogramPanel } from '../AnalysisPanels/BondAnalysisPanel.js';
+import { removeBondLengthHistogramPanel } from '../AnalysisPanels/BondLengthHistogram.js';
+import { removeCoordinationHistogramPanel } from '../AnalysisPanels/CoordinationHistogram.js';
 import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../LatticeSupercellPanel.js';
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
+import { removePolyhedraTypeHistogramPanel } from '../AnalysisPanels/PolyhedraTypeHistogram.js';
+import { removePolyhedronInspectorPanel } from '../AnalysisPanels/PolyhedronInspector.js';
+import { removePolyhedraConnectivityHistogramPanel } from '../AnalysisPanels/PolyhedraConnectivityHistogram.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
 import { addEOSPanel, removeEOSPanel } from '../EOSPanel.js';
 import { openEOSSplitView, closeEOSSplitView } from '../EOSSplitView.js';
@@ -444,7 +448,12 @@ export function registerDefaultPanels() {
     },
     onDestroyContent() {
       removeBondPanel();
-      removeHistogramPanel();
+      // Floating histogram windows are torn down with the Bonds panel's
+      // content (same as before); the split-view versions are left open —
+      // refreshBondLengthHistogram/refreshCoordinationHistogram keep them
+      // live with the new structure's data instead.
+      removeBondLengthHistogramPanel();
+      removeCoordinationHistogramPanel();
     },
     defaults: { docked: true, order: 70, collapsed: true },
   });
@@ -487,7 +496,15 @@ export function registerDefaultPanels() {
     infoMd: './data/polyhedraInfo.md',
     available() { return !!fileBrowser.selectedStructure && general.showPolyhedra !== false; },
     buildContent(body) { addPolyhedraPanel(body.id); },
-    onDestroyContent() { removePolyhedraPanel(); },
+    onDestroyContent() {
+      removePolyhedraPanel();
+      // Floating histogram windows are torn down with the Polyhedra panel's
+      // content (same as the Bonds panel); the split-view versions are left
+      // open — polyhedraAnalysisHub keeps them live with fresh data instead.
+      removePolyhedraTypeHistogramPanel();
+      removePolyhedronInspectorPanel();
+      removePolyhedraConnectivityHistogramPanel();
+    },
     defaults: { docked: true, order: 90, collapsed: true },
   });
 

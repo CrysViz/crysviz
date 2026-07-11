@@ -6,7 +6,7 @@ import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getVi
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
-import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
+import { updatePolyhedra, updatePolyhedraColors, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
 import { listPipelines, setActivePipeline, requestRender } from '../render/index.js'
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
 import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js'
@@ -119,32 +119,15 @@ function createColorBar(container, colormap, minValue, maxValue, type) {
       updateAtomColorsByForce();
       updateAtoms();
 
-      // If bonds should match atom colors, update them
-      if (general.bondsColor == "elements" || general.bondsColor == null) {
-        const structure = fileBrowser.selectedStructure;
-        if (structure && structure.atoms) {
-          structure.atoms.forEach((atom, atomIndex) => {
-            const color = atom.getColor();
-            if (structure.atomImages?.[atomIndex]) {
-              structure.atomImages[atomIndex].forEach((imageIndex) => {
-                if (structure.bondMapping?.[imageIndex]) {
-                  structure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
-                    updateSingleBondColor(bondHalvIndex, color, true);
-                    const indexset = structure.bondObjectMapping[bondHalvIndex];
-                    structure.bonds[indexset[0]].color[indexset[1]] = color;
-                  });
-                }
-              });
-            }
-          });
-          updateBonds();
-        }
-      }
+      // No-ops unless bonds are in "elements" mode (see bondsFollowAtomColors).
+      syncBondsToAtomColors(fileBrowser.selectedStructure);
+      updatePolyhedraColors();
     } else if (type === "bonds") {
       general.BondMin = min;
       general.BondMax = max;
       updateBondColorsByLength();
       updateBonds();
+      updatePolyhedraColors();
     }
   }
 
@@ -186,6 +169,52 @@ function createDropdown(id, labelText, options, onChange) {
 }
 
 // --- Color Mapping Functions ---
+
+// Bonds only mirror atom colors in "elements" mode (or the unset default) —
+// every atom-color-driven sync below is a no-op otherwise, so a bond in
+// Length/White/Solid mode is never touched just because an atom's color
+// changed.
+function bondsFollowAtomColors() {
+  return general.bondsColor === "elements" || general.bondsColor == null;
+}
+
+// Mirrors `color` onto ONE mesh-instance's (one periodic image's) attached
+// bond halves — the single primitive behind every atom-color-driven bond
+// sync in the app (color-map/mode dropdowns, individual atom/element
+// pickers, resets). A per-bond user override (bond.userColor, set via the
+// individual bond color picker) must always win over this mirroring — see
+// updateSingleBond's color precedence (bond userColor > atom userColor >
+// mode color) in BondsFracUpdateModule.js — so an overridden half is
+// skipped, and this never itself writes bond.userColor: it's a mode-driven
+// mirror, not a deliberate per-bond pick, and marking it as one would
+// permanently freeze that half against every future legitimate sync.
+export function syncBondHalvesToImageColor(structure, imageIndex, color) {
+  if (!bondsFollowAtomColors()) return;
+  if (!structure?.bondMapping?.[imageIndex]) return;
+  structure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
+    const indexset = structure.bondObjectMapping[bondHalvIndex];
+    const bond = structure.bonds[indexset[0]];
+    if (bond.userColor?.[indexset[1]] != null) return;
+    updateSingleBondColor(bondHalvIndex, color, true);
+    bond.color[indexset[1]] = color;
+  });
+}
+
+// Mirrors one atom's color onto every one of its periodic images' bond halves.
+export function syncBondHalvesToAtomColor(structure, atomIndex, color) {
+  structure?.atomImages?.[atomIndex]?.forEach((imageIndex) => {
+    syncBondHalvesToImageColor(structure, imageIndex, color);
+  });
+}
+
+function syncBondsToAtomColors(structure) {
+  if (!structure || !structure.atoms) return;
+  structure.atoms.forEach((atom, atomIndex) => {
+    syncBondHalvesToAtomColor(structure, atomIndex, atom.getColor());
+  });
+  updateBonds();
+}
+
 function updateBondColorsByLength() {
   const bonds = fileBrowser.selectedStructure.bonds;
   if (!bonds) return;
@@ -204,27 +233,41 @@ function updateBondColorsByLength() {
   }
 }
 
-export function bondLengthToColor(bondLength, minVal = general.BondMin, maxVal = general.BondMax) {
-  let colors;
-  switch (general.bondsColorMap) {
-    case "batlow": colors = getBatlowColors(); break;
-    case "hawaii": colors = getHawaiiColors(); break;
-    case "managua": colors = getManaguaColors(); break;
-    case "viridis": colors = getViridisColors(); break;
-    case "plasma": colors = getPlasmaColors(); break;
-    case "spectralR": colors = getSpectralRColors(); break;
-    default: colors = getHeatMapColors();
+function colorMapColors(colorMapName) {
+  switch (colorMapName) {
+    case "batlow": return getBatlowColors();
+    case "hawaii": return getHawaiiColors();
+    case "managua": return getManaguaColors();
+    case "viridis": return getViridisColors();
+    case "plasma": return getPlasmaColors();
+    case "spectralR": return getSpectralRColors();
+    default: return getHeatMapColors();
   }
+}
 
+function valueToColor(value, minVal, maxVal, colorMapName) {
+  const colors = colorMapColors(colorMapName);
   if (!colors || colors.length === 0) {
     return "#ffffff";
   }
 
   const nBins = colors.length;
-  const clamped = Math.max(minVal, Math.min(maxVal, bondLength));
+  const clamped = Math.max(minVal, Math.min(maxVal, value));
   let t = (maxVal > minVal) ? (clamped - minVal) / (maxVal - minVal) : 0.5;
   const bin = Math.min(Math.max(0, Math.floor(t * nBins)), nBins - 1);
   return `#${(colors[bin].r * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].g * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].b * 255 | 0).toString(16).padStart(2, '0')}`;
+}
+
+export function bondLengthToColor(bondLength, minVal = general.BondMin, maxVal = general.BondMax) {
+  return valueToColor(bondLength, minVal, maxVal, general.bondsColorMap);
+}
+
+// Same binning as bondLengthToColor, but reads the ATOMS color map
+// (general.atomColorMap) — used to recompute an individual atom's force
+// color (on reset, or when force mode repaints), which must track whatever
+// color map the Atoms panel currently has selected, not the Bonds one.
+export function atomForceToColor(magnitude, minVal = general.ForceMin, maxVal = general.ForceMax) {
+  return valueToColor(magnitude, minVal, maxVal, general.atomColorMap);
 }
 
 function updateAtomColorsByForce() {
@@ -247,16 +290,7 @@ function updateAtomColorsByForce() {
   const colorMap = general.atomColorMap || "heatmap";
 
   // Get color array
-  let colors;
-  switch (colorMap) {
-    case "batlow": colors = getBatlowColors(); break;
-    case "hawaii": colors = getHawaiiColors(); break;
-    case "managua": colors = getManaguaColors(); break;
-    case "viridis": colors = getViridisColors(); break;
-    case "plasma": colors = getPlasmaColors(); break;
-    case "spectralR": colors = getSpectralRColors(); break;
-    default: colors = getHeatMapColors();
-  }
+  const colors = colorMapColors(colorMap);
 
   if (!colors || colors.length === 0) {
     alert("No colors available for selected color map. Using element colors instead.");
@@ -803,27 +837,8 @@ export function addColorPanel(target = "colorContainer") {
       updateAtomColorsByForce();
       updateAtoms();
 
-      // If bonds should match atom colors, update them
-      if (general.bondsColor == "elements" || general.bondsColor == null) {
-        const structure = fileBrowser.selectedStructure;
-        if (structure && structure.atoms) {
-          structure.atoms.forEach((atom, atomIndex) => {
-            const color = atom.getColor();
-            if (structure.atomImages?.[atomIndex]) {
-              structure.atomImages[atomIndex].forEach((imageIndex) => {
-                if (structure.bondMapping?.[imageIndex]) {
-                  structure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
-                    updateSingleBondColor(bondHalvIndex, color, true);
-                    const indexset = structure.bondObjectMapping[bondHalvIndex];
-                    structure.bonds[indexset[0]].color[indexset[1]] = color;
-                  });
-                }
-              });
-            }
-          });
-          updateBonds();
-        }
-      }
+      syncBondsToAtomColors(fileBrowser.selectedStructure);
+      updatePolyhedraColors();
     }
   });
   const atomsColorBarContainer = createElement("div", {}, { display: "none", marginTop: "8px" });
@@ -900,29 +915,11 @@ export function addColorPanel(target = "colorContainer") {
       }
     }
 
-    // If bonds should match atom colors (elements mode or default)
-    if (general.bondsColor == "elements" || general.bondsColor == null) {
-      if (structure && structure.atoms) {
-        structure.atoms.forEach((atom, atomIndex) => {
-          const color = atom.getColor();
-          if (structure.atomImages?.[atomIndex]) {
-            structure.atomImages[atomIndex].forEach((imageIndex) => {
-              if (structure.bondMapping?.[imageIndex]) {
-                structure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
-                  updateSingleBondColor(bondHalvIndex, color, true); // Pass true to overwrite
-                  const indexset = structure.bondObjectMapping[bondHalvIndex];
-                  structure.bonds[indexset[0]].color[indexset[1]] = color;
-                });
-              }
-            });
-          }
-        });
-        updateBonds();
-      }
-    }
+    syncBondsToAtomColors(structure);
 
     general.atomsColor = mode;
     updateAtoms();
+    updatePolyhedraColors();
 
   }
 
@@ -957,6 +954,7 @@ export function addColorPanel(target = "colorContainer") {
     bondsColorBar?.update(cmap);
     updateBondColorsByLength();
     updateBonds();
+    updatePolyhedraColors();
   });
 
   const bondsColorBarContainer = createElement("div", {}, { display: "none", marginTop: "8px" });
@@ -978,6 +976,12 @@ export function addColorPanel(target = "colorContainer") {
     const isLength = mode === "length";
     const isWhite = mode === "white";
     const isSolid = mode === "solid";
+
+    // Set before recoloring below: the "reset to elements" branch calls
+    // syncBondsToAtomColors(), which gates on general.bondsColor already
+    // being the NEW mode — setting this after that call left it reading the
+    // stale mode and silently skipping the resync.
+    general.bondsColor = mode;
 
     // Control visibility of each section independently
     bondsColorMapBlock.style.display = isLength ? "block" : "none";
@@ -1025,6 +1029,7 @@ export function addColorPanel(target = "colorContainer") {
         });
         general.solidBondColor = hex;
         updateBonds();
+        updatePolyhedraColors();
       });
 
       // Append the picker's DOM element
@@ -1042,16 +1047,10 @@ export function addColorPanel(target = "colorContainer") {
       });
     }
     else {
-      // Reset to element colors
-      const bonds = fileBrowser.selectedStructure.bonds;
-      bonds.forEach((bond, bondIndex) => {
-        if (!bond.visibleLen || bond.visibleLen <= 1e-3) return;
-        const atoms = fileBrowser.selectedStructure.atoms;
-        bond.color[0] = atoms[bond.srcIndices[0]].color;
-        bond.color[1] = atoms[bond.srcIndices[1]].color;
-        updateSingleBondColor(bondIndex * 2, bond.color[0]);
-        updateSingleBondColor(bondIndex * 2 + 1, bond.color[1]);
-      });
+      // Reset to element colors — mirrors each bond half to its endpoint
+      // atom's actual displayed color (getColor(), not the raw default),
+      // respecting any per-bond user override.
+      syncBondsToAtomColors(fileBrowser.selectedStructure);
     }
 
     // Clean up if not in solid mode
@@ -1059,7 +1058,7 @@ export function addColorPanel(target = "colorContainer") {
       bondsSolidColorContainer.innerHTML = "";
       bondsSolidColorPicker = null;
     }
-    general.bondsColor = mode;
+    updatePolyhedraColors();
   }
 
   // =========================

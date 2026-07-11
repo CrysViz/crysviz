@@ -133,6 +133,19 @@ export function highlightAtomIn3D(index) {
 }
 
 /**
+ * Highlight several atoms at once, given their SOURCE indices (structure.atoms
+ * order — e.g. a group of atoms sharing a coordination number). Expands each
+ * to every periodic-image instance via structure.atomImages, same as a
+ * multi-atom selection does, so all copies glow, not just the primary cell's.
+ */
+export function highlightAtomsIn3D(sourceIndices) {
+  clear3DHighlights();
+  const structure = fileBrowser.selectedStructure;
+  const instances = sourceIndices.flatMap((i) => structure?.atomImages?.[i] ?? [i]);
+  applyAtomHighlightIndices(instances);
+}
+
+/**
  * Temporarily remove the 3D highlight glow/recolor from whatever is
  * currently selected, without touching the selection itself (row highlight,
  * atomSelection/currentlyHighlightedBond state) — so a color editor opened
@@ -325,6 +338,13 @@ function findPolyhedronGroupMeshes(groupKey) {
     && (m.userData.groupKey ?? polyhedronGroupKey(m.userData.key ?? '')) === groupKey);
 }
 
+/** Notifies listeners (currently just AnalysisPanels/PolyhedronInspector.js)
+ *  that the 3D-picked polyhedron selection changed — mirrors the
+ *  'crysviz:polyhedra-rebuilt' event PolyhedraModule.js already dispatches. */
+function dispatchPolyhedronSelectionEvent(detail) {
+  document.dispatchEvent(new CustomEvent('crysviz:polyhedron-selection-changed', { detail }));
+}
+
 export function clearPolyhedronSelection() {
   const sel = highlightHover.currentlyHighlightedPolyhedron;
   if (sel) {
@@ -341,6 +361,7 @@ export function clearPolyhedronSelection() {
   }
   clearUIHighlight();
   highlightHover.currentlyHighlightedPolyhedron = null;
+  if (sel) dispatchPolyhedronSelectionEvent(null);
 }
 
 /** Locate (and if needed lazily build + expand) the Poly-tab row for a
@@ -405,6 +426,7 @@ function selectPolyhedronByKey(key, catKey, options = {}) {
     mesh.material.emissiveIntensity = 1.0;
   }
   highlightHover.currentlyHighlightedPolyhedron = { key, catKey, groupKey };
+  dispatchPolyhedronSelectionEvent({ key, catKey, groupKey });
 
   let row = options.row ?? null;
   if (!row && options.openPanel) {

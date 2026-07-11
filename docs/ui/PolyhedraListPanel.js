@@ -6,7 +6,7 @@
 // updateVisualization, so this panel re-renders itself on the
 // 'crysviz:polyhedra-rebuilt' CustomEvent dispatched by render/PolyhedraModule.
 import { fileBrowser, general } from '../state/store.js';
-import { colorHexToCss, createPieDot } from '../utils/ColorModule.js';
+import { colorHexToCss, createPieDot, updatePieDot } from '../utils/ColorModule.js';
 import { createColorPicker } from './ColorPickerModule.js';
 import {
   groupPolyhedraByCategory, updatePolyhedraColors, resolvePolyhedronStyle,
@@ -62,6 +62,16 @@ function rerenderPreservingExpansion(panelId = 'infoPolyControls') {
 // The polyhedra group was swapped or cleared (async) — refresh the panel.
 document.addEventListener('crysviz:polyhedra-rebuilt', () => {
   rerenderPreservingExpansion();
+});
+
+// A pure recolor (atom color-map dropdown, mode switch, color-bar limits,
+// individual edits) only fires crysviz:colors-changed, not
+// crysviz:polyhedra-rebuilt — so category pie dots went stale the same way
+// the Bonds tab's did. Keyed by catKey so re-creating a category overwrites
+// its own entry instead of accumulating stale closures.
+const polyCategorySwatchUpdateFunctions = {};
+document.addEventListener('crysviz:colors-changed', () => {
+  Object.values(polyCategorySwatchUpdateFunctions).forEach((updateFn) => updateFn());
 });
 
 export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
@@ -174,6 +184,9 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     dot.classList.add('dot');
     dot.style.cursor = 'pointer';
     dot.title = `Customize color/alpha for all ${entry.label} polyhedra`;
+    polyCategorySwatchUpdateFunctions[catKey] = () => {
+      updatePieDot(dot, entry.indices.map((i) => resolvedColorOf(structure, model.polyhedra[i])));
+    };
 
     // Uniform header order across tabs: checkbox, dot, label, caret, count, immunity.
     headerDiv.appendChild(checkbox);

@@ -44,6 +44,19 @@ function notifyPolyhedraRebuilt() {
   document.dispatchEvent(new CustomEvent('crysviz:polyhedra-rebuilt'));
 }
 
+// Same DOM-event pattern as notifyPolyhedraRebuilt() above, for colour-only
+// edits: most recolours already call updatePolyhedraColors() (below) to keep
+// the main view's polyhedra faces in sync, and updateVisualization() (see
+// core/crystal-viewer.js) fires this too as a broad safety net — but a
+// handful of paths (an individual bond's own color editor) mutate bond
+// instance colors directly without going through either, so they call this
+// exported helper themselves. Any listener — e.g. the Polyhedron Inspector's
+// mini render, which resolves its own atom/bond/face colours fresh on every
+// update — gets a single place to learn "a colour just changed".
+export function notifyColorsChanged() {
+  document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
+}
+
 function clearPolyhedraGroup() {
   if (groups.polyhedraGroup) disposeGroup(groups.polyhedraGroup);
   groups.polyhedraGroup = new THREE.Group();
@@ -1206,6 +1219,7 @@ export function renderPolyhedra(structure) {
  * that channel is owned by the selection highlight. No-op when nothing drawn.
  */
 export function updatePolyhedraColors() {
+  notifyColorsChanged();
   const grp = groups.polyhedraGroup;
   const structure = fileBrowser.selectedStructure;
   if (!grp || !structure) return;

@@ -6,7 +6,6 @@ import {
   getAtomImageStyle, setAtomImageStyle, clearAtomImageStyle,
   clearAtomImageStylesForAtom, getAtomImageColor, updateSingleAtomImageColor,
 } from '../../../render/AtomsFracUpdateModule.js';
-import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
 import { updatePolyhedraColors, scheduleBondRebuild } from '../../../render/index.js';
 import { createMaterialEditor } from './MaterialEditor.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
@@ -15,7 +14,19 @@ import { selectAtomFromRow, suppressSelectionHighlightFor3D, restoreSelectionHig
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createSpinForceEditor } from './SpinForceEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
-import { bondLengthToColor } from '../../ColorPanel.js';
+import { atomForceToColor, syncBondHalvesToImageColor } from '../../ColorPanel.js';
+
+// Each row's "Edit" button swatch previews the atom's live color, but a
+// global recolor (color-map dropdown, mode switch, color-bar limits) never
+// rebuilds these rows — so without this, the swatch goes stale exactly like
+// the composition pie dots did (see CompositionRow.js's
+// updateAllCompositionPieDots for the same pattern). Keyed by atom+image so
+// re-creating a row overwrites its own entry instead of accumulating stale
+// closures over detached buttons.
+const atomRowSwatchUpdateFunctions = {};
+document.addEventListener('crysviz:colors-changed', () => {
+  Object.values(atomRowSwatchUpdateFunctions).forEach((updateFn) => updateFn());
+});
 
 
 
@@ -118,8 +129,15 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   colorBtn.className = 'atom-editor-button';
   colorBtn.dataset.editorButton = 'color';
   colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;';
-  colorBtn.style.background = hexToRgba(currentColor, 0.8);
   colorBtn.title = `Edit color, alpha and size for ${element}${displayNumber}`;
+  function updateColorBtnSwatch() {
+    const color = perImage
+      ? safeColor(getAtomImageColor(fileBrowser.selectedStructure, imageIndex))
+      : safeColor(getAtomColor(atomIndex));
+    colorBtn.style.background = hexToRgba(color, 0.8);
+  }
+  updateColorBtnSwatch();
+  atomRowSwatchUpdateFunctions[`${atomIndex}:${imageIndex ?? 'all'}`] = updateColorBtnSwatch;
 
   // Coordinate edit button
   const coordBtn = document.createElement('button');
@@ -157,18 +175,6 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   editor.className = 'atom-color-editor';
   editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
 
-  // Recolor the bond halves attached to one mesh instance (transient across
-  // bond rebuilds, same lifetime as the linked path's bond tint).
-  function tintBondHalvesOfImage(structure, imgIndex, hex) {
-    if (!structure.bondMapping[imgIndex]) return;
-    structure.bondMapping[imgIndex].forEach(bondHalvIndex => {
-      updateSingleBondColor(bondHalvIndex, hex, true);
-      const indexset = structure.bondObjectMapping[bondHalvIndex];
-      structure.bonds[indexset[0]].color[indexset[1]] = hex;
-      structure.bonds[indexset[0]].userColor[indexset[1]] = hex;
-    });
-  }
-
   const mom_color = currentColor;
   const picker = createColorPicker(mom_color, (hex) => {
     let structure = fileBrowser.selectedStructure;
@@ -177,13 +183,13 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       // one instance — never mutate the shared source atom.
       setAtomImageStyle(structure, imageIndex, { color: hex });
       updateSingleAtomImageColor(imageIndex, hex);
-      tintBondHalvesOfImage(structure, imageIndex, hex);
+      syncBondHalvesToImageColor(structure, imageIndex, hex);
     } else {
       linkedAtomIndices.forEach((linkedAtomIndex) => {
         // Newest edit wins: a linked recolor overrides earlier per-copy colors.
         clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'color');
         structure.atomImages[linkedAtomIndex]?.forEach(imgIndex => {
-          tintBondHalvesOfImage(structure, imgIndex, hex);
+          syncBondHalvesToImageColor(structure, imgIndex, hex);
           updateSingleAtomColor(linkedAtomIndex, imgIndex, structure.elements[linkedAtomIndex], hex, hex);
         });
       });
@@ -516,10 +522,8 @@ AtomColorResetBtn.onclick = () => {
     updateSingleAtomOpacity(imageIndex, atom.getOpacity?.() ?? atom.opacity ?? 1);
     updateSingleAtomDiameter(imageIndex, element, atom.getRadiusScale?.() ?? 1);
     groups.atomsMesh.instanceMatrix.needsUpdate = true;
-    if (general.bondsColor == "elements") {
-      tintBondHalvesOfImage(structure, imageIndex, safeColor(atom.getColor()));
-      if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
-    }
+    syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
+    if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
     // Sync the editor controls without re-writing the store.
     const srcOpacity = clampOpacity(atom.getOpacity?.() ?? atom.opacity ?? 1);
     atomAlphaSlider.value = String(srcOpacity);
@@ -556,7 +560,7 @@ AtomColorResetBtn.onclick = () => {
           forceObj.vector[1] ** 2 +
           forceObj.vector[2] ** 2
         );
-        atom.color = bondLengthToColor(magnitude, general.ForceMin, general.ForceMax);
+        atom.color = atomForceToColor(magnitude, general.ForceMin, general.ForceMax);
       } else {
         atom.color = structure.getDefaultElementColor(element);
       }
@@ -568,16 +572,7 @@ AtomColorResetBtn.onclick = () => {
     atom.resetRadiusScale?.();
 
     structure.atomImages[linkedAtomIndex]?.forEach((imageIndex) => {
-      if (general.bondsColor == "elements") {
-        if (structure.bondMapping[imageIndex]) {
-          structure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
-            updateSingleBondColor(bondHalvIndex, safeColor(atom.getColor()));
-            const indexset = structure.bondObjectMapping[bondHalvIndex];
-            structure.bonds[indexset[0]].color[indexset[1]] = safeColor(atom.getColor());
-            structure.bonds[indexset[0]].userColor[indexset[1]] = safeColor(atom.getColor());
-          });
-        }
-      }
+      syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
       updateSingleAtomColor(linkedAtomIndex, imageIndex, structure.elements[linkedAtomIndex]);
       updateSingleAtomOpacity(imageIndex, atom.getOpacity());
     });
@@ -585,7 +580,7 @@ AtomColorResetBtn.onclick = () => {
 
   // update button to show reset color
   const resetColor = currentMode === "force"
-    ? bondLengthToColor(
+    ? atomForceToColor(
         Math.sqrt(
           (fileBrowser.selectedStructure.forces?.[atomIndex]?.vector?.[0] || 0) ** 2 +
           (fileBrowser.selectedStructure.forces?.[atomIndex]?.vector?.[1] || 0) ** 2 +
@@ -601,6 +596,9 @@ AtomColorResetBtn.onclick = () => {
   applyIndividualOpacity(fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? 1);
   applyIndividualRadiusScale(fileBrowser.selectedStructure.atoms[atomIndex].getRadiusScale?.() ?? 1);
   onColorChange();
+  // A centered polyhedron is coloured by its centre atom, so recolour in place
+  // (cheap, no geometry recompute) — matches the perImage reset branch above.
+  updatePolyhedraColors();
   updateVisualization({
     bondsUpdate: false,
     reRenderAtoms: false,

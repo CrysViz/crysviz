@@ -23,6 +23,7 @@ import { runPeriodicWrapped } from '../render/index.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { parse_any } from '../io/load_structure.js';
 import { initializeUIOnLoad } from './StructureInputModule.js';
+import { recenterCamera as recenterCameraImpl } from './WindowAndSceneControls.js';
 
 /**
  * Build the API object handed to an addon's build(). `registerStructureChange`
@@ -130,6 +131,18 @@ export function createAddonAPI({ registerStructureChange, toolbar = null } = {})
       const container = await parse_any(text, fileName);
       initializeUIOnLoad(container);
       return container;
+    },
+
+    // ---- camera -------------------------------------------------------
+    /**
+     * Re-center the camera's existing view on the active structure without
+     * touching rotation/zoom (only the orbit target moves) — the same call
+     * the file browser makes on a row/step switch. Call this after
+     * loadStructure() (or any other addon-driven structure swap) so the new
+     * structure isn't left off-center in the user's current view.
+     */
+    recenterCamera() {
+      recenterCameraImpl();
     },
 
     // ---- subscriptions ----------------------------------------------------

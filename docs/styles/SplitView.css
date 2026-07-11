@@ -34,14 +34,25 @@
   border-radius: 0;
 }
 
-#viewArea.split-active:not(.split-pane-collapsed) #view {
+#viewArea.split-active:not(.split-pane-collapsed):not(.split-dock-bottom) #view {
   margin-right: calc(var(--split-pane-fraction, 0.5) * 100vw);
 }
 
+/* Docked to the bottom: the pane spans the scene's own width, not the full
+   viewport, so it reserves height instead of width. */
+#viewArea.split-active.split-dock-bottom:not(.split-pane-collapsed) #view {
+  margin-right: 0;
+  margin-bottom: calc(var(--split-pane-fraction, 0.5) * 100vh);
+}
+
 /* #ui hidden: #view normally goes fullscreen (styles.css) — keep it clear
-   of the pane instead, at the same width the pane itself is drawn at. */
-body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
+   of the pane instead, at the same width/height the pane itself is drawn at. */
+body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed):not(.split-dock-bottom) #view {
   width: calc(100dvw - (var(--split-pane-fraction, 0.5) * 100vw)) !important;
+}
+
+body.panel-hidden #viewArea.split-active.split-dock-bottom:not(.split-pane-collapsed) #view {
+  height: calc(100dvh - (var(--split-pane-fraction, 0.5) * 100vh)) !important;
 }
 
 .split-handle {
@@ -79,16 +90,72 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
   overflow: hidden;
 }
 
+/* Docked to the bottom: hug the bottom edge, left-aligned with the 3D scene
+   (i.e. clear of #ui, using the same total-width token #ui's neighbors —
+   the axes gizmo, camera tools — already position off of) instead of the
+   viewport's left edge, and only as tall as the fraction dictates. */
+#viewArea.split-dock-bottom .split-pane {
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: var(--ui-total-width, 0px);
+  width: auto;
+  height: calc(var(--split-pane-fraction, 0.5) * 100vh);
+  min-width: 0;
+  max-width: none;
+  min-height: 220px; /* keep in sync with MIN_PANE_PX */
+  max-height: 85vh;
+  border-left: none;
+  border-top: 1px solid var(--panel-border);
+}
+
+/* #ui hidden or off-canvas (mobile overlay): the scene starts at the
+   viewport's left edge, so the bottom pane should too. */
+body.panel-hidden #viewArea.split-dock-bottom .split-pane {
+  left: 0;
+}
+
+#viewArea.split-dock-bottom .split-handle {
+  top: auto;
+  bottom: calc(var(--split-pane-fraction, 0.5) * 100vh);
+  right: 0;
+  left: var(--ui-total-width, 0px);
+  width: auto;
+  height: 6px;
+  cursor: row-resize;
+}
+
+body.panel-hidden #viewArea.split-dock-bottom .split-handle {
+  left: 0;
+}
+
+@media screen and (max-width: 1024px) {
+  /* #ui is an off-canvas overlay on mobile (see styles.css) — it never
+     narrows the scene, so the bottom pane always starts at the left edge. */
+  #viewArea.split-dock-bottom .split-pane,
+  #viewArea.split-dock-bottom .split-handle {
+    left: 0;
+  }
+}
+
 /* Not split (no panel's split view active): pane + handle take no space. */
 #viewArea:not(.split-active) .split-pane,
 #viewArea:not(.split-active) .split-handle {
   display: none;
 }
 
-/* Pane collapsed to a pull-tab: give the 3D view the width back. */
-#viewArea.split-pane-collapsed .split-pane {
+/* Pane collapsed to a pull-tab: give the 3D view the width back (or, docked
+   to the bottom, the height back). */
+#viewArea.split-pane-collapsed:not(.split-dock-bottom) .split-pane {
   width: 0;
   min-width: 0;
+  border: none;
+  overflow: hidden;
+}
+
+#viewArea.split-pane-collapsed.split-dock-bottom .split-pane {
+  height: 0;
+  min-height: 0;
   border: none;
   overflow: hidden;
 }
@@ -109,6 +176,16 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
   flex: 0 0 auto;
 }
 
+/* Absorbs the header's free space so the dock/collapse buttons cluster
+   together at the right edge instead of `justify-content: space-between`
+   spreading all three items (title / dock button / collapse button) evenly
+   — which otherwise strands the dock button in the middle whenever the
+   title text is short. */
+#splitPaneTitle {
+  flex: 1;
+  min-width: 0;
+}
+
 .split-pane-btn {
   background: var(--input-bg);
   color: var(--panel-fg);
@@ -121,6 +198,17 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
 
 .split-pane-btn:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+/* The "»" hide icon points the direction the pane collapses toward: right
+   normally, rotated to point down once docked to the bottom. */
+#splitPaneCollapseBtn {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+#viewArea.split-dock-bottom #splitPaneCollapseBtn {
+  transform: rotate(90deg);
 }
 
 /* The body holds one persistent container per open owner; only the front one
@@ -330,8 +418,9 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
 .split-pane-tabs {
   display: none;
   position: fixed;
-  top: 64px;
+  top: 50%;
   right: 0;
+  transform: translateY(-50%);
   z-index: 1300;
   flex-direction: column;
   align-items: flex-end;
@@ -348,6 +437,38 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed) #view {
   border-radius: 8px 0 0 8px;
   padding: 12px 6px;
   opacity: 0.75;
+}
+
+/* Docked to the bottom: the single pull-tab sits on the pane's own edge
+   (the bottom of the viewport), centered over the scene's own width (not
+   the full viewport, which would sit it off-center behind #ui), and reads
+   horizontally, like an ordinary tab. */
+#viewArea.split-dock-bottom .split-pane-tabs {
+  top: auto;
+  bottom: 0;
+  right: auto;
+  left: calc((var(--ui-total-width, 0px) + 100vw) / 2);
+  transform: translateX(-50%);
+}
+
+/* #ui hidden or off-canvas (mobile overlay): the scene spans the full
+   viewport, so center on it instead of the #ui-offset midpoint. */
+body.panel-hidden #viewArea.split-dock-bottom .split-pane-tabs {
+  left: 50vw;
+}
+
+@media screen and (max-width: 1024px) {
+  #viewArea.split-dock-bottom .split-pane-tabs {
+    left: 50vw;
+  }
+}
+
+#viewArea.split-dock-bottom .split-pane-tabs .split-pane-tab {
+  writing-mode: horizontal-tb;
+  border-right: 1px solid var(--panel-border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  padding: 6px 14px;
 }
 
 .split-pane-tabs .split-pane-tab:hover,

@@ -4,6 +4,7 @@ import { createColorPicker } from '../../ColorPickerModule.js';
 import { updateSingleBondColor, updateSingleBondOpacity, updateSingleBondDiameter, bondKey } from '../../../render/BondsFracUpdateModule.js';
 import { createMaterialEditor } from './MaterialEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
+import { notifyColorsChanged } from '../../../render/index.js';
 import { getElementAtomIndices, clampOpacity, clampRadiusScale } from './utils.js';
 import { selectBondFromRow, suppressSelectionHighlightFor3D, restoreSelectionHighlight } from '../../SelectAndHighlightModule.js';
 
@@ -14,6 +15,15 @@ function safeColor(color) {
   if (typeof color === 'string' && !color.startsWith('#')) return `#${color}`;
   return color;
 }
+
+// Each row's "Edit" button swatch previews the bond's live color, but a
+// global recolor (Bonds color-map dropdown, mode switch, color-bar limits)
+// never rebuilds these rows — refresh in place on the same event, mirroring
+// createIndividualAtomRow's atomRowSwatchUpdateFunctions.
+const bondRowSwatchUpdateFunctions = {};
+document.addEventListener('crysviz:colors-changed', () => {
+  Object.values(bondRowSwatchUpdateFunctions).forEach((updateFn) => updateFn());
+});
 
 /**
  * Creates a row for one individual bond inside an expanded Bonds-tab category
@@ -78,8 +88,13 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
   colorBtn.className = 'atom-editor-button';
   colorBtn.dataset.editorButton = 'color';
   colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;';
-  colorBtn.style.background = hexToRgba(currentColor, 0.8);
   colorBtn.title = `Edit color, alpha and size for bond ${bondName}`;
+  function updateColorBtnSwatch() {
+    const b = fileBrowser.selectedStructure?.bonds?.[bondIndex] ?? bond;
+    colorBtn.style.background = hexToRgba(safeColor(b.userColor?.[0] ?? b.color?.[0] ?? b.defaultColor?.[0]), 0.8);
+  }
+  updateColorBtnSwatch();
+  bondRowSwatchUpdateFunctions[groupKey ?? key] = updateColorBtnSwatch;
 
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = 'display: flex; gap: 10px;';
@@ -116,6 +131,10 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
     }
     if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
     colorBtn.style.background = hexToRgba(hex, 0.8);
+    // Nothing else here calls updateVisualization() (it's a direct instance-color
+    // mutation, cheaper than a full re-render) — notify separately so anything
+    // depending on live colours (e.g. the Polyhedron Inspector) still refreshes.
+    notifyColorsChanged();
   });
 
   // --- Alpha row (same layout as the atom editor) ---

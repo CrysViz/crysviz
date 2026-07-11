@@ -15,13 +15,14 @@
 // built once (into a per-owner container) and only shown/hidden, so transient
 // state (a loaded file, scroll position) survives a tab switch.
 
-import { setRightReserve, getPanel } from './PanelManager.js';
+import { setRightReserve, setBottomReserve, getPanel } from './PanelManager.js';
 import { resizeRenderer } from '../WindowAndSceneControls.js';
 import { requestRender } from '../../render/index.js';
 import { app } from '../../state/store.js';
 
 const DEFAULT_PANE_FRACTION = 1 / 3;
 const MIN_PANE_PX = 220; // dragged narrower than this -> snap collapsed
+const DOCK_SIDE_KEY = 'splitViewDockSide';
 
 const owners = [];              // open owners, in the order they were opened
 const containers = new Map();   // owner -> its persistent content <div>
@@ -29,6 +30,21 @@ let front = null;               // the owner currently shown in the body, or nul
 let collapsed = false;
 let wired = false;
 let paneFraction = DEFAULT_PANE_FRACTION;
+// Which viewport edge the pane hugs: 'right' (default) or 'bottom'. Bottom
+// mode aligns the pane's left edge with the 3D scene's left edge (not the
+// full viewport) so it never overlaps the #ui side panel — see
+// #viewArea.split-dock-bottom in SplitView.css.
+let dockSide = loadDockSide();
+
+function loadDockSide() {
+  try {
+    return localStorage.getItem(DOCK_SIDE_KEY) === 'bottom' ? 'bottom' : 'right';
+  } catch { return 'right'; }
+}
+
+function saveDockSide() {
+  try { localStorage.setItem(DOCK_SIDE_KEY, dockSide); } catch { /* storage unavailable */ }
+}
 
 function els() {
   return {
@@ -41,6 +57,8 @@ function els() {
     tabs: document.getElementById('splitPaneTabs'),
     headerTabs: document.getElementById('splitPaneHeaderTabs'),
     overlay: document.getElementById('splitPaneOverlay'),
+    dockBtn: document.getElementById('splitPaneDockBtn'),
+    closeBtn: document.getElementById('splitPaneCloseBtn'),
   };
 }
 
@@ -51,25 +69,50 @@ function applyPaneWidth() {
   // the pane, not descendants, so they need it too (CSS vars only inherit
   // down the tree from where they're declared).
   document.documentElement.style.setProperty('--split-pane-fraction', String(paneFraction));
+  viewArea.classList.toggle('split-dock-bottom', dockSide === 'bottom');
   if (collapsed) viewArea.classList.add('split-pane-collapsed');
   else viewArea.classList.remove('split-pane-collapsed');
 }
 
+/** Switch which viewport edge the pane docks to. No-op if already there. */
+function setDockSide(side) {
+  if (dockSide === side || (side !== 'right' && side !== 'bottom')) return;
+  dockSide = side;
+  saveDockSide();
+  applyPaneWidth();
+  syncSceneAndSidePanels();
+  updateDockBtn();
+  front?.onResize?.();
+}
+
+function updateDockBtn() {
+  const { dockBtn } = els();
+  if (!dockBtn) return;
+  dockBtn.textContent = dockSide === 'bottom' ? '⇒' : '⇩';
+  dockBtn.title = dockSide === 'bottom' ? 'Dock to the right' : 'Dock to the bottom';
+}
+
 /**
- * Re-derive the space the pane currently occupies to the right of #view and
- * push that out to everything that needs to stay clear of it: the 3D
- * renderer (resize + a fresh on-demand frame — #view's size can change here
- * without a window resize event ever firing), right-anchored floating panels
- * (Structure info, ...) via PanelManager's right-reserve, and the
- * background-dot (a plain fixed div, via the --split-reserve custom
- * property).
+ * Re-derive the space the pane currently occupies next to #view and push
+ * that out to everything that needs to stay clear of it: the 3D renderer
+ * (resize + a fresh on-demand frame — #view's size can change here without a
+ * window resize event ever firing), floating panels anchored to that same
+ * edge (Structure info, ...) via PanelManager's right-/bottom-reserve, and
+ * plain fixed-position chrome (the background-dot, the axes gizmo/legend)
+ * via the --split-reserve / --split-reserve-bottom custom properties.
  */
 function syncSceneAndSidePanels() {
   const { view } = els();
   if (!view) return;
-  const reservePx = Math.max(0, window.innerWidth - view.getBoundingClientRect().right);
-  setRightReserve(reservePx);
-  document.documentElement.style.setProperty('--split-reserve', `${reservePx}px`);
+  const rect = view.getBoundingClientRect();
+  // Only the pane's own docked edge reserves space; the other axis is left
+  // alone (right-docked reserves no height, bottom-docked reserves no width).
+  const rightReservePx = dockSide === 'bottom' ? 0 : Math.max(0, window.innerWidth - rect.right);
+  const bottomReservePx = dockSide === 'bottom' ? Math.max(0, window.innerHeight - rect.bottom) : 0;
+  setRightReserve(rightReservePx);
+  setBottomReserve(bottomReservePx);
+  document.documentElement.style.setProperty('--split-reserve', `${rightReservePx}px`);
+  document.documentElement.style.setProperty('--split-reserve-bottom', `${bottomReservePx}px`);
   resizeRenderer(app.orthographicFrustumSize);
   requestRender();
 }
@@ -128,11 +171,40 @@ function requestClose(owner) {
   else closeSplitView(owner);
 }
 
+/** Collapsed state shows a single pull-tab (not one per owner): it reopens
+ *  the pane on whichever owner was front when it collapsed. The other
+ *  owners aren't lost — their tabs are still in the header strip, reachable
+ *  as soon as the pane reopens. Label is a fixed generic name rather than
+ *  the front owner's title (which owner is front isn't the point here — the
+ *  tab is just "come back to the split view"). */
+function renderCollapsedTab(container) {
+  container.innerHTML = '';
+  if (!front) return;
+  const tab = document.createElement('div');
+  tab.className = 'split-pane-tab active';
+  tab.setAttribute('role', 'tab');
+  tab.tabIndex = 0;
+  tab.title = 'Show Split View';
+
+  const label = document.createElement('span');
+  label.className = 'split-pane-tab-label';
+  label.textContent = 'Split View';
+  tab.appendChild(label);
+
+  const activate = () => setCollapsed(false);
+  tab.addEventListener('click', activate);
+  tab.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); activate(); }
+  });
+
+  container.appendChild(tab);
+}
+
 function renderTabs() {
   const { viewArea, tabs, headerTabs } = els();
   if (headerTabs) fillTabs(headerTabs, { withClose: true });
   if (tabs) {
-    fillTabs(tabs, { suffix: ' ▸' });
+    renderCollapsedTab(tabs);
     tabs.hidden = owners.length === 0;
   }
   if (viewArea) viewArea.classList.toggle('split-multi', owners.length > 1);
@@ -270,31 +342,41 @@ function closeExpandedItem() {
 function wireOnce() {
   if (wired) return;
   wired = true;
-  const { pane, handle, overlay } = els();
+  const { pane, handle, overlay, dockBtn, closeBtn } = els();
 
   const collapseBtn = document.getElementById('splitPaneCollapseBtn');
   if (collapseBtn) collapseBtn.addEventListener('click', () => setCollapsed(true));
 
+  if (closeBtn) closeBtn.addEventListener('click', () => { if (front) requestClose(front); });
+
+  updateDockBtn();
+  if (dockBtn) {
+    dockBtn.addEventListener('click', () => setDockSide(dockSide === 'bottom' ? 'right' : 'bottom'));
+  }
+
   // Drag the splitter: resize while open, snap to the collapsed tab if
-  // dragged past most of the pane's width.
+  // dragged past most of the pane's width/height.
   if (handle) {
     handle.addEventListener('pointerdown', (startEv) => {
       if (collapsed) return;
       startEv.preventDefault();
       handle.setPointerCapture(startEv.pointerId);
 
-      // The pane's CSS width is a vw-based fraction of the whole viewport
+      // The pane's CSS size is a vw/vh-based fraction of the whole viewport
       // (it's viewport-fixed, not a flex child of #viewArea) — the fraction
       // must be computed against the same basis, not #viewArea's narrower
-      // width (which excludes the #ui dock), or the drag and the rendered
-      // width disagree.
+      // extent (which excludes the #ui dock), or the drag and the rendered
+      // size disagree.
       const onMove = (ev) => {
-        const paneWidthPx = Math.max(0, window.innerWidth - ev.clientX);
-        if (paneWidthPx < MIN_PANE_PX) {
+        const sizePx = dockSide === 'bottom'
+          ? Math.max(0, window.innerHeight - ev.clientY)
+          : Math.max(0, window.innerWidth - ev.clientX);
+        const basis = dockSide === 'bottom' ? window.innerHeight : window.innerWidth;
+        if (sizePx < MIN_PANE_PX) {
           setCollapsed(true);
           return;
         }
-        paneFraction = Math.min(0.8, paneWidthPx / window.innerWidth);
+        paneFraction = Math.min(0.8, sizePx / basis);
         collapsed = false;
         applyPaneWidth();
         syncSceneAndSidePanels();

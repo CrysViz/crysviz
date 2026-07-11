@@ -59,6 +59,17 @@ function refreshBondHeaders(panelRoot) {
   });
 }
 
+// A global recolor (Bonds color-map dropdown, mode switch, color-bar limits,
+// individual/category bond edits elsewhere) doesn't go through any of the
+// three refreshBondHeaders() call sites above (those only fire on
+// visibility/slider/rebuild actions), so category pie dots went stale the
+// same way the composition pie dots and Edit-button swatches did. Keyed by
+// pair so re-creating a category row overwrites its own entry.
+const bondCategorySwatchUpdateFunctions = {};
+document.addEventListener('crysviz:colors-changed', () => {
+  Object.values(bondCategorySwatchUpdateFunctions).forEach((updateFn) => updateFn());
+});
+
 // Inject CSS for the double slider
 function injectDoubleSliderCSS() {
   const style = document.createElement('style');
@@ -296,6 +307,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       countLabel.textContent = `${members.length} (${total ? (100 * members.length / total).toFixed(1) : '0.0'}%)`;
     }
     /** @type {any} */ (div)._refreshBondHeader = refreshHeader;
+    bondCategorySwatchUpdateFunctions[pair] = refreshHeader;
 
     // --- Per-pair cut-plane immunity toggle (parity with the Atoms header) ---
     const keepToggle = createTinyToggle({
