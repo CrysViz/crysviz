@@ -1,16 +1,17 @@
 // First-run ray/path-tracing performance-warning modal (ui/RaytraceWarningModal.js).
 //
-// Deterministic single-page flow (order matters because "shown once per
-// session" is a module-local flag):
+// Deterministic single-page flow (order matters for the one-shot suppression
+// and the persisted pref):
 //   (0) suppressRaytraceWarningOnce() BEFORE any modal has shown -> the next
 //       tracer enable is silently consumed (models the ShareModule restore).
 //   (1) enabling a tracer again shows the modal, and the pipeline ALSO switches
 //       (the warning is non-blocking). Ok closes it.
-//   (2) a second tracer enable does NOT show it again (once per session).
+//   (2) tracer->tracer switches do not re-warn, but leaving to a raster mode
+//       and flipping back into a tracer shows the warning again.
 //   (3) showRaytraceWarning() + tick "Don't show again" + Ok -> pref persisted
 //       and the Settings-window toggle reflects it.
-//   (4) unchecking the Settings toggle clears the pref AND resets the session
-//       flag, so the next tracer enable shows the modal again.
+//   (4) unchecking the Settings toggle clears the pref, so the next tracer
+//       enable shows the modal again.
 'use strict';
 const H = require('../harness');
 
@@ -53,13 +54,20 @@ const pipelineId = (page) => page.evaluate(async () => {
   await page.waitForTimeout(150);
   H.check('Ok closes the modal', (await visible(page)) === false);
 
-  // --- (2) Once per session: a second enable does not re-show --------------------
-  await H.setSelect(page, 'renderPipelineMenu', 'forward');
-  await H.setSelect(page, 'renderPipelineMenu', 'pathtrace');
+  // --- (2) Tracer -> tracer does not re-warn; leaving and re-entering does -------
+  await H.setSelect(page, 'renderPipelineMenu', 'pathtrace'); // raytrace -> pathtrace
   await page.waitForTimeout(300);
-  H.check('second tracer enable does NOT re-show the modal (once per session)',
+  H.check('switching between the two tracers does NOT re-show the modal',
     (await visible(page)) === false);
   H.check('pathtrace pipeline active', (await pipelineId(page)) === 'pathtrace');
+  await H.setSelect(page, 'renderPipelineMenu', 'forward');
+  await H.setSelect(page, 'renderPipelineMenu', 'pathtrace'); // re-entry from raster
+  await page.waitForTimeout(300);
+  H.check('flipping back into a tracer (raster -> tracer) shows the modal again',
+    (await visible(page)) === true);
+  await H.clickById(page, 'raytraceWarningOk');
+  await page.waitForTimeout(150);
+  H.check('Ok closes the re-shown modal', (await visible(page)) === false);
 
   // --- (3) "Don't show again" persists the pref + syncs the Settings toggle ------
   const persisted = await page.evaluate(async () => {
@@ -96,7 +104,7 @@ const pipelineId = (page) => page.evaluate(async () => {
   await H.setSelect(page, 'renderPipelineMenu', 'forward');
   await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
   await page.waitForTimeout(300);
-  H.check('re-enabled warning shows again on the next tracer enable (session flag reset)',
+  H.check('re-enabled warning shows again on the next tracer enable',
     (await visible(page)) === true);
   await H.clickById(page, 'raytraceWarningOk');
   await page.waitForTimeout(150);

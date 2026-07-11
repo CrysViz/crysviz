@@ -407,12 +407,14 @@ export function addColorPanel(target = "colorContainer") {
   const renderPipelineMenu = createDropdown("renderPipelineMenu", "Rendering pipeline",
     renderPipelineOptions(), () => {
       const pipelineValue = renderPipelineMenu.querySelector("select").value;
+      const wasTracer = general.renderPipeline === 'raytrace' || general.renderPipeline === 'pathtrace';
       setActivePipeline(pipelineValue);
       updateRenderingControlsVisibility();
-      // First-run performance warning on the (potentially slow) tracer modes.
-      if (pipelineValue === 'raytrace' || pipelineValue === 'pathtrace') {
-        maybeShowRaytraceWarning();
-      }
+      // Performance warning each time a (potentially slow) tracer mode is
+      // ENTERED from a raster mode — switching between the two tracers does
+      // not re-warn; "Don't show this again" suppresses it permanently.
+      const isTracer = pipelineValue === 'raytrace' || pipelineValue === 'pathtrace';
+      if (isTracer && !wasTracer) maybeShowRaytraceWarning();
     });
   content.appendChild(renderPipelineMenu);
 

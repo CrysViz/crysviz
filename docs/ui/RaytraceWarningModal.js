@@ -1,7 +1,7 @@
-// First-run performance-warning modal for the ray/path-tracing pipelines.
+// Performance-warning modal for the ray/path-tracing pipelines.
 //
-// Shown at most once per browser session, on the first user enable of the
-// raytrace/pathtrace pipeline (fired from ColorPanel's pipeline dropdown).
+// Shown each time the user ENTERS a tracer mode from a raster mode (fired from
+// ColorPanel's pipeline dropdown; tracer -> tracer switches do not re-warn).
 // A "Don't show this again" checkbox persists suppression across sessions via
 // the panelPrefs bag (`hideRaytraceWarning`); that pref is also surfaced as a
 // toggle in the Settings window. The ShareModule session-restore re-dispatch
@@ -15,8 +15,6 @@ let modal = null;
 let okBtn = null;
 let dontShowInput = null;
 
-// Once-per-session guard: set the first time the modal is actually shown.
-let shownThisSession = false;
 // One-shot suppression armed by suppressRaytraceWarningOnce(), consumed by the
 // next maybeShowRaytraceWarning() call (used for the ShareModule restore).
 let suppressOnce = false;
@@ -67,16 +65,17 @@ export function showRaytraceWarning() {
   if (dontShowInput) dontShowInput.checked = false;
   previousFocus = document.activeElement;
   modal.hidden = false;
-  shownThisSession = true;
   // Focus the Ok button once the modal is visible.
   setTimeout(() => { if (okBtn) okBtn.focus({ preventScroll: true }); }, 0);
 }
 
-/** Show iff not already shown this session AND the pref does not suppress it.
- *  A one-shot suppression (suppressRaytraceWarningOnce) is consumed first. */
+/** Show unless the "Don't show this again" pref suppresses it. Called on every
+ *  raster -> tracer switch (the ColorPanel handler skips tracer -> tracer), so
+ *  without the pref the user is re-warned each time they flip back into a
+ *  tracer mode. A one-shot suppression (suppressRaytraceWarningOnce) is
+ *  consumed first. */
 export function maybeShowRaytraceWarning() {
   if (suppressOnce) { suppressOnce = false; return; }
-  if (shownThisSession) return;
   if (getPanelPref('hideRaytraceWarning')) return;
   showRaytraceWarning();
 }
@@ -85,12 +84,6 @@ export function maybeShowRaytraceWarning() {
  *  call (used before the ShareModule session-restore change dispatch). */
 export function suppressRaytraceWarningOnce() {
   suppressOnce = true;
-}
-
-/** Reset the once-per-session flag so the warning can show again this session
- *  (used when the user re-enables the warning from Settings). */
-export function resetRaytraceWarningSession() {
-  shownThisSession = false;
 }
 
 function closeWarning() {
