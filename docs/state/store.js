@@ -28,7 +28,12 @@ export const highlightHover ={
    currentlyHighlightedRow:null,
    currentlyHighlightedRows:[],
    currentlyHighlightedBond:null,
-   currentlyHighlightedPolyhedron:null
+   currentlyHighlightedPolyhedron:null,
+   // Instance ids currently glowing (recorded by SelectAndHighlightModule) so the
+   // ray/path tracers can draw them as a post-present overlay and clear them
+   // without a full mesh rebuild (which would restart the accumulation).
+   currentlyHighlightedAtomInstances:[],
+   currentlyHighlightedBondInstances:[]
 };
 
 export const atomSelection = {

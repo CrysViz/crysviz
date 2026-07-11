@@ -44,6 +44,15 @@ export function getActivePipeline() {
   return app.pipeline ?? null;
 }
 
+/** True when a progressive ray/path tracer owns the frame. Callers use it to
+ *  avoid fingerprint-bumping scene writes (which would restart the tracer's
+ *  accumulation) — e.g. atom/bond highlight recolor, which the tracers draw as
+ *  a post-present overlay instead. */
+export function isTracerPipelineActive() {
+  const id = app.pipeline?.id;
+  return id === RayTracingPipeline.id || id === PathTracingPipeline.id;
+}
+
 /**
  * Activate a pipeline by id (unknown ids fall back to forward). Disposes the
  * previous pipeline, installs the new one as the transparency-policy delegate,

@@ -187,9 +187,14 @@ export function initImageExportPanel() {
     downloadBtn.textContent = 'Rendering…';
     try {
       // Tracer pipelines render to full convergence inside captureSceneToPng
-      // (the on-screen progress bar tracks the export accumulation).
+      // (the on-screen progress bar tracks the export accumulation). The button
+      // mirrors that accumulation count; raster pipelines never emit progress
+      // (the loop is skipped), so the text stays 'Rendering…'.
       const blob = await captureSceneToPng({
         width, height, margin, transparent: transparentInput.checked,
+        onProgress: ({ current, target }) => {
+          downloadBtn.textContent = `Rendering… ${current} / ${target}`;
+        },
       });
       downloadBlob(currentBaseName() + '.png', blob);
       closeModal();

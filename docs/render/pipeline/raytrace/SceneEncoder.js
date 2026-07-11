@@ -16,7 +16,7 @@
 
 import * as THREE from '../../../external/three/three.module.js';
 import { ConvexHull } from '../../../external/three/ConvexHull.js';
-import { groups, fileBrowser, general, app } from '../../../state/store.js';
+import { groups, fileBrowser, general, app, measurements } from '../../../state/store.js';
 import { bondKey } from '../../BondsFracUpdateModule.js';
 import { getAtomImageStyle } from '../../AtomsFracUpdateModule.js';
 import { MAX_CUT_PLANES } from '../../MaterialStyles.js';
@@ -345,6 +345,25 @@ export class SceneEncoder {
     }
     parts.push('plc', planes.length);
 
+    // measurements (shells + dashes): traced as ghost spheres / thin cylinders.
+    // Cheap signal — count, and per traced group its id, child count, visibility
+    // and first-child world position (rounded to 1e-3). add/clear changes the
+    // count/ids; updateAllMeasurements rebuilds children + moves positions.
+    const mLines = measurements?.measureLines;
+    if (Array.isArray(mLines)) {
+      parts.push('me', mLines.length);
+      const r3 = (x) => Math.round(x * 1000);
+      for (const g of mLines) {
+        const t = g?.userData?.type;
+        if (t !== 'distance' && t !== 'angle' && t !== 'distanceMarker' && t !== 'angleMarker') continue;
+        const child = g.children?.[0];
+        if (child) child.updateWorldMatrix(true, false);
+        if (child) child.getWorldPosition(_pos); else _pos.set(0, 0, 0);
+        parts.push(g.id, t, g.visible === false ? 0 : 1, g.children?.length ?? 0,
+          r3(_pos.x), r3(_pos.y), r3(_pos.z));
+      }
+    }
+
     // TRACER-MATERIAL side: today's 'm' block verbatim (all seven maps, full
     // serialization) — a raster-field edit that flips BOTH parts is harmless
     // since the preview trigger keys only on the core part.
@@ -657,84 +676,87 @@ export class SceneEncoder {
 
   _encodeAtoms() {
     const mesh = groups.atomsMesh;
-    if (!mesh || !mesh.visible) {
+    // Measurement shell markers ('distanceMarker'/'angleMarker') are traced as
+    // extra ghost spheres appended after the real atoms (so they share the atom
+    // hit loop + uniform grid); gathered up front to size the texture.
+    const measSpheres = this._measurementSpheres();
+    const meshVisible = !!(mesh && mesh.visible);
+    if (!meshVisible && measSpheres.length === 0) {
       this.atomCount = 0;
       return;
     }
     const structure = fileBrowser.selectedStructure;
-    const srcIndex = structure?.periodic?.wrapped?.srcIndex;
-    const atomMaterials = structure?.atomMaterials ?? {};
-    const atomUserMaterials = structure?.atomUserMaterials ?? {};
-    const matrices = mesh.instanceMatrix.array;
-    const colors = mesh.instanceColor.array;
-    const opacities = mesh.geometry.attributes.instanceOpacity?.array;
-    const baseOpacity = mesh.material.opacity ?? 1;
     // whole-atom cut-plane removal by world CENTER, matching the raster shader
     // discard (AtomsFracUpdateModule); per-atom "Keep" immunity is honored.
     const cutPlanes = this._activeCutPlanes();
-    const immune = mesh.geometry.attributes.instanceCutPlaneImmune?.array;
-    const texture = this._ensureCapacity('atomsTexture', mesh.count * 3);
+    const texture = this._ensureCapacity('atomsTexture',
+      Math.max(1, ((meshVisible ? mesh.count : 0) + measSpheres.length) * 3));
     const data = texture.image.data;
     let n = 0;
     let maxR2 = 25;
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-    for (let i = 0; i < mesh.count; i++) {
-      const o = i * 16;
-      const radius = matrices[o]; // uniform scale; 0 = hidden instance
-      if (!(radius > 0)) continue;
-      if (cutPlanes.length && !(immune && immune[i] >= 0.5)) {
-        const cx = matrices[o + 12], cy = matrices[o + 13], cz = matrices[o + 14];
-        let cut = false;
-        for (const p of cutPlanes) {
-          if ((cx * p.nx + cy * p.ny + cz * p.nz - p.w) * p.sign > 0) { cut = true; break; }
+    if (meshVisible) {
+      const srcIndex = structure?.periodic?.wrapped?.srcIndex;
+      const atomMaterials = structure?.atomMaterials ?? {};
+      const atomUserMaterials = structure?.atomUserMaterials ?? {};
+      const matrices = mesh.instanceMatrix.array;
+      const colors = mesh.instanceColor.array;
+      const opacities = mesh.geometry.attributes.instanceOpacity?.array;
+      const baseOpacity = mesh.material.opacity ?? 1;
+      const immune = mesh.geometry.attributes.instanceCutPlaneImmune?.array;
+      for (let i = 0; i < mesh.count; i++) {
+        const o = i * 16;
+        const radius = matrices[o]; // uniform scale; 0 = hidden instance
+        if (!(radius > 0)) continue;
+        if (cutPlanes.length && !(immune && immune[i] >= 0.5)) {
+          const cx = matrices[o + 12], cy = matrices[o + 13], cz = matrices[o + 14];
+          let cut = false;
+          for (const p of cutPlanes) {
+            if ((cx * p.nx + cy * p.ny + cz * p.nz - p.w) * p.sign > 0) { cut = true; break; }
+          }
+          if (cut) continue;
         }
-        if (cut) continue;
+        const d = n * 12;
+        data[d] = matrices[o + 12];
+        data[d + 1] = matrices[o + 13];
+        data[d + 2] = matrices[o + 14];
+        data[d + 3] = radius;
+        const r2 = data[d] * data[d] + data[d + 1] * data[d + 1] + data[d + 2] * data[d + 2];
+        if (r2 > maxR2) maxR2 = r2;
+        if (data[d] - radius < minX) minX = data[d] - radius;
+        if (data[d] + radius > maxX) maxX = data[d] + radius;
+        if (data[d + 1] - radius < minY) minY = data[d + 1] - radius;
+        if (data[d + 1] + radius > maxY) maxY = data[d + 1] + radius;
+        if (data[d + 2] - radius < minZ) minZ = data[d + 2] - radius;
+        if (data[d + 2] + radius > maxZ) maxZ = data[d + 2] + radius;
+        data[d + 4] = colors[i * 3];
+        data[d + 5] = colors[i * 3 + 1];
+        data[d + 6] = colors[i * 3 + 2];
+        data[d + 7] = (opacities ? opacities[i] : 1) * baseOpacity;
+        // per-copy override > per-atom override > per-species material
+        // (per-copy = "Link periodic copies" off, stored in atomImageStyles)
+        const src = srcIndex ? srcIndex[i] : i;
+        const element = structure?.elements?.[src];
+        const mt = materialTexel(
+          getAtomImageStyle(structure, i)?.material
+            ?? atomUserMaterials[src]
+            ?? (element ? atomMaterials[element] : null));
+        if (mt[0] === 3) {
+          this.hasEmissive = true;
+          // listed bit into the free reflectivity slot (unused for emissive);
+          // the emitter's bounding sphere is its own atom sphere.
+          const listed = this._emissiveList.length < EMISSIVE_CAP;
+          mt[3] = listed ? 1 : 0;
+          this._emissiveList.push({ kind: 0, encIndex: n,
+            cx: data[d], cy: data[d + 1], cz: data[d + 2], r: radius, power: mt[2] });
+        }
+        data.set(mt, d + 8);
+        n++;
       }
-      const d = n * 12;
-      data[d] = matrices[o + 12];
-      data[d + 1] = matrices[o + 13];
-      data[d + 2] = matrices[o + 14];
-      data[d + 3] = radius;
-      const r2 = data[d] * data[d] + data[d + 1] * data[d + 1] + data[d + 2] * data[d + 2];
-      if (r2 > maxR2) maxR2 = r2;
-      if (data[d] - radius < minX) minX = data[d] - radius;
-      if (data[d] + radius > maxX) maxX = data[d] + radius;
-      if (data[d + 1] - radius < minY) minY = data[d + 1] - radius;
-      if (data[d + 1] + radius > maxY) maxY = data[d + 1] + radius;
-      if (data[d + 2] - radius < minZ) minZ = data[d + 2] - radius;
-      if (data[d + 2] + radius > maxZ) maxZ = data[d + 2] + radius;
-      data[d + 4] = colors[i * 3];
-      data[d + 5] = colors[i * 3 + 1];
-      data[d + 6] = colors[i * 3 + 2];
-      data[d + 7] = (opacities ? opacities[i] : 1) * baseOpacity;
-      // per-copy override > per-atom override > per-species material
-      // (per-copy = "Link periodic copies" off, stored in atomImageStyles)
-      const src = srcIndex ? srcIndex[i] : i;
-      const element = structure?.elements?.[src];
-      const mt = materialTexel(
-        getAtomImageStyle(structure, i)?.material
-          ?? atomUserMaterials[src]
-          ?? (element ? atomMaterials[element] : null));
-      if (mt[0] === 3) {
-        this.hasEmissive = true;
-        // listed bit into the free reflectivity slot (unused for emissive);
-        // the emitter's bounding sphere is its own atom sphere.
-        const listed = this._emissiveList.length < EMISSIVE_CAP;
-        mt[3] = listed ? 1 : 0;
-        this._emissiveList.push({ kind: 0, encIndex: n,
-          cx: data[d], cy: data[d + 1], cz: data[d + 2], r: radius, power: mt[2] });
-      }
-      data.set(mt, d + 8);
-      n++;
     }
-    this.atomCount = n;
     this.boundingRadius = Math.sqrt(maxR2) + 3;
     this.minY = Number.isFinite(minY) ? minY : -5;
-    // atom-only AABB for the whole-scene bound (kept separate from
-    // structureCenter/minY, which stay atoms-only for ground/light placement)
-    this._atomMin = [minX, minY, minZ];
-    this._atomMax = [maxX, maxY, maxZ];
     if (Number.isFinite(minX)) {
       this.structureCenter.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
       this.structureRadius = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2 + (maxZ - minZ) ** 2) / 2;
@@ -742,7 +764,92 @@ export class SceneEncoder {
       this.structureCenter.set(0, 0, 0);
       this.structureRadius = 5;
     }
+    // atom-only AABB for the whole-scene bound (kept separate from
+    // structureCenter/minY, which stay atoms-only for ground/light placement)
+    this._atomMin = [minX, minY, minZ];
+    this._atomMax = [maxX, maxY, maxZ];
+    // Append the measurement shells as ghost spheres (alpha 0.32 → the tracers'
+    // stochastic see-through gives the ghost look). They extend the whole-scene
+    // AABB (so the grid / bounds early-out include them) but NOT the atoms-only
+    // center/minY/boundingRadius used for ground & light placement.
+    for (const s of measSpheres) {
+      const d = n * 12;
+      data[d] = s.cx; data[d + 1] = s.cy; data[d + 2] = s.cz; data[d + 3] = s.r;
+      data[d + 4] = s.cr; data[d + 5] = s.cg; data[d + 6] = s.cb; data[d + 7] = 0.32;
+      data.set(DEFAULT_MATERIAL_TEXEL, d + 8);
+      if (s.cx - s.r < this._atomMin[0]) this._atomMin[0] = s.cx - s.r;
+      if (s.cy - s.r < this._atomMin[1]) this._atomMin[1] = s.cy - s.r;
+      if (s.cz - s.r < this._atomMin[2]) this._atomMin[2] = s.cz - s.r;
+      if (s.cx + s.r > this._atomMax[0]) this._atomMax[0] = s.cx + s.r;
+      if (s.cy + s.r > this._atomMax[1]) this._atomMax[1] = s.cy + s.r;
+      if (s.cz + s.r > this._atomMax[2]) this._atomMax[2] = s.cz + s.r;
+      n++;
+    }
+    this.atomCount = n;
     texture.needsUpdate = true;
+  }
+
+  /** Visible measurement shell markers ('distanceMarker'/'angleMarker' groups)
+   *  as ghost spheres {cx,cy,cz,r, cr,cg,cb}. World center + radius come from
+   *  the child shell mesh's world matrix (radius = SphereGeometry parameter x
+   *  world scale); colour from its MeshBasicMaterial. */
+  _measurementSpheres() {
+    const lines = measurements?.measureLines;
+    if (!Array.isArray(lines) || lines.length === 0) return [];
+    const result = [];
+    for (const group of lines) {
+      const type = group?.userData?.type;
+      if (type !== 'distanceMarker' && type !== 'angleMarker') continue;
+      if (group.visible === false) continue;
+      const shell = group.children?.[0];
+      if (!shell || shell.visible === false || !shell.geometry?.parameters) continue;
+      shell.updateWorldMatrix(true, false);
+      shell.matrixWorld.decompose(_pos, _quat, _scale);
+      const worldScale = Math.max(Math.abs(_scale.x), Math.abs(_scale.y), Math.abs(_scale.z));
+      const r = (shell.geometry.parameters.radius ?? 1) * worldScale;
+      if (!(r > 0)) continue;
+      _color.copy(shell.material.color);
+      result.push({ cx: _pos.x, cy: _pos.y, cz: _pos.z, r, cr: _color.r, cg: _color.g, cb: _color.b });
+    }
+    return result;
+  }
+
+  /** Visible measurement dash segments ('distance'/'angle' groups) as thin
+   *  cylinder edge entries {invM, geom, r,g,b,a}, one per dash child. Each dash
+   *  is a CylinderGeometry mesh (local +y axis) placed by position+lookAt; its
+   *  world endpoints (center +/- worldDir x worldLen/2) feed the same
+   *  endpoint->cylinder path the lattice/poly edges use. */
+  _measurementCylinders() {
+    const lines = measurements?.measureLines;
+    if (!Array.isArray(lines) || lines.length === 0) return [];
+    const result = [];
+    for (const group of lines) {
+      const type = group?.userData?.type;
+      if (type !== 'distance' && type !== 'angle') continue;
+      if (group.visible === false) continue;
+      for (const dash of group.children ?? []) {
+        if (dash.visible === false || !dash.geometry?.parameters) continue;
+        dash.updateWorldMatrix(true, false);
+        dash.matrixWorld.decompose(_pos, _quat, _scale);
+        const height = dash.geometry.parameters.height ?? 1;
+        const radiusTop = dash.geometry.parameters.radiusTop ?? 0.08;
+        const worldLen = height * Math.abs(_scale.y);
+        const worldRad = radiusTop * Math.max(Math.abs(_scale.x), Math.abs(_scale.z));
+        if (!(worldLen > 1e-6) || !(worldRad > 0)) continue;
+        // cylinder local axis is +y; rotate into world
+        _pos2.set(0, 1, 0).applyQuaternion(_quat).normalize();
+        const half = worldLen / 2;
+        _color.copy(dash.material.color);
+        // compose the unit-cylinder (y in [-1,1]) forward matrix from the
+        // world center, axis rotation and (radius, half-length, radius) scale
+        _scale.set(worldRad, half, worldRad);
+        _quat.setFromUnitVectors(_yAxis, _pos2);
+        _m.compose(_pos, _quat, _scale);
+        result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
+          r: _color.r, g: _color.g, b: _color.b, a: dash.material.opacity ?? 1 });
+      }
+    }
+    return result;
   }
 
   _encodeCylinders() {
@@ -753,7 +860,9 @@ export class SceneEncoder {
     const edges = this._latticeEdges();
     const polyEdges = this._polyEdges();
     const planeBorders = this._planeBorders();
-    const total = (bonds ? bonds.count : 0) + edges.length + polyEdges.length + planeBorders.length;
+    const measCyls = this._measurementCylinders();
+    const total = (bonds ? bonds.count : 0) + edges.length + polyEdges.length
+      + planeBorders.length + measCyls.length;
     const texture = this._ensureCapacity('cylindersTexture', Math.max(1, total * 8));
     const data = texture.image.data;
     // per-cylinder world bounding spheres (cx,cy,cz,r), reused by the whole-
@@ -830,6 +939,9 @@ export class SceneEncoder {
       writeCylinder(edge.invM, edge.geom, edge.r, edge.g, edge.b, edge.a, DEFAULT_MATERIAL_TEXEL);
     }
     for (const edge of planeBorders) {
+      writeCylinder(edge.invM, edge.geom, edge.r, edge.g, edge.b, edge.a, DEFAULT_MATERIAL_TEXEL);
+    }
+    for (const edge of measCyls) {
       writeCylinder(edge.invM, edge.geom, edge.r, edge.g, edge.b, edge.a, DEFAULT_MATERIAL_TEXEL);
     }
 

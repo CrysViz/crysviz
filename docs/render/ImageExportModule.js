@@ -53,17 +53,31 @@ function renderMainToCanvas(w, h) {
 // on-screen progress bar (render/TracerProgressModule.js, driven from
 // pipeline.render()) stays live — until the pipeline reports convergence.
 // Non-tracer pipelines (no isConverged) capture after the single frame.
-async function renderMainToCanvasConverged(w, h) {
+async function renderMainToCanvasConverged(w, h, onProgress) {
   app.renderer.setSize(w, h, false);
   app.pipeline?.setSize(w, h);
   const renderCtx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
+  // Report accumulation progress on the export button (tracer pipelines only).
+  // Reads the same counters the on-screen progress strip uses; guarded so raster
+  // pipelines (no uSampleCounter / targetSamples) never emit a bogus 0/0.
+  const reportProgress = () => {
+    if (typeof onProgress !== 'function') return;
+    const current = app.pipeline?._uniforms?.uSampleCounter?.value ?? 0;
+    const target = app.pipeline?._cfg?.targetSamples ?? 0;
+    if (Number.isFinite(current) && Number.isFinite(target) && target > 0) {
+      onProgress({ current, target });
+    }
+  };
+  reportProgress(); // show 0/target immediately, before the first (blocking) burst
   app.pipeline?.render(renderCtx); // first call: resize reset + initial burst
   if (app.pipeline?.isConverged) {
     while (!app.pipeline.isConverged()) {
+      reportProgress();
       await new Promise((resolve) => requestAnimationFrame(resolve));
       app.pipeline.requestBoost?.(4); // small batches keep the UI responsive
       app.pipeline.render(renderCtx);
     }
+    reportProgress(); // final (converged) count
   }
 
   const canvas = document.createElement('canvas');
@@ -237,7 +251,8 @@ function drawAxesLegend(ictx, x, bottomY, gsize) {
 
 /**
  * Capture the current scene to a high-resolution PNG Blob.
- * @param {{width:number, height:number, margin?:number, transparent?:boolean}} opts
+ * @param {{width:number, height:number, margin?:number, transparent?:boolean,
+ *          onProgress?:(p:{current:number, target:number})=>void}} opts
  * @returns {Promise<Blob>}
  */
 export async function captureSceneToPng(opts) {
@@ -329,7 +344,7 @@ export async function captureSceneToPng(opts) {
 
     // --- Final high-res pass (tracer pipelines render to full convergence,
     //     with the on-screen progress bar tracking the accumulation). ---
-    const srcCanvas = await renderMainToCanvasConverged(srcW, srcH);
+    const srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress);
 
     // Crop rect in source pixels, from the (accurate enough) probe fractions.
     const cropX = Math.max(0, Math.floor(nx0 * srcW));

@@ -11,8 +11,13 @@
 //
 // v1 scope/limits (documented in the plan + vendor README): renders atoms,
 // bonds, polyhedra (<= 20 faces), unit-cell edges, volumetric field
-// isosurfaces and crystallographic lattice planes — measurement overlays and
-// comparison structures are not traced, and the cel outline pass is skipped.
+// isosurfaces, crystallographic lattice planes AND measurements (shell markers
+// as ghost spheres + dashed distance/angle lines as thin cylinders, encoded by
+// SceneEncoder; the CSS2D labels stay DOM) — comparison structures are not
+// traced, and the cel outline pass is skipped. Atom/bond/polyhedron HIGHLIGHT is
+// drawn as a post-present orange ghost overlay (see _renderHighlightOverlay)
+// instead of the raster recolor, so selecting under a tracer never restarts the
+// accumulation.
 // Field isosurfaces are traced as a RAY-MARCHED implicit surface (no
 // marching-cubes mesh) with the opaque/COAT material only (glass/refraction is
 // not supported on the field surface; alpha < 1 gives the usual stochastic
@@ -75,7 +80,7 @@
 // while enabled (intended). The preview<->traced visual "pop" is the contract.
 
 import * as THREE from '../../external/three/three.module.js';
-import { app, general } from '../../state/store.js';
+import { app, general, mode, groups, highlightHover } from '../../state/store.js';
 import '../../external/three-raytracing/RayTracingCommon.js'; // registers THREE.ShaderChunk['raytracing_*']
 import { CommonRayTracing_Vertex } from '../../external/three-raytracing/CommonRayTracing_Vertex.js';
 import { ScreenCopy_Fragment } from '../../external/three-raytracing/ScreenCopy_Fragment.js';
@@ -205,6 +210,16 @@ export class RayTracingPipeline extends ForwardPipeline {
   _previewActive = false;    // test-inspectable: this frame rendered a preview (not a trace)
   _lastInteractionAt = 0;    // performance.now() of the last camera/core-scene interaction
   _restTimer = null;         // rearming timer that wakes render() when the rest window elapses
+
+  // ---- post-present highlight overlay (lazily built in _ensureHighlightOverlay)
+  _hlScene = null;
+  _hlAtomsMesh = null;
+  _hlBondsMesh = null;
+  _hlPolyMat = null;
+  _hlPolyGhosts = null;
+  _hlMat = null;
+  _hlScaleAtom = null;
+  _hlScaleBond = null;
 
   constructor() {
     super();
@@ -672,6 +687,12 @@ export class RayTracingPipeline extends ForwardPipeline {
       const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
       const triggered = cameraIsMoving || (fpChanged && this._encoder.lastChangeWasCoreScene);
       if (triggered) this._lastInteractionAt = now;
+      // An active measurement tool is a continuous interaction: keep the raster
+      // preview held (atom picking + hover glow happen on the raster scene, which
+      // the tracer can't show live) for as long as a distance/angle/delete tool
+      // is selected. Deselecting it lets the rest delay elapse and the tracer
+      // resume — which re-encodes and shows the new measurement (Item 3).
+      if (mode.measureMode !== 'none') this._lastInteractionAt = now;
       const restMs = Math.max(0, (general.rtPreviewRestDelay ?? 0.5) * 1000);
       const sinceInteraction = now - this._lastInteractionAt;
       if (this._lastInteractionAt > 0 && sinceInteraction < restMs) {
@@ -991,6 +1012,12 @@ export class RayTracingPipeline extends ForwardPipeline {
     this._updateOutputUniforms(out);
     renderer.setRenderTarget(null);
     this._outputQuad.render(renderer);
+    // Post-present highlight overlay: draw the current atom/bond/polyhedron
+    // selection as occlusion-agnostic orange ghosts directly over the traced
+    // image. Only on a TRACED present (this code path is skipped by the preview
+    // early-return above, so preview frames show the raster glow instead).
+    // autoClear is already false here, so it composites over the presented frame.
+    this._renderHighlightOverlay(renderer, camera);
     renderer.autoClear = oldAutoClear;
 
     // --- progressive refinement under render-on-demand ----------------------
@@ -1000,6 +1027,138 @@ export class RayTracingPipeline extends ForwardPipeline {
     // keeps self-perpetuating until convergence.
     updateTracerProgress(u.uSampleCounter.value + completedFraction, this._cfg.targetSamples);
     if (u.uSampleCounter.value < this._cfg.targetSamples) requestRender();
+  }
+
+  // ---- post-present highlight overlay -------------------------------------
+  // Lazily-built tiny scene of orange ghosts (atoms as scaled-up spheres, bonds
+  // as fattened cylinders, polyhedra as ghost copies) drawn AFTER the output
+  // pass with depthTest off, so a highlight glows through the traced image. The
+  // tracer encoder deliberately ignores the highlight recolor (Item 2a) so it
+  // never restarts the accumulation; this overlay is how the selection is shown
+  // in traced frames. Reads the highlight instance ids recorded on the
+  // highlightHover store singleton (no ui-layer import).
+  _ensureHighlightOverlay() {
+    if (this._hlScene) return;
+    this._hlScene = new THREE.Scene();
+    const HL = 0xFF8C00;
+    const sphere = new THREE.SphereGeometry(1, 16, 12);
+    const atomMat = new THREE.MeshBasicMaterial({
+      color: HL, transparent: true, opacity: 0.4, depthTest: false, depthWrite: false });
+    this._hlAtomsMesh = new THREE.InstancedMesh(sphere, atomMat, 8);
+    this._hlAtomsMesh.frustumCulled = false;
+    this._hlAtomsMesh.count = 0;
+    this._hlScene.add(this._hlAtomsMesh);
+    // Unit cylinder matching the bonds mesh instance-matrix convention
+    // (CylinderGeometry height 1, radius 1: local y in [-0.5, 0.5]).
+    const cyl = new THREE.CylinderGeometry(1, 1, 1, 12, 1);
+    const bondMat = new THREE.MeshBasicMaterial({
+      color: HL, transparent: true, opacity: 0.4, depthTest: false, depthWrite: false });
+    this._hlBondsMesh = new THREE.InstancedMesh(cyl, bondMat, 8);
+    this._hlBondsMesh.frustumCulled = false;
+    this._hlBondsMesh.count = 0;
+    this._hlScene.add(this._hlBondsMesh);
+    this._hlPolyMat = new THREE.MeshBasicMaterial({
+      color: HL, transparent: true, opacity: 0.35, depthTest: false, depthWrite: false });
+    this._hlPolyGhosts = []; // reused Mesh pool (share the highlighted geometry)
+    this._hlMat = new THREE.Matrix4();
+    this._hlScaleAtom = new THREE.Matrix4().makeScale(1.12, 1.12, 1.12); // rim
+    this._hlScaleBond = new THREE.Matrix4().makeScale(1.3, 1, 1.3);      // fatten radius only
+  }
+
+  /** InstancedMesh capacity grow (its capacity is fixed at construction). */
+  _growInstanced(mesh, needed) {
+    if (needed <= mesh.instanceMatrix.count) return mesh;
+    const cap = Math.max(needed, mesh.instanceMatrix.count * 2);
+    const grown = new THREE.InstancedMesh(mesh.geometry, mesh.material, cap);
+    grown.frustumCulled = false;
+    grown.count = 0;
+    this._hlScene.remove(mesh);
+    this._hlScene.add(grown);
+    mesh.dispose();
+    return grown;
+  }
+
+  /** Meshes of the currently-highlighted polyhedron (all periodic copies when
+   *  linked). Matched by stable key or group key on the mesh userData — no
+   *  ui-layer import needed. */
+  _highlightedPolyMeshes() {
+    const sel = highlightHover.currentlyHighlightedPolyhedron;
+    const group = groups.polyhedraGroup;
+    if (!sel || !group) return [];
+    return group.children.filter((m) => m.userData?.type === 'polyhedron' && m.visible
+      && (sel.groupKey ? m.userData.groupKey === sel.groupKey : m.userData.key === sel.key));
+  }
+
+  _renderHighlightOverlay(renderer, camera) {
+    const atomIds = highlightHover.currentlyHighlightedAtomInstances ?? [];
+    const bondIds = highlightHover.currentlyHighlightedBond?.instanceIds
+      ?? highlightHover.currentlyHighlightedBondInstances ?? [];
+    const polyMeshes = this._highlightedPolyMeshes();
+    if (!atomIds.length && !bondIds.length && !polyMeshes.length) {
+      if (this._hlScene) { // nothing selected: make sure any stale ghosts are hidden
+        this._hlAtomsMesh.count = 0;
+        this._hlBondsMesh.count = 0;
+        for (const g of this._hlPolyGhosts) g.visible = false;
+      }
+      return;
+    }
+    this._ensureHighlightOverlay();
+
+    // atoms: copy each highlighted instance matrix, scaled up slightly
+    const atomsMesh = groups.atomsMesh;
+    if (atomsMesh && atomIds.length) {
+      this._hlAtomsMesh = this._growInstanced(this._hlAtomsMesh, atomIds.length);
+      let n = 0;
+      for (const id of atomIds) {
+        if (id < 0 || id >= atomsMesh.count) continue;
+        atomsMesh.getMatrixAt(id, this._hlMat);
+        if (this._hlMat.elements[0] === 0) continue; // hidden (zero-scaled) instance
+        this._hlMat.multiply(this._hlScaleAtom);
+        this._hlAtomsMesh.setMatrixAt(n++, this._hlMat);
+      }
+      this._hlAtomsMesh.count = n;
+      this._hlAtomsMesh.instanceMatrix.needsUpdate = true;
+    } else {
+      this._hlAtomsMesh.count = 0;
+    }
+
+    // bonds: copy each highlighted half's instance matrix, fatten the radius
+    const bondsMesh = groups.bondsMesh;
+    if (bondsMesh && bondIds.length) {
+      this._hlBondsMesh = this._growInstanced(this._hlBondsMesh, bondIds.length);
+      let n = 0;
+      for (const id of bondIds) {
+        if (id < 0 || id >= bondsMesh.count) continue;
+        bondsMesh.getMatrixAt(id, this._hlMat);
+        if (this._hlMat.elements[0] === 0 && this._hlMat.elements[5] === 0) continue; // culled
+        this._hlMat.multiply(this._hlScaleBond);
+        this._hlBondsMesh.setMatrixAt(n++, this._hlMat);
+      }
+      this._hlBondsMesh.count = n;
+      this._hlBondsMesh.instanceMatrix.needsUpdate = true;
+    } else {
+      this._hlBondsMesh.count = 0;
+    }
+
+    // polyhedra: ghost copies sharing the highlighted meshes' geometry
+    for (const g of this._hlPolyGhosts) g.visible = false;
+    polyMeshes.forEach((pm, i) => {
+      let ghost = this._hlPolyGhosts[i];
+      if (!ghost) {
+        ghost = new THREE.Mesh(pm.geometry, this._hlPolyMat);
+        ghost.frustumCulled = false;
+        ghost.matrixAutoUpdate = false;
+        this._hlScene.add(ghost);
+        this._hlPolyGhosts[i] = ghost;
+      }
+      ghost.geometry = pm.geometry;
+      pm.updateWorldMatrix(true, false);
+      ghost.matrix.copy(pm.matrixWorld);
+      ghost.visible = true;
+    });
+
+    // Draw over the presented frame (render target already null, autoClear off).
+    renderer.render(this._hlScene, camera);
   }
 
   setSize(_width, _height) {
@@ -1023,6 +1182,18 @@ export class RayTracingPipeline extends ForwardPipeline {
     // rest timer) can exist even if this tracer never rendered a traced frame.
     this._teardownPreview();
     hideTracerProgress();
+    // Highlight overlay resources (may exist even before the first traced frame).
+    if (this._hlScene) {
+      this._hlAtomsMesh.geometry.dispose();
+      this._hlAtomsMesh.material.dispose();
+      this._hlAtomsMesh.dispose();
+      this._hlBondsMesh.geometry.dispose();
+      this._hlBondsMesh.material.dispose();
+      this._hlBondsMesh.dispose();
+      this._hlPolyMat.dispose();
+      this._hlScene = null;
+      this._hlPolyGhosts = null;
+    }
     if (!this._initialized) return;
     this._accumTarget.dispose();
     this._previousTarget.dispose();
