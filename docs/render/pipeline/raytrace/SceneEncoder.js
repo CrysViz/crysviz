@@ -157,6 +157,29 @@ function makeAtlasTexture(data, width, height) {
   return texture;
 }
 
+/** Enabled atom cut planes as {nx,ny,nz,w,sign}, replicating the raster
+ *  semantics (AtomsFracUpdateModule.applyCutPlaneUniformsToShader): normalized
+ *  normal, w = r, sign = getCutPlaneMaskSign(side), degenerate normals fall back
+ *  to (1,0,0), capped at MAX_CUT_PLANES. Extracted as a free function so the
+ *  encoder's atom scan and GroundPlaneModule's duplicated bounds loop filter
+ *  atoms identically (the subtle shared logic; the AABB loop itself is kept
+ *  duplicated with lockstep comments). */
+export function activeAtomCutPlanes() {
+  const planes = general.atomCutPlanes;
+  if (!Array.isArray(planes) || planes.length === 0) return [];
+  const active = [];
+  for (const plane of planes) {
+    if (!plane?.enabled) continue;
+    let nx = Number(plane.x) || 0, ny = Number(plane.y) || 0, nz = Number(plane.z) || 0;
+    const len = Math.hypot(nx, ny, nz);
+    if (len < 1e-8) { nx = 1; ny = 0; nz = 0; } // raster normalizePlaneNormal fallback
+    else { nx /= len; ny /= len; nz /= len; }
+    active.push({ nx, ny, nz, w: Number(plane.r) || 0, sign: getCutPlaneMaskSign(plane.side) });
+    if (active.length >= MAX_CUT_PLANES) break;
+  }
+  return active;
+}
+
 export class SceneEncoder {
   atomsTexture = makeDataTexture(1);
   cylindersTexture = makeDataTexture(1);
@@ -654,24 +677,11 @@ export class SceneEncoder {
     return (this[key] = makeDataTexture(texelCount));
   }
 
-  /** Enabled atom cut planes as {nx,ny,nz,w,sign}, replicating the raster
-   *  semantics (AtomsFracUpdateModule.applyCutPlaneUniformsToShader):
-   *  normalized normal, w = r, sign = getCutPlaneMaskSign(side), degenerate
-   *  normals fall back to (1,0,0), capped at MAX_CUT_PLANES. */
+  /** Enabled atom cut planes as {nx,ny,nz,w,sign} (see the exported free
+   *  function activeAtomCutPlanes — shared with GroundPlaneModule so the two
+   *  atom-scans filter identically). The hot encode path keeps this method. */
   _activeCutPlanes() {
-    const planes = general.atomCutPlanes;
-    if (!Array.isArray(planes) || planes.length === 0) return [];
-    const active = [];
-    for (const plane of planes) {
-      if (!plane?.enabled) continue;
-      let nx = Number(plane.x) || 0, ny = Number(plane.y) || 0, nz = Number(plane.z) || 0;
-      const len = Math.hypot(nx, ny, nz);
-      if (len < 1e-8) { nx = 1; ny = 0; nz = 0; } // raster normalizePlaneNormal fallback
-      else { nx /= len; ny /= len; nz /= len; }
-      active.push({ nx, ny, nz, w: Number(plane.r) || 0, sign: getCutPlaneMaskSign(plane.side) });
-      if (active.length >= MAX_CUT_PLANES) break;
-    }
-    return active;
+    return activeAtomCutPlanes();
   }
 
   _encodeAtoms() {

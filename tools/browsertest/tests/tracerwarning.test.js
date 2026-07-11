@@ -27,6 +27,17 @@ const pipelineId = (page) => page.evaluate(async () => {
   H.check('webgl available', await H.webglAvailable(page));
   await H.loadDefaultStructure(page); // YBCO
 
+  // The harness pre-seeds hideRaytraceWarning=true (so other tests' page
+  // screenshots aren't dimmed by the modal backdrop) — this test IS about the
+  // modal, so clear the pref first and sync the Settings toggle.
+  await page.evaluate(async () => {
+    const { setPanelPref } = await import('./ui/panels/PanelManager.js');
+    setPanelPref('hideRaytraceWarning', false);
+    const toggle = /** @type {HTMLInputElement|null} */ (
+      document.getElementById('disableRaytraceWarningToggle'));
+    if (toggle) toggle.checked = false;
+  });
+
   // The settings panel is persistent — its toggle exists once panels register.
   const hasSettingsToggle = await page.evaluate(() =>
     !!document.getElementById('disableRaytraceWarningToggle'));

@@ -10,7 +10,7 @@ import { parsePOSCAR, initializeUIOnLoad } from './StructureInputModule.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
 import { StructureContainer } from '../model/index.js';
 import { updateAtoms } from '../render/index.js';
-import { rebuildBonds, updatePolyhedra, setActivePipeline } from '../render/index.js';
+import { rebuildBonds, updatePolyhedra, setActivePipeline, updateGroundPlane } from '../render/index.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
@@ -411,6 +411,10 @@ function applyStyleSettings(style) {
   if (style.rtGroundOffset != null) { general.rtGroundOffset = style.rtGroundOffset; setSelect('rtGroundOffset', sizeValueToSlider(style.rtGroundOffset, GROUND_OFFSET_RANGE)); }
   if (style.rtGroundSize != null) { general.rtGroundSize = style.rtGroundSize; setSelect('rtGroundSize', sizeValueToSlider(style.rtGroundSize, GROUND_SIZE_RANGE)); }
   if (style.rtGroundReflect != null) { general.rtGroundReflect = style.rtGroundReflect; setSelect('rtGroundReflect', style.rtGroundReflect); }
+  // Defensive: the toggle's change-dispatch fires before offset/size restore, so
+  // sync the raster disc to the final restored state (placement is re-fixed by
+  // the structure load's updateVisualization, which runs after applyStyleSettings).
+  updateGroundPlane();
   if (style.rtLightIntensity != null) {
     general.rtLightIntensity = style.rtLightIntensity;
     setSelect('rtLightIntensity', style.rtLightIntensity);

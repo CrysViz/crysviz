@@ -8,6 +8,7 @@ import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
 import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
 import { listPipelines, setActivePipeline, requestRender } from '../render/index.js'
+import { updateGroundPlane } from '../render/index.js'
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
 import { maybeShowRaytraceWarning } from './RaytraceWarningModal.js'
 import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js'
@@ -373,6 +374,9 @@ export function addColorPanel(target = "colorContainer") {
     // both tracers), but is a path-tracing-only control, so its row is toggled
     // individually here.
     ptDenoiseRow.style.display = general.renderPipeline === "pathtrace" ? "grid" : "none";
+    // The ground block is always visible (all pipelines), but "Ground reflect"
+    // is a tracer-only analytic-mirror control, so its row is toggled here.
+    groundReflectRow.style.display = isTracer ? "grid" : "none";
     renderStyleMenu.style.display = isRaster ? "grid" : "none";
     outlineBlock.style.display = isRaster && general.renderStyle === "cel" ? "block" : "none";
     // Structure-window tracer-only blocks (material editors) hide under the
@@ -585,6 +589,14 @@ export function addColorPanel(target = "colorContainer") {
     (v) => `Focus distance: ×${v.toFixed(2)}`,
     (v) => { general.rtDofFocus = v; }));
 
+  // Ground plane block — ALWAYS VISIBLE (all pipelines): the raster pipelines
+  // and tracer preview frames draw a raster ground disc (render/GroundPlaneModule)
+  // matched to the tracers' analytic disc, so the floor no longer disappears
+  // while the view is manipulated in mixed mode. The block is appended after the
+  // cel-outline block (below); only the "Ground reflect" row is tracer-gated
+  // (groundReflectRow, toggled in updateRenderingControlsVisibility).
+  const groundBlock = createElement("div", {});
+
   const groundRow = createElement("div", { class: "control-row" });
   const groundLabel = createElement("label", { for: "rtGroundToggle" }, {}, "Ground plane");
   const groundToggle = createElement("input", { type: "checkbox", id: "rtGroundToggle" },
@@ -593,12 +605,13 @@ export function addColorPanel(target = "colorContainer") {
   groundToggle.addEventListener("change", () => {
     general.rtGroundPlane = groundToggle.checked;
     groundOptions.style.display = groundToggle.checked ? "block" : "none";
+    updateGroundPlane(); // create/position/hide the raster disc
     app.pipeline?.resetAccumulation?.();
     requestRender();
   });
   groundRow.appendChild(groundLabel);
   groundRow.appendChild(groundToggle);
-  rtControlsBlock.appendChild(groundRow);
+  groundBlock.appendChild(groundRow);
 
   // Ground options (shown while the plane is enabled): orientation, pattern,
   // the two pattern colors (default: follow the background), tile size and
@@ -648,23 +661,28 @@ export function addColorPanel(target = "colorContainer") {
   groundOptions.appendChild(groundColorRow('rtGroundColor1', 'Ground color 1', 'rtGroundColor1'));
   groundOptions.appendChild(groundColorRow('rtGroundColor2', 'Ground color 2', 'rtGroundColor2'));
 
+  // Offset/size affect PLACEMENT, so they also reposition the raster disc
+  // (pattern/colors/scale need nothing — they refresh per-frame in onBeforeRender).
   groundOptions.appendChild(makeTracerSliderRow('rtGroundOffset', 'rtGroundOffset',
     0, 1, 'any', general.rtGroundOffset ?? 0.75,
     (v) => `Ground distance: ${v.toFixed(2)}`,
-    (v) => { general.rtGroundOffset = v; }, GROUND_OFFSET_RANGE));
+    (v) => { general.rtGroundOffset = v; updateGroundPlane(); }, GROUND_OFFSET_RANGE));
   groundOptions.appendChild(makeTracerSliderRow('rtGroundSize', 'rtGroundSize',
     0, 1, 'any', general.rtGroundSize ?? 2.5,
     (v) => `Ground size: ${v.toFixed(2)}x`,
-    (v) => { general.rtGroundSize = v; }, GROUND_SIZE_RANGE));
+    (v) => { general.rtGroundSize = v; updateGroundPlane(); }, GROUND_SIZE_RANGE));
   groundOptions.appendChild(makeTracerSliderRow('rtGroundScale', 'rtGroundScale',
     0.5, 10, 0.25, general.rtGroundScale ?? 2,
     (v) => `Tile size: ${v.toFixed(2)}`,
     (v) => { general.rtGroundScale = v; }));
-  groundOptions.appendChild(makeTracerSliderRow('rtGroundReflect', 'rtGroundReflect',
+  // "Ground reflect" is tracer-only (analytic mirror floor); the row is gated to
+  // the tracers in updateRenderingControlsVisibility.
+  const groundReflectRow = makeTracerSliderRow('rtGroundReflect', 'rtGroundReflect',
     0, 1, 0.05, general.rtGroundReflect ?? 0,
     (v) => `Ground reflect: ${v.toFixed(2)}`,
-    (v) => { general.rtGroundReflect = v; }));
-  rtControlsBlock.appendChild(groundOptions);
+    (v) => { general.rtGroundReflect = v; });
+  groundOptions.appendChild(groundReflectRow);
+  groundBlock.appendChild(groundOptions);
 
   // "Advanced" section: seldom-touched tracer toggles, collapsed by default.
   // Reuses the app's native <details>/<summary> collapsible idiom (the same
@@ -772,6 +790,10 @@ export function addColorPanel(target = "colorContainer") {
   outlineBlock.appendChild(hullControls);
 
   content.appendChild(outlineBlock);
+
+  // Ground plane block: always visible (all pipelines), after the cel-outline
+  // block and before the reset row (built above, near the tracer controls).
+  content.appendChild(groundBlock);
 
   // Reset every Rendering-section setting to its default (RENDERING_DEFAULTS
   // in state/store.js — the same values `general` boots with). Routed through

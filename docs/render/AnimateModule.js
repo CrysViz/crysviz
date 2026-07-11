@@ -3,6 +3,7 @@ import * as THREE from '../external/three/three.module.js';
 
 import { app, general} from '../state/store.js';
 import {updateLattice,latticeDirsNorm} from './LatticeModule.js'
+import { syncGroundPlaneVisibility } from './GroundPlaneModule.js'
 
 import {updateRandomColors} from '../ui/DiscoModule.js'
 
@@ -193,6 +194,10 @@ export function animation_update(time = 0) {
   app.keyLight.position.copy(cameraPosition).add(
     new THREE.Vector3(3, 4, 3).applyQuaternion(app.camera.quaternion)
   );
+
+  // Keep the ground disc's visibility in sync with a possibly-direct
+  // general.rtGroundPlane write (O(1); onBeforeRender can't un-hide a hidden mesh).
+  syncGroundPlaneVisibility();
 
   // The active rendering pipeline owns the full frame (passes + composite);
   // read from app.pipeline (not an import) to avoid a render-layer cycle.

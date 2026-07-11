@@ -47,6 +47,7 @@ import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
 import {initFontScale} from '../ui/FontScaleModule.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../render/index.js';
+import { updateGroundPlane } from '../render/index.js';
 
 // .........................................................................................................
 // Import Panels
@@ -234,6 +235,11 @@ export function updateVisualization(options = {}) {
   if (measurements.measureLines.length > 0) {
     updateAllMeasurements();
   }
+
+  // Reposition the raster ground disc to the (possibly new) structure bottom —
+  // covers load/switch, supercell, cut planes, atom-size rebuilds, trajectory
+  // steps. O(1) when the ground is off.
+  updateGroundPlane();
 
   // Everything above mutated the scene; schedule a frame (rendering is on-demand).
   requestRender();

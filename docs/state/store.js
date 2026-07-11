@@ -80,6 +80,7 @@ export const groups = {
   fieldMeshNeg: null,
   activeField: null,
   isosurfaceGroup: null,
+  groundMesh: null, // persistent raster ground-plane disc (render/GroundPlaneModule.js); a scene fixture drawn by every raster/preview frame, visually matched to the tracers' analytic disc
 };
 
 
@@ -100,14 +101,18 @@ export const RENDERING_DEFAULTS = {
   ptLightSoftness: 0.3, // both tracers: light softness (0 = hard shadows, 1 = very soft; PT area-light radius / RT shadow-ray cone)
   rtDofAperture: 0, // both tracers: depth-of-field aperture in world units (0 = off)
   rtDofFocus: 1, // both tracers: focus distance as a factor of the camera->target distance
-  rtGroundPlane: false, // both tracers: ground plane (shadow catcher)
+  // Ground plane (all pipelines): the tracers draw an analytic disc; the raster
+  // pipelines + preview frames draw a visually-matched raster disc mesh via
+  // render/GroundPlaneModule.js. Keys keep their rt* names for persistence
+  // compatibility (they predate the raster mesh); rtGroundReflect is tracer-only.
+  rtGroundPlane: false, // all pipelines: ground plane on/off (raster disc + tracer shadow catcher)
   rtGroundPattern: 'solid', // 'solid' | 'checker' | 'grid'
   rtGroundColor1: null, // hex or null = follow the background color
   rtGroundColor2: null, // hex or null = auto (darkened color1)
   rtGroundScale: 2, // pattern tile size in world units (Å)
-  rtGroundOffset: 0.75, // distance from the structure bottom to the plane (both modes)
-  rtGroundSize: 2.5, // ground disc radius in multiples of the structure radius
-  rtGroundReflect: 0, // ground mirror fraction (0 = matte ... 1 = mirror floor)
+  rtGroundOffset: 0.75, // distance from the structure bottom to the plane (all pipelines)
+  rtGroundSize: 2.5, // ground disc radius in multiples of the structure radius (all pipelines)
+  rtGroundReflect: 0, // ground mirror fraction (0 = matte ... 1 = mirror floor); TRACER-ONLY
   rtLightIntensity: 1.2, // both tracers: key-light intensity multiplier
   rtAmbient: 0.3, // both tracers: ambient/fill light strength (RT ambient term / PT sky bounce)
   rtSaturation: 1, // both tracers: post-tone-map saturation grade (output pass; 1 = neutral)

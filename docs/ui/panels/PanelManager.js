@@ -33,7 +33,12 @@ const COMPACT_STACK_GAP_PX = 20;
 // in their own localStorage key, NOT in the versioned panelLayout blob: they
 // must survive both Reset UI (which clears LS_KEY) and layout version bumps.
 const PREFS_KEY = 'panelPrefs';
-const panelPrefs = { dragIntoDock: true, dragOutOfDock: true, dragByHandleOnly: false };
+const panelPrefs = {
+  dragIntoDock: true,
+  dragOutOfDock: true,
+  dragByHandleOnly: false,
+  hideRaytraceWarning: false, // "Don't show again" on the tracer performance modal
+};
 
 function loadPanelPrefs() {
   try {
@@ -41,9 +46,12 @@ function loadPanelPrefs() {
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') {
-      if (typeof parsed.dragIntoDock === 'boolean') panelPrefs.dragIntoDock = parsed.dragIntoDock;
-      if (typeof parsed.dragOutOfDock === 'boolean') panelPrefs.dragOutOfDock = parsed.dragOutOfDock;
-      if (typeof parsed.dragByHandleOnly === 'boolean') panelPrefs.dragByHandleOnly = parsed.dragByHandleOnly;
+      // Every known boolean pref loads from storage (a pref missing from this
+      // defaults bag would be saved by setPanelPref but DROPPED here on the
+      // next load — add new prefs above, not just at the write site).
+      for (const key of Object.keys(panelPrefs)) {
+        if (typeof parsed[key] === 'boolean') panelPrefs[key] = parsed[key];
+      }
     }
   } catch { /* corrupted prefs -> defaults */ }
 }

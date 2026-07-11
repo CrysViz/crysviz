@@ -152,8 +152,7 @@ const H = require('../harness');
     const denoiseRow = document.getElementById('ptDenoiseToggle')?.closest('.control-row');
     const softnessInRtBlock = document.getElementById('ptLightSoftness')?.parentElement?.parentElement === rtBlock;
     const dofInRtBlock = document.getElementById('rtDofAperture')?.parentElement?.parentElement === rtBlock
-      && document.getElementById('rtDofFocus')?.parentElement?.parentElement === rtBlock
-      && document.getElementById('rtGroundToggle')?.parentElement?.parentElement === rtBlock;
+      && document.getElementById('rtDofFocus')?.parentElement?.parentElement === rtBlock;
     // Advanced section: exists inside the shared tracer block, collapsed by default.
     const advancedExists = !!advanced && rtBlock?.contains(advanced) === true;
     const advancedCollapsedByDefault = advanced?.open === false;
@@ -183,7 +182,7 @@ const H = require('../harness');
       rtSharedUnderPathtrace, denoiseShownUnderPathtrace,
       denoiseHiddenUnderRaytrace, sharedShownUnderRaytrace, allHiddenUnderForward };
   });
-  H.check('shared tracer controls (softness/DoF/ground) show for both tracers; PT-only denoiser ROW follows the dropdown',
+  H.check('shared tracer controls (softness/DoF) show for both tracers; PT-only denoiser ROW follows the dropdown',
     ptControls.softnessInRtBlock && ptControls.dofInRtBlock && ptControls.rtSharedUnderPathtrace
       && ptControls.denoiseShownUnderPathtrace && ptControls.denoiseHiddenUnderRaytrace
       && ptControls.sharedShownUnderRaytrace && ptControls.allHiddenUnderForward,
@@ -225,6 +224,41 @@ const H = require('../harness');
       && styleTree.hiddenUnderRaytrace && styleTree.outlineHiddenUnderRaytrace
       && styleTree.outlineBackUnderForward && styleTree.pipelineFirst,
     JSON.stringify(styleTree));
+
+  // --- Ground block: always visible (all pipelines); reflect row tracer-gated ------
+  const ground = await page.evaluate(() => {
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
+    const groundToggle = /** @type {HTMLInputElement} */ (document.getElementById('rtGroundToggle'));
+    const groundBlock = groundToggle?.closest('.control-row')?.parentElement;
+    const reflectRow = document.getElementById('rtGroundReflect')?.closest('.control-row');
+    // Enable the ground so its options (incl. the reflect row) are laid out.
+    groundToggle.checked = true; groundToggle.dispatchEvent(new Event('change'));
+    const blockDisp = () => getComputedStyle(groundBlock).display;
+    const reflectDisp = () => getComputedStyle(reflectRow).display;
+    const set = (v) => { select.value = v; select.dispatchEvent(new Event('change')); };
+    set('forward');
+    const blockUnderForward = blockDisp() !== 'none';
+    const reflectHiddenForward = reflectDisp() === 'none';
+    set('raytrace');
+    const blockUnderRaytrace = blockDisp() !== 'none';
+    const reflectShownRaytrace = reflectDisp() !== 'none';
+    set('pathtrace');
+    const reflectShownPathtrace = reflectDisp() !== 'none';
+    set('depthpeel');
+    const blockUnderDepthpeel = blockDisp() !== 'none';
+    const reflectHiddenDepthpeel = reflectDisp() === 'none';
+    // Restore the default off-state / pipeline for later checks.
+    groundToggle.checked = false; groundToggle.dispatchEvent(new Event('change'));
+    return { blockUnderForward, blockUnderRaytrace, blockUnderDepthpeel,
+      reflectHiddenForward, reflectShownRaytrace, reflectShownPathtrace, reflectHiddenDepthpeel };
+  });
+  H.check('ground block is visible under forward, raytrace AND depthpeel',
+    ground.blockUnderForward && ground.blockUnderRaytrace && ground.blockUnderDepthpeel,
+    JSON.stringify(ground));
+  H.check('ground reflect row hidden under raster (forward/depthpeel), shown under both tracers',
+    ground.reflectHiddenForward && ground.reflectHiddenDepthpeel
+      && ground.reflectShownRaytrace && ground.reflectShownPathtrace,
+    JSON.stringify(ground));
 
   // --- "Reset rendering settings" button ------------------------------------------
   const reset = await page.evaluate(async () => {
