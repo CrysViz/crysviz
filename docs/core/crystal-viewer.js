@@ -61,6 +61,7 @@ import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
 
 import {addSavePanel} from '../ui/SavePanel.js'
 import {initImageExportPanel} from '../ui/ImageExportPanel.js'
+import {initRaytraceWarningModal} from '../ui/RaytraceWarningModal.js'
 
 // NOTE: share-related import utils still need to move into the "share" module.
 
@@ -447,6 +448,7 @@ function initUIPanels() {
   addBackendModeSwitch();
   addSavePanel();
   initImageExportPanel();
+  initRaytraceWarningModal();
   addAtomVacuumPanel();
 
   // Add viewport meta tag if not present for proper mobile scaling

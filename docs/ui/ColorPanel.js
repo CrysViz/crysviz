@@ -9,6 +9,7 @@ import { updateSingleBondColor } from '../render/index.js'
 import { updatePolyhedra, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
 import { listPipelines, setActivePipeline, requestRender } from '../render/index.js'
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
+import { maybeShowRaytraceWarning } from './RaytraceWarningModal.js'
 import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js'
 
 
@@ -405,8 +406,13 @@ export function addColorPanel(target = "colorContainer") {
   // Rendering pipeline (how a frame is drawn) — the top of the tree.
   const renderPipelineMenu = createDropdown("renderPipelineMenu", "Rendering pipeline",
     renderPipelineOptions(), () => {
-      setActivePipeline(renderPipelineMenu.querySelector("select").value);
+      const pipelineValue = renderPipelineMenu.querySelector("select").value;
+      setActivePipeline(pipelineValue);
       updateRenderingControlsVisibility();
+      // First-run performance warning on the (potentially slow) tracer modes.
+      if (pipelineValue === 'raytrace' || pipelineValue === 'pathtrace') {
+        maybeShowRaytraceWarning();
+      }
     });
   content.appendChild(renderPipelineMenu);
 

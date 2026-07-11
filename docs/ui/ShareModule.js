@@ -14,6 +14,7 @@ import { rebuildBonds, updatePolyhedra, setActivePipeline } from '../render/inde
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
+import { suppressRaytraceWarningOnce } from './RaytraceWarningModal.js';
 import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
 import { revealFeaturePanels } from './panels/PanelManager.js';
 import { fracToCart } from '../math/index.js';
@@ -752,6 +753,8 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   }
   // Depth peeling / ray tracing: same re-fire so their control blocks show.
   if (['depthpeel', 'raytrace', 'pathtrace'].includes(state.style?.renderPipeline)) {
+    // This is a restore, not a user enable — don't fire the tracer warning.
+    suppressRaytraceWarningOnce();
     document.getElementById('renderPipelineMenu')?.dispatchEvent(new Event('change'));
   }
 

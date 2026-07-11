@@ -441,6 +441,68 @@ body.panel-hidden #axesLegend {
   cursor: pointer;
 }
 
+/* First-run ray/path-tracing performance warning (reuses .png-export-modal
+ * card + .paste-modal-actions button row). */
+#raytraceWarningModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#raytraceWarningModal[hidden] {
+  display: none;
+}
+
+.rt-warning-modal .rt-warning-body {
+  max-height: min(48vh, 420px);
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.rt-warning-modal .rt-warning-body p {
+  margin: 0 0 10px 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.rt-warning-modal .rt-warning-body p:last-child {
+  margin-bottom: 0;
+}
+
+.rt-warning-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.rt-warning-check input {
+  width: auto;
+}
+
+.rt-warning-modal .paste-modal-actions #raytraceWarningOk {
+  flex: 1;
+  margin-top: 4px;
+  padding: 12px 16px;
+  background: var(--bg-color);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.rt-warning-modal .paste-modal-actions #raytraceWarningOk:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+
 /* Drag&drop hover highlight on the drop targets (Files window / 3D view) */
 .cv-drop-hover {
   outline: 2px dashed var(--highlight-color);

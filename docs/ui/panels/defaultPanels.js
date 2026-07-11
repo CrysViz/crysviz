@@ -26,6 +26,7 @@ import { openEOSSplitView, closeEOSSplitView } from '../EOSSplitView.js';
 import { addDummySplitPanel, removeDummySplitPanel, openDummySplitView, closeDummySplitView } from '../DummySplitPanel.js';
 import { addLandscapePanel, removeLandscapePanel, openLandscapeSplitView, closeLandscapeSplitView } from '../LandscapeSplitView.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
+import { resetRaytraceWarningSession } from '../RaytraceWarningModal.js';
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
 import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
 
@@ -603,6 +604,18 @@ export function registerDefaultPanels() {
       dragGroup.appendChild(makeToggleRow('dragByHandleToggle', 'Only drag windows by handle',
         !!getPanelPref('dragByHandleOnly'), (on) => setPanelPref('dragByHandleOnly', on)));
       body.appendChild(dragGroup);
+      // Warnings: the first-run ray/path-tracing performance modal. Unchecking
+      // re-enables it and resets the once-per-session flag so it can appear
+      // again this session on the next tracer enable.
+      body.appendChild(makeSectionHeadline('Warnings'));
+      const warnGroup = document.createElement('div');
+      warnGroup.className = 'toggle_group';
+      warnGroup.appendChild(makeToggleRow('disableRaytraceWarningToggle',
+        'Disable raytracing warning', !!getPanelPref('hideRaytraceWarning'), (on) => {
+          setPanelPref('hideRaytraceWarning', on);
+          if (!on) resetRaytraceWarningSession();
+        }));
+      body.appendChild(warnGroup);
       // Overall font scale: multiplies the window fonts (title bars, headlines,
       // labels) live via --cv-font-scale; persisted across sessions.
       body.appendChild(makeSectionHeadline('Text'));
