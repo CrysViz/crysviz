@@ -188,6 +188,12 @@ export class RayTracingPipeline extends ForwardPipeline {
   _initialized = false;
   _sceneDirty = true;
   _boostSamples = 0;
+  // When true (set via beginPacedRender), render() traces at most ONE sample per
+  // call regardless of any armed resize/boost — the PNG export drives the
+  // accumulation one animation frame at a time (one tile/frame when tiling is
+  // on, one full sample/frame when off) so the whole scene never freezes on a
+  // synchronous 16-sample resize burst, and uSampleCounter advances monotonically.
+  _pacedExternally = false;
 
   // ---- tiled progressive rendering state ----------------------------------
   _gridX = 1;             // live (adaptive) tile grid, applied at the next round start
@@ -468,10 +474,23 @@ export class RayTracingPipeline extends ForwardPipeline {
 
   /** Ask the next render() call to accumulate at least `samples` inner
    *  iterations before presenting (render() takes the max with its own
-   *  resize boost). Used by the PNG export's render-to-completion loop. */
+   *  resize boost). Kept for direct callers/tests; the PNG export no longer
+   *  uses it (see beginPacedRender). */
   requestBoost(samples) {
     this._boostSamples = Math.max(this._boostSamples, Math.max(1, Math.round(samples)));
   }
+
+  /** Enter externally-paced mode: render() clamps each call to a single sample
+   *  (one tile when tiling is on) and ignores any armed resize/boost burst, so
+   *  the PNG export can advance the accumulation one RAF at a time without a
+   *  synchronous multi-sample freeze. The resize path may still SET _boostSamples;
+   *  it just isn't consumed in bursts. PathTracingPipeline inherits this. */
+  beginPacedRender() { this._pacedExternally = true; }
+
+  /** Leave externally-paced mode (paired with beginPacedRender in the export's
+   *  finally). Any leftover boost is cleared so a later interactive frame doesn't
+   *  burst unexpectedly. */
+  endPacedRender() { this._pacedExternally = false; this._boostSamples = 0; }
 
   /** True once the accumulation has reached this tracer's convergence target
    *  (the image no longer changes). The PNG export loops render() until this
@@ -895,7 +914,10 @@ export class RayTracingPipeline extends ForwardPipeline {
     // bookkeeping (uSampleCounter advance, the frame-1 ghost blend, the output
     // divide) stays per-round, so isConverged()/PNG-export/progress semantics
     // are unchanged (counter == samples fully accumulated at EVERY pixel).
-    const samplesThisCall = Math.max(1, this._boostSamples);
+    // Externally-paced (PNG export): exactly one sample per call — the resize
+    // boost is discarded, not bursted, so the export can pace the accumulation
+    // one animation frame at a time (and, with tiling on, one tile per frame).
+    const samplesThisCall = this._pacedExternally ? 1 : Math.max(1, this._boostSamples);
     this._boostSamples = 0;
     // Tiling gate. Sample 1 after any reset is always untiled full-frame: it
     // confines the frame-1 ghost blend and uCameraIsMoving to the untiled path

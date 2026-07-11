@@ -1,6 +1,13 @@
 // "Download → PNG Image…" modal: pick output dimensions (with an aspect-ratio
 // helper), margins and transparency, then export a high-resolution PNG of the
 // scene via render/ImageExportModule.js.
+//
+// While a (tracer) export runs, the Download button shows live "Rendering… N /
+// target" progress and the modal is LOCKED: backdrop-click and Escape no longer
+// dismiss it, and the Cancel button becomes "Abort", which cancels the capture
+// (via an AbortController signal) and leaves the modal open with the live view
+// intact. The click yields two animation frames before starting so the button
+// state repaints instantly.
 
 import { captureSceneToPng } from '../render/index.js';
 import { downloadBlob, currentBaseName } from './SavePanel.js';
@@ -89,6 +96,12 @@ export function initImageExportPanel() {
   // aspectRatio is the enforced ratio while an explicit preset/view is chosen;
   // it is ignored in "free" mode (edit both dimensions independently).
   let aspectRatio = viewAspect();
+
+  // Export-in-progress state. While busy the modal must NOT close on a backdrop
+  // click or Escape (the render keeps going invisibly otherwise); the Cancel
+  // button becomes "Abort" and cancels the in-flight capture via the signal.
+  let busy = false;
+  let abortController = null;
 
   function isFree() { return aspectSelect.value === 'free'; }
 
@@ -183,15 +196,24 @@ export function initImageExportPanel() {
       alert('Enter a valid width and height.');
       return;
     }
+    busy = true;
+    abortController = new AbortController();
     downloadBtn.disabled = true;
     downloadBtn.textContent = 'Rendering…';
+    cancelBtn.textContent = 'Abort'; // repurpose Cancel -> Abort while rendering
+    // Yield two frames so the 'Rendering…' label (and the disabled state)
+    // actually paint BEFORE the synchronous-until-its-first-await capture work
+    // begins — the click must feel instant even for a long tracer export.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     try {
       // Tracer pipelines render to full convergence inside captureSceneToPng
-      // (the on-screen progress bar tracks the export accumulation). The button
-      // mirrors that accumulation count; raster pipelines never emit progress
-      // (the loop is skipped), so the text stays 'Rendering…'.
+      // (paced tiled rendering; the on-screen progress bar + this button both
+      // track the accumulation). Raster pipelines never emit progress (the loop
+      // is skipped), so the text stays 'Rendering…'. opts.signal lets Abort
+      // cancel mid-render.
       const blob = await captureSceneToPng({
         width, height, margin, transparent: transparentInput.checked,
+        signal: abortController.signal,
         onProgress: ({ current, target }) => {
           downloadBtn.textContent = `Rendering… ${current} / ${target}`;
         },
@@ -199,20 +221,34 @@ export function initImageExportPanel() {
       downloadBlob(currentBaseName() + '.png', blob);
       closeModal();
     } catch (e) {
-      alert(/** @type {any} */ (e)?.message || String(e));
+      // Abort is a user action, not an error: swallow it silently and leave the
+      // modal open (the live view is already restored by captureSceneToPng's
+      // finally). Any other failure is surfaced.
+      if (/** @type {any} */ (e)?.name !== 'AbortError') {
+        alert(/** @type {any} */ (e)?.message || String(e));
+      }
     } finally {
+      busy = false;
+      abortController = null;
       downloadBtn.disabled = false;
       downloadBtn.textContent = 'Download';
+      cancelBtn.textContent = 'Cancel';
     }
   }
 
   trigger.addEventListener('click', openModal);
-  cancelBtn.addEventListener('click', closeModal);
+  cancelBtn.addEventListener('click', () => {
+    // While an export is running, Cancel is "Abort": cancel the capture and keep
+    // the modal open. Otherwise it closes the dialog as before.
+    if (busy) { abortController?.abort(); return; }
+    closeModal();
+  });
   downloadBtn.addEventListener('click', doDownload);
   modal.addEventListener('click', (e) => {
+    if (busy) return; // don't dismiss a running export on a backdrop click
     if (e.target === modal) closeModal(); // backdrop click
   });
   modal.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Escape' && !busy) closeModal(); // Escape ignored while busy
   });
 }

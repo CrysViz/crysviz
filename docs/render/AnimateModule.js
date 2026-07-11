@@ -142,6 +142,16 @@ export function animation_update(time = 0) {
   // seconds at sub-pixel amplitude. Once every residual is below perception,
   // zero it EXACTLY so the camera is strictly static from then on.
   settleControlsMomentum(app.controls);
+
+  // Offscreen capture in progress (PNG export): skip the pipeline/gizmo/label
+  // passes for this tick so the export is the SOLE render driver. Otherwise an
+  // interactive animate frame would take the tiled path, leave a round in
+  // flight, and the export's next paced render would abandon it with
+  // resetAccumulation() — the "Rendering… 4/8/4…" oscillation + permanent
+  // stall. controls.update() above (damping) and the RAF chain stay live, and
+  // needsRender is left untouched so the view resumes on the first free tick
+  // (the export's finally also calls requestRender()).
+  if (app.offscreenRenderHold) return;
   //if (_counter%60 === 0 || _counter=== 1) {
   //  console.log('[animate] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
   //}

@@ -64,6 +64,13 @@ export const app = {
   defaultZoomScale:0.75,
   orthographicFrustumSize:null,
   keyLight:null,
+  // When true, an offscreen capture (PNG export, render/ImageExportModule.js)
+  // owns the renderer: the AnimateModule loop skips its pipeline/gizmo/label
+  // passes so the export is the SOLE render driver. Without this the animate
+  // loop's interactive tracer frames fight the export's paced renders and reset
+  // the accumulation (the "4/8/4" progress oscillation). Set around the whole
+  // capture and cleared in captureSceneToPng's finally.
+  offscreenRenderHold:false,
 };
 
 export const groups = {

@@ -18,6 +18,16 @@
 // render with scene.background = null so content detection is a clean alpha
 // test; an opaque output is produced by filling the scene background colour
 // under the composited content.
+//
+// Progressive tracer pipelines (raytrace/pathtrace) are driven to convergence
+// with PACED tiled rendering that follows the general.rtTiledRender UI setting:
+// one pipeline.render() per animation frame (one scissored tile when tiling is
+// on, one full sample when off), the pipeline in externally-paced mode so its
+// resize boost never bursts synchronously, and the animate loop held off the
+// renderer (app.offscreenRenderHold) so the export is the single render driver
+// and uSampleCounter advances monotonically. An optional AbortSignal (opts.signal)
+// cancels the export cleanly at any loop iteration — the same finally restores
+// the live view, then an AbortError is thrown.
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general, measurements } from '../state/store.js';
@@ -29,6 +39,24 @@ const ALPHA_THRESHOLD = 12; // 0..255; a pixel counts as content above this
 /** @returns {HTMLElement} the #view container */
 function getViewEl() {
   return /** @type {HTMLElement} */ (document.getElementById('view'));
+}
+
+/** One animation-frame yield (paces the export so the browser stays responsive
+ *  and can repaint the button/progress between renders). */
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+}
+
+/** Throw a recognizable AbortError if the caller's AbortSignal has fired.
+ *  captureSceneToPng's finally still runs (restoring the live view), then this
+ *  propagates to doDownload, which swallows it (no alert) and leaves the modal
+ *  open. */
+function throwIfAborted(signal) {
+  if (signal && signal.aborted) {
+    const err = new Error('Export aborted.');
+    err.name = 'AbortError';
+    throw err;
+  }
 }
 
 // Render one frame through the active pipeline into an offscreen 2D canvas of
@@ -48,12 +76,17 @@ function renderMainToCanvas(w, h) {
   return canvas;
 }
 
-// Like renderMainToCanvas, but for progressive tracer pipelines: keeps
-// accumulating in small batches — yielding to the browser between them so the
-// on-screen progress bar (render/TracerProgressModule.js, driven from
-// pipeline.render()) stays live — until the pipeline reports convergence.
-// Non-tracer pipelines (no isConverged) capture after the single frame.
-async function renderMainToCanvasConverged(w, h, onProgress) {
+// Like renderMainToCanvas, but for progressive tracer pipelines: PACES the
+// accumulation one animation frame at a time — a single pipeline.render() per
+// awaited RAF — until the pipeline reports convergence. The pipeline is in
+// externally-paced mode (beginPacedRender, set by captureSceneToPng), so each
+// call traces exactly ONE sample: with general.rtTiledRender on that is one
+// scissored tile per frame (the system stays responsive even at full export
+// resolution), with it off one full sample per frame. The animate loop is held
+// off the renderer (app.offscreenRenderHold) so this is the sole render driver,
+// which makes uSampleCounter strictly MONOTONIC (no round is ever abandoned).
+// Non-tracer pipelines (no isConverged) capture after a single frame.
+async function renderMainToCanvasConverged(w, h, onProgress, signal) {
   app.renderer.setSize(w, h, false);
   app.pipeline?.setSize(w, h);
   const renderCtx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
@@ -68,16 +101,18 @@ async function renderMainToCanvasConverged(w, h, onProgress) {
       onProgress({ current, target });
     }
   };
-  reportProgress(); // show 0/target immediately, before the first (blocking) burst
-  app.pipeline?.render(renderCtx); // first call: resize reset + initial burst
   if (app.pipeline?.isConverged) {
+    reportProgress(); // show the starting count before the first paced frame
     while (!app.pipeline.isConverged()) {
+      throwIfAborted(signal);
+      await nextFrame();            // yield first: the button/progress repaints
+      throwIfAborted(signal);
+      app.pipeline.render(renderCtx); // one paced sample (one tile when tiling)
       reportProgress();
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      app.pipeline.requestBoost?.(4); // small batches keep the UI responsive
-      app.pipeline.render(renderCtx);
     }
     reportProgress(); // final (converged) count
+  } else {
+    app.pipeline?.render(renderCtx); // raster: single frame, capture immediately
   }
 
   const canvas = document.createElement('canvas');
@@ -251,8 +286,17 @@ function drawAxesLegend(ictx, x, bottomY, gsize) {
 
 /**
  * Capture the current scene to a high-resolution PNG Blob.
+ *
+ * Tracer pipelines are driven to convergence one animation frame at a time
+ * (paced tiled rendering that follows the general.rtTiledRender UI setting),
+ * with the animate loop held off the renderer so the export is the single
+ * render driver. Pass opts.signal (an AbortController's signal) to allow a
+ * clean mid-export cancel: on abort the live view is fully restored (the same
+ * finally as a normal completion) and an AbortError is thrown.
+ *
  * @param {{width:number, height:number, margin?:number, transparent?:boolean,
- *          onProgress?:(p:{current:number, target:number})=>void}} opts
+ *          onProgress?:(p:{current:number, target:number})=>void,
+ *          signal?:AbortSignal}} opts
  * @returns {Promise<Blob>}
  */
 export async function captureSceneToPng(opts) {
@@ -280,14 +324,28 @@ export async function captureSceneToPng(opts) {
   // Exports always trace at 100% internal resolution regardless of the
   // interactive "RT resolution" setting.
   const prevRtScale = general.rtResolutionScale;
+  const signal = opts.signal;
 
   try {
+    // Take over rendering: hold the animate loop off the renderer (single
+    // driver) and put tracer pipelines in externally-paced mode (one sample /
+    // one tile per render call — no synchronous multi-sample resize freeze).
+    app.offscreenRenderHold = true;
+    app.pipeline?.beginPacedRender?.();
     app.renderer.setPixelRatio(1);
     app.scene.background = null;
     app.renderer.setClearAlpha(0);
     general.rtResolutionScale = 1;
 
+    // Yield one frame so the caller's "Rendering…" button label paints BEFORE
+    // the first (synchronous) probe render — the click must feel instant.
+    throwIfAborted(signal);
+    await nextFrame();
+    throwIfAborted(signal);
+
     // --- Probe pass: find the content fraction of the view at low cost. ---
+    // In paced mode this is a single-sample render (a silhouette is all the
+    // auto-margin bbox needs), so it can never block on a 16-sample burst.
     const probeLong = 1024;
     const probeW = aspect >= 1 ? probeLong : Math.max(1, Math.round(probeLong * aspect));
     const probeH = aspect >= 1 ? Math.max(1, Math.round(probeLong / aspect)) : probeLong;
@@ -344,7 +402,8 @@ export async function captureSceneToPng(opts) {
 
     // --- Final high-res pass (tracer pipelines render to full convergence,
     //     with the on-screen progress bar tracking the accumulation). ---
-    const srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress);
+    const srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal);
+    throwIfAborted(signal);
 
     // Crop rect in source pixels, from the (accurate enough) probe fractions.
     const cropX = Math.max(0, Math.floor(nx0 * srcW));
@@ -391,7 +450,10 @@ export async function captureSceneToPng(opts) {
       }, 'image/png');
     });
   } finally {
-    // Restore the live view. Camera projection was never changed.
+    // Restore the live view. Camera projection was never changed. Runs on
+    // normal completion AND on abort, so the view is always intact afterwards.
+    app.pipeline?.endPacedRender?.();
+    app.offscreenRenderHold = false;
     general.rtResolutionScale = prevRtScale;
     app.scene.background = prevBackground;
     app.renderer.setClearAlpha(prevClearAlpha);
