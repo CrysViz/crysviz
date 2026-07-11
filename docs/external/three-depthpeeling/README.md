@@ -32,9 +32,23 @@ to this app's rendering-pipeline architecture:
    The demo's defines force a program rebuild on every peel-state change and
    require replacing `customProgramCacheKey` (which would collide with other
    patches, e.g. the WBOIT pipeline's). One program serves all states via
-   `uPeelEnabled`/`uFirstPass` int uniforms; the discard conditions use nested
-   ifs (GLSL need not short-circuit `&&`, and `nearDepth` is null on the first
+   `dpPeelEnabled`/`dpFirstPass` int uniforms; the discard conditions use nested
+   ifs (GLSL need not short-circuit `&&`, and `dpNearDepth` is null on the first
    peel). `customProgramCacheKey` is composed (appended to), not replaced.
+   **All injected uniforms carry a `dp` prefix** (`dpPeelEnabled`,
+   `dpFirstPass`, `dpNearDepth`, `dpOpaqueDepth`, `dpResolution`).
+   `DepthPeelUtils.patch` merges them into the material's uniform set with
+   `Object.assign( shader.uniforms, uniforms )`, and for a `ShaderMaterial`
+   `shader.uniforms === material.uniforms` — so an UNPREFIXED name would
+   OVERWRITE the material's own same-named uniform. The polyhedra fat-line
+   edges are a `LineMaterial` whose vertex shader reads its own `resolution`
+   uniform for screen-space line width; the previous (unprefixed) `resolution`
+   injection clobbered it, coupling the fat line's width-resolution and the
+   discard's UV-resolution into a single value. That let the discard sample the
+   wrong opaque-depth texel (reading background depth, so it never discarded) —
+   transparent poly edges (`edgeAlpha < 1`) then drew IN FRONT of opaque atoms
+   and faces. Prefixing keeps the material's own uniforms intact and gives the
+   discard a private, pass-driven `dpResolution`.
 3. **Mesh gathering by material flags** (`depthPeelEnabled && transparent`)
    with cached blending/depth/forceSinglePass state restored after the frame —
    the demo used two fixed scene groups instead. Stage gating uses **layer
