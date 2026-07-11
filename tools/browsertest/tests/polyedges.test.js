@@ -73,11 +73,14 @@ const H = require('../harness');
     const { setStructurePanelOpen } = await import('./ui/StructureInfoPanel/General.js');
     setStructurePanelOpen(true);
     document.querySelector('#atomBondControlSwitch button[data-mode="polyhedra"]').click();
+    // Expand the row lists FIRST: expanding/collapsing a category deliberately
+    // closes its color editor (main-branch UX change in PolyhedraListPanel's
+    // togglePolyList), so the dot must be clicked after expansion.
+    document.querySelectorAll('#infoPolyControls .poly-expand-icon')
+      .forEach((icon) => /** @type {HTMLElement} */ (icon).click());
     const control = document.querySelector('#infoPolyControls .poly-control');
     /** @type {HTMLElement} */ (control.querySelector('.dot')).click();
     const catEditor = /** @type {HTMLElement} */ (control.querySelector('.poly-cat-editor'));
-    document.querySelectorAll('#infoPolyControls .poly-expand-icon')
-      .forEach((icon) => /** @type {HTMLElement} */ (icon).click());
     const row = document.querySelector('#infoPolyControls .individual-polyhedron-row');
     /** @type {HTMLElement} */ (row.querySelector('button[data-editor-button="color"]')).click();
     const rowEditor = /** @type {HTMLElement} */ (row.querySelector('.poly-color-editor'));

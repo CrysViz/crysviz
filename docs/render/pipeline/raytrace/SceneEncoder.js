@@ -23,7 +23,13 @@ import { MAX_CUT_PLANES } from '../../MaterialStyles.js';
 import { getCutPlaneMaskSign, Plane } from '../../../model/index.js';
 import { DATA_TEX_WIDTH } from './sceneFragment.js';
 
-const MAX_PLANES = 20; // ConvexPolyhedronIntersect limit (vendored chunk)
+// Texture/perf sanity cap on unique face planes per polyhedron. No longer the
+// vendored intersector limit: the shaders now stream planes straight from the
+// data texture (raytrace/convexChunk.js -> ConvexPolyStreamIntersect), so any
+// plane count is supported. This bound only guards against a pathological hull
+// blowing up the texture; real coordination shells (faces = 2*verts - 4) never
+// approach it (256 would need >130 ligands).
+const MAX_PLANES = 256;
 
 // Ray/path-tracing material encoding: one texel with TYPE-MULTIPLEXED slots
 // (the per-type knobs are mutually exclusive, so no layout growth needed):
@@ -994,7 +1000,10 @@ export class SceneEncoder {
 
   /** Polyhedra edge segments as thin cylinders. The raster edges are fat
    *  lines in PIXEL units; here the width maps to world units pinned to the
-   *  unit-cell line thickness (polyEdgeWidth 1 ~ a 0.015-radius cell edge). */
+   *  unit-cell line thickness (polyEdgeWidth 1 ~ a 0.015-radius cell edge).
+   *  Note: with the streaming intersector, poly FACES are no longer capped at
+   *  20 planes, so an edge cage no longer outruns its (now-rendered) filled
+   *  body for high-face-count polyhedra. */
   _polyEdges() {
     const width = general.polyEdgeWidth ?? 1;
     if (!(width > 0)) return [];
@@ -1120,9 +1129,11 @@ export class SceneEncoder {
     texture.needsUpdate = true;
   }
 
-  /** World-space face planes (deduped, <= MAX_PLANES) + AABB for one
-   *  polyhedron mesh, cached on its userData (dies with the mesh on rebuild).
-   *  Returns false (and warns once) for polyhedra beyond the plane limit. */
+  /** World-space face planes (deduped, any count up to the MAX_PLANES sanity
+   *  cap) + AABB for one polyhedron mesh, cached on its userData (dies with the
+   *  mesh on rebuild). The shader streams these planes (convexChunk.js), so
+   *  there is no fixed-array limit; returns false (and warns once) only for a
+   *  degenerate hull or one beyond the sanity cap. */
   _polyPlanes(mesh) {
     if (mesh.userData.rtPlanes) return true;
     if (mesh.userData.rtPlanesUnsupported) return false;
@@ -1152,7 +1163,8 @@ export class SceneEncoder {
     }
     if (planes.length > MAX_PLANES) {
       console.warn(`raytrace: polyhedron with ${planes.length} faces exceeds the `
-        + `${MAX_PLANES}-plane limit of ConvexPolyhedronIntersect — skipped`);
+        + `${MAX_PLANES}-plane texture/perf sanity cap — skipped (should never `
+        + `fire for real coordination shells)`);
       mesh.userData.rtPlanesUnsupported = true;
       return false;
     }

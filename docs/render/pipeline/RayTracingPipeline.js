@@ -10,7 +10,8 @@
 // pipeline intentionally has its own look).
 //
 // v1 scope/limits (documented in the plan + vendor README): renders atoms,
-// bonds, polyhedra (<= 20 faces), unit-cell edges, volumetric field
+// bonds, polyhedra (any face count — streaming convex intersector,
+// raytrace/convexChunk.js), unit-cell edges, volumetric field
 // isosurfaces, crystallographic lattice planes AND measurements (shell markers
 // as ghost spheres + dashed distance/angle lines as thin cylinders, encoded by
 // SceneEncoder; the CSS2D labels stay DOM) — comparison structures are not

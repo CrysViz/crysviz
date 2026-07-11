@@ -24,6 +24,7 @@ import { DATA_TEX_WIDTH } from '../raytrace/sceneFragment.js';
 import { fieldChunk } from '../raytrace/fieldChunk.js';
 import { planeChunk } from '../raytrace/planeChunk.js';
 import { gridChunk } from '../raytrace/gridChunk.js';
+import { convexChunk } from '../raytrace/convexChunk.js';
 
 export const ptSceneFragment = /* glsl */`
 precision highp float;
@@ -318,6 +319,8 @@ vec3 ptSampleNEE(vec3 x, vec3 nl, out float weight)
 	return dir;
 }
 
+${convexChunk}
+
 ${fieldChunk}
 
 ${planeChunk}
@@ -461,7 +464,6 @@ float SceneIntersect()
 	}
 
 	// ---- polyhedra: convex plane sets with an AABB quick reject ------------
-	vec4 planes[20];
 	for (int p = 0; p < uPolyCount; p++)
 	{
 		int o = p * 4;
@@ -475,11 +477,9 @@ float SceneIntersect()
 		vec4 header = fetchData(uPolyDataTexture, o);
 		int planeOffset = int(header.x);
 		int planeCount = int(header.y);
-		for (int k = 0; k < 20; k++)
-		{
-			planes[k] = k < planeCount ? fetchData(uPolyDataTexture, planeOffset + k) : vec4(0, 1, 0, INFINITY);
-		}
-		d = ConvexPolyhedronIntersect(rayOrigin, rayDirection, n, planeCount, planes);
+		// streaming convex intersector (raytrace/convexChunk.js): fetches
+		// planes straight from uPolyDataTexture — no local array, no plane cap
+		d = ConvexPolyStreamIntersect(rayOrigin, rayDirection, planeOffset, planeCount, n);
 		if (d < t)
 		{
 			t = d;
@@ -492,6 +492,14 @@ float SceneIntersect()
 				colA.rgb, colA.a);
 			hitObjectID = float(1 + uAtomCount + uCylinderCount + p);
 			gRayExiting = dot(n, rayDirection) > 0.0 ? TRUE : FALSE;
+			// any-hit shadow early-out — same gate as testAtom/testCylinder:
+			// under uShadowAnyHit a glass (code==2) or opaque (alpha>=0.999)
+			// poly hit blocks the light-sample ray. uShadowAnyHit is false when
+			// the scene has emissives, so the listed-bit / NEE id-match path is
+			// unaffected. Same statistical-identity argument as the other prims.
+			if (gShadowRay == TRUE && uShadowAnyHit
+				&& (int(header.z + 0.5) == 2 || colA.a >= 0.999))
+				return t;
 		}
 	}
 

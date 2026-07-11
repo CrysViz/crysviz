@@ -36,6 +36,7 @@
 import { fieldChunk } from './fieldChunk.js';
 import { planeChunk } from './planeChunk.js';
 import { gridChunk } from './gridChunk.js';
+import { convexChunk } from './convexChunk.js';
 
 export const DATA_TEX_WIDTH = 1024;
 
@@ -118,6 +119,8 @@ vec4 fetchData(sampler2D tex, int index)
 {
 	return texelFetch(tex, ivec2(index % DATA_W, index / DATA_W), 0);
 }
+
+${convexChunk}
 
 ${fieldChunk}
 
@@ -248,7 +251,6 @@ float SceneIntersect( int isShadowRay )
 	}
 
 	// ---- polyhedra: convex plane sets with an AABB quick reject ----------
-	vec4 planes[20];
 	for (int p = 0; p < uPolyCount; p++)
 	{
 		int o = p * 4;
@@ -262,11 +264,9 @@ float SceneIntersect( int isShadowRay )
 		vec4 header = fetchData(uPolyDataTexture, o);
 		int planeOffset = int(header.x);
 		int planeCount = int(header.y);
-		for (int k = 0; k < 20; k++)
-		{
-			planes[k] = k < planeCount ? fetchData(uPolyDataTexture, planeOffset + k) : vec4(0, 1, 0, INFINITY);
-		}
-		d = ConvexPolyhedronIntersect(rayOrigin, rayDirection, n, planeCount, planes);
+		// streaming convex intersector (raytrace/convexChunk.js): fetches
+		// planes straight from uPolyDataTexture — no local array, no plane cap
+		d = ConvexPolyStreamIntersect(rayOrigin, rayDirection, planeOffset, planeCount, n);
 		if (d < t)
 		{
 			t = d;
@@ -280,6 +280,14 @@ float SceneIntersect( int isShadowRay )
 			intersectionTypeParam = aabbMinT.w;
 			intersectionReflectivity = aabbMaxT.w;
 			intersectionShapeIsClosed = TRUE;
+			// any-hit shadow early-out — mirrors testAtom/testCylinder exactly:
+			// an opaque (alpha>=0.999), non-glass poly hit that becomes the new
+			// closest occludes the shadow ray; return immediately. Same
+			// statistical-identity argument as the atom/cylinder gate (an opaque
+			// blocker forces occlusion regardless of order; a nearer transparent
+			// surface that hides it here is re-found by the shadow-march).
+			if (isShadowRay == TRUE && colA.a >= 0.999 && intersectionMaterialType != MAT_TRANSP)
+				return t;
 		}
 	}
 
