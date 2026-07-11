@@ -200,13 +200,32 @@ function orangeFraction(png) {
     raster.after > raster.before, JSON.stringify(raster));
 
   // ================= (3) Measurements traced =================================
+  // Re-activate the ray tracer (section 2 left depthpeel active) and wait for its
+  // ASYNC shader compile to finish before the deterministic single-evaluate drive
+  // below: a fresh tracer switch parks in _shaderState 'compiling' until a
+  // macrotask fires the compile, which can never happen inside one synchronous
+  // evaluate — so the compile-gate readiness must be awaited across evaluates.
+  await page.evaluate(async () => {
+    const { setActivePipeline } = await import('./render/index.js');
+    setActivePipeline('raytrace');
+  });
+  {
+    const deadline = Date.now() + 120000;
+    for (;;) {
+      const ok = await page.evaluate(async () => {
+        const { app } = await import('./state/store.js');
+        const p = app.pipeline;
+        return p?._shaderState === 'ready' && !!p?._blueNoise?.image;
+      });
+      if (ok || Date.now() > deadline) break;
+      await page.waitForTimeout(500);
+    }
+  }
   const meas = await page.evaluate(async () => {
     const { app, groups, fileBrowser, measurements } = await import('./state/store.js');
-    const { setActivePipeline } = await import('./render/index.js');
     const { addDistanceMeasurement, clearAllMeasurements } = await import('./render/MeasurementModule.js');
     const { fracToCart } = await import('./math/index.js');
     const THREE = await import('./external/three/three.module.js');
-    setActivePipeline('raytrace');
     const p = app.pipeline;
     const ctx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
     const canvas = app.renderer.domElement;

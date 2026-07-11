@@ -9,6 +9,7 @@
 let barEl = null;
 let fillEl = null;
 let hideTimer = null;
+let compiling = false; // true while the indeterminate "Compiling…" marquee runs
 
 // Stacking: the strip must sit ABOVE the PNG-export backdrop (#pngExportModal,
 // position:fixed z-index:3000 on <body>) so the export accumulation stays
@@ -38,6 +39,33 @@ function ensureBar() {
   return barEl;
 }
 
+/** Inject the marquee keyframes once (inline @keyframes can't live on a style
+ *  attribute, so a tiny <style> element carries them). Matches the module's
+ *  style-in-JS approach. */
+function ensureCompileAnim() {
+  if (document.getElementById('tracerCompileAnim')) return;
+  const style = document.createElement('style');
+  style.id = 'tracerCompileAnim';
+  style.textContent = '@keyframes tracerCompileSlide {'
+    + ' 0% { left:-40%; } 100% { left:100%; } }';
+  (document.head || document.documentElement).appendChild(style);
+}
+
+/** Leave the indeterminate compiling mode and restore the determinate fill so
+ *  the very next updateTracerProgress()/hideTracerProgress() presents normally.
+ *  A no-op unless a compiling marquee is currently running. */
+function clearCompiling() {
+  if (!compiling) return;
+  compiling = false;
+  if (fillEl) {
+    fillEl.style.animation = '';
+    fillEl.style.position = '';
+    fillEl.style.left = '';
+    fillEl.style.width = '0%';
+    fillEl.style.transition = 'width 0.15s linear';
+  }
+}
+
 /** Mirror the strip's fixed geometry onto #view's current bounding rect, so it
  *  spans the 3D view (excluding the UI column) regardless of layout/resize. */
 function positionBar() {
@@ -49,10 +77,32 @@ function positionBar() {
   barEl.style.width = `${r.width}px`;
 }
 
+/** Indeterminate "Compiling…" mode: shown while the tracer's scene-trace
+ *  ShaderMaterial is being (asynchronously) compiled/linked — there is no
+ *  sample fraction to report yet, so a fixed-width segment sweeps across the
+ *  strip. Cleared automatically by the first updateTracerProgress() (accumulation
+ *  started) or hideTracerProgress() (pipeline switch/dispose). Idempotent: called
+ *  every frame of the compile window, it must NOT restart the marquee. */
+export function showTracerCompiling() {
+  const bar = ensureBar();
+  if (!bar) return;
+  positionBar(); // keep aligned even as the marquee runs (layout/resize)
+  if (compiling) return; // already animating — don't restart it each frame
+  ensureCompileAnim();
+  compiling = true;
+  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+  bar.style.opacity = '1';
+  fillEl.style.transition = 'none';
+  fillEl.style.position = 'relative';
+  fillEl.style.width = '40%';
+  fillEl.style.animation = 'tracerCompileSlide 1.1s ease-in-out infinite';
+}
+
 /** Per-frame progress update from the tracer pipelines. */
 export function updateTracerProgress(samples, target) {
   const bar = ensureBar();
   if (!bar) return;
+  clearCompiling(); // accumulation started: leave the indeterminate marquee
   positionBar(); // keep aligned to #view across resizes / panel-collapse / docked mode
   // Perceptual mapping: Monte-Carlo error falls off as 1/sqrt(N), so most of
   // the visible quality arrives early — a linear bar would crawl through its
@@ -75,6 +125,7 @@ export function updateTracerProgress(samples, target) {
 
 /** Hide immediately (pipeline switch/dispose). */
 export function hideTracerProgress() {
+  clearCompiling(); // also cancel any in-flight compiling marquee
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   if (barEl) barEl.style.opacity = '0';
 }

@@ -66,6 +66,21 @@
 // (boost / motion / toggle-off / 1x1 grid / sample 1) render full-frame; with
 // the toggle OFF the present is byte-identical to the legacy accum-target path.
 //
+// Async shader-compile phase: the assembled scene-trace ShaderMaterial is
+// thousands of GLSL lines, and its gl.linkProgram (triggered lazily by the first
+// renderer.render of the trace scene) is a multi-second synchronous freeze that
+// the desktop flags as a hung tab. So the first render() after activation does
+// NOT trace: it PAINTS feedback (a "Compiling…" strip via TracerProgressModule +,
+// when the raster preview instance exists, one fully-interactive depth-peeled
+// preview frame) and then kicks renderer.compileAsync(); accumulation begins only
+// once the program is ready (_shaderState pending -> compiling -> ready). ASYMMETRY:
+// on Chromium/ANGLE the KHR_parallel_shader_compile extension makes compileAsync
+// genuinely non-blocking (it polls COMPLETION_STATUS_KHR). On Firefox (no
+// extension — also the browsertest env) the link still happens synchronously
+// inside compileAsync's compile() call; the win there is that the compile is
+// deferred to a macrotask AFTER the compiling frame has painted, so the user sees
+// "Compiling…" (and can still orbit via the preview) rather than a frozen tab.
+//
 // Interactive raster preview (general.rtRasterPreview, default on): tracing
 // every interactive frame is expensive, so while the user drives the view the
 // pipeline renders cheap DEPTH-PEELED preview frames instead — it holds a
@@ -88,7 +103,7 @@ import { ScreenCopy_Fragment } from '../../external/three-raytracing/ScreenCopy_
 import { ScreenOutput_Fragment } from '../../external/three-raytracing/ScreenOutput_Fragment.js';
 import { FullScreenQuad } from '../../external/three/Pass.js';
 import { requestRender } from '../AnimateModule.js';
-import { updateTracerProgress, hideTracerProgress } from '../TracerProgressModule.js';
+import { updateTracerProgress, hideTracerProgress, showTracerCompiling } from '../TracerProgressModule.js';
 import { ForwardPipeline } from './ForwardPipeline.js';
 import { DepthPeelPipeline } from './DepthPeelPipeline.js';
 import { sceneFragment } from './raytrace/sceneFragment.js';
@@ -189,6 +204,19 @@ export class RayTracingPipeline extends ForwardPipeline {
   _initialized = false;
   _sceneDirty = true;
   _boostSamples = 0;
+
+  // ---- async shader-compile gate ------------------------------------------
+  // The scene-trace ShaderMaterial is thousands of assembled GLSL lines
+  // (ptSceneFragment is worst); its gl.linkProgram — triggered lazily on the
+  // FIRST renderer.render(this._rtScene) one RAF after activation — is a
+  // multi-second synchronous freeze. The gate defers that link off the
+  // activation frame: on the first frame it PAINTS feedback (an interactive
+  // preview frame + a "Compiling…" strip) and then kicks
+  // renderer.compileAsync(); accumulation begins only once the program is
+  // 'ready'. 'pending' -> 'compiling' (compile scheduled) -> 'ready'.
+  _shaderState = 'pending';
+  _compileWarned = false; // one-shot: log a compileAsync rejection at most once
+  _disposed = false;      // set in dispose(): a late compile resolve must no-op
   // When true (set via beginPacedRender), render() traces at most ONE sample per
   // call regardless of any armed resize/boost — the PNG export drives the
   // accumulation one animation frame at a time (one tile/frame when tiling is
@@ -657,10 +685,76 @@ export class RayTracingPipeline extends ForwardPipeline {
     }, Math.max(0, delayMs));
   }
 
+  // ---- async shader-compile gate ------------------------------------------
+  /** Paint one frame of compile-window feedback: the "Compiling…" strip, plus —
+   *  if the interactive raster preview instance exists — a single depth-peeled
+   *  preview frame (rendered regardless of ctx.interactive so the view stays
+   *  fully interactive while the tracer program links). Without a preview
+   *  instance the canvas is left untouched (the last composited frame persists;
+   *  nothing draws over it). Never advances uSampleCounter. */
+  _paintCompileFrame(ctx) {
+    showTracerCompiling();
+    if (this._previewPipeline) {
+      const { renderer, scene, camera } = ctx;
+      this._previewPipeline.render({ renderer, scene, camera });
+      this._previewActive = true; // a preview frame was drawn (test-inspectable)
+    }
+  }
+
+  /** Drive the compile gate for one frame (called from render() while
+   *  _shaderState !== 'ready'). FIRST ('pending') frame: paint feedback NOW, then
+   *  schedule renderer.compileAsync in a macrotask so its work runs AFTER this
+   *  frame's paint reaches the compositor — CRITICAL on Firefox, whose WebGL has
+   *  no KHR_parallel_shader_compile, so compileAsync's internal compile() still
+   *  blocks synchronously; deferring it lets the "Compiling…" strip / preview
+   *  paint first. With the extension (Chromium/ANGLE) the link is genuinely
+   *  non-blocking and the ordering is moot. Subsequent ('compiling') frames just
+   *  re-paint. Guards: a resolve after dispose() or after the state already left
+   *  'compiling' (pipeline switched away, blue-noise reset raced, …) no-ops. */
+  _renderCompileGate(ctx) {
+    if (this._shaderState === 'pending') {
+      this._shaderState = 'compiling';
+      this._paintCompileFrame(ctx); // paint BEFORE the (possibly blocking) compile
+      const { renderer, camera } = ctx;
+      const markReady = () => {
+        if (this._disposed || this._shaderState !== 'compiling') return;
+        this._shaderState = 'ready';
+        this.resetAccumulation();
+        requestRender();
+      };
+      // Macrotask defer: the just-issued preview/strip GL must present before the
+      // synchronous link inside compileAsync's compile() (Firefox fallback).
+      setTimeout(() => {
+        if (this._disposed || this._shaderState !== 'compiling') return;
+        Promise.resolve(renderer.compileAsync(this._rtScene, camera))
+          .then(markReady)
+          .catch((e) => {
+            if (!this._compileWarned) {
+              this._compileWarned = true;
+              console.warn('[RayTracingPipeline] compileAsync failed; '
+                + 'falling back to lazy compile on the first traced frame', e);
+            }
+            markReady(); // still proceed: the first render() links lazily
+          });
+      }, 0);
+      requestRender();
+      return;
+    }
+    // 'compiling': keep the feedback alive until markReady flips to 'ready'.
+    this._paintCompileFrame(ctx);
+    requestRender();
+  }
+
   render(ctx) {
     const { renderer, scene, camera } = ctx;
     if (!this._initialized) this._init(renderer);
     this._syncPreviewLifecycle();
+    // Async shader-compile gate (see class header + _shaderState): keep the
+    // multi-thousand-line scene-trace program's synchronous link off this
+    // (activation) frame. While not 'ready' nothing is sized/encoded/accumulated
+    // — uSampleCounter stays put — and the canvas shows an interactive preview
+    // frame (or its last content) under a "Compiling…" strip.
+    if (this._shaderState !== 'ready') { this._renderCompileGate(ctx); return; }
     const u = this._uniforms;
 
     // --- camera-motion detection (hoisted above sizing so motion low-res can
@@ -1201,6 +1295,10 @@ export class RayTracingPipeline extends ForwardPipeline {
   }
 
   dispose() {
+    // Mark disposed FIRST so an in-flight compileAsync resolve (compile gate)
+    // that lands after a mid-compile pipeline switch no-ops instead of resetting
+    // a foreign accumulation / requesting a render on a dead pipeline.
+    this._disposed = true;
     // Teardown BEFORE the _initialized guard: the preview instance (and its
     // rest timer) can exist even if this tracer never rendered a traced frame.
     this._teardownPreview();
