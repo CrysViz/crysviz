@@ -28,8 +28,9 @@ const H = require('../harness');
   H.check('depthpeel pipeline active after boot (app.pipeline + general in sync)',
     boot.activeId === 'depthpeel' && boot.appPipelineMatches && boot.generalId === 'depthpeel',
     JSON.stringify(boot));
-  H.check('rendering-pipeline dropdown lists the registry',
-    Array.isArray(boot.menuOptions) && boot.menuOptions.join(',') === boot.registry.map((p) => p.id).join(',')
+  H.check('rendering-pipeline dropdown lists the visible pipelines (hidden split/sorted omitted)',
+    Array.isArray(boot.menuOptions)
+      && boot.menuOptions.join(',') === 'depthpeel,wboit,forward,raytrace,pathtrace'
       && boot.menuValue === 'depthpeel',
     JSON.stringify({ menu: boot.menuOptions, registry: boot.registry }));
   // --- Opaque-scene fast path (default depthpeel renders like forward) -----------
@@ -52,9 +53,54 @@ const H = require('../harness');
   H.check('depthpeel fast path: plain single pass when nothing is transparent',
     fastPath.opaque === true && fastPath.transp === false, JSON.stringify(fastPath));
 
-  H.check('registry holds the seven pipelines',
-    boot.registry.map((p) => p.id).join(',') === 'forward,split-atoms,sorted-atoms,wboit,depthpeel,raytrace,pathtrace',
+  H.check('registry holds the seven pipelines (recommended-first dropdown order)',
+    boot.registry.map((p) => p.id).join(',') === 'depthpeel,wboit,forward,raytrace,pathtrace,split-atoms,sorted-atoms',
     JSON.stringify(boot.registry));
+  H.check('registry flags split-atoms/sorted-atoms as hidden, the rest visible',
+    boot.registry.filter((p) => p.hidden).map((p) => p.id).join(',') === 'split-atoms,sorted-atoms',
+    JSON.stringify(boot.registry));
+
+  // --- Hidden pipelines: activatable, and surfaced in the dropdown only via a
+  //     rebuild when they are the active id or general.showAllRenderPipelines ---
+  const hiddenPipelines = await page.evaluate(async () => {
+    const { app, general } = await import('./state/store.js');
+    const { setActivePipeline } = await import('./render/index.js');
+    const { rebuildRenderPipelineMenu } = await import('./ui/ColorPanel.js');
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
+    const optionIds = () => [...select.options].map((o) => o.value);
+
+    // (a) hidden ids stay fully activatable via setActivePipeline...
+    setActivePipeline('split-atoms');
+    const splitActive = app.pipeline?.id;
+    // ...and a menu rebuild then appends the active hidden id (select stays truthful),
+    // while the other hidden pipeline stays omitted.
+    rebuildRenderPipelineMenu();
+    const menuWithActiveHidden = optionIds();
+
+    // (b) general.showAllRenderPipelines + rebuild => all seven appear.
+    general.showAllRenderPipelines = true;
+    rebuildRenderPipelineMenu();
+    const menuShowAll = optionIds();
+
+    // Restore normal state for the checks that follow.
+    general.showAllRenderPipelines = false;
+    setActivePipeline('depthpeel');
+    rebuildRenderPipelineMenu();
+    const menuRestored = optionIds();
+    return { splitActive, menuWithActiveHidden, menuShowAll, menuRestored };
+  });
+  H.check('hidden pipeline stays activatable via setActivePipeline (app.pipeline.id)',
+    hiddenPipelines.splitActive === 'split-atoms', JSON.stringify(hiddenPipelines));
+  H.check('active hidden pipeline gains a dropdown option on rebuild; other hidden one stays out',
+    hiddenPipelines.menuWithActiveHidden.includes('split-atoms')
+      && !hiddenPipelines.menuWithActiveHidden.includes('sorted-atoms'),
+    JSON.stringify(hiddenPipelines.menuWithActiveHidden));
+  H.check('showAllRenderPipelines lists all seven in the dropdown after rebuild',
+    hiddenPipelines.menuShowAll.join(',') === 'depthpeel,wboit,forward,raytrace,pathtrace,split-atoms,sorted-atoms',
+    JSON.stringify(hiddenPipelines.menuShowAll));
+  H.check('dropdown returns to the five visible pipelines once a visible one is active',
+    hiddenPipelines.menuRestored.join(',') === 'depthpeel,wboit,forward,raytrace,pathtrace',
+    JSON.stringify(hiddenPipelines.menuRestored));
 
   // --- Depth-peel "Peel layers" slider follows the dropdown ----------------------
   const slider = await page.evaluate(() => {

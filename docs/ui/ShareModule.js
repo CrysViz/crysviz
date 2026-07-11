@@ -13,6 +13,7 @@ import { updateAtoms } from '../render/index.js';
 import { rebuildBonds, updatePolyhedra, setActivePipeline } from '../render/index.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
+import { rebuildRenderPipelineMenu } from './ColorPanel.js';
 import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
 import { revealFeaturePanels } from './panels/PanelManager.js';
 import { fracToCart } from '../math/index.js';
@@ -338,6 +339,9 @@ function applyStyleSettings(style) {
   if (style.renderPipeline) {
     // Unknown ids fall back to 'forward' inside setActivePipeline.
     setActivePipeline(style.renderPipeline);
+    // A restored id may be a hidden pipeline (superseded split/sorted) with no
+    // dropdown option — rebuild the option list first so the select can hold it.
+    rebuildRenderPipelineMenu();
     setSelect('renderPipelineMenu', general.renderPipeline);
   }
   if (style.depthPeelLayers != null) {

@@ -1,4 +1,4 @@
-// "Ray tracing (experimental)" pipeline: Whitted-style ray tracing of the
+// "Ray tracing (slow)" pipeline: Whitted-style ray tracing of the
 // crystal scene (atom spheres, bond/cell-edge cylinders, convex polyhedra)
 // with true reflections, refractive transparency, hard shadows and
 // progressive accumulation — built on the vendored
@@ -178,7 +178,7 @@ function compensateBackground(bg, exposure, saturation, out) {
 
 export class RayTracingPipeline extends ForwardPipeline {
   static id = 'raytrace';
-  static label = 'Ray tracing (experimental)';
+  static label = 'Ray tracing (slow)';
 
   id = RayTracingPipeline.id;
   label = RayTracingPipeline.label;

@@ -89,6 +89,7 @@ export const groups = {
 export const RENDERING_DEFAULTS = {
   renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
   renderPipeline: 'depthpeel', // active rendering pipeline id; depthpeel self-optimizes to a plain forward pass when the scene has no transparency (DepthPeelPass fast path)
+  showAllRenderPipelines: false, // HIDDEN (config-only, no GUI): list superseded/debug pipelines in the rendering dropdown
   depthPeelLayers: 5, // peel passes for the 'depthpeel' pipeline (1-10; more = deeper transparency, slower)
   rtResolutionScale: 0.95, // raytrace/pathtrace pipelines: internal resolution as a fraction of the canvas
   rtTiledRender: true, // raytrace/pathtrace: render each sample in scissored tiles (one/frame) to keep the shared GPU responsive; untiled half-res while the camera moves

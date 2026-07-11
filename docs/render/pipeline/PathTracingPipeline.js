@@ -1,4 +1,4 @@
-// "Path tracing (experimental)" pipeline: Monte-Carlo path tracing with
+// "Path tracing (slower)" pipeline: Monte-Carlo path tracing with
 // global illumination, soft area-light shadows and an edge-aware denoiser —
 // built on the vendored docs/external/three-pathtracing/ GLSL chunk library
 // (CC0, Erich Loftis; sibling of three-raytracing, same architecture). The
@@ -31,7 +31,7 @@ import { ptSceneFragment } from './pathtrace/ptSceneFragment.js';
 
 export class PathTracingPipeline extends RayTracingPipeline {
   static id = 'pathtrace';
-  static label = 'Path tracing (experimental)';
+  static label = 'Path tracing (slower)';
 
   id = PathTracingPipeline.id;
   label = PathTracingPipeline.label;

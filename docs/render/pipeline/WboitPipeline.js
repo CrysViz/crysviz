@@ -1,4 +1,4 @@
-// "Weighted blended (WBOIT)" pipeline: order-independent transparency via the
+// "Weight blended (WBOIT)" pipeline: order-independent transparency via the
 // vendored three-wboit library (docs/external/three-wboit/ — McGuire & Bavoil
 // weighted blended OIT). Every frame runs WboitPass's stages instead of a
 // plain renderer.render: opaque pass → plain-transparent pass → WBOIT
@@ -19,7 +19,7 @@ import { StagedTransparencyPipeline } from './StagedTransparencyPipeline.js';
 
 export class WboitPipeline extends StagedTransparencyPipeline {
   static id = 'wboit';
-  static label = 'Weighted blended (WBOIT)';
+  static label = 'Weight blended (WBOIT)';
 
   id = WboitPipeline.id;
   label = WboitPipeline.label;

@@ -7,6 +7,9 @@
 //
 // Pipeline interface (duck-typed; see render/pipeline/index.js):
 //   static id / static label       registry identity + dropdown text
+//   static hidden (optional)       true = registered + activatable but omitted
+//                                  from the GUI dropdown unless the id is active
+//                                  or general.showAllRenderPipelines is set
 //   render(ctx)                    draw one full frame into the default
 //                                  framebuffer; ctx = {renderer, scene, camera}
 //   setSize(w, h)                  resize any offscreen targets (device px)
@@ -23,7 +26,7 @@ import { renderCelOutlinePass } from '../CelOutlinePass.js';
 
 export class ForwardPipeline {
   static id = 'forward';
-  static label = 'Standard (forward)';
+  static label = 'Simple (no transparency order)';
 
   id = ForwardPipeline.id;
   label = ForwardPipeline.label;

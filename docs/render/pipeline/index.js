@@ -34,9 +34,17 @@ export function registerPipeline(PipelineClass) {
   registry.set(PipelineClass.id, PipelineClass);
 }
 
-/** For the GUI dropdown: [{id, label}] in registration order. */
+/** For the GUI dropdown: [{id, label, hidden}] in registration order. Returns
+ *  ALL registered pipelines (hidden ones included, flagged); ColorPanel filters
+ *  the `hidden` ones out of the dropdown unless general.showAllRenderPipelines.
+ *  `hidden` is read as an OWN static so subclasses (DepthPeel/Wboit extend the
+ *  hidden SplitAtomsPipeline) don't inherit the flag. */
 export function listPipelines() {
-  return [...registry.values()].map((P) => ({ id: P.id, label: P.label }));
+  return [...registry.values()].map((P) => ({
+    id: P.id,
+    label: P.label,
+    hidden: Object.prototype.hasOwnProperty.call(P, 'hidden') && !!P.hidden,
+  }));
 }
 
 /** The active pipeline instance (null only before setupScene bootstrap). */
@@ -77,10 +85,12 @@ export function setActivePipeline(id) {
   return pipeline;
 }
 
-registerPipeline(ForwardPipeline);
-registerPipeline(SplitAtomsPipeline);
-registerPipeline(SortedAtomsPipeline);
-registerPipeline(WboitPipeline);
+// Registration order = dropdown order: recommended modes first (depth peeling
+// is the default), then the tracers, then the specialized raster variants.
 registerPipeline(DepthPeelPipeline);
+registerPipeline(WboitPipeline);
+registerPipeline(ForwardPipeline);
 registerPipeline(RayTracingPipeline);
 registerPipeline(PathTracingPipeline);
+registerPipeline(SplitAtomsPipeline);
+registerPipeline(SortedAtomsPipeline);

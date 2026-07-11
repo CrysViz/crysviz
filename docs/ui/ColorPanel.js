@@ -185,6 +185,32 @@ function createDropdown(id, labelText, options, onChange) {
   return block;
 }
 
+/** Options for the "Rendering pipeline" dropdown, in registry order: the
+ *  visible pipelines, with hidden ones (superseded split/sorted) omitted —
+ *  unless general.showAllRenderPipelines lists them all, or a hidden pipeline
+ *  is the currently-active id (a restored/console-set session), in which case
+ *  its option is kept so the select stays truthful. */
+function renderPipelineOptions() {
+  const activeId = general.renderPipeline;
+  return listPipelines()
+    .filter((p) => !p.hidden || general.showAllRenderPipelines || p.id === activeId)
+    .map((p) => ({ value: p.id, text: p.label, selected: p.id === activeId }));
+}
+
+/** Rebuild the #renderPipelineMenu <option> list from current state. Called on
+ *  session restore (so a restored hidden pipeline id gains an option before the
+ *  select is set) and whenever general.showAllRenderPipelines is toggled. */
+export function rebuildRenderPipelineMenu() {
+  const select = /** @type {HTMLSelectElement} */ (document.getElementById("renderPipelineMenu"));
+  if (!select) return;
+  select.textContent = "";
+  renderPipelineOptions().forEach((opt) => {
+    const option = createElement("option", { value: opt.value }, {}, opt.text);
+    if (opt.selected) option.selected = true;
+    select.appendChild(option);
+  });
+}
+
 // --- Color Mapping Functions ---
 function updateBondColorsByLength() {
   const bonds = fileBrowser.selectedStructure.bonds;
@@ -378,9 +404,7 @@ export function addColorPanel(target = "colorContainer") {
 
   // Rendering pipeline (how a frame is drawn) — the top of the tree.
   const renderPipelineMenu = createDropdown("renderPipelineMenu", "Rendering pipeline",
-    listPipelines().map((p) => ({
-      value: p.id, text: p.label, selected: general.renderPipeline === p.id,
-    })), () => {
+    renderPipelineOptions(), () => {
       setActivePipeline(renderPipelineMenu.querySelector("select").value);
       updateRenderingControlsVisibility();
     });
