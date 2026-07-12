@@ -301,11 +301,10 @@ float SceneIntersect( int isShadowRay )
 			intersectionNormal = fN;
 			intersectionColor = fCol;
 			intersectionAlpha = uFieldAlpha;
-			intersectionMaterialType = MAT_OPAQUE;
-			intersectionMatCode = 0;
-			intersectionRoughness = 0.0;
-			intersectionTypeParam = 0.6;   // default gloss (matches DEFAULT_MATERIAL_TEXEL)
-			intersectionReflectivity = -1.0; // use the global Reflectivity slider
+			intersectionMaterialType = resolveMaterialType(uFieldMaterial.x, uFieldAlpha); // sets intersectionMatCode
+			intersectionRoughness = uFieldMaterial.y;
+			intersectionTypeParam = uFieldMaterial.z;
+			intersectionReflectivity = uFieldMaterial.w;
 			intersectionShapeIsClosed = FALSE; // double-sided implicit surface
 		}
 	}

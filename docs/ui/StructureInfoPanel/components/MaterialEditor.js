@@ -27,11 +27,17 @@ const TYPES = [
   { value: 'translucent', label: 'Translucent (waxy)' },
 ];
 
+// The full type list, exported so callers (e.g. FieldPanel) can build a
+// restricted subset (the field surface excludes 'glass').
+export const MATERIAL_TYPES = TYPES;
+
 /**
  * @param {() => ({type?: string, gloss?: number, roughness?: number, frost?: number, ior?: number, tintDepth?: number, intensity?: number, scatterDepth?: number, reflectivity?: number} | null | undefined)} getMaterial
  * @param {(material: object | null) => void} setMaterial write to the owning store (null = clear)
+ * @param {{ types?: Array<{value: string, label: string}> }} [options] optional type-list override (e.g. glass-free for the field surface)
  */
-export function createMaterialEditor(getMaterial, setMaterial) {
+export function createMaterialEditor(getMaterial, setMaterial, { types } = {}) {
+  const typeList = types ?? TYPES;
   const block = document.createElement('div');
   block.className = 'material-editor';
   block.style.cssText = 'margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.08);';
@@ -62,7 +68,7 @@ export function createMaterialEditor(getMaterial, setMaterial) {
   const typeSelect = document.createElement('select');
   typeSelect.className = 'material-type-select';
   typeSelect.style.cssText = 'flex:1; height:28px; font-size:11px;';
-  for (const t of TYPES) {
+  for (const t of typeList) {
     const opt = document.createElement('option');
     opt.value = t.value;
     opt.textContent = t.label;

@@ -8,6 +8,7 @@ import {
   applyMaterialSettingsToStoredIsosurfaces,
 } from '../model/index.js';
 import { createColorPicker } from './ColorPickerModule.js';
+import { createMaterialEditor, MATERIAL_TYPES } from './StructureInfoPanel/components/MaterialEditor.js';
 
 export let useLogSliderScale = false; // Global variable to track log scale state for iso slider
 
@@ -219,6 +220,8 @@ export function addFieldPanel(target = "cvPanelBody-field") {
       <span id="isoValue">${isoValue.toExponential(3)}</span>
     </div>
 
+    <div id="fieldMaterialEditorMount"></div>
+
     <div id="fieldColorToggle" class="spin-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="fieldColorContent">
     <h4>Color controls</h4>
     <div class="toggle-icon" id="fieldColorToggleIcon">+</div>
@@ -329,6 +332,21 @@ function setupFieldControlEvents(fields, container) {
   const negPicker = createColorPicker(currentMaterialSettings.negativeColor, () => applyFieldMaterialControls());
   posColorPickerContainer?.appendChild(posPicker.element);
   negColorPickerContainer?.appendChild(negPicker.element);
+
+  // Ray/path-tracing material for the field isosurface (glass excluded — no
+  // refraction through the ray-marched medium). Hidden under raster pipelines
+  // by the global `.material-editor` CSS rule.
+  const matMount = document.getElementById('fieldMaterialEditorMount');
+  if (matMount) {
+    matMount.appendChild(createMaterialEditor(
+      () => fileBrowser.selectedStructure?.fieldMaterial,
+      (m) => {
+        const s = fileBrowser.selectedStructure;
+        if (!s) return;
+        if (m) s.fieldMaterial = m; else delete s.fieldMaterial;
+      },
+      { types: MATERIAL_TYPES.filter((t) => t.value !== 'glass') }));
+  }
 
   function setColorPanelOpen(open) {
     if (!fieldColorContent || !fieldColorToggle || !fieldColorToggleIcon) return;

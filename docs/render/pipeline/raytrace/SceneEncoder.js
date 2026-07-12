@@ -254,6 +254,8 @@ export class SceneEncoder {
   fieldPosColor = new THREE.Color(0x33aaff);
   fieldNegColor = new THREE.Color(0xff3333);
   fieldAlpha = 0.6;
+  fieldMaterialTexel = DEFAULT_MATERIAL_TEXEL; // tracer material for the field surface
+  _fieldGlassWarned = false; // one-time warn when the field asks for 'glass'
   _fieldValuesRef = null; // last uploaded field.values (re-upload on change)
   _fieldDimsKey = '';
 
@@ -404,7 +406,8 @@ export class SceneEncoder {
         JSON.stringify(structure.bondCategoryStyles ?? {}),
         JSON.stringify(structure.bondUserStyles ?? {}),
         JSON.stringify(structure.polyhedraCategoryStyles ?? {}),
-        JSON.stringify(structure.polyhedraUserStyles ?? {}));
+        JSON.stringify(structure.polyhedraUserStyles ?? {}),
+        JSON.stringify(structure.fieldMaterial ?? {}));
     }
 
     const coreFp = parts.join('|');
@@ -1184,6 +1187,7 @@ export class SceneEncoder {
       this.fieldEnabled = false;
       this.fieldTexture = this._dummyFieldTexture;
       this._fieldForward = null;
+      this.fieldMaterialTexel = DEFAULT_MATERIAL_TEXEL;
       return;
     }
     const iso = groups.isosurfaceGroup;
@@ -1207,6 +1211,24 @@ export class SceneEncoder {
     if (iso.meshes?.positive?.material?.color) this.fieldPosColor.copy(iso.meshes.positive.material.color);
     if (iso.meshes?.negative?.material?.color) this.fieldNegColor.copy(iso.meshes.negative.material.color);
     this.fieldAlpha = iso.meshes?.positive?.material?.opacity ?? 0.6;
+
+    // Tracer material for the field surface (default = opaque coat). Glass is
+    // unsupported (no refraction through the ray-marched implicit medium) —
+    // fall back to default with a one-time console warning. An emissive field
+    // still glows, but it has no bounding-sphere primitive to add to the NEE
+    // _emissiveList, so it lights via the PT non-listed diffuse-arrival
+    // fallback only (hasEmissive keeps shadow-any-hit off so it isn't occluded).
+    const structure = fileBrowser.selectedStructure;
+    let fm = structure?.fieldMaterial;
+    if (fm && fm.type === 'glass') {
+      if (!this._fieldGlassWarned) {
+        console.warn('raytrace: field material "glass" is not supported (refraction through the ray-marched medium) — using default');
+        this._fieldGlassWarned = true;
+      }
+      fm = null;
+    }
+    this.fieldMaterialTexel = materialTexel(fm);
+    if (fm && fm.type === 'emissive') this.hasEmissive = true; // implicit-only, NOT _emissiveList-listed
 
     const dimsKey = `${field.nx},${field.ny},${field.nz}`;
     if (this._fieldValuesRef !== field.values || this._fieldDimsKey !== dimsKey) {

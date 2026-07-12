@@ -512,12 +512,7 @@ float SceneIntersect()
 			t = fT;
 			hitNormal = fN;
 			hitColor = fCol;
-			hitType = COAT;
-			hitAlpha = uFieldAlpha;
-			hitEmission = vec3(0);
-			hitGloss = 0.6;          // default coat reflection tightness
-			hitReflectivity = -1.0;  // use the global Reflectivity slider
-			hitRoughness = 0.0;
+			hitType = resolveHitType(uFieldMaterial, fCol, uFieldAlpha); // fills hitAlpha/roughness/reflectivity/gloss/emission/gHitEmissiveListed
 			hitObjectID = -3.0;      // distinct id (light 0, ground -2)
 			gRayExiting = FALSE;    // double-sided implicit surface
 		}

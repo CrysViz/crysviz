@@ -20,10 +20,11 @@
 // own hit globals + material type) stays in each scene shader; everything
 // physical lives here so the two shaders share one implementation.
 //
-// v1 limits: the field surface is always the opaque/COAT material (default
-// gloss/reflectivity); alpha < 1 gives the existing stochastic see-through
+// The field surface honors the per-structure tracer material
+// (structure.fieldMaterial, encoded into uFieldMaterial) for every material
+// type EXCEPT glass; alpha < 1 still gives the existing stochastic see-through
 // (raster-like translucency, resolved by the accumulation). Glass/refraction
-// is NOT supported on the field surface.
+// is NOT supported on the field surface (it falls back to the default).
 
 export const fieldChunk = /* glsl */`
 uniform bool uFieldEnabled;
@@ -35,6 +36,7 @@ uniform bool uFieldAbsMode; // true: two lobes at +/-|iso| (pos/neg colours)
 uniform vec3 uFieldPosColor;
 uniform vec3 uFieldNegColor;
 uniform float uFieldAlpha;
+uniform vec4 uFieldMaterial; // encoded tracer material texel (type, roughness, typeParam, reflectivity)
 
 // Trilinear reconstruction of the field at a fractional-space point. Mirrors
 // model/Field.getValueAtPoint: continuous index = frac * (dims - 1), floor,

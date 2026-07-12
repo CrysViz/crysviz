@@ -14,7 +14,7 @@
 //       preview frame during camera motion STILL shows the ground;
 //   (d) a solid->checker pattern change alters raster pixels;
 //   (e) the "Ground reflect" row is tracer-gated while the block is always shown;
-//   (f) persistence smoke — the 8 rtGround* keys survive at state v2.11.
+//   (f) persistence smoke — the 8 rtGround* keys survive at state v2.12.
 'use strict';
 const H = require('../harness');
 const { PNG } = require(`${__dirname}/../env/node_modules/pngjs`);
@@ -230,7 +230,7 @@ async function waitTracerReady(page) {
     reflect.blockRaster && reflect.blockTracer && reflect.reflectHiddenRaster && reflect.reflectShownTracer,
     JSON.stringify(reflect));
 
-  // --- (f) persistence smoke: the 8 rtGround* keys at state v2.11 ------------------
+  // --- (f) persistence smoke: the 8 rtGround* keys at state v2.12 ------------------
   const persist = await page.evaluate(async () => {
     const { captureState } = await import('./ui/ShareModule.js');
     const s = captureState();
@@ -238,8 +238,8 @@ async function waitTracerReady(page) {
       'rtGroundScale', 'rtGroundOffset', 'rtGroundSize', 'rtGroundReflect'];
     return { version: s.version, present: keys.filter((k) => k in s.style) };
   });
-  H.check('captureState carries all 8 rtGround* keys at v2.11',
-    persist.version === '2.11' && persist.present.length === 8,
+  H.check('captureState carries all 8 rtGround* keys at v2.12',
+    persist.version === '2.12' && persist.present.length === 8,
     JSON.stringify(persist));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));

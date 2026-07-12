@@ -101,7 +101,7 @@ export function captureState({ includeFrames = false } = {}) {
   }
 
   return {
-    version: '2.11',
+    version: '2.12',
     ...(frames ? { frames } : {}),
     structure: {
       elements: [...structure.elements],
@@ -125,6 +125,7 @@ export function captureState({ includeFrames = false } = {}) {
       // poly materials ride in their user/category stores above).
       atomMaterials: nonEmptyDeepCopy(structure.atomMaterials),
       atomUserMaterials: nonEmptyDeepCopy(structure.atomUserMaterials),
+      fieldMaterial: nonEmptyDeepCopy(structure.fieldMaterial),
     },
     display: {
       atomSize: general.atomSize,
@@ -489,7 +490,7 @@ function applyAtomColors(colors, structure) {
   // (see applySharedState), so the wrapped-index bondUserStyles keys match the
   // corrected atom order when the caller's rebuildBonds() re-applies them;
   // stale keys are silently ignored by the stores' element/geometry checks.
-  for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles', 'polyhedraCategoryStyles', 'atomMaterials', 'atomUserMaterials']) {
+  for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles', 'polyhedraCategoryStyles', 'atomMaterials', 'atomUserMaterials', 'fieldMaterial']) {
     if (colors[k]) structure[k] = JSON.parse(JSON.stringify(colors[k]));
   }
 }

@@ -20,9 +20,10 @@
 // instead of the raster recolor, so selecting under a tracer never restarts the
 // accumulation.
 // Field isosurfaces are traced as a RAY-MARCHED implicit surface (no
-// marching-cubes mesh) with the opaque/COAT material only (glass/refraction is
-// not supported on the field surface; alpha < 1 gives the usual stochastic
-// see-through). Lattice planes are traced analytically and cell-clipped, either
+// marching-cubes mesh) and honor the per-structure tracer material
+// (structure.fieldMaterial) — all material types EXCEPT glass (refraction
+// through the ray-marched medium is unsupported); alpha < 1 gives the usual
+// stochastic see-through. Lattice planes are traced analytically and cell-clipped, either
 // flat translucent grey ('None' mode, with their purple border as thin
 // cylinders) or coloured from a CPU-baked field colormap atlas ('Field' mode).
 // Atom cut planes ARE honored: the SceneEncoder drops whole atoms by their
@@ -370,6 +371,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       uFieldPosColor: { value: new THREE.Color(0x33aaff) },
       uFieldNegColor: { value: new THREE.Color(0xff3333) },
       uFieldAlpha: { value: 0.6 },
+      uFieldMaterial: { value: new THREE.Vector4(0, 0, 0.6, -1) }, // = DEFAULT_MATERIAL_TEXEL
       // crystallographic lattice planes (analytic, cell-clipped)
       uPlaneCount: { value: 0 },
       uPlanesDataTexture: { value: this._encoder.planesTexture },
@@ -905,6 +907,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       u.uFieldPosColor.value.copy(this._encoder.fieldPosColor);
       u.uFieldNegColor.value.copy(this._encoder.fieldNegColor);
       u.uFieldAlpha.value = this._encoder.fieldAlpha;
+      u.uFieldMaterial.value.fromArray(this._encoder.fieldMaterialTexel);
       // crystallographic lattice planes (plane edits arrive via the encoder
       // fingerprint, which re-encodes + re-bakes the atlas and lands here)
       u.uPlaneCount.value = this._encoder.planeCount;
