@@ -404,8 +404,10 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   background: radial-gradient(circle at top right, transparent 11px, var(--split-tab-bg) 11px);
 }
 
-/* Per-tab close button (browser-style ✕ that appears on the tab). */
-.split-pane-tab-close {
+/* Per-tab ≡ window-menu button (Position / Close / panel-specific sections
+   — the tab is the window's only chrome while right-docked, so its menu
+   lives here; see PanelWindow.toggleMenuAt). */
+.split-pane-tab-menu {
   flex: 0 0 auto;
   width: 16px;
   height: 16px;
@@ -418,12 +420,12 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   border-radius: 50%;
   background: transparent;
   color: inherit;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   opacity: 0.55;
 }
 
-.split-pane-tab-close:hover {
+.split-pane-tab-menu:hover {
   background: rgba(255, 255, 255, 0.18);
   opacity: 1;
 }

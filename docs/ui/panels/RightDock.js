@@ -21,7 +21,6 @@
 //   onLayoutChange()                    any persistable state changed
 //   setRightReserve(px)                 width the pane occupies on the right
 //   setBottomReserve(px)                height it occupies when docked bottom
-//   closePanelFromTab(panel)            the tab's ✕ (routes closeMode)
 //   floatPanelForDrag(panel, pos)       float a pulled-out window mid-gesture
 
 import { resizeRenderer } from '../WindowAndSceneControls.js';
@@ -150,7 +149,7 @@ function syncSceneAndSidePanels() {
  *  horizontal strip in the pane header (the windows' chrome while open) or
  *  the vertical pull-tab stack on the pane edge (shown while collapsed, to
  *  reopen). Windows keep their pane DOM order in both. */
-function fillTabs(container, panelsList, { suffix = '', withClose = false, draggable = false } = {}) {
+function fillTabs(container, panelsList, { suffix = '', withMenu = false, draggable = false } = {}) {
   container.innerHTML = '';
   for (const panel of panelsList) {
     const tab = document.createElement('div');
@@ -175,17 +174,22 @@ function fillTabs(container, panelsList, { suffix = '', withClose = false, dragg
       if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); activatePanel(panel); }
     });
 
-    if (withClose) {
-      const close = document.createElement('button');
-      close.type = 'button';
-      close.className = 'split-pane-tab-close';
-      close.textContent = '×';
-      close.title = `Close ${panel.def.title || ''}`;
-      close.addEventListener('click', (ev) => {
+    if (withMenu) {
+      // The ≡ window menu (Position / Close / def.menuSections) — the tab is
+      // the window's only chrome while right-docked, so this is where its
+      // menu lives. Deliberately NOT a ✕: a bare close here permanently
+      // unregistered transient windows, and non-closable ones have no
+      // business closing at all (their menu simply has no Close item).
+      const menuBtn = document.createElement('button');
+      menuBtn.type = 'button';
+      menuBtn.className = 'split-pane-tab-menu';
+      menuBtn.textContent = '≡';
+      menuBtn.title = `${panel.def.title || 'Window'} options`;
+      menuBtn.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        hooks?.closePanelFromTab(panel);
+        panel.toggleMenuAt(menuBtn);
       });
-      tab.appendChild(close);
+      tab.appendChild(menuBtn);
     }
 
     container.appendChild(tab);
@@ -195,7 +199,7 @@ function fillTabs(container, panelsList, { suffix = '', withClose = false, dragg
 function renderTabs() {
   const { tabs, headerTabs } = els();
   const visible = visiblePanels();
-  if (headerTabs) fillTabs(headerTabs, visible, { withClose: true, draggable: true });
+  if (headerTabs) fillTabs(headerTabs, visible, { withMenu: true, draggable: true });
   if (tabs) {
     fillTabs(tabs, visible, { suffix: ' ▸' });
     tabs.hidden = visible.length === 0;
@@ -237,7 +241,7 @@ function updateHeaderInfoBtn() {
 
 function onTabPointerDown(panel, tab, e) {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
-  if (/** @type {HTMLElement} */ (e.target).closest('.split-pane-tab-close')) return;
+  if (/** @type {HTMLElement} */ (e.target).closest('button')) return;
   e.preventDefault();
   const { headerTabs: strip } = els();
   if (!strip) return;

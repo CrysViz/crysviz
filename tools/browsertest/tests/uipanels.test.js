@@ -127,10 +127,15 @@ async function expandPanel(page, id) {
   await page.evaluate(() => {
     const tab = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
       .find((t) => t.dataset.panelId === 'bondLengthHistogram');
-    /** @type {HTMLElement} */ (tab.querySelector('.split-pane-tab-close')).click();
+    /** @type {HTMLElement} */ (tab.querySelector('.split-pane-tab-menu')).click();
+  });
+  await page.waitForTimeout(100);
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.cv-panel-menu-item')]
+      .find((b) => b.textContent === 'Close')?.click();
   });
   await page.waitForTimeout(200);
-  H.check('Histogram window closes via its tab ✕ (transient: unregistered)',
+  H.check('Histogram window closes via its tab ≡ menu (transient: unregistered)',
     await page.evaluate(() => !document.querySelector('.cv-panel[data-panel-id="bondLengthHistogram"]')
       && !document.getElementById('viewArea').classList.contains('split-active')));
 

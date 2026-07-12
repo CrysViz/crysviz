@@ -256,7 +256,6 @@ export function initPanelSystem() {
     onLayoutChange: scheduleSave,
     setRightReserve,
     setBottomReserve,
-    closePanelFromTab: (panel) => hooks.onClose(panel),
     floatPanelForDrag: (panel, pos) => floatPanel(panel, pos, { noDockShift: true }),
   });
   applyRightDockLayout(stored.rightDock);

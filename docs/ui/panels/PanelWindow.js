@@ -334,6 +334,7 @@ export class PanelWindow {
   _menuSections() {
     const mode = this.dock === 'right' ? 'right' : (this.dock === 'left' ? 'left' : 'float');
     const move = (m) => { this.hooks.positionPanel(this, m); };
+    /** @type {{title?: string, items: {label: string, checked?: boolean, onSelect: () => void}[]}[]} */
     const sections = [{
       title: 'Position',
       items: [
@@ -347,12 +348,26 @@ export class PanelWindow {
       ? this.def.menuSections(this)
       : this.def.menuSections;
     if (Array.isArray(extra)) sections.push(...extra);
+    // Closable windows get a Close item at the end. While right-docked this
+    // is the ONLY close path (the title-bar ✕ is hidden with the bar, and
+    // the tab deliberately carries no ✕ — a stray click there permanently
+    // unregistered transient windows).
+    if (this.def.closable) {
+      sections.push({ items: [{ label: 'Close', onSelect: () => this.hooks.onClose(this) }] });
+    }
     return sections;
   }
 
   _toggleMenu(anchorBtn) {
     if (this._menuEl) this._closeMenu();
     else this._openMenu(anchorBtn);
+  }
+
+  /** Open/toggle the ≡ menu anchored at an arbitrary element — used by the
+   *  right dock's tab ≡ button, where the title bar (and its own ≡) is
+   *  hidden. */
+  toggleMenuAt(anchorEl) {
+    this._toggleMenu(anchorEl);
   }
 
   /** Build and show the dropdown. Portaled to document.body (position:fixed):
@@ -367,6 +382,11 @@ export class PanelWindow {
         header.className = 'cv-panel-menu-header';
         header.textContent = section.title;
         menu.appendChild(header);
+      } else if (menu.childElementCount) {
+        // Untitled section after another: a thin separator line.
+        const sep = document.createElement('div');
+        sep.className = 'cv-panel-menu-sep';
+        menu.appendChild(sep);
       }
       for (const item of section.items || []) {
         const btn = document.createElement('button');

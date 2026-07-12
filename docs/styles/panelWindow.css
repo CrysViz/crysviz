@@ -257,6 +257,13 @@
   background: var(--hover-color);
 }
 
+/* Thin separator before an untitled section (e.g. the Close item). */
+.cv-panel-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--panel-border, rgba(255, 255, 255, 0.15));
+}
+
 /* Checkmark on the item matching the window's current state. */
 .cv-panel-menu-item.checked::before {
   content: "✓";

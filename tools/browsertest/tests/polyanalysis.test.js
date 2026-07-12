@@ -4,7 +4,8 @@
 // right dock. Covers the single-window conversion of the contributed
 // Panel/Split-View dual implementations: open → front tab, several coexist
 // as tabs, the Inspector forces Show/Complete Polyhedra on while open and
-// restores them on close, and tab ✕ unregisters the transient window.
+// restores them on close, and the tab ≡ menu's Close item unregisters the
+// transient window.
 'use strict';
 const H = require('../harness');
 
@@ -83,7 +84,12 @@ function dockState(page) {
   await page.evaluate(() => {
     const tab = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
       .find((t) => t.dataset.panelId === 'polyhedronInspector');
-    /** @type {HTMLElement} */ (tab.querySelector('.split-pane-tab-close')).click();
+    /** @type {HTMLElement} */ (tab.querySelector('.split-pane-tab-menu')).click();
+  });
+  await page.waitForTimeout(100);
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.cv-panel-menu-item')]
+      .find((b) => b.textContent === 'Close')?.click();
   });
   await page.waitForTimeout(500);
   const after = await page.evaluate(async () => {

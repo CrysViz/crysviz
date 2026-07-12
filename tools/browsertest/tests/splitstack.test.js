@@ -4,8 +4,9 @@
 // defaults to the right dock and opens by itself when there is something to
 // show — dropping a P/V data file on the EOS controls, or a landscape JSON on
 // the Landscape controls. Tabs select the front window, the whole dock
-// collapses to pull-tabs, and the tab ✕ closes to a detached-but-registered
-// state (closeMode:'hide') that the next fit reopens with content intact.
+// collapses to pull-tabs, and the tab ≡ menu's Close item closes to a
+// detached-but-registered state (closeMode:'hide') that the next fit reopens
+// with content intact.
 'use strict';
 const H = require('../harness');
 const path = require('path');
@@ -48,7 +49,7 @@ function snap(page) {
       tabLabels: edge.map(lbl),
       headerLabels: header.map(lbl),
       edgeShown: getComputedStyle(document.getElementById('splitPaneTabs')).display !== 'none',
-      headerHasClose: header.every((t) => !!t.querySelector('.split-pane-tab-close')),
+      headerHasMenu: header.every((t) => !!t.querySelector('.split-pane-tab-menu')),
       activeTab: activeEl ? lbl(activeEl) : '',
       eosPlotsClosed: !!getPanel('eosPlots')?.closed,
       eosPlotsDock: getPanel('eosPlots')?.dock ?? null,
@@ -92,7 +93,7 @@ function snap(page) {
   H.check('header tabs list both plots windows',
     s.headerLabels.includes('EOS Fit') && s.headerLabels.includes('Landscape Plots'),
     JSON.stringify(s.headerLabels));
-  H.check('each header tab has a close ✕', s.headerHasClose);
+  H.check('each header tab has a ≡ window-menu button', s.headerHasMenu);
 
   await page.screenshot({ path: path.join(__dirname, '..', 'artifacts', 'splitstack-two-windows.png') });
 
@@ -170,15 +171,30 @@ function snap(page) {
     !backRight.cls && backRight.paneAtRight && backRight.reserveBottom === 0,
     JSON.stringify(backRight));
 
-  // ---- close EOS Fit from its tab ✕: closes ONLY it (hidden, not gone) ----
+  // ---- close EOS Fit from its tab ≡ menu: closes ONLY it (hidden, not gone)
   await page.evaluate(() => {
     const tab = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
       .find((t) => /EOS Fit/.test(t.textContent));
-    tab?.querySelector('.split-pane-tab-close')?.click();
+    /** @type {HTMLElement} */ (tab.querySelector('.split-pane-tab-menu')).click();
+  });
+  await page.waitForTimeout(100);
+  const eosMenu = await page.evaluate(() => {
+    const menu = document.querySelector('.cv-panel-menu');
+    return {
+      checked: menu?.querySelector('.cv-panel-menu-item.checked')?.textContent ?? null,
+      hasClose: [...(menu?.querySelectorAll('.cv-panel-menu-item') ?? [])]
+        .some((b) => b.textContent === 'Close'),
+    };
+  });
+  H.check('tab ≡ opens the window menu (Right dock checked, Close offered)',
+    eosMenu.checked === 'Right dock' && eosMenu.hasClose, JSON.stringify(eosMenu));
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.cv-panel-menu-item')]
+      .find((b) => b.textContent === 'Close')?.click();
   });
   await page.waitForTimeout(300);
   s = await snap(page);
-  H.check('tab ✕ closes only the EOS plots window',
+  H.check('menu Close closes only the EOS plots window',
     s.dockedIds.join() === 'landscapePlots' && s.frontId === 'landscapePlots',
     JSON.stringify(s.dockedIds));
   H.check('closed plots window detached but remembered right-docked',
