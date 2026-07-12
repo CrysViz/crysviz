@@ -1962,10 +1962,12 @@ body {
   }
 }
 
-/* Tracer-only controls (e.g. the ray/path-tracing material editors in the
-   Structure window) show only while a tracer pipeline is active. The body
-   class is driven by ui/ColorPanel.js updateRenderingControlsVisibility().
+/* Tracer-only controls (the ray/path-tracing material editors in the
+   Structure window, and single rows like the Visual window's "Element
+   Materials Map" dropdown) show only while a tracer pipeline is active. The
+   body class is driven by ui/ColorPanel.js updateRenderingControlsVisibility().
    The material data itself is always persisted, pipeline regardless. */
-body:not(.tracer-pipeline) .material-editor {
+body:not(.tracer-pipeline) .material-editor,
+body:not(.tracer-pipeline) .tracer-only-control {
   display: none;
 }

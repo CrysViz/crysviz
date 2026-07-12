@@ -293,7 +293,15 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
         else delete structure.atomUserMaterials[linkedAtomIndex];
         clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'material');
       });
-    });
+    },
+    // a cleared per-atom entry falls back to the effective SPECIES material:
+    // the manual species entry, else the Element-Materials-Map preset
+    { getDefault: () => {
+      const structure = fileBrowser.selectedStructure;
+      const el = structure?.elements?.[atomIndex];
+      if (!el) return null;
+      return structure.atomMaterials?.[el] ?? structure.getDefaultElementMaterial?.(el);
+    } });
 
   editor.appendChild(topRowIndiv);
   editor.appendChild(atomAlphaRow);

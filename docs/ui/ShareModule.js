@@ -169,7 +169,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
   }
 
   return {
-    version: '2.14',
+    version: '2.15',
     ...(frames ? { frames } : {}),
     ...(fields ? { fields } : {}),
     structure: {
@@ -181,6 +181,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       atomColors,
       elementColors,
       useDefaultColors: general.useDefaultColors,
+      elementMaterialsMap: general.elementMaterialsMap,
       atomOpacities,
       atomRadiusScales,
       // The per-item / per-category style stores (all stably keyed, so they
@@ -529,6 +530,17 @@ function applyAtomColors(colors, structure) {
   if (!colors || !structure) return;
 
   if (colors.useDefaultColors != null) general.useDefaultColors = colors.useDefaultColors;
+
+  // Element-Materials-Map id (state v2.15+). Absent key = a pre-map state,
+  // authored when everything defaulted to the plain standard material — force
+  // 'standard' (NOT the fresh-session 'crysviz' default) so the saved look is
+  // reproduced. Only the select VALUE is synced: dispatching 'change' would
+  // run the dropdown's reset-manual-edits handler and wipe the materials
+  // restored below.
+  general.elementMaterialsMap = colors.elementMaterialsMap ?? 'standard';
+  const materialsMapSelect = /** @type {HTMLSelectElement | null} */ (
+    document.getElementById('atomsElementMaterialsMapMenu'));
+  if (materialsMapSelect) materialsMapSelect.value = general.elementMaterialsMap;
 
   if (colors.elementColors) {
     structure.atoms.forEach((atom, i) => {

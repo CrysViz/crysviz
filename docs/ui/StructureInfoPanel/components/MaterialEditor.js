@@ -17,8 +17,11 @@
 // 0 = the original untinted white "billiard ball" coat), metal 1.0 (fully
 // colored mirror; 0 = chrome).
 // reflectivity overrides the global "Reflectivity" slider (standard) or is
-// the mirrored fraction (metal). Selecting "Standard" with every knob
-// untouched clears the stored entry (that IS the default).
+// the mirrored fraction (metal). An editor left at its EFFECTIVE default
+// clears the stored entry: with a getDefault() callback (the per-species /
+// per-atom editors pass the active Element-Materials-Map preset,
+// Structure.getDefaultElementMaterial) the default is that preset; without
+// one it is the classic untouched-Standard rule.
 
 import { general } from '../../../state/store.js';
 import { requestRender } from '../../../render/index.js';
@@ -38,15 +41,20 @@ export const MATERIAL_TYPES = TYPES;
 /**
  * @param {() => ({type?: string, gloss?: number, tint?: number, roughness?: number, frost?: number, ior?: number, tintDepth?: number, intensity?: number, scatterDepth?: number, reflectivity?: number} | null | undefined)} getMaterial
  * @param {(material: object | null) => void} setMaterial write to the owning store (null = clear)
- * @param {{ types?: Array<{value: string, label: string}> }} [options] optional type-list override (e.g. glass-free for the field surface)
+ * @param {{ types?: Array<{value: string, label: string}>, getDefault?: () => (object | null | undefined) }} [options]
+ *   types: optional type-list override (e.g. glass-free for the field surface);
+ *   getDefault: the material a CLEARED entry falls back to (the active
+ *   Element-Materials-Map preset) — seeds the editor when no entry is stored
+ *   and defines the commit() clear-to-default comparison.
  */
-export function createMaterialEditor(getMaterial, setMaterial, { types } = {}) {
+export function createMaterialEditor(getMaterial, setMaterial, { types, getDefault } = {}) {
   const typeList = types ?? TYPES;
-  const block = document.createElement('div');
+  const block = /** @type {HTMLDivElement & { syncFromStore?: () => void }} */ (document.createElement('div'));
   block.className = 'material-editor';
   block.style.cssText = 'margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.08);';
 
-  const current = getMaterial() ?? {};
+  // No stored entry shows the effective default (the map preset, if any).
+  const current = getMaterial() ?? getDefault?.() ?? {};
   const state = {
     type: current.type ?? 'standard',
     gloss: current.gloss ?? 0.6,
@@ -112,10 +120,42 @@ export function createMaterialEditor(getMaterial, setMaterial, { types } = {}) {
     return row;
   };
 
+  // Does the edited state equal the EFFECTIVE default (the map preset from
+  // getDefault, or the plain untouched Standard)? Only the knobs relevant to
+  // the current type count — the hidden sliders keep stale values by design.
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  const matchesDefault = () => {
+    const def = getDefault?.() ?? null;
+    if (!def) {
+      return state.type === 'standard' && state.reflectivity == null
+        && near(state.gloss, 0.6)
+        && (state.tint == null || near(state.tint, 0.6));
+    }
+    if (state.type !== (def.type ?? 'standard')) return false;
+    // tint/reflectivity: null = follow the type default, so compare through it
+    const sameTintRefl = (tintDef) =>
+      near(state.tint ?? tintDef, def.tint ?? tintDef)
+      && (state.reflectivity == null
+        ? def.reflectivity == null
+        : def.reflectivity != null && near(state.reflectivity, def.reflectivity));
+    switch (state.type) {
+      case 'standard':
+        return near(state.gloss, def.gloss ?? 0.6) && sameTintRefl(0.6);
+      case 'metal':
+        return near(state.roughness, def.roughness ?? 0.2) && sameTintRefl(1);
+      case 'glass':
+        return near(state.frost, def.frost ?? 0) && near(state.ior, def.ior ?? 1.5)
+          && near(state.tintDepth, def.tintDepth ?? 0.2);
+      case 'emissive':
+        return near(state.intensity, def.intensity ?? 5);
+      case 'translucent':
+        return near(state.scatterDepth, def.scatterDepth ?? 0.5);
+    }
+    return false;
+  };
+
   const commit = () => {
-    if (state.type === 'standard' && state.reflectivity == null
-        && Math.abs(state.gloss - 0.6) < 1e-9
-        && (state.tint == null || Math.abs(state.tint - 0.6) < 1e-9)) {
+    if (matchesDefault()) {
       setMaterial(null); // fully default — clear the entry
     } else {
       setMaterial({
@@ -205,6 +245,40 @@ export function createMaterialEditor(getMaterial, setMaterial, { types } = {}) {
     syncPropVisibility();
     commit();
   });
+
+  // Re-read the store (entry, or the effective default when cleared) and
+  // refresh every control WITHOUT committing — used by the group editors'
+  // Reset buttons after they delete the stored entry.
+  const setRowValue = (row, v) => {
+    const slider = row.querySelector('input');
+    const span = row.querySelector('span:last-child');
+    if (slider) slider.value = String(v);
+    if (span) span.textContent = Number(v).toFixed(2);
+  };
+  block.syncFromStore = () => {
+    const cur = getMaterial() ?? getDefault?.() ?? {};
+    state.type = cur.type ?? 'standard';
+    state.gloss = cur.gloss ?? 0.6;
+    state.tint = cur.tint ?? null;
+    state.roughness = cur.roughness ?? 0.2;
+    state.frost = cur.frost ?? 0;
+    state.ior = cur.ior ?? 1.5;
+    state.tintDepth = cur.tintDepth ?? 0.2;
+    state.intensity = cur.intensity ?? 5;
+    state.scatterDepth = cur.scatterDepth ?? 0.5;
+    state.reflectivity = cur.reflectivity ?? null;
+    typeSelect.value = state.type;
+    setRowValue(glossRow, state.gloss);
+    setRowValue(coatTintRow, state.tint ?? defaultTint());
+    setRowValue(roughRow, state.roughness);
+    setRowValue(frostRow, state.frost);
+    setRowValue(iorRow, state.ior);
+    setRowValue(tintRow, state.tintDepth);
+    setRowValue(intensityRow, state.intensity);
+    setRowValue(scatterRow, state.scatterDepth);
+    setRowValue(reflectRow, state.reflectivity ?? defaultReflectivity());
+    syncPropVisibility();
+  };
 
   return block;
 }

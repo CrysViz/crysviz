@@ -143,6 +143,11 @@ export const general = {
   currentLatticeColor:null,
   defaultBackgroundColor:null,
   useDefaultColors:true,
+  // "Element Materials Map" (Visual → Colors): per-species tracer-material
+  // presets. 'crysviz' = defaults/material_defaults.js crysvizMaterialMap,
+  // 'standard' = no presets (plain standard material everywhere). Resolved by
+  // Structure.getDefaultElementMaterial below manual atomMaterials edits.
+  elementMaterialsMap:'crysviz',
   bondLengths:{},
   defaultBondLengths:{},
   bondVisibility:{},

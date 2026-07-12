@@ -4,7 +4,7 @@ import { clampOpacity, clampRadiusScale } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom } from '../../../render/AtomsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
-import { updatePolyhedraColors, scheduleBondRebuild } from '../../../render/index.js';
+import { updatePolyhedraColors, scheduleBondRebuild, requestRender } from '../../../render/index.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { bondLengthToColor } from '../../ColorPanel.js';
@@ -131,7 +131,9 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
   sizeRow.appendChild(sizeSlider);
   sizeRow.appendChild(sizeValue);
 
-  // Per-species ray/path-tracing material (structure.atomMaterials[el]).
+  // Per-species ray/path-tracing material (structure.atomMaterials[el]); a
+  // cleared entry falls back to the Element-Materials-Map preset, which the
+  // editor shows and treats as its default.
   const materialEditor = createMaterialEditor(
     () => fileBrowser.selectedStructure?.atomMaterials?.[el],
     (material) => {
@@ -140,7 +142,8 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
       structure.atomMaterials = structure.atomMaterials ?? {};
       if (material) structure.atomMaterials[el] = material;
       else delete structure.atomMaterials[el];
-    });
+    },
+    { getDefault: () => fileBrowser.selectedStructure?.getDefaultElementMaterial?.(el) });
 
   editor.appendChild(topRow);
   editor.appendChild(alphaRow);
@@ -251,11 +254,12 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     });
   });
 
-  // Reset also clears the per-species ray/path-tracing material.
+  // Reset also clears the per-species ray/path-tracing material (falling
+  // back to the Element-Materials-Map preset, which the editor re-shows).
   if (fileBrowser.selectedStructure?.atomMaterials) {
     delete fileBrowser.selectedStructure.atomMaterials[el];
-    const sel = materialEditor.querySelector('.material-type-select');
-    if (sel) { sel.value = 'standard'; sel.dispatchEvent(new Event('change')); }
+    materialEditor.syncFromStore?.();
+    requestRender();
   }
 
   updatePieDotCallback();

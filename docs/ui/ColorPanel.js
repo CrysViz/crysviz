@@ -950,6 +950,31 @@ export function addColorPanel(target = "colorContainer") {
     }
   });
 
+  // "Element Materials Map" — per-species tracer-material presets (the
+  // material analog of the color map above; defaults/material_defaults.js).
+  // Materials only affect the ray/path-tracing pipelines, so the row hides
+  // under raster via the body.tracer-pipeline gate (styles.css), like the
+  // Structure-window material editors. Color-palette parity: switching the
+  // map RESETS manual material edits on the selected structure.
+  const atomsElementMaterialsMapMenu = createDropdown("atomsElementMaterialsMapMenu", "Element Materials Map", [
+    { value: "crysviz", text: "CrysViz Default", selected: general.elementMaterialsMap !== "standard" },
+    { value: "standard", text: "Standard", selected: general.elementMaterialsMap === "standard" }
+  ], () => {
+    general.elementMaterialsMap = atomsElementMaterialsMapMenu.querySelector("select").value;
+    const structure = fileBrowser.selectedStructure;
+    if (structure) {
+      structure.atomMaterials = {};
+      structure.atomUserMaterials = {};
+      for (const styles of [structure.atomImageStyles, structure.bondUserStyles, structure.bondCategoryStyles]) {
+        for (const key of Object.keys(styles ?? {})) delete styles[key].material;
+      }
+    }
+    // The tracer SceneEncoder fingerprint picks the map change up on the next
+    // requested frame (re-encode + accumulation reset); raster is unaffected.
+    requestRender();
+  });
+  atomsElementMaterialsMapMenu.classList.add("tracer-only-control");
+
   const atomsColorMapBlock = createElement("div", { style: "display:none;" });
 
   const atomsColorMapMenu = createDropdown("atomsColorMapMenu", "Color Map", [
@@ -998,6 +1023,7 @@ export function addColorPanel(target = "colorContainer") {
   atomsMenuBlock.appendChild(atomsMenu);
   atomsMenuBlock.appendChild(atomsElementColorMapBlock);
   atomsElementColorMapBlock.appendChild(atomsElementColorMapMenu);
+  atomsElementColorMapBlock.appendChild(atomsElementMaterialsMapMenu);
   atomsMenuBlock.appendChild(atomsColorMapBlock);
 
   function onAtomsModeChange() {
