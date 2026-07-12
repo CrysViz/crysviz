@@ -535,6 +535,23 @@ export function addColorPanel(target = "colorContainer") {
   rtBgMatchRow.appendChild(rtBgMatchLabel);
   rtBgMatchRow.appendChild(rtBgMatchToggle);
 
+  // Legacy tone mapping: the original tracers' Reinhard operator (muted,
+  // desaturated midtones) instead of exposure x ACES (raster parity; default).
+  // Output-pass only — no accumulation reset needed (the traced-background
+  // interplay with "Match background color" rides the pipeline's look key).
+  // Lives in the "Advanced" section below.
+  const rtLegacyToneRow = createElement("div", { class: "control-row" });
+  const rtLegacyToneLabel = createElement("label", { for: "rtLegacyToneToggle" }, {}, "Legacy tone mapping");
+  const rtLegacyToneToggle = createElement("input", { type: "checkbox", id: "rtLegacyToneToggle" },
+    { justifySelf: "start", width: "auto" });
+  rtLegacyToneToggle.checked = general.rtToneMapLegacy === true;
+  rtLegacyToneToggle.addEventListener("change", () => {
+    general.rtToneMapLegacy = rtLegacyToneToggle.checked;
+    requestRender();
+  });
+  rtLegacyToneRow.appendChild(rtLegacyToneLabel);
+  rtLegacyToneRow.appendChild(rtLegacyToneToggle);
+
   // Denoiser (path-tracing only): edge-aware denoiser on the screen output.
   // Lives in the shared "Advanced" section (visible for both tracers) but its
   // row is shown only under the pathtrace pipeline (updateRenderingControlsVisibility).
@@ -736,6 +753,7 @@ export function addColorPanel(target = "colorContainer") {
   rtAdvancedBody.appendChild(rtTiledRow);
   rtAdvancedBody.appendChild(rtPreviewRow);
   rtAdvancedBody.appendChild(rtBgMatchRow);
+  rtAdvancedBody.appendChild(rtLegacyToneRow);
   rtAdvancedBody.appendChild(ptDenoiseRow);
   rtAdvanced.appendChild(rtAdvancedBody);
   rtControlsBlock.appendChild(rtAdvanced);
@@ -865,6 +883,7 @@ export function addColorPanel(target = "colorContainer") {
     fireCheck('rtTiledToggle', D.rtTiledRender);
     fireCheck('rtPreviewToggle', D.rtRasterPreview);
     fireCheck('rtBgMatchToggle', D.rtBackgroundMatch);
+    fireCheck('rtLegacyToneToggle', D.rtToneMapLegacy);
     fire('rtReflectivity', D.rtReflectivity, 'input');
     fire('ptLightSoftness', D.ptLightSoftness, 'input');
     fire('rtLightIntensity', D.rtLightIntensity, 'input');

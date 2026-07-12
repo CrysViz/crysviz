@@ -79,6 +79,7 @@ float hitRoughness = 0.0;  // metal roughness / glass frost
 float hitIor = 1.5;
 float hitReflectivity = -1.0; // < 0 = use the global uReflectivity
 float hitGloss = 0.6;      // standard: coat reflection tightness
+float hitCoatTint = 0.6;   // standard: coat reflection color tint (0 = white/legacy)
 float hitTintDepth = 0.2;  // glass: Beer's-law strength
 float hitScatter = 0.5;    // translucent: scatter depth
 float hitAlpha = 1.0;      // surface alpha (non-glass: stochastic see-through)
@@ -105,6 +106,7 @@ int resolveHitType(vec4 mat, vec3 color, float alpha)
 	hitRoughness = mat.y;
 	hitReflectivity = mat.w;
 	hitGloss = 0.6;
+	hitCoatTint = 0.6;
 	hitTintDepth = 0.2;
 	hitScatter = 0.5;
 	hitEmission = vec3(0);
@@ -127,6 +129,7 @@ int resolveHitType(vec4 mat, vec3 color, float alpha)
 	if (code == 2) { hitTintDepth = mat.w; hitReflectivity = -1.0; return REFR; }
 	if (code == 1) return SPEC;
 	hitGloss = clamp(mat.z, 0.0, 1.0); // standard
+	hitCoatTint = clamp(mat.y, 0.0, 1.0); // standard: the roughness slot carries the tint
 	return COAT;
 }
 
@@ -531,6 +534,7 @@ float SceneIntersect()
 			hitAlpha = pAlpha;       // None: 0.70 stochastic see-through; Field: 1
 			hitEmission = vec3(0);
 			hitGloss = 0.6;          // default coat reflection tightness
+			hitCoatTint = 0.6;       // default coat reflection tint
 			hitReflectivity = -1.0;  // use the global Reflectivity slider
 			hitRoughness = 0.0;
 			hitObjectID = -4.0;      // distinct id (light 0, ground -2, field -3)
@@ -556,6 +560,7 @@ float SceneIntersect()
 			hitType = COAT;
 			hitAlpha = 1.0;
 			hitGloss = 1.0;          // sharp fresnel floor reflections
+			hitCoatTint = 0.6;       // default coat reflection tint
 			hitReflectivity = uGroundReflect; // stochastic mirror fraction
 			hitObjectID = -2.0;
 			gRayExiting = FALSE;
@@ -870,9 +875,10 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 			{
 				// gloss (standard slot, default 0.6) sets how tight the coat
 				// reflection is; 0 = fully blurred (matte), 1 = mirror-sharp.
-				// Tinted by the surface color (raster-metalness parity: an
-				// untinted background reflection washes saturation out).
-				reflectionMask = mask * Re * clamp(hitGloss * 1.4, 0.0, 1.0) * mix(vec3(1), hitColor, 0.6);
+				// Tinted by the surface color per the material's Tint knob
+				// (default 0.6 = raster-metalness parity: an untinted background
+				// reflection washes saturation out; 0 = the original white coat).
+				reflectionMask = mask * Re * clamp(hitGloss * 1.4, 0.0, 1.0) * mix(vec3(1), hitColor, hitCoatTint);
 				reflectionRayDirection = ptSpecLobe(nl, reflect(rayDirection, nl), 1.0 - hitGloss);
 				reflectionRayOrigin = x + (nl * uEPS_intersect);
 				willNeedReflectionRay = hitGloss > 0.02 ? TRUE : FALSE;

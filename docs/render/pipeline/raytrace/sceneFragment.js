@@ -321,7 +321,7 @@ float SceneIntersect( int isShadowRay )
 			intersectionAlpha = pAlpha; // None: 0.70 stochastic see-through; Field: 1
 			intersectionMaterialType = MAT_OPAQUE;
 			intersectionMatCode = 0;
-			intersectionRoughness = 0.0;
+			intersectionRoughness = 0.6;   // standard tint slot: default coat tint
 			intersectionTypeParam = 0.6;   // default gloss (matches DEFAULT_MATERIAL_TEXEL)
 			intersectionReflectivity = -1.0; // use the global Reflectivity slider
 			intersectionShapeIsClosed = FALSE; // double-sided flat surface
@@ -345,7 +345,7 @@ float SceneIntersect( int isShadowRay )
 			intersectionAlpha = 1.0;
 			intersectionMaterialType = MAT_OPAQUE;
 			intersectionMatCode = 0;
-			intersectionRoughness = 0.0;
+			intersectionRoughness = 0.6; // standard tint slot: default coat tint
 			intersectionTypeParam = 0.0; // gloss 0: matte base (Reflect adds mirror)
 			intersectionReflectivity = uGroundReflect;
 			intersectionShapeIsClosed = FALSE;
@@ -461,10 +461,12 @@ vec3 RayTrace()
 			// gloss (typeParam, default 0.6 = the classic look) sets the Blinn
 			// highlight tightness; 0 = pure matte Lambert
 			float gloss = clamp(intersectionTypeParam, 0.0, 1.0);
-			// specular + reflections are TINTED by the surface color (like the
-			// raster metallic style's metalness) — an untinted white sheen +
-			// background reflections wash the saturation out
-			vec3 specularTint = mix(vec3(1), intersectionColor, 0.6);
+			// specular + reflections are TINTED by the surface color per the
+			// material's Tint knob (carried in the standard type's roughness
+			// slot; default 0.6 = raster-metalness parity — an untinted white
+			// sheen + background reflections wash the saturation out; 0 = the
+			// original white coat)
+			vec3 specularTint = mix(vec3(1), intersectionColor, clamp(intersectionRoughness, 0.0, 1.0));
 			accumulatedColor += doAmbientLighting(rayColorMask, intersectionColor, ambientIntensity);
 			diffuseContribution = doDiffuseDirectLighting(rayColorMask, intersectionColor, uLightColor, diffuseIntensity);
 			specularContribution = doBlinnPhongSpecularLighting(rayColorMask * specularTint, shadingNormal, halfwayVector, uLightColor, 1.0 - gloss, diffuseIntensity) * step(0.01, gloss);

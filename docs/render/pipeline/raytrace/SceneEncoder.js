@@ -44,7 +44,7 @@ const MAX_PLANES = 256;
 // gates diffuse-arrival emission on it). Codes/slots must match
 // resolveMaterialType/resolveHitType in BOTH scene shaders.
 const MATERIAL_CODES = { standard: 0, metal: 1, glass: 2, emissive: 3, translucent: 4 };
-const DEFAULT_MATERIAL_TEXEL = [0, 0, 0.6, -1]; // standard, gloss 0.6 = classic look
+const DEFAULT_MATERIAL_TEXEL = [0, 0.6, 0.6, -1]; // standard, tint 0.6 + gloss 0.6 = classic look
 
 // Emissive next-event-estimation list cap (B1/B2): the path tracer directly
 // samples up to this many emissive primitives per frame (2 texels each in
@@ -64,8 +64,8 @@ function materialTexel(mat) {
       return [3, 0, mat.intensity ?? 5, 0];
     case 'translucent':
       return [4, 0, mat.scatterDepth ?? 0.5, 0];
-    default: // standard
-      return [0, 0, mat.gloss ?? 0.6, mat.reflectivity ?? -1];
+    default: // standard (the roughness slot carries the coat/specular color tint)
+      return [0, mat.tint ?? 0.6, mat.gloss ?? 0.6, mat.reflectivity ?? -1];
   }
 }
 

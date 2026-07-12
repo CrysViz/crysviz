@@ -8,10 +8,13 @@
 //
 // Material object shape (see model/Structure.js atomMaterials):
 //   { type: 'standard'|'metal'|'glass'|'emissive'|'translucent',
-//     gloss?, roughness?, frost?, ior?, tintDepth?, intensity?,
+//     gloss?, tint?, roughness?, frost?, ior?, tintDepth?, intensity?,
 //     scatterDepth?, reflectivity? }
-// Per-type knobs: standard = Gloss + Reflect; metal = Rough + Reflect;
+// Per-type knobs: standard = Gloss + Tint + Reflect; metal = Rough + Reflect;
 // glass = Frost + IoR + Tint depth; emissive = Glow; translucent = Depth.
+// The standard Tint colors the coat/specular reflections by the surface color
+// (0.6 default = the current raster-metalness-parity look; 0 = the original
+// untinted white "billiard ball" coat).
 // reflectivity overrides the global "Reflectivity" slider (standard) or is
 // the mirrored fraction (metal). Selecting "Standard" with every knob
 // untouched clears the stored entry (that IS the default).
@@ -32,7 +35,7 @@ const TYPES = [
 export const MATERIAL_TYPES = TYPES;
 
 /**
- * @param {() => ({type?: string, gloss?: number, roughness?: number, frost?: number, ior?: number, tintDepth?: number, intensity?: number, scatterDepth?: number, reflectivity?: number} | null | undefined)} getMaterial
+ * @param {() => ({type?: string, gloss?: number, tint?: number, roughness?: number, frost?: number, ior?: number, tintDepth?: number, intensity?: number, scatterDepth?: number, reflectivity?: number} | null | undefined)} getMaterial
  * @param {(material: object | null) => void} setMaterial write to the owning store (null = clear)
  * @param {{ types?: Array<{value: string, label: string}> }} [options] optional type-list override (e.g. glass-free for the field surface)
  */
@@ -46,6 +49,7 @@ export function createMaterialEditor(getMaterial, setMaterial, { types } = {}) {
   const state = {
     type: current.type ?? 'standard',
     gloss: current.gloss ?? 0.6,
+    tint: current.tint ?? 0.6,
     roughness: current.roughness ?? 0.2,
     frost: current.frost ?? 0,
     ior: current.ior ?? 1.5,
@@ -109,12 +113,13 @@ export function createMaterialEditor(getMaterial, setMaterial, { types } = {}) {
 
   const commit = () => {
     if (state.type === 'standard' && state.reflectivity == null
-        && Math.abs(state.gloss - 0.6) < 1e-9) {
+        && Math.abs(state.gloss - 0.6) < 1e-9 && Math.abs(state.tint - 0.6) < 1e-9) {
       setMaterial(null); // fully default — clear the entry
     } else {
       setMaterial({
         type: state.type,
         gloss: state.gloss,
+        tint: state.tint,
         roughness: state.roughness,
         frost: state.frost,
         ior: state.ior,
@@ -129,6 +134,10 @@ export function createMaterialEditor(getMaterial, setMaterial, { types } = {}) {
 
   const glossRow = makePropRow('Gloss', 'material-gloss-row', 0, 1, 0.05, state.gloss,
     (v) => { state.gloss = v; commit(); });
+  // standard-only: how strongly coat/specular reflections take the surface
+  // color (0 = untinted white — the original "billiard ball" coat)
+  const coatTintRow = makePropRow('Tint', 'material-tint-row', 0, 1, 0.05, state.tint,
+    (v) => { state.tint = v; commit(); });
   const roughRow = makePropRow('Rough', 'material-roughness-row', 0, 1, 0.05, state.roughness,
     (v) => { state.roughness = v; commit(); });
   const frostRow = makePropRow('Frost', 'material-frost-row', 0, 1, 0.05, state.frost,
@@ -150,6 +159,7 @@ export function createMaterialEditor(getMaterial, setMaterial, { types } = {}) {
     state.reflectivity ?? defaultReflectivity(),
     (v) => { state.reflectivity = v; commit(); });
   block.appendChild(glossRow);
+  block.appendChild(coatTintRow);
   block.appendChild(roughRow);
   block.appendChild(frostRow);
   block.appendChild(iorRow);
@@ -160,6 +170,7 @@ export function createMaterialEditor(getMaterial, setMaterial, { types } = {}) {
 
   const syncPropVisibility = () => {
     glossRow.style.display = state.type === 'standard' ? 'flex' : 'none';
+    coatTintRow.style.display = state.type === 'standard' ? 'flex' : 'none';
     roughRow.style.display = state.type === 'metal' ? 'flex' : 'none';
     frostRow.style.display = state.type === 'glass' ? 'flex' : 'none';
     iorRow.style.display = state.type === 'glass' ? 'flex' : 'none';

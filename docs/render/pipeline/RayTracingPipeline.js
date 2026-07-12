@@ -175,18 +175,27 @@ function rrtFitInverse(y) {
 
 const sRGB_OETF = (x) => (x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055);
 
-/** Radiance whose displayed value (exposure -> ACES -> saturation -> sqrt)
+/** Radiance whose displayed value (exposure -> tone map -> saturation -> sqrt)
  *  equals the raster-displayed background color, so the backdrop stays pinned
  *  to the user's pick regardless of the Saturation slider. bg is a
  *  linear-space THREE.Color. The luma mix is invertible for saturation >~0
- *  (clamped below; at extreme settings the inversion saturates gracefully). */
-function compensateBackground(bg, exposure, saturation, out) {
+ *  (clamped below; at extreme settings the inversion saturates gracefully).
+ *  With `legacy` set the operator is three's Reinhard (see uToneMapLegacy):
+ *  y = saturate(E*L / (1 + E*L)), invertible per channel as L = y / (E*(1-y)),
+ *  clamped so a pure-white backdrop stays finite. */
+function compensateBackground(bg, exposure, saturation, out, legacy = false) {
   const display = [sRGB_OETF(bg.r), sRGB_OETF(bg.g), sRGB_OETF(bg.b)];
   let X = display.map((v) => v * v); // undo the output sqrt
   // undo the saturation grade (mix(luma, c, s) preserves luma)
   const sat = Math.max(saturation, 0.05);
   const luma = 0.2126 * X[0] + 0.7152 * X[1] + 0.0722 * X[2];
   X = X.map((v) => Math.max(0, luma + (v - luma) / sat));
+  if (legacy) {
+    const E = Math.max(exposure, 1e-4);
+    const L = X.map((v) => { const y = Math.min(v, 0.99); return Math.max(0, y / (E * (1 - y))); });
+    out.setRGB(L[0], L[1], L[2]);
+    return out;
+  }
   const v1 = mul3(ACES_OUT_INV, X).map(rrtFitInverse);
   const L = mul3(ACES_IN_INV, v1).map((v) => Math.max(0, (v * 0.6) / Math.max(exposure, 1e-4)));
   out.setRGB(L[0], L[1], L[2]);
@@ -371,7 +380,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       uFieldPosColor: { value: new THREE.Color(0x33aaff) },
       uFieldNegColor: { value: new THREE.Color(0xff3333) },
       uFieldAlpha: { value: 0.6 },
-      uFieldMaterial: { value: new THREE.Vector4(0, 0, 0.6, -1) }, // = DEFAULT_MATERIAL_TEXEL
+      uFieldMaterial: { value: new THREE.Vector4(0, 0.6, 0.6, -1) }, // = DEFAULT_MATERIAL_TEXEL
       // crystallographic lattice planes (analytic, cell-clipped)
       uPlaneCount: { value: 0 },
       uPlanesDataTexture: { value: this._encoder.planesTexture },
@@ -433,6 +442,9 @@ export class RayTracingPipeline extends ForwardPipeline {
         // double-exposed the tracers).
         uExposure: { value: 1.0 },
         uSaturation: { value: general.rtSaturation ?? 1 },
+        // legacy Reinhard operator (the original tracer look) instead of
+        // exposure x ACES; Advanced-section toggle, output-pass only
+        uToneMapLegacy: { value: general.rtToneMapLegacy === true },
         ...this._extraOutputUniforms(),
       },
       vertexShader: this._cfg.vertexShader,
@@ -954,10 +966,14 @@ export class RayTracingPipeline extends ForwardPipeline {
     // the raw color instead, so the backdrop is tone-mapped along with the
     // scene — the pre-compensation look.
     if (general.rtBackgroundMatch !== false) {
+      // legacy Reinhard skips uExposure in the shader (only the prelude's
+      // toneMappingExposure applies inside ReinhardToneMapping)
       compensateBackground(u.uBackgroundColor.value,
-        (renderer.toneMappingExposure ?? 1) * (this._outputQuad?.material.uniforms.uExposure.value ?? 1),
+        (renderer.toneMappingExposure ?? 1) * (general.rtToneMapLegacy === true ? 1
+          : (this._outputQuad?.material.uniforms.uExposure.value ?? 1)),
         general.rtSaturation ?? 1,
-        u.uBackgroundDisplay.value);
+        u.uBackgroundDisplay.value,
+        general.rtToneMapLegacy === true);
     } else {
       u.uBackgroundDisplay.value.copy(u.uBackgroundColor.value);
     }
@@ -1003,6 +1019,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     const lookKey = `${u.uBackgroundColor.value.getHex()}|${u.uLightColor.value.getHex()}`
       + `|${u.uReflectivity.value}|${u.uLightSoftness.value}|${u.uAmbientStrength.value}`
       + `|${general.rtSaturation ?? 1}|${general.rtBackgroundMatch !== false}`
+      + `|${general.rtToneMapLegacy === true}`
       + `|${u.uGroundEnabled.value}|${u.uApertureSize.value}|${(general.rtDofFocus ?? 1)}`
       + `|${u.uGroundPattern.value}|${u.uGroundColor1.value.getHex()}`
       + `|${u.uGroundColor2.value.getHex()}|${u.uGroundScale.value}|${u.uGroundReflect.value}`
@@ -1136,6 +1153,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     }
     out.uOneOverSampleCounter.value = 1 / Math.max(1, u.uSampleCounter.value);
     out.uSaturation.value = general.rtSaturation ?? 1; // output-pass grade: no reset needed
+    out.uToneMapLegacy.value = general.rtToneMapLegacy === true; // ditto (bg-match reset rides the lookKey)
     this._updateOutputUniforms(out);
     renderer.setRenderTarget(null);
     this._outputQuad.render(renderer);

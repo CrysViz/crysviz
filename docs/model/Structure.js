@@ -96,8 +96,10 @@ export class Structure {
     this.polyhedraUserStyles = {};
     this.polyhedraCategoryStyles = {};
     // Ray/path-tracing materials: { type: 'standard'|'metal'|'glass'|
-    // 'emissive', roughness?, ior?, intensity?, reflectivity? } — reflectivity
-    // (when set) overrides the global "Reflectivity" slider for that object.
+    // 'emissive', gloss?, tint?, roughness?, ior?, intensity?, reflectivity? }
+    // — reflectivity (when set) overrides the global "Reflectivity" slider for
+    // that object; tint (standard) colors the coat reflections by the surface
+    // color (0.6 default, 0 = untinted white).
     // Per-SPECIES: atomMaterials[element]; per-ATOM override:
     // atomUserMaterials[atomIndex] (wins over the species entry). Bond and
     // polyhedra materials live as `material` sub-objects on
