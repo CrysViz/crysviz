@@ -1,20 +1,34 @@
 // Panel registry + layout management for the unified panel/window system.
 //
 // Owns the cross-panel concerns: which panels exist, their dock order,
-// drag-to-reorder inside #dock, dock<->float transitions, content lifecycle
-// ('persistent' content is built once; 'rebuild' content is built lazily on
-// first expand and torn down/rebuilt when the active structure changes), and
-// layout persistence in localStorage (single versioned key, like the theme).
+// drag-to-reorder inside #dock, dock<->float<->right-dock transitions,
+// content lifecycle ('persistent' content is built once; 'rebuild' content is
+// built lazily on first expand and torn down/rebuilt when the active
+// structure changes), and layout persistence in localStorage (single
+// versioned key, like the theme).
 //
-// Per-window DOM/behavior lives in PanelWindow.js.
+// Per-window DOM/behavior lives in PanelWindow.js; the wide right dock's pane
+// plumbing (tabs, resize handle, drop zone) lives in RightDock.js.
 
 import { PanelWindow } from './PanelWindow.js';
+import {
+  initRightDock, rightDockPanel, rightUndockPanel,
+  setRightDockCollapsed, refreshRightDock, getRightDockLayout,
+  applyRightDockLayout, resetRightDockLayout, wantsRightDockDrop,
+  updateRightDockHint,
+} from './RightDock.js';
 
 const LS_KEY = 'panelLayout';
+// v3: `docked` (boolean) became `dock` ('left'|'right'|false — the right dock
+// is the wide tabbed pane), plus per-panel `closed` (closeMode:'hide' windows
+// detached from the DOM) and the top-level `rightDock` block (tab order,
+// front tab, collapsed, pane fraction). v2 blobs are migrated; the old
+// eos/landscape/splitDemo entries (collapsed left-dock stubs) are dropped so
+// the new defaults apply.
 // v2: pos is the INHERENT position, per axis anchored to the nearest viewport
 // edge at capture time (v1 stored absolute left/top rect readings; no
 // migration — a v1 blob is simply discarded).
-const LAYOUT_VERSION = 2;
+const LAYOUT_VERSION = 3;
 const SAVE_DEBOUNCE_MS = 250;
 const DOCK_GAP = 10; // gap between the dock's right edge and displaced windows
 // How far past the dock's right edge a dock-drag must travel before the panel
@@ -68,7 +82,7 @@ export function setPanelPref(name, value) {
 /** @type {Map<string, PanelWindow>} */
 const panels = new Map();
 let dockEl = null;
-let stored = { dockOrder: [], panels: {} };
+let stored = { dockOrder: [], panels: {}, rightDock: defaultRightDockLayout() };
 let revealed = false; // set once a structure is loaded (feature panels unhide)
 let saveTimer = 0;
 let dockOccupies = false; // side panel currently takes layout space
@@ -77,7 +91,12 @@ let rightReservePx = 0; // width reserved on the right (e.g. the EOS split pane)
 
 const hooks = {
   beforeExpand(panel) {
-    if (panel.def.lifecycle === 'rebuild' && revealed) buildContent(panel);
+    if (panel.def.lifecycle === 'rebuild') {
+      if (revealed) buildContent(panel);
+    } else if (!panel.built) {
+      // Persistent windows registered closed defer their first build to here.
+      buildContent(panel);
+    }
     return true;
   },
   onToggleDock(panel) {
@@ -87,7 +106,11 @@ const hooks = {
   },
   onClose(panel) {
     if (panel.def.onClose) panel.def.onClose(panel);
-    removePanel(panel.id);
+    // closeMode:'hide' windows (EOS, Energy Landscape, ...) close to a
+    // detached-but-registered state and can be reopened; the default keeps
+    // the old behavior of fully unregistering (MD monitor, histogram, ...).
+    if (panel.def.closeMode === 'hide') closePanel(panel.id);
+    else removePanel(panel.id);
   },
   onLayoutChange: scheduleSave,
   onResetPanel(panel) {
@@ -102,8 +125,27 @@ const hooks = {
   beginDockReorder,
   wantsDockDrop,
   dockAtPointer,
+  wantsRightDockDrop,
+  rightDockAtPointer,
+  updateRightDockHint,
   getPref: getPanelPref,
 };
+
+/** Normalize a stored/default dock value to 'left' | 'right' | false. */
+function normalizeDock(v, fallback = 'left') {
+  if (v === 'right' || v === 'left') return v;
+  if (v === false) return false;
+  return fallback;
+}
+
+/** A panel definition's default dock. `defaults.dock` ('left'|'right'|false)
+ *  is canonical; the legacy boolean `defaults.docked` is still honored for
+ *  defs registered outside defaultPanels.js (MD monitor, histogram, ...). */
+function defaultDockOf(def) {
+  const d = def.defaults || {};
+  if (d.dock !== undefined) return normalizeDock(d.dock);
+  return d.docked !== false ? 'left' : false;
+}
 
 /**
  * Restore one panel's default placement: docked/floating state, dock slot or
@@ -117,21 +159,27 @@ const hooks = {
  */
 function applyPanelDefaults(panel, { resetCollapsed = false } = {}) {
   const defaults = panel.def.defaults || {};
-  if (defaults.docked !== false) {
+  const dock = defaultDockOf(panel.def);
+  panel.closed = false;
+  if (dock === 'right') {
+    rightDockPanel(panel, { front: true, expand: false });
+    setRightDockCollapsed(false);
+  } else if (dock === 'left') {
     dockPanelAtDefaultOrder(panel);
   } else {
     floatPanel(panel, clampPos({ ...(defaults.anchor || { left: 40, top: 40 }) }));
   }
   const barCollapsed = defaults.barCollapsed !== undefined
     ? !!defaults.barCollapsed
-    : defaults.docked === false;
+    : dock === false;
   if (barCollapsed) panel.collapseBar();
   else panel.expandBar();
 
   if (resetCollapsed) {
     // Same convention registerPanel uses: collapsed by default unless the
-    // panel explicitly opts out with `collapsed: false`.
-    if (defaults.collapsed !== false) panel.collapse();
+    // panel explicitly opts out with `collapsed: false`. Right-docked
+    // windows are always expanded while docked.
+    if (dock !== 'right' && defaults.collapsed !== false) panel.collapse();
     else panel.expand();
   }
 }
@@ -153,11 +201,17 @@ function dockPanelAtDefaultOrder(panel) {
 
 /** Restore every window to its defaults and forget the remembered layout. */
 export function resetAllPanels() {
-  stored = { dockOrder: [], panels: {} };
+  stored = { dockOrder: [], panels: {}, rightDock: defaultRightDockLayout() };
+  resetRightDockLayout();
   // Reset in default-order sequence so each dock insertion lands correctly.
   const all = [...panels.values()].sort(
     (a, b) => ((a.def.defaults?.order) || 0) - ((b.def.defaults?.order) || 0));
   for (const panel of all) applyPanelDefaults(panel, { resetCollapsed: true });
+  // Windows whose default state is closed (EOS, Energy Landscape, ...) end
+  // detached again — after placement, so their remembered dock is the default.
+  for (const panel of all) {
+    if (panel.def.defaults?.closed) closePanel(panel.id);
+  }
   refreshCompactFloatingPanels();
   saveLayout();
 }
@@ -166,6 +220,18 @@ export function initPanelSystem() {
   dockEl = document.getElementById('dock');
   loadStoredLayout();
   loadPanelPrefs();
+
+  // The right dock never imports the manager (acyclic layering): everything
+  // it needs from the registry/persistence side is handed over here.
+  initRightDock({
+    resolvePanel: (id) => panels.get(id) || null,
+    getPref: getPanelPref,
+    onLayoutChange: scheduleSave,
+    setRightReserve,
+    closePanelFromTab: (panel) => hooks.onClose(panel),
+    floatPanelForDrag: (panel, pos) => floatPanel(panel, pos, { noDockShift: true }),
+  });
+  applyRightDockLayout(stored.rightDock);
 
   // Floating windows react to the layout changing around them through one
   // derivation (see updateFloatPlacements): windows in the dock's column are
@@ -217,8 +283,13 @@ export function registerPanel(def) {
 
   const persisted = def.persist === false ? null : stored.panels[def.id];
   const defaults = def.defaults || {};
-  const docked = persisted ? !!persisted.docked : defaults.docked !== false;
-  const collapsed = persisted ? !!persisted.collapsed : defaults.collapsed !== false;
+  const dock = persisted ? normalizeDock(persisted.dock, defaultDockOf(def)) : defaultDockOf(def);
+  const closed = persisted ? !!persisted.closed : !!defaults.closed;
+  // Right-docked windows are always expanded while docked (the tab is the
+  // only per-window chrome there); otherwise remembered/default state.
+  const collapsed = dock === 'right'
+    ? false
+    : (persisted ? !!persisted.collapsed : defaults.collapsed !== false);
   // The remembered position is taken verbatim (a layout saved on a larger
   // screen must survive a session in a small window); floatPanel derives an
   // on-screen placement from it without modifying it.
@@ -233,10 +304,21 @@ export function registerPanel(def) {
   // otherwise.
   const barCollapsed = persisted
     ? !!persisted.bar
-    : (defaults.barCollapsed !== undefined ? !!defaults.barCollapsed : defaults.docked === false);
+    : (defaults.barCollapsed !== undefined ? !!defaults.barCollapsed : dock === false);
   if (barCollapsed) panel.collapseBar();
 
-  if (docked) {
+  if (closed) {
+    // Registered but detached (closeMode:'hide' windows, e.g. EOS): `dock`
+    // remembers where openPanel should attach it; content build is deferred.
+    panel.closed = true;
+    panel.dock = dock;
+  } else if (dock === 'right') {
+    rightDockPanel(panel, {
+      beforeEl: rightDockBeforeFromStoredOrder(def.id),
+      front: stored.rightDock.front === def.id,
+      expand: false,
+    });
+  } else if (dock === 'left') {
     // A panel remembered as docked but with no remembered slot (e.g. an MD
     // monitor docked in a past run) goes to the top, like the dock button.
     const atTop = !!persisted && !stored.dockOrder.includes(def.id);
@@ -248,9 +330,9 @@ export function registerPanel(def) {
   // Build persistent content only after the panel is attached: builders
   // resolve their target container by id (document.getElementById), which
   // fails on a detached panel body.
-  if (def.lifecycle !== 'rebuild') buildContent(panel);
+  if (def.lifecycle !== 'rebuild' && !closed) buildContent(panel);
 
-  if (!collapsed && panel.collapsed) {
+  if (!closed && !collapsed && panel.collapsed) {
     if (def.lifecycle === 'rebuild' && !revealed) panel.wantExpanded = true;
     else panel.expand();
   }
@@ -269,6 +351,10 @@ export function registerPanel(def) {
 export function refreshActivePanels() {
   for (const panel of panels.values()) {
     const avail = panel.def.available ? !!panel.def.available() : true;
+    // An unavailable right-docked window would be a greyed tab over a
+    // force-visible body — close it out of the dock instead (it reopens
+    // right-docked when its feature returns).
+    if (!avail && panel.dock === 'right' && !panel.closed) closePanel(panel.id);
     if (panel.def.lifecycle === 'rebuild' && panel.built) {
       if (!avail) {
         panel.collapse();
@@ -298,13 +384,57 @@ export function revealFeaturePanels() {
   // placement (viewport clamp) before any wantExpanded expansion below
   // decides its grow-upward anchoring from the applied position.
   updateFloatPlacements();
+  // Right-docked feature windows became visible -> show the pane chrome/tabs.
+  refreshRightDock();
   for (const panel of panels.values()) {
-    if (panel.wantExpanded) {
+    if (panel.wantExpanded && !panel.closed) {
       panel.wantExpanded = false;
       panel.expand();
     }
   }
   refreshActivePanels();
+}
+
+/**
+ * Open a registered window: re-attach it if it was closed (closeMode:'hide'),
+ * then bring it into view — a right-docked window becomes the front tab (and
+ * the right dock un-collapses); others expand in place. The Features window's
+ * EOS / Energy Landscape rows drive this.
+ */
+export function openPanel(id) {
+  const panel = panels.get(id);
+  if (!panel) return;
+  const wasClosed = panel.closed;
+  panel.closed = false;
+  if (revealed || !panel.def.hiddenUntilStructure) panel.el.hidden = false;
+  if (panel.dock === 'right') {
+    rightDockPanel(panel, { front: true, expand: false });
+    setRightDockCollapsed(false);
+  } else if (!panel.el.isConnected) {
+    if (panel.dock === 'left') dockPanel(panel);
+    else floatPanel(panel, panel.floatPos);
+  }
+  panel.expandBar();
+  panel.expand(); // builds deferred content via beforeExpand
+  if (wasClosed && panel.def.onOpened) panel.def.onOpened(panel);
+  refreshCompactFloatingPanels();
+  scheduleSave();
+}
+
+/**
+ * Close (hide) a window without unregistering it: the element is detached,
+ * content stays built, and panel.dock remembers where it lived so openPanel
+ * restores it there. Fires def.onClosed (used to sync the Features toggles).
+ */
+export function closePanel(id) {
+  const panel = panels.get(id);
+  if (!panel || panel.closed) return;
+  if (panel.dock === 'right') rightUndockPanel(panel);
+  else if (panel.el.isConnected) panel.el.remove();
+  panel.closed = true;
+  if (panel.def.onClosed) panel.def.onClosed(panel);
+  refreshCompactFloatingPanels();
+  scheduleSave();
 }
 
 /**
@@ -314,6 +444,7 @@ export function revealFeaturePanels() {
 export function removePanel(id) {
   const panel = panels.get(id);
   if (!panel) return;
+  if (panel.dock === 'right' && !panel.closed) rightUndockPanel(panel);
   destroyContent(panel);
   panel.remove();
   panels.delete(id);
@@ -354,12 +485,17 @@ export function revealPanel(id) {
 
 export function resetLayout() {
   try { localStorage.removeItem(LS_KEY); } catch { /* storage unavailable */ }
-  stored = { dockOrder: [], panels: {} };
+  stored = { dockOrder: [], panels: {}, rightDock: defaultRightDockLayout() };
 }
 
 export function saveLayout() {
   if (!dockEl) return;
-  const data = { version: LAYOUT_VERSION, dockOrder: [], panels: {} };
+  const data = {
+    version: LAYOUT_VERSION,
+    dockOrder: [],
+    rightDock: defaultRightDockLayout(),
+    panels: {},
+  };
   for (const p of dockedPanels()) {
     if (p.def.persist !== false) data.dockOrder.push(p.id);
   }
@@ -372,14 +508,26 @@ export function saveLayout() {
       data.dockOrder.splice(Math.min(oldIdx, data.dockOrder.length), 0, id);
     }
   }
+  const rd = getRightDockLayout();
+  data.rightDock = {
+    order: rd.order.filter((id) => panels.get(id)?.def.persist !== false),
+    front: rd.front,
+    collapsed: rd.collapsed,
+    fraction: rd.fraction,
+  };
   for (const panel of panels.values()) {
     if (panel.def.persist === false) continue;
-    const entry = { docked: panel.docked, collapsed: panel.collapsed, bar: panel.barCollapsed };
-    // The inherent position is persisted verbatim: dock displacement and
-    // viewport clamping are derived at apply time (updateFloatPlacements)
-    // and must never leak into the stored layout.
-    if (!panel.docked) entry.pos = panel.floatPos;
-    data.panels[panel.id] = entry;
+    // The inherent position is persisted verbatim (also for docked/closed
+    // windows — it is where a pull-out/reopen returns them): dock
+    // displacement and viewport clamping are derived at apply time
+    // (updateFloatPlacements) and must never leak into the stored layout.
+    data.panels[panel.id] = {
+      dock: panel.dock,
+      closed: panel.closed,
+      collapsed: panel.collapsed,
+      bar: panel.barCollapsed,
+      pos: panel.floatPos,
+    };
   }
   // Keep remembered entries of currently-unregistered panels.
   for (const [id, entry] of Object.entries(stored.panels)) {
@@ -387,7 +535,7 @@ export function saveLayout() {
   }
   // Refresh the in-memory snapshot so panels registered later in the session
   // (e.g. the MD monitor on its next run) resolve against the latest state.
-  stored = { dockOrder: data.dockOrder, panels: data.panels };
+  stored = { dockOrder: data.dockOrder, panels: data.panels, rightDock: data.rightDock };
   try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch { /* storage unavailable */ }
 }
 
@@ -517,11 +665,40 @@ function dockAtPointer(panel, ev) {
   beginDockReorder(panel, ev); // re-captures the pointer, gesture continues
 }
 
+/** Commit a floating drag released over the right dock's drop zone: the
+ *  window becomes the front tab (and the dock un-collapses if it was a
+ *  closed-edge drop). */
+function rightDockAtPointer(panel) {
+  panel.floatPos = panel.captureFloatPosition(); // last float pos, before styles clear
+  rightDockPanel(panel, { front: true, expand: true });
+  setRightDockCollapsed(false);
+  refreshCompactFloatingPanels();
+}
+
+/** The pane-body sibling a restored right-docked panel should be inserted
+ *  before, honoring the persisted tab order (panels register one by one). */
+function rightDockBeforeFromStoredOrder(id) {
+  const order = stored.rightDock?.order || [];
+  const idx = order.indexOf(id);
+  if (idx < 0) return null;
+  const body = document.getElementById('splitPaneBody');
+  if (!body) return null;
+  for (const el of body.querySelectorAll(':scope > .cv-panel')) {
+    const sibIdx = order.indexOf(/** @type {HTMLElement} */ (el).dataset.panelId);
+    if (sibIdx === -1 || sibIdx > idx) return el;
+  }
+  return null;
+}
+
 /** @param {{noDockShift?: boolean}} [opts] noDockShift skips the displacement
  *  past the dock (used when a drag-out must keep the panel under the pointer). */
 function floatPanel(panel, pos, opts = {}) {
-  // Remember the dock slot (the panel it sits above) so re-docking restores it.
-  if (panel.docked) {
+  // Leaving the right dock: detach from the pane (re-fronts/hides its chrome)
+  // before the reparent below, so no stale tab is left behind.
+  if (panel.dock === 'right') rightUndockPanel(panel);
+  // Remember the LEFT dock slot (the panel it sits above) so re-docking
+  // restores it.
+  if (panel.dock === 'left') {
     const siblings = dockedPanels();
     const idx = siblings.indexOf(panel);
     const after = idx >= 0 ? siblings[idx + 1] : null;
@@ -823,17 +1000,52 @@ function beginDockReorder(panel, startEv) {
 
 // ---- persistence ------------------------------------------------------------
 
+function defaultRightDockLayout() {
+  return { order: [], front: null, collapsed: false, fraction: null };
+}
+
+// v2 entries for the old split-view stub windows described "collapsed stub in
+// the left dock" — a state that no longer exists; dropping them at migration
+// lets the new defaults (one merged window, right dock, closed) apply.
+const DROPPED_V2_IDS = ['eos', 'landscape', 'splitDemo'];
+
 function loadStoredLayout() {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return;
     const parsed = JSON.parse(raw);
-    if (parsed && parsed.version === LAYOUT_VERSION) {
+    if (!parsed || typeof parsed !== 'object') return;
+    const panelsIn = parsed.panels && typeof parsed.panels === 'object' ? parsed.panels : {};
+    const orderIn = Array.isArray(parsed.dockOrder) ? parsed.dockOrder : [];
+    if (parsed.version === LAYOUT_VERSION) {
       stored = {
-        dockOrder: Array.isArray(parsed.dockOrder) ? parsed.dockOrder : [],
-        panels: parsed.panels && typeof parsed.panels === 'object' ? parsed.panels : {},
+        dockOrder: orderIn,
+        panels: panelsIn,
+        rightDock: parsed.rightDock && typeof parsed.rightDock === 'object'
+          ? { ...defaultRightDockLayout(), ...parsed.rightDock }
+          : defaultRightDockLayout(),
+      };
+    } else if (parsed.version === 2) {
+      // v2 -> v3 migration: docked (boolean) becomes dock ('left'|false);
+      // float positions and collapse states survive verbatim.
+      const panelsOut = {};
+      for (const [id, e] of Object.entries(panelsIn)) {
+        if (DROPPED_V2_IDS.includes(id) || !e || typeof e !== 'object') continue;
+        panelsOut[id] = {
+          dock: e.docked ? 'left' : false,
+          closed: false,
+          collapsed: !!e.collapsed,
+          bar: !!e.bar,
+          pos: e.pos,
+        };
+      }
+      stored = {
+        dockOrder: orderIn.filter((id) => !DROPPED_V2_IDS.includes(id)),
+        panels: panelsOut,
+        rightDock: defaultRightDockLayout(),
       };
     }
+    // v1 (or unknown) blobs are discarded, as before.
   } catch { /* corrupted layout -> defaults */ }
 }
 

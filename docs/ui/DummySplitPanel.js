@@ -1,55 +1,20 @@
-// Minimal example of a second feature using the generic split view
-// (docs/ui/panels/SplitView.js) — the same pane EOSPanel.js/EOSSplitView.js
-// use for the EOS fit plots, here holding nothing more than a click counter.
-// Kept deliberately trivial so the wiring (not the feature) is what stands out.
+// Minimal reference example of a right-dock-by-default window (registered in
+// ui/panels/defaultPanels.js as 'splitDemo', closed by default — open it with
+// openPanel('splitDemo') from the console or a test). One ordinary window
+// body holding a .split-item content card with action buttons, including the
+// generic ⛶ fullscreen expand the EOS plots use. Kept deliberately trivial so
+// the wiring (not the feature) is what stands out.
 
-import { openSplitView, closeSplitView } from './panels/SplitView.js';
+import { expandSplitItem, closeExpandedSplitItem } from './panels/RightDock.js';
 
 const state = { count: 0 };
 
-function updateSplitDisplay() {
-  const el = document.getElementById('splitPaneBody')?.querySelector('#dummyCounterValue');
-  if (el) el.textContent = String(state.count);
-}
-
-function updateDockedDisplay() {
-  const el = document.getElementById('cvPanelBody-splitDemo')?.querySelector('#dummyDockedValue');
-  if (el) el.textContent = String(state.count);
-}
-
-function renderSplitContent(body) {
-  body.innerHTML = `
-    <div class="split-item dummy-counter-item">
-      <h4>Shared Counter</h4>
-      <div class="split-item-body dummy-counter-display" id="dummyCounterValue">${state.count}</div>
-      <div class="split-item-actions">
-        <button type="button" class="split-item-action-btn" data-split-action="reset">Reset</button>
-        <button type="button" class="split-item-action-btn" data-split-action="increment">+1</button>
-      </div>
-    </div>
-  `;
-}
-
-function handleAction(action) {
-  if (action === 'increment') state.count += 1;
-  else if (action === 'reset') state.count = 0;
-  updateSplitDisplay();
-  updateDockedDisplay();
-}
-
-const owner = {
-  title: 'Split View Demo',
-  panelId: 'splitDemo', // lets the split-view tab's ✕ collapse this dock panel
-  render: renderSplitContent,
-  onAction: handleAction,
-};
-
-export function openDummySplitView() {
-  openSplitView(owner);
-}
-
-export function closeDummySplitView() {
-  closeSplitView(owner);
+function updateDisplays() {
+  const body = document.getElementById('cvPanelBody-splitDemo');
+  if (!body) return;
+  for (const el of body.querySelectorAll('.dummy-count-value')) {
+    el.textContent = String(state.count);
+  }
 }
 
 export function addDummySplitPanel(target = 'cvPanelBody-splitDemo') {
@@ -58,19 +23,38 @@ export function addDummySplitPanel(target = 'cvPanelBody-splitDemo') {
 
   container.innerHTML = `
     <div class="control-group">
-      <p>Trivial demo of the shared split-view pane: expand this panel to open
-      it on the right, then increment the counter from either side.</p>
+      <p>Trivial demo window: it defaults to the right dock, but can be
+      dragged out to float or into the left bar like any window. The counter
+      lives in module state, so it survives closing and reopening.</p>
       <div class="dummy-docked-row">
-        <span>Count: <strong id="dummyDockedValue">${state.count}</strong></span>
-        <button type="button" id="dummyIncrementBtn" class="btn-mini">+1</button>
+        <span>Count: <strong class="dummy-count-value">${state.count}</strong></span>
+        <button type="button" class="btn-mini" data-split-action="increment">+1</button>
+      </div>
+    </div>
+    <div class="split-item dummy-counter-item">
+      <h4>Shared Counter</h4>
+      <div class="split-item-body dummy-counter-display dummy-count-value">${state.count}</div>
+      <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
+      <div class="split-item-actions">
+        <button type="button" class="split-item-action-btn" data-split-action="reset">Reset</button>
+        <button type="button" class="split-item-action-btn" data-split-action="increment">+1</button>
+        <button type="button" class="split-item-action-btn" data-split-action="expand" title="Expand">⛶</button>
       </div>
     </div>
   `;
 
-  container.querySelector('#dummyIncrementBtn').addEventListener('click', () => {
-    state.count += 1;
-    updateDockedDisplay();
-    updateSplitDisplay();
+  // One delegated listener for all [data-split-action] buttons — the same
+  // idiom the EOS window uses, so actions keep working when the window is
+  // right-docked, floating or left-docked.
+  container.addEventListener('click', (ev) => {
+    const btn = /** @type {HTMLElement} */ (ev.target).closest('[data-split-action]');
+    if (!btn) return;
+    const action = /** @type {HTMLElement} */ (btn).dataset.splitAction;
+    if (action === 'increment') state.count += 1;
+    else if (action === 'reset') state.count = 0;
+    else if (action === 'expand') expandSplitItem(btn.closest('.split-item'));
+    else if (action === 'close') closeExpandedSplitItem();
+    updateDisplays();
   });
 }
 

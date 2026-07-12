@@ -157,20 +157,45 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
     s.saved && near(s.saved.left, 150) && near(s.saved.top, 100) && s.left >= uiWidth + 9,
     `left=${s.left} saved=${JSON.stringify(s.saved)}`);
 
-  // -- a remembered dock order differing from registration order is restored --
+  // -- a remembered dock order differing from registration order is restored,
+  //    exercised through the v2 -> v3 migration path: float positions and the
+  //    dock order survive, while the old eos/landscape/splitDemo stub entries
+  //    are dropped (they default to right-dock/closed now) ---------------------
   await page.evaluate(() => {
     localStorage.setItem('panelLayout', JSON.stringify({
       version: 2,
-      dockOrder: ['files', 'backend'], // swapped vs registration order
-      panels: {},
+      dockOrder: ['files', 'eos', 'backend'], // swapped vs registration order
+      panels: {
+        view: { docked: false, collapsed: false, bar: false, pos: { left: 222, top: 111 } },
+        eos: { docked: true, collapsed: false, bar: false },
+      },
     }));
   });
   await page.reload({ waitUntil: 'load' });
   await page.waitForTimeout(5000);
-  const domOrder = await page.evaluate(() => Array.from(
-    document.querySelectorAll('#dock > .cv-panel')).map((el) => el.dataset.panelId));
-  H.check('remembered dock order restored', domOrder[0] === 'files' && domOrder[1] === 'backend',
-    JSON.stringify(domOrder.slice(0, 3)));
+  const migrated = await page.evaluate(async () => {
+    const { getPanel } = await import('./ui/panels/PanelManager.js');
+    const layout = JSON.parse(localStorage.getItem('panelLayout'));
+    return {
+      domOrder: Array.from(document.querySelectorAll('#dock > .cv-panel'))
+        .map((el) => el.dataset.panelId),
+      version: layout.version,
+      viewPos: layout.panels.view?.pos || null,
+      eosClosed: !!getPanel('eos')?.closed,
+      eosDock: getPanel('eos')?.dock ?? null,
+      eosInLeftDock: !!document.querySelector('#dock .cv-panel[data-panel-id="eos"]'),
+    };
+  });
+  H.check('v2 blob migrated: remembered dock order restored',
+    migrated.domOrder[0] === 'files' && migrated.domOrder[1] === 'backend',
+    JSON.stringify(migrated.domOrder.slice(0, 3)));
+  H.check('migration re-saves as v3', migrated.version === 3, String(migrated.version));
+  H.check('migration keeps the v2 float position', migrated.viewPos
+    && migrated.viewPos.left === 222 && migrated.viewPos.top === 111,
+    JSON.stringify(migrated.viewPos));
+  H.check('migration drops the old eos stub entry (new defaults: right dock, closed)',
+    migrated.eosClosed && migrated.eosDock === 'right' && !migrated.eosInLeftDock,
+    JSON.stringify(migrated));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

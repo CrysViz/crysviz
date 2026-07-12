@@ -224,9 +224,9 @@
   margin-top: 0;
 }
 
-/* EOS-specific split-pane content: the P-V plot's "Show Error Plots" mini
-   toggle. Generic pane chrome (including plot div sizing, via
-   .split-item-body) lives in SplitView.css. */
+/* EOS-specific plot-card content: the P-V plot's "Show Error Plots" mini
+   toggle. Generic card chrome (including plot div sizing, via
+   .split-item-body) lives in rightDock.css. */
 
 /* P-V plot only: a mini "Show Error Plots" toggle on the left (empty space
    there), action buttons kept on the right. */

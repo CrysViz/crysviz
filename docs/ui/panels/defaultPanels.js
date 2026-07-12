@@ -3,7 +3,7 @@
 // migration is concentrated here; the builders themselves only need to build
 // into the panel body they are given.
 
-import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref } from './PanelManager.js';
+import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, openPanel, closePanel, getPanel, getPanelPref, setPanelPref } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
 import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender } from '../../render/index.js';
@@ -22,9 +22,8 @@ import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
 import { addEOSPanel, removeEOSPanel } from '../EOSPanel.js';
-import { openEOSSplitView, closeEOSSplitView } from '../EOSSplitView.js';
-import { addDummySplitPanel, removeDummySplitPanel, openDummySplitView, closeDummySplitView } from '../DummySplitPanel.js';
-import { addLandscapePanel, removeLandscapePanel, openLandscapeSplitView, closeLandscapeSplitView } from '../LandscapeSplitView.js';
+import { addDummySplitPanel, removeDummySplitPanel } from '../DummySplitPanel.js';
+import { addLandscapePanel, removeLandscapePanel } from '../LandscapePanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
@@ -117,6 +116,14 @@ function detachStaticRow(inputId) {
   return input ? input.closest('label') : null;
 }
 
+/** Set a Features-window open/close checkbox without firing its onChange
+ *  (used by the right-dock windows' onOpened/onClosed to stay in sync when
+ *  they are opened/closed from elsewhere — tab ✕, restored layout, reset). */
+function syncFeatureToggle(checkboxId, checked) {
+  const cb = /** @type {HTMLInputElement|null} */ (document.getElementById(checkboxId));
+  if (cb) cb.checked = !!checked;
+}
+
 /** Build a checkbox toggle row matching the static ones (toggle_styles.css). */
 function makeToggleRow(id, labelText, checked, onChange) {
   const row = document.createElement('label');
@@ -200,6 +207,19 @@ function buildFeaturesBody(body) {
     onToggle('planes', on);
   }));
 
+  // Open/close rows for the right-dock tool windows (EOS, Energy Landscape):
+  // ON opens the window where it lives (right dock by default, front tab),
+  // OFF closes it (closeMode:'hide' — content survives). Closing from the
+  // window's own tab ✕ syncs these back via the defs' onClosed below.
+  group.appendChild(makeToggleRow('eosOpenToggle', 'EOS Fitting', false, (on) => {
+    if (on) openPanel('eos');
+    else closePanel('eos');
+  }));
+  group.appendChild(makeToggleRow('landscapeOpenToggle', 'Energy Landscape', false, (on) => {
+    if (on) openPanel('landscape');
+    else closePanel('landscape');
+  }));
+
   body.appendChild(group);
 
   // The moved static toggles (Show Bonds / Show Polyhedra) also grey/reveal
@@ -228,7 +248,7 @@ export function registerDefaultPanels() {
       const el = document.getElementById('measurementTools');
       if (el) body.appendChild(el);
     },
-    defaults: { docked: false, anchor: { right: 20, top: 20 }, collapsed: false },
+    defaults: { dock: false, anchor: { right: 20, top: 20 }, collapsed: false },
   });
 
   registerPanel({
@@ -247,7 +267,7 @@ export function registerDefaultPanels() {
     // (#mobileMenuToggle: left 12px + 44px wide) with the same 12px margin the
     // button keeps to the screen edge. While the dock occupies that column the
     // window is displaced to sit just right of it.
-    defaults: { docked: false, anchor: { left: 68, top: 20 }, collapsed: false },
+    defaults: { dock: false, anchor: { left: 68, top: 20 }, collapsed: false },
   });
 
   registerPanel({
@@ -273,7 +293,7 @@ export function registerDefaultPanels() {
         });
       }
     },
-    defaults: { docked: false, anchor: { right: 20, bottom: 20 }, collapsed: false },
+    defaults: { dock: false, anchor: { right: 20, bottom: 20 }, collapsed: false },
   });
 
   // A restored share URL may ask for the formula box to start open
@@ -298,7 +318,7 @@ export function registerDefaultPanels() {
       const group = document.getElementById('backendControlGroup');
       if (group) body.appendChild(group);
     },
-    defaults: { docked: true, order: -10, collapsed: true },
+    defaults: { dock: 'left', order: -10, collapsed: true },
   });
 
   registerPanel({
@@ -318,7 +338,7 @@ export function registerDefaultPanels() {
       // (The Share button lives in #uploadSection's action row and moves with
       // it; see ShareModule.createShareButton.)
     },
-    defaults: { docked: true, order: -20, collapsed: false, barCollapsed: true },
+    defaults: { dock: 'left', order: -20, collapsed: false, barCollapsed: true },
   });
 
   registerPanel({
@@ -328,7 +348,7 @@ export function registerDefaultPanels() {
     hiddenUntilStructure: true,
     infoMd: './data/analysisInfo.md',
     buildContent: buildFeaturesBody,
-    defaults: { docked: true, order: 2, collapsed: false },
+    defaults: { dock: 'left', order: 2, collapsed: false },
   });
 
   //
@@ -349,7 +369,7 @@ export function registerDefaultPanels() {
     },
     buildContent(body) { addTrajectoryPlayer(body.id); },
     onDestroyContent() { removeTrajectoryPlayer(); },
-    defaults: { docked: true, order: 10, collapsed: true },
+    defaults: { dock: 'left', order: 10, collapsed: true },
   });
 
   registerPanel({
@@ -361,7 +381,7 @@ export function registerDefaultPanels() {
     available() { return !!fileBrowser.comparisonStructure; },
     buildContent(body) { addCompPanel(body.id); },
     onDestroyContent() { removeCompPanel(); },
-    defaults: { docked: true, order: 20, collapsed: true },
+    defaults: { dock: 'left', order: 20, collapsed: true },
   });
 
   registerPanel({
@@ -382,7 +402,7 @@ export function registerDefaultPanels() {
       }
     },
     onDestroyContent() { removeForcePanel(); },
-    defaults: { docked: true, order: 30, collapsed: true },
+    defaults: { dock: 'left', order: 30, collapsed: true },
   });
 
   registerPanel({
@@ -402,7 +422,7 @@ export function registerDefaultPanels() {
       }
     },
     onDestroyContent() { removeSpinPanel(); },
-    defaults: { docked: true, order: 40, collapsed: true },
+    defaults: { dock: 'left', order: 40, collapsed: true },
   });
 
   registerPanel({
@@ -418,7 +438,7 @@ export function registerDefaultPanels() {
     // Field meshes are managed by the Features "Show Volumetric Field" toggle
     // and the row/step switch logic (FileBrowswerPanel), not by panel teardown.
     buildContent(body) { addFieldPanel(body.id); },
-    defaults: { docked: true, order: 50, collapsed: true },
+    defaults: { dock: 'left', order: 50, collapsed: true },
   });
 
   registerPanel({
@@ -430,7 +450,7 @@ export function registerDefaultPanels() {
     available() { return !!fileBrowser.selectedStructure && planesData.showPlanes !== false; },
     buildContent(body) { addPlanesPanel(body.id); },
     onDestroyContent() { removePlanesPanel(); },
-    defaults: { docked: true, order: 60, collapsed: true },
+    defaults: { dock: 'left', order: 60, collapsed: true },
   });
 
   registerPanel({
@@ -447,7 +467,7 @@ export function registerDefaultPanels() {
       removeBondPanel();
       removeHistogramPanel();
     },
-    defaults: { docked: true, order: 70, collapsed: true },
+    defaults: { dock: 'left', order: 70, collapsed: true },
   });
 
   registerPanel({
@@ -465,7 +485,7 @@ export function registerDefaultPanels() {
       stashStaticRows(CELL_ROWS);
       removeLatticeAndSupercellPanel();
     },
-    defaults: { docked: true, order: 80, collapsed: true },
+    defaults: { dock: 'left', order: 80, collapsed: true },
   });
 
   registerPanel({
@@ -477,7 +497,7 @@ export function registerDefaultPanels() {
     available() { return !!fileBrowser.selectedStructure; },
     // async builder: fills the body once the Moyo WASM module is ready.
     buildContent(body) { addMoyoPanel(body.id); },
-    defaults: { docked: true, order: 85, collapsed: true },
+    defaults: { dock: 'left', order: 85, collapsed: true },
   });
 
   registerPanel({
@@ -489,7 +509,7 @@ export function registerDefaultPanels() {
     available() { return !!fileBrowser.selectedStructure && general.showPolyhedra !== false; },
     buildContent(body) { addPolyhedraPanel(body.id); },
     onDestroyContent() { removePolyhedraPanel(); },
-    defaults: { docked: true, order: 90, collapsed: true },
+    defaults: { dock: 'left', order: 90, collapsed: true },
   });
 
   registerPanel({
@@ -534,52 +554,69 @@ export function registerDefaultPanels() {
       body.appendChild(makeSectionHeadline('Camera'));
       addCameraPanel(body.id);
     },
-    defaults: { docked: true, order: 5, collapsed: false },
+    defaults: { dock: 'left', order: 5, collapsed: false },
   });
+
+  // ---- right-dock windows ----------------------------------------------------
+  //
+  // EOS / Energy Landscape / the demo are ordinary windows that DEFAULT to
+  // the wide right dock (ui/panels/RightDock.js) and start closed
+  // (registered but detached; closeMode:'hide' keeps their content across
+  // close/open). They are opened from the Features window's toggle rows
+  // (below) and can be dragged out to float or into the left dock like any
+  // other window. lifecycle 'persistent': their content (loaded fit data /
+  // landscape JSON) is independent of the selected structure and must
+  // survive structure switches — the build is simply deferred to first open.
 
   registerPanel({
     id: 'eos',
     title: 'EOS Fitting',
-    lifecycle: 'rebuild',
-    hiddenUntilStructure: true,
+    lifecycle: 'persistent',
+    closable: true,
+    closeMode: 'hide',
     infoMd: './data/eosInfo.md',
     available() { return true; },
     buildContent(body) { addEOSPanel(body.id); },
     onDestroyContent() { removeEOSPanel(); },
-    // The fit plots live in a split view on the right of the 3D scene, not in
-    // this docked window — it opens/closes with this panel's expand state.
-    onExpand() { openEOSSplitView(); },
-    onCollapse() { closeEOSSplitView(); },
-    defaults: { docked: true, order: 92, collapsed: true },
+    onOpened() { syncFeatureToggle('eosOpenToggle', true); },
+    onClosed() { syncFeatureToggle('eosOpenToggle', false); },
+    defaults: { dock: 'right', closed: true, order: 92 },
   });
 
   registerPanel({
     id: 'splitDemo',
-    title: 'Split View Demo',
-    lifecycle: 'rebuild',
+    title: 'Right Dock Demo',
+    lifecycle: 'persistent',
+    closable: true,
+    closeMode: 'hide',
     infoMd: './data/splitDemoInfo.md',
     available() { return true; },
     buildContent(body) { addDummySplitPanel(body.id); },
     onDestroyContent() { removeDummySplitPanel(); },
-    // Minimal example of a second feature reusing the same split view the EOS
-    // panel uses (docs/ui/panels/SplitView.js) for its own, unrelated content.
-    onExpand() { openDummySplitView(); },
-    onCollapse() { closeDummySplitView(); },
-    defaults: { docked: true, order: 93, collapsed: true },
+    // Minimal reference example of a right-dock-by-default window (open it
+    // from the console/tests via openPanel('splitDemo')).
+    defaults: { dock: 'right', closed: true, order: 93 },
   });
 
   registerPanel({
     id: 'landscape',
     title: 'Energy Landscape',
-    lifecycle: 'rebuild',
+    lifecycle: 'persistent',
+    closable: true,
+    closeMode: 'hide',
     infoMd: './data/landscapeInfo.md',
     available() { return true; },
     buildContent(body) { addLandscapePanel(body.id); },
     onDestroyContent() { removeLandscapePanel(); },
-    onExpand() { openLandscapeSplitView(); },
-    onCollapse() { closeLandscapeSplitView(); },
-    defaults: { docked: true, order: 94, collapsed: true },
+    onOpened() { syncFeatureToggle('landscapeOpenToggle', true); },
+    onClosed() { syncFeatureToggle('landscapeOpenToggle', false); },
+    defaults: { dock: 'right', closed: true, order: 94 },
   });
+
+  // Reflect windows restored open from a remembered layout in the Features
+  // rows (their toggles are built before these windows register).
+  syncFeatureToggle('eosOpenToggle', !getPanel('eos')?.closed);
+  syncFeatureToggle('landscapeOpenToggle', !getPanel('landscape')?.closed);
 
   registerPanel({
     id: 'settings',
@@ -659,6 +696,6 @@ export function registerDefaultPanels() {
       body.appendChild(resetRow);
     },
     // The very last window in the dock.
-    defaults: { docked: true, order: 100, collapsed: false },
+    defaults: { dock: 'left', order: 100, collapsed: false },
   });
 }

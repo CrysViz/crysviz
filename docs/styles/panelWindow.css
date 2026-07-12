@@ -38,6 +38,58 @@
   margin: 0 0 8px 0;
 }
 
+/* ---- right-docked: the window is a TAB in the wide right dock ----
+   Its element lives inside #splitPaneBody (rightDock.css). The tab strip is
+   the chrome: the title bar is hidden, the body is always shown (per-window
+   collapse doesn't apply here — the whole dock collapses instead), and only
+   the front window is visible, filling the pane. */
+.cv-panel.cv-right-docked {
+  display: none;
+  margin: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.cv-panel.cv-right-docked.cv-front {
+  display: flex;
+}
+
+.cv-panel.cv-right-docked > .cv-panel-titlebar {
+  display: none;
+}
+
+/* The pane provides the surface; strip the body's own window box. The
+   backdrop-filter:none is load-bearing: a backdrop-filter creates a
+   containing block for fixed-position descendants, which would trap the
+   ⛶-expanded .split-item inside the body. */
+.cv-panel.cv-right-docked > .cv-panel-body,
+.cv-panel.cv-right-docked.cv-collapsed > .cv-panel-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 10px;
+  padding: 10px;
+  overflow-y: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+/* Host of a ⛶-expanded (fullscreen) .split-item in ANY window state: lift
+   the body's backdrop-filter (fixed-position containing block, see above)
+   and raise a floating host above the fullscreen overlay (z-index 1350) —
+   !important because raise() sets an inline z-index. */
+.cv-panel.cv-has-expanded-item > .cv-panel-body {
+  backdrop-filter: none;
+}
+
+.cv-panel.cv-floating.cv-has-expanded-item {
+  z-index: 1400 !important;
+}
+
 /* ---- floating ---- */
 .cv-panel.cv-floating {
   position: fixed;

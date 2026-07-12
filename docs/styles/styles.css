@@ -118,9 +118,9 @@ body.panel-hidden #axesLegend {
   border: 2px solid rgba(26,26,26,0.8);
   cursor: pointer;
   top: max(120px, calc(var(--compact-stack-bottom, 0px) + 20px));
-  /* --split-reserve is kept in sync with the split view's pane width (see
-     ui/panels/SplitView.js) so the dot stays clear of the pane instead of
-     sliding underneath it. 0px when the pane is closed. */
+  /* --split-reserve is kept in sync with the right dock's pane width (see
+     ui/panels/RightDock.js) so the dot stays clear of the pane instead of
+     sliding underneath it. 0px when the dock is closed. */
   right: calc(20px + var(--split-reserve, 0px));
   z-index: 999;
 }

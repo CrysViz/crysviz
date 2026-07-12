@@ -1,6 +1,6 @@
-/* Split View Demo panel (docs/ui/DummySplitPanel.js) — a minimal example of a
-   second feature using the shared split view. Only the couple of rules
-   unique to it live here; the pane chrome is SplitView.css. */
+/* Right Dock Demo window (docs/ui/DummySplitPanel.js) — a minimal example of
+   a window defaulting to the right dock. Only the couple of rules unique to
+   it live here; the dock/card chrome is rightDock.css. */
 
 .dummy-docked-row {
   display: flex;
