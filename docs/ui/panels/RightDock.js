@@ -458,29 +458,51 @@ export function resetRightDockLayout() {
 
 // ---- drop zone (floating drags, checked by PanelWindow via manager hooks) ------
 
-/** Is this pointer position over the dock's drop zone? The open pane's own
- *  rect while open; a narrow band along the docked screen edge (right, or
- *  bottom in bottom mode) while the dock is collapsed, hidden or empty. */
-export function wantsRightDockDrop(ev) {
-  if (!hooks || !hooks.getPref('dragIntoDock')) return false;
+/**
+ * Which edge this pointer position would drop into, or null if it isn't over
+ * a drop zone:
+ * - dock open: the pane's own rect (its current side);
+ * - dock EMPTY (no visible windows): a band along EITHER the right or the
+ *   bottom screen edge — the drop decides where the dock appears (in the
+ *   shared corner, the nearer edge wins);
+ * - dock holding windows but collapsed to pull-tabs: only its own edge's
+ *   band (a drop must not silently relocate an occupied dock).
+ */
+export function rightDockDropSideAt(ev) {
+  if (!hooks || !hooks.getPref('dragIntoDock')) return null;
   const { pane } = els();
   if (pane && !pane.hidden && !collapsed) {
     const r = pane.getBoundingClientRect();
-    return ev.clientX >= r.left && ev.clientX <= r.right
+    const inside = ev.clientX >= r.left && ev.clientX <= r.right
         && ev.clientY >= r.top && ev.clientY <= r.bottom;
+    return inside ? dockSide : null;
   }
-  return dockSide === 'bottom'
-    ? ev.clientY >= window.innerHeight - EDGE_BAND_PX
-    : ev.clientX >= window.innerWidth - EDGE_BAND_PX;
+  const rightGap = window.innerWidth - ev.clientX;
+  const bottomGap = window.innerHeight - ev.clientY;
+  const inRight = rightGap <= EDGE_BAND_PX;
+  const inBottom = bottomGap <= EDGE_BAND_PX;
+  if (visiblePanels().length === 0) {
+    if (inRight && inBottom) return rightGap <= bottomGap ? 'right' : 'bottom';
+    if (inRight) return 'right';
+    if (inBottom) return 'bottom';
+    return null;
+  }
+  return (dockSide === 'bottom' ? inBottom : inRight) ? dockSide : null;
+}
+
+/** Is this pointer position over the dock's drop zone? */
+export function wantsRightDockDrop(ev) {
+  return rightDockDropSideAt(ev) !== null;
 }
 
 /** Show/position the drop highlight while a floating drag hovers the zone
  *  (null hides it — drag ended or moved away). Geometry is set inline: the
- *  open pane's rect, or the docked edge's band. */
+ *  open pane's rect, or the band of whichever edge would take the drop. */
 export function updateRightDockHint(ev) {
   const { dropHint, pane } = els();
   if (!dropHint) return;
-  const active = !!ev && wantsRightDockDrop(ev);
+  const side = ev ? rightDockDropSideAt(ev) : null;
+  const active = side !== null;
   dropHint.hidden = !active;
   dropHint.classList.toggle('active', active);
   if (!active) return;
@@ -493,7 +515,7 @@ export function updateRightDockHint(ev) {
     s.width = `${r.width}px`;
     s.height = `${r.height}px`;
     s.right = s.bottom = 'auto';
-  } else if (dockSide === 'bottom') {
+  } else if (side === 'bottom') {
     s.left = '0';
     s.right = '0';
     s.bottom = '0';

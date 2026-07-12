@@ -112,6 +112,63 @@ async function barCenter(page, id) {
   H.check('dragging over the side panel docks the window left',
     s.dock === 'left' && s.inLeftDock, JSON.stringify(s));
 
+  // ---- 5. EMPTY dock: dropping at the BOTTOM edge materializes it there ---
+  // Drag out of the left dock (past its right edge) and keep going to the
+  // bottom edge in one gesture.
+  bar = await barCenter(page, PANEL);
+  const uiRight = await page.evaluate(() =>
+    document.getElementById('ui').getBoundingClientRect().right);
+  await page.mouse.move(bar.x, bar.y);
+  await page.mouse.down();
+  await page.mouse.move(bar.x + 6, bar.y + 6); // threshold
+  await page.mouse.move(uiRight + 80, bar.y + 6, { steps: 6 }); // pull out of the left dock
+  await page.mouse.move(vp.width / 2, vp.height - 20, { steps: 10 }); // to the bottom edge
+  const hintBottom = await page.evaluate(() => {
+    const hint = document.getElementById('rightDockDropHint');
+    if (hint.hidden) return null;
+    const r = hint.getBoundingClientRect();
+    return { top: r.top, isBottomBand: r.top > window.innerHeight - 60 && r.width > window.innerWidth / 2 };
+  });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  s = await panelInfo(page, PANEL);
+  const bottomSide = await page.evaluate(() => ({
+    cls: document.getElementById('viewArea').classList.contains('split-dock-bottom'),
+    saved: JSON.parse(localStorage.getItem('panelLayout') || '{}').rightDock?.side ?? null,
+  }));
+  H.check('drop highlight shows as the bottom-edge band', !!hintBottom && hintBottom.isBottomBand,
+    JSON.stringify(hintBottom));
+  H.check('dropping at the bottom edge docks the window with the dock at the BOTTOM',
+    s.dock === 'right' && s.inRightDock && s.front && bottomSide.cls,
+    JSON.stringify({ s, bottomSide }));
+  await page.waitForTimeout(400); // save debounce
+  const savedBottom = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('panelLayout') || '{}').rightDock?.side ?? null);
+  H.check('bottom side persisted', savedBottom === 'bottom', String(savedBottom));
+
+  // ---- 6. pull the tab out (dock empties) and drop at the RIGHT edge: the
+  //          dock re-materializes on the right ------------------------------
+  const tabRect2 = await page.evaluate((id) => {
+    const tab = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
+      .find((t) => t.dataset.panelId === id);
+    const r = tab.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }, PANEL);
+  await page.mouse.move(tabRect2.x, tabRect2.y);
+  await page.mouse.down();
+  await page.mouse.move(tabRect2.x + 6, tabRect2.y - 6); // threshold
+  await page.mouse.move(tabRect2.x + 40, tabRect2.y - 120, { steps: 8 }); // out of the strip band
+  await page.mouse.move(vp.width - 20, vp.height / 2, { steps: 10 }); // to the right edge
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  s = await panelInfo(page, PANEL);
+  const rightSide = await page.evaluate(() => ({
+    cls: document.getElementById('viewArea').classList.contains('split-dock-bottom'),
+  }));
+  H.check('tab pull-out + right-edge drop re-materializes the dock on the right',
+    s.dock === 'right' && s.inRightDock && s.front && !rightSide.cls,
+    JSON.stringify({ s, rightSide }));
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

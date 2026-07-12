@@ -13,9 +13,9 @@
 import { PanelWindow } from './PanelWindow.js';
 import {
   initRightDock, rightDockPanel, rightUndockPanel,
-  setRightDockCollapsed, refreshRightDock, getRightDockLayout,
+  setRightDockCollapsed, setRightDockSide, refreshRightDock, getRightDockLayout,
   applyRightDockLayout, resetRightDockLayout, wantsRightDockDrop,
-  updateRightDockHint,
+  rightDockDropSideAt, updateRightDockHint,
 } from './RightDock.js';
 
 const LS_KEY = 'panelLayout';
@@ -675,8 +675,13 @@ function dockAtPointer(panel, ev) {
 /** Commit a floating drag released over the right dock's drop zone: the
  *  window becomes the front tab (and the dock un-collapses if it was a
  *  closed-edge drop). */
-function rightDockAtPointer(panel) {
+function rightDockAtPointer(panel, ev) {
   panel.floatPos = panel.captureFloatPosition(); // last float pos, before styles clear
+  // An EMPTY dock materializes on whichever edge the window was dropped at
+  // (rightDockDropSideAt only ever reports the other edge while the dock has
+  // no visible windows, so an occupied dock is never silently relocated).
+  const side = ev ? rightDockDropSideAt(ev) : null;
+  if (side) setRightDockSide(side);
   rightDockPanel(panel, { front: true, expand: true });
   setRightDockCollapsed(false);
   refreshCompactFloatingPanels();
