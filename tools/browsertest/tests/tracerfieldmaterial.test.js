@@ -282,6 +282,75 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
       && tracerVis.visible === true && tracerVis.tracerClass === true,
     JSON.stringify({ rasterVis, tracerVis }));
 
+  // --- (4b) Live iso-slider updates: dragging rebuilds the surface (no 'change') ---
+  await H.setSelect(page, 'renderPipelineMenu', 'depthpeel');
+  await page.waitForTimeout(400);
+  const liveDrag = await page.evaluate(async () => {
+    const { groups, fileBrowser } = await import('./state/store.js');
+    const { Field, FieldContainer } = await import('./model/index.js');
+    const { addFieldPanel, fieldBrowser } = await import('./ui/FieldPanel.js');
+    const { setActiveField, updateField } = await import('./render/index.js');
+    const nextFrame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const verts = () => groups.isosurfaceGroup?.meshes?.positive?.geometry?.attributes?.position?.count ?? 0;
+    // Self-contained baseline: the GUI section's field is a CONSTANT (no
+    // isosurface at any level), so build a Gaussian blob field, select it, and
+    // REBUILD the panel so #isoSlider's handlers are bound to it.
+    const structure = fileBrowser.selectedStructure;
+    const lat = structure.lattice;
+    const nx = 16, ny = 16, nz = 16;
+    const values = new Float32Array(nx * ny * nz);
+    const c = (nx - 1) / 2, sigma = 3.5;
+    for (let k = 0; k < nz; k++)
+      for (let j = 0; j < ny; j++)
+        for (let i = 0; i < nx; i++) {
+          const d2 = (i - c) ** 2 + (j - c) ** 2 + (k - c) ** 2;
+          values[i + nx * (j + ny * k)] = Math.exp(-d2 / (2 * sigma * sigma));
+        }
+    const voxel = [
+      [lat[0][0] / nx, lat[0][1] / nx, lat[0][2] / nx],
+      [lat[1][0] / ny, lat[1][1] / ny, lat[1][2] / ny],
+      [lat[2][0] / nz, lat[2][1] / nz, lat[2][2] / nz],
+    ];
+    const blob = new Field({ nx, ny, nz, origin: [0, 0, 0], voxel, values,
+      label: 'liveblob', isoValue: 0.5, minValue: 0, maxValue: 1, useAbsoluteIsoValue: false });
+    blob.isVisible = true;
+    structure.volumetricFields = new FieldContainer({
+      fileName: 'liveblob', source: 'Cube', fields: [blob], fieldCount: 1 });
+    fieldBrowser.setAvailableFields([blob]);
+    fieldBrowser.setSelectedField(0);
+    addFieldPanel('cvPanelBody-field'); // rebuild so the slider drives THIS field
+    const slider = /** @type {HTMLInputElement} */ (document.querySelector('#cvPanelBody-field #isoSlider'));
+    setActiveField(blob, false);
+    updateField(0.5);
+    blob.isoValue = 0.5;
+    await nextFrame();
+    const before = { verts: verts(), iso: fieldBrowser.selectedField?.isoValue };
+    // Rapid drag: three 'input' events, NO 'change'. The coalesced RAF handler
+    // must rebuild at the LATEST value only.
+    for (const v of ['70', '60', '30']) {
+      slider.value = v;
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    await nextFrame();
+    await nextFrame();
+    const after = { verts: verts(), iso: fieldBrowser.selectedField?.isoValue };
+    const readout = document.querySelector('#cvPanelBody-field #isoValue')?.textContent;
+    // Release: 'change' at the same value must not error (skip-if-built path).
+    slider.dispatchEvent(new Event('change', { bubbles: true }));
+    await nextFrame();
+    return { before, after, readout, finalVerts: verts(),
+      structureOk: !!fileBrowser.selectedStructure?.volumetricFields };
+  });
+  H.check('dragging the iso slider live-rebuilds the isosurface without a change event',
+    liveDrag.structureOk && liveDrag.after.verts > 0
+      && liveDrag.after.verts !== liveDrag.before.verts
+      && liveDrag.after.iso !== liveDrag.before.iso,
+    JSON.stringify(liveDrag));
+  H.check('live rebuild lands on the LATEST drag value and release is a no-op re-build',
+    liveDrag.readout === liveDrag.after.iso?.toExponential(3)
+      && liveDrag.finalVerts === liveDrag.after.verts,
+    JSON.stringify({ readout: liveDrag.readout, iso: liveDrag.after.iso, finalVerts: liveDrag.finalVerts }));
+
   // --- (5) Persistence: fieldMaterial round-trips through capture/apply at 2.12 -----
   const persist = await page.evaluate(async () => {
     const { fileBrowser } = await import('./state/store.js');
