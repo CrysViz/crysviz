@@ -92,6 +92,7 @@ let saveTimer = 0;
 let dockOccupies = false; // side panel currently takes layout space
 let lastUiWidth = 0; // last known #ui width (it measures 0 while hidden)
 let rightReservePx = 0; // width reserved on the right (e.g. the EOS split pane)
+let bottomReservePx = 0; // height reserved at the bottom (e.g. the split pane docked to the bottom)
 
 const hooks = {
   beforeExpand(panel) {
@@ -232,6 +233,7 @@ export function initPanelSystem() {
     getPref: getPanelPref,
     onLayoutChange: scheduleSave,
     setRightReserve,
+    setBottomReserve,
     closePanelFromTab: (panel) => hooks.onClose(panel),
     floatPanelForDrag: (panel, pos) => floatPanel(panel, pos, { noDockShift: true }),
   });
@@ -518,6 +520,7 @@ export function saveLayout() {
     front: rd.front,
     collapsed: rd.collapsed,
     fraction: rd.fraction,
+    side: rd.side,
   };
   for (const panel of panels.values()) {
     if (panel.def.persist === false) continue;
@@ -765,6 +768,7 @@ function derivedFloatPos(panel) {
     if (anchor) {
       const pos = { ...anchor };
       if (rightReservePx > 0 && typeof pos.right === 'number') pos.right += rightReservePx;
+      if (bottomReservePx > 0 && typeof pos.bottom === 'number') pos.bottom += bottomReservePx;
       return panel.clampToViewport(pos);
     }
   }
@@ -775,14 +779,18 @@ function derivedFloatPos(panel) {
   if (rightReservePx > 0 && typeof pos.right === 'number') {
     pos.right += rightReservePx;
   }
+  if (bottomReservePx > 0 && typeof pos.bottom === 'number') {
+    pos.bottom += bottomReservePx;
+  }
   return panel.clampToViewport(pos);
 }
 
 /**
- * Reserve width on the right edge (e.g. the EOS split pane) so right-anchored
- * floating windows (Structure info, ...) stay clear of it instead of sliding
- * underneath. Pure additive offset on top of the panel's inherent floatPos —
- * never mutates it, so it unwinds exactly when the reservation drops to 0.
+ * Reserve width on the right edge (e.g. the split view docked to the right)
+ * so right-anchored floating windows (Structure info, ...) stay clear of it
+ * instead of sliding underneath. Pure additive offset on top of the panel's
+ * inherent floatPos — never mutates it, so it unwinds exactly when the
+ * reservation drops to 0.
  */
 export function setRightReserve(px) {
   rightReservePx = Math.max(0, px || 0);
@@ -793,6 +801,17 @@ export function setRightReserve(px) {
   // (same category as a window resize), not a discrete "hide this UI" toggle.
   // Gating it one-way would leave Measure/View stuck as icons after the pane
   // shrinks back until some unrelated resize came along.
+  refreshCompactFloatingPanels();
+}
+
+/** Same as setRightReserve, but for the bottom edge (the split view docked
+ *  to the bottom of the viewport) — keeps bottom-anchored floating windows
+ *  (Structure info's default anchor is bottom-right, so both can apply) and
+ *  the compact-icon stack clear of the pane. */
+export function setBottomReserve(px) {
+  bottomReservePx = Math.max(0, px || 0);
+  updateFloatPlacements();
+  document.documentElement.style.setProperty('--compact-stack-bottom', `${compactStackBottomPx()}px`);
   refreshCompactFloatingPanels();
 }
 
@@ -1005,7 +1024,7 @@ function beginDockReorder(panel, startEv) {
 // ---- persistence ------------------------------------------------------------
 
 function defaultRightDockLayout() {
-  return { order: [], front: null, collapsed: false, fraction: null };
+  return { order: [], front: null, collapsed: false, fraction: null, side: 'right' };
 }
 
 // Entries for windows whose meaning changed shape across versions — dropped

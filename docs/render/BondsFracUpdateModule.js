@@ -1,6 +1,6 @@
 import * as THREE from '../external/three/three.module.js';
 
-import {bondLengths, app, groups,fileBrowser, general, highlightHover} from '../state/store.js';
+import {bondLengths, coordinationNumbers, app, groups,fileBrowser, general, highlightHover} from '../state/store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
@@ -14,7 +14,8 @@ import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
 
 //import {bondLengthToColor} from '../ui/ColorPanel.js'
-import {refreshHistogram} from '../ui/AnalysisPanels/BondAnalysisPanel.js'
+import {refreshBondLengthHistogram} from '../ui/AnalysisPanels/BondLengthHistogram.js'
+import {refreshCoordinationHistogram} from '../ui/AnalysisPanels/CoordinationHistogram.js'
 import {generateID} from '../utils/index.js'
 import {computeBondPairsWasm} from '../compiled/bondsWasm.js'
 //import {getBondCutoff} from './BondsModule.js'
@@ -83,7 +84,9 @@ export function disposeBondsMesh(clearBondData = false) {
     fileBrowser.selectedStructure.bondhalfToAtom = {};
   }
   for (const key in bondLengths) delete bondLengths[key];
-  refreshHistogram([], []);
+  for (const key in coordinationNumbers) delete coordinationNumbers[key];
+  refreshBondLengthHistogram({});
+  refreshCoordinationHistogram({});
 }
 
 
@@ -108,10 +111,14 @@ export function rebuildBonds(opacity=1.0) {
   if (groups.bondsMesh) {
     groups.bondsMesh.visible = !!general.showBonds;
   }
-  // Refresh histogram if it's open
-  console.time("bond:refreshHistogram");
-  refreshHistogram(Object.values(bondLengths), Object.keys(bondLengths));
-  console.timeEnd("bond:refreshHistogram");
+  // instanceIds are only assigned in renderBonds() above, so the histogram
+  // data (which carries them for click-to-highlight) is populated here, not
+  // inside buildBondObjects().
+  populateBondHistogramData(fileBrowser.selectedStructure);
+  console.time("bond:refreshHistograms");
+  refreshBondLengthHistogram(bondLengths);
+  refreshCoordinationHistogram(coordinationNumbers);
+  console.timeEnd("bond:refreshHistograms");
 }
 
 // Debounced bond-geometry refresh: anything that changes RENDERED atom radii
@@ -469,16 +476,99 @@ export function buildBondObjects(structure){
     }
   }
 
-  // Populate global bondLengths for histogram
+}
+
+/**
+ * Group key for populateBondHistogramData's dedup, below — deliberately NOT
+ * the shared bondGroupKey() export (used elsewhere for the Bonds tab's "Link
+ * periodic copies" display; out of scope here). It differs in exactly one
+ * respect: bondGroupKey() canonicalizes a self-image bond's (srcA === srcB)
+ * vector sign, so an atom's neighbor in the +x direction and its neighbor in
+ * -x collapse to the same group — a fine simplification for showing one
+ * representative row of a bond "type", but wrong for coordination number,
+ * where +x and -x are two distinct neighbors (e.g. a simple-cubic atom's 6
+ * nearest periodic images must not fold down to 3). This keeps every other
+ * bond (srcA !== srcB) canonicalized exactly like bondGroupKey() — the same
+ * physical bond found via (A,B) or (B,A) still merges — it just skips that
+ * one extra canonicalization step for the self-image case.
+ */
+function histogramBondGroupKey(structure, bond) {
+  const frac = structure?.periodic?.wrapped?.frac;
+  const fi = frac?.[bond.indices[0]];
+  const fj = frac?.[bond.indices[1]];
+  if (!fi || !fj) return `nofrac:${bondKey(bond.indices)}`;
+  let [sa, sb] = bond.srcIndices;
+  let v = [fj[0] - fi[0], fj[1] - fi[1], fj[2] - fi[2]];
+  if (sa > sb) {
+    [sa, sb] = [sb, sa];
+    v = [-v[0], -v[1], -v[2]];
+  }
+  const q = v.map((x) => Math.round(x * 1000) || 0);
+  return `${sa}_${sb}:${q.join(',')}`;
+}
+
+/**
+ * Populate the bondLengths/coordinationNumbers histogram data. Must run
+ * AFTER renderBonds() (bond.instanceIds is assigned there) — the click-to-
+ * highlight histograms need real render instance ids, not just distances.
+ * Bonds filtered out of the render (visibleLen too small) keep instanceIds
+ * undefined and are simply left out of the highlight set for their bin.
+ *
+ * structure.bonds legitimately contains more than one Bond per PHYSICAL
+ * neighbor relationship whenever a ghost atom is rendered nearby (every
+ * rendered atom, ghost or real, needs its own correct set of bond
+ * cylinders) — that's correct for rendering, but these histograms describe
+ * the crystal's neighbor structure, not the render instance count, so
+ * bonds are deduplicated here by histogramBondGroupKey() (see above) — a
+ * "is this a lattice-translate of that bond" grouping like the Bonds tab's
+ * "Link periodic copies" already uses — before tallying either histogram.
+ * Only this function's own bookkeeping changes; structure.bonds itself (and
+ * everything the renderer does with it) is untouched.
+ */
+function populateBondHistogramData(structure) {
   for (const key in bondLengths) delete bondLengths[key];
+  for (const key in coordinationNumbers) delete coordinationNumbers[key];
+
+  const cnByAtom = new Array(structure.atoms.length).fill(0);
+  const seenGroups = new Map(); // histogramBondGroupKey -> that group's bondLengths entry
+
   for (const bond of structure.bonds) {
+    const groupKey = histogramBondGroupKey(structure, bond);
+    const existing = seenGroups.get(groupKey);
+
+    if (existing) {
+      // Same physical bond, rendered again for a different ghost pairing —
+      // fold its render instance into the existing entry so a histogram bar
+      // click still highlights every rendered copy, not just the first found.
+      if (bond.instanceIds?.length) existing.instanceIds.push(...bond.instanceIds);
+      continue;
+    }
+
     const [a, b] = bond.elements[0].localeCompare(bond.elements[1]) <= 0
       ? [bond.elements[0], bond.elements[1]]
       : [bond.elements[1], bond.elements[0]];
-    const key = `${a}-${b}`;
-    if (!bondLengths[key]) bondLengths[key] = [];
-    bondLengths[key].push(bond.dist);
+    const pairKey = `${a}-${b}`;
+    if (!bondLengths[pairKey]) bondLengths[pairKey] = [];
+    const entry = { dist: bond.dist, instanceIds: bond.instanceIds ? [...bond.instanceIds] : [] };
+    bondLengths[pairKey].push(entry);
+    seenGroups.set(groupKey, entry);
+
+    // bond.indices is in the WRAPPED (periodic-image) index space used for
+    // pair-finding/cut-plane masking — bond.srcIndices is the one that maps
+    // back to structure.atoms, which is what coordination number needs. A
+    // small/high-symmetry cell can bond an atom to its OWN periodic image
+    // (both srcIndices the same atom) — that is one neighbor relationship
+    // from that atom's perspective, so it counts once, not twice.
+    const [srcA, srcB] = bond.srcIndices;
+    cnByAtom[srcA]++;
+    if (srcB !== srcA) cnByAtom[srcB]++;
   }
+
+  structure.atoms.forEach((atom, i) => {
+    const el = structure.elements[i];
+    if (!coordinationNumbers[el]) coordinationNumbers[el] = [];
+    coordinationNumbers[el].push({ cn: cnByAtom[i], atomIndex: i });
+  });
 }
 // Material for the bond InstancedMeshes and (in the WBOIT pipeline) their
 // transparent-instance overlay pass. Carries the same generic uAlphaPass

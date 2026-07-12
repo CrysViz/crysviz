@@ -1,8 +1,9 @@
 // The right dock (formerly the "split view"): a wide, resizable pane on the
-// right edge of the screen that hosts regular PanelWindows as TABS. Any
-// window can be dropped here (drag to the right border) and dragged back out
-// (drag its tab away) — the same PanelWindow instances the left dock and
-// floating windows use, so "everything is the same kind of Window".
+// right edge of the screen — or, via the ⇩/⇒ header toggle, along the BOTTOM
+// edge (dockSide) — that hosts regular PanelWindows as TABS. Any window can
+// be dropped here (drag to the docked border) and dragged back out (drag its
+// tab away) — the same PanelWindow instances the left dock and floating
+// windows use, so "everything is the same kind of Window".
 //
 // While a window is right-docked its element lives inside #splitPaneBody with
 // the cv-right-docked class (title bar hidden — the tab is the chrome) and
@@ -19,6 +20,7 @@
 //   getPref(name) -> boolean            panelPrefs (dragIntoDock/dragOutOfDock)
 //   onLayoutChange()                    any persistable state changed
 //   setRightReserve(px)                 width the pane occupies on the right
+//   setBottomReserve(px)                height it occupies when docked bottom
 //   closePanelFromTab(panel)            the tab's ✕ (routes closeMode)
 //   floatPanelForDrag(panel, pos)       float a pulled-out window mid-gesture
 
@@ -41,6 +43,12 @@ let hooks = null;
 let collapsed = false;
 let paneFraction = DEFAULT_PANE_FRACTION;
 let frontId = null; // id of the window currently shown in the pane body
+// Which viewport edge the dock hugs: 'right' (default) or 'bottom'. Bottom
+// mode aligns the pane's left edge with the 3D scene's left edge (not the
+// full viewport) so it never overlaps the #ui side panel — see
+// #viewArea.split-dock-bottom in rightDock.css. Persisted in the layout
+// blob's rightDock.side.
+let dockSide = 'right';
 let wired = false;
 
 function els() {
@@ -54,6 +62,7 @@ function els() {
     headerTabs: document.getElementById('splitPaneHeaderTabs'),
     overlay: document.getElementById('splitPaneOverlay'),
     infoBtn: document.getElementById('splitPaneInfoBtn'),
+    dockBtn: document.getElementById('splitPaneDockBtn'),
     dropHint: document.getElementById('rightDockDropHint'),
   };
 }
@@ -88,25 +97,49 @@ function applyPaneWidth() {
   // the pane, not descendants, so they need it too (CSS vars only inherit
   // down the tree from where they're declared).
   document.documentElement.style.setProperty('--split-pane-fraction', String(paneFraction));
+  viewArea.classList.toggle('split-dock-bottom', dockSide === 'bottom');
   if (collapsed) viewArea.classList.add('split-pane-collapsed');
   else viewArea.classList.remove('split-pane-collapsed');
 }
 
+/** Switch which viewport edge the dock hugs. No-op if already there. */
+export function setRightDockSide(side) {
+  if (dockSide === side || (side !== 'right' && side !== 'bottom')) return;
+  dockSide = side;
+  applyPaneWidth();
+  syncSceneAndSidePanels();
+  updateDockBtn();
+  hooks?.onLayoutChange();
+}
+
+function updateDockBtn() {
+  const { dockBtn } = els();
+  if (!dockBtn) return;
+  dockBtn.textContent = dockSide === 'bottom' ? '⇒' : '⇩';
+  dockBtn.title = dockSide === 'bottom' ? 'Dock to the right' : 'Dock to the bottom';
+}
+
 /**
- * Re-derive the space the pane currently occupies to the right of #view and
- * push that out to everything that needs to stay clear of it: the 3D
- * renderer (resize + a fresh on-demand frame — #view's size can change here
- * without a window resize event ever firing), right-anchored floating panels
- * (Structure info, ...) via PanelManager's right-reserve, and the
- * background-dot (a plain fixed div, via the --split-reserve custom
- * property).
+ * Re-derive the space the pane currently occupies next to #view and push
+ * that out to everything that needs to stay clear of it: the 3D renderer
+ * (resize + a fresh on-demand frame — #view's size can change here without a
+ * window resize event ever firing), floating panels anchored to that same
+ * edge (Structure info, ...) via PanelManager's right-/bottom-reserve, and
+ * plain fixed-position chrome (the background-dot, the axes gizmo/legend)
+ * via the --split-reserve / --split-reserve-bottom custom properties.
  */
 function syncSceneAndSidePanels() {
   const { view } = els();
   if (!view || !hooks) return;
-  const reservePx = Math.max(0, window.innerWidth - view.getBoundingClientRect().right);
-  hooks.setRightReserve(reservePx);
-  document.documentElement.style.setProperty('--split-reserve', `${reservePx}px`);
+  const rect = view.getBoundingClientRect();
+  // Only the pane's own docked edge reserves space; the other axis is left
+  // alone (right-docked reserves no height, bottom-docked reserves no width).
+  const rightReservePx = dockSide === 'bottom' ? 0 : Math.max(0, window.innerWidth - rect.right);
+  const bottomReservePx = dockSide === 'bottom' ? Math.max(0, window.innerHeight - rect.bottom) : 0;
+  hooks.setRightReserve(rightReservePx);
+  hooks.setBottomReserve(bottomReservePx);
+  document.documentElement.style.setProperty('--split-reserve', `${rightReservePx}px`);
+  document.documentElement.style.setProperty('--split-reserve-bottom', `${bottomReservePx}px`);
   resizeRenderer(app.orthographicFrustumSize);
   requestRender();
 }
@@ -399,30 +432,35 @@ export function getRightDockLayout() {
     front: frontId,
     collapsed,
     fraction: paneFraction,
+    side: dockSide,
   };
 }
 
-/** Apply the remembered pane fraction/collapsed state (called before the
- *  panels register — DOM state follows as they dock in). */
+/** Apply the remembered pane fraction/collapsed/side state (called before
+ *  the panels register — DOM state follows as they dock in). */
 export function applyRightDockLayout(saved) {
   if (!saved || typeof saved !== 'object') return;
   const f = Number(saved.fraction);
   if (Number.isFinite(f) && f > 0) paneFraction = Math.min(0.8, Math.max(0.1, f));
   collapsed = !!saved.collapsed;
+  dockSide = saved.side === 'bottom' ? 'bottom' : 'right';
+  updateDockBtn();
 }
 
 /** Restore the dock's own defaults (Reset UI). */
 export function resetRightDockLayout() {
   paneFraction = DEFAULT_PANE_FRACTION;
   collapsed = false;
+  dockSide = 'right';
+  updateDockBtn();
   applyPaneWidth();
 }
 
 // ---- drop zone (floating drags, checked by PanelWindow via manager hooks) ------
 
-/** Is this pointer position over the right dock's drop zone? The open pane's
- *  own rect while open; a narrow band along the right screen edge while the
- *  dock is collapsed, hidden or empty. */
+/** Is this pointer position over the dock's drop zone? The open pane's own
+ *  rect while open; a narrow band along the docked screen edge (right, or
+ *  bottom in bottom mode) while the dock is collapsed, hidden or empty. */
 export function wantsRightDockDrop(ev) {
   if (!hooks || !hooks.getPref('dragIntoDock')) return false;
   const { pane } = els();
@@ -431,20 +469,44 @@ export function wantsRightDockDrop(ev) {
     return ev.clientX >= r.left && ev.clientX <= r.right
         && ev.clientY >= r.top && ev.clientY <= r.bottom;
   }
-  return ev.clientX >= window.innerWidth - EDGE_BAND_PX;
+  return dockSide === 'bottom'
+    ? ev.clientY >= window.innerHeight - EDGE_BAND_PX
+    : ev.clientX >= window.innerWidth - EDGE_BAND_PX;
 }
 
 /** Show/position the drop highlight while a floating drag hovers the zone
- *  (null hides it — drag ended or moved away). */
+ *  (null hides it — drag ended or moved away). Geometry is set inline: the
+ *  open pane's rect, or the docked edge's band. */
 export function updateRightDockHint(ev) {
   const { dropHint, pane } = els();
   if (!dropHint) return;
   const active = !!ev && wantsRightDockDrop(ev);
   dropHint.hidden = !active;
   dropHint.classList.toggle('active', active);
-  if (active) {
-    const open = pane && !pane.hidden && !collapsed;
-    dropHint.style.width = open ? `${pane.getBoundingClientRect().width}px` : '';
+  if (!active) return;
+  const open = pane && !pane.hidden && !collapsed;
+  const s = dropHint.style;
+  if (open) {
+    const r = pane.getBoundingClientRect();
+    s.left = `${r.left}px`;
+    s.top = `${r.top}px`;
+    s.width = `${r.width}px`;
+    s.height = `${r.height}px`;
+    s.right = s.bottom = 'auto';
+  } else if (dockSide === 'bottom') {
+    s.left = '0';
+    s.right = '0';
+    s.bottom = '0';
+    s.top = 'auto';
+    s.width = 'auto';
+    s.height = `${EDGE_BAND_PX}px`;
+  } else {
+    s.top = '0';
+    s.bottom = '0';
+    s.right = '0';
+    s.left = 'auto';
+    s.height = 'auto';
+    s.width = `${EDGE_BAND_PX}px`;
   }
 }
 
@@ -486,10 +548,15 @@ export function initRightDock(h) {
 function wireOnce() {
   if (wired) return;
   wired = true;
-  const { handle, overlay, infoBtn } = els();
+  const { handle, overlay, infoBtn, dockBtn } = els();
 
   const collapseBtn = document.getElementById('splitPaneCollapseBtn');
   if (collapseBtn) collapseBtn.addEventListener('click', () => setRightDockCollapsed(true));
+
+  updateDockBtn();
+  if (dockBtn) {
+    dockBtn.addEventListener('click', () => setRightDockSide(dockSide === 'bottom' ? 'right' : 'bottom'));
+  }
 
   if (infoBtn) {
     infoBtn.addEventListener('click', () => {
@@ -499,25 +566,28 @@ function wireOnce() {
   }
 
   // Drag the splitter: resize while open, snap to the collapsed pull-tabs if
-  // dragged past most of the pane's width.
+  // dragged past most of the pane's width/height.
   if (handle) {
     handle.addEventListener('pointerdown', (startEv) => {
       if (collapsed) return;
       startEv.preventDefault();
       handle.setPointerCapture(startEv.pointerId);
 
-      // The pane's CSS width is a vw-based fraction of the whole viewport
+      // The pane's CSS size is a vw/vh-based fraction of the whole viewport
       // (it's viewport-fixed, not a flex child of #viewArea) — the fraction
       // must be computed against the same basis, not #viewArea's narrower
-      // width (which excludes the #ui dock), or the drag and the rendered
-      // width disagree.
+      // extent (which excludes the #ui dock), or the drag and the rendered
+      // size disagree.
       const onMove = (ev) => {
-        const paneWidthPx = Math.max(0, window.innerWidth - ev.clientX);
-        if (paneWidthPx < MIN_PANE_PX) {
+        const sizePx = dockSide === 'bottom'
+          ? Math.max(0, window.innerHeight - ev.clientY)
+          : Math.max(0, window.innerWidth - ev.clientX);
+        const basis = dockSide === 'bottom' ? window.innerHeight : window.innerWidth;
+        if (sizePx < MIN_PANE_PX) {
           setRightDockCollapsed(true);
           return;
         }
-        paneFraction = Math.min(0.8, paneWidthPx / window.innerWidth);
+        paneFraction = Math.min(0.8, sizePx / basis);
         collapsed = false;
         applyPaneWidth();
         syncSceneAndSidePanels();

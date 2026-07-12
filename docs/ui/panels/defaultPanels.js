@@ -17,7 +17,6 @@ import { addSpinPanel, removeSpinPanel } from '../SpinPanel.js';
 import { addFieldPanel, fieldBrowser } from '../FieldPanel.js';
 import { addPlanesPanel, removePlanesPanel, setPlanesVisible, planesData } from '../PlanesPanel.js';
 import { addBondPanel, removeBondPanel } from '../BondPanel.js';
-import { removeHistogramPanel } from '../AnalysisPanels/BondAnalysisPanel.js';
 import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../LatticeSupercellPanel.js';
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
@@ -443,10 +442,12 @@ export function registerDefaultPanels() {
     buildContent(body) {
       addBondPanel(body.id);
     },
-    onDestroyContent() {
-      removeBondPanel();
-      removeHistogramPanel();
-    },
+    // The histogram windows (Bond Length / Coordination Number —
+    // AnalysisPanels/*.js) are deliberately NOT torn down here: they are
+    // independent windows kept live across structure switches by
+    // refreshBondLengthHistogram/refreshCoordinationHistogram after every
+    // rebuildBonds.
+    onDestroyContent() { removeBondPanel(); },
     defaults: { dock: 'left', order: 70, collapsed: true },
   });
 
@@ -488,6 +489,10 @@ export function registerDefaultPanels() {
     infoMd: './data/polyhedraInfo.md',
     available() { return !!fileBrowser.selectedStructure && general.showPolyhedra !== false; },
     buildContent(body) { addPolyhedraPanel(body.id); },
+    // The polyhedra analysis windows (Type/Inspector/Connectivity —
+    // AnalysisPanels/*.js) are deliberately NOT torn down here: they are
+    // independent windows kept live across structure switches by
+    // polyhedraAnalysisHub's re-analysis fan-out.
     onDestroyContent() { removePolyhedraPanel(); },
     defaults: { dock: 'left', order: 90, collapsed: true },
   });

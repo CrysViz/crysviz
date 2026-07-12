@@ -460,3 +460,10 @@ export function createWyckoffCompositionRow(el, entries, total) {
 export function updateAllCompositionPieDots() {
   Object.values(compositionRowUpdateFunctions).forEach(updateFn => updateFn());
 }
+
+// Recoloring (color-map change, mode switch, color-bar limits, individual
+// atom/bond edits, resets) never rebuilds these rows from scratch, so their
+// pie dots would otherwise go stale — refresh in place whenever anything
+// signals a color change (see notifyColorsChanged in PolyhedraModule.js,
+// already fired by every such recolor path via updatePolyhedraColors()).
+document.addEventListener('crysviz:colors-changed', updateAllCompositionPieDots);

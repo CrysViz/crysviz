@@ -129,6 +129,47 @@ function snap(page) {
   H.check('pull-tab reopens the dock on that window', !s.collapsed && s.frontId === 'landscapePlots',
     `${s.collapsed} / ${s.frontId}`);
 
+  // ---- ⇩ toggles the whole dock to the BOTTOM edge (and back) -------------
+  await page.evaluate(() => document.getElementById('splitPaneDockBtn').click());
+  await page.waitForTimeout(300);
+  const bottom = await page.evaluate(() => {
+    const va = document.getElementById('viewArea');
+    const pane = document.getElementById('splitPane').getBoundingClientRect();
+    const view = document.getElementById('view').getBoundingClientRect();
+    return {
+      cls: va.classList.contains('split-dock-bottom'),
+      paneAtBottom: Math.abs(pane.bottom - window.innerHeight) < 2 && pane.width > pane.height,
+      viewAbovePane: view.bottom <= pane.top + 2,
+      reserveBottom: getComputedStyle(document.documentElement).getPropertyValue('--split-reserve-bottom').trim(),
+      btnGlyph: document.getElementById('splitPaneDockBtn').textContent,
+      saved: JSON.parse(localStorage.getItem('panelLayout') || '{}').rightDock?.side ?? null,
+    };
+  });
+  H.check('⇩ docks the pane to the bottom edge',
+    bottom.cls && bottom.paneAtBottom && bottom.viewAbovePane, JSON.stringify(bottom));
+  H.check('bottom reserve published + button flips to ⇒',
+    parseFloat(bottom.reserveBottom) > 100 && bottom.btnGlyph === '⇒',
+    `${bottom.reserveBottom} / ${bottom.btnGlyph}`);
+  await page.waitForTimeout(400); // save debounce
+  const savedSide = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('panelLayout') || '{}').rightDock?.side ?? null);
+  H.check('dock side persists in the layout blob', savedSide === 'bottom', String(savedSide));
+  await page.evaluate(() => document.getElementById('splitPaneDockBtn').click());
+  await page.waitForTimeout(300);
+  const backRight = await page.evaluate(() => {
+    const va = document.getElementById('viewArea');
+    const pane = document.getElementById('splitPane').getBoundingClientRect();
+    return {
+      cls: va.classList.contains('split-dock-bottom'),
+      paneAtRight: Math.abs(pane.right - window.innerWidth) < 2 && pane.height > pane.width,
+      reserveBottom: parseFloat(getComputedStyle(document.documentElement)
+        .getPropertyValue('--split-reserve-bottom')) || 0,
+    };
+  });
+  H.check('⇒ docks the pane back to the right edge',
+    !backRight.cls && backRight.paneAtRight && backRight.reserveBottom === 0,
+    JSON.stringify(backRight));
+
   // ---- close EOS Fit from its tab ✕: closes ONLY it (hidden, not gone) ----
   await page.evaluate(() => {
     const tab = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]

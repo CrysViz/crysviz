@@ -3,11 +3,10 @@ import { colorHexToCss, getAtomColor } from '../../../utils/ColorModule.js';
 import { clampOpacity, clampRadiusScale } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom } from '../../../render/AtomsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
-import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
 import { updatePolyhedraColors, scheduleBondRebuild } from '../../../render/index.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
-import { bondLengthToColor } from '../../ColorPanel.js';
+import { atomForceToColor, syncBondHalvesToImageColor } from '../../ColorPanel.js';
 import { createMaterialEditor } from './MaterialEditor.js';
 
 // Helper function to get the current color for an atom based on the active mode
@@ -40,15 +39,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
       // Newest edit wins: an element recolor overrides earlier per-copy colors.
       clearAtomImageStylesForAtom(structure, atomIndex, 'color');
       structure.atomImages[atomIndex]?.forEach(imageIndex => {
-        if (general.bondsColor == "elements") {
-          if (structure.bondMapping[imageIndex]) {
-            structure.bondMapping[imageIndex].forEach(bondHalvIndex => {
-              updateSingleBondColor(bondHalvIndex, parsedHex, true);
-              const indexset = structure.bondObjectMapping[bondHalvIndex];
-              structure.bonds[indexset[0]].color[indexset[1]] = parsedHex;
-            });
-          }
-        }
+        syncBondHalvesToImageColor(structure, imageIndex, parsedHex);
         updateSingleAtomColor(atomIndex, imageIndex, el, hex, hex);
       });
     });
@@ -226,7 +217,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
           forceObj.vector[1] ** 2 +
           forceObj.vector[2] ** 2
         );
-        atom.color = bondLengthToColor(magnitude, general.ForceMin, general.ForceMax);
+        atom.color = atomForceToColor(magnitude, general.ForceMin, general.ForceMax);
       } else {
         atom.color = structure.getDefaultElementColor(element);
       }
@@ -239,13 +230,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     atom.setOpacity(1);
 
     structure.atomImages[atomIndex]?.forEach((imageIndex) => {
-      if (structure.bondMapping[imageIndex]) {
-        structure.bondMapping[imageIndex].forEach((bondHalvIndex) => {
-          updateSingleBondColor(bondHalvIndex, safeColor(atom.getColor()));
-          const indexset = structure.bondObjectMapping[bondHalvIndex];
-          structure.bonds[indexset[0]].color[indexset[1]] = safeColor(atom.getColor());
-        });
-      }
+      syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
       updateSingleAtomColor(atomIndex, imageIndex, el);
       updateSingleAtomOpacity(imageIndex, atom.getOpacity());
     });
@@ -261,6 +246,9 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
   updatePieDotCallback();
   applyElementOpacity(1);
   applyElementRadiusScale(1);
+  // Polyhedra faces are coloured by element — recolour them in place to match
+  // (mirrors the live picker callback above, which does the same on every edit).
+  updatePolyhedraColors();
   updateVisualization({
     bondsUpdate: false,
     reRenderAtoms: false,

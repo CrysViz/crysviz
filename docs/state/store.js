@@ -2,6 +2,12 @@ import {StructureShip} from '../model/index.js'
 
 export const bondLengths = {}
 
+// Per-element coordination-number data for the Coordination Number
+// histogram (docs/ui/AnalysisPanels/CoordinationHistogram.js): element ->
+// [{ cn, atomIndex }, ...], one entry per atom of that element. Populated
+// alongside bondLengths in docs/render/BondsFracUpdateModule.js.
+export const coordinationNumbers = {}
+
 export const periodic ={
   wrapped:null,
   hash:null

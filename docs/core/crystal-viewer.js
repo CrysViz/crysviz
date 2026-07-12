@@ -33,7 +33,7 @@ import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
 import {updateSecondBonds,rebuildSecondBonds} from '../render/index.js'
 import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
-import { updatePolyhedra} from '../render/index.js'
+import { updatePolyhedra, notifyColorsChanged } from '../render/index.js'
 import {rebuildAtoms,updateAtoms} from '../render/index.js';
 import {rebuildSecondAtoms,updateSecondAtoms} from '../render/index.js';
 
@@ -223,6 +223,14 @@ export function updateVisualization(options = {}) {
   // computed and shown.
   if (reRenderPolyhedra && (general.showPolyhedra || general.completePolyhedra)) updatePolyhedra();
   console.timeEnd("uv:updateOther");
+  // Broad safety net: every colour edit path (individual atom/bond/polyhedron,
+  // element/category bulk edits, force/length colour-mode switches) ends up
+  // calling updateVisualization() to make the change visible, even the ones
+  // that don't separately call updatePolyhedraColors() — so anything that
+  // needs to stay in sync with live colour edits (e.g. the Polyhedron
+  // Inspector's mini render) can listen for this instead of tracking down
+  // every individual call site.
+  notifyColorsChanged();
   if (reRenderField) {
     if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
       updateField();

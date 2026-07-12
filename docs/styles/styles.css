@@ -881,6 +881,14 @@ input[type="checkbox"] {
     user-select: none;
   }
 
+  /* Visual panel (Sizes/Scene/Rendering/Colors/Camera): larger, centered
+     headlines make its several sections easier to tell apart at a glance. */
+  #cvPanelBody-visual .panel-headline {
+    font-size: calc(16px * var(--cv-font-scale, 1));
+    font-weight: 600;
+    text-align: center;
+  }
+
   .bond-toggle:hover,
   .bond-toggle:focus {
     background-color: var( --bg-color);
@@ -1323,14 +1331,19 @@ justify-content: center;
 
 
 #axesGizmo {
-position: fixed; left: var(--gizmo-left); bottom: var(--gizmo-bottom); width: var(--gizmo-size); height: var(--gizmo-size);
+/* --split-reserve-bottom is kept in sync with the split view's pane height
+   when it's docked to the bottom (see ui/panels/SplitView.js), so the gizmo
+   stays clear of the pane instead of sliding underneath it — same idea as
+   --split-reserve does for the background-dot's right offset. 0px when the
+   pane is closed or docked to the right. */
+position: fixed; left: var(--gizmo-left); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px)); width: var(--gizmo-size); height: var(--gizmo-size);
 border-radius: 10px; background: rgba(0,0,0,0.08); backdrop-filter: blur(6px);
 border: 1px solid rgba(255,255,255,0.15); z-index: 1000; overflow: hidden;
 pointer-events: none;
 }
 
 #axesLegend{
-position: fixed; left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px); bottom: var(--gizmo-bottom);
+position: fixed; left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px));
 background: rgba(0,0,0,0.8);
 border: 1px solid rgba(255,255,255,0.2);
 border-radius: 8px;
@@ -1638,7 +1651,9 @@ body {
 #ui h2,
 #ui h3,
 #composition,
-#status {
+#status,
+#piSummary,
+#piSplitSummary {
   -webkit-user-select: text;
   -moz-user-select: text;
   -ms-user-select: text;
@@ -1689,7 +1704,7 @@ body {
   /* Adjust axes gizmo position and size */
   #axesGizmo {
     left: 12px;
-    bottom: 12px;
+    bottom: calc(12px + var(--split-reserve-bottom, 0px));
     width: 60px;
     height: 60px;
     border-radius: 6px;
@@ -1867,13 +1882,13 @@ body {
     width: 50px;
     height: 50px;
     left: 8px;
-    bottom: 8px;
+    bottom: calc(8px + var(--split-reserve-bottom, 0px));
   }
 
   #axesLegend {
     transform: translateX(58px);
     font-size: 10px;
-    bottom: 8px;
+    bottom: calc(8px + var(--split-reserve-bottom, 0px));
     padding: 3px 5px;
     left: 8px;
     background: rgba(0, 0, 0, 0.9);
@@ -1940,13 +1955,13 @@ body {
     width: 50px;
     height: 50px;
     left: 8px;
-    bottom: 8px;
+    bottom: calc(8px + var(--split-reserve-bottom, 0px));
   }
 
   #axesLegend {
     transform: translateX(58px);
     font-size: 10px;
-    bottom: 8px;
+    bottom: calc(8px + var(--split-reserve-bottom, 0px));
     padding: 3px 5px;
     left: 8px;
     background: rgba(0, 0, 0, 0.9);

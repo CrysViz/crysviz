@@ -1,5 +1,5 @@
-import {bondLengths} from '../state/store.js';
-import { addHistogramPanel } from './AnalysisPanels/BondAnalysisPanel.js';
+import { addBondLengthHistogramPanel } from './AnalysisPanels/BondLengthHistogram.js';
+import { addCoordinationHistogramPanel } from './AnalysisPanels/CoordinationHistogram.js';
 import { makeSectionHeadline } from './panels/sectionHeadline.js';
 
 // The Bonds window body: flat headline + content sections (the window itself
@@ -15,35 +15,41 @@ export function addBondPanel(target = "cvPanelBody-bonds") {
   group.style.padding = "10px";
 
   // --- Histograms ---
+  // One button per histogram: each opens ONE ordinary panel window
+  // (AnalysisPanels/BondLengthHistogram.js, CoordinationHistogram.js) that
+  // defaults to the right dock — from there the user drags its tab out to
+  // float, or into the left bar, like any other window.
   const histogramsPanel = document.createElement("div");
   histogramsPanel.id = "histogramsPanel";
   histogramsPanel.style.marginBottom = "10px";
   histogramsPanel.appendChild(makeSectionHeadline("Histograms"));
 
-  const histogramButtonsRow = document.createElement("div");
-  histogramButtonsRow.style.display = "flex";
-  histogramButtonsRow.style.gap = "8px";
-  histogramButtonsRow.style.justifyContent = "center";
+  function addHistogramRow(label, buttonId, openWindow) {
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.justifyContent = "space-between";
+    row.style.gap = "8px";
+    row.style.marginBottom = "6px";
 
-  const histogramBtn = document.createElement("button");
-  histogramBtn.id = "bondHistogram";
-  histogramBtn.className = "btn-mini highlight";
-  histogramBtn.textContent = "Histogram";
-  histogramBtn.style.fontSize = "12px";
+    const nameLabel = document.createElement("span");
+    nameLabel.textContent = label;
+    nameLabel.style.cssText = "font-size:12px; color:#ccc;";
 
-  histogramBtn.onclick = () => {
-    const dataArrays = Object.values(bondLengths);
-    const labelsArray = Object.keys(bondLengths);
-    addHistogramPanel(dataArrays, labelsArray);
-  };
+    const openBtn = document.createElement("button");
+    openBtn.id = buttonId;
+    openBtn.className = "btn-mini highlight";
+    openBtn.textContent = "Open";
+    openBtn.title = `Open the ${label} window`;
+    openBtn.style.fontSize = "12px";
+    openBtn.onclick = openWindow;
 
-  // (The Angle Histogram and Coordination Number buttons were removed: they
-  // were unimplemented stubs. Re-add them here once the analysis exists —
-  // BondAnalysisPanel's addHistogramPanel already takes arbitrary datasets
-  // and axis labels.)
+    row.append(nameLabel, openBtn);
+    histogramsPanel.appendChild(row);
+  }
 
-  histogramButtonsRow.appendChild(histogramBtn);
-  histogramsPanel.appendChild(histogramButtonsRow);
+  addHistogramRow("Bond Length", "openBondLengthHistogram", addBondLengthHistogramPanel);
+  addHistogramRow("Coordination Number", "openCoordinationHistogram", addCoordinationHistogramPanel);
 
   // --- Draw Bonds ---
   // Hidden for now: the draw/undo/delete-bond buttons are non-functional stubs

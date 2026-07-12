@@ -1,5 +1,9 @@
 import { fileBrowser, general } from '../state/store.js';
 import { updatePolyhedra } from '../render/index.js';
+import { makeSectionHeadline } from './panels/sectionHeadline.js';
+import { addPolyhedraTypeHistogramPanel } from './AnalysisPanels/PolyhedraTypeHistogram.js';
+import { addPolyhedronInspectorPanel } from './AnalysisPanels/PolyhedronInspector.js';
+import { addPolyhedraConnectivityHistogramPanel } from './AnalysisPanels/PolyhedraConnectivityHistogram.js';
 
 function getSelectedStructureSettings() {
   const structure = fileBrowser.selectedStructure;
@@ -55,6 +59,45 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
   // collapse, so no header is built here.
   const group = document.createElement('div');
   group.id = 'polyhedraSettingsGroup';
+
+  // --- Histograms ---
+  // Same idiom as the Bonds panel's histograms (BondPanel.js): one button per
+  // analysis, each opening ONE ordinary panel window that defaults to the
+  // right dock (drag its tab out to float, or into the left bar). See
+  // AnalysisPanels/PolyhedraTypeHistogram.js, PolyhedronInspector.js,
+  // PolyhedraConnectivityHistogram.js.
+  if (structure) {
+    const histogramsPanel = document.createElement('div');
+    histogramsPanel.id = 'polyhedraHistogramsPanel';
+    histogramsPanel.style.marginBottom = '10px';
+    histogramsPanel.appendChild(makeSectionHeadline('Histograms'));
+
+    function addHistogramRow(label, buttonId, openWindow) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;';
+
+      const nameLabel = document.createElement('span');
+      nameLabel.textContent = label;
+      nameLabel.style.cssText = 'font-size:12px; color:#ccc;';
+
+      const openBtn = document.createElement('button');
+      openBtn.id = buttonId;
+      openBtn.className = 'btn-mini highlight';
+      openBtn.textContent = 'Open';
+      openBtn.title = `Open the ${label} window`;
+      openBtn.style.fontSize = '12px';
+      openBtn.onclick = openWindow;
+
+      row.append(nameLabel, openBtn);
+      histogramsPanel.appendChild(row);
+    }
+
+    addHistogramRow('Type', 'openPolyhedraTypeHistogram', addPolyhedraTypeHistogramPanel);
+    addHistogramRow('Inspector', 'openPolyhedronInspector', addPolyhedronInspectorPanel);
+    addHistogramRow('Connectivity', 'openPolyhedraConnectivityHistogram', addPolyhedraConnectivityHistogramPanel);
+
+    group.appendChild(histogramsPanel);
+  }
 
   const panel = document.createElement('div');
   panel.id = 'polyhedraSettingsPanel';
