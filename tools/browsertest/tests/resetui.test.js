@@ -7,8 +7,8 @@
 //   2. For a `barCollapsed` panel (Files) a body the user folded on top of
 //      the thin strip leaves no visible title AND no visible body:
 //      indistinguishable from being gone. Reset UI must reopen the body to
-//      its default; the per-panel "⌂ restore default position" button must
-//      NOT (narrower, placement-only reset).
+//      its default; the per-panel ≡ menu's "Position ▸ Default" must NOT
+//      (narrower, placement-only reset).
 'use strict';
 const H = require('../harness');
 
@@ -50,18 +50,39 @@ const snap = (page, id) => page.evaluate((pid) => {
   H.check('Reset UI reopens the Files panel body (its default is expanded)',
     !afterReset.collapsed && afterReset.h > 100, JSON.stringify(afterReset));
 
-  // 3. The per-panel "restore default position" (⌂) button is narrower: it
-  //    must NOT force the body open, only fix placement/bar state.
+  // 3. The per-panel ≡ menu's "Position ▸ Default" is narrower: it must NOT
+  //    force the body open, only fix placement/bar state.
   await page.evaluate(() => {
     document.querySelector('.cv-panel[data-panel-id="files"] .cv-panel-fold').click();
   });
   await page.evaluate(() => {
-    document.querySelector('.cv-panel[data-panel-id="files"] .cv-panel-home').click();
+    document.querySelector('.cv-panel[data-panel-id="files"] .cv-panel-menu-btn').click();
+  });
+  await page.waitForTimeout(100);
+  const menuShape = await page.evaluate(() => {
+    const menu = document.querySelector('.cv-panel-menu');
+    return {
+      header: menu?.querySelector('.cv-panel-menu-header')?.textContent ?? null,
+      items: [...(menu?.querySelectorAll('.cv-panel-menu-item') ?? [])].map((b) => b.textContent),
+      checked: menu?.querySelector('.cv-panel-menu-item.checked')?.textContent ?? null,
+    };
+  });
+  H.check('≡ menu shows a Position section with the four choices',
+    menuShape.header === 'Position'
+      && JSON.stringify(menuShape.items) === JSON.stringify(['Float', 'Left dock', 'Right dock', 'Default']),
+    JSON.stringify(menuShape));
+  H.check('current position (Left dock) is check-marked', menuShape.checked === 'Left dock',
+    String(menuShape.checked));
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.cv-panel-menu-item')]
+      .find((b) => b.textContent === 'Default')?.click();
   });
   await page.waitForTimeout(200);
   const afterHome = await snap(page, 'files');
-  H.check('the per-panel restore-position button still leaves collapsed state as the user left it',
+  H.check('Position ▸ Default still leaves collapsed state as the user left it',
     afterHome.collapsed && afterHome.h < 10, JSON.stringify(afterHome));
+  H.check('menu closed after selecting an item',
+    await page.evaluate(() => !document.querySelector('.cv-panel-menu')));
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

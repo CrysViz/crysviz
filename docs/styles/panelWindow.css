@@ -175,9 +175,8 @@
 }
 
 .cv-panel-fold,
-.cv-panel-home,
+.cv-panel-menu-btn,
 .cv-panel-barhide,
-.cv-panel-dock,
 .cv-panel-close {
   background: none;
   border: none;
@@ -190,9 +189,8 @@
 }
 
 .cv-panel-fold:hover,
-.cv-panel-home:hover,
+.cv-panel-menu-btn:hover,
 .cv-panel-barhide:hover,
-.cv-panel-dock:hover,
 .cv-panel-close:hover {
   background: var(--hover-color);
 }
@@ -213,9 +211,58 @@
   white-space: nowrap;
 }
 
-.cv-panel-dock,
+.cv-panel-menu-btn,
 .cv-panel-close {
   font-size: calc(14px * var(--cv-font-scale, 1));
+}
+
+/* ---- ≡ window menu (dropdown, portaled to <body> so #ui's scroll container
+   can't clip it — see PanelWindow._openMenu) ---- */
+.cv-panel-menu {
+  position: fixed;
+  z-index: 3200; /* above floating windows and the fullscreen-item overlay */
+  min-width: 140px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--popup-bg, rgba(30, 30, 30, 0.95));
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+/* Greyish section header ("Position", ...). */
+.cv-panel-menu-header {
+  padding: 4px 8px 2px;
+  font-size: calc(10.5px * var(--cv-font-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-fg, #9aa0a6);
+}
+
+.cv-panel-menu-item {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  text-align: left;
+  padding: 4px 8px 4px 22px;
+  position: relative;
+  font-size: calc(12.5px * var(--cv-font-scale, 1));
+  color: var(--panel-fg);
+  cursor: pointer;
+}
+
+.cv-panel-menu-item:hover {
+  background: var(--hover-color);
+}
+
+/* Checkmark on the item matching the window's current state. */
+.cv-panel-menu-item.checked::before {
+  content: "✓";
+  position: absolute;
+  left: 7px;
+  color: var(--highlight-color, #00bcd4);
 }
 
 /* The generic .info-button rule sizes it for a standalone corner badge

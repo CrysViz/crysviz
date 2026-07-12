@@ -1,10 +1,18 @@
 // Unified panel/window component. Every UI panel is one of these: a small
-// title bar (drag grip, collapse/expand triangle, title, dock/undock toggle,
+// title bar (drag grip, collapse/expand triangle, title, ≡ window menu,
 // optional close button) above a content body. A panel is either docked in
 // the LEFT dock (stacked inside #dock in the side panel), docked in the
 // RIGHT dock (a tab in the wide right pane — ui/panels/RightDock.js; the
 // title bar is hidden there, the tab is the chrome), or "floating" (a
 // fixed-position window over the canvas). dock ∈ {'left','right',false}.
+//
+// The ≡ button opens a dropdown menu of window options. Its first section is
+// always "Position" (Float / Left dock / Right dock / Default — replacing the
+// old ⌂ and ↦/⇤ title-bar buttons); a panel definition can append its own
+// sections via def.menuSections — an array (or a function of the panel
+// returning an array, for dynamic state) of
+//   { title: string, items: [{ label, checked?, onSelect() }] }
+// e.g. a future color-bar window offering Vertical/Horizontal orientation.
 //
 // This class owns the per-window DOM and behavior: collapse/expand (including
 // the expand-upward rule near the bottom viewport edge), floating drag with
@@ -12,7 +20,8 @@
 // dock order, drag-to-reorder, persistence) live in PanelManager.js and are
 // reached through the `hooks` object passed to the constructor:
 //   beforeExpand(panel) -> boolean   lazy content build; false vetoes expand
-//   onToggleDock(panel)              dock/undock button pressed
+//   positionPanel(panel, mode)       ≡ menu Position action; mode is one of
+//                                    'float' | 'left' | 'right' | 'default'
 //   onClose(panel)                   close button pressed (closable panels)
 //   onLayoutChange()                 any persistable state changed
 //   beginDockReorder(panel, event)   drag started on a docked panel's title bar
@@ -120,23 +129,19 @@ export class PanelWindow {
       infoBtn.addEventListener('click', () => showInfoPanel(def.infoMd));
     }
 
-    const homeBtn = document.createElement('button');
-    homeBtn.type = 'button';
-    homeBtn.className = 'cv-panel-home';
-    homeBtn.title = 'Restore default position';
-    homeBtn.textContent = '⌂';
+    // ≡ window menu (Position section + any def.menuSections) — replaces the
+    // old ⌂ restore-default and ↦/⇤ dock-toggle buttons.
+    const menuBtn = document.createElement('button');
+    menuBtn.type = 'button';
+    menuBtn.className = 'cv-panel-menu-btn';
+    menuBtn.title = 'Window options';
+    menuBtn.textContent = '≡';
 
     const barBtn = document.createElement('button');
     barBtn.type = 'button';
     barBtn.className = 'cv-panel-barhide';
     barBtn.title = 'Hide title bar (double-click the strip to restore)';
     barBtn.textContent = '―';
-
-    const dockBtn = document.createElement('button');
-    dockBtn.type = 'button';
-    dockBtn.className = 'cv-panel-dock';
-    dockBtn.title = 'Undock';
-    dockBtn.textContent = '↦';
 
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
@@ -149,9 +154,8 @@ export class PanelWindow {
     bar.appendChild(fold);
     bar.appendChild(title);
     if (infoBtn) bar.appendChild(infoBtn);
-    bar.appendChild(homeBtn);
+    bar.appendChild(menuBtn);
     bar.appendChild(barBtn);
-    bar.appendChild(dockBtn);
     bar.appendChild(closeBtn);
 
     // Round compact-mode icon button (hidden until .cv-compact via CSS). Lives
@@ -182,18 +186,18 @@ export class PanelWindow {
     this.titlebar = bar;
     this.titleEl = title;
     this.foldBtn = fold;
-    this.dockBtn = dockBtn;
     this.body = body;
+    this._menuEl = null;      // the open ≡ dropdown, if any (portaled to body)
+    this._menuCleanup = null; // outside-click/Escape listeners teardown
 
     fold.addEventListener('click', () => this.toggleCollapsed());
-    homeBtn.addEventListener('click', () => this.hooks.onResetPanel(this));
+    menuBtn.addEventListener('click', () => this._toggleMenu(menuBtn));
     barBtn.addEventListener('click', () => {
       // Hiding the bar of a collapsed window would leave only the thin
       // strip — open the body along with it.
       if (this.collapsed) this.expand();
       this.collapseBar();
     });
-    dockBtn.addEventListener('click', () => this.hooks.onToggleDock(this));
     closeBtn.addEventListener('click', () => this.hooks.onClose(this));
 
     bar.addEventListener('pointerdown', (e) => this._onTitlebarPointerDown(e));
@@ -317,8 +321,97 @@ export class PanelWindow {
   }
 
   remove() {
+    this._closeMenu();
     this._sizeObserver.disconnect();
     this.el.remove();
+  }
+
+  // ---- ≡ window menu -------------------------------------------------------
+
+  /** The menu's sections: the built-in Position section first, then whatever
+   *  the panel definition contributes via def.menuSections (see the header
+   *  comment for the shape). */
+  _menuSections() {
+    const mode = this.dock === 'right' ? 'right' : (this.dock === 'left' ? 'left' : 'float');
+    const move = (m) => { this.hooks.positionPanel(this, m); };
+    const sections = [{
+      title: 'Position',
+      items: [
+        { label: 'Float', checked: mode === 'float', onSelect: () => move('float') },
+        { label: 'Left dock', checked: mode === 'left', onSelect: () => move('left') },
+        { label: 'Right dock', checked: mode === 'right', onSelect: () => move('right') },
+        { label: 'Default', onSelect: () => move('default') },
+      ],
+    }];
+    const extra = typeof this.def.menuSections === 'function'
+      ? this.def.menuSections(this)
+      : this.def.menuSections;
+    if (Array.isArray(extra)) sections.push(...extra);
+    return sections;
+  }
+
+  _toggleMenu(anchorBtn) {
+    if (this._menuEl) this._closeMenu();
+    else this._openMenu(anchorBtn);
+  }
+
+  /** Build and show the dropdown. Portaled to document.body (position:fixed):
+   *  a docked window's title bar lives inside #ui's scroll container, which
+   *  would clip an in-place dropdown. */
+  _openMenu(anchorBtn) {
+    const menu = document.createElement('div');
+    menu.className = 'cv-panel-menu';
+    for (const section of this._menuSections()) {
+      if (section.title) {
+        const header = document.createElement('div');
+        header.className = 'cv-panel-menu-header';
+        header.textContent = section.title;
+        menu.appendChild(header);
+      }
+      for (const item of section.items || []) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cv-panel-menu-item' + (item.checked ? ' checked' : '');
+        btn.textContent = item.label;
+        btn.addEventListener('click', () => {
+          this._closeMenu();
+          item.onSelect();
+        });
+        menu.appendChild(btn);
+      }
+    }
+    document.body.appendChild(menu);
+    // Below the ≡ button, kept inside the viewport (measure after append).
+    const r = anchorBtn.getBoundingClientRect();
+    const mw = menu.offsetWidth;
+    const mh = menu.offsetHeight;
+    menu.style.left = `${Math.max(VIEWPORT_MARGIN, Math.min(r.left, window.innerWidth - mw - VIEWPORT_MARGIN))}px`;
+    menu.style.top = r.bottom + 4 + mh > window.innerHeight - VIEWPORT_MARGIN
+      ? `${Math.max(VIEWPORT_MARGIN, r.top - 4 - mh)}px`
+      : `${r.bottom + 4}px`;
+    this._menuEl = menu;
+
+    const onOutside = (ev) => {
+      const t = /** @type {Node} */ (ev.target);
+      if (menu.contains(t) || anchorBtn.contains(t)) return;
+      this._closeMenu();
+    };
+    const onKey = (ev) => { if (ev.key === 'Escape') this._closeMenu(); };
+    // Capture-phase so a click that some panel handler swallows still closes
+    // the menu; registered after this click event finished bubbling.
+    document.addEventListener('pointerdown', onOutside, true);
+    document.addEventListener('keydown', onKey, true);
+    this._menuCleanup = () => {
+      document.removeEventListener('pointerdown', onOutside, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }
+
+  _closeMenu() {
+    this._menuEl?.remove();
+    this._menuEl = null;
+    this._menuCleanup?.();
+    this._menuCleanup = null;
   }
 
   // ---- dock / float transitions (DOM moves are done by PanelManager) ------
@@ -329,8 +422,6 @@ export class PanelWindow {
     this.dockShifted = false;
     this.el.classList.add('cv-docked');
     this.el.classList.remove('cv-floating', 'cv-right-docked', 'cv-front');
-    this.dockBtn.textContent = '↦';
-    this.dockBtn.title = 'Undock';
     // Clear floating geometry.
     const s = this.el.style;
     s.left = s.right = s.top = s.bottom = s.zIndex = '';
@@ -354,8 +445,6 @@ export class PanelWindow {
     this.dock = false;
     this.el.classList.add('cv-floating');
     this.el.classList.remove('cv-docked', 'cv-right-docked', 'cv-front');
-    this.dockBtn.textContent = '⇤';
-    this.dockBtn.title = 'Dock into side panel';
     this.applyFloatPosition(pos);
     this.raise();
   }

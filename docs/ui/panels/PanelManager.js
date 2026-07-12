@@ -104,10 +104,36 @@ const hooks = {
     }
     return true;
   },
-  onToggleDock(panel) {
-    if (panel.docked) floatPanel(panel);
-    else redockPanel(panel); // restore the dock slot it last occupied
-    refreshCompactFloatingPanels(); // dock occupancy changed
+  // The ≡ menu's Position section: move a window to one of its three homes,
+  // or back to its per-panel defaults (the old ⌂ button).
+  positionPanel(panel, mode) {
+    if (mode === 'default') {
+      applyPanelDefaults(panel);
+    } else if (mode === 'float') {
+      if (panel.docked) floatPanel(panel); // pops out near its current spot
+    } else if (mode === 'left') {
+      if (panel.dock !== 'left') {
+        if (panel.dock === 'right') rightUndockPanel(panel);
+        redockPanel(panel); // restores the slot it last occupied
+      }
+    } else if (mode === 'right') {
+      if (panel.dock !== 'right') {
+        // Leaving the left dock: remember the slot (same as floatPanel does)
+        // so a later "Left dock" returns the window to where it sat.
+        if (panel.dock === 'left') {
+          const siblings = dockedPanels();
+          const idx = siblings.indexOf(panel);
+          const after = idx >= 0 ? siblings[idx + 1] : null;
+          panel.redockBeforeId = after ? after.id : null;
+          panel.redockRemembered = true;
+        }
+        rightDockPanel(panel, { front: true, expand: true });
+        setRightDockCollapsed(false);
+        resequenceSortKeys();
+      }
+    }
+    refreshCompactFloatingPanels(); // dock occupancy may have changed
+    scheduleSave();
   },
   onClose(panel) {
     if (panel.def.onClose) panel.def.onClose(panel);
@@ -118,10 +144,6 @@ const hooks = {
     else removePanel(panel.id);
   },
   onLayoutChange: scheduleSave,
-  onResetPanel(panel) {
-    applyPanelDefaults(panel);
-    refreshCompactFloatingPanels();
-  },
   // A compact panel's icon<->toolbar height change moves anything stacked
   // below it; re-derive the stack the same frame.
   onCompactResize(panel) {

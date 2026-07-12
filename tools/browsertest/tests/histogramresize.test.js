@@ -1,32 +1,82 @@
-// Docked histogram canvas must resize to its panel width, not stay pinned to
-// the width it was created at (BondAnalysisPanel.js addHistogramPanel).
+// The Bond Length Histogram window moved between its three homes via the ≡
+// window menu's Position section, and its Plotly chart resizing to each home:
+// it opens right-docked (wide), "Left dock" squeezes it into the narrow side
+// panel (the chart must follow the panel width, not stay pinned to the width
+// it was created at), "Float" pops it out, and "Right dock" returns it.
 'use strict';
 const H = require('../harness');
+
+async function pickPosition(page, panelId, label) {
+  await page.evaluate((id) => {
+    document.querySelector(`.cv-panel[data-panel-id="${id}"] .cv-panel-menu-btn`).click();
+  }, panelId);
+  await page.waitForTimeout(100);
+  await page.evaluate((label) => {
+    [...document.querySelectorAll('.cv-panel-menu-item')]
+      .find((b) => b.textContent === label)?.click();
+  }, label);
+  await page.waitForTimeout(500);
+}
+
+function histState(page) {
+  return page.evaluate(async () => {
+    const { getPanel } = await import('./ui/panels/PanelManager.js');
+    const p = getPanel('bondLengthHistogram');
+    const el = p?.el;
+    const body = el?.querySelector('.cv-panel-body');
+    const plot = document.getElementById('bondLengthHistogramPlot');
+    return {
+      dock: p?.dock ?? null,
+      bodyW: body?.getBoundingClientRect().width ?? 0,
+      plotW: plot?.getBoundingClientRect().width ?? 0,
+      inLeftDock: !!document.querySelector('#dock .cv-panel[data-panel-id="bondLengthHistogram"]'),
+      inRightDock: !!document.querySelector('#splitPaneBody > .cv-panel[data-panel-id="bondLengthHistogram"]'),
+      floating: !!el?.classList.contains('cv-floating'),
+    };
+  });
+}
 
 (async () => {
   const { browser, page, errors } = await H.launchApp();
   await H.loadDefaultStructure(page);
 
+  // Open via the Bonds window's single button: right-docked, wide.
   await page.evaluate(async () => {
-    const { addHistogramPanel } = await import('./ui/AnalysisPanels/BondAnalysisPanel.js');
-    addHistogramPanel([[1.9, 2.0, 2.1, 2.2]], ['Si-Si']);
+    const { getPanel } = await import('./ui/panels/PanelManager.js');
+    getPanel('bonds').expand();
   });
   await page.waitForTimeout(300);
+  await H.clickById(page, 'openBondLengthHistogram');
+  await page.waitForTimeout(800); // Plotly first render
+  let s = await histState(page);
+  H.check('histogram opens right-docked with a wide chart',
+    s.dock === 'right' && s.inRightDock && s.plotW > 300, JSON.stringify(s));
+  const wideW = s.plotW;
 
-  // Dock the floating histogram panel, then compare canvas width to the dock.
-  await page.evaluate(() => {
-    document.querySelector('.cv-panel[data-panel-id="histogram"] .cv-panel-dock').click();
-  });
-  await page.waitForTimeout(400);
+  // ≡ Position ▸ Left dock: the chart must squeeze to the side panel's width.
+  await pickPosition(page, 'bondLengthHistogram', 'Left dock');
+  await page.waitForTimeout(600); // ResizeObserver + Plotly relayout
+  s = await histState(page);
+  H.check('Position ▸ Left dock moves the window into #dock',
+    s.dock === 'left' && s.inLeftDock, JSON.stringify(s));
+  H.check('docked histogram chart fits its panel', s.plotW <= s.bodyW + 2,
+    `plot=${s.plotW} body=${s.bodyW}`);
+  H.check('chart shrank from its right-dock width', s.plotW < wideW - 20,
+    `plot=${s.plotW} was=${wideW}`);
 
-  const widths = await page.evaluate(() => {
-    const panelBody = document.getElementById('cvPanelBody-histogram');
-    const canvas = panelBody.querySelector('#histCanvas');
-    return { panel: panelBody.clientWidth, canvas: canvas.clientWidth };
-  });
-  H.check('docked histogram canvas fits its panel', widths.canvas <= widths.panel + 2,
-    `canvas=${widths.canvas} panel=${widths.panel}`);
-  H.check('canvas shrank from its 600px floating default', widths.canvas < 500, `canvas=${widths.canvas}`);
+  // ≡ Position ▸ Float: pops out over the scene.
+  await pickPosition(page, 'bondLengthHistogram', 'Float');
+  s = await histState(page);
+  H.check('Position ▸ Float pops the window out', s.dock === false && s.floating,
+    JSON.stringify(s));
+
+  // ≡ Position ▸ Right dock: returns as the front tab.
+  await pickPosition(page, 'bondLengthHistogram', 'Right dock');
+  await page.waitForTimeout(600);
+  s = await histState(page);
+  H.check('Position ▸ Right dock returns the window to the right dock',
+    s.dock === 'right' && s.inRightDock, JSON.stringify(s));
+  H.check('chart grew back to the wide dock', s.plotW > 300, `plot=${s.plotW}`);
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
