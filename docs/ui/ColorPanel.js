@@ -969,6 +969,12 @@ export function addColorPanel(target = "colorContainer") {
         for (const key of Object.keys(styles ?? {})) delete styles[key].material;
       }
     }
+    // Already-mounted material editors (Structure-window species/atom/bond
+    // rows, FieldPanel) seeded from the OLD map at build time — re-sync them
+    // to the new effective defaults.
+    document.querySelectorAll(".material-editor").forEach((el) => {
+      /** @type {HTMLElement & { syncFromStore?: () => void }} */ (el).syncFromStore?.();
+    });
     // The tracer SceneEncoder fingerprint picks the map change up on the next
     // requested frame (re-encode + accumulation reset); raster is unaffected.
     requestRender();

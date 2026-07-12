@@ -200,24 +200,44 @@ function changedPixelCount(fileA, fileB) {
   // --- Color-palette parity: switching the map wipes manual material edits --------
   const wipe = await page.evaluate(async () => {
     const { fileBrowser } = await import('./state/store.js');
+    const { createMaterialEditor } = await import('./ui/StructureInfoPanel/components/MaterialEditor.js');
     const structure = fileBrowser.selectedStructure;
     structure.atomMaterials = { Cu: { type: 'glass', ior: 2.0 } };
     structure.atomUserMaterials = { 0: { type: 'emissive', intensity: 3 } };
     structure.bondCategoryStyles['Cu-O'] = { color: 0x123456, material: { type: 'metal' } };
+    // a live editor (map is 'standard' here, Cu has the manual glass entry):
+    // the switch must re-sync it to the new map's Cu preset
+    const editor = createMaterialEditor(
+      () => structure.atomMaterials?.Cu,
+      () => {},
+      { getDefault: () => structure.getDefaultElementMaterial('Cu') });
+    document.body.appendChild(editor);
+    const sel = editor.querySelector('.material-type-select');
+    const editorBefore = sel.value; // 'glass' from the manual entry
     const select = /** @type {HTMLSelectElement} */ (document.getElementById('atomsElementMaterialsMapMenu'));
     select.value = 'crysviz';
     select.dispatchEvent(new Event('change'));
+    const editorAfter = {
+      type: sel.value,
+      rough: editor.querySelector('.material-roughness-row input')?.value,
+    };
+    editor.remove();
     return {
       atomMaterials: Object.keys(structure.atomMaterials).length,
       atomUserMaterials: Object.keys(structure.atomUserMaterials).length,
       bondMaterialGone: structure.bondCategoryStyles['Cu-O'].material === undefined,
       bondColorKept: structure.bondCategoryStyles['Cu-O'].color === 0x123456,
+      editorBefore, editorAfter,
     };
   });
   H.check('map switch wipes manual material edits but keeps non-material style fields',
     wipe.atomMaterials === 0 && wipe.atomUserMaterials === 0
       && wipe.bondMaterialGone && wipe.bondColorKept,
     JSON.stringify(wipe));
+  H.check('map switch re-syncs already-mounted material editors to the new defaults',
+    wipe.editorBefore === 'glass' && wipe.editorAfter.type === 'metal'
+      && Math.abs(parseFloat(wipe.editorAfter.rough) - 0.05) < 1e-9,
+    JSON.stringify({ before: wipe.editorBefore, after: wipe.editorAfter }));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);
