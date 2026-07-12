@@ -8,7 +8,8 @@ const H = require('../harness');
 const EXPECTED_PANEL_IDS = [
   'measure', 'view', 'info', 'backend', 'files', 'features', 'trajectory',
   'comparison', 'forces', 'spins', 'field', 'planes', 'bonds', 'cell',
-  'symmetry', 'polyhedra', 'visual', 'eos', 'splitDemo', 'landscape', 'settings',
+  'symmetry', 'polyhedra', 'visual', 'eos', 'eosPlots', 'splitDemo', 'landscape',
+  'landscapePlots', 'settings',
 ];
 
 (async () => {

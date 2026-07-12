@@ -158,9 +158,9 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
     `left=${s.left} saved=${JSON.stringify(s.saved)}`);
 
   // -- a remembered dock order differing from registration order is restored,
-  //    exercised through the v2 -> v3 migration path: float positions and the
-  //    dock order survive, while the old eos/landscape/splitDemo stub entries
-  //    are dropped (they default to right-dock/closed now) ---------------------
+  //    exercised through the v2 -> v4 migration path: float positions and the
+  //    dock order survive, while the old eos stub entry is dropped (eos gets
+  //    its new default: a left-dock controls window) ---------------------------
   await page.evaluate(() => {
     localStorage.setItem('panelLayout', JSON.stringify({
       version: 2,
@@ -181,21 +181,61 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
         .map((el) => el.dataset.panelId),
       version: layout.version,
       viewPos: layout.panels.view?.pos || null,
-      eosClosed: !!getPanel('eos')?.closed,
       eosDock: getPanel('eos')?.dock ?? null,
-      eosInLeftDock: !!document.querySelector('#dock .cv-panel[data-panel-id="eos"]'),
+      eosCollapsed: !!getPanel('eos')?.collapsed,
+      plotsClosed: !!getPanel('eosPlots')?.closed,
+      plotsDock: getPanel('eosPlots')?.dock ?? null,
     };
   });
   H.check('v2 blob migrated: remembered dock order restored',
-    migrated.domOrder[0] === 'files' && migrated.domOrder[1] === 'backend',
-    JSON.stringify(migrated.domOrder.slice(0, 3)));
-  H.check('migration re-saves as v3', migrated.version === 3, String(migrated.version));
+    migrated.domOrder.indexOf('files') !== -1
+      && migrated.domOrder.indexOf('files') < migrated.domOrder.indexOf('backend'),
+    JSON.stringify(migrated.domOrder.slice(0, 4)));
+  H.check('migration re-saves as v4', migrated.version === 4, String(migrated.version));
   H.check('migration keeps the v2 float position', migrated.viewPos
     && migrated.viewPos.left === 222 && migrated.viewPos.top === 111,
     JSON.stringify(migrated.viewPos));
-  H.check('migration drops the old eos stub entry (new defaults: right dock, closed)',
-    migrated.eosClosed && migrated.eosDock === 'right' && !migrated.eosInLeftDock,
+  H.check('migration drops the old eos stub entry (new defaults apply)',
+    migrated.eosDock === 'left' && migrated.eosCollapsed
+      && migrated.plotsClosed && migrated.plotsDock === 'right',
     JSON.stringify(migrated));
+
+  // -- a v3 blob (the merged-window dev iteration) also migrates: its stale
+  //    eos/landscape right-dock entries are dropped, everything else survives --
+  await page.evaluate(() => {
+    localStorage.setItem('panelLayout', JSON.stringify({
+      version: 3,
+      dockOrder: ['files', 'backend'],
+      rightDock: { order: ['eos', 'splitDemo'], front: 'eos', collapsed: false, fraction: 0.4 },
+      panels: {
+        view: { dock: false, closed: false, collapsed: false, bar: false, pos: { left: 333, top: 99 } },
+        eos: { dock: 'right', closed: false, collapsed: false, bar: false },
+        landscape: { dock: 'right', closed: true, collapsed: false, bar: false },
+      },
+    }));
+  });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(5000);
+  const v3m = await page.evaluate(async () => {
+    const { getPanel } = await import('./ui/panels/PanelManager.js');
+    const layout = JSON.parse(localStorage.getItem('panelLayout'));
+    return {
+      version: layout.version,
+      viewPos: layout.panels.view?.pos || null,
+      rightOrder: layout.rightDock.order,
+      rightFraction: layout.rightDock.fraction,
+      eosDock: getPanel('eos')?.dock ?? null,
+      eosClosed: !!getPanel('eos')?.closed,
+      landscapeDock: getPanel('landscape')?.dock ?? null,
+    };
+  });
+  H.check('v3 blob migrated to v4, float pos + pane fraction kept',
+    v3m.version === 4 && v3m.viewPos?.left === 333 && Math.abs(v3m.rightFraction - 0.4) < 1e-6,
+    JSON.stringify(v3m));
+  H.check('v3 stale eos/landscape right-dock entries dropped (left-dock defaults apply)',
+    v3m.eosDock === 'left' && !v3m.eosClosed && v3m.landscapeDock === 'left'
+      && !v3m.rightOrder.includes('eos'),
+    JSON.stringify(v3m));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

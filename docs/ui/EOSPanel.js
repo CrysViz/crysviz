@@ -1,17 +1,15 @@
-// EOS (Birch-Murnaghan equation-of-state) fitting window: reads a
+// EOS (Birch-Murnaghan equation-of-state) fitting control window: reads a
 // Pressure/Energy/Volume dataset, fits it with SciPy (via Pyodide) and shows
-// the fit parameters and the E-V/P-V plots — all in ONE window body. The
-// window defaults to the wide right dock (ui/panels/RightDock.js) where the
-// plots get room, but renders the same content floating or left-docked (the
-// plot stack keeps a min-height and the body scrolls).
+// the fit parameters; the E-V/P-V plots live in their own window
+// (EOSPlotsPanel.js, defaulting to the wide right dock), which THIS module
+// activates whenever there is something to show — a dataset loaded or re-fit
+// opens it, resetting the fit closes it.
 
 import { CONVERSION_FACTORS, detectColumns, parseReferenceData, formatParam } from '../eos/eosMath.js';
 import { fitEOS, fitReferencePV } from '../eos/eosFit.js';
-import { plotEV, plotPV, clearPlot, togglePlotTheme, exportPlotAsPNG, resizePlot } from '../eos/eosPlots.js';
-import { expandSplitItem, closeExpandedSplitItem } from './panels/RightDock.js';
-
-let showErrorPlots = true; // the P-V card's "Show Error Plots" mini toggle
-let plotResizeObserver = null; // refits the Plotly charts to the plot stack
+import { plotEV, plotPV, clearPlot } from '../eos/eosPlots.js';
+import { setRedrawHandler, setPlotVisible, getShowErrorPlots } from './EOSPlotsPanel.js';
+import { openPanel, closePanel } from './panels/PanelManager.js';
 
 const state = {
   originalColumnData: null, // {volumes, energies, pressures, columnInfo} verbatim from file
@@ -53,15 +51,14 @@ function isPlotExpanded(plotId) {
   return !!document.getElementById(`${plotId}-wrapper`)?.classList.contains('expanded');
 }
 
-/** Show/hide one plot's card (e.g. the E-V plot when a dataset has no energy
- *  column) — the other plot grows to fill the freed space. */
-function setPlotVisible(plotId, visible) {
-  const wrapper = document.getElementById(`${plotId}-wrapper`);
-  if (wrapper) wrapper.hidden = !visible;
-}
-
 function safeRedraw(plotId) {
   redraw(plotId).catch((error) => console.error(error));
+}
+
+/** There is something to show: make sure the plots window is open (front tab
+ *  of the right dock by default — or wherever the user last put it). */
+function ensurePlotsWindowOpen() {
+  openPanel('eosPlots');
 }
 
 async function redraw(plotId) {
@@ -76,7 +73,7 @@ async function redraw(plotId) {
       evParams: state.evResult?.params,
       referenceData: state.referenceRaw,
       referenceFit: state.referenceFit,
-      showErrorPlots,
+      showErrorPlots: getShowErrorPlots(),
     }, isExpanded);
   }
 }
@@ -108,6 +105,9 @@ function updateResultsUI(container) {
 }
 
 async function fitAndDisplay(container) {
+  // A dataset is loaded (or re-fit) — open the plots window BEFORE drawing so
+  // the plot elements exist and the user sees the result appear.
+  ensurePlotsWindowOpen();
   try {
     const si = toSI(state.originalColumnData, state.units);
     const hasEnergy = Array.isArray(si.energies);
@@ -147,6 +147,9 @@ async function resetFit(container) {
   if (info) info.innerHTML = '';
   container.querySelector('.eos-results').hidden = true;
   setPlotVisible('ev-plot', false);
+  // Nothing left to show — close the plots window immediately (it reopens on
+  // the next fit); the plot clearing below may first await Plotly loading.
+  closePanel('eosPlots');
   await Promise.all([clearPlot('ev-plot'), clearPlot('pv-plot')]);
   setStatus(container, 'Fit cleared.');
 }
@@ -189,6 +192,9 @@ function rescaleReference() {
  *  data and redraw. */
 async function refitReference(container) {
   if (!state.referenceRawParsed) return;
+  // Reference curves render into the P-V plot, which only exists once a
+  // primary fit produced something to show.
+  if (state.pvResult) ensurePlotsWindowOpen();
   rescaleReference();
   // Move the scatter points immediately (doesn't need a re-fit); the fitted
   // reference curve below catches up once SciPy responds.
@@ -352,79 +358,7 @@ export function addEOSPanel(target = 'cvPanelBody-eos') {
         </div>
       </div>
     </div>
-
-    <div class="cv-plot-stack">
-      <div class="split-item" id="ev-plot-wrapper">
-        <h4>E vs V</h4>
-        <div id="ev-plot" class="split-item-body"></div>
-        <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
-        <div class="split-item-actions">
-          <button type="button" class="split-item-action-btn" data-split-action="theme" data-split-item="ev-plot" title="Toggle light/dark">🌓</button>
-          <button type="button" class="split-item-action-btn" data-split-action="export" data-split-item="ev-plot" title="Export PNG">📥</button>
-          <button type="button" class="split-item-action-btn" data-split-action="expand" data-split-item="ev-plot" title="Expand">⛶</button>
-        </div>
-      </div>
-      <div class="split-item" id="pv-plot-wrapper">
-        <h4>P vs V</h4>
-        <div id="pv-plot" class="split-item-body"></div>
-        <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
-        <div class="split-item-actions eos-plot-actions-split">
-          <label class="eos-mini-toggle toggle_row toggle_container">
-            <span class="toggle_switch">
-              <input type="checkbox" id="eosErrorPlotsToggleMini" data-split-action="toggle-error-plots" ${showErrorPlots ? 'checked' : ''}>
-              <span class="toggle_slider"></span>
-            </span>
-            <span class="toggle_text">Show Error Plots</span>
-          </label>
-          <div class="eos-plot-actions-right">
-            <button type="button" class="split-item-action-btn" data-split-action="theme" data-split-item="pv-plot" title="Toggle light/dark">🌓</button>
-            <button type="button" class="split-item-action-btn" data-split-action="export" data-split-item="pv-plot" title="Export PNG">📥</button>
-            <button type="button" class="split-item-action-btn" data-split-action="expand" data-split-item="pv-plot" title="Expand">⛶</button>
-          </div>
-        </div>
-      </div>
-    </div>
   `;
-
-  // One delegated listener for every [data-split-action] button/toggle in the
-  // plot cards — works the same right-docked, floating or left-docked.
-  container.addEventListener('click', (ev) => {
-    const btn = /** @type {HTMLElement|null} */ (
-      /** @type {HTMLElement} */ (ev.target).closest('[data-split-action]'));
-    if (!btn) return;
-    const action = btn.dataset.splitAction;
-    const itemId = btn.dataset.splitItem ?? null;
-    if (action === 'theme') {
-      togglePlotTheme(itemId);
-      safeRedraw(itemId);
-    } else if (action === 'export') {
-      exportPlotAsPNG(itemId).catch((error) => console.error('EOS plot export failed:', error));
-    } else if (action === 'toggle-error-plots') {
-      showErrorPlots = /** @type {HTMLInputElement} */ (btn).checked;
-      safeRedraw('pv-plot');
-    } else if (action === 'expand') {
-      expandSplitItem(btn.closest('.split-item'));
-      safeRedraw(itemId);
-    } else if (action === 'close') {
-      closeExpandedSplitItem();
-      safeRedraw('ev-plot');
-      safeRedraw('pv-plot');
-    }
-  });
-
-  // Refit the Plotly charts whenever the plot stack's size changes: right-dock
-  // handle drags, tab switches (display none -> flex), floating-window growth,
-  // browser resizes. rAF-debounced — ResizeObserver can fire in bursts.
-  plotResizeObserver?.disconnect();
-  let resizeRaf = 0;
-  plotResizeObserver = new ResizeObserver(() => {
-    cancelAnimationFrame(resizeRaf);
-    resizeRaf = requestAnimationFrame(() => {
-      resizePlot('ev-plot');
-      resizePlot('pv-plot');
-    });
-  });
-  plotResizeObserver.observe(container.querySelector('.cv-plot-stack'));
 
   const energySel = container.querySelector('#eosEnergyUnits');
   const pressureSel = container.querySelector('#eosPressureUnits');
@@ -471,8 +405,10 @@ export function addEOSPanel(target = 'cvPanelBody-eos') {
 
   wireCopyToClipboard(container);
 
-  // Re-populate the panel from already-loaded data (e.g. the window body was
-  // rebuilt after a full remove/re-register).
+  setRedrawHandler(redraw);
+
+  // Re-populate the panel from already-loaded data (e.g. re-expanding after a
+  // structure switch rebuilt this panel's body).
   if (state.pvResult) {
     updateResultsUI(container);
     setPlotVisible('ev-plot', !!state.evResult);
@@ -482,9 +418,7 @@ export function addEOSPanel(target = 'cvPanelBody-eos') {
 }
 
 export function removeEOSPanel() {
-  // Fit data intentionally persists in module state across rebuilds: the EOS
-  // dataset is independent of the loaded crystal structure. Only the plot
-  // resize observer refers to DOM that is about to go away.
-  plotResizeObserver?.disconnect();
-  plotResizeObserver = null;
+  // Fit data intentionally persists in module state across rebuilds (e.g. a
+  // structure switch): the EOS dataset is independent of the loaded crystal
+  // structure, so there is nothing structure-specific to tear down here.
 }

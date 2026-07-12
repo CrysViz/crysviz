@@ -1,28 +1,34 @@
-// Right dock with several windows (docs/ui/panels/RightDock.js): regular
-// panel windows dock on the right as TABS — #splitPaneBody hosts their
-// .cv-panel elements, exactly one is front (.cv-front, visible), and the
-// header strip / collapsed edge pull-tabs select it. Opening a second window
-// must NOT evict the first, switching tabs must not destroy either one's
-// content, and the tab ✕ closes to a detached-but-registered state
-// (closeMode:'hide') that the Features toggles reopen.
+// Right dock with several windows (docs/ui/panels/RightDock.js) and the
+// content-driven activation of the plots windows: EOS and Energy Landscape
+// are each a CONTROLS window in the left dock plus a PLOTS window that
+// defaults to the right dock and opens by itself when there is something to
+// show — dropping a P/V data file on the EOS controls, or a landscape JSON on
+// the Landscape controls. Tabs select the front window, the whole dock
+// collapses to pull-tabs, and the tab ✕ closes to a detached-but-registered
+// state (closeMode:'hide') that the next fit reopens with content intact.
 'use strict';
 const H = require('../harness');
 const path = require('path');
 
-async function openPanel(page, id) {
+async function expandPanel(page, id) {
   await page.evaluate(async (id) => {
-    const { openPanel } = await import('./ui/panels/PanelManager.js');
-    openPanel(id);
+    const { getPanel } = await import('./ui/panels/PanelManager.js');
+    getPanel(id).expand();
   }, id);
   await page.waitForTimeout(300);
 }
-async function closePanel(page, id) {
-  await page.evaluate(async (id) => {
-    const { closePanel } = await import('./ui/panels/PanelManager.js');
-    closePanel(id);
-  }, id);
-  await page.waitForTimeout(300);
+
+/** Drop a synthetic file onto an element (real DataTransfer drop event). */
+async function dropFile(page, selector, name, text) {
+  await page.evaluate(({ selector, name, text }) => {
+    const el = document.querySelector(selector);
+    const dt = new DataTransfer();
+    dt.items.add(new File([text], name, { type: 'text/plain' }));
+    el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  }, { selector, name, text });
+  await page.waitForTimeout(500);
 }
+
 function snap(page) {
   return page.evaluate(async () => {
     const { getPanel } = await import('./ui/panels/PanelManager.js');
@@ -30,7 +36,6 @@ function snap(page) {
     const clean = (s) => s.replace(/\s*▸\s*$/, '');
     const edge = [...document.querySelectorAll('#splitPaneTabs .split-pane-tab')];
     const header = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')];
-    const visible = (el) => !!el && el.getBoundingClientRect().width > 4;
     const lbl = (t) => clean(t.querySelector('.split-pane-tab-label')?.textContent || '');
     const activeEl = header.find((t) => t.classList.contains('active'));
     const docked = [...document.querySelectorAll('#splitPaneBody > .cv-panel')];
@@ -42,14 +47,14 @@ function snap(page) {
       frontId: frontEl ? frontEl.dataset.panelId : null,
       tabLabels: edge.map(lbl),
       headerLabels: header.map(lbl),
-      headerShown: visible(document.getElementById('splitPaneHeaderTabs')),
       edgeShown: getComputedStyle(document.getElementById('splitPaneTabs')).display !== 'none',
       headerHasClose: header.every((t) => !!t.querySelector('.split-pane-tab-close')),
       activeTab: activeEl ? lbl(activeEl) : '',
-      eosClosed: !!getPanel('eos')?.closed,
-      eosDock: getPanel('eos')?.dock ?? null,
-      eosToggle: document.getElementById('eosOpenToggle')?.checked ?? null,
-      eosHasContent: !!document.getElementById('eosDropZone'),
+      eosPlotsClosed: !!getPanel('eosPlots')?.closed,
+      eosPlotsDock: getPanel('eosPlots')?.dock ?? null,
+      eosInLeftDock: !!document.querySelector('#dock .cv-panel[data-panel-id="eos"]'),
+      landscapeInLeftDock: !!document.querySelector('#dock .cv-panel[data-panel-id="landscape"]'),
+      hasPlotCards: !!document.getElementById('ev-plot-wrapper') && !!document.getElementById('pv-plot-wrapper'),
     };
   });
 }
@@ -59,60 +64,52 @@ function snap(page) {
   H.check('WebGL2 available', await H.webglAvailable(page));
   await H.loadDefaultStructure(page);
 
-  // ---- closed by default: registered, detached, unchecked in Features -----
+  // ---- boot: controls windows in the left dock, plots windows closed ------
   let s = await snap(page);
-  H.check('EOS starts closed (no tab, no pane)', !s.active && s.eosClosed
-    && s.dockedIds.length === 0, JSON.stringify(s.dockedIds));
-  H.check('Features EOS toggle starts unchecked', s.eosToggle === false, String(s.eosToggle));
+  H.check('EOS + Landscape controls windows sit in the left dock',
+    s.eosInLeftDock && s.landscapeInLeftDock, JSON.stringify(s));
+  H.check('plots windows start closed (no right dock)',
+    !s.active && s.eosPlotsClosed && s.dockedIds.length === 0, JSON.stringify(s.dockedIds));
 
-  // ---- open EOS: its window docks right as the front tab ------------------
-  await openPanel(page, 'eos');
+  // ---- EOS activation: loading a dataset opens the plots window -----------
+  await expandPanel(page, 'eos'); // build the controls (rebuild lifecycle)
+  await dropFile(page, '#eosDropZone', 'pv.txt', 'P V\n10 20\n9 21\n8 22\n7 23\n6 24\n');
   s = await snap(page);
-  H.check('openPanel(eos) opens the right dock on EOS', s.active
-    && s.dockedIds.join() === 'eos' && s.frontId === 'eos', JSON.stringify(s));
-  H.check('EOS window content built into the pane', s.eosHasContent);
-  H.check('tab strip shows the single window', s.headerShown
-    && s.headerLabels.join() === 'EOS Fitting', JSON.stringify(s.headerLabels));
-  H.check('Features EOS toggle synced on', s.eosToggle === true);
-  H.check('EOS remembered as right-docked', s.eosDock === 'right' && !s.eosClosed);
+  H.check('dropping a P/V file opens the EOS plots window in the right dock',
+    s.active && s.dockedIds.join() === 'eosPlots' && s.frontId === 'eosPlots',
+    JSON.stringify(s));
+  H.check('plot cards built into the plots window', s.hasPlotCards);
+  H.check('its tab shows the plots window title', s.headerLabels.join() === 'EOS Fit',
+    JSON.stringify(s.headerLabels));
 
-  // Mark transient content state to prove tab switches never rebuild.
-  await page.evaluate(() => {
-    document.getElementById('eosEnergyUnits').value = 'Ry';
-  });
-
-  // ---- open Landscape too: EOS must survive; two tabs ---------------------
-  await openPanel(page, 'landscape');
+  // ---- Landscape activation: loading a JSON opens its plots window --------
+  await expandPanel(page, 'landscape');
+  await dropFile(page, '#landscapeControlsHost', 'scan.json', '{"not":"a real landscape"}');
   s = await snap(page);
-  H.check('opening Landscape keeps EOS docked (2 windows)',
-    s.dockedIds.length === 2 && s.dockedIds.includes('eos') && s.dockedIds.includes('landscape'),
-    JSON.stringify(s.dockedIds));
-  H.check('header tabs list both windows', s.headerShown
-    && s.headerLabels.includes('EOS Fitting') && s.headerLabels.includes('Energy Landscape'),
+  H.check('dropping a landscape JSON opens the Landscape plots window',
+    s.dockedIds.length === 2 && s.dockedIds.includes('landscapePlots')
+      && s.frontId === 'landscapePlots', JSON.stringify(s));
+  H.check('header tabs list both plots windows',
+    s.headerLabels.includes('EOS Fit') && s.headerLabels.includes('Landscape Plots'),
     JSON.stringify(s.headerLabels));
   H.check('each header tab has a close ✕', s.headerHasClose);
-  H.check('Landscape is front (just opened)', s.frontId === 'landscape'
-    && s.activeTab === 'Energy Landscape', `${s.frontId} / ${s.activeTab}`);
-  H.check('edge stack hidden while open', s.edgeShown === false);
 
   await page.screenshot({ path: path.join(__dirname, '..', 'artifacts', 'splitstack-two-windows.png') });
 
-  // ---- click the EOS header tab: front switches, nothing destroyed --------
+  // ---- click the EOS Fit tab: front switches, nothing destroyed -----------
   const eosTabPos = await page.evaluate(() => {
     const tab = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
-      .find((t) => /EOS Fitting/.test(t.textContent));
+      .find((t) => /EOS Fit/.test(t.textContent));
     const r = tab.getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   });
   await page.mouse.click(eosTabPos.x, eosTabPos.y);
   await page.waitForTimeout(250);
   s = await snap(page);
-  H.check('clicking EOS tab brings EOS front', s.frontId === 'eos' && s.activeTab === 'EOS Fitting',
-    `${s.frontId} / ${s.activeTab}`);
-  H.check('both windows still docked after switch', s.dockedIds.length === 2,
+  H.check('clicking the EOS Fit tab brings it front', s.frontId === 'eosPlots'
+    && s.activeTab === 'EOS Fit', `${s.frontId} / ${s.activeTab}`);
+  H.check('both plots windows still docked after switch', s.dockedIds.length === 2,
     JSON.stringify(s.dockedIds));
-  const units = await page.evaluate(() => document.getElementById('eosEnergyUnits').value);
-  H.check('tab switch kept EOS content state (units still Ry)', units === 'Ry', units);
 
   // ---- » collapses the whole dock: edge pull-tabs show to reopen ----------
   await page.evaluate(() => document.getElementById('splitPaneCollapseBtn').click());
@@ -125,43 +122,51 @@ function snap(page) {
   // ---- reopen via the Landscape pull-tab ----------------------------------
   await page.evaluate(() => {
     [...document.querySelectorAll('#splitPaneTabs .split-pane-tab')]
-      .find((t) => /Energy Landscape/.test(t.textContent))?.click();
+      .find((t) => /Landscape Plots/.test(t.textContent))?.click();
   });
   await page.waitForTimeout(250);
   s = await snap(page);
-  H.check('pull-tab reopens the dock on that window', !s.collapsed && s.frontId === 'landscape',
+  H.check('pull-tab reopens the dock on that window', !s.collapsed && s.frontId === 'landscapePlots',
     `${s.collapsed} / ${s.frontId}`);
 
-  // ---- close EOS from its tab ✕: closes ONLY EOS (to hidden, not gone) ----
+  // ---- close EOS Fit from its tab ✕: closes ONLY it (hidden, not gone) ----
   await page.evaluate(() => {
     const tab = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
-      .find((t) => /EOS Fitting/.test(t.textContent));
+      .find((t) => /EOS Fit/.test(t.textContent));
     tab?.querySelector('.split-pane-tab-close')?.click();
   });
   await page.waitForTimeout(300);
   s = await snap(page);
-  H.check('tab ✕ closes only EOS (1 window left, Landscape front)',
-    s.dockedIds.join() === 'landscape' && s.frontId === 'landscape', JSON.stringify(s.dockedIds));
-  H.check('closed EOS is detached but remembered right-docked',
-    s.eosClosed && s.eosDock === 'right', `${s.eosClosed} / ${s.eosDock}`);
-  H.check('Features EOS toggle synced off by the tab ✕', s.eosToggle === false);
+  H.check('tab ✕ closes only the EOS plots window',
+    s.dockedIds.join() === 'landscapePlots' && s.frontId === 'landscapePlots',
+    JSON.stringify(s.dockedIds));
+  H.check('closed plots window detached but remembered right-docked',
+    s.eosPlotsClosed && s.eosPlotsDock === 'right', `${s.eosPlotsClosed} / ${s.eosPlotsDock}`);
 
-  // ---- reopen from the Features toggle: content survived the close --------
-  await H.clickById(page, 'eosOpenToggle');
-  await page.waitForTimeout(300);
+  // ---- using the feature again reopens it (units change -> re-fit) --------
+  await page.evaluate(() => {
+    const sel = /** @type {HTMLSelectElement} */ (document.getElementById('eosEnergyUnits'));
+    sel.value = 'Ry';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.waitForTimeout(400);
   s = await snap(page);
-  H.check('Features toggle reopens EOS as front tab', s.dockedIds.length === 2
-    && s.frontId === 'eos', JSON.stringify(s));
-  const unitsAfterReopen = await page.evaluate(() => document.getElementById('eosEnergyUnits').value);
-  H.check('close/reopen kept EOS content (units still Ry)', unitsAfterReopen === 'Ry', unitsAfterReopen);
+  H.check('re-fitting (units change) reopens the plots window as front',
+    s.dockedIds.length === 2 && s.frontId === 'eosPlots' && !s.eosPlotsClosed,
+    JSON.stringify(s));
+  H.check('close/reopen kept the plot content (cards still built)', s.hasPlotCards);
 
-  // ---- closing the last window hides the pane -----------------------------
-  await closePanel(page, 'eos');
-  await closePanel(page, 'landscape');
+  // ---- resetting the fit closes the plots window (nothing to show) --------
+  await page.evaluate(() => document.getElementById('eosResetFitBtn').click());
+  await page.waitForTimeout(400);
   s = await snap(page);
-  H.check('closing the last window closes the pane', !s.active && s.dockedIds.length === 0,
-    `${s.active} / ${JSON.stringify(s.dockedIds)}`);
+  H.check('Reset closes the EOS plots window (Landscape stays)',
+    s.eosPlotsClosed && s.dockedIds.join() === 'landscapePlots', JSON.stringify(s.dockedIds));
 
-  H.check('no page errors', errors.length === 0, errors[0] || '');
+  // The stub landscape JSON is deliberately not a valid dataset — the addon's
+  // caught "failed to load JSON" console.error is the expected outcome there
+  // (the window opening to show the error box is exactly what we asserted).
+  const unexpected = errors.filter((e) => !/Landscape: failed to load JSON/.test(e));
+  H.check('no page errors', unexpected.length === 0, unexpected[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

@@ -62,15 +62,15 @@ async function barCenter(page, id) {
   const hintAfter = await page.evaluate(() => !document.getElementById('rightDockDropHint').hidden);
   H.check('drop highlight cleared after the drop', hintAfter === false);
 
-  // ---- 2. the v3 rightDock layout round-trips across a reload -------------
+  // ---- 2. the versioned rightDock layout round-trips across a reload ------
   await page.reload({ waitUntil: 'load' });
   await page.waitForTimeout(5000);
   s = await panelInfo(page, PANEL);
   const layout = await page.evaluate(() => JSON.parse(localStorage.getItem('panelLayout')));
   H.check('reload restores the window into the right dock',
     s.dock === 'right' && s.inRightDock && s.front && s.splitActive, JSON.stringify(s));
-  H.check('panelLayout v3 rightDock block round-trips',
-    layout.version === 3 && layout.rightDock
+  H.check('panelLayout v4 rightDock block round-trips',
+    layout.version === 4 && layout.rightDock
       && layout.rightDock.order.includes(PANEL) && layout.rightDock.front === PANEL,
     JSON.stringify(layout.rightDock));
 

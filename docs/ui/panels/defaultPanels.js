@@ -3,7 +3,7 @@
 // migration is concentrated here; the builders themselves only need to build
 // into the panel body they are given.
 
-import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, openPanel, closePanel, getPanel, getPanelPref, setPanelPref } from './PanelManager.js';
+import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
 import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender } from '../../render/index.js';
@@ -22,8 +22,9 @@ import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
 import { addEOSPanel, removeEOSPanel } from '../EOSPanel.js';
+import { addEOSPlotsPanel, removeEOSPlotsPanel } from '../EOSPlotsPanel.js';
 import { addDummySplitPanel, removeDummySplitPanel } from '../DummySplitPanel.js';
-import { addLandscapePanel, removeLandscapePanel } from '../LandscapePanel.js';
+import { addLandscapePanel, removeLandscapePanel, addLandscapePlotsPanel, removeLandscapePlotsPanel } from '../LandscapePanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
@@ -116,14 +117,6 @@ function detachStaticRow(inputId) {
   return input ? input.closest('label') : null;
 }
 
-/** Set a Features-window open/close checkbox without firing its onChange
- *  (used by the right-dock windows' onOpened/onClosed to stay in sync when
- *  they are opened/closed from elsewhere — tab ✕, restored layout, reset). */
-function syncFeatureToggle(checkboxId, checked) {
-  const cb = /** @type {HTMLInputElement|null} */ (document.getElementById(checkboxId));
-  if (cb) cb.checked = !!checked;
-}
-
 /** Build a checkbox toggle row matching the static ones (toggle_styles.css). */
 function makeToggleRow(id, labelText, checked, onChange) {
   const row = document.createElement('label');
@@ -205,19 +198,6 @@ function buildFeaturesBody(body) {
   group.appendChild(makeToggleRow('showPlanesMasterToggle', 'Show Planes', planesData.showPlanes !== false, (on) => {
     setPlanesVisible(on);
     onToggle('planes', on);
-  }));
-
-  // Open/close rows for the right-dock tool windows (EOS, Energy Landscape):
-  // ON opens the window where it lives (right dock by default, front tab),
-  // OFF closes it (closeMode:'hide' — content survives). Closing from the
-  // window's own tab ✕ syncs these back via the defs' onClosed below.
-  group.appendChild(makeToggleRow('eosOpenToggle', 'EOS Fitting', false, (on) => {
-    if (on) openPanel('eos');
-    else closePanel('eos');
-  }));
-  group.appendChild(makeToggleRow('landscapeOpenToggle', 'Energy Landscape', false, (on) => {
-    if (on) openPanel('landscape');
-    else closePanel('landscape');
   }));
 
   body.appendChild(group);
@@ -557,29 +537,41 @@ export function registerDefaultPanels() {
     defaults: { dock: 'left', order: 5, collapsed: false },
   });
 
-  // ---- right-dock windows ----------------------------------------------------
+  // ---- controls + plots window pairs (EOS, Energy Landscape) -----------------
   //
-  // EOS / Energy Landscape / the demo are ordinary windows that DEFAULT to
-  // the wide right dock (ui/panels/RightDock.js) and start closed
-  // (registered but detached; closeMode:'hide' keeps their content across
-  // close/open). They are opened from the Features window's toggle rows
-  // (below) and can be dragged out to float or into the left dock like any
-  // other window. lifecycle 'persistent': their content (loaded fit data /
-  // landscape JSON) is independent of the selected structure and must
-  // survive structure switches — the build is simply deferred to first open.
+  // Each feature is TWO ordinary windows: a controls window in the left dock
+  // (like any feature window) and a plots window that DEFAULTS to the wide
+  // right dock (ui/panels/RightDock.js) and starts closed. The plots window
+  // is never opened by hand — the feature opens it when there is something
+  // to show (EOSPanel.js on dataset load/re-fit, LandscapePanel.js when a
+  // landscape JSON loads) — and, like any window, it can be dragged out to
+  // float or into the left dock. Plots windows are 'persistent' +
+  // closeMode:'hide': their content (fit data / loaded JSON) is independent
+  // of the selected structure and survives both structure switches and
+  // close/reopen; the build is simply deferred to first open.
 
   registerPanel({
     id: 'eos',
     title: 'EOS Fitting',
+    lifecycle: 'rebuild',
+    hiddenUntilStructure: true,
+    infoMd: './data/eosInfo.md',
+    available() { return true; },
+    buildContent(body) { addEOSPanel(body.id); },
+    onDestroyContent() { removeEOSPanel(); },
+    defaults: { dock: 'left', order: 92, collapsed: true },
+  });
+
+  registerPanel({
+    id: 'eosPlots',
+    title: 'EOS Fit',
     lifecycle: 'persistent',
     closable: true,
     closeMode: 'hide',
     infoMd: './data/eosInfo.md',
     available() { return true; },
-    buildContent(body) { addEOSPanel(body.id); },
-    onDestroyContent() { removeEOSPanel(); },
-    onOpened() { syncFeatureToggle('eosOpenToggle', true); },
-    onClosed() { syncFeatureToggle('eosOpenToggle', false); },
+    buildContent(body) { addEOSPlotsPanel(body.id); },
+    onDestroyContent() { removeEOSPlotsPanel(); },
     defaults: { dock: 'right', closed: true, order: 92 },
   });
 
@@ -602,21 +594,25 @@ export function registerDefaultPanels() {
     id: 'landscape',
     title: 'Energy Landscape',
     lifecycle: 'persistent',
-    closable: true,
-    closeMode: 'hide',
     infoMd: './data/landscapeInfo.md',
     available() { return true; },
     buildContent(body) { addLandscapePanel(body.id); },
     onDestroyContent() { removeLandscapePanel(); },
-    onOpened() { syncFeatureToggle('landscapeOpenToggle', true); },
-    onClosed() { syncFeatureToggle('landscapeOpenToggle', false); },
-    defaults: { dock: 'right', closed: true, order: 94 },
+    defaults: { dock: 'left', order: 94, collapsed: true },
   });
 
-  // Reflect windows restored open from a remembered layout in the Features
-  // rows (their toggles are built before these windows register).
-  syncFeatureToggle('eosOpenToggle', !getPanel('eos')?.closed);
-  syncFeatureToggle('landscapeOpenToggle', !getPanel('landscape')?.closed);
+  registerPanel({
+    id: 'landscapePlots',
+    title: 'Landscape Plots',
+    lifecycle: 'persistent',
+    closable: true,
+    closeMode: 'hide',
+    infoMd: './data/landscapeInfo.md',
+    available() { return true; },
+    buildContent(body) { addLandscapePlotsPanel(body.id); },
+    onDestroyContent() { removeLandscapePlotsPanel(); },
+    defaults: { dock: 'right', closed: true, order: 94 },
+  });
 
   registerPanel({
     id: 'settings',

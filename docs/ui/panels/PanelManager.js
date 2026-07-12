@@ -19,6 +19,10 @@ import {
 } from './RightDock.js';
 
 const LS_KEY = 'panelLayout';
+// v4: eos/landscape reverted to left-dock CONTROLS windows with separate
+// right-dock plots windows (eosPlots/landscapePlots) — v3 blobs (one dev
+// iteration) are migrated by dropping their eos/landscape entries (which
+// meant "merged window, right dock, closed" — a shape that no longer exists).
 // v3: `docked` (boolean) became `dock` ('left'|'right'|false — the right dock
 // is the wide tabbed pane), plus per-panel `closed` (closeMode:'hide' windows
 // detached from the DOM) and the top-level `rightDock` block (tab order,
@@ -28,7 +32,7 @@ const LS_KEY = 'panelLayout';
 // v2: pos is the INHERENT position, per axis anchored to the nearest viewport
 // edge at capture time (v1 stored absolute left/top rect readings; no
 // migration — a v1 blob is simply discarded).
-const LAYOUT_VERSION = 3;
+const LAYOUT_VERSION = 4;
 const SAVE_DEBOUNCE_MS = 250;
 const DOCK_GAP = 10; // gap between the dock's right edge and displaced windows
 // How far past the dock's right edge a dock-drag must travel before the panel
@@ -1004,10 +1008,14 @@ function defaultRightDockLayout() {
   return { order: [], front: null, collapsed: false, fraction: null };
 }
 
-// v2 entries for the old split-view stub windows described "collapsed stub in
-// the left dock" — a state that no longer exists; dropping them at migration
-// lets the new defaults (one merged window, right dock, closed) apply.
+// Entries for windows whose meaning changed shape across versions — dropped
+// at migration so the new defaults apply. v2's eos/landscape/splitDemo were
+// "collapsed stub in the left dock" (the split-view era); v3's eos/landscape
+// were "one merged window, right dock, closed" (one dev iteration) — both
+// gone now that eos/landscape are left-dock controls windows with separate
+// eosPlots/landscapePlots right-dock windows.
 const DROPPED_V2_IDS = ['eos', 'landscape', 'splitDemo'];
+const DROPPED_V3_IDS = ['eos', 'landscape'];
 
 function loadStoredLayout() {
   try {
@@ -1025,8 +1033,25 @@ function loadStoredLayout() {
           ? { ...defaultRightDockLayout(), ...parsed.rightDock }
           : defaultRightDockLayout(),
       };
+    } else if (parsed.version === 3) {
+      // v3 -> v4 migration: same shape; only the stale eos/landscape entries
+      // (and their right-dock slots) are dropped.
+      const panelsOut = {};
+      for (const [id, e] of Object.entries(panelsIn)) {
+        if (DROPPED_V3_IDS.includes(id) || !e || typeof e !== 'object') continue;
+        panelsOut[id] = e;
+      }
+      const rdIn = parsed.rightDock && typeof parsed.rightDock === 'object' ? parsed.rightDock : {};
+      const rd = { ...defaultRightDockLayout(), ...rdIn };
+      rd.order = (Array.isArray(rd.order) ? rd.order : []).filter((id) => !DROPPED_V3_IDS.includes(id));
+      if (DROPPED_V3_IDS.includes(rd.front)) rd.front = null;
+      stored = {
+        dockOrder: orderIn.filter((id) => !DROPPED_V3_IDS.includes(id)),
+        panels: panelsOut,
+        rightDock: rd,
+      };
     } else if (parsed.version === 2) {
-      // v2 -> v3 migration: docked (boolean) becomes dock ('left'|false);
+      // v2 -> v4 migration: docked (boolean) becomes dock ('left'|false);
       // float positions and collapse states survive verbatim.
       const panelsOut = {};
       for (const [id, e] of Object.entries(panelsIn)) {
