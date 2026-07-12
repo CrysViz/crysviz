@@ -466,7 +466,7 @@ export function addColorPanel(target = "colorContainer") {
   // pipelines so the two can be compared apples to apples; changes take
   // effect on the next accumulated frame (the pipelines read `general`).
   const isTracerPipeline = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
-  const rtControlsBlock = createElement("div", {},
+  const rtControlsBlock = createElement("div", { id: "rtControlsBlock" },
     { display: isTracerPipeline ? "block" : "none" });
   const rtResRow = createElement("div", { class: "control-row" });
   const rtResLabel = createElement("label", { for: "rtResolutionScale" }, {},

@@ -1,22 +1,85 @@
-import { app, general, measurements, fileBrowser, structureShip } from '../state/store.js';
+import { app, general, groups, measurements, fileBrowser, structureShip } from '../state/store.js';
 
 /** Deep copy of a sparse style-store object, or undefined when empty/absent
  *  (keeps captured sessions small). */
 function nonEmptyDeepCopy(obj) {
   return obj && Object.keys(obj).length ? JSON.parse(JSON.stringify(obj)) : undefined;
 }
+
+// --- Volumetric-field byte <-> base64 helpers (used only by the .crysviz save) ---
+// Field values are Float32Array; the .crysviz format stores their raw little-endian
+// bytes base64-encoded. Endianness assumption: every platform CrysViz runs on is
+// little-endian in practice (x86 / ARM / WASM), and a .crysviz is loaded back on a
+// like-endian machine — no byte-swap is performed. No compression in v1: the load
+// path is readAsText/JSON, so a large grid inflates ~1.33x; gzip via
+// CompressionStream is a possible follow-up.
+const B64_CHUNK = 0x8000; // String.fromCharCode.apply overflows on very large arrays
+
+/** Encode a Float32Array's raw bytes to base64 (chunked to avoid arg overflow). */
+function float32ToBase64(floatArray) {
+  const bytes = new Uint8Array(floatArray.buffer, floatArray.byteOffset, floatArray.byteLength);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += B64_CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + B64_CHUNK));
+  }
+  return btoa(binary);
+}
+
+/** Decode base64 (raw little-endian float bytes) back to a Float32Array. */
+function base64ToFloat32(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Float32Array(bytes.buffer);
+}
+
+/** Serialize a structure's volumetric fields for embedding in a .crysviz file.
+ *  Returns undefined when there is nothing to save. */
+function captureFields(structure) {
+  const container = structure?.volumetricFields;
+  const fields = container?.fields;
+  if (!fields?.length) return undefined;
+
+  // The field browser tracks which field is selected/shown; fall back to 0.
+  const selectedIndex = (fieldBrowser?.selectedField && fieldBrowser.selectedFieldIndex >= 0)
+    ? fieldBrowser.selectedFieldIndex : 0;
+
+  return {
+    fileName: container.fileName,
+    source: container.source,
+    selectedIndex,
+    // Isosurface render material (pos/neg colors + opacity) — module globals.
+    isoSettings: getIsosurfaceMaterialSettings(),
+    fields: fields.map((f) => ({
+      label: f.label,
+      nx: f.nx, ny: f.ny, nz: f.nz,
+      origin: f.origin, voxel: f.voxel,
+      component: f.component,
+      isoValue: f.isoValue,
+      useAbsoluteIsoValue: f.useAbsoluteIsoValue,
+      isVisible: f.isVisible,
+      minValue: f.minValue, maxValue: f.maxValue,
+      absMinValue: f.absMinValue, absMaxValue: f.absMaxValue,
+      values: f.values ? float32ToBase64(f.values) : null,
+    })),
+  };
+}
 import * as THREE from '../external/three/three.module.js';
 import { parsePOSCAR, initializeUIOnLoad } from './StructureInputModule.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
-import { StructureContainer } from '../model/index.js';
+import {
+  StructureContainer, Field, FieldContainer,
+  getIsosurfaceMaterialSettings, setIsosurfaceMaterialSettings,
+  applyMaterialSettingsToStoredIsosurfaces,
+} from '../model/index.js';
 import { updateAtoms } from '../render/index.js';
-import { rebuildBonds, updatePolyhedra, setActivePipeline, updateGroundPlane } from '../render/index.js';
+import { rebuildBonds, updatePolyhedra, setActivePipeline, updateGroundPlane, setActiveField, updateField } from '../render/index.js';
+import { fieldBrowser } from './FieldPanel.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
-import { suppressRaytraceWarningOnce } from './RaytraceWarningModal.js';
 import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
-import { revealFeaturePanels } from './panels/PanelManager.js';
+import { revealFeaturePanels, refreshPanelAvailability } from './panels/PanelManager.js';
 import { fracToCart } from '../math/index.js';
 import { updateAxesGizmoWidth, switchCameraType, resizeRenderer } from './WindowAndSceneControls.js';
 import { getContrastingBorder } from './BackgroundPicker.js';
@@ -34,9 +97,14 @@ const URL_HARD_CHARS = 10000;
  * the panel system's own localStorage. Shared by the Share-URL feature and
  * the .crysviz file download (SavePanel).
  */
-export function captureState({ includeFrames = false } = {}) {
+export function captureState({ includeFrames = false, includeFields = false } = {}) {
   const structure = fileBrowser.selectedStructure;
   if (!structure) return null;
+
+  // Volumetric fields are embedded ONLY in the .crysviz file save (includeFields):
+  // they are large (base64 float bytes) and must not bloat share URLs or the many
+  // other captureState() callers/tests.
+  const fields = includeFields ? captureFields(structure) : undefined;
 
   // Per-atom color overrides — only atoms whose color differs from their element color
   const atomColors = {};
@@ -101,8 +169,9 @@ export function captureState({ includeFrames = false } = {}) {
   }
 
   return {
-    version: '2.12',
+    version: '2.13',
     ...(frames ? { frames } : {}),
+    ...(fields ? { fields } : {}),
     structure: {
       elements: [...structure.elements],
       lattice: structure.lattice.map(r => [...r]),
@@ -536,6 +605,59 @@ function restoreAtomOrder(savedStructure, loadedStructure) {
   loadedStructure.uniqueElements = [...new Set(reorderedElements)];
 }
 
+/** Rebuild volumetric fields embedded in a .crysviz and re-attach them to the
+ *  loaded structure, replicating the CHGCAR/cube reader's post-attach sequence
+ *  (fieldBrowser.setAvailableFields -> setSelectedField -> setActiveField ->
+ *  updateField) plus the isosurface material restore. Synchronous, like the
+ *  rest of the state restore. A field saved hidden stays hidden (updateField
+ *  early-returns on !isVisible). */
+function restoreFields(fieldState, structure) {
+  const savedFields = fieldState?.fields;
+  if (!savedFields?.length || !structure) return;
+
+  const fields = savedFields.map((f) => new Field({
+    label: f.label,
+    nx: f.nx, ny: f.ny, nz: f.nz,
+    origin: f.origin, voxel: f.voxel,
+    component: f.component,
+    isoValue: f.isoValue,
+    useAbsoluteIsoValue: f.useAbsoluteIsoValue,
+    isVisible: f.isVisible,
+    minValue: f.minValue, maxValue: f.maxValue,
+    absMinValue: f.absMinValue, absMaxValue: f.absMaxValue,
+    values: f.values ? base64ToFloat32(f.values) : null,
+  }));
+
+  structure.volumetricFields = new FieldContainer({
+    fileName: fieldState.fileName,
+    source: fieldState.source,
+    fields,
+  });
+
+  const selectedIndex = Math.min(Math.max(fieldState.selectedIndex ?? 0, 0), fields.length - 1);
+
+  // Clear any prior selection so setAvailableFields re-selects for this structure.
+  fieldBrowser.selectedField = null;
+  fieldBrowser.setAvailableFields(fields);
+  fieldBrowser.setSelectedField(selectedIndex);
+  const selected = fieldBrowser.selectedField;
+  if (!selected) return;
+
+  // The saved useAbsoluteIsoValue is already on the Field (a boolean, not null),
+  // so pass it explicitly rather than letting setActiveField re-derive it.
+  setActiveField(selected, selected.useAbsoluteIsoValue);
+  updateField(selected.isoValue);
+
+  // Isosurface material (positive/negative colors + opacity) — module globals.
+  if (fieldState.isoSettings) {
+    setIsosurfaceMaterialSettings(fieldState.isoSettings);
+    applyMaterialSettingsToStoredIsosurfaces(groups.isosurfaceGroup, fieldState.isoSettings);
+  }
+
+  // The Field window is greyed until a structure carries volumetric fields.
+  refreshPanelAvailability();
+}
+
 function restoreCamera(camState) {
   if (!camState?.position || !camState?.target) return;
   setTimeout(() => {
@@ -742,6 +864,12 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   if (multiFrame) trajectoryContainer.flushColorToAllStructures(structure);
   updateAtoms();
 
+  // Volumetric fields embedded in a .crysviz: rebuild + re-attach after the
+  // structure exists. Independent of the colors.fieldMaterial restore above
+  // (that sets structure.fieldMaterial, consumed per-primitive by the tracer
+  // SceneEncoder), so the two compose on the next trace.
+  if (state.fields) restoreFields(state.fields, structure);
+
   // Rebuild bonds to reflect any bondLength / bondVisibility changes
   rebuildBonds();
 
@@ -756,10 +884,15 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   if (state.style?.renderStyle === 'cel') {
     document.getElementById('renderStyleMenu')?.dispatchEvent(new Event('change'));
   }
-  // Depth peeling / ray tracing: same re-fire so their control blocks show.
-  if (['depthpeel', 'raytrace', 'pathtrace'].includes(state.style?.renderPipeline)) {
-    // This is a restore, not a user enable — don't fire the tracer warning.
-    suppressRaytraceWarningOnce();
+  // Re-fire the pipeline dropdown so ColorPanel's updateRenderingControlsVisibility
+  // runs for EVERY restored pipeline id (not just the tracers): a raster restore
+  // while the app is currently in a tracer must hide the tracer control blocks +
+  // the `tracer-pipeline` body class and reveal the raster-only Render Style menu.
+  // No tracer warning fires during a restore because the handler's
+  // `isTracer && !wasTracer` guard is already false here (general.renderPipeline
+  // was set by applyStyleSettings before this dispatch), so no one-shot
+  // suppression is needed.
+  if (state.style?.renderPipeline) {
     document.getElementById('renderPipelineMenu')?.dispatchEvent(new Event('change'));
   }
 

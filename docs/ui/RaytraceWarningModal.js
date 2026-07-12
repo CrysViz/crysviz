@@ -15,9 +15,15 @@
 // A "Don't show this again" checkbox persists suppression across sessions via the
 // panelPrefs bag (`hideRaytraceWarning`) on EITHER button — the user has read the
 // warning regardless of which choice they make; that pref is also surfaced as a
-// toggle in the Settings window. The ShareModule session-restore re-dispatch of
-// the pipeline `change` event arms a one-shot suppression so the warning does not
-// fire from a restore (and the restore then switches immediately).
+// toggle in the Settings window.
+//
+// suppressRaytraceWarningOnce() arms a general-purpose one-shot that the next
+// maybeShowRaytraceWarning() consumes (swallow + switch immediately). It is
+// currently NOT used by production code — ShareModule's session restore no longer
+// needs it because its pipeline `change` re-dispatch runs with general.render-
+// Pipeline already set to the restored id, so the handler's `isTracer && !wasTracer`
+// guard is already false and the warning never fires. The one-shot is kept for API
+// stability and is exercised by tracerwarning.test.js.
 //
 // showRaytraceWarning() is an unconditional, INFORMATIONAL show (no callbacks):
 // the Cancel button is hidden and Ok / Escape / backdrop just close it (used by
@@ -32,7 +38,8 @@ let cancelBtn = null;
 let dontShowInput = null;
 
 // One-shot suppression armed by suppressRaytraceWarningOnce(), consumed by the
-// next maybeShowRaytraceWarning() call (used for the ShareModule restore).
+// next maybeShowRaytraceWarning() call. General-purpose; no current production
+// caller (see the header note) — retained for API stability and test coverage.
 let suppressOnce = false;
 
 let previousFocus = null;
@@ -122,7 +129,8 @@ export function maybeShowRaytraceWarning({ onConfirm, onCancel } = {}) {
 }
 
 /** Arm a one-shot suppression consumed by the next maybeShowRaytraceWarning
- *  call (used before the ShareModule session-restore change dispatch). */
+ *  call. General-purpose; no current production caller (see the header note) —
+ *  kept for API stability and exercised by tracerwarning.test.js. */
 export function suppressRaytraceWarningOnce() {
   suppressOnce = true;
 }

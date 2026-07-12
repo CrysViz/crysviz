@@ -11,7 +11,7 @@
 //       (lastChangeWasCoreScene === false) and restarts the accumulation;
 //   (4) the Field window hosts a glass-free MaterialEditor, hidden under raster
 //       and shown under a tracer;
-//   (5) the material persists through captureState/applySharedState at v2.12;
+//   (5) the material persists through captureState/applySharedState at v2.13;
 //   (6) the default field-material texel is [0,0,0.6,-1] (DEFAULT_MATERIAL_TEXEL).
 'use strict';
 const H = require('../harness');
@@ -351,7 +351,7 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
       && liveDrag.finalVerts === liveDrag.after.verts,
     JSON.stringify({ readout: liveDrag.readout, iso: liveDrag.after.iso, finalVerts: liveDrag.finalVerts }));
 
-  // --- (5) Persistence: fieldMaterial round-trips through capture/apply at 2.12 -----
+  // --- (5) Persistence: fieldMaterial round-trips through capture/apply at 2.13 -----
   const persist = await page.evaluate(async () => {
     const { fileBrowser } = await import('./state/store.js');
     const { captureState, applySharedState } = await import('./ui/ShareModule.js');
@@ -362,8 +362,8 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
     const restored = fileBrowser.selectedStructure?.fieldMaterial;
     return { version: state.version, captured, restored };
   });
-  H.check('captureState/applySharedState round-trips fieldMaterial at v2.12',
-    persist.version === '2.12'
+  H.check('captureState/applySharedState round-trips fieldMaterial at v2.13',
+    persist.version === '2.13'
       && persist.captured?.type === 'metal' && Math.abs(persist.captured?.roughness - 0.3) < 1e-9
       && persist.restored?.type === 'metal' && Math.abs(persist.restored?.roughness - 0.3) < 1e-9,
     JSON.stringify(persist));

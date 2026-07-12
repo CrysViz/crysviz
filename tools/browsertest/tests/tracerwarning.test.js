@@ -3,8 +3,9 @@
 // The modal is a CONFIRM gate that DEFERS the pipeline switch: while it is open
 // the prior raster pipeline keeps rendering (responsive GUI). Deterministic flow:
 //   (0) suppressRaytraceWarningOnce() BEFORE any modal has shown -> the next
-//       tracer enable is silently consumed AND switches immediately (ShareModule
-//       session-restore path).
+//       tracer enable is silently consumed AND switches immediately. This is a
+//       general-purpose one-shot with no current production caller (ShareModule's
+//       session restore no longer needs it); kept for API stability + this test.
 //   (a) a fresh raster->tracer switch SHOWS the modal and does NOT switch yet
 //       (general.renderPipeline + app.pipeline.id still the prior raster id).
 //   (b) Ok -> the pipeline switches to the tracer.
