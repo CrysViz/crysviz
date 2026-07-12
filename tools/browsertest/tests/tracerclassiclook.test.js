@@ -122,6 +122,36 @@ function changedPixelCount(fileA, fileB, minDelta = 30) {
   H.check('untinted (white) coat visibly changes the traced structure',
     tintDelta > 200, JSON.stringify({ tintDelta }));
 
+  // --- PT: the light fixture appears in the coat's stochastic mirror --------
+  // High standard reflectivity routes ~95% of camera rays through the COAT
+  // mirror branch; those rays must see the light sphere (isPrimaryRay cleared,
+  // matching SPEC) — with the regression they returned the dark background
+  // instead and the glint all but vanished (near-zero bright pixels).
+  // Softness 1 makes the light sphere large (glint discs span many pixels
+  // even at 0.25 internal res) and intensity 3 keeps partially-covered pixels
+  // clipped white through the averaging + denoiser.
+  await page.evaluate(async () => {
+    const { fileBrowser, general, app } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    const structure = fileBrowser.selectedStructure;
+    general.ptLightSoftness = 1;
+    general.rtLightIntensity = 3;
+    structure.atomMaterials = Object.fromEntries([...new Set(structure.elements)]
+      .map((el) => [el, { type: 'standard', tint: 0, gloss: 1, reflectivity: 0.95 }]));
+    app.pipeline?.resetAccumulation?.();
+    requestRender();
+  });
+  await H.setSelect(page, 'renderPipelineMenu', 'pathtrace');
+  await page.waitForTimeout(7000);
+  const glintShot = await H.shotCanvas(page, 'classiclook-pt-glint');
+  const glintPng = PNG.sync.read(fs.readFileSync(glintShot));
+  let brightPixels = 0;
+  for (let i = 0; i < glintPng.data.length; i += 4) {
+    if (Math.max(glintPng.data[i], glintPng.data[i + 1], glintPng.data[i + 2]) > 230) brightPixels++;
+  }
+  H.check('PT light-sphere glint shows in the standard coat stochastic mirror',
+    brightPixels > 100, JSON.stringify({ brightPixels }));
+
   // --- Persistence: legacy flag in style, tint in the material store --------
   const persisted = await page.evaluate(async () => {
     const { captureState } = await import('./ui/ShareModule.js');

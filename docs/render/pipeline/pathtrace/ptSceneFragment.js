@@ -863,6 +863,11 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				mask *= hitColor;
 				rayDirection = reflect(rayDirection, nl);
 				rayOrigin = x + (nl * uEPS_intersect);
+				// no longer a camera ray: the light fixture must appear in
+				// mirror reflections (gCameraRay gate; matches the SPEC path —
+				// without this the glint on standard atoms loses its dominant
+				// stochastic-mirror contribution)
+				isPrimaryRay = FALSE;
 				continue;
 			}
 
