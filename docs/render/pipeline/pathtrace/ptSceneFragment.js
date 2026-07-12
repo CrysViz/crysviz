@@ -127,7 +127,11 @@ int resolveHitType(vec4 mat, vec3 color, float alpha)
 	// CalculateRadiance
 	hitIor = code == 2 && mat.z > 1.0 ? mat.z : 1.5;
 	if (code == 2) { hitTintDepth = mat.w; hitReflectivity = -1.0; return REFR; }
-	if (code == 1) return SPEC;
+	if (code == 1)
+	{
+		hitCoatTint = clamp(mat.z, 0.0, 1.0); // metal: typeParam slot carries the tint (1 = colored, 0 = chrome)
+		return SPEC;
+	}
 	hitGloss = clamp(mat.z, 0.0, 1.0); // standard
 	hitCoatTint = clamp(mat.y, 0.0, 1.0); // standard: the roughness slot carries the tint
 	return COAT;
@@ -775,11 +779,14 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 		if (hitType == SPEC) // metal: tinted mirror, roughness blurs the lobe
 		{
 			// reflectivity = mirrored fraction (unset/-1 = 1.0, ideal mirror);
-			// the rest of the energy shades as a diffuse surface (brushed metal)
+			// the rest of the energy shades as a diffuse surface (brushed metal).
+			// The Tint knob (typeParam slot, default 1) sets how much the metal
+			// colors what it reflects/scatters — 0 = chrome (white reflections).
+			vec3 metalTint = mix(vec3(1), hitColor, hitCoatTint);
 			float metalReflect = hitReflectivity < 0.0 ? 1.0 : hitReflectivity;
 			if (ptRand() < metalReflect)
 			{
-				mask *= hitColor;
+				mask *= metalTint;
 				mask *= (1.0 - (hitRoughness * 0.8));
 				rayDirection = ptSpecLobe(nl, reflect(rayDirection, nl), hitRoughness);
 				rayOrigin = x + (nl * uEPS_intersect);
@@ -788,7 +795,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 			}
 			// diffuse fraction: same bookkeeping as COAT's diffuse part
 			diffuseCount++;
-			mask *= hitColor;
+			mask *= metalTint;
 			bounceIsSpecular = FALSE;
 			rayOrigin = x + (nl * uEPS_intersect);
 			if (diffuseCount == 1)

@@ -536,9 +536,11 @@ vec3 RayTrace()
 			// tinted mirror (upstream METAL): roughness blurs the reflection lobe
 			// (resolved by accumulation); reflectivity is the mirrored fraction
 			// (unset/-1 = 1.0, an ideal mirror) — the remainder shades as diffuse
-			// (no shadow ray, keeping metal single-bounce cheap)
+			// (no shadow ray, keeping metal single-bounce cheap). The Tint knob
+			// (typeParam slot, default 1) sets how much the metal colors its
+			// response — 0 = chrome (white reflections).
 			float metalReflect = intersectionReflectivity < 0.0 ? 1.0 : intersectionReflectivity;
-			rayColorMask *= intersectionColor;
+			rayColorMask *= mix(vec3(1), intersectionColor, clamp(intersectionTypeParam, 0.0, 1.0));
 			if (metalReflect < 1.0)
 			{
 				accumulatedColor += doAmbientLighting(rayColorMask, vec3(1), ambientIntensity) * (1.0 - metalReflect);

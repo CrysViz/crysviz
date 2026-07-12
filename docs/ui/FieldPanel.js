@@ -220,8 +220,6 @@ export function addFieldPanel(target = "cvPanelBody-field") {
       <span id="isoValue">${isoValue.toExponential(3)}</span>
     </div>
 
-    <div id="fieldMaterialEditorMount"></div>
-
     <div id="fieldColorToggle" class="spin-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="fieldColorContent">
     <h4>Color controls</h4>
     <div class="toggle-icon" id="fieldColorToggleIcon">+</div>
@@ -239,6 +237,10 @@ export function addFieldPanel(target = "cvPanelBody-field") {
         <input type="range" id="FieldOpacitySlider" min="0" max="1" step="0.01" value="${materialSettings.opacity}">
         <span id="FieldOpacityValue">${materialSettings.opacity.toFixed(2)}</span>
         </div>
+
+        <!-- tracer material block: not strictly color, but it lives alongside
+             the color/alpha selectors here like everywhere else -->
+        <div id="fieldMaterialEditorMount"></div>
     </div>
     </div>
 

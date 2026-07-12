@@ -56,8 +56,8 @@ const EMISSIVE_CAP = 64;
 function materialTexel(mat) {
   if (!mat) return DEFAULT_MATERIAL_TEXEL;
   switch (mat.type) {
-    case 'metal':
-      return [1, mat.roughness ?? 0.2, 0, mat.reflectivity ?? -1];
+    case 'metal': // typeParam slot carries the reflection color tint (1 = colored mirror, 0 = chrome)
+      return [1, mat.roughness ?? 0.2, mat.tint ?? 1, mat.reflectivity ?? -1];
     case 'glass':
       return [2, mat.frost ?? 0, mat.ior ?? 1.5, mat.tintDepth ?? 0.2];
     case 'emissive':

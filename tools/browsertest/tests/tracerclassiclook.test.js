@@ -122,6 +122,33 @@ function changedPixelCount(fileA, fileB, minDelta = 30) {
   H.check('untinted (white) coat visibly changes the traced structure',
     tintDelta > 200, JSON.stringify({ tintDelta }));
 
+  // --- Metal Tint: default 1 = fully colored mirror, 0 = chrome -------------
+  const setAllMetal = async (tint) => page.evaluate(async (t) => {
+    const { fileBrowser, app } = await import('./state/store.js');
+    const { requestRender } = await import('./render/index.js');
+    const structure = fileBrowser.selectedStructure;
+    structure.atomMaterials = Object.fromEntries([...new Set(structure.elements)]
+      .map((el) => [el, { type: 'metal', roughness: 0.05, ...(t != null ? { tint: t } : {}) }]));
+    app.pipeline?.resetAccumulation?.();
+    requestRender();
+  }, tint);
+  await setAllMetal(null); // untouched tint -> type default (fully colored)
+  await page.waitForTimeout(2500);
+  const metalTexel = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const data = app.pipeline._encoder.atomsTexture.image.data;
+    return Math.round(data[2 * 4 + 2] * 100) / 100; // atom 0 material texel z slot
+  });
+  H.check('metal tint defaults to 1 in the typeParam texel slot',
+    metalTexel === 1, JSON.stringify({ metalTexel }));
+  const coloredMetalShot = await H.shotCanvas(page, 'classiclook-metal-colored');
+  await setAllMetal(0); // chrome
+  await page.waitForTimeout(2500);
+  const chromeShot = await H.shotCanvas(page, 'classiclook-metal-chrome');
+  const chromeDelta = changedPixelCount(coloredMetalShot, chromeShot, 20);
+  H.check('chrome (tint 0) visibly whitens the metal reflections',
+    chromeDelta > 200, JSON.stringify({ chromeDelta }));
+
   // --- PT: the light fixture appears in the coat's stochastic mirror --------
   // High standard reflectivity routes ~95% of camera rays through the COAT
   // mirror branch; those rays must see the light sphere (isPrimaryRay cleared,
