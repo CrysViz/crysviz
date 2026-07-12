@@ -949,11 +949,18 @@ export class RayTracingPipeline extends ForwardPipeline {
     if (scene.background?.isColor) u.uBackgroundColor.value.copy(scene.background);
     // primary-miss rays return the display-transform-inverted background so
     // the traced backdrop matches the raster clear color exactly (secondary
-    // rays keep the RAW color — a bright backdrop must not become a light source)
-    compensateBackground(u.uBackgroundColor.value,
-      (renderer.toneMappingExposure ?? 1) * (this._outputQuad?.material.uniforms.uExposure.value ?? 1),
-      general.rtSaturation ?? 1,
-      u.uBackgroundDisplay.value);
+    // rays keep the RAW color — a bright backdrop must not become a light source).
+    // With "Match background color" off (Advanced toggle), primary misses get
+    // the raw color instead, so the backdrop is tone-mapped along with the
+    // scene — the pre-compensation look.
+    if (general.rtBackgroundMatch !== false) {
+      compensateBackground(u.uBackgroundColor.value,
+        (renderer.toneMappingExposure ?? 1) * (this._outputQuad?.material.uniforms.uExposure.value ?? 1),
+        general.rtSaturation ?? 1,
+        u.uBackgroundDisplay.value);
+    } else {
+      u.uBackgroundDisplay.value.copy(u.uBackgroundColor.value);
+    }
     u.uReflectivity.value = general.rtReflectivity ?? 0.15;
     u.uLightSoftness.value = general.ptLightSoftness ?? 0.3;
     u.uAmbientStrength.value = general.rtAmbient ?? 0.3;
@@ -995,7 +1002,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     // invisible once converged).
     const lookKey = `${u.uBackgroundColor.value.getHex()}|${u.uLightColor.value.getHex()}`
       + `|${u.uReflectivity.value}|${u.uLightSoftness.value}|${u.uAmbientStrength.value}`
-      + `|${general.rtSaturation ?? 1}`
+      + `|${general.rtSaturation ?? 1}|${general.rtBackgroundMatch !== false}`
       + `|${u.uGroundEnabled.value}|${u.uApertureSize.value}|${(general.rtDofFocus ?? 1)}`
       + `|${u.uGroundPattern.value}|${u.uGroundColor1.value.getHex()}`
       + `|${u.uGroundColor2.value.getHex()}|${u.uGroundScale.value}|${u.uGroundReflect.value}`

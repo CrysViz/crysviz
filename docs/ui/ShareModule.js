@@ -169,7 +169,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
   }
 
   return {
-    version: '2.13',
+    version: '2.14',
     ...(frames ? { frames } : {}),
     ...(fields ? { fields } : {}),
     structure: {
@@ -223,6 +223,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       rtResolutionScale: general.rtResolutionScale,
       rtTiledRender: general.rtTiledRender,
       rtRasterPreview: general.rtRasterPreview,
+      rtBackgroundMatch: general.rtBackgroundMatch,
       rtReflectivity: general.rtReflectivity,
       ptDenoise: general.ptDenoise,
       ptLightSoftness: general.ptLightSoftness,
@@ -435,6 +436,11 @@ function applyStyleSettings(style) {
       toggle.checked = style.rtRasterPreview;
       toggle.dispatchEvent(new Event('change'));
     }
+  }
+  if (style.rtBackgroundMatch != null) {
+    general.rtBackgroundMatch = style.rtBackgroundMatch;
+    const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtBgMatchToggle'));
+    if (toggle) toggle.checked = style.rtBackgroundMatch;
   }
   // rtPreviewRestDelay is a hidden config-only setting (no GUI) and is no longer
   // persisted; older saves that still carry the key are simply ignored so they

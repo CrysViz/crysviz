@@ -103,6 +103,7 @@ export const RENDERING_DEFAULTS = {
   rtTiledRender: true, // raytrace/pathtrace: render each sample in scissored tiles (one/frame) to keep the shared GPU responsive; untiled half-res while the camera moves
   rtReflectivity: 0.15, // raytrace/pathtrace pipelines: extra mirror reflectivity on opaque surfaces (0-1)
   rtRasterPreview: true, // raytrace/pathtrace: while interacting, show cheap depth-peeled preview frames; resume tracing after rest
+  rtBackgroundMatch: true, // both tracers: pin the traced backdrop to the exact picked background color (inverse tone-map on primary misses); off = classic look, backdrop tone-mapped with the scene
   rtPreviewRestDelay: 0.5, // HIDDEN (config-only, no GUI): raytrace/pathtrace seconds of no interaction before the tracer resumes (raster-preview rest delay)
   ptDenoise: true, // 'pathtrace' pipeline: edge-aware denoiser on the screen output
   ptLightSoftness: 0.3, // both tracers: light softness (0 = hard shadows, 1 = very soft; PT area-light radius / RT shadow-ray cone)

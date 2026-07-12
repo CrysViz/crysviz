@@ -518,6 +518,23 @@ export function addColorPanel(target = "colorContainer") {
   rtPreviewRow.appendChild(rtPreviewLabel);
   rtPreviewRow.appendChild(rtPreviewToggle);
 
+  // Match background color: pin the traced backdrop to the exact picked
+  // background color (the pipeline inverse-tone-maps primary-miss rays;
+  // default ON). Off restores the older look where the backdrop is
+  // tone-mapped along with the scene. Lives in the "Advanced" section below.
+  const rtBgMatchRow = createElement("div", { class: "control-row" });
+  const rtBgMatchLabel = createElement("label", { for: "rtBgMatchToggle" }, {}, "Match background color");
+  const rtBgMatchToggle = createElement("input", { type: "checkbox", id: "rtBgMatchToggle" },
+    { justifySelf: "start", width: "auto" });
+  rtBgMatchToggle.checked = general.rtBackgroundMatch !== false;
+  rtBgMatchToggle.addEventListener("change", () => {
+    general.rtBackgroundMatch = rtBgMatchToggle.checked;
+    app.pipeline?.resetAccumulation?.();
+    requestRender();
+  });
+  rtBgMatchRow.appendChild(rtBgMatchLabel);
+  rtBgMatchRow.appendChild(rtBgMatchToggle);
+
   // Denoiser (path-tracing only): edge-aware denoiser on the screen output.
   // Lives in the shared "Advanced" section (visible for both tracers) but its
   // row is shown only under the pathtrace pipeline (updateRenderingControlsVisibility).
@@ -718,6 +735,7 @@ export function addColorPanel(target = "colorContainer") {
   const rtAdvancedBody = createElement("div", { class: "eos-collapsible-body" });
   rtAdvancedBody.appendChild(rtTiledRow);
   rtAdvancedBody.appendChild(rtPreviewRow);
+  rtAdvancedBody.appendChild(rtBgMatchRow);
   rtAdvancedBody.appendChild(ptDenoiseRow);
   rtAdvanced.appendChild(rtAdvancedBody);
   rtControlsBlock.appendChild(rtAdvanced);
@@ -846,6 +864,7 @@ export function addColorPanel(target = "colorContainer") {
     fire('rtResolutionScale', D.rtResolutionScale, 'input');
     fireCheck('rtTiledToggle', D.rtTiledRender);
     fireCheck('rtPreviewToggle', D.rtRasterPreview);
+    fireCheck('rtBgMatchToggle', D.rtBackgroundMatch);
     fire('rtReflectivity', D.rtReflectivity, 'input');
     fire('ptLightSoftness', D.ptLightSoftness, 'input');
     fire('rtLightIntensity', D.rtLightIntensity, 'input');
