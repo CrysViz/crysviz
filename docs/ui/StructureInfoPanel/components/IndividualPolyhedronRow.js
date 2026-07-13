@@ -14,6 +14,15 @@ function safeColor(color) {
   return color;
 }
 
+// Each row's "Edit" button swatch previews the polyhedron's live face color,
+// but a global recolor (atom color-map dropdown, mode switch, color-bar
+// limits) never rebuilds these rows — refresh in place on the same event,
+// mirroring createIndividualAtomRow/createIndividualBondRow's registries.
+const polyRowSwatchUpdateFunctions = {};
+document.addEventListener('crysviz:colors-changed', () => {
+  Object.values(polyRowSwatchUpdateFunctions).forEach((updateFn) => updateFn());
+});
+
 /**
  * Creates a row for one individual polyhedron inside an expanded Poly-tab
  * category (the polyhedron analog of createIndividualBondRow): label like
@@ -91,8 +100,14 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   colorBtn.className = 'atom-editor-button';
   colorBtn.dataset.editorButton = 'color';
   colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;';
-  colorBtn.style.background = hexToRgba(currentColor, 0.8);
   colorBtn.title = `Edit color and alpha for ${poly.catLabel} #${displayNumber}`;
+  function updateColorBtnSwatch() {
+    const style = resolvePolyhedronStyle(
+      fileBrowser.selectedStructure, key, catKey, poly.type, poly.centerIndex, poly.colorElem);
+    colorBtn.style.background = hexToRgba(safeColor(style.color), 0.8);
+  }
+  updateColorBtnSwatch();
+  polyRowSwatchUpdateFunctions[groupKey ?? key] = updateColorBtnSwatch;
 
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = 'display: flex; gap: 10px;';

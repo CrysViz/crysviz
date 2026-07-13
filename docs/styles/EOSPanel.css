@@ -228,6 +228,18 @@
    toggle. Generic pane chrome (including plot div sizing, via
    .split-item-body) lives in SplitView.css. */
 
+/* Docked to the bottom, the pane is wide and short — lay the E-V and P-V
+   plots out side by side instead of stacked so each keeps useful height.
+   Only the container's axis flips; each .split-item's own layout (title,
+   buttons, toggle) is untouched. */
+#viewArea.split-dock-bottom .eos-split-owner {
+  flex-direction: row;
+}
+
+#viewArea.split-dock-bottom .eos-split-owner .split-item {
+  min-width: 0; /* let the two plots actually shrink to share the row */
+}
+
 /* P-V plot only: a mini "Show Error Plots" toggle on the left (empty space
    there), action buttons kept on the right. */
 .eos-plot-actions-split {

@@ -1,5 +1,9 @@
 import { fileBrowser, general } from '../state/store.js';
 import { updatePolyhedra } from '../render/index.js';
+import { makeSectionHeadline } from './panels/sectionHeadline.js';
+import { addPolyhedraTypeHistogramPanel, openPolyhedraTypeHistogramSplitView } from './AnalysisPanels/PolyhedraTypeHistogram.js';
+import { addPolyhedronInspectorPanel, openPolyhedronInspectorSplitView } from './AnalysisPanels/PolyhedronInspector.js';
+import { addPolyhedraConnectivityHistogramPanel, openPolyhedraConnectivityHistogramSplitView } from './AnalysisPanels/PolyhedraConnectivityHistogram.js';
 
 function getSelectedStructureSettings() {
   const structure = fileBrowser.selectedStructure;
@@ -55,6 +59,54 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
   // collapse, so no header is built here.
   const group = document.createElement('div');
   group.id = 'polyhedraSettingsGroup';
+
+  // --- Histograms ---
+  // Same idiom as the Bonds panel's histograms (BondPanel.js): "Panel" opens a
+  // floating/dockable window, "Split View" opens the same live chart in the
+  // shared split pane. See AnalysisPanels/PolyhedraTypeHistogram.js,
+  // PolyhedronInspector.js, PolyhedraConnectivityHistogram.js.
+  if (structure) {
+    const histogramsPanel = document.createElement('div');
+    histogramsPanel.id = 'polyhedraHistogramsPanel';
+    histogramsPanel.style.marginBottom = '10px';
+    histogramsPanel.appendChild(makeSectionHeadline('Histograms'));
+
+    function addHistogramRow(label, openPanelFn, openSplitViewFn) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;';
+
+      const nameLabel = document.createElement('span');
+      nameLabel.textContent = label;
+      nameLabel.style.cssText = 'font-size:12px; color:#ccc;';
+
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display:flex; gap:6px;';
+
+      const panelBtn = document.createElement('button');
+      panelBtn.className = 'btn-mini highlight';
+      panelBtn.textContent = 'Panel';
+      panelBtn.title = `Open ${label} as a floating window`;
+      panelBtn.style.fontSize = '12px';
+      panelBtn.onclick = openPanelFn;
+
+      const splitBtn = document.createElement('button');
+      splitBtn.className = 'btn-mini';
+      splitBtn.textContent = 'Split View';
+      splitBtn.title = `Open ${label} in the split view beside the 3D scene`;
+      splitBtn.style.fontSize = '12px';
+      splitBtn.onclick = openSplitViewFn;
+
+      btnRow.append(panelBtn, splitBtn);
+      row.append(nameLabel, btnRow);
+      histogramsPanel.appendChild(row);
+    }
+
+    addHistogramRow('Type', addPolyhedraTypeHistogramPanel, openPolyhedraTypeHistogramSplitView);
+    addHistogramRow('Inspector', addPolyhedronInspectorPanel, openPolyhedronInspectorSplitView);
+    addHistogramRow('Connectivity', addPolyhedraConnectivityHistogramPanel, openPolyhedraConnectivityHistogramSplitView);
+
+    group.appendChild(histogramsPanel);
+  }
 
   const panel = document.createElement('div');
   panel.id = 'polyhedraSettingsPanel';

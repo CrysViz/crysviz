@@ -41,6 +41,10 @@ async function resizeVisiblePlots() {
 }
 
 function renderContent(body) {
+  // Lets the pane's dock-side (see docs/ui/panels/SplitView.js) switch this
+  // owner's two plots from stacked to side-by-side when docked at the
+  // bottom — see #viewArea.split-dock-bottom .eos-split-owner in EOSPanel.css.
+  body.classList.add('eos-split-owner');
   body.innerHTML = `
     <div class="split-item" id="ev-plot-wrapper">
       <h4>E vs V</h4>

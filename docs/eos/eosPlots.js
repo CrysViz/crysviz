@@ -4,8 +4,7 @@
 // (see docs/ui/EOSSplitView.js), not side by side.
 
 import { birchMurnaghanPressure, birchMurnaghanEnergy } from './eosMath.js';
-
-const PLOTLY_MODULE_URL = 'https://esm.sh/plotly.js-dist-min@2.27.0';
+import { loadPlotly } from '../utils/plotlyLoader.js';
 
 const COLORS = {
   DATA: '#d62828',
@@ -29,14 +28,6 @@ const V_DIFF_GUIDES = [
   { level: 2, color: '#e67e22' },
   { level: 5, color: '#e74c3c' },
 ];
-
-let plotlyPromise = null;
-export function loadPlotly() {
-  if (!plotlyPromise) {
-    plotlyPromise = import(PLOTLY_MODULE_URL).then((m) => m.default || m);
-  }
-  return plotlyPromise;
-}
 
 const plotThemes = new Map(); // plotId -> 'dark' | 'light'
 

@@ -9,7 +9,7 @@ import { clearAllHighlights } from '../SelectAndHighlightModule.js'
 import { getPanel } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
-import { bondLengthToColor } from '../ColorPanel.js';
+import { atomForceToColor } from '../ColorPanel.js';
 
 // The per-structure style-override stores (all survive rebuilds; see Structure.js).
 const ALL_STYLE_STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
@@ -25,7 +25,7 @@ function resetAllColorStyling(structure) {
       // Force-color mode repaints from force magnitudes (mirrors ColorEditor's reset).
       const f = structure.forces?.[i]?.vector;
       if (f?.length >= 3) {
-        atom.color = bondLengthToColor(Math.hypot(f[0], f[1], f[2]), general.ForceMin, general.ForceMax);
+        atom.color = atomForceToColor(Math.hypot(f[0], f[1], f[2]), general.ForceMin, general.ForceMax);
       }
     }
   });

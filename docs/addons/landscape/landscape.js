@@ -49,10 +49,10 @@ const STYLE_TEXT = `
 .lsc-row-label { font-size:11px; color:var(--muted-fg); padding:0 2px; line-height:1.5; }
 .lsc-row-label b { color:var(--panel-fg); }
 .lsc-gridwrap { position:relative; }
-.lsc-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(118px,1fr)); gap:8px; }
+.lsc-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(118px,1fr)); gap:12px; }
 .lsc-tile {
   border:1px solid var(--panel-border); border-radius:var(--radius);
-  background:var(--group-bg); padding:6px; display:flex; flex-direction:column; gap:5px;
+  background:var(--group-bg); padding:12px; display:flex; flex-direction:column; gap:7px;
 }
 .lsc-tile-hot { border-color:rgba(255,180,0,0.7); box-shadow:0 0 0 2px rgba(255,180,0,0.18); }
 .lsc-tile-hdr { display:flex; align-items:center; justify-content:space-between; gap:4px; }
@@ -68,7 +68,11 @@ const STYLE_TEXT = `
 .lsc-ov { cursor:crosshair; touch-action:none; }
 .lsc-tile-foot { display:flex; align-items:center; gap:5px; }
 .lsc-cb-lo, .lsc-cb-hi { font-size:9px; font-family:ui-monospace,monospace; color:var(--muted-fg); opacity:0.8; }
-.lsc-cb { flex:1; height:6px; border-radius:3px; }
+/* min-width:0 overrides the flex default (min-width:auto), which — once
+   renderColorbar() sets the canvas's width attribute (its intrinsic size)
+   — would otherwise floor the item at that size forever: a flex item can't
+   shrink below its own intrinsic content size unless min-width is reset. */
+.lsc-cb { flex:1; min-width:0; height:6px; border-radius:3px; }
 .lsc-resync-overlay {
   position:absolute; inset:0; display:none; align-items:center; justify-content:center;
   pointer-events:none; z-index:5;
@@ -238,6 +242,7 @@ export function createLandscape(container, api) {
     atomMap: null,        // canonical index -> structure atom index
     mappedSig: null,      // signature the atomMap was built against
     lastSelect: null,     // 'A' | 'B'
+    tileGrids: [],         // [{ grid, rows, cols }, ...] — every .lsc-grid currently on screen
   };
 
   const tooltip = document.createElement('div');
@@ -280,11 +285,12 @@ export function createLandscape(container, api) {
   container.addEventListener('dragleave', onDragLeave);
   container.addEventListener('drop', onDrop);
 
-  // ---- resize: re-fit overlays + colorbars off the pane width ------------
+  // ---- resize: re-size tiles to the available space, then re-fit overlays
+  // + colorbars off the result -----------------------------------------
   let resizeRaf = 0;
   const ro = new ResizeObserver(() => {
     if (resizeRaf) return;
-    resizeRaf = requestAnimationFrame(() => { resizeRaf = 0; refitAll(); });
+    resizeRaf = requestAnimationFrame(() => { resizeRaf = 0; applyTileSizing(); refitAll(); });
   });
   ro.observe(container);
 
@@ -293,6 +299,7 @@ export function createLandscape(container, api) {
   // ---- empty state -------------------------------------------------------
   function showEmpty() {
     state.mode = 'empty';
+    state.tileGrids = [];
     root.replaceChildren();
     const box = document.createElement('div');
     box.className = 'lsc-empty';
@@ -348,6 +355,7 @@ export function createLandscape(container, api) {
       const poscar = toPOSCAR(`${canon.name}_landscape`, canon.lattice, canon.els, canon.base);
       await api.loadStructure(poscar, 'poscar', `${canon.name}_landscape`);
       structure = api.getStructure();
+      api.recenterCamera();
     }
     const map = buildAtomMap(structure, canon.els, canon.base);
     state.atomMap = map;
@@ -429,6 +437,7 @@ export function createLandscape(container, api) {
     root.replaceChildren();
     const { A, B } = state;
     state.linkTiles = { A: {}, B: {} };
+    state.tileGrids = [];
 
     const rowA = buildRowSection(
       A, state.RA, state.linkTiles.A,
@@ -459,7 +468,11 @@ export function createLandscape(container, api) {
     root.append(rowA.section, rowB.section, info);
     state.syncEl = info.querySelector('#lsc-sync');
 
-    requestAnimationFrame(() => renderLinkedOverlays());
+    // refitAll() (not just renderLinkedOverlays()) — applyTileSizing() just
+    // changed every tile's pixel size, and the colorbars' own raster buffers
+    // (set from their old offsetWidth when each tile first built) need a
+    // redraw at the new size or they render stretched/blurry.
+    requestAnimationFrame(() => { applyTileSizing(); refitAll(); });
   }
 
   function selectA(r, c, live) {
@@ -551,6 +564,7 @@ export function createLandscape(container, api) {
   function setupIndependent(datasets) {
     state.mode = 'independent';
     state.rows = [];
+    state.tileGrids = [];
     root.replaceChildren();
 
     for (const D of datasets) {
@@ -591,7 +605,7 @@ export function createLandscape(container, api) {
     ensureStructure(state.rows[0].canon).then(() => {
       driveIndep(state.rows[0], false);
     });
-    requestAnimationFrame(() => renderIndepOverlays());
+    requestAnimationFrame(() => { applyTileSizing(); refitAll(); });
   }
 
   function selectIndep(rowState, r, c, live) {
@@ -642,6 +656,8 @@ export function createLandscape(container, api) {
     const grid = document.createElement('div');
     grid.className = 'lsc-grid';
     wrap.appendChild(grid);
+    const [rows, cols] = D.grid_shape;
+    state.tileGrids.push({ grid, rows, cols });
 
     let overlay = null;
     if (isLinked) {
@@ -731,6 +747,71 @@ export function createLandscape(container, api) {
     ovCanvas.addEventListener('pointerup', end);
     ovCanvas.addEventListener('pointercancel', end);
     ovCanvas.addEventListener('pointerleave', () => { tooltip.style.display = 'none'; });
+  }
+
+  // ── Adaptive tile sizing ─────────────────────────────────────────────────
+  // Each tile keeps its dataset's own grid aspect ratio ("square" cells —
+  // width/height following grid_shape, not literally 1:1), but the SIZE is
+  // driven by the available space in BOTH axes, not just by how wide the
+  // pane happens to be: dragging the split view taller (e.g. while docked to
+  // the bottom, see docs/ui/panels/SplitView.js) grows the tiles, a shorter
+  // pane shrinks them. A row also isn't forced to stay a single line — in a
+  // narrow ("portrait") pane a full-width row of N tiles would be squeezed
+  // tiny, so the layout tries every column count from N (one row) down to 1
+  // (fully stacked) and keeps whichever yields the biggest tile, wrapping
+  // into fewer, taller columns once that's a better use of the space than a
+  // single cramped row. Applied via an explicit pixel grid-template-columns,
+  // overriding the CSS default (repeat(auto-fit,minmax(118px,1fr)), which is
+  // purely width-driven and ignores the pane's height entirely).
+  const MIN_TILE_PX = 64;
+
+  function applyTileSizing() {
+    const grids = state.tileGrids;
+    if (!grids.length) return;
+
+    const containerStyle = getComputedStyle(container);
+    const containerPad = parseFloat(containerStyle.paddingTop) + parseFloat(containerStyle.paddingBottom);
+    const containerGap = (parseFloat(containerStyle.rowGap) || 0) * Math.max(0, container.children.length - 1);
+    const availableHeight = container.clientHeight - containerPad - containerGap;
+
+    // Everything currently on screen that ISN'T a tile grid (the load
+    // button, row labels, inter-row gaps, the info panel) — measured live
+    // off the real DOM rather than assumed, so this has no hardcoded
+    // knowledge of the surrounding chrome and stays correct if it changes.
+    let contentHeight = 0;
+    for (const child of container.children) contentHeight += child.getBoundingClientRect().height;
+    const gridsHeight = grids.reduce((sum, g) => sum + g.grid.getBoundingClientRect().height, 0);
+    const chromeHeight = contentHeight - gridsHeight;
+
+    const perGridHeight = Math.max(MIN_TILE_PX, (availableHeight - chromeHeight) / grids.length);
+
+    for (const g of grids) {
+      const n = g.grid.children.length;
+      if (!n) continue;
+      const gap = parseFloat(getComputedStyle(g.grid).columnGap) || 0;
+      const gridWidth = g.grid.clientWidth;
+      const aspect = g.cols / g.rows; // canvas width/height at "square" (data-shaped) sizing
+
+      // Per-tile chrome (header + footer + padding) around the canvas
+      // itself, needed to convert a row-height budget into a canvas size —
+      // measured live off whatever's currently on screen.
+      const sampleTile = g.grid.children[0];
+      const sampleCanvas = sampleTile.querySelector('.lsc-canvas-wrap');
+      const tileChrome = sampleCanvas
+        ? sampleTile.getBoundingClientRect().height - sampleCanvas.getBoundingClientRect().height
+        : 0;
+
+      let best = { cols: n, size: MIN_TILE_PX };
+      for (let cols = n; cols >= 1; cols--) {
+        const rows = Math.ceil(n / cols);
+        const widthPerTile = (gridWidth - gap * (cols - 1)) / cols;
+        const heightPerRow = (perGridHeight - gap * (rows - 1)) / rows;
+        const size = Math.min(widthPerTile, (heightPerRow - tileChrome) * aspect);
+        if (size > best.size) best = { cols, size };
+      }
+
+      g.grid.style.gridTemplateColumns = `repeat(${best.cols}, ${Math.max(MIN_TILE_PX, best.size)}px)`;
+    }
   }
 
   // ── Re-fit overlays + colorbars after a size / theme change ────────────
