@@ -807,7 +807,7 @@ autoRangeBtn.addEventListener("click", applyAutoRange);
     // never clicked; nothing to snapshot here.
     structure.spins = spins;
     if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], colorMapSelect.value);
-      updateNoForcesNote()
+      updateNoSpinsNote()
       updateCurrentSpinsList();
       createSpeciesVisibilityToggles();
       refreshOpenStructureInfoSpinEditors();
