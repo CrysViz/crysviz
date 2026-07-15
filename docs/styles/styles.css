@@ -250,6 +250,16 @@ body.panel-hidden #axesLegend {
   box-shadow: 0px 0px 4px 2px var(--highlight-color);
 }
 
+/* Auto Range buttons (Forces/Spins/Atoms/Bonds/Planes panels): same look as
+   the file-action-btn (Upload etc.) buttons, but sized to sit inline next to
+   a Log Scale checkbox instead of stretching to fill the row. */
+.cv-auto-range-btn {
+  width: auto;
+  padding: 6px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 #fileInput {
   display: none;
 }
@@ -445,6 +455,114 @@ body.panel-hidden #axesLegend {
 .cv-drop-hover {
   outline: 2px dashed var(--highlight-color);
   outline-offset: -2px;
+}
+
+/* iOS-Photos-style crop selector (ui/CropOverlay.js), positioned to exactly
+   cover #view. Four mask divs dim everything outside .cv-crop-rect rather
+   than a single overlay with a cut-out — simpler than clip-path/SVG masking
+   and just as effective for an axis-aligned rectangle. */
+.cv-crop-overlay {
+  position: fixed;
+  z-index: 3000;
+  outline: none;
+}
+.cv-crop-mask {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+.cv-crop-rect {
+  position: absolute;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  cursor: move;
+  touch-action: none;
+}
+/* Rule-of-thirds guide lines, purely decorative (matches the iOS crop tool). */
+.cv-crop-rect::before,
+.cv-crop-rect::after {
+  content: "";
+  position: absolute;
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+.cv-crop-rect::before {
+  left: 33.333%;
+  right: 33.333%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  box-shadow: calc(33.333% - 1px) 0 0 rgba(255, 255, 255, 0.35);
+}
+.cv-crop-rect::after {
+  top: 33.333%;
+  bottom: 33.333%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  box-shadow: 0 calc(33.333% - 1px) 0 rgba(255, 255, 255, 0.35);
+}
+.cv-crop-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  touch-action: none;
+}
+.cv-crop-handle::before {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border: 3px solid #fff;
+  border-radius: 2px;
+}
+.cv-crop-handle-nw { left: -11px; top: -11px; cursor: nwse-resize; }
+.cv-crop-handle-ne { right: -11px; top: -11px; cursor: nesw-resize; }
+.cv-crop-handle-sw { left: -11px; bottom: -11px; cursor: nesw-resize; }
+.cv-crop-handle-se { right: -11px; bottom: -11px; cursor: nwse-resize; }
+.cv-crop-handle-nw::before { border-width: 3px 0 0 3px; }
+.cv-crop-handle-ne::before { border-width: 3px 3px 0 0; }
+.cv-crop-handle-sw::before { border-width: 0 0 3px 3px; }
+.cv-crop-handle-se::before { border-width: 0 3px 3px 0; }
+
+.cv-crop-toolbar {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--menu-bg);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+  white-space: nowrap;
+}
+.cv-crop-hint {
+  font-size: 12px;
+  opacity: 0.7;
+  color: var(--panel-fg);
+}
+.cv-crop-confirm,
+.cv-crop-cancel {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cv-crop-confirm {
+  background: var(--bg-color);
+  color: #fff;
+  font-weight: 500;
+}
+.cv-crop-confirm:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+.cv-crop-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }
 
 #structureText {
@@ -1260,9 +1378,15 @@ justify-content: center;
    --split-reserve does for the background-dot's right offset. 0px when the
    pane is closed or docked to the right. */
 position: fixed; left: var(--gizmo-left); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px)); width: var(--gizmo-size); height: var(--gizmo-size);
-border-radius: 10px; background: rgba(0,0,0,0.08); backdrop-filter: blur(6px);
-border: 1px solid rgba(255,255,255,0.15); z-index: 1000; overflow: hidden;
-pointer-events: none;
+z-index: 1000; overflow: hidden;
+/* auto, not none: the whole box is a drag handle (ui/GizmoDrag.js), not
+   just its grip — this trades away clicking "through" the gizmo to rotate
+   the scene behind it, in exchange for being draggable from anywhere on it. */
+pointer-events: auto;
+cursor: grab;
+}
+#axesGizmo.cv-gizmo-dragging {
+  cursor: grabbing;
 }
 
 #axesLegend{
@@ -1278,6 +1402,107 @@ z-index:1000; pointer-events:none;
 .dot{display:inline-block;width:15px;height:15px;border-radius:50%;margin-right:6px;}
 .dot-a{width:10px;height:10px;background:#ff3333;} .dot-b{width:10px;height:10px;background:#33cc33;} .dot-c{width:10px;height:10px;background:#3366ff;}
 .legend-row{display:flex;align-items:center;gap:6px;line-height:1.2;}
+
+/* Drag grip + hamburger menu for the axes gizmo (ui/GizmoDrag.js). A
+   body-level overlay tracking a spot just above #axesGizmo, centered over it
+   (ui/GizmoDrag.js repositions it in JS) rather than a child of #axesGizmo
+   itself, since that box has overflow:hidden (clipping the WebGL canvas to
+   its rounded corners) which would also clip the menu dropdown the moment
+   it opened. Hidden until hovered — same hover-revealed-titlebar treatment
+   as a floating color bar's controls strip (.cv-colorbar-floating
+   .cv-colorbar-controls below), toggled by ui/GizmoDrag.js's own hover
+   tracking rather than CSS :hover (this element isn't a CSS-adjacent
+   sibling of #axesGizmo, so a :hover rule on it couldn't reveal this
+   anyway). */
+.cv-gizmo-controls {
+  position: fixed;
+  /* So the JS-set width (ui/GizmoDrag.js's positionControls, matching the
+     gizmo box's own outer width) isn't inflated further by this element's
+     own padding/border — content-box (the default) would add both on top. */
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  /* Spreads the grip and hamburger menu to the two ends of the strip —
+     width is set in JS (ui/GizmoDrag.js's positionControls) to match the
+     gizmo box's own current width, so this needs a stretch layout instead
+     of the color bars' content-sized "gap" row. */
+  justify-content: space-between;
+  z-index: 1001;
+  transform: translate(-50%, -100%);
+  padding: 5px 10px;
+  border-radius: 12px;
+  /* --menu-bg, not --bg-color — see .cv-colorbar-menu's comment
+     (toggle_styles.css): the same near-opaque token every other menu/modal
+     uses, instead of the ~80%-opaque theme accent. */
+  background: var(--menu-bg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.cv-gizmo-controls-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.cv-gizmo-controls .cv-colorbar-grip {
+  font-size: 18px;
+}
+.cv-gizmo-menu-wrap {
+  position: relative;
+  display: flex;
+}
+.cv-gizmo-menu-wrap .cv-colorbar-menu-btn {
+  width: 22px;
+  height: 22px;
+  font-size: 14px;
+  border-radius: 4px;
+}
+.cv-gizmo-dragging {
+  opacity: 0.85;
+}
+
+/* Bottom-right resize grip (ui/GizmoDrag.js) — a child of #axesGizmo itself
+   (unlike .cv-gizmo-controls, which lives in its own body-level overlay to
+   escape the box's overflow:hidden): this sits fully within the box's own
+   bounds, so no clipping issue applies. Hidden until hovered (its own
+   pointer-events:none/auto toggle, independent of #axesGizmo's own — that's
+   always pointer-events:auto now that the whole box is a drag handle),
+   toggled by the same JS hover tracking that reveals .cv-gizmo-controls. */
+.cv-gizmo-resize-handle {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.cv-gizmo-resize-handle-visible {
+  opacity: 0.7;
+  pointer-events: auto;
+}
+.cv-gizmo-resize-handle:hover {
+  opacity: 1;
+}
+/* currentColor, not a hardcoded white: #axesGizmo's own `color` is kept in
+   sync with the scene's contrast-safe color by ui/GizmoDrag.js (the same
+   currentContrastColor() the floating color bars' tick labels use), so this
+   bracket doesn't wash out against a light background. */
+.cv-gizmo-resize-handle::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  border-radius: 0 0 3px 0;
+  opacity: 0.85;
+}
 
 
 
@@ -1417,12 +1642,27 @@ body > #structureInfoContent {
   gap: 4px;
 }
 
-/* The small step-rotation arrows flanking each axis button. */
+/* The small step-rotation arrows flanking each axis button. Hidden until a
+   long-press on the stack's main button reveals them (see
+   cameraAngleControl.js's setupAxisLongPress) — visibility, not display, so
+   the stack's own height/gap never shifts when they appear/disappear.
+   pointer-events follows visibility so a hidden arrow can't be clicked (or
+   caught by the outside-click handler's own hit-testing) while invisible. */
 #cameraTools .camera-axis-stack .axis-step {
   padding: 1px 6px;
   font-size: 9px;
   line-height: 1;
   min-width: 32px;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+#cameraTools .camera-axis-stack.camera-axis-revealed .axis-step {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Separator for camera controls. Hidden unconditionally (the panel wraps at
@@ -1630,8 +1870,6 @@ body {
     bottom: calc(12px + var(--split-reserve-bottom, 0px));
     width: 60px;
     height: 60px;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   #axesLegend {

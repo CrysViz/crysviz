@@ -1,51 +1,40 @@
-// High-resolution PNG export of the 3D scene, without any floating UI.
+// High-resolution PNG export of the 3D scene, WYSIWYG: whatever the user has
+// on screen right now — atoms/bonds/polyhedra/fields, the axis gizmo and its
+// legend wherever they've been dragged, any color bars floated onto the
+// scene, measurement lines and labels — at the position it's actually
+// showing at, cropped to a rectangle the user picks interactively
+// (ui/CropOverlay.js, an iOS-Photos-style draggable/resizable crop window
+// over the live view) rather than auto-framed to content or auto-placed in
+// a corner. Docked (non-floating) color bars live in the side panel, not
+// over the 3D view, so — like the panel itself — they're never part of this
+// capture; only what's actually layered on #view is.
 //
-// The exported image contains exactly what is "drawn on the scene": atoms,
-// bonds, polyhedra, fields, the cel outline, the measurement lines AND their
-// labels, and the axis gizmo. It deliberately excludes the panel Windows, the
-// dock, the dock/menu button and the background-selection circle (those are
-// separate DOM siblings of #view, so they are never part of a WebGL capture).
-//
-// Strategy (see the plan): render the main scene at a multiple of the current
-// #view size (same aspect, so the camera projection is untouched), read the
+// Strategy: render #view's full viewport at a resolution high enough that
+// the user's chosen crop rectangle maps to good pixel density, read the
 // pixels synchronously in the same tick (the renderer has no
-// preserveDrawingBuffer, so nothing may `await` between render() and the read),
-// crop to the non-background content, and rescale that crop to fit the chosen
-// output canvas with margins. The gizmo (a separate small renderer) and the
-// CSS2D measurement labels are composited on afterwards in 2D.
+// preserveDrawingBuffer, so nothing may `await` between render() and the
+// read), then crop+scale that render to exactly fill the requested output
+// size (the crop rectangle's on-screen aspect always matches the output's,
+// so this never needs to letterbox). The gizmo (a separate small renderer),
+// its legend, floating color bars, and the CSS2D measurement labels are
+// each redrawn in 2D afterward at their own true on-screen position, mapped
+// through the same crop.
 //
 // alpha:true on the main renderer (WindowAndSceneControls.initRenderer) lets us
-// render with scene.background = null so content detection is a clean alpha
-// test; an opaque output is produced by filling the scene background colour
-// under the composited content.
+// render with scene.background = null and fill the requested background
+// colour under the composited content only when transparency isn't requested.
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general, measurements } from '../state/store.js';
 import { latticeDirsNorm } from './LatticeModule.js';
 import { requestRender } from './AnimateModule.js';
-
-const ALPHA_THRESHOLD = 12; // 0..255; a pixel counts as content above this
+import { colorsFor, computeTicks, formatTick, currentContrastColor } from '../ui/ColorBarWidget.js';
+import { listActiveColorBars } from '../ui/ColorBarRegistry.js';
+import { drawLegendRichText } from '../utils/index.js';
 
 /** @returns {HTMLElement} the #view container */
 function getViewEl() {
   return /** @type {HTMLElement} */ (document.getElementById('view'));
-}
-
-// Render one frame through the active pipeline into an offscreen 2D canvas of
-// exactly w x h device pixels. Caller must have set pixelRatio 1,
-// scene.background and clearAlpha for a transparent capture. Reads the drawing
-// buffer synchronously.
-function renderMainToCanvas(w, h) {
-  app.renderer.setSize(w, h, false);
-  app.pipeline?.setSize(w, h);
-  app.pipeline?.render({ renderer: app.renderer, scene: app.scene, camera: app.camera });
-
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
-  ctx.drawImage(app.renderer.domElement, 0, 0, w, h);
-  return canvas;
 }
 
 // Like renderMainToCanvas, but for progressive tracer pipelines: keeps
@@ -74,27 +63,6 @@ async function renderMainToCanvasConverged(w, h) {
   return canvas;
 }
 
-// Bounding box of pixels with alpha > threshold. Returns null if fully empty.
-function contentBBox(canvas) {
-  const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
-  const { width: w, height: h } = canvas;
-  const data = ctx.getImageData(0, 0, w, h).data;
-  let x0 = w, y0 = h, x1 = -1, y1 = -1;
-  for (let y = 0; y < h; y++) {
-    const row = y * w * 4;
-    for (let x = 0; x < w; x++) {
-      if (data[row + x * 4 + 3] > ALPHA_THRESHOLD) {
-        if (x < x0) x0 = x;
-        if (x > x1) x1 = x;
-        if (y < y0) y0 = y;
-        if (y > y1) y1 = y;
-      }
-    }
-  }
-  if (x1 < 0) return null;
-  return { x0, y0, x1, y1 };
-}
-
 function roundRectPath(ctx, x, y, w, h, r) {
   const rr = Math.max(0, Math.min(r, w / 2, h / 2));
   ctx.beginPath();
@@ -104,6 +72,36 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, rr);
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
+}
+
+// A DOM element's on-screen rect expressed as fractions (0..1, can extend
+// outside that range) of #view's own rect — the common coordinate space
+// every overlay (gizmo, legend, floating color bars) gets mapped through.
+function viewFraction(rect, viewRect) {
+  return {
+    x0: (rect.left - viewRect.left) / viewRect.width,
+    y0: (rect.top - viewRect.top) / viewRect.height,
+    x1: (rect.right - viewRect.left) / viewRect.width,
+    y1: (rect.bottom - viewRect.top) / viewRect.height,
+  };
+}
+
+// Maps a view-fraction rect through the user's chosen crop into output
+// canvas pixels. Returns null when the rect falls entirely outside either
+// the crop or the output — same as a real screenshot, something dragged out
+// of frame simply isn't in the picture.
+function cropToOutputRect(viewFrac, crop, width, height, margin) {
+  const cw = crop.x1 - crop.x0;
+  const ch = crop.y1 - crop.y0;
+  if (cw <= 0 || ch <= 0) return null;
+  const innerW = width - 2 * margin;
+  const innerH = height - 2 * margin;
+  const x0 = margin + ((viewFrac.x0 - crop.x0) / cw) * innerW;
+  const y0 = margin + ((viewFrac.y0 - crop.y0) / ch) * innerH;
+  const x1 = margin + ((viewFrac.x1 - crop.x0) / cw) * innerW;
+  const y1 = margin + ((viewFrac.y1 - crop.y0) / ch) * innerH;
+  if (x1 <= 0 || y1 <= 0 || x0 >= width || y0 >= height) return null;
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
 // Draw the measurement labels (CSS2D divs anchored at 3D points) onto the
@@ -157,20 +155,23 @@ function drawMeasurementLabels(octx, map) {
   }
 }
 
-// Render the axis gizmo at high resolution and place it in the output's
-// bottom-left corner inset by the margin (matching #axesGizmo's on-screen
-// position), with the a/b/c legend next to it (matching #axesLegend).
-// Included ONLY when the user has the gizmo showing (general.showAxes /
-// #axesGizmo not display:none). Returns the previous gizmo pixel ratio so
-// the caller can restore it (null if skipped).
-function drawGizmoAndLegend(octx, width, height, margin) {
+// Renders the gizmo (and, unless the labels are integrated onto its arrows,
+// its separate a/b/c legend) at its own true on-screen position, mapped
+// through the crop — wherever ui/GizmoDrag.js has it sitting right now.
+// Skipped entirely if the gizmo is hidden, or dragged fully outside the
+// chosen crop. Returns the previous gizmo pixel ratio so the caller can
+// restore it (null if skipped).
+function drawGizmoAndLegend(octx, width, height, margin, crop, viewRect) {
   const gizmoDiv = document.getElementById('axesGizmo');
-  if (!app.gizmoRenderer || !app.gizmoScene || !app.gizmoCamera) return null;
+  if (!app.gizmoRenderer || !app.gizmoScene || !app.gizmoCamera || !gizmoDiv) return null;
   if (!general.showAxes) return null;
-  if (gizmoDiv && gizmoDiv.style.display === 'none') return null;
+  if (gizmoDiv.style.display === 'none') return null;
+
+  const outRect = cropToOutputRect(viewFraction(gizmoDiv.getBoundingClientRect(), viewRect), crop, width, height, margin);
+  if (!outRect) return null;
 
   const prevGizmoPR = app.gizmoRenderer.getPixelRatio();
-  const gsize = Math.max(24, Math.round(Math.min(width - 2 * margin, height - 2 * margin) * 0.14));
+  const gsize = Math.max(16, Math.round(Math.max(outRect.width, outRect.height)));
   app.gizmoRenderer.setPixelRatio(1);
   app.gizmoRenderer.setSize(gsize, gsize, false);
   app.gizmoCamera.aspect = 1;
@@ -182,62 +183,200 @@ function drawGizmoAndLegend(octx, width, height, margin) {
   app.gizmoScene.userData.bArrow.setDirection(b.clone().applyQuaternion(invCamQ));
   app.gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
   app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
+  octx.drawImage(app.gizmoRenderer.domElement, outRect.x, outRect.y, outRect.width, outRect.height);
 
-  const gx = margin;
-  const gy = height - gsize - margin;
-  octx.drawImage(app.gizmoRenderer.domElement, gx, gy, gsize, gsize);
-  drawAxesLegend(octx, gx + gsize + Math.round(gsize * 0.07), gy + gsize, gsize);
+  // The a/b/c letters are already baked into that render when integrated
+  // onto the arrows (general.gizmoLabelsOnArrows, ui/GizmoDrag.js) — the
+  // separate legend box is only needed as the alternative to that.
+  if (!general.gizmoLabelsOnArrows) {
+    const legendDiv = document.getElementById('axesLegend');
+    if (legendDiv && legendDiv.style.display !== 'none') {
+      const legendOut = cropToOutputRect(viewFraction(legendDiv.getBoundingClientRect(), viewRect), crop, width, height, margin);
+      if (legendOut) drawAxesLegend(octx, legendOut);
+    }
+  }
   return prevGizmoPR;
 }
 
-// The a/b/c legend box (mirrors #axesLegend), bottom-aligned with the gizmo and
-// sized proportionally to it. Colours match the gizmo arrows / .dot-a/b/c CSS.
-function drawAxesLegend(ictx, x, bottomY, gsize) {
+// The a/b/c legend box (mirrors #axesLegend), filling the exact output rect
+// its on-screen counterpart maps to. Colours match the gizmo arrows /
+// .dot-a/b/c CSS.
+function drawAxesLegend(ictx, rect) {
   const rows = [['a', '#ff3333'], ['b', '#33cc33'], ['c', '#3366ff']];
-  const font = Math.max(8, gsize * 0.16);
+  const font = Math.max(7, rect.height * 0.15);
   const dot = font * 0.85;
   const padX = font * 0.6;
-  const padY = font * 0.5;
   const gap = font * 0.5;
-  const rowGap = font * 0.45;
-  const rowH = Math.max(font, dot);
+  const rowH = rect.height / rows.length;
 
-  ictx.font = `600 ${font}px sans-serif`;
-  ictx.textBaseline = 'middle';
-  ictx.textAlign = 'left';
-  let letterW = 0;
-  for (const [ch] of rows) letterW = Math.max(letterW, ictx.measureText(ch).width);
-
-  const boxW = padX * 2 + dot + gap + letterW;
-  const boxH = padY * 2 + rowH * 3 + rowGap * 2;
-  const boxX = x;
-  const boxY = bottomY - boxH; // bottom-aligned with the gizmo bottom
-
-  roundRectPath(ictx, boxX, boxY, boxW, boxH, font * 0.5);
+  roundRectPath(ictx, rect.x, rect.y, rect.width, rect.height, font * 0.5);
   ictx.fillStyle = 'rgba(0,0,0,0.8)';
   ictx.fill();
   ictx.lineWidth = Math.max(1, font * 0.06);
   ictx.strokeStyle = 'rgba(255,255,255,0.2)';
   ictx.stroke();
 
+  ictx.font = `600 ${font}px sans-serif`;
+  ictx.textBaseline = 'middle';
+  ictx.textAlign = 'left';
+
   for (let i = 0; i < rows.length; i++) {
     const [ch, color] = rows[i];
-    const cy = boxY + padY + rowH / 2 + i * (rowH + rowGap);
+    const cy = rect.y + rowH * (i + 0.5);
     ictx.beginPath();
-    ictx.arc(boxX + padX + dot / 2, cy, dot / 2, 0, Math.PI * 2);
+    ictx.arc(rect.x + padX + dot / 2, cy, dot / 2, 0, Math.PI * 2);
     ictx.fillStyle = color;
     ictx.fill();
     ictx.lineWidth = Math.max(1, dot * 0.08);
     ictx.strokeStyle = 'rgba(255,255,255,0.4)';
     ictx.stroke();
     ictx.fillStyle = '#fff';
-    ictx.fillText(ch, boxX + padX + dot + gap, cy);
+    ictx.fillText(ch, rect.x + padX + dot + gap, cy);
+  }
+}
+
+// Redraws one color bar's gradient + ticks + legend onto the export canvas —
+// not a rasterization of the live DOM widget, but a from-scratch Canvas 2D
+// draw using the exact same color stops (ColorBarWidget.colorsFor) and tick
+// math (ColorBarWidget.computeTicks) the on-screen widget itself uses, so
+// the printed numbers and gradient match exactly. (x,y,w,h) is the bar's own
+// gradient strip mapped into output pixels — ticks/legend render below
+// (horizontal) or to the right (vertical) of it, same as the live widget's
+// default (non-flipped) layout.
+function drawColorBar(octx, settings, x, y, w, h, font, pxScale = 1) {
+  const { colormap, min, max, minText, maxText, scale, legend, flipSide } = settings;
+  const horizontal = w >= h;
+  // The live bar shows Min/Max as the exact text in those input fields, not
+  // formatTick(min)/formatTick(max) — the same rounding its OWN inner ticks
+  // use (2 decimal places, or 0 once |v| >= 100) is far coarser than what's
+  // actually typed/set there (a longer decimal like "0.0599" from Auto
+  // Range would print as "0.06"), and reformatting also throws away
+  // notation the user typed directly (scientific notation stays as-is in
+  // the input; parseFloat back through min/max loses it). Falls back to
+  // formatTick only if a caller's settings don't carry the raw text (older
+  // shape, or minText/maxText genuinely empty).
+  const minLabel = minText || formatTick(min);
+  const maxLabel = maxText || formatTick(max);
+
+  const colors = colorsFor(colormap);
+  const grad = horizontal
+    ? octx.createLinearGradient(x, 0, x + w, 0)
+    : octx.createLinearGradient(0, y + h, 0, y); // bottom (min) -> top (max)
+  const step = Math.max(1, Math.floor(colors.length / 20));
+  for (let i = 0; i < colors.length; i += step) {
+    grad.addColorStop(i / colors.length, `#${colors[i].getHexString()}`);
+  }
+  // Matches the live bar exactly: a CSS border-radius:4px on the <canvas>
+  // (ColorBarWidget.js) and NO border/stroke at all. This used to be a
+  // plain fillRect+strokeRect — sharp corners plus a white outline the live
+  // widget never actually has — so the export looked like a different,
+  // boxier bar instead of a redraw of the one on screen.
+  octx.fillStyle = grad;
+  roundRectPath(octx, x, y, w, h, 4 * pxScale);
+  octx.fill();
+
+  const validRange = isFinite(min) && isFinite(max) && min < max;
+  const ticks = validRange ? computeTicks(min, max, scale) : [];
+
+  // Matches the live widget's own tick-label font exactly (normal weight,
+  // the app's actual font stack) — this used to hardcode a semi-bold generic
+  // "sans-serif", which browsers usually resolve to something like Arial:
+  // both bolder and visibly different from the app's -apple-system/Segoe UI
+  // stack, so the exported text never quite looked like the on-screen bar.
+  octx.font = `${font}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  // Same text color the live floating widget itself uses (ColorBarWidget.js's
+  // tickContrast/currentContrastColor) — no outline or shadow, just the
+  // plain, contrast-safe color the on-screen bar is actually showing right
+  // now, so the export matches instead of inventing its own look.
+  octx.fillStyle = currentContrastColor() || '#fff';
+
+  function drawLabel(text, tx, ty, align, baseline) {
+    if (!text) return;
+    octx.textAlign = align;
+    octx.textBaseline = baseline;
+    octx.fillText(text, tx, ty);
+  }
+
+  const tickGap = font * 0.4;
+  // flipSide (ColorBarWidget.js's own flip toggle, carried through in
+  // getSettings()) moves ticks/legend to the opposite side of the bar —
+  // above instead of below in horizontal mode, left instead of right in
+  // vertical — same as the live widget. This used to always draw the
+  // default (non-flipped) side regardless of the widget's actual state, so
+  // a flipped bar exported with its labels back on the default side.
+  if (horizontal) {
+    const tickY = flipSide ? y - tickGap : y + h + tickGap;
+    const tickBaseline = flipSide ? 'bottom' : 'top';
+    drawLabel(validRange ? minLabel : '', x, tickY, 'left', tickBaseline);
+    drawLabel(validRange ? maxLabel : '', x + w, tickY, 'right', tickBaseline);
+    for (const t of ticks) drawLabel(t.label, x + t.frac * w, tickY, 'center', tickBaseline);
+    if (legend) {
+      const legendY = flipSide ? tickY - font * 1.3 : tickY + font * 1.3;
+      // Rich-text draw (bold/italic/sup/sub via utils/LegendRichText.js), not
+      // drawLabel's plain fillText — matches whatever formatting the live
+      // widget's legend (click-to-edit, ColorBarWidget.js) is showing.
+      drawLegendRichText(octx, legend, x + w / 2, legendY, { fontPx: font, align: 'center', baseline: tickBaseline });
+    }
+  } else {
+    const tickX = flipSide ? x - tickGap : x + w + tickGap;
+    const tickAlign = flipSide ? 'right' : 'left';
+    drawLabel(validRange ? maxLabel : '', tickX, y, tickAlign, 'top');
+    drawLabel(validRange ? minLabel : '', tickX, y + h, tickAlign, 'bottom');
+    for (const t of ticks) drawLabel(t.label, tickX, y + h - t.frac * h, tickAlign, 'middle');
+    if (legend) {
+      octx.save();
+      octx.translate(flipSide ? tickX - font * 3.4 : tickX + font * 3.4, y + h / 2);
+      octx.rotate(-Math.PI / 2);
+      drawLegendRichText(octx, legend, 0, 0, { fontPx: font, align: 'center', baseline: 'middle' });
+      octx.restore();
+    }
+  }
+}
+
+// Draws every color bar that's currently floated onto the scene (never a
+// docked one — that lives in the side panel, not over #view, so it's no
+// more "in the scene" than the panel itself) at its own true on-screen
+// position, mapped through the crop.
+function drawFloatingColorBars(octx, width, height, margin, crop, viewRect) {
+  const bars = listActiveColorBars().filter((bar) => bar.instance.isFloating());
+  for (const bar of bars) {
+    const visualRect = bar.instance.getVisualRect();
+    const outRect = cropToOutputRect(viewFraction(visualRect, viewRect), crop, width, height, margin);
+    if (!outRect) continue; // dragged fully outside the chosen crop
+
+    // The gradient strip itself, not the wrapper (which is a plain flex row
+    // — controlsBar+valueRow side by side in horizontal mode) and not the
+    // visual union (which also includes the tick labels/legend below/beside
+    // it) — drawColorBar needs just the bar's own box to lay ticks out from.
+    const barRect = bar.instance.getBarRect();
+    const barOut = cropToOutputRect(viewFraction(barRect, viewRect), crop, width, height, margin);
+    if (!barOut) continue;
+
+    const settings = bar.instance.getSettings();
+    // barOut/barRect describe the exact same box in output vs. screen
+    // pixels — their ratio is the uniform screen->output scale this whole
+    // export is drawn at (crop + output resolution), so scaling the bar's
+    // OWN live font size (settings.tickFontPx, already reflecting its
+    // fontScale()) by that same ratio keeps exported text proportional to
+    // what's on screen, instead of a size derived independently from
+    // barOut's pixel box (which used to drift: THICKNESS never scales with
+    // barLength for a horizontal bar, and the ratio changes with whatever
+    // crop/output resolution the user picked, neither of which has
+    // anything to do with the widget's own font scaling).
+    const pxScale = barRect.width > 0 ? barOut.width / barRect.width : 1;
+    const font = Math.max(7, settings.tickFontPx * pxScale);
+    drawColorBar(octx, settings, barOut.x, barOut.y, barOut.width, barOut.height, font, pxScale);
   }
 }
 
 /**
  * Capture the current scene to a high-resolution PNG Blob.
- * @param {{width:number, height:number, margin?:number, transparent?:boolean}} opts
+ * @param {{width:number, height:number, margin?:number, transparent?:boolean,
+ *   crop: {x0:number, y0:number, x1:number, y1:number}}} opts
+ *   crop: the chosen area, as fractions (0..1) of #view's own box — from
+ *   ui/CropOverlay.js. Its on-screen aspect ratio must match width/height's
+ *   (the crop tool enforces this), so the crop always fills the output
+ *   exactly with no letterboxing.
  * @returns {Promise<Blob>}
  */
 export async function captureSceneToPng(opts) {
@@ -248,10 +387,15 @@ export async function captureSceneToPng(opts) {
   const height = Math.max(1, Math.round(opts.height));
   const margin = Math.max(0, Math.round(opts.margin || 0));
   const transparent = !!opts.transparent;
+  const crop = opts.crop;
+  if (!crop || crop.x1 <= crop.x0 || crop.y1 <= crop.y0) {
+    throw new Error('No export area selected.');
+  }
 
   const viewEl = getViewEl();
-  const vw = Math.max(1, (viewEl && viewEl.clientWidth) || window.innerWidth);
-  const vh = Math.max(1, (viewEl && viewEl.clientHeight) || window.innerHeight);
+  const viewRect = viewEl.getBoundingClientRect();
+  const vw = Math.max(1, viewEl.clientWidth || window.innerWidth);
+  const vh = Math.max(1, viewEl.clientHeight || window.innerHeight);
   const aspect = vw / vh;
 
   // Save live-view state so we can restore exactly (camera projection is never
@@ -272,41 +416,21 @@ export async function captureSceneToPng(opts) {
     app.renderer.setClearAlpha(0);
     general.rtResolutionScale = 1;
 
-    // --- Probe pass: find the content fraction of the view at low cost. ---
-    const probeLong = 1024;
-    const probeW = aspect >= 1 ? probeLong : Math.max(1, Math.round(probeLong * aspect));
-    const probeH = aspect >= 1 ? Math.max(1, Math.round(probeLong / aspect)) : probeLong;
-    const probeCanvas = renderMainToCanvas(probeW, probeH);
-    const probeBox = contentBBox(probeCanvas);
-    if (!probeBox) {
-      throw new Error('Nothing is visible to export.');
-    }
-    // Normalised content rect (fractions of the view).
-    const nx0 = probeBox.x0 / probeW;
-    const ny0 = probeBox.y0 / probeH;
-    const nx1 = (probeBox.x1 + 1) / probeW;
-    const ny1 = (probeBox.y1 + 1) / probeH;
-    const fracW = nx1 - nx0;
-    const fracH = ny1 - ny0;
-
-    // Margins simply inset the content/overlay placement in the output
-    // (the pre-inner-canvas composition — one less full-size allocation).
     const innerW = Math.max(1, width - 2 * margin);
     const innerH = Math.max(1, height - 2 * margin);
+    const cropFracW = crop.x1 - crop.x0;
+    const cropFracH = crop.y1 - crop.y0;
 
-    // --- Choose the source render size so the content maps ~1:1 (slightly
-    //     super-sampled for AA) to the inner content box, capped by BOTH the
-    //     GPU limits and the requested output size. The output-size cap is the
-    //     memory guard: auto-framing used to escalate the source render to
-    //     8192x8192 when the structure filled a small view fraction, which
-    //     (plus the tracers' float accumulation targets) OOM-crashed Firefox
-    //     on ~4K exports. Beyond the cap, small content upscales slightly
-    //     instead. Tracers skip the supersample: their AA comes from the
-    //     accumulation jitter.
+    // --- Choose the source render size so the CROPPED region maps ~1:1
+    //     (slightly super-sampled for AA) to the inner output box, capped by
+    //     both the GPU limits and the requested output size (memory guard —
+    //     see the git history for why: escalating the source render
+    //     unboundedly, plus the tracers' float accumulation targets, OOM-
+    //     crashed Firefox on ~4K exports). The render always keeps #view's
+    //     own aspect ratio, so the crop fraction maps to the SAME pixel
+    //     aspect on both axes — no letterboxing needed when compositing it.
     const SS = app.pipeline?.isConverged ? 1.0 : 1.25;
-    const scaleToFillW = innerW / Math.max(fracW, 1e-3);
-    const scaleToFillH = innerH / Math.max(fracH, 1e-3);
-    let srcW = Math.ceil(Math.max(scaleToFillW, scaleToFillH * aspect) * SS);
+    let srcW = Math.ceil((innerW * SS) / Math.max(cropFracW, 1e-3));
     let srcH = Math.ceil(srcW / aspect);
 
     const gl = app.renderer.getContext();
@@ -316,35 +440,21 @@ export async function captureSceneToPng(opts) {
       Math.ceil(Math.max(width, height) * SS),
       8192,
     );
-    let clamped = false;
     if (srcW > maxDim || srcH > maxDim) {
       const k = maxDim / Math.max(srcW, srcH);
       srcW = Math.max(1, Math.floor(srcW * k));
       srcH = Math.max(1, Math.floor(srcH * k));
-      clamped = true;
-    }
-    if (clamped) {
-      console.info(`[png-export] source render capped to ${srcW}x${srcH}; small content may upscale.`);
+      console.info(`[png-export] source render capped to ${srcW}x${srcH}; small selections may upscale.`);
     }
 
     // --- Final high-res pass (tracer pipelines render to full convergence,
     //     with the on-screen progress bar tracking the accumulation). ---
     const srcCanvas = await renderMainToCanvasConverged(srcW, srcH);
 
-    // Crop rect in source pixels, from the (accurate enough) probe fractions.
-    const cropX = Math.max(0, Math.floor(nx0 * srcW));
-    const cropY = Math.max(0, Math.floor(ny0 * srcH));
-    const cropW = Math.max(1, Math.min(srcW - cropX, Math.ceil(fracW * srcW)));
-    const cropH = Math.max(1, Math.min(srcH - cropY, Math.ceil(fracH * srcH)));
-
-    // Contain-fit the crop into the inner box, centred within the margins
-    // (composited DIRECTLY into the output canvas — no intermediate inner
-    // canvas; margins are plain offsets, matching the original implementation).
-    const scale = Math.min(innerW / cropW, innerH / cropH);
-    const drawW = cropW * scale;
-    const drawH = cropH * scale;
-    const dx = margin + (innerW - drawW) / 2;
-    const dy = margin + (innerH - drawH) / 2;
+    const cropPxX = crop.x0 * srcW;
+    const cropPxY = crop.y0 * srcH;
+    const cropPxW = cropFracW * srcW;
+    const cropPxH = cropFracH * srcH;
 
     const out = document.createElement('canvas');
     out.width = width;
@@ -356,18 +466,20 @@ export async function captureSceneToPng(opts) {
       octx.fillStyle = bgCss;
       octx.fillRect(0, 0, width, height);
     }
-    octx.drawImage(srcCanvas, cropX, cropY, cropW, cropH, dx, dy, drawW, drawH);
+    // Fills innerW x innerH exactly: the crop's on-screen aspect already
+    // matches the output's (ui/CropOverlay.js enforces it), so this scale
+    // factor is the same on both axes — no letterboxing to center.
+    octx.drawImage(srcCanvas, cropPxX, cropPxY, cropPxW, cropPxH, margin, margin, innerW, innerH);
 
-    // Overlays (in output coordinates): labels track content; the gizmo + its
-    // legend go in the bottom-left corner, inset by the margin.
+    const scale = innerW / cropPxW;
     const map = {
-      srcW, srcH, cropX, cropY, dx, dy, scale,
-      // font/label size relative to the on-screen view (content px on screen
-      // = frac * view px; content px in output = crop px * scale).
-      fontScale: (cropH * scale) / Math.max(1, fracH * vh),
+      srcW, srcH, cropX: cropPxX, cropY: cropPxY, dx: margin, dy: margin, scale,
+      // output px per on-screen CSS px, for scaling label font/padding sizes.
+      fontScale: innerH / Math.max(1, cropFracH * vh),
     };
     drawMeasurementLabels(octx, map);
-    prevGizmoPR = drawGizmoAndLegend(octx, width, height, margin);
+    prevGizmoPR = drawGizmoAndLegend(octx, width, height, margin, crop, viewRect);
+    drawFloatingColorBars(octx, width, height, margin, crop, viewRect);
 
     return await new Promise((resolve, reject) => {
       out.toBlob((blob) => {

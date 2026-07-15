@@ -10,6 +10,7 @@ import { updateForces, removeForces, updateSpins, removeSpins, updateField, togg
 import { addCameraPanel } from '../CameraPanel.js';
 import { addColorPanel } from '../ColorPanel.js';
 import { collapseAllAtomExpansions } from '../WindowAndSceneControls.js';
+import { updateForceSpinWarning } from '../ForceSpinWarningBanner.js';
 import { addTrajectoryPlayer, removeTrajectoryPlayer } from '../TrajectoryPanel.js';
 import { addCompPanel, removeCompPanel } from '../ComparisonPanel.js';
 import { addForcePanel, removeForcePanel } from '../ForcePanel.js';
@@ -173,6 +174,7 @@ function buildFeaturesBody(body) {
     if (on && fileBrowser.selectedStructure?.forces?.length) updateForces(general.forceScale ?? 1.0);
     else removeForces();
     onToggle('forces', on);
+    updateForceSpinWarning();
   }));
 
   group.appendChild(makeToggleRow('showSpinsToggle', 'Show Spins', !!general.spinsActive, (on) => {
@@ -180,6 +182,7 @@ function buildFeaturesBody(body) {
     if (on && fileBrowser.selectedStructure?.spins?.length) updateSpins(general.spinScale ?? 1.0);
     else removeSpins();
     onToggle('spins', on);
+    updateForceSpinWarning();
   }));
 
   const showPolyhedra = detachStaticRow('showPolyhedra');

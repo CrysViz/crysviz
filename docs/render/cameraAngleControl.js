@@ -89,3 +89,89 @@ export function setupAxisControls(axis) {
     downBtn.addEventListener('click', () => applyRotationFromUI(-STEP_DEG, rotAxis()));
   }
 }
+
+// How long the main axis button (viewX/viewY/.../viewC) has to be held
+// before the step-rotate arrows reveal themselves, and how long they stay
+// revealed afterward with no further interaction — both tuned to feel
+// deliberate rather than twitchy: long enough that a normal click to view
+// along the axis never brushes it, short enough that holding on purpose
+// doesn't feel like a delay.
+const LONG_PRESS_MS = 450;
+const REVEAL_HOLD_MS = 2500;
+
+/**
+ * Reveals the ▲/▼ step-rotate arrows flanking an axis button (normally
+ * hidden — see styles.css's .axis-step) only on a long-press of the button
+ * itself, and — the reason this can't just be a CSS :active/:focus rule —
+ * suppresses the button's own "view along axis" click when the press that
+ * triggered the reveal releases, so long-pressing never also snaps the
+ * camera to that axis.
+ */
+export function setupAxisLongPress(axis) {
+  const stack = document.getElementById(`${axis}Up`)?.closest('.camera-axis-stack');
+  const mainBtn = document.getElementById(`view${axis.toUpperCase()}`);
+  if (!stack || !mainBtn || stack.dataset.longPressWired) return;
+  stack.dataset.longPressWired = '1';
+
+  let pressTimer = null;
+  let longPressed = false;
+  let hideTimer = null;
+
+  function reveal() {
+    stack.classList.add('camera-axis-revealed');
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(hide, REVEAL_HOLD_MS);
+  }
+  function hide() {
+    stack.classList.remove('camera-axis-revealed');
+    clearTimeout(hideTimer);
+  }
+  function cancelPendingReveal() {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+
+  mainBtn.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    longPressed = false;
+    cancelPendingReveal();
+    pressTimer = setTimeout(() => {
+      longPressed = true;
+      reveal();
+    }, LONG_PRESS_MS);
+  });
+  mainBtn.addEventListener('pointerup', cancelPendingReveal);
+  mainBtn.addEventListener('pointerleave', cancelPendingReveal);
+  mainBtn.addEventListener('pointercancel', cancelPendingReveal);
+  // A long-press easily triggers the browser/OS's own context menu
+  // (especially on touch) — that would fire mid-gesture and steal the
+  // pointerup this relies on to know the press ended.
+  mainBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // Capture phase (not bubble): mainBtn's own "view along axis" handler
+  // (WindowAndSceneControls.js's setupCameraButtons, a plain .onclick
+  // assignment) fires during the target phase, which runs after any
+  // capture-phase listener on an ancestor — this always gets first look at
+  // the click regardless of which of the two was wired up first.
+  stack.addEventListener('click', (e) => {
+    if (!longPressed) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    longPressed = false;
+  }, true);
+
+  // Clicking a revealed arrow refreshes the hold timer instead of letting it
+  // expire mid-click, so a couple of quick nudges don't need a fresh
+  // long-press each time.
+  stack.querySelectorAll('.axis-step').forEach((btn) => {
+    btn.addEventListener('click', () => reveal());
+  });
+
+  // Pressing down anywhere outside this stack closes it immediately, same as
+  // any other popover.
+  document.addEventListener('pointerdown', (e) => {
+    if (stack.classList.contains('camera-axis-revealed') && !stack.contains(/** @type {Node} */ (e.target))) {
+      hide();
+    }
+  });
+}

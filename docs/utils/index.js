@@ -8,3 +8,12 @@ export {
   captureCompleteState, createCompleteShareableURL, generatePOSCARString,
   createLegacyShareableURL, restoreCompleteState,
 } from './shareutils.js';
+
+// Shared "Auto Range" formula for magnitude-driven color bars:
+export { computeAutoRange, roundToSigFigs } from './AutoRange.js';
+
+// Rich-text (HTML/LaTeX-shorthand) rendering for color-bar legends:
+export {
+  normalizeLegendMarkup, applyLegendHtml, legendPlainText,
+  parseLegendSegments, drawLegendRichText,
+} from './LegendRichText.js';

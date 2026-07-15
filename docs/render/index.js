@@ -32,7 +32,7 @@ export {
   updateSecondSingleBondDiameter,
 } from './CompBondsFracUpdateModule.js';
 
-export { removeForces, updateForces } from './ForceModule.js';
+export { removeForces, updateForces, computeForceColor } from './ForceModule.js';
 
 export { applyFrameFast, BOND_TOPOLOGY_STRIDE } from './FastFrameModule.js';
 
@@ -51,9 +51,9 @@ export {
   parseCHGCARFile, parseCubeFile,
 } from './Render3DFieldModule.js';
 
-export { removeSpins, updateSpins, deleteSpins } from './SpinModule.js';
+export { removeSpins, updateSpins, deleteSpins, computeSpinColor } from './SpinModule.js';
 
-export { setupAxisControls } from './cameraAngleControl.js';
+export { setupAxisControls, setupAxisLongPress } from './cameraAngleControl.js';
 
 export { setCelHullWidth, setCelHullPolyWidth } from './MaterialStyles.js';
 

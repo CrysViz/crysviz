@@ -4,6 +4,9 @@ import { fieldBrowser } from './FieldPanel.js';
 import { updateAtomCutPlaneState } from '../render/AtomsFracUpdateModule.js';
 import { getSelectedAtoms, subscribeToAtomSelection } from './SelectAndHighlightModule.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
+import { createColorBar } from './ColorBarWidget.js';
+import { registerColorBarSource } from './ColorBarRegistry.js';
+import { computeAutoRange, roundToSigFigs } from '../utils/index.js';
 
 export const planesData = {
   activeInputMode: 'hkl', // 'hkl' or 'uvwd'
@@ -15,6 +18,23 @@ const structurePlaneMeshes = new WeakMap();
 let activeRenderedStructure = null;
 let selectedPlaneIndex = null;
 let atomSelectionUnsubscribe = null;
+
+// The floating/dockable color-bar legend (ColorBarWidget.js, same widget
+// Forces/Spins/Atoms/Bonds use) for whichever plane is currently selected —
+// there's one shared instance, not one per plane, since only one plane's
+// controls are ever shown at a time (selectedPlaneIndex). Rebuilt whenever
+// the selection changes so it reflects that plane's own colormap/range/
+// scale instead of a stale previous plane's.
+const PLANE_COLORBAR_FLOATING_ID = 'planeColorBarFloating';
+let planesColorBarInstance = null;
+// Which plane object planesColorBarInstance is currently showing — needed at
+// teardown time (refreshPlaneColorBar) because selectedPlaneIndex may have
+// already moved on to a different plane by then (e.g. the user just picked a
+// new plane), so the freshly-computed `plane` there is the NEW plane, not
+// the one whose legend text is actually being read off the outgoing bar.
+let planesColorBarOwnerPlane = null;
+
+registerColorBarSource('plane', 'Field', () => planesColorBarInstance);
 
 function getSelectedStructure() {
   return fileBrowser.selectedStructure || null;
@@ -71,12 +91,17 @@ function replacePlaneMesh(structure, planeDef) {
     normal,
     d,
     cell: lattice,
-    resolution: Number.isFinite(Number(planeDef.colormapResolution)) ? Number(planeDef.colormapResolution) : DEFAULT_COLORMAP_RESOLUTION,
+    // Mesh tessellation density is no longer a user-exposed setting (it
+    // never actually controlled color smoothness — the LUT sampling was
+    // always a fixed 256 steps regardless — just the geometry's own vertex
+    // density), so this is now always the same default everyone gets.
+    resolution: DEFAULT_COLORMAP_RESOLUTION,
     mode: planeDef.visualization || 'None',
     field: planeDef.field || null,
-    colormap: planeDef.colormap || 'cooltowarm',
+    colormap: planeDef.colormap || 'heatmap',
     colormapMin: planeDef.colormapMin,
     colormapMax: planeDef.colormapMax,
+    colormapScale: planeDef.colormapScale || 'linear',
   });
 
   planeMesh.visible = Boolean(planesData.showPlanes && planeDef.enabled);
@@ -222,11 +247,63 @@ function setNumericInputValue(elementId, value, fractionDigits = null) {
     : numericValue.toFixed(fractionDigits);
 }
 
+/**
+ * Apply the user-adjustable min/max endpoint inputs to the d slider's own
+ * range, clamping its current thumb position (display only — the
+ * authoritative d value lives in the #planeD text box / plane.params.d).
+ */
+function applyDSliderBounds() {
+  const slider = document.getElementById('planeDSlider');
+  const minInput = document.getElementById('planeDSliderMin');
+  const maxInput = document.getElementById('planeDSliderMax');
+  if (!slider || !minInput || !maxInput) return;
+
+  let min = parseFloat(minInput.value);
+  let max = parseFloat(maxInput.value);
+  if (!Number.isFinite(min)) min = -10;
+  if (!Number.isFinite(max)) max = 10;
+  if (min >= max) max = min + 0.01;
+
+  minInput.value = `${min}`;
+  maxInput.value = `${max}`;
+  slider.min = `${min}`;
+  slider.max = `${max}`;
+  slider.value = `${Math.min(Math.max(parseFloat(slider.value) || 0, min), max)}`;
+}
+
+/**
+ * Keep the d slider's endpoints wide enough to cover the plane's current d
+ * value (e.g. a plane loaded from a file/state with d outside the default
+ * [-10, 10] bounds), then sync the thumb to that value.
+ */
+function ensureDSliderCoversValue(dValue) {
+  const slider = document.getElementById('planeDSlider');
+  const minInput = document.getElementById('planeDSliderMin');
+  const maxInput = document.getElementById('planeDSliderMax');
+  if (!slider || !minInput || !maxInput) return;
+
+  let min = parseFloat(minInput.value);
+  let max = parseFloat(maxInput.value);
+  if (!Number.isFinite(min)) min = -10;
+  if (!Number.isFinite(max)) max = 10;
+
+  if (Number.isFinite(dValue)) {
+    if (dValue < min) min = Math.floor(dValue - 1);
+    if (dValue > max) max = Math.ceil(dValue + 1);
+  }
+
+  minInput.value = `${min}`;
+  maxInput.value = `${max}`;
+  slider.min = `${min}`;
+  slider.max = `${max}`;
+  if (Number.isFinite(dValue)) slider.value = `${dValue}`;
+}
+
 function updateFieldControlsAvailability(enabled) {
   const fieldSection = document.getElementById('planesFieldSection');
   const fieldCard = fieldSection?.querySelector('.planes-field-colormap-container');
   const fieldControls = document.querySelectorAll(
-    '#planesFieldSelect, #planesColormapSelect, #planesColormapRangeMin, #planesColormapRangeMax, #planesColormapResolution'
+    '#planesFieldSelect, #planesColormapSelect, #planesColormapRangeMin, #planesColormapRangeMax, #planesLogScaleCheckbox, #planesAutoRangeBtn'
   );
   const hasFields = fieldBrowser.availableFields && fieldBrowser.availableFields.length > 0;
   const controlsEnabled = Boolean(enabled && hasFields);
@@ -243,20 +320,6 @@ function updateFieldControlsAvailability(enabled) {
 function clampPlaneRangeValue(value, fallback) {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : fallback;
-}
-
-function getPlaneColormapResolution(plane = null) {
-  const resolution = Number(plane?.colormapResolution);
-  return Number.isFinite(resolution) && resolution > 0
-    ? Math.round(resolution)
-    : DEFAULT_COLORMAP_RESOLUTION;
-}
-
-function syncPlaneResolutionInput(plane = null) {
-  const resolutionInput = document.getElementById('planesColormapResolution');
-  if (!resolutionInput) return;
-
-  resolutionInput.value = `${getPlaneColormapResolution(plane)}`;
 }
 
 function formatPlaneRangeLabel(value) {
@@ -281,8 +344,18 @@ function configurePlaneRangeInputs(field, plane = null) {
   const fieldMin = Number(field?.minValue);
   const fieldMax = Number(field?.maxValue);
   const hasFieldRange = Number.isFinite(fieldMin) && Number.isFinite(fieldMax);
-  const sliderMin = hasFieldRange ? Math.min(fieldMin, fieldMax) : 0;
-  const sliderMax = hasFieldRange ? Math.max(fieldMin, fieldMax) : 100;
+  let sliderMin = hasFieldRange ? Math.min(fieldMin, fieldMax) : 0;
+  let sliderMax = hasFieldRange ? Math.max(fieldMin, fieldMax) : 100;
+
+  // Widen to also cover the plane's own stored range if it already extends
+  // past the field's raw min/max (e.g. Auto Range's own 20% padding) —
+  // otherwise the slider bounds below would silently clamp/undo that
+  // padding every time the panel re-syncs (re-selecting this plane,
+  // switching away and back, a structure reload).
+  const planeMinRaw = Number(plane?.colormapMin);
+  const planeMaxRaw = Number(plane?.colormapMax);
+  if (Number.isFinite(planeMinRaw)) sliderMin = Math.min(sliderMin, planeMinRaw);
+  if (Number.isFinite(planeMaxRaw)) sliderMax = Math.max(sliderMax, planeMaxRaw);
 
   rangeMin.min = `${sliderMin}`;
   rangeMin.max = `${sliderMax}`;
@@ -326,6 +399,7 @@ function syncDerivedPlaneInputs(params, lattice) {
       setNumericInputValue('planeV', 0, 4);
       setNumericInputValue('planeW', 0, 4);
       setNumericInputValue('planeD', 0, 4);
+      ensureDSliderCoversValue(0);
       return;
     }
 
@@ -335,6 +409,7 @@ function syncDerivedPlaneInputs(params, lattice) {
     setNumericInputValue('planeV', normal[1] ?? 0, 4);
     setNumericInputValue('planeW', normal[2] ?? 0, 4);
     setNumericInputValue('planeD', derived?.d ?? 0, 4);
+    ensureDSliderCoversValue(derived?.d ?? 0);
     return;
   }
 
@@ -348,6 +423,7 @@ function syncDerivedPlaneInputs(params, lattice) {
     setNumericInputValue('planeV', v, 4);
     setNumericInputValue('planeW', w, 4);
     setNumericInputValue('planeD', d, 4);
+    ensureDSliderCoversValue(d);
 
     if (!Array.isArray(lattice) || lattice.length !== 3) {
       setNumericInputValue('planeH', 0);
@@ -358,9 +434,12 @@ function syncDerivedPlaneInputs(params, lattice) {
 
     /** @type {any} */
     const derived = CartesianParamsToMillerInds([u, v, w], d, lattice) || {};
-    setNumericInputValue('planeH', derived.h ?? 0);
-    setNumericInputValue('planeK', derived.k ?? 0);
-    setNumericInputValue('planeL', derived.l ?? 0);
+    // Derived (not user-typed) — floating-point round-trip through the
+    // lattice matrix routinely lands a "clean" 1 as 0.9999999999999998, so
+    // this needs the same 4-digit rounding u/v/w/d already get above.
+    setNumericInputValue('planeH', derived.h ?? 0, 4);
+    setNumericInputValue('planeK', derived.k ?? 0, 4);
+    setNumericInputValue('planeL', derived.l ?? 0, 4);
   }
 }
 
@@ -411,6 +490,172 @@ function updateRangeDisplayAndPlane(changedInput = null) {
 
   plane.colormapMin = minValue;
   plane.colormapMax = maxValue;
+  replacePlaneMesh(structure, plane);
+  // Keep the floating/dockable color bar's own Min/Max in sync with the
+  // slider — setRange (not a full refreshPlaneColorBar rebuild) so dragging
+  // the slider doesn't reset the bar's floating position/orientation mid-drag.
+  planesColorBarInstance?.setRange(minValue, maxValue);
+}
+
+// Reverse direction of the sync above: keeps the dual slider's displayed
+// value AND its own min/max bounds in sync with a range that originated
+// from the color bar (typed Min/Max, or Auto Range) instead of the slider
+// itself. Widening the bounds matters because a native <input type=range>
+// can't represent a value outside its own min/max attributes at all — a
+// typed or auto-computed value past the field's raw data range (Auto
+// Range's own 20% padding, for instance) would otherwise just silently
+// clamp back to whatever the slider's old bounds were.
+function syncPlaneRangeControls(minValue, maxValue) {
+  const rangeMin = document.getElementById('planesColormapRangeMin');
+  const rangeMax = document.getElementById('planesColormapRangeMax');
+  const rangeDisplay = document.getElementById('planesRangeDisplay');
+  if (!rangeMin || !rangeMax) return;
+
+  const sliderMin = Math.min(Number(rangeMin.min) || 0, minValue);
+  const sliderMax = Math.max(Number(rangeMin.max) || 100, maxValue);
+  const span = sliderMax - sliderMin;
+  const step = span > 0 ? Math.max(span / 1000, Number.EPSILON) : 1;
+  [rangeMin, rangeMax].forEach(el => {
+    el.min = `${sliderMin}`;
+    el.max = `${sliderMax}`;
+    el.step = `${step}`;
+  });
+
+  rangeMin.value = `${minValue}`;
+  rangeMax.value = `${maxValue}`;
+  if (rangeDisplay) rangeDisplay.textContent = `${formatPlaneRangeLabel(minValue)} – ${formatPlaneRangeLabel(maxValue)}`;
+  updateDualSliderFill();
+}
+
+// Rebuilds the floating/dockable legend (ColorBarWidget.js, the same
+// widget Forces/Spins/Atoms/Bonds use) to reflect whichever plane is
+// currently selected — there's one shared instance, not one per plane,
+// since only one plane's controls are ever shown at a time. Called
+// whenever the selection, field assignment, or colormap changes; a plain
+// range edit (slider drag, color bar Min/Max, Auto Range) uses the
+// lighter setRange()/syncPlaneRangeControls() sync instead so it doesn't
+// reset the bar's floating position mid-drag.
+function refreshPlaneColorBar() {
+  const container = document.getElementById('planesColorBarContainer');
+  if (!container) return;
+
+  const structure = getSelectedStructure();
+  const plane = (structure && selectedPlaneIndex !== null && selectedPlaneIndex >= 0)
+    ? structure.planes[selectedPlaneIndex]
+    : null;
+  const hasField = Boolean(plane && plane.visualization === PLANE_VIS_FIELD && plane.field);
+
+  // Persist floating/orientation state before tearing down (mirrors
+  // ForcePanel.js/SpinPanel.js's captureColorBarState) — switching planes
+  // or fields shouldn't reset a bar the user dragged into the scene back
+  // to docked/horizontal.
+  if (planesColorBarInstance) {
+    const settings = planesColorBarInstance.getSettings();
+    general.planeColorBarOrientation = settings.orientation;
+    general.planeColorBarFlipSide = settings.flipSide;
+    general.colorBarSize = settings.size;
+    if (planesColorBarOwnerPlane) {
+      planesColorBarOwnerPlane.legendText = settings.legend;
+    }
+    general.planeColorBarFloating = planesColorBarInstance.isFloating();
+    if (general.planeColorBarFloating) {
+      general.planeColorBarFloatPos = planesColorBarInstance.getAnchor();
+    }
+    planesColorBarInstance.remove();
+    planesColorBarInstance = null;
+    planesColorBarOwnerPlane = null;
+  }
+  container.innerHTML = '';
+
+  if (!hasField) {
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'block';
+
+  // Same rounding as the fieldSelect handler's plane.colormapMin/Max
+  // assignment — this fallback only fires when those are somehow still
+  // unset (e.g. plane state restored from an older save), but the raw
+  // field.minValue/maxValue it falls back to has the identical noisy-float
+  // problem, so it needs the same treatment.
+  const minValue = Number.isFinite(plane.colormapMin) ? plane.colormapMin : roundToSigFigs(plane.field.minValue ?? 0, 4);
+  const maxValue = Number.isFinite(plane.colormapMax) ? plane.colormapMax : roundToSigFigs(plane.field.maxValue ?? 1, 4);
+
+  planesColorBarInstance = createColorBar(container, plane.colormap || 'heatmap', minValue, maxValue, {
+    floatingId: PLANE_COLORBAR_FLOATING_ID,
+    fallbackMin: minValue,
+    fallbackMax: maxValue,
+    legend: plane.legendText ?? (plane.field.label || plane.fieldLabel || 'Field'),
+    scale: plane.colormapScale || 'linear',
+    orientation: general.planeColorBarOrientation,
+    flipSide: general.planeColorBarFlipSide,
+    size: general.colorBarSize,
+    onLimitsCommit: (min, max) => {
+      const s = getSelectedStructure();
+      if (!s || selectedPlaneIndex === null || selectedPlaneIndex < 0) return;
+      const p = s.planes[selectedPlaneIndex];
+      if (!p) return;
+      p.colormapMin = min;
+      p.colormapMax = max;
+      syncPlaneRangeControls(min, max);
+      replacePlaneMesh(s, p);
+    },
+    onScaleChange: (scale) => applyPlaneLogScale(scale === 'log'),
+    onAutoRange: () => applyPlaneAutoRange(),
+  });
+  planesColorBarOwnerPlane = plane;
+
+  if (general.planeColorBarFloating && general.planeColorBarFloatPos) {
+    planesColorBarInstance.floatAtAnchor(general.planeColorBarFloatPos);
+  }
+}
+
+// Shared by the side-panel checkbox and the floating color bar's own
+// burger-menu "Log Scale" item — either can flip it, both stay in sync
+// since this is the only place that actually applies the change. Mirrors
+// ForcePanel.js's applyLogScale.
+function applyPlaneLogScale(isLog) {
+  const structure = getSelectedStructure();
+  if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return;
+  const plane = structure.planes[selectedPlaneIndex];
+  if (!plane) return;
+
+  plane.colormapScale = isLog ? 'log' : 'linear';
+  // log10(0) is -Infinity — floor a min at/below 0 to a small positive
+  // value the moment log scale turns on, same guard Forces/Spins/Atoms/
+  // Bonds all apply.
+  if (isLog && (!Number.isFinite(plane.colormapMin) || plane.colormapMin <= 0)) {
+    plane.colormapMin = 0.01;
+    syncPlaneRangeControls(plane.colormapMin, plane.colormapMax);
+    planesColorBarInstance?.setRange(plane.colormapMin, plane.colormapMax);
+  }
+  const logScaleCheckbox = document.getElementById('planesLogScaleCheckbox');
+  if (logScaleCheckbox) logScaleCheckbox.checked = isLog;
+  planesColorBarInstance?.update(plane.colormap, plane.colormapScale);
+  replacePlaneMesh(structure, plane);
+}
+
+// Shared by the Auto Range button and the burger menu's own "Auto Range"
+// item. Recomputes min/max from the field's actual data range (minValue/
+// maxValue — the field's own already-computed true extremes), padded 20%
+// of the data's own span on each side and rounded to 3 significant figures
+// (computeAutoRange), exactly matching Forces/Spins/Atoms/Bonds.
+function applyPlaneAutoRange() {
+  const structure = getSelectedStructure();
+  if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return;
+  const plane = structure.planes[selectedPlaneIndex];
+  if (!plane || !plane.field) return;
+
+  const range = computeAutoRange([Number(plane.field.minValue), Number(plane.field.maxValue)]);
+  if (!range) return;
+  let { min, max } = range;
+  if (plane.colormapScale === 'log' && min <= 0) min = 0.01;
+
+  plane.colormapMin = min;
+  plane.colormapMax = max;
+  syncPlaneRangeControls(min, max);
+  planesColorBarInstance?.setRange(min, max);
   replacePlaneMesh(structure, plane);
 }
 
@@ -496,6 +741,13 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
                   <span class="planes-input-label">d</span>
                   <input type="number" id="planeD" class="planes-num-input" value="0" step="0.1" disabled>
                 </div>
+                <div class="planes-d-slider-row">
+                  <input type="range" id="planeDSlider" class="planes-d-slider" min="-10" max="10" step="0.01" value="0" disabled>
+                </div>
+                <div class="planes-d-slider-bounds">
+                  <input type="number" id="planeDSliderMin" class="planes-num-input planes-d-bound-input" value="-10" step="0.1" disabled title="Slider min">
+                  <input type="number" id="planeDSliderMax" class="planes-num-input planes-d-bound-input" value="10" step="0.1" disabled title="Slider max">
+                </div>
               </div>
             </div>
           </div>
@@ -552,16 +804,14 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
             <div class="planes-field-control">
             <label for="planesColormapSelect">Colormap:</label>
             <select id="planesColormapSelect" class="planes-select planes-full-width" disabled>
-              <option value="jet">Jet</option>
-              <option value="cooltowarm">Cool to Warm</option>
+              <option value="heatmap">Heat Map</option>
+              <option value="batlow">Batlow</option>
+              <option value="hawaii">Hawaii</option>
+              <option value="managua">Managua</option>
               <option value="viridis">Viridis</option>
               <option value="plasma">Plasma</option>
-              <option value="inferno">Inferno</option>
-              <option value="magma">Magma</option>
-              <option value="cividis">Cividis</option>
-              <option value="rainbow">Rainbow</option>
-              <option value="blackbody">Blackbody</option>
-              <option value="grayscale">Grayscale</option>
+              <option value="spectralR">Spectral R</option>
+              <option value="jet">Jet</option>
             </select>
           </div>
           </div>
@@ -579,17 +829,26 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
             </div>
           </div>
 
-          <div class="planes-field-control planes-field-resolution-control">
-            <label for="planesColormapResolution">Colormap Resolution:</label>
-            <input
-              type="number"
-              id="planesColormapResolution"
-              class="planes-num-input planes-full-width"
-              value="${DEFAULT_COLORMAP_RESOLUTION}"
-              min="1"
-              step="1"
-              disabled
-            >
+          <!-- Log Scale + Auto Range, side by side, above the color bar itself
+               — same pattern as Forces/Spins/Atoms/Bonds (ForcePanel.js et
+               al.): a docked-reachable pair of controls, since the floating
+               color bar's own burger menu only exists once it's dragged into
+               the scene. -->
+          <div class="planes-field-control" id="planesBarControlsRow" style="display:flex; align-items:center; gap:12px; margin:4px 0;">
+            <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:white; white-space:nowrap; cursor:pointer;">
+              <input type="checkbox" id="planesLogScaleCheckbox" disabled>
+              Log Scale
+            </label>
+            <button type="button" id="planesAutoRangeBtn" class="file-action-btn cv-auto-range-btn" disabled>Auto Range</button>
+          </div>
+
+          <!-- Floating/dockable legend — same shared ColorBarWidget.js
+               Forces/Spins/Atoms/Bonds use, draggable into the 3D scene.
+               Mirrors whichever plane is currently selected; the dual
+               slider above stays as an additional inline range control,
+               synced to this bar's own Min/Max in both directions. -->
+          <div class="planes-field-control">
+            <div id="planesColorBarContainer" style="width:100%; display:none;"></div>
           </div>
 
         </div>
@@ -623,11 +882,13 @@ function setupPlanesEvents(container) {
 
   const uvwdInputs = () => container.querySelectorAll('#planeU, #planeV, #planeW, #planeD');
   const hklInputs  = () => container.querySelectorAll('#planeH, #planeK, #planeL');
+  const dSliderControls = () => container.querySelectorAll('#planeDSlider, #planeDSliderMin, #planeDSliderMax');
 
   function applyRadioState() {
     const isHKL = radioHKL.checked;
     hklInputs().forEach(inp  => { inp.disabled = !isHKL; });
     uvwdInputs().forEach(inp => { inp.disabled =  isHKL; });
+    dSliderControls().forEach(inp => { inp.disabled = isHKL; });
     planesData.activeInputMode = isHKL ? 'hkl' : 'uvwd';
   }
 
@@ -648,6 +909,29 @@ function setupPlanesEvents(container) {
   container.querySelector('#addPlaneBtn').addEventListener('click', addPlaneFromCurrentInputs);
   container.querySelector('#calcFromAtomsBtn').addEventListener('click', calculatePlaneFromSelectedAtoms);
 
+  // d slider: mirrors the d text box, updating the plane in real time while
+  // dragging (not just on blur/Enter like the other numeric inputs).
+  const planeDInput = container.querySelector('#planeD');
+  const planeDSlider = container.querySelector('#planeDSlider');
+  const planeDSliderMin = container.querySelector('#planeDSliderMin');
+  const planeDSliderMax = container.querySelector('#planeDSliderMax');
+
+  planeDSlider.addEventListener('input', () => {
+    planeDInput.value = planeDSlider.value;
+    updateSelectedPlaneFromInputs();
+  });
+
+  // The slider's own endpoints are user-adjustable, independent of the d value.
+  [planeDSliderMin, planeDSliderMax].forEach(boundInput => {
+    boundInput.addEventListener('change', () => applyDSliderBounds());
+    boundInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        event.target.blur();
+      }
+    });
+  });
+
   // Field section event listeners
   const fieldSelect = container.querySelector('#planesFieldSelect');
   if (fieldSelect) {
@@ -661,12 +945,22 @@ function setupPlanesEvents(container) {
       const selectedFieldLabel = e.target.value;
       
       plane.fieldLabel = selectedFieldLabel;
+      // A previously-customized legend almost always describes the OLD
+      // field ("Charge Density"); leaving it in place after switching to a
+      // different field would silently mislabel the new one. Clearing it
+      // here falls back to the new field's own name (refreshPlaneColorBar's
+      // `plane.legendText ?? plane.field.label` default).
+      plane.legendText = null;
       if (selectedFieldLabel) {
         plane.visualization = PLANE_VIS_FIELD;
         const selectedField = fieldBrowser.availableFields.find(f => f.label === selectedFieldLabel);
         plane.field = selectedField || null;
-        plane.colormapMin = selectedField?.minValue;
-        plane.colormapMax = selectedField?.maxValue;
+        // Raw field data min/max (Float32Array-derived) routinely comes out
+        // as something like 0.009999999776482582 — round it to a clean 4
+        // digits before it ever reaches the Min/Max boxes, rather than
+        // showing that noise until the user hits Auto Range.
+        plane.colormapMin = Number.isFinite(selectedField?.minValue) ? roundToSigFigs(selectedField.minValue, 4) : selectedField?.minValue;
+        plane.colormapMax = Number.isFinite(selectedField?.maxValue) ? roundToSigFigs(selectedField.maxValue, 4) : selectedField?.maxValue;
         configurePlaneRangeInputs(selectedField, plane);
       }
       else {
@@ -677,6 +971,7 @@ function setupPlanesEvents(container) {
         configurePlaneRangeInputs(null, plane);
       }
       replacePlaneMesh(structure, plane);
+      refreshPlaneColorBar();
       renderPlanesTable();
     });
   }
@@ -690,12 +985,12 @@ function setupPlanesEvents(container) {
       if (!plane) return;
       plane.colormap = e.target.value;
       replacePlaneMesh(structure, plane);
+      refreshPlaneColorBar();
     });
   }
 
   const rangeMin = container.querySelector('#planesColormapRangeMin');
   const rangeMax = container.querySelector('#planesColormapRangeMax');
-  const resolutionInput = container.querySelector('#planesColormapResolution');
 
   if (rangeMin && rangeMax) {
     const bringThumbToFront = activeInput => {
@@ -713,29 +1008,14 @@ function setupPlanesEvents(container) {
     updateRangeDisplayAndPlane();
   }
 
-  if (resolutionInput) {
-    const applyColormapResolution = () => {
-      const structure = getSelectedStructure();
-      if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return;
-      const plane = structure.planes[selectedPlaneIndex];
-      if (!plane) return;
+  const logScaleCheckbox = container.querySelector('#planesLogScaleCheckbox');
+  if (logScaleCheckbox) {
+    logScaleCheckbox.addEventListener('change', () => applyPlaneLogScale(logScaleCheckbox.checked));
+  }
 
-      const nextResolution = Math.max(1, Math.round(Number(resolutionInput.value) || DEFAULT_COLORMAP_RESOLUTION));
-      resolutionInput.value = `${nextResolution}`;
-      plane.colormapResolution = nextResolution;
-      replacePlaneMesh(structure, plane);
-    };
-
-    resolutionInput.addEventListener('change', applyColormapResolution);
-    resolutionInput.addEventListener('blur', applyColormapResolution);
-    resolutionInput.addEventListener('keydown', event => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        event.target.blur();
-      }
-    });
-
-    syncPlaneResolutionInput();
+  const autoRangeBtn = container.querySelector('#planesAutoRangeBtn');
+  if (autoRangeBtn) {
+    autoRangeBtn.addEventListener('click', applyPlaneAutoRange);
   }
 
   const cutModeSelect = container.querySelector('#planeCutMode');
@@ -768,7 +1048,7 @@ function addPlaneFromCurrentInputs() {
     visualization: 'None',
     cutMode:       CutModes.NONE,
     colormap:      'jet',
-    colormapResolution: DEFAULT_COLORMAP_RESOLUTION,
+    colormapScale: 'linear',
     colormapMin:   0,
     colormapMax:   100,
     field:        null,
@@ -876,11 +1156,13 @@ function loadSelectedPlaneParameters() {
   if (document.getElementById('planesColormapSelect')) {
     document.getElementById('planesColormapSelect').value = plane.colormap || 'jet';
   }
-  syncPlaneResolutionInput(plane);
+  const logScaleCheckbox = document.getElementById('planesLogScaleCheckbox');
+  if (logScaleCheckbox) logScaleCheckbox.checked = plane.colormapScale === 'log';
   if (document.getElementById('planesColormapRangeMin')) {
     configurePlaneRangeInputs(plane.field, plane);
     updateRangeDisplayAndPlane();
   }
+  refreshPlaneColorBar();
   // Load cut mode
   const cutModeEl = document.getElementById('planeCutMode');
   if (cutModeEl) cutModeEl.value = normalizePlaneCutMode(plane.cutMode);
@@ -922,7 +1204,7 @@ function updateSelectedPlaneFromInputs() {
  */
 function enablePlaneControls(enabled) {
   const inputs = document.querySelectorAll(
-    '#planeH, #planeK, #planeL, #planeU, #planeV, #planeW, #planeD, #radioHKL, #radioUVWD, #showPlanesToggle, #planeCutMode'
+    '#planeH, #planeK, #planeL, #planeU, #planeV, #planeW, #planeD, #planeDSlider, #planeDSliderMin, #planeDSliderMax, #radioHKL, #radioUVWD, #showPlanesToggle, #planeCutMode'
   );
   inputs.forEach(inp => {
     inp.disabled = !enabled;
@@ -936,7 +1218,7 @@ function enablePlaneControls(enabled) {
  */
 function disablePlaneControls() {
   const inputs = document.querySelectorAll(
-    '#planeH, #planeK, #planeL, #planeU, #planeV, #planeW, #planeD, #radioHKL, #radioUVWD, #showPlanesToggle, #planeCutMode'
+    '#planeH, #planeK, #planeL, #planeU, #planeV, #planeW, #planeD, #planeDSlider, #planeDSliderMin, #planeDSliderMax, #radioHKL, #radioUVWD, #showPlanesToggle, #planeCutMode'
   );
   inputs.forEach(inp => {
     inp.disabled = true;
@@ -947,6 +1229,7 @@ function disablePlaneControls() {
   const fieldSection = document.getElementById('planesFieldSection');
   if (paramsSection) paramsSection.style.display = 'none';
   if (fieldSection) fieldSection.style.display = 'none';
+  refreshPlaneColorBar();
 }
 
 /**
@@ -961,14 +1244,14 @@ function updateFieldSelectionDropdown() {
 
   if (!hasFields) {
     select.innerHTML = '<option value="">No fields available</option>';
-    syncPlaneResolutionInput();
     configurePlaneRangeInputs(null);
     updateFieldControlsAvailability(true);
+    refreshPlaneColorBar();
     return;
   }
 
   select.innerHTML = '<option value="">No Field</option>';
-  
+
   fieldBrowser.availableFields.forEach(field => {
     const option = document.createElement('option');
     option.value = field.label || '';
@@ -982,11 +1265,11 @@ function updateFieldSelectionDropdown() {
     if (plane && plane.field && plane.field.label) {
       select.value = plane.field.label;
     }
-    syncPlaneResolutionInput(plane);
     configurePlaneRangeInputs(plane?.field, plane);
   }
 
   updateFieldControlsAvailability(true);
+  refreshPlaneColorBar();
 }
 
 function escapeHtml(value) {

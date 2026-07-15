@@ -179,16 +179,41 @@ font-size: 16px;
   grid-template-columns: none;
 }
 
+/* Cartesian x/y/z: single horizontal row of compact fields, same treatment
+   as the Miller row below. The d value/slider/bounds stay their own
+   vertically-stacked rows via .planes-d-cluster's display:contents. */
 .planes-uvw-cluster {
-  display: contents;
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+}
+
+.planes-uvw-cluster .planes-labeled-input {
+  flex: 1;
+  gap: 6px;
+}
+
+.planes-uvw-cluster .planes-num-input {
+  padding: 6px 4px;
 }
 
 .planes-d-cluster {
   display: contents;
 }
 
+/* Miller indices: single horizontal row of compact fields */
 #hklInputs {
-  grid-template-columns: none;
+  flex-direction: row;
+  gap: 10px;
+}
+
+#hklInputs .planes-labeled-input {
+  flex: 1;
+  gap: 6px;
+}
+
+#hklInputs .planes-num-input {
+  padding: 6px 4px;
 }
 
 .planes-labeled-input {
@@ -239,6 +264,94 @@ font-size: 16px;
   outline: none;
   border-color: var(--accent-color);
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* d slider: real-time single-handle slider below the d text box, with
+   user-adjustable endpoint inputs underneath. */
+.planes-d-slider-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 4px 0;
+}
+
+.planes-d-slider {
+  width: 100%;
+  flex: 1;
+  margin: 0;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+}
+
+.planes-d-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+  border-radius: 999px;
+}
+
+.planes-d-slider::-moz-range-track {
+  height: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+}
+
+.planes-d-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--accent-color);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid rgba(15, 18, 30, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+  transition: background 0.15s;
+}
+
+.planes-d-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--accent-color);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid rgba(15, 18, 30, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+  transition: background 0.15s;
+}
+
+.planes-d-slider:hover:not(:disabled)::-webkit-slider-thumb {
+  background: var(--highlight-color);
+}
+
+.planes-d-slider:hover:not(:disabled)::-moz-range-thumb {
+  background: var(--highlight-color);
+}
+
+.planes-d-slider:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.planes-d-slider-bounds {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+}
+
+.planes-d-bound-input {
+  flex: 0 0 56px;
+  width: 56px;
+  min-height: 26px;
+  padding: 3px 4px;
+  font-size: 11px;
 }
 
 .planes-viz-row {

@@ -10,6 +10,7 @@ import { getPanel } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { atomForceToColor } from '../ColorPanel.js';
+import { updateForces, updateSpins } from '../../render/index.js';
 
 // The per-structure style-override stores (all survive rebuilds; see Structure.js).
 const ALL_STYLE_STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
@@ -43,6 +44,23 @@ function resetAllColorStyling(structure) {
       }
     }
   }
+  // Force/spin arrows: strip the same per-arrow color pin (StructureInfoPanel's
+  // Spin/Force row editor "Color" button) atoms/bonds get stripped above.
+  // Vector/scaling (real data) and hidden (visibility) are left alone here —
+  // resetAllStyling() below also clears hidden, matching its broader scope.
+  structure.forces?.forEach((force) => { force.userColor = null; });
+  structure.spins?.forEach((spin) => { spin.userColor = null; });
+}
+
+/** Re-render force/spin arrows (if shown) and any currently-open Structure
+ *  Info Spin/Force row editor after a bulk edit to structure.forces/spins —
+ *  shared by the Reset Colors and Reset Styling buttons below. */
+function refreshForceSpinArrows() {
+  if (general.forcesActive) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
+  if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
+  document.querySelectorAll('.atom-spin-editor').forEach((el) => {
+    if (el.style.display !== 'none') /** @type {any} */ (el).refresh?.();
+  });
 }
 
 /** Reset everything the tabs can set — colors, alpha/size, per-element
@@ -64,6 +82,11 @@ function resetAllStyling(structure) {
   structure.atomUserMaterials = {};
   general.atomVisibility = {};
   general.bondCutImmunity = {};
+  // Force/spin arrows: un-hide every individually-hidden arrow (that atom's
+  // own row "Hide arrow" checkbox) — the arrow counterpart of the atom/bond/
+  // polyhedra visibility overrides cleared above.
+  structure.forces?.forEach((force) => { force.hidden = false; });
+  structure.spins?.forEach((spin) => { spin.hidden = false; });
 }
 
 // Small switch row, same markup/classes as the toggles in PolyhedraPanel.js.
@@ -532,10 +555,11 @@ resetAllColorsBtn.id="resetAllColorsBtn"
 resetAllColorsBtn.textContent = 'Reset Colors';
 resetAllColorsBtn.className = 'reset-btn';
 resetAllColorsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
-resetAllColorsBtn.title = 'Reset every color customization (atoms, per-copy, bond and polyhedra colors) to element defaults';
+resetAllColorsBtn.title = 'Reset every color customization (atoms, per-copy, bond and polyhedra colors, individual force/spin arrow colors) to element defaults';
 resetAllColorsBtn.onclick = () => {
   resetAllColorStyling(fileBrowser.selectedStructure);
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+  refreshForceSpinArrows();
 };
 
 // Historic id kept (never rename ids); label describes the actual behavior.
@@ -544,10 +568,11 @@ resetAtomsBtn.id = "resetAtomsBtn"
 resetAtomsBtn.textContent = 'Reset Styling';
 resetAtomsBtn.className = 'reset-btn';
 resetAtomsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
-resetAtomsBtn.title = 'Reset all atom/bond/polyhedra styling (colors, transparency, sizes, visibility, cut immunity). Bond lengths/visibility keep their own reset in the Bonds tab.';
+resetAtomsBtn.title = 'Reset all atom/bond/polyhedra styling (colors, transparency, sizes, visibility, cut immunity) and unhide every individually-hidden force/spin arrow. Bond lengths/visibility keep their own reset in the Bonds tab.';
 resetAtomsBtn.onclick = () => {
   resetAllStyling(fileBrowser.selectedStructure);
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+  refreshForceSpinArrows();
 };
 
 ResetColorAtomsButtonRow.appendChild(resetAllColorsBtn)

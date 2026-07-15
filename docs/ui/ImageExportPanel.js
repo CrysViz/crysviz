@@ -1,9 +1,12 @@
-// "Download → PNG Image…" modal: pick output dimensions (with an aspect-ratio
-// helper), margins and transparency, then export a high-resolution PNG of the
-// scene via render/ImageExportModule.js.
+// "Download → PNG Image…" flow: a settings modal (output size/aspect ratio,
+// margin, transparency), then an interactive crop overlay
+// (ui/CropOverlay.js) over the live 3D view to pick exactly what's exported
+// — a high-resolution PNG via render/ImageExportModule.js, WYSIWYG (gizmo,
+// floating color bars, measurements exactly as arranged on screen).
 
 import { captureSceneToPng } from '../render/index.js';
 import { downloadBlob, currentBaseName } from './SavePanel.js';
+import { openCropOverlay } from './CropOverlay.js';
 
 const PRESET_ASPECTS = {
   '16:9': 16 / 9,
@@ -68,9 +71,9 @@ export function initImageExportPanel() {
         <label>Margin (px)<input type="number" id="pngMargin" min="0" max="4096" step="1" value="0"></label>
         <label class="png-check"><input type="checkbox" id="pngTransparent">Transparent background</label>
       </div>
-      <p class="png-note">The image is auto-framed to the visible structure. Floating panels are excluded; the axis gizmo and measurements are included.</p>
+      <p class="png-note">Next, drag the crop area over the 3D view to choose exactly what's exported — the scene, the gizmo, and any floating color bars, right where they're currently arranged.</p>
       <div class="paste-modal-actions">
-        <button type="button" id="pngDownloadBtn">Download</button>
+        <button type="button" id="pngDownloadBtn">Choose area…</button>
         <button type="button" id="pngCancelBtn">Cancel</button>
       </div>
     </div>
@@ -175,7 +178,7 @@ export function initImageExportPanel() {
     }
   });
 
-  async function doDownload() {
+  function chooseArea() {
     const width = Math.round(Number(widthInput.value) || 0);
     const height = Math.round(Number(heightInput.value) || 0);
     const margin = Math.max(0, Math.round(Number(marginInput.value) || 0));
@@ -183,27 +186,45 @@ export function initImageExportPanel() {
       alert('Enter a valid width and height.');
       return;
     }
-    downloadBtn.disabled = true;
-    downloadBtn.textContent = 'Rendering…';
-    try {
-      // Tracer pipelines render to full convergence inside captureSceneToPng
-      // (the on-screen progress bar tracks the export accumulation).
-      const blob = await captureSceneToPng({
-        width, height, margin, transparent: transparentInput.checked,
-      });
-      downloadBlob(currentBaseName() + '.png', blob);
-      closeModal();
-    } catch (e) {
-      alert(/** @type {any} */ (e)?.message || String(e));
-    } finally {
-      downloadBtn.disabled = false;
-      downloadBtn.textContent = 'Download';
-    }
+    const transparent = transparentInput.checked;
+    const free = isFree();
+    closeModal();
+
+    openCropOverlay({
+      // Locked aspect: the crop tool is constrained to the exact
+      // width/height ratio, so the crop always fills width x height with no
+      // distortion. Free: let the crop tool resize to whatever shape the
+      // user wants — width/height's LARGER edge becomes the output's long
+      // edge, with the other edge derived from the shape actually drawn
+      // (see below) instead of forcing every free-form crop through
+      // whatever ratio the width/height inputs happened to work out to.
+      aspect: free ? null : width / height,
+      onConfirm: async (crop) => {
+        let outWidth = width;
+        let outHeight = height;
+        if (free) {
+          const longEdge = Math.max(width, height);
+          if (crop.aspect >= 1) {
+            outWidth = Math.round(longEdge);
+            outHeight = Math.round(longEdge / crop.aspect);
+          } else {
+            outHeight = Math.round(longEdge);
+            outWidth = Math.round(longEdge * crop.aspect);
+          }
+        }
+        // Tracer pipelines render to full convergence inside
+        // captureSceneToPng (the on-screen progress bar tracks the export
+        // accumulation).
+        const blob = await captureSceneToPng({ width: outWidth, height: outHeight, margin, transparent, crop });
+        downloadBlob(currentBaseName() + '.png', blob);
+      },
+      onCancel: () => {},
+    });
   }
 
   trigger.addEventListener('click', openModal);
   cancelBtn.addEventListener('click', closeModal);
-  downloadBtn.addEventListener('click', doDownload);
+  downloadBtn.addEventListener('click', chooseArea);
   modal.addEventListener('click', (e) => {
     if (e.target === modal) closeModal(); // backdrop click
   });
