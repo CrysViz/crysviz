@@ -115,7 +115,6 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   logLengthLabel.style.alignItems = "center";
   logLengthLabel.style.gap = "4px";
   logLengthLabel.style.fontSize = "12px";
-  logLengthLabel.style.color = "#FF8C00";
   logLengthLabel.style.whiteSpace = "nowrap";
   logLengthLabel.style.cursor = "pointer";
 

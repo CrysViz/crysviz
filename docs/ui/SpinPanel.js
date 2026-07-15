@@ -92,6 +92,14 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
 
   // Activation ("Show Spins") lives in the Features window; this panel only
   // configures how the spins are drawn.
+  //
+
+  // --- No-spins note ---
+  const noSpinsNote = document.createElement("div");
+  noSpinsNote.className = "control-note";
+  noSpinsNote.textContent = "No spin data available for this structure. Upload a file that includes spin information (e.g. an OUTCAR) or add spins manually.";
+  noSpinsNote.style.display = "none";
+  content.appendChild(noSpinsNote);
 
   // --- Global Scaling slider ---
   const lengthWrapper = document.createElement("div");
@@ -116,7 +124,6 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   logLengthLabel.style.alignItems = "center";
   logLengthLabel.style.gap = "4px";
   logLengthLabel.style.fontSize = "12px";
-  logLengthLabel.style.color = "#FF8C00";
   logLengthLabel.style.whiteSpace = "nowrap";
   logLengthLabel.style.cursor = "pointer";
 
@@ -554,7 +561,6 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
     if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
   });
 
-
 // Only the very first scalar colormap pick for this panel instance should
 // derive the range from the structure's spin lengths; every switch after
 // that (including bouncing through "none"/direction/plusminus, which don't
@@ -714,6 +720,10 @@ logCheckbox.addEventListener("change", () => {
   applyLogScale(logCheckbox.checked);
 });
 
+function updateNoSpinsNote() {
+  noSpinsNote.style.display = fileBrowser.selectedStructure?.spins?.length ? "none" : "block";
+}
+
 // Shared by the Auto Range button and the burger menu's own "Auto Range"
 // item (onAutoRange). Recomputes min/max from whichever spins are actually
 // showing right now (manual list or the structure's own), padded 20% of
@@ -797,9 +807,10 @@ autoRangeBtn.addEventListener("click", applyAutoRange);
     // never clicked; nothing to snapshot here.
     structure.spins = spins;
     if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], colorMapSelect.value);
-    updateCurrentSpinsList();
-    createSpeciesVisibilityToggles();
-    refreshOpenStructureInfoSpinEditors();
+      updateNoForcesNote()
+      updateCurrentSpinsList();
+      createSpeciesVisibilityToggles();
+      refreshOpenStructureInfoSpinEditors();
   });
 
   // --- Restore button ---
@@ -969,4 +980,5 @@ autoRangeBtn.addEventListener("click", applyAutoRange);
   createSpeciesVisibilityToggles();
   refreshColorBarVisibility();
   updateCurrentSpinsList();
+  updateNoSpinsNote();
 }
