@@ -20,10 +20,10 @@ function ensureBanner() {
   banner.textContent = '⚠ Forces and Spins are both shown as arrows';
   banner.style.cssText = `
     position: absolute;
-    top: 12px;
+    top: 125px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 1000;
+    z-index: 2000;
     padding: 6px 14px;
     border-radius: 6px;
     background: rgba(40, 30, 0, 0.85);
