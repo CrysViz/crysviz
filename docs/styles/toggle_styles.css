@@ -276,3 +276,370 @@ margin: 15px 0px 5px 0px;
   margin: 6px 2px;
   line-height: 1.3;
 }
+
+/* Draggable color-bar legend (ui/ColorBarWidget.js, ui/ColorBarDrag.js): a
+   .cv-colorbar-controls strip (grip / layout menu) beside a
+   .cv-colorbar-values row (min input / gradient / max input) — the widget's
+   wrapper (inline style) is display:flex so these two sit side by side.
+   Docked in a panel, controls collapses to just the grip (the menu is
+   floating-only, see below), sitting beside the bar rather than eating its
+   own row above it. Floated onto the scene the whole thing loses its
+   background and the controls collapse into a small hover-revealed strip
+   instead, like a panel titlebar that only appears when needed. */
+.cv-colorbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cv-colorbar-values {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.cv-colorbar-grip,
+.cv-colorbar-menu-wrap {
+  flex: 0 0 auto;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cv-colorbar-menu-wrap {
+  position: relative;
+  display: flex;
+}
+
+.cv-colorbar-grip {
+  cursor: grab;
+  opacity: 0.45;
+  font-size: 20px;
+  color: #fff;
+  user-select: none;
+  touch-action: none;
+}
+
+.cv-colorbar-grip:active {
+  cursor: grabbing;
+}
+
+/* Legend (ui/ColorBarWidget.js, click-to-edit). Empty (no text typed yet, or
+   cleared) shows a "Click to add legend" placeholder, but only on hover —
+   invisible-but-still-there and still clickable the rest of the time, so it
+   doesn't sit there as a permanent label reading "Click to add legend" on
+   every bar that simply has no legend right now. */
+.cv-colorbar-legend-empty {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.cv-colorbar-legend-empty:hover {
+  opacity: 0.45;
+}
+
+/* Editing state: a visible frame + caret, since contentEditable text with no
+   box around it gave no hint you were actually in an editable field at all —
+   easy to miss whether a click landed or typing would do anything. No
+   compensating margin needed: positionLegend()'s centering (translateX/Y
+   against the element's OWN size, see its comments) re-centers automatically
+   as the box grows from the added padding/border, in every orientation. */
+.cv-colorbar-legend-editing {
+  padding: 1px 5px;
+  border: 1px solid var(--accent-color, #4a9eff);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  caret-color: #fff;
+}
+
+/* The bar itself is also a drag handle (ui/ColorBarWidget.js passes it to
+   makeColorBarDraggable as an extra handle), not just the ⦀ grip. */
+.cv-colorbar-bar-handle {
+  cursor: grab;
+  touch-action: none;
+}
+
+.cv-colorbar-bar-handle:active {
+  cursor: grabbing;
+}
+
+.cv-colorbar-menu-btn {
+  width: 27px;
+  height: 27px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 17px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  opacity: 0.8;
+}
+
+.cv-colorbar-menu-btn:hover {
+  opacity: 1;
+}
+
+/* The hamburger's dropdown: Horizontal / Vertical / Dock. A sibling of the
+   button (not a child — a <button> can't validly contain other <button>s),
+   both wrapped in .cv-colorbar-menu-wrap so the dropdown can anchor
+   position:absolute against that wrapper regardless of where it ends up
+   (docked beside the bar, or floating in the hover-revealed strip).
+   --menu-bg (not --bg-color, which runs ~80% opaque as a theme accent) so
+   this reads as a solid, legible dropdown regardless of what's behind it —
+   the same token every other menu/modal in the app already uses. Text is
+   pinned to white rather than inherited: a floating color bar's wrapper
+   tracks a contrast-adaptive color for its bare tick labels against the
+   arbitrary scene background (ColorBarWidget.js's currentContrastColor),
+   which would otherwise leak into this menu's own always-dark chrome too. */
+.cv-colorbar-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 130px;
+  display: none;
+  flex-direction: column;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--menu-bg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1;
+}
+
+.cv-colorbar-menu-open {
+  display: flex;
+}
+
+.cv-colorbar-menu-item {
+  padding: 6px 10px;
+  font-size: 13px;
+  text-align: left;
+  border-radius: 5px;
+  border: none;
+  background: none;
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cv-colorbar-menu-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.cv-colorbar-menu-item-active {
+  font-weight: 600;
+}
+
+.cv-colorbar-menu-item-active::before {
+  content: "✓ ";
+}
+
+.cv-colorbar-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cv-colorbar-dragging {
+  opacity: 0.85;
+}
+
+.cv-colorbar-floating {
+  position: relative; /* anchors the hover-revealed controls bar */
+  padding: 6px 3px;
+  background: none;
+}
+
+/* Floating: controls hide into a strip above the bar, revealed on hover —
+   mirrors .cv-panel-titlebar's look, and like a real titlebar it spans the
+   full width of the widget rather than just its own button content: the bar
+   below it is just as wide, so a narrow left-hugging strip meant most
+   straight-up mouse paths from "hovering the bar" missed it entirely (it
+   only reliably reached from directly above the far-left edge).
+   pointer-events stays none until actually hovered/focused — an earlier
+   version made this permanently auto (to dodge a hover-timing dead zone,
+   below), but that left the whole strip's box - large, and invisible
+   whenever not hovered - live at all times wherever the bar happened to be
+   floating, silently swallowing clicks meant for whatever page content sat
+   underneath it. .cv-colorbar-controls-bridge (below) closes the actual
+   dead zone instead, at a fraction of the size. */
+.cv-colorbar-floating .cv-colorbar-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -34px;
+  margin-bottom: 0;
+  padding: 5px 9px;
+  /* ColorBarWidget.js's positionControlsStrip sets style.width to match the
+     resize frame's own outer width exactly — under the default content-box
+     sizing that only controls the CONTENT box, leaving the rendered
+     (border-box) width padding+border wider than the frame it's meant to
+     align to. border-box makes the assigned width the actual outer size. */
+  box-sizing: border-box;
+  border-radius: 12px;
+  background: var(--bg-color);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  /* .cv-colorbar-bar-handle (the gradient bar) is also position:relative,
+     and its own children now include resizeFrame (z-index: 2, below) —
+     barOuter itself sets no z-index, so that doesn't shield its subtree
+     into its own stacking context; without an explicit z-index here that
+     put this strip and the bar's subtree in direct competition at the same
+     paint layer, resolved by DOM order (not the .cv-colorbar-menu's own
+     z-index:1, which only ranks within this box's own descendants) — and
+     the bar comes later in the tree, so it painted over this whole strip,
+     hiding the dropdown menu (or once resizeFrame existed and went
+     pointer-events: auto, swallowing every click meant for these buttons)
+     behind it. Higher than resizeFrame's z-index so this always wins that
+     tie regardless of DOM order. */
+  z-index: 5;
+}
+
+.cv-colorbar-floating:hover .cv-colorbar-controls,
+.cv-colorbar-floating .cv-colorbar-controls:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Thin hit-testable strip filling exactly the CONTROLS_GAP between the
+   resize frame's top edge and the controls strip's own bottom edge
+   (ColorBarWidget.js's positionControlsStrip positions both). resizeFrame
+   itself is pointer-events: none (so it never blocks Min/Max/tick clicks),
+   so without something else here, that gap hit-tests through to whatever's
+   behind the wrapper — dropping .cv-colorbar-floating's :hover the moment
+   the cursor crosses it, before it reaches the controls strip, since
+   pointer-events (unlike opacity) has no transition to soften the timing.
+   Always pointer-events: auto (not hover-gated — it has to be hit-testable
+   to ever trigger the hover it's bridging toward) but otherwise inert: no
+   background, no click handling, just enough surface for :hover to stay
+   continuous along the path from the bar to the strip. Confined to this
+   narrow band (not the whole strip, unlike the pointer-events:auto-on-
+   .cv-colorbar-controls approach tried before) keeps the always-live
+   surface small enough that it isn't a realistic target for stray clicks
+   meant for whatever's underneath the bar wherever it's floating. */
+.cv-colorbar-floating .cv-colorbar-controls-bridge {
+  position: absolute;
+  pointer-events: auto;
+}
+
+/* Vertical mode's controls-strip position (centered over the bar's actual
+   measured midpoint, not just left:50% of the whole wrapper — which can be
+   wider than the bar itself, e.g. if the Min/Max inputs are) is JS-owned:
+   ui/ColorBarWidget.js's positionControlsStrip sets left/right/width/
+   transform directly for both orientations now, this used to be the
+   vertical-only CSS half of that split and is now dead weight. */
+
+/* The layout menu (Vertical/Dock — Horizontal is already the only docked
+   state) only makes sense once undocked: a vertical bar has nowhere to go
+   inside the panel's fixed-width column. Docked, only the grip remains,
+   sitting beside the bar (.cv-colorbar-controls, above) instead of in its
+   own row above it. */
+.cv-colorbar-menu-wrap {
+  display: none;
+}
+
+.cv-colorbar-floating .cv-colorbar-menu-wrap {
+  display: flex;
+}
+
+/* Resize affordance: a full frame around the bar's whole visual footprint
+   (the color strip plus its tick labels and legend, wherever those land —
+   ui/ColorBarWidget.js's labeledExtent()/positionResizeHandle size both
+   every render), the same visual language as the PNG export crop tool's
+   selection rectangle (.cv-crop-rect/.cv-crop-handle, styles/styles.css),
+   with a single grab handle at its far corner (JS toggles which one —
+   orientation/flipSide) — sitting right at that corner, outside the
+   labeled content the frame itself encloses. Docked-only-visible-when-
+   floating, and hover-revealed on the bar itself so it doesn't clutter
+   the bar at rest. The frame is purely decorative (pointer-events: none,
+   always): an earlier version made it pointer-events: auto so the gap
+   between the bar and the handle stayed continuously hoverable, but since
+   the frame also encloses Min/Max and sits under the controls strip, that
+   ended up swallowing clicks meant for both instead. The handle stays
+   small and isolated at the corner instead — safe to leave pointer-events:
+   auto permanently (below), since nothing else needs that spot. */
+.cv-colorbar-resize-frame,
+.cv-colorbar-resize-handle {
+  display: none;
+}
+
+.cv-colorbar-floating .cv-colorbar-resize-frame,
+.cv-colorbar-floating .cv-colorbar-resize-handle {
+  display: block;
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.cv-colorbar-floating .cv-colorbar-resize-frame {
+  pointer-events: none;
+}
+
+/* Always interactive once floating, not gated behind a hover reveal first
+   (only opacity — its visibility — is): the handle is a small, isolated
+   target at the frame's corner, away from anything else that needs clicks,
+   so there's no risk in it just being clickable the moment the cursor
+   reaches it rather than requiring the bar to already be hovered first. */
+.cv-colorbar-floating .cv-colorbar-resize-handle {
+  pointer-events: auto;
+}
+
+.cv-colorbar-floating .cv-colorbar-bar-handle:hover .cv-colorbar-resize-frame,
+.cv-colorbar-floating .cv-colorbar-bar-handle:hover .cv-colorbar-resize-handle,
+.cv-colorbar-resize-handle:hover {
+  opacity: 1;
+}
+
+/* currentColor, not a hardcoded white: both live inside the
+   .cv-colorbar-floating wrapper, whose `color` ColorBarWidget.js's
+   tickContrastSync polls to the same contrast-safe color the tick labels
+   and legend title already render in (currentContrastColor(), synced
+   against the live scene background) — the frame/handle should read as
+   part of that same text, not a fixed white mark that can wash out on a
+   light background. */
+.cv-colorbar-floating .cv-colorbar-resize-frame {
+  border: 2px solid currentColor;
+  border-radius: 4px;
+  z-index: 2;
+}
+
+.cv-colorbar-floating .cv-colorbar-resize-handle {
+  width: 22px;
+  height: 22px;
+  z-index: 3;
+  touch-action: none;
+}
+
+/* A plain small solid square, centered in the handle's (bigger) hit box —
+   matching a standard iOS-style crop/resize corner mark, simpler than an
+   L-shaped bracket (and sidesteps having to fight a same-element base
+   rule's `border` shorthand on specificity for it, the way the L design
+   used to). */
+.cv-colorbar-floating .cv-colorbar-resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  background: currentColor;
+  border-radius: 3px;
+  opacity: 0.9;
+}
+
+/* Which corner (JS toggles exactly one of these, based on orientation +
+   flipSide — the growing end, on the labeled side) — same -11px inset as
+   the crop tool's own handles. */
+.cv-colorbar-resize-handle-nw { left: -11px; top: -11px; }
+.cv-colorbar-resize-handle-ne { right: -11px; top: -11px; }
+.cv-colorbar-resize-handle-sw { left: -11px; bottom: -11px; }
+.cv-colorbar-resize-handle-se { right: -11px; bottom: -11px; }
+.cv-colorbar-floating .cv-colorbar-resize-handle { cursor: ew-resize; }
+.cv-colorbar-floating.cv-colorbar-vertical .cv-colorbar-resize-handle { cursor: ns-resize; }

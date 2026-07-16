@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 
 import {bondLengths, coordinationNumbers, app, groups,fileBrowser, general, highlightHover} from '../state/store.js';
 import {atomicRadii} from '../defaults/radii_defaults.js'
-import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
+import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors,getJetColors} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
 import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression} from './MaterialStyles.js'
@@ -428,6 +428,7 @@ export function buildBondObjects(structure){
       case "viridis": colors = getViridisColors(); break;
       case "plasma": colors = getPlasmaColors(); break;
       case "spectralR": colors = getSpectralRColors(); break;
+      case "jet": colors = getJetColors(); break;
       default: colors = getHeatMapColors();
     }
 
@@ -437,7 +438,9 @@ export function buildBondObjects(structure){
         const clamped = Math.max(minLength, Math.min(maxLength, bond.dist));
         const t = (maxLength > minLength) ? (clamped - minLength) / (maxLength - minLength) : 0.5;
         const bin = Math.min(Math.max(0, Math.floor(t * nBins)), nBins - 1);
-        const color = `#${(colors[bin].r * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].g * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].b * 255 | 0).toString(16).padStart(2, '0')}`;
+        // getHexString(), not manual r*255 truncation — see
+        // ui/ColorPanel.js's valueToColor for why.
+        const color = `#${colors[bin].getHexString()}`;
         bond.color = [color, color];
       });
     }

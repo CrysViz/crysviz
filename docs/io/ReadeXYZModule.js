@@ -9,7 +9,13 @@ import { Structure } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
 import { Spin } from "../model/index.js";
-import { transpose3x3, multiplyMatVec, invert3x3 } from '../math/index.js';
+// From the concrete JS backend, not the math/index.js facade — see
+// ReadOutcarModule.js's identical import for why: the facade's exports
+// delegate to a module-scope `activeMathBackend` variable that doesn't
+// survive being stringified via .toString() into this file's own worker
+// below (only reached when the file has no Lattice= line, so this path is
+// easy to miss testing against extxyz files that always specify one).
+import { transpose3x3, multiplyMatVec, invert3x3 } from '../math/backend-js.js';
 
 
 /**
@@ -131,7 +137,7 @@ function parseXYZContent(content) {
     const natoms = parseInt(lines[i], 10);
     if (isNaN(natoms) || natoms <= 0) break;
     const comment = lines[i + 1] || '';
-    const frame = { comment, atoms: [], forces: [], lattice: null };
+    const frame = { comment, atoms: [], forces: [], spins: [], lattice: null };
 
     // Parse lattice if extxyz
     if (isExtended) {
@@ -166,6 +172,23 @@ function parseXYZContent(content) {
         ]);
       } else {
         frame.forces.push([0, 0, 0]);
+      }
+
+      // Parse spin/magnetic moment columns if present — positional, same
+      // heuristic as forces above: species+pos(3)+forces(3)+spin(3) = 10
+      // columns (e.g. Properties=species:S:1:pos:R:3:forces:R:3:spin:R:3).
+      // A real Properties= parser would be more robust than a fixed column
+      // count, but nothing in this reader parses that string today (forces
+      // above has the same limitation) — matching its existing approach
+      // rather than introducing a one-off exception for spin alone.
+      if (parts.length >= 10) {
+        frame.spins.push([
+          parseFloat(parts[7]),
+          parseFloat(parts[8]),
+          parseFloat(parts[9])
+        ]);
+      } else {
+        frame.spins.push([0, 0, 0]);
       }
     }
 
@@ -336,8 +359,8 @@ export function parseXYZFile(content, fileName) {
           const forces = frame.forces.map(forceData =>
             new Force({ vector: forceData, scaling: 1.0 })
           );
-          const spins = frame.atoms.map(() =>
-            new Spin({ vector: [0, 0, 0], scaling: 1.0 })
+          const spins = frame.spins.map(spinData =>
+            new Spin({ vector: spinData, scaling: 1.0 })
           );
 
           return new Structure({

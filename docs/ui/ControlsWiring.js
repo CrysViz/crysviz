@@ -82,7 +82,9 @@ export function setupControlsWiring() {
     const gizmo = document.getElementById('axesGizmo');
     const legend = document.getElementById('axesLegend');
     if (gizmo) gizmo.style.display = visible ? '' : 'none';
-    if (legend) legend.style.display = visible ? '' : 'none';
+    // The legend box stays hidden when labels are integrated onto the arrows
+    // instead (general.gizmoLabelsOnArrows, see ui/GizmoDrag.js), even while axes are shown.
+    if (legend) legend.style.display = (visible && !general.gizmoLabelsOnArrows) ? '' : 'none';
   };
   const showAxesToggle = document.getElementById('showAxes');
   if (showAxesToggle) {

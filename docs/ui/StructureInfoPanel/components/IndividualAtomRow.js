@@ -10,7 +10,7 @@ import { updatePolyhedraColors, scheduleBondRebuild } from '../../../render/inde
 import { createMaterialEditor } from './MaterialEditor.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { clampOpacity, clampRadiusScale, updateAtomCoordinates } from './utils.js';
-import { selectAtomFromRow, suppressSelectionHighlightFor3D, restoreSelectionHighlight } from '../../SelectAndHighlightModule.js';
+import { selectAtomFromRow, suppressSelectionHighlightFor3D, restoreSelectionHighlight, setArrowHighlightOverride, clearArrowHighlightOverride } from '../../SelectAndHighlightModule.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createSpinForceEditor } from './SpinForceEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
@@ -375,7 +375,14 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   coordEditor.appendChild(coordButtonsRow);
 
   // Spin/Force editor
-  const spinEditor = createSpinForceEditor(atomIndex, element);
+  const spinEditor = createSpinForceEditor(atomIndex, element, {
+    // Only retarget the 3D highlight if this editor is the one currently
+    // open — a mode switch inside a closed/hidden editor (state restore,
+    // e.g.) shouldn't touch the highlight.
+    onModeChange: (mode) => {
+      if (spinEditor.style.display !== 'none') setArrowHighlightOverride(atomIndex, mode);
+    },
+  });
 
   // --- Event Handlers ---
   function setButtonActive(button, isActive) {
@@ -402,6 +409,14 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     const wasColorOpen = editor.style.display !== 'none';
     if (editorType === 'color') suppressSelectionHighlightFor3D();
     else if (wasColorOpen) restoreSelectionHighlight();
+
+    // While the Spin/Force editor is open for this atom, the 3D highlight
+    // targets its arrow (whichever tab — spin or force — is active) instead
+    // of the atom sphere; closing it (or switching to another editor)
+    // reverts to the normal atom-sphere highlight.
+    const wasSpinOpen = spinEditor.style.display !== 'none';
+    if (editorType === 'spin') setArrowHighlightOverride(atomIndex, /** @type {any} */ (spinEditor).getMode());
+    else if (wasSpinOpen) clearArrowHighlightOverride();
 
     Object.entries(editorMap).forEach(([type, panel]) => {
       panel.style.display = type === editorType ? 'block' : 'none';
@@ -476,6 +491,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   spinBtn.onclick = (e) => {
     e.stopPropagation();
     const shouldOpen = spinEditor.style.display === 'none';
+    if (shouldOpen) /** @type {any} */ (spinEditor).refresh?.();
     setActiveEditor(shouldOpen ? 'spin' : null);
   };
 

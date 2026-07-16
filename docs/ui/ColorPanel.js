@@ -1,7 +1,7 @@
 import { createColorPicker } from './ColorPickerModule.js';
-import {updateVisualization} from '../core/crystal-viewer.js';  
+import {updateVisualization} from '../core/crystal-viewer.js';
 import { app, groups,fileBrowser, general, RENDERING_DEFAULTS} from '../state/store.js';
-import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors} from '../defaults/color_texture_defaults.js'
+import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors,getJetColors} from '../defaults/color_texture_defaults.js'
 
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
@@ -12,6 +12,9 @@ import { updateGroundPlane } from '../render/index.js'
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
 import { maybeShowRaytraceWarning } from './RaytraceWarningModal.js'
 import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js'
+import { createColorBar } from './ColorBarWidget.js'
+import { registerColorBarSource } from './ColorBarRegistry.js'
+import { computeAutoRange } from '../utils/index.js'
 
 
 
@@ -21,133 +24,6 @@ function createElement(tag, attributes = {}, styles = {}, textContent = "") {
   Object.entries(styles).forEach(([k, v]) => (el.style[k] = v));
   if (textContent) el.textContent = textContent;
   return el;
-}
-
-// --- Color Bar ---
-function createColorBar(container, colormap, minValue, maxValue, type) {
-  const wrapper = createElement("div", {}, {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    width: "100%",
-    marginTop: "6px"
-  });
-
-  const barContainer = createElement("div", {}, {
-    width: "100%",
-    borderRadius: "3px",
-    overflow: "hidden"
-  });
-
-  const canvas = createElement("canvas", {}, { width: "100%", display: "block" });
-  canvas.width = 100;
-  canvas.height = 20;
-  barContainer.appendChild(canvas);
-
-  const labels = createElement("div", {}, {
-    display: "flex",
-    justifyContent: "space-between",
-    width: "120px",
-    marginTop: "4px"
-  });
-
-  const inputStyle = {
-    width: "25%",
-    fontSize: "12px",
-    padding: "2px 4px",
-    background: "#555",
-    color: "#fff",
-    border: "1px solid #777",
-    borderRadius: "3px",
-    textAlign: "center"
-  };
-
-  const minInput = createElement("input", {
-    type: "text",
-    value: minValue
-  }, inputStyle);
-
-  const maxInput = createElement("input", {
-    type: "text",
-    value: maxValue
-  }, inputStyle);
-
-  labels.appendChild(minInput);
-  labels.appendChild(maxInput);
-
-  wrapper.appendChild(barContainer);
-  wrapper.appendChild(labels);
-  container.appendChild(wrapper);
-
-  function render() {
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    let colors;
-    switch (colormap) {
-      case "batlow": colors = getBatlowColors(); break;
-      case "hawaii": colors = getHawaiiColors(); break;
-      case "managua": colors = getManaguaColors(); break;
-      case "viridis": colors = getViridisColors(); break;
-      case "plasma": colors = getPlasmaColors(); break;
-      case "spectralR": colors = getSpectralRColors(); break;
-      default: colors = getHeatMapColors();
-    }
-
-    const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
-    const step = Math.max(1, Math.floor(colors.length / 20));
-
-    for (let i = 0; i < colors.length; i += step) {
-      const c = colors[i];
-      grad.addColorStop(i / colors.length,
-        `rgb(${c.r * 255 | 0}, ${c.g * 255 | 0}, ${c.b * 255 | 0})`);
-    }
-
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
-
-  function onLimitsChange() {
-    const min = parseFloat(minInput.value);
-    const max = parseFloat(maxInput.value);
-    if (!isFinite(min) || !isFinite(max) || min >= max) {
-      alert("Invalid range: Max must be greater than Min");
-      return;
-    }
-
-    if (type === "atoms") {
-      general.ForceMin = min;
-      general.ForceMax = max;
-      updateAtomColorsByForce();
-      updateAtoms();
-
-      // No-ops unless bonds are in "elements" mode (see bondsFollowAtomColors).
-      syncBondsToAtomColors(fileBrowser.selectedStructure);
-      updatePolyhedraColors();
-    } else if (type === "bonds") {
-      general.BondMin = min;
-      general.BondMax = max;
-      updateBondColorsByLength();
-      updateBonds();
-      updatePolyhedraColors();
-    }
-  }
-
-
-  minInput.addEventListener("change", onLimitsChange);
-  maxInput.addEventListener("change", onLimitsChange);
-
-  render();
-
-  return {
-    update(cmap) {
-      colormap = cmap;
-      render();
-    },
-    remove() {
-      wrapper.remove();
-    }
-  };
 }
 
 // --- Dropdown Creation ---
@@ -269,11 +145,14 @@ function colorMapColors(colorMapName) {
     case "viridis": return getViridisColors();
     case "plasma": return getPlasmaColors();
     case "spectralR": return getSpectralRColors();
+    case "jet": return getJetColors();
     default: return getHeatMapColors();
   }
 }
 
-function valueToColor(value, minVal, maxVal, colorMapName) {
+const COLOR_LOG_EPS = 1e-6;
+
+function valueToColor(value, minVal, maxVal, colorMapName, useLog = false) {
   const colors = colorMapColors(colorMapName);
   if (!colors || colors.length === 0) {
     return "#ffffff";
@@ -281,13 +160,28 @@ function valueToColor(value, minVal, maxVal, colorMapName) {
 
   const nBins = colors.length;
   const clamped = Math.max(minVal, Math.min(maxVal, value));
-  let t = (maxVal > minVal) ? (clamped - minVal) / (maxVal - minVal) : 0.5;
+  let t;
+  if (useLog) {
+    const lo = Math.log10(Math.max(minVal, COLOR_LOG_EPS));
+    const hi = Math.log10(Math.max(maxVal, COLOR_LOG_EPS));
+    const v = Math.log10(Math.max(clamped, COLOR_LOG_EPS));
+    t = hi > lo ? (v - lo) / (hi - lo) : 0.5;
+  } else {
+    t = (maxVal > minVal) ? (clamped - minVal) / (maxVal - minVal) : 0.5;
+  }
   const bin = Math.min(Math.max(0, Math.floor(t * nBins)), nBins - 1);
-  return `#${(colors[bin].r * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].g * 255 | 0).toString(16).padStart(2, '0')}${(colors[bin].b * 255 | 0).toString(16).padStart(2, '0')}`;
+  // getHexString(), not manual r*255 truncation: these THREE.Color objects
+  // store their intended sRGB appearance internally as linear (color
+  // management), so reading .r/.g/.b directly and truncating them as if
+  // they were already 0-255 sRGB values skips the linear->sRGB conversion
+  // getHexString() does — same value ends up a visibly different color than
+  // what the same colormap+value renders as on an instanced mesh (which
+  // reads .r/.g/.b directly, correctly, as linear).
+  return `#${colors[bin].getHexString()}`;
 }
 
 export function bondLengthToColor(bondLength, minVal = general.BondMin, maxVal = general.BondMax) {
-  return valueToColor(bondLength, minVal, maxVal, general.bondsColorMap);
+  return valueToColor(bondLength, minVal, maxVal, general.bondsColorMap, general.bondColorScale === "log");
 }
 
 // Same binning as bondLengthToColor, but reads the ATOMS color map
@@ -295,7 +189,7 @@ export function bondLengthToColor(bondLength, minVal = general.BondMin, maxVal =
 // color (on reset, or when force mode repaints), which must track whatever
 // color map the Atoms panel currently has selected, not the Bonds one.
 export function atomForceToColor(magnitude, minVal = general.ForceMin, maxVal = general.ForceMax) {
-  return valueToColor(magnitude, minVal, maxVal, general.atomColorMap);
+  return valueToColor(magnitude, minVal, maxVal, general.atomColorMap, general.atomColorScale === "log");
 }
 
 function updateAtomColorsByForce() {
@@ -313,8 +207,6 @@ function updateAtomColorsByForce() {
 
   // Print first few force vectors for debugging
 
-  const min = general.ForceMin;
-  const max = general.ForceMax;
   const colorMap = general.atomColorMap || "heatmap";
 
   // Get color array
@@ -325,10 +217,8 @@ function updateAtomColorsByForce() {
     return false;
   }
 
-  const nBins = colors.length;
-
   // Auto-calculate range if min equals max
-  if (min === max) {
+  if (general.ForceMin === general.ForceMax) {
     let actualMin = Infinity;
     let actualMax = -Infinity;
     structure.forces.forEach(forceObj => {
@@ -342,6 +232,12 @@ function updateAtomColorsByForce() {
     general.ForceMax = actualMax === actualMin ? actualMin + 1 : actualMax;
   }
 
+  // Read AFTER the auto-calc above (not before, into stale locals) — it may
+  // have just replaced general.ForceMin/Max, and every atom below needs the
+  // final range, not whatever was there before this call.
+  const min = general.ForceMin;
+  const max = general.ForceMax;
+
   structure.atoms.forEach((atom, atomIndex) => {
     const forceObj = structure.forces[atomIndex];
     if (!forceObj || !forceObj.vector || forceObj.vector.length < 3) {
@@ -352,25 +248,11 @@ function updateAtomColorsByForce() {
 
     const vector = forceObj.vector;
     const magnitude = Math.sqrt(vector[0]*vector[0] + vector[1]*vector[1] + vector[2]*vector[2]);
-    let bin = 0;
-
-    if (max > min) {
-      const clamped = Math.max(min, Math.min(max, magnitude));
-      const t = (clamped - min) / (max - min);
-      bin = Math.floor(t * nBins);
-    }
-
-    bin = Math.max(0, Math.min(bin, nBins - 1));
-
-    if (bin >= colors.length || !colors[bin]) {
-      const element = structure.elements[atomIndex];
-      atom.color = structure.getDefaultElementColor(element);
-      return;
-    }
-
-    const colorObj = colors[bin];
-    const color = `#${(colorObj.r * 255 | 0).toString(16).padStart(2, '0')}${(colorObj.g * 255 | 0).toString(16).padStart(2, '0')}${(colorObj.b * 255 | 0).toString(16).padStart(2, '0')}`;
-    atom.color = color;
+    // Delegates to the same binning valueToColor uses elsewhere (bonds-by-
+    // length, atomForceToColor) instead of a second hand-rolled copy — this
+    // one used to be linear-only, unlike valueToColor's now-log-aware
+    // version, and there's no reason the two should drift.
+    atom.color = valueToColor(magnitude, min, max, colorMap, general.atomColorScale === "log");
   });
 
   if (groups.atomsMesh) {
@@ -952,8 +834,28 @@ export function addColorPanel(target = "colorContainer") {
   // =========================
   // ATOMS
   // =========================
+  const ATOM_COLORBAR_FLOATING_ID = 'atomColorBarFloating';
   let atomsColorBar = null;
   let atomsMenu; // Declare for access in fallback
+
+  registerColorBarSource('atom', 'Atom Force (eV/Å)', () => atomsColorBar);
+
+  // Save the live color bar's orientation/floating state into `general`
+  // right before it's torn down (switching out of Force mode), so switching
+  // back in restores it instead of resetting to docked/horizontal.
+  function captureAtomColorBarState() {
+    if (!atomsColorBar) return;
+    const settings = atomsColorBar.getSettings();
+    general.atomColorBarOrientation = settings.orientation;
+    general.atomColorBarFlipSide = settings.flipSide;
+    general.atomColorScale = settings.scale;
+    general.colorBarSize = settings.size;
+    general.atomLegendText = settings.legend;
+    general.atomColorBarFloating = atomsColorBar.isFloating();
+    if (general.atomColorBarFloating) {
+      general.atomColorBarFloatPos = atomsColorBar.getAnchor();
+    }
+  }
 
   const atomsMenuBlock = createElement("div", {});
   atomsMenu = createDropdown("atomsMenu", "Atoms", [
@@ -1024,7 +926,8 @@ export function addColorPanel(target = "colorContainer") {
     { value: "managua", text: "Managua" },
     { value: "viridis", text: "Viridis" },
     { value: "plasma", text: "Plasma" },
-    { value: "spectralR", text: "Spectral R" }
+    { value: "spectralR", text: "Spectral R" },
+    { value: "jet", text: "Jet" }
   ], () => {
     const cmap = atomsColorMapMenu.querySelector("select").value;
     general.atomColorMap = cmap;
@@ -1037,8 +940,78 @@ export function addColorPanel(target = "colorContainer") {
       updatePolyhedraColors();
     }
   });
+  // --- Log color scale toggle --- (mirrors ForcePanel.js/SpinPanel.js's own
+  // checkboxes: the floating color bar's burger menu only exists once
+  // .cv-colorbar-floating applies, so a docked bar needs its own reachable
+  // toggle too, not just the menu item.)
+  const atomsBarControlsRow = createElement("div", {}, {
+    display: "flex", alignItems: "center", gap: "12px", margin: "4px 0",
+  });
+  const atomsLogLabel = createElement("label", {}, {
+    display: "flex", alignItems: "center", gap: "4px", fontSize: "12px",
+    color: "white", whiteSpace: "nowrap", cursor: "pointer",
+  });
+  const atomsLogCheckbox = createElement("input", { type: "checkbox", id: "atomsLogScaleCheckbox" });
+  atomsLogCheckbox.checked = general.atomColorScale === "log";
+  atomsLogLabel.appendChild(atomsLogCheckbox);
+  atomsLogLabel.appendChild(document.createTextNode("Log Scale"));
+
+  const atomsAutoRangeBtn = createElement("button", {
+    type: "button", class: "file-action-btn cv-auto-range-btn",
+  }, {}, "Auto Range");
+
+  atomsBarControlsRow.appendChild(atomsLogLabel);
+  atomsBarControlsRow.appendChild(atomsAutoRangeBtn);
+
+  // Shared by atomsLogCheckbox and the color bar's own burger-menu "Log
+  // Scale" item (onScaleChange below) — either can flip it, both stay synced.
+  function applyAtomLogScale(isLog) {
+    general.atomColorScale = isLog ? "log" : "linear";
+    if (isLog && general.ForceMin <= 0) {
+      general.ForceMin = 0.01;
+      atomsColorBar?.setRange(general.ForceMin, general.ForceMax);
+    }
+    atomsLogCheckbox.checked = isLog;
+    atomsColorBar?.update(general.atomColorMap, general.atomColorScale);
+    if (general.atomsColor === "force") {
+      updateAtomColorsByForce();
+      updateAtoms();
+      syncBondsToAtomColors(fileBrowser.selectedStructure);
+      updatePolyhedraColors();
+    }
+  }
+  atomsLogCheckbox.addEventListener("change", () => applyAtomLogScale(atomsLogCheckbox.checked));
+
+  // Shared by atomsAutoRangeBtn and the burger menu's own "Auto Range" item.
+  // Recomputes min/max from the structure's actual force magnitudes, padded
+  // 20% of the data's own span on each side (computeAutoRange).
+  function applyAtomAutoRange() {
+    const structure = fileBrowser.selectedStructure;
+    if (!structure?.forces?.length) return;
+    const magnitudes = structure.forces.map((force) => {
+      if (!force?.vector) return NaN;
+      const mag = Math.sqrt(force.vector[0] ** 2 + force.vector[1] ** 2 + force.vector[2] ** 2);
+      return mag;
+    });
+    const range = computeAutoRange(magnitudes, 0.2, { clampMinAtZero: true });
+    if (!range) return;
+    let { min, max } = range;
+    if (general.atomColorScale === "log" && min <= 0) min = 0.01;
+    general.ForceMin = min;
+    general.ForceMax = max;
+    atomsColorBar?.setRange(min, max);
+    if (general.atomsColor === "force") {
+      updateAtomColorsByForce();
+      updateAtoms();
+      syncBondsToAtomColors(structure);
+      updatePolyhedraColors();
+    }
+  }
+  atomsAutoRangeBtn.addEventListener("click", applyAtomAutoRange);
+
   const atomsColorBarContainer = createElement("div", {}, { display: "none", marginTop: "8px" });
   atomsColorMapBlock.appendChild(atomsColorMapMenu);
+  atomsColorMapBlock.appendChild(atomsBarControlsRow);
   atomsColorMapBlock.appendChild(atomsColorBarContainer);
 
   atomsMenuBlock.appendChild(atomsMenu);
@@ -1077,8 +1050,31 @@ export function addColorPanel(target = "colorContainer") {
           general.atomColorMap,
           general.ForceMin,
           general.ForceMax,
-          "atoms"
+          {
+            floatingId: ATOM_COLORBAR_FLOATING_ID,
+            fallbackMin: general.ForceMin,
+            fallbackMax: general.ForceMax,
+            legend: general.atomLegendText ?? "Atom Force (eV/Å)",
+            scale: general.atomColorScale,
+            orientation: general.atomColorBarOrientation,
+            flipSide: general.atomColorBarFlipSide,
+            size: general.colorBarSize,
+            onLimitsCommit: (min, max) => {
+              general.ForceMin = min;
+              general.ForceMax = max;
+              updateAtomColorsByForce();
+              updateAtoms();
+              // No-ops unless bonds are in "elements" mode (see bondsFollowAtomColors).
+              syncBondsToAtomColors(fileBrowser.selectedStructure);
+              updatePolyhedraColors();
+            },
+            onScaleChange: (scale) => applyAtomLogScale(scale === "log"),
+            onAutoRange: () => applyAtomAutoRange(),
+          }
         );
+        if (general.atomColorBarFloating && general.atomColorBarFloatPos) {
+          atomsColorBar.floatAtAnchor(general.atomColorBarFloatPos);
+        }
       }
       if (!updateAtomColorsByForce()) {
         atomsMenu.querySelector("select").value = "elements";
@@ -1087,20 +1083,10 @@ export function addColorPanel(target = "colorContainer") {
         return;
       }
     } else if (isElements) {
-      // When switching to elements mode, update all atoms with current color scheme
-      if (structure && structure.atoms) {
-        structure.atoms.forEach((atom, atomIndex) => {
-          const element = structure.elements[atomIndex];
-          atom.color = structure.getDefaultElementColor(element);
-        });
-        if (groups.atomsMesh) {
-          groups.atomsMesh.instanceColor.needsUpdate = true;
-        }
-      }
-    } else {
+      captureAtomColorBarState();
       atomsColorBar?.remove();
       atomsColorBar = null;
-      // Reset to element colors
+      // When switching to elements mode, update all atoms with current color scheme
       if (structure && structure.atoms) {
         structure.atoms.forEach((atom, atomIndex) => {
           const element = structure.elements[atomIndex];
@@ -1124,8 +1110,28 @@ export function addColorPanel(target = "colorContainer") {
   // =========================
   // BONDS
   // =========================
+  const BOND_COLORBAR_FLOATING_ID = 'bondColorBarFloating';
   let bondsColorBar = null;
   let bondsSolidColorPicker = null;
+
+  registerColorBarSource('bond', 'Bond Length (Å)', () => bondsColorBar);
+
+  // Save the live color bar's orientation/floating state into `general`
+  // right before it's torn down (switching out of Length mode), so
+  // switching back in restores it instead of resetting to docked/horizontal.
+  function captureBondColorBarState() {
+    if (!bondsColorBar) return;
+    const settings = bondsColorBar.getSettings();
+    general.bondColorBarOrientation = settings.orientation;
+    general.bondColorBarFlipSide = settings.flipSide;
+    general.bondColorScale = settings.scale;
+    general.colorBarSize = settings.size;
+    general.bondLegendText = settings.legend;
+    general.bondColorBarFloating = bondsColorBar.isFloating();
+    if (general.bondColorBarFloating) {
+      general.bondColorBarFloatPos = bondsColorBar.getAnchor();
+    }
+  }
 
   const bondsMenuBlock = createElement("div", {});
   const bondsMenu = createDropdown("bondsMenu", "Bonds", [
@@ -1144,7 +1150,8 @@ export function addColorPanel(target = "colorContainer") {
     { value: "managua", text: "Managua" },
     { value: "viridis", text: "Viridis" },
     { value: "plasma", text: "Plasma" },
-    { value: "spectralR", text: "Spectral R" }
+    { value: "spectralR", text: "Spectral R" },
+    { value: "jet", text: "Jet" }
   ], () => {
     const cmap = bondsColorMapMenu.querySelector("select").value;
     general.bondsColorMap = cmap;
@@ -1154,8 +1161,66 @@ export function addColorPanel(target = "colorContainer") {
     updatePolyhedraColors();
   });
 
+  // --- Log Scale + Auto Range, side by side --- (see the atoms ones above
+  // for why docked-reachable controls are needed alongside the burger menu.)
+  const bondsBarControlsRow = createElement("div", {}, {
+    display: "flex", alignItems: "center", gap: "12px", margin: "4px 0",
+  });
+  const bondsLogLabel = createElement("label", {}, {
+    display: "flex", alignItems: "center", gap: "4px", fontSize: "12px",
+    color: "white", whiteSpace: "nowrap", cursor: "pointer",
+  });
+  const bondsLogCheckbox = createElement("input", { type: "checkbox", id: "bondsLogScaleCheckbox" });
+  bondsLogCheckbox.checked = general.bondColorScale === "log";
+  bondsLogLabel.appendChild(bondsLogCheckbox);
+  bondsLogLabel.appendChild(document.createTextNode("Log Scale"));
+
+  const bondsAutoRangeBtn = createElement("button", {
+    type: "button", class: "file-action-btn cv-auto-range-btn",
+  }, {}, "Auto Range");
+
+  bondsBarControlsRow.appendChild(bondsLogLabel);
+  bondsBarControlsRow.appendChild(bondsAutoRangeBtn);
+
+  function applyBondLogScale(isLog) {
+    general.bondColorScale = isLog ? "log" : "linear";
+    if (isLog && general.BondMin <= 0) {
+      general.BondMin = 0.01;
+      bondsColorBar?.setRange(general.BondMin, general.BondMax);
+    }
+    bondsLogCheckbox.checked = isLog;
+    bondsColorBar?.update(general.bondsColorMap, general.bondColorScale);
+    updateBondColorsByLength();
+    updateBonds();
+    updatePolyhedraColors();
+  }
+  bondsLogCheckbox.addEventListener("change", () => applyBondLogScale(bondsLogCheckbox.checked));
+
+  // Shared by bondsAutoRangeBtn and the burger menu's own "Auto Range" item.
+  // Recomputes min/max from the actual visible bond lengths, padded 20% of
+  // the data's own span on each side (computeAutoRange).
+  function applyBondAutoRange() {
+    const bonds = fileBrowser.selectedStructure?.bonds;
+    if (!bonds?.length) return;
+    const lengths = bonds
+      .filter((bond) => bond.visibleLen && bond.visibleLen > 1e-3)
+      .map((bond) => bond.dist);
+    const range = computeAutoRange(lengths, 0.2, { clampMinAtZero: true });
+    if (!range) return;
+    let { min, max } = range;
+    if (general.bondColorScale === "log" && min <= 0) min = 0.01;
+    general.BondMin = min;
+    general.BondMax = max;
+    bondsColorBar?.setRange(min, max);
+    updateBondColorsByLength();
+    updateBonds();
+    updatePolyhedraColors();
+  }
+  bondsAutoRangeBtn.addEventListener("click", applyBondAutoRange);
+
   const bondsColorBarContainer = createElement("div", {}, { display: "none", marginTop: "8px" });
   bondsColorMapBlock.appendChild(bondsColorMapMenu);
+  bondsColorMapBlock.appendChild(bondsBarControlsRow);
   bondsColorMapBlock.appendChild(bondsColorBarContainer);
 
   // Solid color picker section (separate block)
@@ -1185,6 +1250,15 @@ export function addColorPanel(target = "colorContainer") {
     bondsColorBarContainer.style.display = isLength ? "block" : "none";
     bondsSolidColorBlock.style.display = isSolid ? "block" : "none";
 
+    // The color bar can be floating over the scene (outside this container),
+    // so leaving Length mode has to tear it down explicitly rather than just
+    // hiding bondsColorBarContainer — that wouldn't touch a floated bar at all.
+    if (!isLength && bondsColorBar) {
+      captureBondColorBarState();
+      bondsColorBar.remove();
+      bondsColorBar = null;
+    }
+
     if (isLength) {
       if (!bondsColorBar) {
         bondsColorBar = createColorBar(
@@ -1192,8 +1266,29 @@ export function addColorPanel(target = "colorContainer") {
           general.bondsColorMap,
           general.BondMin,
           general.BondMax,
-          "bonds"
+          {
+            floatingId: BOND_COLORBAR_FLOATING_ID,
+            fallbackMin: general.BondMin,
+            fallbackMax: general.BondMax,
+            legend: general.bondLegendText ?? "Bond Length (Å)",
+            scale: general.bondColorScale,
+            orientation: general.bondColorBarOrientation,
+            flipSide: general.bondColorBarFlipSide,
+            size: general.colorBarSize,
+            onLimitsCommit: (min, max) => {
+              general.BondMin = min;
+              general.BondMax = max;
+              updateBondColorsByLength();
+              updateBonds();
+              updatePolyhedraColors();
+            },
+            onScaleChange: (scale) => applyBondLogScale(scale === "log"),
+            onAutoRange: () => applyBondAutoRange(),
+          }
         );
+        if (general.bondColorBarFloating && general.bondColorBarFloatPos) {
+          bondsColorBar.floatAtAnchor(general.bondColorBarFloatPos);
+        }
       }
       updateBondColorsByLength();
     }

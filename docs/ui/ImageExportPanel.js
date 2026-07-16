@@ -1,16 +1,17 @@
-// "Download → PNG Image…" modal: pick output dimensions (with an aspect-ratio
-// helper), margins and transparency, then export a high-resolution PNG of the
-// scene via render/ImageExportModule.js.
+// "Download → PNG Image…" flow: a settings modal (output size/aspect ratio,
+// margin, transparency), then an interactive crop overlay
+// (ui/CropOverlay.js) over the live 3D view to pick exactly what's exported
+// — a high-resolution PNG via render/ImageExportModule.js, WYSIWYG (gizmo,
+// floating color bars, measurements exactly as arranged on screen).
 //
-// While a (tracer) export runs, the Download button shows live "Rendering… N /
-// target" progress and the modal is LOCKED: backdrop-click and Escape no longer
-// dismiss it, and the Cancel button becomes "Abort", which cancels the capture
-// (via an AbortController signal) and leaves the modal open with the live view
-// intact. The click yields two animation frames before starting so the button
-// state repaints instantly.
+// The settings modal itself closes as soon as the crop overlay opens, so all
+// export-in-progress UI (live "Rendering… N / target" text, Abort) lives on
+// the crop overlay's own confirm/cancel buttons (ui/CropOverlay.js), driven
+// by captureSceneToPng's onProgress/signal options.
 
 import { captureSceneToPng } from '../render/index.js';
 import { downloadBlob, currentBaseName } from './SavePanel.js';
+import { openCropOverlay } from './CropOverlay.js';
 
 const PRESET_ASPECTS = {
   '16:9': 16 / 9,
@@ -75,9 +76,9 @@ export function initImageExportPanel() {
         <label>Margin (px)<input type="number" id="pngMargin" min="0" max="4096" step="1" value="0"></label>
         <label class="png-check"><input type="checkbox" id="pngTransparent">Transparent background</label>
       </div>
-      <p class="png-note">The image is auto-framed to the visible structure. Floating panels are excluded; the axis gizmo and measurements are included.</p>
+      <p class="png-note">Next, drag the crop area over the 3D view to choose exactly what's exported — the scene, the gizmo, and any floating color bars, right where they're currently arranged.</p>
       <div class="paste-modal-actions">
-        <button type="button" id="pngDownloadBtn">Download</button>
+        <button type="button" id="pngDownloadBtn">Choose area…</button>
         <button type="button" id="pngCancelBtn">Cancel</button>
       </div>
     </div>
@@ -96,12 +97,6 @@ export function initImageExportPanel() {
   // aspectRatio is the enforced ratio while an explicit preset/view is chosen;
   // it is ignored in "free" mode (edit both dimensions independently).
   let aspectRatio = viewAspect();
-
-  // Export-in-progress state. While busy the modal must NOT close on a backdrop
-  // click or Escape (the render keeps going invisibly otherwise); the Cancel
-  // button becomes "Abort" and cancels the in-flight capture via the signal.
-  let busy = false;
-  let abortController = null;
 
   function isFree() { return aspectSelect.value === 'free'; }
 
@@ -188,7 +183,7 @@ export function initImageExportPanel() {
     }
   });
 
-  async function doDownload() {
+  function chooseArea() {
     const width = Math.round(Number(widthInput.value) || 0);
     const height = Math.round(Number(heightInput.value) || 0);
     const margin = Math.max(0, Math.round(Number(marginInput.value) || 0));
@@ -196,59 +191,54 @@ export function initImageExportPanel() {
       alert('Enter a valid width and height.');
       return;
     }
-    busy = true;
-    abortController = new AbortController();
-    downloadBtn.disabled = true;
-    downloadBtn.textContent = 'Rendering…';
-    cancelBtn.textContent = 'Abort'; // repurpose Cancel -> Abort while rendering
-    // Yield two frames so the 'Rendering…' label (and the disabled state)
-    // actually paint BEFORE the synchronous-until-its-first-await capture work
-    // begins — the click must feel instant even for a long tracer export.
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    try {
+    const transparent = transparentInput.checked;
+    const free = isFree();
+    closeModal();
+
+    openCropOverlay({
+      // Locked aspect: the crop tool is constrained to the exact
+      // width/height ratio, so the crop always fills width x height with no
+      // distortion. Free: let the crop tool resize to whatever shape the
+      // user wants — width/height's LARGER edge becomes the output's long
+      // edge, with the other edge derived from the shape actually drawn
+      // (see below) instead of forcing every free-form crop through
+      // whatever ratio the width/height inputs happened to work out to.
+      aspect: free ? null : width / height,
       // Tracer pipelines render to full convergence inside captureSceneToPng
-      // (paced tiled rendering; the on-screen progress bar + this button both
-      // track the accumulation). Raster pipelines never emit progress (the loop
-      // is skipped), so the text stays 'Rendering…'. opts.signal lets Abort
-      // cancel mid-render.
-      const blob = await captureSceneToPng({
-        width, height, margin, transparent: transparentInput.checked,
-        signal: abortController.signal,
-        onProgress: ({ current, target }) => {
-          downloadBtn.textContent = `Rendering… ${current} / ${target}`;
-        },
-      });
-      downloadBlob(currentBaseName() + '.png', blob);
-      closeModal();
-    } catch (e) {
-      // Abort is a user action, not an error: swallow it silently and leave the
-      // modal open (the live view is already restored by captureSceneToPng's
-      // finally). Any other failure is surfaced.
-      if (/** @type {any} */ (e)?.name !== 'AbortError') {
-        alert(/** @type {any} */ (e)?.message || String(e));
-      }
-    } finally {
-      busy = false;
-      abortController = null;
-      downloadBtn.disabled = false;
-      downloadBtn.textContent = 'Download';
-      cancelBtn.textContent = 'Cancel';
-    }
+      // (paced tiled rendering). onConfirm receives {signal, onProgress} from
+      // the overlay's own confirm button — signal lets its Abort cancel the
+      // capture mid-render, onProgress drives its live "Rendering… N / target"
+      // text (ui/CropOverlay.js owns that UI; the settings modal is already
+      // closed by the time this runs).
+      onConfirm: async (crop, { signal, onProgress }) => {
+        let outWidth = width;
+        let outHeight = height;
+        if (free) {
+          const longEdge = Math.max(width, height);
+          if (crop.aspect >= 1) {
+            outWidth = Math.round(longEdge);
+            outHeight = Math.round(longEdge / crop.aspect);
+          } else {
+            outHeight = Math.round(longEdge);
+            outWidth = Math.round(longEdge * crop.aspect);
+          }
+        }
+        const blob = await captureSceneToPng({
+          width: outWidth, height: outHeight, margin, transparent, crop, signal, onProgress,
+        });
+        downloadBlob(currentBaseName() + '.png', blob);
+      },
+      onCancel: () => {},
+    });
   }
 
   trigger.addEventListener('click', openModal);
-  cancelBtn.addEventListener('click', () => {
-    // While an export is running, Cancel is "Abort": cancel the capture and keep
-    // the modal open. Otherwise it closes the dialog as before.
-    if (busy) { abortController?.abort(); return; }
-    closeModal();
-  });
-  downloadBtn.addEventListener('click', doDownload);
+  cancelBtn.addEventListener('click', closeModal);
+  downloadBtn.addEventListener('click', chooseArea);
   modal.addEventListener('click', (e) => {
-    if (busy) return; // don't dismiss a running export on a backdrop click
     if (e.target === modal) closeModal(); // backdrop click
   });
   modal.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !busy) closeModal(); // Escape ignored while busy
+    if (e.key === 'Escape') closeModal();
   });
 }

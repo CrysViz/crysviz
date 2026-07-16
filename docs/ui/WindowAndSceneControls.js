@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups, general } from '../state/store.js';
-import { setupAxisControls, latticeDirs, requestRender, setActivePipeline } from '../render/index.js';
+import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, setActivePipeline } from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 
@@ -59,7 +59,7 @@ export function setupScene() {
 
   // init Angle display windows
 
-  ['x', 'y', 'z', 'a', 'b', 'c'].forEach(axis => setupAxisControls(axis));
+  ['x', 'y', 'z', 'a', 'b', 'c'].forEach(axis => { setupAxisControls(axis); setupAxisLongPress(axis); });
 
 
   initAxesGizmo();
@@ -236,17 +236,22 @@ export function resizeRenderer(orthographicFrustumSize) {
     app.labelRenderer.setSize(w, h);
   }
 
-  if (app.gizmoRenderer && app.gizmoCamera) {
-    const gizmoDiv = document.getElementById('axesGizmo');
-    if (gizmoDiv) {
-      const gw = gizmoDiv.clientWidth || 110;
-      const gh = gizmoDiv.clientHeight || 110;
-      app.gizmoRenderer.setSize(gw, gh);
-      app.gizmoCamera.aspect = gw / gh;
-      app.gizmoCamera.updateProjectionMatrix();
-    }
-  }
+  resizeGizmoRenderer();
   requestRender();
+}
+
+/** Re-fits the gizmo's renderer/camera to #axesGizmo's current box size —
+ *  called on every main-view resize (above) and by ui/GizmoDrag.js's resize
+ *  handle while the user is actively resizing the gizmo itself. */
+export function resizeGizmoRenderer() {
+  if (!app.gizmoRenderer || !app.gizmoCamera) return;
+  const gizmoDiv = document.getElementById('axesGizmo');
+  if (!gizmoDiv) return;
+  const gw = gizmoDiv.clientWidth || 110;
+  const gh = gizmoDiv.clientHeight || 110;
+  app.gizmoRenderer.setSize(gw, gh);
+  app.gizmoCamera.aspect = gw / gh;
+  app.gizmoCamera.updateProjectionMatrix();
 }
 
 
@@ -307,12 +312,56 @@ export function initAxesGizmo(){
   const cArrow = makeArrow(0x3366ff);
   app.gizmoScene.add(aArrow, bArrow, cArrow);
 
-  // No labels needed inside gizmo - they're in the external legend
+  // Optional a/b/c letters at each arrow tip, as an alternative to the
+  // separate #axesLegend box (toggled via GizmoDrag.js's hamburger menu,
+  // general.gizmoLabelsOnArrows). Canvas-texture sprites rather than
+  // TextGeometry: no font loading, and THREE.Sprite always faces the camera
+  // regardless of the arrow's own rotation, so the letter stays readable as
+  // the gizmo spins with the view. Parented to the arrow so its position
+  // (but not its billboarded orientation) follows the arrow direction.
+  const makeLabel = (letter, color) => {
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.font = 'bold 92px sans-serif';
+    ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(letter, size / 2, size / 2 + 4);
+    const texture = new THREE.CanvasTexture(canvas);
+    // Mipmapping blurs a small, thin-stroked text texture down to near
+    // nothing at the on-screen sizes this sprite renders at (the gizmo box
+    // is only ~90px); a flat linear filter keeps the letter crisp instead.
+    texture.minFilter = THREE.LinearFilter;
+    texture.generateMipmaps = false;
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(0.34, 0.34, 1);
+    // Just past the tip, not on top of the cone: a label centered on the
+    // arrow's own axis this close to the head reads as overlapping it.
+    // Offset stays modest — an arrow pointing near-straight "up" in camera
+    // space already sits close to the gizmo camera's frustum edge at
+    // y=arrowLen, so too large a gap here would clip off the top instead.
+    sprite.position.y = arrowLen + 0.1;
+    sprite.visible = general.gizmoLabelsOnArrows;
+    return sprite;
+  };
+  const aLabel = makeLabel('a', 0xff3333);
+  const bLabel = makeLabel('b', 0x33cc33);
+  const cLabel = makeLabel('c', 0x3366ff);
+  aArrow.add(aLabel);
+  bArrow.add(bLabel);
+  cArrow.add(cLabel);
 
   // keep handles for animate()
   app.gizmoScene.userData.aArrow = aArrow;
   app.gizmoScene.userData.bArrow = bArrow;
   app.gizmoScene.userData.cArrow = cArrow;
+  app.gizmoScene.userData.aLabel = aLabel;
+  app.gizmoScene.userData.bLabel = bLabel;
+  app.gizmoScene.userData.cLabel = cLabel;
 
 function sizeGizmo(){
   const w = gizmoDiv.clientWidth || 110;
@@ -336,6 +385,23 @@ export function updateAxesGizmoWidth() {
       shaft.scale.z = general.axesLineWidth;
     }
   }
+}
+
+/** Toggle the a/b/c letters between the separate #axesLegend box (default)
+ *  and billboarded sprites at each gizmo arrow's tip (ui/GizmoDrag.js's
+ *  hamburger menu calls this). Both are never shown at once — enabling one
+ *  hides the other, respecting the current general.showAxes visibility. */
+export function setGizmoLabelsOnArrows(enabled) {
+  general.gizmoLabelsOnArrows = enabled;
+  const scene = app.gizmoScene;
+  if (scene?.userData) {
+    for (const key of ['aLabel', 'bLabel', 'cLabel']) {
+      if (scene.userData[key]) scene.userData[key].visible = enabled;
+    }
+  }
+  const legend = document.getElementById('axesLegend');
+  if (legend) legend.style.display = (general.showAxes && !enabled) ? '' : 'none';
+  requestRender();
 }
 
 
@@ -363,7 +429,7 @@ export function switchCameraType() {
     app.orthographicFrustumSize = null;
   }
   app.controls.object = app.camera;
-  ['x', 'y', 'z', 'a', 'b', 'c'].forEach(axis => setupAxisControls(axis));
+  ['x', 'y', 'z', 'a', 'b', 'c'].forEach(axis => { setupAxisControls(axis); setupAxisLongPress(axis); });
 
   const { center, dist } = getCellCenterAndDist();
   app.camera.position.copy(center.clone().add(new THREE.Vector3(1,1,1).normalize().multiplyScalar(dist)));

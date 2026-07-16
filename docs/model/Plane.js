@@ -1,7 +1,10 @@
 import * as THREE from '../external/three/three.module.js';
-import { Lut } from '../external/three/Lut.js';
 import { Field } from './Field.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
+import {
+  getHeatMapColors, getBatlowColors, getHawaiiColors, getManaguaColors,
+  getViridisColors, getPlasmaColors, getSpectralRColors, getJetColors,
+} from '../defaults/color_texture_defaults.js';
 
 // ---------------------------------------------------------------------------
 //  Visualization modes
@@ -56,8 +59,66 @@ export const DEFAULT_COLORMAP_RESOLUTION = 256;
 //  Colormap helpers
 // ---------------------------------------------------------------------------
 
-function createPlaneLut(colormap = 'cooltowarm') {
-  return new Lut(/** @type {any} */ (colormap), 256);
+const COLORMAP_LOG_EPS = 1e-6;
+
+// Same 8 names/colors Forces/Spins/Atoms/Bonds all draw from
+// (defaults/color_texture_defaults.js) — Planes used to have its own,
+// separate 10-entry palette via three.js's Lut/ColorMapKeywords
+// (external/three/Lut.js), so a "Viridis" or "Plasma" here was a
+// same-named but independently-defined lookalike, not actually the same
+// colors as everywhere else in the app.
+function colorArrayFor(colormap) {
+  switch (colormap) {
+    case "batlow": return getBatlowColors();
+    case "hawaii": return getHawaiiColors();
+    case "managua": return getManaguaColors();
+    case "viridis": return getViridisColors();
+    case "plasma": return getPlasmaColors();
+    case "spectralR": return getSpectralRColors();
+    case "jet": return getJetColors();
+    default: return getHeatMapColors();
+  }
+}
+
+// Drop-in replacement for three.js's Lut (external/three/Lut.js) — same
+// setMin/setMax/getColor(value) call shape updateColorMap() below already
+// uses — but sourced from colorArrayFor() above instead of Lut.js's own
+// palette set, and with log-scale support Lut.js has no concept of at all.
+class ColormapLut {
+  constructor(colormap = 'heatmap') {
+    this.colors = colorArrayFor(colormap);
+    this.minV = 0;
+    this.maxV = 1;
+    this.useLog = false;
+  }
+  setColorMap(colormap) {
+    this.colors = colorArrayFor(colormap);
+    return this;
+  }
+  setMin(min) { this.minV = min; return this; }
+  setMax(max) { this.maxV = max; return this; }
+  setLogScale(useLog) { this.useLog = !!useLog; return this; }
+  getColor(value) {
+    const n = this.colors.length;
+    if (!n) return new THREE.Color(0x000000);
+    let t;
+    if (this.maxV === this.minV) {
+      t = 0;
+    } else if (this.useLog) {
+      const lo = Math.log10(Math.max(this.minV, COLORMAP_LOG_EPS));
+      const hi = Math.log10(Math.max(this.maxV, COLORMAP_LOG_EPS));
+      const v = Math.log10(Math.max(value, COLORMAP_LOG_EPS));
+      t = hi > lo ? (v - lo) / (hi - lo) : 0;
+    } else {
+      t = (value - this.minV) / (this.maxV - this.minV);
+    }
+    t = Math.min(Math.max(t, 0), 1);
+    return this.colors[Math.min(Math.floor(t * n), n - 1)];
+  }
+}
+
+function createPlaneLut(colormap = 'heatmap') {
+  return new ColormapLut(colormap);
 }
 
 // ---------------------------------------------------------------------------
@@ -535,8 +596,9 @@ export class Plane extends THREE.Group {
   * @param {string}               [opts.colormap]  - LUT name for field coloring
   * @param {number}               [opts.colormapMin] - LUT lower bound override
   * @param {number}               [opts.colormapMax] - LUT upper bound override
+  * @param {string}               [opts.colormapScale] - 'linear' or 'log'
   */
-  constructor({ normal, d = 0, cell, resolution = DEFAULT_COLORMAP_RESOLUTION, mode, field, colormap = 'cooltowarm', colormapMin = null, colormapMax = null } = {}) {
+  constructor({ normal, d = 0, cell, resolution = DEFAULT_COLORMAP_RESOLUTION, mode, field, colormap = 'heatmap', colormapMin = null, colormapMax = null, colormapScale = 'linear' } = {}) {
     // ── Normalise the plane normal ──────────────────────────────────────────
     const n = normal
       ? toVec3(normal).normalize()
@@ -582,6 +644,7 @@ export class Plane extends THREE.Group {
     this._colormap       = colormap;
     this._colormapMin    = Number.isFinite(colormapMin) ? Number(colormapMin) : null;
     this._colormapMax    = Number.isFinite(colormapMax) ? Number(colormapMax) : null;
+    this._colormapScale  = colormapScale === 'log' ? 'log' : 'linear';
     this._lut            = createPlaneLut(colormap);
     /** THREE.Plane[] for the 6 cell faces — applied to every material. */
     this._clippingPlanes = clippingPlanes ?? [];
@@ -739,8 +802,8 @@ export class Plane extends THREE.Group {
     this._field = field;
   }
 
-  setColormap(colormap = 'cooltowarm') {
-    this._colormap = colormap || 'cooltowarm';
+  setColormap(colormap = 'heatmap') {
+    this._colormap = colormap || 'heatmap';
     this._lut = createPlaneLut(this._colormap);
 
     if (this._mode === PLANE_VIS_FIELD) {
@@ -757,6 +820,14 @@ export class Plane extends THREE.Group {
     }
   }
 
+  setColormapScale(scale) {
+    this._colormapScale = scale === 'log' ? 'log' : 'linear';
+
+    if (this._mode === PLANE_VIS_FIELD) {
+      this.updateColorMap();
+    }
+  }
+
   // ── field colormap sampling (shared by updateColorMap + the tracer encoder) ──
 
   /** Configure the LUT range from the colormap overrides / field min-max.
@@ -764,7 +835,7 @@ export class Plane extends THREE.Group {
   _configureLutRange() {
     const minValue = this._colormapMin ?? this._field?.minValue ?? -1;
     const maxValue = this._colormapMax ?? this._field?.maxValue ?? 1;
-    this._lut.setMin(minValue).setMax(maxValue);
+    this._lut.setMin(minValue).setMax(maxValue).setLogScale(this._colormapScale === 'log');
   }
 
   /** Inverse of the voxel*dims basis: maps a Cartesian world point to

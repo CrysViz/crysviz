@@ -180,6 +180,94 @@ export const general = {
   // Spin colormap range (Spins panel min/max inputs; read with ||-defaults).
   spinMin: 0,
   spinMax: 2,
+  // Spins panel Color Map dropdown selection, mirroring forceColorMap below
+  // (persisted so a panel rebuild — file change, collapse/reopen — restores
+  // the user's last choice instead of resetting to "None").
+  spinColorMap: 'none',
+  // Spin arrow LENGTH normalization (Spins panel "log length" toggle),
+  // independent of spinColorScale — same one-directional lock as
+  // forceLengthLogScale above (render/SpinModule.js's normalizeMag()).
+  spinLengthLogScale: false,
+  // Force colormap range (Forces panel min/max inputs; read with ||-defaults).
+  forceMin: 0,
+  forceMax: 2,
+  // Force colormap normalization: 'linear' | 'log' (Forces panel Log Scale toggle).
+  forceColorScale: 'linear',
+  // Custom legend text for the Forces color bar (ForcePanel.js), falls back
+  // to "Force (eV/Å)" when unset.
+  forceLegendText: null,
+  // Spin colormap normalization: 'linear' | 'log' (Spins panel Log Scale
+  // toggle), same role as forceColorScale above but for SpinModule.js.
+  spinColorScale: 'linear',
+  // Custom legend text for the Spins color bar (SpinPanel.js), falls back
+  // to "Spin (μB)" when unset.
+  spinLegendText: null,
+  // Atoms "Force" mode colormap normalization: 'linear' | 'log' (ColorPanel.js
+  // Log Scale toggle for the atom color bar).
+  atomColorScale: 'linear',
+  // Custom legend text for the Atoms color bar (ColorPanel.js), falls back
+  // to "Atom Force (eV/Å)" when unset.
+  atomLegendText: null,
+  // Bonds "Length" mode colormap normalization: 'linear' | 'log' (ColorPanel.js
+  // Log Scale toggle for the bond color bar).
+  bondColorScale: 'linear',
+  // Custom legend text for the Bonds color bar (ColorPanel.js), falls back
+  // to "Bond Length (Å)" when unset.
+  bondLegendText: null,
+  // Force arrow LENGTH normalization (Forces panel "log length" toggle),
+  // independent of forceColorScale above — but turning it on also forces
+  // forceColorScale to 'log' and locks that toggle, since a log-length arrow
+  // next to a linear color scale would disagree about what a given force
+  // magnitude looks like. See render/ForceModule.js's normalizeMag().
+  forceLengthLogScale: false,
+  // Forces panel Color Map dropdown selection (persisted so trajectory/MD
+  // playback and structure switches redraw with the user's last choice —
+  // there is no "None" option, forces always render through a colormap).
+  forceColorMap: 'heatmap',
+  // Force/Spin color bar layout (ui/ColorBarWidget.js, ui/ColorBarDrag.js):
+  // orientation and floating position live only inside that widget's own
+  // closures, so a panel rebuild (file change, collapse/reopen, colormap
+  // switch) throws them away unless captured here first. Captured in
+  // ForcePanel.js/SpinPanel.js right before the live instance is torn down,
+  // restored when the next instance is built. *FloatPos holds an anchor
+  // ({edgeX, offsetX, edgeY, offsetY} — offsets from #view's edges, from
+  // ColorBarDrag.js's getAnchor()/floatAtAnchor()), not raw left/top: #view
+  // can shift during a file reload's own transient layout changes between
+  // capture and restore, and a raw pixel target wouldn't track that.
+  forceColorBarOrientation: 'horizontal',
+  forceColorBarFloating: false,
+  forceColorBarFloatPos: null,
+  spinColorBarOrientation: 'horizontal',
+  spinColorBarFloating: false,
+  spinColorBarFloatPos: null,
+  // Same trio for the Atoms ("Force" mode) and Bonds ("Length" mode) color
+  // bars in ColorPanel.js, which now share the same ColorBarWidget.js as
+  // Forces/Spins. ForceMin/ForceMax and BondMin/BondMax (above) already hold
+  // the atom/bond range state; these three just cover layout/position.
+  atomColorBarOrientation: 'horizontal',
+  atomColorBarFloating: false,
+  atomColorBarFloatPos: null,
+  bondColorBarOrientation: 'horizontal',
+  bondColorBarFloating: false,
+  bondColorBarFloatPos: null,
+  // Same trio for the Planes panel's colorbar (PlanesPanel.js).
+  planeColorBarOrientation: 'horizontal',
+  planeColorBarFloating: false,
+  planeColorBarFloatPos: null,
+  // Side the legend/tick labels render on, independent of orientation: the
+  // "far" edge (below the bar in horizontal, right of it in vertical — the
+  // original/default) or the "near" edge (above/left). Shared by all four
+  // color bars via the hamburger menu's Flip Side item.
+  forceColorBarFlipSide: false,
+  spinColorBarFlipSide: false,
+  atomColorBarFlipSide: false,
+  bondColorBarFlipSide: false,
+  planeColorBarFlipSide: false,
+  // Length (px) a floating color bar's drag handle resizes to — shared by
+  // all four bars (resizing any one resizes them all, ColorBarWidget.js's
+  // setSize broadcasting via ColorBarRegistry.js), rather than a separate
+  // size per bar. null uses the widget's own default.
+  colorBarSize: null,
   atomSize:1.0,
   mainOpacity:1.0,
   compOpacity:1.0,
@@ -191,6 +279,17 @@ export const general = {
   // Shaft radius of the a/b/c axes-gizmo arrows, in gizmo-scene units
   // (WindowAndSceneControls.initAxesGizmo; arrow length is 1).
   axesLineWidth:0.015,
+  // Position of the draggable gizmo+legend overlay (GizmoDrag.js), captured
+  // as an edge anchor relative to #view — same scheme as the color bars'
+  // *ColorBarFloatPos fields — or null to use the CSS default (bottom-left).
+  gizmoPos: null,
+  // When true, the a/b/c letters render as billboarded sprites at each
+  // arrow's tip inside the gizmo's own 3D scene instead of in the separate
+  // #axesLegend box (WindowAndSceneControls.initAxesGizmo).
+  gizmoLabelsOnArrows: false,
+  // Side length in px of the #axesGizmo box (ui/GizmoDrag.js's resize
+  // handle), or null to use the CSS default (--gizmo-size, theme.css).
+  gizmoSize: null,
   // Cylinder radius of the unit-cell outline edges, in world units (Å)
   // (LatticeModule.createLatticeLines).
   latticeLineWidth:0.015,
@@ -220,6 +319,10 @@ export const general = {
   // window (ui/panels/defaultPanels.js) — NOT by panel expand state. When a
   // flag is off the corresponding feature panel is greyed out.
   forcesActive: false, // "Show Forces" toggle draws force arrows
+  // Force histogram (ui/AnalysisPanels/ForceHistogram.js) "Live during MD"
+  // toggle: redraw the histogram every MD/relax step instead of only when
+  // idle (stats computation isn't free, hence opt-in).
+  forceStatsLive: false,
   spinsActive: false, // "Show Spins" toggle draws spin arrows
   fieldActive: true, // "Show Volumetric Field" toggle draws the isosurface
   comparisonActive: false, // "Show Lattice Comparison" keeps the popup synced

@@ -491,7 +491,15 @@ export function getBatlowColors(nBins = 256) {
   const step = Math.floor(Values.length / 100);
   for (let i = 0; i < Values.length; i += step) {
     const [r, g, b] = Values[i];
-    colors.push(new THREE.Color(r, g, b));
+    // The published triplets are sRGB display values, not THREE's default
+    // working (linear) color space — constructing via the bare (r,g,b)
+    // constructor let THREE silently treat them as already-linear, which
+    // then round-tripped incorrectly wherever a color's .r/.g/.b were read
+    // back directly (e.g. instanced-mesh vertex colors) instead of through
+    // a color-space-aware conversion like getHexString(). Declaring the
+    // space explicitly here fixes it at the one source instead of requiring
+    // every consumer to know to compensate.
+    colors.push(new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace));
   }
   return colors;
 
@@ -778,7 +786,15 @@ export function getHawaiiColors(nBins = 100) {
   const step = Math.floor(Values.length / 100);
   for (let i = 0; i < Values.length; i += step) {
     const [r, g, b] = Values[i];
-    colors.push(new THREE.Color(r, g, b));
+    // The published triplets are sRGB display values, not THREE's default
+    // working (linear) color space — constructing via the bare (r,g,b)
+    // constructor let THREE silently treat them as already-linear, which
+    // then round-tripped incorrectly wherever a color's .r/.g/.b were read
+    // back directly (e.g. instanced-mesh vertex colors) instead of through
+    // a color-space-aware conversion like getHexString(). Declaring the
+    // space explicitly here fixes it at the one source instead of requiring
+    // every consumer to know to compensate.
+    colors.push(new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace));
   }
   return colors;
 
@@ -1062,7 +1078,15 @@ export function getManaguaColors() {
   const step = Math.floor(Values.length / 100);
   for (let i = 0; i < Values.length; i += step) {
     const [r, g, b] = Values[i];
-    colors.push(new THREE.Color(r, g, b));
+    // The published triplets are sRGB display values, not THREE's default
+    // working (linear) color space — constructing via the bare (r,g,b)
+    // constructor let THREE silently treat them as already-linear, which
+    // then round-tripped incorrectly wherever a color's .r/.g/.b were read
+    // back directly (e.g. instanced-mesh vertex colors) instead of through
+    // a color-space-aware conversion like getHexString(). Declaring the
+    // space explicitly here fixes it at the one source instead of requiring
+    // every consumer to know to compensate.
+    colors.push(new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace));
   }
   return colors;
 }
@@ -1103,7 +1127,15 @@ export function getViridisColors(nBins = 100) {
     const g = (stop1.g + (stop2.g - stop1.g) * localT) / 255;
     const b = (stop1.b + (stop2.b - stop1.b) * localT) / 255;
 
-    colors.push(new THREE.Color(r, g, b));
+    // The published triplets are sRGB display values, not THREE's default
+    // working (linear) color space — constructing via the bare (r,g,b)
+    // constructor let THREE silently treat them as already-linear, which
+    // then round-tripped incorrectly wherever a color's .r/.g/.b were read
+    // back directly (e.g. instanced-mesh vertex colors) instead of through
+    // a color-space-aware conversion like getHexString(). Declaring the
+    // space explicitly here fixes it at the one source instead of requiring
+    // every consumer to know to compensate.
+    colors.push(new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace));
   }
 
   return colors;
@@ -1144,7 +1176,15 @@ export function getPlasmaColors(nBins = 100) {
     const g = (stop1.g + (stop2.g - stop1.g) * localT) / 255;
     const b = (stop1.b + (stop2.b - stop1.b) * localT) / 255;
 
-    colors.push(new THREE.Color(r, g, b));
+    // The published triplets are sRGB display values, not THREE's default
+    // working (linear) color space — constructing via the bare (r,g,b)
+    // constructor let THREE silently treat them as already-linear, which
+    // then round-tripped incorrectly wherever a color's .r/.g/.b were read
+    // back directly (e.g. instanced-mesh vertex colors) instead of through
+    // a color-space-aware conversion like getHexString(). Declaring the
+    // space explicitly here fixes it at the one source instead of requiring
+    // every consumer to know to compensate.
+    colors.push(new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace));
   }
 
   return colors;
@@ -1185,11 +1225,60 @@ export function getSpectralRColors(nBins = 100) {
     const g = (stop1.g + (stop2.g - stop1.g) * localT) / 255;
     const b = (stop1.b + (stop2.b - stop1.b) * localT) / 255;
 
-    colors.push(new THREE.Color(r, g, b));
+    // The published triplets are sRGB display values, not THREE's default
+    // working (linear) color space — constructing via the bare (r,g,b)
+    // constructor let THREE silently treat them as already-linear, which
+    // then round-tripped incorrectly wherever a color's .r/.g/.b were read
+    // back directly (e.g. instanced-mesh vertex colors) instead of through
+    // a color-space-aware conversion like getHexString(). Declaring the
+    // space explicitly here fixes it at the one source instead of requiring
+    // every consumer to know to compensate.
+    colors.push(new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace));
   }
 
   return colors;
 
+}
+
+// Same RGB stops as the "jet" entry three.js's Lut.js ships (ColorMapKeywords,
+// docs/external/three/Lut.js) — previously only reachable through
+// docs/ui/PlanesPanel.js's own Lut-based colormap, and unavailable to every
+// other panel (Forces/Spins/Atoms/Bonds). Decoded to plain RGB here (rather
+// than importing Lut.js) so it lives in the same registry, with the same
+// sRGB-declaring convention, as every other colormap in this file.
+export function getJetColors(nBins = 100) {
+  const stops = [
+    { t: 0.0, r: 0, g: 0, b: 127 },
+    { t: 0.2, r: 0, g: 0, b: 255 },
+    { t: 0.4, r: 0, g: 255, b: 255 },
+    { t: 0.6, r: 255, g: 255, b: 0 },
+    { t: 0.8, r: 255, g: 0, b: 0 },
+    { t: 1.0, r: 127, g: 0, b: 0 },
+  ];
+  const colors = [];
+  for (let i = 0; i < nBins; i++) {
+    const t = i / (nBins - 1);
+
+    // Find the two stops surrounding `t`
+    let stop1, stop2;
+    for (let j = 0; j < stops.length - 1; j++) {
+      if (t >= stops[j].t && t <= stops[j + 1].t) {
+        stop1 = stops[j];
+        stop2 = stops[j + 1];
+        break;
+      }
+    }
+
+    // Linearly interpolate RGB
+    const localT = (t - stop1.t) / (stop2.t - stop1.t);
+    const r = (stop1.r + (stop2.r - stop1.r) * localT) / 255;
+    const g = (stop1.g + (stop2.g - stop1.g) * localT) / 255;
+    const b = (stop1.b + (stop2.b - stop1.b) * localT) / 255;
+
+    colors.push(new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace));
+  }
+
+  return colors;
 }
 
 export function getColorFromMap(value, colormap) {
@@ -1202,6 +1291,7 @@ export function getColorFromMap(value, colormap) {
     case "plasma": colors = getPlasmaColors(); break;
     case "spectralR": colors = getSpectralRColors(); break;
     case "heatmap": colors = getHeatMapColors(); break;
+    case "jet": colors = getJetColors(); break;
     default: return new THREE.Color(0x008080); // Default teal
   }
 

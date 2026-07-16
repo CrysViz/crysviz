@@ -4,11 +4,19 @@ import { Spin } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
 import {generateID} from '../utils/index.js'
+// From the concrete JS backend, not the math/index.js facade: the facade's
+// exports are thin wrappers delegating to a module-scope `activeMathBackend`
+// variable at call time (so a WASM backend can be swapped in later), but
+// stringifying a wrapper via .toString() into the worker below carries none
+// of that surrounding module state with it — the worker throws
+// "activeMathBackend is not defined" the moment it's actually called. These
+// backend-js.js implementations are plain, self-contained functions with no
+// such dependency, so they survive being stringified.
 import {
   transpose3x3,
   multiplyMatVec,
   invert3x3,
-} from '../math/index.js';
+} from '../math/backend-js.js';
 
 // Function to show progress bar
 function showProgressBar() {

@@ -57,6 +57,7 @@ import { updateGroundPlane } from '../render/index.js';
 // // .........................................................................................................
 import {setupScene, setupCameraButtons,resizeRenderer, switchCameraType, recenterCamera
 } from '../ui/WindowAndSceneControls.js'
+import {initGizmoDrag} from '../ui/GizmoDrag.js'
 import {renderComposition} from '../ui/StructureInfoPanel/General.js';
 import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
 
@@ -342,6 +343,7 @@ function init() {
 async function initApp() {
   await initializeMathBackend();
   setupScene();
+  initGizmoDrag();
 
   // Click Atom
   setupSceneInteraction();

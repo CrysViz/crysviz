@@ -64,6 +64,19 @@ export class Structure {
     this.symmetry = symmetry;
     this.spins = spins;           // list of spins
     this.forces = forces;         // list of forces
+    // True as-loaded spins snapshot, captured once here rather than lazily by
+    // SpinPanel.js's "Overwrite Structure" button — so "Restore" always has
+    // something to restore to, even if Overwrite was never clicked. An empty
+    // array (not null/undefined) when the structure had no spins at load, so
+    // Restore correctly empties structure.spins back out rather than no-op'ing.
+    this.originalSpins = spins.map(spin => ({
+      vector: [...(spin.vector ?? [0, 0, 0])],
+      scaling: spin.scaling,
+      color: spin.color,
+      atomIndex: spin.atomIndex,
+      element: spin.element,
+      position: spin.position ? [...spin.position] : null,
+    }));
     this.stress = stress;
     this.polyhedra = polyhedra;
     this.polyhedraSettings = normalizePolyhedraSettings(polyhedraSettings);

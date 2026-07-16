@@ -7,6 +7,12 @@ import { StructureContainer } from "../model/index.js";
 import {generateID} from '../utils/index.js'
 
 const BOHR_TO_ANG = 0.52917721092;
+const RY_TO_EV = 13.605693;
+// pw.x prints "Forces acting on atoms (cartesian axes, Ry/au)" — Rydberg per
+// Bohr, not eV/Å (the unit every other reader/the Forces panel legend uses).
+// Force is energy/length, so the conversion is eV-per-Ry divided by
+// Å-per-Bohr, not just one factor or the other.
+const FORCE_RY_BOHR_TO_EV_ANG = RY_TO_EV / BOHR_TO_ANG;
 
 export function parsePWSCFout(content, fileName) {
   const lines = content.split("\n");
@@ -92,7 +98,7 @@ export function parsePWSCFout(content, fileName) {
           const match = lines[j].match(/force\s*=\s*(.*)/);
           if (match) {
             const nums = match[1].trim().split(/\s+/).map(Number);
-            forces.push(nums.slice(0, 3));
+            forces.push(nums.slice(0, 3).map(v => v * FORCE_RY_BOHR_TO_EV_ANG));
           }
           j++;
         }
@@ -149,7 +155,7 @@ export function parsePWSCFout(content, fileName) {
             const match = lines[j].match(/force\s*=\s*(.*)/);
             if (match) {
               const nums = match[1].trim().split(/\s+/).map(Number);
-              forces.push(nums.slice(0, 3));
+              forces.push(nums.slice(0, 3).map(v => v * FORCE_RY_BOHR_TO_EV_ANG));
             }
             j++;
           }
@@ -199,7 +205,7 @@ export function parsePWSCFout(content, fileName) {
         const match = lines[j].match(/force\s*=\s*(.*)/);
         if (match) {
           const nums = match[1].trim().split(/\s+/).map(Number);
-          forces.push(nums.slice(0, 3));
+          forces.push(nums.slice(0, 3).map(v => v * FORCE_RY_BOHR_TO_EV_ANG));
         }
         j++;
       }
