@@ -424,13 +424,15 @@ function drawFloatingColorBars(octx, width, height, margin, crop, viewRect) {
  * finally as a normal completion) and an AbortError is thrown.
  *
  * @param {{width:number, height:number, margin?:number, transparent?:boolean,
- *   crop: {x0:number, y0:number, x1:number, y1:number},
+ *   crop?: {x0:number, y0:number, x1:number, y1:number},
  *   onProgress?:(p:{current:number, target:number})=>void,
  *   signal?:AbortSignal}} opts
  *   crop: the chosen area, as fractions (0..1) of #view's own box — from
  *   ui/CropOverlay.js. Its on-screen aspect ratio must match width/height's
  *   (the crop tool enforces this), so the crop always fills the output
- *   exactly with no letterboxing.
+ *   exactly with no letterboxing. Omit it for a direct/programmatic capture
+ *   of the full #view (no crop step) — same as passing the full-frame
+ *   {x0:0, y0:0, x1:1, y1:1}.
  * @returns {Promise<Blob>}
  */
 export async function captureSceneToPng(opts) {
@@ -441,8 +443,11 @@ export async function captureSceneToPng(opts) {
   const height = Math.max(1, Math.round(opts.height));
   const margin = Math.max(0, Math.round(opts.margin || 0));
   const transparent = !!opts.transparent;
-  const crop = opts.crop;
-  if (!crop || crop.x1 <= crop.x0 || crop.y1 <= crop.y0) {
+  // crop is optional: omitting it (a direct/programmatic capture, no
+  // ui/CropOverlay.js step) captures the full #view, same as the crop tool's
+  // own full-frame default.
+  const crop = opts.crop || { x0: 0, y0: 0, x1: 1, y1: 1 };
+  if (crop.x1 <= crop.x0 || crop.y1 <= crop.y0) {
     throw new Error('No export area selected.');
   }
 
@@ -481,16 +486,23 @@ export async function captureSceneToPng(opts) {
     const cropFracW = crop.x1 - crop.x0;
     const cropFracH = crop.y1 - crop.y0;
 
-    // --- Choose the source render size so the CROPPED region maps ~1:1
+    // --- Choose the source render size so the cropped region maps ~1:1
     //     (slightly super-sampled for AA) to the inner output box, capped by
     //     both the GPU limits and the requested output size (memory guard —
-    //     see the git history for why: escalating the source render
-    //     unboundedly, plus the tracers' float accumulation targets, OOM-
-    //     crashed Firefox on ~4K exports). The render always keeps #view's
-    //     own aspect ratio, so the crop fraction maps to the SAME pixel
-    //     aspect on both axes — no letterboxing needed when compositing it.
+    //     escalating the source render unboundedly, plus the tracers' float
+    //     accumulation targets, OOM-crashed Firefox on ~4K exports). Take the
+    //     MAX of the two fill candidates (matching #view's own aspect ratio)
+    //     so the render is big enough in BOTH dimensions regardless of how
+    //     the crop's aspect compares to the output's — for a crop-tool
+    //     selection the two already match (CropOverlay.js enforces it), so
+    //     this reduces to the exact same size either way; for the no-crop
+    //     fallback (full view, output aspect unconstrained) it avoids
+    //     under-sizing one axis. Tracers skip the supersample: their AA comes
+    //     from the accumulation jitter.
     const SS = app.pipeline?.isConverged ? 1.0 : 1.25;
-    let srcW = Math.ceil((innerW * SS) / Math.max(cropFracW, 1e-3));
+    const scaleToFillW = innerW / Math.max(cropFracW, 1e-3);
+    const scaleToFillH = innerH / Math.max(cropFracH, 1e-3);
+    let srcW = Math.ceil(Math.max(scaleToFillW, scaleToFillH * aspect) * SS);
     let srcH = Math.ceil(srcW / aspect);
 
     const gl = app.renderer.getContext();
@@ -527,16 +539,23 @@ export async function captureSceneToPng(opts) {
       octx.fillStyle = bgCss;
       octx.fillRect(0, 0, width, height);
     }
-    // Fills innerW x innerH exactly: the crop's on-screen aspect already
-    // matches the output's (ui/CropOverlay.js enforces it), so this scale
-    // factor is the same on both axes — no letterboxing to center.
-    octx.drawImage(srcCanvas, cropPxX, cropPxY, cropPxW, cropPxH, margin, margin, innerW, innerH);
+    // Contain-fit the crop into the inner box, centred within the margins. A
+    // real crop-tool selection already matches the output's aspect exactly
+    // (ui/CropOverlay.js enforces it), so this reduces to filling innerW x
+    // innerH with no letterboxing; the no-crop fallback (arbitrary output
+    // dims vs the view's own aspect) is the case this centring actually
+    // guards against distortion for.
+    const scale = Math.min(innerW / cropPxW, innerH / cropPxH);
+    const drawW = cropPxW * scale;
+    const drawH = cropPxH * scale;
+    const dx = margin + (innerW - drawW) / 2;
+    const dy = margin + (innerH - drawH) / 2;
+    octx.drawImage(srcCanvas, cropPxX, cropPxY, cropPxW, cropPxH, dx, dy, drawW, drawH);
 
-    const scale = innerW / cropPxW;
     const map = {
-      srcW, srcH, cropX: cropPxX, cropY: cropPxY, dx: margin, dy: margin, scale,
+      srcW, srcH, cropX: cropPxX, cropY: cropPxY, dx, dy, scale,
       // output px per on-screen CSS px, for scaling label font/padding sizes.
-      fontScale: innerH / Math.max(1, cropFracH * vh),
+      fontScale: (cropPxH * scale) / Math.max(1, cropFracH * vh),
     };
     drawMeasurementLabels(octx, map);
     prevGizmoPR = drawGizmoAndLegend(octx, width, height, margin, crop, viewRect);

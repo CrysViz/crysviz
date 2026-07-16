@@ -5,12 +5,12 @@
 //      (dual render drivers — the animate loop fighting the export's paced
 //      renders and abandoning the in-flight tiled round every iteration).
 //   2. Untiled export (rtTiledRender OFF): completes too, also monotonic.
-//   3. Instant button feedback: the Download button text changes away from
-//      'Download' promptly after the click (before any long render).
-//   4. Modal is locked while rendering: a backdrop click does NOT hide it, the
-//      Cancel button is relabelled "Abort", and clicking Abort cleanly cancels
-//      (button back to 'Download', modal still open, no alert, no page errors)
-//      with the live view still rendering afterwards.
+//   3. Instant button feedback: the crop overlay's confirm button text changes
+//      away from 'Download' promptly after the click (before any long render).
+//   4. The crop overlay is locked while rendering: Escape does NOT dismiss it,
+//      its Cancel button is relabelled "Abort", and clicking Abort cleanly
+//      cancels (button back to 'Download', overlay still open, no alert, no
+//      page errors) with the live view still rendering afterwards.
 'use strict';
 const H = require('../harness');
 
@@ -90,73 +90,76 @@ const H = require('../harness');
     untiled.type === 'image/png' && untiled.target === 64 && untiled.maxV >= 64 && untiled.mono,
     JSON.stringify(untiled));
 
-  // ============ (3)+(4) Instant feedback + modal lock + Abort ==================
+  // ============ (3)+(4) Instant feedback + overlay lock + Abort ================
+  // The settings modal itself closes as soon as the crop overlay opens (it
+  // doesn't own the busy/Abort state) — that state lives on the crop
+  // overlay's own confirm/cancel buttons (ui/CropOverlay.js).
   // Make the export effectively unbounded (never converges) so it is still
-  // running while we probe the button/modal state and then abort it.
+  // running while we probe the overlay's button state and then abort it.
   await page.evaluate(async () => {
     const { app, general } = await import('./state/store.js');
     general.rtTiledRender = true;
     app.pipeline._cfg.targetSamples = 100000; // won't converge before we abort
   });
 
-  // Open the modal, set a size, click Download through the real UI.
+  // Open the modal, set a size, click Download → opens the crop overlay.
   await page.evaluate(() => {
     document.getElementById('savePngButton').click();
     document.getElementById('pngWidth').value = '400';
     document.getElementById('pngHeight').value = '300';
+    document.getElementById('pngDownloadBtn').click();
   });
-  await page.evaluate(() => document.getElementById('pngDownloadBtn').click());
+  // Start the capture via the crop overlay's own confirm button.
+  await page.evaluate(() => document.querySelector('.cv-crop-confirm').click());
 
   // (3) The button label changes away from 'Download' promptly after the click.
   let changedFast = false;
   {
     const deadline = Date.now() + 3000;
     while (Date.now() < deadline) {
-      const txt = await page.evaluate(() => document.getElementById('pngDownloadBtn').textContent);
+      const txt = await page.evaluate(() => document.querySelector('.cv-crop-confirm')?.textContent);
       if (txt !== 'Download') { changedFast = true; break; }
       await page.waitForTimeout(20);
     }
   }
   H.check('Download button text changes away from "Download" promptly after click', changedFast);
 
-  // (4a) While rendering: a backdrop click must NOT hide the modal, and Cancel
-  //      is relabelled "Abort".
+  // (4a) While rendering: Escape must NOT dismiss the overlay, and Cancel is
+  //      relabelled "Abort".
   const locked = await page.evaluate(() => {
-    const modal = document.getElementById('pngExportModal');
-    modal.dispatchEvent(new MouseEvent('click', { bubbles: true })); // target === modal (backdrop)
-    // Escape too
-    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    const overlay = document.querySelector('.cv-crop-overlay');
+    overlay.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     return {
-      hidden: modal.hidden,
-      cancelTxt: document.getElementById('pngCancelBtn').textContent,
+      present: !!document.querySelector('.cv-crop-overlay'),
+      cancelTxt: document.querySelector('.cv-crop-cancel').textContent,
     };
   });
-  H.check('backdrop click / Escape do NOT close the modal while rendering', locked.hidden === false,
+  H.check('Escape does NOT close the crop overlay while rendering', locked.present === true,
     JSON.stringify(locked));
   H.check('the abort control is present (Cancel relabelled "Abort")', locked.cancelTxt === 'Abort',
     JSON.stringify(locked));
 
-  // (4b) Click Abort → export cancels: button back to 'Download', modal stays
-  //      open, Cancel label restored. Then restore the real target.
-  await page.evaluate(() => document.getElementById('pngCancelBtn').click());
-  let aborted = false, modalOpen = false, cancelRestored = false;
+  // (4b) Click Abort → export cancels: button back to 'Download', overlay
+  //      stays open, Cancel label restored. Then restore the real target.
+  await page.evaluate(() => document.querySelector('.cv-crop-cancel').click());
+  let aborted = false, overlayOpen = false, cancelRestored = false;
   {
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
       const st = await page.evaluate(() => ({
-        txt: document.getElementById('pngDownloadBtn').textContent,
-        hidden: document.getElementById('pngExportModal').hidden,
-        cancelTxt: document.getElementById('pngCancelBtn').textContent,
+        txt: document.querySelector('.cv-crop-confirm')?.textContent,
+        present: !!document.querySelector('.cv-crop-overlay'),
+        cancelTxt: document.querySelector('.cv-crop-cancel')?.textContent,
       }));
       if (st.txt === 'Download') {
-        aborted = true; modalOpen = !st.hidden; cancelRestored = st.cancelTxt === 'Cancel'; break;
+        aborted = true; overlayOpen = st.present; cancelRestored = st.cancelTxt === 'Cancel'; break;
       }
       await page.waitForTimeout(30);
     }
   }
   H.check('Abort returns the button to "Download" and restores the Cancel label',
     aborted && cancelRestored, JSON.stringify({ aborted, cancelRestored }));
-  H.check('the modal stays OPEN after Abort (not dismissed)', modalOpen);
+  H.check('the crop overlay stays OPEN after Abort (not dismissed)', overlayOpen);
 
   // (4c) The live view still renders after an abort: restore the target, then a
   //      manual trace accumulates and the hold flag is clear.
@@ -174,8 +177,8 @@ const H = require('../harness');
   H.check('live view renders after Abort (accumulates; hold + paced cleared)',
     live.after > live.before && live.hold === false && live.paced === false, JSON.stringify(live));
 
-  // Close the modal cleanly (not busy now → Cancel closes it).
-  await page.evaluate(() => document.getElementById('pngCancelBtn').click());
+  // Close the overlay cleanly (not busy now → Cancel closes it).
+  await page.evaluate(() => document.querySelector('.cv-crop-cancel')?.click());
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);
