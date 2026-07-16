@@ -118,9 +118,9 @@ body.panel-hidden #axesLegend {
   border: 2px solid rgba(26,26,26,0.8);
   cursor: pointer;
   top: max(120px, calc(var(--compact-stack-bottom, 0px) + 20px));
-  /* --split-reserve is kept in sync with the split view's pane width (see
-     ui/panels/SplitView.js) so the dot stays clear of the pane instead of
-     sliding underneath it. 0px when the pane is closed. */
+  /* --split-reserve is kept in sync with the right dock's pane width (see
+     ui/panels/RightDock.js) so the dot stays clear of the pane instead of
+     sliding underneath it. 0px when the dock is closed. */
   right: calc(20px + var(--split-reserve, 0px));
   z-index: 999;
 }
@@ -449,6 +449,83 @@ body.panel-hidden #axesLegend {
   border-radius: 8px;
   font-size: 14px;
   cursor: pointer;
+}
+
+/* First-run ray/path-tracing performance warning (reuses .png-export-modal
+ * card + .paste-modal-actions button row). */
+#raytraceWarningModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#raytraceWarningModal[hidden] {
+  display: none;
+}
+
+.rt-warning-modal .rt-warning-body {
+  max-height: min(48vh, 420px);
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.rt-warning-modal .rt-warning-body p {
+  margin: 0 0 10px 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.rt-warning-modal .rt-warning-body p:last-child {
+  margin-bottom: 0;
+}
+
+.rt-warning-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.rt-warning-check input {
+  width: auto;
+}
+
+.rt-warning-modal .paste-modal-actions #raytraceWarningOk {
+  flex: 1;
+  margin-top: 4px;
+  padding: 12px 16px;
+  background: var(--bg-color);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.rt-warning-modal .paste-modal-actions #raytraceWarningOk:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+
+.rt-warning-modal .paste-modal-actions #raytraceWarningCancel {
+  margin-top: 4px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.rt-warning-modal .paste-modal-actions #raytraceWarningCancel[hidden] {
+  display: none;
 }
 
 /* Drag&drop hover highlight on the drop targets (Files window / 3D view) */
@@ -2138,10 +2215,12 @@ body {
   }
 }
 
-/* Tracer-only controls (e.g. the ray/path-tracing material editors in the
-   Structure window) show only while a tracer pipeline is active. The body
-   class is driven by ui/ColorPanel.js updateRenderingControlsVisibility().
+/* Tracer-only controls (the ray/path-tracing material editors in the
+   Structure window, and single rows like the Visual window's "Element
+   Materials Map" dropdown) show only while a tracer pipeline is active. The
+   body class is driven by ui/ColorPanel.js updateRenderingControlsVisibility().
    The material data itself is always persisted, pipeline regardless. */
-body:not(.tracer-pipeline) .material-editor {
+body:not(.tracer-pipeline) .material-editor,
+body:not(.tracer-pipeline) .tracer-only-control {
   display: none;
 }

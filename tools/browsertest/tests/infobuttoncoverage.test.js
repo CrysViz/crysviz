@@ -8,7 +8,8 @@ const H = require('../harness');
 const EXPECTED_PANEL_IDS = [
   'measure', 'view', 'info', 'backend', 'files', 'features', 'trajectory',
   'comparison', 'forces', 'spins', 'field', 'planes', 'bonds', 'cell',
-  'symmetry', 'polyhedra', 'visual', 'eos', 'splitDemo', 'landscape', 'settings',
+  'symmetry', 'polyhedra', 'visual', 'eos', 'eosPlots', 'splitDemo', 'landscape',
+  'landscapePlots', 'settings',
 ];
 
 (async () => {
@@ -16,10 +17,13 @@ const EXPECTED_PANEL_IDS = [
   await H.loadDefaultStructure(page);
   await page.waitForTimeout(500);
 
-  const result = await page.evaluate((ids) => {
+  const result = await page.evaluate(async (ids) => {
+    // Resolve via the registry: closed-by-default windows (eos, splitDemo,
+    // landscape) are registered but detached from the document.
+    const { getPanel } = await import('./ui/panels/PanelManager.js');
     const missing = [];
     for (const id of ids) {
-      const el = document.querySelector(`.cv-panel[data-panel-id="${id}"]`);
+      const el = getPanel(id)?.el;
       const btn = el?.querySelector('.cv-panel-titlebar > .cv-panel-info');
       if (!btn) missing.push(id);
     }

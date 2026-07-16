@@ -1,5 +1,5 @@
-import { addBondLengthHistogramPanel, openBondLengthHistogramSplitView } from './AnalysisPanels/BondLengthHistogram.js';
-import { addCoordinationHistogramPanel, openCoordinationHistogramSplitView } from './AnalysisPanels/CoordinationHistogram.js';
+import { addBondLengthHistogramPanel } from './AnalysisPanels/BondLengthHistogram.js';
+import { addCoordinationHistogramPanel } from './AnalysisPanels/CoordinationHistogram.js';
 import { makeSectionHeadline } from './panels/sectionHeadline.js';
 
 // The Bonds window body: flat headline + content sections (the window itself
@@ -15,17 +15,16 @@ export function addBondPanel(target = "cvPanelBody-bonds") {
   group.style.padding = "10px";
 
   // --- Histograms ---
-  // Each histogram offers two independent, mutually non-exclusive entry
-  // points: "Panel" opens the existing floating/dockable window; "Split
-  // View" opens the same live chart in the shared split pane (the same
-  // mechanism the EOS Fit and Energy Landscape panels use) — see
-  // AnalysisPanels/BondLengthHistogram.js and CoordinationHistogram.js.
+  // One button per histogram: each opens ONE ordinary panel window
+  // (AnalysisPanels/BondLengthHistogram.js, CoordinationHistogram.js) that
+  // defaults to the right dock — from there the user drags its tab out to
+  // float, or into the left bar, like any other window.
   const histogramsPanel = document.createElement("div");
   histogramsPanel.id = "histogramsPanel";
   histogramsPanel.style.marginBottom = "10px";
   histogramsPanel.appendChild(makeSectionHeadline("Histograms"));
 
-  function addHistogramRow(label, openPanel, openSplitView) {
+  function addHistogramRow(label, buttonId, openWindow) {
     const row = document.createElement("div");
     row.style.display = "flex";
     row.style.alignItems = "center";
@@ -37,31 +36,20 @@ export function addBondPanel(target = "cvPanelBody-bonds") {
     nameLabel.textContent = label;
     nameLabel.style.cssText = "font-size:12px; color:#ccc;";
 
-    const btnRow = document.createElement("div");
-    btnRow.style.display = "flex";
-    btnRow.style.gap = "6px";
+    const openBtn = document.createElement("button");
+    openBtn.id = buttonId;
+    openBtn.className = "btn-mini highlight";
+    openBtn.textContent = "Open";
+    openBtn.title = `Open the ${label} window`;
+    openBtn.style.fontSize = "12px";
+    openBtn.onclick = openWindow;
 
-    const panelBtn = document.createElement("button");
-    panelBtn.className = "btn-mini highlight";
-    panelBtn.textContent = "Panel";
-    panelBtn.title = `Open ${label} as a floating window`;
-    panelBtn.style.fontSize = "12px";
-    panelBtn.onclick = openPanel;
-
-    const splitBtn = document.createElement("button");
-    splitBtn.className = "btn-mini";
-    splitBtn.textContent = "Split View";
-    splitBtn.title = `Open ${label} in the split view beside the 3D scene`;
-    splitBtn.style.fontSize = "12px";
-    splitBtn.onclick = openSplitView;
-
-    btnRow.append(panelBtn, splitBtn);
-    row.append(nameLabel, btnRow);
+    row.append(nameLabel, openBtn);
     histogramsPanel.appendChild(row);
   }
 
-  addHistogramRow("Bond Length", addBondLengthHistogramPanel, openBondLengthHistogramSplitView);
-  addHistogramRow("Coordination Number", addCoordinationHistogramPanel, openCoordinationHistogramSplitView);
+  addHistogramRow("Bond Length", "openBondLengthHistogram", addBondLengthHistogramPanel);
+  addHistogramRow("Coordination Number", "openCoordinationHistogram", addCoordinationHistogramPanel);
 
   // --- Draw Bonds ---
   // Hidden for now: the draw/undo/delete-bond buttons are non-functional stubs

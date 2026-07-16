@@ -36,9 +36,13 @@ const OVERLAY_INSTANCED_ATTRS = [
 export class SortedAtomsPipeline extends SplitAtomsPipeline {
   static id = 'sorted-atoms';
   static label = 'Sorted transparent atoms';
+  // Superseded by wboit/depthpeel; kept registered for regression tests +
+  // legacy sessions. Hidden from the GUI dropdown (unhide via general.showAllRenderPipelines).
+  static hidden = true;
 
   id = SortedAtomsPipeline.id;
   label = SortedAtomsPipeline.label;
+  hidden = SortedAtomsPipeline.hidden;
 
   /** Sort the transparent instances for the current camera, then render. */
   render(ctx) {

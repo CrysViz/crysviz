@@ -97,9 +97,8 @@ async function expandPanel(page, id) {
 
   // --- Bonds window ------------------------------------------------------------
   await expandPanel(page, 'bonds');
-  H.check('Bonds: Histogram button present', await page.evaluate(() => !!document.getElementById('bondHistogram')));
-  H.check('Bonds: stub Angle Histogram / Coordination Number buttons removed',
-    await page.evaluate(() => !document.getElementById('angleHistogram') && !document.getElementById('coordinationNumber')));
+  H.check('Bonds: histogram Open buttons present', await page.evaluate(() =>
+    !!document.getElementById('openBondLengthHistogram') && !!document.getElementById('openCoordinationHistogram')));
   H.check('Bonds: Bond Length Controls section removed',
     await page.evaluate(() => !document.getElementById('bondControls') && !document.getElementById('bondLengthPanel')));
   H.check('Bonds: no collapsible flip-outs left',
@@ -108,28 +107,37 @@ async function expandPanel(page, id) {
     (await inBody(page, 'features', 'PBCBondToggle')) && !(await inBody(page, 'bonds', 'PBCBondToggle')));
   H.check('Bond Diameter moved out of Bonds', !(await inBody(page, 'bonds', 'bondWidth')));
 
-  // --- Histogram window: normal closable floating window -----------------------
-  await H.clickById(page, 'bondHistogram');
-  await page.waitForTimeout(300);
+  // --- Bond Length Histogram: ONE ordinary window, right dock by default -------
+  await H.clickById(page, 'openBondLengthHistogram');
+  await page.waitForTimeout(400);
   const hist = await page.evaluate(() => {
-    const el = document.querySelector('.cv-panel[data-panel-id="histogram"]');
+    const el = document.querySelector('#splitPaneBody > .cv-panel[data-panel-id="bondLengthHistogram"]');
     if (!el) return null;
-    const closeBtn = el.querySelector('.cv-panel-close');
     return {
-      floating: el.classList.contains('cv-floating'),
-      barVisible: !el.classList.contains('cv-bar-collapsed'),
-      closable: !!closeBtn && !closeBtn.hidden,
+      front: el.classList.contains('cv-front'),
+      splitActive: document.getElementById('viewArea').classList.contains('split-active'),
+      tab: [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
+        .some((t) => t.dataset.panelId === 'bondLengthHistogram'),
+      hasCard: !!el.querySelector('#bond-length-histogram-item'),
     };
   });
-  H.check('Histogram opens as a floating window with a visible title bar and close button',
-    !!hist && hist.floating && hist.barVisible && hist.closable, JSON.stringify(hist));
+  H.check('Bond Length Histogram opens as the right dock\'s front tab',
+    !!hist && hist.front && hist.splitActive && hist.tab && hist.hasCard, JSON.stringify(hist));
   await page.screenshot({ path: path.join(ARTIFACTS, 'uipanels-histogram.png') });
   await page.evaluate(() => {
-    /** @type {HTMLElement} */ (document.querySelector('.cv-panel[data-panel-id="histogram"] .cv-panel-close')).click();
+    const tab = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
+      .find((t) => t.dataset.panelId === 'bondLengthHistogram');
+    /** @type {HTMLElement} */ (tab.querySelector('.split-pane-tab-menu')).click();
+  });
+  await page.waitForTimeout(100);
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.cv-panel-menu-item')]
+      .find((b) => b.textContent === 'Close')?.click();
   });
   await page.waitForTimeout(200);
-  H.check('Histogram window closes via its close button',
-    await page.evaluate(() => !document.querySelector('.cv-panel[data-panel-id="histogram"]')));
+  H.check('Histogram window closes via its tab ≡ menu (transient: unregistered)',
+    await page.evaluate(() => !document.querySelector('.cv-panel[data-panel-id="bondLengthHistogram"]')
+      && !document.getElementById('viewArea').classList.contains('split-active')));
 
   // --- Cell & Supercell: flat sections -----------------------------------------
   await expandPanel(page, 'cell');
@@ -187,8 +195,8 @@ async function expandPanel(page, id) {
     const { captureState } = await import('./ui/ShareModule.js');
     return captureState();
   });
-  H.check('captured state has the new visual keys (v2.9)',
-    state.version === '2.9'
+  H.check('captured state has the new visual keys (v2.15)',
+    state.version === '2.15'
       && state.display.latticeLineWidth === 0.06
       && state.display.axesLineWidth === 0.05
       && typeof state.display.bondRadius === 'number'

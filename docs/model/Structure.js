@@ -1,5 +1,6 @@
 import {general} from '../state/store.js';
 import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
+import {crysvizMaterialMap} from '../defaults/material_defaults.js'
 import { colorHexToCss } from '../utils/ColorModule.js';
 
 // Helper function to deep freeze objects
@@ -109,8 +110,10 @@ export class Structure {
     this.polyhedraUserStyles = {};
     this.polyhedraCategoryStyles = {};
     // Ray/path-tracing materials: { type: 'standard'|'metal'|'glass'|
-    // 'emissive', roughness?, ior?, intensity?, reflectivity? } — reflectivity
-    // (when set) overrides the global "Reflectivity" slider for that object.
+    // 'emissive', gloss?, tint?, roughness?, ior?, intensity?, reflectivity? }
+    // — reflectivity (when set) overrides the global "Reflectivity" slider for
+    // that object; tint (standard) colors the coat reflections by the surface
+    // color (0.6 default, 0 = untinted white).
     // Per-SPECIES: atomMaterials[element]; per-ATOM override:
     // atomUserMaterials[atomIndex] (wins over the species entry). Bond and
     // polyhedra materials live as `material` sub-objects on
@@ -150,6 +153,14 @@ export class Structure {
   getDefaultElementColor(element) {
     const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
     return colorScheme[element] || 0x808080;
+  }
+  // Element-material analog of getDefaultElementColor: the per-species tracer
+  // material the active "Element Materials Map" assigns, or null (= the plain
+  // standard default). Sits BELOW atomMaterials/atomUserMaterials in the
+  // SceneEncoder cascade; the returned object is frozen — treat as read-only.
+  getDefaultElementMaterial(element) {
+    if (general.elementMaterialsMap !== 'crysviz') return null;
+    return crysvizMaterialMap[element] ?? null;
   }
   getElementColors() {
     const elementColors = {};

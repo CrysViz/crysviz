@@ -484,7 +484,7 @@ function planePolygon(n, d, cell) {
  * @param {THREE.Vector3}   n          - unit plane normal
  * @param {Array}           [cell]     - lattice vectors [a, b, c] for clipping planes
  * @param {number}          [resolution=DEFAULT_COLORMAP_RESOLUTION]
- * @returns {{ geometry, uAxis, vAxis, centroid, clippingPlanes }}
+ * @returns {{ geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes }}
  */
 function buildPolygonGeometry(polygon, n, cell, resolution = DEFAULT_COLORMAP_RESOLUTION) {
   // ── 1. Centroid ───────────────────────────────────────────────────────────
@@ -527,7 +527,7 @@ function buildPolygonGeometry(polygon, n, cell, resolution = DEFAULT_COLORMAP_RE
     ? makeCellClippingPlanes(cell)
     : [];
 
-  return { geometry, uAxis, vAxis, centroid, clippingPlanes };
+  return { geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes };
 }
 
 /**
@@ -611,9 +611,9 @@ export class Plane extends THREE.Group {
     }
 
     // ── Build geometry ─────────────────────────────────────────────────────
-    let geometry, uAxis, vAxis, centroid, clippingPlanes;
+    let geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes;
     if (polygon.length >= 3) {
-      ({ geometry, uAxis, vAxis, centroid, clippingPlanes } =
+      ({ geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes } =
           buildPolygonGeometry(polygon, n, cell, resolution));
     } else {
       // Fallback: make plane outside of cell bounds
@@ -622,6 +622,8 @@ export class Plane extends THREE.Group {
       uAxis          = new THREE.Vector3(1, 0, 0);
       vAxis          = new THREE.Vector3(0, 1, 0);
       centroid       = new THREE.Vector3(0, 0, -1);
+      halfU          = 0.5;
+      halfV          = 0.5;
       const matrix = new THREE.Matrix4().makeBasis(uAxis, vAxis, n);
       matrix.setPosition(centroid);
       geometry.applyMatrix4(matrix);
@@ -659,6 +661,10 @@ export class Plane extends THREE.Group {
     this.vAxis         = vAxis;
     /** Centroid of the polygon in Cartesian space. */
     this.planeCentroid = centroid;
+    /** Half-extent of the bounding rectangle along uAxis (world units). */
+    this.halfU         = halfU;
+    /** Half-extent of the bounding rectangle along vAxis (world units). */
+    this.halfV         = halfV;
 
     // Purple border outline around the polygon edges
     this._border = Plane._makeBorderMesh(polygon);
@@ -681,6 +687,18 @@ export class Plane extends THREE.Group {
   /** Shorthand for `this._mesh.material`. */
   get material() { return this._planeMesh.material; }
   set material(m) { this._planeMesh.material = m; }
+
+  // ── read-only accessors used by the ray/path-tracer SceneEncoder ─────────
+  /** The Field object driving the colormap (Field mode), or null. */
+  get field() { return this._field; }
+  /** Active LUT / colormap name. */
+  get colormap() { return this._colormap; }
+  /** Colormap lower-bound override (null = use field.minValue). */
+  get colormapMin() { return this._colormapMin; }
+  /** Colormap upper-bound override (null = use field.maxValue). */
+  get colormapMax() { return this._colormapMax; }
+  /** The purple perimeter LineSegments child ("None" mode only). */
+  get border() { return this._border; }
 
   // ── static material factories ─────────────────────────────────────────────
 
@@ -810,12 +828,81 @@ export class Plane extends THREE.Group {
     }
   }
 
+  // ── field colormap sampling (shared by updateColorMap + the tracer encoder) ──
+
+  /** Configure the LUT range from the colormap overrides / field min-max.
+   *  Keeps zero at the midpoint for diverging data (like the raster path). */
+  _configureLutRange() {
+    const minValue = this._colormapMin ?? this._field?.minValue ?? -1;
+    const maxValue = this._colormapMax ?? this._field?.maxValue ?? 1;
+    this._lut.setMin(minValue).setMax(maxValue).setLogScale(this._colormapScale === 'log');
+  }
+
+  /** Inverse of the voxel*dims basis: maps a Cartesian world point to
+   *  fractional voxel coordinates. Returns null when no field/voxel is set. */
+  _fieldFracBasisInv() {
+    const voxelBasis = this._field?.voxel;
+    if (!voxelBasis) return null;
+    const [a, b, c] = voxelBasis.map(toVec3);
+    return new THREE.Matrix3()
+      .setFromMatrix4(new THREE.Matrix4().makeBasis(
+        a.multiplyScalar(this._field.nx),
+        b.multiplyScalar(this._field.ny),
+        c.multiplyScalar(this._field.nz)))
+      .invert();
+  }
+
+  /** Colormap colour at a Cartesian world point: fractional voxel coordinates
+   *  (wrapped to [0,1]), field trilinear sample, then the LUT. `basisInv` is a
+   *  precomputed `_fieldFracBasisInv()`; the LUT range must be set beforehand
+   *  (`_configureLutRange`). Writes into `target` and returns it, or null when
+   *  no field is available. */
+  fieldColorAtWorldPoint(worldPoint, basisInv, target = new THREE.Color()) {
+    if (!basisInv || !this._field) return null;
+    const vec = worldPoint.clone().applyMatrix3(basisInv);
+    vec.x = (vec.x % 1 + 1) % 1; // wrap fractional coordinates to [0,1]
+    vec.y = (vec.y % 1 + 1) % 1;
+    vec.z = (vec.z % 1 + 1) % 1;
+    const interp = this._field.getValueAtPoint(vec.x, vec.y, vec.z);
+    return target.copy(this._lut.getColor(interp));
+  }
+
+  /** Bake this plane's Field-mode colormap into an RGBA8 `size`×`size` tile at
+   *  (x0, y0) inside `data` (row-major, stride = `atlasWidth`*4). The world
+   *  point for texel (px, py) is the SAME bounding-rectangle mapping the tracer
+   *  shader inverts: centroid + (2s-1)·halfU·uAxis + (2t-1)·halfV·vAxis with
+   *  (s, t) the texel centres. Colours come from `fieldColorAtWorldPoint`, so
+   *  updateColorMap and this share one sampling path. Returns false when no
+   *  field is available. */
+  bakeFieldAtlasTile(data, atlasWidth, x0, y0, size) {
+    const basisInv = this._fieldFracBasisInv();
+    if (!basisInv) return false;
+    this._configureLutRange();
+    const wp = new THREE.Vector3();
+    const col = new THREE.Color();
+    for (let py = 0; py < size; py++) {
+      const t = (py + 0.5) / size;
+      for (let px = 0; px < size; px++) {
+        const s = (px + 0.5) / size;
+        wp.copy(this.planeCentroid)
+          .addScaledVector(this.uAxis, (2 * s - 1) * this.halfU)
+          .addScaledVector(this.vAxis, (2 * t - 1) * this.halfV);
+        this.fieldColorAtWorldPoint(wp, basisInv, col);
+        const o = ((y0 + py) * atlasWidth + (x0 + px)) * 4;
+        data[o]     = Math.max(0, Math.min(255, Math.round(col.r * 255)));
+        data[o + 1] = Math.max(0, Math.min(255, Math.round(col.g * 255)));
+        data[o + 2] = Math.max(0, Math.min(255, Math.round(col.b * 255)));
+        data[o + 3] = 255;
+      }
+    }
+    return true;
+  }
+
   /**
    * Write field scalar values to the geometry's vertex-colour attribute.
    *
    * Values are symmetrically normalised around zero so the diverging
    * colormap's midpoint (t = 0.5) always represents the zero level.
-   * Fill in `divergingColormap()` with your preferred palette.
    *
    * Operates on the plane's stored `_field` / resolution (no parameters).
    */
@@ -830,29 +917,15 @@ export class Plane extends THREE.Group {
     const colArray = new Float32Array(positions.array.length);
 
     // Configure LUT range once — keep zero at the midpoint for diverging data
-    const minValue = this._colormapMin ?? this._field?.minValue ?? -1;
-    const maxValue = this._colormapMax ?? this._field?.maxValue ?? 1;
-    this._lut.setMin(minValue).setMax(maxValue).setLogScale(this._colormapScale === 'log');
+    this._configureLutRange();
+    const basisInv = this._fieldFracBasisInv();
+    if (!basisInv) return;
 
+    const wp = new THREE.Vector3();
+    const col = new THREE.Color();
     for (let i = 0; i < positions.array.length; i += 3) {
-      const vec = new THREE.Vector3(positions.array[i], positions.array[i + 1], positions.array[i + 2]);
-      // Convert Cartesian position to relative (fractional) coordinates
-      // in the voxel basis: vec = u*a + v*b + w*c  ->  [u,v,w]
-      const voxelBasis = this._field?.voxel;
-      if (!voxelBasis) continue;
-
-      const [a, b, c] = voxelBasis.map(toVec3);
-      const basisInv = new THREE.Matrix3()
-        .setFromMatrix4(new THREE.Matrix4().makeBasis(a.multiplyScalar(this._field.nx), b.multiplyScalar(this._field.ny), c.multiplyScalar(this._field.nz)))
-        .invert();
-      vec.applyMatrix3(basisInv); // get fractional coordinates in the voxel basis
-      vec.x = (vec.x % 1 + 1) % 1; // wrap fractional coordinates to [0,1]
-      vec.y = (vec.y % 1 + 1) % 1;
-      vec.z = (vec.z % 1 + 1) % 1;
-
-      const interp = this._field.getValueAtPoint(vec.x, vec.y, vec.z);
-      const col = this._lut.getColor(interp);
-
+      wp.set(positions.array[i], positions.array[i + 1], positions.array[i + 2]);
+      this.fieldColorAtWorldPoint(wp, basisInv, col);
       colArray[i    ] = col.r;
       colArray[i + 1] = col.g;
       colArray[i + 2] = col.b;

@@ -6,24 +6,22 @@
 // vertex–bond–atom–bond–vertex). See render/PolyhedraAnalysisModule.js for the
 // detection. Offered as a summary bar chart (grouped by sharing type x
 // polyhedron-pair category) plus a drill-down list of the individual
-// connections, both as a floating panel and a split-view pane, mirroring
-// BondLengthHistogram.js. Clicking a bar or a list row highlights the LINK
-// itself: for corner/edge/face sharing that's just the shared vertex atom(s)
-// (the "corners"), not every atom of both polyhedra; for the two bond-bridge
-// categories it's the actual connecting bond(s), not any atoms.
+// connections, in ONE ordinary panel window that defaults to the right dock,
+// mirroring BondLengthHistogram.js. Clicking a bar or a list row highlights
+// the LINK itself: for corner/edge/face sharing that's just the shared vertex
+// atom(s) (the "corners"), not every atom of both polyhedra; for the two
+// bond-bridge categories it's the actual connecting bond(s), not any atoms.
 
-import { registerPanel, removePanel } from '../panels/PanelManager.js';
-import { openSplitView, closeSplitView, isSplitViewActive } from '../panels/SplitView.js';
+import { registerPanel, removePanel, getPanel, openPanel } from '../panels/PanelManager.js';
+import { expandSplitItem, closeExpandedSplitItem } from '../panels/RightDock.js';
 import {
   renderGroupedHistogram, onHistogramBarClick, exportHistogramPNG, resizeHistogramPlot, clearHistogramPlot,
 } from './histogramPlotly.js';
 import { highlightAtomsIn3D, highlightBondIn3D, clearAllHighlights } from '../SelectAndHighlightModule.js';
-import { activatePanelDisplay, deactivatePanelDisplay, activateSplitDisplay, deactivateSplitDisplay } from './histogramCoordinator.js';
 import { subscribePolyhedraAnalysis } from './polyhedraAnalysisHub.js';
 
 const PANEL_ID = 'polyhedraConnectivityHistogram';
-const FLOAT_PLOT_ID = 'polyhedraConnectivityPlot';
-const SPLIT_PLOT_ID = 'polyhedraConnectivitySplitPlot';
+const PLOT_ID = 'polyhedraConnectivityPlot';
 
 const SHARING_LABELS = {
   corner: 'Corner', edge: 'Edge', face: 'Face', bond1: 'Bond-bridge', bond2: 'Trimer-bridge',
@@ -32,13 +30,11 @@ const SHARING_KEYS = ['corner', 'edge', 'face', 'bond1', 'bond2'];
 const BOND_SHARING = new Set(['bond1', 'bond2']);
 
 let connections = []; // latest computePolyhedraConnectivity() rows
-let floating = null;
-let split = null;
+let view = null;
 
 subscribePolyhedraAnalysis((data) => {
   connections = data.connectivity;
-  floating?.redraw();
-  split?.redraw();
+  view?.redraw();
 });
 
 function pairLabelOf(conn) {
@@ -88,7 +84,7 @@ function makeClickHandler() {
 /** Scrollable drill-down list of individual connections, one row each. */
 function buildPairList(container) {
   container.innerHTML = '';
-  container.style.cssText = 'max-height:180px; overflow-y:auto; border:1px solid rgba(255,255,255,0.12); border-radius:6px; margin-top:8px;';
+  container.style.cssText = 'max-height:180px; overflow-y:auto; border:1px solid rgba(255,255,255,0.12); border-radius:6px; margin-top:8px; flex:0 0 auto;';
 
   if (!connections.length) {
     const empty = document.createElement('div');
@@ -130,123 +126,87 @@ function buildPairList(container) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Floating / dockable panel
-// ---------------------------------------------------------------------------
-
 export function removePolyhedraConnectivityHistogramPanel() {
-  floating = null;
+  view = null;
   removePanel(PANEL_ID);
-  deactivatePanelDisplay(removePolyhedraConnectivityHistogramPanel);
 }
 
+/** The single entry point (the Polyhedra window's "Connectivity" button):
+ *  opens the window — right-dock front tab by default, or wherever the user
+ *  last dragged it — creating it on first use. */
 export function addPolyhedraConnectivityHistogramPanel() {
-  removePolyhedraConnectivityHistogramPanel();
-  activatePanelDisplay(removePolyhedraConnectivityHistogramPanel);
+  if (getPanel(PANEL_ID)) {
+    openPanel(PANEL_ID);
+    return;
+  }
 
   const isMobile = window.innerWidth < 700;
-  const panel = registerPanel({
+  let resizeObserver = null;
+  registerPanel({
     id: PANEL_ID,
     title: 'Polyhedra Connectivity',
     lifecycle: 'persistent',
     infoMd: './data/polyhedraConnectivityHistogramInfo.md',
     closable: true,
-    onClose() { floating = null; resizeObserver?.disconnect(); clearHistogramPlot(FLOAT_PLOT_ID); deactivatePanelDisplay(removePolyhedraConnectivityHistogramPanel); },
+    onClose() { view = null; resizeObserver?.disconnect(); clearHistogramPlot(PLOT_ID); },
     buildContent(body) {
       body.innerHTML = `
-        <div style="padding:6px; box-sizing:border-box; width: min(90vw, 640px); max-width: 100%;">
-          <div id="${FLOAT_PLOT_ID}" style="width:100%; height:300px;"></div>
-          <div id="pcFloatList"></div>
+        <div class="cv-plot-stack">
+          <div class="split-item" id="polyhedra-connectivity-histogram-item">
+            <h4>Polyhedra Connectivity</h4>
+            <div id="${PLOT_ID}" class="split-item-body"></div>
+            <div id="pcList"></div>
+            <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
+            <div class="split-item-actions">
+              <button type="button" class="split-item-action-btn" data-split-action="export" title="Export PNG">📥</button>
+              <button type="button" class="split-item-action-btn" data-split-action="expand" title="Expand">⛶</button>
+            </div>
+          </div>
         </div>
       `;
+
+      const onBarClick = makeClickHandler();
+      let expanded = false;
+
+      function redraw() {
+        renderGroupedHistogram(PLOT_ID, { groups: computeGroups(), xTitle: 'Polyhedron pair', yTitle: 'Connections', isExpanded: expanded })
+          .then(() => onHistogramBarClick(PLOT_ID, onBarClick));
+        buildPairList(body.querySelector('#pcList'));
+      }
+
+      body.addEventListener('click', (ev) => {
+        const btn = /** @type {HTMLElement|null} */ (
+          /** @type {HTMLElement} */ (ev.target).closest('[data-split-action]'));
+        if (!btn) return;
+        const action = btn.dataset.splitAction;
+        if (action === 'export') {
+          exportHistogramPNG(PLOT_ID).catch((error) => console.error('Polyhedra connectivity histogram export failed:', error));
+        } else if (action === 'expand') {
+          expandSplitItem(btn.closest('.split-item'));
+          expanded = true;
+          redraw();
+        } else if (action === 'close') {
+          closeExpandedSplitItem();
+          expanded = false;
+          redraw();
+        }
+      });
+
+      let lastWidth = body.clientWidth;
+      resizeObserver = new ResizeObserver(() => {
+        if (body.clientWidth === lastWidth || !body.clientWidth) return;
+        lastWidth = body.clientWidth;
+        resizeHistogramPlot(PLOT_ID);
+      });
+      resizeObserver.observe(body);
+
+      view = { redraw };
+      redraw();
     },
     defaults: {
-      docked: false, collapsed: false, barCollapsed: false,
+      dock: 'right', collapsed: false, barCollapsed: false,
       anchor: isMobile ? { left: 4, top: 10 } : { left: 20, top: 40 },
     },
   });
-
-  const onBarClick = makeClickHandler();
-
-  function redraw() {
-    renderGroupedHistogram(FLOAT_PLOT_ID, { groups: computeGroups(), xTitle: 'Polyhedron pair', yTitle: 'Connections' })
-      .then(() => onHistogramBarClick(FLOAT_PLOT_ID, onBarClick));
-    buildPairList(panel.body.querySelector('#pcFloatList'));
-  }
-
-  const body = panel.body;
-  let lastWidth = body.clientWidth;
-  const resizeObserver = new ResizeObserver(() => {
-    if (body.clientWidth === lastWidth || !body.clientWidth) return;
-    lastWidth = body.clientWidth;
-    resizeHistogramPlot(FLOAT_PLOT_ID);
-  });
-  resizeObserver.observe(body);
-
-  floating = { redraw };
-  redraw();
-}
-
-// ---------------------------------------------------------------------------
-// Split view
-// ---------------------------------------------------------------------------
-
-function renderSplitContent(body) {
-  body.innerHTML = `
-    <div class="split-item" id="polyhedra-connectivity-histogram-item">
-      <h4>Polyhedra Connectivity</h4>
-      <div id="${SPLIT_PLOT_ID}" class="split-item-body"></div>
-      <div id="pcSplitList"></div>
-      <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
-      <div class="split-item-actions">
-        <button type="button" class="split-item-action-btn" data-split-action="export" title="Export PNG">📥</button>
-        <button type="button" class="split-item-action-btn" data-split-action="expand" title="Expand">⛶</button>
-      </div>
-    </div>
-  `;
-
-  const onBarClick = makeClickHandler();
-  let expanded = false;
-
-  function redraw() {
-    renderGroupedHistogram(SPLIT_PLOT_ID, { groups: computeGroups(), xTitle: 'Polyhedron pair', yTitle: 'Connections', isExpanded: expanded })
-      .then(() => onHistogramBarClick(SPLIT_PLOT_ID, onBarClick));
-    buildPairList(body.querySelector('#pcSplitList'));
-  }
-
-  split = {
-    redraw,
-    setExpanded(v) { expanded = v; redraw(); },
-  };
-  redraw();
-}
-
-function handleAction(action) {
-  if (action === 'export') exportHistogramPNG(SPLIT_PLOT_ID).catch((error) => console.error('Polyhedra connectivity histogram export failed:', error));
-}
-
-function handleExpandChange(itemId, isExpanded) {
-  split?.setExpanded(!!isExpanded);
-}
-
-const splitOwner = {
-  title: 'Polyhedra Connectivity',
-  render: renderSplitContent,
-  onAction: handleAction,
-  onExpandChange: handleExpandChange,
-  onResize() { resizeHistogramPlot(SPLIT_PLOT_ID); },
-  onClose() { split = null; clearHistogramPlot(SPLIT_PLOT_ID); deactivateSplitDisplay(closePolyhedraConnectivityHistogramSplitView); },
-};
-
-export function openPolyhedraConnectivityHistogramSplitView() {
-  activateSplitDisplay(closePolyhedraConnectivityHistogramSplitView);
-  openSplitView(splitOwner);
-}
-
-export function closePolyhedraConnectivityHistogramSplitView() {
-  closeSplitView(splitOwner);
-}
-
-export function isPolyhedraConnectivityHistogramSplitViewActive() {
-  return isSplitViewActive(splitOwner);
+  openPanel(PANEL_ID);
 }

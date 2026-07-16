@@ -34,14 +34,31 @@ export function registerPipeline(PipelineClass) {
   registry.set(PipelineClass.id, PipelineClass);
 }
 
-/** For the GUI dropdown: [{id, label}] in registration order. */
+/** For the GUI dropdown: [{id, label, hidden}] in registration order. Returns
+ *  ALL registered pipelines (hidden ones included, flagged); ColorPanel filters
+ *  the `hidden` ones out of the dropdown unless general.showAllRenderPipelines.
+ *  `hidden` is read as an OWN static so subclasses (DepthPeel/Wboit extend the
+ *  hidden SplitAtomsPipeline) don't inherit the flag. */
 export function listPipelines() {
-  return [...registry.values()].map((P) => ({ id: P.id, label: P.label }));
+  return [...registry.values()].map((P) => ({
+    id: P.id,
+    label: P.label,
+    hidden: Object.prototype.hasOwnProperty.call(P, 'hidden') && !!P.hidden,
+  }));
 }
 
 /** The active pipeline instance (null only before setupScene bootstrap). */
 export function getActivePipeline() {
   return app.pipeline ?? null;
+}
+
+/** True when a progressive ray/path tracer owns the frame. Callers use it to
+ *  avoid fingerprint-bumping scene writes (which would restart the tracer's
+ *  accumulation) — e.g. atom/bond highlight recolor, which the tracers draw as
+ *  a post-present overlay instead. */
+export function isTracerPipelineActive() {
+  const id = app.pipeline?.id;
+  return id === RayTracingPipeline.id || id === PathTracingPipeline.id;
 }
 
 /**
@@ -60,27 +77,20 @@ export function setActivePipeline(id) {
     const size = app.renderer.getDrawingBufferSize(new THREE.Vector2());
     pipeline.setSize(size.x, size.y);
   }
-  reapplyTransparencyToScene(pipeline);
+  // The scene graph is the registry of transparency intents: re-run the new
+  // pipeline's policy for every material that has declared one (method on
+  // ForwardPipeline so the tracers can reuse it without an import cycle).
+  pipeline.reapplyTransparencyToScene();
   requestRender();
   return pipeline;
 }
 
-// The scene graph is the registry of transparency intents: re-run the new
-// pipeline's policy for every material that has declared one.
-function reapplyTransparencyToScene(pipeline) {
-  app.scene?.traverse((obj) => {
-    const materials = Array.isArray(obj.material) ? obj.material : (obj.material ? [obj.material] : []);
-    for (const material of materials) {
-      const spec = material.userData?.transparencySpec;
-      if (spec) pipeline.applyTransparency(material, { ...spec, mesh: obj });
-    }
-  });
-}
-
-registerPipeline(ForwardPipeline);
-registerPipeline(SplitAtomsPipeline);
-registerPipeline(SortedAtomsPipeline);
-registerPipeline(WboitPipeline);
+// Registration order = dropdown order: recommended modes first (depth peeling
+// is the default), then the tracers, then the specialized raster variants.
 registerPipeline(DepthPeelPipeline);
+registerPipeline(WboitPipeline);
+registerPipeline(ForwardPipeline);
 registerPipeline(RayTracingPipeline);
 registerPipeline(PathTracingPipeline);
+registerPipeline(SplitAtomsPipeline);
+registerPipeline(SortedAtomsPipeline);

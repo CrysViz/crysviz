@@ -36,6 +36,8 @@ export { removeForces, updateForces, computeForceColor } from './ForceModule.js'
 
 export { applyFrameFast, BOND_TOPOLOGY_STRIDE } from './FastFrameModule.js';
 
+export { updateGroundPlane } from './GroundPlaneModule.js';
+
 export {
   runPeriodicWrapped, periodicWrapped, fracToCart, cartToFrac, updateLattice,
   recomputeLatticeDirs, latticeDirsNorm, latticeDirs, getCellCenterAndDist,
@@ -59,4 +61,4 @@ export { setCelHullWidth, setCelHullPolyWidth } from './MaterialStyles.js';
 
 export { captureSceneToPng } from './ImageExportModule.js';
 
-export { registerPipeline, listPipelines, getActivePipeline, setActivePipeline } from './pipeline/index.js';
+export { registerPipeline, listPipelines, getActivePipeline, setActivePipeline, isTracerPipelineActive } from './pipeline/index.js';

@@ -1,12 +1,15 @@
-// EOS (Birch-Murnaghan equation-of-state) fitting control panel: reads a
+// EOS (Birch-Murnaghan equation-of-state) fitting control window: reads a
 // Pressure/Energy/Volume dataset, fits it with SciPy (via Pyodide) and shows
-// the fit parameters; the E-V/P-V plots themselves live in the split view
-// (EOSSplitView.js) on the right side of the screen.
+// the fit parameters; the E-V/P-V plots live in their own window
+// (EOSPlotsPanel.js, defaulting to the wide right dock), which THIS module
+// activates whenever there is something to show — a dataset loaded or re-fit
+// opens it, resetting the fit closes it.
 
 import { CONVERSION_FACTORS, detectColumns, parseReferenceData, formatParam } from '../eos/eosMath.js';
 import { fitEOS, fitReferencePV } from '../eos/eosFit.js';
 import { plotEV, plotPV, clearPlot } from '../eos/eosPlots.js';
-import { setRedrawHandler, setPlotVisible, getShowErrorPlots } from './EOSSplitView.js';
+import { setRedrawHandler, setPlotVisible, getShowErrorPlots } from './EOSPlotsPanel.js';
+import { openPanel, closePanel } from './panels/PanelManager.js';
 
 const state = {
   originalColumnData: null, // {volumes, energies, pressures, columnInfo} verbatim from file
@@ -46,6 +49,16 @@ function setPyodideStatus(container, text) {
 
 function isPlotExpanded(plotId) {
   return !!document.getElementById(`${plotId}-wrapper`)?.classList.contains('expanded');
+}
+
+function safeRedraw(plotId) {
+  redraw(plotId).catch((error) => console.error(error));
+}
+
+/** There is something to show: make sure the plots window is open (front tab
+ *  of the right dock by default — or wherever the user last put it). */
+function ensurePlotsWindowOpen() {
+  openPanel('eosPlots');
 }
 
 async function redraw(plotId) {
@@ -92,6 +105,9 @@ function updateResultsUI(container) {
 }
 
 async function fitAndDisplay(container) {
+  // A dataset is loaded (or re-fit) — open the plots window BEFORE drawing so
+  // the plot elements exist and the user sees the result appear.
+  ensurePlotsWindowOpen();
   try {
     const si = toSI(state.originalColumnData, state.units);
     const hasEnergy = Array.isArray(si.energies);
@@ -131,6 +147,9 @@ async function resetFit(container) {
   if (info) info.innerHTML = '';
   container.querySelector('.eos-results').hidden = true;
   setPlotVisible('ev-plot', false);
+  // Nothing left to show — close the plots window immediately (it reopens on
+  // the next fit); the plot clearing below may first await Plotly loading.
+  closePanel('eosPlots');
   await Promise.all([clearPlot('ev-plot'), clearPlot('pv-plot')]);
   setStatus(container, 'Fit cleared.');
 }
@@ -173,6 +192,9 @@ function rescaleReference() {
  *  data and redraw. */
 async function refitReference(container) {
   if (!state.referenceRawParsed) return;
+  // Reference curves render into the P-V plot, which only exists once a
+  // primary fit produced something to show.
+  if (state.pvResult) ensurePlotsWindowOpen();
   rescaleReference();
   // Move the scatter points immediately (doesn't need a re-fit); the fitted
   // reference curve below catches up once SciPy responds.
@@ -390,8 +412,8 @@ export function addEOSPanel(target = 'cvPanelBody-eos') {
   if (state.pvResult) {
     updateResultsUI(container);
     setPlotVisible('ev-plot', !!state.evResult);
-    if (state.evResult) redraw('ev-plot').catch((error) => console.error(error));
-    redraw('pv-plot').catch((error) => console.error(error));
+    if (state.evResult) safeRedraw('ev-plot');
+    safeRedraw('pv-plot');
   }
 }
 

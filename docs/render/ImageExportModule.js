@@ -23,6 +23,16 @@
 // alpha:true on the main renderer (WindowAndSceneControls.initRenderer) lets us
 // render with scene.background = null and fill the requested background
 // colour under the composited content only when transparency isn't requested.
+//
+// Progressive tracer pipelines (raytrace/pathtrace) are driven to convergence
+// with PACED tiled rendering that follows the general.rtTiledRender UI setting:
+// one pipeline.render() per animation frame (one scissored tile when tiling is
+// on, one full sample when off), the pipeline in externally-paced mode so its
+// resize boost never bursts synchronously, and the animate loop held off the
+// renderer (app.offscreenRenderHold) so the export is the single render driver
+// and uSampleCounter advances monotonically. An optional AbortSignal (opts.signal)
+// cancels the export cleanly at any loop iteration — the same finally restores
+// the live view, then an AbortError is thrown.
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general, measurements } from '../state/store.js';
@@ -37,22 +47,56 @@ function getViewEl() {
   return /** @type {HTMLElement} */ (document.getElementById('view'));
 }
 
+/** One animation-frame yield (paces the export so the browser stays responsive
+ *  and can repaint the button/progress between renders). */
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+}
+
+/** Throw a recognizable AbortError if the caller's AbortSignal has fired.
+ *  captureSceneToPng's finally still runs (restoring the live view), then this
+ *  propagates to doDownload, which swallows it (no alert) and leaves the modal
+ *  open. */
+function throwIfAborted(signal) {
+  if (signal && signal.aborted) {
+    const err = new Error('Export aborted.');
+    err.name = 'AbortError';
+    throw err;
+  }
+}
+
 // Like renderMainToCanvas, but for progressive tracer pipelines: keeps
 // accumulating in small batches — yielding to the browser between them so the
 // on-screen progress bar (render/TracerProgressModule.js, driven from
 // pipeline.render()) stays live — until the pipeline reports convergence.
 // Non-tracer pipelines (no isConverged) capture after the single frame.
-async function renderMainToCanvasConverged(w, h) {
+async function renderMainToCanvasConverged(w, h, onProgress, signal) {
   app.renderer.setSize(w, h, false);
   app.pipeline?.setSize(w, h);
   const renderCtx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
-  app.pipeline?.render(renderCtx); // first call: resize reset + initial burst
-  if (app.pipeline?.isConverged) {
-    while (!app.pipeline.isConverged()) {
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      app.pipeline.requestBoost?.(4); // small batches keep the UI responsive
-      app.pipeline.render(renderCtx);
+  // Report accumulation progress on the export button (tracer pipelines only).
+  // Reads the same counters the on-screen progress strip uses; guarded so raster
+  // pipelines (no uSampleCounter / targetSamples) never emit a bogus 0/0.
+  const reportProgress = () => {
+    if (typeof onProgress !== 'function') return;
+    const current = app.pipeline?._uniforms?.uSampleCounter?.value ?? 0;
+    const target = app.pipeline?._cfg?.targetSamples ?? 0;
+    if (Number.isFinite(current) && Number.isFinite(target) && target > 0) {
+      onProgress({ current, target });
     }
+  };
+  if (app.pipeline?.isConverged) {
+    reportProgress(); // show the starting count before the first paced frame
+    while (!app.pipeline.isConverged()) {
+      throwIfAborted(signal);
+      await nextFrame();            // yield first: the button/progress repaints
+      throwIfAborted(signal);
+      app.pipeline.render(renderCtx); // one paced sample (one tile when tiling)
+      reportProgress();
+    }
+    reportProgress(); // final (converged) count
+  } else {
+    app.pipeline?.render(renderCtx); // raster: single frame, capture immediately
   }
 
   const canvas = document.createElement('canvas');
@@ -371,8 +415,18 @@ function drawFloatingColorBars(octx, width, height, margin, crop, viewRect) {
 
 /**
  * Capture the current scene to a high-resolution PNG Blob.
+ *
+ * Tracer pipelines are driven to convergence one animation frame at a time
+ * (paced tiled rendering that follows the general.rtTiledRender UI setting),
+ * with the animate loop held off the renderer so the export is the single
+ * render driver. Pass opts.signal (an AbortController's signal) to allow a
+ * clean mid-export cancel: on abort the live view is fully restored (the same
+ * finally as a normal completion) and an AbortError is thrown.
+ *
  * @param {{width:number, height:number, margin?:number, transparent?:boolean,
- *   crop: {x0:number, y0:number, x1:number, y1:number}}} opts
+ *   crop: {x0:number, y0:number, x1:number, y1:number},
+ *   onProgress?:(p:{current:number, target:number})=>void,
+ *   signal?:AbortSignal}} opts
  *   crop: the chosen area, as fractions (0..1) of #view's own box — from
  *   ui/CropOverlay.js. Its on-screen aspect ratio must match width/height's
  *   (the crop tool enforces this), so the crop always fills the output
@@ -409,8 +463,14 @@ export async function captureSceneToPng(opts) {
   // Exports always trace at 100% internal resolution regardless of the
   // interactive "RT resolution" setting.
   const prevRtScale = general.rtResolutionScale;
+  const signal = opts.signal;
 
   try {
+    // Take over rendering: hold the animate loop off the renderer (single
+    // driver) and put tracer pipelines in externally-paced mode (one sample /
+    // one tile per render call — no synchronous multi-sample resize freeze).
+    app.offscreenRenderHold = true;
+    app.pipeline?.beginPacedRender?.();
     app.renderer.setPixelRatio(1);
     app.scene.background = null;
     app.renderer.setClearAlpha(0);
@@ -449,7 +509,8 @@ export async function captureSceneToPng(opts) {
 
     // --- Final high-res pass (tracer pipelines render to full convergence,
     //     with the on-screen progress bar tracking the accumulation). ---
-    const srcCanvas = await renderMainToCanvasConverged(srcW, srcH);
+    const srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal);
+    throwIfAborted(signal);
 
     const cropPxX = crop.x0 * srcW;
     const cropPxY = crop.y0 * srcH;
@@ -488,7 +549,10 @@ export async function captureSceneToPng(opts) {
       }, 'image/png');
     });
   } finally {
-    // Restore the live view. Camera projection was never changed.
+    // Restore the live view. Camera projection was never changed. Runs on
+    // normal completion AND on abort, so the view is always intact afterwards.
+    app.pipeline?.endPacedRender?.();
+    app.offscreenRenderHold = false;
     general.rtResolutionScale = prevRtScale;
     app.scene.background = prevBackground;
     app.renderer.setClearAlpha(prevClearAlpha);

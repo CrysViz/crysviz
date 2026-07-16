@@ -16,14 +16,21 @@ function currentViewRect() {
 }
 
 /**
- * @param {{aspect: number|null, onConfirm: (crop: {x0:number,y0:number,x1:number,y1:number,aspect:number}) => Promise<void>|void, onCancel: () => void}} opts
+ * @param {{aspect: number|null,
+ *   onConfirm: (crop: {x0:number,y0:number,x1:number,y1:number,aspect:number},
+ *     opts: {signal: AbortSignal, onProgress: (p:{current:number, target:number})=>void}) => Promise<void>|void,
+ *   onCancel: () => void}} opts
  *   aspect: width/height to lock the rect to, or null for freeform resize.
  *   onConfirm receives the chosen area as fractions (0..1) of #view's box,
  *   plus the rect's own on-screen pixel aspect ratio (== the `aspect` opt
  *   when one was given; freeform mode's only way to report what shape the
- *   user actually drew). The overlay shows a "Rendering…" state until its
- *   promise settles, and stays open (re-enabled) if it rejects so the
- *   selection isn't lost.
+ *   user actually drew), plus a signal/onProgress pair for a long (tracer)
+ *   capture: onProgress drives the confirm button's live "Rendering… N /
+ *   target" text, and clicking Cancel while busy (repurposed as "Abort")
+ *   fires the signal instead of closing the overlay. The overlay shows the
+ *   busy state until the promise settles, and stays open (re-enabled) if it
+ *   rejects — with no alert for a user-triggered abort — so the selection
+ *   isn't lost.
  */
 export function openCropOverlay({ aspect, onConfirm, onCancel }) {
   let vRect = currentViewRect();
@@ -221,31 +228,52 @@ export function openCropOverlay({ aspect, onConfirm, onCancel }) {
     overlay.remove();
   }
 
+  // Set while a capture is in flight: repurposes Cancel into Abort (below)
+  // and gates the Escape handler, same as the settings modal does while busy.
+  let abortController = null;
+
   confirmBtn.addEventListener('click', async () => {
     const crop = toFractionCrop();
     confirmBtn.disabled = true;
-    cancelBtn.disabled = true;
     confirmBtn.textContent = 'Rendering…';
+    cancelBtn.textContent = 'Abort';
+    abortController = new AbortController();
     try {
       // Awaited so the overlay (and the user's crop selection) stays put
       // until the export actually finishes — captureSceneToPng can take a
       // while on tracer pipelines, and closing early would both lose the
       // selection on failure and hide that anything was still happening.
-      await onConfirm(crop);
+      await onConfirm(crop, {
+        signal: abortController.signal,
+        onProgress: ({ current, target }) => {
+          confirmBtn.textContent = `Rendering… ${current} / ${target}`;
+        },
+      });
       close();
     } catch (e) {
+      // Abort is a user action, not an error: swallow it silently and leave
+      // the overlay open with the selection intact (the live view is already
+      // restored by captureSceneToPng's finally). Any other failure alerts.
+      if (/** @type {any} */ (e)?.name !== 'AbortError') {
+        alert(/** @type {any} */ (e)?.message || String(e));
+      }
+    } finally {
+      abortController = null;
       confirmBtn.disabled = false;
-      cancelBtn.disabled = false;
       confirmBtn.textContent = 'Download';
-      alert(/** @type {any} */ (e)?.message || String(e));
+      cancelBtn.textContent = 'Cancel';
     }
   });
   cancelBtn.addEventListener('click', () => {
+    // While a capture is running, Cancel is "Abort": cancel it and keep the
+    // overlay open. Otherwise it closes the overlay as before.
+    if (abortController) { abortController.abort(); return; }
     close();
     onCancel();
   });
   overlay.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (abortController) return; // ignore Escape while a capture is running
       close();
       onCancel();
     }

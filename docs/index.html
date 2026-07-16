@@ -19,7 +19,7 @@
     <link rel="stylesheet" href="./styles/BondAtomColorPanel.css">
     <link rel="stylesheet" href="./styles/info_button_styles.css">
     <link rel="stylesheet" href="./styles/EOSPanel.css">
-    <link rel="stylesheet" href="./styles/SplitView.css">
+    <link rel="stylesheet" href="./styles/rightDock.css">
     <link rel="stylesheet" href="./styles/DummySplitPanel.css">
     <!-- Active theme override — keep last so theme rules win the cascade. -->
     <link rel="stylesheet" id="theme-active">
@@ -210,22 +210,24 @@
     </div>
     <div id="viewArea">
       <div id="view"></div>
-      <!-- Generic split-view shell (docs/ui/panels/SplitView.js): whichever
-           feature panel is expanded (EOS fit, the split-view demo, ...) fills
-           #splitPaneBody with its own content when it opens the pane. -->
+      <!-- Right dock shell (docs/ui/panels/RightDock.js): regular panel
+           windows dock here as tabs — #splitPaneBody hosts their .cv-panel
+           elements, the header strip selects the front one, and dragging a
+           window to the right border drops it in (#rightDockDropHint is the
+           drop highlight). -->
       <div id="splitHandle" class="split-handle" hidden title="Drag to resize"></div>
-      <aside id="splitPane" class="split-pane" hidden aria-label="Split view">
+      <aside id="splitPane" class="split-pane" hidden aria-label="Right dock">
         <div class="split-pane-header">
-          <span id="splitPaneTitle"></span>
           <div id="splitPaneHeaderTabs" class="split-pane-header-tabs" role="tablist"></div>
-          <button type="button" id="splitPaneCloseBtn" class="split-pane-btn" title="Close">✕</button>
+          <button type="button" id="splitPaneInfoBtn" class="info-button" title="About this window" hidden>i</button>
           <button type="button" id="splitPaneDockBtn" class="split-pane-btn" title="Dock to the bottom">⇩</button>
-          <button type="button" id="splitPaneCollapseBtn" class="split-pane-btn" title="Hide (keeps a pull-tab)">»</button>
+          <button type="button" id="splitPaneCollapseBtn" class="split-pane-btn" title="Hide (keeps pull-tabs)">»</button>
         </div>
         <div class="split-pane-body" id="splitPaneBody"></div>
       </aside>
-      <div id="splitPaneTabs" class="split-pane-tabs" hidden aria-label="Open split views"></div>
+      <div id="splitPaneTabs" class="split-pane-tabs" hidden aria-label="Right dock windows"></div>
       <div class="split-pane-overlay" id="splitPaneOverlay"></div>
+      <div id="rightDockDropHint" hidden></div>
     </div>
 
     <div id="aboutOverlay" hidden>

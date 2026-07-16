@@ -3,7 +3,7 @@ import {collapseAllAtomExpansions} from './WindowAndSceneControls.js';
 import {setStructurePanelOpen} from './StructureInfoPanel/General.js';
 import * as THREE from '../external/three/three.module.js';
 import {updateAtoms} from '../render/index.js';
-import {updateBonds, bondKey, bondGroupKey, polyhedronGroupKey} from '../render/index.js';
+import {updateBonds, bondKey, bondGroupKey, polyhedronGroupKey, isTracerPipelineActive} from '../render/index.js';
 import {updateForces, updateSpins} from '../render/index.js';
 
 const ATOM_HIGHLIGHT_COLOR = new THREE.Color(0xFF8C00);
@@ -87,7 +87,46 @@ export function subscribeToAtomSelection(subscriber, options = {}) {
   };
 }
 
+// Zero the emissive glow of only the instances we recorded as highlighted, with
+// NO instanceColor / full-rebuild touch — the tracer path uses this so
+// unhighlighting never bumps the SceneEncoder fingerprint (which would restart
+// the accumulation). The highlight then shows via the tracer's post-present
+// overlay instead of a recolor.
+function clearAtomEmissiveOnly() {
+  const mesh = groups.atomsMesh;
+  const ids = highlightHover.currentlyHighlightedAtomInstances;
+  if (mesh && ids?.length) {
+    const em = mesh.geometry.attributes.instanceEmissive;
+    const emI = mesh.geometry.attributes.instanceEmissiveIntensity;
+    ids.forEach((index) => { em.setXYZ(index, 0, 0, 0); emI.setX(index, 0.0); });
+    em.needsUpdate = true;
+    emI.needsUpdate = true;
+  }
+  highlightHover.currentlyHighlightedAtomInstances = [];
+}
+
+function clearBondEmissiveOnly() {
+  const mesh = groups.bondsMesh;
+  const ids = highlightHover.currentlyHighlightedBondInstances;
+  if (mesh && ids?.length) {
+    const em = mesh.geometry.attributes.instanceEmissive;
+    const emI = mesh.geometry.attributes.instanceEmissiveIntensity;
+    ids.forEach((index) => { em.setXYZ(index, 0, 0, 0); emI.setX(index, 0.0); });
+    em.needsUpdate = true;
+    emI.needsUpdate = true;
+  }
+  highlightHover.currentlyHighlightedBondInstances = [];
+}
+
 export function clearHighlightAtom() {
+  // Under a tracer, clear only the emissive attrs of the tracked instances (no
+  // instanceColor bump → no accumulation restart). Raster pipelines keep the
+  // classic full rebuild-from-model.
+  if (isTracerPipelineActive()) {
+    clearAtomEmissiveOnly();
+    return;
+  }
+  highlightHover.currentlyHighlightedAtomInstances = [];
   updateAtoms(1.0);
   clearForceSpinHighlight();
 }
@@ -190,6 +229,11 @@ function clearForceSpinHighlight() {
 }
 
 export function clearHighlightBond() {
+  if (isTracerPipelineActive()) {
+    clearBondEmissiveOnly();
+    return;
+  }
+  highlightHover.currentlyHighlightedBondInstances = [];
   updateBonds(1.0);
 }
 
@@ -213,10 +257,11 @@ function clear3DHighlights() {
   clearHighlightAtom();
 }
 
-function applyAtomHighlightIndices(indices) {
+export function applyAtomHighlightIndices(indices) {
   clearHighlightAtom();
 
   if (!groups.atomsMesh || !indices.length) {
+    highlightHover.currentlyHighlightedAtomInstances = [];
     return;
   }
 
@@ -224,6 +269,12 @@ function applyAtomHighlightIndices(indices) {
   // the Structure Info panel's Spin/Force editor is open for an atom
   // (arrowHighlightOverride), that atom's sphere is skipped here in favor of
   // its arrow, highlighted below by applyForceSpinHighlightForInstances.
+  // Under a tracer, SKIP the setColorAt recolor: it bumps instanceColor.version,
+  // which the SceneEncoder hashes into its fingerprint → a re-encode + hardReset
+  // (accumulation restart). Keep the emissive attr writes (unhashed; they make
+  // the raster preview / not-yet-traced frames glow) and record the instances so
+  // clearAtomEmissiveOnly() and the tracer overlay can find them.
+  const tracer = isTracerPipelineActive();
   let atomsChanged = false;
   indices.forEach((index) => {
     const srcIdx = sourceIndicesForInstances([index])[0];
@@ -231,15 +282,16 @@ function applyAtomHighlightIndices(indices) {
 
     groups.atomsMesh.geometry.attributes.instanceEmissive.setXYZ(index, 1, 0.549, 0);
     groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.setX(index, 2.0);
-    groups.atomsMesh.setColorAt(index, ATOM_HIGHLIGHT_COLOR);
+    if (!tracer) groups.atomsMesh.setColorAt(index, ATOM_HIGHLIGHT_COLOR);
     atomsChanged = true;
   });
 
   if (atomsChanged) {
     groups.atomsMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
     groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
-    groups.atomsMesh.instanceColor.needsUpdate = true;
+    if (!tracer) groups.atomsMesh.instanceColor.needsUpdate = true;
   }
+  highlightHover.currentlyHighlightedAtomInstances = indices.slice();
 
   applyForceSpinHighlightForInstances(indices);
 }
@@ -287,15 +339,20 @@ export function restoreSelectionHighlight() {
 export function highlightBondIn3D(indexList) {
   clear3DHighlights();
 
+  // Under a tracer, SKIP setColorAt (fingerprint bump / accumulation restart) —
+  // see applyAtomHighlightIndices. Emissive attr writes are kept and the
+  // instances recorded for clearBondEmissiveOnly() + the tracer overlay.
+  const tracer = isTracerPipelineActive();
   indexList.forEach((index) => {
     groups.bondsMesh.geometry.attributes.instanceEmissive.setXYZ(index, 1, 0.549, 0);
     groups.bondsMesh.geometry.attributes.instanceEmissiveIntensity.setX(index, 2.0);
-    groups.bondsMesh.setColorAt(index, ATOM_HIGHLIGHT_COLOR);
+    if (!tracer) groups.bondsMesh.setColorAt(index, ATOM_HIGHLIGHT_COLOR);
   });
 
   groups.bondsMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
   groups.bondsMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
-  groups.bondsMesh.instanceColor.needsUpdate = true;
+  if (!tracer) groups.bondsMesh.instanceColor.needsUpdate = true;
+  highlightHover.currentlyHighlightedBondInstances = indexList.slice();
 }
 
 function showPanel(panelId) {

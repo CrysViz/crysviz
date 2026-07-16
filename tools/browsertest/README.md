@@ -18,7 +18,18 @@ environments without root and without a display:
 make browsertest-setup   # one-time: ~180 MB into tools/browsertest/env/ (gitignored)
 make browsertest         # run all tests/*.test.js
 tools/browsertest/run.sh tests/celoutline.test.js   # run one test
+tools/browsertest/run.sh tests/tracerbench.bench.js # tracer micro-benchmark (opt-in)
 ```
+
+The `.bench.js` suffix keeps a file OUT of the default `tests/*.test.js` glob,
+so it never runs under `make browsertest` — pass it to `run.sh` by hand. The one
+bench today, `tracerbench.bench.js`, times `pipeline.render()` for the ray/path
+tracers over a 3x3x3 YBCO supercell and prints `ms/sample` (with the scene's
+primitive counts). It forces a GPU sync with a 1-px `readRenderTargetPixels`
+after the render burst — WebGL submission is async, so without a readback it
+would time command submission, not the trace. It is a software-GL (llvmpipe)
+proxy, so absolute numbers are machine-dependent, but it is fetch/ALU-sensitive,
+which makes before/after comparisons of tracer-shader changes meaningful.
 
 Each test is a standalone node script (CommonJS) using `harness.js`; exit code
 0/1 per test, `run.sh` aggregates. Screenshots land in `artifacts/`

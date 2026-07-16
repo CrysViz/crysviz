@@ -23,6 +23,9 @@ uniform bool uUseToneMapping;
 // saturation control (output-pass only: changing it needs no re-accumulation).
 uniform float uExposure;
 uniform float uSaturation;
+// LOCAL ADAPTATION (CrysViz): uToneMapLegacy restores the upstream Reinhard
+// operator (the original tracer look, no uExposure) — Advanced-section toggle.
+uniform bool uToneMapLegacy;
 
 
 void main()
@@ -35,8 +38,13 @@ void main()
 	pixelColor *= uOneOverSampleCounter;
 
 	// LOCAL ADAPTATION (CrysViz): exposure + ACES + saturation grade
-	pixelColor *= uExposure;
-	pixelColor = uUseToneMapping ? ACESFilmicToneMapping(pixelColor) : pixelColor;
+	if (uToneMapLegacy)
+		pixelColor = uUseToneMapping ? ReinhardToneMapping(pixelColor) : pixelColor;
+	else
+	{
+		pixelColor *= uExposure;
+		pixelColor = uUseToneMapping ? ACESFilmicToneMapping(pixelColor) : pixelColor;
+	}
 	float luma = dot(pixelColor, vec3(0.2126, 0.7152, 0.0722));
 	pixelColor = mix(vec3(luma), pixelColor, uSaturation);
 

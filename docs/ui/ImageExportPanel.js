@@ -3,6 +3,11 @@
 // (ui/CropOverlay.js) over the live 3D view to pick exactly what's exported
 // — a high-resolution PNG via render/ImageExportModule.js, WYSIWYG (gizmo,
 // floating color bars, measurements exactly as arranged on screen).
+//
+// The settings modal itself closes as soon as the crop overlay opens, so all
+// export-in-progress UI (live "Rendering… N / target" text, Abort) lives on
+// the crop overlay's own confirm/cancel buttons (ui/CropOverlay.js), driven
+// by captureSceneToPng's onProgress/signal options.
 
 import { captureSceneToPng } from '../render/index.js';
 import { downloadBlob, currentBaseName } from './SavePanel.js';
@@ -199,7 +204,13 @@ export function initImageExportPanel() {
       // (see below) instead of forcing every free-form crop through
       // whatever ratio the width/height inputs happened to work out to.
       aspect: free ? null : width / height,
-      onConfirm: async (crop) => {
+      // Tracer pipelines render to full convergence inside captureSceneToPng
+      // (paced tiled rendering). onConfirm receives {signal, onProgress} from
+      // the overlay's own confirm button — signal lets its Abort cancel the
+      // capture mid-render, onProgress drives its live "Rendering… N / target"
+      // text (ui/CropOverlay.js owns that UI; the settings modal is already
+      // closed by the time this runs).
+      onConfirm: async (crop, { signal, onProgress }) => {
         let outWidth = width;
         let outHeight = height;
         if (free) {
@@ -212,10 +223,9 @@ export function initImageExportPanel() {
             outWidth = Math.round(longEdge * crop.aspect);
           }
         }
-        // Tracer pipelines render to full convergence inside
-        // captureSceneToPng (the on-screen progress bar tracks the export
-        // accumulation).
-        const blob = await captureSceneToPng({ width: outWidth, height: outHeight, margin, transparent, crop });
+        const blob = await captureSceneToPng({
+          width: outWidth, height: outHeight, margin, transparent, crop, signal, onProgress,
+        });
         downloadBlob(currentBaseName() + '.png', blob);
       },
       onCancel: () => {},

@@ -87,7 +87,7 @@ export function addSavePanel() {
   const crysvizButton = document.getElementById('saveCrysvizButton');
   if (crysvizButton) {
     crysvizButton.addEventListener('click', () => {
-      const state = captureState({ includeFrames: true });
+      const state = captureState({ includeFrames: true, includeFields: true });
       if (!state) { alert('No structure loaded.'); return; }
       downloadTextFile(currentBaseName() + '.crysviz',
         JSON.stringify({ format: 'crysviz', ...state }, null, 2));

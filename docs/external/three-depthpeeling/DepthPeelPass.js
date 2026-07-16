@@ -320,11 +320,13 @@ class DepthPeelPass {
 
 				const uniforms = material.userData.depthPeel;
 				if ( ! uniforms ) continue;
-				uniforms.uPeelEnabled.value = 1;
-				uniforms.uFirstPass.value = ( i === 0 ) ? 1 : 0;
-				uniforms.opaqueDepth.value = this._opaqueDepthTexture;
-				uniforms.nearDepth.value = ( i === 0 ) ? null : nearDepthTexture;
-				uniforms.resolution.value.set( size.width, size.height );
+				// dp-prefixed names: DepthPeelUtils injects them without clobbering
+				// a material's own same-named uniforms (e.g. LineMaterial.resolution).
+				uniforms.dpPeelEnabled.value = 1;
+				uniforms.dpFirstPass.value = ( i === 0 ) ? 1 : 0;
+				uniforms.dpOpaqueDepth.value = this._opaqueDepthTexture;
+				uniforms.dpNearDepth.value = ( i === 0 ) ? null : nearDepthTexture;
+				uniforms.dpResolution.value.set( size.width, size.height );
 
 				// Each peel layer keeps exactly the nearest surviving fragment
 				// per pixel: replace-blending + depth writes.
@@ -373,9 +375,9 @@ class DepthPeelPass {
 			const uniforms = material.userData.depthPeel;
 			if ( uniforms ) {
 
-				uniforms.uPeelEnabled.value = 0;
-				uniforms.nearDepth.value = null;
-				uniforms.opaqueDepth.value = null;
+				uniforms.dpPeelEnabled.value = 0;
+				uniforms.dpNearDepth.value = null;
+				uniforms.dpOpaqueDepth.value = null;
 
 			}
 

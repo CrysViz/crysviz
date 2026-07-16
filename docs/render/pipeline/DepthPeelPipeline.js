@@ -20,7 +20,7 @@ import { StagedTransparencyPipeline } from './StagedTransparencyPipeline.js';
 
 export class DepthPeelPipeline extends StagedTransparencyPipeline {
   static id = 'depthpeel';
-  static label = 'Depth peeling';
+  static label = 'Depth peeling (default)';
 
   id = DepthPeelPipeline.id;
   label = DepthPeelPipeline.label;
