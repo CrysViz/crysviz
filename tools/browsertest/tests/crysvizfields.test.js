@@ -101,7 +101,7 @@ const H = require('../harness');
   });
 
   H.check('captureState({includeFields}) adds a fields block at v2.13 with correct metadata',
-    cap.version === '2.13' && cap.hasFields === true && cap.fileName === 'blob.cube'
+    cap.version === '2.15' && cap.hasFields === true && cap.fileName === 'blob.cube'
       && cap.source === 'Cube' && cap.selectedIndex === 0 && cap.fieldCount === 1
       && cap.label === 'TestBlob' && cap.nx === 20 && cap.ny === 20 && cap.nz === 20
       && cap.useAbs === false && Math.abs(cap.isoValue - 0.5) < 1e-9,
@@ -114,7 +114,7 @@ const H = require('../harness');
       && Math.abs(cap.isoSettings?.opacity - 0.42) < 1e-9,
     JSON.stringify(cap.isoSettings));
   H.check('plain captureState() (share-URL path) has NO fields block, still v2.13',
-    cap.plainHasFields === false && cap.plainVersion === '2.13',
+    cap.plainHasFields === false && cap.plainVersion === '2.15',
     JSON.stringify({ plainHasFields: cap.plainHasFields, plainVersion: cap.plainVersion }));
 
   // --- (3) Round-trip: wipe the field, then applySharedState restores it ------------

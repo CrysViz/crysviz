@@ -49,4 +49,5 @@ support — not used in v1).
    toneMappingExposure) plus a `uExposure` extra multiplier (default 1) and a
    post-tone-map `uSaturation` control, so the traced image matches the
    raster pipelines' ACES color grade instead of Reinhard's desaturated
-   midtones.
+   midtones. A `uToneMapLegacy` bool restores the upstream Reinhard operator
+   (skipping `uExposure`) — the app's "Legacy tone mapping" Advanced toggle.

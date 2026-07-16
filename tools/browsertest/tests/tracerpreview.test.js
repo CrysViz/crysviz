@@ -173,6 +173,36 @@ function contentFraction(png, thresh = 40) {
     matEdit.previewActive === false && matEdit.lastCore === false && matEdit.samples >= 1,
     JSON.stringify(matEdit));
 
+  // --- (6b) Background drag holds the preview; a tracer-only look knob does not ----
+  // The raster preview can mirror the background live, so a color-picker drag
+  // must preview (not restart the trace at 1 sample per tick); lights & co.
+  // are invisible to the preview and stay live-traced.
+  const bgDrag = await page.evaluate(async () => {
+    const { app, general } = await import('./state/store.js');
+    const THREE = await import('./external/three/three.module.js');
+    const p = app.pipeline;
+    const ctx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
+    const origBg = app.scene.background;
+    p.render({ ...ctx, interactive: true }); // seeds the raster-look snapshot
+    p._lastInteractionAt = 0;
+    app.scene.background = new THREE.Color('#803020'); // one picker drag tick
+    p.render({ ...ctx, interactive: true });
+    const bgPreview = p._previewActive;
+    p._lastInteractionAt = 0;
+    general.rtLightIntensity = 2.0; // tracer-only look knob
+    p.render({ ...ctx, interactive: true });
+    const lightPreview = p._previewActive;
+    const lightSamples = p._uniforms.uSampleCounter.value;
+    general.rtLightIntensity = 1.2;
+    app.scene.background = origBg;
+    p._lastInteractionAt = 0;
+    p.render(ctx); // settle back to tracing with the restored look
+    return { bgPreview, lightPreview, lightSamples };
+  });
+  H.check('a background-color drag holds the raster preview; a light knob stays traced',
+    bgDrag.bgPreview === true && bgDrag.lightPreview === false && bgDrag.lightSamples >= 1,
+    JSON.stringify(bgDrag));
+
   // --- (7) Transparency-policy routing through the preview instance ----------------
   const routing = await page.evaluate(async () => {
     const { app, groups, general, fileBrowser } = await import('./state/store.js');
@@ -267,7 +297,7 @@ function contentFraction(png, thresh = 40) {
     };
   });
   H.check('captureState persists rtRasterPreview at v2.13 but NOT the hidden rest delay',
-    persist.version === '2.13' && persist.savedPreviewKey && persist.restDelayAbsent, JSON.stringify(persist));
+    persist.version === '2.15' && persist.savedPreviewKey && persist.restDelayAbsent, JSON.stringify(persist));
   H.check('applySharedState restores the preview toggle; a legacy rest-delay key is ignored',
     persist.generalPreview === false && persist.toggleChecked === false
       && Math.abs(persist.generalDelay - 2) < 1e-9, JSON.stringify(persist));

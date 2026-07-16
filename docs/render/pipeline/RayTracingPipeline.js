@@ -87,9 +87,13 @@
 // pipeline renders cheap DEPTH-PEELED preview frames instead — it holds a
 // private, persistent DepthPeelPipeline instance (never re-created per gesture)
 // and routes its own transparency policy through it so preview frames blend
-// correctly. Triggers are CAMERA MOTION and CORE scene edits (geometry/colors/
-// planes/field) — tracer-only material/look edits stay live-traced since the
-// raster preview can't show them. After the scene has been at rest for
+// correctly. Triggers are CAMERA MOTION, CORE scene edits (geometry/colors/
+// planes/field), and RASTER-VISIBLE look edits (background color, ground-disc
+// settings — continuous picker drags the raster preview CAN mirror; without
+// this a background drag restarts the trace at 1 sample per tick). Tracer-only
+// material/look edits (lights, reflectivity, DoF, saturation …) stay
+// live-traced since the raster preview can't show them. After the scene has
+// been at rest for
 // general.rtPreviewRestDelay seconds (a rearming timer wakes the loop with no
 // user input) the tracer resumes and accumulates. Preview frames are gated on
 // ctx.interactive (set ONLY by the animate loop) so PNG export and any manual
@@ -175,18 +179,27 @@ function rrtFitInverse(y) {
 
 const sRGB_OETF = (x) => (x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055);
 
-/** Radiance whose displayed value (exposure -> ACES -> saturation -> sqrt)
+/** Radiance whose displayed value (exposure -> tone map -> saturation -> sqrt)
  *  equals the raster-displayed background color, so the backdrop stays pinned
  *  to the user's pick regardless of the Saturation slider. bg is a
  *  linear-space THREE.Color. The luma mix is invertible for saturation >~0
- *  (clamped below; at extreme settings the inversion saturates gracefully). */
-function compensateBackground(bg, exposure, saturation, out) {
+ *  (clamped below; at extreme settings the inversion saturates gracefully).
+ *  With `legacy` set the operator is three's Reinhard (see uToneMapLegacy):
+ *  y = saturate(E*L / (1 + E*L)), invertible per channel as L = y / (E*(1-y)),
+ *  clamped so a pure-white backdrop stays finite. */
+function compensateBackground(bg, exposure, saturation, out, legacy = false) {
   const display = [sRGB_OETF(bg.r), sRGB_OETF(bg.g), sRGB_OETF(bg.b)];
   let X = display.map((v) => v * v); // undo the output sqrt
   // undo the saturation grade (mix(luma, c, s) preserves luma)
   const sat = Math.max(saturation, 0.05);
   const luma = 0.2126 * X[0] + 0.7152 * X[1] + 0.0722 * X[2];
   X = X.map((v) => Math.max(0, luma + (v - luma) / sat));
+  if (legacy) {
+    const E = Math.max(exposure, 1e-4);
+    const L = X.map((v) => { const y = Math.min(v, 0.99); return Math.max(0, y / (E * (1 - y))); });
+    out.setRGB(L[0], L[1], L[2]);
+    return out;
+  }
   const v1 = mul3(ACES_OUT_INV, X).map(rrtFitInverse);
   const L = mul3(ACES_IN_INV, v1).map((v) => Math.max(0, (v * 0.6) / Math.max(exposure, 1e-4)));
   out.setRGB(L[0], L[1], L[2]);
@@ -246,6 +259,7 @@ export class RayTracingPipeline extends ForwardPipeline {
   _previewActive = false;    // test-inspectable: this frame rendered a preview (not a trace)
   _lastInteractionAt = 0;    // performance.now() of the last camera/core-scene interaction
   _restTimer = null;         // rearming timer that wakes render() when the rest window elapses
+  _lastRasterLook = undefined; // raster-visible look snapshot (background + ground) — a change holds the preview like camera motion
 
   // ---- post-present highlight overlay (lazily built in _ensureHighlightOverlay)
   _hlScene = null;
@@ -371,7 +385,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       uFieldPosColor: { value: new THREE.Color(0x33aaff) },
       uFieldNegColor: { value: new THREE.Color(0xff3333) },
       uFieldAlpha: { value: 0.6 },
-      uFieldMaterial: { value: new THREE.Vector4(0, 0, 0.6, -1) }, // = DEFAULT_MATERIAL_TEXEL
+      uFieldMaterial: { value: new THREE.Vector4(0, 0.6, 0.6, -1) }, // = DEFAULT_MATERIAL_TEXEL
       // crystallographic lattice planes (analytic, cell-clipped)
       uPlaneCount: { value: 0 },
       uPlanesDataTexture: { value: this._encoder.planesTexture },
@@ -433,6 +447,9 @@ export class RayTracingPipeline extends ForwardPipeline {
         // double-exposed the tracers).
         uExposure: { value: 1.0 },
         uSaturation: { value: general.rtSaturation ?? 1 },
+        // legacy Reinhard operator (the original tracer look) instead of
+        // exposure x ACES; Advanced-section toggle, output-pass only
+        uToneMapLegacy: { value: general.rtToneMapLegacy === true },
         ...this._extraOutputUniforms(),
       },
       vertexShader: this._cfg.vertexShader,
@@ -801,7 +818,21 @@ export class RayTracingPipeline extends ForwardPipeline {
     // manual render() always trace.
     if (this._previewPipeline && ctx.interactive === true) {
       const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-      const triggered = cameraIsMoving || (fpChanged && this._encoder.lastChangeWasCoreScene);
+      // Look edits the raster preview CAN mirror (background color + ground
+      // disc) are continuous picker drags: hold the preview like camera
+      // motion instead of restarting the trace at 1 sample per drag tick.
+      // Tracer-only look knobs (lights, reflectivity, DoF, saturation …)
+      // deliberately stay out — they are live-traced (the lookKey reset below).
+      const rasterLook = `${scene.background?.isColor ? scene.background.getHex() : -1}`
+        + `|${general.rtGroundPlane === true}|${general.rtGroundPattern ?? ''}`
+        + `|${general.rtGroundColor1 ?? ''}|${general.rtGroundColor2 ?? ''}`
+        + `|${general.rtGroundScale ?? 1}|${general.rtGroundOffset ?? 0.75}`
+        + `|${general.rtGroundSize ?? 2.5}`;
+      const rasterLookChanged = this._lastRasterLook !== undefined
+        && rasterLook !== this._lastRasterLook;
+      this._lastRasterLook = rasterLook;
+      const triggered = cameraIsMoving || rasterLookChanged
+        || (fpChanged && this._encoder.lastChangeWasCoreScene);
       if (triggered) this._lastInteractionAt = now;
       // An active measurement tool is a continuous interaction: keep the raster
       // preview held (atom picking + hover glow happen on the raster scene, which
@@ -949,11 +980,22 @@ export class RayTracingPipeline extends ForwardPipeline {
     if (scene.background?.isColor) u.uBackgroundColor.value.copy(scene.background);
     // primary-miss rays return the display-transform-inverted background so
     // the traced backdrop matches the raster clear color exactly (secondary
-    // rays keep the RAW color — a bright backdrop must not become a light source)
-    compensateBackground(u.uBackgroundColor.value,
-      (renderer.toneMappingExposure ?? 1) * (this._outputQuad?.material.uniforms.uExposure.value ?? 1),
-      general.rtSaturation ?? 1,
-      u.uBackgroundDisplay.value);
+    // rays keep the RAW color — a bright backdrop must not become a light source).
+    // With "Match background color" off (Advanced toggle), primary misses get
+    // the raw color instead, so the backdrop is tone-mapped along with the
+    // scene — the pre-compensation look.
+    if (general.rtBackgroundMatch !== false) {
+      // legacy Reinhard skips uExposure in the shader (only the prelude's
+      // toneMappingExposure applies inside ReinhardToneMapping)
+      compensateBackground(u.uBackgroundColor.value,
+        (renderer.toneMappingExposure ?? 1) * (general.rtToneMapLegacy === true ? 1
+          : (this._outputQuad?.material.uniforms.uExposure.value ?? 1)),
+        general.rtSaturation ?? 1,
+        u.uBackgroundDisplay.value,
+        general.rtToneMapLegacy === true);
+    } else {
+      u.uBackgroundDisplay.value.copy(u.uBackgroundColor.value);
+    }
     u.uReflectivity.value = general.rtReflectivity ?? 0.15;
     u.uLightSoftness.value = general.ptLightSoftness ?? 0.3;
     u.uAmbientStrength.value = general.rtAmbient ?? 0.3;
@@ -995,7 +1037,8 @@ export class RayTracingPipeline extends ForwardPipeline {
     // invisible once converged).
     const lookKey = `${u.uBackgroundColor.value.getHex()}|${u.uLightColor.value.getHex()}`
       + `|${u.uReflectivity.value}|${u.uLightSoftness.value}|${u.uAmbientStrength.value}`
-      + `|${general.rtSaturation ?? 1}`
+      + `|${general.rtSaturation ?? 1}|${general.rtBackgroundMatch !== false}`
+      + `|${general.rtToneMapLegacy === true}`
       + `|${u.uGroundEnabled.value}|${u.uApertureSize.value}|${(general.rtDofFocus ?? 1)}`
       + `|${u.uGroundPattern.value}|${u.uGroundColor1.value.getHex()}`
       + `|${u.uGroundColor2.value.getHex()}|${u.uGroundScale.value}|${u.uGroundReflect.value}`
@@ -1129,6 +1172,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     }
     out.uOneOverSampleCounter.value = 1 / Math.max(1, u.uSampleCounter.value);
     out.uSaturation.value = general.rtSaturation ?? 1; // output-pass grade: no reset needed
+    out.uToneMapLegacy.value = general.rtToneMapLegacy === true; // ditto (bg-match reset rides the lookKey)
     this._updateOutputUniforms(out);
     renderer.setRenderTarget(null);
     this._outputQuad.render(renderer);

@@ -169,7 +169,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
   }
 
   return {
-    version: '2.13',
+    version: '2.15',
     ...(frames ? { frames } : {}),
     ...(fields ? { fields } : {}),
     structure: {
@@ -181,6 +181,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       atomColors,
       elementColors,
       useDefaultColors: general.useDefaultColors,
+      elementMaterialsMap: general.elementMaterialsMap,
       atomOpacities,
       atomRadiusScales,
       // The per-item / per-category style stores (all stably keyed, so they
@@ -223,6 +224,8 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       rtResolutionScale: general.rtResolutionScale,
       rtTiledRender: general.rtTiledRender,
       rtRasterPreview: general.rtRasterPreview,
+      rtBackgroundMatch: general.rtBackgroundMatch,
+      rtToneMapLegacy: general.rtToneMapLegacy,
       rtReflectivity: general.rtReflectivity,
       ptDenoise: general.ptDenoise,
       ptLightSoftness: general.ptLightSoftness,
@@ -436,6 +439,16 @@ function applyStyleSettings(style) {
       toggle.dispatchEvent(new Event('change'));
     }
   }
+  if (style.rtBackgroundMatch != null) {
+    general.rtBackgroundMatch = style.rtBackgroundMatch;
+    const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtBgMatchToggle'));
+    if (toggle) toggle.checked = style.rtBackgroundMatch;
+  }
+  if (style.rtToneMapLegacy != null) {
+    general.rtToneMapLegacy = style.rtToneMapLegacy;
+    const toggle = /** @type {HTMLInputElement|null} */ (document.getElementById('rtLegacyToneToggle'));
+    if (toggle) toggle.checked = style.rtToneMapLegacy;
+  }
   // rtPreviewRestDelay is a hidden config-only setting (no GUI) and is no longer
   // persisted; older saves that still carry the key are simply ignored so they
   // can't override the current default.
@@ -517,6 +530,17 @@ function applyAtomColors(colors, structure) {
   if (!colors || !structure) return;
 
   if (colors.useDefaultColors != null) general.useDefaultColors = colors.useDefaultColors;
+
+  // Element-Materials-Map id (state v2.15+). Absent key = a pre-map state,
+  // authored when everything defaulted to the plain standard material — force
+  // 'standard' (NOT the fresh-session 'crysviz' default) so the saved look is
+  // reproduced. Only the select VALUE is synced: dispatching 'change' would
+  // run the dropdown's reset-manual-edits handler and wipe the materials
+  // restored below.
+  general.elementMaterialsMap = colors.elementMaterialsMap ?? 'standard';
+  const materialsMapSelect = /** @type {HTMLSelectElement | null} */ (
+    document.getElementById('atomsElementMaterialsMapMenu'));
+  if (materialsMapSelect) materialsMapSelect.value = general.elementMaterialsMap;
 
   if (colors.elementColors) {
     structure.atoms.forEach((atom, i) => {

@@ -552,6 +552,40 @@ export function addColorPanel(target = "colorContainer") {
   rtPreviewRow.appendChild(rtPreviewLabel);
   rtPreviewRow.appendChild(rtPreviewToggle);
 
+  // Match background color: pin the traced backdrop to the exact picked
+  // background color (the pipeline inverse-tone-maps primary-miss rays;
+  // default ON). Off restores the older look where the backdrop is
+  // tone-mapped along with the scene. Lives in the "Advanced" section below.
+  const rtBgMatchRow = createElement("div", { class: "control-row" });
+  const rtBgMatchLabel = createElement("label", { for: "rtBgMatchToggle" }, {}, "Match background color");
+  const rtBgMatchToggle = createElement("input", { type: "checkbox", id: "rtBgMatchToggle" },
+    { justifySelf: "start", width: "auto" });
+  rtBgMatchToggle.checked = general.rtBackgroundMatch !== false;
+  rtBgMatchToggle.addEventListener("change", () => {
+    general.rtBackgroundMatch = rtBgMatchToggle.checked;
+    app.pipeline?.resetAccumulation?.();
+    requestRender();
+  });
+  rtBgMatchRow.appendChild(rtBgMatchLabel);
+  rtBgMatchRow.appendChild(rtBgMatchToggle);
+
+  // Legacy tone mapping: the original tracers' Reinhard operator (muted,
+  // desaturated midtones) instead of exposure x ACES (raster parity; default).
+  // Output-pass only — no accumulation reset needed (the traced-background
+  // interplay with "Match background color" rides the pipeline's look key).
+  // Lives in the "Advanced" section below.
+  const rtLegacyToneRow = createElement("div", { class: "control-row" });
+  const rtLegacyToneLabel = createElement("label", { for: "rtLegacyToneToggle" }, {}, "Legacy tone mapping");
+  const rtLegacyToneToggle = createElement("input", { type: "checkbox", id: "rtLegacyToneToggle" },
+    { justifySelf: "start", width: "auto" });
+  rtLegacyToneToggle.checked = general.rtToneMapLegacy === true;
+  rtLegacyToneToggle.addEventListener("change", () => {
+    general.rtToneMapLegacy = rtLegacyToneToggle.checked;
+    requestRender();
+  });
+  rtLegacyToneRow.appendChild(rtLegacyToneLabel);
+  rtLegacyToneRow.appendChild(rtLegacyToneToggle);
+
   // Denoiser (path-tracing only): edge-aware denoiser on the screen output.
   // Lives in the shared "Advanced" section (visible for both tracers) but its
   // row is shown only under the pathtrace pipeline (updateRenderingControlsVisibility).
@@ -752,6 +786,8 @@ export function addColorPanel(target = "colorContainer") {
   const rtAdvancedBody = createElement("div", { class: "eos-collapsible-body" });
   rtAdvancedBody.appendChild(rtTiledRow);
   rtAdvancedBody.appendChild(rtPreviewRow);
+  rtAdvancedBody.appendChild(rtBgMatchRow);
+  rtAdvancedBody.appendChild(rtLegacyToneRow);
   rtAdvancedBody.appendChild(ptDenoiseRow);
   rtAdvanced.appendChild(rtAdvancedBody);
   rtControlsBlock.appendChild(rtAdvanced);
@@ -880,6 +916,8 @@ export function addColorPanel(target = "colorContainer") {
     fire('rtResolutionScale', D.rtResolutionScale, 'input');
     fireCheck('rtTiledToggle', D.rtTiledRender);
     fireCheck('rtPreviewToggle', D.rtRasterPreview);
+    fireCheck('rtBgMatchToggle', D.rtBackgroundMatch);
+    fireCheck('rtLegacyToneToggle', D.rtToneMapLegacy);
     fire('rtReflectivity', D.rtReflectivity, 'input');
     fire('ptLightSoftness', D.ptLightSoftness, 'input');
     fire('rtLightIntensity', D.rtLightIntensity, 'input');
@@ -946,6 +984,37 @@ export function addColorPanel(target = "colorContainer") {
     }
   });
 
+  // "Element Materials Map" — per-species tracer-material presets (the
+  // material analog of the color map above; defaults/material_defaults.js).
+  // Materials only affect the ray/path-tracing pipelines, so the row hides
+  // under raster via the body.tracer-pipeline gate (styles.css), like the
+  // Structure-window material editors. Color-palette parity: switching the
+  // map RESETS manual material edits on the selected structure.
+  const atomsElementMaterialsMapMenu = createDropdown("atomsElementMaterialsMapMenu", "Element Materials Map", [
+    { value: "crysviz", text: "CrysViz Default", selected: general.elementMaterialsMap !== "standard" },
+    { value: "standard", text: "Standard", selected: general.elementMaterialsMap === "standard" }
+  ], () => {
+    general.elementMaterialsMap = atomsElementMaterialsMapMenu.querySelector("select").value;
+    const structure = fileBrowser.selectedStructure;
+    if (structure) {
+      structure.atomMaterials = {};
+      structure.atomUserMaterials = {};
+      for (const styles of [structure.atomImageStyles, structure.bondUserStyles, structure.bondCategoryStyles]) {
+        for (const key of Object.keys(styles ?? {})) delete styles[key].material;
+      }
+    }
+    // Already-mounted material editors (Structure-window species/atom/bond
+    // rows, FieldPanel) seeded from the OLD map at build time — re-sync them
+    // to the new effective defaults.
+    document.querySelectorAll(".material-editor").forEach((el) => {
+      /** @type {HTMLElement & { syncFromStore?: () => void }} */ (el).syncFromStore?.();
+    });
+    // The tracer SceneEncoder fingerprint picks the map change up on the next
+    // requested frame (re-encode + accumulation reset); raster is unaffected.
+    requestRender();
+  });
+  atomsElementMaterialsMapMenu.classList.add("tracer-only-control");
+
   const atomsColorMapBlock = createElement("div", { style: "display:none;" });
 
   const atomsColorMapMenu = createDropdown("atomsColorMapMenu", "Color Map", [
@@ -975,6 +1044,7 @@ export function addColorPanel(target = "colorContainer") {
   atomsMenuBlock.appendChild(atomsMenu);
   atomsMenuBlock.appendChild(atomsElementColorMapBlock);
   atomsElementColorMapBlock.appendChild(atomsElementColorMapMenu);
+  atomsElementColorMapBlock.appendChild(atomsElementMaterialsMapMenu);
   atomsMenuBlock.appendChild(atomsColorMapBlock);
 
   function onAtomsModeChange() {

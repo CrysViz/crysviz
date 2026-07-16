@@ -109,6 +109,8 @@ export const RENDERING_DEFAULTS = {
   rtTiledRender: true, // raytrace/pathtrace: render each sample in scissored tiles (one/frame) to keep the shared GPU responsive; untiled half-res while the camera moves
   rtReflectivity: 0.15, // raytrace/pathtrace pipelines: extra mirror reflectivity on opaque surfaces (0-1)
   rtRasterPreview: true, // raytrace/pathtrace: while interacting, show cheap depth-peeled preview frames; resume tracing after rest
+  rtBackgroundMatch: true, // both tracers: pin the traced backdrop to the exact picked background color (inverse tone-map on primary misses); off = classic look, backdrop tone-mapped with the scene
+  rtToneMapLegacy: false, // both tracers: legacy Reinhard tone mapping (the original muted tracer look) instead of exposure x ACES (raster parity)
   rtPreviewRestDelay: 0.5, // HIDDEN (config-only, no GUI): raytrace/pathtrace seconds of no interaction before the tracer resumes (raster-preview rest delay)
   ptDenoise: true, // 'pathtrace' pipeline: edge-aware denoiser on the screen output
   ptLightSoftness: 0.3, // both tracers: light softness (0 = hard shadows, 1 = very soft; PT area-light radius / RT shadow-ray cone)
@@ -147,6 +149,11 @@ export const general = {
   currentLatticeColor:null,
   defaultBackgroundColor:null,
   useDefaultColors:true,
+  // "Element Materials Map" (Visual → Colors): per-species tracer-material
+  // presets. 'crysviz' = defaults/material_defaults.js crysvizMaterialMap,
+  // 'standard' = no presets (plain standard material everywhere). Resolved by
+  // Structure.getDefaultElementMaterial below manual atomMaterials edits.
+  elementMaterialsMap:'crysviz',
   bondLengths:{},
   defaultBondLengths:{},
   bondVisibility:{},

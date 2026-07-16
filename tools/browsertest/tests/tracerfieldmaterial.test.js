@@ -11,8 +11,8 @@
 //       (lastChangeWasCoreScene === false) and restarts the accumulation;
 //   (4) the Field window hosts a glass-free MaterialEditor, hidden under raster
 //       and shown under a tracer;
-//   (5) the material persists through captureState/applySharedState at v2.13;
-//   (6) the default field-material texel is [0,0,0.6,-1] (DEFAULT_MATERIAL_TEXEL).
+//   (5) the material persists through captureState/applySharedState at v2.15;
+//   (6) the default field-material texel is [0,0.6,0.6,-1] (DEFAULT_MATERIAL_TEXEL).
 'use strict';
 const H = require('../harness');
 const fs = require('fs');
@@ -110,10 +110,10 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
       uMat: u?.uFieldMaterial?.value?.toArray?.(),
     };
   });
-  H.check('default field material texel is [0,0,0.6,-1] and the uniform matches',
+  H.check('default field material texel is [0,0.6,0.6,-1] and the uniform matches',
     defState.enabled === true
-      && JSON.stringify(defState.texel) === JSON.stringify([0, 0, 0.6, -1])
-      && JSON.stringify(defState.uMat) === JSON.stringify([0, 0, 0.6, -1]),
+      && JSON.stringify(defState.texel) === JSON.stringify([0, 0.6, 0.6, -1])
+      && JSON.stringify(defState.uMat) === JSON.stringify([0, 0.6, 0.6, -1]),
     JSON.stringify(defState));
   const stdShot = await H.shotCanvas(page, 'fieldmat-standard');
 
@@ -154,9 +154,9 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
     const u = app.pipeline?._uniforms?.uFieldMaterial?.value?.toArray?.();
     const approx = (arr, want) => arr && arr.length === 4
       && arr.every((v, i) => Math.abs(v - want[i]) < 1e-6);
-    return { texel: t, uMat: u, ok: approx(t, [1, 0.1, 0, -1]) && approx(u, [1, 0.1, 0, -1]) };
+    return { texel: t, uMat: u, ok: approx(t, [1, 0.1, 1, -1]) && approx(u, [1, 0.1, 1, -1]) }; // z = metal tint, default 1
   });
-  H.check('metal field material encodes texel [1,0.1,0,-1] into uFieldMaterial',
+  H.check('metal field material encodes texel [1,0.1,1,-1] into uFieldMaterial',
     metalState.ok, JSON.stringify(metalState));
   const metalShot = await H.shotCanvas(page, 'fieldmat-metal');
   const metalDelta = changedPixelCount(stdShot, metalShot);
@@ -170,6 +170,21 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
     fileBrowser.selectedStructure.fieldMaterial = { type: 'emissive', intensity: 14 };
     requestRender();
   });
+  // The counter is still at the metal section's convergence, so
+  // waitForSamples alone would return before the requested frame re-encodes
+  // (a race this read used to win only because frames were faster) — wait for
+  // the encoder to actually pick the emissive edit up first.
+  {
+    const deadline = Date.now() + 90000;
+    for (;;) {
+      const encoded = await page.evaluate(async () => {
+        const { app } = await import('./state/store.js');
+        return app.pipeline?._encoder?.fieldMaterialTexel?.[0] === 3;
+      });
+      if (encoded || Date.now() > deadline) break;
+      await page.waitForTimeout(500);
+    }
+  }
   await waitForSamples(CONVERGED);
   const emiState = await page.evaluate(async () => {
     const { app } = await import('./state/store.js');
@@ -250,17 +265,16 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
     const editor = body.querySelector('.material-editor');
     const select = editor?.querySelector('.material-type-select');
     const options = select ? Array.from(select.options).map((o) => o.value) : [];
-    const isoSlider = body.querySelector('#isoSlider');
     return {
       hasEditor: !!editor,
-      nextToIsoSlider: !!isoSlider && !!editor,
+      inColorControls: !!editor?.closest('#fieldColorContent'),
       optionCount: options.length,
       hasGlass: options.includes('glass'),
       options,
     };
   });
-  H.check('Field window hosts a glass-free MaterialEditor next to the iso slider',
-    gui.hasEditor && gui.nextToIsoSlider && gui.optionCount === 4 && gui.hasGlass === false,
+  H.check('Field window hosts a glass-free MaterialEditor in the Color controls section',
+    gui.hasEditor && gui.inColorControls && gui.optionCount === 4 && gui.hasGlass === false,
     JSON.stringify(gui));
 
   await H.setSelect(page, 'renderPipelineMenu', 'depthpeel');
@@ -351,7 +365,7 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
       && liveDrag.finalVerts === liveDrag.after.verts,
     JSON.stringify({ readout: liveDrag.readout, iso: liveDrag.after.iso, finalVerts: liveDrag.finalVerts }));
 
-  // --- (5) Persistence: fieldMaterial round-trips through capture/apply at 2.13 -----
+  // --- (5) Persistence: fieldMaterial round-trips through capture/apply at 2.15 -----
   const persist = await page.evaluate(async () => {
     const { fileBrowser } = await import('./state/store.js');
     const { captureState, applySharedState } = await import('./ui/ShareModule.js');
@@ -362,8 +376,8 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
     const restored = fileBrowser.selectedStructure?.fieldMaterial;
     return { version: state.version, captured, restored };
   });
-  H.check('captureState/applySharedState round-trips fieldMaterial at v2.13',
-    persist.version === '2.13'
+  H.check('captureState/applySharedState round-trips fieldMaterial at v2.15',
+    persist.version === '2.15'
       && persist.captured?.type === 'metal' && Math.abs(persist.captured?.roughness - 0.3) < 1e-9
       && persist.restored?.type === 'metal' && Math.abs(persist.restored?.roughness - 0.3) < 1e-9,
     JSON.stringify(persist));

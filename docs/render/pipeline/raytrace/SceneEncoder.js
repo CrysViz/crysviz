@@ -44,7 +44,7 @@ const MAX_PLANES = 256;
 // gates diffuse-arrival emission on it). Codes/slots must match
 // resolveMaterialType/resolveHitType in BOTH scene shaders.
 const MATERIAL_CODES = { standard: 0, metal: 1, glass: 2, emissive: 3, translucent: 4 };
-const DEFAULT_MATERIAL_TEXEL = [0, 0, 0.6, -1]; // standard, gloss 0.6 = classic look
+const DEFAULT_MATERIAL_TEXEL = [0, 0.6, 0.6, -1]; // standard, tint 0.6 + gloss 0.6 = classic look
 
 // Emissive next-event-estimation list cap (B1/B2): the path tracer directly
 // samples up to this many emissive primitives per frame (2 texels each in
@@ -56,16 +56,16 @@ const EMISSIVE_CAP = 64;
 function materialTexel(mat) {
   if (!mat) return DEFAULT_MATERIAL_TEXEL;
   switch (mat.type) {
-    case 'metal':
-      return [1, mat.roughness ?? 0.2, 0, mat.reflectivity ?? -1];
+    case 'metal': // typeParam slot carries the reflection color tint (1 = colored mirror, 0 = chrome)
+      return [1, mat.roughness ?? 0.2, mat.tint ?? 1, mat.reflectivity ?? -1];
     case 'glass':
       return [2, mat.frost ?? 0, mat.ior ?? 1.5, mat.tintDepth ?? 0.2];
     case 'emissive':
       return [3, 0, mat.intensity ?? 5, 0];
     case 'translucent':
       return [4, 0, mat.scatterDepth ?? 0.5, 0];
-    default: // standard
-      return [0, 0, mat.gloss ?? 0.6, mat.reflectivity ?? -1];
+    default: // standard (the roughness slot carries the coat/specular color tint)
+      return [0, mat.tint ?? 0.6, mat.gloss ?? 0.6, mat.reflectivity ?? -1];
   }
 }
 
@@ -400,6 +400,9 @@ export class SceneEncoder {
     // since the preview trigger keys only on the core part.
     const matParts = [];
     if (structure) {
+      // the active element-materials map feeds the same material cascade, so
+      // switching it re-encodes exactly like a manual material edit
+      matParts.push('mm', general.elementMaterialsMap ?? 'standard');
       matParts.push('m', JSON.stringify(structure.atomMaterials ?? {}),
         JSON.stringify(structure.atomUserMaterials ?? {}),
         JSON.stringify(structure.atomImageStyles ?? {}),
@@ -753,14 +756,17 @@ export class SceneEncoder {
         data[d + 5] = colors[i * 3 + 1];
         data[d + 6] = colors[i * 3 + 2];
         data[d + 7] = (opacities ? opacities[i] : 1) * baseOpacity;
-        // per-copy override > per-atom override > per-species material
+        // per-copy override > per-atom override > per-species material >
+        // element-materials-map preset (Structure.getDefaultElementMaterial)
         // (per-copy = "Link periodic copies" off, stored in atomImageStyles)
         const src = srcIndex ? srcIndex[i] : i;
         const element = structure?.elements?.[src];
         const mt = materialTexel(
           getAtomImageStyle(structure, i)?.material
             ?? atomUserMaterials[src]
-            ?? (element ? atomMaterials[element] : null));
+            ?? (element
+              ? atomMaterials[element] ?? structure.getDefaultElementMaterial(element)
+              : null));
         if (mt[0] === 3) {
           this.hasEmissive = true;
           // listed bit into the free reflectivity slot (unused for emissive);
@@ -936,7 +942,9 @@ export class SceneEncoder {
         // the ray-traced unit cylinder spans y in [-1, 1] — pre-scale by 0.5
         _m.multiply(_halfY);
         _mInv.copy(_m).invert();
-        // per-bond override > per-pair material (instance i -> bond floor(i/2))
+        // per-bond override > per-pair material > the half's end-atom
+        // element-materials-map preset (instance i -> bond floor(i/2), half
+        // i % 2 -> bond.elements[i % 2], see BondsFracUpdateModule ordering)
         const bond = structure?.bonds?.[Math.floor(i / 2)];
         let material = null;
         if (bond) {
@@ -945,6 +953,9 @@ export class SceneEncoder {
           if (!material && bond.elements) {
             const [e1, e2] = bond.elements;
             material = bondCategoryStyles[e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`]?.material;
+          }
+          if (!material && bond.elements) {
+            material = structure.getDefaultElementMaterial(bond.elements[i % 2]);
           }
         }
         writeCylinder(_mInv, cylinderGeom(_m), colors[i * 3], colors[i * 3 + 1], colors[i * 3 + 2],
