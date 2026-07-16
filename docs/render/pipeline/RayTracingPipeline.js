@@ -87,9 +87,13 @@
 // pipeline renders cheap DEPTH-PEELED preview frames instead — it holds a
 // private, persistent DepthPeelPipeline instance (never re-created per gesture)
 // and routes its own transparency policy through it so preview frames blend
-// correctly. Triggers are CAMERA MOTION and CORE scene edits (geometry/colors/
-// planes/field) — tracer-only material/look edits stay live-traced since the
-// raster preview can't show them. After the scene has been at rest for
+// correctly. Triggers are CAMERA MOTION, CORE scene edits (geometry/colors/
+// planes/field), and RASTER-VISIBLE look edits (background color, ground-disc
+// settings — continuous picker drags the raster preview CAN mirror; without
+// this a background drag restarts the trace at 1 sample per tick). Tracer-only
+// material/look edits (lights, reflectivity, DoF, saturation …) stay
+// live-traced since the raster preview can't show them. After the scene has
+// been at rest for
 // general.rtPreviewRestDelay seconds (a rearming timer wakes the loop with no
 // user input) the tracer resumes and accumulates. Preview frames are gated on
 // ctx.interactive (set ONLY by the animate loop) so PNG export and any manual
@@ -255,6 +259,7 @@ export class RayTracingPipeline extends ForwardPipeline {
   _previewActive = false;    // test-inspectable: this frame rendered a preview (not a trace)
   _lastInteractionAt = 0;    // performance.now() of the last camera/core-scene interaction
   _restTimer = null;         // rearming timer that wakes render() when the rest window elapses
+  _lastRasterLook = undefined; // raster-visible look snapshot (background + ground) — a change holds the preview like camera motion
 
   // ---- post-present highlight overlay (lazily built in _ensureHighlightOverlay)
   _hlScene = null;
@@ -813,7 +818,21 @@ export class RayTracingPipeline extends ForwardPipeline {
     // manual render() always trace.
     if (this._previewPipeline && ctx.interactive === true) {
       const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-      const triggered = cameraIsMoving || (fpChanged && this._encoder.lastChangeWasCoreScene);
+      // Look edits the raster preview CAN mirror (background color + ground
+      // disc) are continuous picker drags: hold the preview like camera
+      // motion instead of restarting the trace at 1 sample per drag tick.
+      // Tracer-only look knobs (lights, reflectivity, DoF, saturation …)
+      // deliberately stay out — they are live-traced (the lookKey reset below).
+      const rasterLook = `${scene.background?.isColor ? scene.background.getHex() : -1}`
+        + `|${general.rtGroundPlane === true}|${general.rtGroundPattern ?? ''}`
+        + `|${general.rtGroundColor1 ?? ''}|${general.rtGroundColor2 ?? ''}`
+        + `|${general.rtGroundScale ?? 1}|${general.rtGroundOffset ?? 0.75}`
+        + `|${general.rtGroundSize ?? 2.5}`;
+      const rasterLookChanged = this._lastRasterLook !== undefined
+        && rasterLook !== this._lastRasterLook;
+      this._lastRasterLook = rasterLook;
+      const triggered = cameraIsMoving || rasterLookChanged
+        || (fpChanged && this._encoder.lastChangeWasCoreScene);
       if (triggered) this._lastInteractionAt = now;
       // An active measurement tool is a continuous interaction: keep the raster
       // preview held (atom picking + hover glow happen on the raster scene, which

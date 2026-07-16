@@ -412,7 +412,7 @@ const H = require('../harness');
     };
   });
   H.check('captureState persists the pipeline id + per-pipeline knobs (v2.13), not the hidden rest delay',
-    persisted.version === '2.13' && persisted.renderPipeline === 'forward'
+    persisted.version === '2.15' && persisted.renderPipeline === 'forward'
       && typeof persisted.depthPeelLayers === 'number'
       && typeof persisted.rtResolutionScale === 'number'
       && typeof persisted.rtReflectivity === 'number'

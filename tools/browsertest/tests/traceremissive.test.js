@@ -109,7 +109,11 @@ async function convergeTo(page, N, forceEmissive = null) {
     // backdrop — otherwise the bright default background dominates mean
     // luminance and the emissive brightening is invisible against it.
     app.scene.background = new THREE.Color(0x000000);
-    // ensure a clean baseline (no emissive materials from a prior session)
+    // ensure a clean baseline (no emissive materials from a prior session).
+    // Pin the Element Materials Map to 'standard': this test measures the
+    // NEE-lit DIFFUSE brightening of Cu's neighbours, and the crysviz map's
+    // metallic Y/Ba would reflect the glow specularly instead.
+    general.elementMaterialsMap = 'standard';
     const structure = fileBrowser.selectedStructure;
     structure.atomMaterials = {};
     structure.atomUserMaterials = {};

@@ -170,6 +170,21 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
     fileBrowser.selectedStructure.fieldMaterial = { type: 'emissive', intensity: 14 };
     requestRender();
   });
+  // The counter is still at the metal section's convergence, so
+  // waitForSamples alone would return before the requested frame re-encodes
+  // (a race this read used to win only because frames were faster) — wait for
+  // the encoder to actually pick the emissive edit up first.
+  {
+    const deadline = Date.now() + 90000;
+    for (;;) {
+      const encoded = await page.evaluate(async () => {
+        const { app } = await import('./state/store.js');
+        return app.pipeline?._encoder?.fieldMaterialTexel?.[0] === 3;
+      });
+      if (encoded || Date.now() > deadline) break;
+      await page.waitForTimeout(500);
+    }
+  }
   await waitForSamples(CONVERGED);
   const emiState = await page.evaluate(async () => {
     const { app } = await import('./state/store.js');

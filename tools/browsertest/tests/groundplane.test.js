@@ -239,7 +239,7 @@ async function waitTracerReady(page) {
     return { version: s.version, present: keys.filter((k) => k in s.style) };
   });
   H.check('captureState carries all 8 rtGround* keys at v2.13',
-    persist.version === '2.13' && persist.present.length === 8,
+    persist.version === '2.15' && persist.present.length === 8,
     JSON.stringify(persist));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
