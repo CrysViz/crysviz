@@ -54,8 +54,9 @@ function sanitizeToRoot(html) {
   const root = doc.body.firstElementChild;
 
   (function clean(node) {
-    for (const child of Array.from(node.childNodes)) {
-      if (child.nodeType !== Node.ELEMENT_NODE) continue;
+    for (const childNode of Array.from(node.childNodes)) {
+      if (childNode.nodeType !== Node.ELEMENT_NODE) continue;
+      const child = /** @type {Element} */ (childNode);
       if (!ALLOWED_TAGS.has(child.tagName)) {
         node.replaceChild(doc.createTextNode(child.textContent), child);
         continue;

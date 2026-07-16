@@ -165,6 +165,27 @@ export const general = {
   forceMax: 2,
   // Force colormap normalization: 'linear' | 'log' (Forces panel Log Scale toggle).
   forceColorScale: 'linear',
+  // Custom legend text for the Forces color bar (ForcePanel.js), falls back
+  // to "Force (eV/Å)" when unset.
+  forceLegendText: null,
+  // Spin colormap normalization: 'linear' | 'log' (Spins panel Log Scale
+  // toggle), same role as forceColorScale above but for SpinModule.js.
+  spinColorScale: 'linear',
+  // Custom legend text for the Spins color bar (SpinPanel.js), falls back
+  // to "Spin (μB)" when unset.
+  spinLegendText: null,
+  // Atoms "Force" mode colormap normalization: 'linear' | 'log' (ColorPanel.js
+  // Log Scale toggle for the atom color bar).
+  atomColorScale: 'linear',
+  // Custom legend text for the Atoms color bar (ColorPanel.js), falls back
+  // to "Atom Force (eV/Å)" when unset.
+  atomLegendText: null,
+  // Bonds "Length" mode colormap normalization: 'linear' | 'log' (ColorPanel.js
+  // Log Scale toggle for the bond color bar).
+  bondColorScale: 'linear',
+  // Custom legend text for the Bonds color bar (ColorPanel.js), falls back
+  // to "Bond Length (Å)" when unset.
+  bondLegendText: null,
   // Force arrow LENGTH normalization (Forces panel "log length" toggle),
   // independent of forceColorScale above — but turning it on also forces
   // forceColorScale to 'log' and locks that toggle, since a log-length arrow
@@ -201,6 +222,10 @@ export const general = {
   bondColorBarOrientation: 'horizontal',
   bondColorBarFloating: false,
   bondColorBarFloatPos: null,
+  // Same trio for the Planes panel's colorbar (PlanesPanel.js).
+  planeColorBarOrientation: 'horizontal',
+  planeColorBarFloating: false,
+  planeColorBarFloatPos: null,
   // Side the legend/tick labels render on, independent of orientation: the
   // "far" edge (below the bar in horizontal, right of it in vertical — the
   // original/default) or the "near" edge (above/left). Shared by all four
@@ -209,6 +234,7 @@ export const general = {
   spinColorBarFlipSide: false,
   atomColorBarFlipSide: false,
   bondColorBarFlipSide: false,
+  planeColorBarFlipSide: false,
   // Length (px) a floating color bar's drag handle resizes to — shared by
   // all four bars (resizing any one resizes them all, ColorBarWidget.js's
   // setSize broadcasting via ColorBarRegistry.js), rather than a separate
@@ -265,6 +291,10 @@ export const general = {
   // window (ui/panels/defaultPanels.js) — NOT by panel expand state. When a
   // flag is off the corresponding feature panel is greyed out.
   forcesActive: false, // "Show Forces" toggle draws force arrows
+  // Force histogram (ui/AnalysisPanels/ForceHistogram.js) "Live during MD"
+  // toggle: redraw the histogram every MD/relax step instead of only when
+  // idle (stats computation isn't free, hence opt-in).
+  forceStatsLive: false,
   spinsActive: false, // "Show Spins" toggle draws spin arrows
   fieldActive: true, // "Show Volumetric Field" toggle draws the isosurface
   comparisonActive: false, // "Show Lattice Comparison" keeps the popup synced

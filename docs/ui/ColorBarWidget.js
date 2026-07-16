@@ -209,7 +209,7 @@ export function currentContrastColor() {
  * @param {{ floatingId?: string, onLimitsCommit?: (min: number, max: number) => void,
  *   fallbackMin?: number, fallbackMax?: number, legend?: string, scale?: string,
  *   onScaleChange?: (scale: string) => void, onAutoRange?: () => void,
- *   onLegendChange?: (legend: string) => void,
+ *   onLegendChange?: (legend: string) => void, isScaleLocked?: () => boolean,
  *   orientation?: string, flipSide?: boolean, size?: number }} [opts]
  *   legend: axis title shown alongside the bar (e.g. "Force (eV/Å)"), rotated
  *   to read bottom-to-top when the bar is vertical. Click-to-edit: the raw

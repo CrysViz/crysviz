@@ -22,6 +22,11 @@ function contrastTextColor(hex) {
 // computed from its own vector through the live colormap — sticky, via
 // Force/Spin.userColor, until Reset clears it (see ForceModule.js/
 // SpinModule.js's recolor loops, which skip any object with userColor set).
+/**
+ * @param {number} atomIndex
+ * @param {HTMLElement} element
+ * @param {{ onModeChange?: (mode: string) => void }} [opts]
+ */
 export function createSpinForceEditor(atomIndex, element, { onModeChange = () => {} } = {}) {
   const spinEditor = document.createElement('div');
   spinEditor.className = 'atom-spin-editor';
@@ -278,10 +283,10 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
   // Exposed so IndividualAtomRow.js can re-sync the panel's values when the
   // user reopens it — the panel itself isn't reactive to changes made
   // elsewhere (a bulk reset from SpinPanel.js, say) while it's closed.
-  spinEditor.refresh = refreshInputs;
+  /** @type {any} */ (spinEditor).refresh = refreshInputs;
   // Exposed so IndividualAtomRow.js knows which arrow (spin or force) to
   // 3D-highlight when this editor is the open one for its atom.
-  spinEditor.getMode = () => mode;
+  /** @type {any} */ (spinEditor).getMode = () => mode;
 
   return spinEditor;
 }

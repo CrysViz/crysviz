@@ -407,7 +407,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     // of the atom sphere; closing it (or switching to another editor)
     // reverts to the normal atom-sphere highlight.
     const wasSpinOpen = spinEditor.style.display !== 'none';
-    if (editorType === 'spin') setArrowHighlightOverride(atomIndex, spinEditor.getMode());
+    if (editorType === 'spin') setArrowHighlightOverride(atomIndex, /** @type {any} */ (spinEditor).getMode());
     else if (wasSpinOpen) clearArrowHighlightOverride();
 
     Object.entries(editorMap).forEach(([type, panel]) => {
@@ -483,7 +483,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   spinBtn.onclick = (e) => {
     e.stopPropagation();
     const shouldOpen = spinEditor.style.display === 'none';
-    if (shouldOpen) spinEditor.refresh?.();
+    if (shouldOpen) /** @type {any} */ (spinEditor).refresh?.();
     setActiveEditor(shouldOpen ? 'spin' : null);
   };
 
