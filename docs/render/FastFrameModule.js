@@ -5,6 +5,7 @@ import { periodicWrapped, updateLattice } from './LatticeModule.js';
 import { updateForces } from './ForceModule.js';
 import { getActiveCutPlanes, isBondCutByPlanes, hideSingleBond } from './BondsFracUpdateModule.js';
 import { requestRender } from './AnimateModule.js';
+import { updateGroundPlane } from './GroundPlaneModule.js';
 
 // ── Render fast path for MD / relax frames ────────────────────────────────────
 //
@@ -160,6 +161,10 @@ export function applyFrameFast(structure) {
   if (general.forcesActive) {
     updateForces();
   }
+
+  // MD/relax playback moves atoms and bypasses updateVisualization — reposition
+  // the ground disc so it tracks the structure bottom each frame (O(1) when off).
+  updateGroundPlane();
 
   requestRender();
   return true;

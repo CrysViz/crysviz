@@ -28,8 +28,9 @@ const H = require('../harness');
   H.check('depthpeel pipeline active after boot (app.pipeline + general in sync)',
     boot.activeId === 'depthpeel' && boot.appPipelineMatches && boot.generalId === 'depthpeel',
     JSON.stringify(boot));
-  H.check('rendering-pipeline dropdown lists the registry',
-    Array.isArray(boot.menuOptions) && boot.menuOptions.join(',') === boot.registry.map((p) => p.id).join(',')
+  H.check('rendering-pipeline dropdown lists the visible pipelines (hidden split/sorted omitted)',
+    Array.isArray(boot.menuOptions)
+      && boot.menuOptions.join(',') === 'depthpeel,wboit,forward,raytrace,pathtrace'
       && boot.menuValue === 'depthpeel',
     JSON.stringify({ menu: boot.menuOptions, registry: boot.registry }));
   // --- Opaque-scene fast path (default depthpeel renders like forward) -----------
@@ -52,9 +53,54 @@ const H = require('../harness');
   H.check('depthpeel fast path: plain single pass when nothing is transparent',
     fastPath.opaque === true && fastPath.transp === false, JSON.stringify(fastPath));
 
-  H.check('registry holds the seven pipelines',
-    boot.registry.map((p) => p.id).join(',') === 'forward,split-atoms,sorted-atoms,wboit,depthpeel,raytrace,pathtrace',
+  H.check('registry holds the seven pipelines (recommended-first dropdown order)',
+    boot.registry.map((p) => p.id).join(',') === 'depthpeel,wboit,forward,raytrace,pathtrace,split-atoms,sorted-atoms',
     JSON.stringify(boot.registry));
+  H.check('registry flags split-atoms/sorted-atoms as hidden, the rest visible',
+    boot.registry.filter((p) => p.hidden).map((p) => p.id).join(',') === 'split-atoms,sorted-atoms',
+    JSON.stringify(boot.registry));
+
+  // --- Hidden pipelines: activatable, and surfaced in the dropdown only via a
+  //     rebuild when they are the active id or general.showAllRenderPipelines ---
+  const hiddenPipelines = await page.evaluate(async () => {
+    const { app, general } = await import('./state/store.js');
+    const { setActivePipeline } = await import('./render/index.js');
+    const { rebuildRenderPipelineMenu } = await import('./ui/ColorPanel.js');
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
+    const optionIds = () => [...select.options].map((o) => o.value);
+
+    // (a) hidden ids stay fully activatable via setActivePipeline...
+    setActivePipeline('split-atoms');
+    const splitActive = app.pipeline?.id;
+    // ...and a menu rebuild then appends the active hidden id (select stays truthful),
+    // while the other hidden pipeline stays omitted.
+    rebuildRenderPipelineMenu();
+    const menuWithActiveHidden = optionIds();
+
+    // (b) general.showAllRenderPipelines + rebuild => all seven appear.
+    general.showAllRenderPipelines = true;
+    rebuildRenderPipelineMenu();
+    const menuShowAll = optionIds();
+
+    // Restore normal state for the checks that follow.
+    general.showAllRenderPipelines = false;
+    setActivePipeline('depthpeel');
+    rebuildRenderPipelineMenu();
+    const menuRestored = optionIds();
+    return { splitActive, menuWithActiveHidden, menuShowAll, menuRestored };
+  });
+  H.check('hidden pipeline stays activatable via setActivePipeline (app.pipeline.id)',
+    hiddenPipelines.splitActive === 'split-atoms', JSON.stringify(hiddenPipelines));
+  H.check('active hidden pipeline gains a dropdown option on rebuild; other hidden one stays out',
+    hiddenPipelines.menuWithActiveHidden.includes('split-atoms')
+      && !hiddenPipelines.menuWithActiveHidden.includes('sorted-atoms'),
+    JSON.stringify(hiddenPipelines.menuWithActiveHidden));
+  H.check('showAllRenderPipelines lists all seven in the dropdown after rebuild',
+    hiddenPipelines.menuShowAll.join(',') === 'depthpeel,wboit,forward,raytrace,pathtrace,split-atoms,sorted-atoms',
+    JSON.stringify(hiddenPipelines.menuShowAll));
+  H.check('dropdown returns to the five visible pipelines once a visible one is active',
+    hiddenPipelines.menuRestored.join(',') === 'depthpeel,wboit,forward,raytrace,pathtrace',
+    JSON.stringify(hiddenPipelines.menuRestored));
 
   // --- Depth-peel "Peel layers" slider follows the dropdown ----------------------
   const slider = await page.evaluate(() => {
@@ -95,37 +141,58 @@ const H = require('../harness');
       && rtSliders.shownUnderRaytrace && rtSliders.hiddenAgain,
     JSON.stringify(rtSliders));
 
-  // --- Path-tracing controls: shared tracer block + PT-only denoiser ---------------
-  // Light softness/DoF/ground live in the SHARED tracer block (both tracers);
-  // only the Denoiser stays pathtrace-only.
+  // --- Path-tracing controls: shared tracer block + Advanced section ----------------
+  // Light softness/DoF/ground live directly in the SHARED tracer block (both
+  // tracers); the tiled/preview/denoiser toggles live in a collapsible
+  // "Advanced" section inside that block (collapsed by default). Only the
+  // Denoiser ROW stays pathtrace-only (row-level display, not a separate block).
   const ptControls = await page.evaluate(() => {
     const rtBlock = document.getElementById('rtResolutionScale')?.parentElement?.parentElement;
-    const ptBlock = document.getElementById('ptDenoiseToggle')?.parentElement?.parentElement;
+    const advanced = document.getElementById('ptDenoiseToggle')?.closest('details.eos-collapsible');
+    const denoiseRow = document.getElementById('ptDenoiseToggle')?.closest('.control-row');
     const softnessInRtBlock = document.getElementById('ptLightSoftness')?.parentElement?.parentElement === rtBlock;
     const dofInRtBlock = document.getElementById('rtDofAperture')?.parentElement?.parentElement === rtBlock
-      && document.getElementById('rtDofFocus')?.parentElement?.parentElement === rtBlock
-      && document.getElementById('rtGroundToggle')?.parentElement?.parentElement === rtBlock;
+      && document.getElementById('rtDofFocus')?.parentElement?.parentElement === rtBlock;
+    // Advanced section: exists inside the shared tracer block, collapsed by default.
+    const advancedExists = !!advanced && rtBlock?.contains(advanced) === true;
+    const advancedCollapsedByDefault = advanced?.open === false;
+    const tiledInAdvanced = advanced?.contains(document.getElementById('rtTiledToggle')) === true;
+    const previewInAdvanced = advanced?.contains(document.getElementById('rtPreviewToggle')) === true;
+    const denoiseInAdvanced = advanced?.contains(document.getElementById('ptDenoiseToggle')) === true;
+    const tiledDefaultChecked = /** @type {HTMLInputElement} */ (
+      document.getElementById('rtTiledToggle'))?.checked === true;
+    const previewDefaultChecked = /** @type {HTMLInputElement} */ (
+      document.getElementById('rtPreviewToggle'))?.checked === true;
+    // Expand the section so computed-visibility checks below see the rows.
+    if (advanced) advanced.open = true;
     const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
     select.value = 'pathtrace';
     select.dispatchEvent(new Event('change'));
     const rtSharedUnderPathtrace = getComputedStyle(rtBlock).display !== 'none';
-    const ptShownUnderPathtrace = getComputedStyle(ptBlock).display !== 'none';
+    const denoiseShownUnderPathtrace = getComputedStyle(denoiseRow).display !== 'none';
     select.value = 'raytrace';
     select.dispatchEvent(new Event('change'));
-    const ptHiddenUnderRaytrace = getComputedStyle(ptBlock).display === 'none';
+    const denoiseHiddenUnderRaytrace = getComputedStyle(denoiseRow).display === 'none';
     const sharedShownUnderRaytrace = getComputedStyle(rtBlock).display !== 'none';
     select.value = 'forward';
     select.dispatchEvent(new Event('change'));
-    const allHiddenUnderForward = getComputedStyle(rtBlock).display === 'none'
-      && getComputedStyle(ptBlock).display === 'none';
-    return { softnessInRtBlock, dofInRtBlock, rtSharedUnderPathtrace, ptShownUnderPathtrace,
-      ptHiddenUnderRaytrace, sharedShownUnderRaytrace, allHiddenUnderForward };
+    const allHiddenUnderForward = getComputedStyle(rtBlock).display === 'none';
+    return { softnessInRtBlock, dofInRtBlock, advancedExists, advancedCollapsedByDefault,
+      tiledInAdvanced, previewInAdvanced, denoiseInAdvanced, tiledDefaultChecked, previewDefaultChecked,
+      rtSharedUnderPathtrace, denoiseShownUnderPathtrace,
+      denoiseHiddenUnderRaytrace, sharedShownUnderRaytrace, allHiddenUnderForward };
   });
-  H.check('shared tracer controls (softness/DoF/ground) + PT-only denoiser follow the dropdown',
+  H.check('shared tracer controls (softness/DoF) show for both tracers; PT-only denoiser ROW follows the dropdown',
     ptControls.softnessInRtBlock && ptControls.dofInRtBlock && ptControls.rtSharedUnderPathtrace
-      && ptControls.ptShownUnderPathtrace && ptControls.ptHiddenUnderRaytrace
+      && ptControls.denoiseShownUnderPathtrace && ptControls.denoiseHiddenUnderRaytrace
       && ptControls.sharedShownUnderRaytrace && ptControls.allHiddenUnderForward,
     JSON.stringify(ptControls));
+  H.check('Advanced section exists in the shared tracer block, collapsed by default, holds tiled/preview/denoiser',
+    ptControls.advancedExists && ptControls.advancedCollapsedByDefault
+      && ptControls.tiledInAdvanced && ptControls.previewInAdvanced && ptControls.denoiseInAdvanced,
+    JSON.stringify(ptControls));
+  H.check('Tiled-rendering toggle defaults ON', ptControls.tiledDefaultChecked, JSON.stringify(ptControls));
+  H.check('Interactive raster preview toggle defaults ON', ptControls.previewDefaultChecked, JSON.stringify(ptControls));
 
   // --- Dependency tree: Render Style (and cel outlines) only for raster pipelines --
   const styleTree = await page.evaluate(async () => {
@@ -158,6 +225,41 @@ const H = require('../harness');
       && styleTree.outlineBackUnderForward && styleTree.pipelineFirst,
     JSON.stringify(styleTree));
 
+  // --- Ground block: always visible (all pipelines); reflect row tracer-gated ------
+  const ground = await page.evaluate(() => {
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
+    const groundToggle = /** @type {HTMLInputElement} */ (document.getElementById('rtGroundToggle'));
+    const groundBlock = groundToggle?.closest('.control-row')?.parentElement;
+    const reflectRow = document.getElementById('rtGroundReflect')?.closest('.control-row');
+    // Enable the ground so its options (incl. the reflect row) are laid out.
+    groundToggle.checked = true; groundToggle.dispatchEvent(new Event('change'));
+    const blockDisp = () => getComputedStyle(groundBlock).display;
+    const reflectDisp = () => getComputedStyle(reflectRow).display;
+    const set = (v) => { select.value = v; select.dispatchEvent(new Event('change')); };
+    set('forward');
+    const blockUnderForward = blockDisp() !== 'none';
+    const reflectHiddenForward = reflectDisp() === 'none';
+    set('raytrace');
+    const blockUnderRaytrace = blockDisp() !== 'none';
+    const reflectShownRaytrace = reflectDisp() !== 'none';
+    set('pathtrace');
+    const reflectShownPathtrace = reflectDisp() !== 'none';
+    set('depthpeel');
+    const blockUnderDepthpeel = blockDisp() !== 'none';
+    const reflectHiddenDepthpeel = reflectDisp() === 'none';
+    // Restore the default off-state / pipeline for later checks.
+    groundToggle.checked = false; groundToggle.dispatchEvent(new Event('change'));
+    return { blockUnderForward, blockUnderRaytrace, blockUnderDepthpeel,
+      reflectHiddenForward, reflectShownRaytrace, reflectShownPathtrace, reflectHiddenDepthpeel };
+  });
+  H.check('ground block is visible under forward, raytrace AND depthpeel',
+    ground.blockUnderForward && ground.blockUnderRaytrace && ground.blockUnderDepthpeel,
+    JSON.stringify(ground));
+  H.check('ground reflect row hidden under raster (forward/depthpeel), shown under both tracers',
+    ground.reflectHiddenForward && ground.reflectHiddenDepthpeel
+      && ground.reflectShownRaytrace && ground.reflectShownPathtrace,
+    JSON.stringify(ground));
+
   // --- "Reset rendering settings" button ------------------------------------------
   const reset = await page.evaluate(async () => {
     const { general } = await import('./state/store.js');
@@ -168,17 +270,23 @@ const H = require('../harness');
     general.rtReflectivity = 0.9;
     general.rtAmbient = 0.9;
     general.rtGroundPlane = true;
+    general.rtTiledRender = false;
+    general.rtRasterPreview = false;
     general.depthPeelLayers = 9;
     general.celHullWidth = 0.1;
     document.getElementById('resetRenderingBtn').click();
     await new Promise((r) => setTimeout(r, 300));
     const styleRow = document.getElementById('renderStyleMenu')?.closest('.control-row');
+    const previewToggle = /** @type {HTMLInputElement} */ (document.getElementById('rtPreviewToggle'));
     return {
       pipeline: general.renderPipeline,
       style: general.renderStyle,
       reflectivity: general.rtReflectivity,
       ambient: general.rtAmbient,
       ground: general.rtGroundPlane,
+      tiled: general.rtTiledRender,
+      preview: general.rtRasterPreview,
+      previewToggleChecked: previewToggle?.checked === true,
       peel: general.depthPeelLayers,
       hull: general.celHullWidth,
       menuValue: pipeSelect.value,
@@ -188,7 +296,9 @@ const H = require('../harness');
   H.check('Reset rendering settings restores every default (pipeline back to depthpeel)',
     reset.pipeline === 'depthpeel' && reset.style === 'metallic'
       && Math.abs(reset.reflectivity - 0.15) < 1e-9 && Math.abs(reset.ambient - 0.3) < 1e-9
-      && reset.ground === false && reset.peel === 5 && Math.abs(reset.hull - 0.025) < 1e-9
+      && reset.ground === false && reset.tiled === true && reset.peel === 5
+      && reset.preview === true && reset.previewToggleChecked
+      && Math.abs(reset.hull - 0.025) < 1e-9
       && reset.menuValue === 'depthpeel' && reset.styleRowVisible,
     JSON.stringify(reset));
   H.check('pipeline dropdown lives in the Visual window', await page.evaluate(() =>
@@ -295,15 +405,22 @@ const H = require('../harness');
       rtReflectivity: state.style.rtReflectivity,
       ptDenoise: state.style.ptDenoise,
       ptLightSoftness: state.style.ptLightSoftness,
+      rtTiledRender: state.style.rtTiledRender,
+      rtRasterPreview: state.style.rtRasterPreview,
+      // rtPreviewRestDelay is a hidden config-only setting and is no longer persisted.
+      hasPreviewRestDelay: 'rtPreviewRestDelay' in state.style,
     };
   });
-  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.9)',
-    persisted.version === '2.9' && persisted.renderPipeline === 'forward'
+  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.13), not the hidden rest delay',
+    persisted.version === '2.15' && persisted.renderPipeline === 'forward'
       && typeof persisted.depthPeelLayers === 'number'
       && typeof persisted.rtResolutionScale === 'number'
       && typeof persisted.rtReflectivity === 'number'
       && typeof persisted.ptDenoise === 'boolean'
-      && typeof persisted.ptLightSoftness === 'number', JSON.stringify(persisted));
+      && typeof persisted.ptLightSoftness === 'number'
+      && typeof persisted.rtTiledRender === 'boolean'
+      && typeof persisted.rtRasterPreview === 'boolean'
+      && persisted.hasPreviewRestDelay === false, JSON.stringify(persisted));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);

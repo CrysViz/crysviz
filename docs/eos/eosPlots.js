@@ -1,7 +1,7 @@
 // Plotly rendering for the EOS panel's E-V and P-V charts. Plotly is heavy
 // (~1MB) so it is only imported the first time a plot is actually drawn.
-// Layout here assumes the charts are stacked vertically in a narrow pane
-// (see docs/ui/EOSSplitView.js), not side by side.
+// Layout here assumes the charts are stacked vertically in a narrow column
+// (the EOS window's .cv-plot-stack, see docs/ui/EOSPanel.js), not side by side.
 
 import { birchMurnaghanPressure, birchMurnaghanEnergy } from './eosMath.js';
 import { loadPlotly } from '../utils/plotlyLoader.js';

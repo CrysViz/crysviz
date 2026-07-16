@@ -34,6 +34,17 @@ async function launchApp() {
   fs.mkdirSync(ARTIFACTS, { recursive: true });
   const browser = await firefox.launch({ headless: false }); // headless FF has no WebGL
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  // Pre-dismiss the ray/path-tracing performance-warning modal: shotCanvas is a
+  // page screenshot (DOM overlays included), so the modal backdrop would dim
+  // every capture taken after a dropdown switch into a tracer. Tests that TEST
+  // the modal (tracerwarning) clear this pref explicitly at their start.
+  await page.addInitScript(() => {
+    try {
+      const prefs = JSON.parse(localStorage.getItem('panelPrefs') || '{}');
+      prefs.hideRaytraceWarning = true;
+      localStorage.setItem('panelPrefs', JSON.stringify(prefs));
+    } catch { /* storage unavailable */ }
+  });
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`.slice(0, 300)));
   page.on('console', (m) => {

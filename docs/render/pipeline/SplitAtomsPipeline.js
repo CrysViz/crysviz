@@ -31,9 +31,13 @@ import { ForwardPipeline } from './ForwardPipeline.js';
 export class SplitAtomsPipeline extends ForwardPipeline {
   static id = 'split-atoms';
   static label = 'Split transparent atoms';
+  // Superseded by wboit/depthpeel; kept registered for regression tests +
+  // legacy sessions. Hidden from the GUI dropdown (unhide via general.showAllRenderPipelines).
+  static hidden = true;
 
   id = SplitAtomsPipeline.id;
   label = SplitAtomsPipeline.label;
+  hidden = SplitAtomsPipeline.hidden;
 
   applyTransparency(material, spec = {}) {
     if (spec.kind !== 'atoms' || !spec.mesh) {

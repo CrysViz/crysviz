@@ -132,6 +132,7 @@ function changedPixelCount(fileA, fileB) {
   await page.evaluate(async () => {
     const { general } = await import('./state/store.js');
     general.rtResolutionScale = 0.25; // software-GL speed
+    general.rtRasterPreview = false; // trace every frame (no depth-peel preview stalling RAF assertions)
   });
   await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
   await page.waitForTimeout(3500);
@@ -365,15 +366,25 @@ function changedPixelCount(fileA, fileB) {
   const barState = await page.evaluate(() => {
     const bar = document.getElementById('tracerProgress');
     const fill = document.getElementById('tracerProgressFill');
+    // The strip is parented to <body> with position:fixed (so it can stack above
+    // the export modal), geometry mirrored onto #view's bounding rect.
+    const view = document.getElementById('view');
+    const vr = view?.getBoundingClientRect();
+    const alignedToView = !!bar && !!vr
+      && Math.abs(parseFloat(bar.style.left) - vr.left) < 2
+      && Math.abs(parseFloat(bar.style.width) - vr.width) < 2;
     return {
       exists: !!bar && !!fill,
-      inView: !!bar?.closest('#view'),
+      inBody: bar?.parentElement === document.body,
+      fixed: bar ? getComputedStyle(bar).position === 'fixed' : false,
+      alignedToView,
       visible: bar ? getComputedStyle(bar).opacity !== '0' : false,
       fillWidth: fill ? parseFloat(fill.style.width) : 0,
     };
   });
   H.check('accumulation progress bar shows while the tracer refines',
-    barState.exists && barState.inView && barState.visible && barState.fillWidth > 5,
+    barState.exists && barState.inBody && barState.fixed && barState.alignedToView
+      && barState.visible && barState.fillWidth > 5,
     JSON.stringify(barState));
 
   // Force convergence: the bar must fill and fade out.
@@ -601,8 +612,8 @@ function changedPixelCount(fileA, fileB) {
       atomUserMaterials: state.colors.atomUserMaterials,
     };
   });
-  H.check('captureState persists atomMaterials + per-atom overrides (v2.9)',
-    persisted.version === '2.9' && persisted.atomMaterials?.Cu?.type === 'emissive'
+  H.check('captureState persists atomMaterials + per-atom overrides (v2.15)',
+    persisted.version === '2.15' && persisted.atomMaterials?.Cu?.type === 'emissive'
       && persisted.atomMaterials?.Ba?.type === 'metal'
       && Object.values(persisted.atomUserMaterials ?? {}).some((m) => m?.type === 'glass'),
     JSON.stringify(persisted));

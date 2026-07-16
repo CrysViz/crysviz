@@ -1,0 +1,182 @@
+// Tracer PNG-export quality-of-life fixes (branch rickard_more_rendering_improvements):
+//   1. Paced tiled export (general.rtTiledRender ON): progress is MONOTONICALLY
+//      non-decreasing and reaches the convergence target; a PNG is produced.
+//      This is the regression guard for the old "Rendering… 4/8/4…" oscillation
+//      (dual render drivers — the animate loop fighting the export's paced
+//      renders and abandoning the in-flight tiled round every iteration).
+//   2. Untiled export (rtTiledRender OFF): completes too, also monotonic.
+//   3. Instant button feedback: the Download button text changes away from
+//      'Download' promptly after the click (before any long render).
+//   4. Modal is locked while rendering: a backdrop click does NOT hide it, the
+//      Cancel button is relabelled "Abort", and clicking Abort cleanly cancels
+//      (button back to 'Download', modal still open, no alert, no page errors)
+//      with the live view still rendering afterwards.
+'use strict';
+const H = require('../harness');
+
+(async () => {
+  const { browser, page, errors } = await H.launchApp();
+  H.check('webgl available', await H.webglAvailable(page));
+  await H.loadDefaultStructure(page); // YBCO
+
+  // Keep interactive frames cheap; activate the ray tracer and wait for it to
+  // fully initialize (blue noise loads asynchronously).
+  await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    general.rtResolutionScale = 0.3;
+    general.rtRasterPreview = false; // export traces regardless, but keep it simple
+  });
+  await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
+  {
+    const deadline = Date.now() + 120000;
+    for (;;) {
+      const ok = await page.evaluate(async () => {
+        const { app } = await import('./state/store.js');
+        const p = app.pipeline;
+        return !!p?._blueNoise?.image && p?._initialized === true;
+      });
+      if (ok || Date.now() > deadline) break;
+      await page.waitForTimeout(1000);
+    }
+  }
+
+  // ============ (1) Paced TILED export: monotonic progress, reaches target =====
+  const tiled = await page.evaluate(async () => {
+    const { captureSceneToPng } = await import('./render/index.js');
+    const { app, general } = await import('./state/store.js');
+    general.rtTiledRender = true;
+    const p = app.pipeline;
+    // Force a multi-tile grid so the tiled round path is actually exercised at
+    // these small export sizes (production floor is 64px / 200k-px budget).
+    p._tilePixelBudget = 64 * 64;
+    p._minTileSizePx = 16;
+    const vals = [];
+    let target = 0;
+    const blob = await captureSceneToPng({
+      width: 200, height: 150, margin: 0, transparent: false,
+      onProgress: ({ current, target: t }) => { vals.push(current); target = t; },
+    });
+    let mono = true;
+    for (let i = 1; i < vals.length; i++) if (vals[i] < vals[i - 1]) mono = false;
+    const maxV = vals.reduce((a, b) => Math.max(a, b), 0);
+    return { type: blob.type, target, mono, maxV, ticks: vals.length,
+      holdCleared: app.offscreenRenderHold === false, paced: p._pacedExternally };
+  });
+  H.check('tiled export: progress is monotonically non-decreasing (no 4/8/4 oscillation)',
+    tiled.mono, JSON.stringify(tiled));
+  H.check('tiled export: reaches the 64-sample target and produces an image/png',
+    tiled.target === 64 && tiled.maxV >= 64 && tiled.type === 'image/png', JSON.stringify(tiled));
+  H.check('tiled export: hold + paced mode cleared afterwards',
+    tiled.holdCleared === true && tiled.paced === false, JSON.stringify(tiled));
+
+  // ============ (2) Paced UNTILED export: also completes, also monotonic =======
+  const untiled = await page.evaluate(async () => {
+    const { captureSceneToPng } = await import('./render/index.js');
+    const { app, general } = await import('./state/store.js');
+    general.rtTiledRender = false;
+    const p = app.pipeline;
+    const vals = [];
+    let target = 0;
+    const blob = await captureSceneToPng({
+      width: 200, height: 150, margin: 0, transparent: false,
+      onProgress: ({ current, target: t }) => { vals.push(current); target = t; },
+    });
+    let mono = true;
+    for (let i = 1; i < vals.length; i++) if (vals[i] < vals[i - 1]) mono = false;
+    const maxV = vals.reduce((a, b) => Math.max(a, b), 0);
+    return { type: blob.type, target, mono, maxV, roundActive: p._roundActive };
+  });
+  H.check('untiled export: completes to target and produces an image/png (monotonic)',
+    untiled.type === 'image/png' && untiled.target === 64 && untiled.maxV >= 64 && untiled.mono,
+    JSON.stringify(untiled));
+
+  // ============ (3)+(4) Instant feedback + modal lock + Abort ==================
+  // Make the export effectively unbounded (never converges) so it is still
+  // running while we probe the button/modal state and then abort it.
+  await page.evaluate(async () => {
+    const { app, general } = await import('./state/store.js');
+    general.rtTiledRender = true;
+    app.pipeline._cfg.targetSamples = 100000; // won't converge before we abort
+  });
+
+  // Open the modal, set a size, click Download through the real UI.
+  await page.evaluate(() => {
+    document.getElementById('savePngButton').click();
+    document.getElementById('pngWidth').value = '400';
+    document.getElementById('pngHeight').value = '300';
+  });
+  await page.evaluate(() => document.getElementById('pngDownloadBtn').click());
+
+  // (3) The button label changes away from 'Download' promptly after the click.
+  let changedFast = false;
+  {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const txt = await page.evaluate(() => document.getElementById('pngDownloadBtn').textContent);
+      if (txt !== 'Download') { changedFast = true; break; }
+      await page.waitForTimeout(20);
+    }
+  }
+  H.check('Download button text changes away from "Download" promptly after click', changedFast);
+
+  // (4a) While rendering: a backdrop click must NOT hide the modal, and Cancel
+  //      is relabelled "Abort".
+  const locked = await page.evaluate(() => {
+    const modal = document.getElementById('pngExportModal');
+    modal.dispatchEvent(new MouseEvent('click', { bubbles: true })); // target === modal (backdrop)
+    // Escape too
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return {
+      hidden: modal.hidden,
+      cancelTxt: document.getElementById('pngCancelBtn').textContent,
+    };
+  });
+  H.check('backdrop click / Escape do NOT close the modal while rendering', locked.hidden === false,
+    JSON.stringify(locked));
+  H.check('the abort control is present (Cancel relabelled "Abort")', locked.cancelTxt === 'Abort',
+    JSON.stringify(locked));
+
+  // (4b) Click Abort → export cancels: button back to 'Download', modal stays
+  //      open, Cancel label restored. Then restore the real target.
+  await page.evaluate(() => document.getElementById('pngCancelBtn').click());
+  let aborted = false, modalOpen = false, cancelRestored = false;
+  {
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      const st = await page.evaluate(() => ({
+        txt: document.getElementById('pngDownloadBtn').textContent,
+        hidden: document.getElementById('pngExportModal').hidden,
+        cancelTxt: document.getElementById('pngCancelBtn').textContent,
+      }));
+      if (st.txt === 'Download') {
+        aborted = true; modalOpen = !st.hidden; cancelRestored = st.cancelTxt === 'Cancel'; break;
+      }
+      await page.waitForTimeout(30);
+    }
+  }
+  H.check('Abort returns the button to "Download" and restores the Cancel label',
+    aborted && cancelRestored, JSON.stringify({ aborted, cancelRestored }));
+  H.check('the modal stays OPEN after Abort (not dismissed)', modalOpen);
+
+  // (4c) The live view still renders after an abort: restore the target, then a
+  //      manual trace accumulates and the hold flag is clear.
+  const live = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const p = app.pipeline;
+    p._cfg.targetSamples = 64; // restore
+    const ctx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
+    p.resetAccumulation();
+    const before = p._uniforms.uSampleCounter.value;
+    p.render(ctx);
+    const after = p._uniforms.uSampleCounter.value;
+    return { before, after, hold: app.offscreenRenderHold, paced: p._pacedExternally };
+  });
+  H.check('live view renders after Abort (accumulates; hold + paced cleared)',
+    live.after > live.before && live.hold === false && live.paced === false, JSON.stringify(live));
+
+  // Close the modal cleanly (not busy now → Cancel closes it).
+  await page.evaluate(() => document.getElementById('pngCancelBtn').click());
+
+  H.check('no page errors', errors.length === 0, errors.join(' | '));
+  await H.finish(browser);
+})().catch(H.crash);

@@ -38,6 +38,58 @@
   margin: 0 0 8px 0;
 }
 
+/* ---- right-docked: the window is a TAB in the wide right dock ----
+   Its element lives inside #splitPaneBody (rightDock.css). The tab strip is
+   the chrome: the title bar is hidden, the body is always shown (per-window
+   collapse doesn't apply here — the whole dock collapses instead), and only
+   the front window is visible, filling the pane. */
+.cv-panel.cv-right-docked {
+  display: none;
+  margin: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.cv-panel.cv-right-docked.cv-front {
+  display: flex;
+}
+
+.cv-panel.cv-right-docked > .cv-panel-titlebar {
+  display: none;
+}
+
+/* The pane provides the surface; strip the body's own window box. The
+   backdrop-filter:none is load-bearing: a backdrop-filter creates a
+   containing block for fixed-position descendants, which would trap the
+   ⛶-expanded .split-item inside the body. */
+.cv-panel.cv-right-docked > .cv-panel-body,
+.cv-panel.cv-right-docked.cv-collapsed > .cv-panel-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 10px;
+  padding: 10px;
+  overflow-y: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+/* Host of a ⛶-expanded (fullscreen) .split-item in ANY window state: lift
+   the body's backdrop-filter (fixed-position containing block, see above)
+   and raise a floating host above the fullscreen overlay (z-index 1350) —
+   !important because raise() sets an inline z-index. */
+.cv-panel.cv-has-expanded-item > .cv-panel-body {
+  backdrop-filter: none;
+}
+
+.cv-panel.cv-floating.cv-has-expanded-item {
+  z-index: 1400 !important;
+}
+
 /* ---- floating ---- */
 .cv-panel.cv-floating {
   position: fixed;
@@ -123,9 +175,8 @@
 }
 
 .cv-panel-fold,
-.cv-panel-home,
+.cv-panel-menu-btn,
 .cv-panel-barhide,
-.cv-panel-dock,
 .cv-panel-close {
   background: none;
   border: none;
@@ -138,9 +189,8 @@
 }
 
 .cv-panel-fold:hover,
-.cv-panel-home:hover,
+.cv-panel-menu-btn:hover,
 .cv-panel-barhide:hover,
-.cv-panel-dock:hover,
 .cv-panel-close:hover {
   background: var(--hover-color);
 }
@@ -161,9 +211,65 @@
   white-space: nowrap;
 }
 
-.cv-panel-dock,
+.cv-panel-menu-btn,
 .cv-panel-close {
   font-size: calc(14px * var(--cv-font-scale, 1));
+}
+
+/* ---- ≡ window menu (dropdown, portaled to <body> so #ui's scroll container
+   can't clip it — see PanelWindow._openMenu) ---- */
+.cv-panel-menu {
+  position: fixed;
+  z-index: 3200; /* above floating windows and the fullscreen-item overlay */
+  min-width: 140px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--popup-bg, rgba(30, 30, 30, 0.95));
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+/* Greyish section header ("Position", ...). */
+.cv-panel-menu-header {
+  padding: 4px 8px 2px;
+  font-size: calc(10.5px * var(--cv-font-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-fg, #9aa0a6);
+}
+
+.cv-panel-menu-item {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  text-align: left;
+  padding: 4px 8px 4px 22px;
+  position: relative;
+  font-size: calc(12.5px * var(--cv-font-scale, 1));
+  color: var(--panel-fg);
+  cursor: pointer;
+}
+
+.cv-panel-menu-item:hover {
+  background: var(--hover-color);
+}
+
+/* Thin separator before an untitled section (e.g. the Close item). */
+.cv-panel-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--panel-border, rgba(255, 255, 255, 0.15));
+}
+
+/* Checkmark on the item matching the window's current state. */
+.cv-panel-menu-item.checked::before {
+  content: "✓";
+  position: absolute;
+  left: 7px;
+  color: var(--highlight-color, #00bcd4);
 }
 
 /* The generic .info-button rule sizes it for a standalone corner badge

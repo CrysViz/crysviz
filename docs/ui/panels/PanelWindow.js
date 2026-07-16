@@ -1,8 +1,18 @@
 // Unified panel/window component. Every UI panel is one of these: a small
-// title bar (drag grip, collapse/expand triangle, title, dock/undock toggle,
-// optional close button) above a content body. A panel is either "docked"
-// (stacked inside #dock in the side panel) or "floating" (a fixed-position
-// window over the canvas).
+// title bar (drag grip, collapse/expand triangle, title, ≡ window menu,
+// optional close button) above a content body. A panel is either docked in
+// the LEFT dock (stacked inside #dock in the side panel), docked in the
+// RIGHT dock (a tab in the wide right pane — ui/panels/RightDock.js; the
+// title bar is hidden there, the tab is the chrome), or "floating" (a
+// fixed-position window over the canvas). dock ∈ {'left','right',false}.
+//
+// The ≡ button opens a dropdown menu of window options. Its first section is
+// always "Position" (Float / Left dock / Right dock / Default — replacing the
+// old ⌂ and ↦/⇤ title-bar buttons); a panel definition can append its own
+// sections via def.menuSections — an array (or a function of the panel
+// returning an array, for dynamic state) of
+//   { title: string, items: [{ label, checked?, onSelect() }] }
+// e.g. a future color-bar window offering Vertical/Horizontal orientation.
 //
 // This class owns the per-window DOM and behavior: collapse/expand (including
 // the expand-upward rule near the bottom viewport edge), floating drag with
@@ -10,7 +20,8 @@
 // dock order, drag-to-reorder, persistence) live in PanelManager.js and are
 // reached through the `hooks` object passed to the constructor:
 //   beforeExpand(panel) -> boolean   lazy content build; false vetoes expand
-//   onToggleDock(panel)              dock/undock button pressed
+//   positionPanel(panel, mode)       ≡ menu Position action; mode is one of
+//                                    'float' | 'left' | 'right' | 'default'
 //   onClose(panel)                   close button pressed (closable panels)
 //   onLayoutChange()                 any persistable state changed
 //   beginDockReorder(panel, event)   drag started on a docked panel's title bar
@@ -18,6 +29,14 @@
 //                                    drag-into-dock setting is enabled
 //   dockAtPointer(panel, event)      commit a drag-into-dock; the manager
 //                                    continues the gesture as a reorder drag
+//   wantsRightDockDrop(event) -> boolean  floating drag RELEASED over the
+//                                    right dock's drop zone (checked on
+//                                    pointerup only — the right edge is a
+//                                    normal parking spot for floating
+//                                    windows, so no live commit)
+//   rightDockAtPointer(panel, event) commit a drop into the right dock
+//   updateRightDockHint(event|null)  show/hide the right-dock drop highlight
+//                                    while a floating drag is in progress
 
 import { showInfoPanel } from '../InfoPanel.js';
 
@@ -36,7 +55,15 @@ export class PanelWindow {
     this.bodyId = `cvPanelBody-${def.id}`;
     this.available = true;
     this.collapsed = true;
-    this.docked = true;
+    /** Where the window lives: 'left' (#dock), 'right' (the wide right dock,
+     *  shown as a tab), or false (floating). The legacy boolean `docked`
+     *  getter below means "not floating" and covers both docks.
+     *  @type {'left'|'right'|false} */
+    this.dock = 'left';
+    // Registered but detached from the DOM (closeMode:'hide' windows, e.g.
+    // EOS). PanelManager owns attach/detach; `dock` keeps the remembered
+    // location for reopening.
+    this.closed = false;
     this.barCollapsed = false; // title bar shrunk to a thin strip
     // Floating window displaced to the dock's right edge so the visible dock
     // doesn't cover it; cleared when the user repositions the window. The
@@ -102,23 +129,19 @@ export class PanelWindow {
       infoBtn.addEventListener('click', () => showInfoPanel(def.infoMd));
     }
 
-    const homeBtn = document.createElement('button');
-    homeBtn.type = 'button';
-    homeBtn.className = 'cv-panel-home';
-    homeBtn.title = 'Restore default position';
-    homeBtn.textContent = '⌂';
+    // ≡ window menu (Position section + any def.menuSections) — replaces the
+    // old ⌂ restore-default and ↦/⇤ dock-toggle buttons.
+    const menuBtn = document.createElement('button');
+    menuBtn.type = 'button';
+    menuBtn.className = 'cv-panel-menu-btn';
+    menuBtn.title = 'Window options';
+    menuBtn.textContent = '≡';
 
     const barBtn = document.createElement('button');
     barBtn.type = 'button';
     barBtn.className = 'cv-panel-barhide';
     barBtn.title = 'Hide title bar (double-click the strip to restore)';
     barBtn.textContent = '―';
-
-    const dockBtn = document.createElement('button');
-    dockBtn.type = 'button';
-    dockBtn.className = 'cv-panel-dock';
-    dockBtn.title = 'Undock';
-    dockBtn.textContent = '↦';
 
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
@@ -131,9 +154,8 @@ export class PanelWindow {
     bar.appendChild(fold);
     bar.appendChild(title);
     if (infoBtn) bar.appendChild(infoBtn);
-    bar.appendChild(homeBtn);
+    bar.appendChild(menuBtn);
     bar.appendChild(barBtn);
-    bar.appendChild(dockBtn);
     bar.appendChild(closeBtn);
 
     // Round compact-mode icon button (hidden until .cv-compact via CSS). Lives
@@ -164,18 +186,18 @@ export class PanelWindow {
     this.titlebar = bar;
     this.titleEl = title;
     this.foldBtn = fold;
-    this.dockBtn = dockBtn;
     this.body = body;
+    this._menuEl = null;      // the open ≡ dropdown, if any (portaled to body)
+    this._menuCleanup = null; // outside-click/Escape listeners teardown
 
     fold.addEventListener('click', () => this.toggleCollapsed());
-    homeBtn.addEventListener('click', () => this.hooks.onResetPanel(this));
+    menuBtn.addEventListener('click', () => this._toggleMenu(menuBtn));
     barBtn.addEventListener('click', () => {
       // Hiding the bar of a collapsed window would leave only the thin
       // strip — open the body along with it.
       if (this.collapsed) this.expand();
       this.collapseBar();
     });
-    dockBtn.addEventListener('click', () => this.hooks.onToggleDock(this));
     closeBtn.addEventListener('click', () => this.hooks.onClose(this));
 
     bar.addEventListener('pointerdown', (e) => this._onTitlebarPointerDown(e));
@@ -202,6 +224,12 @@ export class PanelWindow {
     this.titleEl.innerHTML = html;
   }
 
+  /** Legacy boolean: in either dock (i.e. not floating). Most cross-panel
+   *  logic (float placement, compact mode) only cares about this. */
+  get docked() {
+    return this.dock !== false;
+  }
+
   isExpanded() {
     return !this.collapsed;
   }
@@ -210,7 +238,14 @@ export class PanelWindow {
     return this.docked;
   }
 
+  isRightDocked() {
+    return this.dock === 'right';
+  }
+
   toggleCollapsed() {
+    // Right-docked windows have no individual collapse — the whole right dock
+    // collapses to edge pull-tabs instead (RightDock.js).
+    if (this.dock === 'right') return;
     if (this.collapsed) this.expand();
     else this.collapse();
   }
@@ -286,32 +321,150 @@ export class PanelWindow {
   }
 
   remove() {
+    this._closeMenu();
     this._sizeObserver.disconnect();
     this.el.remove();
+  }
+
+  // ---- ≡ window menu -------------------------------------------------------
+
+  /** The menu's sections: the built-in Position section first, then whatever
+   *  the panel definition contributes via def.menuSections (see the header
+   *  comment for the shape). */
+  _menuSections() {
+    const mode = this.dock === 'right' ? 'right' : (this.dock === 'left' ? 'left' : 'float');
+    const move = (m) => { this.hooks.positionPanel(this, m); };
+    /** @type {{title?: string, items: {label: string, checked?: boolean, onSelect: () => void}[]}[]} */
+    const sections = [{
+      title: 'Position',
+      items: [
+        { label: 'Float', checked: mode === 'float', onSelect: () => move('float') },
+        { label: 'Left dock', checked: mode === 'left', onSelect: () => move('left') },
+        { label: 'Right dock', checked: mode === 'right', onSelect: () => move('right') },
+        { label: 'Default', onSelect: () => move('default') },
+      ],
+    }];
+    const extra = typeof this.def.menuSections === 'function'
+      ? this.def.menuSections(this)
+      : this.def.menuSections;
+    if (Array.isArray(extra)) sections.push(...extra);
+    // Closable windows get a Close item at the end. While right-docked this
+    // is the ONLY close path (the title-bar ✕ is hidden with the bar, and
+    // the tab deliberately carries no ✕ — a stray click there permanently
+    // unregistered transient windows).
+    if (this.def.closable) {
+      sections.push({ items: [{ label: 'Close', onSelect: () => this.hooks.onClose(this) }] });
+    }
+    return sections;
+  }
+
+  _toggleMenu(anchorBtn) {
+    if (this._menuEl) this._closeMenu();
+    else this._openMenu(anchorBtn);
+  }
+
+  /** Open/toggle the ≡ menu anchored at an arbitrary element — used by the
+   *  right dock's tab ≡ button, where the title bar (and its own ≡) is
+   *  hidden. */
+  toggleMenuAt(anchorEl) {
+    this._toggleMenu(anchorEl);
+  }
+
+  /** Build and show the dropdown. Portaled to document.body (position:fixed):
+   *  a docked window's title bar lives inside #ui's scroll container, which
+   *  would clip an in-place dropdown. */
+  _openMenu(anchorBtn) {
+    const menu = document.createElement('div');
+    menu.className = 'cv-panel-menu';
+    for (const section of this._menuSections()) {
+      if (section.title) {
+        const header = document.createElement('div');
+        header.className = 'cv-panel-menu-header';
+        header.textContent = section.title;
+        menu.appendChild(header);
+      } else if (menu.childElementCount) {
+        // Untitled section after another: a thin separator line.
+        const sep = document.createElement('div');
+        sep.className = 'cv-panel-menu-sep';
+        menu.appendChild(sep);
+      }
+      for (const item of section.items || []) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cv-panel-menu-item' + (item.checked ? ' checked' : '');
+        btn.textContent = item.label;
+        btn.addEventListener('click', () => {
+          this._closeMenu();
+          item.onSelect();
+        });
+        menu.appendChild(btn);
+      }
+    }
+    document.body.appendChild(menu);
+    // Below the ≡ button, kept inside the viewport (measure after append).
+    const r = anchorBtn.getBoundingClientRect();
+    const mw = menu.offsetWidth;
+    const mh = menu.offsetHeight;
+    menu.style.left = `${Math.max(VIEWPORT_MARGIN, Math.min(r.left, window.innerWidth - mw - VIEWPORT_MARGIN))}px`;
+    menu.style.top = r.bottom + 4 + mh > window.innerHeight - VIEWPORT_MARGIN
+      ? `${Math.max(VIEWPORT_MARGIN, r.top - 4 - mh)}px`
+      : `${r.bottom + 4}px`;
+    this._menuEl = menu;
+
+    const onOutside = (ev) => {
+      const t = /** @type {Node} */ (ev.target);
+      if (menu.contains(t) || anchorBtn.contains(t)) return;
+      this._closeMenu();
+    };
+    const onKey = (ev) => { if (ev.key === 'Escape') this._closeMenu(); };
+    // Capture-phase so a click that some panel handler swallows still closes
+    // the menu; registered after this click event finished bubbling.
+    document.addEventListener('pointerdown', onOutside, true);
+    document.addEventListener('keydown', onKey, true);
+    this._menuCleanup = () => {
+      document.removeEventListener('pointerdown', onOutside, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }
+
+  _closeMenu() {
+    this._menuEl?.remove();
+    this._menuEl = null;
+    this._menuCleanup?.();
+    this._menuCleanup = null;
   }
 
   // ---- dock / float transitions (DOM moves are done by PanelManager) ------
 
   /** Called by the manager after the element has been appended to #dock. */
   markDocked() {
-    this.docked = true;
+    this.dock = 'left';
     this.dockShifted = false;
     this.el.classList.add('cv-docked');
-    this.el.classList.remove('cv-floating');
-    this.dockBtn.textContent = '↦';
-    this.dockBtn.title = 'Undock';
+    this.el.classList.remove('cv-floating', 'cv-right-docked', 'cv-front');
     // Clear floating geometry.
+    const s = this.el.style;
+    s.left = s.right = s.top = s.bottom = s.zIndex = '';
+  }
+
+  /** Called by RightDock after the element has been inserted into the right
+   *  pane's body. The title bar is hidden there (the tab is the chrome);
+   *  floatPos is deliberately NOT touched — it is where the window returns
+   *  when pulled back out. */
+  markRightDocked() {
+    this.dock = 'right';
+    this.dockShifted = false;
+    this.el.classList.add('cv-right-docked');
+    this.el.classList.remove('cv-docked', 'cv-floating', 'cv-drag-moving');
     const s = this.el.style;
     s.left = s.right = s.top = s.bottom = s.zIndex = '';
   }
 
   /** Called by the manager after the element has been moved to document.body. */
   markFloating(pos) {
-    this.docked = false;
+    this.dock = false;
     this.el.classList.add('cv-floating');
-    this.el.classList.remove('cv-docked');
-    this.dockBtn.textContent = '⇤';
-    this.dockBtn.title = 'Dock into side panel';
+    this.el.classList.remove('cv-docked', 'cv-right-docked', 'cv-front');
     this.applyFloatPosition(pos);
     this.raise();
   }
@@ -472,6 +625,9 @@ export class PanelWindow {
   // ---- title bar pointer handling ------------------------------------------
 
   _onTitlebarPointerDown(e) {
+    // The title bar is hidden while right-docked (the tab is the chrome);
+    // defensive in case a hidden bar still receives a press.
+    if (this.dock === 'right') return;
     const target = /** @type {HTMLElement} */ (e.target);
     if (target.closest('button')) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -492,7 +648,7 @@ export class PanelWindow {
       bar.removeEventListener('pointermove', onMove);
       bar.removeEventListener('pointerup', onUp);
       bar.removeEventListener('pointercancel', onUp);
-      if (this.docked) {
+      if (this.dock === 'left') {
         // Hand the whole gesture over to the manager's reorder logic.
         bar.releasePointerCapture(e.pointerId);
         this.hooks.beginDockReorder(this, ev);
@@ -538,6 +694,7 @@ export class PanelWindow {
       bar.removeEventListener('pointercancel', onUp);
       this.el.classList.remove('cv-drag-moving');
       this._moving = false;
+      this.hooks.updateRightDockHint?.(null);
     };
 
     const onMove = (mv) => {
@@ -550,6 +707,9 @@ export class PanelWindow {
         this.hooks.dockAtPointer(this, mv);
         return;
       }
+      // Right-dock drop is on-release only (the right edge is a normal
+      // parking spot); while hovering the zone, just show the highlight.
+      this.hooks.updateRightDockHint?.(mv);
       // Floating move, clamped so the title bar (or the collapsed handle,
       // which is a short centered strip) stays reachable: its top never goes
       // above the viewport, and at least 40px of it stays visible
@@ -566,8 +726,15 @@ export class PanelWindow {
       this.el.style.top = `${top}px`;
     };
 
-    const onUp = () => {
+    const onUp = (up) => {
       teardown();
+      // Released over the right dock's drop zone: dock there instead of
+      // parking. Only a real pointerup commits (a pointercancel must not).
+      if (up.type === 'pointerup'
+          && this.hooks.wantsRightDockDrop && this.hooks.wantsRightDockDrop(up)) {
+        this.hooks.rightDockAtPointer(this, up);
+        return;
+      }
       // A user-chosen position replaces any dock displacement, and becomes
       // the new inherent position, anchored to the nearest viewport edges.
       this.dockShifted = false;

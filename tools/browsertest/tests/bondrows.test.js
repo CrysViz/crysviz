@@ -5,6 +5,26 @@
 // the grouped (linked, default) behavior is covered by linkedgroups.test.js.
 'use strict';
 const H = require('../harness');
+const fs = require('fs');
+const { PNG } = require(`${__dirname}/../env/node_modules/pngjs`);
+
+// Count pixels whose summed RGB delta between two screenshots exceeds a
+// perceptual floor — used to prove a translucent bond actually renders
+// differently from an opaque one (the user-facing property behind per-bond
+// alpha). Copied from tracerfield.test.js.
+function changedPixelCount(fileA, fileB) {
+  const a = PNG.sync.read(fs.readFileSync(fileA));
+  const b = PNG.sync.read(fs.readFileSync(fileB));
+  let n = 0;
+  const total = Math.min(a.width * a.height, b.width * b.height);
+  for (let i = 0; i < total; i++) {
+    const o = i * 4;
+    const d = Math.abs(a.data[o] - b.data[o]) + Math.abs(a.data[o + 1] - b.data[o + 1])
+      + Math.abs(a.data[o + 2] - b.data[o + 2]);
+    if (d > 90) n++;
+  }
+  return n;
+}
 
 (async () => {
   const { browser, page, errors } = await H.launchApp();
@@ -161,6 +181,27 @@ const H = require('../harness');
       const o = i * 16;
       return Math.hypot(a[o], a[o + 1], a[o + 2]);
     };
+    // How is per-bond transparency actually being realized after the rebuilds?
+    // Two pipeline-correct realizations are accepted so this test survives a
+    // change of default pipeline:
+    //  - 'forward'      : whole-mesh forward blending (material.transparent=true)
+    //  - 'staged-split' : the staged pipelines (depthpeel/wboit, the current
+    //                     default) keep the main material OPAQUE (alphaPass 1,
+    //                     opaque instances) and draw the transparent instances
+    //                     in a pipeline-owned overlay child (alphaPass 2). The
+    //                     overlay shares the mesh geometry, so its per-instance
+    //                     instanceOpacity is the same 0.4 buffer.
+    const mesh = groups.bondsMesh;
+    const mat = mesh.material;
+    const overlay = mesh.userData.transparentOverlay;
+    const overlayAttrs = overlay?.geometry?.attributes;
+    let transparencyMode = 'none';
+    if (mat.transparent === true) {
+      transparencyMode = 'forward';
+    } else if (overlay && overlay.visible
+      && mat.userData.alphaPass === 1 && overlay.material.userData.alphaPass === 2) {
+      transparencyMode = 'staged-split';
+    }
     return {
       modelColor: rebuilt.color,
       userColor: rebuilt.userColor,
@@ -173,7 +214,12 @@ const H = require('../harness');
       otherRGB: rgbAt(otherBond.instanceIds[0]),
       xScale: xScaleAt(rebuilt.instanceIds[0]),
       otherXScale: xScaleAt(otherBond.instanceIds[0]),
-      materialTransparent: groups.bondsMesh.material.transparent,
+      materialTransparent: mat.transparent,
+      transparencyMode,
+      // The overlay (when present) must carry the styled bond's 0.4 alpha.
+      overlayOpacity: overlayAttrs
+        ? rebuilt.instanceIds.map((i) => overlayAttrs.instanceOpacity.getX(i))
+        : null,
     };
   });
   H.check('per-bond user color survives bond rebuilds on model and mesh (both halves red)',
@@ -184,17 +230,88 @@ const H = require('../harness');
   H.check('other bonds keep their mode color (only the recolored bond is red)',
     !(styled.otherRGB[0] === 1 && styled.otherRGB[1] === 0 && styled.otherRGB[2] === 0),
     JSON.stringify(styled.otherRGB));
-  H.check('per-bond alpha survives rebuilds (instanceOpacity 0.4, material transparent, others opaque)',
+  H.check('per-bond alpha survives rebuilds (instanceOpacity 0.4, transparency realized by the pipeline, others opaque)',
     styled.alpha === 0.4
       && styled.meshOpacity.every((o) => Math.abs(o - 0.4) < 1e-6)
       && styled.otherOpacity === 1
-      && styled.materialTransparent === true,
-    JSON.stringify({ alpha: styled.alpha, meshOpacity: styled.meshOpacity, otherOpacity: styled.otherOpacity, transparent: styled.materialTransparent }));
+      // Pipeline-correct: EITHER forward whole-mesh blending OR the staged
+      // opaque-main + transparent-overlay split (the depthpeel/wboit default).
+      && (styled.transparencyMode === 'forward' || styled.transparencyMode === 'staged-split')
+      // When staged, the overlay must carry the same 0.4 per-instance alpha.
+      && (styled.transparencyMode !== 'staged-split'
+        || styled.overlayOpacity?.every((o) => Math.abs(o - 0.4) < 1e-6)),
+    JSON.stringify({
+      alpha: styled.alpha, meshOpacity: styled.meshOpacity, otherOpacity: styled.otherOpacity,
+      mode: styled.transparencyMode, materialTransparent: styled.materialTransparent,
+      overlayOpacity: styled.overlayOpacity,
+    }));
   H.check('per-bond size survives rebuilds (radius doubled on the instance matrix)',
     Math.abs(styled.radius - styled.expectedRadius) < 1e-9
       && Math.abs(styled.xScale - styled.expectedRadius) < 1e-6
       && Math.abs(styled.otherXScale - styled.expectedRadius / 2) < 1e-6,
     JSON.stringify({ radius: styled.radius, expected: styled.expectedRadius, xScale: styled.xScale, otherXScale: styled.otherXScale }));
+
+  // --- Visual: the translucent bond really renders differently from opaque ------
+  // The structural checks above prove the pipeline is wired to blend the bond;
+  // this proves it actually shows on screen. Capture the styled bond at its
+  // current alpha 0.4, flip it fully opaque and rebuild, and require a nonzero
+  // pixel delta — whichever realization (forward or staged-split) the active
+  // pipeline uses to composite the per-bond alpha.
+  const shotAlpha04 = await H.shotCanvas(page, 'bondrows-alpha04');
+  await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const { updateVisualization } = await import('./core/crystal-viewer.js');
+    const { bondKey } = await import('./render/index.js');
+    const s = fileBrowser.selectedStructure;
+    const bond = s.bonds.find((b) => b.instanceIds);
+    const key = bondKey(bond.indices);
+    // Flip only alpha (keep the red color + radiusScale 2 so the bond stays
+    // easy to see): opaque now, so the pixels must differ from the 0.4 shot.
+    s.bondUserStyles[key] = { ...s.bondUserStyles[key], alpha: 1 };
+    for (const b of s.bonds) if (bondKey(b.indices) === key) b.alpha = 1;
+    await updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
+  });
+  await page.waitForTimeout(200);
+  const shotAlpha1 = await H.shotCanvas(page, 'bondrows-alpha1');
+  const alphaPixelDelta = changedPixelCount(shotAlpha04, shotAlpha1);
+  H.check('the translucent bond renders visibly differently from the opaque bond (pipeline composites per-bond alpha)',
+    alphaPixelDelta > 30, JSON.stringify({ alphaPixelDelta }));
+
+  // --- Interactive: the Alpha slider changes per-bond alpha WITHOUT a rebuild ----
+  // updateSingleBondOpacity + syncBondMaterialTransparency is exactly the path
+  // the bond editor's Alpha slider drives (ui/StructureInfoPanel IndividualBondRow
+  // applyBondAlpha). The bond is opaque from the block above; drive it back to
+  // 0.4 in place and assert the same mesh (no rebuild) now realizes transparency.
+  const interactive = await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const { updateSingleBondOpacity, bondKey } = await import('./render/BondsFracUpdateModule.js');
+    const s = fileBrowser.selectedStructure;
+    const meshBefore = groups.bondsMesh;
+    const bond = s.bonds.find((b) => b.instanceIds);
+    const key = bondKey(bond.indices);
+    // Replicate applyBondAlpha: model + persisted style, then the no-rebuild sync.
+    s.bondUserStyles[key] = { ...s.bondUserStyles[key], alpha: 0.4 };
+    bond.alpha = 0.4;
+    updateSingleBondOpacity(bond.instanceIds[0], 0.4);
+    updateSingleBondOpacity(bond.instanceIds[1], 0.4);
+    const mesh = groups.bondsMesh;
+    const mat = mesh.material;
+    const overlay = mesh.userData.transparentOverlay;
+    let transparencyMode = 'none';
+    if (mat.transparent === true) transparencyMode = 'forward';
+    else if (overlay && overlay.visible
+      && mat.userData.alphaPass === 1 && overlay.material.userData.alphaPass === 2) transparencyMode = 'staged-split';
+    return {
+      noRebuild: mesh === meshBefore,
+      meshOpacity: bond.instanceIds.map((i) => mesh.geometry.attributes.instanceOpacity.getX(i)),
+      transparencyMode,
+    };
+  });
+  H.check('the Alpha-slider path updates per-bond alpha in place (no rebuild) with transparency realized',
+    interactive.noRebuild
+      && interactive.meshOpacity.every((o) => Math.abs(o - 0.4) < 1e-6)
+      && (interactive.transparencyMode === 'forward' || interactive.transparencyMode === 'staged-split'),
+    JSON.stringify(interactive));
 
   // --- the bond editor exposes Alpha and Size ranges ------------------------------
   const editorRows = await page.evaluate(() => {

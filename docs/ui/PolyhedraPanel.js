@@ -1,9 +1,9 @@
 import { fileBrowser, general } from '../state/store.js';
 import { updatePolyhedra } from '../render/index.js';
 import { makeSectionHeadline } from './panels/sectionHeadline.js';
-import { addPolyhedraTypeHistogramPanel, openPolyhedraTypeHistogramSplitView } from './AnalysisPanels/PolyhedraTypeHistogram.js';
-import { addPolyhedronInspectorPanel, openPolyhedronInspectorSplitView } from './AnalysisPanels/PolyhedronInspector.js';
-import { addPolyhedraConnectivityHistogramPanel, openPolyhedraConnectivityHistogramSplitView } from './AnalysisPanels/PolyhedraConnectivityHistogram.js';
+import { addPolyhedraTypeHistogramPanel } from './AnalysisPanels/PolyhedraTypeHistogram.js';
+import { addPolyhedronInspectorPanel } from './AnalysisPanels/PolyhedronInspector.js';
+import { addPolyhedraConnectivityHistogramPanel } from './AnalysisPanels/PolyhedraConnectivityHistogram.js';
 
 function getSelectedStructureSettings() {
   const structure = fileBrowser.selectedStructure;
@@ -61,17 +61,18 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
   group.id = 'polyhedraSettingsGroup';
 
   // --- Histograms ---
-  // Same idiom as the Bonds panel's histograms (BondPanel.js): "Panel" opens a
-  // floating/dockable window, "Split View" opens the same live chart in the
-  // shared split pane. See AnalysisPanels/PolyhedraTypeHistogram.js,
-  // PolyhedronInspector.js, PolyhedraConnectivityHistogram.js.
+  // Same idiom as the Bonds panel's histograms (BondPanel.js): one button per
+  // analysis, each opening ONE ordinary panel window that defaults to the
+  // right dock (drag its tab out to float, or into the left bar). See
+  // AnalysisPanels/PolyhedraTypeHistogram.js, PolyhedronInspector.js,
+  // PolyhedraConnectivityHistogram.js.
   if (structure) {
     const histogramsPanel = document.createElement('div');
     histogramsPanel.id = 'polyhedraHistogramsPanel';
     histogramsPanel.style.marginBottom = '10px';
     histogramsPanel.appendChild(makeSectionHeadline('Histograms'));
 
-    function addHistogramRow(label, openPanelFn, openSplitViewFn) {
+    function addHistogramRow(label, buttonId, openWindow) {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;';
 
@@ -79,31 +80,21 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
       nameLabel.textContent = label;
       nameLabel.style.cssText = 'font-size:12px; color:#ccc;';
 
-      const btnRow = document.createElement('div');
-      btnRow.style.cssText = 'display:flex; gap:6px;';
+      const openBtn = document.createElement('button');
+      openBtn.id = buttonId;
+      openBtn.className = 'btn-mini highlight';
+      openBtn.textContent = 'Open';
+      openBtn.title = `Open the ${label} window`;
+      openBtn.style.fontSize = '12px';
+      openBtn.onclick = openWindow;
 
-      const panelBtn = document.createElement('button');
-      panelBtn.className = 'btn-mini highlight';
-      panelBtn.textContent = 'Panel';
-      panelBtn.title = `Open ${label} as a floating window`;
-      panelBtn.style.fontSize = '12px';
-      panelBtn.onclick = openPanelFn;
-
-      const splitBtn = document.createElement('button');
-      splitBtn.className = 'btn-mini';
-      splitBtn.textContent = 'Split View';
-      splitBtn.title = `Open ${label} in the split view beside the 3D scene`;
-      splitBtn.style.fontSize = '12px';
-      splitBtn.onclick = openSplitViewFn;
-
-      btnRow.append(panelBtn, splitBtn);
-      row.append(nameLabel, btnRow);
+      row.append(nameLabel, openBtn);
       histogramsPanel.appendChild(row);
     }
 
-    addHistogramRow('Type', addPolyhedraTypeHistogramPanel, openPolyhedraTypeHistogramSplitView);
-    addHistogramRow('Inspector', addPolyhedronInspectorPanel, openPolyhedronInspectorSplitView);
-    addHistogramRow('Connectivity', addPolyhedraConnectivityHistogramPanel, openPolyhedraConnectivityHistogramSplitView);
+    addHistogramRow('Type', 'openPolyhedraTypeHistogram', addPolyhedraTypeHistogramPanel);
+    addHistogramRow('Inspector', 'openPolyhedronInspector', addPolyhedronInspectorPanel);
+    addHistogramRow('Connectivity', 'openPolyhedraConnectivityHistogram', addPolyhedraConnectivityHistogramPanel);
 
     group.appendChild(histogramsPanel);
   }

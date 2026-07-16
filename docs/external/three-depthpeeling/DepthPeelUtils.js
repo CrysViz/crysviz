@@ -38,12 +38,28 @@ class DepthPeelUtils {
 			// program rebuild on every peel-state change and require replacing
 			// customProgramCacheKey (colliding with other shader patches, e.g.
 			// the WBOIT pipeline's). One program serves all peel states.
+			//
+			// LOCAL ADAPTATION: every injected uniform carries a `dp` prefix.
+			// `Object.assign( shader.uniforms, uniforms )` merges these names
+			// into the material's uniform set, and for a ShaderMaterial
+			// `shader.uniforms === material.uniforms`, so an UNPREFIXED name
+			// (the original `resolution`) would OVERWRITE the material's own
+			// same-named uniform. `LineMaterial` (the polyhedra fat-line edges)
+			// owns a `resolution` uniform its vertex shader reads for
+			// screen-space line width; clobbering it coupled the fat line's
+			// width-resolution and this discard's UV-resolution into one value,
+			// so the discard could sample the WRONG opaque-depth texel (reading
+			// background depth -> never discarding -> transparent edges drawn in
+			// FRONT of opaque atoms/faces). Prefixed names never collide, so the
+			// material keeps its own uniforms and the discard gets a private,
+			// pass-driven resolution. The pass writes these via
+			// `material.userData.depthPeel` (DepthPeelPass.js).
 			const uniforms = {
-				uPeelEnabled: { value: 0 },
-				uFirstPass: { value: 1 },
-				nearDepth: { value: null },
-				opaqueDepth: { value: null },
-				resolution: { value: new Vector2() },
+				dpPeelEnabled: { value: 0 },
+				dpFirstPass: { value: 1 },
+				dpNearDepth: { value: null },
+				dpOpaqueDepth: { value: null },
+				dpResolution: { value: new Vector2() },
 			};
 			material.userData.depthPeel = uniforms;
 
@@ -58,32 +74,32 @@ class DepthPeelUtils {
 				Object.assign( shader.uniforms, uniforms );
 
 				shader.fragmentShader = /* glsl */`
-					uniform int uPeelEnabled;
-					uniform int uFirstPass;
-					uniform sampler2D nearDepth;
-					uniform sampler2D opaqueDepth;
-					uniform vec2 resolution;
+					uniform int dpPeelEnabled;
+					uniform int dpFirstPass;
+					uniform sampler2D dpNearDepth;
+					uniform sampler2D dpOpaqueDepth;
+					uniform vec2 dpResolution;
 				` + shader.fragmentShader;
 
 				// The demo's discard prologue, gated by uniforms (nested ifs —
-				// GLSL need not short-circuit, and nearDepth is null on the
+				// GLSL need not short-circuit, and dpNearDepth is null on the
 				// first peel).
 				shader.fragmentShader = shader.fragmentShader.replace( 'void main() {', /* glsl */`
 					void main() {
 
-						if ( uPeelEnabled == 1 ) {
+						if ( dpPeelEnabled == 1 ) {
 
-							vec2 dpScreenUV = gl_FragCoord.xy / resolution;
+							vec2 dpScreenUV = gl_FragCoord.xy / dpResolution;
 
-							if ( texture2D( opaqueDepth, dpScreenUV ).r < gl_FragCoord.z ) {
+							if ( texture2D( dpOpaqueDepth, dpScreenUV ).r < gl_FragCoord.z ) {
 
 								discard;
 
 							}
 
-							if ( uFirstPass == 0 ) {
+							if ( dpFirstPass == 0 ) {
 
-								if ( texture2D( nearDepth, dpScreenUV ).r >= gl_FragCoord.z - 1e-6 ) {
+								if ( texture2D( dpNearDepth, dpScreenUV ).r >= gl_FragCoord.z - 1e-6 ) {
 
 									discard;
 

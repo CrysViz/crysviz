@@ -8,13 +8,20 @@
 //
 // Material object shape (see model/Structure.js atomMaterials):
 //   { type: 'standard'|'metal'|'glass'|'emissive'|'translucent',
-//     gloss?, roughness?, frost?, ior?, tintDepth?, intensity?,
+//     gloss?, tint?, roughness?, frost?, ior?, tintDepth?, intensity?,
 //     scatterDepth?, reflectivity? }
-// Per-type knobs: standard = Gloss + Reflect; metal = Rough + Reflect;
-// glass = Frost + IoR + Tint depth; emissive = Glow; translucent = Depth.
+// Per-type knobs: standard = Gloss + Tint + Reflect; metal = Rough + Tint +
+// Reflect; glass = Frost + IoR + Tint depth; emissive = Glow; translucent =
+// Depth. Tint colors the reflections by the surface color, with a per-type
+// default (null = follow it): standard 0.6 (the raster-metalness-parity look;
+// 0 = the original untinted white "billiard ball" coat), metal 1.0 (fully
+// colored mirror; 0 = chrome).
 // reflectivity overrides the global "Reflectivity" slider (standard) or is
-// the mirrored fraction (metal). Selecting "Standard" with every knob
-// untouched clears the stored entry (that IS the default).
+// the mirrored fraction (metal). An editor left at its EFFECTIVE default
+// clears the stored entry: with a getDefault() callback (the per-species /
+// per-atom editors pass the active Element-Materials-Map preset,
+// Structure.getDefaultElementMaterial) the default is that preset; without
+// one it is the classic untouched-Standard rule.
 
 import { general } from '../../../state/store.js';
 import { requestRender } from '../../../render/index.js';
@@ -27,19 +34,31 @@ const TYPES = [
   { value: 'translucent', label: 'Translucent (waxy)' },
 ];
 
+// The full type list, exported so callers (e.g. FieldPanel) can build a
+// restricted subset (the field surface excludes 'glass').
+export const MATERIAL_TYPES = TYPES;
+
 /**
- * @param {() => ({type?: string, gloss?: number, roughness?: number, frost?: number, ior?: number, tintDepth?: number, intensity?: number, scatterDepth?: number, reflectivity?: number} | null | undefined)} getMaterial
+ * @param {() => ({type?: string, gloss?: number, tint?: number, roughness?: number, frost?: number, ior?: number, tintDepth?: number, intensity?: number, scatterDepth?: number, reflectivity?: number} | null | undefined)} getMaterial
  * @param {(material: object | null) => void} setMaterial write to the owning store (null = clear)
+ * @param {{ types?: Array<{value: string, label: string}>, getDefault?: () => (object | null | undefined) }} [options]
+ *   types: optional type-list override (e.g. glass-free for the field surface);
+ *   getDefault: the material a CLEARED entry falls back to (the active
+ *   Element-Materials-Map preset) — seeds the editor when no entry is stored
+ *   and defines the commit() clear-to-default comparison.
  */
-export function createMaterialEditor(getMaterial, setMaterial) {
-  const block = document.createElement('div');
+export function createMaterialEditor(getMaterial, setMaterial, { types, getDefault } = {}) {
+  const typeList = types ?? TYPES;
+  const block = /** @type {HTMLDivElement & { syncFromStore?: () => void }} */ (document.createElement('div'));
   block.className = 'material-editor';
   block.style.cssText = 'margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.08);';
 
-  const current = getMaterial() ?? {};
+  // No stored entry shows the effective default (the map preset, if any).
+  const current = getMaterial() ?? getDefault?.() ?? {};
   const state = {
     type: current.type ?? 'standard',
     gloss: current.gloss ?? 0.6,
+    tint: current.tint ?? null, // null = follow the type default (0.6 std / 1 metal)
     roughness: current.roughness ?? 0.2,
     frost: current.frost ?? 0,
     ior: current.ior ?? 1.5,
@@ -62,7 +81,7 @@ export function createMaterialEditor(getMaterial, setMaterial) {
   const typeSelect = document.createElement('select');
   typeSelect.className = 'material-type-select';
   typeSelect.style.cssText = 'flex:1; height:28px; font-size:11px;';
-  for (const t of TYPES) {
+  for (const t of typeList) {
     const opt = document.createElement('option');
     opt.value = t.value;
     opt.textContent = t.label;
@@ -101,14 +120,48 @@ export function createMaterialEditor(getMaterial, setMaterial) {
     return row;
   };
 
+  // Does the edited state equal the EFFECTIVE default (the map preset from
+  // getDefault, or the plain untouched Standard)? Only the knobs relevant to
+  // the current type count — the hidden sliders keep stale values by design.
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  const matchesDefault = () => {
+    const def = getDefault?.() ?? null;
+    if (!def) {
+      return state.type === 'standard' && state.reflectivity == null
+        && near(state.gloss, 0.6)
+        && (state.tint == null || near(state.tint, 0.6));
+    }
+    if (state.type !== (def.type ?? 'standard')) return false;
+    // tint/reflectivity: null = follow the type default, so compare through it
+    const sameTintRefl = (tintDef) =>
+      near(state.tint ?? tintDef, def.tint ?? tintDef)
+      && (state.reflectivity == null
+        ? def.reflectivity == null
+        : def.reflectivity != null && near(state.reflectivity, def.reflectivity));
+    switch (state.type) {
+      case 'standard':
+        return near(state.gloss, def.gloss ?? 0.6) && sameTintRefl(0.6);
+      case 'metal':
+        return near(state.roughness, def.roughness ?? 0.2) && sameTintRefl(1);
+      case 'glass':
+        return near(state.frost, def.frost ?? 0) && near(state.ior, def.ior ?? 1.5)
+          && near(state.tintDepth, def.tintDepth ?? 0.2);
+      case 'emissive':
+        return near(state.intensity, def.intensity ?? 5);
+      case 'translucent':
+        return near(state.scatterDepth, def.scatterDepth ?? 0.5);
+    }
+    return false;
+  };
+
   const commit = () => {
-    if (state.type === 'standard' && state.reflectivity == null
-        && Math.abs(state.gloss - 0.6) < 1e-9) {
+    if (matchesDefault()) {
       setMaterial(null); // fully default — clear the entry
     } else {
       setMaterial({
         type: state.type,
         gloss: state.gloss,
+        ...(state.tint != null ? { tint: state.tint } : {}),
         roughness: state.roughness,
         frost: state.frost,
         ior: state.ior,
@@ -123,6 +176,13 @@ export function createMaterialEditor(getMaterial, setMaterial) {
 
   const glossRow = makePropRow('Gloss', 'material-gloss-row', 0, 1, 0.05, state.gloss,
     (v) => { state.gloss = v; commit(); });
+  // standard + metal: how strongly reflections take the surface color
+  // (standard 0 = the original white "billiard ball" coat; metal 0 = chrome).
+  // An untouched slider tracks the type default (0.6 std / 1 metal).
+  const defaultTint = () => (state.type === 'metal' ? 1 : 0.6);
+  const coatTintRow = makePropRow('Tint', 'material-tint-row', 0, 1, 0.05,
+    state.tint ?? defaultTint(),
+    (v) => { state.tint = v; commit(); });
   const roughRow = makePropRow('Rough', 'material-roughness-row', 0, 1, 0.05, state.roughness,
     (v) => { state.roughness = v; commit(); });
   const frostRow = makePropRow('Frost', 'material-frost-row', 0, 1, 0.05, state.frost,
@@ -144,6 +204,7 @@ export function createMaterialEditor(getMaterial, setMaterial) {
     state.reflectivity ?? defaultReflectivity(),
     (v) => { state.reflectivity = v; commit(); });
   block.appendChild(glossRow);
+  block.appendChild(coatTintRow);
   block.appendChild(roughRow);
   block.appendChild(frostRow);
   block.appendChild(iorRow);
@@ -154,6 +215,14 @@ export function createMaterialEditor(getMaterial, setMaterial) {
 
   const syncPropVisibility = () => {
     glossRow.style.display = state.type === 'standard' ? 'flex' : 'none';
+    coatTintRow.style.display = (state.type === 'standard' || state.type === 'metal') ? 'flex' : 'none';
+    // an untouched Tint slider tracks the type's default (0.6 std / 1 metal)
+    if (state.tint == null) {
+      const slider = coatTintRow.querySelector('input');
+      const span = coatTintRow.querySelector('span:last-child');
+      if (slider) slider.value = String(defaultTint());
+      if (span) span.textContent = defaultTint().toFixed(2);
+    }
     roughRow.style.display = state.type === 'metal' ? 'flex' : 'none';
     frostRow.style.display = state.type === 'glass' ? 'flex' : 'none';
     iorRow.style.display = state.type === 'glass' ? 'flex' : 'none';
@@ -176,6 +245,40 @@ export function createMaterialEditor(getMaterial, setMaterial) {
     syncPropVisibility();
     commit();
   });
+
+  // Re-read the store (entry, or the effective default when cleared) and
+  // refresh every control WITHOUT committing — used by the group editors'
+  // Reset buttons after they delete the stored entry.
+  const setRowValue = (row, v) => {
+    const slider = row.querySelector('input');
+    const span = row.querySelector('span:last-child');
+    if (slider) slider.value = String(v);
+    if (span) span.textContent = Number(v).toFixed(2);
+  };
+  block.syncFromStore = () => {
+    const cur = getMaterial() ?? getDefault?.() ?? {};
+    state.type = cur.type ?? 'standard';
+    state.gloss = cur.gloss ?? 0.6;
+    state.tint = cur.tint ?? null;
+    state.roughness = cur.roughness ?? 0.2;
+    state.frost = cur.frost ?? 0;
+    state.ior = cur.ior ?? 1.5;
+    state.tintDepth = cur.tintDepth ?? 0.2;
+    state.intensity = cur.intensity ?? 5;
+    state.scatterDepth = cur.scatterDepth ?? 0.5;
+    state.reflectivity = cur.reflectivity ?? null;
+    typeSelect.value = state.type;
+    setRowValue(glossRow, state.gloss);
+    setRowValue(coatTintRow, state.tint ?? defaultTint());
+    setRowValue(roughRow, state.roughness);
+    setRowValue(frostRow, state.frost);
+    setRowValue(iorRow, state.ior);
+    setRowValue(tintRow, state.tintDepth);
+    setRowValue(intensityRow, state.intensity);
+    setRowValue(scatterRow, state.scatterDepth);
+    setRowValue(reflectRow, state.reflectivity ?? defaultReflectivity());
+    syncPropVisibility();
+  };
 
   return block;
 }

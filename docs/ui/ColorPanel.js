@@ -8,7 +8,9 @@ import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
 import { updatePolyhedra, updatePolyhedraColors, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
 import { listPipelines, setActivePipeline, requestRender } from '../render/index.js'
+import { updateGroundPlane } from '../render/index.js'
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
+import { maybeShowRaytraceWarning } from './RaytraceWarningModal.js'
 import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js'
 
 
@@ -166,6 +168,32 @@ function createDropdown(id, labelText, options, onChange) {
   block.appendChild(label);
   block.appendChild(select);
   return block;
+}
+
+/** Options for the "Rendering pipeline" dropdown, in registry order: the
+ *  visible pipelines, with hidden ones (superseded split/sorted) omitted —
+ *  unless general.showAllRenderPipelines lists them all, or a hidden pipeline
+ *  is the currently-active id (a restored/console-set session), in which case
+ *  its option is kept so the select stays truthful. */
+function renderPipelineOptions() {
+  const activeId = general.renderPipeline;
+  return listPipelines()
+    .filter((p) => !p.hidden || general.showAllRenderPipelines || p.id === activeId)
+    .map((p) => ({ value: p.id, text: p.label, selected: p.id === activeId }));
+}
+
+/** Rebuild the #renderPipelineMenu <option> list from current state. Called on
+ *  session restore (so a restored hidden pipeline id gains an option before the
+ *  select is set) and whenever general.showAllRenderPipelines is toggled. */
+export function rebuildRenderPipelineMenu() {
+  const select = /** @type {HTMLSelectElement} */ (document.getElementById("renderPipelineMenu"));
+  if (!select) return;
+  select.textContent = "";
+  renderPipelineOptions().forEach((opt) => {
+    const option = createElement("option", { value: opt.value }, {}, opt.text);
+    if (opt.selected) option.selected = true;
+    select.appendChild(option);
+  });
 }
 
 // --- Color Mapping Functions ---
@@ -376,7 +404,13 @@ export function addColorPanel(target = "colorContainer") {
     const isTracer = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
     depthPeelBlock.style.display = general.renderPipeline === "depthpeel" ? "grid" : "none";
     rtControlsBlock.style.display = isTracer ? "block" : "none";
-    ptControlsBlock.style.display = general.renderPipeline === "pathtrace" ? "block" : "none";
+    // The denoiser lives in the shared tracer "Advanced" section (visible for
+    // both tracers), but is a path-tracing-only control, so its row is toggled
+    // individually here.
+    ptDenoiseRow.style.display = general.renderPipeline === "pathtrace" ? "grid" : "none";
+    // The ground block is always visible (all pipelines), but "Ground reflect"
+    // is a tracer-only analytic-mirror control, so its row is toggled here.
+    groundReflectRow.style.display = isTracer ? "grid" : "none";
     renderStyleMenu.style.display = isRaster ? "grid" : "none";
     outlineBlock.style.display = isRaster && general.renderStyle === "cel" ? "block" : "none";
     // Structure-window tracer-only blocks (material editors) hide under the
@@ -409,11 +443,35 @@ export function addColorPanel(target = "colorContainer") {
 
   // Rendering pipeline (how a frame is drawn) — the top of the tree.
   const renderPipelineMenu = createDropdown("renderPipelineMenu", "Rendering pipeline",
-    listPipelines().map((p) => ({
-      value: p.id, text: p.label, selected: general.renderPipeline === p.id,
-    })), () => {
-      setActivePipeline(renderPipelineMenu.querySelector("select").value);
-      updateRenderingControlsVisibility();
+    renderPipelineOptions(), () => {
+      const pipelineValue = renderPipelineMenu.querySelector("select").value;
+      const wasTracer = general.renderPipeline === 'raytrace' || general.renderPipeline === 'pathtrace';
+      const isTracer = pipelineValue === 'raytrace' || pipelineValue === 'pathtrace';
+      const doSwitch = () => {
+        setActivePipeline(pipelineValue);
+        updateRenderingControlsVisibility();
+      };
+      // Performance warning each time a (potentially slow) tracer mode is
+      // ENTERED from a raster mode — switching between the two tracers does not
+      // re-warn; "Don't show this again" suppresses it permanently. When the
+      // warning IS shown the switch is DEFERRED: the prior (raster) pipeline
+      // keeps rendering (responsive GUI) while the modal is open. Ok performs
+      // the switch; Cancel/Escape/backdrop reverts the dropdown to the pipeline
+      // that is still active (general.renderPipeline). updateRenderingControls-
+      // Visibility reads general.renderPipeline (not the select), so no tracer
+      // knobs flash while the modal is open.
+      if (isTracer && !wasTracer) {
+        const shown = maybeShowRaytraceWarning({
+          onConfirm: doSwitch,
+          onCancel: () => {
+            renderPipelineMenu.querySelector("select").value = general.renderPipeline;
+            updateRenderingControlsVisibility();
+          },
+        });
+        if (!shown) doSwitch(); // suppressed -> switch immediately as before
+      } else {
+        doSwitch();
+      }
     });
   content.appendChild(renderPipelineMenu);
 
@@ -442,11 +500,11 @@ export function addColorPanel(target = "colorContainer") {
   // pipelines so the two can be compared apples to apples; changes take
   // effect on the next accumulated frame (the pipelines read `general`).
   const isTracerPipeline = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
-  const rtControlsBlock = createElement("div", {},
+  const rtControlsBlock = createElement("div", { id: "rtControlsBlock" },
     { display: isTracerPipeline ? "block" : "none" });
   const rtResRow = createElement("div", { class: "control-row" });
   const rtResLabel = createElement("label", { for: "rtResolutionScale" }, {},
-    `RT resolution: ${Math.round((general.rtResolutionScale ?? 0.75) * 100)}%`);
+    `RT resolution: ${Math.round((general.rtResolutionScale ?? 0.95) * 100)}%`);
   const rtResSlider = createElement("input", {
     type: "range", id: "rtResolutionScale", min: "0.25", max: "1", step: "0.05",
     value: String(general.rtResolutionScale),
@@ -459,6 +517,89 @@ export function addColorPanel(target = "colorContainer") {
   rtResRow.appendChild(rtResLabel);
   rtResRow.appendChild(rtResSlider);
   rtControlsBlock.appendChild(rtResRow);
+
+  // Tiled ("gentle") rendering: split each accumulation sample into scissored
+  // tiles, one per frame, so the shared GPU stays responsive while the tracer
+  // converges (default ON). Toggling restarts the accumulation. Lives in the
+  // "Advanced" section built below.
+  const rtTiledRow = createElement("div", { class: "control-row" });
+  const rtTiledLabel = createElement("label", { for: "rtTiledToggle" }, {}, "Tiled rendering");
+  const rtTiledToggle = createElement("input", { type: "checkbox", id: "rtTiledToggle" },
+    { justifySelf: "start", width: "auto" });
+  rtTiledToggle.checked = general.rtTiledRender !== false;
+  rtTiledToggle.addEventListener("change", () => {
+    general.rtTiledRender = rtTiledToggle.checked;
+    app.pipeline?.resetAccumulation?.();
+    requestRender();
+  });
+  rtTiledRow.appendChild(rtTiledLabel);
+  rtTiledRow.appendChild(rtTiledToggle);
+
+  // Interactive raster preview: while the user drives the view, render cheap
+  // depth-peeled frames instead of tracing, resuming the tracer after a hidden
+  // config-only rest delay (general.rtPreviewRestDelay; no GUI). Default ON. No
+  // accumulation reset on toggle — it changes only how interactive frames are
+  // drawn, not the converged image. Lives in the "Advanced" section below.
+  const rtPreviewRow = createElement("div", { class: "control-row" });
+  const rtPreviewLabel = createElement("label", { for: "rtPreviewToggle" }, {}, "Interactive raster preview");
+  const rtPreviewToggle = createElement("input", { type: "checkbox", id: "rtPreviewToggle" },
+    { justifySelf: "start", width: "auto" });
+  rtPreviewToggle.checked = general.rtRasterPreview !== false;
+  rtPreviewToggle.addEventListener("change", () => {
+    general.rtRasterPreview = rtPreviewToggle.checked;
+    requestRender();
+  });
+  rtPreviewRow.appendChild(rtPreviewLabel);
+  rtPreviewRow.appendChild(rtPreviewToggle);
+
+  // Match background color: pin the traced backdrop to the exact picked
+  // background color (the pipeline inverse-tone-maps primary-miss rays;
+  // default ON). Off restores the older look where the backdrop is
+  // tone-mapped along with the scene. Lives in the "Advanced" section below.
+  const rtBgMatchRow = createElement("div", { class: "control-row" });
+  const rtBgMatchLabel = createElement("label", { for: "rtBgMatchToggle" }, {}, "Match background color");
+  const rtBgMatchToggle = createElement("input", { type: "checkbox", id: "rtBgMatchToggle" },
+    { justifySelf: "start", width: "auto" });
+  rtBgMatchToggle.checked = general.rtBackgroundMatch !== false;
+  rtBgMatchToggle.addEventListener("change", () => {
+    general.rtBackgroundMatch = rtBgMatchToggle.checked;
+    app.pipeline?.resetAccumulation?.();
+    requestRender();
+  });
+  rtBgMatchRow.appendChild(rtBgMatchLabel);
+  rtBgMatchRow.appendChild(rtBgMatchToggle);
+
+  // Legacy tone mapping: the original tracers' Reinhard operator (muted,
+  // desaturated midtones) instead of exposure x ACES (raster parity; default).
+  // Output-pass only — no accumulation reset needed (the traced-background
+  // interplay with "Match background color" rides the pipeline's look key).
+  // Lives in the "Advanced" section below.
+  const rtLegacyToneRow = createElement("div", { class: "control-row" });
+  const rtLegacyToneLabel = createElement("label", { for: "rtLegacyToneToggle" }, {}, "Legacy tone mapping");
+  const rtLegacyToneToggle = createElement("input", { type: "checkbox", id: "rtLegacyToneToggle" },
+    { justifySelf: "start", width: "auto" });
+  rtLegacyToneToggle.checked = general.rtToneMapLegacy === true;
+  rtLegacyToneToggle.addEventListener("change", () => {
+    general.rtToneMapLegacy = rtLegacyToneToggle.checked;
+    requestRender();
+  });
+  rtLegacyToneRow.appendChild(rtLegacyToneLabel);
+  rtLegacyToneRow.appendChild(rtLegacyToneToggle);
+
+  // Denoiser (path-tracing only): edge-aware denoiser on the screen output.
+  // Lives in the shared "Advanced" section (visible for both tracers) but its
+  // row is shown only under the pathtrace pipeline (updateRenderingControlsVisibility).
+  const ptDenoiseRow = createElement("div", { class: "control-row" });
+  const ptDenoiseLabel = createElement("label", { for: "ptDenoiseToggle" }, {}, "Denoiser");
+  const ptDenoiseToggle = createElement("input", { type: "checkbox", id: "ptDenoiseToggle" },
+    { justifySelf: "start", width: "auto" });
+  ptDenoiseToggle.checked = general.ptDenoise !== false;
+  ptDenoiseToggle.addEventListener("change", () => {
+    general.ptDenoise = ptDenoiseToggle.checked;
+    requestRender();
+  });
+  ptDenoiseRow.appendChild(ptDenoiseLabel);
+  ptDenoiseRow.appendChild(ptDenoiseToggle);
 
   const rtReflRow = createElement("div", { class: "control-row" });
   const rtReflLabel = createElement("label", { for: "rtReflectivity" }, {},
@@ -535,6 +676,14 @@ export function addColorPanel(target = "colorContainer") {
     (v) => `Focus distance: ×${v.toFixed(2)}`,
     (v) => { general.rtDofFocus = v; }));
 
+  // Ground plane block — ALWAYS VISIBLE (all pipelines): the raster pipelines
+  // and tracer preview frames draw a raster ground disc (render/GroundPlaneModule)
+  // matched to the tracers' analytic disc, so the floor no longer disappears
+  // while the view is manipulated in mixed mode. The block is appended after the
+  // cel-outline block (below); only the "Ground reflect" row is tracer-gated
+  // (groundReflectRow, toggled in updateRenderingControlsVisibility).
+  const groundBlock = createElement("div", {});
+
   const groundRow = createElement("div", { class: "control-row" });
   const groundLabel = createElement("label", { for: "rtGroundToggle" }, {}, "Ground plane");
   const groundToggle = createElement("input", { type: "checkbox", id: "rtGroundToggle" },
@@ -543,12 +692,13 @@ export function addColorPanel(target = "colorContainer") {
   groundToggle.addEventListener("change", () => {
     general.rtGroundPlane = groundToggle.checked;
     groundOptions.style.display = groundToggle.checked ? "block" : "none";
+    updateGroundPlane(); // create/position/hide the raster disc
     app.pipeline?.resetAccumulation?.();
     requestRender();
   });
   groundRow.appendChild(groundLabel);
   groundRow.appendChild(groundToggle);
-  rtControlsBlock.appendChild(groundRow);
+  groundBlock.appendChild(groundRow);
 
   // Ground options (shown while the plane is enabled): orientation, pattern,
   // the two pattern colors (default: follow the background), tile size and
@@ -598,44 +748,51 @@ export function addColorPanel(target = "colorContainer") {
   groundOptions.appendChild(groundColorRow('rtGroundColor1', 'Ground color 1', 'rtGroundColor1'));
   groundOptions.appendChild(groundColorRow('rtGroundColor2', 'Ground color 2', 'rtGroundColor2'));
 
+  // Offset/size affect PLACEMENT, so they also reposition the raster disc
+  // (pattern/colors/scale need nothing — they refresh per-frame in onBeforeRender).
   groundOptions.appendChild(makeTracerSliderRow('rtGroundOffset', 'rtGroundOffset',
     0, 1, 'any', general.rtGroundOffset ?? 0.75,
     (v) => `Ground distance: ${v.toFixed(2)}`,
-    (v) => { general.rtGroundOffset = v; }, GROUND_OFFSET_RANGE));
+    (v) => { general.rtGroundOffset = v; updateGroundPlane(); }, GROUND_OFFSET_RANGE));
   groundOptions.appendChild(makeTracerSliderRow('rtGroundSize', 'rtGroundSize',
     0, 1, 'any', general.rtGroundSize ?? 2.5,
     (v) => `Ground size: ${v.toFixed(2)}x`,
-    (v) => { general.rtGroundSize = v; }, GROUND_SIZE_RANGE));
+    (v) => { general.rtGroundSize = v; updateGroundPlane(); }, GROUND_SIZE_RANGE));
   groundOptions.appendChild(makeTracerSliderRow('rtGroundScale', 'rtGroundScale',
     0.5, 10, 0.25, general.rtGroundScale ?? 2,
     (v) => `Tile size: ${v.toFixed(2)}`,
     (v) => { general.rtGroundScale = v; }));
-  groundOptions.appendChild(makeTracerSliderRow('rtGroundReflect', 'rtGroundReflect',
+  // "Ground reflect" is tracer-only (analytic mirror floor); the row is gated to
+  // the tracers in updateRenderingControlsVisibility.
+  const groundReflectRow = makeTracerSliderRow('rtGroundReflect', 'rtGroundReflect',
     0, 1, 0.05, general.rtGroundReflect ?? 0,
     (v) => `Ground reflect: ${v.toFixed(2)}`,
-    (v) => { general.rtGroundReflect = v; }));
-  rtControlsBlock.appendChild(groundOptions);
+    (v) => { general.rtGroundReflect = v; });
+  groundOptions.appendChild(groundReflectRow);
+  groundBlock.appendChild(groundOptions);
+
+  // "Advanced" section: seldom-touched tracer toggles, collapsed by default.
+  // Reuses the app's native <details>/<summary> collapsible idiom (the same
+  // `eos-collapsible` styling used by the EOS panel's reference-data section:
+  // a green header strip with a caret that rotates on open). Shown for both
+  // tracers via rtControlsBlock; the Denoiser row inside is toggled to
+  // pathtrace-only by updateRenderingControlsVisibility. Collapse state is
+  // native <details> UI state — not persisted.
+  const rtAdvanced = createElement("details", { class: "eos-collapsible" });
+  const rtAdvancedSummary = createElement("summary", { class: "eos-collapsible-summary" });
+  rtAdvancedSummary.appendChild(createElement("span", { class: "eos-collapsible-arrow" }, {}, "▶"));
+  rtAdvancedSummary.appendChild(createElement("span", {}, {}, "Advanced"));
+  rtAdvanced.appendChild(rtAdvancedSummary);
+  const rtAdvancedBody = createElement("div", { class: "eos-collapsible-body" });
+  rtAdvancedBody.appendChild(rtTiledRow);
+  rtAdvancedBody.appendChild(rtPreviewRow);
+  rtAdvancedBody.appendChild(rtBgMatchRow);
+  rtAdvancedBody.appendChild(rtLegacyToneRow);
+  rtAdvancedBody.appendChild(ptDenoiseRow);
+  rtAdvanced.appendChild(rtAdvancedBody);
+  rtControlsBlock.appendChild(rtAdvanced);
 
   content.appendChild(rtControlsBlock);
-
-  // Path-tracing-only controls: the denoiser toggle (light softness moved to
-  // the shared tracer block above — it drives both tracers' soft shadows).
-  const ptControlsBlock = createElement("div", {},
-    { display: general.renderPipeline === "pathtrace" ? "block" : "none" });
-  const ptDenoiseRow = createElement("div", { class: "control-row" });
-  const ptDenoiseLabel = createElement("label", { for: "ptDenoiseToggle" }, {}, "Denoiser");
-  const ptDenoiseToggle = createElement("input", { type: "checkbox", id: "ptDenoiseToggle" },
-    { justifySelf: "start", width: "auto" });
-  ptDenoiseToggle.checked = general.ptDenoise !== false;
-  ptDenoiseToggle.addEventListener("change", () => {
-    general.ptDenoise = ptDenoiseToggle.checked;
-    requestRender();
-  });
-  ptDenoiseRow.appendChild(ptDenoiseLabel);
-  ptDenoiseRow.appendChild(ptDenoiseToggle);
-  ptControlsBlock.appendChild(ptDenoiseRow);
-
-  content.appendChild(ptControlsBlock);
 
   // Render Style follows the per-pipeline knobs (raster pipelines only).
   content.appendChild(renderStyleMenu);
@@ -723,6 +880,10 @@ export function addColorPanel(target = "colorContainer") {
 
   content.appendChild(outlineBlock);
 
+  // Ground plane block: always visible (all pipelines), after the cel-outline
+  // block and before the reset row (built above, near the tracer controls).
+  content.appendChild(groundBlock);
+
   // Reset every Rendering-section setting to its default (RENDERING_DEFAULTS
   // in state/store.js — the same values `general` boots with). Routed through
   // the real controls' events so labels, visibility, pipeline switching and
@@ -753,6 +914,10 @@ export function addColorPanel(target = "colorContainer") {
     fire('celHullWidth', D.celHullWidth, 'input');
     fire('celHullPolyWidth', D.celHullPolyWidth, 'input');
     fire('rtResolutionScale', D.rtResolutionScale, 'input');
+    fireCheck('rtTiledToggle', D.rtTiledRender);
+    fireCheck('rtPreviewToggle', D.rtRasterPreview);
+    fireCheck('rtBgMatchToggle', D.rtBackgroundMatch);
+    fireCheck('rtLegacyToneToggle', D.rtToneMapLegacy);
     fire('rtReflectivity', D.rtReflectivity, 'input');
     fire('ptLightSoftness', D.ptLightSoftness, 'input');
     fire('rtLightIntensity', D.rtLightIntensity, 'input');
@@ -819,6 +984,37 @@ export function addColorPanel(target = "colorContainer") {
     }
   });
 
+  // "Element Materials Map" — per-species tracer-material presets (the
+  // material analog of the color map above; defaults/material_defaults.js).
+  // Materials only affect the ray/path-tracing pipelines, so the row hides
+  // under raster via the body.tracer-pipeline gate (styles.css), like the
+  // Structure-window material editors. Color-palette parity: switching the
+  // map RESETS manual material edits on the selected structure.
+  const atomsElementMaterialsMapMenu = createDropdown("atomsElementMaterialsMapMenu", "Element Materials Map", [
+    { value: "crysviz", text: "CrysViz Default", selected: general.elementMaterialsMap !== "standard" },
+    { value: "standard", text: "Standard", selected: general.elementMaterialsMap === "standard" }
+  ], () => {
+    general.elementMaterialsMap = atomsElementMaterialsMapMenu.querySelector("select").value;
+    const structure = fileBrowser.selectedStructure;
+    if (structure) {
+      structure.atomMaterials = {};
+      structure.atomUserMaterials = {};
+      for (const styles of [structure.atomImageStyles, structure.bondUserStyles, structure.bondCategoryStyles]) {
+        for (const key of Object.keys(styles ?? {})) delete styles[key].material;
+      }
+    }
+    // Already-mounted material editors (Structure-window species/atom/bond
+    // rows, FieldPanel) seeded from the OLD map at build time — re-sync them
+    // to the new effective defaults.
+    document.querySelectorAll(".material-editor").forEach((el) => {
+      /** @type {HTMLElement & { syncFromStore?: () => void }} */ (el).syncFromStore?.();
+    });
+    // The tracer SceneEncoder fingerprint picks the map change up on the next
+    // requested frame (re-encode + accumulation reset); raster is unaffected.
+    requestRender();
+  });
+  atomsElementMaterialsMapMenu.classList.add("tracer-only-control");
+
   const atomsColorMapBlock = createElement("div", { style: "display:none;" });
 
   const atomsColorMapMenu = createDropdown("atomsColorMapMenu", "Color Map", [
@@ -848,6 +1044,7 @@ export function addColorPanel(target = "colorContainer") {
   atomsMenuBlock.appendChild(atomsMenu);
   atomsMenuBlock.appendChild(atomsElementColorMapBlock);
   atomsElementColorMapBlock.appendChild(atomsElementColorMapMenu);
+  atomsElementColorMapBlock.appendChild(atomsElementMaterialsMapMenu);
   atomsMenuBlock.appendChild(atomsColorMapBlock);
 
   function onAtomsModeChange() {

@@ -8,6 +8,7 @@ import {
   applyMaterialSettingsToStoredIsosurfaces,
 } from '../model/index.js';
 import { createColorPicker } from './ColorPickerModule.js';
+import { createMaterialEditor, MATERIAL_TYPES } from './StructureInfoPanel/components/MaterialEditor.js';
 
 export let useLogSliderScale = false; // Global variable to track log scale state for iso slider
 
@@ -236,6 +237,10 @@ export function addFieldPanel(target = "cvPanelBody-field") {
         <input type="range" id="FieldOpacitySlider" min="0" max="1" step="0.01" value="${materialSettings.opacity}">
         <span id="FieldOpacityValue">${materialSettings.opacity.toFixed(2)}</span>
         </div>
+
+        <!-- tracer material block: not strictly color, but it lives alongside
+             the color/alpha selectors here like everywhere else -->
+        <div id="fieldMaterialEditorMount"></div>
     </div>
     </div>
 
@@ -330,6 +335,21 @@ function setupFieldControlEvents(fields, container) {
   posColorPickerContainer?.appendChild(posPicker.element);
   negColorPickerContainer?.appendChild(negPicker.element);
 
+  // Ray/path-tracing material for the field isosurface (glass excluded — no
+  // refraction through the ray-marched medium). Hidden under raster pipelines
+  // by the global `.material-editor` CSS rule.
+  const matMount = document.getElementById('fieldMaterialEditorMount');
+  if (matMount) {
+    matMount.appendChild(createMaterialEditor(
+      () => fileBrowser.selectedStructure?.fieldMaterial,
+      (m) => {
+        const s = fileBrowser.selectedStructure;
+        if (!s) return;
+        if (m) s.fieldMaterial = m; else delete s.fieldMaterial;
+      },
+      { types: MATERIAL_TYPES.filter((t) => t.value !== 'glass') }));
+  }
+
   function setColorPanelOpen(open) {
     if (!fieldColorContent || !fieldColorToggle || !fieldColorToggleIcon) return;
 
@@ -418,7 +438,33 @@ function setupFieldControlEvents(fields, container) {
 
   // Event listeners
 
-  // Iso-slider: update display, compute new iso value, re-render selected field on release
+  // Live isosurface updates while DRAGGING the iso slider: rebuilds are
+  // COALESCED to at most one marching-cubes pass per animation frame (the
+  // pending callback reads the field's CURRENT isoValue, so rapid drag events
+  // never queue work — the latest value wins). Marching cubes runs
+  // synchronously in WASM: ms-scale for typical grids, up to ~100 ms per step
+  // on very large CHGCAR grids, which merely throttles the drag cadence.
+  // Under the tracers an iso change is a CORE scene edit, so with the
+  // interactive raster preview enabled the drag shows the live raster surface
+  // and the tracer re-converges after the rest delay.
+  let liveIsoScheduled = false;
+  let lastBuiltIso = null;
+  function scheduleLiveIsoUpdate() {
+    if (liveIsoScheduled) return;
+    liveIsoScheduled = true;
+    requestAnimationFrame(() => {
+      liveIsoScheduled = false;
+      const field = fieldBrowser.selectedField;
+      const structure = fileBrowser.selectedStructure;
+      if (!field || !structure || !structure.volumetricFields) return;
+      if (field.isoValue === lastBuiltIso) return;
+      lastBuiltIso = field.isoValue;
+      updateField(field.isoValue);
+    });
+  }
+
+  // Iso-slider release: the authoritative final rebuild (skipped when the live
+  // path already built this exact value).
   slider.addEventListener('change', function () {
     let sliderValue = parseFloat(slider.value);
     if (!fieldBrowser.selectedField) return;
@@ -433,12 +479,13 @@ function setupFieldControlEvents(fields, container) {
 
     // 3. Rebuild the isosurface for the selected field
     const structure = fileBrowser.selectedStructure;
-    if (structure && structure.volumetricFields) {
+    if (structure && structure.volumetricFields && isoValue !== lastBuiltIso) {
+      lastBuiltIso = isoValue;
       updateField(isoValue);
     }
   });
 
-  // slider input event: update text of slider value
+  // Slider drag: update the readout and schedule a coalesced live rebuild.
   slider.addEventListener('input', function () {
     let sliderValue = parseFloat(slider.value);
     if (!fieldBrowser.selectedField) return;
@@ -448,6 +495,7 @@ function setupFieldControlEvents(fields, container) {
     // Update the displayed value
     valueDisplay.textContent = isoValue.toExponential(3);
     fieldBrowser.selectedField.isoValue = isoValue; // Update the isoValue on the selected field for memory
+    scheduleLiveIsoUpdate();
   });
 
   absoluteValueCheckbox.addEventListener('change', function () {

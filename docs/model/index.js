@@ -13,7 +13,7 @@ export { Polyhedron } from './Polyhedron.js';
 export { Symmetry } from './Symmetry.js';
 export { Wyckoff } from './Wyckoff.js';
 export { Field } from './Field.js';
-export { Plane } from './Plane.js';
+export { Plane, getCutPlaneMaskSign } from './Plane.js';
 export { FieldContainer } from './FieldContainer.js';
 export { ColoredObject } from './ColoredObject.js';
 

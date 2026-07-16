@@ -227,8 +227,19 @@ function detectLink(D1, D2) {
 }
 
 // ── Controller ────────────────────────────────────────────────────────────────
-export function createLandscape(container, api) {
+/**
+ * opts (all optional):
+ *   controlsHost: element hosting the loader UI (the 📂 button + a drop
+ *     target) instead of `container` — used by the split controls/plots
+ *     window pair (ui/LandscapePanel.js), where the loader lives in the
+ *     left-dock controls window and `container` is the plots window's body.
+ *   onContent(): a load attempt started (files chosen/dropped) — the caller
+ *     opens/reveals the plots window so the result (or the error box) is
+ *     visible.
+ */
+export function createLandscape(container, api, opts = {}) {
   injectStyles();
+  const controlsHost = opts.controlsHost || null;
 
   const state = {
     mode: 'empty',        // 'empty' | 'linked' | 'independent'
@@ -249,11 +260,11 @@ export function createLandscape(container, api) {
   tooltip.className = 'lsc-tip';
   document.body.appendChild(tooltip);
 
-  // ---- toolbar: file input (multi-select), prepended at the top of the
-  // addon's container — there is no header toolbar slot to borrow (the pane
-  // header is generic to the shared split view). Attached directly to
-  // `container` (not `root`) so it survives showEmpty()/buildLinkedDOM()/
-  // setupIndependent(), all of which do a root.replaceChildren(). ----------
+  // ---- toolbar: file input (multi-select), hosted in the controls window
+  // when one is provided (opts.controlsHost), else prepended at the top of
+  // the addon's container. Attached outside `root` either way so it survives
+  // showEmpty()/buildLinkedDOM()/setupIndependent(), all of which do a
+  // root.replaceChildren(). -------------------------------------------------
   const loadLabel = document.createElement('label');
   loadLabel.className = 'lsc-load-btn';
   loadLabel.textContent = '📂 Load landscape JSON';
@@ -262,7 +273,7 @@ export function createLandscape(container, api) {
   fileInput.accept = '.json,application/json';
   fileInput.multiple = true;
   loadLabel.appendChild(fileInput);
-  container.appendChild(loadLabel);
+  (controlsHost || container).appendChild(loadLabel);
   fileInput.addEventListener('change', () => {
     if (fileInput.files?.length) loadFiles([...fileInput.files]);
     fileInput.value = '';
@@ -272,18 +283,24 @@ export function createLandscape(container, api) {
   root.className = 'lsc-root';
   container.appendChild(root);
 
-  // ---- drag & drop onto the pane body ------------------------------------
-  const onDragOver = (e) => { e.preventDefault(); container.classList.add('lsc-dragover'); };
-  const onDragLeave = (e) => { if (e.target === container) container.classList.remove('lsc-dragover'); };
-  const onDrop = (e) => {
-    e.preventDefault();
-    container.classList.remove('lsc-dragover');
-    const files = [...(e.dataTransfer?.files || [])].filter((f) => /\.json$/i.test(f.name));
-    if (files.length) loadFiles(files);
-  };
-  container.addEventListener('dragover', onDragOver);
-  container.addEventListener('dragleave', onDragLeave);
-  container.addEventListener('drop', onDrop);
+  // ---- drag & drop onto the plots body (and the controls window, if split:
+  // the plots window may be closed until a first load, so the controls side
+  // must accept the drop too) -----------------------------------------------
+  const dropZones = controlsHost ? [container, controlsHost] : [container];
+  const dropHandlers = dropZones.map((zone) => {
+    const onDragOver = (e) => { e.preventDefault(); zone.classList.add('lsc-dragover'); };
+    const onDragLeave = (e) => { if (e.target === zone) zone.classList.remove('lsc-dragover'); };
+    const onDrop = (e) => {
+      e.preventDefault();
+      zone.classList.remove('lsc-dragover');
+      const files = [...(e.dataTransfer?.files || [])].filter((f) => /\.json$/i.test(f.name));
+      if (files.length) loadFiles(files);
+    };
+    zone.addEventListener('dragover', onDragOver);
+    zone.addEventListener('dragleave', onDragLeave);
+    zone.addEventListener('drop', onDrop);
+    return { zone, onDragOver, onDragLeave, onDrop };
+  });
 
   // ---- resize: re-size tiles to the available space, then re-fit overlays
   // + colorbars off the result -----------------------------------------
@@ -305,7 +322,8 @@ export function createLandscape(container, api) {
     box.className = 'lsc-empty';
     box.innerHTML =
       '<p><b>Energy Landscape</b> — load one or two landscape JSON files ' +
-      '(via the header button or by dropping them here).</p>' +
+      '(via the Load button in the Energy Landscape window, or by dropping ' +
+      'them onto it or here).</p>' +
       '<p>Each file renders one row of per-model energy heatmaps. Two files that ' +
       'describe the same crystal with a shared displacement coordinate become the ' +
       'linked two-row view; clicking or dragging a tile displaces the atoms live in ' +
@@ -319,6 +337,9 @@ export function createLandscape(container, api) {
 
   // ---- load / parse ------------------------------------------------------
   async function loadFiles(files) {
+    // Something is about to show (rows, or the error box) — let the host
+    // reveal the plots window before we render into it, so sizes measure.
+    opts.onContent?.();
     try {
       const parsed = [];
       for (const f of files.slice(0, 2)) {
@@ -754,7 +775,7 @@ export function createLandscape(container, api) {
   // width/height following grid_shape, not literally 1:1), but the SIZE is
   // driven by the available space in BOTH axes, not just by how wide the
   // pane happens to be: dragging the split view taller (e.g. while docked to
-  // the bottom, see docs/ui/panels/SplitView.js) grows the tiles, a shorter
+  // the bottom, see docs/ui/panels/RightDock.js) grows the tiles, a shorter
   // pane shrinks them. A row also isn't forced to stay a single line — in a
   // narrow ("portrait") pane a full-width row of N tiles would be squeezed
   // tiny, so the layout tries every column count from N (one row) down to 1
@@ -840,9 +861,12 @@ export function createLandscape(container, api) {
   function destroy() {
     ro.disconnect();
     if (unsubTheme) unsubTheme();
-    container.removeEventListener('dragover', onDragOver);
-    container.removeEventListener('dragleave', onDragLeave);
-    container.removeEventListener('drop', onDrop);
+    for (const { zone, onDragOver, onDragLeave, onDrop } of dropHandlers) {
+      zone.removeEventListener('dragover', onDragOver);
+      zone.removeEventListener('dragleave', onDragLeave);
+      zone.removeEventListener('drop', onDrop);
+    }
+    loadLabel.remove();
     tooltip.remove();
     removeStyles();
   }
