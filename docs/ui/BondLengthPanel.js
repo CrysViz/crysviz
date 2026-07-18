@@ -1,6 +1,6 @@
 import { fileBrowser, general, groups } from '../state/store.js';
 
-import {atomicRadii} from '../defaults/radii_defaults.js'
+import {getElementRadius} from '../defaults/radii_defaults.js'
 
 
 
@@ -184,7 +184,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     openDoublePeriodicTable((pair) => {
       if (!general.bondLengths[pair]) {
         const [el1, el2] = pair.split('-');
-        const defaultRadius = (atomicRadii[el1] || 1.0) + (atomicRadii[el2] || 1.0);
+        const defaultRadius = getElementRadius(el1) + getElementRadius(el2);
         const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
         general.bondLengths[pair] = { min: 0, max: defaultValue };
         general.defaultBondLengths[pair] = { min: 0, max: defaultValue };
@@ -216,7 +216,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       pairs.push(pair);
 
       if (!general.bondLengths[pair]) {
-        const defaultRadius = (atomicRadii[uniqueElements[i]] || 1.0) + (atomicRadii[uniqueElements[j]] || 1.0);
+        const defaultRadius = getElementRadius(uniqueElements[i]) + getElementRadius(uniqueElements[j]);
         const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
         general.bondLengths[pair] = { min: 0.0, max: defaultValue };
         general.defaultBondLengths[pair] = { min: 0.0, max: defaultValue }; // Store default

@@ -1,3 +1,5 @@
+import { general } from '../state/store.js';
+
 export const atomicRadii = {
   H: 0.8, He: 1.0, Li: 1.28, Be: 0.96, B: 0.84, C: 0.76, N: 0.71, O: 0.66, F: 0.57, Ne: 0.58,
   Na: 1.66, Mg: 1.41, Al: 1.21, Si: 1.11, P: 1.07, S: 1.05, Cl: 1.02, Ar: 1.06,
@@ -10,3 +12,11 @@ export const atomicRadii = {
   Hf: 1.75, Ta: 1.70, W: 1.62, Re: 1.51, Os: 1.44, Ir: 1.41, Pt: 1.36, Au: 1.36, Hg: 1.32,
   Tl: 1.45, Pb: 1.46, Bi: 1.48, Po: 1.40, At: 1.50, Rn: 1.50
 }; // atomic radii in angstroms
+
+// Single source of truth for "what base radius should this element use": a
+// user-defined override (general.customAtomicRadii, see
+// CustomUserSettingsPanel.js) wins if set, otherwise the built-in table,
+// falling back to 1.0 Å for anything unlisted.
+export function getElementRadius(element) {
+  return general.customAtomicRadii?.[element] ?? atomicRadii[element] ?? 1.0;
+}

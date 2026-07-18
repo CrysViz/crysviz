@@ -37,6 +37,7 @@ function createDropdown(id, labelText, options, onChange) {
   options.forEach((opt) => {
     const option = createElement("option", { value: opt.value }, {}, opt.text);
     if (opt.selected) option.selected = true;
+    if (opt.disabled) option.disabled = true;
     select.appendChild(option);
   });
 
@@ -70,6 +71,19 @@ export function rebuildRenderPipelineMenu() {
     if (opt.selected) option.selected = true;
     select.appendChild(option);
   });
+}
+
+// Keeps the "Element Color Map" dropdown truthful when something outside its
+// own onChange changes what it represents - restoring a share link (which
+// sets general.useDefaultColors directly) or touching general.customColorMap
+// via the Custom User Settings panel (which layers per-element overrides on
+// top of whichever base scheme is selected, so the dropdown should show
+// "User (custom)" the moment any override exists).
+export function syncElementColorMapDropdown() {
+  const select = document.getElementById('atomsElementColorMapMenu');
+  if (!select) return;
+  const hasOverrides = Object.keys(general.customColorMap).length > 0;
+  select.value = hasOverrides ? 'user' : (general.useDefaultColors ? 'default' : 'jmol');
 }
 
 // --- Color Mapping Functions ---
@@ -867,9 +881,16 @@ export function addColorPanel(target = "colorContainer") {
 
   const atomsElementColorMapMenu = createDropdown("atomsElementColorMapMenu", "Element Color Map", [
     { value: "default", text: "CrysViz Default", selected: true },
-    { value: "jmol", text: "JMol-like" }
+    { value: "jmol", text: "JMol-like" },
+    // Not user-selectable (disabled) - this option only ever gets set
+    // programmatically by syncElementColorMapDropdown(), to reflect that
+    // per-element overrides (Custom User Settings) are layered on top of
+    // whichever base scheme is chosen below.
+    { value: "user", text: "User (custom)", disabled: true },
   ], () => {
-    const useDefault = atomsElementColorMapMenu.querySelector("select").value === "default";
+    const select = atomsElementColorMapMenu.querySelector("select");
+    if (select.value === "user") return;
+    const useDefault = select.value === "default";
     general.useDefaultColors = useDefault;
     // Explicitly update all atom colors with the new scheme
     const structure = fileBrowser.selectedStructure;
@@ -1363,4 +1384,9 @@ export function addColorPanel(target = "colorContainer") {
   panel.appendChild(content);
   group.appendChild(panel);
   targetPanel.appendChild(group);
+
+  // The dropdown above hardcodes "CrysViz Default" as selected at creation;
+  // fix it up to the real state (including "User (custom)" if overrides were
+  // already restored from localStorage before this panel built).
+  syncElementColorMapDropdown();
 }

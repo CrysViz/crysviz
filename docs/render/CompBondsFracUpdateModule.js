@@ -1,7 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
 
 import { app, groups,fileBrowser, general} from '../state/store.js';
-import {atomicRadii} from '../defaults/radii_defaults.js'
+import {getElementRadius} from '../defaults/radii_defaults.js'
 
 import {Bond} from '../model/index.js';
 
@@ -34,7 +34,7 @@ export function initBondsLengths(){
       pairs.push(pair);
 
       if (!general.bondLengths[pair]) {
-        const defaultRadius = (atomicRadii[uniqueElements[i]] || 1.0) + (atomicRadii[uniqueElements[j]] || 1.0);
+        const defaultRadius = getElementRadius(uniqueElements[i]) + getElementRadius(uniqueElements[j]);
         const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
         general.bondLengths[pair] = { min: 0.0, max: defaultValue };
         general.defaultBondLengths[pair] = { min: 0.0, max: defaultValue }; // Store default
