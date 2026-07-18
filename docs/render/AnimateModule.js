@@ -5,7 +5,7 @@ import { app, general} from '../state/store.js';
 import {updateLattice,latticeDirsNorm} from './LatticeModule.js'
 import { syncGroundPlaneVisibility } from './GroundPlaneModule.js'
 
-import {updateRandomColors} from '../ui/DiscoModule.js'
+import {updateRandomColors, startDisco, stopDisco} from '../ui/DiscoModule.js'
 
 
 let isRendering = true;
@@ -85,6 +85,14 @@ let frames = 0;
 let fps = 0;
 let keyState={};
 let isKeyComboActive = false;
+// Disco mode requires holding the combo for DISCO_HOLD_MS before it engages —
+// a bare press-and-release must not trigger it. comboHeldSince is the
+// timestamp the combo most recently became active (null while inactive);
+// discoEngaged tracks whether the hold threshold has actually been reached
+// (and thus whether stopDisco() is owed on release).
+const DISCO_HOLD_MS = 1000;
+let comboHeldSince = null;
+let discoEngaged = false;
 
 
 let _counter = 1;
@@ -99,6 +107,11 @@ window.addEventListener('keyup', (event) => {
   keyState[event.code] = false;
   //console.log('Key released:', event.code, keyState);
 });
+
+// A held combo's keyup can be missed if the window loses focus mid-hold (e.g.
+// alt-tab) — clear all key state so a stuck combo (disco mode) exits on the
+// next frame instead of leaving colors scrambled indefinitely.
+window.addEventListener('blur', () => { keyState = {}; });
 
 /** Zero the TrackballControls damping momentum once it is sub-perceptual.
  *  The residuals live in the (private) gap vectors `_moveCurr - _movePrev`,
@@ -158,6 +171,18 @@ export function animation_update(time = 0) {
 
   // Continuous animations hold the render flag high while active.
   isKeyComboActive = keyState['ControlLeft'] && keyState['KeyD'];
+  if (isKeyComboActive && comboHeldSince == null) {
+    comboHeldSince = time; // rising edge — start timing the hold
+  } else if (!isKeyComboActive) {
+    if (discoEngaged) stopDisco();
+    discoEngaged = false;
+    comboHeldSince = null;
+  } else if (!discoEngaged && time - comboHeldSince >= DISCO_HOLD_MS) {
+    // Combo has been held continuously past the threshold — engage now,
+    // rather than on a quick press-and-release.
+    discoEngaged = true;
+    startDisco();
+  }
   const autoRotating = app.angularVelocity != null &&
     general.autoRandomEnabled && app.angularVelocity.lengthSq() > 0;
   if (autoRotating || isKeyComboActive) needsRender = true;
@@ -243,7 +268,7 @@ export function animation_update(time = 0) {
     }
 
   //console.log(keyState)
-  if (isKeyComboActive) {
+  if (discoEngaged) {
     // Update colors every 20th timestep
     if (_counter >= 20) {
       if (_counter%10 == 0){

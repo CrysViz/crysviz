@@ -376,7 +376,10 @@ export function registerDefaultPanels() {
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/comparisonInfo.md',
-    available() { return !!fileBrowser.comparisonStructure; },
+    // Available as soon as a structure is loaded (not gated on a comparison
+    // structure already being chosen) — the panel now hosts the "Enable
+    // Comparison" toggle and the "please select a structure" error itself.
+    available() { return !!fileBrowser.selectedStructure; },
     buildContent(body) { addCompPanel(body.id); },
     onDestroyContent() { removeCompPanel(); },
     defaults: { dock: 'left', order: 20, collapsed: true },

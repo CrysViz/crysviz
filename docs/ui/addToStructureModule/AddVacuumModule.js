@@ -18,8 +18,18 @@ import { wireCollisionGuardedButton } from './CollisionWarningUI.js';
 import { createBondLengthControls } from '../BondLengthPanel.js';
 import { fileBrowser } from '../../state/store.js';
 import { fracToCart, cartToFrac } from '../../render/index.js';
+import { fracToCartPoint } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { defaultFloatingAnchor } from './floatingPanelAnchor.js';
+import { elementData } from '../PeriodicTablePickerCore.js';
+
+// Rows with an element string that isn't a real periodic-table symbol, keyed
+// by the atom-table row index (matches editor.getAtoms()/highlightConflicts).
+function invalidElementMessage(atoms) {
+  const bad = [...new Set(atoms.filter(a => !elementData[a.element]).map(a => a.element || '(empty)'))];
+  if (!bad.length) return null;
+  return `Not a recognized element: ${bad.join(', ')}. Use the periodic table picker (⚛) to pick one.`;
+}
 
 const PANEL_ID = 'addAtomsVacuum';
 const COLLISION_THRESHOLD_ANGSTROM = 0.5;
@@ -173,13 +183,16 @@ function addAtomsPanel(container) {
     watchContainer: editorHost,
     defaultLabel: 'Add to Structure',
     anywayLabel: 'Add Anyway',
+    validate: () => invalidElementMessage(editor.getAtoms()),
     checkCollisions: () => {
       const structure = fileBrowser.selectedStructure;
       const atoms = editor.getAtoms();
       if (!structure || !atoms.length) return { tooClose: [] };
       const existingCart = fracToCart(structure.atoms.map(a => a.position), structure.lattice);
       const existingAtoms = existingCart.map((position, i) => ({ position, element: structure.elements[i] }));
-      const candidateAtoms = atoms.map(a => ({ position: [a.x, a.y, a.z], element: a.element }));
+      // The table's x/y/z are fractional — convert to Cartesian for the
+      // distance-based collision check (checkAtomCollisions expects Cartesian).
+      const candidateAtoms = atoms.map(a => ({ position: fracToCartPoint([a.x, a.y, a.z], structure.lattice), element: a.element }));
       return checkAtomCollisions({
         lattice: structure.lattice,
         existingAtoms,
@@ -199,8 +212,13 @@ function addAtomsPanel(container) {
       if (!atoms.length) return;
       addAtomsToExistingStructure(structure, atoms);
       createBondLengthControls();
-      updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+      // reRenderComposition: "open" — the Structure Info panel otherwise
+      // doesn't rebuild its composition/atom list at all (its default is
+      // false), so newly-added atoms/elements wouldn't show up there until
+      // some unrelated action happened to trigger a rebuild.
+      updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderComposition: "open" });
       editor.clear();
+      removePanel(PANEL_ID);
     },
   });
 }

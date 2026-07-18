@@ -5,7 +5,6 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
 import {runPeriodicWrapped} from './LatticeModule.js'
-import {getAtomColor} from '../utils/ColorModule.js'
 import {finishAtomsMesh} from './AtomsFracUpdateModule.js'
 import {createStyledMaterial, syncCelHullOpacitySuppression} from './MaterialStyles.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
@@ -108,9 +107,7 @@ export function updateSecondSingleAtomPosition(index, position) {
  // console.log("Expected length:", 16 * groups.atomsMesh.count);
 }
 
-export function updateSecondSingleAtomColor(originalIndex, index, element, opacity = 1.0) {
-  const hex = getAtomColor(originalIndex)
-  // console.log(`Element: ${element}, Hex: ${hex}, RGB: [${((hex >> 16) & 0xFF) / 255}, ${((hex >> 8) & 0xFF) / 255}, ${(hex & 0xFF) / 255}]`);
+export function updateSecondSingleAtomColor(index, hex) {
   groups.secondAtomsMesh.setColorAt(index, new THREE.Color(hex));
   groups.secondAtomsMesh.instanceColor.needsUpdate = true;
 }
@@ -128,7 +125,6 @@ export function updateSecondSingleAtomDiameter(index, element, scale = 1) {
 
 
 export function updateSecondAtoms(structure, opacity = 1.0) {
-  console.error("Update comp  opacity", opacity)
   let periodic = structure.periodic;
 
   let wrapped;
@@ -137,15 +133,23 @@ export function updateSecondAtoms(structure, opacity = 1.0) {
   wrapped = periodic.wrapped
   wrappedCart = wrapped.cart
   const mesh = groups.secondAtomsMesh;
- 
+
   mesh.material.opacity = opacity;
   applyTransparency(mesh.material, { kind: 'compAtoms', opacity, mesh });
   syncCelHullOpacitySuppression(mesh, opacity);
 
-  for (let i = 0; i < groups.atomsMesh.count; i++) {
+  // Iterate the COMPARISON mesh's own instance count, not the main
+  // structure's — the two structures can (and usually do) have different
+  // atom/periodic-image counts, and indexing wrappedCart/wrapped.elements
+  // (both sized to the comparison structure) past its own length reads
+  // undefined and crashes updateSecondSingleAtomPosition.
+  for (let i = 0; i < mesh.count; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     updateSecondSingleAtomPosition(i, wrappedCart[i])
-    updateSecondSingleAtomColor(originalIndex,i, wrapped.elements[i], opacity)
+    // Read the color from the comparison structure's own atom — never from
+    // the main structure — so editing a main-structure atom's color never
+    // bleeds into the comparison rendering.
+    updateSecondSingleAtomColor(i, structure.atoms?.[originalIndex]?.getColor?.() ?? structure.atoms?.[originalIndex]?.defaultColor)
     updateSecondSingleAtomDiameter(i, wrapped.elements[i],
       structure.atoms?.[originalIndex]?.getRadiusScale?.() ?? 1)
 

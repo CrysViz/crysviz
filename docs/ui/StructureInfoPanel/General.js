@@ -2,7 +2,7 @@ import {fileBrowser, general, structureShip} from '../../state/store.js';
 
 
 import {collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
-import { createCompositionRow, createWyckoffCompositionRow} from './Species.js'
+import { createCompositionRow, createWyckoffCompositionRow, clearCompositionRowRegistry} from './Species.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'
 import { createPolyhedraListControls } from '../PolyhedraListPanel.js'
 import { clearAllHighlights } from '../SelectAndHighlightModule.js'
@@ -408,6 +408,9 @@ export function renderComposition(panelState="closed") {
 
   const compDiv = document.getElementById('composition');
   compDiv.innerHTML = '';
+  // Drop any row updaters left behind by a previously-selected structure —
+  // see clearCompositionRowRegistry() for why stale entries crash.
+  clearCompositionRowRegistry();
   const compWrapper = document.createElement('div');
     compWrapper.style.cssText = `
     display: flex;

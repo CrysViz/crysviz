@@ -102,10 +102,18 @@ export function createCompositionRow(el, count, total) {
     // linking is off, aggregate the resolved per-copy colors instead so the
     // dot reflects individually recolored copies.
     const structure = fileBrowser.selectedStructure;
+    // A color-change event can fire between fileBrowser.selectedStructure
+    // being swapped and this row's own rebuild (e.g. syncPlanesForSelectedStructure's
+    // updateVisualization call, which runs before updateStructureFromRowAndStep's
+    // final reRenderComposition:true) — so elementAtomIndices may briefly hold
+    // indices from the PREVIOUS structure. Drop any that are out of range for
+    // the structure actually selected right now instead of crashing.
+    const atomCount = structure?.atoms?.length ?? 0;
+    const validIndices = elementAtomIndices.filter((index) => index < atomCount);
     const atomColors = (!general.linkPeriodicCopies && structure?.atomImages)
-      ? elementAtomIndices.flatMap((index) =>
+      ? validIndices.flatMap((index) =>
           (structure.atomImages[index] ?? []).map((img) => safeColor(getAtomImageColor(structure, img))))
-      : elementAtomIndices.map(index => safeColor(getAtomColor(index)));
+      : validIndices.map(index => safeColor(getAtomColor(index)));
     const currentOpacity = getElementOpacityValues(el)[0] ?? 1;
 
     // Remove old dot if it exists
@@ -325,7 +333,13 @@ export function createWyckoffCompositionRow(el, entries, total) {
    * Updates the pie dot for this Wyckoff element row
    */
   function updatePieDotForRow() {
-    const atomColors = wyckoffAtomIndices.map(index => safeColor(getAtomColor(index)));
+    // See the non-Wyckoff updatePieDotForRow above for why this bounds check
+    // is needed — a color-change event can fire against a just-swapped
+    // fileBrowser.selectedStructure before this row itself rebuilds.
+    const atomCount = fileBrowser.selectedStructure?.atoms?.length ?? 0;
+    const atomColors = wyckoffAtomIndices
+      .filter((index) => index < atomCount)
+      .map(index => safeColor(getAtomColor(index)));
     const currentOpacity = getElementOpacityValues(el)[0] ?? 1;
 
     // Remove old dot if it exists
@@ -478,6 +492,20 @@ export function createWyckoffCompositionRow(el, entries, total) {
  */
 export function updateAllCompositionPieDots() {
   Object.values(compositionRowUpdateFunctions).forEach(updateFn => updateFn());
+}
+
+/**
+ * Drop every registered row updater. `renderComposition()` rebuilds the
+ * composition DOM from scratch on every call but this registry is keyed by
+ * element symbol and was never cleared, so an element present in a
+ * previously-selected structure but absent from the current one left its
+ * updater behind — the next `crysviz:colors-changed` event (fired by every
+ * `updateVisualization()` call) would then call it with atom indices from the
+ * old structure against the new (possibly smaller) `fileBrowser.selectedStructure`,
+ * crashing on an out-of-range atom lookup. Call this before (re)creating rows.
+ */
+export function clearCompositionRowRegistry() {
+  for (const key of Object.keys(compositionRowUpdateFunctions)) delete compositionRowUpdateFunctions[key];
 }
 
 // Recoloring (color-map change, mode switch, color-bar limits, individual

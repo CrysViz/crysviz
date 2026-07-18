@@ -21,7 +21,15 @@ export function initBondsLengths(){
     return;
 
   }
-  let elements = [...fileBrowser.selectedStructure.elements];
+  // Include the comparison structure's elements too: this only ever runs
+  // ahead of building COMPARISON bonds, and a comparison structure commonly
+  // has at least one element the main structure doesn't — any pair missing
+  // from general.bondLengths gets a cutoff of 0 (getBondCutoff falls back to
+  // `?.max || 0.0`), which silently drops every bond that pair could form.
+  let elements = [
+    ...fileBrowser.selectedStructure.elements,
+    ...(fileBrowser.comparisonStructure?.elements ?? []),
+  ];
   const uniqueElements = [...new Set(elements)]; // there is a object variable for this!
   const pairs = [];
 
@@ -116,10 +124,29 @@ export function buildSecondBondObjects(structure){
         srcIndices: [wrapped.srcIndex[i], wrapped.srcIndex[j]],
         indices: [i, j]
       });
+
+      // bond.color is never set by the Bond constructor itself (it only
+      // computes defaultColor) — the main buildBondObjects assigns it right
+      // after construction based on the active color mode; this path never
+      // did, so every comparison bond rendered white regardless of element
+      // (new THREE.Color(undefined) from an empty bond.color array).
+      const atoms = structure.atoms;
+      if (general.bondsColor === "white") {
+        bond.color = ["#ffffff", "#ffffff"];
+      } else if (general.bondsColor === "solid") {
+        bond.color = [general.solidBondColor || "#ffffff", general.solidBondColor || "#ffffff"];
+      } else if (atoms && bond.srcIndices[0] < atoms.length && bond.srcIndices[1] < atoms.length) {
+        // Default (including "elements"/"length" — length-based colormap
+        // grading isn't implemented for comparison bonds, so they fall back
+        // to element/atom colors instead of a gradient).
+        bond.color = [atoms[bond.srcIndices[0]].color, atoms[bond.srcIndices[1]].color];
+      } else {
+        bond.color = bond.defaultColor;
+      }
+
       structure.bonds.push(bond);
     }
   }
-  console.warn(structure.bonds)
 }
 
 export function renderSecondBonds(structure) {

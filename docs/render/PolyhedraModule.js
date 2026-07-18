@@ -25,6 +25,7 @@ import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedra
 import { rebuildAtoms } from '../render/AtomsFracUpdateModule.js'
 import { rebuildBonds } from '../render/BondsFracUpdateModule.js'
 import { runPeriodicWrapped } from '../render/LatticeModule.js'
+import { updatePolyhedraComparisonWarning } from '../ui/PolyhedraComparisonWarningBanner.js'
 
 // Single-flight guard for the async compute. Only one compute runs at a time; any
 // updatePolyhedra() request that arrives while one is in flight sets `polyhedraDirty`
@@ -1266,6 +1267,11 @@ export function setPolyEdgeWidth(width) {
  * mirrors the scene and bond-cutoff edits take effect) and renders it.
  */
 export async function updatePolyhedra() {
+  // Reflect current showPolyhedra/completePolyhedra + comparison-structure
+  // state in the viewport warning banner every time this entry point runs
+  // (toggles, comparison enable/disable/step-change all funnel through here).
+  updatePolyhedraComparisonWarning();
+
   // Turning the feature off takes effect immediately (clear the group now), even if a
   // compute is in flight — flag it dirty so that in-flight loop also stops/settles.
   if (!general.showPolyhedra && !general.completePolyhedra) {

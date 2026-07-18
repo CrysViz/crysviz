@@ -186,7 +186,9 @@ export function createLatticeComparisonPopup() {
   popup.appendChild(collapsible);
 
   const toggleBtn = document.createElement("button");
-  toggleBtn.textContent = "Show details ▼";
+  // Starts expanded — the comparison details are the point of this popup, so
+  // hiding them by default just added an extra click most users would take anyway.
+  toggleBtn.textContent = "Hide details ▲";
   toggleBtn.style.width = "100%";
   toggleBtn.style.background = "#333";
   toggleBtn.style.border = "none";
@@ -196,7 +198,7 @@ export function createLatticeComparisonPopup() {
   collapsible.appendChild(toggleBtn);
 
   const content = document.createElement("div");
-  content.style.display = "none";
+  content.style.display = "block";
   content.style.padding = "5px";
   collapsible.appendChild(content);
 

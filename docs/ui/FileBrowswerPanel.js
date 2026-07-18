@@ -24,6 +24,169 @@ export function countChecked() {
     .filter((cb) => cb.checked).length;
 }
 
+/** Enable the combine button only when there's something to combine. */
+export function updateCombineButtonState() {
+  const btn = document.getElementById('combineTrajectoriesButton');
+  if (!btn) return;
+  btn.disabled = countChecked() < 2;
+}
+
+/** Small centered modal asking for a name; calls onConfirm(name) if confirmed. */
+function openCombineNamePopup(onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.className = 'combine-name-popup-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.4);
+  `;
+
+  const popup = document.createElement('div');
+  popup.style.cssText = `
+    background: rgba(13,13,13,0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 260px;
+  `;
+
+  const label = document.createElement('div');
+  label.textContent = 'Name for the combined trajectory:';
+  label.style.cssText = 'color: rgb(255,255,255); font-size: 12px;';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'combine-name-input';
+  input.value = 'Combined Trajectory';
+  input.style.cssText = `
+    background: var(--bg-color);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgb(255,255,255);
+    border-radius: 4px;
+    font-size: 12px;
+    padding: 6px;
+  `;
+
+  const buttonRow = document.createElement('div');
+  buttonRow.style.cssText = 'display:flex; gap:10px; justify-content:flex-end;';
+
+  const buttonStyle = `
+    background: var(--bg-color);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgb(255,255,255);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 6px 10px;
+  `;
+  const confirmButton = document.createElement('button');
+  confirmButton.textContent = 'Combine';
+  confirmButton.style.cssText = buttonStyle;
+
+  const cancelButton = document.createElement('button');
+  cancelButton.textContent = 'Cancel';
+  cancelButton.style.cssText = buttonStyle;
+
+  buttonRow.appendChild(cancelButton);
+  buttonRow.appendChild(confirmButton);
+  popup.appendChild(label);
+  popup.appendChild(input);
+  popup.appendChild(buttonRow);
+  overlay.appendChild(popup);
+  document.body.appendChild(overlay);
+
+  input.focus();
+  input.select();
+
+  const close = () => overlay.remove();
+  cancelButton.onclick = close;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  const confirm = () => { onConfirm(input.value); close(); };
+  confirmButton.onclick = confirm;
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') confirm();
+    if (e.key === 'Escape') close();
+  });
+}
+
+/**
+ * Concatenate every checked row's frames (in table order) into one new
+ * trajectory row, appended after the existing rows (originals are kept).
+ * Structures are cloned the same way the row "copy" action does, so the new
+ * row doesn't share mutable state with the originals.
+ */
+function combineCheckedRows(name) {
+  const tbody = document.querySelector('#objectTable tbody');
+  const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
+  const checkedRows = rows.filter((r) => r.querySelector('input[type="checkbox"]')?.checked);
+  if (checkedRows.length < 2) return;
+
+  const combinedStructures = [];
+  for (const r of checkedRows) {
+    const idx = rows.indexOf(r);
+    const container = structureShip.container[idx];
+    if (!container) continue;
+    for (const structure of container.structures) {
+      combinedStructures.push(new Structure({
+        elements: [...structure.elements],
+        uniqueElements: [...structure.uniqueElements],
+        lattice: structure.lattice.map(row => [...row]),
+        atoms: [...structure.atoms],
+        periodic: { ...structure.periodic }, // Clone as object/Map
+        volumetricFields: null
+      }));
+    }
+  }
+  if (!combinedStructures.length) return;
+
+  const newObj = {
+    name: (name && name.trim()) ? name.trim() : 'Combined Trajectory',
+    traj: combinedStructures.length,
+    step: 1,
+    structures: combinedStructures,
+  };
+
+  const newRow = createRow(newObj);
+  tbody.appendChild(newRow);
+  structureShip.len += 1;
+  structureShip.container.push(newObj);
+
+  // Selected rows have been combined — uncheck them and re-sync the derived
+  // UI state (combine button enablement, comparison structure).
+  checkedRows.forEach((r) => {
+    const cb = r.querySelector('input[type="checkbox"]');
+    if (cb) cb.checked = false;
+  });
+  updateCombineButtonState();
+  syncComparisonFromCheckboxes();
+
+  selectRow(newRow);
+}
+
+/** Wire the static combine button (index.html) once at startup. */
+export function initCombineTrajectoriesButton() {
+  const btn = document.getElementById('combineTrajectoriesButton');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const count = countChecked();
+    if (count < 2) return; // guarded by the disabled state anyway
+    if (count > 2 && general.compareModeOn) {
+      showError('Comparison only supports one structure — turn off Comparison, or check only two rows to combine.');
+      return;
+    }
+    openCombineNamePopup((name) => combineCheckedRows(name));
+  });
+  updateCombineButtonState();
+}
+
 // Function to create a new row in the table
 export function createRow(obj) {
   const row = document.createElement("tr");
@@ -42,16 +205,14 @@ export function createRow(obj) {
     <td class="ftd icon delete">×</td>
   `;
 
-  // Bind the checkbox limit logic
+  // Plain multi-select checkbox: feeds both "combine into one trajectory"
+  // (any number checked) and the comparison structure (only meaningful when
+  // exactly one is checked and general.compareModeOn is on — see
+  // syncComparisonFromCheckboxes).
   const checkbox = row.querySelector('input[type="checkbox"]');
   checkbox.addEventListener("change", () => {
-    const count = countChecked();
-    if (count > 1) {
-      checkbox.checked = false;
-      showError("Only one structure can be selected for comparison");
-      return;
-    }
-    updateComparisonStructure(row, checkbox.checked);
+    updateCombineButtonState();
+    syncComparisonFromCheckboxes();
   });
 
   // Step input handler (validation and updates)
@@ -398,6 +559,9 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     structureShip.container.splice(rowIndex, 1);
     row.remove();
     selectLastAddedRow();
+    // The removed row may have been checked — re-derive combine/comparison state.
+    updateCombineButtonState();
+    syncComparisonFromCheckboxes();
   });
 
   row.dataset.obj = JSON.stringify(obj);
@@ -433,17 +597,82 @@ export function selectLastAddedRow() {
   updateStructureFromRowAndStep(rowIndex);
 }
 
-// Function to update the comparison structure when a checkbox is toggled
-export function updateComparisonStructure(row, isChecked) {
-  if (isChecked) {
-    const rowIndex = Array.from(row.parentElement.children).indexOf(row);
-    fileBrowser.comparisonRow = row;
-    fileBrowser.comparisonRowIndex = rowIndex;
-    const stepInput = row.querySelector('input[type="number"]');
-    const step = parseInt(stepInput.value, 10) - 1;
-    const container = structureShip.container[rowIndex];
-    if (container && step >= 0 && step < container.structures.length) {
-      fileBrowser.comparisonStructure = container.structures[step];
+// Checkboxes in the file browser are a plain multi-select (needed so several
+// rows can be picked for "combine into one trajectory"). They only drive the
+// comparison structure when general.compareModeOn is also on — see
+// syncComparisonFromCheckboxes(), the single place that reconciles "what's
+// checked" + "is comparison mode on" into fileBrowser.comparisonStructure.
+
+/** Drop the active comparison structure/meshes and reset the crossfade opacity. */
+export function clearComparisonStructure() {
+  if (!fileBrowser.comparisonRow && !fileBrowser.comparisonStructure) {
+    refreshPanelAvailability();
+    return;
+  }
+  fileBrowser.comparisonRow = null;
+  fileBrowser.comparisonRowIndex = -1;
+  fileBrowser.comparisonStructure = null;
+
+  if (groups.secondAtomsMesh) {
+    groups.secondAtomsMesh.geometry.dispose();
+    groups.secondAtomsMesh.material.dispose();
+    app.scene.remove(groups.secondAtomsMesh);
+    groups.secondAtomsMesh = null;
+  }
+  if (groups.secondBondsMesh) {
+    groups.secondBondsMesh.geometry.dispose();
+    groups.secondBondsMesh.material.dispose();
+    app.scene.remove(groups.secondBondsMesh);
+    groups.secondBondsMesh = null;
+  }
+  // Comparison is gone — the crossfade slider no longer applies, so drop
+  // both opacities back to the structure's own default instead of
+  // leaving the main structure faded from wherever the slider was left.
+  general.mainOpacity = 1.0;
+  general.compOpacity = 1.0;
+  updateVisualization({
+    atomsUpdate: true,
+    bondsUpdate: true,
+    SecondAtomsUpdate: false,
+    SecondReRenderAtoms: false,
+    SecondBondsUpdate: false,
+    SecondReRenderBonds: false,
+    SecondReRenderLattice: false
+  });
+  // No comparison structure anymore — grey out the Comparison panel.
+  refreshPanelAvailability();
+}
+
+/** Make `row` the active comparison structure (the single checked row). */
+function setComparisonRow(row) {
+  const rowIndex = Array.from(row.parentElement.children).indexOf(row);
+  fileBrowser.comparisonRow = row;
+  fileBrowser.comparisonRowIndex = rowIndex;
+  const stepInput = row.querySelector('input[type="number"]');
+  const container = structureShip.container[rowIndex];
+  const step = parseInt(stepInput.value, 10) - 1;
+  if (container && step >= 0 && step < container.structures.length) {
+    fileBrowser.comparisonStructure = container.structures[step];
+    updateVisualization({
+      SecondAtomsUpdate: false,
+      SecondReRenderAtoms: true,
+      SecondBondsUpdate: false,
+      SecondReRenderBonds: true,
+      SecondReRenderLattice: false
+    });
+  }
+
+  // Wire the step-input listener once per row (not once per check) — the old
+  // per-check wiring stacked a new listener on every checkbox toggle.
+  if (!row.dataset.comparisonStepWired) {
+    row.dataset.comparisonStepWired = "1";
+    stepInput.addEventListener("input", () => {
+      if (fileBrowser.comparisonRow !== row) return; // no longer the active comparison row
+      const idx = Array.from(row.parentElement.children).indexOf(row);
+      const cont = structureShip.container[idx];
+      const newStep = parseInt(stepInput.value, 10) - 1;
+      if (!cont || newStep < 0 || newStep >= cont.structures.length) return;
+      fileBrowser.comparisonStructure = cont.structures[newStep];
       updateVisualization({
         SecondAtomsUpdate: false,
         SecondReRenderAtoms: true,
@@ -451,76 +680,58 @@ export function updateComparisonStructure(row, isChecked) {
         SecondReRenderBonds: true,
         SecondReRenderLattice: false
       });
-    }
-
-    // Add event listener for step input changes
-    stepInput.addEventListener("input", () => {
-      const newStep = parseInt(stepInput.value, 10) - 1;
-      if (newStep >= 0 && newStep < container.structures.length) {
-        fileBrowser.comparisonStructure = container.structures[newStep];
-        updateVisualization({
-          SecondAtomsUpdate: false,
-          SecondReRenderAtoms: true,
-          SecondBondsUpdate: false,
-          SecondReRenderBonds: true,
-          SecondReRenderLattice: false
-        });
-
-        // Update lattice comparison panel if the popup is active
-        if (
-          fileBrowser.comparisonStructure &&
-          fileBrowser.selectedStructure &&
-          general.comparisonActive
-        ) {
-          const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
-          const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
-          updateLatticeComparisonPanel(L1, L2);
-        }
+      if (fileBrowser.comparisonStructure && fileBrowser.selectedStructure && general.comparisonActive) {
+        const L1 = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+        const L2 = fileBrowser.comparisonStructure.lattice.map(r => [...r]);
+        updateLatticeComparisonPanel(L1, L2);
       }
     });
-
-    // Update lattice comparison panel if the popup is active
-    if (
-      fileBrowser.comparisonStructure &&
-      fileBrowser.selectedStructure &&
-      general.comparisonActive
-    ) {
-      const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
-      const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
-      updateLatticeComparisonPanel(L1, L2);
-    }
-    // A comparison structure now exists — the Comparison panel becomes usable.
-    refreshPanelAvailability();
   }
-  else {
-    // If unchecked, clear the comparison structure if this row was the comparison row
-    if (fileBrowser.comparisonRow === row) {
-      fileBrowser.comparisonRow = null;
-      fileBrowser.comparisonRowIndex = -1;
-      fileBrowser.comparisonStructure = null;
 
-      if (groups.secondAtomsMesh) {
-        groups.secondAtomsMesh.geometry.dispose();
-        groups.secondAtomsMesh.material.dispose();
-        app.scene.remove(groups.secondAtomsMesh);
-        groups.secondAtomsMesh = null;
-      }
-      if (groups.secondBondsMesh) {
-        groups.secondBondsMesh.geometry.dispose();
-        groups.secondBondsMesh.material.dispose();
-        app.scene.remove(groups.secondBondsMesh);
-        groups.secondBondsMesh = null;
-      }
-      updateVisualization({
-        SecondAtomsUpdate: false,
-        SecondReRenderAtoms: false,
-        SecondBondsUpdate: false,
-        SecondReRenderBonds: false,
-        SecondReRenderLattice: false
-      });
-    }
-    // No comparison structure anymore — grey out the Comparison panel.
-    refreshPanelAvailability();
+  if (fileBrowser.comparisonStructure && fileBrowser.selectedStructure && general.comparisonActive) {
+    const L1 = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+    const L2 = fileBrowser.comparisonStructure.lattice.map(r => [...r]);
+    updateLatticeComparisonPanel(L1, L2);
+  }
+  // A comparison structure now exists — the Comparison panel becomes usable.
+  refreshPanelAvailability();
+}
+
+/** Show/hide the persistent error line in the Comparison panel, if built. */
+function setComparisonErrorText(text) {
+  const el = document.getElementById('comparisonErrorField');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.display = text ? 'block' : 'none';
+}
+
+/**
+ * Reconcile "which rows are checked" + "is Comparison mode on" into the
+ * active comparison structure. Call this on every checkbox change and
+ * whenever general.compareModeOn changes (also called once from
+ * ComparisonPanel.js's addCompPanel() so a fresh panel build shows the
+ * right state immediately).
+ */
+export function syncComparisonFromCheckboxes() {
+  const tbody = document.querySelector('#objectTable tbody');
+  const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
+  const checkedRows = rows.filter((r) => r.querySelector('input[type="checkbox"]')?.checked);
+
+  if (!general.compareModeOn) {
+    setComparisonErrorText(null);
+    clearComparisonStructure();
+    return;
+  }
+
+  if (checkedRows.length === 0) {
+    clearComparisonStructure();
+    setComparisonErrorText('Please select a structure to compare to.');
+  } else if (checkedRows.length === 1) {
+    setComparisonErrorText(null);
+    setComparisonRow(checkedRows[0]);
+  } else {
+    clearComparisonStructure();
+    setComparisonErrorText('Only one structure can be selected for comparison.');
   }
 }
 

@@ -43,6 +43,7 @@ import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render
 
 import {addAtomVacuumPanel} from '../ui/addToStructureModule/AddVacuumModule.js'
 import {initAddStructureButton} from '../ui/addToStructureModule/AddStructureModule.js'
+import {initCombineTrajectoriesButton} from '../ui/FileBrowswerPanel.js'
 import {initPanelSystem, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
 import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
 import {initFontScale} from '../ui/FontScaleModule.js'
@@ -471,6 +472,7 @@ function initUIPanels() {
   initRaytraceWarningModal();
   addAtomVacuumPanel();
   initAddStructureButton();
+  initCombineTrajectoriesButton();
   initKeyboardShortcuts();
 
   // Add viewport meta tag if not present for proper mobile scaling

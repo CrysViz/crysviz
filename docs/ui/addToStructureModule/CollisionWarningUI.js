@@ -15,7 +15,7 @@ function formatEndpoint(endpoint) {
   return `${endpoint.element} (${endpoint.group} atom ${endpoint.index + 1})`;
 }
 
-// wireCollisionGuardedButton({ button, warningContainer, watchContainer, defaultLabel, anywayLabel, checkCollisions, commit, onWarn, onClear })
+// wireCollisionGuardedButton({ button, warningContainer, watchContainer, defaultLabel, anywayLabel, checkCollisions, commit, onWarn, onClear, validate })
 //   button: the commit <button> element
 //   warningContainer: element the warning banner is inserted into (cleared between attempts)
 //   watchContainer: element to watch for 'input' events (e.g. the atom table)
@@ -24,7 +24,12 @@ function formatEndpoint(endpoint) {
 //   commit: () => void, called once the add is confirmed (clean, or after "Add Anyway")
 //   onWarn(tooClose): optional, called when a warning is shown (e.g. to highlight rows)
 //   onClear(): optional, called whenever the warning/armed state clears
-export function wireCollisionGuardedButton({ button, warningContainer, watchContainer, defaultLabel, anywayLabel, checkCollisions, commit, onWarn, onClear }) {
+//   validate(): optional, () => string | null. Runs before the collision check on every
+//     click; a returned string is shown as a hard-stop error (no "Anyway" override — the
+//     click just does nothing else) and skips both checkCollisions and commit entirely.
+//     For invalid input (e.g. an unrecognized element symbol) that must be fixed, not
+//     bypassed, unlike a proximity warning.
+export function wireCollisionGuardedButton({ button, warningContainer, watchContainer, defaultLabel, anywayLabel, checkCollisions, commit, onWarn, onClear, validate }) {
   let armed = false;
 
   function clearWarning() {
@@ -51,7 +56,23 @@ export function wireCollisionGuardedButton({ button, warningContainer, watchCont
     onWarn?.(tooClose);
   }
 
+  function showValidationError(message) {
+    warningContainer.innerHTML = `
+      <div class="collision-warning-banner">
+        <strong>Error:</strong> ${message}
+      </div>
+    `;
+    armed = false;
+    button.textContent = defaultLabel;
+    button.classList.remove('add-anyway-btn');
+  }
+
   button.addEventListener('click', () => {
+    const validationError = validate?.();
+    if (validationError) {
+      showValidationError(validationError);
+      return;
+    }
     const result = checkCollisions();
     if (result.tooClose.length && !armed) {
       showWarning(result.tooClose);

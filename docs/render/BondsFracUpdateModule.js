@@ -946,12 +946,19 @@ export async function updateBonds(opacity=1.0) {
   const bonds = fileBrowser.selectedStructure.bonds.filter(b => b.visibleLen > 1e-3);
   const activeCutPlanes = getActiveCutPlanes();
 
+  // updateSingleBond's own default lets an atom's userColor win over bond.color
+  // (right for "elements" mode, where bond.color IS meant to track the atom) —
+  // but in white/solid/length mode bond.color is intentionally NOT atom-derived,
+  // so an atom's custom color must not leak onto its bonds there. Mirrors
+  // ui/ColorPanel.js's bondsFollowAtomColors() gate for the same reason.
+  const overwriteAtomColor = general.bondsColor !== "elements" && general.bondsColor != null;
+
   bonds.forEach((bond, i) => {
     if (isBondCutByPlanes(bond, activeCutPlanes)) {
       hideSingleBond(i);
       return;
     }
-    updateSingleBond(i, bond);
+    updateSingleBond(i, bond, overwriteAtomColor);
   });
   mesh.material.opacity = opacity;
   // Transparency also accounts for per-bond alpha overrides (instanceOpacity).

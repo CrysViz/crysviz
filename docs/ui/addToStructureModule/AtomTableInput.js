@@ -22,7 +22,7 @@ function nonEmptyRows(container) {
 }
 
 // createAtomTableEditor(container) -> { getAtoms(), clear(), highlightConflicts(indices), clearConflicts() }
-// atoms returned by getAtoms() are Cartesian: { element, x, y, z, color }
+// atoms returned by getAtoms() are fractional (relative to the cell): { element, x, y, z, color }
 export function createAtomTableEditor(container) {
   const STICKY_TH_STYLE = 'border: 1px solid #444; padding: 3px; font-size: 12px; text-align: center; position: sticky; top: 0; background: var(--popup-bg); z-index: 1;';
 
@@ -33,9 +33,9 @@ export function createAtomTableEditor(container) {
           <thead>
             <tr>
               <th style="${STICKY_TH_STYLE}">Element</th>
-              <th style="${STICKY_TH_STYLE}">X</th>
-              <th style="${STICKY_TH_STYLE}">Y</th>
-              <th style="${STICKY_TH_STYLE}">Z</th>
+              <th style="${STICKY_TH_STYLE}" title="Fractional coordinate (0-1 spans the cell)">X (frac)</th>
+              <th style="${STICKY_TH_STYLE}" title="Fractional coordinate (0-1 spans the cell)">Y (frac)</th>
+              <th style="${STICKY_TH_STYLE}" title="Fractional coordinate (0-1 spans the cell)">Z (frac)</th>
               <th style="${STICKY_TH_STYLE}">Color</th>
             </tr>
           </thead>

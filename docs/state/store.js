@@ -308,7 +308,10 @@ export const general = {
   // (LatticeModule.createLatticeLines).
   latticeLineWidth:0.015,
   showSecond:false,
-  showSecondBond:false, // comparison-structure bonds visibility (was misspelled `showSecondBonds`)
+  // Comparison-structure bonds visibility (was misspelled `showSecondBonds`).
+  // Defaults true to match the main structure's showBonds and the
+  // Comparison panel's bond-toggle checkbox, which starts checked.
+  showSecondBond:true,
   showComparisonInfo:false,
   showPeriodic:true,
   // Atoms tab: edit all periodic-image copies of an atom together. When false
@@ -340,6 +343,10 @@ export const general = {
   spinsActive: false, // "Show Spins" toggle draws spin arrows
   fieldActive: true, // "Show Volumetric Field" toggle draws the isosurface
   comparisonActive: false, // "Show Lattice Comparison" keeps the popup synced
+  // Master "Enable Comparison" toggle (Comparison panel). Checking a file-
+  // browser row no longer starts rendering the comparison by itself — this
+  // must also be on. See ui/FileBrowswerPanel.js's syncComparisonFromCheckboxes.
+  compareModeOn: false,
   structurePanelMode: "atoms",
   backendState:"none",
   atomisticPotential:"nep",

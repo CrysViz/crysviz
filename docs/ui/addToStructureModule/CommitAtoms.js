@@ -10,7 +10,6 @@
 import { Atom, Structure, StructureContainer } from '../../model/index.js';
 import { fileBrowser, structureShip } from '../../state/store.js';
 import { createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
-import { cartToFrac } from '../../render/index.js';
 import { generateID } from '../../utils/index.js';
 import { recenterCamera } from '../WindowAndSceneControls.js';
 
@@ -22,17 +21,16 @@ export function parseColorHexToInt(hex) {
   return parseInt(h, 16);
 }
 
-// Push new atoms (Cartesian x/y/z inputs) into an already-loaded Structure.
-// Mirrors the delete-atom mutation in SceneInteraction.js in reverse: pushes
-// onto the parallel atoms/elements arrays and recomputes uniqueElements.
-// Caller is responsible for refreshing bond controls and re-rendering
-// (createBondLengthControls() + updateVisualization({reRenderAtoms:true,
-// reRenderBonds:true})), same as the delete-atom path.
+// Push new atoms (fractional x/y/z inputs, used as-is) into an already-loaded
+// Structure. Mirrors the delete-atom mutation in SceneInteraction.js in
+// reverse: pushes onto the parallel atoms/elements arrays and recomputes
+// uniqueElements. Caller is responsible for refreshing bond controls and
+// re-rendering (createBondLengthControls() + updateVisualization({
+// reRenderAtoms:true, reRenderBonds:true})), same as the delete-atom path.
 export function addAtomsToExistingStructure(structure, atomsToAdd) {
   for (const a of atomsToAdd) {
-    const position = cartToFrac([a.x, a.y, a.z], structure.lattice);
     structure.atoms.push(new Atom({
-      position,
+      position: [a.x, a.y, a.z],
       element: a.element,
       color: parseColorHexToInt(a.color),
       uuid: generateID([a.element]),
@@ -59,8 +57,8 @@ function registerNewStructure(structure, fileName = 'new_structure') {
 }
 
 // Build a brand-new Structure from atoms entered in an atom-table editor
-// (Cartesian x/y/z) plus a lattice (3x3 Cartesian row-vector matrix, from
-// LatticeInputPanel.js), and register it as a new file-browser row.
+// (fractional x/y/z, used as-is) plus a lattice (3x3 Cartesian row-vector
+// matrix, from LatticeInputPanel.js), and register it as a new file-browser row.
 export function createNewStructureFromAtoms(atomsToAdd, { lattice, fileName = 'new_structure' } = {}) {
   if (!atomsToAdd.length) {
     console.warn('Create structure: no atoms entered.');
@@ -69,7 +67,7 @@ export function createNewStructureFromAtoms(atomsToAdd, { lattice, fileName = 'n
 
   const elements = atomsToAdd.map(a => a.element);
   const atoms = atomsToAdd.map(a => new Atom({
-    position: cartToFrac([a.x, a.y, a.z], lattice),
+    position: [a.x, a.y, a.z],
     element: a.element,
     color: parseColorHexToInt(a.color),
     uuid: generateID([a.element]),

@@ -21,9 +21,18 @@ import { checkAtomCollisions, conflictingCandidateIndices } from './AtomCollisio
 import { createNewStructureFromAtoms } from './CommitAtoms.js';
 import { wireCollisionGuardedButton } from './CollisionWarningUI.js';
 import { defaultFloatingAnchor } from './floatingPanelAnchor.js';
+import { fracToCartPoint } from '../../math/index.js';
+import { elementData } from '../PeriodicTablePickerCore.js';
 
 const PANEL_ID = 'addStructure';
 const COLLISION_THRESHOLD_ANGSTROM = 0.5;
+
+// Rows with an element string that isn't a real periodic-table symbol.
+function invalidElementMessage(atoms) {
+  const bad = [...new Set(atoms.filter(a => !elementData[a.element]).map(a => a.element || '(empty)'))];
+  if (!bad.length) return null;
+  return `Not a recognized element: ${bad.join(', ')}. Use the periodic table picker (⚛) to pick one.`;
+}
 
 function buildAtomsMode(body, onCreated) {
   const latticeHost = document.createElement('div');
@@ -52,12 +61,16 @@ function buildAtomsMode(body, onCreated) {
     watchContainer: editorHost,
     defaultLabel: 'Create Structure',
     anywayLabel: 'Create Anyway',
+    validate: () => invalidElementMessage(editor.getAtoms()),
     checkCollisions: () => {
       const atoms = editor.getAtoms();
       if (!atoms.length) return { tooClose: [] };
-      const candidateAtoms = atoms.map(a => ({ position: [a.x, a.y, a.z], element: a.element }));
+      const lattice = latticePanel.getLattice();
+      // The table's x/y/z are fractional — convert to Cartesian for the
+      // distance-based collision check (checkAtomCollisions expects Cartesian).
+      const candidateAtoms = atoms.map(a => ({ position: fracToCartPoint([a.x, a.y, a.z], lattice), element: a.element }));
       return checkAtomCollisions({
-        lattice: latticePanel.getLattice(),
+        lattice,
         existingAtoms: [],
         candidateAtoms,
         thresholdAngstrom: COLLISION_THRESHOLD_ANGSTROM,
