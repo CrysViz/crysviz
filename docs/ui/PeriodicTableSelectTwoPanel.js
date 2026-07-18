@@ -1,5 +1,6 @@
 import { fileBrowser } from '../state/store.js';
 import { getAtomColor } from '../utils/ColorModule.js';
+import { tableLayout, lanthanides, actinides } from './PeriodicTablePickerCore.js';
 
 // Helper: Normalize color to hex string
 function normalizeColor(color) {
@@ -49,27 +50,11 @@ export function openDoublePeriodicTable(callback) {
     color: white;
     border: 1px solid #333;
     border-radius: 8px;
-    z-index: 1000;
+    z-index: 1300;
     padding: 15px;
     font-family: Arial, sans-serif;
     width: 600px;
   `;
-
-  // Element data
-
-  // Main periodic table layout
-  const tableLayout = [
-    ["H", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "He"],
-    ["Li", "Be", null, null, null, null, null, null, null, null, null, null, "B", "C", "N", "O", "F", "Ne"],
-    ["Na", "Mg", null, null, null, null, null, null, null, null, null, null, "Al", "Si", "P", "S", "Cl", "Ar"],
-    ["K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr"],
-    ["Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe"],
-    ["Cs", "Ba", "La", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn"],
-    ["Fr", "Ra", "Ac", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og"]
-  ];
-
-  const lanthanides = ["La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu"];
-  const actinides = ["Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr"];
 
   // Track selected elements (up to 2)
   let selectedElements = [];
