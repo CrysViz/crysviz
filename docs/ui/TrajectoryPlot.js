@@ -25,13 +25,16 @@ const SERIES_SPEC = {
   epotEv:             { color: '#ffb347', dash: [3, 3], group: 'energy',      label: 'Potential Energy (eV)', plot: false },
   ekinEv:             { color: '#ffb347', dash: [2, 5], group: 'energy',      label: 'Kinetic Energy (eV)',   plot: false },
   meanForce:          { color: '#7CFC9B', dash: [],     group: 'force',       label: 'Mean |Force| (eV/Å)',   plot: true },
+  pressure:           { color: '#c39bff', dash: [],     group: 'pressure',    label: 'Pressure (tr σ)',       plot: true },
 };
 
-// Per-group axis presentation.
+// Per-group axis presentation. Titles are short symbols (units live in the
+// legend) so up to three axis labels fit without colliding.
 const GROUP_META = {
-  temperature: { color: '#53c7ff', title: 'T (K)' },
-  energy:      { color: '#ffb347', title: 'E (eV)' },
-  force:       { color: '#7CFC9B', title: '|F| (eV/Å)' },
+  temperature: { color: '#53c7ff', title: 'T' },
+  energy:      { color: '#ffb347', title: 'E' },
+  force:       { color: '#7CFC9B', title: '|F|' },
+  pressure:    { color: '#c39bff', title: 'P' },
 };
 
 const PAD_L = 54;   // room for left-axis tick labels
@@ -164,7 +167,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
 
   // Which groups currently have plottable data, in a stable priority order.
   function presentGroups() {
-    const order = ['temperature', 'energy', 'force'];
+    const order = ['temperature', 'energy', 'force', 'pressure'];
     const present = [];
     for (const g of order) {
       let has = false;
@@ -247,8 +250,17 @@ export function createTrajectoryPlot(hostEl, options = {}) {
 
     const n = seriesLength();
     const groups = presentGroups();
-    const leftG = groups[0] || null;
-    const rightG = groups[1] || null;
+    // Up to three y-axes: one on the left, up to two stacked on the right. The
+    // second right axis (e.g. pressure alongside temperature + energy) reserves
+    // extra right margin so its tick labels don't collide with the first.
+    const axes = groups.slice(0, 3);
+    const RIGHT2_GAP = 46;
+    const need2ndRight = axes.length >= 3;
+    plotR = W - PAD_R - (need2ndRight ? RIGHT2_GAP : 0);
+
+    const leftG = axes[0] || null;
+    const right1G = axes[1] || null;
+    const right2G = axes[2] || null;
 
     const scales = {};
     for (const g of groups) {
@@ -259,7 +271,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     ctx.font = '10px monospace';
     ctx.textBaseline = 'middle';
 
-    // --- horizontal gridlines + left-axis tick labels ---
+    // --- left axis: horizontal gridlines + tick labels ---
     if (leftG) {
       const sc = scales[leftG];
       const col = GROUP_META[leftG].color;
@@ -278,24 +290,37 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       }
     }
 
-    // --- right-axis tick labels (no gridlines, to avoid clutter) ---
-    if (rightG) {
-      const sc = scales[rightG];
-      const col = GROUP_META[rightG].color;
+    // --- right axis/axes: tick labels only (no gridlines), in the group colour ---
+    function drawRightAxis(group, axisX, labelX) {
+      if (!group) return;
+      const sc = scales[group];
+      const col = GROUP_META[group].color;
       ctx.textAlign = 'left';
       for (const t of sc.ticks) {
         if (t < sc.min - 1e-9 || t > sc.max + 1e-9) continue;
         const y = mapY(t, sc);
         ctx.fillStyle = col;
-        ctx.fillText(t.toFixed(tickDecimals(sc.step)), plotR + 6, y);
+        ctx.fillText(t.toFixed(tickDecimals(sc.step)), labelX, y);
         ctx.strokeStyle = col;
         ctx.globalAlpha = 0.5;
         ctx.beginPath();
-        ctx.moveTo(plotR, y);
-        ctx.lineTo(plotR + 3, y);
+        ctx.moveTo(axisX, y);
+        ctx.lineTo(axisX + 3, y);
         ctx.stroke();
         ctx.globalAlpha = 1;
       }
+    }
+    drawRightAxis(right1G, plotR, plotR + 6);
+    drawRightAxis(right2G, plotR + RIGHT2_GAP, plotR + RIGHT2_GAP + 6);
+    if (right2G) {
+      // Faint vertical anchor for the outer axis so its labels don't float.
+      ctx.strokeStyle = GROUP_META[right2G].color;
+      ctx.globalAlpha = 0.22;
+      ctx.beginPath();
+      ctx.moveTo(plotR + RIGHT2_GAP, plotT);
+      ctx.lineTo(plotR + RIGHT2_GAP, plotB);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
 
     // --- x (frame) ticks ---
@@ -322,15 +347,18 @@ export function createTrajectoryPlot(hostEl, options = {}) {
 
     // --- axis titles ---
     ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
     if (leftG) {
       ctx.fillStyle = GROUP_META[leftG].color;
-      ctx.textAlign = 'left';
       ctx.fillText(GROUP_META[leftG].title, plotL - 2, plotT - 5);
     }
-    if (rightG) {
-      ctx.fillStyle = GROUP_META[rightG].color;
-      ctx.textAlign = 'right';
-      ctx.fillText(GROUP_META[rightG].title, plotR + 2, plotT - 5);
+    if (right1G) {
+      ctx.fillStyle = GROUP_META[right1G].color;
+      ctx.fillText(GROUP_META[right1G].title, plotR + 6, plotT - 5);
+    }
+    if (right2G) {
+      ctx.fillStyle = GROUP_META[right2G].color;
+      ctx.fillText(GROUP_META[right2G].title, plotR + RIGHT2_GAP + 6, plotT - 5);
     }
     ctx.textBaseline = 'middle';
 
@@ -341,7 +369,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     ctx.beginPath();
     ctx.rect(plotL, plotT, plotR - plotL, plotB - plotT);
     ctx.clip();
-    for (const g of groups) {
+    for (const g of axes) {
       const sc = scales[g];
       for (const name of seriesOrder) {
         const spec = specFor(name);
@@ -412,7 +440,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
 
   // --- stats line ---------------------------------------------------------
   function updateStatsLine(point) {
-    const { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv, meanForce } = point;
+    const { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv, meanForce, pressure } = point;
     const parts = [];
     if (step !== undefined) parts.push(`step=${step}`);
     if (Number.isFinite(temperatureK)) parts.push(`T=${fmt(temperatureK, 1)} K`);
@@ -421,11 +449,12 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     if (Number.isFinite(epotEv)) parts.push(`Epot=${fmt(epotEv, 4)} eV`);
     if (Number.isFinite(ekinEv)) parts.push(`Ekin=${fmt(ekinEv, 4)} eV`);
     if (Number.isFinite(meanForce)) parts.push(`Fmean=${fmt(meanForce, 4)} eV/Å`);
+    if (Number.isFinite(pressure)) parts.push(`P=${fmt(pressure, 3)}`);
     statsEl.textContent = parts.join('  |  ');
   }
 
   // --- public API ---------------------------------------------------------
-  const KNOWN = ['temperatureK', 'targetTemperatureK', 'etotEv', 'epotEv', 'ekinEv', 'meanForce'];
+  const KNOWN = ['temperatureK', 'targetTemperatureK', 'etotEv', 'epotEv', 'ekinEv', 'meanForce', 'pressure'];
 
   const api = {
     update(point = {}) {

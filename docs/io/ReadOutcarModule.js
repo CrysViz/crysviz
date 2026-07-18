@@ -3,6 +3,7 @@ import { Structure } from "../model/index.js";
 import { Spin } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
+import { Stress } from "../model/index.js";
 import {generateID} from '../utils/index.js'
 // From the concrete JS backend, not the math/index.js facade: the facade's
 // exports are thin wrappers delegating to a module-scope `activeMathBackend`
@@ -175,6 +176,7 @@ export function parseOUTCAR(content, fileName) {
                   forces: currentForces,
                   spins: currentSpins,
                   energy: null,
+                  stress: null,
                 });
 
                 // Update progress
@@ -210,6 +212,18 @@ export function parseOUTCAR(content, fileName) {
             currentEnergy = parseFloat(sigmaMatch[1]);
             steps[steps.length - 1].energy = currentEnergy;
           }
+
+          // Stress: the "in kB" line gives the Voigt stress (XX YY ZZ XY YZ ZX)
+          // and prints after the POSITION block for the step, so attach it to the
+          // most-recently pushed step. Build a symmetric 3x3 tensor.
+          const kbMatch = line.match(/^\\s*in kB\\s+(.*)$/i);
+          if (kbMatch && steps.length > 0) {
+            const sv = parseFloats(kbMatch[1]);
+            if (sv.length >= 6) {
+              const xx = sv[0], yy = sv[1], zz = sv[2], xy = sv[3], yz = sv[4], zx = sv[5];
+              steps[steps.length - 1].stress = [[xx, xy, zx], [xy, yy, yz], [zx, yz, zz]];
+            }
+          }
         }
 
         // Build structures
@@ -227,6 +241,7 @@ export function parseOUTCAR(content, fileName) {
             spins,
             forces,
             energy: step.energy,
+            stress: step.stress,
           };
         });
 
@@ -259,6 +274,7 @@ export function parseOUTCAR(content, fileName) {
             spins,
             forces,
             energy: structureData.energy,
+            stress: structureData.stress ? new Stress({ tensor: structureData.stress }) : null,
           });
         });
 

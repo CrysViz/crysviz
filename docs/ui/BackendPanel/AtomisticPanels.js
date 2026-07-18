@@ -6,6 +6,7 @@ import {
   applyStructureToViewer,
   maxForce,
   pressureGPaFromStress,
+  stressTrace,
 } from '../../atomistic/relaxer.js';
 import {
   initializeMDState,
@@ -214,10 +215,16 @@ function convertStressEvA3ToGPa(stressTensor) {
 }
 
 function setCurrentEFS(out) {
-  fileBrowser.selectedStructure.forces = out.forces.map((v) => new Force({ vector: [...v] }));
-  fileBrowser.selectedStructure.stress = new Stress({
-    tensor: out.stress.matrix3x3.map((row) => [...row]),
-  });
+  if (Array.isArray(out?.forces)) {
+    fileBrowser.selectedStructure.forces = out.forces.map((v) => new Force({ vector: [...v] }));
+  }
+  // Stress is optional — some calculators don't provide it. Don't throw when
+  // it's absent; just leave the structure without a stress tensor.
+  if (Array.isArray(out?.stress?.matrix3x3)) {
+    fileBrowser.selectedStructure.stress = new Stress({
+      tensor: out.stress.matrix3x3.map((row) => [...row]),
+    });
+  }
 
   if (general.forcesActive) {
     updateForces();
@@ -692,8 +699,12 @@ async function runLocalRelax(shell, params, potential) {
   const saveStride = Math.max(1, Number(general.backendTrajectorySaveStride || 1));
   let lastSavedStep = 0;
   const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
+  // Relax animates this structure in place; keep the reference to restore it.
+  const originalStructure = fileBrowser.selectedStructure;
   const relaxLabel = `Relax_${srcContainer?.fileName ?? 'run'}`;
   const relaxContainer = new StructureContainer({ fileName: relaxLabel, structures: [snapshotCurrentStructure()] });
+  // Persisted plot series (energy / mean force / pressure), 1:1 with frames.
+  relaxContainer.plotSeries = { etotEv: [NaN], meanForce: [NaN], pressure: [NaN] };
   structureShip.container.push(relaxContainer);
   const relaxRow = createRow({ name: relaxLabel, traj: 1, step: 1 });
   tableBody.appendChild(relaxRow);
@@ -701,58 +712,92 @@ async function runLocalRelax(shell, params, potential) {
   shell.statusEl.textContent = 'Relaxation running...';
   shell.resultEl.textContent = '';
 
-  const initial = buildNEPStructure(runner, fileBrowser.selectedStructure);
-  const relaxed = await relaxUntilConverged(runner, initial, {
-    fmaxTol: params.forceTol,
-    maxSteps: params.maxSteps,
-    atomStep: 0.02,
-    cellStep: 0.002,
-    targetPressureGPa: params.targetPressure,
-    pressureTolGPa: params.stressTol,
-    onStep: (step, current, out, mF) => {
-      // snapshotCurrentStructure copies the viewer structure, so a save-step must
-      // also apply the current state to the viewer first.
-      const shouldSave = step % saveStride === 0;
-      const shouldUpdateViewer = step === 1 || shouldSave || step % viewerStride === 0;
-      if (shouldUpdateViewer) {
-        applyStructureToViewer(current, fileBrowser.selectedStructure);
-        setCurrentEFS(out);
+  resetLivePlot();
+  ensureTrajectoryPanelForLive();
+  let lastMetrics = null;
+  const meanForceOf = (forces) => (Array.isArray(forces) && forces.length
+    ? forces.reduce((a, v) => a + Math.hypot(v[0], v[1], v[2]), 0) / forces.length
+    : NaN);
+  const pushRelaxSeries = (m) => {
+    relaxContainer.plotSeries.etotEv.push(Number.isFinite(m.etotEv) ? m.etotEv : NaN);
+    relaxContainer.plotSeries.meanForce.push(Number.isFinite(m.meanForce) ? m.meanForce : NaN);
+    relaxContainer.plotSeries.pressure.push(Number.isFinite(m.pressure) ? m.pressure : NaN);
+  };
+
+  try {
+    const initial = buildNEPStructure(runner, fileBrowser.selectedStructure);
+    const relaxed = await relaxUntilConverged(runner, initial, {
+      fmaxTol: params.forceTol,
+      maxSteps: params.maxSteps,
+      atomStep: 0.02,
+      cellStep: 0.002,
+      targetPressureGPa: params.targetPressure,
+      pressureTolGPa: params.stressTol,
+      onStep: (step, current, out, mF) => {
+        // snapshotCurrentStructure copies the viewer structure, so a save-step must
+        // also apply the current state to the viewer first.
+        const shouldSave = step % saveStride === 0;
+        const shouldUpdateViewer = step === 1 || shouldSave || step % viewerStride === 0;
+        if (shouldUpdateViewer) {
+          applyStructureToViewer(current, fileBrowser.selectedStructure);
+          setCurrentEFS(out);
+        }
+
+        lastMetrics = {
+          step,
+          etotEv: Number(out.total_energy),
+          meanForce: meanForceOf(out.forces),
+          pressure: stressTrace(out.stress?.matrix3x3),
+        };
+        if (shouldSave) {
+          relaxContainer.structures.push(snapshotCurrentStructure());
+          lastSavedStep = step;
+          feedLiveStep(lastMetrics);
+          pushRelaxSeries(lastMetrics);
+        }
+
+        const pressureText = (!noStress && out.stress?.matrix3x3)
+          ? `${pressureGPaFromStress(out.stress.matrix3x3).toFixed(2)} GPa`
+          : 'n/a';
+        shell.statusEl.textContent = `step ${step} / ${params.maxSteps}`;
+        if (metricsEl) {
+          metricsEl.innerHTML = `
+            <div>energy / atom: ${Number(out.energy_per_atom).toFixed(6)} eV</div>
+            <div>max force: ${mF.toFixed(5)} eV/Å</div>
+            <div>pressure: ${pressureText}</div>
+          `;
+        }
+      },
+    });
+
+    applyStructureToViewer(relaxed.structure, fileBrowser.selectedStructure, { full: true });
+    setCurrentEFS(relaxed.result);
+
+    // Always keep the final state in the trajectory, even off-stride.
+    if (relaxed.steps !== lastSavedStep) {
+      relaxContainer.structures.push(snapshotCurrentStructure());
+      if (lastMetrics) {
+        feedLiveStep({ ...lastMetrics, step: relaxed.steps });
+        pushRelaxSeries(lastMetrics);
       }
+    }
 
-      if (shouldSave) {
-        relaxContainer.structures.push(snapshotCurrentStructure());
-        lastSavedStep = step;
-      }
+    const stepsSaved = relaxContainer.structures.length;
+    updateRow(relaxRow, { name: relaxLabel, traj: stepsSaved, step: stepsSaved });
 
-      const pressureText = noStress
-        ? 'n/a'
-        : `${pressureGPaFromStress(out.stress.matrix3x3).toFixed(2)} GPa`;
-      shell.statusEl.textContent = `step ${step} / ${params.maxSteps}`;
-      if (metricsEl) {
-        metricsEl.innerHTML = `
-          <div>energy / atom: ${Number(out.energy_per_atom).toFixed(6)} eV</div>
-          <div>max force: ${mF.toFixed(5)} eV/Å</div>
-          <div>pressure: ${pressureText}</div>
-        `;
-      }
-    },
-  });
-
-  applyStructureToViewer(relaxed.structure, fileBrowser.selectedStructure, { full: true });
-  setCurrentEFS(relaxed.result);
-
-  // Always keep the final state in the trajectory, even off-stride.
-  if (relaxed.steps !== lastSavedStep) {
-    relaxContainer.structures.push(snapshotCurrentStructure());
+    shell.statusEl.textContent = '';
+    shell.resultEl.textContent = relaxed.converged
+      ? `Converged after ${relaxed.steps} steps.`
+      : `Stopped after ${relaxed.steps} steps.`;
+  } finally {
+    // Live run over: release the plot, restore the source structure (relax
+    // mutated it in place), and switch to the recorded relaxation trajectory.
+    endLiveFeed();
+    try {
+      restoreStructureInPlace(originalStructure, relaxContainer.structures[0]);
+      selectLastAddedRow();
+    } catch { /* non-fatal: leave selection/structure as-is */ }
   }
-
-  const stepsSaved = relaxContainer.structures.length;
-  updateRow(relaxRow, { name: relaxLabel, traj: stepsSaved, step: stepsSaved });
-
-  shell.statusEl.textContent = '';
-  shell.resultEl.textContent = relaxed.converged
-    ? `Converged after ${relaxed.steps} steps.`
-    : `Stopped after ${relaxed.steps} steps.`;
 }
 
 async function runLocalEFS(shell, metricsEl, potential) {
@@ -892,7 +937,7 @@ function bindMDBody(panel, shell, potential) {
       // long after the live run's in-memory plot was torn down. Seed one NaN gap
       // for the initial (pre-run) frame so the series stays index-aligned with
       // mdContainer.structures.
-      mdContainer.plotSeries = { temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN] };
+      mdContainer.plotSeries = { temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN], pressure: [NaN] };
       structureShip.container.push(mdContainer);
       const mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
       tableBody.appendChild(mdRow);
@@ -945,7 +990,9 @@ function bindMDBody(panel, shell, potential) {
             });
           }
 
-          lastStepMetrics = { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv };
+          // Pressure = trace of the step's stress matrix (NaN when absent).
+          const pressure = stressTrace(mdState.stress);
+          lastStepMetrics = { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv, pressure };
           if (shouldSave) {
             const frame = snapshotCurrentStructure();
             frame.energy = epotEv;
@@ -959,6 +1006,7 @@ function bindMDBody(panel, shell, potential) {
             mdContainer.plotSeries.temperatureK.push(temperatureK);
             mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(targetTemperatureK) ? targetTemperatureK : NaN);
             mdContainer.plotSeries.etotEv.push(etotEv);
+            mdContainer.plotSeries.pressure.push(Number.isFinite(pressure) ? pressure : NaN);
           }
           const tLabel = Number.isFinite(targetTemperatureK)
             ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`
@@ -986,6 +1034,7 @@ function bindMDBody(panel, shell, potential) {
           mdContainer.plotSeries.temperatureK.push(lastStepMetrics.temperatureK);
           mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(lastStepMetrics.targetTemperatureK) ? lastStepMetrics.targetTemperatureK : NaN);
           mdContainer.plotSeries.etotEv.push(lastStepMetrics.etotEv);
+          mdContainer.plotSeries.pressure.push(Number.isFinite(lastStepMetrics.pressure) ? lastStepMetrics.pressure : NaN);
         }
       }
 

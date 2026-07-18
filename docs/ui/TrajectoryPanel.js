@@ -6,6 +6,7 @@ import { updateForces, removeForces } from '../render/index.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import { createTrajectoryPlot } from './TrajectoryPlot.js';
 import { openPanel, refreshPanelAvailability } from './panels/PanelManager.js';
+import { stressTrace } from '../atomistic/relaxer.js';
 // Mean force magnitude over a frame's per-atom force vectors (eV/Å). Kept local
 // so the panel does not depend on the Forces-panel/histogram machinery.
 function meanForceMagnitude(structure) {
@@ -89,8 +90,10 @@ function computeStepStats(container) {
 
   const etotEv = new Array(structures.length);
   const meanForce = new Array(structures.length);
+  const pressure = new Array(structures.length);
   let hasEnergy = false;
   let hasForce = false;
+  let hasPressure = false;
 
   function processRange(start, end) {
     for (let i = start; i < end; i++) {
@@ -102,6 +105,11 @@ function computeStepStats(container) {
       const mean = meanForceMagnitude(s);
       meanForce[i] = Number.isFinite(mean) ? mean : NaN;
       if (Number.isFinite(mean)) hasForce = true;
+
+      // Pressure = trace of the frame's stress tensor (NaN when absent).
+      const p = stressTrace(s?.stress?.tensor);
+      pressure[i] = Number.isFinite(p) ? p : NaN;
+      if (Number.isFinite(p)) hasPressure = true;
     }
   }
 
@@ -111,6 +119,7 @@ function computeStepStats(container) {
     const seriesObj = container.plotSeries ? { ...container.plotSeries } : {};
     if (hasEnergy && !Array.isArray(seriesObj.etotEv)) seriesObj.etotEv = etotEv;
     if (hasForce) seriesObj.meanForce = meanForce;
+    if (hasPressure) seriesObj.pressure = pressure;
 
     if (Object.keys(seriesObj).length) {
       // Persist on the container so the plot redraws after a panel rebuild.
