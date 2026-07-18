@@ -24,3 +24,33 @@
 
     #toggleControls { position: fixed; top: 20px; right: 20px; }
     #frameIndicator { text-align: center; font-size: 12px; margin-top: 6px; display: block; }
+
+    /* "Compute step stats" — builds the energy/mean-force plot series from a
+       loaded trajectory's existing per-frame data (no MLIP/model run). Sits
+       above the plot host; hidden unless there's something to compute. */
+    #computeStepStatsBtn { margin-top: 2px; }
+    #computeStepStatsBtn:disabled { background: #2a2a2a; color: #999; cursor: wait; }
+
+    /* Trajectory plot region (unified MD Monitor). Hidden by default via
+       inline style until hasPlottableData() decides there's something to
+       show (file-loaded energy, forces, or a live MD/relax feed). */
+    #trajPlotHost {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      margin-top: 4px;
+    }
+
+    .trajPlot {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+    }
+
+    .trajPlot canvas { max-width: 100%; }
+
+    .trajPlotLegend { justify-content: center; }
+
+    .trajPlotStats { text-align: center; margin-top: 4px; }

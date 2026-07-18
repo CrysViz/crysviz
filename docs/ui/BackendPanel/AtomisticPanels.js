@@ -11,12 +11,12 @@ import {
   initializeMDState,
   runMDSimulation,
   applyMDStateToViewer,
-  createMDMonitorPanel,
   createNEPForceEvaluator,
   createVelocityVerletIntegrator,
   createCosineAnnealingSchedule,
   createVelocityRescaleThermostat,
 } from '../../atomistic/MD.js';
+import { ensureTrajectoryPanelForLive, feedLiveStep, resetLivePlot } from '../TrajectoryPanel.js';
 import { MLIPRunner } from '../../external/mlip_wasm/mlip_runner.js';
 import { updateForces } from '../../render/index.js';
 import { updateRow, createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
@@ -842,7 +842,6 @@ function bindMDBody(panel, shell, potential) {
   startBtn?.addEventListener('click', async () => {
     if (mdRunning) return;
 
-    let monitor = null;
     try {
       mdRunning = true;
       mdStopRequested = false;
@@ -869,7 +868,8 @@ function bindMDBody(panel, shell, potential) {
       const mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
       tableBody.appendChild(mdRow);
 
-      monitor = createMDMonitorPanel();
+      resetLivePlot();
+      ensureTrajectoryPanelForLive();
       const forceEvaluator = createNEPForceEvaluator(runner);
       const integrator = createVelocityVerletIntegrator();
       const targetTemperatureSchedule = useAnneal
@@ -917,14 +917,16 @@ function bindMDBody(panel, shell, potential) {
           }
 
           if (shouldSave) {
-            mdContainer.structures.push(snapshotCurrentStructure());
+            const frame = snapshotCurrentStructure();
+            frame.energy = epotEv;
+            mdContainer.structures.push(frame);
             lastSavedStep = step;
           }
           const tLabel = Number.isFinite(targetTemperatureK)
             ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`
             : `T=${temperatureK.toFixed(0)} K`;
           shell.statusEl.textContent = `step ${step} / ${steps}  ·  t=${timeFs.toFixed(1)} fs  ·  ${tLabel}`;
-          monitor.update({ step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv });
+          feedLiveStep({ step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv });
         },
       });
 
@@ -937,7 +939,9 @@ function bindMDBody(panel, shell, potential) {
 
       // Always keep the final state in the trajectory, even off-stride.
       if (state.step !== lastSavedStep) {
-        mdContainer.structures.push(snapshotCurrentStructure());
+        const frame = snapshotCurrentStructure();
+        frame.energy = state.potentialEnergyEv;
+        mdContainer.structures.push(frame);
       }
 
       const count = mdContainer.structures.length;

@@ -43,6 +43,7 @@ export class Structure {
     spins = [],
     forces = [],
     stress = null,
+    energy = null,
     polyhedra = null,
     polyhedraSettings = null,
     bondMapping = {}, // Mapping from bond index number to the indices in the THREE mesh object.
@@ -78,6 +79,7 @@ export class Structure {
       position: spin.position ? [...spin.position] : null,
     }));
     this.stress = stress;
+    this.energy = energy ?? null; // per-frame free energy in eV; null when unknown
     this.polyhedra = polyhedra;
     this.polyhedraSettings = normalizePolyhedraSettings(polyhedraSettings);
     // NOTE: the bond/atom-image lookup maps are populated later by the bonds/
@@ -143,6 +145,7 @@ export class Structure {
       spins: deepCopyArrayOfObjects(spins),   // deep copy of spin objects
       forces: deepCopyArrayOfObjects(forces), // deep copy of force objects
       stress: stress ? { ...stress } : null,  // deep copy of stress object if it exists
+      energy: energy ?? null,                 // per-frame free energy in eV; null when unknown
       polyhedra: polyhedra ? { ...polyhedra } : null,
       polyhedraSettings: { ...this.polyhedraSettings },
       bonds: deepCopyArrayOfObjects(this.bonds), // deep copy of bond objects

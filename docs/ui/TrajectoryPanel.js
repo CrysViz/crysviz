@@ -4,12 +4,227 @@ import { createBondLengthControls } from './BondLengthPanel.js';
 import { updateSpins, removeSpins } from '../render/index.js';
 import { updateForces, removeForces } from '../render/index.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
+import { createTrajectoryPlot } from './TrajectoryPlot.js';
+import { openPanel } from './panels/PanelManager.js';
+// Mean force magnitude over a frame's per-atom force vectors (eV/Å). Kept local
+// so the panel does not depend on the Forces-panel/histogram machinery.
+function meanForceMagnitude(structure) {
+  const forces = structure?.forces;
+  if (!forces?.length) return NaN;
+  let sum = 0;
+  let n = 0;
+  for (const f of forces) {
+    const v = f?.vector;
+    if (!v || v.length < 3) continue;
+    sum += Math.hypot(v[0], v[1], v[2]);
+    n += 1;
+  }
+  return n ? sum / n : NaN;
+}
 
 let trajectoryPlayerElements = {};
 let currentFrame = 0;
 let playing = false;
 let frameStep = 1;
 let autoPlayInterval = null;
+
+// --- Trajectory plot (unified MD Monitor) --------------------------------
+// One plot singleton, lazily built into whatever "Trajectory" panel body is
+// currently mounted. It is torn down by removeTrajectoryPlayer() and rebuilt
+// on demand (by addTrajectoryPlayer() or the live-MD bridge below), so it
+// survives panel collapse/expand cycles without leaking DOM/listeners.
+let trajPlot = null;
+let trajPlotHostEl = null;
+// True while a live MD/relax run is actively streaming steps into the plot;
+// makes hasPlottableData() report true even before any frame has energy.
+let liveActive = false;
+
+// True if the container has anything worth plotting: per-frame energy on any
+// structure, per-frame forces on any structure, or an active live-MD feed.
+function hasPlottableData(container) {
+  if (liveActive) return true;
+  if (!container?.structures?.length) return false;
+  return container.structures.some(
+    (s) => Number.isFinite(s?.energy) || (s?.forces && s.forces.length > 0)
+  );
+}
+
+function setPlotVisible(visible) {
+  if (trajPlotHostEl) trajPlotHostEl.style.display = visible ? '' : 'none';
+}
+
+// Show the "Compute step stats" button only for a loaded trajectory that has
+// per-frame energy and/or forces to crunch, and never during a live MD/relax
+// feed (that already streams its own series).
+function updateComputeStepStatsBtnVisibility(container) {
+  const btn = trajectoryPlayerElements.computeStepStatsBtn;
+  if (!btn) return;
+  const hasData = !!container?.structures?.some(
+    (s) => Number.isFinite(s?.energy) || (s?.forces && s.forces.length > 0)
+  );
+  btn.style.display = (!liveActive && hasData) ? '' : 'none';
+}
+
+// Frames per chunk when bulk-computing step stats for a large trajectory, and
+// the frame-count threshold above which we chunk at all (keeps small
+// trajectories snappy with a plain synchronous loop).
+const COMPUTE_STATS_CHUNK = 500;
+const COMPUTE_STATS_CHUNK_THRESHOLD = 2000;
+
+// Build { etotEv, meanForce } series from data already present in each frame
+// (OUTCAR-parsed energy/forces) — no MLIP/model run. meanForce is the mean of
+// per-atom |F| computed locally (see meanForceMagnitude).
+function computeStepStats(container) {
+  const btn = trajectoryPlayerElements.computeStepStatsBtn;
+  if (!btn || btn.disabled) return;
+  const structures = container?.structures ?? [];
+  if (!structures.length) return;
+
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Computing…';
+
+  const etotEv = new Array(structures.length);
+  const meanForce = new Array(structures.length);
+  let hasEnergy = false;
+  let hasForce = false;
+
+  function processRange(start, end) {
+    for (let i = start; i < end; i++) {
+      const s = structures[i];
+      const e = Number.isFinite(s?.energy) ? s.energy : NaN;
+      etotEv[i] = e;
+      if (Number.isFinite(e)) hasEnergy = true;
+
+      const mean = meanForceMagnitude(s);
+      meanForce[i] = Number.isFinite(mean) ? mean : NaN;
+      if (Number.isFinite(mean)) hasForce = true;
+    }
+  }
+
+  function finish() {
+    const seriesObj = {};
+    if (hasEnergy) seriesObj.etotEv = etotEv;
+    if (hasForce) seriesObj.meanForce = meanForce;
+
+    if (Object.keys(seriesObj).length) {
+      const plot = ensurePlot();
+      if (plot) {
+        plot.setSeries(seriesObj);
+        setPlotVisible(true);
+        plot.setCursor(currentFrame);
+      }
+    }
+
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+
+  if (structures.length > COMPUTE_STATS_CHUNK_THRESHOLD) {
+    let idx = 0;
+    const step = () => {
+      const end = Math.min(idx + COMPUTE_STATS_CHUNK, structures.length);
+      processRange(idx, end);
+      idx = end;
+      if (idx < structures.length) requestAnimationFrame(step);
+      else finish();
+    };
+    requestAnimationFrame(step);
+  } else {
+    processRange(0, structures.length);
+    finish();
+  }
+}
+
+// Build (once) the plot instance inside the currently-mounted panel body.
+// No-ops (returns null) if the panel body isn't in the DOM yet — callers
+// (feedLiveStep in particular) must tolerate that and just skip the update;
+// the plot catches up next time it's called after the panel body appears.
+function ensurePlot() {
+  if (trajPlot) return trajPlot;
+  const panelBody = trajectoryPlayerElements.panelBody;
+  if (!panelBody) return null;
+
+  trajPlotHostEl = panelBody.querySelector('#trajPlotHost');
+  if (!trajPlotHostEl) {
+    trajPlotHostEl = document.createElement('div');
+    trajPlotHostEl.id = 'trajPlotHost';
+    panelBody.appendChild(trajPlotHostEl);
+  }
+  trajPlotHostEl.style.display = 'none';
+
+  trajPlot = createTrajectoryPlot(trajPlotHostEl, { maxPts: 5000 });
+  trajPlot.onSeek((f) => {
+    const container = structureShip.container[fileBrowser.selectedRowIndex];
+    if (!container?.structures?.length) return;
+    playing = false;
+    if (trajectoryPlayerElements.playPauseBtn) trajectoryPlayerElements.playPauseBtn.textContent = '▶️';
+    currentFrame = Math.max(0, Math.min(container.structures.length - 1, f));
+    updateFrame(currentFrame, container);
+  });
+  return trajPlot;
+}
+
+// Populate/refresh the plot region from file-loaded data (replay case, not
+// live MD). Called once on panel build. Leaves the region hidden when there
+// is nothing to show, or when data is forces-only (Phase 3 adds a "compute
+// mean force" button for that case — we don't compute it here).
+function refreshPlotFromContainer(container) {
+  const plot = ensurePlot();
+  if (!plot) return;
+  if (liveActive) {
+    // A live run owns the series; just make sure the region is visible.
+    setPlotVisible(true);
+    return;
+  }
+  if (!hasPlottableData(container)) {
+    setPlotVisible(false);
+    return;
+  }
+  const hasEnergy = container.structures.some((s) => Number.isFinite(s?.energy));
+  if (hasEnergy) {
+    const etotEv = container.structures.map((s) => (Number.isFinite(s?.energy) ? s.energy : NaN));
+    plot.setSeries({ etotEv });
+    setPlotVisible(true);
+  } else {
+    // Forces-only data: nothing to auto-populate yet.
+    setPlotVisible(false);
+  }
+}
+
+// --- Live-MD bridge (module-level, usable before the panel DOM exists) ---
+
+/** Make sure the Trajectory panel is open/expanded so the plot is visible
+ * during a live run. Reuses the existing PanelManager openPanel() API (same
+ * one the Features window uses); safe no-op if the panel isn't registered. */
+export function ensureTrajectoryPanelForLive() {
+  try {
+    openPanel('trajectory');
+  } catch {
+    // PanelManager not ready / panel not registered — plot still works once
+    // the user opens the panel manually; feedLiveStep() stays robust either way.
+  }
+}
+
+/** Feed one live MD/relax step into the plot. Safe to call even if the panel
+ * body isn't built yet (ensurePlot() just no-ops until it is; call
+ * ensureTrajectoryPanelForLive() first so it typically is). */
+export function feedLiveStep(point) {
+  liveActive = true;
+  updateComputeStepStatsBtnVisibility(structureShip.container[fileBrowser.selectedRowIndex]);
+  const plot = ensurePlot();
+  if (!plot) return;
+  setPlotVisible(true);
+  plot.update(point);
+}
+
+/** Reset the live plot state at the start of a new run. */
+export function resetLivePlot() {
+  liveActive = false;
+  if (trajPlot) trajPlot.clear();
+  setPlotVisible(false);
+  updateComputeStepStatsBtnVisibility(structureShip.container[fileBrowser.selectedRowIndex]);
+}
 
 // --- Update scene from a specific frame ---
 function updateStructureFromFrame(frame, container) {
@@ -48,6 +263,8 @@ function updateFrame(frame, container) {
   if (trajectoryPlayerElements.frameSlider) trajectoryPlayerElements.frameSlider.value = frame;
 
   updateStructureFromFrame(frame, container);
+
+  if (trajPlot) trajPlot.setCursor(frame);
 }
 
 // --- Auto-play control ---
@@ -107,6 +324,8 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
       </div>
       <input type="range" id="frameSlider" min="0" max="0" value="0" style="width:100%" />
       <div id="frameIndicator">Frame: 0</div>
+      <button id="computeStepStatsBtn" class="control-button" type="button" style="display:none; font-size:12px; width:100%;">Compute step stats</button>
+      <div id="trajPlotHost" style="display:none;"></div>
     </div>
   `;
   targetPanel.appendChild(trajControlPanel);
@@ -120,7 +339,8 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
     speedSelect: trajControlPanel.querySelector('#speedSelect'),
     frameStepInput: trajControlPanel.querySelector('#frameStepInput'),
     frameSlider: trajControlPanel.querySelector('#frameSlider'),
-    frameIndicator: trajControlPanel.querySelector('#frameIndicator')
+    frameIndicator: trajControlPanel.querySelector('#frameIndicator'),
+    computeStepStatsBtn: trajControlPanel.querySelector('#computeStepStatsBtn')
   };
 
   const container = structureShip.container[fileBrowser.selectedRowIndex];
@@ -128,6 +348,12 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
 
   trajectoryPlayerElements.frameSlider.max = container.structures.length - 1;
   updateFrame(currentFrame, container);
+  refreshPlotFromContainer(container);
+  updateComputeStepStatsBtnVisibility(container);
+
+  trajectoryPlayerElements.computeStepStatsBtn.onclick = () => {
+    computeStepStats(container);
+  };
 
   // Disable play button if only 1 frame
   if (container.structures.length <= 1) {
@@ -179,6 +405,11 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
 // --- Remove panel ---
 export function removeTrajectoryPlayer() {
   stopAutoPlay();
+  if (trajPlot) {
+    trajPlot.remove();
+    trajPlot = null;
+  }
+  trajPlotHostEl = null;
   if (!trajectoryPlayerElements.trajControlPanel) return;
   trajectoryPlayerElements.trajControlPanel.remove();
   trajectoryPlayerElements = {};
