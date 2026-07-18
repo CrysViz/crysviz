@@ -861,6 +861,7 @@ function bindMDBody(panel, shell, potential) {
       const saveStride = Math.max(1, Number(shell.bodyEl.querySelector('#mdSaveStrideInput')?.value || general.backendTrajectorySaveStride || 4));
       general.backendTrajectorySaveStride = saveStride;
       let lastSavedStep = 0;
+      let lastStepMetrics = null;
       const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
       const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
       const mdContainer = new StructureContainer({ fileName: mdLabel, structures: [snapshotCurrentStructure()] });
@@ -916,17 +917,22 @@ function bindMDBody(panel, shell, potential) {
             });
           }
 
+          lastStepMetrics = { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv };
           if (shouldSave) {
             const frame = snapshotCurrentStructure();
             frame.energy = epotEv;
             mdContainer.structures.push(frame);
             lastSavedStep = step;
+            // Feed the plot exactly once per SAVED trajectory frame so the plot's
+            // sample count stays 1:1 with the scrubber's frames — this is what
+            // keeps the frame cursor aligned with the slider (feeding every step
+            // would desync the cursor from the 1..N frame index).
+            feedLiveStep(lastStepMetrics);
           }
           const tLabel = Number.isFinite(targetTemperatureK)
             ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`
             : `T=${temperatureK.toFixed(0)} K`;
           shell.statusEl.textContent = `step ${step} / ${steps}  ·  t=${timeFs.toFixed(1)} fs  ·  ${tLabel}`;
-          feedLiveStep({ step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv });
         },
       });
 
@@ -942,6 +948,9 @@ function bindMDBody(panel, shell, potential) {
         const frame = snapshotCurrentStructure();
         frame.energy = state.potentialEnergyEv;
         mdContainer.structures.push(frame);
+        // Keep the plot 1:1 with frames: feed this final frame too, reusing the
+        // last step's computed metrics (state carries no temperature/KE fields).
+        if (lastStepMetrics) feedLiveStep({ ...lastStepMetrics, step: state.step });
       }
 
       const count = mdContainer.structures.length;

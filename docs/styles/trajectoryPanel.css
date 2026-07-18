@@ -45,12 +45,36 @@
     .trajPlot {
       display: flex;
       flex-direction: column;
-      align-items: center;
+      align-items: stretch;
       width: 100%;
     }
 
-    .trajPlot canvas { max-width: 100%; }
+    .trajPlotCanvas { width: 100%; max-width: 100%; }
 
-    .trajPlotLegend { justify-content: center; }
+    .trajPlotLegend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px 14px;
+      font-size: 11px;
+      margin-top: 8px;
+      color: #cfcfcf;
+    }
 
-    .trajPlotStats { text-align: center; margin-top: 4px; }
+    .trajPlotLegendItem { display: inline-flex; align-items: center; gap: 5px; }
+
+    .trajPlotSwatch {
+      display: inline-block;
+      width: 11px;
+      height: 3px;
+      border-radius: 2px;
+      flex: 0 0 auto;
+    }
+
+    .trajPlotStats {
+      text-align: center;
+      margin-top: 6px;
+      font-size: 11px;
+      font-family: monospace;
+      color: #bdbdbd;
+    }
