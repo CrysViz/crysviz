@@ -1,10 +1,11 @@
-import { fileBrowser, groups, general, structureShip } from '../../../state/store.js';
-import { colorHexToCss, getAtomColor } from '../../../utils/ColorModule.js';
+import { fileBrowser, groups, general, structureShip, mode } from '../../../state/store.js';
+import { colorHexToCss, getAtomColor, setAtomColor } from '../../../utils/ColorModule.js';
 import { clampOpacity, clampRadiusScale } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom } from '../../../render/AtomsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
 import { updatePolyhedraColors, scheduleBondRebuild, requestRender } from '../../../render/index.js';
+import { refreshGhostAtoms } from '../../../render/GhostAtomsModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { atomForceToColor, syncBondHalvesToImageColor } from '../../ColorPanel.js';
@@ -37,6 +38,13 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     atomIndices.forEach(atomIndex => {
       const atom = structure.atoms[atomIndex];
       atom.elementColor = parsedHex;
+      // Authoritative color state, set unconditionally: an atom with zero
+      // periodic images right now (e.g. currently hidden) never runs the
+      // per-image loop below, so without this its userColor/color — and
+      // therefore getColor() — would silently keep the old value forever,
+      // surviving even a later restore.
+      atom.userColor = hex;
+      setAtomColor(atom, hex);
       // Newest edit wins: an element recolor overrides earlier per-copy colors.
       clearAtomImageStylesForAtom(structure, atomIndex, 'color');
       structure.atomImages[atomIndex]?.forEach(imageIndex => {
@@ -48,12 +56,17 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     groups.atomsMesh.instanceColor.needsUpdate = true;
     if (groups.bondsMesh) {
       groups.bondsMesh.instanceColor.needsUpdate = true;
-    }      
+    }
     updatePieDotCallback(); // Update the pie dot
     // Polyhedra faces are coloured by element; recolour them in place to match (cheap,
     // no geometry recompute). The picker updates atom/bond meshes directly and otherwise
     // never triggers a polyhedra update.
     updatePolyhedraColors();
+    // This callback updates the real-atom mesh directly rather than going
+    // through updateVisualization, so it's the one color-edit path that
+    // doesn't get updateVisualization's own ghost-refresh hook — any of
+    // these atoms currently shown as a ghost needs the same recolor here.
+    if (mode.measureMode === 'hide' || mode.measureMode === 'restore') refreshGhostAtoms();
   });
 
   // --- Editor UI ---

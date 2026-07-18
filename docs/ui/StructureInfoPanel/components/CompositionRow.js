@@ -81,8 +81,13 @@ export function createCompositionRow(el, count, total) {
   };
   left.appendChild(visCheckbox);
 
-  // Get all atom indices for this element
-  const elementAtomIndices = getElementAtomIndices(el);
+  // Get all atom indices for this element — including hidden ones. This
+  // feeds the color/opacity/immunity editors below (and the per-atom row
+  // list), which must still reach a hidden atom or its color/opacity would
+  // silently stay stuck at whatever it was before hiding, even surviving a
+  // later restore. The visible-only COUNT shown in this row's header comes
+  // from computeComposition() separately and is unaffected by this.
+  const elementAtomIndices = getElementAtomIndices(el, { includeHidden: true });
 
   // =========================================
   // PIE DOT MANAGEMENT
@@ -127,6 +132,13 @@ export function createCompositionRow(el, count, total) {
       e.stopPropagation();
       editor.style.display = (editor.style.display === 'none') ? 'flex' : 'none';
       if (editor.style.display === 'flex') editor.style.flexDirection = 'column';
+      // Mirrors the row's own click handler closing the color editor when
+      // expanding/collapsing — the dot closes the individual-atom list the
+      // same way, so the two never clutter the row at once.
+      if (atomsContainer.style.display !== 'none') {
+        atomsContainer.style.display = 'none';
+        expandIcon.style.transform = 'rotate(0deg)';
+      }
     };
   }
 
@@ -211,7 +223,7 @@ export function createCompositionRow(el, count, total) {
       elementAtomIndices.forEach((atomIndex, i) => {
         const images = structure.atomImages[atomIndex] ?? [];
         images.forEach((imageIndex, j) => {
-          const frac = structure.periodic?.wrapped?.frac?.[imageIndex];
+          const frac = structure.periodic?.visibleWrapped?.frac?.[imageIndex];
           const off = frac
             ? [0, 1, 2].map((a) => Math.round(frac[a] - structure.atoms[atomIndex].position[a]))
             : [0, 0, 0];
@@ -339,6 +351,13 @@ export function createWyckoffCompositionRow(el, entries, total) {
       e.stopPropagation();
       editor.style.display = (editor.style.display === 'none') ? 'flex' : 'none';
       if (editor.style.display === 'flex') editor.style.flexDirection = 'column';
+      // Mirrors the row's own click handler closing the color editor when
+      // expanding/collapsing — the dot closes the individual-atom list the
+      // same way, so the two never clutter the row at once.
+      if (atomsContainer.style.display !== 'none') {
+        atomsContainer.style.display = 'none';
+        expandIcon.style.transform = 'rotate(0deg)';
+      }
     };
   }
 

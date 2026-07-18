@@ -16,10 +16,17 @@ export function clampRadiusScale(value) {
   return Math.max(0.2, Math.min(3, scale));
 }
 
-export function getElementAtomIndices(element) {
+// By default excludes hidden atoms — matches what bond/polyhedron numbering
+// needs, since only visible atoms can be a bond endpoint or polyhedron
+// center. Pass includeHidden:true for anything that EDITS every atom of an
+// element (color/opacity/radius pickers) — those must reach hidden atoms
+// too, or a hidden atom would silently keep its pre-hide color/opacity
+// forever, surviving even a later restore.
+export function getElementAtomIndices(element, { includeHidden = false } = {}) {
+  const structure = fileBrowser.selectedStructure;
   const atomIndices = [];
-  fileBrowser.selectedStructure.elements.forEach((currentElement, index) => {
-    if (currentElement === element) {
+  structure.elements.forEach((currentElement, index) => {
+    if (currentElement === element && (includeHidden || !structure.atoms[index]?.hidden)) {
       atomIndices.push(index);
     }
   });

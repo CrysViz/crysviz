@@ -136,7 +136,7 @@ export function clearHighlightAtom() {
 // unlike the atoms mesh — so highlighting them needs each instance id
 // resolved back to its source atom first.
 function sourceIndicesForInstances(instanceIds) {
-  const srcIndexArr = fileBrowser.selectedStructure?.periodic?.wrapped?.srcIndex;
+  const srcIndexArr = fileBrowser.selectedStructure?.periodic?.visibleWrapped?.srcIndex;
   const unique = new Set();
   instanceIds.forEach((id) => unique.add(srcIndexArr ? srcIndexArr[id] : id));
   return [...unique];
@@ -644,9 +644,14 @@ function getTargetAtomDetails(sourceIndex) {
   };
 }
 
-function ensureAtomPanelVisible(targetMode, targetPanelId) {
+// `reveal` false skips opening the panel / switching its tab entirely — used
+// by a Shift-add 3D pick (building a multi-atom selection for e.g. the
+// Planes panel's best-fit-plane calculation), which should still glow the
+// atom in 3D but must not yank focus to the Structure panel on every click.
+function ensureAtomPanelVisible(targetMode, targetPanelId, reveal = true) {
   const composition = document.getElementById('composition');
   if (!composition) return null;
+  if (!reveal) return composition;
 
   setStructurePanelOpen(true);
 
@@ -659,9 +664,9 @@ function ensureAtomPanelVisible(targetMode, targetPanelId) {
   return composition;
 }
 
-function findAtomRow(element, sourceIndex, instanceId = null) {
+function findAtomRow(element, sourceIndex, instanceId = null, revealPanel = true) {
   const {targetAtomIndex, targetPanelId, targetMode} = getTargetAtomDetails(sourceIndex);
-  const composition = ensureAtomPanelVisible(targetMode, targetPanelId);
+  const composition = ensureAtomPanelVisible(targetMode, targetPanelId, revealPanel);
   if (!composition) return null;
 
   const elementContainers = composition.querySelectorAll('.comp-container');
@@ -686,7 +691,10 @@ function findAtomRow(element, sourceIndex, instanceId = null) {
   // CompositionRow.js). We expand programmatically here, so ensure they exist.
   /** @type {any} */ (atomsContainer)._populateAtomRows?.();
 
-  if (atomsContainer.style.display === 'none') {
+  // Only force the row list open when the caller actually wants the panel
+  // revealed — a Shift-add pick still highlights the row once expanded
+  // manually, it just doesn't un-collapse the list on its own.
+  if (revealPanel && atomsContainer.style.display === 'none') {
     atomsContainer.style.display = 'block';
     if (expandIcon) {
       expandIcon.style.transform = 'rotate(90deg)';
@@ -736,10 +744,11 @@ function syncSelectedAtomRows(options = {}) {
     return;
   }
 
+  const revealPanel = options.revealPanel !== false;
   /** @type {any} */
   let lastRow = null;
   atomSelection.selectedAtoms.forEach((atom) => {
-    const row = findAtomRow(atom.element, atom.sourceIndex, atom.instanceId);
+    const row = findAtomRow(atom.element, atom.sourceIndex, atom.instanceId, revealPanel);
     if (!row) return;
     highlightAtomRow(row, atom.selectionOrder);
     lastRow = row;
@@ -781,7 +790,7 @@ function buildSelectionAtomFromHit(hit) {
     return null;
   }
 
-  const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
+  const wrapped = fileBrowser.selectedStructure?.periodic?.visibleWrapped;
   const instanceId = hit.instanceId;
   const sourceIndex = wrapped?.srcIndex ? wrapped.srcIndex[instanceId] : instanceId;
   const element = wrapped?.elements?.[instanceId]
@@ -914,7 +923,7 @@ export function updateAtomSelectionFrom3DHit(hit, options = {}) {
           sourceEvent,
           reason: options.reason ?? 'pick',
         },
-        { scrollToLast: false },
+        { scrollToLast: false, revealPanel: options.revealPanel },
       );
     }
 
@@ -944,7 +953,7 @@ export function updateAtomSelectionFrom3DHit(hit, options = {}) {
       sourceEvent,
       reason: options.reason ?? 'pick',
     },
-    { scrollToLast: options.scrollToSelection },
+    { scrollToLast: options.scrollToSelection, revealPanel: options.revealPanel },
   );
 }
 

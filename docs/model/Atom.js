@@ -1,7 +1,6 @@
 import { ColoredObject } from './ColoredObject.js';
 
-import {general} from '../state/store.js';
-import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
+import {getElementDefaultColor} from '../defaults/color_texture_defaults.js'
 
 
 
@@ -28,8 +27,7 @@ export class Atom extends ColoredObject {
     // here. Coordination is not known at construction time; it is filled in
     // later by neighbour/bond analysis, so the field just starts as null.
     this.coordination = null;
-    const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
-    this.defaultColor = colorScheme[element] || 0x808080;
+    this.defaultColor = getElementDefaultColor(element);
     this.userColor=null;
     this.elementColor = elementColor || this.defaultColor;
     const normalizedElementOpacity = Number.isFinite(elementOpacity) ? Math.max(0, Math.min(1, elementOpacity)) : 1;
@@ -40,6 +38,12 @@ export class Atom extends ColoredObject {
     // Per-atom size multiplier on the element's default radius (1 = default).
     this.radiusScale = Number.isFinite(radiusScale) && radiusScale > 0 ? radiusScale : 1;
     this.uuid = uuid;
+    // Hidden atoms are excluded from rendering and from every other panel
+    // (composition, bonds, forces, spins, polyhedra, symmetry) but stay in
+    // structure.atoms so they can be restored exactly as they were. Not part
+    // of `original` below — hiding isn't something a reset-to-as-loaded
+    // action should touch.
+    this.hidden = false;
     this.original = Object.freeze({
       element,
       position: [...position],
@@ -131,8 +135,7 @@ export class Atom extends ColoredObject {
 
   // Reset to the element's default color (from map)
   resetToDefaultColor() {
-    const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
-    this.color = colorScheme[this.original.element] || 0x808080;
+    this.color = getElementDefaultColor(this.original.element);
     this.elementColor = this.color;
     this.userColor=null;
     return true;

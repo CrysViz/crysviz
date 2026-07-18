@@ -101,7 +101,7 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
   const structure = fileBrowser.selectedStructure;
   if (!structure?.periodic?.wrapped) { disposeSpinMeshes(); return; }
 
-  const wrapped = structure.periodic.wrapped;
+  const wrapped = structure.periodic.visibleWrapped;
   const shaftDiameter = general.spinRadius ?? 0.08;
   const tipDiameter = TIP_RADIUS * (shaftDiameter / 0.08);
   const tipLength = TIP_LENGTH * (shaftDiameter / 0.08);

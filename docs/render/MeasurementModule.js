@@ -9,6 +9,42 @@ import { applyTransparency } from '../utils/TransparencyPolicy.js';
 /** @type {any} */
 let measureLabel = null;
 
+// Shared across every line/marker/label belonging to one measurement (a
+// distance is 1 line + 2 markers + 1 label; an angle is 2 lines + 3 markers
+// + 1 label) so a single measurement can be found and removed as a unit
+// without disturbing any other measurement. Assigned fresh each add — never
+// serialized, since addDistanceMeasurement/addAngleMeasurement re-assign one
+// on restore anyway (see ShareModule.js).
+let nextMeasurementId = 1;
+
+// Disposes one measure item's own geometry plus, for Groups (the dashed-
+// cylinder line groups and the atom-ring markers), every child's geometry —
+// clearAllMeasurements previously only disposed the top-level item, quietly
+// leaking every segment's geometry on each clear.
+function disposeMeasureItem(item) {
+  item.traverse?.((child) => {
+    if (child.geometry) child.geometry.dispose();
+  });
+  if (item.geometry) item.geometry.dispose();
+}
+
+/** Removes just one measurement (all its lines/markers/label) by the shared
+ *  measurementId every add function stamps onto them. No-op if the id isn't
+ *  found (e.g. already removed). */
+export function removeMeasurementById(id) {
+  measurements.measureLines = measurements.measureLines.filter((item) => {
+    if (item.userData?.measurementId !== id) return true;
+    app.scene.remove(item);
+    disposeMeasureItem(item);
+    return false;
+  });
+  measurements.measureLabels = measurements.measureLabels.filter((label) => {
+    if (label.userData?.measurementId !== id) return true;
+    app.scene.remove(label);
+    return false;
+  });
+}
+
 // Helper function for creating measurement markers.
 // A single translucent sphere reads closer to a ghost atom and is cheaper than stacked rings.
 export function createAtomRings(position, radius, innerColor, outerColor, element = null) {
@@ -66,7 +102,7 @@ export function clearAllMeasurements(){
   // Clear all stored measurements
   measurements.measureLines.forEach(item => {
     app.scene.remove(item);
-    if (item.geometry) item.geometry.dispose();
+    disposeMeasureItem(item);
   });
   measurements.measureLabels.forEach(label => {
     app.scene.remove(label);
@@ -122,7 +158,7 @@ function cloneMeasurementRef(ref) {
 }
 
 function buildLegacyMeasurementRef(atomIndex, savedPosition = null) {
-  const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
+  const wrapped = fileBrowser.selectedStructure?.periodic?.visibleWrapped;
   if (!wrapped || atomIndex == null) return null;
 
   let bestIndex = -1;
@@ -208,7 +244,24 @@ export function serializeMeasurementRef(ref) {
   return normalized ? cloneMeasurementRef(normalized) : null;
 }
 
+// Small "x" shown only on hover (styles.css) inside a measurement label's
+// CSS2DObject div — removes just that one measurement.
+function createRemoveButton(measurementId) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'measure-label-remove';
+  btn.textContent = '×';
+  btn.title = 'Remove this measurement';
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    removeMeasurementById(measurementId);
+  });
+  return btn;
+}
+
 export function addAngleMeasurement(atom1, atom2, atom3) {
+  const measurementId = nextMeasurementId++;
   const atom1Ref = createMeasurementAtomRef(atom1);
   const atom2Ref = createMeasurementAtomRef(atom2);
   const atom3Ref = createMeasurementAtomRef(atom3);
@@ -255,6 +308,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
   // Store atom indices for dynamic updates
   angleLine1.userData = {
     type: 'angle',
+    measurementId,
     atom1Ref,
     atom2Ref,
     atom3Ref,
@@ -263,6 +317,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
 
   angleLine2.userData = {
     type: 'angle',
+    measurementId,
     atom1Ref,
     atom2Ref,
     atom3Ref,
@@ -283,6 +338,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
     rings.userData = {
       ...rings.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
       type: 'angleMarker',
+      measurementId,
       atomRef: index === 0 ? atom1Ref : (index === 1 ? atom2Ref : atom3Ref),
       atom1Ref,
       atom2Ref,
@@ -305,6 +361,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
   div.style.borderRadius = '4px';
   const elements = [atom1.userData.element, atom2.userData.element, atom3.userData.element];
   div.textContent = `∠${elements[0]}-${elements[1]}-${elements[2]}: ${angle.toFixed(1)}°`;
+  div.appendChild(createRemoveButton(measurementId));
 
   const label = /** @type {any} */ (new CSS2DObject(div));
   label.position.copy(p2);
@@ -312,6 +369,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
   // Store atom indices for dynamic updates
   label.userData = {
     type: 'angle',
+    measurementId,
     atom1Ref,
     atom2Ref,
     atom3Ref
@@ -323,6 +381,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
 
 
 export function addDistanceMeasurement(atom1, atom2) {
+  const measurementId = nextMeasurementId++;
   const atom1Ref = createMeasurementAtomRef(atom1);
   const atom2Ref = createMeasurementAtomRef(atom2);
   // Create thick dashed cylinder for distance measurement (BLUE for distance)
@@ -356,6 +415,7 @@ export function addDistanceMeasurement(atom1, atom2) {
   // Store atom indices for dynamic updates
   cylinderGroup.userData = {
     type: 'distance',
+    measurementId,
     atom1Ref,
     atom2Ref
   };
@@ -373,6 +433,7 @@ export function addDistanceMeasurement(atom1, atom2) {
   ringsA.userData = {
     ...ringsA.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
     type: 'distanceMarker',
+    measurementId,
     atomRef: atom1Ref,
     measurementIndex: measurements.measureLines.length // Reference to the cylinder group
   };
@@ -383,6 +444,7 @@ export function addDistanceMeasurement(atom1, atom2) {
   ringsB.userData = {
     ...ringsB.userData, // Preserve ring metadata (isAtomMarker, markerType, element)
     type: 'distanceMarker',
+    measurementId,
     atomRef: atom2Ref,
     measurementIndex: measurements.measureLines.length - 1 // Reference to the cylinder group
   };
@@ -405,12 +467,14 @@ export function addDistanceMeasurement(atom1, atom2) {
   const d = pa.distanceTo(pb);
   //div.textContent = `${a}—${b}: ${formatÅ(d)} Å`;
   div.textContent = `${formatÅ(d)} Å`;
+  div.appendChild(createRemoveButton(measurementId));
   const label = /** @type {any} */ (new CSS2DObject(div));
   label.position.copy(mid);
 
   // Store atom indices for dynamic updates
   label.userData = {
     type: 'distance',
+    measurementId,
     atom1Ref,
     atom2Ref
   };

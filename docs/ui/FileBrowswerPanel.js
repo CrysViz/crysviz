@@ -650,3 +650,40 @@ export function selectStructure(rowIndex, step = 0) {
   updateStructureFromRowAndStep(rowIndex);
   return true;
 }
+
+/**
+ * Select the next/previous row in the Files table (delta = +1/-1), wrapping
+ * around at either end. Keeps the current trajectory step (clamped by
+ * selectStructure if the new structure has fewer frames). Used by the
+ * Shift+Arrow keyboard shortcut. No-op if fewer than two structures are loaded.
+ */
+export function selectAdjacentStructure(delta) {
+  const tbody = document.querySelector('#objectTable tbody');
+  const rows = tbody ? tbody.querySelectorAll('tr') : [];
+  if (rows.length < 2) return false;
+  const current = fileBrowser.selectedRowIndex ?? 0;
+  const next = ((current + delta) % rows.length + rows.length) % rows.length;
+  return selectStructure(next, fileBrowser.stepInput ?? 0);
+}
+
+/**
+ * Step the CURRENTLY selected structure's trajectory frame by delta (+1/-1),
+ * clamped to [1, traj] — unlike selectAdjacentStructure this does NOT wrap
+ * (scrubbing past the last/first frame just stops, like a video scrubber).
+ * Reuses the row's own step <input> and fires the same 'input' event a
+ * manual edit would, so the existing stepInputValidation wiring (updateRow)
+ * drives the actual structure update. No-op if the structure has one frame.
+ */
+export function selectAdjacentStep(delta) {
+  const row = fileBrowser.selectedRow;
+  const stepInput = row ? row.querySelector('input[type="number"]') : null;
+  if (!stepInput) return false;
+  const max = parseInt(stepInput.max, 10) || 1;
+  if (max < 2) return false;
+  const current = parseInt(stepInput.value, 10) || 1;
+  const next = Math.min(Math.max(current + delta, 1), max);
+  if (next === current) return false;
+  stepInput.value = String(next);
+  stepInput.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+}

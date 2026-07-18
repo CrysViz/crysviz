@@ -1,5 +1,6 @@
-import { fileBrowser, groups, general } from '../../../state/store.js';
-import { colorHexToCss, getAtomColor, hexToRgba } from '../../../utils/ColorModule.js';
+import { fileBrowser, groups, general, mode } from '../../../state/store.js';
+import { colorHexToCss, getAtomColor, hexToRgba, setAtomColor } from '../../../utils/ColorModule.js';
+import { refreshGhostAtoms } from '../../../render/GhostAtomsModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import {
   updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter,
@@ -186,6 +187,13 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       syncBondHalvesToImageColor(structure, imageIndex, hex);
     } else {
       linkedAtomIndices.forEach((linkedAtomIndex) => {
+        const linkedAtom = structure.atoms[linkedAtomIndex];
+        // Authoritative color state, set unconditionally: an atom with zero
+        // periodic images right now (e.g. currently hidden) never runs the
+        // per-image loop below, so without this its userColor/color would
+        // silently keep the old value forever, surviving even a later restore.
+        linkedAtom.userColor = hex;
+        setAtomColor(linkedAtom, hex);
         // Newest edit wins: a linked recolor overrides earlier per-copy colors.
         clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'color');
         structure.atomImages[linkedAtomIndex]?.forEach(imgIndex => {
@@ -203,6 +211,10 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     // A centered polyhedron is coloured by its centre atom, so recolour in place (cheap, no
     // geometry recompute) — the polyhedron of the edited atom matches its new colour.
     updatePolyhedraColors();
+    // This callback updates the real-atom mesh directly rather than going
+    // through updateVisualization, so it's one of the color-edit paths that
+    // doesn't get updateVisualization's own ghost-refresh hook.
+    if (mode.measureMode === 'hide' || mode.measureMode === 'restore') refreshGhostAtoms();
   });
 
   const AtomColorApplyBtn = document.createElement('button');

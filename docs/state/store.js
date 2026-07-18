@@ -83,6 +83,7 @@ export const groups = {
   polyhedraGroup:null,
   latticeGroup:null,
   atomsMesh: null,
+  ghostAtomsMesh: null, // render/GhostAtomsModule.js — hidden-atom ghosts, hide mode only
   bondsMesh: null,
   forcesShaftMesh: null,
   forcesTipMesh: null,
@@ -154,6 +155,19 @@ export const general = {
   // 'standard' = no presets (plain standard material everywhere). Resolved by
   // Structure.getDefaultElementMaterial below manual atomMaterials edits.
   elementMaterialsMap:'crysviz',
+  // Sparse per-element overrides from the Custom User Settings panel (loaded
+  // JSON or picked interactively) - element -> 0xRRGGBB / element -> radius
+  // in Å. Only elements the user has actually touched are present; anything
+  // else falls back to the built-in scheme (see
+  // defaults/color_texture_defaults.js's getElementDefaultColor and
+  // defaults/radii_defaults.js's getElementRadius).
+  customColorMap:{},
+  customAtomicRadii:{},
+  // Bookkeeping-only sparse record of which bond pairs the user has
+  // explicitly overridden via the Custom User Settings panel (for JSON
+  // export/persistence) - the actual live values also live in bondLengths
+  // below, which is what the render pipeline consults.
+  customBondLengths:{},
   bondLengths:{},
   defaultBondLengths:{},
   bondVisibility:{},
@@ -343,7 +357,7 @@ export const general = {
 
 
 export const mode = {
-  measureMode:'none', // 'none', 'distance', 'angle', 'delete' 
+  measureMode:'none', // 'none', 'distance', 'angle', 'hide', 'restore'
   overlayMode:'none', // 'none', comparison, trajectory_force,  trajectory_spin
 };
 

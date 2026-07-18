@@ -711,7 +711,7 @@ function restoreCamera(camState) {
 function restoreMeasurements(measurementData) {
   if (!measurementData?.length) return;
   setTimeout(() => {
-    const wrapped = fileBrowser.selectedStructure?.periodic?.wrapped;
+    const wrapped = fileBrowser.selectedStructure?.periodic?.visibleWrapped;
     if (!wrapped) return;
 
     measurementData.forEach(m => {

@@ -377,6 +377,7 @@ function isPointCutByPlanes(position, cutPlanes) {
 }
 
 function isAtomImageVisible(position, atom, cutPlanes) {
+  if (atom?.hidden) return false;
   if (!cutPlanes.length) return true;
   if (atom?.cutPlaneImmune) return true;
   return !isPointCutByPlanes(position, cutPlanes);
@@ -464,7 +465,7 @@ export function computePolyhedra(structure) {
   const baseCart = fracToCart(positions, lattice).map(p => new THREE.Vector3(p[0], p[1], p[2]));
   const nAtoms = baseCart.length;
   const latInv = invert3x3(transpose3x3(lattice));
-  const dispWrapped = structure.periodic?.wrapped;
+  const dispWrapped = structure.periodic?.visibleWrapped;
   const activeCutPlanes = getActiveCutPlanes();
 
   // Build the set of wrapped base images eligible to act as displayed centres.

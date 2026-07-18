@@ -74,7 +74,9 @@ if (aboutTrigger) {
     openAboutPanel();
   });
   aboutTrigger.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
+    // Space is reserved globally as a keyboard-shortcut modifier
+    // (ui/KeyboardShortcuts.js) — Enter alone opens the About panel.
+    if (event.key === 'Enter') {
       event.preventDefault();
       openAboutPanel();
     }

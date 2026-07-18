@@ -418,7 +418,7 @@ export function applyMDStateToViewer(
 
   // Full path: re-establishes topology (fast path resumes on the next frame).
   runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
-  const wrappedCount = structure.periodic.wrapped?.elements?.length ?? 0;
+  const wrappedCount = structure.periodic.visibleWrapped?.elements?.length ?? 0;
   const needAtomRebuild = full || forceRerender || !groups.atomsMesh || groups.atomsMesh.count !== wrappedCount;
   updateVisualization({
     atomsUpdate: true,

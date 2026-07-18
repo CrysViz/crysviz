@@ -42,9 +42,11 @@ import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render
 
 
 import {addAtomVacuumPanel} from '../ui/addToStructureModule/AddVacuumModule.js'
+import {initAddStructureButton} from '../ui/addToStructureModule/AddStructureModule.js'
 import {initPanelSystem, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
 import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
 import {initFontScale} from '../ui/FontScaleModule.js'
+import {initKeyboardShortcuts} from '../ui/KeyboardShortcuts.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../render/index.js';
 import { updateGroundPlane } from '../render/index.js';
@@ -119,9 +121,6 @@ function updateOther() {
   console.time("other:updateAllMeasurements");
   updateAllMeasurements();
   console.timeEnd("other:updateAllMeasurements");
-  console.time("other:addAtomVacuumPanel");
-  addAtomVacuumPanel();
-  console.timeEnd("other:addAtomVacuumPanel");
 }
 
 export function updateVisualization(options = {}) {
@@ -212,6 +211,11 @@ export function updateVisualization(options = {}) {
   // Panels
   if (reRenderComposition != false) {
     renderComposition(reRenderComposition);
+    // #addButton is only (re)created when renderComposition() runs, so
+    // (re)wire the Add Atoms/Vacuum popup here rather than on every
+    // updateVisualization() call — avoids stacking duplicate click listeners
+    // on the same live button node.
+    addAtomVacuumPanel();
   }
   console.time("uv:updateLattice");
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
@@ -466,6 +470,8 @@ function initUIPanels() {
   initImageExportPanel();
   initRaytraceWarningModal();
   addAtomVacuumPanel();
+  initAddStructureButton();
+  initKeyboardShortcuts();
 
   // Add viewport meta tag if not present for proper mobile scaling
   if (!document.querySelector('meta[name="viewport"]')) {

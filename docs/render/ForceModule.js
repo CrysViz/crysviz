@@ -88,7 +88,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
   const structure = fileBrowser.selectedStructure;
   if (!structure?.periodic?.wrapped) { disposeForceMeshes(); return; }
 
-  const wrapped = structure.periodic.wrapped;
+  const wrapped = structure.periodic.visibleWrapped;
   const shaftDiameter = general.forceRadius ?? 0.08;
   const tipDiameter = TIP_RADIUS * (shaftDiameter / 0.08);
   const tipLength = TIP_LENGTH * (shaftDiameter / 0.08);

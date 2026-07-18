@@ -29,6 +29,21 @@
   display: none !important;
 }
 
+/* Keyboard-shortcut focus confirmation (ui/KeyboardShortcuts.js): a brief
+   orange outline so a panel — or a plain button (camera alignment, Add
+   Structure/Atoms) that wouldn't otherwise show any reaction — visibly
+   confirms a keypress landed. Reuses the app's one existing "draw attention"
+   orange (the collision-warning banner color). Not scoped to .cv-panel: any
+   element can receive the class. */
+@keyframes cv-shortcut-flash {
+  from { box-shadow: 0 0 0 2px rgba(240, 132, 18, 0.9); }
+  to { box-shadow: 0 0 0 2px rgba(240, 132, 18, 0); }
+}
+
+.cv-shortcut-flash {
+  animation: cv-shortcut-flash 0.5s ease-out;
+}
+
 /* The .cv-panel container itself is chrome-less: collapsed, a panel is just
    its title bar; expanded, the body hangs below the bar as the window
    surface. */

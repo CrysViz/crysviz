@@ -171,7 +171,9 @@ function fillTabs(container, panelsList, { suffix = '', withMenu = false, dragga
       tab.addEventListener('click', () => activatePanel(panel));
     }
     tab.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); activatePanel(panel); }
+      // Space is reserved globally as a keyboard-shortcut modifier
+      // (ui/KeyboardShortcuts.js) — Enter alone activates the tab.
+      if (ev.key === 'Enter') { ev.preventDefault(); activatePanel(panel); }
     });
 
     if (withMenu) {

@@ -25,6 +25,7 @@ import { addEOSPanel, removeEOSPanel } from '../EOSPanel.js';
 import { addEOSPlotsPanel, removeEOSPlotsPanel } from '../EOSPlotsPanel.js';
 import { addDummySplitPanel, removeDummySplitPanel } from '../DummySplitPanel.js';
 import { addLandscapePanel, removeLandscapePanel, addLandscapePlotsPanel, removeLandscapePlotsPanel } from '../LandscapePanel.js';
+import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
@@ -88,6 +89,19 @@ function makePolyEdgeSliderRow() {
   });
   label.appendChild(input);
   return label;
+}
+
+/** A bordered box (styles.css .panel-section) grouping one section's
+ *  headline + controls — currently only used by the Visual panel, whose
+ *  several stacked sections otherwise read as one long undifferentiated
+ *  list. `id`, if given, lets a sub-builder (addColorPanel/addCameraPanel)
+ *  target this box directly instead of appending to the shared body. */
+function makePanelSection(title, id) {
+  const section = document.createElement('div');
+  section.className = 'panel-section';
+  if (id) section.id = id;
+  section.appendChild(makeSectionHeadline(title));
+  return section;
 }
 
 /** Return adopted rows to the staging block (called from onDestroyContent,
@@ -268,7 +282,9 @@ export function registerDefaultPanels() {
       if (toggle) {
         toggle.addEventListener('click', handleStructurePanelToggle);
         toggle.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
+          // Space is reserved globally as a keyboard-shortcut modifier
+          // (ui/KeyboardShortcuts.js) — Enter alone toggles the formula box.
+          if (e.key === 'Enter') {
             e.preventDefault();
             handleStructurePanelToggle();
           }
@@ -508,18 +524,22 @@ export function registerDefaultPanels() {
     infoMd: './data/visualInfo.md',
     buildContent(body) {
       // All appearance settings in one window, grouped by concern (Sizes /
-      // Scene / Rendering / Colors / Camera). The feature-specific controls
-      // stay in their feature windows.
-      body.appendChild(makeSectionHeadline('Sizes'));
-      adoptStaticRows(body, ['atomSize', 'bondWidth'], false);
+      // Scene / Rendering+Colors / Camera), each in its own bordered
+      // .panel-section box so the stacked sections read as distinct groups
+      // rather than one long flat list. The feature-specific controls stay
+      // in their feature windows.
+      const sizesSection = makePanelSection('Sizes');
+      body.appendChild(sizesSection);
+      adoptStaticRows(sizesSection, ['atomSize', 'bondWidth'], false);
       // Polyhedra edge thickness belongs with the other size controls: since
       // the fat-lines change it applies in every render style, not only to
       // the cel hull-outline substitute it was introduced as.
-      body.lastElementChild.appendChild(makePolyEdgeSliderRow());
+      sizesSection.lastElementChild.appendChild(makePolyEdgeSliderRow());
 
       // Scene furniture: unit cell, cell axes (each show-toggle sharing a row
       // with its width slider) and the background picker.
-      body.appendChild(makeSectionHeadline('Scene'));
+      const sceneSection = makePanelSection('Scene');
+      body.appendChild(sceneSection);
       const sceneGroup = document.createElement('div');
       sceneGroup.className = 'toggle_group';
       sceneGroup.appendChild(makeAdoptedPairRow('showLattice', 'latticeWidth'));
@@ -535,12 +555,18 @@ export function registerDefaultPanels() {
       bgRow.appendChild(bgToggle);
       bgRow.appendChild(createBackgroundSwatch());
       sceneGroup.appendChild(bgRow);
-      body.appendChild(sceneGroup);
+      sceneSection.appendChild(sceneGroup);
 
-      body.appendChild(makeSectionHeadline('Rendering'));
-      addColorPanel(body.id); // rendering rows + its own 'Colors' section
-      body.appendChild(makeSectionHeadline('Camera'));
-      addCameraPanel(body.id);
+      // Rendering and Colors share one box: addColorPanel appends its own
+      // internal 'Colors' sub-heading right after the rendering rows, into
+      // this same section, rather than getting a second frame of its own.
+      const renderingSection = makePanelSection('Rendering', 'visualRenderingSection');
+      body.appendChild(renderingSection);
+      addColorPanel(renderingSection.id);
+
+      const cameraSection = makePanelSection('Camera', 'visualCameraSection');
+      body.appendChild(cameraSection);
+      addCameraPanel(cameraSection.id);
     },
     defaults: { dock: 'left', order: 5, collapsed: false },
   });
@@ -620,6 +646,15 @@ export function registerDefaultPanels() {
     buildContent(body) { addLandscapePlotsPanel(body.id); },
     onDestroyContent() { removeLandscapePlotsPanel(); },
     defaults: { dock: 'right', closed: true, order: 94 },
+  });
+
+  registerPanel({
+    id: 'customSettings',
+    title: 'Custom User Settings',
+    lifecycle: 'persistent',
+    infoMd: './data/customUserSettingsInfo.md',
+    buildContent(body) { buildCustomUserSettingsPanel(body); },
+    defaults: { docked: true, order: 96, collapsed: true },
   });
 
   registerPanel({

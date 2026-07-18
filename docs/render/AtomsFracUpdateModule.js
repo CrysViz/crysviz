@@ -1,7 +1,8 @@
 import * as THREE from '../external/three/three.module.js';
 
-import { app, groups,fileBrowser, general} from '../state/store.js';
-import {atomicRadii} from '../defaults/radii_defaults.js'
+import { app, groups,fileBrowser, general, mode} from '../state/store.js';
+import { refreshGhostAtoms } from './GhostAtomsModule.js';
+import {getElementRadius} from '../defaults/radii_defaults.js'
 import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
 import { getCutPlaneMaskSign } from '../model/Plane.js';
@@ -27,6 +28,48 @@ function normalizePlaneNormal(x = 1, y = 0, z = 0) {
     return [1, 0, 0];
   }
   return [nx / length, ny / length, nz / length];
+}
+
+// Derives structure.periodic.visibleWrapped from structure.periodic.wrapped,
+// excluding any instance whose source atom is hidden (Atom.hidden). Every
+// instance-indexed consumer (mesh build/update, per-image style keys,
+// cut-plane state, bonds, forces, spins, polyhedra centers, click-picking)
+// reads .visibleWrapped instead of .wrapped, so a hidden atom simply never
+// gets an instance anywhere.
+//
+// .wrapped itself is intentionally left untouched: it's the full, hash-cached
+// truth (render/LatticeModule.js's runPeriodicWrapped only recomputes it when
+// positions/elements/lattice/bond-settings change — a hide/restore toggle
+// changes none of those, so if we filtered .wrapped in place a later restore
+// would have nothing to restore from). This derives a fresh view every time
+// instead, cheap since it's a plain linear filter over already-computed data.
+// When nothing is hidden it's the exact same object reference as .wrapped —
+// zero allocation, zero behavior change, in the common case.
+export function deriveVisibleWrapped(structure) {
+  const wrapped = structure?.periodic?.wrapped;
+  const atoms = structure?.atoms;
+  if (!structure?.periodic) return;
+  if (!wrapped || !atoms) { structure.periodic.visibleWrapped = wrapped; return; }
+  const srcIndex = wrapped.srcIndex;
+  if (!srcIndex || !srcIndex.length) { structure.periodic.visibleWrapped = wrapped; return; }
+  let anyHidden = false;
+  for (let i = 0; i < srcIndex.length; i++) {
+    if (atoms[srcIndex[i]]?.hidden) { anyHidden = true; break; }
+  }
+  if (!anyHidden) { structure.periodic.visibleWrapped = wrapped; return; }
+
+  const baseCountIn = typeof wrapped.baseCount === 'number' ? wrapped.baseCount : wrapped.elements.length;
+  let baseCountOut = 0;
+  const elements = [], frac = [], cart = [], srcOut = [];
+  for (let i = 0; i < srcIndex.length; i++) {
+    if (atoms[srcIndex[i]]?.hidden) continue;
+    elements.push(wrapped.elements[i]);
+    frac.push(wrapped.frac[i]);
+    cart.push(wrapped.cart[i]);
+    srcOut.push(srcIndex[i]);
+    if (i < baseCountIn) baseCountOut++;
+  }
+  structure.periodic.visibleWrapped = { elements, frac, cart, srcIndex: srcOut, baseCount: baseCountOut };
 }
 
 function getActiveCutPlanes() {
@@ -139,6 +182,7 @@ export function rebuildAtoms(opacity) {
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   let elements = [...fileBrowser.selectedStructure.elements];
   let _ = runPeriodicWrapped(fileBrowser.selectedStructure.periodic, positions, elements,lattice)
+  deriveVisibleWrapped(fileBrowser.selectedStructure)
 
   console.log("Building atoms")
   buildAtoms();
@@ -385,7 +429,7 @@ export function buildAtoms() {
   let structure = fileBrowser.selectedStructure
   //perdic.wrapped
 
-  let wrapped = fileBrowser.selectedStructure.periodic.wrapped
+  let wrapped = fileBrowser.selectedStructure.periodic.visibleWrapped
 
   const atomCount = wrapped.elements.length;
   console.log("Building mesh for",atomCount,"atoms")
@@ -432,7 +476,7 @@ export function getAtomImageStyle(structure, instanceId) {
   const key = atomImageKey(structure, instanceId);
   const entry = key ? structure.atomImageStyles?.[key] : null;
   if (!entry) return null;
-  return entry.element === structure.periodic?.wrapped?.elements?.[instanceId] ? entry : null;
+  return entry.element === structure.periodic?.visibleWrapped?.elements?.[instanceId] ? entry : null;
 }
 
 /** Upsert per-image style fields for an instance; returns the entry (or null). */
@@ -441,7 +485,7 @@ export function setAtomImageStyle(structure, instanceId, patch) {
   if (!key) return null;
   structure.atomImageStyles ??= {};
   const entry = structure.atomImageStyles[key]
-    ??= { element: structure.periodic?.wrapped?.elements?.[instanceId] };
+    ??= { element: structure.periodic?.visibleWrapped?.elements?.[instanceId] };
   Object.assign(entry, patch);
   return entry;
 }
@@ -473,7 +517,7 @@ export function clearAtomImageStylesForAtom(structure, srcIndex, field = null) {
 export function getAtomImageColor(structure, instanceId) {
   const override = getAtomImageStyle(structure, instanceId)?.color;
   if (override != null) return override;
-  const srcIndex = structure.periodic?.wrapped?.srcIndex?.[instanceId] ?? instanceId;
+  const srcIndex = structure.periodic?.visibleWrapped?.srcIndex?.[instanceId] ?? instanceId;
   return structure.atoms[srcIndex]?.getColor();
 }
 
@@ -523,7 +567,7 @@ export function updateSingleAtomCutPlaneImmunity(index, immune = false) {
 export function updateAtomCutPlaneState() {
   const mesh = groups.atomsMesh;
   if (!mesh || !fileBrowser.selectedStructure) return;
-  const wrapped = fileBrowser.selectedStructure.periodic?.wrapped;
+  const wrapped = fileBrowser.selectedStructure.periodic?.visibleWrapped;
   if (!wrapped?.srcIndex) {
     applyAtomCutPlaneUniforms(mesh.material);
     return;
@@ -557,7 +601,7 @@ export function updateSingleAtomDiameter(index, element, scale = 1) {
   // cut-plane shader discard). Checked here so no other diameter writer
   // (global size slider, per-atom/per-element size edits) can un-hide them.
   const hidden = general.atomVisibility?.[element] === false;
-  const radius = hidden ? 0 : (atomicRadii[element] || 1.0) * atomSize * scale;
+  const radius = hidden ? 0 : getElementRadius(element) * atomSize * scale;
   const mOffset = index * 16;
   a[mOffset + 0] = radius;
   a[mOffset + 5] = radius;
@@ -570,7 +614,7 @@ export function updateAtoms(opacity = 1.0) {
   const atoms = fileBrowser.selectedStructure.atoms;
   const periodic = fileBrowser.selectedStructure.periodic;
 
-  const wrapped = periodic.wrapped;
+  const wrapped = periodic.visibleWrapped;
   const wrappedCart = wrapped.cart;
   const mesh = groups.atomsMesh;
 
@@ -606,8 +650,8 @@ export function updateAtoms(opacity = 1.0) {
 
     // Opacity + cut-plane immunity written inline (the per-atom helpers each flag
     // needsUpdate / re-sync transparency; done once after the loop instead).
-    const op = imageStyle?.alpha ?? atom.getOpacity?.() ?? atom.opacity ?? 1;
-    opacityAttr.setX(i, Math.max(0, Math.min(1, Number(op) || 0)));
+    const baseOp = imageStyle?.alpha ?? atom.getOpacity?.() ?? atom.opacity ?? 1;
+    opacityAttr.setX(i, Math.max(0, Math.min(1, Number(baseOp) || 0)));
     immuneAttr.setX(i, atom.cutPlaneImmune ? 1 : 0);
 
     emissiveAttr.setXYZ(i, 0, 0, 0);
@@ -623,4 +667,14 @@ export function updateAtoms(opacity = 1.0) {
 
   mesh.instanceMatrix.needsUpdate = true;
   mesh.instanceColor.needsUpdate = true;
+
+  // Every real-atom re-render funnels through here — rebuildAtoms() calls
+  // this at the end too — so this is the one place that reliably catches
+  // every color/radius/opacity change (element-color edits, force-color
+  // mode, per-atom picker, etc.), including the several call sites that
+  // update groups.atomsMesh directly and skip updateVisualization entirely.
+  // Ghosts (render/GhostAtomsModule.js) are a separate mesh snapshotted at
+  // build time, so without this they'd go stale until the next hide/restore
+  // click. Cheap: a no-op rebuild when nothing is hidden.
+  if (mode.measureMode === 'hide' || mode.measureMode === 'restore') refreshGhostAtoms();
 }

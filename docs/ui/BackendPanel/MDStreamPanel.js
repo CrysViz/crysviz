@@ -171,7 +171,13 @@ function fastUpdatePositions(cartPositions, lattice, elements, forces) {
   const mesh = groups.atomsMesh;
   if (!mesh) return;
 
-  const n   = cartPositions.length;
+  const n = cartPositions.length;
+  // Hiding an atom mid-stream shrinks the mesh (rebuildAtoms filters it out)
+  // without changing the streamed atom count this function otherwise assumes
+  // 1:1 with mesh instances — bail rather than write past/misalign the
+  // now-smaller instance buffer. The next atom-count-changed frame (or any
+  // full rebuild) re-syncs prevNAtoms and resumes the fast path normally.
+  if (mesh.count !== n) return;
   const arr = mesh.instanceMatrix.array;
 
   // Direct float writes — skip color, radius, emissive, hashing, periodic expansion

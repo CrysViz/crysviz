@@ -152,8 +152,12 @@ export function handleStructurePanelToggle() {
 export function getCompositionString() {
   function computeComposition() {
     if (!fileBrowser.selectedStructure) return {};
+      const structure = fileBrowser.selectedStructure;
       const counts = {};
-      fileBrowser.selectedStructure.elements.forEach(e => counts[e] = (counts[e] || 0) + 1);
+      structure.elements.forEach((e, i) => {
+        if (structure.atoms[i]?.hidden) return;
+        counts[e] = (counts[e] || 0) + 1;
+      });
     return counts;
   }
   // Generate the chemical formula as a string
