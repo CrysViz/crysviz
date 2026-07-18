@@ -5,7 +5,7 @@ import { updateSpins, removeSpins } from '../render/index.js';
 import { updateForces, removeForces } from '../render/index.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import { createTrajectoryPlot } from './TrajectoryPlot.js';
-import { openPanel } from './panels/PanelManager.js';
+import { openPanel, refreshPanelAvailability } from './panels/PanelManager.js';
 // Mean force magnitude over a frame's per-atom force vectors (eV/Å). Kept local
 // so the panel does not depend on the Forces-panel/histogram machinery.
 function meanForceMagnitude(structure) {
@@ -231,12 +231,24 @@ function seriesFromContainer(container) {
  * during a live run. Reuses the existing PanelManager openPanel() API (same
  * one the Features window uses); safe no-op if the panel isn't registered. */
 export function ensureTrajectoryPanelForLive() {
+  // Mark the run active BEFORE opening so the panel's available() (which ORs in
+  // isLivePlotActive) is true even though the MD container starts with a single
+  // seed frame — otherwise the panel would stay in its "not available" state and
+  // never pop up for live feedback until enough frames had accrued.
+  liveActive = true;
   try {
+    refreshPanelAvailability();
     openPanel('trajectory');
   } catch {
     // PanelManager not ready / panel not registered — plot still works once
     // the user opens the panel manually; feedLiveStep() stays robust either way.
   }
+}
+
+/** True while a live MD/relax run is streaming into the plot. Consulted by the
+ * Trajectory panel's available() so it pops up immediately for live feedback. */
+export function isLivePlotActive() {
+  return liveActive;
 }
 
 /** Feed one live MD/relax step into the plot. Safe to call even if the panel
@@ -295,7 +307,10 @@ function updateStructureFromFrame(frame, container) {
 }
 
 // --- Update UI and scene ---
-function updateFrame(frame, container) {
+// opts.render=false updates only the label/slider/cursor without re-rendering
+// the 3D viewer — used while a live MD/relax run owns the scene, or for a
+// single-frame container where there is nothing to scrub.
+function updateFrame(frame, container, opts = {}) {
   if (!container) return;
   const numFrames = container.structures.length;
 
@@ -306,7 +321,7 @@ function updateFrame(frame, container) {
   else if (ind) ind.textContent = `${frame + 1} / ${numFrames}`;
   if (trajectoryPlayerElements.frameSlider) trajectoryPlayerElements.frameSlider.value = frame;
 
-  updateStructureFromFrame(frame, container);
+  if (opts.render !== false) updateStructureFromFrame(frame, container);
 
   if (trajPlot) trajPlot.setCursor(frame);
 }
@@ -391,7 +406,12 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
   if (!container || container.structures.length === 0) return;
 
   trajectoryPlayerElements.frameSlider.max = container.structures.length - 1;
-  updateFrame(currentFrame, container);
+  // Clamp a frame index carried over from a previous (longer) trajectory.
+  currentFrame = Math.min(currentFrame, Math.max(0, container.structures.length - 1));
+  // Don't re-render the scene on build while a live run owns it, or for a
+  // single-frame container (avoids a redundant re-render of the source structure).
+  const renderOnBuild = !liveActive && container.structures.length > 1;
+  updateFrame(currentFrame, container, { render: renderOnBuild });
   refreshPlotFromContainer(container);
   updateComputeStepStatsBtnVisibility(container);
 
