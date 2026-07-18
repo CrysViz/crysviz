@@ -16,7 +16,7 @@ import {
   createCosineAnnealingSchedule,
   createVelocityRescaleThermostat,
 } from '../../atomistic/MD.js';
-import { ensureTrajectoryPanelForLive, feedLiveStep, resetLivePlot } from '../TrajectoryPanel.js';
+import { ensureTrajectoryPanelForLive, feedLiveStep, resetLivePlot, endLiveFeed } from '../TrajectoryPanel.js';
 import { MLIPRunner } from '../../external/mlip_wasm/mlip_runner.js';
 import { updateForces } from '../../render/index.js';
 import { updateRow, createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
@@ -865,6 +865,12 @@ function bindMDBody(panel, shell, potential) {
       const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
       const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
       const mdContainer = new StructureContainer({ fileName: mdLabel, structures: [snapshotCurrentStructure()] });
+      // Persist the plotted series on the container so the trajectory plot can be
+      // rebuilt (e.g. after a panel rebuild from a structure-table interaction)
+      // long after the live run's in-memory plot was torn down. Seed one NaN gap
+      // for the initial (pre-run) frame so the series stays index-aligned with
+      // mdContainer.structures.
+      mdContainer.plotSeries = { temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN] };
       structureShip.container.push(mdContainer);
       const mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
       tableBody.appendChild(mdRow);
@@ -928,6 +934,9 @@ function bindMDBody(panel, shell, potential) {
             // keeps the frame cursor aligned with the slider (feeding every step
             // would desync the cursor from the 1..N frame index).
             feedLiveStep(lastStepMetrics);
+            mdContainer.plotSeries.temperatureK.push(temperatureK);
+            mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(targetTemperatureK) ? targetTemperatureK : NaN);
+            mdContainer.plotSeries.etotEv.push(etotEv);
           }
           const tLabel = Number.isFinite(targetTemperatureK)
             ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`
@@ -950,7 +959,12 @@ function bindMDBody(panel, shell, potential) {
         mdContainer.structures.push(frame);
         // Keep the plot 1:1 with frames: feed this final frame too, reusing the
         // last step's computed metrics (state carries no temperature/KE fields).
-        if (lastStepMetrics) feedLiveStep({ ...lastStepMetrics, step: state.step });
+        if (lastStepMetrics) {
+          feedLiveStep({ ...lastStepMetrics, step: state.step });
+          mdContainer.plotSeries.temperatureK.push(lastStepMetrics.temperatureK);
+          mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(lastStepMetrics.targetTemperatureK) ? lastStepMetrics.targetTemperatureK : NaN);
+          mdContainer.plotSeries.etotEv.push(lastStepMetrics.etotEv);
+        }
       }
 
       const count = mdContainer.structures.length;
@@ -964,6 +978,9 @@ function bindMDBody(panel, shell, potential) {
       mdStopRequested = false;
       if (startBtn) startBtn.disabled = false;
       if (stopBtn) stopBtn.disabled = true;
+      // Live run is over: hand ownership of the plot back to the container's
+      // persisted series so scrubbing/replay survives later panel rebuilds.
+      endLiveFeed();
     }
   });
 }

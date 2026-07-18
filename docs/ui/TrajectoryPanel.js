@@ -59,10 +59,13 @@ function setPlotVisible(visible) {
 function updateComputeStepStatsBtnVisibility(container) {
   const btn = trajectoryPlayerElements.computeStepStatsBtn;
   if (!btn) return;
+  // Already have a plotted series (live MD streamed temperature/energy, or a
+  // previous compute) — hide the button so a click can't wipe that series.
+  const alreadyPlotted = !!(container?.plotSeries && Object.keys(container.plotSeries).length);
   const hasData = !!container?.structures?.some(
     (s) => Number.isFinite(s?.energy) || (s?.forces && s.forces.length > 0)
   );
-  btn.style.display = (!liveActive && hasData) ? '' : 'none';
+  btn.style.display = (!liveActive && hasData && !alreadyPlotted) ? '' : 'none';
 }
 
 // Frames per chunk when bulk-computing step stats for a large trajectory, and
@@ -103,11 +106,15 @@ function computeStepStats(container) {
   }
 
   function finish() {
-    const seriesObj = {};
-    if (hasEnergy) seriesObj.etotEv = etotEv;
+    // Merge into any existing series rather than replacing it, so a live MD
+    // run's temperature/energy survive when mean force is added.
+    const seriesObj = container.plotSeries ? { ...container.plotSeries } : {};
+    if (hasEnergy && !Array.isArray(seriesObj.etotEv)) seriesObj.etotEv = etotEv;
     if (hasForce) seriesObj.meanForce = meanForce;
 
     if (Object.keys(seriesObj).length) {
+      // Persist on the container so the plot redraws after a panel rebuild.
+      container.plotSeries = seriesObj;
       const plot = ensurePlot();
       if (plot) {
         plot.setSeries(seriesObj);
@@ -158,7 +165,7 @@ function ensurePlot() {
     const container = structureShip.container[fileBrowser.selectedRowIndex];
     if (!container?.structures?.length) return;
     playing = false;
-    if (trajectoryPlayerElements.playPauseBtn) trajectoryPlayerElements.playPauseBtn.textContent = '▶️';
+    if (trajectoryPlayerElements.playPauseBtn) trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = Math.max(0, Math.min(container.structures.length - 1, f));
     updateFrame(currentFrame, container);
   });
@@ -177,6 +184,17 @@ function refreshPlotFromContainer(container) {
     setPlotVisible(true);
     return;
   }
+  // Preferred source: a full series persisted on the container (live MD stores
+  // temperature/target/energy here; "Compute step stats" stores energy/force).
+  // This is what makes replay survive a panel rebuild — the in-memory plot is
+  // gone, but the container still carries everything needed to redraw it.
+  const persisted = seriesFromContainer(container);
+  if (persisted) {
+    plot.setSeries(persisted);
+    setPlotVisible(true);
+    plot.setCursor(currentFrame);
+    return;
+  }
   if (!hasPlottableData(container)) {
     setPlotVisible(false);
     return;
@@ -186,10 +204,25 @@ function refreshPlotFromContainer(container) {
     const etotEv = container.structures.map((s) => (Number.isFinite(s?.energy) ? s.energy : NaN));
     plot.setSeries({ etotEv });
     setPlotVisible(true);
+    plot.setCursor(currentFrame);
   } else {
     // Forces-only data: nothing to auto-populate yet.
     setPlotVisible(false);
   }
+}
+
+// Return the container's persisted plot series if it has any finite data,
+// else null. Shared by replay (refreshPlotFromContainer) and set by live MD
+// (mdContainer.plotSeries) / computeStepStats.
+function seriesFromContainer(container) {
+  const ps = container?.plotSeries;
+  if (!ps) return null;
+  const out = {};
+  let any = false;
+  for (const [name, arr] of Object.entries(ps)) {
+    if (Array.isArray(arr) && arr.some(Number.isFinite)) { out[name] = arr; any = true; }
+  }
+  return any ? out : null;
 }
 
 // --- Live-MD bridge (module-level, usable before the panel DOM exists) ---
@@ -226,6 +259,13 @@ export function resetLivePlot() {
   updateComputeStepStatsBtnVisibility(structureShip.container[fileBrowser.selectedRowIndex]);
 }
 
+/** End the live feed (run finished/stopped/failed). Hands the plot back to the
+ * container's persisted series so replay survives later panel rebuilds. */
+export function endLiveFeed() {
+  liveActive = false;
+  updateComputeStepStatsBtnVisibility(structureShip.container[fileBrowser.selectedRowIndex]);
+}
+
 // --- Update scene from a specific frame ---
 function updateStructureFromFrame(frame, container) {
   if (!container || frame < 0 || frame >= container.structures.length) return;
@@ -259,7 +299,11 @@ function updateFrame(frame, container) {
   if (!container) return;
   const numFrames = container.structures.length;
 
-  trajectoryPlayerElements.frameIndicator.textContent = `Frame: ${frame + 1}/${numFrames}`;
+  const ind = trajectoryPlayerElements.frameIndicator;
+  const cur = ind && ind.querySelector('.tfCur');
+  const tot = ind && ind.querySelector('.tfTot');
+  if (cur && tot) { cur.textContent = frame + 1; tot.textContent = numFrames; }
+  else if (ind) ind.textContent = `${frame + 1} / ${numFrames}`;
   if (trajectoryPlayerElements.frameSlider) trajectoryPlayerElements.frameSlider.value = frame;
 
   updateStructureFromFrame(frame, container);
@@ -304,27 +348,27 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
   trajControlPanel.id = 'TrajControlPanel';
   trajControlPanel.innerHTML = `
     <div class="panelBody" id="panelBody">
-      <div class="controlsRow">
-        <button id="stepBackBtn" className="control-button">⏮️</button>
-        <button id="playPauseBtn" className="control-button">▶️</button>
-        <button id="stepFwdBtn" className="control-button">⏭️</button>
+      <div class="trajTransport">
+        <button id="stepBackBtn" class="trajBtn" type="button" title="Previous frame">⏮</button>
+        <button id="playPauseBtn" class="trajBtn" type="button" title="Play / pause">▶</button>
+        <button id="stepFwdBtn" class="trajBtn" type="button" title="Next frame">⏭</button>
+        <input type="range" id="frameSlider" class="trajSlider" min="0" max="0" value="0" />
+        <span id="frameIndicator" class="trajFrameLabel" title="Current frame"><span class="tfCur">0</span><span class="tfSep">/</span><span class="tfTot">0</span></span>
       </div>
-      <div style="display:flex; flex-direction:column; align-items:center; width:100%;">
-        <label style="font-size:12px; margin-bottom:4px;">Speed:</label>
-        <select id="speedSelect">
-          <option value="500">0.5s</option>
-          <option value="200" selected>0.2s</option>
-          <option value="100">0.1s</option>
-          <option value="50">0.05s</option>
-        </select>
+      <div class="trajOptions">
+        <label class="trajOpt">Speed
+          <select id="speedSelect">
+            <option value="500">0.5s</option>
+            <option value="200" selected>0.2s</option>
+            <option value="100">0.1s</option>
+            <option value="50">0.05s</option>
+          </select>
+        </label>
+        <label class="trajOpt">Step
+          <input type="number" id="frameStepInput" min="1" value="1" />
+        </label>
       </div>
-      <div style="display:flex; flex-direction:column; align-items:center; width:100%;">
-        <label style="font-size:12px; margin-bottom:4px;">Frame Step:</label>
-        <input type="number" id="frameStepInput" min="1" value="1" />
-      </div>
-      <input type="range" id="frameSlider" min="0" max="0" value="0" style="width:100%" />
-      <div id="frameIndicator">Frame: 0</div>
-      <button id="computeStepStatsBtn" class="control-button" type="button" style="display:none; font-size:12px; width:100%;">Compute step stats</button>
+      <button id="computeStepStatsBtn" class="trajComputeBtn" type="button" style="display:none;">Compute step stats</button>
       <div id="trajPlotHost" style="display:none;"></div>
     </div>
   `;
@@ -363,28 +407,28 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
   // --- Button & slider events ---
   trajectoryPlayerElements.playPauseBtn.onclick = () => {
     playing = !playing;
-    trajectoryPlayerElements.playPauseBtn.textContent = playing ? '⏸️' : '▶️';
+    trajectoryPlayerElements.playPauseBtn.textContent = playing ? '⏸' : '▶';
     if (playing) startAutoPlay(container, parseInt(trajectoryPlayerElements.speedSelect.value));
     else stopAutoPlay();
   };
 
   trajectoryPlayerElements.stepBackBtn.onclick = () => {
     playing = false;
-    trajectoryPlayerElements.playPauseBtn.textContent = '▶️';
+    trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = Math.max(0, currentFrame - frameStep);
     updateFrame(currentFrame, container);
   };
 
   trajectoryPlayerElements.stepFwdBtn.onclick = () => {
     playing = false;
-    trajectoryPlayerElements.playPauseBtn.textContent = '▶️';
+    trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = Math.min(container.structures.length - 1, currentFrame + frameStep);
     updateFrame(currentFrame, container);
   };
 
   trajectoryPlayerElements.frameSlider.oninput = () => {
     playing = false;
-    trajectoryPlayerElements.playPauseBtn.textContent = '▶️';
+    trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = parseInt(trajectoryPlayerElements.frameSlider.value);
     updateFrame(currentFrame, container);
   };

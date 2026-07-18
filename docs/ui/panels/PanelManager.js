@@ -379,9 +379,16 @@ export function refreshActivePanels() {
   for (const panel of panels.values()) {
     const avail = panel.def.available ? !!panel.def.available() : true;
     // An unavailable right-docked window would be a greyed tab over a
-    // force-visible body — close it out of the dock instead (it reopens
-    // right-docked when its feature returns).
-    if (!avail && panel.dock === 'right' && !panel.closed) closePanel(panel.id);
+    // force-visible body — close it out of the dock instead. Flag the close so
+    // it actually reopens right-docked when its feature returns (below);
+    // without this it stayed closed until a full UI reset.
+    if (!avail && panel.dock === 'right' && !panel.closed) {
+      panel._closedForUnavailable = true;
+      closePanel(panel.id);
+    } else if (avail && panel._closedForUnavailable && panel.closed) {
+      panel._closedForUnavailable = false;
+      openPanel(panel.id);
+    }
     if (panel.def.lifecycle === 'rebuild' && panel.built) {
       if (!avail) {
         panel.collapse();
@@ -433,6 +440,9 @@ export function openPanel(id) {
   if (!panel) return;
   const wasClosed = panel.closed;
   panel.closed = false;
+  // A manual open clears the auto-close flag so a later user-initiated close
+  // isn't mistaken for an availability close and auto-reopened.
+  panel._closedForUnavailable = false;
   if (revealed || !panel.def.hiddenUntilStructure) panel.el.hidden = false;
   if (panel.dock === 'right') {
     rightDockPanel(panel, { front: true, expand: false });
