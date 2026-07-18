@@ -246,6 +246,25 @@ function snapshotCurrentStructure() {
   });
 }
 
+// Copy a snapshot's positions/lattice/forces back into a structure in place
+// (preserving object identity + styles). Used to undo the in-place mutation MD
+// makes to the source structure while it animates the viewer.
+function restoreStructureInPlace(target, src) {
+  if (!target || !src) return;
+  if (Array.isArray(src.lattice)) target.lattice = src.lattice.map((row) => [...row]);
+  if (Array.isArray(src.atoms)) {
+    src.atoms.forEach((atom, index) => {
+      if (target.atoms[index] && Array.isArray(atom.position)) {
+        target.atoms[index].position = [...atom.position];
+      }
+    });
+  }
+  target.forces = (src.forces ?? []).map((force) => new Force({ vector: [...force.vector] }));
+  // Drop the wrapped-position cache so the restored structure re-wraps from its
+  // own positions instead of a leftover MD frame's.
+  target.periodic = { hash: 'None', wrapped: null };
+}
+
 function setASEStatus(bound, message) {
   if (!bound?.statusEl) return;
   bound.statusEl.textContent = message;
@@ -863,6 +882,9 @@ function bindMDBody(panel, shell, potential) {
       let lastSavedStep = 0;
       let lastStepMetrics = null;
       const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
+      // MD animates this structure in place for live viewer feedback; keep the
+      // reference so it can be restored (from the seed frame) once the run ends.
+      const originalStructure = fileBrowser.selectedStructure;
       const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
       const mdContainer = new StructureContainer({ fileName: mdLabel, structures: [snapshotCurrentStructure()] });
       // Persist the plotted series on the container so the trajectory plot can be
@@ -981,6 +1003,13 @@ function bindMDBody(panel, shell, potential) {
       // Live run is over: hand ownership of the plot back to the container's
       // persisted series so scrubbing/replay survives later panel rebuilds.
       endLiveFeed();
+      // Restore the source structure (MD mutated it in place) so its row isn't
+      // left holding the final MD frame, then auto-select the recorded
+      // trajectory so the viewer/panel show MD_… instead of the original.
+      try {
+        restoreStructureInPlace(originalStructure, mdContainer.structures[0]);
+        selectLastAddedRow();
+      } catch { /* non-fatal: leave selection/structure as-is */ }
     }
   });
 }
