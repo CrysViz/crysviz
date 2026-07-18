@@ -1,9 +1,13 @@
 import {fileBrowser} from '../state/store.js';
 
 
-// Get the color for an atom (custom or default)
+// Get the color for an atom (custom or default). Guards against a stale index —
+// e.g. an instanced-mesh/comparison update iterating more atoms than the
+// newly-selected structure has — by falling back to the default grey instead of
+// throwing on atoms[index] being undefined.
 export function getAtomColor(index) {
-  return fileBrowser.selectedStructure.atoms[index].getColor();
+  const atom = fileBrowser.selectedStructure?.atoms?.[index];
+  return atom ? atom.getColor() : 0x808080;
 }
 
 // Set a custom color for an atom
