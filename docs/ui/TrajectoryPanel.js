@@ -374,9 +374,9 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
         <label class="trajOpt">Speed
           <select id="speedSelect">
             <option value="500">0.5s</option>
-            <option value="200" selected>0.2s</option>
+            <option value="200">0.2s</option>
             <option value="100">0.1s</option>
-            <option value="50">0.05s</option>
+            <option value="50" selected>0.05s</option>
           </select>
         </label>
         <label class="trajOpt">Step
