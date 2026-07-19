@@ -325,7 +325,7 @@ export function addColorPanel(target = "colorContainer") {
   ], () => {
     general.renderStyle = renderStyleMenu.querySelector("select").value;
     updateRenderingControlsVisibility();
-    const hasComparison = !!fileBrowser.comparisonStructure;
+    const hasComparison = fileBrowser.overlayEntries.length > 0;
     updateVisualization({
       reRenderAtoms: true,
       reRenderBonds: true,
@@ -718,7 +718,7 @@ export function addColorPanel(target = "colorContainer") {
     const isHull = general.celOutlineMode === "hull";
     screenControls.style.display = isHull ? "none" : "block";
     hullControls.style.display = isHull ? "block" : "none";
-    const hasComparison = !!fileBrowser.comparisonStructure;
+    const hasComparison = fileBrowser.overlayEntries.length > 0;
     updateVisualization({
       reRenderAtoms: true,
       reRenderBonds: true,

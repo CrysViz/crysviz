@@ -6,10 +6,10 @@
 // later (e.g. a real selection model) without touching every call site.
 //
 // Current backing fields (see store.js):
-//   fileBrowser.selectedStructure   -> the active/primary structure
-//   fileBrowser.comparisonStructure -> the overlay structure (comparison mode)
+//   fileBrowser.selectedStructure -> the active/primary structure
+//   fileBrowser.overlayEntries    -> the overlaid structures (Structure Overlay module)
 //   fileBrowser.selectedRow / selectedRowIndex -> active file-browser row
-//   structureShip.container         -> list of StructureContainer (one per file/trajectory)
+//   structureShip.container       -> list of StructureContainer (one per file/trajectory)
 
 import { fileBrowser, structureShip } from './store.js';
 
@@ -35,18 +35,14 @@ export function getActiveRowIndex() {
   return fileBrowser.selectedRowIndex;
 }
 
-// --- Comparison (overlay) structure -----------------------------------------
+// --- Overlay structures (Structure Overlay module) --------------------------
 
-export function getComparisonStructure() {
-  return fileBrowser.comparisonStructure;
+export function getOverlayStructures() {
+  return fileBrowser.overlayEntries.map((entry) => entry.structure);
 }
 
-export function setComparisonStructure(structure) {
-  fileBrowser.comparisonStructure = structure;
-}
-
-export function hasComparisonStructure() {
-  return fileBrowser.comparisonStructure != null;
+export function hasOverlayStructures() {
+  return fileBrowser.overlayEntries.length > 0;
 }
 
 // --- Loaded containers (one per file / trajectory) --------------------------

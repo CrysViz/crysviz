@@ -149,13 +149,12 @@
 }
 
 /* ---- hidden title bar: the ― button shrinks the bar to a short, centered
-   accent strip (a "handle"); double-clicking it restores the bar. ---- */
+   accent strip (a "handle"); double-clicking (or, on touch, a single tap -
+   see PanelWindow.js's _onTitlebarPointerDown) restores the bar. ---- */
 .cv-panel.cv-bar-collapsed > .cv-panel-titlebar {
-  /* Sized in physical units so the handle stays clickable on hi-DPI displays,
-     with a 3px floor for low-DPI. */
-  height: max(3px, 0.6mm);
-  min-height: 3px;
-  width: 64px;
+  height: 8px;
+  min-height: 8px;
+  width: 100px;
   max-width: 50%;
   margin: 0 auto 3px auto;
   padding: 0;
@@ -164,6 +163,21 @@
   background: var(--highlight-color); /* green in the standard mode */
   backdrop-filter: none;
   overflow: hidden;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+/* Desktop/mouse only (hover-capable + fine pointer): the handle stays
+   invisible (but still hittable - opacity, not display/visibility) until the
+   pointer is actually over it, so it doesn't clutter the view. Touch devices
+   have no hover concept, so they keep the default fixed 0.6 opacity above. */
+@media (hover: hover) and (pointer: fine) {
+  .cv-panel.cv-bar-collapsed > .cv-panel-titlebar {
+    opacity: 0;
+  }
+  .cv-panel.cv-bar-collapsed:hover > .cv-panel-titlebar {
+    opacity: 0.6;
+  }
 }
 
 .cv-panel.cv-bar-collapsed > .cv-panel-titlebar > * {

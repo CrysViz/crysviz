@@ -24,12 +24,11 @@ export {
 } from './BondsFracUpdateModule.js';
 
 export {
-  rebuildSecondAtoms, updateSecondAtoms, updateSecondSingleAtomDiameter,
+  rebuildOverlayAtoms, updateOverlayAtoms, disposeOverlayMeshes,
 } from './CompAtomsFracUpdateModule.js';
 
 export {
-  updateSecondBonds, rebuildSecondBonds, buildSecondBondObjects,
-  updateSecondSingleBondDiameter,
+  updateOverlayBonds, rebuildOverlayBonds,
 } from './CompBondsFracUpdateModule.js';
 
 export { removeForces, updateForces, computeForceColor } from './ForceModule.js';

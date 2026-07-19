@@ -191,8 +191,8 @@ export function rebuildAtoms(opacity) {
   console.log("status updateAtoms", ok)
  }
 
-// Shared mesh finalization for atom InstancedMeshes (main + comparison/"second").
-// The caller (buildAtoms / buildSecondAtoms) creates the geometry + material
+// Shared mesh finalization for atom InstancedMeshes (main + overlay structures).
+// The caller (buildAtoms / buildOverlayAtoms) creates the geometry + material
 // (incl. its own onBeforeCompile shader) and passes them in; this fills the
 // instance color / UUID / emissive (+ cut-plane) buffers, adds the mesh to the
 // scene, and stores it at groups[meshKey]. Only meshKey, the structure source,

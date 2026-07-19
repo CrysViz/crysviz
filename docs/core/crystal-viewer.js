@@ -31,17 +31,17 @@ import { pauseRendering, resumeRendering,animation_update,requestRender} from '.
 import {createShareButton,loadSharedStructure,loadCrysvizFile} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
-import {updateSecondBonds,rebuildSecondBonds} from '../render/index.js'
+import {updateOverlayBonds,rebuildOverlayBonds} from '../render/index.js'
 import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
 import { updatePolyhedra, notifyColorsChanged } from '../render/index.js'
 import {rebuildAtoms,updateAtoms} from '../render/index.js';
-import {rebuildSecondAtoms,updateSecondAtoms} from '../render/index.js';
+import {rebuildOverlayAtoms,updateOverlayAtoms} from '../render/index.js';
 
 
 import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render/MeasurementModule.js' // not all imports might be needed in this file
 
 
-import {addAtomVacuumPanel} from '../ui/addToStructureModule/AddVacuumModule.js'
+import {addAtomPanel} from '../ui/addToStructureModule/AddAtomModule.js'
 import {initAddStructureButton} from '../ui/addToStructureModule/AddStructureModule.js'
 import {initCombineTrajectoriesButton} from '../ui/FileBrowswerPanel.js'
 import {initPanelSystem, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
@@ -133,7 +133,9 @@ export function updateVisualization(options = {}) {
     reRenderBonds = false,
     reRenderLattice = true,
 
-    // Comparison Structure
+    // Overlay structures (Structure Overlay module) — applies to every entry
+    // in fileBrowser.overlayEntries, each rendered/updated with its own opacity
+    // and bonds-visibility (no single shared "second" opacity/visibility anymore).
     SecondAtomsUpdate = false,
     SecondReRenderAtoms = false,
     SecondBondsUpdate = false,
@@ -151,7 +153,6 @@ export function updateVisualization(options = {}) {
     // and rely on polyhedra refreshing.
     reRenderPolyhedra = true,
 
-    sOpacity = general.compOpacity,
     mOpacity = general.mainOpacity,
     reRenderField = false
   } = options;
@@ -185,29 +186,31 @@ export function updateVisualization(options = {}) {
     updateBonds(mOpacity)
   }
 
-  // Comparison Structure
-  if (SecondReRenderAtoms) {
-    console.warn("Calling rebuildSecondAtoms")
-    rebuildSecondAtoms(fileBrowser.comparisonStructure, sOpacity);
-  }
-  if (!SecondReRenderAtoms && SecondAtomsUpdate) {
-    console.warn("Calling updateSecondAtoms")
-    updateSecondAtoms(fileBrowser.comparisonStructure, sOpacity);
+  // Overlay structures — one rebuild/update pass per fileBrowser.overlayEntries
+  // entry, each keeping its own opacity and bonds visibility.
+  if (SecondReRenderAtoms || SecondAtomsUpdate || SecondReRenderBonds || SecondBondsUpdate) {
+    for (const entry of fileBrowser.overlayEntries) {
+      if (SecondReRenderAtoms) {
+        console.warn("Calling rebuildOverlayAtoms")
+        rebuildOverlayAtoms(entry.key, entry.structure, entry.opacity);
+      } else if (SecondAtomsUpdate) {
+        console.warn("Calling updateOverlayAtoms")
+        updateOverlayAtoms(entry.key, entry.structure, entry.opacity);
+      }
+
+      if (SecondReRenderBonds) {
+        console.warn("Calling rebuildOverlayBonds")
+        rebuildOverlayBonds(entry.key, entry.structure, entry.opacity, entry.showBonds);
+      } else if (SecondBondsUpdate) {
+        console.warn("Calling updateOverlayBonds")
+        updateOverlayBonds(entry.key, entry.structure, entry.opacity, entry.showBonds);
+      }
+    }
   }
 
-  if (SecondReRenderBonds) {
-    console.warn("Calling rebuildSecondBonds")
-    rebuildSecondBonds(fileBrowser.comparisonStructure,sOpacity)
-  }
-
-  if (!SecondReRenderBonds && SecondBondsUpdate) {
-    console.warn("Calling updateSecondBonds")
-    updateSecondBonds(fileBrowser.comparisonStructure,sOpacity)
-  }
-
-  // TODO: comparison-structure lattice re-render is not implemented
-  // (updateSecondLattice does not exist). Left disabled rather than throwing.
-  // if (SecondReRenderLattice) updateSecondLattice(general.secondLatticeColor);
+  // TODO: overlay-structure lattice re-render is not implemented
+  // (updateOverlayLattice does not exist). Left disabled rather than throwing.
+  // if (SecondReRenderLattice) updateOverlayLattice(general.secondLatticeColor);
 
   // Panels
   if (reRenderComposition != false) {
@@ -216,7 +219,7 @@ export function updateVisualization(options = {}) {
     // (re)wire the Add Atoms/Vacuum popup here rather than on every
     // updateVisualization() call — avoids stacking duplicate click listeners
     // on the same live button node.
-    addAtomVacuumPanel();
+    addAtomPanel();
   }
   console.time("uv:updateLattice");
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
@@ -470,7 +473,7 @@ function initUIPanels() {
   addSavePanel();
   initImageExportPanel();
   initRaytraceWarningModal();
-  addAtomVacuumPanel();
+  addAtomPanel();
   initAddStructureButton();
   initCombineTrajectoriesButton();
   initKeyboardShortcuts();

@@ -4,11 +4,18 @@
 // The comparison structure itself is picked via the checkbox in the structure
 // table (ui/FileBrowswerPanel.js); `general.comparisonActive` tracks whether
 // the lattice-comparison popup should follow structure/frame changes.
+//
+// Classic, single-structure mode: exactly one checked row becomes the
+// comparison structure (fileBrowser.overlayEntries[0] — same underlying
+// engine the Multi-Structure Overlay panel uses, see ui/OverlayPanel.js).
+// Mutually exclusive with that panel — both interpret the same file-browser
+// checkboxes, so only one mode's rules ("exactly one" vs "any number") can be
+// in effect at a time. Enabling this one turns Overlay off, and vice versa.
 
 import { general, fileBrowser } from '../state/store.js';
-import { removeLatticeComparisonPopup, updateLatticeComparisonPanel } from './LatticeComparisonPanel.js';
+import { removeLatticeComparisonPopup } from './LatticeComparisonPanel.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { syncComparisonFromCheckboxes } from './FileBrowswerPanel.js';
+import { syncOverlayFromCheckboxes, refreshOverlayLatticePlots } from './FileBrowswerPanel.js';
 
 /**
  * Build a labeled toggle switch (the pill-shaped checkbox used throughout
@@ -71,10 +78,11 @@ function createToggleSwitch(id, labelText, checked) {
 }
 
 /**
- * Build the comparison panel controls into the given container.
+ * Build the comparison panel controls into the given container (one tab's
+ * body inside the unified Comparison/Overlay panel — see
+ * ui/ComparisonOverlayPanel.js).
  */
-export function addCompPanel(target = "cvPanelBody-comparison") {
-  const container = document.getElementById(target);
+export function addCompPanel(container) {
   if (!container) return;
 
   // Clear existing content
@@ -82,13 +90,18 @@ export function addCompPanel(target = "cvPanelBody-comparison") {
 
   // Master toggle: checking a file-browser row no longer starts rendering
   // the comparison by itself — this must also be on (ui/FileBrowswerPanel.js's
-  // syncComparisonFromCheckboxes reconciles the two).
+  // syncOverlayFromCheckboxes reconciles the two).
   const { container: compareToggleContainer, input: compareToggleInput } =
     createToggleSwitch("enableComparisonToggle", "Enable Comparison", general.compareModeOn);
   container.appendChild(compareToggleContainer);
 
   // Persistent error line: "please select a structure" (nothing checked) or
   // "only one structure can be selected" (2+ checked), while comparison is on.
+  // fileBrowser.overlayEntries/general.compareModeOn are kept consistent
+  // continuously by syncOverlayFromCheckboxes (every checkbox change, row
+  // delete, ...), so this only needs to reflect current state — it must NOT
+  // call syncOverlayFromCheckboxes itself, which would rebuild this very
+  // panel and recurse.
   const comparisonError = document.createElement("div");
   comparisonError.id = "comparisonErrorField";
   comparisonError.style.cssText = `
@@ -97,6 +110,18 @@ export function addCompPanel(target = "cvPanelBody-comparison") {
     margin: 0 0 10px 0;
     display: none;
   `;
+  if (general.compareModeOn && fileBrowser.overlayEntries.length === 0) {
+    // Distinguish "nothing checked" from "too many checked" the same way
+    // syncOverlayFromCheckboxes does — both leave overlayEntries empty, so
+    // that alone can't tell them apart (a rebuild right after a ">1 checked"
+    // error would otherwise clobber it back to the generic "select a
+    // structure" message).
+    const checkedCount = document.querySelectorAll('#objectTable tbody input[type="checkbox"]:checked').length;
+    comparisonError.textContent = checkedCount > 1
+      ? 'Only one structure can be selected for comparison.'
+      : 'Please select a structure to compare to.';
+    comparisonError.style.display = 'block';
+  }
   container.appendChild(comparisonError);
 
   // Add toggle for bonds
@@ -195,11 +220,16 @@ export function addCompPanel(target = "cvPanelBody-comparison") {
   // Add event listeners
   compareToggleInput.addEventListener('change', function() {
     general.compareModeOn = this.checked;
-    syncComparisonFromCheckboxes();
+    // Mutually exclusive with the Multi-Structure Overlay panel — both
+    // interpret the same file-browser checkboxes, so only one mode's rules
+    // can apply.
+    if (general.compareModeOn) general.overlayModeOn = false;
+    syncOverlayFromCheckboxes();
   });
 
   bondToggleInput.addEventListener('change', function() {
     general.showSecondBond = this.checked;
+    if (fileBrowser.overlayEntries[0]) fileBrowser.overlayEntries[0].showBonds = this.checked;
     updateVisualization({
       SecondBondsUpdate: true,
       //SecondReRenderBonds: true,
@@ -211,32 +241,31 @@ export function addCompPanel(target = "cvPanelBody-comparison") {
   latticeToggleInput.addEventListener('change', function() {
     general.comparisonActive = this.checked;
     if (this.checked) {
-      // Create or update the lattice comparison popup
-      if (fileBrowser.comparisonStructure && fileBrowser.selectedStructure) {
-        const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
-        const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
-        updateLatticeComparisonPanel(L1, L2);
-      }
+      refreshOverlayLatticePlots();
     } else {
-      // Remove the lattice comparison popup
       removeLatticeComparisonPopup();
     }
   });
 
   opacitySlider.addEventListener('input', function() {
     const value = parseFloat(this.value);
+    let compOpacity;
+    let mainOpacity;
     if (value < 0.5){
-      general.compOpacity = 2*value
-      general.mainOpacity = 1.0
+      compOpacity = 2*value
+      mainOpacity = 1.0
       }
     else if (value > 0.5){
-      general.mainOpacity = 1-2 * (value - 0.5)
-      general.compOpacity = 1.0
+      mainOpacity = 1-2 * (value - 0.5)
+      compOpacity = 1.0
       }
     else {
-      general.compOpacity =1.0
-      general.mainOpacity = 1.0
+      compOpacity = 1.0
+      mainOpacity = 1.0
     }
+
+    general.mainOpacity = mainOpacity;
+    if (fileBrowser.overlayEntries[0]) fileBrowser.overlayEntries[0].opacity = compOpacity;
 
     updateVisualization({
       atomsUpdate: true,
@@ -245,19 +274,13 @@ export function addCompPanel(target = "cvPanelBody-comparison") {
       SecondAtomsUpdate: true,
     });
   });
-
-  // Apply the current checked-rows/compareModeOn state to this fresh build
-  // (the panel rebuilds on every structure switch, so the error field must be
-  // re-derived rather than defaulting to hidden).
-  syncComparisonFromCheckboxes();
 }
 
 /**
  * Tear down the comparison panel: clears the controls, closes the
  * lattice-comparison popup, and deactivates its follow-updates flag.
  */
-export function removeCompPanel(target = "cvPanelBody-comparison") {
-  const container = document.getElementById(target);
+export function removeCompPanel(container) {
   if (container) container.innerHTML = "";
   general.comparisonActive = false;
   removeLatticeComparisonPopup();

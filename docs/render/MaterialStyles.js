@@ -300,8 +300,12 @@ export function setCelHullWidth(width) {
     const shader = material?.userData?.shader;
     if (shader) shader.uniforms.uOutlineWidth.value = width;
   }
-  for (const key of ['atomsMesh', 'secondAtomsMesh', 'bondsMesh', 'secondBondsMesh']) {
-    const outline = groups[key]?.userData?.celOutline;
+  const cellHullMeshes = [groups.atomsMesh, groups.bondsMesh];
+  for (const entry of groups.overlayMeshes.values()) {
+    cellHullMeshes.push(entry.atomsMesh, entry.bondsMesh);
+  }
+  for (const mesh of cellHullMeshes) {
+    const outline = mesh?.userData?.celOutline;
     // opacitySuppressed: whole-mesh transparency (opacity sliders) drops the
     // hull — transparent objects get no outlines (see makeOutlineMaterial).
     if (outline) outline.visible = width > 0 && outline.userData.opacitySuppressed !== true;

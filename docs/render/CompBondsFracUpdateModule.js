@@ -8,8 +8,6 @@ import {Bond} from '../model/index.js';
 
 
 
-
-
 import {createBondsMesh} from './BondsFracUpdateModule.js'
 import {generateID} from '../utils/index.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
@@ -21,14 +19,14 @@ export function initBondsLengths(){
     return;
 
   }
-  // Include the comparison structure's elements too: this only ever runs
-  // ahead of building COMPARISON bonds, and a comparison structure commonly
-  // has at least one element the main structure doesn't — any pair missing
-  // from general.bondLengths gets a cutoff of 0 (getBondCutoff falls back to
+  // Include every overlay structure's elements too: this only ever runs ahead
+  // of building OVERLAY bonds, and an overlaid structure commonly has at least
+  // one element the main structure doesn't — any pair missing from
+  // general.bondLengths gets a cutoff of 0 (getBondCutoff falls back to
   // `?.max || 0.0`), which silently drops every bond that pair could form.
   let elements = [
     ...fileBrowser.selectedStructure.elements,
-    ...(fileBrowser.comparisonStructure?.elements ?? []),
+    ...fileBrowser.overlayEntries.flatMap((entry) => entry.structure?.elements ?? []),
   ];
   const uniqueElements = [...new Set(elements)]; // there is a object variable for this!
   const pairs = [];
@@ -57,23 +55,21 @@ export function initBondsLengths(){
 }
 
 
-export function rebuildSecondBonds(structure, opacity) {
+export function rebuildOverlayBonds(key, structure, opacity, visible = true) {
   initBondsLengths() // this needs to be called once in general. Otherwise the sliders do nothing
-  if (groups.secondBondsMesh) {
-    groups.secondBondsMesh.geometry.dispose();
-    groups.secondBondsMesh.material.dispose();
-    app.scene.remove(groups.secondBondsMesh);
-    groups.secondBondssMesh = null;
+  const entry = groups.overlayMeshes.get(key);
+  if (entry?.bondsMesh) {
+    entry.bondsMesh.geometry.dispose();
+    entry.bondsMesh.material.dispose();
+    app.scene.remove(entry.bondsMesh);
+    entry.bondsMesh = null;
   }
   console.log("Building bond objects");
-  buildSecondBondObjects(structure)
+  buildOverlayBondObjects(structure)
   console.log("Rendering bond objects");
-  renderSecondBonds(structure);
+  renderOverlayBonds(key, structure);
   console.log("Updating bond positions");
-  updateSecondBonds(structure,opacity);
-  if (groups.secondBondsMesh) {
-    groups.secondBondsMesh.visible = general.showSecondBond;
-  }
+  updateOverlayBonds(key, structure, opacity, visible);
 }
 
 export function getBondCutoff(elem1, elem2) {
@@ -90,7 +86,7 @@ export function getBondMinCutoff(elem1, elem2) {
   return general.bondLengths[pair]?.min || 0.0;
 }
 
-export function buildSecondBondObjects(structure){
+export function buildOverlayBondObjects(structure){
   structure.bonds = [];
   structure.bondMapping ={};
 
@@ -128,7 +124,7 @@ export function buildSecondBondObjects(structure){
       // bond.color is never set by the Bond constructor itself (it only
       // computes defaultColor) — the main buildBondObjects assigns it right
       // after construction based on the active color mode; this path never
-      // did, so every comparison bond rendered white regardless of element
+      // did, so every overlay bond rendered white regardless of element
       // (new THREE.Color(undefined) from an empty bond.color array).
       const atoms = structure.atoms;
       if (general.bondsColor === "white") {
@@ -137,7 +133,7 @@ export function buildSecondBondObjects(structure){
         bond.color = [general.solidBondColor || "#ffffff", general.solidBondColor || "#ffffff"];
       } else if (atoms && bond.srcIndices[0] < atoms.length && bond.srcIndices[1] < atoms.length) {
         // Default (including "elements"/"length" — length-based colormap
-        // grading isn't implemented for comparison bonds, so they fall back
+        // grading isn't implemented for overlay bonds, so they fall back
         // to element/atom colors instead of a gradient).
         bond.color = [atoms[bond.srcIndices[0]].color, atoms[bond.srcIndices[1]].color];
       } else {
@@ -149,7 +145,7 @@ export function buildSecondBondObjects(structure){
   }
 }
 
-export function renderSecondBonds(structure) {
+export function renderOverlayBonds(key, structure) {
   const bonds = structure.bonds;
   const validBonds = bonds.filter(b => b.visibleLen > 1e-3);
   const bondCount = validBonds.length;
@@ -177,11 +173,11 @@ export function renderSecondBonds(structure) {
     dummy.updateMatrix();
     mesh.setMatrixAt(i*2 , dummy.matrix);
 
-    let key = bond.indices[0];
-    if (!structure.bondMapping[key]) {
-        structure.bondMapping[key] = []; // Initialize with an empty array
+    let key2 = bond.indices[0];
+    if (!structure.bondMapping[key2]) {
+        structure.bondMapping[key2] = []; // Initialize with an empty array
     }
-    structure.bondMapping[key].push(i * 2);    
+    structure.bondMapping[key2].push(i * 2);
 
 
     // color
@@ -208,11 +204,11 @@ export function renderSecondBonds(structure) {
     dummy.rotateX(Math.PI / 2);
     dummy.updateMatrix();
     mesh.setMatrixAt(i*2 + 1, dummy.matrix);
-    key = bond.indices[1];
-    if (!structure.bondMapping[key]) {
-        structure.bondMapping[key] = []; // Initialize with an empty array
+    key2 = bond.indices[1];
+    if (!structure.bondMapping[key2]) {
+        structure.bondMapping[key2] = []; // Initialize with an empty array
     }
-    structure.bondMapping[key].push(i * 2 + 1);
+    structure.bondMapping[key2].push(i * 2 + 1);
 
     // color
     mesh.instanceColor.setXYZ(i*2 + 1,
@@ -246,12 +242,18 @@ export function renderSecondBonds(structure) {
 
   // Add to scene
   app.scene.add(mesh);
-  groups.secondBondsMesh = mesh;
+  let entry = groups.overlayMeshes.get(key);
+  if (!entry) {
+    entry = { atomsMesh: null, bondsMesh: null };
+    groups.overlayMeshes.set(key, entry);
+  }
+  entry.bondsMesh = mesh;
 }
 
 // change the color of a bond "half  cylinder" with index bondMeshIndex to color "color" (hex)
-export function updateSecondSingleBondColor(bondMeshIndex, color) {
-  const mesh = groups.secondBondsMesh;
+export function updateOverlaySingleBondColor(key, bondMeshIndex, color) {
+  const mesh = groups.overlayMeshes.get(key)?.bondsMesh;
+  if (!mesh) return;
   mesh.instanceColor.setXYZ(
     bondMeshIndex,
     new THREE.Color(color).r,
@@ -263,8 +265,9 @@ export function updateSecondSingleBondColor(bondMeshIndex, color) {
 
 
 
-export function updateSecondSingleBondPosition(index, bond) {
-  const mesh = groups.secondBondsMesh;
+export function updateOverlaySingleBondPosition(key, index, bond) {
+  const mesh = groups.overlayMeshes.get(key)?.bondsMesh;
+  if (!mesh) return;
   const dummy = new THREE.Object3D();
   const dirNorm = bond.dir.clone().normalize();
 
@@ -283,8 +286,9 @@ export function updateSecondSingleBondPosition(index, bond) {
   mesh.setMatrixAt(index * 2 + 1, dummy.matrix);
 }
 
-export function updateSecondSingleBondDiameter(instanceIndex, newRadius) {
-  const mesh = groups.secondBondsMesh;
+export function updateOverlaySingleBondDiameter(key, instanceIndex, newRadius) {
+  const mesh = groups.overlayMeshes.get(key)?.bondsMesh;
+  if (!mesh) return;
   const dummy = new THREE.Object3D();
 
   // Get the current matrix for the instance
@@ -316,8 +320,9 @@ export function updateSecondSingleBondDiameter(instanceIndex, newRadius) {
 
 
 
-export function updateSecondSingleBond(index, bond) {
-  const mesh = groups.secondBondsMesh;
+export function updateOverlaySingleBond(key, index, bond) {
+  const mesh = groups.overlayMeshes.get(key)?.bondsMesh;
+  if (!mesh) return;
   const dummy = new THREE.Object3D();
   const dirNorm = bond.dir.clone().normalize();
 
@@ -356,20 +361,18 @@ export function updateSecondSingleBond(index, bond) {
   mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, 0);
 }
 
-export function updateSecondBonds(structure, opacity) {
-  const mesh = groups.secondBondsMesh;
+export function updateOverlayBonds(key, structure, opacity, visible = true) {
+  const mesh = groups.overlayMeshes.get(key)?.bondsMesh;
   if (!mesh) return;
-  if (!general.showSecondBond) {
-    groups.secondBondsMesh.visible = general.showSecondBond
+  if (!visible) {
+    mesh.visible = false;
     return;
   }
-  else {
-     groups.secondBondsMesh.visible = general.showSecondBond
-  }
-  let bonds = structure.bonds.filter(b => b.visibleLen > 1e-3); 
+  mesh.visible = true;
+  let bonds = structure.bonds.filter(b => b.visibleLen > 1e-3);
 
   bonds.forEach((bond, i) => {
-    updateSecondSingleBond(i, bond);
+    updateOverlaySingleBond(key, i, bond);
   });
   mesh.material.opacity = opacity;
   applyTransparency(mesh.material, { kind: 'compBonds', opacity, mesh });

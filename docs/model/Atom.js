@@ -6,7 +6,7 @@ import {getElementDefaultColor} from '../defaults/color_texture_defaults.js'
 
 export class Atom extends ColoredObject {
   constructor({
-    element = "",
+    element = '',
     position = [],
     coordination = [],
     color = null,

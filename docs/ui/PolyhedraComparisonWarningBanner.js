@@ -1,13 +1,13 @@
 // Top-center banner over the 3D view (#view), shown whenever polyhedra are on
-// ("Show Polyhedra" or "Complete Polyhedra") while a comparison structure is
-// active — polyhedra rendering for the comparison structure isn't implemented
-// yet (see the note in ui/ComparisonPanel.js), so this flags the gap directly
-// in the viewport instead of only in a panel the user might not have open.
+// ("Show Polyhedra" or "Complete Polyhedra") while one or more structures are
+// overlaid — polyhedra rendering for overlay structures isn't implemented yet
+// (see the note in ui/ComparisonPanel.js), so this flags the gap directly in
+// the viewport instead of only in a panel the user might not have open.
 // Reactive to general.showPolyhedra/completePolyhedra and
-// fileBrowser.comparisonStructure: call updatePolyhedraComparisonWarning()
+// fileBrowser.overlayEntries: call updatePolyhedraComparisonWarning()
 // anywhere either can change — currently done once, at the top of
 // updatePolyhedra() (render/PolyhedraModule.js), which already re-runs on
-// every relevant toggle or comparison-structure change.
+// every relevant toggle or overlay-entries change.
 
 import { general, fileBrowser } from '../state/store.js';
 
@@ -20,7 +20,7 @@ function ensureBanner() {
 
   banner = document.createElement('div');
   banner.className = 'cv-polyhedra-comparison-warning';
-  banner.textContent = '⚠ Polyhedra are not shown for the comparison structure';
+  banner.textContent = '⚠ Polyhedra are not shown for overlay structures';
   banner.style.cssText = `
     position: absolute;
     top: 38px;
@@ -47,5 +47,5 @@ export function updatePolyhedraComparisonWarning() {
   const el = ensureBanner();
   if (!el) return;
   const polyhedraOn = !!(general.showPolyhedra || general.completePolyhedra);
-  el.style.display = (polyhedraOn && !!fileBrowser.comparisonStructure) ? 'block' : 'none';
+  el.style.display = (polyhedraOn && fileBrowser.overlayEntries.length > 0) ? 'block' : 'none';
 }

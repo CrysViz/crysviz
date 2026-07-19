@@ -186,7 +186,7 @@ function makePopupShell(title, width = 660) {
 // and click behavior, so the same layout serves the color picker, the radius
 // picker, and (in 2-select mode) the bond-pair picker.
 // ---------------------------------------------------------------------------
-//
+
 /**
  * @param {{
  *   onTileClick: (symbol: string, tile: HTMLElement) => void,
@@ -197,7 +197,6 @@ function makePopupShell(title, width = 660) {
  *   isSelected?: (symbol: string) => boolean,
  * }} options
  */
-
 function buildPeriodicGrid({ onTileClick, tileLabel, tileStyle, tileTextColor, tileBorderColor, isSelected }) {
   const wrap = document.createElement('div');
 

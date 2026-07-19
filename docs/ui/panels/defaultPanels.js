@@ -12,7 +12,7 @@ import { addColorPanel } from '../ColorPanel.js';
 import { collapseAllAtomExpansions } from '../WindowAndSceneControls.js';
 import { updateForceSpinWarning } from '../ForceSpinWarningBanner.js';
 import { addTrajectoryPlayer, removeTrajectoryPlayer } from '../TrajectoryPanel.js';
-import { addCompPanel, removeCompPanel } from '../ComparisonPanel.js';
+import { addComparisonOverlayPanel, removeComparisonOverlayPanel } from '../ComparisonOverlayPanel.js';
 import { addForcePanel, removeForcePanel } from '../ForcePanel.js';
 import { addSpinPanel, removeSpinPanel } from '../SpinPanel.js';
 import { addFieldPanel, fieldBrowser } from '../FieldPanel.js';
@@ -273,6 +273,12 @@ export function registerDefaultPanels() {
     infoMd: './data/structureInfo.md',
     onCollapse() { collapseAllAtomExpansions(); },
     buildContent(body) {
+      // Fixed width regardless of which tab (Atoms/Bonds/Poly/Wyckoff) is
+      // active — without this the floating panel shrink-wraps to whichever
+      // tab's content is currently widest, so it visibly resizes every time
+      // the user switches tabs. Still shrinks on narrow viewports.
+      body.style.width = 'min(340px, calc(100vw - 16px))';
+
       // Adopt the formula header box (+/− expandable) and the composition
       // details it controls; wire the header (the old inline-script behavior).
       const el = document.getElementById('structureInfoContent');
@@ -372,16 +378,16 @@ export function registerDefaultPanels() {
 
   registerPanel({
     id: 'comparison',
-    title: 'Comparison',
+    title: 'Structure Overlay & Comparison',
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
-    infoMd: './data/comparisonInfo.md',
-    // Available as soon as a structure is loaded (not gated on a comparison
-    // structure already being chosen) — the panel now hosts the "Enable
-    // Comparison" toggle and the "please select a structure" error itself.
+    infoMd: './data/overlayInfo.md',
+    // Available as soon as a structure is loaded (not gated on a comparison/
+    // overlay structure already being chosen) — the panel hosts its own
+    // "Enable ___" toggle and "please select a structure" error per tab.
     available() { return !!fileBrowser.selectedStructure; },
-    buildContent(body) { addCompPanel(body.id); },
-    onDestroyContent() { removeCompPanel(); },
+    buildContent(body) { addComparisonOverlayPanel(body); },
+    onDestroyContent() { removeComparisonOverlayPanel(); },
     defaults: { dock: 'left', order: 20, collapsed: true },
   });
 
