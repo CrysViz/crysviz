@@ -772,13 +772,12 @@ export function updateRow(row, obj) {
       updateStructureFromRowAndStep(strucIndex);
     }
   }
+  // Plain multi-select, same as createRow()'s checkbox handler — see
+  // syncComparisonFromCheckboxes for how checked rows map to the
+  // comparison structure (only meaningful with the Comparison toggle on).
   function checkboxLimitLogic() {
-    const count = countChecked();
-    if (count > 1) {
-      checkbox.checked = false;
-      showError("Only two structures can be compared");
-    }
-    updateComparisonStructure(row, checkbox.checked);
+    updateCombineButtonState();
+    syncComparisonFromCheckboxes();
   }
 }
 
