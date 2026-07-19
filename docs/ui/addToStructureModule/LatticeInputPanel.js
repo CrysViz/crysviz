@@ -31,6 +31,10 @@ function paramRow(labelA, idA, labelB, idB) {
 }
 
 // createLatticeInputPanel(container, { initial }) -> { getLattice() }
+/**
+ * @param {HTMLElement} container
+ * @param {{initial?: number[][]}} options
+ */
 export function createLatticeInputPanel(container, { initial } = {}) {
   let lattice = initial || [[10, 0, 0], [0, 10, 0], [0, 0, 10]];
 

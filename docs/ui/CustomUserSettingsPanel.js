@@ -186,6 +186,17 @@ function makePopupShell(title, width = 660) {
 // and click behavior, so the same layout serves the color picker, the radius
 // picker, and (in 2-select mode) the bond-pair picker.
 // ---------------------------------------------------------------------------
+//
+/**
+ * @param {{
+ *   onTileClick: (symbol: string, tile: HTMLElement) => void,
+ *   tileLabel: (symbol: string) => string,
+ *   tileStyle: (symbol: string) => string,
+ *   tileTextColor?: (symbol: string) => string,
+ *   tileBorderColor?: (symbol: string, selected: boolean) => string,
+ *   isSelected?: (symbol: string) => boolean,
+ * }} options
+ */
 
 function buildPeriodicGrid({ onTileClick, tileLabel, tileStyle, tileTextColor, tileBorderColor, isSelected }) {
   const wrap = document.createElement('div');
@@ -254,6 +265,15 @@ function makeInlineInput({ type = 'text', value, width }) {
 // opening a picker. `buildRow(key, rowEl, hasTrailingComma)` fills in the
 // row's content; an optional `footer` (e.g. an "add a new line" affordance)
 // is appended after the closing brace.
+/**
+ * @param {{
+ *   keys: string[],
+ *   isOverridden: (key: string) => boolean,
+ *   buildRow: (key: string, row: HTMLElement, hasTrailingComma: boolean) => void,
+ *   emptyText?: string,
+ *   footer?: HTMLElement,
+ * }} options
+ */
 function buildJsonListView({ keys, isOverridden, buildRow, emptyText, footer }) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size:12px; max-height:440px; overflow-y:auto; background:var(--input-bg, #0d0d0d); border-radius:6px; padding:10px 14px;';

@@ -59,7 +59,14 @@ function registerNewStructure(structure, fileName = 'new_structure') {
 // Build a brand-new Structure from atoms entered in an atom-table editor
 // (fractional x/y/z, used as-is) plus a lattice (3x3 Cartesian row-vector
 // matrix, from LatticeInputPanel.js), and register it as a new file-browser row.
-export function createNewStructureFromAtoms(atomsToAdd, { lattice, fileName = 'new_structure' } = {}) {
+//
+//
+//
+/**
+ * @param {Array<{element: string, x: number, y: number, z: number, color?: string}>} atomsToAdd
+ * @param {{lattice: number[][], fileName?: string}} options
+ */
+export function createNewStructureFromAtoms(atomsToAdd, { lattice, fileName = 'new_structure' }) {  
   if (!atomsToAdd.length) {
     console.warn('Create structure: no atoms entered.');
     return;

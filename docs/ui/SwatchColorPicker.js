@@ -25,6 +25,13 @@ let activePicker = null;
 // table). Pass onReset(closePanel) when the caller has a "default" to revert
 // to (e.g. an element-color override) - it adds a Reset button; omit it for
 // callers with no such concept (e.g. a plain atom-row swatch).
+//
+/**
+* @param {HTMLElement} anchor
+* @param {string|number} hex
+* @param {(hex: string) => void} onChange
+* @param {{onReset?: () => void}} options
+*/
 export function openSwatchColorPicker(anchor, hex, onChange, { onReset } = {}) {
   if (activePicker) {
     const reopeningSame = activePicker.anchor === anchor;
