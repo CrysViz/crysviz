@@ -64,6 +64,9 @@ export class PanelWindow {
     // EOS). PanelManager owns attach/detach; `dock` keeps the remembered
     // location for reopening.
     this.closed = false;
+    // Set by PanelManager when a right-docked panel is auto-closed because its
+    // feature became unavailable, so it can be reopened when the feature returns.
+    this._closedForUnavailable = false;
     this.barCollapsed = false; // title bar shrunk to a thin strip
     // Floating window displaced to the dock's right edge so the visible dock
     // doesn't cover it; cleared when the user repositions the window. The

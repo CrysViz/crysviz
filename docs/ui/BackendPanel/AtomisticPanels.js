@@ -794,7 +794,7 @@ async function runLocalRelax(shell, params, potential) {
 
   resetLivePlot();
   ensureTrajectoryPanelForLive();
-  let lastMetrics = null;
+  let lastMetrics = /** @type {any} */ (null);
   const meanForceOf = (forces) => (Array.isArray(forces) && forces.length
     ? forces.reduce((a, v) => a + Math.hypot(v[0], v[1], v[2]), 0) / forces.length
     : NaN);
@@ -1013,6 +1013,10 @@ function bindMDBody(panel, shell, potential) {
   startBtn?.addEventListener('click', async () => {
     if (mdRunning) return;
 
+    // Declared out here (not inside the try) so the finally block can see them
+    // for the restore/switch even if the run throws before/after assigning.
+    let originalStructure = /** @type {any} */ (null);
+    let mdContainer = /** @type {any} */ (null);
     try {
       mdRunning = true;
       mdStopRequested = false;
@@ -1032,13 +1036,13 @@ function bindMDBody(panel, shell, potential) {
       const saveStride = Math.max(1, Number(shell.bodyEl.querySelector('#mdSaveStrideInput')?.value || general.backendTrajectorySaveStride || 4));
       general.backendTrajectorySaveStride = saveStride;
       let lastSavedStep = 0;
-      let lastStepMetrics = null;
+      let lastStepMetrics = /** @type {any} */ (null);
       const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
       // MD animates this structure in place for live viewer feedback; keep the
       // reference so it can be restored (from the seed frame) once the run ends.
-      const originalStructure = fileBrowser.selectedStructure;
+      originalStructure = fileBrowser.selectedStructure;
       const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
-      const mdContainer = new StructureContainer({ fileName: mdLabel, structures: [snapshotCurrentStructure()] });
+      mdContainer = new StructureContainer({ fileName: mdLabel, structures: [snapshotCurrentStructure()] });
       // Persist the plotted series on the container so the trajectory plot can be
       // rebuilt (e.g. after a panel rebuild from a structure-table interaction)
       // long after the live run's in-memory plot was torn down. Seed one NaN gap
@@ -1175,7 +1179,7 @@ function bindMDBody(panel, shell, potential) {
       // that MD animates a working copy). SEPARATE try/catch from the row switch
       // below: a restore hiccup must not prevent switching to MD_….
       try {
-        restoreStructureInPlace(originalStructure, mdContainer.structures[0]);
+        restoreStructureInPlace(originalStructure, mdContainer?.structures?.[0]);
       } catch { /* safety net only */ }
       // Auto-select the recorded trajectory so the viewer refreshes to MD_…
       // instead of leaving the green selection (and the last animated frame) on

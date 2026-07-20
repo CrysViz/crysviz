@@ -320,7 +320,8 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     // plotting area, not only on a data point.
     plotDiv.addEventListener('click', (e) => {
       if (!ready || typeof seekCb !== 'function') return;
-      const xa = plotDiv._fullLayout && plotDiv._fullLayout.xaxis;
+      const fl = /** @type {any} */ (plotDiv)._fullLayout;
+      const xa = fl && fl.xaxis;
       if (!xa || typeof xa.p2d !== 'function') return;
       const rect = plotDiv.getBoundingClientRect();
       const px = e.clientX - rect.left - (xa._offset || 0);

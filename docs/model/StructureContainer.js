@@ -9,6 +9,11 @@ export class StructureContainer {
     this.fileName = fileName ? fileName : "Unspecified";
     this.structures = this._ensureListOfClass(structures, Structure);
     this.finalSCF=finalSCF;
+    // Per-frame plot series for the Trajectory panel (step / temperatureK /
+    // etotEv / meanForce / pressure / ...), each a number[] 1:1 with structures.
+    // Populated by live MD/relax and "Compute step stats"; null until then.
+    /** @type {Record<string, number[]> | null} */
+    this.plotSeries = null;
   }
 
   _ensureListOfClass(input, ClassType) {
