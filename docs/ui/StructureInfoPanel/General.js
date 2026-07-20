@@ -11,6 +11,7 @@ import { latticeVolume } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { atomForceToColor } from '../ColorPanel.js';
 import { updateForces, updateSpins } from '../../render/index.js';
+import { applyToOtherTrajectoryFrames, wirePressHoldPopup } from './components/utils.js';
 
 // The per-structure style-override stores (all survive rebuilds; see Structure.js).
 const ALL_STYLE_STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
@@ -561,26 +562,51 @@ const resetAllColorsBtn = document.createElement('button');
 resetAllColorsBtn.id="resetAllColorsBtn"
 resetAllColorsBtn.textContent = 'Reset Colors';
 resetAllColorsBtn.className = 'reset-btn';
-resetAllColorsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
-resetAllColorsBtn.title = 'Reset every color customization (atoms, per-copy, bond and polyhedra colors, individual force/spin arrow colors) to element defaults';
-resetAllColorsBtn.onclick = () => {
-  resetAllColorStyling(fileBrowser.selectedStructure);
-  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
-  refreshForceSpinArrows();
-};
+resetAllColorsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 50px;';
+resetAllColorsBtn.title = 'Reset every color customization (atoms, per-copy, bond and polyhedra colors, individual force/spin arrow colors) to element defaults.\nClick: this frame. Press and hold: whole trajectory.';
+wirePressHoldPopup(resetAllColorsBtn, {
+  holdLabel: 'Reset Trajectory',
+  onPress: () => {
+    resetAllColorStyling(fileBrowser.selectedStructure);
+    updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+    refreshForceSpinArrows();
+  },
+  onConfirm: () => {
+    resetAllColorStyling(fileBrowser.selectedStructure);
+    // Re-run the very same (pure-data) reset on every other frame of this
+    // trajectory, rather than copying the current frame's post-reset state
+    // onto them — that would wrongly clobber other frames' own force-mode
+    // colors and alpha/size overrides, which this reset must leave untouched.
+    applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, resetAllColorStyling);
+    updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+    refreshForceSpinArrows();
+  },
+});
 
 // Historic id kept (never rename ids); label describes the actual behavior.
 const resetAtomsBtn = document.createElement('button');
 resetAtomsBtn.id = "resetAtomsBtn"
 resetAtomsBtn.textContent = 'Reset Styling';
 resetAtomsBtn.className = 'reset-btn';
-resetAtomsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
-resetAtomsBtn.title = 'Reset all atom/bond/polyhedra styling (colors, transparency, sizes, visibility, cut immunity) and unhide every individually-hidden force/spin arrow. Bond lengths/visibility keep their own reset in the Bonds tab.';
-resetAtomsBtn.onclick = () => {
-  resetAllStyling(fileBrowser.selectedStructure);
-  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
-  refreshForceSpinArrows();
-};
+resetAtomsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 50px;';
+resetAtomsBtn.title = 'Reset all atom/bond/polyhedra styling (colors, transparency, sizes, visibility, cut immunity) and unhide every individually-hidden force/spin arrow. Bond lengths/visibility keep their own reset in the Bonds tab.\nClick: this frame. Press and hold: whole trajectory.';
+wirePressHoldPopup(resetAtomsBtn, {
+  holdLabel: 'Reset Trajectory',
+  onPress: () => {
+    resetAllStyling(fileBrowser.selectedStructure);
+    updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+    refreshForceSpinArrows();
+  },
+  onConfirm: () => {
+    resetAllStyling(fileBrowser.selectedStructure);
+    // Same reset re-run on every other frame (see resetAllColorsBtn above).
+    // resetAllStyling wipes everything to fixed defaults anyway, so unlike
+    // the color-only reset there's no per-frame data it could clobber.
+    applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, resetAllStyling);
+    updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+    refreshForceSpinArrows();
+  },
+});
 
 ResetColorAtomsButtonRow.appendChild(resetAllColorsBtn)
 ResetColorAtomsButtonRow.appendChild(resetAtomsBtn)

@@ -399,6 +399,20 @@
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 
+/* .cv-bar-collapsed is never cleared when a panel enters compact mode (the
+   two classes co-occur), and its hover:hover-gated opacity:0 rule above is
+   the only rule that touches opacity for this element — .cv-compact's own
+   rule above doesn't — so that opacity leaked onto the round icon at any
+   width narrow enough to go compact, making it hover-only too. It must
+   always be visible; only the full bar's hidden-strip handle is meant to be
+   hover-only. Scoped to the exact .cv-compact.cv-bar-collapsed combination
+   (not a blanket .cv-compact rule) so it doesn't also override the
+   unrelated .cv-unavailable dimming above, which shares the same
+   specificity and legitimately wants reduced opacity on a compact panel. */
+.cv-panel.cv-compact.cv-bar-collapsed > .cv-panel-titlebar {
+  opacity: 1;
+}
+
 .cv-panel.cv-compact > .cv-panel-titlebar > *:not(.cv-panel-compact-btn) {
   display: none;
 }

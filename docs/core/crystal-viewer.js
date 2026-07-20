@@ -453,7 +453,24 @@ async function initializeMathBackend() {
     console.warn('[math] Failed to initialize WASM backend, falling back to JavaScript backend', error);
   }
 }
-  window.addEventListener('resize', () => resizeRenderer(app.orthographicFrustumSize));
+  // rAF-coalesced: a window drag-resize fires 'resize' many times per second,
+  // and resizeRenderer() does real GPU work (renderer/pipeline/label/gizmo
+  // setSize, a full polyhedra-group traversal). Calling all of that
+  // synchronously on every raw event — outside the on-demand render loop's
+  // own rAF tick — let the browser paint the just-cleared (WebGL clears its
+  // drawing buffer on any canvas resize) but not-yet-redrawn canvas in
+  // between, which showed up as the scene background flickering during any
+  // resize. Coalescing into a single rAF callback per frame lands the resize
+  // and the redraw it triggers in the same frame instead.
+  let rendererResizePending = false;
+  window.addEventListener('resize', () => {
+    if (rendererResizePending) return;
+    rendererResizePending = true;
+    requestAnimationFrame(() => {
+      rendererResizePending = false;
+      resizeRenderer(app.orthographicFrustumSize);
+    });
+  });
   window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
   window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
 

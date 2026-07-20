@@ -1516,7 +1516,7 @@ justify-content: center;
 .bond-checkbox {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   margin-bottom: 4px;
   padding: 4px 0;
 }
@@ -1853,13 +1853,30 @@ justify-content: center;
   width: 10px; height: 10px; border-radius: 50%; margin-right: 8px;
   border: 1px solid rgba(255,255,255,0.4);
 }
-.comp-left { display: inline-flex; align-items: center; gap: 6px; }
+.comp-left { display: inline-flex; align-items: center; gap: 8px; }
 #picked {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 6px 8px; background: var(--bg-color);
   border: 1px solid var(--accent-color); border-radius: 10px;
 }
-#view canvas { cursor: pointer; } /* for click affordance */
+#view canvas {
+  cursor: pointer; /* for click affordance */
+  /* Three.js's renderer.setSize() sets this canvas's CSS box via an inline
+     style, updated only when JS runs (on init, and on the resize handler's
+     next animation-frame tick). #view itself (flex: 1) is resized instantly
+     by the browser's native layout on every 'resize' event, with no
+     background-color of its own — so during the gap before JS catches up,
+     the canvas's stale inline size left part of #view uncovered, showing the
+     page's background-color (--surface-bg) through it: the reported
+     green/black flicker on resize. !important here beats that inline style
+     unconditionally, so the canvas's box always instantly matches #view; only
+     the internal drawing-buffer resolution (actual render pixels) still
+     briefly lags a frame behind, which just reads as a touch of stretching/
+     blur, never a gap. */
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
 
 
 #axesGizmo {

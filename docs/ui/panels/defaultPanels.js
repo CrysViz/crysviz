@@ -277,7 +277,11 @@ export function registerDefaultPanels() {
       // active — without this the floating panel shrink-wraps to whichever
       // tab's content is currently widest, so it visibly resizes every time
       // the user switches tabs. Still shrinks on narrow viewports.
-      body.style.width = 'min(340px, calc(100vw - 16px))';
+      // 300px (not the old 340px): the Bonds tab's double-range slider row no
+      // longer carries its own redundant min/max labels (the combined "min -
+      // max Å" label above the slider already shows them), so the row needs
+      // much less width than before.
+      body.style.width = 'min(300px, calc(100vw - 16px))';
 
       // Adopt the formula header box (+/− expandable) and the composition
       // details it controls; wire the header (the old inline-script behavior).

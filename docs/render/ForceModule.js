@@ -1,6 +1,6 @@
 import * as THREE from '../external/three/three.module.js';
 import { app, fileBrowser, groups, general } from '../state/store.js';
-import { getColorFromMap } from '../defaults/color_texture_defaults.js';
+import { getColorFromMap, getElementDefaultColor } from '../defaults/color_texture_defaults.js';
 import { createArrowMaterial, addArrowEmissiveAttributes } from './ArrowMaterial.js';
 
 const SHAFT_SEGS = 20;
@@ -45,8 +45,15 @@ export function computeForceColor(vector, scaling, {
   minValue = general.forceMin || 0,
   maxValue = general.forceMax || 2,
   useLog = general.forceColorScale === "log",
+  element = null,
 } = {}) {
   if (!vector) return null;
+  // Element map ignores the vector entirely — every force on the same
+  // species gets that species' own color (general.customColorMap-aware via
+  // getElementDefaultColor), same source atoms/bonds already use.
+  if (colorMap === "element") {
+    return element ? new THREE.Color(getElementDefaultColor(element)) : null;
+  }
   const mag = Math.sqrt(vector[0] ** 2 + vector[1] ** 2 + vector[2] ** 2);
   const colorMag = mag * (scaling ?? 1.0);
 
@@ -125,12 +132,17 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
     return maxValue > minValue ? Math.min(Math.max((mag - minValue) / (maxValue - minValue), 0), 1) : 0;
   }
 
-  forces.forEach(force => {
+  forces.forEach((force, idx) => {
     if (!force?.vector) return;
     // A per-arrow color pick (StructureInfoPanel's Spin/Force row editor)
     // is sticky — it wins over the colormap until the row's Reset clears
     // it, so this loop leaves force.color (and userColor) untouched here.
     if (force.userColor) return;
+
+    if (colorMap === "element") {
+      force.color = new THREE.Color(getElementDefaultColor(structure.elements[idx]));
+      return;
+    }
 
     const mag = Math.sqrt(force.vector[0] ** 2 + force.vector[1] ** 2 + force.vector[2] ** 2);
     const colorMag = mag * (force.scaling ?? 1.0);
@@ -265,8 +277,17 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
       quat.setFromUnitVectors(UP, dir);
     }
 
+    // The shaft alone is symmetric about `origin` (shaftHalfLen either way),
+    // but the tip cone only adds length past its + end — so without this
+    // shift, the atom sat at the midpoint of the shaft, not of the whole
+    // visible arrow (shaft + tip), which visually reads as off-center toward
+    // the tail by half the tip's length. Shifting the whole assembly's
+    // reference point back by tipLength/2 puts the atom at the true midpoint
+    // of the full shaft+tip span instead.
+    const center = origin.clone().addScaledVector(dir, -tipLength / 2);
+
     // Shaft+
-    dummy.position.copy(origin).addScaledVector(dir, shaftHalfLen / 2);
+    dummy.position.copy(center).addScaledVector(dir, shaftHalfLen / 2);
     dummy.scale.set(shaftDiameter, shaftHalfLen, shaftDiameter);
     dummy.quaternion.copy(quat);
     dummy.updateMatrix();
@@ -274,7 +295,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
     groups.forcesShaftMesh.instanceColor.setXYZ(i * 2, color.r, color.g, color.b);
 
     // Shaft-
-    dummy.position.copy(origin).addScaledVector(dir, -shaftHalfLen / 2);
+    dummy.position.copy(center).addScaledVector(dir, -shaftHalfLen / 2);
     dummy.scale.set(shaftDiameter, shaftHalfLen, shaftDiameter);
     dummy.quaternion.copy(quat);
     dummy.updateMatrix();
@@ -282,7 +303,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
     groups.forcesShaftMesh.instanceColor.setXYZ(i * 2 + 1, color.r, color.g, color.b);
 
     // Tip cone
-    dummy.position.copy(origin).addScaledVector(dir, shaftHalfLen + tipLength / 2);
+    dummy.position.copy(center).addScaledVector(dir, shaftHalfLen + tipLength / 2);
     dummy.scale.set(tipDiameter, tipLength, tipDiameter);
     dummy.quaternion.copy(quat);
     dummy.updateMatrix();

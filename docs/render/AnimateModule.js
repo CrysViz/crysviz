@@ -22,6 +22,31 @@ export function requestRender() {
   needsRender = true;
 }
 
+/** The actual pipeline/gizmo/label draw calls for one frame, with no camera/
+ *  controls/lighting update — just paint whatever the scene currently holds.
+ *  Used by the on-demand animate loop (interactive:true) and, synchronously,
+ *  by resizeRenderer() (interactive:false) right after it resizes the canvas:
+ *  resizing a canvas clears its WebGL drawing buffer immediately (and this
+ *  renderer is alpha:true, so a cleared-but-unpainted canvas is transparent),
+ *  so leaving the repaint to wait for needsRender's next throttled/queued rAF
+ *  tick left a real gap the browser could composite in between — the cleared,
+ *  transparent canvas revealing the page's background color underneath — on
+ *  every resize event during a drag. Rendering immediately, in the same tick
+ *  as the resize, closes that gap. */
+export function renderFrameNow({ interactive = false } = {}) {
+  if (!app.renderer || !app.pipeline || !app.scene || !app.camera) return;
+  app.pipeline.render({ renderer: app.renderer, scene: app.scene, camera: app.camera, interactive });
+  if (app.gizmoRenderer && app.gizmoScene && app.gizmoCamera) {
+    const invCamQ = app.camera.quaternion.clone().invert();
+    const { a, b, c } = latticeDirsNorm();
+    app.gizmoScene.userData.aArrow.setDirection(a.clone().applyQuaternion(invCamQ));
+    app.gizmoScene.userData.bArrow.setDirection(b.clone().applyQuaternion(invCamQ));
+    app.gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
+    app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
+  }
+  if (app.labelRenderer) app.labelRenderer.render(app.scene, app.camera);
+}
+
 let renderOnDemandWired = false;
 
 function wireRenderOnDemand() {
@@ -234,20 +259,7 @@ export function animation_update(time = 0) {
   // general.rtGroundPlane write (O(1); onBeforeRender can't un-hide a hidden mesh).
   syncGroundPlaneVisibility();
 
-  // The active rendering pipeline owns the full frame (passes + composite);
-  // read from app.pipeline (not an import) to avoid a render-layer cycle.
-  // interactive:true marks a live animate-loop frame (only here) so the tracers'
-  // raster preview may kick in; PNG export / manual render() omit it and trace.
-  app.pipeline?.render({ renderer: app.renderer, scene: app.scene, camera: app.camera, interactive: true });
-  if (app.gizmoRenderer && app.gizmoScene && app.gizmoCamera) {
-    const invCamQ = app.camera.quaternion.clone().invert();
-    const { a, b, c } = latticeDirsNorm();
-    app.gizmoScene.userData.aArrow.setDirection(a.clone().applyQuaternion(invCamQ));
-    app.gizmoScene.userData.bArrow.setDirection(b.clone().applyQuaternion(invCamQ));
-    app.gizmoScene.userData.cArrow.setDirection(c.clone().applyQuaternion(invCamQ));
-    app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
-  }
-  app.labelRenderer.render(app.scene, app.camera);
+  renderFrameNow({ interactive: true });
   if (autoRotating) {
       const delta = app.clock.getDelta(); // seconds since last frame
       const axis = app.angularVelocity.clone().normalize();

@@ -130,7 +130,7 @@ function getElementColor(element) {
 // editing one atom's colour recolours just its polyhedron — and an element-wide change (which
 // recolours every atom of the element) still works. Cages have no centre atom → element colour.
 // Returns a CSS string or a hex number; THREE.Color.set accepts either.
-function polyhedronFaceColor(type, centerIndex, colorElem) {
+export function polyhedronFaceColor(type, centerIndex, colorElem) {
   if (type === 'centered' && Number.isInteger(centerIndex)) {
     const atom = fileBrowser.selectedStructure?.atoms?.[centerIndex];
     if (atom) return colorHexToCss(atom.getColor());

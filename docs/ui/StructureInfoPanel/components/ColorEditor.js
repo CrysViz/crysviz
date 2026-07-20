@@ -1,6 +1,6 @@
 import { fileBrowser, groups, general, structureShip, mode } from '../../../state/store.js';
 import { colorHexToCss, getAtomColor, setAtomColor } from '../../../utils/ColorModule.js';
-import { clampOpacity, clampRadiusScale } from './utils.js';
+import { clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom } from '../../../render/AtomsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
@@ -77,12 +77,12 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset';
   resetBtn.className = 'btn-mini';
-  resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 44px;';
+  resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 50px;';
 
   const applyBtn = document.createElement('button');
-  applyBtn.textContent = 'Apply to Trajectory';
+  applyBtn.textContent = 'Apply';
   applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 88px;';
+  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
 
   const buttonRow = document.createElement('div');
   buttonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';
@@ -211,74 +211,68 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
   sizeValue.oninput = (e) => applyElementRadiusScale(/** @type {any} */ (e.target).value);
 
 
-  resetBtn.onclick = () => {
-  const structure = fileBrowser.selectedStructure;
-  const currentMode = general.atomsColor; // current color mode
+  // Pure data reset for one frame's copy of these atoms — no mesh/render
+  // calls, so it's safe to re-run against off-screen trajectory frames too
+  // (see the press-and-hold loop in resetBtn below). Recomputes the
+  // force-mode color from THIS structure's own forces, so looping it per
+  // frame (rather than copying the current frame's color) stays correct even
+  // when frames have different force vectors.
+  function resetElementColorData(structure, currentMode) {
+    atomIndices.forEach((atomIndex) => {
+      const atom = structure.atoms[atomIndex];
+      const element = structure.elements[atomIndex];
 
-  atomIndices.forEach((atomIndex) => {
-    const atom = structure.atoms[atomIndex];
-    const element = structure.elements[atomIndex];
+      if (atom.userColor !== undefined) delete atom.userColor;
+      if (atom.forceColor !== undefined) delete atom.forceColor;
+      clearAtomImageStylesForAtom(structure, atomIndex);
 
-    // clear user-color flag only for these atoms (incl. per-copy overrides)
-    if (atom.userColor !== undefined) delete atom.userColor;
-    if (atom.forceColor !== undefined) delete atom.forceColor;
-    clearAtomImageStylesForAtom(structure, atomIndex);
-
-    // set color based on current mode
-    if (currentMode === "force") {
-      // For force mode: calculate force-based color
-      const forceObj = structure.forces?.[atomIndex];
-      if (forceObj?.vector?.length >= 3) {
-        const magnitude = Math.sqrt(
-          forceObj.vector[0] ** 2 +
-          forceObj.vector[1] ** 2 +
-          forceObj.vector[2] ** 2
-        );
-        atom.color = atomForceToColor(magnitude, general.ForceMin, general.ForceMax);
+      if (currentMode === "force") {
+        const forceObj = structure.forces?.[atomIndex];
+        if (forceObj?.vector?.length >= 3) {
+          const magnitude = Math.sqrt(
+            forceObj.vector[0] ** 2 +
+            forceObj.vector[1] ** 2 +
+            forceObj.vector[2] ** 2
+          );
+          atom.color = atomForceToColor(magnitude, general.ForceMin, general.ForceMax);
+        } else {
+          atom.color = structure.getDefaultElementColor(element);
+        }
       } else {
         atom.color = structure.getDefaultElementColor(element);
       }
-    } else {
-      // For elements/other modes: use element default color
-      atom.color = structure.getDefaultElementColor(element);
-    }
 
-    atom.setElementOpacity(1);
-    atom.setOpacity(1);
-
-    structure.atomImages[atomIndex]?.forEach((imageIndex) => {
-      syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
-      updateSingleAtomColor(atomIndex, imageIndex, el);
-      updateSingleAtomOpacity(imageIndex, atom.getOpacity());
+      atom.setElementOpacity(1);
+      atom.setOpacity(1);
+      atom.setRadiusScale(1);
     });
-  });
-
-  // Reset also clears the per-species ray/path-tracing material (falling
-  // back to the Element-Materials-Map preset, which the editor re-shows).
-  if (fileBrowser.selectedStructure?.atomMaterials) {
-    delete fileBrowser.selectedStructure.atomMaterials[el];
-    materialEditor.syncFromStore?.();
-    requestRender();
+    if (structure.atomMaterials) delete structure.atomMaterials[el];
   }
 
-  updatePieDotCallback();
-  applyElementOpacity(1);
-  applyElementRadiusScale(1);
-  // Polyhedra faces are coloured by element — recolour them in place to match
-  // (mirrors the live picker callback above, which does the same on every edit).
-  updatePolyhedraColors();
-  updateVisualization({
-    bondsUpdate: false,
-    reRenderAtoms: false,
-    reRenderBonds: false,
-    reRenderLattice: false,
-    reRenderOther: false,
-    reRenderComposition: "open",
-  });
-};
+  resetBtn.title = 'Click: this frame. Press and hold: whole trajectory.';
+  function doResetThisFrame() {
+    const structure = fileBrowser.selectedStructure;
+    const currentMode = general.atomsColor; // current color mode
 
-  applyBtn.onclick = () => {
-    updatePieDotCallback(); // Update the pie dot
+    resetElementColorData(structure, currentMode);
+
+    atomIndices.forEach((atomIndex) => {
+      const atom = structure.atoms[atomIndex];
+      structure.atomImages[atomIndex]?.forEach((imageIndex) => {
+        syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
+        updateSingleAtomColor(atomIndex, imageIndex, el);
+        updateSingleAtomOpacity(imageIndex, atom.getOpacity());
+      });
+    });
+    if (structure.atomMaterials) materialEditor.syncFromStore?.();
+
+    updatePieDotCallback();
+    applyElementOpacity(1);
+    applyElementRadiusScale(1);
+    // Polyhedra faces are coloured by element — recolour them in place to match
+    // (mirrors the live picker callback above, which does the same on every edit).
+    updatePolyhedraColors();
+    requestRender();
     updateVisualization({
       bondsUpdate: false,
       reRenderAtoms: false,
@@ -287,9 +281,45 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
       reRenderOther: false,
       reRenderComposition: "open",
     });
-    structureShip.container[fileBrowser.selectedRowIndex].flushColorToAllStructures(fileBrowser.selectedStructure);
-    editor.style.display = 'none';
-  };
+    return { structure, currentMode };
+  }
+  wirePressHoldPopup(resetBtn, {
+    holdLabel: 'Reset Trajectory',
+    onPress: () => { doResetThisFrame(); },
+    onConfirm: () => {
+      const { structure, currentMode } = doResetThisFrame();
+      // Re-run the same pure-data reset on every other frame of this
+      // trajectory (a loop, not a copy of the current frame's result — see
+      // resetElementColorData's docstring for why that distinction matters).
+      applyToOtherTrajectoryFrames(structure, (frame) => resetElementColorData(frame, currentMode));
+    },
+  });
+
+  applyBtn.title = 'Click: close. Press and hold: copy this color/alpha/size to every trajectory frame.';
+  wirePressHoldPopup(applyBtn, {
+    holdLabel: 'Apply to Trajectory',
+    onPress: () => {
+      updatePieDotCallback(); // Update the pie dot
+      updateVisualization({
+        bondsUpdate: false,
+        reRenderAtoms: false,
+        reRenderBonds: false,
+        reRenderLattice: false,
+        reRenderOther: false,
+        reRenderComposition: "open",
+      });
+      editor.style.display = 'none';
+    },
+    onConfirm: () => {
+      // A deliberate broadcast (unlike Reset, it's meant to overwrite every
+      // other frame's look with this one's). Pushes both plain colors and
+      // the style stores (atomImageStyles/materials/etc) so nothing Reset
+      // can clear is left un-propagated.
+      const trajContainer = structureShip.container[fileBrowser.selectedRowIndex];
+      trajContainer.flushColorToAllStructures(fileBrowser.selectedStructure);
+      trajContainer.flushStylesToAllStructures(fileBrowser.selectedStructure);
+    },
+  });
 
   return editor;
 }

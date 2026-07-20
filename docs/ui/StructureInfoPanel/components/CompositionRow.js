@@ -2,7 +2,7 @@ import { fileBrowser, general } from '../../../state/store.js';
 import { colorHexToCss, createPieDot, getAtomColor } from '../../../utils/ColorModule.js';
 import { getAtomImageColor } from '../../../render/AtomsFracUpdateModule.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
-import { getElementAtomIndices, getElementOpacityValues, setSwatchOpacity } from './utils.js';
+import { getElementAtomIndices, getElementOpacityValues, setSwatchOpacity, createMiniToggleSwitch } from './utils.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createIndividualAtomRow } from './IndividualAtomRow.js';
 import { createElementColorEditor } from './ColorEditor.js';
@@ -62,11 +62,8 @@ export function createCompositionRow(el, count, total) {
   // Per-element visibility (parity with the Bonds/Poly tab headers): hides
   // only this element's atom spheres (zero-scaled, also unpickable); bonds and
   // polyhedra keep their own visibility toggles.
-  const visCheckbox = document.createElement('input');
-  visCheckbox.type = 'checkbox';
+  const { wrapper: visCheckboxSwitch, input: visCheckbox } = createMiniToggleSwitch(`Show/hide all ${el} atoms`);
   visCheckbox.checked = general.atomVisibility[el] !== false;
-  visCheckbox.title = `Show/hide all ${el} atoms`;
-  visCheckbox.addEventListener('click', (e) => e.stopPropagation()); // row click still expands
   visCheckbox.onchange = (e) => {
     general.atomVisibility[el] = /** @type {any} */ (e.target).checked;
     updateVisualization({
@@ -79,7 +76,7 @@ export function createCompositionRow(el, count, total) {
       reRenderComposition: false,
     });
   };
-  left.appendChild(visCheckbox);
+  left.appendChild(visCheckboxSwitch);
 
   // Get all atom indices for this element — including hidden ones. This
   // feeds the color/opacity/immunity editors below (and the per-atom row
@@ -132,7 +129,7 @@ export function createCompositionRow(el, count, total) {
     `;
     setSwatchOpacity(dot, currentOpacity);
     // Keep DOM order checkbox -> dot -> name -> caret across repaints.
-    left.insertBefore(dot, visCheckbox.nextSibling);
+    left.insertBefore(dot, visCheckboxSwitch.nextSibling);
 
     // Make the dot clickable to open the color editor
     dot.title = `Customize color for all ${el} atoms`;
@@ -162,6 +159,12 @@ export function createCompositionRow(el, count, total) {
 
   const name = document.createElement('span');
   name.textContent = el;
+  // Explicit, scale-respecting size matching Bonds'/Poly's category labels
+  // (styles.css's global `label` rule) so all three tabs render identically
+  // regardless of viewport width — this span isn't a <label>, so it doesn't
+  // inherit that rule, and previously fell through to `.comp-row`'s
+  // narrow-viewport override instead, causing a mismatch.
+  name.style.fontSize = 'calc(14px * var(--cv-font-scale, 1))';
 
   const expandIcon = document.createElement('span');
   expandIcon.textContent = '▶';
@@ -387,6 +390,12 @@ export function createWyckoffCompositionRow(el, entries, total) {
 
   const name = document.createElement('span');
   name.textContent = el;
+  // Explicit, scale-respecting size matching Bonds'/Poly's category labels
+  // (styles.css's global `label` rule) so all three tabs render identically
+  // regardless of viewport width — this span isn't a <label>, so it doesn't
+  // inherit that rule, and previously fell through to `.comp-row`'s
+  // narrow-viewport override instead, causing a mismatch.
+  name.style.fontSize = 'calc(14px * var(--cv-font-scale, 1))';
 
   const expandIcon = document.createElement('span');
   expandIcon.textContent = '▶';

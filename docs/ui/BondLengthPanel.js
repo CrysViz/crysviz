@@ -12,25 +12,34 @@ import { createColorPicker } from './ColorPickerModule.js';
 import { createMaterialEditor } from './StructureInfoPanel/components/MaterialEditor.js';
 import { createIndividualBondRow } from './StructureInfoPanel/components/IndividualBondRow.js';
 import { createTinyToggle } from './StructureInfoPanel/components/Immunity.js';
-import { clampOpacity, clampRadiusScale } from './StructureInfoPanel/components/utils.js';
+import {
+  clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup, createMiniToggleSwitch,
+} from './StructureInfoPanel/components/utils.js';
 import {
   bondGroupKey, bondKey, updateSingleBondColor, updateSingleBondOpacity,
   updateSingleBondDiameter,
 } from '../render/index.js';
 
-// Must match the CSS below: the slider's fixed width and its thumb's
-// diameter. A range input's thumb travels from thumbWidth/2 to
-// width-thumbWidth/2 (it can never center past its own edge), so the colored
-// fill track has to be inset by that same half-thumb amount on each side —
-// lining it up as a plain 0-100% overlay (no inset) makes the fill's ends
-// drift away from the thumbs as they approach the min/max stops.
+// The slider container is fluid (flex:1, see .bond-range-slider below) so it
+// shrinks to fit the Structure Info panel at any width instead of overflowing
+// it — BOND_SLIDER_WIDTH is only a same-frame-paint fallback for the rare
+// moment a row is built while its tab is hidden (display:none reads
+// clientWidth 0); the ResizeObserver in each row corrects it the instant the
+// container gets real layout (becomes visible / panel or window resizes).
+// BOND_SLIDER_THUMB must match the CSS thumb diameter below: a range input's
+// thumb travels from thumbWidth/2 to width-thumbWidth/2 (it can never center
+// past its own edge), so the colored fill track has to be inset by that same
+// half-thumb amount on each side — lining it up as a plain 0-100% overlay (no
+// inset) makes the fill's ends drift away from the thumbs near the min/max
+// stops.
 const BOND_SLIDER_WIDTH = 200;
 const BOND_SLIDER_THUMB = 16;
 
-/** Pixel offset of a range input's thumb CENTER for value `v` in [0, max]. */
-function bondSliderThumbPos(v, max) {
+/** Pixel offset of a range input's thumb CENTER for value `v` in [0, max],
+ *  within a track of the given (actual, current) pixel `width`. */
+function bondSliderThumbPos(v, max, width = BOND_SLIDER_WIDTH) {
   const inset = BOND_SLIDER_THUMB / 2;
-  return inset + (v / max) * (BOND_SLIDER_WIDTH - 2 * inset);
+  return inset + (v / max) * (width - 2 * inset);
 }
 
 function safeColor(color) {
@@ -38,6 +47,17 @@ function safeColor(color) {
   if (typeof color === 'number') return colorHexToCss(color);
   if (typeof color === 'string' && !color.startsWith('#')) return `#${color}`;
   return color;
+}
+
+/** Legible text color (black/white) for a given CSS hex background. */
+function textColorForBg(cssHex) {
+  let hex = cssHex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('');
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 128 ? '#000' : '#fff';
 }
 
 // Re-populate the individual-bond lists of any *expanded* category rows after a
@@ -76,7 +96,8 @@ function injectDoubleSliderCSS() {
   style.textContent = `
     .bond-range-slider {
       position: relative;
-      width: ${BOND_SLIDER_WIDTH}px;
+      flex: 1 1 auto;
+      min-width: 60px;
       height: 16px;
       margin: 0 8px;
     }
@@ -139,8 +160,37 @@ export function resetBondLengths() {
   for (const pair in general.defaultBondLengths) {
     general.bondLengths[pair] = { ...general.defaultBondLengths[pair] };
   }
-  createBondLengthControls();
-  updateVisualization({reRenderOther: false, reRenderComposition: false});
+  // createBondLengthControls() never clears its target container first (it's
+  // an append-only builder, unlike e.g. createPolyhedraListControls) — its
+  // only safe caller is renderComposition(), which always hands it a freshly
+  // recreated, empty #infoBondControls div. Calling it directly here (a
+  // previous fix attempt) instead DUPLICATED every category row on top of
+  // the existing ones each time Reset was clicked. Go through
+  // updateVisualization's reRenderComposition instead, which rebuilds the
+  // whole composition panel (bonds tab included) from a clean slate — the
+  // same path every other bond-length-affecting flow already relies on to
+  // refresh this same UI. reRenderBonds:true is still needed alongside it so
+  // the 3D bond SET (which pairs qualify at the just-reset min/max) actually
+  // recomputes — bondsUpdate (the default) only repaints existing bonds, it
+  // doesn't re-filter by length range.
+  updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+}
+
+/** Reset every bond COLOR customization (category + individual) on one
+ *  structure/frame back to defaults; alpha/size/material overrides survive
+ *  (mirrors resetAllColorStyling's atom-side semantics in General.js). Pure
+ *  data — no mesh/render calls — so it's safe to re-run against off-screen
+ *  trajectory frames too. */
+function resetAllBondColors(structure) {
+  for (const store of [structure.bondCategoryStyles, structure.bondUserStyles]) {
+    if (!store) continue;
+    for (const [key, entry] of Object.entries(store)) {
+      delete entry.color;
+      if (entry.alpha == null && entry.radiusScale == null && entry.material == null) {
+        delete store[key];
+      }
+    }
+  }
 }
 
 export function createBondLengthControls(targetPanel='bondControls') {
@@ -152,7 +202,8 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
   if (!fileBrowser.selectedStructure) return;
 
-    // --- Reset wrapper + button ---
+    // --- Reset wrapper (Add Custom Bond only now — Reset Bond Lengths moved
+    // to the bottom, next to Reset Colors) ---
   const resetWrapper = document.createElement("div");
   resetWrapper.id = "resetBondLengthsWrapper";
   resetWrapper.className = "buttonWrapper";
@@ -161,45 +212,51 @@ export function createBondLengthControls(targetPanel='bondControls') {
   resetWrapper.style.justifyContent = "center";
   resetWrapper.style.gap = "8px";
 
-  const resetBtn = document.createElement("button");
-  resetBtn.id = "resetBondLengths";
-  resetBtn.className = "reset-btn";
-  resetBtn.textContent = "Reset to Defaults";
-  resetBtn.style.fontSize = "12px";
-  resetBtn.style.marginTop= "2px";
-  resetBtn.style.height ="22px";
-  resetBtn.onclick = () => {
-    resetBondLengths();
-    clearAllHighlights();
-
-   };
-
   const addCustomBondBtn = document.createElement("button");
   addCustomBondBtn.id = "addCustomBond";
   addCustomBondBtn.className = "reset-btn";
   addCustomBondBtn.textContent = "Add Custom Bond";
   addCustomBondBtn.style.fontSize = "12px";
   addCustomBondBtn.style.height = "22px";
+  // Deactivated for now: the underlying data model holds one length range
+  // per element pair, so this button can only add a pair that has none yet
+  // (e.g. a cross-element pair the auto-detector never saw) — not a second,
+  // independent range for a pair that already has one. Keeping the handler
+  // below intact (just hidden) rather than deleting it in case that
+  // single-range-only version of "Add Custom Bond" turns out to be wanted
+  // later.
+  addCustomBondBtn.style.display = "none";
   addCustomBondBtn.onclick = () => {
     openDoublePeriodicTable((pair) => {
-      if (!general.bondLengths[pair]) {
-        const [el1, el2] = pair.split('-');
-        const defaultRadius = getElementRadius(el1) + getElementRadius(el2);
-        const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
-        general.bondLengths[pair] = { min: 0, max: defaultValue };
-        general.defaultBondLengths[pair] = { min: 0, max: defaultValue };
-        general.bondVisibility[pair] = true;
-        createBondLengthControls(targetPanel);
-        updateVisualization({
-          reRenderBonds: true,
-          reRenderOther: false,
-          reRenderComposition: false,
-        });
+      if (general.bondLengths[pair]) {
+        // One range per element pair is all this data model holds (it's a
+        // flat pair -> {min,max} dictionary) — picking a pair that's already
+        // defined has nothing new to add, it would just silently overwrite
+        // the existing definition. Say so instead of doing nothing with no
+        // feedback; edit the existing range in the list above instead.
+        const prior = addCustomBondBtn.textContent;
+        addCustomBondBtn.textContent = `${pair} already exists — edit it above`;
+        setTimeout(() => { if (addCustomBondBtn.isConnected) addCustomBondBtn.textContent = prior; }, 1800);
+        return;
       }
+      const [el1, el2] = pair.split('-');
+      const defaultRadius = getElementRadius(el1) + getElementRadius(el2);
+      const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
+      general.bondLengths[pair] = { min: 0, max: defaultValue };
+      general.defaultBondLengths[pair] = { min: 0, max: defaultValue };
+      general.bondVisibility[pair] = true;
+      // createBondLengthControls(targetPanel) directly here would duplicate
+      // every category row on top of the existing ones (see resetBondLengths
+      // - it's an append-only builder, safe only via renderComposition's
+      // freshly emptied container). Go through reRenderComposition instead.
+      updateVisualization({
+        reRenderBonds: true,
+        reRenderOther: false,
+        reRenderComposition: "open",
+      });
     });
   };
 
-  resetWrapper.appendChild(resetBtn);
   resetWrapper.appendChild(addCustomBondBtn);
 
   bondControls.appendChild(resetWrapper);
@@ -234,14 +291,12 @@ export function createBondLengthControls(targetPanel='bondControls') {
     div.className = 'bond-control';
     div.dataset.pair = pair;
 
-    // Add checkbox for bond visibility
+    // Bond visibility toggle
     const checkboxDiv = document.createElement('div');
     checkboxDiv.className = 'bond-checkbox';
 
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
+    const { wrapper: checkboxSwitch, input: checkbox } = createMiniToggleSwitch(`Show/hide ${pair} bonds`);
     checkbox.checked = general.bondVisibility[pair];
-    checkbox.title = `Show/hide ${pair} bonds`;
     checkbox.onchange = (e) => {
       general.bondVisibility[pair] = /** @type {any} */ (e.target).checked;
       updateVisualization({
@@ -254,12 +309,16 @@ export function createBondLengthControls(targetPanel='bondControls') {
     };
 
     const checkboxLabel = document.createElement('label');
-    checkboxLabel.textContent = pair; // compact, matching the Atoms/Poly headers
+    checkboxLabel.textContent = pair;
     checkboxLabel.title = `Show/hide ${pair} bonds`;
-    checkboxLabel.style.fontSize = '12px';
+    // Explicit, scale-respecting size matching the Atoms tab's element-symbol
+    // label, so both stay identical regardless of viewport width instead of
+    // relying on the ambient cascade (global `label` rule here vs. Atoms'
+    // `.comp-row` narrow-viewport override there).
     checkboxLabel.style.color = '#ccc';
     checkboxLabel.style.margin = '0';
     checkboxLabel.style.cursor = 'pointer';
+    checkboxLabel.style.fontSize = 'calc(14px * var(--cv-font-scale, 1))';
 
     // Expand caret toggling the individual-bond list (same style as the
     // Atoms-tab composition rows).
@@ -290,12 +349,24 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
     function refreshHeader() {
       const members = memberBonds();
+      // No bonds currently fall in this pair's length range (0 members) —
+      // but the DEFAULT color is purely a function of the two element
+      // symbols (Bond.js derives it from general.customColorMap/
+      // defaultColorMap, never from a live Bond instance), so an empty
+      // category can still preview its real would-be color instead of a
+      // dead grey placeholder.
+      const [el1, el2] = pair.split('-');
+      const defaultPairColors = [el1, el2].map((el) => safeColor(structure()?.getDefaultElementColor(el)));
+      const catColorOverride = structure()?.bondCategoryStyles?.[pair]?.color;
       const colors = members.length
         ? members.map((b) => safeColor(b.color?.[0]))
-        : [safeColor(structure()?.bondCategoryStyles?.[pair]?.color ?? '#808080')];
+        : catColorOverride != null ? [safeColor(catColorOverride)] : defaultPairColors;
       const dot = createPieDot(colors, 20);
       dot.classList.add('dot');
-      dot.style.cursor = 'pointer';
+      // Match the Atoms tab's dot size (the shared .dot CSS class alone
+      // renders at 10x10 — its rule predates this row and this row never
+      // overrode it, unlike CompositionRow.js's atom dot).
+      dot.style.cssText = 'width: 20px; height: 20px; margin-right: 6px; border: 1px solid rgba(255,255,255,0.4); cursor: pointer;';
       dot.title = `Customize color/alpha/size for all ${pair} bonds`;
       dot.onclick = (e) => {
         e.stopPropagation();
@@ -335,7 +406,10 @@ export function createBondLengthControls(targetPanel='bondControls') {
     // Live edits fan out to every bond of the pair, but SKIP members that have
     // a per-copy override for the same field so individual > category holds
     // live as well as after rebuilds (buildBondObjects re-applies both).
-    const currentCatColor = safeColor(structure()?.bondCategoryStyles?.[pair]?.color ?? '#808080');
+    // Falls back to the pair's real default color (element-based, not
+    // dependent on a live bond existing) rather than a placeholder grey.
+    const currentCatColor = safeColor(
+      structure()?.bondCategoryStyles?.[pair]?.color ?? structure()?.getDefaultElementColor(pair.split('-')[0]));
     const catPicker = createColorPicker(currentCatColor, (hex) => {
       catStyle().color = hex;
       for (const b of memberBonds()) {
@@ -435,23 +509,70 @@ export function createBondLengthControls(targetPanel='bondControls') {
     const catResetBtn = document.createElement('button');
     catResetBtn.textContent = 'Reset';
     catResetBtn.className = 'btn-mini';
-    catResetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
-    catResetBtn.title = `Reset ${pair} bonds: removes the group style AND every individual override`;
-    catResetBtn.onclick = (e) => {
-      e.stopPropagation();
-      delete structure().bondCategoryStyles[pair];
-      for (const b of memberBonds()) delete structure().bondUserStyles[bondKey(b.indices)];
-      updateVisualization({
-        reRenderBonds: true,
-        reRenderOther: false,
-        reRenderComposition: false,
-      });
-      refreshExpandedBondLists(bondControls);
-      refreshBondHeaders(bondControls);
-    };
+    catResetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+    catResetBtn.title = `Reset ${pair} bonds: removes the group style AND every individual override.\nClick: this frame. Press and hold: whole trajectory.`;
+    // Preview the two elements' default (pre-override) half-colors, same idea
+    // as the element editor's Reset swatch — each bond half is colored by its
+    // own endpoint element by default.
+    const [defColor1, defColor2] = (memberBonds()[0]?.defaultColor ?? []).map(safeColor);
+    if (defColor1 && defColor2) {
+      catResetBtn.style.background = `linear-gradient(90deg, ${defColor1} 50%, ${defColor2} 50%)`;
+      catResetBtn.style.borderColor = 'rgba(0,0,0,0.2)';
+      catResetBtn.style.color = textColorForBg(defColor1);
+      catResetBtn.style.textShadow = '0 0 3px rgba(0,0,0,0.6)';
+    }
+    function resetPairOnFrame(frame) {
+      delete frame.bondCategoryStyles?.[pair];
+      (frame.bonds ?? []).filter((b) => pairOf(b) === pair)
+        .forEach((b) => delete frame.bondUserStyles?.[bondKey(b.indices)]);
+    }
+    wirePressHoldPopup(catResetBtn, {
+      holdLabel: 'Reset Trajectory',
+      onPress: (e) => {
+        e.stopPropagation();
+        resetPairOnFrame(structure());
+        updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
+        refreshExpandedBondLists(bondControls);
+        refreshBondHeaders(bondControls);
+      },
+      onConfirm: (e) => {
+        e.stopPropagation();
+        resetPairOnFrame(structure());
+        // Clear this same pair's category + member overrides on every other
+        // frame too, using each frame's OWN bond list/keys (not a copy of
+        // this frame's), since wrapped-index bond keys can drift frame to frame.
+        applyToOtherTrajectoryFrames(structure(), resetPairOnFrame);
+        updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
+        refreshExpandedBondLists(bondControls);
+        refreshBondHeaders(bondControls);
+      },
+    });
+
+    const catApplyBtn = document.createElement('button');
+    catApplyBtn.textContent = 'Apply';
+    catApplyBtn.className = 'btn-mini highlight';
+    catApplyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+    catApplyBtn.title = `Click: close. Press and hold: copy ${pair} bonds' group color/alpha/size to every trajectory frame.`;
+    wirePressHoldPopup(catApplyBtn, {
+      holdLabel: 'Apply to Trajectory',
+      onPress: (e) => {
+        e.stopPropagation();
+        catEditor.style.display = 'none';
+      },
+      onConfirm: (e) => {
+        e.stopPropagation();
+        const style = { ...structure().bondCategoryStyles[pair] };
+        applyToOtherTrajectoryFrames(structure(), (frame) => {
+          frame.bondCategoryStyles ??= {};
+          frame.bondCategoryStyles[pair] = { ...style };
+        });
+      },
+    });
+
     const catButtonRow = document.createElement('div');
     catButtonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';
     catButtonRow.appendChild(catResetBtn);
+    catButtonRow.appendChild(catApplyBtn);
 
     // Per-pair ray/path-tracing material (bondCategoryStyles[pair].material).
     const catMaterialEditor = createMaterialEditor(
@@ -468,7 +589,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     catEditor.appendChild(catButtonRow);
 
     // Uniform header order across tabs: checkbox, dot, label, caret, count, immunity.
-    checkboxDiv.appendChild(checkbox);
+    checkboxDiv.appendChild(checkboxSwitch);
     checkboxDiv.appendChild(dotEl);
     checkboxDiv.appendChild(checkboxLabel);
     checkboxDiv.appendChild(expandIcon);
@@ -556,20 +677,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     controlsRow.style.display = 'flex';
     controlsRow.style.gap = '8px';
     controlsRow.style.alignItems = 'center';
-
-    // Min value display
-    const minValueSpan = document.createElement('span');
-    minValueSpan.className = 'slider-value';
-    minValueSpan.textContent = `${general.bondLengths[pair].min.toFixed(2)} Å`;
-    minValueSpan.style.minWidth = '50px';
-    minValueSpan.style.textAlign = 'right';
-
-    // Max value display
-    const maxValueSpan = document.createElement('span');
-    maxValueSpan.className = 'slider-value';
-    maxValueSpan.textContent = `${general.bondLengths[pair].max.toFixed(2)} Å`;
-    maxValueSpan.style.minWidth = '50px';
-    maxValueSpan.style.textAlign = 'left';
+    controlsRow.style.minWidth = '0'; // let the slider (flex:1) actually shrink instead of overflowing the row
 
     // Double slider container
     const sliderContainer = document.createElement('div');
@@ -607,6 +715,24 @@ export function createBondLengthControls(targetPanel='bondControls') {
     maxSlider.style.zIndex = '1';
     sliderContainer.appendChild(maxSlider);
 
+    // Fill-track position depends on the container's ACTUAL current width,
+    // not a fixed constant, now that .bond-range-slider is fluid (flex:1) —
+    // recomputed from the live slider values on every call, so both a value
+    // change and a pure resize (tab becoming visible, panel/window resize)
+    // can call this without duplicating the min/max readout.
+    function redrawTrackFill() {
+      const width = sliderContainer.clientWidth || BOND_SLIDER_WIDTH;
+      const minPx = bondSliderThumbPos(parseFloat(minSlider.value), 6, width);
+      const maxPx = bondSliderThumbPos(parseFloat(maxSlider.value), 6, width);
+      track.style.left = `${minPx}px`;
+      track.style.width = `${maxPx - minPx}px`;
+    }
+    // clientWidth reads 0 while the row's tab is hidden (display:none) —
+    // ResizeObserver fires again the instant the container gets real layout
+    // (tab switched to, panel/window resized), so the fill self-corrects
+    // instead of staying pinned to the display:none-time (wrong) width.
+    new ResizeObserver(redrawTrackFill).observe(sliderContainer);
+
     // Update function for both sliders
     function updateBondRange() {
       let minVal = parseFloat(minSlider.value);
@@ -634,13 +760,8 @@ export function createBondLengthControls(targetPanel='bondControls') {
         }
       }
 
-      const minPx = bondSliderThumbPos(minVal, 6);
-      const maxPx = bondSliderThumbPos(maxVal, 6);
-      track.style.left = `${minPx}px`;
-      track.style.width = `${maxPx - minPx}px`;
+      redrawTrackFill();
 
-      minValueSpan.textContent = `${minVal.toFixed(2)} Å`;
-      maxValueSpan.textContent = `${maxVal.toFixed(2)} Å`;
       valueSpan.textContent = `${minVal.toFixed(2)} - ${maxVal.toFixed(2)} Å`;
 
       general.bondLengths[pair].min = minVal;
@@ -658,15 +779,12 @@ export function createBondLengthControls(targetPanel='bondControls') {
     minSlider.oninput = updateBondRange;
     maxSlider.oninput = updateBondRange;
 
-    // Initialize track
-    const initMinPx = bondSliderThumbPos(parseFloat(minSlider.value), 6);
-    const initMaxPx = bondSliderThumbPos(parseFloat(maxSlider.value), 6);
-    track.style.left = `${initMinPx}px`;
-    track.style.width = `${initMaxPx - initMinPx}px`;
+    // Initialize track (ResizeObserver's own initial callback also covers
+    // this once layout lands, but painting the best-guess position
+    // synchronously avoids a visible jump on the frame the row first shows).
+    redrawTrackFill();
 
-    controlsRow.appendChild(minValueSpan);
     controlsRow.appendChild(sliderContainer);
-    controlsRow.appendChild(maxValueSpan);
 
     div.appendChild(checkboxDiv);
     div.appendChild(catEditor);
@@ -675,4 +793,43 @@ export function createBondLengthControls(targetPanel='bondControls') {
     div.appendChild(bondsContainer);
     bondControls.appendChild(div);
   });
+
+  // Below every individual bond category — same placement as the Atoms tab's
+  // Reset Colors/Reset Styling row below the composition list.
+  const resetColorsRow = document.createElement('div');
+  resetColorsRow.style.cssText = 'display: flex; justify-content: center; gap: 8px; margin-top: 20px;';
+
+  // Historic id kept (never rename ids); label describes the actual behavior.
+  const resetBtn = document.createElement("button");
+  resetBtn.id = "resetBondLengths";
+  resetBtn.className = "reset-btn";
+  resetBtn.textContent = "Reset Bond Lengths";
+  resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; min-width: 50px;';
+  resetBtn.onclick = () => {
+    resetBondLengths();
+    clearAllHighlights();
+  };
+
+  const resetBondColorsBtn = document.createElement('button');
+  resetBondColorsBtn.id = 'resetBondColorsBtn';
+  resetBondColorsBtn.textContent = 'Reset Colors';
+  resetBondColorsBtn.className = 'reset-btn';
+  resetBondColorsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; min-width: 50px;';
+  resetBondColorsBtn.title = 'Reset every bond color customization (category and individual) to element defaults.\nClick: this frame. Press and hold: whole trajectory.';
+  wirePressHoldPopup(resetBondColorsBtn, {
+    holdLabel: 'Reset Trajectory',
+    onPress: () => {
+      resetAllBondColors(fileBrowser.selectedStructure);
+      updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+    },
+    onConfirm: () => {
+      const structure = fileBrowser.selectedStructure;
+      resetAllBondColors(structure);
+      applyToOtherTrajectoryFrames(structure, resetAllBondColors);
+      updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+    },
+  });
+  resetColorsRow.appendChild(resetBtn);
+  resetColorsRow.appendChild(resetBondColorsBtn);
+  bondControls.appendChild(resetColorsRow);
 }
