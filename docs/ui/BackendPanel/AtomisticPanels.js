@@ -728,6 +728,13 @@ async function runLocalRelax(shell, params, potential) {
   };
 
   try {
+    // Animate a throwaway working copy, not the source structure: the relax
+    // loop mutates fileBrowser.selectedStructure in place for live feedback, and
+    // we do not want that to alter the user's starting structure. Only relax_…
+    // holds the trajectory. (restoreStructureInPlace remains a safety net.)
+    const workingStructure = snapshotCurrentStructure();
+    fileBrowser.selectedStructure = workingStructure;
+
     const initial = buildNEPStructure(runner, fileBrowser.selectedStructure);
     const relaxed = await relaxUntilConverged(runner, initial, {
       fmaxTol: params.forceTol,
@@ -796,10 +803,14 @@ async function runLocalRelax(shell, params, potential) {
     // Live run over: release the plot, restore the source structure (relax
     // mutated it in place), and switch to the recorded relaxation trajectory.
     endLiveFeed();
+    // Separate try/catch so a restore hiccup can't block switching to the
+    // recorded relaxation trajectory (see the MD path for the rationale).
     try {
       restoreStructureInPlace(originalStructure, relaxContainer.structures[0]);
+    } catch { /* safety net only */ }
+    try {
       selectLastAddedRow();
-    } catch { /* non-fatal: leave selection/structure as-is */ }
+    } catch { /* non-fatal: leave selection as-is */ }
   }
 }
 
@@ -1067,13 +1078,18 @@ function bindMDBody(panel, shell, potential) {
       // Live run is over: hand ownership of the plot back to the container's
       // persisted series so scrubbing/replay survives later panel rebuilds.
       endLiveFeed();
-      // Restore the source structure (MD mutated it in place) so its row isn't
-      // left holding the final MD frame, then auto-select the recorded
-      // trajectory so the viewer/panel show MD_… instead of the original.
+      // Safety-net restore of the source structure (it's normally untouched now
+      // that MD animates a working copy). SEPARATE try/catch from the row switch
+      // below: a restore hiccup must not prevent switching to MD_….
       try {
         restoreStructureInPlace(originalStructure, mdContainer.structures[0]);
+      } catch { /* safety net only */ }
+      // Auto-select the recorded trajectory so the viewer refreshes to MD_…
+      // instead of leaving the green selection (and the last animated frame) on
+      // the source row.
+      try {
         selectLastAddedRow();
-      } catch { /* non-fatal: leave selection/structure as-is */ }
+      } catch { /* non-fatal: leave selection as-is */ }
     }
   });
 }
