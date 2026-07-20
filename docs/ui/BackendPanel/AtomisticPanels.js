@@ -22,6 +22,8 @@ import { MLIPRunner } from '../../external/mlip_wasm/mlip_runner.js';
 import { updateForces } from '../../render/index.js';
 import { updateRow, createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
 import { refreshActivePanels } from '../panels/PanelManager.js';
+import { updateVisualization } from '../../core/crystal-viewer.js';
+import { fracToCartPoint, cartToFractional } from '../../math/index.js';
 import { StructureContainer } from '../../model/index.js';
 import { Atom } from '../../model/index.js';
 import { Force } from '../../model/index.js';
@@ -584,6 +586,61 @@ function readRelaxParams(bodyEl) {
   };
 }
 
+// Fixed cell-strain magnitude for the Rattle "lattice" option (±2%).
+const RATTLE_LATTICE_PCT = 0.02;
+
+// Standard normal sample (Box–Muller) for the atom-displacement rattle.
+function gaussianRandom() {
+  let u = 0;
+  let v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// Apply a random perturbation to the selected structure: a Gaussian displacement
+// (std = amp Å) to every atom and, when doLattice is set, a small symmetric
+// random strain (±RATTLE_LATTICE_PCT) to the cell. Mutates the structure in
+// place (the user's explicit intent — rattle then relax) and re-renders.
+function rattleSelectedStructure(amp, doLattice) {
+  const s = fileBrowser.selectedStructure;
+  if (!s || !Array.isArray(s.atoms) || !s.atoms.length) return;
+  const lattice = s.lattice.map((r) => [...r]);
+
+  s.atoms.forEach((atom) => {
+    const cart = fracToCartPoint(atom.position, lattice);
+    const moved = [
+      cart[0] + gaussianRandom() * amp,
+      cart[1] + gaussianRandom() * amp,
+      cart[2] + gaussianRandom() * amp,
+    ];
+    atom.position = cartToFractional(moved, lattice);
+  });
+
+  if (doLattice) {
+    // Symmetric random strain E (independent components in [-pct, pct]);
+    // new lattice = old · (I + E).
+    const pct = RATTLE_LATTICE_PCT;
+    const E = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    for (let i = 0; i < 3; i++) {
+      for (let j = i; j < 3; j++) {
+        const e = (Math.random() * 2 - 1) * pct;
+        E[i][j] = e;
+        E[j][i] = e;
+      }
+    }
+    s.lattice = lattice.map((row) => [0, 1, 2].map(
+      (j) => row[j] + row[0] * E[0][j] + row[1] * E[1][j] + row[2] * E[2][j],
+    ));
+  }
+
+  // Forces/stress are stale after moving atoms; drop them and re-render geometry.
+  s.forces = [];
+  s.stress = null;
+  s.periodic = { hash: 'None', wrapped: null };
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderLattice: true });
+}
+
 function renderRelaxBody(bodyEl, potential) {
   bodyEl.innerHTML = `
     <button type="button" class="atomistic-card atomistic-efs-card" id="relaxEfsCard">
@@ -623,6 +680,22 @@ function renderRelaxBody(bodyEl, potential) {
       <div class="atomistic-button-row atomistic-button-row-compact">
         <button type="button" class="calcButton" id="relaxAppendBtn">Append</button>
         <button type="button" class="calcButton" id="relaxNewBtn">New</button>
+      </div>
+    </div>
+    <div class="atomistic-card atomistic-card-compact">
+      <div class="atomistic-card-title atomistic-card-title-accent">Rattle</div>
+      <div class="atomistic-grid atomistic-grid-2 atomistic-grid-compact">
+        <label>
+          <span>displacement (Å)</span>
+          <input type="number" class="atomistic-input-sm" id="relaxRattleAmpInput" value="0.1" step="0.01" min="0">
+        </label>
+        <label style="display:flex;flex-direction:row;align-items:center;gap:6px;align-self:end;">
+          <input type="checkbox" id="relaxRattleLatticeChk" style="width:16px;height:16px;flex:0 0 auto;margin:0;">
+          <span>lattice (±2%)</span>
+        </label>
+      </div>
+      <div class="atomistic-button-row atomistic-button-row-compact">
+        <button type="button" class="calcButton" id="relaxRattleBtn">Rattle</button>
       </div>
     </div>
   `;
@@ -887,6 +960,18 @@ function bindRelaxBody(panel, shell, potential) {
       }
     } catch (error) {
       shell.resultEl.textContent = `Relax failed: ${error.message || String(error)}`;
+    }
+  });
+
+  const rattleBtn = shell.bodyEl.querySelector('#relaxRattleBtn');
+  rattleBtn?.addEventListener('click', () => {
+    try {
+      const amp = Number(shell.bodyEl.querySelector('#relaxRattleAmpInput')?.value || 0.1);
+      const doLattice = !!shell.bodyEl.querySelector('#relaxRattleLatticeChk')?.checked;
+      rattleSelectedStructure(amp, doLattice);
+      shell.resultEl.textContent = `Rattled atoms ±${amp} Å${doLattice ? `, cell ±${(RATTLE_LATTICE_PCT * 100).toFixed(0)}%` : ''}.`;
+    } catch (error) {
+      shell.resultEl.textContent = `Rattle failed: ${error.message || String(error)}`;
     }
   });
 }
