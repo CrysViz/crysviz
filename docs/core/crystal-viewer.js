@@ -34,7 +34,7 @@ import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
 import {updateOverlayBonds,rebuildOverlayBonds} from '../render/index.js'
 import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
 import { updatePolyhedra, notifyColorsChanged } from '../render/index.js'
-import {rebuildAtoms,updateAtoms} from '../render/index.js';
+import {rebuildAtoms,updateAtoms,deriveVisibleWrapped} from '../render/index.js';
 import {rebuildOverlayAtoms,updateOverlayAtoms} from '../render/index.js';
 
 
@@ -161,6 +161,14 @@ export function updateVisualization(options = {}) {
   if (!fileBrowser.selectedStructure) {
     return;
   }
+
+  // Every instance-indexed consumer below reads periodic.visibleWrapped, which is
+  // derived from periodic.wrapped. Callers that recompute .wrapped themselves
+  // (runPeriodicWrapped in the MD/relax loops, AddonAPI, polyhedra) would otherwise
+  // leave .visibleWrapped pointing at the previous frame's object, so the atoms
+  // never move on the non-rebuild path. Re-derive here, once, for all of them.
+  // Cheap: same-reference no-op unless an atom is actually hidden.
+  deriveVisibleWrapped(fileBrowser.selectedStructure);
 
   // Main Structure
   if (reRenderAtoms) {

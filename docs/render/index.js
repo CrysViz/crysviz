@@ -15,6 +15,7 @@ export {
   updateSingleAtomCutPlaneImmunity,
   atomImageKey, getAtomImageStyle, setAtomImageStyle, clearAtomImageStyle,
   clearAtomImageStylesForAtom, getAtomImageColor, updateSingleAtomImageColor,
+  deriveVisibleWrapped,
 } from './AtomsFracUpdateModule.js';
 
 export {
