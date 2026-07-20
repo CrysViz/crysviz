@@ -98,6 +98,11 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   /** @type {Map<string, number[]>} */
   const series = new Map();
   const seriesOrder = [];
+  // x-coordinate per sample. For MD/relax this is the actual step number (a
+  // multiple of the save stride, e.g. 2,4,…), not the 1-based frame index, so
+  // the axis reads real steps. cursor/seek map between frame index and these.
+  const xValues = [];
+  let xTitle = 'Frame';
   let sampleCount = 0;       // longest series length == number of x samples
   let cursorIndex = null;
   let seekCb = null;
@@ -148,15 +153,17 @@ export function createTrajectoryPlot(hostEl, options = {}) {
 
   const DASH = { solid: undefined, dash: 'dash', dot: 'dot', dashdot: 'dashdot' };
 
-  function xData(n) {
+  // x-coordinates for the first n samples: the recorded step numbers where
+  // known, falling back to a 1-based index for any not yet supplied.
+  function currentX(n) {
     const x = new Array(n);
-    for (let i = 0; i < n; i++) x[i] = i + 1; // frames are 1-based on screen
+    for (let i = 0; i < n; i++) x[i] = i < xValues.length ? xValues[i] : i + 1;
     return x;
   }
 
   function buildTraces(plotted) {
     const n = sampleCount;
-    const x = xData(n);
+    const x = currentX(n);
     return plotted.map(({ name, spec, group }) => ({
       type: 'scatter',
       mode: 'lines',
@@ -166,7 +173,8 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       yaxis: groupAxisMap(plotted).map[group],
       line: { color: spec.color, width: 1.8, dash: DASH[spec.dash] },
       connectgaps: false,
-      hovertemplate: `${spec.label}: %{y}<br>frame %{x}<extra></extra>`,
+      // Value only; the "x unified" hover header already shows the step/frame.
+      hovertemplate: `%{y}<extra>${spec.label}</extra>`,
     }));
   }
 
@@ -201,7 +209,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
         font: { color: '#f2f2f2', size: 11 },
       },
       xaxis: {
-        title: { text: 'Frame', font: { size: 11 }, standoff: 6 },
+        title: { text: xTitle, font: { size: 11 }, standoff: 6 },
         color: fontColor, gridcolor: 'rgba(255,255,255,0.07)',
         zeroline: false, domain: [0, rightDomain],
       },
@@ -236,7 +244,8 @@ export function createTrajectoryPlot(hostEl, options = {}) {
 
   function cursorShapes() {
     if (!Number.isFinite(cursorIndex) || sampleCount < 1) return [];
-    const x = Math.max(1, Math.min(sampleCount, cursorIndex + 1));
+    const i = Math.max(0, Math.min(sampleCount - 1, cursorIndex));
+    const x = i < xValues.length ? xValues[i] : i + 1; // step at this frame
     return [{
       type: 'line', xref: 'x', yref: 'paper',
       x0: x, x1: x, y0: 0, y1: 1,
@@ -316,8 +325,22 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       const rect = plotDiv.getBoundingClientRect();
       const px = e.clientX - rect.left - (xa._offset || 0);
       if (px < 0 || px > (xa._length || 0)) return; // outside the plotting area
-      const frame = Math.round(xa.p2d(px)) - 1;      // 1-based x -> 0-based frame
-      if (!Number.isFinite(frame)) return;
+      const dataX = xa.p2d(px);
+      if (!Number.isFinite(dataX)) return;
+      // Map the clicked x back to the nearest FRAME INDEX. x may be step numbers
+      // (non-unit spacing), so find the closest recorded step rather than assume
+      // x == frame index.
+      let frame;
+      if (xValues.length) {
+        let best = 0; let bestD = Infinity;
+        for (let i = 0; i < xValues.length; i++) {
+          const d = Math.abs(xValues[i] - dataX);
+          if (d < bestD) { bestD = d; best = i; }
+        }
+        frame = best;
+      } else {
+        frame = Math.round(dataX) - 1;
+      }
       seekCb(Math.max(0, Math.min(sampleCount - 1, frame)));
     });
   }
@@ -352,6 +375,15 @@ export function createTrajectoryPlot(hostEl, options = {}) {
         arr.push(Number.isFinite(v) ? v : NaN);
         if (arr.length > maxPts) arr.shift();
       }
+      // x-coordinate for this sample: the real step number when present (a
+      // multiple of the save stride), else the next running index.
+      const stepX = Number.isFinite(point.step)
+        ? point.step
+        : (xValues.length ? xValues[xValues.length - 1] + 1 : 1);
+      xValues.push(stepX);
+      if (xValues.length > maxPts) xValues.shift();
+      if (Number.isFinite(point.step) && xTitle !== 'Step') xTitle = 'Step';
+
       recomputeSampleCount();
       updateStatsLine(point);
 
@@ -362,7 +394,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
         return;
       }
       // Fast path: append the new x + each trace's latest value (NaN if absent).
-      const nx = sampleCount;
+      const nx = stepX;
       const xUpdate = plotted.map(() => [nx]);
       const yUpdate = plotted.map(({ name }) => {
         const arr = series.get(name);
@@ -373,16 +405,32 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       scheduleCursor();
     },
 
-    // Replace all series from arrays (replay / compute-stats path).
-    setSeries(seriesObj = {}) {
+    // Replace all series from arrays (replay / compute-stats path). A reserved
+    // `step` key on the object (or opts.steps) supplies the per-frame step
+    // numbers for the x-axis; without it the x-axis falls back to 1-based frames.
+    setSeries(seriesObj = {}, opts = {}) {
       series.clear();
       seriesOrder.length = 0;
       for (const [name, arr] of Object.entries(seriesObj)) {
+        if (name === 'step') continue; // reserved: x-axis steps, not a plotted series
         if (SERIES_SPEC[name] && SERIES_SPEC[name].plot === false) continue;
         series.set(name, Array.isArray(arr) ? arr.slice() : []);
         seriesOrder.push(name);
       }
       recomputeSampleCount();
+
+      xValues.length = 0;
+      const steps = Array.isArray(opts.steps) ? opts.steps
+        : (Array.isArray(seriesObj.step) ? seriesObj.step : null);
+      if (steps) {
+        for (let i = 0; i < sampleCount; i++) {
+          xValues.push(Number.isFinite(steps[i]) ? steps[i] : i + 1);
+        }
+        xTitle = 'Step';
+      } else {
+        xTitle = 'Frame';
+      }
+
       statsEl.textContent = '';
       drawFull();
     },
@@ -390,6 +438,8 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     clear() {
       series.clear();
       seriesOrder.length = 0;
+      xValues.length = 0;
+      xTitle = 'Frame';
       sampleCount = 0;
       cursorIndex = null;
       statsEl.textContent = '';
