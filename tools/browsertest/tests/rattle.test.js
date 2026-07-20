@@ -42,9 +42,12 @@ function maxDelta(a, b) {
     hasAmp: !!document.getElementById('relaxRattleAmpInput'),
     ampDefault: document.getElementById('relaxRattleAmpInput')?.value,
     hasLatticeChk: !!document.getElementById('relaxRattleLatticeChk'),
+    hasPct: !!document.getElementById('relaxRattleLatticePctInput'),
+    pctDefault: document.getElementById('relaxRattleLatticePctInput')?.value,
   }));
-  H.check('Rattle section present (button, displacement input default 0.1, lattice checkbox)',
-    ui.hasBtn && ui.hasAmp && ui.ampDefault === '0.1' && ui.hasLatticeChk, JSON.stringify(ui));
+  H.check('Rattle controls present (displacement 0.1, lattice checkbox, cell-strain % default 2)',
+    ui.hasBtn && ui.hasAmp && ui.ampDefault === '0.1' && ui.hasLatticeChk && ui.hasPct && ui.pctDefault === '2',
+    JSON.stringify(ui));
 
   // --- rattle atoms only (lattice box unchecked) ---
   const before = await snapshot(page);

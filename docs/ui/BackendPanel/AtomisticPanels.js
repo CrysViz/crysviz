@@ -586,7 +586,8 @@ function readRelaxParams(bodyEl) {
   };
 }
 
-// Fixed cell-strain magnitude for the Rattle "lattice" option (±2%).
+// Default cell-strain magnitude for the Rattle "cell" option (±2%); editable
+// in the UI.
 const RATTLE_LATTICE_PCT = 0.02;
 
 // Standard normal sample (Box–Muller) for the atom-displacement rattle.
@@ -602,7 +603,7 @@ function gaussianRandom() {
 // (std = amp Å) to every atom and, when doLattice is set, a small symmetric
 // random strain (±RATTLE_LATTICE_PCT) to the cell. Mutates the structure in
 // place (the user's explicit intent — rattle then relax) and re-renders.
-function rattleSelectedStructure(amp, doLattice) {
+function rattleSelectedStructure(amp, doLattice, latticePct = RATTLE_LATTICE_PCT) {
   const s = fileBrowser.selectedStructure;
   if (!s || !Array.isArray(s.atoms) || !s.atoms.length) return;
   const lattice = s.lattice.map((r) => [...r]);
@@ -620,7 +621,7 @@ function rattleSelectedStructure(amp, doLattice) {
   if (doLattice) {
     // Symmetric random strain E (independent components in [-pct, pct]);
     // new lattice = old · (I + E).
-    const pct = RATTLE_LATTICE_PCT;
+    const pct = latticePct;
     const E = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
     for (let i = 0; i < 3; i++) {
       for (let j = i; j < 3; j++) {
@@ -682,21 +683,20 @@ function renderRelaxBody(bodyEl, potential) {
         <button type="button" class="calcButton" id="relaxNewBtn">New</button>
       </div>
     </div>
-    <div class="atomistic-card atomistic-card-compact">
-      <div class="atomistic-card-title atomistic-card-title-accent">Rattle</div>
-      <div class="atomistic-grid atomistic-grid-2 atomistic-grid-compact">
-        <label>
-          <span>displacement (Å)</span>
-          <input type="number" class="atomistic-input-sm" id="relaxRattleAmpInput" value="0.1" step="0.01" min="0">
-        </label>
-        <label style="display:flex;flex-direction:row;align-items:center;gap:6px;align-self:end;">
-          <input type="checkbox" id="relaxRattleLatticeChk" style="width:16px;height:16px;flex:0 0 auto;margin:0;">
-          <span>lattice (±2%)</span>
-        </label>
-      </div>
-      <div class="atomistic-button-row atomistic-button-row-compact">
-        <button type="button" class="calcButton" id="relaxRattleBtn">Rattle</button>
-      </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 2px 0;font-size:12px;">
+      <span style="font-weight:600;">Rattle</span>
+      <input type="number" id="relaxRattleAmpInput" value="0.1" step="0.01" min="0" title="atom displacement (Å)"
+             style="width:58px;padding:3px 6px;" class="atomistic-input-sm">
+      <span style="opacity:0.6;">Å</span>
+      <label style="display:flex;align-items:center;gap:4px;margin:0;">
+        <input type="checkbox" id="relaxRattleLatticeChk" style="width:14px;height:14px;flex:0 0 auto;margin:0;">
+        cell
+      </label>
+      <input type="number" id="relaxRattleLatticePctInput" value="2" step="0.5" min="0" title="cell strain (±%)"
+             style="width:52px;padding:3px 6px;" class="atomistic-input-sm">
+      <span style="opacity:0.6;">%</span>
+      <button type="button" class="calcButton" id="relaxRattleBtn"
+              style="margin-left:auto;padding:4px 12px;">Rattle</button>
     </div>
   `;
 }
@@ -968,8 +968,10 @@ function bindRelaxBody(panel, shell, potential) {
     try {
       const amp = Number(shell.bodyEl.querySelector('#relaxRattleAmpInput')?.value || 0.1);
       const doLattice = !!shell.bodyEl.querySelector('#relaxRattleLatticeChk')?.checked;
-      rattleSelectedStructure(amp, doLattice);
-      shell.resultEl.textContent = `Rattled atoms ±${amp} Å${doLattice ? `, cell ±${(RATTLE_LATTICE_PCT * 100).toFixed(0)}%` : ''}.`;
+      const pctVal = Number(shell.bodyEl.querySelector('#relaxRattleLatticePctInput')?.value);
+      const latticePct = (Number.isFinite(pctVal) ? pctVal : RATTLE_LATTICE_PCT * 100) / 100;
+      rattleSelectedStructure(amp, doLattice, latticePct);
+      shell.resultEl.textContent = `Rattled atoms ±${amp} Å${doLattice ? `, cell ±${(latticePct * 100).toFixed(1)}%` : ''}.`;
     } catch (error) {
       shell.resultEl.textContent = `Rattle failed: ${error.message || String(error)}`;
     }
