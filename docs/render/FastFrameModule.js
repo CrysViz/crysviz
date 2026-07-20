@@ -2,6 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 
 import { groups, general } from '../state/store.js';
 import { periodicWrapped, updateLattice } from './LatticeModule.js';
+import { deriveVisibleWrapped } from './AtomsFracUpdateModule.js';
 import { updateForces } from './ForceModule.js';
 import { getActiveCutPlanes, isBondCutByPlanes, hideSingleBond } from './BondsFracUpdateModule.js';
 import { requestRender } from './AnimateModule.js';
@@ -149,6 +150,12 @@ export function applyFrameFast(structure) {
   wrapped.baseCount = n;
   periodic.wrapped = wrapped;
   periodic.hash = 'fastframe';
+  // Compatibility check above already bails to the full rebuild path the
+  // moment any atom is hidden (mesh instance count would no longer match
+  // the full recompute's n), so this is always the cheap same-reference
+  // path here — but it must still run each frame to keep .visibleWrapped's
+  // positions from going stale relative to the cart update just committed.
+  deriveVisibleWrapped(structure);
 
   // ---- Lattice: only rebuild the cell box when the cell actually changes ----
   const ck = cellKey(lattice);

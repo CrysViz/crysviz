@@ -2,7 +2,7 @@ import { fileBrowser, highlightHover } from '../../../state/store.js';
 import { colorHexToCss, hexToRgba } from '../../../utils/ColorModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updatePolyhedraColors, resolvePolyhedronStyle } from '../../../render/index.js';
-import { getElementAtomIndices, clampOpacity } from './utils.js';
+import { getElementAtomIndices, clampOpacity, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
 import { selectPolyhedronFromRow } from '../../SelectAndHighlightModule.js';
 import { createMaterialEditor } from './MaterialEditor.js';
 
@@ -207,24 +207,51 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
   applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
-  applyBtn.onclick = (e) => {
-    e.stopPropagation();
-    editor.style.display = 'none';
-  };
+  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+  applyBtn.title = `Click: close. Press and hold: copy ${poly.catLabel} #${displayNumber}'s color/alpha to every trajectory frame.`;
+  wirePressHoldPopup(applyBtn, {
+    holdLabel: 'Apply to Trajectory',
+    onPress: (e) => {
+      e.stopPropagation();
+      editor.style.display = 'none';
+    },
+    onConfirm: (e) => {
+      e.stopPropagation();
+      // Same keys, directly transplanted onto every other frame's own
+      // polyhedraUserStyles — matching how flushStylesToAllStructures already
+      // treats these keys (index/geometry-derived, tolerated staleness).
+      const entries = memberKeys.map((k) => [k, { ...structure.polyhedraUserStyles[k] }]);
+      applyToOtherTrajectoryFrames(structure, (frame) => {
+        frame.polyhedraUserStyles ??= {};
+        for (const [k, style] of entries) frame.polyhedraUserStyles[k] = { ...style };
+      });
+    },
+  });
 
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset';
   resetBtn.className = 'btn-mini';
-  resetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
-  resetBtn.title = `Remove the custom color and alpha for ${poly.catLabel} #${displayNumber}`;
-  resetBtn.onclick = (e) => {
-    e.stopPropagation();
-    for (const k of memberKeys) delete structure.polyhedraUserStyles[k];
-    updatePolyhedraColors(); // in-place restyle; no rebuild needed
-    // Refresh the (expanded) list so swatches reflect the reverted style.
-    /** @type {any} */ (row.closest('.individual-polyhedra'))?._populatePolyhedronRows?.(true);
-  };
+  resetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+  resetBtn.title = `Remove the custom color and alpha for ${poly.catLabel} #${displayNumber}.\nClick: this frame. Press and hold: whole trajectory.`;
+  wirePressHoldPopup(resetBtn, {
+    holdLabel: 'Reset Trajectory',
+    onPress: (e) => {
+      e.stopPropagation();
+      for (const k of memberKeys) delete structure.polyhedraUserStyles[k];
+      updatePolyhedraColors(); // in-place restyle; no rebuild needed
+      // Refresh the (expanded) list so swatches reflect the reverted style.
+      /** @type {any} */ (row.closest('.individual-polyhedra'))?._populatePolyhedronRows?.(true);
+    },
+    onConfirm: (e) => {
+      e.stopPropagation();
+      for (const k of memberKeys) delete structure.polyhedraUserStyles[k];
+      applyToOtherTrajectoryFrames(structure, (frame) => {
+        for (const k of memberKeys) delete frame.polyhedraUserStyles?.[k];
+      });
+      updatePolyhedraColors();
+      /** @type {any} */ (row.closest('.individual-polyhedra'))?._populatePolyhedronRows?.(true);
+    },
+  });
 
   const editorButtonRow = document.createElement('div');
   editorButtonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';

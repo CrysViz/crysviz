@@ -9,7 +9,7 @@ export function addCutPlanePanel(target = "TrajectoryComparisonContainer") {
   general.atomCutPlanes ||= [];
 
   const maxAbsCoordinate = (() => {
-    const wrappedCart = fileBrowser.selectedStructure?.periodic?.wrapped?.cart;
+    const wrappedCart = fileBrowser.selectedStructure?.periodic?.visibleWrapped?.cart;
     const positions = wrappedCart?.length
       ? wrappedCart
       : fileBrowser.selectedStructure?.atoms?.map((atom) => atom.position) || [];

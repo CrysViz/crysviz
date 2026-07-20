@@ -151,9 +151,10 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
   }
 
   function computeCurrentColor(obj) {
+    const speciesElement = structure()?.elements?.[atomIndex];
     const computed = mode === 'spin'
-      ? computeSpinColor(obj.vector, obj.scaling)
-      : computeForceColor(obj.vector, obj.scaling);
+      ? computeSpinColor(obj.vector, obj.scaling, { element: speciesElement })
+      : computeForceColor(obj.vector, obj.scaling, { element: speciesElement });
     return computed ?? obj.color;
   }
 

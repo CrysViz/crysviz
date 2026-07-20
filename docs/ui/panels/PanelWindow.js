@@ -657,13 +657,21 @@ export class PanelWindow {
       this._startFloatMove(ev, e.pointerId);
     };
 
-    const onUp = () => {
+    const onUp = (ev) => {
       bar.removeEventListener('pointermove', onMove);
       bar.removeEventListener('pointerup', onUp);
       bar.removeEventListener('pointercancel', onUp);
       // Plain click on the title bar toggles collapse — except on the thin
       // strip of a hidden bar, where only double-click (restore) acts.
-      if (!this.barCollapsed) this.toggleCollapsed();
+      if (!this.barCollapsed) {
+        this.toggleCollapsed();
+      } else if (ev.type === 'pointerup' && ev.pointerType === 'touch') {
+        // Touch has no reliable dblclick: this handler's own preventDefault +
+        // setPointerCapture above suppress the browser's tap-to-dblclick
+        // synthesis, so double-tapping the collapsed handle does nothing on
+        // touch devices. A single untapped-into-a-drag tap restores it instead.
+        this.expandBar();
+      }
     };
 
     bar.addEventListener('pointermove', onMove);

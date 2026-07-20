@@ -2,7 +2,7 @@ import { fileBrowser, general } from '../../../state/store.js';
 import { colorHexToCss, createPieDot, getAtomColor } from '../../../utils/ColorModule.js';
 import { getAtomImageColor } from '../../../render/AtomsFracUpdateModule.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
-import { getElementAtomIndices, getElementOpacityValues, setSwatchOpacity } from './utils.js';
+import { getElementAtomIndices, getElementOpacityValues, setSwatchOpacity, createMiniToggleSwitch } from './utils.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createIndividualAtomRow } from './IndividualAtomRow.js';
 import { createElementColorEditor } from './ColorEditor.js';
@@ -62,11 +62,8 @@ export function createCompositionRow(el, count, total) {
   // Per-element visibility (parity with the Bonds/Poly tab headers): hides
   // only this element's atom spheres (zero-scaled, also unpickable); bonds and
   // polyhedra keep their own visibility toggles.
-  const visCheckbox = document.createElement('input');
-  visCheckbox.type = 'checkbox';
+  const { wrapper: visCheckboxSwitch, input: visCheckbox } = createMiniToggleSwitch(`Show/hide all ${el} atoms`);
   visCheckbox.checked = general.atomVisibility[el] !== false;
-  visCheckbox.title = `Show/hide all ${el} atoms`;
-  visCheckbox.addEventListener('click', (e) => e.stopPropagation()); // row click still expands
   visCheckbox.onchange = (e) => {
     general.atomVisibility[el] = /** @type {any} */ (e.target).checked;
     updateVisualization({
@@ -79,10 +76,15 @@ export function createCompositionRow(el, count, total) {
       reRenderComposition: false,
     });
   };
-  left.appendChild(visCheckbox);
+  left.appendChild(visCheckboxSwitch);
 
-  // Get all atom indices for this element
-  const elementAtomIndices = getElementAtomIndices(el);
+  // Get all atom indices for this element — including hidden ones. This
+  // feeds the color/opacity/immunity editors below (and the per-atom row
+  // list), which must still reach a hidden atom or its color/opacity would
+  // silently stay stuck at whatever it was before hiding, even surviving a
+  // later restore. The visible-only COUNT shown in this row's header comes
+  // from computeComposition() separately and is unaffected by this.
+  const elementAtomIndices = getElementAtomIndices(el, { includeHidden: true });
 
   // =========================================
   // PIE DOT MANAGEMENT
@@ -97,10 +99,18 @@ export function createCompositionRow(el, count, total) {
     // linking is off, aggregate the resolved per-copy colors instead so the
     // dot reflects individually recolored copies.
     const structure = fileBrowser.selectedStructure;
+    // A color-change event can fire between fileBrowser.selectedStructure
+    // being swapped and this row's own rebuild (e.g. syncPlanesForSelectedStructure's
+    // updateVisualization call, which runs before updateStructureFromRowAndStep's
+    // final reRenderComposition:true) — so elementAtomIndices may briefly hold
+    // indices from the PREVIOUS structure. Drop any that are out of range for
+    // the structure actually selected right now instead of crashing.
+    const atomCount = structure?.atoms?.length ?? 0;
+    const validIndices = elementAtomIndices.filter((index) => index < atomCount);
     const atomColors = (!general.linkPeriodicCopies && structure?.atomImages)
-      ? elementAtomIndices.flatMap((index) =>
+      ? validIndices.flatMap((index) =>
           (structure.atomImages[index] ?? []).map((img) => safeColor(getAtomImageColor(structure, img))))
-      : elementAtomIndices.map(index => safeColor(getAtomColor(index)));
+      : validIndices.map(index => safeColor(getAtomColor(index)));
     const currentOpacity = getElementOpacityValues(el)[0] ?? 1;
 
     // Remove old dot if it exists
@@ -119,7 +129,7 @@ export function createCompositionRow(el, count, total) {
     `;
     setSwatchOpacity(dot, currentOpacity);
     // Keep DOM order checkbox -> dot -> name -> caret across repaints.
-    left.insertBefore(dot, visCheckbox.nextSibling);
+    left.insertBefore(dot, visCheckboxSwitch.nextSibling);
 
     // Make the dot clickable to open the color editor
     dot.title = `Customize color for all ${el} atoms`;
@@ -127,6 +137,13 @@ export function createCompositionRow(el, count, total) {
       e.stopPropagation();
       editor.style.display = (editor.style.display === 'none') ? 'flex' : 'none';
       if (editor.style.display === 'flex') editor.style.flexDirection = 'column';
+      // Mirrors the row's own click handler closing the color editor when
+      // expanding/collapsing — the dot closes the individual-atom list the
+      // same way, so the two never clutter the row at once.
+      if (atomsContainer.style.display !== 'none') {
+        atomsContainer.style.display = 'none';
+        expandIcon.style.transform = 'rotate(0deg)';
+      }
     };
   }
 
@@ -142,6 +159,12 @@ export function createCompositionRow(el, count, total) {
 
   const name = document.createElement('span');
   name.textContent = el;
+  // Explicit, scale-respecting size matching Bonds'/Poly's category labels
+  // (styles.css's global `label` rule) so all three tabs render identically
+  // regardless of viewport width — this span isn't a <label>, so it doesn't
+  // inherit that rule, and previously fell through to `.comp-row`'s
+  // narrow-viewport override instead, causing a mismatch.
+  name.style.fontSize = 'calc(14px * var(--cv-font-scale, 1))';
 
   const expandIcon = document.createElement('span');
   expandIcon.textContent = '▶';
@@ -211,7 +234,7 @@ export function createCompositionRow(el, count, total) {
       elementAtomIndices.forEach((atomIndex, i) => {
         const images = structure.atomImages[atomIndex] ?? [];
         images.forEach((imageIndex, j) => {
-          const frac = structure.periodic?.wrapped?.frac?.[imageIndex];
+          const frac = structure.periodic?.visibleWrapped?.frac?.[imageIndex];
           const off = frac
             ? [0, 1, 2].map((a) => Math.round(frac[a] - structure.atoms[atomIndex].position[a]))
             : [0, 0, 0];
@@ -313,7 +336,13 @@ export function createWyckoffCompositionRow(el, entries, total) {
    * Updates the pie dot for this Wyckoff element row
    */
   function updatePieDotForRow() {
-    const atomColors = wyckoffAtomIndices.map(index => safeColor(getAtomColor(index)));
+    // See the non-Wyckoff updatePieDotForRow above for why this bounds check
+    // is needed — a color-change event can fire against a just-swapped
+    // fileBrowser.selectedStructure before this row itself rebuilds.
+    const atomCount = fileBrowser.selectedStructure?.atoms?.length ?? 0;
+    const atomColors = wyckoffAtomIndices
+      .filter((index) => index < atomCount)
+      .map(index => safeColor(getAtomColor(index)));
     const currentOpacity = getElementOpacityValues(el)[0] ?? 1;
 
     // Remove old dot if it exists
@@ -339,6 +368,13 @@ export function createWyckoffCompositionRow(el, entries, total) {
       e.stopPropagation();
       editor.style.display = (editor.style.display === 'none') ? 'flex' : 'none';
       if (editor.style.display === 'flex') editor.style.flexDirection = 'column';
+      // Mirrors the row's own click handler closing the color editor when
+      // expanding/collapsing — the dot closes the individual-atom list the
+      // same way, so the two never clutter the row at once.
+      if (atomsContainer.style.display !== 'none') {
+        atomsContainer.style.display = 'none';
+        expandIcon.style.transform = 'rotate(0deg)';
+      }
     };
   }
 
@@ -354,6 +390,12 @@ export function createWyckoffCompositionRow(el, entries, total) {
 
   const name = document.createElement('span');
   name.textContent = el;
+  // Explicit, scale-respecting size matching Bonds'/Poly's category labels
+  // (styles.css's global `label` rule) so all three tabs render identically
+  // regardless of viewport width — this span isn't a <label>, so it doesn't
+  // inherit that rule, and previously fell through to `.comp-row`'s
+  // narrow-viewport override instead, causing a mismatch.
+  name.style.fontSize = 'calc(14px * var(--cv-font-scale, 1))';
 
   const expandIcon = document.createElement('span');
   expandIcon.textContent = '▶';
@@ -459,6 +501,20 @@ export function createWyckoffCompositionRow(el, entries, total) {
  */
 export function updateAllCompositionPieDots() {
   Object.values(compositionRowUpdateFunctions).forEach(updateFn => updateFn());
+}
+
+/**
+ * Drop every registered row updater. `renderComposition()` rebuilds the
+ * composition DOM from scratch on every call but this registry is keyed by
+ * element symbol and was never cleared, so an element present in a
+ * previously-selected structure but absent from the current one left its
+ * updater behind — the next `crysviz:colors-changed` event (fired by every
+ * `updateVisualization()` call) would then call it with atom indices from the
+ * old structure against the new (possibly smaller) `fileBrowser.selectedStructure`,
+ * crashing on an out-of-range atom lookup. Call this before (re)creating rows.
+ */
+export function clearCompositionRowRegistry() {
+  for (const key of Object.keys(compositionRowUpdateFunctions)) delete compositionRowUpdateFunctions[key];
 }
 
 // Recoloring (color-map change, mode switch, color-bar limits, individual

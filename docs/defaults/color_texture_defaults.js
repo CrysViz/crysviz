@@ -132,6 +132,15 @@ export const defaultColorMap = {
   XX: 0x4c4c4c
 };
 
+// Single source of truth for "what color should this element be by default":
+// a user-defined override (general.customColorMap, see CustomUserSettingsPanel.js)
+// wins if set, otherwise the active built-in scheme (CrysViz or JMOL), falling
+// back to a neutral gray for anything unlisted.
+export function getElementDefaultColor(element) {
+  const scheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
+  return general.customColorMap?.[element] ?? scheme[element] ?? 0x808080;
+}
+
 export function getAtomVisSettings(opacity=1.0) {
   // Convert to THREE.Color
   if (general.renderStyle === 'matte') {

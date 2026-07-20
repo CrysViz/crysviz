@@ -1,6 +1,6 @@
 import { fileBrowser, groups, general } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE } from '../render/index.js';
+import { runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE, deriveVisibleWrapped } from '../render/index.js';
 import { registerPanel, removePanel } from '../ui/panels/PanelManager.js';
 import { buildNEPStructure } from './relaxer.js';
 import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart, normalizeFractionalPositions } from './math.js';
@@ -418,7 +418,11 @@ export function applyMDStateToViewer(
 
   // Full path: re-establishes topology (fast path resumes on the next frame).
   runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
-  const wrappedCount = structure.periodic.wrapped?.elements?.length ?? 0;
+  // .visibleWrapped is derived from the .wrapped just recomputed — derive it here
+  // too, not only inside updateVisualization, because the rebuild decision below
+  // counts its instances and a stale count leaves orphan instances in the mesh.
+  deriveVisibleWrapped(structure);
+  const wrappedCount = structure.periodic.visibleWrapped?.elements?.length ?? 0;
   const needAtomRebuild = full || forceRerender || !groups.atomsMesh || groups.atomsMesh.count !== wrappedCount;
   updateVisualization({
     atomsUpdate: true,

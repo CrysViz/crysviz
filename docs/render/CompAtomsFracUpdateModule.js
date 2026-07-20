@@ -5,34 +5,68 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
 import {runPeriodicWrapped} from './LatticeModule.js'
-import {getAtomColor} from '../utils/ColorModule.js'
 import {finishAtomsMesh} from './AtomsFracUpdateModule.js'
 import {createStyledMaterial, syncCelHullOpacitySuppression} from './MaterialStyles.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
+// Structure Overlay module: each overlaid structure (fileBrowser.overlayEntries)
+// gets its own InstancedMesh, tracked in groups.overlayMeshes (Map: entry.key ->
+// { atomsMesh, bondsMesh }) instead of the old single groups.secondAtomsMesh slot.
+function getOverlayMeshEntry(key) {
+  let entry = groups.overlayMeshes.get(key);
+  if (!entry) {
+    entry = { atomsMesh: null, bondsMesh: null };
+    groups.overlayMeshes.set(key, entry);
+  }
+  return entry;
+}
 
-export function rebuildSecondAtoms(structure, opacity) {
+function disposeOverlayAtomsMesh(key) {
+  const entry = groups.overlayMeshes.get(key);
+  if (entry?.atomsMesh) {
+    entry.atomsMesh.geometry.dispose();
+    entry.atomsMesh.material.dispose();
+    app.scene.remove(entry.atomsMesh);
+    entry.atomsMesh = null;
+  }
+}
+
+/** Dispose both meshes (atoms + bonds) of one overlay entry and drop it from
+ *  the registry — called when a row is unchecked/deleted/the structure is no
+ *  longer overlaid. */
+export function disposeOverlayMeshes(key) {
+  const entry = groups.overlayMeshes.get(key);
+  if (!entry) return;
+  if (entry.atomsMesh) {
+    entry.atomsMesh.geometry.dispose();
+    entry.atomsMesh.material.dispose();
+    app.scene.remove(entry.atomsMesh);
+  }
+  if (entry.bondsMesh) {
+    entry.bondsMesh.geometry.dispose();
+    entry.bondsMesh.material.dispose();
+    app.scene.remove(entry.bondsMesh);
+  }
+  groups.overlayMeshes.delete(key);
+}
+
+export function rebuildOverlayAtoms(key, structure, opacity) {
   if (!structure) {
-    console.error("rebuildSecondAtoms:Comparison structure not found")
+    console.error("rebuildOverlayAtoms: overlay structure not found")
     return;
     }
-  if (groups.secondAtomsMesh) {
-    groups.secondAtomsMesh.geometry.dispose();
-    groups.secondAtomsMesh.material.dispose();
-    app.scene.remove(groups.secondAtomsMesh);
-    groups.secondAtomsMesh = null;
-  }
+  disposeOverlayAtomsMesh(key);
   structure.atomImages={}
   let positions = structure.atoms.map(a => a.position);
   let lattice = structure.lattice.map(r => [...r]);
   let elements = [...structure.elements];
   let _ = runPeriodicWrapped(structure.periodic, positions, elements,lattice)
 
-  buildSecondAtoms(structure);
-  updateSecondAtoms(structure,opacity);
+  buildOverlayAtoms(key, structure);
+  updateOverlayAtoms(key, structure, opacity);
  }
 
-export function buildSecondAtoms(structure) {
+export function buildOverlayAtoms(key, structure) {
   if (!structure) return;
 
   let atoms= structure.atoms
@@ -84,51 +118,56 @@ export function buildSecondAtoms(structure) {
 
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <emissivemap_fragment>',
-      ` 
+      `
         totalEmissiveRadiance += vInstanceEmissive * vInstanceEmissiveIntensity;
       `
     );
   };
 
-  finishAtomsMesh({ geometry, material, structure, wrapped, atoms, meshKey: 'secondAtomsMesh', cutPlanes: false });
+  // meshKey is a namespaced, unique flat property on `groups` (finishAtomsMesh's
+  // generic storage side effect) — the actual lookup used everywhere else goes
+  // through groups.overlayMeshes, populated from the returned mesh below.
+  const mesh = finishAtomsMesh({ geometry, material, structure, wrapped, atoms, meshKey: `overlayAtoms:${key}`, cutPlanes: false });
+  getOverlayMeshEntry(key).atomsMesh = mesh;
 }
 
 
 
 
-export function updateSecondSingleAtomPosition(index, position) {
-  //console.log("Updatng atom",index,"to",position)
-  const a = groups.secondAtomsMesh.instanceMatrix.array;
+export function updateOverlaySingleAtomPosition(key, index, position) {
+  const mesh = groups.overlayMeshes.get(key)?.atomsMesh;
+  if (!mesh) return;
+  const a = mesh.instanceMatrix.array;
   const mOffset = index * 16;
   a[mOffset + 12] = position[0];
   a[mOffset + 13] = position[1];
   a[mOffset + 14] = position[2];
-
- // console.log("Matrix array length:", groups.atomsMesh.instanceMatrix.array.length);
- // console.log("Expected length:", 16 * groups.atomsMesh.count);
 }
 
-export function updateSecondSingleAtomColor(originalIndex, index, element, opacity = 1.0) {
-  const hex = getAtomColor(originalIndex)
-  // console.log(`Element: ${element}, Hex: ${hex}, RGB: [${((hex >> 16) & 0xFF) / 255}, ${((hex >> 8) & 0xFF) / 255}, ${(hex & 0xFF) / 255}]`);
-  groups.secondAtomsMesh.setColorAt(index, new THREE.Color(hex));
-  groups.secondAtomsMesh.instanceColor.needsUpdate = true;
+export function updateOverlaySingleAtomColor(key, index, hex) {
+  const mesh = groups.overlayMeshes.get(key)?.atomsMesh;
+  if (!mesh) return;
+  mesh.setColorAt(index, new THREE.Color(hex));
+  mesh.instanceColor.needsUpdate = true;
 }
 
-export function updateSecondSingleAtomDiameter(index, element, scale = 1) {
-  const mesh = groups.secondAtomsMesh;
-  const a = mesh.instanceMatrix.array;
+export function updateOverlaySingleAtomDiameter(key, index, element, scale = 1) {
+  const mesh = groups.overlayMeshes.get(key)?.atomsMesh;
+  if (!mesh) return;
   const atomSize = general.atomSize;
   const radius = (atomicRadii[element] || 1.0) * atomSize * scale;
   const mOffset = index * 16;
+  const a = mesh.instanceMatrix.array;
   a[mOffset + 0] = radius;
   a[mOffset + 5] = radius;
   a[mOffset + 10] = radius;
 }
 
 
-export function updateSecondAtoms(structure, opacity = 1.0) {
-  console.error("Update comp  opacity", opacity)
+export function updateOverlayAtoms(key, structure, opacity = 1.0) {
+  const mesh = groups.overlayMeshes.get(key)?.atomsMesh;
+  if (!mesh) return;
+
   let periodic = structure.periodic;
 
   let wrapped;
@@ -136,17 +175,23 @@ export function updateSecondAtoms(structure, opacity = 1.0) {
 
   wrapped = periodic.wrapped
   wrappedCart = wrapped.cart
-  const mesh = groups.secondAtomsMesh;
- 
+
   mesh.material.opacity = opacity;
   applyTransparency(mesh.material, { kind: 'compAtoms', opacity, mesh });
   syncCelHullOpacitySuppression(mesh, opacity);
 
-  for (let i = 0; i < groups.atomsMesh.count; i++) {
+  // Iterate this OVERLAY mesh's own instance count, not the main structure's
+  // (or any other overlay's) — each overlaid structure can have a different
+  // atom/periodic-image count, and indexing wrappedCart/wrapped.elements past
+  // its own length reads undefined and crashes updateOverlaySingleAtomPosition.
+  for (let i = 0; i < mesh.count; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    updateSecondSingleAtomPosition(i, wrappedCart[i])
-    updateSecondSingleAtomColor(originalIndex,i, wrapped.elements[i], opacity)
-    updateSecondSingleAtomDiameter(i, wrapped.elements[i],
+    updateOverlaySingleAtomPosition(key, i, wrappedCart[i])
+    // Read the color from this overlay structure's own atom — never from the
+    // main structure or another overlay — so editing one structure's atom
+    // color never bleeds into another's rendering.
+    updateOverlaySingleAtomColor(key, i, structure.atoms?.[originalIndex]?.getColor?.() ?? structure.atoms?.[originalIndex]?.defaultColor)
+    updateOverlaySingleAtomDiameter(key, i, wrapped.elements[i],
       structure.atoms?.[originalIndex]?.getRadiusScale?.() ?? 1)
 
     mesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);
@@ -160,6 +205,5 @@ export function updateSecondAtoms(structure, opacity = 1.0) {
   mesh.instanceMatrix.needsUpdate = true;
   mesh.instanceColor.needsUpdate = true;
   mesh.material.needsUpdate = true;
-  
-}
 
+}

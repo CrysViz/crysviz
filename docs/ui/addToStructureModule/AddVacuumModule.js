@@ -1,72 +1,51 @@
 // AddVacuumModule.js
-import { openPeriodicTable } from '../PeriodicTableSelectPanel.js';
-import { Atom, Structure, StructureContainer } from '../../model/index.js';
-import { fileBrowser, structureShip } from '../../state/store.js';
-import { createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
+//
+// The "+" popup on the Structure Info panel: add atoms to the currently
+// loaded structure, and grow the cell with vacuum. A real floating panel
+// (docs/ui/panels/PanelManager.js), not a hand-rolled popup, so it gets the
+// app's usual title bar/drag/close for free. Atom-table UI, collision
+// checking, and structure-registration are all pulled from shared modules
+// (AtomTableInput.js, AtomCollisionCheck.js, CommitAtoms.js,
+// CollisionWarningUI.js) so the same pieces can be reused by
+// AddStructureModule.js and, later, a symmetry/Wyckoff generator.
+
+import { registerPanel, removePanel } from '../panels/PanelManager.js';
+import { createTabSwitcher } from '../TabSwitcher.js';
+import { createAtomTableEditor } from './AtomTableInput.js';
+import { checkAtomCollisions, conflictingCandidateIndices } from './AtomCollisionCheck.js';
+import { addAtomsToExistingStructure } from './CommitAtoms.js';
+import { wireCollisionGuardedButton } from './CollisionWarningUI.js';
+import { createBondLengthControls } from '../BondLengthPanel.js';
+import { fileBrowser } from '../../state/store.js';
 import { fracToCart, cartToFrac } from '../../render/index.js';
+import { fracToCartPoint } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
+import { defaultFloatingAnchor } from './floatingPanelAnchor.js';
+import { elementData } from '../PeriodicTablePickerCore.js';
 
-// Parse a "#rrggbb" string to a numeric color, or undefined (=> element default).
-function parseColorHexToInt(hex) {
-  if (typeof hex !== 'string') return undefined;
-  const h = hex.trim().replace(/^#/, '');
-  if (!/^[0-9a-fA-F]{6}$/.test(h)) return undefined;
-  return parseInt(h, 16);
+// Rows with an element string that isn't a real periodic-table symbol, keyed
+// by the atom-table row index (matches editor.getAtoms()/highlightConflicts).
+function invalidElementMessage(atoms) {
+  const bad = [...new Set(atoms.filter(a => !elementData[a.element]).map(a => a.element || '(empty)'))];
+  if (!bad.length) return null;
+  return `Not a recognized element: ${bad.join(', ')}. Use the periodic table picker (⚛) to pick one.`;
 }
 
-// Build a brand-new boxed structure from atoms entered in the Add-atoms panel.
-// The panel's x/y/z are Cartesian Å; we wrap them in an orthorhombic cell sized
-// to the bounding box plus vacuum padding, convert to fractional coordinates,
-// then register the structure as a new file-browser row and select it.
-function makeNewStructureFromAtoms(atomsToAdd) {
-  if (!atomsToAdd.length) {
-    console.warn('Make New Structure: no atoms entered.');
-    return;
-  }
-
-  const PAD = 5.0; // Å of vacuum padding around the bounding box
-
-  const xs = atomsToAdd.map(a => a.x);
-  const ys = atomsToAdd.map(a => a.y);
-  const zs = atomsToAdd.map(a => a.z);
-  const min = [Math.min(...xs), Math.min(...ys), Math.min(...zs)];
-  const max = [Math.max(...xs), Math.max(...ys), Math.max(...zs)];
-  // Each cell length is the extent + padding on both sides (≥ 2·PAD), so a
-  // single atom or a flat axis still gets a real box.
-  const L = [0, 1, 2].map(i => (max[i] - min[i]) + 2 * PAD);
-  const lattice = [[L[0], 0, 0], [0, L[1], 0], [0, 0, L[2]]];
-
-  const elements = atomsToAdd.map(a => a.element);
-  const atoms = atomsToAdd.map(a => new Atom({
-    // Shift so the min corner sits at PAD, then normalise to fractional.
-    position: [
-      (a.x - min[0] + PAD) / L[0],
-      (a.y - min[1] + PAD) / L[1],
-      (a.z - min[2] + PAD) / L[2],
-    ],
-    element: a.element,
-    color: parseColorHexToInt(a.color),
-  }));
-
-  const structure = new Structure({
-    elements,
-    uniqueElements: [...new Set(elements)],
-    lattice,
-    atoms,
-  });
-
-  const container = new StructureContainer({ fileName: 'new_structure', structures: [structure] });
-  structureShip.container.push(container);
-
-  const row = createRow({ name: 'new_structure', traj: 1, step: 1 });
-  document.querySelector('#objectTable tbody').appendChild(row);
-  fileBrowser.fileData.push({ name: 'new_structure', traj: 1, step: 1 });
-  selectLastAddedRow(); // selects the row and triggers a render
-}
+const PANEL_ID = 'addAtomsVacuum';
+const COLLISION_THRESHOLD_ANGSTROM = 0.5;
 
 // Grow the current structure's cell by the requested vacuum (Å) along each
-// lattice vector, keeping the atoms' Cartesian positions fixed and recentering
-// the content in the enlarged cell.
+// lattice vector, keeping the atoms' Cartesian positions fixed - a standard
+// slab-with-vacuum construction (vacuum is added on one side only; atoms do
+// not recenter, so their fractional coordinates compress toward the origin
+// side of whichever vector(s) grew).
+//
+// _vacuumApplied is an in-memory (not saved/exported) bookkeeping field on
+// the structure - the running total added per axis, plus the lattice as it
+// was before any vacuum was ever applied to this structure - so the panel
+// can show a running counter and Reset can undo the whole thing in one step
+// (restoring baseLattice; atoms' Cartesian positions never changed, so their
+// fractional coordinates just get recomputed against it).
 function applyVacuumToStructure(vacX, vacY, vacZ) {
   const s = fileBrowser.selectedStructure;
   if (!s) {
@@ -74,6 +53,13 @@ function applyVacuumToStructure(vacX, vacY, vacZ) {
     return;
   }
   if (!vacX && !vacY && !vacZ) return;
+
+  if (!s._vacuumApplied) {
+    s._vacuumApplied = { x: 0, y: 0, z: 0, baseLattice: s.lattice.map(row => row.slice()) };
+  }
+  s._vacuumApplied.x += vacX;
+  s._vacuumApplied.y += vacY;
+  s._vacuumApplied.z += vacZ;
 
   const lattice = s.lattice;
   const vac = [vacX, vacY, vacZ];
@@ -88,17 +74,8 @@ function applyVacuumToStructure(vacX, vacY, vacZ) {
     return [row[0] * k, row[1] * k, row[2] * k];
   });
 
-  // Recenter by half of each added lattice vector.
-  const shift = [0, 0, 0];
-  for (let i = 0; i < 3; i++) {
-    for (let j = 0; j < 3; j++) {
-      shift[j] += 0.5 * (newLattice[i][j] - lattice[i][j]);
-    }
-  }
-
   s.atoms.forEach((atom, idx) => {
-    const c = carts[idx];
-    atom.position = cartToFrac([c[0] + shift[0], c[1] + shift[1], c[2] + shift[2]], newLattice);
+    atom.position = cartToFrac(carts[idx], newLattice);
   });
 
   s.lattice = newLattice;
@@ -107,238 +84,144 @@ function applyVacuumToStructure(vacX, vacY, vacZ) {
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
 }
 
-export function addVacuumPanel(container) {
+// Undoes every vacuum addition made so far on this structure in one step.
+function resetVacuumForStructure(s) {
+  if (!s || !s._vacuumApplied) return;
+  const carts = fracToCart(s.atoms.map(a => a.position), s.lattice);
+  s.lattice = s._vacuumApplied.baseLattice.map(row => row.slice());
+  s.atoms.forEach((atom, idx) => {
+    atom.position = cartToFrac(carts[idx], s.lattice);
+  });
+  s.periodic = { wrapped: null, hash: null };
+  delete s._vacuumApplied;
+
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+}
+
+function addVacuumPanel(container) {
   container.innerHTML = `
-    <div style="display: flex; align-items: center; margin-bottom: 10px; flex-wrap: nowrap;">
-      <div style="display: flex; align-items: center; margin-right: 15px;">
+    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+      <div style="display: flex; align-items: center;">
         <label style="margin-right: 5px; white-space: nowrap; display: flex; align-items: center;">X (Å):</label>
-        <input type="number" id="vacX" value="0" step="0.1" style="width: 80px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+        <input type="number" id="vacX" class="coord-input" value="0" step="0.1" style="width: 56px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
       </div>
 
-      <div style="display: flex; align-items: center; margin-right: 15px;">
+      <div style="display: flex; align-items: center;">
         <label style="margin-right: 5px; white-space: nowrap; display: flex; align-items: center;">Y (Å):</label>
-        <input type="number" id="vacY" value="0" step="0.1" style="width: 80px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+        <input type="number" id="vacY" class="coord-input" value="0" step="0.1" style="width: 56px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
       </div>
 
-      <div style="display: flex; align-items: center; margin-right: 15px;">
+      <div style="display: flex; align-items: center;">
         <label style="margin-right: 5px; white-space: nowrap; display: flex; align-items: center;">Z (Å):</label>
-        <input type="number" id="vacZ" value="0" step="0.1" style="width: 80px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+        <input type="number" id="vacZ" class="coord-input" value="0" step="0.1" style="width: 56px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
       </div>
 
       <button id="applyVacuum" class="btn-mini highlight" style="padding: 5px 10px; background: var(--bg-color); color: white; cursor: pointer;">Apply Vacuum</button>
     </div>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11px; color: rgba(255,255,255,0.7); border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
+      <span id="vacuumAppliedText"></span>
+      <button id="resetVacuum" class="btn-mini" style="padding: 3px 10px; font-size: 11px;">Reset Vacuum</button>
+    </div>
   `;
 
-  // Vacuum tab logic
+  const statusText = container.querySelector('#vacuumAppliedText');
+  const resetBtn = container.querySelector('#resetVacuum');
+
+  function refreshVacuumStatus() {
+    const state = fileBrowser.selectedStructure?._vacuumApplied;
+    const applied = state && (state.x || state.y || state.z);
+    if (applied) {
+      statusText.textContent = `Vacuum applied: X=${state.x.toFixed(2)} Å, Y=${state.y.toFixed(2)} Å, Z=${state.z.toFixed(2)} Å`;
+    } else {
+      statusText.textContent = 'No vacuum applied yet.';
+    }
+    resetBtn.disabled = !applied;
+    resetBtn.style.opacity = applied ? '1' : '0.4';
+    resetBtn.style.cursor = applied ? 'pointer' : 'default';
+  }
+  refreshVacuumStatus();
+
   container.querySelector('#applyVacuum').addEventListener('click', () => {
     const vacX = parseFloat(container.querySelector('#vacX').value) || 0;
     const vacY = parseFloat(container.querySelector('#vacY').value) || 0;
     const vacZ = parseFloat(container.querySelector('#vacZ').value) || 0;
     applyVacuumToStructure(vacX, vacY, vacZ);
+    refreshVacuumStatus();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    resetVacuumForStructure(fileBrowser.selectedStructure);
+    refreshVacuumStatus();
   });
 }
 
+function addAtomsPanel(container) {
+  const editorHost = document.createElement('div');
+  const warningHost = document.createElement('div');
+  const buttonRow = document.createElement('div');
+  buttonRow.style.cssText = 'margin-top: 15px; text-align: right;';
 
+  const addToStructureBtn = document.createElement('button');
+  addToStructureBtn.id = 'addToStructure';
+  addToStructureBtn.className = 'btn-mini highlight';
+  addToStructureBtn.textContent = 'Add to Structure';
+  buttonRow.appendChild(addToStructureBtn);
 
+  container.appendChild(editorHost);
+  container.appendChild(warningHost);
+  container.appendChild(buttonRow);
 
-export function addAtomsPanel(container) {
-  container.innerHTML = `
-    <div style="margin-bottom: 10px;">
-      <table id="atomsTable" style="width:100%; margin-top: 10px; border-collapse: collapse;">
-        <thead>
-          <tr>
-            <th style="border: 1px solid #444; padding: 5px; font-size: 12px; text-align: center;">Element</th>
-            <th style="border: 1px solid #444; padding: 5px; font-size: 12px; text-align: center;">X</th>
-            <th style="border: 1px solid #444; padding: 5px; font-size: 12px; text-align: center;">Y</th>
-            <th style="border: 1px solid #444; padding: 5px; font-size: 12px; text-align: center;">Z</th>
-            <th style="border: 1px solid #444; padding: 5px; font-size: 12px; text-align: center;">Color</th>
-          </tr>
-        </thead>
-        <tbody>
-          <!-- Rows will be added dynamically -->
-        </tbody>
-      </table>
+  const editor = createAtomTableEditor(editorHost);
 
-      <div style="text-align: center; margin-top: 10px;">
-        <button id="addNewRow" class="btn-mini highlight" style="width: 90%;" >
-          + Add New Atom
-        </button>
-      </div>
-    </div>
-
-    <div style="margin-top: 15px; display: flex; align-items: center;">
-      <textarea id="bulkInput" placeholder="Element x y z [color]
-Example:
-H 0.5 0.5 0.5 #FF0000
-C 1.0 1.0 1.0
-O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1px solid #555; color: white; padding: 5px; resize: vertical; margin-right: 10px;"></textarea>
-      <div style="display: flex; flex-direction: column;">
-        <button id="selectElementForBulk" class="btn-mini highlight">Select Element</button>
-        <button id="applyBulk" class="btn-mini highlight" style="padding: 5px 10px; margin-top: 10px">Apply Bulk</button>
-      </div>
-    </div>
-
-    <div style="margin-top: 15px; text-align: right;">
-      <button id="addToStructure" class="btn-mini highlight" style="margin-right: 10px">Add to Structure</button>
-      <button id="makeNewStructure" class="btn-mini highlight" >Add to New Structure</button>
-    </div>
-  `;
-
-  // Store atoms to be added
-  const atomsToAdd = [];
-  let currentBulkElementInput = null;
-
-  // Function to add a new row to the table
-  function addRowToTable(element = '', x = 0, y = 0, z = 0, color = '#000000') {
-    const tbody = container.querySelector('#atomsTable tbody');
-
-    // Clear empty rows before adding new ones
-    const rows = tbody.querySelectorAll('tr');
-    if (rows.length > 0) {
-      const lastRow = rows[rows.length - 1];
-      const elementInput = lastRow.querySelector('.atom-element');
-      if (!elementInput || elementInput.value === '') {
-        tbody.removeChild(lastRow);
-      }
-    }
-
-    const newRow = document.createElement('tr');
-
-    newRow.innerHTML = `
-      <td style="border: 1px solid #444; padding: 5px;">
-        <div style="display: flex; flex-direction: column;">
-          <input type="text" class="atom-element" value="${element}" style="width: 100px; background: #333; border: 1px solid #555; color: white; padding: 3px; margin: 4px; margin-bottom: 3px; border-radius: 3px;">
-          <button class="select-element-btn"  style="padding: 2px 5px; background: #595959; border: none; color: white; cursor: pointer; font-size: 10px; width: 100%; border-radius: 3px;">Select Element</button>
-        </div>
-      </td>
-      <td style="border: 1px solid #444; padding: 5px;"><input type="number" class="atom-x" value="${x}" step="0.1" style="width: 100%; background: #333; border: 1px solid #555; color: white; padding: 3px;"></td>
-      <td style="border: 1px solid #444; padding: 5px;"><input type="number" class="atom-y" value="${y}" step="0.1" style="width: 100%; background: #333; border: 1px solid #555; color: white; padding: 3px;"></td>
-      <td style="border: 1px solid #444; padding: 5px;"><input type="number" class="atom-z" value="${z}" step="0.1" style="width: 100%; background: #333; border: 1px solid #555; color: white; padding: 3px;"></td>
-      <td style="border: 1px solid #444; padding: 5px;"><input type="color" class="atom-color" value="${color}" style="width: 100%; height: 22px; padding: 0;"></td>
-    `;
-
-    tbody.appendChild(newRow);
-
-    // Add event listener to the select button
-    const selectBtn = newRow.querySelector('.select-element-btn');
-    selectBtn.addEventListener('click', (e) => {
-      const row = e.target.closest('tr');
-      openPeriodicTable((element) => {
-        if (row) {
-          row.querySelector('.atom-element').value = element;
-        }
+  // Collision check compares new atoms against the existing ones and against
+  // each other, but never re-checks existing pairs. On a warning, the
+  // offending rows are highlighted so the user can fix them directly instead
+  // of just forcing the add through.
+  wireCollisionGuardedButton({
+    button: addToStructureBtn,
+    warningContainer: warningHost,
+    watchContainer: editorHost,
+    defaultLabel: 'Add to Structure',
+    anywayLabel: 'Add Anyway',
+    validate: () => invalidElementMessage(editor.getAtoms()),
+    checkCollisions: () => {
+      const structure = fileBrowser.selectedStructure;
+      const atoms = editor.getAtoms();
+      if (!structure || !atoms.length) return { tooClose: [] };
+      const existingCart = fracToCart(structure.atoms.map(a => a.position), structure.lattice);
+      const existingAtoms = existingCart.map((position, i) => ({ position, element: structure.elements[i] }));
+      // The table's x/y/z are fractional — convert to Cartesian for the
+      // distance-based collision check (checkAtomCollisions expects Cartesian).
+      const candidateAtoms = atoms.map(a => ({ position: fracToCartPoint([a.x, a.y, a.z], structure.lattice), element: a.element }));
+      return checkAtomCollisions({
+        lattice: structure.lattice,
+        existingAtoms,
+        candidateAtoms,
+        thresholdAngstrom: COLLISION_THRESHOLD_ANGSTROM,
       });
-    });
-  }
-
-  // Add initial row
-  addRowToTable();
-
-  // Add new row button
-  container.querySelector('#addNewRow').addEventListener('click', () => {
-    addRowToTable();
-  });
-
-  // Bulk input logic - Select element button for bulk input
-  container.querySelector('#selectElementForBulk').addEventListener('click', () => {
-    currentBulkElementInput = container.querySelector('#bulkInput');
-    openPeriodicTable((element) => {
-      if (currentBulkElementInput) {
-        const start = currentBulkElementInput.selectionStart;
-        const end = currentBulkElementInput.selectionEnd;
-        const currentValue = currentBulkElementInput.value;
-
-        const newValue = currentValue.substring(0, start) +
-                        element +
-                        currentValue.substring(end, currentValue.length);
-
-        currentBulkElementInput.value = newValue;
-        currentBulkElementInput.focus();
-        currentBulkElementInput.setSelectionRange(start + element.length, start + element.length);
+    },
+    onWarn: (tooClose) => editor.highlightConflicts(conflictingCandidateIndices(tooClose)),
+    onClear: () => editor.clearConflicts(),
+    commit: () => {
+      const structure = fileBrowser.selectedStructure;
+      if (!structure) {
+        console.warn('Add to structure: no structure selected.');
+        return;
       }
-    });
-  });
-
-  // Apply bulk input - Adds rows to the table
-  container.querySelector('#applyBulk').addEventListener('click', () => {
-    const bulkInput = container.querySelector('#bulkInput').value;
-    const lines = bulkInput.split('\n');
-
-    // Clear all empty rows before adding bulk input
-    const tbody = container.querySelector('#atomsTable tbody');
-    const rows = tbody.querySelectorAll('tr');
-    rows.forEach(row => {
-      const elementInput = row.querySelector('.atom-element');
-      if (!elementInput || elementInput.value === '') {
-        tbody.removeChild(row);
-      }
-    });
-
-    lines.forEach(line => {
-      if (line.trim() === '') return;
-
-      // Parse line in format: Element x y z [color]
-      const parts = line.trim().split(/\s+/);
-      if (parts.length >= 4) {
-        const element = parts[0];
-        const x = parseFloat(parts[1]) || 0;
-        const y = parseFloat(parts[2]) || 0;
-        const z = parseFloat(parts[3]) || 0;
-        const color = parts[4] || '#000000';
-
-        addRowToTable(element, x, y, z, color);
-      }
-    });
-
-    container.querySelector('#bulkInput').value = '';
-  });
-
-  // Add to structure button
-  container.querySelector('#addToStructure').addEventListener('click', () => {
-    const tbody = container.querySelector('#atomsTable tbody');
-    const rows = tbody.querySelectorAll('tr');
-
-    rows.forEach(row => {
-      const element = row.querySelector('.atom-element').value;
-      const x = parseFloat(row.querySelector('.atom-x').value) || 0;
-      const y = parseFloat(row.querySelector('.atom-y').value) || 0;
-      const z = parseFloat(row.querySelector('.atom-z').value) || 0;
-      const color = row.querySelector('.atom-color').value;
-
-      if (element) {
-        atomsToAdd.push({ element, x, y, z, color });
-      }
-    });
-
-    // TODO (deferred): inserting atoms into the *existing* structure also needs
-    // the bond / atom-image mappings rebuilt (model on SuperCellModule). For now
-    // only "Make New Structure" is implemented; this path no-ops with a warning.
-    console.warn('Add to existing structure is not implemented yet', atomsToAdd);
-    atomsToAdd.length = 0;
-  });
-
-  // Make new structure button
-  container.querySelector('#makeNewStructure').addEventListener('click', () => {
-    const tbody = container.querySelector('#atomsTable tbody');
-    const rows = tbody.querySelectorAll('tr');
-
-    rows.forEach(row => {
-      const element = row.querySelector('.atom-element').value;
-      const x = parseFloat(row.querySelector('.atom-x').value) || 0;
-      const y = parseFloat(row.querySelector('.atom-y').value) || 0;
-      const z = parseFloat(row.querySelector('.atom-z').value) || 0;
-      const color = row.querySelector('.atom-color').value;
-
-      if (element) {
-        atomsToAdd.push({ element, x, y, z, color });
-      }
-    });
-
-    makeNewStructureFromAtoms(atomsToAdd);
-    atomsToAdd.length = 0;
+      const atoms = editor.getAtoms();
+      if (!atoms.length) return;
+      addAtomsToExistingStructure(structure, atoms);
+      createBondLengthControls();
+      // reRenderComposition: "open" — the Structure Info panel otherwise
+      // doesn't rebuild its composition/atom list at all (its default is
+      // false), so newly-added atoms/elements wouldn't show up there until
+      // some unrelated action happened to trigger a rebuild.
+      updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderComposition: "open" });
+      editor.clear();
+      removePanel(PANEL_ID);
+    },
   });
 }
-
 
 export function addAtomVacuumPanel(buttonId = 'addButton') {
   const button = document.getElementById(buttonId);
@@ -348,64 +231,24 @@ export function addAtomVacuumPanel(buttonId = 'addButton') {
   }
 
   button.addEventListener('click', () => {
-    const existingPanel = document.getElementById('vacuumAndAtomsPanel');
-    if (existingPanel) {
-      existingPanel.remove();
-    }
+    removePanel(PANEL_ID); // idempotent re-open
 
-    const panel = document.createElement('div');
-    panel.id = 'vacuumAndAtomsPanel';
-    panel.style.cssText = `
-      position: fixed;
-      top: 150px;
-      left: var(--popup-left);
-      padding: 15px;
-      background-color: rgba(42, 42, 42, 0.9);
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      border-radius: 8px;
-      z-index: 999;
-      width: 500px;
-    `;
-
-    panel.innerHTML = `
-      <div class="segmented-backend-control" id="AddPanelModeSwitch" style="margin-bottom: 10px;">
-        <button data-tab="atoms" class="active">Add Atoms</button>
-        <button data-tab="vacuum">Add Vacuum</button>
-      </div>
-
-      <div id="atomsTab" class="tab-content active" style="display: block;"></div>
-      <div id="vacuumTab" class="tab-content" style="display: none;"></div>
-
-      <button id="closePanel" class="btn-mini highlight" style="margin-top: 10px; padding: 5px 10px; background: rgba(240, 132, 18,0.90); border: none; color: white; cursor: pointer;">Close</button>
-    `;
-
-    document.body.appendChild(panel);
-
-    // Initialize tabs
-    addAtomsPanel(panel.querySelector('#atomsTab'));
-    addVacuumPanel(panel.querySelector('#vacuumTab'));
-
-    // Tab switching logic
-    const tabButtons = panel.querySelectorAll('#AddPanelModeSwitch button');
-    const tabContents = panel.querySelectorAll('.tab-content');
-
-    tabButtons.forEach(button => {
-      button.addEventListener('click', () => {
-        tabButtons.forEach(b => b.classList.remove('active'));
-        tabContents.forEach(c => c.style.display = 'none');
-
-        button.classList.add('active');
-        document.getElementById(button.dataset.tab + 'Tab').style.display = 'block';
-      });
-    });
-
-    // Close panel
-    panel.querySelector('#closePanel').addEventListener('click', () => {
-      if (panel.parentNode) {
-        panel.parentNode.removeChild(panel);
-      }
+    registerPanel({
+      id: PANEL_ID,
+      title: 'Add Atoms / Vacuum',
+      lifecycle: 'persistent',
+      closable: true,
+      persist: false,
+      buildContent(body) {
+        body.style.cssText = 'width: min(90vw, 460px);';
+        const tabHost = document.createElement('div');
+        body.appendChild(tabHost);
+        createTabSwitcher(tabHost, [
+          { id: 'atoms', label: 'Add Atoms', render: addAtomsPanel },
+          { id: 'vacuum', label: 'Add Vacuum', render: addVacuumPanel },
+        ]);
+      },
+      defaults: { docked: false, collapsed: false, barCollapsed: false, anchor: defaultFloatingAnchor() },
     });
   });
 }
-

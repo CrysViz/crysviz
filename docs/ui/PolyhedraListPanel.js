@@ -10,18 +10,49 @@ import { colorHexToCss, createPieDot, updatePieDot } from '../utils/ColorModule.
 import { createColorPicker } from './ColorPickerModule.js';
 import {
   groupPolyhedraByCategory, updatePolyhedraColors, resolvePolyhedronStyle,
-  updatePolyhedra,
+  updatePolyhedra, polyhedronFaceColor,
 } from '../render/index.js';
 import { createIndividualPolyhedronRow } from './StructureInfoPanel/components/IndividualPolyhedronRow.js';
 import { createMaterialEditor } from './StructureInfoPanel/components/MaterialEditor.js';
 import { createTinyImmunityToggle } from './StructureInfoPanel/components/Immunity.js';
-import { clampOpacity } from './StructureInfoPanel/components/utils.js';
+import {
+  clampOpacity, applyToOtherTrajectoryFrames, wirePressHoldPopup, createMiniToggleSwitch,
+} from './StructureInfoPanel/components/utils.js';
 
 function safeColor(color) {
   if (!color || color === '#') return '#808080';
   if (typeof color === 'number') return colorHexToCss(color);
   if (typeof color === 'string' && !color.startsWith('#')) return `#${color}`;
   return color;
+}
+
+/** Legible text color (black/white) for a given CSS hex background. */
+function textColorForBg(cssHex) {
+  let hex = cssHex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('');
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 128 ? '#000' : '#fff';
+}
+
+/** Reset every polyhedra COLOR customization (category + individual) on one
+ *  structure/frame back to defaults; alpha/edgeAlpha/material overrides
+ *  survive (mirrors resetAllColorStyling's atom-side semantics in
+ *  General.js). Pure data — no mesh/render calls — so it's safe to re-run
+ *  against off-screen trajectory frames too. */
+function resetAllPolyhedraColors(structure) {
+  for (const store of [structure.polyhedraCategoryStyles, structure.polyhedraUserStyles]) {
+    if (!store) continue;
+    for (const [key, entry] of Object.entries(store)) {
+      delete entry.color;
+      delete entry.edgeColor;
+      if (entry.alpha == null && entry.edgeAlpha == null && entry.material == null && entry.visible == null) {
+        delete store[key];
+      }
+    }
+  }
 }
 
 /** Resolved face color of a model polyhedron (for swatches). */
@@ -126,14 +157,12 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
       return structure.polyhedraCategoryStyles[catKey] ??= {};
     }
 
-    // --- Header row: visibility checkbox, swatch, label, caret ---
+    // --- Header row: visibility toggle, swatch, label, caret ---
     const headerDiv = document.createElement('div');
     headerDiv.className = 'bond-checkbox';
 
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
+    const { wrapper: checkboxSwitch, input: checkbox } = createMiniToggleSwitch(`Show/hide all ${entry.label} polyhedra`);
     checkbox.checked = structure.polyhedraCategoryStyles[catKey]?.visible !== false;
-    checkbox.title = `Show/hide all ${entry.label} polyhedra`;
     checkbox.onchange = (e) => {
       catStyle().visible = /** @type {any} */ (e.target).checked;
       updatePolyhedraColors();
@@ -141,7 +170,11 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
     const label = document.createElement('label');
     label.textContent = entry.label;
-    label.style.cssText = 'font-size: 12px; color: #ccc; margin: 0; cursor: pointer;';
+    // Explicit, scale-respecting size matching the Atoms tab's element-symbol
+    // label, so both stay identical regardless of viewport width instead of
+    // relying on the ambient cascade (global `label` rule here vs. Atoms'
+    // `.comp-row` narrow-viewport override there).
+    label.style.cssText = 'color: #ccc; margin: 0; cursor: pointer; font-size: calc(14px * var(--cv-font-scale, 1));';
 
     // Count + percentage, matching the Atoms/Bonds headers.
     const totalPolys = model.polyhedra.length || 1;
@@ -182,14 +215,16 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     const memberColors = entry.indices.map((i) => resolvedColorOf(structure, model.polyhedra[i]));
     const dot = createPieDot(memberColors, 20);
     dot.classList.add('dot');
-    dot.style.cursor = 'pointer';
+    // Match the Atoms tab's dot size (the shared .dot CSS class alone
+    // renders at 10x10 — this row never overrode it, unlike CompositionRow.js).
+    dot.style.cssText = 'width: 20px; height: 20px; margin-right: 6px; border: 1px solid rgba(255,255,255,0.4); cursor: pointer;';
     dot.title = `Customize color/alpha for all ${entry.label} polyhedra`;
     polyCategorySwatchUpdateFunctions[catKey] = () => {
       updatePieDot(dot, entry.indices.map((i) => resolvedColorOf(structure, model.polyhedra[i])));
     };
 
     // Uniform header order across tabs: checkbox, dot, label, caret, count, immunity.
-    headerDiv.appendChild(checkbox);
+    headerDiv.appendChild(checkboxSwitch);
     headerDiv.appendChild(dot);
     headerDiv.appendChild(label);
     headerDiv.appendChild(expandIcon);
@@ -295,20 +330,72 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     const catResetBtn = document.createElement('button');
     catResetBtn.textContent = 'Reset';
     catResetBtn.className = 'btn-mini';
-    catResetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
-    catResetBtn.title = `Reset this whole category: removes the group style AND every individual ${entry.label} override`;
-    catResetBtn.onclick = (e) => {
-      e.stopPropagation();
-      delete structure.polyhedraCategoryStyles[catKey];
-      for (const i of entry.indices) {
-        delete structure.polyhedraUserStyles[model.polyhedra[i].key];
+    catResetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+    catResetBtn.title = `Reset this whole category: removes the group style AND every individual ${entry.label} override.\nClick: this frame. Press and hold: whole trajectory.`;
+    // Preview the category's default (pre-override) face color, same idea as
+    // the element editor's Reset swatch.
+    const representative = model.polyhedra[entry.indices[0]];
+    if (representative) {
+      const defColor = safeColor(polyhedronFaceColor(representative.type, representative.centerIndex, representative.colorElem));
+      catResetBtn.style.background = defColor;
+      catResetBtn.style.borderColor = 'rgba(0,0,0,0.2)';
+      catResetBtn.style.color = textColorForBg(defColor);
+    }
+    function resetCategoryOnFrame(frame) {
+      delete frame.polyhedraCategoryStyles?.[catKey];
+      // A frame that's never been displayed has no polyhedra model yet (and
+      // therefore no overrides to clear); use its OWN grouping/keys rather
+      // than this frame's, since indices are per-structure.
+      const frameEntry = frame === structure ? entry : groupPolyhedraByCategory(frame).get(catKey);
+      if (!frameEntry) return;
+      const polys = frame.polyhedra?.polyhedra;
+      if (!polys) return;
+      for (const i of frameEntry.indices) {
+        delete frame.polyhedraUserStyles?.[polys[i].key];
       }
-      updatePolyhedraColors();
-      rerenderPreservingExpansion(targetPanel); // refresh swatches everywhere
-    };
+    }
+    wirePressHoldPopup(catResetBtn, {
+      holdLabel: 'Reset Trajectory',
+      onPress: (e) => {
+        e.stopPropagation();
+        resetCategoryOnFrame(structure);
+        updatePolyhedraColors();
+        rerenderPreservingExpansion(targetPanel);
+      },
+      onConfirm: (e) => {
+        e.stopPropagation();
+        resetCategoryOnFrame(structure);
+        applyToOtherTrajectoryFrames(structure, resetCategoryOnFrame);
+        updatePolyhedraColors();
+        rerenderPreservingExpansion(targetPanel); // refresh swatches everywhere
+      },
+    });
+
+    const catApplyBtn = document.createElement('button');
+    catApplyBtn.textContent = 'Apply';
+    catApplyBtn.className = 'btn-mini highlight';
+    catApplyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+    catApplyBtn.title = `Click: close. Press and hold: copy this ${entry.label} category's color/alpha to every trajectory frame.`;
+    wirePressHoldPopup(catApplyBtn, {
+      holdLabel: 'Apply to Trajectory',
+      onPress: (e) => {
+        e.stopPropagation();
+        catEditor.style.display = 'none';
+      },
+      onConfirm: (e) => {
+        e.stopPropagation();
+        const style = { ...structure.polyhedraCategoryStyles[catKey] };
+        applyToOtherTrajectoryFrames(structure, (frame) => {
+          frame.polyhedraCategoryStyles ??= {};
+          frame.polyhedraCategoryStyles[catKey] = { ...style };
+        });
+      },
+    });
+
     const catButtonRow = document.createElement('div');
     catButtonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';
     catButtonRow.appendChild(catResetBtn);
+    catButtonRow.appendChild(catApplyBtn);
 
     // Per-category ray/path-tracing material (polyhedraCategoryStyles[catKey].material).
     const catMaterialEditor = createMaterialEditor(
@@ -401,4 +488,32 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     div.appendChild(listContainer);
     polyControls.appendChild(div);
   });
+
+  // Below every individual polyhedra category — same placement as the Atoms
+  // tab's Reset Colors/Reset Styling row below the composition list, and the
+  // Bonds tab's Reset Colors row below its category list.
+  const resetColorsRow = document.createElement('div');
+  resetColorsRow.style.cssText = 'display: flex; justify-content: center; margin-top: 20px;';
+  const resetPolyColorsBtn = document.createElement('button');
+  resetPolyColorsBtn.id = 'resetPolyColorsBtn';
+  resetPolyColorsBtn.textContent = 'Reset Colors';
+  resetPolyColorsBtn.className = 'reset-btn';
+  resetPolyColorsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; min-width: 50px;';
+  resetPolyColorsBtn.title = 'Reset every polyhedra color customization (category and individual) to element defaults.\nClick: this frame. Press and hold: whole trajectory.';
+  wirePressHoldPopup(resetPolyColorsBtn, {
+    holdLabel: 'Reset Trajectory',
+    onPress: () => {
+      resetAllPolyhedraColors(structure);
+      updatePolyhedraColors();
+      rerenderPreservingExpansion(targetPanel);
+    },
+    onConfirm: () => {
+      resetAllPolyhedraColors(structure);
+      applyToOtherTrajectoryFrames(structure, resetAllPolyhedraColors);
+      updatePolyhedraColors();
+      rerenderPreservingExpansion(targetPanel);
+    },
+  });
+  resetColorsRow.appendChild(resetPolyColorsBtn);
+  polyControls.appendChild(resetColorsRow);
 }

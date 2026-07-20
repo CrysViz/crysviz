@@ -719,7 +719,7 @@ export class SceneEncoder {
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
     if (meshVisible) {
-      const srcIndex = structure?.periodic?.wrapped?.srcIndex;
+      const srcIndex = structure?.periodic?.visibleWrapped?.srcIndex;
       const atomMaterials = structure?.atomMaterials ?? {};
       const atomUserMaterials = structure?.atomUserMaterials ?? {};
       const matrices = mesh.instanceMatrix.array;

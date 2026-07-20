@@ -110,6 +110,84 @@ font-size: 12px;
   box-shadow: 0 2px 10px rgba(240, 132, 18, 0.9);
 }
 
+.collision-warning-banner {
+  background: rgba(240, 132, 18, 0.18);
+  border: 1px solid rgba(240, 132, 18, 0.9);
+  color: white;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.collision-warning-banner strong {
+  color: rgba(240, 132, 18, 1);
+}
+
+.collision-warning-banner ul {
+  margin: 4px 0 0 0;
+  padding-left: 18px;
+}
+
+.add-anyway-btn {
+  background: rgba(240, 132, 18, 0.9) !important;
+}
+
+.add-anyway-btn:hover {
+  background: rgba(240, 132, 18, 1) !important;
+}
+
+/* Row in an atom-table editor flagged by AtomCollisionCheck.js as too close
+   to another atom - lets the user find and fix it directly instead of only
+   reading the warning banner text. */
+.atom-row-conflict td {
+  background: rgba(240, 132, 18, 0.14);
+}
+
+.atom-row-conflict input {
+  border-color: rgba(240, 132, 18, 0.9) !important;
+}
+
+/* Coordinate/lattice number fields in the Add Atom / Add Structure panels -
+   hide the native up/down spinner buttons (scoped to these; other numeric
+   inputs app-wide, e.g. supercell nx/ny/nz, keep theirs). */
+.coord-input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Atom-table editor (AtomTableInput.js): scrolls after ~5 rows, with a
+   slim green scrollbar matching the app's accent color. */
+.atoms-table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--highlight-color) rgba(255, 255, 255, 0.06);
+}
+
+.atoms-table-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.atoms-table-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+}
+
+.atoms-table-scroll::-webkit-scrollbar-thumb {
+  background: var(--highlight-color);
+  border-radius: 4px;
+}
+
+.atoms-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-color);
+}
+
+.coord-input::-webkit-inner-spin-button,
+.coord-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .segmented-backend-control {
   display: flex;
   flex-wrap: nowrap;
@@ -127,14 +205,16 @@ font-size: 12px;
   border: none;
   background: none;
   color: rgba(255,255,255,0.8);
-  padding: 6px 8px;
+  padding: 6px 6px;
   border-radius: 8px;
   font-size: 11px;
   cursor: pointer;
   font-weight: 500;
   min-width: 0;
   flex: 1 1 0;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.2;
+  overflow-wrap: break-word;
   text-align: center;
 }
 

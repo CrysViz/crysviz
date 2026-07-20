@@ -17,7 +17,7 @@ import { TrackballControls } from '../../external/three/TrackballControls.js';
 import { ConvexGeometry } from '../../external/three/ConvexGeometry.js';
 import { defaultColorMap, getAtomVisSettings, getBondVisSettings } from '../../defaults/color_texture_defaults.js';
 import { createStyledMaterial } from '../../render/MaterialStyles.js';
-import { app } from '../../state/store.js';
+import { app, general } from '../../state/store.js';
 
 const FALLBACK_COLOR = 0x999999;
 const ANGLE_ACCENT = 0xffcc44; // arc + angle-label accent
@@ -25,7 +25,7 @@ const ANGLE_ACCENT = 0xffcc44; // arc + angle-label accent
  *  (already the main view's colour), fall back to the element default. */
 function resolveColor(hex, element) {
   if (typeof hex === 'number') return hex;
-  const c = element ? defaultColorMap[element] : undefined;
+  const c = element ? (general.customColorMap?.[element] ?? defaultColorMap[element]) : undefined;
   return c !== undefined ? c : FALLBACK_COLOR;
 }
 

@@ -7,7 +7,7 @@
 // This is a *curated* surface: only the symbols actually consumed by other
 // domains are re-exported. Add to it when a new cross-domain function is needed.
 
-export { pauseRendering, resumeRendering, animation_update, requestRender } from './AnimateModule.js';
+export { pauseRendering, resumeRendering, animation_update, requestRender, renderFrameNow } from './AnimateModule.js';
 
 export {
   rebuildAtoms, updateAtoms, updateSingleAtomDiameter, updateSingleAtomColor,
@@ -15,6 +15,7 @@ export {
   updateSingleAtomCutPlaneImmunity,
   atomImageKey, getAtomImageStyle, setAtomImageStyle, clearAtomImageStyle,
   clearAtomImageStylesForAtom, getAtomImageColor, updateSingleAtomImageColor,
+  deriveVisibleWrapped,
 } from './AtomsFracUpdateModule.js';
 
 export {
@@ -24,12 +25,11 @@ export {
 } from './BondsFracUpdateModule.js';
 
 export {
-  rebuildSecondAtoms, updateSecondAtoms, updateSecondSingleAtomDiameter,
+  rebuildOverlayAtoms, updateOverlayAtoms, disposeOverlayMeshes,
 } from './CompAtomsFracUpdateModule.js';
 
 export {
-  updateSecondBonds, rebuildSecondBonds, buildSecondBondObjects,
-  updateSecondSingleBondDiameter,
+  updateOverlayBonds, rebuildOverlayBonds,
 } from './CompBondsFracUpdateModule.js';
 
 export { removeForces, updateForces, computeForceColor } from './ForceModule.js';
@@ -46,6 +46,7 @@ export {
 export {
   updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory,
   resolvePolyhedronStyle, polyhedronGroupKey, setPolyEdgeWidth, notifyColorsChanged,
+  polyhedronFaceColor,
 } from './PolyhedraModule.js';
 
 export {

@@ -1,5 +1,5 @@
 import {general} from '../state/store.js';
-import {defaultColorMap, jmolColorMap} from '../defaults/color_texture_defaults.js'
+import {getElementDefaultColor} from '../defaults/color_texture_defaults.js'
 import {crysvizMaterialMap} from '../defaults/material_defaults.js'
 import { colorHexToCss } from '../utils/ColorModule.js';
 
@@ -151,8 +151,7 @@ export class Structure {
 
   }
   getDefaultElementColor(element) {
-    const colorScheme = general.useDefaultColors ? defaultColorMap : jmolColorMap;
-    return colorScheme[element] || 0x808080;
+    return getElementDefaultColor(element);
   }
   // Element-material analog of getDefaultElementColor: the per-species tracer
   // material the active "Element Materials Map" assigns, or null (= the plain

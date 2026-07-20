@@ -154,14 +154,9 @@ function wireThemeControls() {
     const item = document.createElement('li');
     item.className = 'theme-menu-item';
     item.dataset.themeId = t.id;
-    item.setAttribute('role', 'menuitem');
-    item.tabIndex = 0;
     item.textContent = t.name;
     const choose = () => { applyTheme(t.id); closeMenu(); };
     item.addEventListener('click', choose);
-    item.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); }
-    });
     menu.appendChild(item);
   });
 

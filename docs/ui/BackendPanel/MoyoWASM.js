@@ -196,7 +196,19 @@ function buildAflowLabel(spgNumber, wyckoffs, elements) {
 }
 
 function callMoyo(calcType="getSymmetryInfo", tolerance=0.01) {
-  let elements = [...fileBrowser.selectedStructure.elements];
+  const structure = fileBrowser.selectedStructure;
+  // Hidden atoms are excluded from symmetry detection entirely — filtered
+  // together (elements/positions in lockstep) before anything is indexed, so
+  // result.wyckoffs (one entry per surviving atom, in this same order) stays
+  // aligned with `elements` below for buildAflowLabel. Safe here specifically
+  // because this function's outputs are either display-only strings or a
+  // freshly-computed primitive/conventional cell with no back-reference to
+  // original atom indices — unlike SymmetryEditModule.js's Wyckoff editing,
+  // which mutates structure.atoms by raw index and is NOT filtered this way.
+  const visibleIndices = structure.atoms
+    .map((atom, i) => (atom.hidden ? -1 : i))
+    .filter((i) => i !== -1);
+  let elements = visibleIndices.map(i => structure.elements[i]);
   const numbers = elements.map(el => {
     const n = PT_INVERTED[el];
     if (n === undefined) {
@@ -205,8 +217,8 @@ function callMoyo(calcType="getSymmetryInfo", tolerance=0.01) {
     }
     return n;
   });
-  let positions = fileBrowser.selectedStructure.atoms.map(a => a.position)
-  let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
+  let positions = visibleIndices.map(i => structure.atoms[i].position)
+  let lattice = structure.lattice.map(r => [...r]);
   const struct = { positions: positions, lattice:{basis:lattice.flat()}, numbers: numbers }
 
   const result = analyze_cell(JSON.stringify(struct), tolerance, 'Standard');

@@ -5,12 +5,138 @@ import { general, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { createSupercell } from './SuperCellModule.js';
 import { resetView } from './WindowAndSceneControls.js';
+import { fracToCart, cartToFrac } from '../render/index.js';
 import {
   vectorLength3,
   dot3,
   acosDeg,
   latticeVolume,
 } from '../math/index.js';
+
+// Grow the current structure's cell by the requested vacuum (Å) along each
+// lattice vector, keeping the atoms' Cartesian positions fixed - a standard
+// slab-with-vacuum construction (vacuum is added on one side only; atoms do
+// not recenter, so their fractional coordinates compress toward the origin
+// side of whichever vector(s) grew).
+//
+// _vacuumApplied is an in-memory (not saved/exported) bookkeeping field on
+// the structure - the running total added per axis, plus the lattice as it
+// was before any vacuum was ever applied to this structure - so the panel
+// can show a running counter and Reset can undo the whole thing in one step
+// (restoring baseLattice; atoms' Cartesian positions never changed, so their
+// fractional coordinates just get recomputed against it).
+function applyVacuumToStructure(vacX, vacY, vacZ) {
+  const s = fileBrowser.selectedStructure;
+  if (!s) {
+    console.warn('Add vacuum: no structure selected.');
+    return;
+  }
+  if (!vacX && !vacY && !vacZ) return;
+
+  if (!s._vacuumApplied) {
+    s._vacuumApplied = { x: 0, y: 0, z: 0, baseLattice: s.lattice.map(row => row.slice()) };
+  }
+  s._vacuumApplied.x += vacX;
+  s._vacuumApplied.y += vacY;
+  s._vacuumApplied.z += vacZ;
+
+  const lattice = s.lattice;
+  const vac = [vacX, vacY, vacZ];
+
+  // Cartesian positions to preserve.
+  const carts = fracToCart(s.atoms.map(a => a.position), lattice);
+
+  // Scale each lattice vector's length by its added vacuum.
+  const newLattice = lattice.map((row, i) => {
+    const len = Math.hypot(row[0], row[1], row[2]);
+    const k = (len > 0 && vac[i]) ? (len + vac[i]) / len : 1;
+    return [row[0] * k, row[1] * k, row[2] * k];
+  });
+
+  s.atoms.forEach((atom, idx) => {
+    atom.position = cartToFrac(carts[idx], newLattice);
+  });
+
+  s.lattice = newLattice;
+  s.periodic = { wrapped: null, hash: null }; // force periodic-wrap recompute
+
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+}
+
+// Undoes every vacuum addition made so far on this structure in one step.
+function resetVacuumForStructure(s) {
+  if (!s || !s._vacuumApplied) return;
+  const carts = fracToCart(s.atoms.map(a => a.position), s.lattice);
+  s.lattice = s._vacuumApplied.baseLattice.map(row => row.slice());
+  s.atoms.forEach((atom, idx) => {
+    atom.position = cartToFrac(carts[idx], s.lattice);
+  });
+  s.periodic = { wrapped: null, hash: null };
+  delete s._vacuumApplied;
+
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+}
+
+/** "Add Vacuum" section content — grows the cell along X/Y/Z (Å), independent
+ *  of the Supercell/Transformation sections above/below it. Lives here (Cell &
+ *  Supercell) rather than the add-atoms popup: it modifies the cell, not the
+ *  atom list, so it fits this panel's job much better. */
+function addVacuumSection(container) {
+  container.innerHTML = `
+    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+      <div style="display: flex; align-items: center;">
+        <label style="margin-right: 5px; white-space: nowrap; display: flex; align-items: center;">X (Å):</label>
+        <input type="number" id="vacX" class="coord-input" value="0" step="0.1" style="width: 56px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+      </div>
+
+      <div style="display: flex; align-items: center;">
+        <label style="margin-right: 5px; white-space: nowrap; display: flex; align-items: center;">Y (Å):</label>
+        <input type="number" id="vacY" class="coord-input" value="0" step="0.1" style="width: 56px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+      </div>
+
+      <div style="display: flex; align-items: center;">
+        <label style="margin-right: 5px; white-space: nowrap; display: flex; align-items: center;">Z (Å):</label>
+        <input type="number" id="vacZ" class="coord-input" value="0" step="0.1" style="width: 56px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+      </div>
+
+      <button id="applyVacuum" class="btn-mini highlight" style="padding: 5px 10px; background: var(--bg-color); color: white; cursor: pointer;">Apply Vacuum</button>
+    </div>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11px; color: rgba(255,255,255,0.7); border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
+      <span id="vacuumAppliedText"></span>
+      <button id="resetVacuum" class="btn-mini" style="padding: 3px 10px; font-size: 11px;">Reset Vacuum</button>
+    </div>
+  `;
+
+  const statusText = container.querySelector('#vacuumAppliedText');
+  const resetBtn = container.querySelector('#resetVacuum');
+
+  function refreshVacuumStatus() {
+    const state = fileBrowser.selectedStructure?._vacuumApplied;
+    const applied = state && (state.x || state.y || state.z);
+    if (applied) {
+      statusText.textContent = `Vacuum applied: X=${state.x.toFixed(2)} Å, Y=${state.y.toFixed(2)} Å, Z=${state.z.toFixed(2)} Å`;
+    } else {
+      statusText.textContent = 'No vacuum applied yet.';
+    }
+    resetBtn.disabled = !applied;
+    resetBtn.style.opacity = applied ? '1' : '0.4';
+    resetBtn.style.cursor = applied ? 'pointer' : 'default';
+  }
+  refreshVacuumStatus();
+
+  container.querySelector('#applyVacuum').addEventListener('click', () => {
+    const vacX = parseFloat(container.querySelector('#vacX').value) || 0;
+    const vacY = parseFloat(container.querySelector('#vacY').value) || 0;
+    const vacZ = parseFloat(container.querySelector('#vacZ').value) || 0;
+    applyVacuumToStructure(vacX, vacY, vacZ);
+    refreshVacuumStatus();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    resetVacuumForStructure(fileBrowser.selectedStructure);
+    refreshVacuumStatus();
+  });
+}
 
 export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   const targetPanel = document.getElementById(target);
@@ -196,6 +322,18 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
 
   supercellPanel.appendChild(makeSectionHeadline("Supercell"));
   supercellPanel.appendChild(supercellContent);
+
+  // --- Vacuum section ---
+  const vacuumPanel = document.createElement("div");
+  vacuumPanel.id = "vacuumPanel";
+  vacuumPanel.style.marginBottom = "10px";
+
+  const vacuumContent = document.createElement("div");
+  vacuumContent.id = "vacuumContent";
+
+  vacuumPanel.appendChild(makeSectionHeadline("Vacuum"));
+  vacuumPanel.appendChild(vacuumContent);
+  addVacuumSection(vacuumContent);
 
   // --- Transformation section ---
   const transformPanel = document.createElement("div");
@@ -535,6 +673,7 @@ transformResetBtn.onclick = () => {
   // --- Build Structure ---
   group.appendChild(latticePanel);
   group.appendChild(supercellPanel);
+  group.appendChild(vacuumPanel);
   group.appendChild(transformPanel);
   targetPanel.appendChild(group);
 

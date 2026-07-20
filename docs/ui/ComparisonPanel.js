@@ -4,126 +4,134 @@
 // The comparison structure itself is picked via the checkbox in the structure
 // table (ui/FileBrowswerPanel.js); `general.comparisonActive` tracks whether
 // the lattice-comparison popup should follow structure/frame changes.
+//
+// Classic, single-structure mode: exactly one checked row becomes the
+// comparison structure (fileBrowser.overlayEntries[0] — same underlying
+// engine the Multi-Structure Overlay panel uses, see ui/OverlayPanel.js).
+// Mutually exclusive with that panel — both interpret the same file-browser
+// checkboxes, so only one mode's rules ("exactly one" vs "any number") can be
+// in effect at a time. Enabling this one turns Overlay off, and vice versa.
 
 import { general, fileBrowser } from '../state/store.js';
-import { removeLatticeComparisonPopup, updateLatticeComparisonPanel } from './LatticeComparisonPanel.js';
+import { removeLatticeComparisonPopup } from './LatticeComparisonPanel.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
+import { syncOverlayFromCheckboxes, refreshOverlayLatticePlots } from './FileBrowswerPanel.js';
 
 /**
- * Build the comparison panel controls into the given container.
+ * Build a labeled toggle switch (the pill-shaped checkbox used throughout
+ * this panel). Returns the input element so callers can wire `change`.
  */
-export function addCompPanel(target = "cvPanelBody-comparison") {
-  const container = document.getElementById(target);
+function createToggleSwitch(id, labelText, checked) {
+  const container = document.createElement("label");
+  container.style.display = "flex";
+  container.style.alignItems = "center";
+  container.style.margin = "10px 0";
+
+  const switchEl = document.createElement("span");
+  switchEl.style.position = "relative";
+  switchEl.style.display = "inline-block";
+  switchEl.style.width = "50px";
+  switchEl.style.height = "24px";
+
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.id = id;
+  input.checked = checked;
+  input.style.opacity = "0";
+  input.style.width = "0";
+  input.style.height = "0";
+
+  const slider = document.createElement("span");
+  slider.className = "toggle_slider";
+  slider.style.position = "absolute";
+  slider.style.cursor = "pointer";
+  slider.style.top = "0";
+  slider.style.left = "0";
+  slider.style.right = "0";
+  slider.style.bottom = "0";
+  slider.style.backgroundColor = "#ccc";
+  slider.style.transition = ".4s";
+  slider.style.borderRadius = "24px";
+
+  const sliderInner = document.createElement("span");
+  sliderInner.style.position = "absolute";
+  sliderInner.style.height = "16px";
+  sliderInner.style.width = "16px";
+  sliderInner.style.left = "4px";
+  sliderInner.style.bottom = "4px";
+  sliderInner.style.backgroundColor = "white";
+  sliderInner.style.transition = ".4s";
+  sliderInner.style.borderRadius = "50%";
+
+  slider.appendChild(sliderInner);
+  switchEl.appendChild(input);
+  switchEl.appendChild(slider);
+
+  const text = document.createElement("span");
+  text.textContent = labelText;
+  text.style.marginLeft = "10px";
+
+  container.appendChild(switchEl);
+  container.appendChild(text);
+
+  return { container, input };
+}
+
+/**
+ * Build the comparison panel controls into the given container (one tab's
+ * body inside the unified Comparison/Overlay panel — see
+ * ui/ComparisonOverlayPanel.js).
+ */
+export function addCompPanel(container) {
   if (!container) return;
 
   // Clear existing content
   container.innerHTML = "";
 
+  // Master toggle: checking a file-browser row no longer starts rendering
+  // the comparison by itself — this must also be on (ui/FileBrowswerPanel.js's
+  // syncOverlayFromCheckboxes reconciles the two).
+  const { container: compareToggleContainer, input: compareToggleInput } =
+    createToggleSwitch("enableComparisonToggle", "Enable Comparison", general.compareModeOn);
+  container.appendChild(compareToggleContainer);
+
+  // Persistent error line: "please select a structure" (nothing checked) or
+  // "only one structure can be selected" (2+ checked), while comparison is on.
+  // fileBrowser.overlayEntries/general.compareModeOn are kept consistent
+  // continuously by syncOverlayFromCheckboxes (every checkbox change, row
+  // delete, ...), so this only needs to reflect current state — it must NOT
+  // call syncOverlayFromCheckboxes itself, which would rebuild this very
+  // panel and recurse.
+  const comparisonError = document.createElement("div");
+  comparisonError.id = "comparisonErrorField";
+  comparisonError.style.cssText = `
+    font-size: 12px;
+    color: #ff6b6b;
+    margin: 0 0 10px 0;
+    display: none;
+  `;
+  if (general.compareModeOn && fileBrowser.overlayEntries.length === 0) {
+    // Distinguish "nothing checked" from "too many checked" the same way
+    // syncOverlayFromCheckboxes does — both leave overlayEntries empty, so
+    // that alone can't tell them apart (a rebuild right after a ">1 checked"
+    // error would otherwise clobber it back to the generic "select a
+    // structure" message).
+    const checkedCount = document.querySelectorAll('#objectTable tbody input[type="checkbox"]:checked').length;
+    comparisonError.textContent = checkedCount > 1
+      ? 'Only one structure can be selected for comparison.'
+      : 'Please select a structure to compare to.';
+    comparisonError.style.display = 'block';
+  }
+  container.appendChild(comparisonError);
+
   // Add toggle for bonds
-  const bondToggleContainer = document.createElement("label");
-  bondToggleContainer.style.display = "flex";
-  bondToggleContainer.style.alignItems = "center";
-  bondToggleContainer.style.margin = "10px 0";
-
-  const bondToggleSwitch = document.createElement("span");
-  bondToggleSwitch.style.position = "relative";
-  bondToggleSwitch.style.display = "inline-block";
-  bondToggleSwitch.style.width = "50px";
-  bondToggleSwitch.style.height = "24px";
-
-  const bondToggleInput = document.createElement("input");
-  bondToggleInput.type = "checkbox";
-  bondToggleInput.id = "showComparisonBonds";
-  bondToggleInput.checked = true;
-  bondToggleInput.style.opacity = "0";
-  bondToggleInput.style.width = "0";
-  bondToggleInput.style.height = "0";
-
-  const bondToggleSlider = document.createElement("span");
-  bondToggleSlider.className = "toggle_slider";
-  bondToggleSlider.style.position = "absolute";
-  bondToggleSlider.style.cursor = "pointer";
-  bondToggleSlider.style.top = "0";
-  bondToggleSlider.style.left = "0";
-  bondToggleSlider.style.right = "0";
-  bondToggleSlider.style.bottom = "0";
-  bondToggleSlider.style.backgroundColor = "#ccc";
-  bondToggleSlider.style.transition = ".4s";
-  bondToggleSlider.style.borderRadius = "24px";
-
-  const bondToggleSliderInner = document.createElement("span");
-  bondToggleSliderInner.style.position = "absolute";
-  bondToggleSliderInner.style.height = "16px";
-  bondToggleSliderInner.style.width = "16px";
-  bondToggleSliderInner.style.left = "4px";
-  bondToggleSliderInner.style.bottom = "4px";
-  bondToggleSliderInner.style.backgroundColor = "white";
-  bondToggleSliderInner.style.transition = ".4s";
-  bondToggleSliderInner.style.borderRadius = "50%";
-
-  bondToggleSlider.appendChild(bondToggleSliderInner);
-  bondToggleSwitch.appendChild(bondToggleInput);
-  bondToggleSwitch.appendChild(bondToggleSlider);
-
-  const bondToggleText = document.createElement("span");
-  bondToggleText.textContent = "Show Comparison Bonds";
-  bondToggleText.style.marginLeft = "10px";
-
-  bondToggleContainer.appendChild(bondToggleSwitch);
-  bondToggleContainer.appendChild(bondToggleText);
+  const { container: bondToggleContainer, input: bondToggleInput } =
+    createToggleSwitch("showComparisonBonds", "Show Comparison Bonds", general.showSecondBond);
   container.appendChild(bondToggleContainer);
 
   // Add toggle for lattice comparison
-  const latticeToggleContainer = document.createElement("label");
-  latticeToggleContainer.style.display = "flex";
-  latticeToggleContainer.style.alignItems = "center";
-  latticeToggleContainer.style.margin = "10px 0";
-
-  const latticeToggleSwitch = document.createElement("span");
-  latticeToggleSwitch.style.position = "relative";
-  latticeToggleSwitch.style.display = "inline-block";
-  latticeToggleSwitch.style.width = "50px";
-  latticeToggleSwitch.style.height = "24px";
-
-  const latticeToggleInput = document.createElement("input");
-  latticeToggleInput.type = "checkbox";
-  latticeToggleInput.id = "showLatticeComparison";
-  latticeToggleInput.style.opacity = "0";
-  latticeToggleInput.style.width = "0";
-  latticeToggleInput.style.height = "0";
-
-  const latticeToggleSlider = document.createElement("span");
-  latticeToggleSlider.className = "toggle_slider";
-  latticeToggleSlider.style.position = "absolute";
-  latticeToggleSlider.style.cursor = "pointer";
-  latticeToggleSlider.style.top = "0";
-  latticeToggleSlider.style.left = "0";
-  latticeToggleSlider.style.right = "0";
-  latticeToggleSlider.style.bottom = "0";
-  latticeToggleSlider.style.backgroundColor = "#ccc";
-  latticeToggleSlider.style.transition = ".4s";
-  latticeToggleSlider.style.borderRadius = "24px";
-
-  const latticeToggleSliderInner = document.createElement("span");
-  latticeToggleSliderInner.style.position = "absolute";
-  latticeToggleSliderInner.style.height = "16px";
-  latticeToggleSliderInner.style.width = "16px";
-  latticeToggleSliderInner.style.left = "4px";
-  latticeToggleSliderInner.style.bottom = "4px";
-  latticeToggleSliderInner.style.backgroundColor = "white";
-  latticeToggleSliderInner.style.transition = ".4s";
-  latticeToggleSliderInner.style.borderRadius = "50%";
-
-  latticeToggleSlider.appendChild(latticeToggleSliderInner);
-  latticeToggleSwitch.appendChild(latticeToggleInput);
-  latticeToggleSwitch.appendChild(latticeToggleSlider);
-
-  const latticeToggleText = document.createElement("span");
-  latticeToggleText.textContent = "Show Lattice Comparison";
-  latticeToggleText.style.marginLeft = "10px";
-
-  latticeToggleContainer.appendChild(latticeToggleSwitch);
-  latticeToggleContainer.appendChild(latticeToggleText);
+  const { container: latticeToggleContainer, input: latticeToggleInput } =
+    createToggleSwitch("showLatticeComparison", "Show Lattice Comparison", general.comparisonActive);
   container.appendChild(latticeToggleContainer);
 
   // Add slider for opacity
@@ -170,6 +178,21 @@ export function addCompPanel(target = "cvPanelBody-comparison") {
 
   container.appendChild(opacitySliderContainer);
 
+  // Polyhedra aren't rendered for the comparison structure yet — the main
+  // pipeline's WASM/worker compute, cage detection, and "Complete Polyhedra"
+  // atom-completion aren't safely separable per-structure without more work,
+  // so this is deferred rather than half-implemented. Only shown when
+  // polyhedra are actually visible, so it doesn't clutter the panel otherwise.
+  if (general.showPolyhedra) {
+    const polyhedraNote = document.createElement("div");
+    polyhedraNote.textContent = "Note: Polyhedra are not yet shown for the comparison structure.";
+    polyhedraNote.style.fontSize = "12px";
+    polyhedraNote.style.color = "#ccc";
+    polyhedraNote.style.fontStyle = "italic";
+    polyhedraNote.style.margin = "5px 0 10px 0";
+    container.appendChild(polyhedraNote);
+  }
+
   // Add dynamic style for checked state
   const styleElement = document.createElement('style');
   styleElement.textContent = `
@@ -185,12 +208,28 @@ export function addCompPanel(target = "cvPanelBody-comparison") {
     #showLatticeComparison:checked + .toggle_slider > span {
       transform: translateX(26px) !important;
     }
+    #enableComparisonToggle:checked + .toggle_slider {
+      background-color: #4CAF50 !important;
+    }
+    #enableComparisonToggle:checked + .toggle_slider > span {
+      transform: translateX(26px) !important;
+    }
   `;
   document.head.appendChild(styleElement);
 
   // Add event listeners
+  compareToggleInput.addEventListener('change', function() {
+    general.compareModeOn = this.checked;
+    // Mutually exclusive with the Multi-Structure Overlay panel — both
+    // interpret the same file-browser checkboxes, so only one mode's rules
+    // can apply.
+    if (general.compareModeOn) general.overlayModeOn = false;
+    syncOverlayFromCheckboxes();
+  });
+
   bondToggleInput.addEventListener('change', function() {
     general.showSecondBond = this.checked;
+    if (fileBrowser.overlayEntries[0]) fileBrowser.overlayEntries[0].showBonds = this.checked;
     updateVisualization({
       SecondBondsUpdate: true,
       //SecondReRenderBonds: true,
@@ -202,32 +241,31 @@ export function addCompPanel(target = "cvPanelBody-comparison") {
   latticeToggleInput.addEventListener('change', function() {
     general.comparisonActive = this.checked;
     if (this.checked) {
-      // Create or update the lattice comparison popup
-      if (fileBrowser.comparisonStructure && fileBrowser.selectedStructure) {
-        const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
-        const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
-        updateLatticeComparisonPanel(L1, L2);
-      }
+      refreshOverlayLatticePlots();
     } else {
-      // Remove the lattice comparison popup
       removeLatticeComparisonPopup();
     }
   });
 
   opacitySlider.addEventListener('input', function() {
     const value = parseFloat(this.value);
+    let compOpacity;
+    let mainOpacity;
     if (value < 0.5){
-      general.compOpacity = 2*value
-      general.mainOpacity = 1.0
+      compOpacity = 2*value
+      mainOpacity = 1.0
       }
     else if (value > 0.5){
-      general.mainOpacity = 1-2 * (value - 0.5)
-      general.compOpacity = 1.0
+      mainOpacity = 1-2 * (value - 0.5)
+      compOpacity = 1.0
       }
     else {
-      general.compOpacity =1.0
-      general.mainOpacity = 1.0
+      compOpacity = 1.0
+      mainOpacity = 1.0
     }
+
+    general.mainOpacity = mainOpacity;
+    if (fileBrowser.overlayEntries[0]) fileBrowser.overlayEntries[0].opacity = compOpacity;
 
     updateVisualization({
       atomsUpdate: true,
@@ -242,8 +280,7 @@ export function addCompPanel(target = "cvPanelBody-comparison") {
  * Tear down the comparison panel: clears the controls, closes the
  * lattice-comparison popup, and deactivates its follow-updates flag.
  */
-export function removeCompPanel(target = "cvPanelBody-comparison") {
-  const container = document.getElementById(target);
+export function removeCompPanel(container) {
   if (container) container.innerHTML = "";
   general.comparisonActive = false;
   removeLatticeComparisonPopup();

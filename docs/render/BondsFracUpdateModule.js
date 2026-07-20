@@ -1,7 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
 
 import {bondLengths, coordinationNumbers, app, groups,fileBrowser, general, highlightHover} from '../state/store.js';
-import {atomicRadii} from '../defaults/radii_defaults.js'
+import {getElementRadius} from '../defaults/radii_defaults.js'
 import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors,getJetColors} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
@@ -48,7 +48,7 @@ export function initBondsLengths(){
       pairs.push(pair);
 
       if (!general.bondLengths[pair]) {
-        const defaultRadius = (atomicRadii[uniqueElements[i]] || 1.0) + (atomicRadii[uniqueElements[j]] || 1.0);
+        const defaultRadius = getElementRadius(uniqueElements[i]) + getElementRadius(uniqueElements[j]);
         const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
         general.bondLengths[pair] = { min: 0.0, max: defaultValue };
         general.defaultBondLengths[pair] = { min: 0.0, max: defaultValue }; // Store default
@@ -101,7 +101,7 @@ export function rebuildBonds(opacity=1.0) {
   buildBondObjects(fileBrowser.selectedStructure)
   console.timeEnd("bond:buildBondObjects");
   console.log("bond: bondCount =", fileBrowser.selectedStructure.bonds.length,
-              "wrappedCart =", fileBrowser.selectedStructure.periodic?.wrapped?.cart?.length);
+              "wrappedCart =", fileBrowser.selectedStructure.periodic?.visibleWrapped?.cart?.length);
   console.time("bond:renderBonds");
   renderBonds();
   console.timeEnd("bond:renderBonds");
@@ -220,7 +220,7 @@ export function bondKey(indices) {
  * @returns {string}
  */
 export function bondGroupKey(structure, bond) {
-  const frac = structure?.periodic?.wrapped?.frac;
+  const frac = structure?.periodic?.visibleWrapped?.frac;
   const fi = frac?.[bond.indices[0]];
   const fj = frac?.[bond.indices[1]];
   if (!fi || !fj) return `nofrac:${bondKey(bond.indices)}`; // degrades to per-copy
@@ -253,7 +253,7 @@ export function buildBondObjects(structure){
   general.bondsBuildCounter = (general.bondsBuildCounter || 0) + 1;
   highlightHover.currentlyHighlightedBond = null;
 
-  const wrapped = structure.periodic.wrapped;
+  const wrapped = structure.periodic.visibleWrapped;
   const wrappedCart = wrapped.cart;
   const atoms = fileBrowser.selectedStructure?.atoms;
 
@@ -496,7 +496,7 @@ export function buildBondObjects(structure){
  * one extra canonicalization step for the self-image case.
  */
 function histogramBondGroupKey(structure, bond) {
-  const frac = structure?.periodic?.wrapped?.frac;
+  const frac = structure?.periodic?.visibleWrapped?.frac;
   const fi = frac?.[bond.indices[0]];
   const fj = frac?.[bond.indices[1]];
   if (!fi || !fj) return `nofrac:${bondKey(bond.indices)}`;
@@ -568,6 +568,7 @@ function populateBondHistogramData(structure) {
   }
 
   structure.atoms.forEach((atom, i) => {
+    if (atom.hidden) return;
     const el = structure.elements[i];
     if (!coordinationNumbers[el]) coordinationNumbers[el] = [];
     coordinationNumbers[el].push({ cn: cnByAtom[i], atomIndex: i });
@@ -945,12 +946,19 @@ export async function updateBonds(opacity=1.0) {
   const bonds = fileBrowser.selectedStructure.bonds.filter(b => b.visibleLen > 1e-3);
   const activeCutPlanes = getActiveCutPlanes();
 
+  // updateSingleBond's own default lets an atom's userColor win over bond.color
+  // (right for "elements" mode, where bond.color IS meant to track the atom) —
+  // but in white/solid/length mode bond.color is intentionally NOT atom-derived,
+  // so an atom's custom color must not leak onto its bonds there. Mirrors
+  // ui/ColorPanel.js's bondsFollowAtomColors() gate for the same reason.
+  const overwriteAtomColor = general.bondsColor !== "elements" && general.bondsColor != null;
+
   bonds.forEach((bond, i) => {
     if (isBondCutByPlanes(bond, activeCutPlanes)) {
       hideSingleBond(i);
       return;
     }
-    updateSingleBond(i, bond);
+    updateSingleBond(i, bond, overwriteAtomColor);
   });
   mesh.material.opacity = opacity;
   // Transparency also accounts for per-bond alpha overrides (instanceOpacity).

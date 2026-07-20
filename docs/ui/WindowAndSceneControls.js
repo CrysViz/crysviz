@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups, general } from '../state/store.js';
-import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, setActivePipeline } from '../render/index.js';
+import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, renderFrameNow, setActivePipeline } from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 
@@ -238,6 +238,15 @@ export function resizeRenderer(orthographicFrustumSize) {
 
   resizeGizmoRenderer();
   requestRender();
+
+  // Resizing a canvas clears its WebGL drawing buffer immediately (spec
+  // behavior), and this renderer is alpha:true, so between that clear and the
+  // on-demand loop's next (throttled/queued) rAF tick, the browser could
+  // composite a frame with a transparent canvas — revealing the page's
+  // background color underneath instead of the scene. Painting synchronously
+  // right here, in the same tick as the resize, closes that gap instead of
+  // leaving it to requestRender()'s flag alone.
+  renderFrameNow({ interactive: false });
 }
 
 /** Re-fits the gizmo's renderer/camera to #axesGizmo's current box size —
