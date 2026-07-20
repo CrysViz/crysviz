@@ -967,6 +967,15 @@ function bindMDBody(panel, shell, potential) {
         tauFs: 20,
       });
 
+      // Animate a throwaway working copy of the source structure, not the
+      // source itself: the MD loop mutates fileBrowser.selectedStructure in
+      // place every step for live viewer feedback, and we do NOT want that to
+      // alter the user's starting structure. With a working copy the source row
+      // stays exactly as provided and only MD_… holds the trajectory. (The
+      // end-of-run restoreStructureInPlace remains as a belt-and-suspenders.)
+      const workingStructure = snapshotCurrentStructure();
+      fileBrowser.selectedStructure = workingStructure;
+
       const state = await initializeMDState({
         nepRunner: runner,
         structure: fileBrowser.selectedStructure,
