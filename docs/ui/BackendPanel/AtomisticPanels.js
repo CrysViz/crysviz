@@ -685,22 +685,21 @@ function renderRelaxBody(bodyEl, potential) {
     </div>
     <div class="atomistic-card atomistic-card-compact">
       <div class="atomistic-card-title atomistic-card-title-accent">Rattle</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;">
-        <label style="display:flex;flex-direction:column;gap:3px;margin:0;">
-          <span style="opacity:0.7;">displacement (Å)</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;">
+        <span style="display:flex;align-items:center;gap:6px;" title="atom displacement (Å)">
           <input type="number" id="relaxRattleAmpInput" value="0.1" step="0.01" min="0"
-                 style="width:72px;padding:3px 6px;" class="atomistic-input-sm">
-        </label>
-        <label style="display:flex;flex-direction:column;gap:3px;margin:0;">
-          <span style="display:flex;align-items:center;gap:5px;opacity:0.7;">
-            <input type="checkbox" id="relaxRattleLatticeChk" style="width:14px;height:14px;flex:0 0 auto;margin:0;">
-            cell strain (±%)
-          </span>
+                 style="width:58px;padding:3px 6px;" class="atomistic-input-sm">
+          <span style="opacity:0.6;">Å</span>
+        </span>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;" title="cell strain (±%)">
+          <input type="checkbox" id="relaxRattleLatticeChk" style="width:14px;height:14px;flex:0 0 auto;margin:0;">
+          <span style="opacity:0.85;">cell</span>
           <input type="number" id="relaxRattleLatticePctInput" value="2" step="0.5" min="0"
-                 style="width:72px;padding:3px 6px;" class="atomistic-input-sm">
+                 style="width:52px;padding:3px 6px;" class="atomistic-input-sm">
+          <span style="opacity:0.6;">%</span>
         </label>
         <button type="button" class="calcButton" id="relaxRattleBtn"
-                style="padding:5px 16px;align-self:end;">Rattle</button>
+                style="padding:4px 14px;">Rattle</button>
       </div>
     </div>
   `;
