@@ -4,7 +4,12 @@ import { general } from '../state/store.js';
 
 function percentDiff(v1, v2) { return Math.abs(v2 - v1) / v1; }
 
-// Function to render the content of the lattice comparison panel
+// Per-popup bookkeeping (its blocks container + the live block refs), keyed
+// by the popup element rather than stashed as ad-hoc properties on it.
+const popupState = new WeakMap();
+
+// Render one block's radar plot + table, comparing the main lattice against
+// one overlay structure's lattice.
 function renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, content, toggleBtn) {
   // Compute parameters and differences
   const p1 = latticeParameters(L1_matrix);
@@ -49,8 +54,8 @@ function renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, con
 
   // Set canvas dimensions explicitly
   const dpi = window.devicePixelRatio || 1;
-  const displayWidth = 400;
-  const displayHeight = 400;
+  const displayWidth = 320;
+  const displayHeight = 320;
   canvas.width = displayWidth * dpi;
   canvas.height = displayHeight * dpi;
   canvas.style.width = `${displayWidth}px`;
@@ -61,7 +66,7 @@ function renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, con
 
   // Center and radius
   const center = { x: canvas.width / 2, y: canvas.height / 2 };
-  const radius = Math.min(canvas.width, canvas.height) / 2 - 60;
+  const radius = Math.min(canvas.width, canvas.height) / 2 - 50;
 
   // Draw grid
   ctx.strokeStyle = "#666";
@@ -102,8 +107,8 @@ function renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, con
     ctx.moveTo(center.x, center.y);
     ctx.lineTo(x, y);
     ctx.stroke();
-    const labelX = center.x + Math.cos(angle) * (radius + 25);
-    const labelY = center.y + Math.sin(angle) * (radius + 25);
+    const labelX = center.x + Math.cos(angle) * (radius + 22);
+    const labelY = center.y + Math.sin(angle) * (radius + 22);
     ctx.fillStyle = "#fff";
     ctx.fillText(axisLabels[i], labelX, labelY);
   }
@@ -126,6 +131,78 @@ function renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, con
   ctx.stroke();
 }
 
+// One radar-plot + collapsible-table block per overlay structure, appended
+// into the popup's (scrollable) blocks container.
+function buildComparisonBlock(container) {
+  const block = document.createElement("div");
+  block.className = "lattice-comparison-block";
+  block.style.cssText = "margin: 0 0 14px 0; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.15);";
+
+  const heading = document.createElement("div");
+  heading.style.cssText = "font-weight:600; font-size:12px; text-align:center; margin-bottom:4px; color:#ddd;";
+  block.appendChild(heading);
+
+  const canvas = document.createElement("canvas");
+  canvas.style.display = "block";
+  canvas.style.margin = "6px auto 0 auto";
+  block.appendChild(canvas);
+
+  const collapsible = document.createElement("div");
+  collapsible.style.width = "100%";
+  collapsible.style.margin = "10px auto 0 auto";
+  block.appendChild(collapsible);
+
+  const toggleBtn = document.createElement("button");
+  // Starts expanded — the comparison details are the point of this popup, so
+  // hiding them by default just added an extra click most users would take anyway.
+  toggleBtn.textContent = "Hide details ▲";
+  toggleBtn.style.width = "100%";
+  toggleBtn.style.background = "#333";
+  toggleBtn.style.border = "none";
+  toggleBtn.style.color = "#fff";
+  toggleBtn.style.cursor = "pointer";
+  toggleBtn.style.padding = "5px";
+  collapsible.appendChild(toggleBtn);
+
+  const content = document.createElement("div");
+  content.style.display = "block";
+  content.style.padding = "5px";
+  collapsible.appendChild(content);
+
+  const table = document.createElement("table");
+  table.style.width = "100%";
+  table.style.fontSize = "12px";
+  table.style.borderCollapse = "collapse";
+  content.appendChild(table);
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  ["Parameter", "Main", "Overlay", "% Diff"].forEach(t => {
+    const th = document.createElement("th");
+    th.textContent = t;
+    th.style.borderBottom = "1px solid #555";
+    th.style.padding = "2px 5px";
+    th.style.color = "#fff";
+    th.style.textAlign = "left";
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+  table.appendChild(document.createElement("tbody"));
+
+  toggleBtn.addEventListener("click", () => {
+    if (content.style.display === "none") {
+      content.style.display = "block";
+      toggleBtn.textContent = "Hide details ▲";
+    } else {
+      content.style.display = "none";
+      toggleBtn.textContent = "Show details ▼";
+    }
+  });
+
+  container.appendChild(block);
+  return { block, heading, canvas, table, content, toggleBtn };
+}
 
 export function createLatticeComparisonPopup() {
   // Remove existing popup (if any)
@@ -133,7 +210,7 @@ export function createLatticeComparisonPopup() {
 
   // Roughly centered default position (the panel window is freely draggable).
   const anchor = {
-    left: Math.max(8, Math.round(window.innerWidth / 2 - 220)),
+    left: Math.max(8, Math.round(window.innerWidth / 2 - 180)),
     top: Math.max(8, Math.round(window.innerHeight / 2 - 280)),
   };
 
@@ -154,7 +231,9 @@ export function createLatticeComparisonPopup() {
     defaults: { docked: false, collapsed: false, anchor },
   });
 
-  // Inner wrapper keeps the historical id so update/remove lookups work.
+  // Inner wrapper keeps the historical id so update/remove lookups work. One
+  // block per overlay structure is appended into blocksContainer — the
+  // wrapper's own overflow makes any number of blocks scrollable.
   const popup = document.createElement("div");
   popup.id = "latticeComparisonPopup";
   popup.style.backgroundColor = "#222";
@@ -164,110 +243,35 @@ export function createLatticeComparisonPopup() {
   popup.style.overflowY = "auto";
   panelWindow.body.appendChild(popup);
 
-  // --- Create canvas ---
-  const canvas = document.createElement("canvas");
-  const dpi = window.devicePixelRatio || 1;
-  const displayWidth = 400;
-  const displayHeight = 400;
-  canvas.width = displayWidth * dpi;
-  canvas.height = displayHeight * dpi;
-  canvas.style.width = `${displayWidth}px`;
-  canvas.style.height = `${displayHeight}px`;
-  canvas.style.display = "block";
-  canvas.style.margin = "10px auto 0 auto";
-  popup.appendChild(canvas);
+  const blocksContainer = document.createElement("div");
+  popup.appendChild(blocksContainer);
 
-  // --- Create collapsible details ---
-  const collapsible = document.createElement("div");
-  collapsible.style.width = "100%";
-  collapsible.style.margin = "10px auto";
-  collapsible.style.background = "#222";
-  collapsible.style.color = "#fff";
-  popup.appendChild(collapsible);
+  popupState.set(popup, { blocksContainer, blockRefs: [] });
 
-  const toggleBtn = document.createElement("button");
-  toggleBtn.textContent = "Show details ▼";
-  toggleBtn.style.width = "100%";
-  toggleBtn.style.background = "#333";
-  toggleBtn.style.border = "none";
-  toggleBtn.style.color = "#fff";
-  toggleBtn.style.cursor = "pointer";
-  toggleBtn.style.padding = "5px";
-  collapsible.appendChild(toggleBtn);
-
-  const content = document.createElement("div");
-  content.style.display = "none";
-  content.style.padding = "5px";
-  collapsible.appendChild(content);
-
-  // --- Create table ---
-  const table = document.createElement("table");
-  table.style.width = "100%";
-  table.style.fontSize = "12px";
-  table.style.borderCollapse = "collapse";
-  content.appendChild(table);
-
-  // --- Add table header ---
-  const thead = document.createElement("thead");
-  const headRow = document.createElement("tr");
-  ["Parameter", "Main", "Struc2", "% Diff"].forEach(t => {
-    const th = document.createElement("th");
-    th.textContent = t;
-    th.style.borderBottom = "1px solid #555";
-    th.style.padding = "2px 5px";
-    th.style.color = "#fff";
-    th.style.textAlign = "left";
-    headRow.appendChild(th);
-  });
-  thead.appendChild(headRow);
-  table.appendChild(thead);
-
-  // --- Add tbody ---
-  const tbody = document.createElement("tbody");
-  table.appendChild(tbody);
-
-  // --- Toggle button logic ---
-  toggleBtn.addEventListener("click", () => {
-    if (content.style.display === "none") {
-      content.style.display = "block";
-      toggleBtn.textContent = "Hide details ▲";
-    } else {
-      content.style.display = "none";
-      toggleBtn.textContent = "Show details ▼";
-    }
-  });
-
-  return { popup, canvas, table, content, toggleBtn };
+  return popup;
 }
 
-
-
-
-// Function to update the lattice comparison panel
-export function updateLatticeComparisonPanel(L1_matrix, L2_matrix) {
+/**
+ * Render one lattice-overlay block per entry in `comparisons`, stacked in the
+ * (scrollable) popup — creating it first if it doesn't exist yet, and adding/
+ * removing blocks in place to match the current overlay list on later calls.
+ * @param {number[][]} L1_matrix Main structure's lattice.
+ * @param {Array<{label: string, lattice: number[][]}>} comparisons One entry
+ *   per overlaid structure.
+ */
+export function updateLatticeComparisonPanel(L1_matrix, comparisons) {
   let popup = document.getElementById("latticeComparisonPopup");
+  if (!popup) popup = createLatticeComparisonPopup();
 
-  // If the popup doesn't exist, create it
-  if (!popup) {
-    const { popup: _popup, canvas, table, content, toggleBtn } = createLatticeComparisonPopup();
-    renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, content, toggleBtn);
-    return;
-  }
+  const { blocksContainer: container, blockRefs: refs } = popupState.get(popup);
 
-  // Find canvas and table elements
-  const canvas = popup.querySelector("canvas");
-  const collapsible = popup.querySelector("div:last-child");
-  const content = collapsible.querySelector("div:last-child");
-  const table = content.querySelector("table");
-  const toggleBtn = collapsible.querySelector("button");
+  while (refs.length < comparisons.length) refs.push(buildComparisonBlock(container));
+  while (refs.length > comparisons.length) refs.pop().block.remove();
 
-  if (!canvas || !table || !toggleBtn) {
-    console.error("Popup elements not found!");
-    return;
-  }
-
-  // Update content
-  renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, content, toggleBtn);
+  comparisons.forEach((cmp, i) => {
+    refs[i].heading.textContent = cmp.label;
+    renderLatticeComparisonContent(L1_matrix, cmp.lattice, refs[i].canvas, refs[i].table, refs[i].content, refs[i].toggleBtn);
+  });
 }
 
 /**

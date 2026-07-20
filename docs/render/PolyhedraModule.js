@@ -25,6 +25,7 @@ import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedra
 import { rebuildAtoms } from '../render/AtomsFracUpdateModule.js'
 import { rebuildBonds } from '../render/BondsFracUpdateModule.js'
 import { runPeriodicWrapped } from '../render/LatticeModule.js'
+import { updatePolyhedraComparisonWarning } from '../ui/PolyhedraComparisonWarningBanner.js'
 
 // Single-flight guard for the async compute. Only one compute runs at a time; any
 // updatePolyhedra() request that arrives while one is in flight sets `polyhedraDirty`
@@ -129,7 +130,7 @@ function getElementColor(element) {
 // editing one atom's colour recolours just its polyhedron — and an element-wide change (which
 // recolours every atom of the element) still works. Cages have no centre atom → element colour.
 // Returns a CSS string or a hex number; THREE.Color.set accepts either.
-function polyhedronFaceColor(type, centerIndex, colorElem) {
+export function polyhedronFaceColor(type, centerIndex, colorElem) {
   if (type === 'centered' && Number.isInteger(centerIndex)) {
     const atom = fileBrowser.selectedStructure?.atoms?.[centerIndex];
     if (atom) return colorHexToCss(atom.getColor());
@@ -377,6 +378,7 @@ function isPointCutByPlanes(position, cutPlanes) {
 }
 
 function isAtomImageVisible(position, atom, cutPlanes) {
+  if (atom?.hidden) return false;
   if (!cutPlanes.length) return true;
   if (atom?.cutPlaneImmune) return true;
   return !isPointCutByPlanes(position, cutPlanes);
@@ -464,7 +466,7 @@ export function computePolyhedra(structure) {
   const baseCart = fracToCart(positions, lattice).map(p => new THREE.Vector3(p[0], p[1], p[2]));
   const nAtoms = baseCart.length;
   const latInv = invert3x3(transpose3x3(lattice));
-  const dispWrapped = structure.periodic?.wrapped;
+  const dispWrapped = structure.periodic?.visibleWrapped;
   const activeCutPlanes = getActiveCutPlanes();
 
   // Build the set of wrapped base images eligible to act as displayed centres.
@@ -1265,6 +1267,11 @@ export function setPolyEdgeWidth(width) {
  * mirrors the scene and bond-cutoff edits take effect) and renders it.
  */
 export async function updatePolyhedra() {
+  // Reflect current showPolyhedra/completePolyhedra + comparison-structure
+  // state in the viewport warning banner every time this entry point runs
+  // (toggles, comparison enable/disable/step-change all funnel through here).
+  updatePolyhedraComparisonWarning();
+
   // Turning the feature off takes effect immediately (clear the group now), even if a
   // compute is in flight — flag it dirty so that in-flight loop also stops/settles.
   if (!general.showPolyhedra && !general.completePolyhedra) {

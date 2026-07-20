@@ -422,7 +422,9 @@ function setupFieldControlEvents(fields, container) {
     });
 
     fieldColorToggle.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') {
+      // Space is reserved globally as a keyboard-shortcut modifier
+      // (ui/KeyboardShortcuts.js) — Enter alone toggles this box.
+      if (e.key === 'Enter') {
         e.preventDefault();
         setColorPanelOpen(!fieldColorContent.classList.contains('open'));
       }

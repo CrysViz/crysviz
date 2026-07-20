@@ -212,6 +212,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
     ["none", "None (Default)"],
     ["direction", "Direction Map"],
     ["plusminus", "Plus-Minus Map"],
+    ["element", "Element Color Map"],
     ["heatmap", "Heat Map"],
     ["batlow", "Batlow"],
     ["hawaii", "Hawaii"],
@@ -300,7 +301,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   // underlying data may have changed (initial build) recompute.
   function refreshColorBarVisibility(preserveRange = false) {
     const cmap = currentColorMap();
-    const isScalar = cmap !== "none" && cmap !== "direction" && cmap !== "plusminus";
+    const isScalar = cmap !== "none" && cmap !== "direction" && cmap !== "plusminus" && cmap !== "element";
     barControlsRow.style.display = isScalar ? "flex" : "none";
 
     // The bar may currently be floating over the scene (dragged out of

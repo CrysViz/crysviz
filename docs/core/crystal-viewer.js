@@ -31,20 +31,23 @@ import { pauseRendering, resumeRendering,animation_update,requestRender} from '.
 import {createShareButton,loadSharedStructure,loadCrysvizFile} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
-import {updateSecondBonds,rebuildSecondBonds} from '../render/index.js'
+import {updateOverlayBonds,rebuildOverlayBonds} from '../render/index.js'
 import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
 import { updatePolyhedra, notifyColorsChanged } from '../render/index.js'
-import {rebuildAtoms,updateAtoms} from '../render/index.js';
-import {rebuildSecondAtoms,updateSecondAtoms} from '../render/index.js';
+import {rebuildAtoms,updateAtoms,deriveVisibleWrapped} from '../render/index.js';
+import {rebuildOverlayAtoms,updateOverlayAtoms} from '../render/index.js';
 
 
 import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render/MeasurementModule.js' // not all imports might be needed in this file
 
 
-import {addAtomVacuumPanel} from '../ui/addToStructureModule/AddVacuumModule.js'
+import {addAtomPanel} from '../ui/addToStructureModule/AddAtomModule.js'
+import {initAddStructureButton} from '../ui/addToStructureModule/AddStructureModule.js'
+import {initCombineTrajectoriesButton} from '../ui/FileBrowswerPanel.js'
 import {initPanelSystem, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
 import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
 import {initFontScale} from '../ui/FontScaleModule.js'
+import {initKeyboardShortcuts} from '../ui/KeyboardShortcuts.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../render/index.js';
 import { updateGroundPlane } from '../render/index.js';
@@ -119,9 +122,6 @@ function updateOther() {
   console.time("other:updateAllMeasurements");
   updateAllMeasurements();
   console.timeEnd("other:updateAllMeasurements");
-  console.time("other:addAtomVacuumPanel");
-  addAtomVacuumPanel();
-  console.timeEnd("other:addAtomVacuumPanel");
 }
 
 export function updateVisualization(options = {}) {
@@ -133,7 +133,9 @@ export function updateVisualization(options = {}) {
     reRenderBonds = false,
     reRenderLattice = true,
 
-    // Comparison Structure
+    // Overlay structures (Structure Overlay module) — applies to every entry
+    // in fileBrowser.overlayEntries, each rendered/updated with its own opacity
+    // and bonds-visibility (no single shared "second" opacity/visibility anymore).
     SecondAtomsUpdate = false,
     SecondReRenderAtoms = false,
     SecondBondsUpdate = false,
@@ -151,7 +153,6 @@ export function updateVisualization(options = {}) {
     // and rely on polyhedra refreshing.
     reRenderPolyhedra = true,
 
-    sOpacity = general.compOpacity,
     mOpacity = general.mainOpacity,
     reRenderField = false
   } = options;
@@ -160,6 +161,14 @@ export function updateVisualization(options = {}) {
   if (!fileBrowser.selectedStructure) {
     return;
   }
+
+  // Every instance-indexed consumer below reads periodic.visibleWrapped, which is
+  // derived from periodic.wrapped. Callers that recompute .wrapped themselves
+  // (runPeriodicWrapped in the MD/relax loops, AddonAPI, polyhedra) would otherwise
+  // leave .visibleWrapped pointing at the previous frame's object, so the atoms
+  // never move on the non-rebuild path. Re-derive here, once, for all of them.
+  // Cheap: same-reference no-op unless an atom is actually hidden.
+  deriveVisibleWrapped(fileBrowser.selectedStructure);
 
   // Main Structure
   if (reRenderAtoms) {
@@ -185,33 +194,40 @@ export function updateVisualization(options = {}) {
     updateBonds(mOpacity)
   }
 
-  // Comparison Structure
-  if (SecondReRenderAtoms) {
-    console.warn("Calling rebuildSecondAtoms")
-    rebuildSecondAtoms(fileBrowser.comparisonStructure, sOpacity);
-  }
-  if (!SecondReRenderAtoms && SecondAtomsUpdate) {
-    console.warn("Calling updateSecondAtoms")
-    updateSecondAtoms(fileBrowser.comparisonStructure, sOpacity);
+  // Overlay structures — one rebuild/update pass per fileBrowser.overlayEntries
+  // entry, each keeping its own opacity and bonds visibility.
+  if (SecondReRenderAtoms || SecondAtomsUpdate || SecondReRenderBonds || SecondBondsUpdate) {
+    for (const entry of fileBrowser.overlayEntries) {
+      if (SecondReRenderAtoms) {
+        console.warn("Calling rebuildOverlayAtoms")
+        rebuildOverlayAtoms(entry.key, entry.structure, entry.opacity);
+      } else if (SecondAtomsUpdate) {
+        console.warn("Calling updateOverlayAtoms")
+        updateOverlayAtoms(entry.key, entry.structure, entry.opacity);
+      }
+
+      if (SecondReRenderBonds) {
+        console.warn("Calling rebuildOverlayBonds")
+        rebuildOverlayBonds(entry.key, entry.structure, entry.opacity, entry.showBonds);
+      } else if (SecondBondsUpdate) {
+        console.warn("Calling updateOverlayBonds")
+        updateOverlayBonds(entry.key, entry.structure, entry.opacity, entry.showBonds);
+      }
+    }
   }
 
-  if (SecondReRenderBonds) {
-    console.warn("Calling rebuildSecondBonds")
-    rebuildSecondBonds(fileBrowser.comparisonStructure,sOpacity)
-  }
-
-  if (!SecondReRenderBonds && SecondBondsUpdate) {
-    console.warn("Calling updateSecondBonds")
-    updateSecondBonds(fileBrowser.comparisonStructure,sOpacity)
-  }
-
-  // TODO: comparison-structure lattice re-render is not implemented
-  // (updateSecondLattice does not exist). Left disabled rather than throwing.
-  // if (SecondReRenderLattice) updateSecondLattice(general.secondLatticeColor);
+  // TODO: overlay-structure lattice re-render is not implemented
+  // (updateOverlayLattice does not exist). Left disabled rather than throwing.
+  // if (SecondReRenderLattice) updateOverlayLattice(general.secondLatticeColor);
 
   // Panels
   if (reRenderComposition != false) {
     renderComposition(reRenderComposition);
+    // #addButton is only (re)created when renderComposition() runs, so
+    // (re)wire the Add Atoms/Vacuum popup here rather than on every
+    // updateVisualization() call — avoids stacking duplicate click listeners
+    // on the same live button node.
+    addAtomPanel();
   }
   console.time("uv:updateLattice");
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
@@ -445,7 +461,24 @@ async function initializeMathBackend() {
     console.warn('[math] Failed to initialize WASM backend, falling back to JavaScript backend', error);
   }
 }
-  window.addEventListener('resize', () => resizeRenderer(app.orthographicFrustumSize));
+  // rAF-coalesced: a window drag-resize fires 'resize' many times per second,
+  // and resizeRenderer() does real GPU work (renderer/pipeline/label/gizmo
+  // setSize, a full polyhedra-group traversal). Calling all of that
+  // synchronously on every raw event — outside the on-demand render loop's
+  // own rAF tick — let the browser paint the just-cleared (WebGL clears its
+  // drawing buffer on any canvas resize) but not-yet-redrawn canvas in
+  // between, which showed up as the scene background flickering during any
+  // resize. Coalescing into a single rAF callback per frame lands the resize
+  // and the redraw it triggers in the same frame instead.
+  let rendererResizePending = false;
+  window.addEventListener('resize', () => {
+    if (rendererResizePending) return;
+    rendererResizePending = true;
+    requestAnimationFrame(() => {
+      rendererResizePending = false;
+      resizeRenderer(app.orthographicFrustumSize);
+    });
+  });
   window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
   window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
 
@@ -465,7 +498,10 @@ function initUIPanels() {
   addSavePanel();
   initImageExportPanel();
   initRaytraceWarningModal();
-  addAtomVacuumPanel();
+  addAtomPanel();
+  initAddStructureButton();
+  initCombineTrajectoriesButton();
+  initKeyboardShortcuts();
 
   // Add viewport meta tag if not present for proper mobile scaling
   if (!document.querySelector('meta[name="viewport"]')) {

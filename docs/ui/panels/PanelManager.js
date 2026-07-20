@@ -286,6 +286,9 @@ export function initPanelSystem() {
     // A real window resize is symmetric — recheck compaction both directions.
     requestAnimationFrame(() => {
       resizePending = false;
+      // The scene edge a compact-capable panel's cached reach was measured
+      // against can itself have moved — see sceneReach()'s docstring.
+      invalidateSceneReachCache();
       updateFloatPlacements();
       refreshCompactFloatingPanels();
     });
@@ -885,7 +888,20 @@ function sceneRect() {
  * How far a compact-capable panel's expanded toolbar reaches in from the scene
  * edge it anchors near (right-anchored: from the scene's left edge inward;
  * left-anchored: from the scene's right edge inward). Measured once while the
- * panel is expanded and non-compact (its toolbar is fixed-size) and cached.
+ * panel is expanded and non-compact (its toolbar is fixed-size) and cached —
+ * checked BEFORE the compact check below on purpose, so a panel that's
+ * CURRENTLY compact still contributes its remembered (rather than a phantom
+ * zero) reach to requiredSceneWidthForCompact(); without that, evaluating
+ * while already compact would read as "plenty of room" and immediately
+ * un-compact every panel in one shot, with nothing left to trigger a
+ * follow-up re-check against the now-available real measurement — they'd
+ * sit expanded (and, with more than one such panel, overlapping) until some
+ * unrelated event happened to call this again.
+ *
+ * The cache is invalidated on real window resize (invalidateSceneReachCache,
+ * called from the resize handler below) — the one event where the anchored
+ * scene edge this reach is measured against can itself have moved, which a
+ * permanent cache would otherwise miss forever.
  */
 function sceneReach(panel) {
   if (panel._sceneReach != null) return panel._sceneReach;
@@ -898,6 +914,27 @@ function sceneReach(panel) {
     : scene.right - rect.left;
   panel._sceneReach = reach;
   return reach;
+}
+
+/** Force every compact-capable, currently-EXPANDED panel's reach to be
+ *  re-measured on the next check — see sceneReach()'s docstring for why a
+ *  permanent cache goes stale specifically across a real window resize.
+ *
+ *  Currently-compact panels are deliberately skipped: sceneReach() can't
+ *  re-measure a compact panel's expanded footprint (it returns a phantom 0
+ *  for it instead, by design), so nulling its cache here would just make the
+ *  very next check read that phantom 0 as "no room needed" and mass-uncompact
+ *  everything, which then re-measures large on the following resize tick and
+ *  recompacts again — right at the threshold width, where resize events fire
+ *  continuously while the window edge is dragged, that round-trip repeats
+ *  every frame and shows up as flicker. Leaving a compact panel's last-known
+ *  (expanded) reach cached instead keeps requiredSceneWidthForCompact()
+ *  stable while it stays compact. */
+function invalidateSceneReachCache() {
+  for (const panel of panels.values()) {
+    if (panel.compact) continue;
+    panel._sceneReach = null;
+  }
 }
 
 /** Scene width the two toolbars need before they crowd each other. */

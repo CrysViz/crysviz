@@ -1,17 +1,18 @@
-import {groups,app, general, structureShip, fileBrowser} from '../state/store.js';
+import {general, structureShip, fileBrowser} from '../state/store.js';
 import {updateVisualization} from '../core/crystal-viewer.js';
 import { refreshActivePanels, refreshPanelAvailability, rebuildPanel } from './panels/PanelManager.js';
 import {createBondLengthControls} from './BondLengthPanel.js';
 import {updateSpins} from '../render/index.js';
 import {updateForces} from '../render/index.js';
 import {fieldBrowser} from './FieldPanel.js';
-import { setActiveField, updateField, deleteField} from '../render/index.js';
-import {updateLatticeComparisonPanel} from './LatticeComparisonPanel.js';
+import { setActiveField, updateField, deleteField, disposeOverlayMeshes} from '../render/index.js';
+import {updateLatticeComparisonPanel, removeLatticeComparisonPopup} from './LatticeComparisonPanel.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import {Structure} from '../model/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import { recenterCamera } from './WindowAndSceneControls.js';
 import { notifyActiveStructureChange } from '../state/structures.js';
+import { generateID } from '../utils/index.js';
 
 export function showError(message) {
   errorPanel.textContent = message;
@@ -22,6 +23,172 @@ export function showError(message) {
 export function countChecked() {
   return [...document.querySelectorAll('#objectTable tbody input[type="checkbox"]')]
     .filter((cb) => cb.checked).length;
+}
+
+/** Enable the combine button only when there's something to combine. */
+export function updateCombineButtonState() {
+  const btn = document.getElementById('combineTrajectoriesButton');
+  if (!btn) return;
+  btn.disabled = countChecked() < 2;
+}
+
+/** Small centered modal asking for a name; calls onConfirm(name) if confirmed. */
+function openCombineNamePopup(onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.className = 'combine-name-popup-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.4);
+  `;
+
+  const popup = document.createElement('div');
+  popup.style.cssText = `
+    background: rgba(13,13,13,0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 260px;
+  `;
+
+  const label = document.createElement('div');
+  label.textContent = 'Name for the combined trajectory:';
+  label.style.cssText = 'color: rgb(255,255,255); font-size: 12px;';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'combine-name-input';
+  input.value = 'Combined Trajectory';
+  input.style.cssText = `
+    background: var(--bg-color);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgb(255,255,255);
+    border-radius: 4px;
+    font-size: 12px;
+    padding: 6px;
+  `;
+
+  const buttonRow = document.createElement('div');
+  buttonRow.style.cssText = 'display:flex; gap:10px; justify-content:flex-end;';
+
+  const buttonStyle = `
+    background: var(--bg-color);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgb(255,255,255);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 6px 10px;
+  `;
+  const confirmButton = document.createElement('button');
+  confirmButton.textContent = 'Combine';
+  confirmButton.style.cssText = buttonStyle;
+
+  const cancelButton = document.createElement('button');
+  cancelButton.textContent = 'Cancel';
+  cancelButton.style.cssText = buttonStyle;
+
+  buttonRow.appendChild(cancelButton);
+  buttonRow.appendChild(confirmButton);
+  popup.appendChild(label);
+  popup.appendChild(input);
+  popup.appendChild(buttonRow);
+  overlay.appendChild(popup);
+  document.body.appendChild(overlay);
+
+  input.focus();
+  input.select();
+
+  const close = () => overlay.remove();
+  cancelButton.onclick = close;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  const confirm = () => { onConfirm(input.value); close(); };
+  confirmButton.onclick = confirm;
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') confirm();
+    if (e.key === 'Escape') close();
+  });
+}
+
+/**
+ * Concatenate every checked row's frames (in table order) into one new
+ * trajectory row, appended after the existing rows (originals are kept).
+ * Structures are cloned the same way the row "copy" action does, so the new
+ * row doesn't share mutable state with the originals.
+ */
+function combineCheckedRows(name) {
+  const tbody = document.querySelector('#objectTable tbody');
+  const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
+  const checkedRows = rows.filter((r) => r.querySelector('input[type="checkbox"]')?.checked);
+  if (checkedRows.length < 2) return;
+
+  const combinedStructures = [];
+  for (const r of checkedRows) {
+    const idx = rows.indexOf(r);
+    const container = structureShip.container[idx];
+    if (!container) continue;
+    for (const structure of container.structures) {
+      combinedStructures.push(new Structure({
+        elements: [...structure.elements],
+        uniqueElements: [...structure.uniqueElements],
+        lattice: structure.lattice.map(row => [...row]),
+        atoms: [...structure.atoms],
+        periodic: { ...structure.periodic }, // Clone as object/Map
+        volumetricFields: null
+      }));
+    }
+  }
+  if (!combinedStructures.length) return;
+
+  const newObj = {
+    name: (name && name.trim()) ? name.trim() : 'Combined Trajectory',
+    traj: combinedStructures.length,
+    step: 1,
+    structures: combinedStructures,
+  };
+
+  const newRow = createRow(newObj);
+  tbody.appendChild(newRow);
+  structureShip.len += 1;
+  structureShip.container.push(newObj);
+
+  // Selected rows have been combined — uncheck them and re-sync the derived
+  // UI state (combine button enablement, comparison structure).
+  checkedRows.forEach((r) => {
+    const cb = r.querySelector('input[type="checkbox"]');
+    if (cb) cb.checked = false;
+  });
+  updateCombineButtonState();
+  syncOverlayFromCheckboxes();
+
+  selectRow(newRow);
+}
+
+/** Wire the static combine button (index.html) once at startup. */
+export function initCombineTrajectoriesButton() {
+  const btn = document.getElementById('combineTrajectoriesButton');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const count = countChecked();
+    if (count < 2) return; // guarded by the disabled state anyway
+    // Classic Comparison mode expects exactly one checked row; combining 3+
+    // rows while it's on would also trip its own "only one" error. Overlay
+    // mode has no such limit, so this only guards Comparison.
+    if (count > 2 && general.compareModeOn) {
+      showError('Comparison only supports one structure — turn off Comparison, or check only two rows to combine.');
+      return;
+    }
+    openCombineNamePopup((name) => combineCheckedRows(name));
+  });
+  updateCombineButtonState();
 }
 
 // Function to create a new row in the table
@@ -42,16 +209,14 @@ export function createRow(obj) {
     <td class="ftd icon delete">×</td>
   `;
 
-  // Bind the checkbox limit logic
+  // Plain multi-select checkbox: feeds both "combine into one trajectory"
+  // (any number checked) and the Structure Overlay module — every checked row
+  // becomes one overlay entry while general.compareModeOn is on (see
+  // syncOverlayFromCheckboxes).
   const checkbox = row.querySelector('input[type="checkbox"]');
   checkbox.addEventListener("change", () => {
-    const count = countChecked();
-    if (count > 1) {
-      checkbox.checked = false;
-      showError("Only one structure can be selected for comparison");
-      return;
-    }
-    updateComparisonStructure(row, checkbox.checked);
+    updateCombineButtonState();
+    syncOverlayFromCheckboxes();
   });
 
   // Step input handler (validation and updates)
@@ -398,6 +563,9 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     structureShip.container.splice(rowIndex, 1);
     row.remove();
     selectLastAddedRow();
+    // The removed row may have been checked — re-derive combine/comparison state.
+    updateCombineButtonState();
+    syncOverlayFromCheckboxes();
   });
 
   row.dataset.obj = JSON.stringify(obj);
@@ -433,95 +601,203 @@ export function selectLastAddedRow() {
   updateStructureFromRowAndStep(rowIndex);
 }
 
-// Function to update the comparison structure when a checkbox is toggled
-export function updateComparisonStructure(row, isChecked) {
-  if (isChecked) {
-    const rowIndex = Array.from(row.parentElement.children).indexOf(row);
-    fileBrowser.comparisonRow = row;
-    fileBrowser.comparisonRowIndex = rowIndex;
-    const stepInput = row.querySelector('input[type="number"]');
-    const step = parseInt(stepInput.value, 10) - 1;
-    const container = structureShip.container[rowIndex];
-    if (container && step >= 0 && step < container.structures.length) {
-      fileBrowser.comparisonStructure = container.structures[step];
+// Checkboxes in the file browser are a plain multi-select (needed so several
+// rows can be picked for "combine into one trajectory"). They drive
+// fileBrowser.overlayEntries only when one of two mutually-exclusive modes is
+// on: general.compareModeOn (classic Comparison panel — exactly one checked
+// row, Main/Comp crossfade slider) or general.overlayModeOn (Multi-Structure
+// Overlay panel — any number of checked rows, independent per-row controls).
+// Both panels' own "Enable ___" toggle handlers turn the other mode off before
+// calling syncOverlayFromCheckboxes() below, the single place that reconciles
+// "what's checked" + "which mode is on" into fileBrowser.overlayEntries.
+
+const DEFAULT_COMPARISON_OPACITY = 1.0; // classic Comparison: crossfade slider starts centered (both fully opaque)
+const DEFAULT_OVERLAY_OPACITY = 0.6; // Multi-Structure Overlay: translucent by default, so overlaid structures are visible through each other
+
+/** Name shown for an overlay entry in the Overlay panel's table and the
+ *  lattice-overlay plots — the row's display name in the Files list. */
+export function overlayEntryLabel(entry) {
+  return entry.row?.querySelector('.name-inner')?.textContent || 'Structure';
+}
+
+/** Drop every overlay entry's meshes and empty fileBrowser.overlayEntries. */
+export function clearAllOverlayStructures() {
+  if (!fileBrowser.overlayEntries.length) {
+    refreshPanelAvailability();
+    return;
+  }
+  for (const entry of fileBrowser.overlayEntries) disposeOverlayMeshes(entry.key);
+  fileBrowser.overlayEntries = [];
+
+  updateVisualization({
+    atomsUpdate: true,
+    bondsUpdate: true,
+    SecondAtomsUpdate: false,
+    SecondReRenderAtoms: false,
+    SecondBondsUpdate: false,
+    SecondReRenderBonds: false,
+  });
+  removeLatticeComparisonPopup();
+  // No overlay structures anymore — grey out the Overlay panel.
+  refreshPanelAvailability();
+}
+
+/** Show/hide a panel's persistent error line, if built. `elementId` differs
+ *  per panel: Comparison uses 'comparisonErrorField', Overlay uses
+ *  'overlayErrorField' (two separate DOM panels, see ComparisonPanel.js /
+ *  OverlayPanel.js). */
+function setErrorText(elementId, text) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.display = text ? 'block' : 'none';
+}
+
+/** Push the main structure's lattice + every overlay entry's lattice into the
+ *  (possibly multi-block) lattice-overlay popup, or remove it if there's
+ *  nothing to show. No-op if the popup isn't toggled on. */
+export function refreshOverlayLatticePlots() {
+  if (!general.comparisonActive) return;
+  if (!fileBrowser.selectedStructure || !fileBrowser.overlayEntries.length) {
+    removeLatticeComparisonPopup();
+    return;
+  }
+  const L1 = fileBrowser.selectedStructure.lattice.map((r) => [...r]);
+  const comparisons = fileBrowser.overlayEntries.map((entry) => ({
+    label: overlayEntryLabel(entry),
+    lattice: entry.structure.lattice.map((r) => [...r]),
+  }));
+  updateLatticeComparisonPanel(L1, comparisons);
+}
+
+/** Build a fresh overlay entry for a newly-checked row and render its meshes. */
+function addOverlayEntryForRow(row, defaultOpacity) {
+  const rowIndex = Array.from(row.parentElement.children).indexOf(row);
+  const stepInput = row.querySelector('input[type="number"]');
+  const container = structureShip.container[rowIndex];
+  const step = parseInt(stepInput.value, 10) - 1;
+  if (!container || step < 0 || step >= container.structures.length) return;
+
+  if (!row.dataset.overlayKey) row.dataset.overlayKey = generateID(['overlay']);
+  fileBrowser.overlayEntries.push({
+    key: row.dataset.overlayKey,
+    row,
+    structure: container.structures[step],
+    opacity: defaultOpacity,
+    // Comparison mode has exactly one entry, so its "Show Comparison Bonds"
+    // toggle default (general.showSecondBond) applies directly; Overlay mode
+    // always starts with bonds shown (each row has its own toggle to turn off).
+    showBonds: general.compareModeOn ? general.showSecondBond : true,
+  });
+
+  // Wire the step-input listener once per row (not once per check) — stacking
+  // a new listener on every checkbox toggle would fire the update N times.
+  if (!row.dataset.overlayStepWired) {
+    row.dataset.overlayStepWired = "1";
+    stepInput.addEventListener("input", () => {
+      const entry = fileBrowser.overlayEntries.find((e) => e.row === row);
+      if (!entry) return; // row is no longer overlaid
+      const idx = Array.from(row.parentElement.children).indexOf(row);
+      const cont = structureShip.container[idx];
+      const newStep = parseInt(stepInput.value, 10) - 1;
+      if (!cont || newStep < 0 || newStep >= cont.structures.length) return;
+      entry.structure = cont.structures[newStep];
       updateVisualization({
+        atomsUpdate: false,
+        bondsUpdate: false,
         SecondAtomsUpdate: false,
         SecondReRenderAtoms: true,
         SecondBondsUpdate: false,
         SecondReRenderBonds: true,
-        SecondReRenderLattice: false
       });
-    }
-
-    // Add event listener for step input changes
-    stepInput.addEventListener("input", () => {
-      const newStep = parseInt(stepInput.value, 10) - 1;
-      if (newStep >= 0 && newStep < container.structures.length) {
-        fileBrowser.comparisonStructure = container.structures[newStep];
-        updateVisualization({
-          SecondAtomsUpdate: false,
-          SecondReRenderAtoms: true,
-          SecondBondsUpdate: false,
-          SecondReRenderBonds: true,
-          SecondReRenderLattice: false
-        });
-
-        // Update lattice comparison panel if the popup is active
-        if (
-          fileBrowser.comparisonStructure &&
-          fileBrowser.selectedStructure &&
-          general.comparisonActive
-        ) {
-          const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
-          const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
-          updateLatticeComparisonPanel(L1, L2);
-        }
-      }
+      refreshOverlayLatticePlots();
     });
-
-    // Update lattice comparison panel if the popup is active
-    if (
-      fileBrowser.comparisonStructure &&
-      fileBrowser.selectedStructure &&
-      general.comparisonActive
-    ) {
-      const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
-      const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
-      updateLatticeComparisonPanel(L1, L2);
-    }
-    // A comparison structure now exists — the Comparison panel becomes usable.
-    refreshPanelAvailability();
   }
-  else {
-    // If unchecked, clear the comparison structure if this row was the comparison row
-    if (fileBrowser.comparisonRow === row) {
-      fileBrowser.comparisonRow = null;
-      fileBrowser.comparisonRowIndex = -1;
-      fileBrowser.comparisonStructure = null;
+}
 
-      if (groups.secondAtomsMesh) {
-        groups.secondAtomsMesh.geometry.dispose();
-        groups.secondAtomsMesh.material.dispose();
-        app.scene.remove(groups.secondAtomsMesh);
-        groups.secondAtomsMesh = null;
-      }
-      if (groups.secondBondsMesh) {
-        groups.secondBondsMesh.geometry.dispose();
-        groups.secondBondsMesh.material.dispose();
-        app.scene.remove(groups.secondBondsMesh);
-        groups.secondBondsMesh = null;
-      }
-      updateVisualization({
-        SecondAtomsUpdate: false,
-        SecondReRenderAtoms: false,
-        SecondBondsUpdate: false,
-        SecondReRenderBonds: false,
-        SecondReRenderLattice: false
-      });
-    }
-    // No comparison structure anymore — grey out the Comparison panel.
-    refreshPanelAvailability();
+/** Drop entries for rows that got unchecked (or deleted), add entries for
+ *  newly-checked rows — shared by both modes below, only the default opacity
+ *  for freshly-created entries differs. */
+function reconcileOverlayEntries(checkedRows, defaultOpacity) {
+  fileBrowser.overlayEntries = fileBrowser.overlayEntries.filter((entry) => {
+    if (checkedRows.includes(entry.row)) return true;
+    disposeOverlayMeshes(entry.key);
+    return false;
+  });
+
+  const existingRows = new Set(fileBrowser.overlayEntries.map((e) => e.row));
+  for (const row of checkedRows) {
+    if (existingRows.has(row)) continue;
+    addOverlayEntryForRow(row, defaultOpacity);
   }
+}
+
+/**
+ * Reconcile "which rows are checked" + "which of the two mutually-exclusive
+ * overlay modes is on" into fileBrowser.overlayEntries. Call this on every
+ * checkbox change and whenever general.compareModeOn / general.overlayModeOn
+ * changes. Rebuilds both panels' tables (whichever is open) so they always
+ * reflect the result — neither panel calls this from its own build, which
+ * would recurse back into rebuildPanel.
+ */
+export function syncOverlayFromCheckboxes() {
+  const tbody = document.querySelector('#objectTable tbody');
+  const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
+  const checkedRows = rows.filter((r) => r.querySelector('input[type="checkbox"]')?.checked);
+
+  const finish = () => {
+    refreshPanelAvailability();
+    // Single unified panel now (both tabs live in the same DOM subtree) — see
+    // ui/ComparisonOverlayPanel.js.
+    rebuildPanel('comparison');
+  };
+
+  if (general.compareModeOn) {
+    // Classic Comparison: exactly one checked row.
+    setErrorText('overlayErrorField', null);
+    if (checkedRows.length === 0) {
+      clearAllOverlayStructures();
+      setErrorText('comparisonErrorField', 'Please select a structure to compare to.');
+      finish();
+      return;
+    }
+    if (checkedRows.length > 1) {
+      clearAllOverlayStructures();
+      setErrorText('comparisonErrorField', 'Only one structure can be selected for comparison.');
+      finish();
+      return;
+    }
+    setErrorText('comparisonErrorField', null);
+    reconcileOverlayEntries(checkedRows, DEFAULT_COMPARISON_OPACITY);
+  } else if (general.overlayModeOn) {
+    // Multi-Structure Overlay: any number of checked rows.
+    setErrorText('comparisonErrorField', null);
+    if (checkedRows.length === 0) {
+      clearAllOverlayStructures();
+      setErrorText('overlayErrorField', 'Check one or more structures below to overlay them.');
+      finish();
+      return;
+    }
+    setErrorText('overlayErrorField', null);
+    reconcileOverlayEntries(checkedRows, DEFAULT_OVERLAY_OPACITY);
+  } else {
+    setErrorText('comparisonErrorField', null);
+    setErrorText('overlayErrorField', null);
+    clearAllOverlayStructures();
+    finish();
+    return;
+  }
+
+  updateVisualization({
+    atomsUpdate: false,
+    bondsUpdate: false,
+    SecondAtomsUpdate: false,
+    SecondReRenderAtoms: true,
+    SecondBondsUpdate: false,
+    SecondReRenderBonds: true,
+  });
+  refreshOverlayLatticePlots();
+  finish();
 }
 
 
@@ -562,12 +838,11 @@ export function updateRow(row, obj) {
     }
   }
   function checkboxLimitLogic() {
-    const count = countChecked();
-    if (count > 1) {
-      checkbox.checked = false;
-      showError("Only two structures can be compared");
-    }
-    updateComparisonStructure(row, checkbox.checked);
+    // Plain multi-select, same as createRow()'s checkbox handler — see
+    // syncOverlayFromCheckboxes for how checked rows map to overlay entries
+    // (only meaningful with the Overlay toggle on).
+    updateCombineButtonState();
+    syncOverlayFromCheckboxes();
   }
 }
 
@@ -610,15 +885,7 @@ function updateStructureFromRowAndStep(rowIndex) {
   createBondLengthControls();
   rebuildPanel('cell'); // lattice inputs follow the selected frame
   rebuildPanel('polyhedra');
-  if (
-    fileBrowser.comparisonStructure &&
-    fileBrowser.selectedStructure &&
-    general.comparisonActive // Only update if the lattice comparison popup is on
-  ) {
-    const L1 = fileBrowser.selectedStructure.lattice.map(row => [...row]);
-    const L2 = fileBrowser.comparisonStructure.lattice.map(row => [...row]);
-    updateLatticeComparisonPanel(L1, L2);
-  }
+  refreshOverlayLatticePlots(); // only updates if the lattice-overlay popup is on
   updateVisualization({reRenderAtoms: true, reRenderBonds: true, reRenderField: true, reRenderComposition: true});
   // Single choke point for every selection path (row click, step change,
   // programmatic selectStructure, load) — let subscribers (addons) react.
@@ -648,5 +915,42 @@ export function selectStructure(rowIndex, step = 0) {
   fileBrowser.selectedRow = row;
   fileBrowser.selectedRowIndex = rowIndex;
   updateStructureFromRowAndStep(rowIndex);
+  return true;
+}
+
+/**
+ * Select the next/previous row in the Files table (delta = +1/-1), wrapping
+ * around at either end. Keeps the current trajectory step (clamped by
+ * selectStructure if the new structure has fewer frames). Used by the
+ * Shift+Arrow keyboard shortcut. No-op if fewer than two structures are loaded.
+ */
+export function selectAdjacentStructure(delta) {
+  const tbody = document.querySelector('#objectTable tbody');
+  const rows = tbody ? tbody.querySelectorAll('tr') : [];
+  if (rows.length < 2) return false;
+  const current = fileBrowser.selectedRowIndex ?? 0;
+  const next = ((current + delta) % rows.length + rows.length) % rows.length;
+  return selectStructure(next, fileBrowser.stepInput ?? 0);
+}
+
+/**
+ * Step the CURRENTLY selected structure's trajectory frame by delta (+1/-1),
+ * clamped to [1, traj] — unlike selectAdjacentStructure this does NOT wrap
+ * (scrubbing past the last/first frame just stops, like a video scrubber).
+ * Reuses the row's own step <input> and fires the same 'input' event a
+ * manual edit would, so the existing stepInputValidation wiring (updateRow)
+ * drives the actual structure update. No-op if the structure has one frame.
+ */
+export function selectAdjacentStep(delta) {
+  const row = fileBrowser.selectedRow;
+  const stepInput = row ? row.querySelector('input[type="number"]') : null;
+  if (!stepInput) return false;
+  const max = parseInt(stepInput.max, 10) || 1;
+  if (max < 2) return false;
+  const current = parseInt(stepInput.value, 10) || 1;
+  const next = Math.min(Math.max(current + delta, 1), max);
+  if (next === current) return false;
+  stepInput.value = String(next);
+  stepInput.dispatchEvent(new Event('input', { bubbles: true }));
   return true;
 }

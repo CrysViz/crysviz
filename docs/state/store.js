@@ -15,16 +15,23 @@ export const periodic ={
 
 export const usedIDs = new Set();
 
-export const fileBrowser = { 
+export const fileBrowser = {
   fileData:[],
-  selectedRow:null, 
+  selectedRow:null,
   selectedRowIndex:0,
   selectedStructure:null,
-  comparisonRow:null,
-  comparisonRowIndex:-1,
-  comparisonStructure:null,
+  // Shared engine behind both the classic Comparison panel (ui/ComparisonPanel.js,
+  // general.compareModeOn, exactly one entry) and the Multi-Structure Overlay
+  // panel (ui/OverlayPanel.js, general.overlayModeOn, any number of entries) —
+  // the two modes are mutually exclusive (see syncOverlayFromCheckboxes in
+  // ui/FileBrowswerPanel.js), so there is only ever one active consumer of this
+  // array at a time. Each entry: { key (stable string id, also used as the
+  // render mesh registry key in groups.overlayMeshes), row (the <tr> element,
+  // the source of truth — rowIndex is re-derived from it), structure, opacity
+  // (0-1, independent per overlay), showBonds (bool) }.
+  overlayEntries:[],
   stepInput:null,
-}  
+}
 
 export const structureShip = new StructureShip();
 
@@ -83,7 +90,13 @@ export const groups = {
   polyhedraGroup:null,
   latticeGroup:null,
   atomsMesh: null,
+  ghostAtomsMesh: null, // render/GhostAtomsModule.js — hidden-atom ghosts, hide mode only
   bondsMesh: null,
+  // Structure Overlay module: one { atomsMesh, bondsMesh } per fileBrowser.overlayEntries
+  // entry, keyed by that entry's `key`. See render/CompAtomsFracUpdateModule.js /
+  // CompBondsFracUpdateModule.js (build/update/dispose) and MaterialStyles.js
+  // (cel-hull outline width) for the other places that iterate this map.
+  overlayMeshes: new Map(),
   forcesShaftMesh: null,
   forcesTipMesh: null,
   spinShaftMesh: null,
@@ -154,6 +167,19 @@ export const general = {
   // 'standard' = no presets (plain standard material everywhere). Resolved by
   // Structure.getDefaultElementMaterial below manual atomMaterials edits.
   elementMaterialsMap:'crysviz',
+  // Sparse per-element overrides from the Custom User Settings panel (loaded
+  // JSON or picked interactively) - element -> 0xRRGGBB / element -> radius
+  // in Å. Only elements the user has actually touched are present; anything
+  // else falls back to the built-in scheme (see
+  // defaults/color_texture_defaults.js's getElementDefaultColor and
+  // defaults/radii_defaults.js's getElementRadius).
+  customColorMap:{},
+  customAtomicRadii:{},
+  // Bookkeeping-only sparse record of which bond pairs the user has
+  // explicitly overridden via the Custom User Settings panel (for JSON
+  // export/persistence) - the actual live values also live in bondLengths
+  // below, which is what the render pipeline consults.
+  customBondLengths:{},
   bondLengths:{},
   defaultBondLengths:{},
   bondVisibility:{},
@@ -270,7 +296,6 @@ export const general = {
   colorBarSize: null,
   atomSize:1.0,
   mainOpacity:1.0,
-  compOpacity:1.0,
   showAtoms:true,
   showBonds:true,
   showLattice:true,
@@ -293,8 +318,6 @@ export const general = {
   // Cylinder radius of the unit-cell outline edges, in world units (Å)
   // (LatticeModule.createLatticeLines).
   latticeLineWidth:0.015,
-  showSecond:false,
-  showSecondBond:false, // comparison-structure bonds visibility (was misspelled `showSecondBonds`)
   showComparisonInfo:false,
   showPeriodic:true,
   // Atoms tab: edit all periodic-image copies of an atom together. When false
@@ -325,7 +348,21 @@ export const general = {
   forceStatsLive: false,
   spinsActive: false, // "Show Spins" toggle draws spin arrows
   fieldActive: true, // "Show Volumetric Field" toggle draws the isosurface
-  comparisonActive: false, // "Show Lattice Comparison" keeps the popup synced
+  comparisonActive: false, // "Show Lattice Comparison" keeps the lattice popup synced (shared by both panels below)
+  // Master "Enable Comparison" toggle (classic Comparison panel, ui/ComparisonPanel.js):
+  // exactly one checked file-browser row becomes the comparison structure, with
+  // the Main/Comp crossfade slider. Mutually exclusive with overlayModeOn below
+  // (turning one on turns the other off) — both drive fileBrowser.overlayEntries
+  // via the same checkboxes, so only one can interpret them at a time. See
+  // ui/FileBrowswerPanel.js's syncOverlayFromCheckboxes.
+  compareModeOn: false,
+  // Comparison panel's "Show Comparison Bonds" toggle — the sole entry's
+  // showBonds default (and live value, since there's only ever one entry).
+  showSecondBond: true,
+  // Master "Enable Overlay" toggle (Multi-Structure Overlay panel,
+  // ui/OverlayPanel.js): any number of checked rows become independent overlay
+  // entries, each with its own opacity/bonds toggle in a scrollable table.
+  overlayModeOn: false,
   structurePanelMode: "atoms",
   backendState:"none",
   atomisticPotential:"nep",
@@ -343,7 +380,7 @@ export const general = {
 
 
 export const mode = {
-  measureMode:'none', // 'none', 'distance', 'angle', 'delete' 
+  measureMode:'none', // 'none', 'distance', 'angle', 'hide', 'restore'
   overlayMode:'none', // 'none', comparison, trajectory_force,  trajectory_spin
 };
 

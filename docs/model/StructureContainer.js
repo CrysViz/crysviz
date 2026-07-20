@@ -53,8 +53,13 @@ export class StructureContainer {
    * element/geometry sanity checks at apply time.
    */
   flushStylesToAllStructures(targetStructure) {
+    // atomMaterials/atomUserMaterials (per-species / per-atom ray-tracing
+    // material overrides) travel alongside the style stores below — without
+    // them here, no Apply/Reset action in the app ever propagated a material
+    // override to other trajectory frames.
     const STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
-                    'polyhedraUserStyles', 'polyhedraCategoryStyles'];
+                    'polyhedraUserStyles', 'polyhedraCategoryStyles',
+                    'atomMaterials', 'atomUserMaterials'];
     this.structures.forEach(structure => {
       if (structure === targetStructure) return;
       for (const k of STORES) {

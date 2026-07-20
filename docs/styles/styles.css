@@ -528,6 +528,395 @@ body.panel-hidden #axesLegend {
   display: none;
 }
 
+/* Keyboard shortcuts help modal (ui/KeyboardShortcuts.js) — reuses the
+ * .png-export-modal card + .paste-modal-actions button row. */
+#shortcutsHelpModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#shortcutsHelpModal[hidden] {
+  display: none;
+}
+
+.shortcuts-help-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcuts-help-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shortcuts-help-title-row h3 {
+  margin: 0;
+}
+
+/* Small "i" toggle next to the title that reveals/hides .shortcuts-help-note
+ * below it, so the modal opens straight to the shortcut table instead of a
+ * wall of explanatory text. */
+.shortcuts-help-info-btn {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 11px;
+  font-style: italic;
+  font-family: Georgia, 'Times New Roman', serif;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.shortcuts-help-info-btn:hover,
+.shortcuts-help-info-btn[aria-expanded="true"] {
+  background: var(--bg-color);
+  color: #fff;
+}
+
+.shortcuts-help-note {
+  margin: 8px 0 12px 0;
+  font-size: 11.5px;
+  opacity: 0.7;
+  line-height: 1.35;
+  text-align: justify;
+}
+
+/* Four columns, one per modifier combo (Shift / Space / Shift+Space /
+ * Shift+Alt — ui/KeyboardShortcuts.js's TIER). Portrait/narrow: stacked, one
+ * shared scroll region. Landscape/wide (see the media query below): side by
+ * side, each with its own scroll. */
+.shortcuts-help-columns {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-bottom: 12px;
+}
+
+.shortcuts-help-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcuts-help-column h4 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+
+.shortcuts-help-list {
+  overflow: visible;
+}
+
+/* A real <table> per tier column — a description that needs to wrap does so
+ * in its own cell, right next to its shortcut, instead of the two fighting
+ * over space in a plain flex row. */
+.shortcuts-help-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* One function-grouped sub-section within a tier's table (e.g. Shift's
+ * "Camera" vs "Navigation" vs "Other") — commands stay in the order they're
+ * defined in ui/KeyboardShortcuts.js's COMMANDS array, not alphabetized. */
+.shortcuts-help-group-row th {
+  text-align: left;
+  padding: 10px 0 4px 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.45;
+}
+
+.shortcuts-help-group-row:first-child th {
+  padding-top: 0;
+}
+
+@media (orientation: landscape) {
+  .shortcuts-help-columns {
+    flex-direction: row;
+    gap: 16px;
+    overflow: hidden; /* scrolling moves to each column's own list below */
+  }
+
+  .shortcuts-help-column {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .shortcuts-help-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
+
+.shortcuts-help-row td {
+  padding: 3px 0;
+  vertical-align: middle;
+}
+
+.shortcuts-help-row .shortcuts-help-clear-cell {
+  width: 20px;
+  padding-right: 4px;
+}
+
+.shortcuts-help-row .shortcuts-help-key-cell {
+  width: 1%; /* shrink to the key button's own content, not table-layout's equal split */
+  white-space: nowrap;
+  padding-right: 10px;
+}
+
+.shortcuts-help-desc-cell {
+  font-size: 12.5px;
+  opacity: 0.9;
+  line-height: 1.3;
+}
+
+/* Left of each key button — clears that shortcut entirely (stored as "NONE"
+ * so it round-trips through JSON export/import as a plain string). Disabled
+ * once a shortcut is already unbound. */
+.shortcuts-help-clear {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.shortcuts-help-clear:hover:not(:disabled) {
+  background: rgba(220, 53, 53, 0.25);
+  border-color: rgba(220, 53, 53, 0.6);
+  color: #fff;
+}
+
+.shortcuts-help-clear:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+/* .shortcuts-help-key is a <button> (click to rebind), styled to still read
+ * as a key-cap chip like the rest of the app's shortcut labels. */
+.shortcuts-help-key {
+  min-width: 62px;
+  max-width: 140px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background-color 0.15s, box-shadow 0.15s;
+}
+
+.shortcuts-help-key:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Individual tokens inside a key button's default (non-recording,
+ * non-conflict) state — modifier names / the bound key itself, spaced out
+ * with "+" separators dimmed to grey so they read as punctuation rather
+ * than part of the label. */
+.shortcuts-help-key-tokens {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shortcuts-help-key-token {
+  color: #fff;
+}
+
+.shortcuts-help-key-sep {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.shortcuts-help-key-empty {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.shortcuts-help-key-recording {
+  background: rgba(240, 132, 18, 0.25);
+  border-color: rgba(240, 132, 18, 0.7);
+  box-shadow: 0 0 0 1px rgba(240, 132, 18, 0.4);
+}
+
+/* Shown briefly when a captured combo is already used by another command —
+ * the rebind is rejected, not reassigned, so this reads as an error rather
+ * than the orange "recording" state above. */
+.shortcuts-help-key-conflict {
+  background: rgba(220, 53, 53, 0.25);
+  border-color: rgba(220, 53, 53, 0.85);
+  box-shadow: 0 0 0 1px rgba(220, 53, 53, 0.5);
+  color: #fff;
+}
+
+.shortcuts-help-actions {
+  flex-wrap: wrap;
+}
+
+.shortcuts-help-modal .shortcuts-help-actions #shortcutsHelpClose {
+  flex: 1;
+  min-width: 100px;
+  margin-top: 4px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.shortcuts-help-modal .shortcuts-help-actions #shortcutsHelpClose:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+
+/* Reset lives here too (not just the Custom User Settings panel) — still
+ * gated by the same confirm popup (confirmResetAllShortcuts), just a click
+ * closer since this is where the shortcut list itself is visible. */
+.shortcuts-help-modal .shortcuts-help-actions #shortcutsHelpReset {
+  flex: 1;
+  min-width: 100px;
+  margin-top: 4px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.shortcuts-help-modal .shortcuts-help-actions #shortcutsHelpReset:hover {
+  background: rgba(220, 53, 53, 0.2);
+  border-color: rgba(220, 53, 53, 0.6);
+  color: #fff;
+}
+
+/* Reset-all-shortcuts confirmation (ui/KeyboardShortcuts.js's
+ * confirmResetAllShortcuts, triggered from the Custom User Settings panel) —
+ * reuses the same .png-export-modal card + .paste-modal-actions row as the
+ * shortcuts help modal above and RaytraceWarningModal. */
+#shortcutsResetConfirmModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#shortcutsResetConfirmModal[hidden] {
+  display: none;
+}
+
+.shortcuts-reset-confirm-modal {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.shortcuts-reset-confirm-modal p {
+  margin: 0 0 14px 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  opacity: 0.85;
+}
+
+.shortcuts-reset-confirm-modal .paste-modal-actions #shortcutsResetConfirmOk {
+  flex: 1;
+  min-width: 100px;
+  margin-top: 4px;
+  padding: 10px 16px;
+  background: rgba(220, 53, 53, 0.25);
+  border: 1px solid rgba(220, 53, 53, 0.7);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.shortcuts-reset-confirm-modal .paste-modal-actions #shortcutsResetConfirmOk:hover {
+  background: rgba(220, 53, 53, 0.4);
+}
+
+.shortcuts-reset-confirm-modal .paste-modal-actions #shortcutsResetConfirmCancel {
+  flex: 1;
+  min-width: 100px;
+  margin-top: 4px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.shortcuts-reset-confirm-modal .paste-modal-actions #shortcutsResetConfirmCancel:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+
+/* Small "keyboard shortcuts" trigger, positioned just left of .theme-switch
+ * (ui/KeyboardShortcuts.js; controlPanel.css's .theme-switch is
+ * left:286px/top:10px — adjust both together if the logo width changes). */
+.shortcuts-help-trigger {
+  position: absolute;
+  top: 10px;
+  left: 246px;
+  z-index: 10;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--panel-fg);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.shortcuts-help-trigger:hover {
+  background: var(--bg-color);
+  box-shadow: 0 0 4px 2px var(--bg-color);
+}
+
 /* Drag&drop hover highlight on the drop targets (Files window / 3D view) */
 .cv-drop-hover {
   outline: 2px dashed var(--highlight-color);
@@ -1007,6 +1396,31 @@ input[type="checkbox"] {
     text-align: center;
   }
 
+  /* Framed section box (currently only the Visual panel groups its content
+     this way — see ui/panels/defaultPanels.js's makePanelSection): a rounded
+     border around each section's headline + controls, so several stacked
+     sections read as distinct groups instead of one long flat list. */
+  .panel-section {
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 12px;
+    padding: 10px 14px 14px;
+    margin: 0 0 14px 0;
+  }
+
+  .panel-section .panel-headline {
+    margin-top: 0;
+  }
+
+  .panel-section:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Add Structure panel (ui/addToStructureModule/AddStructureModule.js,
+     LatticeInputPanel.js): centered section headlines. */
+  #cvPanelBody-addStructure .panel-headline {
+    text-align: center;
+  }
+
   .bond-toggle:hover,
   .bond-toggle:focus {
     background-color: var( --bg-color);
@@ -1102,7 +1516,7 @@ justify-content: center;
 .bond-checkbox {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   margin-bottom: 4px;
   padding: 4px 0;
 }
@@ -1439,13 +1853,30 @@ justify-content: center;
   width: 10px; height: 10px; border-radius: 50%; margin-right: 8px;
   border: 1px solid rgba(255,255,255,0.4);
 }
-.comp-left { display: inline-flex; align-items: center; gap: 6px; }
+.comp-left { display: inline-flex; align-items: center; gap: 8px; }
 #picked {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 6px 8px; background: var(--bg-color);
   border: 1px solid var(--accent-color); border-radius: 10px;
 }
-#view canvas { cursor: pointer; } /* for click affordance */
+#view canvas {
+  cursor: pointer; /* for click affordance */
+  /* Three.js's renderer.setSize() sets this canvas's CSS box via an inline
+     style, updated only when JS runs (on init, and on the resize handler's
+     next animation-frame tick). #view itself (flex: 1) is resized instantly
+     by the browser's native layout on every 'resize' event, with no
+     background-color of its own — so during the gap before JS catches up,
+     the canvas's stale inline size left part of #view uncovered, showing the
+     page's background-color (--surface-bg) through it: the reported
+     green/black flicker on resize. !important here beats that inline style
+     unconditionally, so the canvas's box always instantly matches #view; only
+     the internal drawing-buffer resolution (actual render pixels) still
+     briefly lags a frame behind, which just reads as a touch of stretching/
+     blur, never a gap. */
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
 
 
 #axesGizmo {
@@ -1803,15 +2234,66 @@ body > #structureInfoContent {
   transform: translateY(-2px);
 }
 
-.measure-tool-btn.clear-btn {
-  background: rgba(231, 76, 60, 0.15);
-  border-color: rgba(231, 76, 60, 0.3);
+/* "Restore All / Cancel" panel anchored below the Hide/Show mode button
+ * (ui/MeasurementToolbar.js) — opened by long-pressing (mouse-hold or touch)
+ * that button, not shown automatically. Fixed-positioned + placed via JS
+ * (getBoundingClientRect on the button) rather than CSS-relative, so it
+ * stays correct regardless of where the measurement toolbar itself is
+ * docked. */
+.restore-popover {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  min-width: 130px;
+  background: var(--menu-bg);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.2));
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 
-.measure-tool-btn.clear-btn:hover {
-  background: rgba(231, 76, 60, 0.25);
-  border-color: rgba(231, 76, 60, 0.5);
-  box-shadow: 0px 0px 4px 2px  rgba(231, 76, 60, 0.3);
+.restore-popover[hidden] {
+  display: none;
+}
+
+.restore-popover-btn {
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: none;
+  font-size: 12.5px;
+  cursor: pointer;
+  color: var(--panel-fg, #fff);
+}
+
+.restore-popover-all {
+  background: var(--highlight-color);
+}
+
+.restore-popover-all:hover {
+  filter: brightness(1.1);
+}
+
+.restore-popover-cancel {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.restore-popover-cancel:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Shift+drag rectangle-select over the 3D view (ui/SceneInteraction.js) —
+ * plain live outline, no masks/handles/toolbar like .cv-crop-rect above
+ * (that one is a whole configure-then-confirm flow for PNG export; this is
+ * a single live gesture that commits itself on pointerup). Pointer-events
+ * none so it never itself becomes a raycasting/click target. */
+.cv-drag-select-rect {
+  position: fixed;
+  z-index: 2000;
+  border: 1.5px solid var(--highlight-color, #f08412);
+  background: rgba(240, 132, 18, 0.12);
+  pointer-events: none;
 }
 
 .tool-icon {
@@ -1837,9 +2319,47 @@ body > #structureInfoContent {
 
 /* --- Floating distance label in scene --- */
 .measure-label{
+  position: relative;
+  /* The whole CSS2DRenderer overlay has pointer-events:none (so labels never
+   * block clicking through to the 3D scene below them) — opt this one
+   * element back in, or its remove button below could never be hovered or
+   * clicked at all. */
+  pointer-events: auto;
   padding:6px 9px; border-radius:10px; font-size:14px; font-weight:700;
   color:#fff; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.2);
   backdrop-filter: blur(6px); white-space:nowrap;
+}
+
+/* Per-measurement remove button — hidden until the label is hovered, so it
+ * doesn't clutter the view when several measurements are on screen at once. */
+.measure-label-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(20, 20, 20, 0.9);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.measure-label:hover .measure-label-remove {
+  opacity: 1;
+}
+
+.measure-label-remove:hover {
+  background: rgba(240, 132, 18, 0.9);
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
 /* Hamburger Menu - Always Top Left */

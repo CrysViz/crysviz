@@ -26,9 +26,27 @@
 /* toggle base */
 .toggle_switch {
   position: relative;
+  display: inline-block;
   width: 46px;
   height: 24px;
   flex-shrink: 0;
+  vertical-align: middle;
+  /* createMiniToggleSwitch() (StructureInfoPanel/components/utils.js) makes
+     THIS element itself a <label> (so clicking anywhere on it natively
+     toggles its wrapped checkbox), unlike the original "Link periodic
+     copies" toggle where .toggle_switch is a plain <span> inside a separate
+     outer <label class="toggle_row toggle_container"> — that container
+     already overrides margin, so it never hit this. Without resetting it
+     here too, the small toggle silently inherited the app's global `label`
+     rule's asymmetric 15px-top/8px-bottom margin (styles.css), which threw
+     off its vertical centering against the pie dot/text sitting right next
+     to it in the same row (those have their own explicit margin:0).
+     font-size/font-weight reset for the same reason, though harmless here
+     with no visible text — see styles.css's plain `label` rule this
+     overrides. */
+  margin: 0;
+  font-size: inherit;
+  font-weight: normal;
 }
 
 /* hide checkbox but keep logic */
@@ -94,6 +112,25 @@
 
 .toggle_switch input:checked + .toggle_slider::before {
   transform: translateX(22px);
+}
+
+/* Small variant (Bonds/Polyhedra category header show/hide toggle) — same
+   pill switch, shrunk to fit a compact header row instead of a plain
+   checkbox tick. */
+.toggle_switch.toggle_switch--sm {
+  width: 30px;
+  height: 16px;
+}
+
+.toggle_switch.toggle_switch--sm .toggle_slider::before {
+  width: 10px;
+  height: 10px;
+  left: 3px;
+  top: 3px;
+}
+
+.toggle_switch.toggle_switch--sm input:checked + .toggle_slider::before {
+  transform: translateX(14px);
 }
 
 

@@ -277,6 +277,10 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   plusminusMapOption.value = "plusminus";
   plusminusMapOption.textContent = "Plus-Minus Map";
 
+  const elementMapOption = document.createElement("option");
+  elementMapOption.value = "element";
+  elementMapOption.textContent = "Element Color Map";
+
   const batlowOption = document.createElement("option");
   batlowOption.value = "batlow";
   batlowOption.textContent = "Batlow";
@@ -308,6 +312,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   colorMapSelect.appendChild(noneOption);
   colorMapSelect.appendChild(directionMapOption);
   colorMapSelect.appendChild(plusminusMapOption);
+  colorMapSelect.appendChild(elementMapOption);
   colorMapSelect.appendChild(heatMapOption);
   colorMapSelect.appendChild(batlowOption);
   colorMapSelect.appendChild(hawaiiOption);
@@ -577,7 +582,7 @@ let spinRangeInitialized = false;
 // a widget instead of just a select value nothing reads.
 function refreshColorBarVisibility() {
   const cmap = colorMapSelect.value;
-  const isScalar = cmap !== "none" && cmap !== "direction" && cmap !== "plusminus";
+  const isScalar = cmap !== "none" && cmap !== "direction" && cmap !== "plusminus" && cmap !== "element";
   barControlsRow.style.display = isScalar ? "flex" : "none";
 
   // The bar may currently be floating over the scene (dragged out of

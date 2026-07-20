@@ -5,7 +5,7 @@ import { updateSingleBondColor, updateSingleBondOpacity, updateSingleBondDiamete
 import { createMaterialEditor } from './MaterialEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { notifyColorsChanged } from '../../../render/index.js';
-import { getElementAtomIndices, clampOpacity, clampRadiusScale } from './utils.js';
+import { getElementAtomIndices, clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
 import { selectBondFromRow, suppressSelectionHighlightFor3D, restoreSelectionHighlight } from '../../SelectAndHighlightModule.js';
 
 // Helper: Ensure color is always a valid CSS hex string
@@ -224,27 +224,56 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
   applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
-  applyBtn.onclick = (e) => {
-    e.stopPropagation();
-    editor.style.display = 'none';
-    restoreSelectionHighlight();
-  };
+  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+  applyBtn.title = `Click: close. Press and hold: copy ${bondName}'s color/alpha/size to every trajectory frame.`;
+  wirePressHoldPopup(applyBtn, {
+    holdLabel: 'Apply to Trajectory',
+    onPress: (e) => {
+      e.stopPropagation();
+      editor.style.display = 'none';
+      restoreSelectionHighlight();
+    },
+    onConfirm: (e) => {
+      e.stopPropagation();
+      // Same key (bondKey), directly transplanted onto every other frame's
+      // own bondUserStyles — matching how flushStylesToAllStructures already
+      // treats these keys (index/geometry-derived, tolerated staleness if a
+      // bond wraps differently on another frame; see its docstring).
+      const entries = memberBonds().map((b) => [bondKey(b.indices), { ...stylesEntryFor(b) }]);
+      applyToOtherTrajectoryFrames(structure, (frame) => {
+        frame.bondUserStyles ??= {};
+        for (const [k, style] of entries) frame.bondUserStyles[k] = { ...style };
+      });
+    },
+  });
 
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset';
   resetBtn.className = 'btn-mini';
-  resetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
-  resetBtn.title = `Remove the custom color, alpha and size for ${bondName}`;
-  resetBtn.onclick = (e) => {
-    e.stopPropagation();
-    for (const b of memberBonds()) delete structure.bondUserStyles[bondKey(b.indices)];
-    // Rebuild bonds so the mode coloring (element/solid/length/...) reapplies.
-    updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
-    // The rebuild invalidated every Bond object this list references — refresh
-    // the (expanded) list so rows point at the fresh objects.
-    /** @type {any} */ (row.closest('.individual-bonds'))?._populateBondRows?.();
-  };
+  resetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+  resetBtn.title = `Remove the custom color, alpha and size for ${bondName}.\nClick: this frame. Press and hold: whole trajectory.`;
+  wirePressHoldPopup(resetBtn, {
+    holdLabel: 'Reset Trajectory',
+    onPress: (e) => {
+      e.stopPropagation();
+      for (const b of memberBonds()) delete structure.bondUserStyles[bondKey(b.indices)];
+      // Rebuild bonds so the mode coloring (element/solid/length/...) reapplies.
+      updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
+      // The rebuild invalidated every Bond object this list references — refresh
+      // the (expanded) list so rows point at the fresh objects.
+      /** @type {any} */ (row.closest('.individual-bonds'))?._populateBondRows?.();
+    },
+    onConfirm: (e) => {
+      e.stopPropagation();
+      const keys = memberBonds().map((b) => bondKey(b.indices));
+      for (const k of keys) delete structure.bondUserStyles[k];
+      applyToOtherTrajectoryFrames(structure, (frame) => {
+        for (const k of keys) delete frame.bondUserStyles?.[k];
+      });
+      updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
+      /** @type {any} */ (row.closest('.individual-bonds'))?._populateBondRows?.();
+    },
+  });
 
   const editorButtonRow = document.createElement('div');
   editorButtonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';

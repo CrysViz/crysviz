@@ -1,15 +1,16 @@
-import { fileBrowser, groups, general } from '../../../state/store.js';
-import { colorHexToCss, getAtomColor, hexToRgba } from '../../../utils/ColorModule.js';
+import { fileBrowser, groups, general, mode } from '../../../state/store.js';
+import { colorHexToCss, getAtomColor, hexToRgba, setAtomColor } from '../../../utils/ColorModule.js';
+import { refreshGhostAtoms } from '../../../render/GhostAtomsModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import {
   updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter,
-  getAtomImageStyle, setAtomImageStyle, clearAtomImageStyle,
+  getAtomImageStyle, setAtomImageStyle, clearAtomImageStyle, atomImageKey,
   clearAtomImageStylesForAtom, getAtomImageColor, updateSingleAtomImageColor,
 } from '../../../render/AtomsFracUpdateModule.js';
 import { updatePolyhedraColors, scheduleBondRebuild } from '../../../render/index.js';
 import { createMaterialEditor } from './MaterialEditor.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
-import { clampOpacity, clampRadiusScale, updateAtomCoordinates } from './utils.js';
+import { clampOpacity, clampRadiusScale, updateAtomCoordinates, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
 import { selectAtomFromRow, suppressSelectionHighlightFor3D, restoreSelectionHighlight, setArrowHighlightOverride, clearArrowHighlightOverride } from '../../SelectAndHighlightModule.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createSpinForceEditor } from './SpinForceEditor.js';
@@ -186,6 +187,13 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       syncBondHalvesToImageColor(structure, imageIndex, hex);
     } else {
       linkedAtomIndices.forEach((linkedAtomIndex) => {
+        const linkedAtom = structure.atoms[linkedAtomIndex];
+        // Authoritative color state, set unconditionally: an atom with zero
+        // periodic images right now (e.g. currently hidden) never runs the
+        // per-image loop below, so without this its userColor/color would
+        // silently keep the old value forever, surviving even a later restore.
+        linkedAtom.userColor = hex;
+        setAtomColor(linkedAtom, hex);
         // Newest edit wins: a linked recolor overrides earlier per-copy colors.
         clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'color');
         structure.atomImages[linkedAtomIndex]?.forEach(imgIndex => {
@@ -203,17 +211,21 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     // A centered polyhedron is coloured by its centre atom, so recolour in place (cheap, no
     // geometry recompute) — the polyhedron of the edited atom matches its new colour.
     updatePolyhedraColors();
+    // This callback updates the real-atom mesh directly rather than going
+    // through updateVisualization, so it's one of the color-edit paths that
+    // doesn't get updateVisualization's own ghost-refresh hook.
+    if (mode.measureMode === 'hide' || mode.measureMode === 'restore') refreshGhostAtoms();
   });
 
   const AtomColorApplyBtn = document.createElement('button');
   AtomColorApplyBtn.textContent = 'Apply';
   AtomColorApplyBtn.className = 'btn-mini highlight';
-  AtomColorApplyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
+  AtomColorApplyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
 
   const AtomColorResetBtn = document.createElement('button');
   AtomColorResetBtn.textContent = 'Reset';
   AtomColorResetBtn.className = 'btn-mini';
-  AtomColorResetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 44px; width: 44px;';
+  AtomColorResetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
 
   // Get the default color for this element
   const defaultColor = safeColor(fileBrowser.selectedStructure.getDefaultElementColor(element));
@@ -517,7 +529,34 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     }
   };
 
-  AtomColorApplyBtn.onclick = () => {
+  // Pure-data push of this row's current color/opacity/radius/material for
+  // linkedAtomIndices onto another (off-screen) frame — no mesh/render calls,
+  // since only the currently-displayed frame has a live mesh to update.
+  // Per-copy (perImage) rows have no trajectory equivalent (an "image index"
+  // is a render-time concept for the current frame only), so this is only
+  // used from the non-perImage branch below.
+  function pushLinkedAtomsDataToFrame(frame) {
+    const src = fileBrowser.selectedStructure;
+    linkedAtomIndices.forEach((linkedAtomIndex) => {
+      const srcAtom = src.atoms[linkedAtomIndex];
+      const atom = frame.atoms[linkedAtomIndex];
+      if (!atom) return;
+      atom.color = srcAtom.color;
+      atom.userColor = srcAtom.userColor;
+      atom.elementColor = srcAtom.elementColor;
+      atom.elementOpacity = srcAtom.elementOpacity;
+      atom.opacity = srcAtom.opacity;
+      atom.radiusScale = srcAtom.radiusScale ?? 1;
+      if (src.atomUserMaterials?.[linkedAtomIndex] !== undefined) {
+        frame.atomUserMaterials ??= {};
+        frame.atomUserMaterials[linkedAtomIndex] = src.atomUserMaterials[linkedAtomIndex];
+      } else if (frame.atomUserMaterials) {
+        delete frame.atomUserMaterials[linkedAtomIndex];
+      }
+    });
+  }
+
+  function closeAtomColorEditor() {
     const currentColor = safeColor(getAtomColor(atomIndex));
     colorBtn.style.background = hexToRgba(currentColor, 0.8);
     setActiveEditor(null);
@@ -530,109 +569,152 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       reRenderOther: false,
       reRenderComposition: "open",
     });
-  };
-
-AtomColorResetBtn.onclick = () => {
-  const structure = fileBrowser.selectedStructure;
-  const currentMode = general.atomsColor; // current color mode
-
-  if (perImage) {
-    // Reset only this copy: drop its style entry and repaint from the source
-    // atom's model values (the hex==null repaint path resolves them now that
-    // the override is gone).
-    const atom = structure.atoms[atomIndex];
-    clearAtomImageStyle(structure, imageIndex);
-    updateSingleAtomColor(atomIndex, imageIndex, element);
-    updateSingleAtomOpacity(imageIndex, atom.getOpacity?.() ?? atom.opacity ?? 1);
-    updateSingleAtomDiameter(imageIndex, element, atom.getRadiusScale?.() ?? 1);
-    groups.atomsMesh.instanceMatrix.needsUpdate = true;
-    syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
-    if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
-    // Sync the editor controls without re-writing the store.
-    const srcOpacity = clampOpacity(atom.getOpacity?.() ?? atom.opacity ?? 1);
-    atomAlphaSlider.value = String(srcOpacity);
-    atomAlphaValue.value = srcOpacity.toFixed(2);
-    const srcScale = clampRadiusScale(atom.getRadiusScale?.() ?? 1);
-    atomSizeSlider.value = String(srcScale);
-    atomSizeValue.value = srcScale.toFixed(2);
-    colorBtn.style.background = hexToRgba(safeColor(atom.getColor()), 0.8);
-    updateMeasurementMarkers();
-    onColorChange();
-    updatePolyhedraColors();
-    setActiveEditor(null);
-    return;
   }
+  AtomColorApplyBtn.title = 'Click: close. Press and hold: copy this color/alpha/size to every trajectory frame.';
+  wirePressHoldPopup(AtomColorApplyBtn, {
+    holdLabel: 'Apply to Trajectory',
+    onPress: closeAtomColorEditor,
+    onConfirm: () => {
+      if (perImage) {
+        // atomImageKey is srcIndex + integer periodic offset — stable across
+        // frames of a fixed-topology trajectory (same key format the Bonds/
+        // Polyhedra rows already transplant directly), unlike the raw
+        // instanceId, which is only a this-frame render detail.
+        const structure = fileBrowser.selectedStructure;
+        const key = atomImageKey(structure, imageIndex);
+        if (!key) return;
+        const style = { ...structure.atomImageStyles?.[key] };
+        applyToOtherTrajectoryFrames(structure, (frame) => {
+          frame.atomImageStyles ??= {};
+          frame.atomImageStyles[key] = { ...style };
+        });
+      } else {
+        applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, pushLinkedAtomsDataToFrame);
+      }
+    },
+  });
 
-  linkedAtomIndices.forEach((linkedAtomIndex) => {
-    // Also drop any per-copy overrides of this atom (newest edit wins) and
-    // its ray/path-tracing material override.
-    clearAtomImageStylesForAtom(structure, linkedAtomIndex);
-    if (structure.atomUserMaterials) delete structure.atomUserMaterials[linkedAtomIndex];
-    const atom = structure.atoms[linkedAtomIndex];
-    const element = structure.elements[linkedAtomIndex];
+  // Pure-data reset of the linked-atom-indices branch below, reusable against
+  // off-screen trajectory frames (see resetBtn's press-and-hold wiring).
+  function resetLinkedAtomsColorData(structure, currentMode) {
+    linkedAtomIndices.forEach((linkedAtomIndex) => {
+      clearAtomImageStylesForAtom(structure, linkedAtomIndex);
+      if (structure.atomUserMaterials) delete structure.atomUserMaterials[linkedAtomIndex];
+      const atom = structure.atoms[linkedAtomIndex];
+      const element = structure.elements[linkedAtomIndex];
 
-    // clear user-color flag only for these atoms
-    if (atom.userColor !== undefined) delete atom.userColor;
-    if (atom.forceColor !== undefined) delete atom.forceColor;
+      if (atom.userColor !== undefined) delete atom.userColor;
+      if (atom.forceColor !== undefined) delete atom.forceColor;
 
-    // set color based on current mode
-    if (currentMode === "force") {
-      const forceObj = structure.forces?.[linkedAtomIndex];
-      if (forceObj?.vector?.length >= 3) {
-        const magnitude = Math.sqrt(
-          forceObj.vector[0] ** 2 +
-          forceObj.vector[1] ** 2 +
-          forceObj.vector[2] ** 2
-        );
-        atom.color = atomForceToColor(magnitude, general.ForceMin, general.ForceMax);
+      if (currentMode === "force") {
+        const forceObj = structure.forces?.[linkedAtomIndex];
+        if (forceObj?.vector?.length >= 3) {
+          const magnitude = Math.sqrt(
+            forceObj.vector[0] ** 2 +
+            forceObj.vector[1] ** 2 +
+            forceObj.vector[2] ** 2
+          );
+          atom.color = atomForceToColor(magnitude, general.ForceMin, general.ForceMax);
+        } else {
+          atom.color = structure.getDefaultElementColor(element);
+        }
       } else {
         atom.color = structure.getDefaultElementColor(element);
       }
-    } else {
-      atom.color = structure.getDefaultElementColor(element);
+
+      atom.resetToElementOpacity();
+      atom.resetRadiusScale?.();
+    });
+  }
+
+  function doResetAtomThisFrame() {
+    const structure = fileBrowser.selectedStructure;
+    const currentMode = general.atomsColor; // current color mode
+
+    if (perImage) {
+      // Reset only this copy: drop its style entry and repaint from the source
+      // atom's model values (the hex==null repaint path resolves them now that
+      // the override is gone).
+      const atom = structure.atoms[atomIndex];
+      clearAtomImageStyle(structure, imageIndex);
+      updateSingleAtomColor(atomIndex, imageIndex, element);
+      updateSingleAtomOpacity(imageIndex, atom.getOpacity?.() ?? atom.opacity ?? 1);
+      updateSingleAtomDiameter(imageIndex, element, atom.getRadiusScale?.() ?? 1);
+      groups.atomsMesh.instanceMatrix.needsUpdate = true;
+      syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
+      if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
+      // Sync the editor controls without re-writing the store.
+      const srcOpacity = clampOpacity(atom.getOpacity?.() ?? atom.opacity ?? 1);
+      atomAlphaSlider.value = String(srcOpacity);
+      atomAlphaValue.value = srcOpacity.toFixed(2);
+      const srcScale = clampRadiusScale(atom.getRadiusScale?.() ?? 1);
+      atomSizeSlider.value = String(srcScale);
+      atomSizeValue.value = srcScale.toFixed(2);
+      colorBtn.style.background = hexToRgba(safeColor(atom.getColor()), 0.8);
+      updateMeasurementMarkers();
+      onColorChange();
+      updatePolyhedraColors();
+      setActiveEditor(null);
+      return { structure, currentMode };
     }
 
-    atom.resetToElementOpacity();
-    atom.resetRadiusScale?.();
+    resetLinkedAtomsColorData(structure, currentMode);
 
-    structure.atomImages[linkedAtomIndex]?.forEach((imageIndex) => {
-      syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
-      updateSingleAtomColor(linkedAtomIndex, imageIndex, structure.elements[linkedAtomIndex]);
-      updateSingleAtomOpacity(imageIndex, atom.getOpacity());
+    linkedAtomIndices.forEach((linkedAtomIndex) => {
+      const atom = structure.atoms[linkedAtomIndex];
+      structure.atomImages[linkedAtomIndex]?.forEach((imageIndex) => {
+        syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
+        updateSingleAtomColor(linkedAtomIndex, imageIndex, structure.elements[linkedAtomIndex]);
+        updateSingleAtomOpacity(imageIndex, atom.getOpacity());
+      });
     });
+
+    // update button to show reset color
+    const resetColor = currentMode === "force"
+      ? atomForceToColor(
+          Math.sqrt(
+            (fileBrowser.selectedStructure.forces?.[atomIndex]?.vector?.[0] || 0) ** 2 +
+            (fileBrowser.selectedStructure.forces?.[atomIndex]?.vector?.[1] || 0) ** 2 +
+            (fileBrowser.selectedStructure.forces?.[atomIndex]?.vector?.[2] || 0) ** 2
+          ),
+          general.ForceMin,
+          general.ForceMax
+        )
+      : safeColor(fileBrowser.selectedStructure.getDefaultElementColor(element));
+
+    colorBtn.style.background = hexToRgba(resetColor, 0.8);
+
+    applyIndividualOpacity(fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? 1);
+    applyIndividualRadiusScale(fileBrowser.selectedStructure.atoms[atomIndex].getRadiusScale?.() ?? 1);
+    onColorChange();
+    // A centered polyhedron is coloured by its centre atom, so recolour in place
+    // (cheap, no geometry recompute) — matches the perImage reset branch above.
+    updatePolyhedraColors();
+    updateVisualization({
+      bondsUpdate: false,
+      reRenderAtoms: false,
+      reRenderBonds: false,
+      reRenderLattice: false,
+      reRenderOther: false,
+      reRenderComposition: "open",
+    });
+    setActiveEditor(null);
+    return { structure, currentMode };
+  }
+  AtomColorResetBtn.title = 'Click: this frame. Press and hold: whole trajectory.';
+  wirePressHoldPopup(AtomColorResetBtn, {
+    holdLabel: 'Reset Trajectory',
+    onPress: () => { doResetAtomThisFrame(); },
+    onConfirm: () => {
+      const { structure, currentMode } = doResetAtomThisFrame();
+      if (perImage) {
+        const key = atomImageKey(structure, imageIndex);
+        if (key) applyToOtherTrajectoryFrames(structure, (frame) => { delete frame.atomImageStyles?.[key]; });
+      } else {
+        applyToOtherTrajectoryFrames(structure, (frame) => resetLinkedAtomsColorData(frame, currentMode));
+      }
+    },
   });
-
-  // update button to show reset color
-  const resetColor = currentMode === "force"
-    ? atomForceToColor(
-        Math.sqrt(
-          (fileBrowser.selectedStructure.forces?.[atomIndex]?.vector?.[0] || 0) ** 2 +
-          (fileBrowser.selectedStructure.forces?.[atomIndex]?.vector?.[1] || 0) ** 2 +
-          (fileBrowser.selectedStructure.forces?.[atomIndex]?.vector?.[2] || 0) ** 2
-        ),
-        general.ForceMin,
-        general.ForceMax
-      )
-    : safeColor(fileBrowser.selectedStructure.getDefaultElementColor(element));
-
-  colorBtn.style.background = hexToRgba(resetColor, 0.8);
-
-  applyIndividualOpacity(fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? 1);
-  applyIndividualRadiusScale(fileBrowser.selectedStructure.atoms[atomIndex].getRadiusScale?.() ?? 1);
-  onColorChange();
-  // A centered polyhedron is coloured by its centre atom, so recolour in place
-  // (cheap, no geometry recompute) — matches the perImage reset branch above.
-  updatePolyhedraColors();
-  updateVisualization({
-    bondsUpdate: false,
-    reRenderAtoms: false,
-    reRenderBonds: false,
-    reRenderLattice: false,
-    reRenderOther: false,
-    reRenderComposition: "open",
-  });
-  setActiveEditor(null);
-};
   row.appendChild(editor);
   row.appendChild(coordEditor);
   row.appendChild(spinEditor);

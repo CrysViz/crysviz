@@ -19,8 +19,8 @@ export class Bond {
     radiusScales = [1, 1],
   } = {}) {
     this.elements = elements;
-    const dcolor1 = elements.length > 0 ? (defaultColorMap[elements[0]] || 0x6523b0) : 0x6523b0;
-    const dcolor2 = elements.length > 1 ? (defaultColorMap[elements[1]] || 0x808080) : 0x808080;
+    const dcolor1 = elements.length > 0 ? (general.customColorMap?.[elements[0]] ?? defaultColorMap[elements[0]] ?? 0x6523b0) : 0x6523b0;
+    const dcolor2 = elements.length > 1 ? (general.customColorMap?.[elements[1]] ?? defaultColorMap[elements[1]] ?? 0x808080) : 0x808080;
     this.defaultColor = [dcolor1, dcolor2];
     this.positions = positions;
     this.indices = indices;
