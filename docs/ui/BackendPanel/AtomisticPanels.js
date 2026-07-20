@@ -21,6 +21,7 @@ import { ensureTrajectoryPanelForLive, feedLiveStep, resetLivePlot, endLiveFeed 
 import { MLIPRunner } from '../../external/mlip_wasm/mlip_runner.js';
 import { updateForces } from '../../render/index.js';
 import { updateRow, createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
+import { refreshActivePanels } from '../panels/PanelManager.js';
 import { StructureContainer } from '../../model/index.js';
 import { Atom } from '../../model/index.js';
 import { Force } from '../../model/index.js';
@@ -810,6 +811,7 @@ async function runLocalRelax(shell, params, potential) {
     } catch { /* safety net only */ }
     try {
       selectLastAddedRow();
+      refreshActivePanels(); // rebuild the Trajectory panel for the new container
     } catch { /* non-fatal: leave selection as-is */ }
   }
 }
@@ -1086,9 +1088,12 @@ function bindMDBody(panel, shell, potential) {
       } catch { /* safety net only */ }
       // Auto-select the recorded trajectory so the viewer refreshes to MD_…
       // instead of leaving the green selection (and the last animated frame) on
-      // the source row.
+      // the source row. refreshActivePanels() rebuilds the Trajectory panel for
+      // the new container (selectLastAddedRow alone doesn't, so the scrubber
+      // otherwise stayed at 1 / 1 until a manual row click).
       try {
         selectLastAddedRow();
+        refreshActivePanels();
       } catch { /* non-fatal: leave selection as-is */ }
     }
   });
