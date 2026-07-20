@@ -277,6 +277,30 @@ export function feedLiveStep(point) {
   if (!plot) return;
   setPlotVisible(true);
   plot.update(point);
+  // Keep the scrubber tracking the growing run. The plot streams every saved
+  // frame, but the transport (slider + "N / N" indicator) is only rebuilt when
+  // the panel is; without this it froze at whatever frame count it last saw,
+  // so the number under the slider disagreed with the plot's sample count.
+  syncScrubberToLiveContainer();
+}
+
+// Advance the transport (slider max/value + frame indicator + plot cursor) to
+// the current live container length, WITHOUT re-rendering the 3D scene — the MD
+// loop owns the scene during a live run.
+function syncScrubberToLiveContainer() {
+  const container = structureShip.container[fileBrowser.selectedRowIndex];
+  const n = container?.structures?.length || 0;
+  if (!n) return;
+  const last = n - 1;
+  const slider = trajectoryPlayerElements.frameSlider;
+  if (slider) { slider.max = last; slider.value = last; }
+  const ind = trajectoryPlayerElements.frameIndicator;
+  const cur = ind && ind.querySelector('.tfCur');
+  const tot = ind && ind.querySelector('.tfTot');
+  if (cur && tot) { cur.textContent = n; tot.textContent = n; }
+  else if (ind) ind.textContent = `${n} / ${n}`;
+  currentFrame = last;
+  if (trajPlot) trajPlot.setCursor(last); // clamped to the last plotted sample
 }
 
 /** Reset the live plot state at the start of a new run. */

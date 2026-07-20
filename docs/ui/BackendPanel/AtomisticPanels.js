@@ -937,7 +937,9 @@ function bindMDBody(panel, shell, potential) {
       // long after the live run's in-memory plot was torn down. Seed one NaN gap
       // for the initial (pre-run) frame so the series stays index-aligned with
       // mdContainer.structures.
-      mdContainer.plotSeries = { temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN], pressure: [NaN] };
+      // No pressure series: NEP/PET-MAD/ASE MD here runs at fixed cell, so the
+      // stress trace is not a meaningful pressure to plot.
+      mdContainer.plotSeries = { temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN] };
       structureShip.container.push(mdContainer);
       const mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
       tableBody.appendChild(mdRow);
@@ -990,9 +992,8 @@ function bindMDBody(panel, shell, potential) {
             });
           }
 
-          // Pressure = mean of the step's stress-tensor diagonal (NaN when absent).
-          const pressure = stressMean(mdState.stress);
-          lastStepMetrics = { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv, pressure };
+          // Fixed-cell MD: no pressure series (see plotSeries seed above).
+          lastStepMetrics = { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv };
           if (shouldSave) {
             const frame = snapshotCurrentStructure();
             frame.energy = epotEv;
@@ -1006,7 +1007,6 @@ function bindMDBody(panel, shell, potential) {
             mdContainer.plotSeries.temperatureK.push(temperatureK);
             mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(targetTemperatureK) ? targetTemperatureK : NaN);
             mdContainer.plotSeries.etotEv.push(etotEv);
-            mdContainer.plotSeries.pressure.push(Number.isFinite(pressure) ? pressure : NaN);
           }
           const tLabel = Number.isFinite(targetTemperatureK)
             ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`
@@ -1034,7 +1034,6 @@ function bindMDBody(panel, shell, potential) {
           mdContainer.plotSeries.temperatureK.push(lastStepMetrics.temperatureK);
           mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(lastStepMetrics.targetTemperatureK) ? lastStepMetrics.targetTemperatureK : NaN);
           mdContainer.plotSeries.etotEv.push(lastStepMetrics.etotEv);
-          mdContainer.plotSeries.pressure.push(Number.isFinite(lastStepMetrics.pressure) ? lastStepMetrics.pressure : NaN);
         }
       }
 

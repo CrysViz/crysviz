@@ -194,6 +194,12 @@ export function createTrajectoryPlot(hostEl, options = {}) {
         tracegroupgap: 8,
       },
       hovermode: 'x unified',
+      // Opaque, light-on-dark hover box — the default translucent label was
+      // unreadable against the plot background.
+      hoverlabel: {
+        bgcolor: 'rgba(24,24,27,0.96)', bordercolor: '#5a5a5e',
+        font: { color: '#f2f2f2', size: 11 },
+      },
       xaxis: {
         title: { text: 'Frame', font: { size: 11 }, standoff: 6 },
         color: fontColor, gridcolor: 'rgba(255,255,255,0.07)',
@@ -262,7 +268,26 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     await Plotly.react(plotDiv, buildTraces(plotted), buildLayout(plotted), config);
     ready = true;
     wireClickSeek();
+    startResizeObserver();
     requestAnimationFrame(() => { if (!removed) Plotly.Plots.resize(plotDiv); });
+  }
+
+  // Plotly's responsive:true only tracks window resizes; the panel is
+  // user-resizable (drag + CSS resize handle), so observe the container and
+  // resize the chart to fill it — otherwise it only caught up on an autoscale
+  // ("Home") click. rAF-coalesced so a drag doesn't fire a resize per pixel.
+  let ro = null;
+  let resizeRAF = 0;
+  function startResizeObserver() {
+    if (ro || typeof ResizeObserver === 'undefined') return;
+    ro = new ResizeObserver(() => {
+      if (resizeRAF) return;
+      resizeRAF = requestAnimationFrame(() => {
+        resizeRAF = 0;
+        if (ready && !removed && Plotly) Plotly.Plots.resize(plotDiv);
+      });
+    });
+    ro.observe(plotDiv);
   }
 
   // --- live cursor (rAF-coalesced single relayout) ------------------------
@@ -392,6 +417,8 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     remove() {
       removed = true;
       if (cursorRAF) cancelAnimationFrame(cursorRAF);
+      if (resizeRAF) cancelAnimationFrame(resizeRAF);
+      if (ro) { ro.disconnect(); ro = null; }
       try { if (Plotly && plotDiv) Plotly.purge(plotDiv); } catch { /* nothing drawn yet */ }
       root.remove();
     },
