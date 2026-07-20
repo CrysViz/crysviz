@@ -6,7 +6,7 @@ import {
   applyStructureToViewer,
   maxForce,
   pressureGPaFromStress,
-  stressTrace,
+  stressMean,
 } from '../../atomistic/relaxer.js';
 import {
   initializeMDState,
@@ -747,7 +747,7 @@ async function runLocalRelax(shell, params, potential) {
           step,
           etotEv: Number(out.total_energy),
           meanForce: meanForceOf(out.forces),
-          pressure: stressTrace(out.stress?.matrix3x3),
+          pressure: stressMean(out.stress?.matrix3x3),
         };
         if (shouldSave) {
           relaxContainer.structures.push(snapshotCurrentStructure());
@@ -990,8 +990,8 @@ function bindMDBody(panel, shell, potential) {
             });
           }
 
-          // Pressure = trace of the step's stress matrix (NaN when absent).
-          const pressure = stressTrace(mdState.stress);
+          // Pressure = mean of the step's stress-tensor diagonal (NaN when absent).
+          const pressure = stressMean(mdState.stress);
           lastStepMetrics = { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv, pressure };
           if (shouldSave) {
             const frame = snapshotCurrentStructure();

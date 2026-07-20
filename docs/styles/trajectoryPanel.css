@@ -153,25 +153,10 @@
     .trajOpt select:focus,
     .trajOpt input:focus { border-color: #2e9c6e; outline: none; }
 
-    /* ---- "Compute step stats": builds the energy/mean-force series from a
-       loaded trajectory's existing per-frame data (no MLIP/model run). ---- */
-    .trajComputeBtn {
-      align-self: stretch;
-      background: #2c2c2e;
-      color: #dcdcdc;
-      border: 1px solid #3a3a3c;
-      border-radius: 7px;
-      padding: 7px 10px;
-      font-size: 12px;
-      cursor: pointer;
-      transition: background 0.12s ease, border-color 0.12s ease;
-    }
-    .trajComputeBtn:hover { background: #3a3a3c; border-color: #4a4a4c; }
-    .trajComputeBtn:disabled { color: #888; cursor: wait; }
-
-    /* ---- Resizable plot region (unified MD Monitor). Hidden by default via
-       inline style until hasPlottableData() decides there's something to show
-       (file-loaded energy, forces, or a live MD/relax feed). ---- */
+    /* ---- Resizable Plotly plot region (unified MD Monitor). Hidden by default
+       via inline style until hasPlottableData() decides there's something to
+       show (file-loaded energy, forces, or a live MD/relax feed). Legend,
+       zoom/pan and PNG/data export come from Plotly's own chrome. ---- */
     #trajPlotHost {
       display: block;
       width: 100%;
@@ -181,8 +166,8 @@
       display: flex;
       flex-direction: column;
       width: 100%;
-      height: 230px;
-      min-height: 170px;
+      height: 260px;
+      min-height: 190px;
       min-width: 260px;
       padding: 8px;
       box-sizing: border-box;
@@ -193,29 +178,32 @@
       overflow: hidden;
     }
 
-    .trajPlotCanvas {
+    /* Slim toolbar above the chart; the "Compute step stats" action reads as
+       part of the plot chrome and only appears when there's data to crunch. */
+    .trajPlotToolbar {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      min-height: 0;
+      margin-bottom: 2px;
+    }
+    .trajPlotComputeBtn {
+      background: #2c2c2e;
+      color: #dcdcdc;
+      border: 1px solid #3a3a3c;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease;
+    }
+    .trajPlotComputeBtn:hover { background: #3a3a3c; border-color: #4a4a4c; }
+
+    .trajPlotChart {
       flex: 1 1 auto;
       width: 100%;
       min-height: 0;
-    }
-
-    .trajPlotLegend {
-      flex: 0 0 auto;
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 5px 14px;
-      font-size: 11px;
-      margin-top: 8px;
-      color: #cfcfcf;
-    }
-    .trajPlotLegendItem { display: inline-flex; align-items: center; gap: 5px; }
-    .trajPlotSwatch {
-      display: inline-block;
-      width: 12px;
-      height: 3px;
-      border-radius: 2px;
-      flex: 0 0 auto;
     }
 
     .trajPlotStats {

@@ -1,89 +1,59 @@
-// Standalone, reusable canvas time-series plot component.
+// Standalone, reusable Plotly time-series plot for trajectory data (live MD
+// runs, relaxations, loaded OUTCAR/extxyz trajectories). Renders into a
+// caller-supplied host element and hands back a small imperative API. It does
+// NOT register a panel.
 //
-// Renders trajectory data (live MD runs, relaxations, loaded OUTCAR/extxyz
-// trajectories) into a caller-supplied host element and hands back a small
-// imperative API. It does NOT register a panel.
+// Backed by Plotly (shared, lazily-loaded — see utils/plotlyLoader.js), so it
+// inherits Plotly's native niceties for free: click a legend entry to toggle a
+// series (temperature / energy / force / pressure) on and off, box-zoom, pan,
+// autoscale, and PNG/data export from the modebar — the same toolset the EOS
+// plots use, for a consistent feel.
 //
-// Layout: a proper dual-axis chart. Up to two quantity "groups" are shown at
-// once, each with its own y-axis, nice tick labels and colour:
-//   - temperature group (blue)  -> left axis by default
-//   - energy group      (orange)
-//   - force group       (green)
-// The first present group takes the left axis, the second the right axis, so
-// MD (temperature + energy) and OUTCAR (energy + mean force) both read cleanly
-// without one quantity being flattened onto another's scale. Potential/kinetic
-// energy are reported in the stats line but not drawn (they would swamp the
-// total-energy scale).
+// Up to three quantity "groups" get their own y-axis so quantities on very
+// different scales (temperature vs energy vs force/pressure) all read cleanly:
+//   temperature (blue), energy (orange), force (green), pressure (violet).
+// The first present group takes the left axis, the next two stack on the right.
+//
+// Performance: live streaming appends via Plotly.extendTraces (with a ring-buffer
+// cap), never a full redraw; the playback cursor is a layout shape moved through
+// a single rAF-coalesced relayout, so even a fast live feed can't thrash it.
 
-// Series metadata: colour, dash pattern, autoscale group, legend label and
-// whether the series is drawn (`plot`). Series not listed fall back to a
-// generic style on their own scale.
+import { loadPlotly } from '../utils/plotlyLoader.js';
+
+// Series metadata: colour, dash, autoscale group, legend label and whether the
+// series is drawn (`plot`). Potential/kinetic energy are reported in the live
+// stats line but not drawn (they would swamp the total-energy scale).
+// Compact legend labels (units live on the y-axis titles/hover) so the
+// horizontal legend fits the narrow panel without wrapping onto the plot.
 const SERIES_SPEC = {
-  temperatureK:       { color: '#53c7ff', dash: [],     group: 'temperature', label: 'Temperature (K)', plot: true },
-  targetTemperatureK: { color: '#95efff', dash: [6, 4], group: 'temperature', label: 'Target T (K)',    plot: true },
-  etotEv:             { color: '#ffb347', dash: [],     group: 'energy',      label: 'Total Energy (eV)', plot: true },
-  epotEv:             { color: '#ffb347', dash: [3, 3], group: 'energy',      label: 'Potential Energy (eV)', plot: false },
-  ekinEv:             { color: '#ffb347', dash: [2, 5], group: 'energy',      label: 'Kinetic Energy (eV)',   plot: false },
-  meanForce:          { color: '#7CFC9B', dash: [],     group: 'force',       label: 'Mean |Force| (eV/Å)',   plot: true },
-  pressure:           { color: '#c39bff', dash: [],     group: 'pressure',    label: 'Pressure (tr σ)',       plot: true },
+  temperatureK:       { color: '#53c7ff', dash: 'solid', group: 'temperature', label: 'T',        plot: true },
+  targetTemperatureK: { color: '#95efff', dash: 'dash',  group: 'temperature', label: 'T target', plot: true },
+  etotEv:             { color: '#ffb347', dash: 'solid', group: 'energy',      label: 'E tot',    plot: true },
+  epotEv:             { color: '#ffb347', dash: 'dot',   group: 'energy',      label: 'E pot',    plot: false },
+  ekinEv:             { color: '#ffb347', dash: 'dashdot', group: 'energy',    label: 'E kin',    plot: false },
+  meanForce:          { color: '#7CFC9B', dash: 'solid', group: 'force',       label: 'mean |F|', plot: true },
+  pressure:           { color: '#c39bff', dash: 'solid', group: 'pressure',    label: 'P',        plot: true },
 };
 
 // Per-group axis presentation. Titles are short symbols (units live in the
 // legend) so up to three axis labels fit without colliding.
 const GROUP_META = {
-  temperature: { color: '#53c7ff', title: 'T' },
-  energy:      { color: '#ffb347', title: 'E' },
-  force:       { color: '#7CFC9B', title: '|F|' },
-  pressure:    { color: '#c39bff', title: 'P' },
+  temperature: { color: '#53c7ff', title: 'T (K)' },
+  energy:      { color: '#ffb347', title: 'E (eV)' },
+  force:       { color: '#7CFC9B', title: '|F| (eV/Å)' },
+  pressure:    { color: '#c39bff', title: 'P (mean σ)' },
 };
 
-const PAD_L = 54;   // room for left-axis tick labels
-const PAD_R = 58;   // room for right-axis tick labels
-const PAD_T = 16;   // room for the axis titles
-const PAD_B = 26;   // room for x (frame) tick labels
-const CSS_H = 210;  // canvas height in CSS pixels
+const GROUP_ORDER = ['temperature', 'energy', 'force', 'pressure'];
+const AXIS_IDS = ['y', 'y2', 'y3'];      // left, right, outer-right
+const KNOWN = ['temperatureK', 'targetTemperatureK', 'etotEv', 'epotEv', 'ekinEv', 'meanForce', 'pressure'];
+
+function specFor(name) {
+  return SERIES_SPEC[name] || { color: '#cccccc', dash: 'solid', group: name, label: name, plot: true };
+}
 
 function fmt(v, digits) {
   return Number.isFinite(v) ? v.toFixed(digits) : 'n/a';
-}
-
-// "Nice number" rounding for axis ticks (Heckbert).
-function niceNum(range, round) {
-  if (!(range > 0)) return 1;
-  const exp = Math.floor(Math.log10(range));
-  const frac = range / Math.pow(10, exp);
-  let nf;
-  if (round) nf = frac < 1.5 ? 1 : frac < 3 ? 2 : frac < 7 ? 5 : 10;
-  else nf = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
-  return nf * Math.pow(10, exp);
-}
-
-// Build a padded, tick-aligned scale for [min, max]. Handles the flat case
-// (a near-constant series still gets a readable, centred axis).
-function niceScale(min, max, maxTicks = 5) {
-  if (!Number.isFinite(min) || !Number.isFinite(max)) { min = 0; max = 1; }
-  if (max - min < 1e-9) {
-    const c = (min + max) / 2 || 0;
-    const pad = Math.abs(c) * 0.01 || 0.5;
-    min = c - pad; max = c + pad;
-  }
-  const range = niceNum(max - min, false);
-  const step = niceNum(range / Math.max(1, maxTicks - 1), true);
-  const nmin = Math.floor(min / step) * step;
-  const nmax = Math.ceil(max / step) * step;
-  const ticks = [];
-  for (let v = nmin; v <= nmax + step * 0.5; v += step) ticks.push(v);
-  return { min: nmin, max: nmax, step, ticks };
-}
-
-// Decimal places for a tick label given the step size.
-function tickDecimals(step) {
-  if (!(step > 0)) return 2;
-  if (step >= 10) return 0;
-  if (step >= 1) return 1;
-  if (step >= 0.1) return 2;
-  if (step >= 0.01) return 3;
-  return 4;
 }
 
 /**
@@ -92,7 +62,8 @@ function tickDecimals(step) {
  * @param {HTMLElement} hostEl
  * @param {object} [options]
  * @param {number} [options.maxPts=5000] - ring-buffer cap per streamed series.
- * @returns {{update, setSeries, clear, setCursor, onSeek, getEl, remove}}
+ * @returns {{update, setSeries, clear, setCursor, onSeek, onComputeStats,
+ *            setComputeStatsAvailable, getEl, remove}}
  */
 export function createTrajectoryPlot(hostEl, options = {}) {
   const maxPts = Number.isFinite(options.maxPts) ? options.maxPts : 5000;
@@ -101,19 +72,21 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   const root = document.createElement('div');
   root.className = 'trajPlot';
 
-  const canvas = document.createElement('canvas');
-  canvas.className = 'trajPlotCanvas';
-  // Width/height are driven by CSS (.trajPlot is resizable; the canvas flexes to
-  // fill it). draw() reads the resulting clientWidth/clientHeight each frame.
-  canvas.style.display = 'block';
-  canvas.style.border = '1px solid #3a3a3a';
-  canvas.style.borderRadius = '6px';
-  canvas.style.background = '#0d0d0d';
-  root.appendChild(canvas);
+  // A slim toolbar above the chart hosts the "Compute step stats" action so it
+  // reads as part of the plot chrome (shown only when there is data to crunch).
+  const toolbar = document.createElement('div');
+  toolbar.className = 'trajPlotToolbar';
+  const computeBtn = document.createElement('button');
+  computeBtn.type = 'button';
+  computeBtn.className = 'trajPlotComputeBtn';
+  computeBtn.textContent = 'Compute step stats';
+  computeBtn.style.display = 'none';
+  toolbar.appendChild(computeBtn);
+  root.appendChild(toolbar);
 
-  const legend = document.createElement('div');
-  legend.className = 'trajPlotLegend';
-  root.appendChild(legend);
+  const plotDiv = document.createElement('div');
+  plotDiv.className = 'trajPlotChart';
+  root.appendChild(plotDiv);
 
   const statsEl = document.createElement('div');
   statsEl.className = 'trajPlotStats';
@@ -121,324 +94,210 @@ export function createTrajectoryPlot(hostEl, options = {}) {
 
   hostEl.appendChild(root);
 
-  const ctx = canvas.getContext('2d');
-
-  // --- series storage -----------------------------------------------------
+  // --- state --------------------------------------------------------------
   /** @type {Map<string, number[]>} */
   const series = new Map();
   const seriesOrder = [];
+  let sampleCount = 0;       // longest series length == number of x samples
+  let cursorIndex = null;
+  let seekCb = null;
+  let computeCb = null;
+
+  let Plotly = null;         // resolved module (once loaded)
+  let ready = false;         // Plotly.newPlot has run at least once
+  let removed = false;
+  let layoutSig = '';        // signature of the current trace/axis layout
 
   function ensureSeries(name) {
     if (!series.has(name)) { series.set(name, []); seriesOrder.push(name); }
     return series.get(name);
   }
-  function specFor(name) {
-    return SERIES_SPEC[name] || { color: '#cccccc', dash: [], group: name, label: name, plot: true };
-  }
 
-  function rebuildLegend() {
-    legend.innerHTML = '';
-    for (const name of seriesOrder) {
-      const arr = series.get(name);
-      if (!arr || !arr.some(Number.isFinite)) continue;
-      const spec = specFor(name);
-      if (spec.plot === false) continue;
-      const span = document.createElement('span');
-      span.className = 'trajPlotLegendItem';
-      const swatch = document.createElement('span');
-      swatch.className = 'trajPlotSwatch';
-      swatch.style.background = spec.color;
-      if (spec.dash.length) swatch.style.opacity = '0.85';
-      span.appendChild(swatch);
-      span.appendChild(document.createTextNode(spec.label));
-      legend.appendChild(span);
-    }
-  }
-
-  // --- cursor + seek ------------------------------------------------------
-  let cursorIndex = null;
-  let seekCb = null;
-
-  function seriesLength() {
+  function recomputeSampleCount() {
     let n = 0;
     for (const arr of series.values()) n = Math.max(n, arr.length);
-    return n;
+    sampleCount = n;
   }
 
-  // Which groups currently have plottable data, in a stable priority order.
-  function presentGroups() {
-    const order = ['temperature', 'energy', 'force', 'pressure'];
+  // Plotted series (finite data + spec.plot !== false), in group order, each
+  // tagged with the y-axis its group maps to. Drives both traces and layout.
+  function plottedSeries() {
     const present = [];
-    for (const g of order) {
-      let has = false;
+    for (const g of GROUP_ORDER) {
       for (const name of seriesOrder) {
         const spec = specFor(name);
         if (spec.group !== g || spec.plot === false) continue;
         const arr = series.get(name);
-        if (arr && arr.some(Number.isFinite)) { has = true; break; }
+        if (arr && arr.some(Number.isFinite)) present.push({ name, spec, group: g });
       }
-      if (has) present.push(g);
     }
     return present;
   }
 
-  function groupMinMax(group) {
-    let mn = Infinity; let mx = -Infinity;
-    for (const name of seriesOrder) {
-      const spec = specFor(name);
-      if (spec.group !== group || spec.plot === false) continue;
-      const arr = series.get(name);
-      if (!arr) continue;
-      for (const v of arr) if (Number.isFinite(v)) { if (v < mn) mn = v; if (v > mx) mx = v; }
-    }
-    return { mn, mx };
+  // Distinct groups present, in order — the first gets the left axis, the next
+  // two the right axes.
+  function groupAxisMap(plotted) {
+    const groups = [];
+    for (const p of plotted) if (!groups.includes(p.group)) groups.push(p.group);
+    const map = {};
+    groups.slice(0, AXIS_IDS.length).forEach((g, i) => { map[g] = AXIS_IDS[i]; });
+    // Any groups beyond the third fold onto the last axis rather than vanish.
+    for (const g of groups) if (!map[g]) map[g] = AXIS_IDS[AXIS_IDS.length - 1];
+    return { groups, map };
   }
 
-  // --- geometry helpers (CSS-px coordinate space) -------------------------
-  let plotL = PAD_L; let plotR = 0; let plotT = PAD_T; let plotB = 0;
+  const DASH = { solid: undefined, dash: 'dash', dot: 'dot', dashdot: 'dashdot' };
 
-  function mapX(i, n) {
-    if (n <= 1) return plotL;
-    return plotL + (i / (n - 1)) * (plotR - plotL);
-  }
-  function invMapX(px, n) {
-    if (n <= 1) return 0;
-    const frac = (px - plotL) / Math.max(1, plotR - plotL);
-    return Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
-  }
-  function mapY(v, scale) {
-    const den = Math.max(1e-12, scale.max - scale.min);
-    return plotB - ((v - scale.min) / den) * (plotB - plotT);
+  function xData(n) {
+    const x = new Array(n);
+    for (let i = 0; i < n; i++) x[i] = i + 1; // frames are 1-based on screen
+    return x;
   }
 
-  function drawSeriesLine(name, scale, n) {
-    const arr = series.get(name);
-    if (!arr || !arr.some(Number.isFinite)) return;
-    const spec = specFor(name);
-    ctx.beginPath();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = spec.color;
-    if (spec.dash.length) ctx.setLineDash(spec.dash);
-    let started = false;
-    for (let i = 0; i < n; i += 1) {
-      const v = arr[i];
-      if (!Number.isFinite(v)) { started = false; continue; }
-      const x = mapX(i, n);
-      const y = mapY(v, scale);
-      if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
-    }
-    ctx.stroke();
-    if (spec.dash.length) ctx.setLineDash([]);
+  function buildTraces(plotted) {
+    const n = sampleCount;
+    const x = xData(n);
+    return plotted.map(({ name, spec, group }) => ({
+      type: 'scatter',
+      mode: 'lines',
+      name: spec.label,
+      x: x.slice(),
+      y: (series.get(name) || []).slice(0, n),
+      yaxis: groupAxisMap(plotted).map[group],
+      line: { color: spec.color, width: 1.8, dash: DASH[spec.dash] },
+      connectgaps: false,
+      hovertemplate: `${spec.label}: %{y}<br>frame %{x}<extra></extra>`,
+    }));
   }
 
-  function draw() {
-    // Size the backing store to the element's rendered size (the .trajPlot box
-    // is user-resizable) and the device pixel ratio.
-    const cssW = Math.max(260, Math.floor(canvas.clientWidth || 340));
-    const cssH = Math.max(150, Math.floor(canvas.clientHeight || CSS_H));
-    const dpr = window.devicePixelRatio || 1;
-    if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
-      canvas.width = Math.round(cssW * dpr);
-      canvas.height = Math.round(cssH * dpr);
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  function buildLayout(plotted) {
+    const { groups, map } = groupAxisMap(plotted);
+    const nRight = Math.max(0, groups.length - 1);
+    // Shrink the plotting area from the right to make room for stacked right
+    // axes, and pad the right margin so the outer axis's tick labels aren't
+    // clipped by the container edge.
+    const rightDomain = nRight >= 2 ? 0.84 : 1;
+    const marginR = nRight >= 2 ? 52 : (nRight === 1 ? 44 : 14);
+    const fontColor = '#ddd';
 
-    const W = cssW; const H = cssH;
-    plotL = PAD_L; plotR = W - PAD_R; plotT = PAD_T; plotB = H - PAD_B;
+    const layout = {
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      font: { color: fontColor, size: 11 },
+      // Extra top room so the (possibly two-row) horizontal legend sits fully
+      // above the plot frame instead of overlapping the traces.
+      margin: { t: 42, r: marginR, b: 38, l: 52 },
+      showlegend: true,
+      legend: {
+        orientation: 'h', x: 0.5, y: 1.02, xanchor: 'center', yanchor: 'bottom',
+        font: { color: fontColor, size: 10 }, bgcolor: 'rgba(0,0,0,0)',
+        tracegroupgap: 8,
+      },
+      hovermode: 'x unified',
+      xaxis: {
+        title: { text: 'Frame', font: { size: 11 }, standoff: 6 },
+        color: fontColor, gridcolor: 'rgba(255,255,255,0.07)',
+        zeroline: false, domain: [0, rightDomain],
+      },
+      shapes: cursorShapes(),
+    };
 
-    ctx.clearRect(0, 0, W, H);
-
-    const n = seriesLength();
-    const groups = presentGroups();
-    // Up to three y-axes: one on the left, up to two stacked on the right. The
-    // second right axis (e.g. pressure alongside temperature + energy) reserves
-    // extra right margin so its tick labels don't collide with the first.
-    const axes = groups.slice(0, 3);
-    const RIGHT2_GAP = 46;
-    const need2ndRight = axes.length >= 3;
-    plotR = W - PAD_R - (need2ndRight ? RIGHT2_GAP : 0);
-
-    const leftG = axes[0] || null;
-    const right1G = axes[1] || null;
-    const right2G = axes[2] || null;
-
-    const scales = {};
-    for (const g of groups) {
-      const { mn, mx } = groupMinMax(g);
-      scales[g] = niceScale(mn, mx, 5);
-    }
-
-    ctx.font = '10px monospace';
-    ctx.textBaseline = 'middle';
-
-    // --- left axis: horizontal gridlines + tick labels ---
-    if (leftG) {
-      const sc = scales[leftG];
-      const col = GROUP_META[leftG].color;
-      ctx.textAlign = 'right';
-      for (const t of sc.ticks) {
-        if (t < sc.min - 1e-9 || t > sc.max + 1e-9) continue;
-        const y = mapY(t, sc);
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(plotL, y);
-        ctx.lineTo(plotR, y);
-        ctx.stroke();
-        ctx.fillStyle = col;
-        ctx.fillText(t.toFixed(tickDecimals(sc.step)), plotL - 6, y);
+    groups.forEach((g, i) => {
+      const axisId = map[g];
+      const key = axisId === 'y' ? 'yaxis' : `yaxis${axisId.slice(1)}`;
+      const meta = GROUP_META[g];
+      const ax = {
+        title: { text: meta.title, font: { color: meta.color, size: 12 } },
+        color: meta.color,
+        tickfont: { color: meta.color, size: 10 },
+        zeroline: false,
+      };
+      if (i === 0) {
+        ax.gridcolor = 'rgba(255,255,255,0.07)';
+      } else {
+        ax.overlaying = 'y';
+        ax.side = 'right';
+        ax.showgrid = false;
+        // Second right axis floats just outside the shrunk plot area, at the
+        // right edge of the paper so its labels live in the padded margin.
+        if (i >= 2) { ax.anchor = 'free'; ax.position = 1; }
       }
-    }
+      layout[key] = ax;
+    });
 
-    // --- right axis/axes: tick labels only (no gridlines), in the group colour ---
-    function drawRightAxis(group, axisX, labelX) {
-      if (!group) return;
-      const sc = scales[group];
-      const col = GROUP_META[group].color;
-      ctx.textAlign = 'left';
-      for (const t of sc.ticks) {
-        if (t < sc.min - 1e-9 || t > sc.max + 1e-9) continue;
-        const y = mapY(t, sc);
-        ctx.fillStyle = col;
-        ctx.fillText(t.toFixed(tickDecimals(sc.step)), labelX, y);
-        ctx.strokeStyle = col;
-        ctx.globalAlpha = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(axisX, y);
-        ctx.lineTo(axisX + 3, y);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-      }
-    }
-    drawRightAxis(right1G, plotR, plotR + 6);
-    drawRightAxis(right2G, plotR + RIGHT2_GAP, plotR + RIGHT2_GAP + 6);
-    if (right2G) {
-      // Faint vertical anchor for the outer axis so its labels don't float.
-      ctx.strokeStyle = GROUP_META[right2G].color;
-      ctx.globalAlpha = 0.22;
-      ctx.beginPath();
-      ctx.moveTo(plotR + RIGHT2_GAP, plotT);
-      ctx.lineTo(plotR + RIGHT2_GAP, plotB);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-
-    // --- x (frame) ticks ---
-    if (n >= 2) {
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#888';
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-      const xTicks = Math.min(6, n);
-      for (let k = 0; k < xTicks; k += 1) {
-        const i = Math.round((k / (xTicks - 1)) * (n - 1));
-        const x = mapX(i, n);
-        ctx.beginPath();
-        ctx.moveTo(x, plotT);
-        ctx.lineTo(x, plotB);
-        ctx.stroke();
-        ctx.fillText(String(i + 1), x, plotB + 12);
-      }
-    }
-
-    // --- plot border ---
-    ctx.strokeStyle = '#555';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(plotL, plotT, plotR - plotL, plotB - plotT);
-
-    // --- axis titles ---
-    ctx.textBaseline = 'alphabetic';
-    ctx.textAlign = 'left';
-    if (leftG) {
-      ctx.fillStyle = GROUP_META[leftG].color;
-      ctx.fillText(GROUP_META[leftG].title, plotL - 2, plotT - 5);
-    }
-    if (right1G) {
-      ctx.fillStyle = GROUP_META[right1G].color;
-      ctx.fillText(GROUP_META[right1G].title, plotR + 6, plotT - 5);
-    }
-    if (right2G) {
-      ctx.fillStyle = GROUP_META[right2G].color;
-      ctx.fillText(GROUP_META[right2G].title, plotR + RIGHT2_GAP + 6, plotT - 5);
-    }
-    ctx.textBaseline = 'middle';
-
-    if (n < 2) return;
-
-    // --- clip to plot area, draw series ---
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(plotL, plotT, plotR - plotL, plotB - plotT);
-    ctx.clip();
-    for (const g of axes) {
-      const sc = scales[g];
-      for (const name of seriesOrder) {
-        const spec = specFor(name);
-        if (spec.group !== g || spec.plot === false) continue;
-        drawSeriesLine(name, sc, n);
-      }
-    }
-    // cursor line
-    if (Number.isFinite(cursorIndex)) {
-      const idx = Math.max(0, Math.min(n - 1, cursorIndex));
-      const x = mapX(idx, n);
-      ctx.strokeStyle = 'rgba(255,255,255,0.65)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(x, plotT);
-      ctx.lineTo(x, plotB);
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    // cursor frame label (outside clip, above the line)
-    if (Number.isFinite(cursorIndex)) {
-      const idx = Math.max(0, Math.min(n - 1, cursorIndex));
-      const x = mapX(idx, n);
-      const label = `${idx + 1}`;
-      ctx.font = '10px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const tw = ctx.measureText(label).width + 8;
-      const bx = Math.max(plotL, Math.min(plotR - tw, x - tw / 2));
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.fillRect(bx, plotT + 2, tw, 13);
-      ctx.fillStyle = '#111';
-      ctx.fillText(label, bx + tw / 2, plotT + 9);
-    }
+    return layout;
   }
 
-  // --- seek (click / pointer drag) ---------------------------------------
-  function pointerToFrame(evt) {
-    const n = seriesLength();
-    if (n < 1) return null;
-    const rect = canvas.getBoundingClientRect();
-    const px = evt.clientX - rect.left; // CSS px, same space as draw()
-    return invMapX(px, n);
-  }
-  function fireSeek(evt) {
-    const frame = pointerToFrame(evt);
-    if (frame === null) return;
-    if (typeof seekCb === 'function') seekCb(frame);
-  }
-  let dragging = false;
-  const onPointerDown = (e) => { dragging = true; fireSeek(e); };
-  const onPointerMove = (e) => { if (dragging) fireSeek(e); };
-  const onPointerUp = () => { dragging = false; };
-  const onClick = (e) => fireSeek(e);
-  canvas.addEventListener('click', onClick);
-  canvas.addEventListener('pointerdown', onPointerDown);
-  window.addEventListener('pointermove', onPointerMove);
-  window.addEventListener('pointerup', onPointerUp);
-
-  // Redraw when the panel/host resizes (responsive width).
-  let ro = null;
-  if (typeof ResizeObserver !== 'undefined') {
-    ro = new ResizeObserver(() => draw());
-    ro.observe(canvas);
+  function cursorShapes() {
+    if (!Number.isFinite(cursorIndex) || sampleCount < 1) return [];
+    const x = Math.max(1, Math.min(sampleCount, cursorIndex + 1));
+    return [{
+      type: 'line', xref: 'x', yref: 'paper',
+      x0: x, x1: x, y0: 0, y1: 1,
+      line: { color: 'rgba(255,255,255,0.7)', width: 1, dash: 'solid' },
+      layer: 'above',
+    }];
   }
 
-  // --- stats line ---------------------------------------------------------
+  const config = {
+    responsive: true,
+    displaylogo: false,
+    modeBarButtonsToRemove: ['select2d', 'lasso2d'],
+    toImageButtonOptions: { format: 'png', filename: 'trajectory', scale: 3 },
+  };
+
+  function sigOf(plotted) {
+    const { map } = groupAxisMap(plotted);
+    return plotted.map((p) => `${p.name}:${map[p.group]}`).join('|');
+  }
+
+  // Full (re)draw — used on first render, on setSeries/clear, and whenever the
+  // set of plotted series or their axis assignment changes.
+  async function drawFull() {
+    if (removed) return;
+    if (!Plotly) Plotly = await loadPlotly();
+    if (removed || !document.body.contains(plotDiv)) return;
+    const plotted = plottedSeries();
+    layoutSig = sigOf(plotted);
+    await Plotly.react(plotDiv, buildTraces(plotted), buildLayout(plotted), config);
+    ready = true;
+    wireClickSeek();
+    requestAnimationFrame(() => { if (!removed) Plotly.Plots.resize(plotDiv); });
+  }
+
+  // --- live cursor (rAF-coalesced single relayout) ------------------------
+  let cursorRAF = 0;
+  function scheduleCursor() {
+    if (cursorRAF) return;
+    cursorRAF = requestAnimationFrame(() => {
+      cursorRAF = 0;
+      if (!ready || removed) return;
+      Plotly.relayout(plotDiv, { shapes: cursorShapes() });
+    });
+  }
+
+  // --- click / drag to seek ----------------------------------------------
+  let clickWired = false;
+  function wireClickSeek() {
+    if (clickWired) return;
+    clickWired = true;
+    // A single click (no drag) seeks; a drag is Plotly's own box-zoom. Map the
+    // click x-pixel to a frame via the live x-axis, so it works anywhere on the
+    // plotting area, not only on a data point.
+    plotDiv.addEventListener('click', (e) => {
+      if (!ready || typeof seekCb !== 'function') return;
+      const xa = plotDiv._fullLayout && plotDiv._fullLayout.xaxis;
+      if (!xa || typeof xa.p2d !== 'function') return;
+      const rect = plotDiv.getBoundingClientRect();
+      const px = e.clientX - rect.left - (xa._offset || 0);
+      if (px < 0 || px > (xa._length || 0)) return; // outside the plotting area
+      const frame = Math.round(xa.p2d(px)) - 1;      // 1-based x -> 0-based frame
+      if (!Number.isFinite(frame)) return;
+      seekCb(Math.max(0, Math.min(sampleCount - 1, frame)));
+    });
+  }
+
+  // --- live stats line ----------------------------------------------------
   function updateStatsLine(point) {
     const { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv, meanForce, pressure } = point;
     const parts = [];
@@ -449,15 +308,17 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     if (Number.isFinite(epotEv)) parts.push(`Epot=${fmt(epotEv, 4)} eV`);
     if (Number.isFinite(ekinEv)) parts.push(`Ekin=${fmt(ekinEv, 4)} eV`);
     if (Number.isFinite(meanForce)) parts.push(`Fmean=${fmt(meanForce, 4)} eV/Å`);
-    if (Number.isFinite(pressure)) parts.push(`P=${fmt(pressure, 3)}`);
+    if (Number.isFinite(pressure)) parts.push(`P=${fmt(pressure, 4)}`);
     statsEl.textContent = parts.join('  |  ');
   }
 
   // --- public API ---------------------------------------------------------
-  const KNOWN = ['temperatureK', 'targetTemperatureK', 'etotEv', 'epotEv', 'ekinEv', 'meanForce', 'pressure'];
-
   const api = {
+    // Append one live step. Uses the fast extendTraces path when the plotted
+    // set/axes are unchanged; falls back to a full redraw when a new series or
+    // axis appears (e.g. the first pressure sample).
     update(point = {}) {
+      const before = sigOf(plottedSeries());
       for (const field of KNOWN) {
         if (!(field in point)) continue;
         if (SERIES_SPEC[field] && SERIES_SPEC[field].plot === false) continue; // stats-only
@@ -466,18 +327,28 @@ export function createTrajectoryPlot(hostEl, options = {}) {
         arr.push(Number.isFinite(v) ? v : NaN);
         if (arr.length > maxPts) arr.shift();
       }
-      for (const key of Object.keys(point)) {
-        if (key === 'step' || KNOWN.includes(key)) continue;
-        const arr = ensureSeries(key);
-        const v = point[key];
-        arr.push(Number.isFinite(v) ? v : NaN);
-        if (arr.length > maxPts) arr.shift();
-      }
-      rebuildLegend();
-      draw();
+      recomputeSampleCount();
       updateStatsLine(point);
+
+      const plotted = plottedSeries();
+      const after = sigOf(plotted);
+      if (!ready || after !== before || after !== layoutSig) {
+        drawFull();
+        return;
+      }
+      // Fast path: append the new x + each trace's latest value (NaN if absent).
+      const nx = sampleCount;
+      const xUpdate = plotted.map(() => [nx]);
+      const yUpdate = plotted.map(({ name }) => {
+        const arr = series.get(name);
+        return [arr && arr.length ? arr[arr.length - 1] : NaN];
+      });
+      const idxs = plotted.map((_, i) => i);
+      Plotly.extendTraces(plotDiv, { x: xUpdate, y: yUpdate }, idxs, maxPts);
+      scheduleCursor();
     },
 
+    // Replace all series from arrays (replay / compute-stats path).
     setSeries(seriesObj = {}) {
       series.clear();
       seriesOrder.length = 0;
@@ -486,39 +357,48 @@ export function createTrajectoryPlot(hostEl, options = {}) {
         series.set(name, Array.isArray(arr) ? arr.slice() : []);
         seriesOrder.push(name);
       }
-      rebuildLegend();
-      draw();
+      recomputeSampleCount();
       statsEl.textContent = '';
+      drawFull();
     },
 
     clear() {
       series.clear();
       seriesOrder.length = 0;
+      sampleCount = 0;
       cursorIndex = null;
-      rebuildLegend();
-      draw();
       statsEl.textContent = '';
+      drawFull();
     },
 
     setCursor(frameIndex) {
       cursorIndex = Number.isFinite(frameIndex) ? frameIndex : null;
-      draw();
+      scheduleCursor();
     },
 
     onSeek(cb) { seekCb = cb; },
 
+    onComputeStats(cb) {
+      computeCb = cb;
+      computeBtn.onclick = () => { if (typeof computeCb === 'function') computeCb(); };
+    },
+
+    setComputeStatsAvailable(available) {
+      computeBtn.style.display = available ? '' : 'none';
+    },
+
     getEl() { return root; },
 
     remove() {
-      canvas.removeEventListener('click', onClick);
-      canvas.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      if (ro) ro.disconnect();
+      removed = true;
+      if (cursorRAF) cancelAnimationFrame(cursorRAF);
+      try { if (Plotly && plotDiv) Plotly.purge(plotDiv); } catch { /* nothing drawn yet */ }
       root.remove();
     },
   };
 
-  draw();
+  // Kick off the (async) first draw so an empty, correctly-themed chart shows
+  // immediately even before any data arrives.
+  drawFull();
   return api;
 }

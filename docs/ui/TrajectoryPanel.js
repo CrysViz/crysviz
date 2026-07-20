@@ -6,7 +6,7 @@ import { updateForces, removeForces } from '../render/index.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import { createTrajectoryPlot } from './TrajectoryPlot.js';
 import { openPanel, refreshPanelAvailability } from './panels/PanelManager.js';
-import { stressTrace } from '../atomistic/relaxer.js';
+import { stressMean } from '../atomistic/relaxer.js';
 // Mean force magnitude over a frame's per-atom force vectors (eV/Å). Kept local
 // so the panel does not depend on the Forces-panel/histogram machinery.
 function meanForceMagnitude(structure) {
@@ -58,15 +58,17 @@ function setPlotVisible(visible) {
 // per-frame energy and/or forces to crunch, and never during a live MD/relax
 // feed (that already streams its own series).
 function updateComputeStepStatsBtnVisibility(container) {
-  const btn = trajectoryPlayerElements.computeStepStatsBtn;
-  if (!btn) return;
-  // Already have a plotted series (live MD streamed temperature/energy, or a
-  // previous compute) — hide the button so a click can't wipe that series.
+  // The "Compute step stats" action now lives inside the plot's own toolbar
+  // (see TrajectoryPlot.js). Show it only for a loaded trajectory that has
+  // per-frame energy and/or forces to crunch, and never during a live MD/relax
+  // feed (that already streams its own series) or once a series exists (a click
+  // would wipe it).
+  if (!trajPlot) return;
   const alreadyPlotted = !!(container?.plotSeries && Object.keys(container.plotSeries).length);
   const hasData = !!container?.structures?.some(
     (s) => Number.isFinite(s?.energy) || (s?.forces && s.forces.length > 0)
   );
-  btn.style.display = (!liveActive && hasData && !alreadyPlotted) ? '' : 'none';
+  trajPlot.setComputeStatsAvailable(!liveActive && hasData && !alreadyPlotted);
 }
 
 // Frames per chunk when bulk-computing step stats for a large trajectory, and
@@ -78,15 +80,15 @@ const COMPUTE_STATS_CHUNK_THRESHOLD = 2000;
 // Build { etotEv, meanForce } series from data already present in each frame
 // (OUTCAR-parsed energy/forces) — no MLIP/model run. meanForce is the mean of
 // per-atom |F| computed locally (see meanForceMagnitude).
+let computingStats = false;
 function computeStepStats(container) {
-  const btn = trajectoryPlayerElements.computeStepStatsBtn;
-  if (!btn || btn.disabled) return;
+  if (computingStats) return;
   const structures = container?.structures ?? [];
   if (!structures.length) return;
-
-  const originalLabel = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Computing…';
+  computingStats = true;
+  // Hide the in-plot action while the compute runs (and it stays hidden after,
+  // since a series will now exist — see updateComputeStepStatsBtnVisibility).
+  if (trajPlot) trajPlot.setComputeStatsAvailable(false);
 
   const etotEv = new Array(structures.length);
   const meanForce = new Array(structures.length);
@@ -106,8 +108,8 @@ function computeStepStats(container) {
       meanForce[i] = Number.isFinite(mean) ? mean : NaN;
       if (Number.isFinite(mean)) hasForce = true;
 
-      // Pressure = trace of the frame's stress tensor (NaN when absent).
-      const p = stressTrace(s?.stress?.tensor);
+      // Pressure = mean of the frame's stress-tensor diagonal (NaN when absent).
+      const p = stressMean(s?.stress?.tensor);
       pressure[i] = Number.isFinite(p) ? p : NaN;
       if (Number.isFinite(p)) hasPressure = true;
     }
@@ -132,8 +134,7 @@ function computeStepStats(container) {
       }
     }
 
-    btn.disabled = false;
-    btn.textContent = originalLabel;
+    computingStats = false;
   }
 
   if (structures.length > COMPUTE_STATS_CHUNK_THRESHOLD) {
@@ -177,6 +178,12 @@ function ensurePlot() {
     if (trajectoryPlayerElements.playPauseBtn) trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = Math.max(0, Math.min(container.structures.length - 1, f));
     updateFrame(currentFrame, container);
+  });
+  // "Compute step stats" lives in the plot's own toolbar now; run it against
+  // whichever container is selected at click time.
+  trajPlot.onComputeStats(() => {
+    const container = structureShip.container[fileBrowser.selectedRowIndex];
+    if (container) computeStepStats(container);
   });
   return trajPlot;
 }
@@ -392,7 +399,6 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
           <input type="number" id="frameStepInput" min="1" value="1" />
         </label>
       </div>
-      <button id="computeStepStatsBtn" class="trajComputeBtn" type="button" style="display:none;">Compute step stats</button>
       <div id="trajPlotHost" style="display:none;"></div>
     </div>
   `;
@@ -408,7 +414,6 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
     frameStepInput: trajControlPanel.querySelector('#frameStepInput'),
     frameSlider: trajControlPanel.querySelector('#frameSlider'),
     frameIndicator: trajControlPanel.querySelector('#frameIndicator'),
-    computeStepStatsBtn: trajControlPanel.querySelector('#computeStepStatsBtn')
   };
 
   const container = structureShip.container[fileBrowser.selectedRowIndex];
@@ -423,10 +428,6 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
   updateFrame(currentFrame, container, { render: renderOnBuild });
   refreshPlotFromContainer(container);
   updateComputeStepStatsBtnVisibility(container);
-
-  trajectoryPlayerElements.computeStepStatsBtn.onclick = () => {
-    computeStepStats(container);
-  };
 
   // Disable play button if only 1 frame
   if (container.structures.length <= 1) {

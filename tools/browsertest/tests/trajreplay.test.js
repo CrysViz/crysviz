@@ -45,23 +45,30 @@ const H = require('../harness');
     // Now REBUILD the panel body (what a structure-table interaction triggers).
     tp.removeTrajectoryPlayer();
     tp.addTrajectoryPlayer('cvPanelBody-trajectory');
-    await new Promise((r) => setTimeout(r, 200));
+
+    // Plotly redraws async — wait for the restored chart to carry its traces.
+    let chart = null;
+    for (let i = 0; i < 80; i++) {
+      chart = document.querySelector('#trajPlotHost .js-plotly-plot');
+      if (chart && chart.data && chart.data.length) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
 
     const host = document.getElementById('trajPlotHost');
-    const canvas = host ? host.querySelector('canvas') : null;
-    const btn = document.getElementById('computeStepStatsBtn');
+    const btn = host ? host.querySelector('.trajPlotComputeBtn') : null;
     return {
       hostShown: host ? getComputedStyle(host).display !== 'none' : false,
-      canvasPresent: !!canvas,
-      // With a series already on the container, the compute button must be
+      chartPresent: !!chart,
+      traceCount: chart?.data?.length ?? 0,
+      // With a series already on the container, the compute action must be
       // hidden so a click can't wipe the streamed temperature/energy.
       computeBtnHidden: btn ? getComputedStyle(btn).display === 'none' : true,
     };
   }, TRAJ);
 
   H.check('after run+rebuild the plot is restored from container.plotSeries (not blank)',
-    res.hostShown && res.canvasPresent, JSON.stringify(res));
-  H.check('compute-stats button hidden when a series already exists',
+    res.hostShown && res.chartPresent && res.traceCount >= 1, JSON.stringify(res));
+  H.check('compute-stats action hidden when a series already exists',
     res.computeBtnHidden, JSON.stringify(res));
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

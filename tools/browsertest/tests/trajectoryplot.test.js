@@ -1,10 +1,27 @@
-// Unified Trajectory panel: the MD Monitor plot is folded into the Trajectory
-// panel. Barebone (no per-frame data) => plot hidden, no compute button. A
-// loaded trajectory with forces => "Compute step stats" builds a mean-force
-// series and the plot shows. A live MD feed => plot shows, compute button
-// hides. The old standalone MD Monitor (#mdCanvas / 'mdMonitor') must be gone.
+// Unified Trajectory panel with the Plotly-backed plot. Barebone (no per-frame
+// data) => plot hidden, no compute action. A loaded trajectory with forces =>
+// the in-plot "Compute step stats" action builds a mean-force series and the
+// Plotly chart shows. A live MD feed => chart shows (temperature/energy on
+// separate axes), compute action hides. The old standalone MD Monitor
+// (#mdCanvas / 'mdMonitor') must be gone.
 'use strict';
 const H = require('../harness');
+
+// Poll until the Plotly chart inside #trajPlotHost has drawn its traces (Plotly
+// loads lazily from the shared loader, so the draw is async).
+async function waitForChart(page, minTraces = 1) {
+  return page.evaluate(async (min) => {
+    for (let i = 0; i < 80; i++) {
+      const chart = document.querySelector('#trajPlotHost .js-plotly-plot');
+      if (chart && chart.data && chart.data.length >= min) {
+        return { present: true, traceCount: chart.data.length, names: chart.data.map((t) => t.name), hasY2: !!chart.layout?.yaxis2 };
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const chart = document.querySelector('#trajPlotHost .js-plotly-plot');
+    return { present: !!chart, traceCount: chart?.data?.length ?? 0, names: (chart?.data || []).map((t) => t.name), hasY2: !!chart?.layout?.yaxis2 };
+  }, minTraces);
+}
 
 (async () => {
   const { browser, page, errors } = await H.launchApp();
@@ -47,7 +64,7 @@ const H = require('../harness');
     const { fileBrowser, structureShip } = await import('./state/store.js');
     const container = structureShip.container[fileBrowser.selectedRowIndex];
     const host = document.getElementById('trajPlotHost');
-    const btn = document.getElementById('computeStepStatsBtn');
+    const btn = host ? host.querySelector('.trajPlotComputeBtn') : null;
     const hasForces = container.structures.some((s) => s.forces && s.forces.length > 0);
     return {
       frames: container.structures.length,
@@ -58,31 +75,35 @@ const H = require('../harness');
       btnVisible: btn ? getComputedStyle(btn).display !== 'none' : false,
     };
   });
-  H.check('2-frame traj with forces: plot host present but folded, compute button shown',
+  H.check('2-frame traj with forces: plot host present but folded, compute action shown',
     built.frames === 2 && built.hasForces && built.hostPresent
       && built.hostHiddenInitially === true && built.btnPresent && built.btnVisible,
     JSON.stringify(built));
 
-  // Click "Compute step stats" -> mean-force series built, plot expands.
-  await H.clickById(page, 'computeStepStatsBtn');
-  const computed = await page.evaluate(async () => {
-    await new Promise((r) => setTimeout(r, 500));
+  // Click the in-plot "Compute step stats" -> mean-force series built, chart shows.
+  await page.evaluate(() => document.querySelector('#trajPlotHost .trajPlotComputeBtn')?.click());
+  const computedChart = await waitForChart(page, 1);
+  const shown = await page.evaluate(() => {
     const host = document.getElementById('trajPlotHost');
-    const canvas = host ? host.querySelector('canvas') : null;
-    return {
-      hostShown: host ? getComputedStyle(host).display !== 'none' : false,
-      canvasPresent: !!canvas,
-    };
+    return host ? getComputedStyle(host).display !== 'none' : false;
   });
-  H.check('after Compute step stats: plot region shown with a canvas',
-    computed.hostShown && computed.canvasPresent, JSON.stringify(computed));
+  H.check('after Compute step stats: Plotly chart shown with a mean-force trace',
+    shown && computedChart.present && computedChart.names.some((n) => /\|F\|/.test(n)),
+    JSON.stringify({ shown, computedChart }));
 
-  // --- Live MD feed bridge: plot shows, compute button hides -----------------------
+  // The compute action hides once a series exists (a click could wipe it).
+  const btnAfter = await page.evaluate(() => {
+    const btn = document.querySelector('#trajPlotHost .trajPlotComputeBtn');
+    return btn ? getComputedStyle(btn).display === 'none' : true;
+  });
+  H.check('compute action hides after a series has been computed', btnAfter, String(btnAfter));
+
+  // --- Live MD feed bridge: chart shows (dual-axis), compute action hides -----------
   const live = await page.evaluate(async () => {
     const tp = await import('./ui/TrajectoryPanel.js');
     tp.resetLivePlot();
     tp.ensureTrajectoryPanelForLive();
-    for (let step = 1; step <= 5; step++) {
+    for (let step = 1; step <= 6; step++) {
       tp.feedLiveStep({
         step,
         temperatureK: 300 + step * 5,
@@ -92,16 +113,18 @@ const H = require('../harness');
         ekinEv: 0.05,
       });
     }
-    await new Promise((r) => setTimeout(r, 200));
     const host = document.getElementById('trajPlotHost');
-    const btn = document.getElementById('computeStepStatsBtn');
+    const btn = host ? host.querySelector('.trajPlotComputeBtn') : null;
     return {
       hostShown: host ? getComputedStyle(host).display !== 'none' : false,
       btnHidden: btn ? getComputedStyle(btn).display === 'none' : true,
     };
   });
-  H.check('live MD feed: plot shown, compute button hidden during run',
+  const liveChart = await waitForChart(page, 2);
+  H.check('live MD feed: chart shown, compute action hidden during run',
     live.hostShown && live.btnHidden, JSON.stringify(live));
+  H.check('live chart puts temperature and energy on separate axes',
+    liveChart.present && liveChart.hasY2, JSON.stringify(liveChart));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
