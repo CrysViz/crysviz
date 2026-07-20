@@ -683,8 +683,9 @@ function renderRelaxBody(bodyEl, potential) {
         <button type="button" class="calcButton" id="relaxNewBtn">New</button>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 2px 0;font-size:12px;">
-      <span style="font-weight:600;">Rattle</span>
+    <div class="atomistic-card atomistic-card-compact">
+      <div class="atomistic-card-title atomistic-card-title-accent">Rattle</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;">
       <input type="number" id="relaxRattleAmpInput" value="0.1" step="0.01" min="0" title="atom displacement (Å)"
              style="width:58px;padding:3px 6px;" class="atomistic-input-sm">
       <span style="opacity:0.6;">Å</span>
@@ -697,6 +698,7 @@ function renderRelaxBody(bodyEl, potential) {
       <span style="opacity:0.6;">%</span>
       <button type="button" class="calcButton" id="relaxRattleBtn"
               style="margin-left:auto;padding:4px 12px;">Rattle</button>
+      </div>
     </div>
   `;
 }
