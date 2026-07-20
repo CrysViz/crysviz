@@ -6,7 +6,7 @@ import {
   applyStructureToViewer,
   maxForce,
   pressureGPaFromStress,
-  stressTrace,
+  stressMean,
 } from '../../atomistic/relaxer.js';
 import {
   initializeMDState,
@@ -704,7 +704,9 @@ async function runLocalRelax(shell, params, potential) {
   const relaxLabel = `Relax_${srcContainer?.fileName ?? 'run'}`;
   const relaxContainer = new StructureContainer({ fileName: relaxLabel, structures: [snapshotCurrentStructure()] });
   // Persisted plot series (energy / mean force / pressure), 1:1 with frames.
-  relaxContainer.plotSeries = { etotEv: [NaN], meanForce: [NaN], pressure: [NaN] };
+  // `step` records the real relax step per saved frame so the plot's x-axis
+  // reads steps (a multiple of the save stride); seed frame = step 0.
+  relaxContainer.plotSeries = { step: [0], etotEv: [NaN], meanForce: [NaN], pressure: [NaN] };
   structureShip.container.push(relaxContainer);
   const relaxRow = createRow({ name: relaxLabel, traj: 1, step: 1 });
   tableBody.appendChild(relaxRow);
@@ -719,6 +721,7 @@ async function runLocalRelax(shell, params, potential) {
     ? forces.reduce((a, v) => a + Math.hypot(v[0], v[1], v[2]), 0) / forces.length
     : NaN);
   const pushRelaxSeries = (m) => {
+    relaxContainer.plotSeries.step.push(Number.isFinite(m.step) ? m.step : NaN);
     relaxContainer.plotSeries.etotEv.push(Number.isFinite(m.etotEv) ? m.etotEv : NaN);
     relaxContainer.plotSeries.meanForce.push(Number.isFinite(m.meanForce) ? m.meanForce : NaN);
     relaxContainer.plotSeries.pressure.push(Number.isFinite(m.pressure) ? m.pressure : NaN);
@@ -747,7 +750,7 @@ async function runLocalRelax(shell, params, potential) {
           step,
           etotEv: Number(out.total_energy),
           meanForce: meanForceOf(out.forces),
-          pressure: stressTrace(out.stress?.matrix3x3),
+          pressure: stressMean(out.stress?.matrix3x3),
         };
         if (shouldSave) {
           relaxContainer.structures.push(snapshotCurrentStructure());
@@ -937,7 +940,11 @@ function bindMDBody(panel, shell, potential) {
       // long after the live run's in-memory plot was torn down. Seed one NaN gap
       // for the initial (pre-run) frame so the series stays index-aligned with
       // mdContainer.structures.
-      mdContainer.plotSeries = { temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN], pressure: [NaN] };
+      // No pressure series: NEP/PET-MAD/ASE MD here runs at fixed cell, so the
+      // stress trace is not a meaningful pressure to plot. `step` records the
+      // real MD step per saved frame so the plot's x-axis reads steps (a
+      // multiple of the save stride), not the frame index; seed frame = step 0.
+      mdContainer.plotSeries = { step: [0], temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN] };
       structureShip.container.push(mdContainer);
       const mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
       tableBody.appendChild(mdRow);
@@ -990,9 +997,8 @@ function bindMDBody(panel, shell, potential) {
             });
           }
 
-          // Pressure = trace of the step's stress matrix (NaN when absent).
-          const pressure = stressTrace(mdState.stress);
-          lastStepMetrics = { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv, pressure };
+          // Fixed-cell MD: no pressure series (see plotSeries seed above).
+          lastStepMetrics = { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv };
           if (shouldSave) {
             const frame = snapshotCurrentStructure();
             frame.energy = epotEv;
@@ -1003,10 +1009,10 @@ function bindMDBody(panel, shell, potential) {
             // keeps the frame cursor aligned with the slider (feeding every step
             // would desync the cursor from the 1..N frame index).
             feedLiveStep(lastStepMetrics);
+            mdContainer.plotSeries.step.push(step);
             mdContainer.plotSeries.temperatureK.push(temperatureK);
             mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(targetTemperatureK) ? targetTemperatureK : NaN);
             mdContainer.plotSeries.etotEv.push(etotEv);
-            mdContainer.plotSeries.pressure.push(Number.isFinite(pressure) ? pressure : NaN);
           }
           const tLabel = Number.isFinite(targetTemperatureK)
             ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`
@@ -1031,10 +1037,10 @@ function bindMDBody(panel, shell, potential) {
         // last step's computed metrics (state carries no temperature/KE fields).
         if (lastStepMetrics) {
           feedLiveStep({ ...lastStepMetrics, step: state.step });
+          mdContainer.plotSeries.step.push(state.step);
           mdContainer.plotSeries.temperatureK.push(lastStepMetrics.temperatureK);
           mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(lastStepMetrics.targetTemperatureK) ? lastStepMetrics.targetTemperatureK : NaN);
           mdContainer.plotSeries.etotEv.push(lastStepMetrics.etotEv);
-          mdContainer.plotSeries.pressure.push(Number.isFinite(lastStepMetrics.pressure) ? lastStepMetrics.pressure : NaN);
         }
       }
 

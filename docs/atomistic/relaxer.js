@@ -139,6 +139,13 @@ export function stressTrace(stress) {
   return xx + yy + zz;
 }
 
+// Mean of the stress-tensor diagonal, (σxx+σyy+σzz)/3 — the isotropic (scalar)
+// stress plotted as "pressure" on the trajectory chart. NaN for missing data.
+export function stressMean(stress) {
+  const tr = stressTrace(stress);
+  return Number.isFinite(tr) ? tr / 3 : NaN;
+}
+
 // FIRE — Fast Inertial Relaxation Engine (Bitzek et al., PRL 97, 170201
 // (2006)), semi-implicit Euler variant with the ASE update order. Unit atomic
 // mass, so dt² carries units of Å²/(eV/Å): the first step's displacement is
