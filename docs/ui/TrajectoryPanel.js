@@ -346,6 +346,18 @@ function updateStructureFromFrame(frame, container) {
   }
 }
 
+/** Mirror the current frame into the selected file-browser row's step box.
+ *  The box and the scrubber are two views of the same index, but only the box
+ *  -> scrubber direction existed (the box drives updateStructureFromRowAndStep
+ *  in FileBrowswerPanel); scrubbing left the box showing whatever it last had,
+ *  typically 1. Assigning .value does NOT fire an 'input' event, so this can't
+ *  loop back into a frame update. */
+function syncRowStepInput(frame) {
+  const row = fileBrowser.selectedRow;
+  const input = row && row.querySelector('input[type="number"]');
+  if (input && input.value !== String(frame + 1)) input.value = String(frame + 1);
+}
+
 // --- Update UI and scene ---
 // opts.render=false updates only the label/slider/cursor without re-rendering
 // the 3D viewer — used while a live MD/relax run owns the scene, or for a
@@ -360,6 +372,7 @@ function updateFrame(frame, container, opts = {}) {
   if (cur && tot) { cur.textContent = frame + 1; tot.textContent = numFrames; }
   else if (ind) ind.textContent = `${frame + 1} / ${numFrames}`;
   if (trajectoryPlayerElements.frameSlider) trajectoryPlayerElements.frameSlider.value = frame;
+  syncRowStepInput(frame);
 
   if (opts.render !== false) updateStructureFromFrame(frame, container);
 

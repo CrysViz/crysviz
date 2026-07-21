@@ -812,7 +812,16 @@ export function updateRow(row, obj) {
   const stepInput = row.querySelector('input[type="number"]');
   if (stepInput) {
     stepInput.max = obj.traj;
-    if (parseInt(stepInput.value, 10) > obj.traj) {
+    // Honor an explicit obj.step. Every caller is an MD/relax run that just
+    // finished appending frames and passes the LAST one, wanting the row
+    // parked there — but this used to only clamp downward, so the input kept
+    // the 1 it was created with at the start of the run and a finished
+    // 51-step relax opened on frame 1. selectLastAddedRow() reads this input
+    // (via updateStructureFromRowAndStep), so setting it here is what puts
+    // the viewer on the relaxed structure.
+    if (obj.step !== undefined && obj.step !== null) {
+      stepInput.value = String(Math.min(Math.max(1, obj.step), obj.traj));
+    } else if (parseInt(stepInput.value, 10) > obj.traj) {
       stepInput.value = obj.traj;
     }
   }

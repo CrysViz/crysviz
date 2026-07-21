@@ -381,7 +381,13 @@ export function registerDefaultPanels() {
     },
     buildContent(body) { addTrajectoryPlayer(body.id); },
     onDestroyContent() { removeTrajectoryPlayer(); },
-    defaults: { dock: 'left', order: 10, collapsed: true },
+    // Left dock, but directly above Atomistic (order -10) rather than down at
+    // 10 with the feature panels: this is the live MD/relax monitor, so it
+    // belongs next to the controls that drive it instead of below a dozen
+    // collapsed panels where it was easy to miss. Files (-20) stays on top.
+    // A remembered layout still wins (registerPanel prefers `persisted.dock`
+    // and the stored dock order), so moving it keeps your placement.
+    defaults: { dock: 'left', order: -15, collapsed: true },
   });
 
   registerPanel({

@@ -214,3 +214,32 @@
       font-family: ui-monospace, "SF Mono", Menlo, monospace;
       color: #b8b8b8;
     }
+
+    /* ---- Right-docked (either edge): the pane owns the height, not the plot.
+       Free-floating or left-docked, .trajPlot's fixed 260px is what makes the
+       chart a sensible size. Inside the dock that's wrong: the pane already
+       has a definite height the user drags, so a fixed-height chart either
+       leaves dead space or (docked to the bottom, where the pane is short and
+       wide) overflows and forces the body to scroll. Chain flex down
+       .cv-panel-body > #TrajControlPanel > .panelBody > #trajPlotHost so the
+       chart takes the full width and whatever height is left; Plotly's own
+       ResizeObserver (TrajectoryPlot.js) re-lays it out from there.
+       min-height:0 at every level — flex items default to min-height:auto and
+       refuse to shrink below their content otherwise. ---- */
+    .cv-panel.cv-right-docked[data-panel-id="trajectory"] > .cv-panel-body > #TrajControlPanel,
+    .cv-panel.cv-right-docked[data-panel-id="trajectory"] .panelBody,
+    .cv-panel.cv-right-docked[data-panel-id="trajectory"] #trajPlotHost {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .cv-panel.cv-right-docked[data-panel-id="trajectory"] #trajPlotHost > .trajPlot {
+      flex: 1 1 auto;
+      height: auto;
+      /* Below this the axes stop being readable; the body scrolls instead. */
+      min-height: 140px;
+      /* The pane's own drag handle is the height control here. */
+      resize: none;
+    }
