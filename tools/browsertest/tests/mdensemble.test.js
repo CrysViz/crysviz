@@ -103,23 +103,29 @@ direct
         }
         temps.push((2 * ke) / ((3 * n - 3) * 8.617333262e-5));
       }
-      const tail = temps.slice(Math.floor(steps / 2));
+      const tail = temps.slice(Math.floor(steps * 0.75));
       const mean = tail.reduce((a, b) => a + b, 0) / tail.length;
       const variance = tail.reduce((a, b) => a + (b - mean) ** 2, 0) / tail.length;
       return { mean, rel: Math.sqrt(variance) / mean };
     };
 
     const target = 300;
-    const bussi = run(md.createBussiThermostat({ targetTemperatureK: target, tauFs: 50 }), 4000);
+    // 20k steps, and the mean is taken over the last quarter. This is a
+    // stochastic estimator with an autocorrelation time of tau, so a short run
+    // gives a mean that wanders a few percent from the setpoint — at 4k steps
+    // it was landing anywhere in 285-316 K and failing a 5% tolerance roughly
+    // one run in three. There are no forces to evaluate here, so length is
+    // nearly free.
+    const bussi = run(md.createBussiThermostat({ targetTemperatureK: target, tauFs: 50 }), 20000);
     const berendsen = run(
-      md.createVelocityRescaleThermostat({ targetTemperatureK: target, tauFs: 50 }), 4000);
+      md.createVelocityRescaleThermostat({ targetTemperatureK: target, tauFs: 50 }), 20000);
     // Canonical prediction for the relative KE fluctuation: sqrt(2/Nf).
     const expectedRel = Math.sqrt(2 / (3 * 64 - 3));
     return { bussi, berendsen, expectedRel, target };
   });
 
   H.check('CSVR holds the target temperature',
-    Math.abs(thermo.bussi.mean - thermo.target) / thermo.target < 0.05,
+    Math.abs(thermo.bussi.mean - thermo.target) / thermo.target < 0.04,
     `mean=${thermo.bussi.mean.toFixed(1)} K`);
   H.check('CSVR reproduces the canonical fluctuation sqrt(2/Nf)',
     Math.abs(thermo.bussi.rel - thermo.expectedRel) / thermo.expectedRel < 0.35,
