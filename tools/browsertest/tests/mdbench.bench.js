@@ -16,6 +16,8 @@ const STEPS = 60;
 // MDBENCH_WORKER=0 runs the potential on the main thread, for an A/B against
 // the worker path.
 const USE_WORKER = process.env.MDBENCH_WORKER !== '0';
+// MDBENCH_NPT=1 ticks the NPT box, to price the barostat + moving cell.
+const USE_NPT = process.env.MDBENCH_NPT === '1';
 
 (async () => {
   const { browser, page, errors } = await H.launchApp();
@@ -39,7 +41,7 @@ const USE_WORKER = process.env.MDBENCH_WORKER !== '0';
     return { atoms: fileBrowser.selectedStructure.atoms.length };
   }, { nx: NX, ny: NY, nz: NZ, useWorker: USE_WORKER });
   console.log(`  structure: ${built.atoms} atoms (${NX}x${NY}x${NZ} supercell), `
-    + `NEP ${USE_WORKER ? 'in worker' : 'on main thread'}`);
+    + `NEP ${USE_WORKER ? 'in worker' : 'on main thread'}, ${USE_NPT ? 'NPT' : 'NVT'}`);
 
   await page.evaluate(async () => {
     const { openPanel } = await import('./ui/panels/PanelManager.js');
@@ -49,11 +51,18 @@ const USE_WORKER = process.env.MDBENCH_WORKER !== '0';
   await page.evaluate(() => document.querySelector('#BackendModeSwitch button[data-mode="md"]')?.click());
   await page.waitForTimeout(400);
 
-  const run = await page.evaluate(async (steps) => {
+  const run = await page.evaluate(async ({ steps, npt }) => {
     const stepsInput = document.getElementById('mdStepsInput');
     const startBtn = document.getElementById('mdStartBtn');
     if (!stepsInput || !startBtn) return { error: 'MD controls not found' };
     stepsInput.value = String(steps);
+    const nptChk = document.getElementById('mdNptChk');
+    if (nptChk && npt) {
+      nptChk.checked = true;
+      nptChk.dispatchEvent(new Event('change'));
+      const p = document.getElementById('mdPressureInput');
+      if (p) p.value = '0';
+    }
 
     // The button re-enables in the run's finally block. The first click also
     // pays for loading the 14.9 MB NEP model, so allow a generous deadline.
@@ -65,7 +74,7 @@ const USE_WORKER = process.env.MDBENCH_WORKER !== '0';
     }
     const resultEl = document.querySelector('#BackendPanel .atomistic-result, #mdResult');
     return { finished: !startBtn.disabled, result: resultEl?.textContent ?? '' };
-  }, STEPS);
+  }, { steps: STEPS, npt: USE_NPT });
 
   console.log(`  run: ${JSON.stringify(run)}`);
   H.check('the MD run finished', run.finished === true, JSON.stringify(run));

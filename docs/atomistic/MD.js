@@ -13,6 +13,7 @@ import {
 const KB_EV_PER_K = 8.617333262e-5;
 const ACCEL_AFS2_PER_EVAA_AMU = 0.00964853399;
 const KE_EV_FACTOR = 103.642695; // m(amu) * v(A/fs)^2 -> eV (without 1/2)
+const EV_A3_TO_GPA = 160.21766208;
 
 const MASS_BY_SYMBOL = {
   H: 1.008, He: 4.0026, Li: 6.94, Be: 9.0122, B: 10.81, C: 12.011, N: 14.007, O: 15.999,
@@ -157,6 +158,42 @@ export function createNoThermostat() {
   return { name: 'none', apply() {} };
 }
 
+// ── Pressure ─────────────────────────────────────────────────────────────────
+//
+// P = 2·KE/(3V) + P_virial. NEP returns σ = -W/V (see stressFromVirial in
+// nep_simple.js), and the pressure convention that rises under compression is
+// -tr(σ)/3 — verified against FCC Cu in tests/nppressure.bench.js: +118 GPa at
+// a = 3.2 Å, ~0 near the energy minimum at Cu's real lattice constant.
+//
+// The kinetic term is NOT optional. It is what the barostat is balancing
+// against: at 300 K and normal solid densities it is a few kbar, so a barostat
+// driven by the virial alone would sit at the wrong volume forever.
+
+export function cellVolume(lattice) {
+  const [a, b, c] = lattice;
+  return Math.abs(
+    a[0] * (b[1] * c[2] - b[2] * c[1])
+    - a[1] * (b[0] * c[2] - b[2] * c[0])
+    + a[2] * (b[0] * c[1] - b[1] * c[0]),
+  );
+}
+
+/** Virial (potential) part of the pressure, eV/Å³. */
+function virialPressureEvA3(stress) {
+  if (!Array.isArray(stress) || stress.length < 3) return NaN;
+  return -(stress[0][0] + stress[1][1] + stress[2][2]) / 3;
+}
+
+/** Instantaneous pressure of an MD state, in GPa (kinetic + virial). */
+export function instantaneousPressureGPa(state) {
+  const volume = cellVolume(state.lattice);
+  if (!(volume > 0)) return NaN;
+  const kinetic = (2 * kineticEnergyEv(state.velocities, state.masses)) / (3 * volume);
+  const virial = virialPressureEvA3(state.stress);
+  if (!Number.isFinite(virial)) return NaN;
+  return (kinetic + virial) * EV_A3_TO_GPA;
+}
+
 function resolveTargetTemperature(targetTemperatureK, context) {
   const target = typeof targetTemperatureK === 'function'
     ? targetTemperatureK(context)
@@ -183,6 +220,164 @@ export function createVelocityRescaleThermostat({ targetTemperatureK = 300, tauF
       if (state.symmetryConstrained) {
         state.velocities = symmetrizeCartesianVectors(state.velocities, state.lattice);
       }
+    },
+  };
+}
+
+// Sum of `n` squared standard normals, i.e. a chi-squared draw. Needed by the
+// CSVR thermostat, where n is the number of degrees of freedom minus one and so
+// is far too large to sample by adding up that many gaussians. Drawn as
+// 2·Gamma(n/2) with Marsaglia-Tsang, which is exact rather than a large-n
+// approximation (small cells and symmetry-constrained runs have few DOF, which
+// is exactly where an approximation would show).
+function sumOfSquaredGaussians(n) {
+  if (n <= 0) return 0;
+  if (n === 1) {
+    const g = gaussianRand();
+    return g * g;
+  }
+  return 2 * gammaRand(n / 2);
+}
+
+function gammaRand(shape) {
+  if (shape < 1) {
+    // Boost: Gamma(a) = Gamma(a+1)·U^(1/a)
+    const u = Math.max(Number.MIN_VALUE, Math.random());
+    return gammaRand(shape + 1) * Math.pow(u, 1 / shape);
+  }
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    let x;
+    let v;
+    do {
+      x = gaussianRand();
+      v = 1 + c * x;
+    } while (v <= 0);
+    v = v * v * v;
+    const u = Math.random();
+    const x2 = x * x;
+    if (u < 1 - 0.0331 * x2 * x2) return d * v;
+    if (Math.log(u) < 0.5 * x2 + d * (1 - v + Math.log(v))) return d * v;
+  }
+}
+
+/**
+ * Bussi-Donadio-Parrinello canonical sampling through velocity rescaling
+ * (J. Chem. Phys. 126, 014101 (2007)).
+ *
+ * Same shape as the Berendsen rescale it replaces — one global factor on every
+ * velocity — plus the stochastic term that makes it actually sample the
+ * canonical ensemble. Berendsen damps the kinetic-energy fluctuations instead
+ * of reproducing them, so it gives the right mean temperature with the wrong
+ * distribution (and the "flying ice cube" drift); this costs the same and is
+ * correct, so there is no reason to prefer the old one.
+ */
+export function createBussiThermostat({ targetTemperatureK = 300, tauFs = 100 } = {}) {
+  return {
+    name: 'bussi',
+    apply(state, dtFs, context = {}) {
+      const targetK = resolveTargetTemperature(targetTemperatureK, context);
+      state.currentTargetTemperatureK = targetK;
+      if (!Number.isFinite(targetK) || targetK <= 0) return;
+
+      const dof = Math.max(1, state.constrainedDof ?? (3 * state.velocities.length - 3));
+      const ke = kineticEnergyEv(state.velocities, state.masses);
+      if (!(ke > 0)) return;
+      // Target kinetic energy for `dof` degrees of freedom.
+      const keTarget = 0.5 * dof * KB_EV_PER_K * targetK;
+
+      const decay = Math.exp(-dtFs / Math.max(1e-6, tauFs));
+      const r1 = gaussianRand();
+      const noise = sumOfSquaredGaussians(dof - 1);
+      const ratio = keTarget / (dof * ke);
+
+      const scale2 = decay
+        + ratio * (1 - decay) * (r1 * r1 + noise)
+        + 2 * r1 * Math.sqrt(ratio * (1 - decay) * decay);
+      const scale = Math.sqrt(Math.max(1e-12, scale2));
+
+      for (let i = 0; i < state.velocities.length; i += 1) {
+        state.velocities[i][0] *= scale;
+        state.velocities[i][1] *= scale;
+        state.velocities[i][2] *= scale;
+      }
+      if (state.symmetryConstrained) {
+        state.velocities = symmetrizeCartesianVectors(state.velocities, state.lattice);
+      }
+    },
+  };
+}
+
+export function createNoBarostat() {
+  return { name: 'none', apply() {} };
+}
+
+/**
+ * Stochastic cell rescaling, isotropic (Bernetti & Bussi, J. Chem. Phys. 153,
+ * 114107 (2020)) — the CSVR of barostats: first-order relaxation towards the
+ * target pressure plus the noise term that makes the volume distribution the
+ * correct isothermal-isobaric one.
+ *
+ *   dε = (β/τ_p)(P - P_ext)dt + sqrt(2 k_B T β/(V τ_p)) dW,   ε = ln V
+ *
+ * Isotropic on purpose. A uniform dilation commutes with every point-group
+ * operation, so it cannot lower the space group — which means this works
+ * unchanged in Wyckoff mode, where an anisotropic (Parrinello-Rahman) cell
+ * fluctuation would shear a hexagonal cell into a triclinic one and would have
+ * to be projected through symmetrizeCartesianStrain first.
+ *
+ * `compressibility` is β in GPa⁻¹; the default 0.01 corresponds to a bulk
+ * modulus of 100 GPa, i.e. a typical hard solid. It only sets the response
+ * rate, not the equilibrium volume, so being a factor of a few out costs
+ * equilibration time and nothing else.
+ */
+/**
+ * @param {{targetPressureGPa?: number|((context:any)=>number), tauFs?: number,
+ *   compressibility?: number}} [opts]
+ */
+export function createStochasticCellBarostat({
+  targetPressureGPa = 0,
+  tauFs = 1000,
+  compressibility = 0.01,
+} = {}) {
+  return {
+    name: 'stochastic-cell',
+    apply(state, dtFs, context = {}) {
+      const targetP = typeof targetPressureGPa === 'function'
+        ? targetPressureGPa(context)
+        : targetPressureGPa;
+      if (!Number.isFinite(targetP)) return;
+
+      const volume = cellVolume(state.lattice);
+      const pressure = instantaneousPressureGPa(state);
+      if (!(volume > 0) || !Number.isFinite(pressure)) return;
+
+      const temperatureTarget = Number.isFinite(state.currentTargetTemperatureK)
+        && state.currentTargetTemperatureK > 0
+        ? state.currentTargetTemperatureK
+        : temperatureK(state.velocities, state.masses, state.constrainedDof);
+      const kT = KB_EV_PER_K * temperatureTarget * EV_A3_TO_GPA; // GPa·Å³
+
+      const tau = Math.max(1e-6, tauFs);
+      const drift = (compressibility * dtFs / tau) * (pressure - targetP);
+      const diffusion = Math.sqrt(Math.max(0,
+        (2 * compressibility * kT * dtFs) / (volume * tau)));
+      const dEpsilon = drift + diffusion * gaussianRand();
+
+      // exp(dε) is the volume ratio; the cell scales by its cube root. Clamped
+      // so one bad force evaluation cannot collapse or explode the cell.
+      const volumeRatio = Math.exp(Math.max(-0.05, Math.min(0.05, dEpsilon)));
+      const scale = Math.cbrt(volumeRatio);
+
+      state.lattice = state.lattice.map((row) => row.map((v) => v * scale));
+      for (let i = 0; i < state.positions.length; i += 1) {
+        state.positions[i][0] *= scale;
+        state.positions[i][1] *= scale;
+        state.positions[i][2] *= scale;
+      }
+      state.currentPressureGPa = pressure;
+      state.currentVolumeA3 = volume * volumeRatio;
     },
   };
 }
@@ -364,8 +559,8 @@ function logMdProfile(timing) {
 
 /**
  * @param {{state?:any, steps?:number, dtFs?:number, forceEvaluator?:any,
- *   integrator?:any, thermostat?:any, onStep?:any, shouldStop?:any,
- *   offThreadForces?:boolean}} [opts]
+ *   integrator?:any, thermostat?:any, barostat?:any, onStep?:any,
+ *   shouldStop?:any, offThreadForces?:boolean}} [opts]
  */
 export async function runMDSimulation({
   state,
@@ -374,6 +569,7 @@ export async function runMDSimulation({
   forceEvaluator,
   integrator = createVelocityVerletIntegrator(),
   thermostat = createNoThermostat(),
+  barostat = createNoBarostat(),
   onStep = null,
   shouldStop = null,
   // True when forceEvaluator does its work off the main thread (the NEP
@@ -424,6 +620,15 @@ export async function runMDSimulation({
       timeFs: state.timeFs + dtFs,
       state,
     });
+    // Barostat after the thermostat and inside the same timing bucket: it is a
+    // handful of scalar operations plus one cell scaling, far below the noise
+    // floor of a force evaluation.
+    barostat.apply(state, dtFs, {
+      step: state.step + 1,
+      totalSteps: steps,
+      timeFs: state.timeFs + dtFs,
+      state,
+    });
     timing.thermostatMs += performance.now() - t0;
 
     state.step += 1;
@@ -433,6 +638,8 @@ export async function runMDSimulation({
     const temp = temperatureK(state.velocities, state.masses, state.constrainedDof);
     const epot = state.potentialEnergyEv;
     const etot = epot + ke;
+    const pressureGPa = instantaneousPressureGPa(state);
+    const volumeA3 = cellVolume(state.lattice);
 
     if (onStep) {
       t0 = performance.now();
@@ -444,6 +651,8 @@ export async function runMDSimulation({
         epotEv: epot,
         ekinEv: ke,
         etotEv: etot,
+        pressureGPa,
+        volumeA3,
         state,
       });
       timing.onStepMs += performance.now() - t0;

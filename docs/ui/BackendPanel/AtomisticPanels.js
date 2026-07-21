@@ -6,7 +6,6 @@ import {
   applyStructureToViewer,
   maxForce,
   pressureGPaFromStress,
-  stressMean,
 } from '../../atomistic/relaxer.js';
 import {
   initializeMDState,
@@ -15,7 +14,9 @@ import {
   createNEPForceEvaluator,
   createVelocityVerletIntegrator,
   createCosineAnnealingSchedule,
-  createVelocityRescaleThermostat,
+  createBussiThermostat,
+  createStochasticCellBarostat,
+  createNoBarostat,
   mdProfileMeasure,
 } from '../../atomistic/MD.js';
 import { ensureWorkerNEPReady, createWorkerNEPForceEvaluator } from '../../atomistic/nepWorkerClient.js';
@@ -739,8 +740,12 @@ function renderMDBody(bodyEl, potential) {
           <input type="number" class="atomistic-input-sm" id="mdTemperatureInput" value="300" step="10" min="1">
         </label>
         <label>
-          <span class="atomistic-label-disabled">pressure</span>
+          <span>pressure (GPa)</span>
           <input type="number" class="atomistic-input-sm" id="mdPressureInput" value="0" step="0.1" disabled>
+        </label>
+        <label class="atomistic-checkbox-label">
+          <input type="checkbox" id="mdNptChk">
+          <span>NPT (relax cell)</span>
         </label>
         <label>
           <span>Save every (steps)</span>
@@ -849,7 +854,7 @@ async function runLocalRelax(shell, params, potential) {
           step,
           etotEv: Number(out.total_energy),
           meanForce: meanForceOf(out.forces),
-          pressure: stressMean(out.stress?.matrix3x3),
+          pressure: pressureGPaFromStress(out.stress?.matrix3x3),
         };
         if (shouldSave) {
           relaxContainer.structures.push(snapshotCurrentStructure());
@@ -1008,6 +1013,16 @@ function bindMDBody(panel, shell, potential) {
     shell.statusEl.textContent = 'Stopping MD after current step...';
   });
 
+  // The target pressure only means something with the barostat on, so the input
+  // follows the NPT checkbox rather than sitting there permanently greyed.
+  const nptChk = shell.bodyEl.querySelector('#mdNptChk');
+  const pressureInput = shell.bodyEl.querySelector('#mdPressureInput');
+  const syncNptControls = () => {
+    if (pressureInput) pressureInput.disabled = !nptChk?.checked;
+  };
+  nptChk?.addEventListener('change', syncNptControls);
+  syncNptControls();
+
   startBtn?.addEventListener('click', async () => {
     if (mdRunning) return;
 
@@ -1029,6 +1044,8 @@ function bindMDBody(panel, shell, potential) {
       const dtFs = Number(shell.bodyEl.querySelector('#mdTimestepInput')?.value || 1);
       const startTemperatureK = Number(shell.bodyEl.querySelector('#mdTemperatureInput')?.value || 300);
       const useAnneal = !annealControls.classList.contains('hidden');
+      const useNpt = !!shell.bodyEl.querySelector('#mdNptChk')?.checked;
+      const targetPressureGPa = Number(shell.bodyEl.querySelector('#mdPressureInput')?.value || 0);
       const minTemperatureK = Number(shell.bodyEl.querySelector('#mdAnnealMinInput')?.value || 100);
       const maxTemperatureK = Number(shell.bodyEl.querySelector('#mdAnnealMaxInput')?.value || 1200);
       const peakFraction = Math.max(0.01, Math.min(0.99, Number(shell.bodyEl.querySelector('#mdAnnealPeakPctInput')?.value || 30) / 100));
@@ -1071,7 +1088,9 @@ function bindMDBody(panel, shell, potential) {
         // stress trace is not a meaningful pressure to plot. `step` records the
         // real MD step per saved frame so the plot's x-axis reads steps (a
         // multiple of the save stride), not the frame index; seed frame = step 0.
-        mdContainer.plotSeries = { step: [0], temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN] };
+        mdContainer.plotSeries = {
+          step: [0], temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN], pressure: [NaN],
+        };
         structureShip.container.push(mdContainer);
         mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
         tableBody.appendChild(mdRow);
@@ -1112,10 +1131,15 @@ function bindMDBody(panel, shell, potential) {
             totalSteps: steps,
           })
         : startTemperatureK;
-      const thermostat = createVelocityRescaleThermostat({
+      // CSVR rather than the old Berendsen rescale: same cost, but it samples
+      // the canonical ensemble instead of merely holding the mean temperature.
+      const thermostat = createBussiThermostat({
         targetTemperatureK: /** @type {any} */ (targetTemperatureSchedule),
-        tauFs: 20,
+        tauFs: 100,
       });
+      const barostat = useNpt
+        ? createStochasticCellBarostat({ targetPressureGPa, tauFs: 1000 })
+        : createNoBarostat();
 
       // Animate a throwaway working copy of the source structure, not the
       // source itself: the MD loop mutates fileBrowser.selectedStructure in
@@ -1145,9 +1169,11 @@ function bindMDBody(panel, shell, potential) {
         forceEvaluator,
         integrator,
         thermostat,
+        barostat,
         offThreadForces,
         shouldStop: () => mdStopRequested,
-        onStep: ({ step, timeFs, temperatureK, targetTemperatureK, epotEv, ekinEv, etotEv, state: mdState }) => {
+        onStep: ({ step, timeFs, temperatureK, targetTemperatureK, epotEv, ekinEv, etotEv,
+                   pressureGPa, volumeA3, state: mdState }) => {
           // snapshotCurrentStructure copies the viewer structure, so a save-step
           // must also apply the current state to the viewer first. Bond-topology
           // refresh is handled inside applyMDStateToViewer (BOND_TOPOLOGY_STRIDE);
@@ -1165,7 +1191,9 @@ function bindMDBody(panel, shell, potential) {
           }
 
           // Fixed-cell MD: no pressure series (see plotSeries seed above).
-          lastStepMetrics = { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv };
+          lastStepMetrics = {
+            step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv, pressure: pressureGPa,
+          };
           if (shouldSave) {
             mdProfileMeasure('saveMs', () => {
               const frame = snapshotCurrentStructure();
@@ -1183,12 +1211,16 @@ function bindMDBody(panel, shell, potential) {
               mdContainer.plotSeries.temperatureK.push(temperatureK);
               mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(targetTemperatureK) ? targetTemperatureK : NaN);
               mdContainer.plotSeries.etotEv.push(etotEv);
+              mdContainer.plotSeries.pressure.push(Number.isFinite(pressureGPa) ? pressureGPa : NaN);
             });
           }
           const tLabel = Number.isFinite(targetTemperatureK)
             ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`
             : `T=${temperatureK.toFixed(0)} K`;
-          shell.statusEl.textContent = `step ${step} / ${steps}  ·  t=${timeFs.toFixed(1)} fs  ·  ${tLabel}`;
+          const pvLabel = useNpt && Number.isFinite(pressureGPa)
+            ? `  ·  P=${pressureGPa.toFixed(2)} GPa  ·  V=${volumeA3.toFixed(1)} A^3`
+            : '';
+          shell.statusEl.textContent = `step ${step} / ${steps}  ·  t=${timeFs.toFixed(1)} fs  ·  ${tLabel}${pvLabel}`;
         },
       });
 
@@ -1212,6 +1244,8 @@ function bindMDBody(panel, shell, potential) {
           mdContainer.plotSeries.temperatureK.push(lastStepMetrics.temperatureK);
           mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(lastStepMetrics.targetTemperatureK) ? lastStepMetrics.targetTemperatureK : NaN);
           mdContainer.plotSeries.etotEv.push(lastStepMetrics.etotEv);
+          mdContainer.plotSeries.pressure.push(
+            Number.isFinite(lastStepMetrics.pressure) ? lastStepMetrics.pressure : NaN);
         }
       }
 

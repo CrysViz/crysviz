@@ -45,7 +45,7 @@ const GROUP_META = {
   temperature: { color: '#53c7ff', lightColor: '#0f77b8', title: 'T (K)' },
   energy:      { color: '#ffb347', lightColor: '#c9720a', title: 'E (eV)' },
   force:       { color: '#7CFC9B', lightColor: '#1f9c46', title: '|F| (eV/Å)' },
-  pressure:    { color: '#c39bff', lightColor: '#7c3fd1', title: 'P (mean σ)' },
+  pressure:    { color: '#c39bff', lightColor: '#7c3fd1', title: 'P (GPa)' },
 };
 
 const GROUP_ORDER = ['temperature', 'energy', 'force', 'pressure'];

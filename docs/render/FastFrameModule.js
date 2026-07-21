@@ -27,7 +27,7 @@ const _dummy = new THREE.Object3D();
 const _dir = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 
-let _prevCellKey = null;
+let _prevCell = null;
 
 // Why the last attempt fell back. The fast path is silent by design (a bail is
 // legitimate), but a run that never takes it is a performance cliff worth
@@ -48,8 +48,27 @@ function bail(reason) {
 // MD.js so the two loops can't drift apart.
 export const BOND_TOPOLOGY_STRIDE = 20;
 
-function cellKey(lattice) {
-  return lattice.flat().map(v => v.toFixed(4)).join(',');
+// Has the cell moved enough to be worth rebuilding the box geometry? Under a
+// barostat it changes every single step, by ~1e-5 relative — rebuilding and
+// re-uploading the line geometry that often cost ~240 ms/step of paint on the
+// 1300-atom NPT benchmark, for a box edge shifting by less than a thousandth of
+// an Angstrom. A relative threshold keeps the box visually locked to the cell
+// (it still updates ~every 10 steps while the volume drifts) at a fraction of
+// the cost. Exact equality is not usable here: floats from the barostat scaling
+// never repeat.
+const CELL_REBUILD_REL_TOL = 1e-3;
+
+function cellChangedEnough(lattice, previous) {
+  if (!previous) return true;
+  for (let i = 0; i < 3; i++) {
+    for (let k = 0; k < 3; k++) {
+      const now = lattice[i][k];
+      const before = previous[i][k];
+      const scale = Math.max(1e-6, Math.abs(before), Math.abs(now));
+      if (Math.abs(now - before) / scale > CELL_REBUILD_REL_TOL) return true;
+    }
+  }
+  return false;
 }
 
 /** Rewrite wrapped.frac/.cart in place from the atoms' current positions. */
@@ -208,9 +227,8 @@ export function applyFrameFast(structure) {
   deriveVisibleWrapped(structure);
 
   // ---- Lattice: only rebuild the cell box when the cell actually changes ----
-  const ck = cellKey(lattice);
-  if (ck !== _prevCellKey) {
-    _prevCellKey = ck;
+  if (cellChangedEnough(lattice, _prevCell)) {
+    _prevCell = lattice.map((row) => [...row]);
     updateLattice();
   }
 
