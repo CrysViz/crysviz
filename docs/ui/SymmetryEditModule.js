@@ -276,7 +276,12 @@ function projectRepresentativePosition(orbit, targetRepresentative, structure = 
   return wrapFrac(add(currentRepresentative, projectedDelta));
 }
 
-export function applyWyckoffOrbitPosition(representativeIndex, newCoords, structure = fileBrowser.selectedStructure) {
+// `reRenderComposition` is passed straight to updateVisualization: the default
+// 'open' rebuilds the composition panel (and with it this orbit's row), which
+// is right after a committed edit but would tear the row out from under a
+// slider mid-drag — live drags pass false and refresh their own inputs.
+export function applyWyckoffOrbitPosition(representativeIndex, newCoords, structure = fileBrowser.selectedStructure,
+  /** @type {{ reRenderComposition?: string | false }} */ { reRenderComposition = 'open' } = {}) {
   if (!structure?.symmetry || structure.symmetry.mode !== 'wyckoff') return;
 
   const orbit = structure.symmetry.orbitGroups.find((group) => group.representativeIndex === representativeIndex);
@@ -298,8 +303,18 @@ export function applyWyckoffOrbitPosition(representativeIndex, newCoords, struct
     reRenderBonds: true,
     reRenderLattice: false,
     reRenderOther: true,
-    reRenderComposition: 'open',
+    reRenderComposition,
   });
+}
+
+// Which fractional axes an orbit can move along: axis j is free when some
+// basis vector of the site's freedom subspace has a component along j. Note
+// free axes can still be coupled (a (x, x, z) site reports x and y free, but
+// moving one drags the other — the projection in
+// projectRepresentativePosition enforces that).
+export function getOrbitAxisFreedom(orbit) {
+  if (!orbit || orbit.isFixed) return [false, false, false];
+  return [0, 1, 2].map((axis) => (orbit.basis ?? []).some((v) => Math.abs(v[axis]) > 1e-6));
 }
 
 export function symmetrizeFractionalPositions(fracPositions, structure = fileBrowser.selectedStructure) {
