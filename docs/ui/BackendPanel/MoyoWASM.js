@@ -5,7 +5,7 @@ import { Structure } from "../../model/index.js";
 import { Atom } from "../../model/index.js";
 import { StructureContainer } from "../../model/index.js";
 import { generateID } from "../../utils/index.js";
-import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive } from '../SymmetryEditModule.js';
+import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive, describeMoyoFailure } from '../SymmetryEditModule.js';
 import { renderComposition } from '../StructureInfoPanel/General.js';
 import { refreshBackendTheme } from './BackendTheme.js';
 import { normalizeFractional } from "../../math/index.js";
@@ -126,25 +126,38 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
       if (el) el.textContent = text;
     };
 
-    document.getElementById("getSymBtn").onclick = () => {
-      const result = callMoyo("getSymmetryInfo", getTol());
-      renderSymmetryResult(result);
-      setStatus();
-    }
+    // moyo throws for cells it cannot handle (atoms closer than the tolerance,
+    // a heavily distorted MD frame, ...). Those are ordinary user situations,
+    // not bugs: report them in the panel and leave the app untouched, rather
+    // than letting an exception escape and kill the click handler.
+    const failSoft = (action) => {
+      try {
+        action();
+      } catch (error) {
+        const box = document.getElementById('symResult');
+        if (box) box.hidden = true;
+        setStatus(describeMoyoFailure(error, getTol()));
+      }
+    };
 
-    document.getElementById("getConvBtn").onclick = () => {
+    document.getElementById("getSymBtn").onclick = () => failSoft(() => {
+      renderSymmetryResult(callMoyo("getSymmetryInfo", getTol()));
+      setStatus();
+    });
+
+    document.getElementById("getConvBtn").onclick = () => failSoft(() => {
       const result = callMoyo("getConvUnit", getTol());
       renderSymmetryResult(result);
       setStatus();
       newContainerFromSymmetrisation("conv", result.positions, result.lattice, result.elements)
-    }
+    });
 
-    document.getElementById("getPrimBtn").onclick = () => {
+    document.getElementById("getPrimBtn").onclick = () => failSoft(() => {
       const result = callMoyo("getPrimUnit", getTol());
       renderSymmetryResult(result);
       setStatus();
       newContainerFromSymmetrisation("prim", result.positions, result.lattice, result.elements)
-    }
+    });
 
     const wyckoffBtn = document.getElementById("getWyckoffBtn");
     const syncWyckoffButton = () => {
@@ -169,11 +182,22 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
         return;
       }
 
-      const result = callMoyo("getSymmetryInfo", getTol());
-      await activateWyckoffMode(fileBrowser.selectedStructure, getTol());
+      let result;
+      try {
+        result = callMoyo("getSymmetryInfo", getTol());
+        await activateWyckoffMode(fileBrowser.selectedStructure, getTol());
+      } catch (error) {
+        // Nothing was locked (activateWyckoffMode assigns only on success), so
+        // the structure stays exactly as editable as it was.
+        const box = document.getElementById('symResult');
+        if (box) box.hidden = true;
+        setStatus(describeMoyoFailure(error, getTol()));
+        syncWyckoffButton();
+        return;
+      }
       renderComposition('open');
       renderSymmetryResult(result);
-      document.getElementById("calcResult").textContent = 'Wyckoff editor active';
+      setStatus('Wyckoff editor active');
       syncWyckoffButton();
       refreshBackendTheme();
     };

@@ -6,6 +6,13 @@ import { cartToFrac, fracToCart, invert3x3, transpose3x3 } from '../math/index.j
 
 let moyoReady = null;
 
+// Two symmetry-equivalent atoms closer than this are, to moyo, one atom on a
+// higher-symmetry site — and its primitive-cell search then fails outright
+// ("PrimitiveSymmetrySearchError"), leaving a structure whose symmetry can no
+// longer be analysed at all. Orbit moves that would collapse a site that far
+// are refused instead (see applyWyckoffOrbitPosition).
+const MIN_SITE_SEPARATION_ANG = 0.4;
+
 function wrap01(x) {
   return ((x % 1) + 1) % 1;
 }
@@ -200,7 +207,25 @@ export async function analyzeStructureSymmetry(structure = fileBrowser.selectedS
   const positions = structure.atoms.map((atom) => [...atom.position]);
   const lattice = structure.lattice.map((row) => [...row]);
   const cell = { positions, lattice: { basis: lattice.flat() }, numbers };
-  return analyze_cell(JSON.stringify(cell), tolerance, 'Standard');
+  try {
+    return analyze_cell(JSON.stringify(cell), tolerance, 'Standard');
+  } catch (error) {
+    throw new Error(describeMoyoFailure(error, tolerance));
+  }
+}
+
+// moyo throws bare tagged strings ("PrimitiveSymmetrySearchError"). Turn them
+// into something a user can act on — every one of them is really "this cell,
+// at this tolerance".
+export function describeMoyoFailure(error, tolerance) {
+  const raw = String(error?.message ?? error);
+  const at = `at tolerance ${tolerance} Å`;
+  if (raw.includes('PrimitiveSymmetrySearchError') || raw.includes('PrimitiveCellError')) {
+    return `Symmetry search failed ${at} — atoms may sit closer than the tolerance, or the cell is too distorted. Try a smaller tolerance.`;
+  }
+  if (raw.includes('TooSmallToleranceError')) return `Tolerance too small ${at} — raise it.`;
+  if (raw.includes('TooLargeToleranceError')) return `Tolerance too large ${at} — lower it.`;
+  return `Symmetry analysis failed ${at}: ${raw}`;
 }
 
 function buildWyckoffSymmetryState(structure, dataset) {
@@ -282,15 +307,19 @@ function projectRepresentativePosition(orbit, targetRepresentative, structure = 
 // slider mid-drag — live drags pass false and refresh their own inputs.
 export function applyWyckoffOrbitPosition(representativeIndex, newCoords, structure = fileBrowser.selectedStructure,
   /** @type {{ reRenderComposition?: string | false }} */ { reRenderComposition = 'open' } = {}) {
-  if (!structure?.symmetry || structure.symmetry.mode !== 'wyckoff') return;
+  if (!structure?.symmetry || structure.symmetry.mode !== 'wyckoff') return false;
 
   const orbit = structure.symmetry.orbitGroups.find((group) => group.representativeIndex === representativeIndex);
-  if (!orbit || orbit.isFixed) return;
+  if (!orbit || orbit.isFixed) return false;
 
   const wrappedRepresentative = projectRepresentativePosition(orbit, newCoords, structure);
-  orbit.mappings.forEach(({ atomIndex, operationIndex }) => {
-    const operation = structure.symmetry.operations[operationIndex];
-    const mapped = applyOperation(wrappedRepresentative, operation);
+  const proposed = orbit.mappings.map(({ atomIndex, operationIndex }) => ({
+    atomIndex,
+    position: applyOperation(wrappedRepresentative, structure.symmetry.operations[operationIndex]),
+  }));
+  if (collapsesSites(proposed, orbit, structure)) return false;
+
+  proposed.forEach(({ atomIndex, position: mapped }) => {
     structure.atoms[atomIndex].position = mapped;
     const rowIndex = fileBrowser.selectedRowIndex;
     const stepIndex = fileBrowser.stepInput;
@@ -305,6 +334,35 @@ export function applyWyckoffOrbitPosition(representativeIndex, newCoords, struct
     reRenderOther: true,
     reRenderComposition,
   });
+  return true;
+}
+
+// Would this set of proposed orbit positions put two atoms on top of each
+// other? Only the moving orbit's atoms can cause that (nothing else moves), so
+// each proposed position is checked against the other proposed ones and
+// against every atom outside the orbit, using the minimum-image distance in
+// Ångström.
+function collapsesSites(proposed, orbit, structure) {
+  const lattice = structure.lattice;
+  const cartDistance = (a, b) => {
+    const d = fracDelta(a, b);
+    const x = d[0] * lattice[0][0] + d[1] * lattice[1][0] + d[2] * lattice[2][0];
+    const y = d[0] * lattice[0][1] + d[1] * lattice[1][1] + d[2] * lattice[2][1];
+    const z = d[0] * lattice[0][2] + d[1] * lattice[1][2] + d[2] * lattice[2][2];
+    return Math.hypot(x, y, z);
+  };
+
+  const inOrbit = new Set(orbit.atomIndices);
+  for (let i = 0; i < proposed.length; i += 1) {
+    for (let j = i + 1; j < proposed.length; j += 1) {
+      if (cartDistance(proposed[i].position, proposed[j].position) < MIN_SITE_SEPARATION_ANG) return true;
+    }
+    for (let k = 0; k < structure.atoms.length; k += 1) {
+      if (inOrbit.has(k)) continue;
+      if (cartDistance(proposed[i].position, structure.atoms[k].position) < MIN_SITE_SEPARATION_ANG) return true;
+    }
+  }
+  return false;
 }
 
 // Which fractional axes an orbit can move along: axis j is free when some

@@ -584,6 +584,28 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   // Slider drags apply live but coalesce to one update per frame — each apply
   // re-lays-out atoms and bonds.
+  // A Wyckoff move that would put symmetry-equivalent atoms on top of each
+  // other is refused (returns false) — say so and snap the controls back to
+  // where the atom actually is.
+  function reportRefusedMove(applied) {
+    const note = coordEditor.querySelector('.coord-editor-note');
+    if (applied !== false) {
+      if (note && note.dataset.refused) {
+        note.textContent = note.dataset.original ?? '';
+        note.style.color = 'rgba(255,255,255,0.45)';
+        delete note.dataset.refused;
+      }
+      return;
+    }
+    if (note && !note.dataset.refused) {
+      note.dataset.original = note.textContent;
+      note.dataset.refused = '1';
+      note.style.color = 'rgba(255,180,120,0.9)';
+    }
+    if (note) note.textContent = 'atoms would overlap';
+    syncAxisControlsFromStructure();
+  }
+
   let pendingFrame = null;
   function applyLive() {
     if (pendingFrame != null) return;
@@ -591,7 +613,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       pendingFrame = null;
       const coordsNow = readAxisInputs();
       if (!coordsNow) return;
-      livePositionUpdater(coordsNow);
+      reportRefusedMove(livePositionUpdater(coordsNow));
       syncAxisControlsFromStructure();
     });
   }
@@ -607,7 +629,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     slider.onchange = () => {
       const coordsNow = readAxisInputs();
       if (!coordsNow) return;
-      livePositionUpdater(coordsNow);
+      reportRefusedMove(livePositionUpdater(coordsNow));
       syncAxisControlsFromStructure();
     };
   });
@@ -621,10 +643,12 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   coordApplyBtn.onclick = () => {
     const newCoords = readAxisInputs();
-    if (newCoords) {
-      positionUpdater(newCoords);
-      coordsDisplay.textContent = `(${newCoords[0].toFixed(3)}, ${newCoords[1].toFixed(3)}, ${newCoords[2].toFixed(3)})`;
+    if (!newCoords) return;
+    if (positionUpdater(newCoords) === false) {
+      reportRefusedMove(false);
+      return;
     }
+    coordsDisplay.textContent = `(${newCoords[0].toFixed(3)}, ${newCoords[1].toFixed(3)}, ${newCoords[2].toFixed(3)})`;
   };
 
   coordResetBtn.onclick = () => {

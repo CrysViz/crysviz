@@ -658,7 +658,6 @@ function showPanel(panelId) {
 
   // Show the selected panel
   const panelToShow = document.getElementById(panelId);
-  console.warn(panelId)
   if (panelToShow) {
     panelToShow.style.display = 'block';
   }

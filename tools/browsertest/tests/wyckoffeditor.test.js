@@ -64,10 +64,10 @@ async function openFirstCoordEditor(page) {
 
   const orbits = await page.evaluate(async () => {
     const { fileBrowser } = await import('./state/store.js');
-    const { getOrbitAxisFreedom } = await import('./ui/SymmetryEditModule.js');
+    const sym = await import('./ui/SymmetryEditModule.js');
     return (fileBrowser.selectedStructure.symmetry?.orbitGroups ?? []).map((g) => ({
       wyckoff: g.wyckoff, dof: g.dofDimension, fixed: g.isFixed,
-      freedom: getOrbitAxisFreedom(g),
+      freedom: sym.getOrbitAxisFreedom(g),
     }));
   });
   H.check('Wyckoff mode active with orbit groups', orbits.length > 0, `${orbits.length} orbits`);
@@ -160,13 +160,77 @@ async function openFirstCoordEditor(page) {
     symmetryHolds.number === symmetryHolds.before,
     `${symmetryHolds.before} -> ${symmetryHolds.number}`);
 
-  const rowEl = await page.$('.individual-atom-row .atom-coord-editor:not([style*="display: none"])');
-  if (rowEl) {
-    const handle = await rowEl.evaluateHandle((el) => el.closest('.individual-atom-row'));
+  const shot = await page.$('.individual-atom-row .atom-coord-editor:not([style*="display: none"])');
+  if (shot) {
+    const handle = await shot.evaluateHandle((el) => el.closest('.individual-atom-row'));
     await handle.asElement().screenshot({
       path: require('path').join(__dirname, '..', 'artifacts', 'wyckoffeditor-ui.png'),
     });
   }
+
+  // --- the trap: an orbit dragged onto its own symmetry partner ------------
+  // Left unchecked this produces a cell moyo cannot analyse at all
+  // (PrimitiveSymmetrySearchError), so the editor can never be re-enabled.
+  const collapse = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const m = await import('./ui/SymmetryEditModule.js');
+    const s = fileBrowser.selectedStructure;
+    const orbit = s.symmetry.orbitGroups.find((g) => !g.isFixed && g.atomIndices.length > 1);
+    if (!orbit) return null;
+    const rep = orbit.representativeIndex;
+    const before = [...s.atoms[rep].position];
+    const target = [...before];
+    target[2] = 0.5; // partner sits at -z, so both land on 1/2
+    const applied = m.applyWyckoffOrbitPosition(rep, target, s, { reRenderComposition: false });
+    const after = [...s.atoms[rep].position];
+    let stillAnalysable = true;
+    try { await m.analyzeStructureSymmetry(s, 0.01); } catch { stillAnalysable = false; }
+    return { applied, moved: Math.abs(after[2] - before[2]) > 1e-9, stillAnalysable };
+  });
+  H.check('a site-collapsing move is refused, not applied',
+    collapse && collapse.applied === false && collapse.moved === false, JSON.stringify(collapse));
+  H.check('structure stays analysable after the refused move',
+    collapse && collapse.stillAnalysable === true);
+
+  // --- fail-soft: an unanalysable structure reports instead of throwing ----
+  const failSoft = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const m = await import('./ui/SymmetryEditModule.js');
+    const s = fileBrowser.selectedStructure;
+    // Break the cell the way an MD frame can: a symmetry pair squeezed to
+    // within the tolerance, which is what moyo's primitive-cell search chokes
+    // on. (Written straight onto the atoms, bypassing the orbit guard.)
+    s.atoms[0].position = [0.5, 0.5, 0.4995];
+    s.atoms[1].position = [0.5, 0.5, 0.5005];
+    m.deactivateWyckoffMode(s);
+    document.getElementById('getWyckoffBtn').click();
+    await new Promise((r) => setTimeout(r, 2000));
+    return {
+      status: document.getElementById('calcResult').textContent,
+      button: document.getElementById('getWyckoffBtn').textContent.trim(),
+      active: m.isWyckoffModeActive(s),
+      resultHidden: document.getElementById('symResult').hidden,
+    };
+  });
+  H.check('an unanalysable cell reports in the panel instead of throwing',
+    /Symmetry search failed|Symmetry analysis failed|Tolerance/.test(failSoft.status || ''),
+    failSoft.status);
+  H.check('a failed enable leaves the editor off and the button consistent',
+    failSoft.active === false && failSoft.button === 'Enable Wyckoff Editor'
+      && failSoft.resultHidden === true, JSON.stringify(failSoft));
+
+  // Same cell, the plain "Get Symmetry Info" path.
+  const infoFail = await page.evaluate(async () => {
+    document.getElementById('getSymBtn').click();
+    await new Promise((r) => setTimeout(r, 500));
+    return {
+      status: document.getElementById('calcResult').textContent,
+      resultHidden: document.getElementById('symResult').hidden,
+    };
+  });
+  H.check('Get Symmetry Info reports the same failure instead of throwing',
+    /Symmetry search failed/.test(infoFail.status || '') && infoFail.resultHidden === true,
+    infoFail.status);
 
   H.check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   await H.finish(browser);
