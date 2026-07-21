@@ -15,22 +15,10 @@ fi
 PORT="${PORT:-8123}"
 DISPLAY_NUM="${DISPLAY_NUM:-99}"
 
-# Plain `python3 -m http.server` sends no Cache-Control, so Firefox caches
-# heuristically and a run right after an edit can execute the previous version
-# of a module. Serve everything no-store instead.
-python3 - "$PORT" >/dev/null 2>&1 <<'PY' &
-import sys, functools, http.server, socketserver
-
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def end_headers(self):
-        self.send_header('Cache-Control', 'no-store, must-revalidate')
-        super().end_headers()
-
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(('', int(sys.argv[1])),
-                            functools.partial(Handler, directory='../../docs')) as httpd:
-    httpd.serve_forever()
-PY
+# Serves no-store: plain `python3 -m http.server` sends no Cache-Control, so
+# Firefox caches heuristically and a run right after an edit can execute the
+# previous version of a module.
+python3 ../devserver.py "$PORT" --directory ../../docs >/dev/null 2>&1 &
 SERVER_PID=$!
 env/xvfb-root/usr/bin/Xvfb ":$DISPLAY_NUM" -screen 0 1400x900x24 -nolisten tcp >/dev/null 2>&1 &
 XVFB_PID=$!

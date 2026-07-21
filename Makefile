@@ -1,9 +1,12 @@
 .PHONY: serve install_devtools lint lint-fix typecheck check-imports check periodic-wasm browsertest browsertest-setup
 
+# Serves no-store (tools/devserver.py) — plain `python3 -m http.server` sends no
+# Cache-Control and Firefox then caches modules heuristically, so an edit can
+# appear as a missing export from the previous version of a file.
 serve:
 	echo "Open:"
 	echo "* http://localhost:8000/index.html"
-	cd docs && python3 -m http.server
+	python3 tools/devserver.py 8000 --directory docs
 
 # One-time: install dev-only tooling (eslint, typescript). Writes node_modules/
 # (gitignored, never served). Run this before lint/typecheck.

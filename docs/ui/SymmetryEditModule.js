@@ -6,10 +6,17 @@ import { cartToFrac, fracToCart, invert3x3, transpose3x3 } from '../math/index.j
 
 let moyoReady = null;
 
-// moyo's symmetry tolerance (symprec), in Å. Same value the Symmetry panel's
-// Tolerance box starts at — every entry point defaults to it so panel and
-// internal calls cannot silently disagree.
+// moyo's symmetry tolerance (symprec), in Å. The live value is
+// general.symmetryTolerance in state/store.js (the Symmetry panel's Tolerance
+// box reads and writes it); this constant is only the fallback if that is ever
+// missing or nonsense. Every entry point defaults to defaultSymprec(), so the
+// panel and internal calls cannot silently disagree.
 export const DEFAULT_SYMPREC = 0.01;
+
+export function defaultSymprec() {
+  const value = general.symmetryTolerance;
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_SYMPREC;
+}
 
 // Two symmetry-equivalent atoms closer than symprec are, to moyo, one atom on
 // a higher-symmetry site — and its primitive-cell search then fails outright
@@ -19,7 +26,7 @@ export const DEFAULT_SYMPREC = 0.01;
 // fails at ~0.012 Å), with a floor so a tiny symprec cannot allow literal
 // duplicates. This is a Cartesian distance, unrelated to symprec except that
 // its whole job is keeping the cell analysable AT that symprec.
-function minSiteSeparation(tolerance = DEFAULT_SYMPREC) {
+function minSiteSeparation(tolerance = defaultSymprec()) {
   return Math.max(4 * tolerance, 0.05);
 }
 
@@ -214,7 +221,7 @@ async function ensureMoyoReady() {
   return moyoReady;
 }
 
-export async function analyzeStructureSymmetry(structure = fileBrowser.selectedStructure, tolerance = DEFAULT_SYMPREC) {
+export async function analyzeStructureSymmetry(structure = fileBrowser.selectedStructure, tolerance = defaultSymprec()) {
   if (!structure) throw new Error('No structure selected');
   await ensureMoyoReady();
 
@@ -243,7 +250,7 @@ export function describeMoyoFailure(error, tolerance) {
   return `Symmetry analysis failed ${at}: ${raw}`;
 }
 
-function buildWyckoffSymmetryState(structure, dataset, tolerance = DEFAULT_SYMPREC) {
+function buildWyckoffSymmetryState(structure, dataset, tolerance = defaultSymprec()) {
   const positions = structure.atoms.map((atom) => [...atom.position]);
   // moyo serializes matrices COLUMN-major (nalgebra's memory order), while
   // applyOperation reads `rotation` row-major — so every operation has to be
@@ -300,7 +307,7 @@ function buildWyckoffSymmetryState(structure, dataset, tolerance = DEFAULT_SYMPR
   };
 }
 
-export async function activateWyckoffMode(structure = fileBrowser.selectedStructure, tolerance = DEFAULT_SYMPREC) {
+export async function activateWyckoffMode(structure = fileBrowser.selectedStructure, tolerance = defaultSymprec()) {
   if (!structure) throw new Error('No structure selected');
   const dataset = await analyzeStructureSymmetry(structure, tolerance);
   structure.symmetry = buildWyckoffSymmetryState(structure, dataset, tolerance);
@@ -377,7 +384,7 @@ function collapsesSites(proposed, orbit, structure) {
     return Math.hypot(x, y, z);
   };
 
-  const minimum = minSiteSeparation(structure.symmetry?.tolerance ?? DEFAULT_SYMPREC);
+  const minimum = minSiteSeparation(structure.symmetry?.tolerance ?? defaultSymprec());
   const inOrbit = new Set(orbit.atomIndices);
   for (let i = 0; i < proposed.length; i += 1) {
     for (let j = i + 1; j < proposed.length; j += 1) {

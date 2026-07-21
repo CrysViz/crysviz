@@ -1,11 +1,11 @@
-import {structureShip,fileBrowser} from '../../state/store.js'
+import {structureShip,fileBrowser,general} from '../../state/store.js'
 import { createRow,selectLastAddedRow } from '../FileBrowswerPanel.js';
 import init, { analyze_cell } from '../../external/moyo-test/moyo_wasm.js';
 import { Structure } from "../../model/index.js";
 import { Atom } from "../../model/index.js";
 import { StructureContainer } from "../../model/index.js";
 import { generateID } from "../../utils/index.js";
-import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive, describeMoyoFailure, DEFAULT_SYMPREC } from '../SymmetryEditModule.js';
+import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive, describeMoyoFailure, defaultSymprec } from '../SymmetryEditModule.js';
 import { renderComposition } from '../StructureInfoPanel/General.js';
 import { refreshBackendTheme } from './BackendTheme.js';
 import { normalizeFractional } from "../../math/index.js";
@@ -88,7 +88,7 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
         <div class="sym-card-title">Symmetry information</div>
         <div class="sym-row">
           <label for="symTolInput">Tolerance (Å)
-            <input type="number" id="symTolInput" value="${DEFAULT_SYMPREC}" min="0" step="0.001">
+            <input type="number" id="symTolInput" value="${defaultSymprec()}" min="0" step="0.001">
           </label>
         </div>
         <div class="sym-row">
@@ -116,9 +116,14 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
     </div>
     `;
 
+    // The box is the single place the tolerance is edited; every read pushes
+    // it back into the store so a panel rebuild (structure switch, dock move)
+    // and every internal analysis keep the value the user set.
     const getTol = () => {
       const v = parseFloat(document.getElementById("symTolInput")?.value);
-      return Number.isFinite(v) && v > 0 ? v : DEFAULT_SYMPREC;
+      const tol = Number.isFinite(v) && v > 0 ? v : defaultSymprec();
+      general.symmetryTolerance = tol;
+      return tol;
     };
 
     const setStatus = (text = '') => {
@@ -294,7 +299,7 @@ function renderSymmetryResult(result) {
   box.hidden = false;
 }
 
-function callMoyo(calcType="getSymmetryInfo", tolerance=DEFAULT_SYMPREC) {
+function callMoyo(calcType="getSymmetryInfo", tolerance=defaultSymprec()) {
   const structure = fileBrowser.selectedStructure;
   // Hidden atoms are excluded from symmetry detection entirely — filtered
   // together (elements/positions in lockstep) before anything is indexed, so
