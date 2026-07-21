@@ -1,7 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
 
 import { groups, general } from '../state/store.js';
-import { periodicWrapped, updateLattice } from './LatticeModule.js';
+import { updateLattice } from './LatticeModule.js';
 import { deriveVisibleWrapped } from './AtomsFracUpdateModule.js';
 import { updateForces } from './ForceModule.js';
 import { getActiveCutPlanes, isBondCutByPlanes, hideSingleBond } from './BondsFracUpdateModule.js';
@@ -29,6 +29,20 @@ const _up = new THREE.Vector3(0, 1, 0);
 
 let _prevCellKey = null;
 
+// Why the last attempt fell back. The fast path is silent by design (a bail is
+// legitimate), but a run that never takes it is a performance cliff worth
+// seeing — the MD profile prints this.
+let _lastBailReason = null;
+
+export function lastFastFrameBail() {
+  return _lastBailReason;
+}
+
+function bail(reason) {
+  _lastBailReason = reason;
+  return false;
+}
+
 // Full bond-topology (and polyhedra) refresh cadence for the MD/relax hot loops:
 // every Nth viewer update takes the full rebuild path. Shared by relaxer.js and
 // MD.js so the two loops can't drift apart.
@@ -38,6 +52,31 @@ function cellKey(lattice) {
   return lattice.flat().map(v => v.toFixed(4)).join(',');
 }
 
+/** Rewrite wrapped.frac/.cart in place from the atoms' current positions. */
+function updateWrappedFromSources(wrapped, structure, shifts, lattice) {
+  const { srcIndex, frac, cart } = wrapped;
+  const atoms = structure.atoms;
+  const [ax, ay, az] = lattice[0];
+  const [bx, by, bz] = lattice[1];
+  const [cx, cy, cz] = lattice[2];
+
+  for (let i = 0; i < srcIndex.length; i++) {
+    const p = atoms[srcIndex[i]].position;
+    const o = i * 3;
+    const f0 = p[0] + shifts[o];
+    const f1 = p[1] + shifts[o + 1];
+    const f2 = p[2] + shifts[o + 2];
+    const fi = frac[i];
+    fi[0] = f0;
+    fi[1] = f1;
+    fi[2] = f2;
+    const ci = cart[i];
+    ci[0] = f0 * ax + f1 * bx + f2 * cx;
+    ci[1] = f0 * ay + f1 * by + f2 * cy;
+    ci[2] = f0 * az + f1 * bz + f2 * cz;
+  }
+}
+
 /**
  * Attempt a fast in-place viewer update for the given structure. Returns true if
  * the fast path applied, false if topology is incompatible (caller must fall back
@@ -45,52 +84,63 @@ function cellKey(lattice) {
  * compatibility check passes, so a false return never leaves a partial update.
  */
 export function applyFrameFast(structure) {
-  if (!structure) return false;
+  if (!structure) return bail('no structure');
 
   const atomsMesh = groups.atomsMesh;
-  if (!atomsMesh) return false;
+  if (!atomsMesh) return bail('no atomsMesh');
 
   const periodic = structure.periodic;
-  if (!periodic || !periodic.wrapped) return false;
+  if (!periodic || !periodic.wrapped) return bail('no periodic.wrapped');
 
   // "Complete Polyhedra" appends extra atoms to the wrapped set (beyond baseCount)
   // and grows atomsMesh; the direct recompute here won't reproduce them, so bail
   // and let the full pipeline handle that mode. Visible polyhedra must track the
   // moving atoms every frame (updatePolyhedra), which only the full path does.
-  if (general.completePolyhedra || general.showPolyhedra) return false;
+  if (general.completePolyhedra || general.showPolyhedra) return bail('polyhedra visible');
 
-  // Recompute the wrapping directly. Replicate exactly the options object
-  // runPeriodicWrapped builds ({ ...general, showPBCBonds }).
-  const showPBCBonds = general.showBonds && general.showPBCBonds;
-  const frac = structure.atoms.map(a => a.position);
-  const elements = [...structure.elements];
   const lattice = structure.lattice;
-  const wrapped = periodicWrapped({ ...general, showPBCBonds }, frac, elements, lattice);
+  const wrapped = periodic.wrapped;
 
   // ---- Compatibility check (before touching any mesh) ----
   const n = wrapped.elements.length;
-  if (n !== atomsMesh.count) return false;
+  if (n !== atomsMesh.count) return bail(`wrapped count ${n} != mesh count ${atomsMesh.count}`);
 
   const meshElems = atomsMesh.userData?.elementNames;
-  if (!meshElems || meshElems.length !== n) return false;
+  if (!meshElems || meshElems.length !== n) return bail('mesh elementNames missing/stale');
 
-  const prevSrc = periodic.wrapped.srcIndex;
-  const newSrc = wrapped.srcIndex;
-  if (!prevSrc || !newSrc || prevSrc.length !== n) return false;
+  const srcIndex = wrapped.srcIndex;
+  if (!srcIndex || srcIndex.length !== n) return bail('srcIndex missing/length changed');
 
   for (let i = 0; i < n; i++) {
-    // Per-index element identity vs the mesh's build-time mapping, and per-index
-    // srcIndex identity vs the previous wrapping — together these guarantee the
-    // instance -> atom mapping (and bond.indices) are still valid.
-    if (wrapped.elements[i] !== meshElems[i]) return false;
-    if (prevSrc[i] !== newSrc[i]) return false;
+    // Per-index element identity vs the mesh's build-time mapping: guarantees
+    // the instance -> atom mapping (and bond.indices) are still valid.
+    if (wrapped.elements[i] !== meshElems[i]) return bail('element order changed');
   }
 
+  // Recorded by runPeriodicWrapped when this wrapping was built (it is the only
+  // place where the wrapping and the atom coordinates are guaranteed to line
+  // up). Absent means the wrapping came from somewhere else — fall back.
+  const shifts = wrapped.imageShifts;
+  if (!shifts || shifts.length !== n * 3) return bail('no recorded image shifts');
+
   // Bonds may legitimately be off — then skip the bond update, don't fail. If they
-  // are on but the mesh is missing, topology needs a rebuild -> fall back.
+  // are on but the mesh is missing, topology needs a rebuild -> fall back. Checked
+  // before the wrapping is rewritten below, so a bail leaves nothing half-updated.
   const bondsOn = !!general.showBonds;
   const bondsMesh = groups.bondsMesh;
-  if (bondsOn && !bondsMesh) return false;
+  if (bondsOn && !bondsMesh) return bail('bonds on but no bondsMesh');
+
+  // ---- Move every instance from its source atom + its frozen lattice shift ----
+  // Re-deriving the wrapping with periodicWrapped() here is what used to make
+  // this path pointless: the ghost set is built by a bond search, so a single
+  // atom drifting off a cell face changes the instance count and the whole
+  // frame fell back to a full rebuild. Measured on a 1300-atom MD run: 1 fast
+  // frame out of 60. Every image is a source atom plus an integer lattice
+  // translation, though, and that translation cannot change while the set is
+  // frozen — so the positions can be reconstructed exactly, in O(N), with no
+  // search at all. The set itself is refreshed by the caller's periodic full
+  // rebuild (BOND_TOPOLOGY_STRIDE).
+  updateWrappedFromSources(wrapped, structure, shifts, lattice);
 
   // ---- Atoms: translation-only instanceMatrix writes (offsets 12/13/14) ----
   const cart = wrapped.cart;

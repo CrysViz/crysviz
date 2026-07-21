@@ -241,6 +241,29 @@ function periodicWrappedJS(general, frac, elements, lattice) {
   };
 }
 
+// Per-instance integer cell offset: wrapped.frac[i] - frac[srcIndex[i]]. Both a
+// face mirror and a PBC-bond ghost are their source atom translated by whole
+// cells, so this is exact; anything else (a wrapping built for different
+// coordinates) yields a non-integer and disables the fast path rather than
+// rendering atoms in the wrong place.
+function imageShiftsOf(wrapped, frac) {
+  const { srcIndex, frac: wfrac } = wrapped
+  if (!srcIndex || !wfrac) return null
+  const n = srcIndex.length
+  const shifts = new Int8Array(n * 3)
+  for (let i = 0; i < n; i++) {
+    const src = frac[srcIndex[i]]
+    if (!src) return null
+    for (let k = 0; k < 3; k++) {
+      const delta = wfrac[i][k] - src[k]
+      const rounded = Math.round(delta)
+      if (Math.abs(delta - rounded) > 1e-6 || Math.abs(rounded) > 3) return null
+      shifts[i * 3 + k] = rounded
+    }
+  }
+  return shifts
+}
+
 export function runPeriodicWrapped(periodic, frac, elements,lattice) {
 
     let bondLenghts = general.bondLengths
@@ -258,6 +281,13 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
       // Number of base atoms (periodic-image + PBC-bond ghosts), before any "Complete
       // Polyhedra" atoms which updatePolyhedra() appends. Polyhedra centers use only these.
       periodic.wrapped.baseCount = periodic.wrapped.elements.length
+      // Integer lattice translation of each rendered instance from its source
+      // atom. Recorded here, where `frac` and the wrapping are by construction
+      // consistent — deriving it later (once the atoms have moved) would round
+      // to the wrong cell for an atom that has since crossed a face. The MD /
+      // relax render fast path replays these to move every instance without
+      // re-deriving the image set (see render/FastFrameModule.js).
+      periodic.wrapped.imageShifts = imageShiftsOf(periodic.wrapped, frac)
       periodic.hash = inputHash
     }
     return periodic

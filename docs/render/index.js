@@ -34,7 +34,7 @@ export {
 
 export { removeForces, updateForces, computeForceColor } from './ForceModule.js';
 
-export { applyFrameFast, BOND_TOPOLOGY_STRIDE } from './FastFrameModule.js';
+export { applyFrameFast, BOND_TOPOLOGY_STRIDE, lastFastFrameBail } from './FastFrameModule.js';
 
 export { updateGroundPlane } from './GroundPlaneModule.js';
 
