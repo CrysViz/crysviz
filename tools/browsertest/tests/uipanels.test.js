@@ -143,13 +143,20 @@ async function expandPanel(page, id) {
   await expandPanel(page, 'cell');
   const cell = await page.evaluate(() => ({
     flipouts: document.querySelectorAll('#cvPanelBody-cell .bond-toggle').length,
-    headlines: document.querySelectorAll('#cvPanelBody-cell .panel-headline').length,
+    // Assert the headline TEXTS, not just the count: a bare number goes stale
+    // the moment a section is added (this expected 3 and started failing when
+    // the Vacuum section landed) and tells you nothing about which one moved.
+    headlines: [...document.querySelectorAll('#cvPanelBody-cell .panel-headline')]
+      .map((h) => h.textContent.trim()),
     latticeVisible: (document.getElementById('latticeContent')?.offsetHeight ?? 0) > 0,
     supercellVisible: (document.getElementById('supercellContent')?.offsetHeight ?? 0) > 0,
     transformVisible: (document.getElementById('transformContent')?.offsetHeight ?? 0) > 0,
   }));
   H.check('Cell: flip-outs replaced by flat headlines',
-    cell.flipouts === 0 && cell.headlines === 3, JSON.stringify(cell));
+    cell.flipouts === 0
+      && JSON.stringify(cell.headlines)
+        === JSON.stringify(['Lattice Parameters', 'Supercell', 'Vacuum', 'Lattice Transformation']),
+    JSON.stringify(cell));
   H.check('Cell: all three sections\' content visible',
     cell.latticeVisible && cell.supercellVisible && cell.transformVisible, JSON.stringify(cell));
   H.check('Cell keeps Show Periodic Images', await inBody(page, 'cell', 'showPeriodic'));

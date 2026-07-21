@@ -1,9 +1,28 @@
 .PHONY: serve install_devtools lint lint-fix typecheck check-imports check periodic-wasm browsertest browsertest-setup
 
+# Local dev server for docs/. Two things python3 -m http.server won't do on
+# its own:
+#   - bind loopback only. Its default is 0.0.0.0, which publishes the working
+#     tree (including anything else under docs/) to every machine on the LAN
+#     or cafe wifi. Override with SERVE_HOST= if you actually want that.
+#   - pick a free port. The default 8000 is a popular squat, and the failure
+#     mode is a bare "Address already in use". Probe upward instead.
+SERVE_HOST ?= 127.0.0.1
+SERVE_PORT ?= 8000
+SERVE_TRIES ?= 20
+
 serve:
-	echo "Open:"
-	echo "* http://localhost:8000/index.html"
-	cd docs && python3 -m http.server
+	@host='$(SERVE_HOST)'; port=$(SERVE_PORT); max=$$(( $(SERVE_PORT) + $(SERVE_TRIES) )); \
+	while [ $$port -lt $$max ] && ! python3 -c "import socket, sys; s = socket.socket(); s.settimeout(0.2); busy = s.connect_ex(('$$host', $$port)) == 0; s.close(); sys.exit(1 if busy else 0)"; do \
+		echo "port $$port is taken, trying $$(( port + 1 ))"; \
+		port=$$(( port + 1 )); \
+	done; \
+	if [ $$port -ge $$max ]; then \
+		echo "no free port in $(SERVE_PORT)..$$(( max - 1 ))" >&2; exit 1; \
+	fi; \
+	echo "Open:"; \
+	echo "* http://$$host:$$port/index.html"; \
+	cd docs && exec python3 -m http.server $$port --bind "$$host"
 
 # One-time: install dev-only tooling (eslint, typescript). Writes node_modules/
 # (gitignored, never served). Run this before lint/typecheck.
