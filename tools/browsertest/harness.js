@@ -32,17 +32,10 @@ function check(name, ok, detail = '') {
  *  pageerror + console.error text for the "no errors" assertion. */
 async function launchApp() {
   fs.mkdirSync(ARTIFACTS, { recursive: true });
-  // headless FF has no WebGL. Caching is off because python's http.server
-  // sends no Cache-Control: Firefox then caches heuristically and a test run
-  // right after an edit can execute the PREVIOUS version of a module.
-  const browser = await firefox.launch({
-    headless: false,
-    firefoxUserPrefs: {
-      'browser.cache.disk.enable': false,
-      'browser.cache.memory.enable': false,
-      'network.http.use-cache': false,
-    },
-  });
+  // headless FF has no WebGL. Stale modules are handled at the server
+  // (tools/devserver.py sends Cache-Control: no-store), not with browser prefs
+  // here — one mechanism, and it covers `make serve` in a real browser too.
+  const browser = await firefox.launch({ headless: false });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   // Pre-dismiss the ray/path-tracing performance-warning modal: shotCanvas is a
   // page screenshot (DOM overlays included), so the modal backdrop would dim
