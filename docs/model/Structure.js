@@ -44,6 +44,7 @@ export class Structure {
     forces = [],
     stress = null,
     energy = null,
+    velocities = null,
     polyhedra = null,
     polyhedraSettings = null,
     bondMapping = {}, // Mapping from bond index number to the indices in the THREE mesh object.
@@ -80,6 +81,7 @@ export class Structure {
     }));
     this.stress = stress;
     this.energy = energy ?? null; // per-frame free energy in eV; null when unknown
+    this.velocities = velocities ?? null; // per-atom [vx,vy,vz] in Å/fs; null when untracked (relax frames, loaded files)
     this.polyhedra = polyhedra;
     this.polyhedraSettings = normalizePolyhedraSettings(polyhedraSettings);
     // NOTE: the bond/atom-image lookup maps are populated later by the bonds/
@@ -146,6 +148,9 @@ export class Structure {
       forces: deepCopyArrayOfObjects(forces), // deep copy of force objects
       stress: stress ? { ...stress } : null,  // deep copy of stress object if it exists
       energy: energy ?? null,                 // per-frame free energy in eV; null when unknown
+      // Raw [vx,vy,vz] tuples, not Force instances — copy like lattice rows
+      // (deepCopyArrayOfObjects would flatten each tuple into a plain object).
+      velocities: velocities ? velocities.map(row => [...row]) : null,
       polyhedra: polyhedra ? { ...polyhedra } : null,
       polyhedraSettings: { ...this.polyhedraSettings },
       bonds: deepCopyArrayOfObjects(this.bonds), // deep copy of bond objects

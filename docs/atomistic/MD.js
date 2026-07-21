@@ -224,7 +224,7 @@ function syncStateSymmetryConstraint(state, structure = fileBrowser.selectedStru
 
 /**
  * @param {{nepRunner?:any, structure?:any, temperatureTargetK?:number,
- *   zeroMomentum?:boolean, forceEvaluator?:any}} [opts]
+ *   zeroMomentum?:boolean, forceEvaluator?:any, initialVelocities?:any}} [opts]
  */
 export async function initializeMDState({
   nepRunner,
@@ -232,6 +232,10 @@ export async function initializeMDState({
   temperatureTargetK = 300,
   zeroMomentum = true,
   forceEvaluator = null,
+  // "Continue MD": resume with a prior frame's own velocities instead of a
+  // fresh Maxwell-Boltzmann draw. Deep-copied so the returned state doesn't
+  // alias whatever array the caller passed in (e.g. a frame's .velocities).
+  initialVelocities = null,
 } = {}) {
   if (!nepRunner) throw new Error('initializeMDState: nepRunner is required');
   const evalForce = forceEvaluator ?? createNEPForceEvaluator(nepRunner);
@@ -239,12 +243,17 @@ export async function initializeMDState({
   const base = buildNEPStructure(nepRunner, structure);
   const masses = getMassesFromElements(structure.elements);
   const n = base.positions.length;
-  const velocities = new Array(n);
-  for (let i = 0; i < n; i += 1) {
-    const sigma = Math.sqrt((KB_EV_PER_K * temperatureTargetK) / (masses[i] * KE_EV_FACTOR));
-    velocities[i] = [sigma * gaussianRand(), sigma * gaussianRand(), sigma * gaussianRand()];
+  let velocities;
+  if (initialVelocities) {
+    velocities = initialVelocities.map((v) => [...v]);
+  } else {
+    velocities = new Array(n);
+    for (let i = 0; i < n; i += 1) {
+      const sigma = Math.sqrt((KB_EV_PER_K * temperatureTargetK) / (masses[i] * KE_EV_FACTOR));
+      velocities[i] = [sigma * gaussianRand(), sigma * gaussianRand(), sigma * gaussianRand()];
+    }
+    if (zeroMomentum) removeCenterOfMassVelocity(velocities, masses);
   }
-  if (zeroMomentum) removeCenterOfMassVelocity(velocities, masses);
   const symmetryConstrained = isWyckoffModeActive(structure);
   if (symmetryConstrained) {
     for (let i = 0; i < velocities.length; i += 1) {
@@ -403,6 +412,14 @@ export function applyMDStateToViewer(
   structure.atoms.forEach((atom, i) => {
     atom.position = [...frac[i]];
   });
+  // Carried onto every emitted frame (via snapshotCurrentStructure, which
+  // copies structure.velocities like it does structure.forces) so "Continue
+  // MD" can later resume from a frame's own velocities instead of redrawing.
+  // Guarded: callers may pass a minimal state (e.g. tests driving positions
+  // only) with no velocities to carry.
+  if (Array.isArray(state.velocities)) {
+    structure.velocities = clone3xN(state.velocities);
+  }
 
   if (!structure.periodic) structure.periodic = { hash: 'None', wrapped: null };
 

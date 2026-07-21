@@ -20,7 +20,7 @@ import {
 import { ensureTrajectoryPanelForLive, feedLiveStep, resetLivePlot, endLiveFeed } from '../TrajectoryPanel.js';
 import { MLIPRunner } from '../../external/mlip_wasm/mlip_runner.js';
 import { updateForces } from '../../render/index.js';
-import { updateRow, createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
+import { updateRow, createRow, selectLastAddedRow, selectStructure } from '../FileBrowswerPanel.js';
 import { refreshActivePanels } from '../panels/PanelManager.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { fracToCartPoint, cartToFractional, normalizeFractionalPoint } from '../../math/index.js';
@@ -244,6 +244,9 @@ function snapshotCurrentStructure() {
   }));
   const forces = (src.forces ?? []).map((force) => new Force({ vector: [...force.vector] }));
   const stress = src.stress ? new Stress({ tensor: src.stress.tensor.map((row) => [...row]) }) : null;
+  // Carried like forces (not reset here) so an MD frame's velocities survive
+  // into its saved trajectory frame — that's what "Continue MD" resumes from.
+  const velocities = src.velocities ? src.velocities.map((v) => [...v]) : null;
 
   return new Structure({
     elements,
@@ -252,6 +255,7 @@ function snapshotCurrentStructure() {
     atoms,
     forces,
     stress,
+    velocities,
     periodic: { hash: 'None', wrapped: null },
   });
 }
@@ -286,7 +290,6 @@ function clearASEHandlers() {
   aseSocket.off('connect', aseBoundElements.onConnect);
   aseSocket.off('connect_error', aseBoundElements.onConnectError);
   aseSocket.off('status', aseBoundElements.onStatus);
-  aseSocket.off('append', aseBoundElements.onAppend);
   aseSocket.off('new', aseBoundElements.onNew);
   aseSocket.off('getEFS', aseBoundElements.onGetEFS);
   aseSocket.off('stressUpdate', aseBoundElements.onStressUpdate);
@@ -311,45 +314,6 @@ function bindASEHandlers(bound) {
 
   const onStatus = (data) => {
     setASEStatus(bound, data.message);
-  };
-
-  const onAppend = (data) => {
-    setASEStatus(bound, 'ASE relaxation appended.');
-    if (bound.resultEl) bound.resultEl.textContent = data.log ?? '';
-    const selected = structureShip.container[fileBrowser.selectedRowIndex];
-    const trajLength = selected.structures.length + data.result.positions.length;
-
-    for (let i = 0; i < data.result.positions.length; i += 1) {
-      const atoms = [];
-      data.result.positions[i].forEach((pos, index) => {
-        atoms.push(new Atom({
-          position: pos,
-          element: [...fileBrowser.selectedStructure.elements][index],
-        }));
-      });
-
-      const forces = [];
-      data.result.forces[i].forEach((force) => {
-        forces.push(new Force({ vector: force }));
-      });
-
-      const elements = [...fileBrowser.selectedStructure.elements];
-      const structure = new Structure({
-        elements,
-        uniqueElements: [...new Set(elements)],
-        lattice: data.result.lattices[i],
-        atoms,
-        forces,
-        stress: new Stress({ tensor: convertStressEvA3ToGPa(data.result.stresses[i]) }),
-      });
-      selected.structures.push(structure);
-    }
-
-    updateRow(fileBrowser.selectedRow, {
-      name: selected.fileName,
-      traj: trajLength,
-      step: trajLength,
-    });
   };
 
   const onNew = (data) => {
@@ -436,7 +400,6 @@ function bindASEHandlers(bound) {
     onConnect,
     onConnectError,
     onStatus,
-    onAppend,
     onNew,
     onGetEFS,
     onStressUpdate,
@@ -445,7 +408,6 @@ function bindASEHandlers(bound) {
   aseSocket.on('connect', onConnect);
   aseSocket.on('connect_error', onConnectError);
   aseSocket.on('status', onStatus);
-  aseSocket.on('append', onAppend);
   aseSocket.on('new', onNew);
   aseSocket.on('getEFS', onGetEFS);
   aseSocket.on('stressUpdate', onStressUpdate);
@@ -641,9 +603,12 @@ function rattleSelectedStructure(amp, doLattice, latticePct = RATTLE_LATTICE_PCT
     ));
   }
 
-  // Forces/stress are stale after moving atoms; drop them and re-render geometry.
+  // Forces/stress/velocities are stale after moving atoms; drop them (velocities
+  // also so a rattled MD tip doesn't look like a "Continue MD"-able last frame)
+  // and re-render geometry.
   s.forces = [];
   s.stress = null;
+  s.velocities = null;
   s.periodic = { hash: 'None', wrapped: null };
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderLattice: true });
 }
@@ -685,8 +650,7 @@ function renderRelaxBody(bodyEl, potential) {
         </label>
       </div>
       <div class="atomistic-button-row atomistic-button-row-compact">
-        <button type="button" class="calcButton" id="relaxAppendBtn">Append</button>
-        <button type="button" class="calcButton" id="relaxNewBtn">New</button>
+        <button type="button" class="calcButton" id="relaxBtn">Relax</button>
       </div>
     </div>
     <div class="atomistic-card atomistic-card-compact">
@@ -817,6 +781,11 @@ async function runLocalRelax(shell, params, potential) {
     // we do not want that to alter the user's starting structure. Only relax_…
     // holds the trajectory. (restoreStructureInPlace remains a safety net.)
     const workingStructure = snapshotCurrentStructure();
+    // Relax has no dynamics — never let a stale velocity value (e.g. carried
+    // over from an MD frame relaxed in place) survive onto relax's own frames,
+    // or a later "Continue MD" could mistake this trajectory's tip for a
+    // resumable one.
+    workingStructure.velocities = null;
     fileBrowser.selectedStructure = workingStructure;
 
     const initial = buildNEPStructure(runner, fileBrowser.selectedStructure);
@@ -919,8 +888,7 @@ function bindRelaxBody(panel, shell, potential) {
   renderRelaxBody(shell.bodyEl, potential);
   const metricsEl = shell.bodyEl.querySelector('#relaxEfsMetrics');
   const efsCard = shell.bodyEl.querySelector('#relaxEfsCard');
-  const appendBtn = shell.bodyEl.querySelector('#relaxAppendBtn');
-  const newBtn = shell.bodyEl.querySelector('#relaxNewBtn');
+  const relaxBtn = shell.bodyEl.querySelector('#relaxBtn');
 
   const aseBinding = {
     statusEl: shell.statusEl,
@@ -943,28 +911,13 @@ function bindRelaxBody(panel, shell, potential) {
     }
   });
 
-  appendBtn.addEventListener('click', async () => {
-    try {
-      const params = readRelaxParams(shell.bodyEl);
-      shell.resultEl.textContent = '';
-      if (potential === 'ase') {
-        emitASERelax('append', params);
-        setASEStatus(aseBinding, 'Submitting ASE append relaxation...');
-      } else {
-        await runLocalRelax(shell, params, potential);
-      }
-    } catch (error) {
-      shell.resultEl.textContent = `Relax failed: ${error.message || String(error)}`;
-    }
-  });
-
-  newBtn.addEventListener('click', async () => {
+  relaxBtn.addEventListener('click', async () => {
     try {
       const params = readRelaxParams(shell.bodyEl);
       shell.resultEl.textContent = '';
       if (potential === 'ase') {
         emitASERelax('new', params);
-        setASEStatus(aseBinding, 'Submitting ASE new relaxation...');
+        setASEStatus(aseBinding, 'Submitting ASE relaxation...');
       } else {
         await runLocalRelax(shell, params, potential);
       }
@@ -1023,6 +976,8 @@ function bindMDBody(panel, shell, potential) {
     // for the restore/switch even if the run throws before/after assigning.
     let originalStructure = /** @type {any} */ (null);
     let mdContainer = /** @type {any} */ (null);
+    let seedFrame = /** @type {any} */ (null);
+    let isContinuation = false;
     try {
       mdRunning = true;
       mdStopRequested = false;
@@ -1047,21 +1002,48 @@ function bindMDBody(panel, shell, potential) {
       // MD animates this structure in place for live viewer feedback; keep the
       // reference so it can be restored (from the seed frame) once the run ends.
       originalStructure = fileBrowser.selectedStructure;
+
+      // "Continue MD": resume with the selected frame's own velocities and grow
+      // its container in place, instead of a fresh start — but only when that
+      // frame is genuinely the trajectory's tip (compared by reference, the
+      // same way this file already tracks "the" selected structure) and it was
+      // actually produced by MD (relax/rattle null out .velocities, so a relaxed
+      // or rattled tip always falls through to the fresh-start branch below).
+      const isLastFrame = !!srcContainer
+        && srcContainer.structures[srcContainer.structures.length - 1] === originalStructure;
+      const resumeVelocities = (isLastFrame && originalStructure.velocities) || null;
+      isContinuation = !!resumeVelocities;
+
       const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
-      mdContainer = new StructureContainer({ fileName: mdLabel, structures: [snapshotCurrentStructure()] });
-      // Persist the plotted series on the container so the trajectory plot can be
-      // rebuilt (e.g. after a panel rebuild from a structure-table interaction)
-      // long after the live run's in-memory plot was torn down. Seed one NaN gap
-      // for the initial (pre-run) frame so the series stays index-aligned with
-      // mdContainer.structures.
-      // No pressure series: NEP/PET-MAD/ASE MD here runs at fixed cell, so the
-      // stress trace is not a meaningful pressure to plot. `step` records the
-      // real MD step per saved frame so the plot's x-axis reads steps (a
-      // multiple of the save stride), not the frame index; seed frame = step 0.
-      mdContainer.plotSeries = { step: [0], temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN] };
-      structureShip.container.push(mdContainer);
-      const mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
-      tableBody.appendChild(mdRow);
+      let mdRow;
+      if (isContinuation) {
+        mdContainer = srcContainer;
+        seedFrame = originalStructure;
+        mdRow = fileBrowser.selectedRow;
+      } else {
+        seedFrame = snapshotCurrentStructure();
+        mdContainer = new StructureContainer({ fileName: mdLabel, structures: [seedFrame] });
+        // Persist the plotted series on the container so the trajectory plot can be
+        // rebuilt (e.g. after a panel rebuild from a structure-table interaction)
+        // long after the live run's in-memory plot was torn down. Seed one NaN gap
+        // for the initial (pre-run) frame so the series stays index-aligned with
+        // mdContainer.structures.
+        // No pressure series: NEP/PET-MAD/ASE MD here runs at fixed cell, so the
+        // stress trace is not a meaningful pressure to plot. `step` records the
+        // real MD step per saved frame so the plot's x-axis reads steps (a
+        // multiple of the save stride), not the frame index; seed frame = step 0.
+        mdContainer.plotSeries = { step: [0], temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN] };
+        structureShip.container.push(mdContainer);
+        mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
+        tableBody.appendChild(mdRow);
+      }
+      // Continuing picks the step/time clock up from the trajectory's own
+      // record, so the plot's x-axis and the on-screen step counter don't snap
+      // back to 0 partway through an otherwise-continuous run.
+      const resumeStep = isContinuation
+        ? (mdContainer.plotSeries?.step?.[mdContainer.plotSeries.step.length - 1] ?? 0)
+        : 0;
+      lastSavedStep = resumeStep;
 
       resetLivePlot();
       ensureTrajectoryPanelForLive();
@@ -1095,7 +1077,12 @@ function bindMDBody(panel, shell, potential) {
         structure: fileBrowser.selectedStructure,
         temperatureTargetK: startTemperatureK,
         forceEvaluator,
+        initialVelocities: resumeVelocities,
       });
+      if (isContinuation) {
+        state.step = resumeStep;
+        state.timeFs = resumeStep * dtFs;
+      }
 
       await runMDSimulation({
         state,
@@ -1168,7 +1155,9 @@ function bindMDBody(panel, shell, potential) {
       }
 
       const count = mdContainer.structures.length;
-      updateRow(mdRow, { name: mdLabel, traj: count, step: count });
+      // Continuation keeps the row's existing name — it's the same container,
+      // not a freshly labeled one.
+      updateRow(mdRow, { name: isContinuation ? srcContainer.fileName : mdLabel, traj: count, step: count });
       shell.statusEl.textContent = '';
       shell.resultEl.textContent = mdStopRequested ? `Stopped at step ${state.step}.` : `Finished at step ${state.step}.`;
     } catch (error) {
@@ -1183,17 +1172,25 @@ function bindMDBody(panel, shell, potential) {
       endLiveFeed();
       // Safety-net restore of the source structure (it's normally untouched now
       // that MD animates a working copy). SEPARATE try/catch from the row switch
-      // below: a restore hiccup must not prevent switching to MD_….
+      // below: a restore hiccup must not prevent switching to MD_…. seedFrame is
+      // the frame the run actually started from — mdContainer.structures[0] for
+      // a fresh run, but the (unmoved) resumed frame itself when continuing.
       try {
-        restoreStructureInPlace(originalStructure, mdContainer?.structures?.[0]);
+        restoreStructureInPlace(originalStructure, seedFrame);
       } catch { /* safety net only */ }
-      // Auto-select the recorded trajectory so the viewer refreshes to MD_…
-      // instead of leaving the green selection (and the last animated frame) on
-      // the source row. refreshActivePanels() rebuilds the Trajectory panel for
-      // the new container (selectLastAddedRow alone doesn't, so the scrubber
-      // otherwise stayed at 1 / 1 until a manual row click).
+      // Auto-select the recorded trajectory so the viewer refreshes to the new
+      // frame(s). refreshActivePanels() rebuilds the Trajectory panel (selection
+      // alone doesn't, so the scrubber otherwise stayed put until a manual row
+      // click).
       try {
-        selectLastAddedRow();
+        if (isContinuation) {
+          // Same row as before the run — jump it to the newly appended tip.
+          // selectLastAddedRow() would pick whatever row is last in the table,
+          // which isn't necessarily this one.
+          selectStructure(fileBrowser.selectedRowIndex, mdContainer.structures.length - 1);
+        } else {
+          selectLastAddedRow();
+        }
         refreshActivePanels();
       } catch { /* non-fatal: leave selection as-is */ }
     }
