@@ -461,6 +461,50 @@ export function symmetrizeCartesianVectors(cartVectors, lattice, structure = fil
   return fracToCart(outFrac, lattice);
 }
 
+function multiply3x3(a, b) {
+  const out = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < 3; i += 1) {
+    for (let j = 0; j < 3; j += 1) {
+      out[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
+    }
+  }
+  return out;
+}
+
+/**
+ * Project a cartesian strain tensor onto the symmetry-invariant subspace — the
+ * Reynolds average (1/N)·Σ Rᵀ E R over the point group. Straining a cell by an
+ * arbitrary symmetric tensor drops it to P1 (a hexagonal cell stops being
+ * hexagonal), so anything that deforms the cell while the Wyckoff lock is on
+ * has to pass its strain through here first.
+ *
+ * The operations are stored as fractional rotations W; a cartesian point is
+ * x = Lᵀf, so the same isometry in cartesian axes is R = Lᵀ W (Lᵀ)⁻¹.
+ */
+export function symmetrizeCartesianStrain(strain, lattice, structure = fileBrowser.selectedStructure) {
+  const operations = structure?.symmetry?.mode === 'wyckoff' ? structure.symmetry.operations : null;
+  if (!operations?.length) return strain.map((row) => [...row]);
+
+  const latticeT = transpose3x3(lattice);
+  const latticeTInverse = invert3x3(latticeT);
+  const sum = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+
+  operations.forEach(({ rotation }) => {
+    const W = [
+      [rotation[0], rotation[1], rotation[2]],
+      [rotation[3], rotation[4], rotation[5]],
+      [rotation[6], rotation[7], rotation[8]],
+    ];
+    const R = multiply3x3(multiply3x3(latticeT, W), latticeTInverse);
+    const projected = multiply3x3(multiply3x3(transpose3x3(R), strain), R);
+    for (let i = 0; i < 3; i += 1) {
+      for (let j = 0; j < 3; j += 1) sum[i][j] += projected[i][j];
+    }
+  });
+
+  return sum.map((row) => row.map((value) => value / operations.length));
+}
+
 export function getSymmetryDegreesOfFreedom(structure = fileBrowser.selectedStructure) {
   if (!structure?.symmetry || structure.symmetry.mode !== 'wyckoff') return null;
   return structure.symmetry.orbitGroups.reduce((sum, orbit) => sum + orbit.dofDimension, 0);

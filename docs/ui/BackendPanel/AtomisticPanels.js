@@ -24,6 +24,12 @@ import { updateRow, createRow, selectLastAddedRow, selectStructure } from '../Fi
 import { refreshActivePanels } from '../panels/PanelManager.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { fracToCartPoint, cartToFractional, normalizeFractionalPoint } from '../../math/index.js';
+import {
+  isWyckoffModeActive,
+  symmetrizeCartesianPositions,
+  symmetrizeCartesianVectors,
+  symmetrizeCartesianStrain,
+} from '../SymmetryEditModule.js';
 import { StructureContainer } from '../../model/index.js';
 import { Atom } from '../../model/index.js';
 import { Force } from '../../model/index.js';
@@ -575,32 +581,52 @@ function gaussianRandom() {
 // (std = amp Å) to every atom and, when doLattice is set, a small symmetric
 // random strain (±RATTLE_LATTICE_PCT) to the cell. Mutates the structure in
 // place (the user's explicit intent — rattle then relax) and re-renders.
+//
+// In Wyckoff mode both the displacement field and the strain are projected onto
+// what the space group allows, so rattling stays inside the symmetry the user
+// locked — same contract as constrained MD/relax. Note the projection shrinks
+// the perturbation (a site with no freedom does not move at all, and a hexagonal
+// cell only breathes along its allowed strains), so the effective amplitude is
+// below `amp` by design rather than being renormalised back up.
 function rattleSelectedStructure(amp, doLattice, latticePct = RATTLE_LATTICE_PCT) {
   const s = fileBrowser.selectedStructure;
   if (!s || !Array.isArray(s.atoms) || !s.atoms.length) return;
   const lattice = s.lattice.map((r) => [...r]);
+  const constrained = isWyckoffModeActive(s);
 
-  s.atoms.forEach((atom) => {
-    const cart = fracToCartPoint(atom.position, lattice);
-    const moved = [
-      cart[0] + gaussianRandom() * amp,
-      cart[1] + gaussianRandom() * amp,
-      cart[2] + gaussianRandom() * amp,
-    ];
+  const cartPositions = s.atoms.map((atom) => fracToCartPoint(atom.position, lattice));
+  let displacements = s.atoms.map(() => [
+    gaussianRandom() * amp,
+    gaussianRandom() * amp,
+    gaussianRandom() * amp,
+  ]);
+  if (constrained) displacements = symmetrizeCartesianVectors(displacements, lattice, s);
+
+  let moved = cartPositions.map((cart, i) => [
+    cart[0] + displacements[i][0],
+    cart[1] + displacements[i][1],
+    cart[2] + displacements[i][2],
+  ]);
+  // Re-project the positions themselves: the displacement field alone leaves
+  // each orbit consistent only to float precision, and the symmetry analysis
+  // downstream runs at a tolerance that deserves better than that.
+  if (constrained) moved = symmetrizeCartesianPositions(moved, lattice, s);
+
+  s.atoms.forEach((atom, i) => {
     // Wrap back into [0,1). An atom sitting near a face is as likely to be
     // kicked out of the cell as into it, and nothing downstream folds it back:
     // periodicWrapped() only mirrors atoms that lie ON a face/edge/corner, it
     // does not normalize out-of-cell coordinates, so the atom would simply
     // render outside the box. Under PBC the wrapped position is the same
     // physical site.
-    atom.position = normalizeFractionalPoint(cartToFractional(moved, lattice));
+    atom.position = normalizeFractionalPoint(cartToFractional(moved[i], lattice));
   });
 
   if (doLattice) {
     // Symmetric random strain E (independent components in [-pct, pct]);
     // new lattice = old · (I + E).
     const pct = latticePct;
-    const E = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    let E = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
     for (let i = 0; i < 3; i++) {
       for (let j = i; j < 3; j++) {
         const e = (Math.random() * 2 - 1) * pct;
@@ -608,6 +634,7 @@ function rattleSelectedStructure(amp, doLattice, latticePct = RATTLE_LATTICE_PCT
         E[j][i] = e;
       }
     }
+    if (constrained) E = symmetrizeCartesianStrain(E, lattice, s);
     s.lattice = lattice.map((row) => [0, 1, 2].map(
       (j) => row[j] + row[0] * E[0][j] + row[1] * E[1][j] + row[2] * E[2][j],
     ));
