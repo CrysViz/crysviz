@@ -11,7 +11,7 @@ which shows up as nonsense like
 for an export that is plainly there. Serving no-store removes the whole class
 of problem. Used by `make serve` and tools/browsertest/run.sh.
 
-    python3 tools/devserver.py [port] [--directory DIR]
+    python3 tools/devserver.py [port] [--directory DIR] [--bind HOST]
 """
 
 import argparse
@@ -35,11 +35,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('port', nargs='?', type=int, default=8000)
     parser.add_argument('--directory', default='docs')
+    # Loopback by default: 0.0.0.0 would publish the working tree to the whole
+    # LAN. Pass --bind 0.0.0.0 deliberately if that is what you want.
+    parser.add_argument('--bind', default='127.0.0.1')
     args = parser.parse_args()
 
     socketserver.TCPServer.allow_reuse_address = True
     handler = functools.partial(NoCacheHandler, directory=args.directory)
-    with socketserver.TCPServer(('', args.port), handler) as httpd:
+    with socketserver.TCPServer((args.bind, args.port), handler) as httpd:
         httpd.serve_forever()
 
 
