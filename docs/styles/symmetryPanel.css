@@ -116,11 +116,6 @@
   color: var(--highlight-color, #6fb6ff);
 }
 
-.sym-spg-number {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
-}
-
 .sym-kv {
   display: grid;
   grid-template-columns: auto auto;

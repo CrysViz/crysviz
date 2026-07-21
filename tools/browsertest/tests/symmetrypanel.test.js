@@ -25,11 +25,11 @@ async function runSym(page) {
     return {
       hidden: box.hidden,
       symbol: box.querySelector('.sym-spg-symbol')?.textContent.trim(),
-      number: box.querySelector('.sym-spg-number')?.textContent.trim(),
+      protoLabel: box.querySelector('.sym-proto-label')?.textContent.trim(),
       href: link ? link.getAttribute('href') : null,
       target: link ? link.getAttribute('target') : null,
       hall: dd[0],
-      pearson: dd[1],
+      number: dd[1],
       proto: box.querySelector('.sym-proto-value')?.textContent.trim(),
       status: document.getElementById('calcResult').textContent.trim(),
     };
@@ -73,15 +73,20 @@ async function runSym(page) {
   // --- symmetry info + link ---------------------------------------------
   const r = await runSym(page);
   H.check('result block appears after Get Symmetry Info', r.hidden === false);
-  H.check('space group shown with its ITA number',
-    !!r.symbol && /^No\. \d+$/.test(r.number || ''), `${r.symbol} ${r.number}`);
+  H.check('space group symbol as heading, ITA number as its own row',
+    !!r.symbol && !/no\./i.test(r.symbol) && /^\d+$/.test(r.number || ''),
+    `${r.symbol} / ${r.number}`);
+  H.check('result block is labelled "Protostructure"', r.protoLabel === 'Protostructure',
+    r.protoLabel);
   H.check('Hall symbol links to symdata for that Hall symbol',
     !!r.href && r.href.startsWith('https://symdata.anyterial.se/hall/')
       && r.href.includes('#wyckoff-positions') && r.target === '_blank', r.href);
   H.check('link slug is the lower-cased Hall symbol with "_" for spaces',
     !!r.hall && r.href.includes(`/hall/${encodeURIComponent(r.hall.toLowerCase().replace(/ /g, '_'))}/`),
     `${r.hall} -> ${r.href}`);
-  H.check('Pearson symbol reported', /^[acmothrf][PABCIRF]\d+$/i.test(r.pearson || ''), r.pearson);
+  // Pearson is no longer a row of its own — it lives in the protostructure label.
+  H.check('Pearson symbol carried in the protostructure label',
+    /^[acmothrf][PABCIRF]\d+$/i.test((r.proto || '').split('_')[1] || ''), r.proto);
 
   // YBCO (default structure): Pmmm, 5 elements-worth of orbits.
   H.check('protostructure has anon_pearson_spg_wyckoffs:elements shape',

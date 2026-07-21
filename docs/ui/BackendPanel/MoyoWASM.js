@@ -258,14 +258,13 @@ function renderSymmetryResult(result) {
   box.innerHTML = `
     <div class="sym-spg">
       <span class="sym-spg-symbol">${link(hm)}</span>
-      <span class="sym-spg-number">No. ${result.spg_number}</span>
     </div>
     <dl class="sym-kv">
       <dt>Hall</dt><dd class="sym-mono">${hall ? link(hall.symbol) : '—'}</dd>
-      <dt>Pearson</dt><dd class="sym-mono">${result.pearson || '—'}</dd>
+      <dt>Number</dt><dd class="sym-mono">${result.spg_number}</dd>
     </dl>
     <div class="sym-proto">
-      <span class="sym-proto-label">Prototype</span>
+      <span class="sym-proto-label">Protostructure</span>
       <span class="sym-mono sym-proto-value">${result.protostructure}</span>
     </div>`;
   box.hidden = false;
