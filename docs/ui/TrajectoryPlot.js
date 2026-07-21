@@ -25,23 +25,27 @@ import { loadPlotly } from '../utils/plotlyLoader.js';
 // stats line but not drawn (they would swamp the total-energy scale).
 // Compact legend labels (units live on the y-axis titles/hover) so the
 // horizontal legend fits the narrow panel without wrapping onto the plot.
+// `lightColor` is the same hue darkened/saturated enough to stay readable on
+// a white plot background — the plain `color` values are tuned for the dark
+// canvas and read as washed-out pastels on white (see togglePlotTheme below).
 const SERIES_SPEC = {
-  temperatureK:       { color: '#53c7ff', dash: 'solid', group: 'temperature', label: 'T',        plot: true },
-  targetTemperatureK: { color: '#95efff', dash: 'dash',  group: 'temperature', label: 'T target', plot: true },
-  etotEv:             { color: '#ffb347', dash: 'solid', group: 'energy',      label: 'E tot',    plot: true },
-  epotEv:             { color: '#ffb347', dash: 'dot',   group: 'energy',      label: 'E pot',    plot: false },
-  ekinEv:             { color: '#ffb347', dash: 'dashdot', group: 'energy',    label: 'E kin',    plot: false },
-  meanForce:          { color: '#7CFC9B', dash: 'solid', group: 'force',       label: 'mean |F|', plot: true },
-  pressure:           { color: '#c39bff', dash: 'solid', group: 'pressure',    label: 'P',        plot: true },
+  temperatureK:       { color: '#53c7ff', lightColor: '#0f77b8', dash: 'solid', group: 'temperature', label: 'T',        plot: true },
+  targetTemperatureK: { color: '#95efff', lightColor: '#4fa3cf', dash: 'dash',  group: 'temperature', label: 'T target', plot: true },
+  etotEv:             { color: '#ffb347', lightColor: '#c9720a', dash: 'solid', group: 'energy',      label: 'E tot',    plot: true },
+  epotEv:             { color: '#ffb347', lightColor: '#c9720a', dash: 'dot',   group: 'energy',      label: 'E pot',    plot: false },
+  ekinEv:             { color: '#ffb347', lightColor: '#c9720a', dash: 'dashdot', group: 'energy',    label: 'E kin',    plot: false },
+  meanForce:          { color: '#7CFC9B', lightColor: '#1f9c46', dash: 'solid', group: 'force',       label: 'mean |F|', plot: true },
+  pressure:           { color: '#c39bff', lightColor: '#7c3fd1', dash: 'solid', group: 'pressure',    label: 'P',        plot: true },
 };
 
-// Per-group axis presentation. Titles are short symbols (units live in the
-// legend) so up to three axis labels fit without colliding.
+// Per-group axis presentation (mirrors each group's primary series colour).
+// Titles are short symbols (units live in the legend) so up to three axis
+// labels fit without colliding.
 const GROUP_META = {
-  temperature: { color: '#53c7ff', title: 'T (K)' },
-  energy:      { color: '#ffb347', title: 'E (eV)' },
-  force:       { color: '#7CFC9B', title: '|F| (eV/Å)' },
-  pressure:    { color: '#c39bff', title: 'P (mean σ)' },
+  temperature: { color: '#53c7ff', lightColor: '#0f77b8', title: 'T (K)' },
+  energy:      { color: '#ffb347', lightColor: '#c9720a', title: 'E (eV)' },
+  force:       { color: '#7CFC9B', lightColor: '#1f9c46', title: '|F| (eV/Å)' },
+  pressure:    { color: '#c39bff', lightColor: '#7c3fd1', title: 'P (mean σ)' },
 };
 
 const GROUP_ORDER = ['temperature', 'energy', 'force', 'pressure'];
@@ -49,7 +53,17 @@ const AXIS_IDS = ['y', 'y2', 'y3'];      // left, right, outer-right
 const KNOWN = ['temperatureK', 'targetTemperatureK', 'etotEv', 'epotEv', 'ekinEv', 'meanForce', 'pressure'];
 
 function specFor(name) {
-  return SERIES_SPEC[name] || { color: '#cccccc', dash: 'solid', group: name, label: name, plot: true };
+  return SERIES_SPEC[name] || { color: '#cccccc', lightColor: '#555555', dash: 'solid', group: name, label: name, plot: true };
+}
+
+// Light/dark toggle, module-level like eosPlots.js's plotThemes map — there is
+// only ever one trajectory plot instance, and keeping it outside the factory
+// lets the choice survive removeTrajectoryPlayer()/addTrajectoryPlayer()
+// rebuilds (panel collapse/expand) rather than resetting to dark each time.
+let plotTheme = 'dark';
+
+function pickColor(spec, isLight) {
+  return isLight ? spec.lightColor : spec.color;
 }
 
 function fmt(v, digits) {
@@ -72,10 +86,22 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   const root = document.createElement('div');
   root.className = 'trajPlot';
 
-  // A slim toolbar above the chart hosts the "Compute step stats" action so it
-  // reads as part of the plot chrome (shown only when there is data to crunch).
+  // A slim toolbar above the chart hosts the light/dark toggle (always
+  // available, same wording/icon as the EOS plots' per-card toggle) and the
+  // "Compute step stats" action (shown only when there is data to crunch), so
+  // both read as part of the plot chrome.
   const toolbar = document.createElement('div');
   toolbar.className = 'trajPlotToolbar';
+  const themeBtn = document.createElement('button');
+  themeBtn.type = 'button';
+  themeBtn.className = 'trajPlotThemeBtn';
+  themeBtn.title = 'Toggle light/dark';
+  themeBtn.textContent = '🌓';
+  themeBtn.onclick = () => {
+    plotTheme = plotTheme === 'dark' ? 'light' : 'dark';
+    drawFull();
+  };
+  toolbar.appendChild(themeBtn);
   const computeBtn = document.createElement('button');
   computeBtn.type = 'button';
   computeBtn.className = 'trajPlotComputeBtn';
@@ -164,6 +190,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   function buildTraces(plotted) {
     const n = sampleCount;
     const x = currentX(n);
+    const isLight = plotTheme === 'light';
     return plotted.map(({ name, spec, group }) => ({
       type: 'scatter',
       mode: 'lines',
@@ -171,7 +198,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       x: x.slice(),
       y: (series.get(name) || []).slice(0, n),
       yaxis: groupAxisMap(plotted).map[group],
-      line: { color: spec.color, width: 1.8, dash: DASH[spec.dash] },
+      line: { color: pickColor(spec, isLight), width: 1.8, dash: DASH[spec.dash] },
       connectgaps: false,
       // Value only; the "x unified" hover header already shows the step/frame.
       hovertemplate: `%{y}<extra>${spec.label}</extra>`,
@@ -186,11 +213,16 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     // clipped by the container edge.
     const rightDomain = nRight >= 2 ? 0.84 : 1;
     const marginR = nRight >= 2 ? 52 : (nRight === 1 ? 44 : 14);
-    const fontColor = '#ddd';
+    const isLight = plotTheme === 'light';
+    const fontColor = isLight ? '#1a1a1a' : '#ddd';
+    const gridColor = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)';
 
     const layout = {
-      paper_bgcolor: 'rgba(0,0,0,0)',
-      plot_bgcolor: 'rgba(0,0,0,0)',
+      // Dark stays transparent (the surrounding .trajPlot div already paints
+      // the dark chrome via CSS); light needs an opaque canvas since axes/text
+      // switch to dark-on-white and would otherwise sit on that dark CSS bg.
+      paper_bgcolor: isLight ? '#ffffff' : 'rgba(0,0,0,0)',
+      plot_bgcolor: isLight ? '#ffffff' : 'rgba(0,0,0,0)',
       font: { color: fontColor, size: 11 },
       // Extra top room so the (possibly two-row) horizontal legend sits fully
       // above the plot frame instead of overlapping the traces.
@@ -202,15 +234,13 @@ export function createTrajectoryPlot(hostEl, options = {}) {
         tracegroupgap: 8,
       },
       hovermode: 'x unified',
-      // Opaque, light-on-dark hover box — the default translucent label was
-      // unreadable against the plot background.
-      hoverlabel: {
-        bgcolor: 'rgba(24,24,27,0.96)', bordercolor: '#5a5a5e',
-        font: { color: '#f2f2f2', size: 11 },
-      },
+      // Opaque hover box, readable against either canvas colour.
+      hoverlabel: isLight
+        ? { bgcolor: 'rgba(255,255,255,0.96)', bordercolor: '#bbbbbb', font: { color: '#1a1a1a', size: 11 } }
+        : { bgcolor: 'rgba(24,24,27,0.96)', bordercolor: '#5a5a5e', font: { color: '#f2f2f2', size: 11 } },
       xaxis: {
         title: { text: xTitle, font: { size: 11 }, standoff: 6 },
-        color: fontColor, gridcolor: 'rgba(255,255,255,0.07)',
+        color: fontColor, gridcolor: gridColor,
         zeroline: false, domain: [0, rightDomain],
       },
       shapes: cursorShapes(),
@@ -220,14 +250,15 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       const axisId = map[g];
       const key = axisId === 'y' ? 'yaxis' : `yaxis${axisId.slice(1)}`;
       const meta = GROUP_META[g];
+      const axColor = pickColor(meta, isLight);
       const ax = {
-        title: { text: meta.title, font: { color: meta.color, size: 12 } },
-        color: meta.color,
-        tickfont: { color: meta.color, size: 10 },
+        title: { text: meta.title, font: { color: axColor, size: 12 } },
+        color: axColor,
+        tickfont: { color: axColor, size: 10 },
         zeroline: false,
       };
       if (i === 0) {
-        ax.gridcolor = 'rgba(255,255,255,0.07)';
+        ax.gridcolor = gridColor;
       } else {
         ax.overlaying = 'y';
         ax.side = 'right';
@@ -246,10 +277,11 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     if (!Number.isFinite(cursorIndex) || sampleCount < 1) return [];
     const i = Math.max(0, Math.min(sampleCount - 1, cursorIndex));
     const x = i < xValues.length ? xValues[i] : i + 1; // step at this frame
+    const isLight = plotTheme === 'light';
     return [{
       type: 'line', xref: 'x', yref: 'paper',
       x0: x, x1: x, y0: 0, y1: 1,
-      line: { color: 'rgba(255,255,255,0.7)', width: 1, dash: 'solid' },
+      line: { color: isLight ? 'rgba(20,20,20,0.55)' : 'rgba(255,255,255,0.7)', width: 1, dash: 'solid' },
       layer: 'above',
     }];
   }

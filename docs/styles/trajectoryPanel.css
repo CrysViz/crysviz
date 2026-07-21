@@ -178,16 +178,30 @@
       overflow: hidden;
     }
 
-    /* Slim toolbar above the chart; the "Compute step stats" action reads as
-       part of the plot chrome and only appears when there's data to crunch. */
+    /* Slim toolbar above the chart; the light/dark toggle (always shown) and
+       the "Compute step stats" action (only when there's data to crunch) both
+       read as part of the plot chrome, matching the EOS plot cards' 🌓 button. */
     .trajPlotToolbar {
       flex: 0 0 auto;
       display: flex;
       justify-content: flex-end;
       align-items: center;
+      gap: 6px;
       min-height: 0;
       margin-bottom: 2px;
     }
+    .trajPlotThemeBtn {
+      background: #2c2c2e;
+      color: #dcdcdc;
+      border: 1px solid #3a3a3c;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease;
+    }
+    .trajPlotThemeBtn:hover { background: #3a3a3c; border-color: #4a4a4c; }
     .trajPlotComputeBtn {
       background: #2c2c2e;
       color: #dcdcdc;
