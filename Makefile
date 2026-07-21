@@ -7,6 +7,9 @@
 #     or cafe wifi. Override with SERVE_HOST= if you actually want that.
 #   - pick a free port. The default 8000 is a popular squat, and the failure
 #     mode is a bare "Address already in use". Probe upward instead.
+#   - send Cache-Control. Without it Firefox caches modules heuristically and
+#     an edit resurfaces as a missing export from the previous version of a
+#     file. tools/devserver.py does all three.
 SERVE_HOST ?= 127.0.0.1
 SERVE_PORT ?= 8000
 SERVE_TRIES ?= 20
@@ -22,7 +25,7 @@ serve:
 	fi; \
 	echo "Open:"; \
 	echo "* http://$$host:$$port/index.html"; \
-	cd docs && exec python3 -m http.server $$port --bind "$$host"
+	exec python3 tools/devserver.py $$port --directory docs --bind "$$host"
 
 # One-time: install dev-only tooling (eslint, typescript). Writes node_modules/
 # (gitignored, never served). Run this before lint/typecheck.

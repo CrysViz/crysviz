@@ -158,6 +158,11 @@ export const general = {
   BondMin:1.1,
   BondMax:4.5,
   autoRandomEnabled: false,
+  // moyo's symmetry tolerance (symprec) in Å — the Symmetry panel's Tolerance
+  // box starts here and writes back, so the value survives panel rebuilds and
+  // structure switches, and every internal analysis uses the same number the
+  // user sees (ui/SymmetryEditModule.js's defaultSymprec()).
+  symmetryTolerance: 0.01,
   powerMode: true,
   currentLatticeColor:null,
   defaultBackgroundColor:null,

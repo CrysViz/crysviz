@@ -1,0 +1,187 @@
+/* Symmetry panel (ui/BackendPanel/MoyoWASM.js). Card layout mirroring the
+   Atomistic panel's cards, but centred: every card has a centred title and a
+   centred control row, and the analysis result is a centred key/value block. */
+
+.sym-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.sym-caption {
+  margin: 0 0 2px 0;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.02em;
+}
+
+.sym-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.sym-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.sym-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sym-row label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.sym-row input[type="number"] {
+  width: 5.5em;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(22, 22, 22, 0.88);
+  color: #fff;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.sym-card .calcButton {
+  min-height: 32px;
+  padding: 6px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sym-card .calcButton.sym-wide {
+  width: 100%;
+}
+
+/* Result block --------------------------------------------------------- */
+
+.sym-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.sym-result[hidden] { display: none; }
+
+.sym-spg {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.sym-spg-symbol {
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* The big space-group symbol is a link too, but reads as a heading until hover. */
+.sym-spg-symbol .sym-link {
+  color: inherit;
+  border-bottom: none;
+}
+
+.sym-spg-symbol .sym-link:hover {
+  color: var(--highlight-color, #6fb6ff);
+}
+
+.sym-kv {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: center;
+  gap: 4px 10px;
+  max-width: 100%;
+}
+
+.sym-kv dt {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.sym-kv dd {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  overflow-wrap: anywhere;
+}
+
+.sym-proto {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sym-proto-label {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+}
+
+.sym-proto-value {
+  text-align: center;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+
+.sym-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+}
+
+.sym-link {
+  color: var(--highlight-color, #6fb6ff);
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(111, 182, 255, 0.5);
+}
+
+.sym-link:hover {
+  border-bottom-style: solid;
+}
+
+.sym-status {
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.sym-status:empty { display: none; }

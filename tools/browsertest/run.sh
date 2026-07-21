@@ -36,7 +36,9 @@ while [ -e "/tmp/.X${DISPLAY_NUM}-lock" ] && [ "$DISPLAY_NUM" -lt 120 ]; do
   DISPLAY_NUM=$(( DISPLAY_NUM + 1 ))
 done
 
-python3 -m http.server "$PORT" --bind 127.0.0.1 --directory ../../docs >/dev/null 2>&1 &
+# devserver.py also sends Cache-Control: no-store — plain http.server sends
+# none, so Firefox can execute the PREVIOUS version of a just-edited module.
+python3 ../devserver.py "$PORT" --bind 127.0.0.1 --directory ../../docs >/dev/null 2>&1 &
 SERVER_PID=$!
 env/xvfb-root/usr/bin/Xvfb ":$DISPLAY_NUM" -screen 0 1400x900x24 -nolisten tcp >/dev/null 2>&1 &
 XVFB_PID=$!
