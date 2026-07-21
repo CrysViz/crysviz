@@ -2,6 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { app, fileBrowser, groups, general } from '../state/store.js';
 import { getColorFromMap, getElementDefaultColor } from '../defaults/color_texture_defaults.js';
 import { createArrowMaterial, addArrowEmissiveAttributes } from './ArrowMaterial.js';
+import { refreshForceHistogram } from '../ui/AnalysisPanels/ForceHistogram.js';
 
 const SHAFT_SEGS = 20;
 const TIP_SEGS = 20;
@@ -93,6 +94,12 @@ export function computeForceColor(vector, scaling, {
 
 export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap = general.forceColorMap ?? "heatmap") {
   const structure = fileBrowser.selectedStructure;
+  // Pushed unconditionally (even on the early-return branches below): mirrors
+  // BondsFracUpdateModule.js pushing refreshBondLengthHistogram/
+  // refreshCoordinationHistogram after every rebuildBonds, so the Force
+  // Histogram panel (if open) tracks the current frame's forces regardless of
+  // which of the many updateForces() call sites triggered this render.
+  refreshForceHistogram(structure);
   if (!structure?.periodic?.wrapped) { disposeForceMeshes(); return; }
 
   const wrapped = structure.periodic.visibleWrapped;

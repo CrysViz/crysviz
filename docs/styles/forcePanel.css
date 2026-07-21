@@ -1,0 +1,179 @@
+/* Forces window (ui/ForcePanel.js), the shared colour bar (ui/ColorBarControl.js,
+   also used by the Spins panel) and the force histogram
+   (ui/AnalysisPanels/ForceHistogram.js). */
+
+/* --- Forces panel body --- */
+
+.cv-force-row {
+  margin-bottom: 8px;
+}
+
+.cv-force-row label {
+  font-size: 12px;
+}
+
+.cv-force-row .cv-force-value {
+  margin-right: 8px;
+}
+
+.cv-force-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.cv-force-colormap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.cv-force-colormap select {
+  flex: 1;
+  background: #555;
+  color: #fff;
+  border: 1px solid #777;
+  border-radius: 3px;
+  padding: 2px;
+}
+
+.cv-force-solid-color {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #777;
+  background: none;
+}
+
+.cv-force-autorange {
+  display: flex;
+  justify-content: flex-end;
+  margin: 4px 0 8px;
+}
+
+.cv-force-hist-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.cv-force-hist-row .cv-force-hist-label {
+  font-size: 12px;
+  color: #ccc;
+}
+
+.cv-force-hist-row .cv-force-hist-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.cv-force-hist-row .btn-mini {
+  font-size: 12px;
+}
+
+#deleteForces {
+  margin-top: 6px;
+}
+
+/* Colour-mode switch: solid picker and colour bar are mutually exclusive. */
+.cv-force-hidden {
+  display: none;
+}
+
+/* --- Shared colour bar (min ▸ gradient ▸ max) --- */
+
+.cv-colorbar {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.cv-colorbar-input {
+  width: 44px;
+  font-size: 12px;
+  padding: 2px 4px;
+  background: #555;
+  color: #fff;
+  border: 1px solid #777;
+  border-radius: 3px;
+  text-align: center;
+  /* Hide the spinners: the arrows are unusable at this size. */
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.cv-colorbar-input.cv-colorbar-min { margin-right: 6px; }
+.cv-colorbar-input.cv-colorbar-max { margin-left: 6px; }
+
+.cv-colorbar-bar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.cv-colorbar-canvas {
+  width: 50px;
+  height: 20px;
+  margin: 0 6px;
+  border-radius: 3px;
+}
+
+.cv-colorbar-labels {
+  display: flex;
+  justify-content: space-between;
+  width: 50px;
+  margin-top: 2px;
+}
+
+.cv-colorbar-labels div {
+  font-size: 10px;
+  color: white;
+}
+
+/* --- Force histogram (ui/AnalysisPanels/ForceHistogram.js) ---
+   One ordinary panel window (right-dock by default), same idiom as
+   BondLengthHistogram.js / CoordinationHistogram.js: the plot itself lives in
+   the shared .cv-plot-stack/.split-item layout (rightDock.css), only the
+   bin/range controls and stats readout below need panel-specific styling. */
+
+.fh-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #ddd;
+}
+
+.fh-controls-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fh-bin-slider,
+.fh-max-slider {
+  width: 100px;
+}
+
+.fh-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: #ccc;
+  margin-bottom: 8px;
+}
+
+.fh-stats .fh-stats-muted {
+  color: #888;
+}
