@@ -1133,9 +1133,15 @@ function bindMDBody(panel, shell, potential) {
         : startTemperatureK;
       // CSVR rather than the old Berendsen rescale: same cost, but it samples
       // the canonical ensemble instead of merely holding the mean temperature.
+      // tau = 20 fs, as the old Berendsen rescale used. CSVR samples the
+      // canonical ensemble for any tau (it only sets the correlation time), and
+      // a loose coupling is visibly wrong here: starting from an idealised,
+      // unrelaxed structure the relaxation dumps potential energy faster than a
+      // 100 fs coupling removes it, so the run sits hundreds of K above the
+      // temperature the user typed (measured: 619 K for a 300 K setpoint).
       const thermostat = createBussiThermostat({
         targetTemperatureK: /** @type {any} */ (targetTemperatureSchedule),
-        tauFs: 100,
+        tauFs: 20,
       });
       const barostat = useNpt
         ? createStochasticCellBarostat({ targetPressureGPa, tauFs: 1000 })
