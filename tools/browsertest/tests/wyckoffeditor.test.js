@@ -7,6 +7,32 @@
 'use strict';
 const H = require('../harness');
 
+// Melon/C3N4-like cell in P6_3/m: a hexagonal group, so its operations are the
+// ones a row/column-major mix-up destroys (see the last section).
+const C6N8_POSCAR = `C6 N8
+1.0
+   3.2252631334172732   -5.5863196148575156    0.0000000000000000
+   3.2252631334172732    5.5863196148575156    0.0000000000000000
+   0.0000000000000000    0.0000000000000000    2.4231400000000001
+C N
+6 8
+direct
+   0.7732450000000001    0.5949050000000000    0.7500000000000000
+   0.4050950000000000    0.1783400000000000    0.7500000000000000
+   0.8216599999999991    0.2267549999999990    0.7500000000000000
+   0.2267549999999990    0.4050950000000000    0.2500000000000000
+   0.5949050000000000    0.8216599999999991    0.2500000000000000
+   0.1783400000000000    0.7732450000000001    0.2500000000000000
+   0.0333069999999990    0.7034199999999990    0.7500000000000000
+   0.2965800000000000    0.3298870000000000    0.7500000000000000
+   0.6701130000000000    0.9666929999999990    0.7500000000000000
+   0.9666929999999990    0.2965800000000000    0.2500000000000000
+   0.7034199999999990    0.6701130000000000    0.2500000000000000
+   0.3298870000000000    0.0333069999999990    0.2500000000000000
+   0.6666666666666661    0.3333333333333330    0.7500000000000000
+   0.3333333333333330    0.6666666666666661    0.2500000000000000
+`;
+
 async function enableWyckoff(page) {
   await page.evaluate(async () => {
     const pm = await import('./ui/panels/PanelManager.js');
@@ -231,6 +257,123 @@ async function openFirstCoordEditor(page) {
   H.check('Get Symmetry Info reports the same failure instead of throwing',
     /Symmetry search failed/.test(infoFail.status || '') && infoFail.resultHidden === true,
     infoFail.status);
+
+  // --- a group whose rotations are NOT diagonal ---------------------------
+  // moyo hands back column-major matrices; read row-major they only survive
+  // for all-diagonal groups like Pmmm above. In P6_3/m the transposed
+  // operations are a different isometry entirely: orbit mappings collapse onto
+  // the identity, every move puts atoms on top of each other and is refused,
+  // and the constraint MD/relax apply through symmetrizeCartesian* is wrong.
+  await page.evaluate(async (text) => {
+    const cv = await import('./core/crystal-viewer.js');
+    await cv.loadStructure(text, 'C6N8');
+  }, C6N8_POSCAR);
+  await page.waitForTimeout(2500);
+  await page.evaluate(async () => {
+    const pm = await import('./ui/panels/PanelManager.js');
+    pm.openPanel('symmetry');
+  });
+  await page.waitForTimeout(1500);
+  await H.clickById(page, 'getWyckoffBtn');
+  await page.waitForTimeout(2500);
+
+  const hex = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const sym = await import('./ui/SymmetryEditModule.js');
+    const s = fileBrowser.selectedStructure;
+    if (!s.symmetry) return { err: document.getElementById('calcResult')?.textContent };
+    const positions = s.atoms.map((a) => [...a.position]);
+    const wrap = (x) => ((x % 1) + 1) % 1;
+    const dist = (a, b) => Math.hypot(...a.map((v, k) => { let d = v - b[k]; d -= Math.round(d); return d; }));
+    const opsMapCell = s.symmetry.operations.filter((op) => positions.every((p) => {
+      const r = op.rotation, t = op.translation;
+      const q = [
+        wrap(r[0] * p[0] + r[1] * p[1] + r[2] * p[2] + t[0]),
+        wrap(r[3] * p[0] + r[4] * p[1] + r[5] * p[2] + t[1]),
+        wrap(r[6] * p[0] + r[7] * p[1] + r[8] * p[2] + t[2]),
+      ];
+      return Math.min(...positions.map((x) => dist(q, x))) < 1e-3;
+    })).length;
+
+    const orbits = s.symmetry.orbitGroups.map((g) => ({
+      w: g.wyckoff, n: g.atomIndices.length, dof: g.dofDimension, rep: g.representativeIndex,
+    }));
+
+    const moving = s.symmetry.orbitGroups.find((g) => g.wyckoff === 'h');
+    const before = [...s.atoms[moving.representativeIndex].position];
+    const target = [...before];
+    target[0] += 0.004;
+    const applied = sym.applyWyckoffOrbitPosition(moving.representativeIndex, target, s, { reRenderComposition: false });
+    const after = [...s.atoms[moving.representativeIndex].position];
+    let numberAfter = null;
+    try { numberAfter = (await sym.analyzeStructureSymmetry(s, 0.01)).number; } catch (e) { numberAfter = String(e).slice(0, 40); }
+
+    return {
+      number: s.symmetry.number, ops: s.symmetry.operations.length, opsMapCell, orbits,
+      applied, moved: Math.abs(after[0] - before[0]) > 1e-6, numberAfter,
+    };
+  });
+
+  H.check('P6_3/m detected with all 12 operations mapping the cell onto itself',
+    hex.number === 176 && hex.ops === 12 && hex.opsMapCell === 12,
+    `SG ${hex.number}, ${hex.opsMapCell}/${hex.ops} valid`);
+  H.check('orbits are 6h + 6h + 2d, and 2d is a fixed site',
+    JSON.stringify(hex.orbits?.map((o) => `${o.n}${o.w}:${o.dof}`)) === JSON.stringify(['6h:2', '6h:2', '2d:0']),
+    JSON.stringify(hex.orbits));
+  H.check('a normal move on a hexagonal orbit is applied, not refused as overlap',
+    hex.applied === true && hex.moved === true, JSON.stringify({ applied: hex.applied, moved: hex.moved }));
+  H.check('the hexagonal space group survives the orbit move',
+    hex.numberAfter === 176, String(hex.numberAfter));
+
+  // --- the constraint MD and relaxation actually run on --------------------
+  // Both call symmetrizeCartesianPositions/Vectors every step (MD.js,
+  // relaxer.js), so the constraint is exactly as good as those two: noise put
+  // through them must come back on-orbit, and a force on a site the symmetry
+  // pins must come back zero along the pinned directions.
+  const constrained = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const sym = await import('./ui/SymmetryEditModule.js');
+    const { fracToCart, cartToFrac } = await import('./math/index.js');
+    const s = fileBrowser.selectedStructure;
+    const lattice = s.lattice;
+
+    const cart = fracToCart(s.atoms.map((a) => [...a.position]), lattice);
+    const noisy = cart.map((p) => p.map((v) => v + (Math.random() - 0.5) * 0.1));
+    const fixed = sym.symmetrizeCartesianPositions(noisy, lattice, s);
+    const back = cartToFrac
+      ? fixed.map((p) => cartToFrac(p, lattice))
+      : null;
+    const restored = s.atoms.map((a, i) => back[i]);
+
+    // analyse the symmetrized coordinates without disturbing the live atoms
+    const saved = s.atoms.map((a) => [...a.position]);
+    s.atoms.forEach((a, i) => { a.position = restored[i].map((v) => ((v % 1) + 1) % 1); });
+    let numberAfterNoise;
+    try { numberAfterNoise = (await sym.analyzeStructureSymmetry(s, 0.01)).number; }
+    catch (e) { numberAfterNoise = String(e).slice(0, 40); }
+    s.atoms.forEach((a, i) => { a.position = saved[i]; });
+
+    const forces = s.atoms.map(() => [Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5]);
+    const symForces = sym.symmetrizeCartesianVectors(forces, lattice, s);
+    const fixedSite = s.symmetry.orbitGroups.find((g) => g.isFixed);
+    const freeSite = s.symmetry.orbitGroups.find((g) => !g.isFixed);
+    if (!fixedSite || !freeSite) return { err: 'expected one fixed (2d) and one free (6h) site' };
+    return {
+      numberAfterNoise,
+      forceOnFixedSite: Math.hypot(...symForces[fixedSite.representativeIndex]),
+      // 6h has z pinned (dof 2 in the ab plane), so the symmetrized force must
+      // have no z component
+      zForceOnFreeSite: Math.abs(symForces[freeSite.representativeIndex][2]),
+      forceMagnitude: Math.hypot(...symForces[freeSite.representativeIndex]),
+    };
+  });
+  H.check('symmetrized noise stays in P6_3/m (what MD/relax feed back each step)',
+    constrained.numberAfterNoise === 176, String(constrained.numberAfterNoise));
+  H.check('a force on a symmetry-fixed site is projected to zero',
+    constrained.forceOnFixedSite < 1e-9, String(constrained.forceOnFixedSite));
+  H.check('a force on a 6h site keeps no component along its pinned axis',
+    constrained.zForceOnFreeSite < 1e-9 && constrained.forceMagnitude > 1e-6,
+    `z=${constrained.zForceOnFreeSite}, |F|=${constrained.forceMagnitude}`);
 
   H.check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   await H.finish(browser);

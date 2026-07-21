@@ -52,6 +52,11 @@ function normalize(vector, tolerance = 1e-10) {
   return vector.map((value) => value / length);
 }
 
+/** Transpose a flat 3x3 (row-major <-> column-major). */
+function transpose3(m) {
+  return [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
+}
+
 function applyOperation(position, operation) {
   const r = operation.rotation;
   const t = operation.translation;
@@ -230,8 +235,15 @@ export function describeMoyoFailure(error, tolerance) {
 
 function buildWyckoffSymmetryState(structure, dataset) {
   const positions = structure.atoms.map((atom) => [...atom.position]);
+  // moyo serializes matrices COLUMN-major (nalgebra's memory order), while
+  // applyOperation reads `rotation` row-major — so every operation has to be
+  // transposed on the way in. Without this only groups whose rotations are
+  // symmetric (all-diagonal ones: Pmmm and friends) behave; hexagonal,
+  // trigonal and cubic operations come out as the wrong isometry, which
+  // scrambles the orbit mappings, the site-freedom basis, and the symmetry
+  // constraint MD/relax apply through symmetrizeCartesian*.
   const operations = (dataset.operations ?? []).map((op) => ({
-    rotation: [...op.rotation],
+    rotation: transpose3(op.rotation),
     translation: [...op.translation],
   }));
   const orbitIds = dataset.orbits ?? positions.map((_, index) => index);
