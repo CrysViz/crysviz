@@ -41,6 +41,34 @@ const H = require('../harness');
     afterAlign.dir.x > 0.999 && Math.abs(afterAlign.dir.y) < 1e-6 && Math.abs(afterAlign.dir.z) < 1e-6,
     JSON.stringify(afterAlign.dir));
 
+  // The step-rotate arrows revealed by long-pressing an axis button had the
+  // same bug: they orbited around the cell center at the fit radius, so each
+  // press snapped zoom and pan back too.
+  const afterStep = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const { applyRotationFromUI } = await import('./render/cameraAngleControl.js');
+    // Pan off-center first — the arrows must orbit the current target, not
+    // re-center on the cell.
+    app.controls.target.x += 1.5;
+    app.camera.position.x += 1.5;
+    app.controls.update();
+    const target = app.controls.target.clone();
+    const dist = app.camera.position.distanceTo(app.controls.target);
+    applyRotationFromUI(15, 'y');
+    return {
+      zoom: app.camera.zoom,
+      dist: app.camera.position.distanceTo(app.controls.target),
+      targetDrift: app.controls.target.distanceTo(target),
+      beforeDist: dist,
+    };
+  });
+  H.check('step-rotate arrow preserves zoom', Math.abs(afterStep.zoom - before.zoom) < 1e-6,
+    JSON.stringify(afterStep));
+  H.check('step-rotate arrow preserves orbit radius',
+    Math.abs(afterStep.dist - afterStep.beforeDist) < 1e-6, JSON.stringify(afterStep));
+  H.check('step-rotate arrow keeps the panned target',
+    afterStep.targetDrift < 1e-6, JSON.stringify(afterStep));
+
   // The explicit reset button must still behave exactly as before: re-fit
   // (distance jumps to the structure's fit distance) and restore zoom.
   await H.clickById(page, 'resetView');
