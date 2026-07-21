@@ -234,7 +234,10 @@ function setCurrentEFS(out) {
   }
 }
 
-function snapshotCurrentStructure() {
+// Exported for the browser test: this is the working copy MD/relax actually
+// animate, and what it silently drops (symmetry, velocities) is invisible from
+// anywhere else in the UI.
+export function snapshotCurrentStructure() {
   const src = fileBrowser.selectedStructure;
   const elements = [...src.elements];
   const atoms = src.atoms.map((atom, index) => new Atom({
@@ -256,6 +259,13 @@ function snapshotCurrentStructure() {
     forces,
     stress,
     velocities,
+    // MD/relax animate a snapshot, not the source, and every symmetrize call
+    // in MD.js keys off `structure.symmetry.mode === 'wyckoff'`. Dropping it
+    // here left the working copy looking unconstrained, so Wyckoff-mode runs
+    // silently integrated without symmetry and even zero-freedom sites moved.
+    // Shared by reference: it is derived, read-only data (operations, orbits,
+    // site-freedom bases) that no run mutates.
+    symmetry: src.symmetry ?? null,
     periodic: { hash: 'None', wrapped: null },
   });
 }
