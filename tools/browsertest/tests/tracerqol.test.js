@@ -1,6 +1,7 @@
 // Tracer quality-of-life features (branch rickard_more_rendering_improvements):
-//   1. PNG export button shows live accumulation progress ("Rendering… N / 64")
-//      and the tracer progress strip stacks ABOVE the export modal backdrop.
+//   1. The crop overlay's confirm button shows live accumulation progress
+//      ("Rendering… N / 64") for the whole capture and the tracer progress
+//      strip stacks ABOVE the export modal backdrop.
 //   2. Atom/bond highlight under a tracer does NOT restart the accumulation
 //      (no instanceColor fingerprint bump) and is shown via a post-present
 //      orange overlay; raster pipelines keep the classic recolor.
@@ -93,25 +94,38 @@ function orangeFraction(png) {
   H.check('strip is parented to <body> (root stacking context)', zorder.stripInBody === true,
     JSON.stringify(zorder));
 
-  // Click the real Download button; poll for progress text, then completion.
+  // The settings modal's button only picks the output size: it closes the modal
+  // and opens the crop overlay (ui/CropOverlay.js), whose OWN confirm button
+  // starts the capture and carries the live progress text. Drive both, then
+  // poll the confirm button for progress and the overlay for completion.
   await page.evaluate(() => document.getElementById('pngDownloadBtn').click());
+  const opened = await page.evaluate(() => ({
+    crop: !!document.querySelector('.cv-crop-confirm'),
+    modalHidden: document.getElementById('pngExportModal').hidden,
+  }));
+  H.check('"Choose area…" closes the settings modal and opens the crop overlay',
+    opened.crop === true && opened.modalHidden === true, JSON.stringify(opened));
+  await page.evaluate(() => document.querySelector('.cv-crop-confirm').click());
+
   let sawProgress = false;
   let endedDownload = false;
   {
-    const deadline = Date.now() + 90000;
+    const deadline = Date.now() + 120000;
     while (Date.now() < deadline) {
-      const st = await page.evaluate(() => {
-        const btn = document.getElementById('pngDownloadBtn');
-        const modal = document.getElementById('pngExportModal');
-        return { txt: btn.textContent, hidden: modal.hidden };
-      });
+      const st = await page.evaluate(() => ({
+        txt: document.querySelector('.cv-crop-confirm')?.textContent ?? '',
+        cropGone: !document.querySelector('.cv-crop-overlay'),
+        modalHidden: document.getElementById('pngExportModal').hidden,
+      }));
       if (/\/\s*64/.test(st.txt)) sawProgress = true;
-      if (st.hidden && st.txt === 'Download') { endedDownload = true; break; }
+      // A finished export downloads the PNG and closes the overlay; the
+      // settings modal was already closed when the overlay opened.
+      if (st.cropGone && st.modalHidden) { endedDownload = true; break; }
       await page.waitForTimeout(40);
     }
   }
-  H.check('export button shows "Rendering… N / 64" progress during the render', sawProgress);
-  H.check('export button returns to "Download" and the modal closes', endedDownload);
+  H.check('crop confirm button shows "Rendering… N / 64" progress during the render', sawProgress);
+  H.check('a finished export closes the crop overlay (and the modal stays closed)', endedDownload);
 
   // A PNG is produced, and onProgress reports the 64-sample target (direct call;
   // does not duplicate pngexport.test's full capture assertions).
