@@ -6,12 +6,22 @@ import { cartToFrac, fracToCart, invert3x3, transpose3x3 } from '../math/index.j
 
 let moyoReady = null;
 
-// Two symmetry-equivalent atoms closer than this are, to moyo, one atom on a
-// higher-symmetry site — and its primitive-cell search then fails outright
+// moyo's symmetry tolerance (symprec), in Å. Same value the Symmetry panel's
+// Tolerance box starts at — every entry point defaults to it so panel and
+// internal calls cannot silently disagree.
+export const DEFAULT_SYMPREC = 0.01;
+
+// Two symmetry-equivalent atoms closer than symprec are, to moyo, one atom on
+// a higher-symmetry site — and its primitive-cell search then fails outright
 // ("PrimitiveSymmetrySearchError"), leaving a structure whose symmetry can no
-// longer be analysed at all. Orbit moves that would collapse a site that far
-// are refused instead (see applyWyckoffOrbitPosition).
-const MIN_SITE_SEPARATION_ANG = 0.4;
+// longer be analysed at all. Orbit moves are refused just before that point
+// (measured: at symprec 0.01 Å the search still succeeds at ~0.06 Å apart and
+// fails at ~0.012 Å), with a floor so a tiny symprec cannot allow literal
+// duplicates. This is a Cartesian distance, unrelated to symprec except that
+// its whole job is keeping the cell analysable AT that symprec.
+function minSiteSeparation(tolerance = DEFAULT_SYMPREC) {
+  return Math.max(4 * tolerance, 0.05);
+}
 
 function wrap01(x) {
   return ((x % 1) + 1) % 1;
@@ -204,7 +214,7 @@ async function ensureMoyoReady() {
   return moyoReady;
 }
 
-export async function analyzeStructureSymmetry(structure = fileBrowser.selectedStructure, tolerance = 1e-5) {
+export async function analyzeStructureSymmetry(structure = fileBrowser.selectedStructure, tolerance = DEFAULT_SYMPREC) {
   if (!structure) throw new Error('No structure selected');
   await ensureMoyoReady();
 
@@ -233,7 +243,7 @@ export function describeMoyoFailure(error, tolerance) {
   return `Symmetry analysis failed ${at}: ${raw}`;
 }
 
-function buildWyckoffSymmetryState(structure, dataset) {
+function buildWyckoffSymmetryState(structure, dataset, tolerance = DEFAULT_SYMPREC) {
   const positions = structure.atoms.map((atom) => [...atom.position]);
   // moyo serializes matrices COLUMN-major (nalgebra's memory order), while
   // applyOperation reads `rotation` row-major — so every operation has to be
@@ -281,16 +291,19 @@ function buildWyckoffSymmetryState(structure, dataset) {
     mode: 'wyckoff',
     spaceGroup: dataset.hm_symbol,
     number: dataset.number,
+    // symprec this lock was built at — orbit moves stay far enough apart to
+    // keep the cell analysable at exactly this tolerance.
+    tolerance,
     operations,
     orbitGroups,
     representativeAtomIndices: orbitGroups.map((group) => group.representativeIndex),
   };
 }
 
-export async function activateWyckoffMode(structure = fileBrowser.selectedStructure, tolerance = 1e-5) {
+export async function activateWyckoffMode(structure = fileBrowser.selectedStructure, tolerance = DEFAULT_SYMPREC) {
   if (!structure) throw new Error('No structure selected');
   const dataset = await analyzeStructureSymmetry(structure, tolerance);
-  structure.symmetry = buildWyckoffSymmetryState(structure, dataset);
+  structure.symmetry = buildWyckoffSymmetryState(structure, dataset, tolerance);
   general.structurePanelMode = 'wyckoff';
   return structure.symmetry;
 }
@@ -364,14 +377,15 @@ function collapsesSites(proposed, orbit, structure) {
     return Math.hypot(x, y, z);
   };
 
+  const minimum = minSiteSeparation(structure.symmetry?.tolerance ?? DEFAULT_SYMPREC);
   const inOrbit = new Set(orbit.atomIndices);
   for (let i = 0; i < proposed.length; i += 1) {
     for (let j = i + 1; j < proposed.length; j += 1) {
-      if (cartDistance(proposed[i].position, proposed[j].position) < MIN_SITE_SEPARATION_ANG) return true;
+      if (cartDistance(proposed[i].position, proposed[j].position) < minimum) return true;
     }
     for (let k = 0; k < structure.atoms.length; k += 1) {
       if (inOrbit.has(k)) continue;
-      if (cartDistance(proposed[i].position, structure.atoms[k].position) < MIN_SITE_SEPARATION_ANG) return true;
+      if (cartDistance(proposed[i].position, structure.atoms[k].position) < minimum) return true;
     }
   }
   return false;

@@ -5,7 +5,7 @@ import { Structure } from "../../model/index.js";
 import { Atom } from "../../model/index.js";
 import { StructureContainer } from "../../model/index.js";
 import { generateID } from "../../utils/index.js";
-import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive, describeMoyoFailure } from '../SymmetryEditModule.js';
+import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive, describeMoyoFailure, DEFAULT_SYMPREC } from '../SymmetryEditModule.js';
 import { renderComposition } from '../StructureInfoPanel/General.js';
 import { refreshBackendTheme } from './BackendTheme.js';
 import { normalizeFractional } from "../../math/index.js";
@@ -88,7 +88,7 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
         <div class="sym-card-title">Symmetry information</div>
         <div class="sym-row">
           <label for="symTolInput">Tolerance (Å)
-            <input type="number" id="symTolInput" value="0.01" min="0" step="0.001">
+            <input type="number" id="symTolInput" value="${DEFAULT_SYMPREC}" min="0" step="0.001">
           </label>
         </div>
         <div class="sym-row">
@@ -118,7 +118,7 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
 
     const getTol = () => {
       const v = parseFloat(document.getElementById("symTolInput")?.value);
-      return Number.isFinite(v) && v > 0 ? v : 0.01;
+      return Number.isFinite(v) && v > 0 ? v : DEFAULT_SYMPREC;
     };
 
     const setStatus = (text = '') => {
@@ -294,7 +294,7 @@ function renderSymmetryResult(result) {
   box.hidden = false;
 }
 
-function callMoyo(calcType="getSymmetryInfo", tolerance=0.01) {
+function callMoyo(calcType="getSymmetryInfo", tolerance=DEFAULT_SYMPREC) {
   const structure = fileBrowser.selectedStructure;
   // Hidden atoms are excluded from symmetry detection entirely — filtered
   // together (elements/positions in lockstep) before anything is indexed, so
