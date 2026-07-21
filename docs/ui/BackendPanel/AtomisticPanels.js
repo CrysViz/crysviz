@@ -23,7 +23,7 @@ import { updateForces } from '../../render/index.js';
 import { updateRow, createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
 import { refreshActivePanels } from '../panels/PanelManager.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
-import { fracToCartPoint, cartToFractional } from '../../math/index.js';
+import { fracToCartPoint, cartToFractional, normalizeFractionalPoint } from '../../math/index.js';
 import { StructureContainer } from '../../model/index.js';
 import { Atom } from '../../model/index.js';
 import { Force } from '../../model/index.js';
@@ -615,7 +615,13 @@ function rattleSelectedStructure(amp, doLattice, latticePct = RATTLE_LATTICE_PCT
       cart[1] + gaussianRandom() * amp,
       cart[2] + gaussianRandom() * amp,
     ];
-    atom.position = cartToFractional(moved, lattice);
+    // Wrap back into [0,1). An atom sitting near a face is as likely to be
+    // kicked out of the cell as into it, and nothing downstream folds it back:
+    // periodicWrapped() only mirrors atoms that lie ON a face/edge/corner, it
+    // does not normalize out-of-cell coordinates, so the atom would simply
+    // render outside the box. Under PBC the wrapped position is the same
+    // physical site.
+    atom.position = normalizeFractionalPoint(cartToFractional(moved, lattice));
   });
 
   if (doLattice) {
@@ -685,21 +691,21 @@ function renderRelaxBody(bodyEl, potential) {
     </div>
     <div class="atomistic-card atomistic-card-compact">
       <div class="atomistic-card-title atomistic-card-title-accent">Rattle</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;">
-        <span style="display:flex;align-items:center;gap:6px;" title="atom displacement (Å)">
-          <input type="number" id="relaxRattleAmpInput" value="0.1" step="0.01" min="0"
-                 style="width:58px;padding:3px 6px;" class="atomistic-input-sm">
-          <span style="opacity:0.6;">Å</span>
-        </span>
-        <label style="display:flex;align-items:center;gap:6px;margin:0;" title="cell strain (±%)">
-          <input type="checkbox" id="relaxRattleLatticeChk" style="width:14px;height:14px;flex:0 0 auto;margin:0;">
-          <span style="opacity:0.85;">cell</span>
-          <input type="number" id="relaxRattleLatticePctInput" value="2" step="0.5" min="0"
-                 style="width:52px;padding:3px 6px;" class="atomistic-input-sm">
-          <span style="opacity:0.6;">%</span>
+      <div class="atomistic-grid atomistic-grid-3 atomistic-grid-compact atomistic-rattle-grid">
+        <label title="Gaussian displacement applied to every atom; the value is the standard deviation in Å.">
+          <span>coordinate (Å)</span>
+          <input type="number" class="atomistic-input-sm" id="relaxRattleAmpInput" value="0.1" step="0.01" min="0">
         </label>
-        <button type="button" class="calcButton" id="relaxRattleBtn"
-                style="padding:4px 14px;">Rattle</button>
+        <label title="Random symmetric strain on the cell: each independent strain component is drawn uniformly from ±this percent, so both lattice lengths and angles change.">
+          <span class="atomistic-rattle-toggle-label">
+            lattice (±%)
+            <input type="checkbox" id="relaxRattleLatticeChk">
+          </span>
+          <input type="number" class="atomistic-input-sm" id="relaxRattleLatticePctInput" value="2" step="0.5" min="0">
+        </label>
+        <div class="atomistic-rattle-action">
+          <button type="button" class="calcButton" id="relaxRattleBtn">Rattle</button>
+        </div>
       </div>
     </div>
   `;

@@ -80,6 +80,33 @@ function maxDelta(a, b) {
   H.check('lattice strain stays small (<= ~5% of the largest cell component)',
     latticeMove2 <= maxLatMag * 0.05 + 1e-6, `delta=${latticeMove2}, maxComp=${maxLatMag}`);
 
+  // --- wrapping: a rattle must never leave an atom outside the cell ---------
+  // Park every atom hard against a cell face, then rattle with an amplitude
+  // large enough that a plain displacement would certainly push some of them
+  // out. periodicWrapped() only mirrors atoms sitting ON a face, it does not
+  // fold out-of-cell coordinates back in, so without normalization they render
+  // outside the box.
+  const wrapRes = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const s = fileBrowser.selectedStructure;
+    s.atoms.forEach((atom, i) => {
+      atom.position = [i % 2 === 0 ? 0.995 : 0.005, 0.995, 0.005];
+    });
+    document.getElementById('relaxRattleLatticeChk').checked = false;
+    document.getElementById('relaxRattleAmpInput').value = '0.5';
+    document.getElementById('relaxRattleBtn').click();
+    await new Promise((r) => setTimeout(r, 250));
+    const positions = fileBrowser.selectedStructure.atoms.map((a) => [...a.position]);
+    return {
+      positions,
+      outside: positions.filter((p) => p.some((c) => c < 0 || c >= 1)).length,
+      moved: positions.some((p) => p.some((c) => Math.abs(c - 0.995) > 1e-6 && Math.abs(c - 0.005) > 1e-6)),
+    };
+  });
+  H.check('the large rattle actually moved the boundary atoms', wrapRes.moved, JSON.stringify(wrapRes.positions));
+  H.check('every atom is wrapped back inside the cell (0 <= frac < 1)',
+    wrapRes.outside === 0, `outside=${wrapRes.outside} ${JSON.stringify(wrapRes.positions)}`);
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

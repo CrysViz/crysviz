@@ -503,6 +503,52 @@ font-size: 12px;
   border-radius: 8px !important;
 }
 
+/* ---- Rattle card: two labeled inputs (coordinate / lattice) plus the action
+   button, sharing one 3-column grid so the inputs get the same size and
+   captions as every other atomistic control. ---- */
+
+/* The "lattice" caption carries its own enable checkbox, which has to opt out
+   of the full-width, 46px-tall .atomistic-grid input styling above. */
+.atomistic-rattle-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.atomistic-rattle-grid input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  min-height: 0;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  border-radius: 4px;
+}
+
+/* Third column: no caption of its own, so push the button down onto the input
+   row instead of letting it float against the captions.
+
+   The margin is load-bearing, not cosmetic. styles.css has a global
+   `label { margin: 15px 0 8px }`, so the two label columns each reserve 23px
+   of vertical margin and the grid row grows to fit it. This div is not a
+   label; without the same margins it stretches the full row and its
+   bottom-aligned button sits 8px below the inputs — the row reads crooked. */
+.atomistic-rattle-action {
+  display: flex;
+  align-items: flex-end;
+  margin: 15px 0 8px;
+}
+
+/* Match .atomistic-input-sm exactly: .calcButton's own 8px padding + 2px
+   border makes it 37px against the inputs' 34px, which shows as a 3px
+   overhang once the bottoms line up. */
+.atomistic-rattle-action .calcButton {
+  width: 100%;
+  height: 34px;
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
 .atomistic-anneal-section {
   display: flex;
   flex-direction: column;
