@@ -9,14 +9,17 @@ import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder 
 // Wire the camera view buttons (x/y/z + a/b/c lattice axes + reset).
 // Extracted from crystal-viewer.js initApp() (Stage 6).
 export function setupCameraButtons() {
-  document.getElementById('viewX').onclick = () => {app.controls.reset(); setViewDirection(new THREE.Vector3( 1., 0., 0.))};
-  document.getElementById('viewY').onclick = () => {app.controls.reset(); setViewDirection(new THREE.Vector3( 0., 1., 0.))};
-  document.getElementById('viewZ').onclick = () => {app.controls.reset(); setViewDirection(new THREE.Vector3( 0., 0., 1.))};
+  // Alignment only re-aims the camera (setViewDirection's default,
+  // refit:false) — it must never touch zoom/framing, so no controls.reset()
+  // here. Only the explicit "reset view" button below re-fits.
+  document.getElementById('viewX').onclick = () => setViewDirection(new THREE.Vector3( 1., 0., 0.));
+  document.getElementById('viewY').onclick = () => setViewDirection(new THREE.Vector3( 0., 1., 0.));
+  document.getElementById('viewZ').onclick = () => setViewDirection(new THREE.Vector3( 0., 0., 1.));
 
 
-  document.getElementById('viewA').onclick = () => {app.controls.reset(); const {a} = latticeDirs(); setViewDirection(a); };
-  document.getElementById('viewB').onclick = () => {app.controls.reset(); const {b} = latticeDirs(); setViewDirection(b); };
-  document.getElementById('viewC').onclick = () => {app.controls.reset(); const {c} = latticeDirs(); setViewDirection(c); };
+  document.getElementById('viewA').onclick = () => { const {a} = latticeDirs(); setViewDirection(a); };
+  document.getElementById('viewB').onclick = () => { const {b} = latticeDirs(); setViewDirection(b); };
+  document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
 }
 
@@ -464,15 +467,28 @@ export function asetViewDirection(dir) {
   app.controls.target = center;
   app.controls.update();
 }
-export function setViewDirection(dir, up) {
-  const { center, dist } = getCellCenterAndDist();
+// Aim the camera along `dir`. Default (refit:false) is a pure re-aim: it
+// keeps the controls' current target and the camera's current distance from
+// it (and, since zoom is never touched here, the orthographic camera's
+// current zoom too) — so alignment buttons rotate the view without
+// re-fitting to the structure or disturbing the user's zoom. Pass
+// refit:true (resetView() only) to instead recompute center/distance from
+// the structure's bounding box, i.e. fit the view like the old behavior.
+export function setViewDirection(dir, { refit = false } = {}) {
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
 
-  // Set camera position
-  app.camera.position.copy(center.clone().add(n.multiplyScalar(dist)));
-  app.controls.target = center;
+  let dist;
+  if (refit) {
+    const fit = getCellCenterAndDist();
+    app.controls.target = fit.center;
+    dist = fit.dist;
+  } else {
+    dist = app.camera.position.distanceTo(app.controls.target);
+  }
 
-  console.warn(n)
+  // Set camera position
+  app.camera.position.copy(app.controls.target.clone().add(n.multiplyScalar(dist)));
+
   // Set camera up vector based on the desired view
   if (n.y == 0 && n.z == 0) {
     // X towards me: up is Y, Z to the right
@@ -493,7 +509,7 @@ export function setViewDirection(dir, up) {
 }
 
 
-export function resetView() { app.controls.reset(); setViewDirection(new THREE.Vector3(1,1,1)); } //CAMERA RESET
+export function resetView() { app.controls.reset(); setViewDirection(new THREE.Vector3(1,1,1), { refit: true }); } //CAMERA RESET
 
 /**
  * Re-center the camera's existing view on the (possibly moved) structure
