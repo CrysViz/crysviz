@@ -17,6 +17,10 @@ import {
   createBussiThermostat,
   createStochasticCellBarostat,
   createNoBarostat,
+  recommendedTimestepFs,
+  DEFAULT_THERMOSTAT_TAU_FS,
+  DEFAULT_BAROSTAT_TAU_FS,
+  MIN_BAROSTAT_TAU_RATIO,
   mdProfileMeasure,
 } from '../../atomistic/MD.js';
 import { ensureWorkerNEPReady, createWorkerNEPForceEvaluator } from '../../atomistic/nepWorkerClient.js';
@@ -726,6 +730,14 @@ function renderMDAnnealSummary(bodyEl) {
 function renderMDBody(bodyEl, potential) {
   bodyEl.innerHTML = `
     <div class="atomistic-card atomistic-card-compact">
+      <div class="atomistic-source-row">
+        <div class="atomistic-source-label">Ensemble</div>
+        <div class="backend-potential-toggle" id="mdEnsembleSwitch">
+          <button type="button" class="active" data-ensemble="nvt">NVT</button>
+          <button type="button" data-ensemble="npt">NPT</button>
+        </div>
+      </div>
+      <div class="atomistic-ensemble-hint" id="mdEnsembleHint"></div>
       <div class="atomistic-grid atomistic-grid-2 atomistic-grid-compact">
         <label>
           <span>Steps</span>
@@ -733,24 +745,39 @@ function renderMDBody(bodyEl, potential) {
         </label>
         <label>
           <span>timestep (fs)</span>
-          <input type="number" class="atomistic-input-sm" id="mdTimestepInput" value="1.0" step="0.1" min="0.1">
+          <input type="number" class="atomistic-input-sm" id="mdTimestepInput" value="${recommendedTimestepFs(fileBrowser.selectedStructure?.elements)}" step="0.1" min="0.05">
         </label>
         <label>
-          <span>Temperature</span>
+          <span>temperature (K)</span>
           <input type="number" class="atomistic-input-sm" id="mdTemperatureInput" value="300" step="10" min="1">
         </label>
-        <label>
+        <label id="mdPressureField">
           <span>pressure (GPa)</span>
           <input type="number" class="atomistic-input-sm" id="mdPressureInput" value="0" step="0.1" disabled>
-        </label>
-        <label class="atomistic-checkbox-label">
-          <input type="checkbox" id="mdNptChk">
-          <span>NPT (relax cell)</span>
         </label>
         <label>
           <span>Save every (steps)</span>
           <input type="number" class="atomistic-input-sm" id="mdSaveStrideInput" value="${Math.max(1, Number(general.backendTrajectorySaveStride || 4))}" step="1" min="1">
         </label>
+      </div>
+      <div class="atomistic-anneal-section">
+        <button type="button" class="atomistic-collapse-toggle" id="mdCouplingHeader">
+          <span id="mdCouplingIcon">▸</span>
+          <span class="atomistic-card-title-accent atomistic-anneal-title">Coupling times</span>
+        </button>
+        <div class="hidden" id="mdCouplingControls">
+          <div class="atomistic-grid atomistic-grid-2 atomistic-grid-compact">
+            <label>
+              <span>thermostat τ (fs)</span>
+              <input type="number" class="atomistic-input-sm" id="mdTauTInput" value="${DEFAULT_THERMOSTAT_TAU_FS}" step="10" min="1">
+            </label>
+            <label id="mdTauPField">
+              <span>barostat τ (fs)</span>
+              <input type="number" class="atomistic-input-sm" id="mdTauPInput" value="${DEFAULT_BAROSTAT_TAU_FS}" step="100" min="10" disabled>
+            </label>
+          </div>
+          <div class="atomistic-ensemble-hint" id="mdCouplingHint"></div>
+        </div>
       </div>
       <div class="atomistic-button-row atomistic-button-row-compact">
         <button type="button" class="calcButton" id="mdStartBtn"${potential === 'ase' ? ' disabled' : ''}>start</button>
@@ -1013,15 +1040,57 @@ function bindMDBody(panel, shell, potential) {
     shell.statusEl.textContent = 'Stopping MD after current step...';
   });
 
-  // The target pressure only means something with the barostat on, so the input
-  // follows the NPT checkbox rather than sitting there permanently greyed.
-  const nptChk = shell.bodyEl.querySelector('#mdNptChk');
+  // Ensemble: NVT (thermostat, fixed cell) or NPT (thermostat + barostat, cell
+  // free to change volume). A segmented control rather than a checkbox — it
+  // matches the Relax/MD and potential switches above it, and "NPT" needs the
+  // one-line explanation underneath more than it needs a tick box. The word
+  // "relax" is deliberately avoided here: this panel's other mode is called
+  // Relax and means something completely different.
+  const ensembleSwitch = shell.bodyEl.querySelector('#mdEnsembleSwitch');
+  const ensembleHint = shell.bodyEl.querySelector('#mdEnsembleHint');
   const pressureInput = shell.bodyEl.querySelector('#mdPressureInput');
-  const syncNptControls = () => {
-    if (pressureInput) pressureInput.disabled = !nptChk?.checked;
+  const tauTInput = shell.bodyEl.querySelector('#mdTauTInput');
+  const tauPInput = shell.bodyEl.querySelector('#mdTauPInput');
+  const couplingHint = shell.bodyEl.querySelector('#mdCouplingHint');
+  const isNpt = () => ensembleSwitch?.querySelector('button.active')?.dataset.ensemble === 'npt';
+
+  const syncEnsembleControls = () => {
+    const npt = isNpt();
+    if (pressureInput) pressureInput.disabled = !npt;
+    if (tauPInput) tauPInput.disabled = !npt;
+    if (ensembleHint) {
+      ensembleHint.textContent = npt
+        ? 'constant temperature and pressure — cell volume follows the target pressure (shape fixed)'
+        : 'constant temperature — cell held fixed';
+    }
+    if (couplingHint) {
+      const tauT = Number(tauTInput?.value) || DEFAULT_THERMOSTAT_TAU_FS;
+      const tauP = Number(tauPInput?.value) || DEFAULT_BAROSTAT_TAU_FS;
+      // A barostat comparable in speed to the thermostat fights it: the cell
+      // does work on the atoms faster than the bath can absorb it.
+      couplingHint.textContent = npt && tauP < tauT * MIN_BAROSTAT_TAU_RATIO
+        ? `barostat τ should be at least ${MIN_BAROSTAT_TAU_RATIO}× the thermostat τ (≥ ${tauT * MIN_BAROSTAT_TAU_RATIO} fs) — the two will fight otherwise`
+        : 'τ is how fast T and P are corrected, not how accurate the run is — that is the timestep. Loosen the thermostat for undistorted sampling, tighten it to tame a hot start.';
+    }
   };
-  nptChk?.addEventListener('change', syncNptControls);
-  syncNptControls();
+
+  ensembleSwitch?.addEventListener('click', (event) => {
+    const button = event.target instanceof Element ? event.target.closest('button[data-ensemble]') : null;
+    if (!button) return;
+    ensembleSwitch.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === button));
+    syncEnsembleControls();
+  });
+  tauTInput?.addEventListener('input', syncEnsembleControls);
+  tauPInput?.addEventListener('input', syncEnsembleControls);
+  syncEnsembleControls();
+
+  const couplingHeader = shell.bodyEl.querySelector('#mdCouplingHeader');
+  const couplingControls = shell.bodyEl.querySelector('#mdCouplingControls');
+  const couplingIcon = shell.bodyEl.querySelector('#mdCouplingIcon');
+  couplingHeader?.addEventListener('click', () => {
+    const hidden = couplingControls?.classList.toggle('hidden');
+    if (couplingIcon) couplingIcon.textContent = hidden ? '▸' : '▾';
+  });
 
   startBtn?.addEventListener('click', async () => {
     if (mdRunning) return;
@@ -1044,8 +1113,16 @@ function bindMDBody(panel, shell, potential) {
       const dtFs = Number(shell.bodyEl.querySelector('#mdTimestepInput')?.value || 1);
       const startTemperatureK = Number(shell.bodyEl.querySelector('#mdTemperatureInput')?.value || 300);
       const useAnneal = !annealControls.classList.contains('hidden');
-      const useNpt = !!shell.bodyEl.querySelector('#mdNptChk')?.checked;
+      const useNpt = shell.bodyEl.querySelector('#mdEnsembleSwitch button.active')?.dataset.ensemble === 'npt';
       const targetPressureGPa = Number(shell.bodyEl.querySelector('#mdPressureInput')?.value || 0);
+      const thermostatTauFs = Math.max(1,
+        Number(shell.bodyEl.querySelector('#mdTauTInput')?.value) || DEFAULT_THERMOSTAT_TAU_FS);
+      // Clamped rather than merely warned about: a barostat running as fast as
+      // the thermostat is unstable, and silently producing a bad trajectory is
+      // worse than quietly slowing the cell down.
+      const barostatTauFs = Math.max(
+        thermostatTauFs * MIN_BAROSTAT_TAU_RATIO,
+        Number(shell.bodyEl.querySelector('#mdTauPInput')?.value) || DEFAULT_BAROSTAT_TAU_FS);
       const minTemperatureK = Number(shell.bodyEl.querySelector('#mdAnnealMinInput')?.value || 100);
       const maxTemperatureK = Number(shell.bodyEl.querySelector('#mdAnnealMaxInput')?.value || 1200);
       const peakFraction = Math.max(0.01, Math.min(0.99, Number(shell.bodyEl.querySelector('#mdAnnealPeakPctInput')?.value || 30) / 100));
@@ -1133,18 +1210,12 @@ function bindMDBody(panel, shell, potential) {
         : startTemperatureK;
       // CSVR rather than the old Berendsen rescale: same cost, but it samples
       // the canonical ensemble instead of merely holding the mean temperature.
-      // tau = 20 fs, as the old Berendsen rescale used. CSVR samples the
-      // canonical ensemble for any tau (it only sets the correlation time), and
-      // a loose coupling is visibly wrong here: starting from an idealised,
-      // unrelaxed structure the relaxation dumps potential energy faster than a
-      // 100 fs coupling removes it, so the run sits hundreds of K above the
-      // temperature the user typed (measured: 619 K for a 300 K setpoint).
       const thermostat = createBussiThermostat({
         targetTemperatureK: /** @type {any} */ (targetTemperatureSchedule),
-        tauFs: 20,
+        tauFs: thermostatTauFs,
       });
       const barostat = useNpt
-        ? createStochasticCellBarostat({ targetPressureGPa, tauFs: 1000 })
+        ? createStochasticCellBarostat({ targetPressureGPa, tauFs: barostatTauFs })
         : createNoBarostat();
 
       // Animate a throwaway working copy of the source structure, not the

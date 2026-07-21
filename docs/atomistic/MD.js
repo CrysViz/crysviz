@@ -91,6 +91,60 @@ export function getMassesFromElements(elements) {
   return elements.map((el) => MASS_BY_SYMBOL[symbolCase(el)] ?? 50.0);
 }
 
+// ── Time scales ──────────────────────────────────────────────────────────────
+//
+// Everything below is in femtoseconds and is anchored to one physical fact: a
+// vibrational period scales as sqrt(m), so the fastest motion in the cell — and
+// therefore the largest usable timestep — is set by the LIGHTEST atom present.
+// A flat 1 fs is right for a carbon-ish solid and plainly wrong for anything
+// with hydrogen in it, where an X-H stretch has a period of ~10 fs and 1 fs
+// integrates it with ten points per oscillation (visibly non-conserving).
+
+/** Largest sensible timestep for this structure, fs. Anchored at 1 fs for carbon. */
+export function recommendedTimestepFs(elements) {
+  const masses = getMassesFromElements(elements ?? []);
+  if (!masses.length) return 1;
+  const lightest = Math.min(...masses);
+  const dt = Math.sqrt(lightest / 12.011);
+  // Snap DOWN onto a ladder of round values: a box reading 1.15 invites the
+  // user to wonder what is special about 1.15 (nothing), and rounding down is
+  // the safe direction for an explicit stability limit. Floored at 0.25 fs
+  // (below that a run of any length is unaffordable here) and capped at 2 fs
+  // (beyond it even heavy-atom solids start to drift).
+  const ladder = [0.25, 0.5, 1, 1.5, 2];
+  let chosen = ladder[0];
+  for (const value of ladder) {
+    if (dt >= value) chosen = value;
+  }
+  return chosen;
+}
+
+// Thermostat coupling. CSVR is canonical for ANY tau — tau only sets how fast
+// energy is exchanged with the bath — so this is a responsiveness choice, not a
+// correctness one, and the textbook 100 fs turned out to be the wrong default
+// HERE: structures are usually loaded unrelaxed, and the relaxation dumps
+// potential energy faster than a 100 fs coupling removes it. Measured on the
+// default structure, 300 K setpoint: 838 K at tau = 100 fs, 458 K at 20 fs,
+// 330 K at 5 fs. 20 fs is responsive enough to be usable on a cold start while
+// staying slower than the timestep by a comfortable margin.
+export const DEFAULT_THERMOSTAT_TAU_FS = 20;
+
+// Barostat coupling. Stochastic cell rescaling is unconditionally stable — a
+// sweep from 20 fs to 1000 fs on a K = 100 GPa toy solid never blew up, and the
+// volume fluctuation did not grow at tight coupling (sd 5.1 at 20 fs vs 4.6 at
+// 1000 fs) — so the only thing tau_p buys is settling time, which scales
+// linearly with it (35 steps at 20 fs, 1344 at 1000 fs). The usual ">= 1 ps"
+// advice comes from biomolecular water, not from stiff solids in a small cell,
+// and at 1000 fs the panel's default 500-step run would end before the barostat
+// acted once. 200 fs settles in ~300 steps, which fits inside a default run.
+//
+// It must still be well slower than the thermostat: the cell does work on the
+// atoms, and the bath has to absorb that before the cell moves again. At a
+// ratio of 2 an end-to-end NEP run came out ~10% hotter than the same run in
+// NVT; at 10x the difference vanished (460 K vs 458 K).
+export const DEFAULT_BAROSTAT_TAU_FS = 200;
+export const MIN_BAROSTAT_TAU_RATIO = 10;
+
 export function createNEPForceEvaluator(nepRunner) {
   return async ({ lattice, positions, types }) => nepRunner.compute({ lattice, positions, types });
 }

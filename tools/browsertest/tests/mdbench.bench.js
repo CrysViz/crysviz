@@ -56,10 +56,9 @@ const USE_NPT = process.env.MDBENCH_NPT === '1';
     const startBtn = document.getElementById('mdStartBtn');
     if (!stepsInput || !startBtn) return { error: 'MD controls not found' };
     stepsInput.value = String(steps);
-    const nptChk = document.getElementById('mdNptChk');
-    if (nptChk && npt) {
-      nptChk.checked = true;
-      nptChk.dispatchEvent(new Event('change'));
+    if (npt) {
+      const nptBtn = document.querySelector('#mdEnsembleSwitch button[data-ensemble="npt"]');
+      nptBtn?.click();
       const p = document.getElementById('mdPressureInput');
       if (p) p.value = '0';
     }

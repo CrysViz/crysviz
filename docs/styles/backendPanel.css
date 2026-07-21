@@ -641,3 +641,23 @@ font-size: 12px;
     grid-template-columns: 1fr;
   }
 }
+
+/* One-line explanation under the ensemble switch and the coupling inputs.
+   Deliberately quiet: it is there to answer "what does NPT do here" the first
+   time, not to compete with the controls. */
+.atomistic-ensemble-hint {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 4px 2px 8px;
+}
+
+.atomistic-ensemble-hint:empty {
+  display: none;
+}
+
+/* The ensemble switch reuses .backend-potential-toggle, which is sized for the
+   three-way potential chooser; two buttons should not stretch to fill. */
+#mdEnsembleSwitch {
+  flex: 0 0 auto;
+}

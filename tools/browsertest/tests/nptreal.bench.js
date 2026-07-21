@@ -10,14 +10,15 @@ const H = require('../harness');
 
 const STEPS = 150;
 const TARGET_GPA = Number(process.env.NPT_TARGET_GPA ?? 10);
-// Matches the coupling the MD panel uses.
+// Match the coupling the MD panel uses.
 const TAU_FS = Number(process.env.NPT_TAU_FS ?? 20);
+const TAU_P_FS = Number(process.env.NPT_TAU_P_FS ?? 200);
 
 (async () => {
   const { browser, page, errors } = await H.launchApp();
   await H.loadDefaultStructure(page);
 
-  const res = await page.evaluate(async ({ steps, targetGPa, tauFs }) => {
+  const res = await page.evaluate(async ({ steps, targetGPa, tauFs, tauPFs }) => {
     const { createSupercell } = await import('./ui/SuperCellModule.js');
     const { fileBrowser } = await import('./state/store.js');
     const md = await import('./atomistic/MD.js');
@@ -51,7 +52,7 @@ const TAU_FS = Number(process.env.NPT_TAU_FS ?? 20);
         integrator: md.createVelocityVerletIntegrator(),
         thermostat: md.createBussiThermostat({ targetTemperatureK: 300, tauFs }),
         barostat: useBarostat
-          ? md.createStochasticCellBarostat({ targetPressureGPa: targetGPa, tauFs: 200 })
+          ? md.createStochasticCellBarostat({ targetPressureGPa: targetGPa, tauFs: tauPFs })
           : md.createNoBarostat(),
         offThreadForces: true,
         onStep: ({ pressureGPa, volumeA3, temperatureK }) => {
@@ -75,10 +76,11 @@ const TAU_FS = Number(process.env.NPT_TAU_FS ?? 20);
     };
 
     return { npt: await runOnce(true), nvt: await runOnce(false) };
-  }, { steps: STEPS, targetGPa: TARGET_GPA, tauFs: TAU_FS });
+  }, { steps: STEPS, targetGPa: TARGET_GPA, tauFs: TAU_FS, tauPFs: TAU_P_FS });
 
   const { npt, nvt } = res;
   console.log(`  start: V=${npt.v0.toFixed(1)} A^3, P=${npt.p0.toFixed(2)} GPa, target ${TARGET_GPA} GPa`);
+  console.log(`  coupling: thermostat tau=${TAU_FS} fs, barostat tau=${TAU_P_FS} fs (ratio ${(TAU_P_FS / TAU_FS).toFixed(1)}x)`);
   console.log(`  NPT  : V ${npt.v0.toFixed(1)} -> ${npt.vEnd.toFixed(1)}`
     + `  <P>=${npt.meanP.toFixed(2)} GPa  T ${npt.firstHalfT.toFixed(0)} -> ${npt.secondHalfT.toFixed(0)} K`);
   console.log(`  NVT  : V ${nvt.v0.toFixed(1)} -> ${nvt.vEnd.toFixed(1)}`
