@@ -16,7 +16,9 @@ import {
   createVelocityVerletIntegrator,
   createCosineAnnealingSchedule,
   createVelocityRescaleThermostat,
+  mdProfileMeasure,
 } from '../../atomistic/MD.js';
+import { ensureWorkerNEPReady, createWorkerNEPForceEvaluator } from '../../atomistic/nepWorkerClient.js';
 import { ensureTrajectoryPanelForLive, feedLiveStep, resetLivePlot, endLiveFeed } from '../TrajectoryPanel.js';
 import { MLIPRunner } from '../../external/mlip_wasm/mlip_runner.js';
 import { updateForces } from '../../render/index.js';
@@ -1084,7 +1086,22 @@ function bindMDBody(panel, shell, potential) {
 
       resetLivePlot();
       ensureTrajectoryPanelForLive();
-      const forceEvaluator = createNEPForceEvaluator(runner);
+      // Evaluate the potential off-thread when we can: it is by far the longest
+      // part of a step, and on the main thread it blocks paint, so the render of
+      // one frame and the compute of the next serialise instead of overlapping.
+      // Falls back to the in-thread runner if the worker cannot start (and for
+      // MLIP/ASE, which have their own transports).
+      let forceEvaluator = createNEPForceEvaluator(runner);
+      let offThreadForces = false;
+      if (potential === 'nep' && general.mdWorker !== false && typeof Worker !== 'undefined') {
+        try {
+          await ensureWorkerNEPReady();
+          forceEvaluator = createWorkerNEPForceEvaluator();
+          offThreadForces = true;
+        } catch (workerError) {
+          console.warn('NEP worker unavailable, running the potential on the main thread:', workerError);
+        }
+      }
       const integrator = createVelocityVerletIntegrator();
       const targetTemperatureSchedule = useAnneal
         ? createCosineAnnealingSchedule({
@@ -1128,6 +1145,7 @@ function bindMDBody(panel, shell, potential) {
         forceEvaluator,
         integrator,
         thermostat,
+        offThreadForces,
         shouldStop: () => mdStopRequested,
         onStep: ({ step, timeFs, temperatureK, targetTemperatureK, epotEv, ekinEv, etotEv, state: mdState }) => {
           // snapshotCurrentStructure copies the viewer structure, so a save-step
@@ -1137,29 +1155,35 @@ function bindMDBody(panel, shell, potential) {
           const shouldSave = step % saveStride === 0;
           const shouldUpdateViewer = step === 1 || shouldSave || step % viewerStride === 0;
           if (shouldUpdateViewer) {
-            applyMDStateToViewer(mdState, fileBrowser.selectedStructure);
-            setCurrentEFS({
-              forces: mdState.forces,
-              stress: { matrix3x3: mdState.stress },
+            mdProfileMeasure('viewerMs', () => {
+              applyMDStateToViewer(mdState, fileBrowser.selectedStructure);
+              setCurrentEFS({
+                forces: mdState.forces,
+                stress: { matrix3x3: mdState.stress },
+              });
             });
           }
 
           // Fixed-cell MD: no pressure series (see plotSeries seed above).
           lastStepMetrics = { step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv };
           if (shouldSave) {
-            const frame = snapshotCurrentStructure();
-            frame.energy = epotEv;
-            mdContainer.structures.push(frame);
-            lastSavedStep = step;
+            mdProfileMeasure('saveMs', () => {
+              const frame = snapshotCurrentStructure();
+              frame.energy = epotEv;
+              mdContainer.structures.push(frame);
+              lastSavedStep = step;
+            });
             // Feed the plot exactly once per SAVED trajectory frame so the plot's
             // sample count stays 1:1 with the scrubber's frames — this is what
             // keeps the frame cursor aligned with the slider (feeding every step
             // would desync the cursor from the 1..N frame index).
-            feedLiveStep(lastStepMetrics);
-            mdContainer.plotSeries.step.push(step);
-            mdContainer.plotSeries.temperatureK.push(temperatureK);
-            mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(targetTemperatureK) ? targetTemperatureK : NaN);
-            mdContainer.plotSeries.etotEv.push(etotEv);
+            mdProfileMeasure('plotMs', () => {
+              feedLiveStep(lastStepMetrics);
+              mdContainer.plotSeries.step.push(step);
+              mdContainer.plotSeries.temperatureK.push(temperatureK);
+              mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(targetTemperatureK) ? targetTemperatureK : NaN);
+              mdContainer.plotSeries.etotEv.push(etotEv);
+            });
           }
           const tLabel = Number.isFinite(targetTemperatureK)
             ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`

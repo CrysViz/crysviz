@@ -343,6 +343,16 @@ export const general = {
   serialPolyhedraAlgorithm:false, // true = single-threaded WASM; false = parallel over Web Workers
   backendViewerUpdateStride:1, // Update the viewer every N backend/NEP steps during relax/MD
   backendTrajectorySaveStride:4, // Save a trajectory snapshot every N steps during relax/MD
+  // Console profile of the MD/relax loop: when true, runMDSimulation prints a
+  // per-run breakdown (force eval vs integration vs viewer vs rAF wait, ms and
+  // % of wall clock) plus steps/s. Set general.mdProfile = true from the
+  // console before starting a run. Off by default — the timers themselves are
+  // cheap, but the logging is noise for anyone not chasing frame rate.
+  mdProfile:false,
+  // Run the NEP potential in workers/nepWorker.js instead of on the main
+  // thread during MD. Set false to force the in-thread path (the worker also
+  // holds its own copy of the 14.9 MB model, so it costs memory).
+  mdWorker:true,
   // Feature activation flags, set by the toggles in the unified "Features"
   // window (ui/panels/defaultPanels.js) — NOT by panel expand state. When a
   // flag is off the corresponding feature panel is greyed out.

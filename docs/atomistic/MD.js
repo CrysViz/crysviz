@@ -1,6 +1,6 @@
 import { fileBrowser, groups, general } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE, deriveVisibleWrapped } from '../render/index.js';
+import { runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE, deriveVisibleWrapped, lastFastFrameBail } from '../render/index.js';
 import { buildNEPStructure } from './relaxer.js';
 import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart, normalizeFractionalPositions } from './math.js';
 import {
@@ -289,11 +289,20 @@ function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
+// Yield to the event loop without waiting for the paint to finish. Used when
+// the potential runs in a worker: the browser can paint the frame we just
+// pushed while the worker computes the next one, so blocking on rAF here would
+// serialise two things that are free to overlap.
+function nextMacrotask() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function createTimingProfile(label) {
   return {
     label,
     totalMs: 0,
     integrateMs: 0,
+    forceEvalMs: 0,
     thermostatMs: 0,
     onStepMs: 0,
     waitMs: 0,
@@ -301,9 +310,62 @@ function createTimingProfile(label) {
   };
 }
 
+// Buckets the MD loop cannot time itself: the work the caller's onStep does
+// (pushing the frame to the viewer, feeding the plot, snapshotting a trajectory
+// frame). AtomisticPanels reports into these through mdProfileMeasure so the
+// breakdown printed at the end of a run accounts for the whole step, not just
+// the parts inside runMDSimulation. Reset per run.
+const mdProfileBuckets = { viewerMs: 0, plotMs: 0, saveMs: 0, fastFrames: 0, fullFrames: 0 };
+
+function resetMdProfileBuckets() {
+  mdProfileBuckets.viewerMs = 0;
+  mdProfileBuckets.plotMs = 0;
+  mdProfileBuckets.saveMs = 0;
+  mdProfileBuckets.fastFrames = 0;
+  mdProfileBuckets.fullFrames = 0;
+}
+
+/** Time `fn` into one of the onStep buckets — a no-op unless profiling is on. */
+export function mdProfileMeasure(bucket, fn) {
+  if (!general.mdProfile || !(bucket in mdProfileBuckets)) return fn();
+  const t0 = performance.now();
+  const result = fn();
+  mdProfileBuckets[bucket] += performance.now() - t0;
+  return result;
+}
+
+function logMdProfile(timing) {
+  const { totalMs, steps } = timing;
+  if (!steps || totalMs <= 0) return;
+  const pct = (ms) => `${(100 * ms / totalMs).toFixed(1)}%`;
+  const row = (name, ms) => `${name.padEnd(18)} ${(ms / steps).toFixed(2).padStart(8)} ms/step  ${pct(ms).padStart(6)}`;
+  // integrateMs contains the force evaluation (the integrator awaits it), so
+  // the JS-side integration cost is the difference.
+  const integrationOnly = Math.max(0, timing.integrateMs - timing.forceEvalMs);
+  const accounted = timing.integrateMs + timing.thermostatMs + timing.onStepMs + timing.waitMs;
+  console.log(
+    [
+      `[MD profile] ${steps} steps in ${totalMs.toFixed(0)} ms — `
+        + `${(1000 * steps / totalMs).toFixed(1)} steps/s (${(totalMs / steps).toFixed(2)} ms/step)`,
+      row('force eval', timing.forceEvalMs),
+      row('integration (JS)', integrationOnly),
+      row('thermostat', timing.thermostatMs),
+      row('onStep total', timing.onStepMs),
+      row('  · viewer', mdProfileBuckets.viewerMs),
+      row('  · plot', mdProfileBuckets.plotMs),
+      row('  · frame save', mdProfileBuckets.saveMs),
+      row('rAF wait', timing.waitMs),
+      row('unaccounted', Math.max(0, totalMs - accounted)),
+      `viewer frames      ${mdProfileBuckets.fastFrames} fast / ${mdProfileBuckets.fullFrames} full rebuild`
+        + (mdProfileBuckets.fullFrames ? ` (last fallback: ${lastFastFrameBail() ?? 'stride/forced'})` : ''),
+    ].join('\n'),
+  );
+}
+
 /**
  * @param {{state?:any, steps?:number, dtFs?:number, forceEvaluator?:any,
- *   integrator?:any, thermostat?:any, onStep?:any, shouldStop?:any}} [opts]
+ *   integrator?:any, thermostat?:any, onStep?:any, shouldStop?:any,
+ *   offThreadForces?:boolean}} [opts]
  */
 export async function runMDSimulation({
   state,
@@ -314,6 +376,9 @@ export async function runMDSimulation({
   thermostat = createNoThermostat(),
   onStep = null,
   shouldStop = null,
+  // True when forceEvaluator does its work off the main thread (the NEP
+  // worker). Changes only how this loop yields — see nextMacrotask.
+  offThreadForces = false,
 } = {}) {
   if (!state) throw new Error('runMDSimulation: state is required');
   if (!forceEvaluator) throw new Error('runMDSimulation: forceEvaluator is required');
@@ -321,6 +386,16 @@ export async function runMDSimulation({
   let stopped = false;
   const startStep = state.step;
   const timing = createTimingProfile('MD');
+  resetMdProfileBuckets();
+  // Force evaluation happens inside integrator.step (it awaits the evaluator),
+  // so the only way to separate "the potential" from "our JS" is to time the
+  // evaluator itself.
+  const timedForceEvaluator = async (cell) => {
+    const t = performance.now();
+    const result = await forceEvaluator(cell);
+    timing.forceEvalMs += performance.now() - t;
+    return result;
+  };
   const totalStart = performance.now();
   // Run consecutive steps without yielding to the render loop until this many
   // ms have elapsed since the last rAF yield, then yield once. Keeps fast
@@ -339,7 +414,7 @@ export async function runMDSimulation({
     syncStateSymmetryConstraint(state);
 
     let t0 = performance.now();
-    await integrator.step(state, dtFs, forceEvaluator);
+    await integrator.step(state, dtFs, timedForceEvaluator);
     timing.integrateMs += performance.now() - t0;
 
     t0 = performance.now();
@@ -381,12 +456,16 @@ export async function runMDSimulation({
     }
     if (performance.now() - lastYield >= FRAME_BUDGET_MS) {
       t0 = performance.now();
-      await nextFrame();
+      await (offThreadForces ? nextMacrotask() : nextFrame());
       timing.waitMs += performance.now() - t0;
       lastYield = performance.now();
     }
   }
   timing.totalMs = performance.now() - totalStart;
+  timing.viewerMs = mdProfileBuckets.viewerMs;
+  timing.plotMs = mdProfileBuckets.plotMs;
+  timing.saveMs = mdProfileBuckets.saveMs;
+  if (general.mdProfile) logMdProfile(timing);
 
   return {
     stopped,
@@ -429,8 +508,10 @@ export function applyMDStateToViewer(
   // Fast in-place update; skipped on run-end full apply, caller-forced rebuilds,
   // and the periodic bond-topology refresh. Returns false on topology change.
   if (!full && !forceRerender && !strideDue && structure.periodic.wrapped && applyFrameFast(structure)) {
+    mdProfileBuckets.fastFrames += 1;
     return;
   }
+  mdProfileBuckets.fullFrames += 1;
 
   // Full path: re-establishes topology (fast path resumes on the next frame).
   runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
