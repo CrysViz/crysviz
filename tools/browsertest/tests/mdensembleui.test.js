@@ -111,6 +111,53 @@ async function openMD(page) {
     [0.25, 0.5, 1, 1.5, 2].includes(heavyDt) && [0.25, 0.5, 1, 1.5, 2].includes(lightDt),
     `YBCO ${heavyDt}, PdH ${lightDt}`);
 
+  // ---- Simulated Annealing: expanding it IS the switch, so say so ----------
+  const anneal = await page.evaluate(async () => {
+    const card = document.querySelector('#cvPanelBody-backend .atomistic-card');
+    const kids = [...card.children];
+    const annealIdx = kids.findIndex((k) => k.querySelector('#mdAnnealHeader'));
+    const buttonIdx = kids.findIndex((k) => k.querySelector('#mdStartBtn'));
+    const header = document.getElementById('mdAnnealHeader');
+    const badge = document.getElementById('mdAnnealBadge');
+    const title = header.querySelector('.atomistic-anneal-title');
+
+    const collapsed = {
+      active: header.classList.contains('active'),
+      badgeOpacity: getComputedStyle(badge).opacity,
+      hint: document.getElementById('mdAnnealHint')?.textContent ?? '',
+    };
+    header.click();
+    // The badge fades in over 120 ms; computed opacity mid-transition is still 0.
+    await new Promise((r) => setTimeout(r, 250));
+    const expanded = {
+      active: header.classList.contains('active'),
+      badgeOpacity: getComputedStyle(badge).opacity,
+      badgeText: badge.textContent.trim(),
+      titleColor: getComputedStyle(title).color,
+      hint: document.getElementById('mdAnnealHint')?.textContent ?? '',
+    };
+    return { annealIdx, buttonIdx, collapsed, expanded };
+  });
+
+  H.check('start/stop sit below the annealing section',
+    anneal.buttonIdx > anneal.annealIdx && anneal.annealIdx >= 0,
+    `anneal at ${anneal.annealIdx}, buttons at ${anneal.buttonIdx}`);
+  H.check('collapsed annealing shows no "on" badge',
+    anneal.collapsed.active === false && anneal.collapsed.badgeOpacity === '0',
+    JSON.stringify(anneal.collapsed));
+  H.check('expanding annealing marks it on',
+    anneal.expanded.active === true && anneal.expanded.badgeOpacity === '1'
+      && anneal.expanded.badgeText === 'on',
+    JSON.stringify(anneal.expanded));
+  // The green is the whole point of the badge — check the channel, not the exact string.
+  const green = anneal.expanded.titleColor.match(/\d+/g)?.map(Number) ?? [];
+  H.check('the annealing header turns green while it applies',
+    green.length >= 3 && green[1] > green[0] && green[1] > 150,
+    anneal.expanded.titleColor);
+  H.check('it spells out the schedule that overrides the fixed temperature',
+    /start/i.test(anneal.expanded.hint) && /K/.test(anneal.expanded.hint),
+    anneal.expanded.hint);
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

@@ -14,8 +14,8 @@ import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
 
 //import {bondLengthToColor} from '../ui/ColorPanel.js'
-import {refreshBondLengthHistogram} from '../ui/AnalysisPanels/BondLengthHistogram.js'
-import {refreshCoordinationHistogram} from '../ui/AnalysisPanels/CoordinationHistogram.js'
+import {refreshBondLengthHistogram, isBondLengthHistogramOpen} from '../ui/AnalysisPanels/BondLengthHistogram.js'
+import {refreshCoordinationHistogram, isCoordinationHistogramOpen} from '../ui/AnalysisPanels/CoordinationHistogram.js'
 import {generateID} from '../utils/index.js'
 import {computeBondPairsWasm} from '../compiled/bondsWasm.js'
 //import {getBondCutoff} from './BondsModule.js'
@@ -114,11 +114,12 @@ export function rebuildBonds(opacity=1.0) {
   // instanceIds are only assigned in renderBonds() above, so the histogram
   // data (which carries them for click-to-highlight) is populated here, not
   // inside buildBondObjects().
-  populateBondHistogramData(fileBrowser.selectedStructure);
-  console.time("bond:refreshHistograms");
-  refreshBondLengthHistogram(bondLengths);
-  refreshCoordinationHistogram(coordinationNumbers);
-  console.timeEnd("bond:refreshHistograms");
+  //
+  // Skipped entirely when neither histogram window is open: this walks every
+  // bond building per-pair arrays, and during MD it runs on every bond-topology
+  // rebuild. A window nobody is looking at should cost nothing — the panels
+  // call refreshBondHistogramData() themselves when they open.
+  refreshBondHistogramData();
 }
 
 // Debounced bond-geometry refresh: anything that changes RENDERED atom radii
@@ -528,6 +529,20 @@ function histogramBondGroupKey(structure, bond) {
  * Only this function's own bookkeeping changes; structure.bonds itself (and
  * everything the renderer does with it) is untouched.
  */
+/**
+ * Recompute the bond-length / coordination histogram data from the current
+ * structure and push it to whichever of those windows is open. A no-op when
+ * both are closed. Exported so a panel can fill itself in on open, when the
+ * data it skipped computing is finally wanted.
+ */
+export function refreshBondHistogramData() {
+  if (!isBondLengthHistogramOpen() && !isCoordinationHistogramOpen()) return;
+  if (!fileBrowser.selectedStructure) return;
+  populateBondHistogramData(fileBrowser.selectedStructure);
+  refreshBondLengthHistogram(bondLengths);
+  refreshCoordinationHistogram(coordinationNumbers);
+}
+
 function populateBondHistogramData(structure) {
   for (const key in bondLengths) delete bondLengths[key];
   for (const key in coordinationNumbers) delete coordinationNumbers[key];

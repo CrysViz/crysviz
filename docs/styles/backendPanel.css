@@ -661,3 +661,28 @@ font-size: 12px;
 #mdEnsembleSwitch {
   flex: 0 0 auto;
 }
+
+/* Simulated Annealing is enabled by being expanded — there is no separate
+   switch — so the header has to read as a state, not just a disclosure. */
+.atomistic-anneal-badge {
+  margin-left: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7ee2a8;
+  background: rgba(126, 226, 168, 0.14);
+  border: 1px solid rgba(126, 226, 168, 0.35);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.atomistic-collapse-toggle.active .atomistic-anneal-badge {
+  opacity: 1;
+}
+
+.atomistic-collapse-toggle.active .atomistic-anneal-title,
+.atomistic-collapse-toggle.active > span:first-child {
+  color: #7ee2a8;
+}

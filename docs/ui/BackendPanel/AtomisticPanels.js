@@ -719,12 +719,30 @@ function renderRelaxBody(bodyEl, potential) {
   `;
 }
 
+// Expanding the Simulated Annealing section is what ENABLES annealing — the
+// run reads `!annealControls.classList.contains('hidden')`. That is a lot of
+// meaning to hang on a disclosure triangle, so the header carries an explicit
+// "on" badge and turns green while it applies, and the section spells out the
+// schedule that replaces the fixed temperature above it.
 function renderMDAnnealSummary(bodyEl) {
-  const enabled = bodyEl.querySelector('#mdAnnealControls') && !bodyEl.querySelector('#mdAnnealControls').classList.contains('hidden');
   const controls = bodyEl.querySelector('#mdAnnealControls');
   const icon = bodyEl.querySelector('#mdAnnealIcon');
+  const header = bodyEl.querySelector('#mdAnnealHeader');
   if (!controls || !icon) return;
+  const enabled = !controls.classList.contains('hidden');
   icon.textContent = enabled ? '▾' : '▸';
+  header?.classList.toggle('active', enabled);
+
+  const hint = bodyEl.querySelector('#mdAnnealHint');
+  if (hint) {
+    const tMin = Number(bodyEl.querySelector('#mdAnnealMinInput')?.value) || 0;
+    const tMax = Number(bodyEl.querySelector('#mdAnnealMaxInput')?.value) || 0;
+    const peak = Number(bodyEl.querySelector('#mdAnnealPeakPctInput')?.value) || 0;
+    const start = Number(bodyEl.querySelector('#mdTemperatureInput')?.value) || 0;
+    hint.textContent = enabled
+      ? `while this section is open the temperature above is only the start: ${start} K → ${tMax} K at ${peak}% of the run → ${tMin} K`
+      : '';
+  }
 }
 
 function renderMDBody(bodyEl, potential) {
@@ -779,14 +797,11 @@ function renderMDBody(bodyEl, potential) {
           <div class="atomistic-ensemble-hint" id="mdCouplingHint"></div>
         </div>
       </div>
-      <div class="atomistic-button-row atomistic-button-row-compact">
-        <button type="button" class="calcButton" id="mdStartBtn"${potential === 'ase' ? ' disabled' : ''}>start</button>
-        <button type="button" class="calcButton" id="mdStopBtn" disabled>stop</button>
-      </div>
       <div class="atomistic-anneal-section">
         <button type="button" class="atomistic-collapse-toggle" id="mdAnnealHeader">
           <span id="mdAnnealIcon">▸</span>
           <span class="atomistic-card-title-accent atomistic-anneal-title">Simulated Annealing</span>
+          <span class="atomistic-anneal-badge" id="mdAnnealBadge">on</span>
         </button>
         <div class="hidden" id="mdAnnealControls">
           <div class="atomistic-grid atomistic-grid-3 atomistic-grid-compact atomistic-anneal-grid">
@@ -803,7 +818,12 @@ function renderMDBody(bodyEl, potential) {
               <input type="number" class="atomistic-input-sm" id="mdAnnealPeakPctInput" value="30" step="1" min="1" max="99">
             </label>
           </div>
+          <div class="atomistic-ensemble-hint" id="mdAnnealHint"></div>
         </div>
+      </div>
+      <div class="atomistic-button-row atomistic-button-row-compact">
+        <button type="button" class="calcButton" id="mdStartBtn"${potential === 'ase' ? ' disabled' : ''}>start</button>
+        <button type="button" class="calcButton" id="mdStopBtn" disabled>stop</button>
       </div>
     </div>
     ${potential === 'ase' ? '<div class="atomistic-hint">ASE-backed MD is not wired yet. Use NEP for in-browser MD.</div>' : ''}
@@ -1027,6 +1047,9 @@ function bindMDBody(panel, shell, potential) {
     annealControls.classList.toggle('hidden');
     renderMDAnnealSummary(shell.bodyEl);
   });
+  ['#mdAnnealMinInput', '#mdAnnealMaxInput', '#mdAnnealPeakPctInput', '#mdTemperatureInput']
+    .forEach((sel) => shell.bodyEl.querySelector(sel)
+      ?.addEventListener('input', () => renderMDAnnealSummary(shell.bodyEl)));
 
   if (potential === 'ase') {
     startBtn?.addEventListener('click', () => {
