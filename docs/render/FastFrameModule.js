@@ -71,6 +71,58 @@ function cellChangedEnough(lattice, previous) {
   return false;
 }
 
+/**
+ * Track atoms crossing a cell face.
+ *
+ * MD wraps positions into [0,1) every step, so an atom leaving through one face
+ * reappears at the other as a jump of ~1 in fractional coordinates. The image
+ * shifts recorded at the last rebuild are relative to where the atom was THEN,
+ * so after such a jump every one of that atom's periodic images is drawn a
+ * whole cell away from where it belongs — which is what the occasional stray
+ * atom floating outside the box during MD was.
+ *
+ * The set of images cannot be corrected without a rebuild, but their positions
+ * can: accumulate a per-atom integer counter of how many cells it has wrapped
+ * through, and add it back. Every instance then moves continuously with its
+ * source, and the frozen set stays geometrically consistent until the next full
+ * rebuild resets everything.
+ */
+function accumulateWrapFix(wrapped, atoms) {
+  const natoms = atoms.length;
+  let prev = wrapped.prevAtomFrac;
+  let fix = wrapped.wrapFix;
+  if (!prev || prev.length !== natoms * 3) {
+    // First fast frame after a rebuild: the wrapping and the atoms agree, so
+    // there is nothing to correct yet — just record the baseline.
+    prev = new Float64Array(natoms * 3);
+    fix = new Int16Array(natoms * 3);
+    for (let j = 0; j < natoms; j++) {
+      const p = atoms[j].position;
+      prev[j * 3] = p[0];
+      prev[j * 3 + 1] = p[1];
+      prev[j * 3 + 2] = p[2];
+    }
+    wrapped.prevAtomFrac = prev;
+    wrapped.wrapFix = fix;
+    return fix;
+  }
+
+  for (let j = 0; j < natoms; j++) {
+    const p = atoms[j].position;
+    const o = j * 3;
+    for (let k = 0; k < 3; k++) {
+      const now = p[k];
+      const delta = now - prev[o + k];
+      // Only a wrap can move an atom by more than half a cell in one frame; a
+      // real displacement that large would mean the run has already blown up.
+      if (delta > 0.5) fix[o + k] -= 1;
+      else if (delta < -0.5) fix[o + k] += 1;
+      prev[o + k] = now;
+    }
+  }
+  return fix;
+}
+
 /** Rewrite wrapped.frac/.cart in place from the atoms' current positions. */
 function updateWrappedFromSources(wrapped, structure, shifts, lattice) {
   const { srcIndex, frac, cart } = wrapped;
@@ -78,13 +130,16 @@ function updateWrappedFromSources(wrapped, structure, shifts, lattice) {
   const [ax, ay, az] = lattice[0];
   const [bx, by, bz] = lattice[1];
   const [cx, cy, cz] = lattice[2];
+  const fix = accumulateWrapFix(wrapped, atoms);
 
   for (let i = 0; i < srcIndex.length; i++) {
-    const p = atoms[srcIndex[i]].position;
+    const src = srcIndex[i];
+    const p = atoms[src].position;
     const o = i * 3;
-    const f0 = p[0] + shifts[o];
-    const f1 = p[1] + shifts[o + 1];
-    const f2 = p[2] + shifts[o + 2];
+    const s = src * 3;
+    const f0 = p[0] + shifts[o] + fix[s];
+    const f1 = p[1] + shifts[o + 1] + fix[s + 1];
+    const f2 = p[2] + shifts[o + 2] + fix[s + 2];
     const fi = frac[i];
     fi[0] = f0;
     fi[1] = f1;

@@ -159,6 +159,47 @@ const H = require('../harness');
   H.check('a full rebuild agrees with the fast frames', res.rebuildErr < 1e-9, String(res.rebuildErr));
   H.check('force arrows are present while forcesActive', res.forcesMesh, '');
 
+  // ---- atoms crossing a cell face must not fling their images a cell away ---
+  // MD wraps positions into [0,1) every step. The image shifts are frozen
+  // between rebuilds, so without a correction an atom that wraps drags all of
+  // its periodic images a whole cell off — seen in the viewer as stray atoms
+  // floating outside the box during a run.
+  const wrapRes = await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const { applyFrameFast } = await import('./render/FastFrameModule.js');
+    const s = fileBrowser.selectedStructure;
+
+    // Park every atom just inside a face, then step it across.
+    s.atoms.forEach((atom) => { atom.position = [0.995, 0.5, 0.5]; });
+    applyFrameFast(s);
+    const before = groups.atomsMesh.instanceMatrix.array.slice();
+
+    const STEP = 0.01; // crosses 1.0 and wraps to ~0.005
+    s.atoms.forEach((atom) => {
+      atom.position = [((atom.position[0] + STEP) % 1 + 1) % 1, 0.5, 0.5];
+    });
+    const applied = applyFrameFast(s);
+    const after = groups.atomsMesh.instanceMatrix.array;
+
+    // The cell's shortest edge bounds "a whole cell away".
+    const edge = Math.min(...s.lattice.map((r) => Math.hypot(r[0], r[1], r[2])));
+    let maxJump = 0;
+    for (let i = 0; i < groups.atomsMesh.count; i += 1) {
+      const o = i * 16;
+      maxJump = Math.max(maxJump, Math.hypot(
+        after[o + 12] - before[o + 12],
+        after[o + 13] - before[o + 13],
+        after[o + 14] - before[o + 14]));
+    }
+    return { applied, maxJump, edge };
+  });
+
+  H.check('the fast path still applies across a wrap', wrapRes.applied === true,
+    JSON.stringify(wrapRes));
+  H.check('no instance jumps a whole cell when its atom wraps',
+    wrapRes.maxJump < wrapRes.edge * 0.5,
+    `max jump ${wrapRes.maxJump.toFixed(3)} A vs shortest cell edge ${wrapRes.edge.toFixed(3)} A`);
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);
