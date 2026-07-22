@@ -86,6 +86,15 @@ async function renderMainToCanvasConverged(w, h, onProgress, signal) {
     }
   };
   if (app.pipeline?.isConverged) {
+    // The live view's accumulation belongs to the on-screen size and RT
+    // resolution scale, so it cannot be carried into the export: render()'s own
+    // resize reset would zero it on the very first paced frame, after the
+    // starting count had already been reported (progress running BACKWARDS,
+    // e.g. "Rendering… 16 / 64" then "1 / 64") — and a live view that had
+    // already reached the target would satisfy isConverged() before a single
+    // export frame was traced, capturing a canvas that was resized but never
+    // rendered into. Start the export from a known-empty accumulation instead.
+    app.pipeline.resetAccumulation?.();
     reportProgress(); // show the starting count before the first paced frame
     while (!app.pipeline.isConverged()) {
       throwIfAborted(signal);

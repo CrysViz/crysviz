@@ -1,15 +1,16 @@
-import {structureShip,fileBrowser} from '../../state/store.js'
+import {structureShip,fileBrowser,general} from '../../state/store.js'
 import { createRow,selectLastAddedRow } from '../FileBrowswerPanel.js';
 import init, { analyze_cell } from '../../external/moyo-test/moyo_wasm.js';
 import { Structure } from "../../model/index.js";
 import { Atom } from "../../model/index.js";
 import { StructureContainer } from "../../model/index.js";
 import { generateID } from "../../utils/index.js";
-import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive } from '../SymmetryEditModule.js';
+import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive, describeMoyoFailure, defaultSymprec } from '../SymmetryEditModule.js';
 import { renderComposition } from '../StructureInfoPanel/General.js';
 import { refreshBackendTheme } from './BackendTheme.js';
 import { normalizeFractional } from "../../math/index.js";
 import { runPeriodicWrapped } from "../../render/index.js";
+import { hallEntry, symdataHallUrl } from './hallSymbols.js';
 
 
 
@@ -80,59 +81,88 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
     panel.innerHTML = "";
 
     panel.innerHTML = `
-    <div id="panel">
-<div style="margin-bottom: 1em; text-align: center;">
-  <p style="margin: 0; font-size: 12px;">Analyse symmetry with Moyo</p>
-</div>
-  <div style="margin-bottom: 1em;">
-    <p style="font-size: 12px;">Get symmetry information:</p>
-    <label style="font-size:12px; display:block; margin-bottom:0.4em;">Tolerance (Å):
-      <input type="number" id="symTolInput" value="0.01" min="0" step="0.001" style="width:6em;">
-    </label>
-    <button class="calcButton" id="getSymBtn">Get Symmetry Info</button>
-  </div>
+    <div id="panel" class="sym-body">
+      <p class="sym-caption">Analyse symmetry with Moyo</p>
 
-  <div style="margin-bottom: 1em;">
-    <p style="font-size: 12px;">Symmetrize cell:</p>
-    <div style="display: flex; gap: 0.5em;">
-      <button class="calcButton" id="getPrimBtn">Prim. Cell</button>
-      <button class="calcButton" id="getConvBtn">Conv. Cell</button>
+      <div class="sym-card">
+        <div class="sym-card-title">Symmetry information</div>
+        <div class="sym-row">
+          <label for="symTolInput">Tolerance (Å)
+            <input type="number" id="symTolInput" value="${defaultSymprec()}" min="0" step="0.001">
+          </label>
+        </div>
+        <div class="sym-row">
+          <button class="calcButton" id="getSymBtn">Get Symmetry Info</button>
+        </div>
+        <div class="sym-result" id="symResult" hidden></div>
+      </div>
+
+      <div class="sym-card">
+        <div class="sym-card-title">Symmetrize cell</div>
+        <div class="sym-row">
+          <button class="calcButton" id="getPrimBtn">Prim. Cell</button>
+          <button class="calcButton" id="getConvBtn">Conv. Cell</button>
+        </div>
+      </div>
+
+      <div class="sym-card">
+        <div class="sym-card-title">Wyckoff positions</div>
+        <div class="sym-row">
+          <button class="calcButton sym-wide" id="getWyckoffBtn">Enable Wyckoff Editor</button>
+        </div>
+      </div>
+
+      <p class="sym-status" id="calcResult"></p>
     </div>
-  </div>
-
-  <div style="margin-bottom: 1em;">
-    <p style="font-size: 12px;">Operate on Wyckoff positions:</p>
-    <button class="calcButton" id="getWyckoffBtn">Enable Wyckoff Editor</button>
-  </div>
-
-  <p id="calcResult" style="margin-top: 1em; font-weight: bold; user-select: text; -webkit-user-select: text; cursor: text;"></p>
-</div>
     `;
 
+    // The box is the single place the tolerance is edited; every read pushes
+    // it back into the store so a panel rebuild (structure switch, dock move)
+    // and every internal analysis keep the value the user set.
     const getTol = () => {
       const v = parseFloat(document.getElementById("symTolInput")?.value);
-      return Number.isFinite(v) && v > 0 ? v : 0.01;
+      const tol = Number.isFinite(v) && v > 0 ? v : defaultSymprec();
+      general.symmetryTolerance = tol;
+      return tol;
     };
 
-    document.getElementById("getSymBtn").onclick = () => {
-      const result = callMoyo("getSymmetryInfo", getTol());
-      document.getElementById("calcResult").textContent =
-        `${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
-    }
+    const setStatus = (text = '') => {
+      const el = document.getElementById("calcResult");
+      if (el) el.textContent = text;
+    };
 
-    document.getElementById("getConvBtn").onclick = () => {
+    // moyo throws for cells it cannot handle (atoms closer than the tolerance,
+    // a heavily distorted MD frame, ...). Those are ordinary user situations,
+    // not bugs: report them in the panel and leave the app untouched, rather
+    // than letting an exception escape and kill the click handler.
+    const failSoft = (action) => {
+      try {
+        action();
+      } catch (error) {
+        const box = document.getElementById('symResult');
+        if (box) box.hidden = true;
+        setStatus(describeMoyoFailure(error, getTol()));
+      }
+    };
+
+    document.getElementById("getSymBtn").onclick = () => failSoft(() => {
+      renderSymmetryResult(callMoyo("getSymmetryInfo", getTol()));
+      setStatus();
+    });
+
+    document.getElementById("getConvBtn").onclick = () => failSoft(() => {
       const result = callMoyo("getConvUnit", getTol());
-      document.getElementById("calcResult").textContent =
-        `${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
+      renderSymmetryResult(result);
+      setStatus();
       newContainerFromSymmetrisation("conv", result.positions, result.lattice, result.elements)
-    }
+    });
 
-    document.getElementById("getPrimBtn").onclick = () => {
+    document.getElementById("getPrimBtn").onclick = () => failSoft(() => {
       const result = callMoyo("getPrimUnit", getTol());
-      document.getElementById("calcResult").textContent =
-        `${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
+      renderSymmetryResult(result);
+      setStatus();
       newContainerFromSymmetrisation("prim", result.positions, result.lattice, result.elements)
-    }
+    });
 
     const wyckoffBtn = document.getElementById("getWyckoffBtn");
     const syncWyckoffButton = () => {
@@ -157,11 +187,22 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
         return;
       }
 
-      const result = callMoyo("getSymmetryInfo", getTol());
-      await activateWyckoffMode(fileBrowser.selectedStructure, getTol());
+      let result;
+      try {
+        result = callMoyo("getSymmetryInfo", getTol());
+        await activateWyckoffMode(fileBrowser.selectedStructure, getTol());
+      } catch (error) {
+        // Nothing was locked (activateWyckoffMode assigns only on success), so
+        // the structure stays exactly as editable as it was.
+        const box = document.getElementById('symResult');
+        if (box) box.hidden = true;
+        setStatus(describeMoyoFailure(error, getTol()));
+        syncWyckoffButton();
+        return;
+      }
       renderComposition('open');
-      document.getElementById("calcResult").textContent =
-        `Wyckoff editor active: ${result.spg_symbol} (${result.spg_number})  ${result.aflowLabel}`;
+      renderSymmetryResult(result);
+      setStatus('Wyckoff editor active');
       syncWyckoffButton();
       refreshBackendTheme();
     };
@@ -169,38 +210,102 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
     syncWyckoffButton();
 }
 
-// Build an AFLOW-style label: "{spg}_{wyck_elem1}_{wyck_elem2}...:{elem1}-{elem2}-..."
-// wyckoffs and elements are parallel arrays, one entry per atom in the input cell.
-// For a primitive-cell input each entry is one inequivalent orbit, giving exact counts.
-function buildAflowLabel(spgNumber, wyckoffs, elements) {
-  const elemOrder = [];
-  const elemLetters = {};
-  for (let i = 0; i < elements.length; i++) {
+function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+
+// AFLOW anonymous formula from per-element atom counts of the conventional
+// cell: stoichiometry reduced by its gcd, sorted ascending, labelled A, B, C...
+// with a count of 1 written as nothing (Al2O3 -> "A2B3", TiO2 -> "AB2").
+function anonymousFormula(counts) {
+  if (!counts.length) return '';
+  const g = counts.reduce((acc, c) => gcd(acc, c));
+  return counts
+    .map(c => c / g)
+    .sort((a, b) => a - b)
+    .map((c, i) => String.fromCharCode(65 + i) + (c > 1 ? c : ''))
+    .join('');
+}
+
+// Build the protostructure (AFLOW prototype) label:
+//   "{anonymous formula}_{Pearson}_{spg number}_{wyckoffs per element}:{elements}"
+// e.g. "A2B3_hR10_167_1c_1e:Al-O".
+//
+// The number in front of a Wyckoff letter is NOT the site multiplicity — it is
+// how many DISTINCT orbits of that element sit on that letter, and it is always
+// written, including when it is 1. So `orbits` (moyo's crystallographic orbits,
+// one representative atom index per orbit) is what gets counted here, never the
+// raw per-atom Wyckoff list.
+//
+// `elements` is the per-atom element list of the input cell, parallel to
+// `result.orbits` / `result.wyckoffs`. The anonymous formula is counted on the
+// conventional standard cell (`result.std_cell.numbers`).
+function buildProtostructureLabel(result, elements) {
+  const reps = [...new Set(result.orbits)]; // one representative atom per orbit
+  const lettersByElement = new Map();
+  for (const i of reps) {
     const el = elements[i];
-    if (!elemLetters[el]) {
-      elemLetters[el] = [];
-      elemOrder.push(el);
-    }
-    elemLetters[el].push(wyckoffs[i]);
+    if (!lettersByElement.has(el)) lettersByElement.set(el, []);
+    lettersByElement.get(el).push(result.wyckoffs[i]);
   }
 
-  const orbitParts = elemOrder.map(el => {
-    const count = {};
-    for (const l of elemLetters[el]) count[l] = (count[l] || 0) + 1;
-    return Object.keys(count).sort()
-      .map(l => (count[l] > 1 ? count[l] : '') + l)
+  const sortedElements = [...lettersByElement.keys()].sort();
+  const wyckParts = sortedElements.map(el => {
+    const perLetter = new Map();
+    for (const letter of lettersByElement.get(el)) {
+      perLetter.set(letter, (perLetter.get(letter) || 0) + 1);
+    }
+    return [...perLetter.keys()].sort()
+      .map(letter => `${perLetter.get(letter)}${letter}`)
       .join('');
   });
 
-  return `${spgNumber}_${orbitParts.join('_')}:${elemOrder.join('-')}`;
+  const convCounts = new Map();
+  for (const z of (result.std_cell?.numbers || [])) {
+    convCounts.set(z, (convCounts.get(z) || 0) + 1);
+  }
+  const anon = anonymousFormula([...convCounts.values()]);
+  const pearson = result.pearson_symbol || '';
+
+  return `${anon}_${pearson}_${result.number}_${wyckParts.join('_')}:${sortedElements.join('-')}`;
 }
 
-function callMoyo(calcType="getSymmetryInfo", tolerance=0.01) {
+// Fill the panel's result block: space group (linked to symdata), Hall symbol,
+// Pearson symbol and protostructure label. No-op when the panel is not built.
+function renderSymmetryResult(result) {
+  const box = document.getElementById('symResult');
+  if (!box) return;
+
+  const hall = hallEntry(result.hall_number);
+  const url = hall ? symdataHallUrl(hall.symbol) : null;
+  const link = (text) => (url
+    ? `<a class="sym-link" href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`
+    : text);
+
+  // moyo writes the HM symbol with spaces ("P m m m"); the usual display form
+  // is unspaced.
+  const hm = String(result.spg_symbol).replace(/\s+/g, '');
+
+  box.innerHTML = `
+    <div class="sym-spg">
+      <span class="sym-spg-symbol">${link(hm)}</span>
+    </div>
+    <dl class="sym-kv">
+      <dt>Hall</dt><dd class="sym-mono">${hall ? link(hall.symbol) : '—'}</dd>
+      <dt>Number</dt><dd class="sym-mono">${result.spg_number}</dd>
+    </dl>
+    <div class="sym-proto">
+      <span class="sym-proto-label">Protostructure</span>
+      <span class="sym-mono sym-proto-value">${result.protostructure}</span>
+    </div>`;
+  box.hidden = false;
+}
+
+function callMoyo(calcType="getSymmetryInfo", tolerance=defaultSymprec()) {
   const structure = fileBrowser.selectedStructure;
   // Hidden atoms are excluded from symmetry detection entirely — filtered
   // together (elements/positions in lockstep) before anything is indexed, so
-  // result.wyckoffs (one entry per surviving atom, in this same order) stays
-  // aligned with `elements` below for buildAflowLabel. Safe here specifically
+  // result.wyckoffs/result.orbits (one entry per surviving atom, in this same
+  // order) stay aligned with `elements` below for the protostructure label.
+  // Safe here specifically
   // because this function's outputs are either display-only strings or a
   // freshly-computed primitive/conventional cell with no back-reference to
   // original atom indices — unlike SymmetryEditModule.js's Wyckoff editing,
@@ -222,22 +327,29 @@ function callMoyo(calcType="getSymmetryInfo", tolerance=0.01) {
   const struct = { positions: positions, lattice:{basis:lattice.flat()}, numbers: numbers }
 
   const result = analyze_cell(JSON.stringify(struct), tolerance, 'Standard');
-  const aflowLabel = buildAflowLabel(result.number, result.wyckoffs, elements);
+  const protostructure = buildProtostructureLabel(result, elements);
+  const info = {
+    spg_symbol: result.hm_symbol,
+    spg_number: result.number,
+    hall_number: result.hall_number,
+    pearson: result.pearson_symbol,
+    protostructure,
+  };
 
   if (calcType === "getSymmetryInfo"){
-      return {spg_symbol:result.hm_symbol, spg_number:result.number, aflowLabel};
+      return info;
   }
   else if (calcType === "getPrimUnit"){
       const flat = result.prim_std_cell.lattice.basis;
       const lattice3x3 = [flat.slice(0,3), flat.slice(3,6), flat.slice(6,9)];
       const primElements = result.prim_std_cell.numbers.map(el => PT[el]);
-      return {lattice:lattice3x3, positions:result.prim_std_cell.positions, elements:primElements, spg_symbol:result.hm_symbol, spg_number:result.number, aflowLabel};
+      return {...info, lattice:lattice3x3, positions:result.prim_std_cell.positions, elements:primElements};
   }
   else if (calcType === "getConvUnit"){
       const flat = result.std_cell.lattice.basis;
       const lattice3x3 = [flat.slice(0,3), flat.slice(3,6), flat.slice(6,9)];
       const convElements = result.std_cell.numbers.map(el => PT[el]);
-      return {lattice:lattice3x3, positions:result.std_cell.positions, elements:convElements, spg_symbol:result.hm_symbol, spg_number:result.number, aflowLabel};
+      return {...info, lattice:lattice3x3, positions:result.std_cell.positions, elements:convElements};
   }
   else {
       console.warn("Unknown calculation type!");

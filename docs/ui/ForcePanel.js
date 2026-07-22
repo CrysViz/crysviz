@@ -3,6 +3,8 @@ import { fileBrowser, general } from '../state/store.js';
 import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
 import { computeAutoRange } from '../utils/index.js';
+import { addForceHistogramPanel } from './AnalysisPanels/ForceHistogram.js';
+import { makeSectionHeadline } from './panels/sectionHeadline.js';
 
 const FORCE_COLORBAR_FLOATING_ID = 'forceColorBarFloating';
 
@@ -91,6 +93,39 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   noForcesNote.textContent = "No force data available for this structure. Upload a file that includes forces (e.g. an OUTCAR) or run a Relax/MD calculation.";
   noForcesNote.style.display = "none";
   content.appendChild(noForcesNote);
+
+  // --- Histogram ---
+  // Opens ui/AnalysisPanels/ForceHistogram.js's window (right-dock by
+  // default) — same "Histograms" idiom as the Bonds window's Bond Length /
+  // Coordination Number buttons (BondPanel.js). Disabled while the structure
+  // has no force data (updateNoForcesNote keeps this in sync on rebuild and
+  // on every redraw()).
+  const histogramSection = document.createElement("div");
+  histogramSection.style.marginBottom = "8px";
+  histogramSection.appendChild(makeSectionHeadline("Histograms"));
+
+  const histogramRow = document.createElement("div");
+  histogramRow.style.display = "flex";
+  histogramRow.style.alignItems = "center";
+  histogramRow.style.justifyContent = "space-between";
+  histogramRow.style.gap = "8px";
+
+  const histogramLabel = document.createElement("span");
+  histogramLabel.textContent = "Force Histogram";
+  histogramLabel.style.cssText = "font-size:12px; color:#ccc;";
+
+  const histogramBtn = document.createElement("button");
+  histogramBtn.type = "button";
+  histogramBtn.id = "openForceHistogram";
+  histogramBtn.className = "btn-mini highlight";
+  histogramBtn.textContent = "Open";
+  histogramBtn.title = "Open the Force Histogram window";
+  histogramBtn.style.fontSize = "12px";
+  histogramBtn.addEventListener("click", () => addForceHistogramPanel());
+
+  histogramRow.append(histogramLabel, histogramBtn);
+  histogramSection.appendChild(histogramRow);
+  content.appendChild(histogramSection);
 
   // --- Global Scaling slider ---
   const sliderWrapper = document.createElement("div");
@@ -378,7 +413,12 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   }
 
   function updateNoForcesNote() {
-    noForcesNote.style.display = fileBrowser.selectedStructure?.forces?.length ? "none" : "block";
+    const hasForces = !!fileBrowser.selectedStructure?.forces?.length;
+    noForcesNote.style.display = hasForces ? "none" : "block";
+    histogramBtn.disabled = !hasForces;
+    histogramBtn.title = hasForces
+      ? "Open the Force Histogram window"
+      : "No force data on this structure — nothing to plot";
   }
 
   function redraw() {

@@ -1,5 +1,4 @@
 import * as THREE from '../external/three/three.module.js';
-import { getCellCenterAndDist } from './LatticeModule.js'
 import { latticeDirs } from './LatticeModule.js'
 import { app } from '../state/store.js';
 
@@ -19,11 +18,16 @@ const STEP_DEG = 5;
  *   direction vector (used for the a/b/c crystallographic axes).
  */
 export function applyRotationFromUI(directionDeg, axis) {
-  const { center, dist } = getCellCenterAndDist();
   if (!app.camera) {
     console.warn("Why no camera??");
     return;
   }
+
+  // Orbit around whatever the controls are already looking at, not the cell
+  // center at its fit distance: snapping to getCellCenterAndDist() here threw
+  // away the user's zoom and pan on every arrow press, same as the alignment
+  // buttons used to.
+  const center = app.controls.target.clone();
 
   // 1) pick the rotation axis: world x/y/z by name, or an explicit direction.
   const rotAxis =
@@ -43,19 +47,15 @@ export function applyRotationFromUI(directionDeg, axis) {
   // 3) rotate the vector from center to the CAMERA (not the target)
   //    (This orbits the camera around the center while looking at the center.)
   const v = app.camera.position.clone().sub(center); // do NOT mutate center
-  v.applyQuaternion(q);
+  v.applyQuaternion(q); // a rotation is length-preserving, so the radius stays
 
-  // 4) keep the same radius if you have a canonical dist
-  const radius = dist ?? v.length();
-  if (radius > 0) v.setLength(radius);
-
-  // 5) commit: position camera on rotated vector, rotate up in lockstep,
+  // 4) commit: position camera on rotated vector, rotate up in lockstep,
   //    look at center
   app.camera.position.copy(center).add(v);
   app.camera.up.applyQuaternion(q).normalize();
   app.controls.target.copy(center);
 
-  // 6) update controls/camera
+  // 5) update controls/camera
   app.controls.update();
   app.camera.updateMatrixWorld(true);
 }

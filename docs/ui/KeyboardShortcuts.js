@@ -299,6 +299,7 @@ const COMMANDS = [
   // -- Shift+Alt: Windows -------------------------------------------------------
   { id: 'panel-files', label: 'Files', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('files'), default: bind(TIER.SHIFT_ALT, { code: 'KeyF' }) },
   { id: 'panel-features', label: 'Features', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('features'), default: bind(TIER.SHIFT_ALT, { code: 'KeyU' }) },
+  { id: 'panel-atomistic', label: 'Atomistic', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('backend'), default: bind(TIER.SHIFT_ALT, { code: 'KeyA' }) },
   { id: 'panel-trajectory', label: 'Trajectory', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('trajectory'), default: bind(TIER.SHIFT_ALT, { code: 'KeyT' }) },
   { id: 'panel-comparison', label: 'Comparison', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('comparison'), default: bind(TIER.SHIFT_ALT, { code: 'KeyC' }) },
   { id: 'panel-forces', label: 'Forces', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('forces'), default: bind(TIER.SHIFT_ALT, { code: 'KeyR' }) },

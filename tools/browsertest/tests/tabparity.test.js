@@ -53,7 +53,10 @@ const H = require('../harness');
     document.querySelector('#atomBondControlSwitch button[data-mode="bonds"]').click();
     const controls = [...document.querySelectorAll('#infoBondControls .bond-control')];
     return {
-      labels: controls.map((c) => c.querySelector('label')?.textContent ?? ''),
+      // The row's mini toggle switch is itself a (text-free) <label> wrapping
+      // its checkbox and comes first in the header, so exclude it — the pair
+      // label is the only other <label> in the row.
+      labels: controls.map((c) => c.querySelector('label:not(.toggle_switch)')?.textContent ?? ''),
       counts: controls.map((c) => c.querySelector('.bond-count')?.textContent ?? ''),
       toggles: controls.filter((c) => c.querySelectorAll('.bond-checkbox input[type="checkbox"]').length >= 2).length,
       dotsClickable: controls.filter((c) => /** @type {HTMLElement} */ (c.querySelector('.dot'))?.onclick).length,

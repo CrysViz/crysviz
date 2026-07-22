@@ -7,7 +7,7 @@ import { createTinyImmunityToggle } from './Immunity.js';
 import { createIndividualAtomRow } from './IndividualAtomRow.js';
 import { createElementColorEditor } from './ColorEditor.js';
 
-import { applyWyckoffOrbitPosition } from '../../SymmetryEditModule.js';
+import { applyWyckoffOrbitPosition, getOrbitAxisFreedom } from '../../SymmetryEditModule.js';
 
 // =============================================
 // HELPERS
@@ -453,6 +453,16 @@ export function createWyckoffCompositionRow(el, entries, total) {
       label: `${el}${index + 1}  ${entry.multiplicity}${entry.wyckoff}`,
       metaText: `${entry.siteSymmetry ? `${entry.siteSymmetry}  |  ` : ''}orbit ${entry.atomIndices.length}  |  ${entry.isFixed ? 'fixed' : `${entry.dofDimension} DOF`}`,
       positionUpdater: (coords) => applyWyckoffOrbitPosition(entry.representativeIndex, coords),
+      // Slider drags skip the composition rebuild — it would replace this very
+      // row (and the slider being dragged) on every frame.
+      livePositionUpdater: (coords) => applyWyckoffOrbitPosition(
+        entry.representativeIndex, coords, fileBrowser.selectedStructure, { reRenderComposition: false }),
+      axisFreedom: getOrbitAxisFreedom(entry),
+      // dofDimension is the dimension of the freedom subspace, which is not the
+      // number of movable axes when they are coupled ((x, x, z) is 2 DOF across
+      // 3 movable axes) — the greyed-out rows show which axes are frozen.
+      freedomNote: entry.isFixed ? 'fixed by symmetry' : `${entry.dofDimension} DOF`,
+      stackedHeader: true,
       resetCoordsProvider: () => fileBrowser.selectedStructure?.original?.atoms?.[entry.representativeIndex]?.position ?? null,
       positionEditable: !entry.isFixed,
       onColorChange: updatePieDotForRow

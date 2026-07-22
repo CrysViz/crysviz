@@ -12,6 +12,7 @@ import {
   renderGroupedHistogram, onHistogramBarClick, exportHistogramPNG, resizeHistogramPlot, clearHistogramPlot,
 } from './histogramPlotly.js';
 import { highlightAtomsIn3D, clearAllHighlights } from '../SelectAndHighlightModule.js';
+import { refreshBondHistogramData } from '../../render/BondsFracUpdateModule.js';
 
 const PANEL_ID = 'coordinationHistogram';
 const PLOT_ID = 'coordinationHistogramPlot';
@@ -20,6 +21,11 @@ let data = {}; // element -> [{ cn, atomIndex }, ...] — latest from BondsFracU
 let view = null;
 
 /** Called by BondsFracUpdateModule after every rebuildBonds. */
+/** True while the window is open — the producer skips its work when it is not. */
+export function isCoordinationHistogramOpen() {
+  return !!view;
+}
+
 export function refreshCoordinationHistogram(newData) {
   data = newData || {};
   view?.redraw();
@@ -134,6 +140,9 @@ export function addCoordinationHistogramPanel() {
       resizeObserver.observe(body);
 
       view = { redraw };
+      // The producer skips computing histogram data while every window is
+      // closed, so this window has to ask for it on the way in.
+      refreshBondHistogramData();
       redraw();
     },
     defaults: {

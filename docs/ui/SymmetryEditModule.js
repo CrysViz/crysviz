@@ -6,6 +6,30 @@ import { cartToFrac, fracToCart, invert3x3, transpose3x3 } from '../math/index.j
 
 let moyoReady = null;
 
+// moyo's symmetry tolerance (symprec), in Å. The live value is
+// general.symmetryTolerance in state/store.js (the Symmetry panel's Tolerance
+// box reads and writes it); this constant is only the fallback if that is ever
+// missing or nonsense. Every entry point defaults to defaultSymprec(), so the
+// panel and internal calls cannot silently disagree.
+export const DEFAULT_SYMPREC = 0.01;
+
+export function defaultSymprec() {
+  const value = general.symmetryTolerance;
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_SYMPREC;
+}
+
+// Two symmetry-equivalent atoms closer than symprec are, to moyo, one atom on
+// a higher-symmetry site — and its primitive-cell search then fails outright
+// ("PrimitiveSymmetrySearchError"), leaving a structure whose symmetry can no
+// longer be analysed at all. Orbit moves are refused just before that point
+// (measured: at symprec 0.01 Å the search still succeeds at ~0.06 Å apart and
+// fails at ~0.012 Å), with a floor so a tiny symprec cannot allow literal
+// duplicates. This is a Cartesian distance, unrelated to symprec except that
+// its whole job is keeping the cell analysable AT that symprec.
+function minSiteSeparation(tolerance = defaultSymprec()) {
+  return Math.max(4 * tolerance, 0.05);
+}
+
 function wrap01(x) {
   return ((x % 1) + 1) % 1;
 }
@@ -43,6 +67,11 @@ function normalize(vector, tolerance = 1e-10) {
   const length = Math.hypot(vector[0], vector[1], vector[2]);
   if (length <= tolerance) return null;
   return vector.map((value) => value / length);
+}
+
+/** Transpose a flat 3x3 (row-major <-> column-major). */
+function transpose3(m) {
+  return [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
 }
 
 function applyOperation(position, operation) {
@@ -192,7 +221,7 @@ async function ensureMoyoReady() {
   return moyoReady;
 }
 
-export async function analyzeStructureSymmetry(structure = fileBrowser.selectedStructure, tolerance = 1e-5) {
+export async function analyzeStructureSymmetry(structure = fileBrowser.selectedStructure, tolerance = defaultSymprec()) {
   if (!structure) throw new Error('No structure selected');
   await ensureMoyoReady();
 
@@ -200,13 +229,38 @@ export async function analyzeStructureSymmetry(structure = fileBrowser.selectedS
   const positions = structure.atoms.map((atom) => [...atom.position]);
   const lattice = structure.lattice.map((row) => [...row]);
   const cell = { positions, lattice: { basis: lattice.flat() }, numbers };
-  return analyze_cell(JSON.stringify(cell), tolerance, 'Standard');
+  try {
+    return analyze_cell(JSON.stringify(cell), tolerance, 'Standard');
+  } catch (error) {
+    throw new Error(describeMoyoFailure(error, tolerance));
+  }
 }
 
-function buildWyckoffSymmetryState(structure, dataset) {
+// moyo throws bare tagged strings ("PrimitiveSymmetrySearchError"). Turn them
+// into something a user can act on — every one of them is really "this cell,
+// at this tolerance".
+export function describeMoyoFailure(error, tolerance) {
+  const raw = String(error?.message ?? error);
+  const at = `at tolerance ${tolerance} Å`;
+  if (raw.includes('PrimitiveSymmetrySearchError') || raw.includes('PrimitiveCellError')) {
+    return `Symmetry search failed ${at} — atoms may sit closer than the tolerance, or the cell is too distorted. Try a smaller tolerance.`;
+  }
+  if (raw.includes('TooSmallToleranceError')) return `Tolerance too small ${at} — raise it.`;
+  if (raw.includes('TooLargeToleranceError')) return `Tolerance too large ${at} — lower it.`;
+  return `Symmetry analysis failed ${at}: ${raw}`;
+}
+
+function buildWyckoffSymmetryState(structure, dataset, tolerance = defaultSymprec()) {
   const positions = structure.atoms.map((atom) => [...atom.position]);
+  // moyo serializes matrices COLUMN-major (nalgebra's memory order), while
+  // applyOperation reads `rotation` row-major — so every operation has to be
+  // transposed on the way in. Without this only groups whose rotations are
+  // symmetric (all-diagonal ones: Pmmm and friends) behave; hexagonal,
+  // trigonal and cubic operations come out as the wrong isometry, which
+  // scrambles the orbit mappings, the site-freedom basis, and the symmetry
+  // constraint MD/relax apply through symmetrizeCartesian*.
   const operations = (dataset.operations ?? []).map((op) => ({
-    rotation: [...op.rotation],
+    rotation: transpose3(op.rotation),
     translation: [...op.translation],
   }));
   const orbitIds = dataset.orbits ?? positions.map((_, index) => index);
@@ -244,16 +298,19 @@ function buildWyckoffSymmetryState(structure, dataset) {
     mode: 'wyckoff',
     spaceGroup: dataset.hm_symbol,
     number: dataset.number,
+    // symprec this lock was built at — orbit moves stay far enough apart to
+    // keep the cell analysable at exactly this tolerance.
+    tolerance,
     operations,
     orbitGroups,
     representativeAtomIndices: orbitGroups.map((group) => group.representativeIndex),
   };
 }
 
-export async function activateWyckoffMode(structure = fileBrowser.selectedStructure, tolerance = 1e-5) {
+export async function activateWyckoffMode(structure = fileBrowser.selectedStructure, tolerance = defaultSymprec()) {
   if (!structure) throw new Error('No structure selected');
   const dataset = await analyzeStructureSymmetry(structure, tolerance);
-  structure.symmetry = buildWyckoffSymmetryState(structure, dataset);
+  structure.symmetry = buildWyckoffSymmetryState(structure, dataset, tolerance);
   general.structurePanelMode = 'wyckoff';
   return structure.symmetry;
 }
@@ -276,16 +333,25 @@ function projectRepresentativePosition(orbit, targetRepresentative, structure = 
   return wrapFrac(add(currentRepresentative, projectedDelta));
 }
 
-export function applyWyckoffOrbitPosition(representativeIndex, newCoords, structure = fileBrowser.selectedStructure) {
-  if (!structure?.symmetry || structure.symmetry.mode !== 'wyckoff') return;
+// `reRenderComposition` is passed straight to updateVisualization: the default
+// 'open' rebuilds the composition panel (and with it this orbit's row), which
+// is right after a committed edit but would tear the row out from under a
+// slider mid-drag — live drags pass false and refresh their own inputs.
+export function applyWyckoffOrbitPosition(representativeIndex, newCoords, structure = fileBrowser.selectedStructure,
+  /** @type {{ reRenderComposition?: string | false }} */ { reRenderComposition = 'open' } = {}) {
+  if (!structure?.symmetry || structure.symmetry.mode !== 'wyckoff') return false;
 
   const orbit = structure.symmetry.orbitGroups.find((group) => group.representativeIndex === representativeIndex);
-  if (!orbit || orbit.isFixed) return;
+  if (!orbit || orbit.isFixed) return false;
 
   const wrappedRepresentative = projectRepresentativePosition(orbit, newCoords, structure);
-  orbit.mappings.forEach(({ atomIndex, operationIndex }) => {
-    const operation = structure.symmetry.operations[operationIndex];
-    const mapped = applyOperation(wrappedRepresentative, operation);
+  const proposed = orbit.mappings.map(({ atomIndex, operationIndex }) => ({
+    atomIndex,
+    position: applyOperation(wrappedRepresentative, structure.symmetry.operations[operationIndex]),
+  }));
+  if (collapsesSites(proposed, orbit, structure)) return false;
+
+  proposed.forEach(({ atomIndex, position: mapped }) => {
     structure.atoms[atomIndex].position = mapped;
     const rowIndex = fileBrowser.selectedRowIndex;
     const stepIndex = fileBrowser.stepInput;
@@ -298,8 +364,48 @@ export function applyWyckoffOrbitPosition(representativeIndex, newCoords, struct
     reRenderBonds: true,
     reRenderLattice: false,
     reRenderOther: true,
-    reRenderComposition: 'open',
+    reRenderComposition,
   });
+  return true;
+}
+
+// Would this set of proposed orbit positions put two atoms on top of each
+// other? Only the moving orbit's atoms can cause that (nothing else moves), so
+// each proposed position is checked against the other proposed ones and
+// against every atom outside the orbit, using the minimum-image distance in
+// Ångström.
+function collapsesSites(proposed, orbit, structure) {
+  const lattice = structure.lattice;
+  const cartDistance = (a, b) => {
+    const d = fracDelta(a, b);
+    const x = d[0] * lattice[0][0] + d[1] * lattice[1][0] + d[2] * lattice[2][0];
+    const y = d[0] * lattice[0][1] + d[1] * lattice[1][1] + d[2] * lattice[2][1];
+    const z = d[0] * lattice[0][2] + d[1] * lattice[1][2] + d[2] * lattice[2][2];
+    return Math.hypot(x, y, z);
+  };
+
+  const minimum = minSiteSeparation(structure.symmetry?.tolerance ?? defaultSymprec());
+  const inOrbit = new Set(orbit.atomIndices);
+  for (let i = 0; i < proposed.length; i += 1) {
+    for (let j = i + 1; j < proposed.length; j += 1) {
+      if (cartDistance(proposed[i].position, proposed[j].position) < minimum) return true;
+    }
+    for (let k = 0; k < structure.atoms.length; k += 1) {
+      if (inOrbit.has(k)) continue;
+      if (cartDistance(proposed[i].position, structure.atoms[k].position) < minimum) return true;
+    }
+  }
+  return false;
+}
+
+// Which fractional axes an orbit can move along: axis j is free when some
+// basis vector of the site's freedom subspace has a component along j. Note
+// free axes can still be coupled (a (x, x, z) site reports x and y free, but
+// moving one drags the other — the projection in
+// projectRepresentativePosition enforces that).
+export function getOrbitAxisFreedom(orbit) {
+  if (!orbit || orbit.isFixed) return [false, false, false];
+  return [0, 1, 2].map((axis) => (orbit.basis ?? []).some((v) => Math.abs(v[axis]) > 1e-6));
 }
 
 export function symmetrizeFractionalPositions(fracPositions, structure = fileBrowser.selectedStructure) {
@@ -353,6 +459,50 @@ export function symmetrizeCartesianVectors(cartVectors, lattice, structure = fil
   });
 
   return fracToCart(outFrac, lattice);
+}
+
+function multiply3x3(a, b) {
+  const out = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < 3; i += 1) {
+    for (let j = 0; j < 3; j += 1) {
+      out[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
+    }
+  }
+  return out;
+}
+
+/**
+ * Project a cartesian strain tensor onto the symmetry-invariant subspace — the
+ * Reynolds average (1/N)·Σ Rᵀ E R over the point group. Straining a cell by an
+ * arbitrary symmetric tensor drops it to P1 (a hexagonal cell stops being
+ * hexagonal), so anything that deforms the cell while the Wyckoff lock is on
+ * has to pass its strain through here first.
+ *
+ * The operations are stored as fractional rotations W; a cartesian point is
+ * x = Lᵀf, so the same isometry in cartesian axes is R = Lᵀ W (Lᵀ)⁻¹.
+ */
+export function symmetrizeCartesianStrain(strain, lattice, structure = fileBrowser.selectedStructure) {
+  const operations = structure?.symmetry?.mode === 'wyckoff' ? structure.symmetry.operations : null;
+  if (!operations?.length) return strain.map((row) => [...row]);
+
+  const latticeT = transpose3x3(lattice);
+  const latticeTInverse = invert3x3(latticeT);
+  const sum = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+
+  operations.forEach(({ rotation }) => {
+    const W = [
+      [rotation[0], rotation[1], rotation[2]],
+      [rotation[3], rotation[4], rotation[5]],
+      [rotation[6], rotation[7], rotation[8]],
+    ];
+    const R = multiply3x3(multiply3x3(latticeT, W), latticeTInverse);
+    const projected = multiply3x3(multiply3x3(transpose3x3(R), strain), R);
+    for (let i = 0; i < 3; i += 1) {
+      for (let j = 0; j < 3; j += 1) sum[i][j] += projected[i][j];
+    }
+  });
+
+  return sum.map((row) => row.map((value) => value / operations.length));
 }
 
 export function getSymmetryDegreesOfFreedom(structure = fileBrowser.selectedStructure) {

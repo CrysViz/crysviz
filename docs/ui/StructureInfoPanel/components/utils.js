@@ -301,10 +301,9 @@ export function updateAtomCoordinates(atomIndex, newCoords) {
   const orbit = fileBrowser.selectedStructure.symmetry?.mode === 'wyckoff'
     ? fileBrowser.selectedStructure.symmetry.orbitGroups?.find((group) => group.atomIndices.includes(atomIndex))
     : null;
-  if (orbit) {
-    applyWyckoffOrbitPosition(orbit.representativeIndex, newCoords);
-    return;
-  }
+  // false means the move was refused (it would have collapsed a site) — the
+  // caller shows that instead of pretending the atom moved.
+  if (orbit) return applyWyckoffOrbitPosition(orbit.representativeIndex, newCoords);
 
   fileBrowser.selectedStructure.atoms[atomIndex].position = [...newCoords];
   structureShip.container[fileBrowser.selectedRowIndex].structures[fileBrowser.stepInput].atoms[atomIndex].position = [...newCoords];

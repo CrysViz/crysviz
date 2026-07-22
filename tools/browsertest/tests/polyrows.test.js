@@ -35,7 +35,10 @@ const H = require('../harness');
       controls: controls.length,
       withCatKey: controls.filter((c) => c.dataset.catKey).length,
       carets: document.querySelectorAll('#infoPolyControls .poly-expand-icon').length,
-      labels: controls.map((c) => c.querySelector('label')?.textContent ?? ''),
+      // The row's mini toggle switch is itself a (text-free) <label> wrapping
+      // its checkbox and comes first in the header, so exclude it — the
+      // category label is the only other <label> in the row.
+      labels: controls.map((c) => c.querySelector('label:not(.toggle_switch)')?.textContent ?? ''),
       counts: controls.map((c) => c.querySelector('.poly-count')?.textContent ?? ''),
       rowsBeforeExpand: document.querySelectorAll('#infoPolyControls .individual-polyhedron-row').length,
     };

@@ -1,7 +1,6 @@
 import { fileBrowser, groups, general } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE, deriveVisibleWrapped } from '../render/index.js';
-import { registerPanel, removePanel } from '../ui/panels/PanelManager.js';
+import { runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE, deriveVisibleWrapped, lastFastFrameBail } from '../render/index.js';
 import { buildNEPStructure } from './relaxer.js';
 import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart, normalizeFractionalPositions } from './math.js';
 import {
@@ -14,6 +13,7 @@ import {
 const KB_EV_PER_K = 8.617333262e-5;
 const ACCEL_AFS2_PER_EVAA_AMU = 0.00964853399;
 const KE_EV_FACTOR = 103.642695; // m(amu) * v(A/fs)^2 -> eV (without 1/2)
+const EV_A3_TO_GPA = 160.21766208;
 
 const MASS_BY_SYMBOL = {
   H: 1.008, He: 4.0026, Li: 6.94, Be: 9.0122, B: 10.81, C: 12.011, N: 14.007, O: 15.999,
@@ -91,6 +91,60 @@ export function getMassesFromElements(elements) {
   return elements.map((el) => MASS_BY_SYMBOL[symbolCase(el)] ?? 50.0);
 }
 
+// ── Time scales ──────────────────────────────────────────────────────────────
+//
+// Everything below is in femtoseconds and is anchored to one physical fact: a
+// vibrational period scales as sqrt(m), so the fastest motion in the cell — and
+// therefore the largest usable timestep — is set by the LIGHTEST atom present.
+// A flat 1 fs is right for a carbon-ish solid and plainly wrong for anything
+// with hydrogen in it, where an X-H stretch has a period of ~10 fs and 1 fs
+// integrates it with ten points per oscillation (visibly non-conserving).
+
+/** Largest sensible timestep for this structure, fs. Anchored at 1 fs for carbon. */
+export function recommendedTimestepFs(elements) {
+  const masses = getMassesFromElements(elements ?? []);
+  if (!masses.length) return 1;
+  const lightest = Math.min(...masses);
+  const dt = Math.sqrt(lightest / 12.011);
+  // Snap DOWN onto a ladder of round values: a box reading 1.15 invites the
+  // user to wonder what is special about 1.15 (nothing), and rounding down is
+  // the safe direction for an explicit stability limit. Floored at 0.25 fs
+  // (below that a run of any length is unaffordable here) and capped at 2 fs
+  // (beyond it even heavy-atom solids start to drift).
+  const ladder = [0.25, 0.5, 1, 1.5, 2];
+  let chosen = ladder[0];
+  for (const value of ladder) {
+    if (dt >= value) chosen = value;
+  }
+  return chosen;
+}
+
+// Thermostat coupling. CSVR is canonical for ANY tau — tau only sets how fast
+// energy is exchanged with the bath — so this is a responsiveness choice, not a
+// correctness one, and the textbook 100 fs turned out to be the wrong default
+// HERE: structures are usually loaded unrelaxed, and the relaxation dumps
+// potential energy faster than a 100 fs coupling removes it. Measured on the
+// default structure, 300 K setpoint: 838 K at tau = 100 fs, 458 K at 20 fs,
+// 330 K at 5 fs. 20 fs is responsive enough to be usable on a cold start while
+// staying slower than the timestep by a comfortable margin.
+export const DEFAULT_THERMOSTAT_TAU_FS = 20;
+
+// Barostat coupling. Stochastic cell rescaling is unconditionally stable — a
+// sweep from 20 fs to 1000 fs on a K = 100 GPa toy solid never blew up, and the
+// volume fluctuation did not grow at tight coupling (sd 5.1 at 20 fs vs 4.6 at
+// 1000 fs) — so the only thing tau_p buys is settling time, which scales
+// linearly with it (35 steps at 20 fs, 1344 at 1000 fs). The usual ">= 1 ps"
+// advice comes from biomolecular water, not from stiff solids in a small cell,
+// and at 1000 fs the panel's default 500-step run would end before the barostat
+// acted once. 200 fs settles in ~300 steps, which fits inside a default run.
+//
+// It must still be well slower than the thermostat: the cell does work on the
+// atoms, and the bath has to absorb that before the cell moves again. At a
+// ratio of 2 an end-to-end NEP run came out ~10% hotter than the same run in
+// NVT; at 10x the difference vanished (460 K vs 458 K).
+export const DEFAULT_BAROSTAT_TAU_FS = 200;
+export const MIN_BAROSTAT_TAU_RATIO = 10;
+
 export function createNEPForceEvaluator(nepRunner) {
   return async ({ lattice, positions, types }) => nepRunner.compute({ lattice, positions, types });
 }
@@ -158,6 +212,42 @@ export function createNoThermostat() {
   return { name: 'none', apply() {} };
 }
 
+// ── Pressure ─────────────────────────────────────────────────────────────────
+//
+// P = 2·KE/(3V) + P_virial. NEP returns σ = -W/V (see stressFromVirial in
+// nep_simple.js), and the pressure convention that rises under compression is
+// -tr(σ)/3 — verified against FCC Cu in tests/nppressure.bench.js: +118 GPa at
+// a = 3.2 Å, ~0 near the energy minimum at Cu's real lattice constant.
+//
+// The kinetic term is NOT optional. It is what the barostat is balancing
+// against: at 300 K and normal solid densities it is a few kbar, so a barostat
+// driven by the virial alone would sit at the wrong volume forever.
+
+export function cellVolume(lattice) {
+  const [a, b, c] = lattice;
+  return Math.abs(
+    a[0] * (b[1] * c[2] - b[2] * c[1])
+    - a[1] * (b[0] * c[2] - b[2] * c[0])
+    + a[2] * (b[0] * c[1] - b[1] * c[0]),
+  );
+}
+
+/** Virial (potential) part of the pressure, eV/Å³. */
+function virialPressureEvA3(stress) {
+  if (!Array.isArray(stress) || stress.length < 3) return NaN;
+  return -(stress[0][0] + stress[1][1] + stress[2][2]) / 3;
+}
+
+/** Instantaneous pressure of an MD state, in GPa (kinetic + virial). */
+export function instantaneousPressureGPa(state) {
+  const volume = cellVolume(state.lattice);
+  if (!(volume > 0)) return NaN;
+  const kinetic = (2 * kineticEnergyEv(state.velocities, state.masses)) / (3 * volume);
+  const virial = virialPressureEvA3(state.stress);
+  if (!Number.isFinite(virial)) return NaN;
+  return (kinetic + virial) * EV_A3_TO_GPA;
+}
+
 function resolveTargetTemperature(targetTemperatureK, context) {
   const target = typeof targetTemperatureK === 'function'
     ? targetTemperatureK(context)
@@ -184,6 +274,164 @@ export function createVelocityRescaleThermostat({ targetTemperatureK = 300, tauF
       if (state.symmetryConstrained) {
         state.velocities = symmetrizeCartesianVectors(state.velocities, state.lattice);
       }
+    },
+  };
+}
+
+// Sum of `n` squared standard normals, i.e. a chi-squared draw. Needed by the
+// CSVR thermostat, where n is the number of degrees of freedom minus one and so
+// is far too large to sample by adding up that many gaussians. Drawn as
+// 2·Gamma(n/2) with Marsaglia-Tsang, which is exact rather than a large-n
+// approximation (small cells and symmetry-constrained runs have few DOF, which
+// is exactly where an approximation would show).
+function sumOfSquaredGaussians(n) {
+  if (n <= 0) return 0;
+  if (n === 1) {
+    const g = gaussianRand();
+    return g * g;
+  }
+  return 2 * gammaRand(n / 2);
+}
+
+function gammaRand(shape) {
+  if (shape < 1) {
+    // Boost: Gamma(a) = Gamma(a+1)·U^(1/a)
+    const u = Math.max(Number.MIN_VALUE, Math.random());
+    return gammaRand(shape + 1) * Math.pow(u, 1 / shape);
+  }
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    let x;
+    let v;
+    do {
+      x = gaussianRand();
+      v = 1 + c * x;
+    } while (v <= 0);
+    v = v * v * v;
+    const u = Math.random();
+    const x2 = x * x;
+    if (u < 1 - 0.0331 * x2 * x2) return d * v;
+    if (Math.log(u) < 0.5 * x2 + d * (1 - v + Math.log(v))) return d * v;
+  }
+}
+
+/**
+ * Bussi-Donadio-Parrinello canonical sampling through velocity rescaling
+ * (J. Chem. Phys. 126, 014101 (2007)).
+ *
+ * Same shape as the Berendsen rescale it replaces — one global factor on every
+ * velocity — plus the stochastic term that makes it actually sample the
+ * canonical ensemble. Berendsen damps the kinetic-energy fluctuations instead
+ * of reproducing them, so it gives the right mean temperature with the wrong
+ * distribution (and the "flying ice cube" drift); this costs the same and is
+ * correct, so there is no reason to prefer the old one.
+ */
+export function createBussiThermostat({ targetTemperatureK = 300, tauFs = 100 } = {}) {
+  return {
+    name: 'bussi',
+    apply(state, dtFs, context = {}) {
+      const targetK = resolveTargetTemperature(targetTemperatureK, context);
+      state.currentTargetTemperatureK = targetK;
+      if (!Number.isFinite(targetK) || targetK <= 0) return;
+
+      const dof = Math.max(1, state.constrainedDof ?? (3 * state.velocities.length - 3));
+      const ke = kineticEnergyEv(state.velocities, state.masses);
+      if (!(ke > 0)) return;
+      // Target kinetic energy for `dof` degrees of freedom.
+      const keTarget = 0.5 * dof * KB_EV_PER_K * targetK;
+
+      const decay = Math.exp(-dtFs / Math.max(1e-6, tauFs));
+      const r1 = gaussianRand();
+      const noise = sumOfSquaredGaussians(dof - 1);
+      const ratio = keTarget / (dof * ke);
+
+      const scale2 = decay
+        + ratio * (1 - decay) * (r1 * r1 + noise)
+        + 2 * r1 * Math.sqrt(ratio * (1 - decay) * decay);
+      const scale = Math.sqrt(Math.max(1e-12, scale2));
+
+      for (let i = 0; i < state.velocities.length; i += 1) {
+        state.velocities[i][0] *= scale;
+        state.velocities[i][1] *= scale;
+        state.velocities[i][2] *= scale;
+      }
+      if (state.symmetryConstrained) {
+        state.velocities = symmetrizeCartesianVectors(state.velocities, state.lattice);
+      }
+    },
+  };
+}
+
+export function createNoBarostat() {
+  return { name: 'none', apply() {} };
+}
+
+/**
+ * Stochastic cell rescaling, isotropic (Bernetti & Bussi, J. Chem. Phys. 153,
+ * 114107 (2020)) — the CSVR of barostats: first-order relaxation towards the
+ * target pressure plus the noise term that makes the volume distribution the
+ * correct isothermal-isobaric one.
+ *
+ *   dε = (β/τ_p)(P - P_ext)dt + sqrt(2 k_B T β/(V τ_p)) dW,   ε = ln V
+ *
+ * Isotropic on purpose. A uniform dilation commutes with every point-group
+ * operation, so it cannot lower the space group — which means this works
+ * unchanged in Wyckoff mode, where an anisotropic (Parrinello-Rahman) cell
+ * fluctuation would shear a hexagonal cell into a triclinic one and would have
+ * to be projected through symmetrizeCartesianStrain first.
+ *
+ * `compressibility` is β in GPa⁻¹; the default 0.01 corresponds to a bulk
+ * modulus of 100 GPa, i.e. a typical hard solid. It only sets the response
+ * rate, not the equilibrium volume, so being a factor of a few out costs
+ * equilibration time and nothing else.
+ */
+/**
+ * @param {{targetPressureGPa?: number|((context:any)=>number), tauFs?: number,
+ *   compressibility?: number}} [opts]
+ */
+export function createStochasticCellBarostat({
+  targetPressureGPa = 0,
+  tauFs = 1000,
+  compressibility = 0.01,
+} = {}) {
+  return {
+    name: 'stochastic-cell',
+    apply(state, dtFs, context = {}) {
+      const targetP = typeof targetPressureGPa === 'function'
+        ? targetPressureGPa(context)
+        : targetPressureGPa;
+      if (!Number.isFinite(targetP)) return;
+
+      const volume = cellVolume(state.lattice);
+      const pressure = instantaneousPressureGPa(state);
+      if (!(volume > 0) || !Number.isFinite(pressure)) return;
+
+      const temperatureTarget = Number.isFinite(state.currentTargetTemperatureK)
+        && state.currentTargetTemperatureK > 0
+        ? state.currentTargetTemperatureK
+        : temperatureK(state.velocities, state.masses, state.constrainedDof);
+      const kT = KB_EV_PER_K * temperatureTarget * EV_A3_TO_GPA; // GPa·Å³
+
+      const tau = Math.max(1e-6, tauFs);
+      const drift = (compressibility * dtFs / tau) * (pressure - targetP);
+      const diffusion = Math.sqrt(Math.max(0,
+        (2 * compressibility * kT * dtFs) / (volume * tau)));
+      const dEpsilon = drift + diffusion * gaussianRand();
+
+      // exp(dε) is the volume ratio; the cell scales by its cube root. Clamped
+      // so one bad force evaluation cannot collapse or explode the cell.
+      const volumeRatio = Math.exp(Math.max(-0.05, Math.min(0.05, dEpsilon)));
+      const scale = Math.cbrt(volumeRatio);
+
+      state.lattice = state.lattice.map((row) => row.map((v) => v * scale));
+      for (let i = 0; i < state.positions.length; i += 1) {
+        state.positions[i][0] *= scale;
+        state.positions[i][1] *= scale;
+        state.positions[i][2] *= scale;
+      }
+      state.currentPressureGPa = pressure;
+      state.currentVolumeA3 = volume * volumeRatio;
     },
   };
 }
@@ -225,7 +473,7 @@ function syncStateSymmetryConstraint(state, structure = fileBrowser.selectedStru
 
 /**
  * @param {{nepRunner?:any, structure?:any, temperatureTargetK?:number,
- *   zeroMomentum?:boolean, forceEvaluator?:any}} [opts]
+ *   zeroMomentum?:boolean, forceEvaluator?:any, initialVelocities?:any}} [opts]
  */
 export async function initializeMDState({
   nepRunner,
@@ -233,6 +481,10 @@ export async function initializeMDState({
   temperatureTargetK = 300,
   zeroMomentum = true,
   forceEvaluator = null,
+  // "Continue MD": resume with a prior frame's own velocities instead of a
+  // fresh Maxwell-Boltzmann draw. Deep-copied so the returned state doesn't
+  // alias whatever array the caller passed in (e.g. a frame's .velocities).
+  initialVelocities = null,
 } = {}) {
   if (!nepRunner) throw new Error('initializeMDState: nepRunner is required');
   const evalForce = forceEvaluator ?? createNEPForceEvaluator(nepRunner);
@@ -240,12 +492,17 @@ export async function initializeMDState({
   const base = buildNEPStructure(nepRunner, structure);
   const masses = getMassesFromElements(structure.elements);
   const n = base.positions.length;
-  const velocities = new Array(n);
-  for (let i = 0; i < n; i += 1) {
-    const sigma = Math.sqrt((KB_EV_PER_K * temperatureTargetK) / (masses[i] * KE_EV_FACTOR));
-    velocities[i] = [sigma * gaussianRand(), sigma * gaussianRand(), sigma * gaussianRand()];
+  let velocities;
+  if (initialVelocities) {
+    velocities = initialVelocities.map((v) => [...v]);
+  } else {
+    velocities = new Array(n);
+    for (let i = 0; i < n; i += 1) {
+      const sigma = Math.sqrt((KB_EV_PER_K * temperatureTargetK) / (masses[i] * KE_EV_FACTOR));
+      velocities[i] = [sigma * gaussianRand(), sigma * gaussianRand(), sigma * gaussianRand()];
+    }
+    if (zeroMomentum) removeCenterOfMassVelocity(velocities, masses);
   }
-  if (zeroMomentum) removeCenterOfMassVelocity(velocities, masses);
   const symmetryConstrained = isWyckoffModeActive(structure);
   if (symmetryConstrained) {
     for (let i = 0; i < velocities.length; i += 1) {
@@ -281,11 +538,20 @@ function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
+// Yield to the event loop without waiting for the paint to finish. Used when
+// the potential runs in a worker: the browser can paint the frame we just
+// pushed while the worker computes the next one, so blocking on rAF here would
+// serialise two things that are free to overlap.
+function nextMacrotask() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function createTimingProfile(label) {
   return {
     label,
     totalMs: 0,
     integrateMs: 0,
+    forceEvalMs: 0,
     thermostatMs: 0,
     onStepMs: 0,
     waitMs: 0,
@@ -293,9 +559,62 @@ function createTimingProfile(label) {
   };
 }
 
+// Buckets the MD loop cannot time itself: the work the caller's onStep does
+// (pushing the frame to the viewer, feeding the plot, snapshotting a trajectory
+// frame). AtomisticPanels reports into these through mdProfileMeasure so the
+// breakdown printed at the end of a run accounts for the whole step, not just
+// the parts inside runMDSimulation. Reset per run.
+const mdProfileBuckets = { viewerMs: 0, plotMs: 0, saveMs: 0, fastFrames: 0, fullFrames: 0 };
+
+function resetMdProfileBuckets() {
+  mdProfileBuckets.viewerMs = 0;
+  mdProfileBuckets.plotMs = 0;
+  mdProfileBuckets.saveMs = 0;
+  mdProfileBuckets.fastFrames = 0;
+  mdProfileBuckets.fullFrames = 0;
+}
+
+/** Time `fn` into one of the onStep buckets — a no-op unless profiling is on. */
+export function mdProfileMeasure(bucket, fn) {
+  if (!general.mdProfile || !(bucket in mdProfileBuckets)) return fn();
+  const t0 = performance.now();
+  const result = fn();
+  mdProfileBuckets[bucket] += performance.now() - t0;
+  return result;
+}
+
+function logMdProfile(timing) {
+  const { totalMs, steps } = timing;
+  if (!steps || totalMs <= 0) return;
+  const pct = (ms) => `${(100 * ms / totalMs).toFixed(1)}%`;
+  const row = (name, ms) => `${name.padEnd(18)} ${(ms / steps).toFixed(2).padStart(8)} ms/step  ${pct(ms).padStart(6)}`;
+  // integrateMs contains the force evaluation (the integrator awaits it), so
+  // the JS-side integration cost is the difference.
+  const integrationOnly = Math.max(0, timing.integrateMs - timing.forceEvalMs);
+  const accounted = timing.integrateMs + timing.thermostatMs + timing.onStepMs + timing.waitMs;
+  console.log(
+    [
+      `[MD profile] ${steps} steps in ${totalMs.toFixed(0)} ms — `
+        + `${(1000 * steps / totalMs).toFixed(1)} steps/s (${(totalMs / steps).toFixed(2)} ms/step)`,
+      row('force eval', timing.forceEvalMs),
+      row('integration (JS)', integrationOnly),
+      row('thermostat', timing.thermostatMs),
+      row('onStep total', timing.onStepMs),
+      row('  · viewer', mdProfileBuckets.viewerMs),
+      row('  · plot', mdProfileBuckets.plotMs),
+      row('  · frame save', mdProfileBuckets.saveMs),
+      row('rAF wait', timing.waitMs),
+      row('unaccounted', Math.max(0, totalMs - accounted)),
+      `viewer frames      ${mdProfileBuckets.fastFrames} fast / ${mdProfileBuckets.fullFrames} full rebuild`
+        + (mdProfileBuckets.fullFrames ? ` (last fallback: ${lastFastFrameBail() ?? 'stride/forced'})` : ''),
+    ].join('\n'),
+  );
+}
+
 /**
  * @param {{state?:any, steps?:number, dtFs?:number, forceEvaluator?:any,
- *   integrator?:any, thermostat?:any, onStep?:any, shouldStop?:any}} [opts]
+ *   integrator?:any, thermostat?:any, barostat?:any, onStep?:any,
+ *   shouldStop?:any, offThreadForces?:boolean}} [opts]
  */
 export async function runMDSimulation({
   state,
@@ -304,8 +623,12 @@ export async function runMDSimulation({
   forceEvaluator,
   integrator = createVelocityVerletIntegrator(),
   thermostat = createNoThermostat(),
+  barostat = createNoBarostat(),
   onStep = null,
   shouldStop = null,
+  // True when forceEvaluator does its work off the main thread (the NEP
+  // worker). Changes only how this loop yields — see nextMacrotask.
+  offThreadForces = false,
 } = {}) {
   if (!state) throw new Error('runMDSimulation: state is required');
   if (!forceEvaluator) throw new Error('runMDSimulation: forceEvaluator is required');
@@ -313,6 +636,16 @@ export async function runMDSimulation({
   let stopped = false;
   const startStep = state.step;
   const timing = createTimingProfile('MD');
+  resetMdProfileBuckets();
+  // Force evaluation happens inside integrator.step (it awaits the evaluator),
+  // so the only way to separate "the potential" from "our JS" is to time the
+  // evaluator itself.
+  const timedForceEvaluator = async (cell) => {
+    const t = performance.now();
+    const result = await forceEvaluator(cell);
+    timing.forceEvalMs += performance.now() - t;
+    return result;
+  };
   const totalStart = performance.now();
   // Run consecutive steps without yielding to the render loop until this many
   // ms have elapsed since the last rAF yield, then yield once. Keeps fast
@@ -331,11 +664,20 @@ export async function runMDSimulation({
     syncStateSymmetryConstraint(state);
 
     let t0 = performance.now();
-    await integrator.step(state, dtFs, forceEvaluator);
+    await integrator.step(state, dtFs, timedForceEvaluator);
     timing.integrateMs += performance.now() - t0;
 
     t0 = performance.now();
     thermostat.apply(state, dtFs, {
+      step: state.step + 1,
+      totalSteps: steps,
+      timeFs: state.timeFs + dtFs,
+      state,
+    });
+    // Barostat after the thermostat and inside the same timing bucket: it is a
+    // handful of scalar operations plus one cell scaling, far below the noise
+    // floor of a force evaluation.
+    barostat.apply(state, dtFs, {
       step: state.step + 1,
       totalSteps: steps,
       timeFs: state.timeFs + dtFs,
@@ -350,6 +692,8 @@ export async function runMDSimulation({
     const temp = temperatureK(state.velocities, state.masses, state.constrainedDof);
     const epot = state.potentialEnergyEv;
     const etot = epot + ke;
+    const pressureGPa = instantaneousPressureGPa(state);
+    const volumeA3 = cellVolume(state.lattice);
 
     if (onStep) {
       t0 = performance.now();
@@ -361,6 +705,8 @@ export async function runMDSimulation({
         epotEv: epot,
         ekinEv: ke,
         etotEv: etot,
+        pressureGPa,
+        volumeA3,
         state,
       });
       timing.onStepMs += performance.now() - t0;
@@ -373,12 +719,16 @@ export async function runMDSimulation({
     }
     if (performance.now() - lastYield >= FRAME_BUDGET_MS) {
       t0 = performance.now();
-      await nextFrame();
+      await (offThreadForces ? nextMacrotask() : nextFrame());
       timing.waitMs += performance.now() - t0;
       lastYield = performance.now();
     }
   }
   timing.totalMs = performance.now() - totalStart;
+  timing.viewerMs = mdProfileBuckets.viewerMs;
+  timing.plotMs = mdProfileBuckets.plotMs;
+  timing.saveMs = mdProfileBuckets.saveMs;
+  if (general.mdProfile) logMdProfile(timing);
 
   return {
     stopped,
@@ -404,6 +754,14 @@ export function applyMDStateToViewer(
   structure.atoms.forEach((atom, i) => {
     atom.position = [...frac[i]];
   });
+  // Carried onto every emitted frame (via snapshotCurrentStructure, which
+  // copies structure.velocities like it does structure.forces) so "Continue
+  // MD" can later resume from a frame's own velocities instead of redrawing.
+  // Guarded: callers may pass a minimal state (e.g. tests driving positions
+  // only) with no velocities to carry.
+  if (Array.isArray(state.velocities)) {
+    structure.velocities = clone3xN(state.velocities);
+  }
 
   if (!structure.periodic) structure.periodic = { hash: 'None', wrapped: null };
 
@@ -413,8 +771,10 @@ export function applyMDStateToViewer(
   // Fast in-place update; skipped on run-end full apply, caller-forced rebuilds,
   // and the periodic bond-topology refresh. Returns false on topology change.
   if (!full && !forceRerender && !strideDue && structure.periodic.wrapped && applyFrameFast(structure)) {
+    mdProfileBuckets.fastFrames += 1;
     return;
   }
+  mdProfileBuckets.fullFrames += 1;
 
   // Full path: re-establishes topology (fast path resumes on the next frame).
   runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
@@ -439,127 +799,3 @@ export function applyMDStateToViewer(
   });
 }
 
-export function createMDMonitorPanel() {
-  // A previous run's monitor may still be around — replace it.
-  removePanel('mdMonitor');
-
-  const isMobile = window.innerWidth <= 1024;
-  const panel = registerPanel({
-    id: 'mdMonitor',
-    title: 'MD Monitor',
-    lifecycle: 'persistent',
-    infoMd: './data/mdMonitorInfo.md',
-    closable: true,
-    // Layout persists: the monitor re-opens docked/floating (and where)
-    // exactly as the user last left it.
-    buildContent(body) {
-      body.innerHTML = `
-        <div class="panelBody" id="mdBody">
-          <canvas id="mdCanvas" width="330" height="170" style="border:1px solid #444; border-radius:6px; background:#111;"></canvas>
-          <div style="display:flex; gap:12px; font-size:11px; margin-top:6px;">
-            <span style="color:#53c7ff;">Blue: Temperature (K)</span>
-            <span style="color:#95efff;">Dashed: Target T (K)</span>
-            <span style="color:#ffb347;">Orange: Total Energy (eV)</span>
-          </div>
-          <div id="mdText" style="font-size:12px;"></div>
-        </div>
-      `;
-    },
-    defaults: {
-      // Docked just below the Backend window (order -10), expanded; the
-      // anchor is where it opens if undocked without a remembered position.
-      docked: true,
-      order: -5,
-      collapsed: false,
-      anchor: isMobile ? { left: 8, top: 56 } : { left: 430, top: 110 },
-    },
-  });
-
-  const text = panel.body.querySelector('#mdText');
-  const canvas = /** @type {HTMLCanvasElement} */ (panel.body.querySelector('#mdCanvas'));
-  const ctx = canvas.getContext('2d');
-
-  const tSeries = [];
-  const targetSeries = [];
-  const eSeries = [];
-  const maxPts = 250;
-
-  function draw() {
-    const W = canvas.width;
-    const H = canvas.height;
-    ctx.clearRect(0, 0, W, H);
-    ctx.strokeStyle = '#666';
-    ctx.strokeRect(0, 0, W, H);
-    if (tSeries.length < 2) return;
-
-    const n = tSeries.length;
-    const xmin = 0;
-    const xmax = Math.max(1, n - 1);
-    const allTemps = [...tSeries, ...targetSeries.filter(Number.isFinite)];
-    const emin = Math.min(...eSeries);
-    const emax = Math.max(...eSeries);
-
-    const mapX = (i) => ((i - xmin) / (xmax - xmin)) * (W - 10) + 5;
-    const mapY = (v, vmin, vmax) => {
-      const den = Math.max(1e-12, vmax - vmin);
-      return H - (((v - vmin) / den) * (H - 10) + 5);
-    };
-
-    ctx.beginPath();
-    ctx.strokeStyle = '#53c7ff';
-    for (let i = 0; i < n; i += 1) {
-      const x = mapX(i);
-      const y = mapY(tSeries[i], Math.min(...allTemps), Math.max(...allTemps));
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    if (targetSeries.some(Number.isFinite)) {
-      ctx.beginPath();
-      ctx.setLineDash([5, 4]);
-      ctx.strokeStyle = '#95efff';
-      for (let i = 0; i < n; i += 1) {
-        if (!Number.isFinite(targetSeries[i])) continue;
-        const x = mapX(i);
-        const y = mapY(targetSeries[i], Math.min(...allTemps), Math.max(...allTemps));
-        if (i === 0 || !Number.isFinite(targetSeries[i - 1])) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    ctx.beginPath();
-    ctx.strokeStyle = '#ffb347';
-    for (let i = 0; i < n; i += 1) {
-      const x = mapX(i);
-      const y = mapY(eSeries[i], emin, emax);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    ctx.fillStyle = '#53c7ff';
-    ctx.font = '10px monospace';
-    const plotTmin = Math.min(...allTemps);
-    const plotTmax = Math.max(...allTemps);
-    ctx.fillText(`T: ${plotTmin.toFixed(1)}..${plotTmax.toFixed(1)} K`, 8, 14);
-    ctx.fillStyle = '#ffb347';
-    ctx.fillText(`Etot: ${emin.toFixed(4)}..${emax.toFixed(4)} eV`, 8, 28);
-  }
-
-  return {
-    update({ step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv }) {
-      tSeries.push(temperatureK);
-      targetSeries.push(Number.isFinite(targetTemperatureK) ? targetTemperatureK : NaN);
-      eSeries.push(etotEv);
-      if (tSeries.length > maxPts) tSeries.shift();
-      if (targetSeries.length > maxPts) targetSeries.shift();
-      if (eSeries.length > maxPts) eSeries.shift();
-      draw();
-      const targetText = Number.isFinite(targetTemperatureK) ? ` | Ttarget=${targetTemperatureK.toFixed(1)} K` : '';
-      text.textContent = `step=${step} | T=${temperatureK.toFixed(1)} K${targetText} | Etot=${etotEv.toFixed(4)} eV | Epot=${epotEv.toFixed(4)} eV | Ekin=${ekinEv.toFixed(4)} eV`;
-    },
-    remove() {
-      removePanel('mdMonitor');
-    },
-  };
-}

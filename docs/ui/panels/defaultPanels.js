@@ -11,7 +11,7 @@ import { addCameraPanel } from '../CameraPanel.js';
 import { addColorPanel } from '../ColorPanel.js';
 import { collapseAllAtomExpansions } from '../WindowAndSceneControls.js';
 import { updateForceSpinWarning } from '../ForceSpinWarningBanner.js';
-import { addTrajectoryPlayer, removeTrajectoryPlayer } from '../TrajectoryPanel.js';
+import { addTrajectoryPlayer, removeTrajectoryPlayer, isLivePlotActive } from '../TrajectoryPanel.js';
 import { addComparisonOverlayPanel, removeComparisonOverlayPanel } from '../ComparisonOverlayPanel.js';
 import { addForcePanel, removeForcePanel } from '../ForcePanel.js';
 import { addSpinPanel, removeSpinPanel } from '../SpinPanel.js';
@@ -372,12 +372,22 @@ export function registerDefaultPanels() {
     hiddenUntilStructure: true,
     infoMd: './data/trajectoryInfo.md',
     available() {
+      // Available for a multi-frame trajectory, OR while a live MD/relax run is
+      // streaming (the MD container starts with one seed frame, so this is what
+      // makes the panel pop up immediately for live feedback).
+      if (isLivePlotActive()) return true;
       const container = structureShip.container[fileBrowser.selectedRowIndex];
       return !!container && container.structures.length > 1;
     },
     buildContent(body) { addTrajectoryPlayer(body.id); },
     onDestroyContent() { removeTrajectoryPlayer(); },
-    defaults: { dock: 'left', order: 10, collapsed: true },
+    // Left dock, but directly above Atomistic (order -10) rather than down at
+    // 10 with the feature panels: this is the live MD/relax monitor, so it
+    // belongs next to the controls that drive it instead of below a dozen
+    // collapsed panels where it was easy to miss. Files (-20) stays on top.
+    // A remembered layout still wins (registerPanel prefers `persisted.dock`
+    // and the stored dock order), so moving it keeps your placement.
+    defaults: { dock: 'left', order: -15, collapsed: true },
   });
 
   registerPanel({

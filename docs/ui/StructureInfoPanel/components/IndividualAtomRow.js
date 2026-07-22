@@ -47,6 +47,13 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const positionUpdater = options.positionUpdater ?? ((coords) => updateAtomCoordinates(atomIndex, coords));
   const resetCoordsProvider = options.resetCoordsProvider ?? (() => fileBrowser.selectedStructure?.original?.atoms?.[atomIndex]?.position ?? null);
   const positionEditable = options.positionEditable ?? true;
+  // Which fractional axes this row may move along (Wyckoff rows pass the
+  // orbit's freedom mask; ordinary atoms are free in all three). A frozen axis
+  // gets a greyed-out, disabled slider + box in the coordinate editor.
+  const axisFreedom = options.axisFreedom ?? [true, true, true];
+  // Applied while a slider is being dragged: same edit, but without the
+  // composition rebuild that would destroy this row mid-drag.
+  const livePositionUpdater = options.livePositionUpdater ?? positionUpdater;
   const onColorChange = options.onColorChange ?? (() => {}); // Callback for color changes
   // Per-image mode ("Link periodic copies" off): this row represents ONE
   // on-screen copy (options.imageIndex = mesh instance id). Color/Alpha/Size
@@ -61,7 +68,14 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   row.dataset.atomIndex = String(atomIndex);
   if (perImage) row.dataset.imageIndex = String(imageIndex);
   row.dataset.element = element;
-  row.style.cssText = 'display: grid; grid-template-columns: 1fr auto auto; align-items: center; column-gap: 12px; padding: 4px 0; font-size: 11px;';
+  // Wyckoff orbit rows carry a long label ("F1  16l", site symmetry, orbit
+  // size, DOF) that has no room next to three buttons in a docked panel, so
+  // they stack: identity on its own line, buttons underneath. Ordinary atom
+  // rows keep the original single-line grid.
+  const stackedHeader = options.stackedHeader ?? false;
+  row.style.cssText = stackedHeader
+    ? 'display: flex; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 6px; padding: 6px 0; font-size: 11px;'
+    : 'display: grid; grid-template-columns: 1fr auto auto; align-items: center; column-gap: 12px; padding: 4px 0; font-size: 11px;';
 
   const imageStyle = perImage ? getAtomImageStyle(fileBrowser.selectedStructure, imageIndex) : null;
   const currentColor = perImage
@@ -72,7 +86,9 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   // Atom name and coordinates container
   const nameContainer = document.createElement('div');
-  nameContainer.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
+  nameContainer.style.cssText = stackedHeader
+    ? 'display: flex; flex-direction: column; gap: 2px; flex: 1 1 100%; min-width: 0;'
+    : 'display: flex; flex-direction: column; gap: 2px;';
 
   const name = document.createElement('span');
   name.textContent = options.label ?? `${element}${displayNumber}`;
@@ -117,7 +133,9 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   // Button container
   const buttonContainer = document.createElement('div');
-  buttonContainer.style.cssText = 'display: flex; gap: 10px;';
+  buttonContainer.style.cssText = stackedHeader
+    ? 'display: flex; gap: 8px; flex: 1 1 auto; flex-wrap: wrap;'
+    : 'display: flex; gap: 10px;';
 
   const inactiveButtonBorder = '1px solid rgba(255,255,255,0.2)';
   const activeButtonBorder = '1px solid rgba(125, 206, 160, 0.95)';
@@ -333,37 +351,75 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   coordEditor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
 
   const coordTitle = document.createElement('div');
-  coordTitle.textContent = positionEditable ? 'Fractional Coordinates' : 'Fractional Coordinates (fixed by symmetry)';
-  coordTitle.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.8); margin-bottom: 6px; font-weight: 500;';
-  const xInput = document.createElement('input');
-  xInput.type = 'number';
-  xInput.value = coords[0].toFixed(6);
-  xInput.step = '0.000001';
-  xInput.style.cssText = 'width: 80px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px;';
-  xInput.placeholder = 'x';
-  xInput.disabled = !positionEditable;
+  coordTitle.className = 'coord-editor-title';
+  coordTitle.style.cssText = 'display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 11px; color: rgba(255,255,255,0.8); margin-bottom: 6px; font-weight: 500;';
+  const coordTitleText = document.createElement('span');
+  coordTitleText.textContent = 'Fractional Coordinates';
+  coordTitle.appendChild(coordTitleText);
+  if (options.freedomNote) {
+    const note = document.createElement('span');
+    note.className = 'coord-editor-note';
+    note.textContent = options.freedomNote;
+    note.style.cssText = 'font-size: 10px; font-weight: 400; color: rgba(255,255,255,0.45);';
+    coordTitle.appendChild(note);
+  }
 
-  const yInput = document.createElement('input');
-  yInput.type = 'number';
-  yInput.value = coords[1].toFixed(6);
-  yInput.step = '0.000001';
-  yInput.style.cssText = 'width: 80px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px;';
-  yInput.placeholder = 'y';
-  yInput.disabled = !positionEditable;
-
-  const zInput = document.createElement('input');
-  zInput.type = 'number';
-  zInput.value = coords[2].toFixed(6);
-  zInput.step = '0.000001';
-  zInput.style.cssText = 'width: 80px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px;';
-  zInput.placeholder = 'z';
-  zInput.disabled = !positionEditable;
-
+  // One stacked row per axis: label, slider, number box. Axes the symmetry
+  // freezes (axisFreedom[axis] false) are greyed out and disabled — dragging
+  // them could only ever be undone by the projection anyway.
+  const axisNames = ['x', 'y', 'z'];
   const coordInputsRow = document.createElement('div');
-  coordInputsRow.style.cssText = 'display: flex; align-items: center; gap: 4px; margin-bottom: 6px;';
-  coordInputsRow.appendChild(xInput);
-  coordInputsRow.appendChild(yInput);
-  coordInputsRow.appendChild(zInput);
+  coordInputsRow.className = 'coord-axis-rows';
+  coordInputsRow.style.cssText = 'display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px;';
+
+  const axisSliders = [];
+  const axisInputs = [];
+
+  axisNames.forEach((axisName, axis) => {
+    const free = positionEditable && axisFreedom[axis];
+
+    const axisRow = document.createElement('div');
+    axisRow.className = 'coord-axis-row';
+    axisRow.dataset.axis = axisName;
+    axisRow.dataset.free = String(free);
+    axisRow.style.cssText = `display: grid; grid-template-columns: 10px minmax(0, 1fr) 72px; align-items: center; gap: 6px;${free ? '' : ' opacity: 0.4;'}`;
+
+    const axisLabel = document.createElement('span');
+    axisLabel.textContent = axisName;
+    axisLabel.style.cssText = 'font-size: 10px; color: rgba(255,255,255,0.65); font-family: monospace;';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.className = 'coord-axis-slider';
+    slider.min = '0';
+    slider.max = '1';
+    slider.step = '0.0001';
+    slider.value = String(coords[axis]);
+    slider.style.cssText = 'width: 100%; min-width: 0; accent-color: rgba(125,206,160,0.95);';
+    slider.disabled = !free;
+    slider.title = free
+      ? `Drag to move ${axisName} (fractional)`
+      : `${axisName} is fixed by the site symmetry`;
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.value = coords[axis].toFixed(6);
+    input.step = '0.000001';
+    input.placeholder = axisName;
+    // The spinner arrows eat a third of a 72px box at this font size; the
+    // slider is the coarse control, so the box is text-only.
+    input.style.cssText = 'width: 100%; min-width: 0; padding: 3px 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 10px; font-family: monospace; -moz-appearance: textfield; appearance: textfield;';
+    input.disabled = !free;
+    input.title = slider.title;
+
+    axisRow.appendChild(axisLabel);
+    axisRow.appendChild(slider);
+    axisRow.appendChild(input);
+    coordInputsRow.appendChild(axisRow);
+    axisSliders.push(slider);
+    axisInputs.push(input);
+  });
+
 
   const coordApplyBtn = document.createElement('button');
   coordApplyBtn.textContent = 'Apply';
@@ -507,22 +563,101 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     setActiveEditor(shouldOpen ? 'spin' : null);
   };
 
-  coordApplyBtn.onclick = () => {
-    const newX = parseFloat(xInput.value);
-    const newY = parseFloat(yInput.value);
-    const newZ = parseFloat(zInput.value);
-    if (!isNaN(newX) && !isNaN(newY) && !isNaN(newZ)) {
-      positionUpdater([newX, newY, newZ]);
-      coordsDisplay.textContent = `(${newX.toFixed(3)}, ${newY.toFixed(3)}, ${newZ.toFixed(3)})`;
+  // Read the atom's real position back into the three axis rows. A Wyckoff
+  // edit is projected onto the site's freedom subspace and can move axes the
+  // user didn't touch (coupled sites like (x, x, z)), so what landed is the
+  // only thing worth showing.
+  function syncAxisControlsFromStructure() {
+    const position = fileBrowser.selectedStructure?.atoms?.[atomIndex]?.position;
+    if (!position) return;
+    position.forEach((value, axis) => {
+      axisSliders[axis].value = String(value);
+      axisInputs[axis].value = value.toFixed(6);
+    });
+    coordsDisplay.textContent = `(${position[0].toFixed(3)}, ${position[1].toFixed(3)}, ${position[2].toFixed(3)})`;
+  }
+
+  function readAxisInputs() {
+    const values = axisInputs.map((input) => parseFloat(input.value));
+    return values.some((value) => isNaN(value)) ? null : values;
+  }
+
+  // Slider drags apply live but coalesce to one update per frame — each apply
+  // re-lays-out atoms and bonds.
+  // A Wyckoff move that would put symmetry-equivalent atoms on top of each
+  // other is refused (returns false) — say so and snap the controls back to
+  // where the atom actually is.
+  function reportRefusedMove(applied) {
+    const note = coordEditor.querySelector('.coord-editor-note');
+    if (applied !== false) {
+      if (note && note.dataset.refused) {
+        note.textContent = note.dataset.original ?? '';
+        note.style.color = 'rgba(255,255,255,0.45)';
+        delete note.dataset.refused;
+      }
+      return;
     }
+    if (note && !note.dataset.refused) {
+      note.dataset.original = note.textContent;
+      note.dataset.refused = '1';
+      note.style.color = 'rgba(255,180,120,0.9)';
+    }
+    if (note) note.textContent = 'atoms would overlap';
+    syncAxisControlsFromStructure();
+  }
+
+  let pendingFrame = null;
+  function applyLive() {
+    if (pendingFrame != null) return;
+    pendingFrame = requestAnimationFrame(() => {
+      pendingFrame = null;
+      const coordsNow = readAxisInputs();
+      if (!coordsNow) return;
+      reportRefusedMove(livePositionUpdater(coordsNow));
+      syncAxisControlsFromStructure();
+    });
+  }
+
+  axisSliders.forEach((slider, axis) => {
+    slider.oninput = () => {
+      axisInputs[axis].value = parseFloat(slider.value).toFixed(6);
+      applyLive();
+    };
+    // Releasing the slider is not a "commit": it stays on the live path so the
+    // editor survives the drag. Apply does the full update (composition panel
+    // included, which rebuilds and closes this row's editor).
+    slider.onchange = () => {
+      const coordsNow = readAxisInputs();
+      if (!coordsNow) return;
+      reportRefusedMove(livePositionUpdater(coordsNow));
+      syncAxisControlsFromStructure();
+    };
+  });
+
+  axisInputs.forEach((input, axis) => {
+    input.oninput = () => {
+      const value = parseFloat(input.value);
+      if (!isNaN(value)) axisSliders[axis].value = String(value);
+    };
+  });
+
+  coordApplyBtn.onclick = () => {
+    const newCoords = readAxisInputs();
+    if (!newCoords) return;
+    if (positionUpdater(newCoords) === false) {
+      reportRefusedMove(false);
+      return;
+    }
+    coordsDisplay.textContent = `(${newCoords[0].toFixed(3)}, ${newCoords[1].toFixed(3)}, ${newCoords[2].toFixed(3)})`;
   };
 
   coordResetBtn.onclick = () => {
     const originalCoords = resetCoordsProvider();
     if (originalCoords) {
-      xInput.value = originalCoords[0].toFixed(6);
-      yInput.value = originalCoords[1].toFixed(6);
-      zInput.value = originalCoords[2].toFixed(6);
+      originalCoords.forEach((value, axis) => {
+        axisSliders[axis].value = String(value);
+        axisInputs[axis].value = value.toFixed(6);
+      });
       positionUpdater([...originalCoords]);
       coordsDisplay.textContent = `(${originalCoords[0].toFixed(3)}, ${originalCoords[1].toFixed(3)}, ${originalCoords[2].toFixed(3)})`;
       setActiveEditor(null);
@@ -718,5 +853,10 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   row.appendChild(editor);
   row.appendChild(coordEditor);
   row.appendChild(spinEditor);
+  // The editors span the full row; in the stacked (flex) layout `grid-column`
+  // on them means nothing, so they claim a whole flex line instead.
+  if (stackedHeader) {
+    [editor, coordEditor, spinEditor].forEach((panel) => { panel.style.flex = '1 1 100%'; });
+  }
   return row;
 }

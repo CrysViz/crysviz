@@ -15,7 +15,30 @@ fi
 PORT="${PORT:-8123}"
 DISPLAY_NUM="${DISPLAY_NUM:-99}"
 
-python3 -m http.server "$PORT" --directory ../../docs >/dev/null 2>&1 &
+# Both the port and the X display must be private to THIS checkout. A second
+# working tree (git worktree) running its own tests otherwise wins the race for
+# :99 / 8123 and this run silently tests the OTHER tree's docs/ — every
+# assertion still executes, against the wrong source. Probe upward instead.
+port_free() {
+  python3 -c "import socket, sys; s = socket.socket(); s.settimeout(0.2); busy = s.connect_ex(('127.0.0.1', $1)) == 0; s.close(); sys.exit(1 if busy else 0)"
+}
+for _ in $(seq 20); do
+  # `if`, not `&&`: under `set -e` a bare failing command at the end of an
+  # AND-list still aborts the script.
+  if port_free "$PORT"; then break; fi
+  PORT=$(( PORT + 1 ))
+done
+if ! port_free "$PORT"; then
+  echo "no free port for the app server near ${PORT}" >&2
+  exit 1
+fi
+while [ -e "/tmp/.X${DISPLAY_NUM}-lock" ] && [ "$DISPLAY_NUM" -lt 120 ]; do
+  DISPLAY_NUM=$(( DISPLAY_NUM + 1 ))
+done
+
+# devserver.py also sends Cache-Control: no-store — plain http.server sends
+# none, so Firefox can execute the PREVIOUS version of a just-edited module.
+python3 ../devserver.py "$PORT" --bind 127.0.0.1 --directory ../../docs >/dev/null 2>&1 &
 SERVER_PID=$!
 env/xvfb-root/usr/bin/Xvfb ":$DISPLAY_NUM" -screen 0 1400x900x24 -nolisten tcp >/dev/null 2>&1 &
 XVFB_PID=$!

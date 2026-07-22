@@ -3,6 +3,7 @@ import { Structure } from "../model/index.js";
 import { Spin } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
+import { Stress } from "../model/index.js";
 import {generateID} from '../utils/index.js'
 // From the concrete JS backend, not the math/index.js facade: the facade's
 // exports are thin wrappers delegating to a module-scope `activeMathBackend`
@@ -140,6 +141,7 @@ export function parseOUTCAR(content, fileName) {
         let currentForces = [];
         let currentSpins = new Array(natoms).fill([0, 0, 0]);
         let spinX = null, spinY = null, spinZ = null;
+        let currentEnergy = null;
 
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
@@ -173,6 +175,8 @@ export function parseOUTCAR(content, fileName) {
                   positions: currentPositions,
                   forces: currentForces,
                   spins: currentSpins,
+                  energy: null,
+                  stress: null,
                 });
 
                 // Update progress
@@ -191,6 +195,35 @@ export function parseOUTCAR(content, fileName) {
           if (/^\\s*magnetization\\s*\\(z\\)/i.test(line)) {
             spinZ = readSpinComponent(lines, i, natoms, /^\\s*magnetization\\s*\\(z\\)/i);
           }
+
+          // Energy lines print AFTER the POSITION/TOTAL-FORCE block for the
+          // same ionic step, so by the time we see them the step is already
+          // pushed onto steps above -- attach to the most-recently pushed
+          // step (steps[steps.length - 1]) rather than the next one.
+          // TOTEN is the fallback; energy(sigma->0) is preferred and, since
+          // it prints after TOTEN for the same step, overwrites it below.
+          const totenMatch = line.match(/free\\s+energy\\s+TOTEN\\s*=\\s*(-?\\d+\\.?\\d*(?:[eE][+-]?\\d+)?)/i);
+          if (totenMatch && steps.length > 0) {
+            currentEnergy = parseFloat(totenMatch[1]);
+            steps[steps.length - 1].energy = currentEnergy;
+          }
+          const sigmaMatch = line.match(/energy\\(sigma->0\\)\\s*=\\s*(-?\\d+\\.?\\d*(?:[eE][+-]?\\d+)?)/i);
+          if (sigmaMatch && steps.length > 0) {
+            currentEnergy = parseFloat(sigmaMatch[1]);
+            steps[steps.length - 1].energy = currentEnergy;
+          }
+
+          // Stress: the "in kB" line gives the Voigt stress (XX YY ZZ XY YZ ZX)
+          // and prints after the POSITION block for the step, so attach it to the
+          // most-recently pushed step. Build a symmetric 3x3 tensor.
+          const kbMatch = line.match(/^\\s*in kB\\s+(.*)$/i);
+          if (kbMatch && steps.length > 0) {
+            const sv = parseFloats(kbMatch[1]);
+            if (sv.length >= 6) {
+              const xx = sv[0], yy = sv[1], zz = sv[2], xy = sv[3], yz = sv[4], zx = sv[5];
+              steps[steps.length - 1].stress = [[xx, xy, zx], [xy, yy, yz], [zx, yz, zz]];
+            }
+          }
         }
 
         // Build structures
@@ -207,6 +240,8 @@ export function parseOUTCAR(content, fileName) {
             atoms,
             spins,
             forces,
+            energy: step.energy,
+            stress: step.stress,
           };
         });
 
@@ -238,6 +273,8 @@ export function parseOUTCAR(content, fileName) {
             atoms,
             spins,
             forces,
+            energy: structureData.energy,
+            stress: structureData.stress ? new Stress({ tensor: structureData.stress }) : null,
           });
         });
 

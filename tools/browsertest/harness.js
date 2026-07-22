@@ -32,7 +32,10 @@ function check(name, ok, detail = '') {
  *  pageerror + console.error text for the "no errors" assertion. */
 async function launchApp() {
   fs.mkdirSync(ARTIFACTS, { recursive: true });
-  const browser = await firefox.launch({ headless: false }); // headless FF has no WebGL
+  // headless FF has no WebGL. Stale modules are handled at the server
+  // (tools/devserver.py sends Cache-Control: no-store), not with browser prefs
+  // here — one mechanism, and it covers `make serve` in a real browser too.
+  const browser = await firefox.launch({ headless: false });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   // Pre-dismiss the ray/path-tracing performance-warning modal: shotCanvas is a
   // page screenshot (DOM overlays included), so the modal backdrop would dim
@@ -123,11 +126,33 @@ function darkFraction(file, threshold = 60) {
   return dark / total;
 }
 
-/** Fraction of pixels that differ from the top-left pixel — "something is
- *  drawn" metric (a blank canvas is a uniform background color). */
+/** The most common colour in a PNG, quantized into 8-level-per-channel bins
+ *  and returned as that bin's centre — the scene background, since every
+ *  screenshot is mostly empty backdrop. Binning absorbs the backdrop's slight
+ *  dithering/gradient, which an exact-colour histogram would scatter. */
+function dominantColor(png) {
+  const counts = new Map();
+  const total = png.width * png.height;
+  for (let i = 0; i < total; i++) {
+    const o = i * 4;
+    const key = ((png.data[o] >> 3) << 10) | ((png.data[o + 1] >> 3) << 5) | (png.data[o + 2] >> 3);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  let best = 0, bestN = -1;
+  for (const [key, n] of counts) if (n > bestN) { best = key; bestN = n; }
+  return [((best >> 10) & 31) * 8 + 4, ((best >> 5) & 31) * 8 + 4, (best & 31) * 8 + 4];
+}
+
+/** Fraction of pixels that differ from the background — "something is drawn"
+ *  metric (a blank canvas is a uniform background color).
+ *  The background is taken as the DOMINANT colour, not the top-left pixel:
+ *  CANVAS_CLIP's first row clips the bottom border of the toolbar above the
+ *  view, so a top-left reference is a dark border pixel and every background
+ *  pixel then counts as "drawn" — the metric read ~0.99 for every screenshot,
+ *  blank or not, which made comparisons between two shots meaningless. */
 function nonUniformFraction(file, tolerance = 30) {
   const png = PNG.sync.read(fs.readFileSync(file));
-  const [r0, g0, b0] = [png.data[0], png.data[1], png.data[2]];
+  const [r0, g0, b0] = dominantColor(png);
   let diff = 0;
   const total = png.width * png.height;
   for (let i = 0; i < total; i++) {

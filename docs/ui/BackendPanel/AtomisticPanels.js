@@ -11,15 +11,32 @@ import {
   initializeMDState,
   runMDSimulation,
   applyMDStateToViewer,
-  createMDMonitorPanel,
   createNEPForceEvaluator,
   createVelocityVerletIntegrator,
   createCosineAnnealingSchedule,
-  createVelocityRescaleThermostat,
+  createBussiThermostat,
+  createStochasticCellBarostat,
+  createNoBarostat,
+  recommendedTimestepFs,
+  DEFAULT_THERMOSTAT_TAU_FS,
+  DEFAULT_BAROSTAT_TAU_FS,
+  MIN_BAROSTAT_TAU_RATIO,
+  mdProfileMeasure,
 } from '../../atomistic/MD.js';
+import { ensureWorkerNEPReady, createWorkerNEPForceEvaluator } from '../../atomistic/nepWorkerClient.js';
+import { ensureTrajectoryPanelForLive, feedLiveStep, resetLivePlot, endLiveFeed } from '../TrajectoryPanel.js';
 import { MLIPRunner } from '../../external/mlip_wasm/mlip_runner.js';
 import { updateForces } from '../../render/index.js';
-import { updateRow, createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
+import { updateRow, createRow, selectLastAddedRow, selectStructure } from '../FileBrowswerPanel.js';
+import { refreshActivePanels } from '../panels/PanelManager.js';
+import { updateVisualization } from '../../core/crystal-viewer.js';
+import { fracToCartPoint, cartToFractional, normalizeFractionalPoint } from '../../math/index.js';
+import {
+  isWyckoffModeActive,
+  symmetrizeCartesianPositions,
+  symmetrizeCartesianVectors,
+  symmetrizeCartesianStrain,
+} from '../SymmetryEditModule.js';
 import { StructureContainer } from '../../model/index.js';
 import { Atom } from '../../model/index.js';
 import { Force } from '../../model/index.js';
@@ -214,17 +231,26 @@ function convertStressEvA3ToGPa(stressTensor) {
 }
 
 function setCurrentEFS(out) {
-  fileBrowser.selectedStructure.forces = out.forces.map((v) => new Force({ vector: [...v] }));
-  fileBrowser.selectedStructure.stress = new Stress({
-    tensor: out.stress.matrix3x3.map((row) => [...row]),
-  });
+  if (Array.isArray(out?.forces)) {
+    fileBrowser.selectedStructure.forces = out.forces.map((v) => new Force({ vector: [...v] }));
+  }
+  // Stress is optional — some calculators don't provide it. Don't throw when
+  // it's absent; just leave the structure without a stress tensor.
+  if (Array.isArray(out?.stress?.matrix3x3)) {
+    fileBrowser.selectedStructure.stress = new Stress({
+      tensor: out.stress.matrix3x3.map((row) => [...row]),
+    });
+  }
 
   if (general.forcesActive) {
     updateForces();
   }
 }
 
-function snapshotCurrentStructure() {
+// Exported for the browser test: this is the working copy MD/relax actually
+// animate, and what it silently drops (symmetry, velocities) is invisible from
+// anywhere else in the UI.
+export function snapshotCurrentStructure() {
   const src = fileBrowser.selectedStructure;
   const elements = [...src.elements];
   const atoms = src.atoms.map((atom, index) => new Atom({
@@ -234,6 +260,9 @@ function snapshotCurrentStructure() {
   }));
   const forces = (src.forces ?? []).map((force) => new Force({ vector: [...force.vector] }));
   const stress = src.stress ? new Stress({ tensor: src.stress.tensor.map((row) => [...row]) }) : null;
+  // Carried like forces (not reset here) so an MD frame's velocities survive
+  // into its saved trajectory frame — that's what "Continue MD" resumes from.
+  const velocities = src.velocities ? src.velocities.map((v) => [...v]) : null;
 
   return new Structure({
     elements,
@@ -242,8 +271,35 @@ function snapshotCurrentStructure() {
     atoms,
     forces,
     stress,
+    velocities,
+    // MD/relax animate a snapshot, not the source, and every symmetrize call
+    // in MD.js keys off `structure.symmetry.mode === 'wyckoff'`. Dropping it
+    // here left the working copy looking unconstrained, so Wyckoff-mode runs
+    // silently integrated without symmetry and even zero-freedom sites moved.
+    // Shared by reference: it is derived, read-only data (operations, orbits,
+    // site-freedom bases) that no run mutates.
+    symmetry: src.symmetry ?? null,
     periodic: { hash: 'None', wrapped: null },
   });
+}
+
+// Copy a snapshot's positions/lattice/forces back into a structure in place
+// (preserving object identity + styles). Used to undo the in-place mutation MD
+// makes to the source structure while it animates the viewer.
+function restoreStructureInPlace(target, src) {
+  if (!target || !src) return;
+  if (Array.isArray(src.lattice)) target.lattice = src.lattice.map((row) => [...row]);
+  if (Array.isArray(src.atoms)) {
+    src.atoms.forEach((atom, index) => {
+      if (target.atoms[index] && Array.isArray(atom.position)) {
+        target.atoms[index].position = [...atom.position];
+      }
+    });
+  }
+  target.forces = (src.forces ?? []).map((force) => new Force({ vector: [...force.vector] }));
+  // Drop the wrapped-position cache so the restored structure re-wraps from its
+  // own positions instead of a leftover MD frame's.
+  target.periodic = { hash: 'None', wrapped: null };
 }
 
 function setASEStatus(bound, message) {
@@ -257,7 +313,6 @@ function clearASEHandlers() {
   aseSocket.off('connect', aseBoundElements.onConnect);
   aseSocket.off('connect_error', aseBoundElements.onConnectError);
   aseSocket.off('status', aseBoundElements.onStatus);
-  aseSocket.off('append', aseBoundElements.onAppend);
   aseSocket.off('new', aseBoundElements.onNew);
   aseSocket.off('getEFS', aseBoundElements.onGetEFS);
   aseSocket.off('stressUpdate', aseBoundElements.onStressUpdate);
@@ -282,45 +337,6 @@ function bindASEHandlers(bound) {
 
   const onStatus = (data) => {
     setASEStatus(bound, data.message);
-  };
-
-  const onAppend = (data) => {
-    setASEStatus(bound, 'ASE relaxation appended.');
-    if (bound.resultEl) bound.resultEl.textContent = data.log ?? '';
-    const selected = structureShip.container[fileBrowser.selectedRowIndex];
-    const trajLength = selected.structures.length + data.result.positions.length;
-
-    for (let i = 0; i < data.result.positions.length; i += 1) {
-      const atoms = [];
-      data.result.positions[i].forEach((pos, index) => {
-        atoms.push(new Atom({
-          position: pos,
-          element: [...fileBrowser.selectedStructure.elements][index],
-        }));
-      });
-
-      const forces = [];
-      data.result.forces[i].forEach((force) => {
-        forces.push(new Force({ vector: force }));
-      });
-
-      const elements = [...fileBrowser.selectedStructure.elements];
-      const structure = new Structure({
-        elements,
-        uniqueElements: [...new Set(elements)],
-        lattice: data.result.lattices[i],
-        atoms,
-        forces,
-        stress: new Stress({ tensor: convertStressEvA3ToGPa(data.result.stresses[i]) }),
-      });
-      selected.structures.push(structure);
-    }
-
-    updateRow(fileBrowser.selectedRow, {
-      name: selected.fileName,
-      traj: trajLength,
-      step: trajLength,
-    });
   };
 
   const onNew = (data) => {
@@ -407,7 +423,6 @@ function bindASEHandlers(bound) {
     onConnect,
     onConnectError,
     onStatus,
-    onAppend,
     onNew,
     onGetEFS,
     onStressUpdate,
@@ -416,7 +431,6 @@ function bindASEHandlers(bound) {
   aseSocket.on('connect', onConnect);
   aseSocket.on('connect_error', onConnectError);
   aseSocket.on('status', onStatus);
-  aseSocket.on('append', onAppend);
   aseSocket.on('new', onNew);
   aseSocket.on('getEFS', onGetEFS);
   aseSocket.on('stressUpdate', onStressUpdate);
@@ -557,6 +571,92 @@ function readRelaxParams(bodyEl) {
   };
 }
 
+// Default cell-strain magnitude for the Rattle "cell" option (±2%); editable
+// in the UI.
+const RATTLE_LATTICE_PCT = 0.02;
+
+// Standard normal sample (Box–Muller) for the atom-displacement rattle.
+function gaussianRandom() {
+  let u = 0;
+  let v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// Apply a random perturbation to the selected structure: a Gaussian displacement
+// (std = amp Å) to every atom and, when doLattice is set, a small symmetric
+// random strain (±RATTLE_LATTICE_PCT) to the cell. Mutates the structure in
+// place (the user's explicit intent — rattle then relax) and re-renders.
+//
+// In Wyckoff mode both the displacement field and the strain are projected onto
+// what the space group allows, so rattling stays inside the symmetry the user
+// locked — same contract as constrained MD/relax. Note the projection shrinks
+// the perturbation (a site with no freedom does not move at all, and a hexagonal
+// cell only breathes along its allowed strains), so the effective amplitude is
+// below `amp` by design rather than being renormalised back up.
+function rattleSelectedStructure(amp, doLattice, latticePct = RATTLE_LATTICE_PCT) {
+  const s = fileBrowser.selectedStructure;
+  if (!s || !Array.isArray(s.atoms) || !s.atoms.length) return;
+  const lattice = s.lattice.map((r) => [...r]);
+  const constrained = isWyckoffModeActive(s);
+
+  const cartPositions = s.atoms.map((atom) => fracToCartPoint(atom.position, lattice));
+  let displacements = s.atoms.map(() => [
+    gaussianRandom() * amp,
+    gaussianRandom() * amp,
+    gaussianRandom() * amp,
+  ]);
+  if (constrained) displacements = symmetrizeCartesianVectors(displacements, lattice, s);
+
+  let moved = cartPositions.map((cart, i) => [
+    cart[0] + displacements[i][0],
+    cart[1] + displacements[i][1],
+    cart[2] + displacements[i][2],
+  ]);
+  // Re-project the positions themselves: the displacement field alone leaves
+  // each orbit consistent only to float precision, and the symmetry analysis
+  // downstream runs at a tolerance that deserves better than that.
+  if (constrained) moved = symmetrizeCartesianPositions(moved, lattice, s);
+
+  s.atoms.forEach((atom, i) => {
+    // Wrap back into [0,1). An atom sitting near a face is as likely to be
+    // kicked out of the cell as into it, and nothing downstream folds it back:
+    // periodicWrapped() only mirrors atoms that lie ON a face/edge/corner, it
+    // does not normalize out-of-cell coordinates, so the atom would simply
+    // render outside the box. Under PBC the wrapped position is the same
+    // physical site.
+    atom.position = normalizeFractionalPoint(cartToFractional(moved[i], lattice));
+  });
+
+  if (doLattice) {
+    // Symmetric random strain E (independent components in [-pct, pct]);
+    // new lattice = old · (I + E).
+    const pct = latticePct;
+    let E = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    for (let i = 0; i < 3; i++) {
+      for (let j = i; j < 3; j++) {
+        const e = (Math.random() * 2 - 1) * pct;
+        E[i][j] = e;
+        E[j][i] = e;
+      }
+    }
+    if (constrained) E = symmetrizeCartesianStrain(E, lattice, s);
+    s.lattice = lattice.map((row) => [0, 1, 2].map(
+      (j) => row[j] + row[0] * E[0][j] + row[1] * E[1][j] + row[2] * E[2][j],
+    ));
+  }
+
+  // Forces/stress/velocities are stale after moving atoms; drop them (velocities
+  // also so a rattled MD tip doesn't look like a "Continue MD"-able last frame)
+  // and re-render geometry.
+  s.forces = [];
+  s.stress = null;
+  s.velocities = null;
+  s.periodic = { hash: 'None', wrapped: null };
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderLattice: true });
+}
+
 function renderRelaxBody(bodyEl, potential) {
   bodyEl.innerHTML = `
     <button type="button" class="atomistic-card atomistic-efs-card" id="relaxEfsCard">
@@ -594,24 +694,68 @@ function renderRelaxBody(bodyEl, potential) {
         </label>
       </div>
       <div class="atomistic-button-row atomistic-button-row-compact">
-        <button type="button" class="calcButton" id="relaxAppendBtn">Append</button>
-        <button type="button" class="calcButton" id="relaxNewBtn">New</button>
+        <button type="button" class="calcButton" id="relaxBtn">Relax</button>
+      </div>
+    </div>
+    <div class="atomistic-card atomistic-card-compact">
+      <div class="atomistic-card-title atomistic-card-title-accent">Rattle</div>
+      <div class="atomistic-grid atomistic-grid-3 atomistic-grid-compact atomistic-rattle-grid">
+        <label title="Gaussian displacement applied to every atom; the value is the standard deviation in Å.">
+          <span>coordinate (Å)</span>
+          <input type="number" class="atomistic-input-sm" id="relaxRattleAmpInput" value="0.1" step="0.01" min="0">
+        </label>
+        <label title="Random symmetric strain on the cell: each independent strain component is drawn uniformly from ±this percent, so both lattice lengths and angles change.">
+          <span class="atomistic-rattle-toggle-label">
+            lattice (±%)
+            <input type="checkbox" id="relaxRattleLatticeChk">
+          </span>
+          <input type="number" class="atomistic-input-sm" id="relaxRattleLatticePctInput" value="2" step="0.5" min="0">
+        </label>
+        <div class="atomistic-rattle-action">
+          <button type="button" class="calcButton" id="relaxRattleBtn">Rattle</button>
+        </div>
       </div>
     </div>
   `;
 }
 
+// Expanding the Simulated Annealing section is what ENABLES annealing — the
+// run reads `!annealControls.classList.contains('hidden')`. That is a lot of
+// meaning to hang on a disclosure triangle, so the header carries an explicit
+// "on" badge and turns green while it applies, and the section spells out the
+// schedule that replaces the fixed temperature above it.
 function renderMDAnnealSummary(bodyEl) {
-  const enabled = bodyEl.querySelector('#mdAnnealControls') && !bodyEl.querySelector('#mdAnnealControls').classList.contains('hidden');
   const controls = bodyEl.querySelector('#mdAnnealControls');
   const icon = bodyEl.querySelector('#mdAnnealIcon');
+  const header = bodyEl.querySelector('#mdAnnealHeader');
   if (!controls || !icon) return;
+  const enabled = !controls.classList.contains('hidden');
   icon.textContent = enabled ? '▾' : '▸';
+  header?.classList.toggle('active', enabled);
+
+  const hint = bodyEl.querySelector('#mdAnnealHint');
+  if (hint) {
+    const tMin = Number(bodyEl.querySelector('#mdAnnealMinInput')?.value) || 0;
+    const tMax = Number(bodyEl.querySelector('#mdAnnealMaxInput')?.value) || 0;
+    const peak = Number(bodyEl.querySelector('#mdAnnealPeakPctInput')?.value) || 0;
+    const start = Number(bodyEl.querySelector('#mdTemperatureInput')?.value) || 0;
+    hint.textContent = enabled
+      ? `while this section is open the temperature above is only the start: ${start} K → ${tMax} K at ${peak}% of the run → ${tMin} K`
+      : '';
+  }
 }
 
 function renderMDBody(bodyEl, potential) {
   bodyEl.innerHTML = `
     <div class="atomistic-card atomistic-card-compact">
+      <div class="atomistic-source-row">
+        <div class="atomistic-source-label">Ensemble</div>
+        <div class="backend-potential-toggle" id="mdEnsembleSwitch">
+          <button type="button" class="active" data-ensemble="nvt">NVT</button>
+          <button type="button" data-ensemble="npt">NPT</button>
+        </div>
+      </div>
+      <div class="atomistic-ensemble-hint" id="mdEnsembleHint"></div>
       <div class="atomistic-grid atomistic-grid-2 atomistic-grid-compact">
         <label>
           <span>Steps</span>
@@ -619,14 +763,14 @@ function renderMDBody(bodyEl, potential) {
         </label>
         <label>
           <span>timestep (fs)</span>
-          <input type="number" class="atomistic-input-sm" id="mdTimestepInput" value="1.0" step="0.1" min="0.1">
+          <input type="number" class="atomistic-input-sm" id="mdTimestepInput" value="${recommendedTimestepFs(fileBrowser.selectedStructure?.elements)}" step="0.1" min="0.05">
         </label>
         <label>
-          <span>Temperature</span>
+          <span>temperature (K)</span>
           <input type="number" class="atomistic-input-sm" id="mdTemperatureInput" value="300" step="10" min="1">
         </label>
-        <label>
-          <span class="atomistic-label-disabled">pressure</span>
+        <label id="mdPressureField">
+          <span>pressure (GPa)</span>
           <input type="number" class="atomistic-input-sm" id="mdPressureInput" value="0" step="0.1" disabled>
         </label>
         <label>
@@ -634,14 +778,30 @@ function renderMDBody(bodyEl, potential) {
           <input type="number" class="atomistic-input-sm" id="mdSaveStrideInput" value="${Math.max(1, Number(general.backendTrajectorySaveStride || 4))}" step="1" min="1">
         </label>
       </div>
-      <div class="atomistic-button-row atomistic-button-row-compact">
-        <button type="button" class="calcButton" id="mdStartBtn"${potential === 'ase' ? ' disabled' : ''}>start</button>
-        <button type="button" class="calcButton" id="mdStopBtn" disabled>stop</button>
+      <div class="atomistic-anneal-section">
+        <button type="button" class="atomistic-collapse-toggle" id="mdCouplingHeader">
+          <span id="mdCouplingIcon">▸</span>
+          <span class="atomistic-card-title-accent atomistic-anneal-title">Coupling times</span>
+        </button>
+        <div class="hidden" id="mdCouplingControls">
+          <div class="atomistic-grid atomistic-grid-2 atomistic-grid-compact">
+            <label>
+              <span>thermostat τ (fs)</span>
+              <input type="number" class="atomistic-input-sm" id="mdTauTInput" value="${DEFAULT_THERMOSTAT_TAU_FS}" step="10" min="1">
+            </label>
+            <label id="mdTauPField">
+              <span>barostat τ (fs)</span>
+              <input type="number" class="atomistic-input-sm" id="mdTauPInput" value="${DEFAULT_BAROSTAT_TAU_FS}" step="100" min="10" disabled>
+            </label>
+          </div>
+          <div class="atomistic-ensemble-hint" id="mdCouplingHint"></div>
+        </div>
       </div>
       <div class="atomistic-anneal-section">
         <button type="button" class="atomistic-collapse-toggle" id="mdAnnealHeader">
           <span id="mdAnnealIcon">▸</span>
           <span class="atomistic-card-title-accent atomistic-anneal-title">Simulated Annealing</span>
+          <span class="atomistic-anneal-badge" id="mdAnnealBadge">on</span>
         </button>
         <div class="hidden" id="mdAnnealControls">
           <div class="atomistic-grid atomistic-grid-3 atomistic-grid-compact atomistic-anneal-grid">
@@ -658,7 +818,12 @@ function renderMDBody(bodyEl, potential) {
               <input type="number" class="atomistic-input-sm" id="mdAnnealPeakPctInput" value="30" step="1" min="1" max="99">
             </label>
           </div>
+          <div class="atomistic-ensemble-hint" id="mdAnnealHint"></div>
         </div>
+      </div>
+      <div class="atomistic-button-row atomistic-button-row-compact">
+        <button type="button" class="calcButton" id="mdStartBtn"${potential === 'ase' ? ' disabled' : ''}>start</button>
+        <button type="button" class="calcButton" id="mdStopBtn" disabled>stop</button>
       </div>
     </div>
     ${potential === 'ase' ? '<div class="atomistic-hint">ASE-backed MD is not wired yet. Use NEP for in-browser MD.</div>' : ''}
@@ -673,8 +838,14 @@ async function runLocalRelax(shell, params, potential) {
   const saveStride = Math.max(1, Number(general.backendTrajectorySaveStride || 1));
   let lastSavedStep = 0;
   const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
+  // Relax animates this structure in place; keep the reference to restore it.
+  const originalStructure = fileBrowser.selectedStructure;
   const relaxLabel = `Relax_${srcContainer?.fileName ?? 'run'}`;
   const relaxContainer = new StructureContainer({ fileName: relaxLabel, structures: [snapshotCurrentStructure()] });
+  // Persisted plot series (energy / mean force / pressure), 1:1 with frames.
+  // `step` records the real relax step per saved frame so the plot's x-axis
+  // reads steps (a multiple of the save stride); seed frame = step 0.
+  relaxContainer.plotSeries = { step: [0], etotEv: [NaN], meanForce: [NaN], pressure: [NaN] };
   structureShip.container.push(relaxContainer);
   const relaxRow = createRow({ name: relaxLabel, traj: 1, step: 1 });
   tableBody.appendChild(relaxRow);
@@ -682,58 +853,110 @@ async function runLocalRelax(shell, params, potential) {
   shell.statusEl.textContent = 'Relaxation running...';
   shell.resultEl.textContent = '';
 
-  const initial = buildNEPStructure(runner, fileBrowser.selectedStructure);
-  const relaxed = await relaxUntilConverged(runner, initial, {
-    fmaxTol: params.forceTol,
-    maxSteps: params.maxSteps,
-    atomStep: 0.02,
-    cellStep: 0.002,
-    targetPressureGPa: params.targetPressure,
-    pressureTolGPa: params.stressTol,
-    onStep: (step, current, out, mF) => {
-      // snapshotCurrentStructure copies the viewer structure, so a save-step must
-      // also apply the current state to the viewer first.
-      const shouldSave = step % saveStride === 0;
-      const shouldUpdateViewer = step === 1 || shouldSave || step % viewerStride === 0;
-      if (shouldUpdateViewer) {
-        applyStructureToViewer(current, fileBrowser.selectedStructure);
-        setCurrentEFS(out);
+  resetLivePlot();
+  ensureTrajectoryPanelForLive();
+  let lastMetrics = /** @type {any} */ (null);
+  const meanForceOf = (forces) => (Array.isArray(forces) && forces.length
+    ? forces.reduce((a, v) => a + Math.hypot(v[0], v[1], v[2]), 0) / forces.length
+    : NaN);
+  const pushRelaxSeries = (m) => {
+    relaxContainer.plotSeries.step.push(Number.isFinite(m.step) ? m.step : NaN);
+    relaxContainer.plotSeries.etotEv.push(Number.isFinite(m.etotEv) ? m.etotEv : NaN);
+    relaxContainer.plotSeries.meanForce.push(Number.isFinite(m.meanForce) ? m.meanForce : NaN);
+    relaxContainer.plotSeries.pressure.push(Number.isFinite(m.pressure) ? m.pressure : NaN);
+  };
+
+  try {
+    // Animate a throwaway working copy, not the source structure: the relax
+    // loop mutates fileBrowser.selectedStructure in place for live feedback, and
+    // we do not want that to alter the user's starting structure. Only relax_…
+    // holds the trajectory. (restoreStructureInPlace remains a safety net.)
+    const workingStructure = snapshotCurrentStructure();
+    // Relax has no dynamics — never let a stale velocity value (e.g. carried
+    // over from an MD frame relaxed in place) survive onto relax's own frames,
+    // or a later "Continue MD" could mistake this trajectory's tip for a
+    // resumable one.
+    workingStructure.velocities = null;
+    fileBrowser.selectedStructure = workingStructure;
+
+    const initial = buildNEPStructure(runner, fileBrowser.selectedStructure);
+    const relaxed = await relaxUntilConverged(runner, initial, {
+      fmaxTol: params.forceTol,
+      maxSteps: params.maxSteps,
+      atomStep: 0.02,
+      cellStep: 0.002,
+      targetPressureGPa: params.targetPressure,
+      pressureTolGPa: params.stressTol,
+      onStep: (step, current, out, mF) => {
+        // snapshotCurrentStructure copies the viewer structure, so a save-step must
+        // also apply the current state to the viewer first.
+        const shouldSave = step % saveStride === 0;
+        const shouldUpdateViewer = step === 1 || shouldSave || step % viewerStride === 0;
+        if (shouldUpdateViewer) {
+          applyStructureToViewer(current, fileBrowser.selectedStructure);
+          setCurrentEFS(out);
+        }
+
+        lastMetrics = {
+          step,
+          etotEv: Number(out.total_energy),
+          meanForce: meanForceOf(out.forces),
+          pressure: pressureGPaFromStress(out.stress?.matrix3x3),
+        };
+        if (shouldSave) {
+          relaxContainer.structures.push(snapshotCurrentStructure());
+          lastSavedStep = step;
+          feedLiveStep(lastMetrics);
+          pushRelaxSeries(lastMetrics);
+        }
+
+        const pressureText = (!noStress && out.stress?.matrix3x3)
+          ? `${pressureGPaFromStress(out.stress.matrix3x3).toFixed(2)} GPa`
+          : 'n/a';
+        shell.statusEl.textContent = `step ${step} / ${params.maxSteps}`;
+        if (metricsEl) {
+          metricsEl.innerHTML = `
+            <div>energy / atom: ${Number(out.energy_per_atom).toFixed(6)} eV</div>
+            <div>max force: ${mF.toFixed(5)} eV/Å</div>
+            <div>pressure: ${pressureText}</div>
+          `;
+        }
+      },
+    });
+
+    applyStructureToViewer(relaxed.structure, fileBrowser.selectedStructure, { full: true });
+    setCurrentEFS(relaxed.result);
+
+    // Always keep the final state in the trajectory, even off-stride.
+    if (relaxed.steps !== lastSavedStep) {
+      relaxContainer.structures.push(snapshotCurrentStructure());
+      if (lastMetrics) {
+        feedLiveStep({ ...lastMetrics, step: relaxed.steps });
+        pushRelaxSeries(lastMetrics);
       }
+    }
 
-      if (shouldSave) {
-        relaxContainer.structures.push(snapshotCurrentStructure());
-        lastSavedStep = step;
-      }
+    const stepsSaved = relaxContainer.structures.length;
+    updateRow(relaxRow, { name: relaxLabel, traj: stepsSaved, step: stepsSaved });
 
-      const pressureText = noStress
-        ? 'n/a'
-        : `${pressureGPaFromStress(out.stress.matrix3x3).toFixed(2)} GPa`;
-      shell.statusEl.textContent = `step ${step} / ${params.maxSteps}`;
-      if (metricsEl) {
-        metricsEl.innerHTML = `
-          <div>energy / atom: ${Number(out.energy_per_atom).toFixed(6)} eV</div>
-          <div>max force: ${mF.toFixed(5)} eV/Å</div>
-          <div>pressure: ${pressureText}</div>
-        `;
-      }
-    },
-  });
-
-  applyStructureToViewer(relaxed.structure, fileBrowser.selectedStructure, { full: true });
-  setCurrentEFS(relaxed.result);
-
-  // Always keep the final state in the trajectory, even off-stride.
-  if (relaxed.steps !== lastSavedStep) {
-    relaxContainer.structures.push(snapshotCurrentStructure());
+    shell.statusEl.textContent = '';
+    shell.resultEl.textContent = relaxed.converged
+      ? `Converged after ${relaxed.steps} steps.`
+      : `Stopped after ${relaxed.steps} steps.`;
+  } finally {
+    // Live run over: release the plot, restore the source structure (relax
+    // mutated it in place), and switch to the recorded relaxation trajectory.
+    endLiveFeed();
+    // Separate try/catch so a restore hiccup can't block switching to the
+    // recorded relaxation trajectory (see the MD path for the rationale).
+    try {
+      restoreStructureInPlace(originalStructure, relaxContainer.structures[0]);
+    } catch { /* safety net only */ }
+    try {
+      selectLastAddedRow();
+      refreshActivePanels(); // rebuild the Trajectory panel for the new container
+    } catch { /* non-fatal: leave selection as-is */ }
   }
-
-  const stepsSaved = relaxContainer.structures.length;
-  updateRow(relaxRow, { name: relaxLabel, traj: stepsSaved, step: stepsSaved });
-
-  shell.statusEl.textContent = '';
-  shell.resultEl.textContent = relaxed.converged
-    ? `Converged after ${relaxed.steps} steps.`
-    : `Stopped after ${relaxed.steps} steps.`;
 }
 
 async function runLocalEFS(shell, metricsEl, potential) {
@@ -756,8 +979,7 @@ function bindRelaxBody(panel, shell, potential) {
   renderRelaxBody(shell.bodyEl, potential);
   const metricsEl = shell.bodyEl.querySelector('#relaxEfsMetrics');
   const efsCard = shell.bodyEl.querySelector('#relaxEfsCard');
-  const appendBtn = shell.bodyEl.querySelector('#relaxAppendBtn');
-  const newBtn = shell.bodyEl.querySelector('#relaxNewBtn');
+  const relaxBtn = shell.bodyEl.querySelector('#relaxBtn');
 
   const aseBinding = {
     statusEl: shell.statusEl,
@@ -780,13 +1002,13 @@ function bindRelaxBody(panel, shell, potential) {
     }
   });
 
-  appendBtn.addEventListener('click', async () => {
+  relaxBtn.addEventListener('click', async () => {
     try {
       const params = readRelaxParams(shell.bodyEl);
       shell.resultEl.textContent = '';
       if (potential === 'ase') {
-        emitASERelax('append', params);
-        setASEStatus(aseBinding, 'Submitting ASE append relaxation...');
+        emitASERelax('new', params);
+        setASEStatus(aseBinding, 'Submitting ASE relaxation...');
       } else {
         await runLocalRelax(shell, params, potential);
       }
@@ -795,18 +1017,17 @@ function bindRelaxBody(panel, shell, potential) {
     }
   });
 
-  newBtn.addEventListener('click', async () => {
+  const rattleBtn = shell.bodyEl.querySelector('#relaxRattleBtn');
+  rattleBtn?.addEventListener('click', () => {
     try {
-      const params = readRelaxParams(shell.bodyEl);
-      shell.resultEl.textContent = '';
-      if (potential === 'ase') {
-        emitASERelax('new', params);
-        setASEStatus(aseBinding, 'Submitting ASE new relaxation...');
-      } else {
-        await runLocalRelax(shell, params, potential);
-      }
+      const amp = Number(shell.bodyEl.querySelector('#relaxRattleAmpInput')?.value || 0.1);
+      const doLattice = !!shell.bodyEl.querySelector('#relaxRattleLatticeChk')?.checked;
+      const pctVal = Number(shell.bodyEl.querySelector('#relaxRattleLatticePctInput')?.value);
+      const latticePct = (Number.isFinite(pctVal) ? pctVal : RATTLE_LATTICE_PCT * 100) / 100;
+      rattleSelectedStructure(amp, doLattice, latticePct);
+      shell.resultEl.textContent = `Rattled atoms ±${amp} Å${doLattice ? `, cell ±${(latticePct * 100).toFixed(1)}%` : ''}.`;
     } catch (error) {
-      shell.resultEl.textContent = `Relax failed: ${error.message || String(error)}`;
+      shell.resultEl.textContent = `Rattle failed: ${error.message || String(error)}`;
     }
   });
 }
@@ -826,6 +1047,9 @@ function bindMDBody(panel, shell, potential) {
     annealControls.classList.toggle('hidden');
     renderMDAnnealSummary(shell.bodyEl);
   });
+  ['#mdAnnealMinInput', '#mdAnnealMaxInput', '#mdAnnealPeakPctInput', '#mdTemperatureInput']
+    .forEach((sel) => shell.bodyEl.querySelector(sel)
+      ?.addEventListener('input', () => renderMDAnnealSummary(shell.bodyEl)));
 
   if (potential === 'ase') {
     startBtn?.addEventListener('click', () => {
@@ -839,10 +1063,67 @@ function bindMDBody(panel, shell, potential) {
     shell.statusEl.textContent = 'Stopping MD after current step...';
   });
 
+  // Ensemble: NVT (thermostat, fixed cell) or NPT (thermostat + barostat, cell
+  // free to change volume). A segmented control rather than a checkbox — it
+  // matches the Relax/MD and potential switches above it, and "NPT" needs the
+  // one-line explanation underneath more than it needs a tick box. The word
+  // "relax" is deliberately avoided here: this panel's other mode is called
+  // Relax and means something completely different.
+  const ensembleSwitch = shell.bodyEl.querySelector('#mdEnsembleSwitch');
+  const ensembleHint = shell.bodyEl.querySelector('#mdEnsembleHint');
+  const pressureInput = shell.bodyEl.querySelector('#mdPressureInput');
+  const tauTInput = shell.bodyEl.querySelector('#mdTauTInput');
+  const tauPInput = shell.bodyEl.querySelector('#mdTauPInput');
+  const couplingHint = shell.bodyEl.querySelector('#mdCouplingHint');
+  const isNpt = () => ensembleSwitch?.querySelector('button.active')?.dataset.ensemble === 'npt';
+
+  const syncEnsembleControls = () => {
+    const npt = isNpt();
+    if (pressureInput) pressureInput.disabled = !npt;
+    if (tauPInput) tauPInput.disabled = !npt;
+    if (ensembleHint) {
+      ensembleHint.textContent = npt
+        ? 'constant temperature and pressure — cell volume follows the target pressure (shape fixed)'
+        : 'constant temperature — cell held fixed';
+    }
+    if (couplingHint) {
+      const tauT = Number(tauTInput?.value) || DEFAULT_THERMOSTAT_TAU_FS;
+      const tauP = Number(tauPInput?.value) || DEFAULT_BAROSTAT_TAU_FS;
+      // A barostat comparable in speed to the thermostat fights it: the cell
+      // does work on the atoms faster than the bath can absorb it.
+      couplingHint.textContent = npt && tauP < tauT * MIN_BAROSTAT_TAU_RATIO
+        ? `barostat τ should be at least ${MIN_BAROSTAT_TAU_RATIO}× the thermostat τ (≥ ${tauT * MIN_BAROSTAT_TAU_RATIO} fs) — the two will fight otherwise`
+        : 'τ is how fast T and P are corrected, not how accurate the run is — that is the timestep. Loosen the thermostat for undistorted sampling, tighten it to tame a hot start.';
+    }
+  };
+
+  ensembleSwitch?.addEventListener('click', (event) => {
+    const button = event.target instanceof Element ? event.target.closest('button[data-ensemble]') : null;
+    if (!button) return;
+    ensembleSwitch.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === button));
+    syncEnsembleControls();
+  });
+  tauTInput?.addEventListener('input', syncEnsembleControls);
+  tauPInput?.addEventListener('input', syncEnsembleControls);
+  syncEnsembleControls();
+
+  const couplingHeader = shell.bodyEl.querySelector('#mdCouplingHeader');
+  const couplingControls = shell.bodyEl.querySelector('#mdCouplingControls');
+  const couplingIcon = shell.bodyEl.querySelector('#mdCouplingIcon');
+  couplingHeader?.addEventListener('click', () => {
+    const hidden = couplingControls?.classList.toggle('hidden');
+    if (couplingIcon) couplingIcon.textContent = hidden ? '▸' : '▾';
+  });
+
   startBtn?.addEventListener('click', async () => {
     if (mdRunning) return;
 
-    let monitor = null;
+    // Declared out here (not inside the try) so the finally block can see them
+    // for the restore/switch even if the run throws before/after assigning.
+    let originalStructure = /** @type {any} */ (null);
+    let mdContainer = /** @type {any} */ (null);
+    let seedFrame = /** @type {any} */ (null);
+    let isContinuation = false;
     try {
       mdRunning = true;
       mdStopRequested = false;
@@ -855,6 +1136,16 @@ function bindMDBody(panel, shell, potential) {
       const dtFs = Number(shell.bodyEl.querySelector('#mdTimestepInput')?.value || 1);
       const startTemperatureK = Number(shell.bodyEl.querySelector('#mdTemperatureInput')?.value || 300);
       const useAnneal = !annealControls.classList.contains('hidden');
+      const useNpt = shell.bodyEl.querySelector('#mdEnsembleSwitch button.active')?.dataset.ensemble === 'npt';
+      const targetPressureGPa = Number(shell.bodyEl.querySelector('#mdPressureInput')?.value || 0);
+      const thermostatTauFs = Math.max(1,
+        Number(shell.bodyEl.querySelector('#mdTauTInput')?.value) || DEFAULT_THERMOSTAT_TAU_FS);
+      // Clamped rather than merely warned about: a barostat running as fast as
+      // the thermostat is unstable, and silently producing a bad trajectory is
+      // worse than quietly slowing the cell down.
+      const barostatTauFs = Math.max(
+        thermostatTauFs * MIN_BAROSTAT_TAU_RATIO,
+        Number(shell.bodyEl.querySelector('#mdTauPInput')?.value) || DEFAULT_BAROSTAT_TAU_FS);
       const minTemperatureK = Number(shell.bodyEl.querySelector('#mdAnnealMinInput')?.value || 100);
       const maxTemperatureK = Number(shell.bodyEl.querySelector('#mdAnnealMaxInput')?.value || 1200);
       const peakFraction = Math.max(0.01, Math.min(0.99, Number(shell.bodyEl.querySelector('#mdAnnealPeakPctInput')?.value || 30) / 100));
@@ -862,15 +1153,74 @@ function bindMDBody(panel, shell, potential) {
       const saveStride = Math.max(1, Number(shell.bodyEl.querySelector('#mdSaveStrideInput')?.value || general.backendTrajectorySaveStride || 4));
       general.backendTrajectorySaveStride = saveStride;
       let lastSavedStep = 0;
+      let lastStepMetrics = /** @type {any} */ (null);
       const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
-      const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
-      const mdContainer = new StructureContainer({ fileName: mdLabel, structures: [snapshotCurrentStructure()] });
-      structureShip.container.push(mdContainer);
-      const mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
-      tableBody.appendChild(mdRow);
+      // MD animates this structure in place for live viewer feedback; keep the
+      // reference so it can be restored (from the seed frame) once the run ends.
+      originalStructure = fileBrowser.selectedStructure;
 
-      monitor = createMDMonitorPanel();
-      const forceEvaluator = createNEPForceEvaluator(runner);
+      // "Continue MD": resume with the selected frame's own velocities and grow
+      // its container in place, instead of a fresh start — but only when that
+      // frame is genuinely the trajectory's tip (compared by reference, the
+      // same way this file already tracks "the" selected structure) and it was
+      // actually produced by MD (relax/rattle null out .velocities, so a relaxed
+      // or rattled tip always falls through to the fresh-start branch below).
+      const isLastFrame = !!srcContainer
+        && srcContainer.structures[srcContainer.structures.length - 1] === originalStructure;
+      const resumeVelocities = (isLastFrame && originalStructure.velocities) || null;
+      isContinuation = !!resumeVelocities;
+
+      const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
+      let mdRow;
+      if (isContinuation) {
+        mdContainer = srcContainer;
+        seedFrame = originalStructure;
+        mdRow = fileBrowser.selectedRow;
+      } else {
+        seedFrame = snapshotCurrentStructure();
+        mdContainer = new StructureContainer({ fileName: mdLabel, structures: [seedFrame] });
+        // Persist the plotted series on the container so the trajectory plot can be
+        // rebuilt (e.g. after a panel rebuild from a structure-table interaction)
+        // long after the live run's in-memory plot was torn down. Seed one NaN gap
+        // for the initial (pre-run) frame so the series stays index-aligned with
+        // mdContainer.structures.
+        // No pressure series: NEP/PET-MAD/ASE MD here runs at fixed cell, so the
+        // stress trace is not a meaningful pressure to plot. `step` records the
+        // real MD step per saved frame so the plot's x-axis reads steps (a
+        // multiple of the save stride), not the frame index; seed frame = step 0.
+        mdContainer.plotSeries = {
+          step: [0], temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN], pressure: [NaN],
+        };
+        structureShip.container.push(mdContainer);
+        mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
+        tableBody.appendChild(mdRow);
+      }
+      // Continuing picks the step/time clock up from the trajectory's own
+      // record, so the plot's x-axis and the on-screen step counter don't snap
+      // back to 0 partway through an otherwise-continuous run.
+      const resumeStep = isContinuation
+        ? (mdContainer.plotSeries?.step?.[mdContainer.plotSeries.step.length - 1] ?? 0)
+        : 0;
+      lastSavedStep = resumeStep;
+
+      resetLivePlot();
+      ensureTrajectoryPanelForLive();
+      // Evaluate the potential off-thread when we can: it is by far the longest
+      // part of a step, and on the main thread it blocks paint, so the render of
+      // one frame and the compute of the next serialise instead of overlapping.
+      // Falls back to the in-thread runner if the worker cannot start (and for
+      // MLIP/ASE, which have their own transports).
+      let forceEvaluator = createNEPForceEvaluator(runner);
+      let offThreadForces = false;
+      if (potential === 'nep' && general.mdWorker !== false && typeof Worker !== 'undefined') {
+        try {
+          await ensureWorkerNEPReady();
+          forceEvaluator = createWorkerNEPForceEvaluator();
+          offThreadForces = true;
+        } catch (workerError) {
+          console.warn('NEP worker unavailable, running the potential on the main thread:', workerError);
+        }
+      }
       const integrator = createVelocityVerletIntegrator();
       const targetTemperatureSchedule = useAnneal
         ? createCosineAnnealingSchedule({
@@ -881,17 +1231,36 @@ function bindMDBody(panel, shell, potential) {
             totalSteps: steps,
           })
         : startTemperatureK;
-      const thermostat = createVelocityRescaleThermostat({
+      // CSVR rather than the old Berendsen rescale: same cost, but it samples
+      // the canonical ensemble instead of merely holding the mean temperature.
+      const thermostat = createBussiThermostat({
         targetTemperatureK: /** @type {any} */ (targetTemperatureSchedule),
-        tauFs: 20,
+        tauFs: thermostatTauFs,
       });
+      const barostat = useNpt
+        ? createStochasticCellBarostat({ targetPressureGPa, tauFs: barostatTauFs })
+        : createNoBarostat();
+
+      // Animate a throwaway working copy of the source structure, not the
+      // source itself: the MD loop mutates fileBrowser.selectedStructure in
+      // place every step for live viewer feedback, and we do NOT want that to
+      // alter the user's starting structure. With a working copy the source row
+      // stays exactly as provided and only MD_… holds the trajectory. (The
+      // end-of-run restoreStructureInPlace remains as a belt-and-suspenders.)
+      const workingStructure = snapshotCurrentStructure();
+      fileBrowser.selectedStructure = workingStructure;
 
       const state = await initializeMDState({
         nepRunner: runner,
         structure: fileBrowser.selectedStructure,
         temperatureTargetK: startTemperatureK,
         forceEvaluator,
+        initialVelocities: resumeVelocities,
       });
+      if (isContinuation) {
+        state.step = resumeStep;
+        state.timeFs = resumeStep * dtFs;
+      }
 
       await runMDSimulation({
         state,
@@ -900,8 +1269,11 @@ function bindMDBody(panel, shell, potential) {
         forceEvaluator,
         integrator,
         thermostat,
+        barostat,
+        offThreadForces,
         shouldStop: () => mdStopRequested,
-        onStep: ({ step, timeFs, temperatureK, targetTemperatureK, epotEv, ekinEv, etotEv, state: mdState }) => {
+        onStep: ({ step, timeFs, temperatureK, targetTemperatureK, epotEv, ekinEv, etotEv,
+                   pressureGPa, volumeA3, state: mdState }) => {
           // snapshotCurrentStructure copies the viewer structure, so a save-step
           // must also apply the current state to the viewer first. Bond-topology
           // refresh is handled inside applyMDStateToViewer (BOND_TOPOLOGY_STRIDE);
@@ -909,22 +1281,46 @@ function bindMDBody(panel, shell, potential) {
           const shouldSave = step % saveStride === 0;
           const shouldUpdateViewer = step === 1 || shouldSave || step % viewerStride === 0;
           if (shouldUpdateViewer) {
-            applyMDStateToViewer(mdState, fileBrowser.selectedStructure);
-            setCurrentEFS({
-              forces: mdState.forces,
-              stress: { matrix3x3: mdState.stress },
+            mdProfileMeasure('viewerMs', () => {
+              applyMDStateToViewer(mdState, fileBrowser.selectedStructure);
+              setCurrentEFS({
+                forces: mdState.forces,
+                stress: { matrix3x3: mdState.stress },
+              });
             });
           }
 
+          // Fixed-cell MD: no pressure series (see plotSeries seed above).
+          lastStepMetrics = {
+            step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv, pressure: pressureGPa,
+          };
           if (shouldSave) {
-            mdContainer.structures.push(snapshotCurrentStructure());
-            lastSavedStep = step;
+            mdProfileMeasure('saveMs', () => {
+              const frame = snapshotCurrentStructure();
+              frame.energy = epotEv;
+              mdContainer.structures.push(frame);
+              lastSavedStep = step;
+            });
+            // Feed the plot exactly once per SAVED trajectory frame so the plot's
+            // sample count stays 1:1 with the scrubber's frames — this is what
+            // keeps the frame cursor aligned with the slider (feeding every step
+            // would desync the cursor from the 1..N frame index).
+            mdProfileMeasure('plotMs', () => {
+              feedLiveStep(lastStepMetrics);
+              mdContainer.plotSeries.step.push(step);
+              mdContainer.plotSeries.temperatureK.push(temperatureK);
+              mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(targetTemperatureK) ? targetTemperatureK : NaN);
+              mdContainer.plotSeries.etotEv.push(etotEv);
+              mdContainer.plotSeries.pressure.push(Number.isFinite(pressureGPa) ? pressureGPa : NaN);
+            });
           }
           const tLabel = Number.isFinite(targetTemperatureK)
             ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`
             : `T=${temperatureK.toFixed(0)} K`;
-          shell.statusEl.textContent = `step ${step} / ${steps}  ·  t=${timeFs.toFixed(1)} fs  ·  ${tLabel}`;
-          monitor.update({ step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv });
+          const pvLabel = useNpt && Number.isFinite(pressureGPa)
+            ? `  ·  P=${pressureGPa.toFixed(2)} GPa  ·  V=${volumeA3.toFixed(1)} A^3`
+            : '';
+          shell.statusEl.textContent = `step ${step} / ${steps}  ·  t=${timeFs.toFixed(1)} fs  ·  ${tLabel}${pvLabel}`;
         },
       });
 
@@ -937,11 +1333,26 @@ function bindMDBody(panel, shell, potential) {
 
       // Always keep the final state in the trajectory, even off-stride.
       if (state.step !== lastSavedStep) {
-        mdContainer.structures.push(snapshotCurrentStructure());
+        const frame = snapshotCurrentStructure();
+        frame.energy = state.potentialEnergyEv;
+        mdContainer.structures.push(frame);
+        // Keep the plot 1:1 with frames: feed this final frame too, reusing the
+        // last step's computed metrics (state carries no temperature/KE fields).
+        if (lastStepMetrics) {
+          feedLiveStep({ ...lastStepMetrics, step: state.step });
+          mdContainer.plotSeries.step.push(state.step);
+          mdContainer.plotSeries.temperatureK.push(lastStepMetrics.temperatureK);
+          mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(lastStepMetrics.targetTemperatureK) ? lastStepMetrics.targetTemperatureK : NaN);
+          mdContainer.plotSeries.etotEv.push(lastStepMetrics.etotEv);
+          mdContainer.plotSeries.pressure.push(
+            Number.isFinite(lastStepMetrics.pressure) ? lastStepMetrics.pressure : NaN);
+        }
       }
 
       const count = mdContainer.structures.length;
-      updateRow(mdRow, { name: mdLabel, traj: count, step: count });
+      // Continuation keeps the row's existing name — it's the same container,
+      // not a freshly labeled one.
+      updateRow(mdRow, { name: isContinuation ? srcContainer.fileName : mdLabel, traj: count, step: count });
       shell.statusEl.textContent = '';
       shell.resultEl.textContent = mdStopRequested ? `Stopped at step ${state.step}.` : `Finished at step ${state.step}.`;
     } catch (error) {
@@ -951,6 +1362,32 @@ function bindMDBody(panel, shell, potential) {
       mdStopRequested = false;
       if (startBtn) startBtn.disabled = false;
       if (stopBtn) stopBtn.disabled = true;
+      // Live run is over: hand ownership of the plot back to the container's
+      // persisted series so scrubbing/replay survives later panel rebuilds.
+      endLiveFeed();
+      // Safety-net restore of the source structure (it's normally untouched now
+      // that MD animates a working copy). SEPARATE try/catch from the row switch
+      // below: a restore hiccup must not prevent switching to MD_…. seedFrame is
+      // the frame the run actually started from — mdContainer.structures[0] for
+      // a fresh run, but the (unmoved) resumed frame itself when continuing.
+      try {
+        restoreStructureInPlace(originalStructure, seedFrame);
+      } catch { /* safety net only */ }
+      // Auto-select the recorded trajectory so the viewer refreshes to the new
+      // frame(s). refreshActivePanels() rebuilds the Trajectory panel (selection
+      // alone doesn't, so the scrubber otherwise stayed put until a manual row
+      // click).
+      try {
+        if (isContinuation) {
+          // Same row as before the run — jump it to the newly appended tip.
+          // selectLastAddedRow() would pick whatever row is last in the table,
+          // which isn't necessarily this one.
+          selectStructure(fileBrowser.selectedRowIndex, mdContainer.structures.length - 1);
+        } else {
+          selectLastAddedRow();
+        }
+        refreshActivePanels();
+      } catch { /* non-fatal: leave selection as-is */ }
     }
   });
 }

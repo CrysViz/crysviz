@@ -4,12 +4,13 @@
        .panelBody is shared with the MD monitor's content. */
 
     .panelBody {
-      padding: 12px;
+      padding: 12px 12px 14px;
       display: flex;
       flex-direction: column;
       gap: 12px;
     }
 
+    /* .controlsRow / generic select+input styling are shared with BondLengthPanel. */
     .controlsRow {
       display: flex;
       gap: 8px;
@@ -17,10 +18,242 @@
       justify-content: center;
     }
 
-    .control-button { background: #3a3a3a; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 18px; }
-    .control-button:hover { background: #555; }
+    select, input[type=number] {
+      padding: 4px;
+      border-radius: 6px;
+      background: #3a3a3a;
+      color: white;
+      border: none;
+      box-sizing: border-box;
+      text-align: center;
+    }
 
-    select, input[type=number] { padding: 4px; border-radius: 6px; background: #3a3a3a; color: white; border: none; box-sizing: border-box; text-align: center; }
+    /* ---- Transport row: prev / play / next · scrub slider · frame counter ---- */
+    .trajTransport {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
 
-    #toggleControls { position: fixed; top: 20px; right: 20px; }
-    #frameIndicator { text-align: center; font-size: 12px; margin-top: 6px; display: block; }
+    .trajBtn {
+      flex: 0 0 auto;
+      width: 34px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #2c2c2e;
+      color: #e8e8e8;
+      border: 1px solid #3a3a3c;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      padding: 0;
+      transition: background 0.12s ease, border-color 0.12s ease;
+    }
+    .trajBtn:hover { background: #3a3a3c; border-color: #4a4a4c; }
+    .trajBtn:active { background: #454547; }
+    .trajBtn:disabled { opacity: 0.4; cursor: default; }
+
+    /* Play is the primary action: circular accent, anchoring the square
+       prev/next buttons like a media deck. */
+    #playPauseBtn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #2e9c6e;
+      border-color: #2e9c6e;
+      color: #0c1f17;
+      font-size: 14px;
+      box-shadow: 0 0 0 4px rgba(46, 156, 110, 0.12);
+    }
+    #playPauseBtn:hover { background: #37b07d; border-color: #37b07d; }
+    #playPauseBtn:disabled {
+      background: #2c2c2e; border-color: #3a3a3c; color: #888; box-shadow: none;
+    }
+
+    .trajSlider {
+      flex: 1 1 auto;
+      min-width: 60px;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: #3a3a3c;
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+      margin: 0;
+    }
+    .trajSlider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #2e9c6e;
+      border: 2px solid #d7f5e8;
+      cursor: pointer;
+    }
+    .trajSlider::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #2e9c6e;
+      border: 2px solid #d7f5e8;
+      cursor: pointer;
+    }
+
+    /* Frame readout as a tape counter: accent current / muted total. */
+    .trajFrameLabel {
+      flex: 0 0 auto;
+      min-width: 58px;
+      text-align: right;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+    .trajFrameLabel .tfCur { color: #e8e8e8; font-weight: 600; }
+    .trajFrameLabel .tfSep { color: #5a5a5a; margin: 0 1px; }
+    .trajFrameLabel .tfTot { color: #7f7f7f; }
+
+    /* ---- Options row: speed + frame step ---- */
+    .trajOptions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+    }
+    /* Instrument micro-labels: tracked uppercase, like a control-deck legend. */
+    .trajOpt {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: 0.9px;
+      text-transform: uppercase;
+      color: #7a7a7a;
+    }
+    .trajOpt select,
+    .trajOpt input[type=number] {
+      background: #2c2c2e;
+      color: #e8e8e8;
+      border: 1px solid #3a3a3c;
+      border-radius: 6px;
+      padding: 3px 6px;
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: normal;
+      text-transform: none;
+    }
+    .trajOpt input[type=number] { width: 48px; }
+    .trajOpt select:focus,
+    .trajOpt input:focus { border-color: #2e9c6e; outline: none; }
+
+    /* ---- Resizable Plotly plot region (unified MD Monitor). Hidden by default
+       via inline style until hasPlottableData() decides there's something to
+       show (file-loaded energy, forces, or a live MD/relax feed). Legend,
+       zoom/pan and PNG/data export come from Plotly's own chrome. ---- */
+    #trajPlotHost {
+      display: block;
+      width: 100%;
+    }
+
+    .trajPlot {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 260px;
+      min-height: 190px;
+      min-width: 260px;
+      padding: 8px;
+      box-sizing: border-box;
+      background: #161618;
+      border: 1px solid #2c2c2e;
+      border-radius: 10px;
+      resize: vertical;
+      overflow: hidden;
+    }
+
+    /* Slim toolbar above the chart; the light/dark toggle (always shown) and
+       the "Compute step stats" action (only when there's data to crunch) both
+       read as part of the plot chrome, matching the EOS plot cards' 🌓 button. */
+    .trajPlotToolbar {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 6px;
+      min-height: 0;
+      margin-bottom: 2px;
+    }
+    .trajPlotThemeBtn {
+      background: #2c2c2e;
+      color: #dcdcdc;
+      border: 1px solid #3a3a3c;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease;
+    }
+    .trajPlotThemeBtn:hover { background: #3a3a3c; border-color: #4a4a4c; }
+    .trajPlotComputeBtn {
+      background: #2c2c2e;
+      color: #dcdcdc;
+      border: 1px solid #3a3a3c;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease;
+    }
+    .trajPlotComputeBtn:hover { background: #3a3a3c; border-color: #4a4a4c; }
+
+    .trajPlotChart {
+      flex: 1 1 auto;
+      width: 100%;
+      min-height: 0;
+    }
+
+    .trajPlotStats {
+      flex: 0 0 auto;
+      text-align: center;
+      margin-top: 6px;
+      font-size: 11px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      color: #b8b8b8;
+    }
+
+    /* ---- Right-docked (either edge): the pane owns the height, not the plot.
+       Free-floating or left-docked, .trajPlot's fixed 260px is what makes the
+       chart a sensible size. Inside the dock that's wrong: the pane already
+       has a definite height the user drags, so a fixed-height chart either
+       leaves dead space or (docked to the bottom, where the pane is short and
+       wide) overflows and forces the body to scroll. Chain flex down
+       .cv-panel-body > #TrajControlPanel > .panelBody > #trajPlotHost so the
+       chart takes the full width and whatever height is left; Plotly's own
+       ResizeObserver (TrajectoryPlot.js) re-lays it out from there.
+       min-height:0 at every level — flex items default to min-height:auto and
+       refuse to shrink below their content otherwise. ---- */
+    .cv-panel.cv-right-docked[data-panel-id="trajectory"] > .cv-panel-body > #TrajControlPanel,
+    .cv-panel.cv-right-docked[data-panel-id="trajectory"] .panelBody,
+    .cv-panel.cv-right-docked[data-panel-id="trajectory"] #trajPlotHost {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .cv-panel.cv-right-docked[data-panel-id="trajectory"] #trajPlotHost > .trajPlot {
+      flex: 1 1 auto;
+      height: auto;
+      /* Below this the axes stop being readable; the body scrolls instead. */
+      min-height: 140px;
+      /* The pane's own drag handle is the height control here. */
+      resize: none;
+    }

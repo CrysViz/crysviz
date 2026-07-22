@@ -373,6 +373,36 @@ export function registerPanel(def) {
 }
 
 /**
+ * Apply one panel's current availability, dock-aware. The single source of
+ * truth for the "structure gained/lost this feature" transition, shared by
+ * refreshActivePanels (structure switch) and refreshPanelAvailability (URL
+ * load, live-plot start, overlay sync) so a panel can never end up in the
+ * half-state that used to require a UI reset.
+ *
+ * Order matters: setAvailable(avail) runs FIRST, because reopening a
+ * right-docked panel goes through openPanel -> expand(), and expand() bails
+ * while the panel is still flagged unavailable — so it would re-dock as an
+ * empty, unbuilt tab. Greying/un-greying before the open/close reconciliation
+ * makes expand() actually build the content.
+ *
+ * An unavailable right-docked window would otherwise be a greyed tab over a
+ * live body — close it out of the dock and flag the close (_closedForUnavailable)
+ * so it reopens right-docked, and rebuilds, the moment its feature returns.
+ */
+function applyPanelAvailability(panel) {
+  const avail = panel.def.available ? !!panel.def.available() : true;
+  panel.setAvailable(avail);
+  if (!avail && panel.dock === 'right' && !panel.closed) {
+    panel._closedForUnavailable = true;
+    closePanel(panel.id);
+  } else if (avail && panel._closedForUnavailable && panel.closed) {
+    panel._closedForUnavailable = false;
+    openPanel(panel.id); // available now true -> expand() builds the content
+  }
+  return avail;
+}
+
+/**
  * Re-sync panels to a newly selected structure: rebuild the content of built
  * 'rebuild' panels (expanded ones immediately, collapsed ones lazily) and
  * re-evaluate every panel's availability. Replaces the old per-row
@@ -380,11 +410,7 @@ export function registerPanel(def) {
  */
 export function refreshActivePanels() {
   for (const panel of panels.values()) {
-    const avail = panel.def.available ? !!panel.def.available() : true;
-    // An unavailable right-docked window would be a greyed tab over a
-    // force-visible body — close it out of the dock instead (it reopens
-    // right-docked when its feature returns).
-    if (!avail && panel.dock === 'right' && !panel.closed) closePanel(panel.id);
+    const avail = applyPanelAvailability(panel);
     if (panel.def.lifecycle === 'rebuild' && panel.built) {
       if (!avail) {
         panel.collapse();
@@ -396,7 +422,6 @@ export function refreshActivePanels() {
         panel.stale = true;
       }
     }
-    panel.setAvailable(avail);
   }
 }
 
@@ -436,6 +461,9 @@ export function openPanel(id) {
   if (!panel) return;
   const wasClosed = panel.closed;
   panel.closed = false;
+  // A manual open clears the auto-close flag so a later user-initiated close
+  // isn't mistaken for an availability close and auto-reopened.
+  panel._closedForUnavailable = false;
   if (revealed || !panel.def.hiddenUntilStructure) panel.el.hidden = false;
   if (panel.dock === 'right') {
     rightDockPanel(panel, { front: true, expand: false });
@@ -493,10 +521,14 @@ export function rebuildPanel(id) {
   else panel.stale = true;
 }
 
-/** Re-evaluate available() for all panels without touching built content. */
+/** Re-evaluate available() for all panels without rebuilding structure content.
+ *  Dock-aware (via applyPanelAvailability): a right-docked panel that loses its
+ *  feature closes out of the dock and reopens when it returns, same as the
+ *  structure-switch path — so URL load / live-plot start / overlay sync can't
+ *  leave a panel stranded as a greyed or vanished tab. */
 export function refreshPanelAvailability() {
   for (const panel of panels.values()) {
-    if (panel.def.available) panel.setAvailable(!!panel.def.available());
+    if (panel.def.available) applyPanelAvailability(panel);
   }
 }
 

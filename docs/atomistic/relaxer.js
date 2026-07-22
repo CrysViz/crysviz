@@ -127,6 +127,25 @@ export function pressureGPaFromStress(stress) {
   return pressureFromStress(stress) * EV_A3_TO_GPA;
 }
 
+// Trace of a 3×3 stress tensor (σxx+σyy+σzz), in whatever units the tensor is.
+// Guarded: returns NaN for a missing/malformed tensor instead of throwing, so
+// callers can plot pressure only when stress data actually exists.
+export function stressTrace(stress) {
+  if (!Array.isArray(stress) || stress.length < 3) return NaN;
+  const xx = stress[0]?.[0];
+  const yy = stress[1]?.[1];
+  const zz = stress[2]?.[2];
+  if (!Number.isFinite(xx) || !Number.isFinite(yy) || !Number.isFinite(zz)) return NaN;
+  return xx + yy + zz;
+}
+
+// Mean of the stress-tensor diagonal, (σxx+σyy+σzz)/3 — the isotropic (scalar)
+// stress plotted as "pressure" on the trajectory chart. NaN for missing data.
+export function stressMean(stress) {
+  const tr = stressTrace(stress);
+  return Number.isFinite(tr) ? tr / 3 : NaN;
+}
+
 // FIRE — Fast Inertial Relaxation Engine (Bitzek et al., PRL 97, 170201
 // (2006)), semi-implicit Euler variant with the ASE update order. Unit atomic
 // mass, so dt² carries units of Å²/(eV/Å): the first step's displacement is
