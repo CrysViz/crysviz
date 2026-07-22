@@ -3,7 +3,8 @@
 // Wires the Files panel's ".add-structure-button" to a floating panel for
 // building a brand-new structure from scratch. "Atoms" (manual entry,
 // reusing the same table/bulk editor and periodic table picker as the
-// add-atom panel) and "Symmetry (Wyckoff)" (disabled stub) are top-level
+// add-atom panel) and "Symmetry (Wyckoff)" (space group + Wyckoff sites, see
+// SymmetryWyckoffTab.js) are top-level
 // tabs, each owning its own Lattice section (see LatticeInputPanel.js)
 // rather than sharing one lattice above a nested mode switch - symmetry-based
 // generation will constrain/derive the lattice differently than free-form
@@ -16,7 +17,7 @@ import { registerPanel, removePanel } from '../panels/PanelManager.js';
 import { createTabSwitcher } from '../TabSwitcher.js';
 import { createAtomTableEditor } from './AtomTableInput.js';
 import { createLatticeInputPanel } from './LatticeInputPanel.js';
-import { createSymmetryWyckoffTab } from './SymmetryWyckoffTabStub.js';
+import { createSymmetryWyckoffTab } from './SymmetryWyckoffTab.js';
 import { checkAtomCollisions, conflictingCandidateIndices } from './AtomCollisionCheck.js';
 import { createNewStructureFromAtoms } from './CommitAtoms.js';
 import { wireCollisionGuardedButton } from './CollisionWarningUI.js';
@@ -115,8 +116,7 @@ export function initAddStructureButton(buttonSelector = '.add-structure-button')
           {
             id: 'symmetry',
             label: 'Symmetry (Wyckoff)',
-            disabled: true,
-            render: createSymmetryWyckoffTab,
+            render: (tabBody) => createSymmetryWyckoffTab(tabBody, () => removePanel(PANEL_ID)),
           },
         ]);
       },
