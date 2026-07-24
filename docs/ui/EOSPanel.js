@@ -7,9 +7,14 @@
 
 import { CONVERSION_FACTORS, detectColumns, parseReferenceData, formatParam } from '../eos/eosMath.js';
 import { fitEOS, fitReferencePV } from '../eos/eosFit.js';
-import { plotEV, plotPV, clearPlot } from '../eos/eosPlots.js';
+import { plotEV, plotPV, clearPlot, onEOSPointClick } from '../eos/eosPlots.js';
+import { runEOSScan } from '../eos/eosCompute.js';
 import { setRedrawHandler, setPlotVisible, getShowErrorPlots } from './EOSPlotsPanel.js';
 import { openPanel, closePanel } from './panels/PanelManager.js';
+import { ensureActiveCalculator, snapshotCurrentStructure } from './BackendPanel/AtomisticPanels.js';
+import { createRow, updateRow, selectStructure } from './FileBrowswerPanel.js';
+import { StructureContainer } from '../model/index.js';
+import { fileBrowser, structureShip, general } from '../state/store.js';
 
 const state = {
   originalColumnData: null, // {volumes, energies, pressures, columnInfo} verbatim from file
@@ -22,7 +27,18 @@ const state = {
   referenceFit: null,
   minEnergy: null,
   units: { energy: 'eV', pressure: 'GPa', volume: 'Å³' },
+  // Potential-computed scan (see ingestComputedScan): the per-point structures,
+  // sorted by volume 1:1 with the plotted data (= plot customdata index), and
+  // the "EOS scan (…)" file-browser <tr> they live under. The row's index is
+  // re-derived from the table at click time — rows can be deleted/reordered.
+  computedStructures: null,
+  computedRow: null,
 };
+
+// Compute-from-potential run state. Module-level (not per-panel-build) so a
+// panel rebuild mid-scan can't spawn a second concurrent run.
+let computeRunning = false;
+let computeStopRequested = false;
 
 function toSI(columnData, units) {
   const hasEnergy = Array.isArray(columnData.energies);
@@ -44,6 +60,11 @@ function setStatus(container, text) {
 
 function setPyodideStatus(container, text) {
   const el = container.querySelector('.eos-pyodide-status');
+  if (el) el.textContent = text;
+}
+
+function setComputeStatus(container, text) {
+  const el = container.querySelector('.eos-compute-status');
   if (el) el.textContent = text;
 }
 
@@ -141,6 +162,12 @@ async function resetFit(container) {
   state.pvResult = null;
   state.evResult = null;
   state.minEnergy = null;
+  // Computed-scan teardown: drop the structures and unhook the plot clicks.
+  // The scan's file-browser row (a loaded trajectory like any other) stays —
+  // Reset clears the FIT, and a re-run reuses/refreshes that row anyway.
+  state.computedStructures = null;
+  wireComputedPointClicks();
+  setComputeStatus(container, '');
   const fileInput = container.querySelector('#eosFileInput');
   if (fileInput) fileInput.value = '';
   const info = container.querySelector('.eos-column-info');
@@ -174,6 +201,149 @@ async function handlePrimaryFile(container, file) {
     return;
   }
   await fitAndDisplay(container);
+}
+
+/** Register (or refresh, on a re-run) the computed scan as a file-browser row
+ *  named "EOS scan (<potential>)" — each point's structure is a frame, so the
+ *  scan is scrubbable/selectable like any loaded trajectory. */
+function registerScanRow(scan, potential) {
+  const tbody = document.querySelector('#objectTable tbody');
+  if (!tbody) return;
+  const name = `EOS scan (${potential})`;
+  const row = state.computedRow;
+  if (row && row.isConnected) {
+    // Re-run: swap the frames into the existing row's container instead of
+    // piling up a new row per scan. The container index tracks the row's
+    // live table position (row deletion splices both in step).
+    const rowIndex = Array.from(row.parentElement.children).indexOf(row);
+    const container = structureShip.container[rowIndex];
+    if (container) {
+      container.fileName = name;
+      container.structures = scan.structures;
+      updateRow(row, { name, traj: scan.structures.length, step: 1 });
+      return;
+    }
+  }
+  const container = new StructureContainer({ fileName: name, structures: scan.structures });
+  structureShip.container.push(container);
+  const newRow = createRow({ name, traj: scan.structures.length, step: 1 });
+  tbody.appendChild(newRow);
+  state.computedRow = newRow;
+}
+
+/** Point plot clicks at the computed structures — or unhook them when there
+ *  is no computed scan (file-loaded datasets have no structures to show). */
+function wireComputedPointClicks() {
+  if (!state.computedStructures) {
+    onEOSPointClick('ev-plot', null);
+    onEOSPointClick('pv-plot', null);
+    return;
+  }
+  const handler = (pointIndex) => {
+    const row = state.computedRow;
+    if (!row || !row.isConnected) return;
+    const rowIndex = Array.from(row.parentElement.children).indexOf(row);
+    selectStructure(rowIndex, Number(pointIndex));
+  };
+  onEOSPointClick('ev-plot', handler);
+  onEOSPointClick('pv-plot', handler);
+}
+
+/**
+ * Feed a potential-computed scan (runEOSScan result, sorted by volume) into
+ * the panel as if a file had been loaded. Computed data is already in
+ * eV / GPa / Å³, so the unit selectors are reset to those (a leftover user
+ * unit choice must not rescale calculator output). The dataset takes the
+ * detectColumns shape so fitAndDisplay runs unchanged, the scan becomes a
+ * file-browser row, and plot clicks map points to its frames. Exported
+ * separately from the Compute button so tests can drive it with a synthetic
+ * scan (no wasm).
+ */
+export async function ingestComputedScan(scan, { potential = general.atomisticPotential || 'nep' } = {}) {
+  const container = document.getElementById('cvPanelBody-eos');
+  if (!container) throw new Error('EOS panel is not built — expand it first.');
+  if (!scan || !Array.isArray(scan.volumes) || scan.volumes.length < 3) {
+    throw new Error('EOS scan needs at least 3 points to fit.');
+  }
+
+  state.units = { energy: 'eV', pressure: 'GPa', volume: 'Å³' };
+  for (const [id, value] of [['#eosEnergyUnits', 'eV'], ['#eosPressureUnits', 'GPa'], ['#eosVolumeUnits', 'Å³']]) {
+    const sel = container.querySelector(id);
+    if (sel) sel.value = value;
+  }
+
+  state.originalColumnData = {
+    volumes: [...scan.volumes],
+    energies: [...scan.energies],
+    pressures: [...scan.pressures],
+    columnInfo: { p: 2, e: 1, v: 0, headers: null, hasHeaders: false, hasEnergy: true },
+  };
+  state.computedStructures = Array.isArray(scan.structures) && scan.structures.length
+    ? scan.structures
+    : null;
+
+  const info = container.querySelector('.eos-column-info');
+  if (info) {
+    info.textContent = `Computed from potential (${potential}): ${scan.volumes.length} points`
+      + (state.computedStructures ? ' — click a plot point to view its structure.' : '');
+  }
+
+  if (state.computedStructures) registerScanRow(scan, potential);
+  wireComputedPointClicks();
+  await fitAndDisplay(container);
+}
+
+async function runComputeFromPotential(container) {
+  if (computeRunning) return;
+  const q = (sel) => container.querySelector(sel);
+  const nPoints = Math.max(3, Math.min(21, parseInt(q('#eosComputePoints').value, 10) || 7));
+  const maxStrainPct = Math.max(1, Math.min(15, parseFloat(q('#eosComputeStrainPct').value) || 5));
+  const doRelax = q('#eosComputeRelax').checked;
+  const fmaxTol = parseFloat(q('#eosComputeFmax').value) || 0.01;
+  const maxSteps = Math.max(1, parseInt(q('#eosComputeMaxSteps').value, 10) || 200);
+
+  if (!fileBrowser.selectedStructure) {
+    setComputeStatus(container, 'Error: no structure loaded.');
+    return;
+  }
+
+  computeRunning = true;
+  computeStopRequested = false;
+  /** @type {HTMLButtonElement} */ (q('#eosComputeBtn')).disabled = true;
+  /** @type {HTMLButtonElement} */ (q('#eosComputeStopBtn')).disabled = false;
+
+  try {
+    const base = snapshotCurrentStructure();
+    setComputeStatus(container, 'Preparing calculator…');
+    const { runner, potential } = await ensureActiveCalculator((text) => setComputeStatus(container, text));
+    const scan = await runEOSScan(runner, base, {
+      nPoints, maxStrainPct, fmaxTol, maxSteps, doRelax,
+      onProgress: (text) => setComputeStatus(container, text),
+      shouldStop: () => computeStopRequested,
+    });
+    if (scan.volumes.length < 3) {
+      setComputeStatus(container, `Stopped — only ${scan.volumes.length} point(s) computed, need 3 to fit.`);
+      return;
+    }
+    await ingestComputedScan(scan, { potential });
+    setComputeStatus(container, scan.stopped
+      ? `Stopped — fitted the ${scan.volumes.length} completed points.`
+      : `Computed ${scan.volumes.length} points.`);
+  } catch (error) {
+    // Everything the scan can throw (unsupported element, calculator init
+    // failure, …) surfaces here, not just on the console.
+    setComputeStatus(container, `Error: ${error.message || String(error)}`);
+    console.error(error);
+  } finally {
+    computeRunning = false;
+    computeStopRequested = false;
+    // The panel may have been rebuilt mid-run — re-query, don't trust `q`.
+    const live = document.getElementById('cvPanelBody-eos');
+    const computeBtn = /** @type {HTMLButtonElement} */ (live?.querySelector('#eosComputeBtn'));
+    const stopBtn = /** @type {HTMLButtonElement} */ (live?.querySelector('#eosComputeStopBtn'));
+    if (computeBtn) computeBtn.disabled = false;
+    if (stopBtn) stopBtn.disabled = true;
+  }
 }
 
 /** Recompute state.referenceRaw from the raw parsed file using the current
@@ -298,6 +468,42 @@ export function addEOSPanel(target = 'cvPanelBody-eos') {
       </div>
     </div>
 
+    <details class="control-group eos-collapsible">
+      <summary class="eos-collapsible-summary">
+        <span class="eos-collapsible-arrow">▶</span>
+        Compute from potential
+      </summary>
+      <div class="eos-collapsible-body">
+        <div class="eos-unit-list">
+          <div class="eos-unit-row">
+            <label for="eosComputePoints">Points</label>
+            <input type="number" id="eosComputePoints" value="7" min="3" max="21" step="1">
+          </div>
+          <div class="eos-unit-row">
+            <label for="eosComputeStrainPct">Volume range ± %</label>
+            <input type="number" id="eosComputeStrainPct" value="5" min="1" max="15" step="any">
+          </div>
+          <div class="eos-unit-row">
+            <label for="eosComputeRelax">Relax atoms (fixed cell)</label>
+            <input type="checkbox" id="eosComputeRelax" checked>
+          </div>
+          <div class="eos-unit-row">
+            <label for="eosComputeFmax">Force tol (eV/Å)</label>
+            <input type="number" id="eosComputeFmax" value="0.01" min="0.0001" step="any">
+          </div>
+          <div class="eos-unit-row">
+            <label for="eosComputeMaxSteps">Max relax steps</label>
+            <input type="number" id="eosComputeMaxSteps" value="200" min="1" step="1">
+          </div>
+        </div>
+        <div class="eos-primary-actions-row">
+          <button type="button" id="eosComputeBtn" class="eos-pane-btn">Compute</button>
+          <button type="button" id="eosComputeStopBtn" class="eos-pane-btn" disabled>Stop</button>
+        </div>
+        <div class="eos-compute-status"></div>
+      </div>
+    </details>
+
     <div class="control-group">
       <div class="eos-drop-zone" id="eosDropZone">Drop P/E/V data file here, or click to select</div>
       <input type="file" id="eosFileInput" accept=".txt,.dat,.csv" hidden>
@@ -381,6 +587,18 @@ export function addEOSPanel(target = 'cvPanelBody-eos') {
     (file) => handlePrimaryFile(container, file),
   );
   container.querySelector('#eosResetFitBtn').addEventListener('click', () => resetFit(container));
+
+  container.querySelector('#eosComputeBtn').addEventListener('click', () => runComputeFromPotential(container));
+  container.querySelector('#eosComputeStopBtn').addEventListener('click', () => {
+    computeStopRequested = true;
+    setComputeStatus(container, 'Stopping…');
+  });
+  // A rebuild mid-scan must not re-enable Compute (the run is module-level).
+  if (computeRunning) {
+    /** @type {HTMLButtonElement} */ (container.querySelector('#eosComputeBtn')).disabled = true;
+    /** @type {HTMLButtonElement} */ (container.querySelector('#eosComputeStopBtn')).disabled = false;
+  }
+
   wireDropZone(
     container.querySelector('#eosRefDropZone'),
     container.querySelector('#eosRefFileInput'),
