@@ -1,12 +1,14 @@
-// EOS computed from the in-browser potential: does the scan pipeline hold?
+// EOS computed from the in-browser potential: does the pressure scan hold?
 //
 // Driven with a synthetic potential (no NEP/MLIP wasm), so each check isolates
 // one claim:
-//   - runEOSScan spans the requested volume range, fixed-cell (the relaxer may
-//     move atoms but must NOT touch the scan's lattice, even under stress)
-//   - the energy minimum lands on the interior point nearest the base volume
+//   - runEOSScan relaxes cell+atoms onto each TARGET pressure (tension
+//     included): measured pressure within tolerance, volume strictly
+//     shrinking as the target pressure grows
+//   - the energy minimum lands on the point whose pressure is nearest zero
 //   - shouldStop aborts between points / mid-relax with partial results
-//   - the DEFAULT relax path still moves the cell (relaxCell regression)
+//   - relaxCell:false regression: the fixed-cell mode still holds the lattice
+//     against nonzero stress while atoms move
 //   - ingestComputedScan feeds the panel: plots window opens, E-V fit runs,
 //     the scan becomes ONE file-browser row (re-runs replace, not pile up)
 //   - clicking an E-V data point shows that point's structure in the viewer
@@ -29,13 +31,14 @@ const H = require('../harness');
     const V0 = latticeVolume(base.lattice);
     const frac0 = base.atoms.map((a) => [...a.position]);
 
-    // Synthetic potential: E = k(V-V0)^2/V0 (hydrostatic stress from dE/dV)
-    // plus springs pulling every atom to its base fractional site SHIFTED by
-    // 0.1 Å in x — so the relaxer has real work to do (several FIRE steps),
-    // which is what makes the fixed-cell claim non-trivial: nonzero stress is
-    // on the table the whole time the atoms move.
-    const k = 5;      // eV per (fractional volume deviation)
-    const kS = 1;     // eV/Å² spring constant
+    // Synthetic potential: E = k(V-V0)²/V0 with tension-positive hydrostatic
+    // stress σ_ii = dE/dV, so pressureGPaFromStress = -dE/dV × 160.2 — a
+    // positive target pressure must COMPRESS the cell below V0, a negative
+    // one stretch it above. Plus springs pulling every atom to its base
+    // fractional site SHIFTED by 0.1 Å in x, so the relaxer has real atomic
+    // work to do at every point, not just cell scaling.
+    const k = 5;       // eV per (fractional volume deviation)²·V0
+    const kS = 1;      // eV/Å² spring constant
     const SHIFT = 0.1; // Å, along x
     const makeRunner = () => ({
       modelInfo: { name: 'synthetic', element_list: [...new Set(base.elements)] },
@@ -69,12 +72,28 @@ const H = require('../harness');
     // Stash for the UI half of the test (separate evaluate, same page).
     window.__eosSynthetic = { makeRunner, V0 };
 
-    const scan = await runEOSScan(makeRunner(), base, { nPoints: 7, maxStrainPct: 6 });
-    const factors = scan.volumes.map((v) => v / V0);
-    const wantFactors = [0.94, 0.96, 0.98, 1.0, 1.02, 1.04, 1.06];
-    const factorErr = Math.max(...factors.map((f, i) => Math.abs(f - wantFactors[i])));
+    const pMinGPa = -5;
+    const pMaxGPa = 40;
+    const nPoints = 7;
+    const tol = 0.2;
+    const scan = await runEOSScan(makeRunner(), base, {
+      nPoints, pMinGPa, pMaxGPa, maxSteps: 400, pressureTolGPa: tol,
+    });
+
+    // Ascending targets; result arrays are sorted by volume, i.e. targets
+    // reversed (highest pressure = smallest volume first).
+    const targets = Array.from({ length: nPoints },
+      (_, i) => pMinGPa + ((pMaxGPa - pMinGPa) * i) / (nPoints - 1));
+    const targetErr = Math.max(...scan.pressures.map(
+      (p, i) => Math.abs(p - targets[nPoints - 1 - i])));
+    const volumesAscending = scan.volumes.every((v, i) => i === 0 || v > scan.volumes[i - 1]);
+    const pressuresDescending = scan.pressures.every((p, i) => i === 0 || p < scan.pressures[i - 1]);
+    const tensionExpands = scan.volumes[nPoints - 1] > V0; // the -5 GPa point
+    const compressionShrinks = scan.volumes[0] < V0;       // the +40 GPa point
     const minIdx = scan.energies.indexOf(Math.min(...scan.energies));
-    // Did the relaxer actually move the atoms (springs satisfied)?
+    const nearZeroIdx = scan.pressures.reduce(
+      (best, p, i) => (Math.abs(p) < Math.abs(scan.pressures[best]) ? i : best), 0);
+    // Did the relaxer satisfy the shifted springs (atoms really moved)?
     const p0 = scan.structures[3].atoms[0].position;
     const atomMoved = Math.hypot(
       p0[0] - frac0[0][0], p0[1] - frac0[0][1], p0[2] - frac0[0][2]) > 1e-4;
@@ -83,7 +102,7 @@ const H = require('../harness');
     // survive (the in-flight point is dropped) and the scan flags stopped.
     let stopFlag = false;
     const partial = await runEOSScan(makeRunner(), base, {
-      nPoints: 7, maxStrainPct: 6,
+      nPoints, pMinGPa, pMaxGPa, maxSteps: 400,
       onProgress: (text) => { if (text.startsWith('point 4/')) stopFlag = true; },
       shouldStop: () => stopFlag,
     });
@@ -94,40 +113,57 @@ const H = require('../harness');
       relaxCell: false, shouldStop: () => { relaxChecks += 1; return relaxChecks > 2; },
     });
 
-    // Regression: DEFAULT opts still relax the cell (volume walks toward V0).
-    const off = buildNEPStructure(makeRunner(), scan.structures[6]); // V ≈ 1.06 V0
-    const vStart = latticeVolume(off.lattice);
-    const relaxed = await relaxUntilConverged(makeRunner(), off, { maxSteps: 60 });
-    const vEnd = latticeVolume(relaxed.structure.lattice);
+    // relaxCell:false regression (relaxer API unchanged): the fixed-cell mode
+    // must hold a strongly stressed lattice (V ≈ 1.06 V0) bit-for-bit while
+    // the atoms relax onto the shifted spring sites.
+    const nep0 = buildNEPStructure(makeRunner(), base);
+    const scaled = {
+      lattice: nep0.lattice.map((r) => r.map((x) => x * 1.02)),
+      positions: nep0.positions.map((r) => r.map((x) => x * 1.02)),
+      types: [...nep0.types],
+    };
+    const fixed = await relaxUntilConverged(makeRunner(), scaled, { relaxCell: false, maxSteps: 200 });
+    const latticeHeld = fixed.structure.lattice.every(
+      (row, i) => row.every((x, j) => x === scaled.lattice[i][j]));
+    const fixedAtomsMoved = Math.abs(fixed.structure.positions[0][0] - scaled.positions[0][0]) > 0.05;
 
     return {
       n: scan.volumes.length,
       nStruct: scan.structures.length,
+      allConverged: scan.converged.length === nPoints && scan.converged.every(Boolean),
       stopped: scan.stopped,
-      factorErr,
-      minIdx,
+      targetErr, tol,
+      volumesAscending, pressuresDescending, tensionExpands, compressionShrinks,
+      minIdx, nearZeroIdx,
       atomMoved,
       partial: { n: partial.volumes.length, stopped: partial.stopped },
       stoppedRelax: { converged: stoppedRelax.converged, stopped: stoppedRelax.stopped },
-      V0, vStart, vEnd,
+      fixedCell: { latticeHeld, fixedAtomsMoved, converged: fixed.converged },
     };
   });
 
-  H.check('scan yields 7 points with 7 structures, not stopped',
-    engine.n === 7 && engine.nStruct === 7 && engine.stopped === false, JSON.stringify(engine));
-  H.check('volumes span exactly ±6% around the base volume (fixed cell held)',
-    engine.factorErr < 1e-6, `max factor error ${engine.factorErr}`);
-  H.check('energy minimum sits on the interior point at the base volume',
-    engine.minIdx === 3, `min at index ${engine.minIdx}`);
-  H.check('the fixed-cell relax really moved the atoms', engine.atomMoved);
+  H.check('scan yields 7 points with 7 structures, all converged, not stopped',
+    engine.n === 7 && engine.nStruct === 7 && engine.allConverged && engine.stopped === false,
+    JSON.stringify(engine));
+  H.check('measured pressure lands within tolerance of every target',
+    engine.targetErr <= engine.tol + 1e-9, `max |P - target| = ${engine.targetErr}`);
+  H.check('volume strictly shrinks as the target pressure grows',
+    engine.volumesAscending && engine.pressuresDescending,
+    `ascendingV ${engine.volumesAscending} descendingP ${engine.pressuresDescending}`);
+  H.check('tension expands the cell, compression shrinks it (sign convention)',
+    engine.tensionExpands && engine.compressionShrinks,
+    `tension ${engine.tensionExpands} compression ${engine.compressionShrinks}`);
+  H.check('energy minimum sits on the point with pressure nearest zero',
+    engine.minIdx === engine.nearZeroIdx, `min at ${engine.minIdx}, P≈0 at ${engine.nearZeroIdx}`);
+  H.check('the relax really moved the atoms onto the shifted spring sites', engine.atomMoved);
   H.check('shouldStop between points returns the completed points + stopped flag',
     engine.partial.n === 3 && engine.partial.stopped === true, JSON.stringify(engine.partial));
   H.check('shouldStop mid-relax reports stopped, not converged',
     engine.stoppedRelax.stopped === true && engine.stoppedRelax.converged === false,
     JSON.stringify(engine.stoppedRelax));
-  H.check('default relax opts still move the cell toward equilibrium',
-    Math.abs(engine.vEnd - engine.V0) < Math.abs(engine.vStart - engine.V0) - 1e-6,
-    `V ${engine.vStart.toFixed(2)} -> ${engine.vEnd.toFixed(2)} (V0 ${engine.V0.toFixed(2)})`);
+  H.check('relaxCell:false holds the lattice exactly while atoms relax under stress',
+    engine.fixedCell.latticeHeld && engine.fixedCell.fixedAtomsMoved && engine.fixedCell.converged,
+    JSON.stringify(engine.fixedCell));
 
   // ---- 2. UI: ingestComputedScan drives the panel + plots -------------------
   await page.evaluate(async () => {
@@ -144,9 +180,10 @@ const H = require('../harness');
     const { makeRunner } = window.__eosSynthetic;
 
     const base = snapshotCurrentStructure();
-    await ingestComputedScan(await runEOSScan(makeRunner(), base, { nPoints: 7, maxStrainPct: 6 }));
+    const opts = { nPoints: 7, pMinGPa: -5, pMaxGPa: 40, maxSteps: 400 };
+    await ingestComputedScan(await runEOSScan(makeRunner(), base, opts));
     // Re-run: must REPLACE the scan row, not add a second one.
-    const scan = await runEOSScan(makeRunner(), base, { nPoints: 7, maxStrainPct: 6 });
+    const scan = await runEOSScan(makeRunner(), base, opts);
     await ingestComputedScan(scan);
 
     const names = [...document.querySelectorAll('#objectTable tbody tr')]
@@ -166,6 +203,8 @@ const H = require('../harness');
       evV0Text: document.getElementById('eos-ev-V0')?.textContent ?? '',
       status: eosBody.querySelector('.eos-status').textContent,
       unitsReset: eosBody.querySelector('#eosEnergyUnits').value === 'eV',
+      hasPressureInputs: !!eosBody.querySelector('#eosComputePMin')
+        && !!eosBody.querySelector('#eosComputePMax'),
     };
   });
 
@@ -179,6 +218,7 @@ const H = require('../harness');
   H.check('re-running the scan replaces its file-browser row (exactly one)',
     ui.scanRows.length === 1 && ui.scanRows[0] === 'EOS scan (nep)', JSON.stringify(ui.names));
   H.check('ingest reset the input units to computed (eV)', ui.unitsReset);
+  H.check('the panel exposes the pressure-range inputs', ui.hasPressureInputs);
 
   // ---- 3. clicking an E-V point shows that structure ------------------------
   const clickPoint = async (idx) => page.evaluate(async (idx) => {
@@ -197,7 +237,7 @@ const H = require('../harness');
   }, idx);
 
   const first = await clickPoint(0);
-  H.check('clicking the smallest-volume point selects that scan frame',
+  H.check('clicking the smallest-volume (highest-P) point selects that scan frame',
     first.emitOk && first.rowName === 'EOS scan (nep)'
       && Math.abs(first.volume - ui.scanVolumes[0]) < 1e-6 && first.step === '1',
     JSON.stringify(first));

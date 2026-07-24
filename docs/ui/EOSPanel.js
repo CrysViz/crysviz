@@ -297,11 +297,18 @@ async function runComputeFromPotential(container) {
   if (computeRunning) return;
   const q = (sel) => container.querySelector(sel);
   const nPoints = Math.max(3, Math.min(21, parseInt(q('#eosComputePoints').value, 10) || 7));
-  const maxStrainPct = Math.max(1, Math.min(15, parseFloat(q('#eosComputeStrainPct').value) || 5));
-  const doRelax = q('#eosComputeRelax').checked;
+  // `|| default` would turn a typed 0 GPa into the default — check finiteness.
+  const pMinRaw = parseFloat(q('#eosComputePMin').value);
+  const pMaxRaw = parseFloat(q('#eosComputePMax').value);
+  const pMinGPa = Number.isFinite(pMinRaw) ? pMinRaw : -2;
+  const pMaxGPa = Number.isFinite(pMaxRaw) ? pMaxRaw : 20;
   const fmaxTol = parseFloat(q('#eosComputeFmax').value) || 0.01;
   const maxSteps = Math.max(1, parseInt(q('#eosComputeMaxSteps').value, 10) || 200);
 
+  if (pMinGPa >= pMaxGPa) {
+    setComputeStatus(container, 'Error: P min must be below P max.');
+    return;
+  }
   if (!fileBrowser.selectedStructure) {
     setComputeStatus(container, 'Error: no structure loaded.');
     return;
@@ -317,7 +324,7 @@ async function runComputeFromPotential(container) {
     setComputeStatus(container, 'Preparing calculator…');
     const { runner, potential } = await ensureActiveCalculator((text) => setComputeStatus(container, text));
     const scan = await runEOSScan(runner, base, {
-      nPoints, maxStrainPct, fmaxTol, maxSteps, doRelax,
+      nPoints, pMinGPa, pMaxGPa, fmaxTol, maxSteps,
       onProgress: (text) => setComputeStatus(container, text),
       shouldStop: () => computeStopRequested,
     });
@@ -326,9 +333,11 @@ async function runComputeFromPotential(container) {
       return;
     }
     await ingestComputedScan(scan, { potential });
+    const unconverged = scan.converged.filter((c) => !c).length;
+    const convergedNote = unconverged ? ` (${unconverged} did not converge)` : '';
     setComputeStatus(container, scan.stopped
-      ? `Stopped — fitted the ${scan.volumes.length} completed points.`
-      : `Computed ${scan.volumes.length} points.`);
+      ? `Stopped — fitted the ${scan.volumes.length} completed points${convergedNote}.`
+      : `Computed ${scan.volumes.length} points${convergedNote}.`);
   } catch (error) {
     // Everything the scan can throw (unsupported element, calculator init
     // failure, …) surfaces here, not just on the console.
@@ -480,12 +489,12 @@ export function addEOSPanel(target = 'cvPanelBody-eos') {
             <input type="number" id="eosComputePoints" value="7" min="3" max="21" step="1">
           </div>
           <div class="eos-unit-row">
-            <label for="eosComputeStrainPct">Volume range ± %</label>
-            <input type="number" id="eosComputeStrainPct" value="5" min="1" max="15" step="any">
+            <label for="eosComputePMin">P min (GPa)</label>
+            <input type="number" id="eosComputePMin" value="-2" step="any">
           </div>
           <div class="eos-unit-row">
-            <label for="eosComputeRelax">Relax atoms (fixed cell)</label>
-            <input type="checkbox" id="eosComputeRelax" checked>
+            <label for="eosComputePMax">P max (GPa)</label>
+            <input type="number" id="eosComputePMax" value="20" step="any">
           </div>
           <div class="eos-unit-row">
             <label for="eosComputeFmax">Force tol (eV/Å)</label>
