@@ -676,7 +676,7 @@ export function recenterCamera() {
 // Function to collapse all individual atom (and bond/polyhedron) expansions
 export function collapseAllAtomExpansions() {
   const atomsContainers = document.querySelectorAll('.individual-atoms, .individual-bonds, .individual-polyhedra');
-  const expandIcons = document.querySelectorAll('.comp-left span:last-child, .bond-expand-icon, .poly-expand-icon');
+  const expandIcons = document.querySelectorAll('.comp-expand-icon, .bond-expand-icon, .poly-expand-icon');
 
   atomsContainers.forEach(container => {
     container.style.display = 'none';

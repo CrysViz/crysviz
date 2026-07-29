@@ -305,7 +305,11 @@ function restoreCompositionUiState(state) {
     const container = compDiv.querySelector(`.comp-container[data-element="${element}"]`);
     if (!container) continue;
     const atomsContainer = container.querySelector('.individual-atoms');
-    const expandIcon = container.querySelector('.comp-left span:last-child');
+    // Target the caret by class, not `.comp-left span:last-child`: the
+    // per-element visibility toggle is a <label> whose last child is a
+    // <span class="toggle_slider">, which the positional selector matched
+    // first and then rotated 90deg (flipping the pill on its side).
+    const expandIcon = container.querySelector('.comp-expand-icon');
     atomsContainer?._populateAtomRows?.();
     if (atomsContainer) atomsContainer.style.display = 'block';
     if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';

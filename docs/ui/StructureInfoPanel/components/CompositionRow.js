@@ -167,6 +167,7 @@ export function createCompositionRow(el, count, total) {
   name.style.fontSize = 'calc(14px * var(--cv-font-scale, 1))';
 
   const expandIcon = document.createElement('span');
+  expandIcon.className = 'comp-expand-icon';
   expandIcon.textContent = '▶';
   expandIcon.style.cssText = `
     margin-left: 4px;
@@ -209,10 +210,10 @@ export function createCompositionRow(el, count, total) {
   atomsContainer.className = 'individual-atoms';
   atomsContainer.style.cssText = `
     display: none;
-    margin-left: 20px;
+    margin-left: 6px;
     margin-top: 8px;
     border-left: 2px solid rgba(255,255,255,0.1);
-    padding-left: 8px;
+    padding-left: 6px;
   `;
 
   // The individual atom rows are expensive to build (one DOM subtree per atom)
@@ -401,6 +402,7 @@ export function createWyckoffCompositionRow(el, entries, total) {
   name.style.fontSize = 'calc(14px * var(--cv-font-scale, 1))';
 
   const expandIcon = document.createElement('span');
+  expandIcon.className = 'comp-expand-icon';
   expandIcon.textContent = '▶';
   expandIcon.style.cssText = `
     margin-left: 4px;
@@ -443,10 +445,10 @@ export function createWyckoffCompositionRow(el, entries, total) {
   atomsContainer.className = 'individual-atoms';
   atomsContainer.style.cssText = `
     display: none;
-    margin-left: 20px;
+    margin-left: 6px;
     margin-top: 8px;
     border-left: 2px solid rgba(255,255,255,0.1);
-    padding-left: 8px;
+    padding-left: 6px;
   `;
 
   // Create individual atom rows for each Wyckoff site

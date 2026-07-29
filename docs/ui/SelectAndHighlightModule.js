@@ -684,7 +684,9 @@ function findAtomRow(element, sourceIndex, instanceId = null, revealPanel = true
   if (!targetContainer) return null;
 
   const atomsContainer = targetContainer.querySelector('.individual-atoms');
-  const expandIcon = targetContainer.querySelector('.comp-left span:last-child');
+  // By class, not `.comp-left span:last-child` - the latter matches the
+  // visibility toggle's inner <span class="toggle_slider"> and rotates it.
+  const expandIcon = targetContainer.querySelector('.comp-expand-icon');
   if (!atomsContainer) return null;
 
   // Individual atom rows are populated lazily on first expand (see
