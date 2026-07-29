@@ -41,8 +41,7 @@ import {rebuildOverlayAtoms,updateOverlayAtoms} from '../render/index.js';
 import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render/MeasurementModule.js' // not all imports might be needed in this file
 
 
-import {addAtomPanel} from '../ui/addToStructureModule/AddAtomModule.js'
-import {initAddStructureButton} from '../ui/addToStructureModule/AddStructureModule.js'
+import {initAddStructureButton, initModifyStructureButton} from '../ui/addToStructureModule/AddStructureModule.js'
 import {initCombineTrajectoriesButton} from '../ui/FileBrowswerPanel.js'
 import {initPanelSystem, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
 import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
@@ -224,10 +223,10 @@ export function updateVisualization(options = {}) {
   if (reRenderComposition != false) {
     renderComposition(reRenderComposition);
     // #addButton is only (re)created when renderComposition() runs, so
-    // (re)wire the Add Atoms/Vacuum popup here rather than on every
+    // (re)wire the Modify Structure panel here rather than on every
     // updateVisualization() call — avoids stacking duplicate click listeners
     // on the same live button node.
-    addAtomPanel();
+    initModifyStructureButton();
   }
   console.time("uv:updateLattice");
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
@@ -498,7 +497,7 @@ function initUIPanels() {
   addSavePanel();
   initImageExportPanel();
   initRaytraceWarningModal();
-  addAtomPanel();
+  initModifyStructureButton();
   initAddStructureButton();
   initCombineTrajectoriesButton();
   initKeyboardShortcuts();

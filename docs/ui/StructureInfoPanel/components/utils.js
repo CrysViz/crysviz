@@ -288,7 +288,13 @@ export function wirePressHoldPopup(button, { onPress, onConfirm, holdLabel = 'Ap
   });
 }
 
-export function updateAtomCoordinates(atomIndex, newCoords) {
+// `rebuildComposition` false is the live-drag path: it re-lays-out atoms and
+// bonds but leaves the Structure Info composition panel alone. Rebuilding it
+// ("open") tears down and recreates this atom's row — and with it the very
+// slider the user is dragging — so a drag only ever registers its first frame.
+// The Apply button and slider-release go through the full path; the drag
+// itself must not.
+function applyAtomCoordinates(atomIndex, newCoords, { rebuildComposition }) {
   if (!fileBrowser.selectedStructure) {
     console.error("updateAtomCoordinates: selected structure not found");
     return;
@@ -313,6 +319,19 @@ export function updateAtomCoordinates(atomIndex, newCoords) {
     reRenderBonds: true,
     reRenderLattice: false,
     reRenderOther: true,
-    reRenderComposition: "open",
+    reRenderComposition: rebuildComposition ? "open" : false,
   });
+  // The Modify Structure panel shows the same coordinates in its atom table
+  // and is not part of the composition rebuild — this is how it learns.
+  document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+}
+
+export function updateAtomCoordinates(atomIndex, newCoords) {
+  return applyAtomCoordinates(atomIndex, newCoords, { rebuildComposition: true });
+}
+
+// Live variant for slider drags — same edit, no composition rebuild (which
+// would destroy the slider mid-drag). See applyAtomCoordinates.
+export function updateAtomCoordinatesLive(atomIndex, newCoords) {
+  return applyAtomCoordinates(atomIndex, newCoords, { rebuildComposition: false });
 }

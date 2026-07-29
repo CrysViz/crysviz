@@ -3,6 +3,7 @@ import { fileBrowser, general, structureShip } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { PT_INVERTED } from './BackendPanel/MoyoWASM.js';
 import { cartToFrac, fracToCart, invert3x3, transpose3x3 } from '../math/index.js';
+import { clearSelectedAtoms } from './SelectAndHighlightModule.js';
 
 let moyoReady = null;
 
@@ -366,6 +367,64 @@ export function applyWyckoffOrbitPosition(representativeIndex, newCoords, struct
     reRenderOther: true,
     reRenderComposition,
   });
+  // Anything else showing these coordinates (the Modify Structure panel's atom
+  // table) has no other way to learn the atoms moved — reRenderComposition
+  // only rebuilds the Structure Info panel.
+  document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+  return true;
+}
+
+// Delete a whole Wyckoff orbit: every atom of the orbit leaves the structure
+// at once, which is the only removal that keeps the symmetry lock true —
+// dropping a single atom of a multiplicity-N site would break the very
+// operations the lock is built from.
+//
+// The remaining orbits store raw atom indices (atomIndices,
+// representativeIndex, mappings), so they are renumbered here against the
+// shortened atoms array rather than the lock being thrown away and
+// re-analysed: re-running moyo could land on a different tolerance/setting and
+// silently reshuffle orbits the user wasn't editing.
+export function removeWyckoffOrbit(orbitId, structure = fileBrowser.selectedStructure) {
+  if (!structure?.symmetry || structure.symmetry.mode !== 'wyckoff') return false;
+  const orbits = structure.symmetry.orbitGroups;
+  const orbit = orbits.find((group) => group.orbitId === orbitId);
+  // Removing the last orbit would leave an atom-less structure, which every
+  // downstream panel (bonds, polyhedra, symmetry) reads as a load failure.
+  if (!orbit || orbits.length <= 1) return false;
+
+  const removed = new Set(orbit.atomIndices);
+  const renumbered = [];
+  let shift = 0;
+  for (let i = 0; i < structure.atoms.length; i += 1) {
+    renumbered[i] = removed.has(i) ? -1 : i - shift;
+    if (removed.has(i)) shift += 1;
+  }
+
+  structure.atoms = structure.atoms.filter((_, i) => !removed.has(i));
+  structure.elements = structure.elements.filter((_, i) => !removed.has(i));
+  structure.uniqueElements = [...new Set(structure.elements)];
+
+  structure.symmetry.orbitGroups = orbits
+    .filter((group) => group !== orbit)
+    .map((group) => ({
+      ...group,
+      atomIndices: group.atomIndices.map((index) => renumbered[index]),
+      representativeIndex: renumbered[group.representativeIndex],
+      mappings: group.mappings.map((mapping) => ({ ...mapping, atomIndex: renumbered[mapping.atomIndex] })),
+    }));
+  structure.symmetry.representativeAtomIndices = structure.symmetry.orbitGroups.map((group) => group.representativeIndex);
+
+  // Selection and 3D highlight both hold atom indices from before the splice.
+  clearSelectedAtoms();
+
+  updateVisualization({
+    reRenderAtoms: true,
+    reRenderBonds: true,
+    reRenderLattice: false,
+    reRenderOther: true,
+    reRenderComposition: 'open',
+  });
+  document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
   return true;
 }
 

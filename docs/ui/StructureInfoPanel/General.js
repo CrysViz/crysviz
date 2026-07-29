@@ -421,12 +421,16 @@ export function renderComposition(panelState="closed") {
 
 
 
-  // Button to add additional atoms to structure <- FIXME so far not working
+  // Opens the Modify Structure panel (AddStructureModule.js's
+  // initModifyStructureButton, rewired by updateVisualization every time this
+  // function runs). Shown in wyckoff mode too — there it opens the orbit
+  // editor rather than the atom table.
   const addButtonsRow = document.createElement('div');
   addButtonsRow.style.cssText = 'display: flex; align-items: center; gap: 4px;';
   const addAtomButton = document.createElement('button');
   addAtomButton.id = 'addButton';
-  addAtomButton.innerHTML = '+';               // icon only
+  addAtomButton.innerHTML = '✎';               // icon only
+  addAtomButton.title = hasWyckoffPanel ? 'Modify Wyckoff orbits' : 'Modify structure: lattice, atoms, add and remove';
   addAtomButton.className = 'btn-mini highlight';
   addAtomButton.style.cssText = `
     height: 26px;
@@ -444,8 +448,8 @@ export function renderComposition(panelState="closed") {
     cursor: pointer;
   `;
 
-   if (!hasWyckoffPanel) addButtonsRow.appendChild(addAtomButton)
-  
+  addButtonsRow.appendChild(addAtomButton);
+
   const title = document.createElement('div');
   const titleWrapper = document.createElement('div');
     titleWrapper.style.cssText = `
