@@ -1,11 +1,11 @@
 // CommitAtoms.js
 //
-// The two ways new atoms end up in the app's state: pushed into an existing,
-// currently-loaded Structure, or used to build a brand-new Structure that
-// gets registered as its own file-browser row. Both paths are pulled out
-// here, decoupled from any particular panel's UI, so the add-atom panel, the
-// add-structure modal, and (later) a symmetry/Wyckoff generator can all call
-// the same commit logic after running AtomCollisionCheck.js.
+// The ways an edited atom list ends up in the app's state: applied to the
+// currently-loaded Structure (Modify Structure), or used to build a brand-new
+// Structure that gets registered as its own file-browser row (Add Structure).
+// Both paths are pulled out here, decoupled from any particular panel's UI, so
+// the two structure editors and (later) a symmetry/Wyckoff generator can all
+// call the same commit logic after running AtomCollisionCheck.js.
 
 import { Atom, Structure, StructureContainer } from '../../model/index.js';
 import { fileBrowser, structureShip } from '../../state/store.js';
@@ -26,43 +26,128 @@ export function parseColorHexToInt(hex) {
 // uniqueElements. Caller is responsible for refreshing bond controls and
 // re-rendering (createBondLengthControls() + updateVisualization({
 // reRenderAtoms:true, reRenderBonds:true})).
-//
-// Also records each pushed atom's uuid on `structure._sessionAddedAtoms` (an
-// in-memory, not saved/exported bookkeeping list, same pattern as the vacuum
-// module's `_vacuumApplied`) so the Add Atoms panel can list and remove them
-// again later in the session — see removeSessionAddedAtom() below.
 export function addAtomsToExistingStructure(structure, atomsToAdd) {
-  structure._sessionAddedAtoms ??= [];
   for (const a of atomsToAdd) {
-    const atom = new Atom({
+    structure.atoms.push(new Atom({
       position: [a.x, a.y, a.z],
       element: a.element,
       color: parseColorHexToInt(a.color),
       uuid: generateID([a.element]),
-    });
-    structure.atoms.push(atom);
+    }));
     structure.elements.push(a.element);
-    structure._sessionAddedAtoms.push({ uuid: atom.uuid, element: a.element });
   }
   structure.uniqueElements = [...new Set(structure.elements)];
 }
 
-// Undo one addAtomsToExistingStructure() addition by uuid — removes the atom
-// from the structure's parallel atoms/elements arrays (and from the session
-// bookkeeping list) so it can be added and then immediately un-added without
-// leaving stale entries either place. Returns true if an atom was removed.
-// Caller is responsible for re-rendering, same as addAtomsToExistingStructure.
-export function removeSessionAddedAtom(structure, uuid) {
-  if (!structure) return false;
-  const index = structure.atoms.findIndex((a) => a.uuid === uuid);
-  if (index === -1) return false;
-  structure.atoms.splice(index, 1);
-  structure.elements.splice(index, 1);
+// Apply one round of edits from the Modify Structure panel's atom table.
+//
+// `atoms` is the FINAL atom list in table order: an entry with a uuid is the
+// existing atom of that uuid (possibly moved/recoloured/re-elemented), an
+// entry without one is new, and any atom of `structure` missing from the list
+// is deleted. Rebuilding the arrays from the table beats replaying individual
+// add/move/remove operations — every atom-indexed thing in the app
+// (atomImages, bonds, selection) is derived from these arrays anyway, and a
+// rebuild can't drift out of order the way an operation replay can.
+//
+// Caller re-renders (createBondLengthControls() + updateVisualization({
+// reRenderAtoms:true, reRenderBonds:true, reRenderComposition:"open" })).
+// Returns { added, removed } counts.
+/**
+ * @param {any} structure
+ * @param {{atoms: Array<{uuid: string|null, element: string, x: number, y: number, z: number, color?: string}>, lattice?: number[][]}} edits
+ */
+export function applyStructureEdits(structure, { atoms, lattice }) {
+  const byUuid = new Map(structure.atoms.map((atom) => [atom.uuid, atom]));
+  // Element lives on the parallel `elements` array, not on the Atom (see
+  // model/Atom.js — the constructor only uses `element` to derive colours).
+  const elementByUuid = new Map(structure.atoms.map((atom, i) => [atom.uuid, structure.elements[i]]));
+  const keptUuids = new Set();
+
+  const nextAtoms = atoms.map((entry) => {
+    const existing = entry.uuid ? byUuid.get(entry.uuid) : null;
+    if (!existing) {
+      return new Atom({
+        position: [entry.x, entry.y, entry.z],
+        element: entry.element,
+        color: parseColorHexToInt(entry.color),
+        // Honour a uuid the table already assigned to a new row: the live
+        // Modify editor re-runs this on every keystroke, so a stable uuid is
+        // what keeps a just-added atom the SAME atom across edits (and lets
+        // the New/Removed diff tell it from the originals).
+        uuid: entry.uuid || generateID([entry.element]),
+      });
+    }
+    keptUuids.add(entry.uuid);
+    // A changed element changes the atom's default/element colour and radius,
+    // which the Atom constructor derives once — so re-make it rather than
+    // patch it, keeping the uuid so later edits still find the same row.
+    const atom = elementByUuid.get(entry.uuid) === entry.element
+      ? existing
+      : new Atom({ position: existing.position, element: entry.element, uuid: existing.uuid });
+    atom.position = [entry.x, entry.y, entry.z];
+    // Only write the colour when the user actually picked a different one:
+    // the table is prefilled with each atom's *effective* colour, so writing
+    // it back unconditionally would pin every atom to a user colour and stop
+    // it following its element/colour-map default.
+    if (entry.color && entry.color.toLowerCase() !== colorToHex(atom.getColor()).toLowerCase()) {
+      atom.userColor = entry.color;
+      atom.setColor(entry.color);
+    }
+    return atom;
+  });
+
+  const removed = structure.atoms.length - keptUuids.size;
+  const added = nextAtoms.length - keptUuids.size;
+
+  structure.atoms = nextAtoms;
+  structure.elements = atoms.map((entry) => entry.element);
   structure.uniqueElements = [...new Set(structure.elements)];
-  if (structure._sessionAddedAtoms) {
-    structure._sessionAddedAtoms = structure._sessionAddedAtoms.filter((e) => e.uuid !== uuid);
-  }
-  return true;
+  if (lattice) structure.lattice = lattice.map((row) => [...row]);
+
+  // A Wyckoff lock stores raw atom indices (orbitGroups.atomIndices), so it is
+  // meaningless the moment atoms are added or removed — drop it instead of
+  // letting the composition panel index past the end of structure.atoms.
+  if ((added || removed) && structure.symmetry?.mode === 'wyckoff') structure.symmetry = null;
+
+  return { added, removed };
+}
+
+// Restore a structure to its as-loaded state (Structure.original, the frozen
+// snapshot taken in the constructor). This is the Modify panel's "Revert
+// Changes": the panel edits the structure live, so undoing everything means
+// rebuilding the atom/element/lattice arrays from that snapshot. Fresh uuids
+// are minted (the snapshot predates uuid assignment) - the caller drops any
+// _modify diff state so the baseline is recaptured on the next open.
+export function revertStructureToOriginal(structure) {
+  const orig = structure.original;
+  if (!orig) return;
+  structure.atoms = orig.atoms.map((a, i) => {
+    const atom = new Atom({
+      position: [...a.position],
+      element: orig.elements[i],
+      uuid: generateID([orig.elements[i]]),
+    });
+    if (a.userColor) { atom.userColor = a.userColor; atom.setColor(a.userColor); }
+    return atom;
+  });
+  structure.elements = [...orig.elements];
+  structure.uniqueElements = [...new Set(orig.elements)];
+  structure.lattice = orig.lattice.map((row) => [...row]);
+  // Atom-index-based locks are meaningless against the rebuilt array.
+  if (structure.symmetry) structure.symmetry = null;
+}
+
+// Restore only the cell to its as-loaded value - the lattice section's own
+// "Reset Lattice", independent of the atom edits.
+export function resetLatticeToOriginal(structure) {
+  if (structure.original) structure.lattice = structure.original.lattice.map((row) => [...row]);
+}
+
+// Numeric colour (Atom.color) or css string (Atom.userColor) -> "#rrggbb".
+export function colorToHex(color) {
+  if (typeof color === 'string') return color.startsWith('#') ? color : `#${color}`;
+  if (!Number.isFinite(color)) return '#808080';
+  return `#${(color >>> 0).toString(16).padStart(6, '0')}`;
 }
 
 // Register a Structure as a new file-browser row, select it, and recenter

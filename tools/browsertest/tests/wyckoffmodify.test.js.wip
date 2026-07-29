@@ -1,0 +1,85 @@
+// Modify Structure panel in Wyckoff mode (WyckoffOrbitEditor.js): when the
+// loaded structure carries a Wyckoff lock, the "✎" button opens the orbit
+// editor instead of the free-form atom table. It must move a site along its
+// degrees of freedom (frozen axes disabled) and delete a whole orbit at once
+// — never offer per-atom add/delete, which would break the lock.
+'use strict';
+const H = require('../harness');
+
+const MODIFY = '[data-panel-id="modifyStructure"]';
+
+async function enableWyckoff(page) {
+  await page.evaluate(async () => {
+    const pm = await import('./ui/panels/PanelManager.js');
+    pm.openPanel('symmetry');
+  });
+  await page.waitForTimeout(1500);
+  await H.clickById(page, 'getWyckoffBtn');
+  await page.waitForTimeout(2500);
+}
+
+(async () => {
+  const { browser, page, errors } = await H.launchApp();
+  await H.loadDefaultStructure(page); // YBCO, P-class -> several orbits
+  await enableWyckoff(page);
+
+  const locked = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    return fileBrowser.selectedStructure?.symmetry?.mode === 'wyckoff';
+  });
+  H.check('structure is Wyckoff-locked before modifying', locked);
+
+  // --- The modify button opens the orbit editor, not the atom table ------------
+  const opened = await page.evaluate(async (sel) => {
+    const { fileBrowser } = await import('./state/store.js');
+    /** @type {HTMLElement} */ (document.getElementById('addButton')).click();
+    const panel = document.querySelector(sel);
+    return {
+      title: document.querySelector(`${sel} .cv-panel-title, ${sel} .panel-title`)?.textContent || '',
+      orbitCards: panel.querySelectorAll('button').length > 0,
+      hasAtomTable: !!panel.querySelector('#atomsTable'),
+      hasAddRow: !!panel.querySelector('#addNewRow'),
+      orbits: fileBrowser.selectedStructure.symmetry.orbitGroups.length,
+    };
+  }, MODIFY);
+  H.check('Wyckoff modify opens the orbit editor, with no atom table or Add-atom button',
+    !opened.hasAtomTable && !opened.hasAddRow && opened.orbits > 1, JSON.stringify(opened));
+
+  // --- Deleting an orbit removes every atom of that orbit ----------------------
+  const removed = await page.evaluate(async (sel) => {
+    const { fileBrowser } = await import('./state/store.js');
+    const s = fileBrowser.selectedStructure;
+    const before = s.atoms.length;
+    const orbitsBefore = s.symmetry.orbitGroups.length;
+    const victim = s.symmetry.orbitGroups[0];
+    const victimSize = victim.atomIndices.length;
+
+    const panel = document.querySelector(sel);
+    // The orbit cards each carry a "✕" remove button.
+    const removeBtn = [...panel.querySelectorAll('button')].find((b) => b.textContent === '✕' && !b.disabled);
+    removeBtn.click();
+
+    return {
+      before,
+      victimSize,
+      after: s.atoms.length,
+      elements: s.elements.length,
+      orbitsBefore,
+      orbitsAfter: s.symmetry.orbitGroups.length,
+      stillWyckoff: s.symmetry.mode === 'wyckoff',
+      // The renumbered orbits must still index inside the shortened array.
+      indicesInRange: s.symmetry.orbitGroups.every(
+        (g) => g.atomIndices.every((i) => i >= 0 && i < s.atoms.length)
+          && g.representativeIndex >= 0 && g.representativeIndex < s.atoms.length),
+    };
+  }, MODIFY);
+  H.check('removing an orbit drops all its atoms and keeps arrays parallel',
+    removed.after === removed.before - removed.victimSize && removed.elements === removed.after,
+    JSON.stringify(removed));
+  H.check('the lock survives with one fewer orbit, all indices renumbered in range',
+    removed.stillWyckoff && removed.orbitsAfter === removed.orbitsBefore - 1 && removed.indicesInRange,
+    JSON.stringify(removed));
+
+  H.check('no page errors', errors.length === 0, errors[0] || '');
+  await H.finish(browser);
+})().catch(H.crash);

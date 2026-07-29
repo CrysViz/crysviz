@@ -30,12 +30,12 @@ function paramRow(labelA, idA, labelB, idB) {
   `;
 }
 
-// createLatticeInputPanel(container, { initial }) -> { getLattice() }
+// createLatticeInputPanel(container, { initial, onChange }) -> { getLattice, setLattice }
 /**
  * @param {HTMLElement} container
- * @param {{initial?: number[][]}} options
+ * @param {{initial?: number[][], onChange?: (lattice: number[][]) => void}} options
  */
-export function createLatticeInputPanel(container, { initial } = {}) {
+export function createLatticeInputPanel(container, { initial, onChange } = {}) {
   let lattice = initial || [[10, 0, 0], [0, 10, 0], [0, 0, 10]];
 
   container.appendChild(makeSectionHeadline('Lattice'));
@@ -127,6 +127,7 @@ export function createLatticeInputPanel(container, { initial } = {}) {
       if (a > 0 && b > 0 && c > 0 && alpha > 0 && beta > 0 && gamma > 0) {
         lattice = latticeFromCell(a, b, c, alpha, beta, gamma);
         syncMatrixFromLattice();
+        onChange?.(lattice);
       }
     });
   });
@@ -137,6 +138,7 @@ export function createLatticeInputPanel(container, { initial } = {}) {
     input.addEventListener('input', () => {
       lattice[i][j] = parseFloat(input.value) || 0;
       syncParamsFromLattice();
+      onChange?.(lattice);
     });
   });
 
@@ -145,5 +147,13 @@ export function createLatticeInputPanel(container, { initial } = {}) {
 
   return {
     getLattice: () => lattice,
+    // Replace the shown cell wholesale (revert / reset-lattice) - refreshes
+    // both the parameter and matrix views. Does NOT fire onChange: the caller
+    // that resets the structure is already driving the render itself.
+    setLattice: (next) => {
+      lattice = next.map((row) => [...row]);
+      syncParamsFromLattice();
+      syncMatrixFromLattice();
+    },
   };
 }

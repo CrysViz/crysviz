@@ -225,6 +225,40 @@ async function ensureCalculatorReady(potential, shell) {
   return ensureNEPReady(shell.statusEl, shell.sourceStateEl);
 }
 
+// Write-only stand-in for a panel status element: the ensure* helpers report
+// progress by assigning .textContent, so a setter that forwards to a callback
+// lets them run without any panel DOM.
+function statusElAdapter(onStatus) {
+  return { set textContent(text) { onStatus(String(text)); } };
+}
+
+/**
+ * Headless access to the active in-browser calculator (EOS scans, addons):
+ * resolves general.atomisticPotential to a ready { runner, potential } without
+ * needing the Relax/MD panel open. When that panel IS built, its PET-MAD
+ * backend/model controls are reused so a headless load matches (and shares the
+ * singleton with) whatever the user picked there. 'ase' throws — it computes
+ * on a remote server, not in the browser.
+ */
+export async function ensureActiveCalculator(onStatus = () => {}) {
+  const potential = general.atomisticPotential || 'nep';
+  if (potential === 'ase') {
+    throw new Error('ASE runs on a remote server backend — select the NEP or PET-MAD potential to compute in-browser.');
+  }
+  const statusEl = statusElAdapter(onStatus);
+  const panel = document.getElementById('BackendCalcPanel');
+  const shell = {
+    statusEl,
+    sourceStateEl: statusEl,
+    mlipStatusEl: statusEl,
+    mlipBackendSelect: panel?.querySelector('[data-role="mlip-backend"]') ?? null,
+    mlipModelSelect: panel?.querySelector('[data-role="mlip-model"]') ?? null,
+    mlipFileInput: panel?.querySelector('[data-role="mlip-file"]') ?? null,
+  };
+  const runner = await ensureCalculatorReady(potential, shell);
+  return { runner, potential };
+}
+
 function convertStressEvA3ToGPa(stressTensor) {
   const factor = 160.21766208;
   return stressTensor.map((row) => row.map((value) => value * factor));
