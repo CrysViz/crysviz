@@ -75,7 +75,11 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const stackedHeader = options.stackedHeader ?? false;
   row.style.cssText = stackedHeader
     ? 'display: flex; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 6px; padding: 6px 0; font-size: 11px;'
-    : 'display: grid; grid-template-columns: 1fr auto auto; align-items: center; column-gap: 12px; padding: 4px 0; font-size: 11px;';
+    // Name prefers its content width but yields (minmax(0, max-content)) when
+    // the panel is narrow, handing space to the buttons; the buttons keep their
+    // natural width, with "Spin/Force" wrapping at its <wbr> to two lines so the
+    // trio stays compact instead of overflowing.
+    : 'display: grid; grid-template-columns: minmax(0, max-content) auto auto; align-items: center; column-gap: 10px; padding: 4px 0; font-size: 11px;';
 
   const imageStyle = perImage ? getAtomImageStyle(fileBrowser.selectedStructure, imageIndex) : null;
   const currentColor = perImage
@@ -135,19 +139,21 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = stackedHeader
     ? 'display: flex; gap: 8px; flex: 1 1 auto; flex-wrap: wrap;'
-    : 'display: flex; gap: 10px;';
+    // One row of buttons at their natural width; "Spin/Force" is split onto two
+    // lines (its <br>), keeping the trio compact enough to sit beside the name.
+    : 'display: flex; gap: 6px; justify-content: flex-end;';
 
   const inactiveButtonBorder = '1px solid rgba(255,255,255,0.2)';
   const activeButtonBorder = '1px solid rgba(125, 206, 160, 0.95)';
   const activeButtonShadow = '0 0 0 1px rgba(125, 206, 160, 0.35), inset 0 0 0 1px rgba(125, 206, 160, 0.15)';
 
-  // Color/alpha/size editor button (labeled "Edit" — the editor holds more
+  // Color/alpha/size editor button (labeled "Color" — the editor holds more
   // than color; the swatch background still previews the atom color)
   const colorBtn = document.createElement('button');
-  colorBtn.textContent = 'Edit';
+  colorBtn.textContent = 'Color';
   colorBtn.className = 'atom-editor-button';
   colorBtn.dataset.editorButton = 'color';
-  colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;';
+  colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 10px; white-space: normal; line-height: 1.15; text-align: center;';
   colorBtn.title = `Edit color, alpha and size for ${element}${displayNumber}`;
   function updateColorBtnSwatch() {
     const color = perImage
@@ -163,7 +169,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   coordBtn.textContent = 'Position';
   coordBtn.className = 'atom-editor-button';
   coordBtn.dataset.editorButton = 'coord';
-  coordBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; cursor: pointer; font-size: 10px;';
+  coordBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 10px; white-space: normal; line-height: 1.15; text-align: center;';
   coordBtn.title = `Edit coordinates for ${element}${displayNumber}`;
   if (!positionEditable) {
     coordBtn.disabled = true;
@@ -174,10 +180,13 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   // Spin Edit button
   const spinBtn = document.createElement('button');
-  spinBtn.textContent = 'Spin/Force';
+  // Split the label at the slash onto two lines ("Spin/" / "Force"), the way it
+  // was before: it keeps this (longest) button narrow so the three buttons fit
+  // beside the name in a docked panel instead of overflowing it.
+  spinBtn.innerHTML = 'Spin/<br>Force';
   spinBtn.className = 'atom-editor-button';
   spinBtn.dataset.editorButton = 'spin';
-  spinBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; cursor: pointer; font-size: 10px;';
+  spinBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 10px; white-space: normal; line-height: 1.15; text-align: center;';
   spinBtn.title = `Edit Spin for ${element}${displayNumber}`;
 
   const keepToggle = createTinyImmunityToggle(linkedAtomIndices, `Keep ${element}${displayNumber} visible across cut planes`);
@@ -403,11 +412,14 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
     const input = document.createElement('input');
     input.type = 'number';
+    input.className = 'coord-num-input';
     input.value = coords[axis].toFixed(6);
     input.step = '0.000001';
     input.placeholder = axisName;
     // The spinner arrows eat a third of a 72px box at this font size; the
-    // slider is the coarse control, so the box is text-only.
+    // slider is the coarse control, so the box is text-only. The inline
+    // appearance:textfield handles Firefox; recent Chrome ignores it for the
+    // spinner, so .coord-num-input strips the webkit spin buttons in CSS.
     input.style.cssText = 'width: 100%; min-width: 0; padding: 3px 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 10px; font-family: monospace; -moz-appearance: textfield; appearance: textfield;';
     input.disabled = !free;
     input.title = slider.title;
