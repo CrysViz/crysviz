@@ -6,12 +6,6 @@ import { updateVisualization } from '../core/crystal-viewer.js';
 import { createSupercell } from './SuperCellModule.js';
 import { resetView } from './WindowAndSceneControls.js';
 import { fracToCart, cartToFrac } from '../render/index.js';
-import {
-  vectorLength3,
-  dot3,
-  acosDeg,
-  latticeVolume,
-} from '../math/index.js';
 
 // Grow the current structure's cell by the requested vacuum (Å) along each
 // lattice vector, keeping the atoms' Cartesian positions fixed - a standard
@@ -157,91 +151,6 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
     border-radius: 5px;
     padding: 10px;
   `;
-
-  // --- Lattice Parameters section (flat headline + content; the whole
-  // window is collapsible, so the sections are not) ---
-  const latticePanel = document.createElement("div");
-  latticePanel.id = "latticeParametersPanel";
-  latticePanel.style.marginBottom = "10px";
-
-  const latticeContent = document.createElement("div");
-  latticeContent.id = "latticeContent";
-
-  // --- Lattice Reset Button ---
-  const latticeResetBtnWrapper = document.createElement("div");
-  latticeResetBtnWrapper.style.cssText = `
-    display: flex;
-    justify-content: center;
-    margin-top: 2px;
-  `;
-
-  const latticeResetBtn = document.createElement("button");
-  latticeResetBtn.textContent = "Reset Lattice";
-  latticeResetBtn.className = "reset-btn";
-  latticeResetBtn.style.cssText = `
-    height: 28px;
-    padding: 4px 10px;
-    font-size: 12px;
-    margin-bottom: 10px;
-    cursor: pointer;
-    border: none;
-    border-radius: 4px;
-    color: white;
-  `;
-
-  latticeResetBtnWrapper.appendChild(latticeResetBtn);
-  latticeContent.appendChild(latticeResetBtnWrapper);
-
-  // --- Toggle for Lattice Input ---
-  const toggleRow = document.createElement("div");
-  toggleRow.style.cssText = `
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    margin-bottom: 8px;
-  `;
-
-  const toggleLabel = document.createElement("span");
-  toggleLabel.textContent = "Input Option: ";
-  toggleLabel.style.cssText = `
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.8);
-  `;
-
-  const toggleBtn = document.createElement("button");
-  toggleBtn.textContent = "Matrix";
-  toggleBtn.className = "mini-btn";
-  toggleBtn.style.cssText = `
-    height: 24px;
-    padding: 2px 8px;
-    font-size: 12px;
-    cursor: pointer;
-    border: none;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
-    margin-left: 8px;
-  `;
-
-  toggleRow.appendChild(toggleLabel);
-  toggleRow.appendChild(toggleBtn);
-  latticeContent.appendChild(toggleRow);
-
-  // --- Lattice Input Container ---
-  const latticeViewContainer = document.createElement("div");
-  latticeContent.appendChild(latticeViewContainer);
-
-  // --- Volume Display ---
-  const volumeDiv = document.createElement("div");
-  volumeDiv.style.cssText = `
-    margin-top: 8px;
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.8);
-  `;
-  latticeContent.appendChild(volumeDiv);
-
-  latticePanel.appendChild(makeSectionHeadline("Lattice Parameters"));
-  latticePanel.appendChild(latticeContent);
 
   // --- Supercell section ---
   const supercellPanel = document.createElement("div");
@@ -437,162 +346,8 @@ transformContent.appendChild(transformMatrixContainer);
   transformPanel.appendChild(makeSectionHeadline("Lattice Transformation"));
   transformPanel.appendChild(transformContent);
 
-  const deg2rad = (deg) => (deg * Math.PI) / 180;
-
-  function updateVolumeDisplay(L) {
-    const V = latticeVolume(L);
-    volumeDiv.textContent = `Volume: ${V.toFixed(3)} Å³`;
-  }
-
-  // --- Lattice Parameter View ---
-  function renderLatticeParams() {
-    latticeViewContainer.innerHTML = "";
-
-    const L = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-    const a = vectorLength3(L[0]);
-    const b = vectorLength3(L[1]);
-    const c = vectorLength3(L[2]);
-    const alpha = acosDeg(dot3(L[1], L[2]) / (b * c || 1));
-    const beta = acosDeg(dot3(L[0], L[2]) / (a * c || 1));
-    const gamma = acosDeg(dot3(L[0], L[1]) / (a * b || 1));
-
-    const params = { a, b, c, alpha, beta, gamma };
-    const table = document.createElement("table");
-    table.style.cssText = "width:100%; border-collapse:collapse; font-size:12px;";
-    const tbody = document.createElement("tbody");
-
-    for (const [key, val] of Object.entries(params)) {
-      const tr = document.createElement("tr");
-      const tdLabel = document.createElement("td");
-      tdLabel.textContent = key;
-      tdLabel.style.cssText = "padding:4px;";
-
-      const tdInput = document.createElement("td");
-      const input = document.createElement("input");
-      input.type = "number";
-      input.className = "LatticeInput"
-      input.value = val.toFixed(4);
-      input.step = key.length === 1 ? "0.01" : "0.1";
-      input.style.cssText = "width:80px; text-align:right; font-family:monospace; padding:2px;";
-      input.id = `${key}Input`;
-      input.oninput = () => {
-        const vals = {
-          a: parseFloat(document.querySelector("#aInput").value),
-          b: parseFloat(document.querySelector("#bInput").value),
-          c: parseFloat(document.querySelector("#cInput").value),
-          alpha: parseFloat(document.querySelector("#alphaInput").value),
-          beta: parseFloat(document.querySelector("#betaInput").value),
-          gamma: parseFloat(document.querySelector("#gammaInput").value),
-        };
-        if (Object.values(vals).some((v) => !isFinite(v))) return;
-
-        const { a, b, c, alpha, beta, gamma } = vals;
-        const cosA = Math.cos(deg2rad(alpha));
-        const cosB = Math.cos(deg2rad(beta));
-        const cosG = Math.cos(deg2rad(gamma));
-        const sinG = Math.sin(deg2rad(gamma));
-        const Lnew = [
-          [a, 0, 0],
-          [b * cosG, b * sinG, 0],
-          [
-            c * cosB,
-            c * ((cosA - cosB * cosG) / sinG),
-            c * Math.sqrt(1 - cosB ** 2 - ((cosA - cosB * cosG) / sinG) ** 2),
-          ],
-        ];
-        general.modifiedLattice = Lnew;
-        fileBrowser.selectedStructure.lattice =  Lnew;
-        updateVisualization({
-          reRenderAtoms: true,
-          reRenderBonds: true,
-          reRenderLattice: true,
-          reRenderOther: false,
-        });
-        updateVolumeDisplay(Lnew);
-      };
-      tdInput.appendChild(input);
-      tr.appendChild(tdLabel);
-      tr.appendChild(tdInput);
-      tbody.appendChild(tr);
-    }
-
-    table.appendChild(tbody);
-    latticeViewContainer.appendChild(table);
-    updateVolumeDisplay(L);
-  }
-
-  // --- Matrix View ---
-  function renderMatrixView() {
-    latticeViewContainer.innerHTML = "";
-    const L = fileBrowser.selectedStructure.lattice.map(r => [...r]);
-
-    const table = document.createElement("table");
-    table.style.cssText = "width:100%; border-collapse:collapse; font-size:12px;";
-    const tbody = document.createElement("tbody");
-
-    for (let i = 0; i < 3; i++) {
-      const tr = document.createElement("tr");
-      for (let j = 0; j < 3; j++) {
-        const td = document.createElement("td");
-        const input = document.createElement("input");
-        input.type = "number";
-        input.className = "LatticeInput"
-        input.value = L[i][j].toFixed(4);
-        input.step = "0.01";
-        input.style.cssText = "width:80px; text-align:right; font-family:monospace; padding:2px;";
-        input.oninput = () => {
-          const val = parseFloat(input.value);
-          if (isFinite(val)) {
-            fileBrowser.selectedStructure.lattice[i][j] = val;
-            updateVisualization({
-              reRenderAtoms: true,
-              reRenderBonds: true,
-              reRenderLattice: true,
-              reRenderOther: false,
-            });
-            updateVolumeDisplay(fileBrowser.selectedStructure.lattice);
-          }
-        };
-        general.modifiedLattice = fileBrowser.selectedStructure.lattice
-        td.appendChild(input);
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
-    }
-
-    table.appendChild(tbody);
-    latticeViewContainer.appendChild(table);
-    updateVolumeDisplay(L);
-  }
 
   // --- Event Handlers ---
-  let showMatrix = false;
-  toggleBtn.onclick = () => {
-    showMatrix = !showMatrix;
-    toggleBtn.textContent = showMatrix ? "Parameters" : "Matrix";
-    showMatrix ? renderMatrixView() : renderLatticeParams();
-  };
-
-  latticeResetBtn.onclick = () => {
-    general.modifiedLattice = null;
-    fileBrowser.selectedStructure.atoms = fileBrowser.selectedStructure.original.atoms;
-    fileBrowser.selectedStructure.lattice = fileBrowser.selectedStructure.original.lattice;
-    if (general.currentSupercell != null) {
-      createSupercell(
-        general.currentSupercell.nx,
-        general.currentSupercell.ny,
-        general.currentSupercell.nz
-      );
-    }
-    updateVisualization({
-      reRenderAtoms: true,
-      reRenderBonds: true,
-      reRenderLattice: true,
-      reRenderOther: true,
-    });
-    resetView();
-    showMatrix ? renderMatrixView() : renderLatticeParams();
-  };
 
   supercellApplyBtn.onclick = () => {
     const newA = Math.max(1, parseInt(supercellInputs.nx.value));
@@ -671,14 +426,11 @@ transformResetBtn.onclick = () => {
 };
 
   // --- Build Structure ---
-  group.appendChild(latticePanel);
   group.appendChild(supercellPanel);
   group.appendChild(vacuumPanel);
   group.appendChild(transformPanel);
   targetPanel.appendChild(group);
 
-  // --- Initial Render ---
-  renderLatticeParams();
 }
 
 export function removeLatticeAndSupercellPanel() {
