@@ -75,11 +75,11 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const stackedHeader = options.stackedHeader ?? false;
   row.style.cssText = stackedHeader
     ? 'display: flex; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 6px; padding: 6px 0; font-size: 11px;'
-    // Name prefers its content width but yields (minmax(0, max-content)) when
-    // the panel is narrow, handing space to the buttons; the buttons keep their
-    // natural width, with "Spin/Force" wrapping at its <wbr> to two lines so the
-    // trio stays compact instead of overflowing.
-    : 'display: grid; grid-template-columns: minmax(0, max-content) auto auto; align-items: center; column-gap: 10px; padding: 4px 0; font-size: 11px;';
+    // Name column is `auto`: it shrinks to the coords' min-content but no
+    // further, so the coordinates never overflow into (and overlap) the buttons.
+    // Buttons keep their natural width, "Spin/Force" split to two lines, and the
+    // reduced left indent on the container leaves room for all three.
+    : 'display: grid; grid-template-columns: auto auto auto; align-items: center; column-gap: 10px; padding: 4px 0; font-size: 11px;';
 
   const imageStyle = perImage ? getAtomImageStyle(fileBrowser.selectedStructure, imageIndex) : null;
   const currentColor = perImage
