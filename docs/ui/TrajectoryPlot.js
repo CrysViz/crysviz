@@ -19,6 +19,13 @@
 // a single rAF-coalesced relayout, so even a fast live feed can't thrash it.
 
 import { loadPlotly } from '../utils/plotlyLoader.js';
+import { expandSplitItem, closeExpandedSplitItem } from './panels/RightDock.js';
+import { exportHistogramPNG } from './AnalysisPanels/histogramPlotly.js';
+
+// Stable id for the chart div — there is only ever one trajectory plot
+// instance (see plotTheme below), so a fixed id is safe and is what lets
+// exportHistogramPNG (shared with the analysis histograms) address it.
+const PLOT_ID = 'trajectoryPlotChart';
 
 // Series metadata: colour, dash, autoscale group, legend label and whether the
 // series is drawn (`plot`). Potential/kinetic energy are reported in the live
@@ -108,9 +115,49 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   computeBtn.textContent = 'Compute step stats';
   computeBtn.style.display = 'none';
   toolbar.appendChild(computeBtn);
+  // Export + expand, same icons/styling as the analysis histograms'
+  // .split-item-action-btn corner buttons — reused directly (rightDock.css)
+  // rather than re-styled, so this reads as the same chrome.
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.className = 'split-item-action-btn';
+  exportBtn.title = 'Export PNG';
+  exportBtn.textContent = '📥';
+  exportBtn.onclick = () => {
+    exportHistogramPNG(PLOT_ID).catch((error) => console.error('Trajectory plot export failed:', error));
+  };
+  toolbar.appendChild(exportBtn);
+  const expandBtn = document.createElement('button');
+  expandBtn.type = 'button';
+  expandBtn.className = 'split-item-action-btn';
+  expandBtn.title = 'Expand';
+  expandBtn.textContent = '⛶';
+  expandBtn.onclick = () => {
+    expandSplitItem(root);
+    isExpanded = true;
+    drawFull();
+  };
+  toolbar.appendChild(expandBtn);
   root.appendChild(toolbar);
 
+  // Fullscreen-only close button — same .split-item-close-btn RightDock.js's
+  // expandSplitItem()/closeExpandedSplitItem() drive on the analysis
+  // histograms and EOS plots (hidden unless `root` carries `.expanded`, see
+  // trajectoryPanel.css's .trajPlot.expanded rule below).
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'split-item-close-btn';
+  closeBtn.title = 'Close expanded view';
+  closeBtn.textContent = '✕';
+  closeBtn.onclick = () => {
+    closeExpandedSplitItem();
+    isExpanded = false;
+    drawFull();
+  };
+  root.appendChild(closeBtn);
+
   const plotDiv = document.createElement('div');
+  plotDiv.id = PLOT_ID;
   plotDiv.className = 'trajPlotChart';
   root.appendChild(plotDiv);
 
@@ -138,6 +185,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   let ready = false;         // Plotly.newPlot has run at least once
   let removed = false;
   let layoutSig = '';        // signature of the current trace/axis layout
+  let isExpanded = false;    // fullscreen (⛶) — bigger fonts, see buildLayout
 
   function ensureSeries(name) {
     if (!series.has(name)) { series.set(name, []); seriesOrder.push(name); }
@@ -216,6 +264,13 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     const isLight = plotTheme === 'light';
     const fontColor = isLight ? '#1a1a1a' : '#ddd';
     const gridColor = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)';
+    // Bigger fonts/margins in the fullscreen (⛶) view, same idiom as the
+    // histograms' isExpanded sizing — the compact panel's tuned sizes read as
+    // tiny once stretched across a 90vw/90vh fullscreen canvas.
+    const sizes = isExpanded
+      ? { base: 15, legend: 14, xTitle: 15, yTitle: 16, tick: 14 }
+      : { base: 11, legend: 10, xTitle: 11, yTitle: 12, tick: 10 };
+    const marginScale = isExpanded ? 1.5 : 1;
 
     const layout = {
       // Dark stays transparent (the surrounding .trajPlot div already paints
@@ -223,23 +278,29 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       // switch to dark-on-white and would otherwise sit on that dark CSS bg.
       paper_bgcolor: isLight ? '#ffffff' : 'rgba(0,0,0,0)',
       plot_bgcolor: isLight ? '#ffffff' : 'rgba(0,0,0,0)',
-      font: { color: fontColor, size: 11 },
+      font: { color: fontColor, size: sizes.base },
       // Extra top room so the (possibly two-row) horizontal legend sits fully
       // above the plot frame instead of overlapping the traces.
-      margin: { t: 42, r: marginR, b: 38, l: 52 },
+      margin: {
+        t: Math.round(42 * marginScale),
+        r: Math.round(marginR * marginScale),
+        b: Math.round(38 * marginScale),
+        l: Math.round(52 * marginScale),
+      },
       showlegend: true,
       legend: {
         orientation: 'h', x: 0.5, y: 1.02, xanchor: 'center', yanchor: 'bottom',
-        font: { color: fontColor, size: 10 }, bgcolor: 'rgba(0,0,0,0)',
+        font: { color: fontColor, size: sizes.legend }, bgcolor: 'rgba(0,0,0,0)',
         tracegroupgap: 8,
       },
       hovermode: 'x unified',
       // Opaque hover box, readable against either canvas colour.
       hoverlabel: isLight
-        ? { bgcolor: 'rgba(255,255,255,0.96)', bordercolor: '#bbbbbb', font: { color: '#1a1a1a', size: 11 } }
-        : { bgcolor: 'rgba(24,24,27,0.96)', bordercolor: '#5a5a5e', font: { color: '#f2f2f2', size: 11 } },
+        ? { bgcolor: 'rgba(255,255,255,0.96)', bordercolor: '#bbbbbb', font: { color: '#1a1a1a', size: sizes.base } }
+        : { bgcolor: 'rgba(24,24,27,0.96)', bordercolor: '#5a5a5e', font: { color: '#f2f2f2', size: sizes.base } },
       xaxis: {
-        title: { text: xTitle, font: { size: 11 }, standoff: 6 },
+        title: { text: xTitle, font: { size: sizes.xTitle }, standoff: 6 },
+        tickfont: { size: sizes.tick },
         color: fontColor, gridcolor: gridColor,
         zeroline: false, domain: [0, rightDomain],
       },
@@ -252,9 +313,9 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       const meta = GROUP_META[g];
       const axColor = pickColor(meta, isLight);
       const ax = {
-        title: { text: meta.title, font: { color: axColor, size: 12 } },
+        title: { text: meta.title, font: { color: axColor, size: sizes.yTitle } },
         color: axColor,
-        tickfont: { color: axColor, size: 10 },
+        tickfont: { color: axColor, size: sizes.tick },
         zeroline: false,
       };
       if (i === 0) {
@@ -502,6 +563,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       if (cursorRAF) cancelAnimationFrame(cursorRAF);
       if (resizeRAF) cancelAnimationFrame(resizeRAF);
       if (ro) { ro.disconnect(); ro = null; }
+      if (isExpanded) { closeExpandedSplitItem(); isExpanded = false; }
       try { if (Plotly && plotDiv) Plotly.purge(plotDiv); } catch { /* nothing drawn yet */ }
       root.remove();
     },

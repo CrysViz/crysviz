@@ -76,6 +76,12 @@ export const app = {
   useOrthographicCamera:true,
   defaultZoomScale:0.75,
   orthographicFrustumSize:null,
+  // Default (true): one shared camera view across every loaded structure —
+  // switching structures re-centers but keeps rotation/zoom, good for
+  // comparing them. Off: each file-browser row remembers its own camera (not
+  // per trajectory step within a row) — see FileBrowswerPanel.js's
+  // updateStructureFromRowAndStep and the lock button in setupCameraButtons.
+  cameraLocked:true,
   keyLight:null,
   // When true, an offscreen capture (PNG export, render/ImageExportModule.js)
   // owns the renderer: the AnimateModule loop skips its pipeline/gizmo/label
@@ -353,6 +359,12 @@ export const general = {
   // thread during MD. Set false to force the in-thread path (the worker also
   // holds its own copy of the 14.9 MB model, so it costs memory).
   mdWorker:true,
+  // Default (true): the Features window's toggles are one shared set of
+  // values across every loaded structure. Off: each file-browser row
+  // remembers its own toggle values (not per trajectory step within a row)
+  // — see ui/FeatureLockModule.js and FileBrowswerPanel.js's
+  // updateStructureFromRowAndStep.
+  featuresLocked: true,
   // Feature activation flags, set by the toggles in the unified "Features"
   // window (ui/panels/defaultPanels.js) — NOT by panel expand state. When a
   // flag is off the corresponding feature panel is greyed out.
@@ -392,7 +404,37 @@ export const general = {
   atomCutPlanes: [],
 };
 
+// ---- lock-toggle persistence (ui/LockToggleButton.js's camera/feature
+// locks) — its own small localStorage-backed allowlist, same convention as
+// panelPrefs (ui/panels/PanelManager.js): own key, explicit named booleans,
+// saved immediately on change. Read as a top-level side effect right here
+// (not deferred to some later init call) so both app.cameraLocked and
+// general.featuresLocked already hold their persisted value the moment ANY
+// consumer reads them — setupCameraButtons() (WindowAndSceneControls.js)
+// reads app.cameraLocked well before registerDefaultPanels() reads
+// general.featuresLocked, so there's no single "init" point after which
+// every reader would already be ordered correctly.
+const LOCK_PREFS_KEY = 'crysvizLockPrefs';
+try {
+  const raw = localStorage.getItem(LOCK_PREFS_KEY);
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.cameraLocked === 'boolean') app.cameraLocked = parsed.cameraLocked;
+    if (typeof parsed?.featuresLocked === 'boolean') general.featuresLocked = parsed.featuresLocked;
+  }
+} catch { /* corrupted/missing -> defaults */ }
 
+/** Called by the lock buttons' onChange handlers (WindowAndSceneControls.js,
+ *  FeatureLockModule.js) right after flipping app.cameraLocked /
+ *  general.featuresLocked, so the choice survives a reload. */
+export function saveLockPrefs() {
+  try {
+    localStorage.setItem(LOCK_PREFS_KEY, JSON.stringify({
+      cameraLocked: app.cameraLocked,
+      featuresLocked: general.featuresLocked,
+    }));
+  } catch { /* storage unavailable */ }
+}
 
 export const mode = {
   measureMode:'none', // 'none', 'distance', 'angle', 'hide', 'restore'

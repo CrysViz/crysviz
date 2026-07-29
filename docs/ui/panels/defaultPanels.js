@@ -27,6 +27,7 @@ import { addDummySplitPanel, removeDummySplitPanel } from '../DummySplitPanel.js
 import { addLandscapePanel, removeLandscapePanel, addLandscapePlotsPanel, removeLandscapePlotsPanel } from '../LandscapePanel.js';
 import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
+import { createFeatureLockButton } from '../FeatureLockModule.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
 import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
@@ -349,7 +350,7 @@ export function registerDefaultPanels() {
     defaults: { dock: 'left', order: -20, collapsed: false, barCollapsed: true },
   });
 
-  registerPanel({
+  const featuresPanel = registerPanel({
     id: 'features',
     title: 'Features',
     lifecycle: 'persistent',
@@ -358,6 +359,12 @@ export function registerDefaultPanels() {
     buildContent: buildFeaturesBody,
     defaults: { dock: 'left', order: 2, collapsed: false },
   });
+  // Per-structure lock, top-right of the title bar next to the other window
+  // controls (see FeatureLockModule.js).
+  featuresPanel.titlebar.insertBefore(
+    createFeatureLockButton(),
+    featuresPanel.titlebar.querySelector('.cv-panel-menu-btn'),
+  );
 
   //
   // Feature panels are lifecycle 'rebuild': their content is built lazily on

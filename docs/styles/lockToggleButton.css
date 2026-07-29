@@ -1,0 +1,18 @@
+/* Shared lock/unlock toggle glyph (ui/LockToggleButton.js) — the camera
+   panel's and Features panel's lock buttons both use this one padlock icon;
+   sizing/hover/highlight chrome is layered on by each button's own context
+   class (.camera-lock-btn in styles.css, .cv-panel-lock in panelWindow.css). */
+.lock-toggle-btn svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.lock-toggle-btn .lock-strike {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.lock-toggle-btn.unlocked .lock-strike {
+  opacity: 1;
+}

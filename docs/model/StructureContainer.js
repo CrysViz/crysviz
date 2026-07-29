@@ -14,6 +14,11 @@ export class StructureContainer {
     // Populated by live MD/relax and "Compute step stats"; null until then.
     /** @type {Record<string, number[]> | null} */
     this.plotSeries = null;
+    // Per-structure camera/feature-toggle memory, used only while the
+    // corresponding lock (state/store.js's app.cameraLocked / general.featuresLocked)
+    // is off — see FileBrowswerPanel.js's updateStructureFromRowAndStep.
+    this.cameraSnapshot = null;
+    this.featureSnapshot = null;
   }
 
   _ensureListOfClass(input, ClassType) {

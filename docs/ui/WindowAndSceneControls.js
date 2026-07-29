@@ -1,10 +1,11 @@
 import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
-import { app, groups, general } from '../state/store.js';
+import { app, groups, general, saveLockPrefs } from '../state/store.js';
 import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, renderFrameNow, setActivePipeline } from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
+import { createLockToggleButton } from './LockToggleButton.js';
 
 // Wire the camera view buttons (x/y/z + a/b/c lattice axes + reset).
 // Extracted from crystal-viewer.js initApp() (Stage 6).
@@ -21,6 +22,24 @@ export function setupCameraButtons() {
   document.getElementById('viewB').onclick = () => { const {b} = latticeDirs(); setViewDirection(b); };
   document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
+
+  // Lock button sits directly above Reset (its own column stack) rather than
+  // just another item in the wrapping row, so it reads as "modifies what
+  // Reset/switching do" rather than one more view shortcut.
+  const resetBtn = document.getElementById('resetView');
+  const stack = document.createElement('div');
+  stack.className = 'camera-reset-stack';
+  const lockBtn = createLockToggleButton({
+    className: 'camera-tool-btn camera-lock-btn',
+    titleLocked: 'Camera view is shared across all structures — click to move each structure independently',
+    titleUnlocked: 'Camera view is independent per structure — click to share one view across all structures',
+    locked: app.cameraLocked !== false,
+    confirmOnLock: 'Locking the camera makes every structure share this exact view going forward — any independent views other structures had will stop being used (though not lost; unlocking again brings them back). Continue?',
+    onChange: (locked) => { app.cameraLocked = locked; saveLockPrefs(); },
+  });
+  resetBtn.parentElement.insertBefore(stack, resetBtn);
+  stack.appendChild(lockBtn);
+  stack.appendChild(resetBtn);
 }
 
 // Build the three.js scene: renderer/camera/controls/gizmo + lights + theme.
@@ -121,7 +140,12 @@ export function initCamera(useOrthographicCamera){
 
   if (useOrthographicCamera) {
     const size = 20; // Initial size - will be adjusted when structure loads
-    app.camera = new THREE.OrthographicCamera(-size, size, size / (w/h), -size / (w/h), 0.1, 1000);
+    const aspect = w / h;
+    // Vertical half-height fixed at `size`, horizontal scaled BY aspect (the
+    // standard three.js convention) — a wide window reveals more world
+    // horizontally at the same zoom, instead of shrinking the vertical
+    // extent below what `size` intended (see resizeRenderer's note).
+    app.camera = new THREE.OrthographicCamera(-size * aspect, size * aspect, size, -size, 0.1, 1000);
   } else {
     app.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
   }
@@ -217,10 +241,14 @@ export function resizeRenderer(orthographicFrustumSize) {
 
   if (app.camera.isOrthographicCamera) {
     const base = orthographicFrustumSize || 10;
-    app.camera.left = -base;
-    app.camera.right = base;
-    app.camera.top = base / aspect;
-    app.camera.bottom = -base / aspect;
+    // Vertical half-height fixed at `base`, horizontal scaled by aspect (see
+    // initCamera's note) — the previous base/aspect split shrank the
+    // vertical extent on wide screens instead of growing the horizontal one,
+    // which read as "too zoomed in" the wider the window got.
+    app.camera.left = -base * aspect;
+    app.camera.right = base * aspect;
+    app.camera.top = base;
+    app.camera.bottom = -base;
   } else if (app.camera.isPerspectiveCamera) {
     app.camera.aspect = aspect;
   }
@@ -427,11 +455,13 @@ export function switchCameraType() {
     const { center: _center, dist } = getCellCenterAndDist();
     app.orthographicFrustumSize = dist * 0.5; // Adjust this multiplier as needed
     const aspect = w / h;
+    // See initCamera's note: vertical half-height fixed, horizontal scaled
+    // by aspect.
     app.camera = new THREE.OrthographicCamera(
-      -app.orthographicFrustumSize,
+      -app.orthographicFrustumSize * aspect,
+      app.orthographicFrustumSize * aspect,
       app.orthographicFrustumSize,
-      app.orthographicFrustumSize / aspect,
-      -app.orthographicFrustumSize / aspect,
+      -app.orthographicFrustumSize,
       0.1,
       1000
     );
@@ -509,7 +539,115 @@ export function setViewDirection(dir, { refit = false } = {}) {
 }
 
 
-export function resetView() { app.controls.reset(); setViewDirection(new THREE.Vector3(1,1,1), { refit: true }); } //CAMERA RESET
+/**
+ * Clear TrackballControls' in-flight rotation momentum (and zoom/pan
+ * convergence) so a just-set camera transform sticks exactly, rather than
+ * drifting further on the next few frames. TrackballControls' dynamic
+ * damping keeps a decaying angular "velocity" (_lastAngle/_lastAxis) alive
+ * for a bit AFTER the mouse is released — its own reset() clears
+ * position/target/zoom but never this momentum (external/three/TrackballControls.js's
+ * _rotateCamera). Left alone, a drag released right before switching
+ * structures (or restoring a saved view) keeps nudging the camera for a few
+ * more frames on whatever position we just set it to — which is what read as
+ * "my rotation doesn't stick, I have to switch away and back again" (the
+ * extra round trip just gives the decay time to fully settle first).
+ */
+function stopCameraMomentum() {
+  const c = app.controls;
+  if (!c) return;
+  c._lastAngle = 0;
+  c._movePrev.copy(c._moveCurr);
+  c._zoomStart.copy(c._zoomEnd);
+  c._panStart.copy(c._panEnd);
+}
+
+/** Recompute the orthographic camera's frustum size (its actual zoom level)
+ *  from the currently selected structure. setViewDirection's refit only ever
+ *  moves camera position/target — for the orthographic camera (the default)
+ *  the visible scale is the frustum size, a separate number it never
+ *  touches. Without this, Reset View (and anything else that "re-fits")
+ *  silently kept whatever zoom was set when the camera was first fit,
+ *  regardless of how much the structure has since changed (e.g. a supercell
+ *  tiled much bigger). No-op for the perspective camera, whose zoom is just
+ *  camera distance — already handled by refit. */
+function refitOrthographicFrustum() {
+  if (!app.useOrthographicCamera) return;
+  const { dist } = getCellCenterAndDist();
+  app.orthographicFrustumSize = dist * 0.5;
+  resizeRenderer(app.orthographicFrustumSize);
+}
+
+export function resetView() {
+  app.controls.reset();
+  stopCameraMomentum();
+  setViewDirection(new THREE.Vector3(1,1,1), { refit: true });
+  refitOrthographicFrustum();
+} //CAMERA RESET
+
+/**
+ * Fit distance/zoom to the currently selected structure. Default
+ * (resetDirection:false) keeps whatever direction the camera is already
+ * looking from — used for generating a supercell (SuperCellModule.js), where
+ * the tiled structure is usually a very different size than whatever the
+ * camera was fit to, but it's still the SAME structure you were just looking
+ * at, so the viewing angle shouldn't jump.
+ *
+ * resetDirection:true instead snaps to the canonical (1,1,1) direction, like
+ * resetView — used for the per-structure camera lock's first-ever view of a
+ * given file-browser row (FileBrowswerPanel.js) specifically because
+ * "keep the current direction" is the wrong default there: the current
+ * direction may belong to a DIFFERENT structure's own customization (e.g.
+ * you duplicated a structure, unlocked, rotated the copy, then visited the
+ * original for the first time since unlocking) — inheriting it would read as
+ * "the original moved too", when really it just never had a view of its own
+ * yet and should start fresh instead of borrowing someone else's.
+ */
+export function fitCameraToCurrentStructure({ resetDirection = false } = {}) {
+  const { center, dist } = getCellCenterAndDist();
+  const dir = resetDirection
+    ? new THREE.Vector3(1, 1, 1).normalize()
+    : app.camera.position.clone().sub(app.controls.target).normalize();
+  if (resetDirection) app.camera.up.set(0, 1, 0);
+  app.camera.position.copy(center.clone().add(dir.multiplyScalar(dist)));
+  app.controls.target.copy(center);
+  refitOrthographicFrustum();
+  stopCameraMomentum();
+  app.controls.update();
+}
+
+/** Capture enough of the current camera/controls state to restore this exact
+ *  view later — the per-structure camera lock (FileBrowswerPanel.js) saves
+ *  this for whichever structure the camera is currently framing, right
+ *  before switching to a different one.
+ *
+ *  Stops momentum first: a drag released right before switching away leaves
+ *  rotation still decaying (see stopCameraMomentum), so position/target read
+ *  here would otherwise be a moving target — a snapshot taken 50ms later
+ *  wouldn't match one taken now, and it would keep drifting a little further
+ *  even while dormant, only for as long as it takes to get decayed away. */
+export function captureCameraSnapshot() {
+  stopCameraMomentum();
+  return {
+    position: app.camera.position.clone(),
+    target: app.controls.target.clone(),
+    up: app.camera.up.clone(),
+    orthographicFrustumSize: app.useOrthographicCamera ? app.orthographicFrustumSize : null,
+  };
+}
+
+/** Restore a snapshot captured by captureCameraSnapshot(). */
+export function applyCameraSnapshot(snapshot) {
+  if (!snapshot) return;
+  app.camera.position.copy(snapshot.position);
+  app.controls.target.copy(snapshot.target);
+  app.camera.up.copy(snapshot.up);
+  if (app.useOrthographicCamera && snapshot.orthographicFrustumSize != null) {
+    app.orthographicFrustumSize = snapshot.orthographicFrustumSize;
+    resizeRenderer(app.orthographicFrustumSize);
+  }
+  stopCameraMomentum();
+  app.controls.update();
+}
 
 /**
  * Re-center the camera's existing view on the (possibly moved) structure
@@ -525,6 +663,11 @@ export function recenterCamera() {
   const offset = app.camera.position.clone().sub(app.controls.target);
   app.controls.target.copy(center);
   app.camera.position.copy(center.clone().add(offset));
+  // A drag released just before switching structures would otherwise keep
+  // decaying its rotation momentum onto whatever offset we just preserved
+  // (see stopCameraMomentum's note) — most noticeable right after a quick
+  // rotate-then-switch.
+  stopCameraMomentum();
   app.controls.update();
 }
 

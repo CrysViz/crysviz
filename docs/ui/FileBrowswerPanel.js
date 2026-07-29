@@ -1,4 +1,4 @@
-import {general, structureShip, fileBrowser} from '../state/store.js';
+import {app, general, structureShip, fileBrowser} from '../state/store.js';
 import {updateVisualization} from '../core/crystal-viewer.js';
 import { refreshActivePanels, refreshPanelAvailability, rebuildPanel } from './panels/PanelManager.js';
 import {createBondLengthControls} from './BondLengthPanel.js';
@@ -10,9 +10,10 @@ import {updateLatticeComparisonPanel, removeLatticeComparisonPopup} from './Latt
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import {Structure} from '../model/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
-import { recenterCamera } from './WindowAndSceneControls.js';
+import { recenterCamera, captureCameraSnapshot, applyCameraSnapshot, fitCameraToCurrentStructure } from './WindowAndSceneControls.js';
 import { notifyActiveStructureChange } from '../state/structures.js';
 import { generateID } from '../utils/index.js';
+import { snapshotFeatureToggles, applyFeatureToggles, applyDefaultFeatureToggles } from './FeatureLockModule.js';
 
 export function showError(message) {
   errorPanel.textContent = message;
@@ -855,6 +856,14 @@ export function updateRow(row, obj) {
   }
 }
 
+// Tracks the container behind the previously active row (by reference, not
+// index — indices shift when rows are deleted/inserted, an object reference
+// doesn't) so updateStructureFromRowAndStep can tell a genuine row switch
+// apart from a same-row trajectory step change, and knows which container to
+// save the outgoing camera/feature snapshot onto. Stays null until the first
+// switch actually happens.
+let lastActiveContainer = null;
+
 // Function to update structure data from a row and its step input
 function updateStructureFromRowAndStep(rowIndex) {
   const stepInput = document.querySelector(`#objectTable tbody tr:nth-child(${rowIndex + 1}) input[type="number"]`);
@@ -868,6 +877,17 @@ function updateStructureFromRowAndStep(rowIndex) {
     if (step >= container.structures.length) console.warn("Structure could not be selected: step >= container.structures.length");
     return;
   }
+
+  // A genuine structure switch (different row/container), not just a
+  // trajectory step change within the same one — the camera/feature locks
+  // are deliberately per-structure, not per-step (see store.js's
+  // cameraLocked/featuresLocked).
+  const rowChanged = lastActiveContainer !== null && lastActiveContainer !== container;
+  if (rowChanged) {
+    if (!app.cameraLocked) lastActiveContainer.cameraSnapshot = captureCameraSnapshot();
+    if (general.featuresLocked === false) lastActiveContainer.featureSnapshot = snapshotFeatureToggles();
+  }
+
   fileBrowser.selectedStructure = container.structures[step];
   syncPlanesForSelectedStructure();
   refreshBackendTheme();
@@ -896,6 +916,30 @@ function updateStructureFromRowAndStep(rowIndex) {
   rebuildPanel('polyhedra');
   refreshOverlayLatticePlots(); // only updates if the lattice-overlay popup is on
   updateVisualization({reRenderAtoms: true, reRenderBonds: true, reRenderField: true, reRenderComposition: true});
+
+  if (rowChanged) {
+    if (!app.cameraLocked) {
+      // A container this row has already shown (while unlocked) restores its
+      // own remembered view; one never shown before resets to the canonical
+      // direction instead of keeping whatever direction is currently active
+      // — that current direction could belong to a DIFFERENT structure's own
+      // customization (e.g. duplicate a structure, unlock, rotate the copy,
+      // then visit the original for the first time since unlocking), and
+      // inheriting it would read as "the original moved too".
+      if (container.cameraSnapshot) applyCameraSnapshot(container.cameraSnapshot);
+      else fitCameraToCurrentStructure({ resetDirection: true });
+    }
+    if (general.featuresLocked === false) {
+      // Same reasoning as the camera fallback above: a container never
+      // individually saved falls back to the app's own declared defaults,
+      // not whatever the checkboxes currently read (which may reflect a
+      // DIFFERENT structure's customization made after unlocking).
+      if (container.featureSnapshot) applyFeatureToggles(container.featureSnapshot);
+      else applyDefaultFeatureToggles();
+    }
+  }
+  lastActiveContainer = container;
+
   // Single choke point for every selection path (row click, step change,
   // programmatic selectStructure, load) — let subscribers (addons) react.
   notifyActiveStructureChange();

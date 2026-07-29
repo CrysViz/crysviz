@@ -543,6 +543,18 @@ export function refreshBondHistogramData() {
   refreshCoordinationHistogram(coordinationNumbers);
 }
 
+/** Live bond lookup by render instance id (one of bond.instanceIds), via the
+ *  same bondObjectMapping renderBonds() builds for the Bonds tab rows and the
+ *  colour-edit code. Used by bondDistanceLabels.js to read a bond's CURRENT
+ *  positions/dist at click time — the histogram only stores instance ids, not
+ *  positions, so this is the one place that resolves them back to a live bond. */
+export function getBondByInstanceId(instanceId) {
+  const structure = fileBrowser.selectedStructure;
+  const mapping = structure?.bondObjectMapping?.[instanceId];
+  if (!mapping) return null;
+  return structure.bonds?.[mapping[0]] ?? null;
+}
+
 function populateBondHistogramData(structure) {
   for (const key in bondLengths) delete bondLengths[key];
   for (const key in coordinationNumbers) delete coordinationNumbers[key];
@@ -567,7 +579,13 @@ function populateBondHistogramData(structure) {
       : [bond.elements[1], bond.elements[0]];
     const pairKey = `${a}-${b}`;
     if (!bondLengths[pairKey]) bondLengths[pairKey] = [];
-    const entry = { dist: bond.dist, instanceIds: bond.instanceIds ? [...bond.instanceIds] : [] };
+    // srcIndices lets the Bond Length Histogram label a bin's actual bonds
+    // (hover list, distance labels) without re-deriving them from instanceIds.
+    const entry = {
+      dist: bond.dist,
+      instanceIds: bond.instanceIds ? [...bond.instanceIds] : [],
+      srcIndices: [...bond.srcIndices],
+    };
     bondLengths[pairKey].push(entry);
     seenGroups.set(groupKey, entry);
 

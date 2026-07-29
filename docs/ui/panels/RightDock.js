@@ -347,7 +347,7 @@ function hidePaneChrome() {
   if (handle) handle.hidden = true;
   if (tabs) { tabs.innerHTML = ''; tabs.hidden = true; }
   if (headerTabs) headerTabs.innerHTML = '';
-  if (body?.querySelector('.split-item.expanded')) closeExpandedSplitItem();
+  if (body?.querySelector('.split-item.expanded, .trajPlot.expanded')) closeExpandedSplitItem();
   syncSceneAndSidePanels();
 }
 
@@ -386,7 +386,7 @@ export function rightDockPanel(panel, { beforeEl = null, front = true, expand = 
 export function rightUndockPanel(panel) {
   const { body } = els();
   if (!body || panel.el.parentElement !== body) return;
-  if (panel.el.querySelector('.split-item.expanded')) closeExpandedSplitItem();
+  if (panel.el.querySelector('.split-item.expanded, .trajPlot.expanded')) closeExpandedSplitItem();
   panel.el.remove();
   panel.el.classList.remove('cv-right-docked', 'cv-front');
   if (frontId === panel.id) frontId = null;
@@ -540,12 +540,15 @@ export function updateRightDockHint(ev) {
 
 // ---- fullscreen-item overlay (the ⛶ button on .split-item blocks) --------------
 //
-// Generic helpers for feature content (EOS plots, the demo counter): expand
-// one .split-item to (almost) fullscreen over a dark overlay. Works from any
-// window state — right-docked, floating or left-docked (the host window gets
+// Generic helpers for feature content (EOS plots, the demo counter, the
+// trajectory plot's own .trajPlot root — see TrajectoryPlot.js): expand one
+// item to (almost) fullscreen over a dark overlay. Works from any window
+// state — right-docked, floating or left-docked (the host window gets
 // cv-has-expanded-item, which lifts the body's backdrop-filter so the
 // fixed-position item isn't trapped inside it, and raises a floating host
-// above the overlay).
+// above the overlay). closeExpandedSplitItem() matches both `.split-item` and
+// `.trajPlot` since the trajectory plot deliberately isn't a `.split-item`
+// (its own CSS is tuned independently, see trajectoryPanel.css).
 
 export function expandSplitItem(wrapper) {
   if (!wrapper) return;
@@ -558,7 +561,7 @@ export function expandSplitItem(wrapper) {
 
 export function closeExpandedSplitItem() {
   const { viewArea, overlay } = els();
-  document.querySelectorAll('.split-item.expanded')
+  document.querySelectorAll('.split-item.expanded, .trajPlot.expanded')
     .forEach((w) => w.classList.remove('expanded'));
   document.querySelectorAll('.cv-panel.cv-has-expanded-item')
     .forEach((el) => el.classList.remove('cv-has-expanded-item'));

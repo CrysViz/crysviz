@@ -1,0 +1,244 @@
+/* Bond Length Histogram (ui/AnalysisPanels/BondLengthHistogram.js): one
+   low-profile chart per bond species pair, stacked in the panel body — which
+   already scrolls (panelWindow.css's .cv-panel-body) — each with its own
+   compact dual-range slider under the x-axis. */
+
+.blh-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #ddd;
+}
+
+/* The label itself is one atomic flex item that wraps onto its own new row
+   when the panel is too narrow to fit everything — its TEXT never wraps
+   internally (that was stacking "Bin / width / (Å)" across three lines and
+   blowing up the row's height). */
+.blh-controls-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.blh-width-slider {
+  width: 80px;
+}
+
+.blh-pair-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Overrides .split-item's tall defaults (min-height:220px, flex:1 1 50% —
+   sized for the EOS window's one or two big plots) for a stack of many
+   low-profile cards. Loaded after rightDock.css, so this wins at equal
+   (one-class) specificity; .split-item.expanded's fullscreen rule is
+   !important and always takes over regardless of load order. */
+.blh-pair-card {
+  flex: 0 0 auto;
+  min-height: 0;
+  padding: 6px 8px;
+  /* Safety net: if the plot div is ever handed a stale/oversized height by
+     Plotly (see .blh-pair-plot below) before a resize catches up, clip it to
+     the card instead of letting it visually paint over the cards after it. */
+  overflow: hidden;
+}
+
+.blh-pair-card h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  margin: 0 0 2px 0;
+  text-align: left;
+}
+
+.blh-collapse-toggle {
+  background: none;
+  border: none;
+  color: var(--muted-fg);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.blh-collapse-toggle:hover {
+  color: var(--panel-fg);
+}
+
+.blh-pair-name {
+  flex: 1 1 auto;
+}
+
+.blh-pair-count {
+  color: var(--muted-fg);
+  font-weight: 400;
+  font-size: 10.5px;
+  flex: 0 0 auto;
+}
+
+/* .split-item-body (rightDock.css) sets `flex: 1` (flex-basis 0%) so a plot
+   div stretches to fill whatever space its flex-column parent has to give —
+   fine for the EOS/old single-chart layout, where the CARD itself has a real
+   min-height (220px) to distribute. These cards deliberately have none (that
+   min-height is exactly the "too tall" this layout was built to avoid), so
+   with no override here the plot's flex-basis:0% left it with no real size
+   to measure — Plotly then fell back to its own default (~450px) INSIDE a
+   card that never grew to fit it, which is what was overlapping the cards
+   below it. Pinning an explicit flex + height bypasses flex-grow entirely. */
+.blh-pair-plot {
+  flex: 0 0 auto;
+  height: 110px;
+  min-height: 60px;
+  /* Drag the bottom edge down to make just this one chart taller — a plain
+     block-level resize handle, independent of Plotly's own sizing (a
+     ResizeObserver on this div calls Plotly.Plots.resize() whenever it
+     changes, see watchPlotResize in BondLengthHistogram.js). overflow other
+     than visible is required for the native handle to appear at all. */
+  resize: vertical;
+  overflow: hidden;
+}
+
+/* !important on both: the native resize handle above sets an INLINE height
+   on this div (that's how CSS `resize` works), and a plain class rule can't
+   override an inline style regardless of specificity — only a stylesheet
+   !important rule can. Without it, dragging a card shorter in its normal
+   compact view left that same small inline height stuck in place once you
+   later expanded it to fullscreen. */
+.split-item.expanded .blh-pair-plot {
+  height: calc(100% - 60px) !important;
+  resize: none !important;
+}
+
+/* The combined "All Pairs" card (multiple series, legend, dividers — see
+   redrawItem's isCombined branch) reads cramped at the plain per-pair
+   height, so it starts noticeably taller. Two classes beat .blh-pair-plot's
+   one, so this wins regardless of stylesheet order. */
+.blh-pair-plot.blh-combined-item {
+  height: 200px;
+  min-height: 80px;
+}
+
+/* Collapsed: only the header row (toggle/name/count) stays visible — chart,
+   range slider and export/expand actions hide, so a structure with many
+   species pairs can be scanned as a short list instead of a long scroll. */
+.blh-pair-card.collapsed .blh-pair-plot,
+.blh-pair-card.collapsed .blh-range-row,
+.blh-pair-card.collapsed .split-item-actions {
+  display: none;
+}
+
+.blh-pair-card.collapsed {
+  padding-bottom: 6px;
+}
+
+.blh-pair-actions .split-item-action-btn {
+  font-size: 10px;
+  padding: 1px 5px;
+}
+
+/* ---- per-pair compact dual-range slider (same overlapping-inputs +
+   inset-corrected fill technique as ui/BondLengthPanel.js's
+   .bond-range-slider, scaled down for a low-profile card) ---- */
+.blh-range-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.blh-range-slider {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 60px;
+  height: 12px;
+}
+
+.blh-range-slider .blh-range-bg {
+  position: absolute;
+  height: 3px;
+  background: rgba(150, 150, 150, 0.5);
+  border-radius: 2px;
+  top: 50%;
+  left: 6px;
+  right: 6px;
+  transform: translateY(-50%);
+  z-index: -2;
+}
+
+.blh-range-slider .blh-range-fill {
+  position: absolute;
+  height: 3px;
+  background: rgba(34, 197, 94, 0.9);
+  border-radius: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: -1;
+}
+
+.blh-range-slider input[type="range"] {
+  position: absolute;
+  width: 100%;
+  height: 12px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+  margin: 0;
+}
+
+.blh-range-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #ccc;
+  cursor: pointer;
+  pointer-events: auto;
+  margin-top: -4.5px;
+}
+
+.blh-range-slider input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #ccc;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.blh-range-label {
+  font-size: 10px;
+  color: var(--muted-fg);
+  white-space: nowrap;
+}
+
+.blh-range-reset {
+  background: none;
+  border: none;
+  color: var(--muted-fg);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.blh-range-reset:hover {
+  color: var(--panel-fg);
+}
+
+.blh-range-reset:disabled {
+  opacity: 0.35;
+  cursor: default;
+}

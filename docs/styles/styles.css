@@ -892,6 +892,71 @@ body.panel-hidden #axesLegend {
   box-shadow: 0 0 4px 2px var(--highlight-color);
 }
 
+/* Generic confirm modal (ui/ConfirmModal.js) — used by the camera/Features
+ * lock buttons' confirmOnLock prompt in place of window.confirm(), which
+ * always prefixes its message with the page's own origin. Reuses the same
+ * .png-export-modal card + .paste-modal-actions row as the other confirm
+ * dialogs above. */
+#confirmModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#confirmModal[hidden] {
+  display: none;
+}
+
+.lock-confirm-modal {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.lock-confirm-modal p {
+  margin: 0 0 14px 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  opacity: 0.85;
+}
+
+.lock-confirm-modal .paste-modal-actions #confirmModalOk {
+  flex: 1;
+  min-width: 100px;
+  margin-top: 4px;
+  padding: 10px 16px;
+  background: var(--bg-color);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.lock-confirm-modal .paste-modal-actions #confirmModalOk:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+
+.lock-confirm-modal .paste-modal-actions #confirmModalCancel {
+  flex: 1;
+  min-width: 100px;
+  margin-top: 4px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.lock-confirm-modal .paste-modal-actions #confirmModalCancel:hover {
+  background: var(--hover-color);
+}
+
 /* Small "keyboard shortcuts" trigger, positioned just left of .theme-switch
  * (ui/KeyboardShortcuts.js; controlPanel.css's .theme-switch is
  * left:286px/top:10px — adjust both together if the logo width changes). */
@@ -2134,6 +2199,39 @@ body > #structureInfoContent {
 
 #cameraTools .camera-tool-btn span {
   display: none;
+}
+
+/* Lock button + Reset button, stacked so the lock reads as "modifies what
+   Reset/switching structures do" rather than one more view shortcut in the
+   wrapping row (see setupCameraButtons in WindowAndSceneControls.js). */
+.camera-reset-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+#cameraTools .camera-lock-btn {
+  padding: 4px;
+  min-width: 26px;
+  min-height: 26px;
+}
+
+#cameraTools .camera-lock-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Persistent highlight while unlocked (not just on hover, like the other
+   camera buttons) — this is a standing mode, not a momentary action. */
+#cameraTools .camera-lock-btn.unlocked {
+  border-color: var(--highlight-color);
+  color: var(--highlight-color);
+  box-shadow: 0px 0px 4px 1px rgba(6, 100, 50, 0.6);
+}
+
+#cameraTools .camera-lock-btn.unlocked:hover {
+  box-shadow: 0px 0px 4px 2px rgba(6, 100, 50, 0.9);
 }
 
 .camera-icon {

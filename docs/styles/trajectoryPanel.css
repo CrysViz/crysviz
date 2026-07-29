@@ -176,6 +176,29 @@
       border-radius: 10px;
       resize: vertical;
       overflow: hidden;
+      position: relative;
+    }
+
+    /* ---- fullscreen (⛶), same mechanism as the analysis histograms'
+       .split-item.expanded (rightDock.css) — expandSplitItem()/
+       closeExpandedSplitItem() toggle this class and the shared overlay.
+       !important on every geometry property: the native `resize` handle above
+       sets an INLINE height on this div, and only an !important stylesheet
+       rule can beat an inline style regardless of specificity — without it, a
+       previously hand-dragged compact height would stick even at fullscreen. */
+    .trajPlot.expanded {
+      position: fixed !important;
+      top: 5vh !important;
+      left: 5vw !important;
+      width: 90vw !important;
+      height: 90vh !important;
+      z-index: 1400 !important;
+      resize: none !important;
+      box-shadow: 0 0 24px rgba(0, 0, 0, 0.5) !important;
+    }
+
+    .trajPlot.expanded .split-item-close-btn {
+      display: block;
     }
 
     /* Slim toolbar above the chart; the light/dark toggle (always shown) and
