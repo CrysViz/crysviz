@@ -365,10 +365,18 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
     notifyChange();
   }
 
-  // Append one atom row (restoring a removed atom keeps its original uuid so
-  // the diff recognises it as one of the originals coming back, not a new one).
+  // Add one atom row (restoring a removed atom keeps its original uuid so the
+  // diff recognises it as one of the originals coming back, not a new one).
+  // A numeric `atom.position` (the row index it was deleted from, saved in the
+  // delete snapshot) reinserts it at that spot, so a restored original lands
+  // back in the old stack where it came from rather than appended below the
+  // newly-added atoms. Falls back to appending when there is no such slot.
   function addAtom(atom) {
-    addRowToTable(atom);
+    const before = Number.isInteger(atom.position)
+      ? [...tbody.querySelectorAll('tr')][atom.position]
+      : null;
+    if (before) tbody.insertBefore(buildRow(atom), before);
+    else addRowToTable(atom);
     notifyChange();
   }
 

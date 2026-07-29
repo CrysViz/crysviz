@@ -134,14 +134,26 @@ const ADD = '[data-panel-id="addStructure"]';
     const restoreBtn = [...panel.querySelectorAll('button')].find((b) => b.textContent === '↺');
     restoreBtn.click();
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    // The restored original must rejoin the OLD stack (above the "Newly added"
+    // separator), not sit among the new atoms: every row before the separator
+    // is a baseline atom, every row after it is a new one.
+    const baseline = fileBrowser.selectedStructure._modify.baseline;
+    const rows = [...panel.querySelectorAll('#atomsTable tbody tr')];
+    const sepIdx = rows.findIndex((r) => r.classList.contains('atom-new-separator'));
+    const atomsBefore = rows.slice(0, sepIdx).filter((r) => r.dataset.uuid);
+    const atomsAfter = rows.slice(sepIdx + 1).filter((r) => r.dataset.uuid);
     return {
       before,
       after: fileBrowser.selectedStructure.atoms.length,
       removedGone: !panel.textContent.includes('Removed atoms'),
+      grouped: sepIdx > 0
+        && atomsBefore.every((r) => baseline.has(r.dataset.uuid))
+        && atomsAfter.length > 0 && atomsAfter.every((r) => !baseline.has(r.dataset.uuid)),
     };
   }, MODIFY);
-  H.check('restoring a removed atom puts it back and clears the Removed list',
-    restored.after === restored.before + 1 && restored.removedGone, JSON.stringify(restored));
+  H.check('restoring a removed atom puts it back in the old stack, above the separator',
+    restored.after === restored.before + 1 && restored.removedGone && restored.grouped,
+    JSON.stringify(restored));
 
   // --- Reset Lattice restores the cell without touching the atoms -----------
   const latticeReset = await page.evaluate(async (sel) => {
