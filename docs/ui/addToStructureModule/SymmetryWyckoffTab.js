@@ -102,8 +102,10 @@ function buildTab(container, onCreated) {
   sgRow.style.cssText = 'display:flex; align-items:center; gap:10px; margin-bottom:6px;';
   sgRow.innerHTML = `
     <label style="font-size:12px; color:rgba(255,255,255,0.7); flex:none;">Space group</label>
-    <div id="wyckoffSpaceGroupSelect" style="flex:1 1 auto; min-width:0;"></div>
   `;
+  const spaceGroupHost = document.createElement('div');
+  spaceGroupHost.style.cssText = 'flex:1 1 auto; min-width:0;';
+  sgRow.appendChild(spaceGroupHost);
   container.appendChild(sgRow);
 
   const spaceGroupName = document.createElement('div');
@@ -317,7 +319,7 @@ function buildTab(container, onCreated) {
     refreshSummary();
   }
 
-  createSpaceGroupSelect(sgRow.querySelector('#wyckoffSpaceGroupSelect'), {
+  createSpaceGroupSelect(spaceGroupHost, {
     value: spaceGroup,
     onChange: (number) => {
       spaceGroup = clampSpaceGroup(number);

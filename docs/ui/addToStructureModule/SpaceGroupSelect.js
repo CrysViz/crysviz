@@ -106,6 +106,10 @@ function describe(group) {
 //   onChange: optional, called with the new IT number whenever the user picks
 //             an entry.
 // Returns { getValue, setValue }.
+/**
+ * @param {HTMLElement} host
+ * @param {{ value?: number, onChange?: (spaceGroupNumber: number) => void }} [options]
+ */
 export function createSpaceGroupSelect(host, { value = 225, onChange } = {}) {
   const groups = listSpaceGroups();
   let selected = groups.find((group) => group.number === Number(value)) ?? groups[0];
