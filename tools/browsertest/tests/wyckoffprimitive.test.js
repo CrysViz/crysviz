@@ -123,6 +123,59 @@ const MODIFY = '[data-panel-id="modifyStructure"]';
       && added.elements.join() === 'Ge' && added.stillWyckoff && added.indicesInRange,
     JSON.stringify(added));
 
+  // --- An existing orbit's site is editable, like its element and colour ----
+  // Every cell of a row has to be a control; the site used to be a dead label,
+  // so a frozen coordinate had no route to becoming free.
+  const moved = await page.evaluate(async (sel) => {
+    const { fileBrowser } = await import('./state/store.js');
+    const s = fileBrowser.selectedStructure;
+    const panel = document.querySelector(sel);
+    const row = [...panel.querySelectorAll('tr')].find((r) => r.querySelector('.orbit-element'));
+    const select = /** @type {HTMLSelectElement} */ (row.querySelector('.orbit-site'));
+    const before = {
+      enabled: !select.disabled,
+      value: select.value,
+      atoms: s.atoms.length,
+      orbits: s.symmetry.orbitGroups.length,
+      // Si sits on 'a', which is fixed: all three coordinates are frozen.
+      frozen: ['x', 'y', 'z'].map((axis) => row.querySelector(`.orbit-${axis}`).disabled),
+    };
+
+    select.value = 'g'; // one free parameter, 24 atoms here
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+
+    const movedRow = [...panel.querySelectorAll('tr')].find((r) => r.querySelector('.orbit-element'));
+    const orbit = s.symmetry.orbitGroups.find((g) => g.orbitId === 0);
+    return {
+      before,
+      after: {
+        atoms: s.atoms.length,
+        orbits: s.symmetry.orbitGroups.length,
+        label: orbit ? `${orbit.multiplicity}${orbit.wyckoff}` : null,
+        element: orbit ? orbit.element : null,
+        rowIndex: [...panel.querySelectorAll('tr')].filter((r) => r.querySelector('.orbit-element')).indexOf(movedRow),
+        frozen: ['x', 'y', 'z'].map((axis) => movedRow.querySelector(`.orbit-${axis}`).disabled),
+        stillWyckoff: s.symmetry.mode === 'wyckoff',
+        indicesInRange: s.symmetry.orbitGroups.every((g) =>
+          g.atomIndices.every((i) => i >= 0 && i < s.atoms.length)),
+      },
+    };
+  }, MODIFY);
+  H.check('an existing orbit\'s site is a live control, not a label',
+    moved.before.enabled && moved.before.value === 'a'
+      && moved.before.frozen.join() === 'true,true,true',
+    JSON.stringify(moved.before));
+  H.check('changing the site re-expands the orbit and frees a coordinate',
+    moved.after.label === '24g' && moved.after.element === 'Si'
+      // the 2-atom orbit becomes 24, the Ge one added above is untouched
+      && moved.after.atoms === moved.before.atoms + 22
+      && moved.after.orbits === moved.before.orbits
+      && moved.after.frozen.includes(false)
+      && moved.after.stillWyckoff && moved.after.indicesInRange,
+    JSON.stringify(moved.after));
+  H.check('the moved orbit keeps its row position', moved.after.rowIndex === 0,
+    JSON.stringify(moved.after));
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

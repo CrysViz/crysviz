@@ -41,6 +41,7 @@ import {
   previewWyckoffOrbit,
   setWyckoffOrbitElement,
   setWyckoffOrbitColor,
+  setWyckoffOrbitSite,
   applyWyckoffLattice,
   wyckoffLatticeConstraints,
   activateWyckoffMode,
@@ -470,6 +471,8 @@ const SITE_TEXT_STYLE = 'width:54px; background:#333; border:1px solid #555; col
 const SITE_PICK_STYLE = 'flex:none; width:22px; height:22px; background:#595959; border:none; color:white; cursor:pointer; font-size:13px; border-radius:3px; line-height:1; padding:0;';
 const HINT_STYLE = 'font-size:11px; color:rgba(255,255,255,0.5); margin: 4px 0 10px 0;';
 const AXES = ['x', 'y', 'z'];
+// Starting points for a site's free parameters, tried in order.
+const SITE_SEEDS = [[0.123, 0.234, 0.345], [0.2, 0.3, 0.4], [0.31, 0.37, 0.43], [0.05, 0.11, 0.17]];
 
 // The Newly-added / Removed diff for the locked body, kept on the structure so
 // it survives closing and reopening the panel - same idea as the free-form
@@ -506,7 +509,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
 
   const intro = document.createElement('div');
   intro.style.cssText = HINT_STYLE;
-  intro.textContent = 'One row per orbit: editing it moves, re-elements or removes every symmetry-equivalent atom at once. Frozen coordinates are disabled.';
+  intro.textContent = 'One row per orbit: editing it moves, re-elements, recolours or removes every symmetry-equivalent atom at once. Changing the site re-derives the position from it — fill in whichever coordinates it leaves free; the rest are disabled.';
   body.appendChild(intro);
 
   // --- Lattice, projected onto what the lock allows ---
@@ -616,8 +619,9 @@ function buildWyckoffModifyEditor(body, structure, remount) {
             <button type="button" class="orbit-pick-element" title="Select Element" style="${SITE_PICK_STYLE}">⚛</button>
           </div>
         </td>
-        <td style="${SITE_CELL_STYLE} text-align:center; font-size:11px; color:rgba(255,255,255,0.75); white-space:nowrap;">
-          ${orbit.multiplicity}${orbit.wyckoff}${orbit.siteSymmetry ? `<div style="font-family:monospace; font-size:10px; color:rgba(255,255,255,0.45);">${orbit.siteSymmetry}</div>` : ''}
+        <td style="${SITE_CELL_STYLE}">
+          <select class="orbit-site" style="${SITE_NUM_STYLE}"></select>
+          <div class="orbit-site-form" style="font-family:monospace; font-size:10px; color:rgba(255,255,255,0.45); text-align:center; margin-top:2px;">${orbit.siteSymmetry}</div>
         </td>
         ${AXES.map((axis, index) => `
           <td style="${SITE_CELL_STYLE}">
@@ -640,6 +644,46 @@ function buildWyckoffModifyEditor(body, structure, remount) {
           const frozen = /** @type {HTMLInputElement} */ (row.querySelector(`.orbit-${axis}`));
           frozen.style.opacity = '0.45';
         }
+      });
+
+      // Until the space-group tables land (or when they don't line up with this
+      // cell) the site stays a read-only label showing what the lock reports.
+      const siteSelect = /** @type {HTMLSelectElement} */ (row.querySelector('.orbit-site'));
+      const currentLabel = `${orbit.multiplicity}${orbit.wyckoff}`;
+      if (siteLettersUsable) {
+        const known = getWyckoffLetters(symmetry.number).filter(letterIsConsistent);
+        siteSelect.innerHTML = known.includes(orbit.wyckoff)
+          ? siteOptions()
+          : `<option value="">${currentLabel}</option>${siteOptions()}`;
+        siteSelect.value = known.includes(orbit.wyckoff) ? orbit.wyckoff : '';
+      } else {
+        siteSelect.innerHTML = `<option value="">${currentLabel}</option>`;
+        siteSelect.disabled = true;
+      }
+
+      siteSelect.addEventListener('change', () => {
+        status.textContent = '';
+        const letter = siteSelect.value;
+        if (!letter) return;
+        // The position is re-derived from the new site, never carried over:
+        // the old one lands on a degenerate value (2a at 0,0,0 onto e's
+        // "x,x,x" gives x=0, which is still site a) and the row would claim a
+        // site it isn't on. Seeds are tried in turn because a particular free
+        // parameter can put the site on top of its own images in a small cell.
+        const labels = { wyckoff: letter, siteSymmetry: getSiteFreedom(symmetry.number, letter).siteSymmetry };
+        /** @type {{ok: boolean, reason?: string, multiplicity?: number}} */
+        let result = { ok: false };
+        for (const seed of SITE_SEEDS) {
+          result = setWyckoffOrbitSite(orbit.orbitId,
+            constrainRepresentative(symmetry.number, letter, seed), labels, structure);
+          if (result.ok) break;
+        }
+        if (!result.ok) {
+          status.textContent = result.reason ?? 'Could not move the orbit to that site.';
+          siteSelect.value = orbit.wyckoff;
+          return;
+        }
+        afterStructureEdit();
       });
 
       const coordInputs = AXES.map((axis) => /** @type {HTMLInputElement} */ (row.querySelector(`.orbit-${axis}`)));
@@ -999,6 +1043,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
       newSite.title = dropped > 0
         ? `${dropped} of this group's sites are not expressible in this cell (it is not the conventional one) and are left out. Convert the structure to its conventional cell to get all of them; "free" always works.`
         : '';
+      renderSites(); // the per-orbit site dropdowns were waiting on this
       refreshNewSite();
     })
     .catch((error) => {

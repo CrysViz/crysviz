@@ -396,6 +396,66 @@ export function applyWyckoffOrbitPosition(representativeIndex, newCoords, struct
 // shortened atoms array rather than the lock being thrown away and
 // re-analysed: re-running moyo could land on a different tolerance/setting and
 // silently reshuffle orbits the user wasn't editing.
+// Callers clear the selection first — see removeWyckoffOrbit.
+function dropOrbitAtoms(structure, orbit) {
+  const removed = new Set(orbit.atomIndices);
+  const renumbered = [];
+  let shift = 0;
+  for (let i = 0; i < structure.atoms.length; i += 1) {
+    renumbered[i] = removed.has(i) ? -1 : i - shift;
+    if (removed.has(i)) shift += 1;
+  }
+
+  structure.atoms = structure.atoms.filter((_, i) => !removed.has(i));
+  structure.elements = structure.elements.filter((_, i) => !removed.has(i));
+  structure.uniqueElements = [...new Set(structure.elements)];
+
+  structure.symmetry.orbitGroups = structure.symmetry.orbitGroups
+    .filter((group) => group !== orbit)
+    .map((group) => ({
+      ...group,
+      atomIndices: group.atomIndices.map((index) => renumbered[index]),
+      representativeIndex: renumbered[group.representativeIndex],
+      mappings: group.mappings.map((mapping) => ({ ...mapping, atomIndex: renumbered[mapping.atomIndex] })),
+    }));
+  structure.symmetry.representativeAtomIndices = structure.symmetry.orbitGroups.map((group) => group.representativeIndex);
+}
+
+// Appending is the only insertion that leaves every existing orbit's raw
+// indices valid. `at` and `orbitId` let a moved orbit keep its row and its
+// identity, so the panel's added/removed diff doesn't report it as a new site.
+/**
+ * @param {any} structure
+ * @param {{element: string, color?: any, images: {positions: number[][], operationIndices: number[]},
+ *   wyckoff?: string, siteSymmetry?: string, orbitId?: number, at?: number}} spec
+ */
+function appendOrbitAtoms(structure, { element, color, images, wyckoff, siteSymmetry, orbitId, at }) {
+  const firstIndex = structure.atoms.length;
+  images.positions.forEach((position) => {
+    structure.atoms.push(new Atom({ position, element, color, uuid: generateID([element]) }));
+    structure.elements.push(element);
+  });
+  structure.uniqueElements = [...new Set(structure.elements)];
+
+  const atomIndices = images.positions.map((_, offset) => firstIndex + offset);
+  const orbits = structure.symmetry.orbitGroups;
+  const group = {
+    orbitId: orbitId ?? orbits.reduce((max, other) => Math.max(max, other.orbitId), -1) + 1,
+    representativeIndex: firstIndex,
+    atomIndices,
+    element,
+    wyckoff: wyckoff || '—',
+    siteSymmetry: siteSymmetry || '',
+    multiplicity: atomIndices.length,
+    ...computeOrbitFreedom(images.positions[0], structure.symmetry.operations),
+    mappings: atomIndices.map((atomIndex, offset) => ({ atomIndex, operationIndex: images.operationIndices[offset] })),
+  };
+  if (at == null || at >= orbits.length) orbits.push(group);
+  else orbits.splice(at, 0, group);
+  structure.symmetry.representativeAtomIndices = orbits.map((other) => other.representativeIndex);
+  return group;
+}
+
 export function removeWyckoffOrbit(orbitId, structure = fileBrowser.selectedStructure) {
   if (!structure?.symmetry || structure.symmetry.mode !== 'wyckoff') return false;
   const orbits = structure.symmetry.orbitGroups;
@@ -411,28 +471,7 @@ export function removeWyckoffOrbit(orbitId, structure = fileBrowser.selectedStru
   // of here after the orbit was already gone - leaving the caller's return value
   // unreached and its rows never refreshed.
   clearSelectedAtoms();
-
-  const removed = new Set(orbit.atomIndices);
-  const renumbered = [];
-  let shift = 0;
-  for (let i = 0; i < structure.atoms.length; i += 1) {
-    renumbered[i] = removed.has(i) ? -1 : i - shift;
-    if (removed.has(i)) shift += 1;
-  }
-
-  structure.atoms = structure.atoms.filter((_, i) => !removed.has(i));
-  structure.elements = structure.elements.filter((_, i) => !removed.has(i));
-  structure.uniqueElements = [...new Set(structure.elements)];
-
-  structure.symmetry.orbitGroups = orbits
-    .filter((group) => group !== orbit)
-    .map((group) => ({
-      ...group,
-      atomIndices: group.atomIndices.map((index) => renumbered[index]),
-      representativeIndex: renumbered[group.representativeIndex],
-      mappings: group.mappings.map((mapping) => ({ ...mapping, atomIndex: renumbered[mapping.atomIndex] })),
-    }));
-  structure.symmetry.representativeAtomIndices = structure.symmetry.orbitGroups.map((group) => group.representativeIndex);
+  dropOrbitAtoms(structure, orbit);
 
   updateVisualization({
     reRenderAtoms: true,
@@ -523,38 +562,53 @@ export function addWyckoffOrbit({ element, representative, color, wyckoff, siteS
     return { ok: false, reason: 'Refused — the site would land on an existing atom or on its own symmetry image.' };
   }
 
-  // Indices held by the existing orbits stay valid only because this appends;
-  // inserting anywhere else would renumber them the way removeWyckoffOrbit has
-  // to. Selection is dropped first, while its indices still match the mesh.
+  // The letter is never derived here — that would mean re-running moyo, which
+  // can reshuffle orbits the user wasn't editing (see removeWyckoffOrbit).
   clearSelectedAtoms();
-  const firstIndex = structure.atoms.length;
-  images.positions.forEach((position) => {
-    structure.atoms.push(new Atom({ position, element, color, uuid: generateID([element]) }));
-    structure.elements.push(element);
-  });
-  structure.uniqueElements = [...new Set(structure.elements)];
-
-  const atomIndices = images.positions.map((_, offset) => firstIndex + offset);
-  const orbits = structure.symmetry.orbitGroups;
-  orbits.push({
-    orbitId: orbits.reduce((max, group) => Math.max(max, group.orbitId), -1) + 1,
-    representativeIndex: firstIndex,
-    atomIndices,
-    element,
-    // The letter, when the caller had one to give. It is never derived here:
-    // that would mean re-running moyo, and re-analysis can reshuffle orbits the
-    // user was not editing (see removeWyckoffOrbit). The multiplicity and the
-    // degrees of freedom below are measured from the lock either way.
-    wyckoff: wyckoff || '—',
-    siteSymmetry: siteSymmetry || '',
-    multiplicity: atomIndices.length,
-    ...computeOrbitFreedom(images.positions[0], structure.symmetry.operations),
-    mappings: atomIndices.map((atomIndex, offset) => ({ atomIndex, operationIndex: images.operationIndices[offset] })),
-  });
-  structure.symmetry.representativeAtomIndices = orbits.map((group) => group.representativeIndex);
+  const group = appendOrbitAtoms(structure, { element, color, images, wyckoff, siteSymmetry });
 
   refreshAfterOrbitEdit();
-  return { ok: true, multiplicity: atomIndices.length };
+  return { ok: true, multiplicity: group.multiplicity };
+}
+
+// Move an orbit onto a different Wyckoff site, keeping its element, colour,
+// identity and row. Its size changes with the site (8e -> 4c drops four atoms),
+// hence the same drop-and-renumber that removing does.
+/**
+ * @param {number} orbitId
+ * @param {number[]} representative
+ * @param {{wyckoff?: string, siteSymmetry?: string}} labels
+ * @param {any} structure
+ * @returns {{ok: boolean, reason?: string, multiplicity?: number}}
+ */
+export function setWyckoffOrbitSite(orbitId, representative, labels = {},
+  structure = fileBrowser.selectedStructure) {
+  const { wyckoff, siteSymmetry } = labels;
+  if (structure?.symmetry?.mode !== 'wyckoff') return { ok: false, reason: 'The structure is not symmetry-locked.' };
+  const orbits = structure.symmetry.orbitGroups;
+  const index = orbits.findIndex((group) => group.orbitId === orbitId);
+  if (index === -1) return { ok: false, reason: 'That orbit is no longer there.' };
+  const orbit = orbits[index];
+
+  const images = orbitImagesUnderLock(representative, structure);
+  if (!images) return { ok: false, reason: 'This lock carries no symmetry operations.' };
+  // Own atoms excluded — they're about to be replaced.
+  if (collapsesSites(images.positions.map((position) => ({ position })), orbit, structure)) {
+    return { ok: false, reason: 'Refused — the site would land on another atom or on its own symmetry image.' };
+  }
+
+  const element = orbit.element;
+  const representativeAtom = structure.atoms[orbit.representativeIndex];
+  const color = representativeAtom?.userColor ?? representativeAtom?.getColor?.();
+
+  clearSelectedAtoms();
+  dropOrbitAtoms(structure, orbit);
+  const group = appendOrbitAtoms(structure, {
+    element, color, images, wyckoff, siteSymmetry, orbitId: orbit.orbitId, at: index,
+  });
+
+  refreshAfterOrbitEdit();
+  return { ok: true, multiplicity: group.multiplicity };
 }
 
 // Re-element every atom of an orbit at once. The operation set stays valid (it
