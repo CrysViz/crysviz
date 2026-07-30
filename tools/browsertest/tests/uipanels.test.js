@@ -118,7 +118,10 @@ async function expandPanel(page, id) {
       splitActive: document.getElementById('viewArea').classList.contains('split-active'),
       tab: [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
         .some((t) => t.dataset.panelId === 'bondLengthHistogram'),
-      hasCard: !!el.querySelector('#bond-length-histogram-item'),
+      // One card per bond pair plus a combined "All Pairs" one, so the panel is
+      // populated iff at least one card exists (was #bond-length-histogram-item,
+      // a single item, before the per-pair rewrite).
+      hasCard: !!el.querySelector('.blh-pair-card'),
     };
   });
   H.check('Bond Length Histogram opens as the right dock\'s front tab',

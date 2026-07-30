@@ -135,7 +135,26 @@ export async function renderGroupedHistogram(plotId, {
   };
 
   await Plotly.react(plotId, data, layout, { responsive: true, displayModeBar: false });
-  requestAnimationFrame(() => Plotly.Plots.resize(plotId));
+  // A frame later the card may have been collapsed, or the whole card list
+  // rebuilt, so this has to re-check that the div is still there and still
+  // displayed — see safeResize.
+  requestAnimationFrame(() => safeResize(Plotly, plotId));
+}
+
+/** Plotly.Plots.resize throws "Resize must be passed a displayed plot div
+ *  element" for a div that is hidden or was never plotted, and every caller
+ *  here resizes speculatively: a collapsed bond-length card keeps its plot div
+ *  in the DOM but display:none, and the panel's ResizeObserver fires for every
+ *  card including those. So the div is checked for being plotted (_fullLayout
+ *  is Plotly's own marker) and actually laid out before asking. */
+function safeResize(Plotly, plotId) {
+  const el = /** @type {(HTMLElement & {_fullLayout?: unknown}) | null} */ (document.getElementById(plotId));
+  if (!el || !el._fullLayout || !el.offsetParent || !el.clientWidth) return;
+  try {
+    Plotly.Plots.resize(el);
+  } catch {
+    // Raced with a collapse or a rebuild — the next render resizes it anyway.
+  }
 }
 
 /** Wire a bar-click handler onto a plot div (idempotent — safe to call after
@@ -211,10 +230,9 @@ export async function exportHistogramPNG(plotId) {
  *  chart may exist yet, so failures here are swallowed rather than surfaced. */
 export async function resizeHistogramPlot(plotId) {
   try {
-    const Plotly = await loadPlotly();
-    if (document.getElementById(plotId)) Plotly.Plots.resize(plotId);
+    safeResize(await loadPlotly(), plotId);
   } catch {
-    // No chart to resize yet, or Plotly failed to load — nothing to do.
+    // Plotly failed to load — nothing to resize.
   }
 }
 

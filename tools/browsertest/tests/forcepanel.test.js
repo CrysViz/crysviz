@@ -116,15 +116,32 @@ const H = require('../harness');
     JSON.stringify(clickResult));
 
   // --- Bin/range controls redraw the plot ---
-  const controlsChange = await page.evaluate(() => {
+  const controlsChange = await page.evaluate(async () => {
     const plot = /** @type {any} */ (document.getElementById('forceHistogramPlot'));
     const before = plot.data.length;
-    const binSlider = /** @type {HTMLInputElement} */ (document.querySelector('.fh-bin-slider'));
-    binSlider.value = '6';
+    const binsBefore = plot.data[0].x.length;
+    // The bin control is a bin-WIDTH slider in eV/Å (.fh-width-slider, range
+    // 0.02-1), not a bin count - the count adapts to it, see
+    // ForceHistogram.js's computeBins. Setting a count like 6 just clamped to
+    // the max and changed nothing, so halving the default width is the edit
+    // that actually exercises a redraw.
+    const binSlider = /** @type {HTMLInputElement} */ (document.querySelector('.fh-width-slider'));
+    const widthBefore = parseFloat(binSlider.value);
+    // Snaps to the slider's 0.02 step, so the exact value asked for is not the
+    // value that lands - what matters is that it got narrower and the chart
+    // rebinned accordingly.
+    binSlider.value = String(widthBefore / 2);
     binSlider.dispatchEvent(new Event('input'));
-    return { before, binsAfter: binSlider.value };
+    await new Promise((r) => setTimeout(r, 400));
+    return {
+      before, widthBefore, widthAfter: parseFloat(binSlider.value),
+      binsBefore, binsAfter: plot.data[0].x.length,
+    };
   });
-  H.check('bin slider present and settable', controlsChange.binsAfter === '6', JSON.stringify(controlsChange));
+  H.check('a narrower bin width rebins the chart into more bins',
+    controlsChange.widthAfter < controlsChange.widthBefore
+      && controlsChange.binsAfter > controlsChange.binsBefore,
+    JSON.stringify(controlsChange));
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
