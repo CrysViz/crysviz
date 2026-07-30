@@ -33,6 +33,7 @@ import {
   constrainRepresentative,
   projectWyckoffOrbit,
 } from './WyckoffProjector.js';
+import { createSpaceGroupSelect } from './SpaceGroupSelect.js';
 import { makeSectionHeadline } from '../panels/sectionHeadline.js';
 import { openPeriodicTable } from '../PeriodicTableSelectPanel.js';
 import { elementData } from '../PeriodicTablePickerCore.js';
@@ -100,14 +101,14 @@ function buildTab(container, onCreated) {
   const sgRow = document.createElement('div');
   sgRow.style.cssText = 'display:flex; align-items:center; gap:10px; margin-bottom:6px;';
   sgRow.innerHTML = `
-    <label style="font-size:12px; color:rgba(255,255,255,0.7);">Number (1–230)</label>
-    <input type="number" id="wyckoffSpaceGroup" min="1" max="230" step="1" value="${spaceGroup}"
-      style="width:70px; text-align:right; font-family:monospace; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:4px; color:white; padding:3px 5px; box-sizing:border-box;">
-    <span id="wyckoffSpaceGroupName" style="font-size:12px; color:rgba(255,255,255,0.85);"></span>
+    <label style="font-size:12px; color:rgba(255,255,255,0.7); flex:none;">Space group</label>
+    <div id="wyckoffSpaceGroupSelect" style="flex:1 1 auto; min-width:0;"></div>
   `;
   container.appendChild(sgRow);
-  const spaceGroupInput = sgRow.querySelector('#wyckoffSpaceGroup');
-  const spaceGroupName = sgRow.querySelector('#wyckoffSpaceGroupName');
+
+  const spaceGroupName = document.createElement('div');
+  spaceGroupName.style.cssText = 'font-size:12px; color:rgba(255,255,255,0.85); margin-bottom:4px;';
+  container.appendChild(spaceGroupName);
 
   const constraintHint = document.createElement('div');
   constraintHint.style.cssText = 'font-size:11px; color:rgba(255,255,255,0.5); margin-bottom:10px;';
@@ -316,10 +317,12 @@ function buildTab(container, onCreated) {
     refreshSummary();
   }
 
-  spaceGroupInput.addEventListener('change', () => {
-    spaceGroup = clampSpaceGroup(spaceGroupInput.value);
-    spaceGroupInput.value = String(spaceGroup);
-    applySpaceGroup();
+  createSpaceGroupSelect(sgRow.querySelector('#wyckoffSpaceGroupSelect'), {
+    value: spaceGroup,
+    onChange: (number) => {
+      spaceGroup = clampSpaceGroup(number);
+      applySpaceGroup();
+    },
   });
 
   sitesHost.querySelector('#wyckoffAddSite').addEventListener('click', () => {

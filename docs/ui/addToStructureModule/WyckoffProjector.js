@@ -184,6 +184,31 @@ export function getSpaceGroupInfo(spaceGroupNumber) {
   };
 }
 
+// All 230 space groups, ascending, one entry per IT number - the same setting
+// getSpaceGroupEntry() would pick for that number, so what a picker offers is
+// exactly what the rest of this module will use. Each entry carries the
+// alternative spellings a user might type (compact and spaced Hermann-Mauguin,
+// Schoenflies, point group), which is what makes fuzzy searching by symbol
+// rather than by number possible.
+export function listSpaceGroups() {
+  const byNumber = new Map();
+
+  for (const entry of requireData().spacegroups ?? []) {
+    const number = Number(entry.it_number);
+    if (byNumber.has(number)) continue;
+    byNumber.set(number, {
+      number,
+      hmShort: entry.hm_short ?? '',
+      hmCompact: entry.hm_short_markup?.unicode ?? (entry.hm_short ?? '').replace(/\s+/g, ''),
+      schoenflies: entry.schoenflies_markup?.unicode ?? entry.schoenflies ?? '',
+      pointGroup: entry.point_group ?? '',
+      crystalSystem: entry.crystal_system ?? '',
+    });
+  }
+
+  return [...byNumber.values()].sort((a, b) => a.number - b.number);
+}
+
 // Which of x/y/z are genuinely free parameters on this site, and the symbolic
 // representative it comes from ("x,2x,z", "0,y,1/4", "1/2,1/2,1/2"). A `false`
 // entry means that coordinate is not an independent input: it is either fixed
