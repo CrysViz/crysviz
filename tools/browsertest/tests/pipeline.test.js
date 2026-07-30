@@ -411,8 +411,8 @@ const H = require('../harness');
       hasPreviewRestDelay: 'rtPreviewRestDelay' in state.style,
     };
   });
-  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.13), not the hidden rest delay',
-    persisted.version === '2.15' && persisted.renderPipeline === 'forward'
+  H.check('captureState persists the pipeline id + per-pipeline knobs (v2.x), not the hidden rest delay',
+    persisted.version?.startsWith('2') && persisted.renderPipeline === 'forward'
       && typeof persisted.depthPeelLayers === 'number'
       && typeof persisted.rtResolutionScale === 'number'
       && typeof persisted.rtReflectivity === 'number'

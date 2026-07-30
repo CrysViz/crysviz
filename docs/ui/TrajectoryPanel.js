@@ -379,6 +379,15 @@ function updateFrame(frame, container, opts = {}) {
   if (trajPlot) trajPlot.setCursor(frame);
 }
 
+/** Jump the trajectory to a specific frame. Used by the .crysviz loader to
+ *  restore the step the user was viewing; reuses updateFrame so the structure,
+ *  scrubber, plot cursor and force/spin arrows all follow. */
+export function showTrajectoryFrame(frame, container) {
+  if (!container?.structures?.length) return;
+  currentFrame = Math.max(0, Math.min(container.structures.length - 1, frame));
+  updateFrame(currentFrame, container);
+}
+
 // --- Auto-play control ---
 function startAutoPlay(container, intervalMs = 200) {
   if (!container || container.structures.length <= 1) return;
