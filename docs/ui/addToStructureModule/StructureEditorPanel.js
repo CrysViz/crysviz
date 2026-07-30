@@ -619,22 +619,25 @@ function buildWyckoffModifyEditor(body, structure, remount) {
       row.innerHTML = `
         <td style="${SITE_CELL_STYLE}">
           <div style="display:flex; align-items:center; gap:3px;">
-            <input type="text" class="orbit-element" value="${orbit.element}" style="${SITE_TEXT_STYLE}">
-            <button type="button" class="orbit-pick-element" title="Select Element" style="${SITE_PICK_STYLE}">⚛</button>
+            <input type="text" class="orbit-element" value="${orbit.element}" style="${SITE_TEXT_STYLE}"
+              title="Element of every atom in this orbit">
+            <button type="button" class="orbit-pick-element" title="Pick the element from the periodic table" style="${SITE_PICK_STYLE}">⚛</button>
           </div>
         </td>
         <td style="${SITE_CELL_STYLE}">
-          <select class="orbit-site" style="${SITE_NUM_STYLE}"></select>
+          <select class="orbit-site" style="${SITE_NUM_STYLE}"
+            title="Wyckoff site. Changing it re-derives the position and the orbit size"></select>
           <div class="orbit-site-form" style="font-family:monospace; font-size:10px; color:rgba(255,255,255,0.45); text-align:center; margin-top:2px;">${orbit.siteSymmetry}</div>
         </td>
         ${AXES.map((axis, index) => `
           <td style="${SITE_CELL_STYLE}">
             <input type="number" step="0.01" class="orbit-${axis} coord-input" value="${round4(position[index])}"
               style="${SITE_NUM_STYLE}" ${freedom[index] ? '' : 'disabled'}
-              ${freedom[index] ? '' : `title="${axis} is fixed by the site symmetry"`}>
+              ${freedom[index] ? `title="Free coordinate of this site; every image follows it"` : `title="${axis} is fixed by the site symmetry"`}>
           </td>`).join('')}
         <td style="${SITE_CELL_STYLE} text-align:center;">
-          <input type="color" class="orbit-color" value="${colorToHex(structure.atoms[orbit.representativeIndex].getColor())}"
+          <input type="color" class="orbit-color" title="Colour of every atom in this orbit"
+            value="${colorToHex(structure.atoms[orbit.representativeIndex].getColor())}"
             style="width:24px; height:20px; padding:0; border:1px solid #555; background:#333; cursor:pointer;">
         </td>
         <td style="${SITE_CELL_STYLE} text-align:center;">
@@ -850,8 +853,8 @@ function buildWyckoffModifyEditor(body, structure, remount) {
       <tbody><tr>
         <td style="${SITE_CELL_STYLE}">
           <div style="display:flex; align-items:center; gap:3px;">
-            <input type="text" id="wyckoffNewElement" style="${SITE_TEXT_STYLE}">
-            <button type="button" id="wyckoffNewPick" title="Select Element" style="${SITE_PICK_STYLE}">⚛</button>
+            <input type="text" id="wyckoffNewElement" title="Element for the new site" style="${SITE_TEXT_STYLE}">
+            <button type="button" id="wyckoffNewPick" title="Pick the element from the periodic table" style="${SITE_PICK_STYLE}">⚛</button>
           </div>
         </td>
         <td style="${SITE_CELL_STYLE}">
@@ -860,7 +863,8 @@ function buildWyckoffModifyEditor(body, structure, remount) {
         </td>
         ${AXES.map((axis) => `<td style="${SITE_CELL_STYLE}"><input type="number" step="0.05" id="wyckoffNew${axis.toUpperCase()}" class="coord-input" value="0" style="${SITE_NUM_STYLE}"></td>`).join('')}
         <td style="${SITE_CELL_STYLE} text-align:center;">
-          <button type="button" id="wyckoffAddSite" class="btn-mini highlight" style="white-space:nowrap;">+ Add</button>
+          <button type="button" id="wyckoffAddSite" class="btn-mini highlight"
+            title="Add this site and every symmetry image of it" style="white-space:nowrap;">+ Add</button>
         </td>
       </tr></tbody>
     </table>

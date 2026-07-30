@@ -188,3 +188,47 @@ export function hexToRgb(hex) {
     b: parseInt(result[3], 16)
   } : { r: 0, g: 0, b: 0 };
 }
+
+// Both pickers render a popup under the same #periodicTablePopup id, so only
+// one can meaningfully be up at a time. Opening either used to append a second
+// element sharing that id, and every getElementById in them then addressed only
+// the first - which is why the popup had to be closed once per time it had been
+// opened. Dismissal lives here so the two cannot drift apart.
+let closeOpenPicker = null;
+
+export function closeAnyPicker() {
+  closeOpenPicker?.();
+}
+
+/** Wires Escape, click-outside and the Close button. Returns close(). */
+export function wirePickerDismiss(popup, closeButton) {
+  let closed = false;
+
+  function close() {
+    if (closed) return;
+    closed = true;
+    closeOpenPicker = null;
+    document.removeEventListener('keydown', onKeyDown);
+    document.removeEventListener('pointerdown', onPointerDown, true);
+    popup.remove();
+  }
+
+  function onKeyDown(event) {
+    if (event.key === 'Escape') close();
+  }
+
+  function onPointerDown(event) {
+    if (!popup.contains(/** @type {Node} */ (event.target))) close();
+  }
+
+  closeOpenPicker = close;
+  closeButton?.addEventListener('click', close);
+  document.addEventListener('keydown', onKeyDown);
+  // Deferred: the click that opened the popup is still on its way up to
+  // document, and would otherwise read as a click outside it.
+  setTimeout(() => {
+    if (!closed) document.addEventListener('pointerdown', onPointerDown, true);
+  }, 0);
+
+  return close;
+}
