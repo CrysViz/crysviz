@@ -120,15 +120,24 @@ export function createLatticeConstraintController(host) {
 
   Object.values(inputs).forEach((input) => input.addEventListener('input', enforce));
 
+  // Apply a constraint map directly. The add panel derives it from the
+  // space-group table via setCrystalSystem(); the Modify panel measures it from
+  // the lock's own operations (wyckoffLatticeConstraints) because the table is
+  // keyed to the generator's setting and would freeze the wrong angle there.
+  function setConstraints(next) {
+    constraints = next ?? {};
+    const anyLocked = Object.keys(constraints).length > 0;
+    host.querySelectorAll('.lat-mat').forEach((input) => markLocked(/** @type {HTMLInputElement} */ (input), anyLocked));
+    for (const [key, input] of Object.entries(inputs)) {
+      markLocked(input, Boolean(constraints[key]));
+    }
+    enforce();
+  }
+
   return {
+    setConstraints,
     setCrystalSystem(crystalSystem) {
-      constraints = latticeConstraintsFor(crystalSystem);
-      const anyLocked = Object.keys(constraints).length > 0;
-      host.querySelectorAll('.lat-mat').forEach((input) => markLocked(input, anyLocked));
-      for (const [key, input] of Object.entries(inputs)) {
-        markLocked(input, Boolean(constraints[key]));
-      }
-      enforce();
+      setConstraints(latticeConstraintsFor(crystalSystem));
     },
   };
 }

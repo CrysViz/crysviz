@@ -434,7 +434,10 @@ export function renderComposition(panelState="closed") {
   const addAtomButton = document.createElement('button');
   addAtomButton.id = 'addButton';
   addAtomButton.innerHTML = '✎';               // icon only
-  addAtomButton.title = hasWyckoffPanel ? 'Modify Wyckoff orbits' : 'Modify structure: lattice, atoms, add and remove';
+  // Same panel, same edits, either way - locked it works one orbit at a time.
+  addAtomButton.title = hasWyckoffPanel
+    ? 'Modify structure: cell, Wyckoff sites, add and remove'
+    : 'Modify structure: lattice, atoms, add and remove';
   addAtomButton.className = 'btn-mini highlight';
   addAtomButton.style.cssText = `
     height: 26px;

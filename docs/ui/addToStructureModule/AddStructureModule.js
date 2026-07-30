@@ -22,15 +22,14 @@
 // generation constrains and derives the lattice, free-form manual entry does
 // not, so the two modes cannot share one.
 //
-// On the modify side a structure that already carries a Wyckoff lock gets the
-// orbit editor instead of the atom table - see WyckoffOrbitEditor.js for why
-// free-form atom editing is not offered there.
+// On the modify side a structure carrying a Wyckoff lock gets the same panel
+// with orbit rows in place of atom rows - one editor, both modes. See
+// StructureEditorPanel.js's buildWyckoffModifyEditor.
 
 import { registerPanel, removePanel } from '../panels/PanelManager.js';
 import { createTabSwitcher } from '../TabSwitcher.js';
 import { createSymmetryWyckoffTab } from './SymmetryWyckoffTab.js';
 import { buildStructureEditor } from './StructureEditorPanel.js';
-import { buildWyckoffOrbitEditor } from './WyckoffOrbitEditor.js';
 import { createNewStructureFromAtoms } from './CommitAtoms.js';
 import { defaultFloatingAnchor } from './floatingPanelAnchor.js';
 import { fileBrowser } from '../../state/store.js';
@@ -91,14 +90,22 @@ export function initAddStructureButton(buttonSelector = '.add-structure-button')
   });
 }
 
-export function initModifyStructureButton(buttonId = 'addButton') {
-  const button = document.getElementById(buttonId);
-  if (!button) {
-    console.warn(`No element with id '${buttonId}' found.`);
-    return;
-  }
+// #addButton is destroyed and rebuilt by every renderComposition(), and not
+// every caller of that goes through updateVisualization() — MoyoWASM.js's
+// Wyckoff toggle calls it directly — so a listener bound to the live node was
+// silently lost the moment symmetry was locked or unlocked, leaving the ✎
+// button dead until some unrelated re-render happened to rewire it. Delegating
+// from document survives every rebuild, and makes repeat calls harmless.
+let modifyDelegationBoundFor = null;
 
-  button.addEventListener('click', () => {
+export function initModifyStructureButton(buttonId = 'addButton') {
+  if (modifyDelegationBoundFor === buttonId) return;
+  modifyDelegationBoundFor = buttonId;
+
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest(`#${buttonId}`)) return;
+
     removePanel(MODIFY_PANEL_ID); // idempotent re-open
 
     const structure = fileBrowser.selectedStructure;
@@ -106,27 +113,24 @@ export function initModifyStructureButton(buttonId = 'addButton') {
       console.warn('Modify structure: no structure selected.');
       return;
     }
-    const wyckoffLocked = structure.symmetry?.mode === 'wyckoff';
-
     /** @type {{dispose: () => void} | null} */
     let editor = null;
 
     registerPanel({
       id: MODIFY_PANEL_ID,
-      title: wyckoffLocked ? 'Modify Wyckoff Orbits' : 'Modify Structure',
+      // One title for both modes: the panel offers the same edits either way,
+      // and a Revert can drop the lock mid-session, which would leave a
+      // mode-specific title lying.
+      title: 'Modify Structure',
       lifecycle: 'persistent',
       closable: true,
       persist: false,
       buildContent(body) {
         body.style.cssText = 'width: min(90vw, 560px);';
 
-        if (wyckoffLocked) {
-          editor = buildWyckoffOrbitEditor(body);
-          return;
-        }
-
         // The Modify editor is LIVE: it edits `structure` in place as changes
-        // are made (no commit), and its button reverts instead. See
+        // are made (no commit), and its button reverts instead. It picks the
+        // orbit-row or atom-row body from the structure's lock - see
         // StructureEditorPanel.js's buildModifyEditor.
         editor = buildStructureEditor(body, { source: structure });
       },

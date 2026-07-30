@@ -15,11 +15,38 @@
 //     section has its own "Reset Lattice". The New/Removed lists are derived
 //     from a persistent diff kept on the structure (structure._modify), so
 //     they survive closing and reopening the panel.
+//
+// The Modify editor has two bodies, picked by whether the structure carries a
+// Wyckoff lock, and they offer the SAME set of edits - cell, element, colour,
+// coordinates, add and remove - so that locking symmetry does not cost the user
+// half the panel. What differs is the unit of editing: locked, the unit is a
+// whole orbit (one representative row per orbit, its frozen axes disabled, add
+// and delete acting on every image at once) and the cell is projected onto what
+// the lock permits. Reverting stays in whichever mode it started in - locked, it
+// re-locks the restored structure rather than dropping the user into the atom
+// table - but the body is re-mounted either way, since a revert rebuilds
+// structure.atoms and with it every index the orbit rows were built from.
 
 import { createAtomTableEditor } from './AtomTableInput.js';
 import { createLatticeInputPanel } from './LatticeInputPanel.js';
 import { checkAtomCollisions, conflictingCandidateIndices } from './AtomCollisionCheck.js';
 import { wireCollisionGuardedButton } from './CollisionWarningUI.js';
+import { createLatticeConstraintController } from './WyckoffLatticeConstraints.js';
+import {
+  getWyckoffOrbitGroups,
+  getOrbitAxisFreedom,
+  applyWyckoffOrbitPosition,
+  removeWyckoffOrbit,
+  addWyckoffOrbit,
+  previewWyckoffOrbit,
+  setWyckoffOrbitElement,
+  setWyckoffOrbitColor,
+  applyWyckoffLattice,
+  wyckoffLatticeConstraints,
+  activateWyckoffMode,
+} from '../SymmetryEditModule.js';
+import { loadSymmetryData, getWyckoffLetters, getSiteFreedom, constrainRepresentative } from './WyckoffProjector.js';
+import { openPeriodicTable } from '../PeriodicTableSelectPanel.js';
 import {
   colorToHex,
   applyStructureEdits,
@@ -82,6 +109,26 @@ export function structureToTableAtoms(structure) {
  */
 export function buildStructureEditor(body, options) {
   return options.source ? buildModifyEditor(body, options.source) : buildAddEditor(body, options);
+}
+
+// Picks the locked or free-form body and can swap between them in place. The
+// lock can come and go while the panel is open (a revert rebuilds it, the
+// Symmetry panel's toggle can drop it), and re-mounting is cheaper to reason
+// about than teaching one body to change shape underneath itself.
+function buildModifyEditor(body, structure) {
+  /** @type {{dispose: () => void} | null} */
+  let inner = null;
+
+  function mount() {
+    inner?.dispose();
+    body.innerHTML = '';
+    inner = structure.symmetry?.mode === 'wyckoff'
+      ? buildWyckoffModifyEditor(body, structure, mount)
+      : buildFreeformModifyEditor(body, structure);
+  }
+
+  mount();
+  return { dispose() { inner?.dispose(); } };
 }
 
 function makeListHeading(text) {
@@ -189,7 +236,7 @@ function ensureModifyState(structure) {
 // ---------------------------------------------------------------------------
 // Modify Structure: live editor on the loaded structure
 // ---------------------------------------------------------------------------
-function buildModifyEditor(body, structure) {
+function buildFreeformModifyEditor(body, structure) {
   let initialAtoms = structureToTableAtoms(structure); // also assigns uuids
   let mod = ensureModifyState(structure);
 
@@ -409,6 +456,619 @@ function buildModifyEditor(body, structure) {
       document.removeEventListener('crysviz:colors-changed', syncFromStructure);
       unsubscribeSelection?.();
       if (highlightedUuid) clearHighlightAtom();
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Modify Structure, symmetry-locked: the same edits, one orbit at a time
+// ---------------------------------------------------------------------------
+const SITE_CELL_STYLE = 'border: 1px solid #444; padding: 3px;';
+const SITE_TH_STYLE = 'border: 1px solid #444; padding: 3px; font-size: 12px; text-align: center; color: #ddd;';
+const SITE_NUM_STYLE = 'width: 100%; background: #333; border: 1px solid #555; color: white; padding: 2px 3px; border-radius: 3px; box-sizing: border-box; text-align: right;';
+const SITE_TEXT_STYLE = 'width:54px; background:#333; border:1px solid #555; color:white; padding:2px 3px; border-radius:3px; box-sizing:border-box;';
+const SITE_PICK_STYLE = 'flex:none; width:22px; height:22px; background:#595959; border:none; color:white; cursor:pointer; font-size:13px; border-radius:3px; line-height:1; padding:0;';
+const HINT_STYLE = 'font-size:11px; color:rgba(255,255,255,0.5); margin: 4px 0 10px 0;';
+const AXES = ['x', 'y', 'z'];
+
+// The Newly-added / Removed diff for the locked body, kept on the structure so
+// it survives closing and reopening the panel - same idea as the free-form
+// body's `_modify`, but the unit is an orbit. It is tied to the lock object
+// itself: re-locking (Get Wyckoff again) builds fresh orbitIds, at which point
+// the old baseline would name orbits that no longer exist.
+function ensureWyckoffModifyState(structure) {
+  const lock = structure.symmetry;
+  if (structure._wyckoffModify?.lock !== lock) {
+    structure._wyckoffModify = {
+      lock,
+      baseline: new Set((lock.orbitGroups ?? []).map((orbit) => orbit.orbitId)),
+      removed: new Map(),
+      nextRemovedKey: 0,
+    };
+  }
+  return structure._wyckoffModify;
+}
+
+/**
+ * @param {HTMLElement} body
+ * @param {any} structure
+ * @param {() => void} remount Rebuild the body for the structure's current lock.
+ * @returns {{dispose: () => void}}
+ */
+function buildWyckoffModifyEditor(body, structure, remount) {
+  const symmetry = structure.symmetry;
+  const mod = ensureWyckoffModifyState(structure);
+
+  const heading = document.createElement('div');
+  heading.style.cssText = 'font-size:12px; color:rgba(255,255,255,0.85); margin-bottom:2px;';
+  heading.textContent = `Symmetry locked · ${symmetry.spaceGroup ?? '?'} (No. ${symmetry.number ?? '?'}) · tolerance ${symmetry.tolerance} Å`;
+  body.appendChild(heading);
+
+  const intro = document.createElement('div');
+  intro.style.cssText = HINT_STYLE;
+  intro.textContent = 'One row per orbit: editing it moves, re-elements or removes every symmetry-equivalent atom at once. Frozen coordinates are disabled.';
+  body.appendChild(intro);
+
+  // --- Lattice, projected onto what the lock allows ---
+  const latticeHost = document.createElement('div');
+  body.appendChild(latticeHost);
+  const latticePanel = createLatticeInputPanel(latticeHost, {
+    initial: structure.lattice.map((row) => [...row]),
+    onChange: () => scheduleLatticeApply(),
+  });
+
+  const latticeConstraints = createLatticeConstraintController(latticeHost);
+
+  const latticeHint = document.createElement('div');
+  latticeHint.style.cssText = HINT_STYLE;
+  body.appendChild(latticeHint);
+
+  const PARAM_SYMBOLS = { alpha: 'α', beta: 'β', gamma: 'γ' };
+
+  // Locked parameters are disabled and DRIVEN from the free one they follow, so
+  // a cubic cell cannot be given three different lengths - typing a re-writes b
+  // and c. Same enforcement the add panel's Wyckoff tab uses; only the source of
+  // the rules differs (measured from the lock, not the space-group table).
+  function refreshLatticeConstraints() {
+    const constraints = wyckoffLatticeConstraints(structure) ?? {};
+    latticeConstraints.setConstraints(constraints);
+
+    const described = Object.entries(constraints).map(([key, rule]) => {
+      const name = PARAM_SYMBOLS[key] ?? key;
+      return rule.mirror ? `${name} = ${PARAM_SYMBOLS[rule.mirror] ?? rule.mirror}` : `${name} = ${rule.fixed}`;
+    });
+    latticeHint.textContent = described.length
+      ? `${symmetry.spaceGroup ?? 'This group'} determines ${described.join(', ')} — those boxes are driven from the free ones.`
+      : 'This group leaves every cell parameter free.';
+  }
+
+  const resetLatticeRow = document.createElement('div');
+  resetLatticeRow.style.cssText = 'text-align:right; margin-top:6px;';
+  const resetLatticeBtn = document.createElement('button');
+  resetLatticeBtn.textContent = 'Reset Lattice';
+  resetLatticeBtn.className = 'btn-mini';
+  resetLatticeBtn.title = 'Restore the cell to its as-loaded values';
+  resetLatticeRow.appendChild(resetLatticeBtn);
+  latticeHost.appendChild(resetLatticeRow);
+
+  // Coalesce a burst of keystrokes into one projection, and never rewrite the
+  // box being typed in - the projection can change the value, and snapping it
+  // back mid-word would make the field impossible to edit.
+  let latticeFrame = null;
+  function scheduleLatticeApply() {
+    if (latticeFrame != null) return;
+    latticeFrame = requestAnimationFrame(() => {
+      latticeFrame = null;
+      const landed = applyWyckoffLattice(latticePanel.getLattice(), structure);
+      if (landed && !latticeHost.contains(document.activeElement)) latticePanel.setLattice(landed);
+    });
+  }
+
+  // --- Orbits ---
+  body.appendChild(makeSectionHeadline('Wyckoff Sites'));
+
+  const sitesHost = document.createElement('div');
+  sitesHost.innerHTML = `
+    <div style="max-height:240px; overflow-y:auto; margin-top:6px;">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="${SITE_TH_STYLE}">Element</th>
+            <th style="${SITE_TH_STYLE}" title="Wyckoff letter, multiplicity and site symmetry as the lock reports them">Site</th>
+            <th style="${SITE_TH_STYLE}" title="Fractional coordinate of the orbit's representative">X</th>
+            <th style="${SITE_TH_STYLE}">Y</th>
+            <th style="${SITE_TH_STYLE}">Z</th>
+            <th style="${SITE_TH_STYLE}" title="Colour for every atom of this orbit">Col</th>
+            <th style="${SITE_TH_STYLE}"></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  `;
+  body.appendChild(sitesHost);
+  const tbody = sitesHost.querySelector('tbody');
+
+  const summaryHost = document.createElement('div');
+  body.appendChild(summaryHost);
+
+  const status = document.createElement('div');
+  status.style.cssText = 'font-size:11px; color:rgba(240,132,18,0.95); margin-top:6px; min-height:14px;';
+  body.appendChild(status);
+
+  let highlightedOrbitId = null;
+  /** @type {Array<{orbitId: number, representativeIndex: number, inputs: HTMLInputElement[]}>} */
+  let rows = [];
+
+  function renderSites() {
+    tbody.innerHTML = '';
+    rows = [];
+    const orbits = getWyckoffOrbitGroups(structure);
+
+    orbits.forEach((orbit) => {
+      const freedom = getOrbitAxisFreedom(orbit);
+      const position = structure.atoms[orbit.representativeIndex].position;
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td style="${SITE_CELL_STYLE}">
+          <div style="display:flex; align-items:center; gap:3px;">
+            <input type="text" class="orbit-element" value="${orbit.element}" style="${SITE_TEXT_STYLE}">
+            <button type="button" class="orbit-pick-element" title="Select Element" style="${SITE_PICK_STYLE}">⚛</button>
+          </div>
+        </td>
+        <td style="${SITE_CELL_STYLE} text-align:center; font-size:11px; color:rgba(255,255,255,0.75); white-space:nowrap;">
+          ${orbit.multiplicity}${orbit.wyckoff}${orbit.siteSymmetry ? `<div style="font-family:monospace; font-size:10px; color:rgba(255,255,255,0.45);">${orbit.siteSymmetry}</div>` : ''}
+        </td>
+        ${AXES.map((axis, index) => `
+          <td style="${SITE_CELL_STYLE}">
+            <input type="number" step="0.01" class="orbit-${axis} coord-input" value="${round4(position[index])}"
+              style="${SITE_NUM_STYLE}" ${freedom[index] ? '' : 'disabled'}
+              ${freedom[index] ? '' : `title="${axis} is fixed by the site symmetry"`}>
+          </td>`).join('')}
+        <td style="${SITE_CELL_STYLE} text-align:center;">
+          <input type="color" class="orbit-color" value="${colorToHex(structure.atoms[orbit.representativeIndex].getColor())}"
+            style="width:24px; height:20px; padding:0; border:1px solid #555; background:#333; cursor:pointer;">
+        </td>
+        <td style="${SITE_CELL_STYLE} text-align:center;">
+          <button type="button" class="orbit-remove btn-mini" style="width:20px; height:20px; padding:0; line-height:0; display:flex; align-items:center; justify-content:center;">✕</button>
+        </td>
+      `;
+      tbody.appendChild(row);
+
+      AXES.forEach((axis, index) => {
+        if (!freedom[index]) {
+          const frozen = /** @type {HTMLInputElement} */ (row.querySelector(`.orbit-${axis}`));
+          frozen.style.opacity = '0.45';
+        }
+      });
+
+      const coordInputs = AXES.map((axis) => /** @type {HTMLInputElement} */ (row.querySelector(`.orbit-${axis}`)));
+      const elementInput = /** @type {HTMLInputElement} */ (row.querySelector('.orbit-element'));
+      const removeBtn = /** @type {HTMLButtonElement} */ (row.querySelector('.orbit-remove'));
+
+      removeBtn.disabled = orbits.length <= 1;
+      removeBtn.title = orbits.length <= 1
+        ? 'The last orbit cannot be removed — it would leave an empty structure'
+        : `Remove all ${orbit.multiplicity} ${orbit.element} atoms of this orbit`;
+
+      function commitCoords() {
+        status.textContent = '';
+        const target = coordInputs.map((input) => parseFloat(input.value) || 0);
+        if (!applyWyckoffOrbitPosition(orbit.representativeIndex, target, structure)) {
+          status.textContent = orbit.isFixed
+            ? 'This site has no free parameters.'
+            : 'Move refused — it would collapse two sites onto each other.';
+        }
+        // Whether it landed or was refused, show where the atom actually is:
+        // the move is projected onto the site's degrees of freedom, so the
+        // typed value is rarely the value that results.
+        syncCoordsFromStructure();
+      }
+
+      coordInputs.forEach((input) => input.addEventListener('change', commitCoords));
+
+      elementInput.addEventListener('change', () => {
+        status.textContent = '';
+        const picked = elementInput.value.trim();
+        if (!elementData[picked]) {
+          status.textContent = `Not a recognized element: ${picked || '(empty)'}. Use the periodic table picker (⚛).`;
+          elementInput.value = orbit.element;
+          return;
+        }
+        if (setWyckoffOrbitElement(orbit.orbitId, picked, structure)) afterStructureEdit();
+      });
+
+      row.querySelector('.orbit-pick-element').addEventListener('click', () => {
+        openPeriodicTable((picked) => {
+          if (setWyckoffOrbitElement(orbit.orbitId, picked, structure)) afterStructureEdit();
+        });
+      });
+
+      row.querySelector('.orbit-color').addEventListener('input', (event) => {
+        setWyckoffOrbitColor(orbit.orbitId, /** @type {HTMLInputElement} */ (event.target).value, structure);
+      });
+
+      // Clicking the row (not one of its controls) highlights the whole orbit,
+      // which is the only way to see which atoms a row actually owns.
+      row.addEventListener('click', (event) => {
+        if (/** @type {HTMLElement} */ (event.target).closest('button, input')) return;
+        clearHighlightAtom();
+        if (highlightedOrbitId === orbit.orbitId) {
+          highlightedOrbitId = null;
+          return;
+        }
+        highlightedOrbitId = orbit.orbitId;
+        highlightAtomsIn3D(orbit.atomIndices);
+      });
+
+      removeBtn.addEventListener('click', () => {
+        status.textContent = '';
+        clearHighlightAtom();
+        highlightedOrbitId = null;
+        // Snapshot BEFORE the removal: afterwards the orbit is gone and its
+        // representative index points at a different atom. Only an orbit that
+        // was there when the lock was made is worth listing and restoring -
+        // removing one you just added simply drops it.
+        const wasOriginal = mod.baseline.has(orbit.orbitId);
+        const snapshot = {
+          key: mod.nextRemovedKey,
+          element: orbit.element,
+          wyckoff: orbit.wyckoff,
+          siteSymmetry: orbit.siteSymmetry,
+          multiplicity: orbit.multiplicity,
+          representative: [...structure.atoms[orbit.representativeIndex].position],
+        };
+        if (!removeWyckoffOrbit(orbit.orbitId, structure)) return;
+        if (wasOriginal) {
+          mod.removed.set(snapshot.key, snapshot);
+          mod.nextRemovedKey += 1;
+        }
+        afterStructureEdit();
+      });
+
+      rows.push({ orbitId: orbit.orbitId, representativeIndex: orbit.representativeIndex, inputs: coordInputs });
+    });
+
+    markNewOrbitGap();
+  }
+
+  // Splice a "Newly added" label row above the first orbit the user added, so
+  // the originals and the additions read as two groups - the same idiom the
+  // free-form body uses for atoms. Added orbits are always appended, so they
+  // are contiguous at the bottom.
+  function markNewOrbitGap() {
+    const orbits = getWyckoffOrbitGroups(structure);
+    const firstNewRow = [...tbody.querySelectorAll('tr')]
+      .find((_, index) => orbits[index] && !mod.baseline.has(orbits[index].orbitId));
+    if (!firstNewRow) return;
+    const colCount = sitesHost.querySelectorAll('thead th').length;
+    const separator = document.createElement('tr');
+    separator.className = 'orbit-new-separator';
+    separator.innerHTML = `<td colspan="${colCount}" style="padding:9px 6px 3px; border-top:2px solid rgba(125,206,160,0.5); color:rgba(125,206,160,0.95); font-size:11px; font-weight:600; letter-spacing:0.03em;">Newly added</td>`;
+    firstNewRow.parentNode.insertBefore(separator, firstNewRow);
+  }
+
+  // Removals have nowhere else to appear (the additions show up in the table
+  // itself), and they carry the restore button. Restoring re-expands the orbit
+  // from the lock's operations, so it comes back as the same set of atoms -
+  // appended at the end rather than at its old indices, which removeWyckoffOrbit
+  // has already renumbered away.
+  function renderOrbitSummary() {
+    summaryHost.innerHTML = '';
+    const removed = [...mod.removed.values()];
+    if (!removed.length) return;
+
+    summaryHost.appendChild(makeListHeading(`Removed orbits (${removed.length})`));
+    const list = document.createElement('div');
+    list.style.cssText = LIST_STYLE;
+    removed.forEach((snapshot) => {
+      const [x, y, z] = snapshot.representative;
+      const label = `${snapshot.element} ${snapshot.multiplicity}${snapshot.wyckoff}`;
+      list.appendChild(summaryEntry({ element: label, x, y, z }, () => {
+        status.textContent = '';
+        const result = addWyckoffOrbit({
+          element: snapshot.element,
+          representative: snapshot.representative,
+          wyckoff: snapshot.wyckoff,
+          siteSymmetry: snapshot.siteSymmetry,
+        }, structure);
+        if (!result.ok) {
+          status.textContent = result.reason ?? 'Could not restore the orbit.';
+          return;
+        }
+        mod.removed.delete(snapshot.key);
+        afterStructureEdit();
+      }));
+    });
+    summaryHost.appendChild(list);
+  }
+
+  // --- Add a site ---
+  body.appendChild(makeSectionHeadline('Add Site'));
+
+  const addHost = document.createElement('div');
+  addHost.innerHTML = `
+    <table style="width:100%; border-collapse:collapse; margin-top:6px;">
+      <thead><tr>
+        <th style="${SITE_TH_STYLE}">Element</th>
+        <th style="${SITE_TH_STYLE}" title="Wyckoff site to place the new atom on">Site</th>
+        <th style="${SITE_TH_STYLE}">X</th>
+        <th style="${SITE_TH_STYLE}">Y</th>
+        <th style="${SITE_TH_STYLE}">Z</th>
+        <th style="${SITE_TH_STYLE}"></th>
+      </tr></thead>
+      <tbody><tr>
+        <td style="${SITE_CELL_STYLE}">
+          <div style="display:flex; align-items:center; gap:3px;">
+            <input type="text" id="wyckoffNewElement" style="${SITE_TEXT_STYLE}">
+            <button type="button" id="wyckoffNewPick" title="Select Element" style="${SITE_PICK_STYLE}">⚛</button>
+          </div>
+        </td>
+        <td style="${SITE_CELL_STYLE}">
+          <select id="wyckoffNewSite" style="${SITE_NUM_STYLE}" disabled><option value="">…</option></select>
+          <div id="wyckoffNewForm" style="font-family:monospace; font-size:10px; color:rgba(255,255,255,0.45); text-align:center; margin-top:2px;"></div>
+        </td>
+        ${AXES.map((axis) => `<td style="${SITE_CELL_STYLE}"><input type="number" step="0.05" id="wyckoffNew${axis.toUpperCase()}" class="coord-input" value="0" style="${SITE_NUM_STYLE}"></td>`).join('')}
+        <td style="${SITE_CELL_STYLE} text-align:center;">
+          <button type="button" id="wyckoffAddSite" class="btn-mini highlight" style="white-space:nowrap;">+ Add</button>
+        </td>
+      </tr></tbody>
+    </table>
+  `;
+  body.appendChild(addHost);
+
+  const addPreview = document.createElement('div');
+  addPreview.style.cssText = HINT_STYLE;
+  body.appendChild(addPreview);
+
+  const newElement = /** @type {HTMLInputElement} */ (addHost.querySelector('#wyckoffNewElement'));
+  const newCoordInputs = AXES.map((axis) => /** @type {HTMLInputElement} */ (addHost.querySelector(`#wyckoffNew${axis.toUpperCase()}`)));
+  const newSite = /** @type {HTMLSelectElement} */ (addHost.querySelector('#wyckoffNewSite'));
+  const newSiteForm = /** @type {HTMLElement} */ (addHost.querySelector('#wyckoffNewForm'));
+  const addBtn = /** @type {HTMLButtonElement} */ (addHost.querySelector('#wyckoffAddSite'));
+
+  // Whether the site letters from symmetry_basics.json can be trusted for THIS
+  // lock. They are two different worlds: the lock is moyo's, in moyo's setting
+  // and in whatever cell was analysed, while the tables are keyed to one setting
+  // per IT number and to the conventional cell. When they agree, letters give the
+  // user real Wyckoff sites to choose from; when they do not (a different
+  // setting, or a supercell whose multiplicities are a multiple of the
+  // conventional ones), the letters would snap coordinates onto the wrong
+  // subspace, so the chooser stays off and free coordinates are used instead.
+  let siteLettersUsable = false;
+
+  function lettersAgreeWithLock() {
+    const orbits = getWyckoffOrbitGroups(structure);
+    const labelled = orbits.filter((orbit) => /^[a-zA-Z]$/.test(orbit.wyckoff ?? ''));
+    if (!labelled.length) return false;
+    return labelled.every((orbit) => {
+      try {
+        return getSiteFreedom(symmetry.number, orbit.wyckoff).multiplicity === orbit.multiplicity;
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  function siteOptions() {
+    return getWyckoffLetters(symmetry.number)
+      .map((letter) => {
+        const { multiplicity, siteSymmetry } = getSiteFreedom(symmetry.number, letter);
+        return `<option value="${letter}">${multiplicity}${letter}${siteSymmetry ? ` (${siteSymmetry})` : ''}</option>`;
+      })
+      .join('');
+  }
+
+  // Disable the coordinates the chosen site does not leave free and show what
+  // the symmetry makes of the typed values, so the boxes always hold the
+  // position that will actually be generated. Mirrors the add panel's Wyckoff
+  // tab (SymmetryWyckoffTab.js's syncRowFreedom).
+  function syncNewSiteFreedom() {
+    if (!siteLettersUsable || !newSite.value) {
+      newCoordInputs.forEach((input) => { input.disabled = false; input.style.opacity = ''; input.title = ''; });
+      newSiteForm.textContent = '';
+      return;
+    }
+    const { hasFreedom, firstOrbit } = getSiteFreedom(symmetry.number, newSite.value);
+    const typed = newCoordInputs.map((input) => parseFloat(input.value) || 0);
+    const actual = constrainRepresentative(symmetry.number, newSite.value, typed);
+
+    newCoordInputs.forEach((input, index) => {
+      const free = hasFreedom[index] !== false;
+      input.disabled = !free;
+      input.style.opacity = free ? '' : '0.45';
+      input.title = free ? '' : `Determined by site ${newSite.value} (${firstOrbit})`;
+      if (!free) input.value = String(round4(actual[index]));
+    });
+    newSiteForm.textContent = firstOrbit;
+  }
+
+  // The multiplicity of a new site is not a lookup - it is however many distinct
+  // images the lock's operations produce from these coordinates, which drops as
+  // the position approaches a special one. So it is measured and shown before
+  // the add, and the number here is the number that lands. When a letter is
+  // chosen its table multiplicity is compared against that measurement, which is
+  // what catches a site whose coordinates do not really sit on it.
+  function refreshAddPreview() {
+    const preview = previewWyckoffOrbit(newCoordInputs.map((input) => parseFloat(input.value) || 0), structure);
+    if (!preview) {
+      addPreview.textContent = '';
+      return;
+    }
+    if (preview.collapses) {
+      addPreview.textContent = `Adds ${preview.multiplicity} atoms — but this position lands on an existing atom or on its own image, so it will be refused.`;
+      return;
+    }
+    let note = `Adds ${preview.multiplicity} atom${preview.multiplicity === 1 ? '' : 's'} (the representative plus its symmetry images).`;
+    if (siteLettersUsable && newSite.value) {
+      const expected = getSiteFreedom(symmetry.number, newSite.value).multiplicity;
+      if (expected !== preview.multiplicity) {
+        note += ` Site ${newSite.value} has multiplicity ${expected} — these coordinates give ${preview.multiplicity}, so they do not sit on it.`;
+      }
+    }
+    addPreview.textContent = note;
+  }
+
+  function refreshNewSite() {
+    syncNewSiteFreedom();
+    refreshAddPreview();
+  }
+
+  newCoordInputs.forEach((input) => input.addEventListener('input', refreshAddPreview));
+  newCoordInputs.forEach((input) => input.addEventListener('change', refreshNewSite));
+  newSite.addEventListener('change', refreshNewSite);
+  addHost.querySelector('#wyckoffNewPick').addEventListener('click', () => {
+    openPeriodicTable((picked) => { newElement.value = picked; });
+  });
+
+  // ~8.9 MB of space-group tables, fetched only now that a locked structure is
+  // actually being edited. Until it lands the chooser stays disabled and the
+  // free-coordinate path works, so nothing here blocks on it.
+  let disposed = false;
+  loadSymmetryData()
+    .then(() => {
+      if (disposed) return;
+      siteLettersUsable = lettersAgreeWithLock();
+      if (!siteLettersUsable) {
+        newSite.innerHTML = '<option value="">free</option>';
+        newSite.title = 'The tabulated Wyckoff sites for this space group do not match this lock (a different setting, or a supercell), so coordinates are entered freely.';
+        newSiteForm.textContent = 'free';
+        return;
+      }
+      newSite.innerHTML = `<option value="">free</option>${siteOptions()}`;
+      newSite.disabled = false;
+      newSite.title = '';
+      refreshNewSite();
+    })
+    .catch((error) => {
+      if (disposed) return;
+      newSite.innerHTML = '<option value="">free</option>';
+      newSiteForm.textContent = 'free';
+      console.warn('Modify (Wyckoff): site list unavailable, using free coordinates', error);
+    });
+
+  addBtn.addEventListener('click', () => {
+    status.textContent = '';
+    const element = newElement.value.trim();
+    if (!elementData[element]) {
+      status.textContent = `Not a recognized element: ${element || '(empty)'}. Use the periodic table picker (⚛).`;
+      return;
+    }
+    const typed = newCoordInputs.map((input) => parseFloat(input.value) || 0);
+    // With a letter chosen, the representative is snapped onto that site first.
+    // The orbit itself still comes from the lock's operations - the letter only
+    // picks and constrains the representative, and labels the result.
+    const letter = siteLettersUsable ? newSite.value : '';
+    const representative = letter ? constrainRepresentative(symmetry.number, letter, typed) : typed;
+    const result = addWyckoffOrbit({
+      element,
+      representative,
+      wyckoff: letter,
+      siteSymmetry: letter ? getSiteFreedom(symmetry.number, letter).siteSymmetry : '',
+    }, structure);
+    if (!result.ok) {
+      status.textContent = result.reason ?? 'Could not add the site.';
+      return;
+    }
+    afterStructureEdit();
+  });
+
+  // --- Revert ---
+  const buttonRow = document.createElement('div');
+  buttonRow.style.cssText = 'margin-top: 15px; text-align: right;';
+  const revertBtn = document.createElement('button');
+  revertBtn.id = 'commitStructureEdits';
+  revertBtn.className = 'btn-mini';
+  revertBtn.textContent = 'Revert Changes';
+  revertBtn.title = 'Undo every change and restore the structure as it was loaded, keeping symmetry locked';
+  buttonRow.appendChild(revertBtn);
+  body.appendChild(buttonRow);
+
+  // Anything that changes which atoms exist invalidates the rows (orbit indices
+  // and multiplicities move) and can change the element set, so bonds are
+  // rebuilt too - the free-form body does the same after an add or delete.
+  let lastUnique = structure.uniqueElements.join(',');
+  function afterStructureEdit() {
+    const uniqueNow = structure.uniqueElements.join(',');
+    if (uniqueNow !== lastUnique) { createBondLengthControls(); lastUnique = uniqueNow; }
+    renderSites();
+    renderOrbitSummary();
+    refreshAddPreview();
+  }
+
+  function syncCoordsFromStructure() {
+    rows.forEach(({ representativeIndex, inputs }) => {
+      const position = structure.atoms[representativeIndex]?.position;
+      if (!position) return;
+      inputs.forEach((input, index) => {
+        if (input === document.activeElement) return;
+        input.value = String(round4(position[index]));
+      });
+    });
+  }
+
+  // A coordinate changed elsewhere (the Structure Info panel's orbit sliders
+  // drive the same applyWyckoffOrbitPosition) lands here. Rows are not rebuilt:
+  // an external move never changes orbit membership, and rebuilding would tear
+  // out a row mid-edit.
+  function onExternalChange() {
+    if (structure.symmetry?.mode !== 'wyckoff') {
+      remount();
+      return;
+    }
+    syncCoordsFromStructure();
+  }
+  document.addEventListener('crysviz:atoms-changed', onExternalChange);
+  document.addEventListener('crysviz:colors-changed', syncCoordsFromStructure);
+
+  resetLatticeBtn.addEventListener('click', () => {
+    resetLatticeToOriginal(structure);
+    latticePanel.setLattice(structure.lattice);
+    refreshLatticeConstraints();
+    updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderLattice: true, reRenderOther: true, reRenderComposition: 'open' });
+  });
+
+  revertBtn.addEventListener('click', async () => {
+    if (!window.confirm('Revert all changes? This restores the structure exactly as it was loaded and discards every edit (moved, added and removed orbits, and the cell).')) return;
+    // Same ordering constraint as the free-form body: the selection still
+    // matches the live mesh here, and the revert rebuilds structure.atoms.
+    clearSelectedAtoms();
+    clearHighlightAtom();
+    const tolerance = symmetry.tolerance;
+    revertStructureToOriginal(structure); // drops structure.symmetry: the lock
+    delete structure._modify;             // held indices into the old array
+    delete structure._wyckoffModify;
+
+    // Re-lock rather than fall back to the free-form table. Reverting restores
+    // exactly the structure the lock was built from, so re-analysing at the same
+    // tolerance reproduces that lock - and dropping to the atom table would be a
+    // mode change the user did not ask for. Re-analysis is only unsafe on a
+    // structure that has since been edited (it can reshuffle orbits), which is
+    // precisely what a revert has just undone.
+    try {
+      await activateWyckoffMode(structure, tolerance);
+    } catch (error) {
+      console.warn('Modify (Wyckoff): could not re-lock after revert', error);
+    }
+    createBondLengthControls();
+    updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderLattice: true, reRenderOther: true, reRenderComposition: 'open' });
+    // Re-mount either way: with the lock back this rebuilds the orbit rows from
+    // the fresh orbitIds, and without it falls back to the atom table.
+    remount();
+  });
+
+  renderSites();
+  renderOrbitSummary();
+  refreshLatticeConstraints();
+  refreshAddPreview();
+
+  return {
+    dispose() {
+      disposed = true; // the symmetry-table fetch may still be in flight
+      if (latticeFrame != null) cancelAnimationFrame(latticeFrame);
+      document.removeEventListener('crysviz:atoms-changed', onExternalChange);
+      document.removeEventListener('crysviz:colors-changed', syncCoordsFromStructure);
+      if (highlightedOrbitId !== null) clearHighlightAtom();
     },
   };
 }
