@@ -48,6 +48,7 @@ import {
 } from '../SymmetryEditModule.js';
 import { loadSymmetryData, getWyckoffLetters, getSiteFreedom, constrainRepresentative } from './WyckoffProjector.js';
 import { openPeriodicTable } from '../PeriodicTableSelectPanel.js';
+import { createColorSwatch } from '../SwatchColorPicker.js';
 import {
   colorToHex,
   applyStructureEdits,
@@ -635,11 +636,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
               style="${SITE_NUM_STYLE}" ${freedom[index] ? '' : 'disabled'}
               ${freedom[index] ? `title="Free coordinate of this site; every image follows it"` : `title="${axis} is fixed by the site symmetry"`}>
           </td>`).join('')}
-        <td style="${SITE_CELL_STYLE} text-align:center;">
-          <input type="color" class="orbit-color" title="Colour of every atom in this orbit"
-            value="${colorToHex(structure.atoms[orbit.representativeIndex].getColor())}"
-            style="width:24px; height:20px; padding:0; border:1px solid #555; background:#333; cursor:pointer;">
-        </td>
+        <td class="orbit-color-cell" style="${SITE_CELL_STYLE} text-align:center;"></td>
         <td style="${SITE_CELL_STYLE} text-align:center;">
           <button type="button" class="orbit-remove btn-mini" style="width:20px; height:20px; padding:0; line-height:0; display:flex; align-items:center; justify-content:center;">✕</button>
         </td>
@@ -737,9 +734,13 @@ function buildWyckoffModifyEditor(body, structure, remount) {
         });
       });
 
-      row.querySelector('.orbit-color').addEventListener('input', (event) => {
-        setWyckoffOrbitColor(orbit.orbitId, /** @type {HTMLInputElement} */ (event.target).value, structure);
-      });
+      // The project's own swatch picker (SwatchColorPicker), same as the atom
+      // table uses - not the browser's native <input type="color">.
+      const colorCell = row.querySelector('.orbit-color-cell');
+      const initialHex = colorToHex(structure.atoms[orbit.representativeIndex].getColor());
+      colorCell.appendChild(createColorSwatch(initialHex, (hex) => {
+        setWyckoffOrbitColor(orbit.orbitId, hex, structure);
+      }));
 
       // Clicking the row (not one of its controls) highlights the whole orbit,
       // which is the only way to see which atoms a row actually owns.

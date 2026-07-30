@@ -53,11 +53,18 @@ const openModify = (page) => page.evaluate(() => {
       // The free-form per-atom table must NOT be there: one row per atom would
       // let a single atom of a multiplicity-N site be dragged off on its own.
       hasAtomTable: !!panel.querySelector('#atomsTable'),
+      // Colour uses the project's custom swatch picker, one per orbit row, not
+      // the browser's native <input type="color">.
+      orbitSwatches: panel.querySelectorAll('.orbit-color-cell .color-swatch-btn').length,
+      nativeColorInputs: panel.querySelectorAll('input[type="color"]').length,
     };
   }, MODIFY);
   H.check('locked panel has one row per orbit, a lattice, Add Site and Revert - and no per-atom table',
     shape.orbitRows === shape.orbits && shape.orbitRows > 1 && shape.hasLatticeParams
       && shape.hasAddSite && shape.hasRevert && !shape.hasAtomTable,
+    JSON.stringify(shape));
+  H.check('each orbit row uses the custom colour swatch, no native colour input',
+    shape.orbitSwatches === shape.orbits && shape.nativeColorInputs === 0,
     JSON.stringify(shape));
   H.check('one title for both modes', shape.title === 'Modify Structure', shape.title);
 
@@ -415,6 +422,24 @@ const openModify = (page) => page.evaluate(() => {
   H.check('choosing a fixed site freezes the coordinates and fills in its position',
     sites.coordsFrozen.every(Boolean) && sites.coords.every((value) => Number(value) === 0.5),
     JSON.stringify(sites));
+
+  // --- Toggling Wyckoff from the Symmetry panel closes an open Modify panel --
+  // The panel would otherwise keep showing the old mode's body (orbit rows vs
+  // atom table) until reopened; closing it is the agreed behaviour.
+  const openNow = () => page.evaluate((sel) => !!document.querySelector(sel), MODIFY);
+  H.check('Modify panel is open and locked before the toggle', await openNow());
+
+  await H.clickById(page, 'getWyckoffBtn'); // disable Wyckoff
+  await page.waitForTimeout(500);
+  H.check('disabling Wyckoff closes the open Modify panel', !(await openNow()));
+
+  await openModify(page); // reopens free-form now that the lock is gone
+  await page.waitForTimeout(400);
+  const reopenedFree = await openNow();
+  await H.clickById(page, 'getWyckoffBtn'); // enable Wyckoff again
+  await page.waitForTimeout(2500);
+  H.check('enabling Wyckoff closes the open Modify panel',
+    reopenedFree && !(await openNow()));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
