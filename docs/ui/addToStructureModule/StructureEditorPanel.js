@@ -507,10 +507,8 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   heading.textContent = `Symmetry locked · ${symmetry.spaceGroup ?? '?'} (No. ${symmetry.number ?? '?'}) · tolerance ${symmetry.tolerance} Å`;
   body.appendChild(heading);
 
-  const intro = document.createElement('div');
-  intro.style.cssText = HINT_STYLE;
-  intro.textContent = 'One row per orbit: editing it moves, re-elements, recolours or removes every symmetry-equivalent atom at once. Changing the site re-derives the position from it — fill in whichever coordinates it leaves free; the rest are disabled.';
-  body.appendChild(intro);
+  // No intro text: every row edit acts on the whole orbit, and the disabled
+  // inputs already show what the symmetry fixes.
 
   // --- Lattice, projected onto what the lock allows ---
   const latticeHost = document.createElement('div');
@@ -540,9 +538,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
       const name = PARAM_SYMBOLS[key] ?? key;
       return rule.mirror ? `${name} = ${PARAM_SYMBOLS[rule.mirror] ?? rule.mirror}` : `${name} = ${rule.fixed}`;
     });
-    latticeHint.textContent = described.length
-      ? `${symmetry.spaceGroup ?? 'This group'} determines ${described.join(', ')} — those boxes are driven from the free ones.`
-      : 'This group leaves every cell parameter free.';
+    latticeHint.textContent = described.join(', ');
   }
 
   const resetLatticeRow = document.createElement('div');
@@ -609,7 +605,15 @@ function buildWyckoffModifyEditor(body, structure, remount) {
     const orbits = getWyckoffOrbitGroups(structure);
 
     orbits.forEach((orbit) => {
-      const freedom = getOrbitAxisFreedom(orbit);
+      // The lock reports an axis free whenever the site's freedom has any
+      // component along it, so "x,x,x" comes back free on all three even though
+      // only one is an independent input. Where the site is known, its own
+      // hasFreedom is what the user can actually type into — same rule the Add
+      // Site row follows.
+      const siteLetter = siteLettersUsable && letterIsConsistent(orbit.wyckoff) ? orbit.wyckoff : '';
+      const freedom = siteLetter
+        ? getSiteFreedom(symmetry.number, siteLetter).hasFreedom
+        : getOrbitAxisFreedom(orbit);
       const position = structure.atoms[orbit.representativeIndex].position;
       const row = document.createElement('tr');
       row.innerHTML = `
@@ -697,7 +701,9 @@ function buildWyckoffModifyEditor(body, structure, remount) {
 
       function commitCoords() {
         status.textContent = '';
-        const target = coordInputs.map((input) => parseFloat(input.value) || 0);
+        const typed = coordInputs.map((input) => parseFloat(input.value) || 0);
+        // The disabled axes are derived from the free ones, not read back.
+        const target = siteLetter ? constrainRepresentative(symmetry.number, siteLetter, typed) : typed;
         if (!applyWyckoffOrbitPosition(orbit.representativeIndex, target, structure)) {
           status.textContent = orbit.isFixed
             ? 'This site has no free parameters.'
@@ -862,6 +868,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   body.appendChild(addHost);
 
   const addPreview = document.createElement('div');
+  addPreview.className = 'wyckoff-add-preview';
   addPreview.style.cssText = HINT_STYLE;
   body.appendChild(addPreview);
 
@@ -942,8 +949,13 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   // after. Those come back when the structure is converted to its conventional
   // cell, which is also what the fallback note says.
   function letterIsConsistent(letter) {
-    const expected = getSiteFreedom(symmetry.number, letter).multiplicity / (symmetry.conventionalCellRatio ?? 1);
-    return Number.isInteger(expected) && expected === measureSite(letter);
+    if (!/^[a-zA-Z]$/.test(letter ?? '')) return false; // an added orbit has no letter
+    try {
+      const expected = getSiteFreedom(symmetry.number, letter).multiplicity / (symmetry.conventionalCellRatio ?? 1);
+      return Number.isInteger(expected) && expected === measureSite(letter);
+    } catch {
+      return false;
+    }
   }
 
   function siteOptions() {
@@ -993,21 +1005,15 @@ function buildWyckoffModifyEditor(body, structure, remount) {
       return;
     }
     if (preview.collapses) {
-      addPreview.textContent = `Adds ${preview.multiplicity} atoms — but this position lands on an existing atom or on its own image, so it will be refused.`;
+      addPreview.textContent = `${preview.multiplicity} atoms — overlaps an existing atom, will be refused.`;
       return;
     }
-    let note = `Adds ${preview.multiplicity} atom${preview.multiplicity === 1 ? '' : 's'} (the representative plus its symmetry images).`;
-    if (siteLettersUsable && newSite.value) {
-      // Against the MEASURED count for this cell, not the table's - the two
-      // differ for any cell that is not the conventional one, and only a
-      // mismatch against the measurement means the coordinates have drifted off
-      // the site.
-      const expected = measureSite(newSite.value);
-      if (expected !== preview.multiplicity) {
-        note += ` Site ${newSite.value} gives ${expected} atoms here — these coordinates give ${preview.multiplicity}, so they do not sit on it.`;
-      }
-    }
-    addPreview.textContent = note;
+    // Measured for THIS cell, not the table's count: they differ for any cell
+    // that is not the conventional one.
+    const expected = siteLettersUsable && newSite.value ? measureSite(newSite.value) : preview.multiplicity;
+    addPreview.textContent = expected === preview.multiplicity
+      ? `${preview.multiplicity} atom${preview.multiplicity === 1 ? '' : 's'}`
+      : `${preview.multiplicity} atoms — not on site ${newSite.value}, which gives ${expected} here`;
   }
 
   function refreshNewSite() {

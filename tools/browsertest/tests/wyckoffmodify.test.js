@@ -133,7 +133,7 @@ const openModify = (page) => page.evaluate(() => {
       input.dispatchEvent(new Event('input', { bubbles: true }));
     }
     // The panel promises a count before the add; it has to be the count that lands.
-    const promised = panel.textContent.match(/Adds (\d+) atom/);
+    const promised = panel.querySelector('.wyckoff-add-preview').textContent.match(/^(\d+) atom/);
     panel.querySelector('#wyckoffAddSite').click();
 
     const orbit = s.symmetry.orbitGroups[s.symmetry.orbitGroups.length - 1];

@@ -98,7 +98,7 @@ const MODIFY = '[data-panel-id="modifyStructure"]';
     const form = panel.querySelector('#wyckoffNewForm').textContent;
     const frozen = ['X', 'Y', 'Z'].map((axis) => panel.querySelector(`#wyckoffNew${axis}`).disabled);
     const coords = ['X', 'Y', 'Z'].map((axis) => panel.querySelector(`#wyckoffNew${axis}`).value);
-    const promised = panel.textContent.match(/Adds (\d+) atom/);
+    const promised = panel.querySelector('.wyckoff-add-preview').textContent.match(/^(\d+) atom/);
     const before = s.atoms.length;
     /** @type {HTMLElement} */ (panel.querySelector('#wyckoffAddSite')).click();
     const last = s.symmetry.orbitGroups.at(-1);
@@ -170,9 +170,13 @@ const MODIFY = '[data-panel-id="modifyStructure"]';
       // the 2-atom orbit becomes 24, the Ge one added above is untouched
       && moved.after.atoms === moved.before.atoms + 22
       && moved.after.orbits === moved.before.orbits
-      && moved.after.frozen.includes(false)
       && moved.after.stillWyckoff && moved.after.indicesInRange,
     JSON.stringify(moved.after));
+  // 24g is "x,x,z": x and z are typed, y follows x. The lock on its own reports
+  // all three free (its freedom has a component along each), which left every
+  // box editable and let y be typed independently of x.
+  H.check('only the site\'s independent coordinates are editable',
+    moved.after.frozen.join() === 'false,true,false', JSON.stringify(moved.after));
   H.check('the moved orbit keeps its row position', moved.after.rowIndex === 0,
     JSON.stringify(moved.after));
 
