@@ -64,6 +64,8 @@ const ADD = '[data-panel-id="addStructure"]';
   // --- Adding a row adds the atom live and lists it under "New atoms" --------
   const added = await page.evaluate(async (sel) => {
     const { fileBrowser } = await import('./state/store.js');
+    const { getElementDefaultColor } = await import('./defaults/color_texture_defaults.js');
+    const { colorToHex } = await import('./ui/addToStructureModule/CommitAtoms.js');
     const panel = document.querySelector(sel);
     const before = fileBrowser.selectedStructure.atoms.length;
     /** @type {HTMLElement} */ (panel.querySelector('#addNewRow')).click();
@@ -80,6 +82,10 @@ const ADD = '[data-panel-id="addStructure"]';
       before,
       after: fileBrowser.selectedStructure.atoms.length,
       hasNe: fileBrowser.selectedStructure.elements.includes('Ne'),
+      // A new row's swatch tracks the element's default colour, not a flat
+      // black one - the same colour the atom renders with.
+      swatchHex: newRow.querySelector('.color-swatch-btn').dataset.hex.toLowerCase(),
+      elementHex: colorToHex(getElementDefaultColor('Ne')).toLowerCase(),
       // Additions live in the table under a "Newly added" separator - there is
       // no separate "New atoms" summary list.
       separator: sep?.textContent.trim(),
@@ -88,6 +94,9 @@ const ADD = '[data-panel-id="addStructure"]';
   }, MODIFY);
   H.check('adding a row adds the atom live, under a "Newly added" separator, no New-atoms list',
     added.after === added.before + 1 && added.hasNe && added.separator === 'Newly added' && added.noNewList,
+    JSON.stringify(added));
+  H.check('a new atom row takes the element default colour, not black',
+    added.swatchHex === added.elementHex && added.swatchHex !== '#000000',
     JSON.stringify(added));
 
   // --- Deleting an original removes it live and lists it under "Removed" -----
@@ -214,6 +223,32 @@ const ADD = '[data-panel-id="addStructure"]';
     addPanel.rows === 1 && addPanel.empty && !addPanel.hasDeleteColumn
       && addPanel.commitLabel === 'Create Structure',
     JSON.stringify(addPanel));
+
+  // --- Escape closes the periodic table first, then the panel ---------------
+  const escaped = await page.evaluate(async (sel) => {
+    /** @type {HTMLElement} */ (document.getElementById('addButton')).click();
+    const panel = document.querySelector(sel);
+    const wasOpen = !!panel;
+    const esc = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    // Open the element picker from a row, then Escape: the picker must take the
+    // first Escape and the panel must survive it.
+    /** @type {HTMLElement} */ (panel.querySelector('.select-element-btn')).click();
+    const pickerOpen = !!document.getElementById('periodicTablePopup');
+    esc();
+    await new Promise((r) => requestAnimationFrame(r));
+    const afterFirst = { picker: !!document.getElementById('periodicTablePopup'), panel: !!document.querySelector(sel) };
+
+    // No picker up now, so the next Escape closes the panel.
+    esc();
+    await new Promise((r) => requestAnimationFrame(r));
+    return { wasOpen, pickerOpen, afterFirst, panelAfterSecond: !!document.querySelector(sel) };
+  }, MODIFY);
+  H.check('Escape dismisses the periodic table first, keeping the panel open',
+    escaped.wasOpen && escaped.pickerOpen && !escaped.afterFirst.picker && escaped.afterFirst.panel,
+    JSON.stringify(escaped));
+  H.check('a second Escape then closes the Modify panel',
+    !escaped.panelAfterSecond, JSON.stringify(escaped));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

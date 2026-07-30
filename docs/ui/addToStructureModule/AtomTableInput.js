@@ -17,6 +17,8 @@
 import { openPeriodicTable } from '../PeriodicTableSelectPanel.js';
 import { createColorSwatch } from '../SwatchColorPicker.js';
 import { generateID } from '../../utils/index.js';
+import { getElementDefaultColor } from '../../defaults/color_texture_defaults.js';
+import { colorToHex } from './CommitAtoms.js';
 
 const CELL_STYLE = 'border: 1px solid #444; padding: 3px;';
 const NUM_INPUT_STYLE = 'width: 100%; background: #333; border: 1px solid #555; color: white; padding: 2px 3px; box-sizing: border-box;';
@@ -144,7 +146,14 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
     });
   }
 
-  function buildRow({ uuid = null, element = '', x = 0, y = 0, z = 0, color = '#000000' } = {}) {
+  function buildRow({ uuid = null, element = '', x = 0, y = 0, z = 0, color = null } = {}) {
+    // A row added without an explicit colour (a fresh "Add New Atom" row, a bulk
+    // line with no colour) tracks the element's default colour instead of a flat
+    // black swatch, matching how a new atom looks everywhere else. A loaded atom
+    // arrives with its own colour, so it opts out; picking a colour by hand stops
+    // the tracking too.
+    let autoColor = color == null;
+    const initialColor = autoColor ? colorToHex(getElementDefaultColor(element)) : color;
     const newRow = document.createElement('tr');
     // Every row carries a uuid, not just prefilled ones: the live Modify
     // editor rebuilds the structure from this table on each change, and a
@@ -168,14 +177,24 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
     `;
 
     const colorCell = newRow.querySelector('.atom-color-cell');
-    colorCell.appendChild(createColorSwatch(color, () => {
+    const swatch = createColorSwatch(initialColor, () => {
+      autoColor = false; // a hand-picked colour must not be overwritten
       newRow.dataset.dirty = '1';
       notifyChange();
-    }));
+    });
+    colorCell.appendChild(swatch);
 
     const elementInput = newRow.querySelector('.atom-element');
+    // Follow the element's default colour while the row is still auto-coloured.
+    function refreshAutoColor() {
+      if (!autoColor) return;
+      const hex = colorToHex(getElementDefaultColor(elementInput.value.trim()));
+      swatch.dataset.hex = hex;
+      swatch.style.background = hex;
+    }
     elementInput.addEventListener('input', () => {
       addRowHint.style.display = 'none';
+      refreshAutoColor();
       notifyChange();
     });
 
@@ -195,6 +214,7 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
         elementInput.value = picked;
         newRow.dataset.dirty = '1';
         addRowHint.style.display = 'none';
+        refreshAutoColor();
         notifyChange();
       });
     });
@@ -327,7 +347,7 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
           x: parseFloat(parts[1]) || 0,
           y: parseFloat(parts[2]) || 0,
           z: parseFloat(parts[3]) || 0,
-          color: parts[4] || '#000000',
+          color: parts[4], // omitted -> the row tracks the element default
         });
       }
     });

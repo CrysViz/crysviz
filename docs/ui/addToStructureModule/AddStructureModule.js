@@ -115,6 +115,8 @@ export function initModifyStructureButton(buttonId = 'addButton') {
     }
     /** @type {{dispose: () => void} | null} */
     let editor = null;
+    /** @type {((event: KeyboardEvent) => void) | null} */
+    let onKeyDown = null;
 
     registerPanel({
       id: MODIFY_PANEL_ID,
@@ -133,8 +135,24 @@ export function initModifyStructureButton(buttonId = 'addButton') {
         // orbit-row or atom-row body from the structure's lock - see
         // StructureEditorPanel.js's buildModifyEditor.
         editor = buildStructureEditor(body, { source: structure });
+
+        // Escape closes the panel. A picker popup opened from inside it (the
+        // element periodic table, a colour swatch) owns the first Escape, so
+        // skip while one is up - it dismisses itself, and the next Escape
+        // reaches the panel.
+        onKeyDown = (event) => {
+          if (event.key !== 'Escape') return;
+          if (document.getElementById('periodicTablePopup')
+            || document.querySelector('.swatch-color-picker')) return;
+          removePanel(MODIFY_PANEL_ID);
+        };
+        document.addEventListener('keydown', onKeyDown);
       },
       onDestroyContent() {
+        if (onKeyDown) {
+          document.removeEventListener('keydown', onKeyDown);
+          onKeyDown = null;
+        }
         editor?.dispose();
         editor = null;
       },
