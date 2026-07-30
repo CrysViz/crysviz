@@ -103,9 +103,10 @@ function describe(group) {
 //   host:     element the combobox is appended to (it is given position:relative
 //             so the dropdown can hang off it).
 //   value:    initially selected IT number.
-//   onChange: called with the new IT number whenever the user picks an entry.
+//   onChange: optional, called with the new IT number whenever the user picks
+//             an entry.
 // Returns { getValue, setValue }.
-export function createSpaceGroupSelect(host, { value = 225, onChange = () => {} } = {}) {
+export function createSpaceGroupSelect(host, { value = 225, onChange } = {}) {
   const groups = listSpaceGroups();
   let selected = groups.find((group) => group.number === Number(value)) ?? groups[0];
   let shown = groups;
@@ -134,10 +135,11 @@ export function createSpaceGroupSelect(host, { value = 225, onChange = () => {} 
   }
 
   function highlight() {
-    [...list.children].forEach((item, index) => {
+    const items = /** @type {HTMLElement[]} */ ([...list.querySelectorAll('div[role="option"]')]);
+    items.forEach((item, index) => {
       item.style.background = index === activeIndex ? ACTIVE_BG : '';
     });
-    list.children[activeIndex]?.scrollIntoView({ block: 'nearest' });
+    items[activeIndex]?.scrollIntoView({ block: 'nearest' });
   }
 
   function renderList(query) {
@@ -190,7 +192,7 @@ export function createSpaceGroupSelect(host, { value = 225, onChange = () => {} 
     selected = group;
     input.value = describe(group);
     close();
-    onChange(group.number);
+    onChange?.(group.number);
   }
 
   input.addEventListener('focus', () => {
