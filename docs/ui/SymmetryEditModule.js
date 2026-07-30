@@ -304,6 +304,16 @@ function buildWyckoffSymmetryState(structure, dataset, tolerance = defaultSympre
     // symprec this lock was built at — orbit moves stay far enough apart to
     // keep the cell analysable at exactly this tolerance.
     tolerance,
+    // How many times larger the CONVENTIONAL cell is than the one analysed:
+    // 4 for a primitive face-centred cell, 1 when the input already is the
+    // conventional cell, 1/8 for a 2x2x2 supercell. Tabulated Wyckoff
+    // multiplicities are quoted for the conventional cell, so this is what
+    // relates them to the orbit sizes in `orbitGroups`. Captured here because it
+    // is a property of the lock — dividing by a live structure.atoms.length
+    // would drift the moment an orbit is added or removed.
+    conventionalCellRatio: dataset.std_cell?.numbers?.length
+      ? dataset.std_cell.numbers.length / positions.length
+      : 1,
     operations,
     orbitGroups,
     representativeAtomIndices: orbitGroups.map((group) => group.representativeIndex),

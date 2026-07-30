@@ -830,31 +830,84 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   // Whether the site letters from symmetry_basics.json can be trusted for THIS
   // lock. They are two different worlds: the lock is moyo's, in moyo's setting
   // and in whatever cell was analysed, while the tables are keyed to one setting
-  // per IT number and to the conventional cell. When they agree, letters give the
-  // user real Wyckoff sites to choose from; when they do not (a different
-  // setting, or a supercell whose multiplicities are a multiple of the
-  // conventional ones), the letters would snap coordinates onto the wrong
-  // subspace, so the chooser stays off and free coordinates are used instead.
+  // per IT number. The one thing this panel asks of them is that
+  // constrainRepresentative() be meaningful in the LOCK's coordinates, so that
+  // is what gets tested - every labelled orbit's representative must already
+  // satisfy the parametrisation the tables give its letter. A different setting
+  // or a rotated standard cell fails that; a primitive or super cell does not,
+  // which is the point.
+  //
+  // Multiplicity is deliberately NOT part of the test. It differs whenever the
+  // analysed cell is not the conventional one - primitive Si is Fd-3m 8a with
+  // two atoms in the cell, not eight - and requiring equality there rejected
+  // every primitive structure even though its coordinates line up exactly. The
+  // count the user is shown always comes from the lock, and refreshAddPreview
+  // says so when it disagrees with the table.
+  const SITE_MATCH_TOLERANCE = 1e-3;
   let siteLettersUsable = false;
 
   function lettersAgreeWithLock() {
-    const orbits = getWyckoffOrbitGroups(structure);
-    const labelled = orbits.filter((orbit) => /^[a-zA-Z]$/.test(orbit.wyckoff ?? ''));
+    const labelled = getWyckoffOrbitGroups(structure)
+      .filter((orbit) => /^[a-zA-Z]$/.test(orbit.wyckoff ?? ''));
     if (!labelled.length) return false;
     return labelled.every((orbit) => {
       try {
-        return getSiteFreedom(symmetry.number, orbit.wyckoff).multiplicity === orbit.multiplicity;
+        const actual = structure.atoms[orbit.representativeIndex].position;
+        const snapped = constrainRepresentative(symmetry.number, orbit.wyckoff, actual);
+        return snapped.every((value, axis) => {
+          let delta = value - actual[axis];
+          delta -= Math.round(delta); // fractional coordinates wrap
+          return Math.abs(delta) <= SITE_MATCH_TOLERANCE;
+        });
       } catch {
         return false;
       }
     });
   }
 
+  // How many atoms a site actually produces IN THIS CELL, measured by expanding
+  // it under the lock rather than read off the table: a primitive cell holds
+  // Fd-3m's 8a as two atoms, and labelling it "8a" in the menu would promise six
+  // atoms that never arrive. Measured at a generic point of the site's
+  // parametrisation - taking the tabulated representative with its free
+  // parameters at zero can land on a higher-symmetry position and undercount.
+  const GENERIC_POINT = [0.123, 0.234, 0.345];
+  /** @type {Map<string, number>} */
+  const siteMultiplicity = new Map();
+
+  function measureSite(letter) {
+    if (siteMultiplicity.has(letter)) return siteMultiplicity.get(letter);
+    let measured = getSiteFreedom(symmetry.number, letter).multiplicity;
+    try {
+      const generic = constrainRepresentative(symmetry.number, letter, GENERIC_POINT);
+      measured = previewWyckoffOrbit(generic, structure)?.multiplicity ?? measured;
+    } catch (error) {
+      console.warn(`Modify (Wyckoff): could not measure site ${letter}`, error);
+    }
+    siteMultiplicity.set(letter, measured);
+    return measured;
+  }
+
+  // A letter is only offered when its tabulated coordinates still MEAN that site
+  // in this cell, and the test is that the measured orbit size comes out at the
+  // tabulated multiplicity scaled by the cell ratio. In a primitive
+  // face-centred cell that keeps the sites whose parametrisation is invariant
+  // under the centring transform - Fd-3m's 8a and 32e (x,x,x) become 2a and 8e -
+  // and drops the ones whose coordinates would land somewhere else entirely
+  // (8b, 16d, 48f), where an atom would be placed off the site it was named
+  // after. Those come back when the structure is converted to its conventional
+  // cell, which is also what the fallback note says.
+  function letterIsConsistent(letter) {
+    const expected = getSiteFreedom(symmetry.number, letter).multiplicity / (symmetry.conventionalCellRatio ?? 1);
+    return Number.isInteger(expected) && expected === measureSite(letter);
+  }
+
   function siteOptions() {
     return getWyckoffLetters(symmetry.number)
+      .filter(letterIsConsistent)
       .map((letter) => {
-        const { multiplicity, siteSymmetry } = getSiteFreedom(symmetry.number, letter);
-        return `<option value="${letter}">${multiplicity}${letter}${siteSymmetry ? ` (${siteSymmetry})` : ''}</option>`;
+        const { siteSymmetry } = getSiteFreedom(symmetry.number, letter);
+        return `<option value="${letter}">${measureSite(letter)}${letter}${siteSymmetry ? ` (${siteSymmetry})` : ''}</option>`;
       })
       .join('');
   }
@@ -901,9 +954,13 @@ function buildWyckoffModifyEditor(body, structure, remount) {
     }
     let note = `Adds ${preview.multiplicity} atom${preview.multiplicity === 1 ? '' : 's'} (the representative plus its symmetry images).`;
     if (siteLettersUsable && newSite.value) {
-      const expected = getSiteFreedom(symmetry.number, newSite.value).multiplicity;
+      // Against the MEASURED count for this cell, not the table's - the two
+      // differ for any cell that is not the conventional one, and only a
+      // mismatch against the measurement means the coordinates have drifted off
+      // the site.
+      const expected = measureSite(newSite.value);
       if (expected !== preview.multiplicity) {
-        note += ` Site ${newSite.value} has multiplicity ${expected} — these coordinates give ${preview.multiplicity}, so they do not sit on it.`;
+        note += ` Site ${newSite.value} gives ${expected} atoms here — these coordinates give ${preview.multiplicity}, so they do not sit on it.`;
       }
     }
     addPreview.textContent = note;
@@ -928,16 +985,20 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   loadSymmetryData()
     .then(() => {
       if (disposed) return;
-      siteLettersUsable = lettersAgreeWithLock();
+      siteLettersUsable = lettersAgreeWithLock() && siteOptions() !== '';
       if (!siteLettersUsable) {
         newSite.innerHTML = '<option value="">free</option>';
-        newSite.title = 'The tabulated Wyckoff sites for this space group do not match this lock (a different setting, or a supercell), so coordinates are entered freely.';
+        newSite.title = 'The tabulated Wyckoff sites for this space group do not line up with this cell (a different setting or origin), so coordinates are entered freely.';
         newSiteForm.textContent = 'free';
         return;
       }
-      newSite.innerHTML = `<option value="">free</option>${siteOptions()}`;
+      const offered = siteOptions();
+      newSite.innerHTML = `<option value="">free</option>${offered}`;
       newSite.disabled = false;
-      newSite.title = '';
+      const dropped = getWyckoffLetters(symmetry.number).length - (offered.match(/<option/g)?.length ?? 0);
+      newSite.title = dropped > 0
+        ? `${dropped} of this group's sites are not expressible in this cell (it is not the conventional one) and are left out. Convert the structure to its conventional cell to get all of them; "free" always works.`
+        : '';
       refreshNewSite();
     })
     .catch((error) => {
