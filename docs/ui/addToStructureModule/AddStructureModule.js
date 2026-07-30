@@ -16,14 +16,19 @@
 // enough intents that mixing them behind a toggle is how you overwrite a
 // structure you meant to keep.
 //
-// "Symmetry (Wyckoff)" stays a disabled stub on the add side. On the modify
-// side a structure that already carries a Wyckoff lock gets the orbit editor
-// instead of the atom table - see WyckoffOrbitEditor.js for why free-form atom
-// editing is not offered there.
+// The add side carries a second top-level tab, "Symmetry (Wyckoff)" (space
+// group + Wyckoff sites, see SymmetryWyckoffTab.js), which owns its own
+// Lattice section rather than sharing the Atoms tab's: symmetry-based
+// generation constrains and derives the lattice, free-form manual entry does
+// not, so the two modes cannot share one.
+//
+// On the modify side a structure that already carries a Wyckoff lock gets the
+// orbit editor instead of the atom table - see WyckoffOrbitEditor.js for why
+// free-form atom editing is not offered there.
 
 import { registerPanel, removePanel } from '../panels/PanelManager.js';
 import { createTabSwitcher } from '../TabSwitcher.js';
-import { createSymmetryWyckoffTab } from './SymmetryWyckoffTabStub.js';
+import { createSymmetryWyckoffTab } from './SymmetryWyckoffTab.js';
 import { buildStructureEditor } from './StructureEditorPanel.js';
 import { buildWyckoffOrbitEditor } from './WyckoffOrbitEditor.js';
 import { createNewStructureFromAtoms } from './CommitAtoms.js';
@@ -73,8 +78,7 @@ export function initAddStructureButton(buttonSelector = '.add-structure-button')
           {
             id: 'symmetry',
             label: 'Symmetry (Wyckoff)',
-            disabled: true,
-            render: createSymmetryWyckoffTab,
+            render: (tabBody) => createSymmetryWyckoffTab(tabBody, () => removePanel(ADD_PANEL_ID)),
           },
         ]);
       },
