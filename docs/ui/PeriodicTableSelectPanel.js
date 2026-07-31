@@ -10,9 +10,14 @@
 // color - that's reserved for the Color/Bond Distance pickers in
 // CustomUserSettingsPanel.js, which are specifically about that color.
 
-import { elementData, borderColors, tableLayout, lanthanides, actinides, hexToRgb } from './PeriodicTablePickerCore.js';
+import {
+  elementData, borderColors, tableLayout, lanthanides, actinides, hexToRgb,
+  closeAnyPicker, wirePickerDismiss,
+} from './PeriodicTablePickerCore.js';
 
 export function openPeriodicTable(callback) {
+  closeAnyPicker();
+
   // Create the popup container
   const periodicTable = document.createElement('div');
   periodicTable.id = 'periodicTablePopup';
@@ -146,7 +151,7 @@ export function openPeriodicTable(callback) {
 
   // Close button
   tableHTML += `<div style="text-align: center; margin-top: 10px;">
-                  <button onclick="document.getElementById('periodicTablePopup').remove()"
+                  <button class="periodic-table-close"
                     style="padding: 5px 15px; background: #333; border: 1px solid #555;
                            color: white; cursor: pointer; border-radius: 4px;">
                     Close
@@ -157,6 +162,8 @@ export function openPeriodicTable(callback) {
   periodicTable.innerHTML = tableHTML;
   periodicTable.prepend(selectedElementDisplay);
   document.body.appendChild(periodicTable);
+
+  wirePickerDismiss(periodicTable, periodicTable.querySelector('.periodic-table-close'));
 
   // Add event listeners to all element buttons
   const elementButtons = periodicTable.querySelectorAll('.element-button');

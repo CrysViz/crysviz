@@ -177,7 +177,7 @@ function createFireState(atomStep, cellStep, nAtoms) {
   };
 }
 
-export function applyRelaxStep(structure, efs, fire, targetPressureEvA3 = 0) {
+export function applyRelaxStep(structure, efs, fire, targetPressureEvA3 = 0, relaxCell = true) {
   const activeForces = isWyckoffModeActive(fileBrowser.selectedStructure)
     ? symmetrizeCartesianVectors(efs.forces, structure.lattice, fileBrowser.selectedStructure)
     : efs.forces;
@@ -236,10 +236,16 @@ export function applyRelaxStep(structure, efs, fire, targetPressureEvA3 = 0) {
     return [r[0] + dx, r[1] + dy, r[2] + dz];
   });
 
-  const M = deformationFromStress(efs.stress.matrix3x3, fire.cell, targetPressureEvA3);
+  // Fixed-cell mode (relaxCell = false, e.g. an EOS volume scan owns the
+  // lattice): atoms move, the cell stays exactly as given.
+  const M = relaxCell
+    ? deformationFromStress(efs.stress.matrix3x3, fire.cell, targetPressureEvA3)
+    : null;
 
-  let newPositions = moved.map((r) => matVec(M, r));
-  const newLattice = structure.lattice.map((row) => matVec(M, row));
+  let newPositions = M ? moved.map((r) => matVec(M, r)) : moved;
+  const newLattice = M
+    ? structure.lattice.map((row) => matVec(M, row))
+    : structure.lattice.map((row) => [...row]);
   if (isWyckoffModeActive(fileBrowser.selectedStructure)) {
     newPositions = symmetrizeCartesianPositions(newPositions, newLattice, fileBrowser.selectedStructure);
   }
@@ -309,6 +315,12 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
   const targetPressureGPa = Number(opts.targetPressureGPa ?? 0.0);
   const pressureTolGPa = Number(opts.pressureTolGPa ?? 0.2);
   const targetPressureEvA3 = targetPressureGPa / EV_A3_TO_GPA;
+  // Fixed-cell relax: skip the cell deformation entirely and gate convergence
+  // on forces alone (the pressure can't converge if the cell may not move).
+  const relaxCell = opts.relaxCell ?? true;
+  // Cooperative cancel (mirrors MD.js): checked once per step, and the caller
+  // gets converged:false + stopped:true back instead of a half-true verdict.
+  const shouldStop = opts.shouldStop ?? (() => false);
   const onStep = opts.onStep ?? (() => {});
   const timing = createTimingProfile('Relax');
   const totalStart = performance.now();
@@ -330,6 +342,7 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
   let mF = Infinity;
   let pGPa = Infinity;
   let step = 0;
+  let stopped = false;
   const fire = createFireState(atomStep, cellStep, current.positions.length);
 
   for (step = 1; step <= maxSteps; step += 1) {
@@ -339,7 +352,9 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
     out = await nepRunner.compute(current);
     timing.computeMs += performance.now() - t0;
     mF = maxForce(out.forces);
-    pGPa = pressureGPaFromStress(out.stress.matrix3x3);
+    // Stress may be absent from a calculator; NaN keeps every pressure gate
+    // failing (like the old Infinity seed) instead of throwing mid-relax.
+    pGPa = out.stress?.matrix3x3 ? pressureGPaFromStress(out.stress.matrix3x3) : NaN;
 
     t0 = performance.now();
     onStep(step, current, out, mF);
@@ -347,11 +362,12 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
     timing.steps = step;
 
     const forceOK = mF <= fmaxTol;
-    const pressureOK = Math.abs(pGPa - targetPressureGPa) <= pressureTolGPa;
+    const pressureOK = !relaxCell || Math.abs(pGPa - targetPressureGPa) <= pressureTolGPa;
     if ((forceOK && pressureOK) || step === maxSteps) break;
+    if (shouldStop()) { stopped = true; break; }
 
     t0 = performance.now();
-    current = applyRelaxStep(current, out, fire, targetPressureEvA3);
+    current = applyRelaxStep(current, out, fire, targetPressureEvA3, relaxCell);
     timing.updateMs += performance.now() - t0;
 
     if (performance.now() - lastYield >= FRAME_BUDGET_MS) {
@@ -374,7 +390,8 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
     pressureGPa: pGPa,
     convergedForce,
     convergedPressure,
-    converged: convergedForce && convergedPressure,
+    converged: !stopped && convergedForce && (!relaxCell || convergedPressure),
+    stopped,
     timing,
   };
 }

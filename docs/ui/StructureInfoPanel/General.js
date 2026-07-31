@@ -305,7 +305,11 @@ function restoreCompositionUiState(state) {
     const container = compDiv.querySelector(`.comp-container[data-element="${element}"]`);
     if (!container) continue;
     const atomsContainer = container.querySelector('.individual-atoms');
-    const expandIcon = container.querySelector('.comp-left span:last-child');
+    // Target the caret by class, not `.comp-left span:last-child`: the
+    // per-element visibility toggle is a <label> whose last child is a
+    // <span class="toggle_slider">, which the positional selector matched
+    // first and then rotated 90deg (flipping the pill on its side).
+    const expandIcon = container.querySelector('.comp-expand-icon');
     atomsContainer?._populateAtomRows?.();
     if (atomsContainer) atomsContainer.style.display = 'block';
     if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
@@ -421,12 +425,19 @@ export function renderComposition(panelState="closed") {
 
 
 
-  // Button to add additional atoms to structure <- FIXME so far not working
+  // Opens the Modify Structure panel (AddStructureModule.js's
+  // initModifyStructureButton, rewired by updateVisualization every time this
+  // function runs). Shown in wyckoff mode too — there it opens the orbit
+  // editor rather than the atom table.
   const addButtonsRow = document.createElement('div');
   addButtonsRow.style.cssText = 'display: flex; align-items: center; gap: 4px;';
   const addAtomButton = document.createElement('button');
   addAtomButton.id = 'addButton';
-  addAtomButton.innerHTML = '+';               // icon only
+  addAtomButton.innerHTML = '✎';               // icon only
+  // Same panel, same edits, either way - locked it works one orbit at a time.
+  addAtomButton.title = hasWyckoffPanel
+    ? 'Modify structure: cell, Wyckoff sites, add and remove'
+    : 'Modify structure: lattice, atoms, add and remove';
   addAtomButton.className = 'btn-mini highlight';
   addAtomButton.style.cssText = `
     height: 26px;
@@ -444,8 +455,8 @@ export function renderComposition(panelState="closed") {
     cursor: pointer;
   `;
 
-   if (!hasWyckoffPanel) addButtonsRow.appendChild(addAtomButton)
-  
+  addButtonsRow.appendChild(addAtomButton);
+
   const title = document.createElement('div');
   const titleWrapper = document.createElement('div');
     titleWrapper.style.cssText = `

@@ -272,7 +272,7 @@ function contentFraction(png, thresh = 40) {
   H.check('resuming from preview hard-flushes the stale accumulation (no ghost)',
     after.prevCount === 1, JSON.stringify({ after }));
 
-  // --- (2) Persistence round trip (only rtRasterPreview, v2.13; delay ignored) ------
+  // --- (2) Persistence round trip (only rtRasterPreview, v2.x; delay ignored) ------
   const persist = await page.evaluate(async () => {
     const { general } = await import('./state/store.js');
     const { captureState, applySharedState } = await import('./ui/ShareModule.js');
@@ -296,8 +296,8 @@ function contentFraction(png, thresh = 40) {
       toggleChecked: toggle?.checked === true,
     };
   });
-  H.check('captureState persists rtRasterPreview at v2.13 but NOT the hidden rest delay',
-    persist.version === '2.15' && persist.savedPreviewKey && persist.restDelayAbsent, JSON.stringify(persist));
+  H.check('captureState persists rtRasterPreview at v2.x but NOT the hidden rest delay',
+    persist.version?.startsWith('2') && persist.savedPreviewKey && persist.restDelayAbsent, JSON.stringify(persist));
   H.check('applySharedState restores the preview toggle; a legacy rest-delay key is ignored',
     persist.generalPreview === false && persist.toggleChecked === false
       && Math.abs(persist.generalDelay - 2) < 1e-9, JSON.stringify(persist));

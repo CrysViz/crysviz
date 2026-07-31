@@ -318,6 +318,34 @@
   background: var(--hover-color);
 }
 
+/* Per-structure settings lock (ui/FeatureLockModule.js), top-right of the
+   Features window's title bar alongside the other icon buttons — sized to
+   match .cv-panel-info's flush-with-the-titlebar footprint. */
+.cv-panel-titlebar .cv-panel-lock {
+  width: calc(13px * var(--cv-font-scale, 1));
+  height: calc(13px * var(--cv-font-scale, 1));
+  padding: 0;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+}
+
+.cv-panel-titlebar .cv-panel-lock:hover {
+  background: var(--hover-color);
+}
+
+/* Persistent highlight while unlocked — a standing mode, not a momentary
+   action, so it stays visible without hovering. */
+.cv-panel-titlebar .cv-panel-lock.unlocked {
+  color: var(--highlight-color, #4ade80);
+}
+
 /* ---- body / collapse ---- */
 /* The body is the window surface: it carries the box the old .control-group /
    floating popups had, minus the top edge where the title bar sits. */

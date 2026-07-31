@@ -16,6 +16,7 @@ import { registerPanel, removePanel, getPanel, openPanel } from '../panels/Panel
 import { expandSplitItem, closeExpandedSplitItem } from '../panels/RightDock.js';
 import {
   renderGroupedHistogram, onHistogramBarClick, exportHistogramPNG, resizeHistogramPlot, clearHistogramPlot,
+  togglePlotTheme,
 } from './histogramPlotly.js';
 import { highlightAtomsIn3D, clearAllHighlights } from '../SelectAndHighlightModule.js';
 import { fileBrowser } from '../../state/store.js';
@@ -75,11 +76,16 @@ export function getForceStats() {
   return stats;
 }
 
-function computeBins(binCount, maxVal) {
+/** binWidth is fixed (user-chosen) — the bin COUNT adapts to it and to the
+ *  chosen max-|F| bound, instead of the other way around (mirrors
+ *  BondLengthHistogram.js's computeBins). */
+function computeBins(binWidth, maxVal) {
   const minVal = 0;
-  const span = Math.max(maxVal - minVal, 1e-6);
-  const binWidth = span / binCount;
-  const xLabels = Array.from({ length: binCount }, (_, i) => (minVal + i * binWidth).toPrecision(3));
+  const binCount = Math.max(1, Math.ceil(Math.max(maxVal - minVal, 1e-6) / binWidth));
+  const xLabels = Array.from({ length: binCount }, (_, i) => {
+    const lo = minVal + i * binWidth;
+    return `${lo.toPrecision(3)}–${(lo + binWidth).toPrecision(3)}`;
+  });
 
   const byElement = new Map();
   for (const { element, mag, index } of data) {
@@ -133,14 +139,14 @@ function statsHTML() {
   `;
 }
 
-/** Control-row builder (bin count + max |F| sliders), same idiom as
+/** Control-row builder (fixed bin width + max |F| sliders), same idiom as
  *  BondLengthHistogram's buildControls, plus a stats readout underneath. */
-function buildControls(container, { binCount, maxVal, onChange }) {
+function buildControls(container, { binWidth, maxVal, onChange }) {
   container.innerHTML = `
     <div class="fh-controls-row">
-      <label>Bins
-        <input type="range" min="4" max="40" value="${binCount}" class="fh-bin-slider">
-        <span class="fh-bin-label">${binCount}</span>
+      <label>Bin width (eV/Å)
+        <input type="range" min="0.02" max="1" step="0.02" value="${binWidth}" class="fh-width-slider">
+        <span class="fh-width-label">${binWidth}</span>
       </label>
       <label>Max |F| (eV/Å)
         <input type="range" min="0.5" max="20" step="0.5" value="${maxVal}" class="fh-max-slider">
@@ -149,13 +155,13 @@ function buildControls(container, { binCount, maxVal, onChange }) {
     </div>
     <div class="fh-stats">${statsHTML()}</div>
   `;
-  const binSlider = container.querySelector('.fh-bin-slider');
-  const binLabel = container.querySelector('.fh-bin-label');
+  const widthSlider = container.querySelector('.fh-width-slider');
+  const widthLabel = container.querySelector('.fh-width-label');
   const maxSlider = container.querySelector('.fh-max-slider');
   const maxLabel = container.querySelector('.fh-max-label');
   const statsEl = container.querySelector('.fh-stats');
-  binSlider.addEventListener('input', () => {
-    binLabel.textContent = binSlider.value;
+  widthSlider.addEventListener('input', () => {
+    widthLabel.textContent = widthSlider.value;
     onChange();
   });
   maxSlider.addEventListener('input', () => {
@@ -163,13 +169,13 @@ function buildControls(container, { binCount, maxVal, onChange }) {
     onChange();
   });
   return {
-    get binCount() { return parseInt(binSlider.value, 10); },
+    get binWidth() { return parseFloat(widthSlider.value); },
     get maxVal() { return parseFloat(maxSlider.value); },
     syncStats() { statsEl.innerHTML = statsHTML(); },
   };
 }
 
-const DEFAULT_BINS = 20;
+const DEFAULT_BIN_WIDTH = 0.1;
 const DEFAULT_MAX = 2;
 
 export function removeForceHistogramPanel() {
@@ -205,6 +211,7 @@ export function addForceHistogramPanel() {
             <div id="${PLOT_ID}" class="split-item-body"></div>
             <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
             <div class="split-item-actions">
+              <button type="button" class="split-item-action-btn" data-split-action="theme" title="Toggle light/dark">🌓</button>
               <button type="button" class="split-item-action-btn" data-split-action="export" title="Export PNG">📥</button>
               <button type="button" class="split-item-action-btn" data-split-action="expand" title="Expand">⛶</button>
             </div>
@@ -217,14 +224,14 @@ export function addForceHistogramPanel() {
       recompute(fileBrowser.selectedStructure);
       const initialMax = stats ? Math.max(0.5, Math.ceil(stats.max * 1.05 * 2) / 2) : DEFAULT_MAX;
       const controls = buildControls(body.querySelector('#fhControls'), {
-        binCount: DEFAULT_BINS, maxVal: initialMax, onChange: () => redraw(),
+        binWidth: DEFAULT_BIN_WIDTH, maxVal: initialMax, onChange: () => redraw(),
       });
       const onBarClick = makeClickHandler();
       let expanded = false;
 
       function redraw() {
         controls.syncStats();
-        const { groups } = computeBins(controls.binCount, controls.maxVal);
+        const { groups } = computeBins(controls.binWidth, controls.maxVal);
         renderGroupedHistogram(PLOT_ID, { groups, xTitle: '|F| (eV/Å)', yTitle: 'Atoms', isExpanded: expanded })
           .then(() => onHistogramBarClick(PLOT_ID, onBarClick));
       }
@@ -234,7 +241,10 @@ export function addForceHistogramPanel() {
           /** @type {HTMLElement} */ (ev.target).closest('[data-split-action]'));
         if (!btn) return;
         const action = btn.dataset.splitAction;
-        if (action === 'export') {
+        if (action === 'theme') {
+          togglePlotTheme(PLOT_ID);
+          redraw();
+        } else if (action === 'export') {
           exportHistogramPNG(PLOT_ID).catch((error) => console.error('Force histogram export failed:', error));
         } else if (action === 'expand') {
           expandSplitItem(btn.closest('.split-item'));

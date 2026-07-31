@@ -118,7 +118,10 @@ async function expandPanel(page, id) {
       splitActive: document.getElementById('viewArea').classList.contains('split-active'),
       tab: [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
         .some((t) => t.dataset.panelId === 'bondLengthHistogram'),
-      hasCard: !!el.querySelector('#bond-length-histogram-item'),
+      // One card per bond pair plus a combined "All Pairs" one, so the panel is
+      // populated iff at least one card exists (was #bond-length-histogram-item,
+      // a single item, before the per-pair rewrite).
+      hasCard: !!el.querySelector('.blh-pair-card'),
     };
   });
   H.check('Bond Length Histogram opens as the right dock\'s front tab',
@@ -148,17 +151,19 @@ async function expandPanel(page, id) {
     // the Vacuum section landed) and tells you nothing about which one moved.
     headlines: [...document.querySelectorAll('#cvPanelBody-cell .panel-headline')]
       .map((h) => h.textContent.trim()),
-    latticeVisible: (document.getElementById('latticeContent')?.offsetHeight ?? 0) > 0,
     supercellVisible: (document.getElementById('supercellContent')?.offsetHeight ?? 0) > 0,
     transformVisible: (document.getElementById('transformContent')?.offsetHeight ?? 0) > 0,
   }));
+  // The old "Lattice Parameters" (a/b/c/α/β/γ + Volume) section was removed —
+  // that cell is now edited through the Modify Structure panel's lattice
+  // inputs, so the Cell panel keeps only Supercell/Vacuum/Transformation.
   H.check('Cell: flip-outs replaced by flat headlines',
     cell.flipouts === 0
       && JSON.stringify(cell.headlines)
-        === JSON.stringify(['Lattice Parameters', 'Supercell', 'Vacuum', 'Lattice Transformation']),
+        === JSON.stringify(['Supercell', 'Vacuum', 'Lattice Transformation']),
     JSON.stringify(cell));
-  H.check('Cell: all three sections\' content visible',
-    cell.latticeVisible && cell.supercellVisible && cell.transformVisible, JSON.stringify(cell));
+  H.check('Cell: remaining sections\' content visible',
+    cell.supercellVisible && cell.transformVisible, JSON.stringify(cell));
   H.check('Cell keeps Show Periodic Images', await inBody(page, 'cell', 'showPeriodic'));
   H.check('Show Unit Cell moved out of Cell', !(await inBody(page, 'cell', 'showLattice')));
 
@@ -202,8 +207,8 @@ async function expandPanel(page, id) {
     const { captureState } = await import('./ui/ShareModule.js');
     return captureState();
   });
-  H.check('captured state has the new visual keys (v2.15)',
-    state.version === '2.15'
+  H.check('captured state has the new visual keys (v2.x)',
+    state.version?.startsWith('2')
       && state.display.latticeLineWidth === 0.06
       && state.display.axesLineWidth === 0.05
       && typeof state.display.bondRadius === 'number'

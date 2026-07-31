@@ -1,6 +1,6 @@
 import { fileBrowser } from '../state/store.js';
 import { getAtomColor } from '../utils/ColorModule.js';
-import { tableLayout, lanthanides, actinides } from './PeriodicTablePickerCore.js';
+import { tableLayout, lanthanides, actinides, closeAnyPicker, wirePickerDismiss } from './PeriodicTablePickerCore.js';
 
 // Helper: Normalize color to hex string
 function normalizeColor(color) {
@@ -16,6 +16,8 @@ function normalizeColor(color) {
 // Helper: Determine if a color is light (needs dark text)
 
 export function openDoublePeriodicTable(callback) {
+  closeAnyPicker();
+
   // Get element color, returns white if multiple colors exist for the element
   function getElementColor(symbol) {
     const structure = fileBrowser.selectedStructure;
@@ -169,7 +171,7 @@ export function openDoublePeriodicTable(callback) {
                color: white; cursor: pointer; border-radius: 4px;">
         Confirm Bond
       </button>
-      <button onclick="document.getElementById('periodicTablePopup').remove()"
+      <button class="periodic-table-close"
         style="padding: 5px 15px; background: #333; border: 1px solid #555;
                color: white; cursor: pointer; border-radius: 4px;">
         Close
@@ -181,6 +183,7 @@ export function openDoublePeriodicTable(callback) {
   periodicTable.innerHTML = tableHTML;
   periodicTable.insertBefore(selectedDisplay, periodicTable.firstChild.nextSibling);
   document.body.appendChild(periodicTable);
+  wirePickerDismiss(periodicTable, periodicTable.querySelector('.periodic-table-close'));
 
   // Update selected display initially
   updateSelectedDisplay();

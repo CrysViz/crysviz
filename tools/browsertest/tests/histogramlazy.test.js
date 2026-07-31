@@ -47,12 +47,20 @@ const H = require('../harness');
       bondKeys: Object.keys(bondLengths).length,
     };
 
-    // And a rebuild while open must keep it current and drawn.
+    // And a rebuild while open must keep it current and drawn. The panel now
+    // builds one card per bond pair plus a combined "All Pairs" card, each with
+    // its own plot div, and every card starts COLLAPSED - a collapsed card is
+    // deliberately not rendered, so the combined card is expanded first and it
+    // is that card's chart which must be drawn.
     updateVisualization({ bondsUpdate: true, reRenderBonds: true });
     await new Promise((r) => setTimeout(r, 700));
-    const host = document.getElementById('bondLengthHistogramPlot');
+    /** @type {HTMLElement} */ (
+      document.getElementById('blh-card__All_Pairs').querySelector('.blh-collapse-toggle')).click();
+    await new Promise((r) => setTimeout(r, 700));
+    const host = document.getElementById('bondLengthHistogramPlot__All_Pairs');
     const afterRebuild = {
       bondKeys: Object.keys(bondLengths).length,
+      cards: document.querySelectorAll('.blh-pair-card').length,
       drawn: host ? host.children.length > 0 : false,
     };
 
@@ -72,9 +80,13 @@ const H = require('../harness');
   H.check('opening the window fills in the data it skipped',
     res.afterOpen.open === true && res.afterOpen.bondKeys > 0,
     JSON.stringify(res.afterOpen));
-  H.check('a rebuild while open keeps the data current and drawn',
-    res.afterRebuild.bondKeys > 0 && res.afterRebuild.drawn === true,
+  H.check('a rebuild while open keeps the data current, with a card per pair',
+    res.afterRebuild.bondKeys > 0
+      // one card per pair group, plus the combined "All Pairs" card
+      && res.afterRebuild.cards === res.afterRebuild.bondKeys + 1,
     JSON.stringify(res.afterRebuild));
+  H.check('an expanded card draws its chart',
+    res.afterRebuild.drawn === true, JSON.stringify(res.afterRebuild));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

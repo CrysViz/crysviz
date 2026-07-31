@@ -6,6 +6,34 @@ function nonEmptyDeepCopy(obj) {
   return obj && Object.keys(obj).length ? JSON.parse(JSON.stringify(obj)) : undefined;
 }
 
+/** A THREE.Color (or css string) to '#rrggbb', or null. */
+function colorToHex(c) {
+  if (!c) return null;
+  if (typeof c === 'string') return c;
+  return c.getHexString ? '#' + c.getHexString() : null;
+}
+
+/** Serialize a structure's per-atom force or spin arrows for a .crysviz frame.
+ *  Index-aligned to structure.atoms (matching the file readers). Only `vector`
+ *  is mandatory; scaling/color/hidden and the spin-only atomIndex/element/
+ *  position are written when set, so a plain arrow list stays compact. A saved
+ *  `color` means a pinned per-arrow pick (userColor) — the colormap otherwise
+ *  recomputes color on load. */
+function serializeArrows(arrows, isSpin = false) {
+  return arrows.map((a) => {
+    const out = { vector: [...a.vector] };
+    if (a.scaling != null) out.scaling = a.scaling;
+    if (a.userColor) out.color = colorToHex(a.userColor);
+    if (a.hidden) out.hidden = true;
+    if (isSpin) {
+      if (a.atomIndex != null) out.atomIndex = a.atomIndex;
+      if (a.element != null) out.element = a.element;
+      if (a.position != null) out.position = [...a.position];
+    }
+    return out;
+  });
+}
+
 // --- Volumetric-field byte <-> base64 helpers (used only by the .crysviz save) ---
 // Field values are Float32Array; the .crysviz format stores their raw little-endian
 // bytes base64-encoded. Endianness assumption: every platform CrysViz runs on is
@@ -68,12 +96,13 @@ import * as THREE from '../external/three/three.module.js';
 import { parsePOSCAR, initializeUIOnLoad } from './StructureInputModule.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
 import {
-  StructureContainer, Field, FieldContainer,
+  StructureContainer, Field, FieldContainer, Force, Spin,
   getIsosurfaceMaterialSettings, setIsosurfaceMaterialSettings,
   applyMaterialSettingsToStoredIsosurfaces,
 } from '../model/index.js';
 import { updateAtoms } from '../render/index.js';
-import { rebuildBonds, updatePolyhedra, setActivePipeline, updateGroundPlane, setActiveField, updateField } from '../render/index.js';
+import { rebuildBonds, updatePolyhedra, setActivePipeline, updateGroundPlane, setActiveField, updateField, updateForces, updateSpins, removeForces, removeSpins } from '../render/index.js';
+import { showTrajectoryFrame } from './TrajectoryPanel.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
@@ -155,28 +184,41 @@ export function captureState({ includeFrames = false, includeFields = false } = 
 
   // Whole-trajectory frames (all steps of the active container), so saving an
   // MD/relaxation run preserves every frame — not just the viewed one. Each
-  // frame is stored in its native atom order. Only the .crysviz file save opts
-  // in (includeFrames); the share-URL omits them to keep the URL small. The
-  // single `structure` field below always carries the viewed frame (back-compat).
+  // frame carries its native atom order plus the per-atom force/spin arrows
+  // shown on screen (issue #53). Only the .crysviz file save opts in
+  // (includeFrames); the share-URL omits them to keep the URL small. When
+  // frames are present they are the sole source of truth for geometry — the
+  // top-level `structure` field is dropped to avoid duplicating the viewed
+  // frame (issue #53), and `selectedFrameIndex` records which one is on screen.
   let frames;
+  let selectedFrameIndex;
   if (includeFrames) {
     const activeContainer = structureShip.container?.[fileBrowser.selectedRowIndex];
-    frames = (activeContainer?.structures ?? [structure]).map(frame => ({
+    const structures = activeContainer?.structures ?? [structure];
+    frames = structures.map(frame => ({
       elements: [...frame.elements],
       lattice: frame.lattice.map(r => [...r]),
       positions: frame.atoms.map(a => [...a.position]),
+      ...(frame.forces?.length ? { forces: serializeArrows(frame.forces) } : {}),
+      ...(frame.spins?.length ? { spins: serializeArrows(frame.spins, true) } : {}),
     }));
+    selectedFrameIndex = Math.max(0, structures.indexOf(structure));
   }
 
   return {
-    version: '2.15',
-    ...(frames ? { frames } : {}),
+    version: '2.16',
+    ...(frames ? { frames, selectedFrameIndex } : {}),
     ...(fields ? { fields } : {}),
-    structure: {
-      elements: [...structure.elements],
-      lattice: structure.lattice.map(r => [...r]),
-      positions: structure.atoms.map(a => [...a.position]),
-    },
+    // The viewed frame lives in `frames[selectedFrameIndex]` when frames are
+    // present (the .crysviz file save); only the share-URL / frame-less capture
+    // carries a standalone `structure` (issue #53 — no duplication).
+    ...(frames ? {} : {
+      structure: {
+        elements: [...structure.elements],
+        lattice: structure.lattice.map(r => [...r]),
+        positions: structure.atoms.map(a => [...a.position]),
+      },
+    }),
     colors: {
       atomColors,
       elementColors,
@@ -216,6 +258,27 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       bondVisibility: { ...general.bondVisibility },
       atomVisibility: { ...general.atomVisibility },
       bondCutImmunity: { ...general.bondCutImmunity },
+      // Force / spin arrow display (issue #53). Only the values ForceModule/
+      // SpinModule read to draw the arrows are persisted — not panel widget
+      // state; undefined keys (e.g. never-toggled forcesActive) drop out of the
+      // JSON and are left at their defaults on load.
+      forcesActive: general.forcesActive,
+      forceScale: general.forceScale,
+      forceRadius: general.forceRadius,
+      forceMin: general.forceMin,
+      forceMax: general.forceMax,
+      forceColorScale: general.forceColorScale,
+      forceLengthLogScale: general.forceLengthLogScale,
+      forceColorMap: general.forceColorMap,
+      spinsActive: general.spinsActive,
+      spinScale: general.spinScale,
+      spinRadius: general.spinRadius,
+      spinMin: general.spinMin,
+      spinMax: general.spinMax,
+      spinColorScale: general.spinColorScale,
+      spinLengthLogScale: general.spinLengthLogScale,
+      spinColorMap: general.spinColorMap,
+      spinSpeciesVisibility: nonEmptyDeepCopy(general.speciesVisibility),
     },
     style: {
       renderStyle: general.renderStyle,
@@ -399,6 +462,29 @@ function applyDisplaySettings(display) {
   if (display.bondVisibility) Object.assign(general.bondVisibility, display.bondVisibility);
   if (display.atomVisibility) Object.assign(general.atomVisibility, display.atomVisibility);
   if (display.bondCutImmunity) Object.assign(general.bondCutImmunity, display.bondCutImmunity);
+
+  // Force / spin arrow display (issue #53). Only general.* is restored — the
+  // panels read it live and rebuild their own widgets; the arrows themselves
+  // are (re)drawn by applySharedState once the structure's periodic wrap
+  // exists. Absent keys keep the current default.
+  const setGen = (key, val) => { if (val != null) general[key] = val; };
+  setGen('forceScale', display.forceScale);
+  setGen('forceRadius', display.forceRadius);
+  setGen('forceMin', display.forceMin);
+  setGen('forceMax', display.forceMax);
+  setGen('forceColorScale', display.forceColorScale);
+  setGen('forceLengthLogScale', display.forceLengthLogScale);
+  setGen('forceColorMap', display.forceColorMap);
+  setGen('spinScale', display.spinScale);
+  setGen('spinRadius', display.spinRadius);
+  setGen('spinMin', display.spinMin);
+  setGen('spinMax', display.spinMax);
+  setGen('spinColorScale', display.spinColorScale);
+  setGen('spinLengthLogScale', display.spinLengthLogScale);
+  setGen('spinColorMap', display.spinColorMap);
+  if (display.spinSpeciesVisibility) general.speciesVisibility = { ...display.spinSpeciesVisibility };
+  if (display.forcesActive != null) { general.forcesActive = display.forcesActive; setToggle('showForcesToggle', display.forcesActive); }
+  if (display.spinsActive != null) { general.spinsActive = display.spinsActive; setToggle('showSpinsToggle', display.spinsActive); }
 }
 
 /** Render style, color modes and scene background. Runs BEFORE the structure
@@ -629,6 +715,35 @@ function restoreAtomOrder(savedStructure, loadedStructure) {
   loadedStructure.uniqueElements = [...new Set(reorderedElements)];
 }
 
+/** Rebuild the Force/Spin arrow objects saved in a .crysviz frame and attach
+ *  them to the structure, which must already have had its atom order restored
+ *  (arrows are index-aligned to structure.atoms, like the file readers build
+ *  them). A saved `color` marks a pinned per-arrow pick, so it becomes
+ *  userColor; otherwise the colormap recomputes color when the arrows draw. */
+function applyArrows(saved, structure) {
+  if (!structure) return;
+  if (saved?.forces?.length) {
+    structure.forces = saved.forces.map((f) => {
+      const force = new Force({ vector: [...f.vector], scaling: f.scaling ?? null, color: f.color ?? null });
+      if (f.color) force.userColor = force.color;
+      if (f.hidden) force.hidden = true;
+      return force;
+    });
+  }
+  if (saved?.spins?.length) {
+    structure.spins = saved.spins.map((s) => {
+      const spin = new Spin({
+        vector: [...s.vector], scaling: s.scaling ?? null, color: s.color ?? null,
+        atomIndex: s.atomIndex ?? null, element: s.element ?? null,
+        position: s.position ? [...s.position] : null,
+      });
+      if (s.color) spin.userColor = spin.color;
+      if (s.hidden) spin.hidden = true;
+      return spin;
+    });
+  }
+}
+
 /** Rebuild volumetric fields embedded in a .crysviz and re-attach them to the
  *  loaded structure, replicating the CHGCAR/cube reader's post-attach sequence
  *  (fieldBrowser.setAvailableFields -> setSelectedField -> setActiveField ->
@@ -710,9 +825,26 @@ function restoreCamera(camState) {
 
 function restoreMeasurements(measurementData) {
   if (!measurementData?.length) return;
-  setTimeout(() => {
+
+  // Measurement refs resolve against the loaded structure's periodic wrap. That
+  // wrap is usually ready synchronously, but can lag behind on a heavy structure
+  // or the file-load path. A single fixed 200 ms delay used to fire before the
+  // wrap existed and then silently `return`, dropping every measurement with no
+  // retry — the reason a saved measurement did not reliably survive a reload.
+  // Poll until the wrap is present (applied immediately in the common case),
+  // capped so a structure that never wraps can't spin forever.
+  const stepMs = 100;
+  const maxWaitMs = 3000;
+  let waited = 0;
+
+  const apply = () => {
     const wrapped = fileBrowser.selectedStructure?.periodic?.visibleWrapped;
-    if (!wrapped) return;
+    if (!wrapped) {
+      waited += stepMs;
+      if (waited <= maxWaitMs) setTimeout(apply, stepMs);
+      else console.warn('restoreMeasurements: structure wrap never became ready — measurements not restored');
+      return;
+    }
 
     measurementData.forEach(m => {
       if (m.type === 'distance' && (m.atom1Ref || m.atom1Index != null) && (m.atom2Ref || m.atom2Index != null)) {
@@ -726,7 +858,9 @@ function restoreMeasurements(measurementData) {
         if (a1 && a2 && a3) addAngleMeasurement(a1, a2, a3);
       }
     });
-  }, 200);
+  };
+
+  apply();
 }
 
 function makeAtomProxy(wrapped, ref) {
@@ -845,25 +979,41 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   applyStyleSettings(state.style);
 
   // A saved trajectory carries every frame in `frames`; older single-frame
-  // files (and the share-URL) carry only `structure`.
+  // files (and the share-URL) carry only `structure`. New .crysviz files omit
+  // the redundant top-level `structure` entirely (issue #53) — the viewed frame
+  // is frames[selectedFrameIndex]; `viewed` resolves either form.
   const frames = Array.isArray(state.frames) ? state.frames : null;
   const multiFrame = !!(frames && frames.length > 1);
+  const selectedFrameIndex = frames
+    ? Math.min(Math.max(state.selectedFrameIndex ?? 0, 0), frames.length - 1)
+    : 0;
+  const viewed = state.structure ?? (frames ? frames[selectedFrameIndex] : null);
+  if (!viewed) {
+    console.warn('State has neither frames nor a structure to load.');
+    return false;
+  }
   let trajectoryContainer = null;
 
   // Load structure (synchronous — triggers updateVisualization internally)
   try {
     if (multiFrame) {
       // Rebuild each frame's Structure, restoring its native atom order (buildPOSCAR
-      // groups by element) so per-atom indices stay stable across the trajectory.
+      // groups by element) so per-atom indices stay stable across the trajectory,
+      // then re-attach that frame's force/spin arrows (index-aligned to atoms).
       const structures = frames.map((f) => {
         const s = readPOSCAR(buildPOSCAR({ structure: f }), fileName);
         restoreAtomOrder(f, s);
+        applyArrows(f, s);
         return s;
       });
       trajectoryContainer = new StructureContainer({ fileName, structures });
       initializeUIOnLoad(trajectoryContainer);
+      // Land on the frame the user was viewing before colors/fields are applied,
+      // so `structure` below is that frame (also draws its arrows via the gated
+      // updateForces/updateSpins in updateStructureFromFrame).
+      showTrajectoryFrame(selectedFrameIndex, trajectoryContainer);
     } else {
-      parsePOSCAR(buildPOSCAR(state), fileName);
+      parsePOSCAR(buildPOSCAR({ structure: viewed }), fileName);
     }
   } catch (e) {
     console.error('Failed to load structure from state:', e);
@@ -875,8 +1025,12 @@ export function applySharedState(state, fileName = 'shared.vasp') {
 
   // Single-frame: buildPOSCAR() groups atoms by element, so restore the saved
   // atom ordering before applying any per-atom state that relies on stable
-  // indices. (Multi-frame frames were already restored above.)
-  if (!multiFrame) restoreAtomOrder(state.structure, structure);
+  // indices, then re-attach the arrows. (Multi-frame frames were already
+  // restored above.)
+  if (!multiFrame) {
+    restoreAtomOrder(viewed, structure);
+    applyArrows(viewed, structure);
+  }
 
   revealFeaturePanels();
   createBondLengthControls();
@@ -896,6 +1050,17 @@ export function applySharedState(state, fileName = 'shared.vasp') {
 
   // Rebuild bonds to reflect any bondLength / bondVisibility changes
   rebuildBonds();
+
+  // Force / spin arrows (issue #53): general.* was restored in
+  // applyDisplaySettings; draw them now that periodic.wrapped exists. The
+  // multi-frame path already drew the viewed frame's arrows via
+  // showTrajectoryFrame, so only the single-frame view needs this kick.
+  if (!multiFrame) {
+    if (general.forcesActive && structure.forces?.length) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
+    else removeForces();
+    if (general.spinsActive && structure.spins?.length) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
+    else removeSpins();
+  }
 
   // parsePOSCAR's updateVisualization kicked off the (async) polyhedra compute
   // BEFORE restoreAtomOrder and the style-store restore above; re-run it so

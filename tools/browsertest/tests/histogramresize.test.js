@@ -3,8 +3,18 @@
 // it opens right-docked (wide), "Left dock" squeezes it into the narrow side
 // panel (the chart must follow the panel width, not stay pinned to the width
 // it was created at), "Float" pops it out, and "Right dock" returns it.
+//
+// The panel now holds one card PER bond pair plus a combined "All Pairs" card,
+// each with its own plot div (`bondLengthHistogramPlot__<key>`) — there is no
+// single `bondLengthHistogramPlot` any more — and every card starts collapsed.
+// This drives the combined card, which is always present, and expands it first:
+// a collapsed card's chart is display:none and has no width to measure.
 'use strict';
 const H = require('../harness');
+
+// ALL_PAIRS_KEY 'All Pairs' through BondLengthHistogram.js's id sanitiser.
+const ALL_PAIRS_PLOT = 'bondLengthHistogramPlot__All_Pairs';
+const ALL_PAIRS_CARD = 'blh-card__All_Pairs';
 
 async function pickPosition(page, panelId, label) {
   await page.evaluate((id) => {
@@ -19,12 +29,12 @@ async function pickPosition(page, panelId, label) {
 }
 
 function histState(page) {
-  return page.evaluate(async () => {
+  return page.evaluate(async (plotId) => {
     const { getPanel } = await import('./ui/panels/PanelManager.js');
     const p = getPanel('bondLengthHistogram');
     const el = p?.el;
     const body = el?.querySelector('.cv-panel-body');
-    const plot = document.getElementById('bondLengthHistogramPlot');
+    const plot = document.getElementById(plotId);
     return {
       dock: p?.dock ?? null,
       bodyW: body?.getBoundingClientRect().width ?? 0,
@@ -33,7 +43,7 @@ function histState(page) {
       inRightDock: !!document.querySelector('#splitPaneBody > .cv-panel[data-panel-id="bondLengthHistogram"]'),
       floating: !!el?.classList.contains('cv-floating'),
     };
-  });
+  }, ALL_PAIRS_PLOT);
 }
 
 (async () => {
@@ -47,7 +57,16 @@ function histState(page) {
   });
   await page.waitForTimeout(300);
   await H.clickById(page, 'openBondLengthHistogram');
+  await page.waitForTimeout(800);
+
+  // Cards open collapsed by design; expand the combined one so its chart has a
+  // size to follow across the dock moves below.
+  await page.evaluate((cardId) => {
+    /** @type {HTMLElement} */ (
+      document.getElementById(cardId).querySelector('.blh-collapse-toggle')).click();
+  }, ALL_PAIRS_CARD);
   await page.waitForTimeout(800); // Plotly first render
+
   let s = await histState(page);
   H.check('histogram opens right-docked with a wide chart',
     s.dock === 'right' && s.inRightDock && s.plotW > 300, JSON.stringify(s));

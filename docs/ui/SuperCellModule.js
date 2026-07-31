@@ -2,6 +2,7 @@ import { fileBrowser} from '../state/store.js';
 import { Atom} from '../model/index.js';
 import {updateVisualization} from '../core/crystal-viewer.js'
 import {generateID} from '../utils/index.js'
+import { fitCameraToCurrentStructure } from './WindowAndSceneControls.js';
 
 // Clone an atom, carrying over the user-facing modifications (colour, opacity,
 // cut-plane immunity, …) so they survive supercell (re)tiling. `element` and
@@ -107,4 +108,11 @@ export function createSupercell(nx = 1, ny = 1, nz = 1) {
     reRenderLattice: true,
     reRenderComposition: true
   });
+
+  // The tiled cell is usually a very different size than whatever the camera
+  // was last fit to (bigger for nx*ny*nz > 1, smaller shrinking back down) —
+  // always refit distance/zoom here rather than requiring a separate manual
+  // Reset View click, keeping whatever direction the camera already looks
+  // from.
+  fitCameraToCurrentStructure();
 }

@@ -108,9 +108,44 @@ function fitCurve(vMin, vMax, fn, nPoints = 200) {
   return { xs, ys };
 }
 
+// plotId -> click handler for the DATA markers, looked up at event time so a
+// cleared handler goes quiet immediately. Wiring differs from
+// histogramPlotly.js's once-per-element WeakSet: these charts render through
+// Plotly.newPlot (not Plotly.react), which drops the div's existing
+// plotly_click listeners with the old plot — a once-only guard would silently
+// unwire on the second redraw. Instead every render re-attaches one
+// dispatcher, and the generation counters stop a double attach when
+// onEOSPointClick is called between renders.
+const pointClickHandlers = new Map();
+const renderGeneration = new Map(); // plotId -> newPlot count
+const wiredGeneration = new Map();  // plotId -> generation whose dispatcher is attached
+
+function wirePointClick(plotId) {
+  const el = document.getElementById(plotId);
+  if (!el || typeof el.on !== 'function') return;
+  if (wiredGeneration.get(plotId) === renderGeneration.get(plotId)) return;
+  wiredGeneration.set(plotId, renderGeneration.get(plotId));
+  el.on('plotly_click', (ev) => {
+    const handler = pointClickHandlers.get(plotId);
+    const pt = ev.points?.[0];
+    if (handler && pt && pt.customdata !== undefined) handler(pt.customdata, pt);
+  });
+}
+
+/** Register (or, with null, unregister) a click handler for the DATA markers
+ *  of an EOS chart. `handler(pointIndex, point)` receives the marker's
+ *  customdata — its index into the sorted volume/energy/pressure arrays. */
+export function onEOSPointClick(plotId, handler) {
+  if (handler) pointClickHandlers.set(plotId, handler);
+  else pointClickHandlers.delete(plotId);
+  wirePointClick(plotId);
+}
+
 async function renderInto(plotId, data, layout) {
   const Plotly = await loadPlotly();
   await Plotly.newPlot(plotId, data, layout, { responsive: true, displayModeBar: false });
+  renderGeneration.set(plotId, (renderGeneration.get(plotId) || 0) + 1);
+  wirePointClick(plotId);
   requestAnimationFrame(() => Plotly.Plots.resize(plotId));
 }
 
@@ -133,7 +168,8 @@ export async function plotEV(plotId, ctx, isExpanded = false) {
 
   const mScale = markerScale(isExpanded);
   const data = [
-    { x: volumes, y: energies, mode: 'markers', type: 'scatter', name: 'Data', marker: { color: COLORS.DATA, size: 6 * mScale } },
+    // customdata = index into the sorted arrays, for onEOSPointClick consumers.
+    { x: volumes, y: energies, customdata: volumes.map((_, i) => i), mode: 'markers', type: 'scatter', name: 'Data', marker: { color: COLORS.DATA, size: 6 * mScale } },
     { x: xs, y: ys, mode: 'lines', type: 'scatter', name: 'Fit', line: { color: COLORS.EV_FIT, width: 2 } },
   ];
 
@@ -233,7 +269,8 @@ export async function plotPV(plotId, ctx, isExpanded = false) {
 
   /** @type {any[]} */
   const data = [
-    { x: volumes, y: pressures, mode: 'markers', type: 'scatter', name: 'Data', marker: { color: COLORS.DATA, size: 6 * mScale }, xaxis: 'x', yaxis: 'y' },
+    // customdata = index into the sorted arrays, for onEOSPointClick consumers.
+    { x: volumes, y: pressures, customdata: volumes.map((_, i) => i), mode: 'markers', type: 'scatter', name: 'Data', marker: { color: COLORS.DATA, size: 6 * mScale }, xaxis: 'x', yaxis: 'y' },
     { x: pv.xs, y: pv.ys, mode: 'lines', type: 'scatter', name: 'P-V Fit', line: { color: COLORS.PV_FIT, width: 2 }, xaxis: 'x', yaxis: 'y' },
   ];
   if (ev) {

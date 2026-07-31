@@ -10,6 +10,7 @@ import { registerPanel, removePanel, getPanel, openPanel } from '../panels/Panel
 import { expandSplitItem, closeExpandedSplitItem } from '../panels/RightDock.js';
 import {
   renderGroupedHistogram, onHistogramBarClick, exportHistogramPNG, resizeHistogramPlot, clearHistogramPlot,
+  togglePlotTheme,
 } from './histogramPlotly.js';
 import { highlightAtomsIn3D, clearAllHighlights } from '../SelectAndHighlightModule.js';
 import { refreshBondHistogramData } from '../../render/BondsFracUpdateModule.js';
@@ -97,6 +98,7 @@ export function addCoordinationHistogramPanel() {
             <div id="${PLOT_ID}" class="split-item-body"></div>
             <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
             <div class="split-item-actions">
+              <button type="button" class="split-item-action-btn" data-split-action="theme" title="Toggle light/dark">🌓</button>
               <button type="button" class="split-item-action-btn" data-split-action="export" title="Export PNG">📥</button>
               <button type="button" class="split-item-action-btn" data-split-action="expand" title="Expand">⛶</button>
             </div>
@@ -118,7 +120,10 @@ export function addCoordinationHistogramPanel() {
           /** @type {HTMLElement} */ (ev.target).closest('[data-split-action]'));
         if (!btn) return;
         const action = btn.dataset.splitAction;
-        if (action === 'export') {
+        if (action === 'theme') {
+          togglePlotTheme(PLOT_ID);
+          redraw();
+        } else if (action === 'export') {
           exportHistogramPNG(PLOT_ID).catch((error) => console.error('Coordination histogram export failed:', error));
         } else if (action === 'expand') {
           expandSplitItem(btn.closest('.split-item'));

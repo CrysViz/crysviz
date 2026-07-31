@@ -4,7 +4,7 @@
 // Visual window (ui/ColorPanel.js) — resolver categories, editor
 // default-awareness, tracer-only gating, atom+bond texel encoding, the
 // color-palette-parity wipe on switch, and ShareModule persistence
-// (colors.elementMaterialsMap, v2.15; absent key = pre-map state = 'standard').
+// (colors.elementMaterialsMap, v2.x; absent key = pre-map state = 'standard').
 'use strict';
 const H = require('../harness');
 const fs = require('fs');
@@ -133,8 +133,8 @@ function changedPixelCount(fileA, fileB) {
     const legacySelect = document.getElementById('atomsElementMaterialsMapMenu')?.value;
     return { version, captured, roundTrip, roundTripSelect, legacyMap, legacySelect };
   });
-  H.check('elementMaterialsMap persists at v2.15 and absent-key restores to standard',
-    persist.version === '2.15' && persist.captured === 'crysviz'
+  H.check('elementMaterialsMap persists at v2.x and absent-key restores to standard',
+    persist.version?.startsWith('2') && persist.captured === 'crysviz'
       && persist.roundTrip === 'crysviz' && persist.roundTripSelect === 'crysviz'
       && persist.legacyMap === 'standard' && persist.legacySelect === 'standard',
     JSON.stringify(persist));

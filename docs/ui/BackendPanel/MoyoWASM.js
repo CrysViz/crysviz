@@ -7,6 +7,7 @@ import { StructureContainer } from "../../model/index.js";
 import { generateID } from "../../utils/index.js";
 import { activateWyckoffMode, deactivateWyckoffMode, isWyckoffModeActive, describeMoyoFailure, defaultSymprec } from '../SymmetryEditModule.js';
 import { renderComposition } from '../StructureInfoPanel/General.js';
+import { removePanel } from '../panels/PanelManager.js';
 import { refreshBackendTheme } from './BackendTheme.js';
 import { normalizeFractional } from "../../math/index.js";
 import { runPeriodicWrapped } from "../../render/index.js";
@@ -178,8 +179,14 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
     };
 
     wyckoffBtn.onclick = async () => {
+      // Toggling the mode swaps which body the Modify panel would show (orbit
+      // rows vs atom rows). Rather than re-mount it live, close it if open - it
+      // reopens in the right mode on the next click of the ✎ button. (The
+      // panel's own Revert re-locks through activateWyckoffMode without coming
+      // through here, so it keeps re-mounting itself.)
       if (isWyckoffModeActive(fileBrowser.selectedStructure)) {
         deactivateWyckoffMode(fileBrowser.selectedStructure);
+        removePanel('modifyStructure');
         renderComposition('open');
         document.getElementById("calcResult").textContent = 'Wyckoff editor disabled';
         syncWyckoffButton();
@@ -200,6 +207,7 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
         syncWyckoffButton();
         return;
       }
+      removePanel('modifyStructure');
       renderComposition('open');
       renderSymmetryResult(result);
       setStatus('Wyckoff editor active');

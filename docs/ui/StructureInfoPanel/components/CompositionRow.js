@@ -2,7 +2,7 @@ import { fileBrowser, general } from '../../../state/store.js';
 import { colorHexToCss, createPieDot, getAtomColor } from '../../../utils/ColorModule.js';
 import { getAtomImageColor } from '../../../render/AtomsFracUpdateModule.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
-import { getElementAtomIndices, getElementOpacityValues, setSwatchOpacity, createMiniToggleSwitch } from './utils.js';
+import { getElementAtomIndices, getElementOpacityValues, setSwatchOpacity, createMiniToggleSwitch, updateAtomCoordinatesLive } from './utils.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createIndividualAtomRow } from './IndividualAtomRow.js';
 import { createElementColorEditor } from './ColorEditor.js';
@@ -167,6 +167,7 @@ export function createCompositionRow(el, count, total) {
   name.style.fontSize = 'calc(14px * var(--cv-font-scale, 1))';
 
   const expandIcon = document.createElement('span');
+  expandIcon.className = 'comp-expand-icon';
   expandIcon.textContent = '▶';
   expandIcon.style.cssText = `
     margin-left: 4px;
@@ -209,10 +210,10 @@ export function createCompositionRow(el, count, total) {
   atomsContainer.className = 'individual-atoms';
   atomsContainer.style.cssText = `
     display: none;
-    margin-left: 20px;
+    margin-left: 6px;
     margin-top: 8px;
     border-left: 2px solid rgba(255,255,255,0.1);
-    padding-left: 8px;
+    padding-left: 6px;
   `;
 
   // The individual atom rows are expensive to build (one DOM subtree per atom)
@@ -251,7 +252,10 @@ export function createCompositionRow(el, count, total) {
     for (let i = 0; i < elementAtomIndices.length; i++) {
       const atomIndex = elementAtomIndices[i];
       const atomRow = createIndividualAtomRow(el, atomIndex, i + 1, {
-        onColorChange: updatePieDotForRow  // Pass callback to update pie dot
+        onColorChange: updatePieDotForRow,  // Pass callback to update pie dot
+        // Drag the coordinate sliders live without rebuilding this very panel
+        // out from under them — the release/Apply still runs the full update.
+        livePositionUpdater: (coords) => updateAtomCoordinatesLive(atomIndex, coords),
       });
       atomsContainer.appendChild(atomRow);
     }
@@ -398,6 +402,7 @@ export function createWyckoffCompositionRow(el, entries, total) {
   name.style.fontSize = 'calc(14px * var(--cv-font-scale, 1))';
 
   const expandIcon = document.createElement('span');
+  expandIcon.className = 'comp-expand-icon';
   expandIcon.textContent = '▶';
   expandIcon.style.cssText = `
     margin-left: 4px;
@@ -440,10 +445,10 @@ export function createWyckoffCompositionRow(el, entries, total) {
   atomsContainer.className = 'individual-atoms';
   atomsContainer.style.cssText = `
     display: none;
-    margin-left: 20px;
+    margin-left: 6px;
     margin-top: 8px;
     border-left: 2px solid rgba(255,255,255,0.1);
-    padding-left: 8px;
+    padding-left: 6px;
   `;
 
   // Create individual atom rows for each Wyckoff site

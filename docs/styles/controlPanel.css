@@ -255,6 +255,16 @@ font-size: 16px;
   opacity: 0.4;
 }
 
+/* Fractional-coordinate boxes in the per-atom Position editor: the slider is
+   the coarse control, so the number box is text-only. Recent Chrome ignores
+   appearance:textfield for hiding the spinner, so strip it here. */
+.coord-num-input::-webkit-inner-spin-button,
+.coord-num-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
 .planes-num-input:disabled {
   opacity: 0.35;
   cursor: not-allowed;

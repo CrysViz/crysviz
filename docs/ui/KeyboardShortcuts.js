@@ -294,7 +294,7 @@ const COMMANDS = [
   { id: 'toggle-complete-polyhedra', label: 'Complete Polyhedra', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('completePolyhedraToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyC' }) },
   { id: 'toggle-field', label: 'Show Volumetric Field', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showFieldToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyD' }) },
   { id: 'toggle-planes', label: 'Show Planes', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showPlanesMasterToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyL' }) },
-  { id: 'add-atoms-vacuum', label: 'Add Atoms / Vacuum', tier: 'SHIFT_SPACE', group: 'Other', action: () => clickButton('#addButton', 'addAtomsVacuum'), default: bind(TIER.SHIFT_SPACE, { codes: ['Equal', 'BracketRight'] }) },
+  { id: 'add-atoms-vacuum', label: 'Modify Structure', tier: 'SHIFT_SPACE', group: 'Other', action: () => clickButton('#addButton', 'modifyStructure'), default: bind(TIER.SHIFT_SPACE, { codes: ['Equal', 'BracketRight'] }) },
 
   // -- Shift+Alt: Windows -------------------------------------------------------
   { id: 'panel-files', label: 'Files', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('files'), default: bind(TIER.SHIFT_ALT, { code: 'KeyF' }) },
