@@ -242,6 +242,7 @@ export function createCompositionRow(el, count, total) {
           atomsContainer.appendChild(createIndividualAtomRow(el, atomIndex, i + 1, {
             imageIndex,
             displayCoords: frac,
+            imageOffset: off,
             metaText: `copy ${j + 1}/${images.length}  (${off.join(',')})`,
             onColorChange: updatePieDotForRow,
           }));

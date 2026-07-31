@@ -53,6 +53,23 @@ const H = require('../harness');
       && /copy \d+\/\d+\s+\(-?\d+,-?\d+,-?\d+\)/.test(unlinked.sampleMeta),
     JSON.stringify(unlinked));
 
+  // --- Image rows are colour-only; the (0,0,0) copy keeps Position/Spin -------------
+  const buttons = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#atomPanel .individual-atom-row')];
+    const btnLabels = (r) => [...r.querySelectorAll('.atom-editor-button')].map((b) => b.textContent);
+    const isPrimary = (r) => /\(0,0,0\)/.test(r.textContent);
+    const primary = rows.find(isPrimary);
+    const image = rows.find((r) => r.dataset.imageIndex != null && !isPrimary(r));
+    return {
+      primaryHasPosition: btnLabels(primary).includes('Position'),
+      imageOnlyColor: btnLabels(image).length === 1 && btnLabels(image)[0] === 'Color',
+      imageMarked: /↳/.test(image.textContent),
+    };
+  });
+  H.check('periodic-image rows are colour-only and marked; the (0,0,0) copy keeps all buttons',
+    buttons.primaryHasPosition && buttons.imageOnlyColor && buttons.imageMarked,
+    JSON.stringify(buttons));
+
   // --- Per-copy color edit: only that instance changes ------------------------------
   const colored = await page.evaluate(async () => {
     const { fileBrowser, groups } = await import('./state/store.js');
