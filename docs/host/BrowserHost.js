@@ -500,7 +500,7 @@ export async function bootstrapAuthoritative(deps) {
       }
     };
     try {
-      await initialize();
+      const initialized = await initialize();
       const response = await responseOrThrow(
         await strictFetch(route), 'MANIFEST_FETCH_FAILED', 'Could not fetch host manifest');
       const manifest = await response.json();
@@ -515,6 +515,13 @@ export async function bootstrapAuthoritative(deps) {
           args: { name: input.name, data, format: input.format, binary: input.binary },
         });
         if (!result.ok) throw Object.assign(new Error(result.error.message), result.error);
+      }
+      if (inputs.length === 0) {
+        const loadDefault = initialized?.loadDefault || deps.loadDefault;
+        if (typeof loadDefault !== 'function') {
+          throw manifestError('DEFAULT_LOAD_UNAVAILABLE', 'The built-in default structure loader is unavailable');
+        }
+        await loadDefault();
       }
       await postCompletion({ ok: true });
       return { source: 'host' };

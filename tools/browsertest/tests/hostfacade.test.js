@@ -262,6 +262,34 @@ const TRAJECTORY = makeTrajectoryFixture();
   H.check('successful host bootstrap has no harness errors', errors.length === 0, errors.join(' | '));
 
   await page.unroute('**/_crysviz/manifest/capability*');
+  const emptyManifestCompletions = [];
+  await page.route('**/_crysviz/manifest/empty*', async (route) => {
+    if (route.request().method() === 'POST') {
+      emptyManifestCompletions.push(JSON.parse(route.request().postData() || '{}'));
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ version: 1, inputs: [] }),
+    });
+  });
+  await page.goto(`${origin}/index.html?_crysviz_manifest=empty`, { waitUntil: 'load', timeout: 90000 });
+  await page.waitForTimeout(2500);
+  const emptyManifest = await page.evaluate(async () => {
+    const dispatch = await window.crysvizHost.dispatch({ command: 'list_structures' });
+    return {
+      dispatch,
+      defaultName: dispatch.ok ? dispatch.result[0]?.name : null,
+    };
+  });
+  H.check('empty host manifest loads the built-in default authoritatively',
+    emptyManifest.dispatch.ok && emptyManifest.dispatch.result.length === 1
+      && emptyManifest.defaultName === 'Si'
+      && emptyManifestCompletions.length === 1 && emptyManifestCompletions[0].ok === true);
+  await page.unroute('**/_crysviz/manifest/empty*');
+
   await page.route('**/_crysviz/manifest/failing*', async (route) => {
     if (route.request().method() === 'POST') {
       failureCompletions.push(JSON.parse(route.request().postData() || '{}'));
