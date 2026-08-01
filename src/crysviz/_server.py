@@ -46,7 +46,8 @@ def _safe_json_error(code: str, message: str, details: object = None) -> dict[st
 
 
 class _LaunchState:
-    def __init__(self, root: Path, sources: list[PreparedSource], debug: bool):
+    def __init__(self, root: Path, sources: list[PreparedSource], debug: bool,
+                 bridge_capability: str | None = None):
         self.root = root
         self.sources = sources
         self.debug = debug
@@ -54,7 +55,10 @@ class _LaunchState:
         self.used: set[str] = set()
         self.manifest_capability = _new_capability(self.used)
         self.input_capabilities = [_new_capability(self.used) for _ in sources]
+        self.one_use_capabilities: set[str] = set()
+        self.bridge_capability = bridge_capability
         self.active = True
+        self.manifest_active = True
 
     def manifest(self, base_url: str) -> bytes:
         inputs: list[dict[str, object]] = []
@@ -68,15 +72,62 @@ class _LaunchState:
             if source.binary:
                 item["binary"] = True
             inputs.append(item)
-        return json.dumps({"version": 1, "inputs": inputs}, separators=(",", ":")).encode("utf-8")
+        manifest: dict[str, object] = {"version": 1, "inputs": inputs}
+        if self.bridge_capability is not None:
+            manifest["bridgeCapability"] = self.bridge_capability
+        return json.dumps(manifest, separators=(",", ":")).encode("utf-8")
 
     def expire(self) -> None:
         with self.lock:
             self.active = False
+            self.manifest_active = False
             for source in self.sources:
                 source.close()
             self.sources.clear()
             self.input_capabilities.clear()
+            self.one_use_capabilities.clear()
+
+    def complete_manifest(self) -> None:
+        """Revoke bootstrap inputs while retaining a managed bridge server."""
+        with self.lock:
+            self.manifest_active = False
+            if self.bridge_capability is None:
+                self.expire()
+                return
+            for source in self.sources:
+                source.close()
+            self.sources.clear()
+            self.input_capabilities.clear()
+            self.one_use_capabilities.clear()
+
+    def add_source(self, source: PreparedSource) -> str:
+        """Publish one private, capability-addressed input for the JS bridge."""
+        with self.lock:
+            if not self.active:
+                source.close()
+                raise RuntimeError("server is closed")
+            capability = _new_capability(self.used)
+            self.sources.append(source)
+            self.input_capabilities.append(capability)
+            self.one_use_capabilities.add(capability)
+            return capability
+
+    def input_source(self, capability: str, *, consume: bool) -> tuple[PreparedSource | None, bool]:
+        """Return an input source, atomically claiming one-use GET routes."""
+        with self.lock:
+            if not self.active:
+                return None, False
+            try:
+                index = self.input_capabilities.index(capability)
+            except ValueError:
+                return None, False
+            source = self.sources[index]
+            one_use = capability in self.one_use_capabilities
+            if consume and one_use:
+                self.input_capabilities.pop(index)
+                self.sources.pop(index)
+                self.one_use_capabilities.remove(capability)
+            return source, consume and one_use
 
 
 class _Server(ThreadingHTTPServer):
@@ -232,7 +283,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             capability = path[len(manifest_prefix):]
             if _CAPABILITY_RE.fullmatch(capability) and capability == self.state.manifest_capability:
                 with self.state.lock:
-                    if self.state.active:
+                    if self.state.active and self.state.manifest_active:
                         body = self.state.manifest(self._base_url())
                     else:
                         body = None
@@ -247,15 +298,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 return
             capability = path[len(input_prefix):]
             if _CAPABILITY_RE.fullmatch(capability):
-                with self.state.lock:
+                source, claimed = self.state.input_source(capability, consume=not head)
+                if source is not None:
                     try:
-                        index = self.state.input_capabilities.index(capability)
-                        source = self.state.sources[index]
-                    except ValueError:
-                        source = None
-                    if source is not None and self.state.active:
                         self._stream_source(source)
-                        return
+                    finally:
+                        if claimed:
+                            source.close()
+                    return
             self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
             return
         self._serve_static(path)
@@ -377,10 +427,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.BAD_REQUEST, "INVALID_COMPLETION", "Invalid completion body")
             return
         with self.state.lock:
-            if not self.state.active or capability != self.state.manifest_capability:
+            if (not self.state.active or not self.state.manifest_active
+                    or capability != self.state.manifest_capability):
                 self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
                 return
-            self.state.expire()
+            self.state.complete_manifest()
         self._send(HTTPStatus.OK, "application/json", 2, b"{}")
 
 
@@ -399,12 +450,14 @@ def _content_type(path: Path) -> str:
 class CrysVizServer:
     """Own a loopback server and its importlib resource lifetime."""
 
-    def __init__(self, sources: list[PreparedSource], port: int = 0, debug: bool = False):
+    def __init__(self, sources: list[PreparedSource], port: int = 0, debug: bool = False,
+                 *, bridge_capability: str | None = None):
         if isinstance(port, bool) or not isinstance(port, int) or not 0 <= port <= 65535:
             raise ValueError("port must be an integer from 0 through 65535")
         self.sources = sources
         self.port = port
         self.debug = debug
+        self._bridge_capability = bridge_capability
         self._stack: ExitStack | None = None
         self._httpd: _Server | None = None
         self._thread: threading.Thread | None = None
@@ -421,7 +474,8 @@ class CrysVizServer:
         try:
             traversable = resources.files("crysviz.web")
             root = stack.enter_context(resources.as_file(traversable))
-            state = _LaunchState(Path(root).resolve(), self.sources, self.debug)
+            state = _LaunchState(Path(root).resolve(), self.sources, self.debug,
+                                 self._bridge_capability)
             httpd = _Server(("127.0.0.1", self.port), state)
             self._stack = stack
             self._httpd = httpd
@@ -461,6 +515,17 @@ class CrysVizServer:
         if self._httpd is None:
             raise RuntimeError("server has not started")
         return f"http://127.0.0.1:{self.address[1]}/index.html?_crysviz_manifest={self._httpd.state.manifest_capability}"
+
+    @property
+    def bridge_capability(self) -> str | None:
+        return self._httpd.state.bridge_capability if self._httpd is not None else self._bridge_capability
+
+    def publish(self, source: PreparedSource) -> str:
+        """Return a one-time-private input URL for a managed browser command."""
+        if self._httpd is None:
+            raise RuntimeError("server has not started")
+        capability = self._httpd.state.add_source(source)
+        return f"http://{self._httpd.expected_host}/_crysviz/input/{capability}"
 
     def wait(self) -> None:
         if self._thread is None:

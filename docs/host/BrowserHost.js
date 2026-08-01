@@ -337,9 +337,46 @@ export function createBrowserHost({
     return dispatchRequest(request);
   }
 
+  // This is the sole Python-to-browser trigger. Python never interpolates a
+  // command or data into JavaScript: the descriptor arrives through the
+  // capability-protected pywebview API and binary content is fetched through
+  // an exact loopback capability URL.
+  async function processBridgeCommand() {
+    captureBridgeReceiver();
+    const api = window.pywebview?.api;
+    if (!bridgeCapability || !api
+      || typeof api.next_command !== 'function' || typeof api.command_result !== 'function') return;
+    let descriptor;
+    try {
+      descriptor = await api.next_command(bridgeCapability);
+      if (!descriptor || typeof descriptor.id !== 'string' || !descriptor.request
+        || typeof descriptor.request !== 'object') return;
+      const request = descriptor.request;
+      if (request.args?.inputUrl !== undefined) {
+        const inputUrl = sameOriginURL(request.args.inputUrl, window.location.origin);
+        if (!inputUrl || inputUrl.username || inputUrl.password) {
+          throw commandError('INVALID_INPUT_URL', 'Managed input URL must be same-origin');
+        }
+        const response = await strictFetch(inputUrl);
+        await responseOrThrow(response, 'INPUT_FETCH_FAILED', 'Could not fetch managed host input');
+        const binary = request.args.binary === true;
+        request.args = { ...request.args, data: binary ? await response.arrayBuffer() : await response.text() };
+        delete request.args.inputUrl;
+      }
+      const result = await dispatch(request);
+      await api.command_result(bridgeCapability, descriptor.id, result);
+    } catch (error) {
+      const result = { ok: false, error: errorFromThrown(error, 'HOST_COMMAND_FAILED') };
+      try {
+        if (descriptor?.id) await api.command_result(bridgeCapability, descriptor.id, result);
+      } catch { /* Parent will time out and poison the host. */ }
+    }
+  }
+
   const facade = Object.freeze({
     protocolVersion: PROTOCOL_VERSION,
     dispatch,
+    processBridgeCommand,
     subscribe(callback) {
       if (typeof callback !== 'function') return () => {};
       for (const event of ['ready', 'closed']) {

@@ -55,12 +55,64 @@ WebKit/GTK or Qt WebEngine backend as well. If that is not practical,
 
 Path arguments are validated before the server or GUI starts, loaded in
 argument order, and displayed by basename only. `.traj` paths are treated as
-binary; ordinary structure paths are text. The Phase 2 library preview exposes
-only the representation-neutral `crysviz.Payload(name, data, format=None)`
-for in-memory text or bytes-like data. Payload data is snapshotted and served
-without putting it in a URL; bytes use text browser loading unless the payload
-format is `.traj`/`traj`. The higher-level `Viewer` API and control/results
-objects arrive in the package public surface in Phase 3.
+binary; ordinary structure paths are text.
+
+### Managed Python API
+
+The library controller launches an isolated pywebview child process while the
+calling Python session remains interactive. Importing `crysviz` does not start
+a server, browser, process, or network listener. Sources may be filesystem
+paths or immutable, snapshotting `Payload` values:
+
+```python
+from crysviz import Payload, Viewer, show
+
+payload = Payload("silicon.cif", "data_Si\n_cell_length_a 5.43\n")
+with Viewer([payload]) as viewer:
+    structures = viewer.list_structures()
+    viewer.select(structures[0].id, frame=0)
+    viewer.update_fractional_positions([[0.0, 0.0, 0.0]], commit=False)
+    viewer.commit_positions()
+    viewer.recenter_camera()
+
+# Equivalent concise construction; returns once the window is ready.
+viewer = show(["structure.cif"])
+```
+
+`load`, `list_structures`, `select`, `update_fractional_positions`,
+`commit_positions`, and `recenter_camera` are synchronous controller methods.
+They return `LoadResult`, `StructureInfo`, and `PositionUpdateResult` where
+appropriate. Structure IDs are opaque and stable for the lifetime of a viewer.
+Position updates require exactly one finite three-component fractional point
+per atom; a failed fast update automatically performs the full periodic and
+topology rebuild, and `commit=True` completes that full synchronization.
+
+Subscribe before or after startup with `viewer.on("ready", callback)` and
+remove a callback with `off`. Callbacks receive `ViewerEvent` records and run
+on a dedicated event worker, so they may issue controller commands or call
+`close`; `wait()` from a callback raises `ViewerReentrancyError`. The events
+are `ready`, `structure_loaded`, `active_structure_changed`, `error`, and
+`closed`; `ready` and `closed` replay to late subscribers. `close()` is
+idempotent and `wait()` waits for the window to close.
+
+Failures are typed: `ViewerStartupError`, `ViewerClosedError`,
+`ViewerCommandTimeout`, `ViewerProtocolError`, and `BrowserCommandError`
+(also exported under the short names `StartupError`, `ClosedViewerError`,
+`CommandTimeoutError`, and `ProtocolError`). A command timeout intentionally
+closes the private host rather than allowing a potentially wedged GUI to keep
+accepting mutations.
+
+The parent and child authenticate over a private loopback IPC connection. The
+bootstrap secret travels only through inherited stdin, never command-line
+arguments, URLs, or logs. IPC is protocol-versioned JSON with bounded explicit
+binary attachments; it never uses pickle. Browser commands use one fixed
+dispatcher and the page-to-host bridge is capability- and exact-loopback-origin
+checked.
+
+For Linux GUI use install `crysviz[qt]` or `crysviz[gtk]` plus its documented
+system backend. CI exercises the Qt backend under Xvfb. Windows and macOS
+smoke coverage should use the native supported Qt, GTK/WebKit, or platform
+pywebview backend before releases; `--browser` remains the no-GUI fallback.
 
 The frontend, JavaScript modules, WASM, themes, assets, and local licenses are
 packaged together, so normal startup is fully offline. Optional Plotly and

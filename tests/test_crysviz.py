@@ -24,6 +24,7 @@ from crysviz.server import CrysVizServer
 class PayloadTests(unittest.TestCase):
     def test_import_surface_and_snapshot(self):
         self.assertEqual(crysviz.__version__, "0.1.0")
+        self.assertIs(crysviz.ViewerEvent, crysviz._viewer.ViewerEvent)
         self.assertNotIn("webview", sys.modules)
         original = bytearray(b"input")
         payload = crysviz.Payload("sample.cif", original, "cif")
@@ -231,6 +232,21 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body, b"")
         self.assertEqual(int(headers["Content-Length"]), 3)
+
+    def test_managed_bridge_revokes_bootstrap_but_accepts_later_private_input(self):
+        sources = prepare_sources([crysviz.Payload("initial.cif", b"initial")])
+        self.server = CrysVizServer(sources, bridge_capability="bridge-capability-for-test")
+        self.server.start()
+        token = urlsplit(self.server.url).query.split("=", 1)[1]
+        manifest = json.loads(self.request("GET", f"/_crysviz/manifest/{token}")[2])
+        self.assertNotIn("managed", manifest)
+        self.assertEqual(self.request("POST", f"/_crysviz/manifest/{token}/complete", body=b'{"ok":true}')[0], 200)
+        self.assertEqual(self.request("GET", f"/_crysviz/manifest/{token}")[0], 404)
+        later = prepare_sources([crysviz.Payload("later.cif", b"later")])[0]
+        route = urlsplit(self.server.publish(later)).path
+        self.assertEqual(self.request("HEAD", route)[0], 200)
+        self.assertEqual(self.request("GET", route)[2], b"later")
+        self.assertEqual(self.request("GET", route)[0], 404)
 
     def test_static_mime_security_and_rejections(self):
         server = self.start([])
