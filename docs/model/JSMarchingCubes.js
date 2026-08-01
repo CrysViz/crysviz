@@ -1,7 +1,7 @@
 // @ts-nocheck -- port of three.js MarchingCubes addon; not type-checked
 import {
 	Color
-} from 'three';
+} from '../external/three/three.module.js';
 
 /**
  * A marching cubes implementation.

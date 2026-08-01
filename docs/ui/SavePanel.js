@@ -48,9 +48,9 @@ export function poscartoFile() {
 /** Base name of the selected structure's file (extension stripped). */
 export function currentBaseName() {
   const rawName = fileBrowser.selectedRow
-    ? JSON.parse(fileBrowser.selectedRow.dataset.obj).name
+    ? fileBrowser.selectedRow.querySelector('.name-inner')?.textContent
     : 'structure';
-  return rawName.replace(/\.[^.]+$/, '');
+  return String(rawName || 'structure').replace(/\.[^.]+$/, '');
 }
 
 /** Trigger a browser download of a Blob under the given file name. */
@@ -94,4 +94,3 @@ export function addSavePanel() {
     });
   }
 }
-

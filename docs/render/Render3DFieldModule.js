@@ -209,61 +209,43 @@ export function updateField(iso = null) {
 }
 
 export function parseCubeFile(content, fileName) {
-  try {
-    // Parse the Cube file (volumetric fields are now included in the structure)
-    const result = readCubeFile(content, fileName);
-    
-    // Initialize the field rendering
-    if (result.structure_with_field.volumetricFields) {
-      fieldBrowser.setAvailableFields(result.structure_with_field.volumetricFields.fields);
-      fieldBrowser.setSelectedField(0); // Select the first field by default
-      const selectedField = fieldBrowser.selectedField;
+  // Parse the Cube file (volumetric fields are now included in the structure).
+  // Errors intentionally propagate to loadStructure and the host facade.
+  const result = readCubeFile(content, fileName);
 
-      setActiveField(selectedField);
-      updateField();
-    }
-    
-    // Initialize the structure (volumetricFields are already attached)
-    initializeWithPOSCAR(result.structure_with_field, fileName);
+  if (result.structure_with_field.volumetricFields) {
+    fieldBrowser.setAvailableFields(result.structure_with_field.volumetricFields.fields);
+    fieldBrowser.setSelectedField(0); // Select the first field by default
+    const selectedField = fieldBrowser.selectedField;
 
-    updateFieldPanel();
-    
-    // Note: Field visualization controls are now handled by the "Field" button in the control panel
-    console.log(`CHGCAR file parsed successfully with ${result.structure_with_field.volumetricFields ? result.structure_with_field.volumetricFields.fields.length : 0} volumetric fields`);
-    
-  } catch (error) {
-    console.log(`Error parsing CHGCAR file: ${error.message}`);
-    console.error(error);
+    setActiveField(selectedField);
+    updateField();
   }
+
+  const container = initializeWithPOSCAR(result.structure_with_field, fileName);
+  updateFieldPanel();
+  console.log(`Cube file parsed successfully with ${result.structure_with_field.volumetricFields ? result.structure_with_field.volumetricFields.fields.length : 0} volumetric fields`);
+  return container;
 }
 
 export function parseCHGCARFile(content, fileName) {
-  try {
-    // Parse the CHGCAR file (volumetric fields are now included in the structure)
-    const result = readCHGCAR(content, fileName);
-    
-    // Initialize the field rendering
-    if (result.structure_with_field.volumetricFields) {
-      fieldBrowser.setAvailableFields(result.structure_with_field.volumetricFields.fields);
-      fieldBrowser.setSelectedField(0); // Select the first field by default
-      const selectedField = fieldBrowser.selectedField;
+  // Parse the CHGCAR file (volumetric fields are now included in the structure).
+  // Errors intentionally propagate to loadStructure and the host facade.
+  const result = readCHGCAR(content, fileName);
 
-      setActiveField(selectedField);
-      updateField();
-    }
-    
-    // Initialize the structure (volumetricFields are already attached)
-    initializeWithPOSCAR(result.structure_with_field, fileName);
+  if (result.structure_with_field.volumetricFields) {
+    fieldBrowser.setAvailableFields(result.structure_with_field.volumetricFields.fields);
+    fieldBrowser.setSelectedField(0); // Select the first field by default
+    const selectedField = fieldBrowser.selectedField;
 
-    updateFieldPanel();
-    
-    // Note: Field visualization controls are now handled by the "Field" button in the control panel
-    console.log(`CHGCAR file parsed successfully with ${result.structure_with_field.volumetricFields ? result.structure_with_field.volumetricFields.fields.length : 0} volumetric fields`);
-    
-  } catch (error) {
-    console.log(`Error parsing CHGCAR file: ${error.message}`);
-    console.error(error);
+    setActiveField(selectedField);
+    updateField();
   }
+
+  const container = initializeWithPOSCAR(result.structure_with_field, fileName);
+  updateFieldPanel();
+  console.log(`CHGCAR file parsed successfully with ${result.structure_with_field.volumetricFields ? result.structure_with_field.volumetricFields.fields.length : 0} volumetric fields`);
+  return container;
 }
 
 // End of file

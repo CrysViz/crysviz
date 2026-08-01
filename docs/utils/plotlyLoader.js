@@ -8,7 +8,12 @@ const PLOTLY_MODULE_URL = 'https://esm.sh/plotly.js-dist-min@2.27.0';
 let plotlyPromise = null;
 export function loadPlotly() {
   if (!plotlyPromise) {
-    plotlyPromise = import(PLOTLY_MODULE_URL).then((m) => m.default || m);
+    plotlyPromise = import(PLOTLY_MODULE_URL).then((m) => m.default || m).catch((error) => {
+      plotlyPromise = null;
+      const unavailable = new Error('Plotting is unavailable offline; connect to the network and try again.');
+      unavailable.cause = error;
+      throw unavailable;
+    });
   }
   return plotlyPromise;
 }

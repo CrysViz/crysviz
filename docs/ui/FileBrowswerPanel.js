@@ -15,6 +15,12 @@ import { notifyActiveStructureChange } from '../state/structures.js';
 import { generateID } from '../utils/index.js';
 import { snapshotFeatureToggles, applyFeatureToggles, applyDefaultFeatureToggles } from './FeatureLockModule.js';
 
+const rowObjects = new WeakMap();
+
+export function getRowObject(row) {
+  return rowObjects.get(row) || null;
+}
+
 export function showError(message) {
   errorPanel.textContent = message;
   errorPanel.style.display = "block";
@@ -200,15 +206,23 @@ export function createRow(obj) {
     <td class="ftd"><input type="checkbox"></td>
     <td class="ftd">
       <div class="name-cell">
-        <span class="name-inner">${obj.name}</span>
-        <span class="name-scroll">${obj.name}</span>
+        <span class="name-inner"></span>
+        <span class="name-scroll"></span>
       </div>
     </td>
-    <td class="ftd">${obj.traj}</td>
-    <td class="ftd"><input type="number" min="1" max="${obj.traj}" value="${obj.step}" /></td>
+    <td class="ftd"></td>
+    <td class="ftd"><input type="number" min="1" /></td>
     <td class="ftd icon copy">⧉</td>
     <td class="ftd icon delete">×</td>
   `;
+
+  row.querySelector('.name-inner').textContent = String(obj.name ?? '');
+  row.querySelector('.name-scroll').textContent = String(obj.name ?? '');
+  const trajectoryCell = row.querySelector('td:nth-child(3)');
+  trajectoryCell.textContent = String(obj.traj ?? '');
+  const initialStepInput = row.querySelector('input[type="number"]');
+  initialStepInput.max = String(obj.traj ?? '');
+  initialStepInput.value = String(obj.step ?? '');
 
   // Plain multi-select checkbox: feeds both "combine into one trajectory"
   // (any number checked) and the Structure Overlay module — every checked row
@@ -254,7 +268,7 @@ export function createRow(obj) {
 
 // Duplicate (copy) logic
 row.querySelector(".copy").addEventListener("click", (e) => {
-  const updatedObj = JSON.parse(row.dataset.obj);
+  const updatedObj = getRowObject(row);
   // Check if Command (Mac) or Ctrl (Windows/Linux) is pressed
   const isCommandClick = e.metaKey || e.ctrlKey;
 
@@ -569,7 +583,7 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     syncOverlayFromCheckboxes();
   });
 
-  row.dataset.obj = JSON.stringify(obj);
+  rowObjects.set(row, obj);
   return row;
 }
 
@@ -826,7 +840,7 @@ export function updateRow(row, obj) {
       stepInput.value = obj.traj;
     }
   }
-  row.dataset.obj = JSON.stringify(obj);
+  rowObjects.set(row, obj);
   if (stepInput) {
     stepInput.setCustomValidity("");
     stepInput.removeEventListener("input", stepInputValidation);

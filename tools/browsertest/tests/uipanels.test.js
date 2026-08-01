@@ -295,7 +295,7 @@ async function expandPanel(page, id) {
         zoom: app.camera.zoom,
       },
       rowNames: [...document.querySelectorAll('#structureTablePanel tbody tr')]
-        .map((r) => { try { return JSON.parse(/** @type {HTMLElement} */ (r).dataset.obj).name; } catch { return null; } }),
+        .map((r) => r.querySelector('.name-inner')?.textContent || null),
     };
   });
   H.check('.crysviz load restores the saved visual state',
