@@ -7,7 +7,7 @@ import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
 import { updatePolyhedra, updatePolyhedraColors, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
-import { listPipelines, setActivePipeline, requestRender } from '../render/index.js'
+import { listPipelines, setActivePipeline, isPngCaptureInProgress, requestRender } from '../render/index.js'
 import { updateGroundPlane } from '../render/index.js'
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
 import { maybeShowRaytraceWarning } from './RaytraceWarningModal.js'
@@ -16,6 +16,7 @@ import { createColorBar } from './ColorBarWidget.js'
 import { registerColorBarSource } from './ColorBarRegistry.js'
 import { computeAutoRange } from '../utils/index.js'
 
+let synchronizeControllerPipelineVisibility = () => {};
 
 
 function createElement(tag, attributes = {}, styles = {}, textContent = "") {
@@ -71,6 +72,23 @@ export function rebuildRenderPipelineMenu() {
     if (opt.selected) option.selected = true;
     select.appendChild(option);
   });
+}
+
+export function setActivePipelineFromController(id) {
+  const pipeline = listPipelines().find((candidate) => candidate.id === id);
+  if (!pipeline) {
+    /** @type {any} */
+    const error = new Error('Unknown rendering pipeline');
+    error.code = 'INVALID_PIPELINE';
+    throw error;
+  }
+  const active = setActivePipeline(id);
+  rebuildRenderPipelineMenu();
+  const select = document.getElementById('renderPipelineMenu');
+  if (select) select.value = active.id;
+  document.body.classList.toggle('tracer-pipeline', active.id === 'raytrace' || active.id === 'pathtrace');
+  synchronizeControllerPipelineVisibility();
+  return active.id;
 }
 
 // Keeps the "Element Color Map" dropdown truthful when something outside its
@@ -314,6 +332,7 @@ export function addColorPanel(target = "colorContainer") {
     // material stores are always persisted regardless.
     document.body.classList.toggle("tracer-pipeline", isTracer);
   }
+  synchronizeControllerPipelineVisibility = updateRenderingControlsVisibility;
 
   // Render style (material) dropdown. Switching style rebuilds the meshes:
   // cel shading uses a different material class (MeshToonMaterial), so the
@@ -343,10 +362,23 @@ export function addColorPanel(target = "colorContainer") {
       const pipelineValue = renderPipelineMenu.querySelector("select").value;
       const wasTracer = general.renderPipeline === 'raytrace' || general.renderPipeline === 'pathtrace';
       const isTracer = pipelineValue === 'raytrace' || pipelineValue === 'pathtrace';
-      const doSwitch = () => {
-        setActivePipeline(pipelineValue);
+      const restorePipelineSelection = () => {
+        renderPipelineMenu.querySelector("select").value = general.renderPipeline;
         updateRenderingControlsVisibility();
       };
+      const doSwitch = () => {
+        try {
+          setActivePipeline(pipelineValue);
+          updateRenderingControlsVisibility();
+        } catch (error) {
+          if (error?.code !== 'PNG_CAPTURE_IN_PROGRESS') throw error;
+          restorePipelineSelection();
+        }
+      };
+      if (isPngCaptureInProgress()) {
+        restorePipelineSelection();
+        return;
+      }
       // Performance warning each time a (potentially slow) tracer mode is
       // ENTERED from a raster mode — switching between the two tracers does not
       // re-warn; "Don't show this again" suppresses it permanently. When the
@@ -359,10 +391,7 @@ export function addColorPanel(target = "colorContainer") {
       if (isTracer && !wasTracer) {
         const shown = maybeShowRaytraceWarning({
           onConfirm: doSwitch,
-          onCancel: () => {
-            renderPipelineMenu.querySelector("select").value = general.renderPipeline;
-            updateRenderingControlsVisibility();
-          },
+          onCancel: restorePipelineSelection,
         });
         if (!shown) doSwitch(); // suppressed -> switch immediately as before
       } else {

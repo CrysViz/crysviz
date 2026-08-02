@@ -140,13 +140,13 @@ class ServerTests(unittest.TestCase):
         connection.close()
         return result
 
-    def raw_request(self, method, target, body=b"", extra_headers=()):
+    def raw_request(self, method, target, body=b"", extra_headers=(), *, include_default_length=True):
         split = urlsplit(self.server.url)
         request = (
             f"{method} {target} HTTP/1.1\r\n"
             f"Host: 127.0.0.1:{split.port}\r\n"
             + "".join(f"{key}: {value}\r\n" for key, value in extra_headers)
-            + f"Content-Length: {len(body)}\r\n"
+            + (f"Content-Length: {len(body)}\r\n" if include_default_length else "")
             + "Connection: keep-alive\r\n\r\n"
         ).encode("ascii") + body
         with socket.create_connection((split.hostname, split.port), timeout=2) as connection:
@@ -160,6 +160,24 @@ class ServerTests(unittest.TestCase):
                 if not block:
                     return bytes(response)
                 response.extend(block)
+
+    def raw_post_declared_length(self, target, declared_length, body, extra_headers=()):
+        split = urlsplit(self.server.url)
+        request = (
+            f"POST {target} HTTP/1.1\r\n"
+            f"Host: 127.0.0.1:{split.port}\r\n"
+            "Content-Type: image/png\r\n"
+            f"Content-Length: {declared_length}\r\n"
+            + "".join(f"{key}: {value}\r\n" for key, value in extra_headers)
+            + "Connection: close\r\n\r\n"
+        ).encode("ascii") + body
+        with socket.create_connection((split.hostname, split.port), timeout=2) as connection:
+            connection.sendall(request)
+            connection.shutdown(socket.SHUT_WR)
+            response = bytearray()
+            while block := connection.recv(65536):
+                response.extend(block)
+            return bytes(response)
 
     def raw_headers_then_disconnect(self, target):
         split = urlsplit(self.server.url)
@@ -414,6 +432,110 @@ class ServerTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
 
+    def test_managed_output_is_exact_one_use_png_upload(self):
+        server = self.start([])
+        output_url = server.reserve_output()
+        route = urlsplit(output_url).path
+        self.assertEqual(self.request("POST", route, body=b"not-png", headers={"Content-Type": "image/jpeg"})[0], 400)
+        self.assertEqual(self.request("POST", route, body=b"\x89PNG\r\n\x1a\nimage", headers={"Content-Type": "image/png"})[0], 404)
+        output_url = server.reserve_output()
+        route = urlsplit(output_url).path
+        self.assertEqual(self.request("POST", route, body=b"\x89PNG\r\n\x1a\nimage", headers={"Content-Type": "image/png"})[0], 200)
+        stream = server.take_output(output_url)
+        self.assertIsNotNone(stream)
+        assert stream is not None
+        self.assertEqual(stream.read(), b"\x89PNG\r\n\x1a\nimage")
+        stream.close()
+        self.assertEqual(self.request("POST", route, body=b"again", headers={"Content-Type": "image/png"})[0], 404)
+        self.assertEqual(self.request("GET", route)[0], 404)
+        self.assertEqual(self.request("POST", route, body=b"bad-host", host="localhost")[0], 404)
+
+    def test_managed_output_rejects_encoded_alias_and_oversize(self):
+        server = self.start([])
+        wrong_host_url = server.reserve_output()
+        wrong_host_route = urlsplit(wrong_host_url).path
+        self.assertEqual(self.request("POST", wrong_host_route, body=b"bad-host", host="localhost")[0], 404)
+        self.assertEqual(self.request("POST", wrong_host_route, body=b"\x89PNG\r\n\x1a\nimage", headers={"Content-Type": "image/png"})[0], 200)
+        completed = server.take_output(wrong_host_url)
+        self.assertIsNotNone(completed)
+        completed.close()
+
+        wrong_method_url = server.reserve_output()
+        wrong_method_route = urlsplit(wrong_method_url).path
+        self.assertEqual(self.request("GET", wrong_method_route)[0], 404)
+        self.assertEqual(self.request("POST", wrong_method_route, body=b"\x89PNG\r\n\x1a\nimage", headers={"Content-Type": "image/png"})[0], 200)
+        completed = server.take_output(wrong_method_url)
+        self.assertIsNotNone(completed)
+        completed.close()
+
+        for headers, body in (
+            ({"Content-Type": "image/png"}, None),
+            ({"Content-Type": "image/png", "Content-Length": "1"}, b"x"),
+        ):
+            bad_url = server.reserve_output()
+            bad_route = urlsplit(bad_url).path
+            if body is None:
+                status = self.request("POST", bad_route)[0]
+            else:
+                raw = self.raw_request("POST", bad_route, body=body, extra_headers=tuple(headers.items()))
+                status = 400 if b"400" in raw.split(b"\r\n", 1)[0] else 0
+            self.assertEqual(status, 400)
+            self.assertEqual(self.request("POST", bad_route, body=b"x", headers={"Content-Type": "image/png"})[0], 404)
+
+        invalid_length_url = server.reserve_output()
+        invalid_length_route = urlsplit(invalid_length_url).path
+        invalid = self.raw_request(
+            "POST", invalid_length_route, body=b"x", extra_headers=(("Content-Type", "image/png"), ("Content-Length", "nope")),
+            include_default_length=False,
+        )
+        self.assertIn(b"400", invalid.split(b"\r\n", 1)[0])
+        self.assertEqual(self.request("POST", invalid_length_route, body=b"x", headers={"Content-Type": "image/png"})[0], 404)
+
+        transfer_url = server.reserve_output()
+        transfer_route = urlsplit(transfer_url).path
+        transfer = self.raw_request(
+            "POST", transfer_route, body=b"", extra_headers=(("Content-Type", "image/png"), ("Transfer-Encoding", "chunked")),
+            include_default_length=False,
+        )
+        self.assertIn(b"400", transfer.split(b"\r\n", 1)[0])
+        self.assertEqual(self.request("POST", transfer_route, body=b"x", headers={"Content-Type": "image/png"})[0], 404)
+
+        zero_url = server.reserve_output()
+        zero_route = urlsplit(zero_url).path
+        self.assertEqual(self.request("POST", zero_route, body=b"", headers={"Content-Type": "image/png"})[0], 400)
+        self.assertEqual(self.request("POST", zero_route, body=b"x", headers={"Content-Type": "image/png"})[0], 404)
+
+        incomplete_url = server.reserve_output()
+        incomplete_route = urlsplit(incomplete_url).path
+        incomplete = self.raw_post_declared_length(incomplete_route, 8, b"short")
+        self.assertIn(b"400", incomplete.split(b"\r\n", 1)[0])
+        self.assertEqual(self.request("POST", incomplete_route, body=b"x", headers={"Content-Type": "image/png"})[0], 404)
+
+        output_url = server.reserve_output()
+        route = urlsplit(output_url).path
+        token = route.rsplit("/", 1)[1]
+        alias = route.replace(token, "%" + format(ord(token[0]), "02X") + token[1:], 1)
+        self.assertEqual(self.request("POST", alias, body=b"x", headers={"Content-Type": "image/png"})[0], 404)
+        response = self.raw_request(
+            "POST", route, body=b"", extra_headers=(
+                ("Content-Type", "image/png"), ("Content-Length", str(2 * 1024 * 1024 * 1024 + 1)),
+            ), include_default_length=False,
+        )
+        self.assertIn(b"413", response.split(b"\r\n", 1)[0])
+        self.assertEqual(self.request("POST", route, body=b"x", headers={"Content-Type": "image/png"})[0], 404)
+
+        discard_url = server.reserve_output()
+        discard_route = urlsplit(discard_url).path
+        server.discard_output("http://example.invalid" + discard_route)
+        self.assertEqual(self.request("POST", discard_route, body=b"\x89PNG\r\n\x1a\nimage", headers={"Content-Type": "image/png"})[0], 200)
+        completed = server.take_output(discard_url)
+        self.assertIsNotNone(completed)
+        completed.close()
+        discard_pending_url = server.reserve_output()
+        discard_pending_route = urlsplit(discard_pending_url).path
+        server.discard_output(discard_pending_url)
+        self.assertEqual(self.request("POST", discard_pending_route, body=b"x", headers={"Content-Type": "image/png"})[0], 404)
+
 
 class PackagingMetadataTests(unittest.TestCase):
     def test_pywebview_backend_extras_are_forwarded_and_pinned(self):
@@ -440,6 +562,14 @@ class PackagingMetadataTests(unittest.TestCase):
             package_data = tomllib.load(stream)["tool"]["setuptools"]["exclude-package-data"]["crysviz.web"]
         for pattern in ("**/target/**/*", "**/pkg/**/*", "report/**/*"):
             self.assertIn(pattern, package_data)
+
+    def test_examples_are_in_source_distribution_only(self):
+        root = pathlib.Path(__file__).parents[1]
+        manifest = (root / "MANIFEST.in").read_text(encoding="utf-8")
+        self.assertIn("recursive-include examples *.py README.md", manifest)
+        self.assertTrue((root / "examples" / "rotate_camera.py").is_file())
+        self.assertTrue((root / "examples" / "raytrace_snapshot.py").is_file())
+        self.assertNotIn("examples", tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8")).get("tool", {}).get("setuptools", {}).get("packages", []))
 
 
 class CLITests(unittest.TestCase):

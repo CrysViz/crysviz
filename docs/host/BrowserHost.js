@@ -15,7 +15,11 @@ const COMMANDS = new Set([
   'update_fractional_positions',
   'commit_positions',
   'recenter_camera',
+  'rotate_camera',
+  'set_render_pipeline',
+  'save_image',
 ]);
+const PIPELINE_IDS = new Set(['depthpeel', 'wboit', 'forward', 'raytrace', 'pathtrace', 'split-atoms', 'sorted-atoms']);
 const EVENT_NAMES = new Set([
   'ready',
   'structure_loaded',
@@ -138,13 +142,16 @@ function removeQueryParameter(name) {
  * intentionally private to the bootstrap coordinator; only the frozen facade
  * is put on window.
  */
-/** @param {{loadStructure?: Function, selectStructure?: Function, applyFrameFast?: Function, commitPositions?: Function, recenterCamera?: Function}} [deps] */
+/** @param {{loadStructure?: Function, selectStructure?: Function, applyFrameFast?: Function, commitPositions?: Function, recenterCamera?: Function, rotateCamera?: Function, setRenderPipeline?: Function, captureSceneToPng?: Function}} [deps] */
 export function createBrowserHost({
   loadStructure,
   selectStructure,
   applyFrameFast,
   commitPositions,
   recenterCamera,
+  rotateCamera,
+  setRenderPipeline,
+  captureSceneToPng,
 } = {}) {
   const initialOrigin = window.location.origin;
   const subscribers = new Set();
@@ -160,6 +167,9 @@ export function createBrowserHost({
     if (typeof next.applyFrameFast === 'function') applyFrameFast = next.applyFrameFast;
     if (typeof next.commitPositions === 'function') commitPositions = next.commitPositions;
     if (typeof next.recenterCamera === 'function') recenterCamera = next.recenterCamera;
+    if (typeof next.rotateCamera === 'function') rotateCamera = next.rotateCamera;
+    if (typeof next.setRenderPipeline === 'function') setRenderPipeline = next.setRenderPipeline;
+    if (typeof next.captureSceneToPng === 'function') captureSceneToPng = next.captureSceneToPng;
   }
 
   function captureBridgeReceiver() {
@@ -305,6 +315,62 @@ export function createBrowserHost({
         if (args !== undefined) requireArgs(args, command);
         recenterCamera();
         return true;
+      case 'rotate_camera': {
+        const input = requireArgs(args, command);
+        if (typeof input.angleDegrees !== 'number' || !Number.isFinite(input.angleDegrees)) {
+          throw commandError('INVALID_ARGS', 'rotate_camera.angleDegrees must be a finite number');
+        }
+        if (!['x', 'y', 'z'].includes(input.axis)) {
+          throw commandError('INVALID_ARGS', 'rotate_camera.axis must be x, y, or z');
+        }
+        if (typeof rotateCamera !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'Camera rotation is unavailable');
+        rotateCamera(input.angleDegrees, input.axis);
+        return true;
+      }
+      case 'set_render_pipeline': {
+        const input = requireArgs(args, command);
+        if (typeof input.pipelineId !== 'string' || !PIPELINE_IDS.has(input.pipelineId)) {
+          throw commandError('INVALID_PIPELINE', 'Unknown rendering pipeline');
+        }
+        if (typeof setRenderPipeline !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'Pipeline selection is unavailable');
+        const activeId = setRenderPipeline(input.pipelineId);
+        if (typeof activeId !== 'string' || !PIPELINE_IDS.has(activeId)) {
+          throw commandError('PIPELINE_FAILED', 'Pipeline selection returned an invalid active id');
+        }
+        return activeId;
+      }
+      case 'save_image': {
+        const input = requireArgs(args, command);
+        const integerInRange = (value, min, max) => typeof value === 'number'
+          && Number.isInteger(value) && value >= min && value <= max;
+        if (!integerInRange(input.width, 1, 16384) || !integerInRange(input.height, 1, 16384)) {
+          throw commandError('INVALID_ARGS', 'save_image dimensions must be integers from 1 through 16384');
+        }
+        if (!integerInRange(input.margin, 0, 4096)) {
+          throw commandError('INVALID_ARGS', 'save_image.margin must be an integer from 0 through 4096');
+        }
+        if (typeof input.transparent !== 'boolean') {
+          throw commandError('INVALID_ARGS', 'save_image.transparent must be boolean');
+        }
+        if (typeof captureSceneToPng !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'PNG capture is unavailable');
+        const outputUrl = sameOriginURL(input.outputUrl, window.location.origin);
+        if (!outputUrl || outputUrl.username || outputUrl.password || outputUrl.search || outputUrl.hash
+          || outputUrl.href !== input.outputUrl
+          || !/^\/_crysviz\/output\/[A-Za-z0-9_-]{32,}$/.test(outputUrl.pathname)) {
+          throw commandError('INVALID_OUTPUT_URL', 'Managed output URL is invalid');
+        }
+        const blob = await captureSceneToPng({
+          width: input.width, height: input.height, margin: input.margin, transparent: input.transparent,
+        });
+        if (!(blob instanceof Blob) || blob.type !== 'image/png') {
+          throw commandError('CAPTURE_FAILED', 'PNG capture did not return an image/png Blob');
+        }
+        const response = await strictFetch(outputUrl, {
+          method: 'POST', headers: { 'Content-Type': 'image/png' }, body: blob,
+        });
+        await responseOrThrow(response, 'OUTPUT_UPLOAD_FAILED', 'Could not upload managed PNG');
+        return { contentType: 'image/png', size: blob.size };
+      }
       default:
         throw commandError('UNKNOWN_COMMAND', `Unknown host command: ${command}`);
     }

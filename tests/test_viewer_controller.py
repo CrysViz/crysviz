@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import queue
+import pathlib
 import threading
+import tempfile
 import unittest
 from unittest import mock
 
@@ -46,9 +48,11 @@ def _pair() -> tuple[_Connection, _Connection]:
 
 
 class _Host:
-    def __init__(self, connection: _Connection, *, crash_command: str | None = None, ignore_command: str | None = None):
+    def __init__(self, connection: _Connection, *, crash_command: str | None = None, ignore_command: str | None = None,
+                 response_mode: str | None = None):
         self.connection = connection
         self.crash_command, self.ignore_command = crash_command, ignore_command
+        self.response_mode = response_mode
         self.bootstrap: tuple[object, dict[str, object]] | None = None
         self.commands: list[tuple[str, object, dict[str, bytes]]] = []
         self.thread = threading.Thread(target=self.run, daemon=True)
@@ -87,7 +91,26 @@ class _Host:
                 result = {"id": "structure-2", "name": payload["args"]["name"], "frames": 1, "active": True, "activeFrame": 0}
             elif command == "update_fractional_positions":
                 result = {"atomCount": 2, "fastPathApplied": False, "rebuilt": True, "fallbackReason": "FAST_PATH_UNAVAILABLE"}
-            send_frame(self.connection, "response", {"id": request_id, "ok": True, "result": result})
+            elif command == "set_render_pipeline":
+                result = "raytrace"
+            if command == "save_image":
+                png = b"\x89PNG\r\n\x1a\nmanaged-png"
+                if self.response_mode == "bad_signature":
+                    png = b"not-a-png"
+                metadata = {"contentType": "image/png", "size": len(png), "attachment": "image"}
+                if self.response_mode == "bad_metadata":
+                    metadata["contentType"] = "image/jpeg"
+                if self.response_mode == "bad_size":
+                    metadata["size"] += 1
+                attachments = {} if self.response_mode == "missing" else {"image": png}
+                send_frame(self.connection, "response", {
+                    "id": request_id, "ok": True,
+                    "result": metadata,
+                }, attachments)
+            elif self.response_mode == "unexpected" and command == "list_structures":
+                send_frame(self.connection, "response", {"id": request_id, "ok": True, "result": result}, {"extra": b"unexpected"})
+            else:
+                send_frame(self.connection, "response", {"id": request_id, "ok": True, "result": result})
             if command == "close":
                 return
 
@@ -240,3 +263,73 @@ class ViewerControllerTests(unittest.TestCase):
         with mock.patch.object(viewer, "_launch", side_effect=OSError("cannot spawn")):
             with self.assertRaisesRegex(ViewerStartupError, "cannot spawn"):
                 viewer.start()
+
+    def test_controller_validation_and_png_attachment_round_trip(self):
+        client, server = _pair()
+        host = _Host(server)
+        viewer = self.start_fake(Viewer(), host)
+        try:
+            with self.assertRaises(TypeError):
+                viewer.rotate_camera(True)
+            with self.assertRaises(ValueError):
+                viewer.rotate_camera(float("inf"))
+            with self.assertRaises(ValueError):
+                viewer.rotate_camera(1, axis="q")
+            with self.assertRaises(ValueError):
+                viewer.set_render_pipeline("fallback")
+            with tempfile.TemporaryDirectory() as directory:
+                target = pathlib.Path(directory) / "image.png"
+                with mock.patch.object(viewer, "_command", wraps=viewer._command) as command:
+                    self.assertEqual(viewer.save_image(target, timeout=4.5), target)
+                    self.assertEqual(command.call_args.kwargs["timeout"], 4.5)
+                self.assertEqual(target.read_bytes(), b"\x89PNG\r\n\x1a\nmanaged-png")
+            self.assertEqual(host.commands[-1][0], "save_image")
+        finally:
+            viewer.close()
+
+    def test_png_write_failure_preserves_existing_target_and_removes_temp(self):
+        client, server = _pair()
+        host = _Host(server)
+        viewer = self.start_fake(Viewer(), host)
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                target = pathlib.Path(directory) / "image.png"
+                target.write_bytes(b"sentinel")
+                with mock.patch("crysviz._viewer.shutil.copyfileobj", side_effect=OSError("write failed")):
+                    with self.assertRaises(OSError):
+                        viewer.save_image(target)
+                self.assertEqual(target.read_bytes(), b"sentinel")
+                self.assertEqual(list(pathlib.Path(directory).iterdir()), [target])
+        finally:
+            viewer.close()
+
+    def test_camera_and_pipeline_commands_forward_args_and_results(self):
+        client, server = _pair()
+        host = _Host(server)
+        viewer = self.start_fake(Viewer(), host)
+        try:
+            self.assertIsNone(viewer.rotate_camera(12.5, axis="z"))
+            self.assertEqual(viewer.set_render_pipeline("raytrace"), "raytrace")
+            self.assertEqual(host.commands[-2][0], "rotate_camera")
+            self.assertEqual(host.commands[-2][1], {"angleDegrees": 12.5, "axis": "z"})
+            self.assertEqual(host.commands[-1][1], {"pipelineId": "raytrace"})
+        finally:
+            viewer.close()
+
+    def test_png_missing_unexpected_and_malformed_responses_close_or_reject(self):
+        for mode, command in (("missing", "save"), ("bad_metadata", "save"), ("bad_size", "save"),
+                              ("bad_signature", "save"), ("unexpected", "normal")):
+            with self.subTest(mode=mode):
+                client, server = _pair()
+                host = _Host(server, response_mode=mode)
+                viewer = self.start_fake(Viewer(), host)
+                try:
+                    with tempfile.TemporaryDirectory() as directory:
+                        if command == "save":
+                            with self.assertRaises(ViewerProtocolError):
+                                viewer.save_image(pathlib.Path(directory) / "bad.png")
+                        else:
+                            with self.assertRaises(ViewerProtocolError):
+                                viewer.list_structures()
+                finally:
+                    viewer.close()

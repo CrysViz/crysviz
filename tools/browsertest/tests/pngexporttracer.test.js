@@ -40,6 +40,99 @@ const H = require('../harness');
     }
   }
 
+  // A live UI switch must not replace the tracer while export owns the shared
+  // renderer/pipeline. The short target keeps this a delayed, deterministic
+  // race test without waiting for a production-length convergence.
+  const pipelineRace = await page.evaluate(async () => {
+    const { captureSceneToPng } = await import('./render/index.js');
+    const { app, general } = await import('./state/store.js');
+    const p = app.pipeline;
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('renderPipelineMenu'));
+    const view = document.getElementById('view');
+    const previous = {
+      pipeline: p,
+      background: app.scene.background,
+      pixelRatio: app.renderer.getPixelRatio(),
+      alpha: app.renderer.getClearAlpha(),
+      rtScale: general.rtResolutionScale,
+      targetSamples: p._cfg.targetSamples,
+      tiled: general.rtTiledRender,
+    };
+    p._cfg.targetSamples = 2;
+    general.rtTiledRender = false;
+    app.renderer.setPixelRatio(1.25);
+    app.renderer.setClearAlpha(0.31);
+    general.rtResolutionScale = 0.47;
+    try {
+      const capture = captureSceneToPng({ width: 180, height: 120, margin: 0, transparent: false });
+      while (!app.offscreenRenderHold) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+      const controllerAttempt = await window.crysvizHost.dispatch({
+        command: 'set_render_pipeline', args: { pipelineId: 'forward' },
+      });
+      select.value = 'forward';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      const during = {
+        controllerAttempt,
+        pipelineUnchanged: app.pipeline === p,
+        generalPipeline: general.renderPipeline,
+        selected: select.value,
+      };
+      const blob = await capture;
+      const size = app.renderer.getSize(new (await import('./external/three/three.module.js')).Vector2());
+      const restored = {
+        blobType: blob.type,
+        pipelineUnchanged: app.pipeline === previous.pipeline,
+        pixelRatio: app.renderer.getPixelRatio(),
+        background: app.scene.background === previous.background,
+        alpha: app.renderer.getClearAlpha(),
+        rtScale: general.rtResolutionScale,
+        hold: app.offscreenRenderHold,
+        paced: p._pacedExternally,
+        size: [Math.round(size.x), Math.round(size.y)],
+        view: [view.clientWidth, view.clientHeight],
+      };
+      p._cfg.targetSamples = previous.targetSamples;
+      general.rtTiledRender = previous.tiled;
+      select.value = 'forward';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      const switchedAfter = {
+        pipeline: app.pipeline.id,
+        selected: select.value,
+        tracerBody: document.body.classList.contains('tracer-pipeline'),
+      };
+      select.value = 'raytrace';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return { during, restored, switchedAfter, blobSize: blob.size };
+    } finally {
+      general.rtTiledRender = previous.tiled;
+      if (app.pipeline === p) p._cfg.targetSamples = previous.targetSamples;
+    }
+  });
+  H.check('UI pipeline switch is refused while tracer capture owns the pipeline',
+    !pipelineRace.during.controllerAttempt.ok
+      && pipelineRace.during.controllerAttempt.error.code === 'PNG_CAPTURE_IN_PROGRESS'
+      && pipelineRace.during.pipelineUnchanged
+      && pipelineRace.during.generalPipeline === 'raytrace'
+      && pipelineRace.during.selected === 'raytrace', JSON.stringify(pipelineRace.during));
+  H.check('tracer capture completes with renderer state restored',
+    pipelineRace.restored.blobType === 'image/png'
+      && pipelineRace.restored.pipelineUnchanged
+      && pipelineRace.restored.pixelRatio === 1.25
+      && pipelineRace.restored.background
+      && Math.abs(pipelineRace.restored.alpha - 0.31) < 1e-6
+      && pipelineRace.restored.rtScale === 0.47
+      && pipelineRace.restored.hold === false
+      && pipelineRace.restored.paced === false
+      && pipelineRace.restored.size[0] === pipelineRace.restored.view[0]
+      && pipelineRace.restored.size[1] === pipelineRace.restored.view[1]
+      && pipelineRace.blobSize > 32, JSON.stringify(pipelineRace.restored));
+  H.check('pipeline switching works again after capture releases ownership',
+    pipelineRace.switchedAfter.pipeline === 'forward'
+      && pipelineRace.switchedAfter.selected === 'forward'
+      && pipelineRace.switchedAfter.tracerBody === false, JSON.stringify(pipelineRace.switchedAfter));
+
   // ============ (1) Paced TILED export: monotonic progress, reaches target =====
   const tiled = await page.evaluate(async () => {
     const { captureSceneToPng } = await import('./render/index.js');

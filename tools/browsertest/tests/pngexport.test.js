@@ -92,6 +92,94 @@ const H = require('../harness');
     res.restoredW === res.viewW && res.restoredH === res.viewH,
     `renderer=${res.restoredW}x${res.restoredH} view=${res.viewW}x${res.viewH}`);
 
+  const overlap = await page.evaluate(async () => {
+    const { captureSceneToPng } = await import('./render/index.js');
+    const { app, general } = await import('./state/store.js');
+    const THREE = await import('./external/three/three.module.js');
+    const view = document.getElementById('view');
+    const renderer = app.renderer;
+    const pipeline = app.pipeline;
+    const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+    const originalSetSize = pipeline?.setSize;
+    const oldPaced = pipeline?._pacedExternally;
+    const oldWidth = Object.getOwnPropertyDescriptor(view, 'clientWidth');
+    const oldHeight = Object.getOwnPropertyDescriptor(view, 'clientHeight');
+    const previous = {
+      pixelRatio: renderer.getPixelRatio(),
+      background: app.scene.background,
+      alpha: renderer.getClearAlpha(),
+      rtScale: general.rtResolutionScale,
+      hold: app.offscreenRenderHold,
+      paced: pipeline?._pacedExternally,
+    };
+    const sizes = [];
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    HTMLCanvasElement.prototype.toBlob = function delayedToBlob(callback, type, quality) {
+      return gate.then(() => originalToBlob.call(this, callback, type, quality));
+    };
+    if (pipeline?.setSize) {
+      pipeline.setSize = (width, height) => {
+        sizes.push([width, height]);
+        return originalSetSize.call(pipeline, width, height);
+      };
+    }
+    if (pipeline) pipeline._pacedExternally = false;
+    renderer.setPixelRatio(1.4);
+    renderer.setClearAlpha(0.27);
+    general.rtResolutionScale = 0.61;
+    app.offscreenRenderHold = false;
+    try {
+      const first = captureSceneToPng({ width: 320, height: 240, margin: 0, transparent: false });
+      const second = await captureSceneToPng({ width: 64, height: 64, margin: 0, transparent: false })
+        .then(() => ({ rejected: false }), (error) => ({ rejected: true, message: error.message }));
+      Object.defineProperty(view, 'clientWidth', { configurable: true, value: 777 });
+      Object.defineProperty(view, 'clientHeight', { configurable: true, value: 333 });
+      const current = { width: view.clientWidth, height: view.clientHeight };
+      release();
+      await first;
+      const size = renderer.getSize(new THREE.Vector2());
+      return {
+        second,
+        current,
+        finalRenderer: [Math.round(size.x), Math.round(size.y)],
+        finalPipeline: sizes.at(-1),
+        restored: {
+          pixelRatio: renderer.getPixelRatio(),
+          background: app.scene.background === previous.background,
+          alpha: renderer.getClearAlpha(),
+          rtScale: general.rtResolutionScale,
+          hold: app.offscreenRenderHold,
+          paced: pipeline?._pacedExternally,
+        },
+      };
+    } finally {
+      release();
+      HTMLCanvasElement.prototype.toBlob = originalToBlob;
+      if (oldWidth) Object.defineProperty(view, 'clientWidth', oldWidth);
+      else delete view.clientWidth;
+      if (oldHeight) Object.defineProperty(view, 'clientHeight', oldHeight);
+      else delete view.clientHeight;
+      if (pipeline?.setSize) pipeline.setSize = originalSetSize;
+      if (pipeline) {
+        if (oldPaced === undefined) delete pipeline._pacedExternally;
+        else pipeline._pacedExternally = oldPaced;
+      }
+    }
+  });
+  H.check('overlapping PNG capture rejects while the first owns capture state',
+    overlap.second.rejected && /already in progress/.test(overlap.second.message), overlap.second.message);
+  H.check('PNG restoration follows live view dimensions after resize',
+    overlap.finalRenderer[0] === overlap.current.width && overlap.finalRenderer[1] === overlap.current.height
+      && overlap.finalPipeline[0] === overlap.current.width && overlap.finalPipeline[1] === overlap.current.height,
+    JSON.stringify(overlap));
+  H.check('PNG restoration preserves renderer and export state',
+    overlap.restored.pixelRatio === 1.4 && overlap.restored.background
+      && Math.abs(overlap.restored.alpha - 0.27) < 1e-6
+      && overlap.restored.rtScale === 0.61 && overlap.restored.hold === false
+      && overlap.restored.paced === false,
+    JSON.stringify(overlap.restored));
+
   // Settings persistence: tweak the modal, close it, reopen it, and the
   // choices must be restored (from localStorage).
   const prefs = await page.evaluate(() => {

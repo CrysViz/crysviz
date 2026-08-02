@@ -8,12 +8,15 @@ import math
 import os
 import queue
 import secrets
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
 from multiprocessing.connection import Client
+from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from ._payload import Payload
@@ -314,18 +317,28 @@ class Viewer:
                 if connection is None:
                     return
                 message_type, payload, attachments = recv_frame(connection)
-                for attachment in attachments.values():
-                    attachment.close()
                 if message_type == "response":
                     if not isinstance(payload, dict) or not isinstance(payload.get("id"), str):
+                        for attachment in attachments.values():
+                            attachment.close()
                         raise ViewerProtocolError("response has no request id")
                     with self._lock:
                         pending = self._pending.pop(payload["id"], None)
                     if pending is not None:
-                        pending.put(payload)
+                        pending.put((payload, attachments))
+                    else:
+                        for attachment in attachments.values():
+                            attachment.close()
+                        raise ViewerProtocolError("response arrived for an unknown request")
                 elif message_type == "event":
+                    for attachment in attachments.values():
+                        attachment.close()
+                    if attachments:
+                        raise ViewerProtocolError("events cannot carry attachments")
                     self._accept_event(payload)
                 else:
+                    for attachment in attachments.values():
+                        attachment.close()
                     raise ViewerProtocolError(f"unexpected host message type {message_type!r}")
         except (EOFError, OSError, ProtocolError, ViewerError) as error:
             self._fail(ViewerProtocolError(str(error)))
@@ -384,7 +397,7 @@ class Viewer:
                     self._callback_thread = None
 
     def _command(self, command: str, args: object = None, attachments: dict[str, object] | None = None,
-                 timeout: float | None = None) -> object:
+                 timeout: float | None = None, *, include_attachments: bool = False) -> object:
         if not self._started:
             self.start()
         if self._closed.is_set():
@@ -404,13 +417,28 @@ class Viewer:
                 timeout_error = ViewerCommandTimeout(f"browser command {command!r} timed out")
                 self._fail(timeout_error)
                 raise timeout_error from error
-            if not isinstance(response, dict) or response.get("ok") is not True:
-                if isinstance(response, ViewerError):
-                    raise response
-                error = response.get("error") if isinstance(response, dict) else None
+            received: dict[str, object] = {}
+            if isinstance(response, ViewerError):
+                raise response
+            if isinstance(response, tuple) and len(response) == 2:
+                response, received = response
+            if not isinstance(response, dict):
+                for item in received.values():
+                    item.close()
+                raise ViewerProtocolError("browser response has an invalid schema")
+            if response.get("ok") is not True:
+                for item in received.values():
+                    item.close()
+                error = response.get("error")
                 if not isinstance(error, dict) or not isinstance(error.get("code"), str) or not isinstance(error.get("message"), str):
                     raise ViewerProtocolError("browser response has an invalid error")
                 raise BrowserCommandError(error["code"], error["message"], error.get("details"))
+            if received and not include_attachments:
+                for item in received.values():
+                    item.close()
+                raise ViewerProtocolError("browser response has unexpected attachments")
+            if include_attachments:
+                return response.get("result"), received
             return response.get("result")
         finally:
             with self._lock:
@@ -463,6 +491,83 @@ class Viewer:
 
     def recenter_camera(self) -> None:
         self._command("recenter_camera")
+
+    def rotate_camera(self, angle_degrees: float, *, axis: str = "y") -> None:
+        if isinstance(angle_degrees, bool) or not isinstance(angle_degrees, (int, float)):
+            raise TypeError("angle_degrees must be a number")
+        try:
+            angle = float(angle_degrees)
+        except OverflowError as error:
+            raise ValueError("angle_degrees must be finite") from error
+        if not math.isfinite(angle):
+            raise ValueError("angle_degrees must be finite")
+        if axis not in {"x", "y", "z"}:
+            raise ValueError("axis must be x, y, or z")
+        self._command("rotate_camera", {"angleDegrees": angle, "axis": axis})
+
+    def set_render_pipeline(self, pipeline_id: str) -> str:
+        valid = {"depthpeel", "wboit", "forward", "raytrace", "pathtrace", "split-atoms", "sorted-atoms"}
+        if not isinstance(pipeline_id, str) or pipeline_id not in valid:
+            raise ValueError("unknown rendering pipeline")
+        result = self._command("set_render_pipeline", {"pipelineId": pipeline_id})
+        if not isinstance(result, str) or result not in valid:
+            raise ViewerProtocolError("browser returned an invalid active pipeline")
+        return result
+
+    def save_image(self, path: str | os.PathLike[str], *, width: int = 800, height: int = 600,
+                   margin: int = 0, transparent: bool = False, timeout: float | None = None) -> Path:
+        if isinstance(width, bool) or not isinstance(width, int) or not 1 <= width <= 16384:
+            raise ValueError("width must be an integer from 1 through 16384")
+        if isinstance(height, bool) or not isinstance(height, int) or not 1 <= height <= 16384:
+            raise ValueError("height must be an integer from 1 through 16384")
+        if isinstance(margin, bool) or not isinstance(margin, int) or not 0 <= margin <= 4096:
+            raise ValueError("margin must be an integer from 0 through 4096")
+        if not isinstance(transparent, bool):
+            raise TypeError("transparent must be boolean")
+        if timeout is not None:
+            try:
+                valid_timeout = (not isinstance(timeout, bool) and isinstance(timeout, (int, float))
+                                 and math.isfinite(float(timeout)) and timeout > 0)
+            except OverflowError:
+                valid_timeout = False
+            if not valid_timeout:
+                raise ValueError("timeout must be a positive finite number")
+        target = Path(path)
+        result, received = self._command(
+            "save_image", {"width": width, "height": height, "margin": margin, "transparent": transparent},
+            timeout=timeout, include_attachments=True,
+        )
+        try:
+            if not isinstance(result, dict) or result.get("contentType") != "image/png" \
+                    or result.get("attachment") != "image" or set(received) != {"image"}:
+                raise ViewerProtocolError("browser PNG response is missing its image attachment")
+            attachment = received["image"]
+            if not isinstance(result.get("size"), int) or result["size"] != attachment.size:
+                raise ViewerProtocolError("browser PNG response has an invalid image size")
+            attachment.stream.seek(0)
+            if attachment.stream.read(8) != b"\x89PNG\r\n\x1a\n":
+                raise ViewerProtocolError("browser PNG response has an invalid signature")
+            attachment.stream.seek(0)
+            temp_path: Path | None = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w+b", prefix=f".{target.name}.", suffix=".tmp", dir=target.parent, delete=False,
+                ) as output:
+                    temp_path = Path(output.name)
+                    shutil.copyfileobj(attachment.stream, output, length=1024 * 1024)
+                    output.flush()
+                os.replace(temp_path, target)
+                temp_path = None
+            finally:
+                if temp_path is not None:
+                    try:
+                        temp_path.unlink()
+                    except OSError:
+                        pass
+        finally:
+            for attachment in received.values():
+                attachment.close()
+        return target
 
     def wait(self, timeout: float | None = None) -> None:
         if self._callback_thread == threading.get_ident():

@@ -176,6 +176,21 @@ const TRAJECTORY = makeTrajectoryFixture();
   H.check('manifest completion acknowledges success',
     completeBodies.length === 1 && completeBodies[0].ok === true, JSON.stringify(completeBodies));
 
+  const outputCapability = 'output-capability-123456789012345678901234';
+  const outputBodies = [];
+  const outputRoute = `${origin}/_crysviz/output/${outputCapability}`;
+  await page.route(outputRoute, async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fulfill({ status: 404, body: 'not found' });
+      return;
+    }
+    outputBodies.push({
+      contentType: route.request().headerValue('content-type'),
+      body: route.request().postDataBuffer(),
+    });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+
   const protocol = await page.evaluate(async () => {
     const host = window.crysvizHost;
     const before = await host.dispatch({ command: 'list_structures' });
@@ -211,6 +226,38 @@ const TRAJECTORY = makeTrajectoryFixture();
     const fallback = await fallbackController.dispatchInternal({ command: 'update_fractional_positions', args: {
       positions: [[0.15, 0.25, 0.35]],
     } });
+    const beforeCamera = {
+      position: (await import('./state/store.js')).app.camera.position.toArray(),
+      target: (await import('./state/store.js')).app.controls.target.toArray(),
+    };
+    const beforeRadius = Math.hypot(
+      beforeCamera.position[0] - beforeCamera.target[0],
+      beforeCamera.position[1] - beforeCamera.target[1],
+      beforeCamera.position[2] - beforeCamera.target[2],
+    );
+    const rotated = await host.dispatch({ command: 'rotate_camera', args: { angleDegrees: 18, axis: 'y' } });
+    const afterCamera = { position: app.camera.position.toArray(), target: app.controls.target.toArray() };
+    const afterRadius = Math.hypot(
+      afterCamera.position[0] - afterCamera.target[0],
+      afterCamera.position[1] - afterCamera.target[1],
+      afterCamera.position[2] - afterCamera.target[2],
+    );
+    const raytrace = await host.dispatch({ command: 'set_render_pipeline', args: { pipelineId: 'raytrace' } });
+    const raytraceState = {
+      select: document.getElementById('renderPipelineMenu')?.value,
+      tracerBody: document.body.classList.contains('tracer-pipeline'),
+      warningVisible: document.getElementById('raytraceWarningModal')?.hidden === false,
+    };
+    const unknownPipeline = await host.dispatch({ command: 'set_render_pipeline', args: { pipelineId: 'unknown' } });
+    const raster = await host.dispatch({ command: 'set_render_pipeline', args: { pipelineId: 'forward' } });
+    const saved = await host.dispatch({ command: 'save_image', args: {
+      width: 320, height: 240, margin: 0, transparent: false,
+      outputUrl: `${location.origin}/_crysviz/output/output-capability-123456789012345678901234`,
+    } });
+    const invalidOutput = await host.dispatch({ command: 'save_image', args: {
+      width: 320, height: 240, margin: 0, transparent: false,
+      outputUrl: `${location.origin}/_crysviz/output/output-capability-123456789012345678901234?alias=1`,
+    } });
     return {
       before,
       select,
@@ -224,6 +271,8 @@ const TRAJECTORY = makeTrajectoryFixture();
       sessionCamera: sessionState.camera,
       cameraAfterSession,
       fallback,
+      rotated, beforeCamera, afterCamera, beforeRadius, afterRadius,
+      raytrace, raytraceState, unknownPipeline, raster, saved, invalidOutput,
       injected: window.__hostInjected === 1,
       injectedNodes: document.querySelectorAll('img[src="x"], img[onerror]').length,
       textName: [...document.querySelectorAll('.name-inner')].some((el) => el.textContent === payload),
@@ -252,6 +301,73 @@ const TRAJECTORY = makeTrajectoryFixture();
     protocol.fallback.ok && protocol.fallback.result.fastPathApplied === false
       && protocol.fallback.result.rebuilt === true
       && protocol.fallback.result.fallbackReason === 'FAST_PATH_FAILED');
+  H.check('controller camera rotation preserves target and orbit radius',
+    protocol.rotated.ok
+      && protocol.beforeCamera.target.every((value, index) => Math.abs(value - protocol.afterCamera.target[index]) < 1e-9)
+      && Math.abs(protocol.beforeRadius - protocol.afterRadius) < 1e-6
+      && protocol.beforeCamera.position.some((value, index) => Math.abs(value - protocol.afterCamera.position[index]) > 1e-6));
+  H.check('controller pipeline selection synchronizes UI without warning',
+    protocol.raytrace.ok && protocol.raytrace.result === 'raytrace'
+      && protocol.raytraceState.select === 'raytrace'
+      && protocol.raytraceState.tracerBody && !protocol.raytraceState.warningVisible);
+  H.check('controller rejects unknown pipeline and returns to raster',
+    !protocol.unknownPipeline.ok && protocol.unknownPipeline.error.code === 'INVALID_PIPELINE'
+      && protocol.raster.ok && protocol.raster.result === 'forward');
+  const pngBody = outputBodies[0]?.body;
+  H.check('controller PNG capture uploads a nontrivial PNG to the exact output route',
+    protocol.saved.ok && protocol.saved.result.contentType === 'image/png'
+      && outputBodies.length === 1 && outputBodies[0].contentType === 'image/png'
+      && pngBody && pngBody.length > 32
+      && pngBody.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])));
+  H.check('controller rejects invalid output URL without upload',
+    !protocol.invalidOutput.ok && protocol.invalidOutput.error.code === 'INVALID_OUTPUT_URL'
+      && outputBodies.length === 1);
+
+  const deferredPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  await deferredPage.addInitScript(() => {
+    localStorage.setItem('panelLayout', JSON.stringify({
+      version: 4,
+      dockOrder: [],
+      panels: { visual: { dock: 'left', closed: true, collapsed: false, bar: false } },
+      rightDock: { order: [], front: null, collapsed: false, fraction: null, side: 'right' },
+    }));
+  });
+  await deferredPage.goto(`${origin}/index.html`, { waitUntil: 'load', timeout: 90000 });
+  await deferredPage.waitForTimeout(5000);
+  const deferredPanel = await deferredPage.evaluate(async () => {
+    const before = {
+      contentBuilt: !!document.getElementById('colorControlsGroup'),
+      selectPresent: !!document.getElementById('renderPipelineMenu'),
+    };
+    const dispatched = await window.crysvizHost.dispatch({
+      command: 'set_render_pipeline', args: { pipelineId: 'raytrace' },
+    });
+    const beforeOpen = {
+      bodyTracer: document.body.classList.contains('tracer-pipeline'),
+      warningVisible: document.getElementById('raytraceWarningModal')?.hidden === false,
+    };
+    const { openPanel } = await import('./ui/panels/PanelManager.js');
+    openPanel('visual');
+    return {
+      before, dispatched, beforeOpen,
+      afterOpen: {
+        select: document.getElementById('renderPipelineMenu')?.value,
+        rtControls: document.getElementById('rtControlsBlock')?.style.display,
+        groundReflect: document.getElementById('rtGroundReflect')?.closest('.control-row')?.style.display,
+        renderStyle: document.getElementById('renderStyleMenu')?.style.display,
+      },
+    };
+  });
+  H.check('closed Visual panel defers content construction',
+    !deferredPanel.before.contentBuilt && !deferredPanel.before.selectPresent);
+  H.check('controller pipeline selection updates deferred Visual body state without warning',
+    deferredPanel.dispatched.ok && deferredPanel.beforeOpen.bodyTracer && !deferredPanel.beforeOpen.warningVisible);
+  H.check('opening deferred Visual builds truthful tracer controls',
+    deferredPanel.afterOpen.select === 'raytrace'
+      && deferredPanel.afterOpen.rtControls === 'block'
+      && deferredPanel.afterOpen.groundReflect === 'grid'
+      && deferredPanel.afterOpen.renderStyle === 'none', JSON.stringify(deferredPanel.afterOpen));
+  await deferredPage.close();
 
   const vendored = await page.evaluate(async () => {
     const response = await fetch('./external/socket.io/socket.io.esm.min.js');
@@ -406,5 +522,6 @@ const TRAJECTORY = makeTrajectoryFixture();
   }, POSCAR);
   H.check('legacy hash decodes encoded percent and pipe once',
     hashResult.loaded && hashResult.found && hashResult.hash === '');
+  await page.unroute(outputRoute);
   await H.finish(browser);
 })().catch(H.crash);

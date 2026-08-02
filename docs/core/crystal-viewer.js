@@ -27,7 +27,9 @@ import { setupMobileMenu } from '../ui/MobileMenu.js';
 import { setupControlsWiring, sizeSliderToValue, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE } from '../ui/ControlsWiring.js';
 import { setupSceneInteraction } from '../ui/SceneInteraction.js';
 import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
-import { pauseRendering, resumeRendering,animation_update,requestRender,runPeriodicWrapped} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
+import { pauseRendering, resumeRendering,animation_update,requestRender,runPeriodicWrapped,
+  applyRotationFromUI, captureSceneToPng } from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
+import { setActivePipelineFromController } from '../ui/ColorPanel.js';
 import {createShareButton,loadSharedStructure,loadCrysvizFile} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
@@ -383,6 +385,9 @@ export async function initializeCore(browserHostController) {
     applyFrameFast,
     commitPositions: commitHostPositions,
     recenterCamera,
+    rotateCamera: (angle, axis) => { applyRotationFromUI(angle, axis); requestRender(); },
+    setRenderPipeline: setActivePipelineFromController,
+    captureSceneToPng,
   });
   await initApp();
   setupMobileMenu();

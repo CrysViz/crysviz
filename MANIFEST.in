@@ -1,6 +1,7 @@
 include LICENSE
 include NOTICE
 include README.md
+recursive-include examples *.py README.md
 recursive-include docs *
 global-exclude .DS_Store
 global-exclude .gitignore

@@ -79,6 +79,15 @@ with Viewer([payload]) as viewer:
 viewer = show(["structure.cif"])
 ```
 
+Two self-contained remote-control examples are in [`examples/`](examples/):
+[`rotate_camera.py`](examples/rotate_camera.py) demonstrates a camera orbit,
+and [`raytrace_snapshot.py`](examples/raytrace_snapshot.py) selects ray tracing
+and saves a PNG. The managed controller also provides
+`rotate_camera(angle_degrees, axis="y")`, `set_render_pipeline(pipeline_id)`,
+and `save_image(path, width=800, height=600, margin=0, transparent=False,
+timeout=None)`. `save_image` returns the written `pathlib.Path`; PNG capture is
+full-view and restores the browser's render state after export.
+
 `load`, `list_structures`, `select`, `update_fractional_positions`,
 `commit_positions`, and `recenter_camera` are synchronous controller methods.
 They return `LoadResult`, `StructureInfo`, and `PositionUpdateResult` where

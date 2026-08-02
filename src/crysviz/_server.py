@@ -8,6 +8,7 @@ import mimetypes
 import re
 import secrets
 import sys
+import tempfile
 import threading
 from contextlib import ExitStack
 from http import HTTPStatus
@@ -16,7 +17,8 @@ from importlib import resources
 from pathlib import Path
 from urllib.parse import unquote_to_bytes, urlsplit
 
-from ._sources import PreparedSource
+from ._protocol import MAX_BLOB_BYTES
+from ._sources import PreparedSource, SPOOL_THRESHOLD
 
 _CAPABILITY_RE = re.compile(r"^[A-Za-z0-9_-]{32,}$")
 _VALID_PERCENT_RE = re.compile(r"%(?![0-9A-Fa-f]{2})")
@@ -56,6 +58,9 @@ class _LaunchState:
         self.manifest_capability = _new_capability(self.used)
         self.input_capabilities = [_new_capability(self.used) for _ in sources]
         self.one_use_capabilities: set[str] = set()
+        self.output_pending: set[str] = set()
+        self.output_claimed: dict[str, tempfile.SpooledTemporaryFile] = {}
+        self.output_completed: dict[str, tempfile.SpooledTemporaryFile] = {}
         self.bridge_capability = bridge_capability
         self.active = True
         self.manifest_active = True
@@ -86,6 +91,13 @@ class _LaunchState:
             self.sources.clear()
             self.input_capabilities.clear()
             self.one_use_capabilities.clear()
+            for stream in self.output_completed.values():
+                stream.close()
+            for stream in self.output_claimed.values():
+                stream.close()
+            self.output_pending.clear()
+            self.output_claimed.clear()
+            self.output_completed.clear()
 
     def complete_manifest(self) -> None:
         """Revoke bootstrap inputs while retaining a managed bridge server."""
@@ -99,6 +111,13 @@ class _LaunchState:
             self.sources.clear()
             self.input_capabilities.clear()
             self.one_use_capabilities.clear()
+            for stream in self.output_completed.values():
+                stream.close()
+            for stream in self.output_claimed.values():
+                stream.close()
+            self.output_pending.clear()
+            self.output_claimed.clear()
+            self.output_completed.clear()
 
     def add_source(self, source: PreparedSource) -> str:
         """Publish one private, capability-addressed input for the JS bridge."""
@@ -128,6 +147,44 @@ class _LaunchState:
                 self.sources.pop(index)
                 self.one_use_capabilities.remove(capability)
             return source, consume and one_use
+
+    def reserve_output(self, base_url: str) -> str:
+        with self.lock:
+            if not self.active:
+                raise RuntimeError("server is closed")
+            capability = _new_capability(self.used)
+            self.output_pending.add(capability)
+            return f"{base_url}/_crysviz/output/{capability}"
+
+    def claim_output_post(self, capability: str) -> tempfile.SpooledTemporaryFile | None:
+        with self.lock:
+            if capability not in self.output_pending or not self.active:
+                return None
+            self.output_pending.remove(capability)
+            stream = tempfile.SpooledTemporaryFile(max_size=SPOOL_THRESHOLD, mode="w+b")
+            self.output_claimed[capability] = stream
+            return stream
+
+    def complete_output_upload(self, capability: str) -> bool:
+        with self.lock:
+            stream = self.output_claimed.pop(capability, None)
+            if stream is not None:
+                self.output_completed[capability] = stream
+                return True
+            return False
+
+    def take_output(self, capability: str) -> tempfile.SpooledTemporaryFile | None:
+        with self.lock:
+            return self.output_completed.pop(capability, None)
+
+    def discard_output(self, capability: str) -> None:
+        with self.lock:
+            self.output_pending.discard(capability)
+            stream = self.output_claimed.pop(capability, None)
+            completed = self.output_completed.pop(capability, None)
+        for item in (stream, completed):
+            if item is not None:
+                item.close()
 
 
 class _Server(ThreadingHTTPServer):
@@ -250,6 +307,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         raw_path, path = request_path
         manifest_prefix = "/_crysviz/manifest/"
+        output_prefix = "/_crysviz/output/"
         if path.startswith(manifest_prefix):
             if raw_path != path:
                 self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
@@ -260,6 +318,16 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     self._complete(capability)
                     return
                 self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
+                return
+            self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
+            return
+        if path.startswith(output_prefix):
+            if raw_path != path:
+                self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
+                return
+            capability = path[len(output_prefix):]
+            if _CAPABILITY_RE.fullmatch(capability):
+                self._upload_output(capability)
                 return
             self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
             return
@@ -276,6 +344,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         raw_path, path = request_path
         manifest_prefix = "/_crysviz/manifest/"
         input_prefix = "/_crysviz/input/"
+        output_prefix = "/_crysviz/output/"
         if path.startswith(manifest_prefix):
             if raw_path != path:
                 self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
@@ -306,6 +375,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
                         if claimed:
                             source.close()
                     return
+            self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
+            return
+        if path.startswith(output_prefix):
             self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
             return
         self._serve_static(path)
@@ -434,6 +506,51 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self.state.complete_manifest()
         self._send(HTTPStatus.OK, "application/json", 2, b"{}")
 
+    def _upload_output(self, capability: str) -> None:
+        content_type = self.headers.get("Content-Type", "")
+        lengths = self.headers.get_all("Content-Length", [])
+        transfers = self.headers.get_all("Transfer-Encoding", [])
+        stream = self.state.claim_output_post(capability)
+        if stream is None:
+            self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
+            return
+        if content_type.strip().lower() != "image/png" or len(lengths) != 1 or transfers:
+            self.state.discard_output(capability)
+            self._error(HTTPStatus.BAD_REQUEST, "INVALID_OUTPUT", "Invalid PNG upload")
+            return
+        raw_length = lengths[0]
+        if raw_length is None or not re.fullmatch(r"[0-9]+", raw_length.strip()):
+            self.state.discard_output(capability)
+            self._error(HTTPStatus.BAD_REQUEST, "INVALID_OUTPUT", "Invalid PNG upload")
+            return
+        length = int(raw_length)
+        if length == 0:
+            self.state.discard_output(capability)
+            self._error(HTTPStatus.BAD_REQUEST, "INVALID_OUTPUT", "Invalid PNG upload")
+            return
+        if length > MAX_BLOB_BYTES:
+            self.state.discard_output(capability)
+            self._error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "OUTPUT_TOO_LARGE", "PNG upload is too large")
+            return
+        try:
+            remaining = length
+            while remaining:
+                block = self.rfile.read(min(_CHUNK_SIZE, remaining))
+                if not block:
+                    raise OSError("PNG upload ended before its advertised length")
+                stream.write(block)
+                remaining -= len(block)
+            stream.seek(0)
+            if not self.state.complete_output_upload(capability):
+                raise OSError("PNG upload capability was revoked")
+            self._send(HTTPStatus.OK, "application/json", 2, b"{}")
+        except (OSError, ConnectionError):
+            self.state.discard_output(capability)
+            try:
+                self._error(HTTPStatus.BAD_REQUEST, "INVALID_OUTPUT", "Invalid PNG upload")
+            except OSError:
+                self.close_connection = True
+
 
 def _content_type(path: Path) -> str:
     suffix = path.suffix.lower()
@@ -526,6 +643,39 @@ class CrysVizServer:
             raise RuntimeError("server has not started")
         capability = self._httpd.state.add_source(source)
         return f"http://{self._httpd.expected_host}/_crysviz/input/{capability}"
+
+    def reserve_output(self) -> str:
+        """Reserve a one-use PNG upload URL for the managed browser."""
+        if self._httpd is None:
+            raise RuntimeError("server has not started")
+        return self._httpd.state.reserve_output(f"http://{self._httpd.expected_host}")
+
+    def _output_capability(self, url: str) -> str | None:
+        if self._httpd is None or not isinstance(url, str):
+            return None
+        try:
+            split = urlsplit(url)
+        except ValueError:
+            return None
+        prefix = "/_crysviz/output/"
+        if (split.scheme != "http" or split.netloc != self._httpd.expected_host
+                or split.query or split.fragment or split.username or split.password
+                or not split.path.startswith(prefix)
+                or not _CAPABILITY_RE.fullmatch(split.path[len(prefix):])
+                or f"http://{split.netloc}{split.path}" != url):
+            return None
+        return split.path[len(prefix):]
+
+    def take_output(self, url: str):
+        capability = self._output_capability(url)
+        if capability is None:
+            return None
+        return self._httpd.state.take_output(capability)
+
+    def discard_output(self, url: str) -> None:
+        capability = self._output_capability(url)
+        if capability is not None:
+            self._httpd.state.discard_output(capability)
 
     def wait(self) -> None:
         if self._thread is None:

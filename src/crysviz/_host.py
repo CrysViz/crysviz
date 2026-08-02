@@ -83,9 +83,9 @@ class HostRuntime:
         self._closing = threading.Event()
         self._bridge_api = _BridgeAPI(self)
 
-    def send(self, message_type: str, payload: object) -> None:
+    def send(self, message_type: str, payload: object, attachments: dict[str, object] | None = None) -> None:
         with self._send_lock:
-            send_frame(self.connection, message_type, payload)
+            send_frame(self.connection, message_type, payload, attachments)
 
     def origin_ok(self) -> bool:
         if self.window is None:
@@ -130,6 +130,15 @@ class HostRuntime:
         return None
 
     def _prepare_request(self, request_id: str, command: str, args: object, attachments: dict[str, Attachment]) -> dict[str, object]:
+        if command == "save_image":
+            if attachments:
+                raise ProtocolError("save_image accepts no attachment")
+            output_url = self.server.reserve_output()
+            if not isinstance(args, dict):
+                self.server.discard_output(output_url)
+                return {"id": request_id, "request": {"command": command, "args": args}}
+            command_args = {**args, "outputUrl": output_url}
+            return {"id": request_id, "request": {"command": command, "args": command_args}}
         if command != "load":
             if attachments:
                 raise ProtocolError("only load accepts an attachment")
@@ -188,6 +197,7 @@ class HostRuntime:
             payload, attachments = delivery
             request_id, command, args = payload["id"], payload["command"], payload["args"]
             assert isinstance(request_id, str) and isinstance(command, str)
+            descriptor = None
             try:
                 try:
                     if command == "close":
@@ -211,11 +221,36 @@ class HostRuntime:
                     if not isinstance(result, dict) or not isinstance(result.get("ok"), bool):
                         raise ProtocolError("browser result has an invalid schema")
                     response = {"id": request_id, **result}
-                    self.send("response", response)
+                    output_url = descriptor["request"]["args"].get("outputUrl") if (
+                        command == "save_image" and isinstance(descriptor.get("request"), dict)
+                        and isinstance(descriptor["request"].get("args"), dict)
+                    ) else None
+                    output = self.server.take_output(output_url) if isinstance(output_url, str) and result.get("ok") else None
+                    if command == "save_image" and result.get("ok"):
+                        if output is None:
+                            raise ProtocolError("PNG upload is missing")
+                        try:
+                            response["result"] = {
+                                "contentType": "image/png", "size": output.seek(0, 2), "attachment": "image",
+                            }
+                            output.seek(0)
+                            self.send("response", response, {"image": output})
+                        finally:
+                            output.close()
+                    else:
+                        self.send("response", response)
                 except Exception as error:
+                    if command == "save_image" and isinstance(locals().get("descriptor"), dict):
+                        request_args = descriptor.get("request", {}).get("args", {})
+                        if isinstance(request_args, dict) and isinstance(request_args.get("outputUrl"), str):
+                            self.server.discard_output(request_args["outputUrl"])
                     self.send("response", {"id": request_id, "ok": False,
                                            "error": {"code": "HOST_COMMAND_FAILED", "message": str(error)}})
                 finally:
+                    if command == "save_image" and isinstance(locals().get("descriptor"), dict):
+                        request_args = descriptor.get("request", {}).get("args", {})
+                        if isinstance(request_args, dict) and isinstance(request_args.get("outputUrl"), str):
+                            self.server.discard_output(request_args["outputUrl"])
                     with self._result_lock:
                         self._results.pop(request_id, None)
                     for attachment in attachments.values():
