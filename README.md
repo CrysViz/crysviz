@@ -10,128 +10,6 @@ This project is licensed under the GNU Affero General Public License v3.0 (AGPL-
 
 Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, and Rickard Armiento 
 
-## Python package and command line launcher
-
-Install the packaged launcher from a wheel or source distribution with:
-
-```bash
-python -m pip install crysviz
-```
-
-For development, an editable install keeps the live `docs/` tree as the
-frontend resource tree:
-
-```bash
-python -m pip install -e .
-```
-
-The package requires Python 3.12 or newer and `pywebview` 6.2. It does not
-install ASE, httk, or the optional CrysViz computation backend.
-
-Run the viewer with the native pywebview window:
-
-```bash
-crysviz structure.cif another.POSCAR
-crysviz --gui qt structure.cif
-```
-
-Use a system browser when a GUI backend is unavailable:
-
-```bash
-crysviz --browser structure.cif
-crysviz --browser --no-open --port 8765
-```
-
-`--browser` prints a loopback URL and keeps serving until interrupted with
-Ctrl-C, whether or not a tab was opened; closing the tab is not observable.
-`--port` accepts 0 through 65535 (0 selects a free port), `--gui` accepts
-`gtk`, `qt`, or `cef`, `--debug` enables pywebview/server diagnostics, and
-`--version` prints the package version. `--no-open` is valid only with
-`--browser`. On Linux, install the optional `crysviz[gtk]` or `crysviz[qt]`
-extra; these forward pywebview's documented backend extras while retaining
-the package's `pywebview>=6.2,<7` constraint. Install the corresponding system
-WebKit/GTK or Qt WebEngine backend as well. If that is not practical,
-`--browser` is the supported fallback.
-
-Path arguments are validated before the server or GUI starts, loaded in
-argument order, and displayed by basename only. `.traj` paths are treated as
-binary; ordinary structure paths are text.
-
-### Managed Python API
-
-The library controller launches an isolated pywebview child process while the
-calling Python session remains interactive. Importing `crysviz` does not start
-a server, browser, process, or network listener. Sources may be filesystem
-paths or immutable, snapshotting `Payload` values:
-
-```python
-from crysviz import Payload, Viewer, show
-
-payload = Payload("silicon.cif", "data_Si\n_cell_length_a 5.43\n")
-with Viewer([payload]) as viewer:
-    structures = viewer.list_structures()
-    viewer.select(structures[0].id, frame=0)
-    viewer.update_fractional_positions([[0.0, 0.0, 0.0]], commit=False)
-    viewer.commit_positions()
-    viewer.recenter_camera()
-
-# Equivalent concise construction; returns once the window is ready.
-viewer = show(["structure.cif"])
-```
-
-Two self-contained remote-control examples are in [`examples/`](examples/):
-[`rotate_camera.py`](examples/rotate_camera.py) demonstrates a camera orbit,
-and [`raytrace_snapshot.py`](examples/raytrace_snapshot.py) selects ray tracing
-and saves a PNG. The managed controller also provides
-`rotate_camera(angle_degrees, axis="y")`, `set_render_pipeline(pipeline_id)`,
-and `save_image(path, width=800, height=600, margin=0, transparent=False,
-timeout=None)`. `save_image` returns the written `pathlib.Path`; PNG capture is
-full-view and restores the browser's render state after export.
-
-`load`, `list_structures`, `select`, `update_fractional_positions`,
-`commit_positions`, and `recenter_camera` are synchronous controller methods.
-They return `LoadResult`, `StructureInfo`, and `PositionUpdateResult` where
-appropriate. Structure IDs are opaque and stable for the lifetime of a viewer.
-Position updates require exactly one finite three-component fractional point
-per atom; a failed fast update automatically performs the full periodic and
-topology rebuild, and `commit=True` completes that full synchronization.
-
-Subscribe before or after startup with `viewer.on("ready", callback)` and
-remove a callback with `off`. Callbacks receive `ViewerEvent` records and run
-on a dedicated event worker, so they may issue controller commands or call
-`close`; `wait()` from a callback raises `ViewerReentrancyError`. The events
-are `ready`, `structure_loaded`, `active_structure_changed`, `error`, and
-`closed`; `ready` and `closed` replay to late subscribers. `close()` is
-idempotent and `wait()` waits for the window to close.
-
-Failures are typed: `ViewerStartupError`, `ViewerClosedError`,
-`ViewerCommandTimeout`, `ViewerProtocolError`, and `BrowserCommandError`
-(also exported under the short names `StartupError`, `ClosedViewerError`,
-`CommandTimeoutError`, and `ProtocolError`). A command timeout intentionally
-closes the private host rather than allowing a potentially wedged GUI to keep
-accepting mutations.
-
-The parent and child authenticate over a private loopback IPC connection. The
-bootstrap secret travels only through inherited stdin, never command-line
-arguments, URLs, or logs. IPC is protocol-versioned JSON with bounded explicit
-binary attachments; it never uses pickle. Browser commands use one fixed
-dispatcher and the page-to-host bridge is capability- and exact-loopback-origin
-checked.
-
-For Linux GUI use install `crysviz[qt]` or `crysviz[gtk]` plus its documented
-system backend. CI exercises the Qt backend under Xvfb. Windows and macOS
-smoke coverage should use the native supported Qt, GTK/WebKit, or platform
-pywebview backend before releases; `--browser` remains the no-GUI fallback.
-
-The frontend, JavaScript modules, WASM, themes, assets, and local licenses are
-packaged together, so normal startup is fully offline. Optional Plotly and
-Pyodide-powered tools may contact their existing online resources; if those
-resources are unavailable, those optional tools fail while the core viewer
-remains usable. The launcher server binds only to `127.0.0.1`, checks its exact
-Host header, does not list directories, rejects traversal, and uses short-lived
-opaque capability URLs for the manifest and input blobs. It exposes no remote
-control HTTP API.
-
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published
 by the Free Software Foundation, either version 3 of the License, or
@@ -179,6 +57,78 @@ Source code: https://github.com/ftrybel/CrysViz_hot_develop
 - Structures manipulation under symmetry constraints
 - Add atoms and vaccuum
 - eXYZ reader for trajectories or sets of files.
+
+## Using CrysViz
+
+The easiest way to use CrysViz is to simply visit our hosted CrysViz here:
+
+* <URL to be added>
+
+### Local in-browser installation and use
+
+If you do not want to use CrysViz over the Internet, you can run it via a webserver on your own computer:
+
+* Clone the CrysViz repository from GitHub
+
+* Start the local server:
+
+   ```bash
+   make serve
+   ```
+
+* Visit the URL shown.
+
+### Run CrysViz as a stand-alone application
+
+The stand-alone application uses pywebview, which requires a native GUI backend.
+This sometimes works automatically via CrysViz dependency handling,
+but if not, follow the [installation instructions for pywebview](https://pywebview.flowrl.com/guide/installation.html)).
+
+We suggest that you set up pywebview and CrysViz in a venv.
+For pywebview to access its required system packages, you may need to create it as, e.g.:
+```bash
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+python -m pip install pywebview
+```
+And then test that the pywebview backend works:
+```python
+import webview
+webview.create_window('Hello world', 'https://pywebview.flowrl.com/')
+webview.start()
+```
+Now you can install CrysViz into the venv as:
+```bash
+python -m pip install -e .
+```
+(Good alternatives are via `pipx install` or `uv tool install` if you have these tools available.)
+
+And then run the standalone application with:
+```
+crysviz
+```
+
+### Python API
+
+If you have the standalone application installed, you can also use the Python API for visualization and remote-control from Python. For example:
+
+```python
+from crysviz import Payload, Viewer, show
+
+payload = Payload("silicon.cif", "data_Si\n_cell_length_a 5.43\n")
+with Viewer([payload]) as viewer:
+    structures = viewer.list_structures()
+    viewer.select(structures[0].id, frame=0)
+    viewer.update_fractional_positions([[0.0, 0.0, 0.0]], commit=False)
+    viewer.commit_positions()
+    viewer.recenter_camera()
+
+# Equivalent concise construction; returns once the window is ready.
+viewer = show(["structure.cif"])
+```
+For more, see [examples](examples/).
+
+## 
 
 Third-Party Libraries and Attribution:
 
@@ -246,3 +196,4 @@ Third-Party Libraries and Attribution:
    - GLSL chunk library adapted for the optional "Path tracing" rendering
      pipeline; see docs/external/three-pathtracing/README.md for the adaptations.
    - License and code can be found in docs/external/three-pathtracing/
+
