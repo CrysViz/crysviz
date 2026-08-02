@@ -64,10 +64,7 @@ const H = require('../harness');
     app.renderer.setClearAlpha(0.31);
     general.rtResolutionScale = 0.47;
     try {
-      const capture = captureSceneToPng({
-        width: 180, height: 120, margin: 0, transparent: false,
-        useTimerYield: true, // hidden managed windows cannot rely on rAF
-      });
+      const capture = captureSceneToPng({ width: 180, height: 120, margin: 0, transparent: false });
       while (!app.offscreenRenderHold) {
         await new Promise((resolve) => requestAnimationFrame(resolve));
       }

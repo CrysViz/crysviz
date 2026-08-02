@@ -122,18 +122,15 @@ class Viewer:
     """
 
     def __init__(self, sources: Sequence[object] = (), *, startup_timeout: float = DEFAULT_STARTUP_TIMEOUT,
-                 command_timeout: float = DEFAULT_COMMAND_TIMEOUT, gui: str | None = None,
-                 debug: bool = False, hidden: bool = False):
+                 command_timeout: float = DEFAULT_COMMAND_TIMEOUT, gui: str | None = None, debug: bool = False):
         if startup_timeout <= 0 or command_timeout <= 0:
             raise ValueError("timeouts must be positive")
         if gui not in {None, "gtk", "qt", "cef"}:
             raise ValueError("gui must be one of gtk, qt, cef, or None")
-        if not isinstance(hidden, bool):
-            raise TypeError("hidden must be boolean")
         self._sources = ((sources,) if isinstance(sources, (Payload, str, os.PathLike)) else tuple(sources))
         self._startup_timeout = float(startup_timeout)
         self._command_timeout = float(command_timeout)
-        self._gui, self._debug, self._hidden = gui, debug, hidden
+        self._gui, self._debug = gui, debug
         self._lock = threading.RLock()
         self._send_lock = threading.Lock()
         self._connection: Any | None = None
@@ -231,7 +228,7 @@ class Viewer:
         secret = secrets.token_bytes(32)
         bootstrap = json.dumps({
             "version": 1, "auth": base64.b64encode(secret).decode("ascii"),
-            "gui": self._gui, "debug": self._debug, "hidden": self._hidden,
+            "gui": self._gui, "debug": self._debug,
         }) + "\n"
         process: subprocess.Popen[str] | None = None
         connection: Any | None = None

@@ -127,11 +127,6 @@ with Viewer([payload]) as viewer:
 viewer = show(["structure.cif"])
 ```
 
-Pass `hidden=True` to create the managed pywebview window without showing it.
-This still requires a working GUI backend and display connection; hidden
-ray-traced image exports use timer pacing because animation frames may pause
-when the window is not visible.
-
 For more, see [examples](examples/).
 
 ## 

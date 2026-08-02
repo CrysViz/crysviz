@@ -265,8 +265,6 @@ class ViewerControllerTests(unittest.TestCase):
                 viewer.start()
 
     def test_controller_validation_and_png_attachment_round_trip(self):
-        with self.assertRaises(TypeError):
-            Viewer(hidden=1)
         client, server = _pair()
         host = _Host(server)
         viewer = self.start_fake(Viewer(), host)

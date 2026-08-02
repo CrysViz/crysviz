@@ -11,8 +11,7 @@ DEFAULT_WINDOW_SIZE = (1280, 800)
 MINIMUM_WINDOW_SIZE = (640, 480)
 
 
-def create_native_window(webview: Any, url: str, *, js_api: object | None = None,
-                         hidden: bool = False) -> object:
+def create_native_window(webview: Any, url: str, *, js_api: object | None = None) -> object:
     """Create a consistently sized, resizable CrysViz native window."""
     options: dict[str, object] = {
         "width": DEFAULT_WINDOW_SIZE[0],
@@ -21,6 +20,4 @@ def create_native_window(webview: Any, url: str, *, js_api: object | None = None
     }
     if js_api is not None:
         options["js_api"] = js_api
-    if hidden:
-        options["hidden"] = True
     return webview.create_window("CrysViz", url, **options)

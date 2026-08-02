@@ -33,20 +33,6 @@ prints its resolved path, and closes as soon as the synchronous image export
 finishes. Ctrl-C or a context exit also closes the managed window and cleans up
 its private host.
 
-### Hidden ray-traced snapshot
-
-The ray-tracing example passes `hidden=True` to `Viewer`, so it does not open a
-visible window. Run it normally:
-
-```bash
-python examples/raytrace_snapshot.py
-```
-
-The process exits after `crysviz-raytrace.png` has been completely written.
-This is not a display-server-free mode: pywebview and WebGL still require a
-working GUI backend and display connection. Hidden tracer exports use timer
-yields because hidden webviews may suspend animation-frame callbacks.
-
 ## Details
 
 Two self-contained remote-control examples are in [`examples/`](examples/):
