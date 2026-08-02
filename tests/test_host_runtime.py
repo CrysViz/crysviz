@@ -32,6 +32,22 @@ class BridgeSurfaceTests(unittest.TestCase):
         finally:
             runtime.server.close()
 
+    def test_managed_window_enables_web_storage(self):
+        connection = mock.Mock()
+        connection.recv_bytes.side_effect = EOFError
+        webview = mock.MagicMock()
+        window = webview.create_window.return_value
+
+        runtime = HostRuntime(connection, [], gui="qt", debug=True)
+        runtime.server = mock.Mock(url="http://127.0.0.1:1234/index.html")
+        with mock.patch.dict("sys.modules", {"webview": webview}):
+            runtime.run()
+
+        webview.create_window.assert_called_once_with(
+            "CrysViz", runtime.server.url, js_api=runtime._bridge_api,
+        )
+        webview.start.assert_called_once_with(debug=True, private_mode=False, gui="qt")
+
 
 if __name__ == "__main__":
     unittest.main()

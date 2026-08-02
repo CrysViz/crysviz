@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 
 import crysviz
 from crysviz._sources import SPOOL_THRESHOLD, prepare_sources
-from crysviz.cli import build_parser, main
+from crysviz.cli import _run_pywebview, build_parser, main
 from crysviz.server import CrysVizServer
 
 
@@ -464,6 +464,14 @@ class CLITests(unittest.TestCase):
             with redirect_stderr(stderr):
                 self.assertEqual(main(["--gui", "qt"]), 1)
         self.assertIn("use --browser", stderr.getvalue())
+
+    def test_native_window_enables_web_storage(self):
+        webview = mock.Mock()
+        server = mock.Mock(url="http://127.0.0.1:1234/index.html")
+        with mock.patch.dict(sys.modules, {"webview": webview}):
+            self.assertEqual(_run_pywebview(server, "qt", True), 0)
+        webview.create_window.assert_called_once_with("CrysViz", server.url)
+        webview.start.assert_called_once_with(debug=True, private_mode=False, gui="qt")
 
     def test_fixed_port_failure_is_concise(self):
         occupied = socket.socket()

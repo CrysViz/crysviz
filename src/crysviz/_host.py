@@ -251,7 +251,9 @@ class HostRuntime:
             commands = threading.Thread(target=self.command_loop, name="crysviz-host-browser", daemon=True)
             reader.start()
             commands.start()
-            options = {"debug": self.debug}
+            # Match the command launcher: CrysViz requires localStorage, which
+            # is unavailable in the private data store of some renderers.
+            options = {"debug": self.debug, "private_mode": False}
             if self.gui is not None:
                 options["gui"] = self.gui
             webview.start(**options)

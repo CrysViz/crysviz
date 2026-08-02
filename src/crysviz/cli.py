@@ -63,7 +63,10 @@ def _run_pywebview(server: CrysVizServer, gui: str | None, debug: bool) -> int:
         ) from error
     try:
         webview.create_window("CrysViz", server.url)
-        kwargs = {"debug": debug}
+        # The frontend persists UI state in localStorage. Some pywebview
+        # renderers do not expose Web Storage at all in the default private
+        # data store, so use the persistent store for native windows.
+        kwargs = {"debug": debug, "private_mode": False}
         if gui is not None:
             kwargs["gui"] = gui
         webview.start(**kwargs)
