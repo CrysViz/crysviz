@@ -44,7 +44,8 @@ class BridgeSurfaceTests(unittest.TestCase):
             runtime.run()
 
         webview.create_window.assert_called_once_with(
-            "CrysViz", runtime.server.url, js_api=runtime._bridge_api,
+            "CrysViz", runtime.server.url, width=1280, height=800,
+            min_size=(640, 480), js_api=runtime._bridge_api,
         )
         webview.start.assert_called_once_with(debug=True, private_mode=False, gui="qt")
 

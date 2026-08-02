@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 from ._protocol import Attachment, ProtocolError, recv_frame, send_frame
 from ._server import CrysVizServer
 from ._sources import PreparedSource
+from ._windowing import create_native_window
 
 _FIXED_TRIGGER = "window.crysvizHost.processBridgeCommand()"
 
@@ -280,7 +281,7 @@ class HostRuntime:
         reader: threading.Thread | None = None
         commands: threading.Thread | None = None
         try:
-            self.window = webview.create_window("CrysViz", self.server.url, js_api=self._bridge_api)
+            self.window = create_native_window(webview, self.server.url, js_api=self._bridge_api)
             self.window.events.closed += lambda: self._closing.set()
             reader = threading.Thread(target=self.reader_loop, name="crysviz-host-ipc", daemon=True)
             commands = threading.Thread(target=self.command_loop, name="crysviz-host-browser", daemon=True)

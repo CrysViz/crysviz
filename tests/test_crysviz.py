@@ -600,7 +600,9 @@ class CLITests(unittest.TestCase):
         server = mock.Mock(url="http://127.0.0.1:1234/index.html")
         with mock.patch.dict(sys.modules, {"webview": webview}):
             self.assertEqual(_run_pywebview(server, "qt", True), 0)
-        webview.create_window.assert_called_once_with("CrysViz", server.url)
+        webview.create_window.assert_called_once_with(
+            "CrysViz", server.url, width=1280, height=800, min_size=(640, 480),
+        )
         webview.start.assert_called_once_with(debug=True, private_mode=False, gui="qt")
 
     def test_fixed_port_failure_is_concise(self):

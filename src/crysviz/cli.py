@@ -11,6 +11,7 @@ from typing import Sequence
 from . import __version__
 from ._server import CrysVizServer
 from ._sources import prepare_sources
+from ._windowing import create_native_window
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -62,7 +63,7 @@ def _run_pywebview(server: CrysVizServer, gui: str | None, debug: bool) -> int:
             "(`pip install 'crysviz[gtk]'` or `crysviz[qt]`) or use --browser."
         ) from error
     try:
-        webview.create_window("CrysViz", server.url)
+        create_native_window(webview, server.url)
         # The frontend persists UI state in localStorage. Some pywebview
         # renderers do not expose Web Storage at all in the default private
         # data store, so use the persistent store for native windows.
