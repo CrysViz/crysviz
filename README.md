@@ -126,6 +126,12 @@ with Viewer([payload]) as viewer:
 # Equivalent concise construction; returns once the window is ready.
 viewer = show(["structure.cif"])
 ```
+
+Pass `hidden=True` to create the managed pywebview window without showing it.
+This still requires a working GUI backend and display connection; hidden
+ray-traced image exports use timer pacing because animation frames may pause
+when the window is not visible.
+
 For more, see [examples](examples/).
 
 ## 
@@ -196,4 +202,3 @@ Third-Party Libraries and Attribution:
    - GLSL chunk library adapted for the optional "Path tracing" rendering
      pipeline; see docs/external/three-pathtracing/README.md for the adaptations.
    - License and code can be found in docs/external/three-pathtracing/
-

@@ -68,9 +68,10 @@ class _BridgeAPI:
 
 
 class HostRuntime:
-    def __init__(self, connection: object, sources: list[PreparedSource], *, gui: str | None = None, debug: bool = False):
+    def __init__(self, connection: object, sources: list[PreparedSource], *, gui: str | None = None,
+                 debug: bool = False, hidden: bool = False):
         self.connection = connection
-        self.gui, self.debug = gui, debug
+        self.gui, self.debug, self.hidden = gui, debug, hidden
         self.server = CrysVizServer(
             sources, bridge_capability=base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"),
         )
@@ -138,7 +139,7 @@ class HostRuntime:
             if not isinstance(args, dict):
                 self.server.discard_output(output_url)
                 return {"id": request_id, "request": {"command": command, "args": args}}
-            command_args = {**args, "outputUrl": output_url}
+            command_args = {**args, "outputUrl": output_url, "hidden": self.hidden}
             return {"id": request_id, "request": {"command": command, "args": command_args}}
         if command != "load":
             if attachments:
@@ -281,7 +282,9 @@ class HostRuntime:
         reader: threading.Thread | None = None
         commands: threading.Thread | None = None
         try:
-            self.window = create_native_window(webview, self.server.url, js_api=self._bridge_api)
+            self.window = create_native_window(
+                webview, self.server.url, js_api=self._bridge_api, hidden=self.hidden,
+            )
             self.window.events.closed += lambda: self._closing.set()
             reader = threading.Thread(target=self.reader_loop, name="crysviz-host-ipc", daemon=True)
             commands = threading.Thread(target=self.command_loop, name="crysviz-host-browser", daemon=True)
@@ -336,8 +339,10 @@ def main() -> int:
         bootstrap = json.loads(sys.stdin.readline())
         secret = base64.b64decode(bootstrap["auth"], validate=True)
         gui, debug = bootstrap.get("gui"), bootstrap.get("debug", False)
+        hidden = bootstrap.get("hidden", False)
         if (bootstrap.get("version") != 1 or len(secret) < 16
-                or gui not in {None, "gtk", "qt", "cef"} or not isinstance(debug, bool)):
+                or gui not in {None, "gtk", "qt", "cef"} or not isinstance(debug, bool)
+                or not isinstance(hidden, bool)):
             raise ValueError
     except Exception:
         return 2
@@ -350,7 +355,7 @@ def main() -> int:
         if message_type != "bootstrap":
             raise ProtocolError("first host frame must be bootstrap")
         sources = _prepared_sources(payload, attachments)
-        HostRuntime(connection, sources, gui=gui, debug=debug).run()
+        HostRuntime(connection, sources, gui=gui, debug=debug, hidden=hidden).run()
     except (EOFError, OSError, ProtocolError):
         return 2
     finally:

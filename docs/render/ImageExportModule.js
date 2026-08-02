@@ -47,9 +47,13 @@ function getViewEl() {
   return /** @type {HTMLElement} */ (document.getElementById('view'));
 }
 
-/** One animation-frame yield (paces the export so the browser stays responsive
- *  and can repaint the button/progress between renders). */
-function nextFrame() {
+/** Yield between tracer samples. Visible exports use animation frames so the
+ * UI can repaint progress; hidden managed windows use tasks because their rAF
+ * callbacks may be suspended. */
+function nextRenderTurn(useTimerYield = false) {
+  if (useTimerYield) {
+    return new Promise((resolve) => setTimeout(() => resolve(undefined), 0));
+  }
   return new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
 }
 
@@ -70,7 +74,7 @@ function throwIfAborted(signal) {
 // on-screen progress bar (render/TracerProgressModule.js, driven from
 // pipeline.render()) stays live — until the pipeline reports convergence.
 // Non-tracer pipelines (no isConverged) capture after the single frame.
-async function renderMainToCanvasConverged(w, h, onProgress, signal) {
+async function renderMainToCanvasConverged(w, h, onProgress, signal, useTimerYield = false) {
   app.renderer.setSize(w, h, false);
   app.pipeline?.setSize(w, h);
   const renderCtx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
@@ -98,7 +102,7 @@ async function renderMainToCanvasConverged(w, h, onProgress, signal) {
     reportProgress(); // show the starting count before the first paced frame
     while (!app.pipeline.isConverged()) {
       throwIfAborted(signal);
-      await nextFrame();            // yield first: the button/progress repaints
+      await nextRenderTurn(useTimerYield); // hidden webviews may suspend rAF
       throwIfAborted(signal);
       app.pipeline.render(renderCtx); // one paced sample (one tile when tiling)
       reportProgress();
@@ -444,7 +448,7 @@ export function isPngCaptureInProgress() {
  * @param {{width:number, height:number, margin?:number, transparent?:boolean,
  *   crop?: {x0:number, y0:number, x1:number, y1:number},
  *   onProgress?:(p:{current:number, target:number})=>void,
- *   signal?:AbortSignal}} opts
+ *   signal?:AbortSignal, useTimerYield?:boolean}} opts
  *   crop: the chosen area, as fractions (0..1) of #view's own box — from
  *   ui/CropOverlay.js. Its on-screen aspect ratio must match width/height's
  *   (the crop tool enforces this), so the crop always fills the output
@@ -550,7 +554,9 @@ async function captureSceneToPngImpl(opts) {
 
     // --- Final high-res pass (tracer pipelines render to full convergence,
     //     with the on-screen progress bar tracking the accumulation). ---
-    const srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal);
+    const srcCanvas = await renderMainToCanvasConverged(
+      srcW, srcH, opts.onProgress, signal, opts.useTimerYield === true,
+    );
     throwIfAborted(signal);
 
     const cropPxX = crop.x0 * srcW;

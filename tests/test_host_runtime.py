@@ -38,23 +38,24 @@ class BridgeSurfaceTests(unittest.TestCase):
         webview = mock.MagicMock()
         window = webview.create_window.return_value
 
-        runtime = HostRuntime(connection, [], gui="qt", debug=True)
+        runtime = HostRuntime(connection, [], gui="qt", debug=True, hidden=True)
         runtime.server = mock.Mock(url="http://127.0.0.1:1234/index.html")
         with mock.patch.dict("sys.modules", {"webview": webview}):
             runtime.run()
 
         webview.create_window.assert_called_once_with(
             "CrysViz", runtime.server.url, width=1280, height=800,
-            min_size=(640, 480), js_api=runtime._bridge_api,
+            min_size=(640, 480), js_api=runtime._bridge_api, hidden=True,
         )
         webview.start.assert_called_once_with(debug=True, private_mode=False, gui="qt")
 
     def test_save_image_preparation_reserves_private_output_and_discards_invalid_request(self):
-        runtime = HostRuntime(mock.Mock(), [])
+        runtime = HostRuntime(mock.Mock(), [], hidden=True)
         runtime.server = mock.Mock()
         runtime.server.reserve_output.return_value = "http://127.0.0.1:1234/_crysviz/output/" + "a" * 32
         descriptor = runtime._prepare_request("request", "save_image", {"width": 320}, {})
         self.assertEqual(descriptor["request"]["args"]["outputUrl"], runtime.server.reserve_output.return_value)
+        self.assertIs(descriptor["request"]["args"]["hidden"], True)
         runtime.server.discard_output.assert_not_called()
 
         runtime._prepare_request("invalid", "save_image", None, {})

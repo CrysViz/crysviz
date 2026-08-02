@@ -19,12 +19,11 @@ Direct
 
 def main() -> None:
     output = Path.cwd() / "crysviz-raytrace.png"
-    with Viewer([Payload("snapshot.POSCAR", POSCAR)], command_timeout=180) as viewer:
+    with Viewer([Payload("snapshot.POSCAR", POSCAR)], command_timeout=180, hidden=True) as viewer:
         viewer.set_render_pipeline("raytrace")
         viewer.rotate_camera(18, axis="y")
         written = viewer.save_image(output, width=640, height=480, timeout=180)
-        print(f"Saved {written.resolve()}")
-        viewer.wait()
+    print(f"Saved {written.resolve()}; the CrysViz window has closed.")
 
 
 if __name__ == "__main__":

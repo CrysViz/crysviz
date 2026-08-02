@@ -27,10 +27,25 @@ python3 -m pip install .
 
 ## Overview
 
-The rotation example performs a short orbit and waits for the window to close.
+The rotation example performs a short orbit and then closes its window.
 The ray-tracing example writes `crysviz-raytrace.png` in the current directory,
-prints its resolved path, and also waits for manual window close. Ctrl-C or a
-context exit closes the managed window and cleans up its private host.
+prints its resolved path, and closes as soon as the synchronous image export
+finishes. Ctrl-C or a context exit also closes the managed window and cleans up
+its private host.
+
+### Hidden ray-traced snapshot
+
+The ray-tracing example passes `hidden=True` to `Viewer`, so it does not open a
+visible window. Run it normally:
+
+```bash
+python examples/raytrace_snapshot.py
+```
+
+The process exits after `crysviz-raytrace.png` has been completely written.
+This is not a display-server-free mode: pywebview and WebGL still require a
+working GUI backend and display connection. Hidden tracer exports use timer
+yields because hidden webviews may suspend animation-frame callbacks.
 
 ## Details
 
@@ -72,4 +87,3 @@ arguments, URLs, or logs. IPC is protocol-versioned JSON with bounded explicit
 binary attachments; it never uses pickle. Browser commands use one fixed
 dispatcher and the page-to-host bridge is capability- and exact-loopback-origin
 checked.
-

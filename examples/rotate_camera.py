@@ -22,8 +22,7 @@ def main() -> None:
         for _ in range(72):
             viewer.rotate_camera(5, axis="y")
             time.sleep(0.04)
-        print("CrysViz is open; close the window when finished.")
-        viewer.wait()
+    print("Orbit complete; the CrysViz window has closed.")
 
 
 if __name__ == "__main__":
