@@ -1,4 +1,4 @@
-.PHONY: serve install_devtools lint lint-fix typecheck check-imports check periodic-wasm browsertest browsertest-setup
+.PHONY: serve install_devtools lint lint-fix typecheck check-imports check ci periodic-wasm browsertest browsertest-setup
 
 # Local dev server for docs/. Two things python3 -m http.server won't do on
 # its own:
@@ -51,6 +51,12 @@ check-imports:
 # The CI gate: lint + typecheck + import checks. Run on pull requests
 # (see .github/workflows/check.yml). Any failure fails the build.
 check: lint typecheck check-imports
+
+# Reproduce the complete GitHub Actions gate locally: dependency setup, static
+# and Python tests, package-content/install checks, packaged-browser smoke, and
+# the managed pywebview Qt smoke. The workflow itself calls this target.
+ci:
+	tools/ci/run.sh
 
 # Browser end-to-end tests: real app in playwright-Firefox under a private
 # Xvfb (works headless-less and root-less, incl. sandboxed agent

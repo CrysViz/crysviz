@@ -19,7 +19,10 @@ function commandAvailable(command) {
     console.log(`  SKIP  installed CLI browser smoke (${command} is unavailable)`);
     return;
   }
-  const { browser, page, errors } = await H.launchApp();
+  // Start with a blank page. Navigating away from launchApp's default CrysViz
+  // page while its asynchronous default load is still settling can surface a
+  // spurious selectedStructure-null error from the abandoned document.
+  const { browser, page, errors } = await H.launchApp({ navigate: false });
   const child = spawn(command, ['--browser', '--no-open'], {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,
@@ -38,12 +41,15 @@ function commandAvailable(command) {
       child.once('error', (error) => { clearTimeout(timer); reject(error); });
     });
     await page.goto(url, { waitUntil: 'load', timeout: 90000 });
-    await page.waitForTimeout(5000);
-    const state = await page.evaluate(async () => {
+    const state = await H.waitFor(page, async () => {
+      if (!window.crysvizHost) return null;
       const result = await window.crysvizHost.dispatch({ command: 'list_structures' });
-      return { ready: result.ok, count: result.ok ? result.result.length : 0 };
-    });
-    H.check('installed crysviz --browser --no-open starts the viewer', state.ready && state.count === 1, stderr);
+      if (!result.ok || result.result.length !== 1) return null;
+      const { getActiveStructure } = await import('./state/structures.js');
+      return getActiveStructure() ? { ready: true, count: result.result.length } : null;
+    }, { timeout: 90000, interval: 100 });
+    H.check('installed crysviz --browser --no-open starts the viewer',
+      state?.ready && state.count === 1, stderr);
     H.check('installed CLI browser smoke has no page errors', errors.length === 0, errors.join(' | '));
   } finally {
     if (child.exitCode === null) child.kill('SIGINT');

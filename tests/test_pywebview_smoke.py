@@ -12,7 +12,7 @@ class PywebviewSmokeTests(unittest.TestCase):
     def test_managed_viewer_reaches_ready_and_closes(self):
         from crysviz import Viewer
 
-        viewer = Viewer(startup_timeout=60, command_timeout=30)
+        viewer = Viewer(startup_timeout=60, command_timeout=30, gui="qt")
         try:
             viewer.start()
             structures = viewer.list_structures()

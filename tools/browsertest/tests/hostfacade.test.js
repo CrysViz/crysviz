@@ -117,19 +117,22 @@ const TRAJECTORY = makeTrajectoryFixture();
 
   const origin = await page.evaluate(() => location.origin);
   await page.goto(`${origin}/index.html?_crysviz_manifest=capability&state=invalid#load-file=ignored|ignored`, { waitUntil: 'load', timeout: 90000 });
-  await page.waitForTimeout(4000);
+  const hostReady = await H.waitFor(page,
+    () => window.__hostEvents?.some((record) => record.event === 'ready'),
+    { timeout: 90000, interval: 100 });
+  if (!hostReady) throw new Error(`host did not become ready: ${JSON.stringify(await page.evaluate(() => window.__hostEvents))}`);
 
   const bootstrap = await page.evaluate(async () => {
     const events = [];
     const host = window.crysvizHost;
     const off = host.subscribe((record) => events.push(record));
-    const structures = (await host.dispatch({ command: 'list_structures' })).result;
+    const listed = await host.dispatch({ command: 'list_structures' });
     off();
     return {
       descriptor: Object.getOwnPropertyDescriptor(window, 'crysvizHost'),
       frozen: Object.isFrozen(host),
       events,
-      structures,
+      listed,
       url: location.href,
       earlyEvents: window.__hostEvents,
       scrubObserved: window.__hostScrubObserved,
@@ -153,12 +156,13 @@ const TRAJECTORY = makeTrajectoryFixture();
   H.check('manifest query capability is scrubbed at the earliest observable point',
     bootstrap.scrubObserved && !bootstrap.url.includes('_crysviz_manifest'));
   H.check('manifest inputs load in order and ready is replayed',
-    bootstrap.structures.map((e) => e.name).join(',') === 'manifest-a,manifest-b,binary trajectory'
-      && bootstrap.structures[2].frames === 1
+    bootstrap.listed.ok
+      && bootstrap.listed.result.map((e) => e.name).join(',') === 'manifest-a,manifest-b,binary trajectory'
+      && bootstrap.listed.result[2].frames === 1
       && bootstrap.events.some((e) => e.event === 'ready'));
   H.check('host manifest takes precedence over shared state and legacy hash',
-    bootstrap.structures.length === 3
-      && !bootstrap.structures.some((entry) => entry.name === 'ignored'));
+    bootstrap.listed.ok && bootstrap.listed.result.length === 3
+      && !bootstrap.listed.result.some((entry) => entry.name === 'ignored'));
   H.check('ready follows every delayed ordered load',
     inputOrder.join(',') === 'manifest-a,manifest-b'
       && bootstrap.earlyEvents.filter((e) => e.event === 'structure_loaded').map((e) => e.data.name).join(',')
