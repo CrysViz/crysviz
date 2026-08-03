@@ -4,7 +4,7 @@ import { makeSectionHeadline } from './panels/sectionHeadline.js';
 import { general, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { createSupercell } from './SuperCellModule.js';
-import { resetView } from './WindowAndSceneControls.js';
+import { resetView, recenterCamera } from './WindowAndSceneControls.js';
 import { fracToCart, cartToFrac } from '../render/index.js';
 
 // Grow the current structure's cell by the requested vacuum (Å) along each
@@ -55,6 +55,11 @@ function applyVacuumToStructure(vacX, vacY, vacZ) {
   s.periodic = { wrapped: null, hash: null }; // force periodic-wrap recompute
 
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+  // Vacuum is added on one side only (see the comment above), so the cell's
+  // Cartesian center genuinely shifts — recenter on it, but keep whatever
+  // direction/distance the camera was already at rather than snapping to a
+  // canonical view the way resetView() would.
+  recenterCamera();
 }
 
 // Undoes every vacuum addition made so far on this structure in one step.
@@ -69,6 +74,27 @@ function resetVacuumForStructure(s) {
   delete s._vacuumApplied;
 
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+  recenterCamera();
+}
+
+/** "Order Structure" section content — builds an ordered (one definite species
+ *  per site) approximation of a disordered structure as a new file, needed
+ *  before MD/relaxation or polyhedra can be used on it. Lives here rather than
+ *  only behind the 3D view's disorder warning banner: that banner only shows
+ *  once a blocked feature (currently just Polyhedra) is actually toggled on
+ *  and disorder is present, which made the dialog effectively unreachable
+ *  otherwise — this button works regardless of what's toggled on. */
+function addOrderStructureSection(container) {
+  container.innerHTML = `
+    <p style="font-size: 11px; color: rgba(255,255,255,0.6); margin: 0 0 8px 0; line-height: 1.4;">
+      Builds a new file with one definite species per site, approximating this structure's disorder — required before running MD/relaxation or showing polyhedra on a structure with fractionally occupied sites. The original is left untouched.
+    </p>
+    <button id="openOrderStructure" class="btn-mini highlight" style="padding: 5px 10px;">Order Structure…</button>
+  `;
+  container.querySelector('#openOrderStructure').addEventListener('click', async () => {
+    const { openOrderStructureDialog } = await import('./DisorderWarningBanner.js');
+    openOrderStructureDialog();
+  });
 }
 
 /** "Add Vacuum" section content — grows the cell along X/Y/Z (Å), independent
@@ -243,6 +269,18 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   vacuumPanel.appendChild(makeSectionHeadline("Vacuum"));
   vacuumPanel.appendChild(vacuumContent);
   addVacuumSection(vacuumContent);
+
+  // --- Order Structure section ---
+  const orderPanel = document.createElement("div");
+  orderPanel.id = "orderStructurePanel";
+  orderPanel.style.marginBottom = "10px";
+
+  const orderContent = document.createElement("div");
+  orderContent.id = "orderStructureContent";
+
+  orderPanel.appendChild(makeSectionHeadline("Order Structure"));
+  orderPanel.appendChild(orderContent);
+  addOrderStructureSection(orderContent);
 
   // --- Transformation section ---
   const transformPanel = document.createElement("div");
@@ -428,6 +466,7 @@ transformResetBtn.onclick = () => {
   // --- Build Structure ---
   group.appendChild(supercellPanel);
   group.appendChild(vacuumPanel);
+  group.appendChild(orderPanel);
   group.appendChild(transformPanel);
   targetPanel.appendChild(group);
 

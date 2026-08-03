@@ -1,5 +1,5 @@
 import { fileBrowser, groups, general, mode } from '../../../state/store.js';
-import { colorHexToCss, getAtomColor, hexToRgba, setAtomColor } from '../../../utils/ColorModule.js';
+import { colorHexToCss, getAtomColor, hexToRgba, setAtomColor, createPieDot, updatePieDot } from '../../../utils/ColorModule.js';
 import { refreshGhostAtoms } from '../../../render/GhostAtomsModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import {
@@ -7,7 +7,9 @@ import {
   getAtomImageStyle, setAtomImageStyle, clearAtomImageStyle, atomImageKey,
   clearAtomImageStylesForAtom, getAtomImageColor, updateSingleAtomImageColor,
 } from '../../../render/AtomsFracUpdateModule.js';
-import { updatePolyhedraColors, scheduleBondRebuild } from '../../../render/index.js';
+import { updatePolyhedraColors, scheduleBondRebuild, formatCharge, setSpeciesColorBulk, refreshBondColorsForAtoms } from '../../../render/index.js';
+import { openSwatchColorPicker } from '../../SwatchColorPicker.js';
+import { getElementDefaultColor } from '../../../defaults/color_texture_defaults.js';
 import { createMaterialEditor } from './MaterialEditor.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { clampOpacity, clampRadiusScale, updateAtomCoordinates, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
@@ -16,6 +18,71 @@ import { createTinyImmunityToggle } from './Immunity.js';
 import { createSpinForceEditor } from './SpinForceEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { atomForceToColor, syncBondHalvesToImageColor } from '../../ColorPanel.js';
+
+/**
+ * Formal charges of a site as a display string, or '' when none are known.
+ * A disordered site lists one per species, so the row shows every charge on it
+ * rather than only the majority species'.
+ *
+ * @param {any} atom
+ * @returns {string}
+ */
+function formatAtomCharges(atom) {
+  if (!atom?.species) return '';
+  const parts = atom.species
+    .filter((s) => Number.isFinite(s.oxidationState))
+    .map((s) => formatCharge(s.oxidationState));
+  return parts.length ? parts.join('/') : '';
+}
+
+/**
+ * Row label for a site: "Fe1" for an ordinary site, "(Na,K)1" for a
+ * disordered one — the group's representative element alone ("K1") would
+ * silently claim the site is pure K, which is wrong for a 50/50 Na/K site.
+ *
+ * @param {any} atom
+ * @param {string} element fallback for an ordered/unknown atom
+ * @param {number} displayNumber
+ * @returns {string}
+ */
+function defaultAtomLabel(atom, element, displayNumber) {
+  if (atom?.isDisordered?.()) {
+    const elements = [...new Set(atom.species.map((s) => s.element))].sort();
+    return `(${elements.join(',')})${displayNumber}`;
+  }
+  return `${element}${displayNumber}`;
+}
+
+/**
+ * A weighted colour list splitting a disordered site's colour by occupancy,
+ * the same proportions the wedge sphere itself uses — fed to createPieDot()/
+ * updatePieDot() for a round pie-dot preview standing in for a multi-species
+ * site at a glance. A CSS conic-gradient drew this originally, but hard
+ * colour stops in a conic-gradient are prone to a visible anti-aliasing
+ * bleed right at the wedge seams (worst at small sizes, exactly what these
+ * dots are) — the canvas renderer used everywhere else in the app for the
+ * same "pie dot" language (CompositionRow.js, PolyhedraListPanel.js,
+ * BondLengthPanel.js) doesn't have that problem, so this matches it instead
+ * of drawing its own.
+ *
+ * @param {any} atom
+ * @returns {string[]}
+ */
+function speciesPieColors(atom) {
+  const species = atom.species.filter((s) => s.occupancy > 1e-3);
+  const vacancy = atom.getVacancyFraction();
+  const colors = [];
+  for (const s of species) {
+    const hex = colorHexToCss(s.color ?? getElementDefaultColor(s.element));
+    const weight = Math.max(1, Math.round(s.occupancy * 10));
+    for (let w = 0; w < weight; w++) colors.push(hex);
+  }
+  if (vacancy > 1e-3) {
+    const weight = Math.max(1, Math.round(vacancy * 10));
+    for (let w = 0; w < weight; w++) colors.push('#2a2a30');
+  }
+  return colors;
+}
 
 // Each row's "Edit" button swatch previews the atom's live color, but a
 // global recolor (color-map dropdown, mode switch, color-bar limits) never
@@ -94,9 +161,25 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     ? 'display: flex; flex-direction: column; gap: 2px; flex: 1 1 100%; min-width: 0;'
     : 'display: flex; flex-direction: column; gap: 2px;';
 
+  const rowAtom = fileBrowser.selectedStructure?.atoms?.[atomIndex];
+
   const name = document.createElement('span');
-  name.textContent = options.label ?? `${element}${displayNumber}`;
+  name.textContent = options.label ?? defaultAtomLabel(rowAtom, element, displayNumber);
   name.style.color = '#ddd';
+
+  // Formal charge, when the source file supplied one. Rendered next to the
+  // label rather than in metaText so it survives the Wyckoff rows, which use
+  // metaText for site symmetry and DOF.
+  const chargeText = formatAtomCharges(rowAtom);
+  if (chargeText) {
+    const charge = document.createElement('span');
+    charge.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.6); margin-left: 5px;';
+    // Leading space so the label's textContent reads "Fe1 3+" rather than
+    // "Fe13+" — the visual gap is CSS, which screen readers and any code
+    // reading the label do not see.
+    charge.textContent = ` ${chargeText}`;
+    name.appendChild(charge);
+  }
 
   // Per-image rows show the copy's own (wrapped) coords; the Position editor
   // below still edits the source atom's coords.
@@ -106,6 +189,48 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   coordsDisplay.textContent = `(${coords[0].toFixed(3)}, ${coords[1].toFixed(3)}, ${coords[2].toFixed(3)})`;
 
   nameContainer.appendChild(name);
+
+  // Composition of a disordered site, one species per line: a small swatch
+  // (display only — editing lives in the "Color" button's editor below, which
+  // for a disordered site shows one box per species) plus the occupancy as a
+  // percentage. Sits above the coordinates so the row reads label -> what is
+  // on the site -> where it is. Keyed by speciesIndex (not loop position - a
+  // low-occupancy species can be skipped) so the species-colour editor below
+  // can refresh the matching dot instead of leaving it stuck at its
+  // as-built colour after a live colour change.
+  const speciesLineSwatches = new Map();
+  if (rowAtom?.isDisordered?.()) {
+    rowAtom.species.forEach((sp, speciesIndex) => {
+      if (sp.occupancy <= 1e-3) return;
+      const line = document.createElement('div');
+      line.style.cssText = 'display: flex; align-items: center; gap: 5px; margin: 1px 0;';
+
+      const swatch = document.createElement('span');
+      const swatchHex = colorHexToCss(sp.color ?? getElementDefaultColor(sp.element));
+      swatch.style.cssText = `
+        width: 8px; height: 8px; border-radius: 50%; flex: none;
+        border: 1px solid rgba(255,255,255,0.4); background: ${swatchHex};
+      `;
+      speciesLineSwatches.set(speciesIndex, swatch);
+
+      const text = document.createElement('span');
+      text.style.cssText = 'font-size: 9px; color: rgba(255,210,120,0.85); font-family: monospace;';
+      text.textContent = `${sp.element} ${Math.round(sp.occupancy * 100)}%`;
+
+      line.appendChild(swatch);
+      line.appendChild(text);
+      nameContainer.appendChild(line);
+    });
+
+    const vacancy = rowAtom.getVacancyFraction();
+    if (vacancy > 1e-3) {
+      const vacLine = document.createElement('span');
+      vacLine.style.cssText = 'display: block; font-size: 9px; color: rgba(255,210,120,0.6); font-family: monospace; margin-left: 13px;';
+      vacLine.textContent = `vac ${Math.round(vacancy * 100)}%`;
+      nameContainer.appendChild(vacLine);
+    }
+  }
+
   if (options.metaText) {
     const meta = document.createElement('span');
     meta.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.55);';
@@ -149,13 +274,36 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   // Color/alpha/size editor button (labeled "Color" — the editor holds more
   // than color; the swatch background still previews the atom color)
+  // A round pie dot rather than the flat/gradient rectangle this used to be:
+  // a rectangle with a left-right gradient reads ambiguously (could just be
+  // an odd lighting on one colour), where a circle split by wedges is the
+  // established "this is a fractional split" visual — the same language the
+  // composition header's per-element dots already use, so the two read as
+  // one system instead of two different colour conventions.
   const colorBtn = document.createElement('button');
-  colorBtn.textContent = 'Color';
   colorBtn.className = 'atom-editor-button';
   colorBtn.dataset.editorButton = 'color';
-  colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 10px; white-space: normal; line-height: 1.15; text-align: center;';
-  colorBtn.title = `Edit color, alpha and size for ${element}${displayNumber}`;
+  colorBtn.style.cssText = 'width: 26px; height: 26px; border-radius: 50%; padding: 0; border: 1px solid rgba(255,255,255,0.35); cursor: pointer; flex: none; overflow: hidden;';
+  colorBtn.title = rowAtom?.isDisordered?.()
+    ? `Edit each species' colour, plus alpha and size, for ${element}${displayNumber}`
+    : `Edit color, alpha and size for ${element}${displayNumber}`;
+  // A pie dot for a disordered site, wedges proportional to occupancy — the
+  // actual reason for the round shape: a flat swatch or a linear gradient
+  // both fundamentally cannot show "this is two things," where a pie can.
+  // Ordered atoms keep a plain flat circle (no canvas needed, so none is
+  // created — see the pieCanvas-drop branch below).
+  let pieCanvas = null;
   function updateColorBtnSwatch() {
+    if (rowAtom?.isDisordered?.()) {
+      const colors = speciesPieColors(rowAtom);
+      if (pieCanvas) { updatePieDot(pieCanvas, colors); return; }
+      pieCanvas = createPieDot(colors, 24);
+      pieCanvas.style.cssText = 'width: 100%; height: 100%; display: block; border: none; pointer-events: none;';
+      colorBtn.style.background = 'transparent';
+      colorBtn.appendChild(pieCanvas);
+      return;
+    }
+    if (pieCanvas) { pieCanvas.remove(); pieCanvas = null; } // no longer disordered - drop back to a flat circle
     const color = perImage
       ? safeColor(getAtomImageColor(fileBrowser.selectedStructure, imageIndex))
       : safeColor(getAtomColor(atomIndex));
@@ -203,6 +351,67 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   editor.className = 'atom-color-editor';
   editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
 
+  // A disordered site is genuinely more than one thing sharing a position, so
+  // its colour editor is N small square boxes (one per species) instead of
+  // the single big inline picker below — each independently pickable, wired
+  // straight to that species' own colour (never atom.userColor/color, which
+  // the wedge shader does not read at all: setting it here would visibly do
+  // nothing to the sphere, only to bonds, which was the actual bug report).
+  const speciesColorRow = rowAtom?.isDisordered?.() ? document.createElement('div') : null;
+  if (speciesColorRow) {
+    speciesColorRow.style.cssText = 'display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap;';
+    rowAtom.species.forEach((sp, speciesIndex) => {
+      if (sp.occupancy <= 1e-3) return;
+      const box = document.createElement('div');
+      box.style.cssText = 'display: flex; flex-direction: column; align-items: center; gap: 2px;';
+
+      const swatchHex = colorHexToCss(sp.color ?? getElementDefaultColor(sp.element));
+      const swatchBtn = document.createElement('button');
+      swatchBtn.type = 'button';
+      swatchBtn.title = `Colour for ${sp.element} on this site`;
+      swatchBtn.style.cssText = `
+        width: 26px; height: 26px; border-radius: 5px; padding: 0; cursor: pointer;
+        border: 1px solid rgba(255,255,255,0.35); background: ${swatchHex};
+      `;
+      swatchBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openSwatchColorPicker(swatchBtn, swatchHex, (hex) => {
+          setSpeciesColorBulk([{ atomIndex, speciesIndex }], hex);
+          // The small display-only dot next to "<element> <occupancy>%" above
+          // shows this same species' colour — openSwatchColorPicker already
+          // repaints swatchBtn itself, but nothing else was keeping this one
+          // in sync, so it stayed stuck at whatever it was built with.
+          speciesLineSwatches.get(speciesIndex)?.style.setProperty('background', hex);
+          updateColorBtnSwatch();
+          // A representative-species edit changes what colour the bonds
+          // touching this site should show. This fires on every pointer-move
+          // while dragging in the picker, so it has to be the cheap targeted
+          // repaint (no topology recompute) — scheduleBondRebuild's 200ms
+          // debounce would just keep getting reset by the next move and never
+          // actually run until the drag stopped, which read as "not live."
+          refreshBondColorsForAtoms([atomIndex]);
+          onColorChange(); // the parent composition row's own pie dot follows too
+        }, { onReset: () => {
+          setSpeciesColorBulk([{ atomIndex, speciesIndex }], null);
+          const defaultHex = colorHexToCss(getElementDefaultColor(sp.element));
+          swatchBtn.style.background = defaultHex;
+          speciesLineSwatches.get(speciesIndex)?.style.setProperty('background', defaultHex);
+          updateColorBtnSwatch();
+          refreshBondColorsForAtoms([atomIndex]);
+          onColorChange();
+        } });
+      });
+
+      const label = document.createElement('span');
+      label.textContent = sp.element;
+      label.style.cssText = 'font-size: 8px; color: rgba(255,255,255,0.6);';
+
+      box.appendChild(swatchBtn);
+      box.appendChild(label);
+      speciesColorRow.appendChild(box);
+    });
+  }
+
   const mom_color = currentColor;
   const picker = createColorPicker(mom_color, (hex) => {
     let structure = fileBrowser.selectedStructure;
@@ -233,7 +442,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     if (groups.bondsMesh) {
       groups.bondsMesh.instanceColor.needsUpdate = true;
     }
-    colorBtn.style.background = hexToRgba(hex, 0.8);
+    updateColorBtnSwatch();
     onColorChange(); // Notify parent to update pie dot
     // A centered polyhedron is coloured by its centre atom, so recolour in place (cheap, no
     // geometry recompute) — the polyhedron of the edited atom matches its new colour.
@@ -260,7 +469,11 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   const topRowIndiv = document.createElement('div');
   topRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 6px;';
-  topRowIndiv.appendChild(picker.element);
+  // A disordered site shows its per-species boxes instead of the single whole-
+  // atom picker — that picker still exists (Reset/Apply below still operate on
+  // alpha/size, which stay whole-site properties) but is not the colour control
+  // for a mixed site.
+  topRowIndiv.appendChild(speciesColorRow ?? picker.element);
 
   const buttonRowIndiv = document.createElement('div');
   buttonRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px;';
@@ -704,8 +917,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   }
 
   function closeAtomColorEditor() {
-    const currentColor = safeColor(getAtomColor(atomIndex));
-    colorBtn.style.background = hexToRgba(currentColor, 0.8);
+    updateColorBtnSwatch();
     setActiveEditor(null);
     onColorChange(); // Notify parent to update pie dot
     updateVisualization({
@@ -797,7 +1009,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       const srcScale = clampRadiusScale(atom.getRadiusScale?.() ?? 1);
       atomSizeSlider.value = String(srcScale);
       atomSizeValue.value = srcScale.toFixed(2);
-      colorBtn.style.background = hexToRgba(safeColor(atom.getColor()), 0.8);
+      updateColorBtnSwatch();
       updateMeasurementMarkers();
       onColorChange();
       updatePolyhedraColors();
@@ -816,20 +1028,13 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       });
     });
 
-    // update button to show reset color
-    const resetColor = currentMode === "force"
-      ? atomForceToColor(
-          Math.sqrt(
-            (fileBrowser.selectedStructure.forces?.[atomIndex]?.vector?.[0] || 0) ** 2 +
-            (fileBrowser.selectedStructure.forces?.[atomIndex]?.vector?.[1] || 0) ** 2 +
-            (fileBrowser.selectedStructure.forces?.[atomIndex]?.vector?.[2] || 0) ** 2
-          ),
-          general.ForceMin,
-          general.ForceMax
-        )
-      : safeColor(fileBrowser.selectedStructure.getDefaultElementColor(element));
-
-    colorBtn.style.background = hexToRgba(resetColor, 0.8);
+    // resetLinkedAtomsColorData() above already wrote the reset colour (force-
+    // derived or element-default) onto atom.color; updateColorBtnSwatch()
+    // reads that back — via the same isDisordered() branch as everywhere else
+    // — rather than recomputing it a second time here and risking the two
+    // falling out of sync (as a flat recompute did for a disordered atom,
+    // wiping its pie dot back to a single colour on every Reset).
+    updateColorBtnSwatch();
 
     applyIndividualOpacity(fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? 1);
     applyIndividualRadiusScale(fileBrowser.selectedStructure.atoms[atomIndex].getRadiusScale?.() ?? 1);

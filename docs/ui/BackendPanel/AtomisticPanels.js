@@ -1,5 +1,6 @@
 import { io } from 'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.esm.min.js';
 import { fileBrowser, structureShip, general } from '../../state/store.js';
+import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 import {
   buildNEPStructure,
   relaxUntilConverged,
@@ -232,6 +233,22 @@ function statusElAdapter(onStatus) {
   return { set textContent(text) { onStatus(String(text)); } };
 }
 
+// Interatomic potentials and ML force fields need one definite species per
+// site — there is no defined force on an atom that is half Fe and half Ni —
+// so refuse rather than return numbers for a structure the model cannot
+// describe. Shared by every run entry point below (headless calculator
+// access, and the Relax/EFS/MD panel's own buttons — local NEP/PET-MAD *and*
+// the remote ASE dispatch, which otherwise has no calculator-readiness check
+// at all to hang this on).
+function assertOrderedStructure() {
+  if (structureHasFractionalOccupancy()) {
+    throw new Error(
+      'This structure has fractionally occupied sites, which interatomic potentials cannot represent. '
+      + 'Use "Order structure" to generate an ordered approximation first.'
+    );
+  }
+}
+
 /**
  * Headless access to the active in-browser calculator (EOS scans, addons):
  * resolves general.atomisticPotential to a ready { runner, potential } without
@@ -241,6 +258,7 @@ function statusElAdapter(onStatus) {
  * on a remote server, not in the browser.
  */
 export async function ensureActiveCalculator(onStatus = () => {}) {
+  assertOrderedStructure();
   const potential = general.atomisticPotential || 'nep';
   if (potential === 'ase') {
     throw new Error('ASE runs on a remote server backend — select the NEP or PET-MAD potential to compute in-browser.');
@@ -1025,6 +1043,7 @@ function bindRelaxBody(panel, shell, potential) {
   efsCard.addEventListener('click', async () => {
     try {
       shell.resultEl.textContent = '';
+      assertOrderedStructure();
       if (potential === 'ase') {
         emitASEEFS();
         setASEStatus(aseBinding, 'Requesting EFS from ASE backend...');
@@ -1040,6 +1059,7 @@ function bindRelaxBody(panel, shell, potential) {
     try {
       const params = readRelaxParams(shell.bodyEl);
       shell.resultEl.textContent = '';
+      assertOrderedStructure();
       if (potential === 'ase') {
         emitASERelax('new', params);
         setASEStatus(aseBinding, 'Submitting ASE relaxation...');
@@ -1159,6 +1179,7 @@ function bindMDBody(panel, shell, potential) {
     let seedFrame = /** @type {any} */ (null);
     let isContinuation = false;
     try {
+      assertOrderedStructure();
       mdRunning = true;
       mdStopRequested = false;
       startBtn.disabled = true;

@@ -19,6 +19,7 @@ import { createColorSwatch } from '../SwatchColorPicker.js';
 import { generateID } from '../../utils/index.js';
 import { getElementDefaultColor } from '../../defaults/color_texture_defaults.js';
 import { colorToHex } from './CommitAtoms.js';
+import { SITE_TOLERANCE } from '../../io/cif/site_grouping.js';
 
 const CELL_STYLE = 'border: 1px solid #444; padding: 3px;';
 const NUM_INPUT_STYLE = 'width: 100%; background: #333; border: 1px solid #555; color: white; padding: 2px 3px; box-sizing: border-box;';
@@ -77,6 +78,7 @@ export function createAtomTableEditor(container, {
               <th style="${STICKY_TH_STYLE}" title="Fractional coordinate (0-1 spans the cell)">X (frac)</th>
               <th style="${STICKY_TH_STYLE}" title="Fractional coordinate (0-1 spans the cell)">Y (frac)</th>
               <th style="${STICKY_TH_STYLE}" title="Fractional coordinate (0-1 spans the cell)">Z (frac)</th>
+              <th style="${STICKY_TH_STYLE}" title="Site occupancy (1 = fully occupied). Rows sharing a position form one disordered site.">Occ.</th>
               <th style="${STICKY_TH_STYLE}">Color</th>
               ${deletable ? `<th style="${STICKY_TH_STYLE}"></th>` : ''}
             </tr>
@@ -120,6 +122,11 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
   let activeUuid = null;
 
   function notifyChange() {
+    // Re-evaluate site grouping on every change, not just on load: editing a
+    // coordinate can move a row on or off another site's position, and the
+    // synced/disabled state of a mixed site's follower rows has to track that
+    // live rather than only being right immediately after (re)load.
+    groupSiteRows();
     onChange?.();
   }
 
@@ -130,6 +137,12 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
       x: parseFloat(row.querySelector('.atom-x').value) || 0,
       y: parseFloat(row.querySelector('.atom-y').value) || 0,
       z: parseFloat(row.querySelector('.atom-z').value) || 0,
+      // Blank/garbage reads as fully occupied, which is what someone adding an
+      // ordinary atom means and keeps the column ignorable.
+      occupancy: (() => {
+        const v = parseFloat(row.querySelector('.atom-occ').value);
+        return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+      })(),
       color: row.querySelector('.color-swatch-btn').dataset.hex,
     };
   }
@@ -144,9 +157,95 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
         btn.style.borderColor = isActive ? '#ffbf00' : '#555';
       }
     });
+    groupSiteRows();
   }
 
-  function buildRow({ uuid = null, element = '', x = 0, y = 0, z = 0, color = null } = {}) {
+  // A disordered site is one row per species, so several rows sharing a
+  // position are one atom, not several - without this the table just looks
+  // like "too many atoms". Rows are clustered by position (same tolerance the
+  // commit-side merge uses), the first row of a cluster stays fully editable,
+  // and every row after it has its coordinate inputs synced to match and
+  // disabled: editing them would silently do nothing anyway, since the commit
+  // only reads the cluster's first row for position (see CommitAtoms.js) - so
+  // this turns a trap into a visible, intentional state instead of removing
+  // it.
+  function groupSiteRows() {
+    const rows = [...tbody.querySelectorAll('tr')];
+
+    // A brand-new row still sitting at its untouched (0,0,0) placeholder (see
+    // buildRow's positionDirty comment) sits out of clustering entirely —
+    // it never joins a cluster and, just as important, is never even a
+    // candidate for one to match against, so a real row typed in afterward
+    // at the same coordinates can't accidentally lock itself onto this one's
+    // still-undecided position instead of a genuine existing atom's.
+    const clusterableRows = rows.filter((row) => row.dataset.positionDirty === '1');
+    const untouchedRows = rows.filter((row) => row.dataset.positionDirty !== '1');
+
+    /** @type {Array<{x:number,y:number,z:number,rows:HTMLElement[]}>} */
+    const clusters = [];
+    for (const row of clusterableRows) {
+      const x = parseFloat(/** @type {HTMLInputElement} */(row.querySelector('.atom-x'))?.value) || 0;
+      const y = parseFloat(/** @type {HTMLInputElement} */(row.querySelector('.atom-y'))?.value) || 0;
+      const z = parseFloat(/** @type {HTMLInputElement} */(row.querySelector('.atom-z'))?.value) || 0;
+      const host = clusters.find((c) =>
+        Math.abs(c.x - x) <= SITE_TOLERANCE
+        && Math.abs(c.y - y) <= SITE_TOLERANCE
+        && Math.abs(c.z - z) <= SITE_TOLERANCE);
+      if (host) host.rows.push(/** @type {HTMLElement} */ (row));
+      else clusters.push({ x, y, z, rows: [/** @type {HTMLElement} */ (row)] });
+    }
+
+    for (const cluster of clusters) {
+      const mixed = cluster.rows.length > 1;
+      cluster.rows.forEach((row, i) => {
+        const secondary = mixed && i > 0;
+        row.style.borderTop = mixed && i === 0 ? '2px solid rgba(255,193,7,0.35)' : '';
+        row.style.background = secondary
+          ? 'rgba(255,193,7,0.06)'
+          : (row.style.background || '');
+        for (const cls of ['.atom-x', '.atom-y', '.atom-z']) {
+          const input = /** @type {HTMLInputElement} */ (row.querySelector(cls));
+          if (!input) continue;
+          // Never touch the input the user is actively typing into: this runs
+          // synchronously on every keystroke (see the 'input' listener below),
+          // and typing a coordinate digit-by-digit routinely passes through an
+          // intermediate value that transiently matches another row (typing
+          // "0.6" is "0" for one keystroke) — disabling or overwriting it right
+          // then would strand the field the user is still typing in. The
+          // 'blur' listener below re-evaluates once they've actually moved on.
+          if (input === document.activeElement) continue;
+          if (secondary) {
+            // Mirror the primary row's value, not this row's stored own value
+            // — the two must never independently drift once merged.
+            const primaryInput = /** @type {HTMLInputElement} */ (cluster.rows[0].querySelector(cls));
+            input.value = primaryInput.value;
+            input.disabled = true;
+            input.title = 'Same site as the row above — edit its X/Y/Z instead';
+            input.style.opacity = '0.45';
+          } else {
+            input.disabled = false;
+            input.title = '';
+            input.style.opacity = '';
+          }
+        }
+      });
+    }
+
+    for (const row of untouchedRows) {
+      row.style.borderTop = '';
+      row.style.background = '';
+      for (const cls of ['.atom-x', '.atom-y', '.atom-z']) {
+        const input = /** @type {HTMLInputElement} */ (row.querySelector(cls));
+        if (!input) continue;
+        input.disabled = false;
+        input.title = '';
+        input.style.opacity = '';
+      }
+    }
+  }
+
+  function buildRow(atom) {
+    const { uuid = null, element = '', x = 0, y = 0, z = 0, color = null, occupancy = 1 } = atom || {};
     // A row added without an explicit colour (a fresh "Add New Atom" row, a bulk
     // line with no colour) tracks the element's default colour instead of a flat
     // black swatch, matching how a new atom looks everywhere else. A loaded atom
@@ -160,6 +259,16 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
     // stable per-row uuid is the identity that keeps a just-added atom the
     // same atom across edits (and marks it "new" against the baseline set).
     newRow.dataset.uuid = uuid || generateID([element || 'atom']);
+    // groupSiteRows() clusters rows by position and disables/locks every row
+    // after the first in a cluster. A brand-new "+ Add New Atom" row (buildRow
+    // called with no atom at all) defaults to (0,0,0) — a very common real
+    // atom position — so without this it gets auto-clustered with whatever
+    // sits at the origin the instant it gets an element typed in, locking its
+    // coordinates before the user ever touches them. A row built from real
+    // data (loaded, restored, bulk-pasted) already carries a deliberate
+    // position, 0,0,0 or not, so it starts eligible for clustering; only a
+    // truly blank new row waits until its own X/Y/Z is actually typed into.
+    newRow.dataset.positionDirty = atom == null ? '' : '1';
 
     newRow.innerHTML = `
       ${highlightable ? `<td style="${CELL_STYLE} text-align:center;"><button type="button" class="atom-row-highlight" title="Highlight this atom in the 3D view" style="width:22px; height:22px; padding:0; line-height:1; border:1px solid #555; border-radius:3px; background:#333; color:white; cursor:pointer;">◎</button></td>` : ''}
@@ -172,6 +281,7 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
       <td style="${CELL_STYLE}"><input type="number" class="atom-x coord-input" value="${x}" step="0.1" style="${NUM_INPUT_STYLE}"></td>
       <td style="${CELL_STYLE}"><input type="number" class="atom-y coord-input" value="${y}" step="0.1" style="${NUM_INPUT_STYLE}"></td>
       <td style="${CELL_STYLE}"><input type="number" class="atom-z coord-input" value="${z}" step="0.1" style="${NUM_INPUT_STYLE}"></td>
+      <td style="${CELL_STYLE}"><input type="number" class="atom-occ coord-input" value="${occupancy}" step="0.05" min="0" max="1" style="${NUM_INPUT_STYLE}"></td>
       <td class="atom-color-cell" style="${CELL_STYLE} text-align:center;"></td>
       ${deletable ? `<td style="${CELL_STYLE} text-align:center;"><button type="button" class="atom-row-delete btn-mini" title="Remove this atom" style="width:20px; height:20px; padding:0; line-height:0; display:flex; align-items:center; justify-content:center;">✕</button></td>` : ''}
     `;
@@ -205,8 +315,19 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
     newRow.querySelectorAll('input').forEach((input) => {
       input.addEventListener('input', () => {
         newRow.dataset.dirty = '1';
+        if (input.classList.contains('atom-x') || input.classList.contains('atom-y') || input.classList.contains('atom-z')) {
+          newRow.dataset.positionDirty = '1';
+        }
         notifyChange();
       });
+    });
+
+    // groupSiteRows() skips the focused input while typing (see its own
+    // comment) so a mid-edit value never gets disabled out from under the
+    // user - this re-evaluates once they've actually finished with a
+    // coordinate field, so a genuine match still locks/syncs as intended.
+    newRow.querySelectorAll('.atom-x, .atom-y, .atom-z').forEach((input) => {
+      input.addEventListener('blur', () => groupSiteRows());
     });
 
     newRow.querySelector('.select-element-btn').addEventListener('click', () => {
@@ -313,6 +434,7 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
 
   if (initialAtoms.length) initialAtoms.forEach((atom) => tbody.appendChild(buildRow(atom)));
   else addRowToTable();
+  paintRows();
 
   container.querySelector('#addNewRow').addEventListener('click', () => {
     const lastRow = tbody.querySelector('tr:last-child');

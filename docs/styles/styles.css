@@ -528,6 +528,115 @@ body.panel-hidden #axesLegend {
   display: none;
 }
 
+/* Order-structure method choice (ui/DisorderWarningBanner.js) — reuses the
+ * .png-export-modal card + .paste-modal-actions button row. */
+#orderStructureModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#orderStructureModal[hidden] {
+  display: none;
+}
+
+/* The choice and preview action rows toggle independently within the same
+ * always-visible dialog (unlike every other .paste-modal-actions user, which
+ * only ever has one such row) — the generic ".paste-modal-actions { display:
+ * flex }" rule above is an author style, so it beats the UA stylesheet's
+ * default "[hidden] { display: none }" regardless of selector specificity;
+ * this restates it as an author rule so [hidden] actually hides these. */
+#orderStructureChoiceActions[hidden],
+#orderStructureSizeRow[hidden],
+#orderStructurePreviewActions[hidden] {
+  display: none;
+}
+
+.order-structure-modal #orderStructureModalMessage {
+  margin: 0 0 14px 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  white-space: pre-line;
+}
+
+.order-structure-size-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 12.5px;
+}
+
+.order-structure-size-row select {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.25);
+  color: #f5f5f5;
+  font-size: 12.5px;
+}
+
+.order-structure-modal .paste-modal-actions {
+  flex-wrap: wrap;
+}
+
+.order-structure-modal .paste-modal-actions #orderStructureRandomBtn {
+  flex: 1;
+  min-width: 100px;
+  margin-top: 4px;
+  padding: 12px 16px;
+  background: var(--bg-color);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.order-structure-modal .paste-modal-actions #orderStructureRandomBtn:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+
+.order-structure-modal .paste-modal-actions #orderStructureMajorityBtn,
+.order-structure-modal .paste-modal-actions #orderStructureCancelBtn,
+.order-structure-modal .paste-modal-actions #orderStructureRerollBtn,
+.order-structure-modal .paste-modal-actions #orderStructureDiscardBtn {
+  flex: 1;
+  min-width: 100px;
+  margin-top: 4px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.order-structure-modal .paste-modal-actions #orderStructureAcceptBtn {
+  flex: 1;
+  min-width: 100px;
+  margin-top: 4px;
+  padding: 12px 16px;
+  background: var(--bg-color);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.order-structure-modal .paste-modal-actions #orderStructureAcceptBtn:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+
 /* Keyboard shortcuts help modal (ui/KeyboardShortcuts.js) — reuses the
  * .png-export-modal card + .paste-modal-actions button row. */
 #shortcutsHelpModal {

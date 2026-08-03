@@ -15,13 +15,22 @@ export {
   updateSingleAtomCutPlaneImmunity,
   atomImageKey, getAtomImageStyle, setAtomImageStyle, clearAtomImageStyle,
   clearAtomImageStylesForAtom, getAtomImageColor, updateSingleAtomImageColor,
-  deriveVisibleWrapped,
+  deriveVisibleWrapped, refreshAtomWedgeTexture, setSpeciesColorBulk,
 } from './AtomsFracUpdateModule.js';
+
+export {
+  rebuildChargeBadges, updateChargeBadges, disposeChargeBadges, formatCharge,
+} from './ChargeBadgeModule.js';
+
+export {
+  rebuildVacancyMarkers, disposeVacancyMarkers, addVacancyMarker,
+  removeVacancyMarker, getVacancyMarkers,
+} from './VacancyMarkerModule.js';
 
 export {
   getBondCutoff, updateBonds, rebuildBonds, buildBondObjects, scheduleBondRebuild,
   updateSingleBondDiameter, disposeBondsMesh, updateSingleBondColor,
-  updateSingleBondOpacity, bondKey, bondGroupKey,
+  updateSingleBondOpacity, bondKey, bondGroupKey, refreshBondColorsForAtoms,
 } from './BondsFracUpdateModule.js';
 
 export {

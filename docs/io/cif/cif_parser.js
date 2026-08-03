@@ -505,16 +505,96 @@ export function clean_element_symbol(raw) {
 }
 
 /**
+ * Extract a formal charge from CIF oxidation-state notation, i.e. the part
+ * clean_element_symbol() throws away.
+ *
+ * Accepts both orderings seen in the wild ("Fe3+" and "Fe+3") and the Unicode
+ * minus sign. A bare sign means unit charge ("Cu+" -> +1).
+ *
+ * Returns null when the symbol carries no charge marker at all. Note that this
+ * is deliberately distinct from 0: "Fe0+" states explicitly that the site is
+ * neutral, whereas a plain "Fe" says nothing about its oxidation state, and the
+ * badge renderer needs to tell those apart.
+ *
+ * @param {string} raw
+ * @returns {number|null}
+ */
+export function parse_oxidation_from_symbol(raw) {
+  const s = String(raw).trim().replace(/−/g, "-");
+  // Strip the leading element symbol; whatever follows is the charge marker.
+  const tail = s.replace(/^[A-Z][a-z]?/, "");
+  if (!tail) return null;
+
+  let m = tail.match(/^(\d*\.?\d*)([+-])$/);   // "3+", "+"  (digits then sign)
+  if (m) {
+    const mag = m[1] === "" ? 1 : Number(m[1]);
+    if (!Number.isFinite(mag)) return null;
+    return m[2] === "-" ? -mag : mag;
+  }
+
+  m = tail.match(/^([+-])(\d*\.?\d*)$/);       // "+3", "-"  (sign then digits)
+  if (m) {
+    const mag = m[2] === "" ? 1 : Number(m[2]);
+    if (!Number.isFinite(mag)) return null;
+    return m[1] === "-" ? -mag : mag;
+  }
+
+  return null;
+}
+
+/**
+ * Read the _atom_type_oxidation_number loop into a symbol -> charge map.
+ *
+ * This is the authoritative tag for formal charges, so it takes precedence over
+ * any suffix embedded in _atom_site_type_symbol. The loop is keyed by
+ * _atom_type_symbol, which itself usually carries the oxidation notation
+ * ("Fe3+"), so entries are indexed under both the raw symbol and its cleaned
+ * element so either form of _atom_site_type_symbol can find them.
+ *
+ * @param {Map<string, any>} block
+ * @returns {Map<string, number>|null}
+ */
+export function _parse_atom_type_oxidation(block) {
+  const type_syms = block.get("atom_type_symbol");
+  const ox_nums = block.get("atom_type_oxidation_number");
+  if (type_syms == null || ox_nums == null) return null;
+
+  const map = new Map();
+  const n = Math.min(type_syms.length, ox_nums.length);
+  for (let i = 0; i < n; i++) {
+    const v = parse_cif_float(ox_nums[i], { meta: false, pragmatic: false });
+    if (!Number.isFinite(v)) continue;
+    const raw = String(type_syms[i]).trim();
+    map.set(raw, v);
+    // Only fall back to the bare element when it is unambiguous: a CIF listing
+    // both Fe2+ and Fe3+ must not have one silently win for plain "Fe".
+    const el = clean_element_symbol(raw);
+    if (el !== raw) {
+      if (map.has(el) && map.get(el) !== v) map.set(el, null);
+      else if (!map.has(el)) map.set(el, v);
+    }
+  }
+  return map;
+}
+
+/**
  * Internal: parse atoms from a cif block map.
  * Mirrors _parse_atoms.
  *
  * Returns:
  *   if resolution==false:
- *     [symbols, labels, positions, occupancies]
+ *     [symbols, labels, positions, occupancies, oxidation_states, disorder_groups]
  *   else:
- *     [symbols, labels, positions, occupancies, res]
+ *     [symbols, labels, positions, occupancies, res, oxidation_states, disorder_groups]
+ *
+ * The occupancy/oxidation/disorder columns are appended after `res` rather than
+ * kept adjacent to their siblings so that existing positional destructuring of
+ * the first five slots keeps working.
  *
  * positions: list of [x,y,z] numbers
+ * occupancies: list of numbers, or null when the column is absent
+ * oxidation_states: list of numbers, with null for "unknown"
+ * disorder_groups: list of strings, or null when the column is absent
  *
  * @param {Map<string, any>} block
  * @param {boolean} resolution
@@ -546,13 +626,31 @@ export function _parse_atoms(block, resolution = true) {
   const symbols = syms.map((s) => clean_element_symbol(s));
   const labels = lbs.map((l) => String(l).trim());
 
+  // Formal charges: the _atom_type_oxidation_number loop wins where present,
+  // otherwise fall back to the suffix embedded in _atom_site_type_symbol.
+  // Null entries mean "unknown", which is not the same as neutral.
+  const ox_table = _parse_atom_type_oxidation(block);
+  const oxidation_states = syms.map((s) => {
+    const raw = String(s).trim();
+    if (ox_table) {
+      if (ox_table.has(raw)) return ox_table.get(raw);
+      const el = clean_element_symbol(raw);
+      if (ox_table.has(el)) return ox_table.get(el);
+    }
+    return parse_oxidation_from_symbol(raw);
+  });
+
+  // Optional disorder grouping, used downstream to tie co-located sites together.
+  const dg_col = block.get("atom_site_disorder_group");
+  const disorder_groups = dg_col ? dg_col.map((d) => String(d).trim()) : null;
+
   if (!resolution) {
     const positions = xs.map((xi, i) => [
       parse_cif_float(xi, { meta: false, pragmatic: false }),
       parse_cif_float(ys[i], { meta: false, pragmatic: false }),
       parse_cif_float(zs[i], { meta: false, pragmatic: false }),
     ]);
-    return [symbols, labels, positions, occs];
+    return [symbols, labels, positions, occs, oxidation_states, disorder_groups];
   }
 
   const positions = [];
@@ -619,7 +717,7 @@ export function _parse_atoms(block, resolution = true) {
     res = Math.min(data_resolution, separation_resolution);
   }
 
-  return [symbols, labels, positions, occs, res];
+  return [symbols, labels, positions, occs, res, oxidation_states, disorder_groups];
 }
 
 /**
@@ -676,7 +774,8 @@ export function _basis_from_lengths_angles(a, b, c, alpha, beta, gamma) {
 export function parse_asu_cell(cifblock) {
   const [a, b, c, alpha, beta, gamma] = _parse_uc(cifblock);
   const basis = _basis_from_lengths_angles(a, b, c, alpha, beta, gamma);
-  const [symbols, labels, positions, _occs, res] = _parse_atoms(cifblock, true);
+  const [symbols, labels, positions, occs, res, oxidation_states, disorder_groups] =
+    _parse_atoms(cifblock, true);
 
   // equivalent atoms based on labels
   const labels_map = new Map();
@@ -690,7 +789,12 @@ export function parse_asu_cell(cifblock) {
     equivalent_atoms.push(labels_map.get(l));
   }
 
-  return [basis, positions, res, symbols, labels, equivalent_atoms];
+  // Occupancy/oxidation/disorder are appended so existing six-slot destructuring
+  // of this return value (mcif_parser.js) is unaffected.
+  return [
+    basis, positions, res, symbols, labels, equivalent_atoms,
+    occs, oxidation_states, disorder_groups,
+  ];
 }
 
 /**
@@ -747,7 +851,10 @@ export function parse_structural_modulation(cifblock) {
  */
 export function cifblock_to_asu(cifblock, _opts = {}) {
   // basic atom-site parsing
-  const [basis, positions, resolution, symbols, labels, equivalent_atoms] = parse_asu_cell(cifblock);
+  const [
+    basis, positions, resolution, symbols, labels, equivalent_atoms,
+    occupancies, oxidation_states, disorder_groups,
+  ] = parse_asu_cell(cifblock);
 
   // standard space group symmetry
   let symops_xyz = cifblock.get("space_group_symop.operation_xyz");
@@ -804,6 +911,9 @@ export function cifblock_to_asu(cifblock, _opts = {}) {
     resolution,
     equivalent_atoms,
     labels,
+    occupancies,
+    oxidation_states,
+    disorder_groups,
   };
 }
 

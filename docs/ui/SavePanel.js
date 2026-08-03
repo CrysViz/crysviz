@@ -1,5 +1,6 @@
 import { fileBrowser } from '../state/store.js';
 import { captureState } from './ShareModule.js';
+import { structureHasFractionalOccupancy } from './DisorderWarningBanner.js';
 
 export function poscartoFile() {
   const structure = fileBrowser.selectedStructure;
@@ -76,6 +77,15 @@ export function addSavePanel() {
   }
   button.addEventListener('click', () => {
     try {
+      // POSCAR has no way to express partial occupancy, so a disordered
+      // structure would be written out as if it were ordered — silently, and
+      // with each site collapsed to its majority species. Confirm rather than
+      // lose that data without saying so.
+      if (structureHasFractionalOccupancy() && !confirm(
+        'This structure has fractionally occupied sites.\n\n'
+        + 'The POSCAR format cannot express occupancy: each site will be written '
+        + 'as its majority species and the disorder will be lost.\n\nExport anyway?'
+      )) return;
       downloadTextFile(currentBaseName() + '.vasp', poscartoFile());
     } catch (e) {
       alert(e.message);

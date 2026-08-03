@@ -69,6 +69,69 @@ export function getElementAtomIndices(element, { includeHidden = false } = {}) {
   return atomIndices;
 }
 
+/**
+ * The Atoms tab's groups, one per distinct site composition.
+ *
+ * Grouping on the representative element alone is not enough: a site that is
+ * 50/50 Na/K has exactly one representative (the tie breaks alphabetically to
+ * K), so every such site lands under "K" and the "Na" group comes out empty
+ * even though the composition line correctly says there is as much Na as K.
+ *
+ * Keying on the whole element set instead gives one "(K,Na)" group holding
+ * those sites, so every site still appears exactly once - no position is listed
+ * twice, which is the thing to avoid - and no group is ever empty.
+ *
+ * Keyed on the element SET, not the exact occupancies: an Fe0.5/Ni0.5 site and
+ * an Fe0.8/Ni0.2 site share a group and show their ratios per row. Otherwise
+ * nudging an occupancy would move a row to a different group mid-edit and
+ * reshuffle the list under the user's cursor.
+ *
+ * @param {{includeHidden?: boolean}} [opts]
+ * @returns {Array<{key: string, label: string, elements: string[], atomIndices: number[], representative: string}>}
+ */
+export function getSiteSignatureGroups({ includeHidden = false } = {}) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return [];
+
+  /** @type {Map<string, {key:string,label:string,elements:string[],atomIndices:number[],representative:string}>} */
+  const groups = new Map();
+
+  structure.atoms.forEach((atom, index) => {
+    if (!includeHidden && atom?.hidden) return;
+
+    const species = atom?.species?.length
+      ? atom.species.map((s) => s.element)
+      : [structure.elements[index]];
+    const elements = [...new Set(species)].sort();
+    const hasVacancy = (atom?.getVacancyFraction?.() ?? 0) > 1e-3;
+    const key = elements.join(',') + (hasVacancy ? ',Vac' : '');
+
+    let group = groups.get(key);
+    if (!group) {
+      const parts = hasVacancy ? [...elements, 'Vac'] : elements;
+      group = {
+        key,
+        // A single fully-occupied species keeps the bare element symbol, so an
+        // ordered structure's panel looks exactly as it did before occupancy.
+        label: parts.length === 1 ? parts[0] : `(${parts.join(',')})`,
+        elements,
+        hasVacancy,
+        atomIndices: [],
+        representative: structure.elements[index],
+      };
+      groups.set(key, group);
+    }
+    group.atomIndices.push(index);
+  });
+
+  // Sort by representative element, pure compositions before mixed ones, so
+  // everything containing a given element stays adjacent in the list.
+  return [...groups.values()].sort((a, b) =>
+    a.elements[0].localeCompare(b.elements[0])
+    || a.elements.length - b.elements.length
+    || a.key.localeCompare(b.key));
+}
+
 export function getElementOpacityValues(element) {
   return Array.from(new Set(
     getElementAtomIndices(element).map((atomIndex) => {

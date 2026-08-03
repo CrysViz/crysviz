@@ -24,7 +24,7 @@
 
 import * as THREE from '../../external/three/three.module.js';
 import { groups } from '../../state/store.js';
-import { createAtomsMaterial } from '../AtomsFracUpdateModule.js';
+import { createAtomsMaterial, applyWedgeUniforms } from '../AtomsFracUpdateModule.js';
 import { setAlphaPass } from '../MaterialStyles.js';
 import { ForwardPipeline } from './ForwardPipeline.js';
 
@@ -70,6 +70,16 @@ export class SplitAtomsPipeline extends ForwardPipeline {
     material.transparent = true;
     material.depthWrite = false;
     material.userData.alphaPass = 2;
+    // The overlay is a freshly compiled material, not a clone — it never
+    // inherits the source mesh's wedge texture on its own (unlike cut planes,
+    // which every material re-reads via applyAtomCutPlaneUniforms). Seed it
+    // here so a disordered site still shows its species split once it renders
+    // through the transparent-instance pass instead of falling back to the
+    // flat blended instance colour.
+    if (mesh.material.userData.wedge) {
+      material.userData.wedge = mesh.material.userData.wedge;
+      applyWedgeUniforms(material);
+    }
     this._patchOverlayMaterial(material);
     overlay = this._createOverlayMesh(mesh, material);
     overlay.raycast = () => {}; // never intercept picking

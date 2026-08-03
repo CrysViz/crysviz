@@ -6,6 +6,8 @@ import {updateLattice,latticeDirsNorm} from './LatticeModule.js'
 import { syncGroundPlaneVisibility } from './GroundPlaneModule.js'
 
 import {updateRandomColors, startDisco, stopDisco} from '../ui/DiscoModule.js'
+import { updateChargeBadges } from './ChargeBadgeModule.js'
+import { renderScanlinePass, toggleScanlineMode } from './ScanlinePass.js'
 
 
 let isRendering = true;
@@ -35,7 +37,12 @@ export function requestRender() {
  *  as the resize, closes that gap. */
 export function renderFrameNow({ interactive = false } = {}) {
   if (!app.renderer || !app.pipeline || !app.scene || !app.camera) return;
+  // Charge badges are placed in screen space and culled against the current
+  // camera, so they have to be updated before the scene is drawn. Cheap when
+  // there are none, and the loop only runs on frames that actually render.
+  updateChargeBadges();
   app.pipeline.render({ renderer: app.renderer, scene: app.scene, camera: app.camera, interactive });
+  renderScanlinePass(app.renderer);
   if (app.gizmoRenderer && app.gizmoScene && app.gizmoCamera) {
     const invCamQ = app.camera.quaternion.clone().invert();
     const { a, b, c } = latticeDirsNorm();
@@ -126,6 +133,15 @@ let _counter = 1;
 window.addEventListener('keydown', (event) => {
   keyState[event.code] = true;
   //console.log('Key pressed:', event.code, keyState);
+  // Hidden scanline mode: Alt+8, a one-shot toggle (not a hold, unlike disco
+  // above) — press once to enter, press again to leave. event.repeat guards
+  // against the OS's key-repeat re-firing this on every autorepeat tick
+  // while the combo is held down.
+  if (event.altKey && event.code === 'Digit8' && !event.shiftKey && !event.ctrlKey
+      && !event.metaKey && !event.repeat) {
+    toggleScanlineMode();
+    requestRender();
+  }
 });
 
 window.addEventListener('keyup', (event) => {
