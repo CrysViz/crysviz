@@ -444,7 +444,10 @@ class Viewer:
             with self._send_lock:
                 if self._connection is None:
                     raise ViewerClosedError("viewer is closed")
-                send_frame(self._connection, "command", {"id": request_id, "command": command, "args": args}, attachments)
+                command_args = {} if args is None else args
+                send_frame(self._connection, "command", {
+                    "id": request_id, "command": command, "args": command_args,
+                }, attachments)
             try:
                 response = pending.get(timeout=timeout or self._command_timeout)
             except queue.Empty as error:

@@ -156,6 +156,8 @@ class ViewerControllerTests(unittest.TestCase):
             viewer.commit_positions()
             viewer.recenter_camera()
             self.assertEqual(next(data for command, _, data in host.commands if command == "load"), {"data": b"later"})
+            for command in ("list_structures", "commit_positions", "recenter_camera"):
+                self.assertEqual(next(args for name, args, _ in host.commands if name == command), {})
         finally:
             viewer.close()
 
