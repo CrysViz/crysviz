@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from fractions import Fraction
 import queue
 import pathlib
 import threading
@@ -91,6 +92,8 @@ class _Host:
                 result = {"id": "structure-2", "name": payload["args"]["name"], "frames": 1, "active": True, "activeFrame": 0}
             elif command == "update_fractional_positions":
                 result = {"atomCount": 2, "fastPathApplied": False, "rebuilt": True, "fallbackReason": "FAST_PATH_UNAVAILABLE"}
+            elif command == "update_lattice":
+                result = True
             elif command == "set_render_pipeline":
                 result = "raytrace"
             if command == "save_image":
@@ -331,6 +334,36 @@ class ViewerControllerTests(unittest.TestCase):
             self.assertEqual(host.commands[-2][0], "rotate_camera")
             self.assertEqual(host.commands[-2][1], {"angleDegrees": 12.5, "axis": "z"})
             self.assertEqual(host.commands[-1][1], {"pipelineId": "raytrace"})
+        finally:
+            viewer.close()
+
+    def test_update_lattice_validates_and_forwards_copied_float_matrix(self):
+        client, server = _pair()
+        host = _Host(server)
+        viewer = self.start_fake(Viewer(), host)
+        try:
+            lattice = [[6, 0, 0], [Fraction(1, 2), 5, 0], [0, 0, 4]]
+            self.assertIsNone(viewer.update_lattice(lattice))
+            lattice[0][0] = 99
+            command, args, _ = host.commands[-1]
+            self.assertEqual(command, "update_lattice")
+            self.assertEqual(args, {"lattice": [[6.0, 0.0, 0.0], [0.5, 5.0, 0.0], [0.0, 0.0, 4.0]]})
+
+            invalid_lattices = (
+                "not a lattice", [[1, 0, 0], [0, 1, 0]], [1, 2, 3],
+                [[1, 0, 0], "not a vector", [0, 0, 1]], [[1, 0], [0, 1, 0], [0, 0, 1]],
+                [[True, 0, 0], [0, 1, 0], [0, 0, 1]], [["x", 0, 0], [0, 1, 0], [0, 0, 1]],
+                [[1 + 0j, 0, 0], [0, 1, 0], [0, 0, 1]],
+                [[float("nan"), 0, 0], [0, 1, 0], [0, 0, 1]],
+                [[float("inf"), 0, 0], [0, 1, 0], [0, 0, 1]],
+                [[1, 0, 0], [2, 0, 0], [0, 0, 1]],
+            )
+            dispatched = sum(command == "update_lattice" for command, _, _ in host.commands)
+            for lattice in invalid_lattices:
+                with self.subTest(lattice=lattice):
+                    with self.assertRaises(ValueError):
+                        viewer.update_lattice(lattice)
+            self.assertEqual(sum(command == "update_lattice" for command, _, _ in host.commands), dispatched)
         finally:
             viewer.close()
 

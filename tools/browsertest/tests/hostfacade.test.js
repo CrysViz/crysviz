@@ -271,12 +271,134 @@ async function waitForHostFailure(page) {
     const cameraAfterSession = {
       position: app.camera.position.toArray(),
       target: app.controls.target.toArray(),
+      zoom: app.camera.zoom,
+    };
+    const { getActiveStructure } = await import('./state/structures.js');
+    const activeBeforeLattice = getActiveStructure();
+    const oldLattice = activeBeforeLattice.lattice.map((row) => [...row]);
+    const invalidLatticeShape = await host.dispatch({ command: 'update_lattice', args: {
+      lattice: [[3, 0, 0], [0, 3, 0]],
+    } });
+    const latticeAfterShape = getActiveStructure().lattice.map((row) => [...row]);
+    const invalidLatticeNonfinite = await host.dispatch({ command: 'update_lattice', args: {
+      lattice: [[3, 0, 0], [0, 3, 0], [0, 0, Number.NaN]],
+    } });
+    const latticeAfterNonfinite = getActiveStructure().lattice.map((row) => [...row]);
+    const invalidLatticeSingular = await host.dispatch({ command: 'update_lattice', args: {
+      lattice: [[3, 0, 0], [0, 3, 0], [6, 0, 0]],
+    } });
+    const latticeAfterSingular = getActiveStructure().lattice.map((row) => [...row]);
+    const positioned = await host.dispatch({ command: 'update_fractional_positions', args: {
+      positions: [[0.2, 0.3, 0.4]], commit: true,
+    } });
+    const latticeBeforeUpdate = getActiveStructure();
+    const fractionalBeforeLattice = latticeBeforeUpdate.atoms.map((atom) => atom.position.slice());
+    const originalLatticeBeforeUpdate = latticeBeforeUpdate.original.lattice.map((row) => [...row]);
+    const cameraBeforeLattice = {
+      position: app.camera.position.toArray(),
+      target: app.controls.target.toArray(),
+      zoom: app.camera.zoom,
+    };
+    const newLattice = [[3, 0.2, 0], [0, 3, 0.1], [0.3, 0, 3]];
+    const expectedCartesian = [0.2 * 3 + 0.3 * 0 + 0.4 * 0.3,
+      0.2 * 0.2 + 0.3 * 3 + 0.4 * 0,
+      0.2 * 0 + 0.3 * 0.1 + 0.4 * 3];
+    const { groups, general } = await import('./state/store.js');
+    general.showPolyhedra = true;
+    const polyhedraBuildBefore = general.polyhedraBuildCounter || 0;
+    const previousPolyhedraGroup = groups.polyhedraGroup;
+    const pipeline = app.pipeline;
+    const originalPipelineRender = pipeline.render;
+    let postCompletionFrameObserved = false;
+    let paintedPolyhedraGroup = null;
+    pipeline.render = (...args) => {
+      if (groups.polyhedraGroup !== previousPolyhedraGroup) {
+        postCompletionFrameObserved = true;
+        paintedPolyhedraGroup = groups.polyhedraGroup;
+      }
+      return originalPipelineRender.apply(pipeline, args);
+    };
+    const updatedLattice = await host.dispatch({ command: 'update_lattice', args: {
+      lattice: newLattice,
+    } });
+    await new Promise((resolve) => {
+      const deadline = performance.now() + 1000;
+      const observe = () => {
+        if (postCompletionFrameObserved || performance.now() >= deadline) resolve();
+        else requestAnimationFrame(observe);
+      };
+      observe();
+    });
+    pipeline.render = originalPipelineRender;
+    const polyhedraBuildAfter = general.polyhedraBuildCounter || 0;
+    const updatedStructure = getActiveStructure();
+    const latticeMeshPosition = groups.latticeGroup?.children[0]?.position.toArray() || null;
+    const atomMatrix = groups.atomsMesh?.instanceMatrix.array;
+    const updatedState = {
+      lattice: updatedStructure.lattice.map((row) => [...row]),
+      fractional: updatedStructure.atoms.map((atom) => atom.position.slice()),
+      originalLattice: updatedStructure.original.lattice.map((row) => [...row]),
+      periodicCartesian: updatedStructure.periodic.visibleWrapped?.cart?.[0] || null,
+      atomTranslation: atomMatrix ? [...atomMatrix.slice(12, 15)] : null,
+      latticeMeshPosition,
+      camera: {
+        position: app.camera.position.toArray(),
+        target: app.controls.target.toArray(),
+        zoom: app.camera.zoom,
+      },
     };
     const { createBrowserHost } = await import('./host/BrowserHost.js');
+    const throwingController = createBrowserHost({
+      updateLattice: () => {
+        const unsafe = { secret: 'not-json-safe' };
+        unsafe.self = unsafe;
+        throw Object.assign(new Error('injected lattice callback failure'), { details: unsafe });
+      },
+    });
+    const throwingLattice = await throwingController.dispatchInternal({ command: 'update_lattice', args: {
+      lattice: newLattice,
+    } });
     const fallbackController = createBrowserHost({
       applyFrameFast: () => { throw new Error('injected fast path failure'); },
       commitPositions: () => true,
     });
+    const unavailableLattice = await fallbackController.dispatchInternal({ command: 'update_lattice', args: {
+      lattice: newLattice,
+    } });
+    let releaseAsyncLattice;
+    const asyncLatticeGate = new Promise((resolve) => { releaseAsyncLattice = resolve; });
+    const asyncController = createBrowserHost({
+      updateLattice: async () => {
+        await asyncLatticeGate;
+        return true;
+      },
+    });
+    const pendingAsyncLattice = asyncController.dispatchInternal({ command: 'update_lattice', args: {
+      lattice: newLattice,
+    } });
+    const asyncLatticePendingState = await Promise.race([
+      pendingAsyncLattice.then(() => 'settled'),
+      new Promise((resolve) => setTimeout(() => resolve('pending'), 10)),
+    ]);
+    releaseAsyncLattice();
+    const asyncLattice = await pendingAsyncLattice;
+    let releaseAsyncRejection;
+    const asyncRejectionGate = new Promise((resolve) => { releaseAsyncRejection = resolve; });
+    const asyncRejectingController = createBrowserHost({
+      updateLattice: async () => {
+        await asyncRejectionGate;
+        throw new Error('async lattice callback failure');
+      },
+    });
+    const pendingAsyncRejection = asyncRejectingController.dispatchInternal({ command: 'update_lattice', args: {
+      lattice: newLattice,
+    } });
+    const asyncRejectionPendingState = await Promise.race([
+      pendingAsyncRejection.then(() => 'settled'),
+      new Promise((resolve) => setTimeout(() => resolve('pending'), 10)),
+    ]);
+    releaseAsyncRejection();
+    const asyncRejection = await pendingAsyncRejection;
     const fallback = await fallbackController.dispatchInternal({ command: 'update_fractional_positions', args: {
       positions: [[0.15, 0.25, 0.35]],
     } });
@@ -324,6 +446,30 @@ async function waitForHostFailure(page) {
       sessionLoaded,
       sessionCamera: sessionState.camera,
       cameraAfterSession,
+      oldLattice,
+      invalidLatticeShape,
+      latticeAfterShape,
+      invalidLatticeNonfinite,
+      latticeAfterNonfinite,
+      invalidLatticeSingular,
+      latticeAfterSingular,
+      positioned,
+      fractionalBeforeLattice,
+      originalLatticeBeforeUpdate,
+      cameraBeforeLattice,
+      newLattice,
+      expectedCartesian,
+      polyhedraBuildBefore,
+      polyhedraBuildAfter,
+      polyhedraFrameObserved: postCompletionFrameObserved && paintedPolyhedraGroup === groups.polyhedraGroup,
+      updatedLattice,
+      updatedState,
+      throwingLattice,
+      unavailableLattice,
+      asyncLatticePendingState,
+      asyncLattice,
+      asyncRejectionPendingState,
+      asyncRejection,
       fallback,
       rotated, beforeCamera, afterCamera, beforeRadius, afterRadius,
       raytrace, raytraceState, unknownPipeline, raster, saved, invalidOutput,
@@ -351,6 +497,52 @@ async function waitForHostFailure(page) {
     protocol.sessionLoaded.ok
       && JSON.stringify(protocol.cameraAfterSession.position) === JSON.stringify(protocol.sessionCamera.position)
       && JSON.stringify(protocol.cameraAfterSession.target) === JSON.stringify(protocol.sessionCamera.target));
+  H.check('invalid lattice requests reject without mutation',
+    !protocol.invalidLatticeShape.ok && protocol.invalidLatticeShape.error.code === 'INVALID_LATTICE'
+      && !protocol.invalidLatticeNonfinite.ok && protocol.invalidLatticeNonfinite.error.code === 'INVALID_LATTICE'
+      && !protocol.invalidLatticeSingular.ok && protocol.invalidLatticeSingular.error.code === 'INVALID_LATTICE'
+      && JSON.stringify(protocol.oldLattice) === JSON.stringify(protocol.latticeAfterShape)
+      && JSON.stringify(protocol.oldLattice) === JSON.stringify(protocol.latticeAfterNonfinite)
+      && JSON.stringify(protocol.oldLattice) === JSON.stringify(protocol.latticeAfterSingular));
+  H.check('valid lattice update rebuilds geometry while preserving fractional data and camera',
+    protocol.positioned.ok && protocol.updatedLattice.ok && protocol.updatedLattice.result === true
+      && JSON.stringify(protocol.updatedState.lattice) === JSON.stringify(protocol.newLattice)
+      && JSON.stringify(protocol.updatedState.fractional) === JSON.stringify(protocol.fractionalBeforeLattice)
+      && JSON.stringify(protocol.updatedState.originalLattice) === JSON.stringify(protocol.originalLatticeBeforeUpdate)
+      && protocol.updatedState.periodicCartesian.every((value, index) => Math.abs(value - protocol.expectedCartesian[index]) < 1e-9)
+      && protocol.updatedState.atomTranslation.every((value, index) => Math.abs(value - protocol.expectedCartesian[index]) < 1e-6)
+      && protocol.updatedState.latticeMeshPosition.every((value, index) => Math.abs(value - protocol.newLattice[0][index] / 2) < 1e-9)
+      && protocol.polyhedraBuildAfter > protocol.polyhedraBuildBefore
+      && protocol.polyhedraFrameObserved
+      && JSON.stringify(protocol.updatedState.camera) === JSON.stringify(protocol.cameraBeforeLattice),
+    JSON.stringify({
+      positioned: protocol.positioned,
+      updatedLattice: protocol.updatedLattice,
+      expectedCartesian: protocol.expectedCartesian,
+      polyhedraBuildBefore: protocol.polyhedraBuildBefore,
+      polyhedraBuildAfter: protocol.polyhedraBuildAfter,
+      polyhedraFrameObserved: protocol.polyhedraFrameObserved,
+      updatedState: protocol.updatedState,
+      cameraBeforeLattice: protocol.cameraBeforeLattice,
+    }));
+  H.check('lattice callback failure is normalized and JSON-safe',
+    !protocol.throwingLattice.ok
+      && protocol.throwingLattice.error.code === 'LATTICE_SYNC_FAILED'
+      && protocol.throwingLattice.error.details?.cause?.message === 'injected lattice callback failure'
+      && protocol.throwingLattice.error.details?.cause?.details?.self === '[Circular]'
+      && !Object.prototype.hasOwnProperty.call(protocol.throwingLattice.error.details?.cause || {}, 'stack')
+      && (() => { try { JSON.stringify(protocol.throwingLattice); return true; } catch { return false; } })(),
+    JSON.stringify(protocol.throwingLattice));
+  H.check('lattice update reports unavailable callback',
+    !protocol.unavailableLattice.ok
+      && protocol.unavailableLattice.error.code === 'COMMAND_UNAVAILABLE');
+  H.check('lattice update awaits async callback completion and rejection',
+    protocol.asyncLatticePendingState === 'pending'
+      && protocol.asyncLattice.ok && protocol.asyncLattice.result === true
+      && protocol.asyncRejectionPendingState === 'pending'
+      && !protocol.asyncRejection.ok
+      && protocol.asyncRejection.error.code === 'LATTICE_SYNC_FAILED'
+      && protocol.asyncRejection.error.details?.cause?.message === 'async lattice callback failure');
   H.check('thrown fast path falls back to a full synchronization',
     protocol.fallback.ok && protocol.fallback.result.fastPathApplied === false
       && protocol.fallback.result.rebuilt === true

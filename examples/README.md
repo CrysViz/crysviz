@@ -30,27 +30,35 @@ python3 -m pip install .
 The rotation example performs a short orbit and then closes its window.
 The ray-tracing example writes `crysviz-raytrace.png` in the current directory,
 prints its resolved path, and closes as soon as the synchronous image export
-finishes. Ctrl-C or a context exit also closes the managed window and cleans up
-its private host.
+finishes. The lattice-and-positions example visibly deforms a two-atom silicon
+cell, changes both fractional positions, recenters the camera, then closes.
+Ctrl-C or a context exit also closes the managed window and cleans up its
+private host.
 
 ## Details
 
-Two self-contained remote-control examples are in [`examples/`](examples/):
+Three self-contained remote-control examples are in [`examples/`](examples/):
 [`rotate_camera.py`](examples/rotate_camera.py) demonstrates a camera orbit,
-and [`raytrace_snapshot.py`](examples/raytrace_snapshot.py) selects ray tracing
-and saves a PNG. The managed controller also provides
+[`raytrace_snapshot.py`](examples/raytrace_snapshot.py) selects ray tracing
+and saves a PNG, and
+[`update_lattice_and_positions.py`](examples/update_lattice_and_positions.py)
+updates a two-atom structure. The managed controller also provides
 `rotate_camera(angle_degrees, axis="y")`, `set_render_pipeline(pipeline_id)`,
 and `save_image(path, width=800, height=600, margin=0, transparent=False,
 timeout=None)`. `save_image` returns the written `pathlib.Path`; PNG capture is
 full-view and restores the browser's render state after export.
 
-`load`, `list_structures`, `select`, `update_fractional_positions`,
-`commit_positions`, and `recenter_camera` are synchronous controller methods.
+`load`, `list_structures`, `select`, `update_lattice`,
+`update_fractional_positions`, `commit_positions`, and `recenter_camera` are
+synchronous controller methods.
 They return `LoadResult`, `StructureInfo`, and `PositionUpdateResult` where
 appropriate. Structure IDs are opaque and stable for the lifetime of a viewer.
 Position updates require exactly one finite three-component fractional point
 per atom; a failed fast update automatically performs the full periodic and
 topology rebuild, and `commit=True` completes that full synchronization.
+`update_lattice` takes exactly three finite Cartesian row vectors in Å. It
+preserves fractional positions, affects only the active frame, synchronously
+performs a full browser rebuild, and leaves the camera untouched.
 
 Subscribe before or after startup with `viewer.on("ready", callback)` and
 remove a callback with `off`. Callbacks receive `ViewerEvent` records and run

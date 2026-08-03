@@ -16,6 +16,7 @@ import threading
 import time
 from dataclasses import dataclass
 from multiprocessing.connection import Client
+from numbers import Real
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -518,6 +519,34 @@ class Viewer:
             return PositionUpdateResult(value["atomCount"], value["fastPathApplied"], value["rebuilt"], value.get("fallbackReason"))
         except KeyError as error:
             raise ViewerProtocolError("position update result is incomplete") from error
+
+    def update_lattice(self, lattice: Sequence[Sequence[float]]) -> None:
+        if isinstance(lattice, (str, bytes)) or not isinstance(lattice, Sequence) or len(lattice) != 3:
+            raise ValueError("lattice must be a sequence of three three-component vectors")
+        copied: list[list[float]] = []
+        for vector in lattice:
+            if isinstance(vector, (str, bytes)) or not isinstance(vector, Sequence) or len(vector) != 3:
+                raise ValueError("every lattice vector must be exactly three finite numbers")
+            values: list[float] = []
+            for value in vector:
+                if isinstance(value, bool) or not isinstance(value, Real):
+                    raise ValueError("every lattice vector must be exactly three finite numbers")
+                try:
+                    copied_value = float(value)
+                except OverflowError as error:
+                    raise ValueError("every lattice vector must be exactly three finite numbers") from error
+                if not math.isfinite(copied_value):
+                    raise ValueError("every lattice vector must be exactly three finite numbers")
+                values.append(copied_value)
+            copied.append(values)
+        determinant = (
+            copied[0][0] * (copied[1][1] * copied[2][2] - copied[1][2] * copied[2][1])
+            - copied[0][1] * (copied[1][0] * copied[2][2] - copied[1][2] * copied[2][0])
+            + copied[0][2] * (copied[1][0] * copied[2][1] - copied[1][1] * copied[2][0])
+        )
+        if abs(determinant) < 1e-12:
+            raise ValueError("lattice must be nonsingular")
+        self._command("update_lattice", {"lattice": copied})
 
     def commit_positions(self) -> None:
         self._command("commit_positions")

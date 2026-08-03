@@ -291,6 +291,30 @@ function commitHostPositions() {
   return true;
 }
 
+async function updateHostLattice(lattice) {
+  const structure = getActiveStructure();
+  if (!structure) return false;
+  structure.lattice = lattice.map((row) => [...row]);
+  structure.periodic = { hash: null, wrapped: null };
+  const frac = structure.atoms.map((atom) => atom.position);
+  runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
+  updateVisualization({
+    atomsUpdate: true,
+    bondsUpdate: true,
+    reRenderAtoms: true,
+    reRenderBonds: true,
+    reRenderLattice: true,
+    reRenderOther: true,
+    reRenderComposition: false,
+    reRenderPolyhedra: false,
+  });
+  if (general.showPolyhedra || general.completePolyhedra) {
+    await updatePolyhedra();
+    requestRender();
+  }
+  return true;
+}
+
 export async function loadStructure(content, fileName = '', isDefault = false, format = '') {
   try {
 
@@ -384,6 +408,7 @@ export async function initializeCore(browserHostController) {
     selectStructure,
     applyFrameFast,
     commitPositions: commitHostPositions,
+    updateLattice: updateHostLattice,
     recenterCamera,
     rotateCamera: (angle, axis) => { applyRotationFromUI(angle, axis); requestRender(); },
     setRenderPipeline: setActivePipelineFromController,

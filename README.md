@@ -119,6 +119,7 @@ payload = Payload("silicon.cif", "data_Si\n_cell_length_a 5.43\n")
 with Viewer([payload]) as viewer:
     structures = viewer.list_structures()
     viewer.select(structures[0].id, frame=0)
+    viewer.update_lattice([[5.7, 0.0, 0.0], [0.2, 5.4, 0.0], [0.0, 0.0, 5.2]])
     viewer.update_fractional_positions([[0.0, 0.0, 0.0]], commit=False)
     viewer.commit_positions()
     viewer.recenter_camera()

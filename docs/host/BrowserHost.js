@@ -13,6 +13,7 @@ const COMMANDS = new Set([
   'list_structures',
   'select',
   'update_fractional_positions',
+  'update_lattice',
   'commit_positions',
   'recenter_camera',
   'rotate_camera',
@@ -142,12 +143,13 @@ function removeQueryParameter(name) {
  * intentionally private to the bootstrap coordinator; only the frozen facade
  * is put on window.
  */
-/** @param {{loadStructure?: Function, selectStructure?: Function, applyFrameFast?: Function, commitPositions?: Function, recenterCamera?: Function, rotateCamera?: Function, setRenderPipeline?: Function, captureSceneToPng?: Function}} [deps] */
+/** @param {{loadStructure?: Function, selectStructure?: Function, applyFrameFast?: Function, commitPositions?: Function, updateLattice?: Function, recenterCamera?: Function, rotateCamera?: Function, setRenderPipeline?: Function, captureSceneToPng?: Function}} [deps] */
 export function createBrowserHost({
   loadStructure,
   selectStructure,
   applyFrameFast,
   commitPositions,
+  updateLattice,
   recenterCamera,
   rotateCamera,
   setRenderPipeline,
@@ -166,6 +168,7 @@ export function createBrowserHost({
     if (typeof next.selectStructure === 'function') selectStructure = next.selectStructure;
     if (typeof next.applyFrameFast === 'function') applyFrameFast = next.applyFrameFast;
     if (typeof next.commitPositions === 'function') commitPositions = next.commitPositions;
+    if (typeof next.updateLattice === 'function') updateLattice = next.updateLattice;
     if (typeof next.recenterCamera === 'function') recenterCamera = next.recenterCamera;
     if (typeof next.rotateCamera === 'function') rotateCamera = next.rotateCamera;
     if (typeof next.setRenderPipeline === 'function') setRenderPipeline = next.setRenderPipeline;
@@ -305,6 +308,33 @@ export function createBrowserHost({
           rebuilt = true;
         }
         return { atomCount: positions.length, fastPathApplied, rebuilt, ...(fallbackReason ? { fallbackReason } : {}) };
+      }
+      case 'update_lattice': {
+        const input = requireArgs(args, command);
+        if (!getActiveStructure()) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+        if (!Array.isArray(input.lattice) || input.lattice.length !== 3
+          || input.lattice.some((row) => !Array.isArray(row) || row.length !== 3
+            || row.some((value) => typeof value !== 'number' || !Number.isFinite(value)))) {
+          throw commandError('INVALID_LATTICE', 'lattice must be exactly three rows of three finite numbers');
+        }
+        const lattice = input.lattice.map((row) => [...row]);
+        const determinant = lattice[0][0] * (lattice[1][1] * lattice[2][2] - lattice[1][2] * lattice[2][1])
+          - lattice[0][1] * (lattice[1][0] * lattice[2][2] - lattice[1][2] * lattice[2][0])
+          + lattice[0][2] * (lattice[1][0] * lattice[2][1] - lattice[1][1] * lattice[2][0]);
+        if (Math.abs(determinant) < 1e-12) {
+          throw commandError('INVALID_LATTICE', 'lattice must be nonsingular');
+        }
+        if (typeof updateLattice !== 'function') {
+          throw commandError('COMMAND_UNAVAILABLE', 'Lattice update is unavailable');
+        }
+        try {
+          if (await updateLattice(lattice) !== true) throw new Error('Lattice update was not applied');
+        } catch (error) {
+          throw commandError('LATTICE_SYNC_FAILED', 'Lattice synchronization failed', {
+            cause: safeError(error, 'LATTICE_SYNC_FAILED'),
+          });
+        }
+        return true;
       }
       case 'commit_positions':
         if (args !== undefined) requireArgs(args, command);

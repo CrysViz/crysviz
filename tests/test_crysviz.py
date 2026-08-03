@@ -569,6 +569,7 @@ class PackagingMetadataTests(unittest.TestCase):
         self.assertIn("recursive-include examples *.py README.md", manifest)
         self.assertTrue((root / "examples" / "rotate_camera.py").is_file())
         self.assertTrue((root / "examples" / "raytrace_snapshot.py").is_file())
+        self.assertTrue((root / "examples" / "update_lattice_and_positions.py").is_file())
         self.assertNotIn("examples", tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8")).get("tool", {}).get("setuptools", {}).get("packages", []))
 
 
