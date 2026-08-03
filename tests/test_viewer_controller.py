@@ -202,6 +202,24 @@ class ViewerControllerTests(unittest.TestCase):
         with self.assertRaises(ViewerProtocolError):
             viewer.list_structures()
 
+    def test_native_host_crash_preserves_stderr_diagnostic(self):
+        connection = _Connection()
+        connection.incoming.put(None)
+        viewer = Viewer()
+        viewer._connection = connection
+        process = mock.Mock()
+        process.poll.return_value = 1
+        viewer._process = process
+        viewer._host_stderr = "Qt platform plugin failed"
+
+        viewer._reader_loop()
+
+        self.assertIsInstance(viewer._close_error, ViewerProtocolError)
+        self.assertIn("Qt platform plugin failed", str(viewer._close_error))
+        process.stdin.close.assert_called_once_with()
+        process.stdout.close.assert_called_once_with()
+        process.stderr.close.assert_called_once_with()
+
     def test_close_during_startup_and_late_replay_target_only_new_callback(self):
         client, server = _pair()
         viewer = Viewer(startup_timeout=0.5)

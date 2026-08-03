@@ -49,7 +49,7 @@ async function launchApp({ navigate = true } = {}) {
     } catch { /* storage unavailable */ }
   });
   const errors = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`.slice(0, 300)));
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.stack || e.message}`.slice(0, 1200)));
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(`console: ${m.text()}`.slice(0, 300));
   });

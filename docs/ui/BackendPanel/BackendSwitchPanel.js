@@ -1,7 +1,7 @@
 import { general } from '../../state/store.js';
 import { removeAtomisticPanel, addRelaxPanel, addMDPanel } from './AtomisticPanels.js';
 import { refreshBackendTheme } from './BackendTheme.js';
-import { addMDStreamPanel, removeMDStreamPanel } from './MDStreamPanel.js';
+import { removeMDStreamPanel } from './MDStreamPanel.js';
 
 const BackendModeSwitch = document.getElementById("BackendModeSwitch");
 

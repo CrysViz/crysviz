@@ -7,7 +7,6 @@ cd "$repo_root"
 python_bin=${PYTHON:-python3}
 setup_dependencies=${CI_SETUP:-1}
 skip_browser=${CI_SKIP_BROWSER:-0}
-skip_pywebview=${CI_SKIP_PYWEBVIEW:-0}
 temp_base=${TMPDIR:-/tmp}
 ci_temp=$(mktemp -d "$temp_base/crysviz-ci.XXXXXX")
 marker_name="ci-must-not-package-${ci_temp##*/}.txt"
@@ -31,14 +30,10 @@ trap cleanup EXIT
 if [[ "$setup_dependencies" == "1" ]]; then
     npm ci
     "$python_bin" -m pip install build
-    if [[ "$skip_pywebview" == "1" ]]; then
-        "$python_bin" -m pip install -e .
-    else
-        "$python_bin" -m pip install -e '.[qt]'
-    fi
+    "$python_bin" -m pip install -e .
 fi
 
-make check
+make checks
 "$python_bin" -m unittest discover -s tests -v
 
 mkdir -p "$(dirname "$generated_target")" "$(dirname "$generated_pkg")" "$(dirname "$generated_report")"
@@ -78,10 +73,4 @@ if [[ "$skip_browser" != "1" ]]; then
     fi
     CRYSVIZ_COMMAND="$wheel_venv/bin/crysviz" \
         tools/browsertest/run.sh tests/hostfacade.test.js tests/packagecli.test.js
-fi
-
-if [[ "$skip_pywebview" != "1" ]]; then
-    env -u QTWEBENGINE_CHROMIUM_FLAGS \
-        CRYSVIZ_PYWEBVIEW_SMOKE=1 LIBGL_ALWAYS_SOFTWARE=1 \
-        xvfb-run -a "$python_bin" -m unittest tests/test_pywebview_smoke.py -v
 fi

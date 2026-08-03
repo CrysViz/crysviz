@@ -12,7 +12,7 @@ load-time failures in the browser:
                        SyntaxError "does not provide an export named 'x'").
 
 Dependency-free (Python 3 stdlib). Exits non-zero if any problem is found, so it
-can gate `make check`. Scans docs/ and ignores vendored/compiled/dead code.
+can gate `make checks`. Scans docs/ and ignores vendored/compiled/dead code.
 """
 import os
 import re

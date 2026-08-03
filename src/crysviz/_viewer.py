@@ -112,6 +112,13 @@ def _terminate_process(process: subprocess.Popen[str]) -> None:
             process.wait(timeout=2)
         except (OSError, subprocess.TimeoutExpired):
             pass
+    finally:
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                try:
+                    stream.close()
+                except (OSError, ValueError):
+                    pass
 
 
 class Viewer:
@@ -135,6 +142,8 @@ class Viewer:
         self._send_lock = threading.Lock()
         self._connection: Any | None = None
         self._process: subprocess.Popen[str] | None = None
+        self._host_stderr = ""
+        self._stderr_thread: threading.Thread | None = None
         self._reader: threading.Thread | None = None
         self._event_worker: threading.Thread | None = None
         self._events: queue.Queue[ViewerEvent | tuple[ViewerEvent, Callable[[ViewerEvent], object]] | None] = queue.Queue()
@@ -247,9 +256,18 @@ class Viewer:
             assert process.stdin is not None and process.stdout is not None and process.stderr is not None
             process.stdin.write(bootstrap)
             process.stdin.close()
-            # Keep a verbose GUI backend from blocking on its stderr pipe. The
-            # bootstrap secret is never written to stderr by this module.
-            threading.Thread(target=lambda: process.stderr.read(), name="crysviz-host-stderr", daemon=True).start()
+            # Keep a verbose GUI backend from blocking on its stderr pipe, but
+            # retain a bounded tail so an early native crash remains
+            # diagnosable. The bootstrap secret is never written to stderr.
+            def drain_stderr() -> None:
+                stderr = process.stderr.read()
+                with self._lock:
+                    self._host_stderr = stderr[-4096:]
+
+            self._stderr_thread = threading.Thread(
+                target=drain_stderr, name="crysviz-host-stderr", daemon=True,
+            )
+            self._stderr_thread.start()
             deadline = time.monotonic() + self._startup_timeout
             advertised_lines: queue.Queue[str] = queue.Queue(maxsize=1)
             threading.Thread(
@@ -341,7 +359,22 @@ class Viewer:
                         attachment.close()
                     raise ViewerProtocolError(f"unexpected host message type {message_type!r}")
         except (EOFError, OSError, ProtocolError, ViewerError) as error:
-            self._fail(ViewerProtocolError(str(error)))
+            message = str(error)
+            process = self._process
+            stderr_thread = self._stderr_thread
+            if not message and process is not None and process.poll() is None:
+                try:
+                    process.wait(timeout=0.2)
+                except subprocess.TimeoutExpired:
+                    pass
+            if not message and process is not None and process.poll() is not None:
+                if stderr_thread is not None:
+                    stderr_thread.join(timeout=0.2)
+                with self._lock:
+                    stderr = self._host_stderr.strip()
+                if stderr:
+                    message = f"host exited unexpectedly:\n{stderr}"
+            self._fail(ViewerProtocolError(message or "host connection closed unexpectedly"))
 
     def _accept_event(self, payload: object) -> None:
         if not isinstance(payload, dict) or set(payload) != {"event", "data"} or not isinstance(payload["event"], str):

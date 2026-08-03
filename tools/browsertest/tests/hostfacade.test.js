@@ -30,6 +30,16 @@ function makeTrajectoryFixture() {
 }
 const TRAJECTORY = makeTrajectoryFixture();
 
+async function waitForHostFailure(page) {
+  const terminal = await H.waitFor(page, () => {
+    const closed = window.__hostEvents?.some((record) => record.event === 'closed');
+    const error = window.__hostEvents?.find((record) => record.event === 'error')?.data;
+    return closed && error ? { error } : null;
+  }, { timeout: 90000, interval: 100 });
+  if (!terminal) throw new Error('host failure did not reach its terminal state');
+  return terminal;
+}
+
 (async () => {
   const first = await H.launchApp();
   const { browser, page, errors } = first;
@@ -37,6 +47,10 @@ const TRAJECTORY = makeTrajectoryFixture();
   const completeBodies = [];
   const failureCompletions = [];
   const inputOrder = [];
+  let signalFirstInputRequested;
+  const firstInputRequested = new Promise((resolve) => { signalFirstInputRequested = resolve; });
+  let releaseFirstInput;
+  const firstInputRelease = new Promise((resolve) => { releaseFirstInput = resolve; });
 
   // Observe the first history mutation and subscribe as soon as the early
   // facade exists. This makes the test cover the pre-core startup boundary,
@@ -83,7 +97,7 @@ const TRAJECTORY = makeTrajectoryFixture();
     watchHost();
   });
 
-  await page.route('**/_crysviz/manifest/capability*', async (route) => {
+  await page.route('**/_crysviz/manifest/capability{,/complete}', async (route) => {
     if (route.request().method() === 'POST') {
       completeBodies.push(JSON.parse(route.request().postData() || '{}'));
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -104,7 +118,8 @@ const TRAJECTORY = makeTrajectoryFixture();
     });
   });
   await page.route('**/host/input-a', async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    signalFirstInputRequested();
+    await firstInputRelease;
     inputOrder.push('manifest-a');
     await route.fulfill({ status: 200, body: POSCAR });
   });
@@ -117,6 +132,31 @@ const TRAJECTORY = makeTrajectoryFixture();
 
   const origin = await page.evaluate(() => location.origin);
   await page.goto(`${origin}/index.html?_crysviz_manifest=capability&state=invalid#load-file=ignored|ignored`, { waitUntil: 'load', timeout: 90000 });
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('first host input was not requested')), 10000);
+    firstInputRequested.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+  let deferredPanels;
+  try {
+    deferredPanels = await page.evaluate(async () => {
+      const { getPanel } = await import('./ui/panels/PanelManager.js');
+      const { getActiveStructure } = await import('./state/structures.js');
+      const visual = getPanel('visual');
+      const features = getPanel('features');
+      return {
+        hasActiveStructure: !!getActiveStructure(),
+        visualBuilt: visual?.built,
+        visualHidden: visual?.el.hidden,
+        featuresBuilt: features?.built,
+        featuresHidden: features?.el.hidden,
+      };
+    });
+  } finally {
+    releaseFirstInput();
+  }
   const hostReady = await H.waitFor(page,
     () => window.__hostEvents?.some((record) => record.event === 'ready'),
     { timeout: 90000, interval: 100 });
@@ -138,6 +178,7 @@ const TRAJECTORY = makeTrajectoryFixture();
       scrubObserved: window.__hostScrubObserved,
       eventsJsonSafe: window.__hostEventsJsonSafe,
       eventsImmutable: window.__hostEventsImmutable,
+      earlyEventsFrozen: window.__hostEvents.every((record) => Object.isFrozen(record)),
       moduleScripts: [...document.scripts]
         .filter((script) => script.type === 'module')
         .map((script) => script.getAttribute('src')),
@@ -155,6 +196,11 @@ const TRAJECTORY = makeTrajectoryFixture();
       && bootstrap.earlyExports.length === 0);
   H.check('manifest query capability is scrubbed at the earliest observable point',
     bootstrap.scrubObserved && !bootstrap.url.includes('_crysviz_manifest'));
+  H.check('structure-dependent persistent panels defer construction until the first structure',
+    !deferredPanels.hasActiveStructure
+      && !deferredPanels.visualBuilt && deferredPanels.visualHidden
+      && !deferredPanels.featuresBuilt && deferredPanels.featuresHidden,
+    JSON.stringify(deferredPanels));
   H.check('manifest inputs load in order and ready is replayed',
     bootstrap.listed.ok
       && bootstrap.listed.result.map((e) => e.name).join(',') === 'manifest-a,manifest-b,binary trajectory'
@@ -169,8 +215,12 @@ const TRAJECTORY = makeTrajectoryFixture();
         === 'manifest-a,manifest-b,binary trajectory'
       && bootstrap.earlyEvents.at(-1)?.event === 'ready');
   H.check('subscriber event snapshots are immutable and JSON-safe',
-    bootstrap.eventsJsonSafe && bootstrap.eventsImmutable
-      && bootstrap.earlyEvents.every((record) => Object.isFrozen(record)));
+    bootstrap.eventsJsonSafe && bootstrap.eventsImmutable && bootstrap.earlyEventsFrozen,
+    JSON.stringify({
+      jsonSafe: bootstrap.eventsJsonSafe,
+      immutable: bootstrap.eventsImmutable,
+      frozen: bootstrap.earlyEventsFrozen,
+    }));
   H.check('pywebview captures the original receiver and handles rejection',
     bootstrap.bridgeCalls.length > 0
       && bootstrap.bridgeCalls.every((call) => call.capability === 'bridge-capability')
@@ -189,7 +239,7 @@ const TRAJECTORY = makeTrajectoryFixture();
       return;
     }
     outputBodies.push({
-      contentType: route.request().headerValue('content-type'),
+      contentType: await route.request().headerValue('content-type'),
       body: route.request().postDataBuffer(),
     });
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -322,7 +372,13 @@ const TRAJECTORY = makeTrajectoryFixture();
     protocol.saved.ok && protocol.saved.result.contentType === 'image/png'
       && outputBodies.length === 1 && outputBodies[0].contentType === 'image/png'
       && pngBody && pngBody.length > 32
-      && pngBody.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])));
+      && pngBody.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+    JSON.stringify({
+      saved: protocol.saved,
+      uploads: outputBodies.length,
+      contentType: outputBodies[0]?.contentType,
+      bytes: pngBody?.length,
+    }));
   H.check('controller rejects invalid output URL without upload',
     !protocol.invalidOutput.ok && protocol.invalidOutput.error.code === 'INVALID_OUTPUT_URL'
       && outputBodies.length === 1);
@@ -358,7 +414,7 @@ const TRAJECTORY = makeTrajectoryFixture();
         select: document.getElementById('renderPipelineMenu')?.value,
         rtControls: document.getElementById('rtControlsBlock')?.style.display,
         groundReflect: document.getElementById('rtGroundReflect')?.closest('.control-row')?.style.display,
-        renderStyle: document.getElementById('renderStyleMenu')?.style.display,
+        renderStyle: document.getElementById('renderStyleMenu')?.closest('.control-row')?.style.display,
       },
     };
   });
@@ -381,9 +437,9 @@ const TRAJECTORY = makeTrajectoryFixture();
   H.check('Socket.IO startup dependency is locally vendored', vendored);
   H.check('successful host bootstrap has no harness errors', errors.length === 0, errors.join(' | '));
 
-  await page.unroute('**/_crysviz/manifest/capability*');
+  await page.unroute('**/_crysviz/manifest/capability{,/complete}');
   const emptyManifestCompletions = [];
-  await page.route('**/_crysviz/manifest/empty*', async (route) => {
+  await page.route('**/_crysviz/manifest/empty{,/complete}', async (route) => {
     if (route.request().method() === 'POST') {
       emptyManifestCompletions.push(JSON.parse(route.request().postData() || '{}'));
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -408,9 +464,9 @@ const TRAJECTORY = makeTrajectoryFixture();
     emptyManifest.dispatch.ok && emptyManifest.dispatch.result.length === 1
       && emptyManifest.defaultName === 'Si'
       && emptyManifestCompletions.length === 1 && emptyManifestCompletions[0].ok === true);
-  await page.unroute('**/_crysviz/manifest/empty*');
+  await page.unroute('**/_crysviz/manifest/empty{,/complete}');
 
-  await page.route('**/_crysviz/manifest/failing*', async (route) => {
+  await page.route('**/_crysviz/manifest/failing{,/complete}', async (route) => {
     if (route.request().method() === 'POST') {
       failureCompletions.push(JSON.parse(route.request().postData() || '{}'));
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -419,7 +475,7 @@ const TRAJECTORY = makeTrajectoryFixture();
     }
   });
   await page.goto(`${origin}/index.html?_crysviz_manifest=failing`, { waitUntil: 'load', timeout: 90000 });
-  await page.waitForTimeout(1500);
+  await waitForHostFailure(page);
   const failedBootstrap = await page.evaluate(async () => {
     const host = window.crysvizHost;
     const dispatch = await host.dispatch({ command: 'list_structures' });
@@ -427,19 +483,21 @@ const TRAJECTORY = makeTrajectoryFixture();
     return {
       structureCount: getContainers().length,
       dispatchCode: dispatch.error?.code || null,
-      status: document.getElementById('status')?.textContent || '',
+      hostError: window.__hostEvents?.find((record) => record.event === 'error')?.data || null,
     };
   });
   H.check('authoritative host failure does not fall through to default',
     failedBootstrap.structureCount === 0
       && ['NOT_READY', 'VIEWER_CLOSED'].includes(failedBootstrap.dispatchCode)
-      && /Could not fetch host manifest/.test(failedBootstrap.status));
+      && /Could not fetch host manifest/.test(failedBootstrap.hostError?.message || ''),
+    JSON.stringify(failedBootstrap));
   H.check('authoritative host failure posts unsuccessful completion',
-    failureCompletions.length === 1 && failureCompletions[0].ok === false);
+    failureCompletions.length === 1 && failureCompletions[0].ok === false,
+    JSON.stringify(failureCompletions));
 
-  await page.unroute('**/_crysviz/manifest/failing*');
+  await page.unroute('**/_crysviz/manifest/failing{,/complete}');
   const dynamicFailureCompletions = [];
-  await page.route('**/_crysviz/manifest/dynamic-failure*', async (route) => {
+  await page.route('**/_crysviz/manifest/dynamic-failure{,/complete}', async (route) => {
     if (route.request().method() === 'POST') {
       dynamicFailureCompletions.push(JSON.parse(route.request().postData() || '{}'));
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -454,27 +512,28 @@ const TRAJECTORY = makeTrajectoryFixture();
   await page.route('**/core/crystal-viewer.js', (route) =>
     route.fulfill({ status: 404, body: 'intentional dynamic import failure' }));
   await page.goto(`${origin}/index.html?_crysviz_manifest=dynamic-failure`, { waitUntil: 'load', timeout: 90000 });
-  await page.waitForTimeout(1200);
+  await waitForHostFailure(page);
   const dynamicFailure = await page.evaluate(async () => {
     const dispatch = await window.crysvizHost.dispatch({ command: 'list_structures' });
     const { getContainers } = await import('./state/structures.js');
     return {
       structureCount: getContainers().length,
       dispatchCode: dispatch.error?.code || null,
-      status: document.getElementById('status')?.textContent || '',
+      hostError: window.__hostEvents?.find((record) => record.event === 'error')?.data || null,
     };
   });
   H.check('dynamic core import failure closes host and completes once',
     dynamicFailure.structureCount === 0
       && ['NOT_READY', 'VIEWER_CLOSED'].includes(dynamicFailure.dispatchCode)
-      && /Error:/.test(dynamicFailure.status)
+      && !!dynamicFailure.hostError?.message
       && dynamicFailureCompletions.length === 1
-      && dynamicFailureCompletions[0].ok === false);
+      && dynamicFailureCompletions[0].ok === false,
+    JSON.stringify({ dynamicFailure, completions: dynamicFailureCompletions }));
   await page.unroute('**/core/crystal-viewer.js');
-  await page.unroute('**/_crysviz/manifest/dynamic-failure*');
+  await page.unroute('**/_crysviz/manifest/dynamic-failure{,/complete}');
 
   const redirectCompletions = [];
-  await page.route('**/_crysviz/manifest/redirect-manifest*', async (route) => {
+  await page.route('**/_crysviz/manifest/redirect-manifest{,/complete}', async (route) => {
     if (route.request().method() === 'POST') {
       redirectCompletions.push(JSON.parse(route.request().postData() || '{}'));
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -483,14 +542,15 @@ const TRAJECTORY = makeTrajectoryFixture();
     await route.fulfill({ status: 302, headers: { location: 'https://example.invalid/manifest' } });
   });
   await page.goto(`${origin}/index.html?_crysviz_manifest=redirect-manifest`, { waitUntil: 'load', timeout: 90000 });
-  await page.waitForTimeout(1200);
+  await waitForHostFailure(page);
   H.check('manifest redirect is rejected and completed exactly once',
-    redirectCompletions.length === 1 && redirectCompletions[0].ok === false);
+    redirectCompletions.length === 1 && redirectCompletions[0].ok === false,
+    JSON.stringify(redirectCompletions));
 
-  await page.unroute('**/_crysviz/manifest/redirect-manifest*');
+  await page.unroute('**/_crysviz/manifest/redirect-manifest{,/complete}');
   const inputRedirectCompletions = [];
   let redirectedInputFetched = false;
-  await page.route('**/_crysviz/manifest/input-redirect*', async (route) => {
+  await page.route('**/_crysviz/manifest/input-redirect{,/complete}', async (route) => {
     if (route.request().method() === 'POST') {
       inputRedirectCompletions.push(JSON.parse(route.request().postData() || '{}'));
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -507,9 +567,10 @@ const TRAJECTORY = makeTrajectoryFixture();
     await route.fulfill({ status: 302, headers: { location: 'https://example.invalid/input' } });
   });
   await page.goto(`${origin}/index.html?_crysviz_manifest=input-redirect`, { waitUntil: 'load', timeout: 90000 });
-  await page.waitForTimeout(1200);
+  await waitForHostFailure(page);
   H.check('input redirect is rejected without a successful load',
-    redirectedInputFetched && inputRedirectCompletions.length === 1 && inputRedirectCompletions[0].ok === false);
+    redirectedInputFetched && inputRedirectCompletions.length === 1 && inputRedirectCompletions[0].ok === false,
+    JSON.stringify({ redirectedInputFetched, completions: inputRedirectCompletions }));
 
   // The legacy loader splits before decoding. An encoded pipe and percent sign
   // therefore remain legal filename characters and are decoded exactly once.
