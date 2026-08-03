@@ -21,11 +21,19 @@ Direct
 def main() -> None:
     with Viewer([Payload("lattice-and-positions.POSCAR", POSCAR)], command_timeout=10) as viewer:
         structure = viewer.list_structures()[0]
+        for _ in range(26):
+            viewer.rotate_camera(5, axis="y")
+            time.sleep(0.04)
+        time.sleep(2)
         viewer.select(structure.id, frame=0)
         viewer.update_lattice([[6.1, 0.0, 0.0], [0.45, 5.2, 0.0], [0.1, 0.35, 5.7]])
         viewer.update_fractional_positions([[0.0, 0.0, 0.0], [0.32, 0.28, 0.36]], commit=True)
         viewer.recenter_camera()
         time.sleep(2)
+        for _ in range(46):
+            viewer.rotate_camera(5, axis="y")
+            time.sleep(0.04)
+        viewer.wait()
     print("Lattice and fractional-position updates complete; the CrysViz window has closed.")
 
 
