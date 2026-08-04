@@ -422,6 +422,15 @@ function drawFloatingColorBars(octx, width, height, margin, crop, viewRect) {
   }
 }
 
+let captureInProgress = false;
+
+/** Read-only ownership query for render-domain callers that can replace the
+ * active pipeline. The capture wrapper sets this before any asynchronous work
+ * begins and clears it in its outer finally. */
+export function isPngCaptureInProgress() {
+  return captureInProgress;
+}
+
 /**
  * Capture the current scene to a high-resolution PNG Blob.
  *
@@ -445,6 +454,16 @@ function drawFloatingColorBars(octx, width, height, margin, crop, viewRect) {
  * @returns {Promise<Blob>}
  */
 export async function captureSceneToPng(opts) {
+  if (captureInProgress) throw new Error('A PNG capture is already in progress.');
+  captureInProgress = true;
+  try {
+    return await captureSceneToPngImpl(opts);
+  } finally {
+    captureInProgress = false;
+  }
+}
+
+async function captureSceneToPngImpl(opts) {
   if (!app.renderer || !app.scene || !app.camera) {
     throw new Error('Scene is not ready.');
   }
@@ -477,6 +496,7 @@ export async function captureSceneToPng(opts) {
   // Exports always trace at 100% internal resolution regardless of the
   // interactive "RT resolution" setting.
   const prevRtScale = general.rtResolutionScale;
+  const prevPaced = app.pipeline?._pacedExternally;
   const signal = opts.signal;
 
   try {
@@ -580,13 +600,17 @@ export async function captureSceneToPng(opts) {
     // Restore the live view. Camera projection was never changed. Runs on
     // normal completion AND on abort, so the view is always intact afterwards.
     app.pipeline?.endPacedRender?.();
+    if (prevPaced) app.pipeline?.beginPacedRender?.();
     app.offscreenRenderHold = false;
     general.rtResolutionScale = prevRtScale;
     app.scene.background = prevBackground;
     app.renderer.setClearAlpha(prevClearAlpha);
     app.renderer.setPixelRatio(prevPixelRatio);
-    app.renderer.setSize(vw, vh, false);
-    app.pipeline?.setSize(vw, vh);
+    const currentView = getViewEl();
+    const currentW = Math.max(1, currentView.clientWidth || window.innerWidth);
+    const currentH = Math.max(1, currentView.clientHeight || window.innerHeight);
+    app.renderer.setSize(currentW, currentH, false);
+    app.pipeline?.setSize(currentW, currentH);
 
     const gizmoDiv = document.getElementById('axesGizmo');
     if (app.gizmoRenderer && prevGizmoPR != null) {

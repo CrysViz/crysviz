@@ -53,8 +53,15 @@ export function togglePlotTheme(plotId) {
 export async function renderGroupedHistogram(plotId, {
   groups, xTitle, yTitle, isExpanded = false, theme = undefined, compact = false,
 }) {
-  const Plotly = await loadPlotly();
-  if (!document.getElementById(plotId)) return;
+  let Plotly;
+  try {
+    Plotly = await loadPlotly();
+  } catch (error) {
+    const plot = document.getElementById(plotId);
+    if (plot) plot.textContent = error.message;
+    return false;
+  }
+  if (!document.getElementById(plotId)) return false;
 
   const isLight = (theme ?? getPlotTheme(plotId)) === 'light';
   const paperBg = isLight ? '#ffffff' : 'rgba(0,0,0,0)';

@@ -19,6 +19,7 @@ import * as THREE from '../../external/three/three.module.js';
 import { app, general } from '../../state/store.js';
 import { setTransparencyPolicyDelegate } from '../../utils/TransparencyPolicy.js';
 import { requestRender } from '../AnimateModule.js';
+import { isPngCaptureInProgress } from '../ImageExportModule.js';
 import { ForwardPipeline } from './ForwardPipeline.js';
 import { SplitAtomsPipeline } from './SplitAtomsPipeline.js';
 import { SortedAtomsPipeline } from './SortedAtomsPipeline.js';
@@ -67,6 +68,12 @@ export function isTracerPipelineActive() {
  * sizes its targets, and re-applies transparency policy across the live scene.
  */
 export function setActivePipeline(id) {
+  if (isPngCaptureInProgress()) {
+    /** @type {any} */
+    const error = new Error('Cannot change rendering pipeline while PNG capture is in progress.');
+    error.code = 'PNG_CAPTURE_IN_PROGRESS';
+    throw error;
+  }
   const PipelineClass = registry.get(id) ?? ForwardPipeline;
   app.pipeline?.dispose?.();
   const pipeline = new PipelineClass();

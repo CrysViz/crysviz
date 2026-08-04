@@ -4,7 +4,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="referrer" content="no-referrer">
     <title>CrysViz Crystal Structure Viewer</title>
+    <script type="module" src="./host/early.js"></script>
     <!-- Theme base (design tokens) loads first so component CSS can use the
          tokens; the active theme override (#theme-active) loads LAST so a theme
          can override component rules. Both managed by ui/ThemeManager.js. -->
@@ -25,17 +27,12 @@
     <link rel="stylesheet" href="./styles/forcePanel.css">
     <link rel="stylesheet" href="./styles/bondLengthHistogram.css">
     <link rel="stylesheet" href="./styles/lockToggleButton.css">
+    <!-- Loaded after component styles so native WebKit select chrome cannot
+         override the app's compact dark dropdown appearance. -->
+    <link rel="stylesheet" href="./styles/formControls.css">
     <!-- Active theme override — keep last so theme rules win the cascade. -->
     <link rel="stylesheet" id="theme-active">
 
-
-    <script type="importmap">
-      {
-    "imports": {
-      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
-    }
-  }
-    </script>
 
     <!-- All styles moved to styles.css -->
   </head>
@@ -354,9 +351,6 @@
    </div>
 </div>
 
-
-
-   <script type="module" src="./core/crystal-viewer.js"></script> 
 
 
     <!-- Structure info: adopted into the "Structure" panel window

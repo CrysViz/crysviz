@@ -27,7 +27,9 @@ import { setupMobileMenu } from '../ui/MobileMenu.js';
 import { setupControlsWiring, sizeSliderToValue, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE } from '../ui/ControlsWiring.js';
 import { setupSceneInteraction } from '../ui/SceneInteraction.js';
 import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
-import { pauseRendering, resumeRendering,animation_update,requestRender} from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
+import { pauseRendering, resumeRendering,animation_update,requestRender,runPeriodicWrapped,
+  applyRotationFromUI, captureSceneToPng } from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
+import { setActivePipelineFromController } from '../ui/ColorPanel.js';
 import {createShareButton,loadSharedStructure,loadCrysvizFile} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
@@ -42,7 +44,7 @@ import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render
 
 
 import {initAddStructureButton, initModifyStructureButton} from '../ui/addToStructureModule/AddStructureModule.js'
-import {initCombineTrajectoriesButton} from '../ui/FileBrowswerPanel.js'
+import {initCombineTrajectoriesButton, selectStructure} from '../ui/FileBrowswerPanel.js'
 import {initPanelSystem, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
 import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
 import {initFontScale} from '../ui/FontScaleModule.js'
@@ -84,6 +86,8 @@ import { parse_any } from '../io/index.js';
 import { initializeUIOnLoad } from '../ui/StructureInputModule.js';
 import { fieldBrowser } from '../ui/FieldPanel.js';
 import { resetMathBackend } from '../math/index.js';
+import { applyFrameFast } from '../render/FastFrameModule.js';
+import { getActiveStructure, getContainerForStructure } from '../state/structures.js';
 
 // ........................................................................................................
 //
@@ -269,12 +273,57 @@ export function updateVisualization(options = {}) {
   requestRender();
 }
 
+function commitHostPositions() {
+  const structure = getActiveStructure();
+  if (!structure) return false;
+  const frac = structure.atoms.map((atom) => atom.position);
+  runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
+  updateVisualization({
+    atomsUpdate: true,
+    bondsUpdate: true,
+    reRenderAtoms: true,
+    reRenderBonds: true,
+    reRenderLattice: true,
+    reRenderOther: false,
+    reRenderComposition: false,
+    reRenderPolyhedra: general.showPolyhedra || general.completePolyhedra,
+  });
+  return true;
+}
 
-export async function loadStructure(content, fileName = '', isDefault = false) {
+async function updateHostLattice(lattice) {
+  const structure = getActiveStructure();
+  if (!structure) return false;
+  structure.lattice = lattice.map((row) => [...row]);
+  structure.periodic = { hash: null, wrapped: null };
+  const frac = structure.atoms.map((atom) => atom.position);
+  runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
+  updateVisualization({
+    atomsUpdate: true,
+    bondsUpdate: true,
+    reRenderAtoms: true,
+    reRenderBonds: true,
+    reRenderLattice: true,
+    reRenderOther: true,
+    reRenderComposition: false,
+    reRenderPolyhedra: false,
+  });
+  if (general.showPolyhedra || general.completePolyhedra) {
+    await updatePolyhedra();
+    requestRender();
+  }
+  return true;
+}
+
+export async function loadStructure(content, fileName = '', isDefault = false, format = '') {
   try {
 
-    const lower = (fileName || '').toLowerCase();
+    const parserFileName = format && !String(fileName).toLowerCase().endsWith(`.${String(format).toLowerCase()}`)
+      ? `${fileName}.${format}`
+      : fileName;
+    const lower = (parserFileName || '').toLowerCase();
     const contentString = typeof content === 'string' ? content : '';
+    let structureContainer = null;
     
     // Field files and .crysviz state files are handled directly; every other
     // format is dispatched by parse_any (which owns the structure-format
@@ -290,13 +339,13 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
     if (treatAsCrysviz) {
       // A saved CrysViz session: structure + full visual state (ShareModule).
       // Loads its own structure via parsePOSCAR -> initializeUIOnLoad.
-      loadCrysvizFile(contentString, fileName);
+      structureContainer = await loadCrysvizFile(contentString, fileName);
     }
     else if (treatAsCube) {
-      await parseCubeFile(contentString, fileName);
+      structureContainer = await parseCubeFile(contentString, fileName);
     }
     else if (treatAsCHGCAR) {
-      await parseCHGCARFile(contentString, fileName);
+      structureContainer = await parseCHGCARFile(contentString, fileName);
     }
 
     // Everything else is a structure file and goes through the single pure
@@ -306,9 +355,14 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
         // Pass the raw `content` (not contentString): most formats are text, but
         // binary formats like ASE .traj arrive as an ArrayBuffer and parse_any
         // dispatches them by extension.
-        const structureContainer = await parse_any(content, fileName);
+        structureContainer = await parse_any(content, parserFileName);
+        // The parser filename may carry a format suffix, but the browser must
+        // display the manifest/addon supplied name verbatim.
+        if (structureContainer) structureContainer.fileName = fileName;
         if (structureContainer && structureContainer.structures) initializeUIOnLoad(structureContainer);
     }
+
+    if (!structureContainer) throw new Error('Structure loader returned no structure container');
 
    revealFeaturePanels();
 
@@ -318,41 +372,67 @@ export async function loadStructure(content, fileName = '', isDefault = false) {
     // which already performs a full atoms+bonds+field+other re-render. Re-rendering here
     // doubled the (expensive, O(n^2)) bond build on every load.
     console.warn(fileBrowser.selectedStructure)
-    // The first structure ever shown gets a fresh fit-to-structure camera;
-    // later loads/switches keep the user's rotation and zoom, only
-    // re-centering on the new structure (see `cameraFitted`).
-    if (!cameraFitted) {
-      switchCameraType();
-      cameraFitted = true;
-    } else {
-      recenterCamera();
+    // .crysviz restores its camera asynchronously as part of the session;
+    // that saved pose is authoritative and must not be overwritten here.
+    if (!treatAsCrysviz) {
+      // The first structure ever shown gets a fresh fit-to-structure camera;
+      // later loads/switches keep the user's rotation and zoom, only
+      // re-centering on the new structure (see `cameraFitted`).
+      if (!cameraFitted) {
+        switchCameraType();
+        cameraFitted = true;
+      } else {
+        recenterCamera();
+      }
+      clearMeasure();
     }
-    clearMeasure();
     resizeRenderer(app.orthographicFrustumSize);
 
-
-
+    return { ok: true, container: structureContainer, name: fileName, format: format || undefined };
   } catch (error) {
     setStatus(`Error: ${error.message}`);
     console.error(error);
+    throw error;
   }
 }
 
 
 async function loadDefaultStructure() {
-  // Don't load default structure if we've already loaded a shared structure
-  if (general.sharedStructureLoaded) {
-    return;
-  }
-
   setStatus('Loading default NaCl structure...');
-  loadStructure(defaultPOSCAR5, 'Si', true);
-      // Create a new Structure instance
-
+  await loadStructure(defaultPOSCAR5, 'Si', true);
 }
 
-function init() {
-  return initApp();
+export async function initializeCore(browserHostController) {
+  browserHostController.configure({
+    loadStructure,
+    selectStructure,
+    applyFrameFast,
+    commitPositions: commitHostPositions,
+    updateLattice: updateHostLattice,
+    recenterCamera,
+    rotateCamera: (angle, axis) => { applyRotationFromUI(angle, axis); requestRender(); },
+    setRenderPipeline: setActivePipelineFromController,
+    captureSceneToPng,
+  });
+  await initApp();
+  setupMobileMenu();
+  await initUIPanels();
+  return {
+    loadShared: async () => {
+      const result = await loadSharedStructure();
+      if (result) browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
+      return result;
+    },
+    loadHash: async () => {
+      const result = await loadFromFilePath();
+      if (result) browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
+      return result;
+    },
+    loadDefault: async () => {
+      await loadDefaultStructure();
+      browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
+    },
+  };
 }
 
 async function initApp() {
@@ -371,14 +451,8 @@ async function initApp() {
  setupStructureInput({
    onLoadStructure: async (content, name) => {
      setStatus('Loading structure...');
-     try {
-       // Wait for the structure to load
-       await loadStructure(content, name);
-       setStatus('Structure loaded!');
-     } catch (error) {
-       console.error('Error loading structure:', error);
-       setStatus('Error loading structure.');
-     }
+     await loadStructure(content, name);
+     setStatus('Structure loaded!');
    },
    setStatus,
  });
@@ -418,19 +492,6 @@ async function initApp() {
 
   app.camera.position.set(20, 20, 20);
   app.controls.update();
-
-  // Load default structure after everything is initialized
-    loadSharedStructure();
-
-  if (!general.sharedStructureLoaded) {
-    console.log("loadFromFilePath...")
-    loadFromFilePath()
-    console.log("loaded:",fileBrowser.selectedStructure)
-  }
-  if (!general.sharedStructureLoaded) {
-    loadDefaultStructure();
-  }
-
 
   function handleVisibilityChange() {
   if (document.hidden) pauseRendering();
@@ -482,10 +543,10 @@ async function initializeMathBackend() {
   window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
 
 // Panel toggle functionality for all screen sizes
-function initUIPanels() {
+async function initUIPanels() {
   initFontScale();
   createBackgroundControl();
-  setupThemeSystem();
+  await setupThemeSystem();
   initPanelSystem();
   registerDefaultPanels();
   // Apply availability (grey-out) once now that panels exist. On first load the
@@ -510,13 +571,3 @@ function initUIPanels() {
     document.head.appendChild(viewport);
   }
 }
-
-init()
-  .then(() => {
-    setupMobileMenu();
-    initUIPanels();
-  })
-  .catch((error) => {
-    setStatus(`Error: ${error.message}`);
-    console.error(error);
-  });

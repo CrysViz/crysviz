@@ -96,6 +96,10 @@ let bottomReservePx = 0; // height reserved at the bottom (e.g. the split pane d
 
 const hooks = {
   beforeExpand(panel) {
+    if (panel.def.hiddenUntilStructure && !revealed) {
+      panel.wantExpanded = true;
+      return false;
+    }
     if (panel.def.lifecycle === 'rebuild') {
       if (revealed) buildContent(panel);
     } else if (!panel.built) {
@@ -327,7 +331,8 @@ export function registerPanel(def) {
     || sanitizePos(defaults.anchor) || { left: 40, top: 40 };
   panel.sortKey = dockSortKey(def);
 
-  if (def.hiddenUntilStructure && !revealed) panel.el.hidden = true;
+  const waitsForStructure = def.hiddenUntilStructure && !revealed;
+  if (waitsForStructure) panel.el.hidden = true;
 
   // Title-bar strip state: remembered, or per-panel default; floating-by-
   // default windows start with the bar shrunk unless the default says
@@ -360,10 +365,10 @@ export function registerPanel(def) {
   // Build persistent content only after the panel is attached: builders
   // resolve their target container by id (document.getElementById), which
   // fails on a detached panel body.
-  if (def.lifecycle !== 'rebuild' && !closed) buildContent(panel);
+  if (def.lifecycle !== 'rebuild' && !closed && !waitsForStructure) buildContent(panel);
 
   if (!closed && !collapsed && panel.collapsed) {
-    if (def.lifecycle === 'rebuild' && !revealed) panel.wantExpanded = true;
+    if (waitsForStructure) panel.wantExpanded = true;
     else panel.expand();
   }
   // Once a compact-capable panel is attached, re-check crowding immediately so

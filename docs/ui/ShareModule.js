@@ -115,6 +115,7 @@ import { getContrastingBorder } from './BackgroundPicker.js';
 
 const URL_WARN_CHARS = 4000;
 const URL_HARD_CHARS = 10000;
+let lastRestorePromise = Promise.resolve();
 
 // ---------------------------------------------------------------------------
 // Capture
@@ -798,8 +799,8 @@ function restoreFields(fieldState, structure) {
 }
 
 function restoreCamera(camState) {
-  if (!camState?.position || !camState?.target) return;
-  setTimeout(() => {
+  if (!camState?.position || !camState?.target) return Promise.resolve();
+  try {
     // Camera type first: switching rebuilds app.camera at a default pose, so
     // it must precede the pose restore.
     if (camState.orthographic != null && camState.orthographic !== app.useOrthographicCamera) {
@@ -820,11 +821,14 @@ function restoreCamera(camState) {
       app.camera.updateProjectionMatrix();
     }
     app.controls.update();
-  }, 150);
+    return Promise.resolve();
+  } catch (error) {
+    return Promise.reject(error);
+  }
 }
 
 function restoreMeasurements(measurementData) {
-  if (!measurementData?.length) return;
+  if (!measurementData?.length) return Promise.resolve();
 
   // Measurement refs resolve against the loaded structure's periodic wrap. That
   // wrap is usually ready synchronously, but can lag behind on a heavy structure
@@ -837,12 +841,13 @@ function restoreMeasurements(measurementData) {
   const maxWaitMs = 3000;
   let waited = 0;
 
-  const apply = () => {
+  return new Promise((resolve, reject) => {
+    const apply = () => {
     const wrapped = fileBrowser.selectedStructure?.periodic?.visibleWrapped;
     if (!wrapped) {
       waited += stepMs;
       if (waited <= maxWaitMs) setTimeout(apply, stepMs);
-      else console.warn('restoreMeasurements: structure wrap never became ready — measurements not restored');
+      else reject(new Error('Structure wrap was not ready for saved measurements'));
       return;
     }
 
@@ -858,9 +863,11 @@ function restoreMeasurements(measurementData) {
         if (a1 && a2 && a3) addAngleMeasurement(a1, a2, a3);
       }
     });
-  };
+      resolve();
+    };
 
-  apply();
+    apply();
+  });
 }
 
 function makeAtomProxy(wrapped, ref) {
@@ -921,10 +928,9 @@ function makeAtomProxy(wrapped, ref) {
 // Load from URL
 // ---------------------------------------------------------------------------
 
-export function loadSharedStructure() {
-  console.log("In loadSharedStructure")
+export async function loadSharedStructure() {
   const stateParam = new URLSearchParams(window.location.search).get('state');
-  if (!stateParam) return;
+  if (!stateParam) return false;
 
   let state;
   try {
@@ -944,22 +950,26 @@ export function loadSharedStructure() {
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     state = JSON.parse(new TextDecoder().decode(bytes));
-    general.sharedStructureLoaded = true;
-    console.log(general.sharedStructureLoaded)
   } catch (e) {
     const invalidChars = [...stateParam].filter(c => !/[A-Za-z0-9\-_]/.test(c));
     console.error('Failed to decode shared state:', e,
       'param length:', stateParam.length,
       'invalid chars:', invalidChars.slice(0, 10));
-    return;
+    throw new Error(`Failed to decode shared state: ${e.message}`);
   }
 
-  if (!applySharedState(state, 'shared.vasp')) return;
+  if (!applySharedState(state, 'shared.vasp')) {
+    throw new Error('Shared state could not be applied.');
+  }
+  await waitForStateRestoration();
+
+  general.sharedStructureLoaded = true;
 
   // Clean URL
   const newUrl = new URL(window.location.href);
   newUrl.searchParams.delete('state');
   window.history.replaceState({}, document.title, newUrl.toString());
+  return true;
 }
 
 /**
@@ -1066,7 +1076,14 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   // BEFORE restoreAtomOrder and the style-store restore above; re-run it so
   // keys derive from the corrected atom order and restored styles render.
   // (updatePolyhedra coalesces with any in-flight compute.)
-  if (general.showPolyhedra || general.completePolyhedra) updatePolyhedra();
+  const restorationTasks = [restoreCamera(state.camera), restoreMeasurements(state.measurements)];
+  if (general.showPolyhedra || general.completePolyhedra) restorationTasks.push(updatePolyhedra());
+  lastRestorePromise = Promise.all(restorationTasks).then(() => undefined);
+  // Legacy synchronous callers still receive the boolean below; the async
+  // loaders await this same promise. Mark the rejection handled here so a
+  // legacy caller cannot create an unhandled rejection while the async owner
+  // still receives the original failure when it awaits the promise.
+  lastRestorePromise.catch(() => {});
 
   // Cel style: re-fire the dropdown so its dependent controls (outline block)
   // appear; the handler re-renders, which is only paid for cel states.
@@ -1085,17 +1102,19 @@ export function applySharedState(state, fileName = 'shared.vasp') {
     document.getElementById('renderPipelineMenu')?.dispatchEvent(new Event('change'));
   }
 
-  // Camera and measurements need the render to have settled
-  restoreCamera(state.camera);
-  restoreMeasurements(state.measurements);
   return true;
+}
+
+export async function waitForStateRestoration() {
+  await lastRestorePromise;
 }
 
 // ---------------------------------------------------------------------------
 // Load from a .crysviz file (the Download menu's save format)
 // ---------------------------------------------------------------------------
 
-export function loadCrysvizFile(content, fileName = 'file.crysviz') {
+export async function loadCrysvizFile(content, fileName = 'file.crysviz') {
+  const initialContainerCount = structureShip.container.length;
   let state;
   try {
     state = JSON.parse(content);
@@ -1108,6 +1127,14 @@ export function loadCrysvizFile(content, fileName = 'file.crysviz') {
   if (!applySharedState(state, fileName)) {
     throw new Error(`Could not apply the state in ${fileName} (unsupported version?).`);
   }
+  await waitForStateRestoration();
+  const container = structureShip.container.length > initialContainerCount
+    ? structureShip.container.at(-1)
+    : null;
+  if (!container) {
+    throw new Error(`Could not find the loaded structure in ${fileName}.`);
+  }
+  return container;
 }
 
 // ---------------------------------------------------------------------------

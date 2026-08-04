@@ -26,8 +26,10 @@ export function ensurePyodideReady(onStatus = () => {}) {
       return pyodide;
     })().catch((error) => {
       pyodidePromise = null; // allow retry on next call
-      onStatus('Failed to load SciPy backend');
-      throw error;
+      const unavailable = new Error('SciPy fitting is unavailable offline; connect to the network and try again.');
+      unavailable.cause = error;
+      onStatus(unavailable.message);
+      throw unavailable;
     });
   }
   return pyodidePromise;

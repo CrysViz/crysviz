@@ -34,6 +34,7 @@ import { updatePolyhedraComparisonWarning } from '../ui/PolyhedraComparisonWarni
 // the workers are never flooded with superseded jobs.
 let polyhedraBusy = false;
 let polyhedraDirty = false;
+let polyhedraPromise = null;
 
 // Bookkeeping for every path that replaces the displayed polyhedra group:
 // invalidate the Poly tab's lazy row lists (build counter), drop the (now
@@ -1266,7 +1267,7 @@ export function setPolyEdgeWidth(width) {
  * Toggle/refresh entry point. Recomputes `structure.polyhedra` (so the model
  * mirrors the scene and bond-cutoff edits take effect) and renders it.
  */
-export async function updatePolyhedra() {
+export function updatePolyhedra() {
   // Reflect current showPolyhedra/completePolyhedra + comparison-structure
   // state in the viewport warning banner every time this entry point runs
   // (toggles, comparison enable/disable/step-change all funnel through here).
@@ -1277,14 +1278,14 @@ export async function updatePolyhedra() {
   if (!general.showPolyhedra && !general.completePolyhedra) {
     clearPolyhedraGroup();
     if (polyhedraBusy) polyhedraDirty = true;
-    return;
+    return polyhedraPromise || Promise.resolve();
   }
 
   // Coalesce concurrent requests into the single in-flight loop below. A request that
   // arrives mid-compute just flags `dirty` so the loop recomputes once more with the
   // latest state — guaranteeing the last change is always reflected, without spawning a
   // pile of superseded compute jobs.
-  if (polyhedraBusy) { polyhedraDirty = true; return; }
+  if (polyhedraBusy) { polyhedraDirty = true; return polyhedraPromise; }
   polyhedraBusy = true;
   // "Complete Polyhedra" is a FIXED-POINT iteration: the completing atoms are
   // appended to the periodic `wrapped` set, which is exactly where the next
@@ -1294,6 +1295,7 @@ export async function updatePolyhedra() {
   // session restore runs only one pass and came up short. Budget-capped so a
   // pathological oscillation can't loop forever.
   let completingPasses = 0;
+  polyhedraPromise = (async () => {
   try {
     do {
       polyhedraDirty = false;
@@ -1357,10 +1359,22 @@ export async function updatePolyhedra() {
     } while (polyhedraDirty);
   } catch (err) {
     console.error('[updatePolyhedra] compute failed:', err);
-    polyhedraDirty = false;
+    throw err;
   } finally {
     polyhedraBusy = false;
+    polyhedraDirty = false;
   }
+  })();
+  // Most interactive callers intentionally do not await this function. Mark
+  // the shared rejection handled while preserving rejection for awaited
+  // restoration/bootstrap callers.
+  polyhedraPromise.catch(() => {});
+  const result = polyhedraPromise;
+  polyhedraPromise.then(
+    () => { if (polyhedraPromise === result) polyhedraPromise = null; },
+    () => { if (polyhedraPromise === result) polyhedraPromise = null; },
+  );
+  return result;
 }
 
 /**

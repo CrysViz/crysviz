@@ -23,12 +23,10 @@ interface Element {
 declare var view: any;
 declare var errorPanel: any;
 
-// Remote ESM imported directly by URL (resolved by the browser, not tsc).
-declare module "https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.esm.min.js";
-
 // Expando properties CrysViz attaches to `window` at runtime.
 interface Window {
   NEPWasmRunner: any;
   clearAtomHighlight: any;
   InstanceMeshManager: any;
+  pywebview: any;
 }

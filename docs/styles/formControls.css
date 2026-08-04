@@ -1,0 +1,24 @@
+/* Native select widgets vary substantially between browser engines. In
+   particular, WebKit can paint its platform menu button over the background,
+   padding, and font already supplied by CrysViz's component styles. Keep the
+   component-specific colours and dimensions, but normalize the native chrome
+   and provide one small shared chevron. */
+
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  color-scheme: dark;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  padding-right: 21px !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23c8c8c8' d='M0 0h10L5 6z'/%3E%3C/svg%3E") !important;
+  background-position: right 6px center !important;
+  background-repeat: no-repeat !important;
+  background-size: 8px 5px !important;
+}
+
+select option {
+  background-color: #303030;
+  color: #f5f5f5;
+}

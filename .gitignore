@@ -8,6 +8,11 @@ node_modules/
 .env
 .env.local
 *.log
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
 
 # Rust/wasm build artifacts for the periodic_wasm crate (source kept; the
 # committed build outputs live directly in docs/compiled/, see `make periodic-wasm`)

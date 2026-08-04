@@ -1,0 +1,18 @@
+include LICENSE
+include NOTICE
+include README.md
+recursive-include examples *.py README.md
+recursive-include docs *
+global-exclude .DS_Store
+global-exclude .gitignore
+global-exclude *.pyc
+global-exclude __pycache__/*
+prune tools/browsertest/env
+prune tools/browsertest/artifacts
+prune docs/compiled/periodic_wasm_src/target
+prune docs/compiled/periodic_wasm_src/pkg
+prune docs/report
+prune tests
+prune tools
+prune backend
+prune CLI
