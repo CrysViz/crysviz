@@ -164,6 +164,13 @@ export function setSpeciesColorBulk(targets, hex) {
   }
   refreshAtomWedgeTexture();
   requestRender();
+  // The 3D wedge sphere is now correct, but every OTHER UI that shows this
+  // colour (an individual atom row's pie icon/per-species swatches, other
+  // composition groups' own dots if they share a species, bond/polyhedra
+  // color displays, ...) was built from a snapshot and has no other way to
+  // learn a bulk species edit happened - this is the one shared choke point
+  // for all of them, same as every other bulk recolor already broadcasts.
+  document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
 }
 
 function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {

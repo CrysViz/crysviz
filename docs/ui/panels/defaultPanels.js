@@ -28,6 +28,7 @@ import { addLandscapePanel, removeLandscapePanel, addLandscapePlotsPanel, remove
 import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { createFeatureLockButton } from '../FeatureLockModule.js';
+import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
 import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
@@ -320,6 +321,11 @@ export function registerDefaultPanels() {
     title: 'Atomistic',
     lifecycle: 'persistent',
     infoMd: './data/backendInfo.md',
+    // Interatomic potentials/ML force fields need one definite species per
+    // site (see DisorderWarningBanner.js) — grey the whole panel out for a
+    // fractionally occupied structure instead of letting Relax/MD look usable
+    // and only fail once clicked.
+    available() { return !structureHasFractionalOccupancy(); },
     buildContent(body) {
       // Adopt the backend mode selector (Relax/MD) and the calc panel the
       // modes build into. (#uploadSection starts inside this group in the

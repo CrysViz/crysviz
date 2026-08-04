@@ -90,9 +90,26 @@ export function supercellShapeFor(multiplier) {
   return /** @type {[number,number,number]} */ (best);
 }
 
-/** Deterministic PRNG so a seeded run reproduces exactly. */
+/**
+ * Deterministic PRNG so a seeded run reproduces exactly.
+ *
+ * The seed is run through an integer-mixing hash before becoming the
+ * xorshift32 state, not used directly: xorshift32 seeded straight from a
+ * small integer needs several outputs before its state has "mixed" — its raw
+ * first output is roughly seed/15873, so every seed from 1 to ~7935 (i.e.
+ * the whole range every caller here actually uses: seed=1,2,3,... from a
+ * reroll or a multi-sample compare) yields the SAME first draw. That is
+ * silently fatal for a 2-image site's Fisher-Yates shuffle (decorateSite),
+ * which needs exactly one draw and a threshold at 0.5 - every "different"
+ * seed produced the identical decoration. The hash below (splitmix32-style
+ * finalizer) decorrelates adjacent seeds from the very first draw while
+ * keeping the same seed reproducible.
+ */
 function makeRng(seed) {
   let s = (seed >>> 0) || 1;
+  s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
+  s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
+  s = (s ^ (s >>> 16)) >>> 0 || 1; // xorshift needs a nonzero state
   return () => {
     s ^= s << 13; s >>>= 0;
     s ^= s >> 17;

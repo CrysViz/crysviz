@@ -940,6 +940,14 @@ function updateStructureFromRowAndStep(rowIndex) {
   }
   lastActiveContainer = container;
 
+  // Every selection path funnels through here (row click, step change,
+  // programmatic selectStructure, load) — re-evaluate panel availability here
+  // too, not just in the row-click handler, so a panel gated on the selected
+  // structure (e.g. Atomistic vs. fractional occupancy) can't be left stuck
+  // greyed/un-greyed after a programmatic selection (selectLastAddedRow,
+  // selectStructure) that skips that handler.
+  refreshPanelAvailability();
+
   // Single choke point for every selection path (row click, step change,
   // programmatic selectStructure, load) — let subscribers (addons) react.
   notifyActiveStructureChange();

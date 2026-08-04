@@ -287,6 +287,10 @@ export class Atom extends ColoredObject {
     this.color = getElementDefaultColor(this.original.element);
     this.elementColor = this.color;
     this.userColor=null;
+    // A disordered site's wedges each render their OWN species' colour
+    // (species[i].color, set via setSpeciesColor), not this.color at all —
+    // without this they would survive a "Reset Colors" untouched.
+    this.species.forEach((s) => { s.color = null; });
     return true;
   }
 }

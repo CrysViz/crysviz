@@ -227,8 +227,11 @@ export function createCompositionRow(el, count, total, options = {}) {
             // opaque) — without redrawing it here, only a thin ring at the
             // canvas edge (anti-aliasing gap) picks up the new colour while the
             // dot itself keeps showing the stale wedge colours. setSpeciesColorBulk
-            // doesn't fire crysviz:colors-changed (it only touches the 3D wedge
-            // texture), so this is the one place that has to trigger the repaint.
+            // does broadcast crysviz:colors-changed (which updateAllCompositionPieDots
+            // below is also listening for), but that fires synchronously as part
+            // of the call above — this explicit repaint stays as the immediate,
+            // guaranteed-correct one for THIS row rather than relying on event
+            // dispatch order across every other listener also reacting to it.
             updatePieDotForRow();
           });
         });

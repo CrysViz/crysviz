@@ -11,6 +11,12 @@
 //
 // Reactive: call updateDisorderWarning() wherever the selected structure or
 // those flags can change.
+//
+// The actual "Order Structure" workflow (Random/Majority, build, energy
+// comparison, Use/Keep All) lives inline in the Cell & Supercell panel — see
+// addOrderStructureSection() in LatticeSupercellPanel.js. This banner's own
+// action button just brings that panel into view rather than hosting any of
+// the workflow itself.
 
 import { general, fileBrowser } from '../state/store.js';
 
@@ -81,7 +87,8 @@ export function updateDisorderWarning() {
   el.textContent = `⚠ ${blocked.join(' and ')} unavailable for fractionally occupied sites`;
   // The banner is the one place the user is already looking when disorder
   // blocks something, so it carries the way out rather than making them hunt
-  // for it in a menu.
+  // for it in a menu — but the workflow itself lives in the Cell & Supercell
+  // panel now, so this just opens/expands/scrolls to that.
   const action = document.createElement('button');
   action.textContent = 'Order structure…';
   action.style.cssText = `
@@ -90,258 +97,13 @@ export function updateDisorderWarning() {
     color: #ffc107; border-radius: 4px; font-size: 11px; padding: 2px 8px;
     font-family: inherit;
   `;
-  action.onclick = () => openOrderStructureDialog();
+  action.onclick = async () => {
+    const { openPanel, getPanel } = await import('./panels/PanelManager.js');
+    openPanel('cell');
+    const panel = getPanel('cell');
+    panel?.expand();
+    panel?.el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
   el.appendChild(action);
   el.style.display = 'block';
-}
-
-// --- Method-choice modal (Random / Use Majority / Cancel) ---
-// Same "png-export-modal card + paste-modal-actions row" convention as the
-// app's other confirm dialogs (see ConfirmModal.js, RaytraceWarningModal.js);
-// built lazily once and reused, hidden between shows. window.confirm() was
-// the original choice here, but a two-way OK/Cancel doesn't have a slot for a
-// plain "Cancel out of this entirely" option once each answer is a named
-// method — three named outcomes need three named buttons.
-let methodModal = null;
-let methodTitleEl = null;
-let methodMessageEl = null;
-let choiceActions = null;
-let methodRandomBtn = null;
-let methodMajorityBtn = null;
-let methodCancelBtn = null;
-let sizeRow = null;
-let sizeSelect = null;
-let previewActions = null;
-let previewRerollBtn = null;
-let previewAcceptBtn = null;
-let previewDiscardBtn = null;
-let methodPreviousFocus = null;
-let methodResolve = null;
-// Set only while the preview row (see previewRandomOrdering) is open, so a
-// stray Escape/backdrop-click routes to "discard the preview" instead of the
-// choice modal's "cancel out entirely" — the two states share one dialog.
-let discardPreview = null;
-
-function buildMethodModal() {
-  if (methodModal) return;
-  methodModal = document.createElement('div');
-  methodModal.id = 'orderStructureModal';
-  methodModal.hidden = true;
-  methodModal.innerHTML = `
-    <div class="order-structure-modal png-export-modal" role="dialog" aria-modal="true" aria-labelledby="orderStructureModalTitle">
-      <h3 id="orderStructureModalTitle">Order this structure?</h3>
-      <p id="orderStructureModalMessage"></p>
-      <div class="paste-modal-actions" id="orderStructureChoiceActions">
-        <button type="button" id="orderStructureRandomBtn" title="Randomly assign one species per site, weighted to preserve the overall composition (recommended).">Random</button>
-        <button type="button" id="orderStructureMajorityBtn" title="Every site takes its most-occupied species. Faster, but destroys stoichiometry — a 50/50 Fe/Ni alloy becomes pure Fe.">Use Majority</button>
-        <button type="button" id="orderStructureCancelBtn">Cancel</button>
-      </div>
-      <div class="order-structure-size-row" id="orderStructureSizeRow" hidden>
-        <label for="orderStructureMultiplierSelect">Supercell size</label>
-        <select id="orderStructureMultiplierSelect"></select>
-      </div>
-      <div class="paste-modal-actions" id="orderStructurePreviewActions" hidden>
-        <button type="button" id="orderStructureRerollBtn" title="Try a different random decoration at the same supercell size.">Compute Again</button>
-        <button type="button" id="orderStructureAcceptBtn">Accept</button>
-        <button type="button" id="orderStructureDiscardBtn">Discard</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(methodModal);
-
-  methodTitleEl = document.getElementById('orderStructureModalTitle');
-  methodMessageEl = document.getElementById('orderStructureModalMessage');
-  choiceActions = document.getElementById('orderStructureChoiceActions');
-  methodRandomBtn = document.getElementById('orderStructureRandomBtn');
-  methodMajorityBtn = document.getElementById('orderStructureMajorityBtn');
-  methodCancelBtn = document.getElementById('orderStructureCancelBtn');
-  sizeRow = document.getElementById('orderStructureSizeRow');
-  sizeSelect = document.getElementById('orderStructureMultiplierSelect');
-  previewActions = document.getElementById('orderStructurePreviewActions');
-  previewRerollBtn = document.getElementById('orderStructureRerollBtn');
-  previewAcceptBtn = document.getElementById('orderStructureAcceptBtn');
-  previewDiscardBtn = document.getElementById('orderStructureDiscardBtn');
-
-  methodRandomBtn.addEventListener('click', () => finishMethod('random'));
-  methodMajorityBtn.addEventListener('click', () => finishMethod('majority'));
-  methodCancelBtn.addEventListener('click', () => finishMethod(null));
-  previewDiscardBtn.addEventListener('click', () => discardPreview?.());
-  methodModal.addEventListener('click', (e) => {
-    if (e.target !== methodModal) return;
-    if (discardPreview) discardPreview(); else finishMethod(null);
-  });
-  methodModal.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    if (discardPreview) discardPreview(); else finishMethod(null);
-  });
-}
-
-function finishMethod(choice) {
-  if (!methodModal || methodModal.hidden) return;
-  methodModal.hidden = true;
-  const target = methodPreviousFocus;
-  methodPreviousFocus = null;
-  if (target && typeof target.focus === 'function') setTimeout(() => target.focus({ preventScroll: true }), 0);
-  const resolve = methodResolve;
-  methodResolve = null;
-  if (resolve) resolve(choice);
-}
-
-/** Resolves to 'random' | 'majority' | null (Cancel, Escape, or backdrop click). */
-function promptOrderingMethod(reason) {
-  buildMethodModal();
-  if (methodResolve) finishMethod(null);
-  methodTitleEl.textContent = 'Order this structure?';
-  choiceActions.hidden = false;
-  sizeRow.hidden = true;
-  previewActions.hidden = true;
-  return new Promise((resolve) => {
-    methodResolve = resolve;
-    methodMessageEl.textContent = reason;
-    methodPreviousFocus = document.activeElement;
-    methodModal.hidden = false;
-    setTimeout(() => methodRandomBtn.focus({ preventScroll: true }), 0);
-  });
-}
-
-/**
- * Random decoration is randomised per call (a different seed gives a
- * different spatial arrangement of the same composition), so unlike Majority
- * it is worth letting the user look at more than one before committing. Swaps
- * the same modal into a "Compute Again / Accept / Discard" state: the
- * candidate is registered as a real, selected file-browser row immediately
- * (so it's visible in the 3D view and any other panel), Compute Again
- * re-decorates that same row in place with a new seed, Accept just closes the
- * dialog and leaves the row as the user's new structure, and Discard removes
- * the row and leaves the original disordered structure selected.
- */
-async function previewRandomOrdering(structure, plan) {
-  const { buildOrderedStructure, listMultiplierOptions } = await import('../atomistic/order_structure.js');
-  const { createNewStructureFromAtoms } = await import('./addToStructureModule/CommitAtoms.js');
-  const { updateVisualization } = await import('../core/crystal-viewer.js');
-  const { createBondLengthControls } = await import('./BondLengthPanel.js');
-  const { recenterCamera } = await import('./WindowAndSceneControls.js');
-
-  const sizeOptions = listMultiplierOptions(structure);
-  let seed = 1;
-  let multiplier = plan.multiplier ?? 1;
-  const build = () => buildOrderedStructure(structure, { method: 'random', seed, multiplier });
-
-  let result = build();
-  createNewStructureFromAtoms(
-    result.atoms.map((atom, i) => ({
-      element: result.elements[i],
-      x: atom.position[0], y: atom.position[1], z: atom.position[2],
-      color: null,
-    })),
-    { lattice: result.lattice, fileName: 'ordered_structure' }
-  );
-  const previewStructure = fileBrowser.selectedStructure;
-  const previewRow = fileBrowser.selectedRow;
-
-  buildMethodModal();
-  methodTitleEl.textContent = 'Previewing random decoration';
-  choiceActions.hidden = true;
-  sizeRow.hidden = false;
-  previewActions.hidden = false;
-  methodMessageEl.textContent = result.report;
-  methodPreviousFocus = document.activeElement;
-  methodModal.hidden = false;
-  setTimeout(() => previewRerollBtn.focus({ preventScroll: true }), 0);
-
-  sizeSelect.innerHTML = sizeOptions.map((o) =>
-    `<option value="${o.multiplier}"${o.multiplier === multiplier ? ' selected' : ''}>`
-    + `${o.shape.join('x')} (${o.atomCount} atoms)${o.exact ? '' : ' — approximate'}</option>`
-  ).join('');
-
-  return new Promise((resolve) => {
-    const closeModal = () => {
-      methodModal.hidden = true;
-      discardPreview = null;
-      const target = methodPreviousFocus;
-      methodPreviousFocus = null;
-      if (target && typeof target.focus === 'function') setTimeout(() => target.focus({ preventScroll: true }), 0);
-    };
-
-    const rebuild = () => {
-      result = build();
-      previewStructure.atoms = result.atoms;
-      previewStructure.elements = result.elements;
-      previewStructure.uniqueElements = [...new Set(result.elements)];
-      previewStructure.lattice = result.lattice;
-      previewStructure.periodic = { wrapped: null, hash: null };
-      createBondLengthControls();
-      updateVisualization({
-        reRenderAtoms: true, reRenderBonds: true, reRenderLattice: true, reRenderComposition: 'open',
-      });
-      methodMessageEl.textContent = result.report;
-    };
-
-    previewRerollBtn.onclick = () => {
-      seed += 1;
-      rebuild();
-    };
-
-    sizeSelect.onchange = () => {
-      multiplier = Number(sizeSelect.value);
-      seed = 1; // a size change is a fresh comparison, not a continuation
-      rebuild();
-      recenterCamera(); // the cell itself changed shape/size, unlike a reroll
-    };
-
-    previewAcceptBtn.onclick = () => {
-      closeModal();
-      resolve(result);
-    };
-
-    discardPreview = () => {
-      closeModal();
-      // Mirrors the file-browser row's own delete button — removing the
-      // preview row this way keeps every bit of bookkeeping it touches
-      // (structureShip.container, combine/overlay state, reselecting the
-      // previous row) in the one place that already owns it.
-      previewRow.querySelector('.delete')?.click();
-      recenterCamera(); // the row click handler that normally does this ran on a row that no longer exists
-      resolve(null);
-    };
-  });
-}
-
-/**
- * Offer the ordering methods, then build the chosen one as a NEW file-browser
- * entry — never in place, so the disordered original stays available to compare
- * against and nothing is lost if the approximation is unsuitable.
- */
-export async function openOrderStructureDialog() {
-  const structure = fileBrowser.selectedStructure;
-  if (!structure) return;
-  if (!structureHasFractionalOccupancy(structure)) {
-    alert('This structure has no fractionally occupied sites — there is nothing to order.');
-    return;
-  }
-
-  const { planOrdering, buildOrderedStructure } = await import('../atomistic/order_structure.js');
-  const { createNewStructureFromAtoms } = await import('./addToStructureModule/CommitAtoms.js');
-
-  const plan = planOrdering(structure);
-  const method = await promptOrderingMethod(plan.reason);
-  if (!method) return;
-
-  if (method === 'random') {
-    await previewRandomOrdering(structure, plan);
-    return;
-  }
-
-  const result = buildOrderedStructure(structure, { method, seed: 1 });
-
-  createNewStructureFromAtoms(
-    result.atoms.map((atom, i) => ({
-      element: result.elements[i],
-      x: atom.position[0], y: atom.position[1], z: atom.position[2],
-      color: null,
-    })),
-    { lattice: result.lattice, fileName: 'majority_structure' }
-  );
-
-  alert(result.report);
 }

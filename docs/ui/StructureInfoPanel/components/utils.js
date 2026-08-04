@@ -87,13 +87,13 @@ export function getElementAtomIndices(element, { includeHidden = false } = {}) {
  * reshuffle the list under the user's cursor.
  *
  * @param {{includeHidden?: boolean}} [opts]
- * @returns {Array<{key: string, label: string, elements: string[], atomIndices: number[], representative: string}>}
+ * @returns {Array<{key: string, label: string, elements: string[], hasVacancy: boolean, atomIndices: number[], representative: string}>}
  */
 export function getSiteSignatureGroups({ includeHidden = false } = {}) {
   const structure = fileBrowser.selectedStructure;
   if (!structure) return [];
 
-  /** @type {Map<string, {key:string,label:string,elements:string[],atomIndices:number[],representative:string}>} */
+  /** @type {Map<string, {key:string,label:string,elements:string[],hasVacancy:boolean,atomIndices:number[],representative:string}>} */
   const groups = new Map();
 
   structure.atoms.forEach((atom, index) => {

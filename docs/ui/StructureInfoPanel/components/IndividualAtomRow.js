@@ -310,7 +310,27 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     colorBtn.style.background = hexToRgba(color, 0.8);
   }
   updateColorBtnSwatch();
-  atomRowSwatchUpdateFunctions[`${atomIndex}:${imageIndex ?? 'all'}`] = updateColorBtnSwatch;
+  atomRowSwatchUpdateFunctions[`${atomIndex}:${imageIndex ?? 'all'}`] = () => {
+    updateColorBtnSwatch();
+    refreshSpeciesSwatches();
+  };
+
+  // Keeps the small per-species line dots and the big per-species swatch
+  // boxes (if the editor is open) in sync with rowAtom.species[i].color.
+  // updateColorBtnSwatch above only refreshes the pie icon; nothing
+  // previously refreshed these, so a colour change made elsewhere (e.g. the
+  // composition group's own per-element dot in CompositionRow.js) left them
+  // showing whatever colour they were built with until the whole row got
+  // rebuilt. Hoisted (function declaration, not const) so the registration
+  // above can reference it despite speciesSwatchButtons/speciesColorRow
+  // being declared later in this same function.
+  function refreshSpeciesSwatches() {
+    rowAtom?.species?.forEach((sp, speciesIndex) => {
+      const hex = colorHexToCss(sp.color ?? getElementDefaultColor(sp.element));
+      speciesSwatchButtons.get(speciesIndex)?.style.setProperty('background', hex);
+      speciesLineSwatches.get(speciesIndex)?.style.setProperty('background', hex);
+    });
+  }
 
   // Coordinate edit button
   const coordBtn = document.createElement('button');
@@ -357,6 +377,10 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // straight to that species' own colour (never atom.userColor/color, which
   // the wedge shader does not read at all: setting it here would visibly do
   // nothing to the sphere, only to bonds, which was the actual bug report).
+  // Keyed by speciesIndex, same reasoning as speciesLineSwatches above — lets
+  // doResetAtomThisFrame() repaint these big editable boxes after a Reset,
+  // the same way each swatch's own onReset callback already repaints itself.
+  const speciesSwatchButtons = new Map();
   const speciesColorRow = rowAtom?.isDisordered?.() ? document.createElement('div') : null;
   if (speciesColorRow) {
     speciesColorRow.style.cssText = 'display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap;';
@@ -367,6 +391,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
       const swatchHex = colorHexToCss(sp.color ?? getElementDefaultColor(sp.element));
       const swatchBtn = document.createElement('button');
+      speciesSwatchButtons.set(speciesIndex, swatchBtn);
       swatchBtn.type = 'button';
       swatchBtn.title = `Colour for ${sp.element} on this site`;
       swatchBtn.style.cssText = `
@@ -964,6 +989,14 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
       if (atom.userColor !== undefined) delete atom.userColor;
       if (atom.forceColor !== undefined) delete atom.forceColor;
+      // A disordered site's wedges each render their OWN species' colour
+      // (species[i].color, set via the swatches above), never atom.color/
+      // userColor at all — clearing only those left a mixed site's Reset
+      // looking like it did nothing. Pure data here (this also runs against
+      // off-screen trajectory frames, see the press-and-hold caller below);
+      // the wedge-texture repaint for the visible frame happens in
+      // doResetAtomThisFrame, which knows which frame is actually on screen.
+      atom.species?.forEach((s) => { s.color = null; });
 
       if (currentMode === "force") {
         const forceObj = structure.forces?.[linkedAtomIndex];
@@ -1027,6 +1060,24 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
         updateSingleAtomOpacity(imageIndex, atom.getOpacity());
       });
     });
+
+    // Wedge sphere colours (per species) are a separate GPU texture from the
+    // plain per-instance colour updateSingleAtomColor() just repainted above
+    // — resetLinkedAtomsColorData() already cleared species[i].color as data,
+    // this is the one wedge-texture refresh + render request that actually
+    // makes it visible, scoped to the frame on screen right now (species
+    // colours have no per-image concept, so this is keyed by atomIndex only).
+    const speciesResetTargets = [];
+    linkedAtomIndices.forEach((linkedAtomIndex) => {
+      structure.atoms[linkedAtomIndex]?.species?.forEach((_, speciesIndex) => {
+        speciesResetTargets.push({ atomIndex: linkedAtomIndex, speciesIndex });
+      });
+    });
+    // setSpeciesColorBulk now broadcasts crysviz:colors-changed (dispatched
+    // synchronously, so this row's own registered listener has already run
+    // by the time the call below returns), which repaints this row's swatch
+    // boxes/dots via refreshSpeciesSwatches — no need to do it again here.
+    if (speciesResetTargets.length) setSpeciesColorBulk(speciesResetTargets, null);
 
     // resetLinkedAtomsColorData() above already wrote the reset colour (force-
     // derived or element-default) onto atom.color; updateColorBtnSwatch()

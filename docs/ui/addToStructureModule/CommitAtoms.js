@@ -26,10 +26,14 @@ export function parseColorHexToInt(hex) {
 
 // Push new atoms (fractional x/y/z inputs, used as-is) into an already-loaded
 // Structure. Pushes onto the parallel atoms/elements arrays and recomputes
-// uniqueElements. Caller is responsible for refreshing bond controls and
-// re-rendering (createBondLengthControls() + updateVisualization({
-// reRenderAtoms:true, reRenderBonds:true})).
+// uniqueElements. Also records each real atom's uuid onto
+// structure._sessionAddedAtoms — the "Added this session" list in
+// AddAtomModule.js reads that to offer a per-atom undo without the user
+// having to hunt for it in the full atom list. Caller is responsible for
+// refreshing bond controls and re-rendering (createBondLengthControls() +
+// updateVisualization({ reRenderAtoms:true, reRenderBonds:true})).
 export function addAtomsToExistingStructure(structure, atomsToAdd) {
+  if (!structure._sessionAddedAtoms) structure._sessionAddedAtoms = [];
   for (const a of atomsToAdd) {
     // "Va" is not an element — it is an annotation. Routing it here keeps it
     // out of structure.atoms/elements entirely, which is what lets bonding,
@@ -44,14 +48,16 @@ export function addAtomsToExistingStructure(structure, atomsToAdd) {
       }, structure);
       continue;
     }
+    const uuid = generateID([a.element]);
     structure.atoms.push(new Atom({
       position: [a.x, a.y, a.z],
       element: a.element,
       occupancy: a.occupancy ?? 1,
       color: parseColorHexToInt(a.color),
-      uuid: generateID([a.element]),
+      uuid,
     }));
     structure.elements.push(a.element);
+    structure._sessionAddedAtoms.push({ uuid, element: a.element });
   }
   structure.uniqueElements = [...new Set(structure.elements)];
   // Two rows typed at the same position with occupancies summing to at most 1
@@ -59,6 +65,27 @@ export function addAtomsToExistingStructure(structure, atomsToAdd) {
   // they render as a single pie-wedge sphere rather than as coincident atoms.
   mergeCoLocatedAtoms(structure);
   structure._hasFractionalOccupancy = undefined;
+}
+
+// Undo one addAtomsToExistingStructure() addition, looked up by the uuid
+// recorded in structure._sessionAddedAtoms. Returns false (no-op) if that
+// uuid isn't a real atom right now — e.g. it was already removed, or merged
+// into a sibling site by mergeCoLocatedAtoms and no longer has its own
+// entry — so the caller can skip its re-render.
+export function removeSessionAddedAtom(structure, uuid) {
+  const index = structure.atoms.findIndex((a) => a.uuid === uuid);
+  if (index === -1) return false;
+  structure.atoms.splice(index, 1);
+  structure.elements.splice(index, 1);
+  structure.uniqueElements = [...new Set(structure.elements)];
+  structure._hasFractionalOccupancy = undefined;
+  if (structure._sessionAddedAtoms) {
+    structure._sessionAddedAtoms = structure._sessionAddedAtoms.filter((e) => e.uuid !== uuid);
+  }
+  // Same reasoning as applyStructureEdits below: a Wyckoff lock's
+  // orbitGroups store raw atom indices, meaningless once an atom is removed.
+  if (structure.symmetry?.mode === 'wyckoff') structure.symmetry = null;
+  return true;
 }
 
 // Apply one round of edits from the Modify Structure panel's atom table.
@@ -288,6 +315,27 @@ function registerNewStructure(structure, fileName = 'new_structure') {
   fileBrowser.fileData.push({ name: fileName, traj: 1, step: 1 });
   selectLastAddedRow(); // selects the row and triggers a render
   recenterCamera();
+}
+
+// Register several already-built Structures as ONE new multi-frame
+// file-browser row (a trajectory), selected on frame 1. Used by the Order
+// Structure random-sample comparison's "Keep All" action
+// (LatticeSupercellPanel.js) to keep every generated decoration browsable via
+// the normal Trajectory panel/scrubber, not just whichever one gets picked.
+// A frame with `.energy` already set (a decoration whose energy was computed
+// before Keep All was clicked) is picked up automatically by the Trajectory
+// panel's own "Compute step stats" action — nothing extra to wire here.
+export function createTrajectoryFromFrames(frames, fileName = 'ordered_structures') {
+  if (!frames.length) return null;
+  const container = new StructureContainer({ fileName, structures: frames });
+  structureShip.container.push(container);
+
+  const row = createRow({ name: fileName, traj: frames.length, step: 1 });
+  document.querySelector('#objectTable tbody').appendChild(row);
+  fileBrowser.fileData.push({ name: fileName, traj: frames.length, step: 1 });
+  selectLastAddedRow();
+  recenterCamera();
+  return container;
 }
 
 // Build a brand-new Structure from atoms entered in an atom-table editor

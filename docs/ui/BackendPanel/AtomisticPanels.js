@@ -249,16 +249,13 @@ function assertOrderedStructure() {
   }
 }
 
-/**
- * Headless access to the active in-browser calculator (EOS scans, addons):
- * resolves general.atomisticPotential to a ready { runner, potential } without
- * needing the Relax/MD panel open. When that panel IS built, its PET-MAD
- * backend/model controls are reused so a headless load matches (and shares the
- * singleton with) whatever the user picked there. 'ase' throws — it computes
- * on a remote server, not in the browser.
- */
-export async function ensureActiveCalculator(onStatus = () => {}) {
-  assertOrderedStructure();
+// Shared by ensureActiveCalculator and ensureCalculatorRunner below: resolves
+// general.atomisticPotential to a ready { runner, potential }. When the
+// Relax/MD panel IS built, its PET-MAD backend/model controls are reused so a
+// headless load matches (and shares the singleton with) whatever the user
+// picked there. 'ase' throws — it computes on a remote server, not in the
+// browser.
+async function resolveCalculatorRunner(onStatus = () => {}) {
   const potential = general.atomisticPotential || 'nep';
   if (potential === 'ase') {
     throw new Error('ASE runs on a remote server backend — select the NEP or PET-MAD potential to compute in-browser.');
@@ -275,6 +272,28 @@ export async function ensureActiveCalculator(onStatus = () => {}) {
   };
   const runner = await ensureCalculatorReady(potential, shell);
   return { runner, potential };
+}
+
+/**
+ * Headless access to the active in-browser calculator (EOS scans, addons):
+ * resolves general.atomisticPotential to a ready { runner, potential } without
+ * needing the Relax/MD panel open.
+ */
+export async function ensureActiveCalculator(onStatus = () => {}) {
+  assertOrderedStructure();
+  return resolveCalculatorRunner(onStatus);
+}
+
+/**
+ * Same headless calculator access as ensureActiveCalculator, but WITHOUT the
+ * ordered-structure guard — for computing on structures that are already
+ * known to be ordered (Order Structure's random-sample energy comparison
+ * builds fully-ordered candidates from a disordered source; asserting against
+ * fileBrowser.selectedStructure there would reject on the still-disordered
+ * structure the candidates were built FROM, not the candidates themselves).
+ */
+export async function ensureCalculatorRunner(onStatus = () => {}) {
+  return resolveCalculatorRunner(onStatus);
 }
 
 function convertStressEvA3ToGPa(stressTensor) {
