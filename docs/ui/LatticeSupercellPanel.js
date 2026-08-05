@@ -121,12 +121,6 @@ let orderContainer = null;
 // triggered a rebuild.
 let lastSampleCount = 1;
 
-// The chosen supercell size, remembered across rebuilds for the same reason as
-// lastSampleCount: showing a built candidate reselects the file-browser row,
-// which rebuilds this whole panel — without this the Size dropdown would snap
-// back to the default multiplier every time, never reflecting what was built.
-// null = "not chosen yet", fall back to the plan's default.
-let lastMultiplier = null;
 
 function osEl(id) {
   return orderContainer?.querySelector(`#${id}`) ?? null;
@@ -139,22 +133,30 @@ function osEl(id) {
 function refreshOrderSizeOptions() {
   const sizeSelect = osEl('osSizeSelect');
   if (!sizeSelect) return;
-  const structure = fileBrowser.selectedStructure;
+  // Size options describe the DISORDERED structure being ordered. During a
+  // session showOrderCandidate() has selected the ordered PREVIEW instead, and
+  // reading options off that would report its already-integer occupancies
+  // (default 1x1x1) and its own atom count — the wrong cell entirely. Prefer
+  // the live selection while it is the disordered one; fall back to the
+  // session's remembered source only once a preview has become the selection.
+  const sel = fileBrowser.selectedStructure;
+  const structure = (sel && structureHasFractionalOccupancy(sel)) ? sel : (orderSession?.sourceStructure ?? sel);
   if (!structure) { sizeSelect.innerHTML = ''; return; }
   const plan = planOrdering(structure);
   const options = listMultiplierOptions(structure);
-  // Keep the user's remembered size selected, falling back to the plan default
-  // when it's no longer on offer (e.g. the occupancy changed and that size
-  // dropped out).
-  const selected = options.some((o) => o.multiplier === lastMultiplier)
-    ? lastMultiplier
-    : (plan.multiplier ?? 1);
+  const selected = plan.multiplier ?? 1;
   sizeSelect.innerHTML = options.map((o) =>
     `<option value="${o.multiplier}"${o.multiplier === selected ? ' selected' : ''}>`
     + `${o.shape.join('x')} (${o.atomCount} atoms)${o.exact ? '' : ' — approximate'}</option>`
   ).join('');
-  lastMultiplier = selected;
 }
+
+// The Cell panel only rebuilds on a structure SELECTION, not on an in-place
+// occupancy/composition edit (that happens in the Modify Atoms editor), so the
+// size options would otherwise stay stale until the next selection or Build.
+// Refresh them whenever the composition changes. osEl() no-ops when the section
+// isn't mounted, so this is safe to leave registered for the app's lifetime.
+document.addEventListener('crysviz:atoms-changed', refreshOrderSizeOptions);
 
 function setOrderBusy(v) {
   orderBusy = v;
@@ -338,10 +340,6 @@ function addOrderStructureSection(container) {
     lastSampleCount = n;
   });
 
-  sizeSelect.addEventListener('change', () => {
-    lastMultiplier = Number(sizeSelect.value) || 1;
-  });
-
   refreshOrderSizeOptions();
   setOrderBusy(orderBusy); // re-apply the current busy state to these fresh buttons
   renderOrderList(); // reflect whatever orderSession already holds (fresh mount or mid-session rebuild)
@@ -372,7 +370,9 @@ function addOrderStructureSection(container) {
         const b = buildOrderedStructure(structure, { method: 'random', seed, multiplier });
         built.push({ seed, built: b, energyPerAtom: null });
       }
-      orderSession = { builtSamples: built, energiesComputed: false, previewStructure: null, previewRow: null, shownSeed: null };
+      // Keep the disordered source so refreshOrderSizeOptions reports ITS cell
+      // sizes, not the ordered preview's, once a preview becomes the selection.
+      orderSession = { builtSamples: built, energiesComputed: false, previewStructure: null, previewRow: null, shownSeed: null, sourceStructure: structure };
       showOrderCandidate(built[0]);
       setOrderStatus(`${sampleCount} sample${sampleCount === 1 ? '' : 's'} built (${built[0].built.atoms.length} atoms each) — showing #1 in the 3D view. `
         + `${sampleCount > 1 ? 'Click a row to look at another, or ' : ''}Compare Energy to rank them.`);

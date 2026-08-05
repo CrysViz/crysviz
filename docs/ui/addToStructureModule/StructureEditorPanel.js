@@ -392,6 +392,11 @@ function buildFreeformModifyEditor(body, structure) {
     });
     renderSummary();
     runCollisionWarning(atoms, lattice);
+    // An element/count/occupancy edit here changes the composition — announce it
+    // the same way a coordinate edit does (applyAtomCoordinates), so panels that
+    // aren't part of the composition rebuild (e.g. Order Structure's size
+    // options) can react instead of showing stale numbers.
+    document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
   }
 
   // Splice a "Newly added" label row into the table just above the first atom
