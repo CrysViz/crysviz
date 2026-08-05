@@ -482,24 +482,29 @@ function addOrderStructureSection(container) {
  *  Supercell) rather than the add-atoms popup: it modifies the cell, not the
  *  atom list, so it fits this panel's job much better. */
 function addVacuumSection(container) {
+  // X/Y/Z share one horizontal row, each input flex-growing to split the full
+  // width evenly (the panel is far wider than three 56px boxes need), with the
+  // Apply button centered on the line below.
   container.innerHTML = `
-    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
-      <div style="display: flex; align-items: center;">
-        <label style="margin-right: 5px; white-space: nowrap; display: flex; align-items: center;">X (Å):</label>
-        <input type="number" id="vacX" class="coord-input" value="0" step="0.1" style="width: 56px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+    <div style="margin-bottom: 10px;">
+      <div style="display: flex; gap: 12px; margin-bottom: 10px;">
+        <div style="display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0;">
+          <label style="white-space: nowrap;">X (Å):</label>
+          <input type="number" id="vacX" class="coord-input" value="0" step="0.1" style="flex: 1; min-width: 0; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+        </div>
+        <div style="display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0;">
+          <label style="white-space: nowrap;">Y (Å):</label>
+          <input type="number" id="vacY" class="coord-input" value="0" step="0.1" style="flex: 1; min-width: 0; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+        </div>
+        <div style="display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0;">
+          <label style="white-space: nowrap;">Z (Å):</label>
+          <input type="number" id="vacZ" class="coord-input" value="0" step="0.1" style="flex: 1; min-width: 0; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+        </div>
       </div>
 
-      <div style="display: flex; align-items: center;">
-        <label style="margin-right: 5px; white-space: nowrap; display: flex; align-items: center;">Y (Å):</label>
-        <input type="number" id="vacY" class="coord-input" value="0" step="0.1" style="width: 56px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+      <div style="display: flex; justify-content: center;">
+        <button id="applyVacuum" class="btn-mini highlight" style="padding: 5px 14px; background: var(--bg-color); color: white; cursor: pointer;">Apply Vacuum</button>
       </div>
-
-      <div style="display: flex; align-items: center;">
-        <label style="margin-right: 5px; white-space: nowrap; display: flex; align-items: center;">Z (Å):</label>
-        <input type="number" id="vacZ" class="coord-input" value="0" step="0.1" style="width: 56px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
-      </div>
-
-      <button id="applyVacuum" class="btn-mini highlight" style="padding: 5px 10px; background: var(--bg-color); color: white; cursor: pointer;">Apply Vacuum</button>
     </div>
     <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11px; color: rgba(255,255,255,0.7); border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
       <span id="vacuumAppliedText"></span>
@@ -549,19 +554,17 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   const oldPanel = document.getElementById("latticeAndSupercellGroup");
   if (oldPanel) oldPanel.remove();
 
-  // --- Outer wrapper (dark grey background, static) ---
+  // --- Outer wrapper: a plain spacing container. Each section below is its own
+  // .panel-section card (border + padding), so an extra frame here would just
+  // double-border the whole group. ---
   const group = document.createElement("div");
   group.id = "latticeAndSupercellGroup";
-  group.style.cssText = `
-    border: 1px solid rgba(255,255,255,0.3);
-    border-radius: 5px;
-    padding: 10px;
-  `;
+  group.style.cssText = `padding: 2px;`;
 
   // --- Supercell section ---
   const supercellPanel = document.createElement("div");
   supercellPanel.id = "supercellPanel";
-  supercellPanel.style.marginBottom = "10px";
+  supercellPanel.className = "panel-section";
 
   const supercellContent = document.createElement("div");
   supercellContent.id = "supercellContent";
@@ -641,7 +644,7 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   // --- Vacuum section ---
   const vacuumPanel = document.createElement("div");
   vacuumPanel.id = "vacuumPanel";
-  vacuumPanel.style.marginBottom = "10px";
+  vacuumPanel.className = "panel-section";
 
   const vacuumContent = document.createElement("div");
   vacuumContent.id = "vacuumContent";
@@ -653,7 +656,7 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   // --- Order Structure section ---
   const orderPanel = document.createElement("div");
   orderPanel.id = "orderStructurePanel";
-  orderPanel.style.marginBottom = "10px";
+  orderPanel.className = "panel-section";
 
   const orderContent = document.createElement("div");
   orderContent.id = "orderStructureContent";
@@ -665,6 +668,7 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   // --- Transformation section ---
   const transformPanel = document.createElement("div");
   transformPanel.id = "transformPanel";
+  transformPanel.className = "panel-section";
 
   const transformContent = document.createElement("div");
   transformContent.id = "transformContent";

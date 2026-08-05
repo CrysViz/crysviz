@@ -94,9 +94,10 @@ function makePolyEdgeSliderRow() {
 }
 
 /** A bordered box (styles.css .panel-section) grouping one section's
- *  headline + controls — currently only used by the Visual panel, whose
- *  several stacked sections otherwise read as one long undifferentiated
- *  list. `id`, if given, lets a sub-builder (addColorPanel/addCameraPanel)
+ *  headline + controls — used by the Visual panel, whose several stacked
+ *  sections otherwise read as one long undifferentiated list (the Cell &
+ *  Supercell panel applies the same .panel-section class directly).
+ *  `id`, if given, lets a sub-builder (addColorPanel/addCameraPanel)
  *  target this box directly instead of appending to the shared body. */
 function makePanelSection(title, id) {
   const section = document.createElement('div');

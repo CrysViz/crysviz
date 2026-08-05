@@ -1525,8 +1525,8 @@ input[type="checkbox"] {
     text-align: center;
   }
 
-  /* Framed section box (currently only the Visual panel groups its content
-     this way — see ui/panels/defaultPanels.js's makePanelSection): a rounded
+  /* Framed section box (Visual panel via ui/panels/defaultPanels.js's
+     makePanelSection; Cell & Supercell via LatticeSupercellPanel.js): a rounded
      border around each section's headline + controls, so several stacked
      sections read as distinct groups instead of one long flat list. */
   .panel-section {
