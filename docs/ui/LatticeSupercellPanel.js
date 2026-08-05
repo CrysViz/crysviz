@@ -121,6 +121,13 @@ let orderContainer = null;
 // triggered a rebuild.
 let lastSampleCount = 1;
 
+// The chosen supercell size, remembered across rebuilds for the same reason as
+// lastSampleCount: showing a built candidate reselects the file-browser row,
+// which rebuilds this whole panel — without this the Size dropdown would snap
+// back to the default multiplier every time, never reflecting what was built.
+// null = "not chosen yet", fall back to the plan's default.
+let lastMultiplier = null;
+
 function osEl(id) {
   return orderContainer?.querySelector(`#${id}`) ?? null;
 }
@@ -136,10 +143,17 @@ function refreshOrderSizeOptions() {
   if (!structure) { sizeSelect.innerHTML = ''; return; }
   const plan = planOrdering(structure);
   const options = listMultiplierOptions(structure);
+  // Keep the user's remembered size selected, falling back to the plan default
+  // when it's no longer on offer (e.g. the occupancy changed and that size
+  // dropped out).
+  const selected = options.some((o) => o.multiplier === lastMultiplier)
+    ? lastMultiplier
+    : (plan.multiplier ?? 1);
   sizeSelect.innerHTML = options.map((o) =>
-    `<option value="${o.multiplier}"${o.multiplier === (plan.multiplier ?? 1) ? ' selected' : ''}>`
+    `<option value="${o.multiplier}"${o.multiplier === selected ? ' selected' : ''}>`
     + `${o.shape.join('x')} (${o.atomCount} atoms)${o.exact ? '' : ' — approximate'}</option>`
   ).join('');
+  lastMultiplier = selected;
 }
 
 function setOrderBusy(v) {
@@ -322,6 +336,10 @@ function addOrderStructureSection(container) {
   sampleCountInput.addEventListener('input', () => {
     const n = Math.max(1, Math.round(Number(sampleCountInput.value)) || 1);
     lastSampleCount = n;
+  });
+
+  sizeSelect.addEventListener('change', () => {
+    lastMultiplier = Number(sizeSelect.value) || 1;
   });
 
   refreshOrderSizeOptions();
