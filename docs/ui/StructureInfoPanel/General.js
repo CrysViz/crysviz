@@ -526,7 +526,7 @@ export function renderComposition(panelState="closed") {
 // in wyckoff mode, so it is shown unconditionally above the tab selector.
 const linkCopiesRow = createToggleRow({
   id: 'linkPeriodicCopiesToggle',
-  label: 'Link periodic copies',
+  label: 'Link colors of periodic copies',
   checked: general.linkPeriodicCopies !== false,
   onChange: (e) => {
     general.linkPeriodicCopies = /** @type {any} */ (e.target).checked;

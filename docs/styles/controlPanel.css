@@ -265,6 +265,21 @@ font-size: 16px;
   margin: 0;
 }
 
+/* Position editor axis sliders are a compact, secondary control — thinner
+   track and smaller thumb than the app's default range input, so the three
+   stacked axis rows stay tight. */
+.coord-axis-slider {
+  height: 4px;
+}
+.coord-axis-slider::-webkit-slider-thumb {
+  width: 9px;
+  height: 9px;
+}
+.coord-axis-slider::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+}
+
 .planes-num-input:disabled {
   opacity: 0.35;
   cursor: not-allowed;

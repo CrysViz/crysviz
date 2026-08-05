@@ -377,9 +377,15 @@ export function createCompositionRow(el, count, total, options = {}) {
             : [0, 0, 0];
           atomsContainer.appendChild(createIndividualAtomRow(el, atomIndex, i + 1, {
             imageIndex,
+            imageOffset: off,
             displayCoords: frac,
             metaText: `copy ${j + 1}/${images.length}  (${off.join(',')})`,
             onColorChange: updatePieDotForRow,
+            // The (0,0,0) copy still exposes Position; give it the live updater
+            // so a drag doesn't rebuild this panel out from under the slider
+            // (the default here is the full-rebuild path — that's why the
+            // unlinked slider only responded to clicks, not drags).
+            livePositionUpdater: (coords) => updateAtomCoordinatesLive(atomIndex, coords),
           }));
         });
       });

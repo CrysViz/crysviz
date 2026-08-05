@@ -130,6 +130,14 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const imageIndex = options.imageIndex ?? null;
   const perImage = imageIndex != null;
 
+  // Integer periodic offset of this on-screen copy from its source cell. A
+  // copy with a non-zero offset is a periodic IMAGE, not the atom itself: it
+  // may only be recoloured. Position/Spin edit the physical atom (they'd move
+  // or annotate every copy), which reads as a bug on an image row, so those
+  // buttons are dropped there and the whole row is inset + marked as a copy.
+  const imageOffset = options.imageOffset ?? null;
+  const isPeriodicImage = perImage && !!imageOffset && imageOffset.some((v) => v !== 0);
+
   const row = document.createElement('div');
   row.className = 'individual-atom-row';
   row.dataset.atomIndex = String(atomIndex);
@@ -147,6 +155,8 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     // Buttons keep their natural width, "Spin/Force" split to two lines, and the
     // reduced left indent on the container leaves room for all three.
     : 'display: grid; grid-template-columns: auto auto auto; align-items: center; column-gap: 10px; padding: 4px 0; font-size: 11px;';
+  // Inset image rows so they sit under the atom they copy, not beside it.
+  if (isPeriodicImage) row.style.marginLeft = '14px';
 
   const imageStyle = perImage ? getAtomImageStyle(fileBrowser.selectedStructure, imageIndex) : null;
   const currentColor = perImage
@@ -164,8 +174,11 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const rowAtom = fileBrowser.selectedStructure?.atoms?.[atomIndex];
 
   const name = document.createElement('span');
-  name.textContent = options.label ?? defaultAtomLabel(rowAtom, element, displayNumber);
-  name.style.color = '#ddd';
+  const baseLabel = options.label ?? defaultAtomLabel(rowAtom, element, displayNumber);
+  // The leading ↳ and dimmed colour flag this row as a periodic image of the
+  // atom above it rather than an atom in its own right.
+  name.textContent = isPeriodicImage ? `↳ ${baseLabel}` : baseLabel;
+  name.style.color = isPeriodicImage ? 'rgba(255,255,255,0.6)' : '#ddd';
 
   // Formal charge, when the source file supplied one. Rendered next to the
   // label rather than in metaText so it survives the Wyckoff rows, which use
@@ -360,8 +373,12 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const keepToggle = createTinyImmunityToggle(linkedAtomIndices, `Keep ${element}${displayNumber} visible across cut planes`);
 
   buttonContainer.appendChild(colorBtn);
-  buttonContainer.appendChild(coordBtn);
-  buttonContainer.appendChild(spinBtn);
+  // A periodic image only owns its colour; Position/Spin belong to the
+  // physical atom (its own, un-inset row), so they are omitted here.
+  if (!isPeriodicImage) {
+    buttonContainer.appendChild(coordBtn);
+    buttonContainer.appendChild(spinBtn);
+  }
 
   row.appendChild(buttonContainer);
   row.appendChild(keepToggle.wrapper);
@@ -1119,8 +1136,12 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     },
   });
   row.appendChild(editor);
-  row.appendChild(coordEditor);
-  row.appendChild(spinEditor);
+  // Image rows have no Position/Spin buttons, so their editors are unreachable
+  // — don't add them to the DOM.
+  if (!isPeriodicImage) {
+    row.appendChild(coordEditor);
+    row.appendChild(spinEditor);
+  }
   // The editors span the full row; in the stacked (flex) layout `grid-column`
   // on them means nothing, so they claim a whole flex line instead.
   if (stackedHeader) {

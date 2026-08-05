@@ -53,6 +53,49 @@ const H = require('../harness');
       && /copy \d+\/\d+\s+\(-?\d+,-?\d+,-?\d+\)/.test(unlinked.sampleMeta),
     JSON.stringify(unlinked));
 
+  // --- Image rows are colour-only; the (0,0,0) copy keeps Position/Spin -------------
+  const buttons = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#atomPanel .individual-atom-row')];
+    const btns = (r) => [...r.querySelectorAll('.atom-editor-button')];
+    const isPrimary = (r) => /\(0,0,0\)/.test(r.textContent);
+    const primary = rows.find(isPrimary);
+    const image = rows.find((r) => r.dataset.imageIndex != null && !isPrimary(r));
+    return {
+      primaryHasPosition: btns(primary).some((b) => b.textContent === 'Position'),
+      // The colour control is a pie-dot button (dataset.editorButton='color')
+      // with no text label, so match it by its dataset rather than "Color".
+      imageOnlyColor: btns(image).length === 1 && btns(image)[0].dataset.editorButton === 'color',
+      imageMarked: /↳/.test(image.textContent),
+    };
+  });
+  H.check('periodic-image rows are colour-only and marked; the (0,0,0) copy keeps all buttons',
+    buttons.primaryHasPosition && buttons.imageOnlyColor && buttons.imageMarked,
+    JSON.stringify(buttons));
+
+  // --- Unlinked Position slider drags live (no panel rebuild mid-drag) --------------
+  // The (0,0,0) row must move on a slider *drag*, not only a click: with the
+  // rebuild-on-input path the row is torn down each frame and the drag dies.
+  const drag = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const rows = [...document.querySelectorAll('#atomPanel .individual-atom-row')];
+    const primary = rows.find((r) => /\(0,0,0\)/.test(r.textContent));
+    const atomIndex = Number(primary.dataset.atomIndex);
+    const before = fileBrowser.selectedStructure.atoms[atomIndex].position[0];
+    /** @type {HTMLElement} */ (
+      [...primary.querySelectorAll('.atom-editor-button')].find((b) => b.textContent === 'Position')
+    ).click();
+    const slider = /** @type {HTMLInputElement} */ (primary.querySelector('.coord-axis-slider'));
+    slider.value = String(before < 0.5 ? before + 0.2 : before - 0.2);
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return {
+      stillConnected: slider.isConnected,
+      moved: Math.abs(fileBrowser.selectedStructure.atoms[atomIndex].position[0] - before) > 1e-4,
+    };
+  });
+  H.check('unlinked Position slider drags live: the row survives and the atom moves',
+    drag.stillConnected && drag.moved, JSON.stringify(drag));
+
   // --- Per-copy color edit: only that instance changes ------------------------------
   const colored = await page.evaluate(async () => {
     const { fileBrowser, groups } = await import('./state/store.js');
