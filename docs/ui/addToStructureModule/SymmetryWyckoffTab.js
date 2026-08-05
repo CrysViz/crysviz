@@ -36,8 +36,8 @@ import {
 import { createSpaceGroupSelect } from './SpaceGroupSelect.js';
 import { makeSectionHeadline } from '../panels/sectionHeadline.js';
 import { openPeriodicTable } from '../PeriodicTableSelectPanel.js';
-import { elementData } from '../PeriodicTablePickerCore.js';
 import { fracToCartPoint } from '../../math/index.js';
+import { invalidElementMessage } from './ElementValidation.js';
 
 const COLLISION_THRESHOLD_ANGSTROM = 0.5;
 const DEFAULT_SPACE_GROUP = 225;
@@ -58,12 +58,6 @@ function clampSpaceGroup(value) {
 function nonEmptyRows(sitesHost) {
   return [...sitesHost.querySelectorAll('tbody tr')]
     .filter((row) => row.querySelector('.wyckoff-element').value.trim());
-}
-
-function invalidElementMessage(sites) {
-  const bad = [...new Set(sites.filter((s) => !elementData[s.element]).map((s) => s.element || '(empty)'))];
-  if (!bad.length) return null;
-  return `Not a recognized element: ${bad.join(', ')}. Use the periodic table picker (⚛) to pick one.`;
 }
 
 // createSymmetryWyckoffTab(container, onCreated)

@@ -8,7 +8,7 @@
 
 import { general, groups, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle, scheduleBondRebuild } from '../render/index.js';
+import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle, scheduleBondRebuild, rebuildChargeBadges, updateChargeBadges, requestRender } from '../render/index.js';
 import { bondKey } from '../render/BondsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
 import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
@@ -53,6 +53,15 @@ export function setupControlsWiring() {
       reRenderBonds: true,
       bondsUpdate: false
     });
+  };
+
+  document.getElementById('showCharges').onchange = (e) => {
+    general.showCharges = e.target.checked;
+    // Badges are built from the model rather than toggled, so that turning the
+    // flag on after loading a structure still picks up its charges.
+    rebuildChargeBadges();
+    updateChargeBadges();
+    requestRender();
   };
 
     // Control handlers

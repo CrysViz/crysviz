@@ -21,7 +21,19 @@ function deepFreeze(object) {
 
 function deepCopyArrayOfObjects(array) {
   if (!array) return null;
-  return array.map(item => ({ ...item }));
+  return array.map(item => {
+    const copy = { ...item };
+    // `{ ...item }` is shallow: an Atom's `species` array (and its entries)
+    // would otherwise be the SAME objects as the live atom's, not a copy. The
+    // deepFreeze() this feeds into then freezes those live objects too, since
+    // it walks anything not already frozen — silently breaking any later
+    // in-place mutation of a species entry (e.g. a per-species colour edit)
+    // with "Cannot assign to read only property".
+    if (Array.isArray(copy.species)) {
+      copy.species = copy.species.map((s) => ({ ...s }));
+    }
+    return copy;
+  });
 }
 
 function normalizePolyhedraSettings(settings = null) {

@@ -28,6 +28,7 @@ import { addLandscapePanel, removeLandscapePanel, addLandscapePlotsPanel, remove
 import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { createFeatureLockButton } from '../FeatureLockModule.js';
+import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
 import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
@@ -93,9 +94,10 @@ function makePolyEdgeSliderRow() {
 }
 
 /** A bordered box (styles.css .panel-section) grouping one section's
- *  headline + controls — currently only used by the Visual panel, whose
- *  several stacked sections otherwise read as one long undifferentiated
- *  list. `id`, if given, lets a sub-builder (addColorPanel/addCameraPanel)
+ *  headline + controls — used by the Visual panel, whose several stacked
+ *  sections otherwise read as one long undifferentiated list (the Cell &
+ *  Supercell panel applies the same .panel-section class directly).
+ *  `id`, if given, lets a sub-builder (addColorPanel/addCameraPanel)
  *  target this box directly instead of appending to the shared body. */
 function makePanelSection(title, id) {
   const section = document.createElement('div');
@@ -168,6 +170,12 @@ function buildFeaturesBody(body) {
 
   const showBonds = detachStaticRow('showBonds');
   if (showBonds) group.appendChild(showBonds);
+
+  // Wired in ControlsWiring.js (general.showCharges + rebuildChargeBadges());
+  // this row just never made it out of the staging block into the actual
+  // Features window, so the toggle existed but was permanently unreachable.
+  const showCharges = detachStaticRow('showCharges');
+  if (showCharges) group.appendChild(showCharges);
 
   const neighbourBonds = detachStaticRow('PBCBondToggle');
   if (neighbourBonds) group.appendChild(neighbourBonds);
@@ -320,6 +328,11 @@ export function registerDefaultPanels() {
     title: 'Atomistic',
     lifecycle: 'persistent',
     infoMd: './data/backendInfo.md',
+    // Interatomic potentials/ML force fields need one definite species per
+    // site (see DisorderWarningBanner.js) — grey the whole panel out for a
+    // fractionally occupied structure instead of letting Relax/MD look usable
+    // and only fail once clicked.
+    available() { return !structureHasFractionalOccupancy(); },
     buildContent(body) {
       // Adopt the backend mode selector (Relax/MD) and the calc panel the
       // modes build into. (#uploadSection starts inside this group in the

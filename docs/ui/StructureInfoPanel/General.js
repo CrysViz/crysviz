@@ -11,7 +11,7 @@ import { latticeVolume } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { atomForceToColor } from '../ColorPanel.js';
 import { updateForces, updateSpins } from '../../render/index.js';
-import { applyToOtherTrajectoryFrames, wirePressHoldPopup } from './components/utils.js';
+import { applyToOtherTrajectoryFrames, wirePressHoldPopup, getSiteSignatureGroups } from './components/utils.js';
 
 // The per-structure style-override stores (all survive rebuilds; see Structure.js).
 const ALL_STYLE_STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
@@ -156,28 +156,47 @@ export function getCompositionString() {
       const structure = fileBrowser.selectedStructure;
       const counts = {};
       structure.elements.forEach((e, i) => {
-        if (structure.atoms[i]?.hidden) return;
-        counts[e] = (counts[e] || 0) + 1;
+        const atom = structure.atoms[i];
+        if (atom?.hidden) return;
+        // Weight by occupancy so a 50/50 Fe/Ni site contributes half an Fe and
+        // half a Ni rather than one of each — otherwise the formula overstates
+        // the cell contents for every disordered structure.
+        if (atom?.species?.length) {
+          for (const s of atom.species) {
+            counts[s.element] = (counts[s.element] || 0) + s.occupancy;
+          }
+        } else {
+          counts[e] = (counts[e] || 0) + 1;
+        }
       });
     return counts;
   }
   // Generate the chemical formula as a string
   const counts = computeComposition();
-  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+  const totalRaw = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+  // Whole numbers stay whole; fractional totals get a couple of decimals.
+  const total = Number.isInteger(totalRaw) ? totalRaw : Number(totalRaw.toFixed(2));
   const elements = Object.keys(counts).sort();
 
   let formula = '';
 
   // Iterate through the counts object and build the formula string
+  // A fractional count must still be shown: bare "Fe" reads as exactly one
+  // atom, so a 0.5-occupied site needs its subscript even though it is < 1.
+  const subscript = (n) => {
+    const rounded = Number(n.toFixed(2));
+    if (rounded === 1) return '';
+    return `<sub>${Number.isInteger(rounded) ? rounded : rounded}</sub>`;
+  };
+
   for (const element in counts) {
     const count = counts[element];
     if (general.currentSupercell === null) {
-      formula += element + (count > 1 ? `<sub>${count}</sub>` : ''); // Add subscript if count > 1
+      formula += element + subscript(count);
     } else {
       const supercellSize = general.currentSupercell.nx * general.currentSupercell.ny * general.currentSupercell.nz;
       // Divide the count by the supercell size
-      const currCount = count / supercellSize;
-      formula += element + (currCount > 1 ? `<sub>${Math.round(currCount)}</sub>` : ''); // Add subscript if count > 1
+      formula += element + subscript(count / supercellSize);
     }
   }
 
@@ -398,7 +417,10 @@ export function renderComposition(panelState="closed") {
 
   const priorUiState = captureCompositionUiState();
 
-  const {elements, counts, total}=getCompositionString()
+  // Called for its side effects: it writes the formula + atom count into the
+  // header and the #composition box. The per-element counts it returns are no
+  // longer used to build the rows — those group by site composition instead.
+  getCompositionString()
   const hasWyckoffPanel = fileBrowser.selectedStructure?.symmetry?.mode === 'wyckoff'
     && (fileBrowser.selectedStructure.symmetry.orbitGroups?.length ?? 0) > 0;
   // Keep the user's tab across re-renders; only fall back when the stored mode
@@ -504,7 +526,7 @@ export function renderComposition(panelState="closed") {
 // in wyckoff mode, so it is shown unconditionally above the tab selector.
 const linkCopiesRow = createToggleRow({
   id: 'linkPeriodicCopiesToggle',
-  label: 'Link periodic copies',
+  label: 'Link colors of periodic copies',
   checked: general.linkPeriodicCopies !== false,
   onChange: (e) => {
     general.linkPeriodicCopies = /** @type {any} */ (e.target).checked;
@@ -556,8 +578,20 @@ const atomPanel = document.createElement("div");
 atomPanel.id = "atomPanel";
 atomPanel.className = "atomBondClass"; // Add a class for styling
 if (!hasWyckoffPanel) {
-  elements.forEach(el => {
-    const row = createCompositionRow(el, counts[el], total);
+  // One row per distinct site composition rather than per element. The header
+  // count is a SITE count (an integer); the occupancy-weighted chemistry lives
+  // in the formula line above, so the two answer different questions instead of
+  // contradicting each other.
+  const groups = getSiteSignatureGroups({ includeHidden: true });
+  const totalSites = groups.reduce((sum, g) => sum + g.atomIndices.length, 0) || 1;
+  groups.forEach(group => {
+    const row = createCompositionRow(group.representative, group.atomIndices.length, totalSites, {
+      label: group.label,
+      atomIndices: group.atomIndices,
+      key: group.key,
+      elements: group.elements,
+      hasVacancy: group.hasVacancy,
+    });
     atomPanel.appendChild(row);
   });
 }

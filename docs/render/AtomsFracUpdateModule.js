@@ -9,6 +9,12 @@ import { getCutPlaneMaskSign } from '../model/Plane.js';
 import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression, MAX_CUT_PLANES} from './MaterialStyles.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import {runPeriodicWrapped} from './LatticeModule.js'
+import {rebuildChargeBadges} from './ChargeBadgeModule.js'
+import {requestRender} from './AnimateModule.js'
+import {
+  buildWedgeTexture, WEDGE_VERTEX_DECL, WEDGE_VERTEX_BODY,
+  WEDGE_FRAGMENT_DECL, WEDGE_FRAGMENT_BODY,
+} from './WedgeAtoms.js'
 
 import {setAtomColor}  from '../utils/ColorModule.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
@@ -91,6 +97,79 @@ function applyCutPlaneUniformsToShader(shader) {
     shader.uniforms.uCutPlanes.value[index].set(0, 0, 0, 0);
     shader.uniforms.uCutPlaneMaskSide.value[index] = 0;
   }
+}
+
+/**
+ * Push a material's wedge texture into its compiled shader. Safe to call before
+ * compilation (no-op) or with no wedge data (disables the branch).
+ *
+ * @param {any} material
+ */
+export function applyWedgeUniforms(material) {
+  const shader = material?.userData?.shader;
+  const wedge = material?.userData?.wedge;
+  if (!shader?.uniforms?.uWedgeTex) return;
+  if (!wedge) {
+    shader.uniforms.uWedgeEnabled.value = 0;
+    return;
+  }
+  shader.uniforms.uWedgeTex.value = wedge.texture;
+  shader.uniforms.uWedgeTexSize.value.set(wedge.size[0], wedge.size[1]);
+  // Skip the branch entirely when nothing in the structure is disordered.
+  shader.uniforms.uWedgeEnabled.value = wedge.any ? 1 : 0;
+}
+
+/**
+ * Rebuild and re-upload just the wedge texture on the current atoms mesh,
+ * after a per-species colour edit. Positions, the instance count, UUIDs and
+ * every other buffer are untouched, so this is far cheaper than rebuildAtoms()
+ * for what is otherwise only a texture swap.
+ */
+export function refreshAtomWedgeTexture() {
+  const mesh = groups.atomsMesh;
+  const structure = fileBrowser.selectedStructure;
+  const wrapped = structure?.periodic?.visibleWrapped;
+  if (!mesh || !wrapped) return;
+  const wedge = buildWedgeTexture(structure.atoms, wrapped.srcIndex);
+  const old = mesh.material.userData.wedge?.texture;
+  mesh.material.userData.wedge = wedge;
+  applyWedgeUniforms(mesh.material);
+  // Depth-peel/WBOIT pipelines render per-instance-transparent atoms through
+  // a separate overlay material (its own compiled shader, own uniforms) —
+  // keep it in sync with the same texture, same as cut planes already do
+  // (see applyAtomCutPlaneUniforms above).
+  const overlay = mesh.userData.transparentOverlay;
+  if (overlay) {
+    overlay.material.userData.wedge = wedge;
+    applyWedgeUniforms(overlay.material);
+  }
+  old?.dispose();
+}
+
+/**
+ * Set one species colour across many (atom, species-index) targets in one go
+ * — the bulk-edit primitive behind both the group-header per-element dots and
+ * an individual disordered atom's per-species swatches. A single wedge-texture
+ * refresh + render request at the end, not one per target.
+ *
+ * @param {Array<{atomIndex:number, speciesIndex:number}>} targets
+ * @param {string|null} hex null clears back to the element default
+ */
+export function setSpeciesColorBulk(targets, hex) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return;
+  for (const { atomIndex, speciesIndex } of targets) {
+    structure.atoms[atomIndex]?.setSpeciesColor(speciesIndex, hex);
+  }
+  refreshAtomWedgeTexture();
+  requestRender();
+  // The 3D wedge sphere is now correct, but every OTHER UI that shows this
+  // colour (an individual atom row's pie icon/per-species swatches, other
+  // composition groups' own dots if they share a species, bond/polyhedra
+  // color displays, ...) was built from a snapshot and has no other way to
+  // learn a bulk species edit happened - this is the one shared choke point
+  // for all of them, same as every other bulk recolor already broadcasts.
+  document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
 }
 
 function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
@@ -212,6 +291,11 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
 
   const instanceElementIndices = new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1);
 
+  // Pie-wedge description for disordered sites, as a texture rather than
+  // instance attributes (see WedgeAtoms.js — the mesh has no attribute slots
+  // left). Ordered atoms leave their texel at zero, the shader's sentinel.
+  const wedge = buildWedgeTexture(atoms, wrapped.srcIndex);
+
   // Store UUIDs in mesh.userData as an array
   mesh.userData.uuids = [];
   const uuidToIndex = new Map();
@@ -269,6 +353,9 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
 
   mesh.geometry.setAttribute('instanceUUID', instanceUUIDs);
   mesh.geometry.setAttribute('instanceElementIndex', instanceElementIndices);
+  // Feed the wedge texture to the material's shader once it has compiled.
+  material.userData.wedge = wedge;
+  applyWedgeUniforms(material);
 
   // Existing attributes
   mesh.geometry.setAttribute(
@@ -353,7 +440,7 @@ export function createAtomsMaterial() {
       varying float vInstanceOpacity;
       varying float vInstanceCutPlaneImmune;
       varying vec3 vInstanceWorldCenter;
-    ` + shader.vertexShader;
+    ` + WEDGE_VERTEX_DECL + shader.vertexShader;
 
     shader.vertexShader = shader.vertexShader.replace(
       '#include <begin_vertex>',
@@ -367,7 +454,7 @@ export function createAtomsMaterial() {
         vInstanceOpacity = instanceOpacity;
         vInstanceCutPlaneImmune = instanceCutPlaneImmune;
         vInstanceWorldCenter = instanceWorldCenter.xyz;
-      `
+      ` + WEDGE_VERTEX_BODY
     );
 
     shader.fragmentShader = `
@@ -382,7 +469,7 @@ export function createAtomsMaterial() {
       varying float vInstanceOpacity;
       varying float vInstanceCutPlaneImmune;
       varying vec3 vInstanceWorldCenter;
-    ` + shader.fragmentShader;
+    ` + WEDGE_FRAGMENT_DECL + shader.fragmentShader;
 
     shader.fragmentShader = shader.fragmentShader.replace(
       'vec4 diffuseColor = vec4( diffuse, opacity );',
@@ -403,6 +490,13 @@ export function createAtomsMaterial() {
       `
     );
 
+    // After <color_fragment>, which multiplies in the per-instance colour —
+    // injecting earlier would let that multiply wipe out the wedge colours.
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      '#include <color_fragment>' + WEDGE_FRAGMENT_BODY
+    );
+
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <emissivemap_fragment>',
       ` 
@@ -418,8 +512,14 @@ export function createAtomsMaterial() {
     shader.uniforms.uCutPlaneMaskSide = {
       value: new Float32Array(MAX_CUT_PLANES),
     };
+    shader.uniforms.uWedgeTex = { value: null };
+    shader.uniforms.uWedgeTexSize = { value: new THREE.Vector2(1, 1) };
+    shader.uniforms.uWedgeEnabled = { value: 0 };
     material.userData.shader = shader;
     applyAtomCutPlaneUniforms(material);
+    // The mesh's wedge data is built before the shader compiles, so re-apply it
+    // here now that the uniforms exist.
+    applyWedgeUniforms(material);
   };
   return material;
 }
@@ -441,6 +541,11 @@ export function buildAtoms() {
   const material = createAtomsMaterial();
 
   finishAtomsMesh({ geometry, material, structure, wrapped, atoms, meshKey: 'atomsMesh', cutPlanes: true });
+
+  // Badges anchor to the wrapped atom set and scale with atom radius, so they
+  // have to be rebuilt whenever that set is rebuilt. No-ops when the flag is
+  // off or nothing in the structure carries a charge.
+  rebuildChargeBadges();
 }
 
 

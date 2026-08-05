@@ -311,6 +311,11 @@ export const general = {
   showBonds:true,
   showLattice:true,
   showPolyhedra:false,
+  // Formal-charge badges next to atoms that carry an oxidation state (from
+  // _atom_type_oxidation_number, or the suffix on _atom_site_type_symbol).
+  // Off by default: most structures have no charge data, and on those that do
+  // a badge per atom is a lot of extra ink to opt into rather than inherit.
+  showCharges:false,
   showAxes:true,
   // Shaft radius of the a/b/c axes-gizmo arrows, in gizmo-scene units
   // (WindowAndSceneControls.initAxesGizmo; arrow length is 1).

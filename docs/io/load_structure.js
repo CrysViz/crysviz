@@ -167,12 +167,18 @@ export async function parse_cif(content, fileName = '', mcif = false) {
   const positions = cif_struct["positions_full"];
   const spins = cif_struct["moments_full"];
 
+  // Full site composition, one entry per expanded atom. Present only for plain
+  // CIFs — mCIF takes a different expansion path — in which case Atom falls
+  // back to a single fully-occupied species built from `element`.
+  const siteSpecies = cif_struct["site_species_full"];
+
   const atoms = [];
   positions.forEach((pos, i) => {
     atoms.push(
       new Atom({
         position: pos,
         element: elements[i],
+        species: siteSpecies ? siteSpecies[i] : null,
         uuid: generateID([elements[i]])
       })
     );

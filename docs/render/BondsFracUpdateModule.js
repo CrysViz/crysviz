@@ -9,6 +9,7 @@ import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression} from
 import {getAtomImageStyle} from './AtomsFracUpdateModule.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
+import { requestRender } from './AnimateModule.js';
 
 
 
@@ -48,8 +49,15 @@ export function initBondsLengths(){
       pairs.push(pair);
 
       if (!general.bondLengths[pair]) {
+        // "Va" isn't a real element - getElementRadius falls back to a
+        // generic default for it, same as any other unrecognized symbol,
+        // which would otherwise auto-bond a vacancy to its neighbours by
+        // default. Default that pair's cutoff to 0 (no bond) instead; the
+        // Bond Length panel can still raise it by hand for whoever actually
+        // wants to visualize distance-to-nearest-vacancy.
+        const isVacancyPair = uniqueElements[i] === 'Va' || uniqueElements[j] === 'Va';
         const defaultRadius = getElementRadius(uniqueElements[i]) + getElementRadius(uniqueElements[j]);
-        const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
+        const defaultValue = isVacancyPair ? 0.0 : Math.min(defaultRadius * 1.0, 6.0);
         general.bondLengths[pair] = { min: 0.0, max: defaultValue };
         general.defaultBondLengths[pair] = { min: 0.0, max: defaultValue }; // Store default
       }
@@ -379,9 +387,13 @@ export function buildBondObjects(structure){
       // Temporary color, will be updated in second pass
       bond.color = bond.defaultColor;
     } else {
-      // Default to element colors or atom colors
+      // Default to element colors or atom colors. getRepresentativeColor(),
+      // not the plain .color field: for a disordered endpoint that resolves
+      // to whatever the representative species' OWN colour is (falling back
+      // to the element default), so a per-species colour edit is visible on
+      // the bond too, not only on the wedge sphere.
       if (atoms && bond.srcIndices[0] < atoms.length && bond.srcIndices[1] < atoms.length) {
-        bond.color = [atoms[bond.srcIndices[0]].color, atoms[bond.srcIndices[1]].color];
+        bond.color = [atoms[bond.srcIndices[0]].getRepresentativeColor(), atoms[bond.srcIndices[1]].getRepresentativeColor()];
       } else {
         bond.color = bond.defaultColor;
       }
@@ -849,6 +861,47 @@ export function updateSingleBondColor(bondMeshIndex, color, overwriteAtom = fals
 
 }
 
+/**
+ * Re-derive and repaint the colour of every bond half touching any of the
+ * given atoms, from their current getRepresentativeColor() — no topology
+ * recompute, no dispose, no debounce, so it is cheap enough to call on every
+ * pointer-move while dragging in a colour picker.
+ *
+ * This exists because scheduleBondRebuild() is the wrong tool for a colour-
+ * only change: it is a full dispose-and-rebuild of the bond mesh (recomputing
+ * every pair from distance cutoffs), debounced 200ms specifically so a burst
+ * of unrelated edits collapses into one rebuild. A picker drag fires on every
+ * mousemove, which kept RESETTING that debounce before it ever ran — so bond
+ * colours never updated while actually dragging, only some time after
+ * letting go, which read as "not really live."
+ *
+ * Only meaningful in "elements" (the default) bond-colour mode, where a
+ * bond's colour is atom-derived at all; white/solid/length bonds are
+ * deliberately independent of atom colour and are left untouched.
+ *
+ * @param {number[]} atomIndices
+ */
+export function refreshBondColorsForAtoms(atomIndices) {
+  const structure = fileBrowser.selectedStructure;
+  const mesh = groups.bondsMesh;
+  if (!mesh || !structure?.bonds?.length) return;
+  if (general.bondsColor && general.bondsColor !== "elements") return;
+
+  const changed = new Set(atomIndices);
+  let touched = false;
+  structure.bonds.forEach((bond, i) => {
+    if (!changed.has(bond.srcIndices[0]) && !changed.has(bond.srcIndices[1])) return;
+    const a = structure.atoms[bond.srcIndices[0]];
+    const b = structure.atoms[bond.srcIndices[1]];
+    if (!a || !b) return;
+    bond.color = [a.getRepresentativeColor(), b.getRepresentativeColor()];
+    updateSingleBondColor(i * 2, bond.color[0]);
+    updateSingleBondColor(i * 2 + 1, bond.color[1]);
+    touched = true;
+  });
+  if (touched) requestRender();
+}
+
 
 export function updateSingleBondOpacity(bondMeshIndex, opacity = 1.0) {
   const mesh = groups.bondsMesh;
@@ -862,7 +915,8 @@ export function updateSingleBondOpacity(bondMeshIndex, opacity = 1.0) {
 function syncBondMaterialTransparency(baseOpacity = 1.0) {
   const mesh = groups.bondsMesh;
   if (!mesh?.material) return;
-  const hasTransparentInstances = fileBrowser.selectedStructure?.bonds?.some((bond) => (bond.alpha ?? 1) < 0.999) ?? false;
+  const hasTransparentInstances = fileBrowser.selectedStructure?.bonds?.some((bond) =>
+    (bond.alpha ?? 1) < 0.999) ?? false;
   const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances;
   applyTransparency(mesh.material, {
     kind: 'bonds', opacity: baseOpacity, needsTransparency, perInstanceOpacity: true, mesh,
@@ -939,8 +993,11 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
 
   mesh.geometry.attributes.instanceEmissive.setXYZ(index*2, 0,0,0);
   mesh.geometry.attributes.instanceEmissiveIntensity.setX(index*2, 0);
-  mesh.geometry.attributes.instanceElementIndex.setX(index*2, 0);
-  mesh.geometry.attributes.instanceOpacity.setX(index*2, Math.max(0, Math.min(1, bond.alpha ?? 1)));
+  // Carries the half's own instance id so the shader can look up that
+  // endpoint's species in the wedge texture (was an unused constant 0).
+  mesh.geometry.attributes.instanceElementIndex.setX(index*2, index*2);
+  mesh.geometry.attributes.instanceOpacity.setX(index*2,
+    Math.max(0, Math.min(1, bond.alpha ?? 1)));
 
   // ---- second half ----
   _bondDummy.position.copy(bond.center2);
@@ -953,8 +1010,9 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
 
   mesh.geometry.attributes.instanceEmissive.setXYZ(index*2 + 1, 0,0,0);
   mesh.geometry.attributes.instanceEmissiveIntensity.setX(index*2 + 1, 0);
-  mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, 0);
-  mesh.geometry.attributes.instanceOpacity.setX(index*2 + 1, Math.max(0, Math.min(1, bond.alpha ?? 1)));
+  mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, index*2 + 1);
+  mesh.geometry.attributes.instanceOpacity.setX(index*2 + 1,
+    Math.max(0, Math.min(1, bond.alpha ?? 1)));
 }
 
 export function hideSingleBond(index) {

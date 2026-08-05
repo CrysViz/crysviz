@@ -16,6 +16,7 @@ import { createLockToggleButton } from './LockToggleButton.js';
 const FEATURE_TOGGLE_DEFAULTS = {
   showAtoms: true,
   showBonds: true,
+  showCharges: false,
   PBCBondToggle: false,
   showPolyhedra: false,
   completePolyhedraToggle: false,

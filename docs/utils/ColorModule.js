@@ -73,8 +73,14 @@ export function hasCustomAtomColors(atoms, element) {
 // Create a pie dot canvas for an element (showing all custom colors, or default if none)
 export function createPieDot(colors, size = 200) {
   const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
+  const dpr = window.devicePixelRatio || 1;
+  // Backing store at device-pixel resolution, not just `size` (a 1:1 canvas
+  // upscaled to its CSS size on any HiDPI display): at these dots' actual
+  // on-screen size (18-32px) that upscaling visibly softened the border and
+  // let the panel background bleed through right at the wedge seams, which
+  // read as a border that "isn't centered" and colors mixing at the edges.
+  canvas.width = size * dpr;
+  canvas.height = size * dpr;
   updatePieDot(canvas, colors);
   canvas.style.borderRadius = "50%";
   canvas.style.border = "1px solid #666";
@@ -85,11 +91,18 @@ export function createPieDot(colors, size = 200) {
 
 export function updatePieDot(canvas, colors) {
   const ctx = canvas.getContext("2d");
-  const size = canvas.width;
+  const dpr = window.devicePixelRatio || 1;
+  // The backing store is size*dpr (see createPieDot); draw in logical
+  // (CSS-pixel) coordinates via setTransform, which — unlike ctx.scale —
+  // resets to exactly this transform each call rather than compounding on
+  // top of a previous one, since this same canvas gets redrawn in place on
+  // every recolor (see e.g. PolyhedraListPanel.js's polyCategorySwatchUpdateFunctions).
+  const size = canvas.width / dpr;
   const center = size / 2;
   const radius = center;
   const normalizedColors = Array.isArray(colors) && colors.length ? colors : ['#808080'];
 
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, size, size);
 
   // Most atoms of an element share a single color, so draw one wedge per

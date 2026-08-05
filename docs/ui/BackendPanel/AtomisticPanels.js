@@ -1,9 +1,11 @@
 import { loadSocketIO } from '../../external/socket.io-loader.js';
 import { fileBrowser, structureShip, general } from '../../state/store.js';
+import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 import {
   buildNEPStructure,
   relaxUntilConverged,
   applyStructureToViewer,
+  expandKeptVectorsToFull,
   maxForce,
   pressureGPaFromStress,
 } from '../../atomistic/relaxer.js';
@@ -233,15 +235,29 @@ function statusElAdapter(onStatus) {
   return { set textContent(text) { onStatus(String(text)); } };
 }
 
-/**
- * Headless access to the active in-browser calculator (EOS scans, addons):
- * resolves general.atomisticPotential to a ready { runner, potential } without
- * needing the Relax/MD panel open. When that panel IS built, its PET-MAD
- * backend/model controls are reused so a headless load matches (and shares the
- * singleton with) whatever the user picked there. 'ase' throws — it computes
- * on a remote server, not in the browser.
- */
-export async function ensureActiveCalculator(onStatus = () => {}) {
+// Interatomic potentials and ML force fields need one definite species per
+// site — there is no defined force on an atom that is half Fe and half Ni —
+// so refuse rather than return numbers for a structure the model cannot
+// describe. Shared by every run entry point below (headless calculator
+// access, and the Relax/EFS/MD panel's own buttons — local NEP/PET-MAD *and*
+// the remote ASE dispatch, which otherwise has no calculator-readiness check
+// at all to hang this on).
+function assertOrderedStructure() {
+  if (structureHasFractionalOccupancy()) {
+    throw new Error(
+      'This structure has fractionally occupied sites, which interatomic potentials cannot represent. '
+      + 'Use "Order structure" to generate an ordered approximation first.'
+    );
+  }
+}
+
+// Shared by ensureActiveCalculator and ensureCalculatorRunner below: resolves
+// general.atomisticPotential to a ready { runner, potential }. When the
+// Relax/MD panel IS built, its PET-MAD backend/model controls are reused so a
+// headless load matches (and shares the singleton with) whatever the user
+// picked there. 'ase' throws — it computes on a remote server, not in the
+// browser.
+async function resolveCalculatorRunner(onStatus = () => {}) {
   const potential = general.atomisticPotential || 'nep';
   if (potential === 'ase') {
     throw new Error('ASE runs on a remote server backend — select the NEP or PET-MAD potential to compute in-browser.');
@@ -260,14 +276,41 @@ export async function ensureActiveCalculator(onStatus = () => {}) {
   return { runner, potential };
 }
 
+/**
+ * Headless access to the active in-browser calculator (EOS scans, addons):
+ * resolves general.atomisticPotential to a ready { runner, potential } without
+ * needing the Relax/MD panel open.
+ */
+export async function ensureActiveCalculator(onStatus = () => {}) {
+  assertOrderedStructure();
+  return resolveCalculatorRunner(onStatus);
+}
+
+/**
+ * Same headless calculator access as ensureActiveCalculator, but WITHOUT the
+ * ordered-structure guard — for computing on structures that are already
+ * known to be ordered (Order Structure's random-sample energy comparison
+ * builds fully-ordered candidates from a disordered source; asserting against
+ * fileBrowser.selectedStructure there would reject on the still-disordered
+ * structure the candidates were built FROM, not the candidates themselves).
+ */
+export async function ensureCalculatorRunner(onStatus = () => {}) {
+  return resolveCalculatorRunner(onStatus);
+}
+
 function convertStressEvA3ToGPa(stressTensor) {
   const factor = 160.21766208;
   return stressTensor.map((row) => row.map((value) => value * factor));
 }
 
-function setCurrentEFS(out) {
+function setCurrentEFS(out, keptIndices = null) {
   if (Array.isArray(out?.forces)) {
-    fileBrowser.selectedStructure.forces = out.forces.map((v) => new Force({ vector: [...v] }));
+    // The potential returns one force per NON-vacancy atom; expand back to the
+    // full atom list (vacancies get a zero force) so structure.forces stays
+    // index-aligned with structure.atoms for the Forces panel and arrows.
+    const forces = expandKeptVectorsToFull(
+      fileBrowser.selectedStructure.atoms.length, out.forces, keptIndices);
+    fileBrowser.selectedStructure.forces = forces.map((v) => new Force({ vector: [...v] }));
   }
   // Stress is optional — some calculators don't provide it. Don't throw when
   // it's absent; just leave the structure without a stress tensor.
@@ -539,7 +582,11 @@ function emitASEEFS() {
   });
 }
 
-function buildPanelShell(title) {
+// The potential picker lives in its OWN persistent element (#BackendPotentialSelector),
+// rendered once and ABOVE the Relax/MD switch — the user picks the potential
+// first, then an action, and the choice (general.atomisticPotential) survives
+// switching Relax<->MD and is what Order Structure / EOS read too.
+function buildSourcePanel() {
   return `
     <div class="atomistic-panel">
       <div class="atomistic-source-panel">
@@ -583,25 +630,36 @@ function buildPanelShell(title) {
           <div class="atomistic-backend-state" data-role="backend-state">Backend: not connected</div>
         </div>
       </div>
+    </div>
+  `;
+}
+
+function buildBodyShell() {
+  return `
+    <div class="atomistic-panel">
       <div class="atomistic-body" data-role="body"></div>
     </div>
   `;
 }
 
-function getShellBindings(panel) {
-  const sourceStateEl = panel.querySelector('[data-role="source-state"]');
+// One shell object over the two persistent containers: the potential picker
+// (#BackendPotentialSelector) and the action body (#BackendCalcPanel).
+function getShellBindings() {
+  const selector = document.getElementById('BackendPotentialSelector');
+  const calc = document.getElementById('BackendCalcPanel');
+  const sourceStateEl = selector?.querySelector('[data-role="source-state"]');
   return {
-    toggle: panel.querySelector('[data-role="potential-toggle"]'),
+    toggle: selector?.querySelector('[data-role="potential-toggle"]'),
     sourceStateEl,
-    aseConnectorsEl: panel.querySelector('[data-role="ase-connectors"]'),
-    backendStateEl: panel.querySelector('[data-role="backend-state"]'),
-    mlipSourceEl: panel.querySelector('[data-role="mlip-source"]'),
-    mlipModelSelect: panel.querySelector('[data-role="mlip-model"]'),
-    mlipBackendSelect: panel.querySelector('[data-role="mlip-backend"]'),
-    mlipLoadBtn: panel.querySelector('[data-role="mlip-load"]'),
-    mlipFileInput: panel.querySelector('[data-role="mlip-file"]'),
-    mlipStatusEl: panel.querySelector('[data-role="mlip-status"]'),
-    bodyEl: panel.querySelector('[data-role="body"]'),
+    aseConnectorsEl: selector?.querySelector('[data-role="ase-connectors"]'),
+    backendStateEl: selector?.querySelector('[data-role="backend-state"]'),
+    mlipSourceEl: selector?.querySelector('[data-role="mlip-source"]'),
+    mlipModelSelect: selector?.querySelector('[data-role="mlip-model"]'),
+    mlipBackendSelect: selector?.querySelector('[data-role="mlip-backend"]'),
+    mlipLoadBtn: selector?.querySelector('[data-role="mlip-load"]'),
+    mlipFileInput: selector?.querySelector('[data-role="mlip-file"]'),
+    mlipStatusEl: selector?.querySelector('[data-role="mlip-status"]'),
+    bodyEl: calc?.querySelector('[data-role="body"]'),
     statusEl: sourceStateEl,
     resultEl: sourceStateEl,
   };
@@ -939,7 +997,7 @@ async function runLocalRelax(shell, params, potential) {
         const shouldUpdateViewer = step === 1 || shouldSave || step % viewerStride === 0;
         if (shouldUpdateViewer) {
           applyStructureToViewer(current, fileBrowser.selectedStructure);
-          setCurrentEFS(out);
+          setCurrentEFS(out, current.keptIndices);
         }
 
         lastMetrics = {
@@ -970,7 +1028,7 @@ async function runLocalRelax(shell, params, potential) {
     });
 
     applyStructureToViewer(relaxed.structure, fileBrowser.selectedStructure, { full: true });
-    setCurrentEFS(relaxed.result);
+    setCurrentEFS(relaxed.result, relaxed.structure.keptIndices);
 
     // Always keep the final state in the trajectory, even off-stride.
     if (relaxed.steps !== lastSavedStep) {
@@ -1008,7 +1066,7 @@ async function runLocalEFS(shell, metricsEl, potential) {
   const runner = await ensureCalculatorReady(potential, shell);
   const nepStruct = buildNEPStructure(runner, fileBrowser.selectedStructure);
   const out = await runner.compute(nepStruct);
-  setCurrentEFS(out);
+  setCurrentEFS(out, nepStruct.keptIndices);
   const pressureText = runner.supportsStress === false
     ? 'n/a'
     : `${pressureGPaFromStress(out.stress.matrix3x3).toFixed(2)} GPa`;
@@ -1036,6 +1094,7 @@ function bindRelaxBody(panel, shell, potential) {
   efsCard.addEventListener('click', async () => {
     try {
       shell.resultEl.textContent = '';
+      assertOrderedStructure();
       if (potential === 'ase') {
         emitASEEFS();
         setASEStatus(aseBinding, 'Requesting EFS from ASE backend...');
@@ -1051,6 +1110,7 @@ function bindRelaxBody(panel, shell, potential) {
     try {
       const params = readRelaxParams(shell.bodyEl);
       shell.resultEl.textContent = '';
+      assertOrderedStructure();
       if (potential === 'ase') {
         emitASERelax('new', params);
         setASEStatus(aseBinding, 'Submitting ASE relaxation...');
@@ -1170,6 +1230,7 @@ function bindMDBody(panel, shell, potential) {
     let seedFrame = /** @type {any} */ (null);
     let isContinuation = false;
     try {
+      assertOrderedStructure();
       mdRunning = true;
       mdStopRequested = false;
       startBtn.disabled = true;
@@ -1374,7 +1435,7 @@ function bindMDBody(panel, shell, potential) {
       setCurrentEFS({
         forces: state.forces,
         stress: { matrix3x3: state.stress },
-      });
+      }, state.keptIndices);
 
       // Always keep the final state in the trajectory, even off-stride.
       if (state.step !== lastSavedStep) {
@@ -1437,53 +1498,67 @@ function bindMDBody(panel, shell, potential) {
   });
 }
 
-function bindPotentialToggle(panel, shell, mode) {
-  let potential = 'nep';
+// Reflect the current general.atomisticPotential in the selector's own widgets
+// (button highlight, ASE/MLIP sub-controls, one-line hint). Pure UI — no body.
+function updatePotentialUI(shell, { announce = false } = {}) {
+  const potential = general.atomisticPotential || 'nep';
+  shell.toggle?.querySelectorAll('button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.potential === potential);
+  });
+  refreshBackendTheme();
+  shell.aseConnectorsEl?.classList.toggle('hidden', potential !== 'ase');
+  shell.mlipSourceEl?.classList.toggle('hidden', potential !== 'mlip');
+  if (announce && potential === 'ase') {
+    window.alert('ASE requires a server backend. Please connect to the backend server before running this mode.');
+    if (shell.sourceStateEl) shell.sourceStateEl.textContent = 'ASE selected: server backend required.';
+  } else if (potential === 'ase') {
+    if (shell.sourceStateEl) shell.sourceStateEl.textContent = 'ASE selected: server backend required.';
+  } else if (potential === 'mlip') {
+    if (shell.sourceStateEl) shell.sourceStateEl.textContent = 'PET-MAD selected: load a model, then compute in-browser.';
+  } else if (shell.sourceStateEl) {
+    shell.sourceStateEl.textContent = '';
+  }
+}
 
-  const render = async () => {
-    shell.toggle.querySelectorAll('button').forEach((button) => {
-      button.classList.toggle('active', button.dataset.potential === potential);
-    });
-    general.atomisticPotential = potential;
-    refreshBackendTheme();
+// Render the body for whichever action is active (general.backendState), using
+// the currently chosen potential. Called both when the action changes (Relax/MD
+// switch) and when the potential changes under a fixed action.
+function renderActiveBody() {
+  const shell = getShellBindings();
+  if (!shell.bodyEl) return;
+  const potential = general.atomisticPotential || 'nep';
+  if (general.backendState === 'md') {
+    bindMDBody(null, shell, potential);
+  } else {
+    bindRelaxBody(null, shell, potential);
+  }
+}
 
-    shell.aseConnectorsEl.classList.toggle('hidden', potential !== 'ase');
-    shell.mlipSourceEl.classList.toggle('hidden', potential !== 'mlip');
-    shell.resultEl.textContent = '';
+// Wire the persistent potential picker ONCE. Selecting a potential updates the
+// shared state and re-renders the active action's body in place — it never
+// rebuilds (or resets) the selector itself.
+function bindPotentialToggle() {
+  const shell = getShellBindings();
 
-    if (potential === 'ase') {
-      window.alert('ASE requires a server backend. Please connect to the backend server before running this mode.');
-      shell.sourceStateEl.textContent = 'ASE selected: server backend required.';
-    } else if (potential === 'mlip') {
-      shell.sourceStateEl.textContent = 'PET-MAD selected: load a model, then compute in-browser.';
-    } else {
-      shell.sourceStateEl.textContent = '';
-    }
-
-    if (mode === 'relax') {
-      bindRelaxBody(panel, shell, potential);
-    } else {
-      bindMDBody(panel, shell, potential);
-    }
-  };
-
-  shell.toggle.addEventListener('click', (event) => {
+  shell.toggle?.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-potential]');
     if (!button) return;
-    potential = button.dataset.potential;
-    render();
+    general.atomisticPotential = button.dataset.potential;
+    updatePotentialUI(shell, { announce: true });
+    if (shell.resultEl) shell.resultEl.textContent = '';
+    renderActiveBody();
   });
 
-  shell.aseConnectorsEl.querySelector('[data-role="connect-ase"]')?.addEventListener('click', () => {
+  shell.aseConnectorsEl?.querySelector('[data-role="connect-ase"]')?.addEventListener('click', () => {
     void connectASEBackend({
       statusEl: shell.statusEl,
       backendStateEl: shell.backendStateEl,
       resultEl: shell.resultEl,
-      efsMetricsEl: shell.bodyEl.querySelector('#relaxEfsMetrics'),
+      efsMetricsEl: shell.bodyEl?.querySelector('#relaxEfsMetrics'),
     });
   });
 
-  shell.aseConnectorsEl.querySelector('[data-role="disconnect-ase"]')?.addEventListener('click', () => {
+  shell.aseConnectorsEl?.querySelector('[data-role="disconnect-ase"]')?.addEventListener('click', () => {
     disconnectASEBackend({
       statusEl: shell.statusEl,
       backendStateEl: shell.backendStateEl,
@@ -1504,15 +1579,27 @@ function bindPotentialToggle(panel, shell, mode) {
     }
   });
 
-  render();
+  updatePotentialUI(shell);
+}
+
+// Build the persistent potential selector once, above the Relax/MD switch.
+// Idempotent: safe to call on every panel entry.
+export function initAtomisticSelector() {
+  const selector = document.getElementById('BackendPotentialSelector');
+  if (!selector || selector.dataset.ready === '1') return;
+  general.atomisticPotential = general.atomisticPotential || 'nep';
+  selector.innerHTML = buildSourcePanel();
+  selector.dataset.ready = '1';
+  bindPotentialToggle();
 }
 
 function addAtomisticPanel(mode) {
+  initAtomisticSelector();
+  document.getElementById('BackendPotentialSelector')?.classList.remove('hidden');
+  general.backendState = mode;
   const panel = document.getElementById('BackendCalcPanel');
-  const title = mode === 'relax' ? 'Relax' : 'MD';
-  panel.innerHTML = buildPanelShell(title);
-  const shell = getShellBindings(panel);
-  bindPotentialToggle(panel, shell, mode);
+  panel.innerHTML = buildBodyShell();
+  renderActiveBody();
 }
 
 export function addRelaxPanel() {
@@ -1525,5 +1612,9 @@ export function addMDPanel() {
 
 export function removeAtomisticPanel() {
   const panel = document.getElementById('BackendCalcPanel');
-  panel.innerHTML = '';
+  if (panel) panel.innerHTML = '';
+  // Hide the (persistent) selector while no action is open — it has nothing to
+  // drive until a mode is picked again.
+  const selector = document.getElementById('BackendPotentialSelector');
+  if (selector) selector.classList.add('hidden');
 }

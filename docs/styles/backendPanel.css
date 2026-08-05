@@ -64,6 +64,12 @@ border: 2px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
 }
 
+/* Persistent potential picker sits directly above the Relax/MD switch; give it
+   a clear gap so the two control groups don't read as one crowded block. */
+#BackendPotentialSelector {
+  margin-bottom: 12px;
+}
+
 .backend-control-group h1 {
   margin: 0 0 15px 0;
   color:  #FFBF00;
@@ -192,7 +198,7 @@ font-size: 12px;
   display: flex;
   flex-wrap: nowrap;
   background: rgba(25,25,25,0.8);
-  padding: 8px;
+  padding: 5px;
   border-radius: 10px;
   gap: 4px;
   margin-bottom: 10px;
@@ -303,7 +309,7 @@ font-size: 12px;
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.1);

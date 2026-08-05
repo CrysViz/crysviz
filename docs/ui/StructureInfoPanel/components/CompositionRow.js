@@ -1,11 +1,14 @@
 import { fileBrowser, general } from '../../../state/store.js';
 import { colorHexToCss, createPieDot, getAtomColor } from '../../../utils/ColorModule.js';
 import { getAtomImageColor } from '../../../render/AtomsFracUpdateModule.js';
+import { getElementDefaultColor } from '../../../defaults/color_texture_defaults.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { getElementAtomIndices, getElementOpacityValues, setSwatchOpacity, createMiniToggleSwitch, updateAtomCoordinatesLive } from './utils.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createIndividualAtomRow } from './IndividualAtomRow.js';
 import { createElementColorEditor } from './ColorEditor.js';
+import { setSpeciesColorBulk, refreshBondColorsForAtoms } from '../../../render/index.js';
+import { openSwatchColorPicker } from '../../SwatchColorPicker.js';
 
 import { applyWyckoffOrbitPosition, getOrbitAxisFreedom } from '../../SymmetryEditModule.js';
 
@@ -39,10 +42,17 @@ const compositionRowUpdateFunctions = {};
  * @param {number} total - Total number of atoms in the structure
  * @returns {HTMLElement} - The composition row container
  */
-export function createCompositionRow(el, count, total) {
+export function createCompositionRow(el, count, total, options = {}) {
+  // `el` is the group's representative element and still keys everything that
+  // is genuinely element-scoped (visibility, the colour editor, the pie-dot
+  // registry). `options.label`/`options.atomIndices` describe the GROUP, which
+  // for a mixed site is a composition like "(K,Na)" rather than one element -
+  // without them a 50/50 Na/K structure puts every site under K and leaves an
+  // empty, uninteractable Na row.
   const container = document.createElement('div');
   container.className = 'comp-container';
   container.dataset.element = el;
+  if (options.key) container.dataset.signature = options.key;
 
   const row = document.createElement('div');
   row.className = 'comp-row';
@@ -84,7 +94,7 @@ export function createCompositionRow(el, count, total) {
   // silently stay stuck at whatever it was before hiding, even surviving a
   // later restore. The visible-only COUNT shown in this row's header comes
   // from computeComposition() separately and is unaffected by this.
-  const elementAtomIndices = getElementAtomIndices(el, { includeHidden: true });
+  const elementAtomIndices = options.atomIndices ?? getElementAtomIndices(el, { includeHidden: true });
 
   // =========================================
   // PIE DOT MANAGEMENT
@@ -110,12 +120,128 @@ export function createCompositionRow(el, count, total) {
     const atomColors = (!general.linkPeriodicCopies && structure?.atomImages)
       ? validIndices.flatMap((index) =>
           (structure.atomImages[index] ?? []).map((img) => safeColor(getAtomImageColor(structure, img))))
-      : validIndices.map(index => safeColor(getAtomColor(index)));
+      : validIndices.flatMap((index) => {
+        const atom = structure.atoms[index];
+        // A disordered site has only one resolved colour (its representative),
+        // so asking each atom for a single colour would paint a Na/K group
+        // entirely K. Contribute each species' own colour instead, repeated in
+        // proportion to its occupancy, so the dot shows the real split.
+        if (atom?.isDisordered?.()) {
+          const slices = [];
+          for (const sp of atom.species) {
+            const weight = Math.max(1, Math.round(sp.occupancy * 10));
+            for (let w = 0; w < weight; w++) slices.push(safeColor(getElementDefaultColor(sp.element)));
+          }
+          const vacancy = atom.getVacancyFraction();
+          if (vacancy > 1e-3) {
+            const weight = Math.max(1, Math.round(vacancy * 10));
+            for (let w = 0; w < weight; w++) slices.push(safeColor(0x2a2a30));
+          }
+          return slices;
+        }
+        return [safeColor(getAtomColor(index))];
+      });
     const currentOpacity = getElementOpacityValues(el)[0] ?? 1;
 
-    // Remove old dot if it exists
+    // Remove the old dot(s) if present — a single element, or a wrapper of
+    // several for a mixed group (see below).
     const oldDot = left.querySelector('.dot');
     if (oldDot) left.removeChild(oldDot);
+
+    const groupElements = options.elements ?? [el];
+    // A vacancy-only "disorder" (one real species, e.g. "(U,Vac)") still needs
+    // the per-element path below: the single-dot branch's editor writes
+    // atom.userColor, which the wedge shader does not read for ANY disordered
+    // atom (isDisordered() is true here too, from the vacancy alone) — using
+    // it would repaint bonds but leave the sphere itself unchanged, exactly
+    // the bug setSpeciesColorBulk below exists to avoid for a mixed group.
+    if (groupElements.length > 1 || options.hasVacancy) {
+      // A mixed group ("(K,Na)") gets one dot PER ELEMENT rather than one
+      // blended swatch: each is independently pickable, and picking one bulk-
+      // sets that element's colour across every site in the group that
+      // carries it. A single flat dot per element (vs. per-atom pie slices)
+      // reads clearly at this size; sites with different colours per element
+      // still show their own split when expanded into individual rows.
+      const wrapper = document.createElement('div');
+      wrapper.classList.add('dot');
+      // flex:none is load-bearing here, not decoration: the wrapper sits in a
+      // flex row with other content competing for width, and without it each
+      // dot's default flex-shrink squeezed it down to a ~6px sliver (visibly
+      // an oval, not round) rather than staying at its declared size.
+      // A touch more than the single-dot case's 8px .comp-left gap alone (two
+      // 18px dots read as visually wider than the one dot they replace), but
+      // not so much that it starves the row's right column (count/percentage)
+      // of width — this is a grid row (auto 1fr), so anything spent on the
+      // left column here is width the right column doesn't get.
+      // align-items:center is load-bearing, not decoration: without it the two
+      // dot buttons default to a slight vertical offset from the row's other
+      // content (measured ~1.5px low against the label next to them) rather
+      // than sharing its center.
+      // width/height:auto override the shared .dot class's own 15x15 fixed
+      // size (added only so this wrapper picks up the rest of .dot's rules) —
+      // without them the wrapper was clamped to that 15px box while its two
+      // 18px, flex:none children refused to shrink and overflowed past its
+      // edges instead, visibly overlapping the "(K,Na)" label after it.
+      wrapper.style.cssText = 'display:flex; align-items:center; gap:3px; margin-right:6px; flex: none; width: auto; height: auto;';
+
+      groupElements.forEach((groupEl) => {
+        // One colour entry per site that carries this element, so the dot
+        // shows a real split if sites disagree — the same aggregation a
+        // single-element group's dot already gets (line ~120 above), just
+        // scoped to this one element within the mixed group instead of every
+        // atom. Previously this took only the first site's colour, which drew
+        // as a single flat "massive" swatch and hid any per-site variation.
+        const elementColors = [];
+        for (const atomIndex of validIndices) {
+          const atom = structure.atoms[atomIndex];
+          const sp = atom?.species?.find((s) => s.element === groupEl);
+          if (sp) elementColors.push(safeColor(sp.color ?? getElementDefaultColor(groupEl)));
+        }
+        const repHex = elementColors[0] ?? safeColor(getElementDefaultColor(groupEl));
+
+        const miniDot = createPieDot(elementColors.length ? elementColors : [repHex], 18);
+        miniDot.style.cssText = `
+          width: 18px; height: 18px; border-radius: 50%; cursor: pointer;
+          border: 1px solid rgba(255,255,255,0.4); flex: none;
+        `;
+        miniDot.title = `Customize ${groupEl}'s colour across this group`;
+        miniDot.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openSwatchColorPicker(miniDot, repHex, (hex) => {
+            const targets = [];
+            for (const atomIndex of validIndices) {
+              structure.atoms[atomIndex]?.species?.forEach((s, speciesIndex) => {
+                if (s.element === groupEl) targets.push({ atomIndex, speciesIndex });
+              });
+            }
+            setSpeciesColorBulk(targets, hex);
+            // Bonds resolve colour from getRepresentativeColor(), which this
+            // bulk edit can change for any site in the group — not just the
+            // sphere, which setSpeciesColorBulk already repainted. The cheap
+            // targeted repaint, not scheduleBondRebuild: this fires on every
+            // pointer-move while dragging in the picker, and a 200ms-debounced
+            // full rebuild just keeps getting reset by the next move.
+            refreshBondColorsForAtoms(targets.map((t) => t.atomIndex));
+            // openSwatchColorPicker's generic anchor.style.background=hex is a
+            // no-op on this canvas-based pie dot (its drawn pixels sit on top,
+            // opaque) — without redrawing it here, only a thin ring at the
+            // canvas edge (anti-aliasing gap) picks up the new colour while the
+            // dot itself keeps showing the stale wedge colours. setSpeciesColorBulk
+            // does broadcast crysviz:colors-changed (which updateAllCompositionPieDots
+            // below is also listening for), but that fires synchronously as part
+            // of the call above — this explicit repaint stays as the immediate,
+            // guaranteed-correct one for THIS row rather than relying on event
+            // dispatch order across every other listener also reacting to it.
+            updatePieDotForRow();
+          });
+        });
+        wrapper.appendChild(miniDot);
+      });
+
+      setSwatchOpacity(wrapper, currentOpacity);
+      left.insertBefore(wrapper, visCheckboxSwitch.nextSibling);
+      return;
+    }
 
     // Create new dot with current colors
     const dot = createPieDot(atomColors, 20);
@@ -151,14 +277,14 @@ export function createCompositionRow(el, count, total) {
   updatePieDotForRow();
 
   // Store the update function in the global registry
-  compositionRowUpdateFunctions[el] = updatePieDotForRow;
+  compositionRowUpdateFunctions[options.key ?? el] = updatePieDotForRow;
 
   // =========================================
   // ROW CONTENT
   // =========================================
 
   const name = document.createElement('span');
-  name.textContent = el;
+  name.textContent = options.label ?? el;
   // Explicit, scale-respecting size matching Bonds'/Poly's category labels
   // (styles.css's global `label` rule) so all three tabs render identically
   // regardless of viewport width — this span isn't a <label>, so it doesn't
@@ -193,9 +319,19 @@ export function createCompositionRow(el, count, total) {
     gap: 8px;
   `;
 
+  // Percentage in its own, smaller span: at the row's normal font size
+  // "4 (80.0%)" was wide enough to wrap onto a second line whenever the left
+  // column (checkbox + dot(s) + label) ate into the grid row's other column -
+  // nowrap alone would have just pushed the overflow off the edge instead of
+  // fixing it, so the percentage has to actually take less width.
   const countLabel = document.createElement('span');
+  countLabel.style.cssText = 'white-space: nowrap;';
   const pct = (100 * count / total).toFixed(1);
-  countLabel.textContent = `${count} (${pct}%)`;
+  countLabel.textContent = `${count} `;
+  const pctLabel = document.createElement('span');
+  pctLabel.style.cssText = 'font-size: 0.8em; color: rgba(255,255,255,0.7);';
+  pctLabel.textContent = `(${pct}%)`;
+  countLabel.appendChild(pctLabel);
   right.appendChild(countLabel);
   right.appendChild(keepToggle.wrapper);
 
@@ -241,9 +377,15 @@ export function createCompositionRow(el, count, total) {
             : [0, 0, 0];
           atomsContainer.appendChild(createIndividualAtomRow(el, atomIndex, i + 1, {
             imageIndex,
+            imageOffset: off,
             displayCoords: frac,
             metaText: `copy ${j + 1}/${images.length}  (${off.join(',')})`,
             onColorChange: updatePieDotForRow,
+            // The (0,0,0) copy still exposes Position; give it the live updater
+            // so a drag doesn't rebuild this panel out from under the slider
+            // (the default here is the full-rebuild path — that's why the
+            // unlinked slider only responded to clicks, not drags).
+            livePositionUpdater: (coords) => updateAtomCoordinatesLive(atomIndex, coords),
           }));
         });
       });

@@ -1,7 +1,7 @@
 import { fileBrowser, groups, general } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE, deriveVisibleWrapped, lastFastFrameBail } from '../render/index.js';
-import { buildNEPStructure } from './relaxer.js';
+import { buildNEPStructure, expandKeptFracToFull } from './relaxer.js';
 import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart, normalizeFractionalPositions } from './math.js';
 import {
   getSymmetryDegreesOfFreedom,
@@ -490,7 +490,12 @@ export async function initializeMDState({
   const evalForce = forceEvaluator ?? createNEPForceEvaluator(nepRunner);
 
   const base = buildNEPStructure(nepRunner, structure);
-  const masses = getMassesFromElements(structure.elements);
+  // Masses must line up with base.positions, which excludes vacancies — take
+  // the elements of exactly the kept atoms (keptIndices null = nothing filtered).
+  const keptElements = base.keptIndices
+    ? base.keptIndices.map((i) => structure.elements[i])
+    : structure.elements;
+  const masses = getMassesFromElements(keptElements);
   const n = base.positions.length;
   let velocities;
   if (initialVelocities) {
@@ -521,6 +526,9 @@ export async function initializeMDState({
     lattice: clone3xN(base.lattice),
     positions: clone3xN(base.positions),
     types: [...base.types],
+    // Original atom index of each kept (non-vacancy) entry, so the viewer apply
+    // can map these vacancy-excluded arrays back onto the full atom list.
+    keptIndices: base.keptIndices,
     masses,
     velocities,
     forces: symmetryConstrained ? symmetrizeCartesianVectors(clone3xN(efs.forces), base.lattice, structure) : clone3xN(efs.forces),
@@ -745,10 +753,13 @@ export function applyMDStateToViewer(
   { forceRerender = false, full = false } = {},
 ) {
   const invL = invert3x3(transpose3x3(state.lattice));
-  const frac = state.positions.map((r) => {
+  const keptFrac = state.positions.map((r) => {
     const f = matVec(invL, r);
     return [((f[0] % 1) + 1) % 1, ((f[1] % 1) + 1) % 1, ((f[2] % 1) + 1) % 1];
   });
+  // Vacancies aren't in the MD state; put them back so the full atom list stays
+  // aligned (they hold their fractional position, inert to the dynamics).
+  const frac = expandKeptFracToFull(structure, keptFrac, state.keptIndices);
 
   structure.lattice = clone3xN(state.lattice);
   structure.atoms.forEach((atom, i) => {

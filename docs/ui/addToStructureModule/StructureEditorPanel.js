@@ -57,11 +57,13 @@ import {
 } from './CommitAtoms.js';
 import { fracToCartPoint } from '../../math/index.js';
 import { elementData } from '../PeriodicTablePickerCore.js';
+import { getElementDefaultColor } from '../../defaults/color_texture_defaults.js';
 import { makeSectionHeadline } from '../panels/sectionHeadline.js';
 import { generateID } from '../../utils/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { createBondLengthControls } from '../BondLengthPanel.js';
 import { highlightAtomsIn3D, clearHighlightAtom, subscribeToAtomSelection, clearSelectedAtoms } from '../SelectAndHighlightModule.js';
+import { invalidElementMessage, invalidElementIndices } from './ElementValidation.js';
 
 const COLLISION_THRESHOLD_ANGSTROM = 0.5;
 
@@ -69,14 +71,34 @@ const LIST_STYLE = 'max-height: 120px; overflow-y: auto; border: 1px solid rgba(
 const ENTRY_STYLE = 'display:flex; align-items:center; gap:8px; padding: 4px 8px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size:12px;';
 const COORD_STYLE = 'font-family: monospace; color: rgba(255,255,255,0.7); flex-grow:1; text-align:right;';
 
-// Rows with an element string that isn't a real periodic-table symbol.
-function invalidElementMessage(atoms) {
-  const bad = [...new Set(atoms.filter(a => !elementData[a.element]).map(a => a.element || '(empty)'))];
-  if (!bad.length) return null;
-  return `Not a recognized element: ${bad.join(', ')}. Use the periodic table picker (⚛) to pick one.`;
-}
-
 const round4 = (value) => Number(Number(value).toFixed(4));
+
+/**
+ * The colour a table row should show for one species of an atom.
+ *
+ * An ordered atom (one species) has exactly one row, and that row must keep
+ * reading atom.getColor() - the userColor-aware whole-atom colour, which is
+ * how an ordered atom has always been recoloured and the only place a
+ * user-picked colour for it lives.
+ *
+ * A disordered atom has one row PER SPECIES, and every one of them was
+ * showing the same atom.getColor() regardless of which species the row
+ * actually was - since userColor is never set for a disordered atom (its
+ * "Color" button shows per-species boxes instead of the single picker that
+ * would set it), every row fell through to the same flat representative-
+ * element default and looked identical no matter what had actually been
+ * picked. Each row now reads its OWN species' colour instead.
+ *
+ * @param {any} atom
+ * @param {Array<{element:string,color?:number|null}>} species
+ * @param {number} speciesIndex
+ * @returns {string}
+ */
+function tableRowColor(atom, species, speciesIndex) {
+  if (species.length === 1) return colorToHex(atom.getColor());
+  const s = species[speciesIndex];
+  return colorToHex(s.color ?? getElementDefaultColor(s.element));
+}
 
 // Every atom of `structure` as an atom-table row. The uuid is the handle the
 // commit uses to tell "this is the atom that was already there" from "this is
@@ -84,17 +106,38 @@ const round4 = (value) => Number(Number(value).toFixed(4));
 // path that skips the loaders' generateID) gets one here rather than being
 // silently treated as a brand-new atom on every commit.
 export function structureToTableAtoms(structure) {
-  return structure.atoms.map((atom, i) => {
+  const rows = [];
+  structure.atoms.forEach((atom, i) => {
     atom.uuid ??= generateID([structure.elements[i]]);
-    return {
-      uuid: atom.uuid,
-      element: structure.elements[i],
-      x: round4(atom.position[0]),
-      y: round4(atom.position[1]),
-      z: round4(atom.position[2]),
-      color: colorToHex(atom.getColor()),
-    };
+    const species = atom.species?.length
+      ? atom.species
+      : [{ element: structure.elements[i], occupancy: 1 }];
+
+    // One row per SPECIES, not per site. A site that is half Na and half K
+    // cannot be described by a single Element cell — collapsing it to the
+    // representative would show "K, occupancy 1" and hide the Na entirely, and
+    // any edit would then commit that fiction back over the real composition.
+    // This mirrors how the CIF writes it: co-located rows, one per occupant.
+    // The suffixed uuids let applyStructureEdits regroup them into one site.
+    species.forEach((s, k) => {
+      rows.push({
+        uuid: k === 0 ? atom.uuid : `${atom.uuid}#${k}`,
+        element: s.element,
+        x: round4(atom.position[0]),
+        y: round4(atom.position[1]),
+        z: round4(atom.position[2]),
+        occupancy: round4(s.occupancy),
+        oxidationState: s.oxidationState,
+        color: tableRowColor(atom, species, k),
+      });
+    });
   });
+  return rows;
+}
+
+/** The site a table row belongs to — rows of one site share this. */
+export function baseUuidOf(uuid) {
+  return typeof uuid === 'string' ? uuid.split('#')[0] : uuid;
 }
 
 /**
@@ -209,7 +252,10 @@ function buildAddEditor(body, { commitLabel = 'Create Structure', anywayLabel = 
       const atoms = editor.getAtoms();
       if (!atoms.length) return { tooClose: [] };
       const lattice = latticePanel.getLattice();
-      const candidateAtoms = atoms.map(a => ({ position: fracToCartPoint([a.x, a.y, a.z], lattice), element: a.element }));
+      const candidateAtoms = atoms.map(a => ({
+        position: fracToCartPoint([a.x, a.y, a.z], lattice),
+        element: a.element, occupancy: a.occupancy ?? 1,
+      }));
       return checkAtomCollisions({ lattice, existingAtoms: [], candidateAtoms, thresholdAngstrom: COLLISION_THRESHOLD_ANGSTROM });
     },
     onWarn: (tooClose) => editor.highlightConflicts(conflictingCandidateIndices(tooClose)),
@@ -296,8 +342,12 @@ function buildFreeformModifyEditor(body, structure) {
     onRowActivate,
     onChange: () => scheduleApply(),
     // Only an original (baseline) atom going away is a "removal" worth listing
-    // and restoring; deleting an atom you just added just drops it.
-    onDelete: (snapshot) => { if (mod.baseline.has(snapshot.uuid)) mod.removed.set(snapshot.uuid, snapshot); },
+    // and restoring; deleting an atom you just added just drops it. The
+    // baseline holds base (unsuffixed) atom uuids, but a disordered site's
+    // second-and-later species rows carry a suffixed uuid ("<base>#1") - strip
+    // it before checking, or every non-first species row of an ORIGINAL mixed
+    // site is misclassified as something the user just added.
+    onDelete: (snapshot) => { if (mod.baseline.has(baseUuidOf(snapshot.uuid))) mod.removed.set(snapshot.uuid, snapshot); },
   });
 
   // Coalesce a burst of input events (typing, a slider) into one apply/frame.
@@ -342,6 +392,11 @@ function buildFreeformModifyEditor(body, structure) {
     });
     renderSummary();
     runCollisionWarning(atoms, lattice);
+    // An element/count/occupancy edit here changes the composition — announce it
+    // the same way a coordinate edit does (applyAtomCoordinates), so panels that
+    // aren't part of the composition rebuild (e.g. Order Structure's size
+    // options) can react instead of showing stale numbers.
+    document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
   }
 
   // Splice a "Newly added" label row into the table just above the first atom
@@ -353,7 +408,9 @@ function buildFreeformModifyEditor(body, structure) {
     const tbody = editorHost.querySelector('#atomsTable tbody');
     tbody.querySelector('.atom-new-separator')?.remove();
     const rows = [...tbody.querySelectorAll('tr')];
-    const firstNew = rows.find((r) => r.dataset.uuid && !mod.baseline.has(r.dataset.uuid));
+    // Same suffix-stripping as onDelete above, for the same reason: a mixed
+    // site's second species row must not read as "newly added".
+    const firstNew = rows.find((r) => r.dataset.uuid && !mod.baseline.has(baseUuidOf(r.dataset.uuid)));
     if (!firstNew) return;
     const colCount = editorHost.querySelectorAll('#atomsTable thead th').length;
     const sep = document.createElement('tr');
@@ -384,18 +441,43 @@ function buildFreeformModifyEditor(body, structure) {
   }
 
   function runCollisionWarning(atoms, lattice) {
-    warningHost.innerHTML = '';
     editor.clearConflicts();
-    if (atoms.length < 2) return;
-    const candidateAtoms = atoms.map((a) => ({ position: fracToCartPoint([a.x, a.y, a.z], lattice), element: a.element }));
-    const { tooClose } = checkAtomCollisions({ lattice, existingAtoms: [], candidateAtoms, thresholdAngstrom: COLLISION_THRESHOLD_ANGSTROM });
-    if (!tooClose.length) return;
-    editor.highlightConflicts(conflictingCandidateIndices(tooClose));
-    const items = tooClose
-      .map((t) => `<li>${t.a.element} (atom ${t.a.index + 1}) is ${t.distance.toFixed(3)} Å from ${t.b.element} (atom ${t.b.index + 1})</li>`)
-      .join('');
-    // Non-blocking: the edit is already applied; this only flags the overlap.
-    warningHost.innerHTML = `<div class="collision-warning-banner"><strong>Warning:</strong> some atoms are closer than 0.5 Å.<ul>${items}</ul></div>`;
+
+    // Live typing has no commit button to gate, so an invalid element name
+    // (anything not a real periodic-table symbol or "Va") is flagged the same
+    // non-blocking way a collision is — this table used to have no element
+    // validation at all, unlike the "create new structure" flow's commit-time
+    // check (invalidElementMessage/wireCollisionGuardedButton above).
+    const badIndices = invalidElementIndices(atoms);
+    const elementMsg = invalidElementMessage(atoms);
+
+    let tooClose = [];
+    if (atoms.length >= 2) {
+      // occupancy has to travel with each row here — this re-checks the WHOLE
+      // table (not just the newly added rows), so any pre-existing disordered
+      // site (several rows sharing a position, each occupancy < 1) would
+      // otherwise default to occupancy 1 apiece and get re-flagged as an
+      // overfill every time, regardless of what was actually just edited.
+      const candidateAtoms = atoms.map((a) => ({
+        position: fracToCartPoint([a.x, a.y, a.z], lattice),
+        element: a.element, occupancy: a.occupancy ?? 1,
+      }));
+      ({ tooClose } = checkAtomCollisions({ lattice, existingAtoms: [], candidateAtoms, thresholdAngstrom: COLLISION_THRESHOLD_ANGSTROM }));
+    }
+
+    const highlightIndices = new Set([...badIndices, ...conflictingCandidateIndices(tooClose)]);
+    if (highlightIndices.size) editor.highlightConflicts([...highlightIndices]);
+
+    // Non-blocking: the edit is already applied; this only flags the problem.
+    let html = '';
+    if (elementMsg) html += `<div class="collision-warning-banner"><strong>Warning:</strong> ${elementMsg}</div>`;
+    if (tooClose.length) {
+      const items = tooClose
+        .map((t) => `<li>${t.a.element} (atom ${t.a.index + 1}) is ${t.distance.toFixed(3)} Å from ${t.b.element} (atom ${t.b.index + 1})</li>`)
+        .join('');
+      html += `<div class="collision-warning-banner"><strong>Warning:</strong> some atoms are closer than 0.5 Å.<ul>${items}</ul></div>`;
+    }
+    warningHost.innerHTML = html;
   }
 
   resetLatticeBtn.addEventListener('click', () => {
@@ -431,11 +513,18 @@ function buildFreeformModifyEditor(body, structure) {
   function syncFromStructure() {
     structure.atoms.forEach((atom) => {
       if (!atom.uuid) return;
-      editor.syncRow(atom.uuid, {
-        x: round4(atom.position[0]),
-        y: round4(atom.position[1]),
-        z: round4(atom.position[2]),
-        color: colorToHex(atom.getColor()),
+      // A disordered atom has more than one table row (one per species,
+      // uuid "<base>#1", "#2", ...) - syncing only atom.uuid left every row
+      // after the first permanently stale, never picking up a position or
+      // per-species colour edit made elsewhere (the Structure Info panel).
+      const species = atom.species?.length ? atom.species : [{ element: '', color: null }];
+      species.forEach((s, k) => {
+        editor.syncRow(k === 0 ? atom.uuid : `${atom.uuid}#${k}`, {
+          x: round4(atom.position[0]),
+          y: round4(atom.position[1]),
+          z: round4(atom.position[2]),
+          color: tableRowColor(atom, species, k),
+        });
       });
     });
   }

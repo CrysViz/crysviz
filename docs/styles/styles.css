@@ -528,6 +528,70 @@ body.panel-hidden #axesLegend {
   display: none;
 }
 
+/* Order Structure's random-sample build/compare list, inline in the Cell &
+ * Supercell panel (ui/LatticeSupercellPanel.js) — no floating dialog. One row
+ * per built decoration; before Compare Energy runs it shows atom count only,
+ * after it shows energy/atom, cheapest first, visually marked. */
+.order-structure-list {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+
+.order-structure-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 6px;
+  font-size: 11px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+
+.order-structure-row:last-child {
+  border-bottom: none;
+}
+
+.order-structure-row.best {
+  background: rgba(255, 193, 7, 0.1);
+}
+
+/* The one candidate currently rendered into the 3D view (see showCandidate()
+ * in LatticeSupercellPanel.js) — a left accent bar so it reads at a glance
+ * even when it's also the .best row (amber background) at the same time. */
+.order-structure-row.showing {
+  border-left-color: var(--highlight-color, #4fc3f7);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.order-structure-row.best.showing {
+  background: rgba(255, 193, 7, 0.18);
+}
+
+.order-structure-rank {
+  width: 24px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.order-structure-energy {
+  flex: 1;
+  font-family: monospace;
+}
+
+.order-structure-delta {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 10.5px;
+  min-width: 88px;
+  text-align: right;
+}
+
+.order-structure-row.best .order-structure-delta {
+  color: #ffc107;
+}
+
 /* Keyboard shortcuts help modal (ui/KeyboardShortcuts.js) — reuses the
  * .png-export-modal card + .paste-modal-actions button row. */
 #shortcutsHelpModal {
@@ -1461,8 +1525,8 @@ input[type="checkbox"] {
     text-align: center;
   }
 
-  /* Framed section box (currently only the Visual panel groups its content
-     this way — see ui/panels/defaultPanels.js's makePanelSection): a rounded
+  /* Framed section box (Visual panel via ui/panels/defaultPanels.js's
+     makePanelSection; Cell & Supercell via LatticeSupercellPanel.js): a rounded
      border around each section's headline + controls, so several stacked
      sections read as distinct groups instead of one long flat list. */
   .panel-section {

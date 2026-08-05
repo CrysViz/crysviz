@@ -8,15 +8,18 @@
 import { Structure, Atom } from '../model/index.js';
 import { latticeVolume } from '../math/index.js';
 import { cartToFrac, normalizeFractionalPositions } from '../atomistic/math.js';
-import { buildNEPStructure, relaxUntilConverged } from '../atomistic/relaxer.js';
+import { buildNEPStructure, relaxUntilConverged, expandKeptFracToFull } from '../atomistic/relaxer.js';
 
 /** Viewer-ready deep copy of `structure` carrying a relaxed geometry: the
  *  given lattice, and fractional positions from the relaxed cartesians. Only
  *  what an EOS frame needs travels (elements, lattice, positions) — styles/
- *  forces/symmetry stay with the source. */
-function cloneWithGeometry(structure, lattice, positionsCart) {
+ *  forces/symmetry stay with the source. `positionsCart` excludes vacancies
+ *  (the potential never saw them); keptIndices maps them back so vacancy atoms
+ *  stay in the frame at their own positions. */
+function cloneWithGeometry(structure, lattice, positionsCart, keptIndices = null) {
   const elements = [...structure.elements];
-  const frac = normalizeFractionalPositions(cartToFrac(positionsCart, lattice));
+  const keptFrac = normalizeFractionalPositions(cartToFrac(positionsCart, lattice));
+  const frac = expandKeptFracToFull(structure, keptFrac, keptIndices);
   return new Structure({
     elements,
     lattice: lattice.map((row) => [...row]),
@@ -86,7 +89,7 @@ export async function runEOSScan(runner, baseStructure, {
     // it has already walked most of the way toward this pressure range.
     seed = relaxed.structure;
 
-    const structure = cloneWithGeometry(baseStructure, relaxed.structure.lattice, relaxed.structure.positions);
+    const structure = cloneWithGeometry(baseStructure, relaxed.structure.lattice, relaxed.structure.positions, relaxed.structure.keptIndices);
     const energy = Number(relaxed.result.total_energy);
     structure.energy = energy; // per-frame energy, like an MD/relax trajectory
     points.push({

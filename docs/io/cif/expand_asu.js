@@ -1,5 +1,6 @@
 import { single_asu_from_cif_file } from "./cif_parser.js";
 import { single_mag_asu_from_mcif_file } from "./mcif_parser.js";
+import { groupCoLocatedSites, representativeElement } from "./site_grouping.js";
 
 // ---------------- Vector helpers ----------------
 
@@ -635,12 +636,42 @@ export async function cif_to_struct(stream, opts = {}) {
   const res = asu_data.resolution;
   const grid_dens = (res != null && res !== 0.0) ? Math.trunc(1.0 / res) : 16384;
 
-  const [positions_full, species_full] = expand_asu(
-    asu_data.positions,
-    separate_noneq_atoms ? asu_data.labels : asu_data.symbols,
+  // Collapse co-located atom_site rows into single sites BEFORE expanding.
+  // Several rows sharing a position is how CIF writes substitutional disorder,
+  // and expand_asu's positional dedup would otherwise discard all but the first
+  // of them. Seeding the expansion with one atom per site sidesteps that
+  // without touching the dedup, which still has to collapse genuine symmetry
+  // images (and redundant equivalent rows) as before.
+  const sites = groupCoLocatedSites({
+    positions: asu_data.positions,
+    symbols: asu_data.symbols,
+    occupancies: asu_data.occupancies,
+    oxidationStates: asu_data.oxidation_states,
+    labels: asu_data.labels,
+    disorderGroups: asu_data.disorder_groups,
+  });
+  for (const w of sites.warnings) console.warn('[cif] ' + w);
+
+  const siteElements = sites.species.map((sp) => representativeElement(sp));
+
+  // Expand site *indices* rather than species symbols. expand_asu only carries
+  // this array along (dedup and the final sort are purely positional), so the
+  // result is identical to expanding symbols directly — but each expanded atom
+  // now knows which site it came from, which is what lets per-site data
+  // (species list, occupancy, oxidation state, labels) survive the expansion
+  // without a second pass.
+  const [positions_full, site_index_full] = expand_asu(
+    sites.positions,
+    sites.positions.map((_, i) => i),
     asu_data.symops,
     { grid_dens, tol }
   );
+
+  // structure.elements carries one string per atom, so a disordered site is
+  // projected onto its representative element here; the full composition rides
+  // alongside in site_species_full.
+  const species_source = separate_noneq_atoms ? sites.labels : siteElements;
+  const species_full = site_index_full.map((i) => species_source[i]);
 
   let numbers_full, numbers_to_species, species_meta;
 
@@ -667,6 +698,12 @@ export async function cif_to_struct(stream, opts = {}) {
   asu_data.positions_full = positions_full;
   asu_data.numbers_full = numbers_full;
   asu_data.species_full = species_full;
+
+  // Per-expanded-atom provenance and the site data that rides on it.
+  asu_data.sites = sites;
+  asu_data.site_index_full = site_index_full;
+  asu_data.site_species_full = site_index_full.map((i) => sites.species[i]);
+  asu_data.labels_full = site_index_full.map((i) => sites.labels[i]);
 
   return asu_data;
 }
