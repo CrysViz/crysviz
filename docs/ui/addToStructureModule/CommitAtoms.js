@@ -13,7 +13,6 @@ import { createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
 import { generateID } from '../../utils/index.js';
 import { recenterCamera } from '../WindowAndSceneControls.js';
 import { mergeCoLocatedAtoms, sameSite, SITE_TOLERANCE } from '../../io/cif/site_grouping.js';
-import { addVacancyMarker, VACANCY_SYMBOLS } from '../../render/VacancyMarkerModule.js';
 import { getElementDefaultColor } from '../../defaults/color_texture_defaults.js';
 
 // Parse a "#rrggbb" string to a numeric color, or undefined (=> element default).
@@ -35,24 +34,16 @@ export function parseColorHexToInt(hex) {
 export function addAtomsToExistingStructure(structure, atomsToAdd) {
   if (!structure._sessionAddedAtoms) structure._sessionAddedAtoms = [];
   for (const a of atomsToAdd) {
-    // "Va" is not an element — it is an annotation. Routing it here keeps it
-    // out of structure.atoms/elements entirely, which is what lets bonding,
-    // polyhedra, symmetry and the formula stay unaware of it. It is also the
-    // only way to express a fully vacant site, which occupancy cannot: a site
-    // with no occupants simply is not in the file.
-    if (VACANCY_SYMBOLS.has(String(a.element).trim())) {
-      addVacancyMarker({
-        position: [a.x, a.y, a.z],
-        color: parseColorHexToInt(a.color),
-        oxidationState: a.oxidationState ?? null,
-      }, structure);
-      continue;
-    }
+    // "Va" is not a real element, but it is a real, tracked species like any
+    // other — it shows up in structure.atoms/elements (composition, the
+    // atom tables) exactly like a normal atom, and WedgeAtoms.js gives it
+    // the hatched "vacancy" look instead of resolving a real colour for it.
     const uuid = generateID([a.element]);
     structure.atoms.push(new Atom({
       position: [a.x, a.y, a.z],
       element: a.element,
       occupancy: a.occupancy ?? 1,
+      oxidationState: Number.isFinite(a.oxidationState) ? a.oxidationState : null,
       color: parseColorHexToInt(a.color),
       uuid,
     }));
@@ -160,7 +151,10 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
     const existing = existingGroup ? byUuid.get(existingGroup.base) : null;
     const first = cluster.groups[0].entries[0];
 
-    const species = cluster.groups.flatMap((group) => group.entries.map((e) => {
+    // "Va" rows become a real species like any other element string — see
+    // WedgeAtoms.js, which is where "Va" actually gets its hatched look
+    // instead of a resolved (grey, unrecognized-element) colour.
+    const species = cluster.groups.flatMap((group) => group.entries).map((e) => {
       // Each row of a multi-species site shows and edits that ONE species' own
       // colour (tableRowColor() in StructureEditorPanel.js) — the single-
       // species branch below that writes atom.userColor is deliberately gated
@@ -174,12 +168,14 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
       const color = e.color && e.color.toLowerCase() !== currentHex.toLowerCase()
         ? parseColorHexToInt(e.color)
         : (existingSp?.color ?? null);
-      return { element: e.element, occupancy: e.occupancy ?? 1, oxidationState: null, color };
-    }));
+      const oxidationState = Number.isFinite(e.oxidationState) ? e.oxidationState : null;
+      return { element: e.element, occupancy: e.occupancy ?? 1, oxidationState, color };
+    });
 
-    // Colour deliberately excluded here: a colour-only change must still
-    // reuse the existing atom (below) rather than reconstruct a new one, so
-    // opacity/radius/immunity survive it the same as any other edit.
+    // Colour and charge deliberately excluded here: a colour/charge-only
+    // change must still reuse the existing atom (below) rather than
+    // reconstruct a new one, so opacity/radius/immunity survive it the same
+    // as any other edit.
     const sameSpeciesShape = existing
       && existing.species.length === species.length
       && existing.species.every((s, i) =>
@@ -189,10 +185,13 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
     let atom;
     if (existing && sameSpeciesShape) {
       atom = existing;
-      // Species identity/occupancy are already right; sync just the colour,
-      // since this branch never gets `species` (the freshly resolved copy)
-      // applied any other way.
-      species.forEach((sp, i) => { atom.species[i].color = sp.color; });
+      // Species identity/occupancy are already right; sync just the colour
+      // and charge, since this branch never gets `species` (the freshly
+      // resolved copy) applied any other way.
+      species.forEach((sp, i) => {
+        atom.species[i].color = sp.color;
+        atom.species[i].oxidationState = sp.oxidationState;
+      });
     } else if (existing) {
       atom = new Atom({
         position: existing.position,
@@ -342,7 +341,7 @@ export function createTrajectoryFromFrames(frames, fileName = 'ordered_structure
 // (fractional x/y/z, used as-is) plus a lattice (3x3 Cartesian row-vector
 // matrix, from LatticeInputPanel.js), and register it as a new file-browser row.
 /**
- * @param {Array<{element: string, x: number, y: number, z: number, color?: string}>} atomsToAdd
+ * @param {Array<{element: string, x: number, y: number, z: number, occupancy?: number, oxidationState?: number|null, color?: string}>} atomsToAdd
  * @param {{lattice: number[][], fileName?: string}} options
  */
 export function createNewStructureFromAtoms(atomsToAdd, { lattice, fileName = 'new_structure' }) {
@@ -351,10 +350,17 @@ export function createNewStructureFromAtoms(atomsToAdd, { lattice, fileName = 'n
     return;
   }
 
-  const elements = atomsToAdd.map(a => a.element);
-  const atoms = atomsToAdd.map(a => new Atom({
+  // "Va" becomes a real species/atom like any other element string - see
+  // WedgeAtoms.js for where it gets its hatched look instead of a resolved
+  // (grey) colour. A structure that is ENTIRELY vacancy sites is therefore
+  // just as valid as any other single-species structure; nothing special to
+  // guard against here.
+  const elements = atomsToAdd.map((a) => a.element);
+  const atoms = atomsToAdd.map((a) => new Atom({
     position: [a.x, a.y, a.z],
     element: a.element,
+    occupancy: a.occupancy ?? 1,
+    oxidationState: Number.isFinite(a.oxidationState) ? a.oxidationState : null,
     color: parseColorHexToInt(a.color),
     uuid: generateID([a.element]),
   }));
@@ -365,6 +371,11 @@ export function createNewStructureFromAtoms(atomsToAdd, { lattice, fileName = 'n
     lattice,
     atoms,
   });
+
+  // Two rows typed at the same position with occupancies summing to at most 1
+  // are one disordered site, exactly as they would be in a CIF — merge them
+  // the same way Add Atom does, before the structure is ever shown.
+  mergeCoLocatedAtoms(structure);
 
   registerNewStructure(structure, fileName);
 }

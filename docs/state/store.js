@@ -95,8 +95,6 @@ export const app = {
 export const groups = {
   polyhedraGroup:null,
   latticeGroup:null,
-  // render/VacancyMarkerModule.js — user-placed vacancy annotations, not atoms
-  vacancyMarkerGroup: null,
   atomsMesh: null,
   ghostAtomsMesh: null, // render/GhostAtomsModule.js — hidden-atom ghosts, hide mode only
   bondsMesh: null,

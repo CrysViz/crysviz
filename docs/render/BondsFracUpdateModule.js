@@ -49,8 +49,15 @@ export function initBondsLengths(){
       pairs.push(pair);
 
       if (!general.bondLengths[pair]) {
+        // "Va" isn't a real element - getElementRadius falls back to a
+        // generic default for it, same as any other unrecognized symbol,
+        // which would otherwise auto-bond a vacancy to its neighbours by
+        // default. Default that pair's cutoff to 0 (no bond) instead; the
+        // Bond Length panel can still raise it by hand for whoever actually
+        // wants to visualize distance-to-nearest-vacancy.
+        const isVacancyPair = uniqueElements[i] === 'Va' || uniqueElements[j] === 'Va';
         const defaultRadius = getElementRadius(uniqueElements[i]) + getElementRadius(uniqueElements[j]);
-        const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
+        const defaultValue = isVacancyPair ? 0.0 : Math.min(defaultRadius * 1.0, 6.0);
         general.bondLengths[pair] = { min: 0.0, max: defaultValue };
         general.defaultBondLengths[pair] = { min: 0.0, max: defaultValue }; // Store default
       }

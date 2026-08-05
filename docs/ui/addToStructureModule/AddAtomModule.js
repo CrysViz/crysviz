@@ -23,16 +23,8 @@ import { fracToCart } from '../../render/index.js';
 import { fracToCartPoint } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { defaultFloatingAnchor } from './floatingPanelAnchor.js';
-import { elementData } from '../PeriodicTablePickerCore.js';
 import { highlightAtomsIn3D, clearHighlightAtom } from '../SelectAndHighlightModule.js';
-
-// Rows with an element string that isn't a real periodic-table symbol, keyed
-// by the atom-table row index (matches editor.getAtoms()/highlightConflicts).
-function invalidElementMessage(atoms) {
-  const bad = [...new Set(atoms.filter(a => !elementData[a.element]).map(a => a.element || '(empty)'))];
-  if (!bad.length) return null;
-  return `Not a recognized element: ${bad.join(', ')}. Use the periodic table picker (⚛) to pick one.`;
-}
+import { invalidElementMessage } from './ElementValidation.js';
 
 const PANEL_ID = 'addAtoms';
 const COLLISION_THRESHOLD_ANGSTROM = 0.5;

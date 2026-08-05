@@ -19,13 +19,8 @@ export {
 } from './AtomsFracUpdateModule.js';
 
 export {
-  rebuildChargeBadges, updateChargeBadges, disposeChargeBadges, formatCharge,
+  rebuildChargeBadges, updateChargeBadges, disposeChargeBadges, formatCharge, parseChargeInput,
 } from './ChargeBadgeModule.js';
-
-export {
-  rebuildVacancyMarkers, disposeVacancyMarkers, addVacancyMarker,
-  removeVacancyMarker, getVacancyMarkers,
-} from './VacancyMarkerModule.js';
 
 export {
   getBondCutoff, updateBonds, rebuildBonds, buildBondObjects, scheduleBondRebuild,

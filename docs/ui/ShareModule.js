@@ -244,6 +244,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       bondRadius: general.bondRadius,
       showAtoms: general.showAtoms,
       showBonds: general.showBonds,
+      showCharges: general.showCharges,
       showLattice: general.showLattice,
       showPeriodic: general.showPeriodic,
       linkPeriodicCopies: general.linkPeriodicCopies,
@@ -445,6 +446,7 @@ function applyDisplaySettings(display) {
   }
   if (display.showAtoms != null)   { general.showAtoms   = display.showAtoms;   setToggle('showAtoms', display.showAtoms); }
   if (display.showBonds != null)   { general.showBonds   = display.showBonds;   setToggle('showBonds', display.showBonds); }
+  if (display.showCharges != null) { general.showCharges = display.showCharges; setToggle('showCharges', display.showCharges); }
   if (display.showLattice != null) { general.showLattice = display.showLattice; setToggle('showLattice', display.showLattice); }
   if (display.showPeriodic != null){ general.showPeriodic= display.showPeriodic;setToggle('showPeriodic', display.showPeriodic); }
   if (display.periodicFaceTol != null){ general.periodicFaceTol = display.periodicFaceTol; }

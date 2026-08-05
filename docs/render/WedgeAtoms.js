@@ -63,7 +63,16 @@ function packColor(hex) {
  * @returns {{fracs: number[], packed: number[]}|null}
  */
 export function wedgeDataForAtom(atom) {
-  if (!atom?.species || !atom.isDisordered?.()) return null;
+  // "Va" is a real, tracked species like any other element string (it just
+  // isn't a real element) so it shows up everywhere a species does -
+  // composition, the atom tables - without a parallel bookkeeping system.
+  // Rendering is the one place it needs to be told apart from a real
+  // element: a plain single-species "Va" site is not disordered by
+  // isDisordered()'s definition (one species, full occupancy), but it still
+  // needs the hatch, not the ordinary flat-colour path a normal ordered atom
+  // gets.
+  const hasVacancySpecies = atom?.species?.some((s) => s.element === 'Va');
+  if (!atom?.species || (!atom.isDisordered?.() && !hasVacancySpecies)) return null;
 
   // Largest first: the dominant species then reads as the sphere's "main"
   // colour, and any merged tail lands in the least significant wedge.
@@ -73,19 +82,29 @@ export function wedgeDataForAtom(atom) {
     .sort((a, b) => (b.occupancy - a.occupancy) || (a.element < b.element ? -1 : 1));
 
   /** @type {Array<{color: number, occupancy: number, vacancy: boolean}>} */
-  const slots = species.map((s) => ({
-    // A species the user has explicitly recoloured wins over the element
-    // default, same precedence as atom.userColor over atom.color.
-    color: Number.isFinite(s.color) ? s.color : getElementDefaultColor(s.element),
-    occupancy: s.occupancy,
-    vacancy: false,
-  }));
+  const slots = species.map((s) => (s.element === 'Va'
+    ? { color: VACANCY_COLOR, occupancy: s.occupancy, vacancy: true }
+    : {
+      // A species the user has explicitly recoloured wins over the element
+      // default, same precedence as atom.userColor over atom.color.
+      color: Number.isFinite(s.color) ? s.color : getElementDefaultColor(s.element),
+      occupancy: s.occupancy,
+      vacancy: false,
+    }));
 
+  // The IMPLICIT unoccupied fraction (species don't sum to 1, with no
+  // explicit "Va" entry accounting for the shortfall) gets the same
+  // treatment as an explicit one, folded into its own slot alongside it if
+  // both are present.
   const vacancy = atom.getVacancyFraction();
   if (vacancy > MIN_WEDGE) {
     slots.push({ color: VACANCY_COLOR, occupancy: vacancy, vacancy: true });
   }
-  if (slots.length < 2) return null;
+  // A single real species with no vacancy at all is the ordinary flat-colour
+  // case. A single slot that IS vacancy (a pure "Va" site, nothing else at
+  // that position) still needs the hatch even though there's only one of it
+  // - the hatch, not a wedge split, is the whole point there.
+  if (slots.length < 2 && !slots.some((s) => s.vacancy)) return null;
 
   // More species than slots is vanishingly rare; fold the tail into the last
   // wedge rather than dropping it, so the occupancies still sum correctly.

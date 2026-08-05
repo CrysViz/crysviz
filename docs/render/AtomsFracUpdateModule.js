@@ -11,7 +11,6 @@ import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import {runPeriodicWrapped} from './LatticeModule.js'
 import {rebuildChargeBadges} from './ChargeBadgeModule.js'
 import {requestRender} from './AnimateModule.js'
-import {rebuildVacancyMarkers} from './VacancyMarkerModule.js'
 import {
   buildWedgeTexture, WEDGE_VERTEX_DECL, WEDGE_VERTEX_BODY,
   WEDGE_FRAGMENT_DECL, WEDGE_FRAGMENT_BODY,
@@ -547,9 +546,6 @@ export function buildAtoms() {
   // have to be rebuilt whenever that set is rebuilt. No-ops when the flag is
   // off or nothing in the structure carries a charge.
   rebuildChargeBadges();
-  // Markers follow the lattice and the global atom size, both of which a
-  // rebuild can have changed.
-  rebuildVacancyMarkers();
 }
 
 

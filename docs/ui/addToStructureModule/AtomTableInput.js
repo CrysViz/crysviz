@@ -20,9 +20,32 @@ import { generateID } from '../../utils/index.js';
 import { getElementDefaultColor } from '../../defaults/color_texture_defaults.js';
 import { colorToHex } from './CommitAtoms.js';
 import { SITE_TOLERANCE } from '../../io/cif/site_grouping.js';
+import { parseChargeInput } from '../../render/ChargeBadgeModule.js';
 
 const CELL_STYLE = 'border: 1px solid #444; padding: 3px;';
 const NUM_INPUT_STYLE = 'width: 100%; background: #333; border: 1px solid #555; color: white; padding: 2px 3px; box-sizing: border-box;';
+// Occ./Charge take a short number (a fraction or a small signed integer) - a
+// fixed narrow column, rather than sharing the table's auto-layout leftover
+// space, keeps them compact.
+const NARROW_COL_STYLE = 'width: 44px;';
+// X/Y/Z are fractional coordinates, routinely typed to 3-4 decimal places
+// ("0.3333") - noticeably wider than Occ./Charge so the full value stays
+// readable without scrolling the input's own text.
+const COORD_COL_STYLE = 'width: 88px;';
+// The Element cell holds a text input plus the periodic-table-picker button;
+// unconstrained, it silently absorbed 100% of the auto-layout table's
+// leftover width (very visible once the panel is undocked/floating and wider
+// than its docked default) since every OTHER column already had a fixed
+// width and this one didn't. Sized to just fit its content (a short 1-2
+// letter symbol) rather than the extra room it used to eat - narrower than
+// X/Y/Z, which need the room for a full decimal fraction.
+const ELEMENT_COL_STYLE = 'width: 74px;';
+// Every remaining column needs its own fixed width too, or auto-layout just
+// hands whichever one is still unconstrained the same problem Element had -
+// a 24px swatch (Color) or a 22px icon button (highlight/delete) has no
+// business claiming hundreds of spare pixels on a wide floating panel.
+const ICON_COL_STYLE = 'width: 30px;';
+const COLOR_COL_STYLE = 'width: 40px;';
 
 const ROW_BG_ACTIVE = 'rgba(255, 191, 0, 0.18)';
 const ROW_BG_ACTIVE_BTN = 'rgba(255, 191, 0, 0.35)';
@@ -41,11 +64,13 @@ function nonEmptyRows(container) {
  * createAtomTableEditor(container, options)
  *
  * atoms returned by getAtoms() are fractional (relative to the cell):
- * { uuid, element, x, y, z, color }; uuid is null for rows the user added.
+ * { uuid, element, x, y, z, occupancy, oxidationState, color }; uuid is null
+ * for rows the user added. oxidationState is null for a blank Charge cell
+ * ("unspecified"), distinct from an explicitly typed 0 ("neutral").
  *
  * @param {HTMLElement} container
  * @param {{
- *   initialAtoms?: Array<{uuid?: string, element: string, x: number, y: number, z: number, color?: string}>,
+ *   initialAtoms?: Array<{uuid?: string, element: string, x: number, y: number, z: number, occupancy?: number, oxidationState?: number|null, color?: string}>,
  *   deletable?: boolean,
  *   onRowActivate?: (uuid: string|null) => void,
  *   onChange?: () => void,
@@ -73,14 +98,15 @@ export function createAtomTableEditor(container, {
         <table id="atomsTable" style="width:100%; border-collapse: collapse;">
           <thead>
             <tr>
-              ${highlightable ? `<th style="${STICKY_TH_STYLE}" title="Highlight the atom in the 3D view">◎</th>` : ''}
-              <th style="${STICKY_TH_STYLE}">Element</th>
-              <th style="${STICKY_TH_STYLE}" title="Fractional coordinate (0-1 spans the cell)">X (frac)</th>
-              <th style="${STICKY_TH_STYLE}" title="Fractional coordinate (0-1 spans the cell)">Y (frac)</th>
-              <th style="${STICKY_TH_STYLE}" title="Fractional coordinate (0-1 spans the cell)">Z (frac)</th>
-              <th style="${STICKY_TH_STYLE}" title="Site occupancy (1 = fully occupied). Rows sharing a position form one disordered site.">Occ.</th>
-              <th style="${STICKY_TH_STYLE}">Color</th>
-              ${deletable ? `<th style="${STICKY_TH_STYLE}"></th>` : ''}
+              ${highlightable ? `<th style="${STICKY_TH_STYLE}${ICON_COL_STYLE}" title="Highlight the atom in the 3D view">◎</th>` : ''}
+              <th style="${STICKY_TH_STYLE}${ELEMENT_COL_STYLE}">Element</th>
+              <th style="${STICKY_TH_STYLE}${COORD_COL_STYLE}" title="Fractional coordinate (0-1 spans the cell)">X</th>
+              <th style="${STICKY_TH_STYLE}${COORD_COL_STYLE}" title="Fractional coordinate (0-1 spans the cell)">Y</th>
+              <th style="${STICKY_TH_STYLE}${COORD_COL_STYLE}" title="Fractional coordinate (0-1 spans the cell)">Z</th>
+              <th style="${STICKY_TH_STYLE}${NARROW_COL_STYLE}" title="Site occupancy (1 = fully occupied). Rows sharing a position form one disordered site.">Occ.</th>
+              <th style="${STICKY_TH_STYLE}${NARROW_COL_STYLE}" title="Formal charge / oxidation state - 3, -2, 3+ or 2- all work. Blank = unspecified; 0 is a deliberate 'neutral' statement, not the same as blank.">Charge</th>
+              <th style="${STICKY_TH_STYLE}${COLOR_COL_STYLE}">Color</th>
+              ${deletable ? `<th style="${STICKY_TH_STYLE}${ICON_COL_STYLE}"></th>` : ''}
             </tr>
           </thead>
           <tbody>
@@ -143,6 +169,13 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
         const v = parseFloat(row.querySelector('.atom-occ').value);
         return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
       })(),
+      // Blank (or anything parseChargeInput doesn't recognize) reads as null
+      // ("unspecified"), distinct from an explicitly typed 0 ("neutral") -
+      // ChargeBadgeModule.js/formatCharge() already draw that same
+      // distinction (a badge shows "0", not nothing, for a declared-neutral
+      // site). Accepts "3"/"-2" same as before, plus chemistry notation
+      // ("3+", "2-") - see parseChargeInput's own doc for the accepted forms.
+      oxidationState: parseChargeInput(row.querySelector('.atom-charge').value),
       color: row.querySelector('.color-swatch-btn').dataset.hex,
     };
   }
@@ -245,7 +278,9 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
   }
 
   function buildRow(atom) {
-    const { uuid = null, element = '', x = 0, y = 0, z = 0, color = null, occupancy = 1 } = atom || {};
+    const { uuid = null, element = '', x = 0, y = 0, z = 0, color = null, occupancy = 1, oxidationState = null } = atom || {};
+    // Blank input for "unspecified" - see readRow()'s matching parse.
+    const chargeValue = Number.isFinite(oxidationState) ? oxidationState : '';
     // A row added without an explicit colour (a fresh "Add New Atom" row, a bulk
     // line with no colour) tracks the element's default colour instead of a flat
     // black swatch, matching how a new atom looks everywhere else. A loaded atom
@@ -271,19 +306,20 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
     newRow.dataset.positionDirty = atom == null ? '' : '1';
 
     newRow.innerHTML = `
-      ${highlightable ? `<td style="${CELL_STYLE} text-align:center;"><button type="button" class="atom-row-highlight" title="Highlight this atom in the 3D view" style="width:22px; height:22px; padding:0; line-height:1; border:1px solid #555; border-radius:3px; background:#333; color:white; cursor:pointer;">◎</button></td>` : ''}
-      <td style="${CELL_STYLE}">
+      ${highlightable ? `<td style="${CELL_STYLE}${ICON_COL_STYLE} text-align:center;"><button type="button" class="atom-row-highlight" title="Highlight this atom in the 3D view" style="width:22px; height:22px; padding:0; line-height:1; border:1px solid #555; border-radius:3px; background:#333; color:white; cursor:pointer;">◎</button></td>` : ''}
+      <td style="${CELL_STYLE}${ELEMENT_COL_STYLE}">
         <div style="display: flex; align-items: center; gap: 3px;">
-          <input type="text" class="atom-element" value="${element}" style="width: 54px; background: #333; border: 1px solid #555; color: white; padding: 2px 3px; border-radius: 3px; box-sizing: border-box;">
+          <input type="text" class="atom-element" value="${element}" style="width: 40px; background: #333; border: 1px solid #555; color: white; padding: 2px 3px; border-radius: 3px; box-sizing: border-box;">
           <button type="button" class="select-element-btn" title="Select Element" style="flex: none; width: 22px; height: 22px; background: #595959; border: none; color: white; cursor: pointer; font-size: 13px; border-radius: 3px; line-height: 1; padding: 0;">⚛</button>
         </div>
       </td>
-      <td style="${CELL_STYLE}"><input type="number" class="atom-x coord-input" value="${x}" step="0.1" style="${NUM_INPUT_STYLE}"></td>
-      <td style="${CELL_STYLE}"><input type="number" class="atom-y coord-input" value="${y}" step="0.1" style="${NUM_INPUT_STYLE}"></td>
-      <td style="${CELL_STYLE}"><input type="number" class="atom-z coord-input" value="${z}" step="0.1" style="${NUM_INPUT_STYLE}"></td>
-      <td style="${CELL_STYLE}"><input type="number" class="atom-occ coord-input" value="${occupancy}" step="0.05" min="0" max="1" style="${NUM_INPUT_STYLE}"></td>
-      <td class="atom-color-cell" style="${CELL_STYLE} text-align:center;"></td>
-      ${deletable ? `<td style="${CELL_STYLE} text-align:center;"><button type="button" class="atom-row-delete btn-mini" title="Remove this atom" style="width:20px; height:20px; padding:0; line-height:0; display:flex; align-items:center; justify-content:center;">✕</button></td>` : ''}
+      <td style="${CELL_STYLE}${COORD_COL_STYLE}"><input type="number" class="atom-x coord-input" value="${x}" step="0.1" style="${NUM_INPUT_STYLE}"></td>
+      <td style="${CELL_STYLE}${COORD_COL_STYLE}"><input type="number" class="atom-y coord-input" value="${y}" step="0.1" style="${NUM_INPUT_STYLE}"></td>
+      <td style="${CELL_STYLE}${COORD_COL_STYLE}"><input type="number" class="atom-z coord-input" value="${z}" step="0.1" style="${NUM_INPUT_STYLE}"></td>
+      <td style="${CELL_STYLE}${NARROW_COL_STYLE}"><input type="number" class="atom-occ coord-input" value="${occupancy}" step="0.05" min="0" max="1" style="${NUM_INPUT_STYLE}"></td>
+      <td style="${CELL_STYLE}${NARROW_COL_STYLE}"><input type="text" inputmode="numeric" class="atom-charge coord-input" value="${chargeValue}" placeholder="—" title="Formal charge / oxidation state, e.g. 3, -2, 3+ or 2-. Blank = unspecified." style="${NUM_INPUT_STYLE}"></td>
+      <td class="atom-color-cell" style="${CELL_STYLE}${COLOR_COL_STYLE} text-align:center;"></td>
+      ${deletable ? `<td style="${CELL_STYLE}${ICON_COL_STYLE} text-align:center;"><button type="button" class="atom-row-delete btn-mini" title="Remove this atom" style="width:20px; height:20px; padding:0; line-height:0; display:flex; align-items:center; justify-content:center;">✕</button></td>` : ''}
     `;
 
     const colorCell = newRow.querySelector('.atom-color-cell');

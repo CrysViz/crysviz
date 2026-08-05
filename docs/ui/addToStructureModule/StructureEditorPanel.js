@@ -56,7 +56,6 @@ import {
   resetLatticeToOriginal,
 } from './CommitAtoms.js';
 import { fracToCartPoint } from '../../math/index.js';
-import { VACANCY_SYMBOLS } from '../../render/VacancyMarkerModule.js';
 import { elementData } from '../PeriodicTablePickerCore.js';
 import { getElementDefaultColor } from '../../defaults/color_texture_defaults.js';
 import { makeSectionHeadline } from '../panels/sectionHeadline.js';
@@ -64,32 +63,13 @@ import { generateID } from '../../utils/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { createBondLengthControls } from '../BondLengthPanel.js';
 import { highlightAtomsIn3D, clearHighlightAtom, subscribeToAtomSelection, clearSelectedAtoms } from '../SelectAndHighlightModule.js';
+import { invalidElementMessage, invalidElementIndices } from './ElementValidation.js';
 
 const COLLISION_THRESHOLD_ANGSTROM = 0.5;
 
 const LIST_STYLE = 'max-height: 120px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px;';
 const ENTRY_STYLE = 'display:flex; align-items:center; gap:8px; padding: 4px 8px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size:12px;';
 const COORD_STYLE = 'font-family: monospace; color: rgba(255,255,255,0.7); flex-grow:1; text-align:right;';
-
-// Rows with an element string that isn't a real periodic-table symbol.
-function invalidElementMessage(atoms) {
-  // "Va" is accepted but is not an element — it becomes a vacancy marker.
-  const bad = [...new Set(atoms
-    .filter(a => !elementData[a.element] && !VACANCY_SYMBOLS.has(String(a.element).trim()))
-    .map(a => a.element || '(empty)'))];
-  if (!bad.length) return null;
-  return `Not a recognized element: ${bad.join(', ')}. Use the periodic table picker (⚛) to pick one.`;
-}
-
-// Same check as invalidElementMessage, but the row indices rather than a
-// summary string — for highlighting the offending rows the same way a
-// collision does (see runCollisionWarning below).
-function invalidElementIndices(atoms) {
-  return atoms.reduce((indices, a, i) => {
-    if (!elementData[a.element] && !VACANCY_SYMBOLS.has(String(a.element).trim())) indices.push(i);
-    return indices;
-  }, []);
-}
 
 const round4 = (value) => Number(Number(value).toFixed(4));
 
@@ -147,6 +127,7 @@ export function structureToTableAtoms(structure) {
         y: round4(atom.position[1]),
         z: round4(atom.position[2]),
         occupancy: round4(s.occupancy),
+        oxidationState: s.oxidationState,
         color: tableRowColor(atom, species, k),
       });
     });

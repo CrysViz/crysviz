@@ -170,6 +170,12 @@ function buildFeaturesBody(body) {
   const showBonds = detachStaticRow('showBonds');
   if (showBonds) group.appendChild(showBonds);
 
+  // Wired in ControlsWiring.js (general.showCharges + rebuildChargeBadges());
+  // this row just never made it out of the staging block into the actual
+  // Features window, so the toggle existed but was permanently unreachable.
+  const showCharges = detachStaticRow('showCharges');
+  if (showCharges) group.appendChild(showCharges);
+
   const neighbourBonds = detachStaticRow('PBCBondToggle');
   if (neighbourBonds) group.appendChild(neighbourBonds);
 
