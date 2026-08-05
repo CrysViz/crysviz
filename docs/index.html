@@ -59,6 +59,10 @@
         <ul class="theme-menu" id="themeMenu" role="menu" hidden></ul>
       </div>
       <div class="backend-control-group" id="backendControlGroup">
+        <!-- Persistent potential picker, above the action switch: pick the
+             potential first, then the action. Populated once by
+             AtomisticPanels.initAtomisticSelector; survives Relax<->MD swaps. -->
+        <div id="BackendPotentialSelector" class="hidden"></div>
         <div class="segmented-backend-control" id="BackendModeSwitch">
           <button data-mode="relax">Relax</button>
           <button data-mode="md">MD</button>

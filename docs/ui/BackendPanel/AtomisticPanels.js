@@ -582,7 +582,11 @@ function emitASEEFS() {
   });
 }
 
-function buildPanelShell(title) {
+// The potential picker lives in its OWN persistent element (#BackendPotentialSelector),
+// rendered once and ABOVE the Relax/MD switch — the user picks the potential
+// first, then an action, and the choice (general.atomisticPotential) survives
+// switching Relax<->MD and is what Order Structure / EOS read too.
+function buildSourcePanel() {
   return `
     <div class="atomistic-panel">
       <div class="atomistic-source-panel">
@@ -626,25 +630,36 @@ function buildPanelShell(title) {
           <div class="atomistic-backend-state" data-role="backend-state">Backend: not connected</div>
         </div>
       </div>
+    </div>
+  `;
+}
+
+function buildBodyShell() {
+  return `
+    <div class="atomistic-panel">
       <div class="atomistic-body" data-role="body"></div>
     </div>
   `;
 }
 
-function getShellBindings(panel) {
-  const sourceStateEl = panel.querySelector('[data-role="source-state"]');
+// One shell object over the two persistent containers: the potential picker
+// (#BackendPotentialSelector) and the action body (#BackendCalcPanel).
+function getShellBindings() {
+  const selector = document.getElementById('BackendPotentialSelector');
+  const calc = document.getElementById('BackendCalcPanel');
+  const sourceStateEl = selector?.querySelector('[data-role="source-state"]');
   return {
-    toggle: panel.querySelector('[data-role="potential-toggle"]'),
+    toggle: selector?.querySelector('[data-role="potential-toggle"]'),
     sourceStateEl,
-    aseConnectorsEl: panel.querySelector('[data-role="ase-connectors"]'),
-    backendStateEl: panel.querySelector('[data-role="backend-state"]'),
-    mlipSourceEl: panel.querySelector('[data-role="mlip-source"]'),
-    mlipModelSelect: panel.querySelector('[data-role="mlip-model"]'),
-    mlipBackendSelect: panel.querySelector('[data-role="mlip-backend"]'),
-    mlipLoadBtn: panel.querySelector('[data-role="mlip-load"]'),
-    mlipFileInput: panel.querySelector('[data-role="mlip-file"]'),
-    mlipStatusEl: panel.querySelector('[data-role="mlip-status"]'),
-    bodyEl: panel.querySelector('[data-role="body"]'),
+    aseConnectorsEl: selector?.querySelector('[data-role="ase-connectors"]'),
+    backendStateEl: selector?.querySelector('[data-role="backend-state"]'),
+    mlipSourceEl: selector?.querySelector('[data-role="mlip-source"]'),
+    mlipModelSelect: selector?.querySelector('[data-role="mlip-model"]'),
+    mlipBackendSelect: selector?.querySelector('[data-role="mlip-backend"]'),
+    mlipLoadBtn: selector?.querySelector('[data-role="mlip-load"]'),
+    mlipFileInput: selector?.querySelector('[data-role="mlip-file"]'),
+    mlipStatusEl: selector?.querySelector('[data-role="mlip-status"]'),
+    bodyEl: calc?.querySelector('[data-role="body"]'),
     statusEl: sourceStateEl,
     resultEl: sourceStateEl,
   };
@@ -1483,53 +1498,67 @@ function bindMDBody(panel, shell, potential) {
   });
 }
 
-function bindPotentialToggle(panel, shell, mode) {
-  let potential = 'nep';
+// Reflect the current general.atomisticPotential in the selector's own widgets
+// (button highlight, ASE/MLIP sub-controls, one-line hint). Pure UI — no body.
+function updatePotentialUI(shell, { announce = false } = {}) {
+  const potential = general.atomisticPotential || 'nep';
+  shell.toggle?.querySelectorAll('button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.potential === potential);
+  });
+  refreshBackendTheme();
+  shell.aseConnectorsEl?.classList.toggle('hidden', potential !== 'ase');
+  shell.mlipSourceEl?.classList.toggle('hidden', potential !== 'mlip');
+  if (announce && potential === 'ase') {
+    window.alert('ASE requires a server backend. Please connect to the backend server before running this mode.');
+    if (shell.sourceStateEl) shell.sourceStateEl.textContent = 'ASE selected: server backend required.';
+  } else if (potential === 'ase') {
+    if (shell.sourceStateEl) shell.sourceStateEl.textContent = 'ASE selected: server backend required.';
+  } else if (potential === 'mlip') {
+    if (shell.sourceStateEl) shell.sourceStateEl.textContent = 'PET-MAD selected: load a model, then compute in-browser.';
+  } else if (shell.sourceStateEl) {
+    shell.sourceStateEl.textContent = '';
+  }
+}
 
-  const render = async () => {
-    shell.toggle.querySelectorAll('button').forEach((button) => {
-      button.classList.toggle('active', button.dataset.potential === potential);
-    });
-    general.atomisticPotential = potential;
-    refreshBackendTheme();
+// Render the body for whichever action is active (general.backendState), using
+// the currently chosen potential. Called both when the action changes (Relax/MD
+// switch) and when the potential changes under a fixed action.
+function renderActiveBody() {
+  const shell = getShellBindings();
+  if (!shell.bodyEl) return;
+  const potential = general.atomisticPotential || 'nep';
+  if (general.backendState === 'md') {
+    bindMDBody(null, shell, potential);
+  } else {
+    bindRelaxBody(null, shell, potential);
+  }
+}
 
-    shell.aseConnectorsEl.classList.toggle('hidden', potential !== 'ase');
-    shell.mlipSourceEl.classList.toggle('hidden', potential !== 'mlip');
-    shell.resultEl.textContent = '';
+// Wire the persistent potential picker ONCE. Selecting a potential updates the
+// shared state and re-renders the active action's body in place — it never
+// rebuilds (or resets) the selector itself.
+function bindPotentialToggle() {
+  const shell = getShellBindings();
 
-    if (potential === 'ase') {
-      window.alert('ASE requires a server backend. Please connect to the backend server before running this mode.');
-      shell.sourceStateEl.textContent = 'ASE selected: server backend required.';
-    } else if (potential === 'mlip') {
-      shell.sourceStateEl.textContent = 'PET-MAD selected: load a model, then compute in-browser.';
-    } else {
-      shell.sourceStateEl.textContent = '';
-    }
-
-    if (mode === 'relax') {
-      bindRelaxBody(panel, shell, potential);
-    } else {
-      bindMDBody(panel, shell, potential);
-    }
-  };
-
-  shell.toggle.addEventListener('click', (event) => {
+  shell.toggle?.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-potential]');
     if (!button) return;
-    potential = button.dataset.potential;
-    render();
+    general.atomisticPotential = button.dataset.potential;
+    updatePotentialUI(shell, { announce: true });
+    if (shell.resultEl) shell.resultEl.textContent = '';
+    renderActiveBody();
   });
 
-  shell.aseConnectorsEl.querySelector('[data-role="connect-ase"]')?.addEventListener('click', () => {
+  shell.aseConnectorsEl?.querySelector('[data-role="connect-ase"]')?.addEventListener('click', () => {
     void connectASEBackend({
       statusEl: shell.statusEl,
       backendStateEl: shell.backendStateEl,
       resultEl: shell.resultEl,
-      efsMetricsEl: shell.bodyEl.querySelector('#relaxEfsMetrics'),
+      efsMetricsEl: shell.bodyEl?.querySelector('#relaxEfsMetrics'),
     });
   });
 
-  shell.aseConnectorsEl.querySelector('[data-role="disconnect-ase"]')?.addEventListener('click', () => {
+  shell.aseConnectorsEl?.querySelector('[data-role="disconnect-ase"]')?.addEventListener('click', () => {
     disconnectASEBackend({
       statusEl: shell.statusEl,
       backendStateEl: shell.backendStateEl,
@@ -1550,15 +1579,27 @@ function bindPotentialToggle(panel, shell, mode) {
     }
   });
 
-  render();
+  updatePotentialUI(shell);
+}
+
+// Build the persistent potential selector once, above the Relax/MD switch.
+// Idempotent: safe to call on every panel entry.
+export function initAtomisticSelector() {
+  const selector = document.getElementById('BackendPotentialSelector');
+  if (!selector || selector.dataset.ready === '1') return;
+  general.atomisticPotential = general.atomisticPotential || 'nep';
+  selector.innerHTML = buildSourcePanel();
+  selector.dataset.ready = '1';
+  bindPotentialToggle();
 }
 
 function addAtomisticPanel(mode) {
+  initAtomisticSelector();
+  document.getElementById('BackendPotentialSelector')?.classList.remove('hidden');
+  general.backendState = mode;
   const panel = document.getElementById('BackendCalcPanel');
-  const title = mode === 'relax' ? 'Relax' : 'MD';
-  panel.innerHTML = buildPanelShell(title);
-  const shell = getShellBindings(panel);
-  bindPotentialToggle(panel, shell, mode);
+  panel.innerHTML = buildBodyShell();
+  renderActiveBody();
 }
 
 export function addRelaxPanel() {
@@ -1571,5 +1612,9 @@ export function addMDPanel() {
 
 export function removeAtomisticPanel() {
   const panel = document.getElementById('BackendCalcPanel');
-  panel.innerHTML = '';
+  if (panel) panel.innerHTML = '';
+  // Hide the (persistent) selector while no action is open — it has nothing to
+  // drive until a mode is picked again.
+  const selector = document.getElementById('BackendPotentialSelector');
+  if (selector) selector.classList.add('hidden');
 }
