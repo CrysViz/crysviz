@@ -124,11 +124,11 @@ export function createAtomTableEditor(container, {
     </div>
 
     <div style="margin-top: 15px; display: flex; align-items: center;">
-      <textarea id="bulkInput" placeholder="Element x y z [color]
+      <textarea id="bulkInput" placeholder="Element x y z [occ] [color]
 Example:
 H 0.5 0.5 0.5 #FF0000
-C 1.0 1.0 1.0
-O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1px solid #555; color: white; padding: 5px; resize: vertical; margin-right: 10px;"></textarea>
+C 1.0 1.0 1.0 0.6
+O 1.5 1.5 1.5 0.4 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1px solid #555; color: white; padding: 5px; resize: vertical; margin-right: 10px;"></textarea>
       <div style="display: flex; flex-direction: column;">
         <button id="applyBulk" class="btn-mini highlight" style="padding: 5px 10px;">Apply Bulk</button>
       </div>
@@ -497,15 +497,28 @@ O 1.5 1.5 1.5 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1
     lines.forEach(line => {
       if (line.trim() === '') return;
 
-      // Parse line in format: Element x y z [color]
+      // Parse line in format: Element x y z [occ] [color]. The two trailing
+      // fields are order-tolerant and each optional: a '#RRGGBB' token is the
+      // colour, a bare number is the occupancy (a partially occupied site).
       const parts = line.trim().split(/\s+/);
       if (parts.length >= 4) {
+        let occupancy = 1;
+        let color; // omitted -> the row tracks the element default
+        for (const token of parts.slice(4)) {
+          if (token.startsWith('#')) {
+            color = token;
+          } else {
+            const occ = parseFloat(token);
+            if (Number.isFinite(occ)) occupancy = Math.min(1, Math.max(0, occ));
+          }
+        }
         addRowToTable({
           element: parts[0],
           x: parseFloat(parts[1]) || 0,
           y: parseFloat(parts[2]) || 0,
           z: parseFloat(parts[3]) || 0,
-          color: parts[4], // omitted -> the row tracks the element default
+          occupancy,
+          color,
         });
       }
     });
