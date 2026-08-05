@@ -1,6 +1,7 @@
 import { fileBrowser } from '../state/store.js';
 import { captureState } from './ShareModule.js';
 import { structureHasFractionalOccupancy } from './DisorderWarningBanner.js';
+import { isVacancy } from '../render/VacancyMarkerModule.js';
 
 export function poscartoFile() {
   const structure = fileBrowser.selectedStructure;
@@ -14,20 +15,30 @@ export function poscartoFile() {
     v.map(x => x.toFixed(8).padStart(18)).join('')
   );
 
+  // A POSCAR is a list of real atoms with no way to say "a site is empty", so
+  // vacancy markers ("Va") are dropped — writing them would make VASP read a
+  // made-up element. The .crysviz save keeps them (see ShareModule.buildPOSCAR).
+  const keep = structure.atoms.map((_, i) => !isVacancy(structure.elements[i]));
+
   // unique elements preserving first-occurrence order
   const seen = new Set();
   const uniqueElements = [];
-  for (const el of structure.elements) {
-    if (!seen.has(el)) { seen.add(el); uniqueElements.push(el); }
+  structure.elements.forEach((el, i) => {
+    if (!keep[i] || seen.has(el)) return;
+    seen.add(el); uniqueElements.push(el);
+  });
+
+  if (!uniqueElements.length) {
+    throw new Error('Structure has only vacancies — nothing to write to a POSCAR.');
   }
 
-  const counts = uniqueElements.map(el => structure.elements.filter(e => e === el).length);
+  const counts = uniqueElements.map(el => structure.elements.filter((e, i) => keep[i] && e === el).length);
 
   // positions grouped by element (Direct / fractional)
   const posLines = [];
   for (const el of uniqueElements) {
     structure.atoms.forEach((atom, i) => {
-      if (structure.elements[i] === el) {
+      if (keep[i] && structure.elements[i] === el) {
         posLines.push(atom.position.map(v => v.toFixed(8).padStart(18)).join(''));
       }
     });

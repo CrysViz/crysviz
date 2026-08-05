@@ -54,6 +54,29 @@ function packColor(hex) {
 }
 
 /**
+ * Colour for a vacancy wedge. The hatch marks it as absence regardless, but the
+ * fill colour underneath is user-settable so a vacancy can be tinted to stand
+ * out (or blend in): an explicit per-species colour wins, then — on a site that
+ * is nothing BUT a vacancy — the atom's own userColor (what the single-dot
+ * element picker in ColorEditor.js sets), and otherwise the neutral default.
+ *
+ * @param {any} atom
+ * @param {{color:number|null}} s the vacancy species slot
+ * @param {boolean} pureVacancy the whole site is one "Va" species, nothing else
+ * @returns {number}
+ */
+function vacancyWedgeColor(atom, s, pureVacancy) {
+  if (Number.isFinite(s.color)) return s.color;
+  if (pureVacancy && atom.userColor != null) {
+    const n = typeof atom.userColor === 'number'
+      ? atom.userColor
+      : parseInt(String(atom.userColor).replace('#', ''), 16);
+    if (Number.isFinite(n)) return n;
+  }
+  return VACANCY_COLOR;
+}
+
+/**
  * Build the wedge description for one atom.
  *
  * Returns null for an ordinary fully-occupied single-species site, which is the
@@ -81,9 +104,10 @@ export function wedgeDataForAtom(atom) {
     .slice()
     .sort((a, b) => (b.occupancy - a.occupancy) || (a.element < b.element ? -1 : 1));
 
+  const pureVacancy = atom.species.length === 1 && atom.species[0].element === 'Va';
   /** @type {Array<{color: number, occupancy: number, vacancy: boolean}>} */
   const slots = species.map((s) => (s.element === 'Va'
-    ? { color: VACANCY_COLOR, occupancy: s.occupancy, vacancy: true }
+    ? { color: vacancyWedgeColor(atom, s, pureVacancy), occupancy: s.occupancy, vacancy: true }
     : {
       // A species the user has explicitly recoloured wins over the element
       // default, same precedence as atom.userColor over atom.color.

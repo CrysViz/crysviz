@@ -10,6 +10,7 @@ import {
   normalizeFractionalPositions,
 } from './math.js';
 import { symmetrizeCartesianPositions, symmetrizeCartesianVectors, isWyckoffModeActive } from '../ui/SymmetryEditModule.js';
+import { isVacancy } from '../render/VacancyMarkerModule.js';
 
 function symbolCase(sym) {
   const s = String(sym ?? '').trim();
@@ -98,20 +99,68 @@ function deformationFromStress(stress, cellFire, targetPressureEvA3 = 0) {
   return M;
 }
 
+// Build the payload any potential (NEP or PET-MAD/MLIP — both consume this
+// { lattice, positions, types }) sees for a structure. Vacancy markers ("Va")
+// are the absence of an atom, so they are EXCLUDED here: the potential never
+// sees them. `keptIndices[i]` is the original structure.atoms index of the
+// i-th payload atom, so the (shorter) forces/positions the potential returns
+// can be mapped back onto the full atom list — see expandKeptFracToFull /
+// expandKeptVectorsToFull. keptIndices is null when nothing was filtered, which
+// keeps the no-vacancy path (the overwhelming common case) an exact 1:1.
 export function buildNEPStructure(nepRunner, structure = fileBrowser.selectedStructure) {
   const lattice = structure.lattice.map((row) => [...row]);
-  const frac = structure.atoms.map((a) => a.position);
-  const positions = fracToCart(frac, lattice);
-
   const modelElements = nepRunner.modelInfo.element_list.map(symbolCase);
-  const symbols = structure.elements.map(symbolCase);
-  const types = symbols.map((sym) => {
-    const i = modelElements.indexOf(sym);
-    if (i < 0) throw new Error(`Model does not support element: ${sym}`);
-    return i;
+
+  const keptIndices = [];
+  const fracKept = [];
+  const types = [];
+  structure.atoms.forEach((atom, idx) => {
+    if (isVacancy(structure.elements[idx])) return; // the potential ignores vacancies
+    const sym = symbolCase(structure.elements[idx]);
+    const t = modelElements.indexOf(sym);
+    if (t < 0) throw new Error(`Model does not support element: ${sym}`);
+    keptIndices.push(idx);
+    fracKept.push(atom.position);
+    types.push(t);
   });
 
-  return { lattice, positions, types };
+  const positions = fracToCart(fracKept, lattice);
+  const anyFiltered = keptIndices.length !== structure.atoms.length;
+  return { lattice, positions, types, keptIndices: anyFiltered ? keptIndices : null };
+}
+
+/**
+ * Map a kept-space (vacancy-excluded) fractional-position array back onto the
+ * full atom list. Vacancy atoms keep their current fractional position (so they
+ * scale with the cell but never move under the potential). keptIndices null
+ * means nothing was filtered — the array is already full.
+ *
+ * @param {any} structure viewer structure (full atom list, source of vacancy positions)
+ * @param {number[][]} keptFrac fractional positions, one per kept atom
+ * @param {number[]|null} keptIndices original atom index per kept atom
+ * @returns {number[][]} full-length fractional positions
+ */
+export function expandKeptFracToFull(structure, keptFrac, keptIndices) {
+  if (!keptIndices) return keptFrac;
+  const full = structure.atoms.map((a) => [...a.position]);
+  keptIndices.forEach((atomIndex, i) => { full[atomIndex] = keptFrac[i]; });
+  return full;
+}
+
+/**
+ * Map a kept-space per-atom vector array (e.g. forces) back onto the full atom
+ * list; vacancy atoms get a zero vector. keptIndices null means no filtering.
+ *
+ * @param {number} fullLength structure.atoms.length
+ * @param {number[][]} keptVectors one vector per kept atom
+ * @param {number[]|null} keptIndices original atom index per kept atom
+ * @returns {number[][]} full-length vectors
+ */
+export function expandKeptVectorsToFull(fullLength, keptVectors, keptIndices) {
+  if (!keptIndices) return keptVectors;
+  const full = Array.from({ length: fullLength }, () => [0, 0, 0]);
+  keptIndices.forEach((atomIndex, i) => { full[atomIndex] = keptVectors[i]; });
+  return full;
 }
 
 export function maxForce(forces) {
@@ -250,11 +299,14 @@ export function applyRelaxStep(structure, efs, fire, targetPressureEvA3 = 0, rel
     newPositions = symmetrizeCartesianPositions(newPositions, newLattice, fileBrowser.selectedStructure);
   }
 
-  return { lattice: newLattice, positions: newPositions, types: structure.types };
+  return { lattice: newLattice, positions: newPositions, types: structure.types, keptIndices: structure.keptIndices };
 }
 
 export function applyStructureToViewer(nepStruct, structure = fileBrowser.selectedStructure, { full = false } = {}) {
-  const frac = normalizeFractionalPositions(cartToFrac(nepStruct.positions, nepStruct.lattice));
+  const keptFrac = normalizeFractionalPositions(cartToFrac(nepStruct.positions, nepStruct.lattice));
+  // Vacancy atoms aren't in the potential's payload; expand back to the full
+  // atom list so they keep their place (they scale with the cell, never move).
+  const frac = expandKeptFracToFull(structure, keptFrac, nepStruct.keptIndices);
   structure.lattice = nepStruct.lattice.map((r) => [...r]);
   structure.atoms.forEach((atom, i) => {
     atom.position = [...frac[i]];
@@ -336,6 +388,7 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
     lattice: initial.lattice.map((r) => [...r]),
     positions: initial.positions.map((r) => [...r]),
     types: [...initial.types],
+    keptIndices: initial.keptIndices ?? null,
   };
 
   let out = null;

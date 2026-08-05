@@ -27,6 +27,7 @@
 
 import { Atom } from '../model/index.js';
 import { generateID } from '../utils/index.js';
+import { isVacancy } from '../render/VacancyMarkerModule.js';
 
 /** Largest supercell multiplier considered when solving for whole-atom counts. */
 const MAX_MULTIPLIER = 12;
@@ -323,7 +324,10 @@ export function listMultiplierOptions(structure, opts = {}) {
 export function decorateSite(atom, positionsFrac, lattice, rng) {
   const images = positionsFrac.length;
   const wanted = [];
-  for (const s of atom.species) wanted.push({ element: s.element, exact: s.occupancy * images });
+  // An explicit "Va" species counts toward the vacancy pool (element null),
+  // same as the derived vacancy fraction below — so a site written as
+  // Fe 0.5 / Va 0.5 orders the same as Fe 0.5 with a bare 0.5 vacancy.
+  for (const s of atom.species) wanted.push({ element: isVacancy(s.element) ? null : s.element, exact: s.occupancy * images });
   const vac = atom.getVacancyFraction();
   if (vac > 1e-6) wanted.push({ element: null, exact: vac * images });
 
@@ -363,6 +367,9 @@ export function buildOrderedStructure(structure, opts = {}) {
   const rng = makeRng(opts.seed ?? 1);
 
   if (method === 'majority') {
+    // A site whose representative species is a vacancy stays a visible "Va"
+    // atom, same as every other site — the potential ignores it later
+    // (buildNEPStructure filters "Va"), but the ordered cell still shows it.
     const atoms = structure.atoms.map((a) => new Atom({
       position: [...a.position],
       element: a.getRepresentativeElement(),
@@ -411,8 +418,11 @@ export function buildOrderedStructure(structure, opts = {}) {
       : positionsFrac.map(() => atom.getRepresentativeElement());
 
     positionsFrac.forEach((position, i) => {
-      const element = assignment[i];
-      if (!element) return;   // this image is the vacancy
+      // A vacancy image (null from decorateSite, or an ordered "Va" site) is
+      // kept as a visible "Va" atom: the user still sees where the vacancies
+      // landed, and buildNEPStructure filters "Va" so the potential ignores it.
+      const raw = assignment[i];
+      const element = (!raw || isVacancy(raw)) ? 'Va' : raw;
       atoms.push(new Atom({ position, element, uuid: generateID([element]) }));
       elements.push(element);
     });

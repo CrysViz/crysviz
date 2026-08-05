@@ -24,3 +24,15 @@
  * flagging it.
  */
 export const VACANCY_SYMBOLS = new Set(['Va', 'va', 'VA']);
+
+/**
+ * True when an element string means "vacancy" rather than a real element.
+ * Trims first, matching how ElementValidation accepts the symbol, so a padded
+ * "Va " from a table cell is recognized too.
+ *
+ * @param {string|null|undefined} element
+ * @returns {boolean}
+ */
+export function isVacancy(element) {
+  return VACANCY_SYMBOLS.has(String(element ?? '').trim());
+}

@@ -5,6 +5,7 @@ import {
   buildNEPStructure,
   relaxUntilConverged,
   applyStructureToViewer,
+  expandKeptVectorsToFull,
   maxForce,
   pressureGPaFromStress,
 } from '../../atomistic/relaxer.js';
@@ -302,9 +303,14 @@ function convertStressEvA3ToGPa(stressTensor) {
   return stressTensor.map((row) => row.map((value) => value * factor));
 }
 
-function setCurrentEFS(out) {
+function setCurrentEFS(out, keptIndices = null) {
   if (Array.isArray(out?.forces)) {
-    fileBrowser.selectedStructure.forces = out.forces.map((v) => new Force({ vector: [...v] }));
+    // The potential returns one force per NON-vacancy atom; expand back to the
+    // full atom list (vacancies get a zero force) so structure.forces stays
+    // index-aligned with structure.atoms for the Forces panel and arrows.
+    const forces = expandKeptVectorsToFull(
+      fileBrowser.selectedStructure.atoms.length, out.forces, keptIndices);
+    fileBrowser.selectedStructure.forces = forces.map((v) => new Force({ vector: [...v] }));
   }
   // Stress is optional — some calculators don't provide it. Don't throw when
   // it's absent; just leave the structure without a stress tensor.
@@ -976,7 +982,7 @@ async function runLocalRelax(shell, params, potential) {
         const shouldUpdateViewer = step === 1 || shouldSave || step % viewerStride === 0;
         if (shouldUpdateViewer) {
           applyStructureToViewer(current, fileBrowser.selectedStructure);
-          setCurrentEFS(out);
+          setCurrentEFS(out, current.keptIndices);
         }
 
         lastMetrics = {
@@ -1007,7 +1013,7 @@ async function runLocalRelax(shell, params, potential) {
     });
 
     applyStructureToViewer(relaxed.structure, fileBrowser.selectedStructure, { full: true });
-    setCurrentEFS(relaxed.result);
+    setCurrentEFS(relaxed.result, relaxed.structure.keptIndices);
 
     // Always keep the final state in the trajectory, even off-stride.
     if (relaxed.steps !== lastSavedStep) {
@@ -1045,7 +1051,7 @@ async function runLocalEFS(shell, metricsEl, potential) {
   const runner = await ensureCalculatorReady(potential, shell);
   const nepStruct = buildNEPStructure(runner, fileBrowser.selectedStructure);
   const out = await runner.compute(nepStruct);
-  setCurrentEFS(out);
+  setCurrentEFS(out, nepStruct.keptIndices);
   const pressureText = runner.supportsStress === false
     ? 'n/a'
     : `${pressureGPaFromStress(out.stress.matrix3x3).toFixed(2)} GPa`;
@@ -1414,7 +1420,7 @@ function bindMDBody(panel, shell, potential) {
       setCurrentEFS({
         forces: state.forces,
         stress: { matrix3x3: state.stress },
-      });
+      }, state.keptIndices);
 
       // Always keep the final state in the trajectory, even off-stride.
       if (state.step !== lastSavedStep) {

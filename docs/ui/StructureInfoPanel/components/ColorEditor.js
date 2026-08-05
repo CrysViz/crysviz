@@ -1,7 +1,8 @@
 import { fileBrowser, groups, general, structureShip, mode } from '../../../state/store.js';
 import { colorHexToCss, getAtomColor, setAtomColor } from '../../../utils/ColorModule.js';
 import { clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
-import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom } from '../../../render/AtomsFracUpdateModule.js';
+import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom, refreshAtomWedgeTexture } from '../../../render/AtomsFracUpdateModule.js';
+import { isVacancy } from '../../../render/VacancyMarkerModule.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
 import { updatePolyhedraColors, scheduleBondRebuild, requestRender } from '../../../render/index.js';
 import { refreshGhostAtoms } from '../../../render/GhostAtomsModule.js';
@@ -61,6 +62,11 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     // no geometry recompute). The picker updates atom/bond meshes directly and otherwise
     // never triggers a polyhedra update.
     updatePolyhedraColors();
+    // A vacancy ("Va") sphere is drawn from the wedge DataTexture (the hatch),
+    // not the flat instance colour updateSingleAtomColor just wrote — so rebuild
+    // it to pick up the new vacancy tint. (vacancyWedgeColor reads atom.userColor
+    // for a pure-Va site, which this callback set above.)
+    if (isVacancy(el)) refreshAtomWedgeTexture();
     // This callback updates the real-atom mesh directly rather than going
     // through updateVisualization, so it's the one color-edit path that
     // doesn't get updateVisualization's own ghost-refresh hook — any of
@@ -268,6 +274,9 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     updatePieDotCallback();
     applyElementOpacity(1);
     applyElementRadiusScale(1);
+    // Reset cleared userColor, so a vacancy's wedge falls back to the neutral
+    // default — rebuild the wedge texture so the sphere actually shows it.
+    if (isVacancy(el)) refreshAtomWedgeTexture();
     // Polyhedra faces are coloured by element — recolour them in place to match
     // (mirrors the live picker callback above, which does the same on every edit).
     updatePolyhedraColors();
