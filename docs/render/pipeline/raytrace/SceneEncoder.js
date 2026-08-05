@@ -43,7 +43,6 @@ const MAX_PLANES = 256;
 // repurpose it as the "listed" bit (1 = in the emissive NEE list; the PT shader
 // gates diffuse-arrival emission on it). Codes/slots must match
 // resolveMaterialType/resolveHitType in BOTH scene shaders.
-const MATERIAL_CODES = { standard: 0, metal: 1, glass: 2, emissive: 3, translucent: 4 };
 const DEFAULT_MATERIAL_TEXEL = [0, 0.6, 0.6, -1]; // standard, tint 0.6 + gloss 0.6 = classic look
 
 // Emissive next-event-estimation list cap (B1/B2): the path tracer directly

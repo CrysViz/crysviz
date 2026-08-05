@@ -85,6 +85,10 @@ export function createLatticeLines(color = general.currentLatticeColor) {
 
 export function updateLattice(color = general.currentLatticeColor) {
   disposeGroup(groups.latticeGroup);
+  if (!fileBrowser.selectedStructure) {
+    groups.latticeGroup = null;
+    return;
+  }
   if (general.showLattice) {
     groups.latticeGroup = createLatticeLines(color);
     app.scene.add(groups.latticeGroup);

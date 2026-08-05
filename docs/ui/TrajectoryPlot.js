@@ -363,7 +363,13 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   // set of plotted series or their axis assignment changes.
   async function drawFull() {
     if (removed) return;
-    if (!Plotly) Plotly = await loadPlotly();
+    try {
+      if (!Plotly) Plotly = await loadPlotly();
+    } catch (error) {
+      plotDiv.textContent = error.message;
+      ready = false;
+      return;
+    }
     if (removed || !document.body.contains(plotDiv)) return;
     const plotted = plottedSeries();
     layoutSig = sigOf(plotted);

@@ -1,8 +1,11 @@
 // Verifies the batch UI fixes: (a) .crysviz saves/loads a WHOLE trajectory,
 // (b) Forces/Spins panels stay available without data, (c) the initial panel
 // grey-out is applied on first load, (d) the Overall font scale var applies,
-// (e) the Draw Bonds stubs are gone.
+// (e) the Draw Bonds stubs are gone, and native select chrome is normalized.
 'use strict';
+const fs = require('fs');
+const path = require('path');
+const { PNG } = require('pngjs');
 const H = require('../harness');
 
 (async () => {
@@ -65,6 +68,43 @@ const H = require('../harness');
       && scaled(fscale.at1.label, fscale.at2.label)
       && scaled(fscale.at1.button, fscale.at2.button),
     JSON.stringify(fscale));
+
+  // --- Native <select> chrome is normalized across browser/webview engines ------
+  const selectStyle = await page.evaluate(() => {
+    const el = document.getElementById('renderPipelineMenu');
+    if (!el) return { present: false };
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return {
+      present: true,
+      appearance: style.appearance,
+      backgroundColor: style.backgroundColor,
+      backgroundImage: style.backgroundImage,
+      color: style.color,
+      fontSize: style.fontSize,
+      height: rect.height,
+    };
+  });
+  H.check('dropdown opts out of native chrome and supplies the shared chevron',
+    selectStyle.present === true
+      && selectStyle.appearance === 'none'
+      && selectStyle.backgroundImage !== 'none',
+    JSON.stringify(selectStyle));
+
+  const selectShotPath = path.join(__dirname, '..', 'artifacts', 'select-style.png');
+  await page.locator('#renderPipelineMenu').screenshot({ path: selectShotPath });
+  const selectPng = PNG.sync.read(fs.readFileSync(selectShotPath));
+  let darkPixels = 0;
+  for (let i = 0; i < selectPng.width * selectPng.height; i++) {
+    const offset = i * 4;
+    if (selectPng.data[offset] < 100
+      && selectPng.data[offset + 1] < 100
+      && selectPng.data[offset + 2] < 100) darkPixels++;
+  }
+  const darkFraction = darkPixels / (selectPng.width * selectPng.height);
+  H.check('dropdown renders as a compact dark control',
+    selectPng.height < 30 && darkFraction > 0.55,
+    JSON.stringify({ width: selectPng.width, height: selectPng.height, darkFraction, selectStyle }));
 
   // --- (f) Visual background swatch mirrors the scene background --------------------
   const swatch = await page.evaluate(async () => {

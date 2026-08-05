@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crysviz"
+version = "0.1.0"
+description = "Browser-based crystal structure visualisation and analysis"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE", "NOTICE"]
+authors = [
+  { name = "Florian Trybel" },
+  { name = "Abhijith S Parackal" },
+  { name = "Oscar Bulancea-Lindvall" },
+  { name = "Rickard Armiento" },
+]
+classifiers = [
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = ["pywebview>=6.2,<7"]
+
+[project.optional-dependencies]
+# Forward pywebview's documented backend extras while repeating the core
+# version constraint so CrysViz extras cannot select a different pywebview.
+# The base dependency remains GUI-backend-neutral for --browser.
+qt = ["pywebview[qt]>=6.2,<7"]
+gtk = ["pywebview[gtk]>=6.2,<7"]
+
+[project.scripts]
+crysviz = "crysviz.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src", "crysviz.web" = "docs" }
+packages = ["crysviz", "crysviz.web"]
+include-package-data = false
+
+[tool.setuptools.package-data]
+"crysviz.web" = ["**/*"]
+
+[tool.setuptools.exclude-package-data]
+"crysviz.web" = [
+  "**/.*", "**/*.pyc", "**/__pycache__/*",
+  "**/target/*", "**/target/**/*", "**/pkg/*", "**/pkg/**/*",
+  "report/*", "report/**/*",
+]

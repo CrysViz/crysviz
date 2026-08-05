@@ -1,4 +1,4 @@
-import { io } from 'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.esm.min.js';
+import { loadSocketIO } from '../../external/socket.io-loader.js';
 import { fileBrowser, structureShip, general } from '../../state/store.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 import {
@@ -63,6 +63,7 @@ let mlipState = null;
 let aseSocket = null;
 let aseConnected = false;
 let aseBoundElements = null;
+let aseConnectPromise = null;
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -507,7 +508,7 @@ function bindASEHandlers(bound) {
   aseSocket.on('stressUpdate', onStressUpdate);
 }
 
-function connectASEBackend(bound) {
+async function connectASEBackend(bound) {
   bindASEHandlers(bound);
 
   if (aseConnected) {
@@ -516,13 +517,23 @@ function connectASEBackend(bound) {
     return;
   }
 
-  if (!aseSocket) {
-    aseSocket = io('http://localhost:5001', {
-      timeout: 1000,
-      reconnection: false,
-    });
-    bindASEHandlers(bound);
-  }
+  if (aseSocket) return;
+  if (aseConnectPromise) return aseConnectPromise;
+  aseConnectPromise = (async () => {
+    try {
+      const { io } = await loadSocketIO();
+      aseSocket = io('http://localhost:5001', {
+        timeout: 1000,
+        reconnection: false,
+      });
+      bindASEHandlers(bound);
+    } catch (error) {
+      setASEStatus(bound, `ASE backend client unavailable: ${error.message || String(error)}`);
+    } finally {
+      aseConnectPromise = null;
+    }
+  })();
+  return aseConnectPromise;
 }
 
 function disconnectASEBackend(bound) {
@@ -1504,7 +1515,7 @@ function bindPotentialToggle(panel, shell, mode) {
   });
 
   shell.aseConnectorsEl.querySelector('[data-role="connect-ase"]')?.addEventListener('click', () => {
-    connectASEBackend({
+    void connectASEBackend({
       statusEl: shell.statusEl,
       backendStateEl: shell.backendStateEl,
       resultEl: shell.resultEl,

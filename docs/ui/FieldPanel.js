@@ -1,4 +1,4 @@
-import { fileBrowser, app, general, groups } from '../state/store.js';
+import { fileBrowser, app, groups } from '../state/store.js';
 import { updateField, setActiveField, requestRender } from '../render/index.js';
 import {
   getIsosurfaceMaterialSettings,

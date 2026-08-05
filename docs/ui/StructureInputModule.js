@@ -28,7 +28,7 @@ export {
 export  function parsePOSCAR(content, fileName) {
    console.log(content)
   const structure = readPOSCAR(content, fileName);
-  initializeWithPOSCAR(structure, fileName);  
+  return initializeWithPOSCAR(structure, fileName);
 }
 
 export function initializeWithPOSCAR(structure, fileName) {
@@ -37,7 +37,7 @@ export function initializeWithPOSCAR(structure, fileName) {
     structures: [structure],
   });
 
-  initializeUIOnLoad(container);
+  return initializeUIOnLoad(container);
 }
 
 
@@ -91,6 +91,7 @@ export function initializeUIOnLoad(structureContainer) {
 
   structureShip.container.push(structureContainer);
   selectLastAddedRow();
+  return structureContainer;
 }
 
 
@@ -115,41 +116,40 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
     setStatus(`Loading ${files.length} structure(s)...`);
     let loadedCount = 0;
 
-    try {
-      for (const file of files) {
-        setStatus(`Loading ${file.name} (${++loadedCount}/${files.length})...`);
-        const reader = new FileReader();
-        await new Promise((resolve, reject) => {
-          reader.onload = (event) => {
-            try {
-              onLoadStructure(event.target.result, file.name);
-              resolve();
-            } catch (err) {
-              reject(err);
-            }
-          };
-          reader.onerror = (error) => reject(error);
-          // ASE .traj files are binary ULM; read them as an ArrayBuffer so the
-          // raw float64 data survives. Everything else is text.
-          if (file.name.toLowerCase().endsWith('.traj')) {
-            reader.readAsArrayBuffer(file);
-          } else {
-            reader.readAsText(file);
-          }
-        });
-      }
-      setStatus(`${files.length} structure(s) loaded!`);
-    } catch (error) {
-      console.error('Error loading structures:', error);
-      setStatus('Error loading structures.');
+    for (const file of files) {
+      setStatus(`Loading ${file.name} (${++loadedCount}/${files.length})...`);
+      const reader = new FileReader();
+      await new Promise((resolve, reject) => {
+        reader.onload = (event) => {
+          Promise.resolve(onLoadStructure(event.target.result, file.name)).then(resolve, reject);
+        };
+        reader.onerror = (error) => reject(error);
+        // ASE .traj files are binary ULM; read them as an ArrayBuffer so the
+        // raw float64 data survives. Everything else is text.
+        if (file.name.toLowerCase().endsWith('.traj')) {
+          reader.readAsArrayBuffer(file);
+        } else {
+          reader.readAsText(file);
+        }
+      });
     }
+    setStatus(`${files.length} structure(s) loaded!`);
+  }
+
+  function reportFileLoadError(error) {
+    console.error('Error loading structures:', error);
+    setStatus('Error loading structures.');
   }
 
   // ---- Upload: open the file dialog directly ----
 
   if (fileInput) {
     fileInput.onchange = async (e) => {
-      await loadFiles(Array.from(e.target.files));
+      try {
+        await loadFiles(Array.from(e.target.files));
+      } catch (error) {
+        reportFileLoadError(error);
+      }
       fileInput.value = '';
     };
   }
@@ -276,6 +276,10 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
     const target = dropTargetFor(e.target);
     setDropHover(null);
     if (!target) return;
-    await loadFiles(Array.from(e.dataTransfer.files));
+    try {
+      await loadFiles(Array.from(e.dataTransfer.files));
+    } catch (error) {
+      reportFileLoadError(error);
+    }
   });
 }

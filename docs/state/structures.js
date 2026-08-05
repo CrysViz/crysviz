@@ -13,6 +13,9 @@
 
 import { fileBrowser, structureShip } from './store.js';
 
+const containerIds = new WeakMap();
+let nextContainerId = 1;
+
 // --- Active (primary) structure ---------------------------------------------
 
 export function getActiveStructure() {
@@ -49,6 +52,29 @@ export function hasOverlayStructures() {
 
 export function getContainers() {
   return structureShip.container;
+}
+
+/** Return the stable, page-local opaque id for a StructureContainer. */
+export function getContainerId(container) {
+  if (!container || (typeof container !== 'object' && typeof container !== 'function')) {
+    return null;
+  }
+  let id = containerIds.get(container);
+  if (!id) {
+    id = `structure-${nextContainerId++}`;
+    containerIds.set(container, id);
+  }
+  return id;
+}
+
+export function getContainerById(id) {
+  if (typeof id !== 'string') return null;
+  return getContainers().find((container) => getContainerId(container) === id) || null;
+}
+
+export function getContainerForStructure(structure) {
+  if (!structure) return null;
+  return getContainers().find((container) => container.structures.includes(structure)) || null;
 }
 
 export function getContainerCount() {

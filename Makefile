@@ -1,4 +1,6 @@
-.PHONY: serve install_devtools lint lint-fix typecheck check-imports check periodic-wasm browsertest browsertest-setup
+.PHONY: serve install_devtools lint lint-fix typecheck check-imports checks ci tests_full periodic-wasm browsertest browsertest-setup
+
+PYTHON ?= python3
 
 # Local dev server for docs/. Two things python3 -m http.server won't do on
 # its own:
@@ -48,13 +50,27 @@ typecheck:
 check-imports:
 	python3 tools/check_imports.py
 
-# The CI gate: lint + typecheck + import checks. Run on pull requests
-# (see .github/workflows/check.yml). Any failure fails the build.
-check: lint typecheck check-imports
+# Fast source validation: lint + typecheck + import checks.
+checks: lint typecheck check-imports
 
-# Browser end-to-end tests: real app in playwright-Firefox under a private
-# Xvfb (works headless-less and root-less, incl. sandboxed agent
-# environments). See tools/browsertest/README.md. Setup downloads ~180 MB
+# Reproduce the complete headless GitHub Actions gate locally: dependency
+# setup, static and Python tests, package-content/install checks, and packaged
+# browser smoke. The workflow itself calls this target.
+ci:
+	tools/ci/run.sh
+
+# Everything in CI, followed by the complete non-benchmark browser suite and
+# the native-window QtWebEngine integration smoke. The final test requires host
+# facilities unavailable in some headless/container environments.
+tests_full: ci
+	$(MAKE) browsertest-setup
+	$(MAKE) browsertest
+	$(PYTHON) -m pip install -e '.[qt]'
+	bash tests/qtwebengine_smoke.sh
+
+# Browser end-to-end tests: real app in headed Playwright Firefox under a
+# private Xvfb, so no physical display is required. Works root-less, including
+# in sandboxed agent environments. See tools/browsertest/README.md. Setup downloads ~180 MB
 # into tools/browsertest/env/ (gitignored). Run one test with:
 #   tools/browsertest/run.sh tests/<name>.test.js
 browsertest-setup:

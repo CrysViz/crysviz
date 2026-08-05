@@ -1,5 +1,4 @@
-# Lint + typecheck + import checks for CrysViz.
-# Runs `make check` (lint, tsc --checkJs, and the static import resolver).
+# Complete CrysViz validation. The same gate is available locally as `make ci`.
 name: Checks
 
 on:
@@ -17,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,13 +28,10 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      - name: Install dev tooling
-        run: npm ci
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: "3.12"
 
-      - name: Run checks (lint + typecheck + imports)
-        run: make check
+      - name: Run complete CI gate
+        run: make ci

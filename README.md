@@ -58,6 +58,80 @@ Source code: https://github.com/ftrybel/CrysViz_hot_develop
 - Add atoms and vaccuum
 - eXYZ reader for trajectories or sets of files.
 
+## Using CrysViz
+
+The easiest way to use CrysViz is to simply visit our hosted CrysViz here:
+
+* <URL to be added>
+
+### Local in-browser installation and use
+
+If you do not want to use CrysViz over the Internet, you can run it via a webserver on your own computer:
+
+* Clone the CrysViz repository from GitHub
+
+* Start the local server:
+
+   ```bash
+   make serve
+   ```
+
+* Visit the URL shown.
+
+### Run CrysViz as a stand-alone application
+
+The stand-alone application uses pywebview, which requires a native GUI backend.
+This sometimes works automatically via CrysViz dependency handling,
+but if not, follow the [installation instructions for pywebview](https://pywebview.flowrl.com/guide/installation.html)).
+
+We suggest that you set up pywebview and CrysViz in a venv.
+For pywebview to access its required system packages, you may need to create it as, e.g.:
+```bash
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+python -m pip install pywebview
+```
+And then test that the pywebview backend works:
+```python
+import webview
+webview.create_window('Hello world', 'https://pywebview.flowrl.com/')
+webview.start()
+```
+Now you can install CrysViz into the venv as:
+```bash
+python -m pip install -e .
+```
+(Good alternatives are via `pipx install` or `uv tool install` if you have these tools available.)
+
+And then run the standalone application with:
+```
+crysviz
+```
+
+### Python API
+
+If you have the standalone application installed, you can also use the Python API for visualization and remote-control from Python. For example:
+
+```python
+from crysviz import Payload, Viewer, show
+
+payload = Payload("silicon.cif", "data_Si\n_cell_length_a 5.43\n")
+with Viewer([payload]) as viewer:
+    structures = viewer.list_structures()
+    viewer.select(structures[0].id, frame=0)
+    viewer.update_lattice([[5.7, 0.0, 0.0], [0.2, 5.4, 0.0], [0.0, 0.0, 5.2]])
+    viewer.update_fractional_positions([[0.0, 0.0, 0.0]], commit=False)
+    viewer.commit_positions()
+    viewer.recenter_camera()
+
+# Equivalent concise construction; returns once the window is ready.
+viewer = show(["structure.cif"])
+```
+
+For more, see [examples](examples/).
+
+## 
+
 Third-Party Libraries and Attribution:
 
 1. Moyo
@@ -124,4 +198,3 @@ Third-Party Libraries and Attribution:
    - GLSL chunk library adapted for the optional "Path tracing" rendering
      pipeline; see docs/external/three-pathtracing/README.md for the adaptations.
    - License and code can be found in docs/external/three-pathtracing/
-

@@ -156,11 +156,13 @@ async function expandPanel(page, id) {
   }));
   // The old "Lattice Parameters" (a/b/c/α/β/γ + Volume) section was removed —
   // that cell is now edited through the Modify Structure panel's lattice
-  // inputs, so the Cell panel keeps only Supercell/Vacuum/Transformation.
+  // inputs. "Order Structure" (build an ordered approximant of a disordered
+  // cell) was added by the fractional-occupation work, so the panel now reads
+  // Supercell/Vacuum/Order Structure/Transformation.
   H.check('Cell: flip-outs replaced by flat headlines',
     cell.flipouts === 0
       && JSON.stringify(cell.headlines)
-        === JSON.stringify(['Supercell', 'Vacuum', 'Lattice Transformation']),
+        === JSON.stringify(['Supercell', 'Vacuum', 'Order Structure', 'Lattice Transformation']),
     JSON.stringify(cell));
   H.check('Cell: remaining sections\' content visible',
     cell.supercellVisible && cell.transformVisible, JSON.stringify(cell));
@@ -295,7 +297,7 @@ async function expandPanel(page, id) {
         zoom: app.camera.zoom,
       },
       rowNames: [...document.querySelectorAll('#structureTablePanel tbody tr')]
-        .map((r) => { try { return JSON.parse(/** @type {HTMLElement} */ (r).dataset.obj).name; } catch { return null; } }),
+        .map((r) => r.querySelector('.name-inner')?.textContent || null),
     };
   });
   H.check('.crysviz load restores the saved visual state',

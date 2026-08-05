@@ -3,7 +3,6 @@ import { colorHexToCss, getAtomColor, setAtomColor } from '../../../utils/ColorM
 import { clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom } from '../../../render/AtomsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../../../render/MeasurementModule.js';
-import { updateSingleBondColor } from '../../../render/BondsFracUpdateModule.js';
 import { updatePolyhedraColors, scheduleBondRebuild, requestRender } from '../../../render/index.js';
 import { refreshGhostAtoms } from '../../../render/GhostAtomsModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';

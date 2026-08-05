@@ -30,7 +30,7 @@ function check(name, ok, detail = '') {
 
 /** Launch the app. Returns { browser, page, errors } — errors collects
  *  pageerror + console.error text for the "no errors" assertion. */
-async function launchApp() {
+async function launchApp({ navigate = true } = {}) {
   fs.mkdirSync(ARTIFACTS, { recursive: true });
   // headless FF has no WebGL. Stale modules are handled at the server
   // (tools/devserver.py sends Cache-Control: no-store), not with browser prefs
@@ -49,12 +49,14 @@ async function launchApp() {
     } catch { /* storage unavailable */ }
   });
   const errors = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`.slice(0, 300)));
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.stack || e.message}`.slice(0, 1200)));
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(`console: ${m.text()}`.slice(0, 300));
   });
-  await page.goto(URL, { waitUntil: 'load', timeout: 90000 }); // 'networkidle' can hang
-  await page.waitForTimeout(5000); // init + default structure load
+  if (navigate) {
+    await page.goto(URL, { waitUntil: 'load', timeout: 90000 }); // 'networkidle' can hang
+    await page.waitForTimeout(5000); // init + default structure load
+  }
   return { browser, page, errors };
 }
 

@@ -7,6 +7,12 @@
 // This is a *curated* surface: only the symbols actually consumed by other
 // domains are re-exported. Add to it when a new cross-domain function is needed.
 
+import { captureSceneToPng, isPngCaptureInProgress } from './ImageExportModule.js';
+import {
+  registerPipeline, listPipelines, getActivePipeline, setActivePipeline,
+  isTracerPipelineActive,
+} from './pipeline/index.js';
+
 export { pauseRendering, resumeRendering, animation_update, requestRender, renderFrameNow } from './AnimateModule.js';
 
 export {
@@ -60,10 +66,10 @@ export {
 
 export { removeSpins, updateSpins, deleteSpins, computeSpinColor } from './SpinModule.js';
 
-export { setupAxisControls, setupAxisLongPress } from './cameraAngleControl.js';
+export { setupAxisControls, setupAxisLongPress, applyRotationFromUI } from './cameraAngleControl.js';
 
 export { setCelHullWidth, setCelHullPolyWidth } from './MaterialStyles.js';
 
-export { captureSceneToPng } from './ImageExportModule.js';
+export { captureSceneToPng, isPngCaptureInProgress };
 
-export { registerPipeline, listPipelines, getActivePipeline, setActivePipeline, isTracerPipelineActive } from './pipeline/index.js';
+export { registerPipeline, listPipelines, getActivePipeline, setActivePipeline, isTracerPipelineActive };
