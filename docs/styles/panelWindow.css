@@ -383,10 +383,23 @@
   box-shadow: 0 4px 14px var(--overlay);
 }
 
-/* Adopted wrappers keep their ids/classes for the JS wiring, but the panel
-   body already provides the grey box — strip theirs to avoid nesting. */
-.cv-panel-body > .backend-control-group {
+/* .backend-control-group is authored to fit #ui, the ~380px left sidebar
+   (backendPanel.css sizes it to 360px so it clears the sidebar's own
+   padding). Adopted into a panel body it can be far wider than that — right
+   dock, a floating window, any future adopted panel — so the cap must drop
+   for every such element, not just the one the JS appends directly: the
+   Atomistic window nests a SECOND .backend-control-group (#BackendCalcPanel,
+   the Relax/MD action card) inside the first, and a direct-child selector
+   alone leaves that inner one stranded at 360px in an otherwise-empty pane.
+   Descendant selector so any depth of nesting is covered uniformly. */
+.cv-panel-body .backend-control-group {
   max-width: none;
+}
+
+/* The outer wrapper only: the panel body already provides the grey box, so
+   strip its own to avoid nesting one box inside another. A nested group
+   (e.g. #BackendCalcPanel) is real content chrome and keeps its box. */
+.cv-panel-body > .backend-control-group {
   margin: 0;
   padding: 0;
   background: none;
