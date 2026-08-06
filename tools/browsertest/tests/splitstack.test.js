@@ -116,18 +116,23 @@ function snap(page) {
   await page.evaluate(() => document.getElementById('splitPaneCollapseBtn').click());
   await page.waitForTimeout(250);
   s = await snap(page);
-  H.check('» collapse shows the edge stack with both tabs',
-    s.collapsed && s.edgeShown && s.tabLabels.length === 2,
+  // One tab, not one per window: listing every window turned the collapsed
+  // edge into a full-height wall of vertical labels, which is most of what
+  // collapsing is meant to get rid of. It names the front window, since that
+  // is where reopening lands.
+  H.check('» collapse shows a single edge pull-tab, naming the front window',
+    s.collapsed && s.edgeShown && s.tabLabels.length === 1
+      && /EOS Fit/.test(s.tabLabels[0]),
     `edge ${s.edgeShown} ${JSON.stringify(s.tabLabels)}`);
 
-  // ---- reopen via the Landscape pull-tab ----------------------------------
+  // ---- reopen via that pull-tab -------------------------------------------
   await page.evaluate(() => {
-    [...document.querySelectorAll('#splitPaneTabs .split-pane-tab')]
-      .find((t) => /Landscape Plots/.test(t.textContent))?.click();
+    /** @type {HTMLElement | null} */
+    (document.querySelector('#splitPaneTabs .split-pane-tab'))?.click();
   });
   await page.waitForTimeout(250);
   s = await snap(page);
-  H.check('pull-tab reopens the dock on that window', !s.collapsed && s.frontId === 'landscapePlots',
+  H.check('pull-tab reopens the dock on the front window', !s.collapsed && s.frontId === 'eosPlots',
     `${s.collapsed} / ${s.frontId}`);
 
   // ---- ⇩ toggles the whole dock to the BOTTOM edge (and back) -------------
