@@ -84,8 +84,8 @@
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
-  gap: 10px;
-  padding: 10px;
+  gap: var(--sp-3-5);
+  padding: var(--sp-3-5);
   overflow-y: auto;
   border: none;
   border-radius: 0;
@@ -344,7 +344,7 @@
 /* The body is the window surface: it carries the box the old .control-group /
    floating popups had, minus the top edge where the title bar sits. */
 .cv-panel-body {
-  padding: 10px var(--sp-3);
+  padding: var(--sp-3-5) var(--sp-3);
   border: 1px solid var(--line-1);
   border-top: none;
   border-radius: 0 0 var(--radius-md) var(--radius-md);
@@ -474,7 +474,7 @@
 
 .cv-panel.cv-compact:not(.cv-collapsed) > .cv-panel-body {
   align-self: center;
-  margin-right: 10px;
+  margin-right: var(--sp-3-5);
   border-radius: var(--radius-md);
   border-top: 1px solid var(--line-1);
 }

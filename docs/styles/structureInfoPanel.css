@@ -51,7 +51,7 @@
   height: 32px;
   font-size: var(--fs-sm);
   min-width: 50px;
-  padding: 0 10px;
+  padding: 0 var(--sp-3-5);
   margin-right: var(--sp-1);
 }
 .si-action-btn-narrow {
@@ -199,7 +199,7 @@
 }
 .si-wyckoff-badge {
   margin: 0 0 var(--sp-3-5) 0;
-  padding: var(--sp-3) 10px;
+  padding: var(--sp-3) var(--sp-3-5);
   border-radius: var(--radius);
   background: linear-gradient(135deg, rgba(32, 77, 160, 0.35), rgb(var(--blue-accent-fill-rgb) / 0.18)); /* first stop is a one-off darker navy, no matching token; second stop is the blue-accent fill tier */
   border: 1px solid rgb(var(--blue-accent-rgb) / 0.45);
@@ -213,7 +213,7 @@
 .si-link-copies-row { margin: var(--sp-2) 0 var(--sp-3) 0; }
 .si-apply-styles-btn {
   height: 28px;
-  padding: 0 10px;
+  padding: 0 var(--sp-3-5);
   font-size: var(--fs-sm);
   margin: 0 0 var(--sp-3) 0;
 }
@@ -389,7 +389,7 @@
 .individual-atom-row {
   display: grid;
   grid-template-columns: auto auto auto;
-  column-gap: 10px;
+  column-gap: var(--sp-3-5);
   padding: var(--sp-1) 0;
 }
 /* Wyckoff orbit rows carry a long label (site symmetry, orbit size, DOF)
@@ -398,7 +398,7 @@
 .individual-atom-row.stacked-header {
   display: flex;
   flex-wrap: wrap;
-  column-gap: 10px;
+  column-gap: var(--sp-3-5);
   row-gap: var(--sp-2);
   padding: var(--sp-2) 0;
 }
@@ -468,7 +468,7 @@
 .ibr-buttons,
 .ipr-buttons {
   display: flex;
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 .individual-atom-row .iar-buttons {
   gap: var(--sp-2);

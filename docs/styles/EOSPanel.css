@@ -104,7 +104,7 @@
   align-items: center;
   gap: var(--sp-3);
   margin: 0;
-  padding: 10px var(--sp-5);
+  padding: var(--sp-3-5) var(--sp-5);
   cursor: pointer;
   list-style: none;
   font-size: var(--fs-md);
@@ -212,7 +212,7 @@
   font-size: var(--fs-sm);
   color: var(--muted-fg);
   line-height: 1.6;
-  margin-bottom: 10px;
+  margin-bottom: var(--sp-3-5);
 }
 
 .eos-results h4 {

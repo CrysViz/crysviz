@@ -1,6 +1,6 @@
 .toggle_group {
   display: flex;
-  margin-bottom: 10px;
+  margin-bottom: var(--sp-3-5);
   flex-direction: column;
 }
 
@@ -12,8 +12,8 @@
 
 /* toggle + text */
 .toggle_container {
-   margin: 15px 0px 0px 0px;
-  gap: 10px;
+   margin: var(--sp-5) 0px 0px 0px;
+  gap: var(--sp-3-5);
   cursor: pointer;
   user-select: none;
 }
@@ -146,25 +146,25 @@
   display: flex;
   flex-direction: column;
   align-items: center; /* centers the title */
-  gap: 10px;
+  gap: var(--sp-3-5);
   background: var(--chrome-1);
   border-radius: var(--radius-md);
-  margin: 15px 0px 5px 0px;
+  margin: var(--sp-5) 0px 5px 0px;
 }
 
 .camera_title {
   font-weight: bold;
   font-size: 1em;
   text-align: center;
-  margin: 10px 0px -10px;
-    padding: 10px;
+  margin: var(--sp-3-5) 0px calc(-1 * var(--sp-3-5));
+    padding: var(--sp-3-5);
   border-radius: var(--radius-md);
 }
 
 .camera_toggle {
   display: flex;
   align-items: center;
-  margin: 10px 0;
+  margin: var(--sp-3-5) 0;
 }
 
 .camera_label,
@@ -175,7 +175,7 @@
   text-align: center;
   padding: 5px;
   border-radius: var(--radius-4); /* Rounded corners */
-  margin: 0 10px;
+  margin: 0 var(--sp-3-5);
   font-size: var(--fs-lg); /* Adjust font size as needed */
   background: var(--line-1);
 }
@@ -218,18 +218,18 @@ input:checked + .toggle_slider:before {
   display: flex;
   flex-direction: column;
   align-items: center; /* centers the title */
-  gap: 10px;
+  gap: var(--sp-3-5);
     background: var(--chrome-1);
   border-radius: var(--radius-md);
-margin: 15px 0px 5px 0px;
+margin: var(--sp-5) 0px 5px 0px;
 }
 
 .colors_title {
   font-weight: bold;
   font-size: 1em;
   text-align: center;
-  margin: 10px 0px -10px;
-    padding: 10px;
+  margin: var(--sp-3-5) 0px calc(-1 * var(--sp-3-5));
+    padding: var(--sp-3-5);
   border-radius: var(--radius-md);
 }
 
@@ -452,7 +452,7 @@ margin: 15px 0px 5px 0px;
 }
 
 .cv-colorbar-menu-item {
-  padding: var(--sp-2) 10px;
+  padding: var(--sp-2) var(--sp-3-5);
   font-size: var(--fs-md);
   text-align: left;
   border-radius: var(--radius-5);

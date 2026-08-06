@@ -36,8 +36,18 @@ async function armUiSettleWait(page) {
   });
 }
 
+// transitionend alone is not enough: an interrupted slide fires one for the
+// previous transition, which resolves the promise while the panel is still
+// moving (measured at left: -14.7 once). Follow it with a rAF settle poll —
+// the event gets us there fast, the poll guarantees we actually arrived.
 async function waitForUiSettled(page) {
   await page.evaluate(() => window.__cvUiSettled);
+  await page.waitForFunction(() => {
+    const now = document.getElementById('ui').getBoundingClientRect().left;
+    const settled = window.__cvLastLeft === now;
+    window.__cvLastLeft = now;
+    return settled;
+  }, { timeout: 5000, polling: 'raf' });
 }
 
 async function setViewport(page, w, h) {

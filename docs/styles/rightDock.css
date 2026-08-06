@@ -273,7 +273,7 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 
 /* Floating: the window is shrink-to-fit, which would let a Plotly chart

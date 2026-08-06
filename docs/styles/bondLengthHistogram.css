@@ -6,7 +6,7 @@
 .blh-controls-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 14px;
+  gap: var(--sp-3-5) 14px;
   align-items: center;
   margin-bottom: var(--sp-3);
   font-size: var(--fs-base);

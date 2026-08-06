@@ -71,14 +71,14 @@ border: 2px solid var(--line-1);
 }
 
 .backend-control-group h1 {
-  margin: 0 0 15px 0;
+  margin: 0 0 var(--sp-5) 0;
   color:  var(--warn);
   font-size: var(--fs-xl);
   font-weight: var(--fw-medium);
 }
 
 .backend-control-group h3 {
-  margin: 0 0 15px 0;
+  margin: 0 0 var(--sp-5) 0;
   color: var(--bg-color);
   font-size: var(--fs-xl);
   font-weight: var(--fw-medium);
@@ -121,8 +121,8 @@ font-size: var(--fs-base);
   border: 1px solid var(--danger);
   color: var(--fg-1);
   border-radius: var(--radius-sm);
-  padding: var(--sp-3) 10px;
-  margin-top: 10px;
+  padding: var(--sp-3) var(--sp-3-5);
+  margin-top: var(--sp-3-5);
   font-size: var(--fs-base);
   line-height: var(--lh-normal);
 }
@@ -201,7 +201,7 @@ font-size: var(--fs-base);
   padding: 5px;
   border-radius: var(--radius-md);
   gap: var(--sp-1);
-  margin-bottom: 10px;
+  margin-bottom: var(--sp-3-5);
   width: 100%;
   box-sizing: border-box;
   overflow: hidden;
@@ -309,7 +309,7 @@ font-size: var(--fs-base);
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: var(--sp-2) 10px;
+  padding: var(--sp-2) var(--sp-3-5);
   border-radius: var(--radius-12);
   background: var(--wash-0);
   border: 1px solid var(--line-1);
@@ -351,7 +351,7 @@ font-size: var(--fs-base);
 }
 
 .atomistic-source-state:not(:empty) {
-  padding: 9px 10px;
+  padding: 9px var(--sp-3-5);
   border-radius: var(--radius-md);
   background: var(--wash-0);
   border: 1px solid var(--wash-1-5);
@@ -377,7 +377,7 @@ font-size: var(--fs-base);
 .atomistic-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-3-5);
   padding: var(--sp-4) var(--sp-4);
   border-radius: var(--radius-12);
   background: var(--wash-0);
@@ -387,14 +387,14 @@ font-size: var(--fs-base);
 
 .atomistic-card-compact {
   gap: var(--sp-3);
-  padding: 10px var(--sp-4);
+  padding: var(--sp-3-5) var(--sp-4);
 }
 
 .atomistic-card-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 
 .atomistic-card-title,
@@ -461,11 +461,11 @@ font-size: var(--fs-base);
 
 .atomistic-grid {
   display: grid;
-  gap: 10px var(--sp-4);
+  gap: var(--sp-3-5) var(--sp-4);
 }
 
 .atomistic-grid-compact {
-  gap: 7px 10px;
+  gap: 7px var(--sp-3-5);
 }
 
 .atomistic-grid-2 {
@@ -479,7 +479,7 @@ font-size: var(--fs-base);
 .atomistic-grid label {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-3-5);
   color: var(--fg-85);
   font-size: var(--fs-md);
 }
@@ -503,7 +503,7 @@ font-size: var(--fs-base);
 }
 
 .atomistic-input-sm {
-  padding: var(--sp-2) 10px !important;
+  padding: var(--sp-2) var(--sp-3-5) !important;
   font-size: var(--fs-lg) !important;
   min-height: var(--control-h) !important;
   border-radius: var(--radius) !important;
@@ -542,7 +542,7 @@ font-size: var(--fs-base);
 .atomistic-rattle-action {
   display: flex;
   align-items: flex-end;
-  margin: 15px 0 var(--sp-3);
+  margin: var(--sp-5) 0 var(--sp-3);
 }
 
 /* Match .atomistic-input-sm exactly: .calcButton's own 8px padding + 2px
@@ -552,7 +552,7 @@ font-size: var(--fs-base);
   width: 100%;
   height: var(--control-h);
   min-height: var(--control-h);
-  padding: var(--sp-2) 10px;
+  padding: var(--sp-2) var(--sp-3-5);
 }
 
 .atomistic-anneal-section {

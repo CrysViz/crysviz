@@ -6,7 +6,7 @@
   padding: var(--sp-1);
   border-radius: var(--radius-md);
   gap: var(--sp-1);
-  margin-bottom: 10px;
+  margin-bottom: var(--sp-3-5);
   justify-content: center;
   width: 100%;
   box-sizing: border-box;
@@ -22,7 +22,7 @@ font-size: var(--fs-xl);
   border: none;
   background: none;
   color: var(--fg-75);
-  padding: var(--sp-2) 10px;
+  padding: var(--sp-2) var(--sp-3-5);
   border-radius: var(--radius);
   font-size: var(--fs-base);
   cursor: pointer;
@@ -115,7 +115,7 @@ font-size: var(--fs-xl);
 }
 
 .theme-menu-item {
-  padding: var(--sp-2) 10px;
+  padding: var(--sp-2) var(--sp-3-5);
   border-radius: var(--radius-sm);
   color: var(--panel-fg, var(--fg-1));
   cursor: pointer;
@@ -149,7 +149,7 @@ font-size: var(--fs-xl);
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 
 .planes-radio-label {
@@ -185,7 +185,7 @@ font-size: var(--fs-xl);
 .planes-uvw-cluster {
   display: flex;
   flex-direction: row;
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 
 .planes-uvw-cluster .planes-labeled-input {
@@ -204,7 +204,7 @@ font-size: var(--fs-xl);
 /* Miller indices: single horizontal row of compact fields */
 #hklInputs {
   flex-direction: row;
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 
 #hklInputs .planes-labeled-input {
@@ -220,7 +220,7 @@ font-size: var(--fs-xl);
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-3-5);
   min-width: 0;
 }
 
@@ -382,8 +382,8 @@ font-size: var(--fs-xl);
 .planes-viz-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: var(--sp-3-5);
+  margin-bottom: var(--sp-3-5);
 }
 
 .planes-viz-label {
@@ -418,7 +418,7 @@ font-size: var(--fs-xl);
 .planes-action-btn {
   flex: 1;
   min-width: 120px;
-  padding: 7px 10px;
+  padding: 7px var(--sp-3-5);
   background: var(--accent-color);
   color: var(--fg-1);
   border: none;
@@ -680,7 +680,7 @@ font-size: var(--fs-xl);
 .planes-center-row {
   display: flex;
   justify-content: center;
-  margin-bottom: 10px;
+  margin-bottom: var(--sp-3-5);
 }
 
 .planes-calc-btn {
@@ -715,14 +715,14 @@ font-size: var(--fs-xl);
 }
 
 .planes-params-section {
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: var(--sp-3-5);
+  padding-top: var(--sp-3-5);
   border-top: 1px solid var(--line-1);
 }
 
 .planes-field-section {
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: var(--sp-3-5);
+  padding-top: var(--sp-3-5);
   border-top: 1px solid var(--line-1);
 }
 
@@ -731,10 +731,10 @@ font-size: var(--fs-xl);
   background: var(--wash-0);
   border: 1px solid var(--wash-2);
   border-radius: var(--radius-sm);
-  padding: 10px;
+  padding: var(--sp-3-5);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-3-5);
   transition: opacity 0.15s, background 0.15s, border-color 0.15s;
 }
 
@@ -747,7 +747,7 @@ font-size: var(--fs-xl);
 .planes-field-colormap-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 
 .planes-field-control {
@@ -777,7 +777,7 @@ font-size: var(--fs-xl);
 .planes-field-resolution-control {
   flex-direction: row;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 
 .planes-field-resolution-control label {
@@ -799,7 +799,7 @@ font-size: var(--fs-xl);
 .planes-cut-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-3-5);
   margin-top: var(--sp-3);
 }
 

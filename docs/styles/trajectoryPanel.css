@@ -230,7 +230,7 @@
       color: var(--ink-4);
       border: 1px solid var(--chrome-3);
       border-radius: var(--radius-sm);
-      padding: var(--sp-1) 10px;
+      padding: var(--sp-1) var(--sp-3-5);
       font-size: var(--fs-sm);
       cursor: pointer;
       transition: background 0.12s ease, border-color 0.12s ease;

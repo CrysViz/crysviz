@@ -47,7 +47,7 @@ body {
 .rotation-axis {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-3-5);
   align-items: center;
 }
 
@@ -59,12 +59,12 @@ body {
 
 .angle-buttons {
   display: flex;
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 
 .angle-btn {
   font-size: var(--fs-xs);
-  padding: 5px 10px;
+  padding: 5px var(--sp-3-5);
   cursor: pointer;
   background:var(--popup-bg);
   color:var(--muted-fg);
@@ -160,7 +160,7 @@ body.panel-hidden #axesLegend {
       border-radius: var(--radius-md);
       box-shadow: 0px 0px 4px 2px  rgb(var(--shadow-rgb) / 0.2);
       cursor: move;
-      padding: 10px;
+      padding: var(--sp-3-5);
       z-index: var(--z-comp-panel);
 
   #LatticeComparisonPopUp.show {
@@ -210,14 +210,14 @@ body.panel-hidden #axesLegend {
 }
 
 .control-group h1 {
-  margin: 0 0 15px 0;
+  margin: 0 0 var(--sp-5) 0;
   color: 	var(--warn);
   font-size: var(--fs-xl);
   font-weight: var(--fw-medium);
 }
 
 .control-group h3 {
-  margin: 0 0 15px 0;
+  margin: 0 0 var(--sp-5) 0;
   font-size: var(--fs-xl);
   font-weight: var(--fw-medium);
 }
@@ -229,7 +229,7 @@ body.panel-hidden #axesLegend {
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   gap: var(--sp-3);
-  margin-bottom: 15px;
+  margin-bottom: var(--sp-5);
   background: var(--wash-1);
   padding: var(--sp-2);
   border-radius: var(--radius-md);
@@ -240,7 +240,7 @@ body.panel-hidden #axesLegend {
   background: var(--bg-color);
   color: var(--fg-1);
   border: 1px solid var(--line-1);
-  padding: 10px var(--sp-3);
+  padding: var(--sp-3-5) var(--sp-3);
   border-radius: var(--radius);
   font-size: var(--fs-md);
   font-weight: var(--fw-medium);
@@ -331,7 +331,7 @@ body.panel-hidden #axesLegend {
 
 .paste-modal-actions {
   display: flex;
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 
 .paste-modal-actions #cancelTextButton {
@@ -400,7 +400,7 @@ body.panel-hidden #axesLegend {
 .png-row input[type="number"],
 .png-row select {
   width: 100%;
-  padding: var(--sp-3) 10px;
+  padding: var(--sp-3) var(--sp-3-5);
   border-radius: var(--radius);
   border: 1px solid var(--line-1);
   background: var(--overlay-20);
@@ -477,7 +477,7 @@ body.panel-hidden #axesLegend {
 }
 
 .rt-warning-modal .rt-warning-body p {
-  margin: 0 0 10px 0;
+  margin: 0 0 var(--sp-3-5) 0;
   font-size: var(--fs-base);
   line-height: var(--lh-normal);
 }
@@ -708,7 +708,7 @@ body.panel-hidden #axesLegend {
  * defined in ui/KeyboardShortcuts.js's COMMANDS array, not alphabetized. */
 .shortcuts-help-group-row th {
   text-align: left;
-  padding: 10px 0 var(--sp-1) 0;
+  padding: var(--sp-3-5) 0 var(--sp-1) 0;
   font-size: var(--fs-xs);
   font-weight: var(--fw-bold);
   text-transform: uppercase;
@@ -737,7 +737,7 @@ body.panel-hidden #axesLegend {
 .shortcuts-help-row .shortcuts-help-key-cell {
   width: 1%; /* shrink to the key button's own content, not table-layout's equal split */
   white-space: nowrap;
-  padding-right: 10px;
+  padding-right: var(--sp-3-5);
 }
 
 .shortcuts-help-desc-cell {
@@ -845,7 +845,7 @@ body.panel-hidden #axesLegend {
   flex: 1;
   min-width: 100px;
   margin-top: var(--sp-1);
-  padding: 10px var(--sp-5);
+  padding: var(--sp-3-5) var(--sp-5);
   background: var(--wash-2);
   color: var(--fg-1);
   border: none;
@@ -865,7 +865,7 @@ body.panel-hidden #axesLegend {
   flex: 1;
   min-width: 100px;
   margin-top: var(--sp-1);
-  padding: 10px var(--sp-5);
+  padding: var(--sp-3-5) var(--sp-5);
   background: var(--wash-1);
   color: var(--fg-85);
   border: 1px solid var(--wash-4);
@@ -913,7 +913,7 @@ body.panel-hidden #axesLegend {
   flex: 1;
   min-width: 100px;
   margin-top: var(--sp-1);
-  padding: 10px var(--sp-5);
+  padding: var(--sp-3-5) var(--sp-5);
   background: rgb(var(--shortcuts-danger-rgb) / 0.25);
   border: 1px solid rgb(var(--shortcuts-danger-rgb) / 0.7);
   color: var(--fg-1);
@@ -930,7 +930,7 @@ body.panel-hidden #axesLegend {
   flex: 1;
   min-width: 100px;
   margin-top: var(--sp-1);
-  padding: 10px var(--sp-5);
+  padding: var(--sp-3-5) var(--sp-5);
   background: var(--wash-2);
   color: var(--fg-1);
   border: none;
@@ -977,7 +977,7 @@ body.panel-hidden #axesLegend {
   flex: 1;
   min-width: 100px;
   margin-top: var(--sp-1);
-  padding: 10px var(--sp-5);
+  padding: var(--sp-3-5) var(--sp-5);
   background: var(--bg-color);
   color: var(--fg-1);
   border: none;
@@ -995,7 +995,7 @@ body.panel-hidden #axesLegend {
   flex: 1;
   min-width: 100px;
   margin-top: var(--sp-1);
-  padding: 10px var(--sp-5);
+  padding: var(--sp-3-5) var(--sp-5);
   background: var(--wash-2);
   color: var(--fg-1);
   border: none;
@@ -1112,8 +1112,8 @@ body.panel-hidden #axesLegend {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: var(--sp-3) 10px;
+  gap: var(--sp-3-5);
+  padding: var(--sp-3) var(--sp-3-5);
   border-radius: var(--radius-md);
   background: var(--menu-bg);
   border: 1px solid var(--wash-4);
@@ -1194,14 +1194,14 @@ body.panel-hidden #axesLegend {
 }
 
 .comparison-group h1 {
-  margin: 0 0 15px 0;
+  margin: 0 0 var(--sp-5) 0;
   color:  var(--warn);
   font-size: var(--fs-xl);
   font-weight: var(--fw-medium);
 }
 
 .comparison-group h3 {
-  margin: 0 0 15px 0;
+  margin: 0 0 var(--sp-5) 0;
   color: var(--ok-bright);
   font-size: var(--fs-xl);
   font-weight: var(--fw-medium);
@@ -1211,7 +1211,7 @@ body.panel-hidden #axesLegend {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: var(--sp-3);
-  margin-bottom: 15px;
+  margin-bottom: var(--sp-5);
   background: var(--wash-1);
   padding: var(--sp-2);
   border-radius: var(--radius-md);
@@ -1221,7 +1221,7 @@ body.panel-hidden #axesLegend {
   background: transparent;
   color: var(--ink-4);
   border: none;
-  padding: 10px var(--sp-4);
+  padding: var(--sp-3-5) var(--sp-4);
   border-radius: var(--radius);
   font-size: var(--fs-md);
   font-weight: var(--fw-medium);
@@ -1256,7 +1256,7 @@ body.panel-hidden #axesLegend {
 
 #secondFileLabel {
   display: block;
-  padding: 15px 10px;
+  padding: var(--sp-5) var(--sp-3-5);
   background: var(--bg-color);
   color: var(--fg-1);
   text-align: center;
@@ -1318,7 +1318,7 @@ body.panel-hidden #axesLegend {
 
 label {
   display: block;
-  margin: 15px 0 var(--sp-3) 0;
+  margin: var(--sp-5) 0 var(--sp-3) 0;
   color: var(--ink-3);
   /* Multiplied by the Overall font scale (Settings). This is the single source
      for label sizing, so it carries section headlines (.panel-headline) and
@@ -1357,7 +1357,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 input[type="checkbox"] {
-  margin-right: 10px;
+  margin-right: var(--sp-3-5);
   transform: scale(1.2);
   accent-color: var(--highlight-color);
 }
@@ -1519,7 +1519,7 @@ input[type="checkbox"] {
   .panel-section {
     border: 1px solid var(--line-2);
     border-radius: var(--radius-12);
-    padding: 10px 14px 14px;
+    padding: var(--sp-3-5) 14px 14px;
     margin: 0 0 14px 0;
   }
 
@@ -1603,7 +1603,7 @@ input[type="checkbox"] {
 }
 
 .bottonWrapper {
-padding: 0px 0px 10px 0px;
+padding: 0px 0px var(--sp-3-5) 0px;
 display: flex;
 justify-content: center;
 }
@@ -1651,7 +1651,7 @@ justify-content: center;
     padding: 0.6em 1em;
     cursor: pointer;
     user-select: none;
-    margin: 15px 0;
+    margin: var(--sp-5) 0;
     transition: background-color 0.2s, box-shadow 0.2s;
   }
 
@@ -1737,7 +1737,7 @@ gap: var(--sp-3);
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: var(--sp-3);
-  margin-bottom: 15px;
+  margin-bottom: var(--sp-5);
   background: var(--wash-1);
   padding: var(--sp-2);
   border-radius: var(--radius-md);
@@ -1747,7 +1747,7 @@ gap: var(--sp-3);
   background: transparent;
   color: var(--ink-4);
   border: none;
-  padding: 10px var(--sp-4);
+  padding: var(--sp-3-5) var(--sp-4);
   border-radius: var(--radius);
   font-size: var(--fs-md);
   font-weight: var(--fw-medium);
@@ -1775,7 +1775,7 @@ gap: var(--sp-3);
 
 
 .bottonWrapper {
-padding: 0px 0px 10px 0px;
+padding: 0px 0px var(--sp-3-5) 0px;
 display: flex;
 justify-content: center;
 }
@@ -1812,7 +1812,7 @@ justify-content: center;
     padding: 0.6em 1em;
     cursor: pointer;
     user-select: none;
-    margin: 15px 0;
+    margin: var(--sp-5) 0;
     transition: background-color 0.2s, box-shadow 0.2s;
   }
 
@@ -1838,7 +1838,7 @@ justify-content: center;
   right: 20px;
   background: var(--overlay-80);
   color: var(--fg-1);
-  padding: 10px 15px;
+  padding: var(--sp-3-5) var(--sp-5);
   border-radius: 20px;
   font-size: var(--fs-base);
   z-index: var(--z-overlay-widget);
@@ -1871,7 +1871,7 @@ justify-content: center;
   color: var(--fg-75);
 }
 
-.section-heading { margin-top:10px; margin-bottom:var(--sp-2); font-size: var(--fs-lg); font-weight:var(--fw-bold); padding-left:var(--sp-3); }
+.section-heading { margin-top:var(--sp-3-5); margin-bottom:var(--sp-2); font-size: var(--fs-lg); font-weight:var(--fw-bold); padding-left:var(--sp-3); }
 .toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius: var(--radius-sm); background:var(--overlay); color:var(--accent-color); font-weight:1000; transition:transform .18s ease, background .18s ease, color .18s ease; }
 
 .toggle-icon.open { transform: background:var(--accent-color); color:var(--accent-color); }
@@ -1891,7 +1891,7 @@ justify-content: center;
   border-radius: var(--radius-3);
 }
 
-.collapsible-content.open { justify-content: center;  padding-top:var(--sp-3); max-height:650px; margin: 10px 0 0px 0;}
+.collapsible-content.open { justify-content: center;  padding-top:var(--sp-3); max-height:650px; margin: var(--sp-3-5) 0 0px 0;}
 #composition { color:var(--info-tint); line-height: var(--lh-normal); }
 #composition [hidden] { display: none !important; }
 #measure { margin-top:var(--sp-3); }
@@ -1913,7 +1913,7 @@ justify-content: center;
   height: 150px;
   background: red;
   cursor: crosshair;
-  margin-bottom: 10px;
+  margin-bottom: var(--sp-3-5);
 }
 
 .custom-color-picker .sb-picker::after {
@@ -1929,7 +1929,7 @@ justify-content: center;
 
 .custom-color-picker .hue-slider {
   width: 100%;
-  margin-bottom: 10px;
+  margin-bottom: var(--sp-3-5);
 }
 
 .custom-color-picker .color-preview {
@@ -1943,7 +1943,7 @@ justify-content: center;
 
 
 /* Small actions */
-.btn-mini { background:transparent; border:1px solid var(--wash-2); color:var(--info-tint); padding:var(--sp-2) 10px; border-radius: var(--radius-sm); cursor:pointer; }
+.btn-mini { background:transparent; border:1px solid var(--wash-2); color:var(--info-tint); padding:var(--sp-2) var(--sp-3-5); border-radius: var(--radius-sm); cursor:pointer; }
 .btn-mini:hover { transform: translateY(-1px);background:var(--wash-0); border: 1px solid var(--accent-color);}
 
 .btn-mini.highlight { background:var(--bg-color); border-color:rgba(0,0,0,0.15); color:var(--fg-1); }
@@ -2055,7 +2055,7 @@ z-index:var(--z-overlay-widget); pointer-events:none;
   justify-content: space-between;
   z-index: var(--z-gizmo-controls);
   transform: translate(-50%, -100%);
-  padding: 5px 10px;
+  padding: 5px var(--sp-3-5);
   border-radius: var(--radius-12);
   /* --menu-bg, not --bg-color — see .cv-colorbar-menu's comment
      (toggle_styles.css): the same near-opaque token every other menu/modal
@@ -2199,7 +2199,7 @@ body > #structureInfoContent {
 
 /* Camera buttons for desktop - compact style like original vbtn */
 #cameraTools .camera-tool-btn {
-  padding: var(--sp-2) 10px;
+  padding: var(--sp-2) var(--sp-3-5);
   font-size: var(--fs-lg);
   color: var(--fg-1);
   background: var(--bg-color);
@@ -2213,7 +2213,7 @@ body > #structureInfoContent {
 }
 
 #cameraTools .camera-tool-reset-btn {
-  padding: var(--sp-2) 10px;
+  padding: var(--sp-2) var(--sp-3-5);
   font-size: var(--fs-lg);
   color: var(--fg-1);
   background: var(--danger);
@@ -2413,7 +2413,7 @@ body > #structureInfoContent {
 }
 
 .restore-popover-btn {
-  padding: 7px 10px;
+  padding: 7px var(--sp-3-5);
   border-radius: var(--radius-sm);
   border: none;
   font-size: var(--fs-base);

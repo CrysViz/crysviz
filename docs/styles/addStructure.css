@@ -171,7 +171,7 @@
 .addstructure-full-btn { width: 90%; }
 
 .addstructure-button-row {
-  margin-top: 15px;
+  margin-top: var(--sp-5);
   text-align: right;
 }
 
@@ -223,7 +223,7 @@
 .atom-table-add-hint.visible { display: block; }
 
 .atom-table-bulk-row {
-  margin-top: 15px;
+  margin-top: var(--sp-5);
   display: flex;
   align-items: center;
 }

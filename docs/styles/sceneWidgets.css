@@ -419,7 +419,7 @@
   overflow-y: auto;
   background: var(--input-bg, #0d0d0d);
   border-radius: var(--radius-sm);
-  padding: 10px 14px; /* no token — 14px sits between --sp-4 (12) and --sp-5 (16) */
+  padding: var(--sp-3-5) 14px; /* 14px — no token, sits between --sp-4 (12) and --sp-5 (16) */
 }
 
 .cv-cus-json-empty {

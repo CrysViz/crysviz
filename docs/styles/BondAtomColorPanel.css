@@ -22,7 +22,7 @@
 /* Menu Blocks */
 .menu_block {
   width: 100%;
-  margin-bottom: 15px;
+  margin-bottom: var(--sp-5);
   text-align: center;
 }
 
