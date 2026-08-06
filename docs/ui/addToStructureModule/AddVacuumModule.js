@@ -230,7 +230,7 @@ export function addAtomVacuumPanel(buttonId = 'addButton') {
       closable: true,
       persist: false,
       buildContent(body) {
-        body.className = 'addstructure-panel-body--sm';
+        body.classList.add('addstructure-panel-body--sm');
         const tabHost = document.createElement('div');
         body.appendChild(tabHost);
         createTabSwitcher(tabHost, [

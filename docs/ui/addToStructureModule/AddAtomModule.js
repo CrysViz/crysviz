@@ -214,7 +214,7 @@ export function addAtomPanel(buttonId = 'addButton') {
       closable: true,
       persist: false,
       buildContent(body) {
-        body.className = 'addstructure-panel-body--sm';
+        body.classList.add('addstructure-panel-body--sm');
         addAtomsPanel(body);
       },
       defaults: { docked: false, collapsed: false, barCollapsed: false, anchor: defaultFloatingAnchor() },
