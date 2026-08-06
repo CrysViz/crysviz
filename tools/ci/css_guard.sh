@@ -50,8 +50,14 @@ load_allowlist() {
     [[ -f "$allow_file" ]] || return 0
     local raw entry path pattern
     while IFS= read -r raw || [[ -n "$raw" ]]; do
-        entry="${raw%%#*}"                      # strip trailing "  # reason"
-        entry="$(printf '%s' "$entry" | sed -e 's/[[:space:]]*$//')"
+        # A row is "path:pattern  # reason". Only whitespace-preceded '#'
+        # opens the comment: patterns are selectors, and an ID selector
+        # (#someButton) is the whole point of several rows. Cutting at the
+        # first '#' truncated those to empty, so they silently never matched.
+        case "$raw" in
+            ''|[[:space:]]*'#'*|'#'*) [[ "$raw" =~ ^[[:space:]]*# ]] && continue ;;
+        esac
+        entry="$(printf '%s' "$raw" | sed -e 's/[[:space:]][[:space:]]*#.*$//' -e 's/[[:space:]]*$//')"
         [[ -z "$entry" ]] && continue
         path="${entry%%:*}"
         pattern="${entry#*:}"
