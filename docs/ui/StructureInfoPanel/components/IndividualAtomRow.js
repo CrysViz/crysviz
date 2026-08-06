@@ -139,24 +139,18 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const isPeriodicImage = perImage && !!imageOffset && imageOffset.some((v) => v !== 0);
 
   const row = document.createElement('div');
-  row.className = 'individual-atom-row';
-  row.dataset.atomIndex = String(atomIndex);
-  if (perImage) row.dataset.imageIndex = String(imageIndex);
-  row.dataset.element = element;
   // Wyckoff orbit rows carry a long label ("F1  16l", site symmetry, orbit
   // size, DOF) that has no room next to three buttons in a docked panel, so
   // they stack: identity on its own line, buttons underneath. Ordinary atom
-  // rows keep the original single-line grid.
+  // rows keep the original single-line grid (see structureInfoPanel.css for
+  // both layouts). Periodic-image rows are inset under the atom they copy.
   const stackedHeader = options.stackedHeader ?? false;
-  row.style.cssText = stackedHeader
-    ? 'display: flex; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 6px; padding: 6px 0; font-size: 11px;'
-    // Name column is `auto`: it shrinks to the coords' min-content but no
-    // further, so the coordinates never overflow into (and overlap) the buttons.
-    // Buttons keep their natural width, "Spin/Force" split to two lines, and the
-    // reduced left indent on the container leaves room for all three.
-    : 'display: grid; grid-template-columns: auto auto auto; align-items: center; column-gap: 10px; padding: 4px 0; font-size: 11px;';
-  // Inset image rows so they sit under the atom they copy, not beside it.
-  if (isPeriodicImage) row.style.marginLeft = '14px';
+  row.className = 'individual-atom-row'
+    + (stackedHeader ? ' stacked-header' : '')
+    + (isPeriodicImage ? ' periodic-image' : '');
+  row.dataset.atomIndex = String(atomIndex);
+  if (perImage) row.dataset.imageIndex = String(imageIndex);
+  row.dataset.element = element;
 
   const imageStyle = perImage ? getAtomImageStyle(fileBrowser.selectedStructure, imageIndex) : null;
   const currentColor = perImage
@@ -167,18 +161,16 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   // Atom name and coordinates container
   const nameContainer = document.createElement('div');
-  nameContainer.style.cssText = stackedHeader
-    ? 'display: flex; flex-direction: column; gap: 2px; flex: 1 1 100%; min-width: 0;'
-    : 'display: flex; flex-direction: column; gap: 2px;';
+  nameContainer.className = 'iar-name-container';
 
   const rowAtom = fileBrowser.selectedStructure?.atoms?.[atomIndex];
 
   const name = document.createElement('span');
   const baseLabel = options.label ?? defaultAtomLabel(rowAtom, element, displayNumber);
-  // The leading ↳ and dimmed colour flag this row as a periodic image of the
-  // atom above it rather than an atom in its own right.
+  // The leading ↳ and dimmed colour (.periodic-image .iar-name, CSS) flag
+  // this row as a periodic image of the atom above it, not an atom of its own.
   name.textContent = isPeriodicImage ? `↳ ${baseLabel}` : baseLabel;
-  name.style.color = isPeriodicImage ? 'rgba(255,255,255,0.6)' : '#ddd';
+  name.className = 'iar-name';
 
   // Formal charge, when the source file supplied one. Rendered next to the
   // label rather than in metaText so it survives the Wyckoff rows, which use
@@ -186,7 +178,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const chargeText = formatAtomCharges(rowAtom);
   if (chargeText) {
     const charge = document.createElement('span');
-    charge.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.6); margin-left: 5px;';
+    charge.className = 'iar-charge';
     // Leading space so the label's textContent reads "Fe1 3+" rather than
     // "Fe13+" — the visual gap is CSS, which screen readers and any code
     // reading the label do not see.
@@ -198,7 +190,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // below still edits the source atom's coords.
   const coords = options.displayCoords ?? fileBrowser.selectedStructure.atoms.map(a => a.position)[atomIndex];
   const coordsDisplay = document.createElement('span');
-  coordsDisplay.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.8); font-family: monospace;';
+  coordsDisplay.className = 'iar-coords';
   coordsDisplay.textContent = `(${coords[0].toFixed(3)}, ${coords[1].toFixed(3)}, ${coords[2].toFixed(3)})`;
 
   nameContainer.appendChild(name);
@@ -216,18 +208,16 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     rowAtom.species.forEach((sp, speciesIndex) => {
       if (sp.occupancy <= 1e-3) return;
       const line = document.createElement('div');
-      line.style.cssText = 'display: flex; align-items: center; gap: 5px; margin: 1px 0;';
+      line.className = 'iar-species-line';
 
       const swatch = document.createElement('span');
       const swatchHex = colorHexToCss(sp.color ?? getElementDefaultColor(sp.element));
-      swatch.style.cssText = `
-        width: 8px; height: 8px; border-radius: 50%; flex: none;
-        border: 1px solid rgba(255,255,255,0.4); background: ${swatchHex};
-      `;
+      swatch.className = 'iar-species-swatch';
+      swatch.style.background = swatchHex;
       speciesLineSwatches.set(speciesIndex, swatch);
 
       const text = document.createElement('span');
-      text.style.cssText = 'font-size: 9px; color: rgba(255,210,120,0.85); font-family: monospace;';
+      text.className = 'iar-species-text';
       text.textContent = `${sp.element} ${Math.round(sp.occupancy * 100)}%`;
 
       line.appendChild(swatch);
@@ -238,7 +228,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     const vacancy = rowAtom.getVacancyFraction();
     if (vacancy > 1e-3) {
       const vacLine = document.createElement('span');
-      vacLine.style.cssText = 'display: block; font-size: 9px; color: rgba(255,210,120,0.6); font-family: monospace; margin-left: 13px;';
+      vacLine.className = 'iar-vacancy-line';
       vacLine.textContent = `vac ${Math.round(vacancy * 100)}%`;
       nameContainer.appendChild(vacLine);
     }
@@ -246,7 +236,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   if (options.metaText) {
     const meta = document.createElement('span');
-    meta.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.55);';
+    meta.className = 'iar-meta';
     meta.textContent = options.metaText;
     nameContainer.appendChild(meta);
   }
@@ -257,33 +247,20 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // Panel→3D: clicking the row (its background or the name/coords area, NOT
   // the editor buttons/panels) highlights this atom in the 3D view — the
   // mirror of double-clicking the atom in 3D highlighting this row.
-  nameContainer.style.cursor = 'pointer';
   nameContainer.title = `Highlight ${element}${displayNumber} in the 3D view`;
   row.addEventListener('click', (e) => {
     if (e.target !== row && !nameContainer.contains(/** @type {Node} */ (e.target))) return;
     e.stopPropagation();
     selectAtomFromRow(atomIndex, e, perImage ? imageIndex : null);
   });
-  // Hover feedback, skipped while the row carries the amber selection styling
-  // (highlightAtomRow sets dataset.selectionOrder on selected rows).
-  row.addEventListener('mouseenter', () => {
-    if (!row.dataset.selectionOrder) row.style.backgroundColor = 'rgba(255,255,255,0.03)';
-  });
-  row.addEventListener('mouseleave', () => {
-    if (!row.dataset.selectionOrder) row.style.backgroundColor = '';
-  });
+  // Hover tint is plain CSS (:hover, structureInfoPanel.css) — a selected row
+  // gets its amber highlight from an inline style (SelectAndHighlightModule.js
+  // highlightAtomRow), which as an inline style always outranks the :hover
+  // rule, so hovering a selected row never overwrites its highlight.
 
   // Button container
   const buttonContainer = document.createElement('div');
-  buttonContainer.style.cssText = stackedHeader
-    ? 'display: flex; gap: 8px; flex: 1 1 auto; flex-wrap: wrap;'
-    // One row of buttons at their natural width; "Spin/Force" is split onto two
-    // lines (its <br>), keeping the trio compact enough to sit beside the name.
-    : 'display: flex; gap: 6px; justify-content: flex-end;';
-
-  const inactiveButtonBorder = '1px solid rgba(255,255,255,0.2)';
-  const activeButtonBorder = '1px solid rgba(125, 206, 160, 0.95)';
-  const activeButtonShadow = '0 0 0 1px rgba(125, 206, 160, 0.35), inset 0 0 0 1px rgba(125, 206, 160, 0.15)';
+  buttonContainer.className = 'iar-buttons';
 
   // Color/alpha/size editor button (labeled "Color" — the editor holds more
   // than color; the swatch background still previews the atom color)
@@ -294,9 +271,8 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // composition header's per-element dots already use, so the two read as
   // one system instead of two different colour conventions.
   const colorBtn = document.createElement('button');
-  colorBtn.className = 'atom-editor-button';
+  colorBtn.className = 'atom-editor-button iar-color-btn';
   colorBtn.dataset.editorButton = 'color';
-  colorBtn.style.cssText = 'width: 26px; height: 26px; border-radius: 50%; padding: 0; border: 1px solid rgba(255,255,255,0.35); cursor: pointer; flex: none; overflow: hidden;';
   colorBtn.title = rowAtom?.isDisordered?.()
     ? `Edit each species' colour, plus alpha and size, for ${element}${displayNumber}`
     : `Edit color, alpha and size for ${element}${displayNumber}`;
@@ -311,7 +287,11 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       const colors = speciesPieColors(rowAtom);
       if (pieCanvas) { updatePieDot(pieCanvas, colors); return; }
       pieCanvas = createPieDot(colors, 24);
-      pieCanvas.style.cssText = 'width: 100%; height: 100%; display: block; border: none; pointer-events: none;';
+      pieCanvas.className = 'iar-pie-canvas';
+      // createPieDot() always sets its own inline `border: 1px solid #666`
+      // (utils/ColorModule.js) — an inline style beats any class rule, so
+      // this has to override it the same way, not through CSS.
+      pieCanvas.style.border = 'none';
       colorBtn.style.background = 'transparent';
       colorBtn.appendChild(pieCanvas);
       return;
@@ -348,14 +328,11 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // Coordinate edit button
   const coordBtn = document.createElement('button');
   coordBtn.textContent = 'Position';
-  coordBtn.className = 'atom-editor-button';
+  coordBtn.className = 'atom-editor-button iar-coord-btn';
   coordBtn.dataset.editorButton = 'coord';
-  coordBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 10px; white-space: normal; line-height: 1.15; text-align: center;';
   coordBtn.title = `Edit coordinates for ${element}${displayNumber}`;
   if (!positionEditable) {
     coordBtn.disabled = true;
-    coordBtn.style.opacity = '0.45';
-    coordBtn.style.cursor = 'not-allowed';
     coordBtn.title = `Position is fixed by symmetry for ${element}${displayNumber}`;
   }
 
@@ -365,9 +342,8 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // was before: it keeps this (longest) button narrow so the three buttons fit
   // beside the name in a docked panel instead of overflowing it.
   spinBtn.innerHTML = 'Spin/<br>Force';
-  spinBtn.className = 'atom-editor-button';
+  spinBtn.className = 'atom-editor-button iar-spin-btn';
   spinBtn.dataset.editorButton = 'spin';
-  spinBtn.style.cssText = 'background: var(--bg-color); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 10px; white-space: normal; line-height: 1.15; text-align: center;';
   spinBtn.title = `Edit Spin for ${element}${displayNumber}`;
 
   const keepToggle = createTinyImmunityToggle(linkedAtomIndices, `Keep ${element}${displayNumber} visible across cut planes`);
@@ -386,7 +362,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // --- Editors ---
   const editor = document.createElement('div');
   editor.className = 'atom-color-editor';
-  editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
+  editor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
 
   // A disordered site is genuinely more than one thing sharing a position, so
   // its colour editor is N small square boxes (one per species) instead of
@@ -400,21 +376,19 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const speciesSwatchButtons = new Map();
   const speciesColorRow = rowAtom?.isDisordered?.() ? document.createElement('div') : null;
   if (speciesColorRow) {
-    speciesColorRow.style.cssText = 'display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap;';
+    speciesColorRow.className = 'iar-species-color-row';
     rowAtom.species.forEach((sp, speciesIndex) => {
       if (sp.occupancy <= 1e-3) return;
       const box = document.createElement('div');
-      box.style.cssText = 'display: flex; flex-direction: column; align-items: center; gap: 2px;';
+      box.className = 'iar-species-swatch-box';
 
       const swatchHex = colorHexToCss(sp.color ?? getElementDefaultColor(sp.element));
       const swatchBtn = document.createElement('button');
       speciesSwatchButtons.set(speciesIndex, swatchBtn);
       swatchBtn.type = 'button';
       swatchBtn.title = `Colour for ${sp.element} on this site`;
-      swatchBtn.style.cssText = `
-        width: 26px; height: 26px; border-radius: 5px; padding: 0; cursor: pointer;
-        border: 1px solid rgba(255,255,255,0.35); background: ${swatchHex};
-      `;
+      swatchBtn.className = 'iar-species-swatch-btn';
+      swatchBtn.style.background = swatchHex;
       swatchBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         openSwatchColorPicker(swatchBtn, swatchHex, (hex) => {
@@ -446,7 +420,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
       const label = document.createElement('span');
       label.textContent = sp.element;
-      label.style.cssText = 'font-size: 8px; color: rgba(255,255,255,0.6);';
+      label.className = 'iar-species-swatch-label';
 
       box.appendChild(swatchBtn);
       box.appendChild(label);
@@ -497,20 +471,18 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   const AtomColorApplyBtn = document.createElement('button');
   AtomColorApplyBtn.textContent = 'Apply';
-  AtomColorApplyBtn.className = 'btn-mini highlight';
-  AtomColorApplyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+  AtomColorApplyBtn.className = 'btn-mini highlight si-action-btn-narrow';
 
   const AtomColorResetBtn = document.createElement('button');
   AtomColorResetBtn.textContent = 'Reset';
-  AtomColorResetBtn.className = 'btn-mini';
-  AtomColorResetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+  AtomColorResetBtn.className = 'btn-mini si-action-btn-narrow';
 
   // Get the default color for this element
   const defaultColor = safeColor(fileBrowser.selectedStructure.getDefaultElementColor(element));
   AtomColorResetBtn.style.background = hexToRgba(defaultColor, 0.8);
 
   const topRowIndiv = document.createElement('div');
-  topRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 6px;';
+  topRowIndiv.className = 'iar-top-row';
   // A disordered site shows its per-species boxes instead of the single whole-
   // atom picker — that picker still exists (Reset/Apply below still operate on
   // alpha/size, which stay whole-site properties) but is not the colour control
@@ -518,53 +490,49 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   topRowIndiv.appendChild(speciesColorRow ?? picker.element);
 
   const buttonRowIndiv = document.createElement('div');
-  buttonRowIndiv.style.cssText = 'display: flex; align-items: center; gap: 6px;';
+  buttonRowIndiv.className = 'iar-button-row';
   buttonRowIndiv.appendChild(AtomColorResetBtn);
   buttonRowIndiv.appendChild(AtomColorApplyBtn);
 
   const atomAlphaRow = document.createElement('div');
-  atomAlphaRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:6px;';
+  atomAlphaRow.className = 'si-row';
   const atomAlphaLabel = document.createElement('span');
   atomAlphaLabel.textContent = 'Alpha';
-  atomAlphaLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+  atomAlphaLabel.className = 'si-row-label';
   const atomAlphaSlider = document.createElement('input');
   atomAlphaSlider.type = 'range';
   atomAlphaSlider.min = '0.05';
   atomAlphaSlider.max = '1';
   atomAlphaSlider.step = '0.01';
   atomAlphaSlider.value = String(currentOpacity);
-  atomAlphaSlider.style.cssText = 'flex:1;';
   const atomAlphaValue = document.createElement('input');
   atomAlphaValue.type = 'number';
   atomAlphaValue.min = '0.05';
   atomAlphaValue.max = '1';
   atomAlphaValue.step = '0.01';
   atomAlphaValue.value = currentOpacity.toFixed(2);
-  atomAlphaValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
   atomAlphaRow.appendChild(atomAlphaLabel);
   atomAlphaRow.appendChild(atomAlphaSlider);
   atomAlphaRow.appendChild(atomAlphaValue);
 
   // Size (per-atom radius multiplier), same row layout as Alpha.
   const atomSizeRow = document.createElement('div');
-  atomSizeRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:6px;';
+  atomSizeRow.className = 'si-row';
   const atomSizeLabel = document.createElement('span');
   atomSizeLabel.textContent = 'Size';
-  atomSizeLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+  atomSizeLabel.className = 'si-row-label';
   const atomSizeSlider = document.createElement('input');
   atomSizeSlider.type = 'range';
   atomSizeSlider.min = '0.2';
   atomSizeSlider.max = '3';
   atomSizeSlider.step = '0.05';
   atomSizeSlider.value = String(currentRadiusScale);
-  atomSizeSlider.style.cssText = 'flex:1;';
   const atomSizeValue = document.createElement('input');
   atomSizeValue.type = 'number';
   atomSizeValue.min = '0.2';
   atomSizeValue.max = '3';
   atomSizeValue.step = '0.05';
   atomSizeValue.value = currentRadiusScale.toFixed(2);
-  atomSizeValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
   atomSizeRow.appendChild(atomSizeLabel);
   atomSizeRow.appendChild(atomSizeSlider);
   atomSizeRow.appendChild(atomSizeValue);
@@ -612,11 +580,10 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // Coordinate editor
   const coordEditor = document.createElement('div');
   coordEditor.className = 'atom-coord-editor';
-  coordEditor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
+  coordEditor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
 
   const coordTitle = document.createElement('div');
   coordTitle.className = 'coord-editor-title';
-  coordTitle.style.cssText = 'display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 11px; color: rgba(255,255,255,0.8); margin-bottom: 6px; font-weight: 500;';
   const coordTitleText = document.createElement('span');
   coordTitleText.textContent = 'Fractional Coordinates';
   coordTitle.appendChild(coordTitleText);
@@ -624,7 +591,6 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     const note = document.createElement('span');
     note.className = 'coord-editor-note';
     note.textContent = options.freedomNote;
-    note.style.cssText = 'font-size: 10px; font-weight: 400; color: rgba(255,255,255,0.45);';
     coordTitle.appendChild(note);
   }
 
@@ -634,7 +600,6 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   const axisNames = ['x', 'y', 'z'];
   const coordInputsRow = document.createElement('div');
   coordInputsRow.className = 'coord-axis-rows';
-  coordInputsRow.style.cssText = 'display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px;';
 
   const axisSliders = [];
   const axisInputs = [];
@@ -645,12 +610,11 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     const axisRow = document.createElement('div');
     axisRow.className = 'coord-axis-row';
     axisRow.dataset.axis = axisName;
-    axisRow.dataset.free = String(free);
-    axisRow.style.cssText = `display: grid; grid-template-columns: 10px minmax(0, 1fr) 72px; align-items: center; gap: 6px;${free ? '' : ' opacity: 0.4;'}`;
+    axisRow.dataset.free = String(free); // also drives the greyed-out look, see [data-free="false"] in CSS
 
     const axisLabel = document.createElement('span');
     axisLabel.textContent = axisName;
-    axisLabel.style.cssText = 'font-size: 10px; color: rgba(255,255,255,0.65); font-family: monospace;';
+    axisLabel.className = 'coord-axis-row-label';
 
     const slider = document.createElement('input');
     slider.type = 'range';
@@ -659,7 +623,6 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     slider.max = '1';
     slider.step = '0.0001';
     slider.value = String(coords[axis]);
-    slider.style.cssText = 'width: 100%; min-width: 0; accent-color: rgba(125,206,160,0.95);';
     slider.disabled = !free;
     slider.title = free
       ? `Drag to move ${axisName} (fractional)`
@@ -671,11 +634,6 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     input.value = coords[axis].toFixed(6);
     input.step = '0.000001';
     input.placeholder = axisName;
-    // The spinner arrows eat a third of a 72px box at this font size; the
-    // slider is the coarse control, so the box is text-only. The inline
-    // appearance:textfield handles Firefox; recent Chrome ignores it for the
-    // spinner, so .coord-num-input strips the webkit spin buttons in CSS.
-    input.style.cssText = 'width: 100%; min-width: 0; padding: 3px 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 10px; font-family: monospace; -moz-appearance: textfield; appearance: textfield;';
     input.disabled = !free;
     input.title = slider.title;
 
@@ -690,18 +648,16 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   const coordApplyBtn = document.createElement('button');
   coordApplyBtn.textContent = 'Apply';
-  coordApplyBtn.className = 'btn-mini highlight';
-  coordApplyBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px;';
+  coordApplyBtn.className = 'btn-mini highlight si-action-btn-wide';
   coordApplyBtn.disabled = !positionEditable;
 
   const coordResetBtn = document.createElement('button');
   coordResetBtn.textContent = 'Reset';
-  coordResetBtn.className = 'btn-mini';
-  coordResetBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px; margin-right: 6px;';
+  coordResetBtn.className = 'btn-mini si-action-btn-wide si-action-btn-wide--gap';
   coordResetBtn.disabled = !positionEditable;
 
   const coordButtonsRow = document.createElement('div');
-  coordButtonsRow.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+  coordButtonsRow.className = 'coord-buttons-row';
   coordButtonsRow.appendChild(coordResetBtn);
   coordButtonsRow.appendChild(coordApplyBtn);
 
@@ -720,9 +676,9 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   });
 
   // --- Event Handlers ---
+  // Active/inactive border+glow is plain CSS (.atom-editor-button.active).
   function setButtonActive(button, isActive) {
-    button.style.border = isActive ? activeButtonBorder : inactiveButtonBorder;
-    button.style.boxShadow = isActive ? activeButtonShadow : 'none';
+    button.classList.toggle('active', isActive);
   }
 
   function setActiveEditor(editorType = null) {
@@ -859,7 +815,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     if (applied !== false) {
       if (note && note.dataset.refused) {
         note.textContent = note.dataset.original ?? '';
-        note.style.color = 'rgba(255,255,255,0.45)';
+        note.classList.remove('refused');
         delete note.dataset.refused;
       }
       return;
@@ -867,7 +823,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     if (note && !note.dataset.refused) {
       note.dataset.original = note.textContent;
       note.dataset.refused = '1';
-      note.style.color = 'rgba(255,180,120,0.9)';
+      note.classList.add('refused');
     }
     if (note) note.textContent = 'atoms would overlap';
     syncAxisControlsFromStructure();
@@ -1143,9 +1099,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     row.appendChild(spinEditor);
   }
   // The editors span the full row; in the stacked (flex) layout `grid-column`
-  // on them means nothing, so they claim a whole flex line instead.
-  if (stackedHeader) {
-    [editor, coordEditor, spinEditor].forEach((panel) => { panel.style.flex = '1 1 100%'; });
-  }
+  // means nothing, so they claim a whole flex line instead — handled by
+  // .individual-atom-row.stacked-header in structureInfoPanel.css.
   return row;
 }

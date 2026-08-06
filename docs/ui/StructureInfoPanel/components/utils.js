@@ -178,71 +178,9 @@ export function applyToOtherTrajectoryFrames(structure, fn) {
   });
 }
 
-let pressHoldStylesInjected = false;
-function ensurePressHoldPopupStyles() {
-  if (pressHoldStylesInjected) return;
-  pressHoldStylesInjected = true;
-  const style = document.createElement('style');
-  style.textContent = `
-    .press-hold-popup {
-      position: fixed;
-      z-index: 10000;
-      transform: translate(-50%, -100%);
-      margin-top: -8px;
-      animation: pressHoldPopupIn 0.12s ease-out;
-    }
-    @keyframes pressHoldPopupIn {
-      from { opacity: 0; }
-      to   { opacity: 1; }
-    }
-    /* Colors follow the app's own accent tokens (styles.css .theme-standard/
-       .theme-symmetry, set on <body> per the active backend mode) instead of
-       a fixed color, so the popup matches whichever theme is active. */
-    .press-hold-popup-btn {
-      display: block;
-      white-space: nowrap;
-      background: var(--highlight-color, var(--accent-color, #2a8f4f));
-      color: var(--panel-fg, #f5fbff);
-      border: 1px solid var(--border-color, rgba(255,255,255,0.3));
-      border-radius: 6px;
-      padding: 7px 12px;
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.45);
-      transition: background 0.15s ease;
-    }
-    .press-hold-popup-btn:hover { filter: brightness(1.12); }
-    .press-hold-popup-btn:disabled { cursor: default; filter: none; }
-    .press-hold-popup-arrow {
-      position: absolute;
-      left: 50%;
-      bottom: -5px;
-      width: 10px;
-      height: 10px;
-      transform: translateX(-50%) rotate(45deg);
-      background: var(--highlight-color, var(--accent-color, #2a8f4f));
-      border-right: 1px solid var(--border-color, rgba(255,255,255,0.3));
-      border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.3));
-    }
-    /* Not enough room above the button (e.g. panel dragged near the top of
-       the viewport) — flip the popup below it instead. */
-    .press-hold-popup.below {
-      transform: translate(-50%, 0);
-      margin-top: 8px;
-    }
-    .press-hold-popup.below .press-hold-popup-arrow {
-      top: -5px;
-      bottom: auto;
-      border-right: none;
-      border-bottom: none;
-      border-left: 1px solid var(--border-color, rgba(255,255,255,0.3));
-      border-top: 1px solid var(--border-color, rgba(255,255,255,0.3));
-    }
-  `;
-  document.head.appendChild(style);
-}
-
+// Styling lives in styles/structureInfoPanel.css (.press-hold-popup and
+// friends) — it's always loaded with the app, so there's nothing left to
+// inject here.
 let openPressHoldPopup = null; // at most one at a time, across every button
 
 /**
@@ -259,7 +197,6 @@ let openPressHoldPopup = null; // at most one at a time, across every button
  * @param {{ onPress?: (e: Event) => void, onConfirm?: (e: Event) => void, holdLabel?: string, holdMs?: number }} [options]
  */
 export function wirePressHoldPopup(button, { onPress, onConfirm, holdLabel = 'Apply to Trajectory', holdMs = 500 } = {}) {
-  ensurePressHoldPopupStyles();
   let timer = null;
   let holdFired = false;
   const clearTimer = () => { if (timer) { clearTimeout(timer); timer = null; } };

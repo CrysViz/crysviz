@@ -43,65 +43,29 @@ export function updateCombineButtonState() {
 function openCombineNamePopup(onConfirm) {
   const overlay = document.createElement('div');
   overlay.className = 'combine-name-popup-overlay';
-  overlay.style.cssText = `
-    position: fixed;
-    inset: 0;
-    z-index: 10000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.4);
-  `;
 
   const popup = document.createElement('div');
-  popup.style.cssText = `
-    background: rgba(13,13,13,0.95);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 16px;
-    border-radius: 12px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    min-width: 260px;
-  `;
+  popup.className = 'cv-fb-popup cv-fb-popup--modal';
 
   const label = document.createElement('div');
   label.textContent = 'Name for the combined trajectory:';
-  label.style.cssText = 'color: rgb(255,255,255); font-size: 12px;';
+  label.className = 'cv-fb-popup-label';
 
   const input = document.createElement('input');
   input.type = 'text';
-  input.className = 'combine-name-input';
+  input.className = 'combine-name-input cv-fb-popup-input';
   input.value = 'Combined Trajectory';
-  input.style.cssText = `
-    background: var(--bg-color);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: rgb(255,255,255);
-    border-radius: 4px;
-    font-size: 12px;
-    padding: 6px;
-  `;
 
   const buttonRow = document.createElement('div');
-  buttonRow.style.cssText = 'display:flex; gap:10px; justify-content:flex-end;';
+  buttonRow.className = 'cv-fb-popup-btn-row';
 
-  const buttonStyle = `
-    background: var(--bg-color);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: rgb(255,255,255);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 11px;
-    padding: 6px 10px;
-  `;
   const confirmButton = document.createElement('button');
   confirmButton.textContent = 'Combine';
-  confirmButton.style.cssText = buttonStyle;
+  confirmButton.className = 'cv-fb-popup-btn';
 
   const cancelButton = document.createElement('button');
   cancelButton.textContent = 'Cancel';
-  cancelButton.style.cssText = buttonStyle;
+  cancelButton.className = 'cv-fb-popup-btn';
 
   buttonRow.appendChild(cancelButton);
   buttonRow.appendChild(confirmButton);
@@ -315,26 +279,11 @@ row.querySelector(".copy").addEventListener("click", (e) => {
 
   // Create a popup container with your custom styling
   const popup = document.createElement("div");
-  popup.style.position = "absolute";
-  popup.style.zIndex = "10000";
-  popup.style.backgroundColor = "rgba(13,13,13,0.95)";
-  popup.style.border = "1px solid rgba(255, 255, 255, 0.1)";
-  popup.style.padding = "10px";
-  popup.style.borderRadius = "12px";
-  popup.style.boxShadow = "0 2px 5px rgba(0,0,0,0.2)";
-  popup.style.display = "flex";
-  popup.style.flexDirection = "column";
-  popup.style.gap = "10px";
+  popup.className = "cv-fb-popup cv-fb-popup--anchored";
 
   // Create a dropdown for copy options
   const select = document.createElement("select");
-  select.style.background = "var(--bg-color)";
-  select.style.border = "1px solid rgba(255, 255, 255, 0.2)";
-  select.style.color = "rgb(255, 255, 255)";
-  select.style.borderRadius = "4px";
-  select.style.cursor = "pointer";
-  select.style.fontSize = "10px";
-  select.style.padding = "4px";
+  select.className = "cv-fb-copy-select";
   select.innerHTML = `
     <option value="all">Copy All Steps</option>
     <option value="current">Copy Current Step</option>
@@ -343,19 +292,14 @@ row.querySelector(".copy").addEventListener("click", (e) => {
 
   // Create a container for range inputs (hidden by default)
   const rangeContainer = document.createElement("div");
-  rangeContainer.style.display = "none";
-  rangeContainer.style.gap = "10px";
-  rangeContainer.style.flexDirection = "column";
+  rangeContainer.className = "cv-fb-copy-range";
 
   const startStepContainer = document.createElement("div");
-  startStepContainer.style.display = "flex";
-  startStepContainer.style.gap = "5px";
-  startStepContainer.style.alignItems = "center";
+  startStepContainer.className = "cv-fb-copy-step-row";
 
   const startStepLabel = document.createElement("label");
   startStepLabel.textContent = "Start Step:";
-  startStepLabel.style.color = "rgb(255, 255, 255)";
-  startStepLabel.style.fontSize = "10px";
+  startStepLabel.className = "cv-fb-copy-step-label";
 
   const startStepInput = document.createElement("input");
   startStepInput.type = "number";
@@ -363,26 +307,17 @@ row.querySelector(".copy").addEventListener("click", (e) => {
   startStepInput.min = "1";
   startStepInput.max = updatedObj.traj;
   startStepInput.value = "1";
-  startStepInput.style.background = "var(--bg-color)";
-  startStepInput.style.border = "1px solid rgba(255, 255, 255, 0.2)";
-  startStepInput.style.color = "rgb(255, 255, 255)";
-  startStepInput.style.borderRadius = "4px";
-  startStepInput.style.fontSize = "10px";
-  startStepInput.style.width = "50px";
-  startStepInput.style.padding = "4px";
+  startStepInput.className = "cv-fb-copy-step-input";
 
   startStepContainer.appendChild(startStepLabel);
   startStepContainer.appendChild(startStepInput);
 
   const endStepContainer = document.createElement("div");
-  endStepContainer.style.display = "flex";
-  endStepContainer.style.gap = "5px";
-  endStepContainer.style.alignItems = "center";
+  endStepContainer.className = "cv-fb-copy-step-row";
 
   const endStepLabel = document.createElement("label");
   endStepLabel.textContent = "End Step:";
-  endStepLabel.style.color = "rgb(255, 255, 255)";
-  endStepLabel.style.fontSize = "10px";
+  endStepLabel.className = "cv-fb-copy-step-label";
 
   const endStepInput = document.createElement("input");
   endStepInput.type = "number";
@@ -390,13 +325,7 @@ row.querySelector(".copy").addEventListener("click", (e) => {
   endStepInput.min = "1";
   endStepInput.max = updatedObj.traj;
   endStepInput.value = updatedObj.traj;
-  endStepInput.style.background = "var(--bg-color)";
-  endStepInput.style.border = "1px solid rgba(255, 255, 255, 0.2)";
-  endStepInput.style.color = "rgb(255, 255, 255)";
-  endStepInput.style.borderRadius = "4px";
-  endStepInput.style.fontSize = "10px";
-  endStepInput.style.width = "50px";
-  endStepInput.style.padding = "4px";
+  endStepInput.className = "cv-fb-copy-step-input";
 
   endStepContainer.appendChild(endStepLabel);
   endStepContainer.appendChild(endStepInput);
@@ -407,23 +336,11 @@ row.querySelector(".copy").addEventListener("click", (e) => {
   // Create buttons for confirmation and cancellation
   const confirmButton = document.createElement("button");
   confirmButton.textContent = "Copy";
-  confirmButton.style.background = "var(--bg-color)";
-  confirmButton.style.border = "1px solid rgba(255, 255, 255, 0.2)";
-  confirmButton.style.color = "rgb(255, 255, 255)";
-  confirmButton.style.borderRadius = "4px";
-  confirmButton.style.cursor = "pointer";
-  confirmButton.style.fontSize = "10px";
-  confirmButton.style.padding = "4px 8px";
+  confirmButton.className = "cv-fb-popup-btn cv-fb-popup-btn--compact";
 
   const cancelButton = document.createElement("button");
   cancelButton.textContent = "Cancel";
-  cancelButton.style.background = "var(--bg-color)";
-  cancelButton.style.border = "1px solid rgba(255, 255, 255, 0.2)";
-  cancelButton.style.color = "rgb(255, 255, 255)";
-  cancelButton.style.borderRadius = "4px";
-  cancelButton.style.cursor = "pointer";
-  cancelButton.style.fontSize = "10px";
-  cancelButton.style.padding = "4px 8px";
+  cancelButton.className = "cv-fb-popup-btn cv-fb-popup-btn--compact";
 
   // Append all elements to the popup
   popup.appendChild(select);
@@ -441,11 +358,7 @@ row.querySelector(".copy").addEventListener("click", (e) => {
 
   // Toggle range inputs based on selection
   select.addEventListener("change", () => {
-    if (select.value === "range") {
-      rangeContainer.style.display = "flex";
-    } else {
-      rangeContainer.style.display = "none";
-    }
+    rangeContainer.classList.toggle("is-visible", select.value === "range");
   });
 
   // Function to close the popup

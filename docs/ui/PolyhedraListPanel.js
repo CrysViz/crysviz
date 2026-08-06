@@ -117,7 +117,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
   const hint = (text) => {
     const div = document.createElement('div');
-    div.style.cssText = 'font-size: 12px; color: rgba(255,255,255,0.6); padding: 8px 0; text-align: center;';
+    div.className = 'phl-hint';
     div.textContent = text;
     polyControls.appendChild(div);
     return div;
@@ -126,12 +126,11 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
   if (!general.showPolyhedra) {
     hint('Polyhedra are not enabled.');
     const enableWrapper = document.createElement('div');
-    enableWrapper.style.cssText = 'display: flex; justify-content: center;';
+    enableWrapper.className = 'phl-enable-wrapper';
     const enableBtn = document.createElement('button');
     enableBtn.id = 'enablePolyhedraFromTab';
-    enableBtn.className = 'reset-btn';
+    enableBtn.className = 'reset-btn phl-enable-btn';
     enableBtn.textContent = 'Enable polyhedra';
-    enableBtn.style.cssText = 'font-size: 12px; height: 22px;';
     // Drive the real "Show Polyhedra" checkbox so the ControlsWiring path runs.
     enableBtn.onclick = () => document.getElementById('showPolyhedra')?.click();
     enableWrapper.appendChild(enableBtn);
@@ -174,13 +173,12 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     // label, so both stay identical regardless of viewport width instead of
     // relying on the ambient cascade (global `label` rule here vs. Atoms'
     // `.comp-row` narrow-viewport override there).
-    label.style.cssText = 'color: #ccc; margin: 0; cursor: pointer; font-size: calc(14px * var(--cv-font-scale, 1));';
+    label.className = 'phl-cat-label';
 
     // Count + percentage, matching the Atoms/Bonds headers.
     const totalPolys = model.polyhedra.length || 1;
     const countLabel = document.createElement('span');
-    countLabel.className = 'poly-count';
-    countLabel.style.cssText = 'font-size: 11px; color: #ccc; margin-left: auto;';
+    countLabel.className = 'poly-count phl-count-label';
     countLabel.textContent = `${entry.indices.length} (${(100 * entry.indices.length / totalPolys).toFixed(1)}%)`;
 
     // Cut-plane immunity (parity with the Atoms header): the compute drops
@@ -201,23 +199,14 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     // Expand caret (same style as the Bonds tab)
     const expandIcon = document.createElement('span');
     expandIcon.textContent = '▶';
-    expandIcon.className = 'poly-expand-icon';
-    expandIcon.style.cssText = `
-      margin-left: 4px;
-      font-size: 14px;
-      transition: transform 0.2s ease;
-      color: rgba(255,255,255,0.8);
-      transform: rotate(0deg);
-      cursor: pointer;
-    `;
+    expandIcon.className = 'poly-expand-icon phl-expand-icon';
 
     // Swatch: pie dot over the members' resolved colors; opens the group editor.
     const memberColors = entry.indices.map((i) => resolvedColorOf(structure, model.polyhedra[i]));
     const dot = createPieDot(memberColors, 20);
-    dot.classList.add('dot');
     // Match the Atoms tab's dot size (the shared .dot CSS class alone
     // renders at 10x10 — this row never overrode it, unlike CompositionRow.js).
-    dot.style.cssText = 'width: 20px; height: 20px; margin-right: 6px; border: 1px solid rgba(255,255,255,0.4); cursor: pointer;';
+    dot.classList.add('dot', 'phl-cat-dot');
     dot.title = `Customize color/alpha for all ${entry.label} polyhedra`;
     polyCategorySwatchUpdateFunctions[catKey] = () => {
       updatePieDot(dot, entry.indices.map((i) => resolvedColorOf(structure, model.polyhedra[i])));
@@ -234,8 +223,9 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
     // --- Group editor (color + alpha for the whole category) ---
     const catEditor = document.createElement('div');
-    catEditor.className = 'poly-cat-editor';
-    catEditor.style.cssText = 'display: none; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
+    catEditor.className = 'poly-cat-editor phl-cat-editor';
+    // See the matching comment on listContainer.style.display below.
+    catEditor.style.display = 'none';
 
     const currentCatColor = safeColor(
       structure.polyhedraCategoryStyles[catKey]?.color ?? memberColors[0]);
@@ -248,24 +238,24 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
     const currentCatAlpha = clampOpacity(structure.polyhedraCategoryStyles[catKey]?.alpha ?? 0.5);
     const alphaRow = document.createElement('div');
-    alphaRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin: 6px 0;';
+    alphaRow.className = 'phl-slider-row';
     const alphaLabel = document.createElement('span');
     alphaLabel.textContent = 'Alpha';
-    alphaLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+    alphaLabel.className = 'phl-alpha-label';
     const alphaSlider = document.createElement('input');
     alphaSlider.type = 'range';
     alphaSlider.min = '0.05';
     alphaSlider.max = '1';
     alphaSlider.step = '0.01';
     alphaSlider.value = String(currentCatAlpha);
-    alphaSlider.style.cssText = 'flex:1;';
+    alphaSlider.className = 'phl-alpha-slider';
     const alphaValue = document.createElement('input');
     alphaValue.type = 'number';
     alphaValue.min = '0.05';
     alphaValue.max = '1';
     alphaValue.step = '0.01';
     alphaValue.value = currentCatAlpha.toFixed(2);
-    alphaValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+    alphaValue.className = 'phl-alpha-value-input';
     function applyCatAlpha(rawValue) {
       const value = clampOpacity(rawValue);
       alphaSlider.value = String(value);
@@ -286,7 +276,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
     const edgeHeader = document.createElement('div');
     edgeHeader.textContent = 'Edge';
-    edgeHeader.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); margin-top: 8px;';
+    edgeHeader.className = 'phl-edge-header';
 
     const edgePicker = createColorPicker(safeColor(resolvedEdge.edgeColor), (hex) => {
       catStyle().edgeColor = hex;
@@ -296,24 +286,24 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     const currentEdgeAlpha = clampOpacity(
       structure.polyhedraCategoryStyles[catKey]?.edgeAlpha ?? resolvedEdge.edgeOpacity);
     const edgeAlphaRow = document.createElement('div');
-    edgeAlphaRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin: 6px 0;';
+    edgeAlphaRow.className = 'phl-slider-row';
     const edgeAlphaLabel = document.createElement('span');
     edgeAlphaLabel.textContent = 'Edge alpha';
-    edgeAlphaLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 58px;';
+    edgeAlphaLabel.className = 'phl-edge-alpha-label';
     const edgeAlphaSlider = document.createElement('input');
     edgeAlphaSlider.type = 'range';
     edgeAlphaSlider.min = '0.05';
     edgeAlphaSlider.max = '1';
     edgeAlphaSlider.step = '0.01';
     edgeAlphaSlider.value = String(currentEdgeAlpha);
-    edgeAlphaSlider.style.cssText = 'flex:1;';
+    edgeAlphaSlider.className = 'phl-alpha-slider';
     const edgeAlphaValue = document.createElement('input');
     edgeAlphaValue.type = 'number';
     edgeAlphaValue.min = '0.05';
     edgeAlphaValue.max = '1';
     edgeAlphaValue.step = '0.01';
     edgeAlphaValue.value = currentEdgeAlpha.toFixed(2);
-    edgeAlphaValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+    edgeAlphaValue.className = 'phl-alpha-value-input';
     function applyCatEdgeAlpha(rawValue) {
       const value = clampOpacity(rawValue);
       edgeAlphaSlider.value = String(value);
@@ -329,8 +319,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
     const catResetBtn = document.createElement('button');
     catResetBtn.textContent = 'Reset';
-    catResetBtn.className = 'btn-mini';
-    catResetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+    catResetBtn.className = 'btn-mini phl-cat-square-btn';
     catResetBtn.title = `Reset this whole category: removes the group style AND every individual ${entry.label} override.\nClick: this frame. Press and hold: whole trajectory.`;
     // Preview the category's default (pre-override) face color, same idea as
     // the element editor's Reset swatch.
@@ -373,8 +362,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
     const catApplyBtn = document.createElement('button');
     catApplyBtn.textContent = 'Apply';
-    catApplyBtn.className = 'btn-mini highlight';
-    catApplyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+    catApplyBtn.className = 'btn-mini highlight phl-cat-square-btn';
     catApplyBtn.title = `Click: close. Press and hold: copy this ${entry.label} category's color/alpha to every trajectory frame.`;
     wirePressHoldPopup(catApplyBtn, {
       holdLabel: 'Apply to Trajectory',
@@ -393,7 +381,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     });
 
     const catButtonRow = document.createElement('div');
-    catButtonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';
+    catButtonRow.className = 'phl-cat-button-row';
     catButtonRow.appendChild(catResetBtn);
     catButtonRow.appendChild(catApplyBtn);
 
@@ -421,14 +409,13 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
     // --- Individual polyhedra list (expandable, lazily built) ---
     const listContainer = document.createElement('div');
-    listContainer.className = 'individual-polyhedra';
-    listContainer.style.cssText = `
-      display: none;
-      margin-left: 20px;
-      margin-top: 8px;
-      border-left: 2px solid rgba(255,255,255,0.1);
-      padding-left: 8px;
-    `;
+    listContainer.className = 'individual-polyhedra phl-individual-list';
+    // Explicit inline default alongside the CSS class's own `display: none`:
+    // this codebase reads `.style.display` back in several places (this
+    // file, StructureInfoPanel/General.js's expand-state capture) as the
+    // source of truth for open/closed — the CSS class alone would make
+    // those reads see '' instead of 'none' before the first toggle.
+    listContainer.style.display = 'none';
 
     // Lazy + stale-aware (general.polyhedraBuildCounter bumps on every group
     // swap). `force` repopulates even when not stale — used after in-place
@@ -467,7 +454,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
       }
       if (!listContainer.children.length) {
         const empty = document.createElement('div');
-        empty.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.5); padding: 4px 0;';
+        empty.className = 'phl-empty-list-msg';
         empty.textContent = 'No polyhedra in this category';
         listContainer.appendChild(empty);
       }
@@ -493,12 +480,11 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
   // tab's Reset Colors/Reset Styling row below the composition list, and the
   // Bonds tab's Reset Colors row below its category list.
   const resetColorsRow = document.createElement('div');
-  resetColorsRow.style.cssText = 'display: flex; justify-content: center; margin-top: 20px;';
+  resetColorsRow.className = 'phl-reset-colors-row';
   const resetPolyColorsBtn = document.createElement('button');
   resetPolyColorsBtn.id = 'resetPolyColorsBtn';
   resetPolyColorsBtn.textContent = 'Reset Colors';
-  resetPolyColorsBtn.className = 'reset-btn';
-  resetPolyColorsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; min-width: 50px;';
+  resetPolyColorsBtn.className = 'reset-btn phl-reset-colors-btn';
   resetPolyColorsBtn.title = 'Reset every polyhedra color customization (category and individual) to element defaults.\nClick: this frame. Press and hold: whole trajectory.';
   wirePressHoldPopup(resetPolyColorsBtn, {
     holdLabel: 'Reset Trajectory',

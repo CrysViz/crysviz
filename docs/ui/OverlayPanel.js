@@ -23,45 +23,21 @@ import { syncOverlayFromCheckboxes, overlayEntryLabel, refreshOverlayLatticePlot
  */
 function createToggleSwitch(id, labelText, checked) {
   const container = document.createElement("label");
-  container.style.display = "flex";
-  container.style.alignItems = "center";
-  container.style.margin = "10px 0";
+  container.className = "cv-overlay-toggle-row";
 
   const switchEl = document.createElement("span");
-  switchEl.style.position = "relative";
-  switchEl.style.display = "inline-block";
-  switchEl.style.width = "50px";
-  switchEl.style.height = "24px";
+  switchEl.className = "toggle_switch cv-overlay-toggle-switch";
 
   const input = document.createElement("input");
   input.type = "checkbox";
   input.id = id;
   input.checked = checked;
-  input.style.opacity = "0";
-  input.style.width = "0";
-  input.style.height = "0";
 
   const slider = document.createElement("span");
   slider.className = "toggle_slider";
-  slider.style.position = "absolute";
-  slider.style.cursor = "pointer";
-  slider.style.top = "0";
-  slider.style.left = "0";
-  slider.style.right = "0";
-  slider.style.bottom = "0";
-  slider.style.backgroundColor = "#ccc";
-  slider.style.transition = ".4s";
-  slider.style.borderRadius = "24px";
 
   const sliderInner = document.createElement("span");
-  sliderInner.style.position = "absolute";
-  sliderInner.style.height = "16px";
-  sliderInner.style.width = "16px";
-  sliderInner.style.left = "4px";
-  sliderInner.style.bottom = "4px";
-  sliderInner.style.backgroundColor = "white";
-  sliderInner.style.transition = ".4s";
-  sliderInner.style.borderRadius = "50%";
+  sliderInner.className = "cv-overlay-toggle-knob";
 
   slider.appendChild(sliderInner);
   switchEl.appendChild(input);
@@ -69,7 +45,7 @@ function createToggleSwitch(id, labelText, checked) {
 
   const text = document.createElement("span");
   text.textContent = labelText;
-  text.style.marginLeft = "10px";
+  text.className = "cv-overlay-toggle-text";
 
   container.appendChild(switchEl);
   container.appendChild(text);
@@ -80,10 +56,10 @@ function createToggleSwitch(id, labelText, checked) {
 /** A single labeled opacity slider (0-1). Returns the input for wiring. */
 function createOpacitySlider(id, labelText, value) {
   const wrap = document.createElement("div");
-  wrap.style.cssText = "display:flex; flex-direction:column; margin: 6px 0;";
+  wrap.className = "cv-overlay-opacity-row";
 
   const labelRow = document.createElement("div");
-  labelRow.style.cssText = "display:flex; justify-content:space-between; font-size:11px; color:#ccc; margin-bottom:2px;";
+  labelRow.className = "cv-overlay-opacity-label-row";
   const label = document.createElement("span");
   label.textContent = labelText;
   const valueLabel = document.createElement("span");
@@ -98,7 +74,6 @@ function createOpacitySlider(id, labelText, value) {
   input.max = "1";
   input.step = "0.01";
   input.value = String(value);
-  input.style.width = "100%";
 
   input.addEventListener('input', () => { valueLabel.textContent = parseFloat(input.value).toFixed(2); });
 
@@ -118,12 +93,12 @@ function removeOverlayEntry(entry) {
 /** The scrollable table: one row per fileBrowser.overlayEntries entry. */
 function buildOverlayTable(container) {
   const wrapper = document.createElement("div");
-  wrapper.style.cssText = "max-height: 260px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; margin: 8px 0;";
+  wrapper.className = "cv-overlay-table";
 
   if (!fileBrowser.overlayEntries.length) {
     const empty = document.createElement("div");
     empty.textContent = 'No structures overlaid yet — check rows in the Files list.';
-    empty.style.cssText = "padding: 10px; font-size: 12px; color: rgba(255,255,255,0.6); font-style: italic;";
+    empty.className = "cv-overlay-table-empty";
     wrapper.appendChild(empty);
     container.appendChild(wrapper);
     return;
@@ -131,21 +106,21 @@ function buildOverlayTable(container) {
 
   for (const entry of fileBrowser.overlayEntries) {
     const row = document.createElement("div");
-    row.style.cssText = "padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.08); display:flex; flex-direction:column; gap:4px;";
+    row.className = "cv-overlay-row";
 
     const headRow = document.createElement("div");
-    headRow.style.cssText = "display:flex; align-items:center; justify-content:space-between; gap:8px;";
+    headRow.className = "cv-overlay-head-row";
 
     const name = document.createElement("span");
     name.textContent = overlayEntryLabel(entry);
-    name.style.cssText = "font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;";
+    name.className = "cv-overlay-entry-name";
     headRow.appendChild(name);
 
     const controls = document.createElement("div");
-    controls.style.cssText = "display:flex; align-items:center; gap:8px; flex-shrink:0;";
+    controls.className = "cv-overlay-controls";
 
     const bondsLabel = document.createElement("label");
-    bondsLabel.style.cssText = "display:flex; align-items:center; gap:3px; font-size:11px; color:#ccc; cursor:pointer;";
+    bondsLabel.className = "cv-overlay-bonds-label";
     const bondsCheckbox = document.createElement("input");
     bondsCheckbox.type = "checkbox";
     bondsCheckbox.checked = entry.showBonds;
@@ -160,8 +135,7 @@ function buildOverlayTable(container) {
     const removeBtn = document.createElement("button");
     removeBtn.textContent = "✕";
     removeBtn.title = "Remove this structure from the overlay";
-    removeBtn.className = "btn-mini";
-    removeBtn.style.cssText = "width:22px; height:22px; padding:0; line-height:0; display:flex; align-items:center; justify-content:center;";
+    removeBtn.className = "btn-mini cv-overlay-remove-btn";
     removeBtn.addEventListener('click', () => removeOverlayEntry(entry));
     controls.appendChild(removeBtn);
 
@@ -206,15 +180,10 @@ export function addOverlayPanel(container) {
   // this very panel and recurse.
   const overlayError = document.createElement("div");
   overlayError.id = "overlayErrorField";
-  overlayError.style.cssText = `
-    font-size: 12px;
-    color: #ff6b6b;
-    margin: 0 0 10px 0;
-    display: none;
-  `;
+  overlayError.className = "cv-overlay-error cv-force-hidden";
   if (general.overlayModeOn && fileBrowser.overlayEntries.length === 0) {
     overlayError.textContent = 'Check one or more structures below to overlay them.';
-    overlayError.style.display = 'block';
+    overlayError.classList.remove("cv-force-hidden");
   }
   container.appendChild(overlayError);
 
@@ -235,7 +204,7 @@ export function addOverlayPanel(container) {
 
   const tableHeading = document.createElement("div");
   tableHeading.textContent = "Overlaid structures";
-  tableHeading.style.cssText = "font-size:12px; font-weight:600; margin-top:10px;";
+  tableHeading.className = "cv-overlay-table-heading";
   container.appendChild(tableHeading);
 
   buildOverlayTable(container);
@@ -248,30 +217,9 @@ export function addOverlayPanel(container) {
   if (general.showPolyhedra) {
     const polyhedraNote = document.createElement("div");
     polyhedraNote.textContent = "Note: Polyhedra are not yet shown for overlay structures.";
-    polyhedraNote.style.fontSize = "12px";
-    polyhedraNote.style.color = "#ccc";
-    polyhedraNote.style.fontStyle = "italic";
-    polyhedraNote.style.margin = "8px 0 0 0";
+    polyhedraNote.className = "cv-overlay-note";
     container.appendChild(polyhedraNote);
   }
-
-  // Add dynamic style for checked state
-  const styleElement = document.createElement('style');
-  styleElement.textContent = `
-    #showLatticeOverlayToggle:checked + .toggle_slider {
-      background-color: #4CAF50 !important;
-    }
-    #showLatticeOverlayToggle:checked + .toggle_slider > span {
-      transform: translateX(26px) !important;
-    }
-    #enableOverlayToggle:checked + .toggle_slider {
-      background-color: #4CAF50 !important;
-    }
-    #enableOverlayToggle:checked + .toggle_slider > span {
-      transform: translateX(26px) !important;
-    }
-  `;
-  document.head.appendChild(styleElement);
 
   // Add event listeners
   enableToggleInput.addEventListener('change', function() {

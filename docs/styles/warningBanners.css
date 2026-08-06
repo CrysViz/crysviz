@@ -1,0 +1,66 @@
+/* warningBanners — shared shell for the top-center banners over the 3D view
+   (#view): Forces+Spins, Disorder, Polyhedra-comparison, Scanline and Disco
+   (ui/ForceSpinWarningBanner.js, DisorderWarningBanner.js,
+   PolyhedraComparisonWarningBanner.js, ScanlineWarningBanner.js,
+   DiscoWarningBanner.js). All five were near-identical copies of the same
+   amber-warning chrome, differing only in which vertical slot they stack
+   into and their text — factored into one shell plus per-banner position
+   modifiers rather than five parallel rule sets.
+
+   Visibility (el.style.display, toggled by each banner's own reactive
+   update function) stays JS-owned: nothing reads it back today, but it's
+   the same block/none convention the rest of the app uses for this kind of
+   flag, so there's no reason to introduce a class toggle here instead. */
+
+.cv-warning-banner {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-chrome);
+  padding: var(--sp-2) 14px; /* 14px: no token between --sp-4 (12) and --sp-5 (16) */
+  border-radius: var(--radius-sm);
+  /* Warm-black scrim behind the amber text/border below — not the same
+     thing as --warn-rgb at a low alpha (that composes to a BRIGHT amber
+     fill, not this deliberately dark backing); see css_guard_allow.txt. */
+  background: rgba(40, 30, 0, 0.85);
+  border: 1px solid rgb(var(--warn-rgb) / 0.6);
+  color: var(--warn);
+  font-size: var(--fs-base);
+  font-family: inherit;
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  pointer-events: none;
+  display: none;
+}
+
+/* Vertical stacking slots. Each banner's own class name (its only DOM
+   identifier) doubles as the position modifier, so no extra class is added
+   at the call sites beyond the shared shell above. */
+.cv-force-spin-warning,
+.cv-disorder-warning {
+  top: 5px;
+}
+
+.cv-polyhedra-comparison-warning,
+.cv-scanline-warning {
+  top: 38px;
+}
+
+.cv-disco-warning {
+  top: 71px;
+}
+
+/* Disorder banner's inline "Order structure…" action button — the one
+   banner with more than static text. */
+.cv-disorder-warning-action {
+  margin-left: var(--sp-3-5);
+  pointer-events: auto;
+  cursor: pointer;
+  background: rgb(var(--warn-rgb) / 0.18);
+  border: 1px solid rgb(var(--warn-rgb) / 0.6);
+  color: var(--warn);
+  border-radius: var(--radius-4);
+  font-size: var(--fs-sm);
+  padding: 2px var(--sp-3);
+  font-family: inherit;
+}

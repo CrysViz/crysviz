@@ -51,7 +51,6 @@ export function createMaterialEditor(getMaterial, setMaterial, { types, getDefau
   const typeList = types ?? TYPES;
   const block = /** @type {HTMLDivElement & { syncFromStore?: () => void }} */ (document.createElement('div'));
   block.className = 'material-editor';
-  block.style.cssText = 'margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.08);';
 
   // No stored entry shows the effective default (the map preset, if any).
   const current = getMaterial() ?? getDefault?.() ?? {};
@@ -70,17 +69,16 @@ export function createMaterialEditor(getMaterial, setMaterial, { types, getDefau
 
   const header = document.createElement('div');
   header.textContent = 'Material (ray/path tracing)';
-  header.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.6); margin-bottom:6px;';
+  header.className = 'material-editor-header';
   block.appendChild(header);
 
   const typeRow = document.createElement('div');
-  typeRow.style.cssText = 'display:flex; align-items:center; gap:8px;';
+  typeRow.className = 'material-editor-type-row';
   const typeLabel = document.createElement('span');
   typeLabel.textContent = 'Type';
-  typeLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+  typeLabel.className = 'si-row-label';
   const typeSelect = document.createElement('select');
   typeSelect.className = 'material-type-select';
-  typeSelect.style.cssText = 'flex:1; height:28px; font-size:11px;';
   for (const t of typeList) {
     const opt = document.createElement('option');
     opt.value = t.value;
@@ -95,21 +93,19 @@ export function createMaterialEditor(getMaterial, setMaterial, { types, getDefau
   // one property slider row per material type that has a knob
   const makePropRow = (labelText, cls, min, max, step, value, onInput) => {
     const row = document.createElement('div');
-    row.className = cls;
-    row.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:6px;';
+    row.className = `${cls} material-prop-row`;
     const label = document.createElement('span');
     label.textContent = labelText;
-    label.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+    label.className = 'si-row-label';
     const slider = document.createElement('input');
     slider.type = 'range';
     slider.min = String(min);
     slider.max = String(max);
     slider.step = String(step);
     slider.value = String(value);
-    slider.style.cssText = 'flex:1;';
     const valueSpan = document.createElement('span');
     valueSpan.textContent = Number(value).toFixed(2);
-    valueSpan.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.7); min-width: 34px; text-align:right;';
+    valueSpan.className = 'material-prop-value';
     slider.addEventListener('input', () => {
       valueSpan.textContent = Number(slider.value).toFixed(2);
       onInput(parseFloat(slider.value));

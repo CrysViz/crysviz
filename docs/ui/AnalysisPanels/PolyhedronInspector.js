@@ -39,8 +39,7 @@ function setForcedControlsUI(forced) {
     input.checked = general[stateKey];
     const row = input.closest('.toggle_row');
     if (row) {
-      row.style.opacity = forced ? '0.5' : '';
-      row.style.cursor = forced ? 'not-allowed' : '';
+      row.classList.toggle('is-forced-disabled', forced);
       row.title = forced ? REQUIRED_MSG : '';
     }
   }
@@ -77,7 +76,7 @@ function releaseForcedPolyhedraSettings() {
 }
 
 const FORCED_NOTICE_HTML = `
-  <div style="font-size:10.5px; color:#cfe6ff; background:rgba(35,139,230,0.15); border:1px solid rgba(91,168,255,0.4); border-radius:6px; padding:6px 8px; margin-bottom:6px;">
+  <div class="pi-forced-notice">
     Show Polyhedra and Complete Polyhedra are turned on and locked while this inspector is open — an incomplete coordination shell gives wrong bond colors/metrics here.
   </div>
 `;
@@ -147,10 +146,10 @@ let localFaceOpacity = 0.4;
 /** Slider controlling just the mini view's polyhedron face opacity. */
 function buildOpacityControl(container, mini) {
   container.innerHTML = `
-    <div style="display:flex; align-items:center; gap:8px; padding:2px 8px 8px; font-size:11.5px; color:#ccc;">
-      <span style="flex:0 0 auto;">Polyhedron opacity</span>
-      <input type="range" min="0" max="100" value="${Math.round(localFaceOpacity * 100)}" class="pi-opacity-slider" style="flex:1;">
-      <span class="pi-opacity-label" style="width:34px; text-align:right; font-family:monospace;">${Math.round(localFaceOpacity * 100)}%</span>
+    <div class="pi-opacity-row">
+      <span class="pi-opacity-text">Polyhedron opacity</span>
+      <input type="range" min="0" max="100" value="${Math.round(localFaceOpacity * 100)}" class="pi-opacity-slider">
+      <span class="pi-opacity-label">${Math.round(localFaceOpacity * 100)}%</span>
     </div>
   `;
   const slider = container.querySelector('.pi-opacity-slider');
@@ -165,7 +164,7 @@ function buildOpacityControl(container, mini) {
 /** Fills the small text summary above/below the mini render. */
 function renderSummary(container, detail) {
   if (!detail) {
-    container.innerHTML = '<div style="padding:10px; font-size:12px; color:#999; text-align:center;">Click a polyhedron (or its centre atom) in the 3D view to inspect it.</div>';
+    container.innerHTML = '<div class="pi-summary-empty">Click a polyhedron (or its centre atom) in the 3D view to inspect it.</div>';
     return;
   }
   const rows = [
@@ -176,8 +175,8 @@ function renderSummary(container, detail) {
       detail.angleVariance != null ? fmt(detail.angleVariance, 2) : 'n/a (only CN4/CN6)'],
   ];
   container.innerHTML = `
-    <div style="font-size:11.5px; color:#ddd; display:grid; grid-template-columns:auto 1fr; gap:2px 10px; padding:6px 8px;">
-      ${rows.map(([k, v]) => `<span style="color:#999;">${k}</span><span style="text-align:right; font-family:monospace;">${v}</span>`).join('')}
+    <div class="pi-summary-grid">
+      ${rows.map(([k, v]) => `<span class="pi-summary-key">${k}</span><span class="pi-summary-val">${v}</span>`).join('')}
     </div>
   `;
 }
@@ -222,7 +221,7 @@ export function addPolyhedronInspectorPanel() {
             <h4>Polyhedron Inspector</h4>
             ${FORCED_NOTICE_HTML}
             <div id="piSummary"></div>
-            <div id="piViewport" class="split-item-body" style="min-height:260px; border-radius:6px; overflow:hidden; background:rgba(255,255,255,0.03);"></div>
+            <div id="piViewport" class="split-item-body pi-viewport"></div>
             <div id="piOpacityControl"></div>
           </div>
         </div>

@@ -117,33 +117,33 @@ export function createColorPicker(initialHex, onChange) {
 
   // Input wrappers
   const inputsWrapper = document.createElement('div');
-  inputsWrapper.style.cssText = 'display: flex; flex-direction: column; gap: 4px; margin-top: 6px;';
+  inputsWrapper.className = 'cv-colorpicker-inputs-wrap';
 
   // RGB input row
   const rgbRow = document.createElement('div');
-  rgbRow.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+  rgbRow.className = 'cv-colorpicker-input-row';
 
   const rgbLabel = document.createElement('label');
   rgbLabel.textContent = 'RGB:';
-  rgbLabel.style.cssText = 'font-size: 12px; color: #ccc; min-width: 30px;';
+  rgbLabel.className = 'cv-colorpicker-input-label';
 
   const rgbInput = document.createElement('input');
   rgbInput.type = 'text';
   rgbInput.placeholder = '255,128,64';
-  rgbInput.style.cssText = 'flex: 1; padding: 2px 4px; font-size: 12px;';
+  rgbInput.className = 'cv-colorpicker-input-field';
 
   // HEX input row
   const hexRow = document.createElement('div');
-  hexRow.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+  hexRow.className = 'cv-colorpicker-input-row';
 
   const hexLabel = document.createElement('label');
   hexLabel.textContent = 'HEX:';
-  hexLabel.style.cssText = 'font-size: 12px; color: #ccc; min-width: 30px;';
+  hexLabel.className = 'cv-colorpicker-input-label';
 
   const hexInput = document.createElement('input');
   hexInput.type = 'text';
   hexInput.placeholder = '#ffcc00';
-  hexInput.style.cssText = 'flex: 1; padding: 2px 4px; font-size: 12px;';
+  hexInput.className = 'cv-colorpicker-input-field';
 
 
 

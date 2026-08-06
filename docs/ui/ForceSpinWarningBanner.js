@@ -16,26 +16,8 @@ function ensureBanner() {
   if (!view) return null;
 
   banner = document.createElement('div');
-  banner.className = 'cv-force-spin-warning';
+  banner.className = 'cv-warning-banner cv-force-spin-warning';
   banner.textContent = '⚠ Forces and Spins are both shown as arrows';
-  banner.style.cssText = `
-    position: absolute;
-    top: 5px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 2000;
-    padding: 6px 14px;
-    border-radius: 6px;
-    background: rgba(40, 30, 0, 0.85);
-    border: 1px solid rgba(255, 193, 7, 0.6);
-    color: #ffc107;
-    font-size: 12px;
-    font-family: inherit;
-    font-weight: 500;
-    white-space: nowrap;
-    pointer-events: none;
-    display: none;
-  `;
   view.appendChild(banner);
   return banner;
 }

@@ -21,73 +21,19 @@ export function openPeriodicTable(callback) {
   // Create the popup container
   const periodicTable = document.createElement('div');
   periodicTable.id = 'periodicTablePopup';
-  periodicTable.style.cssText = `
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background-color: #111;
-    color: white;
-    border: 1px solid #333;
-    border-radius: 8px;
-    z-index: 1300;
-    padding: 15px;
-    font-family: Arial, sans-serif;
-    width: 600px;
-  `;
+  periodicTable.className = 'pt-popup';
 
   // Create selected element display (compact)
   const selectedElementDisplay = document.createElement('div');
   selectedElementDisplay.id = 'selectedElementDisplay';
-    selectedElementDisplay.style.cssText = `
-    display: none;
-    position: absolute;
-    top: 55px;
-    left: 40%;
-    transform: translateX(-50%);
-    width: 80px;
-    height: 60px;
-    background: rgba(0, 0, 0, 0.8);
-    border-radius: 8px;
-    padding: 5px;
-    text-align: center;
-    z-index: 1301;
-    box-sizing: border-content;
-    border: 2px solid transparent;
-  `;
+  selectedElementDisplay.className = 'pt-selected-display';
 
   selectedElementDisplay.innerHTML = `
-    <div style="position: relative; width: 100%; height: 100%;">
-      <div id="selectedElementNumber" style="
-        position: absolute;
-        top: 2px;
-        left: 2px;
-        font-size: 14px;
-        font-weight: normal;
-      "></div>
-      <div id="selectedElementSymbol" style="
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        font-weight: bold;
-        font-size: 24px;
-      "></div>
-      <div id="selectedElementName" style="
-        position: absolute;
-        bottom: -5px;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        font-size: 12px;
-        font-weight: normal;
-      "></div>
-      <div id="selectedElementMass" style="
-        position: absolute;
-        top: 2px;
-        right: 2px;
-        font-size: 12px;
-        font-weight: normal;
-      "></div>
+    <div class="pt-selected-inner">
+      <div id="selectedElementNumber" class="pt-selected-number"></div>
+      <div id="selectedElementSymbol" class="pt-selected-symbol"></div>
+      <div id="selectedElementName" class="pt-selected-name"></div>
+      <div id="selectedElementMass" class="pt-selected-mass"></div>
     </div>
   `;
 
@@ -114,10 +60,8 @@ export function openPeriodicTable(callback) {
   function tileHTML(symbol) {
     const color = borderColors[symbol] || borderColors.default;
     return `
-      <button class="element-button"
-        style="width: 30px; height: 30px; background: transparent; border: 2px solid ${color};
-               color: white; cursor: pointer; transition: all 0.2s; border-radius: 3px;
-               font-size: 12px; position: relative; z-index: 1;"
+      <button class="element-button pt-tile"
+        style="border-color: ${color}; --tile-glow: ${color};"
         data-symbol="${symbol}">
         ${symbol}
       </button>
@@ -126,34 +70,32 @@ export function openPeriodicTable(callback) {
 
   // Create the table HTML
   let tableHTML = `
-    <h3 style="margin: 0 0 10px 0; text-align: center;">Select an Element</h3>
-    <div style="display: grid; grid-template-columns: repeat(18, 30px); gap: 2px; justify-content: center; margin-bottom: 10px;">
+    <h3 class="pt-heading">Select an Element</h3>
+    <div class="pt-grid-main">
   `;
 
   // Render the main table
   tableLayout.forEach(period => {
     period.forEach(symbol => {
-      tableHTML += symbol ? tileHTML(symbol) : `<div style="width: 30px; height: 30px;"></div>`;
+      tableHTML += symbol ? tileHTML(symbol) : `<div class="pt-tile-empty"></div>`;
     });
   });
 
   tableHTML += '</div>';
 
   // Lanthanides row (always visible)
-  tableHTML += `<div style="display: grid; grid-template-columns: repeat(15, 30px); gap: 2px; justify-content: center; margin-bottom: 5px;">`;
+  tableHTML += `<div class="pt-grid-15 pt-grid-15-mb">`;
   lanthanides.forEach(symbol => { tableHTML += tileHTML(symbol); });
   tableHTML += '</div>';
 
   // Actinides row (always visible)
-  tableHTML += `<div style="display: grid; grid-template-columns: repeat(15, 30px); gap: 2px; justify-content: center;">`;
+  tableHTML += `<div class="pt-grid-15">`;
   actinides.forEach(symbol => { tableHTML += tileHTML(symbol); });
   tableHTML += '</div>';
 
   // Close button
-  tableHTML += `<div style="text-align: center; margin-top: 10px;">
-                  <button class="periodic-table-close"
-                    style="padding: 5px 15px; background: #333; border: 1px solid #555;
-                           color: white; cursor: pointer; border-radius: 4px;">
+  tableHTML += `<div class="pt-close-row">
+                  <button class="periodic-table-close pt-btn">
                     Close
                   </button>
                 </div>`;
@@ -165,23 +107,12 @@ export function openPeriodicTable(callback) {
 
   wirePickerDismiss(periodicTable, periodicTable.querySelector('.periodic-table-close'));
 
-  // Add event listeners to all element buttons
+  // Add event listeners to all element buttons. Hover glow is plain CSS
+  // (.pt-tile:hover, see analysisPanels.css) driven by the --tile-glow
+  // custom property set per tile in tileHTML() above.
   const elementButtons = periodicTable.querySelectorAll('.element-button');
   elementButtons.forEach(button => {
     const symbol = button.getAttribute('data-symbol');
-    const color = borderColors[symbol] || borderColors.default;
-
-    button.addEventListener('mouseover', () => {
-      button.style.transform = 'scale(1.2)';
-      button.style.boxShadow = `0 0 12px ${color}`;
-      button.style.zIndex = '2';
-    });
-
-    button.addEventListener('mouseout', () => {
-      button.style.transform = 'scale(1)';
-      button.style.boxShadow = 'none';
-      button.style.zIndex = '1';
-    });
 
     button.addEventListener('click', () => {
       showSelectedElement(symbol);

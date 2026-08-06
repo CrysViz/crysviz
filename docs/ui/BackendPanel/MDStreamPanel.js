@@ -388,8 +388,7 @@ export function addMDStreamPanel() {
           <span class="atomistic-source-label">Live MD Stream</span>
           <span class="md-stream-dot md-stream-dot--disconnected" id="mdStreamDot"></span>
         </div>
-        <div class="atomistic-source-copy" id="mdStreamMsg"
-             style="font-size:11px; color:var(--text-muted, #999); margin-top:4px;">
+        <div class="atomistic-source-copy md-stream-msg" id="mdStreamMsg">
           Not connected. Start example_md.py, then click Connect.
         </div>
       </div>
@@ -398,17 +397,17 @@ export function addMDStreamPanel() {
 
         <div class="atomistic-card atomistic-card-compact">
           <div class="atomistic-grid atomistic-grid-3 atomistic-grid-compact">
-            <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-              <span style="font-size:10px;color:#888;">Step</span>
-              <span id="mdStreamStep" style="font-size:13px;font-weight:600;">—</span>
+            <div class="md-stream-stat">
+              <span class="md-stream-stat-label">Step</span>
+              <span id="mdStreamStep" class="md-stream-stat-value">—</span>
             </div>
-            <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-              <span style="font-size:10px;color:#888;">Atoms</span>
-              <span id="mdStreamAtoms" style="font-size:13px;font-weight:600;">—</span>
+            <div class="md-stream-stat">
+              <span class="md-stream-stat-label">Atoms</span>
+              <span id="mdStreamAtoms" class="md-stream-stat-value">—</span>
             </div>
-            <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-              <span style="font-size:10px;color:#888;">Viewer FPS</span>
-              <span id="mdStreamFps" style="font-size:13px;font-weight:600;">—</span>
+            <div class="md-stream-stat">
+              <span class="md-stream-stat-label">Viewer FPS</span>
+              <span id="mdStreamFps" class="md-stream-stat-value">—</span>
             </div>
           </div>
         </div>
@@ -418,26 +417,15 @@ export function addMDStreamPanel() {
           <button type="button" class="calcButton" id="mdStreamDisconnectBtn">Disconnect</button>
         </div>
 
-        <div class="atomistic-card atomistic-card-compact"
-             style="font-size:11px;color:#888;line-height:1.8;">
+        <div class="atomistic-card atomistic-card-compact md-stream-info">
           <div><code>python example_md.py</code> &nbsp;→ live preview</div>
           <div><code>python example_md.py sim</code> &nbsp;→ write trajectory</div>
           <div><code>python example_md.py play</code> &nbsp;→ stream at 30 fps</div>
-          <div style="margin-top:6px;">Forces: enable via the Forces toggle in the main panel.</div>
+          <div class="md-stream-info-note">Forces: enable via the Forces toggle in the main panel.</div>
         </div>
 
       </div>
     </div>
-
-    <style>
-      .md-stream-dot {
-        width:10px; height:10px; border-radius:50%;
-        display:inline-block; flex-shrink:0; vertical-align:middle;
-      }
-      .md-stream-dot--connected    { background:#4caf50; box-shadow:0 0 6px #4caf5088; }
-      .md-stream-dot--disconnected { background:#555; }
-      .md-stream-dot--error        { background:#f44336; box-shadow:0 0 6px #f4433688; }
-    </style>
   `;
 
   panelElements = {

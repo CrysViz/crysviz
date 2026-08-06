@@ -56,15 +56,6 @@ export function createCompositionRow(el, count, total, options = {}) {
 
   const row = document.createElement('div');
   row.className = 'comp-row';
-  row.style.cssText = `
-    display: grid;
-    grid-template-columns: auto 1fr;
-    align-items: center;
-    column-gap: 8px;
-    row-gap: 6px;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-  `;
 
   const left = document.createElement('div');
   left.className = 'comp-left';
@@ -163,26 +154,14 @@ export function createCompositionRow(el, count, total, options = {}) {
       // reads clearly at this size; sites with different colours per element
       // still show their own split when expanded into individual rows.
       const wrapper = document.createElement('div');
-      wrapper.classList.add('dot');
-      // flex:none is load-bearing here, not decoration: the wrapper sits in a
-      // flex row with other content competing for width, and without it each
-      // dot's default flex-shrink squeezed it down to a ~6px sliver (visibly
-      // an oval, not round) rather than staying at its declared size.
-      // A touch more than the single-dot case's 8px .comp-left gap alone (two
-      // 18px dots read as visually wider than the one dot they replace), but
-      // not so much that it starves the row's right column (count/percentage)
-      // of width — this is a grid row (auto 1fr), so anything spent on the
-      // left column here is width the right column doesn't get.
-      // align-items:center is load-bearing, not decoration: without it the two
-      // dot buttons default to a slight vertical offset from the row's other
-      // content (measured ~1.5px low against the label next to them) rather
-      // than sharing its center.
-      // width/height:auto override the shared .dot class's own 15x15 fixed
-      // size (added only so this wrapper picks up the rest of .dot's rules) —
-      // without them the wrapper was clamped to that 15px box while its two
-      // 18px, flex:none children refused to shrink and overflowed past its
-      // edges instead, visibly overlapping the "(K,Na)" label after it.
-      wrapper.style.cssText = 'display:flex; align-items:center; gap:3px; margin-right:6px; flex: none; width: auto; height: auto;';
+      // .dot (styles.css) is kept so the "remove old dot" query below
+      // (`left.querySelector('.dot')`) still matches this wrapper the same
+      // way it matches the single-dot case; .comp-mixed-dots (this file's
+      // own class) overrides .dot's fixed 15x15 size and lays the two mini
+      // dots out — see structureInfoPanel.css for why each property is there
+      // (flex:none/align-items/width+height:auto are all load-bearing, not
+      // decoration; the reasoning is preserved in that file's comment).
+      wrapper.className = 'dot comp-mixed-dots';
 
       groupElements.forEach((groupEl) => {
         // One colour entry per site that carries this element, so the dot
@@ -200,10 +179,10 @@ export function createCompositionRow(el, count, total, options = {}) {
         const repHex = elementColors[0] ?? safeColor(getElementDefaultColor(groupEl));
 
         const miniDot = createPieDot(elementColors.length ? elementColors : [repHex], 18);
-        miniDot.style.cssText = `
-          width: 18px; height: 18px; border-radius: 50%; cursor: pointer;
-          border: 1px solid rgba(255,255,255,0.4); flex: none;
-        `;
+        miniDot.className = 'comp-mixed-dot';
+        // createPieDot() always sets its own inline border — override it
+        // explicitly (a class rule can't beat an inline style).
+        miniDot.style.border = '1px solid rgba(255,255,255,0.4)';
         miniDot.title = `Customize ${groupEl}'s colour across this group`;
         miniDot.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -245,14 +224,10 @@ export function createCompositionRow(el, count, total, options = {}) {
 
     // Create new dot with current colors
     const dot = createPieDot(atomColors, 20);
-    dot.classList.add('dot');
-    dot.style.cssText = `
-      width: 20px;
-      height: 20px;
-      margin-right: 6px;
-      border: 1px solid rgba(255,255,255,0.4);
-      cursor: pointer;
-    `;
+    dot.className = 'dot comp-single-dot';
+    // createPieDot() always sets its own inline border — override it
+    // explicitly (a class rule can't beat an inline style).
+    dot.style.border = '1px solid rgba(255,255,255,0.4)';
     setSwatchOpacity(dot, currentOpacity);
     // Keep DOM order checkbox -> dot -> name -> caret across repaints.
     left.insertBefore(dot, visCheckboxSwitch.nextSibling);
@@ -290,18 +265,11 @@ export function createCompositionRow(el, count, total, options = {}) {
   // regardless of viewport width — this span isn't a <label>, so it doesn't
   // inherit that rule, and previously fell through to `.comp-row`'s
   // narrow-viewport override instead, causing a mismatch.
-  name.style.fontSize = 'calc(14px * var(--cv-font-scale, 1))';
+  name.className = 'comp-row-name';
 
   const expandIcon = document.createElement('span');
   expandIcon.className = 'comp-expand-icon';
   expandIcon.textContent = '▶';
-  expandIcon.style.cssText = `
-    margin-left: 4px;
-    font-size: 14px;
-    transition: transform 0.2s ease;
-    color: rgba(255,255,255,0.8);
-    transform: rotate(0deg);
-  `;
 
   const keepToggle = createTinyImmunityToggle(
     elementAtomIndices,
@@ -312,12 +280,7 @@ export function createCompositionRow(el, count, total, options = {}) {
   left.appendChild(expandIcon);
 
   const right = document.createElement('div');
-  right.style.cssText = `
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-  `;
+  right.className = 'comp-right';
 
   // Percentage in its own, smaller span: at the row's normal font size
   // "4 (80.0%)" was wide enough to wrap onto a second line whenever the left
@@ -325,11 +288,11 @@ export function createCompositionRow(el, count, total, options = {}) {
   // nowrap alone would have just pushed the overflow off the edge instead of
   // fixing it, so the percentage has to actually take less width.
   const countLabel = document.createElement('span');
-  countLabel.style.cssText = 'white-space: nowrap;';
+  countLabel.className = 'comp-count-label';
   const pct = (100 * count / total).toFixed(1);
   countLabel.textContent = `${count} `;
   const pctLabel = document.createElement('span');
-  pctLabel.style.cssText = 'font-size: 0.8em; color: rgba(255,255,255,0.7);';
+  pctLabel.className = 'comp-pct-label';
   pctLabel.textContent = `(${pct}%)`;
   countLabel.appendChild(pctLabel);
   right.appendChild(countLabel);
@@ -344,13 +307,7 @@ export function createCompositionRow(el, count, total, options = {}) {
 
   const atomsContainer = document.createElement('div');
   atomsContainer.className = 'individual-atoms';
-  atomsContainer.style.cssText = `
-    display: none;
-    margin-left: 6px;
-    margin-top: 8px;
-    border-left: 2px solid rgba(255,255,255,0.1);
-    padding-left: 6px;
-  `;
+  atomsContainer.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
 
   // The individual atom rows are expensive to build (one DOM subtree per atom)
   // and stay hidden until the row is expanded. Eagerly building thousands of
@@ -408,13 +365,7 @@ export function createCompositionRow(el, count, total, options = {}) {
   // EVENT HANDLERS
   // =========================================
 
-  row.addEventListener('mouseenter', () => {
-    row.style.backgroundColor = 'rgba(255,255,255,0.03)';
-  });
-
-  row.addEventListener('mouseleave', () => {
-    row.style.backgroundColor = 'transparent';
-  });
+  // Hover tint is plain CSS (.comp-row:hover, structureInfoPanel.css).
 
   row.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -458,15 +409,6 @@ export function createWyckoffCompositionRow(el, entries, total) {
 
   const row = document.createElement('div');
   row.className = 'comp-row';
-  row.style.cssText = `
-    display: grid;
-    grid-template-columns: auto 1fr;
-    align-items: center;
-    column-gap: 8px;
-    row-gap: 6px;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-  `;
 
   const left = document.createElement('div');
   left.className = 'comp-left';
@@ -497,14 +439,10 @@ export function createWyckoffCompositionRow(el, entries, total) {
 
     // Create new dot with current colors
     const dot = createPieDot(atomColors, 20);
-    dot.classList.add('dot');
-    dot.style.cssText = `
-      width: 20px;
-      height: 20px;
-      margin-right: 6px;
-      border: 1px solid rgba(255,255,255,0.4);
-      cursor: pointer;
-    `;
+    dot.className = 'dot comp-single-dot';
+    // createPieDot() always sets its own inline border — override it
+    // explicitly (a class rule can't beat an inline style).
+    dot.style.border = '1px solid rgba(255,255,255,0.4)';
     setSwatchOpacity(dot, currentOpacity);
     left.insertBefore(dot, left.firstChild);
 
@@ -541,18 +479,11 @@ export function createWyckoffCompositionRow(el, entries, total) {
   // regardless of viewport width — this span isn't a <label>, so it doesn't
   // inherit that rule, and previously fell through to `.comp-row`'s
   // narrow-viewport override instead, causing a mismatch.
-  name.style.fontSize = 'calc(14px * var(--cv-font-scale, 1))';
+  name.className = 'comp-row-name';
 
   const expandIcon = document.createElement('span');
   expandIcon.className = 'comp-expand-icon';
   expandIcon.textContent = '▶';
-  expandIcon.style.cssText = `
-    margin-left: 4px;
-    font-size: 14px;
-    transition: transform 0.2s ease;
-    color: rgba(255,255,255,0.8);
-    transform: rotate(0deg);
-  `;
 
   const keepToggle = createTinyImmunityToggle(
     wyckoffAtomIndices,
@@ -563,12 +494,7 @@ export function createWyckoffCompositionRow(el, entries, total) {
   left.appendChild(expandIcon);
 
   const right = document.createElement('div');
-  right.style.cssText = `
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-  `;
+  right.className = 'comp-right';
 
   const countLabel = document.createElement('span');
   const pct = (100 * entries.length / total).toFixed(1);
@@ -585,13 +511,7 @@ export function createWyckoffCompositionRow(el, entries, total) {
 
   const atomsContainer = document.createElement('div');
   atomsContainer.className = 'individual-atoms';
-  atomsContainer.style.cssText = `
-    display: none;
-    margin-left: 6px;
-    margin-top: 8px;
-    border-left: 2px solid rgba(255,255,255,0.1);
-    padding-left: 6px;
-  `;
+  atomsContainer.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
 
   // Create individual atom rows for each Wyckoff site
   entries.forEach((entry, index) => {
@@ -621,13 +541,7 @@ export function createWyckoffCompositionRow(el, entries, total) {
   // EVENT HANDLERS
   // =========================================
 
-  row.addEventListener('mouseenter', () => {
-    row.style.backgroundColor = 'rgba(255,255,255,0.03)';
-  });
-
-  row.addEventListener('mouseleave', () => {
-    row.style.backgroundColor = 'transparent';
-  });
+  // Hover tint is plain CSS (.comp-row:hover, structureInfoPanel.css).
 
   row.addEventListener('click', (e) => {
     e.stopPropagation();

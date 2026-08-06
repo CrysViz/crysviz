@@ -163,26 +163,12 @@ const LEGEND_PLACEHOLDER = "Click to add legend";
 // sit in), not a separate pair of boxes flanking the bar, so they need to
 // be absolutely positioned rather than flex children.
 const MINMAX_WIDTH = 46; // centered on the bar's own two ends, so half of this overhangs past each edge
-const plainInputStyle = {
-  position: "absolute",
-  width: `${MINMAX_WIDTH}px`,
-  fontSize: "15px",
-  padding: "0",
-  background: "transparent",
-  color: "inherit",
-  border: "none",
-  borderRadius: "0",
-  textAlign: "center",
-  MozAppearance: "textfield",
-  // Higher than resizeFrame's z-index (styles/toggle_styles.css, 2): frame
-  // is pointer-events: auto and covers this same spot (it encloses Min/Max
-  // along with the ticks/legend — see labeledExtent()), and with no
-  // explicit z-index of their own these inputs would otherwise lose that
-  // stacking tie to frame (barOuter itself sets no z-index, so it doesn't
-  // shield them in their own context) purely by DOM order, leaving frame on
-  // top and swallowing every click meant for the input underneath it.
-  zIndex: "4",
-};
+// Everything about these inputs that never changes lives in the
+// .cv-colorbar-value-input class (styles/sceneWidgets.css) — including the
+// z-index reasoning (it has to clear resizeFrame's, see that class's own
+// comment). Only fontSize/width (scaledFont/scaledInputWidth) and
+// textAlign/position (orientation-dependent, applyLayout/positionMinMax)
+// are ever actually recomputed, so they stay set from JS.
 
 // Best-effort read of "the same feature the background swatch itself uses":
 // general.currentLatticeColor is the live, contrast-safe color the app
@@ -268,11 +254,11 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // else useful to put it — orientation/simplify are floating-only). Once
   // floating, controlsBar goes position:absolute (styles/toggle_styles.css)
   // and drops out of this flow entirely, leaving valueRow to fill the row
-  // alone exactly as before.
-  const wrapper = createElement("div", {}, {
-    width: "100%", marginTop: "9px", marginBottom: "21px",
-    display: "flex", alignItems: "center", gap: "8px"
-  });
+  // alone exactly as before. margin-top/bottom aren't set here — the
+  // applyLayout() call at the end of this function always sets both before
+  // the widget ever paints, off the orientation/flipSide state that isn't
+  // known yet at creation time.
+  const wrapper = createElement("div", { class: "cv-colorbar-wrapper" });
 
   const controlsBar = createElement("div", { class: "cv-colorbar-controls" });
   // Bridges the CONTROLS_GAP dead zone between the frame's top edge and the
@@ -287,7 +273,11 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // it wherever the bar happened to be floating. This bridge keeps that
   // footprint to the minimum needed to keep the hover chain unbroken.
   const controlsBridge = createElement("div", { class: "cv-colorbar-controls-bridge" });
-  const valueRow = createElement("div", { class: "cv-colorbar-values" }, { flex: "1", minWidth: "0" });
+  // flex:1/min-width:0 (valueRow as a flex ITEM of wrapper) live in
+  // sceneWidgets.css alongside .cv-colorbar-values' own display:flex rule
+  // (toggle_styles.css, which governs valueRow as a flex CONTAINER for its
+  // own children — a different axis, no overlap).
+  const valueRow = createElement("div", { class: "cv-colorbar-values" });
   wrapper.appendChild(controlsBar);
   wrapper.appendChild(controlsBridge);
   wrapper.appendChild(valueRow);
@@ -334,10 +324,14 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
 
   controlsBar.appendChild(menuWrap);
 
-  const barOuter = createElement("div", { class: "cv-colorbar-bar-handle" }, { position: "relative" });
+  // position:relative lives on .cv-colorbar-bar-handle itself (sceneWidgets.css,
+  // alongside the cursor:grab/grabbing rule that class already carries from
+  // toggle_styles.css) — barOuter's own flex/width/height/margin vary with
+  // orientation and floating state, so those stay set from applyLayout().
+  const barOuter = createElement("div", { class: "cv-colorbar-bar-handle" });
   valueRow.appendChild(barOuter); // valueRow's only child now — Min/Max moved off it, see below
-  const canvas = createElement("canvas", {}, { display: "block", borderRadius: "4px" });
-  const tickLayer = createElement("div", {}, { position: "absolute", inset: "0", pointerEvents: "none" });
+  const canvas = createElement("canvas", { class: "cv-colorbar-gradient-canvas" });
+  const tickLayer = createElement("div", { class: "cv-colorbar-tick-layer" });
   barOuter.appendChild(canvas);
   barOuter.appendChild(tickLayer);
 
@@ -349,19 +343,13 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // utils/LegendRichText.js's sanitizer+renderer. See beginLegendEdit /
   // commitLegendEdit below, wired up after positionLegend/relayoutFloating
   // exist to call them.
+  // position/color/white-space/letter-spacing/cursor/outline are constant
+  // (styles/sceneWidgets.css); display/opacity/font-style/font-size are all
+  // reset unconditionally by refreshLegendContent()/positionLegend() below
+  // before this ever paints, so they're not worth setting twice here.
   let currentLegendRaw = legend;
   const legendLabel = createElement("div", {
     class: "cv-colorbar-legend", spellcheck: "false", title: "Click to edit legend"
-  }, {
-    position: "absolute",
-    fontSize: "15px",
-    color: "currentColor",
-    whiteSpace: "nowrap",
-    letterSpacing: "0.02em",
-    cursor: "text",
-    outline: "none",
-    display: "block",
-    opacity: "0.85"
   });
   barOuter.appendChild(legendLabel);
 
@@ -451,10 +439,8 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // tickLayer, which renderTicks() wipes and rebuilds on every render —
   // that would destroy and recreate these on every value change, losing
   // focus/typing state mid-edit).
-  const minInput = createElement("input", { type: "number", value: minValue, step: "0.1" }, plainInputStyle);
-  minInput.style.setProperty('appearance', 'textfield', 'important');
-  const maxInput = createElement("input", { type: "number", value: maxValue, step: "0.1" }, plainInputStyle);
-  maxInput.style.setProperty('appearance', 'textfield', 'important');
+  const minInput = createElement("input", { type: "number", value: minValue, step: "0.1", class: "cv-colorbar-value-input" });
+  const maxInput = createElement("input", { type: "number", value: maxValue, step: "0.1", class: "cv-colorbar-value-input" });
   barOuter.appendChild(minInput);
   barOuter.appendChild(maxInput);
 
@@ -526,8 +512,8 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   }
 
   function applyInputStyle(input) {
-    Object.entries(plainInputStyle).forEach(([k, v]) => (input.style[k] = v));
-    input.style.setProperty('appearance', 'textfield', 'important');
+    // Constant chrome lives in .cv-colorbar-value-input (sceneWidgets.css);
+    // only the length-scaled size actually varies per call.
     input.style.fontSize = `${scaledFont(INPUT_BASE_FONT, DOCKED_INPUT_FONT)}px`;
     input.style.width = scaledInputWidth(input);
   }
@@ -958,12 +944,11 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     const ticks = computeTicks(min, max, currentScale);
     const tickFontSize = `${scaledFont(TICK_LABEL_BASE_FONT, DOCKED_TICK_LABEL_FONT)}px`;
     ticks.forEach(({ frac, label: text }) => {
-      const line = createElement("div", {}, { position: "absolute", background: "rgba(0,0,0,0.55)" });
+      const line = createElement("div", { class: "cv-colorbar-tick-line" });
+      // position/color/white-space are constant (sceneWidgets.css); fontSize
+      // is the length-scaled size (scaledFont), recomputed per render.
       const label = createElement("div", { class: "cv-colorbar-tick-label" }, {
-        position: "absolute",
         fontSize: tickFontSize,
-        color: "currentColor",
-        whiteSpace: "nowrap"
       }, text);
 
       const tickOffset = `calc(100% + ${TICK_LABEL_GAP}px)`;

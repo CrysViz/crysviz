@@ -33,9 +33,6 @@ const COLLISION_THRESHOLD_ANGSTROM = 0.5;
 // click on the same row toggles the highlight off instead of just reapplying it.
 let highlightedUuid = null;
 
-const ROW_BG = 'transparent';
-const ROW_BG_SELECTED = 'rgba(255, 191, 0, 0.2)';
-
 // "Added this session" list: every atom pushed via addAtomsToExistingStructure
 // this session (structure._sessionAddedAtoms, set by CommitAtoms.js) shown
 // with its element, live fractional coordinates, and its own Remove button —
@@ -52,11 +49,11 @@ function renderSessionAddedList(container) {
 
   const heading = document.createElement('div');
   heading.textContent = 'Added this session';
-  heading.style.cssText = 'font-size:11px; font-weight:600; color:#ccc; margin: 12px 0 4px 0;';
+  heading.className = 'addstructure-list-heading';
   container.appendChild(heading);
 
   const list = document.createElement('div');
-  list.style.cssText = 'max-height: 160px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px;';
+  list.className = 'addstructure-scroll-list addstructure-scroll-list--tall';
 
   const rowElements = []; // every row built this render, so a click can clear the others'
 
@@ -68,36 +65,35 @@ function renderSessionAddedList(container) {
     const [x, y, z] = structure.atoms[atomIndex].position;
 
     const row = document.createElement('div');
-    row.style.cssText = `display:flex; align-items:center; justify-content:space-between; gap:8px; padding: 4px 8px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size:12px; cursor:pointer; background:${entry.uuid === highlightedUuid ? ROW_BG_SELECTED : ROW_BG};`;
+    row.className = 'addstructure-session-row' + (entry.uuid === highlightedUuid ? ' is-active' : '');
     row.title = 'Click to highlight this atom in the 3D view';
     rowElements.push(row);
     row.addEventListener('click', () => {
-      rowElements.forEach((r) => { r.style.background = ROW_BG; });
+      rowElements.forEach((r) => { r.classList.remove('is-active'); });
       if (highlightedUuid === entry.uuid) {
         clearHighlightAtom();
         highlightedUuid = null;
       } else {
         highlightAtomsIn3D([atomIndex]);
         highlightedUuid = entry.uuid;
-        row.style.background = ROW_BG_SELECTED;
+        row.classList.add('is-active');
       }
     });
 
     const label = document.createElement('span');
     label.textContent = entry.element;
-    label.style.cssText = 'font-weight:600; flex-shrink:0;';
+    label.className = 'addstructure-list-label';
     row.appendChild(label);
 
     const coords = document.createElement('span');
     coords.textContent = `(${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)})`;
-    coords.style.cssText = 'font-family: monospace; color: rgba(255,255,255,0.7); flex-grow:1; text-align:right;';
+    coords.className = 'addstructure-list-coord';
     row.appendChild(coords);
 
     const removeBtn = document.createElement('button');
     removeBtn.textContent = '✕';
     removeBtn.title = 'Remove this atom';
-    removeBtn.className = 'btn-mini';
-    removeBtn.style.cssText = 'width:20px; height:20px; padding:0; line-height:0; display:flex; align-items:center; justify-content:center; flex-shrink:0;';
+    removeBtn.className = 'btn-mini addstructure-icon-btn addstructure-icon-btn--shrink0';
     removeBtn.addEventListener('click', (e) => {
       e.stopPropagation(); // don't also trigger the row's highlight click
       // Clear any 3D highlight BEFORE mutating structure.atoms: clearHighlightAtom()
@@ -127,7 +123,7 @@ function addAtomsPanel(container) {
   const editorHost = document.createElement('div');
   const warningHost = document.createElement('div');
   const buttonRow = document.createElement('div');
-  buttonRow.style.cssText = 'margin-top: 15px; text-align: right;';
+  buttonRow.className = 'addstructure-button-row';
 
   const addToStructureBtn = document.createElement('button');
   addToStructureBtn.id = 'addToStructure';
@@ -218,7 +214,7 @@ export function addAtomPanel(buttonId = 'addButton') {
       closable: true,
       persist: false,
       buildContent(body) {
-        body.style.cssText = 'width: min(90vw, 460px);';
+        body.className = 'addstructure-panel-body--sm';
         addAtomsPanel(body);
       },
       defaults: { docked: false, collapsed: false, barCollapsed: false, anchor: defaultFloatingAnchor() },

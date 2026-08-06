@@ -85,12 +85,11 @@ function makeClickHandler() {
 /** Scrollable drill-down list of individual connections, one row each. */
 function buildPairList(container) {
   container.innerHTML = '';
-  container.style.cssText = 'max-height:180px; overflow-y:auto; border:1px solid rgba(255,255,255,0.12); border-radius:6px; margin-top:8px; flex:0 0 auto;';
 
   if (!connections.length) {
     const empty = document.createElement('div');
     empty.textContent = 'No polyhedra connections found.';
-    empty.style.cssText = 'padding:8px; font-size:12px; color:#999; text-align:center;';
+    empty.className = 'pc-list-empty';
     container.appendChild(empty);
     return;
   }
@@ -98,29 +97,30 @@ function buildPairList(container) {
   let lastRow = null;
   connections.forEach((conn) => {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px; padding:5px 8px; font-size:11.5px; color:#ddd; cursor:pointer; border-bottom:1px solid rgba(255,255,255,0.06);';
+    row.className = 'pc-row';
 
     const label = document.createElement('span');
     label.textContent = pairLabelOf(conn);
-    label.style.cssText = 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+    label.className = 'pc-row-label';
 
     const badge = document.createElement('span');
     badge.textContent = SHARING_LABELS[conn.sharing];
-    badge.style.cssText = 'flex:0 0 auto; font-size:10.5px; padding:1px 6px; border-radius:8px; background:rgba(255,255,255,0.12); color:#ccc;';
+    badge.className = 'pc-row-badge';
 
     row.append(label, badge);
-    row.addEventListener('mouseenter', () => { row.style.background = 'rgba(255,255,255,0.06)'; });
-    row.addEventListener('mouseleave', () => { if (row !== lastRow) row.style.background = ''; });
+    // Hover tint is plain CSS (:hover, see analysisPanels.css); selection is
+    // the .is-selected class, which :hover deliberately still overrides
+    // (source order) while the pointer sits over the row.
     row.addEventListener('click', () => {
       if (lastRow === row) {
         clearAllHighlights();
-        row.style.background = '';
+        row.classList.remove('is-selected');
         lastRow = null;
         return;
       }
-      if (lastRow) lastRow.style.background = '';
+      lastRow?.classList.remove('is-selected');
       highlightConnection(conn);
-      row.style.background = 'rgba(80,160,255,0.18)';
+      row.classList.add('is-selected');
       lastRow = row;
     });
     container.appendChild(row);
@@ -156,7 +156,7 @@ export function addPolyhedraConnectivityHistogramPanel() {
           <div class="split-item" id="polyhedra-connectivity-histogram-item">
             <h4>Polyhedra Connectivity</h4>
             <div id="${PLOT_ID}" class="split-item-body"></div>
-            <div id="pcList"></div>
+            <div id="pcList" class="pc-list"></div>
             <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
             <div class="split-item-actions">
               <button type="button" class="split-item-action-btn" data-split-action="theme" title="Toggle light/dark">🌓</button>

@@ -69,23 +69,22 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
   if (structure) {
     const histogramsPanel = document.createElement('div');
     histogramsPanel.id = 'polyhedraHistogramsPanel';
-    histogramsPanel.style.marginBottom = '10px';
+    histogramsPanel.className = 'cv-histogram-section';
     histogramsPanel.appendChild(makeSectionHeadline('Histograms'));
 
     function addHistogramRow(label, buttonId, openWindow) {
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;';
+      row.className = 'cv-histogram-row';
 
       const nameLabel = document.createElement('span');
       nameLabel.textContent = label;
-      nameLabel.style.cssText = 'font-size:12px; color:#ccc;';
+      nameLabel.className = 'cv-histogram-row-label';
 
       const openBtn = document.createElement('button');
       openBtn.id = buttonId;
-      openBtn.className = 'btn-mini highlight';
+      openBtn.className = 'btn-mini highlight cv-histogram-row-btn';
       openBtn.textContent = 'Open';
       openBtn.title = `Open the ${label} window`;
-      openBtn.style.fontSize = '12px';
       openBtn.onclick = openWindow;
 
       row.append(nameLabel, openBtn);
@@ -101,14 +100,13 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
 
   const panel = document.createElement('div');
   panel.id = 'polyhedraSettingsPanel';
-  panel.style.marginBottom = '10px';
+  panel.className = 'cv-polyhedra-settings-panel';
 
   const content = document.createElement('div');
   content.id = 'polyhedraSettingsContent';
 
   const body = document.createElement('div');
-  body.className = 'toggle_group';
-  body.style.marginTop = '10px';
+  body.className = 'toggle_group cv-polyhedra-settings-body';
 
   if (structure && settings) {
     body.appendChild(createToggleRow({
@@ -141,7 +139,7 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
   } else {
     const empty = document.createElement('div');
     empty.textContent = 'Load a structure to edit polyhedra settings.';
-    empty.style.opacity = '0.8';
+    empty.className = 'cv-polyhedra-empty-msg';
     body.appendChild(empty);
   }
 

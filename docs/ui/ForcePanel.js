@@ -72,8 +72,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   // bar and collapse, so no header is built here.
   const group = document.createElement("div");
   group.id = "forceControlsGroup";
-  group.style.color = "white";
-  group.style.overflowX = "hidden";
+  group.className = "cv-scene-panel-group";
 
   // --- Panel ---
   const panel = document.createElement("div");
@@ -81,17 +80,15 @@ export function addForcePanel(target = "cvPanelBody-forces") {
 
   const content = document.createElement("div");
   content.id = "forceControlsContent";
-  content.style.overflowY = "visible";
-  content.style.overflowX = "hidden";
+  content.className = "cv-scene-panel-content";
 
   // Activation ("Show Forces") lives in the Features window; this panel only
   // configures how the forces are drawn.
 
   // --- No-forces note ---
   const noForcesNote = document.createElement("div");
-  noForcesNote.className = "control-note";
+  noForcesNote.className = "control-note cv-force-hidden";
   noForcesNote.textContent = "No force data available for this structure. Upload a file that includes forces (e.g. an OUTCAR) or run a Relax/MD calculation.";
-  noForcesNote.style.display = "none";
   content.appendChild(noForcesNote);
 
   // --- Histogram ---
@@ -101,18 +98,15 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   // has no force data (updateNoForcesNote keeps this in sync on rebuild and
   // on every redraw()).
   const histogramSection = document.createElement("div");
-  histogramSection.style.marginBottom = "8px";
+  histogramSection.className = "cv-force-row";
   histogramSection.appendChild(makeSectionHeadline("Histograms"));
 
   const histogramRow = document.createElement("div");
-  histogramRow.style.display = "flex";
-  histogramRow.style.alignItems = "center";
-  histogramRow.style.justifyContent = "space-between";
-  histogramRow.style.gap = "8px";
+  histogramRow.className = "cv-force-hist-row";
 
   const histogramLabel = document.createElement("span");
+  histogramLabel.className = "cv-force-hist-label";
   histogramLabel.textContent = "Force Histogram";
-  histogramLabel.style.cssText = "font-size:12px; color:#ccc;";
 
   const histogramBtn = document.createElement("button");
   histogramBtn.type = "button";
@@ -120,7 +114,6 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   histogramBtn.className = "btn-mini highlight";
   histogramBtn.textContent = "Open";
   histogramBtn.title = "Open the Force Histogram window";
-  histogramBtn.style.fontSize = "12px";
   histogramBtn.addEventListener("click", () => addForceHistogramPanel());
 
   histogramRow.append(histogramLabel, histogramBtn);
@@ -129,16 +122,13 @@ export function addForcePanel(target = "cvPanelBody-forces") {
 
   // --- Global Scaling slider ---
   const sliderWrapper = document.createElement("div");
-  sliderWrapper.style.marginBottom = "8px";
+  sliderWrapper.className = "cv-force-row";
 
   const sliderTopRow = document.createElement("div");
-  sliderTopRow.style.display = "flex";
-  sliderTopRow.style.alignItems = "center";
-  sliderTopRow.style.justifyContent = "space-between";
+  sliderTopRow.className = "cv-force-split-row";
 
   const sliderLabel = document.createElement("label");
   sliderLabel.textContent = "Global Scaling (Length): ";
-  sliderLabel.style.color = "white";
 
   // "log length" — scales arrow LENGTH logarithmically instead of linearly,
   // independent of the color map's own Log Scale toggle below (though
@@ -146,12 +136,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   // handler for why a log-length arrow next to a linear-color one would be
   // internally inconsistent about what a given magnitude looks like).
   const logLengthLabel = document.createElement("label");
-  logLengthLabel.style.display = "flex";
-  logLengthLabel.style.alignItems = "center";
-  logLengthLabel.style.gap = "4px";
-  logLengthLabel.style.fontSize = "12px";
-  logLengthLabel.style.whiteSpace = "nowrap";
-  logLengthLabel.style.cursor = "pointer";
+  logLengthLabel.className = "cv-force-check";
 
   const logLengthCheckbox = document.createElement("input");
   logLengthCheckbox.type = "checkbox";
@@ -166,13 +151,11 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   sliderWrapper.appendChild(sliderTopRow);
 
   const sliderBottomRow = document.createElement("div");
-  sliderBottomRow.style.display = "flex";
-  sliderBottomRow.style.alignItems = "center";
+  sliderBottomRow.className = "cv-force-split-row";
 
   const sliderValue = document.createElement("span");
+  sliderValue.className = "cv-force-value";
   sliderValue.textContent = (general.forceScale ?? 1.0).toFixed(2);
-  sliderValue.style.marginRight = "8px";
-  sliderValue.style.color = "white";
   const slider = /** @type {any} */ (document.createElement("input"));
   slider.type = "range";
   slider.min = 0.1; slider.max = 10; slider.step = 0.1;
@@ -184,14 +167,12 @@ export function addForcePanel(target = "cvPanelBody-forces") {
 
   // --- Size slider ---
   const widthWrapper = document.createElement("div");
-  widthWrapper.style.marginBottom = "8px";
+  widthWrapper.className = "cv-force-row";
   const widthLabel = document.createElement("label");
   widthLabel.textContent = "Arrow Size (Diameter): ";
-  widthLabel.style.color = "white";
   const widthValue = document.createElement("span");
+  widthValue.className = "cv-force-value";
   widthValue.textContent = (general.forceRadius ?? 0.1).toFixed(2);
-  widthValue.style.marginRight = "8px";
-  widthValue.style.color = "white";
   const widthSlider = /** @type {any} */ (document.createElement("input"));
   widthSlider.type = "range";
   widthSlider.min = 0.01; widthSlider.max = 0.15; widthSlider.step = 0.01;
@@ -203,43 +184,28 @@ export function addForcePanel(target = "cvPanelBody-forces") {
 
   // --- Species Visibility Panel ---
   const speciesVisibilityLabel = document.createElement("div");
+  speciesVisibilityLabel.className = "cv-force-subheading";
   speciesVisibilityLabel.textContent = "Species Visibility:";
-  speciesVisibilityLabel.style.fontSize = "11px";
-  speciesVisibilityLabel.style.margin = "8px 0 4px";
-  speciesVisibilityLabel.style.color = "white";
   content.appendChild(speciesVisibilityLabel);
 
   const speciesVisibilityContainer = document.createElement("div");
   speciesVisibilityContainer.id = "forceSpeciesVisibilityContainer";
-  speciesVisibilityContainer.style.marginBottom = "8px";
-  speciesVisibilityContainer.style.display = "grid";
-  speciesVisibilityContainer.style.gridTemplateColumns = "repeat(4, 1fr)";
-  speciesVisibilityContainer.style.gap = "4px 8px";
-  speciesVisibilityContainer.style.alignItems = "center";
+  speciesVisibilityContainer.className = "cv-species-toggle-grid";
   content.appendChild(speciesVisibilityContainer);
 
   // --- Color Map dropdown + color bar ---
   const colorMapWrapper = document.createElement("div");
-  colorMapWrapper.style.marginBottom = "8px";
+  colorMapWrapper.className = "cv-force-row";
 
   const colorMapLabel = document.createElement("label");
   colorMapLabel.textContent = "Color Map: ";
-  colorMapLabel.style.color = "white";
-  colorMapLabel.style.display = "block";
-  colorMapLabel.style.marginBottom = "4px";
+  colorMapLabel.className = "cv-force-label-block";
 
   const colorMapRow = document.createElement("div");
-  colorMapRow.style.display = "flex";
-  colorMapRow.style.alignItems = "center";
-  colorMapRow.style.gap = "8px";
+  colorMapRow.className = "cv-force-colormap";
 
   const colorMapSelect = document.createElement("select");
-  colorMapSelect.style.flex = "1";
-  colorMapSelect.style.padding = "4px";
-  colorMapSelect.style.background = "#333";
-  colorMapSelect.style.color = "white";
-  colorMapSelect.style.border = "1px solid #555";
-  colorMapSelect.style.borderRadius = "3px";
+  colorMapSelect.className = "cv-scene-select cv-scene-select--flex";
 
   // Same set/order SpinPanel.js offers, so the two panels read as one
   // consistent system instead of each having its own slightly different list.
@@ -268,19 +234,10 @@ export function addForcePanel(target = "cvPanelBody-forces") {
 
   // --- Log Scale + Auto Range, side by side, above the color bar itself ---
   const barControlsRow = document.createElement("div");
-  barControlsRow.style.display = "flex";
-  barControlsRow.style.alignItems = "center";
-  barControlsRow.style.gap = "12px";
-  barControlsRow.style.margin = "6px 0 4px";
+  barControlsRow.className = "cv-force-bar-controls cv-force-bar-controls--force";
 
   const logLabel = document.createElement("label");
-  logLabel.style.display = "flex";
-  logLabel.style.alignItems = "center";
-  logLabel.style.gap = "4px";
-  logLabel.style.fontSize = "12px";
-  logLabel.style.color = "white";
-  logLabel.style.whiteSpace = "nowrap";
-  logLabel.style.cursor = "pointer";
+  logLabel.className = "cv-force-check";
 
   const logCheckbox = document.createElement("input");
   logCheckbox.type = "checkbox";
@@ -298,8 +255,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   function syncLogScaleLock() {
     const locked = logLengthCheckbox.checked;
     logCheckbox.disabled = locked;
-    logLabel.style.opacity = locked ? "0.55" : "1";
-    logLabel.style.cursor = locked ? "not-allowed" : "pointer";
+    logLabel.classList.toggle("cv-check-locked", locked);
     logLabel.title = locked ? '"log length" requires Log Scale — turn it off first to change this' : "";
   }
 
@@ -313,8 +269,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
 
   const colorBarContainer = document.createElement("div");
   colorBarContainer.id = "forceColorBarContainer";
-  colorBarContainer.style.display = "none";
-  colorBarContainer.style.width = "100%";
+  colorBarContainer.className = "cv-force-colorbar-container cv-force-hidden";
 
   colorMapWrapper.appendChild(colorMapLabel);
   colorMapWrapper.appendChild(colorMapRow);
@@ -337,7 +292,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   function refreshColorBarVisibility(preserveRange = false) {
     const cmap = currentColorMap();
     const isScalar = cmap !== "none" && cmap !== "direction" && cmap !== "plusminus" && cmap !== "element";
-    barControlsRow.style.display = isScalar ? "flex" : "none";
+    barControlsRow.classList.toggle("cv-force-hidden", !isScalar);
 
     // The bar may currently be floating over the scene (dragged out of
     // colorBarContainer into document.body), so innerHTML='' alone wouldn't
@@ -350,7 +305,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
     colorBarContainer.innerHTML = '';
 
     if (isScalar) {
-      colorBarContainer.style.display = "block";
+      colorBarContainer.classList.remove("cv-force-hidden");
 
       let minValue = general.forceMin;
       let maxValue = general.forceMax;
@@ -408,13 +363,13 @@ export function addForcePanel(target = "cvPanelBody-forces") {
         colorBarInstance.floatAtAnchor(general.forceColorBarFloatPos);
       }
     } else {
-      colorBarContainer.style.display = "none";
+      colorBarContainer.classList.add("cv-force-hidden");
     }
   }
 
   function updateNoForcesNote() {
     const hasForces = !!fileBrowser.selectedStructure?.forces?.length;
-    noForcesNote.style.display = hasForces ? "none" : "block";
+    noForcesNote.classList.toggle("cv-force-hidden", hasForces);
     histogramBtn.disabled = !hasForces;
     histogramBtn.title = hasForces
       ? "Open the Force Histogram window"
@@ -533,73 +488,27 @@ export function addForcePanel(target = "cvPanelBody-forces") {
     const uniqueElements = [...new Set(structure.elements)];
 
     uniqueElements.forEach(element => {
-      const toggleItem = createElement("div", {}, {
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "flex-start",
-        height: "24px"
-      });
+      const toggleItem = createElement("div", { class: "cv-species-toggle-item" });
 
-      const toggleContainer = createElement("label", {}, {
-        position: "relative",
-        display: "inline-block",
-        width: "40px",
-        height: "20px",
-        marginRight: "6px",
-        cursor: "pointer"
-      });
+      const toggleContainer = createElement("label", { class: "cv-species-toggle" });
 
       const checkbox = createElement("input", {
         type: "checkbox",
         id: `force-species-${element}`,
         checked: "checked"
-      }, {
-        opacity: "0",
-        width: "0",
-        height: "0",
-        position: "absolute"
       });
 
-      const slider = createElement("span", {}, {
-        position: "absolute",
-        cursor: "pointer",
-        top: "0",
-        left: "0",
-        right: "0",
-        bottom: "0",
-        backgroundColor: "#555",
-        transition: "background-color 0.2s, box-shadow 0.2s",
-        borderRadius: "20px"
-      });
-
-      const circle = createElement("span", {}, {
-        position: "absolute",
-        content: "",
-        height: "16px",
-        width: "16px",
-        left: "2px",
-        bottom: "2px",
-        backgroundColor: "white",
-        transition: "transform 0.2s, box-shadow 0.2s",
-        borderRadius: "50%",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.4)"
-      });
+      const slider = createElement("span", { class: "cv-species-toggle-track" });
+      const circle = createElement("span", { class: "cv-species-toggle-knob" });
 
       toggleContainer.appendChild(checkbox);
       toggleContainer.appendChild(slider);
       slider.appendChild(circle);
 
       const label = createElement("label", {
-        for: `force-species-${element}`
-      }, {
-        color: "white",
-        fontSize: "12px",
-        fontFamily: "monospace",
-        height: "24px",
-        lineHeight: "24px",
-        whiteSpace: "nowrap",
-        cursor: "pointer"
-      }, element);
+        for: `force-species-${element}`,
+        class: "cv-species-toggle-label"
+      }, {}, element);
 
       toggleItem.appendChild(toggleContainer);
       toggleItem.appendChild(label);
@@ -614,16 +523,11 @@ export function addForcePanel(target = "cvPanelBody-forces") {
 
       checkbox.checked = general.speciesVisibility[element];
 
+      // Colour/knob position now come from the browser's own :checked
+      // selector (styles/forcePanel.css) — this only needs to keep the
+      // stored visibility flag and the scene render in sync.
       function updateToggle() {
-        if (checkbox.checked) {
-          slider.style.backgroundColor = "#00C851";
-          circle.style.transform = "translateX(20px)";
-          general.speciesVisibility[element] = true;
-        } else {
-          slider.style.backgroundColor = "#555";
-          circle.style.transform = "translateX(0)";
-          general.speciesVisibility[element] = false;
-        }
+        general.speciesVisibility[element] = checkbox.checked;
         redraw();
       }
 

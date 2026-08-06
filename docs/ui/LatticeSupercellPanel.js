@@ -299,29 +299,29 @@ function addOrderStructureSection(container) {
   }
 
   container.innerHTML = `
-    <p style="font-size: 11px; color: rgba(255,255,255,0.6); margin: 0 0 8px 0; line-height: 1.4;">
+    <p class="lsc-hint-text">
       Builds a new file with one definite species per site, approximating this structure's disorder — required before running MD/relaxation or showing polyhedra on a structure with fractionally occupied sites. The original is left untouched.
     </p>
-    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
-      <label for="osSampleCount" style="font-size: 11px; color: rgba(255,255,255,0.7);">Random samples</label>
+    <div class="lsc-sample-row">
+      <label for="osSampleCount" class="lsc-field-label">Random samples</label>
       <input type="number" id="osSampleCount" min="1" max="30" step="1" value="${lastSampleCount}"
         title="How many independent random decorations to build and compare."
-        style="width: 48px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box; text-align: center;">
-      <label for="osSizeSelect" style="font-size: 11px; color: rgba(255,255,255,0.7);">Size</label>
-      <select id="osSizeSelect" style="flex: 1; min-width: 90px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box; font-size: 11px;"></select>
+        class="lsc-compact-input lsc-sample-count-input">
+      <label for="osSizeSelect" class="lsc-field-label">Size</label>
+      <select id="osSizeSelect" class="lsc-compact-input lsc-size-select"></select>
     </div>
-    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-      <button id="osBuildBtn" class="btn-mini highlight" style="padding: 5px 10px; flex: 1;">Build Random Samples</button>
-      <button id="osMajorityBtn" class="btn-mini" style="padding: 5px 10px;"
+    <div class="lsc-btn-pair-row">
+      <button id="osBuildBtn" class="btn-mini highlight lsc-build-row-btn lsc-flex-1">Build Random Samples</button>
+      <button id="osMajorityBtn" class="btn-mini lsc-build-row-btn"
         title="Every site takes its most-occupied species. Faster, but destroys stoichiometry — a 50/50 Fe/Ni alloy becomes pure Fe.">Use Majority</button>
     </div>
-    <div id="osStatus" style="font-size: 11px; color: rgba(255,255,255,0.6); margin-bottom: 6px; line-height: 1.4;"></div>
+    <div id="osStatus" class="lsc-status-text"></div>
     <div id="osList" class="order-structure-list" hidden></div>
-    <div id="osResultsActions" style="display: flex; gap: 6px; flex-wrap: wrap;" hidden>
-      <button id="osCompareBtn" class="btn-mini highlight" style="padding: 5px 8px; flex: 1;">Compare Energy</button>
-      <button id="osUseBtn" class="btn-mini" style="padding: 5px 8px; flex: 1;">Use Shown</button>
-      <button id="osKeepAllBtn" class="btn-mini" style="padding: 5px 8px; flex: 1;">Keep All</button>
-      <button id="osDiscardBtn" class="reset-btn" style="padding: 5px 8px;">Discard</button>
+    <div id="osResultsActions" class="lsc-results-actions-row" hidden>
+      <button id="osCompareBtn" class="btn-mini highlight lsc-result-btn lsc-flex-1">Compare Energy</button>
+      <button id="osUseBtn" class="btn-mini lsc-result-btn lsc-flex-1">Use Shown</button>
+      <button id="osKeepAllBtn" class="btn-mini lsc-result-btn lsc-flex-1">Keep All</button>
+      <button id="osDiscardBtn" class="reset-btn lsc-result-btn">Discard</button>
     </div>
   `;
 
@@ -504,29 +504,29 @@ function addVacuumSection(container) {
   // width evenly (the panel is far wider than three 56px boxes need), with the
   // Apply button centered on the line below.
   container.innerHTML = `
-    <div style="margin-bottom: 10px;">
-      <div style="display: flex; gap: 12px; margin-bottom: 10px;">
-        <div style="display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0;">
-          <label style="white-space: nowrap;">X (Å):</label>
-          <input type="number" id="vacX" class="coord-input" value="0" step="0.1" style="flex: 1; min-width: 0; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+    <div class="lsc-vacuum-wrap">
+      <div class="lsc-vacuum-axes-row">
+        <div class="lsc-vacuum-axis">
+          <label>X (Å):</label>
+          <input type="number" id="vacX" class="coord-input lsc-compact-input lsc-vacuum-input" value="0" step="0.1">
         </div>
-        <div style="display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0;">
-          <label style="white-space: nowrap;">Y (Å):</label>
-          <input type="number" id="vacY" class="coord-input" value="0" step="0.1" style="flex: 1; min-width: 0; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+        <div class="lsc-vacuum-axis">
+          <label>Y (Å):</label>
+          <input type="number" id="vacY" class="coord-input lsc-compact-input lsc-vacuum-input" value="0" step="0.1">
         </div>
-        <div style="display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0;">
-          <label style="white-space: nowrap;">Z (Å):</label>
-          <input type="number" id="vacZ" class="coord-input" value="0" step="0.1" style="flex: 1; min-width: 0; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+        <div class="lsc-vacuum-axis">
+          <label>Z (Å):</label>
+          <input type="number" id="vacZ" class="coord-input lsc-compact-input lsc-vacuum-input" value="0" step="0.1">
         </div>
       </div>
 
-      <div style="display: flex; justify-content: center;">
-        <button id="applyVacuum" class="btn-mini highlight" style="padding: 5px 14px; background: var(--bg-color); color: white; cursor: pointer;">Apply Vacuum</button>
+      <div class="lsc-btn-center-row">
+        <button id="applyVacuum" class="btn-mini highlight lsc-apply-vacuum-btn">Apply Vacuum</button>
       </div>
     </div>
-    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11px; color: rgba(255,255,255,0.7); border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
+    <div class="lsc-vacuum-status-row">
       <span id="vacuumAppliedText"></span>
-      <button id="resetVacuum" class="btn-mini" style="padding: 3px 10px; font-size: 11px;">Reset Vacuum</button>
+      <button id="resetVacuum" class="btn-mini lsc-reset-vacuum-btn">Reset Vacuum</button>
     </div>
   `;
 
@@ -577,7 +577,7 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   // double-border the whole group. ---
   const group = document.createElement("div");
   group.id = "latticeAndSupercellGroup";
-  group.style.cssText = `padding: 2px;`;
+  group.className = "lsc-group";
 
   // --- Supercell section ---
   const supercellPanel = document.createElement("div");
@@ -593,12 +593,7 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   if (!supercell) fileBrowser.selectedStructure = { nx: 1, ny: 1, nz: 1 };
 
   const supercellInputRow = document.createElement("div");
-  supercellInputRow.style.cssText = `
-    display: flex;
-    gap: 6px;
-    margin-bottom: 8px;
-    justify-content: center;
-  `;
+  supercellInputRow.className = "lsc-supercell-row";
 
   const supercellInputs = {};
   ["nx", "ny", "nz"].forEach((axis) => {
@@ -607,16 +602,7 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
     input.min = "1";
     input.step = "1";
     input.value = general.currentSupercell ? general.currentSupercell[axis] : 1;
-    input.style.cssText = `
-      width: 50px;
-      text-align: center;
-      border: none;
-      border-radius: 4px;
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
-      font-family: monospace;
-      padding: 3px;
-    `;
+    input.className = "lsc-supercell-input";
     supercellInputs[axis] = input;
     supercellInputRow.appendChild(input);
   });
@@ -624,33 +610,15 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
 
   // --- Supercell Buttons Row ---
   const supercellBtnRow = document.createElement("div");
-  supercellBtnRow.style.cssText = `
-    display: flex;
-    gap: 8px;
-    justify-content: center;
-  `;
+  supercellBtnRow.className = "lsc-btn-row";
 
   const supercellApplyBtn = document.createElement("button");
   supercellApplyBtn.textContent = "Apply";
-  supercellApplyBtn.className = "btn-mini highlight";
-  supercellApplyBtn.style.cssText = `
-    height: 32px;
-    padding: 0 10px;
-    font-size: 11px;
-    margin-right: 4px;
-    min-width: 80px;
-  `;
+  supercellApplyBtn.className = "btn-mini highlight lsc-panel-btn";
 
   const supercellResetBtn = document.createElement("button");
   supercellResetBtn.textContent = "Reset";
-  supercellResetBtn.className = "reset-btn";
-  supercellResetBtn.style.cssText = `
-    height: 32px;
-    padding: 0 10px;
-    font-size: 11px;
-    margin-right: 4px;
-    min-width: 80px;
-  `;
+  supercellResetBtn.className = "reset-btn lsc-panel-btn";
 
   supercellBtnRow.appendChild(supercellApplyBtn);
   supercellBtnRow.appendChild(supercellResetBtn);
@@ -694,17 +662,10 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
 
   // --- Transformation Matrix Input ---
 const transformMatrixContainer = document.createElement("div");
-transformMatrixContainer.style.cssText = `
-  margin-bottom: 8px;
-`;
+transformMatrixContainer.className = "lsc-transform-matrix-container";
 
 const transformTable = document.createElement("table");
-transformTable.style.cssText = `
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 12px;
-`;
+transformTable.className = "lsc-transform-table";
 const transformTbody = document.createElement("tbody");
 
 // Create 3x4 matrix (3x3 for P, 1x3 for p)
@@ -712,23 +673,12 @@ for (let i = 0; i < 3; i++) {
   const tr = document.createElement("tr");
   for (let j = 0; j < 4; j++) {
     const td = document.createElement("td");
-    td.style.cssText = `
-      padding: 2px;
-      ${j === 3 ? 'border-left: 1px solid rgba(255, 255, 255, 0.3);' : ''}
-    `;
+    // 4th column (the translation vector p) gets a divider from the 3x3 P block.
+    td.className = j === 3 ? "lsc-transform-cell lsc-transform-cell-p" : "lsc-transform-cell";
     const input = document.createElement("input");
     input.type = "number";
-    input.className = "TransformInput";
+    input.className = "TransformInput lsc-transform-input";
     input.step = "0.1";
-    input.style.cssText = `
-      width: 60px;
-      text-align: center;
-      font-family: monospace;
-      padding: 2px;
-      background: rgba(0, 0, 0, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      color: white;
-    `;
     input.id = `transform_${i}_${j}`;
 
     // Set default values: identity matrix for P, zero for p
@@ -751,33 +701,15 @@ transformContent.appendChild(transformMatrixContainer);
 
   // --- Transformation Buttons Row ---
   const transformBtnRow = document.createElement("div");
-  transformBtnRow.style.cssText = `
-    display: flex;
-    gap: 8px;
-    justify-content: center;
-  `;
+  transformBtnRow.className = "lsc-btn-row";
 
   const transformApplyBtn = document.createElement("button");
   transformApplyBtn.textContent = "Apply";
-  transformApplyBtn.className = "btn-mini highlight";
-  transformApplyBtn.style.cssText = `
-    height: 32px;
-    padding: 0 10px;
-    font-size: 11px;
-    margin-right: 4px;
-    min-width: 80px;
-  `;
+  transformApplyBtn.className = "btn-mini highlight lsc-panel-btn";
 
   const transformResetBtn = document.createElement("button");
   transformResetBtn.textContent = "Reset";
-  transformResetBtn.className = "reset-btn";
-  transformResetBtn.style.cssText = `
-    height: 32px;
-    padding: 0 10px;
-    font-size: 11px;
-    margin-right: 4px;
-    min-width: 80px;
-  `;
+  transformResetBtn.className = "reset-btn lsc-panel-btn";
 
   transformBtnRow.appendChild(transformApplyBtn);
   transformBtnRow.appendChild(transformResetBtn);

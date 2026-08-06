@@ -10,47 +10,26 @@ export function addErrorPanel(message="Default") {
 
   const panel = document.createElement("div");
   panel.id = "backendErrorPanel";
-  panel.style.position = "fixed"
-  panel.style.top = "20%";
-  panel.style.left = "var(--popup-left)";
-  panel.style.background = "rgba(25,25,25,0.9)";
-  panel.style.color = "white";
-  panel.style.padding = "12px 16px";
-  panel.style.borderRadius = "10px";
-  panel.style.zIndex = "99999";
-  panel.style.fontFamily = "sans-serif";
-  panel.style.display = "flex";
-  panel.style.flexDirection = "column";
-  panel.style.gap = "10px";
-  panel.style.maxWidth = "300px";
+  panel.className = "backend-error-panel";
 
   const header = document.createElement("div");
   header.textContent = "⚠️   Warning!  ⚠️"
-  header.style.justifyContent= "center";
-  header.style.display= "flex";
+  header.className = "backend-error-header";
 
   const msg = document.createElement("div");
   msg.innerHTML = message;
-  msg.style.lineHeight = "1.6";
+  msg.className = "backend-error-msg";
 
   const actions = document.createElement("div");
-  actions.style.display = "flex";
-  actions.style.justifyContent = "space-between";
-  actions.style.gap = "10px";
+  actions.className = "backend-error-actions";
 
   const acceptBtn = document.createElement("button");
-  acceptBtn.className="acceptBtn";
+  acceptBtn.className = "acceptBtn backend-error-accept-btn";
   acceptBtn.textContent = "Accept";
-  acceptBtn.style.flex = "1";
-  acceptBtn.style.fontSize = "12px";
-  acceptBtn.style.background = "var(--bg-color)";
 
   const denyBtn = document.createElement("button");
-  denyBtn.className="denyBtn";
+  denyBtn.className = "denyBtn backend-error-deny-btn";
   denyBtn.textContent = "Deny";
-  denyBtn.style.flex = "1";
-  denyBtn.style.fontSize = "12px";
-  denyBtn.style.background = "rgba(240, 132, 18,0.90)" 
 
   actions.appendChild(acceptBtn);
   actions.appendChild(denyBtn);

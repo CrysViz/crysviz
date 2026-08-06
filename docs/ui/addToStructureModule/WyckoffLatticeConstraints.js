@@ -61,10 +61,11 @@ export function describeLatticeConstraints(crystalSystem) {
   return parts.length ? parts.join(', ') : 'all parameters free';
 }
 
+// Dimming/cursor for a locked input is expressed in CSS off the `disabled`
+// attribute alone (addStructure.css's .LatticeInput:disabled) - this only
+// needs to flip the attribute and the dynamic title text.
 function markLocked(input, locked) {
   input.disabled = locked;
-  input.style.opacity = locked ? '0.45' : '';
-  input.style.cursor = locked ? 'not-allowed' : '';
   input.title = locked ? 'Determined by the chosen space group' : '';
 }
 

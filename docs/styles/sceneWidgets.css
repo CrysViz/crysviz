@@ -1,0 +1,853 @@
+/* sceneWidgets — extracted from JS during the CSS consolidation.
+   ui/SpinPanel.js (the pieces without a Force analog — the shared bits with
+   ui/ForcePanel.js live in styles/forcePanel.css), ui/OverlayPanel.js,
+   ui/BackgroundPicker.js, ui/ColorBarWidget.js's constant chrome,
+   ui/CustomUserSettingsPanel.js, ui/ColorPickerModule.js,
+   ui/SwatchColorPicker.js, ui/PolyhedraPanel.js, ui/BondPanel.js, and
+   ui/StructureInfoPanel/components/Immunity.js. */
+
+/* --- Spin panel: Source/Color-Map dropdown row (ui/SpinPanel.js) --- */
+
+.cv-spin-dropdowns-row {
+  display: flex;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+.cv-spin-dropdowns-row > div {
+  flex: 1;
+}
+
+.cv-spin-colormap-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.cv-spin-colormap-select {
+  margin-bottom: var(--sp-1);
+}
+
+/* Current Spins/Forces readout + the manual-entry textarea share the same
+   monospace-on-near-black look; --list has no fixed height (grows with a
+   min-height instead) where --input is a fixed-height entry box. */
+.cv-spin-textarea {
+  width: calc(100% - 16px);
+  resize: vertical;
+  background: rgba(16, 16, 16, 0.8);
+  color: var(--fg-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  border: 1px solid var(--chrome-5);
+  padding: var(--sp-3);
+}
+
+.cv-spin-textarea.cv-spin-textarea--list {
+  min-height: 60px;
+  overflow-y: auto;
+}
+
+.cv-spin-textarea.cv-spin-textarea--input {
+  height: 100px;
+  margin-bottom: var(--sp-3);
+}
+
+.cv-spin-button-row {
+  margin-top: var(--sp-3);
+  display: flex;
+  gap: var(--sp-3);
+}
+
+.cv-spin-button-row > button {
+  flex: 1;
+}
+
+/* --- Overlay panel (ui/OverlayPanel.js) --- */
+
+/* Toggle switch: extends the shared .toggle_switch/.toggle_slider pill
+   (styles/toggle_styles.css) rather than duplicating it — only what's
+   actually different here (a wider 50x24 footprint, a real knob <span>
+   instead of the base's ::before, and a green accent instead of
+   --highlight-color) gets its own rule. */
+.toggle_switch.cv-overlay-toggle-switch {
+  width: 50px;
+  height: 24px;
+}
+
+.cv-overlay-toggle-switch .toggle_slider {
+  cursor: pointer;
+}
+
+.cv-overlay-toggle-knob {
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 4px;
+  bottom: 4px;
+  background-color: var(--fg-1);
+  transition: transform 0.4s;
+  border-radius: 50%;
+}
+
+.cv-overlay-toggle-switch input:checked + .toggle_slider {
+  background-color: #4caf50; /* no token matches this green — --ok is #2e9c6e, --ok-bright is #7ee2a8 */
+}
+
+.cv-overlay-toggle-switch input:checked + .toggle_slider > .cv-overlay-toggle-knob {
+  transform: translateX(26px);
+}
+
+.cv-overlay-toggle-row {
+  display: flex;
+  align-items: center;
+  margin: var(--sp-3-5) 0;
+}
+
+.cv-overlay-toggle-text {
+  margin-left: var(--sp-3-5);
+}
+
+.cv-overlay-opacity-row {
+  display: flex;
+  flex-direction: column;
+  margin: var(--sp-2) 0;
+}
+
+.cv-overlay-opacity-label-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+  margin-bottom: 2px;
+}
+
+.cv-overlay-error {
+  font-size: var(--fs-base);
+  color: #ff6b6b; /* no token matches this red — --danger is orange (rgba(240,132,18,.9)) */
+  margin: 0 0 var(--sp-3-5) 0;
+}
+
+.cv-overlay-table {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius-sm);
+  margin: var(--sp-3) 0;
+}
+
+.cv-overlay-table-empty {
+  padding: var(--sp-3-5);
+  font-size: var(--fs-base);
+  color: var(--fg-2);
+  font-style: italic;
+}
+
+.cv-overlay-table-heading {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
+  margin-top: var(--sp-3-5);
+}
+
+.cv-overlay-row {
+  padding: var(--sp-3) var(--sp-3-5);
+  border-bottom: 1px solid var(--wash-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.cv-overlay-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.cv-overlay-entry-name {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-overlay-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-shrink: 0;
+}
+
+.cv-overlay-bonds-label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.cv-overlay-remove-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cv-overlay-note {
+  font-size: var(--fs-base);
+  color: var(--ink-3);
+  font-style: italic;
+  margin: var(--sp-3) 0 0 0;
+}
+
+/* --- Background picker (ui/BackgroundPicker.js) --- */
+
+/* .background-dot (index.html, styles/styles.css) already carries
+   position/z-index/border-radius/cursor; only pointer-events needs adding
+   here since that rule doesn't otherwise set it. */
+.background-dot {
+  pointer-events: auto;
+}
+
+.cv-background-picker-panel {
+  position: absolute;
+  background: rgba(26, 26, 26, 0.8); /* no exact token — --popup-bg is the same hue at 0.9 alpha */
+  border: 1px solid var(--ink-3);
+  padding: var(--sp-3-5);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgb(var(--shadow-rgb) / 0.25);
+  /* Matches --z-tooltip's ROLE (TOKENS.md lists "colour-picker popover"
+     under it) but not its value (5000) — kept as the original literal so
+     this refactor doesn't reorder the stacking; adopting the token is a
+     deliberate follow-up, not a side effect of moving styles into CSS. */
+  z-index: 9999;
+}
+
+.cv-background-picker-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--sp-3-5);
+  gap: var(--sp-3);
+}
+
+.cv-background-picker-btn {
+  height: 32px;
+}
+
+.cv-background-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  cursor: pointer;
+  /* No token: the wash and line ramps both top out at 0.2. (Do not write the
+     ramp names with a glob here — the star-slash sequence closes the comment
+     early, which silently leaked invalid text into this rule.) */
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  padding: 0;
+  flex: none;
+}
+
+/* --- Colour bar (ui/ColorBarWidget.js) ---
+   Shared by Force/Spin/Atoms/Bonds (ui/ColorBarRegistry.js). Most of this
+   widget's own styling is genuinely dynamic — gradient stops from the active
+   colormap, tick positions from the data range, length-scaled font sizes,
+   orientation/flip-side branching, drag/resize geometry — and stays in JS;
+   these rules are only the constant chrome around it. The .cv-colorbar-*
+   classes already styled in styles/toggle_styles.css (controls strip, menu,
+   legend edit states, resize frame/handle, …) are untouched — these are
+   purely additive, on classes that file doesn't otherwise style. */
+
+.cv-colorbar-wrapper {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+/* valueRow (.cv-colorbar-values) as a flex ITEM of .cv-colorbar-wrapper —
+   toggle_styles.css's own .cv-colorbar-values rule governs it as a flex
+   CONTAINER for its own children, a different axis, so no overlap. */
+.cv-colorbar-values {
+  flex: 1;
+  min-width: 0;
+}
+
+.cv-colorbar-bar-handle {
+  position: relative;
+}
+
+.cv-colorbar-gradient-canvas {
+  display: block;
+  border-radius: var(--radius-4);
+}
+
+.cv-colorbar-tick-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cv-colorbar-legend {
+  position: absolute;
+  color: currentColor;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  cursor: text;
+  outline: none;
+}
+
+.cv-colorbar-tick-line {
+  position: absolute;
+  background: rgb(var(--shadow-rgb) / 0.55);
+}
+
+.cv-colorbar-tick-label {
+  position: absolute;
+  color: currentColor;
+  white-space: nowrap;
+}
+
+/* Min/Max inputs, positioned like tick labels at the bar's own two ends
+   (ColorBarWidget.js's positionMinMax). z-index has to clear resizeFrame's
+   (styles/toggle_styles.css, 2): frame is pointer-events:auto and covers
+   this same spot (it encloses Min/Max along with the ticks/legend), and
+   with no z-index of their own these inputs would otherwise lose that
+   stacking tie to frame purely by DOM order, leaving frame on top and
+   swallowing every click meant for the input underneath it. */
+.cv-colorbar-value-input {
+  position: absolute;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  border: none;
+  border-radius: 0;
+  z-index: 4;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+/* --- Custom User Settings panel (ui/CustomUserSettingsPanel.js) ---
+   Colour/radius/bond-distance override pickers: popups, periodic-table
+   grids (shared by all three pickers), the click-to-edit JSON list view,
+   and the section chrome the panel's own body uses. Per-element/per-pair
+   colours (tile fills, category-colour borders/tints, the override-vs-
+   default text colour choice) stay in JS — they're genuinely data-driven,
+   not fixed. Several literals below have no matching token; each is noted. */
+
+.cv-cus-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--popup-bg, #111);
+  color: var(--panel-fg, #fff);
+  border: 1px solid var(--popup-border, #333);
+  border-radius: var(--radius);
+  /* Matches POPUP_Z's role (a floating panel/popover, above the dock's
+     1200 floating windows) but kept as the exact original literal rather
+     than adopting --z-popup (2000) — that would be a real stacking change,
+     not just where the number lives. --z-dock-pane, however, is an exact
+     value match (1300) — substituting it changes nothing on screen. */
+  z-index: var(--z-dock-pane);
+  padding: var(--sp-5);
+  font-family: var(--font-ui); /* was a stray literal "Arial, sans-serif" — the rest of the app's popups all use this token */
+  max-width: calc(100vw - var(--sp-6));
+  max-height: 85dvh; /* dvh, not vh — tracks the mobile URL bar (defect 2 of the mobile audit) */
+  overflow-y: auto;
+}
+
+.cv-cus-popup-heading {
+  margin: 0 0 var(--sp-3-5) 0;
+  text-align: center;
+}
+
+.cv-cus-grid-row {
+  display: grid;
+  /* grid-template-columns is set from JS — the tile count (18 main-group
+     columns vs. 15 for the lanthanide/actinide rows) is the caller's data,
+     not a fixed layout constant. */
+  gap: 2px;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+.cv-cus-grid-spacer {
+  width: 32px;
+  height: 32px;
+}
+
+.cv-cus-grid-spacer.cv-cus-grid-spacer--sm {
+  width: 30px;
+  height: 30px;
+}
+
+.cv-cus-grid-wrap {
+  position: relative;
+}
+
+.cv-cus-color-tile {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-4);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-xs);
+  line-height: 1.1;
+  padding: 0;
+}
+
+.cv-cus-inline-input {
+  background: #333; /* no token — see forcePanel.css's .cv-scene-select for the same literal/reasoning */
+  border: 1px solid var(--chrome-5);
+  border-radius: var(--radius-3);
+  color: var(--fg-1);
+  font: inherit;
+  padding: 1px 3px;
+  cursor: text;
+}
+
+.cv-cus-json-list {
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  max-height: 440px;
+  overflow-y: auto;
+  background: var(--input-bg, #0d0d0d);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px; /* no token — 14px sits between --sp-4 (12) and --sp-5 (16) */
+}
+
+.cv-cus-json-empty {
+  color: rgba(255, 255, 255, 0.5); /* no token — --wash-* tops out at 0.16 */
+  text-align: center;
+  padding: var(--sp-3-5) 0;
+}
+
+.cv-cus-json-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 2px var(--sp-1) 2px 18px;
+  margin: 0 -4px;
+  border-radius: var(--radius-3);
+}
+
+.cv-cus-json-row:hover {
+  background: rgba(255, 255, 255, 0.07); /* no token — between --wash-1 (.05) and --wash-2 (.08) */
+}
+
+.cv-cus-hint {
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  margin-top: var(--sp-3-5);
+}
+
+.cv-cus-close-btn {
+  display: block;
+  margin: 14px auto 0; /* no token — 14px sits between --sp-4/--sp-5 */
+  padding: 5px 20px; /* no token for either value */
+}
+
+.cv-cus-radius-tile {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-3);
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-width: 2px;
+  border-style: solid;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
+}
+
+.cv-cus-radius-tile-symbol {
+  font-size: var(--fs-base);
+  line-height: var(--lh-tight);
+}
+
+.cv-cus-radius-tile-value {
+  font-size: 8px; /* no token — below --fs-xs (10px), the smallest rung */
+  opacity: 0.85;
+  line-height: var(--lh-normal);
+}
+
+/* Enlarged "selected element" preview (openRadiusPeriodicTable) — same
+   shape as the Add Atom picker's own preview. Hidden by default via
+   .cv-force-hidden (styles/forcePanel.css); selectSymbol() removes it. The
+   category-colour tint (background/border-color) is per-element data and
+   stays in JS. */
+.cv-cus-radius-preview {
+  position: absolute;
+  top: 0;
+  left: 40%;
+  transform: translateX(-50%);
+  width: max-content;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  padding: var(--sp-3);
+  box-sizing: border-box;
+  z-index: 2;
+}
+
+.cv-cus-radius-preview-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3-5);
+  position: relative;
+}
+
+.cv-cus-radius-preview-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  position: relative;
+}
+
+.radius-preview-number {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-normal);
+}
+
+.cv-cus-radius-preview-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+
+.radius-preview-symbol {
+  /* Literal "bold" (700), not --fw-bold (600) — TOKENS.md flags the bold
+     keyword as too sparse a cluster to tokenise; substituting the token
+     would be a real weight change. */
+  font-weight: bold;
+  font-size: 24px; /* no token — TOKENS.md's own "not cleanly clustered" outlier */
+}
+
+.radius-preview-input {
+  width: 44px;
+  font-size: var(--fs-base);
+  text-align: center;
+  background: #222; /* no token — between --chrome-1 and --chrome-2 */
+  border: 1px solid var(--chrome-5);
+  color: var(--fg-1);
+  border-radius: var(--radius-3);
+  padding: 5px var(--sp-2);
+}
+
+.cv-cus-radius-preview-unit {
+  font-size: var(--fs-sm);
+  color: rgba(255, 255, 255, 0.75); /* no token */
+}
+
+.radius-preview-name {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-normal);
+  white-space: nowrap;
+}
+
+.cv-cus-radius-preview-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.cv-cus-radius-preview-btn {
+  padding: 4px 14px; /* no token for 14px */
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+/* Bond-pair picker's inline distance editor, in the periodic table's own
+   blank rectangle above the transition metals. */
+.cv-cus-bond-overlay {
+  position: absolute;
+  left: 68px;
+  top: 0;
+  width: 338px;
+  height: 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+}
+
+.cv-cus-element-chip {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px; /* no token — TOKENS.md's own "not cleanly clustered" outlier */
+  font-weight: 700; /* literal, like .radius-preview-symbol above — not --fw-bold */
+  cursor: pointer;
+  background: transparent;
+  color: var(--fg-1);
+  border: 2px solid; /* colour set from JS (radiusCategoryColor) */
+}
+
+.cv-cus-chip-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.cv-cus-chip-dash {
+  font-size: var(--fs-lg); /* was a literal 15px — TOKENS.md's audit explicitly names 15px as part of the fs-lg cluster */
+  color: rgba(255, 255, 255, 0.7); /* no token */
+}
+
+.cv-cus-bond-hint {
+  font-size: var(--fs-xs);
+  color: var(--fg-2); /* was 0.65 — TOKENS.md names 0.65 as an --fg-2 near-duplicate */
+  text-shadow: 0 1px 2px rgb(var(--shadow-rgb) / 0.8);
+  text-align: center;
+  max-width: 260px;
+}
+
+.cv-cus-bond-fields-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2); /* was a literal 5px — equidistant between --sp-1/--sp-2, snapped up */
+  font-size: var(--fs-xs);
+  color: rgba(255, 255, 255, 0.85); /* no token */
+  text-shadow: 0 1px 2px rgb(var(--shadow-rgb) / 0.8);
+}
+
+.cv-cus-bond-distance-input {
+  width: 42px;
+  background: #333; /* no token, see .cv-cus-inline-input above */
+  border: 1px solid var(--chrome-5);
+  color: var(--fg-1);
+  padding: 2px;
+  text-align: center;
+  font-size: var(--fs-xs);
+}
+
+.cv-cus-bond-btn {
+  padding: 3px var(--sp-3-5);
+  font-size: var(--fs-xs);
+}
+
+.cv-cus-bond-btn.cv-cus-bond-btn--gap {
+  margin-left: var(--sp-1);
+}
+
+.cv-cus-override-list {
+  margin-top: 14px; /* no token */
+  border-top: 1px solid var(--wash-4);
+  padding-top: var(--sp-3-5);
+}
+
+.cv-cus-override-list-heading {
+  font-size: var(--fs-base);
+  color: rgba(255, 255, 255, 0.7); /* no token — close to but not --fg-2's documented 0.68 near-duplicate */
+  margin-bottom: var(--sp-2);
+}
+
+.cv-cus-override-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--fs-base);
+  padding: 3px 0;
+  /* Every row here is by definition an override (renderPairList only shows
+     general.customBondLengths entries), so unlike buildJsonListView's
+     per-row choice this is a plain constant — OVERRIDE_COLOR's hue is
+     exactly --danger-rgb at full opacity. */
+  color: rgb(var(--danger-rgb));
+}
+
+.cv-cus-override-remove-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: var(--fs-xs);
+}
+
+.cv-cus-section {
+  margin-bottom: var(--sp-5);
+}
+
+.cv-cus-section.cv-cus-section--wide {
+  margin-bottom: 18px; /* the "All Settings" section only — no token between --sp-5 (16) and --sp-6 (24) */
+}
+
+.cv-cus-section-desc {
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  margin-bottom: var(--sp-3);
+}
+
+.cv-cus-section-count {
+  font-size: var(--fs-sm);
+  color: rgba(255, 255, 255, 0.75); /* no token */
+  margin-bottom: var(--sp-3);
+}
+
+.cv-cus-section-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* --- Tiny toggle (ui/StructureInfoPanel/components/Immunity.js) ---
+   The small round on/off dot used in tab category headers and per-pair cut-
+   plane immunity toggles. updateVisual() flips background/border-color/
+   box-shadow together as one state (not just recolours a fixed shape), so
+   that stays in JS; only the fixed geometry and the border's width/style
+   are constant enough to live here. */
+.cv-tiny-toggle-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+}
+
+.cv-tiny-toggle {
+  width: 10px;
+  height: 10px;
+  margin: 0;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 50%;
+  border-style: solid;
+  border-width: 1px;
+}
+
+/* --- Histogram row (ui/PolyhedraPanel.js, ui/BondPanel.js) — one button per
+   analysis window; identical shape in both panels, so shared here instead
+   of duplicated per-panel. --- */
+.cv-histogram-section {
+  margin-bottom: var(--sp-3-5);
+}
+
+.cv-histogram-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+
+.cv-histogram-row-label {
+  font-size: var(--fs-base);
+  color: var(--ink-3);
+}
+
+.cv-histogram-row-btn {
+  font-size: var(--fs-base);
+}
+
+/* Polyhedra settings panel only (the toggle rows below its histogram list). */
+.cv-polyhedra-settings-panel {
+  margin-bottom: var(--sp-3-5);
+}
+
+.cv-polyhedra-settings-body {
+  margin-top: var(--sp-3-5);
+}
+
+.cv-polyhedra-empty-msg {
+  opacity: 0.8;
+}
+
+/* Bond controls group — just the histogram section above, but the window
+   body itself carries its own padding. */
+.cv-bond-controls-group {
+  padding: var(--sp-3-5);
+}
+
+/* --- Custom RGB/HSV color picker (ui/ColorPickerModule.js) — the RGB/HEX
+   input rows below the SV/hue canvases. Canvas pixel geometry (WIDTH/
+   HEIGHT/HUE_WIDTH) and the wrapper sized around it stay in JS — they're
+   the picker's own layout constants, not page chrome. */
+.cv-colorpicker-inputs-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+
+.cv-colorpicker-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.cv-colorpicker-input-label {
+  font-size: var(--fs-base);
+  color: var(--ink-3);
+  min-width: 30px;
+}
+
+.cv-colorpicker-input-field {
+  flex: 1;
+  padding: 2px var(--sp-1);
+  font-size: var(--fs-base);
+}
+
+/* --- Swatch color picker popover (ui/SwatchColorPicker.js) — opens
+   ColorPickerModule.js's picker next to whichever swatch was clicked. The
+   swatch's own background (the colour it represents) stays in JS: it's the
+   value, not chrome, same reasoning as the periodic-table tile fills
+   above. --- */
+.cv-swatch-picker-panel {
+  position: fixed;
+  /* --popup-bg is documented for exactly this role ("floating popups /
+     pickers") and the same rgb(26,26,26) hue — only the alpha differs
+     (0.9 vs the original 0.95), a snap on the same order as Wave 2's
+     font-size rounding, not a new colour. */
+  background: var(--popup-bg);
+  border: 1px solid var(--ink-3);
+  padding: var(--sp-3-5);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgb(var(--shadow-rgb) / 0.35);
+  /* Higher than periodic-table popups (--z-dock-pane, 1300) and floating
+     panels (--z-dock, 1200), so it always sits on top regardless of which
+     panel opened it. No token matches 1400 exactly (--z-popup is 2000);
+     kept as the original literal so adopting a token doesn't reorder the
+     stacking as a side effect of this move. */
+  z-index: 1400;
+}
+
+.cv-swatch-picker-btn-row {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.cv-swatch-picker-btn {
+  height: 28px;
+  flex: 1;
+}
+
+/* Plain swatch button (atom-table color column, Custom User Settings'
+   element/pair pickers) — background is the picked colour, set from JS. */
+.color-swatch-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-5);
+  border: 1px solid var(--popup-border);
+  cursor: pointer;
+  padding: 0;
+}

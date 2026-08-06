@@ -30,34 +30,15 @@ function contrastTextColor(hex) {
 export function createSpinForceEditor(atomIndex, element, { onModeChange = () => {} } = {}) {
   const spinEditor = document.createElement('div');
   spinEditor.className = 'atom-spin-editor';
-  spinEditor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
+  spinEditor.style.display = 'none'; // read back via .style.display elsewhere (see IndividualAtomRow.js)
 
   const switchWrapper = document.createElement('div');
-  switchWrapper.style.cssText = `
-    display: inline-flex;
-    background: #2d2d2d;
-    border-radius: 10px;
-    padding: 4px;
-    gap: 4px;
-    font-size: 11px;
-    min-width:98%;
-    margin-bottom: 10px;
-  `;
+  switchWrapper.className = 'spin-mode-switch';
 
   function makeSwitchButton(label) {
     const btn = document.createElement('div');
     btn.textContent = label;
-    btn.style.cssText = `
-      padding: 6px 14px;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: 0.15s ease;
-      user-select: none;
-      font-weight: 500;
-      min-width:40%;
-      justify-content: center;
-      display: flex;
-    `;
+    btn.className = 'spin-mode-switch-btn';
     return btn;
   }
 
@@ -68,16 +49,17 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
   spinEditor.appendChild(switchWrapper);
 
   const noDataMsg = document.createElement('div');
-  noDataMsg.style.cssText = 'display: none; font-size: 11px; color: rgba(255,255,255,0.5); text-align: center; padding: 6px 0;';
+  noDataMsg.className = 'spin-no-data';
+  // display is set unconditionally by refreshInputs() below on every call
+  // (including the one at the end of this function), so no initial value
+  // is needed here.
   spinEditor.appendChild(noDataMsg);
 
   function makeVectorInput(placeholder) {
     const input = document.createElement('input');
     input.type = 'number';
     input.step = '0.0001';
-    input.style.cssText = 'width: 60px; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: white; font-size: 11px; margin-right: 4px; appearance: textfield;';
-    input.style.webkitAppearance = 'none';
-    input.style.setProperty('-moz-appearance', 'textfield');
+    input.className = 'spin-vector-input';
     input.placeholder = placeholder;
     return input;
   }
@@ -85,18 +67,16 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
   const xInput = makeVectorInput('x');
   const yInput = makeVectorInput('y');
   const zInput = makeVectorInput('z');
-  zInput.style.marginRight = '0';
 
   const vectorInputsRow = document.createElement('div');
-  vectorInputsRow.style.cssText = 'display: flex; align-items: center; gap: 4px; margin-bottom: 6px; justify-content:center;';
-  vectorInputsRow.className = 'SpinInputRow';
+  vectorInputsRow.className = 'SpinInputRow spin-vector-row';
   vectorInputsRow.appendChild(xInput);
   vectorInputsRow.appendChild(yInput);
   vectorInputsRow.appendChild(zInput);
   spinEditor.appendChild(vectorInputsRow);
 
   const hideLabel = document.createElement('label');
-  hideLabel.style.cssText = 'display: flex; align-items: center; gap: 4px; font-size: 11px; color: rgba(255,255,255,0.8); cursor: pointer; justify-content: center; margin-bottom: 8px;';
+  hideLabel.className = 'spin-hide-label';
   const hideCheckbox = document.createElement('input');
   hideCheckbox.type = 'checkbox';
   hideLabel.appendChild(hideCheckbox);
@@ -105,21 +85,18 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
 
   const spinApplyBtn = document.createElement('button');
   spinApplyBtn.textContent = 'Apply';
-  spinApplyBtn.className = 'btn-mini highlight';
-  spinApplyBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px;';
+  spinApplyBtn.className = 'btn-mini highlight si-action-btn-wide';
 
   const spinColorBtn = document.createElement('button');
   spinColorBtn.textContent = 'Color';
-  spinColorBtn.className = 'btn-mini highlight';
-  spinColorBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px;';
+  spinColorBtn.className = 'btn-mini highlight si-action-btn-wide';
 
   const spinResetBtn = document.createElement('button');
   spinResetBtn.textContent = 'Reset';
-  spinResetBtn.className = 'btn-mini';
-  spinResetBtn.style.cssText = 'height: 32px; padding: 0 8px; font-size: 11px; min-width: 50px; margin-right: 6px;';
+  spinResetBtn.className = 'btn-mini si-action-btn-wide si-action-btn-wide--gap';
 
   const spinButtonsRow = document.createElement('div');
-  spinButtonsRow.style.cssText = 'display: flex; align-items: center; gap: 4px; justify-content:center;';
+  spinButtonsRow.className = 'spin-buttons-row';
   spinButtonsRow.appendChild(spinResetBtn);
   spinButtonsRow.appendChild(spinApplyBtn);
   spinButtonsRow.appendChild(spinColorBtn);
@@ -131,7 +108,8 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
   // one. Rebuilt fresh every time it's opened, seeded from the color
   // currently showing, since the picker itself has no "reinitialize" API.
   const colorPickerSection = document.createElement('div');
-  colorPickerSection.style.cssText = 'display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); align-items: center; flex-direction: column; gap: 6px;';
+  colorPickerSection.className = 'spin-color-picker-section';
+  colorPickerSection.style.display = 'none'; // read back via .style.display in spinColorBtn.onclick below
   spinEditor.appendChild(colorPickerSection);
 
   // --- Mode (Spin/Force tab) state ---
@@ -159,10 +137,8 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
   }
 
   function setSwitchActive(activeBtn, inactiveBtn) {
-    activeBtn.style.background = '#0d8a36';
-    activeBtn.style.color = '#fff';
-    inactiveBtn.style.background = 'transparent';
-    inactiveBtn.style.color = 'rgba(255,255,255,0.8)';
+    activeBtn.classList.add('active');
+    inactiveBtn.classList.remove('active');
   }
 
   function refreshInputs() {

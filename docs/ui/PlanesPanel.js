@@ -677,7 +677,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
       <!-- Planes table in container -->
       <div class="planes-table-wrapper">
         <p id="noPlanesMsg" class="planes-empty-msg">No planes added yet.</p>
-        <table id="planesTable" class="planes-table" style="display:none;">
+        <table id="planesTable" class="planes-table">
           <thead>
             <tr>
               <th class="planes-th planes-th-narrow"></th>
@@ -700,7 +700,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
       </div>
 
       <!-- Plane parameter controls (hidden until plane selected) -->
-      <div class="planes-params-section" id="planesParamsSection" style="display:none;">
+      <div class="planes-params-section" id="planesParamsSection">
         <h4 class="planes-section-title">Plane Parameters</h4>
 
         <div class="control-group">
@@ -789,7 +789,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
       </div>
 
       <!-- Field + colormap grouped -->
-      <div class="planes-field-section" id="planesFieldSection" style="display:none;">
+      <div class="planes-field-section" id="planesFieldSection">
         <h4 class="planes-section-title">Field &amp; Colormap</h4>
         <div class="planes-field-colormap-container">
 
@@ -834,8 +834,8 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
                al.): a docked-reachable pair of controls, since the floating
                color bar's own burger menu only exists once it's dragged into
                the scene. -->
-          <div class="planes-field-control" id="planesBarControlsRow" style="display:flex; align-items:center; gap:12px; margin:4px 0;">
-            <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:white; white-space:nowrap; cursor:pointer;">
+          <div class="planes-field-control" id="planesBarControlsRow">
+            <label class="planes-log-scale-label">
               <input type="checkbox" id="planesLogScaleCheckbox" disabled>
               Log Scale
             </label>
@@ -848,7 +848,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
                slider above stays as an additional inline range control,
                synced to this bar's own Min/Max in both directions. -->
           <div class="planes-field-control">
-            <div id="planesColorBarContainer" style="width:100%; display:none;"></div>
+            <div id="planesColorBarContainer"></div>
           </div>
 
         </div>

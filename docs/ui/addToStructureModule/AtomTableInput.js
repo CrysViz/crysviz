@@ -22,33 +22,17 @@ import { colorToHex } from './CommitAtoms.js';
 import { SITE_TOLERANCE } from '../../io/cif/site_grouping.js';
 import { parseChargeInput } from '../../render/ChargeBadgeModule.js';
 
-const CELL_STYLE = 'border: 1px solid #444; padding: 3px;';
-const NUM_INPUT_STYLE = 'width: 100%; background: #333; border: 1px solid #555; color: white; padding: 2px 3px; box-sizing: border-box;';
-// Occ./Charge take a short number (a fraction or a small signed integer) - a
-// fixed narrow column, rather than sharing the table's auto-layout leftover
-// space, keeps them compact.
-const NARROW_COL_STYLE = 'width: 44px;';
-// X/Y/Z are fractional coordinates, routinely typed to 3-4 decimal places
-// ("0.3333") - noticeably wider than Occ./Charge so the full value stays
-// readable without scrolling the input's own text.
-const COORD_COL_STYLE = 'width: 88px;';
-// The Element cell holds a text input plus the periodic-table-picker button;
-// unconstrained, it silently absorbed 100% of the auto-layout table's
-// leftover width (very visible once the panel is undocked/floating and wider
-// than its docked default) since every OTHER column already had a fixed
-// width and this one didn't. Sized to just fit its content (a short 1-2
-// letter symbol) rather than the extra room it used to eat - narrower than
-// X/Y/Z, which need the room for a full decimal fraction.
-const ELEMENT_COL_STYLE = 'width: 74px;';
-// Every remaining column needs its own fixed width too, or auto-layout just
-// hands whichever one is still unconstrained the same problem Element had -
-// a 24px swatch (Color) or a 22px icon button (highlight/delete) has no
-// business claiming hundreds of spare pixels on a wide floating panel.
-const ICON_COL_STYLE = 'width: 30px;';
-const COLOR_COL_STYLE = 'width: 40px;';
+// Column-width classes (addStructure.css: .addstructure-col-*) exist because
+// the auto-layout table hands any UNCONSTRAINED column 100% of the leftover
+// width the instant the panel is undocked/floating and wider than its docked
+// default - Element used to visibly eat the extra room, then Color and the
+// icon columns after it, until every column got a fixed width.
 
+// The active-row highlight (paintRows) is left as inline style, not a class:
+// groupSiteRows() below reads `row.style.background` back to decide whether
+// a clustered secondary row should keep it, and a class-only implementation
+// would make that read-back see nothing. See groupSiteRows' own comment.
 const ROW_BG_ACTIVE = 'rgba(255, 191, 0, 0.18)';
-const ROW_BG_ACTIVE_BTN = 'rgba(255, 191, 0, 0.35)';
 
 // Rows with an element string set, in DOM order - the same order/filter
 // getAtoms() uses, so a candidate index from getAtoms() always maps to
@@ -84,8 +68,6 @@ export function createAtomTableEditor(container, {
   onChange = null,
   onDelete = null,
 } = {}) {
-  const STICKY_TH_STYLE = 'border: 1px solid #444; padding: 3px; font-size: 12px; text-align: center; position: sticky; top: 0; background: var(--popup-bg); z-index: 1;';
-
   // A dedicated first column of "highlight this atom in 3D" buttons — a big,
   // obvious click target, since the row chrome between the input fields is a
   // sliver too thin to hit reliably. Only meaningful against a live structure,
@@ -93,20 +75,20 @@ export function createAtomTableEditor(container, {
   const highlightable = !!onRowActivate;
 
   container.innerHTML = `
-    <div style="margin-bottom: 10px;">
-      <div id="atomsTableScroll" class="atoms-table-scroll" style="max-height: 208px; overflow-y: auto; margin-top: 10px;">
-        <table id="atomsTable" style="width:100%; border-collapse: collapse;">
+    <div class="atom-table-wrap">
+      <div id="atomsTableScroll" class="atoms-table-scroll">
+        <table id="atomsTable" class="addstructure-table">
           <thead>
             <tr>
-              ${highlightable ? `<th style="${STICKY_TH_STYLE}${ICON_COL_STYLE}" title="Highlight the atom in the 3D view">◎</th>` : ''}
-              <th style="${STICKY_TH_STYLE}${ELEMENT_COL_STYLE}">Element</th>
-              <th style="${STICKY_TH_STYLE}${COORD_COL_STYLE}" title="Fractional coordinate (0-1 spans the cell)">X</th>
-              <th style="${STICKY_TH_STYLE}${COORD_COL_STYLE}" title="Fractional coordinate (0-1 spans the cell)">Y</th>
-              <th style="${STICKY_TH_STYLE}${COORD_COL_STYLE}" title="Fractional coordinate (0-1 spans the cell)">Z</th>
-              <th style="${STICKY_TH_STYLE}${NARROW_COL_STYLE}" title="Site occupancy (1 = fully occupied). Rows sharing a position form one disordered site.">Occ.</th>
-              <th style="${STICKY_TH_STYLE}${NARROW_COL_STYLE}" title="Formal charge / oxidation state - 3, -2, 3+ or 2- all work. Blank = unspecified; 0 is a deliberate 'neutral' statement, not the same as blank.">Charge</th>
-              <th style="${STICKY_TH_STYLE}${COLOR_COL_STYLE}">Color</th>
-              ${deletable ? `<th style="${STICKY_TH_STYLE}${ICON_COL_STYLE}"></th>` : ''}
+              ${highlightable ? `<th class="addstructure-sticky-th addstructure-col-icon" title="Highlight the atom in the 3D view">◎</th>` : ''}
+              <th class="addstructure-sticky-th addstructure-col-element">Element</th>
+              <th class="addstructure-sticky-th addstructure-col-coord" title="Fractional coordinate (0-1 spans the cell)">X</th>
+              <th class="addstructure-sticky-th addstructure-col-coord" title="Fractional coordinate (0-1 spans the cell)">Y</th>
+              <th class="addstructure-sticky-th addstructure-col-coord" title="Fractional coordinate (0-1 spans the cell)">Z</th>
+              <th class="addstructure-sticky-th addstructure-col-narrow" title="Site occupancy (1 = fully occupied). Rows sharing a position form one disordered site.">Occ.</th>
+              <th class="addstructure-sticky-th addstructure-col-narrow" title="Formal charge / oxidation state - 3, -2, 3+ or 2- all work. Blank = unspecified; 0 is a deliberate 'neutral' statement, not the same as blank.">Charge</th>
+              <th class="addstructure-sticky-th addstructure-col-color">Color</th>
+              ${deletable ? `<th class="addstructure-sticky-th addstructure-col-icon"></th>` : ''}
             </tr>
           </thead>
           <tbody>
@@ -115,22 +97,22 @@ export function createAtomTableEditor(container, {
         </table>
       </div>
 
-      <div style="text-align: center; margin-top: 8px;">
-        <button id="addNewRow" class="btn-mini highlight" style="width: 90%;" >
+      <div class="atom-table-add-row">
+        <button id="addNewRow" class="btn-mini highlight addstructure-full-btn">
           + Add New Atom
         </button>
-        <div id="addRowHint" style="display:none; color: rgba(240, 132, 18, 1); font-size: 11px; margin-top: 4px;">Select element first</div>
+        <div id="addRowHint" class="atom-table-add-hint">Select element first</div>
       </div>
     </div>
 
-    <div style="margin-top: 15px; display: flex; align-items: center;">
-      <textarea id="bulkInput" placeholder="Element x y z [occ] [color]
+    <div class="atom-table-bulk-row">
+      <textarea id="bulkInput" class="atom-table-bulk-textarea" placeholder="Element x y z [occ] [color]
 Example:
 H 0.5 0.5 0.5 #FF0000
 C 1.0 1.0 1.0 0.6
-O 1.5 1.5 1.5 0.4 #00FF00" style="flex: 1; height: 80px; background: #333; border: 1px solid #555; color: white; padding: 5px; resize: vertical; margin-right: 10px;"></textarea>
-      <div style="display: flex; flex-direction: column;">
-        <button id="applyBulk" class="btn-mini highlight" style="padding: 5px 10px;">Apply Bulk</button>
+O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
+      <div class="atom-table-bulk-btn-col">
+        <button id="applyBulk" class="btn-mini highlight atom-table-bulk-apply-btn">Apply Bulk</button>
       </div>
     </div>
   `;
@@ -185,10 +167,7 @@ O 1.5 1.5 1.5 0.4 #00FF00" style="flex: 1; height: 80px; background: #333; borde
       const isActive = !!activeUuid && row.dataset.uuid === activeUuid;
       /** @type {HTMLElement} */ (row).style.background = isActive ? ROW_BG_ACTIVE : '';
       const btn = /** @type {HTMLElement} */ (row.querySelector('.atom-row-highlight'));
-      if (btn) {
-        btn.style.background = isActive ? ROW_BG_ACTIVE_BTN : '#333';
-        btn.style.borderColor = isActive ? '#ffbf00' : '#555';
-      }
+      btn?.classList.toggle('is-active', isActive);
     });
     groupSiteRows();
   }
@@ -254,11 +233,9 @@ O 1.5 1.5 1.5 0.4 #00FF00" style="flex: 1; height: 80px; background: #333; borde
             input.value = primaryInput.value;
             input.disabled = true;
             input.title = 'Same site as the row above — edit its X/Y/Z instead';
-            input.style.opacity = '0.45';
           } else {
             input.disabled = false;
             input.title = '';
-            input.style.opacity = '';
           }
         }
       });
@@ -272,7 +249,6 @@ O 1.5 1.5 1.5 0.4 #00FF00" style="flex: 1; height: 80px; background: #333; borde
         if (!input) continue;
         input.disabled = false;
         input.title = '';
-        input.style.opacity = '';
       }
     }
   }
@@ -306,20 +282,20 @@ O 1.5 1.5 1.5 0.4 #00FF00" style="flex: 1; height: 80px; background: #333; borde
     newRow.dataset.positionDirty = atom == null ? '' : '1';
 
     newRow.innerHTML = `
-      ${highlightable ? `<td style="${CELL_STYLE}${ICON_COL_STYLE} text-align:center;"><button type="button" class="atom-row-highlight" title="Highlight this atom in the 3D view" style="width:22px; height:22px; padding:0; line-height:1; border:1px solid #555; border-radius:3px; background:#333; color:white; cursor:pointer;">◎</button></td>` : ''}
-      <td style="${CELL_STYLE}${ELEMENT_COL_STYLE}">
-        <div style="display: flex; align-items: center; gap: 3px;">
-          <input type="text" class="atom-element" value="${element}" style="width: 40px; background: #333; border: 1px solid #555; color: white; padding: 2px 3px; border-radius: 3px; box-sizing: border-box;">
-          <button type="button" class="select-element-btn" title="Select Element" style="flex: none; width: 22px; height: 22px; background: #595959; border: none; color: white; cursor: pointer; font-size: 13px; border-radius: 3px; line-height: 1; padding: 0;">⚛</button>
+      ${highlightable ? `<td class="addstructure-cell addstructure-col-icon"><button type="button" class="atom-row-highlight addstructure-highlight-btn" title="Highlight this atom in the 3D view">◎</button></td>` : ''}
+      <td class="addstructure-cell addstructure-col-element">
+        <div class="addstructure-inline-row">
+          <input type="text" class="atom-element addstructure-element-input" value="${element}">
+          <button type="button" class="select-element-btn addstructure-pick-btn" title="Select Element">⚛</button>
         </div>
       </td>
-      <td style="${CELL_STYLE}${COORD_COL_STYLE}"><input type="number" class="atom-x coord-input" value="${x}" step="0.1" style="${NUM_INPUT_STYLE}"></td>
-      <td style="${CELL_STYLE}${COORD_COL_STYLE}"><input type="number" class="atom-y coord-input" value="${y}" step="0.1" style="${NUM_INPUT_STYLE}"></td>
-      <td style="${CELL_STYLE}${COORD_COL_STYLE}"><input type="number" class="atom-z coord-input" value="${z}" step="0.1" style="${NUM_INPUT_STYLE}"></td>
-      <td style="${CELL_STYLE}${NARROW_COL_STYLE}"><input type="number" class="atom-occ coord-input" value="${occupancy}" step="0.05" min="0" max="1" style="${NUM_INPUT_STYLE}"></td>
-      <td style="${CELL_STYLE}${NARROW_COL_STYLE}"><input type="text" inputmode="numeric" class="atom-charge coord-input" value="${chargeValue}" placeholder="—" title="Formal charge / oxidation state, e.g. 3, -2, 3+ or 2-. Blank = unspecified." style="${NUM_INPUT_STYLE}"></td>
-      <td class="atom-color-cell" style="${CELL_STYLE}${COLOR_COL_STYLE} text-align:center;"></td>
-      ${deletable ? `<td style="${CELL_STYLE}${ICON_COL_STYLE} text-align:center;"><button type="button" class="atom-row-delete btn-mini" title="Remove this atom" style="width:20px; height:20px; padding:0; line-height:0; display:flex; align-items:center; justify-content:center;">✕</button></td>` : ''}
+      <td class="addstructure-cell addstructure-col-coord"><input type="number" class="atom-x coord-input addstructure-num-input" value="${x}" step="0.1"></td>
+      <td class="addstructure-cell addstructure-col-coord"><input type="number" class="atom-y coord-input addstructure-num-input" value="${y}" step="0.1"></td>
+      <td class="addstructure-cell addstructure-col-coord"><input type="number" class="atom-z coord-input addstructure-num-input" value="${z}" step="0.1"></td>
+      <td class="addstructure-cell addstructure-col-narrow"><input type="number" class="atom-occ coord-input addstructure-num-input" value="${occupancy}" step="0.05" min="0" max="1"></td>
+      <td class="addstructure-cell addstructure-col-narrow"><input type="text" inputmode="numeric" class="atom-charge coord-input addstructure-num-input" value="${chargeValue}" placeholder="—" title="Formal charge / oxidation state, e.g. 3, -2, 3+ or 2-. Blank = unspecified."></td>
+      <td class="atom-color-cell addstructure-cell addstructure-col-color"></td>
+      ${deletable ? `<td class="addstructure-cell addstructure-col-icon"><button type="button" class="atom-row-delete btn-mini addstructure-icon-btn" title="Remove this atom">✕</button></td>` : ''}
     `;
 
     const colorCell = newRow.querySelector('.atom-color-cell');
@@ -339,7 +315,7 @@ O 1.5 1.5 1.5 0.4 #00FF00" style="flex: 1; height: 80px; background: #333; borde
       swatch.style.background = hex;
     }
     elementInput.addEventListener('input', () => {
-      addRowHint.style.display = 'none';
+      addRowHint.classList.remove('visible');
       refreshAutoColor();
       notifyChange();
     });
@@ -370,7 +346,7 @@ O 1.5 1.5 1.5 0.4 #00FF00" style="flex: 1; height: 80px; background: #333; borde
       openPeriodicTable((picked) => {
         elementInput.value = picked;
         newRow.dataset.dirty = '1';
-        addRowHint.style.display = 'none';
+        addRowHint.classList.remove('visible');
         refreshAutoColor();
         notifyChange();
       });
@@ -395,7 +371,7 @@ O 1.5 1.5 1.5 0.4 #00FF00" style="flex: 1; height: 80px; background: #333; borde
         e.stopPropagation();
         activate();
       });
-      newRow.style.cursor = 'pointer';
+      newRow.classList.add('atom-row-activatable');
       newRow.title = 'Click to highlight this atom in the 3D view';
       newRow.addEventListener('click', (e) => {
         const target = /** @type {HTMLElement} */ (e.target);
@@ -476,10 +452,10 @@ O 1.5 1.5 1.5 0.4 #00FF00" style="flex: 1; height: 80px; background: #333; borde
     const lastRow = tbody.querySelector('tr:last-child');
     const lastElement = lastRow?.querySelector('.atom-element').value;
     if (lastRow && !lastElement) {
-      addRowHint.style.display = 'block';
+      addRowHint.classList.add('visible');
       return;
     }
-    addRowHint.style.display = 'none';
+    addRowHint.classList.remove('visible');
     addRowToTable();
     notifyChange();
     container.querySelector('#atomsTableScroll').scrollTop = container.querySelector('#atomsTableScroll').scrollHeight;
@@ -541,7 +517,7 @@ O 1.5 1.5 1.5 0.4 #00FF00" style="flex: 1; height: 80px; background: #333; borde
     activeUuid = null;
     addRowToTable();
     container.querySelector('#bulkInput').value = '';
-    addRowHint.style.display = 'none';
+    addRowHint.classList.remove('visible');
     notifyChange();
   }
 
