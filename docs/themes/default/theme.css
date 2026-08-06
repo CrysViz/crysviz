@@ -14,10 +14,12 @@
    and/or surfaces; minimal.css changes the layout.
 
    NOTE: the accent tokens (--bg-color / --highlight-color / --accent-color /
-   --hover-color / --border-color) are intentionally NOT defined here — they are
-   owned by the backend-mode classes (.theme-standard / .theme-ase / …) in
-   styles/styles.css so the accent follows the active compute backend. A theme
-   MAY override them, but by default leaves them to backend mode.
+   --hover-color / --border-color) are intentionally NOT defined in :root —
+   they live in the .theme-standard / .theme-symmetry blocks below, one set
+   per active compute backend. ui/BackendPanel/BackendTheme.js toggles which
+   class is on <body>, so the accent follows the active backend. A theme
+   override MAY redefine these classes to recolor the accent, but by default
+   leaves them to backend mode.
    =========================================================================== */
 
 :root {
@@ -34,7 +36,227 @@
   --popup-border: rgba(255, 255, 255, 0.3);
   --input-bg: rgba(26, 26, 26, 0.9);
   --danger: rgba(240, 132, 18, 0.9);
+  --warn: #FFBF00;
+  --ok: #2e9c6e;
+  --info: #00bcd4;
+
+  /* ---- State colours, light-on-dark variants ----------------------------
+     --warn/--ok/--info above are chosen to read on light fills. Used as TEXT
+     on a dark panel they are too dark: the earlier consolidation folded the
+     link/heading colours (#81c784, #7ee2a8, #4fc3f7, #6fb6ff, #ffcf4f) into
+     them and measurably dropped contrast on the About panel, the comparison
+     headings and the space-group links. These are the same three states at a
+     luminance that survives a dark background — reach for them whenever the
+     state colour is the foreground rather than the fill. */
+  --warn-bright: #ffcf4f;
+  --ok-bright: #7ee2a8;
+  --info-bright: #4fc3f7;
+  /* The anneal badge tints its own fill and border from the same hue as its
+     text, so --ok-bright needs a triple too. Chosen over the other light
+     green (#81c784) precisely because it collapses those three call sites
+     onto one value instead of stranding them as literals. */
+  --ok-bright-rgb: 126 226 168;
+
+  /* ---- State colours, bare channel triples (Wave 2.5) --------------------
+     --danger/--warn/--ok/--info above stay exactly as they were — other
+     stylesheets already reference them at their one fixed alpha. But real
+     call sites need the same hue at several alphas (badge fill 0.14, badge
+     border 0.18, solid icon 1 — see styles.css:838-840, backendPanel.css
+     :120,131,144,151). Rather than mint a token per alpha, expose the raw
+     channels so a call site composes its own: rgb(var(--danger-rgb) / .18).
+     One source of truth for the hue; alpha stays local to the rule. */
+  --danger-rgb: 240 132 18;   /* same hue as --danger */
+  --warn-rgb: 255 191 0;      /* same hue as --warn (#FFBF00) */
+  --ok-rgb: 46 156 110;       /* same hue as --ok (#2e9c6e) */
+  --info-rgb: 0 188 212;      /* same hue as --info (#00bcd4) */
+
   --radius: 8px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  /* ---- Radius rungs (Wave 2.5) --------------------------------------------
+     3/4/5/9/12/24px are all in real use (audit: 3px×15, 4px×21, 5px×3,
+     9px×2, 12px×17, 24px×3) but sit at no clean semantic "step" relative to
+     --radius-sm/--radius/--radius-md — unlike those three, this isn't a
+     small/base/medium story, it's a dense, non-semantic packing of specific
+     pixel values used by unrelated components. Named by literal pixel value
+     instead of another tier of xs/sm/lg adjectives, which would invent
+     distinctions the data doesn't support. */
+  --radius-3: 3px;
+  --radius-4: 4px;
+  --radius-5: 5px;
+  --radius-9: 9px;
+  --radius-12: 12px;
+  --radius-24: 24px;
+
+  /* ---- Foregrounds & lines (greys the 545 colour literals in styles/*.css
+     actually cluster into — see styles/TOKENS.md for the audit) ---------- */
+  --fg-1: #ffffff;                   /* primary text; same value as --panel-fg */
+  --fg-2: rgba(255, 255, 255, 0.6);  /* secondary/de-emphasised text */
+  --fg-3: rgba(255, 255, 255, 0.4);  /* dim/disabled text */
+  --line-1: rgba(255, 255, 255, 0.1); /* hairline border/divider; same value as --panel-border */
+  --line-2: rgba(255, 255, 255, 0.2); /* stronger border/divider */
+  --overlay: rgba(0, 0, 0, 0.5);     /* modal/backdrop scrim */
+  --overlay-light: rgba(255, 255, 255, 0.95); /* light-on-dark inverse of --overlay
+     (styles_file_browswer.css .error-panel background) — kept as its own
+     token, not folded into --overlay, so a light theme can move the two
+     independently the same way --overlay itself must stay apart from the
+     shadow tokens below. */
+
+  /* ---- Opaque grey ramps (Wave 2.5) ---------------------------------------
+     styles.css's white-alpha idiom (--fg-*/--line-*/--overlay above) covers
+     most of the app, but a handful of smaller panels (TrajectoryPanel,
+     ForcePanel, the file browser, the native <select> chrome) paint flat,
+     OPAQUE greys instead — they can't be expressed as an alpha over
+     --panel-bg because they're meant to read as solid widget chrome, not a
+     translucent layer. Until now these panels had no token to reach for,
+     so they were unthemeable. Clustered from actual call sites, not by
+     lightness alone — see TOKENS.md for the full literal-to-rung mapping
+     and the near-duplicates each rung absorbs. */
+  --chrome-1: rgba(25, 25, 25, 0.8);  /* darkest widget bg (near-dupes: #161618, rgba(20,20,20,.85/.9)) */
+  --chrome-2: #2c2c2e;                /* widget bg (near-dupe: #303030) */
+  --chrome-3: #3a3a3c;                /* widget bg/border (near-dupe: #3a3a3a) */
+  --chrome-4: #4a4a4c;                /* hover border / lighter widget bg (near-dupes: #454547, #444) */
+  --chrome-5: #555;                   /* mid-grey border/bg (near-dupe: #5a5a5a) */
+  --chrome-6: #777;                   /* lightest chrome border */
+
+  /* Bluish-tinted variant of the chrome family, used only by the Planes
+     panel's sticky/selected table column (controlPanel.css). Genuinely a
+     different hue (navy, not neutral grey) — folding it into --chrome-*
+     would misrepresent the intended tint, so it gets its own small scale
+     rather than being rounded into the nearest neutral rung. */
+  --chrome-tint-1: rgba(14, 18, 24, 0.96);
+  --chrome-tint-2: rgba(15, 18, 30, 0.9);
+  --chrome-tint-3: rgba(22, 33, 56, 0.98);
+
+  /* Off-white text/border family — the lighter counterpart to --chrome-*,
+     same "smaller panels have no token" problem. --fg-2/--fg-3 above are
+     alpha-over-panel-bg; these are flat opaque greys used mostly by
+     TrajectoryPanel's frame-counter readout and a few borders. */
+  --ink-1: #888;      /* dim/disabled text (near-dupes: #7a7a7a, #7f7f7f) */
+  --ink-2: #999;      /* dim border/text */
+  --ink-3: #ccc;      /* dominant mid-tone text/border — the mode of this family (near-dupe: #b8b8b8) */
+  --ink-4: #ddd;      /* near-dupe: #dcdcdc */
+  --ink-5: #e8e8e8;
+  --ink-6: #f5f5f5;   /* near-white text */
+
+  /* ---- Wash / tint scale (Wave 2.5) ---------------------------------------
+     rgba(255,255,255,X) hover tints, card backgrounds and subtle input
+     fills — the single most-repeated un-tokenised value in the Wave 2
+     audit. Four alphas actually dominate (counts from docs/styles/*.css):
+     0.08×20, 0.15×16, 0.05×14, 0.12×6. The rest of the 0.02-0.16 range is
+     one-off long tail, not a real cluster — not given rungs of their own. */
+  --wash-1: rgba(255, 255, 255, 0.05); /* subtle fill (backgrounds, faint borders) */
+  --wash-2: rgba(255, 255, 255, 0.08); /* the dominant card/tile background + hover tint */
+  --wash-3: rgba(255, 255, 255, 0.12); /* stronger hover/active fill */
+  --wash-4: rgba(255, 255, 255, 0.15); /* border tier between --line-1 (.1) and --line-2 (.2); mostly used on `border`, not fills — kept in the wash scale rather than the line family because it repeats the exact 0.02-0.16 white-alpha idiom this scale exists for, not the line pair's border-specific naming */
+
+  /* ---- Shadow tokens (Wave 2.5) --------------------------------------------
+     Deliberately separate from --overlay: a drop shadow and a full-screen
+     scrim are different things and must be free to move independently once
+     a light theme exists. --shadow-rgb is the bare channel triple (mirrors
+     the --danger-rgb pattern above) for call sites that need an alpha this
+     scale doesn't name. --shadow-sm/-md/-lg/-glow are whole box-shadow
+     values, not just colours: blur/spread vary per call site (2px/6px vs
+     4px/12px vs 0/4px/2px vs 4px/16px) so a bare colour token alone
+     wouldn't remove the duplication — these four shapes are the ones that
+     already repeat verbatim across multiple files. */
+  --shadow-rgb: 0 0 0;
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.2);   /* file-browser panel shadow */
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);  /* elevated popover/menu (info-panel, toggle_styles ×2 exact) */
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);  /* biggest single-use panel shadow (crop toolbar) */
+  --shadow-glow: 0 0 4px 2px rgba(0, 0, 0, 0.3); /* no-offset ring/glow — the most-repeated shadow shape in the app (6 near-dup sites at .2/.3 alpha) */
+
+  /* ---- Controls ----------------------------------------------------------
+     --control-h is the dominant button/input height found in the audit;
+     --control-h-touch is the WCAG/iOS minimum tap target, used under
+     pointer:coarse media queries. */
+  --control-h: 34px;
+  --control-h-touch: 44px;
+
+  /* ---- Type --------------------------------------------------------------
+     Every size is calc(<px> * var(--cv-font-scale, 1)) so the user font-scale
+     control (ui/FontScaleModule.js, which sets --cv-font-scale on
+     documentElement) keeps scaling every rung, not just the ones a component
+     happened to opt into before. */
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  --font-display: Georgia, 'Times New Roman', serif;
+
+  --fs-xs: calc(10px * var(--cv-font-scale, 1));
+  --fs-sm: calc(11px * var(--cv-font-scale, 1));
+  --fs-base: calc(12px * var(--cv-font-scale, 1));  /* the single most common font-size in the app */
+  --fs-md: calc(13px * var(--cv-font-scale, 1));
+  --fs-lg: calc(14px * var(--cv-font-scale, 1));
+  --fs-xl: calc(16px * var(--cv-font-scale, 1));
+  --fs-hero: calc(64px * var(--cv-font-scale, 1));  /* the one big-number/splash outlier */
+
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-bold: 600;    /* this codebase's actual "emphasis" weight — 600 far outnumbers literal 700/bold */
+  --lh-tight: 1;
+  --lh-normal: 1.4;
+
+  /* ---- Space -------------------------------------------------------------
+     4/6/8/12/16/24px — all six are independently common margin/padding
+     values in the audit; see TOKENS.md for the off-grid 10px/5px note. */
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-3-5: 10px; /* Wave 2.5: 10px is the single most-repeated off-grid spacing
+     value (~60+ sites) and sits exactly equidistant between --sp-3 (8) and
+     --sp-4 (12) — there's no "nearer neighbour" to snap to, so every one of
+     those 60+ sites would need its own directional judgment call. 15px, by
+     contrast, is 1px from --sp-5 (16px) and gets no rung — see TOKENS.md for
+     the full reasoning on both. */
+  --sp-4: 12px;
+  --sp-5: 16px;
+  --sp-6: 24px;
+
+  /* ---- Depth ---------------------------------------------------------------
+     Grouped by role, not a literal copy of today's numbers — the app's
+     existing z-index values disagree with each other (see TOKENS.md "known
+     inversions"). 1000 apart for headroom; nothing on screen changes until
+     Wave 2 substitutes these in for the raw numbers. */
+  --z-canvas: 0;
+  --z-panel: 1;
+  --z-dock: 1200;
+  --z-popup: 2000;
+  --z-menu: 3000;
+  --z-modal: 4000;
+  --z-tooltip: 5000;
+
+  /* ---- Depth: literal stacking ladder (Wave 2.5) --------------------------
+     The flat ladder above is a TARGET grouping — Wave 1 said outright its
+     numbers aren't a copy of what's on screen today, and adopting it changes
+     two real stacking relationships (see "known inversions" in TOKENS.md).
+     This second ladder is the opposite: every value below is the exact
+     current literal for its selector(s), so substituting one of these tokens
+     in is a pure refactor with zero visual change — no inversion is touched,
+     including the .cv-panel-menu one. Only z-index values that participate
+     in the app-wide stack are here (100 and up); the small in-component
+     values (-2 to 20, sticky-cell/slider/colorbar layers) stay literal, since
+     tokenising them would imply a global relationship none of them have.
+     Full value → token → selector mapping is in TOKENS.md so adoption is
+     mechanical. --z-dock (1200, above) already equals its one real call site
+     (.cv-panel.cv-floating) exactly, so it's reused here rather than
+     redefined — everything below is new. */
+  --z-inline-alert: 100;
+  --z-mobile-scrim: 900;
+  --z-anchor: 999;
+  --z-overlay-widget: 1000;
+  --z-gizmo-controls: 1001;
+  --z-comp-panel: 1100;
+  /* --z-dock: 1200 (above) */
+  --z-dock-pane: 1300;
+  --z-dock-handle: 1301;
+  --z-dock-hint: 1302;
+  --z-dock-scrim: 1350;
+  --z-dock-expanded: 1400;
+  --z-mobile-panel: 1500;
+  --z-chrome: 2000;
+  --z-dialog: 3000;
+  --z-confirm: 3100;
+  --z-context-menu: 3200; /* known inversion (TOKENS.md) — preserved, not fixed */
 
   /* ---- Layout geometry (single source of truth) ------------------------- */
   --ui-width: 380px;                 /* panel content width */
