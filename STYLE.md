@@ -51,10 +51,18 @@ gradient-picker stops, the bond-range slider's fixed green). It is not a
 dumping ground for un-tokenised debt. If the guard finds something real, fix it
 or report it — do not allowlist it away.
 
-**The guard currently reports ~73 violations and therefore fails.** These are
-hue families with too few call sites to justify a token, listed in TOKENS.md.
-That is a known, deliberate baseline, not a regression. If your change moves
-that number *up*, you added debt.
+**The guard is clean, and `make checks` exits zero.** It used to carry a
+~73-violation baseline of single-call-site colours. Light-panelled themes
+changed the calculus — a literal in a component stylesheet is a hole a theme
+cannot reach — so those became tokens (the "hue families" block at the end of
+`default/theme.css`). Any new violation is a regression now, not more debt on
+an existing pile.
+
+One guard subtlety worth knowing: the named-colour check keys on
+`(?<![-\w])keyword(?![-\w])`, not `\b`. A hyphen is a word boundary to `\b`, so
+`rgb(var(--active-green-rgb) / .5)` used to be reported as a literal because of
+the "green" **inside the token name** — 11 of the old 73 were already-correct
+code being misread.
 
 ## Adding a theme
 
@@ -108,8 +116,12 @@ Optional: drop icons in `docs/themes/<id>/icons/` and override the
   pair is what everything else reads (see `AddonAPI.getTheme`).
 - **The UI panels are dark in every theme today.** `dark/` and `twilight/` only
   override scene colours. A genuinely light-panelled theme is untested — it
-  will need `--fg-*` (white-alpha) and `--chrome-*`/`--ink-*` (opaque ramps)
-  redefined, and that is where the remaining 73 literals will show as holes.
+  will need the fg ramp (white-alpha) and the chrome and ink opaque ramps
+  redefined, plus the washes, which are white-alpha and become no-ops on a
+  light surface. The 73 literals that used to be holes are tokens now, so the
+  work is bounded by the vocabulary rather than by a hunt through `docs/styles/`.
+  Two things still are not: `.theme-icon { filter: invert(1) }` in
+  `controlPanel.css`, and the icon SVGs with `fill="#ffffff"` baked in.
 
 ## The token vocabulary
 
@@ -130,6 +142,7 @@ Full reference in `docs/styles/TOKENS.md`. The shape:
 | radius | `--radius-3/-4/-5/-sm/(--radius 8)/-9/-md/-12/-24` |
 | depth | `--z-*` ladder |
 | layout | `--ui-width` `--ui-total-width` `--gizmo-*` `--popup-left` |
+| hue families | `--danger-bright/-strong/-fill` `--warn-soft` `--switch-on(-alt)` `--confirm-*` `--locked-*` `--about-*` `--axis-a/b/c` `--tool-active` and the rest of the block at the end of `default/theme.css` |
 
 Two rules that were learned the hard way and are worth restating:
 

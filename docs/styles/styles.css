@@ -69,7 +69,7 @@ body {
   background:var(--popup-bg);
   color:var(--muted-fg);
   border-radius: var(--radius-md);
-  border: 1px solid rgba(128,128,128,1.0);
+  border: 1px solid var(--line-grey);
 }
 .angle-btn:hover {
     transform: scale(1.05);
@@ -559,7 +559,7 @@ body.panel-hidden #axesLegend {
 }
 
 .order-structure-row.best {
-  background: rgba(255, 193, 7, 0.1);
+  background: rgb(var(--best-row-rgb) / 0.1);
 }
 
 /* The one candidate currently rendered into the 3D view (see showCandidate()
@@ -567,11 +567,11 @@ body.panel-hidden #axesLegend {
  * even when it's also the .best row (amber background) at the same time. */
 .order-structure-row.showing {
   border-left-color: var(--highlight-color, var(--info-bright));
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-1-5);
 }
 
 .order-structure-row.best.showing {
-  background: rgba(255, 193, 7, 0.18);
+  background: rgb(var(--best-row-rgb) / 0.18);
 }
 
 .order-structure-rank {
@@ -1050,7 +1050,7 @@ body.panel-hidden #axesLegend {
 }
 .cv-crop-mask {
   position: absolute;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--overlay-60);
   pointer-events: none;
 }
 .cv-crop-rect {
@@ -1312,7 +1312,7 @@ body.panel-hidden #axesLegend {
 
 #secondLoadTextButton:hover {
   transform: translateY(-1px);
-  box-shadow: 0px 0px 4px 2px  rgba(54, 143, 110, 0.35);
+  box-shadow: 0px 0px 4px 2px  rgb(var(--btn-glow-rgb) / 0.35);
 }
 
 
@@ -1377,7 +1377,7 @@ input[type="checkbox"] {
 #aboutOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--overlay-70);
   backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
@@ -1392,14 +1392,14 @@ input[type="checkbox"] {
 }
 
 #aboutModal {
-  background: #0b1f1c;
+  background: var(--about-bg);
   color: var(--ok-tint);
   max-width: 640px;
   max-height: 80dvh;
   overflow-y: auto;
   padding: 28px 32px;
   border-radius: 16px;
-  border: 1px solid rgba(129, 199, 132, 0.4);
+  border: 1px solid var(--about-border);
   box-shadow: 0px 0px 4px 2px  rgb(var(--shadow-rgb) / 0.45);
   position: relative;
   font-size: var(--fs-lg);
@@ -1420,7 +1420,7 @@ input[type="checkbox"] {
 }
 
 #aboutClose:hover {
-  color: #a5d6a7;
+  color: var(--about-close-hover);
 }
 
 #aboutContent h1,
@@ -1464,11 +1464,11 @@ input[type="checkbox"] {
 }
 
 #aboutContent a:hover {
-  color: #81d4fa;
+  color: var(--link-hover);
 }
 
 #aboutContent code {
-  background: rgba(12, 45, 36, 0.7);
+  background: var(--about-code-bg);
   padding: 2px var(--sp-1);
   border-radius: var(--radius-4);
   font-family: var(--font-mono);
@@ -1476,7 +1476,7 @@ input[type="checkbox"] {
 }
 
 #aboutContent .about-error {
-  color: #ff8a80;
+  color: var(--danger-bright);
 }
 
 #aboutOverlay[hidden] {
@@ -1620,13 +1620,13 @@ justify-content: center;
 
 .reset-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0px 0px 4px 2px  rgba(255, 107, 107, 0.1);
-  border: 1px solid rgba(255,255,255,0.5);
+  box-shadow: 0px 0px 4px 2px  rgb(var(--danger-bright-rgb) / 0.1);
+  border: 1px solid var(--line-3);
 }
 
 /* Destructive variant: "Clear local data" wipes all persisted settings. */
 .reset-btn-danger {
-  background: rgba(200, 35, 35, 0.92);
+  background: var(--danger-fill);
 }
 
 .bond-checkbox {
@@ -1946,7 +1946,7 @@ justify-content: center;
 .btn-mini { background:transparent; border:1px solid var(--wash-2); color:var(--info-tint); padding:var(--sp-2) var(--sp-3-5); border-radius: var(--radius-sm); cursor:pointer; }
 .btn-mini:hover { transform: translateY(-1px);background:var(--wash-0); border: 1px solid var(--accent-color);}
 
-.btn-mini.highlight { background:var(--bg-color); border-color:rgba(0,0,0,0.15); color:var(--fg-1); }
+.btn-mini.highlight { background:var(--bg-color); border-color:var(--line-dark); color:var(--fg-1); }
 .btn-mini.highlight:hover { transform: translateY(-1px);filter:brightness(1.03); border: 1px solid var(--accent-color);}
 
 #composition h4 {
@@ -2026,7 +2026,7 @@ backdrop-filter: blur(10px);
 z-index:var(--z-overlay-widget); pointer-events:none;
 }
 .dot{display:inline-block;width:15px;height:15px;border-radius:50%;margin-right:var(--sp-2);}
-.dot-a{width:10px;height:10px;background:#ff3333;} .dot-b{width:10px;height:10px;background:#33cc33;} .dot-c{width:10px;height:10px;background:#3366ff;}
+.dot-a{width:10px;height:10px;background:var(--axis-a);} .dot-b{width:10px;height:10px;background:var(--axis-b);} .dot-c{width:10px;height:10px;background:var(--axis-c);}
 .legend-row{display:flex;align-items:center;gap:var(--sp-2);line-height:1.2;}
 
 /* Drag grip + hamburger menu for the axes gizmo (ui/GizmoDrag.js). A
@@ -2378,13 +2378,13 @@ body > #structureInfoContent {
 
 .measure-tool-btn.active {
   background: var( --bg-color);
-  border-color: #ff6b35;
+  border-color: var(--tool-active);
   color: var(--fg-1);
-  box-shadow: 0px 0px 4px 2px  rgba(255, 107, 53, 0.4);
+  box-shadow: 0px 0px 4px 2px  rgb(var(--tool-active-rgb) / 0.4);
 }
 
 .measure-tool-btn.active:hover {
-  box-shadow: 0px 0px 4px 2px rgba(255, 107, 53, 0.5);
+  box-shadow: 0px 0px 4px 2px rgb(var(--tool-active-rgb) / 0.5);
   transform: translateY(-2px);
 }
 
@@ -2480,7 +2480,7 @@ body > #structureInfoContent {
    * clicked at all. */
   pointer-events: auto;
   padding:var(--sp-2) 9px; border-radius: var(--radius-md); font-size: var(--fs-lg); font-weight:700;
-  color:var(--fg-1); background:rgba(0,0,0,.65); border:1px solid var(--line-2);
+  color:var(--fg-1); background:var(--label-bg); border:1px solid var(--line-2);
   backdrop-filter: blur(6px); white-space:nowrap;
 }
 

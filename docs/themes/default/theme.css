@@ -399,6 +399,85 @@
   --icon-measure-clear:    url('../../data/icons/delete-icon2.svg');
   --icon-measure-restore:  url('../../data/icons/restore-icon.svg');
   /* Delete uses a ❌ glyph (like the floating panel), not an icon image. */
+
+  /* ==========================================================================
+     Hue families that used to sit as literals in docs/styles/
+     --------------------------------------------------------------------------
+     These were the css_guard baseline: single-call-site colours the original
+     consolidation judged too rare to name. Light-panelled themes changed that
+     calculus — a literal in a component stylesheet is a hole a theme cannot
+     reach, and every one of these would have shown through as a dark-panel
+     assumption. Values are the originals, so the default palette is unchanged.
+     ========================================================================== */
+
+  /* ---- Danger ------------------------------------------------------------
+     --danger (amber-orange) is the *fill*; these are the red foreground tier.
+     Kept split per the fg-vs-fill rule: folding a foreground into its fill
+     sibling has measurably dropped contrast here before. */
+  --danger-bright: #ff6b6b;         /* error/destructive text on a dark panel */
+  --danger-bright-rgb: 255 107 107; /* same hue, for rgb(... / alpha) glows */
+  --danger-strong: #e63946;         /* saturated destructive icon hover */
+  --danger-fill: rgba(200, 35, 35, 0.92); /* solid destructive button */
+
+  /* ---- Caution ------------------------------------------------------------ */
+  --warn-soft: rgba(243, 174, 100, 0.9);  /* soft-refusal borders and notes */
+  --warn-banner-bg: rgba(40, 30, 0, 0.85);
+  --best-row-rgb: 255 193 7;        /* "best match" row highlight (amber) */
+
+  /* ---- Positive / switches ------------------------------------------------
+     Two switch greens survive because two different switch widgets ship with
+     them; --switch-on-alt is the blue one in toggle_styles.css. */
+  --switch-on: #4caf50;
+  --switch-on-alt: #2196f3;
+  --seg-active-bg: #0d8a36;         /* active segmented-control button */
+  --btn-glow-rgb: 54 143 110;       /* button hover glow */
+  --on-accent: #0c1f17;             /* text sitting ON an accent fill */
+  --thumb-border: #d7f5e8;          /* slider thumb ring */
+
+  /* ---- Informational blues ------------------------------------------------ */
+  --confirm-bg: #0066cc;
+  --confirm-border: #004499;
+  --link-hover: #81d4fa;
+  --row-selected-bg: rgba(100, 150, 255, 0.12);
+  --locked-bg: rgba(25, 55, 110, 0.28);       /* the Wyckoff "locked" surface */
+  --locked-badge-bg: rgba(32, 77, 160, 0.35);
+  --locked-grad-1: #1c5fb8;
+  --locked-grad-2: #2493ff;
+
+  /* ---- The About modal ----------------------------------------------------
+     A surface of its own (green-tinted, unlike every other panel), so it needs
+     its own handful rather than borrowing the panel tokens. */
+  --about-bg: #0b1f1c;
+  --about-border: rgba(129, 199, 132, 0.4);
+  --about-code-bg: rgba(12, 45, 36, 0.7);
+  --about-close-hover: #a5d6a7;
+
+  /* ---- Neutrals ----------------------------------------------------------- */
+  --overlay-60: rgba(0, 0, 0, 0.6);   /* between --overlay (.5) and --overlay-80 */
+  --overlay-70: rgba(0, 0, 0, 0.7);
+  --label-bg: rgba(0, 0, 0, 0.65);    /* in-scene measurement label backing */
+  --label-ink: #000000;               /* ink on that label — it sits on a light sprite */
+  --line-3: rgba(255, 255, 255, 0.5); /* brighter hairline than --line-2 (.2) */
+  --line-dark: rgba(0, 0, 0, 0.15);   /* hairline ON a light accent fill */
+  --line-grey: #808080;               /* opaque mid-grey border */
+  --track-bg: rgba(128, 128, 128, 0.15);        /* slider/progress groove */
+  --track-bg-strong: rgba(150, 150, 150, 0.5);
+
+  /* ---- Extra opaque surfaces ---------------------------------------------- */
+  --textarea-bg: rgba(16, 16, 16, 0.8);
+  --float-panel-bg: rgba(26, 26, 26, 0.8);  /* floating scene widgets */
+  --popup-bg-deep: rgba(13, 13, 13, 0.95);
+
+  /* ---- Lattice axis legend ------------------------------------------------
+     a/b/c encode data, but they must match the 3D gizmo, so a theme that
+     retints the scene has to be able to retint these with it. */
+  --axis-a: #ff3333;
+  --axis-b: #33cc33;
+  --axis-c: #3366ff;
+
+  /* ---- Active tool -------------------------------------------------------- */
+  --tool-active: #ff6b35;
+  --tool-active-rgb: 255 107 53;    /* same hue, for the active-tool glow */
 }
 
 /* ---- Accent palette (changes with the active backend mode) ----------------

@@ -17,7 +17,7 @@
   }
 
   #objectTable {
-  border: 2px solid rgba(255, 255, 255, 0.0);
+  border: 2px solid transparent;
   border-collapse: collapse;
   }
 
@@ -79,7 +79,7 @@
     border: 1px solid var(--wash-4);
   }
   .icon.delete:hover {
-    color: #e63946;
+    color: var(--danger-strong);
   }
 
   /* Name scrolling behavior */
@@ -222,7 +222,7 @@
 }
 
 .cv-fb-popup {
-  background: rgba(13, 13, 13, 0.95); /* no token — the --chrome-* ramp's darkest rung (--chrome-1) is a different alpha/hue mix */
+  background: var(--popup-bg-deep);
   border: 1px solid var(--line-1);
   border-radius: var(--radius-12);
   box-shadow: 0 2px 5px rgb(var(--shadow-rgb) / 0.2);

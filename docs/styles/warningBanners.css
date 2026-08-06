@@ -19,10 +19,10 @@
   z-index: var(--z-chrome);
   padding: var(--sp-2) 14px; /* 14px: no token between --sp-4 (12) and --sp-5 (16) */
   border-radius: var(--radius-sm);
-  /* Warm-black scrim behind the amber text/border below — not the same
-     thing as --warn-rgb at a low alpha (that composes to a BRIGHT amber
-     fill, not this deliberately dark backing); see css_guard_allow.txt. */
-  background: rgba(40, 30, 0, 0.85);
+  /* A deliberately dark, warm-black backing behind the amber text/border
+     below — not --warn-rgb at a low alpha, which composes to a bright amber
+     fill instead. */
+  background: var(--warn-banner-bg);
   border: 1px solid rgb(var(--warn-rgb) / 0.6);
   color: var(--warn);
   font-size: var(--fs-base);

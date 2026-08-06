@@ -2,10 +2,9 @@
    Covers General.js, Species.js and components/{CompositionRow,
    IndividualAtomRow, IndividualBondRow, IndividualPolyhedronRow, ColorEditor,
    SpinForceEditor, MaterialEditor, utils}.js. Colours/spacing use a design
-   token only where the JS literal was an EXACT match for one — this file was
-   extracted from working inline styles, so an approximate token would be a
-   (forbidden) rendering change, not a refactor. See the wave-3 report for the
-   literals that had no matching token.
+   token only where its value is an EXACT match for the JS literal — this file
+   was extracted from working inline styles, so an approximate token would be a
+   (forbidden) rendering change, not a refactor.
 
    Many editor panels below (`.atom-color-editor`, `.bond-color-editor`, …)
    are toggled open/closed by JS reading/writing `element.style.display`
@@ -113,7 +112,7 @@
 .press-hold-popup-btn {
   display: block;
   white-space: nowrap;
-  background: var(--highlight-color, var(--accent-color, #2a8f4f)); /* fallback checked against every token (TOKENS.md) — no match, stays literal */
+  background: var(--highlight-color, var(--accent-color, var(--ok)));
   color: var(--panel-fg, var(--fg-1)); /* was #fff — free substitution, exact */
   border: 1px solid var(--border-color, var(--popup-border)); /* was rgba(255,255,255,0.3) — exact */
   border-radius: var(--radius-sm);
@@ -133,7 +132,7 @@
   width: 10px;
   height: 10px;
   transform: translateX(-50%) rotate(45deg);
-  background: var(--highlight-color, var(--accent-color, #2a8f4f)); /* fallback checked against every token (TOKENS.md) — no match, stays literal */
+  background: var(--highlight-color, var(--accent-color, var(--ok)));
   border-right: 1px solid var(--border-color, var(--popup-border));
   border-bottom: 1px solid var(--border-color, var(--popup-border));
 }
@@ -201,7 +200,9 @@
   margin: 0 0 var(--sp-3-5) 0;
   padding: var(--sp-3) var(--sp-3-5);
   border-radius: var(--radius);
-  background: linear-gradient(135deg, rgba(32, 77, 160, 0.35), rgb(var(--blue-accent-fill-rgb) / 0.18)); /* first stop is a one-off darker navy, no matching token; second stop is the blue-accent fill tier */
+  /* The two stops come from different families: the badge's own locked fill,
+     then the shared blue-accent fill tier. */
+  background: linear-gradient(135deg, var(--locked-badge-bg), rgb(var(--blue-accent-fill-rgb) / 0.18));
   border: 1px solid rgb(var(--blue-accent-rgb) / 0.45);
   color: var(--info-tint); /* was #cfe6ff — Wave 2.6 exact */
   font-size: var(--fs-sm);
@@ -230,10 +231,10 @@
    single class carries the whole state. */
 .segmented-control.wyckoff-locked {
   box-shadow: 0 0 0 1px rgb(var(--blue-accent-rgb) / 0.35);
-  background: rgba(25, 55, 110, 0.28); /* dark navy fill — one-off, not close enough to --blue-accent-fill-rgb to fold (cluster by role, not hue distance) */
+  background: var(--locked-bg); /* dark navy fill — one-off, not close enough to --blue-accent-fill-rgb to fold (cluster by role, not hue distance) */
 }
 .segmented-control.wyckoff-locked button.active {
-  background: linear-gradient(135deg, #1c5fb8, #2493ff); /* blue accent gradient — no matching token */
+  background: linear-gradient(135deg, var(--locked-grad-1), var(--locked-grad-2));
   color: var(--info-tint); /* was #f5fbff — Wave 2.6 exact */
   font-weight: 700;
 }
@@ -622,7 +623,7 @@
 }
 /* A Wyckoff move that would collapse symmetry-equivalent atoms onto each
    other is refused — the note flips to this warning colour to say so. */
-.coord-editor-note.refused { color: rgba(255, 180, 120, 0.9); } /* orange warning tint — no matching token */
+.coord-editor-note.refused { color: var(--warn-soft); }
 .coord-axis-rows {
   display: flex;
   flex-direction: column;
@@ -719,7 +720,7 @@
 }
 /* Active/inactive state — was setSwitchActive()'s four inline style writes. */
 .spin-mode-switch-btn.active {
-  background: #0d8a36; /* distinct green — no matching token (not an --ok/--ok-bright near-dup) */
+  background: var(--seg-active-bg);
   color: var(--fg-1);
 }
 .spin-mode-switch-btn:not(.active) {

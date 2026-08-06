@@ -169,8 +169,8 @@
    =========================================================================== */
 .bond-distance-label {
   background: var(--overlay-light);
-  border: 2px solid #000; /* opaque black — no matching token (--shadow-rgb is for alpha composition, not solid fills) */
-  color: #000; /* same opaque-black situation as the border above */
+  border: 2px solid var(--label-ink);
+  color: var(--label-ink);
   font-weight: 700; /* one-off emphasis, not the app's --fw-bold (600) */
   font-size: var(--fs-base);
   padding: 2px var(--sp-2);
@@ -197,13 +197,13 @@
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.4s;
-  background: rgba(128, 128, 128, 0.15); /* mid-grey wash — no matching token (neither the white-wash nor black-overlay family) */
+  background: var(--track-bg);
 }
 
 .tracer-progress-fill {
   height: 100%;
   width: 0%;
-  background: var(--highlight-color, #4caf50); /* fallback checked against every token (TOKENS.md) — no match, stays literal */
+  background: var(--highlight-color, var(--switch-on));
   transition: width 0.15s linear;
 }
 
@@ -345,8 +345,8 @@
 }
 
 .pt-confirm-btn:not(:disabled) {
-  background: #0066cc; /* saturated blue — no matching token */
-  border-color: #004499; /* same blue family as above — no matching token */
+  background: var(--confirm-bg);
+  border-color: var(--confirm-border);
   cursor: pointer;
 }
 
@@ -623,14 +623,11 @@
 }
 
 /* Checked-state colours for the three toggles built by createToggleSwitch()
-   (enable comparison / show bonds / show lattice comparison). #4CAF50 has no
-   matching token (same "no token for this specific green" situation as
-   forcePanel.css's .cv-species-toggle track and analysisPanels.css's
-   .md-stream-dot--connected) — kept literal. */
+   (enable comparison / show bonds / show lattice comparison). */
 #showComparisonBonds:checked + .toggle_slider,
 #showLatticeComparison:checked + .toggle_slider,
 #enableComparisonToggle:checked + .toggle_slider {
-  background-color: #4CAF50 !important; /* status colour, same family as the MD-stream dots — reviewed exception (css_guard_allow.txt), left literal */
+  background-color: var(--switch-on) !important;
 }
 
 #showComparisonBonds:checked + .toggle_slider > span,
@@ -641,7 +638,7 @@
 
 .cmp-comparison-error {
   font-size: var(--fs-base); /* 12px */
-  color: #ff6b6b; /* distinct red, not an exact match for --danger (which is orange-hued) — no matching token */
+  color: var(--danger-bright);
   margin: 0 0 var(--sp-3-5) 0; /* 10px */
   /* Closed by default — addCompPanel() only ever sets display:'block' when
      there's an error to show (this element is rebuilt from scratch on every

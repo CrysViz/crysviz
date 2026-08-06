@@ -7,12 +7,7 @@
 
    Wave 2.6 (see docs/styles/TOKENS.md) added rungs for what used to be this
    file's biggest gaps: #333 is now --chrome-2-5, #595959 is --chrome-5, and
-   the one-off rgba(255,255,255,X) text alphas land on --fg-85/--fg-75/--fg-50.
-   Two literals still have no matching token: `var(--popup-bg, #2b2b2b)`
-   (.sg-select-list — checked against every ramp, no near-duplicate) and the
-   rgba(125, 206, 160, X) "newly added" accent (.atom-new-separator/
-   .orbit-new-separator td) — a hue Wave 2.6's audit never clustered at all.
-   Kept literal, not snapped — a real gap, not an oversight. */
+   the one-off rgba(255,255,255,X) text alphas land on --fg-85/--fg-75/--fg-50. */
 
 /* ---------------------------------------------------------------------------
    Shared table/cell/input primitives — identical style strings used to be
@@ -478,7 +473,7 @@
   right: 0;
   max-height: 220px;
   overflow-y: auto;
-  background: var(--popup-bg, #2b2b2b);
+  background: var(--popup-bg);
   border: 1px solid var(--wash-4);
   border-radius: var(--radius-4);
   box-shadow: 0 6px 18px rgb(var(--shadow-rgb) / 0.45);

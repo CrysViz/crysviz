@@ -111,8 +111,8 @@ font-size: var(--fs-base);
 }
 
 .denyBtn:hover {
-  border-color: rgba(243, 174, 100, 0.9);
-  border: 2px solid rgba(243, 174, 100, 0.9);
+  border-color: var(--warn-soft);
+  border: 2px solid var(--warn-soft);
   box-shadow: 0 2px 10px var(--danger);
 }
 
@@ -623,7 +623,7 @@ font-size: var(--fs-base);
 }
 
 .atomistic-label-disabled {
-  color: #ff7b7b;
+  color: var(--danger-bright);
 }
 
 .atomistic-status {

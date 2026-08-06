@@ -163,7 +163,7 @@
 }
 
 .cv-species-toggle input:checked + .cv-species-toggle-track {
-  background-color: #00c851; /* no token matches this green — --ok is #2e9c6e, --ok-bright is #7ee2a8 */
+  background-color: var(--switch-on);
 }
 
 .cv-species-toggle-knob {

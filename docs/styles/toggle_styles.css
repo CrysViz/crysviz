@@ -206,7 +206,7 @@
 }
 
 input:checked + .toggle_slider {
-  background-color: #2196F3;
+  background-color: var(--switch-on-alt);
 }
 
 input:checked + .toggle_slider:before {
@@ -383,7 +383,7 @@ margin: var(--sp-5) 0px 5px 0px;
    as the box grows from the added padding/border, in every orientation. */
 .cv-colorbar-legend-editing {
   padding: 1px 5px;
-  border: 1px solid var(--accent-color, #4a9eff);
+  border: 1px solid var(--accent-color, var(--info-bright));
   border-radius: var(--radius-4);
   background: var(--line-1);
   caret-color: var(--fg-1);

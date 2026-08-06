@@ -613,6 +613,9 @@ judgment):** `var(--highlight-color, #4caf50)`, `var(--highlight-color,
 
 ## Wave 3 — css_guard follow-up (94 → 73)
 
+*73 was the count when this wave ended, not a standing figure — Wave 4 below
+took it to zero.*
+
 Three independent agents had converged on the same short list of hue
 families with no ramp. This pass named the ones with enough call sites to
 justify it and adopted them; the rest stayed literal. 21 sites moved.
@@ -628,7 +631,8 @@ justify it and adopted them; the rest stayed literal. 21 sites moved.
 | `--chrome-1-9` | `rgba(25, 25, 25, 0.9)` | 4 (3 near-dupes: `17/17/17`@.9, `22/22/22`@.88, `26/26/26`@.95) | near-opaque near-black fills above `--chrome-1`'s 0.8 alpha — `.backend-error-panel`, `.backend-potential-toggle`, `.atomistic-grid input`, and a dead `.control-panel` rule (tokenised anyway for consistency) |
 
 **Left literal — below the ~3-site bar, or ruled out by the foreground/fill
-rule:**
+rule:** *(Superseded — every entry in this list is a token as of Wave 4. The
+~3-site bar itself is retired; see below for why.)*
 
 - `rgba(32, 77, 160, 0.35)` (badge gradient's darker stop) and
   `rgba(25, 55, 110, 0.28)` (`.wyckoff-locked` background) — each a single
@@ -674,3 +678,183 @@ missing position — the `top`/`left` in the same rule were already applying.
 Corrected the typo; zero visual change. (`.popup` has no live
 `classList`/`className` consumer anywhere in `docs/ui` either, so the rule
 isn't currently reachable regardless.)
+
+## Wave 4 — the remaining literals (73 → 0)
+
+42 tokens, added in one block at the end of `themes/default/theme.css` under
+the "Hue families that used to sit as literals" header. `css_guard` now
+reports clean and `make checks` exits zero; there is no known-violations
+baseline left to carry.
+
+**Why the bar moved.** Waves 2.6 and 3 both declined most of these on
+call-site count — a hue used once or twice "doesn't justify a token." That
+calculus was right when a theme only had to repaint panels that were already
+dark. It isn't any more: light-panelled themes are being added, and a literal
+sitting in a component stylesheet is a hole a theme cannot reach. Every value
+below is a dark-panel assumption baked into `docs/styles/` — white-alpha
+hairlines, near-black fills, bright-on-dark error text, black ink on a light
+sprite. A one-site literal is exactly as unreachable as a ten-site one, so
+site count stopped being the deciding question and reachability took over.
+The foreground/fill rule established in Wave 1 still holds and still splits
+tokens here (`--danger-bright` vs `--danger-fill`, `--warn-soft` vs
+`--warn-banner-bg`) — that rule is about role, not frequency, and nothing
+about light themes weakens it.
+
+Values are the originals, so the default palette renders unchanged apart from
+five deliberate folds recorded below.
+
+**Eleven of the 73 were never real.** `css_guard.sh`'s colour-keyword scan used
+`\b` for its word boundary, and a hyphen is a word boundary to `\b` — so
+`rgb(var(--active-green-rgb) / .5)` matched on the "green" *inside the token
+name* and reported already-tokenised code as a literal. The pattern now uses
+`(?<![-\w])` / `(?![-\w])` lookarounds (needs `rg -P`). Fixing it took the
+count 73 → 62, so the real debt was 62. (Eleven reports, not eleven distinct
+lines: `.si-wyckoff-badge` was reported twice — once for this false match and
+once for a genuine literal in the same gradient, which remained.)
+
+### Danger
+
+`--danger` (amber-orange) is the fill; these are the red foreground tier.
+
+| token | value | role | call sites |
+|---|---|---|---|
+| `--danger-bright` | `#ff6b6b` | error/destructive text on a dark panel | `analysisPanels.css` `.cmp-comparison-error`; `sceneWidgets.css` `.cv-overlay-error`; `styles.css` `#aboutContent .about-error`; `backendPanel.css` `.atomistic-label-disabled`; `controlPanel.css` `.plane-delete-btn:hover` |
+| `--danger-bright-rgb` | `255 107 107` | same hue as a channel triple, for sites composing their own alpha | `controlPanel.css` `.plane-delete-btn` (0.75); `styles.css` `.reset-btn:hover` glow (0.1) |
+| `--danger-strong` | `#e63946` | saturated destructive icon hover | `styles_file_browswer.css` `.icon.delete:hover` |
+| `--danger-fill` | `rgba(200, 35, 35, 0.92)` | solid destructive button — a fill, kept apart from the foreground tier above | `styles.css` `.reset-btn-danger` |
+
+### Caution
+
+| token | value | role | call sites |
+|---|---|---|---|
+| `--warn-soft` | `rgba(243, 174, 100, 0.9)` | soft-refusal borders and notes — a caution that isn't an error | `backendPanel.css` `.denyBtn:hover` (both `border-color` and `border`); `structureInfoPanel.css` `.coord-editor-note.refused` |
+| `--warn-banner-bg` | `rgba(40, 30, 0, 0.85)` | warm-black backing behind amber banner text; deliberately not `--warn-rgb` at a low alpha, which composes to a bright amber fill instead | `warningBanners.css` `.cv-warning-banner` |
+| `--best-row-rgb` | `255 193 7` | amber "best match" row highlight, two alphas off one hue | `styles.css` `.order-structure-row.best` (0.1) and `.order-structure-row.best.showing` (0.18) |
+
+### Positive / switches
+
+Two switch greens survive because two different switch widgets ship with them
+— `--switch-on-alt` is the blue one in `toggle_styles.css`, not a duplicate.
+
+| token | value | role | call sites |
+|---|---|---|---|
+| `--switch-on` | `#4caf50` | checked-state fill of a toggle track | `sceneWidgets.css` `.cv-overlay-toggle-switch input:checked + .toggle_slider`; `forcePanel.css` `.cv-species-toggle input:checked + .cv-species-toggle-track`; `analysisPanels.css` `#showComparisonBonds` / `#showLatticeComparison` / `#enableComparisonToggle` `:checked + .toggle_slider`, and `.tracer-progress-fill` as `--highlight-color`'s fallback |
+| `--switch-on-alt` | `#2196f3` | the generic slider's checked blue | `toggle_styles.css` `input:checked + .toggle_slider` |
+| `--seg-active-bg` | `#0d8a36` | active button in a segmented control | `structureInfoPanel.css` `.spin-mode-switch-btn.active` |
+| `--btn-glow-rgb` | `54 143 110` | button hover glow | `styles.css` `#secondLoadTextButton:hover` (0.35) |
+| `--on-accent` | `#0c1f17` | text sitting ON an accent fill — 2.6 spotted this one and filed it as "different role again"; that role is now named | `trajectoryPanel.css` `#playPauseBtn` |
+| `--thumb-border` | `#d7f5e8` | slider thumb ring — a border, which is why 2.6 refused to fold it into a text token | `trajectoryPanel.css` `.trajSlider::-webkit-slider-thumb`, `.trajSlider::-moz-range-thumb` |
+
+### Informational blues
+
+| token | value | role | call sites |
+|---|---|---|---|
+| `--confirm-bg` | `#0066cc` | enabled confirm button fill | `analysisPanels.css` `.pt-confirm-btn:not(:disabled)` |
+| `--confirm-border` | `#004499` | its darker border, same rule | `analysisPanels.css` `.pt-confirm-btn:not(:disabled)` |
+| `--link-hover` | `#81d4fa` | hovered link on a dark panel | `styles.css` `#aboutContent a:hover` |
+| `--row-selected-bg` | `rgba(100, 150, 255, 0.12)` | selected table-row wash | `controlPanel.css` `.planes-row-selected` |
+| `--locked-bg` | `rgba(25, 55, 110, 0.28)` | the Wyckoff "locked" surface | `structureInfoPanel.css` `.segmented-control.wyckoff-locked` |
+| `--locked-badge-bg` | `rgba(32, 77, 160, 0.35)` | that surface's badge gradient, first stop — the second stop stays `--blue-accent-fill-rgb`, the two stops being from different families | `structureInfoPanel.css` `.si-wyckoff-badge` |
+| `--locked-grad-1` | `#1c5fb8` | locked active-button gradient, dark stop | `structureInfoPanel.css` `.segmented-control.wyckoff-locked button.active` |
+| `--locked-grad-2` | `#2493ff` | same gradient, light stop | `structureInfoPanel.css` `.segmented-control.wyckoff-locked button.active` |
+
+### The About modal
+
+A surface of its own — green-tinted, unlike every other panel — so it needs
+its own handful rather than borrowing the panel tokens. `--about-close-hover`
+is the `#a5d6a7` that Wave 2.6 explicitly left out as "closer to neither"
+`--ok-bright` nor `--ok-tint`; that was the right call about the ramps and the
+wrong conclusion about the token — it isn't a ramp member, it's this modal's
+close-button hover.
+
+| token | value | role | call site |
+|---|---|---|---|
+| `--about-bg` | `#0b1f1c` | modal background | `styles.css` `#aboutModal` |
+| `--about-border` | `rgba(129, 199, 132, 0.4)` | its green-tinted border | `styles.css` `#aboutModal` |
+| `--about-code-bg` | `rgba(12, 45, 36, 0.7)` | inline-code backing inside it | `styles.css` `#aboutContent code` |
+| `--about-close-hover` | `#a5d6a7` | close-button hover | `styles.css` `#aboutClose:hover` |
+
+### Neutrals
+
+The scrim alphas here (0.6, 0.65, 0.7) are the one-off sites Wave 2.6 counted
+and left unclustered. They still don't cluster — they get names because each
+is a distinct role a light theme has to be able to move, not because a fourth
+scrim tier was discovered.
+
+| token | value | role | call sites |
+|---|---|---|---|
+| `--overlay-60` | `rgba(0, 0, 0, 0.6)` | scrim between `--overlay` (0.5) and `--overlay-80` | `styles.css` `.cv-crop-mask` |
+| `--overlay-70` | `rgba(0, 0, 0, 0.7)` | the About modal's backdrop | `styles.css` `#aboutOverlay` |
+| `--label-bg` | `rgba(0, 0, 0, 0.65)` | in-scene measurement label backing — a fill, not a backdrop | `styles.css` `.measure-label` |
+| `--label-ink` | `#000000` | ink on that label; it sits on a light sprite, so it's the one place the app paints black *on* something rather than behind it | `analysisPanels.css` `.bond-distance-label` (`border` and `color`) |
+| `--line-3` | `rgba(255, 255, 255, 0.5)` | hairline brighter than `--line-2` (0.2) — the emphasis stroke 2.6 declined to name | `sceneWidgets.css` `.cv-background-swatch`; `styles.css` `.reset-btn:hover` |
+| `--line-dark` | `rgba(0, 0, 0, 0.15)` | hairline ON a light accent fill — the inverse case, and precisely the kind a light theme must be able to flip | `styles.css` `.btn-mini.highlight` |
+| `--line-grey` | `#808080` | opaque mid-grey border | `styles.css` `.angle-btn` |
+| `--track-bg` | `rgba(128, 128, 128, 0.15)` | slider/progress groove — mid-grey, in neither the white-wash nor the black-overlay family | `analysisPanels.css` `.tracer-progress-bar` |
+| `--track-bg-strong` | `rgba(150, 150, 150, 0.5)` | the stronger groove | `bondLengthHistogram.css` `.blh-range-slider .blh-range-bg` and `.bond-range-slider .background-track` |
+
+Those last two selectors were the allowlist's worked example of why
+`css_guard_allow.txt` keys on the selector rather than the value: same
+literal, only one of them ever reviewed. Both are `--track-bg-strong` now, so
+both entries are gone; the comment explaining the rule stays, because the next
+pair will need it.
+
+### Extra opaque surfaces
+
+| token | value | role | call site |
+|---|---|---|---|
+| `--textarea-bg` | `rgba(16, 16, 16, 0.8)` | multi-line input backing | `sceneWidgets.css` `.cv-spin-textarea` |
+| `--float-panel-bg` | `rgba(26, 26, 26, 0.8)` | floating scene widgets — `--popup-bg`'s hue at a different alpha, which is why 2.6 found no exact match | `sceneWidgets.css` `.cv-background-picker-panel` |
+| `--popup-bg-deep` | `rgba(13, 13, 13, 0.95)` | near-opaque popup; checked against `--chrome-1` and `--chrome-1-9` in Wave 3 and matched neither | `styles_file_browswer.css` `.cv-fb-popup` |
+
+### Lattice axis legend
+
+a/b/c encode data, so they'd normally stay literal — but they have to match
+the 3D gizmo, and a theme that retints the scene has to be able to retint
+these with it.
+
+| token | value | call site |
+|---|---|---|
+| `--axis-a` | `#ff3333` | `styles.css` `.dot-a` |
+| `--axis-b` | `#33cc33` | `styles.css` `.dot-b` |
+| `--axis-c` | `#3366ff` | `styles.css` `.dot-c` |
+
+### Active tool
+
+| token | value | role | call sites |
+|---|---|---|---|
+| `--tool-active` | `#ff6b35` | active measure-tool border | `styles.css` `.measure-tool-btn.active` |
+| `--tool-active-rgb` | `255 107 53` | same hue for its glow | `styles.css` `.measure-tool-btn.active` (0.4) and `.measure-tool-btn.active:hover` (0.5) |
+
+### Five substitutions that shift colour
+
+Everything else in this wave is a byte-identical swap. These five are not, and
+are recorded here rather than left to be discovered by eye. Each folds a
+near-identical one-off into a token that already had to exist for the rest of
+its family; the alternative was minting a second token one or two RGB units
+away, which is the fragmentation this pass exists to end.
+
+| call site | was | now | shift |
+|---|---|---|---|
+| `styles.css` `#aboutContent .about-error` | `#ff8a80` | `--danger-bright` (`#ff6b6b`) | slightly deeper red |
+| `backendPanel.css` `.atomistic-label-disabled` | `#ff7b7b` | `--danger-bright` (`#ff6b6b`) | slightly deeper red |
+| `controlPanel.css` `.plane-delete-btn` and its `:hover` | `rgba(255, 80, 80, 0.75)` / `rgba(255, 80, 80, 1)` | `rgb(var(--danger-bright-rgb) / 0.75)` / `--danger-bright` | marginally less saturated |
+| `structureInfoPanel.css` `.coord-editor-note.refused` | `rgba(255, 180, 120, 0.9)` | `--warn-soft` (`rgba(243, 174, 100, 0.9)`) | a touch warmer and darker |
+| `forcePanel.css` `.cv-species-toggle input:checked + .cv-species-toggle-track` | `#00c851` | `--switch-on` (`#4caf50`) | less acid green, now matching every other checked switch in the app |
+
+The last one is the only visible change of the five: this toggle was the sole
+switch in the app not painting the shared checked-state green, and it now
+matches the others. The four reds/oranges are sub-perceptual at these sizes.
+
+### Fallbacks resolved
+
+Wave 2.6's fallback survey left eight `var(--token, #hex)` fallbacks "for
+adopters' judgment." All are resolved: `#4caf50` → `var(--switch-on)`,
+`#4ade80` → `var(--ok-bright)`, `#4a9eff` → `var(--info-bright)`, `#2a8f4f`
+(×2) → `var(--ok)`, and the three whose token is defined in every theme and
+can therefore never render its fallback — `var(--popup-bg, #2b2b2b)`,
+`var(--popup-bg, rgba(30, 30, 30, 0.95))`, `var(--input-bg, #0d0d0d)` — had
+the dead branch deleted rather than tokenised, on the same reasoning 2.6
+applied to `var(--muted-fg, #9aa0a6)`. `styles_file_browswer.css`'s
+`rgba(255, 255, 255, 0.0)` border became `transparent`: it was never a colour
+choice, just a fully transparent one spelled the long way.

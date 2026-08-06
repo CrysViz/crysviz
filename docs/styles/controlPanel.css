@@ -500,7 +500,7 @@ font-size: var(--fs-xl);
 .plane-delete-btn {
   background: none;
   border: none;
-  color: rgba(255, 80, 80, 0.75);
+  color: rgb(var(--danger-bright-rgb) / 0.75);
   font-size: var(--fs-xl);
   cursor: pointer;
   padding: 0 var(--sp-1);
@@ -508,7 +508,7 @@ font-size: var(--fs-xl);
 }
 
 .plane-delete-btn:hover {
-  color: rgba(255, 80, 80, 1);
+  color: var(--danger-bright);
 }
 
 /* New Planes Panel Layout Styles */
@@ -692,7 +692,7 @@ font-size: var(--fs-xl);
 }
 
 .planes-row-selected {
-  background: rgba(100, 150, 255, 0.12) !important;
+  background: var(--row-selected-bg) !important;
 }
 
 .planes-row-selected .planes-td-mono {

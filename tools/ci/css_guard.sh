@@ -172,10 +172,16 @@ check_css_file() {
         done < <(printf '%s\n' "$tsv" | rg -e '\b(rgba?|hsla?)\(\s*[0-9]')
 
         # named colour keywords used as a value (":" ... keyword ... before ";"/"{"/"}")
+        #
+        # The boundary is (?<![-\w]) / (?![-\w]), not \b: a hyphen is a word
+        # boundary to \b, so `rgb(var(--active-green-rgb) / .5)` matched on the
+        # "green" *inside the token name* and reported already-tokenised code as
+        # a literal. That accounted for 10 of the historical 73-violation
+        # baseline. Needs -P (PCRE2) for the lookarounds.
         while IFS=$'\t' read -r lineno selector content; do
             [[ -z "$lineno" ]] && continue
             report "color-literal" "$rel" "$lineno" "$selector" "$(printf '%s' "$content" | sed -e 's/^[[:space:]]*//')"
-        done < <(printf '%s\n' "$tsv" | rg -i -e ":[^;{}]*\\b(${color_keywords})\\b[^;{}]*;")
+        done < <(printf '%s\n' "$tsv" | rg -P -i -e ":[^;{}]*(?<![-\\w])(${color_keywords})(?![-\\w])[^;{}]*;")
 
         # --- invariant 2: font-family literals ---
         while IFS=$'\t' read -r lineno selector content; do
@@ -202,9 +208,13 @@ while IFS= read -r f; do
     check_css_file "$f" "no"
 done < <(find docs/styles -name '*.css' | sort)
 
+# Every stylesheet under docs/themes/, not just files literally named
+# theme.css: a palette ships one file per mode (light.css / dark.css), and
+# matching on the old name silently skipped them — including the @media check,
+# which applies to theme files too.
 while IFS= read -r f; do
     check_css_file "$f" "yes"
-done < <(find docs/themes -name 'theme.css' | sort)
+done < <(find docs/themes -name '*.css' | sort)
 
 # ---------------------------------------------------------------------------
 # Invariant 4: no CSS-in-JS under docs/ (excluding vendored/addons dirs)

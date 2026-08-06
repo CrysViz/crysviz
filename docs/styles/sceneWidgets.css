@@ -33,7 +33,7 @@
 .cv-spin-textarea {
   width: calc(100% - 16px);
   resize: vertical;
-  background: rgba(16, 16, 16, 0.8);
+  background: var(--textarea-bg);
   color: var(--fg-1);
   font-family: var(--font-mono);
   font-size: var(--fs-base);
@@ -89,7 +89,7 @@
 }
 
 .cv-overlay-toggle-switch input:checked + .toggle_slider {
-  background-color: #4caf50; /* no token matches this green — --ok is #2e9c6e, --ok-bright is #7ee2a8 */
+  background-color: var(--switch-on);
 }
 
 .cv-overlay-toggle-switch input:checked + .toggle_slider > .cv-overlay-toggle-knob {
@@ -122,7 +122,7 @@
 
 .cv-overlay-error {
   font-size: var(--fs-base);
-  color: #ff6b6b; /* no token matches this red — --danger is orange (rgba(240,132,18,.9)) */
+  color: var(--danger-bright);
   margin: 0 0 var(--sp-3-5) 0;
 }
 
@@ -214,7 +214,7 @@
 
 .cv-background-picker-panel {
   position: absolute;
-  background: rgba(26, 26, 26, 0.8); /* no exact token — --popup-bg is the same hue at 0.9 alpha */
+  background: var(--float-panel-bg);
   border: 1px solid var(--ink-3);
   padding: var(--sp-3-5);
   border-radius: var(--radius);
@@ -245,7 +245,7 @@
   /* No token: the wash and line ramps both top out at 0.2. (Do not write the
      ramp names with a glob here — the star-slash sequence closes the comment
      early, which silently leaked invalid text into this rule.) */
-  border: 2px solid rgba(255, 255, 255, 0.5);
+  border: 2px solid var(--line-3);
   padding: 0;
   flex: none;
 }
@@ -335,7 +335,7 @@
    and the section chrome the panel's own body uses. Per-element/per-pair
    colours (tile fills, category-colour borders/tints, the override-vs-
    default text colour choice) stay in JS — they're genuinely data-driven,
-   not fixed. Several literals below have no matching token; each is noted. */
+   not fixed. Several sizes below sit between token rungs; each is noted. */
 
 .cv-cus-popup {
   position: fixed;
@@ -417,7 +417,7 @@
   font-size: var(--fs-base);
   max-height: 440px;
   overflow-y: auto;
-  background: var(--input-bg, #0d0d0d);
+  background: var(--input-bg);
   border-radius: var(--radius-sm);
   padding: var(--sp-3-5) 14px; /* 14px — no token, sits between --sp-4 (12) and --sp-5 (16) */
 }

@@ -64,7 +64,7 @@
       border-radius: 50%;
       background: var(--ok);
       border-color: var(--ok);
-      color: #0c1f17;
+      color: var(--on-accent);
       font-size: var(--fs-lg);
       box-shadow: 0 0 0 4px rgb(var(--ok-rgb) / 0.12);
     }
@@ -92,7 +92,7 @@
       height: 14px;
       border-radius: 50%;
       background: var(--ok);
-      border: 2px solid #d7f5e8;
+      border: 2px solid var(--thumb-border);
       cursor: pointer;
     }
     .trajSlider::-moz-range-thumb {
@@ -100,7 +100,7 @@
       height: 12px;
       border-radius: 50%;
       background: var(--ok);
-      border: 2px solid #d7f5e8;
+      border: 2px solid var(--thumb-border);
       cursor: pointer;
     }
 
