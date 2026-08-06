@@ -5,16 +5,20 @@
    for dark widget furniture and read correctly over a plum-charcoal surface.
    The fg ramp is NOT left alone — see the note on it below. */
 :root {
-  /* ---- Surfaces --------------------------------------------------------- */
+  /* ---- Surfaces ---------------------------------------------------------
+     Nudged a step further into violet than the first cut (#2e2b38 …): at that
+     chroma the panels read as neutral grey next to the scene and the whole
+     screen flattened into one mass. Slightly more plum in the panels plus a
+     darker scene puts a visible depth step between canvas, panel and group. */
   --surface-bg: #1b1922;
-  --panel-bg: #2e2b38;
-  --group-bg: #3d3849;
-  --menu-bg: #2e2b38;
-  --popup-bg: #29262f;
-  --input-bg: #23212b;
-  --textarea-bg: #23212b;
-  --float-panel-bg: #29262f;
-  --popup-bg-deep: #1d1b24;
+  --panel-bg: #2f2b3f;
+  --group-bg: #3e3854;
+  --menu-bg: #2f2b3f;
+  --popup-bg: #2a2635;
+  --input-bg: #242130;
+  --textarea-bg: #242130;
+  --float-panel-bg: #2a2635;
+  --popup-bg-deep: #1e1b28;
 
   /* ---- Text -------------------------------------------------------------
      The base ramp is white-alpha. Over a plum surface pure white reads cool
@@ -30,27 +34,33 @@
   --fg-50: rgba(236, 230, 220, 0.5);
   --fg-3: rgba(236, 230, 220, 0.4);
 
-  /* ---- Lines ------------------------------------------------------------ */
-  --line-1: #3a3745;
-  --line-2: #6b6480;
+  /* ---- Lines ------------------------------------------------------------
+     Hairlines one step brighter than the first cut: on the plum surfaces the
+     old #3a3745 borders were invisible, and losing the borders is half of
+     what made the theme look washed out — panels had no internal structure. */
+  --line-1: #454059;
+  --line-2: #7d7696;
   --line-3: rgba(236, 230, 220, 0.5);
-  --panel-border: #3a3745;
-  --popup-border: #4a4656;
+  --panel-border: #454059;
+  --popup-border: #565170;
 
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23d8d2c8' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
 
   --chrome-1: rgba(24, 22, 30, 0.8);
   --chrome-1-9: rgba(24, 22, 30, 0.9);
-  --chrome-2: #34313f;
-  --chrome-2-5: #3a3646;
-  --chrome-3: #464154;
-  --chrome-4: #575167;
-  --chrome-5: #6a6379;
-  --chrome-6: #8a8398;
+  --chrome-2: #363146;
+  --chrome-2-5: #3c374e;
+  --chrome-3: #48425e;
+  --chrome-4: #595172;
+  --chrome-5: #6d6386;
+  --chrome-6: #9188a8;
 
-  /* ---- Scene (both mirrored into three.js by ThemeManager) --------------- */
-  --scene-bg: #262430;
-  --lattice-color: #524d63;
+  /* ---- Scene (both mirrored into three.js by ThemeManager) ---------------
+     Darker than the panels on purpose — the canvas recedes, the chrome
+     floats, and the atom colours carry the brightness. The lattice lines
+     step up to stay legible on the deeper ground. */
+  --scene-bg: #201d29;
+  --lattice-color: #6f6890;
   --dot-border: rgba(236, 230, 220, 0.8);
 
   /* ---- Destructive ------------------------------------------------------
@@ -69,12 +79,12 @@
   --ok-rgb: 140 181 135;
   --ok-bright: #aeddc8;
   --ok-bright-rgb: 174 221 200;
-  --switch-on: #7fb277;
+  --switch-on: #8cc281;
   --switch-knob: #ece6dc;
   --track-bg: rgba(236, 230, 220, 0.16);
-  --switch-off: #9a92a6;
-  --switch-on-alt: #8e7fb0;
-  --seg-active-bg: #6e9668;
+  --switch-off: #6a6378;
+  --switch-on-alt: #9d8ec4;
+  --seg-active-bg: #74a06b;
   --btn-glow-rgb: 140 181 135;
   --on-accent: #23212b;
   --thumb-border: #aeddc8;
@@ -84,11 +94,21 @@
   --info-rgb: 173 206 234;
   --info-bright: #adceea;
   --link-hover: #adceea;
-  --row-selected-bg: rgba(51, 70, 62, 0.55);
+  /* Was an opaque forest green (rgba(51,70,62,.55)) that read as mud over the
+     plum panel; a translucent sage wash keeps the row obviously selected and
+     lets the panel hue breathe through. */
+  --row-selected-bg: rgba(140, 194, 129, 0.2);
   --locked-bg: rgba(142, 127, 176, 0.22);
   --locked-badge-bg: rgba(142, 127, 176, 0.35);
-  --locked-grad-1: #6e5f92;
-  --locked-grad-2: #8e7fb0;
+  /* Wyckoff-locked active tab fill — carries the base near-white --info-tint
+     as bold text, so the gradient goes DEEP; the old #6e5f92/#8e7fb0 pair
+     topped out around 3:1 under it. */
+  --locked-grad-1: #574a7c;
+  --locked-grad-2: #746595;
+  /* Wyckoff/symmetry rings and borders follow the palette's own periwinkle
+     instead of the base sky-blue — see the note in fluorite/light.css. */
+  --blue-accent-rgb: 157 180 224;
+  --blue-accent-fill-rgb: 99 131 199;
   --confirm-bg: #56789b;
   --confirm-border: #3d5a78;
 
@@ -130,19 +150,27 @@
    colour can do both. On a light theme it cannot, and --highlight-color was
    the token caught in the middle. See STYLE.md for the target numbers. */
 .theme-standard {
-  --bg-color: #4a3f66;
-  --accent-color: #45613f;
-  --highlight-color: #7fb277;
-  --hover-color: rgba(140, 181, 135, 0.22);
-  --border-color: rgba(140, 181, 135, 0.45);
-  --accent-fg: #a8cba2;
+  --bg-color: #4e4076;
+  --accent-color: #47683e;
+  --highlight-color: #8cc281;
+  --hover-color: rgba(140, 194, 129, 0.22);
+  --border-color: rgba(140, 194, 129, 0.45);
+  --accent-fg: #aed3a6;
 }
 
 .theme-symmetry {
-  --bg-color: #3a3a5e;
-  --accent-color: #3f4a6b;
-  --highlight-color: #5a76b5;
+  --bg-color: #3d3d70;
+  --accent-color: #41507d;
+  --highlight-color: #6383c7;
   --hover-color: rgba(157, 180, 224, 0.22);
   --border-color: rgba(157, 180, 224, 0.45);
-  --accent-fg: #9db4e0;
+  --accent-fg: #a5bce8;
+}
+
+/* The active palette row (controlPanel.css) paints --highlight-color as a
+   text-carrying fill; the cream --fg-1 measured ~1.9:1 on the sage. The
+   on-accent ink is the pairing that reads — scoped here so the default
+   theme keeps its own pairing untouched. */
+.theme-menu-item.active {
+  color: var(--on-accent);
 }
