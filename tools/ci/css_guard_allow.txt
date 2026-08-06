@@ -1,0 +1,46 @@
+# Reviewed exceptions for tools/ci/css_guard.sh, one per line:
+#
+#   path:pattern  # reason
+#
+# `path` is repo-root-relative. `pattern` is a plain substring (not a regex)
+# matched against "<selector> :: <line text>" for CSS hits (docs/styles/*.css,
+# docs/themes/*/theme.css) or "<line text>" for JS hits (docs/**/*.js). Key
+# patterns on the selector/rule, not the bare literal value — several of the
+# literals below repeat byte-for-byte at a second, NOT-allowed call site (see
+# the .bond-range-slider note), so a value-only pattern would amnesty a site
+# nobody actually reviewed.
+#
+# Every entry here was a deliberate call made during the CSS consolidation
+# (docs/styles/TOKENS.md), not a guess made while writing this guard.
+
+# --- data-visualisation colours: they encode data/state, not chrome ---
+docs/styles/analysisPanels.css:.pc-row.is-selected  # link-blue row highlight, distinct from any state token (TOKENS.md)
+docs/styles/analysisPanels.css:.cutplane-plane-row.is-selected  # selected-row green (bg/border/select-btn text) — no matching token, same "flag, don't invent" call as elsewhere in the pass
+docs/styles/analysisPanels.css:.md-stream-dot--connected  # MD-stream connection status dot, fill + glow
+docs/styles/analysisPanels.css:.md-stream-dot--error  # MD-stream connection status dot, fill + glow
+docs/styles/analysisPanels.css:#enableComparisonToggle:checked + .toggle_slider  # comparison/bonds/lattice-comparison toggle checked-state green — same status-colour family as the MD-stream dots above, no matching token
+docs/styles/bondLengthHistogram.css:.blh-range-bg  # bond-length-histogram range slider track background
+docs/styles/bondLengthHistogram.css:.blh-range-fill  # bond-length-histogram range slider fill
+docs/styles/bondLengthHistogram.css:.bond-range-slider .range-track  # deliberately NOT var(--accent-color): must stay a fixed green independent of the active backend theme (the Symmetry backend's blue accent must not leak into this slider)
+docs/styles/EOSPanel.css:.eos-copy-value.eos-copied  # "copied to clipboard" flash (background + text), a transient status colour
+
+# --- NOT allowed, for contrast: .bond-range-slider .background-track uses the
+# same literal rgba(150,150,150,0.5) as the allowed .blh-range-bg above, but
+# was never named as a reviewed exception — it's flagged by the guard and
+# reported as debt, not amnestied by accident because the value matches.
+
+# --- gradient stops / placeholder swatch in the colour picker: colour-space
+# axes and a pre-paint placeholder, not themeable UI ---
+docs/styles/styles.css:.custom-color-picker .sb-picker::after  # #fff/#000 saturation-brightness gradient stops, must stay literal regardless of theme
+docs/styles/styles.css:.custom-color-picker .sb-picker  # base "red" fill behind the gradient overlay above, replaced by JS with the live hue before it's ever visible
+docs/styles/styles.css:.custom-color-picker .color-preview  # placeholder "red" swatch, replaced by JS with the picked colour via inline style
+
+# --- data URI: var() cannot resolve inside a data: URI, so this one is a
+# permanent exception, not debt. (Documentation only — the guard's hex regex
+# requires a literal "#" and this is %-encoded, so it never fires; kept here
+# so the exception is greppable rather than tribal knowledge.) ---
+docs/styles/formControls.css:%23c8c8c8  # native <select> chevron, inline SVG fill baked into background-image: url("data:image/svg+xml,...")
+
+# --- CSS-in-JS: addons/ is excluded from the guard entirely (see css_guard.sh
+# header). This is the one exception outside addons/. ---
+docs/ui/DiscoBallModule.js:createElement('style')  # decorative disco-ball overlay, self-contained like an addon; intentionally left alone (CSSPlan.md Wave 5)
