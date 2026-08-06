@@ -6,15 +6,25 @@
 import { app } from '../state/store.js';
 import { resizeRenderer } from './WindowAndSceneControls.js';
 
+// Must match responsive.css's `compact` rung exactly (max-width: 1024px) —
+// that's the query that switches #ui from in-flow desktop chrome to a
+// fixed off-canvas panel. PanelManager.js's dockOccupiesSpace() has the same
+// number for the same reason; CSS has no custom-media mechanism to share a
+// single declaration across both languages, so matchMedia's query string is
+// the closest thing to one: at least the two threads run through the same
+// browser evaluation instead of JS re-deriving it from window.innerWidth.
+const COMPACT_QUERY = '(max-width: 1024px)';
+
 export function setupMobileMenu() {
   const hamburger = document.getElementById('mobileMenuToggle');
   const overlay = document.getElementById('mobileOverlay');
   const ui = document.getElementById('ui');
+  const compactQuery = window.matchMedia(COMPACT_QUERY);
 
   function togglePanel() {
     if (!ui) return;
 
-    if (window.innerWidth > 1024) {
+    if (!compactQuery.matches) {
       // Desktop: toggle panel-hidden
       ui.classList.toggle('panel-hidden');
       document.body.classList.toggle('panel-hidden');

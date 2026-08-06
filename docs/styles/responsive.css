@@ -1,0 +1,550 @@
+/* Responsive breakpoint ladder — every @media rule in the app lives here.
+ *
+ * This is the ONLY file allowed to contain @media (a later wave adds a CI
+ * guard, tools/ci/css_guard.sh, that enforces it — see CSSPlan.md Wave 5).
+ * Rules used to be scattered across 5 stylesheets on 6 unrelated
+ * breakpoints (1320/1024/640/420, two height cutoffs, an orientation
+ * query) — nobody could see the whole picture, which is why mobile "sort
+ * of worked but not really". Everything now rewrites onto one ladder,
+ * widest first so the cascade reads top-to-bottom as "progressively
+ * smaller/less capable screen":
+ *
+ *   compact  max-width: 1024px   tablet / narrow desktop — dock collapses
+ *   mobile   max-width: 720px    side panel becomes a full-width sheet
+ *   tiny     max-width: 420px    single-column controls
+ *   short    max-height: 480px   landscape phone — chrome shrinks
+ *   coarse   pointer: coarse     touch targets grow to --control-h-touch
+ *
+ * Plus `(hover: hover) and (pointer: fine)` — the direct complement of
+ * `coarse`, gating hover-only affordances on desktop/mouse.
+ *
+ * Each rule below still belongs to the component stylesheet it came from;
+ * only the @media wrapper moved. Component groups are commented and kept
+ * in the rung they best match — several pre-existing breakpoints (1320,
+ * 640, 390, `orientation: landscape`) did not line up with a rung exactly
+ * and were folded into the nearest one. Folding changes which rules apply
+ * at some widths/heights; see the wave-4 report for the specifics rather
+ * than assuming this move was a pure relocation everywhere.
+ *
+ * `coarse` has no rules yet — nothing in the app queried `pointer: coarse`
+ * before this wave. The rung is reserved here for the mobile-fixes wave
+ * that follows this one.
+ */
+
+/* ================================================================
+   (prefers-color-scheme: dark) — NOT part of the layout ladder
+   ================================================================
+   This is a theming query, not a breakpoint — it doesn't belong on the
+   width/height ladder above, but the app's "only @media lives here" rule
+   (Wave 5's CI guard) still means it has to live in this file.
+
+   Finding, not fixed here: the app already has a real theme system
+   (ui/ThemeManager.js + themes/themes.json) whose "auto" entry follows
+   window.matchMedia('(prefers-color-scheme: dark)') and swaps the loaded
+   theme stylesheet (dark vs twilight) accordingly — a full re-theme. This
+   raw CSS query does something narrower and independent of that: it
+   always follows the OS preference for this one declaration, regardless
+   of what the user actually selected in the theme switcher. Pick "Light"
+   while the OS is set to dark, and the background dot's border still
+   snaps to the dark-mode value — a real (if minor) mismatch with
+   ThemeManager's own notion of "auto". Left as-is per instructions;
+   reconciling it with ThemeManager is a separate decision. */
+
+@media (prefers-color-scheme: dark) {
+  .background-dot {
+    border: 2px solid rgba(255, 255, 255, 0.8);
+  }
+}
+
+/* ================================================================
+   compact — max-width: 1024px
+   ================================================================ */
+
+/* ================================================================
+   roomy — max-width: 1320px
+   ----------------------------------------------------------------
+   The one rung that is not about phones. A 380px side panel plus the
+   camera tools leaves little room on a laptop-width window, so the
+   floating popup and the tool icons adapt well before the dock starts
+   collapsing. Folding this into compact/1024 was tried and reverted:
+   1024-1320px is an extremely common desktop window size and it lost
+   the adaptation across that whole band.
+   ================================================================ */
+
+@media screen and (max-width: 1320px) {
+
+  /* NOTE: `position: absolut` is a pre-existing typo — the declaration is
+     invalid, so this rule has never actually positioned the popup. Left
+     as found: correcting it would move the popup for the first time on
+     every tablet-width window, which is a layout change, not a cleanup. */
+  .popup {
+    position: absolut;
+    max-height: 300px;
+    top: 50px;
+    left: 50px
+  }
+
+  .tool-icon {
+    font-size: var(--fs-lg);
+    margin-bottom: 1px;
+  }
+}
+
+@media screen and (max-width: 1024px) {
+
+  /* ---- styles.css: left panel + scene chrome ---- */
+  /* Mobile: Panel positioning */
+  #ui {
+    position: fixed;
+    top: 0;
+    left: -120%;
+    height: 98dvh;
+    z-index: var(--z-mobile-panel);
+    transition: left 0.3s ease;
+  }
+
+  /* Panel open state for mobile */
+  #ui.panel-open {
+    left: 0;
+  }
+
+  /* Adjust axes gizmo position and size. #ui is off-canvas here, so the
+     gizmo sits at the true screen edge — max() keeps its offset on a
+     notched/rounded-corner phone (env is 0 elsewhere, so this costs
+     nothing on a rectangular screen). */
+  #axesGizmo {
+    left: max(12px, env(safe-area-inset-left));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--split-reserve-bottom, 0px));
+    width: 60px;
+    height: 60px;
+  }
+
+  #axesLegend {
+    left: max(12px, env(safe-area-inset-left));
+    transform: translateX(68px);
+    font-size: var(--fs-sm);
+    padding: var(--sp-1) var(--sp-2);
+    /*! border-radius: 4px; */
+    background: rgba(0, 0, 0, 0.8);
+    color: var(--fg-1);
+    border: 1px solid var(--line-2);
+    backdrop-filter: blur(6px);
+    z-index: var(--z-overlay-widget);
+  }
+
+  /* Mobile-specific adjustments */
+  body {
+    overflow-x: hidden;
+  }
+
+  #view {
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+  }
+
+  /* Mobile/Tablet overlay to close menu */
+  #mobileOverlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-mobile-scrim);
+    background: var(--overlay);
+    pointer-events: none;
+  }
+
+  #mobileOverlay.active {
+    display: block;
+    left: 0;
+    right: 0;
+    pointer-events: auto;
+  }
+
+  /* Adjust control group spacing for mobile */
+  .control-group {
+    margin: 0 0 var(--sp-5) 0;
+    padding: 20px;
+  }
+
+  #ui h2 {
+    font-size: 20px;
+    margin: 0 0 20px 0;
+  }
+
+  /* Make touch targets larger */
+  input[type="checkbox"] {
+    transform: scale(1.5);
+  }
+
+  input[type="range"] {
+    height: 8px;
+    margin:  0;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Adjust bond controls for mobile */
+  .bond-control {
+    padding: var(--sp-5);
+    margin: var(--sp-5) 0;
+  }
+
+  .bond-label {
+    font-size: var(--fs-xl);
+    margin-bottom: var(--sp-3);
+  }
+
+  .collapsible-content.open { padding-top:var(--sp-3);
+    min-height: auto;}
+
+  .comp-row {
+    padding: 2px 0;
+    font-size: var(--fs-sm);
+  }
+
+  #measureRow {
+    padding: var(--sp-4);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-3);
+  }
+
+  #distanceValue {
+    font-size: var(--fs-lg);
+  }
+
+  /* Status adjustments */
+  #status {
+    top: 10px;
+    right: 10px;
+    font-size: var(--fs-base);
+    max-width: calc(100vw - 100px);
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--wash-4);
+  }
+
+  /* Measure panel improvements */
+  .btn-mini {
+    padding: var(--sp-4) var(--sp-5);
+    font-size: var(--fs-xl);
+    align-self: stretch;
+    text-align: center;
+  }
+
+  /* Adjust scroll areas */
+  #bondControls {
+    max-height: 200px;
+  }
+
+  /* ---- rightDock.css: bottom-docked pane ----
+     #ui is an off-canvas overlay on mobile, so it never narrows the scene
+     — the bottom pane/handle/pull-tabs always start at the left edge. */
+  #viewArea.split-dock-bottom .split-pane,
+  #viewArea.split-dock-bottom .split-handle {
+    left: 0;
+  }
+
+  #viewArea.split-dock-bottom .split-pane-tabs {
+    left: 50vw;
+  }
+
+  /* ---- panelWindow.css: floating panels ---- */
+  .cv-panel.cv-floating {
+    max-width: calc(100vw - 16px);
+  }
+}
+
+/* ================================================================
+   mobile — max-width: 720px
+   ================================================================ */
+
+@media screen and (max-width: 720px) {
+
+  /* ---- controlPanel.css: Planes field/colormap picker ----
+     Folded from a standalone max-width:640px breakpoint (nearest rung is
+     mobile/720). Real change: the colormap grid now collapses to a single
+     column starting at 720px instead of 640px — 80px earlier than before. */
+  .planes-field-colormap-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* ---- theme.css: --ui-width, a full-width sheet on a phone ----
+     --ui-width was a hard 380px at every viewport (defect 1 of the mobile
+     audit). It feeds --ui-total-width, which everything the panel
+     neighbors (the gizmo, camera tools, the backend-error popup) positions
+     itself off of, so overriding just this one token cascades to all of
+     them automatically. Solve for --ui-width such that --ui-total-width
+     (= ui-width + 2*border + 2*padding) comes out to exactly 100dvw. */
+  :root {
+    --ui-width: calc(100dvw - 2 * var(--ui-border) - 2 * var(--ui-padding));
+  }
+
+  /* .backend-error-panel is the one real consumer of --popup-left
+     (analysisPanels.css); at the full-bleed width above, ui-total-width is
+     ~100dvw, so left: var(--popup-left) (ui-total-width + 10px) would land
+     off the right edge of the screen entirely. Anchor it near the left
+     edge instead, same idea as the gizmo's mobile override below. */
+  :root {
+    --popup-left: max(var(--sp-3), env(safe-area-inset-left));
+  }
+}
+
+/* ================================================================
+   tiny — max-width: 420px
+   ================================================================ */
+
+@media screen and (max-width: 420px) {
+
+  /* ---- backendPanel.css: atomistic grids ----
+     Exact match for the ladder's tiny rung — this was already 420px. */
+  .atomistic-grid-2,
+  .atomistic-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ================================================================
+   roomy-width — min-width: 721px  (the exact complement of `mobile`)
+   ----------------------------------------------------------------
+   For rules that want horizontal room rather than a small screen.
+   The shortcuts-help modal used to ask for this with
+   `(orientation: landscape)`, which is true of almost every desktop
+   window (width > height) — so in practice it meant "wide enough for
+   two columns", not "landscape". Expressing it as the complement of
+   the mobile rung keeps that intent and fixes what orientation got
+   wrong: a tall-but-wide window now gets columns, and a landscape
+   PHONE (800x400) still does, because 800 >= 721.
+   ================================================================ */
+
+@media screen and (min-width: 721px) {
+
+  .shortcuts-help-columns {
+    flex-direction: row;
+    gap: var(--sp-5);
+    overflow: hidden; /* scrolling moves to each column's own list below */
+  }
+
+  .shortcuts-help-column {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .shortcuts-help-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
+
+/* ================================================================
+   short — max-height: 480px
+   ================================================================ */
+
+@media screen and (max-height: 480px) {
+
+  /* ---- styles.css: scene chrome at short heights ----
+     Merges two originally separate breakpoints (max-height:480px and
+     max-height:390px — the ladder has no room for both, so 390 folds into
+     this rung too). Real change: the rules that used to be exclusive to
+     <=390px (the #ui width and the .background-dot reposition) now also
+     apply across the whole 390-480px band, not just below 390px. */
+  #ui {
+    height: 90dvh;
+  }
+
+  /* Was a literal `width: 280px` on #ui itself, which never actually took
+     effect: the base rule (styles.css) also sets min-width: var(--ui-width)
+     (380px), and min-width wins over width per spec — the panel stayed
+     380px wide the whole time. Overriding the token narrows min-width,
+     width and max-width together, so it actually sticks. Set on :root, not
+     #ui, so --ui-total-width's other consumers (--gizmo-left,
+     --popup-left) see the change too, same as the mobile rung above —
+     scoping it to #ui alone would only have been visible inside #ui's own
+     subtree. */
+  :root {
+    --ui-width: 280px;
+  }
+
+  .collapsible-content.open { padding-top:var(--sp-3);max-height: 230px;
+    min-height: auto}
+
+  .background-dot {
+    position: fixed;
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    cursor: pointer;
+    top: max(155px, calc(var(--compact-stack-bottom, 0px) + 20px));
+    right: calc(11px + var(--split-reserve, 0px));
+    z-index: var(--z-anchor);
+  }
+
+  #composition h4 {
+    font-size: var(--fs-sm);
+    margin: 0 0 3px 0;
+  }
+
+  .comp-row {
+    padding: 1px 0;
+    font-size: var(--fs-xs);
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    margin-right: var(--sp-1);
+  }
+
+  #measureRow {
+    padding: var(--sp-2);
+    font-size: var(--fs-sm);
+  }
+
+  #distanceValue {
+    font-size: var(--fs-base);
+  }
+
+  #status {
+    right: 5px;
+    top: 5px;
+    padding: var(--sp-3) var(--sp-4);
+  }
+
+  #axesGizmo {
+    width: 50px;
+    height: 50px;
+    left: max(8px, env(safe-area-inset-left));
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + var(--split-reserve-bottom, 0px));
+  }
+
+  #axesLegend {
+    transform: translateX(58px);
+    font-size: var(--fs-xs);
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + var(--split-reserve-bottom, 0px));
+    padding: 3px 5px;
+    left: max(8px, env(safe-area-inset-left));
+    background: rgba(0, 0, 0, 0.9);
+    border: 1px solid var(--popup-border);
+    backdrop-filter: blur(8px);
+    color: var(--fg-1);
+  }
+
+  /* Smaller measure label for very small screens */
+  .measure-label {
+    font-size: var(--fs-base);
+    padding: var(--sp-1) var(--sp-2);
+  }
+}
+
+/* ================================================================
+   (hover: hover) and (pointer: fine) — desktop/mouse only
+   The direct complement of `coarse` below; kept verbatim, behaviour
+   unchanged by this move.
+   ================================================================ */
+
+@media (hover: hover) and (pointer: fine) {
+
+  /* ---- panelWindow.css: bar-collapsed titlebar handle ----
+     Desktop/mouse only: the handle stays invisible (but still hittable —
+     opacity, not display/visibility) until the pointer is actually over
+     it. Touch devices have no hover concept, so they keep the default
+     fixed 0.6 opacity set outside this query. */
+  .cv-panel.cv-bar-collapsed > .cv-panel-titlebar {
+    opacity: 0;
+  }
+  .cv-panel.cv-bar-collapsed:hover > .cv-panel-titlebar {
+    opacity: 0.6;
+  }
+}
+
+/* ================================================================
+   coarse — pointer: coarse
+   Touch target sizing. --control-h-touch (44px) existed but had no
+   consumer. Two techniques below, picked per element:
+
+   - Controls that are already a plain sized box (inputs, buttons, menu
+     rows) get a bigger box outright — that's what "sized for a mouse"
+     means for them, and there's no smaller thing to preserve.
+   - Small fixed-graphic controls (titlebar icon buttons, the pill toggle
+     switch) get an invisible ::after overlay instead: growing their own
+     box would visibly enlarge a glyph/thumb that isn't supposed to change,
+     or, for the toggle, desync the checked-thumb translateX() from the
+     track width it's drawn against. The pseudo-element extends the
+     clickable area without touching what's on screen. Each of these
+     hosts needs `position: relative` for the ::after to anchor to its own
+     box rather than the nearest already-positioned ancestor.
+   ================================================================ */
+
+@media (pointer: coarse) {
+
+  /* ---- backendPanel.css / controlPanel.css: every --control-h consumer ---- */
+  .calcButton,
+  .planes-num-input,
+  .atomistic-input-sm,
+  .atomistic-rattle-action .calcButton {
+    min-height: var(--control-h-touch);
+  }
+
+  /* ---- panelWindow.css: titlebar icon buttons (fold/menu/bar-hide/close) ---- */
+  .cv-panel-fold,
+  .cv-panel-menu-btn,
+  .cv-panel-barhide,
+  .cv-panel-close {
+    position: relative;
+  }
+  .cv-panel-fold::after,
+  .cv-panel-menu-btn::after,
+  .cv-panel-barhide::after,
+  .cv-panel-close::after {
+    content: "";
+    position: absolute;
+    inset: -10px;
+  }
+
+  /* ---- rightDock.css: per-tab window-menu dot + the fullscreen close btn ---- */
+  .split-pane-tab-menu {
+    position: relative;
+  }
+  .split-pane-tab-menu::after {
+    content: "";
+    position: absolute;
+    inset: -10px;
+  }
+  /* .split-item-close-btn is already position:absolute, so it already
+     establishes its own containing block for the overlay. */
+  .split-item-close-btn::after {
+    content: "";
+    position: absolute;
+    inset: -10px;
+  }
+
+  /* ---- panelWindow.css / toggle_styles.css: dropdown rows ----
+     These are already full-width rows in a vertical list, so growing the
+     row itself (rather than an overlay) is the natural touch fix — a
+     taller menu row is what a touch picker is supposed to look like. */
+  .cv-panel-menu-item,
+  .cv-colorbar-menu-item {
+    min-height: var(--control-h-touch);
+    display: flex;
+    align-items: center;
+  }
+
+  /* ---- toggle_styles.css: the pill toggle switch ----
+     .toggle_switch is already position:relative (see its own comment on
+     why), so the overlay anchors to the 46x24 pill itself, not the row. */
+  .toggle_switch::after {
+    content: "";
+    position: absolute;
+    inset: -10px;
+  }
+}
