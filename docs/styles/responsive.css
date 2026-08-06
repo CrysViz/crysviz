@@ -125,7 +125,7 @@
     font-size: var(--fs-sm);
     padding: var(--sp-1) var(--sp-2);
     /*! border-radius: 4px; */
-    background: rgba(0, 0, 0, 0.8);
+    background: var(--overlay-80);
     color: var(--fg-1);
     border: 1px solid var(--line-2);
     backdrop-filter: blur(6px);
@@ -227,7 +227,7 @@
     right: 10px;
     font-size: var(--fs-base);
     max-width: calc(100vw - 100px);
-    background: rgba(0, 0, 0, 0.85);
+    background: var(--overlay-80);
     backdrop-filter: blur(12px);
     border: 1px solid var(--wash-4);
   }
@@ -433,7 +433,7 @@
     bottom: calc(max(8px, env(safe-area-inset-bottom)) + var(--split-reserve-bottom, 0px));
     padding: 3px 5px;
     left: max(8px, env(safe-area-inset-left));
-    background: rgba(0, 0, 0, 0.9);
+    background: var(--overlay-80);
     border: 1px solid var(--popup-border);
     backdrop-filter: blur(8px);
     color: var(--fg-1);

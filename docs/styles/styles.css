@@ -311,7 +311,7 @@ body.panel-hidden #axesLegend {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
 }
 
 #pasteTextModal[hidden] {
@@ -353,7 +353,7 @@ body.panel-hidden #axesLegend {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
 }
 
 #pngExportModal[hidden] {
@@ -403,7 +403,7 @@ body.panel-hidden #axesLegend {
   padding: var(--sp-3) 10px;
   border-radius: var(--radius);
   border: 1px solid var(--line-1);
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--overlay-20);
   color: var(--ink-6);
   font-size: var(--fs-md);
   box-sizing: border-box;
@@ -463,7 +463,7 @@ body.panel-hidden #axesLegend {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
 }
 
 #raytraceWarningModal[hidden] {
@@ -604,7 +604,7 @@ body.panel-hidden #axesLegend {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
 }
 
 #shortcutsHelpModal[hidden] {
@@ -639,7 +639,7 @@ body.panel-hidden #axesLegend {
   border-radius: 50%;
   border: 1px solid var(--popup-border);
   background: var(--wash-2);
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--fg-75);
   font-size: var(--fs-sm);
   font-style: italic;
   font-family: var(--font-display);
@@ -867,7 +867,7 @@ body.panel-hidden #axesLegend {
   margin-top: var(--sp-1);
   padding: 10px var(--sp-5);
   background: var(--wash-1);
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--fg-85);
   border: 1px solid var(--wash-4);
   border-radius: var(--radius);
   font-size: var(--fs-lg);
@@ -891,7 +891,7 @@ body.panel-hidden #axesLegend {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
 }
 
 #shortcutsResetConfirmModal[hidden] {
@@ -955,7 +955,7 @@ body.panel-hidden #axesLegend {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
 }
 
 #confirmModal[hidden] {
@@ -1020,7 +1020,7 @@ body.panel-hidden #axesLegend {
   height: 30px;
   border-radius: 50%;
   border: 1px solid var(--wash-4);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-1-5);
   color: var(--panel-fg);
   font-size: var(--fs-lg);
   line-height: var(--lh-tight);
@@ -1153,7 +1153,7 @@ body.panel-hidden #axesLegend {
   padding: var(--sp-4);
   border-radius: var(--radius);
   border: 1px solid var(--line-1);
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--overlay-20);
   color: var(--ink-6);
   resize: vertical;
   font-family: var(--font-mono);
@@ -1163,7 +1163,7 @@ body.panel-hidden #axesLegend {
 }
 
 #structureText::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--fg-50);
 }
 
 #loadTextButton {
@@ -1283,7 +1283,7 @@ body.panel-hidden #axesLegend {
   padding: var(--sp-4);
   border-radius: var(--radius);
   border: 1px solid var(--line-1);
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--overlay-20);
   color: var(--ink-6);
   resize: vertical;
   font-family: var(--font-mono);
@@ -1293,7 +1293,7 @@ body.panel-hidden #axesLegend {
 }
 
 #secondStructureText::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--fg-50);
 }
 
 #secondLoadTextButton {
@@ -1393,7 +1393,7 @@ input[type="checkbox"] {
 
 #aboutModal {
   background: #0b1f1c;
-  color: #f5fffa;
+  color: var(--ok-tint);
   max-width: 640px;
   max-height: 80dvh;
   overflow-y: auto;
@@ -1446,7 +1446,7 @@ input[type="checkbox"] {
 
 #aboutContent p {
   margin: 0.8em 0;
-  color: #e8f5e9;
+  color: var(--ok-tint);
 }
 
 #aboutContent ul {
@@ -1836,7 +1836,7 @@ justify-content: center;
   position: fixed;
   top: 20px;
   right: 20px;
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--overlay-80);
   color: var(--fg-1);
   padding: 10px 15px;
   border-radius: 20px;
@@ -1868,7 +1868,7 @@ justify-content: center;
   font-size: var(--fs-lg);
   font-weight: 800;
   line-height: var(--lh-tight);
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--fg-75);
 }
 
 .section-heading { margin-top:10px; margin-bottom:var(--sp-2); font-size: var(--fs-lg); font-weight:var(--fw-bold); padding-left:var(--sp-3); }
@@ -1892,10 +1892,10 @@ justify-content: center;
 }
 
 .collapsible-content.open { justify-content: center;  padding-top:var(--sp-3); max-height:650px; margin: 10px 0 0px 0;}
-#composition { color:#d7eef6; line-height: var(--lh-normal); }
+#composition { color:var(--info-tint); line-height: var(--lh-normal); }
 #composition [hidden] { display: none !important; }
 #measure { margin-top:var(--sp-3); }
-#measureRow { display:flex; justify-content:space-between; gap:var(--sp-3); color:#cfeffb; }
+#measureRow { display:flex; justify-content:space-between; gap:var(--sp-3); color:var(--info-tint); }
 
 
 /* Custom color picker as a modifiable UI component*/
@@ -1943,8 +1943,8 @@ justify-content: center;
 
 
 /* Small actions */
-.btn-mini { background:transparent; border:1px solid var(--wash-2); color:#cfeffb; padding:var(--sp-2) 10px; border-radius: var(--radius-sm); cursor:pointer; }
-.btn-mini:hover { transform: translateY(-1px);background:rgba(255,255,255,0.02); border: 1px solid var(--accent-color);}
+.btn-mini { background:transparent; border:1px solid var(--wash-2); color:var(--info-tint); padding:var(--sp-2) 10px; border-radius: var(--radius-sm); cursor:pointer; }
+.btn-mini:hover { transform: translateY(-1px);background:var(--wash-0); border: 1px solid var(--accent-color);}
 
 .btn-mini.highlight { background:var(--bg-color); border-color:rgba(0,0,0,0.15); color:var(--fg-1); }
 .btn-mini.highlight:hover { transform: translateY(-1px);filter:brightness(1.03); border: 1px solid var(--accent-color);}
@@ -2017,7 +2017,7 @@ cursor: grab;
 
 #axesLegend{
 position: fixed; left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px));
-background: rgba(0,0,0,0.8);
+background: var(--overlay-80);
 border: 1px solid var(--line-2);
 border-radius: var(--radius);
 padding: var(--sp-2) var(--sp-3);
@@ -2442,7 +2442,7 @@ body > #structureInfoContent {
 .cv-drag-select-rect {
   position: fixed;
   z-index: var(--z-chrome);
-  border: 1.5px solid var(--highlight-color, #f08412);
+  border: 1.5px solid var(--highlight-color, rgb(var(--danger-rgb)));
   background: rgb(var(--danger-rgb) / 0.12);
   pointer-events: none;
 }
@@ -2523,7 +2523,7 @@ body > #structureInfoContent {
   top: max(12px, env(safe-area-inset-top));
   left: max(12px, env(safe-area-inset-left));
   z-index: var(--z-chrome);
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--overlay-80);
   border: 1px solid var(--wash-4);
   border-radius: var(--radius-sm);
   padding: 0;
@@ -2542,7 +2542,7 @@ body > #structureInfoContent {
 
 #mobileMenuToggle:hover,
 #mobileMenuToggle:active {
-  background: rgba(0, 0, 0, 0.9);
+  background: var(--overlay-80);
   transform: scale(0.95);
 }
 

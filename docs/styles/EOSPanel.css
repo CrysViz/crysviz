@@ -57,12 +57,12 @@
 }
 
 .eos-drop-zone:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--wash-0);
 }
 
 .eos-drop-zone.highlight {
   border-color: var(--highlight-color, var(--info));
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-1-5);
 }
 
 .eos-drop-zone-ref {
@@ -204,7 +204,7 @@
 }
 
 .eos-result-table th {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-1-5);
   font-weight: var(--fw-medium);
 }
 

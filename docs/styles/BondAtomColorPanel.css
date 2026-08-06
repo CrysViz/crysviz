@@ -63,5 +63,5 @@
 
 .colorbar-labels div {
   font-size: var(--fs-base);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--fg-85);
 }

@@ -167,7 +167,7 @@ font-size: var(--fs-base);
    slim green scrollbar matching the app's accent color. */
 .atoms-table-scroll {
   scrollbar-width: thin;
-  scrollbar-color: var(--highlight-color) rgba(255, 255, 255, 0.06);
+  scrollbar-color: var(--highlight-color) var(--wash-1-5);
 }
 
 .atoms-table-scroll::-webkit-scrollbar {
@@ -175,7 +175,7 @@ font-size: var(--fs-base);
 }
 
 .atoms-table-scroll::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-1-5);
   border-radius: var(--radius-4);
 }
 
@@ -210,7 +210,7 @@ font-size: var(--fs-base);
 .segmented-backend-control button {
   border: none;
   background: none;
-  color: rgba(255,255,255,0.8);
+  color: var(--fg-75);
   padding: var(--sp-2) var(--sp-2);
   border-radius: var(--radius);
   font-size: var(--fs-sm);
@@ -285,13 +285,13 @@ font-size: var(--fs-base);
   border-radius: 11px;
   background: rgba(17, 17, 17, 0.9);
   border: 1px solid var(--line-1);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+  box-shadow: inset 0 1px 0 var(--wash-0);
 }
 
 .backend-potential-toggle button {
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--fg-75);
   padding: var(--sp-2) 13px;
   border-radius: var(--radius-9);
   font-size: var(--fs-base);
@@ -301,8 +301,8 @@ font-size: var(--fs-base);
 
 .backend-potential-toggle button.active {
   background: var(--wash-3);
-  border-color: rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.96);
+  border-color: var(--wash-4);
+  color: var(--fg-85);
 }
 
 .atomistic-source-panel {
@@ -311,7 +311,7 @@ font-size: var(--fs-base);
   gap: 7px;
   padding: var(--sp-2) 10px;
   border-radius: var(--radius-12);
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--wash-0);
   border: 1px solid var(--line-1);
 }
 
@@ -323,7 +323,7 @@ font-size: var(--fs-base);
 }
 
 .atomistic-source-label {
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--fg-85);
   font-size: var(--fs-lg);
   font-weight: var(--fw-medium);
 }
@@ -338,7 +338,7 @@ font-size: var(--fs-base);
 
 .atomistic-source-state,
 .atomistic-backend-state {
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--fg-85);
   font-size: var(--fs-base);
 }
 
@@ -353,8 +353,8 @@ font-size: var(--fs-base);
 .atomistic-source-state:not(:empty) {
   padding: 9px 10px;
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--wash-0);
+  border: 1px solid var(--wash-1-5);
 }
 
 .atomistic-backend-actions {
@@ -380,9 +380,9 @@ font-size: var(--fs-base);
   gap: 10px;
   padding: var(--sp-4) var(--sp-4);
   border-radius: var(--radius-12);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--wash-0);
   border: 1px solid var(--line-1);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.025);
+  box-shadow: inset 0 1px 0 var(--wash-0);
 }
 
 .atomistic-card-compact {
@@ -404,7 +404,7 @@ font-size: var(--fs-base);
 }
 
 .atomistic-card-title-accent {
-  color: rgba(255, 255, 255, 0.9)
+  color: var(--fg-85)
 }
 
 .atomistic-card-pill {
@@ -412,7 +412,7 @@ font-size: var(--fs-base);
   border-radius: 999px;
   background: var(--hover-color, var(--wash-2));
   border: 1px solid var(--line-1);
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--fg-75);
   font-size: var(--fs-sm);
 }
 
@@ -420,7 +420,7 @@ font-size: var(--fs-base);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--fg-75);
   font-size: var(--fs-base);
   line-height: var(--lh-normal);
 }
@@ -435,7 +435,7 @@ font-size: var(--fs-base);
 
 .atomistic-efs-card:hover {
   border-color: var(--border-color, var(--line-2));
-  background: var(--hover-color, rgba(255,255,255,0.045));
+  background: var(--hover-color, var(--wash-0));
 }
 
 .atomistic-efs-card:active {
@@ -480,7 +480,7 @@ font-size: var(--fs-base);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--fg-85);
   font-size: var(--fs-md);
 }
 
@@ -490,7 +490,7 @@ font-size: var(--fs-base);
 }
 
 .atomistic-grid input {
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--wash-4);
   background: rgba(22, 22, 22, 0.88);
   color: var(--fg-1);
   border-radius: var(--radius-12);
@@ -499,7 +499,7 @@ font-size: var(--fs-base);
   min-height: 46px;
   box-sizing: border-box;
   width: 100%;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.025);
+  box-shadow: inset 0 1px 0 var(--wash-0);
 }
 
 .atomistic-input-sm {
@@ -615,7 +615,7 @@ font-size: var(--fs-base);
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--fg-85);
 }
 
 .atomistic-inline-toggle input {
@@ -628,7 +628,7 @@ font-size: var(--fs-base);
 
 .atomistic-status {
   margin: 0;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--fg-85);
 }
 
 .atomistic-result {
@@ -638,7 +638,7 @@ font-size: var(--fs-base);
 }
 
 .atomistic-hint {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--fg-75);
 }
 
 /* The max-width:420px override for .atomistic-grid-2/-3 now lives in

@@ -45,7 +45,7 @@
   left: 50%;
   transform: translate(-50%, -50%);
   background: var(--popup-bg);
-  color:rgba(255,255,255,0.8);
+  color: var(--fg-75);
   padding: 20px;
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);

@@ -94,13 +94,12 @@
 }
 
 /* Native <select> chrome shared by Force's colormap dropdown and Spin's
-   Source/colormap dropdowns. #333 isn't in the --chrome-* ramp (TOKENS.md's
-   audit clustered #2c2c2e/#3a3a3c on either side of it with no closer
-   neighbour) so the background stays a literal; the border lands exactly on
-   --chrome-5. */
+   Source/colormap dropdowns. #333 now lands on --chrome-2-5 (Wave 2.6, added
+   exactly for this gap between --chrome-2/--chrome-3); the border lands
+   exactly on --chrome-5. */
 .cv-scene-select {
   padding: var(--sp-1);
-  background: #333;
+  background: var(--chrome-2-5);
   color: var(--fg-1);
   border: 1px solid var(--chrome-5);
   border-radius: var(--radius-3);

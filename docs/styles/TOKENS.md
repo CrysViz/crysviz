@@ -422,3 +422,172 @@ in the tree (`docs/ui/BackendPanel/BackendTheme.js` only toggles
 `styles.css` — there was nothing to move. `theme.css`'s own header comment
 was updated to stop claiming these are "owned by" `styles.css`, since they
 never were.
+
+## Wave 2.6 — fourth token pass (missing middle rungs)
+
+`tools/ci/css_guard.sh` still reports 280 colour-literal violations after
+Wave 2.5. Re-running it and re-clustering its output (not the Wave 1/2.5
+estimates, which had drifted) showed the 280 aren't scattered one-offs —
+they're four ramps whose *ends* got tokens in earlier waves but whose
+*middles* never did, because the original palette was sampled from
+`styles.css`'s own idiom, which happens to only use the ends. Wave 2.6 adds
+rungs only; **the violation count is unchanged at 280** — nothing was
+adopted, by design, so the two sibling adoption agents don't collide with
+this pass. All new tokens live in `themes/default/theme.css` next to the
+ramp they extend; none of `dark/theme.css` or `twilight/theme.css` override
+any of `--fg-*`/`--wash-*`/`--overlay*`/`--chrome-*`/`--info-bright` family,
+confirming this UI chrome is meant to stay dark in every theme — no theme
+override was needed.
+
+### Foreground (text) ramp: `--fg-85` / `--fg-75` / `--fg-50`
+
+`color: rgba(255,255,255,X)` audited across `docs/styles/*.css`: 72 sites,
+14 distinct alphas, none matching `--fg-1`(1.0)/`--fg-2`(0.6)/`--fg-3`(0.4).
+Two dense clusters fall inside the 1.0–0.6 gap, one inside the 0.6–0.4 gap:
+
+| token | value | absorbs (alpha × count) | sites |
+|---|---|---|---|
+| `--fg-85` | `rgba(255,255,255,0.85)` | .96×1, .92×2, .9×5, .88×4, .86×1, .85×5, .82×7 | 25 |
+| `--fg-75` | `rgba(255,255,255,0.75)` | .8×13, .78×2, .75×4, .72×2, .7×11 | 32 |
+| `--fg-50` | `rgba(255,255,255,0.5)` | .5×13 | 13 |
+
+`.62×2` is 0.02 from `--fg-2` and folds there rather than getting a rung of
+its own. Named by literal alpha×100, not a fourth/fifth ordinal suffix —
+there's no small/base/dim story the way `--fg-1/-2/-3` told one, just three
+unrelated panels that each picked their own near-white independently. The
+number keeps brighter-vs-dimmer legible next to the existing ordinals
+(100 > 85 > 75 > 60 > 50 > 40) without renaming anything that ships.
+
+### Wash (fill) ramp: `--wash-0` / `--wash-1-5`
+
+`background`/`border`/`box-shadow` etc. using `rgba(255,255,255,X)` at
+fill-not-text sites: 46 real sites once the audit is restricted to the
+fill roles (excludes the six `border: ...rgba(255,255,255,0.3)` sites,
+which already equal `--popup-border` exactly — see fallback survey below).
+
+| token | value | absorbs | sites |
+|---|---|---|---|
+| `--wash-0` | `rgba(255,255,255,0.03)` | .02×6, .025×4, .03×7, .04×6, .045×1 | 24 |
+| `--wash-1-5` | `rgba(255,255,255,0.06)` | .06×13, .07×4 | 17 |
+
+`--wash-0` sits below the existing `--wash-1` (0.05); `--wash-1-5` sits
+between `--wash-1` and `--wash-2` (0.08), same midpoint-naming precedent as
+`--sp-3-5`. Leftover: `.09`/`.10` (1 site each) fold toward `--wash-2`;
+`.14` folds toward `--wash-4`; `.16×2` is 0.01 above `--wash-4` and folds
+down rather than earning a fifth rung for two sites.
+
+**Not tokenised, four sparse `border` outliers:** `rgba(255,255,255,0.5)`×2,
+`0.8`×1, `0.0`×1 — all on crop/drag-select-rect strokes, a different role
+(emphasis stroke, not fill or hairline) with too few sites each to cluster.
+
+### Black scrim: `--overlay-20` / `--overlay-80`
+
+`background: rgba(0,0,0,X)` (backdrops, not `box-shadow` — shadows are
+`--shadow-*`'s job): 19 sites, spanning 0.2–0.9, only 0.5 named
+(`--overlay`) before this pass.
+
+| token | value | absorbs | sites |
+|---|---|---|---|
+| `--overlay-20` | `rgba(0,0,0,0.2)` | .2×3 | 3 |
+| `--overlay-80` | `rgba(0,0,0,0.8)` | .8×4, .85×1, .9×2 | 7 |
+
+`.55×6` is 0.05 from `--overlay` and folds there. `.6`/`.65`/`.7` (1 site
+each) stay unclustered — TOKENS.md already flagged this family as having
+"no single dominant tier" between the ends, and the re-audit confirms it:
+three more one-off sites, no new middle cluster. `box-shadow:
+...rgba(0,0,0,0.45)` (1 site) and `border-color: rgba(0,0,0,0.15)` (1
+site) are shadow/border roles respectively, not scrim fills — left alone.
+
+### Opaque grey: `--chrome-2-5`
+
+`#333` appears 15 times (13 `background`, 2 `border`) and matches none of
+`--chrome-1..6`. It sits at lightness 51, exactly 7 units from `--chrome-2`
+(44, `#2c2c2e`) and 7 from `--chrome-3` (58, `#3a3a3c`) — no nearer
+neighbour, the same shape as the `--sp-3-5` gap, hence the same naming.
+
+`--chrome-2-5: #333;`
+
+**Not tokenised:** `#111` and `#222` (2 sites each, no shared selector,
+darker than `--chrome-1`) — too thin to cluster on their own; recommend
+folding both toward `--chrome-1` at adoption. `#f3f3f3` (2 sites, `color:`)
+is 2 units from `--ink-6` (`#f5f5f5`) — fold there, no new token. `#595959`
+(1 site) is 4 units from `--chrome-5` (`#555`) — fold there. `#2d2d2d` (1
+site) is ~1 unit from `--chrome-2` — fold there. `#2b2b2b`, `#0d0d0d` (1
+site each, both `var(--popup-bg/--input-bg, #hex)` fallbacks) don't cluster
+with anything and aren't a real family on their own.
+
+### Tinted near-whites: `--info-tint` / `--ok-tint`
+
+Not part of any ramp above — the "no home at all" family from the css_guard
+scan: near-white text carrying a state hue, one tier paler than
+`--info-bright`/`--ok-bright`. Two real clusters, one per hue actually used:
+
+| token | value | absorbs | sites | use |
+|---|---|---|---|---|
+| `--info-tint` | `#e7f5ff` | `#e7f5ff`×3, `#f5fbff`×2, `#cfe6ff`×2, `#cfeffb`×2, `#d7eef6`×1 | 10 | comparison headings, badges, composition text |
+| `--ok-tint` | `#f5fffa` | `#f5fffa`×1, `#e8f5e9`×1 | 2 | About-panel heading + body text |
+
+`--ok-tint`'s cluster is thin (2 sites, one literal each) but real — both
+are the same About-panel role at slightly different literal picks, not two
+unrelated colours. Kept separate from `-bright` per the rule that a
+foreground tint and a saturated foreground aren't interchangeable just
+because they share a hue.
+
+**Not tokenised (too sparse, no shared role):** `#a5d6a7` (1 site, medium
+green hover text — between `--ok-bright` and `--ok-tint`, closer to
+neither); `#d7f5e8` (2 sites, but a `border` role on `.trajSlider` thumbs,
+not text — mixing it into a text token would repeat the exact mistake
+TOKENS.md's foreground/fill rule exists to prevent); `#0b1f1c` (1 site,
+dark-green `#aboutModal` background); `#0c1f17` (1 site, dark-green text on
+`#playPauseBtn`, presumably over a light-green fill — different role again).
+
+### `var(--token, #hex)` fallback survey
+
+Every `var(name, #hex-or-rgba)` fallback in the violation list, checked
+against every existing token's literal value:
+
+**Already equal to an existing token — free substitution, no visual change:**
+
+| call site | fallback | equals |
+|---|---|---|
+| `analysisPanels.css` ×5 (`.pt-*` rules) | `var(--highlight-color, #00bcd4)` | `--info` (`#00bcd4`, exact) |
+| `structureInfoPanel.css:117` `.press-hold-popup-btn` | `var(--panel-fg, #fff)` | `--panel-fg` / `--fg-1` (`#ffffff`, exact) |
+| `bondLengthHistogram.css` (`.phl-alpha-value-input`'s sibling rule) | `var(--highlight-color, #f08412)` | `--danger-rgb` (`240 132 18`, exact — use `rgb(var(--danger-rgb))`) |
+| 6× (`rightDock.css`, `panelWindow.css` et al.) | `border: 1px solid var(--border-color, rgba(255, 255, 255, 0.3))` | `--popup-border` (`rgba(255, 255, 255, 0.3)`, exact) |
+
+**Becomes tokenisable now that Wave 2.6 exists (wasn't free before this pass):**
+
+- `structureInfoPanel.css:322` `.segmented-control` — `var(--panel-fg,
+  #f5fbff)` → the fallback's `#f5fbff` is one of `--info-tint`'s absorbed
+  literals; can become `var(--panel-fg, var(--info-tint))`.
+- `addStructure.css:481` `.sg-select-list` — `var(--popup-bg, #2b2b2b)` and
+  `analysisPanels.css` `var(--popup-border, #333)` don't equal an existing
+  token, but `#333`'s fallback can now use the new `var(--popup-border,
+  var(--chrome-2-5))`.
+
+**Checked, no match found (leave as literal fallbacks for adopters'
+judgment):** `var(--highlight-color, #4caf50)`, `var(--highlight-color,
+#4ade80)`, `var(--popup-bg, #111)`, `var(--popup-bg, #2b2b2b)`,
+`var(--input-bg, #0d0d0d)`, `var(--highlight-color, var(--accent-color,
+#2a8f4f))`×2, `var(--accent-color, #4a9eff)`, `var(--muted-fg, #9aa0a6)`×2
+— see below, this last one is actually dead code, not a real fallback.
+
+### Two bugs found, not fixed here
+
+- **`var(--muted-fg, #9aa0a6)`** (`panelWindow.css:264`,
+  `rightDock.css:357`) — `--muted-fg` **is** defined (`theme.css:30`,
+  `#f9f9f9`), so this fallback can never actually render; it's dead code,
+  not an intentional degrade path. Recommend adopters just drop the
+  fallback (`var(--muted-fg)`), not tokenise `#9aa0a6` — there is nothing
+  for a new token to represent once the dead branch is gone.
+- **`--text-muted`** (the bug named in this task's brief) — grepped the
+  whole tree: exactly one reference exists,
+  `analysisPanels.css:532`: `color: var(--text-muted, var(--ink-2));` with
+  an inline comment already noting `--text-muted` is undefined so `--ink-2`
+  (`#999`) is what actually renders. `--text-muted` itself is defined
+  nowhere, in any theme. Recommendation: don't define `--text-muted` — one
+  call site referencing an alias for a token that already has a name
+  (`--ink-2`) doesn't justify minting a second name for the same value.
+  Adopters should collapse the site to `color: var(--ink-2);` directly and
+  delete the dead `--text-muted` reference, rather than defining the alias
+  to make the existing fallback "correct."

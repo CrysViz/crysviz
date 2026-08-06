@@ -365,7 +365,7 @@
   font-size: 14px; /* deliberately NOT --fs-lg/--fs-xl: this caret must stay a fixed
     size regardless of the user's font-scale control, unlike the label next to it */
   transition: transform 0.2s ease;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--fg-75);
   transform: rotate(0deg); /* JS overrides this inline (rotate(90deg)) on expand — the
     inline style always wins over this class rule regardless of specificity */
   cursor: pointer;
@@ -394,7 +394,7 @@
   display: none;
   margin-top: var(--sp-2);
   padding: var(--sp-3);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--wash-0);
   border: 1px solid var(--wash-1);
   border-radius: var(--radius-sm);
 }
@@ -408,7 +408,7 @@
 
 .bond-cat-row-label {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--fg-85);
   min-width: 34px;
 }
 
@@ -423,7 +423,7 @@
   border-radius: var(--radius-sm);
   background: rgb(var(--shadow-rgb) / 0.25);
   border: 1px solid var(--line-1);
-  color: #e7f5ff;
+  color: var(--info-tint);
   font-size: var(--fs-sm);
 }
 
@@ -457,7 +457,7 @@
 
 .bond-empty-note {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--fg-50);
   padding: var(--sp-1) 0;
 }
 

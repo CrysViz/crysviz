@@ -30,7 +30,7 @@
 }
 .si-row-label {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.82); /* no exact --fg-* match (0.6/0.4 only) */
+  color: var(--fg-85); /* was 0.82 — Wave 2.6 --fg-85 */
   min-width: 34px;
 }
 .si-row-label--wide { min-width: 58px; } /* "Edge alpha" needs more room */
@@ -42,7 +42,7 @@
   border-radius: var(--radius-sm);
   background: rgb(var(--shadow-rgb) / 0.25);
   border: 1px solid var(--line-1);
-  color: #e7f5ff; /* no matching token */
+  color: var(--info-tint); /* was #e7f5ff — Wave 2.6 exact */
   font-size: var(--fs-sm);
 }
 
@@ -80,7 +80,7 @@
   grid-column: 1 / -1;
   margin-top: var(--sp-2);
   padding: var(--sp-3);
-  background: rgba(255, 255, 255, 0.02); /* no exact --wash-* match (0.05 is nearest) */
+  background: var(--wash-0); /* was 0.02 — Wave 2.6 --wash-0 */
   border: 1px solid var(--wash-1); /* was 0.05 — exact --wash-1 */
   border-radius: var(--radius-sm);
 }
@@ -113,15 +113,15 @@
 .press-hold-popup-btn {
   display: block;
   white-space: nowrap;
-  background: var(--highlight-color, var(--accent-color, #2a8f4f));
-  color: var(--panel-fg, #f5fbff);
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.3));
+  background: var(--highlight-color, var(--accent-color, #2a8f4f)); /* fallback checked against every token (TOKENS.md) — no match, stays literal */
+  color: var(--panel-fg, var(--fg-1)); /* was #fff — free substitution, exact */
+  border: 1px solid var(--border-color, var(--popup-border)); /* was rgba(255,255,255,0.3) — exact */
   border-radius: var(--radius-sm);
   padding: 7px var(--sp-4);
   font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 14px rgb(var(--shadow-rgb) / 0.45);
   transition: background 0.15s ease;
 }
 .press-hold-popup-btn:hover { filter: brightness(1.12); }
@@ -133,9 +133,9 @@
   width: 10px;
   height: 10px;
   transform: translateX(-50%) rotate(45deg);
-  background: var(--highlight-color, var(--accent-color, #2a8f4f));
-  border-right: 1px solid var(--border-color, rgba(255, 255, 255, 0.3));
-  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.3));
+  background: var(--highlight-color, var(--accent-color, #2a8f4f)); /* fallback checked against every token (TOKENS.md) — no match, stays literal */
+  border-right: 1px solid var(--border-color, var(--popup-border));
+  border-bottom: 1px solid var(--border-color, var(--popup-border));
 }
 /* Not enough room above the button (e.g. panel dragged near the top of the
    viewport) — flip the popup below it instead. */
@@ -148,8 +148,8 @@
   bottom: auto;
   border-right: none;
   border-bottom: none;
-  border-left: 1px solid var(--border-color, rgba(255, 255, 255, 0.3));
-  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.3));
+  border-left: 1px solid var(--border-color, var(--popup-border));
+  border-top: 1px solid var(--border-color, var(--popup-border));
 }
 
 /* ================================================================
@@ -201,14 +201,14 @@
   margin: 0 0 var(--sp-3-5) 0;
   padding: var(--sp-3) 10px;
   border-radius: var(--radius);
-  background: linear-gradient(135deg, rgba(32, 77, 160, 0.35), rgba(35, 139, 230, 0.18));
-  border: 1px solid rgba(91, 168, 255, 0.45);
-  color: #cfe6ff; /* no matching token */
+  background: linear-gradient(135deg, rgba(32, 77, 160, 0.35), rgba(35, 139, 230, 0.18)); /* blue accent gradient — no matching token, checked against every ramp */
+  border: 1px solid rgba(91, 168, 255, 0.45); /* same blue-accent family as above — no home */
+  color: var(--info-tint); /* was #cfe6ff — Wave 2.6 exact */
   font-size: var(--fs-sm);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px var(--wash-0); /* was 0.04 — Wave 2.6 --wash-0 */
 }
 .si-link-copies-row { margin: var(--sp-2) 0 var(--sp-3) 0; }
 .si-apply-styles-btn {
@@ -229,12 +229,12 @@
    gradient/color/weight) toggled by the same hasWyckoffPanel boolean; now a
    single class carries the whole state. */
 .segmented-control.wyckoff-locked {
-  box-shadow: 0 0 0 1px rgba(91, 168, 255, 0.35);
-  background: rgba(25, 55, 110, 0.28);
+  box-shadow: 0 0 0 1px rgba(91, 168, 255, 0.35); /* blue accent — no matching token */
+  background: rgba(25, 55, 110, 0.28); /* dark navy fill — no matching token (not a --chrome-tint-* near-dup) */
 }
 .segmented-control.wyckoff-locked button.active {
-  background: linear-gradient(135deg, #1c5fb8, #2493ff);
-  color: #f5fbff; /* no matching token */
+  background: linear-gradient(135deg, #1c5fb8, #2493ff); /* blue accent gradient — no matching token */
+  color: var(--info-tint); /* was #f5fbff — Wave 2.6 exact */
   font-weight: 700;
 }
 /* Dead code, preserved as-is (moved from a JS-injected <style> block in
@@ -246,12 +246,12 @@
   padding: var(--sp-3-5);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-4);
-  background-color: rgba(26, 26, 26, 0.95);
+  background-color: rgba(26, 26, 26, 0.95); /* close to --chrome-1 (25,25,25,0.8) but not exact/near-dup listed — no matching token */
 }
 .si-volume {
   margin-top: var(--sp-3);
   font-size: var(--fs-md);
-  color: rgba(255, 255, 255, 0.8); /* no matching token */
+  color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
 }
 
 /* ================================================================
@@ -269,7 +269,7 @@
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
-.comp-row:hover { background-color: rgba(255, 255, 255, 0.03); }
+.comp-row:hover { background-color: var(--wash-0); } /* was 0.03 — Wave 2.6 */
 .comp-row-name {
   /* Explicit, scale-respecting size matching Bonds'/Poly's category labels
      (styles.css's global `label` rule) so all three tabs render identically
@@ -282,7 +282,7 @@
   margin-left: var(--sp-1);
   font-size: 14px;
   transition: transform 0.2s ease;
-  color: rgba(255, 255, 255, 0.8); /* no matching token */
+  color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
   transform: rotate(0deg);
 }
 .comp-right {
@@ -294,7 +294,7 @@
 .comp-count-label { white-space: nowrap; }
 .comp-pct-label {
   font-size: 0.8em;
-  color: rgba(255, 255, 255, 0.7); /* no matching token */
+  color: var(--fg-75); /* was 0.7 — Wave 2.6 --fg-75 */
 }
 .individual-atoms {
   margin-left: var(--sp-2);
@@ -372,7 +372,7 @@
      background-color on the selected row, which — being inline — always
      outranks this stylesheet rule regardless of :hover, so a selected row's
      amber highlight is never overwritten by hovering it. */
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: var(--wash-0); /* was 0.03 — Wave 2.6 */
 }
 .individual-bond-row,
 .individual-polyhedron-row {
@@ -431,7 +431,7 @@
 .bond-dist,
 .poly-meta {
   font-size: var(--fs-xs);
-  color: rgba(255, 255, 255, 0.8); /* no matching token */
+  color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
   font-family: var(--font-mono);
 }
 .iar-species-line {
@@ -449,13 +449,13 @@
 }
 .iar-species-text {
   font-size: var(--fs-xs);
-  color: rgba(255, 210, 120, 0.85); /* no matching token */
+  color: rgba(255, 210, 120, 0.85); /* amber species tint — no matching token (info/ok tints are blue/green only) */
   font-family: var(--font-mono);
 }
 .iar-vacancy-line {
   display: block;
   font-size: var(--fs-xs);
-  color: rgba(255, 210, 120, 0.6);
+  color: rgba(255, 210, 120, 0.6); /* same amber family as .iar-species-text — no matching token */
   font-family: var(--font-mono);
   margin-left: 13px;
 }
@@ -542,8 +542,8 @@
   box-shadow: none;
 }
 .atom-editor-button.active {
-  border: 1px solid rgba(125, 206, 160, 0.95); /* no matching token */
-  box-shadow: 0 0 0 1px rgba(125, 206, 160, 0.35), inset 0 0 0 1px rgba(125, 206, 160, 0.15);
+  border: 1px solid rgba(125, 206, 160, 0.95); /* active-state green — no matching token (not an exact --ok/--ok-bright match) */
+  box-shadow: 0 0 0 1px rgba(125, 206, 160, 0.35), inset 0 0 0 1px rgba(125, 206, 160, 0.15); /* same green, two alphas — no matching token */
 }
 
 /* Disordered-site colour editor: one small square swatch per species */
@@ -594,7 +594,7 @@
 }
 .poly-edge-header {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--fg-85); /* was 0.82 — Wave 2.6 --fg-85 */
   margin-top: var(--sp-3);
 }
 .ibr-name-container,
@@ -611,7 +611,7 @@
   justify-content: space-between;
   gap: var(--sp-3);
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
   margin-bottom: var(--sp-2);
   font-weight: var(--fw-medium);
 }
@@ -622,7 +622,7 @@
 }
 /* A Wyckoff move that would collapse symmetry-equivalent atoms onto each
    other is refused — the note flips to this warning colour to say so. */
-.coord-editor-note.refused { color: rgba(255, 180, 120, 0.9); }
+.coord-editor-note.refused { color: rgba(255, 180, 120, 0.9); } /* orange warning tint — no matching token */
 .coord-axis-rows {
   display: flex;
   flex-direction: column;
@@ -644,7 +644,7 @@
 .coord-axis-slider {
   width: 100%;
   min-width: 0;
-  accent-color: rgba(125, 206, 160, 0.95);
+  accent-color: rgba(125, 206, 160, 0.95); /* same active-state green as .atom-editor-button.active — no matching token */
 }
 .coord-num-input {
   width: 100%;
@@ -674,7 +674,7 @@
 .element-color-editor {
   grid-column: 2;
   padding: var(--sp-3);
-  background: rgba(255, 255, 255, 0.03); /* no exact --wash-* match (0.05 is nearest) */
+  background: var(--wash-0); /* was 0.03 — Wave 2.6 --wash-0 */
   border: 1px solid var(--wash-2); /* was 0.08 — exact --wash-2 */
   border-radius: var(--radius);
 }
@@ -698,7 +698,7 @@
    ================================================================ */
 .spin-mode-switch {
   display: inline-flex;
-  background: #2d2d2d; /* no matching token */
+  background: var(--chrome-2); /* was #2d2d2d — Wave 2.6 near-dup fold */
   border-radius: var(--radius-md);
   padding: var(--sp-1);
   gap: var(--sp-1);
@@ -719,16 +719,16 @@
 }
 /* Active/inactive state — was setSwitchActive()'s four inline style writes. */
 .spin-mode-switch-btn.active {
-  background: #0d8a36; /* no matching token */
+  background: #0d8a36; /* distinct green — no matching token (not an --ok/--ok-bright near-dup) */
   color: var(--fg-1);
 }
 .spin-mode-switch-btn:not(.active) {
   background: transparent;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
 }
 .spin-no-data {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.5); /* no matching token */
+  color: var(--fg-50); /* was 0.5 — Wave 2.6 --fg-50 */
   text-align: center;
   padding: var(--sp-2) 0;
 }
@@ -758,7 +758,7 @@
   align-items: center;
   gap: var(--sp-1);
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
   cursor: pointer;
   justify-content: center;
   margin-bottom: var(--sp-3);
@@ -811,7 +811,7 @@
 .material-prop-row input[type="range"] { flex: 1; }
 .material-prop-value {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.7); /* no matching token */
+  color: var(--fg-75); /* was 0.7 — Wave 2.6 --fg-75 */
   min-width: 34px;
   text-align: right;
 }

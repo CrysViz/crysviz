@@ -21,7 +21,7 @@ font-size: var(--fs-xl);
 .segmented-control button {
   border: none;
   background: none;
-  color: rgba(255,255,255,0.8);
+  color: var(--fg-75);
   padding: var(--sp-2) 10px;
   border-radius: var(--radius);
   font-size: var(--fs-base);
@@ -239,7 +239,7 @@ font-size: var(--fs-xl);
   min-width: 0;
   min-height: var(--control-h);
   padding: var(--sp-2) var(--sp-3);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--wash-1-5);
   border: 1px solid var(--wash-4);
   border-radius: var(--radius-sm);
   color: var(--fg-1);
@@ -388,13 +388,13 @@ font-size: var(--fs-xl);
 
 .planes-viz-label {
   font-size: var(--fs-base);
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--fg-75);
   white-space: nowrap;
 }
 
 .planes-select,
 .planes-select-sm {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--wash-1-5);
   border: 1px solid var(--wash-4);
   border-radius: var(--radius-sm);
   color: var(--fg-1);
@@ -454,20 +454,20 @@ font-size: var(--fs-xl);
 .planes-th {
   padding: 5px var(--sp-3);
   text-align: left;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--fg-50);
   font-weight: var(--fw-medium);
   border-bottom: 1px solid var(--line-1);
 }
 
 .planes-td {
   padding: 5px var(--sp-3);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--wash-1-5);
   vertical-align: middle;
 }
 
 .planes-params-cell {
   font-family: var(--font-mono);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--fg-85);
 }
 
 .plane-delete-btn {
@@ -543,7 +543,7 @@ font-size: var(--fs-xl);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   border-bottom: 1px solid var(--wash-3);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--wash-0);
   white-space: nowrap;
 }
 
@@ -573,7 +573,7 @@ font-size: var(--fs-xl);
 .planes-td-mono {
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--fg-85);
   white-space: nowrap;
 }
 
@@ -630,7 +630,7 @@ font-size: var(--fs-xl);
   align-items: center;
   font-size: 3em;
   line-height: var(--lh-tight);
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--fg-85);
 }
 
 .planes-vector-values {
@@ -728,8 +728,8 @@ font-size: var(--fs-xl);
 
 /* Grouped field + colormap card */
 .planes-field-colormap-container {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: var(--wash-0);
+  border: 1px solid var(--wash-2);
   border-radius: var(--radius-sm);
   padding: 10px;
   display: flex;
@@ -740,7 +740,7 @@ font-size: var(--fs-xl);
 
 .planes-field-colormap-disabled {
   opacity: 0.55;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--wash-0);
   border-color: var(--wash-1);
 }
 
@@ -805,7 +805,7 @@ font-size: var(--fs-xl);
 
 .planes-cut-label {
   font-size: var(--fs-base);
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--fg-75);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -838,7 +838,7 @@ font-size: var(--fs-xl);
 }
 
 .planes-field-colormap-disabled .planes-dual-slider-track {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-1-5);
 }
 
 .planes-dual-slider-fill {
@@ -846,7 +846,7 @@ font-size: var(--fs-xl);
 }
 
 .planes-field-colormap-disabled .planes-dual-slider-fill {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--wash-4);
 }
 
 .planes-slider {
@@ -918,7 +918,7 @@ font-size: var(--fs-xl);
 .planes-select:disabled {
   opacity: 0.55;
   color: var(--fg-3);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--wash-0);
   border-color: var(--wash-2);
   cursor: not-allowed;
 }

@@ -70,7 +70,7 @@ body.panel-hidden #viewArea.split-active.split-dock-bottom:not(.split-pane-colla
 
 .split-handle:hover,
 .split-handle:active {
-  background: var(--highlight-color, #00bcd4);
+  background: var(--highlight-color, var(--info));
 }
 
 .split-pane {
@@ -354,7 +354,7 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   background: transparent;
   border: none;
   border-radius: var(--radius-9) var(--radius-9) 0 0;
-  color: var(--muted-fg, #9aa0a6);
+  color: var(--muted-fg); /* --muted-fg is always defined; the #9aa0a6 fallback was dead code */
 }
 
 .split-pane-header-tabs .split-pane-tab:hover {
@@ -369,7 +369,7 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
 /* Active tab: filled + raised, outlined, its bottom flaring into the strip.
    --split-tab-bg is the shared fill used by the tab body and its flares. */
 .split-pane-header-tabs .split-pane-tab.active {
-  --split-tab-bg: var(--group-bg, rgba(255, 255, 255, 0.10));
+  --split-tab-bg: var(--group-bg, var(--wash-2));
   background: var(--split-tab-bg);
   border: 1px solid var(--panel-border);
   border-bottom: none;
@@ -481,8 +481,8 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane-tabs {
 .split-pane-tabs .split-pane-tab:hover,
 .split-pane-tabs .split-pane-tab.active {
   opacity: 1;
-  color: var(--highlight-color, #00bcd4);
-  border-color: var(--highlight-color, #00bcd4);
+  color: var(--highlight-color, var(--info));
+  border-color: var(--highlight-color, var(--info));
 }
 
 /* ---- drop highlight (floating window dragged over the right border) -------*/
@@ -499,7 +499,7 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane-tabs {
   z-index: var(--z-dock-hint);
   pointer-events: none;
   box-sizing: border-box;
-  border: 2px dashed var(--highlight-color, #00bcd4);
+  border: 2px dashed var(--highlight-color, var(--info));
   background: rgb(var(--info-rgb) / 0.10);
 }
 

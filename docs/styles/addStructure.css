@@ -5,14 +5,14 @@
    Wyckoff-table editors share `wyckoff-`, LatticeInputPanel is `lattice-`,
    SpaceGroupSelect is `sg-select-`, AddVacuumModule is `vacuum-`).
 
-   Several literals below have no matching token (see docs/styles/TOKENS.md):
-   #333 (widget bg/border used throughout this module's hand-rolled tables —
-   not a documented near-duplicate of any --chrome-* rung), #595959 (icon
-   button bg), and a handful of one-off rgba(255,255,255,X) text/fill alphas
-   (0.5/0.7/0.85/0.9) that don't land on a documented --fg-2/--fg-3
-   near-duplicate. Kept literal, not snapped — a real gap, not an oversight.
-   (#444, formerly in this list, is a documented --chrome-4 near-duplicate
-   and has been substituted below.) */
+   Wave 2.6 (see docs/styles/TOKENS.md) added rungs for what used to be this
+   file's biggest gaps: #333 is now --chrome-2-5, #595959 is --chrome-5, and
+   the one-off rgba(255,255,255,X) text alphas land on --fg-85/--fg-75/--fg-50.
+   Two literals still have no matching token: `var(--popup-bg, #2b2b2b)`
+   (.sg-select-list — checked against every ramp, no near-duplicate) and the
+   rgba(125, 206, 160, X) "newly added" accent (.atom-new-separator/
+   .orbit-new-separator td) — a hue Wave 2.6's audit never clustered at all.
+   Kept literal, not snapped — a real gap, not an oversight. */
 
 /* ---------------------------------------------------------------------------
    Shared table/cell/input primitives — identical style strings used to be
@@ -72,7 +72,7 @@
 .addstructure-num-input,
 .wyckoff-coord-input {
   width: 100%;
-  background: #333;
+  background: var(--chrome-2-5);
   border: 1px solid var(--chrome-5);
   color: var(--fg-1);
   padding: 2px 3px;
@@ -94,7 +94,7 @@
    the plain atom table never used. */
 .wyckoff-orbit-num-input {
   width: 100%;
-  background: #333;
+  background: var(--chrome-2-5);
   border: 1px solid var(--chrome-5);
   color: var(--fg-1);
   padding: 2px 3px;
@@ -109,7 +109,7 @@
 
 .wyckoff-text-input {
   width: 54px;
-  background: #333;
+  background: var(--chrome-2-5);
   border: 1px solid var(--chrome-5);
   color: var(--fg-1);
   padding: 2px 3px;
@@ -119,7 +119,7 @@
 
 .addstructure-element-input {
   width: 40px;
-  background: #333;
+  background: var(--chrome-2-5);
   border: 1px solid var(--chrome-5);
   color: var(--fg-1);
   padding: 2px 3px;
@@ -131,7 +131,7 @@
   flex: none;
   width: 22px;
   height: 22px;
-  background: #595959;
+  background: var(--chrome-5);
   border: none;
   color: var(--fg-1);
   cursor: pointer;
@@ -159,7 +159,7 @@
   line-height: 1;
   border: 1px solid var(--chrome-5);
   border-radius: var(--radius-3);
-  background: #333;
+  background: var(--chrome-2-5);
   color: var(--fg-1);
   cursor: pointer;
 }
@@ -231,7 +231,7 @@
 .atom-table-bulk-textarea {
   flex: 1;
   height: 80px;
-  background: #333;
+  background: var(--chrome-2-5);
   border: 1px solid var(--chrome-5);
   color: var(--fg-1);
   padding: 5px;
@@ -274,7 +274,7 @@
 
 .addstructure-list-coord {
   font-family: var(--font-mono);
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--fg-75);
   flex-grow: 1;
   text-align: right;
 }
@@ -288,13 +288,13 @@
 
 .wyckoff-lock-heading {
   font-size: var(--fs-base);
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--fg-85);
   margin-bottom: 2px;
 }
 
 .wyckoff-hint {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--fg-50);
   margin: var(--sp-1) 0 var(--sp-3-5) 0;
 }
 
@@ -348,7 +348,7 @@
 
 .wyckoff-sg-label {
   font-size: var(--fs-base);
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--fg-75);
   flex: none;
 }
 
@@ -356,13 +356,13 @@
 
 .wyckoff-sg-name {
   font-size: var(--fs-base);
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--fg-85);
   margin-bottom: var(--sp-1);
 }
 
 .wyckoff-sg-hint {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--fg-50);
   margin-bottom: var(--sp-3-5);
 }
 
@@ -396,7 +396,7 @@
 
 .lattice-label {
   padding: var(--sp-1) var(--sp-2) var(--sp-1) 0;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--fg-75);
   text-align: right;
   white-space: nowrap;
 }
@@ -407,7 +407,7 @@
   width: 70px;
   text-align: right;
   font-family: var(--font-mono);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-1-5);
   border: 1px solid var(--wash-4);
   border-radius: var(--radius-4);
   color: var(--fg-1);
@@ -418,7 +418,7 @@
 .lattice-hint {
   text-align: center;
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--fg-50);
   margin-bottom: var(--sp-3-5);
 }
 
@@ -463,7 +463,7 @@
 .sg-select-input {
   width: 100%;
   font-family: var(--font-mono);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-1-5);
   border: 1px solid var(--wash-4);
   border-radius: var(--radius-4);
   color: var(--fg-1);
@@ -490,7 +490,7 @@
 .sg-select-empty {
   padding: var(--sp-2) var(--sp-3);
   font-size: var(--fs-base);
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--fg-50);
 }
 
 .sg-select-item {
@@ -544,7 +544,7 @@
 
 .vacuum-input {
   width: 56px;
-  background: #333;
+  background: var(--chrome-2-5);
   border: 1px solid var(--chrome-5);
   color: var(--fg-1);
   padding: 3px;
@@ -565,7 +565,7 @@
   justify-content: space-between;
   gap: var(--sp-3-5);
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--fg-75);
   border-top: 1px solid var(--line-1);
   padding-top: var(--sp-3);
 }

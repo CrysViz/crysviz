@@ -24,16 +24,16 @@
   gap: 10px;
   padding: var(--sp-4);
   border-radius: var(--radius-12);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--wash-0);
   border: 1px solid var(--line-1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  box-shadow: inset 0 1px 0 var(--wash-0);
 }
 
 .sym-card-title {
   font-size: var(--fs-md);
   font-weight: var(--fw-bold);
   text-align: center;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--fg-85);
 }
 
 .sym-row {
@@ -49,7 +49,7 @@
   align-items: center;
   gap: var(--sp-3);
   font-size: var(--fs-base);
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--fg-75);
 }
 
 .sym-row input[type="number"] {
@@ -125,7 +125,7 @@
 }
 
 .sym-kv dt {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--fg-50);
   font-size: var(--fs-sm);
   text-align: right;
   white-space: nowrap;
@@ -134,7 +134,7 @@
 .sym-kv dd {
   margin: 0;
   font-size: var(--fs-base);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--fg-85);
   overflow-wrap: anywhere;
 }
 
@@ -149,7 +149,7 @@
 }
 
 .sym-proto-label {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--fg-50);
   font-size: var(--fs-sm);
 }
 

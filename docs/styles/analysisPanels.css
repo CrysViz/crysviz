@@ -30,7 +30,7 @@
   font-size: var(--fs-sm); /* 11.5px, in the --fs-sm audit cluster */
   color: var(--ink-4);
   cursor: pointer;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--wash-1-5); /* was 0.06 — Wave 2.6 --wash-1-5 */
 }
 
 .pc-row-label {
@@ -59,7 +59,7 @@
 }
 
 .pc-row:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-1-5); /* was 0.06 — Wave 2.6 --wash-1-5 */
 }
 
 /* ===========================================================================
@@ -77,9 +77,9 @@
 
 .pi-forced-notice {
   font-size: var(--fs-xs); /* 10.5px, in the --fs-xs audit cluster */
-  color: #cfe6ff;
-  background: rgba(35, 139, 230, 0.15);
-  border: 1px solid rgba(91, 168, 255, 0.4);
+  color: var(--info-tint); /* was #cfe6ff — Wave 2.6 exact */
+  background: rgba(35, 139, 230, 0.15); /* blue accent fill — no matching token */
+  border: 1px solid rgba(91, 168, 255, 0.4); /* same blue-accent family as .si-wyckoff-badge — no matching token */
   border-radius: var(--radius-sm);
   padding: var(--sp-2) var(--sp-3);
   margin-bottom: var(--sp-2);
@@ -89,7 +89,7 @@
   min-height: 260px;
   border-radius: var(--radius-sm);
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--wash-0); /* was 0.03 — Wave 2.6 --wash-0 */
 }
 
 .pi-opacity-row {
@@ -169,8 +169,8 @@
    =========================================================================== */
 .bond-distance-label {
   background: var(--overlay-light);
-  border: 2px solid #000;
-  color: #000;
+  border: 2px solid #000; /* opaque black — no matching token (--shadow-rgb is for alpha composition, not solid fills) */
+  color: #000; /* same opaque-black situation as the border above */
   font-weight: 700; /* one-off emphasis, not the app's --fw-bold (600) */
   font-size: var(--fs-base);
   padding: 2px var(--sp-2);
@@ -197,13 +197,13 @@
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.4s;
-  background: rgba(128, 128, 128, 0.15);
+  background: rgba(128, 128, 128, 0.15); /* mid-grey wash — no matching token (neither the white-wash nor black-overlay family) */
 }
 
 .tracer-progress-fill {
   height: 100%;
   width: 0%;
-  background: var(--highlight-color, #4caf50);
+  background: var(--highlight-color, #4caf50); /* fallback checked against every token (TOKENS.md) — no match, stays literal */
   transition: width 0.15s linear;
 }
 
@@ -230,9 +230,9 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background-color: #111;
+  background-color: var(--chrome-1); /* was #111 — Wave 2.6 near-dup fold */
   color: var(--fg-1);
-  border: 1px solid #333;
+  border: 1px solid var(--chrome-2-5); /* was #333 — Wave 2.6 exact */
   border-radius: var(--radius);
   z-index: var(--z-dock-pane); /* was 1300 — exact value match, no stacking change */
   padding: var(--sp-5); /* 15px in the source, 1px from --sp-5 — see TOKENS.md's
@@ -322,7 +322,7 @@
 
 .pt-btn {
   padding: 5px var(--sp-5); /* 15px, see --pt-popup padding note above */
-  background: #333;
+  background: var(--chrome-2-5); /* was #333 — Wave 2.6 exact */
   border: 1px solid var(--chrome-5); /* was #555 — exact --chrome-5 */
   color: var(--fg-1);
   cursor: pointer;
@@ -345,8 +345,8 @@
 }
 
 .pt-confirm-btn:not(:disabled) {
-  background: #0066cc;
-  border-color: #004499;
+  background: #0066cc; /* saturated blue — no matching token */
+  border-color: #004499; /* same blue family as above — no matching token */
   cursor: pointer;
 }
 
@@ -456,7 +456,7 @@
   position: fixed;
   top: 20%;
   left: var(--popup-left);
-  background: rgba(25, 25, 25, 0.9);
+  background: rgba(25, 25, 25, 0.9); /* close to --chrome-1 (25,25,25,0.8) but alpha differs and not a documented near-dup — no matching token */
   color: var(--fg-1);
   padding: var(--sp-4) var(--sp-5);
   border-radius: var(--radius-md);
@@ -630,7 +630,7 @@
 #showComparisonBonds:checked + .toggle_slider,
 #showLatticeComparison:checked + .toggle_slider,
 #enableComparisonToggle:checked + .toggle_slider {
-  background-color: #4CAF50 !important;
+  background-color: #4CAF50 !important; /* status colour, same family as the MD-stream dots — reviewed exception (css_guard_allow.txt), left literal */
 }
 
 #showComparisonBonds:checked + .toggle_slider > span,
@@ -641,7 +641,7 @@
 
 .cmp-comparison-error {
   font-size: var(--fs-base); /* 12px */
-  color: #ff6b6b; /* distinct red, not an exact match for --danger (which is orange-hued) */
+  color: #ff6b6b; /* distinct red, not an exact match for --danger (which is orange-hued) — no matching token */
   margin: 0 0 var(--sp-3-5) 0; /* 10px */
   /* Closed by default — addCompPanel() only ever sets display:'block' when
      there's an error to show (this element is rebuilt from scratch on every
@@ -723,8 +723,7 @@
 
 .lcmp-toggle-btn {
   width: 100%;
-  background: #333; /* not in the --chrome-* ramp (TOKENS.md audit has no exact/near-dup
-    slot for it — same situation as forcePanel.css's .cv-scene-select) */
+  background: var(--chrome-2-5); /* was #333 — Wave 2.6 exact */
   border: none;
   color: var(--fg-1);
   cursor: pointer;
@@ -752,7 +751,7 @@
 }
 
 .lcmp-popup {
-  background-color: #222; /* no exact/near-dup chrome token */
+  background-color: var(--chrome-1); /* was #222 — Wave 2.6 near-dup fold */
   color: var(--fg-1);
   padding: var(--sp-3-5); /* 10px */
   max-height: 80dvh; /* dvh, not vh — tracks the mobile URL bar (defect 2 of the mobile audit) */
@@ -770,7 +769,7 @@
   margin-top: var(--sp-3-5); /* 10px */
   padding: var(--sp-3-5); /* 10px */
   border-radius: var(--radius-md); /* 10px, exact */
-  background: rgba(255, 255, 255, 0.03); /* long-tail, no wash token */
+  background: var(--wash-0); /* was 0.03 — Wave 2.6 --wash-0 */
   border: 1px solid var(--wash-2); /* 0.08, exact */
   width: 100%;
   max-width: 100%;
@@ -789,7 +788,7 @@
 .cutplane-title {
   font-size: var(--fs-md); /* 13px */
   font-weight: var(--fw-bold); /* 600 */
-  color: #f3f3f3; /* between --ink-5 (#e8e8e8) and --ink-6 (#f5f5f5), no exact match */
+  color: var(--ink-6); /* was #f3f3f3 — Wave 2.6 near-dup fold (2 units from --ink-6) */
 }
 
 .cutplane-add-btn {
@@ -800,7 +799,7 @@
 
 .cutplane-hint {
   font-size: var(--fs-xs); /* 10px */
-  color: rgba(255, 255, 255, 0.62); /* not an exact/audited-cluster match for --fg-2 (.6) */
+  color: var(--fg-2); /* was 0.62 — 0.02 from --fg-2, folds there (Wave 2.6) */
   margin-bottom: var(--sp-3); /* 8px */
   line-height: var(--lh-normal); /* 1.35 is in the documented 1.4 reading-line-height cluster */
 }
@@ -830,7 +829,7 @@
 .cutplane-selected-label {
   font-size: var(--fs-sm); /* 11px */
   font-weight: var(--fw-bold); /* 600 */
-  color: #f3f3f3; /* see .cutplane-title */
+  color: var(--ink-6); /* was #f3f3f3 — see .cutplane-title */
 }
 
 .cutplane-control-row {
@@ -897,8 +896,8 @@
   padding: var(--sp-2) var(--sp-3); /* 6px 8px, exact */
   border-radius: var(--radius); /* 8px */
   box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.02); /* long-tail, no wash token */
-  border: 1px solid rgba(255, 255, 255, 0.06); /* long-tail, no wash token */
+  background: var(--wash-0); /* was 0.02 — Wave 2.6 --wash-0 */
+  border: 1px solid var(--wash-1-5); /* was 0.06 — Wave 2.6 --wash-1-5 */
 }
 
 /* Selected-state green — a distinct accent from --ok/--wash, no matching
@@ -922,7 +921,7 @@
 .cutplane-select-btn {
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.86); /* long-tail, no wash token */
+  color: var(--fg-85); /* was 0.86 — Wave 2.6 --fg-85 */
   text-align: left;
   min-width: 0;
   padding: 0;
@@ -935,7 +934,7 @@
 
 .cutplane-summary {
   font-size: var(--fs-xs); /* 10px */
-  color: rgba(255, 255, 255, 0.62); /* same unmatched value as .cutplane-hint */
+  color: var(--fg-2); /* was 0.62 — see .cutplane-hint */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1000,17 +999,16 @@
 
 .lsc-field-label {
   font-size: var(--fs-sm);
-  /* 0.7 alpha sits between the --fg-2 (0.6) and --fg-3 (0.4)/near-dup
-     clusters in TOKENS.md with no exact or sanctioned-near-dup match —
-     kept literal rather than rounding into a token that isn't actually it. */
-  color: rgba(255, 255, 255, 0.7);
+  /* 0.7 was between --fg-2 (0.6) and --fg-3 (0.4) with no match until Wave
+     2.6 added --fg-75 for the 0.7-0.8 cluster. */
+  color: var(--fg-75);
 }
 
 /* Shared chrome for the panel's compact text/number/select fields (order
    sample count, order size select, vacuum X/Y/Z). Per-field sizing is a
    modifier class layered on top, since width/flex differ per field. */
 .lsc-compact-input {
-  background: #333; /* not on the --chrome-* ramp (nearest is --chrome-4 ~#4a4a4c) — kept literal */
+  background: var(--chrome-2-5); /* was #333 — Wave 2.6 exact */
   border: 1px solid var(--chrome-5);
   color: var(--fg-1);
   padding: 3px;
@@ -1110,7 +1108,7 @@
   justify-content: space-between;
   gap: var(--sp-3-5);
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.7); /* same off-cluster 0.7, see .lsc-field-label */
+  color: var(--fg-75); /* was 0.7 — see .lsc-field-label */
   border-top: 1px solid var(--line-1);
   padding-top: var(--sp-3);
 }
@@ -1178,7 +1176,7 @@
    condition (column index) is structural, not runtime state, so it's now a
    plain class toggle at element-creation time. */
 .lsc-transform-cell-p {
-  border-left: 1px solid rgba(255, 255, 255, 0.3); /* no matching token (line-2 is 0.2) */
+  border-left: 1px solid var(--popup-border); /* was rgba(255,255,255,0.3) — exact match to the existing token */
 }
 
 .lsc-transform-input {
@@ -1244,7 +1242,7 @@
   margin-left: var(--sp-1);
   font-size: var(--fs-lg);
   transition: transform 0.2s ease;
-  color: rgba(255, 255, 255, 0.8); /* no exact fg-* match, kept literal */
+  color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
   transform: rotate(0deg);
   cursor: pointer;
 }
@@ -1264,7 +1262,7 @@
   display: none;
   margin-top: var(--sp-2);
   padding: var(--sp-3);
-  background: rgba(255, 255, 255, 0.02); /* long-tail wash value, no token */
+  background: var(--wash-0); /* was 0.02 — Wave 2.6 --wash-0 */
   border: 1px solid var(--wash-1);
   border-radius: var(--radius-sm);
 }
@@ -1279,13 +1277,13 @@
 
 .phl-alpha-label {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.82); /* no exact fg-* match, kept literal */
+  color: var(--fg-85); /* was 0.82 — Wave 2.6 --fg-85 */
   min-width: 34px;
 }
 
 .phl-edge-alpha-label {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--fg-85); /* was 0.82 — Wave 2.6 --fg-85 */
   min-width: 58px;
 }
 
@@ -1303,16 +1301,15 @@
      pattern as .lsc-transform-input above. */
   background: rgb(var(--shadow-rgb) / 0.25);
   border: 1px solid var(--line-1);
-  /* Blue-tinted near-white; neither the fg nor the ink ramp carries a tinted
-     rung, so this stays literal. (Do not write the ramp names with a glob
-     here — the star-slash sequence closes the comment early.) */
-  color: #e7f5ff;
+  /* Blue-tinted near-white — Wave 2.6 added --info-tint, which absorbs this
+     exact literal. */
+  color: var(--info-tint);
   font-size: var(--fs-sm);
 }
 
 .phl-edge-header {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--fg-85); /* was 0.82 — Wave 2.6 --fg-85 */
   margin-top: var(--sp-3);
 }
 
@@ -1344,7 +1341,7 @@
 
 .phl-empty-list-msg {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.5); /* no exact fg-* match, kept literal */
+  color: var(--fg-50); /* was 0.5 — Wave 2.6 --fg-50 */
   padding: var(--sp-1) 0;
 }
 

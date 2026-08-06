@@ -57,6 +57,23 @@
      onto one value instead of stranding them as literals. */
   --ok-bright-rgb: 126 226 168;
 
+  /* ---- State colours, near-white tints (Wave 2.6) -------------------------
+     --warn/-ok/-info-bright above are the saturated light-on-dark tier. A
+     third, paler tier exists too: heading/link text on the About panel, the
+     comparison table and a couple of badges use near-white colours with a
+     faint state hue rather than the fully-saturated bright — visually much
+     closer to --fg-1 (white) than to -bright, but with just enough tint to
+     read as "this text belongs to that state". Two clusters found, one per
+     hue actually in use (audit: docs/styles/TOKENS.md "tinted family"):
+       blue  — #e7f5ff×3, #f5fbff×2, #cfe6ff×2, #cfeffb×2, #d7eef6×1 (10 sites)
+       green — #f5fffa×1, #e8f5e9×1 (2 sites, thin but real — the About panel
+               body text and its heading use the two different literals)
+     Kept apart from -bright by the same rule that split -bright from the
+     base state colour: a foreground tint and a saturated foreground are not
+     interchangeable just because they're the same hue. */
+  --info-tint: #e7f5ff;
+  --ok-tint: #f5fffa;
+
   /* ---- State colours, bare channel triples (Wave 2.5) --------------------
      --danger/--warn/--ok/--info above stay exactly as they were — other
      stylesheets already reference them at their one fixed alpha. But real
@@ -91,7 +108,27 @@
   /* ---- Foregrounds & lines (greys the 545 colour literals in styles/*.css
      actually cluster into — see styles/TOKENS.md for the audit) ---------- */
   --fg-1: #ffffff;                   /* primary text; same value as --panel-fg */
+  /* ---- Foreground mid-rungs (Wave 2.6) ------------------------------------
+     Wave 1 sampled --fg-1/-2/-3 from styles.css's own idiom and happened to
+     land on the two ends of the ramp (1.0, then a 0.6/0.4 pair) — every
+     smaller panel's text alpha in between was still a literal. Re-run of the
+     css_guard audit found two dense clusters sitting inside the 1.0–0.6 gap,
+     plus one inside the 0.6–0.4 gap; each is tight enough (≤0.05 spread from
+     its rung) to be one real value, not three:
+       --fg-85 (0.82–0.96, 25 sites: .96×1 .92×2 .9×5 .88×4 .86×1 .85×5 .82×7)
+       --fg-75 (0.7–0.8,   32 sites: .8×13 .78×2 .75×4 .72×2 .7×11)
+       --fg-50 (0.5 only,  13 sites — .62×2 is 0.02 from --fg-2 and folds
+                there instead of getting its own rung)
+     Named by literal alpha×100, not another tier of ordinal suffixes,
+     because there isn't a clean "how many tiers" story the way --fg-1/-2/-3
+     told one — three unrelated panels each picked their own near-white and
+     these are just where the picks actually landed. The number itself keeps
+     brighter-vs-dimmer obvious next to --fg-1(100)/--fg-2(60)/--fg-3(40)
+     without renaming anything that already ships. */
+  --fg-85: rgba(255, 255, 255, 0.85);
+  --fg-75: rgba(255, 255, 255, 0.75);
   --fg-2: rgba(255, 255, 255, 0.6);  /* secondary/de-emphasised text */
+  --fg-50: rgba(255, 255, 255, 0.5); /* between --fg-2 and --fg-3 — see above */
   --fg-3: rgba(255, 255, 255, 0.4);  /* dim/disabled text */
   --line-1: rgba(255, 255, 255, 0.1); /* hairline border/divider; same value as --panel-border */
   --line-2: rgba(255, 255, 255, 0.2); /* stronger border/divider */
@@ -101,6 +138,18 @@
      token, not folded into --overlay, so a light theme can move the two
      independently the same way --overlay itself must stay apart from the
      shadow tokens below. */
+  /* ---- Scrim mid-rungs (Wave 2.6) -----------------------------------------
+     --overlay (0.5) was Wave 1's single representative of a family that
+     actually spans 0.15-0.9 (TOKENS.md flagged this and deferred it). The
+     re-audit found real mass at both ends beyond what "one scrim" covers:
+       --overlay-20 (0.2×3)             — light backdrop / subtle dim
+       --overlay-80 (0.8×4, 0.85×1, 0.9×2 = 7) — near-opaque modal backdrop
+     0.55×6 is 0.05 from --overlay and folds there rather than getting a
+     rung of its own; 0.6/0.65/0.7 (1 site each) are too sparse to cluster —
+     still a genuine spread with no dominant tier between 0.2 and 0.8, same
+     conclusion TOKENS.md already reached for this family. */
+  --overlay-20: rgba(0, 0, 0, 0.2);
+  --overlay-80: rgba(0, 0, 0, 0.8);
 
   /* ---- Opaque grey ramps (Wave 2.5) ---------------------------------------
      styles.css's white-alpha idiom (--fg-*/--line-*/--overlay above) covers
@@ -114,6 +163,13 @@
      and the near-duplicates each rung absorbs. */
   --chrome-1: rgba(25, 25, 25, 0.8);  /* darkest widget bg (near-dupes: #161618, rgba(20,20,20,.85/.9)) */
   --chrome-2: #2c2c2e;                /* widget bg (near-dupe: #303030) */
+  --chrome-2-5: #333;                 /* Wave 2.6: 15 sites (13 backgrounds, 2 borders) — the single
+     biggest opaque-grey miss in the whole audit, and it sits exactly 7
+     units from --chrome-2 (44) and 7 from --chrome-3 (58): no nearer
+     neighbour to snap to, same shape as the --sp-3-5 gap. #111×2 and
+     #222×2 sit further down this same run but are too thin (2 sites each,
+     no shared selector) to earn their own rung — fold toward --chrome-1
+     at adoption. */
   --chrome-3: #3a3a3c;                /* widget bg/border (near-dupe: #3a3a3a) */
   --chrome-4: #4a4a4c;                /* hover border / lighter widget bg (near-dupes: #454547, #444) */
   --chrome-5: #555;                   /* mid-grey border/bg (near-dupe: #5a5a5a) */
@@ -145,7 +201,19 @@
      audit. Four alphas actually dominate (counts from docs/styles/*.css):
      0.08×20, 0.15×16, 0.05×14, 0.12×6. The rest of the 0.02-0.16 range is
      one-off long tail, not a real cluster — not given rungs of their own. */
+  /* Wave 2.6 re-audit: the "one-off long tail" above turned out to have two
+     real clusters in it once every panel's un-tokenised fill was counted,
+     not just the ones already near an existing rung:
+       --wash-0   (0.02×6, .025×4, .03×7, .04×6, .045×1 = 24) — fainter than
+                  --wash-1 itself; .03 is the mode and centres the spread.
+       --wash-1-5 (0.06×13, 0.07×4 = 17) — sits between --wash-1 (.05) and
+                  --wash-2 (.08), same naming pattern as --sp-3-5.
+     0.09/0.10 (1 site each) fold toward --wash-2; 0.14 folds toward
+     --wash-4; 0.16×2 is close enough to --wash-4 (.15) to fold up rather
+     than mint a fifth named rung for two sites. */
+  --wash-0: rgba(255, 255, 255, 0.03);
   --wash-1: rgba(255, 255, 255, 0.05); /* subtle fill (backgrounds, faint borders) */
+  --wash-1-5: rgba(255, 255, 255, 0.06);
   --wash-2: rgba(255, 255, 255, 0.08); /* the dominant card/tile background + hover tint */
   --wash-3: rgba(255, 255, 255, 0.12); /* stronger hover/active fill */
   --wash-4: rgba(255, 255, 255, 0.15); /* border tier between --line-1 (.1) and --line-2 (.2); mostly used on `border`, not fills — kept in the wash scale rather than the line family because it repeats the exact 0.02-0.16 white-alpha idiom this scale exists for, not the line pair's border-specific naming */

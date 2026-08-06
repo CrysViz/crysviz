@@ -342,9 +342,9 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: var(--popup-bg, #111);
-  color: var(--panel-fg, #fff);
-  border: 1px solid var(--popup-border, #333);
+  background: var(--popup-bg, var(--chrome-1));
+  color: var(--panel-fg, var(--fg-1));
+  border: 1px solid var(--popup-border, var(--chrome-2-5));
   border-radius: var(--radius);
   /* Matches POPUP_Z's role (a floating panel/popover, above the dock's
      1200 floating windows) but kept as the exact original literal rather
@@ -403,7 +403,7 @@
 }
 
 .cv-cus-inline-input {
-  background: #333; /* no token — see forcePanel.css's .cv-scene-select for the same literal/reasoning */
+  background: var(--chrome-2-5);
   border: 1px solid var(--chrome-5);
   border-radius: var(--radius-3);
   color: var(--fg-1);
@@ -423,7 +423,7 @@
 }
 
 .cv-cus-json-empty {
-  color: rgba(255, 255, 255, 0.5); /* no token — --wash-* tops out at 0.16 */
+  color: var(--fg-50);
   text-align: center;
   padding: var(--sp-3-5) 0;
 }
@@ -438,7 +438,7 @@
 }
 
 .cv-cus-json-row:hover {
-  background: rgba(255, 255, 255, 0.07); /* no token — between --wash-1 (.05) and --wash-2 (.08) */
+  background: var(--wash-1-5);
 }
 
 .cv-cus-hint {
@@ -541,7 +541,7 @@
   width: 44px;
   font-size: var(--fs-base);
   text-align: center;
-  background: #222; /* no token — between --chrome-1 and --chrome-2 */
+  background: var(--chrome-1); /* Wave 2.6: #111/#222 fold toward --chrome-1, no closer rung */
   border: 1px solid var(--chrome-5);
   color: var(--fg-1);
   border-radius: var(--radius-3);
@@ -550,7 +550,7 @@
 
 .cv-cus-radius-preview-unit {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.75); /* no token */
+  color: var(--fg-75);
 }
 
 .radius-preview-name {
@@ -609,7 +609,7 @@
 
 .cv-cus-chip-dash {
   font-size: var(--fs-lg); /* was a literal 15px — TOKENS.md's audit explicitly names 15px as part of the fs-lg cluster */
-  color: rgba(255, 255, 255, 0.7); /* no token */
+  color: var(--fg-75);
 }
 
 .cv-cus-bond-hint {
@@ -625,13 +625,13 @@
   align-items: center;
   gap: var(--sp-2); /* was a literal 5px — equidistant between --sp-1/--sp-2, snapped up */
   font-size: var(--fs-xs);
-  color: rgba(255, 255, 255, 0.85); /* no token */
+  color: var(--fg-85);
   text-shadow: 0 1px 2px rgb(var(--shadow-rgb) / 0.8);
 }
 
 .cv-cus-bond-distance-input {
   width: 42px;
-  background: #333; /* no token, see .cv-cus-inline-input above */
+  background: var(--chrome-2-5);
   border: 1px solid var(--chrome-5);
   color: var(--fg-1);
   padding: 2px;
@@ -656,7 +656,7 @@
 
 .cv-cus-override-list-heading {
   font-size: var(--fs-base);
-  color: rgba(255, 255, 255, 0.7); /* no token — close to but not --fg-2's documented 0.68 near-duplicate */
+  color: var(--fg-75); /* Wave 2.6: 0.7 is in the --fg-75 cluster */
   margin-bottom: var(--sp-2);
 }
 
@@ -696,7 +696,7 @@
 
 .cv-cus-section-count {
   font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.75); /* no token */
+  color: var(--fg-75);
   margin-bottom: var(--sp-3);
 }
 
