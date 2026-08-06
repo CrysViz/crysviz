@@ -62,7 +62,7 @@
 .toggle_slider {
   position: absolute;
   inset: 0;
-  background-color: var(--ink-3);
+  background-color: var(--switch-off);
   border-radius: var(--radius-24);
   transition: background-color 0.25s;
 }
@@ -75,7 +75,7 @@
   height: 18px;
   left: 3px;
   top: 3px;
-  background-color: var(--fg-1);
+  background-color: var(--switch-knob);
   border-radius: 50%;
   transition: transform 0.25s;
 }
@@ -100,7 +100,7 @@
   height: 18px;
   left: 3px;
   top: 3px;
-  background-color: var(--fg-1);
+  background-color: var(--switch-knob);
   border-radius: 50%;
   transition: transform 0.25s;
 }
@@ -200,7 +200,7 @@
   width: 16px;
   left: var(--sp-1);
   bottom: var(--sp-1);
-  background-color: var(--fg-1);
+  background-color: var(--switch-knob);
   transition: .4s;
   border-radius: 50%;
 }

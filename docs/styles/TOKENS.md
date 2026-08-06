@@ -858,3 +858,51 @@ the dead branch deleted rather than tokenised, on the same reasoning 2.6
 applied to `var(--muted-fg, #9aa0a6)`. `styles_file_browswer.css`'s
 `rgba(255, 255, 255, 0.0)` border became `transparent`: it was never a colour
 choice, just a fully transparent one spelled the long way.
+
+### Three more, found by building the light themes
+
+Not part of the 42 above and not literal-elimination — these turned up while
+making the first light-panelled themes actually work. `css_guard` was clean
+across all three sites, which is the point: two of them were already a
+`var()`, just pointing at the wrong ramp, and a token aimed at the wrong
+family is indistinguishable from a correct one to a scan that only looks for
+hex. The third was a hardcoded declaration with no variable at all, so no
+theme could reach it however it was written. Reachability, again, rather than
+tidiness.
+
+| token | value | role | call sites |
+|---|---|---|---|
+| `--icon-filter` | `invert(1)` | inversion applied to the theme-picker glyphs; light palettes set it to `none` | `controlPanel.css` `.theme-icon` |
+| `--switch-knob` | `#ffffff` | the toggle knob — contrasts with its track, not with the panel | `toggle_styles.css` `.toggle_slider::before`, `.toggle_slider_dual::before`, `.toggle_slider:before` |
+| `--switch-off` | `#cccccc` | the toggle's OFF track fill | `toggle_styles.css` `.toggle_slider` |
+
+**`--icon-filter`** was a hardcoded `filter: invert(1)` on `.theme-icon`. The
+picker's glyphs are dark SVGs, inverted so they read on a dark panel; a light
+theme has nothing to override, because there was no property to override — the
+inversion lived in a component stylesheet, not the palette. Naming it is the
+whole fix; a light palette turns it off.
+
+**`--switch-knob`** was `--fg-1`. That is white in the default theme and looks
+right, which is why it survived every earlier pass — but it was right by
+coincidence. The knob's job is to stand out against the *track* it slides on,
+and a track is a control fill, not a panel. Following the text ramp meant a
+light theme's dark body text became a black dot rolling along a pale track.
+
+**`--switch-off`** was `--ink-3`, and was its only remaining caller: a
+text-ramp token doing a control fill's job. Reversing the ink ramp for a light
+panel — which a light theme must do, that's what the ramp is for — dropped a
+heavy dark pill where a pale OFF track belongs. `#cccccc` is `#ccc` spelled
+long, so the default palette renders identically. `--ink-3` now has no call
+sites; it stays defined, because it's a rung of the ink ramp and the ramp is
+the vocabulary, not the usage count.
+
+**`--overlay-80` misused as a surface** — not a new token, but the same class
+of bug and fixed in the same pass. `#status`, `#axesLegend` and
+`#mobileMenuToggle` (base, plus its `:hover`/`:active` rule — 4 declarations in
+`styles.css`) took their `background` from `--overlay-80`. That token is a
+scrim: it exists to darken what's behind it, and every other caller uses it
+that way. These three are floating surfaces sitting over the scene, so on a
+light palette — where the scrim stays dark by definition — they rendered as
+black boxes. They're `--float-panel-bg` now, which is what the other floating
+scene widgets already used. The default appearance shifts a hair, from
+`rgba(0, 0, 0, 0.8)` to `rgba(26, 26, 26, 0.8)`.

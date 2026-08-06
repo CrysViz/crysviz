@@ -400,6 +400,11 @@
   --icon-measure-restore:  url('../../data/icons/restore-icon.svg');
   /* Delete uses a ❌ glyph (like the floating panel), not an icon image. */
 
+  /* The theme-picker glyphs are dark-on-transparent SVGs, inverted to sit on a
+     dark panel. This was a hardcoded filter:invert(1) in controlPanel.css,
+     which no light theme could reach — a light palette sets this to `none`. */
+  --icon-filter: invert(1);
+
   /* ==========================================================================
      Hue families that used to sit as literals in docs/styles/
      --------------------------------------------------------------------------
@@ -429,6 +434,13 @@
      them; --switch-on-alt is the blue one in toggle_styles.css. */
   --switch-on: #4caf50;
   --switch-on-alt: #2196f3;
+  /* The toggle knob contrasts with its TRACK, not with the panel, so it does
+     not follow --fg-1 the way body text does. It was --fg-1, which is white
+     here and correct — and a black dot on a light-panelled theme. */
+  --switch-knob: #ffffff;
+  /* The OFF track. Was --ink-3, its only user — a text-ramp token doing a
+     control fill's job, which put a heavy dark pill on a light panel. */
+  --switch-off: #cccccc;
   --seg-active-bg: #0d8a36;         /* active segmented-control button */
   --btn-glow-rgb: 54 143 110;       /* button hover glow */
   --on-accent: #0c1f17;             /* text sitting ON an accent fill */

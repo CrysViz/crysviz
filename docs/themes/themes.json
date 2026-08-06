@@ -5,7 +5,10 @@
     {
       "id": "default",
       "name": "Default",
-      "auto": ["twilight", "dark"],
+      "auto": [
+        "twilight",
+        "dark"
+      ],
       "modes": {
         "light": null,
         "twilight": "twilight/theme.css",
@@ -15,16 +18,24 @@
     {
       "id": "fluorite",
       "name": "Fluorite",
-      "auto": ["light", "dark"],
+      "auto": [
+        "light",
+        "dark"
+      ],
       "modes": {
+        "light": "fluorite/light.css",
         "dark": "fluorite/dark.css"
       }
     },
     {
       "id": "solarized",
       "name": "Solarized",
-      "auto": ["light", "dark"],
+      "auto": [
+        "light",
+        "dark"
+      ],
       "modes": {
+        "light": "solarized/light.css",
         "dark": "solarized/dark.css"
       }
     }

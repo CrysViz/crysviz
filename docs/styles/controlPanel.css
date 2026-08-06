@@ -102,7 +102,7 @@ font-size: var(--fs-xl);
 .theme-icon {
   width: 18px;
   height: 18px;
-  filter: invert(1);
+  filter: var(--icon-filter);
 }
 
 /* Small dropdown arrow that opens the full theme list (ui/ThemeManager.js) */

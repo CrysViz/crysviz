@@ -1,0 +1,196 @@
+/* Fluorite — light. Warm cream panels, sage and dusty-lavender accents.
+   Layered on top of default/theme.css.
+
+   This is the first genuinely light-panelled theme in the app, so it redefines
+   far more than the dark palettes do. Everything the base states as
+   white-alpha (the fg ramp, the washes, the lines) is invisible or inverted on
+   a cream surface, and the two opaque ramps run the wrong way: --chrome-* goes
+   near-black to mid-grey, --ink-* goes mid-grey to near-white. Both are
+   restated running the other direction, so the *tier* each token names still
+   means what its name says — --chrome-1 is still the most recessed widget fill
+   and --ink-6 is still the highest-contrast text. Component CSS keeps working
+   without knowing the panel flipped. */
+:root {
+  /* ---- Surfaces --------------------------------------------------------- */
+  --surface-bg: #f4efe6;
+  --panel-bg: #fffdf9;
+  --group-bg: #f7f1e6;
+  --menu-bg: #fffdf9;
+  --popup-bg: #fffdf9;
+  --input-bg: #fbf7ef;
+  --textarea-bg: #fbf7ef;
+  --float-panel-bg: rgba(255, 253, 249, 0.92);
+  --popup-bg-deep: #fffdf9;
+
+  /* ---- Text --------------------------------------------------------------
+     The base ramp is white at descending alpha. Flipped to the palette's warm
+     ink at the same tiers — --fg-1 stays "the strongest text", it just is not
+     white any more. */
+  --panel-fg: #5c564b;
+  --muted-fg: #938c7e;
+  --fg-1: #5c564b;
+  --fg-85: rgba(92, 86, 75, 0.9);
+  --fg-75: rgba(92, 86, 75, 0.8);
+  --fg-2: rgba(92, 86, 75, 0.68);
+  --fg-50: rgba(92, 86, 75, 0.55);
+  --fg-3: rgba(92, 86, 75, 0.42);
+
+  /* ---- Washes ------------------------------------------------------------
+     White-on-white is a no-op, so these become ink-alpha. Alphas are lower
+     than the base's: the same fraction of black on cream reads much heavier
+     than that fraction of white on charcoal. */
+  --wash-0: rgba(92, 86, 75, 0.02);
+  --wash-1: rgba(92, 86, 75, 0.035);
+  --wash-1-5: rgba(92, 86, 75, 0.045);
+  --wash-2: rgba(92, 86, 75, 0.06);
+  --wash-3: rgba(92, 86, 75, 0.09);
+  --wash-4: rgba(92, 86, 75, 0.12);
+
+  /* ---- Lines -------------------------------------------------------------- */
+  --line-1: #e7dfcf;
+  --line-2: #dad0bc;
+  --line-3: rgba(92, 86, 75, 0.35);
+  --line-dark: rgba(92, 86, 75, 0.15);
+  --line-grey: #b9b0a0;
+  --panel-border: #e7dfcf;
+  --popup-border: #dad0bc;
+
+  /* ---- Opaque ramps, both reversed ---------------------------------------
+     --chrome-* is widget furniture: 1 = most recessed, 6 = lightest border in
+     the base. On cream that inverts to 1 = the faintest inset and 6 = the
+     strongest edge, so the ordering the component CSS relies on survives. */
+  --chrome-1: rgba(92, 86, 75, 0.05);
+  --chrome-1-9: rgba(247, 241, 230, 0.95);
+  --chrome-2: #f2ece1;
+  --chrome-2-5: #ebe4d7;
+  --chrome-3: #e2dacb;
+  --chrome-4: #d3c9b6;
+  --chrome-5: #b9b0a0;
+  --chrome-6: #97907f;
+  --chrome-tint-1: rgba(240, 236, 246, 0.96);
+  --chrome-tint-2: rgba(238, 234, 246, 0.9);
+  --chrome-tint-3: rgba(228, 222, 240, 0.98);
+
+  /* --ink-* is a text ramp: 1 = dimmest, 6 = strongest. Same direction, warm
+     ink instead of off-white. */
+  --ink-1: #a49c8d;
+  --ink-2: #938c7e;
+  --ink-3: #7d766a;
+  --ink-4: #6b6459;
+  --ink-5: #5c564b;
+  --ink-6: #453f37;
+
+  /* ---- Scrims and shadows --------------------------------------------------
+     Black shadows still read correctly on a light panel, but at the base's
+     alphas they look like soot. */
+  --overlay: rgba(60, 54, 45, 0.35);
+  --overlay-20: rgba(60, 54, 45, 0.12);
+  --overlay-60: rgba(60, 54, 45, 0.45);
+  --overlay-70: rgba(60, 54, 45, 0.55);
+  --overlay-80: rgba(60, 54, 45, 0.65);
+  --shadow-sm: 0 2px 6px rgba(92, 86, 75, 0.1);
+  --shadow-md: 0 4px 12px rgba(92, 86, 75, 0.14);
+  --shadow-lg: 0 4px 16px rgba(92, 86, 75, 0.18);
+  --shadow-glow: 0 0 4px 2px rgba(92, 86, 75, 0.14);
+  --shadow-rgb: 92 86 75;
+
+  /* ---- Icons ---------------------------------------------------------------
+     The picker glyphs are dark-on-transparent; on cream they need no inversion. */
+  --icon-filter: none;
+
+  /* ---- Scene (both mirrored into three.js by ThemeManager) ------------------ */
+  --scene-bg: #fbf7ef;
+  --lattice-color: #d6cdbb;
+  --dot-border: rgba(92, 86, 75, 0.8);
+
+  /* ---- Destructive ---------------------------------------------------------
+     On a light panel the tiers swap which one is legible: the pale terracotta
+     becomes the fill and the deep one carries the text. */
+  --danger: #f2bba7;
+  --danger-rgb: 242 187 167;
+  --danger-bright: #8e4a36;
+  --danger-bright-rgb: 142 74 54;
+  --danger-strong: #a8492f;
+  --danger-fill: rgba(200, 106, 80, 0.92);
+
+  /* ---- Caution -------------------------------------------------------------- */
+  --warn: #c98a2e;
+  --warn-bright: #8a5c12;
+  --warn-soft: rgba(180, 118, 48, 0.9);
+  --warn-banner-bg: rgba(250, 238, 214, 0.92);
+  --best-row-rgb: 190 140 20;
+
+  /* ---- Positive / switches ---------------------------------------------------- */
+  --ok: #4e6a46;
+  --ok-rgb: 78 106 70;
+  --ok-bright: #3d5537;
+  --ok-bright-rgb: 61 85 55;
+  --ok-tint: #eef5ec;
+  --switch-on: #7ba473;
+  --switch-knob: #fffdf9;
+  --switch-off: #ded6c6;
+  --switch-on-alt: #9a8bbc;
+  --seg-active-bg: #7ba473;
+  --btn-glow-rgb: 123 164 115;
+  --on-accent: #ffffff;
+  --thumb-border: #4e6a46;
+
+  /* ---- Informational / selection ------------------------------------------------ */
+  --info: #3c5e7e;
+  --info-rgb: 60 94 126;
+  --info-bright: #3c5e7e;
+  --info-tint: #eef4fa;
+  --link-hover: #2f6fa8;
+  --row-selected-bg: rgba(196, 229, 212, 0.75);
+  --locked-bg: rgba(219, 209, 238, 0.5);
+  --locked-badge-bg: rgba(219, 209, 238, 0.7);
+  --locked-grad-1: #a99bcc;
+  --locked-grad-2: #8e7fb0;
+  --confirm-bg: #4a7ba5;
+  --confirm-border: #3c5e7e;
+
+  /* ---- Active tool ---------------------------------------------------------------- */
+  --tool-active: #3c5e7e;
+  --tool-active-rgb: 60 94 126;
+
+  /* ---- Neutrals ------------------------------------------------------------------- */
+  --track-bg: rgba(92, 86, 75, 0.12);
+  --track-bg-strong: rgba(92, 86, 75, 0.28);
+  /* The in-scene measurement label sits on the 3D canvas, not a panel, and the
+     scene is cream here — so it keeps a light backing with dark ink. */
+  --label-bg: rgba(255, 253, 249, 0.85);
+  --label-ink: #453f37;
+
+  /* ---- The About modal --------------------------------------------------------------- */
+  --about-bg: #fffdf9;
+  --about-border: rgba(123, 164, 115, 0.5);
+  --about-code-bg: rgba(92, 86, 75, 0.06);
+  --about-close-hover: #4e6a46;
+
+  /* ---- Lattice axis legend ------------------------------------------------------------
+     Darkened from the dark palette's values so they hold on a cream ground
+     while still tracking the 3D gizmo. */
+  --axis-a: #c06a44;
+  --axis-b: #4e6a46;
+  --axis-c: #4a5da8;
+}
+
+/* ---- Accents ----------------------------------------------------------------
+   Light fills need dark text on them, which is the inverse of the base's
+   assumption. Each backend gets a pale fill plus a deep companion for the
+   text and border, so the standard-vs-symmetry distinction survives. */
+.theme-standard {
+  --bg-color: rgba(186, 214, 175, 0.55);
+  --highlight-color: rgba(186, 214, 175, 1.0);
+  --accent-color: rgba(186, 214, 175, 0.85);
+  --hover-color: rgba(78, 106, 70, 0.14);
+  --border-color: rgba(78, 106, 70, 0.35);
+}
+
+.theme-symmetry {
+  --bg-color: rgba(219, 209, 238, 0.55);
+  --highlight-color: rgba(219, 209, 238, 1.0);
+  --accent-color: rgba(219, 209, 238, 0.85);
+  --hover-color: rgba(95, 81, 133, 0.14);
+  --border-color: rgba(95, 81, 133, 0.35);
+}

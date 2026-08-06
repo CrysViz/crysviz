@@ -1836,7 +1836,7 @@ justify-content: center;
   position: fixed;
   top: 20px;
   right: 20px;
-  background: var(--overlay-80);
+  background: var(--float-panel-bg);
   color: var(--fg-1);
   padding: var(--sp-3-5) var(--sp-5);
   border-radius: 20px;
@@ -2017,7 +2017,7 @@ cursor: grab;
 
 #axesLegend{
 position: fixed; left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px));
-background: var(--overlay-80);
+background: var(--float-panel-bg);
 border: 1px solid var(--line-2);
 border-radius: var(--radius);
 padding: var(--sp-2) var(--sp-3);
@@ -2526,7 +2526,7 @@ body > #structureInfoContent {
   top: max(12px, env(safe-area-inset-top));
   left: max(12px, env(safe-area-inset-left));
   z-index: var(--z-chrome);
-  background: var(--overlay-80);
+  background: var(--float-panel-bg);
   border: 1px solid var(--wash-4);
   border-radius: var(--radius-sm);
   padding: 0;
@@ -2545,7 +2545,7 @@ body > #structureInfoContent {
 
 #mobileMenuToggle:hover,
 #mobileMenuToggle:active {
-  background: var(--overlay-80);
+  background: var(--float-panel-bg);
   transform: scale(0.95);
 }
 

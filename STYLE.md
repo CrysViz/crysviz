@@ -114,14 +114,34 @@ Optional: drop icons in `docs/themes/<id>/icons/` and override the
   a token that the dark mode overrides. `ThemeManager` stamps the effective
   mode on `<html data-theme>` and the palette on `<html data-palette>`; that
   pair is what everything else reads (see `AddonAPI.getTheme`).
-- **The UI panels are dark in every theme today.** `dark/` and `twilight/` only
-  override scene colours. A genuinely light-panelled theme is untested — it
-  will need the fg ramp (white-alpha) and the chrome and ink opaque ramps
-  redefined, plus the washes, which are white-alpha and become no-ops on a
-  light surface. The 73 literals that used to be holes are tokens now, so the
-  work is bounded by the vocabulary rather than by a hunt through `docs/styles/`.
-  Two things still are not: `.theme-icon { filter: invert(1) }` in
-  `controlPanel.css`, and the icon SVGs with `fill="#ffffff"` baked in.
+- **Light panels work.** `fluorite/light.css` and `solarized/light.css` are the
+  reference; the Default palette's own modes are still dark-panelled, and
+  `dark/` and `twilight/` only override scene colours. What a light palette has
+  to redefine, beyond surfaces and scene:
+
+  - the **fg ramp** and the **washes** — both white-alpha, so both are
+    invisible or inverted on a light surface. Use *lower* alphas than the base:
+    a given fraction of ink on cream reads much heavier than the same fraction
+    of white on charcoal.
+  - the **chrome** and **ink** opaque ramps, restated running the other
+    direction so each tier still means what its name says — `--chrome-1` is
+    still the most recessed fill, `--ink-6` still the highest-contrast text.
+    Keep the ordering and component CSS needs no changes.
+  - **`--icon-filter`** to `none`. The picker glyphs are dark SVGs inverted for
+    a dark panel.
+  - the **accent classes**, and here is the trap: several rules paint `--fg-1`
+    on top of an accent fill. On a dark theme that is white on a saturated
+    fill and fine. On a light theme `--fg-1` is ink, so a saturated
+    `--accent-color` or `--highlight-color` makes the selected file row
+    unreadable. Keep light accents to a tint, or the text disappears.
+
+  Three things had to stop being dark-assuming before any of this worked, and
+  they are the shape of bug to look for: `filter: invert(1)` hardcoded rather
+  than tokenised; `--overlay-80`, a *scrim*, used as the background of
+  `#status`, `#axesLegend` and `#mobileMenuToggle`, which are floating
+  *surfaces*; and the switch track and knob painted from `--ink-3` and
+  `--fg-1`, which contrast with the panel when they need to contrast with each
+  other. All three now have their own tokens.
 
 ## The token vocabulary
 
