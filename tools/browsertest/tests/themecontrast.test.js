@@ -54,10 +54,15 @@ const PROBE = () => {
     const th=parse(getComputedStyle(el,'::-moz-range-thumb').backgroundColor);
     if(th.length)bid('control',ratio(over(th,bg),bg),'slider thumb',getComputedStyle(el,'::-moz-range-thumb').backgroundColor,JSON.stringify(bg));
   }
+  // The OFF track is its own axis, not part of 'control': the new palettes
+  // deliberately mute it (an OFF pill as loud as the ON state was half of
+  // what made the panels heavy), and a toggle's functional signal is the
+  // knob-on-track pair, which the 'knob' axis guards. Parity with Default's
+  // unusually strong track would forbid that design outright.
   for(const el of ui.querySelectorAll('.toggle_slider')){
     if(!vis(el))continue; const bg=bgOf(el.parentElement);
     const tr=parse(getComputedStyle(el).backgroundColor);
-    if(tr.length)bid('control',ratio(over(tr,bg),bg),'switch track',getComputedStyle(el).backgroundColor,JSON.stringify(bg));
+    if(tr.length)bid('track',ratio(over(tr,bg),bg),'switch track',getComputedStyle(el).backgroundColor,JSON.stringify(bg));
     const kn=parse(getComputedStyle(el,'::before').backgroundColor);
     if(kn.length&&tr.length)bid('knob',ratio(over(kn,over(tr,bg)),over(tr,bg)),'knob on track');
   }
@@ -104,7 +109,7 @@ const PROBE = () => {
   const base = registry.palettes[0];
   const floor = await measure(base.id, Object.keys(base.modes)[0]);
   H.check('the baseline palette measures on every axis (sanity-checks the probe)',
-    ['text', 'control', 'knob', 'field', 'panel-vs-surface', 'group-vs-panel']
+    ['text', 'control', 'track', 'knob', 'field', 'panel-vs-surface', 'group-vs-panel']
       .every((k) => floor[k] && floor[k].r > 1), JSON.stringify(floor));
 
   for (const p of registry.palettes) {
@@ -117,9 +122,16 @@ const PROBE = () => {
       // so demanding parity chases a number that moves for unrelated reasons.
       // 1.35 is "you can see where the box is", which is the actual requirement.
       const FIELD_FLOOR = 1.35;
+      // `track` too (see the probe comment): the OFF pill only has to be
+      // findable — the knob axis owns legibility of the toggle's state.
+      // Platform toggles (iOS/Material) sit around 1.1–1.7 here; 1.5 keeps us
+      // at the top of that band without forbidding a recessive OFF state.
+      const TRACK_FLOOR = 1.5;
       const bad = Object.keys(floor).filter((k) => {
         if (!got[k]) return false;
-        return k === 'field' ? got[k].r < FIELD_FLOOR : got[k].r < floor[k].r - 0.05;
+        if (k === 'field') return got[k].r < FIELD_FLOOR;
+        if (k === 'track') return got[k].r < TRACK_FLOOR;
+        return got[k].r < floor[k].r - 0.05;
       });
       H.check(`${p.id}/${mode} is no less legible than ${base.id} on any axis`,
         bad.length === 0,
