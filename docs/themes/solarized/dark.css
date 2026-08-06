@@ -1,0 +1,127 @@
+/* Solarized — dark. Ethan Schoonover's canonical palette.
+   Layered on top of default/theme.css; only redefines what differs.
+
+   Solarized's idiom is not the same as a normal dark theme: backgrounds are
+   the base tones (base03/base02) and the accents colour text, borders and thin
+   fills. Solid accent fills are reserved for the primary button and for
+   selected/active states. Recolouring large pale fills with these hexes 1:1
+   goes muddy, which is why the wash and chrome ramps are left alone. */
+:root {
+  /* ---- Surfaces ---------------------------------------------------------
+     base03 is the app ground, base02 the raised panel. */
+  --surface-bg: #002b36;
+  --panel-bg: #073642;
+  --group-bg: #00252e;
+  --menu-bg: #073642;
+  --popup-bg: #073642;
+  --input-bg: #00252e;
+  --textarea-bg: #00252e;
+  --float-panel-bg: rgba(7, 54, 66, 0.9);
+  --popup-bg-deep: #001f27;
+
+  /* ---- Text -------------------------------------------------------------
+     base0 is body text, base1 emphasis, base01 muted. The ramp is restated in
+     base0 at the base alphas rather than white, which is what keeps Solarized
+     from reading as "teal with white text on it". */
+  --panel-fg: #839496;
+  --muted-fg: #93a1a1;
+  --fg-1: #93a1a1;
+  --fg-85: rgba(131, 148, 150, 0.95);
+  --fg-75: rgba(131, 148, 150, 0.85);
+  --fg-2: rgba(131, 148, 150, 0.7);
+  --fg-50: rgba(131, 148, 150, 0.6);
+  --fg-3: rgba(88, 110, 117, 0.9);
+
+  /* ---- Lines ------------------------------------------------------------- */
+  --line-1: #073642;
+  --line-2: #586e75;
+  --line-3: rgba(147, 161, 161, 0.5);
+  --panel-border: #073642;
+  --popup-border: #586e75;
+
+  /* ---- Scene (both mirrored into three.js by ThemeManager) ---------------- */
+  --scene-bg: #002b36;
+  --lattice-color: #586e75;
+  --dot-border: rgba(147, 161, 161, 0.8);
+
+  /* ---- Destructive ------------------------------------------------------- */
+  --danger: #dc322f;
+  --danger-rgb: 220 50 47;
+  --danger-bright: #e8534f;
+  --danger-bright-rgb: 232 83 79;
+  --danger-strong: #dc322f;
+  --danger-fill: rgba(220, 50, 47, 0.92);
+
+  /* ---- Caution ----------------------------------------------------------- */
+  --warn: #b58900;
+  --warn-rgb: 181 137 0;
+  --warn-bright: #cb9c1a;
+  --warn-soft: rgba(203, 75, 22, 0.9);
+  --warn-banner-bg: rgba(30, 24, 0, 0.85);
+  --best-row-rgb: 181 137 0;
+
+  /* ---- Positive / switches ----------------------------------------------- */
+  --ok: #859900;
+  --ok-rgb: 133 153 0;
+  --ok-bright: #a3b81a;
+  --ok-bright-rgb: 163 184 26;
+  --switch-on: #859900;
+  --switch-on-alt: #268bd2;
+  --seg-active-bg: #6b7c00;
+  --btn-glow-rgb: 42 161 152;
+  --thumb-border: #93a1a1;
+  /* On-fill text: base03 under the green/cyan/yellow/orange accents. */
+  --on-accent: #002b36;
+
+  /* ---- Informational / selection ------------------------------------------
+     Cyan is the selection hue, blue the link hue. */
+  --info: #2aa198;
+  --info-rgb: 42 161 152;
+  --info-bright: #4fc3bc;
+  --link-hover: #268bd2;
+  --row-selected-bg: rgba(42, 161, 152, 0.18);
+  --locked-bg: rgba(108, 113, 196, 0.22);
+  --locked-badge-bg: rgba(108, 113, 196, 0.35);
+  --locked-grad-1: #4a4fa8;
+  --locked-grad-2: #6c71c4;
+  --confirm-bg: #268bd2;
+  --confirm-border: #1a6aa3;
+
+  /* ---- Active tool -------------------------------------------------------- */
+  --tool-active: #859900;
+  --tool-active-rgb: 133 153 0;
+
+  /* ---- The About modal ----------------------------------------------------- */
+  --about-bg: #00252e;
+  --about-border: rgba(88, 110, 117, 0.6);
+  --about-code-bg: rgba(0, 31, 39, 0.7);
+  --about-close-hover: #93a1a1;
+
+  /* ---- Lattice axis legend -------------------------------------------------
+     The three spare accents, so a/b/c stay distinguishable without leaving the
+     palette. These must keep tracking the 3D gizmo. */
+  --axis-a: #dc322f;
+  --axis-b: #859900;
+  --axis-c: #268bd2;
+}
+
+/* ---- Accents --------------------------------------------------------------
+   The base defines these on the backend classes, not :root, so a palette that
+   wants its own accents has to restate both. Standard takes blue, symmetry
+   takes violet — the canonical adjacent pair, so the two compute backends stay
+   distinguishable. */
+.theme-standard {
+  --bg-color: rgba(38, 139, 210, 0.8);
+  --highlight-color: rgba(38, 139, 210, 1.0);
+  --accent-color: rgba(38, 139, 210, 0.8);
+  --hover-color: rgba(38, 139, 210, 0.3);
+  --border-color: rgba(38, 139, 210, 0.5);
+}
+
+.theme-symmetry {
+  --bg-color: rgba(108, 113, 196, 0.8);
+  --highlight-color: rgba(108, 113, 196, 1.0);
+  --accent-color: rgba(108, 113, 196, 0.8);
+  --hover-color: rgba(108, 113, 196, 0.25);
+  --border-color: rgba(108, 113, 196, 0.5);
+}

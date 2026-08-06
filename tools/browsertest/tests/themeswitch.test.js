@@ -128,6 +128,46 @@ async function pickPalette(page, id) {
     modeState.every((m) => m.disabled === (m.id !== 'auto' && !offered.includes(m.id))),
     `${JSON.stringify(modeState)} offered=${JSON.stringify(offered)}`);
 
+  // ---- switching PALETTE repaints the chrome, not just the scene -----------
+  // The mode axis only ever moved --scene-bg; a palette has to reach the panel
+  // itself, which is the whole point of the two-axis split.
+  const second = registry.palettes[1];
+  if (second) {
+    await pickMode(page, 'dark');
+    const before = await page.evaluate(() => {
+      const cs = getComputedStyle(document.documentElement);
+      return {
+        panel: cs.getPropertyValue('--panel-bg').trim(),
+        scene: cs.getPropertyValue('--scene-bg').trim(),
+      };
+    });
+    await pickPalette(page, second.id);
+    const after = await page.evaluate(async () => {
+      const { app } = await import('./state/store.js');
+      const cs = getComputedStyle(document.documentElement);
+      return {
+        panel: cs.getPropertyValue('--panel-bg').trim(),
+        scene: cs.getPropertyValue('--scene-bg').trim(),
+        dataPalette: document.documentElement.getAttribute('data-palette'),
+        appBg: '#' + app.scene.background.getHexString(),
+        // A palette that offers no twilight must disable that button rather
+        // than leave a selection pointing at a mode it cannot render.
+        twilightDisabled: document.querySelector('.theme-btn[data-theme-option="twilight"]').disabled,
+      };
+    });
+    H.check(`switching to the ${second.id} palette repaints the PANEL, not only the scene`,
+      after.panel !== before.panel && after.panel !== '',
+      `before=${before.panel} after=${after.panel}`);
+    H.check(`switching to the ${second.id} palette also moves the scene into three.js`,
+      after.scene !== before.scene && after.appBg.toLowerCase() === after.scene.toLowerCase(),
+      JSON.stringify({ before, after }));
+    H.check('the palette is stamped on <html data-palette>',
+      after.dataPalette === second.id, JSON.stringify(after));
+    H.check('a mode the palette does not offer is disabled, not silently broken',
+      after.twilightDisabled === !Object.prototype.hasOwnProperty.call(second.modes, 'twilight'),
+      `${second.id} modes=${JSON.stringify(Object.keys(second.modes))} disabled=${after.twilightDisabled}`);
+  }
+
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

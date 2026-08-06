@@ -1,0 +1,117 @@
+/* Fluorite — dark. Warm charcoal-plum panels, sage and dusty-lavender accents.
+   Layered on top of default/theme.css; only redefines what differs.
+
+   The chrome and ink opaque ramps are deliberately left alone: they are tuned
+   for dark widget furniture and read correctly over a plum-charcoal surface.
+   The fg ramp is NOT left alone — see the note on it below. */
+:root {
+  /* ---- Surfaces --------------------------------------------------------- */
+  --surface-bg: #23212b;
+  --panel-bg: #2e2b38;
+  --group-bg: #29262f;
+  --menu-bg: #2e2b38;
+  --popup-bg: #29262f;
+  --input-bg: #23212b;
+  --textarea-bg: #23212b;
+  --float-panel-bg: #29262f;
+  --popup-bg-deep: #1d1b24;
+
+  /* ---- Text -------------------------------------------------------------
+     The base ramp is white-alpha. Over a plum surface pure white reads cool
+     and faintly blue, so the ramp is restated in the palette's cream at the
+     same alphas — identical contrast tiers, warm instead of neutral. This is
+     the one ramp Fluorite has to touch to stop looking like grey-with-a-tint. */
+  --panel-fg: #ece6dc;
+  --muted-fg: #a79fb0;
+  --fg-1: #ece6dc;
+  --fg-85: rgba(236, 230, 220, 0.85);
+  --fg-75: rgba(236, 230, 220, 0.75);
+  --fg-2: rgba(236, 230, 220, 0.6);
+  --fg-50: rgba(236, 230, 220, 0.5);
+  --fg-3: rgba(236, 230, 220, 0.4);
+
+  /* ---- Lines ------------------------------------------------------------ */
+  --line-1: #3a3745;
+  --line-2: #4a4656;
+  --line-3: rgba(236, 230, 220, 0.5);
+  --panel-border: #3a3745;
+  --popup-border: #4a4656;
+
+  /* ---- Scene (both mirrored into three.js by ThemeManager) --------------- */
+  --scene-bg: #262430;
+  --lattice-color: #524d63;
+  --dot-border: rgba(236, 230, 220, 0.8);
+
+  /* ---- Destructive ------------------------------------------------------
+     Fluorite's reset/danger is a muted terracotta, not a signal red. The
+     foreground and fill tiers stay split — folding them has cost contrast
+     here before. */
+  --danger: #d89a85;
+  --danger-rgb: 216 154 133;
+  --danger-bright: #e8b4a0;
+  --danger-bright-rgb: 232 180 160;
+  --danger-strong: #d07a60;
+  --danger-fill: rgba(176, 92, 68, 0.92);
+
+  /* ---- Positive / switches ---------------------------------------------- */
+  --ok: #8cb587;
+  --ok-rgb: 140 181 135;
+  --ok-bright: #aeddc8;
+  --ok-bright-rgb: 174 221 200;
+  --switch-on: #8cb587;
+  --switch-on-alt: #8e7fb0;
+  --seg-active-bg: #6e9668;
+  --btn-glow-rgb: 140 181 135;
+  --on-accent: #23212b;
+  --thumb-border: #aeddc8;
+
+  /* ---- Informational / selection ---------------------------------------- */
+  --info: #adceea;
+  --info-rgb: 173 206 234;
+  --info-bright: #adceea;
+  --link-hover: #adceea;
+  --row-selected-bg: rgba(51, 70, 62, 0.55);
+  --locked-bg: rgba(142, 127, 176, 0.22);
+  --locked-badge-bg: rgba(142, 127, 176, 0.35);
+  --locked-grad-1: #6e5f92;
+  --locked-grad-2: #8e7fb0;
+  --confirm-bg: #56789b;
+  --confirm-border: #3d5a78;
+
+  /* ---- Active tool ------------------------------------------------------- */
+  --tool-active: #adceea;
+  --tool-active-rgb: 173 206 234;
+
+  /* ---- The About modal ---------------------------------------------------- */
+  --about-bg: #29262f;
+  --about-border: rgba(140, 181, 135, 0.4);
+  --about-code-bg: rgba(35, 33, 43, 0.7);
+  --about-close-hover: #aeddc8;
+
+  /* ---- Lattice axis legend -----------------------------------------------
+     Softened to the palette. These must keep tracking the 3D gizmo. */
+  --axis-a: #d98a6a;
+  --axis-b: #8cb587;
+  --axis-c: #93a6e8;
+}
+
+/* ---- Accents ------------------------------------------------------------
+   The base defines these on the backend classes, not :root, so a palette that
+   wants its own accents has to restate both — otherwise the compute backend's
+   green/navy leaks through. The two backends map onto two Fluorite hues so the
+   standard-vs-symmetry distinction still survives at a glance. */
+.theme-standard {
+  --bg-color: rgba(110, 150, 104, 0.8);
+  --highlight-color: rgba(140, 181, 135, 1.0);
+  --accent-color: rgba(140, 181, 135, 0.8);
+  --hover-color: rgba(140, 181, 135, 0.3);
+  --border-color: rgba(110, 150, 104, 0.5);
+}
+
+.theme-symmetry {
+  --bg-color: rgba(110, 95, 146, 0.8);
+  --highlight-color: rgba(142, 127, 176, 1.0);
+  --accent-color: rgba(142, 127, 176, 0.8);
+  --hover-color: rgba(142, 127, 176, 0.25);
+  --border-color: rgba(110, 95, 146, 0.5);
+}
