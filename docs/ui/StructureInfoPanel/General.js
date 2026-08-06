@@ -12,6 +12,7 @@ import { updateVisualization } from '../../core/crystal-viewer.js';
 import { atomForceToColor } from '../ColorPanel.js';
 import { updateForces, updateSpins } from '../../render/index.js';
 import { applyToOtherTrajectoryFrames, wirePressHoldPopup, getSiteSignatureGroups } from './components/utils.js';
+import { addCompositionLegendPanel } from '../CompositionLegendPanel.js';
 
 // The per-structure style-override stores (all survive rebuilds; see Structure.js).
 const ALL_STYLE_STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
@@ -455,6 +456,17 @@ export function renderComposition(panelState="closed") {
   addAtomButton.className = 'btn-mini highlight structure-edit-button';
 
   addButtonsRow.appendChild(addAtomButton);
+
+  // Opens the Composition Display legend window (CompositionLegendPanel.js).
+  // Direct listener is fine here (unlike ✎'s document delegation): the
+  // button is recreated with its listener on every renderComposition pass.
+  const legendButton = document.createElement('button');
+  legendButton.id = 'compositionLegendButton';
+  legendButton.innerHTML = '❖';
+  legendButton.title = 'Composition display: a movable colour legend for figures';
+  legendButton.className = 'btn-mini highlight structure-edit-button';
+  legendButton.addEventListener('click', () => addCompositionLegendPanel());
+  addButtonsRow.appendChild(legendButton);
 
   const title = document.createElement('div');
   const titleWrapper = document.createElement('div');

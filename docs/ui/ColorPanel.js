@@ -354,6 +354,10 @@ export function addColorPanel(target = "colorContainer") {
     // Hull outlines are children created at polyhedra build time — rebuild so
     // they appear/disappear with the style (no-op when polyhedra are off).
     if (general.celOutlineMode === "hull") updatePolyhedra();
+    // The material style is part of how atom colours present; UIs that mirror
+    // the atoms' look (the Composition Display swatches) re-render on the
+    // same event every bulk recolour already broadcasts.
+    document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
   });
 
   // Rendering pipeline (how a frame is drawn) — the top of the tree.

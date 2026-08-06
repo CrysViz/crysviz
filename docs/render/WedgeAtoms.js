@@ -83,7 +83,7 @@ function vacancyWedgeColor(atom, s, pureVacancy) {
  * overwhelmingly common case and stays on the existing flat-colour path.
  *
  * @param {any} atom
- * @returns {{fracs: number[], packed: number[]}|null}
+ * @returns {{fracs: number[], packed: number[], slots: Array<{color: number, occupancy: number, vacancy: boolean, element: string}>}|null}
  */
 export function wedgeDataForAtom(atom) {
   // "Va" is a real, tracked species like any other element string (it just
@@ -105,15 +105,16 @@ export function wedgeDataForAtom(atom) {
     .sort((a, b) => (b.occupancy - a.occupancy) || (a.element < b.element ? -1 : 1));
 
   const pureVacancy = atom.species.length === 1 && atom.species[0].element === 'Va';
-  /** @type {Array<{color: number, occupancy: number, vacancy: boolean}>} */
+  /** @type {Array<{color: number, occupancy: number, vacancy: boolean, element: string}>} */
   const slots = species.map((s) => (s.element === 'Va'
-    ? { color: vacancyWedgeColor(atom, s, pureVacancy), occupancy: s.occupancy, vacancy: true }
+    ? { color: vacancyWedgeColor(atom, s, pureVacancy), occupancy: s.occupancy, vacancy: true, element: 'Va' }
     : {
       // A species the user has explicitly recoloured wins over the element
       // default, same precedence as atom.userColor over atom.color.
       color: Number.isFinite(s.color) ? s.color : getElementDefaultColor(s.element),
       occupancy: s.occupancy,
       vacancy: false,
+      element: s.element,
     }));
 
   // The IMPLICIT unoccupied fraction (species don't sum to 1, with no
@@ -122,7 +123,7 @@ export function wedgeDataForAtom(atom) {
   // both are present.
   const vacancy = atom.getVacancyFraction();
   if (vacancy > MIN_WEDGE) {
-    slots.push({ color: VACANCY_COLOR, occupancy: vacancy, vacancy: true });
+    slots.push({ color: VACANCY_COLOR, occupancy: vacancy, vacancy: true, element: 'Va' });
   }
   // A single real species with no vacancy at all is the ordinary flat-colour
   // case. A single slot that IS vacancy (a pure "Va" site, nothing else at
@@ -156,7 +157,10 @@ export function wedgeDataForAtom(atom) {
   }
   fracs[MAX_WEDGES - 1] = 1.0;
 
-  return { fracs, packed };
+  // `slots` rides along (unpadded, in wedge order) so UI that mirrors the
+  // wedge sphere — the composition legend — draws from the exact colours,
+  // occupancies and vacancy flags the shader gets, not a re-derivation.
+  return { fracs, packed, slots };
 }
 
 /**

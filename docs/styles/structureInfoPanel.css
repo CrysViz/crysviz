@@ -816,3 +816,103 @@
   min-width: 34px;
   text-align: right;
 }
+
+/* ---------------------------------------------------------------------------
+   Composition Display (ui/CompositionLegendPanel.js) — the movable colour
+   legend. Swatches are canvases painted by a shared WebGL renderer with the
+   main view's atom material; the text sizes lean large because the window's
+   whole purpose is being screenshotted next to the structure.
+   ------------------------------------------------------------------------ */
+
+.comp-legend-body {
+  /* Written by the panel's ResizeObserver as the box is resized; every
+     row dimension below derives from it so the whole legend scales as one. */
+  --legend-scale: 1;
+  padding: var(--sp-3-5);
+  resize: both;
+  overflow: hidden;
+  min-width: 120px;
+  min-height: 44px;
+}
+
+/* The generic floating clamp (min 220 / max 600px) is wrong for a legend:
+   it should shrink to a two-row chip or grow poster-sized for a figure. */
+.cv-panel.comp-legend-panel.cv-floating {
+  min-width: 140px;
+  max-width: min(96vw, 900px);
+}
+
+.comp-legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--legend-scale));
+  min-width: 0;
+}
+
+.comp-legend-row {
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--legend-scale));
+}
+
+.comp-legend-swatch {
+  width: calc(30px * var(--legend-scale));
+  height: calc(30px * var(--legend-scale));
+  flex: none;
+}
+
+/* Raw px on purpose, not the --fs-* rungs: the legend's type tracks the box
+   scale, and the style guide forbids wrapping a font-size token in another
+   calc() (it would re-apply --cv-font-scale). */
+.comp-legend-label {
+  font-size: calc(16px * var(--legend-scale));
+  font-weight: var(--fw-medium);
+  color: var(--fg-1);
+  line-height: var(--lh-tight);
+}
+
+.comp-legend-sub {
+  font-size: calc(11px * var(--legend-scale));
+  color: var(--fg-2);
+  margin-top: 2px;
+}
+
+/* Labels are contenteditable; show it on hover/focus only, so nothing
+   extra prints into a figure capture. */
+.comp-legend-label,
+.comp-legend-sub {
+  outline: none;
+  border-radius: var(--radius-3);
+}
+
+.comp-legend-label:hover,
+.comp-legend-sub:hover {
+  box-shadow: 0 0 0 1px var(--line-2);
+  cursor: text;
+}
+
+.comp-legend-label:focus,
+.comp-legend-sub:focus {
+  box-shadow: 0 0 0 1px var(--border-color);
+}
+
+.comp-legend-empty {
+  font-size: var(--fs-base);
+  color: var(--fg-2);
+  padding: var(--sp-2);
+}
+
+/* Transparent mode (≡ menu): strip the window surface so only swatches and
+   text overlay the scene. The title bar is shrunk to its hover-revealed
+   handle by the same toggle (PanelWindow's bar-collapse), so nothing else
+   shows in a capture. */
+.cv-panel.comp-legend-transparent > .cv-panel-body {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.cv-panel.comp-legend-transparent.cv-bar-collapsed > .cv-panel-body {
+  border-top-color: transparent;
+}
