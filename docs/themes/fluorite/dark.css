@@ -102,11 +102,6 @@
   --about-code-bg: rgba(35, 33, 43, 0.7);
   --about-close-hover: #aeddc8;
 
-  /* ---- Lattice axis legend -----------------------------------------------
-     Softened to the palette. These must keep tracking the 3D gizmo. */
-  --axis-a: #d98a6a;
-  --axis-b: #8cb587;
-  --axis-c: #93a6e8;
 }
 
 /* ---- Accents ------------------------------------------------------------

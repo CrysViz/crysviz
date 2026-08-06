@@ -111,12 +111,6 @@
   --about-code-bg: rgba(0, 31, 39, 0.7);
   --about-close-hover: #93a1a1;
 
-  /* ---- Lattice axis legend -------------------------------------------------
-     The three spare accents, so a/b/c stay distinguishable without leaving the
-     palette. These must keep tracking the 3D gizmo. */
-  --axis-a: #dc322f;
-  --axis-b: #859900;
-  --axis-c: #268bd2;
 }
 
 /* ---- Accents --------------------------------------------------------------

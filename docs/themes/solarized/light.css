@@ -163,12 +163,6 @@
   --about-code-bg: rgba(88, 110, 117, 0.08);
   --about-close-hover: #586e75;
 
-  /* ---- Lattice axis legend --------------------------------------------------------------------
-     The same three spare accents as the dark mode — they are chosen to hold on
-     either ground, which is the point of the palette. */
-  --axis-a: #dc322f;
-  --axis-b: #859900;
-  --axis-c: #268bd2;
 }
 
 /* ---- Accents ---------------------------------------------------------------------

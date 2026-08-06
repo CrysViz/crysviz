@@ -170,12 +170,6 @@
   --about-code-bg: rgba(92, 86, 75, 0.06);
   --about-close-hover: #4e6a46;
 
-  /* ---- Lattice axis legend ------------------------------------------------------------
-     Darkened from the dark palette's values so they hold on a cream ground
-     while still tracking the 3D gizmo. */
-  --axis-a: #c06a44;
-  --axis-b: #4e6a46;
-  --axis-c: #4a5da8;
 }
 
 /* ---- Accents ----------------------------------------------------------------

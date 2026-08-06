@@ -487,8 +487,14 @@
   --popup-bg-deep: rgba(13, 13, 13, 0.95);
 
   /* ---- Lattice axis legend ------------------------------------------------
-     a/b/c encode data, but they must match the 3D gizmo, so a theme that
-     retints the scene has to be able to retint these with it. */
+     a/b/c encode DATA — they identify the axes, and the #axesLegend dots have
+     to match the 3D gizmo arrows exactly. Those arrows are hardcoded three.js
+     colours in ui/WindowAndSceneControls.js (makeArrow/makeLabel), so these
+     three values are pinned to them and a palette must NOT override them:
+     retinting one side without the other is what made the legend and the
+     gizmo disagree. To make them themeable, mirror these into three.js the
+     way ThemeManager already mirrors --scene-bg and --lattice-color, and
+     recolour the arrow materials and label sprites on theme change. */
   --axis-a: #ff3333;
   --axis-b: #33cc33;
   --axis-c: #3366ff;
