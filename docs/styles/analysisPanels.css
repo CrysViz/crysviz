@@ -78,8 +78,8 @@
 .pi-forced-notice {
   font-size: var(--fs-xs); /* 10.5px, in the --fs-xs audit cluster */
   color: var(--info-tint); /* was #cfe6ff — Wave 2.6 exact */
-  background: rgba(35, 139, 230, 0.15); /* blue accent fill — no matching token */
-  border: 1px solid rgba(91, 168, 255, 0.4); /* same blue-accent family as .si-wyckoff-badge — no matching token */
+  background: rgb(var(--blue-accent-fill-rgb) / 0.15);
+  border: 1px solid rgb(var(--blue-accent-rgb) / 0.4); /* same blue-accent family as .si-wyckoff-badge */
   border-radius: var(--radius-sm);
   padding: var(--sp-2) var(--sp-3);
   margin-bottom: var(--sp-2);
@@ -456,7 +456,7 @@
   position: fixed;
   top: 20%;
   left: var(--popup-left);
-  background: rgba(25, 25, 25, 0.9); /* close to --chrome-1 (25,25,25,0.8) but alpha differs and not a documented near-dup — no matching token */
+  background: var(--chrome-1-9);
   color: var(--fg-1);
   padding: var(--sp-4) var(--sp-5);
   border-radius: var(--radius-md);

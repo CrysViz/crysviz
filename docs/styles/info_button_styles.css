@@ -30,7 +30,11 @@
   width: 100%;
   height: 100%;
   background: var(--popup-bg);
-  z-index: var(--z-anchor);
+  /* Was --z-anchor (999) — opened from a floating panel/right-dock tab's ⓘ
+     button (ui/panels/PanelWindow.js), so it must outrank --z-dock (1200) or
+     it renders behind the panel that opened it. See --z-info-panel's own
+     comment in theme.css. */
+  z-index: var(--z-chrome);
   display: none;
 }
 
@@ -52,7 +56,7 @@
   max-width: 80%;
   max-height: 80%;
   overflow-y: auto;
-  z-index: var(--z-overlay-widget);
+  z-index: var(--z-info-panel); /* one rung above .info-panel-overlay — see theme.css */
   display: none;
 }
 

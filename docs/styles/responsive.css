@@ -32,31 +32,6 @@
  */
 
 /* ================================================================
-   (prefers-color-scheme: dark) — NOT part of the layout ladder
-   ================================================================
-   This is a theming query, not a breakpoint — it doesn't belong on the
-   width/height ladder above, but the app's "only @media lives here" rule
-   (Wave 5's CI guard) still means it has to live in this file.
-
-   Finding, not fixed here: the app already has a real theme system
-   (ui/ThemeManager.js + themes/themes.json) whose "auto" entry follows
-   window.matchMedia('(prefers-color-scheme: dark)') and swaps the loaded
-   theme stylesheet (dark vs twilight) accordingly — a full re-theme. This
-   raw CSS query does something narrower and independent of that: it
-   always follows the OS preference for this one declaration, regardless
-   of what the user actually selected in the theme switcher. Pick "Light"
-   while the OS is set to dark, and the background dot's border still
-   snaps to the dark-mode value — a real (if minor) mismatch with
-   ThemeManager's own notion of "auto". Left as-is per instructions;
-   reconciling it with ThemeManager is a separate decision. */
-
-@media (prefers-color-scheme: dark) {
-  .background-dot {
-    border: 2px solid rgba(255, 255, 255, 0.8);
-  }
-}
-
-/* ================================================================
    compact — max-width: 1024px
    ================================================================ */
 
@@ -73,12 +48,15 @@
 
 @media screen and (max-width: 1320px) {
 
-  /* NOTE: `position: absolut` is a pre-existing typo — the declaration is
-     invalid, so this rule has never actually positioned the popup. Left
-     as found: correcting it would move the popup for the first time on
-     every tablet-width window, which is a layout change, not a cleanup. */
+  /* `position: absolut` was a typo — the declaration was invalid, but
+     harmless: .popup's base rule (styles.css) already sets
+     `position: absolute`, so the top/left below were already applying at
+     this width. Corrected typo changes nothing visually, just removes a
+     dead/invalid declaration. (.popup itself has no live consumer in
+     docs/ui — no className/classList adds it anywhere — so this rule isn't
+     currently reachable either way.) */
   .popup {
-    position: absolut;
+    position: absolute;
     max-height: 300px;
     top: 50px;
     left: 50px

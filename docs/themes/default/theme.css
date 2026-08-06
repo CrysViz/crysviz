@@ -87,6 +87,18 @@
   --ok-rgb: 46 156 110;       /* same hue as --ok (#2e9c6e) */
   --info-rgb: 0 188 212;      /* same hue as --info (#00bcd4) */
 
+  /* ---- Additional alpha-bearing families (css_guard follow-up) -----------
+     Six hue clusters the css_guard audit found with no home, each named only
+     where the call sites cleared the bar (see docs/styles/TOKENS.md for the
+     full count-by-count reasoning; several near-identical literals were
+     deliberately left as one-off literals rather than folded in here). */
+  --blue-accent-rgb: 91 168 255;      /* border/ring tier: si-wyckoff-badge border, .wyckoff-locked ring, .pi-forced-notice border, .sym-link underline (4 sites, 1 a near-dupe fold — see TOKENS.md) */
+  --blue-accent-fill-rgb: 35 139 230; /* fill tier of the same family: si-wyckoff-badge's lighter gradient stop, .pi-forced-notice background (2 sites) — kept apart from the border tier per "cluster by role" */
+  --shortcuts-danger-rgb: 220 53 53;  /* shortcuts-help destructive-action red (clear/reset buttons, key-conflict flag) — 10 sites in styles.css, a different hue from the orange --danger */
+  --camera-glow-rgb: 6 100 50;        /* #cameraTools hover/unlocked glow ring, 3 sites — deliberately NOT --highlight-color/--border-color: the glow must stay fixed green regardless of active backend theme, same reasoning as the bond-range-slider's fixed-green track (css_guard_allow.txt) */
+  --vacancy-amber-rgb: 255 210 120;   /* disordered-site species/vacancy text tint, 2 sites (structureInfoPanel.css) — thin but real, same call as --ok-tint's 2-site precedent above */
+  --active-green-rgb: 125 206 160;    /* "active/applied" state accent (atom-editor button, coord-axis slider, new-row separator), 5 sites — checked against --ok-bright-rgb (126 226 168) and kept separate: the existing call sites already flagged it as "not an exact match", and the roles here are border/ring/accent-color, not the anneal badge's fill+text pairing */
+
   --radius: 8px;
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -162,6 +174,13 @@
      lightness alone — see TOKENS.md for the full literal-to-rung mapping
      and the near-duplicates each rung absorbs. */
   --chrome-1: rgba(25, 25, 25, 0.8);  /* darkest widget bg (near-dupes: #161618, rgba(20,20,20,.85/.9)) */
+  --chrome-1-9: rgba(25, 25, 25, 0.9); /* css_guard follow-up: near-opaque near-black backgrounds at a
+     higher alpha than --chrome-1's 0.8 — .backend-error-panel, .backend-potential-toggle,
+     .atomistic-grid input (rgba 25/25/25, 17/17/17, 22/22/22 at .9/.9/.88 — folded together the
+     same way --chrome-2-5 sits between two rungs). Two other near-dupes at this hue
+     (structureInfoPanel.css's dead .control-panel rule, styles_file_browswer.css's
+     rgba(13,13,13,.95)) were already checked against --chrome-1 and explicitly found not to
+     match — kept as their own literals, not folded in here. */
   --chrome-2: #2c2c2e;                /* widget bg (near-dupe: #303030) */
   --chrome-2-5: #333;                 /* Wave 2.6: 15 sites (13 backgrounds, 2 borders) — the single
      biggest opaque-grey miss in the whole audit, and it sits exactly 7
@@ -299,15 +318,16 @@
      two real stacking relationships (see "known inversions" in TOKENS.md).
      This second ladder is the opposite: every value below is the exact
      current literal for its selector(s), so substituting one of these tokens
-     in is a pure refactor with zero visual change — no inversion is touched,
-     including the .cv-panel-menu one. Only z-index values that participate
-     in the app-wide stack are here (100 and up); the small in-component
-     values (-2 to 20, sticky-cell/slider/colorbar layers) stay literal, since
-     tokenising them would imply a global relationship none of them have.
-     Full value → token → selector mapping is in TOKENS.md so adoption is
-     mechanical. --z-dock (1200, above) already equals its one real call site
-     (.cv-panel.cv-floating) exactly, so it's reused here rather than
-     redefined — everything below is new. */
+     in is a pure refactor with zero visual change. One exception, fixed on
+     purpose rather than preserved: --z-context-menu (see its own comment
+     below) — every other relationship here is untouched. Only z-index
+     values that participate in the app-wide stack are here (100 and up);
+     the small in-component values (-2 to 20, sticky-cell/slider/colorbar
+     layers) stay literal, since tokenising them would imply a global
+     relationship none of them have. Full value → token → selector mapping
+     is in TOKENS.md so adoption is mechanical. --z-dock (1200, above)
+     already equals its one real call site (.cv-panel.cv-floating) exactly,
+     so it's reused here rather than redefined — everything below is new. */
   --z-inline-alert: 100;
   --z-mobile-scrim: 900;
   --z-anchor: 999;
@@ -322,9 +342,27 @@
   --z-dock-expanded: 1400;
   --z-mobile-panel: 1500;
   --z-chrome: 2000;
+  /* info-panel-overlay/info-panel (ui/InfoPanel.js) are a second popup-vs-dock
+     inversion (TOKENS.md): the ⓘ button that opens them lives ON a floating
+     .cv-panel/right-dock tab (--z-dock, 1200), so the overlay+card need to
+     out-rank every dock-role element or they render behind the very panel
+     that opened them. Same full-screen-scrim-plus-centered-card shape as
+     #aboutOverlay/#aboutModal, so --z-chrome is the matching role; the card
+     gets its own rung one above so it wins the paint order even if the two
+     elements are ever reordered in the DOM (they're siblings, not nested,
+     unlike #aboutModal inside #aboutOverlay). */
+  --z-info-panel: calc(var(--z-chrome) + 1);
   --z-dialog: 3000;
   --z-confirm: 3100;
-  --z-context-menu: 3200; /* known inversion (TOKENS.md) — preserved, not fixed */
+  /* Was 3200 — outranked the app's own blocking modals (3000/3100), the
+     known inversion TOKENS.md flagged. .cv-panel-menu (panelWindow.css) is
+     this token's only consumer, and a modal's full-viewport backdrop
+     already covers every panel's ≡ button while open (see PanelWindow.js —
+     no menuSections entry opens a modal either), so no flow can open this
+     menu while a modal is up; moving it below the modal band is safe. 2500
+     sits in the one gap nothing else claims: above --z-chrome (2000, the
+     highest thing it still needs to outrank) and below --z-dialog (3000). */
+  --z-context-menu: 2500;
 
   /* ---- Layout geometry (single source of truth) ------------------------- */
   --ui-width: 380px;                 /* panel content width */
@@ -340,6 +378,17 @@
   /* ---- 3D scene (read by ThemeManager → three.js) ----------------------- */
   --scene-bg: #ffffff;               /* WebGL canvas clear color */
   --lattice-color: #090a09;          /* unit-cell lines */
+  /* Background-color picker dot (styles.css .background-dot) border — dark on
+     this theme's light-ish scene, for the same contrast reason --lattice-color
+     is dark here. Used to be a raw `@media (prefers-color-scheme: dark)` rule
+     in responsive.css that forced the dark-theme value regardless of which
+     theme was actually selected (picking "Light" on a dark-mode OS left the
+     dot stuck dark) — that query is gone; dark/theme.css now overrides this
+     token instead, so ThemeManager's own theme resolution is the only thing
+     that decides it. twilight/theme.css deliberately does NOT restate this:
+     its scene is light-ish too, so the same dark border applies via this
+     base value, same as --lattice-color. */
+  --dot-border: rgba(26, 26, 26, 0.8);
 
   /* ---- Icons (in-panel "docked" measure tools) -------------------------- */
   /* These default to the app's shared icons. A theme can re-skin them by

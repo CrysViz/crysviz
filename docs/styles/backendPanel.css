@@ -283,7 +283,7 @@ font-size: var(--fs-base);
   gap: 2px;
   padding: 3px;
   border-radius: 11px;
-  background: rgba(17, 17, 17, 0.9);
+  background: var(--chrome-1-9); /* was rgba(17, 17, 17, 0.9) — near-dupe folded into the rung */
   border: 1px solid var(--line-1);
   box-shadow: inset 0 1px 0 var(--wash-0);
 }
@@ -491,7 +491,7 @@ font-size: var(--fs-base);
 
 .atomistic-grid input {
   border: 1px solid var(--wash-4);
-  background: rgba(22, 22, 22, 0.88);
+  background: var(--chrome-1-9); /* was rgba(22, 22, 22, 0.88) — near-dupe folded into the rung */
   color: var(--fg-1);
   border-radius: var(--radius-12);
   padding: var(--sp-4) 14px;

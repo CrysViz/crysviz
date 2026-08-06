@@ -201,8 +201,8 @@
   margin: 0 0 var(--sp-3-5) 0;
   padding: var(--sp-3) 10px;
   border-radius: var(--radius);
-  background: linear-gradient(135deg, rgba(32, 77, 160, 0.35), rgba(35, 139, 230, 0.18)); /* blue accent gradient — no matching token, checked against every ramp */
-  border: 1px solid rgba(91, 168, 255, 0.45); /* same blue-accent family as above — no home */
+  background: linear-gradient(135deg, rgba(32, 77, 160, 0.35), rgb(var(--blue-accent-fill-rgb) / 0.18)); /* first stop is a one-off darker navy, no matching token; second stop is the blue-accent fill tier */
+  border: 1px solid rgb(var(--blue-accent-rgb) / 0.45);
   color: var(--info-tint); /* was #cfe6ff — Wave 2.6 exact */
   font-size: var(--fs-sm);
   font-weight: 700;
@@ -229,8 +229,8 @@
    gradient/color/weight) toggled by the same hasWyckoffPanel boolean; now a
    single class carries the whole state. */
 .segmented-control.wyckoff-locked {
-  box-shadow: 0 0 0 1px rgba(91, 168, 255, 0.35); /* blue accent — no matching token */
-  background: rgba(25, 55, 110, 0.28); /* dark navy fill — no matching token (not a --chrome-tint-* near-dup) */
+  box-shadow: 0 0 0 1px rgb(var(--blue-accent-rgb) / 0.35);
+  background: rgba(25, 55, 110, 0.28); /* dark navy fill — one-off, not close enough to --blue-accent-fill-rgb to fold (cluster by role, not hue distance) */
 }
 .segmented-control.wyckoff-locked button.active {
   background: linear-gradient(135deg, #1c5fb8, #2493ff); /* blue accent gradient — no matching token */
@@ -246,7 +246,7 @@
   padding: var(--sp-3-5);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-4);
-  background-color: rgba(26, 26, 26, 0.95); /* close to --chrome-1 (25,25,25,0.8) but not exact/near-dup listed — no matching token */
+  background-color: var(--chrome-1-9); /* was 0.95, snapped to the rung's 0.9 (dead rule, see block comment above — tokenised anyway for consistency) */
 }
 .si-volume {
   margin-top: var(--sp-3);
@@ -449,13 +449,13 @@
 }
 .iar-species-text {
   font-size: var(--fs-xs);
-  color: rgba(255, 210, 120, 0.85); /* amber species tint — no matching token (info/ok tints are blue/green only) */
+  color: rgb(var(--vacancy-amber-rgb) / 0.85);/* amber species tint — no matching token (info/ok tints are blue/green only) */
   font-family: var(--font-mono);
 }
 .iar-vacancy-line {
   display: block;
   font-size: var(--fs-xs);
-  color: rgba(255, 210, 120, 0.6); /* same amber family as .iar-species-text — no matching token */
+  color: rgb(var(--vacancy-amber-rgb) / 0.6);/* same amber family as .iar-species-text — no matching token */
   font-family: var(--font-mono);
   margin-left: 13px;
 }
@@ -542,8 +542,8 @@
   box-shadow: none;
 }
 .atom-editor-button.active {
-  border: 1px solid rgba(125, 206, 160, 0.95); /* active-state green — no matching token (not an exact --ok/--ok-bright match) */
-  box-shadow: 0 0 0 1px rgba(125, 206, 160, 0.35), inset 0 0 0 1px rgba(125, 206, 160, 0.15); /* same green, two alphas — no matching token */
+  border: 1px solid rgb(var(--active-green-rgb) / 0.95);
+  box-shadow: 0 0 0 1px rgb(var(--active-green-rgb) / 0.35), inset 0 0 0 1px rgb(var(--active-green-rgb) / 0.15);
 }
 
 /* Disordered-site colour editor: one small square swatch per species */
@@ -644,7 +644,7 @@
 .coord-axis-slider {
   width: 100%;
   min-width: 0;
-  accent-color: rgba(125, 206, 160, 0.95); /* same active-state green as .atom-editor-button.active — no matching token */
+  accent-color: rgb(var(--active-green-rgb) / 0.95); /* same active-state green as .atom-editor-button.active */
 }
 .coord-num-input {
   width: 100%;

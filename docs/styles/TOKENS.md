@@ -157,26 +157,44 @@ Wave 2 does the substitution.
 | `--z-modal` | `4000` | blocking dialogs and full-screen alert banners | 1999, 2000, 3000, 3100 |
 | `--z-tooltip` | `5000` | always-on-top ephemeral feedback: colour-picker popover, load-progress toasts, file-browser popup+overlay, press-and-hold popup, backend-switch banner | 9999, 10000, 99999 |
 
-**Known inversions — not fixed here, flagged for Wave 2:** the app currently
-renders two things *above* where this ladder would put them:
+**Known inversions:**
 
-- `.cv-panel-menu` (`panelWindow.css:252`, `z-index: 3200`) — a context menu
-  — currently outranks the app's own blocking modals (`3000`–`3100`). The
-  file's own comment says it's deliberately "above floating windows and the
-  fullscreen-item overlay," but it also ends up above `#confirmModal`. Under
-  the plan's mandated order (`dock < popup < menu < modal < tooltip`) this
-  is `--z-menu`, which is correctly below `--z-modal` — meaning adopting the
-  token in Wave 2 will change this one stacking relationship. Flagging
-  rather than silently preserving a value that contradicts the requested
-  ladder order.
-- Several `--z-popup`-role elements (999–1100) currently sit *below*
-  `--z-dock`-role elements (1200+) even though popups are meant to float
-  above docked chrome. In practice they don't seem to overlap on screen
-  (e.g. the background-picker dot vs. the right dock), so this hasn't been
-  visibly broken, but a literal-for-literal read of the current numbers
-  would put popup below dock, not above it. The token ladder follows the
-  plan's prescribed name order instead; Wave 2 should sanity-check any site
-  where a popup and the dock can actually overlap.
+- **Fixed.** `.cv-panel-menu` (`panelWindow.css:252`, was `z-index: 3200`) —
+  a context menu — outranked the app's own blocking modals (`3000`–`3100`).
+  Checked whether any flow can open it while a modal is up first: every
+  modal (`#pasteTextModal`, `#pngExportModal`, `#confirmModal`,
+  `#shortcutsResetConfirmModal`, `#aboutOverlay`) is a full-viewport
+  `position: fixed; inset: 0` backdrop, so it already covers every panel's
+  ≡ button while shown — the menu can't be triggered underneath it. Also
+  checked `PanelWindow._menuSections()`: only the Position/Close sections
+  exist app-wide (no `def.menuSections` currently opens a modal), so the
+  menu itself never triggers one either. `--z-context-menu` moved to `2500`
+  — above everything it still needs to outrank (`--z-chrome` at 2000) and
+  below the modal band (`--z-dialog` at 3000). Only consumer, so the token's
+  value changed in place rather than adding a new name.
+- **Fixed.** `.info-panel-overlay`/`.info-panel` (`info_button_styles.css`,
+  were `--z-anchor`/999 and `--z-overlay-widget`/1000) — this one *is* a
+  real overlap, not just a numbers-on-paper mismatch: `ui/panels/
+  PanelWindow.js`'s ⓘ button (any floating panel's titlebar) and
+  `ui/panels/RightDock.js`'s ⓘ button both call `showInfoPanel()`, so the
+  overlay+card can be opened from inside a `--z-dock`-role element (1200)
+  while that element stays open and on top — the "modal" rendered behind
+  the panel that opened it. Moved to `--z-chrome`/`--z-info-panel` (2000/
+  2001), the same role #aboutOverlay/#aboutModal already occupy for the
+  identical full-scrim-plus-centered-card shape.
+- **Checked, not fixed — no overlap found.** The remaining `--z-popup`-role
+  elements (999–1100: `.background-dot`, `.popup`, `#LatticeComparisonPopUp`,
+  `.theme-menu`, `.restore-popover`, `#axesGizmo`/`#axesLegend`) sit below
+  `--z-dock`-role elements (1200+). Checked each for a real trigger path:
+  `.background-dot` explicitly offsets itself clear of the right dock via
+  `--split-reserve` (position-based avoidance, not z-index); `.popup` and
+  `#LatticeComparisonPopUp` have no `classList`/`className` call anywhere
+  in `docs/ui/**/*.js` — dead CSS, nothing to overlap; `.theme-menu` opens
+  from the static left `#ui` panel, which isn't `--z-dock`-role; `#axesGizmo`
+  /`#axesLegend`/`.restore-popover` are scene-chrome anchored to their own
+  reserved corners, not opened from inside a dock/floating element. None of
+  these have the info-panel's "triggered from inside the very layer it
+  needs to outrank" property, so left as literal-preserving.
 
 ## Wave 2.5 — second token pass
 
@@ -378,8 +396,8 @@ Full mapping, in stacking order (lowest to highest):
 |---|---|---|
 | 100 | `--z-inline-alert` | `.error-panel` (`styles_file_browswer.css`) |
 | 900 | `--z-mobile-scrim` | `#mobileOverlay` |
-| 999 | `--z-anchor` | `.background-dot`, `.popup`, `.info-panel-overlay` |
-| 1000 | `--z-overlay-widget` | `#status`, `#axesGizmo`, `#axesLegend`, `.restore-popover`, `.theme-menu`, `.info-panel` |
+| 999 | `--z-anchor` | `.background-dot`, `.popup` |
+| 1000 | `--z-overlay-widget` | `#status`, `#axesGizmo`, `#axesLegend`, `.restore-popover`, `.theme-menu` |
 | 1001 | `--z-gizmo-controls` | `.cv-gizmo-controls` |
 | 1100 | `--z-comp-panel` | `.floating-comp-panel` |
 | 1200 | `--z-dock` (existing, unchanged) | `.cv-panel.cv-floating` |
@@ -389,10 +407,11 @@ Full mapping, in stacking order (lowest to highest):
 | 1350 | `--z-dock-scrim` | `.split-pane-overlay` |
 | 1400 | `--z-dock-expanded` | `.split-item.expanded` `!important`, `#viewArea.split-item-expanded .split-pane`, `.cv-panel.cv-floating.cv-has-expanded-item` `!important`, `.trajPlot.expanded` `!important` |
 | 1500 | `--z-mobile-panel` | `#ui.panel-open` (mobile) |
-| 2000 | `--z-chrome` | `#aboutOverlay`, `.cv-drag-select-rect`, `#mobileMenuToggle` |
+| 2000 | `--z-chrome` | `#aboutOverlay`, `.cv-drag-select-rect`, `#mobileMenuToggle`, `.info-panel-overlay` (moved here, was 999 — see "Known inversions" below) |
+| 2001 | `--z-info-panel` (`calc(--z-chrome + 1)`) | `.info-panel` (moved here, was 1000) |
+| 2500 | `--z-context-menu` | `.cv-panel-menu` (moved here, was 3200 — the known inversion, now fixed; see below) |
 | 3000 | `--z-dialog` | `#pasteTextModal`, `#pngExportModal`, `#raytraceWarningModal`, `#shortcutsHelpModal`, `.cv-crop-overlay` |
 | 3100 | `--z-confirm` | `#shortcutsResetConfirmModal`, `#confirmModal` |
-| 3200 | `--z-context-menu` | `.cv-panel-menu` — the known inversion; preserved as-is |
 
 Not tokenised (local, stays literal): `.shortcuts-help-trigger`/`.theme-switch`/
 `.cv-panel.cv-dragging` 10; `.download-menu` 20; controlPanel.css sticky
@@ -591,3 +610,67 @@ judgment):** `var(--highlight-color, #4caf50)`, `var(--highlight-color,
   Adopters should collapse the site to `color: var(--ink-2);` directly and
   delete the dead `--text-muted` reference, rather than defining the alias
   to make the existing fallback "correct."
+
+## Wave 3 — css_guard follow-up (94 → 73)
+
+Three independent agents had converged on the same short list of hue
+families with no ramp. This pass named the ones with enough call sites to
+justify it and adopted them; the rest stayed literal. 21 sites moved.
+
+| token | value | sites | role |
+|---|---|---|---|
+| `--blue-accent-rgb` | `91 168 255` | 4 (1 a near-dupe fold, `.sym-link`'s `rgba(111,182,255,.5)`) | border/ring: `.si-wyckoff-badge` border, `.wyckoff-locked` ring, `.pi-forced-notice` border, `.sym-link` underline |
+| `--blue-accent-fill-rgb` | `35 139 230` | 2 | fill tier of the same family: badge gradient's lighter stop, `.pi-forced-notice` background — kept apart from the border tier per "cluster by role" |
+| `--shortcuts-danger-rgb` | `220 53 53` | 10 | shortcuts-help destructive actions (clear/reset/conflict) — all in `styles.css`, a different hue from the orange `--danger` |
+| `--camera-glow-rgb` | `6 100 50` | 3 | `#cameraTools` hover/unlocked glow ring — deliberately not `--highlight-color`/`--border-color`: must stay fixed green regardless of active backend theme, same call as the bond-range-slider's fixed track (`css_guard_allow.txt`) |
+| `--vacancy-amber-rgb` | `255 210 120` | 2 | disordered-site species/vacancy text tint — thin but real, same call as `--ok-tint`'s 2-site precedent |
+| `--active-green-rgb` | `125 206 160` | 5 | "active/applied" state accent (atom-editor button, coord-axis slider, new-row separator) — checked against `--ok-bright-rgb` (`126 226 168`) and kept separate: the call sites had already flagged it "not an exact match," and the roles here (border/ring/accent-color) don't match the anneal badge's fill+text pairing |
+| `--chrome-1-9` | `rgba(25, 25, 25, 0.9)` | 4 (3 near-dupes: `17/17/17`@.9, `22/22/22`@.88, `26/26/26`@.95) | near-opaque near-black fills above `--chrome-1`'s 0.8 alpha — `.backend-error-panel`, `.backend-potential-toggle`, `.atomistic-grid input`, and a dead `.control-panel` rule (tokenised anyway for consistency) |
+
+**Left literal — below the ~3-site bar, or ruled out by the foreground/fill
+rule:**
+
+- `rgba(32, 77, 160, 0.35)` (badge gradient's darker stop) and
+  `rgba(25, 55, 110, 0.28)` (`.wyckoff-locked` background) — each a single
+  site, and neither is close enough to `--blue-accent-fill-rgb` to fold
+  without violating "cluster by role, not hue distance."
+- `#1c5fb8`/`#2493ff` (`.wyckoff-locked button.active` gradient) — a single
+  site, a solid saturated pair rather than the family's translucent tints.
+- `#e63946`, `#ff7b7b`, `rgba(255, 80, 80, *)` (2 sites), `#ff6b6b`
+  (2 sites) — a scattered handful of bright reds, each a `color:`
+  (foreground) use on its own feature (delete-icon hover, disabled label,
+  plane-delete button, two unrelated error texts). None reuses 3+ times,
+  and per the foreground/fill rule none of them can safely fold into
+  `--shortcuts-danger-rgb` (a fill/border-only family) even where the hue
+  is close — text needs to stay a separate token from a fill at the same
+  hue, not borrow one.
+- `.backend-error-panel`'s dead-code sibling and `styles_file_browswer.css`'s
+  `rgba(13, 13, 13, 0.95)` — both already explicitly checked against
+  `--chrome-1` and found not to match; not close enough to `--chrome-1-9`
+  either.
+
+**Two z-index inversions, one fixed, one investigated (not just colour
+this pass) — see "Known inversions" above** for `.cv-panel-menu` (moved
+3200 → 2500) and `.info-panel-overlay`/`.info-panel` (moved 999/1000 →
+2000/2001).
+
+**`.background-dot`'s border** no longer comes from a raw
+`@media (prefers-color-scheme: dark)` query in `responsive.css` (deleted).
+It's `--dot-border` now — defined in `default/theme.css`, overridden in
+`dark/theme.css` — so it follows the theme the user actually selected via
+`ui/ThemeManager.js`, not the OS directly. `twilight/theme.css` doesn't
+override it: its scene is light-ish like the base, so the same dark border
+applies without restating it.
+
+**`#cameraTools .camera-tool-reset-btn`'s border** was `rgba(250, 132, 18, 1)`
+— 250 vs. `--danger-rgb`'s 240 for the same G/B (132, 18) is a one-digit
+typo, not a second orange. Corrected and adopted as `rgb(var(--danger-rgb)
+/ 1)`; the shift is a hair darker, essentially imperceptible.
+
+**`.popup`'s `position: absolut` typo** (`responsive.css`, 1320px rung) —
+checked `.popup`'s base rule (`styles.css`) first: it already sets
+`position: absolute`, so the invalid declaration was dead weight, not a
+missing position — the `top`/`left` in the same rule were already applying.
+Corrected the typo; zero visual change. (`.popup` has no live
+`classList`/`className` consumer anywhere in `docs/ui` either, so the rule
+isn't currently reachable regardless.)

@@ -167,7 +167,10 @@
 .sym-link {
   color: var(--highlight-color, var(--info-bright));
   text-decoration: none;
-  border-bottom: 1px dotted rgba(111, 182, 255, 0.5);
+  /* Was rgba(111, 182, 255, 0.5) — 20/14/0 units from --blue-accent-rgb, close
+     enough to fold in as a near-dupe (same precedent as --ink-3 absorbing
+     #b8b8b8). Same border-ish role as the badge's border, not a fill. */
+  border-bottom: 1px dotted rgb(var(--blue-accent-rgb) / 0.5);
 }
 
 .sym-link:hover {

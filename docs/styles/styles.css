@@ -124,7 +124,7 @@ body.panel-hidden #axesLegend {
   width: 54px;
   height: 54px;
   border-radius: 50%;
-  border: 2px solid rgba(26,26,26,0.8);
+  border: 2px solid var(--dot-border);
   cursor: pointer;
   top: max(120px, calc(var(--compact-stack-bottom, 0px) + 20px));
   /* --split-reserve is kept in sync with the right dock's pane width (see
@@ -764,8 +764,8 @@ body.panel-hidden #axesLegend {
 }
 
 .shortcuts-help-clear:hover:not(:disabled) {
-  background: rgba(220, 53, 53, 0.25);
-  border-color: rgba(220, 53, 53, 0.6);
+  background: rgb(var(--shortcuts-danger-rgb) / 0.25);
+  border-color: rgb(var(--shortcuts-danger-rgb) / 0.6);
   color: var(--fg-1);
 }
 
@@ -831,9 +831,9 @@ body.panel-hidden #axesLegend {
  * the rebind is rejected, not reassigned, so this reads as an error rather
  * than the orange "recording" state above. */
 .shortcuts-help-key-conflict {
-  background: rgba(220, 53, 53, 0.25);
-  border-color: rgba(220, 53, 53, 0.85);
-  box-shadow: 0 0 0 1px rgba(220, 53, 53, 0.5);
+  background: rgb(var(--shortcuts-danger-rgb) / 0.25);
+  border-color: rgb(var(--shortcuts-danger-rgb) / 0.85);
+  box-shadow: 0 0 0 1px rgb(var(--shortcuts-danger-rgb) / 0.5);
   color: var(--fg-1);
 }
 
@@ -875,8 +875,8 @@ body.panel-hidden #axesLegend {
 }
 
 .shortcuts-help-modal .shortcuts-help-actions #shortcutsHelpReset:hover {
-  background: rgba(220, 53, 53, 0.2);
-  border-color: rgba(220, 53, 53, 0.6);
+  background: rgb(var(--shortcuts-danger-rgb) / 0.2);
+  border-color: rgb(var(--shortcuts-danger-rgb) / 0.6);
   color: var(--fg-1);
 }
 
@@ -914,8 +914,8 @@ body.panel-hidden #axesLegend {
   min-width: 100px;
   margin-top: var(--sp-1);
   padding: 10px var(--sp-5);
-  background: rgba(220, 53, 53, 0.25);
-  border: 1px solid rgba(220, 53, 53, 0.7);
+  background: rgb(var(--shortcuts-danger-rgb) / 0.25);
+  border: 1px solid rgb(var(--shortcuts-danger-rgb) / 0.7);
   color: var(--fg-1);
   border-radius: var(--radius);
   font-size: var(--fs-lg);
@@ -923,7 +923,7 @@ body.panel-hidden #axesLegend {
 }
 
 .shortcuts-reset-confirm-modal .paste-modal-actions #shortcutsResetConfirmOk:hover {
-  background: rgba(220, 53, 53, 0.4);
+  background: rgb(var(--shortcuts-danger-rgb) / 0.4);
 }
 
 .shortcuts-reset-confirm-modal .paste-modal-actions #shortcutsResetConfirmCancel {
@@ -2217,7 +2217,10 @@ body > #structureInfoContent {
   font-size: var(--fs-lg);
   color: var(--fg-1);
   background: var(--danger);
-  border: 1px solid rgba(250, 132, 18,1);
+  /* Was rgba(250, 132, 18, 1) — 250 vs --danger-rgb's 240 for the same G/B
+     (132, 18) is a one-digit typo, not a deliberate second orange. Corrected
+     and adopted; the shift is a hair darker, essentially imperceptible. */
+  border: 1px solid rgb(var(--danger-rgb) / 1);
   border-radius: var(--radius);
   cursor: pointer;
   min-width: 32px;
@@ -2230,7 +2233,7 @@ body > #structureInfoContent {
   background: var(--bg-color);
   border-color: var(--highlight-color);
   transform: translateY(-2px);
-  box-shadow:0px 0px 4px 2px  rgba(6, 100, 50, 1);
+  box-shadow:0px 0px 4px 2px  rgb(var(--camera-glow-rgb) / 1);
 }
 
 #cameraTools .camera-tool-reset-btn:hover {
@@ -2280,11 +2283,11 @@ body > #structureInfoContent {
 #cameraTools .camera-lock-btn.unlocked {
   border-color: var(--highlight-color);
   color: var(--highlight-color);
-  box-shadow: 0px 0px 4px 1px rgba(6, 100, 50, 0.6);
+  box-shadow: 0px 0px 4px 1px rgb(var(--camera-glow-rgb) / 0.6);
 }
 
 #cameraTools .camera-lock-btn.unlocked:hover {
-  box-shadow: 0px 0px 4px 2px rgba(6, 100, 50, 0.9);
+  box-shadow: 0px 0px 4px 2px rgb(var(--camera-glow-rgb) / 0.9);
 }
 
 .camera-icon {

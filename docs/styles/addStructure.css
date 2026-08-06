@@ -190,8 +190,8 @@
 .atom-new-separator td,
 .orbit-new-separator td {
   padding: 9px var(--sp-2) 3px;
-  border-top: 2px solid rgba(125, 206, 160, 0.5);
-  color: rgba(125, 206, 160, 0.95);
+  border-top: 2px solid rgb(var(--active-green-rgb) / 0.5);
+  color: rgb(var(--active-green-rgb) / 0.95);
   font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
   letter-spacing: 0.03em;
