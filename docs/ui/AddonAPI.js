@@ -162,17 +162,19 @@ export function createAddonAPI({ registerStructureChange, toolbar = null } = {})
     // ---- theme ------------------------------------------------------------
     /**
      * Current theme info for restyling addon canvases. `name` is the effective
-     * concrete theme id (ThemeManager stamps it on <html data-theme>); `isDark`
-     * is a convenience read of the OS preference. `token(name)` reads any theme
-     * CSS custom property (e.g. '--highlight-color') resolved on :root.
+     * mode and `palette` the colour family (ThemeManager stamps both on <html>).
+     * `isDark` derives from the effective mode, NOT from the OS: reading
+     * prefers-color-scheme here made an addon go dark while the user had
+     * explicitly picked a light mode. `token(name)` reads any theme CSS custom
+     * property (e.g. '--highlight-color') resolved on :root.
      */
     getTheme() {
       const name = document.documentElement.getAttribute('data-theme') || '';
-      const isDark = window.matchMedia
-        && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const palette = document.documentElement.getAttribute('data-palette') || '';
       return {
         name,
-        isDark: !!isDark,
+        palette,
+        isDark: name === 'dark',
         token: (prop) => getComputedStyle(document.documentElement).getPropertyValue(prop).trim(),
       };
     },
@@ -185,7 +187,7 @@ export function createAddonAPI({ registerStructureChange, toolbar = null } = {})
     onThemeChange(cb) {
       if (typeof cb !== 'function') return () => {};
       const obs = new MutationObserver(() => cb(api.getTheme()));
-      obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+      obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-palette'] });
       const off = () => obs.disconnect();
       subs.add(off);
       return () => { subs.delete(off); off(); };

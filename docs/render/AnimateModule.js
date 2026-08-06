@@ -2,7 +2,7 @@
 import * as THREE from '../external/three/three.module.js';
 
 import { app, general} from '../state/store.js';
-import {updateLattice,latticeDirsNorm} from './LatticeModule.js'
+import {latticeDirsNorm} from './LatticeModule.js'
 import { syncGroundPlaneVisibility } from './GroundPlaneModule.js'
 
 import {updateRandomColors, startDisco, stopDisco} from '../ui/DiscoModule.js'
@@ -248,21 +248,12 @@ export function animation_update(time = 0) {
 
   _counter = _counter+1;
 
-  const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-   if (isDarkMode && general.currentLatticeColor === 0x090A09){
-    app.scene.background = new THREE.Color(0x090A09)
-    general.defaultBackgroundColor = 0x090A09
-    general.currentLatticeColor = 0xE7E7E7
-    updateLattice()
-   }
-   else if (!isDarkMode && general.currentLatticeColor === 0xE7E7E7)
-   {
-    app.scene.background = new THREE.Color(0xE7E7E7);
-    general.defaultBackgroundColor = 0xE7E7E7
-    general.currentLatticeColor = 0x090A09
-    updateLattice()
-   }
-  
+  // A per-frame block here used to re-derive the scene background and lattice
+  // colour from prefers-color-scheme. ThemeManager owns both now, and it
+  // stores --lattice-color as a CSS string, so the numeric comparisons this
+  // block guarded on could never match — it was dead, and it would have
+  // fought the theme every frame the moment those types lined up again.
+
   // Update camera-relative lighting position
   const cameraPosition = app.camera.position.clone();
 

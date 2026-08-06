@@ -54,7 +54,7 @@ font-size: var(--fs-xl);
   border-radius: 40px;
 }
 
-/* dark/twilight/light icon toggle */
+/* auto/light/twilight/dark mode row */
 .theme-btn {
   display: inline-flex;
   background: none;
@@ -64,12 +64,39 @@ font-size: var(--fs-xl);
   border-radius: 40px;
 }
 
-.theme-btn:hover {
+.theme-btn:hover:not([disabled]) {
   background: var(--hover-color);
 }
 
 .theme-btn.active {
   background: var(--highlight-color);
+}
+
+/* Which way Auto went. Selecting Auto leaves the concrete mode invisible
+   otherwise, so the resolved one gets a wash — dimmer than .active, which
+   stays on Auto itself. */
+.theme-btn.resolved:not(.active) {
+  background: var(--wash-2);
+}
+
+/* A palette that doesn't offer this mode. Dimmed rather than hidden so the
+   row doesn't reflow when you switch palettes. */
+.theme-btn[disabled] {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Auto is a glyph, not an <img>, so it needs its own box to match the 18px
+   icon plus the button's padding. */
+.theme-btn-auto {
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  color: var(--panel-fg, var(--fg-1));
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
 }
 
 .theme-icon {

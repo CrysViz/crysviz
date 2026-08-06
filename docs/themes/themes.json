@@ -1,10 +1,16 @@
 {
-  "//": "CrysViz theme registry. Each theme is a directory under themes/ holding a theme.css (and optionally an icons/ folder). The loader (ui/ThemeManager.js) always applies `base` first, then the selected theme's `css` (null = base only). To add a theme: create themes/<id>/theme.css (+ icons if you want to override the defaults) and add one entry below. The special `auto` entry follows the OS prefers-color-scheme: its `auto` is [light-side theme, dark-side theme]; selecting it tracks the system, and the dark/twilight/light toggle reflects whichever is in effect.",
+  "//": "CrysViz theme registry. Theming is two axes: a PALETTE (the dropdown) and a MODE (the icon row). The loader (ui/ThemeManager.js) always applies `base` first, then the CSS the selected palette lists for the effective mode (null = base only). `auto` is a mode, not a palette: it follows the OS prefers-color-scheme and resolves through the palette's own `auto` pair, [light-side mode, dark-side mode]. A palette only offers the modes it lists in `modes`; the icon row disables the rest, and selecting a palette that lacks the current mode falls back through its `auto` pair. To add a palette: create themes/<id>/<mode>.css (+ an icons/ folder if you want to override the defaults) and add one entry below.",
   "base": "default/theme.css",
-  "themes": [
-    { "id": "auto",     "name": "Auto (light/dark)", "css": null, "auto": ["twilight", "dark"] },
-    { "id": "light",    "name": "Light",    "css": null },
-    { "id": "dark",     "name": "Dark",     "css": "dark/theme.css" },
-    { "id": "twilight", "name": "Twilight", "css": "twilight/theme.css" }
+  "palettes": [
+    {
+      "id": "default",
+      "name": "Default",
+      "auto": ["twilight", "dark"],
+      "modes": {
+        "light": null,
+        "twilight": "twilight/theme.css",
+        "dark": "dark/theme.css"
+      }
+    }
   ]
 }

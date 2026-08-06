@@ -6,6 +6,11 @@
 // versa). Assertions target the RELATIONSHIP (a value changes between
 // themes, a stylesheet actually loaded) rather than pinning exact palette
 // values, per CLAUDE.md.
+//
+// Theming is two axes: a PALETTE from the dropdown and a MODE from the icon
+// row. The registry is read from themes.json rather than hardcoded here, so
+// adding a palette doesn't break this file — only the mode ids, which are
+// structural (they are the icon row), are named directly.
 'use strict';
 const H = require('../harness');
 
@@ -18,83 +23,110 @@ async function activeStyleHref(page) {
   return page.evaluate(() => document.getElementById('theme-active')?.getAttribute('href'));
 }
 
-async function pickTheme(page, id) {
+async function pickMode(page, id) {
   await page.evaluate((id) => document.querySelector(`.theme-btn[data-theme-option="${id}"]`).click(), id);
   await page.waitForTimeout(300); // theme CSS loads async (link 'load' event)
+}
+
+async function pickPalette(page, id) {
+  await page.evaluate((id) => document.querySelector(`.theme-menu-item[data-palette-id="${id}"]`).click(), id);
+  await page.waitForTimeout(300);
 }
 
 (async () => {
   const { browser, page, errors } = await H.launchApp();
   await H.loadDefaultStructure(page);
 
-  // ---- switching concrete themes changes the resolved scene color ----------
-  await pickTheme(page, 'dark');
+  const registry = await page.evaluate(async () => {
+    const res = await fetch('./themes/themes.json');
+    return res.json();
+  });
+
+  // ---- switching modes changes the resolved scene color --------------------
+  await pickMode(page, 'dark');
   const dark = await page.evaluate(async () => {
     const { app } = await import('./state/store.js');
     return {
       dataTheme: document.documentElement.getAttribute('data-theme'),
+      dataPalette: document.documentElement.getAttribute('data-palette'),
       sceneBg: getComputedStyle(document.documentElement).getPropertyValue('--scene-bg').trim(),
       appBg: '#' + app.scene.background.getHexString(),
-      storedSelection: localStorage.getItem('theme'),
+      storedMode: localStorage.getItem('theme'),
+      storedPalette: localStorage.getItem('themePalette'),
       activeBtn: document.querySelector('.theme-btn.active')?.dataset.themeOption,
     };
   });
-  H.check('picking Dark sets data-theme and persists the selection',
-    dark.dataTheme === 'dark' && dark.storedSelection === 'dark', JSON.stringify(dark));
+  H.check('picking Dark stamps the effective mode and the palette, and persists both',
+    dark.dataTheme === 'dark' && dark.storedMode === 'dark'
+    && dark.dataPalette === registry.palettes[0].id && dark.storedPalette === registry.palettes[0].id,
+    JSON.stringify(dark));
   H.check('picking Dark actually recolors the THREE.js scene (not just a class toggle)',
     dark.appBg.toLowerCase() === dark.sceneBg.toLowerCase(), JSON.stringify(dark));
-  H.check('the dark icon in the toggle row reflects the effective theme',
+  H.check('the mode row highlights the picked mode',
     dark.activeBtn === 'dark', JSON.stringify(dark));
   const darkHref = await activeStyleHref(page);
   H.check('a real theme stylesheet was applied (href points at dark/theme.css)',
     /dark\/theme\.css$/.test(darkHref || ''), String(darkHref));
 
-  await pickTheme(page, 'twilight');
+  await pickMode(page, 'twilight');
   const twilightBg = await sceneBg(page);
   const twilightHref = await activeStyleHref(page);
-  H.check('Twilight resolves to a DIFFERENT scene color than Dark (themes actually differ)',
+  H.check('Twilight resolves to a DIFFERENT scene color than Dark (modes actually differ)',
     twilightBg !== '' && twilightBg !== dark.sceneBg.toLowerCase(), `dark=${dark.sceneBg} twilight=${twilightBg}`);
   H.check('Twilight loads its own stylesheet', /twilight\/theme\.css$/.test(twilightHref || ''), String(twilightHref));
 
-  await pickTheme(page, 'light');
+  await pickMode(page, 'light');
   const lightBg = await sceneBg(page);
   const lightHref = await activeStyleHref(page);
   H.check('Light differs from both Dark and Twilight',
     lightBg !== dark.sceneBg.toLowerCase() && lightBg !== twilightBg,
     `dark=${dark.sceneBg} twilight=${twilightBg} light=${lightBg}`);
-  // Light has no override file (themes.json: css:null) — falling back to the
-  // base theme is itself the behavior under test, not a missing feature.
-  H.check('Light has no override stylesheet (falls back cleanly to the base theme)',
+  // The Default palette maps Light to null — falling back to the base theme is
+  // itself the behavior under test, not a missing feature.
+  H.check('Default/Light has no override stylesheet (falls back cleanly to the base theme)',
     !lightHref, String(lightHref));
 
-  // ---- the dropdown lists every theme and Auto follows the OS setting ------
+  // ---- the dropdown lists palettes, not modes -------------------------------
   await page.click('#themeMenuToggle');
   await page.waitForTimeout(150);
   const menu = await page.evaluate(() =>
-    [...document.querySelectorAll('#themeMenu .theme-menu-item')].map((el) => el.dataset.themeId));
-  H.check('theme dropdown lists all four registry entries (incl. Auto)',
-    ['auto', 'light', 'dark', 'twilight'].every((id) => menu.includes(id)) && menu.length === 4,
-    JSON.stringify(menu));
+    [...document.querySelectorAll('#themeMenu .theme-menu-item')].map((el) => el.dataset.paletteId));
+  const expectedPalettes = registry.palettes.map((p) => p.id);
+  H.check('the dropdown lists exactly the registered palettes (and no modes)',
+    menu.length === expectedPalettes.length && expectedPalettes.every((id) => menu.includes(id))
+    && !menu.includes('dark') && !menu.includes('auto'),
+    `menu=${JSON.stringify(menu)} registry=${JSON.stringify(expectedPalettes)}`);
 
+  // ---- Auto is a mode, and follows the OS through the palette's pair --------
   await page.emulateMedia({ colorScheme: 'dark' });
-  await page.click('#themeMenu .theme-menu-item[data-theme-id="auto"]');
-  await page.waitForTimeout(300);
+  await pickMode(page, 'auto');
+  const pair = registry.palettes[0].auto;
   let auto = await page.evaluate(() => ({
     dataTheme: document.documentElement.getAttribute('data-theme'),
-    menuActive: document.querySelector('.theme-menu-item.active')?.dataset.themeId,
     stored: localStorage.getItem('theme'),
+    activeBtn: document.querySelector('.theme-btn.active')?.dataset.themeOption,
+    resolvedBtn: document.querySelector('.theme-btn.resolved')?.dataset.themeOption,
   }));
-  H.check('Auto with the OS in dark mode resolves to the dark side of the pair',
-    auto.dataTheme === 'dark' && auto.stored === 'auto', JSON.stringify(auto));
-  H.check('the dropdown highlights the SELECTION (Auto), separate from the effective-theme icons',
-    auto.menuActive === 'auto', JSON.stringify(auto));
+  H.check('Auto with the OS in dark mode resolves to the dark side of the palette pair',
+    auto.dataTheme === pair[1] && auto.stored === 'auto', `${JSON.stringify(auto)} pair=${pair}`);
+  H.check('the row highlights Auto as SELECTED and marks the mode it resolved to',
+    auto.activeBtn === 'auto' && auto.resolvedBtn === pair[1], JSON.stringify(auto));
 
   // Live-follows the OS while Auto stays selected (no re-click needed).
   await page.emulateMedia({ colorScheme: 'light' });
   await page.waitForTimeout(300);
   const autoLight = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
   H.check('Auto re-resolves live when the OS color scheme flips, without re-selecting it',
-    autoLight === 'twilight', autoLight);
+    autoLight === pair[0], `${autoLight} pair=${pair}`);
+
+  // ---- a palette only offers the modes it registers -------------------------
+  const modeState = await page.evaluate(() =>
+    [...document.querySelectorAll('.theme-btn[data-theme-option]')]
+      .map((el) => ({ id: el.dataset.themeOption, disabled: el.disabled })));
+  const offered = Object.keys(registry.palettes[0].modes);
+  H.check('modes the palette registers are enabled, the rest disabled, and Auto always available',
+    modeState.every((m) => m.disabled === (m.id !== 'auto' && !offered.includes(m.id))),
+    `${JSON.stringify(modeState)} offered=${JSON.stringify(offered)}`);
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

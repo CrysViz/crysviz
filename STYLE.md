@@ -14,8 +14,8 @@ is mostly of archaeological interest now.
 ```
 docs/themes/default/theme.css   the token vocabulary (175 declarations).
                                 The ONLY place a colour or font stack may live.
-docs/themes/<id>/theme.css      a theme: redefines the tokens it changes
-docs/themes/themes.json         the theme registry
+docs/themes/<id>/<mode>.css     a palette's mode: redefines the tokens it changes
+docs/themes/themes.json         the palette registry
 docs/styles/responsive.css      every @media rule in the app, one ladder
 docs/styles/<component>.css     component rules — tokens only, no literals
 docs/ui/ThemeManager.js         loads base + selected override, mirrors the
@@ -58,14 +58,32 @@ that number *up*, you added debt.
 
 ## Adding a theme
 
-1. Create `docs/themes/<id>/theme.css`. Redefine only what changes — it layers
-   on top of `default/theme.css`, which supplies everything else.
-2. Add an entry to `docs/themes/themes.json`:
-   `{ "id": "<id>", "name": "Display Name", "css": "<id>/theme.css" }`
+Theming is two axes. A **palette** is the colour family and is picked from the
+dropdown; a **mode** is `light` / `twilight` / `dark` and is picked from the
+icon row. `auto` is a mode, not a palette — it follows the OS through the
+palette's own `auto` pair, so "Fluorite, following the system" is expressible.
+
+1. Create `docs/themes/<id>/<mode>.css` for each mode the palette offers.
+   Redefine only what changes — it layers on top of `default/theme.css`, which
+   supplies everything else.
+2. Add one entry to `docs/themes/themes.json`:
+
+   ```json
+   { "id": "<id>", "name": "Display Name",
+     "auto": ["light", "dark"],
+     "modes": { "light": "<id>/light.css", "dark": "<id>/dark.css" } }
+   ```
+
 3. That's it. No JS, no `index.html` change.
 
+A palette only offers the modes it lists; the icon row disables the rest, and
+switching to a palette that lacks the current mode falls back through that
+palette's `auto` pair rather than stranding the selection. `"modes"` may map a
+mode to `null`, which means "base theme only" — that is how Default's Light
+works.
+
 Optional: drop icons in `docs/themes/<id>/icons/` and override the
-`--icon-*` tokens; `url()` resolves relative to your `theme.css`.
+`--icon-*` tokens; `url()` resolves relative to your mode's CSS file.
 
 ### What a theme must know
 
@@ -79,12 +97,15 @@ Optional: drop icons in `docs/themes/<id>/icons/` and override the
   `--border-color` are defined on `.theme-standard` / `.theme-symmetry`, which
   `ui/BackendPanel/BackendTheme.js` toggles on `<body>`. A theme *may* redefine
   those classes to recolour accents, but by default leaves them alone.
-- **`auto` mode**: the `auto` entry's `"auto": [lightId, darkId]` pair follows
+- **`auto` mode**: each palette's `"auto": [lightMode, darkMode]` pair follows
   the OS `prefers-color-scheme`. It is the default selection. Nothing else in
   the app should read `prefers-color-scheme` directly — that produced a real
-  bug where picking "Light" on a dark-mode OS left one element dark. If
-  something needs to differ by OS scheme, it becomes a token that the dark
-  theme overrides.
+  bug where picking "Light" on a dark-mode OS left one element dark, and a
+  second one where a dead per-frame block in `AnimateModule` would have fought
+  the theme every frame. If something needs to differ by OS scheme, it becomes
+  a token that the dark mode overrides. `ThemeManager` stamps the effective
+  mode on `<html data-theme>` and the palette on `<html data-palette>`; that
+  pair is what everything else reads (see `AddonAPI.getTheme`).
 - **The UI panels are dark in every theme today.** `dark/` and `twilight/` only
   override scene colours. A genuinely light-panelled theme is untested — it
   will need `--fg-*` (white-alpha) and `--chrome-*`/`--ink-*` (opaque ramps)
