@@ -6,12 +6,11 @@
       "id": "default",
       "name": "Default",
       "auto": [
-        "twilight",
+        "light",
         "dark"
       ],
       "modes": {
         "light": null,
-        "twilight": "twilight/theme.css",
         "dark": "dark/theme.css"
       }
     },

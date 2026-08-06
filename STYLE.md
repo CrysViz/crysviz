@@ -67,7 +67,7 @@ code being misread.
 ## Adding a theme
 
 Theming is two axes. A **palette** is the colour family and is picked from the
-dropdown; a **mode** is `light` / `twilight` / `dark` and is picked from the
+dropdown; a **mode** is `light` or `dark` and is picked from the
 icon row. `auto` is a mode, not a palette — it follows the OS through the
 palette's own `auto` pair, so "Fluorite, following the system" is expressible.
 
@@ -116,7 +116,7 @@ Optional: drop icons in `docs/themes/<id>/icons/` and override the
   pair is what everything else reads (see `AddonAPI.getTheme`).
 - **Light panels work.** `fluorite/light.css` and `solarized/light.css` are the
   reference; the Default palette's own modes are still dark-panelled, and
-  `dark/` and `twilight/` only override scene colours. What a light palette has
+  `dark/` only overrides scene colours. What a light palette has
   to redefine, beyond surfaces and scene:
 
   - the **fg ramp** and the **washes** — both white-alpha, so both are

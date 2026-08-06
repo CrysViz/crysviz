@@ -453,7 +453,7 @@ they're four ramps whose *ends* got tokens in earlier waves but whose
 rungs only; **the violation count is unchanged at 280** — nothing was
 adopted, by design, so the two sibling adoption agents don't collide with
 this pass. All new tokens live in `themes/default/theme.css` next to the
-ramp they extend; none of `dark/theme.css` or `twilight/theme.css` override
+ramp they extend; `dark/theme.css` does not override
 any of `--fg-*`/`--wash-*`/`--overlay*`/`--chrome-*`/`--info-bright` family,
 confirming this UI chrome is meant to stay dark in every theme — no theme
 override was needed.
@@ -662,7 +662,7 @@ this pass) — see "Known inversions" above** for `.cv-panel-menu` (moved
 `@media (prefers-color-scheme: dark)` query in `responsive.css` (deleted).
 It's `--dot-border` now — defined in `default/theme.css`, overridden in
 `dark/theme.css` — so it follows the theme the user actually selected via
-`ui/ThemeManager.js`, not the OS directly. `twilight/theme.css` doesn't
+`ui/ThemeManager.js`, not the OS directly. `dark/theme.css` doesn't
 override it: its scene is light-ish like the base, so the same dark border
 applies without restating it.
 

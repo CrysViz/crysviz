@@ -21,7 +21,8 @@ body {
   min-width: var(--ui-width);
   width:var(--ui-width);
   max-width:var(--ui-width);
-  overflow: auto;
+  overflow-y: auto;
+overflow-x: hidden;
   /* max() rather than a flat var(--ui-padding): on a rectangular screen
      env() is 0 so this is exactly --ui-padding, unchanged; on a notched
      phone (mobile rung makes this panel full-bleed — see responsive.css)

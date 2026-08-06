@@ -3,7 +3,7 @@
 // Theming is two axes:
 //   PALETTE — the colour family (Default, Fluorite, …), picked from the
 //             dropdown. Listed in themes/themes.json under `palettes`.
-//   MODE    — light / twilight / dark, picked from the icon row, plus `auto`.
+//   MODE    — light / dark, picked from the icon row, plus `auto`.
 //
 // Loads themes/themes.json, always applies the base theme (default/theme.css)
 // plus the override file the selected palette lists for the *effective* mode,
@@ -11,9 +11,9 @@
 // theme CSS) into three.js.
 //
 // Auto mode follows the OS prefers-color-scheme through the palette's own
-// `auto` pair ([light-side mode, dark-side mode]) — a palette whose light side
-// is `twilight` gets twilight, not `light`. It is the default. While auto is
-// selected the app re-resolves whenever the system flips.
+// `auto` pair ([light-side mode, dark-side mode]), so a palette can name its
+// own two sides. It is the default. While auto is selected the app re-resolves
+// whenever the system flips.
 //
 // A palette only offers the modes it lists. The icon row disables the rest,
 // and switching to a palette that lacks the current mode falls back through
@@ -36,7 +36,7 @@ import { updateLattice, requestRender } from '../render/index.js';
 
 const THEMES_DIR = './themes/';
 // The mode key is the historical 'theme' key: every value it ever held
-// (auto/light/twilight/dark) is already a valid mode id, so old settings
+// (auto/light/dark, and the retired twilight) maps onto a mode id, so old settings
 // migrate by themselves onto the Default palette.
 const MODE_KEY = 'theme';
 const PALETTE_KEY = 'themePalette';
@@ -184,7 +184,7 @@ function resolveInitialSelection() {
 }
 
 function wireThemeControls() {
-  // Mode icon row — auto/light/twilight/dark, keeping the current palette.
+  // Mode icon row — auto/light/dark, keeping the current palette.
   document.querySelectorAll('.theme-btn[data-theme-option]').forEach(btn =>
     btn.addEventListener('click', () => applyTheme(null, /** @type {HTMLElement} */ (btn).dataset.themeOption)));
 

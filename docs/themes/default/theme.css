@@ -10,7 +10,7 @@
    a theme override only needs to redefine the tokens (and/or rules) it changes.
 
    The default look = the app's historical appearance: dark UI panels over a
-   light 3D scene. Override files (dark.css, twilight.css, …) change the scene
+   light 3D scene. Override files (dark.css, fluorite/light.css, …) change the scene
    and/or surfaces; minimal.css changes the layout.
 
    NOTE: the accent tokens (--bg-color / --highlight-color / --accent-color /

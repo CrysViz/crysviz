@@ -45,7 +45,10 @@ font-size: var(--fs-xl);
 .theme-switch {
   position: absolute;
   top: 10px;
-  left: 286px; /* Adjust based on your logo width */
+  /* Anchored to the panel's right edge, not a pixel offset measured off the
+     logo. `left: 286px` plus a fourth mode button ran past --ui-width and put
+     a horizontal scrollbar on #ui. */
+  right: 10px;
   display: flex;
   align-items: center;
   gap: 0.25rem;
@@ -54,7 +57,7 @@ font-size: var(--fs-xl);
   border-radius: 40px;
 }
 
-/* auto/light/twilight/dark mode row */
+/* auto/light/dark mode row */
 .theme-btn {
   display: inline-flex;
   background: none;

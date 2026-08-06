@@ -68,19 +68,13 @@ async function pickPalette(page, id) {
   H.check('a real theme stylesheet was applied (href points at dark/theme.css)',
     /dark\/theme\.css$/.test(darkHref || ''), String(darkHref));
 
-  await pickMode(page, 'twilight');
-  const twilightBg = await sceneBg(page);
-  const twilightHref = await activeStyleHref(page);
-  H.check('Twilight resolves to a DIFFERENT scene color than Dark (modes actually differ)',
-    twilightBg !== '' && twilightBg !== dark.sceneBg.toLowerCase(), `dark=${dark.sceneBg} twilight=${twilightBg}`);
-  H.check('Twilight loads its own stylesheet', /twilight\/theme\.css$/.test(twilightHref || ''), String(twilightHref));
 
   await pickMode(page, 'light');
   const lightBg = await sceneBg(page);
   const lightHref = await activeStyleHref(page);
-  H.check('Light differs from both Dark and Twilight',
-    lightBg !== dark.sceneBg.toLowerCase() && lightBg !== twilightBg,
-    `dark=${dark.sceneBg} twilight=${twilightBg} light=${lightBg}`);
+  H.check('Light resolves to a DIFFERENT scene color than Dark (modes actually differ)',
+    lightBg !== '' && lightBg !== dark.sceneBg.toLowerCase(),
+    `dark=${dark.sceneBg} light=${lightBg}`);
   // The Default palette maps Light to null — falling back to the base theme is
   // itself the behavior under test, not a missing feature.
   H.check('Default/Light has no override stylesheet (falls back cleanly to the base theme)',
@@ -150,9 +144,10 @@ async function pickPalette(page, id) {
         scene: cs.getPropertyValue('--scene-bg').trim(),
         dataPalette: document.documentElement.getAttribute('data-palette'),
         appBg: '#' + app.scene.background.getHexString(),
-        // A palette that offers no twilight must disable that button rather
-        // than leave a selection pointing at a mode it cannot render.
-        twilightDisabled: document.querySelector('.theme-btn[data-theme-option="twilight"]').disabled,
+        // A palette must disable any mode button it cannot render, rather than
+        // leave a selection pointing at a mode with no stylesheet.
+        modeState: [...document.querySelectorAll('.theme-btn[data-theme-option]')]
+          .map((el) => [el.dataset.themeOption, el.disabled]),
       };
     });
     H.check(`switching to the ${second.id} palette repaints the PANEL, not only the scene`,
@@ -164,9 +159,32 @@ async function pickPalette(page, id) {
     H.check('the palette is stamped on <html data-palette>',
       after.dataPalette === second.id, JSON.stringify(after));
     H.check('a mode the palette does not offer is disabled, not silently broken',
-      after.twilightDisabled === !Object.prototype.hasOwnProperty.call(second.modes, 'twilight'),
-      `${second.id} modes=${JSON.stringify(Object.keys(second.modes))} disabled=${after.twilightDisabled}`);
+      after.modeState.every(([id, off]) =>
+        off === (id !== 'auto' && !Object.prototype.hasOwnProperty.call(second.modes, id))),
+      `${second.id} modes=${JSON.stringify(Object.keys(second.modes))} row=${JSON.stringify(after.modeState)}`);
   }
+
+  // The side panel is a fixed width; anything that overflows it horizontally
+  // is a bug, not a scroll affordance. A fourth mode button pinned at a
+  // hardcoded `left: 286px` is what put a scrollbar there.
+  const overflow = await page.evaluate(async () => {
+    const reg = await (await fetch('./themes/themes.json')).json();
+    const ui = document.getElementById('ui');
+    const out = [];
+    for (const p of reg.palettes) {
+      for (const mode of Object.keys(p.modes)) {
+        document.querySelector(`.theme-btn[data-theme-option="${mode}"]`).click();
+        document.querySelector(`.theme-menu-item[data-palette-id="${p.id}"]`).click();
+        await new Promise((r) => requestAnimationFrame(r));
+        if (ui.scrollWidth > ui.clientWidth + 1) {
+          out.push(`${p.id}/${mode}: ${ui.scrollWidth} > ${ui.clientWidth}`);
+        }
+      }
+    }
+    return out;
+  });
+  H.check('the side panel never scrolls horizontally, in any palette or mode',
+    overflow.length === 0, overflow.join('; '));
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
