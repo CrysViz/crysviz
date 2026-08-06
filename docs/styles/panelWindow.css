@@ -20,7 +20,7 @@
    assorted px sizes across windows — pin them to one scalable size so the font
    scale reaches the Features/Visual/… button texts uniformly. */
 .cv-panel-body button {
-  font-size: calc(13px * var(--cv-font-scale, 1));
+  font-size: var(--fs-md);
 }
 
 /* Feature panels are hidden until a structure loads; the attribute must win
@@ -36,8 +36,8 @@
    orange (the collision-warning banner color). Not scoped to .cv-panel: any
    element can receive the class. */
 @keyframes cv-shortcut-flash {
-  from { box-shadow: 0 0 0 2px rgba(240, 132, 18, 0.9); }
-  to { box-shadow: 0 0 0 2px rgba(240, 132, 18, 0); }
+  from { box-shadow: 0 0 0 2px var(--danger); }
+  to { box-shadow: 0 0 0 2px rgb(var(--danger-rgb) / 0); }
 }
 
 .cv-shortcut-flash {
@@ -50,7 +50,7 @@
 
 /* ---- docked: title bars stack with a small gap ---- */
 .cv-panel.cv-docked {
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--sp-3) 0;
 }
 
 /* ---- right-docked: the window is a TAB in the wide right dock ----
@@ -108,7 +108,7 @@
 /* ---- floating ---- */
 .cv-panel.cv-floating {
   position: fixed;
-  z-index: 1200;
+  z-index: var(--z-dock);
   min-width: 220px;
   max-width: min(600px, calc(100vw - 16px));
   max-height: calc(100dvh - 16px);
@@ -124,28 +124,28 @@
 
 .cv-panel.cv-floating > .cv-panel-titlebar,
 .cv-panel.cv-floating > .cv-panel-body {
-  box-shadow: 0 0 4px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-glow);
 }
 
 /* ---- title bar ---- */
 .cv-panel-titlebar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
   cursor: grab;
   user-select: none;
   touch-action: none;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg-color);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--line-1);
   backdrop-filter: blur(10px);
   color: var(--panel-fg);
 }
 
 /* Expanded: the bar sits flush on the body surface below it. */
 .cv-panel:not(.cv-collapsed) > .cv-panel-titlebar {
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 
 /* ---- hidden title bar: the ― button shrinks the bar to a short, centered
@@ -171,14 +171,8 @@
    invisible (but still hittable - opacity, not display/visibility) until the
    pointer is actually over it, so it doesn't clutter the view. Touch devices
    have no hover concept, so they keep the default fixed 0.6 opacity above. */
-@media (hover: hover) and (pointer: fine) {
-  .cv-panel.cv-bar-collapsed > .cv-panel-titlebar {
-    opacity: 0;
-  }
-  .cv-panel.cv-bar-collapsed:hover > .cv-panel-titlebar {
-    opacity: 0.6;
-  }
-}
+/* The (hover: hover) and (pointer: fine) override for this handle now
+   lives in styles/responsive.css, per Wave 4's single-file @media rule. */
 
 .cv-panel.cv-bar-collapsed > .cv-panel-titlebar > * {
   display: none;
@@ -187,8 +181,8 @@
 /* With only the handle above it, the body is a free-standing box again:
    round all corners and restore its top edge. */
 .cv-panel.cv-bar-collapsed > .cv-panel-body {
-  border-radius: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  border-top: 1px solid var(--line-1);
 }
 
 .cv-panel-titlebar:active,
@@ -199,7 +193,7 @@
 
 .cv-panel-grip {
   opacity: 0.45;
-  font-size: calc(13px * var(--cv-font-scale, 1));
+  font-size: var(--fs-md);
   line-height: 1;
 }
 
@@ -209,12 +203,12 @@
 .cv-panel-close {
   background: none;
   border: none;
-  padding: 2px 4px;
+  padding: 2px var(--sp-1);
   color: var(--panel-fg);
-  font-size: calc(12px * var(--cv-font-scale, 1));
+  font-size: var(--fs-base);
   line-height: 1;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .cv-panel-fold:hover,
@@ -231,7 +225,7 @@
 
 .cv-panel-title {
   flex: 1;
-  font-size: calc(13px * var(--cv-font-scale, 1));
+  font-size: var(--fs-md);
   font-weight: 700;
   line-height: 1.3;
   color: rgba(255, 255, 255, 0.85);
@@ -242,29 +236,29 @@
 
 .cv-panel-menu-btn,
 .cv-panel-close {
-  font-size: calc(14px * var(--cv-font-scale, 1));
+  font-size: var(--fs-lg);
 }
 
 /* ---- ≡ window menu (dropdown, portaled to <body> so #ui's scroll container
    can't clip it — see PanelWindow._openMenu) ---- */
 .cv-panel-menu {
   position: fixed;
-  z-index: 3200; /* above floating windows and the fullscreen-item overlay */
+  z-index: var(--z-context-menu); /* above floating windows and the fullscreen-item overlay */
   min-width: 140px;
-  padding: 4px;
+  padding: var(--sp-1);
   display: flex;
   flex-direction: column;
   background: var(--popup-bg, rgba(30, 30, 30, 0.95));
-  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.15));
-  border-radius: 8px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--panel-border, var(--wash-4));
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px var(--overlay);
 }
 
 /* Greyish section header ("Position", ...). */
 .cv-panel-menu-header {
-  padding: 4px 8px 2px;
-  font-size: calc(10.5px * var(--cv-font-scale, 1));
-  font-weight: 600;
+  padding: var(--sp-1) var(--sp-3) 2px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted-fg, #9aa0a6);
@@ -273,11 +267,11 @@
 .cv-panel-menu-item {
   background: none;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   text-align: left;
-  padding: 4px 8px 4px 22px;
+  padding: var(--sp-1) var(--sp-3) var(--sp-1) 22px;
   position: relative;
-  font-size: calc(12.5px * var(--cv-font-scale, 1));
+  font-size: var(--fs-md);
   color: var(--panel-fg);
   cursor: pointer;
 }
@@ -289,8 +283,8 @@
 /* Thin separator before an untitled section (e.g. the Close item). */
 .cv-panel-menu-sep {
   height: 1px;
-  margin: 4px 6px;
-  background: var(--panel-border, rgba(255, 255, 255, 0.15));
+  margin: var(--sp-1) var(--sp-2);
+  background: var(--panel-border, var(--wash-4));
 }
 
 /* Checkmark on the item matching the window's current state. */
@@ -309,8 +303,8 @@
   height: calc(13px * var(--cv-font-scale, 1));
   font-size: calc(8px * var(--cv-font-scale, 1));
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.6);
-  border-color: rgba(255, 255, 255, 0.3);
+  color: var(--fg-2);
+  border-color: var(--popup-border);
 }
 
 .cv-panel-titlebar .cv-panel-info:hover {
@@ -332,7 +326,7 @@
   background: none;
   border: none;
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--fg-2);
   cursor: pointer;
 }
 
@@ -350,10 +344,10 @@
 /* The body is the window surface: it carries the box the old .control-group /
    floating popups had, minus the top edge where the title bar sits. */
 .cv-panel-body {
-  padding: 10px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px var(--sp-3);
+  border: 1px solid var(--line-1);
   border-top: none;
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
   backdrop-filter: blur(10px);
 }
 
@@ -376,9 +370,9 @@
 
 .cv-dock-placeholder {
   box-sizing: border-box;
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--sp-3) 0;
   border: 1px dashed var(--accent-color);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--hover-color);
 }
 
@@ -386,7 +380,7 @@
   z-index: 10;
   width: 100%;
   opacity: 0.95;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 14px var(--overlay);
 }
 
 /* Adopted wrappers keep their ids/classes for the JS wiring, but the panel
@@ -419,12 +413,12 @@
   margin: 0;
   padding: 0;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--wash-4);
   border-radius: 50%;
-  background: rgba(20, 20, 20, 0.85);
+  background: var(--chrome-1);
   backdrop-filter: none;
   overflow: hidden;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 10px rgb(var(--shadow-rgb) / 0.4);
 }
 
 /* .cv-bar-collapsed is never cleared when a panel enters compact mode (the
@@ -481,13 +475,11 @@
 .cv-panel.cv-compact:not(.cv-collapsed) > .cv-panel-body {
   align-self: center;
   margin-right: 10px;
-  border-radius: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  border-top: 1px solid var(--line-1);
 }
 
-/* ---- mobile ---- */
-@media (max-width: 1024px) {
-  .cv-panel.cv-floating {
-    max-width: calc(100vw - 16px);
-  }
-}
+/* ---- mobile ----
+   The max-width:1024px override for .cv-panel.cv-floating now lives in
+   styles/responsive.css's compact rung, per Wave 4's single-file @media
+   rule. */

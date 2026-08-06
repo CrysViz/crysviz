@@ -2,10 +2,10 @@
     width: 100%;
     margin: 20px 00px 20px 0px;
     margin: 0 auto;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 10px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    font-size: 13px;
+    background: var(--wash-1);
+    border-radius: var(--radius-md);
+    box-shadow: 0 2px 6px rgb(var(--shadow-rgb) / 0.1);
+    font-size: var(--fs-md);
     position: relative;
     max-height: 200px;
     overflow-y: auto;
@@ -14,17 +14,17 @@
   }
   .panel:-webkit-scrollbar {
   display: none;            /* Chrome, Safari, Opera */
-  } 
- 
+  }
+
   #objectTable {
   border: 2px solid rgba(255, 255, 255, 0.0);
-  border-collapse: collapse; 
+  border-collapse: collapse;
   }
 
   #objectTable .fth,
   #objectTable .ftd {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 8px;
+  border: 1px solid var(--line-2);
+  padding: var(--sp-3);
  }
 
   table {
@@ -33,19 +33,19 @@
   }
 
   .fth, .ftd {
-    padding: 4px 6px;
-    border-bottom: 1px solid #ddd;
+    padding: var(--sp-1) var(--sp-2);
+    border-bottom: 1px solid var(--ink-4);
     text-align: left;
   }
 
   .fth {
-    color: white;
+    color: var(--fg-1);
     font-weight: 200;
-    font-size: 12px;
+    font-size: var(--fs-base);
   }
 
   .ftr:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--wash-1);
   }
 
   .ftr.selected {
@@ -57,7 +57,7 @@
     cursor: pointer;
     user-select: none;
     font-weight: bold;
-    font-size: 14px;
+    font-size: var(--fs-lg);
   }
 
   .icon img {
@@ -70,13 +70,13 @@
     filter: var(--accent-color);
   }
   .icon.copy {
-    font-weight: 400;
+    font-weight: var(--fw-normal);
     font-size: 18px;
   }
 
   .icon.copy:hover {
     transform: scale(1.1);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid var(--wash-4);
   }
   .icon.delete:hover {
     color: #e63946;
@@ -124,13 +124,13 @@
   input[type="number"] {
     width: 45px;
     padding: 2px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-size: 12px;
+    border: 1px solid var(--ink-3);
+    border-radius: var(--radius-4);
+    font-size: var(--fs-base);
   }
 
   input[type="number"]:invalid {
-    color: "red";
+    color: var(--danger);
   }
 
   /* Error popup */
@@ -139,35 +139,35 @@
     top: 40%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: rgba(255,255,255,0.95);
-    color: rgba(240, 132, 18,0.90);
-    border: 2px solid rgba(240, 132, 18,0.90);
-    border-radius: 6px;
-    padding: 10px 16px;
-    font-size: 13px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    background: var(--overlay-light);
+    color: var(--danger);
+    border: 2px solid var(--danger);
+    border-radius: var(--radius-sm);
+    padding: 10px var(--sp-5);
+    font-size: var(--fs-md);
+    box-shadow: var(--shadow-sm);
     display: none;
-    z-index: 100;
+    z-index: var(--z-inline-alert);
   }
 
 
 .add-structure-button {
   background-color: var(--bg-color);; /* Green background */
   border: none;
-  color: white;
+  color: var(--fg-1);
   padding: 5px 5px;
   text-align: center;
   text-decoration: none;
   display: inline-block;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
   margin: 0;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  border: 1px solid rgba(255, 255, 255, 0.3)
+  border: 1px solid var(--popup-border)
 }
 
 .add-structure-button:hover {
@@ -177,17 +177,17 @@
 
 .combine-trajectories-button {
   background-color: var(--bg-color);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: white;
+  border: 1px solid var(--popup-border);
+  color: var(--fg-1);
   padding: 5px 5px;
   text-align: center;
   text-decoration: none;
   display: inline-block;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
   margin: 0;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   width: 100%;
   height: 100%;
   box-sizing: border-box;
@@ -203,5 +203,125 @@
   cursor: not-allowed;
 }
 
+/* --- Row-action popups (ui/FileBrowswerPanel.js) --- shared chrome between
+   the "combine checked rows" name prompt and the per-row "copy" options
+   dropdown: same dark card, just centered-over-a-scrim vs. anchored near the
+   click. --- */
 
+.combine-name-popup-overlay {
+  position: fixed;
+  inset: 0;
+  /* Matches --z-tooltip's role but not its value (5000) — same reasoning as
+     .cv-background-picker-panel (sceneWidgets.css): kept as the original
+     literal so adopting a token doesn't reorder stacking as a side effect. */
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(var(--shadow-rgb) / 0.4);
+}
+
+.cv-fb-popup {
+  background: rgba(13, 13, 13, 0.95); /* no token — the --chrome-* ramp's darkest rung (--chrome-1) is a different alpha/hue mix */
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-12);
+  box-shadow: 0 2px 5px rgb(var(--shadow-rgb) / 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3-5);
+  padding: var(--sp-5);
+}
+
+/* The combine-name prompt only — the copy-options popup below sizes to its
+   own content instead. */
+.cv-fb-popup--modal {
+  min-width: 260px;
+}
+
+/* The copy-options popup positions itself near the clicked row (JS-computed
+   left/top) rather than being centered by an overlay, and runs tighter than
+   the combine-name prompt. */
+.cv-fb-popup--anchored {
+  position: absolute;
+  padding: var(--sp-3-5);
+}
+
+.cv-fb-popup-label {
+  color: var(--fg-1);
+  font-size: var(--fs-base);
+}
+
+.cv-fb-popup-input {
+  background: var(--bg-color);
+  border: 1px solid var(--line-2);
+  color: var(--fg-1);
+  border-radius: var(--radius-4);
+  font-size: var(--fs-base);
+  padding: var(--sp-2);
+}
+
+.cv-fb-popup-btn-row {
+  display: flex;
+  gap: var(--sp-3-5);
+  justify-content: flex-end;
+}
+
+.cv-fb-popup-btn {
+  background: var(--bg-color);
+  border: 1px solid var(--line-2);
+  color: var(--fg-1);
+  border-radius: var(--radius-4);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  padding: var(--sp-2) var(--sp-3-5);
+}
+
+/* Copy-options popup's own controls run one size down from the combine-name
+   prompt's buttons above (10px vs 11-12px text) — same family, smaller
+   footprint since several of them share one row. */
+.cv-fb-popup-btn--compact {
+  font-size: var(--fs-xs);
+  padding: var(--sp-1) var(--sp-3);
+}
+
+.cv-fb-copy-select {
+  background: var(--bg-color);
+  border: 1px solid var(--line-2);
+  color: var(--fg-1);
+  border-radius: var(--radius-4);
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  padding: var(--sp-1);
+}
+
+.cv-fb-copy-range {
+  display: none;
+  gap: var(--sp-3-5);
+  flex-direction: column;
+}
+
+.cv-fb-copy-range.is-visible {
+  display: flex;
+}
+
+.cv-fb-copy-step-row {
+  display: flex;
+  gap: var(--sp-2); /* was a literal 5px, equidistant between --sp-1/--sp-2 — snapped up, same call as sceneWidgets.css's .cv-cus-bond-fields-row */
+  align-items: center;
+}
+
+.cv-fb-copy-step-label {
+  color: var(--fg-1);
+  font-size: var(--fs-xs);
+}
+
+.cv-fb-copy-step-input {
+  background: var(--bg-color);
+  border: 1px solid var(--line-2);
+  color: var(--fg-1);
+  border-radius: var(--radius-4);
+  font-size: var(--fs-xs);
+  width: 50px;
+  padding: var(--sp-1);
+}
 

@@ -43,7 +43,7 @@
 .colorbar-container {
   width: 120px;
   height: 40px;
-  border-radius: 3px;
+  border-radius: var(--radius-3);
   overflow: hidden;
   margin: 0 auto;
 }
@@ -62,7 +62,6 @@
 }
 
 .colorbar-labels div {
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: rgba(255, 255, 255, 0.9);
 }
-

@@ -2,10 +2,10 @@
   display: flex;
   flex-wrap: wrap;
   margin-top: 5px;
-  background: rgba(25,25,25,0.8);
-  padding: 4px;
-  border-radius: 10px;
-  gap: 4px;
+  background: var(--chrome-1);
+  padding: var(--sp-1);
+  border-radius: var(--radius-md);
+  gap: var(--sp-1);
   margin-bottom: 10px;
   justify-content: center;
   width: 100%;
@@ -14,19 +14,19 @@
 }
 
 .SettingsHeader{
-font-size: 16px;
-  font-weight: 600;
+font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
   text-align: center;
 }
 .segmented-control button {
   border: none;
   background: none;
   color: rgba(255,255,255,0.8);
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-size: 12px;
+  padding: var(--sp-2) 10px;
+  border-radius: var(--radius);
+  font-size: var(--fs-base);
   cursor: pointer;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   min-width: 0;
   flex: 1 1 0;
   white-space: nowrap;
@@ -34,8 +34,8 @@ font-size: 16px;
 
 .segmented-control button.active {
   background: var(--accent-color);
-  color: white;
-  font-weight: 500;
+  color: var(--fg-1);
+  font-weight: var(--fw-medium);
 }
 
 .segmented-control button:hover {
@@ -50,7 +50,7 @@ font-size: 16px;
   align-items: center;
   gap: 0.25rem;
   z-index: 10;
-  border: solid 1px var(--panel-border, rgba(255, 255, 255, 0.25));
+  border: solid 1px var(--panel-border, var(--line-2));
   border-radius: 40px;
 }
 
@@ -82,11 +82,11 @@ font-size: 16px;
 .theme-menu-toggle {
   background: none;
   border: none;
-  border-left: 1px solid var(--panel-border, rgba(255, 255, 255, 0.2));
-  color: var(--panel-fg, #fff);
-  padding: 0 6px;
-  font-size: 11px;
-  line-height: 1;
+  border-left: 1px solid var(--panel-border, var(--line-2));
+  color: var(--panel-fg, var(--fg-1));
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-tight);
   cursor: pointer;
   border-radius: 0 40px 40px 0;
 }
@@ -97,17 +97,17 @@ font-size: 16px;
 
 .theme-menu {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + var(--sp-1));
   right: 0;
   margin: 0;
-  padding: 4px;
+  padding: var(--sp-1);
   list-style: none;
   min-width: 130px;
   background: var(--menu-bg);
-  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.2));
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
-  z-index: 1000;
+  border: 1px solid var(--panel-border, var(--line-2));
+  border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgb(var(--shadow-rgb) / 0.35);
+  z-index: var(--z-overlay-widget);
 }
 
 .theme-menu[hidden] {
@@ -115,11 +115,11 @@ font-size: 16px;
 }
 
 .theme-menu-item {
-  padding: 6px 10px;
-  border-radius: 6px;
-  color: var(--panel-fg, #fff);
+  padding: var(--sp-2) 10px;
+  border-radius: var(--radius-sm);
+  color: var(--panel-fg, var(--fg-1));
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-base);
 }
 
 .theme-menu-item:hover {
@@ -140,9 +140,9 @@ font-size: 16px;
 .planes-input-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-3);
   width: 100%;
-  margin-bottom: 12px;
+  margin-bottom: var(--sp-4);
 }
 
 .planes-input-row {
@@ -171,7 +171,7 @@ font-size: 16px;
   flex-direction: column;
   width: 100%;
   align-items: stretch;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 /* uvwd layout: uvw cluster + d cluster separated */
@@ -190,11 +190,11 @@ font-size: 16px;
 
 .planes-uvw-cluster .planes-labeled-input {
   flex: 1;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .planes-uvw-cluster .planes-num-input {
-  padding: 6px 4px;
+  padding: var(--sp-2) var(--sp-1);
 }
 
 .planes-d-cluster {
@@ -209,11 +209,11 @@ font-size: 16px;
 
 #hklInputs .planes-labeled-input {
   flex: 1;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 #hklInputs .planes-num-input {
-  padding: 6px 4px;
+  padding: var(--sp-2) var(--sp-1);
 }
 
 .planes-labeled-input {
@@ -225,8 +225,8 @@ font-size: 16px;
 }
 
 .planes-input-label {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
   text-transform: lowercase;
   letter-spacing: 0.03em;
   text-align: left;
@@ -237,13 +237,13 @@ font-size: 16px;
   flex: 1;
   width: 100%;
   min-width: 0;
-  min-height: 34px;
-  padding: 6px 8px;
+  min-height: var(--control-h);
+  padding: var(--sp-2) var(--sp-3);
   background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
-  color: #fff;
-  font-size: 13px;
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius-sm);
+  color: var(--fg-1);
+  font-size: var(--fs-md);
   text-align: center;
   box-sizing: border-box;
   -moz-appearance: textfield;
@@ -288,7 +288,7 @@ font-size: 16px;
 .planes-num-input:focus:not(:disabled) {
   outline: none;
   border-color: var(--accent-color);
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--wash-3);
 }
 
 /* d slider: real-time single-handle slider below the d text box, with
@@ -297,7 +297,7 @@ font-size: 16px;
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 4px 0;
+  padding: var(--sp-1) 0;
 }
 
 .planes-d-slider {
@@ -307,7 +307,7 @@ font-size: 16px;
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--line-1);
   border-radius: 999px;
   outline: none;
   cursor: pointer;
@@ -334,8 +334,8 @@ font-size: 16px;
   background: var(--accent-color);
   border-radius: 50%;
   cursor: pointer;
-  border: 2px solid rgba(15, 18, 30, 0.9);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+  border: 2px solid var(--chrome-tint-2);
+  box-shadow: 0 0 0 1px var(--line-2);
   transition: background 0.15s;
 }
 
@@ -345,8 +345,8 @@ font-size: 16px;
   background: var(--accent-color);
   border-radius: 50%;
   cursor: pointer;
-  border: 2px solid rgba(15, 18, 30, 0.9);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+  border: 2px solid var(--chrome-tint-2);
+  box-shadow: 0 0 0 1px var(--line-2);
   transition: background 0.15s;
 }
 
@@ -367,7 +367,7 @@ font-size: 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: var(--sp-2);
   width: 100%;
 }
 
@@ -375,8 +375,8 @@ font-size: 16px;
   flex: 0 0 56px;
   width: 56px;
   min-height: 26px;
-  padding: 3px 4px;
-  font-size: 11px;
+  padding: 3px var(--sp-1);
+  font-size: var(--fs-sm);
 }
 
 .planes-viz-row {
@@ -387,7 +387,7 @@ font-size: 16px;
 }
 
 .planes-viz-label {
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: rgba(255, 255, 255, 0.75);
   white-space: nowrap;
 }
@@ -395,24 +395,24 @@ font-size: 16px;
 .planes-select,
 .planes-select-sm {
   background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
-  color: #fff;
-  font-size: 12px;
-  padding: 4px 8px;
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius-sm);
+  color: var(--fg-1);
+  font-size: var(--fs-base);
+  padding: var(--sp-1) var(--sp-3);
   cursor: pointer;
 }
 
 .planes-select-sm {
-  padding: 3px 6px;
-  font-size: 11px;
+  padding: 3px var(--sp-2);
+  font-size: var(--fs-sm);
 }
 
 .planes-buttons-row {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-3);
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin-bottom: var(--sp-4);
 }
 
 .planes-action-btn {
@@ -420,11 +420,11 @@ font-size: 16px;
   min-width: 120px;
   padding: 7px 10px;
   background: var(--accent-color);
-  color: #fff;
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 11px;
-  font-weight: 500;
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -439,34 +439,34 @@ font-size: 16px;
 }
 
 .planes-empty-msg {
-  color: rgba(255, 255, 255, 0.35);
-  font-size: 12px;
+  color: var(--fg-3);
+  font-size: var(--fs-base);
   text-align: center;
-  margin: 6px 0 0;
+  margin: var(--sp-2) 0 0;
 }
 
 .planes-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--fs-base);
 }
 
 .planes-th {
-  padding: 5px 8px;
+  padding: 5px var(--sp-3);
   text-align: left;
   color: rgba(255, 255, 255, 0.5);
-  font-weight: 500;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-weight: var(--fw-medium);
+  border-bottom: 1px solid var(--line-1);
 }
 
 .planes-td {
-  padding: 5px 8px;
+  padding: 5px var(--sp-3);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   vertical-align: middle;
 }
 
 .planes-params-cell {
-  font-family: monospace;
+  font-family: var(--font-mono);
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -474,10 +474,10 @@ font-size: 16px;
   background: none;
   border: none;
   color: rgba(255, 80, 80, 0.75);
-  font-size: 16px;
+  font-size: var(--fs-xl);
   cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
+  padding: 0 var(--sp-1);
+  line-height: var(--lh-tight);
 }
 
 .plane-delete-btn:hover {
@@ -489,7 +489,7 @@ font-size: 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: var(--sp-3);
 }
 
 .planes-header h3 {
@@ -500,13 +500,13 @@ font-size: 16px;
 .planes-top-btn {
   flex: 0 0 auto;
   min-width: 90px;
-  padding: 5px 12px;
+  padding: 5px var(--sp-4);
   background: var(--accent-color);
-  color: #fff;
+  color: var(--fg-1);
   border: none;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 500;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
   cursor: pointer;
   transition: background 0.15s;
   white-space: nowrap;
@@ -518,11 +518,11 @@ font-size: 16px;
 
 /* Table container with visible border */
 .planes-table-wrapper {
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
+  border: 1px solid var(--wash-3);
+  border-radius: var(--radius-sm);
   overflow: auto;
-  margin-bottom: 8px;
-  background: rgba(0, 0, 0, 0.15);
+  margin-bottom: var(--sp-3);
+  background: rgb(var(--shadow-rgb) / 0.15);
   max-height: 240px;
 }
 
@@ -530,19 +530,19 @@ font-size: 16px;
   width: max-content;
   min-width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   table-layout: auto;
 }
 
 .planes-th {
-  padding: 5px 6px;
+  padding: 5px var(--sp-2);
   text-align: left;
-  color: rgba(255, 255, 255, 0.45);
-  font-weight: 500;
-  font-size: 10px;
+  color: var(--fg-3);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid var(--wash-3);
   background: rgba(255, 255, 255, 0.04);
   white-space: nowrap;
 }
@@ -554,8 +554,8 @@ font-size: 16px;
 }
 
 .planes-td {
-  padding: 5px 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 5px var(--sp-2);
+  border-bottom: 1px solid var(--wash-1);
   vertical-align: middle;
 }
 
@@ -571,8 +571,8 @@ font-size: 16px;
 }
 
 .planes-td-mono {
-  font-family: monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
   color: rgba(255, 255, 255, 0.88);
   white-space: nowrap;
 }
@@ -582,16 +582,16 @@ font-size: 16px;
 }
 
 .planes-td-field {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.65);
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
   max-width: 90px;
   overflow: hidden;
   white-space: nowrap;
 }
 
 .planes-td-cut {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.65);
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
   white-space: nowrap;
 }
 
@@ -606,8 +606,8 @@ font-size: 16px;
   position: sticky;
   right: 0;
   z-index: 2;
-  background: rgba(14, 18, 24, 0.96);
-  box-shadow: -1px 0 0 rgba(255, 255, 255, 0.08);
+  background: var(--chrome-tint-1);
+  box-shadow: -1px 0 0 var(--wash-2);
 }
 
 .planes-th-del-sticky {
@@ -629,7 +629,7 @@ font-size: 16px;
   display: flex;
   align-items: center;
   font-size: 3em;
-  line-height: 1;
+  line-height: var(--lh-tight);
   color: rgba(255, 255, 255, 0.82);
 }
 
@@ -644,13 +644,13 @@ font-size: 16px;
 .planes-uvwd-cell {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .planes-d-inline {
-  font-size: 10px;
-  line-height: 1;
-  color: rgba(255, 255, 255, 0.64);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+  color: var(--fg-2);
   white-space: nowrap;
 }
 
@@ -661,7 +661,7 @@ font-size: 16px;
 }
 
 .planes-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--wash-1);
 }
 
 .planes-row-selected {
@@ -669,11 +669,11 @@ font-size: 16px;
 }
 
 .planes-row-selected .planes-td-mono {
-  color: rgba(255, 255, 255, 1);
+  color: var(--fg-1);
 }
 
 .planes-row-selected .planes-td-del-sticky {
-  background: rgba(22, 33, 56, 0.98);
+  background: var(--chrome-tint-3);
 }
 
 /* Centered calculate button row */
@@ -684,13 +684,13 @@ font-size: 16px;
 }
 
 .planes-calc-btn {
-  padding: 6px 16px;
+  padding: var(--sp-2) var(--sp-5);
   background: var(--accent-color);
-  color: #fff;
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 11px;
-  font-weight: 500;
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -706,10 +706,10 @@ font-size: 16px;
 
 /* Parameter / field sections */
 .planes-section-title {
-  margin: 0 0 8px 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.55);
+  margin: 0 0 var(--sp-3) 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  color: var(--fg-2);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -717,20 +717,20 @@ font-size: 16px;
 .planes-params-section {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--line-1);
 }
 
 .planes-field-section {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--line-1);
 }
 
 /* Grouped field + colormap card */
 .planes-field-colormap-container {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -741,7 +741,7 @@ font-size: 16px;
 .planes-field-colormap-disabled {
   opacity: 0.55;
   background: rgba(255, 255, 255, 0.02);
-  border-color: rgba(255, 255, 255, 0.05);
+  border-color: var(--wash-1);
 }
 
 .planes-field-colormap-grid {
@@ -753,7 +753,7 @@ font-size: 16px;
 .planes-field-control {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
   margin: 0;
   padding: 0;
   border: none;
@@ -761,17 +761,17 @@ font-size: 16px;
 }
 
 .planes-field-control label {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.68);
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
 }
 
 .planes-field-colormap-disabled .planes-field-control label,
 .planes-field-colormap-disabled #planesRangeDisplay {
-  color: rgba(255, 255, 255, 0.38);
+  color: var(--fg-3);
 }
 
 .planes-field-range-control {
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .planes-field-resolution-control {
@@ -800,11 +800,11 @@ font-size: 16px;
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: var(--sp-3);
 }
 
 .planes-cut-label {
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: rgba(255, 255, 255, 0.7);
   white-space: nowrap;
   flex-shrink: 0;
@@ -814,7 +814,7 @@ font-size: 16px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .planes-dual-slider {
@@ -834,7 +834,7 @@ font-size: 16px;
 .planes-dual-slider-track {
   left: 0;
   right: 0;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--line-1);
 }
 
 .planes-field-colormap-disabled .planes-dual-slider-track {
@@ -885,8 +885,8 @@ font-size: 16px;
   border-radius: 50%;
   cursor: pointer;
   pointer-events: auto;
-  border: 2px solid rgba(15, 18, 30, 0.9);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+  border: 2px solid var(--chrome-tint-2);
+  box-shadow: 0 0 0 1px var(--line-2);
   transition: background 0.15s;
 }
 
@@ -897,8 +897,8 @@ font-size: 16px;
   border-radius: 50%;
   cursor: pointer;
   pointer-events: auto;
-  border: 2px solid rgba(15, 18, 30, 0.9);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+  border: 2px solid var(--chrome-tint-2);
+  box-shadow: 0 0 0 1px var(--line-2);
   transition: background 0.15s;
 }
 
@@ -917,9 +917,9 @@ font-size: 16px;
 
 .planes-select:disabled {
   opacity: 0.55;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--fg-3);
   background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
+  border-color: var(--wash-2);
   cursor: not-allowed;
 }
 
@@ -932,17 +932,15 @@ font-size: 16px;
 }
 
 #planesRangeDisplay {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 11px;
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
   white-space: nowrap;
   text-align: center;
 }
 
-@media (max-width: 640px) {
-  .planes-field-colormap-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
+/* The narrow-viewport override for .planes-field-colormap-grid (folded
+   into the mobile/720px rung) now lives in styles/responsive.css, per
+   Wave 4's single-file @media rule. */
 
 .planes-table tbody tr .planes-params-cell {
   display: flex;

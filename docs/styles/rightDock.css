@@ -44,7 +44,7 @@
    viewport, so it reserves height instead of width. */
 #viewArea.split-active.split-dock-bottom:not(.split-pane-collapsed) #view {
   margin-right: 0;
-  margin-bottom: calc(var(--split-pane-fraction, 0.5) * 100vh);
+  margin-bottom: calc(var(--split-pane-fraction, 0.5) * 100dvh);
 }
 
 /* #ui hidden: #view normally goes fullscreen (styles.css) — keep it clear
@@ -54,7 +54,7 @@ body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed):not(.split-d
 }
 
 body.panel-hidden #viewArea.split-active.split-dock-bottom:not(.split-pane-collapsed) #view {
-  height: calc(100dvh - (var(--split-pane-fraction, 0.5) * 100vh)) !important;
+  height: calc(100dvh - (var(--split-pane-fraction, 0.5) * 100dvh)) !important;
 }
 
 .split-handle {
@@ -65,7 +65,7 @@ body.panel-hidden #viewArea.split-active.split-dock-bottom:not(.split-pane-colla
   width: 6px;
   cursor: col-resize;
   background: var(--panel-border);
-  z-index: 1301;
+  z-index: var(--z-dock-handle);
 }
 
 .split-handle:hover,
@@ -84,7 +84,7 @@ body.panel-hidden #viewArea.split-active.split-dock-bottom:not(.split-pane-colla
      overrides — the pane visibly stops following the pointer. */
   min-width: 220px;
   max-width: 85vw;
-  z-index: 1300;
+  z-index: var(--z-dock-pane);
   display: flex;
   flex-direction: column;
   background: var(--panel-bg);
@@ -102,11 +102,11 @@ body.panel-hidden #viewArea.split-active.split-dock-bottom:not(.split-pane-colla
   bottom: 0;
   left: var(--ui-total-width, 0px);
   width: auto;
-  height: calc(var(--split-pane-fraction, 0.5) * 100vh);
+  height: calc(var(--split-pane-fraction, 0.5) * 100dvh);
   min-width: 0;
   max-width: none;
   min-height: 220px; /* keep in sync with MIN_PANE_PX */
-  max-height: 85vh;
+  max-height: 85dvh;
   border-left: none;
   border-top: 1px solid var(--panel-border);
 }
@@ -119,7 +119,7 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane {
 
 #viewArea.split-dock-bottom .split-handle {
   top: auto;
-  bottom: calc(var(--split-pane-fraction, 0.5) * 100vh);
+  bottom: calc(var(--split-pane-fraction, 0.5) * 100dvh);
   right: 0;
   left: var(--ui-total-width, 0px);
   width: auto;
@@ -131,14 +131,9 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   left: 0;
 }
 
-@media screen and (max-width: 1024px) {
-  /* #ui is an off-canvas overlay on mobile (see styles.css) — it never
-     narrows the scene, so the bottom pane always starts at the left edge. */
-  #viewArea.split-dock-bottom .split-pane,
-  #viewArea.split-dock-bottom .split-handle {
-    left: 0;
-  }
-}
+/* The max-width:1024px override for this rule (and for .split-pane-tabs
+   below) now lives in styles/responsive.css's compact rung, per Wave 4's
+   single-file @media rule. */
 
 /* Dock empty (no visible window docked): pane + handle take no space. */
 #viewArea:not(.split-active) .split-pane,
@@ -170,10 +165,10 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  font-size: 13px;
-  font-weight: 600;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
   color: var(--panel-fg);
   border-bottom: 1px solid var(--panel-border);
   flex: 0 0 auto;
@@ -183,14 +178,14 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   background: var(--input-bg);
   color: var(--panel-fg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  padding: 2px var(--sp-3);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .split-pane-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--wash-2);
 }
 
 /* The "»" hide icon points the direction the pane collapses toward: right
@@ -225,8 +220,8 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   display: flex;
   flex-direction: column;
   background: var(--group-bg);
-  border-radius: 10px;
-  padding: 8px;
+  border-radius: var(--radius-md);
+  padding: var(--sp-3);
   position: relative;
 }
 
@@ -236,38 +231,38 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
 }
 
 .split-item h4 {
-  margin: 0 0 4px 0;
+  margin: 0 0 var(--sp-1) 0;
   text-align: center;
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
   color: var(--muted-fg);
 }
 
 .split-item-body {
   flex: 1;
   min-height: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .split-item-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--sp-2);
   justify-content: flex-end;
-  margin-top: 4px;
+  margin-top: var(--sp-1);
 }
 
 .split-item-action-btn {
   background: var(--input-bg);
   color: var(--panel-fg);
   border: 1px solid var(--panel-border);
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 11px;
+  border-radius: var(--radius-4);
+  padding: 2px var(--sp-2);
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 
 .split-item-action-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--wash-2);
 }
 
 /* A column of .split-item cards inside a window body (the EOS window's two
@@ -315,7 +310,7 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
 /* Base look, shared by both forms; each form overrides orientation/shape. */
 .split-pane-tab {
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-base);
   letter-spacing: 0.04em;
   color: var(--panel-fg);
   background: var(--panel-bg);
@@ -343,7 +338,7 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   /* pull the strip down so the active tab's bottom flares meet the header's
      bottom border, giving the "tab connected to the pane" look */
   margin-bottom: -9px;
-  padding-top: 4px;
+  padding-top: var(--sp-1);
 }
 
 .split-pane-header-tabs .split-pane-tab {
@@ -351,19 +346,19 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   writing-mode: horizontal-tb;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   flex: 0 1 auto;
   min-width: 0;
   max-width: 190px;
-  padding: 5px 6px 7px 12px;
+  padding: 5px var(--sp-2) 7px var(--sp-4);
   background: transparent;
   border: none;
-  border-radius: 9px 9px 0 0;
+  border-radius: var(--radius-9) var(--radius-9) 0 0;
   color: var(--muted-fg, #9aa0a6);
 }
 
 .split-pane-header-tabs .split-pane-tab:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--wash-1);
   color: var(--panel-fg);
 }
 
@@ -420,13 +415,13 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   border-radius: 50%;
   background: transparent;
   color: inherit;
-  font-size: 13px;
+  font-size: var(--fs-md);
   cursor: pointer;
   opacity: 0.55;
 }
 
 .split-pane-tab-menu:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--line-2);
   opacity: 1;
 }
 
@@ -437,10 +432,10 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   top: 50%;
   right: 0;
   transform: translateY(-50%);
-  z-index: 1300;
+  z-index: var(--z-dock-pane);
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 #viewArea.split-active.split-pane-collapsed .split-pane-tabs {
@@ -450,8 +445,8 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
 .split-pane-tabs .split-pane-tab {
   writing-mode: vertical-rl;
   border-right: none;
-  border-radius: 8px 0 0 8px;
-  padding: 12px 6px;
+  border-radius: var(--radius) 0 0 var(--radius);
+  padding: var(--sp-4) var(--sp-2);
   opacity: 0.75;
 }
 
@@ -475,18 +470,12 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane-tabs {
   left: 50vw;
 }
 
-@media screen and (max-width: 1024px) {
-  #viewArea.split-dock-bottom .split-pane-tabs {
-    left: 50vw;
-  }
-}
-
 #viewArea.split-dock-bottom .split-pane-tabs .split-pane-tab {
   writing-mode: horizontal-tb;
   border-right: 1px solid var(--panel-border);
   border-bottom: none;
-  border-radius: 8px 8px 0 0;
-  padding: 6px 14px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: var(--sp-2) 14px;
 }
 
 .split-pane-tabs .split-pane-tab:hover,
@@ -507,11 +496,11 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane-tabs {
   bottom: 0;
   right: 0;
   width: 48px;
-  z-index: 1302;
+  z-index: var(--z-dock-hint);
   pointer-events: none;
   box-sizing: border-box;
   border: 2px dashed var(--highlight-color, #00bcd4);
-  background: rgba(0, 188, 212, 0.10);
+  background: rgb(var(--info-rgb) / 0.10);
 }
 
 #rightDockDropHint.active {
@@ -523,27 +512,27 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane-tabs {
    it; the handle is also hidden outright while expanded (see below). */
 .split-item.expanded {
   position: fixed !important;
-  top: 5vh !important;
+  top: 5dvh !important;
   left: 5vw !important;
   width: 90vw !important;
-  height: 90vh !important;
-  z-index: 1400 !important;
-  box-shadow: 0 0 24px rgba(0, 0, 0, 0.5) !important;
+  height: 90dvh !important;
+  z-index: var(--z-dock-expanded) !important;
+  box-shadow: 0 0 24px var(--overlay) !important;
 }
 
 .split-item-close-btn {
   display: none;
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: var(--sp-3);
+  right: var(--sp-3);
   z-index: 1;
   background: var(--input-bg);
   color: var(--panel-fg);
   border: 1px solid var(--panel-border);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   padding: 2px 7px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-base);
 }
 
 .split-item.expanded .split-item-close-btn {
@@ -560,15 +549,15 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane-tabs {
    context an ancestor establishes, no matter how high the child's own value
    is. Raise the whole pane above the overlay while it holds an expanded item. */
 #viewArea.split-item-expanded .split-pane {
-  z-index: 1400;
+  z-index: var(--z-dock-expanded);
 }
 
 .split-pane-overlay {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  z-index: 1350;
+  background: var(--overlay);
+  z-index: var(--z-dock-scrim);
 }
 
 .split-pane-overlay.active {
