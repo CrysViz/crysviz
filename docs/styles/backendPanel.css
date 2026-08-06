@@ -456,7 +456,7 @@ font-size: var(--fs-base);
 }
 
 .atomistic-efs-card:hover .atomistic-efs-refresh-hint {
-  color: var(--highlight-color, var(--fg-2));
+  color: var(--accent-fg, var(--fg-2));
 }
 
 .atomistic-grid {

@@ -143,6 +143,51 @@ Optional: drop icons in `docs/themes/<id>/icons/` and override the
   `--fg-1`, which contrast with the panel when they need to contrast with each
   other. All three now have their own tokens.
 
+## The contrast contract
+
+A theme is not done when the colours change. It is done when everything is
+still legible. `themecontrast.test.js` measures five axes against the **Default
+palette in the same run** — Default has its own weak spots, so a fixed WCAG
+number would either fail on day one or need Default exempted:
+
+| axis | what it measures |
+|---|---|
+| `text` | every text node in `#ui`, composited over its real backdrop |
+| `control` | slider thumbs and switch tracks against the surface behind them |
+| `knob` | the switch knob against the track it sits on |
+| `panel-vs-surface` | `--panel-bg` against `--surface-bg` |
+| `group-vs-panel` | `--group-bg` against `--panel-bg` |
+
+**Every failure so far had one shape: a token doing two jobs.** On a dark panel
+a single value can be both a fill and a foreground; on a light panel it cannot,
+so the light themes are what exposed all of these:
+
+| token | was also | broke |
+|---|---|---|
+| `--highlight-color` | pale selected-row fill **and** slider thumb | thumb at 1.19:1 |
+| `--danger` | a fill with `--fg-1` painted on it | reset button at 1.9:1 |
+| `--info-tint` / `--ok-tint` | *foreground* tints, set pale | text at 1.01:1 |
+| `--ink-3` | text ramp rung used as a switch track | dark pill on cream |
+| `--overlay-80` | a scrim used as a floating surface | black boxes |
+| `--line-1` | a hairline used as a slider groove | slabs under sliders |
+
+When you add a control, ask which it is: **read** (contrast with the text ramp)
+or **seen** (contrast with the panel). If a token has to be both, split it.
+That is what `--accent-fg` is — the accent at text luminance, distinct from
+`--highlight-color`, the accent at control luminance.
+
+The five accent tokens are not interchangeable:
+
+- `--bg-color` — panel titlebar fill, carries `--fg-1`
+- `--accent-color` — buttons and selected rows, carries `--fg-1`
+- `--highlight-color` — slider thumbs and switch ON; **seen, never read**
+- `--accent-fg` — the accent used *as* text (value labels, checkboxes)
+- `--hover-color` / `--border-color` — transient tints
+
+Controls sit inside **group boxes**, so `--group-bg` is the backdrop they have
+to clear, not `--panel-bg`. That is the tighter of the two and the one that
+counts.
+
 ## The token vocabulary
 
 Full reference in `docs/styles/TOKENS.md`. The shape:

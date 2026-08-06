@@ -481,8 +481,8 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane-tabs {
 .split-pane-tabs .split-pane-tab:hover,
 .split-pane-tabs .split-pane-tab.active {
   opacity: 1;
-  color: var(--highlight-color, var(--info));
-  border-color: var(--highlight-color, var(--info));
+  color: var(--accent-fg, var(--info));
+  border-color: var(--accent-fg, var(--info));
 }
 
 /* ---- drop highlight (floating window dragged over the right border) -------*/

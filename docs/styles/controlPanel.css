@@ -334,7 +334,7 @@ font-size: var(--fs-xl);
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: var(--line-1);
+  background: var(--track-bg);
   border-radius: 999px;
   outline: none;
   cursor: pointer;
@@ -861,7 +861,7 @@ font-size: var(--fs-xl);
 .planes-dual-slider-track {
   left: 0;
   right: 0;
-  background: var(--line-1);
+  background: var(--track-bg);
 }
 
 .planes-field-colormap-disabled .planes-dual-slider-track {

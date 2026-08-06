@@ -129,10 +129,6 @@
     font-size: var(--fs-base);
   }
 
-  input[type="number"]:invalid {
-    color: var(--danger);
-  }
-
   /* Error popup */
   .error-panel {
     position: absolute;

@@ -292,7 +292,7 @@
   content: "✓";
   position: absolute;
   left: 7px;
-  color: var(--highlight-color, var(--info));
+  color: var(--accent-fg, var(--info));
 }
 
 /* The generic .info-button rule sizes it for a standalone corner badge
@@ -337,7 +337,7 @@
 /* Persistent highlight while unlocked — a standing mode, not a momentary
    action, so it stays visible without hovering. */
 .cv-panel-titlebar .cv-panel-lock.unlocked {
-  color: var(--highlight-color, var(--ok-bright));
+  color: var(--accent-fg, var(--ok-bright));
 }
 
 /* ---- body / collapse ---- */

@@ -6,9 +6,9 @@
    The fg ramp is NOT left alone — see the note on it below. */
 :root {
   /* ---- Surfaces --------------------------------------------------------- */
-  --surface-bg: #23212b;
+  --surface-bg: #1b1922;
   --panel-bg: #2e2b38;
-  --group-bg: #29262f;
+  --group-bg: #3d3849;
   --menu-bg: #2e2b38;
   --popup-bg: #29262f;
   --input-bg: #23212b;
@@ -32,10 +32,21 @@
 
   /* ---- Lines ------------------------------------------------------------ */
   --line-1: #3a3745;
-  --line-2: #4a4656;
+  --line-2: #6b6480;
   --line-3: rgba(236, 230, 220, 0.5);
   --panel-border: #3a3745;
   --popup-border: #4a4656;
+
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23d8d2c8' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+
+  --chrome-1: rgba(24, 22, 30, 0.8);
+  --chrome-1-9: rgba(24, 22, 30, 0.9);
+  --chrome-2: #34313f;
+  --chrome-2-5: #3a3646;
+  --chrome-3: #464154;
+  --chrome-4: #575167;
+  --chrome-5: #6a6379;
+  --chrome-6: #8a8398;
 
   /* ---- Scene (both mirrored into three.js by ThemeManager) --------------- */
   --scene-bg: #262430;
@@ -46,7 +57,7 @@
      Fluorite's reset/danger is a muted terracotta, not a signal red. The
      foreground and fill tiers stay split — folding them has cost contrast
      here before. */
-  --danger: #d89a85;
+  --danger: #8f4a35;
   --danger-rgb: 216 154 133;
   --danger-bright: #e8b4a0;
   --danger-bright-rgb: 232 180 160;
@@ -58,9 +69,10 @@
   --ok-rgb: 140 181 135;
   --ok-bright: #aeddc8;
   --ok-bright-rgb: 174 221 200;
-  --switch-on: #8cb587;
+  --switch-on: #7fb277;
   --switch-knob: #ece6dc;
-  --switch-off: #b8afc0;
+  --track-bg: rgba(236, 230, 220, 0.16);
+  --switch-off: #9a92a6;
   --switch-on-alt: #8e7fb0;
   --seg-active-bg: #6e9668;
   --btn-glow-rgb: 140 181 135;
@@ -102,18 +114,40 @@
    wants its own accents has to restate both — otherwise the compute backend's
    green/navy leaks through. The two backends map onto two Fluorite hues so the
    standard-vs-symmetry distinction still survives at a glance. */
+/* ---- Accents --------------------------------------------------------------
+   Fills are DEEP, like the base's, because 38 rules paint a fill from these
+   and the app puts --fg-1 on top of it. A mid-luminance accent and a
+   mid-luminance text ramp cancel out: the palette's own vivid hue as the fill
+   measured 1.9:1 against its own body text. The vivid hue lives in
+   --accent-fg (text/indicators), --hover-color and --border-color instead. */
+/* ---- Accents --------------------------------------------------------------
+   These five are not interchangeable, and treating them as one hue at one
+   luminance is what made the first cut unreadable:
+
+     --bg-color        the panel titlebar fill      — carries --fg-1 text
+     --accent-color    buttons + selected rows      — carries --fg-1 text
+     --highlight-color slider thumbs, switch ON     — must be SEEN, not read
+     --accent-fg       the accent used AS text      — value labels, checkboxes
+     --hover/--border  transient tints
+
+   A fill that carries text must contrast with the text ramp; a control that
+   is only ever looked at must contrast with the PANEL. On a dark theme one
+   colour can do both. On a light theme it cannot, and --highlight-color was
+   the token caught in the middle. See STYLE.md for the target numbers. */
 .theme-standard {
-  --bg-color: rgba(110, 150, 104, 0.8);
-  --highlight-color: rgba(140, 181, 135, 1.0);
-  --accent-color: rgba(140, 181, 135, 0.8);
-  --hover-color: rgba(140, 181, 135, 0.3);
-  --border-color: rgba(110, 150, 104, 0.5);
+  --bg-color: #4a3f66;
+  --accent-color: #45613f;
+  --highlight-color: #7fb277;
+  --hover-color: rgba(140, 181, 135, 0.22);
+  --border-color: rgba(140, 181, 135, 0.45);
+  --accent-fg: #a8cba2;
 }
 
 .theme-symmetry {
-  --bg-color: rgba(110, 95, 146, 0.8);
-  --highlight-color: rgba(142, 127, 176, 1.0);
-  --accent-color: rgba(142, 127, 176, 0.8);
-  --hover-color: rgba(142, 127, 176, 0.25);
-  --border-color: rgba(110, 95, 146, 0.5);
+  --bg-color: #3a3a5e;
+  --accent-color: #3f4a6b;
+  --highlight-color: #5a76b5;
+  --hover-color: rgba(157, 180, 224, 0.22);
+  --border-color: rgba(157, 180, 224, 0.45);
+  --accent-fg: #9db4e0;
 }

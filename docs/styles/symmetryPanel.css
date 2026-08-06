@@ -113,7 +113,7 @@
 }
 
 .sym-spg-symbol .sym-link:hover {
-  color: var(--highlight-color, var(--info-bright));
+  color: var(--accent-fg, var(--info-bright));
 }
 
 .sym-kv {
@@ -165,7 +165,7 @@
 }
 
 .sym-link {
-  color: var(--highlight-color, var(--info-bright));
+  color: var(--accent-fg, var(--info-bright));
   text-decoration: none;
   /* Was rgba(111, 182, 255, 0.5) — 20/14/0 units from --blue-accent-rgb, close
      enough to fold in as a near-dupe (same precedent as --ink-3 absorbing

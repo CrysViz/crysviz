@@ -177,7 +177,10 @@
   border-radius: var(--radius-4); /* Rounded corners */
   margin: 0 var(--sp-3-5);
   font-size: var(--fs-lg); /* Adjust font size as needed */
-  background: var(--line-1);
+  /* --wash-2, not --line-1: this is a chip FILL. Borrowing the hairline token
+     meant that darkening hairlines for a light theme turned the chip into a
+     dark slab and dropped the slider inside it to 2.1:1. */
+  background: var(--wash-2);
 }
 
 
@@ -385,7 +388,7 @@ margin: var(--sp-5) 0px 5px 0px;
   padding: 1px 5px;
   border: 1px solid var(--accent-color, var(--info-bright));
   border-radius: var(--radius-4);
-  background: var(--line-1);
+  background: var(--input-bg);
   caret-color: var(--fg-1);
 }
 

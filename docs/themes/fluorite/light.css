@@ -12,47 +12,47 @@
    without knowing the panel flipped. */
 :root {
   /* ---- Surfaces --------------------------------------------------------- */
-  --surface-bg: #f4efe6;
-  --panel-bg: #fffdf9;
-  --group-bg: #f7f1e6;
-  --menu-bg: #fffdf9;
-  --popup-bg: #fffdf9;
-  --input-bg: #fbf7ef;
-  --textarea-bg: #fbf7ef;
-  --float-panel-bg: rgba(255, 253, 249, 0.92);
-  --popup-bg-deep: #fffdf9;
+  --surface-bg: #ded4bc;
+  --panel-bg: #faf5e9;
+  --group-bg: #e9dfc8;
+  --menu-bg: #faf5e9;
+  --popup-bg: #faf5e9;
+  --input-bg: #f4eedd;
+  --textarea-bg: #f4eedd;
+  --float-panel-bg: rgba(250, 245, 233, 0.94);
+  --popup-bg-deep: #faf5e9;
 
   /* ---- Text --------------------------------------------------------------
      The base ramp is white at descending alpha. Flipped to the palette's warm
      ink at the same tiers — --fg-1 stays "the strongest text", it just is not
      white any more. */
-  --panel-fg: #5c564b;
-  --muted-fg: #938c7e;
-  --fg-1: #5c564b;
-  --fg-85: rgba(92, 86, 75, 0.9);
-  --fg-75: rgba(92, 86, 75, 0.8);
-  --fg-2: rgba(92, 86, 75, 0.68);
-  --fg-50: rgba(92, 86, 75, 0.55);
-  --fg-3: rgba(92, 86, 75, 0.42);
+  --panel-fg: #4a453c;
+  --muted-fg: #6b6455;
+  --fg-1: #4a453c;
+  --fg-85: rgba(74, 69, 60, 0.96);
+  --fg-75: rgba(74, 69, 60, 0.92);
+  --fg-2: rgba(74, 69, 60, 0.84);
+  --fg-50: rgba(74, 69, 60, 0.76);
+  --fg-3: rgba(74, 69, 60, 0.66);
 
   /* ---- Washes ------------------------------------------------------------
      White-on-white is a no-op, so these become ink-alpha. Alphas are lower
      than the base's: the same fraction of black on cream reads much heavier
      than that fraction of white on charcoal. */
-  --wash-0: rgba(92, 86, 75, 0.02);
-  --wash-1: rgba(92, 86, 75, 0.035);
-  --wash-1-5: rgba(92, 86, 75, 0.045);
-  --wash-2: rgba(92, 86, 75, 0.06);
-  --wash-3: rgba(92, 86, 75, 0.09);
-  --wash-4: rgba(92, 86, 75, 0.12);
+  --wash-0: rgba(74, 69, 60, 0.03);
+  --wash-1: rgba(74, 69, 60, 0.05);
+  --wash-1-5: rgba(74, 69, 60, 0.075);
+  --wash-2: rgba(74, 69, 60, 0.10);
+  --wash-3: rgba(74, 69, 60, 0.17);
+  --wash-4: rgba(74, 69, 60, 0.32);
 
   /* ---- Lines -------------------------------------------------------------- */
-  --line-1: #e7dfcf;
-  --line-2: #dad0bc;
+  --line-1: #c9bb9c;
+  --line-2: #b9aa98;
   --line-3: rgba(92, 86, 75, 0.35);
   --line-dark: rgba(92, 86, 75, 0.15);
   --line-grey: #b9b0a0;
-  --panel-border: #e7dfcf;
+  --panel-border: #c9bb9c;
   --popup-border: #dad0bc;
 
   /* ---- Opaque ramps, both reversed ---------------------------------------
@@ -73,9 +73,9 @@
 
   /* --ink-* is a text ramp: 1 = dimmest, 6 = strongest. Same direction, warm
      ink instead of off-white. */
-  --ink-1: #a49c8d;
-  --ink-2: #938c7e;
-  --ink-3: #7d766a;
+  --ink-1: #7d7666;
+  --ink-2: #665f50;
+  --ink-3: #55503f;
   --ink-4: #6b6459;
   --ink-5: #5c564b;
   --ink-6: #453f37;
@@ -98,10 +98,13 @@
      The picker glyphs are dark-on-transparent; on cream they need no inversion. */
   --icon-filter: none;
 
+  --color-scheme: light;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%235c564b' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+
   /* ---- Scene (both mirrored into three.js by ThemeManager) ------------------ */
-  --scene-bg: #fbf7ef;
-  --lattice-color: #d6cdbb;
-  --dot-border: rgba(92, 86, 75, 0.8);
+  --scene-bg: #d3c6ae;
+  --lattice-color: #6b6250;
+  --dot-border: rgba(60, 55, 45, 0.85);
 
   /* ---- Destructive ---------------------------------------------------------
      On a light panel the tiers swap which one is legible: the pale terracotta
@@ -125,10 +128,10 @@
   --ok-rgb: 78 106 70;
   --ok-bright: #3d5537;
   --ok-bright-rgb: 61 85 55;
-  --ok-tint: #eef5ec;
-  --switch-on: #7ba473;
-  --switch-knob: #fffdf9;
-  --switch-off: #ded6c6;
+  --ok-tint: #34492f;
+  --switch-on: #4f7a45;
+  --switch-knob: #fffdf7;
+  --switch-off: #776d58;
   --switch-on-alt: #9a8bbc;
   --seg-active-bg: #7ba473;
   --btn-glow-rgb: 123 164 115;
@@ -139,7 +142,7 @@
   --info: #3c5e7e;
   --info-rgb: 60 94 126;
   --info-bright: #3c5e7e;
-  --info-tint: #eef4fa;
+  --info-tint: #2b4459;
   --link-hover: #2f6fa8;
   --row-selected-bg: rgba(196, 229, 212, 0.75);
   --locked-bg: rgba(219, 209, 238, 0.5);
@@ -154,15 +157,15 @@
   --tool-active-rgb: 60 94 126;
 
   /* ---- Neutrals ------------------------------------------------------------------- */
-  --track-bg: rgba(92, 86, 75, 0.12);
+  --track-bg: rgba(92, 86, 75, 0.20);
   --track-bg-strong: rgba(92, 86, 75, 0.28);
   /* The in-scene measurement label sits on the 3D canvas, not a panel, and the
      scene is cream here — so it keeps a light backing with dark ink. */
-  --label-bg: rgba(255, 253, 249, 0.85);
+  --label-bg: rgba(250, 245, 233, 0.88);
   --label-ink: #453f37;
 
   /* ---- The About modal --------------------------------------------------------------- */
-  --about-bg: #fffdf9;
+  --about-bg: #faf5e9;
   --about-border: rgba(123, 164, 115, 0.5);
   --about-code-bg: rgba(92, 86, 75, 0.06);
   --about-close-hover: #4e6a46;
@@ -179,18 +182,39 @@
    Light fills need dark text on them, which is the inverse of the base's
    assumption. Each backend gets a pale fill plus a deep companion for the
    text and border, so the standard-vs-symmetry distinction survives. */
+/* ---- Accents --------------------------------------------------------------
+   The mirror of the dark palettes: fills stay PALE so the ink --fg-1 reads on
+   them, and --accent-fg carries the deep companion for the nine rules that use
+   the accent as TEXT. One token cannot do both jobs on a light panel — a fill
+   pale enough for ink text is invisible as text itself. */
+/* ---- Accents --------------------------------------------------------------
+   These five are not interchangeable, and treating them as one hue at one
+   luminance is what made the first cut unreadable:
+
+     --bg-color        the panel titlebar fill      — carries --fg-1 text
+     --accent-color    buttons + selected rows      — carries --fg-1 text
+     --highlight-color slider thumbs, switch ON     — must be SEEN, not read
+     --accent-fg       the accent used AS text      — value labels, checkboxes
+     --hover/--border  transient tints
+
+   A fill that carries text must contrast with the text ramp; a control that
+   is only ever looked at must contrast with the PANEL. On a dark theme one
+   colour can do both. On a light theme it cannot, and --highlight-color was
+   the token caught in the middle. See STYLE.md for the target numbers. */
 .theme-standard {
-  --bg-color: rgba(186, 214, 175, 0.55);
-  --highlight-color: rgba(186, 214, 175, 1.0);
-  --accent-color: rgba(186, 214, 175, 0.85);
+  --bg-color: #dbd1ee;
+  --accent-color: #bad6af;
+  --highlight-color: #4f7a45;
   --hover-color: rgba(78, 106, 70, 0.14);
-  --border-color: rgba(78, 106, 70, 0.35);
+  --border-color: rgba(78, 106, 70, 0.4);
+  --accent-fg: #3d5537;
 }
 
 .theme-symmetry {
-  --bg-color: rgba(219, 209, 238, 0.55);
-  --highlight-color: rgba(219, 209, 238, 1.0);
-  --accent-color: rgba(219, 209, 238, 0.85);
-  --hover-color: rgba(95, 81, 133, 0.14);
-  --border-color: rgba(95, 81, 133, 0.35);
+  --bg-color: #cfdcf0;
+  --accent-color: #c3cdee;
+  --highlight-color: #5f7fb5;
+  --hover-color: rgba(58, 79, 122, 0.14);
+  --border-color: rgba(58, 79, 122, 0.4);
+  --accent-fg: #3a4f7a;
 }

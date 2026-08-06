@@ -1129,7 +1129,7 @@
   text-align: center;
   border: none;
   border-radius: var(--radius-4);
-  background: var(--line-1);
+  background: var(--input-bg);
   color: var(--fg-1);
   font-family: var(--font-mono);
   padding: 3px;

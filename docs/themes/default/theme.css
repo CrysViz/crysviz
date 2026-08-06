@@ -405,6 +405,11 @@
      which no light theme could reach — a light palette sets this to `none`. */
   --icon-filter: invert(1);
 
+  /* Native form-control rendering (the <select> popup especially). A light
+     palette must flip this or the UA paints dark widgets on a light panel. */
+  --color-scheme: dark;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23c8c8c8' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+
   /* ==========================================================================
      Hue families that used to sit as literals in docs/styles/
      --------------------------------------------------------------------------
@@ -423,6 +428,7 @@
   --danger-bright-rgb: 255 107 107; /* same hue, for rgb(... / alpha) glows */
   --danger-strong: #e63946;         /* saturated destructive icon hover */
   --danger-fill: rgba(200, 35, 35, 0.92); /* solid destructive button */
+
 
   /* ---- Caution ------------------------------------------------------------ */
   --warn-soft: rgba(243, 174, 100, 0.9);  /* soft-refusal borders and notes */
@@ -502,6 +508,9 @@
   --accent-color: rgba(6, 140, 50, 0.8);
   --hover-color: rgba(6, 140, 50, 0.3);
   --border-color: rgba(6, 90, 50, 0.5);
+  /* The accent used as TEXT. Same value as --highlight-color here, because on
+     a dark panel one colour serves both roles; light themes must split them. */
+  --accent-fg: rgba(6, 140, 50, 1.0);
 }
 
 .theme-symmetry {
@@ -510,4 +519,5 @@
   --accent-color: rgba(18, 141, 204, 0.8);
   --hover-color: rgba(18, 141, 204, 0.2);
   --border-color: rgba(17, 71, 129, 0.5);
+  --accent-fg: rgba(18, 141, 204, 1.0);
 }

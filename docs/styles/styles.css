@@ -781,7 +781,7 @@ body.panel-hidden #axesLegend {
   max-width: 140px;
   padding: 2px 7px;
   border-radius: var(--radius-5);
-  background: var(--line-1);
+  background: var(--input-bg);
   border: 1px solid var(--line-2);
   color: inherit;
   font-family: var(--font-mono);
@@ -1331,7 +1331,7 @@ input[type="range"] {
   width: 100%;
   height: 6px;
   border-radius: var(--radius-3);
-  background: var(--line-1);
+  background: var(--track-bg);
   outline: none;
   -webkit-appearance: none;
 }
@@ -1359,11 +1359,11 @@ input[type="range"]::-moz-range-thumb {
 input[type="checkbox"] {
   margin-right: var(--sp-3-5);
   transform: scale(1.2);
-  accent-color: var(--highlight-color);
+  accent-color: var(--accent-fg);
 }
 
 .slider-value {
-  color: var(--highlight-color);
+  color: var(--accent-fg);
   font-weight: var(--fw-bold);
 }
 
@@ -1882,7 +1882,7 @@ justify-content: center;
 }
 
 .collapsible-content::-webkit-scrollbar-track {
-  background: var(--line-1);
+  background: var(--track-bg);
   border-radius: var(--radius-3);
 }
 
@@ -2231,7 +2231,7 @@ body > #structureInfoContent {
 
 #cameraTools .camera-tool-btn:hover {
   background: var(--bg-color);
-  border-color: var(--highlight-color);
+  border-color: var(--accent-fg);
   transform: translateY(-2px);
   box-shadow:0px 0px 4px 2px  rgb(var(--camera-glow-rgb) / 1);
 }
@@ -2281,8 +2281,8 @@ body > #structureInfoContent {
 /* Persistent highlight while unlocked (not just on hover, like the other
    camera buttons) — this is a standing mode, not a momentary action. */
 #cameraTools .camera-lock-btn.unlocked {
-  border-color: var(--highlight-color);
-  color: var(--highlight-color);
+  border-color: var(--accent-fg);
+  color: var(--accent-fg);
   box-shadow: 0px 0px 4px 1px rgb(var(--camera-glow-rgb) / 0.6);
 }
 

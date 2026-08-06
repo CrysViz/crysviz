@@ -15,9 +15,9 @@
   /* ---- Surfaces ------------------------------------------------------------
      base3 is the app ground, base2 the raised panel — the inverse pairing of
      the dark mode's base03 and base02. */
-  --surface-bg: #fdf6e3;
+  --surface-bg: #e3dbc4;
   --panel-bg: #fdf6e3;
-  --group-bg: #eee8d5;
+  --group-bg: #e2d9bf;
   --menu-bg: #fdf6e3;
   --popup-bg: #fdf6e3;
   --input-bg: #f5eeda;
@@ -28,27 +28,27 @@
   /* ---- Text ----------------------------------------------------------------
      base00 is body text, base01 emphasis, base1 muted. */
   --panel-fg: #657b83;
-  --muted-fg: #93a1a1;
+  --muted-fg: #5f7176;
   --fg-1: #586e75;
-  --fg-85: rgba(101, 123, 131, 0.95);
-  --fg-75: rgba(101, 123, 131, 0.85);
-  --fg-2: rgba(101, 123, 131, 0.72);
-  --fg-50: rgba(101, 123, 131, 0.58);
-  --fg-3: rgba(147, 161, 161, 0.95);
+  --fg-85: rgba(88, 110, 117, 0.97);
+  --fg-75: rgba(88, 110, 117, 0.94);
+  --fg-2: rgba(88, 110, 117, 0.88);
+  --fg-50: rgba(88, 110, 117, 0.80);
+  --fg-3: rgba(88, 110, 117, 0.70);
 
   /* ---- Washes ----------------------------------------------------------------
      Ink-alpha, and lighter than the base's white-alpha values: the same
      fraction of dark on base3 reads far heavier than white on base03. */
-  --wash-0: rgba(88, 110, 117, 0.02);
-  --wash-1: rgba(88, 110, 117, 0.04);
-  --wash-1-5: rgba(88, 110, 117, 0.05);
-  --wash-2: rgba(88, 110, 117, 0.07);
-  --wash-3: rgba(88, 110, 117, 0.1);
-  --wash-4: rgba(88, 110, 117, 0.14);
+  --wash-0: rgba(88, 110, 117, 0.03);
+  --wash-1: rgba(88, 110, 117, 0.05);
+  --wash-1-5: rgba(88, 110, 117, 0.075);
+  --wash-2: rgba(88, 110, 117, 0.10);
+  --wash-3: rgba(88, 110, 117, 0.17);
+  --wash-4: rgba(88, 110, 117, 0.32);
 
   /* ---- Lines ------------------------------------------------------------------- */
   --line-1: #eee8d5;
-  --line-2: #d9d2be;
+  --line-2: #b3ab97;
   --line-3: rgba(88, 110, 117, 0.35);
   --line-dark: rgba(88, 110, 117, 0.15);
   --line-grey: #93a1a1;
@@ -68,9 +68,9 @@
   --chrome-tint-2: rgba(230, 236, 244, 0.9);
   --chrome-tint-3: rgba(218, 228, 240, 0.98);
 
-  --ink-1: #a9b3b0;
-  --ink-2: #93a1a1;
-  --ink-3: #7d8c8c;
+  --ink-1: #74858a;
+  --ink-2: #63767a;
+  --ink-3: #4a5b5c;
   --ink-4: #657b83;
   --ink-5: #586e75;
   --ink-6: #073642;
@@ -89,6 +89,9 @@
 
   /* ---- Icons ------------------------------------------------------------------------ */
   --icon-filter: none;
+
+  --color-scheme: light;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23586e75' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
 
   /* ---- Scene (both mirrored into three.js by ThemeManager) --------------------------- */
   --scene-bg: #fdf6e3;
@@ -118,10 +121,10 @@
   --ok-rgb: 133 153 0;
   --ok-bright: #667400;
   --ok-bright-rgb: 102 116 0;
-  --ok-tint: #f2f5e0;
-  --switch-on: #859900;
+  --ok-tint: #3d4700;
+  --switch-on: #6b7d00;
   --switch-knob: #fdf6e3;
-  --switch-off: #d9d2be;
+  --switch-off: #6f7873;
   --switch-on-alt: #268bd2;
   --seg-active-bg: #859900;
   --btn-glow-rgb: 42 161 152;
@@ -133,7 +136,7 @@
   --info: #2aa198;
   --info-rgb: 42 161 152;
   --info-bright: #1d7a73;
-  --info-tint: #e6f4f2;
+  --info-tint: #0d4a52;
   --link-hover: #268bd2;
   --row-selected-bg: rgba(42, 161, 152, 0.2);
   --locked-bg: rgba(108, 113, 196, 0.16);
@@ -148,7 +151,7 @@
   --tool-active-rgb: 133 153 0;
 
   /* ---- Neutrals ------------------------------------------------------------------------------ */
-  --track-bg: rgba(88, 110, 117, 0.14);
+  --track-bg: rgba(88, 110, 117, 0.20);
   --track-bg-strong: rgba(88, 110, 117, 0.3);
   /* The measurement label sits on the 3D canvas, which is base3 here. */
   --label-bg: rgba(253, 246, 227, 0.85);
@@ -173,18 +176,39 @@
    selected-row fill (.ftr.selected) and the app paints the inherited --fg-1 on
    top of it, which is ink here — a 0.9 blue left the filename unreadable. The
    saturated hue still shows through --border-color and --highlight-color. */
+/* ---- Accents --------------------------------------------------------------
+   The mirror of the dark palettes: fills stay PALE so the ink --fg-1 reads on
+   them, and --accent-fg carries the deep companion for the nine rules that use
+   the accent as TEXT. One token cannot do both jobs on a light panel — a fill
+   pale enough for ink text is invisible as text itself. */
+/* ---- Accents --------------------------------------------------------------
+   These five are not interchangeable, and treating them as one hue at one
+   luminance is what made the first cut unreadable:
+
+     --bg-color        the panel titlebar fill      — carries --fg-1 text
+     --accent-color    buttons + selected rows      — carries --fg-1 text
+     --highlight-color slider thumbs, switch ON     — must be SEEN, not read
+     --accent-fg       the accent used AS text      — value labels, checkboxes
+     --hover/--border  transient tints
+
+   A fill that carries text must contrast with the text ramp; a control that
+   is only ever looked at must contrast with the PANEL. On a dark theme one
+   colour can do both. On a light theme it cannot, and --highlight-color was
+   the token caught in the middle. See STYLE.md for the target numbers. */
 .theme-standard {
-  --bg-color: rgba(38, 139, 210, 0.14);
-  --highlight-color: rgba(38, 139, 210, 0.3);
-  --accent-color: rgba(38, 139, 210, 0.35);
+  --bg-color: #cfe1f0;
+  --accent-color: #d3e4f2;
+  --highlight-color: #1f6b9f;
   --hover-color: rgba(38, 139, 210, 0.16);
-  --border-color: rgba(38, 139, 210, 0.45);
+  --border-color: rgba(38, 139, 210, 0.5);
+  --accent-fg: #1a6aa3;
 }
 
 .theme-symmetry {
-  --bg-color: rgba(108, 113, 196, 0.14);
-  --highlight-color: rgba(108, 113, 196, 0.3);
-  --accent-color: rgba(108, 113, 196, 0.35);
+  --bg-color: #dcdcf1;
+  --accent-color: #e0e0f4;
+  --highlight-color: #5257b5;
   --hover-color: rgba(108, 113, 196, 0.16);
-  --border-color: rgba(108, 113, 196, 0.45);
+  --border-color: rgba(108, 113, 196, 0.5);
+  --accent-fg: #474ba8;
 }

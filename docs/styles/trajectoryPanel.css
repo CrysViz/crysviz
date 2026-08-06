@@ -23,7 +23,10 @@
       border-radius: var(--radius-sm);
       background: var(--chrome-3);
       color: var(--fg-1);
-      border: none;
+      /* Was border:none, which left the field relying entirely on --chrome-3
+         being distinguishable from whatever box it sits in. It wasn't, in any
+         palette whose group boxes are not neutral grey. */
+      border: 1px solid var(--line-2);
       box-sizing: border-box;
       text-align: center;
     }
