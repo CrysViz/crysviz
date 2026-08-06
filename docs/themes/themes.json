@@ -27,15 +27,15 @@
       }
     },
     {
-      "id": "solarized",
-      "name": "Solarized",
+      "id": "azurite",
+      "name": "Azurite",
       "auto": [
         "light",
         "dark"
       ],
       "modes": {
-        "light": "solarized/light.css",
-        "dark": "solarized/dark.css"
+        "light": "azurite/light.css",
+        "dark": "azurite/dark.css"
       }
     }
   ]

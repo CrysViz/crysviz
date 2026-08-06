@@ -1,0 +1,190 @@
+/* Azurite — light. Cool porcelain panels, azure and malachite accents.
+   Layered on top of default/theme.css.
+
+   The glacier counterpart to fluorite/light.css and structured identically:
+   a light-panelled theme must restate the fg/wash/line families and reverse
+   both opaque ramps so the tier each token names still means what its name
+   says — see the notes in fluorite/light.css for the reasoning behind every
+   group; only the values differ here (cool blue-slate instead of warm ink). */
+:root {
+  /* ---- Surfaces --------------------------------------------------------- */
+  --surface-bg: #d8e2ea;
+  --panel-bg: #f5f9fc;
+  --group-bg: #e6eef5;
+  --menu-bg: #f5f9fc;
+  --popup-bg: #f5f9fc;
+  --input-bg: #edf3f8;
+  --textarea-bg: #edf3f8;
+  --float-panel-bg: rgba(245, 249, 252, 0.94);
+  --popup-bg-deep: #f5f9fc;
+
+  /* ---- Text -------------------------------------------------------------- */
+  --panel-fg: #2b3947;
+  --muted-fg: #5d7285;
+  --fg-1: #2b3947;
+  --fg-85: rgba(43, 57, 71, 0.96);
+  --fg-75: rgba(43, 57, 71, 0.92);
+  --fg-2: rgba(43, 57, 71, 0.84);
+  --fg-50: rgba(43, 57, 71, 0.76);
+  --fg-3: rgba(43, 57, 71, 0.66);
+
+  /* ---- Washes ------------------------------------------------------------ */
+  --wash-0: rgba(43, 57, 71, 0.03);
+  --wash-1: rgba(43, 57, 71, 0.05);
+  --wash-1-5: rgba(43, 57, 71, 0.075);
+  --wash-2: rgba(43, 57, 71, 0.10);
+  --wash-3: rgba(43, 57, 71, 0.17);
+  --wash-4: rgba(43, 57, 71, 0.32);
+
+  /* ---- Lines -------------------------------------------------------------- */
+  --line-1: #b9cbd9;
+  --line-2: #9db1c2;
+  --line-3: rgba(59, 78, 95, 0.35);
+  --line-dark: rgba(59, 78, 95, 0.15);
+  --line-grey: #a3b5c4;
+  --panel-border: #b9cbd9;
+  --popup-border: #cfdde8;
+
+  /* ---- Opaque ramps, both reversed --------------------------------------- */
+  --chrome-1: rgba(59, 78, 95, 0.05);
+  --chrome-1-9: rgba(240, 246, 250, 0.95);
+  --chrome-2: #e9f0f6;
+  --chrome-2-5: #dfe9f1;
+  --chrome-3: #d2dfea;
+  --chrome-4: #bfd0dd;
+  --chrome-5: #a3b5c4;
+  --chrome-6: #7f93a3;
+  --chrome-tint-1: rgba(230, 240, 249, 0.96);
+  --chrome-tint-2: rgba(226, 237, 248, 0.9);
+  --chrome-tint-3: rgba(210, 228, 244, 0.98);
+
+  --ink-1: #6a7f91;
+  --ink-2: #4f6375;
+  --ink-3: #3a4d5e;
+  --ink-4: #566b7d;
+  --ink-5: #45596a;
+  --ink-6: #253442;
+
+  /* ---- Scrims and shadows ------------------------------------------------- */
+  --overlay: rgba(40, 55, 70, 0.35);
+  --overlay-20: rgba(40, 55, 70, 0.12);
+  --overlay-60: rgba(40, 55, 70, 0.45);
+  --overlay-70: rgba(40, 55, 70, 0.55);
+  --overlay-80: rgba(40, 55, 70, 0.65);
+  --shadow-sm: 0 2px 6px rgba(59, 78, 95, 0.1);
+  --shadow-md: 0 4px 12px rgba(59, 78, 95, 0.14);
+  --shadow-lg: 0 4px 16px rgba(59, 78, 95, 0.18);
+  --shadow-glow: 0 0 4px 2px rgba(59, 78, 95, 0.14);
+  --shadow-rgb: 59 78 95;
+
+  /* ---- Icons --------------------------------------------------------------- */
+  --icon-filter: none;
+
+  --color-scheme: light;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%2345596a' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+
+  /* ---- Scene (both mirrored into three.js by ThemeManager) ------------------ */
+  --scene-bg: #e2ebf2;
+  --lattice-color: #46586a;
+  --dot-border: rgba(35, 50, 65, 0.85);
+
+  /* ---- Destructive ---------------------------------------------------------
+     Pale copper fill, deep companion for the text — same tier swap as the
+     other light palette. */
+  --danger: #f6bfae;
+  --danger-rgb: 246 191 174;
+  --danger-bright: #963f2d;
+  --danger-bright-rgb: 150 63 45;
+  --danger-strong: #b04a30;
+  --danger-fill: rgba(200, 96, 70, 0.92);
+
+  /* ---- Caution -------------------------------------------------------------- */
+  --warn: #b07f24;
+  --warn-bright: #7d570e;
+  --warn-soft: rgba(176, 127, 48, 0.9);
+  --warn-banner-bg: rgba(248, 240, 222, 0.92);
+  --best-row-rgb: 176 130 20;
+
+  /* ---- Positive / switches ---------------------------------------------------- */
+  --ok: #1f7a60;
+  --ok-rgb: 31 122 96;
+  --ok-bright: #14614b;
+  --ok-bright-rgb: 20 97 75;
+  --ok-tint: #0f5240;
+  --switch-on: #1a7a5e;
+  --switch-knob: #fbfdff;
+  --switch-off: #9fb0c0;
+  --switch-on-alt: #6f8fd8;
+  --seg-active-bg: #2f9d7d;
+  --btn-glow-rgb: 47 157 125;
+  --on-accent: #ffffff;
+  --thumb-border: #1f7a60;
+
+  /* ---- Informational / selection ------------------------------------------------ */
+  --info: #1d5d94;
+  --info-rgb: 29 93 148;
+  --info-bright: #1d5d94;
+  --info-tint: #16456e;
+  --link-hover: #1a6dbb;
+  --row-selected-bg: rgba(168, 214, 255, 0.6);
+  --locked-bg: rgba(200, 212, 245, 0.55);
+  --locked-badge-bg: rgba(200, 212, 245, 0.75);
+  /* Wyckoff-locked active tab fill — carries --info-tint (deep navy here) as
+     bold text, so it stays pale; mid-indigos measured under 3:1. */
+  --locked-grad-1: #b6c2ec;
+  --locked-grad-2: #a2b1e5;
+  /* Wyckoff/symmetry rings and borders follow the palette's azure instead of
+     the base sky-blue — see the note in fluorite/light.css. */
+  --blue-accent-rgb: 59 98 181;
+  --blue-accent-fill-rgb: 197 211 240;
+  --confirm-bg: #2f6fb8;
+  --confirm-border: #245689;
+
+  /* ---- Active tool ---------------------------------------------------------------- */
+  --tool-active: #1d5d94;
+  --tool-active-rgb: 29 93 148;
+
+  /* ---- Neutrals ------------------------------------------------------------------- */
+  --track-bg: rgba(59, 78, 95, 0.20);
+  --track-bg-strong: rgba(59, 78, 95, 0.28);
+  --label-bg: rgba(245, 249, 252, 0.88);
+  --label-ink: #253442;
+
+  /* ---- The About modal --------------------------------------------------------------- */
+  --about-bg: #f5f9fc;
+  --about-border: rgba(47, 111, 184, 0.5);
+  --about-code-bg: rgba(59, 78, 95, 0.06);
+  --about-close-hover: #1f7a60;
+
+}
+
+/* ---- Accents --------------------------------------------------------------
+   Same five-role split as Fluorite's light mode (see the note there): pale
+   fills carry the ink --fg-1, deep companions carry the accent-as-text role,
+   and --highlight-color is the deep seen-not-read control colour. Standard
+   backend wears malachite, symmetry wears azurite. */
+.theme-standard {
+  --bg-color: #c8dff2;
+  --accent-color: #b8e2d2;
+  --highlight-color: #1a7a5e;
+  --hover-color: rgba(31, 122, 96, 0.14);
+  --border-color: rgba(31, 122, 96, 0.4);
+  --accent-fg: #175d49;
+}
+
+.theme-symmetry {
+  --bg-color: #cdd8f2;
+  --accent-color: #c5d3f0;
+  --highlight-color: #3b62b5;
+  --hover-color: rgba(47, 79, 138, 0.14);
+  --border-color: rgba(47, 79, 138, 0.4);
+  --accent-fg: #2e4a85;
+}
+
+/* Same pairing fix as Fluorite: the active palette row paints
+   --highlight-color as a text-carrying fill, and the slate ink --fg-1
+   vanishes on the deep malachite. Scoped here so the default theme keeps
+   its own pairing. */
+.theme-menu-item.active {
+  color: var(--on-accent);
+}

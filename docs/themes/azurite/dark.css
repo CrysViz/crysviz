@@ -1,0 +1,142 @@
+/* Azurite — dark. Deep ink-navy panels, azure and malachite accents.
+   Layered on top of default/theme.css; only redefines what differs.
+
+   Fluorite's cool twin: where Fluorite is warm, soft and pastel, Azurite is
+   cool, crisp and jewel-toned — azurite blue intergrown with malachite green,
+   like the minerals themselves. The two backends map onto the two minerals:
+   standard → malachite, symmetry → azurite. Same file shape as
+   fluorite/dark.css; see the notes there for why each group is overridden. */
+:root {
+  /* ---- Surfaces --------------------------------------------------------- */
+  --surface-bg: #0c1220;
+  --panel-bg: #16202f;
+  --group-bg: #1e2c3f;
+  --menu-bg: #16202f;
+  --popup-bg: #131c2a;
+  --input-bg: #101827;
+  --textarea-bg: #101827;
+  --float-panel-bg: #131c2a;
+  --popup-bg-deep: #0c1220;
+
+  /* ---- Text -------------------------------------------------------------
+     The base ramp is neutral white-alpha; restated in a cool ice-white at the
+     same tiers so the panels read blue-cold rather than grey. */
+  --panel-fg: #e3ecf2;
+  --muted-fg: #8fa5b8;
+  --fg-1: #e3ecf2;
+  --fg-85: rgba(227, 236, 242, 0.85);
+  --fg-75: rgba(227, 236, 242, 0.75);
+  --fg-2: rgba(227, 236, 242, 0.6);
+  --fg-50: rgba(227, 236, 242, 0.5);
+  --fg-3: rgba(227, 236, 242, 0.4);
+
+  /* ---- Lines ------------------------------------------------------------ */
+  --line-1: #2c3e58;
+  --line-2: #4f6d94;
+  --line-3: rgba(227, 236, 242, 0.5);
+  --panel-border: #2c3e58;
+  --popup-border: #3a5273;
+
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23c5d6e2' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+
+  --chrome-1: rgba(10, 16, 26, 0.8);
+  --chrome-1-9: rgba(10, 16, 26, 0.9);
+  --chrome-2: #1d2a3c;
+  --chrome-2-5: #223044;
+  --chrome-3: #293b52;
+  --chrome-4: #33475f;
+  --chrome-5: #42586f;
+  --chrome-6: #61798f;
+
+  /* ---- Scene (both mirrored into three.js by ThemeManager) ---------------
+     Darker than the panels, same depth trick as Fluorite: the canvas recedes
+     and the CPK colours burn against near-black navy. */
+  --scene-bg: #0e1626;
+  --lattice-color: #5f7ea6;
+  --dot-border: rgba(227, 236, 242, 0.8);
+
+  /* ---- Destructive ------------------------------------------------------
+     The one warm family in a cold palette — copper-rust, which is exactly
+     what weathers out of azurite-bearing ore. fg/fill tiers stay split. */
+  --danger: #8f3f31;
+  --danger-rgb: 240 160 140;
+  --danger-bright: #f0a08c;
+  --danger-bright-rgb: 240 160 140;
+  --danger-strong: #e07a5f;
+  --danger-fill: rgba(190, 80, 58, 0.92);
+
+  /* ---- Positive / switches ---------------------------------------------- */
+  --ok: #63c9a8;
+  --ok-rgb: 99 201 168;
+  --ok-bright: #8fe8cb;
+  --ok-bright-rgb: 143 232 203;
+  --switch-on: #34b892;
+  --switch-knob: #e3ecf2;
+  --track-bg: rgba(227, 236, 242, 0.16);
+  --switch-off: #3f5068;
+  --switch-on-alt: #6f9fe8;
+  --seg-active-bg: #22957a;
+  --btn-glow-rgb: 52 184 146;
+  --on-accent: #0c1220;
+  --thumb-border: #8fe8cb;
+
+  /* ---- Informational / selection ---------------------------------------- */
+  --info: #7cc3ff;
+  --info-rgb: 124 195 255;
+  --info-bright: #7cc3ff;
+  --link-hover: #9cd2ff;
+  --row-selected-bg: rgba(84, 169, 255, 0.18);
+  --locked-bg: rgba(122, 138, 224, 0.22);
+  --locked-badge-bg: rgba(122, 138, 224, 0.35);
+  /* Wyckoff-locked active tab fill — carries the base near-white --info-tint
+     as bold text; the lighter #7a8ae0 stop dropped it below 3:1. */
+  --locked-grad-1: #3f4cae;
+  --locked-grad-2: #5a69c8;
+  /* Wyckoff/symmetry rings and borders follow the palette's azure instead of
+     the base sky-blue — see the note in fluorite/light.css. */
+  --blue-accent-rgb: 124 163 232;
+  --blue-accent-fill-rgb: 111 143 216;
+  --confirm-bg: #2f6fb8;
+  --confirm-border: #245689;
+
+  /* ---- Active tool ------------------------------------------------------- */
+  --tool-active: #7cc3ff;
+  --tool-active-rgb: 124 195 255;
+
+  /* ---- The About modal ---------------------------------------------------- */
+  --about-bg: #131c2a;
+  --about-border: rgba(124, 195, 255, 0.4);
+  --about-code-bg: rgba(16, 24, 39, 0.7);
+  --about-close-hover: #8fe8cb;
+
+}
+
+/* ---- Accents --------------------------------------------------------------
+   Same five-role split as Fluorite (see the long note in fluorite/dark.css):
+   fills are DEEP so --fg-1 reads on them, the vivid mineral hue lives in
+   --highlight-color / --accent-fg / the transient tints. Standard backend
+   wears malachite, symmetry wears azurite. */
+.theme-standard {
+  --bg-color: #24558a;
+  --accent-color: #1c6152;
+  --highlight-color: #45d1a6;
+  --hover-color: rgba(69, 209, 166, 0.18);
+  --border-color: rgba(69, 209, 166, 0.45);
+  --accent-fg: #8fe0c6;
+}
+
+.theme-symmetry {
+  --bg-color: #1f3f77;
+  --accent-color: #2a4d8f;
+  --highlight-color: #6f9fe8;
+  --hover-color: rgba(124, 163, 232, 0.2);
+  --border-color: rgba(124, 163, 232, 0.45);
+  --accent-fg: #a8c4f0;
+}
+
+/* Same pairing fix as Fluorite: the active palette row paints
+   --highlight-color as a text-carrying fill, and the ice --fg-1 vanishes on
+   the mint. Scoped here so the default theme keeps its own pairing. */
+.theme-menu-item.active {
+  color: var(--on-accent);
+}
