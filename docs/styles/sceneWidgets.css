@@ -267,6 +267,17 @@
   gap: var(--sp-3);
 }
 
+/* Floating, the bar must shrink-wrap: ColorBarDrag.js's beginFloating()
+   clears the inline width to measure the bar's true content width, and a
+   100% that survives that clear measures the VIEWPORT instead (~1400px).
+   clampToScene then has no room to place a box that wide, so every drop
+   pinned the bar to the left edge of #view and it could only move
+   vertically. The width this rule exposes is immediately replaced by the
+   measured px value, so it is only live for that one measurement. */
+.cv-colorbar-wrapper.cv-colorbar-floating {
+  width: auto;
+}
+
 /* valueRow (.cv-colorbar-values) as a flex ITEM of .cv-colorbar-wrapper —
    toggle_styles.css's own .cv-colorbar-values rule governs it as a flex
    CONTAINER for its own children, a different axis, so no overlap. */
