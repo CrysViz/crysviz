@@ -671,7 +671,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
   container.innerHTML = `
     <div class="control-group">
       <div class="planes-header">
-        <button id="addPlaneBtn" class="planes-action-btn planes-top-btn">Add Plane</button>
+        <button id="addPlaneBtn" class="file-action-btn planes-top-btn">Add Plane</button>
       </div>
 
       <!-- Planes table in container -->
@@ -694,7 +694,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
 
       <!-- Calculate from atoms button (centered) -->
       <div class="planes-center-row">
-        <button id="calcFromAtomsBtn" class="planes-action-btn planes-calc-btn" disabled>
+        <button id="calcFromAtomsBtn" class="file-action-btn planes-calc-btn" disabled>
           Calculate from Selected Atoms
         </button>
       </div>

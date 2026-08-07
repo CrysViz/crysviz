@@ -445,23 +445,11 @@ font-size: var(--fs-xl);
   margin-bottom: var(--sp-4);
 }
 
-.planes-action-btn {
-  flex: 1;
-  min-width: 120px;
-  padding: 7px var(--sp-3-5);
-  background: var(--accent-color);
-  color: var(--fg-1);
-  border: none;
-  border-radius: var(--radius);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.planes-action-btn:hover {
-  background: var(--highlight-color);
-}
+/* The panel's action buttons are regular .file-action-btn buttons (like the
+   panel's own Auto Range button); only sizing lives here. They used to be a
+   one-off accent-filled recipe whose hover swapped the fill to
+   --highlight-color under --fg-1 text — on the light palettes both are dark,
+   so the label vanished on hover. */
 
 /* Table */
 .planes-table-wrapper {
@@ -529,21 +517,10 @@ font-size: var(--fs-xl);
 
 .planes-top-btn {
   flex: 0 0 auto;
+  width: auto;
   min-width: 90px;
   padding: 5px var(--sp-4);
-  background: var(--accent-color);
-  color: var(--fg-1);
-  border: none;
-  border-radius: var(--radius-sm);
   font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  cursor: pointer;
-  transition: background 0.15s;
-  white-space: nowrap;
-}
-
-.planes-top-btn:hover {
-  background: var(--highlight-color);
 }
 
 /* Table container with visible border */
@@ -714,24 +691,20 @@ font-size: var(--fs-xl);
 }
 
 .planes-calc-btn {
+  width: auto;
   padding: var(--sp-2) var(--sp-5);
-  background: var(--accent-color);
-  color: var(--fg-1);
-  border: none;
-  border-radius: var(--radius);
   font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.planes-calc-btn:hover:not(:disabled) {
-  background: var(--highlight-color);
 }
 
 .planes-calc-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* file-action-btn's hover glow has no :disabled guard because its other
+   users never disable. */
+.planes-calc-btn:disabled:hover {
+  box-shadow: none;
 }
 
 /* Parameter / field sections */
