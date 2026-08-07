@@ -390,6 +390,16 @@
      base value, same as --lattice-color. */
   --dot-border: rgba(26, 26, 26, 0.8);
 
+  /* Same job as --dot-border, for the element-picker tiles: their borders are
+     chemistry data (PeriodicTablePickerCore.js's category colours, or the
+     structure's own atom colours), all picked against THIS popup surface, so
+     every palette that moves the surface loses one end of the range — the
+     alkaline-earth yellow on the light panels, the superheavies' grey on
+     Fluorite's plum. A palette sets this to a hairline and every tile keeps a
+     findable edge whatever colour it carries; here the colours are already
+     tuned against this exact background, so no ring. */
+  --tile-edge: transparent;
+
   /* ---- Icons (in-panel "docked" measure tools) -------------------------- */
   /* These default to the app's shared icons. A theme can re-skin them by
      dropping its own files in themes/<id>/icons/ and overriding these vars

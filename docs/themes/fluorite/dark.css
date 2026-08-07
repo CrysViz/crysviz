@@ -62,6 +62,7 @@
   --scene-bg: #201d29;
   --lattice-color: #6f6890;
   --dot-border: rgba(236, 230, 220, 0.8);
+  --tile-edge: rgba(236, 230, 220, 0.18);
 
   /* ---- Destructive ------------------------------------------------------
      Fluorite's reset/danger is a muted terracotta, not a signal red. The

@@ -114,6 +114,7 @@
   --scene-bg: #ece5d3;
   --lattice-color: #5f5847;
   --dot-border: rgba(60, 55, 45, 0.85);
+  --tile-edge: rgba(61, 56, 47, 0.55);
 
   /* ---- Destructive ---------------------------------------------------------
      On a light panel the tiers swap which one is legible: the pale terracotta

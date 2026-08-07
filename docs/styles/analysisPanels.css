@@ -230,9 +230,15 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background-color: var(--chrome-1); /* was #111 — Wave 2.6 near-dup fold */
-  color: var(--fg-1);
-  border: 1px solid var(--chrome-2-5); /* was #333 — Wave 2.6 exact */
+  /* Popup surface, not a widget wash: this is appended to <body> and floats
+     over the scene, so it needs the opaque --popup-bg the sibling
+     .cv-cus-popup already uses. --chrome-1 is a 5%-alpha tint in the light
+     palettes — correct inside an already-opaque panel, but here it made the
+     whole table see-through. */
+  background-color: var(--popup-bg, var(--chrome-1));
+  color: var(--panel-fg, var(--fg-1));
+  border: 1px solid var(--popup-border, var(--chrome-2-5));
+  box-shadow: var(--shadow-lg);
   border-radius: var(--radius);
   z-index: var(--z-dock-pane); /* was 1300 — exact value match, no stacking change */
   padding: var(--sp-5); /* 15px in the source, 1px from --sp-5 — see TOKENS.md's
@@ -291,6 +297,11 @@
   position: relative;
   z-index: 1;
   opacity: 1;
+  /* Hairline just inside the category colour, so a tile whose colour has no
+     contrast left on a light popup (the alkaline-earth yellow) still reads as
+     a tile. Inset, so it never paints over the colour itself; transparent in
+     the dark palettes — see --tile-edge in themes/default/theme.css. */
+  box-shadow: inset 0 0 0 1px var(--tile-edge);
 }
 
 .pt-tile:disabled {
@@ -306,12 +317,12 @@
    replaced while hovered, matching the original mouseover guard). */
 .pt-tile:not(:disabled):not(.is-selected):hover {
   transform: scale(1.2);
-  box-shadow: 0 0 12px var(--tile-glow);
+  box-shadow: inset 0 0 0 1px var(--tile-edge), 0 0 12px var(--tile-glow);
   z-index: 2;
 }
 
 .pt-tile.is-selected {
-  box-shadow: 0 0 10px var(--tile-glow);
+  box-shadow: inset 0 0 0 1px var(--tile-edge), 0 0 10px var(--tile-glow);
   transform: scale(1.1);
 }
 
@@ -377,6 +388,9 @@
     rendered weight; TOKENS.md leaves literal "bold" untokenised */
   font-size: var(--fs-lg);
   border-radius: var(--radius-4);
+  box-shadow: inset 0 0 0 1px var(--tile-edge); /* same reason as .pt-tile —
+    these carry the structure's own atom colours, and a pale one has nothing
+    left on a light popup */
 }
 
 .pt-selected-dash {

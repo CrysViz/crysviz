@@ -54,6 +54,7 @@
   --scene-bg: #0e1626;
   --lattice-color: #5f7ea6;
   --dot-border: rgba(227, 236, 242, 0.8);
+  --tile-edge: rgba(227, 236, 242, 0.18);
 
   /* ---- Destructive ------------------------------------------------------
      The one warm family in a cold palette — copper-rust, which is exactly

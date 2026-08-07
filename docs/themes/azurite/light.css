@@ -87,6 +87,7 @@
   --scene-bg: #e2ebf2;
   --lattice-color: #46586a;
   --dot-border: rgba(35, 50, 65, 0.85);
+  --tile-edge: rgba(43, 57, 71, 0.55);
 
   /* ---- Destructive ---------------------------------------------------------
      Pale copper fill, deep companion for the text — same tier swap as the
