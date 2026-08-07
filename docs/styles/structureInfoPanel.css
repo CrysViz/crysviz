@@ -829,10 +829,19 @@
      row dimension below derives from it so the whole legend scales as one. */
   --legend-scale: 1;
   padding: var(--sp-3-5);
-  resize: both;
   overflow: hidden;
   min-width: 120px;
   min-height: 44px;
+}
+
+/* The resize grip is the browser's, so it can't be styled away — and it is
+   the one bit of chrome that was still sitting in the corner of a figure
+   after transparent mode stripped everything else. Hover-revealed instead,
+   the same trick the title bar uses: pointing at the legend is enough to get
+   it back, and a drag keeps the pointer inside the panel throughout. */
+.cv-panel.comp-legend-panel:hover > .comp-legend-body,
+.comp-legend-body:focus-within {
+  resize: both;
 }
 
 /* The generic floating clamp (min 220 / max 600px) is wrong for a legend:

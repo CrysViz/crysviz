@@ -30,15 +30,31 @@ import { fileBrowser } from '../state/store.js';
 const PANEL_ID = 'compositionLegend';
 const SWATCH_PX = 30;   // on-screen swatch size at scale 1
 const RENDER_PX = 256;  // offscreen render size — headroom for scaled-up boxes
+const MAX_RENDER_PX = 1024; // ceiling when the PNG export asks for more
 const BASE_WIDTH = 210; // body width that maps to scale 1
 
 // ---- shared swatch renderer -------------------------------------------------
 
-/** @type {{ renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera } | null} */
+/** @type {{ renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, size: number } | null} */
 let gl = null;
 
-function ensureGL() {
-  if (gl) return gl;
+/** What each live swatch canvas was painted from, so the PNG export can
+ *  repaint it at the output's resolution instead of upscaling a 30px sphere. */
+/** @type {WeakMap<HTMLCanvasElement, Array<{color: number, fraction: number}>>} */
+const swatchSlices = new WeakMap();
+
+/** The one offscreen renderer, grown (never shrunk) to whatever the largest
+ *  swatch asked for — the PNG export repaints at its own output resolution,
+ *  which is normally well past RENDER_PX. */
+function ensureGL(px = RENDER_PX) {
+  if (gl) {
+    const want = Math.min(MAX_RENDER_PX, Math.max(RENDER_PX, Math.ceil(px)));
+    if (want > gl.size) {
+      gl.renderer.setSize(want, want, false);
+      gl.size = want;
+    }
+    return gl;
+  }
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 50);
   camera.position.set(0, 0, 4.2);
@@ -51,7 +67,8 @@ function ensureGL() {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.2;
-  renderer.setSize(RENDER_PX, RENDER_PX, false);
+  const size = Math.min(MAX_RENDER_PX, Math.max(RENDER_PX, Math.ceil(px)));
+  renderer.setSize(size, size, false);
 
   // Main-view lighting rig: soft ambient fill + one strong key light parked
   // upper-front-right of the camera (static here — the swatch never orbits).
@@ -61,7 +78,7 @@ function ensureGL() {
   scene.add(keyLight);
   scene.add(keyLight.target);
 
-  gl = { renderer, scene, camera };
+  gl = { renderer, scene, camera, size };
   return gl;
 }
 
@@ -80,7 +97,8 @@ function disposeGL() {
  * @param {Array<{color: number, fraction: number}>} slices
  */
 function renderSwatchInto(canvas, slices) {
-  const { renderer, scene, camera } = ensureGL();
+  swatchSlices.set(canvas, slices);
+  const { renderer, scene, camera } = ensureGL(canvas.width);
   const group = new THREE.Group();
   let phi = 0;
   for (const s of slices) {
@@ -108,6 +126,36 @@ function renderSwatchInto(canvas, slices) {
     mesh.geometry.dispose();
     mesh.material.dispose();
   }
+}
+
+/**
+ * Repaint every swatch with a `px`-square backing store, for the PNG export
+ * (render/ImageExportModule.js), and return a restore(). Only the backing
+ * store changes — CSS fixes the displayed size — so nothing moves on screen;
+ * without it a figure exported at 4K gets the 30px on-screen sphere upscaled.
+ * @param {number} px
+ * @returns {() => void}
+ */
+export function repaintSwatchesForExport(px) {
+  /** @type {Array<{canvas: HTMLCanvasElement, w: number, h: number}>} */
+  const previous = [];
+  const size = Math.min(MAX_RENDER_PX, Math.max(8, Math.round(px)));
+  for (const canvas of document.querySelectorAll('.comp-legend-swatch')) {
+    const el = /** @type {HTMLCanvasElement} */ (canvas);
+    const slices = swatchSlices.get(el);
+    if (!slices || el.width >= size) continue;
+    previous.push({ canvas: el, w: el.width, h: el.height });
+    el.width = size;
+    el.height = size;
+    renderSwatchInto(el, slices);
+  }
+  return () => {
+    for (const { canvas, w, h } of previous) {
+      canvas.width = w;
+      canvas.height = h;
+      renderSwatchInto(canvas, swatchSlices.get(canvas) ?? []);
+    }
+  };
 }
 
 // ---- legend data ------------------------------------------------------------

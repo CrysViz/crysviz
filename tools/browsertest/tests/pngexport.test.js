@@ -207,6 +207,66 @@ const H = require('../harness');
   H.check('prefs: transparent restored', prefs.transparent === true, String(prefs.transparent));
   H.check('prefs: 1:1 dimensions', prefs.width === prefs.height, `${prefs.width}x${prefs.height}`);
 
+  // The Composition Display legend is a figure element, not app furniture, so
+  // it has to land in the export — at its own place, and nowhere else. Two
+  // captures either side of closing it: everything that changes must be inside
+  // the box the legend occupied, and there has to be a real amount of it (the
+  // sphere swatch and the label, not a stray pixel).
+  await page.evaluate(() => document.getElementById('compositionLegendButton').click());
+  await page.waitForTimeout(1200);
+
+  const legend = await page.evaluate(async () => {
+    const { captureSceneToPng } = await import('./render/index.js');
+    const { closePanel } = await import('./ui/panels/PanelManager.js');
+    const W = 700, H = 500;
+    const grab = async () => {
+      const blob = await captureSceneToPng({ width: W, height: H, margin: 0, transparent: false });
+      const bmp = await createImageBitmap(blob);
+      const c = document.createElement('canvas');
+      c.width = W;
+      c.height = H;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(bmp, 0, 0);
+      return ctx.getImageData(0, 0, W, H).data;
+    };
+
+    const panel = [...document.querySelectorAll('.cv-panel')]
+      .find((p) => p.textContent.includes('Composition Display'));
+    if (!panel) return { opened: false };
+    const body = panel.querySelector('.comp-legend-body');
+    const view = document.getElementById('view').getBoundingClientRect();
+    const r = body.getBoundingClientRect();
+    const box = {
+      x0: ((r.left - view.left) / view.width) * W - 3,
+      y0: ((r.top - view.top) / view.height) * H - 3,
+      x1: ((r.right - view.left) / view.width) * W + 3,
+      y1: ((r.bottom - view.top) / view.height) * H + 3,
+    };
+
+    const shown = await grab();
+    closePanel('compositionLegend');
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const hidden = await grab();
+
+    let inside = 0, outside = 0;
+    for (let i = 0; i < shown.length; i += 4) {
+      const p = i / 4;
+      const diff = Math.abs(shown[i] - hidden[i]) + Math.abs(shown[i + 1] - hidden[i + 1])
+        + Math.abs(shown[i + 2] - hidden[i + 2]);
+      if (diff <= 24) continue;
+      const x = p % W, y = Math.floor(p / W);
+      if (x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1) inside++;
+      else outside++;
+    }
+    return { opened: true, inside, outside, area: (box.x1 - box.x0) * (box.y1 - box.y0) };
+  });
+
+  H.check('the legend window opened over the scene', legend.opened === true);
+  H.check('the composition legend is drawn into the PNG',
+    legend.inside > legend.area * 0.05, JSON.stringify(legend));
+  H.check('and nothing else in the frame moved because of it',
+    legend.outside === 0, JSON.stringify(legend));
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);
