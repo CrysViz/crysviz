@@ -490,7 +490,8 @@ export function addForcePanel(target = "cvPanelBody-forces") {
     uniqueElements.forEach(element => {
       const toggleItem = createElement("div", { class: "cv-species-toggle-item" });
 
-      const toggleContainer = createElement("label", { class: "cv-species-toggle" });
+      // The shared pill (toggle_styles.css); cv-species-toggle only shrinks it.
+      const toggleContainer = createElement("label", { class: "toggle_switch cv-species-toggle" });
 
       const checkbox = createElement("input", {
         type: "checkbox",
@@ -498,12 +499,10 @@ export function addForcePanel(target = "cvPanelBody-forces") {
         checked: "checked"
       });
 
-      const slider = createElement("span", { class: "cv-species-toggle-track" });
-      const circle = createElement("span", { class: "cv-species-toggle-knob" });
+      const slider = createElement("span", { class: "toggle_slider" });
 
       toggleContainer.appendChild(checkbox);
       toggleContainer.appendChild(slider);
-      slider.appendChild(circle);
 
       const label = createElement("label", {
         for: `force-species-${element}`,

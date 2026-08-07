@@ -13,6 +13,7 @@ import { atomForceToColor } from '../ColorPanel.js';
 import { updateForces, updateSpins } from '../../render/index.js';
 import { applyToOtherTrajectoryFrames, wirePressHoldPopup, getSiteSignatureGroups } from './components/utils.js';
 import { toggleCompositionLegend, refreshCompositionLegend } from '../CompositionLegendWidget.js';
+import { createToggleRow } from '../ToggleSwitch.js';
 
 // The per-structure style-override stores (all survive rebuilds; see Structure.js).
 const ALL_STYLE_STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
@@ -89,35 +90,6 @@ function resetAllStyling(structure) {
   // polyhedra visibility overrides cleared above.
   structure.forces?.forEach((force) => { force.hidden = false; });
   structure.spins?.forEach((spin) => { spin.hidden = false; });
-}
-
-// Small switch row, same markup/classes as the toggles in PolyhedraPanel.js.
-function createToggleRow({ id, label, checked, onChange }) {
-  const row = document.createElement('label');
-  row.className = 'toggle_row toggle_container';
-
-  const switchWrap = document.createElement('span');
-  switchWrap.className = 'toggle_switch';
-
-  const input = document.createElement('input');
-  input.type = 'checkbox';
-  input.id = id;
-  input.checked = checked;
-
-  const slider = document.createElement('span');
-  slider.className = 'toggle_slider';
-
-  const text = document.createElement('span');
-  text.className = 'toggle_text';
-  text.textContent = label;
-
-  input.addEventListener('change', onChange);
-
-  switchWrap.appendChild(input);
-  switchWrap.appendChild(slider);
-  row.appendChild(switchWrap);
-  row.appendChild(text);
-  return row;
 }
 
 /**
@@ -500,15 +472,20 @@ export function renderComposition(panelState="closed") {
 // below — Atoms per-image rows, Bonds/Poly grouped rows (general.linkPeriodicCopies).
 // Wyckoff orbit rows are unaffected, but the toggle still applies to Bonds/Poly
 // in wyckoff mode, so it is shown unconditionally above the tab selector.
-const linkCopiesRow = createToggleRow({
+const { row: linkCopiesRow } = createToggleRow({
   id: 'linkPeriodicCopiesToggle',
   label: 'Link colors of periodic copies',
   checked: general.linkPeriodicCopies !== false,
-  onChange: (e) => {
-    general.linkPeriodicCopies = /** @type {any} */ (e.target).checked;
+  onChange: (checked) => {
+    general.linkPeriodicCopies = checked;
     // Selection rows go stale across the list rebuilds.
     clearAllHighlights({ reason: 'link-copies-toggle' });
-    renderComposition("open");
+    // Rebuilding immediately replaces this very switch with a fresh node
+    // already rendered in its new state, so the knob never visibly slid.
+    // Let the pill's 0.25s transition play out first. Kept under the 300ms
+    // the browser tests wait between clicking this toggle and asserting on
+    // the rebuilt rows.
+    setTimeout(() => renderComposition("open"), 260);
   },
 });
 linkCopiesRow.className = 'si-link-copies-row';

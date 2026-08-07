@@ -139,13 +139,11 @@
   --ok-bright: #3d5537;
   --ok-bright-rgb: 61 85 55;
   --ok-tint: #34492f;
-  --switch-on: #4f7a45;
   --switch-knob: #fffdf7;
   /* Was #776d58 — a dark olive pill as heavy as the ON state, which made a
      column of OFF toggles the loudest thing on the panel. A lavender-grey
      recedes and ties into the palette; the cream knob still reads on it. */
   --switch-off: #a9a1b4;
-  --switch-on-alt: #9a8bbc;
   --seg-active-bg: #7ba473;
   --btn-glow-rgb: 123 164 115;
   --on-accent: #ffffff;

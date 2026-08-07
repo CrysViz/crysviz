@@ -446,10 +446,9 @@
   --best-row-rgb: 255 193 7;        /* "best match" row highlight (amber) */
 
   /* ---- Positive / switches ------------------------------------------------
-     Two switch greens survive because two different switch widgets ship with
-     them; --switch-on-alt is the blue one in toggle_styles.css. */
-  --switch-on: #4caf50;
-  --switch-on-alt: #2196f3;
+     Every pill toggle's checked track is --highlight-color now (the toggle
+     unification retired --switch-on/--switch-on-alt); only the OFF track and
+     the knob keep switch-specific tokens. */
   /* The toggle knob contrasts with its TRACK, not with the panel, so it does
      not follow --fg-1 the way body text does. It was --fg-1, which is white
      here and correct — and a black dot on a light-panelled theme. */

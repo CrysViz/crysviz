@@ -203,7 +203,7 @@
 .tracer-progress-fill {
   height: 100%;
   width: 0%;
-  background: var(--highlight-color, var(--switch-on));
+  background: var(--highlight-color);
   transition: width 0.15s linear;
 }
 
@@ -577,9 +577,9 @@
 /* ===========================================================================
    ui/ComparisonPanel.js — Comparison controls (bond visibility for the
    comparison structure, lattice-comparison popup toggle, main/comparison
-   opacity split slider). Extracted from inline styles set by
-   createToggleSwitch() and addCompPanel(), and from a <style> block that was
-   re-injected into <head> on every addCompPanel() call.
+   opacity split slider). The toggles are the stock .toggle_switch pill
+   (styles/toggle_styles.css, built by ui/ToggleSwitch.js); only the row
+   spacing and label margin are this panel's own.
    =========================================================================== */
 
 .cmp-toggle-row {
@@ -588,66 +588,8 @@
   margin: var(--sp-3-5) 0; /* 10px */
 }
 
-.cmp-toggle-switch {
-  position: relative;
-  display: inline-block;
-  width: 50px;
-  height: 24px;
-}
-
-/* Descendant selector, not a second class on the element itself: the slider
-   span keeps className "toggle_slider" alone (the checked-state rules below
-   key off `#id:checked + .toggle_slider`), and scoping the override under
-   .cmp-toggle-switch gives it two-class specificity so it always wins over
-   toggle_styles.css's own plain `.toggle_slider` rule regardless of
-   stylesheet load order — both are otherwise equal (single-class)
-   specificity, so the base values matter only for pixel-parity with the
-   pre-extraction inline styles, not for who wins the cascade. */
-.cmp-toggle-switch .toggle_slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: var(--ink-3); /* #ccc */
-  transition: .4s;
-  border-radius: var(--radius-24);
-}
-
-.cmp-toggle-knob {
-  position: absolute;
-  height: 16px;
-  width: 16px;
-  left: 4px;
-  bottom: 4px;
-  background-color: var(--fg-1);
-  transition: .4s;
-  border-radius: 50%;
-}
-
-.cmp-toggle-checkbox {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
 .cmp-toggle-label {
   margin-left: var(--sp-3-5); /* 10px */
-}
-
-/* Checked-state colours for the three toggles built by createToggleSwitch()
-   (enable comparison / show bonds / show lattice comparison). */
-#showComparisonBonds:checked + .toggle_slider,
-#showLatticeComparison:checked + .toggle_slider,
-#enableComparisonToggle:checked + .toggle_slider {
-  background-color: var(--switch-on) !important;
-}
-
-#showComparisonBonds:checked + .toggle_slider > span,
-#showLatticeComparison:checked + .toggle_slider > span,
-#enableComparisonToggle:checked + .toggle_slider > span {
-  transform: translateX(26px) !important;
 }
 
 .cmp-comparison-error {

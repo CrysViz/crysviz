@@ -63,39 +63,9 @@
 
 /* --- Overlay panel (ui/OverlayPanel.js) --- */
 
-/* Toggle switch: extends the shared .toggle_switch/.toggle_slider pill
-   (styles/toggle_styles.css) rather than duplicating it — only what's
-   actually different here (a wider 50x24 footprint, a real knob <span>
-   instead of the base's ::before, and a green accent instead of
-   --highlight-color) gets its own rule. */
-.toggle_switch.cv-overlay-toggle-switch {
-  width: 50px;
-  height: 24px;
-}
-
-.cv-overlay-toggle-switch .toggle_slider {
-  cursor: pointer;
-}
-
-.cv-overlay-toggle-knob {
-  position: absolute;
-  height: 16px;
-  width: 16px;
-  left: 4px;
-  bottom: 4px;
-  background-color: var(--fg-1);
-  transition: transform 0.4s;
-  border-radius: 50%;
-}
-
-.cv-overlay-toggle-switch input:checked + .toggle_slider {
-  background-color: var(--switch-on);
-}
-
-.cv-overlay-toggle-switch input:checked + .toggle_slider > .cv-overlay-toggle-knob {
-  transform: translateX(26px);
-}
-
+/* Toggle rows: the pill itself is the stock .toggle_switch/.toggle_slider
+   (styles/toggle_styles.css, built by ui/ToggleSwitch.js) — this panel keeps
+   only its own row spacing and label margin. */
 .cv-overlay-toggle-row {
   display: flex;
   align-items: center;

@@ -16,40 +16,14 @@ import { general, fileBrowser } from '../state/store.js';
 import { removeLatticeComparisonPopup } from './LatticeComparisonPanel.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { syncOverlayFromCheckboxes, overlayEntryLabel, refreshOverlayLatticePlots } from './FileBrowswerPanel.js';
+import { createToggleRow } from './ToggleSwitch.js';
 
-/**
- * Build a labeled toggle switch (the pill-shaped checkbox used throughout
- * this panel). Returns the input element so callers can wire `change`.
- */
+/** Labeled stock pill toggle with this panel's row spacing/label margin. */
 function createToggleSwitch(id, labelText, checked) {
-  const container = document.createElement("label");
-  container.className = "cv-overlay-toggle-row";
-
-  const switchEl = document.createElement("span");
-  switchEl.className = "toggle_switch cv-overlay-toggle-switch";
-
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.id = id;
-  input.checked = checked;
-
-  const slider = document.createElement("span");
-  slider.className = "toggle_slider";
-
-  const sliderInner = document.createElement("span");
-  sliderInner.className = "cv-overlay-toggle-knob";
-
-  slider.appendChild(sliderInner);
-  switchEl.appendChild(input);
-  switchEl.appendChild(slider);
-
-  const text = document.createElement("span");
-  text.textContent = labelText;
-  text.className = "cv-overlay-toggle-text";
-
-  container.appendChild(switchEl);
-  container.appendChild(text);
-
+  const { row: container, input } = createToggleRow({
+    id, label: labelText, checked,
+    rowClass: 'cv-overlay-toggle-row', textClass: 'cv-overlay-toggle-text',
+  });
   return { container, input };
 }
 

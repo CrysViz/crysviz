@@ -16,46 +16,14 @@ import { general, fileBrowser } from '../state/store.js';
 import { removeLatticeComparisonPopup } from './LatticeComparisonPanel.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { syncOverlayFromCheckboxes, refreshOverlayLatticePlots } from './FileBrowswerPanel.js';
+import { createToggleRow } from './ToggleSwitch.js';
 
-/**
- * Build a labeled toggle switch (the pill-shaped checkbox used throughout
- * this panel). Returns the input element so callers can wire `change`.
- */
+/** Labeled stock pill toggle with this panel's row spacing/label margin. */
 function createToggleSwitch(id, labelText, checked) {
-  const container = document.createElement("label");
-  container.className = "cmp-toggle-row";
-
-  const switchEl = document.createElement("span");
-  switchEl.className = "cmp-toggle-switch";
-
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.id = id;
-  input.checked = checked;
-  input.className = "cmp-toggle-checkbox";
-
-  // className stays "toggle_slider" (not renamed/extended) — the checked-state
-  // rules below key off this exact class via `#id:checked + .toggle_slider`.
-  // Its box styling (position/background/etc.) is scoped in CSS under
-  // .cmp-toggle-switch so it wins over toggle_styles.css's own `.toggle_slider`
-  // rule regardless of stylesheet load order.
-  const slider = document.createElement("span");
-  slider.className = "toggle_slider";
-
-  const sliderInner = document.createElement("span");
-  sliderInner.className = "cmp-toggle-knob";
-
-  slider.appendChild(sliderInner);
-  switchEl.appendChild(input);
-  switchEl.appendChild(slider);
-
-  const text = document.createElement("span");
-  text.textContent = labelText;
-  text.className = "cmp-toggle-label";
-
-  container.appendChild(switchEl);
-  container.appendChild(text);
-
+  const { row: container, input } = createToggleRow({
+    id, label: labelText, checked,
+    rowClass: 'cmp-toggle-row', textClass: 'cmp-toggle-label',
+  });
   return { container, input };
 }
 
@@ -158,10 +126,6 @@ export function addCompPanel(container) {
     polyhedraNote.className = "cmp-polyhedra-note";
     container.appendChild(polyhedraNote);
   }
-
-  // Checked-state colours for the three toggles above live in
-  // analysisPanels.css (.cmp- rules) — previously a <style> block re-injected
-  // into <head> on every addCompPanel() call (once per panel open).
 
   // Add event listeners
   compareToggleInput.addEventListener('change', function() {

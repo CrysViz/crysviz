@@ -733,13 +733,16 @@ once for a genuine literal in the same gradient, which remained.)
 
 ### Positive / switches
 
-Two switch greens survive because two different switch widgets ship with them
-— `--switch-on-alt` is the blue one in `toggle_styles.css`, not a duplicate.
+`--switch-on` (`#4caf50`) and `--switch-on-alt` (`#2196f3`) are gone: the
+toggle unification folded every pill switch onto the one
+`.toggle_switch`/`.toggle_slider` base, whose checked track is
+`--highlight-color` (`toggle_styles.css`). The overlay/comparison/species
+switches that carried the green, and the dead generic-slider blue rule, went
+with it — a toggle's palette is now exactly `--switch-off` /
+`--switch-knob` / `--highlight-color`.
 
 | token | value | role | call sites |
 |---|---|---|---|
-| `--switch-on` | `#4caf50` | checked-state fill of a toggle track | `sceneWidgets.css` `.cv-overlay-toggle-switch input:checked + .toggle_slider`; `forcePanel.css` `.cv-species-toggle input:checked + .cv-species-toggle-track`; `analysisPanels.css` `#showComparisonBonds` / `#showLatticeComparison` / `#enableComparisonToggle` `:checked + .toggle_slider`, and `.tracer-progress-fill` as `--highlight-color`'s fallback |
-| `--switch-on-alt` | `#2196f3` | the generic slider's checked blue | `toggle_styles.css` `input:checked + .toggle_slider` |
 | `--seg-active-bg` | `#0d8a36` | active button in a segmented control | `structureInfoPanel.css` `.spin-mode-switch-btn.active` |
 | `--btn-glow-rgb` | `54 143 110` | button hover glow | `styles.css` `#secondLoadTextButton:hover` (0.35) |
 | `--on-accent` | `#0c1f17` | text sitting ON an accent fill — 2.6 spotted this one and filed it as "different role again"; that role is now named | `trajectoryPanel.css` `#playPauseBtn` |
@@ -845,6 +848,9 @@ away, which is the fragmentation this pass exists to end.
 The last one is the only visible change of the five: this toggle was the sole
 switch in the app not painting the shared checked-state green, and it now
 matches the others. The four reds/oranges are sub-perceptual at these sizes.
+(Since overtaken: the toggle unification later replaced that green — and
+`--switch-on` itself — with `--highlight-color` on the shared base, see
+"Positive / switches" above.)
 
 ### Fallbacks resolved
 
@@ -873,7 +879,7 @@ tidiness.
 | token | value | role | call sites |
 |---|---|---|---|
 | `--icon-filter` | `invert(1)` | inversion applied to the theme-picker glyphs; light palettes set it to `none` | `controlPanel.css` `.theme-icon` |
-| `--switch-knob` | `#ffffff` | the toggle knob — contrasts with its track, not with the panel | `toggle_styles.css` `.toggle_slider::before`, `.toggle_slider_dual::before`, `.toggle_slider:before` |
+| `--switch-knob` | `#ffffff` | the toggle knob — contrasts with its track, not with the panel | `toggle_styles.css` `.toggle_slider::before`, `.toggle_slider_dual::before` |
 | `--switch-off` | `#cccccc` | the toggle's OFF track fill | `toggle_styles.css` `.toggle_slider` |
 
 **`--icon-filter`** was a hardcoded `filter: invert(1)` on `.theme-icon`. The

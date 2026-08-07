@@ -112,16 +112,12 @@
 .cv-scene-select.cv-scene-select--block { width: 100%; }
 
 /* --- Species-visibility toggles (Force + Spin) ---
-   Same pill-switch idiom as styles/toggle_styles.css's .toggle_switch, but a
-   parallel implementation rather than an extension of it: this one needs its
-   own fixed 40x20 footprint and a semantic on/off colour (green="visible")
-   that don't match .toggle_switch's 46x24 track / --highlight-color accent,
-   and resizing/recolouring that shared component to fit this one use would
-   ripple through every other toggle in the app. Structure: label
-   (.cv-species-toggle) > input[checkbox] + span(.cv-species-toggle-track) >
-   span(.cv-species-toggle-knob) — the browser's own :checked selector drives
-   the colour/position, so SpinPanel.js/ForcePanel.js only ever flip
-   `checkbox.checked`, never touch these elements' style directly. */
+   The pill is the shared .toggle_switch/.toggle_slider base
+   (styles/toggle_styles.css, built by ui/ToggleSwitch.js) — this used to be a
+   full parallel implementation with its own off colour (--chrome-5, the one
+   visibly odd track in the app) and knob; only the compact 40x20 footprint is
+   local now, a size modifier like .toggle_switch--sm. SpinPanel.js/
+   ForcePanel.js only ever flip `checkbox.checked`, never touch style. */
 .cv-species-toggle-grid {
   margin-bottom: var(--sp-3);
   display: grid;
@@ -137,49 +133,21 @@
   height: 24px;
 }
 
-.cv-species-toggle {
-  position: relative;
-  display: inline-block;
+.toggle_switch.cv-species-toggle {
   width: 40px;
   height: 20px;
   margin-right: var(--sp-2);
   cursor: pointer;
 }
 
-.cv-species-toggle input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-  position: absolute;
-}
-
-.cv-species-toggle-track {
-  position: absolute;
-  cursor: pointer;
-  inset: 0;
-  background-color: var(--chrome-5);
-  border-radius: var(--radius-24);
-  transition: background-color 0.2s, box-shadow 0.2s;
-}
-
-.cv-species-toggle input:checked + .cv-species-toggle-track {
-  background-color: var(--switch-on);
-}
-
-.cv-species-toggle-knob {
-  position: absolute;
-  content: "";
-  height: 16px;
+.toggle_switch.cv-species-toggle .toggle_slider::before {
   width: 16px;
+  height: 16px;
   left: 2px;
-  bottom: 2px;
-  background-color: var(--fg-1);
-  transition: transform 0.2s, box-shadow 0.2s;
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgb(var(--shadow-rgb) / 0.4);
+  top: 2px;
 }
 
-.cv-species-toggle input:checked + .cv-species-toggle-track .cv-species-toggle-knob {
+.toggle_switch.cv-species-toggle input:checked + .toggle_slider::before {
   transform: translateX(20px);
 }
 

@@ -143,13 +143,15 @@ async function openOverlayTab(page) {
   H.check('main structure opacity slider updates general.mainOpacity', mainOpacity === 0.4, String(mainOpacity));
 
   // --- real CSS applied: the pill toggle switch is styled, not a bare checkbox
+  // (the shared 46x24 .toggle_switch base — the panel's own 50x24 variant was
+  // folded into it by the toggle unification)
   const toggleCss = await page.evaluate(() => {
-    const sw = document.getElementById('enableOverlayToggle').closest('.cv-overlay-toggle-switch');
+    const sw = document.getElementById('enableOverlayToggle').closest('.toggle_switch');
     const r = sw.getBoundingClientRect();
     return { width: r.width, height: r.height };
   });
-  H.check('the overlay toggle switch is the styled 50x24 pill, not a native checkbox',
-    Math.round(toggleCss.width) === 50 && Math.round(toggleCss.height) === 24, JSON.stringify(toggleCss));
+  H.check('the overlay toggle switch is the styled 46x24 pill, not a native checkbox',
+    Math.round(toggleCss.width) === 46 && Math.round(toggleCss.height) === 24, JSON.stringify(toggleCss));
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

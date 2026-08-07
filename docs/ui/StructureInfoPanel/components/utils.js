@@ -2,6 +2,7 @@ import { fileBrowser, structureShip } from '../../../state/store.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { updateSingleAtomCutPlaneImmunity } from '../../../render/AtomsFracUpdateModule.js';
 import { applyWyckoffOrbitPosition } from '../../SymmetryEditModule.js';
+import { createToggleSwitch } from '../../ToggleSwitch.js';
 
 /**
  * A small pill-style on/off switch — a shrunk version of the "Link periodic
@@ -26,16 +27,10 @@ import { applyWyckoffOrbitPosition } from '../../SymmetryEditModule.js';
  * @returns {{ wrapper: HTMLLabelElement, input: HTMLInputElement }}
  */
 export function createMiniToggleSwitch(title = '') {
-  const wrapper = document.createElement('label');
-  wrapper.className = 'toggle_switch toggle_switch--sm';
+  const { switchEl, input } = createToggleSwitch({ small: true, tag: 'label' });
+  const wrapper = /** @type {HTMLLabelElement} */ (switchEl);
   wrapper.title = title;
   wrapper.addEventListener('click', (e) => e.stopPropagation());
-  const input = document.createElement('input');
-  input.type = 'checkbox';
-  const slider = document.createElement('span');
-  slider.className = 'toggle_slider';
-  wrapper.appendChild(input);
-  wrapper.appendChild(slider);
   return { wrapper, input };
 }
 
