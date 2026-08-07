@@ -703,7 +703,7 @@ export function addColorPanel(target = "colorContainer") {
   // "Advanced" section: seldom-touched tracer toggles, collapsed by default.
   // Reuses the app's native <details>/<summary> collapsible idiom (the same
   // `eos-collapsible` styling used by the EOS panel's reference-data section:
-  // a green header strip with a caret that rotates on open). Shown for both
+  // a quiet transparent header with a caret that rotates on open). Shown for both
   // tracers via rtControlsBlock; the Denoiser row inside is toggled to
   // pathtrace-only by updateRenderingControlsVisibility. Collapse state is
   // native <details> UI state — not persisted.

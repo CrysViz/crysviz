@@ -89,28 +89,25 @@
   background: var(--wash-2);
 }
 
-/* Reference data is collapsible (<details>/<summary>) — most sessions don't
-   need it, so it starts closed. Styled like the app's own window-panel title
-   bars (panelWindow.css) rather than the browser's native disclosure widget:
-   a solid green header strip with a caret that rotates on expand (same idiom
-   as the Bonds/Polyhedra row carets). */
-.eos-collapsible {
-  padding: 0;
-  overflow: hidden;
-}
-
+/* Seldom-needed sections are collapsible (<details>/<summary>) and start
+   closed. The summary follows the quiet collapse-header idiom of the
+   Backend/Atomistic panels (backendPanel.css .atomistic-collapse-toggle):
+   a caret plus bold accent-toned title on a transparent background — no
+   filled strip — with the caret rotating on expand. Also reused by the
+   Color panel's Advanced tracer section. */
 .eos-collapsible-summary {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
   margin: 0;
-  padding: var(--sp-3-5) var(--sp-5);
+  padding: 0;
+  border: 0;
+  background: transparent;
   cursor: pointer;
   list-style: none;
   font-size: var(--fs-md);
   font-weight: var(--fw-bold);
-  color: var(--fg-1);
-  background: var(--highlight-color, var(--info));
+  color: var(--fg-85);
 }
 
 .eos-collapsible-summary::-webkit-details-marker {
@@ -120,7 +117,7 @@
 .eos-collapsible-arrow {
   display: inline-block;
   font-size: var(--fs-sm);
-  color: var(--fg-1);
+  color: inherit;
   transition: transform 0.15s ease;
 }
 
@@ -129,7 +126,7 @@
 }
 
 .eos-collapsible-body {
-  padding: var(--sp-5);
+  padding: var(--sp-3) 0 0;
 }
 
 .eos-ref-divisor-row {
