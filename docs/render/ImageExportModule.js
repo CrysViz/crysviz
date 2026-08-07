@@ -2,8 +2,8 @@
 // on screen right now — atoms/bonds/polyhedra/fields, the axis gizmo and its
 // legend wherever they've been dragged, any color bars floated onto the
 // scene, the Composition Display legend, measurement lines and labels — at
-// the position it's actually
-// showing at, cropped to a rectangle the user picks interactively
+// the position it's actually showing at, cropped to a rectangle the user picks
+// interactively
 // (ui/CropOverlay.js, an iOS-Photos-style draggable/resizable crop window
 // over the live view) rather than auto-framed to content or auto-placed in
 // a corner. Docked (non-floating) color bars live in the side panel, not
@@ -41,7 +41,7 @@ import { latticeDirsNorm } from './LatticeModule.js';
 import { requestRender } from './AnimateModule.js';
 import { colorsFor, computeTicks, formatTick, currentContrastColor } from '../ui/ColorBarWidget.js';
 import { listActiveColorBars } from '../ui/ColorBarRegistry.js';
-import { repaintSwatchesForExport } from '../ui/CompositionLegendPanel.js';
+import { repaintSwatchesForExport } from '../ui/CompositionLegendWidget.js';
 import { drawLegendRichText } from '../utils/index.js';
 
 /** @returns {HTMLElement} the #view container */
@@ -424,19 +424,19 @@ function drawFloatingColorBars(octx, width, height, margin, crop, viewRect) {
   }
 }
 
-// The Composition Display legend (ui/CompositionLegendPanel.js): a window
+// The Composition Display legend (ui/CompositionLegendWidget.js): a widget
 // whose entire purpose is to sit beside the structure in a figure, so it
-// belongs in the capture. Same rule as the color bars — only when it's
-// FLOATING over the scene; docked, it's side-panel furniture and no more part
-// of the picture than the panel around it.
+// belongs in the capture. Same rule (and same floating class) as the color
+// bars — only while it's actually over the scene.
 //
 // Drawn from the live DOM's own rects (swatch canvas blitted, text redrawn
-// with its computed font), not the window: the title bar and the resize grip
-// are chrome for operating the thing, not legend content. The body surface is
-// filled only when the user hasn't stripped it via ≡ > Transparent background.
+// with its computed font), not the widget: the ⦀/☰ strip and the resize
+// handle are chrome for operating the thing, not legend content. The body
+// surface is filled only when the user hasn't stripped it via ☰ > Transparent
+// background.
 function drawCompositionLegend(octx, width, height, margin, crop, viewRect) {
-  const panel = document.querySelector('.cv-panel.comp-legend-panel.cv-floating');
-  const body = /** @type {HTMLElement | null} */ (panel?.querySelector('.comp-legend-body'));
+  const widget = document.querySelector('.comp-legend-widget.cv-colorbar-floating');
+  const body = /** @type {HTMLElement | null} */ (widget?.querySelector('.comp-legend-body'));
   if (!body) return;
   const rows = body.querySelectorAll('.comp-legend-row');
   if (!rows.length) return; // collapsed, or no structure ("No structure loaded.")
@@ -482,7 +482,11 @@ function drawCompositionLegend(octx, width, height, margin, crop, viewRect) {
         octx.fillStyle = cs.color;
         octx.textAlign = 'left';
         octx.textBaseline = 'middle';
+        // The occupancy sub-line is dimmed by opacity, not by its colour.
+        const alpha = parseFloat(cs.opacity);
+        octx.globalAlpha = Number.isFinite(alpha) ? alpha : 1;
         octx.fillText(text, out.x, out.y + out.height / 2);
+        octx.globalAlpha = 1;
       }
     }
   } finally {

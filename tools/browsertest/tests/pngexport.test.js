@@ -217,7 +217,7 @@ const H = require('../harness');
 
   const legend = await page.evaluate(async () => {
     const { captureSceneToPng } = await import('./render/index.js');
-    const { closePanel } = await import('./ui/panels/PanelManager.js');
+    const { closeCompositionLegend } = await import('./ui/CompositionLegendWidget.js');
     const W = 700, H = 500;
     const grab = async () => {
       const blob = await captureSceneToPng({ width: W, height: H, margin: 0, transparent: false });
@@ -230,10 +230,9 @@ const H = require('../harness');
       return ctx.getImageData(0, 0, W, H).data;
     };
 
-    const panel = [...document.querySelectorAll('.cv-panel')]
-      .find((p) => p.textContent.includes('Composition Display'));
-    if (!panel) return { opened: false };
-    const body = panel.querySelector('.comp-legend-body');
+    const widget = document.querySelector('.comp-legend-widget.cv-colorbar-floating');
+    if (!widget) return { opened: false };
+    const body = widget.querySelector('.comp-legend-body');
     const view = document.getElementById('view').getBoundingClientRect();
     const r = body.getBoundingClientRect();
     const box = {
@@ -244,7 +243,7 @@ const H = require('../harness');
     };
 
     const shown = await grab();
-    closePanel('compositionLegend');
+    closeCompositionLegend();
     await new Promise((resolve) => setTimeout(resolve, 400));
     const hidden = await grab();
 
@@ -261,7 +260,7 @@ const H = require('../harness');
     return { opened: true, inside, outside, area: (box.x1 - box.x0) * (box.y1 - box.y0) };
   });
 
-  H.check('the legend window opened over the scene', legend.opened === true);
+  H.check('the legend opened over the scene', legend.opened === true);
   H.check('the composition legend is drawn into the PNG',
     legend.inside > legend.area * 0.05, JSON.stringify(legend));
   H.check('and nothing else in the frame moved because of it',

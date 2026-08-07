@@ -818,37 +818,76 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Composition Display (ui/CompositionLegendPanel.js) — the movable colour
+   Composition Display (ui/CompositionLegendWidget.js) — the movable colour
    legend. Swatches are canvases painted by a shared WebGL renderer with the
-   main view's atom material; the text sizes lean large because the window's
+   main view's atom material; the text sizes lean large because the legend's
    whole purpose is being screenshotted next to the structure.
+
+   It is a scene widget on ui/ColorBarDrag.js, like the floating colour bars,
+   so it wears their chrome classes too (.cv-colorbar-controls / -grip /
+   -menu-* / -resize-handle, styles/toggle_styles.css) and only the box itself
+   is styled here.
    ------------------------------------------------------------------------ */
 
+.comp-legend-widget {
+  /* Shrink-wraps .comp-legend-body, which is the box the user actually
+     resizes. Sizing/placement otherwise comes from ColorBarDrag (inline
+     position:fixed + left/top) and .cv-colorbar-floating. */
+  width: fit-content;
+}
+
+/* .cv-colorbar-floating's own padding frames a gradient strip against its
+   tick labels — the legend's surface has to sit flush against its edges
+   instead, or transparent mode leaves an inset shadow of the old box. */
+.comp-legend-widget.cv-colorbar-floating {
+  padding: 0;
+}
+
 .comp-legend-body {
-  /* Written by the panel's ResizeObserver as the box is resized; every
+  /* Written by the widget's ResizeObserver as the box is resized; every
      row dimension below derives from it so the whole legend scales as one. */
   --legend-scale: 1;
   padding: var(--sp-3-5);
-  overflow: hidden;
-  min-width: 120px;
-  min-height: 44px;
+  /* Never sized: the box is exactly what the rows need at the current scale,
+     so a two-symbol legend is a chip rather than a wide empty rectangle, and
+     nothing can be cropped. The resize handle drives --legend-scale. */
+  width: fit-content;
+  border-radius: var(--radius-md);
+  background: var(--float-panel-bg);
+  border: 1px solid var(--line-1);
+  box-shadow: var(--shadow-glow);
+  backdrop-filter: blur(10px);
 }
 
-/* The resize grip is the browser's, so it can't be styled away — and it is
-   the one bit of chrome that was still sitting in the corner of a figure
-   after transparent mode stripped everything else. Hover-revealed instead,
-   the same trick the title bar uses: pointing at the legend is enough to get
-   it back, and a drag keeps the pointer inside the panel throughout. */
-.cv-panel.comp-legend-panel:hover > .comp-legend-body,
-.comp-legend-body:focus-within {
-  resize: both;
+/* The resize frame and its handle are the colour bars' (hover-revealed, so
+   they stay out of a figure). The frame encloses the box instead of a
+   gradient strip and its labels, so it's a plain inset rather than the
+   measured extent ColorBarWidget computes; the handle keeps the bar's
+   ew-resize cursor because, as there, the drag sets width only. */
+.comp-legend-widget .cv-colorbar-resize-frame {
+  inset: -4px;
 }
 
-/* The generic floating clamp (min 220 / max 600px) is wrong for a legend:
-   it should shrink to a two-row chip or grow poster-sized for a figure. */
-.cv-panel.comp-legend-panel.cv-floating {
-  min-width: 140px;
-  max-width: min(96vw, 900px);
+.comp-legend-widget .cv-colorbar-resize-handle {
+  right: -8px;
+  bottom: -8px;
+  cursor: ew-resize;
+}
+
+.comp-legend-widget:hover .cv-colorbar-resize-frame,
+.comp-legend-widget:hover .cv-colorbar-resize-handle {
+  opacity: 1;
+}
+
+/* Bridges the gap between .cv-colorbar-controls (top: -34px) and the box, so
+   the hover that reveals the strip survives the trip up to it — the colour
+   bars position their own bridge from JS off the bar's measured frame; the
+   legend's box has no such geometry, the strip just spans its top edge. */
+.comp-legend-widget .cv-colorbar-controls-bridge {
+  left: 0;
+  right: 0;
+  top: -8px;
+  height: 8px;
 }
 
 .comp-legend-list {
@@ -911,17 +950,26 @@
   padding: var(--sp-2);
 }
 
-/* Transparent mode (≡ menu): strip the window surface so only swatches and
-   text overlay the scene. The title bar is shrunk to its hover-revealed
-   handle by the same toggle (PanelWindow's bar-collapse), so nothing else
-   shows in a capture. */
-.cv-panel.comp-legend-transparent > .cv-panel-body {
+/* Transparent mode (☰ menu): strip the surface so only swatches and text
+   overlay the scene. The ⦀/☰ strip and the resize handle are hover-revealed
+   already, so nothing else shows in a capture. */
+.comp-legend-transparent .comp-legend-body {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
   backdrop-filter: none;
 }
 
-.cv-panel.comp-legend-transparent.cv-bar-collapsed > .cv-panel-body {
-  border-top-color: transparent;
+/* With no surface under it the text reads against the SCENE, so it takes the
+   wrapper's colour — which CompositionLegendWidget.js polls to the same
+   contrast-safe value the floating colour bars' ticks use. --fg-1 there is a
+   near-white that vanishes on a light background (and in a light-background
+   PNG export, which copies these computed colours). */
+.comp-legend-transparent .comp-legend-label,
+.comp-legend-transparent .comp-legend-sub {
+  color: inherit;
+}
+
+.comp-legend-transparent .comp-legend-sub {
+  opacity: 0.78;
 }
