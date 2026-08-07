@@ -33,6 +33,7 @@
 import * as THREE from '../external/three/three.module.js';
 import { app, general } from '../state/store.js';
 import { updateLattice, requestRender } from '../render/index.js';
+import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 
 const THEMES_DIR = './themes/';
 // The mode key is the historical 'theme' key: every value it ever held
@@ -119,15 +120,20 @@ export function applySceneFromCSS() {
 // Swap the active theme-override stylesheet to the given CSS file (null = none).
 function applyConcreteVisuals(css) {
   const link = getActiveLink();
+  // The logo has a dark-lettered twin for the light-panelled palettes, and
+  // which one is right is a question about --color-scheme — so it can only be
+  // asked once the override stylesheet is actually in effect, same as the
+  // scene colours below.
+  const applyThemedAssets = () => { applySceneFromCSS(); refreshBackendTheme(); };
   if (css) {
     // Apply scene colors once the override stylesheet has loaded so
     // getComputedStyle sees the new --scene-bg / --lattice-color.
-    const onLoad = () => { link.removeEventListener('load', onLoad); applySceneFromCSS(); };
+    const onLoad = () => { link.removeEventListener('load', onLoad); applyThemedAssets(); };
     link.addEventListener('load', onLoad);
     link.setAttribute('href', THEMES_DIR + css);
   } else {
     link.removeAttribute('href');
-    applySceneFromCSS();
+    applyThemedAssets();
   }
 }
 

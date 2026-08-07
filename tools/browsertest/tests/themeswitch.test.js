@@ -186,6 +186,96 @@ async function pickPalette(page, id) {
   H.check('the side panel never scrolls horizontally, in any palette or mode',
     overflow.length === 0, overflow.join('; '));
 
+  // The logo is a bitmap, so it can't inherit anything: its wordmark is a pale
+  // grey that disappears on a light dock, and the light-panelled palettes need
+  // the dark-lettered file instead. Assert the wordmark is READABLE rather
+  // than which filename got picked — a swap wired to the wrong signal (the
+  // MODE name, say, which is 'light' on the dark-panelled Default palette)
+  // still passes a filename check while showing grey-on-white.
+  const logo = await page.evaluate(async () => {
+    const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+      return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+    const parse = (s) => (String(s).match(/[\d.]+/g) || []).map(Number);
+    const ratio = (a, b) => { const [h, l] = lum(a) > lum(b) ? [lum(a), lum(b)] : [lum(b), lum(a)]; return (h + 0.05) / (l + 0.05); };
+    const behind = (el) => { let n = el.parentElement;
+      while (n && n !== document.documentElement) {
+        const c = parse(getComputedStyle(n).backgroundColor);
+        if (c.length && (c.length < 4 || c[3] > 0.55)) return c.slice(0, 3);
+        n = n.parentElement;
+      }
+      return parse(getComputedStyle(document.body).backgroundColor).slice(0, 3); };
+
+    const img = document.getElementById('aboutTrigger');
+    const reg = await (await fetch('./themes/themes.json')).json();
+    const out = [];
+    for (const p of reg.palettes) {
+      for (const mode of Object.keys(p.modes)) {
+        document.querySelector(`.theme-btn[data-theme-option="${mode}"]`).click();
+        document.querySelector(`.theme-menu-item[data-palette-id="${p.id}"]`).click();
+        await new Promise((r) => setTimeout(r, 500)); // theme CSS + logo swap
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = 200;
+        c.height = Math.max(1, Math.round(200 * img.naturalHeight / img.naturalWidth));
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        const d = ctx.getImageData(0, 0, c.width, c.height).data;
+        // The wordmark is the logo's neutral ink; the lattice mark beside it
+        // is the palette's own colour and is not what goes unreadable.
+        let sum = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i + 3] < 250) continue;
+          const mx = Math.max(d[i], d[i + 1], d[i + 2]);
+          const mn = Math.min(d[i], d[i + 1], d[i + 2]);
+          if (mx - mn > 12) continue;
+          sum += mx; n++;
+        }
+        if (!n) { out.push({ id: `${p.id}/${mode}`, ratio: 0, ink: null }); continue; }
+        const ink = sum / n;
+        out.push({ id: `${p.id}/${mode}`, ink: Math.round(ink), ratio: +ratio([ink, ink, ink], behind(img)).toFixed(2) });
+      }
+    }
+    return out;
+  });
+  const unreadable = logo.filter((r) => r.ratio < 3);
+  H.check('the logo wordmark stays readable on every palette and mode',
+    unreadable.length === 0, JSON.stringify(unreadable.length ? unreadable : logo));
+
+  // The About modal carries its own copy of the logo on its own surface
+  // (--about-bg), so it needs the same swap and is easy to forget: it's behind
+  // a click, and the header logo above it looks fine either way.
+  const aboutLogo = await page.evaluate(async () => {
+    const light = (await (await fetch('./themes/themes.json')).json()).palettes
+      .find((p) => p.modes.light);
+    document.querySelector('.theme-btn[data-theme-option="light"]').click();
+    document.querySelector(`.theme-menu-item[data-palette-id="${light.id}"]`).click();
+    await new Promise((r) => setTimeout(r, 500));
+    document.getElementById('aboutTrigger').click();
+    await new Promise((r) => setTimeout(r, 400));
+    const img = document.querySelector('#aboutModal .logo');
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = 200;
+    c.height = Math.max(1, Math.round(200 * img.naturalHeight / img.naturalWidth));
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let sum = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] < 250) continue;
+      const mx = Math.max(d[i], d[i + 1], d[i + 2]);
+      if (mx - Math.min(d[i], d[i + 1], d[i + 2]) > 12) continue;
+      sum += mx; n++;
+    }
+    document.getElementById('aboutClose').click();
+    return { palette: light.id, loaded: img.naturalWidth > 0, ink: n ? Math.round(sum / n) : null };
+  });
+  // The dark-lettered file is the only one that can land here on a light
+  // palette; the pale wordmark it replaces measures ~213.
+  H.check('the About modal takes the dark-lettered logo on a light palette',
+    aboutLogo.loaded && aboutLogo.ink !== null && aboutLogo.ink < 150,
+    JSON.stringify(aboutLogo));
+
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);
