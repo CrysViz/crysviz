@@ -187,7 +187,7 @@ function drawMeasurementLabels(octx, map) {
     const border = (parseFloat(cs.borderTopWidth) || 0) * k;
     const radius = (parseFloat(cs.borderRadius) || 4) * k;
 
-    octx.font = `${cs.fontWeight || '700'} ${fontPx}px ${cs.fontFamily || 'sans-serif'}`;
+    octx.font = `${cs.fontWeight || '700'} ${fontPx}px ${cs.fontFamily || "'CrysViz Sans', 'CrysViz Sans Math', sans-serif"}`;
     octx.textAlign = 'center';
     octx.textBaseline = 'middle';
     const textW = octx.measureText(text).width;
@@ -271,7 +271,7 @@ function drawAxesLegend(ictx, rect) {
   ictx.strokeStyle = 'rgba(255,255,255,0.2)';
   ictx.stroke();
 
-  ictx.font = `600 ${font}px sans-serif`;
+  ictx.font = `600 ${font}px 'CrysViz Sans', sans-serif`;
   ictx.textBaseline = 'middle';
   ictx.textAlign = 'left';
 
@@ -333,12 +333,9 @@ function drawColorBar(octx, settings, x, y, w, h, font, pxScale = 1) {
   const validRange = isFinite(min) && isFinite(max) && min < max;
   const ticks = validRange ? computeTicks(min, max, scale) : [];
 
-  // Matches the live widget's own tick-label font exactly (normal weight,
-  // the app's actual font stack) — this used to hardcode a semi-bold generic
-  // "sans-serif", which browsers usually resolve to something like Arial:
-  // both bolder and visibly different from the app's -apple-system/Segoe UI
-  // stack, so the exported text never quite looked like the on-screen bar.
-  octx.font = `${font}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  // Matches the live widget's own tick-label font exactly (normal weight and
+  // the app's actual font stack), so the exported text matches the on-screen bar.
+  octx.font = `${font}px 'CrysViz Sans', sans-serif`;
   // Same text color the live floating widget itself uses (ColorBarWidget.js's
   // tickContrast/currentContrastColor) — no outline or shadow, just the
   // plain, contrast-safe color the on-screen bar is actually showing right

@@ -89,7 +89,7 @@ export function createColorPicker(initialHex, onChange) {
   container.style.display = 'inline-flex';
   container.style.flexDirection = 'column';
   container.style.width = WIDTH + 'px';
-  container.style.fontFamily = 'sans-serif';
+  container.style.fontFamily = "'CrysViz Sans', sans-serif";
   container.style.userSelect = 'none';
 
   const svCanvas = document.createElement('canvas');

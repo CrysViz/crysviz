@@ -126,7 +126,7 @@ function chargeTexture(text) {
   if (cached) return cached;
 
   const fontPx = 64;
-  const font = `700 ${fontPx}px sans-serif`;
+  const font = `700 ${fontPx}px 'CrysViz Sans', sans-serif`;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   ctx.font = font;

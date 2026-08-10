@@ -434,7 +434,7 @@ export function initAxesGizmo(){
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d');
-    ctx.font = 'bold 92px sans-serif';
+    ctx.font = "bold 92px 'CrysViz Sans', sans-serif";
     ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -804,7 +804,6 @@ export function collapseAllAtomExpansions() {
     icon.style.transform = 'rotate(0deg)';
   });
 }
-
 
 
 

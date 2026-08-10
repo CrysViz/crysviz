@@ -265,9 +265,9 @@
      control (ui/FontScaleModule.js, which sets --cv-font-scale on
      documentElement) keeps scaling every rung, not just the ones a component
      happened to opt into before. */
-  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-ui: 'CrysViz Sans', 'CrysViz Sans Math', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  --font-display: Georgia, 'Times New Roman', serif;
+  --font-display: 'CrysViz Sans', 'CrysViz Sans Math', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   --fs-xs: calc(10px * var(--cv-font-scale, 1));
   --fs-sm: calc(11px * var(--cv-font-scale, 1));

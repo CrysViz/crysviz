@@ -111,7 +111,7 @@ export function parseLegendSegments(raw) {
 
 const SCRIPT_SCALE = 0.7; // sup/sub font size, relative to the base run
 const SCRIPT_SHIFT = 0.35; // sup/sub baseline offset, relative to fontPx
-const DEFAULT_FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+const DEFAULT_FONT_FAMILY = "'CrysViz Sans', 'CrysViz Sans Math', sans-serif";
 
 /**
  * Draws `raw` legend markup onto a 2D canvas context as a single run of

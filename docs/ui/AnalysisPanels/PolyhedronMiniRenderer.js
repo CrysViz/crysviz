@@ -49,7 +49,7 @@ function bondHalfMaterial(color) {
  *  polyhedron's own bond length. */
 function makeLabelSprite(text, { color = '#fff', bg = 'rgba(0,0,0,0.72)', bold = false, worldHeight = 0.3 } = {}) {
   const fontPx = 56;
-  const font = `${bold ? 700 : 500} ${fontPx}px monospace`;
+  const font = `${bold ? 700 : 500} ${fontPx}px 'CrysViz Sans', sans-serif`;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   ctx.font = font;

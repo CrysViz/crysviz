@@ -506,7 +506,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   function scaledInputWidth(input) {
     if (!(dragCtl?.isFloating() ?? false)) return `${MINMAX_WIDTH}px`;
     const fontPx = scaledFont(INPUT_BASE_FONT, DOCKED_INPUT_FONT);
-    measureCtx.font = `${fontPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    measureCtx.font = `${fontPx}px 'CrysViz Sans', sans-serif`;
     const textWidth = measureCtx.measureText(input.value || '').width;
     return `${Math.max(MINMAX_WIDTH * fontScale(), textWidth + 14)}px`;
   }
@@ -536,7 +536,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     const min = parseFloat(minInput.value);
     const max = parseFloat(maxInput.value);
     if (!isFinite(min) || !isFinite(max) || min >= max) return TICK_LABEL_SPAN_V;
-    measureCtx.font = `${scaledFont(TICK_LABEL_BASE_FONT, DOCKED_TICK_LABEL_FONT)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    measureCtx.font = `${scaledFont(TICK_LABEL_BASE_FONT, DOCKED_TICK_LABEL_FONT)}px 'CrysViz Sans', sans-serif`;
     let widest = TICK_LABEL_SPAN_V;
     for (const { label } of computeTicks(min, max, currentScale)) {
       widest = Math.max(widest, measureCtx.measureText(label).width);
@@ -559,7 +559,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // overlap even though the tick-clearing math above looked right.
   function legendHalfHeight() {
     const fontPx = scaledFont(LEGEND_BASE_FONT, DOCKED_LEGEND_FONT);
-    measureCtx.font = `${fontPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    measureCtx.font = `${fontPx}px 'CrysViz Sans', sans-serif`;
     const m = measureCtx.measureText(legendPlainText(currentLegendRaw) || LEGEND_PLACEHOLDER);
     const ascent = m.actualBoundingBoxAscent || fontPx * 0.8;
     const descent = m.actualBoundingBoxDescent || fontPx * 0.2;
