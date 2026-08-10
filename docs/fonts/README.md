@@ -23,5 +23,21 @@ platform instead of falling back to whatever the OS ships.
   terms) of Noto Sans: the official variable TTF from
   https://github.com/google/fonts/tree/main/ofl/notosans, width axis pinned
   to 100 and subset to U+2070–209F (superscripts/subscripts, absent from
-  every Fontsource subset) with fonttools 4.63. Same OFL 1.1 license
-  (`OFL.txt`); it is exposed only under the `CrysViz Sans` @font-face name.
+  every Fontsource subset) plus U+2011 (non-breaking hyphen) with
+  fonttools 4.63. Same OFL 1.1 license (`OFL.txt`); it is exposed only
+  under the `CrysViz Sans` @font-face name.
+- Symbol coverage for the UI's textual icons, all exposed as additional
+  `CrysViz Sans` faces with narrow `unicode-range`s:
+  - `noto-sans-symbols2-400-normal.woff2` — unmodified "symbols" subset of
+    Noto Sans Symbols 2 from `@fontsource/noto-sans-symbols-2` 5.3.0
+    (`OFL-symbols2.txt`).
+  - `noto-sans-symbols1-extras-wght-normal.woff2` — Modified Version of
+    Noto Sans Symbols (variable TTF from
+    https://github.com/google/fonts/tree/main/ofl/notosanssymbols) subset
+    to U+2460–24FF and U+26F6 with fonttools (`OFL-symbols.txt`).
+  - `noto-emoji-extras-wght-normal.woff2` — Modified Version of Noto Emoji
+    (monochrome; variable TTF from
+    https://github.com/google/fonts/tree/main/ofl/notoemoji) subset to
+    U+269B, U+1F313, U+1F4C1–1F4C2, U+274C with fonttools
+    (`OFL-emoji.txt`). Deliberately monochrome so these glyphs render
+    identically on every platform instead of as per-OS color emoji.

@@ -80,6 +80,7 @@ Third-Party Libraries and Attribution:
    - GLSL chunk library adapted for the optional "Path tracing" rendering
      pipeline; see docs/external/three-pathtracing/README.md for the adaptations.
 
-9. Noto Sans and Noto Sans Math
+9. Noto Sans, Noto Sans Math, Noto Sans Symbols, Noto Sans Symbols 2, and Noto Emoji
    - License: SIL Open Font License 1.1
-   - See docs/fonts/OFL.txt and docs/fonts/OFL-math.txt for the license texts.
+   - See docs/fonts/OFL.txt, docs/fonts/OFL-math.txt, docs/fonts/OFL-symbols.txt,
+     docs/fonts/OFL-symbols2.txt, and docs/fonts/OFL-emoji.txt for the license texts.

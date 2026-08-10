@@ -12,7 +12,6 @@ select {
      every select rendered as a dark widget on a cream panel — unreadable, and
      unreachable from a theme file. */
   color-scheme: var(--color-scheme);
-  font-family: inherit;
   font-size: var(--fs-base);
   line-height: 1.2;
   padding-right: 21px !important;

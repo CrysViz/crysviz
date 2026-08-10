@@ -207,7 +207,7 @@ export function addBondLengthHistogramPanel() {
             </span>
             <span class="toggle_text">Show distances</span>
           </label>
-          <button type="button" class="split-item-action-btn blh-theme-btn" title="Toggle light/dark">🌓</button>
+          <button type="button" class="split-item-action-btn blh-theme-btn" title="Toggle light/dark">🌓︎</button>
           <button type="button" class="split-item-action-btn blh-collapseall-btn">▸ Expand All</button>
         </div>
         <div class="blh-pair-list" id="blhPairList"></div>

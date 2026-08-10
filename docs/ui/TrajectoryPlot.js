@@ -103,7 +103,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   themeBtn.type = 'button';
   themeBtn.className = 'trajPlotThemeBtn';
   themeBtn.title = 'Toggle light/dark';
-  themeBtn.textContent = '🌓';
+  themeBtn.textContent = '\u{1F313}\uFE0E';
   themeBtn.onclick = () => {
     plotTheme = plotTheme === 'dark' ? 'light' : 'dark';
     drawFull();

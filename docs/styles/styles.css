@@ -6,6 +6,10 @@ body {
   font-family: var(--font-ui);
 }
 
+button, input, select, textarea, optgroup {
+  font-family: inherit;
+}
+
 body {
   display: flex;
   overflow: hidden;
