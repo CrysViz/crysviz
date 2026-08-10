@@ -2,6 +2,7 @@
 // opacity for the axes gizmo and floating colour bars.
 'use strict';
 const H = require('../harness');
+const { PNG } = require('pngjs');
 
 const syntheticLongPress = (page, selector, pointerType, pointerId, x, y) =>
   page.evaluate(({ selector, pointerType, pointerId, x, y }) => new Promise((resolve) => {
@@ -26,6 +27,18 @@ const mouseLongPress = async (page, selector, x, y) => {
   await page.waitForTimeout(650);
   const open = await page.evaluate(() => !!document.querySelector('.cv-colorbar-menu-open'));
   return open;
+};
+
+const countDrawnGizmoPixels = async (page) => {
+  const png = PNG.sync.read(await page.locator('#axesGizmo canvas').screenshot());
+  const background = [png.data[0], png.data[1], png.data[2]];
+  let count = 0;
+  for (let i = 0; i < png.data.length; i += 4) {
+    if (Math.abs(png.data[i] - background[0]) > 30
+      || Math.abs(png.data[i + 1] - background[1]) > 30
+      || Math.abs(png.data[i + 2] - background[2]) > 30) count++;
+  }
+  return { count, width: png.width, height: png.height };
 };
 
 (async () => {
@@ -57,6 +70,68 @@ const mouseLongPress = async (page, selector, x, y) => {
   await page.locator('.cv-gizmo-menu-wrap .cv-colorbar-menu-item').first().click();
   const labelsAfter = await page.evaluate(async () => (await import('./state/store.js')).general.gizmoLabelsOnArrows);
   H.check('the axes Integrate Labels item still works after natural release', labelsAfter !== labelsBefore);
+
+  const readGizmoLabels = () => page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    return {
+      camera: app.gizmoCamera.isOrthographicCamera ? 'orthographic' : 'perspective',
+      labels: ['aLabel', 'bLabel', 'cLabel'].map((key) => {
+        const label = app.gizmoScene.userData[key];
+        return {
+          attenuation: label.material.sizeAttenuation,
+          scale: [label.scale.x, label.scale.y, label.scale.z],
+        };
+      }),
+    };
+  });
+  const readLabelPixels = () => page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const arrows = ['aArrow', 'bArrow', 'cArrow'].map((key) => app.gizmoScene.userData[key]);
+    const labels = ['aLabel', 'bLabel', 'cLabel'].map((key) => app.gizmoScene.userData[key]);
+    const saved = arrows.map((arrow, i) => arrow.children.map((child) => ({ child, visible: child.visible, arrow: arrow.visible, label: labels[i].visible })));
+    arrows.forEach((arrow, i) => {
+      arrow.visible = true;
+      arrow.children.forEach((child) => { child.visible = child === labels[i]; });
+      labels[i].visible = true;
+    });
+    app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
+    const canvas = app.gizmoRenderer.domElement;
+    const gl = app.gizmoRenderer.getContext();
+    const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    let count = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i + 3] > 0 && (pixels[i] > 0 || pixels[i + 1] > 0 || pixels[i + 2] > 0)) count++;
+    }
+    saved.forEach((children, i) => {
+      arrows[i].visible = children[0]?.arrow ?? true;
+      children.forEach(({ child, visible }) => { child.visible = visible; });
+      labels[i].visible = children[0]?.label ?? labels[i].visible;
+    });
+    return count;
+  });
+  const labelsOrtho = await readGizmoLabels();
+  H.check('axes gizmo starts in the main camera projection mode', labelsOrtho.camera === 'orthographic', labelsOrtho.camera);
+  H.check('orthographic gizmo labels are non-attenuated and equal-sized',
+    labelsOrtho.labels.every((label) => label.attenuation === false)
+      && labelsOrtho.labels.every((label) => label.scale.every((value, i) => Math.abs(value - labelsOrtho.labels[0].scale[i]) < 1e-8)),
+    JSON.stringify(labelsOrtho));
+  await page.evaluate(() => {
+    const checkbox = document.getElementById('orthographicCamera');
+    if (checkbox.checked) checkbox.click();
+  });
+  await page.waitForTimeout(100);
+  const labelsPerspective = await readGizmoLabels();
+  H.check('the real camera toggle switches the gizmo to perspective', labelsPerspective.camera === 'perspective', labelsPerspective.camera);
+  H.check('perspective gizmo labels are non-attenuated and equal-sized',
+    labelsPerspective.labels.every((label) => label.attenuation === false)
+      && labelsPerspective.labels.every((label) => label.scale.every((value, i) => Math.abs(value - labelsPerspective.labels[0].scale[i]) < 1e-8)),
+    JSON.stringify(labelsPerspective));
+  await page.evaluate(() => {
+    const checkbox = document.getElementById('orthographicCamera');
+    if (!checkbox.checked) checkbox.click();
+  });
+  await page.waitForTimeout(100);
 
   await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
   const axesTouchOpened = await syntheticLongPress(page, '#axesGizmo', 'touch', 702, axesPoint.x, axesPoint.y);
@@ -98,16 +173,27 @@ const mouseLongPress = async (page, selector, x, y) => {
     const box = document.getElementById('axesGizmo').getBoundingClientRect();
     return { size: box.width, x: r.right - 20, y: r.bottom - 20 };
   });
+  const labelPixelsBefore = await readLabelPixels();
   await page.mouse.move(axesSizeBefore.x, axesSizeBefore.y);
   await page.mouse.down();
   await page.waitForTimeout(650);
   const axesResizeMenu = await page.evaluate(() => !!document.querySelector('.cv-colorbar-menu-open'));
   await page.mouse.move(axesSizeBefore.x + 30, axesSizeBefore.y + 30, { steps: 3 });
+  await page.waitForTimeout(50);
+  const midResizePixels = await countDrawnGizmoPixels(page);
   await page.mouse.up();
-  const axesSizeAfter = await page.evaluate(() => document.getElementById('axesGizmo').getBoundingClientRect().width);
+  const axesSizeAfter = await page.evaluate(async () => ({
+    size: document.getElementById('axesGizmo').getBoundingClientRect().width,
+    labelScale: (await import('./state/store.js')).app.gizmoScene.userData.aLabel.scale.x,
+  }));
+  const labelPixelsAfter = await readLabelPixels();
   H.check('holding the axes resize corner does not open the menu', !axesResizeMenu);
-  H.check('the axes 24px corner hit area resizes outside the old 14px mark', axesSizeAfter > axesSizeBefore.size + 10,
-    JSON.stringify({ before: axesSizeBefore.size, after: axesSizeAfter }));
+  H.check('the axes resize redraws the gizmo before pointerup', midResizePixels.count > 100,
+    JSON.stringify(midResizePixels));
+  H.check('the axes 24px corner hit area resizes outside the old 14px mark', axesSizeAfter.size > axesSizeBefore.size + 10,
+    JSON.stringify({ before: axesSizeBefore.size, after: axesSizeAfter.size }));
+  H.check('integrated labels grow on screen with the gizmo box', labelPixelsAfter > labelPixelsBefore,
+    JSON.stringify({ before: labelPixelsBefore, after: labelPixelsAfter, scale: axesSizeAfter.labelScale }));
 
   await page.mouse.move(axesSizeBefore.x, axesSizeBefore.y);
   await page.mouse.down();

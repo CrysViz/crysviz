@@ -8,10 +8,59 @@ import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder 
 import { createLockToggleButton } from './LockToggleButton.js';
 import { installGestureArbiter } from './GestureArbiter.js';
 import { loadCrysVizFonts } from '../utils/index.js';
+import { configureGizmoCameraProjection, GIZMO_FOV, GIZMO_ORTHO_HALF_HEIGHT } from './GizmoLayout.js';
 
 const cameraPanRight = new THREE.Vector3();
 const cameraPanUp = new THREE.Vector3();
 let fontRefreshWired = false;
+
+const GIZMO_LABEL_SCREEN_SIZE = 12;
+
+function gizmoAspect() {
+  const gizmoDiv = document.getElementById('axesGizmo');
+  return gizmoDiv ? (gizmoDiv.clientWidth || 110) / (gizmoDiv.clientHeight || 110) : 1;
+}
+
+function createGizmoCamera() {
+  const aspect = gizmoAspect();
+  const camera = app.camera?.isOrthographicCamera
+    ? new THREE.OrthographicCamera(
+      -GIZMO_ORTHO_HALF_HEIGHT * aspect,
+      GIZMO_ORTHO_HALF_HEIGHT * aspect,
+      GIZMO_ORTHO_HALF_HEIGHT,
+      -GIZMO_ORTHO_HALF_HEIGHT,
+      0.1,
+      100
+    )
+    : new THREE.PerspectiveCamera(GIZMO_FOV, aspect, 0.1, 100);
+  camera.position.set(0, 0, 3);
+  camera.lookAt(0, 0, 0);
+  return camera;
+}
+
+function gizmoLabelScale() {
+  // SpriteMaterial.sizeAttenuation=false makes perspective sprites screen-
+  // stable with respect to depth. The scale remains world-like here, so it
+  // grows with the gizmo canvas in both projection modes.
+  return app.gizmoCamera?.isOrthographicCamera
+    ? GIZMO_LABEL_SCREEN_SIZE * 2 * GIZMO_ORTHO_HALF_HEIGHT / 90
+    : GIZMO_LABEL_SCREEN_SIZE * 2 * Math.tan(THREE.MathUtils.degToRad(GIZMO_FOV / 2)) / 90;
+}
+
+function updateGizmoLabelScales() {
+  const scene = app.gizmoScene;
+  if (!scene?.userData) return;
+  const scale = gizmoLabelScale();
+  for (const key of ['aLabel', 'bLabel', 'cLabel']) {
+    scene.userData[key]?.scale.set(scale, scale, 1);
+  }
+}
+
+function syncGizmoCameraToMainProjection() {
+  if (!app.gizmoCamera) return;
+  app.gizmoCamera = createGizmoCamera();
+  resizeGizmoRenderer();
+}
 
 function wireFontRefresh() {
   if (fontRefreshWired || !document.fonts?.ready) return;
@@ -316,8 +365,9 @@ export function resizeGizmoRenderer() {
   const gw = gizmoDiv.clientWidth || 110;
   const gh = gizmoDiv.clientHeight || 110;
   app.gizmoRenderer.setSize(gw, gh);
-  app.gizmoCamera.aspect = gw / gh;
-  app.gizmoCamera.updateProjectionMatrix();
+  const aspect = gw / gh;
+  configureGizmoCameraProjection(app.gizmoCamera, aspect);
+  updateGizmoLabelScales();
 }
 
 
@@ -346,9 +396,7 @@ export function initAxesGizmo(){
   // No label renderer needed for gizmo - labels are in separate legend
 
   app.gizmoScene = new THREE.Scene();
-  app.gizmoCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-  app.gizmoCamera.position.set(0, 0, 3);
-  app.gizmoCamera.lookAt(0, 0, 0);
+  app.gizmoCamera = createGizmoCamera();
 
   const arrowLen = 1., headLen = 0.35, headWidth = 0.22;
   // Cylinder-shaft arrows instead of THREE.ArrowHelper: the helper's shaft is
@@ -402,9 +450,15 @@ export function initAxesGizmo(){
     // is only ~90px); a flat linear filter keeps the letter crisp instead.
     texture.minFilter = THREE.LinearFilter;
     texture.generateMipmaps = false;
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      sizeAttenuation: false,
+    });
     const sprite = new THREE.Sprite(material);
-    sprite.scale.set(0.34, 0.34, 1);
+    const scale = gizmoLabelScale();
+    sprite.scale.set(scale, scale, 1);
     // Just past the tip, not on top of the cone: a label centered on the
     // arrow's own axis this close to the head reads as overlapping it.
     // Offset stays modest — an arrow pointing near-straight "up" in camera
@@ -444,16 +498,10 @@ export function initAxesGizmo(){
       arrow.add(label);
       gizmoScene.userData[key] = label;
     }
+    updateGizmoLabelScales();
   };
 
-function sizeGizmo(){
-  const w = gizmoDiv.clientWidth || 110;
-  const h = gizmoDiv.clientHeight || 110;
-  app.gizmoRenderer.setSize(w, h);
-  app.gizmoCamera.aspect = w / h;
-  app.gizmoCamera.updateProjectionMatrix();
-}
-  sizeGizmo();
+  resizeGizmoRenderer();
 }
 
 /** Re-apply general.axesLineWidth to the gizmo arrows' shaft radii (the
@@ -515,6 +563,7 @@ export function switchCameraType() {
     app.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
     app.orthographicFrustumSize = null;
   }
+  syncGizmoCameraToMainProjection();
   app.controls.object = app.camera;
   ['x', 'y', 'z', 'a', 'b', 'c'].forEach(axis => { setupAxisControls(axis); setupAxisLongPress(axis); });
 

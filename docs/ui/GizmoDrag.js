@@ -13,6 +13,7 @@ import { setGizmoLabelsOnArrows, resizeGizmoRenderer } from './WindowAndSceneCon
 import { currentContrastColor } from './ColorBarWidget.js';
 import { captureAnchor, clampToScene, getViewRect, positionFromAnchor } from './GizmoLayout.js';
 import { wireLongPress } from '../utils/index.js';
+import { requestRender, renderFrameNow } from '../render/index.js';
 
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
 const MIN_GIZMO_SIZE = 50;
@@ -289,6 +290,11 @@ export function initGizmoDrag() {
       const delta = Math.max(mv.clientX - startX, mv.clientY - startY);
       const size = Math.min(Math.max(startSize + delta, MIN_GIZMO_SIZE), maxSize);
       applySize(size);
+      // resizeGizmoRenderer clears the WebGL buffer; invalidate immediately so
+      // the arrows and labels are painted during the live resize, not only on
+      // pointerup.
+      requestRender();
+      renderFrameNow({ interactive: true });
     };
     const cleanup = () => {
       if (finished) return;

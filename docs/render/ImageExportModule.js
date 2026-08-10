@@ -43,6 +43,7 @@ import { colorsFor, computeTicks, formatTick, currentContrastColor } from '../ui
 import { listActiveColorBars } from '../ui/ColorBarRegistry.js';
 import { repaintSwatchesForExport } from '../ui/CompositionLegendWidget.js';
 import { drawLegendRichText, legendPlainText, crysVizFontsLoaded } from '../utils/index.js';
+import { configureGizmoCameraProjection } from '../ui/GizmoLayout.js';
 
 /** @returns {HTMLElement} the #view container */
 function getViewEl() {
@@ -229,8 +230,7 @@ function drawGizmoAndLegend(octx, width, height, margin, crop, viewRect) {
   const gsize = Math.max(16, Math.round(Math.max(outRect.width, outRect.height)));
   app.gizmoRenderer.setPixelRatio(1);
   app.gizmoRenderer.setSize(gsize, gsize, false);
-  app.gizmoCamera.aspect = 1;
-  app.gizmoCamera.updateProjectionMatrix();
+  configureGizmoCameraProjection(app.gizmoCamera, 1);
 
   const invCamQ = app.camera.quaternion.clone().invert();
   const { a, b, c } = latticeDirsNorm();
@@ -722,8 +722,7 @@ async function captureSceneToPngImpl(opts) {
       const gh = (gizmoDiv && gizmoDiv.clientHeight) || 110;
       app.gizmoRenderer.setSize(gw, gh);
       if (app.gizmoCamera) {
-        app.gizmoCamera.aspect = gw / gh;
-        app.gizmoCamera.updateProjectionMatrix();
+        configureGizmoCameraProjection(app.gizmoCamera, gw / gh);
       }
     }
     requestRender();

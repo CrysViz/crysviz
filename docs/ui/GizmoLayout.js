@@ -2,6 +2,23 @@
 // ColorBarDrag/CompositionLegendWidget still carry their own equivalent math;
 // consolidating those is a separate cleanup candidate outside this change.
 
+export const GIZMO_FOV = 45;
+// The perspective gizmo is at z=3, so this is its vertical half-span at the
+// near-facing center plane. The orthographic camera uses the same span.
+export const GIZMO_ORTHO_HALF_HEIGHT = 3 * Math.tan((GIZMO_FOV * Math.PI) / 360);
+
+export function configureGizmoCameraProjection(camera, aspect) {
+  if (camera.isOrthographicCamera) {
+    camera.left = -GIZMO_ORTHO_HALF_HEIGHT * aspect;
+    camera.right = GIZMO_ORTHO_HALF_HEIGHT * aspect;
+    camera.top = GIZMO_ORTHO_HALF_HEIGHT;
+    camera.bottom = -GIZMO_ORTHO_HALF_HEIGHT;
+  } else {
+    camera.aspect = aspect;
+  }
+  camera.updateProjectionMatrix();
+}
+
 export function getViewRect() {
   const view = document.getElementById('view');
   return view ? view.getBoundingClientRect() : null;
