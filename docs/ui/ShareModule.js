@@ -110,7 +110,7 @@ import { rebuildRenderPipelineMenu } from './ColorPanel.js';
 import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
 import { revealFeaturePanels, refreshPanelAvailability } from './panels/PanelManager.js';
 import { fracToCart } from '../math/index.js';
-import { updateAxesGizmoWidth, switchCameraType, resizeRenderer } from './WindowAndSceneControls.js';
+import { updateAxesGizmoWidth, switchCameraType, resizeRenderer, applyCameraSnapshot } from './WindowAndSceneControls.js';
 import { getContrastingBorder } from './BackgroundPicker.js';
 
 const URL_WARN_CHARS = 4000;
@@ -326,6 +326,10 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       up: app.camera
         ? [app.camera.up.x, app.camera.up.y, app.camera.up.z]
         : null,
+      quaternion: app.camera
+        ? [app.camera.quaternion.x, app.camera.quaternion.y, app.camera.quaternion.z, app.camera.quaternion.w]
+        : null,
+      pan: app.cameraPan ? [app.cameraPan.x, app.cameraPan.y] : [0, 0],
       zoom: app.camera?.zoom ?? null,
       orthographic: !!app.useOrthographicCamera,
       frustumSize: app.orthographicFrustumSize ?? null,
@@ -815,14 +819,18 @@ function restoreCamera(camState) {
       app.orthographicFrustumSize = camState.frustumSize;
       resizeRenderer(camState.frustumSize); // re-derives the ortho frustum planes
     }
-    app.camera.position.set(...camState.position);
-    if (camState.up) app.camera.up.set(...camState.up);
-    app.controls.target.set(...camState.target);
-    if (camState.zoom != null) {
-      app.camera.zoom = camState.zoom;
-      app.camera.updateProjectionMatrix();
-    }
-    app.controls.update();
+    applyCameraSnapshot({
+      position: new THREE.Vector3(...camState.position),
+      target: new THREE.Vector3(...camState.target),
+      up: camState.up ? new THREE.Vector3(...camState.up) : app.camera.up.clone(),
+      quaternion: camState.quaternion ? new THREE.Quaternion(...camState.quaternion) : null,
+      pan: Array.isArray(camState.pan)
+        ? { x: Number.isFinite(camState.pan[0]) ? camState.pan[0] : 0,
+          y: Number.isFinite(camState.pan[1]) ? camState.pan[1] : 0 }
+        : { x: 0, y: 0 },
+      zoom: camState.zoom,
+      orthographicFrustumSize: camState.orthographic ? camState.frustumSize : null,
+    });
     return Promise.resolve();
   } catch (error) {
     return Promise.reject(error);

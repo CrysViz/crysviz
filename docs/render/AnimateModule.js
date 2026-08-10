@@ -126,6 +126,11 @@ const DISCO_HOLD_MS = 1000;
 let comboHeldSince = null;
 let discoEngaged = false;
 
+const cameraPanRight = new THREE.Vector3();
+const cameraPanUp = new THREE.Vector3();
+const cameraPanOffset = new THREE.Vector3();
+const cameraPanDrift = new THREE.Vector3();
+const cameraPanTarget = new THREE.Vector3();
 
 let _counter = 1;
 
@@ -186,10 +191,40 @@ export function animation_update(time = 0) {
   if (time - lastFrameTime < interval) return;
   lastFrameTime = time;
 
-  // Always update controls: damping needs to keep progressing, and update()
-  // fires the 'change' event (-> requestRender) whenever the camera actually
-  // moved — including programmatic moves and the damping coast-down.
-  app.controls.update();
+  // TrackballControls pans by moving both the camera and its target. Keep the
+  // target fixed on the structure center, and represent that translation as a
+  // camera-plane offset so later rotations continue to pivot around the
+  // structure in place.
+  const camera = app.camera;
+  const controls = app.controls;
+  camera.updateMatrixWorld(true);
+  cameraPanRight.setFromMatrixColumn(camera.matrixWorld, 0);
+  cameraPanUp.setFromMatrixColumn(camera.matrixWorld, 1);
+  cameraPanOffset.copy(cameraPanRight).multiplyScalar(app.cameraPan.x)
+    .addScaledVector(cameraPanUp, app.cameraPan.y);
+  camera.position.sub(cameraPanOffset);
+  cameraPanTarget.copy(controls.target);
+
+  // Damping needs to keep progressing, and update() fires the 'change' event
+  // (-> requestRender) whenever the camera actually moved — including
+  // programmatic moves and the damping coast-down.
+  controls.update();
+
+  // Absorb native pan drift into the persistent 2D state using the NEW camera
+  // basis, then restore the structure center as controls.target. Trackball's
+  // update() has already called lookAt(target), so translating the camera back
+  // and reapplying the offset does not require (and must not cause) another
+  // lookAt call.
+  cameraPanDrift.subVectors(controls.target, cameraPanTarget);
+  camera.updateMatrixWorld(true);
+  cameraPanRight.setFromMatrixColumn(camera.matrixWorld, 0);
+  cameraPanUp.setFromMatrixColumn(camera.matrixWorld, 1);
+  app.cameraPan.x += cameraPanDrift.dot(cameraPanRight);
+  app.cameraPan.y += cameraPanDrift.dot(cameraPanUp);
+  controls.target.copy(cameraPanTarget);
+  camera.position.sub(cameraPanDrift);
+  camera.position.addScaledVector(cameraPanRight, app.cameraPan.x);
+  camera.position.addScaledVector(cameraPanUp, app.cameraPan.y);
   // Snap out the damping tail: TrackballControls' momentum decays
   // exponentially and never reaches zero on its own, so 'change' events (and
   // thus render-on-demand frames + tracer accumulation resets) trail on for

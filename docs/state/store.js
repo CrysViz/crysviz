@@ -69,6 +69,7 @@ export const app = {
   scene: null,
   camera: null,
   controls: null,
+  cameraPan: { x: 0, y: 0 },
   labelRenderer:null,
   gizmoScene:null,
   gizmoRenderer:null,

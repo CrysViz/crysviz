@@ -7,6 +7,9 @@ import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 import { createLockToggleButton } from './LockToggleButton.js';
 
+const cameraPanRight = new THREE.Vector3();
+const cameraPanUp = new THREE.Vector3();
+
 // Wire the camera view buttons (x/y/z + a/b/c lattice axes + reset).
 // Extracted from crystal-viewer.js initApp() (Stage 6).
 export function setupCameraButtons() {
@@ -205,7 +208,7 @@ export function initControls(){
   app.controls.dynamicDampingFactor=0.2;
   app.controls.rotateSpeed=1.5;
   app.controls.enableKeys = false; // Disable keyboard controls to avoid conflicts
-  app.controls.noPan= true; // disable panning as it only causes problems and does not really have a use
+  app.controls.noPan = false; // native pan is absorbed while keeping the structure as the pivot
   app.controls.noRotate= false;
   app.controls.panSpeed = 0.8;
 
@@ -229,6 +232,12 @@ export function initControls(){
     }
   });
 
+}
+
+export function resetCameraPan() {
+  if (app.cameraPan.x !== 0 || app.cameraPan.y !== 0) requestRender();
+  app.cameraPan.x = 0;
+  app.cameraPan.y = 0;
 }
 
 
@@ -447,6 +456,7 @@ export function setGizmoLabelsOnArrows(enabled) {
 
 
 export function switchCameraType() {
+  resetCameraPan();
   const w = view.clientWidth || window.innerWidth;
   const h = view.clientHeight || window.innerHeight;
 
@@ -482,6 +492,7 @@ export function switchCameraType() {
 
 // makes the center of structure as the rotation center.
 export function asetViewDirection(dir) {
+  resetCameraPan();
   //console.log('[setView] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
   const { center, dist } = getCellCenterAndDist();
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
@@ -505,6 +516,7 @@ export function asetViewDirection(dir) {
 // refit:true (resetView() only) to instead recompute center/distance from
 // the structure's bounding box, i.e. fit the view like the old behavior.
 export function setViewDirection(dir, { refit = false } = {}) {
+  resetCameraPan();
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
 
   let dist;
@@ -577,7 +589,17 @@ function refitOrthographicFrustum() {
   resizeRenderer(app.orthographicFrustumSize);
 }
 
+function removeCameraPanOffset(x, y) {
+  if (x === 0 && y === 0) return;
+  app.camera.updateMatrixWorld(true);
+  cameraPanRight.setFromMatrixColumn(app.camera.matrixWorld, 0);
+  cameraPanUp.setFromMatrixColumn(app.camera.matrixWorld, 1);
+  app.camera.position.addScaledVector(cameraPanRight, -x);
+  app.camera.position.addScaledVector(cameraPanUp, -y);
+}
+
 export function resetView() {
+  resetCameraPan();
   app.controls.reset();
   stopCameraMomentum();
   setViewDirection(new THREE.Vector3(1,1,1), { refit: true });
@@ -603,6 +625,10 @@ export function resetView() {
  * yet and should start fresh instead of borrowing someone else's.
  */
 export function fitCameraToCurrentStructure({ resetDirection = false } = {}) {
+  const panX = app.cameraPan.x;
+  const panY = app.cameraPan.y;
+  resetCameraPan();
+  removeCameraPanOffset(panX, panY);
   const { center, dist } = getCellCenterAndDist();
   const dir = resetDirection
     ? new THREE.Vector3(1, 1, 1).normalize()
@@ -631,6 +657,9 @@ export function captureCameraSnapshot() {
     position: app.camera.position.clone(),
     target: app.controls.target.clone(),
     up: app.camera.up.clone(),
+    quaternion: app.camera.quaternion.clone(),
+    pan: { x: app.cameraPan.x, y: app.cameraPan.y },
+    zoom: app.camera.zoom,
     orthographicFrustumSize: app.useOrthographicCamera ? app.orthographicFrustumSize : null,
   };
 }
@@ -638,15 +667,39 @@ export function captureCameraSnapshot() {
 /** Restore a snapshot captured by captureCameraSnapshot(). */
 export function applyCameraSnapshot(snapshot) {
   if (!snapshot) return;
+  const panX = Number.isFinite(snapshot.pan?.x) ? snapshot.pan.x : 0;
+  const panY = Number.isFinite(snapshot.pan?.y) ? snapshot.pan.y : 0;
   app.camera.position.copy(snapshot.position);
   app.controls.target.copy(snapshot.target);
   app.camera.up.copy(snapshot.up);
+  if (snapshot.quaternion) app.camera.quaternion.copy(snapshot.quaternion);
+  app.cameraPan.x = panX;
+  app.cameraPan.y = panY;
+  if (snapshot.zoom != null) {
+    app.camera.zoom = snapshot.zoom;
+    app.camera.updateProjectionMatrix();
+  }
   if (app.useOrthographicCamera && snapshot.orthographicFrustumSize != null) {
     app.orthographicFrustumSize = snapshot.orthographicFrustumSize;
     resizeRenderer(app.orthographicFrustumSize);
   }
   stopCameraMomentum();
+  if (panX !== 0 || panY !== 0) {
+    app.camera.updateMatrixWorld(true);
+    cameraPanRight.setFromMatrixColumn(app.camera.matrixWorld, 0);
+    cameraPanUp.setFromMatrixColumn(app.camera.matrixWorld, 1);
+    app.camera.position.addScaledVector(cameraPanRight, -panX);
+    app.camera.position.addScaledVector(cameraPanUp, -panY);
+  }
   app.controls.update();
+  if (panX !== 0 || panY !== 0) {
+    app.camera.updateMatrixWorld(true);
+    cameraPanRight.setFromMatrixColumn(app.camera.matrixWorld, 0);
+    cameraPanUp.setFromMatrixColumn(app.camera.matrixWorld, 1);
+    app.camera.position.addScaledVector(cameraPanRight, panX);
+    app.camera.position.addScaledVector(cameraPanUp, panY);
+  }
+  app.camera.updateMatrixWorld(true);
 }
 
 /**
@@ -659,6 +712,10 @@ export function applyCameraSnapshot(snapshot) {
  * first structure shown.
  */
 export function recenterCamera() {
+  const panX = app.cameraPan.x;
+  const panY = app.cameraPan.y;
+  resetCameraPan();
+  removeCameraPanOffset(panX, panY);
   const { center } = getCellCenterAndDist();
   const offset = app.camera.position.clone().sub(app.controls.target);
   app.controls.target.copy(center);
