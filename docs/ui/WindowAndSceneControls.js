@@ -28,27 +28,32 @@ function wireDirectPan(domElement) {
   let activePointerId = null;
   let lastX = 0;
   let lastY = 0;
+  const activeTouches = new Map();
+  let touchMidpointX = 0;
+  let touchMidpointY = 0;
+  let touchMidpointValid = false;
 
-  const onPointerDown = (event) => {
-    if (event.pointerType !== 'mouse' || event.button !== 2 || activePointerId !== null) return;
-    activePointerId = event.pointerId;
-    lastX = event.clientX;
-    lastY = event.clientY;
-    domElement.setPointerCapture(event.pointerId);
-    event.preventDefault();
+  const clearMousePointer = () => {
+    const pointerId = activePointerId;
+    activePointerId = null;
+    if (pointerId !== null && domElement.hasPointerCapture(pointerId)) {
+      domElement.releasePointerCapture(pointerId);
+    }
   };
 
-  const onPointerMove = (event) => {
-    if (event.pointerType !== 'mouse' || event.pointerId !== activePointerId) return;
+  const clearInteractionState = () => {
+    clearMousePointer();
+    activeTouches.clear();
+    touchMidpointX = 0;
+    touchMidpointY = 0;
+    touchMidpointValid = false;
+  };
 
-    const dxPx = event.clientX - lastX;
-    const dyPx = event.clientY - lastY;
-    lastX = event.clientX;
-    lastY = event.clientY;
-    if (dxPx === 0 && dyPx === 0) return;
-
+  const applyPanDelta = (dxPx, dyPx) => {
     const camera = app.camera;
-    const viewportHeightPx = domElement.clientHeight || domElement.getBoundingClientRect().height;
+    const viewportHeightPx = domElement.clientHeight
+      || domElement.getBoundingClientRect().height
+      || window.innerHeight;
     let worldPerPixel;
     if (camera.isPerspectiveCamera) {
       // The pan offset is perpendicular to the view direction, so remove its
@@ -64,23 +69,118 @@ function wireDirectPan(domElement) {
 
     // Camera-plane offset signs are chosen so dragging the view right/down
     // moves the structure point under the cursor right/down on screen.
-    app.cameraPan.x -= dxPx * worldPerPixel;
-    app.cameraPan.y += dyPx * worldPerPixel;
+    const deltaX = -dxPx * worldPerPixel;
+    const deltaY = dyPx * worldPerPixel;
+    app.cameraPan.x += deltaX;
+    app.cameraPan.y += deltaY;
+
+    // Keep the physical camera synchronized immediately. Pointer events can
+    // arrive in a burst before animation_update() gets a frame; translating
+    // by this same delta keeps the next worldPerPixel calculation axial and
+    // keeps end listeners (e.g. triangle sorting) on the current pose.
+    camera.updateMatrixWorld(true);
+    cameraPanRight.setFromMatrixColumn(camera.matrixWorld, 0);
+    cameraPanUp.setFromMatrixColumn(camera.matrixWorld, 1);
+    camera.position.addScaledVector(cameraPanRight, deltaX);
+    camera.position.addScaledVector(cameraPanUp, deltaY);
+    camera.updateMatrixWorld(true);
     requestRender();
   };
 
-  const release = (event) => {
-    if (event.pointerId !== activePointerId) return;
-    activePointerId = null;
-    if (domElement.hasPointerCapture(event.pointerId)) {
-      domElement.releasePointerCapture(event.pointerId);
+  const resetTouchMidpoint = () => {
+    if (activeTouches.size !== 2) {
+      touchMidpointValid = false;
+      return;
     }
+    const points = activeTouches.values();
+    const first = points.next().value;
+    const second = points.next().value;
+    touchMidpointX = (first.x + second.x) / 2;
+    touchMidpointY = (first.y + second.y) / 2;
+    touchMidpointValid = true;
+  };
+
+  const updateTouchMidpoint = () => {
+    if (activeTouches.size !== 2) {
+      touchMidpointValid = false;
+      return;
+    }
+    const points = activeTouches.values();
+    const first = points.next().value;
+    const second = points.next().value;
+    const nextX = (first.x + second.x) / 2;
+    const nextY = (first.y + second.y) / 2;
+    if (touchMidpointValid) applyPanDelta(nextX - touchMidpointX, nextY - touchMidpointY);
+    touchMidpointX = nextX;
+    touchMidpointY = nextY;
+    touchMidpointValid = true;
+  };
+
+  const onPointerDown = (event) => {
+    if (event.pointerType === 'touch') {
+      activeTouches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      resetTouchMidpoint();
+      return;
+    }
+    if (event.pointerType !== 'mouse' || event.button !== 2 || activePointerId !== null) return;
+    activePointerId = event.pointerId;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    domElement.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const onPointerMove = (event) => {
+    if (event.pointerType === 'touch' && activeTouches.has(event.pointerId)) {
+      activeTouches.get(event.pointerId).x = event.clientX;
+      activeTouches.get(event.pointerId).y = event.clientY;
+      updateTouchMidpoint();
+      return;
+    }
+    if (event.pointerType !== 'mouse' || event.pointerId !== activePointerId) return;
+
+    if ((event.buttons & 2) === 0) {
+      clearMousePointer();
+      return;
+    }
+
+    const dxPx = event.clientX - lastX;
+    const dyPx = event.clientY - lastY;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    if (dxPx === 0 && dyPx === 0) return;
+
+    applyPanDelta(dxPx, dyPx);
+  };
+
+  const release = (event) => {
+    if (event.pointerType === 'touch') {
+      activeTouches.delete(event.pointerId);
+      resetTouchMidpoint();
+      return;
+    }
+    if (event.pointerId !== activePointerId) return;
+    clearMousePointer();
+  };
+
+  const onLostPointerCapture = (event) => {
+    if (event.pointerType === 'touch' || activeTouches.has(event.pointerId)) {
+      activeTouches.delete(event.pointerId);
+      resetTouchMidpoint();
+      return;
+    }
+    if (event.pointerId === activePointerId) clearMousePointer();
   };
 
   domElement.addEventListener('pointerdown', onPointerDown);
   domElement.addEventListener('pointermove', onPointerMove);
   domElement.addEventListener('pointerup', release);
   domElement.addEventListener('pointercancel', release);
+  domElement.addEventListener('lostpointercapture', onLostPointerCapture);
+  window.addEventListener('blur', clearInteractionState);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearInteractionState();
+  });
 }
 
 // Wire the camera view buttons (x/y/z + a/b/c lattice axes + reset).
@@ -282,7 +382,7 @@ export function initControls(){
   app.controls.dynamicDampingFactor=0.2;
   app.controls.rotateSpeed=1.5;
   app.controls.enableKeys = false; // Disable keyboard controls to avoid conflicts
-  app.controls.noPan = false; // native pan is absorbed while keeping the structure as the pivot
+  app.controls.noPan = true; // mouse and touch pan directly; trackball keeps rotate + zoom
   app.controls.noRotate= false;
   app.controls.panSpeed = 0.8;
 
@@ -585,7 +685,10 @@ export function switchCameraType() {
 
 // makes the center of structure as the rotation center.
 export function asetViewDirection(dir) {
+  const panX = app.cameraPan.x;
+  const panY = app.cameraPan.y;
   resetCameraPan();
+  removeCameraPanOffset(panX, panY);
   //console.log('[setView] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
   const { center, dist } = getCellCenterAndDist();
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
@@ -609,7 +712,10 @@ export function asetViewDirection(dir) {
 // refit:true (resetView() only) to instead recompute center/distance from
 // the structure's bounding box, i.e. fit the view like the old behavior.
 export function setViewDirection(dir, { refit = false } = {}) {
+  const panX = app.cameraPan.x;
+  const panY = app.cameraPan.y;
   resetCameraPan();
+  removeCameraPanOffset(panX, panY);
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
 
   let dist;
@@ -836,4 +942,3 @@ export function collapseAllAtomExpansions() {
     icon.style.transform = 'rotate(0deg)';
   });
 }
-

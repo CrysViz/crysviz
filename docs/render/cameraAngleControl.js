@@ -4,6 +4,8 @@ import { app } from '../state/store.js';
 
 // Degrees rotated per arrow-button click (a small, repeatable step).
 const STEP_DEG = 5;
+const cameraPanRight = new THREE.Vector3();
+const cameraPanUp = new THREE.Vector3();
 
 /**
  * Rigidly rotate the camera a small step around an axis through the cell
@@ -28,6 +30,13 @@ export function applyRotationFromUI(directionDeg, axis) {
   // away the user's zoom and pan on every arrow press, same as the alignment
   // buttons used to.
   const center = app.controls.target.clone();
+  const panX = app.cameraPan.x;
+  const panY = app.cameraPan.y;
+  app.camera.updateMatrixWorld(true);
+  cameraPanRight.setFromMatrixColumn(app.camera.matrixWorld, 0);
+  cameraPanUp.setFromMatrixColumn(app.camera.matrixWorld, 1);
+  app.camera.position.addScaledVector(cameraPanRight, -panX);
+  app.camera.position.addScaledVector(cameraPanUp, -panY);
 
   // 1) pick the rotation axis: world x/y/z by name, or an explicit direction.
   const rotAxis =
@@ -57,6 +66,11 @@ export function applyRotationFromUI(directionDeg, axis) {
 
   // 5) update controls/camera
   app.controls.update();
+  app.camera.updateMatrixWorld(true);
+  cameraPanRight.setFromMatrixColumn(app.camera.matrixWorld, 0);
+  cameraPanUp.setFromMatrixColumn(app.camera.matrixWorld, 1);
+  app.camera.position.addScaledVector(cameraPanRight, panX);
+  app.camera.position.addScaledVector(cameraPanUp, panY);
   app.camera.updateMatrixWorld(true);
 }
 

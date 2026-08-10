@@ -163,16 +163,20 @@ window.addEventListener('blur', () => { keyState = {}; });
  *  The residuals live in the (private) gap vectors `_moveCurr - _movePrev`,
  *  `_zoomEnd - _zoomStart`, `_panEnd - _panStart` and the decaying
  *  `_lastAngle`; each shrinks by dynamicDampingFactor per frame and only
- *  approaches zero asymptotically. Thresholds are chosen at the sub-pixel
+ *  approaches zero asymptotically. When noPan is set, Trackball can still
+ *  receive touch pan samples, but `_panCamera()` is intentionally skipped, so
+ *  its pan gap is already irrelevant. Thresholds are chosen at the sub-pixel
  *  level (screen-normalized units / radians). No-op for staticMoving. */
 function settleControlsMomentum(controls) {
   if (!controls || controls.staticMoving || !controls._moveCurr) return;
   const GAP2 = 1e-8; // squared length of a ~1e-4 screen-units residual
   const ANGLE = 1e-4; // radians — sub-pixel rotation at typical view sizes
+  const panSettled = controls.noPan
+    || controls._panEnd.distanceToSquared(controls._panStart) < GAP2;
   if (controls._moveCurr.distanceToSquared(controls._movePrev) < GAP2
       && Math.abs(controls._lastAngle ?? 0) < ANGLE
       && controls._zoomEnd.distanceToSquared(controls._zoomStart) < GAP2
-      && controls._panEnd.distanceToSquared(controls._panStart) < GAP2) {
+      && panSettled) {
     controls._movePrev.copy(controls._moveCurr);
     controls._zoomStart.copy(controls._zoomEnd);
     controls._panStart.copy(controls._panEnd);
@@ -191,10 +195,11 @@ export function animation_update(time = 0) {
   if (time - lastFrameTime < interval) return;
   lastFrameTime = time;
 
-  // TrackballControls pans by moving both the camera and its target. Keep the
-  // target fixed on the structure center, and represent that translation as a
-  // camera-plane offset so later rotations continue to pivot around the
-  // structure in place.
+  // Keep the target fixed on the structure center, and represent the camera
+  // plane translation as an offset so later rotations continue to pivot around
+  // the structure in place. Mouse and touch pan are direct now, so Trackball's
+  // target drift is normally zero; this remains a safety net for residual
+  // drift. The pre/post offset removal and reapplication are load-bearing.
   const camera = app.camera;
   const controls = app.controls;
   camera.updateMatrixWorld(true);
