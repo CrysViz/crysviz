@@ -6,6 +6,7 @@ import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, rend
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 import { createLockToggleButton } from './LockToggleButton.js';
+import { installGestureArbiter } from './GestureArbiter.js';
 import { loadCrysVizFonts } from '../utils/index.js';
 
 const cameraPanRight = new THREE.Vector3();
@@ -21,165 +22,6 @@ function wireFontRefresh() {
     app.gizmoScene?.userData?.rebuildLabels?.();
     rebuildChargeBadges();
     requestRender();
-  });
-}
-
-function wireDirectPan(domElement) {
-  let activePointerId = null;
-  let lastX = 0;
-  let lastY = 0;
-  const activeTouches = new Map();
-  let touchMidpointX = 0;
-  let touchMidpointY = 0;
-  let touchMidpointValid = false;
-
-  const clearMousePointer = () => {
-    const pointerId = activePointerId;
-    activePointerId = null;
-    if (pointerId !== null && domElement.hasPointerCapture(pointerId)) {
-      domElement.releasePointerCapture(pointerId);
-    }
-  };
-
-  const clearInteractionState = () => {
-    clearMousePointer();
-    activeTouches.clear();
-    touchMidpointX = 0;
-    touchMidpointY = 0;
-    touchMidpointValid = false;
-  };
-
-  const applyPanDelta = (dxPx, dyPx) => {
-    const camera = app.camera;
-    const viewportHeightPx = domElement.clientHeight
-      || domElement.getBoundingClientRect().height
-      || window.innerHeight;
-    let worldPerPixel;
-    if (camera.isPerspectiveCamera) {
-      // The pan offset is perpendicular to the view direction, so remove its
-      // squared length from |camera-target|² to recover the unpanned axial
-      // distance used by the perspective projection scale.
-      const eyeLengthSq = camera.position.distanceToSquared(app.controls.target);
-      const panLengthSq = app.cameraPan.x ** 2 + app.cameraPan.y ** 2;
-      const dist = Math.sqrt(Math.max(0, eyeLengthSq - panLengthSq));
-      worldPerPixel = 2 * dist * Math.tan(camera.fov * Math.PI / 360) / viewportHeightPx;
-    } else {
-      worldPerPixel = (camera.top - camera.bottom) / camera.zoom / viewportHeightPx;
-    }
-
-    // Camera-plane offset signs are chosen so dragging the view right/down
-    // moves the structure point under the cursor right/down on screen.
-    const deltaX = -dxPx * worldPerPixel;
-    const deltaY = dyPx * worldPerPixel;
-    app.cameraPan.x += deltaX;
-    app.cameraPan.y += deltaY;
-
-    // Keep the physical camera synchronized immediately. Pointer events can
-    // arrive in a burst before animation_update() gets a frame; translating
-    // by this same delta keeps the next worldPerPixel calculation axial and
-    // keeps end listeners (e.g. triangle sorting) on the current pose.
-    camera.updateMatrixWorld(true);
-    cameraPanRight.setFromMatrixColumn(camera.matrixWorld, 0);
-    cameraPanUp.setFromMatrixColumn(camera.matrixWorld, 1);
-    camera.position.addScaledVector(cameraPanRight, deltaX);
-    camera.position.addScaledVector(cameraPanUp, deltaY);
-    camera.updateMatrixWorld(true);
-    requestRender();
-  };
-
-  const resetTouchMidpoint = () => {
-    if (activeTouches.size !== 2) {
-      touchMidpointValid = false;
-      return;
-    }
-    const points = activeTouches.values();
-    const first = points.next().value;
-    const second = points.next().value;
-    touchMidpointX = (first.x + second.x) / 2;
-    touchMidpointY = (first.y + second.y) / 2;
-    touchMidpointValid = true;
-  };
-
-  const updateTouchMidpoint = () => {
-    if (activeTouches.size !== 2) {
-      touchMidpointValid = false;
-      return;
-    }
-    const points = activeTouches.values();
-    const first = points.next().value;
-    const second = points.next().value;
-    const nextX = (first.x + second.x) / 2;
-    const nextY = (first.y + second.y) / 2;
-    if (touchMidpointValid) applyPanDelta(nextX - touchMidpointX, nextY - touchMidpointY);
-    touchMidpointX = nextX;
-    touchMidpointY = nextY;
-    touchMidpointValid = true;
-  };
-
-  const onPointerDown = (event) => {
-    if (event.pointerType === 'touch') {
-      activeTouches.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      resetTouchMidpoint();
-      return;
-    }
-    if (event.pointerType !== 'mouse' || event.button !== 2 || activePointerId !== null) return;
-    activePointerId = event.pointerId;
-    lastX = event.clientX;
-    lastY = event.clientY;
-    domElement.setPointerCapture(event.pointerId);
-    event.preventDefault();
-  };
-
-  const onPointerMove = (event) => {
-    if (event.pointerType === 'touch' && activeTouches.has(event.pointerId)) {
-      activeTouches.get(event.pointerId).x = event.clientX;
-      activeTouches.get(event.pointerId).y = event.clientY;
-      updateTouchMidpoint();
-      return;
-    }
-    if (event.pointerType !== 'mouse' || event.pointerId !== activePointerId) return;
-
-    if ((event.buttons & 2) === 0) {
-      clearMousePointer();
-      return;
-    }
-
-    const dxPx = event.clientX - lastX;
-    const dyPx = event.clientY - lastY;
-    lastX = event.clientX;
-    lastY = event.clientY;
-    if (dxPx === 0 && dyPx === 0) return;
-
-    applyPanDelta(dxPx, dyPx);
-  };
-
-  const release = (event) => {
-    if (event.pointerType === 'touch') {
-      activeTouches.delete(event.pointerId);
-      resetTouchMidpoint();
-      return;
-    }
-    if (event.pointerId !== activePointerId) return;
-    clearMousePointer();
-  };
-
-  const onLostPointerCapture = (event) => {
-    if (event.pointerType === 'touch' || activeTouches.has(event.pointerId)) {
-      activeTouches.delete(event.pointerId);
-      resetTouchMidpoint();
-      return;
-    }
-    if (event.pointerId === activePointerId) clearMousePointer();
-  };
-
-  domElement.addEventListener('pointerdown', onPointerDown);
-  domElement.addEventListener('pointermove', onPointerMove);
-  domElement.addEventListener('pointerup', release);
-  domElement.addEventListener('pointercancel', release);
-  domElement.addEventListener('lostpointercapture', onLostPointerCapture);
-  window.addEventListener('blur', clearInteractionState);
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) clearInteractionState();
   });
 }
 
@@ -391,7 +233,7 @@ export function initControls(){
     MIDDLE: THREE.MOUSE.DOLLY,
   };
 
-  wireDirectPan(app.renderer.domElement);
+  installGestureArbiter(app.renderer.domElement);
 
   // update() fires 'change' whenever the camera actually moved (user input,
   // damping coast-down, or programmatic moves) — the trigger for on-demand rendering.

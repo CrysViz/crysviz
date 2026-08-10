@@ -325,6 +325,7 @@ let longPressTimer = null;
 let longPressFired = false;
 let pointerDownPos = null;
 let moved = false;
+const cameraOnlyPointerIds = new Set();
 const LONG_PRESS_MS = 700;        // adjust to preference
 const MOVE_THRESHOLD_PX = 10;
 
@@ -459,6 +460,12 @@ el.addEventListener('pointerup', onPointerUp);
 el.addEventListener('pointercancel', onPointerCancel);
 
 function onPointerDown(e) {
+  // GestureArbiter marks promoted camera-only touch pointers with this flag.
+  if (e._cvCameraOnly) {
+    cameraOnlyPointerIds.add(e.pointerId);
+    return;
+  }
+
   // Track touch separately for long-press
   if (e.pointerType === 'touch') {
     clearLongPress(); // always clear any pending timer before starting a new one
@@ -482,6 +489,8 @@ function onPointerDown(e) {
 }
 
 function onPointerMove(e) {
+  if (cameraOnlyPointerIds.has(e.pointerId)) return;
+
   if (dragSelectStart) {
     const dx = e.clientX - dragSelectStart.x;
     const dy = e.clientY - dragSelectStart.y;
@@ -500,6 +509,8 @@ function onPointerMove(e) {
 }
 
 function onPointerUp(e) {
+  if (cameraOnlyPointerIds.delete(e.pointerId)) return;
+
   clearLongPress();
   try { e.target.releasePointerCapture(e.pointerId); } catch {}
 
@@ -536,7 +547,9 @@ function onPointerUp(e) {
   pointerDownPos = null;
 }
 
-function onPointerCancel() {
+function onPointerCancel(e) {
+  if (cameraOnlyPointerIds.delete(e.pointerId)) return;
+
   clearLongPress();
   pointerDownPos = null;
   if (dragSelectStart) teardownDragSelect();
