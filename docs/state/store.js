@@ -332,6 +332,10 @@ export const general = {
   // Side length in px of the #axesGizmo box (ui/GizmoDrag.js's resize
   // handle), or null to use the CSS default (--gizmo-size, theme.css).
   gizmoSize: null,
+  // Position and diameter of the draggable background picker dot. These are
+  // viewport-local UI preferences, like gizmoPos/gizmoSize, not share state.
+  backgroundDotPos: null,
+  backgroundDotSize: null,
   // Cylinder radius of the unit-cell outline edges, in world units (Å)
   // (LatticeModule.createLatticeLines).
   latticeLineWidth:0.015,

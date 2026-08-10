@@ -361,7 +361,7 @@
     width: 54px;
     height: 54px;
     border-radius: 50%;
-    cursor: pointer;
+    cursor: grab;
     top: max(155px, calc(var(--compact-stack-bottom, 0px) + 20px));
     right: calc(11px + var(--split-reserve, 0px));
     z-index: var(--z-anchor);

@@ -10,6 +10,13 @@ import { app, general } from '../state/store.js';
 import { applySceneFromCSS } from './ThemeManager.js';
 import { createColorPicker } from './ColorPickerModule.js';
 import { updateLattice } from '../render/index.js';
+import { captureAnchor, clampToScene, getViewRect, positionFromAnchor } from './GizmoLayout.js';
+import { wireLongPress } from '../utils/index.js';
+
+const DEFAULT_DOT_SIZE = 54;
+const MIN_DOT_SIZE = 36;
+const MAX_DOT_SIZE = DEFAULT_DOT_SIZE * 3;
+const DRAG_THRESHOLD = 4;
 
 export function getLuminance(hex) {
   const c = hex.startsWith("#") ? hex.substring(1) : hex;
@@ -37,6 +44,18 @@ export function syncBackgroundSwatch() {
 // The dot that currently owns an open picker (null = none). Clicking the same
 // dot again closes its picker instead of rebuilding an identical one in place.
 let activePicker = null;
+
+function positionPickerPanel(dot, pickerPanel) {
+  const rect = dot.getBoundingClientRect();
+  let topPosition = rect.top + window.scrollY + 60;
+  const bottomSpace = window.innerHeight - (rect.top + window.scrollY + 24 + pickerPanel.offsetHeight);
+  if (bottomSpace < 40) topPosition = window.innerHeight - pickerPanel.offsetHeight - 65;
+
+  // Keep the panel on screen for anchors near the left edge (the Visual
+  // window's swatch sits in the dock column).
+  pickerPanel.style.left = `${Math.max(8, rect.left + window.scrollX - 200)}px`;
+  pickerPanel.style.top = `${topPosition}px`;
+}
 
 function openBackgroundColorPicker(dot) {
   if (activePicker) {
@@ -81,15 +100,7 @@ function openBackgroundColorPicker(dot) {
   pickerPanel.appendChild(buttonRow);
   document.body.appendChild(pickerPanel);
 
-  const rect = dot.getBoundingClientRect();
-  let topPosition = rect.top + window.scrollY + 60;
-  let bottomSpace = window.innerHeight - (rect.top + window.scrollY + 24 + pickerPanel.offsetHeight);
-  if (bottomSpace < 40) topPosition = window.innerHeight - pickerPanel.offsetHeight - 65;
-
-  // Keep the panel on screen for anchors near the left edge (the Visual
-  // window's swatch sits in the dock column).
-  pickerPanel.style.left = `${Math.max(8, rect.left + window.scrollX - 200)}px`;
-  pickerPanel.style.top = `${topPosition}px`;
+  positionPickerPanel(dot, pickerPanel);
 
   const closePicker = () => {
     pickerPanel.remove();
@@ -102,7 +113,11 @@ function openBackgroundColorPicker(dot) {
   };
   document.addEventListener("mousedown", outsideClick);
   pickerPanel.addEventListener("mousedown", (e) => e.stopPropagation());
-  activePicker = { dot, close: closePicker };
+  activePicker = {
+    dot,
+    close: closePicker,
+    reposition: () => positionPickerPanel(dot, pickerPanel),
+  };
 
   applyBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -127,9 +142,221 @@ export function createBackgroundControl() {
     return;
   }
   // Position/z-index/border-radius/cursor already come from the .background-dot
-  // class (index.html, styles/styles.css); only pointer-events:auto is added
-  // here (styles/sceneWidgets.css) since that class doesn't otherwise set it.
-  dot.addEventListener("click", () => openBackgroundColorPicker(dot));
+  // class (index.html, styles/styles.css); the interaction styling and gizmo
+  // handle are added in styles/sceneWidgets.css.
+  const resizeHandle = document.createElement('div');
+  resizeHandle.className = 'background-dot-resize-handle';
+  resizeHandle.title = 'Drag to resize';
+  dot.appendChild(resizeHandle);
+
+  const menuWrap = document.createElement('div');
+  menuWrap.className = 'cv-colorbar-menu-host background-dot-menu-wrap';
+  const menu = document.createElement('div');
+  menu.className = 'cv-colorbar-menu';
+  const resetItem = document.createElement('button');
+  resetItem.type = 'button';
+  resetItem.className = 'cv-colorbar-menu-item';
+  resetItem.textContent = 'Reset Layout';
+  menu.appendChild(resetItem);
+  menuWrap.appendChild(menu);
+  document.body.appendChild(menuWrap);
+
+  const closeMenu = () => menu.classList.remove('cv-colorbar-menu-open');
+  const openMenuAt = (x, y) => {
+    menu.classList.add('cv-colorbar-menu-open');
+    const view = getViewRect();
+    const rect = menu.getBoundingClientRect();
+    const left = view ? Math.min(Math.max(x, view.left + 4), view.right - rect.width - 4) : x;
+    const top = view ? Math.min(Math.max(y, view.top + 4), view.bottom - rect.height - 4) : y;
+    menuWrap.style.left = `${left}px`;
+    menuWrap.style.top = `${top}px`;
+  };
+  const onMenuPointerDown = (event) => {
+    if (!menuWrap.contains(/** @type {Node} */ (event.target))) closeMenu();
+  };
+  const onMenuClick = (event) => {
+    if (!menuWrap.contains(/** @type {Node} */ (event.target))) closeMenu();
+  };
+  const onMenuKeyDown = (event) => {
+    if (event.key === 'Escape') closeMenu();
+  };
+  document.addEventListener('pointerdown', onMenuPointerDown);
+  document.addEventListener('click', onMenuClick);
+  document.addEventListener('keydown', onMenuKeyDown);
+  menuWrap.addEventListener('pointerdown', (event) => event.stopPropagation());
+
+  const applyDotSize = (size) => {
+    dot.style.width = `${size}px`;
+    dot.style.height = `${size}px`;
+    activePicker?.reposition();
+  };
+  const applyDotAnchor = () => {
+    const position = positionFromAnchor(dot, general.backgroundDotPos);
+    if (!position) return;
+    dot.style.left = `${position.left}px`;
+    dot.style.top = `${position.top}px`;
+    dot.style.right = 'auto';
+    dot.style.bottom = 'auto';
+    activePicker?.reposition();
+  };
+  const resetDotLayout = () => {
+    general.backgroundDotPos = null;
+    general.backgroundDotSize = null;
+    dot.style.left = '';
+    dot.style.top = '';
+    dot.style.right = '';
+    dot.style.bottom = '';
+    dot.style.width = '';
+    dot.style.height = '';
+    activePicker?.reposition();
+  };
+  resetItem.addEventListener('click', (event) => {
+    event.stopPropagation();
+    resetDotLayout();
+    closeMenu();
+  });
+
+  if (general.backgroundDotSize != null) applyDotSize(general.backgroundDotSize);
+  if (general.backgroundDotPos) applyDotAnchor();
+
+  let abortActiveGesture = null;
+  let suppressNextClick = false;
+  const bindDrag = () => {
+    dot.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      if (event.target !== dot) return;
+      suppressNextClick = false;
+      event.stopPropagation();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let dragging = false;
+      let grabDX = 0;
+      let grabDY = 0;
+      let finished = false;
+
+      try { dot.setPointerCapture(event.pointerId); } catch { /* synthetic events cannot capture */ }
+
+      const onMove = (move) => {
+        if (!dragging) {
+          if (Math.hypot(move.clientX - startX, move.clientY - startY) < DRAG_THRESHOLD) return;
+          dragging = true;
+          suppressNextClick = true;
+          event.preventDefault();
+          const rect = dot.getBoundingClientRect();
+          grabDX = startX - rect.left;
+          grabDY = startY - rect.top;
+          dot.classList.add('background-dot-dragging');
+          dot.style.right = 'auto';
+          dot.style.bottom = 'auto';
+        }
+        const size = dot.offsetWidth;
+        const position = clampToScene(move.clientX - grabDX, move.clientY - grabDY, size, size);
+        dot.style.left = `${position.left}px`;
+        dot.style.top = `${position.top}px`;
+        activePicker?.reposition();
+      };
+      const cleanup = () => {
+        if (finished) return;
+        finished = true;
+        dot.removeEventListener('pointermove', onMove);
+        dot.removeEventListener('pointerup', onUp);
+        dot.removeEventListener('pointercancel', onUp);
+        try { dot.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+        if (abortActiveGesture === abort) abortActiveGesture = null;
+      };
+      const onUp = () => {
+        cleanup();
+        if (!dragging) return;
+        dot.classList.remove('background-dot-dragging');
+        general.backgroundDotPos = captureAnchor(dot);
+      };
+      const abort = (pointerId) => {
+        if (pointerId !== event.pointerId || finished) return;
+        cleanup();
+        dot.classList.remove('background-dot-dragging');
+      };
+      dot.addEventListener('pointermove', onMove);
+      dot.addEventListener('pointerup', onUp);
+      dot.addEventListener('pointercancel', onUp);
+      abortActiveGesture = abort;
+    });
+  };
+  bindDrag();
+
+  let abortResize = null;
+  resizeHandle.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressNextClick = true;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startSize = dot.offsetWidth || DEFAULT_DOT_SIZE;
+    const startRect = dot.getBoundingClientRect();
+    const view = getViewRect();
+    const maxByView = view ? Math.min(view.right - startRect.left, view.bottom - startRect.top) : MAX_DOT_SIZE;
+    const maxSize = Math.min(MAX_DOT_SIZE, maxByView);
+    let finished = false;
+
+    dot.style.left = `${startRect.left}px`;
+    dot.style.top = `${startRect.top}px`;
+    dot.style.right = 'auto';
+    dot.style.bottom = 'auto';
+    try { resizeHandle.setPointerCapture(event.pointerId); } catch { /* synthetic events cannot capture */ }
+
+    const onMove = (move) => {
+      const delta = Math.max(move.clientX - startX, move.clientY - startY);
+      applyDotSize(Math.min(Math.max(startSize + delta, MIN_DOT_SIZE), maxSize));
+    };
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
+      resizeHandle.removeEventListener('pointermove', onMove);
+      resizeHandle.removeEventListener('pointerup', onUp);
+      resizeHandle.removeEventListener('pointercancel', onUp);
+      try { resizeHandle.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+      if (abortResize === abort) abortResize = null;
+    };
+    const onUp = () => {
+      cleanup();
+      general.backgroundDotSize = dot.offsetWidth;
+      general.backgroundDotPos = captureAnchor(dot);
+    };
+    const abort = (pointerId) => {
+      if (pointerId !== event.pointerId || finished) return;
+      cleanup();
+    };
+    resizeHandle.addEventListener('pointermove', onMove);
+    resizeHandle.addEventListener('pointerup', onUp);
+    resizeHandle.addEventListener('pointercancel', onUp);
+    abortResize = abort;
+    abortActiveGesture = abort;
+  });
+
+  wireLongPress(dot, ({ clientX, clientY }) => openMenuAt(clientX, clientY), {
+    ignoreSelector: '.background-dot-resize-handle',
+    onFire: ({ pointerId }) => {
+      abortActiveGesture?.(pointerId);
+      abortResize?.(pointerId);
+    },
+  });
+
+  dot.addEventListener("click", (event) => {
+    if (event.target === resizeHandle || suppressNextClick) {
+      suppressNextClick = false;
+      return;
+    }
+    openBackgroundColorPicker(dot);
+  });
+
+  const reapply = () => {
+    if (general.backgroundDotPos) applyDotAnchor();
+    else activePicker?.reposition();
+  };
+  const view = document.getElementById('view');
+  const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(reapply) : null;
+  if (view && resizeObserver) resizeObserver.observe(view);
+  window.addEventListener('resize', reapply);
 }
 
 /** Show/hide the on-canvas picker dot (the Visual window's toggle). */

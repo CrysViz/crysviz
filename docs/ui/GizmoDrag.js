@@ -11,6 +11,7 @@
 import { general } from '../state/store.js';
 import { setGizmoLabelsOnArrows, resizeGizmoRenderer } from './WindowAndSceneControls.js';
 import { currentContrastColor } from './ColorBarWidget.js';
+import { captureAnchor, clampToScene, getViewRect, positionFromAnchor } from './GizmoLayout.js';
 import { wireLongPress } from '../utils/index.js';
 
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
@@ -28,54 +29,6 @@ const LEGEND_BASE_PAD_X = 8;
 const LEGEND_BASE_RADIUS = 8;
 const LEGEND_BASE_DOT = 10;
 const LEGEND_BASE_GAP = 6;
-function viewRect() {
-  const view = document.getElementById('view');
-  return view ? view.getBoundingClientRect() : null;
-}
-
-function clampToScene(left, top, width, height) {
-  const rect = viewRect();
-  if (!rect) return { left, top };
-  const minLeft = rect.left + 4;
-  const maxLeft = Math.max(minLeft, rect.right - width - 4);
-  const minTop = rect.top + 4;
-  const maxTop = Math.max(minTop, rect.bottom - height - 4);
-  return {
-    left: Math.min(Math.max(left, minLeft), maxLeft),
-    top: Math.min(Math.max(top, minTop), maxTop),
-  };
-}
-
-// Position remembered as an offset from the nearest edge of #view (same
-// scheme as ColorBarDrag.js) rather than a raw page-pixel position, so it
-// keeps tracking the same relative spot as #view resizes (side panel
-// docking, window resize) instead of drifting.
-function captureAnchor(gizmoDiv) {
-  const rect = viewRect();
-  if (!rect) return null;
-  const gRect = gizmoDiv.getBoundingClientRect();
-  const leftGap = gRect.left - rect.left;
-  const rightGap = rect.right - gRect.right;
-  const topGap = gRect.top - rect.top;
-  const bottomGap = rect.bottom - gRect.bottom;
-  return {
-    edgeX: leftGap <= rightGap ? 'left' : 'right',
-    offsetX: leftGap <= rightGap ? leftGap : rightGap,
-    edgeY: topGap <= bottomGap ? 'top' : 'bottom',
-    offsetY: topGap <= bottomGap ? topGap : bottomGap,
-  };
-}
-
-function positionFromAnchor(gizmoDiv, anchor) {
-  const rect = viewRect();
-  if (!rect || !anchor) return null;
-  const width = gizmoDiv.offsetWidth;
-  const height = gizmoDiv.offsetHeight;
-  const left = anchor.edgeX === 'left' ? rect.left + anchor.offsetX : rect.right - anchor.offsetX - width;
-  const top = anchor.edgeY === 'top' ? rect.top + anchor.offsetY : rect.bottom - anchor.offsetY - height;
-  return clampToScene(left, top, width, height);
-}
-
 /** Wire up dragging + the layout menu for the axes gizmo. Call once at
  *  startup, after WindowAndSceneControls.initAxesGizmo has built the gizmo
  *  canvas (so #axesGizmo/#axesLegend exist in the DOM). */
@@ -201,7 +154,7 @@ export function initGizmoDrag() {
   function openMenuAt(x, y) {
     updateMenuState();
     menu.classList.add('cv-colorbar-menu-open');
-    const view = viewRect();
+    const view = getViewRect();
     const menuRect = menu.getBoundingClientRect();
     const left = view ? Math.min(Math.max(x, view.left + 4), view.right - menuRect.width - 4) : x;
     const top = view ? Math.min(Math.max(y, view.top + 4), view.bottom - menuRect.height - 4) : y;
@@ -323,7 +276,7 @@ export function initGizmoDrag() {
     const startY = e.clientY;
     const startSize = gizmoDiv.offsetWidth;
     const startRect = gizmoDiv.getBoundingClientRect();
-    const rect = viewRect();
+    const rect = getViewRect();
     // Square stays anchored at its current top-left corner — only the
     // bottom-right one moves — so growth is capped by #view's own edges,
     // same as the drag-to-reposition gesture stays clamped to them.

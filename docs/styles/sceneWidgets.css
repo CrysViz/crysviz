@@ -175,11 +175,40 @@
 
 /* --- Background picker (ui/BackgroundPicker.js) --- */
 
-/* .background-dot (index.html, styles/styles.css) already carries
-   position/z-index/border-radius/cursor; only pointer-events needs adding
-   here since that rule doesn't otherwise set it. */
+/* .background-dot (index.html, styles/styles.css) carries the fixed gizmo
+   placement; this rule supplies interaction opacity and the resize affordance. */
 .background-dot {
   pointer-events: auto;
+}
+
+.background-dot-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  height: 24px;
+  cursor: nwse-resize;
+  pointer-events: auto;
+  opacity: 0.3;
+  transition: opacity 0.15s ease;
+}
+
+.background-dot-resize-handle::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  border-radius: 0 0 50% 0;
+}
+
+.background-dot:hover .background-dot-resize-handle,
+.background-dot.background-dot-dragging .background-dot-resize-handle,
+.background-dot-resize-handle:hover {
+  opacity: 0.7;
 }
 
 .cv-background-picker-panel {

@@ -130,13 +130,18 @@ body.panel-hidden #axesLegend {
   height: 54px;
   border-radius: 50%;
   border: 2px solid var(--dot-border);
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
   top: max(120px, calc(var(--compact-stack-bottom, 0px) + 20px));
   /* --split-reserve is kept in sync with the right dock's pane width (see
      ui/panels/RightDock.js) so the dot stays clear of the pane instead of
      sliding underneath it. 0px when the dock is closed. */
   right: calc(20px + var(--split-reserve, 0px));
   z-index: var(--z-anchor);
+}
+
+.background-dot.background-dot-dragging {
+  cursor: grabbing;
 }
 
 .popup {

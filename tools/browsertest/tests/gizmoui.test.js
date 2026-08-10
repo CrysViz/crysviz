@@ -222,6 +222,146 @@ const mouseLongPress = async (page, selector, x, y) => {
   H.check('the floating color bar corner resizes functionally',
     barSizeAfter > barSizeBefore.width + 10, JSON.stringify({ before: barSizeBefore, after: barSizeAfter }));
 
+  // ---- background dot gizmo -----------------------------------------------
+  const backgroundDefault = await page.evaluate(() => {
+    const dot = document.getElementById('backgroundDot');
+    const rect = dot.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, width: rect.width, height: rect.height };
+  });
+  await page.mouse.click(backgroundDefault.x, backgroundDefault.y);
+  await page.waitForTimeout(150);
+  const backgroundPickerOpen = await page.evaluate(() => !!document.querySelector('.cv-background-picker-panel'));
+  H.check('clicking the background dot opens its picker', backgroundPickerOpen);
+  await page.mouse.click(backgroundDefault.x, backgroundDefault.y);
+  await page.waitForTimeout(150);
+  H.check('clicking the background dot a second time closes its picker',
+    await page.evaluate(() => !document.querySelector('.cv-background-picker-panel')));
+
+  const backgroundBeforeDrag = await page.evaluate(() => {
+    const dot = document.getElementById('backgroundDot');
+    const view = document.getElementById('view').getBoundingClientRect();
+    const rect = dot.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+      view: { left: view.left, right: view.right, top: view.top, bottom: view.bottom },
+    };
+  });
+  await page.mouse.move(backgroundBeforeDrag.x, backgroundBeforeDrag.y);
+  await page.mouse.down();
+  await page.mouse.move(backgroundBeforeDrag.x - 90, backgroundBeforeDrag.y + 45, { steps: 5 });
+  await page.mouse.up();
+  const backgroundAfterDrag = await page.evaluate(async () => {
+    const dot = document.getElementById('backgroundDot');
+    const view = document.getElementById('view').getBoundingClientRect();
+    const rect = dot.getBoundingClientRect();
+    return {
+      rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+      view: { left: view.left, right: view.right, top: view.top, bottom: view.bottom },
+      picker: !!document.querySelector('.cv-background-picker-panel'),
+      pos: (await import('./state/store.js')).general.backgroundDotPos,
+    };
+  });
+  H.check('dragging the background dot moves it without opening the picker',
+    Math.abs(backgroundAfterDrag.rect.left - backgroundBeforeDrag.rect.left) > 20
+      && Math.abs(backgroundAfterDrag.rect.top - backgroundBeforeDrag.rect.top) > 20
+      && !backgroundAfterDrag.picker
+      && !!backgroundAfterDrag.pos, JSON.stringify({ before: backgroundBeforeDrag.rect, after: backgroundAfterDrag.rect }));
+
+  const gap = (info, edge) => edge === 'left'
+    ? info.rect.left - info.view.left
+    : edge === 'right'
+      ? info.view.right - info.rect.right
+      : edge === 'top'
+        ? info.rect.top - info.view.top
+        : info.view.bottom - info.rect.bottom;
+  const horizontalEdge = backgroundBeforeDrag.rect.left - backgroundBeforeDrag.view.left
+    <= backgroundBeforeDrag.view.right - backgroundBeforeDrag.rect.right ? 'left' : 'right';
+  const verticalEdge = backgroundBeforeDrag.rect.top - backgroundBeforeDrag.view.top
+    <= backgroundBeforeDrag.view.bottom - backgroundBeforeDrag.rect.bottom ? 'top' : 'bottom';
+  const backgroundGapBeforeResize = { horizontal: gap(backgroundAfterDrag, horizontalEdge), vertical: gap(backgroundAfterDrag, verticalEdge) };
+  await page.setViewportSize({ width: 1300, height: 850 });
+  await page.waitForTimeout(500);
+  const backgroundAfterViewportResize = await page.evaluate(() => {
+    const dot = document.getElementById('backgroundDot');
+    const view = document.getElementById('view').getBoundingClientRect();
+    const rect = dot.getBoundingClientRect();
+    return { rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }, view: { left: view.left, right: view.right, top: view.top, bottom: view.bottom } };
+  });
+  H.check('the background dot preserves its edge anchor across #view resize',
+    Math.abs(gap(backgroundAfterViewportResize, horizontalEdge) - backgroundGapBeforeResize.horizontal) < 3
+      && Math.abs(gap(backgroundAfterViewportResize, verticalEdge) - backgroundGapBeforeResize.vertical) < 3,
+    JSON.stringify({ before: backgroundGapBeforeResize, after: { horizontal: gap(backgroundAfterViewportResize, horizontalEdge), vertical: gap(backgroundAfterViewportResize, verticalEdge) } }));
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.waitForTimeout(500);
+
+  const backgroundLongPressPoint = await page.evaluate(() => {
+    const r = document.getElementById('backgroundDot').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page.mouse.move(backgroundLongPressPoint.x, backgroundLongPressPoint.y);
+  await page.mouse.down();
+  await page.waitForTimeout(650);
+  const backgroundMenuOpened = await page.evaluate(() => !!document.querySelector('.background-dot-menu-wrap .cv-colorbar-menu-open'));
+  await page.mouse.up();
+  await page.waitForTimeout(50);
+  const backgroundAfterLongRelease = await page.evaluate(() => ({
+    menu: !!document.querySelector('.background-dot-menu-wrap .cv-colorbar-menu-open'),
+    picker: !!document.querySelector('.cv-background-picker-panel'),
+  }));
+  H.check('mouse long-press opens the background-dot menu and suppresses the picker click',
+    backgroundMenuOpened && backgroundAfterLongRelease.menu && !backgroundAfterLongRelease.picker,
+    JSON.stringify(backgroundAfterLongRelease));
+  await page.locator('.background-dot-menu-wrap .cv-colorbar-menu-item', { hasText: 'Reset Layout' }).click();
+  const backgroundAfterReset = await page.evaluate(async () => {
+    const dot = document.getElementById('backgroundDot');
+    const { general } = await import('./state/store.js');
+    return { width: dot.getBoundingClientRect().width, pos: general.backgroundDotPos, size: general.backgroundDotSize, left: dot.style.left, right: dot.style.right };
+  });
+  H.check('Reset Layout restores the background dot default position and size',
+    backgroundAfterReset.width === backgroundDefault.width
+      && backgroundAfterReset.pos === null
+      && backgroundAfterReset.size === null
+      && backgroundAfterReset.left === ''
+      && backgroundAfterReset.right === '', JSON.stringify(backgroundAfterReset));
+
+  const backgroundTouchPoint = await page.evaluate(() => {
+    const r = document.getElementById('backgroundDot').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  const backgroundTouch = await page.evaluate(({ x, y }) => new Promise((resolve) => {
+    const dot = document.getElementById('backgroundDot');
+    dot.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 901, pointerType: 'touch', button: 0, buttons: 1, clientX: x, clientY: y }));
+    setTimeout(() => {
+      const open = !!document.querySelector('.background-dot-menu-wrap .cv-colorbar-menu-open');
+      dot.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 901, pointerType: 'touch', button: 0, clientX: x, clientY: y }));
+      dot.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      resolve({ open, menu: !!document.querySelector('.background-dot-menu-wrap .cv-colorbar-menu-open'), picker: !!document.querySelector('.cv-background-picker-panel') });
+    }, 650);
+  }), backgroundTouchPoint);
+  H.check('touch long-press opens the background-dot menu without opening the picker',
+    backgroundTouch.open && backgroundTouch.menu && !backgroundTouch.picker, JSON.stringify(backgroundTouch));
+  await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+
+  const backgroundResizeBefore = await page.evaluate(() => {
+    const dot = document.getElementById('backgroundDot');
+    const handle = dot.querySelector('.background-dot-resize-handle').getBoundingClientRect();
+    return { width: dot.getBoundingClientRect().width, x: handle.right - 20, y: handle.bottom - 20 };
+  });
+  await page.mouse.move(backgroundResizeBefore.x, backgroundResizeBefore.y);
+  await page.mouse.down();
+  await page.mouse.move(backgroundResizeBefore.x + 35, backgroundResizeBefore.y + 35, { steps: 3 });
+  await page.mouse.up();
+  const backgroundResizeAfter = await page.evaluate(async () => {
+    const dot = document.getElementById('backgroundDot');
+    return { width: dot.getBoundingClientRect().width, size: (await import('./state/store.js')).general.backgroundDotSize };
+  });
+  H.check('dragging the background dot corner resizes it',
+    backgroundResizeAfter.width > backgroundResizeBefore.width + 20
+      && backgroundResizeAfter.size === backgroundResizeAfter.width,
+    JSON.stringify({ before: backgroundResizeBefore.width, after: backgroundResizeAfter }));
+
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);
