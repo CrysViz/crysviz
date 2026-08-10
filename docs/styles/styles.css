@@ -2015,6 +2015,7 @@ z-index: var(--z-overlay-widget); overflow: hidden;
    the scene behind it, in exchange for being draggable from anywhere on it. */
 pointer-events: auto;
 cursor: grab;
+touch-action: none;
 }
 #axesGizmo.cv-gizmo-dragging {
   cursor: grabbing;
@@ -2034,86 +2035,39 @@ z-index:var(--z-overlay-widget); pointer-events:none;
 .dot-a{width:10px;height:10px;background:var(--axis-a);} .dot-b{width:10px;height:10px;background:var(--axis-b);} .dot-c{width:10px;height:10px;background:var(--axis-c);}
 .legend-row{display:flex;align-items:center;gap:var(--sp-2);line-height:1.2;}
 
-/* Drag grip + hamburger menu for the axes gizmo (ui/GizmoDrag.js). A
-   body-level overlay tracking a spot just above #axesGizmo, centered over it
-   (ui/GizmoDrag.js repositions it in JS) rather than a child of #axesGizmo
-   itself, since that box has overflow:hidden (clipping the WebGL canvas to
-   its rounded corners) which would also clip the menu dropdown the moment
-   it opened. Hidden until hovered — same hover-revealed-titlebar treatment
-   as a floating color bar's controls strip (.cv-colorbar-floating
-   .cv-colorbar-controls below), toggled by ui/GizmoDrag.js's own hover
-   tracking rather than CSS :hover (this element isn't a CSS-adjacent
-   sibling of #axesGizmo, so a :hover rule on it couldn't reveal this
-   anyway). */
-.cv-gizmo-controls {
-  position: fixed;
-  /* So the JS-set width (ui/GizmoDrag.js's positionControls, matching the
-     gizmo box's own outer width) isn't inflated further by this element's
-     own padding/border — content-box (the default) would add both on top. */
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  /* Spreads the grip and hamburger menu to the two ends of the strip —
-     width is set in JS (ui/GizmoDrag.js's positionControls) to match the
-     gizmo box's own current width, so this needs a stretch layout instead
-     of the color bars' content-sized "gap" row. */
-  justify-content: space-between;
-  z-index: var(--z-gizmo-controls);
-  transform: translate(-50%, -100%);
-  padding: 5px var(--sp-3-5);
-  border-radius: var(--radius-12);
-  /* --menu-bg, not --bg-color — see .cv-colorbar-menu's comment
-     (toggle_styles.css): the same near-opaque token every other menu/modal
-     uses, instead of the ~80%-opaque theme accent. */
-  background: var(--menu-bg);
-  border: 1px solid var(--line-1);
-  backdrop-filter: blur(10px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
-}
-.cv-gizmo-controls-visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-.cv-gizmo-controls .cv-colorbar-grip {
-  font-size: var(--fs-2xl);
-}
+/* Axes menu (ui/GizmoDrag.js): a body-level dropdown opened by long press at
+   the press coordinates, so the gizmo's overflow clipping cannot affect it. */
 .cv-gizmo-menu-wrap {
-  position: relative;
-  display: flex;
+  position: fixed;
+  z-index: var(--z-gizmo-controls);
+  pointer-events: none;
 }
-.cv-gizmo-menu-wrap .cv-colorbar-menu-btn {
-  width: 22px;
-  height: 22px;
-  font-size: var(--fs-lg);
-  border-radius: var(--radius-4);
+.cv-gizmo-menu-wrap .cv-colorbar-menu {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: auto;
 }
 .cv-gizmo-dragging {
   opacity: 0.85;
 }
 
-/* Bottom-right resize grip (ui/GizmoDrag.js) — a child of #axesGizmo itself
-   (unlike .cv-gizmo-controls, which lives in its own body-level overlay to
-   escape the box's overflow:hidden): this sits fully within the box's own
-   bounds, so no clipping issue applies. Hidden until hovered (its own
-   pointer-events:none/auto toggle, independent of #axesGizmo's own — that's
-   always pointer-events:auto now that the whole box is a drag handle),
-   toggled by the same JS hover tracking that reveals .cv-gizmo-controls. */
+/* Bottom-right resize grip (ui/GizmoDrag.js). The element is a 24px hit zone;
+   its visible bracket remains a smaller corner mark. */
 .cv-gizmo-resize-handle {
   position: absolute;
-  right: 2px;
-  bottom: 2px;
-  width: 14px;
-  height: 14px;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  height: 24px;
   cursor: nwse-resize;
-  pointer-events: none;
-  opacity: 0;
+  pointer-events: auto;
+  opacity: 0.3;
   transition: opacity 0.15s ease;
 }
-.cv-gizmo-resize-handle-visible {
+#axesGizmo:hover .cv-gizmo-resize-handle,
+#axesGizmo.cv-gizmo-dragging .cv-gizmo-resize-handle {
   opacity: 0.7;
-  pointer-events: auto;
 }
 .cv-gizmo-resize-handle:hover {
   opacity: 1;
@@ -2127,8 +2081,8 @@ z-index:var(--z-overlay-widget); pointer-events:none;
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 100%;
-  height: 100%;
+  width: 14px;
+  height: 14px;
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
   border-radius: 0 0 3px 0;

@@ -612,7 +612,7 @@ function refreshPlaneColorBar() {
 }
 
 // Shared by the side-panel checkbox and the floating color bar's own
-// burger-menu "Log Scale" item — either can flip it, both stay in sync
+// layout-menu "Log Scale" item — either can flip it, both stay in sync
 // since this is the only place that actually applies the change. Mirrors
 // ForcePanel.js's applyLogScale.
 function applyPlaneLogScale(isLog) {
@@ -636,7 +636,7 @@ function applyPlaneLogScale(isLog) {
   replacePlaneMesh(structure, plane);
 }
 
-// Shared by the Auto Range button and the burger menu's own "Auto Range"
+// Shared by the Auto Range button and the layout menu's own "Auto Range"
 // item. Recomputes min/max from the field's actual data range (minValue/
 // maxValue — the field's own already-computed true extremes), padded 20%
 // of the data's own span on each side and rounded to 3 significant figures
@@ -832,7 +832,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
           <!-- Log Scale + Auto Range, side by side, above the color bar itself
                — same pattern as Forces/Spins/Atoms/Bonds (ForcePanel.js et
                al.): a docked-reachable pair of controls, since the floating
-               color bar's own burger menu only exists once it's dragged into
+               color bar's own layout menu only exists once it's dragged into
                the scene. -->
           <div class="planes-field-control" id="planesBarControlsRow">
             <label class="planes-log-scale-label">

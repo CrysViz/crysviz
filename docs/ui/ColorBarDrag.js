@@ -48,7 +48,7 @@ function clampToScene(left, top, width, height) {
  * @param {string} floatingId a DOM id to stamp on `wrapper` only while it is
  *   floating over the scene, so the owning panel can find-and-remove it on
  *   teardown even though it now lives outside the panel's DOM subtree.
- * @param {{ gripParent?: HTMLElement, onFloatChange?: (floating: boolean) => void,
+ * @param {{ gripParent?: HTMLElement | null, onFloatChange?: (floating: boolean) => void,
  *   extraHandles?: HTMLElement[] }} [opts]
  *   gripParent: where to mount the drag grip (defaults to `wrapper` itself).
  *   onFloatChange: called right after floating starts/ends. extraHandles:
@@ -96,11 +96,13 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
     return { left: snappedLeft, top: snappedTop };
   }
 
-  const grip = document.createElement('span');
-  grip.className = 'cv-colorbar-grip';
-  grip.textContent = '⦀';
-  grip.title = 'Drag into the 3D scene';
-  gripParent.insertBefore(grip, gripParent.firstChild);
+  const grip = gripParent ? document.createElement('span') : null;
+  if (grip) {
+    grip.className = 'cv-colorbar-grip';
+    grip.textContent = '⦀';
+    grip.title = 'Drag into the 3D scene';
+    gripParent.insertBefore(grip, gripParent.firstChild);
+  }
 
   let floating = false;
   let homeParent = wrapper.parentElement;
@@ -132,6 +134,7 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
   // that: the bar would visibly drift relative to the structure underneath
   // it even though nothing about the bar itself changed.
   let anchor = null;
+  let activeAbort = null;
 
   function captureAnchor() {
     const rect = viewRect();
@@ -237,6 +240,14 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
   // one the pointermove/up listeners live on for the rest of the gesture.
   function onHandlePointerDown(handle, e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // The wrapper is the floating bar's body drag surface. Its descendants
+    // that are controls keep their own behavior, while the bar/legend
+    // surfaces still reach their dedicated handle listeners below.
+    if (handle === wrapper && e.target !== wrapper) {
+      const target = e.target instanceof Element ? e.target : null;
+      if (target && extraHandles.some((extra) => extra !== wrapper && extra.contains(target))) return;
+      if (target?.closest('button, input, select, textarea, [contenteditable]:not([contenteditable="false"]), .cv-colorbar-menu')) return;
+    }
     e.preventDefault();
 
     const startX = e.clientX;
@@ -245,13 +256,14 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
       homeParent = wrapper.parentElement;
       homeNextSibling = wrapper.nextSibling;
     }
-    handle.setPointerCapture(e.pointerId);
+    try { handle.setPointerCapture(e.pointerId); } catch { /* synthetic events cannot capture */ }
 
     let dragging = false;
     let grabDX = 0;
     let grabDY = 0;
     let liftedWidth = 0;
     let liftedHeight = 0;
+    let finished = false;
 
     const startDrag = () => {
       dragging = true;
@@ -271,7 +283,7 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
         // engines even though the node stays connected — re-acquire it so
         // the rest of the drag keeps reaching this handler regardless of
         // what's now under the cursor.
-        handle.setPointerCapture(e.pointerId);
+        try { handle.setPointerCapture(e.pointerId); } catch { /* synthetic events cannot capture */ }
       }
       wrapper.classList.add('cv-colorbar-dragging');
     };
@@ -289,10 +301,7 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
     };
 
     const onUp = (up) => {
-      handle.removeEventListener('pointermove', onMove);
-      handle.removeEventListener('pointerup', onUp);
-      handle.removeEventListener('pointercancel', onUp);
-      document.getElementById('view')?.classList.remove('cv-drop-hover');
+      cleanup();
       if (!dragging) return; // plain click on the handle: no-op
 
       wrapper.classList.remove('cv-colorbar-dragging');
@@ -317,12 +326,31 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
       }
     };
 
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+      document.getElementById('view')?.classList.remove('cv-drop-hover');
+      try { handle.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+      if (activeAbort === abort) activeAbort = null;
+    };
+
+    const abort = (pointerId) => {
+      if (pointerId !== undefined && pointerId !== e.pointerId) return;
+      if (finished) return;
+      cleanup();
+      wrapper.classList.remove('cv-colorbar-dragging');
+    };
+
     handle.addEventListener('pointermove', onMove);
     handle.addEventListener('pointerup', onUp);
     handle.addEventListener('pointercancel', onUp);
+    activeAbort = abort;
   }
 
-  grip.addEventListener('pointerdown', (e) => onHandlePointerDown(grip, e));
+  grip?.addEventListener('pointerdown', (e) => onHandlePointerDown(grip, e));
   extraHandles.forEach((handle) => {
     handle.addEventListener('pointerdown', (e) => onHandlePointerDown(handle, e));
   });
@@ -372,8 +400,10 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
     // the next #view resize (ResizeObserver/applyAnchor) would re-derive
     // position from the stale pre-resize anchor and visibly jump.
     recaptureAnchor: () => { if (floating) captureAnchor(); },
+    abortPointer: (pointerId) => activeAbort?.(pointerId),
     dockBack,
     destroy: () => {
+      activeAbort?.();
       window.removeEventListener('resize', applyAnchor);
       resizeObserver?.disconnect();
     },

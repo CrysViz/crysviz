@@ -398,7 +398,7 @@ Full mapping, in stacking order (lowest to highest):
 | 900 | `--z-mobile-scrim` | `#mobileOverlay` |
 | 999 | `--z-anchor` | `.background-dot`, `.popup` |
 | 1000 | `--z-overlay-widget` | `#status`, `#axesGizmo`, `#axesLegend`, `.restore-popover`, `.theme-menu` |
-| 1001 | `--z-gizmo-controls` | `.cv-gizmo-controls` |
+| 1001 | `--z-gizmo-controls` | `.cv-gizmo-menu-wrap` |
 | 1100 | `--z-comp-panel` | `.floating-comp-panel` |
 | 1200 | `--z-dock` (existing, unchanged) | `.cv-panel.cv-floating` |
 | 1300 | `--z-dock-pane` | `.split-pane`, `.split-pane-tabs` |

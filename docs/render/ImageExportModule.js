@@ -459,10 +459,10 @@ function drawFloatingColorBars(octx, width, height, margin, crop, viewRect) {
 // bars — only while it's actually over the scene.
 //
 // Drawn from the live DOM's own rects (swatch canvas blitted, text redrawn
-// with its computed font), not the widget: the ⦀/☰ strip and the resize
+// with its computed font), not the widget: the long-press menu and resize
 // handle are chrome for operating the thing, not legend content. The body
-// surface is filled only when the user hasn't stripped it via ☰ > Transparent
-// background.
+// surface is filled only when the user hasn't stripped it via the long-press
+// menu's Transparent option; otherwise the widget background is included.
 function drawCompositionLegend(octx, width, height, margin, crop, viewRect) {
   const widget = document.querySelector('.comp-legend-widget.cv-colorbar-floating');
   const body = /** @type {HTMLElement | null} */ (widget?.querySelector('.comp-legend-body'));

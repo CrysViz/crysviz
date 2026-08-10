@@ -20,3 +20,6 @@ export {
   normalizeLegendMarkup, applyLegendHtml, legendPlainText,
   parseLegendSegments, drawLegendRichText,
 } from './LegendRichText.js';
+
+// Shared long-press gesture for scene-resident widgets:
+export { wireLongPress } from './LongPress.js';

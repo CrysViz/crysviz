@@ -389,7 +389,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   }
 
   // Shared by the side-panel checkbox and the floating color bar's own
-  // burger-menu "Log Scale" item (ColorBarWidget.js's onScaleChange) — either
+  // layout-menu "Log Scale" item (ColorBarWidget.js's onScaleChange) — either
   // one can flip it, and both stay in sync since this is the only place that
   // actually applies the change.
   function applyLogScale(isLog) {
@@ -407,7 +407,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
     redraw();
   }
 
-  // Shared by the Auto Range button and the burger menu's own "Auto Range"
+  // Shared by the Auto Range button and the layout menu's own "Auto Range"
   // item (onAutoRange). Recomputes min/max from the actual force magnitudes
   // currently on the structure (not whatever was last typed/loaded), padded
   // 20% of the data's own span on each side (computeAutoRange) so values

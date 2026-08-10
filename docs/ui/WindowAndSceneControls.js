@@ -379,7 +379,7 @@ export function initAxesGizmo(){
   app.gizmoScene.add(aArrow, bArrow, cArrow);
 
   // Optional a/b/c letters at each arrow tip, as an alternative to the
-  // separate #axesLegend box (toggled via GizmoDrag.js's hamburger menu,
+  // separate #axesLegend box (toggled via GizmoDrag.js's long-press menu,
   // general.gizmoLabelsOnArrows). Canvas-texture sprites rather than
   // TextGeometry: no font loading, and THREE.Sprite always faces the camera
   // regardless of the arrow's own rotation, so the letter stays readable as
@@ -472,7 +472,7 @@ export function updateAxesGizmoWidth() {
 
 /** Toggle the a/b/c letters between the separate #axesLegend box (default)
  *  and billboarded sprites at each gizmo arrow's tip (ui/GizmoDrag.js's
- *  hamburger menu calls this). Both are never shown at once — enabling one
+ *  long-press menu calls this). Both are never shown at once — enabling one
  *  hides the other, respecting the current general.showAxes visibility. */
 export function setGizmoLabelsOnArrows(enabled) {
   general.gizmoLabelsOnArrows = enabled;
