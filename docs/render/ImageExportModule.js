@@ -42,7 +42,7 @@ import { requestRender } from './AnimateModule.js';
 import { colorsFor, computeTicks, formatTick, currentContrastColor } from '../ui/ColorBarWidget.js';
 import { listActiveColorBars } from '../ui/ColorBarRegistry.js';
 import { repaintSwatchesForExport } from '../ui/CompositionLegendWidget.js';
-import { drawLegendRichText } from '../utils/index.js';
+import { drawLegendRichText, legendPlainText, crysVizFontsLoaded } from '../utils/index.js';
 
 /** @returns {HTMLElement} the #view container */
 function getViewEl() {
@@ -298,7 +298,7 @@ function drawAxesLegend(ictx, rect) {
 // gradient strip mapped into output pixels — ticks/legend render below
 // (horizontal) or to the right (vertical) of it, same as the live widget's
 // default (non-flipped) layout.
-function drawColorBar(octx, settings, x, y, w, h, font, pxScale = 1) {
+function drawColorBar(octx, settings, x, y, w, h, tickFont, legendFont, inputFont, pxScale = 1) {
   const { colormap, min, max, minText, maxText, scale, legend, flipSide } = settings;
   const horizontal = w >= h;
   // The live bar shows Min/Max as the exact text in those input fields, not
@@ -333,9 +333,6 @@ function drawColorBar(octx, settings, x, y, w, h, font, pxScale = 1) {
   const validRange = isFinite(min) && isFinite(max) && min < max;
   const ticks = validRange ? computeTicks(min, max, scale) : [];
 
-  // Matches the live widget's own tick-label font exactly (normal weight and
-  // the app's actual font stack), so the exported text matches the on-screen bar.
-  octx.font = `${font}px 'CrysViz Sans', sans-serif`;
   // Same text color the live floating widget itself uses (ColorBarWidget.js's
   // tickContrast/currentContrastColor) — no outline or shadow, just the
   // plain, contrast-safe color the on-screen bar is actually showing right
@@ -349,7 +346,34 @@ function drawColorBar(octx, settings, x, y, w, h, font, pxScale = 1) {
     octx.fillText(text, tx, ty);
   }
 
-  const tickGap = font * 0.4;
+  // These mirror ColorBarWidget.js's TICK_LABEL_GAP, TICK_LABEL_SPAN_H and
+  // LEGEND_GAP. They are screen-CSS-pixel layout constants, so pxScale maps
+  // them into the export canvas just like the independently scaled fonts.
+  const tickGap = 6 * pxScale;
+  const legendGap = tickFont * (5 / 16);
+  const horizontalLegendOffset = (6 + 22 + 5) * pxScale;
+  const tickSpanV = () => {
+    const savedFont = octx.font;
+    octx.font = `${tickFont}px 'CrysViz Sans', sans-serif`;
+    let widest = 34 * pxScale;
+    for (const t of ticks) widest = Math.max(widest, octx.measureText(t.label).width);
+    octx.font = savedFont;
+    return widest;
+  };
+  const legendHalfHeight = () => {
+    const savedFont = octx.font;
+    octx.font = `${legendFont}px 'CrysViz Sans', sans-serif`;
+    const m = octx.measureText(legendPlainText(legend) || 'Click to add legend');
+    const ascent = m.actualBoundingBoxAscent || legendFont * 0.8;
+    const descent = m.actualBoundingBoxDescent || legendFont * 0.2;
+    octx.font = savedFont;
+    return (ascent + descent) / 2;
+  };
+  const drawText = (fontPx, text, tx, ty, align, baseline) => {
+    if (!text) return;
+    octx.font = `${fontPx}px 'CrysViz Sans', sans-serif`;
+    drawLabel(text, tx, ty, align, baseline);
+  };
   // flipSide (ColorBarWidget.js's own flip toggle, carried through in
   // getSettings()) moves ticks/legend to the opposite side of the bar —
   // above instead of below in horizontal mode, left instead of right in
@@ -359,27 +383,33 @@ function drawColorBar(octx, settings, x, y, w, h, font, pxScale = 1) {
   if (horizontal) {
     const tickY = flipSide ? y - tickGap : y + h + tickGap;
     const tickBaseline = flipSide ? 'bottom' : 'top';
-    drawLabel(validRange ? minLabel : '', x, tickY, 'left', tickBaseline);
-    drawLabel(validRange ? maxLabel : '', x + w, tickY, 'right', tickBaseline);
-    for (const t of ticks) drawLabel(t.label, x + t.frac * w, tickY, 'center', tickBaseline);
+    drawText(inputFont, validRange ? minLabel : '', x, tickY, 'left', tickBaseline);
+    drawText(inputFont, validRange ? maxLabel : '', x + w, tickY, 'right', tickBaseline);
+    for (const t of ticks) drawText(tickFont, t.label, x + t.frac * w, tickY, 'center', tickBaseline);
     if (legend) {
-      const legendY = flipSide ? tickY - font * 1.3 : tickY + font * 1.3;
+      const legendY = flipSide
+        ? y - horizontalLegendOffset
+        : y + h + horizontalLegendOffset;
       // Rich-text draw (bold/italic/sup/sub via utils/LegendRichText.js), not
       // drawLabel's plain fillText — matches whatever formatting the live
       // widget's legend (click-to-edit, ColorBarWidget.js) is showing.
-      drawLegendRichText(octx, legend, x + w / 2, legendY, { fontPx: font, align: 'center', baseline: tickBaseline });
+      drawLegendRichText(octx, legend, x + w / 2, legendY, { fontPx: legendFont, align: 'center', baseline: tickBaseline });
     }
   } else {
     const tickX = flipSide ? x - tickGap : x + w + tickGap;
     const tickAlign = flipSide ? 'right' : 'left';
-    drawLabel(validRange ? maxLabel : '', tickX, y, tickAlign, 'top');
-    drawLabel(validRange ? minLabel : '', tickX, y + h, tickAlign, 'bottom');
-    for (const t of ticks) drawLabel(t.label, tickX, y + h - t.frac * h, tickAlign, 'middle');
+    drawText(inputFont, validRange ? maxLabel : '', tickX, y, tickAlign, 'top');
+    drawText(inputFont, validRange ? minLabel : '', tickX, y + h, tickAlign, 'bottom');
+    for (const t of ticks) drawText(tickFont, t.label, tickX, y + h - t.frac * h, tickAlign, 'middle');
     if (legend) {
       octx.save();
-      octx.translate(flipSide ? tickX - font * 3.4 : tickX + font * 3.4, y + h / 2);
+      const verticalLegendOffset = tickSpanV() + legendGap + legendHalfHeight();
+      octx.translate(
+        flipSide ? tickX - verticalLegendOffset : tickX + verticalLegendOffset,
+        y + h / 2,
+      );
       octx.rotate(-Math.PI / 2);
-      drawLegendRichText(octx, legend, 0, 0, { fontPx: font, align: 'center', baseline: 'middle' });
+      drawLegendRichText(octx, legend, 0, 0, { fontPx: legendFont, align: 'center', baseline: 'middle' });
       octx.restore();
     }
   }
@@ -408,16 +438,18 @@ function drawFloatingColorBars(octx, width, height, margin, crop, viewRect) {
     // barOut/barRect describe the exact same box in output vs. screen
     // pixels — their ratio is the uniform screen->output scale this whole
     // export is drawn at (crop + output resolution), so scaling the bar's
-    // OWN live font size (settings.tickFontPx, already reflecting its
-    // fontScale()) by that same ratio keeps exported text proportional to
+    // OWN live font sizes (already reflecting fontScale()) by that same ratio keeps exported text proportional to
     // what's on screen, instead of a size derived independently from
     // barOut's pixel box (which used to drift: THICKNESS never scales with
     // barLength for a horizontal bar, and the ratio changes with whatever
     // crop/output resolution the user picked, neither of which has
     // anything to do with the widget's own font scaling).
     const pxScale = barRect.width > 0 ? barOut.width / barRect.width : 1;
-    const font = Math.max(7, settings.tickFontPx * pxScale);
-    drawColorBar(octx, settings, barOut.x, barOut.y, barOut.width, barOut.height, font, pxScale);
+    const tickFont = Math.max(7, settings.tickFontPx * pxScale);
+    const legendFont = Math.max(7, settings.legendFontPx * pxScale);
+    const inputFont = Math.max(7, settings.inputFontPx * pxScale);
+    drawColorBar(octx, settings, barOut.x, barOut.y, barOut.width, barOut.height,
+      tickFont, legendFont, inputFont, pxScale);
   }
 }
 
@@ -523,6 +555,7 @@ export function isPngCaptureInProgress() {
  * @returns {Promise<Blob>}
  */
 export async function captureSceneToPng(opts) {
+  await crysVizFontsLoaded();
   if (captureInProgress) throw new Error('A PNG capture is already in progress.');
   captureInProgress = true;
   try {

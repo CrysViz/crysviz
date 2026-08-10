@@ -1312,6 +1312,8 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       // resolution choices that have nothing to do with the widget's own
       // font-scaling (fontScale(), tied to barLength).
       tickFontPx: scaledFont(TICK_LABEL_BASE_FONT, DOCKED_TICK_LABEL_FONT),
+      legendFontPx: scaledFont(LEGEND_BASE_FONT, DOCKED_LEGEND_FONT),
+      inputFontPx: scaledFont(INPUT_BASE_FONT, DOCKED_INPUT_FONT),
     }),
     // Push a min/max the caller computed externally (e.g. flooring 0 to a
     // log-safe value on switching to log scale) into the visible inputs and

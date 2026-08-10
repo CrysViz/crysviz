@@ -2,13 +2,27 @@ import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups, general, saveLockPrefs } from '../state/store.js';
-import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, renderFrameNow, setActivePipeline } from '../render/index.js';
+import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, renderFrameNow, setActivePipeline, clearChargeTextureCache, rebuildChargeBadges } from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 import { createLockToggleButton } from './LockToggleButton.js';
+import { loadCrysVizFonts } from '../utils/index.js';
 
 const cameraPanRight = new THREE.Vector3();
 const cameraPanUp = new THREE.Vector3();
+let fontRefreshWired = false;
+
+function wireFontRefresh() {
+  if (fontRefreshWired || !document.fonts?.ready) return;
+  fontRefreshWired = true;
+  const boundedFontLoad = loadCrysVizFonts();
+  document.fonts.ready.then(() => boundedFontLoad).then(() => {
+    clearChargeTextureCache();
+    app.gizmoScene?.userData?.rebuildLabels?.();
+    rebuildChargeBadges();
+    requestRender();
+  });
+}
 
 function wireDirectPan(domElement) {
   let activePointerId = null;
@@ -107,6 +121,7 @@ export function setupCameraButtons() {
 // Build the three.js scene: renderer/camera/controls/gizmo + lights + theme.
 // Extracted from crystal-viewer.js initApp() (Stage 3).
 export function setupScene() {
+  wireFontRefresh();
   document.body.classList.add(`theme-standard`);
   app.scene = new THREE.Scene();
 
@@ -471,6 +486,23 @@ export function initAxesGizmo(){
   app.gizmoScene.userData.aLabel = aLabel;
   app.gizmoScene.userData.bLabel = bLabel;
   app.gizmoScene.userData.cLabel = cLabel;
+  const gizmoScene = app.gizmoScene;
+  gizmoScene.userData.rebuildLabels = () => {
+    const specs = [
+      ['aLabel', aArrow, 'a', 0xff3333],
+      ['bLabel', bArrow, 'b', 0x33cc33],
+      ['cLabel', cArrow, 'c', 0x3366ff],
+    ];
+    for (const [key, arrow, letter, color] of specs) {
+      const oldLabel = gizmoScene.userData[key];
+      oldLabel?.parent?.remove(oldLabel);
+      oldLabel?.material?.map?.dispose();
+      oldLabel?.material?.dispose();
+      const label = makeLabel(letter, color);
+      arrow.add(label);
+      gizmoScene.userData[key] = label;
+    }
+  };
 
 function sizeGizmo(){
   const w = gizmoDiv.clientWidth || 110;
@@ -804,6 +836,4 @@ export function collapseAllAtomExpansions() {
     icon.style.transform = 'rotate(0deg)';
   });
 }
-
-
 

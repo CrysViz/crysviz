@@ -19,3 +19,9 @@ platform instead of falling back to whatever the OS ships.
   cyrillic, cyrillic-ext (+ math). Devanagari and Vietnamese subsets exist
   upstream and were deliberately omitted; add them from the same package
   version if ever needed.
+- `noto-sans-subsuper-wght-normal.woff2` is a Modified Version (in OFL
+  terms) of Noto Sans: the official variable TTF from
+  https://github.com/google/fonts/tree/main/ofl/notosans, width axis pinned
+  to 100 and subset to U+2070–209F (superscripts/subscripts, absent from
+  every Fontsource subset) with fonttools 4.63. Same OFL 1.1 license
+  (`OFL.txt`); it is exposed only under the `CrysViz Sans` @font-face name.

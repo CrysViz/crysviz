@@ -53,6 +53,15 @@
   unicode-range: U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F;
 }
 
+@font-face {
+  font-family: 'CrysViz Sans';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url(../fonts/noto-sans-subsuper-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+2070-209F;
+}
+
 /* No unicode-range by design: this face must remain reachable through
    per-glyph fallback for math and letterlike glyphs. */
 @font-face {

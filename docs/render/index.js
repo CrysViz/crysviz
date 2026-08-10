@@ -25,7 +25,8 @@ export {
 } from './AtomsFracUpdateModule.js';
 
 export {
-  rebuildChargeBadges, updateChargeBadges, disposeChargeBadges, formatCharge, parseChargeInput,
+  rebuildChargeBadges, updateChargeBadges, disposeChargeBadges, clearChargeTextureCache,
+  formatCharge, parseChargeInput,
 } from './ChargeBadgeModule.js';
 
 export {

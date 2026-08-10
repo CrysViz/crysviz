@@ -12,6 +12,9 @@ export {
 // Shared "Auto Range" formula for magnitude-driven color bars:
 export { computeAutoRange, roundToSigFigs } from './AutoRange.js';
 
+// Shared bounded webfont loading for asynchronous rendering/export paths:
+export { loadCrysVizFonts, crysVizFontsLoaded } from './FontLoading.js';
+
 // Rich-text (HTML/LaTeX-shorthand) rendering for color-bar legends:
 export {
   normalizeLegendMarkup, applyLegendHtml, legendPlainText,

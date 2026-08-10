@@ -76,7 +76,7 @@ function baseLayout(plotId, xLabel, yLabel, isExpanded) {
   return {
     paper_bgcolor: paperBg,
     plot_bgcolor: paperBg,
-    font: { color: fontColor, family: "'CrysViz Sans', sans-serif", size: sizes.base },
+    font: { color: fontColor, family: "'CrysViz Sans', 'CrysViz Sans Math', sans-serif", size: sizes.base },
     xaxis: {
       title: axisTitle(xLabel, sizes.title, isExpanded ? 15 : 6), tickfont: { size: sizes.tick },
       color: fontColor, gridcolor: gridColor, zerolinecolor: zeroLineColor, showgrid: true,
@@ -239,7 +239,7 @@ export async function plotPV(plotId, ctx, isExpanded = false) {
   const layout = {
     paper_bgcolor: isLight ? '#ffffff' : '#121212',
     plot_bgcolor: isLight ? '#ffffff' : '#121212',
-    font: { color: fontColor, family: "'CrysViz Sans', sans-serif", size: sizes.base },
+    font: { color: fontColor, family: "'CrysViz Sans', 'CrysViz Sans Math', sans-serif", size: sizes.base },
     showlegend: true,
     legend: {
       bgcolor: isLight ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.3)',
