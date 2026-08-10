@@ -81,6 +81,7 @@ float hitReflectivity = -1.0; // < 0 = use the global uReflectivity
 float hitGloss = 0.6;      // standard: coat reflection tightness
 float hitCoatTint = 0.6;   // standard: coat reflection color tint (0 = white/legacy)
 float hitTintDepth = 0.2;  // glass: Beer's-law strength
+int gHitIsGlass = FALSE;
 float hitScatter = 0.5;    // translucent: scatter depth
 float hitAlpha = 1.0;      // surface alpha (non-glass: stochastic see-through)
 int hitType = -100;
@@ -108,6 +109,7 @@ int resolveHitType(vec4 mat, vec3 color, float alpha)
 	hitGloss = 0.6;
 	hitCoatTint = 0.6;
 	hitTintDepth = 0.2;
+	gHitIsGlass = FALSE;
 	hitScatter = 0.5;
 	hitEmission = vec3(0);
 	int code = int(mat.x + 0.5);
@@ -126,7 +128,7 @@ int resolveHitType(vec4 mat, vec3 color, float alpha)
 	// materials is handled as stochastic (non-refractive) transparency in
 	// CalculateRadiance
 	hitIor = code == 2 && mat.z > 1.0 ? mat.z : 1.5;
-	if (code == 2) { hitTintDepth = mat.w; hitReflectivity = -1.0; return REFR; }
+	if (code == 2) { gHitIsGlass = TRUE; hitTintDepth = mat.w; hitReflectivity = -1.0; return REFR; }
 	if (code == 1)
 	{
 		hitCoatTint = clamp(mat.z, 0.0, 1.0); // metal: typeParam slot carries the tint (1 = colored, 0 = chrome)
@@ -835,8 +837,9 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				willNeedReflectionRay = TRUE;
 			}
 
-			// tint towards the object color by the inverse of its alpha;
-			// tintDepth (glass slot) scales the Beer's-law saturation
+			// Glass entry tint is scaled by its Tint slider; alpha-routed non-glass
+			// transparency keeps the existing fixed tint. tintDepth (glass slot)
+			// scales the Beer's-law saturation on exit.
 			vec3 tintColor = mix(vec3(1), hitColor, 0.7);
 			if (gRayExiting == TRUE)
 			{
@@ -844,7 +847,9 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				mask *= exp(log(clamp(tintColor, 0.01, 0.99)) * hitTintDepth * t);
 			}
 			else
-				mask *= tintColor;
+				mask *= (gHitIsGlass == TRUE)
+					? mix(vec3(1), tintColor, clamp(hitTintDepth, 0.0, 1.0))
+					: tintColor;
 
 			mask *= Tr;
 

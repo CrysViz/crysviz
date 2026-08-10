@@ -586,14 +586,19 @@ vec3 RayTrace()
 				continue;
 			}
 
-			// transmitted (refracted) portion, tinted towards the object color
-			// by the inverse of its alpha (alpha 1 would be fully colored glass);
-			// tintDepth (glass slot, default 0.2) sets how strongly color
-			// saturates with the path length through the medium
+			// transmitted (refracted) portion: glass tint is driven by its Tint
+			// slider, while alpha-routed non-glass transparency keeps the classic
+			// inverse-alpha tint. tintDepth (glass slot, default 0.2) sets how
+			// strongly glass color saturates with the path length through the medium.
 			float tintDepth = intersectionMatCode == 2 ? intersectionReflectivity : 0.2;
-			vec3 tintColor = mix(vec3(1), intersectionColor, clamp(1.0 - intersectionAlpha, 0.05, 0.95));
+			vec3 tintColor = intersectionMatCode == 2
+				? mix(vec3(1), intersectionColor, 0.7)
+				: mix(vec3(1), intersectionColor, clamp(1.0 - intersectionAlpha, 0.05, 0.95));
+			vec3 surfaceTint = intersectionMatCode == 2
+				? mix(vec3(1), tintColor, clamp(tintDepth, 0.0, 1.0))
+				: tintColor;
 			if (intersectionShapeIsClosed == FALSE)
-				rayColorMask *= tintColor;
+				rayColorMask *= surfaceTint;
 			else if (distance(geometryNormal, shadingNormal) > 0.1) // exiting a closed shape
 				rayColorMask *= exp(log(clamp(tintColor, 0.01, 0.99)) * tintDepth * t); // Beer's law
 
@@ -607,9 +612,10 @@ vec3 RayTrace()
 				if (intersectionRoughness > 0.0)
 					rayDirection = randomDirectionInSpecularLobe(rayDirection, intersectionRoughness * intersectionRoughness);
 			}
-			else // shadow rays pass through transparent surfaces (tinted)
+			else // shadow rays pass through transparent surfaces (glass slider tint or
+			     // alpha-routed inverse-alpha tint)
 			{
-				diffuseContribution *= tintColor;
+				diffuseContribution *= surfaceTint;
 				diffuseContribution *= max(0.2, transmittance);
 				rayOrigin = intersectionPoint + (uEPS_intersect * rayDirection);
 			}
