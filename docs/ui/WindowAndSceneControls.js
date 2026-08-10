@@ -10,6 +10,65 @@ import { createLockToggleButton } from './LockToggleButton.js';
 const cameraPanRight = new THREE.Vector3();
 const cameraPanUp = new THREE.Vector3();
 
+function wireDirectPan(domElement) {
+  let activePointerId = null;
+  let lastX = 0;
+  let lastY = 0;
+
+  const onPointerDown = (event) => {
+    if (event.pointerType !== 'mouse' || event.button !== 2 || activePointerId !== null) return;
+    activePointerId = event.pointerId;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    domElement.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const onPointerMove = (event) => {
+    if (event.pointerType !== 'mouse' || event.pointerId !== activePointerId) return;
+
+    const dxPx = event.clientX - lastX;
+    const dyPx = event.clientY - lastY;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    if (dxPx === 0 && dyPx === 0) return;
+
+    const camera = app.camera;
+    const viewportHeightPx = domElement.clientHeight || domElement.getBoundingClientRect().height;
+    let worldPerPixel;
+    if (camera.isPerspectiveCamera) {
+      // The pan offset is perpendicular to the view direction, so remove its
+      // squared length from |camera-target|² to recover the unpanned axial
+      // distance used by the perspective projection scale.
+      const eyeLengthSq = camera.position.distanceToSquared(app.controls.target);
+      const panLengthSq = app.cameraPan.x ** 2 + app.cameraPan.y ** 2;
+      const dist = Math.sqrt(Math.max(0, eyeLengthSq - panLengthSq));
+      worldPerPixel = 2 * dist * Math.tan(camera.fov * Math.PI / 360) / viewportHeightPx;
+    } else {
+      worldPerPixel = (camera.top - camera.bottom) / camera.zoom / viewportHeightPx;
+    }
+
+    // Camera-plane offset signs are chosen so dragging the view right/down
+    // moves the structure point under the cursor right/down on screen.
+    app.cameraPan.x -= dxPx * worldPerPixel;
+    app.cameraPan.y += dyPx * worldPerPixel;
+    requestRender();
+  };
+
+  const release = (event) => {
+    if (event.pointerId !== activePointerId) return;
+    activePointerId = null;
+    if (domElement.hasPointerCapture(event.pointerId)) {
+      domElement.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  domElement.addEventListener('pointerdown', onPointerDown);
+  domElement.addEventListener('pointermove', onPointerMove);
+  domElement.addEventListener('pointerup', release);
+  domElement.addEventListener('pointercancel', release);
+}
+
 // Wire the camera view buttons (x/y/z + a/b/c lattice axes + reset).
 // Extracted from crystal-viewer.js initApp() (Stage 6).
 export function setupCameraButtons() {
@@ -215,8 +274,9 @@ export function initControls(){
   app.controls.mouseButtons = {
     LEFT: THREE.MOUSE.ROTATE,
     MIDDLE: THREE.MOUSE.DOLLY,
-    RIGHT: THREE.MOUSE.PAN
-    };
+  };
+
+  wireDirectPan(app.renderer.domElement);
 
   // update() fires 'change' whenever the camera actually moved (user input,
   // damping coast-down, or programmatic moves) — the trigger for on-demand rendering.
@@ -452,6 +512,7 @@ export function setGizmoLabelsOnArrows(enabled) {
   if (legend) legend.style.display = (general.showAxes && !enabled) ? '' : 'none';
   requestRender();
 }
+
 
 
 

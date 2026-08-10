@@ -75,8 +75,20 @@ async function drag(page, button, dx, dy = 0) {
     JSON.stringify(initialProjection));
 
   await drag(page, 'right', 120);
-  H.check('pan damping settles', await waitForQuiescence(page));
+  H.check('horizontal pan stops without inertia', await waitForQuiescence(page));
+  const afterHorizontalPan = await projection(page, initial);
+  const horizontalDelta = afterHorizontalPan.x - initialProjection.x;
+  H.check('horizontal pan is 1:1 in screen space',
+    Math.abs(horizontalDelta - 120) <= 12,
+    JSON.stringify({ initialProjection, afterHorizontalPan, horizontalDelta }));
+
+  await drag(page, 'right', 0, 80);
+  H.check('vertical pan stops without inertia', await waitForQuiescence(page));
   const afterPan = await projection(page, initial);
+  const verticalDelta = afterPan.y - afterHorizontalPan.y;
+  H.check('vertical pan is 1:1 in screen space',
+    Math.abs(verticalDelta - 80) <= 10,
+    JSON.stringify({ afterHorizontalPan, afterPan, verticalDelta }));
   const panState = await page.evaluate(async () => {
     const { app } = await import('./state/store.js');
     return {
@@ -86,7 +98,8 @@ async function drag(page, button, dx, dy = 0) {
     };
   });
   H.check('panning moves the center projection in the drag direction',
-    afterPan.x > initialProjection.x + 5, JSON.stringify({ initialProjection, afterPan }));
+    afterPan.x > initialProjection.x && afterPan.y > initialProjection.y,
+    JSON.stringify({ initialProjection, afterPan }));
   H.check('panning leaves controls.target unchanged',
     Math.max(...panState.target.map((value, i) => Math.abs(value - initial[i]))) === 0,
     JSON.stringify(panState.target));
