@@ -27,9 +27,18 @@
     <link rel="stylesheet" href="./styles/forcePanel.css">
     <link rel="stylesheet" href="./styles/bondLengthHistogram.css">
     <link rel="stylesheet" href="./styles/lockToggleButton.css">
+    <link rel="stylesheet" href="./styles/addStructure.css">
+    <link rel="stylesheet" href="./styles/structureInfoPanel.css">
+    <link rel="stylesheet" href="./styles/sceneWidgets.css">
+    <link rel="stylesheet" href="./styles/analysisPanels.css">
+    <link rel="stylesheet" href="./styles/warningBanners.css">
     <!-- Loaded after component styles so native WebKit select chrome cannot
          override the app's compact dark dropdown appearance. -->
     <link rel="stylesheet" href="./styles/formControls.css">
+    <!-- Responsive breakpoint ladder (all @media rules) — loaded last among
+         component styles so it wins cascade ties, but still before the
+         active theme so a theme can still override it if it ever needs to. -->
+    <link rel="stylesheet" href="./styles/responsive.css">
     <!-- Active theme override — keep last so theme rules win the cascade. -->
     <link rel="stylesheet" id="theme-active">
 
@@ -43,19 +52,22 @@
     <div id="backgroundDot" class="background-dot"></div>
     <div id="ui">
       <img src="./data/CrysViz_logo_clear_back_beta.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
-      <!-- Theme toggle (dark/twilight/light, with icons) + a small dropdown arrow
-           that lists all installed themes. Wired by ui/ThemeManager.js. -->
+      <!-- Theme mode row (auto/light/dark, brightest-first) + a small
+           dropdown arrow that lists the installed palettes. A palette that
+           doesn't offer a mode gets that button disabled. Wired by
+           ui/ThemeManager.js. -->
       <div class="theme-switch" id="themeSwitch" role="group" aria-label="Theme">
-        <button type="button" class="theme-btn" data-theme-option="dark" aria-label="Use dark theme" title="Dark mode">
-          <img class="theme-icon" src="./data/icons/Hicon_Pack_1/moon.svg" alt="" aria-hidden="true" />
-        </button>
-        <button type="button" class="theme-btn" data-theme-option="twilight" aria-label="Use twilight theme" title="Twilight mode">
-          <img class="theme-icon" src="./data/icons/Hicon_Pack_1/sun-half.svg" alt="" aria-hidden="true" />
-        </button>
-        <button type="button" class="theme-btn" data-theme-option="light" aria-label="Use light theme" title="Light mode">
+        <!-- Auto is a letter, not an icon: it has no light/dark counterpart to
+             draw, and a glyph avoids an asset that would need the invert()
+             treatment the SVG icons get. -->
+        <button type="button" class="theme-btn theme-btn-auto" data-theme-option="auto" aria-label="Follow the system light/dark setting" title="Auto (follow system)">A</button>
+        <button type="button" class="theme-btn" data-theme-option="light" aria-label="Use light mode" title="Light mode">
           <img class="theme-icon" src="./data/icons/Hicon_Pack_1/sun.svg" alt="" aria-hidden="true" />
         </button>
-        <button type="button" class="theme-menu-toggle" id="themeMenuToggle" aria-haspopup="true" aria-expanded="false" aria-label="More themes" title="More themes">&#9662;</button>
+        <button type="button" class="theme-btn" data-theme-option="dark" aria-label="Use dark mode" title="Dark mode">
+          <img class="theme-icon" src="./data/icons/Hicon_Pack_1/moon.svg" alt="" aria-hidden="true" />
+        </button>
+        <button type="button" class="theme-menu-toggle" id="themeMenuToggle" aria-haspopup="true" aria-expanded="false" aria-label="Colour palette" title="Colour palette">&#9662;</button>
         <ul class="theme-menu" id="themeMenu" role="menu" hidden></ul>
       </div>
       <div class="backend-control-group" id="backendControlGroup">

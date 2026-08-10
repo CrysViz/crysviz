@@ -42,9 +42,6 @@ import { invalidElementMessage } from './ElementValidation.js';
 const COLLISION_THRESHOLD_ANGSTROM = 0.5;
 const DEFAULT_SPACE_GROUP = 225;
 
-const CELL_STYLE = 'border: 1px solid #444; padding: 3px;';
-const NUM_INPUT_STYLE = 'width: 100%; background: #333; border: 1px solid #555; color: white; padding: 2px 3px; box-sizing: border-box;';
-const TH_STYLE = 'border: 1px solid #444; padding: 3px; font-size: 12px; text-align: center; position: sticky; top: 0; background: var(--popup-bg); z-index: 1;';
 const AXES = ['x', 'y', 'z'];
 
 function clampSpaceGroup(value) {
@@ -66,7 +63,7 @@ function nonEmptyRows(sitesHost) {
 export function createSymmetryWyckoffTab(container, onCreated = () => {}) {
   const loading = document.createElement('div');
   loading.textContent = 'Loading symmetry data…';
-  loading.style.cssText = 'text-align:center; padding:24px 10px; color:rgba(255,255,255,0.6); font-size:13px;';
+  loading.className = 'wyckoff-tab-loading';
   container.appendChild(loading);
 
   // ~8.9 MB of space-group tables, fetched only now that the tab is open.
@@ -77,7 +74,7 @@ export function createSymmetryWyckoffTab(container, onCreated = () => {}) {
     })
     .catch((error) => {
       loading.textContent = `Could not load symmetry data: ${error.message}`;
-      loading.style.color = 'rgba(240, 132, 18, 1)';
+      loading.classList.add('wyckoff-tab-loading--error');
       console.error('Wyckoff tab: symmetry data failed to load', error);
     });
 }
@@ -93,21 +90,21 @@ function buildTab(container, onCreated) {
   container.appendChild(makeSectionHeadline('Space Group'));
 
   const sgRow = document.createElement('div');
-  sgRow.style.cssText = 'display:flex; align-items:center; gap:10px; margin-bottom:6px;';
+  sgRow.className = 'wyckoff-sg-row';
   sgRow.innerHTML = `
-    <label style="font-size:12px; color:rgba(255,255,255,0.7); flex:none;">Space group</label>
+    <label class="wyckoff-sg-label">Space group</label>
   `;
   const spaceGroupHost = document.createElement('div');
-  spaceGroupHost.style.cssText = 'flex:1 1 auto; min-width:0;';
+  spaceGroupHost.className = 'wyckoff-sg-host';
   sgRow.appendChild(spaceGroupHost);
   container.appendChild(sgRow);
 
   const spaceGroupName = document.createElement('div');
-  spaceGroupName.style.cssText = 'font-size:12px; color:rgba(255,255,255,0.85); margin-bottom:4px;';
+  spaceGroupName.className = 'wyckoff-sg-name';
   container.appendChild(spaceGroupName);
 
   const constraintHint = document.createElement('div');
-  constraintHint.style.cssText = 'font-size:11px; color:rgba(255,255,255,0.5); margin-bottom:10px;';
+  constraintHint.className = 'wyckoff-sg-hint';
   container.appendChild(constraintHint);
 
   // ---- Lattice ----------------------------------------------------------
@@ -121,37 +118,37 @@ function buildTab(container, onCreated) {
 
   const sitesHost = document.createElement('div');
   sitesHost.innerHTML = `
-    <div style="max-height:208px; overflow-y:auto; margin-top:6px;">
-      <table style="width:100%; border-collapse:collapse;">
+    <div class="wyckoff-sg-sites-scroll">
+      <table class="addstructure-table">
         <thead>
           <tr>
-            <th style="${TH_STYLE}">Element</th>
-            <th style="${TH_STYLE}" title="Wyckoff letter, restricted to the sites this space group defines">Site</th>
-            <th style="${TH_STYLE}" title="Fractional coordinate (0-1 spans the cell)">X (frac)</th>
-            <th style="${TH_STYLE}" title="Fractional coordinate (0-1 spans the cell)">Y (frac)</th>
-            <th style="${TH_STYLE}" title="Fractional coordinate (0-1 spans the cell)">Z (frac)</th>
-            <th style="${TH_STYLE}"></th>
+            <th class="addstructure-sticky-th">Element</th>
+            <th class="addstructure-sticky-th" title="Wyckoff letter, restricted to the sites this space group defines">Site</th>
+            <th class="addstructure-sticky-th" title="Fractional coordinate (0-1 spans the cell)">X (frac)</th>
+            <th class="addstructure-sticky-th" title="Fractional coordinate (0-1 spans the cell)">Y (frac)</th>
+            <th class="addstructure-sticky-th" title="Fractional coordinate (0-1 spans the cell)">Z (frac)</th>
+            <th class="addstructure-sticky-th"></th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
     </div>
-    <div style="text-align:center; margin-top:8px;">
-      <button id="wyckoffAddSite" class="btn-mini highlight" style="width:90%;">+ Add Site</button>
+    <div class="wyckoff-sg-add-row">
+      <button id="wyckoffAddSite" class="btn-mini highlight addstructure-full-btn">+ Add Site</button>
     </div>
   `;
   container.appendChild(sitesHost);
   const tbody = sitesHost.querySelector('tbody');
 
   const summary = document.createElement('div');
-  summary.style.cssText = 'font-size:11px; color:rgba(255,255,255,0.6); margin-top:8px; text-align:center;';
+  summary.className = 'wyckoff-sg-summary';
   container.appendChild(summary);
 
   const warningHost = document.createElement('div');
   container.appendChild(warningHost);
 
   const buttonRow = document.createElement('div');
-  buttonRow.style.cssText = 'margin-top:15px; text-align:right;';
+  buttonRow.className = 'addstructure-button-row';
   const createBtn = document.createElement('button');
   createBtn.className = 'btn-mini highlight';
   createBtn.textContent = 'Create Structure';
@@ -184,8 +181,6 @@ function buildTab(container, onCreated) {
       const input = row.querySelector(`.wyckoff-${axis}`);
       const free = hasFreedom[index] !== false;
       input.disabled = !free;
-      input.style.opacity = free ? '' : '0.45';
-      input.style.cursor = free ? '' : 'not-allowed';
       input.title = free ? '' : `Determined by site ${letter} (${firstOrbit})`;
       // Only overwrite what the user is not currently editing: a free axis
       // keeps exactly what was typed, a locked one shows its derived value.
@@ -198,21 +193,21 @@ function buildTab(container, onCreated) {
   function addSiteRow(element = '', letter = letters[0]) {
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td style="${CELL_STYLE}">
-        <div style="display:flex; align-items:center; gap:3px;">
-          <input type="text" class="wyckoff-element" value="${element}" style="width:54px; background:#333; border:1px solid #555; color:white; padding:2px 3px; border-radius:3px; box-sizing:border-box;">
-          <button type="button" class="wyckoff-select-element" title="Select Element" style="flex:none; width:22px; height:22px; background:#595959; border:none; color:white; cursor:pointer; font-size:13px; border-radius:3px; line-height:1; padding:0;">⚛</button>
+      <td class="addstructure-cell">
+        <div class="addstructure-inline-row">
+          <input type="text" class="wyckoff-element wyckoff-text-input" value="${element}">
+          <button type="button" class="wyckoff-select-element addstructure-pick-btn" title="Select Element">⚛</button>
         </div>
       </td>
-      <td style="${CELL_STYLE}">
-        <select class="wyckoff-letter" style="${NUM_INPUT_STYLE}">${letterOptions(letter)}</select>
-        <div class="wyckoff-form" style="font-family:monospace; font-size:10px; color:rgba(255,255,255,0.45); text-align:center; margin-top:2px;"></div>
+      <td class="addstructure-cell">
+        <select class="wyckoff-letter wyckoff-coord-input">${letterOptions(letter)}</select>
+        <div class="wyckoff-form wyckoff-site-form"></div>
       </td>
-      <td style="${CELL_STYLE}"><input type="number" class="wyckoff-x coord-input" value="0" step="0.05" style="${NUM_INPUT_STYLE}"></td>
-      <td style="${CELL_STYLE}"><input type="number" class="wyckoff-y coord-input" value="0" step="0.05" style="${NUM_INPUT_STYLE}"></td>
-      <td style="${CELL_STYLE}"><input type="number" class="wyckoff-z coord-input" value="0" step="0.05" style="${NUM_INPUT_STYLE}"></td>
-      <td style="${CELL_STYLE} text-align:center;">
-        <button type="button" class="wyckoff-remove-site btn-mini" title="Remove this site" style="width:20px; height:20px; padding:0; line-height:0; display:flex; align-items:center; justify-content:center;">✕</button>
+      <td class="addstructure-cell"><input type="number" class="wyckoff-x coord-input wyckoff-coord-input" value="0" step="0.05"></td>
+      <td class="addstructure-cell"><input type="number" class="wyckoff-y coord-input wyckoff-coord-input" value="0" step="0.05"></td>
+      <td class="addstructure-cell"><input type="number" class="wyckoff-z coord-input wyckoff-coord-input" value="0" step="0.05"></td>
+      <td class="addstructure-cell addstructure-center">
+        <button type="button" class="wyckoff-remove-site btn-mini addstructure-icon-btn" title="Remove this site">✕</button>
       </td>
     `;
     tbody.appendChild(row);

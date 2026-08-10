@@ -28,14 +28,7 @@ export function showBondDistanceLabels(instanceIds) {
 
     const [p1, p2] = bond.positions;
     const div = document.createElement('div');
-    div.className = 'measure-label';
-    div.style.background = 'rgba(255, 255, 255, 0.95)';
-    div.style.border = '2px solid #000000';
-    div.style.color = '#000000';
-    div.style.fontWeight = '700';
-    div.style.fontSize = '12px';
-    div.style.padding = '2px 6px';
-    div.style.borderRadius = '4px';
+    div.className = 'measure-label bond-distance-label';
     div.textContent = `${bond.dist.toFixed(3)} Å`;
 
     const label = /** @type {any} */ (new CSS2DObject(div));

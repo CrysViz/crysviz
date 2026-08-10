@@ -9,24 +9,17 @@ import { areAllAtomsCutPlaneImmune, setCutPlaneImmunityForAtoms } from './utils.
  */
 export function createTinyToggle({ title = '', checked = false, onChange = null } = {}) {
   const wrapper = document.createElement('label');
-  wrapper.style.cssText = 'display:inline-flex; align-items:center; justify-content:center; cursor:pointer; width:10px; height:10px; flex:0 0 auto;';
+  wrapper.className = 'cv-tiny-toggle-wrap';
   wrapper.title = title;
 
   const toggle = document.createElement('input');
   toggle.type = 'checkbox';
   toggle.checked = checked;
-  toggle.style.cssText = `
-    width:10px;
-    height:10px;
-    margin:0;
-    cursor:pointer;
-    appearance:none;
-    -webkit-appearance:none;
-    border-radius:50%;
-    border:1px solid rgba(255,255,255,0.5);
-    background: rgba(255,255,255,0.08);
-    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18);
-  `;
+  toggle.className = 'cv-tiny-toggle';
+  // background/border-color/box-shadow are set unconditionally by
+  // updateVisual() below (called right after this), so the class above
+  // deliberately carries no default for them — nothing else can flash the
+  // wrong state first.
   const updateVisual = () => {
     if (toggle.checked) {
       toggle.style.background = 'rgba(255,255,255,0.96)';

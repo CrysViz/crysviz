@@ -225,7 +225,7 @@ export function addFieldPanel(target = "cvPanelBody-field") {
     <div class="toggle-icon" id="fieldColorToggleIcon">+</div>
     </div>
     <div id="fieldColorContent" class="collapsible-content" aria-hidden="true">
-    <div style="display:flex; flex-direction:column; gap:8px;">
+    <div class="field-color-controls">
         <label>Positive Isosurface Color:</label>
         <div id="FieldPosColorPicker"></div>
 
@@ -233,7 +233,7 @@ export function addFieldPanel(target = "cvPanelBody-field") {
         <div id="FieldNegColorPicker"></div>
 
         <label for="FieldOpacitySlider">Isosurface Opacity:</label>
-        <div style="display:flex; align-items:center; gap:8px;">
+        <div class="field-opacity-row">
         <input type="range" id="FieldOpacitySlider" min="0" max="1" step="0.01" value="${materialSettings.opacity}">
         <span id="FieldOpacityValue">${materialSettings.opacity.toFixed(2)}</span>
         </div>

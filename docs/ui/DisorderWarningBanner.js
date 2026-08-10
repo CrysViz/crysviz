@@ -49,25 +49,7 @@ function ensureBanner() {
   if (!view) return null;
 
   banner = document.createElement('div');
-  banner.className = 'cv-disorder-warning';
-  banner.style.cssText = `
-    position: absolute;
-    top: 5px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 2000;
-    padding: 6px 14px;
-    border-radius: 6px;
-    background: rgba(40, 30, 0, 0.85);
-    border: 1px solid rgba(255, 193, 7, 0.6);
-    color: #ffc107;
-    font-size: 12px;
-    font-family: inherit;
-    font-weight: 500;
-    white-space: nowrap;
-    pointer-events: none;
-    display: none;
-  `;
+  banner.className = 'cv-warning-banner cv-disorder-warning';
   view.appendChild(banner);
   return banner;
 }
@@ -91,12 +73,7 @@ export function updateDisorderWarning() {
   // panel now, so this just opens/expands/scrolls to that.
   const action = document.createElement('button');
   action.textContent = 'Order structure…';
-  action.style.cssText = `
-    margin-left: 10px; pointer-events: auto; cursor: pointer;
-    background: rgba(255,193,7,0.18); border: 1px solid rgba(255,193,7,0.6);
-    color: #ffc107; border-radius: 4px; font-size: 11px; padding: 2px 8px;
-    font-family: inherit;
-  `;
+  action.className = 'cv-disorder-warning-action';
   action.onclick = async () => {
     const { openPanel, getPanel } = await import('./panels/PanelManager.js');
     openPanel('cell');

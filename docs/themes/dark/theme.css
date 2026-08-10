@@ -3,4 +3,9 @@
 :root {
   --scene-bg: #090a09;
   --lattice-color: #e7e7e7;
+  /* Was a raw `@media (prefers-color-scheme: dark)` override in
+     responsive.css, applied by the OS regardless of the selected theme —
+     see default/theme.css's --dot-border comment. Same light-on-dark
+     contrast pairing as --lattice-color above. */
+  --dot-border: rgba(255, 255, 255, 0.8);
 }

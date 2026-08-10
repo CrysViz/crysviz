@@ -1,4 +1,4 @@
-.PHONY: serve install_devtools lint lint-fix typecheck check-imports checks ci tests_full periodic-wasm browsertest browsertest-setup
+.PHONY: serve install_devtools lint lint-fix typecheck check-imports css-guard checks ci tests_full periodic-wasm browsertest browsertest-setup
 
 PYTHON ?= python3
 
@@ -50,8 +50,15 @@ typecheck:
 check-imports:
 	python3 tools/check_imports.py
 
+# Enforce the CSS consolidation's invariants (CSSPlan.md, docs/styles/TOKENS.md):
+# no colour/font-family literal outside docs/themes/, no @media outside
+# docs/styles/responsive.css, no new CSS-in-JS under docs/. Reviewed exceptions
+# live in tools/ci/css_guard_allow.txt.
+css-guard:
+	tools/ci/css_guard.sh
+
 # Fast source validation: lint + typecheck + import checks.
-checks: lint typecheck check-imports
+checks: lint typecheck check-imports css-guard
 
 # Reproduce the complete headless GitHub Actions gate locally: dependency
 # setup, static and Python tests, package-content/install checks, and packaged

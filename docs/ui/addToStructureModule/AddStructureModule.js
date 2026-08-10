@@ -57,7 +57,7 @@ export function initAddStructureButton(buttonSelector = '.add-structure-button')
       closable: true,
       persist: false,
       buildContent(body) {
-        body.style.cssText = 'width: min(90vw, 560px);';
+        body.classList.add('addstructure-panel-body--lg');
 
         createTabSwitcher(body, [
           {
@@ -128,7 +128,7 @@ export function initModifyStructureButton(buttonId = 'addButton') {
       closable: true,
       persist: false,
       buildContent(body) {
-        body.style.cssText = 'width: min(90vw, 560px);';
+        body.classList.add('addstructure-panel-body--lg');
 
         // The Modify editor is LIVE: it edits `structure` in place as changes
         // are made (no commit), and its button reverts instead. It picks the

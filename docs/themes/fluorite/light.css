@@ -1,0 +1,246 @@
+/* Fluorite — light. Warm cream panels, sage and dusty-lavender accents.
+   Layered on top of default/theme.css.
+
+   This is the first genuinely light-panelled theme in the app, so it redefines
+   far more than the dark palettes do. Everything the base states as
+   white-alpha (the fg ramp, the washes, the lines) is invisible or inverted on
+   a cream surface, and the two opaque ramps run the wrong way: --chrome-* goes
+   near-black to mid-grey, --ink-* goes mid-grey to near-white. Both are
+   restated running the other direction, so the *tier* each token names still
+   means what its name says — --chrome-1 is still the most recessed widget fill
+   and --ink-6 is still the highest-contrast text. Component CSS keeps working
+   without knowing the panel flipped. */
+:root {
+  /* ---- Surfaces ---------------------------------------------------------
+     The first cut used khaki-tan surfaces (#ded4bc / #e9dfc8 / #d3c6ae scene).
+     That yellow ground desaturates the sage/lavender pastels by simultaneous
+     contrast — the whole app read as parchment, not fluorite. The family is
+     kept warm but pulled toward neutral cream and lightened, so the pastels
+     carry the colour instead of the ground. */
+  --surface-bg: #e8e2d3;
+  --panel-bg: #faf5e9;
+  --group-bg: #efe8d8;
+  --menu-bg: #faf5e9;
+  --popup-bg: #faf5e9;
+  --input-bg: #f4eedd;
+  --textarea-bg: #f4eedd;
+  --float-panel-bg: rgba(250, 245, 233, 0.94);
+  --popup-bg-deep: #faf5e9;
+
+  /* ---- Text --------------------------------------------------------------
+     The base ramp is white at descending alpha. Flipped to the palette's warm
+     ink at the same tiers — --fg-1 stays "the strongest text", it just is not
+     white any more. */
+  --panel-fg: #3d382f;
+  --muted-fg: #6b6455;
+  --fg-1: #3d382f;
+  --fg-85: rgba(61, 56, 47, 0.96);
+  --fg-75: rgba(61, 56, 47, 0.92);
+  --fg-2: rgba(61, 56, 47, 0.84);
+  --fg-50: rgba(61, 56, 47, 0.76);
+  --fg-3: rgba(61, 56, 47, 0.66);
+
+  /* ---- Washes ------------------------------------------------------------
+     White-on-white is a no-op, so these become ink-alpha. Alphas are lower
+     than the base's: the same fraction of black on cream reads much heavier
+     than that fraction of white on charcoal. */
+  --wash-0: rgba(61, 56, 47, 0.03);
+  --wash-1: rgba(61, 56, 47, 0.05);
+  --wash-1-5: rgba(61, 56, 47, 0.075);
+  --wash-2: rgba(61, 56, 47, 0.10);
+  --wash-3: rgba(61, 56, 47, 0.17);
+  --wash-4: rgba(61, 56, 47, 0.32);
+
+  /* ---- Lines -------------------------------------------------------------- */
+  --line-1: #cfc4ab;
+  --line-2: #b3a795;
+  --line-3: rgba(92, 86, 75, 0.35);
+  --line-dark: rgba(92, 86, 75, 0.15);
+  --line-grey: #b3aa9a;
+  --panel-border: #cfc4ab;
+  --popup-border: #ddd3c0;
+
+  /* ---- Opaque ramps, both reversed ---------------------------------------
+     --chrome-* is widget furniture: 1 = most recessed, 6 = lightest border in
+     the base. On cream that inverts to 1 = the faintest inset and 6 = the
+     strongest edge, so the ordering the component CSS relies on survives. */
+  --chrome-1: rgba(92, 86, 75, 0.05);
+  --chrome-1-9: rgba(247, 241, 230, 0.95);
+  --chrome-2: #f2ece1;
+  --chrome-2-5: #ebe4d7;
+  --chrome-3: #e2dacb;
+  --chrome-4: #d3c9b6;
+  --chrome-5: #b9b0a0;
+  --chrome-6: #97907f;
+  --chrome-tint-1: rgba(240, 236, 246, 0.96);
+  --chrome-tint-2: rgba(238, 234, 246, 0.9);
+  --chrome-tint-3: rgba(228, 222, 240, 0.98);
+
+  /* --ink-* is a text ramp: 1 = dimmest, 6 = strongest. Same direction, warm
+     ink instead of off-white. */
+  --ink-1: #7d7666;
+  --ink-2: #665f50;
+  --ink-3: #4d4837;
+  --ink-4: #6b6459;
+  --ink-5: #5c564b;
+  --ink-6: #38332b;
+
+  /* ---- Scrims and shadows --------------------------------------------------
+     Black shadows still read correctly on a light panel, but at the base's
+     alphas they look like soot. */
+  --overlay: rgba(60, 54, 45, 0.35);
+  --overlay-20: rgba(60, 54, 45, 0.12);
+  --overlay-60: rgba(60, 54, 45, 0.45);
+  --overlay-70: rgba(60, 54, 45, 0.55);
+  --overlay-80: rgba(60, 54, 45, 0.65);
+  --shadow-sm: 0 2px 6px rgba(92, 86, 75, 0.1);
+  --shadow-md: 0 4px 12px rgba(92, 86, 75, 0.14);
+  --shadow-lg: 0 4px 16px rgba(92, 86, 75, 0.18);
+  --shadow-glow: 0 0 4px 2px rgba(92, 86, 75, 0.14);
+  --shadow-rgb: 92 86 75;
+
+  /* ---- Icons ---------------------------------------------------------------
+     The picker glyphs are dark-on-transparent; on cream they need no inversion. */
+  --icon-filter: none;
+
+  --color-scheme: light;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%235c564b' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+
+  /* ---- Scene (both mirrored into three.js by ThemeManager) ------------------
+     The scene fills most of the viewport, so its colour IS the theme's first
+     impression. The old #d3c6ae khaki dragged everything toward mud; a light
+     cream one tier below the panel keeps the warm identity and lets the CPK
+     atom colours pop. */
+  --scene-bg: #ece5d3;
+  --lattice-color: #5f5847;
+  --dot-border: rgba(60, 55, 45, 0.85);
+  --tile-edge: rgba(61, 56, 47, 0.55);
+
+  /* ---- Destructive ---------------------------------------------------------
+     On a light panel the tiers swap which one is legible: the pale terracotta
+     becomes the fill and the deep one carries the text. */
+  --danger: #f2bba7;
+  --danger-rgb: 242 187 167;
+  --danger-bright: #8e4a36;
+  --danger-bright-rgb: 142 74 54;
+  --danger-strong: #a8492f;
+  --danger-fill: rgba(200, 106, 80, 0.92);
+
+  /* ---- Caution -------------------------------------------------------------- */
+  --warn: #c98a2e;
+  --warn-bright: #8a5c12;
+  --warn-soft: rgba(180, 118, 48, 0.9);
+  --warn-banner-bg: rgba(250, 238, 214, 0.92);
+  --best-row-rgb: 190 140 20;
+
+  /* ---- Positive / switches ---------------------------------------------------- */
+  --ok: #4e6a46;
+  --ok-rgb: 78 106 70;
+  --ok-bright: #3d5537;
+  --ok-bright-rgb: 61 85 55;
+  --ok-tint: #34492f;
+  --switch-knob: #fffdf7;
+  /* Was #776d58 — a dark olive pill as heavy as the ON state, which made a
+     column of OFF toggles the loudest thing on the panel. A lavender-grey
+     recedes and ties into the palette; the cream knob still reads on it. */
+  --switch-off: #a9a1b4;
+  --seg-active-bg: #7ba473;
+  --btn-glow-rgb: 123 164 115;
+  --on-accent: #ffffff;
+  --thumb-border: #4e6a46;
+
+  /* ---- Informational / selection ------------------------------------------------ */
+  --info: #3c5e7e;
+  --info-rgb: 60 94 126;
+  --info-bright: #3c5e7e;
+  --info-tint: #2b4459;
+  --link-hover: #2f6fa8;
+  --row-selected-bg: rgba(196, 229, 212, 0.75);
+  --locked-bg: rgba(219, 209, 238, 0.5);
+  --locked-badge-bg: rgba(219, 209, 238, 0.7);
+  /* Wyckoff-locked active tab fill. The gradient carries --info-tint (dark
+     navy here) as bold text, so it must stay PALE — the old #a99bcc/#8e7fb0
+     mid-lavenders measured ~2.6:1 under it. */
+  --locked-grad-1: #ccc4ec;
+  --locked-grad-2: #b3aade;
+  /* Wyckoff/symmetry rings and borders (badge border, locked ring, sym-link
+     underline, forced-notice). The base sky-blue (91 168 255) is tuned for
+     the default dark panels and glares on cream; both tiers follow this
+     palette's periwinkle instead. */
+  --blue-accent-rgb: 90 108 190;
+  --blue-accent-fill-rgb: 199 205 241;
+  --confirm-bg: #4a7ba5;
+  --confirm-border: #3c5e7e;
+
+  /* ---- Active tool ---------------------------------------------------------------- */
+  --tool-active: #3c5e7e;
+  --tool-active-rgb: 60 94 126;
+
+  /* ---- Neutrals ------------------------------------------------------------------- */
+  --track-bg: rgba(92, 86, 75, 0.20);
+  --track-bg-strong: rgba(92, 86, 75, 0.28);
+  /* The in-scene measurement label sits on the 3D canvas, not a panel, and the
+     scene is cream here — so it keeps a light backing with dark ink. */
+  --label-bg: rgba(250, 245, 233, 0.88);
+  --label-ink: #453f37;
+
+  /* ---- The About modal --------------------------------------------------------------- */
+  --about-bg: #faf5e9;
+  --about-border: rgba(123, 164, 115, 0.5);
+  --about-code-bg: rgba(92, 86, 75, 0.06);
+  --about-close-hover: #4e6a46;
+
+}
+
+/* ---- Accents ----------------------------------------------------------------
+   Light fills need dark text on them, which is the inverse of the base's
+   assumption. Each backend gets a pale fill plus a deep companion for the
+   text and border, so the standard-vs-symmetry distinction survives. */
+/* ---- Accents --------------------------------------------------------------
+   The mirror of the dark palettes: fills stay PALE so the ink --fg-1 reads on
+   them, and --accent-fg carries the deep companion for the nine rules that use
+   the accent as TEXT. One token cannot do both jobs on a light panel — a fill
+   pale enough for ink text is invisible as text itself. */
+/* ---- Accents --------------------------------------------------------------
+   These five are not interchangeable, and treating them as one hue at one
+   luminance is what made the first cut unreadable:
+
+     --bg-color        the panel titlebar fill      — carries --fg-1 text
+     --accent-color    buttons + selected rows      — carries --fg-1 text
+     --highlight-color slider thumbs, switch ON     — must be SEEN, not read
+     --accent-fg       the accent used AS text      — value labels, checkboxes
+     --hover/--border  transient tints
+
+   A fill that carries text must contrast with the text ramp; a control that
+   is only ever looked at must contrast with the PANEL. On a dark theme one
+   colour can do both. On a light theme it cannot, and --highlight-color was
+   the token caught in the middle. See STYLE.md for the target numbers. */
+.theme-standard {
+  --bg-color: #dbd1ee;
+  --accent-color: #bad6af;
+  --highlight-color: #4f7a45;
+  --hover-color: rgba(78, 106, 70, 0.14);
+  --border-color: rgba(78, 106, 70, 0.4);
+  --accent-fg: #3d5537;
+}
+
+.theme-symmetry {
+  /* Wyckoff/symmetry mode. The first cut used a steel blue that sat coldly
+     against the warm cream — shifted toward periwinkle so the symmetry
+     accents read as the blue-violet band of the same fluorite crystal the
+     standard mode's sage comes from. */
+  --bg-color: #d3d7f4;
+  --accent-color: #c7cdf1;
+  --highlight-color: #5a6cbe;
+  --hover-color: rgba(74, 86, 150, 0.14);
+  --border-color: rgba(74, 86, 150, 0.4);
+  --accent-fg: #3c4a8c;
+}
+
+/* The active palette row (controlPanel.css) paints --highlight-color as a
+   text-carrying fill. On this palette highlight is a deep sage that the ink
+   --fg-1 vanishes against; the on-accent ink is the pairing that reads.
+   Scoped here so the default theme keeps its own pairing untouched. */
+.theme-menu-item.active {
+  color: var(--on-accent);
+}

@@ -49,16 +49,7 @@ function openBackgroundColorPicker(dot) {
   let selectedHex = currentHex;
 
   const pickerPanel = document.createElement("div");
-  pickerPanel.className = "spin-color-picker";
-  Object.assign(pickerPanel.style, {
-    position: "absolute",
-    background: "rgba(26,26,26,0.8)",
-    border: "1px solid #ccc",
-    padding: "10px",
-    borderRadius: "8px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
-    zIndex: 9999,
-  });
+  pickerPanel.className = "spin-color-picker cv-background-picker-panel";
 
   const { element: pickerElement } = createColorPicker(currentHex, (hex) => {
     selectedHex = hex;
@@ -73,23 +64,16 @@ function openBackgroundColorPicker(dot) {
   });
 
   const buttonRow = document.createElement("div");
-  Object.assign(buttonRow.style, {
-    display: "flex",
-    justifyContent: "space-between",
-    marginTop: "10px",
-    gap: "8px"
-  });
+  buttonRow.className = "cv-background-picker-buttons";
 
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset';
-  resetBtn.className = 'reset-btn';
-  resetBtn.style.cssText = 'height: 32px';
+  resetBtn.className = 'reset-btn cv-background-picker-btn';
   resetBtn.style.background = general.defaultBackgroundColor;
 
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
-  applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.cssText = 'height: 32px';
+  applyBtn.className = 'btn-mini highlight cv-background-picker-btn';
 
   buttonRow.appendChild(resetBtn);
   buttonRow.appendChild(applyBtn);
@@ -142,11 +126,9 @@ export function createBackgroundControl() {
     console.error("No element found with ID 'backgroundDot'");
     return;
   }
-  dot.style.position = "fixed";
-  dot.style.zIndex = "999";
-  dot.style.pointerEvents = "auto";
-  dot.style.borderRadius = "50%";
-  dot.style.cursor = "pointer";
+  // Position/z-index/border-radius/cursor already come from the .background-dot
+  // class (index.html, styles/styles.css); only pointer-events:auto is added
+  // here (styles/sceneWidgets.css) since that class doesn't otherwise set it.
   dot.addEventListener("click", () => openBackgroundColorPicker(dot));
 }
 
@@ -170,8 +152,7 @@ export function createBackgroundSwatch() {
   dot.id = 'backgroundSwatch';
   dot.title = 'Pick background color';
   dot.dataset.bgSwatch = '1';
-  dot.style.cssText = 'width:26px; height:26px; border-radius:50%; cursor:pointer;'
-    + ' border:2px solid rgba(255,255,255,0.5); padding:0; flex:none;';
+  dot.className = 'cv-background-swatch';
   const syncFill = () => {
     if (app?.scene?.background) dot.style.background = '#' + app.scene.background.getHexString();
   };

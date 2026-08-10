@@ -22,7 +22,7 @@
 /* Menu Blocks */
 .menu_block {
   width: 100%;
-  margin-bottom: 15px;
+  margin-bottom: var(--sp-5);
   text-align: center;
 }
 
@@ -43,7 +43,7 @@
 .colorbar-container {
   width: 120px;
   height: 40px;
-  border-radius: 3px;
+  border-radius: var(--radius-3);
   overflow: hidden;
   margin: 0 auto;
 }
@@ -62,7 +62,6 @@
 }
 
 .colorbar-labels div {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
+  font-size: var(--fs-base);
+  color: var(--fg-85);
 }
-

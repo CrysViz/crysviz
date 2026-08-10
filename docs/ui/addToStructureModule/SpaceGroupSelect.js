@@ -16,35 +16,6 @@
 
 import { listSpaceGroups } from './WyckoffProjector.js';
 
-const INPUT_STYLE = [
-  'width:100%',
-  'font-family:monospace',
-  'background:rgba(255,255,255,0.06)',
-  'border:1px solid rgba(255,255,255,0.15)',
-  'border-radius:4px',
-  'color:white',
-  'padding:4px 6px',
-  'box-sizing:border-box',
-].join('; ');
-
-const LIST_STYLE = [
-  'position:absolute',
-  'top:calc(100% + 2px)',
-  'left:0',
-  'right:0',
-  'max-height:220px',
-  'overflow-y:auto',
-  'background:var(--popup-bg, #2b2b2b)',
-  'border:1px solid rgba(255,255,255,0.15)',
-  'border-radius:4px',
-  'box-shadow:0 6px 18px rgba(0,0,0,0.45)',
-  'z-index:20',
-  'display:none',
-].join('; ');
-
-const ITEM_STYLE = 'padding:4px 8px; cursor:pointer; font-size:12px; display:flex; align-items:baseline; gap:8px;';
-const ACTIVE_BG = 'rgba(255,255,255,0.12)';
-
 // Everything a query may be tested against, lowercased and stripped of the
 // separators people leave out ("P 63/m m c", "P6_3/mmc" and "p63/mmc" are all
 // the same thing to a search box).
@@ -116,7 +87,7 @@ export function createSpaceGroupSelect(host, { value = 225, onChange } = {}) {
   let shown = groups;
   let activeIndex = 0;
 
-  host.style.position = 'relative';
+  host.classList.add('sg-select-host');
 
   const input = document.createElement('input');
   input.type = 'text';
@@ -125,23 +96,23 @@ export function createSpaceGroupSelect(host, { value = 225, onChange } = {}) {
   input.spellcheck = false;
   input.placeholder = 'Number or symbol, e.g. 225 or Fm-3m';
   input.title = 'Type a space-group number or symbol, or pick from the list';
-  input.style.cssText = INPUT_STYLE;
+  input.className = 'sg-select-input';
   input.value = describe(selected);
   host.appendChild(input);
 
   const list = document.createElement('div');
   list.setAttribute('role', 'listbox');
-  list.style.cssText = LIST_STYLE;
+  list.className = 'sg-select-list';
   host.appendChild(list);
 
   function isOpen() {
-    return list.style.display === 'block';
+    return list.classList.contains('open');
   }
 
   function highlight() {
     const items = /** @type {HTMLElement[]} */ ([...list.querySelectorAll('div[role="option"]')]);
     items.forEach((item, index) => {
-      item.style.background = index === activeIndex ? ACTIVE_BG : '';
+      item.classList.toggle('is-active', index === activeIndex);
     });
     items[activeIndex]?.scrollIntoView({ block: 'nearest' });
   }
@@ -153,7 +124,7 @@ export function createSpaceGroupSelect(host, { value = 225, onChange } = {}) {
     if (!shown.length) {
       const empty = document.createElement('div');
       empty.textContent = 'No matching space group';
-      empty.style.cssText = 'padding:6px 8px; font-size:12px; color:rgba(255,255,255,0.5);';
+      empty.className = 'sg-select-empty';
       list.appendChild(empty);
       return;
     }
@@ -161,11 +132,11 @@ export function createSpaceGroupSelect(host, { value = 225, onChange } = {}) {
     shown.forEach((group, index) => {
       const item = document.createElement('div');
       item.setAttribute('role', 'option');
-      item.style.cssText = ITEM_STYLE;
+      item.className = 'sg-select-item';
       item.innerHTML = `
-        <span style="font-family:monospace; color:rgba(255,255,255,0.55); min-width:30px; text-align:right;">${group.number}</span>
-        <span style="font-family:monospace; color:white;">${group.hmShort}</span>
-        <span style="margin-left:auto; font-size:11px; color:rgba(255,255,255,0.45);">${group.crystalSystem}</span>
+        <span class="sg-select-number">${group.number}</span>
+        <span class="sg-select-symbol">${group.hmShort}</span>
+        <span class="sg-select-system">${group.crystalSystem}</span>
       `;
       item.addEventListener('mouseenter', () => {
         activeIndex = index;
@@ -185,11 +156,11 @@ export function createSpaceGroupSelect(host, { value = 225, onChange } = {}) {
 
   function open(query = '') {
     renderList(query);
-    list.style.display = 'block';
+    list.classList.add('open');
   }
 
   function close() {
-    list.style.display = 'none';
+    list.classList.remove('open');
   }
 
   function choose(group) {

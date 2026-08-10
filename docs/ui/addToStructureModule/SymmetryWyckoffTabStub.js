@@ -23,7 +23,7 @@
 
 export function createSymmetryWyckoffTab(container) {
   container.innerHTML = `
-    <div style="text-align: center; padding: 30px 10px; color: rgba(255,255,255,0.6); font-size: 13px;">
+    <div class="wyckoff-stub-message">
       Symmetry (Wyckoff) based structure generation is coming soon.
     </div>
   `;

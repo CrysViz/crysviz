@@ -43,20 +43,7 @@ export function openDoublePeriodicTable(callback) {
   // Create the popup container
   const periodicTable = document.createElement('div');
   periodicTable.id = 'periodicTablePopup';
-  periodicTable.style.cssText = `
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background-color: #111;
-    color: white;
-    border: 1px solid #333;
-    border-radius: 8px;
-    z-index: 1300;
-    padding: 15px;
-    font-family: Arial, sans-serif;
-    width: 600px;
-  `;
+  periodicTable.className = 'pt-popup';
 
   // Track selected elements (up to 2)
   let selectedElements = [];
@@ -64,13 +51,7 @@ export function openDoublePeriodicTable(callback) {
   // Create selected elements display area
   const selectedDisplay = document.createElement('div');
   selectedDisplay.id = 'selectedElementsDisplay';
-  selectedDisplay.style.cssText = `
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    margin: 10px 0;
-    min-height: 40px;
-  `;
+  selectedDisplay.className = 'pt-selected-row';
 
   // Function to update the selected elements display
   function updateSelectedDisplay() {
@@ -78,41 +59,25 @@ export function openDoublePeriodicTable(callback) {
     if (selectedElements.length === 0) return;
 
     const container = document.createElement('div');
-    container.style.cssText = `
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 4px;
-    `;
+    container.className = 'pt-selected-pair';
 
     selectedElements.forEach((symbol, index) => {
       const color = getElementColor(symbol);
       const isWhite = color === '#ffffff';
 
       const elementDiv = document.createElement('div');
-      elementDiv.style.cssText = `
-        width: 36px;
-        height: 36px;
-        border: 2px solid ${color};
-        background: transparent;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        font-weight: bold;
-        color: ${color};
-        font-size: 14px;
-        box-shadow: 0 0 8px ${color};
-        border-radius: 4px;
-      `;
+      elementDiv.className = 'pt-selected-tile';
+      elementDiv.style.borderColor = color;
+      elementDiv.style.color = color;
+      elementDiv.style.boxShadow = `0 0 8px ${color}`;
       elementDiv.textContent = symbol;
       container.appendChild(elementDiv);
 
       if (index < selectedElements.length - 1) {
         const dashDiv = document.createElement('div');
         dashDiv.textContent = '—';
+        dashDiv.className = 'pt-selected-dash';
         dashDiv.style.color = isWhite ? '#000000' : color;
-        dashDiv.style.fontSize = '16px';
-        dashDiv.style.fontWeight = 'bold';
         container.appendChild(dashDiv);
       }
     });
@@ -122,26 +87,22 @@ export function openDoublePeriodicTable(callback) {
 
   // Helper to render a row of elements
   function renderElementRow(symbols, isLanthanideActinide = false) {
-    let rowHTML = `<div style="display: grid; grid-template-columns: repeat(${isLanthanideActinide ? 15 : 18}, 30px); gap: 2px; justify-content: center; margin-bottom: ${isLanthanideActinide ? '5px' : '10px'};">`;
+    const rowClass = isLanthanideActinide ? 'pt-grid-15 pt-grid-15-mb' : 'pt-grid-main';
+    let rowHTML = `<div class="${rowClass}">`;
     symbols.forEach(symbol => {
       if (!symbol) {
-        rowHTML += `<div style="width: 30px; height: 30px;"></div>`;
+        rowHTML += `<div class="pt-tile-empty"></div>`;
       } else {
         const isPresent = presentElements.has(symbol);
         const color = getElementColor(symbol);
         const isSelected = selectedElements.includes(symbol);
+        const tileClass = `element-button pt-tile${isSelected ? ' is-selected' : ''}`;
 
         rowHTML += `
-          <button class="element-button"
-            style="width: 30px; height: 30px;
-                   background: transparent;
-                   border: ${isPresent ? '2px' : '1px'} solid ${isPresent ? color : '#444'};
+          <button class="${tileClass}"
+            style="border-color: ${isPresent ? color : '#444'};
                    color: ${isPresent ? color : '#444'};
-                   cursor: ${isPresent ? 'pointer' : 'not-allowed'};
-                   transition: all 0.2s; border-radius: 3px;
-                   font-size: 12px; position: relative; z-index: 1;
-                   opacity: ${isPresent ? 1 : 0.5};
-                   ${isSelected ? 'box-shadow: 0 0 10px ' + color + '; transform: scale(1.1);' : ''}"
+                   --tile-glow: ${color};"
             data-symbol="${symbol}"
             ${!isPresent ? 'disabled' : ''}>
             ${symbol}
@@ -155,7 +116,7 @@ export function openDoublePeriodicTable(callback) {
 
   // Create the table HTML
   let tableHTML = `
-    <h3 style="margin: 0 0 10px 0; text-align: center;">Select Two Elements for Bond</h3>
+    <h3 class="pt-heading">Select Two Elements for Bond</h3>
     ${renderElementRow(tableLayout[0])}
     ${renderElementRow(tableLayout[1])}
     ${renderElementRow(tableLayout[2])}
@@ -165,15 +126,11 @@ export function openDoublePeriodicTable(callback) {
     ${renderElementRow(tableLayout[6])}
     ${renderElementRow(lanthanides, true)}
     ${renderElementRow(actinides, true)}
-    <div style="text-align: center; margin-top: 10px; display: flex; justify-content: center; gap: 10px;">
-      <button id="confirmBondSelection" disabled
-        style="padding: 5px 15px; background: #333; border: 1px solid #555;
-               color: white; cursor: pointer; border-radius: 4px;">
+    <div class="pt-btn-row">
+      <button id="confirmBondSelection" class="pt-btn pt-confirm-btn" disabled>
         Confirm Bond
       </button>
-      <button class="periodic-table-close"
-        style="padding: 5px 15px; background: #333; border: 1px solid #555;
-               color: white; cursor: pointer; border-radius: 4px;">
+      <button class="periodic-table-close pt-btn">
         Close
       </button>
     </div>
@@ -188,32 +145,18 @@ export function openDoublePeriodicTable(callback) {
   // Update selected display initially
   updateSelectedDisplay();
 
-  // Add event listeners to all element buttons
+  // Add event listeners to all element buttons. Hover glow (present,
+  // unselected tiles only) is plain CSS (.pt-tile:hover, see
+  // analysisPanels.css), driven by the --tile-glow custom property set per
+  // tile in renderElementRow() above.
   const elementButtons = periodicTable.querySelectorAll('.element-button');
   const confirmButton = periodicTable.querySelector('#confirmBondSelection');
 
   elementButtons.forEach(button => {
     const symbol = button.getAttribute('data-symbol');
     const isPresent = presentElements.has(symbol);
-    const color = getElementColor(symbol);
 
     if (!isPresent) return;
-
-    button.addEventListener('mouseover', () => {
-      if (!selectedElements.includes(symbol)) {
-        button.style.transform = 'scale(1.2)';
-        button.style.boxShadow = `0 0 12px ${color}`;
-        button.style.zIndex = '2';
-      }
-    });
-
-    button.addEventListener('mouseout', () => {
-      if (!selectedElements.includes(symbol)) {
-        button.style.transform = 'scale(1)';
-        button.style.boxShadow = 'none';
-        button.style.zIndex = '1';
-      }
-    });
 
     button.addEventListener('click', () => {
       if (selectedElements.length < 2) {
@@ -232,18 +175,16 @@ export function openDoublePeriodicTable(callback) {
         const isBtnPresent = presentElements.has(btnSymbol);
         btn.style.borderColor = isBtnPresent ? btnColor : '#444';
         btn.style.color = isBtnPresent ? btnColor : '#444';
-        btn.style.transform = isBtnSelected ? 'scale(1.1)' : 'scale(1)';
-        btn.style.boxShadow = isBtnSelected ? `0 0 10px ${btnColor}` : 'none';
+        btn.classList.toggle('is-selected', isBtnSelected);
       });
     });
   });
 
-  // Update confirm button state
+  // Update confirm button state — background/border/cursor are plain CSS
+  // (.pt-confirm-btn:not(:disabled), see analysisPanels.css) keyed off this
+  // same disabled flag.
   function updateButtonState() {
     confirmButton.disabled = selectedElements.length < 2;
-    confirmButton.style.background = selectedElements.length >= 2 ? '#0066cc' : '#333';
-    confirmButton.style.borderColor = selectedElements.length >= 2 ? '#004499' : '#555';
-    confirmButton.style.cursor = selectedElements.length >= 2 ? 'pointer' : 'not-allowed';
   }
 
   // Confirm selection

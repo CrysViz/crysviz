@@ -4,6 +4,7 @@ import { makeSectionHeadline } from './panels/sectionHeadline.js';
 import { addPolyhedraTypeHistogramPanel } from './AnalysisPanels/PolyhedraTypeHistogram.js';
 import { addPolyhedronInspectorPanel } from './AnalysisPanels/PolyhedronInspector.js';
 import { addPolyhedraConnectivityHistogramPanel } from './AnalysisPanels/PolyhedraConnectivityHistogram.js';
+import { createToggleRow } from './ToggleSwitch.js';
 
 function getSelectedStructureSettings() {
   const structure = fileBrowser.selectedStructure;
@@ -16,34 +17,6 @@ function getSelectedStructureSettings() {
     structure.polyhedraSettings.detectCages = true;
   }
   return structure.polyhedraSettings;
-}
-
-function createToggleRow({ id, label, checked, onChange }) {
-  const row = document.createElement('label');
-  row.className = 'toggle_row toggle_container';
-
-  const switchWrap = document.createElement('span');
-  switchWrap.className = 'toggle_switch';
-
-  const input = document.createElement('input');
-  input.type = 'checkbox';
-  input.id = id;
-  input.checked = checked;
-
-  const slider = document.createElement('span');
-  slider.className = 'toggle_slider';
-
-  const text = document.createElement('span');
-  text.className = 'toggle_text';
-  text.textContent = label;
-
-  input.addEventListener('change', onChange);
-
-  switchWrap.appendChild(input);
-  switchWrap.appendChild(slider);
-  row.appendChild(switchWrap);
-  row.appendChild(text);
-  return row;
 }
 
 export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
@@ -69,23 +42,22 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
   if (structure) {
     const histogramsPanel = document.createElement('div');
     histogramsPanel.id = 'polyhedraHistogramsPanel';
-    histogramsPanel.style.marginBottom = '10px';
+    histogramsPanel.className = 'cv-histogram-section';
     histogramsPanel.appendChild(makeSectionHeadline('Histograms'));
 
     function addHistogramRow(label, buttonId, openWindow) {
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;';
+      row.className = 'cv-histogram-row';
 
       const nameLabel = document.createElement('span');
       nameLabel.textContent = label;
-      nameLabel.style.cssText = 'font-size:12px; color:#ccc;';
+      nameLabel.className = 'cv-histogram-row-label';
 
       const openBtn = document.createElement('button');
       openBtn.id = buttonId;
-      openBtn.className = 'btn-mini highlight';
+      openBtn.className = 'btn-mini highlight cv-histogram-row-btn';
       openBtn.textContent = 'Open';
       openBtn.title = `Open the ${label} window`;
-      openBtn.style.fontSize = '12px';
       openBtn.onclick = openWindow;
 
       row.append(nameLabel, openBtn);
@@ -101,47 +73,46 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
 
   const panel = document.createElement('div');
   panel.id = 'polyhedraSettingsPanel';
-  panel.style.marginBottom = '10px';
+  panel.className = 'cv-polyhedra-settings-panel';
 
   const content = document.createElement('div');
   content.id = 'polyhedraSettingsContent';
 
   const body = document.createElement('div');
-  body.className = 'toggle_group';
-  body.style.marginTop = '10px';
+  body.className = 'toggle_group cv-polyhedra-settings-body';
 
   if (structure && settings) {
     body.appendChild(createToggleRow({
       id: 'polyhedraChemicalFilterToggle',
       label: 'Use Chemical Filter',
       checked: settings.useChemicalFilter !== false,
-      onChange: (e) => {
-        structure.polyhedraSettings.useChemicalFilter = e.target.checked;
+      onChange: (checked) => {
+        structure.polyhedraSettings.useChemicalFilter = checked;
         updatePolyhedra();
       },
-    }));
+    }).row);
     body.appendChild(createToggleRow({
       id: 'polyhedraDetectCagesToggle',
       label: 'Detect Cages (slower)',
       checked: settings.detectCages !== false,
-      onChange: (e) => {
-        structure.polyhedraSettings.detectCages = e.target.checked;
+      onChange: (checked) => {
+        structure.polyhedraSettings.detectCages = checked;
         updatePolyhedra();
       },
-    }));
+    }).row);
     body.appendChild(createToggleRow({
       id: 'polyhedraUseWasmToggle',
       label: 'Use WASM (faster)',
       checked: general.useWasmPolyhedra !== false,
-      onChange: (e) => {
-        general.useWasmPolyhedra = e.target.checked;
+      onChange: (checked) => {
+        general.useWasmPolyhedra = checked;
         updatePolyhedra();
       },
-    }));
+    }).row);
   } else {
     const empty = document.createElement('div');
     empty.textContent = 'Load a structure to edit polyhedra settings.';
-    empty.style.opacity = '0.8';
+    empty.className = 'cv-polyhedra-empty-msg';
     body.appendChild(empty);
   }
 

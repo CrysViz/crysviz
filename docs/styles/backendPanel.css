@@ -1,52 +1,52 @@
 
 #calcResult {
-font-size: 12px;
+font-size: var(--fs-base);
 }
 
 .calcButton {
-font-size: 12px;
+font-size: var(--fs-base);
   background: var(--bg-color);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255,255,255);
-  padding: 8px;
-  border-radius: 10px;
+  border: 2px solid var(--line-1);
+  color: var(--fg-1);
+  padding: var(--sp-3);
+  border-radius: var(--radius-md);
 }
 #connectBtn{
-font-size: 12px;
+font-size: var(--fs-base);
   background: var(--bg-color);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-    color: rgba(255,255,255);
-  padding: 8px;
-  border-radius: 10px;
+  border: 2px solid var(--line-1);
+    color: var(--fg-1);
+  padding: var(--sp-3);
+  border-radius: var(--radius-md);
 }
 
 #disconnectBtn{
-font-size: 12px;
+font-size: var(--fs-base);
 background: var(--bg-color);
-border: 2px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255,255,255);
-  padding: 8px;
-  border-radius: 10px;
+border: 2px solid var(--line-1);
+  color: var(--fg-1);
+  padding: var(--sp-3);
+  border-radius: var(--radius-md);
 }
 
 .calcButton:hover {
   background: var(--bg-color);
   border-color: var(--border-color);
-  border: 2px solid rgba(255, 255, 255, 0.4);
+  border: 2px solid var(--fg-3);
   box-shadow: 0 2px 10px var(--highlight-color);
 }
 
 #disconnectBtn:hover {
   background: var(--bg-color);
   border-color: var(--border-color);
-  border: 2px solid rgba(255, 255, 255, 0.4);
+  border: 2px solid var(--fg-3);
   box-shadow: 0 2px 10px var(--highlight-color);
 }
 
 #connectBtn:hover {
   background: var(--bg-color);
   border-color: var(--border-color);
-  border: 2px solid rgba(255, 255, 255, 0.4);
+  border: 2px solid var(--fg-3);
   box-shadow: 0 2px 10px var(--highlight-color);
 }
 
@@ -54,105 +54,105 @@ border: 2px solid rgba(255, 255, 255, 0.1);
 
 
 .backend-control-group {
-  font-size: 12px;
+  font-size: var(--fs-base);
   max-width: 360px;
-  margin: 0 0 16px 0;
+  margin: 0 0 var(--sp-5) 0;
   padding: 20px;
   background: var(--group-bg);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-12);
+  border: 1px solid var(--line-1);
   backdrop-filter: blur(10px);
 }
 
 /* Persistent potential picker sits directly above the Relax/MD switch; give it
    a clear gap so the two control groups don't read as one crowded block. */
 #BackendPotentialSelector {
-  margin-bottom: 12px;
+  margin-bottom: var(--sp-4);
 }
 
 .backend-control-group h1 {
-  margin: 0 0 15px 0;
-  color:  #FFBF00;
-  font-size: 16px;
-  font-weight: 500;
+  margin: 0 0 var(--sp-5) 0;
+  color:  var(--warn);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
 }
 
 .backend-control-group h3 {
-  margin: 0 0 15px 0;
+  margin: 0 0 var(--sp-5) 0;
   color: var(--bg-color);
-  font-size: 16px;
-  font-weight: 500;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
 }
 
 .acceptBtn {
- font-size: 12px;
+ font-size: var(--fs-base);
   background: var(--bg-color);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255,255,255);
-  padding: 8px;
-  border-radius: 10px;
+  border: 2px solid var(--line-1);
+  color: var(--fg-1);
+  padding: var(--sp-3);
+  border-radius: var(--radius-md);
 }
 
 
 .acceptBtn:hover {
   background: var(--bg-color);
   border-color: var(--border-color);
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  border: 2px solid var(--line-1);
   box-shadow: 0 2px 10px var(--highlight-color);
 }
 
 .denyBtn {
-font-size: 12px;
+font-size: var(--fs-base);
   background: var(--bg-color);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255,255,255);
-  padding: 8px;
-  border-radius: 10px;
+  border: 2px solid var(--line-1);
+  color: var(--fg-1);
+  padding: var(--sp-3);
+  border-radius: var(--radius-md);
 }
 
 .denyBtn:hover {
-  border-color: rgba(243, 174, 100, 0.9);
-  border: 2px solid rgba(243, 174, 100, 0.9);
-  box-shadow: 0 2px 10px rgba(240, 132, 18, 0.9);
+  border-color: var(--warn-soft);
+  border: 2px solid var(--warn-soft);
+  box-shadow: 0 2px 10px var(--danger);
 }
 
 .collision-warning-banner {
-  background: rgba(240, 132, 18, 0.18);
-  border: 1px solid rgba(240, 132, 18, 0.9);
-  color: white;
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin-top: 10px;
-  font-size: 12px;
-  line-height: 1.5;
+  background: rgb(var(--danger-rgb) / 0.18);
+  border: 1px solid var(--danger);
+  color: var(--fg-1);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3) var(--sp-3-5);
+  margin-top: var(--sp-3-5);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
 }
 
 .collision-warning-banner strong {
-  color: rgba(240, 132, 18, 1);
+  color: rgb(var(--danger-rgb) / 1);
 }
 
 .collision-warning-banner ul {
-  margin: 4px 0 0 0;
+  margin: var(--sp-1) 0 0 0;
   padding-left: 18px;
 }
 
 .add-anyway-btn {
-  background: rgba(240, 132, 18, 0.9) !important;
+  background: var(--danger) !important;
 }
 
 .add-anyway-btn:hover {
-  background: rgba(240, 132, 18, 1) !important;
+  background: rgb(var(--danger-rgb) / 1) !important;
 }
 
 /* Row in an atom-table editor flagged by AtomCollisionCheck.js as too close
    to another atom - lets the user find and fix it directly instead of only
    reading the warning banner text. */
 .atom-row-conflict td {
-  background: rgba(240, 132, 18, 0.14);
+  background: rgb(var(--danger-rgb) / 0.14);
 }
 
 .atom-row-conflict input {
-  border-color: rgba(240, 132, 18, 0.9) !important;
+  border-color: var(--danger) !important;
 }
 
 /* Coordinate/lattice number fields in the Add Atom / Add Structure panels -
@@ -167,7 +167,7 @@ font-size: 12px;
    slim green scrollbar matching the app's accent color. */
 .atoms-table-scroll {
   scrollbar-width: thin;
-  scrollbar-color: var(--highlight-color) rgba(255, 255, 255, 0.06);
+  scrollbar-color: var(--highlight-color) var(--wash-1-5);
 }
 
 .atoms-table-scroll::-webkit-scrollbar {
@@ -175,13 +175,13 @@ font-size: 12px;
 }
 
 .atoms-table-scroll::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 4px;
+  background: var(--wash-1-5);
+  border-radius: var(--radius-4);
 }
 
 .atoms-table-scroll::-webkit-scrollbar-thumb {
   background: var(--highlight-color);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
 
 .atoms-table-scroll::-webkit-scrollbar-thumb:hover {
@@ -197,11 +197,11 @@ font-size: 12px;
 .segmented-backend-control {
   display: flex;
   flex-wrap: nowrap;
-  background: rgba(25,25,25,0.8);
+  background: var(--chrome-1);
   padding: 5px;
-  border-radius: 10px;
-  gap: 4px;
-  margin-bottom: 10px;
+  border-radius: var(--radius-md);
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-3-5);
   width: 100%;
   box-sizing: border-box;
   overflow: hidden;
@@ -210,12 +210,12 @@ font-size: 12px;
 .segmented-backend-control button {
   border: none;
   background: none;
-  color: rgba(255,255,255,0.8);
-  padding: 6px 6px;
-  border-radius: 8px;
-  font-size: 11px;
+  color: var(--fg-75);
+  padding: var(--sp-2) var(--sp-2);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
   cursor: pointer;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   min-width: 0;
   flex: 1 1 0;
   white-space: normal;
@@ -226,24 +226,24 @@ font-size: 12px;
 
 .segmented-backend-control button:hover {
   background: var(--hover-color);
-  
+
 }
 
 .segmented-backend-control button.active {
   background: var(--accent-color);
-  color: white;
-  font-weight: 500;
+  color: var(--fg-1);
+  font-weight: var(--fw-medium);
 }
 .segmented-backend-control button.relax {
   background: var(--accent-color);
-  color: white;
-  font-weight: 500;
+  color: var(--fg-1);
+  font-weight: var(--fw-medium);
 }
 
 .segmented-backend-control button.md {
   background: var(--accent-color);
-  color: white;
-  font-weight: 500;
+  color: var(--fg-1);
+  font-weight: var(--fw-medium);
 }
 
 #BackendCalcPanel:empty {
@@ -261,14 +261,14 @@ font-size: 12px;
 .atomistic-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .atomistic-header-row {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .atomistic-header-row h2 {
@@ -283,49 +283,49 @@ font-size: 12px;
   gap: 2px;
   padding: 3px;
   border-radius: 11px;
-  background: rgba(17, 17, 17, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+  background: var(--chrome-1-9); /* was rgba(17, 17, 17, 0.9) — near-dupe folded into the rung */
+  border: 1px solid var(--line-1);
+  box-shadow: inset 0 1px 0 var(--wash-0);
 }
 
 .backend-potential-toggle button {
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(255, 255, 255, 0.78);
-  padding: 6px 13px;
-  border-radius: 9px;
-  font-size: 12px;
-  font-weight: 600;
+  color: var(--fg-75);
+  padding: var(--sp-2) 13px;
+  border-radius: var(--radius-9);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
   cursor: pointer;
 }
 
 .backend-potential-toggle button.active {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.96);
+  background: var(--wash-3);
+  border-color: var(--wash-4);
+  color: var(--fg-85);
 }
 
 .atomistic-source-panel {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: 6px 10px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: var(--sp-2) var(--sp-3-5);
+  border-radius: var(--radius-12);
+  background: var(--wash-0);
+  border: 1px solid var(--line-1);
 }
 
 .atomistic-source-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--sp-4);
 }
 
 .atomistic-source-label {
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 14px;
-  font-weight: 500;
+  color: var(--fg-85);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
 }
 
 .atomistic-source-state,
@@ -333,13 +333,13 @@ font-size: 12px;
 .atomistic-status,
 .atomistic-result,
 .atomistic-hint {
-  line-height: 1.5;
+  line-height: var(--lh-normal);
 }
 
 .atomistic-source-state,
 .atomistic-backend-state {
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 12px;
+  color: var(--fg-85);
+  font-size: var(--fs-base);
 }
 
 .atomistic-source-state:empty {
@@ -351,17 +351,17 @@ font-size: 12px;
 }
 
 .atomistic-source-state:not(:empty) {
-  padding: 9px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 9px var(--sp-3-5);
+  border-radius: var(--radius-md);
+  background: var(--wash-0);
+  border: 1px solid var(--wash-1-5);
 }
 
 .atomistic-backend-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .hidden {
@@ -371,58 +371,58 @@ font-size: 12px;
 .atomistic-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .atomistic-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.025);
+  gap: var(--sp-3-5);
+  padding: var(--sp-4) var(--sp-4);
+  border-radius: var(--radius-12);
+  background: var(--wash-0);
+  border: 1px solid var(--line-1);
+  box-shadow: inset 0 1px 0 var(--wash-0);
 }
 
 .atomistic-card-compact {
-  gap: 8px;
-  padding: 10px 12px;
+  gap: var(--sp-3);
+  padding: var(--sp-3-5) var(--sp-4);
 }
 
 .atomistic-card-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 
 .atomistic-card-title,
 .atomistic-card-title-accent {
-  font-size: 16px;
+  font-size: var(--fs-xl);
   font-weight: 700;
 }
 
 .atomistic-card-title-accent {
-  color: rgba(255, 255, 255, 0.9)
+  color: var(--fg-85)
 }
 
 .atomistic-card-pill {
-  padding: 3px 8px;
+  padding: 3px var(--sp-3);
   border-radius: 999px;
-  background: var(--hover-color, rgba(255, 255, 255, 0.08));
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 11px;
+  background: var(--hover-color, var(--wash-2));
+  border: 1px solid var(--line-1);
+  color: var(--fg-75);
+  font-size: var(--fs-sm);
 }
 
 .atomistic-card-metrics {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 12px;
-  line-height: 1.5;
+  gap: var(--sp-2);
+  color: var(--fg-75);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
 }
 
 .atomistic-efs-card {
@@ -434,8 +434,8 @@ font-size: 12px;
 }
 
 .atomistic-efs-card:hover {
-  border-color: var(--border-color, rgba(255,255,255,0.18));
-  background: var(--hover-color, rgba(255,255,255,0.045));
+  border-color: var(--border-color, var(--line-2));
+  background: var(--hover-color, var(--wash-0));
 }
 
 .atomistic-efs-card:active {
@@ -445,27 +445,27 @@ font-size: 12px;
 .atomistic-efs-title-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .atomistic-efs-refresh-hint {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
-  font-weight: 400;
+  font-size: var(--fs-sm);
+  color: var(--fg-3);
+  font-weight: var(--fw-normal);
   letter-spacing: 0.01em;
 }
 
 .atomistic-efs-card:hover .atomistic-efs-refresh-hint {
-  color: var(--highlight-color, rgba(255, 255, 255, 0.65));
+  color: var(--accent-fg, var(--fg-2));
 }
 
 .atomistic-grid {
   display: grid;
-  gap: 10px 12px;
+  gap: var(--sp-3-5) var(--sp-4);
 }
 
 .atomistic-grid-compact {
-  gap: 7px 10px;
+  gap: 7px var(--sp-3-5);
 }
 
 .atomistic-grid-2 {
@@ -479,34 +479,34 @@ font-size: 12px;
 .atomistic-grid label {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 13px;
+  gap: var(--sp-3-5);
+  color: var(--fg-85);
+  font-size: var(--fs-md);
 }
 
 .atomistic-grid-compact label {
   gap: 5px;
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .atomistic-grid input {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(22, 22, 22, 0.88);
-  color: #fff;
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 16px;
+  border: 1px solid var(--wash-4);
+  background: var(--chrome-1-9); /* was rgba(22, 22, 22, 0.88) — near-dupe folded into the rung */
+  color: var(--fg-1);
+  border-radius: var(--radius-12);
+  padding: var(--sp-4) 14px;
+  font-size: var(--fs-xl);
   min-height: 46px;
   box-sizing: border-box;
   width: 100%;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.025);
+  box-shadow: inset 0 1px 0 var(--wash-0);
 }
 
 .atomistic-input-sm {
-  padding: 6px 10px !important;
-  font-size: 15px !important;
-  min-height: 34px !important;
-  border-radius: 8px !important;
+  padding: var(--sp-2) var(--sp-3-5) !important;
+  font-size: var(--fs-lg) !important;
+  min-height: var(--control-h) !important;
+  border-radius: var(--radius) !important;
 }
 
 /* ---- Rattle card: two labeled inputs (coordinate / lattice) plus the action
@@ -518,7 +518,7 @@ font-size: 12px;
 .atomistic-rattle-toggle-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .atomistic-rattle-grid input[type="checkbox"] {
@@ -528,7 +528,7 @@ font-size: 12px;
   flex: 0 0 auto;
   margin: 0;
   padding: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
 
 /* Third column: no caption of its own, so push the button down onto the input
@@ -542,7 +542,7 @@ font-size: 12px;
 .atomistic-rattle-action {
   display: flex;
   align-items: flex-end;
-  margin: 15px 0 8px;
+  margin: var(--sp-5) 0 var(--sp-3);
 }
 
 /* Match .atomistic-input-sm exactly: .calcButton's own 8px padding + 2px
@@ -550,41 +550,41 @@ font-size: 12px;
    overhang once the bottoms line up. */
 .atomistic-rattle-action .calcButton {
   width: 100%;
-  height: 34px;
-  min-height: 34px;
-  padding: 6px 10px;
+  height: var(--control-h);
+  min-height: var(--control-h);
+  padding: var(--sp-2) var(--sp-3-5);
 }
 
 .atomistic-anneal-section {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line-1);
 }
 
 .atomistic-anneal-title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
 }
 
 .atomistic-button-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--sp-4);
 }
 
 .atomistic-button-row .calcButton {
   flex: 1 1 140px;
-  min-height: 44px;
-  font-size: 13px;
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.08);
-  font-weight: 600;
+  min-height: var(--control-h-touch);
+  font-size: var(--fs-md);
+  border-radius: var(--radius-12);
+  border: 1px solid var(--wash-2);
+  font-weight: var(--fw-bold);
 }
 
 .atomistic-button-row-compact {
-  gap: 8px;
+  gap: var(--sp-3);
   justify-content: center;
 }
 
@@ -592,8 +592,8 @@ font-size: 12px;
   flex: 0 1 auto;
   min-height: 30px;
   padding: 5px 22px;
-  font-size: 13px;
-  border-radius: 8px;
+  font-size: var(--fs-md);
+  border-radius: var(--radius);
 }
 
 .atomistic-primary-action {
@@ -603,7 +603,7 @@ font-size: 12px;
 .atomistic-collapse-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-3);
   padding: 0;
   border: 0;
   background: transparent;
@@ -614,8 +614,8 @@ font-size: 12px;
 .atomistic-inline-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: rgba(255, 255, 255, 0.88);
+  gap: var(--sp-3);
+  color: var(--fg-85);
 }
 
 .atomistic-inline-toggle input {
@@ -623,39 +623,36 @@ font-size: 12px;
 }
 
 .atomistic-label-disabled {
-  color: #ff7b7b;
+  color: var(--danger-bright);
 }
 
 .atomistic-status {
   margin: 0;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--fg-85);
 }
 
 .atomistic-result {
   margin: 0;
-  color: #ffcf4f;
-  font-weight: 500;
+  color: var(--warn-bright);
+  font-weight: var(--fw-medium);
 }
 
 .atomistic-hint {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--fg-75);
 }
 
-@media (max-width: 420px) {
-  .atomistic-grid-2,
-  .atomistic-grid-3 {
-    grid-template-columns: 1fr;
-  }
-}
+/* The max-width:420px override for .atomistic-grid-2/-3 now lives in
+   styles/responsive.css's tiny rung, per Wave 4's single-file @media
+   rule. */
 
 /* One-line explanation under the ensemble switch and the coupling inputs.
    Deliberately quiet: it is there to answer "what does NPT do here" the first
    time, not to compete with the controls. */
 .atomistic-ensemble-hint {
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 11px;
-  line-height: 1.45;
-  padding: 4px 2px 8px;
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  padding: var(--sp-1) 2px var(--sp-3);
 }
 
 .atomistic-ensemble-hint:empty {
@@ -671,15 +668,15 @@ font-size: 12px;
 /* Simulated Annealing is enabled by being expanded — there is no separate
    switch — so the header has to read as a state, not just a disclosure. */
 .atomistic-anneal-badge {
-  margin-left: 4px;
+  margin-left: var(--sp-1);
   padding: 1px 7px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #7ee2a8;
-  background: rgba(126, 226, 168, 0.14);
-  border: 1px solid rgba(126, 226, 168, 0.35);
+  color: var(--ok-bright);
+  background: rgb(var(--ok-bright-rgb) / 0.14);
+  border: 1px solid rgb(var(--ok-bright-rgb) / 0.35);
   opacity: 0;
   transition: opacity 120ms ease;
 }
@@ -690,5 +687,5 @@ font-size: 12px;
 
 .atomistic-collapse-toggle.active .atomistic-anneal-title,
 .atomistic-collapse-toggle.active > span:first-child {
-  color: #7ee2a8;
+  color: var(--ok-bright);
 }

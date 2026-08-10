@@ -14,18 +14,13 @@
 import { latticeFromCell, latticeParameters } from '../../math/index.js';
 import { makeSectionHeadline } from '../panels/sectionHeadline.js';
 
-const TABLE_STYLE = 'width:100%; border-collapse:collapse; font-size:12px;';
-const LABEL_STYLE = 'padding:4px 6px 4px 0; color:rgba(255,255,255,0.7); text-align:right; white-space:nowrap;';
-const CELL_STYLE = 'padding:4px 4px 4px 4px;';
-const INPUT_STYLE = 'width:70px; text-align:right; font-family:monospace; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:4px; color:white; padding:3px 5px; box-sizing:border-box;';
-
 function paramRow(labelA, idA, labelB, idB) {
   return `
     <tr>
-      <td style="${LABEL_STYLE}">${labelA}</td>
-      <td style="${CELL_STYLE}"><input type="number" id="${idA}" step="0.01" class="LatticeInput coord-input" style="${INPUT_STYLE}"></td>
-      <td style="${LABEL_STYLE}">${labelB}</td>
-      <td style="${CELL_STYLE}"><input type="number" id="${idB}" step="0.01" class="LatticeInput coord-input" style="${INPUT_STYLE}"></td>
+      <td class="lattice-label">${labelA}</td>
+      <td class="lattice-cell"><input type="number" id="${idA}" step="0.01" class="LatticeInput coord-input lattice-num-input"></td>
+      <td class="lattice-label">${labelB}</td>
+      <td class="lattice-cell"><input type="number" id="${idB}" step="0.01" class="LatticeInput coord-input lattice-num-input"></td>
     </tr>
   `;
 }
@@ -42,20 +37,20 @@ export function createLatticeInputPanel(container, { initial, onChange } = {}) {
 
   const hint = document.createElement('div');
   hint.textContent = 'Input either lattice parameters or the matrix - both stay in sync.';
-  hint.style.cssText = 'text-align:center; font-size:11px; color:rgba(255,255,255,0.5); margin-bottom:10px;';
+  hint.className = 'lattice-hint';
   container.appendChild(hint);
 
   const row = document.createElement('div');
-  row.style.cssText = 'display:flex; align-items:flex-start; gap:14px;';
+  row.className = 'lattice-row';
 
   const paramsCol = document.createElement('div');
-  paramsCol.style.cssText = 'flex:1 1 0; min-width:0;';
+  paramsCol.className = 'lattice-col';
 
   const divider = document.createElement('div');
-  divider.style.cssText = 'width:1px; align-self:stretch; background:rgba(255,255,255,0.15);';
+  divider.className = 'lattice-divider';
 
   const matrixCol = document.createElement('div');
-  matrixCol.style.cssText = 'flex:1 1 0; min-width:0; display:flex; justify-content:center;';
+  matrixCol.className = 'lattice-matrix-col';
 
   row.appendChild(paramsCol);
   row.appendChild(divider);
@@ -63,7 +58,7 @@ export function createLatticeInputPanel(container, { initial, onChange } = {}) {
   container.appendChild(row);
 
   paramsCol.innerHTML = `
-    <table style="${TABLE_STYLE}">
+    <table class="lattice-params-table">
       <tbody>
         ${paramRow('a (Å)', 'latA', 'α (°)', 'latAlpha')}
         ${paramRow('b (Å)', 'latB', 'β (°)', 'latBeta')}
@@ -81,11 +76,11 @@ export function createLatticeInputPanel(container, { initial, onChange } = {}) {
   };
 
   matrixCol.innerHTML = `
-    <table style="border-collapse:collapse; font-size:12px;">
+    <table class="lattice-matrix-table">
       <tbody>
         ${[0, 1, 2].map(i => `
           <tr>
-            ${[0, 1, 2].map(j => `<td style="${CELL_STYLE}"><input type="number" class="lat-mat LatticeInput coord-input" data-i="${i}" data-j="${j}" step="0.01" style="${INPUT_STYLE}"></td>`).join('')}
+            ${[0, 1, 2].map(j => `<td class="lattice-cell"><input type="number" class="lat-mat LatticeInput coord-input lattice-num-input" data-i="${i}" data-j="${j}" step="0.01"></td>`).join('')}
           </tr>
         `).join('')}
       </tbody>

@@ -67,10 +67,6 @@ import { invalidElementMessage, invalidElementIndices } from './ElementValidatio
 
 const COLLISION_THRESHOLD_ANGSTROM = 0.5;
 
-const LIST_STYLE = 'max-height: 120px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px;';
-const ENTRY_STYLE = 'display:flex; align-items:center; gap:8px; padding: 4px 8px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size:12px;';
-const COORD_STYLE = 'font-family: monospace; color: rgba(255,255,255,0.7); flex-grow:1; text-align:right;';
-
 const round4 = (value) => Number(Number(value).toFixed(4));
 
 /**
@@ -179,30 +175,29 @@ function buildModifyEditor(body, structure) {
 function makeListHeading(text) {
   const heading = document.createElement('div');
   heading.textContent = text;
-  heading.style.cssText = 'font-size:11px; font-weight:600; color:#ccc; margin: 12px 0 4px 0;';
+  heading.className = 'addstructure-list-heading';
   return heading;
 }
 
 function summaryEntry({ element, x, y, z }, onRestore) {
   const row = document.createElement('div');
-  row.style.cssText = ENTRY_STYLE;
+  row.className = 'addstructure-list-entry';
 
   const label = document.createElement('span');
   label.textContent = element;
-  label.style.cssText = 'font-weight:600; flex-shrink:0;';
+  label.className = 'addstructure-list-label';
   row.appendChild(label);
 
   const coords = document.createElement('span');
   coords.textContent = `(${round4(x)}, ${round4(y)}, ${round4(z)})`;
-  coords.style.cssText = COORD_STYLE;
+  coords.className = 'addstructure-list-coord';
   row.appendChild(coords);
 
   if (onRestore) {
     const restoreBtn = document.createElement('button');
     restoreBtn.textContent = '↺';
     restoreBtn.title = 'Put this atom back';
-    restoreBtn.className = 'btn-mini';
-    restoreBtn.style.cssText = 'width:20px; height:20px; padding:0; line-height:0; display:flex; align-items:center; justify-content:center; flex-shrink:0;';
+    restoreBtn.className = 'btn-mini addstructure-icon-btn addstructure-icon-btn--shrink0';
     restoreBtn.addEventListener('click', onRestore);
     row.appendChild(restoreBtn);
   }
@@ -227,7 +222,7 @@ function buildAddEditor(body, { commitLabel = 'Create Structure', anywayLabel = 
   const editorHost = document.createElement('div');
   const warningHost = document.createElement('div');
   const buttonRow = document.createElement('div');
-  buttonRow.style.cssText = 'margin-top: 15px; text-align: right;';
+  buttonRow.className = 'addstructure-button-row';
 
   const commitBtn = document.createElement('button');
   commitBtn.id = 'commitStructureEdits';
@@ -297,7 +292,7 @@ function buildFreeformModifyEditor(body, structure) {
   });
 
   const resetLatticeRow = document.createElement('div');
-  resetLatticeRow.style.cssText = 'text-align:right; margin-top:6px;';
+  resetLatticeRow.className = 'addstructure-reset-row';
   const resetLatticeBtn = document.createElement('button');
   resetLatticeBtn.textContent = 'Reset Lattice';
   resetLatticeBtn.className = 'btn-mini';
@@ -311,7 +306,7 @@ function buildFreeformModifyEditor(body, structure) {
   const summaryHost = document.createElement('div');
   const warningHost = document.createElement('div');
   const buttonRow = document.createElement('div');
-  buttonRow.style.cssText = 'margin-top: 15px; text-align: right;';
+  buttonRow.className = 'addstructure-button-row';
 
   const revertBtn = document.createElement('button');
   revertBtn.id = 'commitStructureEdits';
@@ -415,7 +410,7 @@ function buildFreeformModifyEditor(body, structure) {
     const colCount = editorHost.querySelectorAll('#atomsTable thead th').length;
     const sep = document.createElement('tr');
     sep.className = 'atom-new-separator';
-    sep.innerHTML = `<td colspan="${colCount}" style="padding:9px 6px 3px; border-top:2px solid rgba(125,206,160,0.5); color:rgba(125,206,160,0.95); font-size:11px; font-weight:600; letter-spacing:0.03em;">Newly added</td>`;
+    sep.innerHTML = `<td colspan="${colCount}">Newly added</td>`;
     firstNew.parentNode.insertBefore(sep, firstNew);
   }
 
@@ -431,7 +426,7 @@ function buildFreeformModifyEditor(body, structure) {
     if (removed.length) {
       summaryHost.appendChild(makeListHeading(`Removed atoms (${removed.length})`));
       const list = document.createElement('div');
-      list.style.cssText = LIST_STYLE;
+      list.className = 'addstructure-scroll-list';
       removed.forEach((atom) => list.appendChild(summaryEntry(atom, () => {
         mod.removed.delete(atom.uuid);
         editor.addAtom(atom); // keeps the original uuid, so it re-enters as an original
@@ -554,12 +549,6 @@ function buildFreeformModifyEditor(body, structure) {
 // ---------------------------------------------------------------------------
 // Modify Structure, symmetry-locked: the same edits, one orbit at a time
 // ---------------------------------------------------------------------------
-const SITE_CELL_STYLE = 'border: 1px solid #444; padding: 3px;';
-const SITE_TH_STYLE = 'border: 1px solid #444; padding: 3px; font-size: 12px; text-align: center; color: #ddd;';
-const SITE_NUM_STYLE = 'width: 100%; background: #333; border: 1px solid #555; color: white; padding: 2px 3px; border-radius: 3px; box-sizing: border-box; text-align: right;';
-const SITE_TEXT_STYLE = 'width:54px; background:#333; border:1px solid #555; color:white; padding:2px 3px; border-radius:3px; box-sizing:border-box;';
-const SITE_PICK_STYLE = 'flex:none; width:22px; height:22px; background:#595959; border:none; color:white; cursor:pointer; font-size:13px; border-radius:3px; line-height:1; padding:0;';
-const HINT_STYLE = 'font-size:11px; color:rgba(255,255,255,0.5); margin: 4px 0 10px 0;';
 const AXES = ['x', 'y', 'z'];
 // Starting points for a site's free parameters, tried in order.
 const SITE_SEEDS = [[0.123, 0.234, 0.345], [0.2, 0.3, 0.4], [0.31, 0.37, 0.43], [0.05, 0.11, 0.17]];
@@ -593,7 +582,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   const mod = ensureWyckoffModifyState(structure);
 
   const heading = document.createElement('div');
-  heading.style.cssText = 'font-size:12px; color:rgba(255,255,255,0.85); margin-bottom:2px;';
+  heading.className = 'wyckoff-lock-heading';
   heading.textContent = `Symmetry locked · ${symmetry.spaceGroup ?? '?'} (No. ${symmetry.number ?? '?'}) · tolerance ${symmetry.tolerance} Å`;
   body.appendChild(heading);
 
@@ -611,7 +600,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   const latticeConstraints = createLatticeConstraintController(latticeHost);
 
   const latticeHint = document.createElement('div');
-  latticeHint.style.cssText = HINT_STYLE;
+  latticeHint.className = 'wyckoff-hint';
   body.appendChild(latticeHint);
 
   const PARAM_SYMBOLS = { alpha: 'α', beta: 'β', gamma: 'γ' };
@@ -632,7 +621,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   }
 
   const resetLatticeRow = document.createElement('div');
-  resetLatticeRow.style.cssText = 'text-align:right; margin-top:6px;';
+  resetLatticeRow.className = 'addstructure-reset-row';
   const resetLatticeBtn = document.createElement('button');
   resetLatticeBtn.textContent = 'Reset Lattice';
   resetLatticeBtn.className = 'btn-mini';
@@ -658,17 +647,17 @@ function buildWyckoffModifyEditor(body, structure, remount) {
 
   const sitesHost = document.createElement('div');
   sitesHost.innerHTML = `
-    <div style="max-height:240px; overflow-y:auto; margin-top:6px;">
-      <table style="width:100%; border-collapse:collapse;">
+    <div class="wyckoff-sites-scroll">
+      <table class="addstructure-table">
         <thead>
           <tr>
-            <th style="${SITE_TH_STYLE}">Element</th>
-            <th style="${SITE_TH_STYLE}" title="Wyckoff letter, multiplicity and site symmetry as the lock reports them">Site</th>
-            <th style="${SITE_TH_STYLE}" title="Fractional coordinate of the orbit's representative">X</th>
-            <th style="${SITE_TH_STYLE}">Y</th>
-            <th style="${SITE_TH_STYLE}">Z</th>
-            <th style="${SITE_TH_STYLE}" title="Colour for every atom of this orbit">Col</th>
-            <th style="${SITE_TH_STYLE}"></th>
+            <th class="wyckoff-site-th">Element</th>
+            <th class="wyckoff-site-th" title="Wyckoff letter, multiplicity and site symmetry as the lock reports them">Site</th>
+            <th class="wyckoff-site-th" title="Fractional coordinate of the orbit's representative">X</th>
+            <th class="wyckoff-site-th">Y</th>
+            <th class="wyckoff-site-th">Z</th>
+            <th class="wyckoff-site-th" title="Colour for every atom of this orbit">Col</th>
+            <th class="wyckoff-site-th"></th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -682,7 +671,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   body.appendChild(summaryHost);
 
   const status = document.createElement('div');
-  status.style.cssText = 'font-size:11px; color:rgba(240,132,18,0.95); margin-top:6px; min-height:14px;';
+  status.className = 'wyckoff-status';
   body.appendChild(status);
 
   let highlightedOrbitId = null;
@@ -707,37 +696,33 @@ function buildWyckoffModifyEditor(body, structure, remount) {
       const position = structure.atoms[orbit.representativeIndex].position;
       const row = document.createElement('tr');
       row.innerHTML = `
-        <td style="${SITE_CELL_STYLE}">
-          <div style="display:flex; align-items:center; gap:3px;">
-            <input type="text" class="orbit-element" value="${orbit.element}" style="${SITE_TEXT_STYLE}"
+        <td class="addstructure-cell">
+          <div class="addstructure-inline-row">
+            <input type="text" class="orbit-element wyckoff-text-input" value="${orbit.element}"
               title="Element of every atom in this orbit">
-            <button type="button" class="orbit-pick-element" title="Pick the element from the periodic table" style="${SITE_PICK_STYLE}">⚛</button>
+            <button type="button" class="orbit-pick-element addstructure-pick-btn" title="Pick the element from the periodic table">⚛</button>
           </div>
         </td>
-        <td style="${SITE_CELL_STYLE}">
-          <select class="orbit-site" style="${SITE_NUM_STYLE}"
+        <td class="addstructure-cell">
+          <select class="orbit-site wyckoff-orbit-num-input"
             title="Wyckoff site. Changing it re-derives the position and the orbit size"></select>
-          <div class="orbit-site-form" style="font-family:monospace; font-size:10px; color:rgba(255,255,255,0.45); text-align:center; margin-top:2px;">${orbit.siteSymmetry}</div>
+          <div class="orbit-site-form wyckoff-site-form">${orbit.siteSymmetry}</div>
         </td>
         ${AXES.map((axis, index) => `
-          <td style="${SITE_CELL_STYLE}">
-            <input type="number" step="0.01" class="orbit-${axis} coord-input" value="${round4(position[index])}"
-              style="${SITE_NUM_STYLE}" ${freedom[index] ? '' : 'disabled'}
+          <td class="addstructure-cell">
+            <input type="number" step="0.01" class="orbit-${axis} coord-input wyckoff-orbit-num-input wyckoff-axis-input" value="${round4(position[index])}"
+              ${freedom[index] ? '' : 'disabled'}
               ${freedom[index] ? `title="Free coordinate of this site; every image follows it"` : `title="${axis} is fixed by the site symmetry"`}>
           </td>`).join('')}
-        <td class="orbit-color-cell" style="${SITE_CELL_STYLE} text-align:center;"></td>
-        <td style="${SITE_CELL_STYLE} text-align:center;">
-          <button type="button" class="orbit-remove btn-mini" style="width:20px; height:20px; padding:0; line-height:0; display:flex; align-items:center; justify-content:center;">✕</button>
+        <td class="orbit-color-cell addstructure-cell addstructure-center"></td>
+        <td class="addstructure-cell addstructure-center">
+          <button type="button" class="orbit-remove btn-mini addstructure-icon-btn">✕</button>
         </td>
       `;
       tbody.appendChild(row);
 
-      AXES.forEach((axis, index) => {
-        if (!freedom[index]) {
-          const frozen = /** @type {HTMLInputElement} */ (row.querySelector(`.orbit-${axis}`));
-          frozen.style.opacity = '0.45';
-        }
-      });
+      // Dimming a frozen axis is now implied by its `disabled` attribute above
+      // (see addStructure.css's .wyckoff-axis-input:disabled) - no JS needed.
 
       // Until the space-group tables land (or when they don't line up with this
       // cell) the site stays a read-only label showing what the lock reports.
@@ -887,7 +872,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
     const colCount = sitesHost.querySelectorAll('thead th').length;
     const separator = document.createElement('tr');
     separator.className = 'orbit-new-separator';
-    separator.innerHTML = `<td colspan="${colCount}" style="padding:9px 6px 3px; border-top:2px solid rgba(125,206,160,0.5); color:rgba(125,206,160,0.95); font-size:11px; font-weight:600; letter-spacing:0.03em;">Newly added</td>`;
+    separator.innerHTML = `<td colspan="${colCount}">Newly added</td>`;
     firstNewRow.parentNode.insertBefore(separator, firstNewRow);
   }
 
@@ -903,7 +888,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
 
     summaryHost.appendChild(makeListHeading(`Removed orbits (${removed.length})`));
     const list = document.createElement('div');
-    list.style.cssText = LIST_STYLE;
+    list.className = 'addstructure-scroll-list';
     removed.forEach((snapshot) => {
       const [x, y, z] = snapshot.representative;
       const label = `${snapshot.element} ${snapshot.multiplicity}${snapshot.wyckoff}`;
@@ -931,30 +916,30 @@ function buildWyckoffModifyEditor(body, structure, remount) {
 
   const addHost = document.createElement('div');
   addHost.innerHTML = `
-    <table style="width:100%; border-collapse:collapse; margin-top:6px;">
+    <table class="addstructure-table addstructure-table--spaced">
       <thead><tr>
-        <th style="${SITE_TH_STYLE}">Element</th>
-        <th style="${SITE_TH_STYLE}" title="Wyckoff site to place the new atom on">Site</th>
-        <th style="${SITE_TH_STYLE}">X</th>
-        <th style="${SITE_TH_STYLE}">Y</th>
-        <th style="${SITE_TH_STYLE}">Z</th>
-        <th style="${SITE_TH_STYLE}"></th>
+        <th class="wyckoff-site-th">Element</th>
+        <th class="wyckoff-site-th" title="Wyckoff site to place the new atom on">Site</th>
+        <th class="wyckoff-site-th">X</th>
+        <th class="wyckoff-site-th">Y</th>
+        <th class="wyckoff-site-th">Z</th>
+        <th class="wyckoff-site-th"></th>
       </tr></thead>
       <tbody><tr>
-        <td style="${SITE_CELL_STYLE}">
-          <div style="display:flex; align-items:center; gap:3px;">
-            <input type="text" id="wyckoffNewElement" title="Element for the new site" style="${SITE_TEXT_STYLE}">
-            <button type="button" id="wyckoffNewPick" title="Pick the element from the periodic table" style="${SITE_PICK_STYLE}">⚛</button>
+        <td class="addstructure-cell">
+          <div class="addstructure-inline-row">
+            <input type="text" id="wyckoffNewElement" title="Element for the new site" class="wyckoff-text-input">
+            <button type="button" id="wyckoffNewPick" title="Pick the element from the periodic table" class="addstructure-pick-btn">⚛</button>
           </div>
         </td>
-        <td style="${SITE_CELL_STYLE}">
-          <select id="wyckoffNewSite" style="${SITE_NUM_STYLE}" disabled><option value="">…</option></select>
-          <div id="wyckoffNewForm" style="font-family:monospace; font-size:10px; color:rgba(255,255,255,0.45); text-align:center; margin-top:2px;"></div>
+        <td class="addstructure-cell">
+          <select id="wyckoffNewSite" class="wyckoff-orbit-num-input" disabled><option value="">…</option></select>
+          <div id="wyckoffNewForm" class="wyckoff-site-form"></div>
         </td>
-        ${AXES.map((axis) => `<td style="${SITE_CELL_STYLE}"><input type="number" step="0.05" id="wyckoffNew${axis.toUpperCase()}" class="coord-input" value="0" style="${SITE_NUM_STYLE}"></td>`).join('')}
-        <td style="${SITE_CELL_STYLE} text-align:center;">
-          <button type="button" id="wyckoffAddSite" class="btn-mini highlight"
-            title="Add this site and every symmetry image of it" style="white-space:nowrap;">+ Add</button>
+        ${AXES.map((axis) => `<td class="addstructure-cell"><input type="number" step="0.05" id="wyckoffNew${axis.toUpperCase()}" class="coord-input wyckoff-orbit-num-input wyckoff-axis-input" value="0"></td>`).join('')}
+        <td class="addstructure-cell addstructure-center">
+          <button type="button" id="wyckoffAddSite" class="btn-mini highlight addstructure-nowrap"
+            title="Add this site and every symmetry image of it">+ Add</button>
         </td>
       </tr></tbody>
     </table>
@@ -962,8 +947,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   body.appendChild(addHost);
 
   const addPreview = document.createElement('div');
-  addPreview.className = 'wyckoff-add-preview';
-  addPreview.style.cssText = HINT_STYLE;
+  addPreview.className = 'wyckoff-add-preview wyckoff-hint';
   body.appendChild(addPreview);
 
   const newElement = /** @type {HTMLInputElement} */ (addHost.querySelector('#wyckoffNewElement'));
@@ -1068,7 +1052,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   // tab (SymmetryWyckoffTab.js's syncRowFreedom).
   function syncNewSiteFreedom() {
     if (!siteLettersUsable || !newSite.value) {
-      newCoordInputs.forEach((input) => { input.disabled = false; input.style.opacity = ''; input.title = ''; });
+      newCoordInputs.forEach((input) => { input.disabled = false; input.title = ''; });
       newSiteForm.textContent = '';
       return;
     }
@@ -1079,7 +1063,6 @@ function buildWyckoffModifyEditor(body, structure, remount) {
     newCoordInputs.forEach((input, index) => {
       const free = hasFreedom[index] !== false;
       input.disabled = !free;
-      input.style.opacity = free ? '' : '0.45';
       input.title = free ? '' : `Determined by site ${newSite.value} (${firstOrbit})`;
       if (!free) input.value = String(round4(actual[index]));
     });
@@ -1181,7 +1164,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
 
   // --- Revert ---
   const buttonRow = document.createElement('div');
-  buttonRow.style.cssText = 'margin-top: 15px; text-align: right;';
+  buttonRow.className = 'addstructure-button-row';
   const revertBtn = document.createElement('button');
   revertBtn.id = 'commitStructureEdits';
   revertBtn.className = 'btn-mini';

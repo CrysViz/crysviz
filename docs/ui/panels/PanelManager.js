@@ -56,6 +56,7 @@ const panelPrefs = {
   dragOutOfDock: true,
   dragByHandleOnly: false,
   hideRaytraceWarning: false, // "Don't show again" on the tracer performance modal
+  legendTransparent: false, // Composition Display: no window chrome, swatches+text only
 };
 
 function loadPanelPrefs() {

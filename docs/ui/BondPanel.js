@@ -12,7 +12,7 @@ export function addBondPanel(target = "cvPanelBody-bonds") {
 
   const group = document.createElement("div");
   group.id = "bondControlsGroup";
-  group.style.padding = "10px";
+  group.className = "cv-bond-controls-group";
 
   // --- Histograms ---
   // One button per histogram: each opens ONE ordinary panel window
@@ -21,27 +21,22 @@ export function addBondPanel(target = "cvPanelBody-bonds") {
   // float, or into the left bar, like any other window.
   const histogramsPanel = document.createElement("div");
   histogramsPanel.id = "histogramsPanel";
-  histogramsPanel.style.marginBottom = "10px";
+  histogramsPanel.className = "cv-histogram-section";
   histogramsPanel.appendChild(makeSectionHeadline("Histograms"));
 
   function addHistogramRow(label, buttonId, openWindow) {
     const row = document.createElement("div");
-    row.style.display = "flex";
-    row.style.alignItems = "center";
-    row.style.justifyContent = "space-between";
-    row.style.gap = "8px";
-    row.style.marginBottom = "6px";
+    row.className = "cv-histogram-row";
 
     const nameLabel = document.createElement("span");
     nameLabel.textContent = label;
-    nameLabel.style.cssText = "font-size:12px; color:#ccc;";
+    nameLabel.className = "cv-histogram-row-label";
 
     const openBtn = document.createElement("button");
     openBtn.id = buttonId;
-    openBtn.className = "btn-mini highlight";
+    openBtn.className = "btn-mini highlight cv-histogram-row-btn";
     openBtn.textContent = "Open";
     openBtn.title = `Open the ${label} window`;
-    openBtn.style.fontSize = "12px";
     openBtn.onclick = openWindow;
 
     row.append(nameLabel, openBtn);

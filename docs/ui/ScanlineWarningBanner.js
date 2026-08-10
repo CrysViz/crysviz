@@ -14,26 +14,8 @@ function ensureBanner() {
   if (!view) return null;
 
   banner = document.createElement('div');
-  banner.className = 'cv-scanline-warning';
+  banner.className = 'cv-warning-banner cv-scanline-warning';
   banner.textContent = 'A wild 8-BIT MODE appeared! Press Alt+8 to flee';
-  banner.style.cssText = `
-    position: absolute;
-    top: 38px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 2000;
-    padding: 6px 14px;
-    border-radius: 6px;
-    background: rgba(40, 30, 0, 0.85);
-    border: 1px solid rgba(255, 193, 7, 0.6);
-    color: #ffc107;
-    font-size: 12px;
-    font-family: inherit;
-    font-weight: 500;
-    white-space: nowrap;
-    pointer-events: none;
-    display: none;
-  `;
   view.appendChild(banner);
   return banner;
 }

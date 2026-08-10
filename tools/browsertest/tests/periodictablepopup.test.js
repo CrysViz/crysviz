@@ -68,6 +68,74 @@ const count = (page) => page.evaluate(() =>
   await page.waitForTimeout(150);
   H.check('the click that opened it does not immediately close it',
     await count(page) === 1);
+  await page.keyboard.press('Escape');
+
+  // --- The popup has to be a surface, in every palette -----------------------
+  // It is appended to <body> and floats over the 3D scene, so it owns its own
+  // background — it took --chrome-1, a 5%-alpha wash in the light palettes,
+  // and the whole table went see-through over the structure. themecontrast
+  // scans #ui only, so nothing saw it. Same for the tiles: their borders are
+  // chemistry data picked against a dark popup, and the alkaline-earth yellow
+  // left those six tiles with no visible edge at all on a light surface.
+  const registry = await page.evaluate(async () => (await fetch('./themes/themes.json')).json());
+
+  const PROBE = () => {
+    const parse = (s) => (String(s).match(/[\d.]+/g) || []).map(Number);
+    const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+      return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+    const over = (fg, bg) => { const a = fg.length > 3 ? fg[3] : 1; return [0, 1, 2].map(i => fg[i] * a + bg[i] * (1 - a)); };
+    const ratio = (a, b) => { const [h, l] = lum(a) > lum(b) ? [lum(a), lum(b)] : [lum(b), lum(a)]; return (h + 0.05) / (l + 0.05); };
+
+    const pop = document.getElementById('periodicTablePopup');
+    const popBg = parse(getComputedStyle(pop).backgroundColor);
+    const alpha = popBg.length > 3 ? popBg[3] : 1;
+    const surface = over(popBg, parse(getComputedStyle(document.body).backgroundColor).slice(0, 3));
+
+    // A tile is findable if EITHER its category border or the --tile-edge ring
+    // inside it separates it from the popup surface — take the better of the
+    // two, the same "one of the two has to work" rule themecontrast uses for
+    // input fields.
+    const edge = parse(getComputedStyle(pop).getPropertyValue('--tile-edge'));
+    const ring = edge.length ? ratio(over(edge, surface), surface) : 0;
+    let worst = { r: Infinity, el: '' };
+    for (const tile of pop.querySelectorAll('.pt-tile')) {
+      const b = parse(getComputedStyle(tile).borderTopColor);
+      const r = Math.max(b.length ? ratio(over(b, surface), surface) : 0, ring);
+      if (r < worst.r) worst = { r: +r.toFixed(2), el: tile.dataset.symbol };
+    }
+    return { alpha, worst };
+  };
+
+  async function probeTheme(palette, mode) {
+    await page.evaluate((m) => document.querySelector(`.theme-btn[data-theme-option="${m}"]`).click(), mode);
+    await page.waitForTimeout(200);
+    await page.evaluate((p) => document.querySelector(`.theme-menu-item[data-palette-id="${p}"]`).click(), palette);
+    await page.waitForTimeout(700); // theme CSS loads async
+    await open();
+    await page.waitForTimeout(200);
+    const got = await page.evaluate(PROBE);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(100);
+    return got;
+  }
+
+  // Default is the bar for tile edges, as in themecontrast: the category
+  // colours are the same everywhere, only the surface under them changes.
+  const base = registry.palettes[0];
+  const floor = await probeTheme(base.id, Object.keys(base.modes)[0]);
+  H.check('the probe measures the baseline palette (sanity check)',
+    floor.alpha > 0 && floor.worst.r > 1, JSON.stringify(floor));
+
+  for (const p of registry.palettes) {
+    for (const mode of Object.keys(p.modes)) {
+      const got = await probeTheme(p.id, mode);
+      H.check(`${p.id}/${mode}: the scene does not show through the picker`,
+        got.alpha >= 0.85, `background alpha ${got.alpha}`);
+      H.check(`${p.id}/${mode}: every tile keeps a visible edge`,
+        got.worst.r >= floor.worst.r - 0.05,
+        `${got.worst.el} at ${got.worst.r} vs ${base.id}'s ${floor.worst.r}`);
+    }
+  }
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

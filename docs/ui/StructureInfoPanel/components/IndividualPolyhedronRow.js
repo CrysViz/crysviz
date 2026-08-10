@@ -1,4 +1,4 @@
-import { fileBrowser, highlightHover } from '../../../state/store.js';
+import { fileBrowser } from '../../../state/store.js';
 import { colorHexToCss, hexToRgba } from '../../../utils/ColorModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updatePolyhedraColors, resolvePolyhedronStyle } from '../../../render/index.js';
@@ -54,18 +54,17 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   row.dataset.polyKey = key; // representative's key (capture/restore keeps working)
   if (groupKey) row.dataset.polyGroupKey = groupKey;
   row.dataset.catKey = catKey;
-  row.style.cssText = 'display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 12px; padding: 4px 0; font-size: 11px; cursor: pointer; transition: background-color 0.2s ease;';
 
   // --- Name + meta ---
   const nameContainer = document.createElement('div');
-  nameContainer.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
+  nameContainer.className = 'ipr-name-container';
 
   const name = document.createElement('span');
   name.textContent = `${poly.catLabel} #${displayNumber}`;
-  name.style.color = '#ddd';
+  name.className = 'ipr-name';
 
   const metaDisplay = document.createElement('span');
-  metaDisplay.style.cssText = 'font-size: 9px; color: rgba(255,255,255,0.8); font-family: monospace;';
+  metaDisplay.className = 'poly-meta';
   const copySuffix = linked && linked.length > 1 ? ` · ×${linked.length}` : '';
   if (poly.type === 'centered' && Number.isInteger(poly.centerIndex)) {
     const n = getElementAtomIndices(poly.centerElement).indexOf(poly.centerIndex) + 1;
@@ -99,7 +98,6 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   colorBtn.textContent = 'Edit';
   colorBtn.className = 'atom-editor-button';
   colorBtn.dataset.editorButton = 'color';
-  colorBtn.style.cssText = 'border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;';
   colorBtn.title = `Edit color and alpha for ${poly.catLabel} #${displayNumber}`;
   function updateColorBtnSwatch() {
     const style = resolvePolyhedronStyle(
@@ -110,14 +108,14 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   polyRowSwatchUpdateFunctions[groupKey ?? key] = updateColorBtnSwatch;
 
   const buttonContainer = document.createElement('div');
-  buttonContainer.style.cssText = 'display: flex; gap: 10px;';
+  buttonContainer.className = 'ipr-buttons';
   buttonContainer.appendChild(colorBtn);
   row.appendChild(buttonContainer);
 
   // --- Hidden editor panel ---
   const editor = document.createElement('div');
   editor.className = 'poly-color-editor';
-  editor.style.cssText = 'display: none; grid-column: 1 / -1; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
+  editor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
 
   const picker = createColorPicker(currentColor, (hex) => {
     // Persist across polyhedra rebuilds (structure.polyhedraUserStyles survives
@@ -129,24 +127,22 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
 
   // Alpha row (same layout as the atom/bond editors)
   const alphaRow = document.createElement('div');
-  alphaRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:6px;';
+  alphaRow.className = 'si-row';
   const alphaLabel = document.createElement('span');
   alphaLabel.textContent = 'Alpha';
-  alphaLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+  alphaLabel.className = 'si-row-label';
   const alphaSlider = document.createElement('input');
   alphaSlider.type = 'range';
   alphaSlider.min = '0.05';
   alphaSlider.max = '1';
   alphaSlider.step = '0.01';
   alphaSlider.value = String(currentAlpha);
-  alphaSlider.style.cssText = 'flex:1;';
   const alphaValue = document.createElement('input');
   alphaValue.type = 'number';
   alphaValue.min = '0.05';
   alphaValue.max = '1';
   alphaValue.step = '0.01';
   alphaValue.value = currentAlpha.toFixed(2);
-  alphaValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
   alphaRow.appendChild(alphaLabel);
   alphaRow.appendChild(alphaSlider);
   alphaRow.appendChild(alphaValue);
@@ -164,7 +160,7 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   // --- Edge styling (color + alpha for this polyhedron's edge lines) ---
   const edgeHeader = document.createElement('div');
   edgeHeader.textContent = 'Edge';
-  edgeHeader.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); margin-top: 8px;';
+  edgeHeader.className = 'poly-edge-header';
 
   const edgePicker = createColorPicker(safeColor(resolved.edgeColor), (hex) => {
     setMemberStyles({ edgeColor: hex });
@@ -173,24 +169,22 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
 
   const currentEdgeAlpha = clampOpacity(resolved.edgeOpacity);
   const edgeAlphaRow = document.createElement('div');
-  edgeAlphaRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:6px;';
+  edgeAlphaRow.className = 'si-row';
   const edgeAlphaLabel = document.createElement('span');
   edgeAlphaLabel.textContent = 'Edge alpha';
-  edgeAlphaLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 58px;';
+  edgeAlphaLabel.className = 'si-row-label si-row-label--wide';
   const edgeAlphaSlider = document.createElement('input');
   edgeAlphaSlider.type = 'range';
   edgeAlphaSlider.min = '0.05';
   edgeAlphaSlider.max = '1';
   edgeAlphaSlider.step = '0.01';
   edgeAlphaSlider.value = String(currentEdgeAlpha);
-  edgeAlphaSlider.style.cssText = 'flex:1;';
   const edgeAlphaValue = document.createElement('input');
   edgeAlphaValue.type = 'number';
   edgeAlphaValue.min = '0.05';
   edgeAlphaValue.max = '1';
   edgeAlphaValue.step = '0.01';
   edgeAlphaValue.value = currentEdgeAlpha.toFixed(2);
-  edgeAlphaValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
   function applyPolyEdgeAlpha(rawValue) {
     const value = clampOpacity(rawValue);
     edgeAlphaSlider.value = String(value);
@@ -206,8 +200,7 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
 
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
-  applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+  applyBtn.className = 'btn-mini highlight si-action-btn-narrow';
   applyBtn.title = `Click: close. Press and hold: copy ${poly.catLabel} #${displayNumber}'s color/alpha to every trajectory frame.`;
   wirePressHoldPopup(applyBtn, {
     holdLabel: 'Apply to Trajectory',
@@ -230,8 +223,7 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
 
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset';
-  resetBtn.className = 'btn-mini';
-  resetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+  resetBtn.className = 'btn-mini si-action-btn-narrow';
   resetBtn.title = `Remove the custom color and alpha for ${poly.catLabel} #${displayNumber}.\nClick: this frame. Press and hold: whole trajectory.`;
   wirePressHoldPopup(resetBtn, {
     holdLabel: 'Reset Trajectory',
@@ -254,7 +246,7 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   });
 
   const editorButtonRow = document.createElement('div');
-  editorButtonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';
+  editorButtonRow.className = 'ipr-button-row';
   editorButtonRow.appendChild(resetBtn);
   editorButtonRow.appendChild(applyBtn);
 
@@ -286,18 +278,10 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   };
 
   // --- Selection / hover ---
-  const isSelected = () => {
-    const s = highlightHover.currentlyHighlightedPolyhedron;
-    if (!s) return false;
-    return groupKey ? s.groupKey === groupKey : s.key === key;
-  };
-  row.addEventListener('mouseenter', () => {
-    if (!isSelected()) row.style.backgroundColor = 'rgba(255,255,255,0.03)';
-  });
-  row.addEventListener('mouseleave', () => {
-    if (!isSelected()) row.style.backgroundColor = '';
-  });
-
+  // Hover tint is plain CSS (:hover, structureInfoPanel.css) — a selected row
+  // gets its amber highlight from an inline style (SelectAndHighlightModule.js
+  // highlightAtomRow), which as an inline style always outranks the :hover
+  // rule, so hovering a selected row never overwrites its highlight.
   row.addEventListener('click', (e) => {
     e.stopPropagation();
     selectPolyhedronFromRow(key, row);

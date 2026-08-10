@@ -1,0 +1,155 @@
+/* Solarized — dark. Ethan Schoonover's canonical palette.
+   Layered on top of default/theme.css; only redefines what differs.
+
+   Solarized's idiom is not the same as a normal dark theme: backgrounds are
+   the base tones (base03/base02) and the accents colour text, borders and thin
+   fills. Solid accent fills are reserved for the primary button and for
+   selected/active states. Recolouring large pale fills with these hexes 1:1
+   goes muddy, which is why the wash and chrome ramps are left alone. */
+:root {
+  /* ---- Surfaces ---------------------------------------------------------
+     base03 is the app ground, base02 the raised panel. */
+  --surface-bg: #001820;
+  --panel-bg: #073642;
+  --group-bg: #0f4c5c;
+  --menu-bg: #073642;
+  --popup-bg: #073642;
+  --input-bg: #00252e;
+  --textarea-bg: #00252e;
+  --float-panel-bg: rgba(7, 54, 66, 0.9);
+  --popup-bg-deep: #001f27;
+
+  /* ---- Text -------------------------------------------------------------
+     base0 is body text, base1 emphasis, base01 muted. The ramp is restated in
+     base0 at the base alphas rather than white, which is what keeps Solarized
+     from reading as "teal with white text on it". */
+  --panel-fg: #839496;
+  --muted-fg: #93a1a1;
+  --fg-1: #eee8d5;
+  --fg-85: rgba(238, 232, 213, 0.92);
+  --fg-75: rgba(238, 232, 213, 0.82);
+  --fg-2: rgba(238, 232, 213, 0.68);
+  --fg-50: rgba(238, 232, 213, 0.55);
+  --fg-3: rgba(238, 232, 213, 0.42);
+
+  /* ---- Lines ------------------------------------------------------------- */
+  --line-1: #073642;
+  --line-2: #6d858c;
+  --line-3: rgba(147, 161, 161, 0.5);
+  --panel-border: #073642;
+  --popup-border: #586e75;
+
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%2393a1a1' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+
+  --chrome-1: rgba(0, 24, 32, 0.8);
+  --chrome-1-9: rgba(0, 24, 32, 0.9);
+  --chrome-2: #0a4152;
+  --chrome-2-5: #0e4a5c;
+  --chrome-3: #135566;
+  --chrome-4: #1c6577;
+  --chrome-5: #2e7688;
+  --chrome-6: #4d8f9e;
+
+  /* ---- Scene (both mirrored into three.js by ThemeManager) ---------------- */
+  --scene-bg: #002b36;
+  --lattice-color: #586e75;
+  --dot-border: rgba(147, 161, 161, 0.8);
+
+  /* ---- Destructive ------------------------------------------------------- */
+  --danger: #96201e;
+  --danger-rgb: 220 50 47;
+  --danger-bright: #e8534f;
+  --danger-bright-rgb: 232 83 79;
+  --danger-strong: #dc322f;
+  --danger-fill: rgba(220, 50, 47, 0.92);
+
+  /* ---- Caution ----------------------------------------------------------- */
+  --warn: #b58900;
+  --warn-rgb: 181 137 0;
+  --warn-bright: #cb9c1a;
+  --warn-soft: rgba(203, 75, 22, 0.9);
+  --warn-banner-bg: rgba(30, 24, 0, 0.85);
+  --best-row-rgb: 181 137 0;
+
+  /* ---- Positive / switches ----------------------------------------------- */
+  --ok: #859900;
+  --ok-rgb: 133 153 0;
+  --ok-bright: #a3b81a;
+  --ok-bright-rgb: 163 184 26;
+  --switch-knob: #fdf6e3;
+  --track-bg: rgba(147, 161, 161, 0.16);
+  --switch-off: #8fadb3;
+  --seg-active-bg: #6b7c00;
+  --btn-glow-rgb: 42 161 152;
+  --thumb-border: #93a1a1;
+  /* On-fill text: base03 under the green/cyan/yellow/orange accents. */
+  --on-accent: #002b36;
+
+  /* ---- Informational / selection ------------------------------------------
+     Cyan is the selection hue, blue the link hue. */
+  --info: #2aa198;
+  --info-rgb: 42 161 152;
+  --info-bright: #4fc3bc;
+  --link-hover: #268bd2;
+  --row-selected-bg: rgba(42, 161, 152, 0.18);
+  --locked-bg: rgba(108, 113, 196, 0.22);
+  --locked-badge-bg: rgba(108, 113, 196, 0.35);
+  --locked-grad-1: #4a4fa8;
+  --locked-grad-2: #6c71c4;
+  --confirm-bg: #268bd2;
+  --confirm-border: #1a6aa3;
+
+  /* ---- Active tool -------------------------------------------------------- */
+  --tool-active: #859900;
+  --tool-active-rgb: 133 153 0;
+
+  /* ---- The About modal ----------------------------------------------------- */
+  --about-bg: #00252e;
+  --about-border: rgba(88, 110, 117, 0.6);
+  --about-code-bg: rgba(0, 31, 39, 0.7);
+  --about-close-hover: #93a1a1;
+
+}
+
+/* ---- Accents --------------------------------------------------------------
+   The base defines these on the backend classes, not :root, so a palette that
+   wants its own accents has to restate both. Standard takes blue, symmetry
+   takes violet — the canonical adjacent pair, so the two compute backends stay
+   distinguishable. */
+/* ---- Accents --------------------------------------------------------------
+   Fills are DEEP, like the base's, because 38 rules paint a fill from these
+   and the app puts --fg-1 on top of it. A mid-luminance accent and a
+   mid-luminance text ramp cancel out: the palette's own vivid hue as the fill
+   measured 1.9:1 against its own body text. The vivid hue lives in
+   --accent-fg (text/indicators), --hover-color and --border-color instead. */
+/* ---- Accents --------------------------------------------------------------
+   These five are not interchangeable, and treating them as one hue at one
+   luminance is what made the first cut unreadable:
+
+     --bg-color        the panel titlebar fill      — carries --fg-1 text
+     --accent-color    buttons + selected rows      — carries --fg-1 text
+     --highlight-color slider thumbs, switch ON     — must be SEEN, not read
+     --accent-fg       the accent used AS text      — value labels, checkboxes
+     --hover/--border  transient tints
+
+   A fill that carries text must contrast with the text ramp; a control that
+   is only ever looked at must contrast with the PANEL. On a dark theme one
+   colour can do both. On a light theme it cannot, and --highlight-color was
+   the token caught in the middle. See STYLE.md for the target numbers. */
+.theme-standard {
+  --bg-color: #0a3f5e;
+  --accent-color: #0d4a70;
+  --highlight-color: #4f9ed2;
+  --hover-color: rgba(38, 139, 210, 0.22);
+  --border-color: rgba(38, 139, 210, 0.5);
+  --accent-fg: #4ca8e0;
+}
+
+.theme-symmetry {
+  --bg-color: #34376a;
+  --accent-color: #3b3e78;
+  --highlight-color: #6c71c4;
+  --hover-color: rgba(108, 113, 196, 0.22);
+  --border-color: rgba(108, 113, 196, 0.5);
+  --accent-fg: #9498e0;
+}

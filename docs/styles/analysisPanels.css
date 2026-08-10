@@ -1,0 +1,1362 @@
+/* analysisPanels — extracted from JS during the CSS consolidation. */
+
+/* ===========================================================================
+   PolyhedraConnectivityHistogram.js — the drill-down list of individual
+   corner/edge/face/bond-bridge connections below the summary bar chart.
+   =========================================================================== */
+
+.pc-list {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--wash-3); /* was 0.12 — exact --wash-3 */
+  border-radius: var(--radius-sm);
+  margin-top: var(--sp-3);
+  flex: 0 0 auto;
+}
+
+.pc-list-empty {
+  padding: var(--sp-3);
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.pc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 5px var(--sp-3);
+  font-size: var(--fs-sm); /* 11.5px, in the --fs-sm audit cluster */
+  color: var(--ink-4);
+  cursor: pointer;
+  border-bottom: 1px solid var(--wash-1-5); /* was 0.06 — Wave 2.6 --wash-1-5 */
+}
+
+.pc-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pc-row-badge {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs); /* 10.5px, in the --fs-xs audit cluster */
+  padding: 1px var(--sp-2);
+  border-radius: var(--radius);
+  background: var(--wash-3);
+  color: var(--ink-3);
+}
+
+/* Selected row's highlight (rgba(80,160,255,.18), a link-blue distinct from
+   any state token) always shows; .pc-row:hover's paler tint intentionally
+   wins over it while the pointer is over the row (declared after
+   .is-selected, same specificity) — matches the pre-extraction behaviour,
+   where mouseenter unconditionally repainted the background regardless of
+   selection. */
+.pc-row.is-selected {
+  background: rgba(80, 160, 255, 0.18);
+}
+
+.pc-row:hover {
+  background: var(--wash-1-5); /* was 0.06 — Wave 2.6 --wash-1-5 */
+}
+
+/* ===========================================================================
+   PolyhedronInspector.js — bond-length/angle-variance summary + opacity
+   slider above the mini 3D render (PolyhedronMiniRenderer.js).
+   =========================================================================== */
+
+/* Forced-on-and-locked state for the "Show/Complete Polyhedra" toggle rows
+   while the inspector is open — .toggle_row itself is toggle_styles.css's
+   (out of scope here); this only adds the modifier. */
+.toggle_row.is-forced-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pi-forced-notice {
+  font-size: var(--fs-xs); /* 10.5px, in the --fs-xs audit cluster */
+  color: var(--info-tint); /* was #cfe6ff — Wave 2.6 exact */
+  background: rgb(var(--blue-accent-fill-rgb) / 0.15);
+  border: 1px solid rgb(var(--blue-accent-rgb) / 0.4); /* same blue-accent family as .si-wyckoff-badge */
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+
+.pi-viewport {
+  min-height: 260px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--wash-0); /* was 0.03 — Wave 2.6 --wash-0 */
+}
+
+.pi-opacity-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-3) var(--sp-3);
+  font-size: var(--fs-sm); /* 11.5px */
+  color: var(--ink-3);
+}
+
+.pi-opacity-text {
+  flex: 0 0 auto;
+}
+
+.pi-opacity-slider {
+  flex: 1;
+}
+
+.pi-opacity-label {
+  width: 34px;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+.pi-summary-empty {
+  padding: var(--sp-3-5);
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.pi-summary-grid {
+  font-size: var(--fs-sm); /* 11.5px */
+  color: var(--ink-4);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--sp-3-5);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.pi-summary-key {
+  color: var(--ink-2);
+}
+
+.pi-summary-val {
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+/* ===========================================================================
+   PolyhedronMiniRenderer.js — standalone mini 3D viewport (its own WebGL
+   canvas layered over whatever container the caller hands it, PolyhedronInspector's
+   #piViewport). Sizing (renderer.setSize) stays in JS — it's computed from
+   the container's live clientWidth/clientHeight — only the constant
+   position/layout CSS moves here.
+   =========================================================================== */
+
+.pi-mini-container {
+  position: relative;
+}
+
+.pi-mini-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ===========================================================================
+   AnalysisPanels/bondDistanceLabels.js — floating "X.XXX Å" labels at each
+   highlighted bond's midpoint. A deliberate visual override of every
+   property .measure-label (styles.css) sets by default: a plain white/black
+   label instead of the Measure tool's dark/blue-bordered one, applied on top
+   of the shared class for structural behaviour (pointer-events, position).
+   =========================================================================== */
+.bond-distance-label {
+  background: var(--overlay-light);
+  border: 2px solid var(--label-ink);
+  color: var(--label-ink);
+  font-weight: 700; /* one-off emphasis, not the app's --fw-bold (600) */
+  font-size: var(--fs-base);
+  padding: 2px var(--sp-2);
+  border-radius: var(--radius-4);
+}
+
+/* ===========================================================================
+   render/TracerProgressModule.js — thin accumulation-progress strip along
+   the top of the 3D view for the ray/path-tracing pipelines. Position (left/
+   top/width, mirrored from #view's live bounding rect) and the fill's
+   width/opacity (sample fraction, fade timing) stay inline in JS — genuinely
+   computed per frame; only the constant box/stacking styling moves here.
+   =========================================================================== */
+.tracer-progress-bar {
+  position: fixed;
+  height: 3px;
+  /* Not var(--z-confirm): the app's own z-index audit (TOKENS.md) never
+     covered this file (render/, not docs/styles/*.css), so 3100 matching
+     --z-confirm's value is coincidence, not a shared stacking role — see
+     this file's header comment for why 3100 specifically (just above the
+     PNG-export backdrop's 3000). Left literal rather than coupling two
+     unrelated layers to one token by accident. */
+  z-index: 3100;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s;
+  background: var(--track-bg);
+}
+
+.tracer-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--highlight-color);
+  transition: width 0.15s linear;
+}
+
+/* Indeterminate "Compiling…" marquee (showTracerCompiling in
+   TracerProgressModule.js). Previously injected via a document.head
+   <style id="tracerCompileAnim"> — @keyframes can't live on a style
+   attribute, but a real stylesheet doesn't have that restriction. */
+@keyframes tracerCompileSlide {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+
+/* ===========================================================================
+   PeriodicTableSelectPanel.js / PeriodicTableSelectTwoPanel.js — the shared
+   element-picker popup (single-element / bond-pair variants build the same
+   shell). Per-element colours (PeriodicTablePickerCore.js's category
+   borderColors, or the structure's own atom colours in the Two-element
+   variant) are data, not constants: JS keeps setting border-color/color and
+   the --tile-glow custom property per tile; everything else here is the
+   fixed shell both files share.
+   =========================================================================== */
+.pt-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  /* Popup surface, not a widget wash: this is appended to <body> and floats
+     over the scene, so it needs the opaque --popup-bg the sibling
+     .cv-cus-popup already uses. --chrome-1 is a 5%-alpha tint in the light
+     palettes — correct inside an already-opaque panel, but here it made the
+     whole table see-through. */
+  background-color: var(--popup-bg, var(--chrome-1));
+  color: var(--panel-fg, var(--fg-1));
+  border: 1px solid var(--popup-border, var(--chrome-2-5));
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius);
+  z-index: var(--z-dock-pane); /* was 1300 — exact value match, no stacking change */
+  padding: var(--sp-5); /* 15px in the source, 1px from --sp-5 — see TOKENS.md's
+    "10px/15px question": a documented safe snap, not a judgment call */
+  font-family: var(--font-ui); /* was a stray literal "Arial, sans-serif" */
+  width: 600px;
+}
+
+.pt-heading {
+  margin: 0 0 var(--sp-3-5) 0;
+  text-align: center;
+}
+
+.pt-grid-main {
+  display: grid;
+  grid-template-columns: repeat(18, 30px);
+  gap: 2px;
+  justify-content: center;
+  margin-bottom: var(--sp-3-5);
+}
+
+.pt-grid-15 {
+  display: grid;
+  grid-template-columns: repeat(15, 30px);
+  gap: 2px;
+  justify-content: center;
+}
+
+/* PeriodicTableSelectPanel.js applies this to the lanthanide row only (the
+   actinide row below it has no bottom margin); PeriodicTableSelectTwoPanel.js
+   shares one row-builder for both and applies it to both — each file's own
+   original layout, not unified here. 5px has no exact --sp rung (equidistant
+   between --sp-1/4px and --sp-2/6px), so it stays literal rather than nudge
+   the layout either direction. */
+.pt-grid-15-mb {
+  margin-bottom: 5px;
+}
+
+.pt-tile-empty {
+  width: 30px;
+  height: 30px;
+}
+
+.pt-tile {
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: 2px solid; /* colour set inline per element */
+  color: var(--fg-1); /* PeriodicTableSelectTwoPanel.js overrides this per tile;
+    PeriodicTableSelectPanel.js's single-element tiles never do — text stays
+    white there regardless of the border's category colour */
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: var(--radius-3);
+  font-size: var(--fs-base);
+  position: relative;
+  z-index: 1;
+  opacity: 1;
+  /* Hairline just inside the category colour, so a tile whose colour has no
+     contrast left on a light popup (the alkaline-earth yellow) still reads as
+     a tile. Inset, so it never paints over the colour itself; transparent in
+     the dark palettes — see --tile-edge in themes/default/theme.css. */
+  box-shadow: inset 0 0 0 1px var(--tile-edge);
+}
+
+.pt-tile:disabled {
+  border-width: 1px;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Hover glow uses the same --tile-glow custom property JS sets once per tile
+   at creation (the element's category/species colour) — excluded for
+   disabled tiles (never had a hover handler originally) and for the
+   currently-selected tile (its own persistent .is-selected glow must not be
+   replaced while hovered, matching the original mouseover guard). */
+.pt-tile:not(:disabled):not(.is-selected):hover {
+  transform: scale(1.2);
+  box-shadow: inset 0 0 0 1px var(--tile-edge), 0 0 12px var(--tile-glow);
+  z-index: 2;
+}
+
+.pt-tile.is-selected {
+  box-shadow: inset 0 0 0 1px var(--tile-edge), 0 0 10px var(--tile-glow);
+  transform: scale(1.1);
+}
+
+.pt-close-row {
+  text-align: center;
+  margin-top: var(--sp-3-5);
+}
+
+.pt-btn {
+  padding: 5px var(--sp-5); /* 15px, see --pt-popup padding note above */
+  background: var(--chrome-2-5); /* was #333 — Wave 2.6 exact */
+  border: 1px solid var(--chrome-5); /* was #555 — exact --chrome-5 */
+  color: var(--fg-1);
+  cursor: pointer;
+  border-radius: var(--radius-4);
+}
+
+.pt-btn:disabled {
+  cursor: not-allowed;
+}
+
+/* Two-element (bond-pair) picker: confirm + close share a row, and the
+   confirm button recolors once two elements are chosen (native :disabled
+   drives the CSS instead of JS toggling background/border/cursor inline). */
+.pt-btn-row {
+  text-align: center;
+  margin-top: var(--sp-3-5);
+  display: flex;
+  justify-content: center;
+  gap: var(--sp-3-5);
+}
+
+.pt-confirm-btn:not(:disabled) {
+  background: var(--confirm-bg);
+  border-color: var(--confirm-border);
+  cursor: pointer;
+}
+
+.pt-selected-row {
+  display: flex;
+  justify-content: center;
+  gap: var(--sp-3-5);
+  margin: var(--sp-3-5) 0;
+  min-height: 40px;
+}
+
+.pt-selected-pair {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.pt-selected-tile {
+  width: 36px;
+  height: 36px;
+  border: 2px solid; /* colour set inline per element */
+  background: transparent;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: bold; /* literal, not --fw-bold(600) — matches the pre-existing
+    rendered weight; TOKENS.md leaves literal "bold" untokenised */
+  font-size: var(--fs-lg);
+  border-radius: var(--radius-4);
+  box-shadow: inset 0 0 0 1px var(--tile-edge); /* same reason as .pt-tile —
+    these carry the structure's own atom colours, and a pale one has nothing
+    left on a light popup */
+}
+
+.pt-selected-dash {
+  font-size: var(--fs-xl);
+  font-weight: bold;
+}
+
+/* Single-element picker's compact selected-element readout (top-left of the
+   popup): #selectedElementDisplay + its four absolutely-positioned fields. */
+.pt-selected-display {
+  display: none;
+  position: absolute;
+  top: 55px;
+  left: 40%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 60px;
+  background: rgb(var(--shadow-rgb) / 0.8); /* black-alpha fill, not a shadow — same shadow-rgb composition pattern used elsewhere */
+  border-radius: var(--radius);
+  padding: var(--sp-1);
+  text-align: center;
+  z-index: var(--z-dock-handle); /* was 1301 — exact value match, no stacking change */
+  box-sizing: border-content; /* invalid value, pre-existing — browsers drop
+    it and fall back to the box-sizing default; kept verbatim, not a target
+    of this refactor */
+  border: 2px solid transparent;
+}
+
+.pt-selected-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.pt-selected-number {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-normal);
+}
+
+.pt-selected-symbol {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-weight: bold; /* literal, not --fw-bold(600) — see .pt-selected-tile note */
+  font-size: 24px; /* no --fs rung covers 24px — documented outlier in TOKENS.md */
+}
+
+.pt-selected-name {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-normal);
+}
+
+.pt-selected-mass {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-normal);
+}
+
+/* ===========================================================================
+   BackendPanel/BackendSwitchPanel.js — the "unsaved changes" warning banner
+   (addErrorPanel/showWarning). .acceptBtn/.denyBtn's own base rules live in
+   backendPanel.css (out of scope here); the compound selectors below only
+   add this banner's own overrides (flex sizing, and Deny's danger tint) on
+   top, matching what the inline styles used to do.
+   =========================================================================== */
+.backend-error-panel {
+  position: fixed;
+  top: 20%;
+  left: var(--popup-left);
+  background: var(--chrome-1-9);
+  color: var(--fg-1);
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--radius-md);
+  /* Matches Wave1's target --z-tooltip role (its own audit names "backend-
+     switch banner" as a --z-tooltip member) but this call site wasn't in
+     Wave2.5's literal-preserving ladder, so substituting the token would
+     silently drop 99999 to 5000 — a real stacking change. Left literal. */
+  z-index: 99999;
+  font-family: var(--font-ui); /* TOKENS.md names this exact site as one of
+    --font-ui's two "bare duplicates" */
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3-5);
+  max-width: 300px;
+}
+
+.backend-error-header {
+  justify-content: center;
+  display: flex;
+}
+
+.backend-error-msg {
+  line-height: 1.6; /* outside the --lh-normal (1.3-1.5) audit cluster */
+}
+
+.backend-error-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3-5);
+}
+
+.acceptBtn.backend-error-accept-btn,
+.denyBtn.backend-error-deny-btn {
+  flex: 1;
+  font-size: var(--fs-base);
+}
+
+.denyBtn.backend-error-deny-btn {
+  background: rgb(var(--danger-rgb) / 0.9);
+}
+
+/* ===========================================================================
+   BackendPanel/MDStreamPanel.js — live WebSocket MD-stream panel. Extracted
+   from a document.head-independent <style> block embedded in the panel's own
+   innerHTML template (rebuilt fresh on every addMDStreamPanel() call, so the
+   old approach re-inserted an identical duplicate <style> tag each time).
+   =========================================================================== */
+.md-stream-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.md-stream-dot--connected {
+  background: #4caf50;
+  box-shadow: 0 0 6px #4caf5088;
+}
+
+.md-stream-dot--disconnected {
+  background: var(--chrome-5);
+}
+
+.md-stream-dot--error {
+  background: #f44336;
+  box-shadow: 0 0 6px #f4433688;
+}
+
+.md-stream-msg {
+  font-size: var(--fs-sm);
+  color: var(--text-muted, var(--ink-2)); /* --text-muted is undefined anywhere, so the fallback (#999, exact --ink-2) is what actually renders */
+  margin-top: var(--sp-1);
+}
+
+.md-stream-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.md-stream-stat-label {
+  font-size: var(--fs-xs);
+  color: var(--ink-1);
+}
+
+.md-stream-stat-value {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+}
+
+.md-stream-info {
+  font-size: var(--fs-sm);
+  color: var(--ink-1);
+  line-height: 1.8; /* outside the --lh-normal (1.3-1.5) audit cluster */
+}
+
+.md-stream-info-note {
+  margin-top: var(--sp-2);
+}
+
+/* ===========================================================================
+   ui/ComparisonPanel.js — Comparison controls (bond visibility for the
+   comparison structure, lattice-comparison popup toggle, main/comparison
+   opacity split slider). The toggles are the stock .toggle_switch pill
+   (styles/toggle_styles.css, built by ui/ToggleSwitch.js); only the row
+   spacing and label margin are this panel's own.
+   =========================================================================== */
+
+.cmp-toggle-row {
+  display: flex;
+  align-items: center;
+  margin: var(--sp-3-5) 0; /* 10px */
+}
+
+.cmp-toggle-label {
+  margin-left: var(--sp-3-5); /* 10px */
+}
+
+.cmp-comparison-error {
+  font-size: var(--fs-base); /* 12px */
+  color: var(--danger-bright);
+  margin: 0 0 var(--sp-3-5) 0; /* 10px */
+  /* Closed by default — addCompPanel() only ever sets display:'block' when
+     there's an error to show (this element is rebuilt from scratch on every
+     call, so there's no separate "hide again" code path to preserve). */
+  display: none;
+}
+
+.cmp-opacity-container {
+  display: flex;
+  flex-direction: column;
+  margin: var(--sp-5) 0; /* 15px in source — sanctioned snap to --sp-5, see TOKENS.md */
+  width: 100%;
+}
+
+.cmp-opacity-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px; /* off-grid, no sanctioned snap */
+  font-size: var(--fs-base); /* 12px */
+  color: var(--ink-3); /* #ccc */
+}
+
+.cmp-opacity-label--left { text-align: left; }
+.cmp-opacity-label--right { text-align: right; }
+
+.cmp-opacity-slider {
+  width: 100%;
+  margin: 5px 0; /* off-grid, no sanctioned snap */
+}
+
+.cmp-polyhedra-note {
+  font-size: var(--fs-base); /* 12px */
+  color: var(--ink-3); /* #ccc */
+  font-style: italic;
+  margin: 5px 0 var(--sp-3-5) 0; /* 5px literal, 10px -> --sp-3-5 */
+}
+
+/* ===========================================================================
+   ui/LatticeComparisonPanel.js — one radar-plot + collapsible-table block per
+   overlay structure, stacked in the (scrollable) "Lattice Comparison" popup.
+   Table row/canvas geometry that's genuinely computed (canvas backing-buffer
+   resolution from devicePixelRatio, the radar plot's Canvas-2D draw colours)
+   stays in JS — Canvas 2D API calls aren't CSS and can't take var() anyway.
+   =========================================================================== */
+
+.lcmp-table-cell {
+  padding: 2px 5px; /* off-grid, no sanctioned snap */
+  border-bottom: 1px solid var(--chrome-4); /* #444, a documented chrome-4 near-duplicate */
+}
+
+.lcmp-block {
+  margin: 0 0 14px 0; /* 14px, no rung / not the sanctioned 15px snap */
+  padding-bottom: var(--sp-4); /* 12px */
+  border-bottom: 1px solid var(--wash-4); /* 0.15 */
+}
+
+.lcmp-heading {
+  font-weight: var(--fw-bold); /* 600 */
+  font-size: var(--fs-base); /* 12px */
+  text-align: center;
+  margin-bottom: var(--sp-1); /* 4px */
+  color: var(--ink-4); /* #ddd */
+}
+
+/* Displayed box size is the one constant part of this canvas's sizing — the
+   backing-buffer resolution (canvas.width/height) is genuinely computed from
+   the live devicePixelRatio and stays set in JS on every render. */
+.lcmp-radar-canvas {
+  display: block;
+  margin: var(--sp-2) auto 0 auto; /* 6px */
+  width: 320px;
+  height: 320px;
+}
+
+.lcmp-collapsible {
+  width: 100%;
+  margin: var(--sp-3-5) auto 0 auto; /* 10px */
+}
+
+.lcmp-toggle-btn {
+  width: 100%;
+  background: var(--chrome-2-5); /* was #333 — Wave 2.6 exact */
+  border: none;
+  color: var(--fg-1);
+  cursor: pointer;
+  padding: 5px; /* off-grid, no sanctioned snap */
+}
+
+.lcmp-content {
+  padding: 5px; /* off-grid, no sanctioned snap */
+  /* display:block/none is toggled entirely in JS (toggleBtn's click handler
+     branches on content.style.display) — not extracted to a class toggle,
+     since JS already sets both states explicitly on every path. */
+}
+
+.lcmp-table {
+  width: 100%;
+  font-size: var(--fs-base); /* 12px */
+  border-collapse: collapse;
+}
+
+.lcmp-table-head {
+  border-bottom: 1px solid var(--chrome-5); /* #555, exact match */
+  padding: 2px 5px; /* off-grid, no sanctioned snap */
+  color: var(--fg-1);
+  text-align: left;
+}
+
+.lcmp-popup {
+  background-color: var(--chrome-1); /* was #222 — Wave 2.6 near-dup fold */
+  color: var(--fg-1);
+  padding: var(--sp-3-5); /* 10px */
+  max-height: 80dvh; /* dvh, not vh — tracks the mobile URL bar (defect 2 of the mobile audit) */
+  overflow-y: auto;
+}
+
+/* ===========================================================================
+   ui/CutPlanePanel.js — atom cut-plane list + slider editor, hosted inside
+   the Trajectory/Comparison container. maxAbsCoordinate (data-derived slider
+   range) and plane values themselves stay in JS; only the constant box/type
+   styling below moved out.
+   =========================================================================== */
+
+.cutplane-panel {
+  margin-top: var(--sp-3-5); /* 10px */
+  padding: var(--sp-3-5); /* 10px */
+  border-radius: var(--radius-md); /* 10px, exact */
+  background: var(--wash-0); /* was 0.03 — Wave 2.6 --wash-0 */
+  border: 1px solid var(--wash-2); /* 0.08, exact */
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.cutplane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3-5); /* 10px */
+  margin-bottom: var(--sp-3); /* 8px */
+}
+
+.cutplane-title {
+  font-size: var(--fs-md); /* 13px */
+  font-weight: var(--fw-bold); /* 600 */
+  color: var(--ink-6); /* was #f3f3f3 — Wave 2.6 near-dup fold (2 units from --ink-6) */
+}
+
+.cutplane-add-btn {
+  height: 28px;
+  padding: 0 var(--sp-3-5); /* 10px */
+  font-size: var(--fs-sm); /* 11px */
+}
+
+.cutplane-hint {
+  font-size: var(--fs-xs); /* 10px */
+  color: var(--fg-2); /* was 0.62 — 0.02 from --fg-2, folds there (Wave 2.6) */
+  margin-bottom: var(--sp-3); /* 8px */
+  line-height: var(--lh-normal); /* 1.35 is in the documented 1.4 reading-line-height cluster */
+}
+
+.cutplane-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3); /* 8px */
+}
+
+.cutplane-editor {
+  margin-top: var(--sp-3-5); /* 10px */
+  padding-top: var(--sp-3-5); /* 10px */
+  border-top: 1px solid var(--wash-2); /* 0.08, exact */
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3); /* 8px */
+}
+
+/* Shared by both "nothing to show" messages (renderEditor's "Add a plane…"
+   and renderPlaneRows' "No cut planes") — identical styling in the source. */
+.cutplane-empty {
+  font-size: var(--fs-sm); /* 11px */
+  color: var(--fg-2); /* 0.55 is in the documented --fg-2 audit cluster */
+}
+
+.cutplane-selected-label {
+  font-size: var(--fs-sm); /* 11px */
+  font-weight: var(--fw-bold); /* 600 */
+  color: var(--ink-6); /* was #f3f3f3 — see .cutplane-title */
+}
+
+.cutplane-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3); /* 8px */
+  flex-wrap: wrap;
+}
+
+.cutplane-enabled-label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2); /* 6px */
+  font-size: var(--fs-sm); /* 11px */
+  color: var(--ink-4); /* #ddd */
+}
+
+.cutplane-side-select {
+  height: 28px;
+  min-width: 88px;
+  background: rgb(var(--shadow-rgb) / 0.28); /* rgba(0,0,0,0.28) via the shared bare triple */
+  color: var(--fg-1);
+  border: 1px solid var(--wash-3); /* 0.12, exact */
+  border-radius: var(--radius-sm); /* 6px */
+}
+
+.cutplane-slider-row {
+  display: grid;
+  grid-template-columns: 18px 1fr 56px;
+  gap: var(--sp-3); /* 8px */
+  align-items: center;
+}
+
+.cutplane-slider-label {
+  font-size: var(--fs-sm); /* 11px */
+  color: var(--ink-4); /* #ddd */
+  font-weight: var(--fw-bold); /* 600 */
+}
+
+.cutplane-slider-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.cutplane-value-input {
+  height: 28px;
+  width: 56px;
+  padding: var(--sp-1) var(--sp-2); /* 4px 6px, exact */
+  background: rgb(var(--shadow-rgb) / 0.28);
+  color: var(--fg-1);
+  border: 1px solid var(--wash-3); /* 0.12, exact */
+  border-radius: var(--radius-sm); /* 6px */
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.cutplane-plane-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: var(--sp-3); /* 8px */
+  align-items: center;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3); /* 6px 8px, exact */
+  border-radius: var(--radius); /* 8px */
+  box-sizing: border-box;
+  background: var(--wash-0); /* was 0.02 — Wave 2.6 --wash-0 */
+  border: 1px solid var(--wash-1-5); /* was 0.06 — Wave 2.6 --wash-1-5 */
+}
+
+/* Selected-state green — a distinct accent from --ok/--wash, no matching
+   token (same "flag, don't invent" call as elsewhere in this pass). Also
+   recolours the row's own select button (below) via descendant selector,
+   replacing what was an inline ternary on selectButton's own color. */
+.cutplane-plane-row.is-selected {
+  background: rgba(17, 128, 57, 0.16);
+  border-color: rgba(17, 128, 57, 0.45);
+}
+
+.cutplane-row-checkbox {
+  margin: 0;
+}
+
+.cutplane-row-body {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cutplane-select-btn {
+  border: none;
+  background: transparent;
+  color: var(--fg-85); /* was 0.86 — Wave 2.6 --fg-85 */
+  text-align: left;
+  min-width: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.cutplane-plane-row.is-selected .cutplane-select-btn {
+  color: #e9fff1;
+}
+
+.cutplane-summary {
+  font-size: var(--fs-xs); /* 10px */
+  color: var(--fg-2); /* was 0.62 — see .cutplane-hint */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+.cutplane-remove-btn {
+  height: 28px;
+  padding: 0 var(--sp-3); /* 8px */
+  font-size: var(--fs-sm); /* 11px */
+  min-width: 64px;
+}
+
+/* ===========================================================================
+   ui/FieldPanel.js — volumetric-field (isosurface) controls. Almost all of
+   this panel's markup already uses shared classes (.control-group,
+   .toggle_row, .spin-toggle, …) defined elsewhere; only two inline
+   `style="…"` attributes in the color-controls template were local to this
+   file.
+   =========================================================================== */
+
+.field-color-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3); /* 8px */
+}
+
+.field-opacity-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3); /* 8px */
+}
+
+/* ===========================================================================
+   LatticeSupercellPanel.js — Cell & Supercell panel: the Supercell,
+   Vacuum, Order Structure and Lattice Transformation sections in the
+   "cell" tab. Extracted from element.style.cssText / template-string
+   style="…" attributes that were always constant (no per-render data).
+   `.lsc-*` prefix.
+   =========================================================================== */
+
+.lsc-group {
+  padding: 2px;
+}
+
+/* --- Order Structure section --- */
+
+.lsc-hint-text {
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  margin: 0 0 var(--sp-3) 0;
+  line-height: var(--lh-normal);
+}
+
+.lsc-sample-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.lsc-field-label {
+  font-size: var(--fs-sm);
+  /* 0.7 was between --fg-2 (0.6) and --fg-3 (0.4) with no match until Wave
+     2.6 added --fg-75 for the 0.7-0.8 cluster. */
+  color: var(--fg-75);
+}
+
+/* Shared chrome for the panel's compact text/number/select fields (order
+   sample count, order size select, vacuum X/Y/Z). Per-field sizing is a
+   modifier class layered on top, since width/flex differ per field. */
+.lsc-compact-input {
+  background: var(--chrome-2-5); /* was #333 — Wave 2.6 exact */
+  border: 1px solid var(--chrome-5);
+  color: var(--fg-1);
+  padding: 3px;
+  height: 24px;
+  box-sizing: border-box;
+}
+
+.lsc-sample-count-input {
+  width: 48px;
+  text-align: center;
+}
+
+.lsc-size-select {
+  flex: 1;
+  min-width: 90px;
+  font-size: var(--fs-sm);
+}
+
+.lsc-btn-pair-row {
+  display: flex;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+.lsc-build-row-btn {
+  padding: 5px var(--sp-3-5);
+}
+
+/* Tiny reusable utility: only the Build button (of the Build/Majority pair)
+   and three of the four result-action buttons need flex:1. */
+.lsc-flex-1 {
+  flex: 1;
+}
+
+.lsc-status-text {
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  margin-bottom: var(--sp-2);
+  line-height: var(--lh-normal);
+}
+
+.lsc-results-actions-row {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.lsc-result-btn {
+  padding: 5px var(--sp-3);
+}
+
+/* --- Vacuum section --- */
+
+.lsc-vacuum-wrap {
+  margin-bottom: var(--sp-3-5);
+}
+
+.lsc-vacuum-axes-row {
+  display: flex;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-3-5);
+}
+
+.lsc-vacuum-axis {
+  display: flex;
+  align-items: center;
+  gap: 5px; /* off-grid, not a sanctioned snap (TOKENS.md) — kept literal */
+  flex: 1;
+  min-width: 0;
+}
+
+.lsc-vacuum-axis label {
+  white-space: nowrap;
+}
+
+/* Combines with .lsc-compact-input for the shared field chrome. */
+.lsc-vacuum-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.lsc-btn-center-row {
+  display: flex;
+  justify-content: center;
+}
+
+.lsc-apply-vacuum-btn {
+  padding: 5px 14px; /* neither value has a rung; kept literal */
+  background: var(--bg-color);
+  color: var(--fg-1);
+  cursor: pointer;
+}
+
+.lsc-vacuum-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3-5);
+  font-size: var(--fs-sm);
+  color: var(--fg-75); /* was 0.7 — see .lsc-field-label */
+  border-top: 1px solid var(--line-1);
+  padding-top: var(--sp-3);
+}
+
+.lsc-reset-vacuum-btn {
+  padding: 3px var(--sp-3-5);
+  font-size: var(--fs-sm);
+}
+
+/* --- Supercell section --- */
+
+.lsc-supercell-row {
+  display: flex;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  justify-content: center;
+}
+
+.lsc-supercell-input {
+  width: 50px;
+  text-align: center;
+  border: none;
+  border-radius: var(--radius-4);
+  background: var(--input-bg);
+  color: var(--fg-1);
+  font-family: var(--font-mono);
+  padding: 3px;
+}
+
+/* Shared by the Supercell and Transformation button rows (identical rule). */
+.lsc-btn-row {
+  display: flex;
+  gap: var(--sp-3);
+  justify-content: center;
+}
+
+/* Shared by all four Apply/Reset buttons (Supercell + Transformation). */
+.lsc-panel-btn {
+  height: 32px;
+  padding: 0 var(--sp-3-5);
+  font-size: var(--fs-sm);
+  margin-right: var(--sp-1);
+  min-width: 80px;
+}
+
+/* --- Lattice Transformation section --- */
+
+.lsc-transform-matrix-container {
+  margin-bottom: var(--sp-3);
+}
+
+.lsc-transform-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-base);
+}
+
+.lsc-transform-cell {
+  padding: 2px; /* off-grid, kept literal */
+}
+
+/* 4th column only (the translation vector p), divides it from the 3x3 P
+   block — was a conditional string built per-loop-iteration in JS; the
+   condition (column index) is structural, not runtime state, so it's now a
+   plain class toggle at element-creation time. */
+.lsc-transform-cell-p {
+  border-left: 1px solid var(--popup-border); /* was rgba(255,255,255,0.3) — exact match to the existing token */
+}
+
+.lsc-transform-input {
+  width: 60px;
+  text-align: center;
+  font-family: var(--font-mono);
+  padding: 2px;
+  /* rgba(0,0,0,0.2) as an input fill, not a shadow — TOKENS.md's own
+     example for this exact case. */
+  background: rgb(var(--shadow-rgb) / 0.2);
+  border: 1px solid var(--line-1);
+  color: var(--fg-1);
+}
+
+/* ===========================================================================
+   PolyhedraListPanel.js — Structure window's "Poly" tab: category rows
+   (visibility/color/alpha/edge editor) plus the lazily-built individual-
+   polyhedron list per category. `.phl-*` prefix. Existing shared classes
+   (`bond-control`, `bond-checkbox`, `poly-control`, `poly-cat-editor`,
+   `poly-expand-icon`, `poly-count`, `individual-polyhedra`, `.dot`,
+   `reset-btn`, `btn-mini`) are kept as-is (still used as query selectors
+   elsewhere) — these new classes are layered alongside them for the extra
+   inline styling only.
+   =========================================================================== */
+
+.phl-hint {
+  font-size: var(--fs-base);
+  color: var(--fg-2);
+  padding: var(--sp-3) 0;
+  text-align: center;
+}
+
+.phl-enable-wrapper {
+  display: flex;
+  justify-content: center;
+}
+
+.phl-enable-btn {
+  font-size: var(--fs-base);
+  height: 22px; /* no rung, kept literal */
+}
+
+/* Matches --fs-lg's own definition (calc(14px * var(--cv-font-scale,1))) —
+   was hand-duplicated inline; using the token instead of a manual calc(). */
+.phl-cat-label {
+  color: var(--ink-3);
+  margin: 0;
+  cursor: pointer;
+  font-size: var(--fs-lg);
+}
+
+.phl-count-label {
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+  margin-left: auto;
+}
+
+/* transform: rotate(0deg) is the icon's own closed-state default; the
+   togglePolyList() handler in JS still sets rotate(0deg)/rotate(90deg)
+   explicitly on every click (both directions), so this default is a no-op
+   until the first click and otherwise inert — safe to move, zero risk. */
+.phl-expand-icon {
+  margin-left: var(--sp-1);
+  font-size: var(--fs-lg);
+  transition: transform 0.2s ease;
+  color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
+  transform: rotate(0deg);
+  cursor: pointer;
+}
+
+.phl-cat-dot {
+  width: 20px; /* no rung, kept literal */
+  height: 20px;
+  margin-right: var(--sp-2);
+  border: 1px solid var(--fg-3);
+  cursor: pointer;
+}
+
+/* display:none is the editor's closed-state default; dot.onclick and
+   togglePolyList() still explicitly set 'block'/'none' at runtime — same
+   zero-risk pattern as the display:none defaults elsewhere in this file. */
+.phl-cat-editor {
+  display: none;
+  margin-top: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--wash-0); /* was 0.02 — Wave 2.6 --wash-0 */
+  border: 1px solid var(--wash-1);
+  border-radius: var(--radius-sm);
+}
+
+/* Shared by the Alpha row and the Edge alpha row (identical rule). */
+.phl-slider-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-2) 0;
+}
+
+.phl-alpha-label {
+  font-size: var(--fs-sm);
+  color: var(--fg-85); /* was 0.82 — Wave 2.6 --fg-85 */
+  min-width: 34px;
+}
+
+.phl-edge-alpha-label {
+  font-size: var(--fs-sm);
+  color: var(--fg-85); /* was 0.82 — Wave 2.6 --fg-85 */
+  min-width: 58px;
+}
+
+.phl-alpha-slider {
+  flex: 1;
+}
+
+/* Shared by the Alpha and Edge-alpha number inputs (identical rule). */
+.phl-alpha-value-input {
+  width: 56px;
+  height: 28px;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+  /* rgba(0,0,0,0.25) fill, not a shadow — same shadow-rgb composition
+     pattern as .lsc-transform-input above. */
+  background: rgb(var(--shadow-rgb) / 0.25);
+  border: 1px solid var(--line-1);
+  /* Blue-tinted near-white — Wave 2.6 added --info-tint, which absorbs this
+     exact literal. */
+  color: var(--info-tint);
+  font-size: var(--fs-sm);
+}
+
+.phl-edge-header {
+  font-size: var(--fs-sm);
+  color: var(--fg-85); /* was 0.82 — Wave 2.6 --fg-85 */
+  margin-top: var(--sp-3);
+}
+
+/* Shared by the category Reset and Apply buttons (identical rule). */
+.phl-cat-square-btn {
+  height: 32px;
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-sm);
+  min-width: 50px;
+  width: 50px;
+}
+
+.phl-cat-button-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+/* display:none is the list's closed-state default; togglePolyList() still
+   explicitly sets 'block'/'none' on every expand/collapse — zero-risk. */
+.phl-individual-list {
+  display: none;
+  margin-left: 20px; /* no rung, kept literal */
+  margin-top: var(--sp-3);
+  border-left: 2px solid var(--line-1);
+  padding-left: var(--sp-3);
+}
+
+.phl-empty-list-msg {
+  font-size: var(--fs-sm);
+  color: var(--fg-50); /* was 0.5 — Wave 2.6 --fg-50 */
+  padding: var(--sp-1) 0;
+}
+
+.phl-reset-colors-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px; /* no rung and not the sanctioned 15px->sp-5 snap, kept literal */
+}
+
+.phl-reset-colors-btn {
+  height: 32px;
+  padding: 0 var(--sp-3-5);
+  font-size: var(--fs-sm);
+  min-width: 50px;
+}
+
+/* ===========================================================================
+   PlanesPanel.js — very few style touches (most of the panel's markup
+   already used the established `.planes-*` family living in
+   controlPanel.css). Only a handful of always-constant inline `style="…"`
+   attributes remained. Kept in the SAME `.planes-*` naming family as
+   controlPanel.css's existing rules.
+
+   `.planes-table` / `.planes-params-section` / `.planes-field-section`
+   already have a base rule in controlPanel.css (layout/spacing, no
+   `display` set there). analysisPanels.css loads AFTER controlPanel.css
+   (see docs/index.html), so these blocks only ADD `display: none` as the
+   closed-state default — they layer onto the existing rule rather than
+   replacing it; no edit to controlPanel.css needed. The show/hide toggle in
+   PlanesPanel.js's JS still explicitly sets 'block'/'table'/'none' at
+   runtime, unchanged. */
+
+.planes-table {
+  display: none;
+}
+
+.planes-params-section {
+  display: none;
+}
+
+.planes-field-section {
+  display: none;
+}
+
+#planesBarControlsRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin: var(--sp-1) 0;
+}
+
+.planes-log-scale-label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-base);
+  color: var(--fg-1);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#planesColorBarContainer {
+  width: 100%;
+  display: none; /* closed-state default; refreshPlaneColorBar() still sets 'block'/'none' at runtime */
+}

@@ -4,26 +4,29 @@
        .panelBody is shared with the MD monitor's content. */
 
     .panelBody {
-      padding: 12px 12px 14px;
+      padding: var(--sp-4) var(--sp-4) 14px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: var(--sp-4);
     }
 
     /* .controlsRow / generic select+input styling are shared with BondLengthPanel. */
     .controlsRow {
       display: flex;
-      gap: 8px;
+      gap: var(--sp-3);
       flex-wrap: wrap;
       justify-content: center;
     }
 
     select, input[type=number] {
-      padding: 4px;
-      border-radius: 6px;
-      background: #3a3a3a;
-      color: white;
-      border: none;
+      padding: var(--sp-1);
+      border-radius: var(--radius-sm);
+      background: var(--chrome-3);
+      color: var(--fg-1);
+      /* Was border:none, which left the field relying entirely on --chrome-3
+         being distinguishable from whatever box it sits in. It wasn't, in any
+         palette whose group boxes are not neutral grey. */
+      border: 1px solid var(--line-2);
       box-sizing: border-box;
       text-align: center;
     }
@@ -32,7 +35,7 @@
     .trajTransport {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--sp-3);
     }
 
     .trajBtn {
@@ -42,18 +45,18 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      background: #2c2c2e;
-      color: #e8e8e8;
-      border: 1px solid #3a3a3c;
+      background: var(--chrome-2);
+      color: var(--ink-5);
+      border: 1px solid var(--chrome-3);
       border-radius: 7px;
       cursor: pointer;
-      font-size: 13px;
-      line-height: 1;
+      font-size: var(--fs-md);
+      line-height: var(--lh-tight);
       padding: 0;
       transition: background 0.12s ease, border-color 0.12s ease;
     }
-    .trajBtn:hover { background: #3a3a3c; border-color: #4a4a4c; }
-    .trajBtn:active { background: #454547; }
+    .trajBtn:hover { background: var(--chrome-3); border-color: var(--chrome-4); }
+    .trajBtn:active { background: var(--chrome-4); }
     .trajBtn:disabled { opacity: 0.4; cursor: default; }
 
     /* Play is the primary action: circular accent, anchoring the square
@@ -62,15 +65,15 @@
       width: 36px;
       height: 36px;
       border-radius: 50%;
-      background: #2e9c6e;
-      border-color: #2e9c6e;
-      color: #0c1f17;
-      font-size: 14px;
-      box-shadow: 0 0 0 4px rgba(46, 156, 110, 0.12);
+      background: var(--ok);
+      border-color: var(--ok);
+      color: var(--on-accent);
+      font-size: var(--fs-lg);
+      box-shadow: 0 0 0 4px rgb(var(--ok-rgb) / 0.12);
     }
-    #playPauseBtn:hover { background: #37b07d; border-color: #37b07d; }
+    #playPauseBtn:hover { background: var(--ok); border-color: var(--ok); }
     #playPauseBtn:disabled {
-      background: #2c2c2e; border-color: #3a3a3c; color: #888; box-shadow: none;
+      background: var(--chrome-2); border-color: var(--chrome-3); color: var(--ink-1); box-shadow: none;
     }
 
     .trajSlider {
@@ -79,8 +82,8 @@
       height: 4px;
       -webkit-appearance: none;
       appearance: none;
-      background: #3a3a3c;
-      border-radius: 3px;
+      background: var(--chrome-3);
+      border-radius: var(--radius-3);
       outline: none;
       cursor: pointer;
       margin: 0;
@@ -91,16 +94,16 @@
       width: 14px;
       height: 14px;
       border-radius: 50%;
-      background: #2e9c6e;
-      border: 2px solid #d7f5e8;
+      background: var(--ok);
+      border: 2px solid var(--thumb-border);
       cursor: pointer;
     }
     .trajSlider::-moz-range-thumb {
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: #2e9c6e;
-      border: 2px solid #d7f5e8;
+      background: var(--ok);
+      border: 2px solid var(--thumb-border);
       cursor: pointer;
     }
 
@@ -109,15 +112,15 @@
       flex: 0 0 auto;
       min-width: 58px;
       text-align: right;
-      font-size: 12.5px;
-      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: var(--fs-md);
+      font-family: var(--font-mono);
       font-variant-numeric: tabular-nums;
       letter-spacing: 0.5px;
       white-space: nowrap;
     }
-    .trajFrameLabel .tfCur { color: #e8e8e8; font-weight: 600; }
-    .trajFrameLabel .tfSep { color: #5a5a5a; margin: 0 1px; }
-    .trajFrameLabel .tfTot { color: #7f7f7f; }
+    .trajFrameLabel .tfCur { color: var(--ink-5); font-weight: var(--fw-bold); }
+    .trajFrameLabel .tfSep { color: var(--chrome-5); margin: 0 1px; }
+    .trajFrameLabel .tfTot { color: var(--ink-1); }
 
     /* ---- Options row: speed + frame step ---- */
     .trajOptions {
@@ -131,27 +134,27 @@
       display: inline-flex;
       align-items: center;
       gap: 7px;
-      font-size: 9.5px;
-      font-weight: 600;
+      font-size: var(--fs-xs);
+      font-weight: var(--fw-bold);
       letter-spacing: 0.9px;
       text-transform: uppercase;
-      color: #7a7a7a;
+      color: var(--ink-1);
     }
     .trajOpt select,
     .trajOpt input[type=number] {
-      background: #2c2c2e;
-      color: #e8e8e8;
-      border: 1px solid #3a3a3c;
-      border-radius: 6px;
-      padding: 3px 6px;
-      font-size: 11px;
-      font-weight: 400;
+      background: var(--chrome-2);
+      color: var(--ink-5);
+      border: 1px solid var(--chrome-3);
+      border-radius: var(--radius-sm);
+      padding: 3px var(--sp-2);
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-normal);
       letter-spacing: normal;
       text-transform: none;
     }
     .trajOpt input[type=number] { width: 48px; }
     .trajOpt select:focus,
-    .trajOpt input:focus { border-color: #2e9c6e; outline: none; }
+    .trajOpt input:focus { border-color: var(--ok); outline: none; }
 
     /* ---- Resizable Plotly plot region (unified MD Monitor). Hidden by default
        via inline style until hasPlottableData() decides there's something to
@@ -169,11 +172,11 @@
       height: 260px;
       min-height: 190px;
       min-width: 260px;
-      padding: 8px;
+      padding: var(--sp-3);
       box-sizing: border-box;
-      background: #161618;
-      border: 1px solid #2c2c2e;
-      border-radius: 10px;
+      background: var(--chrome-1);
+      border: 1px solid var(--chrome-2);
+      border-radius: var(--radius-md);
       resize: vertical;
       overflow: hidden;
       position: relative;
@@ -188,13 +191,13 @@
        previously hand-dragged compact height would stick even at fullscreen. */
     .trajPlot.expanded {
       position: fixed !important;
-      top: 5vh !important;
+      top: 5dvh !important;
       left: 5vw !important;
       width: 90vw !important;
-      height: 90vh !important;
-      z-index: 1400 !important;
+      height: 90dvh !important;
+      z-index: var(--z-dock-expanded) !important;
       resize: none !important;
-      box-shadow: 0 0 24px rgba(0, 0, 0, 0.5) !important;
+      box-shadow: 0 0 24px var(--overlay) !important;
     }
 
     .trajPlot.expanded .split-item-close-btn {
@@ -209,33 +212,33 @@
       display: flex;
       justify-content: flex-end;
       align-items: center;
-      gap: 6px;
+      gap: var(--sp-2);
       min-height: 0;
       margin-bottom: 2px;
     }
     .trajPlotThemeBtn {
-      background: #2c2c2e;
-      color: #dcdcdc;
-      border: 1px solid #3a3a3c;
-      border-radius: 6px;
-      padding: 3px 8px;
-      font-size: 12px;
-      line-height: 1;
+      background: var(--chrome-2);
+      color: var(--ink-4);
+      border: 1px solid var(--chrome-3);
+      border-radius: var(--radius-sm);
+      padding: 3px var(--sp-3);
+      font-size: var(--fs-base);
+      line-height: var(--lh-tight);
       cursor: pointer;
       transition: background 0.12s ease, border-color 0.12s ease;
     }
-    .trajPlotThemeBtn:hover { background: #3a3a3c; border-color: #4a4a4c; }
+    .trajPlotThemeBtn:hover { background: var(--chrome-3); border-color: var(--chrome-4); }
     .trajPlotComputeBtn {
-      background: #2c2c2e;
-      color: #dcdcdc;
-      border: 1px solid #3a3a3c;
-      border-radius: 6px;
-      padding: 4px 10px;
-      font-size: 11px;
+      background: var(--chrome-2);
+      color: var(--ink-4);
+      border: 1px solid var(--chrome-3);
+      border-radius: var(--radius-sm);
+      padding: var(--sp-1) var(--sp-3-5);
+      font-size: var(--fs-sm);
       cursor: pointer;
       transition: background 0.12s ease, border-color 0.12s ease;
     }
-    .trajPlotComputeBtn:hover { background: #3a3a3c; border-color: #4a4a4c; }
+    .trajPlotComputeBtn:hover { background: var(--chrome-3); border-color: var(--chrome-4); }
 
     .trajPlotChart {
       flex: 1 1 auto;
@@ -246,10 +249,10 @@
     .trajPlotStats {
       flex: 0 0 auto;
       text-align: center;
-      margin-top: 6px;
-      font-size: 11px;
-      font-family: ui-monospace, "SF Mono", Menlo, monospace;
-      color: #b8b8b8;
+      margin-top: var(--sp-2);
+      font-size: var(--fs-sm);
+      font-family: var(--font-mono);
+      color: var(--ink-3);
     }
 
     /* ---- Right-docked (either edge): the pane owns the height, not the plot.

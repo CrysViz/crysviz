@@ -78,8 +78,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   // bar and collapse, so no header is built here.
   const group = document.createElement("div");
   group.id = "spinControlsGroup";
-  group.style.color = "white";
-  group.style.overflowX = "hidden";
+  group.className = "cv-scene-panel-group";
 
   // --- Panel ---
   const panel = document.createElement("div");
@@ -87,8 +86,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
 
   const content = document.createElement("div");
   content.id = "spinControlsContent";
-  content.style.overflowY = "visible";
-  content.style.overflowX = "hidden";
+  content.className = "cv-scene-panel-content";
 
   // Activation ("Show Spins") lives in the Features window; this panel only
   // configures how the spins are drawn.
@@ -96,23 +94,19 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
 
   // --- No-spins note ---
   const noSpinsNote = document.createElement("div");
-  noSpinsNote.className = "control-note";
+  noSpinsNote.className = "control-note cv-force-hidden";
   noSpinsNote.textContent = "No spin data available for this structure. Upload a file that includes spin information (e.g. an OUTCAR) or add spins manually.";
-  noSpinsNote.style.display = "none";
   content.appendChild(noSpinsNote);
 
   // --- Global Scaling slider ---
   const lengthWrapper = document.createElement("div");
-  lengthWrapper.style.marginBottom = "8px";
+  lengthWrapper.className = "cv-force-row";
 
   const lengthTopRow = document.createElement("div");
-  lengthTopRow.style.display = "flex";
-  lengthTopRow.style.alignItems = "center";
-  lengthTopRow.style.justifyContent = "space-between";
+  lengthTopRow.className = "cv-force-split-row";
 
   const lengthLabel = document.createElement("label");
   lengthLabel.textContent = "Global Scaling (Length): ";
-  lengthLabel.style.color = "white";
 
   // "log length" — scales arrow LENGTH logarithmically instead of linearly,
   // independent of the color map's own Log Scale toggle below (though
@@ -120,12 +114,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   // handler for why a log-length arrow next to a linear-color one would be
   // internally inconsistent about what a given magnitude looks like).
   const logLengthLabel = document.createElement("label");
-  logLengthLabel.style.display = "flex";
-  logLengthLabel.style.alignItems = "center";
-  logLengthLabel.style.gap = "4px";
-  logLengthLabel.style.fontSize = "12px";
-  logLengthLabel.style.whiteSpace = "nowrap";
-  logLengthLabel.style.cursor = "pointer";
+  logLengthLabel.className = "cv-force-check";
 
   const logLengthCheckbox = document.createElement("input");
   logLengthCheckbox.type = "checkbox";
@@ -140,13 +129,11 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   lengthWrapper.appendChild(lengthTopRow);
 
   const lengthBottomRow = document.createElement("div");
-  lengthBottomRow.style.display = "flex";
-  lengthBottomRow.style.alignItems = "center";
+  lengthBottomRow.className = "cv-force-split-row";
 
   const lengthValue = document.createElement("span");
+  lengthValue.className = "cv-force-value";
   lengthValue.textContent = (general.spinScale ?? 1.0).toFixed(2);
-  lengthValue.style.marginRight = "8px";
-  lengthValue.style.color = "white";
 
   const lengthSlider = /** @type {any} */ (document.createElement("input"));
   lengthSlider.type = "range";
@@ -162,16 +149,14 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
 
   // --- Size slider ---
   const sizeWrapper = document.createElement("div");
-  sizeWrapper.style.marginBottom = "8px";
+  sizeWrapper.className = "cv-force-row";
 
   const sizeLabel = document.createElement("label");
   sizeLabel.textContent = "Arrow Size (Diameter): ";
-  sizeLabel.style.color = "white";
 
   const sizeValue = document.createElement("span");
+  sizeValue.className = "cv-force-value";
   sizeValue.textContent = (general.spinRadius ?? 0.1).toFixed(2);
-  sizeValue.style.marginRight = "8px";
-  sizeValue.style.color = "white";
 
   const sizeSlider = /** @type {any} */ (document.createElement("input"));
   sizeSlider.type = "range";
@@ -187,44 +172,28 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
 
   // --- Species Visibility Panel ---
   const speciesVisibilityLabel = document.createElement("div");
+  speciesVisibilityLabel.className = "cv-force-subheading";
   speciesVisibilityLabel.textContent = "Species Visibility:";
-  speciesVisibilityLabel.style.fontSize = "11px";
-  speciesVisibilityLabel.style.margin = "8px 0 4px";
-  speciesVisibilityLabel.style.color = "white";
   content.appendChild(speciesVisibilityLabel);
 
   const speciesVisibilityContainer = document.createElement("div");
   speciesVisibilityContainer.id = "speciesVisibilityContainer";
-  speciesVisibilityContainer.style.marginBottom = "8px";
-  speciesVisibilityContainer.style.display = "grid";
-  speciesVisibilityContainer.style.gridTemplateColumns = "repeat(4, 1fr)";
-  speciesVisibilityContainer.style.gap = "4px 8px";
-  speciesVisibilityContainer.style.alignItems = "center";
+  speciesVisibilityContainer.className = "cv-species-toggle-grid";
   content.appendChild(speciesVisibilityContainer);
 
   // --- Source and Color Map dropdowns wrapper ---
   const dropdownsWrapper = document.createElement("div");
-  dropdownsWrapper.style.display = "flex";
-  dropdownsWrapper.style.gap = "8px";
-  dropdownsWrapper.style.marginBottom = "8px";
+  dropdownsWrapper.className = "cv-spin-dropdowns-row";
 
   // --- Spin Source dropdown ---
   const sourceWrapper = document.createElement("div");
-  sourceWrapper.style.flex = "1";
 
   const sourceLabel = document.createElement("label");
   sourceLabel.textContent = "Spin Source: ";
-  sourceLabel.style.color = "white";
-  sourceLabel.style.display = "block";
-  sourceLabel.style.marginBottom = "4px";
+  sourceLabel.className = "cv-force-label-block";
 
   const sourceSelect = document.createElement("select");
-  sourceSelect.style.width = "100%";
-  sourceSelect.style.padding = "4px";
-  sourceSelect.style.background = "#333";
-  sourceSelect.style.color = "white";
-  sourceSelect.style.border = "1px solid #555";
-  sourceSelect.style.borderRadius = "3px";
+  sourceSelect.className = "cv-scene-select cv-scene-select--block";
 
   const structureOption = document.createElement("option");
   structureOption.value = "structure";
@@ -242,24 +211,14 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
 
   // --- Color Map dropdown and color bar container ---
   const colorMapWrapper = document.createElement("div");
-  colorMapWrapper.style.flex = "1";
-  colorMapWrapper.style.display = "flex";
-  colorMapWrapper.style.flexDirection = "column";
+  colorMapWrapper.className = "cv-spin-colormap-col";
 
   const colorMapLabel = document.createElement("label");
   colorMapLabel.textContent = "Color Map: ";
-  colorMapLabel.style.color = "white";
-  colorMapLabel.style.display = "block";
-  colorMapLabel.style.marginBottom = "4px";
+  colorMapLabel.className = "cv-force-label-block";
 
   const colorMapSelect = document.createElement("select");
-  colorMapSelect.style.width = "100%";
-  colorMapSelect.style.padding = "4px";
-  colorMapSelect.style.background = "#333";
-  colorMapSelect.style.color = "white";
-  colorMapSelect.style.border = "1px solid #555";
-  colorMapSelect.style.borderRadius = "3px";
-  colorMapSelect.style.marginBottom = "4px";
+  colorMapSelect.className = "cv-scene-select cv-scene-select--block cv-spin-colormap-select";
 
   const noneOption = document.createElement("option");
   noneOption.value = "none";
@@ -329,19 +288,10 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   // .cv-colorbar-menu-wrap is display:none until .cv-colorbar-floating — so
   // a docked bar needs its own reachable controls, not just the menu items.)
   const barControlsRow = document.createElement("div");
-  barControlsRow.style.display = "flex";
-  barControlsRow.style.alignItems = "center";
-  barControlsRow.style.gap = "12px";
-  barControlsRow.style.margin = "4px 0";
+  barControlsRow.className = "cv-force-bar-controls cv-force-bar-controls--spin";
 
   const logLabel = document.createElement("label");
-  logLabel.style.display = "flex";
-  logLabel.style.alignItems = "center";
-  logLabel.style.gap = "4px";
-  logLabel.style.fontSize = "12px";
-  logLabel.style.color = "white";
-  logLabel.style.whiteSpace = "nowrap";
-  logLabel.style.cursor = "pointer";
+  logLabel.className = "cv-force-check";
 
   const logCheckbox = document.createElement("input");
   logCheckbox.type = "checkbox";
@@ -359,8 +309,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   function syncLogScaleLock() {
     const locked = logLengthCheckbox.checked;
     logCheckbox.disabled = locked;
-    logLabel.style.opacity = locked ? "0.55" : "1";
-    logLabel.style.cursor = locked ? "not-allowed" : "pointer";
+    logLabel.classList.toggle("cv-check-locked", locked);
     logLabel.title = locked ? '"log length" requires Log Scale — turn it off first to change this' : "";
   }
 
@@ -383,78 +332,49 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   // --- Color Bar Container (full panel width, below both dropdowns) ---
   const colorBarContainer = document.createElement("div");
   colorBarContainer.id = "spinColorBarContainer";
-  colorBarContainer.style.display = "none";
-  colorBarContainer.style.width = "100%";
-  colorBarContainer.style.marginBottom = "8px";
+  colorBarContainer.className = "cv-force-colorbar-container cv-force-row cv-force-hidden";
   content.appendChild(colorBarContainer);
 
 
   // --- Current Spins/Forces list ---
   const currentSpinsLabel = document.createElement("div");
+  currentSpinsLabel.className = "cv-force-subheading";
   currentSpinsLabel.textContent = "Current Spins/Forces:";
-  currentSpinsLabel.style.fontSize = "11px";
-  currentSpinsLabel.style.margin = "8px 0 4px";
-  currentSpinsLabel.style.color = "white";
   content.appendChild(currentSpinsLabel);
 
   const currentSpinsList = document.createElement("textarea");
   currentSpinsList.id = "currentSpinsList";
-  currentSpinsList.style.width = "calc(100% - 16px)";
-  currentSpinsList.style.minHeight = "60px";
-  currentSpinsList.style.overflowY = "auto";
-  currentSpinsList.style.backgroundColor = "rgba(16, 16, 16, 0.8)";
-  currentSpinsList.style.color = "white";
-  currentSpinsList.style.fontFamily = "monospace";
-  currentSpinsList.style.fontSize = "12px";
-  currentSpinsList.style.border = "1px solid #555";
-  currentSpinsList.style.padding = "8px";
-  currentSpinsList.style.resize = "vertical";
+  currentSpinsList.className = "cv-spin-textarea cv-spin-textarea--list";
   currentSpinsList.readOnly = true;
   content.appendChild(currentSpinsList);
 
   // --- Manual spin text input ---
   const textLabel = document.createElement("div");
+  textLabel.className = "cv-force-subheading";
   textLabel.textContent = "Manual Spin Vectors (x y z [scale] [color]):";
-  textLabel.style.fontSize = "11px";
-  textLabel.style.margin = "8px 0 4px";
-  textLabel.style.color = "white";
   content.appendChild(textLabel);
 
   const textarea = document.createElement("textarea");
   textarea.id = "spinTextInput";
   textarea.placeholder = "x y z [scale] [color]\nExample:\n1 1 1\n1 1 1 1.0 teal\n0 0 1 2.0 #0000ff";
-  textarea.style.width = "calc(100% - 16px)";
-  textarea.style.height = "100px";
-  textarea.style.resize = "vertical";
-  textarea.style.background = "rgba(16,16,16,0.8)";
-  textarea.style.color = "rgb(255,255,255)";
-  textarea.style.border = "1px solid #555";
-  textarea.style.fontFamily = "monospace";
-  textarea.style.fontSize = "12px";
-  textarea.style.marginBottom = "8px";
-  textarea.style.padding = "8px";
+  textarea.className = "cv-spin-textarea cv-spin-textarea--input";
   content.appendChild(textarea);
 
   // --- Action buttons ---
   const buttonWrapper = document.createElement("div");
-  buttonWrapper.style.marginTop = "8px";
-  buttonWrapper.style.display = "flex";
-  buttonWrapper.style.gap = "8px";
+  buttonWrapper.className = "cv-spin-button-row";
 
   const drawBtn = document.createElement("button");
   drawBtn.textContent = "Draw";
   drawBtn.className = "btn-mini highlight";
-  drawBtn.style.flex = "1";
 
   const overwriteBtn = document.createElement("button");
   overwriteBtn.textContent = "Overwrite Structure";
   overwriteBtn.className = "btn-mini highlight";
-  overwriteBtn.style.flex = "1";
 
   const restoreBtn = document.createElement("button");
   restoreBtn.textContent = "Restore";
   restoreBtn.className = "btn-mini highlight";
-  restoreBtn.style.flex = "1";
 
   buttonWrapper.appendChild(drawBtn);
   buttonWrapper.appendChild(overwriteBtn);
@@ -583,7 +503,7 @@ let spinRangeInitialized = false;
 function refreshColorBarVisibility() {
   const cmap = colorMapSelect.value;
   const isScalar = cmap !== "none" && cmap !== "direction" && cmap !== "plusminus" && cmap !== "element";
-  barControlsRow.style.display = isScalar ? "flex" : "none";
+  barControlsRow.classList.toggle("cv-force-hidden", !isScalar);
 
   // The bar may currently be floating over the scene (dragged out of
   // colorBarContainer into document.body), so innerHTML='' alone wouldn't
@@ -596,7 +516,7 @@ function refreshColorBarVisibility() {
   colorBarContainer.innerHTML = '';
 
   if (isScalar) {
-    colorBarContainer.style.display = "block";
+    colorBarContainer.classList.remove("cv-force-hidden");
 
     let minValue = general.spinMin;
     let maxValue = general.spinMax;
@@ -674,7 +594,7 @@ function refreshColorBarVisibility() {
       spinColorBarInstance.floatAtAnchor(general.spinColorBarFloatPos);
     }
   } else {
-    colorBarContainer.style.display = "none";
+    colorBarContainer.classList.add("cv-force-hidden");
   }
 }
 
@@ -726,7 +646,7 @@ logCheckbox.addEventListener("change", () => {
 });
 
 function updateNoSpinsNote() {
-  noSpinsNote.style.display = fileBrowser.selectedStructure?.spins?.length ? "none" : "block";
+  noSpinsNote.classList.toggle("cv-force-hidden", !!fileBrowser.selectedStructure?.spins?.length);
 }
 
 // Shared by the Auto Range button and the burger menu's own "Auto Range"
@@ -856,73 +776,26 @@ autoRangeBtn.addEventListener("click", applyAutoRange);
 
     // Create a toggle for each element
     uniqueElements.forEach(element => {
-      const toggleItem = createElement("div", {}, {
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "flex-start",
-        height: "24px"
-      });
+      const toggleItem = createElement("div", { class: "cv-species-toggle-item" });
 
-      const toggleContainer = createElement("label", {}, {
-        position: "relative",
-        display: "inline-block",
-        width: "40px",
-        height: "20px",
-        marginRight: "6px",
-        cursor: "pointer"
-      });
+      // The shared pill (toggle_styles.css); cv-species-toggle only shrinks it.
+      const toggleContainer = createElement("label", { class: "toggle_switch cv-species-toggle" });
 
       const checkbox = createElement("input", {
         type: "checkbox",
         id: `species-${element}`,
         checked: "checked"
-      }, {
-        opacity: "0",
-        width: "0",
-        height: "0",
-        position: "absolute"
       });
 
-      const slider = createElement("span", {}, {
-        position: "absolute",
-        cursor: "pointer",
-        top: "0",
-        left: "0",
-        right: "0",
-        bottom: "0",
-        backgroundColor: "#555",
-        transition: "background-color 0.2s, box-shadow 0.2s",
-        borderRadius: "20px"
-      });
-
-      const circle = createElement("span", {}, {
-        position: "absolute",
-        content: "",
-        height: "16px",
-        width: "16px",
-        left: "2px",
-        bottom: "2px",
-        backgroundColor: "white",
-        transition: "transform 0.2s, box-shadow 0.2s",
-        borderRadius: "50%",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.4)"
-      });
+      const slider = createElement("span", { class: "toggle_slider" });
 
       toggleContainer.appendChild(checkbox);
       toggleContainer.appendChild(slider);
-      slider.appendChild(circle);
 
       const label = createElement("label", {
-        for: `species-${element}`
-      }, {
-        color: "white",
-        fontSize: "12px",
-        fontFamily: "monospace",
-        height: "24px",
-        lineHeight: "24px",
-        whiteSpace: "nowrap",
-        cursor: "pointer"
-      }, element);
+        for: `species-${element}`,
+        class: "cv-species-toggle-label"
+      }, {}, element);
 
       toggleItem.appendChild(toggleContainer);
       toggleItem.appendChild(label);
@@ -937,16 +810,11 @@ autoRangeBtn.addEventListener("click", applyAutoRange);
 
       checkbox.checked = general.speciesVisibility[element];
 
+      // Colour/knob position now come from the browser's own :checked
+      // selector (styles/forcePanel.css) — this only needs to keep the
+      // stored visibility flag and the scene render in sync.
       function updateToggle() {
-        if (checkbox.checked) {
-          slider.style.backgroundColor = "#00C851";
-          circle.style.transform = "translateX(20px)";
-          general.speciesVisibility[element] = true;
-        } else {
-          slider.style.backgroundColor = "#555";
-          circle.style.transform = "translateX(0)";
-          general.speciesVisibility[element] = false;
-        }
+        general.speciesVisibility[element] = checkbox.checked;
         // Only re-render the arrows if they're actually supposed to be
         // shown — this fires on initial panel build too (once per species),
         // which must never be the thing that turns arrows on when "Show
@@ -956,7 +824,6 @@ autoRangeBtn.addEventListener("click", applyAutoRange);
         }
       }
 
-      // Sync the visual slider state without triggering a render.
       updateToggle();
 
       checkbox.addEventListener("change", updateToggle);

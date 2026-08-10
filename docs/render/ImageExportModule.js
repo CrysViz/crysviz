@@ -1,8 +1,9 @@
 // High-resolution PNG export of the 3D scene, WYSIWYG: whatever the user has
 // on screen right now — atoms/bonds/polyhedra/fields, the axis gizmo and its
 // legend wherever they've been dragged, any color bars floated onto the
-// scene, measurement lines and labels — at the position it's actually
-// showing at, cropped to a rectangle the user picks interactively
+// scene, the Composition Display legend, measurement lines and labels — at
+// the position it's actually showing at, cropped to a rectangle the user picks
+// interactively
 // (ui/CropOverlay.js, an iOS-Photos-style draggable/resizable crop window
 // over the live view) rather than auto-framed to content or auto-placed in
 // a corner. Docked (non-floating) color bars live in the side panel, not
@@ -40,6 +41,7 @@ import { latticeDirsNorm } from './LatticeModule.js';
 import { requestRender } from './AnimateModule.js';
 import { colorsFor, computeTicks, formatTick, currentContrastColor } from '../ui/ColorBarWidget.js';
 import { listActiveColorBars } from '../ui/ColorBarRegistry.js';
+import { repaintSwatchesForExport } from '../ui/CompositionLegendWidget.js';
 import { drawLegendRichText } from '../utils/index.js';
 
 /** @returns {HTMLElement} the #view container */
@@ -422,6 +424,76 @@ function drawFloatingColorBars(octx, width, height, margin, crop, viewRect) {
   }
 }
 
+// The Composition Display legend (ui/CompositionLegendWidget.js): a widget
+// whose entire purpose is to sit beside the structure in a figure, so it
+// belongs in the capture. Same rule (and same floating class) as the color
+// bars — only while it's actually over the scene.
+//
+// Drawn from the live DOM's own rects (swatch canvas blitted, text redrawn
+// with its computed font), not the widget: the ⦀/☰ strip and the resize
+// handle are chrome for operating the thing, not legend content. The body
+// surface is filled only when the user hasn't stripped it via ☰ > Transparent
+// background.
+function drawCompositionLegend(octx, width, height, margin, crop, viewRect) {
+  const widget = document.querySelector('.comp-legend-widget.cv-colorbar-floating');
+  const body = /** @type {HTMLElement | null} */ (widget?.querySelector('.comp-legend-body'));
+  if (!body) return;
+  const rows = body.querySelectorAll('.comp-legend-row');
+  if (!rows.length) return; // collapsed, or no structure ("No structure loaded.")
+
+  const bodyRect = body.getBoundingClientRect();
+  const bodyOut = cropToOutputRect(viewFraction(bodyRect, viewRect), crop, width, height, margin);
+  if (!bodyOut) return; // dragged fully outside the chosen crop
+  const pxScale = bodyRect.width > 0 ? bodyOut.width / bodyRect.width : 1;
+
+  const bodyStyle = window.getComputedStyle(body);
+  const surface = bodyStyle.backgroundColor;
+  if (surface && surface !== 'transparent' && !surface.startsWith('rgba(0, 0, 0, 0)')) {
+    // Flat fill only — a 2D canvas has no backdrop-filter, so a blurred
+    // panel prints as its own colour rather than as the scene behind it.
+    roundRectPath(octx, bodyOut.x, bodyOut.y, bodyOut.width, bodyOut.height,
+      (parseFloat(bodyStyle.borderRadius) || 0) * pxScale);
+    octx.fillStyle = surface;
+    octx.fill();
+  }
+
+  // The swatches are 30-CSS-px spheres; at export scale their on-screen
+  // backing store would upscale into mush, so have the legend repaint them at
+  // the size they're actually being drawn at.
+  const swatchPx = Math.max(...[...rows].map((row) => {
+    const canvas = row.querySelector('canvas');
+    return canvas ? canvas.getBoundingClientRect().width * pxScale : 0;
+  }));
+  const restoreSwatches = repaintSwatchesForExport(swatchPx);
+  try {
+    for (const row of rows) {
+      const canvas = /** @type {HTMLCanvasElement | null} */ (row.querySelector('canvas'));
+      if (canvas) {
+        const out = cropToOutputRect(viewFraction(canvas.getBoundingClientRect(), viewRect), crop, width, height, margin);
+        if (out) octx.drawImage(canvas, out.x, out.y, out.width, out.height);
+      }
+      for (const el of row.querySelectorAll('.comp-legend-label, .comp-legend-sub')) {
+        const text = (el.textContent || '').trim();
+        if (!text) continue;
+        const out = cropToOutputRect(viewFraction(el.getBoundingClientRect(), viewRect), crop, width, height, margin);
+        if (!out) continue;
+        const cs = window.getComputedStyle(el);
+        octx.font = `${cs.fontWeight} ${(parseFloat(cs.fontSize) || 12) * pxScale}px ${cs.fontFamily}`;
+        octx.fillStyle = cs.color;
+        octx.textAlign = 'left';
+        octx.textBaseline = 'middle';
+        // The occupancy sub-line is dimmed by opacity, not by its colour.
+        const alpha = parseFloat(cs.opacity);
+        octx.globalAlpha = Number.isFinite(alpha) ? alpha : 1;
+        octx.fillText(text, out.x, out.y + out.height / 2);
+        octx.globalAlpha = 1;
+      }
+    }
+  } finally {
+    restoreSwatches();
+  }
+}
+
 let captureInProgress = false;
 
 /** Read-only ownership query for render-domain callers that can replace the
@@ -589,6 +661,7 @@ async function captureSceneToPngImpl(opts) {
     drawMeasurementLabels(octx, map);
     prevGizmoPR = drawGizmoAndLegend(octx, width, height, margin, crop, viewRect);
     drawFloatingColorBars(octx, width, height, margin, crop, viewRect);
+    drawCompositionLegend(octx, width, height, margin, crop, viewRect);
 
     return await new Promise((resolve, reject) => {
       out.toBlob((blob) => {

@@ -10,10 +10,6 @@
 
 import { createColorPicker } from './ColorPickerModule.js';
 
-// Higher than periodic-table popups (1300) and floating panels (1200), so it
-// always sits on top regardless of which panel it was opened from.
-const Z_INDEX = 1400;
-
 // The picker currently open (null = none). Clicking the same anchor again
 // closes it instead of rebuilding an identical one in place.
 let activePicker = null;
@@ -39,16 +35,7 @@ export function openSwatchColorPicker(anchor, hex, onChange, { onReset } = {}) {
   }
 
   const panel = document.createElement('div');
-  panel.className = 'swatch-color-picker';
-  panel.style.cssText = `
-    position: fixed;
-    background: rgba(26,26,26,0.95);
-    border: 1px solid #ccc;
-    padding: 10px;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
-    z-index: ${Z_INDEX};
-  `;
+  panel.className = 'swatch-color-picker cv-swatch-picker-panel';
 
   const { element: pickerElement } = createColorPicker(hex, (newHex) => {
     anchor.style.background = newHex;
@@ -57,21 +44,19 @@ export function openSwatchColorPicker(anchor, hex, onChange, { onReset } = {}) {
   });
 
   const btnRow = document.createElement('div');
-  btnRow.style.cssText = 'display: flex; gap: 6px; margin-top: 8px;';
+  btnRow.className = 'cv-swatch-picker-btn-row';
 
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.textContent = 'Close';
-  closeBtn.className = 'btn-mini highlight';
-  closeBtn.style.cssText = 'height: 28px; flex: 1;';
+  closeBtn.className = 'btn-mini highlight cv-swatch-picker-btn';
   btnRow.appendChild(closeBtn);
 
   if (onReset) {
     const resetBtn = document.createElement('button');
     resetBtn.type = 'button';
     resetBtn.textContent = 'Reset';
-    resetBtn.className = 'btn-mini';
-    resetBtn.style.cssText = 'height: 28px; flex: 1;';
+    resetBtn.className = 'btn-mini cv-swatch-picker-btn';
     resetBtn.addEventListener('click', () => { onReset(); close(); });
     btnRow.appendChild(resetBtn);
   }
@@ -111,15 +96,9 @@ export function createColorSwatch(initialHex = '#000000', onChange = () => {}) {
   swatch.className = 'color-swatch-btn';
   swatch.title = 'Pick color';
   swatch.dataset.hex = initialHex;
-  swatch.style.cssText = `
-    width: 24px;
-    height: 24px;
-    border-radius: 5px;
-    border: 1px solid rgba(255,255,255,0.3);
-    cursor: pointer;
-    padding: 0;
-    background: ${initialHex};
-  `;
+  // The one property that isn't chrome: the swatch's own fill IS the value
+  // it represents, so it stays inline rather than in the class.
+  swatch.style.background = initialHex;
   swatch.addEventListener('click', (e) => {
     e.stopPropagation();
     openSwatchColorPicker(swatch, swatch.dataset.hex, onChange);

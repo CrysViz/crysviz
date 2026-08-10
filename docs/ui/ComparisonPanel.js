@@ -16,64 +16,14 @@ import { general, fileBrowser } from '../state/store.js';
 import { removeLatticeComparisonPopup } from './LatticeComparisonPanel.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { syncOverlayFromCheckboxes, refreshOverlayLatticePlots } from './FileBrowswerPanel.js';
+import { createToggleRow } from './ToggleSwitch.js';
 
-/**
- * Build a labeled toggle switch (the pill-shaped checkbox used throughout
- * this panel). Returns the input element so callers can wire `change`.
- */
+/** Labeled stock pill toggle with this panel's row spacing/label margin. */
 function createToggleSwitch(id, labelText, checked) {
-  const container = document.createElement("label");
-  container.style.display = "flex";
-  container.style.alignItems = "center";
-  container.style.margin = "10px 0";
-
-  const switchEl = document.createElement("span");
-  switchEl.style.position = "relative";
-  switchEl.style.display = "inline-block";
-  switchEl.style.width = "50px";
-  switchEl.style.height = "24px";
-
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.id = id;
-  input.checked = checked;
-  input.style.opacity = "0";
-  input.style.width = "0";
-  input.style.height = "0";
-
-  const slider = document.createElement("span");
-  slider.className = "toggle_slider";
-  slider.style.position = "absolute";
-  slider.style.cursor = "pointer";
-  slider.style.top = "0";
-  slider.style.left = "0";
-  slider.style.right = "0";
-  slider.style.bottom = "0";
-  slider.style.backgroundColor = "#ccc";
-  slider.style.transition = ".4s";
-  slider.style.borderRadius = "24px";
-
-  const sliderInner = document.createElement("span");
-  sliderInner.style.position = "absolute";
-  sliderInner.style.height = "16px";
-  sliderInner.style.width = "16px";
-  sliderInner.style.left = "4px";
-  sliderInner.style.bottom = "4px";
-  sliderInner.style.backgroundColor = "white";
-  sliderInner.style.transition = ".4s";
-  sliderInner.style.borderRadius = "50%";
-
-  slider.appendChild(sliderInner);
-  switchEl.appendChild(input);
-  switchEl.appendChild(slider);
-
-  const text = document.createElement("span");
-  text.textContent = labelText;
-  text.style.marginLeft = "10px";
-
-  container.appendChild(switchEl);
-  container.appendChild(text);
-
+  const { row: container, input } = createToggleRow({
+    id, label: labelText, checked,
+    rowClass: 'cmp-toggle-row', textClass: 'cmp-toggle-label',
+  });
   return { container, input };
 }
 
@@ -104,12 +54,7 @@ export function addCompPanel(container) {
   // panel and recurse.
   const comparisonError = document.createElement("div");
   comparisonError.id = "comparisonErrorField";
-  comparisonError.style.cssText = `
-    font-size: 12px;
-    color: #ff6b6b;
-    margin: 0 0 10px 0;
-    display: none;
-  `;
+  comparisonError.className = "cmp-comparison-error";
   if (general.compareModeOn && fileBrowser.overlayEntries.length === 0) {
     // Distinguish "nothing checked" from "too many checked" the same way
     // syncOverlayFromCheckboxes does — both leave overlayEntries empty, so
@@ -136,28 +81,21 @@ export function addCompPanel(container) {
 
   // Add slider for opacity
   const opacitySliderContainer = document.createElement("div");
-  opacitySliderContainer.style.display = "flex";
-  opacitySliderContainer.style.flexDirection = "column";
-  opacitySliderContainer.style.margin = "15px 0";
-  opacitySliderContainer.style.width = "100%";
+  opacitySliderContainer.className = "cmp-opacity-container";
 
   // Create slider labels container
   const sliderLabels = document.createElement("div");
-  sliderLabels.style.display = "flex";
-  sliderLabels.style.justifyContent = "space-between";
-  sliderLabels.style.marginBottom = "5px";
-  sliderLabels.style.fontSize = "12px";
-  sliderLabels.style.color = "#ccc";
+  sliderLabels.className = "cmp-opacity-labels";
 
   // Create left label
   const leftLabel = document.createElement("span");
   leftLabel.textContent = "Main";
-  leftLabel.style.textAlign = "left";
+  leftLabel.className = "cmp-opacity-label--left";
 
   // Create right label
   const rightLabel = document.createElement("span");
   rightLabel.textContent = "Comp";
-  rightLabel.style.textAlign = "right";
+  rightLabel.className = "cmp-opacity-label--right";
 
   // Add labels to container
   sliderLabels.appendChild(leftLabel);
@@ -172,8 +110,7 @@ export function addCompPanel(container) {
   opacitySlider.max = "1";
   opacitySlider.step = "0.01";
   opacitySlider.value = "0.5";
-  opacitySlider.style.width = "100%";
-  opacitySlider.style.margin = "5px 0";
+  opacitySlider.className = "cmp-opacity-slider";
   opacitySliderContainer.appendChild(opacitySlider);
 
   container.appendChild(opacitySliderContainer);
@@ -186,36 +123,9 @@ export function addCompPanel(container) {
   if (general.showPolyhedra) {
     const polyhedraNote = document.createElement("div");
     polyhedraNote.textContent = "Note: Polyhedra are not yet shown for the comparison structure.";
-    polyhedraNote.style.fontSize = "12px";
-    polyhedraNote.style.color = "#ccc";
-    polyhedraNote.style.fontStyle = "italic";
-    polyhedraNote.style.margin = "5px 0 10px 0";
+    polyhedraNote.className = "cmp-polyhedra-note";
     container.appendChild(polyhedraNote);
   }
-
-  // Add dynamic style for checked state
-  const styleElement = document.createElement('style');
-  styleElement.textContent = `
-    #showComparisonBonds:checked + .toggle_slider {
-      background-color: #4CAF50 !important;
-    }
-    #showComparisonBonds:checked + .toggle_slider > span {
-      transform: translateX(26px) !important;
-    }
-    #showLatticeComparison:checked + .toggle_slider {
-      background-color: #4CAF50 !important;
-    }
-    #showLatticeComparison:checked + .toggle_slider > span {
-      transform: translateX(26px) !important;
-    }
-    #enableComparisonToggle:checked + .toggle_slider {
-      background-color: #4CAF50 !important;
-    }
-    #enableComparisonToggle:checked + .toggle_slider > span {
-      transform: translateX(26px) !important;
-    }
-  `;
-  document.head.appendChild(styleElement);
 
   // Add event listeners
   compareToggleInput.addEventListener('change', function() {

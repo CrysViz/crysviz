@@ -4,8 +4,8 @@
 
 .eos-group-label {
   display: block;
-  margin-bottom: 8px;
-  font-size: 13px;
+  margin-bottom: var(--sp-3);
+  font-size: var(--fs-md);
   color: var(--muted-fg);
 }
 
@@ -15,18 +15,18 @@
 .eos-unit-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .eos-unit-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .eos-unit-row label {
   flex: 0 0 60px;
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: var(--muted-fg);
 }
 
@@ -35,82 +35,79 @@
   background: var(--input-bg);
   color: var(--panel-fg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  padding: 3px var(--sp-2);
 }
 
 .eos-pyodide-status {
-  margin-top: 8px;
-  font-size: 11px;
+  margin-top: var(--sp-3);
+  font-size: var(--fs-sm);
   color: var(--muted-fg);
 }
 
 .eos-drop-zone {
   border: 2px dashed var(--panel-border);
-  border-radius: 10px;
-  padding: 18px 12px;
+  border-radius: var(--radius-md);
+  padding: 18px var(--sp-4);
   text-align: center;
   cursor: pointer;
   color: var(--muted-fg);
-  font-size: 12.5px;
+  font-size: var(--fs-md);
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .eos-drop-zone:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--wash-0);
 }
 
 .eos-drop-zone.highlight {
-  border-color: var(--highlight-color, #00bcd4);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--highlight-color, var(--info));
+  background: var(--wash-1-5);
 }
 
 .eos-drop-zone-ref {
-  padding: 12px;
+  padding: var(--sp-4);
 }
 
 .eos-primary-actions-row {
   display: flex;
   justify-content: flex-end;
-  margin-top: 8px;
+  margin-top: var(--sp-3);
 }
 
 .eos-pane-btn {
   background: var(--input-bg);
   color: var(--panel-fg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  padding: 2px var(--sp-3);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .eos-pane-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--wash-2);
 }
 
-/* Reference data is collapsible (<details>/<summary>) — most sessions don't
-   need it, so it starts closed. Styled like the app's own window-panel title
-   bars (panelWindow.css) rather than the browser's native disclosure widget:
-   a solid green header strip with a caret that rotates on expand (same idiom
-   as the Bonds/Polyhedra row carets). */
-.eos-collapsible {
-  padding: 0;
-  overflow: hidden;
-}
-
+/* Seldom-needed sections are collapsible (<details>/<summary>) and start
+   closed. The summary follows the quiet collapse-header idiom of the
+   Backend/Atomistic panels (backendPanel.css .atomistic-collapse-toggle):
+   a caret plus bold accent-toned title on a transparent background — no
+   filled strip — with the caret rotating on expand. Also reused by the
+   Color panel's Advanced tracer section. */
 .eos-collapsible-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-3);
   margin: 0;
-  padding: 10px 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   cursor: pointer;
   list-style: none;
-  font-size: 13px;
-  font-weight: 600;
-  color: #ffffff;
-  background: var(--highlight-color, #00bcd4);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  color: var(--fg-85);
 }
 
 .eos-collapsible-summary::-webkit-details-marker {
@@ -119,8 +116,8 @@
 
 .eos-collapsible-arrow {
   display: inline-block;
-  font-size: 11px;
-  color: #ffffff;
+  font-size: var(--fs-sm);
+  color: inherit;
   transition: transform 0.15s ease;
 }
 
@@ -129,15 +126,15 @@
 }
 
 .eos-collapsible-body {
-  padding: 16px;
+  padding: var(--sp-3) 0 0;
 }
 
 .eos-ref-divisor-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  font-size: 12px;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  font-size: var(--fs-base);
   color: var(--muted-fg);
 }
 
@@ -146,21 +143,21 @@
   background: var(--input-bg);
   color: var(--panel-fg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  padding: 3px var(--sp-2);
 }
 
 .eos-column-info {
-  margin-top: 8px;
-  font-size: 11.5px;
+  margin-top: var(--sp-3);
+  font-size: var(--fs-sm);
   color: var(--muted-fg);
-  line-height: 1.5;
+  line-height: var(--lh-normal);
 }
 
 .eos-status-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .eos-status-group .eos-pyodide-status {
@@ -168,20 +165,20 @@
 }
 
 .eos-status {
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: var(--muted-fg);
   min-height: 1.2em;
-  margin: 4px 0;
+  margin: var(--sp-1) 0;
 }
 
 .eos-copy-value {
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .eos-copy-value:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--wash-2);
 }
 
 .eos-copy-value.eos-copied {
@@ -192,32 +189,32 @@
 .eos-result-table {
   width: 100%;
   border-collapse: collapse;
-  margin: 8px 0;
-  font-size: 12.5px;
+  margin: var(--sp-3) 0;
+  font-size: var(--fs-md);
 }
 
 .eos-result-table th,
 .eos-result-table td {
   border: 1px solid var(--panel-border);
-  padding: 5px 8px;
+  padding: 5px var(--sp-3);
   text-align: left;
 }
 
 .eos-result-table th {
-  background: rgba(255, 255, 255, 0.06);
-  font-weight: 500;
+  background: var(--wash-1-5);
+  font-weight: var(--fw-medium);
 }
 
 .eos-fit-stats {
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   color: var(--muted-fg);
   line-height: 1.6;
-  margin-bottom: 10px;
+  margin-bottom: var(--sp-3-5);
 }
 
 .eos-results h4 {
-  margin: 12px 0 4px 0;
-  font-size: 13px;
+  margin: var(--sp-4) 0 var(--sp-1) 0;
+  font-size: var(--fs-md);
 }
 
 .eos-results h4:first-child {
@@ -251,7 +248,7 @@
 
 .eos-plot-actions-right {
   display: flex;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 /* Reuses the app's .toggle_switch/.toggle_slider tokens (toggle_styles.css)
@@ -259,7 +256,7 @@
 .eos-mini-toggle.toggle_container {
   margin: 0;
   gap: 5px;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--muted-fg);
 }
 
@@ -283,8 +280,8 @@
    up to match the bigger action buttons/fonts used there (full size, same
    as the toggle's other uses in the app). */
 .split-item.expanded .eos-mini-toggle.toggle_container {
-  font-size: 15px;
-  gap: 8px;
+  font-size: var(--fs-lg);
+  gap: var(--sp-3);
 }
 
 .split-item.expanded .eos-mini-toggle .toggle_switch {

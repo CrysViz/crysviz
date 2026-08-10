@@ -29,7 +29,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
 
   const editor = document.createElement('div');
   editor.className = 'element-color-editor';
-  editor.style.cssText = 'display:none; grid-column:2; padding:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px;';
+  editor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
 
   const picker = createColorPicker(currentAtomColors[0], (hex) => {
     const structure = fileBrowser.selectedStructure;
@@ -76,67 +76,61 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
 
   // --- Editor UI ---
   const topRow = document.createElement('div');
-  topRow.style.cssText = 'display: flex; align-items: center; gap: 6px;';
+  topRow.className = 'ece-top-row';
   topRow.appendChild(picker.element);
 
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset';
-  resetBtn.className = 'btn-mini';
-  resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 50px;';
+  resetBtn.className = 'btn-mini si-action-btn ece-reset-btn';
 
   const applyBtn = document.createElement('button');
   applyBtn.textContent = 'Apply';
-  applyBtn.className = 'btn-mini highlight';
-  applyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+  applyBtn.className = 'btn-mini highlight si-action-btn-narrow';
 
   const buttonRow = document.createElement('div');
-  buttonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';
+  buttonRow.className = 'ece-button-row';
   buttonRow.appendChild(resetBtn);
   buttonRow.appendChild(applyBtn);
 
   const alphaRow = document.createElement('div');
-  alphaRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:8px;';
+  alphaRow.className = 'si-row si-row--spaced-top';
   const alphaLabel = document.createElement('span');
   alphaLabel.textContent = 'Alpha';
-  alphaLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+  alphaLabel.className = 'si-row-label';
   const alphaSlider = document.createElement('input');
   alphaSlider.type = 'range';
   alphaSlider.min = '0.05';
   alphaSlider.max = '1';
   alphaSlider.step = '0.01';
   alphaSlider.value = String(currentOpacity);
-  alphaSlider.style.cssText = 'flex:1;';
   const alphaValue = document.createElement('input');
   alphaValue.type = 'number';
   alphaValue.min = '0.05';
   alphaValue.max = '1';
   alphaValue.step = '0.01';
   alphaValue.value = currentOpacity.toFixed(2);
-  alphaValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
   alphaRow.appendChild(alphaLabel);
   alphaRow.appendChild(alphaSlider);
   alphaRow.appendChild(alphaValue);
 
   // Size (per-species radius multiplier), same row layout as Alpha.
   const sizeRow = document.createElement('div');
-  sizeRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:8px;';
+  sizeRow.className = 'si-row si-row--spaced-top';
   const sizeLabel = document.createElement('span');
   sizeLabel.textContent = 'Size';
-  sizeLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+  sizeLabel.className = 'si-row-label';
   const sizeSlider = document.createElement('input');
   sizeSlider.type = 'range';
   sizeSlider.min = '0.2';
   sizeSlider.max = '3';
   sizeSlider.step = '0.05';
   sizeSlider.value = String(currentRadiusScale);
-  sizeSlider.style.cssText = 'flex:1;';
   const sizeValue = document.createElement('input');
   sizeValue.type = 'number';
   sizeValue.min = '0.2';
   sizeValue.max = '3';
   sizeValue.step = '0.05';
   sizeValue.value = currentRadiusScale.toFixed(2);
-  sizeValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
   sizeRow.appendChild(sizeLabel);
   sizeRow.appendChild(sizeSlider);
   sizeRow.appendChild(sizeValue);
@@ -174,7 +168,6 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
   const defaultColor = fileBrowser.selectedStructure.getDefaultElementColor(el);
   const defaultColorCss = safeColor(defaultColor);
   resetBtn.style.background = defaultColorCss;
-  resetBtn.style.borderColor = 'rgba(0,0,0,0.15)';
   resetBtn.style.color = textColorForBg(defaultColorCss);
 
   function applyElementOpacity(rawValue) {

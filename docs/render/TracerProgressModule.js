@@ -27,28 +27,18 @@ function ensureBar() {
   if (!document.body) return null;
   barEl = document.createElement('div');
   barEl.id = 'tracerProgress';
-  barEl.style.cssText = 'position:fixed; height:3px;'
-    + ' z-index:3100; pointer-events:none; opacity:0; transition:opacity 0.4s;'
-    + ' background: rgba(128,128,128,0.15);';
+  barEl.className = 'tracer-progress-bar';
+  // Explicit inline default alongside the CSS class's own `opacity: 0`:
+  // updateTracerProgress() reads bar.style.opacity back (line below) as the
+  // source of truth for "already visible" — the CSS class alone would leave
+  // it as '' instead of '0' before the first inline set.
+  barEl.style.opacity = '0';
   fillEl = document.createElement('div');
   fillEl.id = 'tracerProgressFill';
-  fillEl.style.cssText = 'height:100%; width:0%;'
-    + ' background: var(--highlight-color, #4caf50); transition:width 0.15s linear;';
+  fillEl.className = 'tracer-progress-fill';
   barEl.appendChild(fillEl);
   document.body.appendChild(barEl);
   return barEl;
-}
-
-/** Inject the marquee keyframes once (inline @keyframes can't live on a style
- *  attribute, so a tiny <style> element carries them). Matches the module's
- *  style-in-JS approach. */
-function ensureCompileAnim() {
-  if (document.getElementById('tracerCompileAnim')) return;
-  const style = document.createElement('style');
-  style.id = 'tracerCompileAnim';
-  style.textContent = '@keyframes tracerCompileSlide {'
-    + ' 0% { left:-40%; } 100% { left:100%; } }';
-  (document.head || document.documentElement).appendChild(style);
 }
 
 /** Leave the indeterminate compiling mode and restore the determinate fill so
@@ -88,7 +78,6 @@ export function showTracerCompiling() {
   if (!bar) return;
   positionBar(); // keep aligned even as the marquee runs (layout/resize)
   if (compiling) return; // already animating — don't restart it each frame
-  ensureCompileAnim();
   compiling = true;
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   bar.style.opacity = '1';

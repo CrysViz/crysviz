@@ -40,8 +40,7 @@ function renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, con
     [parameter, v1, v2, diffPercent].forEach(val => {
       const cell = row.insertCell();
       cell.textContent = val;
-      cell.style.padding = "2px 5px";
-      cell.style.borderBottom = "1px solid #444";
+      cell.className = "lcmp-table-cell";
     });
   });
 
@@ -52,14 +51,15 @@ function renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, con
     return;
   }
 
-  // Set canvas dimensions explicitly
+  // Set canvas dimensions explicitly. The displayed box size (320x320) is a
+  // constant set once via .lcmp-radar-canvas at creation (buildComparisonBlock);
+  // only the backing-buffer resolution genuinely depends on the live dpi, so
+  // only that stays here, re-applied on every render.
   const dpi = window.devicePixelRatio || 1;
   const displayWidth = 320;
   const displayHeight = 320;
   canvas.width = displayWidth * dpi;
   canvas.height = displayHeight * dpi;
-  canvas.style.width = `${displayWidth}px`;
-  canvas.style.height = `${displayHeight}px`;
 
   // Clear canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -135,44 +135,34 @@ function renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, con
 // into the popup's (scrollable) blocks container.
 function buildComparisonBlock(container) {
   const block = document.createElement("div");
-  block.className = "lattice-comparison-block";
-  block.style.cssText = "margin: 0 0 14px 0; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.15);";
+  block.className = "lattice-comparison-block lcmp-block";
 
   const heading = document.createElement("div");
-  heading.style.cssText = "font-weight:600; font-size:12px; text-align:center; margin-bottom:4px; color:#ddd;";
+  heading.className = "lcmp-heading";
   block.appendChild(heading);
 
   const canvas = document.createElement("canvas");
-  canvas.style.display = "block";
-  canvas.style.margin = "6px auto 0 auto";
+  canvas.className = "lcmp-radar-canvas";
   block.appendChild(canvas);
 
   const collapsible = document.createElement("div");
-  collapsible.style.width = "100%";
-  collapsible.style.margin = "10px auto 0 auto";
+  collapsible.className = "lcmp-collapsible";
   block.appendChild(collapsible);
 
   const toggleBtn = document.createElement("button");
   // Starts expanded — the comparison details are the point of this popup, so
   // hiding them by default just added an extra click most users would take anyway.
   toggleBtn.textContent = "Hide details ▲";
-  toggleBtn.style.width = "100%";
-  toggleBtn.style.background = "#333";
-  toggleBtn.style.border = "none";
-  toggleBtn.style.color = "#fff";
-  toggleBtn.style.cursor = "pointer";
-  toggleBtn.style.padding = "5px";
+  toggleBtn.className = "lcmp-toggle-btn";
   collapsible.appendChild(toggleBtn);
 
   const content = document.createElement("div");
   content.style.display = "block";
-  content.style.padding = "5px";
+  content.className = "lcmp-content";
   collapsible.appendChild(content);
 
   const table = document.createElement("table");
-  table.style.width = "100%";
-  table.style.fontSize = "12px";
-  table.style.borderCollapse = "collapse";
+  table.className = "lcmp-table";
   content.appendChild(table);
 
   const thead = document.createElement("thead");
@@ -180,10 +170,7 @@ function buildComparisonBlock(container) {
   ["Parameter", "Main", "Overlay", "% Diff"].forEach(t => {
     const th = document.createElement("th");
     th.textContent = t;
-    th.style.borderBottom = "1px solid #555";
-    th.style.padding = "2px 5px";
-    th.style.color = "#fff";
-    th.style.textAlign = "left";
+    th.className = "lcmp-table-head";
     headRow.appendChild(th);
   });
   thead.appendChild(headRow);
@@ -236,11 +223,7 @@ export function createLatticeComparisonPopup() {
   // wrapper's own overflow makes any number of blocks scrollable.
   const popup = document.createElement("div");
   popup.id = "latticeComparisonPopup";
-  popup.style.backgroundColor = "#222";
-  popup.style.color = "#fff";
-  popup.style.padding = "10px";
-  popup.style.maxHeight = "80vh";
-  popup.style.overflowY = "auto";
+  popup.className = "lcmp-popup";
   panelWindow.body.appendChild(popup);
 
   const blocksContainer = document.createElement("div");

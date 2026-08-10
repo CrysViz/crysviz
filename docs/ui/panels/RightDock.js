@@ -203,7 +203,13 @@ function renderTabs() {
   const visible = visiblePanels();
   if (headerTabs) fillTabs(headerTabs, visible, { withMenu: true, draggable: true });
   if (tabs) {
-    fillTabs(tabs, visible, { suffix: ' ▸' });
+    // One pull-tab on the collapsed edge, not one per window: with every
+    // window listed the edge became a full-height wall of vertical labels,
+    // which is most of what the dock is hiding when you collapse it. The tab
+    // names the front window because that is the one reopening lands on; the
+    // rest stay reachable from the header strip once the pane is open.
+    const front = visible.find((p) => p.id === frontId) || visible[0];
+    fillTabs(tabs, front ? [front] : [], { suffix: ' ▸' });
     tabs.hidden = visible.length === 0;
   }
 }

@@ -3,7 +3,7 @@ body {
   height: 100%;
   margin: 0;
   background-color: var(--surface-bg);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-ui);
 }
 
 body {
@@ -21,8 +21,18 @@ body {
   min-width: var(--ui-width);
   width:var(--ui-width);
   max-width:var(--ui-width);
-  overflow: auto;
-  padding: var(--ui-padding);
+  overflow-y: auto;
+overflow-x: hidden;
+  /* max() rather than a flat var(--ui-padding): on a rectangular screen
+     env() is 0 so this is exactly --ui-padding, unchanged; on a notched
+     phone (mobile rung makes this panel full-bleed — see responsive.css)
+     it grows just enough to clear the notch/home-indicator instead of
+     rendering content under it. Applied unconditionally since it costs
+     nothing where there's no cutout to clear. */
+  padding: max(var(--ui-padding), env(safe-area-inset-top))
+           max(var(--ui-padding), env(safe-area-inset-right))
+           max(var(--ui-padding), env(safe-area-inset-bottom))
+           max(var(--ui-padding), env(safe-area-inset-left));
   background: var(--panel-bg);
   color: var(--panel-fg);
   backdrop-filter: blur(var(--panel-blur));
@@ -38,7 +48,7 @@ body {
 .rotation-axis {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-3-5);
   align-items: center;
 }
 
@@ -50,32 +60,32 @@ body {
 
 .angle-buttons {
   display: flex;
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 
 .angle-btn {
-  font-size: 10px;
-  padding: 5px 10px;
+  font-size: var(--fs-xs);
+  padding: 5px var(--sp-3-5);
   cursor: pointer;
   background:var(--popup-bg);
-  color:#f9f9f9;
-  border-radius: 10px;
-  border: 1px solid rgba(128,128,128,1.0);
+  color:var(--muted-fg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line-grey);
 }
 .angle-btn:hover {
     transform: scale(1.05);
-    border: 1px solid white;
+    border: 1px solid var(--fg-1);
 }
 
 .angle-input {
   width: 40px;
   text-align: center;
   padding: 2px;
-  font-size: 12px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
+  font-size: var(--fs-base);
+  border: 1px solid var(--ink-3);
+  border-radius: var(--radius-5);
   background-color: var(--input-bg);
-  color:#f9f9f9;
+  color:var(--muted-fg);
 }
 /*------*/
 
@@ -115,14 +125,14 @@ body.panel-hidden #axesLegend {
   width: 54px;
   height: 54px;
   border-radius: 50%;
-  border: 2px solid rgba(26,26,26,0.8);
+  border: 2px solid var(--dot-border);
   cursor: pointer;
   top: max(120px, calc(var(--compact-stack-bottom, 0px) + 20px));
   /* --split-reserve is kept in sync with the right dock's pane width (see
      ui/panels/RightDock.js) so the dot stays clear of the pane instead of
      sliding underneath it. 0px when the dock is closed. */
   right: calc(20px + var(--split-reserve, 0px));
-  z-index: 999;
+  z-index: var(--z-anchor);
 }
 
 .popup {
@@ -131,10 +141,10 @@ body.panel-hidden #axesLegend {
   left: 120px;
   overflow: auto;
   background: var(--popup-bg);
-  border: 1px solid #444;
-  border-radius: 12px;
-  box-shadow: 0px 0px 4px 2px  rgba(0,0,0,0.5);
-  z-index: 999;
+  border: 1px solid var(--chrome-4);
+  border-radius: var(--radius-12);
+  box-shadow: 0px 0px 4px 2px  var(--overlay);
+  z-index: var(--z-anchor);
   display: none;         /* initially hidden */
   user-select: none;     /* prevent text selection while dragging */
 }
@@ -142,23 +152,17 @@ body.panel-hidden #axesLegend {
   user-select: text !important;
 }
 
-@media (prefers-color-scheme: dark) {
-   .background-dot {
-     border: 2px solid rgba(255,255,255,0.8);
-   }
- }
-
 .floating-comp-panel {
       position: absolute;
       top: 100px;
       left: 100px;
-      background: #fff;
-      border: 1px solid #ccc;
-      border-radius: 10px;
-      box-shadow: 0px 0px 4px 2px  rgba(0,0,0,0.2);
+      background: var(--fg-1);
+      border: 1px solid var(--ink-3);
+      border-radius: var(--radius-md);
+      box-shadow: 0px 0px 4px 2px  rgb(var(--shadow-rgb) / 0.2);
       cursor: move;
-      padding: 10px;
-      z-index: 1100;
+      padding: var(--sp-3-5);
+      z-index: var(--z-comp-panel);
 
   #LatticeComparisonPopUp.show {
     display: block;
@@ -198,25 +202,25 @@ body.panel-hidden #axesLegend {
 }
 
 .control-group {
-  margin: 0 0 16px 0;
+  margin: 0 0 var(--sp-5) 0;
   padding: 20px;
   background: var(--group-bg);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-12);
+  border: 1px solid var(--line-1);
   backdrop-filter: blur(10px);
 }
 
 .control-group h1 {
-  margin: 0 0 15px 0;
-  color: 	#FFBF00;
-  font-size: 16px;
-  font-weight: 500;
+  margin: 0 0 var(--sp-5) 0;
+  color: 	var(--warn);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
 }
 
 .control-group h3 {
-  margin: 0 0 15px 0;
-  font-size: 16px;
-  font-weight: 500;
+  margin: 0 0 var(--sp-5) 0;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
 }
 
 /* File actions row (Files window): Upload / Paste Text / Download (+ Share,
@@ -225,22 +229,22 @@ body.panel-hidden #axesLegend {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  gap: 8px;
-  margin-bottom: 15px;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 6px;
-  border-radius: 10px;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+  background: var(--wash-1);
+  padding: var(--sp-2);
+  border-radius: var(--radius-md);
 }
 
 .file-action-btn {
   width: 100%;
   background: var(--bg-color);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 10px 8px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
+  color: var(--fg-1);
+  border: 1px solid var(--line-1);
+  padding: var(--sp-3-5) var(--sp-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.2s ease, box-shadow 0.2s ease;
@@ -255,8 +259,8 @@ body.panel-hidden #axesLegend {
    a Log Scale checkbox instead of stretching to fill the row. */
 .cv-auto-range-btn {
   width: auto;
-  padding: 6px 12px;
-  font-size: 12px;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-base);
   white-space: nowrap;
 }
 
@@ -276,10 +280,10 @@ body.panel-hidden #axesLegend {
   min-width: 100%;
   z-index: 20;
   background: var(--menu-bg);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
-  padding: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius);
+  padding: var(--sp-1);
+  box-shadow: 0 4px 12px rgb(var(--shadow-rgb) / 0.4);
 }
 
 .download-menu button {
@@ -287,10 +291,10 @@ body.panel-hidden #axesLegend {
   width: 100%;
   background: none;
   border: none;
-  color: #fff;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
+  color: var(--fg-1);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-md);
   text-align: left;
   cursor: pointer;
   white-space: nowrap;
@@ -304,11 +308,11 @@ body.panel-hidden #axesLegend {
 #pasteTextModal {
   position: fixed;
   inset: 0;
-  z-index: 3000;
+  z-index: var(--z-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
 }
 
 #pasteTextModal[hidden] {
@@ -317,28 +321,28 @@ body.panel-hidden #axesLegend {
 
 .paste-modal {
   width: min(640px, calc(100vw - 32px));
-  padding: 16px;
+  padding: var(--sp-5);
   background: var(--menu-bg);
   color: var(--panel-fg);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius-12);
+  box-shadow: 0 8px 24px var(--overlay);
   backdrop-filter: blur(10px);
 }
 
 .paste-modal-actions {
   display: flex;
-  gap: 10px;
+  gap: var(--sp-3-5);
 }
 
 .paste-modal-actions #cancelTextButton {
-  margin-top: 12px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  margin-top: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--wash-2);
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
   cursor: pointer;
 }
 
@@ -346,11 +350,11 @@ body.panel-hidden #axesLegend {
 #pngExportModal {
   position: fixed;
   inset: 0;
-  z-index: 3000;
+  z-index: var(--z-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
 }
 
 #pngExportModal[hidden] {
@@ -359,50 +363,50 @@ body.panel-hidden #axesLegend {
 
 .png-export-modal {
   width: min(460px, calc(100vw - 32px));
-  padding: 16px 18px;
+  padding: var(--sp-5) 18px;
   background: var(--menu-bg);
   color: var(--panel-fg);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius-12);
+  box-shadow: 0 8px 24px var(--overlay);
   backdrop-filter: blur(10px);
 }
 
 .png-export-modal h3 {
-  margin: 0 0 12px 0;
-  font-size: 16px;
-  font-weight: 600;
+  margin: 0 0 var(--sp-4) 0;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
 }
 
 .png-row {
   display: flex;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
 }
 
 .png-row > label {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
+  gap: var(--sp-1);
+  font-size: var(--fs-md);
 }
 
 .png-row label.png-check {
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .png-row input[type="number"],
 .png-row select {
   width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.2);
-  color: #f5f5f5;
-  font-size: 13px;
+  padding: var(--sp-3) var(--sp-3-5);
+  border-radius: var(--radius);
+  border: 1px solid var(--line-1);
+  background: var(--overlay-20);
+  color: var(--ink-6);
+  font-size: var(--fs-md);
   box-sizing: border-box;
 }
 
@@ -411,22 +415,22 @@ body.panel-hidden #axesLegend {
 }
 
 .png-note {
-  margin: 0 0 12px 0;
-  font-size: 11.5px;
+  margin: 0 0 var(--sp-4) 0;
+  font-size: var(--fs-sm);
   opacity: 0.7;
-  line-height: 1.35;
+  line-height: var(--lh-normal);
 }
 
 .png-export-modal .paste-modal-actions #pngDownloadBtn {
   flex: 1;
-  margin-top: 4px;
-  padding: 12px 16px;
+  margin-top: var(--sp-1);
+  padding: var(--sp-4) var(--sp-5);
   background: var(--bg-color);
-  color: #fff;
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
   cursor: pointer;
 }
 
@@ -441,13 +445,13 @@ body.panel-hidden #axesLegend {
 }
 
 .png-export-modal .paste-modal-actions #pngCancelBtn {
-  margin-top: 4px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  margin-top: var(--sp-1);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--wash-2);
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
   cursor: pointer;
 }
 
@@ -456,11 +460,11 @@ body.panel-hidden #axesLegend {
 #raytraceWarningModal {
   position: fixed;
   inset: 0;
-  z-index: 3000;
+  z-index: var(--z-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
 }
 
 #raytraceWarningModal[hidden] {
@@ -468,15 +472,15 @@ body.panel-hidden #axesLegend {
 }
 
 .rt-warning-modal .rt-warning-body {
-  max-height: min(48vh, 420px);
+  max-height: min(48dvh, 420px);
   overflow-y: auto;
-  margin-bottom: 12px;
+  margin-bottom: var(--sp-4);
 }
 
 .rt-warning-modal .rt-warning-body p {
-  margin: 0 0 10px 0;
-  font-size: 12.5px;
-  line-height: 1.4;
+  margin: 0 0 var(--sp-3-5) 0;
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
 }
 
 .rt-warning-modal .rt-warning-body p:last-child {
@@ -486,9 +490,9 @@ body.panel-hidden #axesLegend {
 .rt-warning-check {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  font-size: 13px;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  font-size: var(--fs-md);
   cursor: pointer;
 }
 
@@ -498,14 +502,14 @@ body.panel-hidden #axesLegend {
 
 .rt-warning-modal .paste-modal-actions #raytraceWarningOk {
   flex: 1;
-  margin-top: 4px;
-  padding: 12px 16px;
+  margin-top: var(--sp-1);
+  padding: var(--sp-4) var(--sp-5);
   background: var(--bg-color);
-  color: #fff;
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
   cursor: pointer;
 }
 
@@ -514,13 +518,13 @@ body.panel-hidden #axesLegend {
 }
 
 .rt-warning-modal .paste-modal-actions #raytraceWarningCancel {
-  margin-top: 4px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  margin-top: var(--sp-1);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--wash-2);
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
   cursor: pointer;
 }
 
@@ -535,18 +539,18 @@ body.panel-hidden #axesLegend {
 .order-structure-list {
   max-height: 200px;
   overflow-y: auto;
-  margin-bottom: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  margin-bottom: var(--sp-3);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
 }
 
 .order-structure-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px 6px 6px;
-  font-size: 11px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-2);
+  font-size: var(--fs-sm);
+  border-bottom: 1px solid var(--wash-2);
   border-left: 3px solid transparent;
   cursor: pointer;
 }
@@ -556,40 +560,40 @@ body.panel-hidden #axesLegend {
 }
 
 .order-structure-row.best {
-  background: rgba(255, 193, 7, 0.1);
+  background: rgb(var(--best-row-rgb) / 0.1);
 }
 
 /* The one candidate currently rendered into the 3D view (see showCandidate()
  * in LatticeSupercellPanel.js) — a left accent bar so it reads at a glance
  * even when it's also the .best row (amber background) at the same time. */
 .order-structure-row.showing {
-  border-left-color: var(--highlight-color, #4fc3f7);
-  background: rgba(255, 255, 255, 0.06);
+  border-left-color: var(--highlight-color, var(--info-bright));
+  background: var(--wash-1-5);
 }
 
 .order-structure-row.best.showing {
-  background: rgba(255, 193, 7, 0.18);
+  background: rgb(var(--best-row-rgb) / 0.18);
 }
 
 .order-structure-rank {
   width: 24px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--fg-2);
 }
 
 .order-structure-energy {
   flex: 1;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .order-structure-delta {
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 10.5px;
+  color: var(--fg-2);
+  font-size: var(--fs-xs);
   min-width: 88px;
   text-align: right;
 }
 
 .order-structure-row.best .order-structure-delta {
-  color: #ffc107;
+  color: var(--warn);
 }
 
 /* Keyboard shortcuts help modal (ui/KeyboardShortcuts.js) — reuses the
@@ -597,11 +601,11 @@ body.panel-hidden #axesLegend {
 #shortcutsHelpModal {
   position: fixed;
   inset: 0;
-  z-index: 3000;
+  z-index: var(--z-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
 }
 
 #shortcutsHelpModal[hidden] {
@@ -610,7 +614,7 @@ body.panel-hidden #axesLegend {
 
 .shortcuts-help-modal {
   width: min(760px, calc(100vw - 32px));
-  max-height: 84vh;
+  max-height: 84dvh;
   display: flex;
   flex-direction: column;
 }
@@ -618,7 +622,7 @@ body.panel-hidden #axesLegend {
 .shortcuts-help-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .shortcuts-help-title-row h3 {
@@ -634,13 +638,13 @@ body.panel-hidden #axesLegend {
   height: 18px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 11px;
+  border: 1px solid var(--popup-border);
+  background: var(--wash-2);
+  color: var(--fg-75);
+  font-size: var(--fs-sm);
   font-style: italic;
-  font-family: Georgia, 'Times New Roman', serif;
-  line-height: 1;
+  font-family: var(--font-display);
+  line-height: var(--lh-tight);
   cursor: pointer;
   transition: background-color 0.15s, color 0.15s;
 }
@@ -648,14 +652,14 @@ body.panel-hidden #axesLegend {
 .shortcuts-help-info-btn:hover,
 .shortcuts-help-info-btn[aria-expanded="true"] {
   background: var(--bg-color);
-  color: #fff;
+  color: var(--fg-1);
 }
 
 .shortcuts-help-note {
-  margin: 8px 0 12px 0;
-  font-size: 11.5px;
+  margin: var(--sp-3) 0 var(--sp-4) 0;
+  font-size: var(--fs-sm);
   opacity: 0.7;
-  line-height: 1.35;
+  line-height: var(--lh-normal);
   text-align: justify;
 }
 
@@ -670,7 +674,7 @@ body.panel-hidden #axesLegend {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  margin-bottom: 12px;
+  margin-bottom: var(--sp-4);
 }
 
 .shortcuts-help-column {
@@ -680,9 +684,9 @@ body.panel-hidden #axesLegend {
 }
 
 .shortcuts-help-column h4 {
-  margin: 0 0 8px 0;
-  font-size: 12px;
-  font-weight: 600;
+  margin: 0 0 var(--sp-3) 0;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   opacity: 0.65;
@@ -705,9 +709,9 @@ body.panel-hidden #axesLegend {
  * defined in ui/KeyboardShortcuts.js's COMMANDS array, not alphabetized. */
 .shortcuts-help-group-row th {
   text-align: left;
-  padding: 10px 0 4px 0;
-  font-size: 10.5px;
-  font-weight: 600;
+  padding: var(--sp-3-5) 0 var(--sp-1) 0;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   opacity: 0.45;
@@ -717,25 +721,9 @@ body.panel-hidden #axesLegend {
   padding-top: 0;
 }
 
-@media (orientation: landscape) {
-  .shortcuts-help-columns {
-    flex-direction: row;
-    gap: 16px;
-    overflow: hidden; /* scrolling moves to each column's own list below */
-  }
-
-  .shortcuts-help-column {
-    flex: 1;
-    min-height: 0;
-  }
-
-  .shortcuts-help-list {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
-}
+/* Responsive layout for this modal (previously an orientation:landscape
+   media query, folded into the "short" rung) now lives in
+   styles/responsive.css, per Wave 4's single-file @media rule. */
 
 .shortcuts-help-row td {
   padding: 3px 0;
@@ -744,19 +732,19 @@ body.panel-hidden #axesLegend {
 
 .shortcuts-help-row .shortcuts-help-clear-cell {
   width: 20px;
-  padding-right: 4px;
+  padding-right: var(--sp-1);
 }
 
 .shortcuts-help-row .shortcuts-help-key-cell {
   width: 1%; /* shrink to the key button's own content, not table-layout's equal split */
   white-space: nowrap;
-  padding-right: 10px;
+  padding-right: var(--sp-3-5);
 }
 
 .shortcuts-help-desc-cell {
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   opacity: 0.9;
-  line-height: 1.3;
+  line-height: var(--lh-normal);
 }
 
 /* Left of each key button — clears that shortcut entirely (stored as "NONE"
@@ -766,20 +754,20 @@ body.panel-hidden #axesLegend {
   width: 16px;
   height: 16px;
   padding: 0;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 12px;
-  line-height: 1;
+  border-radius: var(--radius-4);
+  border: 1px solid var(--wash-4);
+  background: var(--wash-1);
+  color: var(--fg-2);
+  font-size: var(--fs-base);
+  line-height: var(--lh-tight);
   cursor: pointer;
   transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .shortcuts-help-clear:hover:not(:disabled) {
-  background: rgba(220, 53, 53, 0.25);
-  border-color: rgba(220, 53, 53, 0.6);
-  color: #fff;
+  background: rgb(var(--shortcuts-danger-rgb) / 0.25);
+  border-color: rgb(var(--shortcuts-danger-rgb) / 0.6);
+  color: var(--fg-1);
 }
 
 .shortcuts-help-clear:disabled {
@@ -793,12 +781,12 @@ body.panel-hidden #axesLegend {
   min-width: 62px;
   max-width: 140px;
   padding: 2px 7px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-5);
+  background: var(--input-bg);
+  border: 1px solid var(--line-2);
   color: inherit;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
@@ -808,7 +796,7 @@ body.panel-hidden #axesLegend {
 }
 
 .shortcuts-help-key:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--line-2);
 }
 
 /* Individual tokens inside a key button's default (non-recording,
@@ -818,15 +806,15 @@ body.panel-hidden #axesLegend {
 .shortcuts-help-key-tokens {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .shortcuts-help-key-token {
-  color: #fff;
+  color: var(--fg-1);
 }
 
 .shortcuts-help-key-sep {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--fg-3);
 }
 
 .shortcuts-help-key-empty {
@@ -835,19 +823,19 @@ body.panel-hidden #axesLegend {
 }
 
 .shortcuts-help-key-recording {
-  background: rgba(240, 132, 18, 0.25);
-  border-color: rgba(240, 132, 18, 0.7);
-  box-shadow: 0 0 0 1px rgba(240, 132, 18, 0.4);
+  background: rgb(var(--danger-rgb) / 0.25);
+  border-color: rgb(var(--danger-rgb) / 0.7);
+  box-shadow: 0 0 0 1px rgb(var(--danger-rgb) / 0.4);
 }
 
 /* Shown briefly when a captured combo is already used by another command —
  * the rebind is rejected, not reassigned, so this reads as an error rather
  * than the orange "recording" state above. */
 .shortcuts-help-key-conflict {
-  background: rgba(220, 53, 53, 0.25);
-  border-color: rgba(220, 53, 53, 0.85);
-  box-shadow: 0 0 0 1px rgba(220, 53, 53, 0.5);
-  color: #fff;
+  background: rgb(var(--shortcuts-danger-rgb) / 0.25);
+  border-color: rgb(var(--shortcuts-danger-rgb) / 0.85);
+  box-shadow: 0 0 0 1px rgb(var(--shortcuts-danger-rgb) / 0.5);
+  color: var(--fg-1);
 }
 
 .shortcuts-help-actions {
@@ -857,13 +845,13 @@ body.panel-hidden #axesLegend {
 .shortcuts-help-modal .shortcuts-help-actions #shortcutsHelpClose {
   flex: 1;
   min-width: 100px;
-  margin-top: 4px;
-  padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  margin-top: var(--sp-1);
+  padding: var(--sp-3-5) var(--sp-5);
+  background: var(--wash-2);
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
   cursor: pointer;
 }
 
@@ -877,20 +865,20 @@ body.panel-hidden #axesLegend {
 .shortcuts-help-modal .shortcuts-help-actions #shortcutsHelpReset {
   flex: 1;
   min-width: 100px;
-  margin-top: 4px;
-  padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
-  font-size: 14px;
+  margin-top: var(--sp-1);
+  padding: var(--sp-3-5) var(--sp-5);
+  background: var(--wash-1);
+  color: var(--fg-85);
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
   cursor: pointer;
 }
 
 .shortcuts-help-modal .shortcuts-help-actions #shortcutsHelpReset:hover {
-  background: rgba(220, 53, 53, 0.2);
-  border-color: rgba(220, 53, 53, 0.6);
-  color: #fff;
+  background: rgb(var(--shortcuts-danger-rgb) / 0.2);
+  border-color: rgb(var(--shortcuts-danger-rgb) / 0.6);
+  color: var(--fg-1);
 }
 
 /* Reset-all-shortcuts confirmation (ui/KeyboardShortcuts.js's
@@ -900,11 +888,11 @@ body.panel-hidden #axesLegend {
 #shortcutsResetConfirmModal {
   position: fixed;
   inset: 0;
-  z-index: 3100;
+  z-index: var(--z-confirm);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
 }
 
 #shortcutsResetConfirmModal[hidden] {
@@ -917,38 +905,38 @@ body.panel-hidden #axesLegend {
 
 .shortcuts-reset-confirm-modal p {
   margin: 0 0 14px 0;
-  font-size: 12.5px;
-  line-height: 1.4;
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
   opacity: 0.85;
 }
 
 .shortcuts-reset-confirm-modal .paste-modal-actions #shortcutsResetConfirmOk {
   flex: 1;
   min-width: 100px;
-  margin-top: 4px;
-  padding: 10px 16px;
-  background: rgba(220, 53, 53, 0.25);
-  border: 1px solid rgba(220, 53, 53, 0.7);
-  color: #fff;
-  border-radius: 8px;
-  font-size: 14px;
+  margin-top: var(--sp-1);
+  padding: var(--sp-3-5) var(--sp-5);
+  background: rgb(var(--shortcuts-danger-rgb) / 0.25);
+  border: 1px solid rgb(var(--shortcuts-danger-rgb) / 0.7);
+  color: var(--fg-1);
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
   cursor: pointer;
 }
 
 .shortcuts-reset-confirm-modal .paste-modal-actions #shortcutsResetConfirmOk:hover {
-  background: rgba(220, 53, 53, 0.4);
+  background: rgb(var(--shortcuts-danger-rgb) / 0.4);
 }
 
 .shortcuts-reset-confirm-modal .paste-modal-actions #shortcutsResetConfirmCancel {
   flex: 1;
   min-width: 100px;
-  margin-top: 4px;
-  padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  margin-top: var(--sp-1);
+  padding: var(--sp-3-5) var(--sp-5);
+  background: var(--wash-2);
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
   cursor: pointer;
 }
 
@@ -964,11 +952,11 @@ body.panel-hidden #axesLegend {
 #confirmModal {
   position: fixed;
   inset: 0;
-  z-index: 3100;
+  z-index: var(--z-confirm);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay);
 }
 
 #confirmModal[hidden] {
@@ -981,22 +969,22 @@ body.panel-hidden #axesLegend {
 
 .lock-confirm-modal p {
   margin: 0 0 14px 0;
-  font-size: 12.5px;
-  line-height: 1.4;
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
   opacity: 0.85;
 }
 
 .lock-confirm-modal .paste-modal-actions #confirmModalOk {
   flex: 1;
   min-width: 100px;
-  margin-top: 4px;
-  padding: 10px 16px;
+  margin-top: var(--sp-1);
+  padding: var(--sp-3-5) var(--sp-5);
   background: var(--bg-color);
-  color: #fff;
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
   cursor: pointer;
 }
 
@@ -1007,13 +995,13 @@ body.panel-hidden #axesLegend {
 .lock-confirm-modal .paste-modal-actions #confirmModalCancel {
   flex: 1;
   min-width: 100px;
-  margin-top: 4px;
-  padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  margin-top: var(--sp-1);
+  padding: var(--sp-3-5) var(--sp-5);
+  background: var(--wash-2);
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
   cursor: pointer;
 }
 
@@ -1032,11 +1020,11 @@ body.panel-hidden #axesLegend {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--wash-4);
+  background: var(--wash-1-5);
   color: var(--panel-fg);
-  font-size: 14px;
-  line-height: 1;
+  font-size: var(--fs-lg);
+  line-height: var(--lh-tight);
   cursor: pointer;
   transition: background-color 0.2s, box-shadow 0.2s;
 }
@@ -1058,18 +1046,18 @@ body.panel-hidden #axesLegend {
    and just as effective for an axis-aligned rectangle. */
 .cv-crop-overlay {
   position: fixed;
-  z-index: 3000;
+  z-index: var(--z-dialog);
   outline: none;
 }
 .cv-crop-mask {
   position: absolute;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--overlay-60);
   pointer-events: none;
 }
 .cv-crop-rect {
   position: absolute;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  border: 2px solid var(--fg-1);
+  box-shadow: 0 0 0 1px rgb(var(--shadow-rgb) / 0.4);
   cursor: move;
   touch-action: none;
 }
@@ -1078,7 +1066,7 @@ body.panel-hidden #axesLegend {
 .cv-crop-rect::after {
   content: "";
   position: absolute;
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--fg-3);
   pointer-events: none;
 }
 .cv-crop-rect::before {
@@ -1087,7 +1075,7 @@ body.panel-hidden #axesLegend {
   top: 0;
   bottom: 0;
   width: 1px;
-  box-shadow: calc(33.333% - 1px) 0 0 rgba(255, 255, 255, 0.35);
+  box-shadow: calc(33.333% - 1px) 0 0 var(--fg-3);
 }
 .cv-crop-rect::after {
   top: 33.333%;
@@ -1095,7 +1083,7 @@ body.panel-hidden #axesLegend {
   left: 0;
   right: 0;
   height: 1px;
-  box-shadow: 0 calc(33.333% - 1px) 0 rgba(255, 255, 255, 0.35);
+  box-shadow: 0 calc(33.333% - 1px) 0 var(--fg-3);
 }
 .cv-crop-handle {
   position: absolute;
@@ -1108,7 +1096,7 @@ body.panel-hidden #axesLegend {
   position: absolute;
   width: 100%;
   height: 100%;
-  border: 3px solid #fff;
+  border: 3px solid var(--fg-1);
   border-radius: 2px;
 }
 .cv-crop-handle-nw { left: -11px; top: -11px; cursor: nwse-resize; }
@@ -1125,76 +1113,76 @@ body.panel-hidden #axesLegend {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 10px;
+  gap: var(--sp-3-5);
+  padding: var(--sp-3) var(--sp-3-5);
+  border-radius: var(--radius-md);
   background: var(--menu-bg);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--wash-4);
+  box-shadow: var(--shadow-lg);
   backdrop-filter: blur(10px);
   white-space: nowrap;
 }
 .cv-crop-hint {
-  font-size: 12px;
+  font-size: var(--fs-base);
   opacity: 0.7;
   color: var(--panel-fg);
 }
 .cv-crop-confirm,
 .cv-crop-cancel {
-  padding: 8px 14px;
-  border-radius: 8px;
+  padding: var(--sp-3) 14px;
+  border-radius: var(--radius);
   border: none;
-  font-size: 13px;
+  font-size: var(--fs-md);
   cursor: pointer;
 }
 .cv-crop-confirm {
   background: var(--bg-color);
-  color: #fff;
-  font-weight: 500;
+  color: var(--fg-1);
+  font-weight: var(--fw-medium);
 }
 .cv-crop-confirm:hover {
   box-shadow: 0 0 4px 2px var(--highlight-color);
 }
 .cv-crop-cancel {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--wash-2);
+  color: var(--fg-1);
 }
 
 #structureText {
   width: 100%;
   min-height: 160px;
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.2);
-  color: #f5f5f5;
+  padding: var(--sp-4);
+  border-radius: var(--radius);
+  border: 1px solid var(--line-1);
+  background: var(--overlay-20);
+  color: var(--ink-6);
   resize: vertical;
-  font-family: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.4;
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
   box-sizing: border-box;
 }
 
 #structureText::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--fg-50);
 }
 
 #loadTextButton {
-  margin-top: 12px;
+  margin-top: var(--sp-4);
   width: 100%;
-  padding: 12px 16px;
+  padding: var(--sp-4) var(--sp-5);
   background: var( --bg-color);
-  color: white;
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 #loadTextButton:hover {
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid var(--line-1);
   transform: translateY(-1px);
   box-shadow: 0px 0px 4px 2px  var(--highlight-color);
 }
@@ -1207,49 +1195,49 @@ body.panel-hidden #axesLegend {
 }
 
 .comparison-group h1 {
-  margin: 0 0 15px 0;
-  color:  #FFBF00;
-  font-size: 16px;
-  font-weight: 500;
+  margin: 0 0 var(--sp-5) 0;
+  color:  var(--warn);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
 }
 
 .comparison-group h3 {
-  margin: 0 0 15px 0;
-  color: #81c784;
-  font-size: 16px;
-  font-weight: 500;
+  margin: 0 0 var(--sp-5) 0;
+  color: var(--ok-bright);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
 }
 
 .second-input-mode-toggle {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin-bottom: 15px;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 6px;
-  border-radius: 10px;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+  background: var(--wash-1);
+  padding: var(--sp-2);
+  border-radius: var(--radius-md);
 }
 
 .second-input-mode-btn {
   background: transparent;
-  color: #ddd;
+  color: var(--ink-4);
   border: none;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
+  padding: var(--sp-3-5) var(--sp-4);
+  border-radius: var(--radius);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
 .second-input-mode-btn:hover {
   background: var(--bg-color);
-  color: #fff;
+  color: var(--fg-1);
 }
 
 .second-input-mode-btn.active {
   background: var(--highlight-color);
-  color: #fff;
+  color: var(--fg-1);
 }
 
 .second-input-mode-panel {
@@ -1269,13 +1257,13 @@ body.panel-hidden #axesLegend {
 
 #secondFileLabel {
   display: block;
-  padding: 15px 10px;
+  padding: var(--sp-5) var(--sp-3-5);
   background: var(--bg-color);
-  color: white;
+  color: var(--fg-1);
   text-align: center;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   transition: all 0.3s ease;
   border: 2px dashed transparent;
 }
@@ -1293,58 +1281,58 @@ body.panel-hidden #axesLegend {
 #secondStructureText {
   width: 100%;
   min-height: 160px;
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.2);
-  color: #f5f5f5;
+  padding: var(--sp-4);
+  border-radius: var(--radius);
+  border: 1px solid var(--line-1);
+  background: var(--overlay-20);
+  color: var(--ink-6);
   resize: vertical;
-  font-family: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.4;
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
   box-sizing: border-box;
 }
 
 #secondStructureText::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--fg-50);
 }
 
 #secondLoadTextButton {
-  margin-top: 12px;
+  margin-top: var(--sp-4);
   width: 100%;
-  padding: 12px 16px;
+  padding: var(--sp-4) var(--sp-5);
   background: var( --bg-color);
-  color: white;
+  color: var(--fg-1);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 #secondLoadTextButton:hover {
   transform: translateY(-1px);
-  box-shadow: 0px 0px 4px 2px  rgba(54, 143, 110, 0.35);
+  box-shadow: 0px 0px 4px 2px  rgb(var(--btn-glow-rgb) / 0.35);
 }
 
 
 label {
   display: block;
-  margin: 15px 0 8px 0;
-  color: #ccc;
+  margin: var(--sp-5) 0 var(--sp-3) 0;
+  color: var(--ink-3);
   /* Multiplied by the Overall font scale (Settings). This is the single source
      for label sizing, so it carries section headlines (.panel-headline) and
      slider labels along with it. */
-  font-size: calc(14px * var(--cv-font-scale, 1));
-  font-weight: 500;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
 }
 
 input[type="range"] {
   width: 100%;
   height: 6px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-3);
+  background: var(--track-bg);
   outline: none;
   -webkit-appearance: none;
 }
@@ -1356,7 +1344,7 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 50%;
   background: var(--highlight-color);
   cursor: pointer;
-  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-glow);
 }
 
 input[type="range"]::-moz-range-thumb {
@@ -1366,18 +1354,18 @@ input[type="range"]::-moz-range-thumb {
   background: var(--highlight-color);
   cursor: pointer;
   border: none;
-  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-glow);
 }
 
 input[type="checkbox"] {
-  margin-right: 10px;
+  margin-right: var(--sp-3-5);
   transform: scale(1.2);
-  accent-color: var(--highlight-color);
+  accent-color: var(--accent-fg);
 }
 
 .slider-value {
-  color: var(--highlight-color);
-  font-weight: 600;
+  color: var(--accent-fg);
+  font-weight: var(--fw-bold);
 }
 
 #view {
@@ -1390,12 +1378,12 @@ input[type="checkbox"] {
 #aboutOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--overlay-70);
   backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2000;
+  z-index: var(--z-chrome);
   opacity: 0;
   transition: opacity 0.15s ease;
 }
@@ -1405,17 +1393,17 @@ input[type="checkbox"] {
 }
 
 #aboutModal {
-  background: #0b1f1c;
-  color: #f5fffa;
+  background: var(--about-bg);
+  color: var(--ok-tint);
   max-width: 640px;
   max-height: 80dvh;
   overflow-y: auto;
   padding: 28px 32px;
   border-radius: 16px;
-  border: 1px solid rgba(129, 199, 132, 0.4);
-  box-shadow: 0px 0px 4px 2px  rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--about-border);
+  box-shadow: 0px 0px 4px 2px  rgb(var(--shadow-rgb) / 0.45);
   position: relative;
-  font-size: 14px;
+  font-size: var(--fs-lg);
   line-height: 1.6;
 }
 
@@ -1425,24 +1413,24 @@ input[type="checkbox"] {
   right: 12px;
   background: transparent;
   border: none;
-  color: #81c784;
+  color: var(--ok-bright);
   font-size: 24px;
   cursor: pointer;
-  line-height: 1;
-  padding: 4px;
+  line-height: var(--lh-tight);
+  padding: var(--sp-1);
 }
 
 #aboutClose:hover {
-  color: #a5d6a7;
+  color: var(--about-close-hover);
 }
 
 #aboutContent h1,
 #aboutContent h2,
 #aboutContent h3 {
-  color: #81c784;
+  color: var(--ok-bright);
   margin-top: 1.4em;
   margin-bottom: 0.6em;
-  font-weight: 600;
+  font-weight: var(--fw-bold);
 }
 
 #aboutContent h1 {
@@ -1459,7 +1447,7 @@ input[type="checkbox"] {
 
 #aboutContent p {
   margin: 0.8em 0;
-  color: #e8f5e9;
+  color: var(--ok-tint);
 }
 
 #aboutContent ul {
@@ -1472,24 +1460,24 @@ input[type="checkbox"] {
 }
 
 #aboutContent a {
-  color: #4fc3f7;
+  color: var(--info-bright);
   text-decoration: underline;
 }
 
 #aboutContent a:hover {
-  color: #81d4fa;
+  color: var(--link-hover);
 }
 
 #aboutContent code {
-  background: rgba(12, 45, 36, 0.7);
-  padding: 2px 4px;
-  border-radius: 4px;
-  font-family: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  background: var(--about-code-bg);
+  padding: 2px var(--sp-1);
+  border-radius: var(--radius-4);
+  font-family: var(--font-mono);
   font-size: 0.92em;
 }
 
 #aboutContent .about-error {
-  color: #ff8a80;
+  color: var(--danger-bright);
 }
 
 #aboutOverlay[hidden] {
@@ -1501,8 +1489,8 @@ input[type="checkbox"] {
     align-items: center;
     justify-content: space-between;
     background-color: var( --bg-color);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius);
     padding: 0.6em 1em;
     cursor: pointer;
     user-select: none;
@@ -1520,8 +1508,8 @@ input[type="checkbox"] {
   /* Visual panel (Sizes/Scene/Rendering/Colors/Camera): larger, centered
      headlines make its several sections easier to tell apart at a glance. */
   #cvPanelBody-visual .panel-headline {
-    font-size: calc(16px * var(--cv-font-scale, 1));
-    font-weight: 600;
+    font-size: var(--fs-xl);
+    font-weight: var(--fw-bold);
     text-align: center;
   }
 
@@ -1530,9 +1518,9 @@ input[type="checkbox"] {
      border around each section's headline + controls, so several stacked
      sections read as distinct groups instead of one long flat list. */
   .panel-section {
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 12px;
-    padding: 10px 14px 14px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-12);
+    padding: var(--sp-3-5) 14px 14px;
     margin: 0 0 14px 0;
   }
 
@@ -1554,14 +1542,14 @@ input[type="checkbox"] {
   .bond-toggle:focus {
     background-color: var( --bg-color);
     box-shadow: 0px 0px 4px 2px  var( --bg-color);
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid var(--line-1);
     outline: none;
   }
 
   .bond-toggle h4 {
     margin: 0;
     font-size: 1rem;
-    font-weight: 600;
+    font-weight: var(--fw-bold);
   }
 
   .toggle-icon {
@@ -1592,62 +1580,62 @@ input[type="checkbox"] {
 
 #bondControls::-webkit-scrollbar-track {
   background: var( --bg-color);
-  border-radius: 3px;
+  border-radius: var(--radius-3);
 }
 
 #bondControls::-webkit-scrollbar-thumb {
   background: var(--hover-color);
-  border-radius: 3px;
+  border-radius: var(--radius-3);
 }
 
 .bond-control {
-  margin: 12px 0;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
+  margin: var(--sp-4) 0;
+  padding: var(--sp-4);
+  background: var(--wash-1);
+  border-radius: var(--radius);
   border-left: 3px solid var(--hover-color);
 }
 
 .bond-label {
-  color: #fff;
-  font-size: 14px;
-  font-weight: 500;
+  color: var(--fg-1);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
   margin-bottom: 5px;
 }
 
 .bottonWrapper {
-padding: 0px 0px 10px 0px;
+padding: 0px 0px var(--sp-3-5) 0px;
 display: flex;
 justify-content: center;
 }
 
 .reset-btn {
-  font-size: 14px;
-  background: rgba(240, 132, 18,0.90); /*rgba(60,60,60,0.8)*/
-  color: white;
+  font-size: var(--fs-lg);
+  background: var(--danger); /*rgba(60,60,60,0.8)*/
+  color: var(--fg-1);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 
 .reset-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0px 0px 4px 2px  rgba(255, 107, 107, 0.1);
-  border: 1px solid rgba(255,255,255,0.5);
+  box-shadow: 0px 0px 4px 2px  rgb(var(--danger-bright-rgb) / 0.1);
+  border: 1px solid var(--line-3);
 }
 
 /* Destructive variant: "Clear local data" wipes all persisted settings. */
 .reset-btn-danger {
-  background: rgba(200, 35, 35, 0.92);
+  background: var(--danger-fill);
 }
 
 .bond-checkbox {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-  padding: 4px 0;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-1);
+  padding: var(--sp-1) 0;
 }
 
 .bond-checkbox input[type="checkbox"] {
@@ -1659,12 +1647,12 @@ justify-content: center;
     align-items: center;
     justify-content: space-between;
     background-color: var( --bg-color);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius);
     padding: 0.6em 1em;
     cursor: pointer;
     user-select: none;
-    margin: 15px 0;
+    margin: var(--sp-5) 0;
     transition: background-color 0.2s, box-shadow 0.2s;
   }
 
@@ -1672,14 +1660,14 @@ justify-content: center;
   .spin-toggle:focus {
     background-color: var( --bg-color);
     box-shadow: 0px 0px 4px 2px  var( --bg-color);
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid var(--line-1);
     outline: none;
   }
 
   .spin-toggle h4 {
     margin: 0;
     font-size: 1rem;
-    font-weight: 600;
+    font-weight: var(--fw-bold);
   }
 
   .toggle-icon {
@@ -1692,8 +1680,8 @@ justify-content: center;
     display: none;
     margin-top: 0.5em;
     padding: 0.5em 1em;
-    border-radius: 8px;
-    border:1px solid rgba(255,255,255,0.3);
+    border-radius: var(--radius);
+    border:1px solid var(--popup-border);
   }
 
   .collapsible-content.open {
@@ -1712,70 +1700,70 @@ justify-content: center;
 
 #spinControls::-webkit-scrollbar-track {
   background: var( --bg-color);
-  border-radius: 3px;
+  border-radius: var(--radius-3);
 }
 
 #spinControls::-webkit-scrollbar-thumb {
   background: var(--hover-color);
-  border-radius: 3px;
+  border-radius: var(--radius-3);
 }
 
 .spin-control {
   justify-content: center;
-  margin: 12px 0;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
+  margin: var(--sp-4) 0;
+  padding: var(--sp-4);
+  background: var(--wash-1);
+  border-radius: var(--radius);
   border-left: 3px solid var(--hover-color);
 }
 
 .spin-label {
-  color: #fff;
-  font-size: 14px;
-  font-weight: 500;
+  color: var(--fg-1);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
   margin-bottom: 5px;
 }
 
 .spinInputWrapper {
 justify-content: center;
 display: grid; 
-padding: 6px;
-background: rgba(255, 255, 255, 0.05);
-border-radius: 10px;
-gap: 8px;
+padding: var(--sp-2);
+background: var(--wash-1);
+border-radius: var(--radius-md);
+gap: var(--sp-3);
 
 }
 
 .spin-input-mode-toggle {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin-bottom: 15px;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 6px;
-  border-radius: 10px;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+  background: var(--wash-1);
+  padding: var(--sp-2);
+  border-radius: var(--radius-md);
 }
 
 .spin-input-mode-btn {
   background: transparent;
-  color: #ddd;
+  color: var(--ink-4);
   border: none;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
+  padding: var(--sp-3-5) var(--sp-4);
+  border-radius: var(--radius);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
 .spin-input-mode-btn:hover {
   background: var(--bg-color);
-  color: #fff;
+  color: var(--fg-1);
 }
 
 .spin-input-mode-btn.active {
   background: var(--highlight-color)
-  color: #fff;
+  color: var(--fg-1);
 }
 
 .spin-input-mode-panel {
@@ -1788,27 +1776,27 @@ gap: 8px;
 
 
 .bottonWrapper {
-padding: 0px 0px 10px 0px;
+padding: 0px 0px var(--sp-3-5) 0px;
 display: flex;
 justify-content: center;
 }
 
 .reset-btn {
-  background: rgba(240, 132, 18,0.90); /*rgba(60,60,60,0.8)*/
-  color: white;
+  background: var(--danger); /*rgba(60,60,60,0.8)*/
+  color: var(--fg-1);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 
 
 .spin-checkbox {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  padding: 4px 0;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-1) 0;
 }
 
 .spin-checkbox input[type="checkbox"] {
@@ -1820,12 +1808,12 @@ justify-content: center;
     align-items: center;
     justify-content: space-between;
     background-color: var(--group-bg);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius);
     padding: 0.6em 1em;
     cursor: pointer;
     user-select: none;
-    margin: 15px 0;
+    margin: var(--sp-5) 0;
     transition: background-color 0.2s, box-shadow 0.2s;
   }
 
@@ -1833,15 +1821,15 @@ justify-content: center;
   .comparison-toggle:focus {
     background-color: var( --bg-color);
     box-shadow: 0px 0px 4px 2px  var( --bg-color);
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid var(--line-1);
     outline: none;
   }
 
   .comparison-toggle h4 {
-    color: #81c784;
+    color: var(--ok-bright);
     margin: 0;
     font-size: 1rem;
-    font-weight: 600;
+    font-weight: var(--fw-bold);
   }
 
 
@@ -1849,14 +1837,14 @@ justify-content: center;
   position: fixed;
   top: 20px;
   right: 20px;
-  background: rgba(0, 0, 0, 0.8);
-  color: #fff;
-  padding: 10px 15px;
+  background: var(--float-panel-bg);
+  color: var(--fg-1);
+  padding: var(--sp-3-5) var(--sp-5);
   border-radius: 20px;
-  font-size: 12px;
-  z-index: 1000;
+  font-size: var(--fs-base);
+  z-index: var(--z-overlay-widget);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--line-1);
 }
 
 /* compositions and clicked element (content lives inside the unified
@@ -1870,22 +1858,22 @@ justify-content: center;
   justify-content: space-between;
   cursor: pointer;
   user-select: none;
-  padding: 6px 8px;
-  border-radius: 8px;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
   background: var(--bg-color);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--line-1);
 }
 
 #structureInfoContent .structure-toggle h4 {
   margin: 5px 20px 0 20px;
-  font-size: 15px;
+  font-size: var(--fs-lg);
   font-weight: 800;
-  line-height: 1.0;
-  color: rgba(255, 255, 255, 0.8);
+  line-height: var(--lh-tight);
+  color: var(--fg-75);
 }
 
-.section-heading { margin-top:10px; margin-bottom:6px; font-size:14px; font-weight:600; padding-left:8px; }
-.toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(0,0,0,0.5); color:var(--accent-color); font-weight:1000; transition:transform .18s ease, background .18s ease, color .18s ease; }
+.section-heading { margin-top:var(--sp-3-5); margin-bottom:var(--sp-2); font-size: var(--fs-lg); font-weight:var(--fw-bold); padding-left:var(--sp-3); }
+.toggle-icon { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius: var(--radius-sm); background:var(--overlay); color:var(--accent-color); font-weight:1000; transition:transform .18s ease, background .18s ease, color .18s ease; }
 
 .toggle-icon.open { transform: background:var(--accent-color); color:var(--accent-color); }
 .collapsible-content { overflow-y:auto; max-height:0; transition:max-height .28s ease, padding .18s ease; }
@@ -1895,20 +1883,20 @@ justify-content: center;
 }
 
 .collapsible-content::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  background: var(--track-bg);
+  border-radius: var(--radius-3);
 }
 
 .collapsible-content::-webkit-scrollbar-thumb {
   background: var(--hover-color);
-  border-radius: 3px;
+  border-radius: var(--radius-3);
 }
 
-.collapsible-content.open { justify-content: center;  padding-top:8px; max-height:650px; margin: 10px 0 0px 0;}
-#composition { color:#d7eef6; line-height:1.4; }
+.collapsible-content.open { justify-content: center;  padding-top:var(--sp-3); max-height:650px; margin: var(--sp-3-5) 0 0px 0;}
+#composition { color:var(--info-tint); line-height: var(--lh-normal); }
 #composition [hidden] { display: none !important; }
-#measure { margin-top:8px; }
-#measureRow { display:flex; justify-content:space-between; gap:8px; color:#cfeffb; }
+#measure { margin-top:var(--sp-3); }
+#measureRow { display:flex; justify-content:space-between; gap:var(--sp-3); color:var(--info-tint); }
 
 
 /* Custom color picker as a modifiable UI component*/
@@ -1916,7 +1904,7 @@ justify-content: center;
 
 .custom-color-picker {
   width: 200px;
-  font-family: sans-serif;
+  font-family: var(--font-ui);
   user-select: none;
 }
 
@@ -1926,13 +1914,15 @@ justify-content: center;
   height: 150px;
   background: red;
   cursor: crosshair;
-  margin-bottom: 10px;
+  margin-bottom: var(--sp-3-5);
 }
 
 .custom-color-picker .sb-picker::after {
   content: "";
   position: absolute;
   inset: 0;
+  /* Saturation/brightness gradient stops must stay literal white/black
+     regardless of theme — these are colour-space axes, not themeable UI. */
   background:
     linear-gradient(to right, #fff, transparent),
     linear-gradient(to top, #000, transparent);
@@ -1940,13 +1930,13 @@ justify-content: center;
 
 .custom-color-picker .hue-slider {
   width: 100%;
-  margin-bottom: 10px;
+  margin-bottom: var(--sp-3-5);
 }
 
 .custom-color-picker .color-preview {
   width: 100%;
   height: 30px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--ink-3);
   background: red;
 }
 
@@ -1954,17 +1944,17 @@ justify-content: center;
 
 
 /* Small actions */
-.btn-mini { background:transparent; border:1px solid rgba(255,255,255,0.08); color:#cfeffb; padding:6px 10px; border-radius:6px; cursor:pointer; }
-.btn-mini:hover { transform: translateY(-1px);background:rgba(255,255,255,0.02); border: 1px solid var(--accent-color);}
+.btn-mini { background:transparent; border:1px solid var(--wash-2); color:var(--info-tint); padding:var(--sp-2) var(--sp-3-5); border-radius: var(--radius-sm); cursor:pointer; }
+.btn-mini:hover { transform: translateY(-1px);background:var(--wash-0); border: 1px solid var(--accent-color);}
 
-.btn-mini.highlight { background:var(--bg-color); border-color:rgba(0,0,0,0.15); color:#fff; }
+.btn-mini.highlight { background:var(--bg-color); border-color:var(--line-dark); color:var(--fg-1); }
 .btn-mini.highlight:hover { transform: translateY(-1px);filter:brightness(1.03); border: 1px solid var(--accent-color);}
 
 #composition h4 {
-  margin: 0 0 8px 0;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 1);
-  font-size: 14px;
+  margin: 0 0 var(--sp-3) 0;
+  font-weight: var(--fw-bold);
+  color: var(--fg-1);
+  font-size: var(--fs-lg);
   letter-spacing: .3px;
 }
 
@@ -1973,20 +1963,20 @@ justify-content: center;
   align-items: flex-start;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 4px 0;
-  border-bottom: 1px dashed rgba(255,255,255,0.1);
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0;
+  border-bottom: 1px dashed var(--line-1);
 }
 .comp-row:last-child { border-bottom: 0; }
 .dot {
-  width: 10px; height: 10px; border-radius: 50%; margin-right: 8px;
-  border: 1px solid rgba(255,255,255,0.4);
+  width: 10px; height: 10px; border-radius: 50%; margin-right: var(--sp-3);
+  border: 1px solid var(--fg-3);
 }
-.comp-left { display: inline-flex; align-items: center; gap: 8px; }
+.comp-left { display: inline-flex; align-items: center; gap: var(--sp-3); }
 #picked {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 6px 8px; background: var(--bg-color);
-  border: 1px solid var(--accent-color); border-radius: 10px;
+  display: inline-flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3); background: var(--bg-color);
+  border: 1px solid var(--accent-color); border-radius: var(--radius-md);
 }
 #view canvas {
   cursor: pointer; /* for click affordance */
@@ -2015,7 +2005,7 @@ justify-content: center;
    --split-reserve does for the background-dot's right offset. 0px when the
    pane is closed or docked to the right. */
 position: fixed; left: var(--gizmo-left); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px)); width: var(--gizmo-size); height: var(--gizmo-size);
-z-index: 1000; overflow: hidden;
+z-index: var(--z-overlay-widget); overflow: hidden;
 /* auto, not none: the whole box is a drag handle (ui/GizmoDrag.js), not
    just its grip — this trades away clicking "through" the gizmo to rotate
    the scene behind it, in exchange for being draggable from anywhere on it. */
@@ -2028,17 +2018,17 @@ cursor: grab;
 
 #axesLegend{
 position: fixed; left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px));
-background: rgba(0,0,0,0.8);
-border: 1px solid rgba(255,255,255,0.2);
-border-radius: 8px;
-padding: 6px 8px;
-font-size: 12px; color:#fff;
+background: var(--float-panel-bg);
+border: 1px solid var(--line-2);
+border-radius: var(--radius);
+padding: var(--sp-2) var(--sp-3);
+font-size: var(--fs-base); color:var(--fg-1);
 backdrop-filter: blur(10px);
-z-index:1000; pointer-events:none;
+z-index:var(--z-overlay-widget); pointer-events:none;
 }
-.dot{display:inline-block;width:15px;height:15px;border-radius:50%;margin-right:6px;}
-.dot-a{width:10px;height:10px;background:#ff3333;} .dot-b{width:10px;height:10px;background:#33cc33;} .dot-c{width:10px;height:10px;background:#3366ff;}
-.legend-row{display:flex;align-items:center;gap:6px;line-height:1.2;}
+.dot{display:inline-block;width:15px;height:15px;border-radius:50%;margin-right:var(--sp-2);}
+.dot-a{width:10px;height:10px;background:var(--axis-a);} .dot-b{width:10px;height:10px;background:var(--axis-b);} .dot-c{width:10px;height:10px;background:var(--axis-c);}
+.legend-row{display:flex;align-items:center;gap:var(--sp-2);line-height:1.2;}
 
 /* Drag grip + hamburger menu for the axes gizmo (ui/GizmoDrag.js). A
    body-level overlay tracking a spot just above #axesGizmo, centered over it
@@ -2064,15 +2054,15 @@ z-index:1000; pointer-events:none;
      gizmo box's own current width, so this needs a stretch layout instead
      of the color bars' content-sized "gap" row. */
   justify-content: space-between;
-  z-index: 1001;
+  z-index: var(--z-gizmo-controls);
   transform: translate(-50%, -100%);
-  padding: 5px 10px;
-  border-radius: 12px;
+  padding: 5px var(--sp-3-5);
+  border-radius: var(--radius-12);
   /* --menu-bg, not --bg-color — see .cv-colorbar-menu's comment
      (toggle_styles.css): the same near-opaque token every other menu/modal
      uses, instead of the ~80%-opaque theme accent. */
   background: var(--menu-bg);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--line-1);
   backdrop-filter: blur(10px);
   opacity: 0;
   pointer-events: none;
@@ -2092,8 +2082,8 @@ z-index:1000; pointer-events:none;
 .cv-gizmo-menu-wrap .cv-colorbar-menu-btn {
   width: 22px;
   height: 22px;
-  font-size: 14px;
-  border-radius: 4px;
+  font-size: var(--fs-lg);
+  border-radius: var(--radius-4);
 }
 .cv-gizmo-dragging {
   opacity: 0.85;
@@ -2147,7 +2137,7 @@ z-index:1000; pointer-events:none;
    which provides positioning + chrome; this is just the content layout) */
 #measurementTools {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-3);
   align-items: center;
 }
 
@@ -2165,7 +2155,7 @@ body > #structureInfoContent {
 /* --- Camera view tools --- (hosted by the unified "View" panel window) */
 #cameraTools {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-3);
   flex-wrap: wrap;
   max-width: 320px;
 }
@@ -2176,7 +2166,7 @@ body > #structureInfoContent {
    this, which made the panel change appearance mid-width for no clear reason). */
 #cameraPanel {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-3);
   align-items: center;
   max-height: none;
   flex-wrap: wrap;
@@ -2188,16 +2178,16 @@ body > #structureInfoContent {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 8px;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3);
   background: var(--bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 12px;
-  color: #fff;
+  border-radius: var(--radius-12);
+  color: var(--fg-1);
   cursor: pointer;
   transition: all 0.3s ease;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
   min-width: 45px;
   min-height: 45px;
   text-align: center;
@@ -2210,12 +2200,12 @@ body > #structureInfoContent {
 
 /* Camera buttons for desktop - compact style like original vbtn */
 #cameraTools .camera-tool-btn {
-  padding: 6px 10px;
-  font-size: 14px;
-  color: #fff;
+  padding: var(--sp-2) var(--sp-3-5);
+  font-size: var(--fs-lg);
+  color: var(--fg-1);
   background: var(--bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
   min-width: 32px;
   min-height: 32px;
@@ -2224,12 +2214,15 @@ body > #structureInfoContent {
 }
 
 #cameraTools .camera-tool-reset-btn {
-  padding: 6px 10px;
-  font-size: 14px;
-  color: #fff;
-  background: rgba(240, 132, 18,0.90);
-  border: 1px solid rgba(250, 132, 18,1);
-  border-radius: 8px;
+  padding: var(--sp-2) var(--sp-3-5);
+  font-size: var(--fs-lg);
+  color: var(--fg-1);
+  background: var(--danger);
+  /* Was rgba(250, 132, 18, 1) — 250 vs --danger-rgb's 240 for the same G/B
+     (132, 18) is a one-digit typo, not a deliberate second orange. Corrected
+     and adopted; the shift is a hair darker, essentially imperceptible. */
+  border: 1px solid rgb(var(--danger-rgb) / 1);
+  border-radius: var(--radius);
   cursor: pointer;
   min-width: 32px;
   min-height: 32px;
@@ -2239,25 +2232,25 @@ body > #structureInfoContent {
 
 #cameraTools .camera-tool-btn:hover {
   background: var(--bg-color);
-  border-color: var(--highlight-color);
+  border-color: var(--accent-fg);
   transform: translateY(-2px);
-  box-shadow:0px 0px 4px 2px  rgba(6, 100, 50, 1);
+  box-shadow:0px 0px 4px 2px  rgb(var(--camera-glow-rgb) / 1);
 }
 
 #cameraTools .camera-tool-reset-btn:hover {
-  background: rgba(240, 132, 18,0.90);
-  border-color: white;
+  background: var(--danger);
+  border-color: var(--fg-1);
   transform: translateY(-1px);
   box-shadow: 0px 0px 2px 1px  var(--highlight-color);
 }
 
 #cameraTools .camera-tool-btn .tool-icon {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   margin: 0;
 }
 
 #cameraTools .camera-tool-btn .reset-icon {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   margin: 0;
 }
 
@@ -2272,11 +2265,11 @@ body > #structureInfoContent {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 #cameraTools .camera-lock-btn {
-  padding: 4px;
+  padding: var(--sp-1);
   min-width: 26px;
   min-height: 26px;
 }
@@ -2289,13 +2282,13 @@ body > #structureInfoContent {
 /* Persistent highlight while unlocked (not just on hover, like the other
    camera buttons) — this is a standing mode, not a momentary action. */
 #cameraTools .camera-lock-btn.unlocked {
-  border-color: var(--highlight-color);
-  color: var(--highlight-color);
-  box-shadow: 0px 0px 4px 1px rgba(6, 100, 50, 0.6);
+  border-color: var(--accent-fg);
+  color: var(--accent-fg);
+  box-shadow: 0px 0px 4px 1px rgb(var(--camera-glow-rgb) / 0.6);
 }
 
 #cameraTools .camera-lock-btn.unlocked:hover {
-  box-shadow: 0px 0px 4px 2px rgba(6, 100, 50, 0.9);
+  box-shadow: 0px 0px 4px 2px rgb(var(--camera-glow-rgb) / 0.9);
 }
 
 .camera-icon {
@@ -2309,7 +2302,7 @@ body > #structureInfoContent {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 /* The small step-rotation arrows flanking each axis button. Hidden until a
@@ -2319,9 +2312,9 @@ body > #structureInfoContent {
    pointer-events follows visibility so a hidden arrow can't be clicked (or
    caught by the outside-click handler's own hit-testing) while invisible. */
 #cameraTools .camera-axis-stack .axis-step {
-  padding: 1px 6px;
-  font-size: 9px;
-  line-height: 1;
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
   min-width: 32px;
   visibility: hidden;
   opacity: 0;
@@ -2341,13 +2334,13 @@ body > #structureInfoContent {
   display: none;
   width: 1px;
   height: 22px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--wash-3);
   margin: 0 2px;
 }
 
 .measurement-group {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-3);
   align-items: center;
   max-height: none;
   overflow: visible;
@@ -2358,16 +2351,16 @@ body > #structureInfoContent {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 6px 6px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2);
   background: var(--bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 12px;
-  color: #fff;
+  border-radius: var(--radius-12);
+  color: var(--fg-1);
   cursor: pointer;
   transition: all 0.3s ease;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
   min-width: 45px;
   min-height: 45px;
   text-align: center;
@@ -2386,13 +2379,13 @@ body > #structureInfoContent {
 
 .measure-tool-btn.active {
   background: var( --bg-color);
-  border-color: #ff6b35;
-  color: #fff;
-  box-shadow: 0px 0px 4px 2px  rgba(255, 107, 53, 0.4);
+  border-color: var(--tool-active);
+  color: var(--fg-1);
+  box-shadow: 0px 0px 4px 2px  rgb(var(--tool-active-rgb) / 0.4);
 }
 
 .measure-tool-btn.active:hover {
-  box-shadow: 0px 0px 4px 2px rgba(255, 107, 53, 0.5);
+  box-shadow: 0px 0px 4px 2px rgb(var(--tool-active-rgb) / 0.5);
   transform: translateY(-2px);
 }
 
@@ -2404,16 +2397,16 @@ body > #structureInfoContent {
  * docked. */
 .restore-popover {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-overlay-widget);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
   min-width: 130px;
   background: var(--menu-bg);
-  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.2));
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--panel-border, var(--line-2));
+  border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgb(var(--shadow-rgb) / 0.35);
 }
 
 .restore-popover[hidden] {
@@ -2421,12 +2414,12 @@ body > #structureInfoContent {
 }
 
 .restore-popover-btn {
-  padding: 7px 10px;
-  border-radius: 6px;
+  padding: 7px var(--sp-3-5);
+  border-radius: var(--radius-sm);
   border: none;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   cursor: pointer;
-  color: var(--panel-fg, #fff);
+  color: var(--panel-fg, var(--fg-1));
 }
 
 .restore-popover-all {
@@ -2438,11 +2431,11 @@ body > #structureInfoContent {
 }
 
 .restore-popover-cancel {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--wash-2);
 }
 
 .restore-popover-cancel:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--wash-4);
 }
 
 /* Shift+drag rectangle-select over the 3D view (ui/SceneInteraction.js) —
@@ -2452,9 +2445,9 @@ body > #structureInfoContent {
  * none so it never itself becomes a raycasting/click target. */
 .cv-drag-select-rect {
   position: fixed;
-  z-index: 2000;
-  border: 1.5px solid var(--highlight-color, #f08412);
-  background: rgba(240, 132, 18, 0.12);
+  z-index: var(--z-chrome);
+  border: 1.5px solid var(--highlight-color, rgb(var(--danger-rgb)));
+  background: rgb(var(--danger-rgb) / 0.12);
   pointer-events: none;
 }
 
@@ -2487,8 +2480,8 @@ body > #structureInfoContent {
    * element back in, or its remove button below could never be hovered or
    * clicked at all. */
   pointer-events: auto;
-  padding:6px 9px; border-radius:10px; font-size:14px; font-weight:700;
-  color:#fff; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.2);
+  padding:var(--sp-2) 9px; border-radius: var(--radius-md); font-size: var(--fs-lg); font-weight:700;
+  color:var(--fg-1); background:var(--label-bg); border:1px solid var(--line-2);
   backdrop-filter: blur(6px); white-space:nowrap;
 }
 
@@ -2502,11 +2495,11 @@ body > #structureInfoContent {
   height: 16px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  background: rgba(20, 20, 20, 0.9);
-  color: #fff;
-  font-size: 11px;
-  line-height: 1;
+  border: 1px solid var(--fg-3);
+  background: var(--chrome-1);
+  color: var(--fg-1);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-tight);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2520,37 +2513,40 @@ body > #structureInfoContent {
 }
 
 .measure-label-remove:hover {
-  background: rgba(240, 132, 18, 0.9);
-  border-color: rgba(255, 255, 255, 0.6);
+  background: var(--danger);
+  border-color: var(--fg-2);
 }
 
-/* Hamburger Menu - Always Top Left */
+/* Hamburger Menu - Always Top Left. max() so a notch/rounded corner (only
+   relevant with viewport-fit=cover, see index.html) pushes it clear
+   instead of rendering underneath — env() is 0 on a rectangular screen, so
+   this is exactly the original 12px there. */
 #mobileMenuToggle {
   display: flex;
   position: fixed;
-  top: 12px;
-  left: 12px;
-  z-index: 2000;
-  background: rgba(0, 0, 0, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
+  top: max(12px, env(safe-area-inset-top));
+  left: max(12px, env(safe-area-inset-left));
+  z-index: var(--z-chrome);
+  background: var(--float-panel-bg);
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius-sm);
   padding: 0;
-  color: #fff;
+  color: var(--fg-1);
   cursor: pointer;
   backdrop-filter: blur(12px);
-  font-size: 16px;
+  font-size: var(--fs-xl);
   font-weight: 300;
   width: 44px;
   height: 44px;
   align-items: center;
   justify-content: center;
-  box-shadow: 0px 0px 4px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-glow);
   transition: all 0.2s ease;
 }
 
 #mobileMenuToggle:hover,
 #mobileMenuToggle:active {
-  background: rgba(0, 0, 0, 0.9);
+  background: var(--float-panel-bg);
   transform: scale(0.95);
 }
 
@@ -2582,320 +2578,11 @@ body {
   user-select: text;
 }
 
-/* Mobile and Tablet Responsive Styles */
-
-
-@media screen and (max-width: 1320px) {
-
-  /* .camera-separator, .background-dot and #cameraPanel wrap overrides removed:
-     they now live unconditionally in the base rules (and the dot's position is
-     driven by --compact-stack-bottom), so this legacy breakpoint no longer
-     fights them at in-between widths. */
-
-  /* Mobile version*/
-  .popup {
-    position: absolut;
-    max-height: 300px;
-    top: 50px;
-    left: 50px
-  }
-
-  .tool-icon {
-    font-size: 14px;
-    margin-bottom: 1px;
-  }
-
-}
-
-@media screen and (max-width: 1024px) {
-  /* Mobile: Panel positioning */
-  #ui {
-    position: fixed;
-    top: 0;
-    left: -120%;
-    height: 98dvh;
-    z-index: 1500;
-    transition: left 0.3s ease;
-  }
-
-  /* Panel open state for mobile */
-  #ui.panel-open {
-    left: 0;
-  }
-
-  /* Adjust axes gizmo position and size */
-  #axesGizmo {
-    left: 12px;
-    bottom: calc(12px + var(--split-reserve-bottom, 0px));
-    width: 60px;
-    height: 60px;
-  }
-
-  #axesLegend {
-    left: 12px;
-    transform: translateX(68px);
-    font-size: 11px;
-    padding: 4px 6px;
-    /*! border-radius: 4px; */
-    background: rgba(0, 0, 0, 0.8);
-    color: #fff;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    backdrop-filter: blur(6px);
-    z-index: 1000;
-  }  
-
-  /* Mobile-specific adjustments */
-  body {
-    overflow-x: hidden;
-  }
-
-  #view {
-    width: 100vw;
-    height: 100dvh;
-    border-radius: 0;
-  }
-
-  /* Mobile/Tablet overlay to close menu */
-  #mobileOverlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    z-index: 900;
-    background: rgba(0, 0, 0, 0.5);
-    pointer-events: none;
-  }
-
-  #mobileOverlay.active {
-    display: block;
-    left: 0;
-    right: 0;
-    pointer-events: auto;
-  }
-
-  /* Adjust control group spacing for mobile */
-  .control-group {
-    margin: 0 0 16px 0;
-    padding: 20px;
-  }
-
-  #ui h2 {
-    font-size: 20px;
-    margin: 0 0 20px 0;
-  }
-
-  /* Make touch targets larger */
-  input[type="checkbox"] {
-    transform: scale(1.5);
-  }
-
-  input[type="range"] {
-    height: 8px;
-    margin:  0;
-  }
-
-  input[type="range"]::-webkit-slider-thumb {
-    width: 24px;
-    height: 24px;
-  }
-
-  input[type="range"]::-moz-range-thumb {
-    width: 24px;
-    height: 24px;
-  }
-
-
-  /* Adjust bond controls for mobile */
-  .bond-control {
-    padding: 16px;
-    margin: 16px 0;
-  }
-
-  .bond-label {
-    font-size: 16px;
-    margin-bottom: 8px;
-  }
-
-  .collapsible-content.open { padding-top:8px;
-    min-height: auto;}
-
-  .comp-row {
-    padding: 2px 0;
-    font-size: 11px;
-  }
-
-  #measureRow {
-    padding: 12px;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-
-  #distanceValue {
-    font-size: 14px;
-  }
-
-  /* Status adjustments */
-  #status {
-    top: 10px;
-    right: 10px;
-    font-size: 12px;
-    max-width: calc(100vw - 100px);
-    background: rgba(0, 0, 0, 0.85);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-  }
-
-  /* Measure panel improvements */
-  .btn-mini {
-    padding: 12px 16px;
-    font-size: 16px;
-    align-self: stretch;
-    text-align: center;
-  }
-
-  /* Adjust scroll areas */
-  #bondControls {
-    max-height: 200px;
-  }
-}
-
-@media screen and (max-height: 480px) {
-  #ui {
-    height: 90dvh;
-  }
-
-  .collapsible-content.open { padding-top:8px;max-height: 230px;
-    min-height: auto}
-
-  #composition h4 {
-    font-size: 11px;
-    margin: 0 0 3px 0;
-  }
-
-  .comp-row {
-    padding: 1px 0;
-    font-size: 10px;
-  }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-    margin-right: 4px;
-  }
-
-  #measureRow {
-    padding: 6px;
-    font-size: 11px;
-  }
-
-  #distanceValue {
-    font-size: 12px;
-  }
-
-  #status {
-    right: 5px;
-    top: 5px;
-    padding: 8px 12px;
-  }
-
-  #axesGizmo {
-    width: 50px;
-    height: 50px;
-    left: 8px;
-    bottom: calc(8px + var(--split-reserve-bottom, 0px));
-  }
-
-  #axesLegend {
-    transform: translateX(58px);
-    font-size: 10px;
-    bottom: calc(8px + var(--split-reserve-bottom, 0px));
-    padding: 3px 5px;
-    left: 8px;
-    background: rgba(0, 0, 0, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    backdrop-filter: blur(8px);
-    color: #fff;
-  }
-
-  /* Smaller measure label for very small screens */
-  .measure-label {
-    font-size: 12px;
-    padding: 4px 6px;
-  }
-}
-
- @media screen and (max-height: 390px) {
-  #ui {
-    width: 280px;
-  }
-
- .background-dot {
-  position: fixed;
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  cursor: pointer;
-  top: max(155px, calc(var(--compact-stack-bottom, 0px) + 20px));
-  right: calc(11px + var(--split-reserve, 0px));
-  z-index: 999;
-}
-
-  #composition h4 {
-    font-size: 11px;
-    margin: 0 0 3px 0;
-  }
-
-  .comp-row {
-    padding: 1px 0;
-    font-size: 10px;
-  }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-    margin-right: 4px;
-  }
-
-  #measureRow {
-    padding: 6px;
-    font-size: 11px;
-  }
-
-  #distanceValue {
-    font-size: 12px;
-  }
-
-  #status {
-    right: 5px;
-    top: 5px;
-    padding: 8px 12px;
-  }
-
-  #axesGizmo {
-    width: 50px;
-    height: 50px;
-    left: 8px;
-    bottom: calc(8px + var(--split-reserve-bottom, 0px));
-  }
-
-  #axesLegend {
-    transform: translateX(58px);
-    font-size: 10px;
-    bottom: calc(8px + var(--split-reserve-bottom, 0px));
-    padding: 3px 5px;
-    left: 8px;
-    background: rgba(0, 0, 0, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    backdrop-filter: blur(8px);
-    color: #fff;
-  }
-
-  /* Smaller measure label for very small screens */
-  .measure-label {
-    font-size: 12px;
-    padding: 4px 6px;
-  }
-}
+/* Mobile and Tablet Responsive Styles now live in styles/responsive.css
+   (compact/short rungs), per Wave 4's single-file @media rule. The
+   .camera-separator/.background-dot/#cameraPanel wrap overrides that used
+   to sit in a 1320px breakpoint here were already removed pre-Wave-4 —
+   they live unconditionally in the base rules now. */
 
 /* Tracer-only controls (the ray/path-tracing material editors in the
    Structure window, and single rows like the Visual window's "Element

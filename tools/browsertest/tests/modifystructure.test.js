@@ -33,6 +33,21 @@ const ADD = '[data-panel-id="addStructure"]';
       && !opened.hasBulkElementPicker && opened.button === 'Revert Changes',
     JSON.stringify(opened));
 
+  // The panel sits over the 3D scene, so an unpainted body makes atoms show
+  // through the form and the whole panel unreadable. It shipped that way once:
+  // the width class was applied with `className =`, which wiped the
+  // cv-panel-body class carrying the background. Assert the surface exists
+  // rather than its exact colour, which is a theme's to change.
+  const surface = await page.evaluate(() => {
+    const body = document.querySelector('[data-panel-id="modifyStructure"] .cv-panel-body');
+    if (!body) return { hasBody: false };
+    const bg = getComputedStyle(body).backgroundColor;
+    const alpha = /rgba?\([^)]*?(?:,\s*([\d.]+))?\)$/.exec(bg);
+    return { hasBody: true, bg, opaqueEnough: !!alpha && (alpha[1] === undefined || Number(alpha[1]) >= 0.8) };
+  });
+  H.check('the panel body is painted, so the scene does not show through it',
+    surface.hasBody && surface.opaqueEnough, JSON.stringify(surface));
+
   // --- A coordinate typed in the table moves the atom in the scene live ------
   const liveMove = await page.evaluate(async (sel) => {
     const { fileBrowser } = await import('./state/store.js');

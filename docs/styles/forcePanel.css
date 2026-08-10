@@ -1,83 +1,202 @@
-/* Forces window (ui/ForcePanel.js), the shared colour bar (ui/ColorBarControl.js,
-   also used by the Spins panel) and the force histogram
-   (ui/AnalysisPanels/ForceHistogram.js). */
+/* Forces window (ui/ForcePanel.js), Spins window (ui/SpinPanel.js — the two
+   share enough markup shape that it's not worth a second stylesheet, see
+   "Shared panel chrome" below), the shared colour bar (ui/ColorBarControl.js)
+   and the force histogram (ui/AnalysisPanels/ForceHistogram.js). */
 
-/* --- Forces panel body --- */
+/* --- Shared panel chrome (Force + Spin) ---
+   Both panels wrap their controls the same way: the hosting panel window
+   (ui/panels/) provides the titlebar/collapse, so this is just the text
+   colour + overflow reset their outer group/content divs need. */
+.cv-scene-panel-group {
+  color: var(--fg-1);
+  overflow-x: hidden;
+}
 
+.cv-scene-panel-content {
+  overflow-y: visible;
+  overflow-x: hidden;
+}
+
+/* Generic "label + value, margin below" row (sliders, the colormap picker,
+   the histogram opener) and the small subheading above a control cluster
+   ("Species Visibility:", "Current Spins/Forces:", …) — both panels reuse
+   the same 8px-below / 11px-heading rhythm throughout. */
 .cv-force-row {
-  margin-bottom: 8px;
+  margin-bottom: var(--sp-3);
 }
 
 .cv-force-row label {
-  font-size: 12px;
+  /* Matches the app's global `label` rule (styles.css) that these labels
+     would otherwise inherit unstyled — named here so this component's own
+     size doesn't silently drift if that global default ever changes. */
+  font-size: var(--fs-lg);
 }
 
 .cv-force-row .cv-force-value {
-  margin-right: 8px;
+  margin-right: var(--sp-3);
 }
 
+.cv-force-subheading {
+  font-size: var(--fs-sm);
+  margin: var(--sp-3) 0 var(--sp-1);
+}
+
+/* A <label> that sits on its own line above the field it describes (the
+   colormap dropdown, Spin's Source dropdown), rather than inline beside it. */
+.cv-force-label-block {
+  display: block;
+  margin-bottom: var(--sp-1);
+}
+
+.cv-force-split-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Inline checkbox + label pairs ("log length", "Log Scale") shown beside a
+   slider or the colour-bar controls row. cv-check-locked mirrors
+   syncLogScaleLock()'s disabled state (SpinPanel.js/ForcePanel.js): "log
+   length" forces + locks "Log Scale" on, so its own label needs to read as
+   unavailable until "log length" is turned back off. */
 .cv-force-check {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  margin-bottom: 8px;
+  gap: var(--sp-1);
+  font-size: var(--fs-base);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cv-force-check.cv-check-locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cv-force-bar-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.cv-force-bar-controls.cv-force-bar-controls--force { margin: var(--sp-2) 0 var(--sp-1); }
+.cv-force-bar-controls.cv-force-bar-controls--spin { margin: var(--sp-1) 0; }
+
+.cv-force-colorbar-container {
+  width: 100%;
 }
 
 .cv-force-colormap {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: var(--sp-3);
+  font-size: var(--fs-base);
 }
 
-.cv-force-colormap select {
-  flex: 1;
-  background: #555;
-  color: #fff;
-  border: 1px solid #777;
-  border-radius: 3px;
-  padding: 2px;
+/* Native <select> chrome shared by Force's colormap dropdown and Spin's
+   Source/colormap dropdowns. #333 now lands on --chrome-2-5 (Wave 2.6, added
+   exactly for this gap between --chrome-2/--chrome-3); the border lands
+   exactly on --chrome-5. */
+.cv-scene-select {
+  padding: var(--sp-1);
+  background: var(--chrome-2-5);
+  color: var(--fg-1);
+  border: 1px solid var(--chrome-5);
+  border-radius: var(--radius-3);
+}
+
+/* Force's colormap select sits in a flex row and grows to fill it; Spin's
+   Source/colormap selects sit in a block column and stretch to their own
+   wrapper's width instead. */
+.cv-scene-select.cv-scene-select--flex { flex: 1; }
+.cv-scene-select.cv-scene-select--block { width: 100%; }
+
+/* --- Species-visibility toggles (Force + Spin) ---
+   The pill is the shared .toggle_switch/.toggle_slider base
+   (styles/toggle_styles.css, built by ui/ToggleSwitch.js) — this used to be a
+   full parallel implementation with its own off colour (--chrome-5, the one
+   visibly odd track in the app) and knob; only the compact 40x20 footprint is
+   local now, a size modifier like .toggle_switch--sm. SpinPanel.js/
+   ForcePanel.js only ever flip `checkbox.checked`, never touch style. */
+.cv-species-toggle-grid {
+  margin-bottom: var(--sp-3);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-1) var(--sp-3);
+  align-items: center;
+}
+
+.cv-species-toggle-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: 24px;
+}
+
+.toggle_switch.cv-species-toggle {
+  width: 40px;
+  height: 20px;
+  margin-right: var(--sp-2);
+  cursor: pointer;
+}
+
+.toggle_switch.cv-species-toggle .toggle_slider::before {
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  top: 2px;
+}
+
+.toggle_switch.cv-species-toggle input:checked + .toggle_slider::before {
+  transform: translateX(20px);
+}
+
+.cv-species-toggle-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  height: 24px;
+  line-height: 24px;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .cv-force-solid-color {
   width: 28px;
   height: 22px;
   padding: 0;
-  border: 1px solid #777;
+  border: 1px solid var(--chrome-6);
   background: none;
 }
 
 .cv-force-autorange {
   display: flex;
   justify-content: flex-end;
-  margin: 4px 0 8px;
+  margin: var(--sp-1) 0;
 }
 
 .cv-force-hist-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: var(--sp-3);
 }
 
 .cv-force-hist-row .cv-force-hist-label {
-  font-size: 12px;
-  color: #ccc;
+  font-size: var(--fs-base);
+  color: var(--ink-3);
 }
 
 .cv-force-hist-row .cv-force-hist-buttons {
   display: flex;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .cv-force-hist-row .btn-mini {
-  font-size: 12px;
+  font-size: var(--fs-base);
 }
 
 #deleteForces {
-  margin-top: 6px;
+  margin-top: var(--sp-2);
 }
 
 /* Colour-mode switch: solid picker and colour bar are mutually exclusive. */
@@ -91,25 +210,25 @@
   display: flex;
   align-items: center;
   width: 100%;
-  margin-top: 6px;
+  margin-top: var(--sp-2);
 }
 
 .cv-colorbar-input {
   width: 44px;
-  font-size: 12px;
-  padding: 2px 4px;
-  background: #555;
-  color: #fff;
-  border: 1px solid #777;
-  border-radius: 3px;
+  font-size: var(--fs-base);
+  padding: 2px var(--sp-1);
+  background: var(--chrome-5);
+  color: var(--fg-1);
+  border: 1px solid var(--chrome-6);
+  border-radius: var(--radius-3);
   text-align: center;
   /* Hide the spinners: the arrows are unusable at this size. */
   -moz-appearance: textfield;
   appearance: textfield;
 }
 
-.cv-colorbar-input.cv-colorbar-min { margin-right: 6px; }
-.cv-colorbar-input.cv-colorbar-max { margin-left: 6px; }
+.cv-colorbar-input.cv-colorbar-min { margin-right: var(--sp-2); }
+.cv-colorbar-input.cv-colorbar-max { margin-left: var(--sp-2); }
 
 .cv-colorbar-bar {
   position: relative;
@@ -122,8 +241,8 @@
 .cv-colorbar-canvas {
   width: 50px;
   height: 20px;
-  margin: 0 6px;
-  border-radius: 3px;
+  margin: 0 var(--sp-2);
+  border-radius: var(--radius-3);
 }
 
 .cv-colorbar-labels {
@@ -134,8 +253,8 @@
 }
 
 .cv-colorbar-labels div {
-  font-size: 10px;
-  color: white;
+  font-size: var(--fs-xs);
+  color: var(--fg-1);
 }
 
 /* --- Force histogram (ui/AnalysisPanels/ForceHistogram.js) ---
@@ -149,15 +268,15 @@
   flex-wrap: wrap;
   gap: 14px;
   align-items: center;
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: #ddd;
+  margin-bottom: var(--sp-3);
+  font-size: var(--fs-base);
+  color: var(--ink-4);
 }
 
 .fh-controls-row label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .fh-width-slider,
@@ -168,12 +287,12 @@
 .fh-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  font-size: 11px;
-  color: #ccc;
-  margin-bottom: 8px;
+  gap: var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+  margin-bottom: var(--sp-3);
 }
 
 .fh-stats .fh-stats-muted {
-  color: #888;
+  color: var(--ink-1);
 }

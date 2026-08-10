@@ -36,7 +36,11 @@ for p in "${pids[@]}"; do wait "$p" || rc=1; done
 echo "===================== SUMMARY ====================="
 awk '/^  PASS /{p++} /^  FAIL /{f++} END{printf "checks: %d passed, %d failed\n", p, f}' "$LOGDIR"/shard_*.log
 echo "files run: $(grep -hcE '^== tests/' "$LOGDIR"/shard_*.log | awk '{s+=$1} END{print s}')"
-fails=$(grep -hE '^  FAIL |crash|browsertest: FAILURES' "$LOGDIR"/shard_*.log | sort -u || true)
+# 'TEST DRIVER ERROR', not 'crash': harness.crash() prints the former, while
+# the latter matched any test whose *name* contains the word — the tracer
+# compile test asserts "no crash", so a fully green run printed a FAILURES
+# banner listing a PASS line.
+fails=$(grep -hE '^  FAIL |TEST DRIVER ERROR|browsertest: FAILURES' "$LOGDIR"/shard_*.log | sort -u || true)
 if [ -n "$fails" ]; then
   echo
   echo "--- FAILURES ---"

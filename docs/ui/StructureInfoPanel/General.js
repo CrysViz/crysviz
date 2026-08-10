@@ -12,6 +12,8 @@ import { updateVisualization } from '../../core/crystal-viewer.js';
 import { atomForceToColor } from '../ColorPanel.js';
 import { updateForces, updateSpins } from '../../render/index.js';
 import { applyToOtherTrajectoryFrames, wirePressHoldPopup, getSiteSignatureGroups } from './components/utils.js';
+import { toggleCompositionLegend, refreshCompositionLegend } from '../CompositionLegendWidget.js';
+import { createToggleRow } from '../ToggleSwitch.js';
 
 // The per-structure style-override stores (all survive rebuilds; see Structure.js).
 const ALL_STYLE_STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
@@ -88,35 +90,6 @@ function resetAllStyling(structure) {
   // polyhedra visibility overrides cleared above.
   structure.forces?.forEach((force) => { force.hidden = false; });
   structure.spins?.forEach((spin) => { spin.hidden = false; });
-}
-
-// Small switch row, same markup/classes as the toggles in PolyhedraPanel.js.
-function createToggleRow({ id, label, checked, onChange }) {
-  const row = document.createElement('label');
-  row.className = 'toggle_row toggle_container';
-
-  const switchWrap = document.createElement('span');
-  switchWrap.className = 'toggle_switch';
-
-  const input = document.createElement('input');
-  input.type = 'checkbox';
-  input.id = id;
-  input.checked = checked;
-
-  const slider = document.createElement('span');
-  slider.className = 'toggle_slider';
-
-  const text = document.createElement('span');
-  text.className = 'toggle_text';
-  text.textContent = label;
-
-  input.addEventListener('change', onChange);
-
-  switchWrap.appendChild(input);
-  switchWrap.appendChild(slider);
-  row.appendChild(switchWrap);
-  row.appendChild(text);
-  return row;
 }
 
 /**
@@ -209,7 +182,7 @@ export function getCompositionString() {
   // Display the chemical formula and the total number of atoms
   const compString = document.createElement('div');
   compString.innerHTML = `${formula} (${total} Atoms)`; // Use innerHTML to allow HTML tags
-  compString.style.cssText = 'font-size:12px; font-weight:500; margin-bottom:10px;';
+  compString.className = 'si-comp-string';
 
   const compWrapper = document.querySelector('#composition');
   compWrapper.appendChild(compString);
@@ -396,19 +369,17 @@ function restoreCompositionUiState(state) {
       if (editor) editor.style.display = 'none';
     });
 
+    // Active/inactive border+glow is plain CSS (.atom-editor-button.active) —
+    // mirrors IndividualAtomRow.js's own setButtonActive().
     row.querySelectorAll('.atom-editor-button').forEach((button) => {
-      button.style.border = '1px solid rgba(255,255,255,0.2)';
-      button.style.boxShadow = 'none';
+      button.classList.remove('active');
     });
 
     const target = editors[entry.type];
     if (target) target.style.display = 'block';
 
     const activeButton = row.querySelector(`.atom-editor-button[data-editor-button="${entry.type}"]`);
-    if (activeButton) {
-      activeButton.style.border = '1px solid rgba(125, 206, 160, 0.95)';
-      activeButton.style.boxShadow = '0 0 0 1px rgba(125, 206, 160, 0.35), inset 0 0 0 1px rgba(125, 206, 160, 0.15)';
-    }
+    if (activeButton) activeButton.classList.add('active');
   }
 }
 
@@ -439,20 +410,14 @@ export function renderComposition(panelState="closed") {
   // see clearCompositionRowRegistry() for why stale entries crash.
   clearCompositionRowRegistry();
   const compWrapper = document.createElement('div');
-    compWrapper.style.cssText = `
-    display: flex;
-    justify-content: center;
-    margin-top: 2px;
-  `;
-
-
+  compWrapper.className = 'si-comp-wrapper';
 
   // Opens the Modify Structure panel (AddStructureModule.js's
   // initModifyStructureButton, rewired by updateVisualization every time this
   // function runs). Shown in wyckoff mode too — there it opens the orbit
   // editor rather than the atom table.
   const addButtonsRow = document.createElement('div');
-  addButtonsRow.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+  addButtonsRow.className = 'si-add-buttons-row';
   const addAtomButton = document.createElement('button');
   addAtomButton.id = 'addButton';
   addAtomButton.innerHTML = '✎';               // icon only
@@ -460,36 +425,31 @@ export function renderComposition(panelState="closed") {
   addAtomButton.title = hasWyckoffPanel
     ? 'Modify structure: cell, Wyckoff sites, add and remove'
     : 'Modify structure: lattice, atoms, add and remove';
-  addAtomButton.className = 'btn-mini highlight';
-  addAtomButton.style.cssText = `
-    height: 26px;
-    width: 26px;
-    font-size: 16px;
-    font-weight: 600;
-    line-height: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255,255,255,0.08);  /* slightly darker square */
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 4px;
-    color: white;
-    cursor: pointer;
-  `;
+  addAtomButton.className = 'btn-mini highlight structure-edit-button';
 
   addButtonsRow.appendChild(addAtomButton);
 
+  // Puts the Composition Display legend on the scene, or takes it away again
+  // (CompositionLegendWidget.js — a floating widget on the colour bars' own
+  // drag machinery, not a panel). Direct listener is fine here (unlike ✎'s
+  // document delegation): the button is recreated with its listener on every
+  // renderComposition pass. That same pass is also the only signal a legend
+  // already on screen gets that the structure changed under it.
+  const legendButton = document.createElement('button');
+  legendButton.id = 'compositionLegendButton';
+  legendButton.innerHTML = '❖';
+  legendButton.title = 'Composition display: a movable colour legend for figures';
+  legendButton.className = 'btn-mini highlight structure-edit-button';
+  legendButton.addEventListener('click', () => toggleCompositionLegend());
+  addButtonsRow.appendChild(legendButton);
+  refreshCompositionLegend();
+
   const title = document.createElement('div');
   const titleWrapper = document.createElement('div');
-    titleWrapper.style.cssText = `
-    display: flex;
-    justify-content: space-between;
-    gap:20px;
-    margin-top: 2px;
-  `;
+  titleWrapper.className = 'si-title-row';
 
   title.textContent = hasWyckoffPanel ? 'Modify Wyckoff Orbits/Bonds' : 'Modify Atoms/Bonds';
-  title.style.cssText = 'font-size:14px; font-weight:500; margin-bottom:10px;';
+  title.className = 'si-title';
 
   titleWrapper.appendChild(title);
   titleWrapper.appendChild(addButtonsRow);
@@ -498,19 +458,7 @@ export function renderComposition(panelState="closed") {
   if (hasWyckoffPanel) {
     const symmetryBadge = document.createElement('div');
     symmetryBadge.textContent = 'Symmetry Locked  |  Wyckoff Mode Active';
-    symmetryBadge.style.cssText = `
-      margin: 0 0 10px 0;
-      padding: 8px 10px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, rgba(32,77,160,0.35), rgba(35,139,230,0.18));
-      border: 1px solid rgba(91,168,255,0.45);
-      color: #cfe6ff;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
-    `;
+    symmetryBadge.className = 'si-wyckoff-badge';
     compDiv.appendChild(symmetryBadge);
   }
 
@@ -524,18 +472,23 @@ export function renderComposition(panelState="closed") {
 // below — Atoms per-image rows, Bonds/Poly grouped rows (general.linkPeriodicCopies).
 // Wyckoff orbit rows are unaffected, but the toggle still applies to Bonds/Poly
 // in wyckoff mode, so it is shown unconditionally above the tab selector.
-const linkCopiesRow = createToggleRow({
+const { row: linkCopiesRow } = createToggleRow({
   id: 'linkPeriodicCopiesToggle',
   label: 'Link colors of periodic copies',
   checked: general.linkPeriodicCopies !== false,
-  onChange: (e) => {
-    general.linkPeriodicCopies = /** @type {any} */ (e.target).checked;
+  onChange: (checked) => {
+    general.linkPeriodicCopies = checked;
     // Selection rows go stale across the list rebuilds.
     clearAllHighlights({ reason: 'link-copies-toggle' });
-    renderComposition("open");
+    // Rebuilding immediately replaces this very switch with a fresh node
+    // already rendered in its new state, so the knob never visibly slid.
+    // Let the pill's 0.25s transition play out first. Kept under the 300ms
+    // the browser tests wait between clicking this toggle and asserting on
+    // the rebuilt rows.
+    setTimeout(() => renderComposition("open"), 260);
   },
 });
-linkCopiesRow.style.margin = '6px 0 8px 0';
+linkCopiesRow.className = 'si-link-copies-row';
 compDiv.appendChild(linkCopiesRow);
 
 // One-click propagation of the current frame's styling to every trajectory
@@ -546,9 +499,8 @@ if (trajContainer?.structures?.length > 1) {
   const applyStylesBtn = document.createElement('button');
   applyStylesBtn.id = 'applyStylesToTrajectoryBtn';
   applyStylesBtn.textContent = 'Apply styles to trajectory';
-  applyStylesBtn.className = 'reset-btn';
+  applyStylesBtn.className = 'reset-btn si-apply-styles-btn';
   applyStylesBtn.title = 'Copy all atom/bond/polyhedra styling from this frame to every frame';
-  applyStylesBtn.style.cssText = 'height: 28px; padding: 0 10px; font-size: 11px; margin: 0 0 8px 0;';
   applyStylesBtn.onclick = () => {
     trajContainer.flushStylesToAllStructures(fileBrowser.selectedStructure);
     trajContainer.flushColorToAllStructures(fileBrowser.selectedStructure); // atom model colors travel too
@@ -564,12 +516,12 @@ const atomBondControl = document.createElement('div');
 atomBondControl.id = 'atomBondControl';
 atomBondControl.className = "atomBondControl";
 
-// Add the segmented control to the div
+// Add the segmented control to the div — a "locked" look while a Wyckoff-
+// symmetry structure is loaded (see .segmented-control.wyckoff-locked in
+// structureInfoPanel.css, which also covers the active button's gradient
+// further below).
 const segmentedControl = addSegmentedControl(atomBondControl, 'atomBondControlSwitch', hasWyckoffPanel);
-if (hasWyckoffPanel) {
-  segmentedControl.style.boxShadow = '0 0 0 1px rgba(91,168,255,0.35)';
-  segmentedControl.style.background = 'rgba(25,55,110,0.28)';
-}
+if (hasWyckoffPanel) segmentedControl.classList.add('wyckoff-locked');
 // Append the div to compDiv
 compDiv.appendChild(atomBondControl);
 
@@ -597,17 +549,13 @@ if (!hasWyckoffPanel) {
 }
 
 const ResetColorAtomsButtonRow = document.createElement('div');
-ResetColorAtomsButtonRow.style.display = 'flex';
-ResetColorAtomsButtonRow.style.justifyContent = 'center';
-ResetColorAtomsButtonRow.style.marginTop = '20px';
-ResetColorAtomsButtonRow.style.gap = '20px';
+ResetColorAtomsButtonRow.className = 'si-reset-row';
 
 
 const resetAllColorsBtn = document.createElement('button');
 resetAllColorsBtn.id="resetAllColorsBtn"
 resetAllColorsBtn.textContent = 'Reset Colors';
-resetAllColorsBtn.className = 'reset-btn';
-resetAllColorsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 50px;';
+resetAllColorsBtn.className = 'reset-btn si-action-btn';
 resetAllColorsBtn.title = 'Reset every color customization (atoms, per-copy, bond and polyhedra colors, individual force/spin arrow colors) to element defaults.\nClick: this frame. Press and hold: whole trajectory.';
 wirePressHoldPopup(resetAllColorsBtn, {
   holdLabel: 'Reset Trajectory',
@@ -632,8 +580,7 @@ wirePressHoldPopup(resetAllColorsBtn, {
 const resetAtomsBtn = document.createElement('button');
 resetAtomsBtn.id = "resetAtomsBtn"
 resetAtomsBtn.textContent = 'Reset Styling';
-resetAtomsBtn.className = 'reset-btn';
-resetAtomsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; margin-right: 4px; min-width: 50px;';
+resetAtomsBtn.className = 'reset-btn si-action-btn';
 resetAtomsBtn.title = 'Reset all atom/bond/polyhedra styling (colors, transparency, sizes, visibility, cut immunity) and unhide every individually-hidden force/spin arrow. Bond lengths/visibility keep their own reset in the Bonds tab.\nClick: this frame. Press and hold: whole trajectory.';
 wirePressHoldPopup(resetAtomsBtn, {
   holdLabel: 'Reset Trajectory',
@@ -746,15 +693,14 @@ const initialButton = Array.from(segmentedControl.querySelectorAll('button'))
   .find((button) => button.dataset.mode === initialMode)
   || segmentedControl.querySelector(hasWyckoffPanel ? 'button[data-mode="wyckoff"]' : 'button[data-mode="atoms"]');
 initialButton?.classList.add('active');
+// The active button's gradient/colour is plain CSS
+// (.segmented-control.wyckoff-locked button.active, structureInfoPanel.css)
+// once segmentedControl carries 'wyckoff-locked' (set above) — only the
+// label rename is left to do here.
 if (hasWyckoffPanel) {
   segmentedControl.querySelectorAll('button').forEach((button) => {
     if (button.dataset.mode === 'wyckoff') {
       button.textContent = 'Wyckoff *';
-    }
-    if (button.classList.contains('active')) {
-      button.style.background = 'linear-gradient(135deg, #1c5fb8, #2493ff)';
-      button.style.color = '#f5fbff';
-      button.style.fontWeight = '700';
     }
   });
 }
@@ -762,31 +708,8 @@ showPanel(modePanelIds[initialMode] ?? 'atomPanel')
 
   restoreCompositionUiState(priorUiState);
 
-// CSS for the panels
-const style = document.createElement('style');
-style.textContent = `
-  .control-panel {
-    display: none; /* Initially hidden */
-    margin-top: 10px;
-    padding: 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background-color: rgba(26, 26, 26, 0.95);
-  }
-`;
-document.head.appendChild(style);
-
-
-
-  // Example usage:
-  //
   const volumeDiv = document.createElement("div");
-  volumeDiv.style.cssText = `
-    margin-top: 8px;
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.8);
-  `;
-
+  volumeDiv.className = 'si-volume';
 
   compDiv.appendChild(volumeDiv);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);

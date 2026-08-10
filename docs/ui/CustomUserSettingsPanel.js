@@ -39,7 +39,8 @@ import { makeSectionHeadline } from './panels/sectionHeadline.js';
 import { confirmResetAllShortcuts, getShortcutOverrides, applyShortcutOverrides } from './KeyboardShortcuts.js';
 
 const LS_KEY = 'crysvizCustomUserSettings';
-const POPUP_Z = 1300; // above floating panels (1200); child popovers (1400) still layer above this
+// Popup z-index (1300, above floating panels' 1200; child popovers' 1400
+// still layer above it) now lives in .cv-cus-popup (styles/sceneWidgets.css).
 
 const OVERRIDE_COLOR = 'rgba(240, 132, 18, 1)'; // orange - the app's existing "user override" accent
 const DEFAULT_BORDER = 'rgba(255, 255, 255, 0.55)'; // white - untouched/default
@@ -167,15 +168,14 @@ function closePopupOnOutsideClick(popup, onClose) {
 
 function makePopupShell(title, width = 660) {
   const popup = document.createElement('div');
-  popup.style.cssText = `
-    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    background: var(--popup-bg, #111); color: var(--panel-fg, #fff); border: 1px solid var(--popup-border, #333); border-radius: 8px;
-    z-index: ${POPUP_Z}; padding: 15px; font-family: Arial, sans-serif; width: ${width}px; max-width: calc(100vw - 24px);
-    max-height: 85vh; overflow-y: auto;
-  `;
+  popup.className = 'cv-cus-popup';
+  // Every current caller passes the default width, but it's a real part of
+  // this helper's API (a future wider/narrower popup), so it stays a JS
+  // value rather than being folded into the class.
+  popup.style.width = `${width}px`;
   const heading = document.createElement('h3');
   heading.textContent = title;
-  heading.style.cssText = 'margin: 0 0 10px 0; text-align: center;';
+  heading.className = 'cv-cus-popup-heading';
   popup.appendChild(heading);
   document.body.appendChild(popup);
   return popup;
@@ -191,48 +191,46 @@ function makePopupShell(title, width = 660) {
  * @param {{
  *   onTileClick: (symbol: string, tile: HTMLElement) => void,
  *   tileLabel: (symbol: string) => string,
- *   tileStyle: (symbol: string) => string,
+ *   tileFill: (symbol: string) => string,
  *   tileTextColor?: (symbol: string) => string,
  *   tileBorderColor?: (symbol: string, selected: boolean) => string,
  *   isSelected?: (symbol: string) => boolean,
  * }} options
  */
-function buildPeriodicGrid({ onTileClick, tileLabel, tileStyle, tileTextColor, tileBorderColor, isSelected }) {
+function buildPeriodicGrid({ onTileClick, tileLabel, tileFill, tileTextColor, tileBorderColor, isSelected }) {
   const wrap = document.createElement('div');
 
   function makeRow(symbols, cols) {
     const row = document.createElement('div');
-    row.style.cssText = `display:grid; grid-template-columns:repeat(${cols}, 32px); gap:2px; justify-content:center; margin-bottom:2px;`;
+    row.className = 'cv-cus-grid-row';
+    row.style.gridTemplateColumns = `repeat(${cols}, 32px)`;
     symbols.forEach((symbol) => {
       if (!symbol) {
         const spacer = document.createElement('div');
-        spacer.style.cssText = 'width:32px; height:32px;';
+        spacer.className = 'cv-cus-grid-spacer';
         row.appendChild(spacer);
         return;
       }
       const tile = document.createElement('button');
       tile.type = 'button';
+      tile.className = 'cv-cus-color-tile';
       tile.dataset.symbol = symbol;
       tile.innerHTML = tileLabel(symbol);
-      const extra = tileStyle(symbol) || '';
+      // Everything below is genuinely per-element: the fill (tileFill),
+      // symbol color/shadow (computed for contrast against that fill —
+      // getContrastingBorder, same luminance-based pick used for the scene
+      // background/lattice contrast elsewhere) and the override/category
+      // border colour. Only the tile's fixed geometry lives in the class.
+      tile.style.background = tileFill(symbol) || '';
       const selected = isSelected?.(symbol);
-      // Symbol color is computed per-tile against its own background
-      // (getContrastingBorder - same luminance-based pick used for the scene
-      // background/lattice contrast elsewhere), not a fixed white, since tile
-      // backgrounds range from near-black to near-white across elements.
       const textColor = tileTextColor ? tileTextColor(symbol) : '#ffffff';
       const shadow = textColor === '#ffffff'
         ? '0 1px 2px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.6)'
         : '0 1px 1px rgba(255,255,255,0.5)';
       const borderColor = tileBorderColor ? tileBorderColor(symbol, selected) : (selected ? OVERRIDE_COLOR : DEFAULT_BORDER);
-      tile.style.cssText = `
-        width:32px; height:32px; border-radius:4px; cursor:pointer;
-        display:flex; flex-direction:column; align-items:center; justify-content:center;
-        font-size:9px; line-height:1.1; color:${textColor}; padding:0;
-        text-shadow: ${shadow};
-        border:2px solid ${borderColor};
-        ${extra}
-      `;
+      tile.style.color = textColor;
+      tile.style.textShadow = shadow;
+      tile.style.border = `2px solid ${borderColor}`;
       tile.addEventListener('click', () => onTileClick(symbol, tile));
       row.appendChild(tile);
     });
@@ -252,9 +250,10 @@ function buildPeriodicGrid({ onTileClick, tileLabel, tileStyle, tileTextColor, t
 function makeInlineInput({ type = 'text', value, width }) {
   const input = document.createElement('input');
   input.type = type;
-  if (type === 'number') { input.step = '0.01'; input.min = '0'; input.className = 'coord-input'; }
+  input.classList.add('cv-cus-inline-input');
+  if (type === 'number') { input.step = '0.01'; input.min = '0'; input.classList.add('coord-input'); }
   if (value != null) input.value = value;
-  input.style.cssText = `width:${width}px; background:#333; border:1px solid #555; border-radius:3px; color:#fff; font:inherit; padding:1px 3px; cursor:text;`;
+  input.style.width = `${width}px`; // per-caller field width, the only thing that varies
   return input;
 }
 
@@ -275,12 +274,12 @@ function makeInlineInput({ type = 'text', value, width }) {
  */
 function buildJsonListView({ keys, isOverridden, buildRow, emptyText, footer }) {
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size:12px; max-height:440px; overflow-y:auto; background:var(--input-bg, #0d0d0d); border-radius:6px; padding:10px 14px;';
+  wrap.className = 'cv-cus-json-list';
 
   if (!keys.length) {
     const empty = document.createElement('div');
     empty.textContent = emptyText || 'Nothing here yet.';
-    empty.style.cssText = 'color:rgba(255,255,255,0.5); text-align:center; padding:10px 0;';
+    empty.className = 'cv-cus-json-empty';
     wrap.appendChild(empty);
     if (footer) wrap.appendChild(footer);
     return wrap;
@@ -290,9 +289,11 @@ function buildJsonListView({ keys, isOverridden, buildRow, emptyText, footer }) 
 
   keys.forEach((key, i) => {
     const row = document.createElement('div');
-    row.style.cssText = `display:flex; align-items:center; flex-wrap:wrap; padding:2px 4px 2px 18px; margin:0 -4px; border-radius:3px; color:${isOverridden(key) ? OVERRIDE_COLOR : DEFAULT_TEXT};`;
-    row.addEventListener('mouseenter', () => { row.style.background = 'rgba(255,255,255,0.07)'; });
-    row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+    row.className = 'cv-cus-json-row';
+    // Override vs. default is a per-key data lookup, not a fixed choice —
+    // the two colours themselves (OVERRIDE_COLOR/DEFAULT_TEXT) are constants
+    // declared once at the top of this file.
+    row.style.color = isOverridden(key) ? OVERRIDE_COLOR : DEFAULT_TEXT;
     buildRow(key, row, i < keys.length - 1);
     wrap.appendChild(row);
   });
@@ -337,7 +338,7 @@ function openColorPeriodicTable(onChange) {
     container.innerHTML = '';
     const grid = buildPeriodicGrid({
       tileLabel: (el) => el,
-      tileStyle: (el) => `background:${currentColorHex(el)};`,
+      tileFill: (el) => currentColorHex(el),
       tileTextColor: (el) => getContrastingBorder(currentColorHex(el)),
       isSelected: (el) => Object.prototype.hasOwnProperty.call(general.customColorMap, el),
       onTileClick: (el, tileEl) => pickElementColor(tileEl, el, () => { renderGrid(container); onChange?.(); }),
@@ -346,7 +347,7 @@ function openColorPeriodicTable(onChange) {
 
     const hint = document.createElement('div');
     hint.textContent = 'Click an element to pick its color. Orange marks an override, white is the default.';
-    hint.style.cssText = 'text-align:center; font-size:11px; color:rgba(255,255,255,0.6); margin-top:10px;';
+    hint.className = 'cv-cus-hint';
     container.appendChild(hint);
   }
 
@@ -396,8 +397,7 @@ function openColorPeriodicTable(onChange) {
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.textContent = 'Close';
-  closeBtn.className = 'btn-mini highlight';
-  closeBtn.style.cssText = 'display:block; margin:14px auto 0; padding:5px 20px;';
+  closeBtn.className = 'btn-mini highlight cv-cus-close-btn';
   closeBtn.addEventListener('click', () => popup.remove());
   popup.appendChild(closeBtn);
 
@@ -436,33 +436,29 @@ function buildRadiusGrid({ onTileClick }) {
 
   function makeRow(symbols, cols) {
     const row = document.createElement('div');
-    row.style.cssText = `display:grid; grid-template-columns:repeat(${cols}, 30px); gap:2px; justify-content:center; margin-bottom:2px;`;
+    row.className = 'cv-cus-grid-row';
+    row.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
     symbols.forEach((symbol) => {
       if (!symbol) {
         const spacer = document.createElement('div');
-        spacer.style.cssText = 'width:30px; height:30px;';
+        spacer.className = 'cv-cus-grid-spacer cv-cus-grid-spacer--sm';
         row.appendChild(spacer);
         return;
       }
 
       const tile = document.createElement('button');
       tile.type = 'button';
+      tile.className = 'cv-cus-radius-tile';
       tile.dataset.symbol = symbol;
-      tile.style.cssText = `
-        width:30px; height:30px; border-radius:3px; cursor:pointer; position:relative; z-index:1;
-        display:flex; flex-direction:column; align-items:center; justify-content:center;
-        border-width:2px; border-style:solid; transition:background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
-      `;
       applyRadiusTileVisual(tile, symbol);
 
       const label = document.createElement('div');
       label.textContent = symbol;
-      label.style.cssText = 'font-size:12px; line-height:1;';
+      label.className = 'cv-cus-radius-tile-symbol';
 
       const radLabel = document.createElement('div');
-      radLabel.className = 'radius-tile-value';
+      radLabel.className = 'radius-tile-value cv-cus-radius-tile-value';
       radLabel.textContent = getElementRadius(symbol).toFixed(2);
-      radLabel.style.cssText = 'font-size:8px; opacity:0.85; line-height:1.3;';
 
       tile.appendChild(label);
       tile.appendChild(radLabel);
@@ -501,7 +497,7 @@ function openRadiusPeriodicTable(onChange) {
     container.innerHTML = '';
 
     const gridWrap = document.createElement('div');
-    gridWrap.style.cssText = 'position:relative;';
+    gridWrap.className = 'cv-cus-grid-wrap';
     container.appendChild(gridWrap);
 
     // Enlarged preview, shown once a tile is picked - same shape as the Add
@@ -512,27 +508,21 @@ function openRadiusPeriodicTable(onChange) {
     // rather than dead-center) so it doesn't sit directly on top of the
     // element that was just clicked.
     const preview = document.createElement('div');
-    preview.style.cssText = `
-      display:none; position:absolute; top:0; left:40%; transform:translateX(-50%);
-      width:max-content; border-radius:8px;
-      border:1px solid transparent; padding:8px; box-sizing:border-box; z-index:2;
-    `;
+    preview.className = 'cv-cus-radius-preview cv-force-hidden';
     preview.innerHTML = `
-      <div style="display:flex; align-items:center; gap:10px; position:relative;">
-        <div style="display:flex; flex-direction:column; align-items:center; gap:4px; position:relative;">
-          <div class="radius-preview-number" style="position:absolute; top:-4px; left:-4px; font-size:14px; font-weight:normal;"></div>
-          <div style="display:flex; align-items:center; gap:6px; margin-top:12px;">
-            <span class="radius-preview-symbol" style="font-weight:bold; font-size:24px;"></span>
-            <input class="radius-preview-input coord-input" type="number" step="0.01" min="0.05" style="
-              width:44px; font-size:12px; text-align:center; background:#222; border:1px solid #555;
-              color:white; border-radius:3px; padding:5px 6px;">
-            <span style="font-size:11px; color:rgba(255,255,255,0.75);">Å</span>
+      <div class="cv-cus-radius-preview-row">
+        <div class="cv-cus-radius-preview-col">
+          <div class="radius-preview-number"></div>
+          <div class="cv-cus-radius-preview-input-row">
+            <span class="radius-preview-symbol"></span>
+            <input class="radius-preview-input coord-input" type="number" step="0.01" min="0.05">
+            <span class="cv-cus-radius-preview-unit">Å</span>
           </div>
-          <div class="radius-preview-name" style="font-size:12px; font-weight:normal; white-space:nowrap;"></div>
+          <div class="radius-preview-name"></div>
         </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <button type="button" class="radius-preview-apply btn-mini highlight" style="padding:4px 14px; font-size:11px; white-space:nowrap;">Apply</button>
-          <button type="button" class="radius-preview-reset btn-mini" style="padding:4px 14px; font-size:11px; white-space:nowrap;">Reset</button>
+        <div class="cv-cus-radius-preview-actions">
+          <button type="button" class="radius-preview-apply btn-mini highlight cv-cus-radius-preview-btn">Apply</button>
+          <button type="button" class="radius-preview-reset btn-mini cv-cus-radius-preview-btn">Reset</button>
         </div>
       </div>
     `;
@@ -602,7 +592,7 @@ function openRadiusPeriodicTable(onChange) {
       preview.style.background = `rgba(${r}, ${g}, ${b}, 0.3)`;
       preview.style.borderColor = category;
 
-      preview.style.display = 'block';
+      preview.classList.remove('cv-force-hidden');
       inputEl.focus();
       inputEl.select();
     }
@@ -612,7 +602,7 @@ function openRadiusPeriodicTable(onChange) {
 
     const hint = document.createElement('div');
     hint.textContent = 'Click an element, then type its radius. An override inverts the tile (white background, black text); the border stays its category color.';
-    hint.style.cssText = 'text-align:center; font-size:11px; color:rgba(255,255,255,0.6); margin-top:10px;';
+    hint.className = 'cv-cus-hint';
     container.appendChild(hint);
   }
 
@@ -659,8 +649,7 @@ function openRadiusPeriodicTable(onChange) {
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.textContent = 'Close';
-  closeBtn.className = 'btn-mini highlight';
-  closeBtn.style.cssText = 'display:block; margin:14px auto 0; padding:5px 20px;';
+  closeBtn.className = 'btn-mini highlight cv-cus-close-btn';
   closeBtn.addEventListener('click', () => popup.remove());
   popup.appendChild(closeBtn);
 
@@ -702,7 +691,7 @@ function openBondPairPicker(onChange) {
     // Relative wrapper so the inline distance editor can be absolutely
     // positioned over the grid's own blank space instead of navigating away.
     const gridWrap = document.createElement('div');
-    gridWrap.style.cssText = 'position:relative;';
+    gridWrap.className = 'cv-cus-grid-wrap';
     container.appendChild(gridWrap);
 
     // Same look as the Add Atom/Add Structure picker - transparent tile,
@@ -710,7 +699,7 @@ function openBondPairPicker(onChange) {
     // color (that's the Color picker's job).
     const grid = buildPeriodicGrid({
       tileLabel: (el) => el,
-      tileStyle: () => 'background:transparent;',
+      tileFill: () => 'transparent',
       tileBorderColor: (el, isSel) => (isSel ? OVERRIDE_COLOR : radiusCategoryColor(el)),
       isSelected: (el) => selected.includes(el),
       onTileClick: (el) => {
@@ -733,10 +722,7 @@ function openBondPairPicker(onChange) {
     // purpose - this should read as content sitting directly in the table's
     // own empty space, not a separate floating card stacked on top of it.
     const overlay = document.createElement('div');
-    overlay.style.cssText = `
-      position:absolute; left:68px; top:0; width:338px; height:100px;
-      display:none; flex-direction:column; align-items:center; justify-content:center; gap:4px;
-    `;
+    overlay.className = 'cv-cus-bond-overlay cv-force-hidden';
     gridWrap.appendChild(overlay);
 
     function refreshTileBorders() {
@@ -753,32 +739,26 @@ function openBondPairPicker(onChange) {
       const chip = document.createElement('div');
       chip.textContent = el;
       chip.title = 'Click to remove from selection';
-      chip.style.cssText = `
-        width:40px; height:40px; border-radius:5px; display:flex; align-items:center; justify-content:center;
-        font-size:17px; font-weight:700; cursor:pointer; background:transparent; color:#ffffff;
-        border:2px solid ${radiusCategoryColor(el)};
-      `;
+      chip.className = 'cv-cus-element-chip';
+      chip.style.borderColor = radiusCategoryColor(el);
       chip.addEventListener('click', onRemove);
       return chip;
     }
 
     function renderOverlay() {
       overlay.innerHTML = '';
-      if (selected.length < 1) {
-        overlay.style.display = 'none';
-        return;
-      }
-      overlay.style.display = 'flex';
+      overlay.classList.toggle('cv-force-hidden', selected.length < 1);
+      if (selected.length < 1) return;
 
       // Click a chip to drop that pick back out of the selection - there's
       // no separate "deselect" button cluttering this up.
       const chipsRow = document.createElement('div');
-      chipsRow.style.cssText = 'display:flex; align-items:center; gap:8px;';
+      chipsRow.className = 'cv-cus-chip-row';
       selected.forEach((el, i) => {
         if (i > 0) {
           const dash = document.createElement('span');
           dash.textContent = '–';
-          dash.style.cssText = 'font-size:15px; color:rgba(255,255,255,0.7);';
+          dash.className = 'cv-cus-chip-dash';
           chipsRow.appendChild(dash);
         }
         chipsRow.appendChild(elementChip(el, () => {
@@ -792,7 +772,7 @@ function openBondPairPicker(onChange) {
       if (selected.length < 2) {
         const hint = document.createElement('div');
         hint.textContent = 'Pick a second element - the same one again makes a self-bond (e.g. Si-Si).';
-        hint.style.cssText = 'font-size:10px; color:rgba(255,255,255,0.65); text-shadow:0 1px 2px rgba(0,0,0,0.8); text-align:center; max-width:260px;';
+        hint.className = 'cv-cus-bond-hint';
         overlay.appendChild(hint);
         return;
       }
@@ -804,7 +784,7 @@ function openBondPairPicker(onChange) {
       // Distance fields and Confirm sit on the same row, next to each other,
       // to leave the chips room to be bigger without growing the total height.
       const fieldsRow = document.createElement('div');
-      fieldsRow.style.cssText = 'display:flex; align-items:center; gap:5px; font-size:10px; color:rgba(255,255,255,0.85); text-shadow:0 1px 2px rgba(0,0,0,0.8);';
+      fieldsRow.className = 'cv-cus-bond-fields-row';
       const distLabel = document.createElement('span');
       distLabel.textContent = 'Distance';
       function smallField(value) {
@@ -812,9 +792,8 @@ function openBondPairPicker(onChange) {
         input.type = 'number';
         input.step = '0.01';
         input.min = '0';
-        input.className = 'coord-input';
+        input.className = 'coord-input cv-cus-bond-distance-input';
         input.value = value.toFixed(2);
-        input.style.cssText = 'width:42px; background:#333; border:1px solid #555; color:white; padding:2px; text-align:center; font-size:10px;';
         return input;
       }
       const minInput = smallField(existing.min);
@@ -825,8 +804,7 @@ function openBondPairPicker(onChange) {
       const applyBtn = document.createElement('button');
       applyBtn.type = 'button';
       applyBtn.textContent = 'Apply';
-      applyBtn.className = 'btn-mini highlight';
-      applyBtn.style.cssText = 'padding:3px 10px; font-size:10px; margin-left:4px;';
+      applyBtn.className = 'btn-mini highlight cv-cus-bond-btn cv-cus-bond-btn--gap';
       applyBtn.addEventListener('click', () => {
         const min = parseFloat(minInput.value) || 0;
         const max = parseFloat(maxInput.value) || 0;
@@ -843,8 +821,7 @@ function openBondPairPicker(onChange) {
       const resetBtn = document.createElement('button');
       resetBtn.type = 'button';
       resetBtn.textContent = 'Reset';
-      resetBtn.className = 'btn-mini';
-      resetBtn.style.cssText = 'padding:3px 10px; font-size:10px;';
+      resetBtn.className = 'btn-mini cv-cus-bond-btn';
       resetBtn.addEventListener('click', () => {
         delete general.customBondLengths[pair];
         general.bondLengths[pair] = computeDefaultBondEntry(elA, elB);
@@ -870,7 +847,7 @@ function openBondPairPicker(onChange) {
 
     const hint = document.createElement('div');
     hint.textContent = 'Click two elements to set a bond-distance override for that pair.';
-    hint.style.cssText = 'text-align:center; font-size:11px; color:rgba(255,255,255,0.6); margin-top:10px;';
+    hint.className = 'cv-cus-hint';
     container.appendChild(hint);
 
     const pairsHost = document.createElement('div');
@@ -934,8 +911,7 @@ function openBondPairPicker(onChange) {
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.textContent = 'Close';
-  closeBtn.className = 'btn-mini highlight';
-  closeBtn.style.cssText = 'display:block; margin:14px auto 0; padding:5px 20px;';
+  closeBtn.className = 'btn-mini highlight cv-cus-close-btn';
   closeBtn.addEventListener('click', () => popup.remove());
   popup.appendChild(closeBtn);
 
@@ -948,24 +924,26 @@ function renderPairList(container, onRemoved) {
   if (!pairs.length) return;
 
   const listWrap = document.createElement('div');
-  listWrap.style.cssText = 'margin-top:14px; border-top:1px solid rgba(255,255,255,0.15); padding-top:10px;';
+  listWrap.className = 'cv-cus-override-list';
   const listHeading = document.createElement('div');
   listHeading.textContent = 'Your bond-distance overrides:';
-  listHeading.style.cssText = 'font-size:12px; color:rgba(255,255,255,0.7); margin-bottom:6px;';
+  listHeading.className = 'cv-cus-override-list-heading';
   listWrap.appendChild(listHeading);
 
   pairs.forEach((pair) => {
     const { min, max } = general.customBondLengths[pair];
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:3px 0; color:' + OVERRIDE_COLOR + ';';
+    // Every row here is by definition an override (this list only ever
+    // shows entries from general.customBondLengths), so the colour is a
+    // plain constant, not a per-row data choice like buildJsonListView's.
+    row.className = 'cv-cus-override-row';
     const text = document.createElement('span');
     text.textContent = `${pair}: ${min.toFixed(2)}–${max.toFixed(2)} Å`;
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.textContent = '✕';
     removeBtn.title = 'Remove override';
-    removeBtn.className = 'btn-mini';
-    removeBtn.style.cssText = 'width:20px; height:20px; padding:0; font-size:10px;';
+    removeBtn.className = 'btn-mini cv-cus-override-remove-btn';
     removeBtn.addEventListener('click', () => {
       delete general.customBondLengths[pair];
       delete general.bondLengths[pair];
@@ -990,7 +968,7 @@ function makeJsonFileInput(onLoaded) {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.json,application/json';
-  input.style.display = 'none';
+  input.className = 'cv-force-hidden'; // never shown — only used to open the browser's own file picker
   input.addEventListener('change', async () => {
     const file = input.files?.[0];
     input.value = '';
@@ -1008,21 +986,21 @@ function makeJsonFileInput(onLoaded) {
 
 function buildMapSection({ title, description, countLabel, onOpenPicker, onClearAll }) {
   const section = document.createElement('div');
-  section.style.cssText = 'margin-bottom: 16px;';
+  section.className = 'cv-cus-section';
 
   section.appendChild(makeSectionHeadline(title));
 
   const desc = document.createElement('div');
   desc.textContent = description;
-  desc.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.6); margin-bottom: 8px;';
+  desc.className = 'cv-cus-section-desc';
   section.appendChild(desc);
 
   const countRow = document.createElement('div');
-  countRow.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.75); margin-bottom: 8px;';
+  countRow.className = 'cv-cus-section-count';
   section.appendChild(countRow);
 
   const btnRow = document.createElement('div');
-  btnRow.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px;';
+  btnRow.className = 'cv-cus-section-btn-row';
 
   const configureBtn = document.createElement('button');
   configureBtn.type = 'button';
@@ -1137,16 +1115,16 @@ export function buildCustomUserSettingsPanel(body) {
   // One combined load/save for everything - keyed by category so more can be
   // added later (e.g. a future "textures" key) without breaking older files.
   const globalSection = document.createElement('div');
-  globalSection.style.cssText = 'margin-bottom: 18px;';
+  globalSection.className = 'cv-cus-section cv-cus-section--wide';
   globalSection.appendChild(makeSectionHeadline('All Settings'));
 
   const globalDesc = document.createElement('div');
   globalDesc.textContent = 'Load or save colors, radii, and bond distances together as one file.';
-  globalDesc.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.6); margin-bottom: 8px;';
+  globalDesc.className = 'cv-cus-section-desc';
   globalSection.appendChild(globalDesc);
 
   const globalBtnRow = document.createElement('div');
-  globalBtnRow.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px;';
+  globalBtnRow.className = 'cv-cus-section-btn-row';
 
   const loadAllBtn = document.createElement('button');
   loadAllBtn.type = 'button';
@@ -1198,16 +1176,16 @@ export function buildCustomUserSettingsPanel(body) {
 // shortcuts help modal (Shift+H).
 function buildKeyboardShortcutsSection() {
   const section = document.createElement('div');
-  section.style.cssText = 'margin-bottom: 16px;';
+  section.className = 'cv-cus-section';
   section.appendChild(makeSectionHeadline('Keyboard Shortcuts'));
 
   const desc = document.createElement('div');
   desc.textContent = 'Your customized bindings are included in the "All Settings" JSON above. Open the shortcut list with Shift+H to see or rebind individual keys, or reset everything back to defaults here.';
-  desc.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.6); margin-bottom: 8px;';
+  desc.className = 'cv-cus-section-desc';
   section.appendChild(desc);
 
   const btnRow = document.createElement('div');
-  btnRow.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px;';
+  btnRow.className = 'cv-cus-section-btn-row';
 
   const resetBtn = document.createElement('button');
   resetBtn.type = 'button';

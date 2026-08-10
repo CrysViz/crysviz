@@ -160,7 +160,7 @@ function applyFaceOpacity(material, opacity) {
 
 /** @param {HTMLElement} container empty block element the viewport fills */
 export function createPolyhedronMiniRenderer(container) {
-  container.style.position = 'relative';
+  container.classList.add('pi-mini-container');
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 200);
@@ -174,7 +174,7 @@ export function createPolyhedronMiniRenderer(container) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.2;
-  renderer.domElement.style.cssText = 'position:absolute; inset:0; width:100%; height:100%; display:block;';
+  renderer.domElement.className = 'pi-mini-canvas';
   container.appendChild(renderer.domElement);
 
   const controls = new TrackballControls(camera, renderer.domElement);

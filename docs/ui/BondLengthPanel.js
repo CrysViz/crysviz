@@ -20,13 +20,15 @@ import {
   updateSingleBondDiameter,
 } from '../render/index.js';
 
-// The slider container is fluid (flex:1, see .bond-range-slider below) so it
-// shrinks to fit the Structure Info panel at any width instead of overflowing
-// it — BOND_SLIDER_WIDTH is only a same-frame-paint fallback for the rare
-// moment a row is built while its tab is hidden (display:none reads
-// clientWidth 0); the ResizeObserver in each row corrects it the instant the
-// container gets real layout (becomes visible / panel or window resizes).
-// BOND_SLIDER_THUMB must match the CSS thumb diameter below: a range input's
+// The slider container is fluid (flex:1, see .bond-range-slider in
+// styles/bondLengthHistogram.css) so it shrinks to fit the Structure Info
+// panel at any width instead of overflowing it — BOND_SLIDER_WIDTH is only a
+// same-frame-paint fallback for the rare moment a row is built while its tab
+// is hidden (display:none reads clientWidth 0); the ResizeObserver in each
+// row corrects it the instant the container gets real layout (becomes
+// visible / panel or window resizes).
+// BOND_SLIDER_THUMB must match the CSS thumb diameter in
+// styles/bondLengthHistogram.css's .bond-range-slider block: a range input's
 // thumb travels from thumbWidth/2 to width-thumbWidth/2 (it can never center
 // past its own edge), so the colored fill track has to be inset by that same
 // half-thumb amount on each side — lining it up as a plain 0-100% overlay (no
@@ -90,72 +92,6 @@ document.addEventListener('crysviz:colors-changed', () => {
   Object.values(bondCategorySwatchUpdateFunctions).forEach((updateFn) => updateFn());
 });
 
-// Inject CSS for the double slider
-function injectDoubleSliderCSS() {
-  const style = document.createElement('style');
-  style.textContent = `
-    .bond-range-slider {
-      position: relative;
-      flex: 1 1 auto;
-      min-width: 60px;
-      height: 16px;
-      margin: 0 8px;
-    }
-    .bond-range-slider .background-track {
-      position: absolute;
-      height: 4px;
-      background: rgba(150, 150, 150, 0.5);
-      border-radius: 2px;
-      top: 50%;
-      left: ${BOND_SLIDER_THUMB / 2}px;
-      right: ${BOND_SLIDER_THUMB / 2}px;
-      transform: translateY(-50%);
-      z-index: -2;
-    }
-    .bond-range-slider .range-track {
-      position: absolute;
-      height: 4px;
-      background: rgba(6, 140, 50, 0.8);
-      border-radius: 2px;
-      top: 50%;
-      transform: translateY(-50%);
-      z-index: -1;
-    }
-    .bond-range-slider input[type="range"] {
-      position: absolute;
-      width: 100%;
-      height: 16px;
-      -webkit-appearance: none;
-      appearance: none;
-      background: transparent;
-      pointer-events: none;
-    }
-    .bond-range-slider input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: ${BOND_SLIDER_THUMB}px;
-      height: ${BOND_SLIDER_THUMB}px;
-      border-radius: 50%;
-      background: #fff;
-      border: 1px solid #ccc;
-      cursor: pointer;
-      pointer-events: auto;
-      margin-top: -6px;
-    }
-    .bond-range-slider input[type="range"]::-moz-range-thumb {
-      width: ${BOND_SLIDER_THUMB}px;
-      height: ${BOND_SLIDER_THUMB}px;
-      border-radius: 50%;
-      background: #fff;
-      border: 1px solid #ccc;
-      cursor: pointer;
-      pointer-events: auto;
-    }
-  `;
-  document.head.appendChild(style);
-}
-injectDoubleSliderCSS();
-
 export function resetBondLengths() {
   for (const pair in general.defaultBondLengths) {
     general.bondLengths[pair] = { ...general.defaultBondLengths[pair] };
@@ -208,24 +144,18 @@ export function createBondLengthControls(targetPanel='bondControls') {
   resetWrapper.id = "resetBondLengthsWrapper";
   resetWrapper.className = "buttonWrapper";
   resetWrapper.setAttribute("aria-hidden", "true");
-  resetWrapper.style.display = "flex";
-  resetWrapper.style.justifyContent = "center";
-  resetWrapper.style.gap = "8px";
 
   const addCustomBondBtn = document.createElement("button");
   addCustomBondBtn.id = "addCustomBond";
-  addCustomBondBtn.className = "reset-btn";
-  addCustomBondBtn.textContent = "Add Custom Bond";
-  addCustomBondBtn.style.fontSize = "12px";
-  addCustomBondBtn.style.height = "22px";
   // Deactivated for now: the underlying data model holds one length range
   // per element pair, so this button can only add a pair that has none yet
   // (e.g. a cross-element pair the auto-detector never saw) — not a second,
   // independent range for a pair that already has one. Keeping the handler
-  // below intact (just hidden) rather than deleting it in case that
-  // single-range-only version of "Add Custom Bond" turns out to be wanted
-  // later.
-  addCustomBondBtn.style.display = "none";
+  // below intact (just hidden, see .blp-add-custom-btn) rather than deleting
+  // it in case that single-range-only version of "Add Custom Bond" turns out
+  // to be wanted later.
+  addCustomBondBtn.className = "reset-btn blp-add-custom-btn";
+  addCustomBondBtn.textContent = "Add Custom Bond";
   addCustomBondBtn.onclick = () => {
     openDoublePeriodicTable((pair) => {
       if (general.bondLengths[pair]) {
@@ -314,25 +244,15 @@ export function createBondLengthControls(targetPanel='bondControls') {
     // Explicit, scale-respecting size matching the Atoms tab's element-symbol
     // label, so both stay identical regardless of viewport width instead of
     // relying on the ambient cascade (global `label` rule here vs. Atoms'
-    // `.comp-row` narrow-viewport override there).
-    checkboxLabel.style.color = '#ccc';
-    checkboxLabel.style.margin = '0';
-    checkboxLabel.style.cursor = 'pointer';
-    checkboxLabel.style.fontSize = 'calc(14px * var(--cv-font-scale, 1))';
+    // `.comp-row` narrow-viewport override there). --fs-lg is exactly
+    // calc(14px * var(--cv-font-scale, 1)).
+    checkboxLabel.className = 'bond-checkbox-label';
 
     // Expand caret toggling the individual-bond list (same style as the
     // Atoms-tab composition rows).
     const expandIcon = document.createElement('span');
     expandIcon.textContent = '▶';
     expandIcon.className = 'bond-expand-icon';
-    expandIcon.style.cssText = `
-      margin-left: 4px;
-      font-size: 14px;
-      transition: transform 0.2s ease;
-      color: rgba(255,255,255,0.8);
-      transform: rotate(0deg);
-      cursor: pointer;
-    `;
 
     // --- Live header: pie dot (opens the category editor) + count(pct%) ---
     const structure = () => fileBrowser.selectedStructure;
@@ -345,7 +265,6 @@ export function createBondLengthControls(targetPanel='bondControls') {
     let dotEl = document.createElement('span');
     const countLabel = document.createElement('span');
     countLabel.className = 'bond-count';
-    countLabel.style.cssText = 'font-size: 11px; color: #ccc; margin-left: auto;';
 
     function refreshHeader() {
       const members = memberBonds();
@@ -362,11 +281,10 @@ export function createBondLengthControls(targetPanel='bondControls') {
         ? members.map((b) => safeColor(b.color?.[0]))
         : catColorOverride != null ? [safeColor(catColorOverride)] : defaultPairColors;
       const dot = createPieDot(colors, 20);
-      dot.classList.add('dot');
       // Match the Atoms tab's dot size (the shared .dot CSS class alone
       // renders at 10x10 — its rule predates this row and this row never
       // overrode it, unlike CompositionRow.js's atom dot).
-      dot.style.cssText = 'width: 20px; height: 20px; margin-right: 6px; border: 1px solid rgba(255,255,255,0.4); cursor: pointer;';
+      dot.classList.add('dot', 'bond-cat-dot');
       dot.title = `Customize color/alpha/size for all ${pair} bonds`;
       dot.onclick = (e) => {
         e.stopPropagation();
@@ -401,7 +319,12 @@ export function createBondLengthControls(targetPanel='bondControls') {
     // --- Category style editor (color + alpha + size for the whole pair) ---
     const catEditor = document.createElement('div');
     catEditor.className = 'bond-cat-editor';
-    catEditor.style.cssText = 'display: none; margin-top: 6px; padding: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;';
+    // Explicit inline default alongside the CSS class's own `display: none`:
+    // this codebase reads `.style.display` back in several places (this
+    // file, StructureInfoPanel/General.js's expand-state capture) as the
+    // source of truth for open/closed — the CSS class alone would make
+    // those reads see '' instead of 'none' before the first toggle.
+    catEditor.style.display = 'none';
 
     // Live edits fan out to every bond of the pair, but SKIP members that have
     // a per-copy override for the same field so individual > category holds
@@ -428,24 +351,23 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
     const currentCatAlpha = clampOpacity(structure()?.bondCategoryStyles?.[pair]?.alpha ?? 1);
     const catAlphaRow = document.createElement('div');
-    catAlphaRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin: 6px 0;';
+    catAlphaRow.className = 'bond-cat-row';
     const catAlphaLabel = document.createElement('span');
     catAlphaLabel.textContent = 'Alpha';
-    catAlphaLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+    catAlphaLabel.className = 'bond-cat-row-label';
     const catAlphaSlider = document.createElement('input');
     catAlphaSlider.type = 'range';
     catAlphaSlider.min = '0.05';
     catAlphaSlider.max = '1';
     catAlphaSlider.step = '0.01';
     catAlphaSlider.value = String(currentCatAlpha);
-    catAlphaSlider.style.cssText = 'flex:1;';
     const catAlphaValue = document.createElement('input');
     catAlphaValue.type = 'number';
     catAlphaValue.min = '0.05';
     catAlphaValue.max = '1';
     catAlphaValue.step = '0.01';
     catAlphaValue.value = currentCatAlpha.toFixed(2);
-    catAlphaValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+    catAlphaValue.className = 'bond-cat-row-input';
     function applyCatAlpha(rawValue) {
       const value = clampOpacity(rawValue);
       catAlphaSlider.value = String(value);
@@ -468,24 +390,23 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
     const currentCatScale = clampRadiusScale(structure()?.bondCategoryStyles?.[pair]?.radiusScale ?? 1);
     const catSizeRow = document.createElement('div');
-    catSizeRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin: 6px 0;';
+    catSizeRow.className = 'bond-cat-row';
     const catSizeLabel = document.createElement('span');
     catSizeLabel.textContent = 'Size';
-    catSizeLabel.style.cssText = 'font-size:11px; color: rgba(255,255,255,0.82); min-width: 34px;';
+    catSizeLabel.className = 'bond-cat-row-label';
     const catSizeSlider = document.createElement('input');
     catSizeSlider.type = 'range';
     catSizeSlider.min = '0.2';
     catSizeSlider.max = '3';
     catSizeSlider.step = '0.05';
     catSizeSlider.value = String(currentCatScale);
-    catSizeSlider.style.cssText = 'flex:1;';
     const catSizeValue = document.createElement('input');
     catSizeValue.type = 'number';
     catSizeValue.min = '0.2';
     catSizeValue.max = '3';
     catSizeValue.step = '0.05';
     catSizeValue.value = currentCatScale.toFixed(2);
-    catSizeValue.style.cssText = 'width:56px; height:28px; padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); color: #e7f5ff; font-size: 11px;';
+    catSizeValue.className = 'bond-cat-row-input';
     function applyCatSize(rawValue) {
       const value = clampRadiusScale(rawValue);
       catSizeSlider.value = String(value);
@@ -508,8 +429,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
     const catResetBtn = document.createElement('button');
     catResetBtn.textContent = 'Reset';
-    catResetBtn.className = 'btn-mini';
-    catResetBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+    catResetBtn.className = 'btn-mini bond-cat-btn';
     catResetBtn.title = `Reset ${pair} bonds: removes the group style AND every individual override.\nClick: this frame. Press and hold: whole trajectory.`;
     // Preview the two elements' default (pre-override) half-colors, same idea
     // as the element editor's Reset swatch — each bond half is colored by its
@@ -550,8 +470,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
     const catApplyBtn = document.createElement('button');
     catApplyBtn.textContent = 'Apply';
-    catApplyBtn.className = 'btn-mini highlight';
-    catApplyBtn.style.cssText = 'height: 32px; padding: 0 4px; font-size: 11px; min-width: 50px; width: 50px;';
+    catApplyBtn.className = 'btn-mini highlight bond-cat-btn';
     catApplyBtn.title = `Click: close. Press and hold: copy ${pair} bonds' group color/alpha/size to every trajectory frame.`;
     wirePressHoldPopup(catApplyBtn, {
       holdLabel: 'Apply to Trajectory',
@@ -570,7 +489,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     });
 
     const catButtonRow = document.createElement('div');
-    catButtonRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-top: 6px;';
+    catButtonRow.className = 'bond-cat-btn-row';
     catButtonRow.appendChild(catResetBtn);
     catButtonRow.appendChild(catApplyBtn);
 
@@ -600,13 +519,8 @@ export function createBondLengthControls(targetPanel='bondControls') {
     // --- Individual bond list (expandable, lazily built) ---
     const bondsContainer = document.createElement('div');
     bondsContainer.className = 'individual-bonds';
-    bondsContainer.style.cssText = `
-      display: none;
-      margin-left: 20px;
-      margin-top: 8px;
-      border-left: 2px solid rgba(255,255,255,0.1);
-      padding-left: 8px;
-    `;
+    // See the matching comment on catEditor.style.display above.
+    bondsContainer.style.display = 'none';
 
     // One row per bond is expensive and hidden until expanded, so build lazily
     // on first expand (mirrors the Atoms tab). structure.bonds is recreated by
@@ -646,7 +560,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       }
       if (!bondsContainer.children.length) {
         const empty = document.createElement('div');
-        empty.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.5); padding: 4px 0;';
+        empty.className = 'bond-empty-note';
         empty.textContent = 'No bonds in the current length range';
         bondsContainer.appendChild(empty);
       }
@@ -674,10 +588,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     label.appendChild(valueSpan);
 
     const controlsRow = document.createElement('div');
-    controlsRow.style.display = 'flex';
-    controlsRow.style.gap = '8px';
-    controlsRow.style.alignItems = 'center';
-    controlsRow.style.minWidth = '0'; // let the slider (flex:1) actually shrink instead of overflowing the row
+    controlsRow.className = 'bond-controls-row';
 
     // Double slider container
     const sliderContainer = document.createElement('div');
@@ -702,7 +613,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     minSlider.max = '6';
     minSlider.step = '0.1';
     minSlider.value = general.bondLengths[pair].min;
-    minSlider.style.zIndex = '2';
+    minSlider.className = 'bond-range-min';
     sliderContainer.appendChild(minSlider);
 
     // Max slider
@@ -712,7 +623,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     maxSlider.max = '6';
     maxSlider.step = '0.1';
     maxSlider.value = general.bondLengths[pair].max;
-    maxSlider.style.zIndex = '1';
+    maxSlider.className = 'bond-range-max';
     sliderContainer.appendChild(maxSlider);
 
     // Fill-track position depends on the container's ACTUAL current width,
@@ -797,14 +708,13 @@ export function createBondLengthControls(targetPanel='bondControls') {
   // Below every individual bond category — same placement as the Atoms tab's
   // Reset Colors/Reset Styling row below the composition list.
   const resetColorsRow = document.createElement('div');
-  resetColorsRow.style.cssText = 'display: flex; justify-content: center; gap: 8px; margin-top: 20px;';
+  resetColorsRow.className = 'blp-reset-colors-row';
 
   // Historic id kept (never rename ids); label describes the actual behavior.
   const resetBtn = document.createElement("button");
   resetBtn.id = "resetBondLengths";
-  resetBtn.className = "reset-btn";
+  resetBtn.className = "reset-btn blp-reset-btn";
   resetBtn.textContent = "Reset Bond Lengths";
-  resetBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; min-width: 50px;';
   resetBtn.onclick = () => {
     resetBondLengths();
     clearAllHighlights();
@@ -813,8 +723,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
   const resetBondColorsBtn = document.createElement('button');
   resetBondColorsBtn.id = 'resetBondColorsBtn';
   resetBondColorsBtn.textContent = 'Reset Colors';
-  resetBondColorsBtn.className = 'reset-btn';
-  resetBondColorsBtn.style.cssText = 'height: 32px; padding: 0 10px; font-size: 11px; min-width: 50px;';
+  resetBondColorsBtn.className = 'reset-btn blp-reset-btn';
   resetBondColorsBtn.title = 'Reset every bond color customization (category and individual) to element defaults.\nClick: this frame. Press and hold: whole trajectory.';
   wirePressHoldPopup(resetBondColorsBtn, {
     holdLabel: 'Reset Trajectory',

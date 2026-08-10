@@ -1,0 +1,677 @@
+/* addStructure — extracted from ui/addToStructureModule/*.js during the CSS
+   consolidation (Wave 3). Every rule here used to be a `style="…"` attribute
+   or a `.style.cssText =` assignment; class names follow each file's own
+   prefix (as- / atom- component pieces share `addstructure-`, the two
+   Wyckoff-table editors share `wyckoff-`, LatticeInputPanel is `lattice-`,
+   SpaceGroupSelect is `sg-select-`, AddVacuumModule is `vacuum-`).
+
+   Wave 2.6 (see docs/styles/TOKENS.md) added rungs for what used to be this
+   file's biggest gaps: #333 is now --chrome-2-5, #595959 is --chrome-5, and
+   the one-off rgba(255,255,255,X) text alphas land on --fg-85/--fg-75/--fg-50. */
+
+/* ---------------------------------------------------------------------------
+   Shared table/cell/input primitives — identical style strings used to be
+   duplicated across AtomTableInput.js, StructureEditorPanel.js and
+   SymmetryWyckoffTab.js; consolidated here once each.
+   ------------------------------------------------------------------------ */
+
+.addstructure-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.addstructure-table--spaced {
+  margin-top: var(--sp-2);
+}
+
+.addstructure-cell {
+  border: 1px solid var(--chrome-4);
+  padding: 3px;
+}
+
+.addstructure-center {
+  text-align: center;
+}
+
+.addstructure-nowrap {
+  white-space: nowrap;
+}
+
+.addstructure-sticky-th {
+  border: 1px solid var(--chrome-4);
+  padding: 3px;
+  font-size: var(--fs-base);
+  text-align: center;
+  position: sticky;
+  top: 0;
+  background: var(--popup-bg);
+  z-index: 1;
+}
+
+.addstructure-col-icon { width: 30px; text-align: center; }
+.addstructure-col-element { width: 74px; }
+.addstructure-col-coord { width: 88px; }
+.addstructure-col-narrow { width: 44px; }
+.addstructure-col-color { width: 40px; text-align: center; }
+
+.addstructure-inline-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Atom-table style numeric input (AtomTableInput's x/y/z/occ/charge) — the
+   secondary row of a disordered site gets `disabled` in JS (groupSiteRows,
+   AtomTableInput.js); the dimming used to be a separate `style.opacity`
+   write next to it, now it's implied by the disabled state alone. */
+.addstructure-num-input,
+.wyckoff-coord-input {
+  width: 100%;
+  background: var(--chrome-2-5);
+  border: 1px solid var(--chrome-5);
+  color: var(--fg-1);
+  padding: 2px 3px;
+  box-sizing: border-box;
+}
+.addstructure-num-input:disabled { opacity: 0.45; }
+
+/* Only set when onRowActivate is passed in (the live Modify table, not the
+   staged Add table) - see AtomTableInput.js's buildRow. */
+.atom-row-activatable { cursor: pointer; }
+/* Space-group tab (SymmetryWyckoffTab.js) additionally showed a
+   not-allowed cursor on a frozen coordinate — the orbit-table equivalent
+   in StructureEditorPanel.js never did, so the cursor stays split out
+   under a differently-scoped class rather than folded into one rule. */
+.wyckoff-coord-input:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Orbit-table numeric input (StructureEditorPanel.js's locked Modify body):
+   same box chrome as .addstructure-num-input, plus the radius/text-align
+   the plain atom table never used. */
+.wyckoff-orbit-num-input {
+  width: 100%;
+  background: var(--chrome-2-5);
+  border: 1px solid var(--chrome-5);
+  color: var(--fg-1);
+  padding: 2px 3px;
+  border-radius: var(--radius-3);
+  box-sizing: border-box;
+  text-align: right;
+}
+/* Only the per-axis coordinate boxes (.wyckoff-axis-input) ever got the
+   disabled dimming — the site <select> shares this class's box chrome but
+   was never opacity-toggled, so the rule is scoped to the axis inputs only. */
+.wyckoff-axis-input:disabled { opacity: 0.45; }
+
+.wyckoff-text-input {
+  width: 54px;
+  background: var(--chrome-2-5);
+  border: 1px solid var(--chrome-5);
+  color: var(--fg-1);
+  padding: 2px 3px;
+  border-radius: var(--radius-3);
+  box-sizing: border-box;
+}
+
+.addstructure-element-input {
+  width: 40px;
+  background: var(--chrome-2-5);
+  border: 1px solid var(--chrome-5);
+  color: var(--fg-1);
+  padding: 2px 3px;
+  border-radius: var(--radius-3);
+  box-sizing: border-box;
+}
+
+.addstructure-pick-btn {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  background: var(--chrome-5);
+  border: none;
+  color: var(--fg-1);
+  cursor: pointer;
+  font-size: var(--fs-md);
+  border-radius: var(--radius-3);
+  line-height: 1;
+  padding: 0;
+}
+
+.addstructure-icon-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  line-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.addstructure-icon-btn--shrink0 { flex-shrink: 0; }
+
+.addstructure-highlight-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 1;
+  border: 1px solid var(--chrome-5);
+  border-radius: var(--radius-3);
+  background: var(--chrome-2-5);
+  color: var(--fg-1);
+  cursor: pointer;
+}
+.addstructure-highlight-btn.is-active {
+  background: rgb(var(--warn-rgb) / 0.35);
+  border-color: var(--warn);
+}
+
+.addstructure-full-btn { width: 90%; }
+
+.addstructure-button-row {
+  margin-top: var(--sp-5);
+  text-align: right;
+}
+
+.addstructure-reset-row {
+  text-align: right;
+  margin-top: var(--sp-2);
+}
+
+.addstructure-panel-body--sm { width: min(90vw, 460px); }
+.addstructure-panel-body--lg { width: min(90vw, 560px); }
+
+/* "Newly added" separator row spliced above the first added atom/orbit
+   (StructureEditorPanel.js's markNewGap/markNewOrbitGap) — the row itself
+   carries .atom-new-separator/.orbit-new-separator for JS lookup, the
+   styling lives here on its one <td>. */
+.atom-new-separator td,
+.orbit-new-separator td {
+  padding: 9px var(--sp-2) 3px;
+  border-top: 2px solid rgb(var(--active-green-rgb) / 0.5);
+  color: rgb(var(--active-green-rgb) / 0.95);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.03em;
+}
+
+/* ---------------------------------------------------------------------------
+   AtomTableInput.js — the shared atom-entry table + bulk-paste box.
+   ------------------------------------------------------------------------ */
+
+.atom-table-wrap { margin-bottom: var(--sp-3-5); }
+
+.atoms-table-scroll {
+  max-height: 208px;
+  overflow-y: auto;
+  margin-top: var(--sp-3-5);
+}
+
+.atom-table-add-row {
+  text-align: center;
+  margin-top: var(--sp-3);
+}
+
+.atom-table-add-hint {
+  display: none;
+  color: rgb(var(--danger-rgb) / 1);
+  font-size: var(--fs-sm);
+  margin-top: var(--sp-1);
+}
+.atom-table-add-hint.visible { display: block; }
+
+.atom-table-bulk-row {
+  margin-top: var(--sp-5);
+  display: flex;
+  align-items: center;
+}
+
+.atom-table-bulk-textarea {
+  flex: 1;
+  height: 80px;
+  background: var(--chrome-2-5);
+  border: 1px solid var(--chrome-5);
+  color: var(--fg-1);
+  padding: 5px;
+  resize: vertical;
+  margin-right: var(--sp-3-5);
+}
+
+.atom-table-bulk-btn-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.atom-table-bulk-apply-btn {
+  padding: 5px var(--sp-3-5);
+}
+
+/* ---------------------------------------------------------------------------
+   StructureEditorPanel.js — shared Add/Modify editor body: New/Removed
+   summary lists, and the Wyckoff-locked orbit table.
+   ------------------------------------------------------------------------ */
+
+.addstructure-scroll-list {
+  max-height: 120px;
+  overflow-y: auto;
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius-sm);
+}
+.addstructure-scroll-list--tall { max-height: 160px; }
+
+.addstructure-list-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid var(--wash-2);
+  font-size: var(--fs-base);
+}
+
+.addstructure-list-label { font-weight: var(--fw-bold); flex-shrink: 0; }
+
+.addstructure-list-coord {
+  font-family: var(--font-mono);
+  color: var(--fg-75);
+  flex-grow: 1;
+  text-align: right;
+}
+
+.addstructure-list-heading {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  color: var(--ink-3);
+  margin: var(--sp-4) 0 var(--sp-1) 0;
+}
+
+.wyckoff-lock-heading {
+  font-size: var(--fs-base);
+  color: var(--fg-85);
+  margin-bottom: 2px;
+}
+
+.wyckoff-hint {
+  font-size: var(--fs-sm);
+  color: var(--fg-50);
+  margin: var(--sp-1) 0 var(--sp-3-5) 0;
+}
+
+.wyckoff-sites-scroll {
+  max-height: 240px;
+  overflow-y: auto;
+  margin-top: var(--sp-2);
+}
+
+.wyckoff-site-th {
+  border: 1px solid var(--chrome-4);
+  padding: 3px;
+  font-size: var(--fs-base);
+  text-align: center;
+  color: var(--ink-4);
+}
+
+.wyckoff-site-form {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-3); /* was 0.45 — documented --fg-3 near-duplicate */
+  text-align: center;
+  margin-top: 2px;
+}
+
+.wyckoff-status {
+  font-size: var(--fs-sm);
+  color: rgb(var(--danger-rgb) / 0.95);
+  margin-top: var(--sp-2);
+  min-height: 14px;
+}
+
+/* ---------------------------------------------------------------------------
+   SymmetryWyckoffTab.js — Add Structure panel's "Symmetry (Wyckoff)" tab.
+   ------------------------------------------------------------------------ */
+
+.wyckoff-tab-loading {
+  text-align: center;
+  padding: var(--sp-6) var(--sp-3-5);
+  color: var(--fg-2); /* was 0.6 — exact --fg-2 */
+  font-size: var(--fs-md);
+}
+.wyckoff-tab-loading--error { color: rgb(var(--danger-rgb) / 1); }
+
+.wyckoff-sg-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3-5);
+  margin-bottom: var(--sp-2);
+}
+
+.wyckoff-sg-label {
+  font-size: var(--fs-base);
+  color: var(--fg-75);
+  flex: none;
+}
+
+.wyckoff-sg-host { flex: 1 1 auto; min-width: 0; }
+
+.wyckoff-sg-name {
+  font-size: var(--fs-base);
+  color: var(--fg-85);
+  margin-bottom: var(--sp-1);
+}
+
+.wyckoff-sg-hint {
+  font-size: var(--fs-sm);
+  color: var(--fg-50);
+  margin-bottom: var(--sp-3-5);
+}
+
+.wyckoff-sg-sites-scroll {
+  max-height: 208px;
+  overflow-y: auto;
+  margin-top: var(--sp-2);
+}
+
+.wyckoff-sg-add-row {
+  text-align: center;
+  margin-top: var(--sp-3);
+}
+
+.wyckoff-sg-summary {
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  margin-top: var(--sp-3);
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------------------
+   LatticeInputPanel.js — Parameters/Matrix lattice entry, side by side.
+   ------------------------------------------------------------------------ */
+
+.lattice-params-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-base);
+}
+
+.lattice-label {
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) 0;
+  color: var(--fg-75);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.lattice-cell { padding: var(--sp-1); }
+
+.lattice-num-input {
+  width: 70px;
+  text-align: right;
+  font-family: var(--font-mono);
+  background: var(--wash-1-5);
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius-4);
+  color: var(--fg-1);
+  padding: 3px 5px;
+  box-sizing: border-box;
+}
+
+.lattice-hint {
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--fg-50);
+  margin-bottom: var(--sp-3-5);
+}
+
+.lattice-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.lattice-col { flex: 1 1 0; min-width: 0; }
+
+.lattice-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--wash-4);
+}
+
+.lattice-matrix-col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.lattice-matrix-table {
+  border-collapse: collapse;
+  font-size: var(--fs-base);
+}
+
+/* WyckoffLatticeConstraints.js's markLocked() sets .disabled on both the
+   param inputs and the .lat-mat matrix cells (which also carry
+   .LatticeInput) for the SAME reason in both places - one rule covers it,
+   the JS only needs to flip the attribute now. */
+.LatticeInput:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ---------------------------------------------------------------------------
+   SpaceGroupSelect.js — number/symbol combobox over all 230 space groups.
+   ------------------------------------------------------------------------ */
+
+.sg-select-host { position: relative; }
+
+.sg-select-input {
+  width: 100%;
+  font-family: var(--font-mono);
+  background: var(--wash-1-5);
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius-4);
+  color: var(--fg-1);
+  padding: var(--sp-1) var(--sp-2);
+  box-sizing: border-box;
+}
+
+.sg-select-list {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--popup-bg);
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius-4);
+  box-shadow: 0 6px 18px rgb(var(--shadow-rgb) / 0.45);
+  z-index: 20;
+  display: none;
+}
+.sg-select-list.open { display: block; }
+
+.sg-select-empty {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-base);
+  color: var(--fg-50);
+}
+
+.sg-select-item {
+  padding: var(--sp-1) var(--sp-3);
+  cursor: pointer;
+  font-size: var(--fs-base);
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+.sg-select-item.is-active { background: var(--wash-3); }
+
+.sg-select-number {
+  font-family: var(--font-mono);
+  color: var(--fg-2); /* was 0.55 — documented --fg-2 near-duplicate */
+  min-width: 30px;
+  text-align: right;
+}
+
+.sg-select-symbol {
+  font-family: var(--font-mono);
+  color: var(--fg-1);
+}
+
+.sg-select-system {
+  margin-left: auto;
+  font-size: var(--fs-sm);
+  color: var(--fg-3); /* was 0.45 — documented --fg-3 near-duplicate */
+}
+
+/* ---------------------------------------------------------------------------
+   AddVacuumModule.js — "Add Vacuum" tab (Add Atoms / Vacuum floating panel).
+   ------------------------------------------------------------------------ */
+
+.vacuum-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3-5);
+  margin-bottom: var(--sp-3-5);
+}
+
+.vacuum-field { display: flex; align-items: center; }
+
+.vacuum-label {
+  margin-right: 5px;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+}
+
+.vacuum-input {
+  width: 56px;
+  background: var(--chrome-2-5);
+  border: 1px solid var(--chrome-5);
+  color: var(--fg-1);
+  padding: 3px;
+  height: 24px;
+  box-sizing: border-box;
+}
+
+.vacuum-apply-btn {
+  padding: 5px var(--sp-3-5);
+  background: var(--bg-color);
+  color: var(--fg-1);
+  cursor: pointer;
+}
+
+.vacuum-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3-5);
+  font-size: var(--fs-sm);
+  color: var(--fg-75);
+  border-top: 1px solid var(--line-1);
+  padding-top: var(--sp-3);
+}
+
+.vacuum-reset-btn {
+  padding: 3px var(--sp-3-5);
+  font-size: var(--fs-sm);
+}
+/* .disabled is driven straight off the button's own `disabled` attribute
+   (AddVacuumModule.js's refreshVacuumStatus) - no separate state class
+   needed for what's already expressible as a pseudo-class. */
+.vacuum-reset-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ---------------------------------------------------------------------------
+   AddAtomModule.js — "Add Atoms" panel's "Added this session" list.
+   ------------------------------------------------------------------------ */
+
+.addstructure-session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid var(--wash-2);
+  font-size: var(--fs-base);
+  cursor: pointer;
+  background: transparent;
+}
+.addstructure-session-row.is-active { background: rgb(var(--warn-rgb) / 0.2); }
+
+/* ---------------------------------------------------------------------------
+   SymmetryWyckoffTabStub.js — placeholder tab (real impl not landed yet).
+   ------------------------------------------------------------------------ */
+
+.wyckoff-stub-message {
+  text-align: center;
+  padding: 30px var(--sp-3-5);
+  color: var(--fg-2); /* was 0.6 — exact --fg-2 */
+  font-size: var(--fs-md);
+}
+
+/* ---------------------------------------------------------------------------
+   Docked panes (Modify Structure adopted into the left/right dock).
+   The editor was authored as a floating window and sizes itself via the
+   --sm/--lg body widths above; a dock pane is narrower and CLIPPED it — the
+   matrix column and the Occ/Charge/Color columns simply vanished off the
+   pane edge. Docked, the pane width wins: the body yields, the lattice
+   columns wrap instead of sitting side by side, the atom table's fixed
+   coordinate columns relax so rows compress, and the table wrapper picks up
+   horizontal scrolling as the last resort for panes narrower than a row's
+   minimum. Descendant selectors on the dock-state classes, per the adopted-
+   content rule (see rightDock.css).
+   ------------------------------------------------------------------------ */
+
+.cv-docked .addstructure-panel-body--sm,
+.cv-docked .addstructure-panel-body--lg,
+.cv-right-docked .addstructure-panel-body--sm,
+.cv-right-docked .addstructure-panel-body--lg {
+  width: auto;
+}
+
+.cv-docked .lattice-row,
+.cv-right-docked .lattice-row {
+  flex-wrap: wrap;
+  row-gap: var(--sp-3);
+}
+
+/* Enough basis that the two columns sit side by side in a wide right pane
+   but wrap into a stack in the ~380px left dock. */
+.cv-docked .lattice-col,
+.cv-docked .lattice-matrix-col,
+.cv-right-docked .lattice-col,
+.cv-right-docked .lattice-matrix-col {
+  flex: 1 1 220px;
+}
+
+/* The vertical divider is meaningless once the columns can wrap. */
+.cv-docked .lattice-divider,
+.cv-right-docked .lattice-divider {
+  display: none;
+}
+
+.cv-docked .addstructure-col-coord,
+.cv-right-docked .addstructure-col-coord {
+  width: auto;
+}
+
+/* Auto table layout refuses to shrink a column below a number input's
+   intrinsic width (~60px in Firefox), which left the row ~60px wider than
+   the left dock no matter what the cells asked for. Fixed layout hands the
+   coordinate columns exactly the leftover pane width and the width:100%
+   inputs follow. */
+.cv-docked .addstructure-table,
+.cv-right-docked .addstructure-table {
+  table-layout: fixed;
+}
+
+/* With fixed layout the coordinate columns only get what the decorated
+   columns leave behind — at the floating widths that was ~20px per axis in
+   the left dock. Trim the fixed columns to their real content so X/Y/Z end
+   up with ~50px each. */
+.cv-docked .addstructure-col-element,
+.cv-right-docked .addstructure-col-element { width: 64px; }
+.cv-docked .addstructure-col-narrow,
+.cv-right-docked .addstructure-col-narrow { width: 40px; }
+.cv-docked .addstructure-col-color,
+.cv-right-docked .addstructure-col-color { width: 30px; }
+.cv-docked .addstructure-col-icon,
+.cv-right-docked .addstructure-col-icon { width: 24px; }
+
+.cv-docked .atoms-table-scroll,
+.cv-right-docked .atoms-table-scroll {
+  overflow-x: auto;
+}

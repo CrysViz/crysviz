@@ -18,6 +18,7 @@ import { addSpinPanel, removeSpinPanel } from '../SpinPanel.js';
 import { addFieldPanel, fieldBrowser } from '../FieldPanel.js';
 import { addPlanesPanel, removePlanesPanel, setPlanesVisible, planesData } from '../PlanesPanel.js';
 import { addBondPanel, removeBondPanel } from '../BondPanel.js';
+import { createToggleRow } from '../ToggleSwitch.js';
 import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../LatticeSupercellPanel.js';
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
@@ -136,25 +137,7 @@ function detachStaticRow(inputId) {
 
 /** Build a checkbox toggle row matching the static ones (toggle_styles.css). */
 function makeToggleRow(id, labelText, checked, onChange) {
-  const row = document.createElement('label');
-  row.className = 'toggle_row toggle_container';
-  const sw = document.createElement('span');
-  sw.className = 'toggle_switch';
-  const cb = document.createElement('input');
-  cb.type = 'checkbox';
-  cb.id = id;
-  cb.checked = checked;
-  const slider = document.createElement('span');
-  slider.className = 'toggle_slider';
-  sw.appendChild(cb);
-  sw.appendChild(slider);
-  const text = document.createElement('span');
-  text.className = 'toggle_text';
-  text.textContent = labelText;
-  row.appendChild(sw);
-  row.appendChild(text);
-  cb.addEventListener('change', () => onChange(cb.checked));
-  return row;
+  return createToggleRow({ id, label: labelText, checked, onChange }).row;
 }
 
 /** Build the Features window body: master show-toggles for each feature, in a

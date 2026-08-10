@@ -92,27 +92,27 @@ function resetVacuumForStructure(s) {
 
 function addVacuumPanel(container) {
   container.innerHTML = `
-    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
-      <div style="display: flex; align-items: center;">
-        <label style="margin-right: 5px; white-space: nowrap; display: flex; align-items: center;">X (Å):</label>
-        <input type="number" id="vacX" class="coord-input" value="0" step="0.1" style="width: 56px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+    <div class="vacuum-row">
+      <div class="vacuum-field">
+        <label class="vacuum-label">X (Å):</label>
+        <input type="number" id="vacX" class="coord-input vacuum-input" value="0" step="0.1">
       </div>
 
-      <div style="display: flex; align-items: center;">
-        <label style="margin-right: 5px; white-space: nowrap; display: flex; align-items: center;">Y (Å):</label>
-        <input type="number" id="vacY" class="coord-input" value="0" step="0.1" style="width: 56px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+      <div class="vacuum-field">
+        <label class="vacuum-label">Y (Å):</label>
+        <input type="number" id="vacY" class="coord-input vacuum-input" value="0" step="0.1">
       </div>
 
-      <div style="display: flex; align-items: center;">
-        <label style="margin-right: 5px; white-space: nowrap; display: flex; align-items: center;">Z (Å):</label>
-        <input type="number" id="vacZ" class="coord-input" value="0" step="0.1" style="width: 56px; background: #333; border: 1px solid #555; color: white; padding: 3px; height: 24px; box-sizing: border-box;">
+      <div class="vacuum-field">
+        <label class="vacuum-label">Z (Å):</label>
+        <input type="number" id="vacZ" class="coord-input vacuum-input" value="0" step="0.1">
       </div>
 
-      <button id="applyVacuum" class="btn-mini highlight" style="padding: 5px 10px; background: var(--bg-color); color: white; cursor: pointer;">Apply Vacuum</button>
+      <button id="applyVacuum" class="btn-mini highlight vacuum-apply-btn">Apply Vacuum</button>
     </div>
-    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11px; color: rgba(255,255,255,0.7); border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
+    <div class="vacuum-status-row">
       <span id="vacuumAppliedText"></span>
-      <button id="resetVacuum" class="btn-mini" style="padding: 3px 10px; font-size: 11px;">Reset Vacuum</button>
+      <button id="resetVacuum" class="btn-mini vacuum-reset-btn">Reset Vacuum</button>
     </div>
   `;
 
@@ -128,8 +128,6 @@ function addVacuumPanel(container) {
       statusText.textContent = 'No vacuum applied yet.';
     }
     resetBtn.disabled = !applied;
-    resetBtn.style.opacity = applied ? '1' : '0.4';
-    resetBtn.style.cursor = applied ? 'pointer' : 'default';
   }
   refreshVacuumStatus();
 
@@ -151,7 +149,7 @@ function addAtomsPanel(container) {
   const editorHost = document.createElement('div');
   const warningHost = document.createElement('div');
   const buttonRow = document.createElement('div');
-  buttonRow.style.cssText = 'margin-top: 15px; text-align: right;';
+  buttonRow.className = 'addstructure-button-row';
 
   const addToStructureBtn = document.createElement('button');
   addToStructureBtn.id = 'addToStructure';
@@ -232,7 +230,7 @@ export function addAtomVacuumPanel(buttonId = 'addButton') {
       closable: true,
       persist: false,
       buildContent(body) {
-        body.style.cssText = 'width: min(90vw, 460px);';
+        body.classList.add('addstructure-panel-body--sm');
         const tabHost = document.createElement('div');
         body.appendChild(tabHost);
         createTabSwitcher(tabHost, [
