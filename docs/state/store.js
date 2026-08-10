@@ -295,7 +295,7 @@ export const general = {
   // Side the legend/tick labels render on, independent of orientation: the
   // "far" edge (below the bar in horizontal, right of it in vertical — the
   // original/default) or the "near" edge (above/left). Shared by all four
-  // color bars via the hamburger menu's Flip Side item.
+  // color bars via the layout menu's Flip Side item.
   forceColorBarFlipSide: false,
   spinColorBarFlipSide: false,
   atomColorBarFlipSide: false,
