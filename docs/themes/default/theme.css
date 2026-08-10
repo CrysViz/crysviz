@@ -275,6 +275,8 @@
   --fs-md: calc(13px * var(--cv-font-scale, 1));
   --fs-lg: calc(14px * var(--cv-font-scale, 1));
   --fs-xl: calc(16px * var(--cv-font-scale, 1));
+  --fs-2xl: calc(20px * var(--cv-font-scale, 1));
+  --fs-3xl: calc(24px * var(--cv-font-scale, 1));
   --fs-hero: calc(64px * var(--cv-font-scale, 1));  /* the one big-number/splash outlier */
 
   --fw-normal: 400;

@@ -1414,7 +1414,7 @@ input[type="checkbox"] {
   background: transparent;
   border: none;
   color: var(--ok-bright);
-  font-size: 24px;
+  font-size: var(--fs-3xl);
   cursor: pointer;
   line-height: var(--lh-tight);
   padding: var(--sp-1);
@@ -1548,12 +1548,12 @@ input[type="checkbox"] {
 
   .bond-toggle h4 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--fs-xl);
     font-weight: var(--fw-bold);
   }
 
   .toggle-icon {
-    font-size: 1.25rem;
+    font-size: var(--fs-2xl);
     margin-left: 0.5em;
     transition: transform 0.2s;
   }
@@ -1666,12 +1666,12 @@ justify-content: center;
 
   .spin-toggle h4 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--fs-xl);
     font-weight: var(--fw-bold);
   }
 
   .toggle-icon {
-    font-size: 1.25rem;
+    font-size: var(--fs-2xl);
     margin-left: 0.5em;
     transition: transform 0.2s;
   }
@@ -1828,7 +1828,7 @@ justify-content: center;
   .comparison-toggle h4 {
     color: var(--ok-bright);
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--fs-xl);
     font-weight: var(--fw-bold);
   }
 
@@ -2073,7 +2073,7 @@ z-index:var(--z-overlay-widget); pointer-events:none;
   pointer-events: auto;
 }
 .cv-gizmo-controls .cv-colorbar-grip {
-  font-size: 18px;
+  font-size: var(--fs-2xl);
 }
 .cv-gizmo-menu-wrap {
   position: relative;

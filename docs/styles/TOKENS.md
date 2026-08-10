@@ -912,3 +912,21 @@ light palette — where the scrim stays dark by definition — they rendered as
 black boxes. They're `--float-panel-bg` now, which is what the other floating
 scene widgets already used. The default appearance shifts a hair, from
 `rgba(0, 0, 0, 0.8)` to `rgba(26, 26, 26, 0.8)`.
+
+## Wave 2 completion — font-size ladder
+
+Added `--fs-2xl` (20px) and `--fs-3xl` (24px), both scaled by
+`--cv-font-scale`. First-party 17px/18px/20px sites now use `--fs-2xl`, 24px
+sites use `--fs-3xl`, 14px sites use `--fs-lg`, and panel/button 1em/1rem/
+1.25rem sites use the matching ladder rung. Inline DOM styles use ladder
+variables; the label-like canvas 9px heatmap text is now 10px, while its
+existing DPI/zoom expressions remain unchanged. ColorBar label bases were
+snapped from 16.8px/18px/15px to 16px/20px/14px.
+
+Deliberately retained: the two 8px swatch/tile labels because 10px can break
+their compact badge layouts; `3em` for the oversized planes vector bracket;
+`0.8em` for the intentionally subordinate composition percentage; the two
+CSS `0.85em` labels and the reset button because they scale with their
+variable-size panel parent; and the About-panel `rem`/`0.92em` hierarchy for
+relative help/content typography. Canvas 56px polyhedron labels, 64px charge
+badges, and 92px atom-symbol textures remain deliberate display art.

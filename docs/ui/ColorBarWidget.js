@@ -127,9 +127,9 @@ const FRAME_PAD = 6;
 // bar reads with bigger labels instead of the same fixed-size text just
 // spread further apart. x1.2 (not the original size, but not the earlier
 // x1.5 either — dialed back 20% after that read too large).
-const TICK_LABEL_BASE_FONT = 16.8;
-const LEGEND_BASE_FONT = 18;
-const INPUT_BASE_FONT = 18;
+const TICK_LABEL_BASE_FONT = 16;
+const LEGEND_BASE_FONT = 20;
+const INPUT_BASE_FONT = 20;
 // Docked bars ignore the above entirely (see fontScale()) — a fixed, quite
 // a bit smaller size instead of the floating scale, since a resized floating
 // bar sharing its length via general.colorBarSize would otherwise inflate a
@@ -138,8 +138,8 @@ const INPUT_BASE_FONT = 18;
 // original sizes this widget used before floating bars got their own,
 // larger scale.
 const DOCKED_TICK_LABEL_FONT = 14;
-const DOCKED_LEGEND_FONT = 15;
-const DOCKED_INPUT_FONT = 15;
+const DOCKED_LEGEND_FONT = 14;
+const DOCKED_INPUT_FONT = 14;
 // Legend placement is fixed geometry, not measured off the rendered tick
 // labels: this widget is often built while its panel is still `display:none`
 // mid-expand, where every offsetTop/offsetHeight reads back as 0. x1.2,

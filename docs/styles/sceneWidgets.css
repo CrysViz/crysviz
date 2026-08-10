@@ -515,7 +515,7 @@
      keyword as too sparse a cluster to tokenise; substituting the token
      would be a real weight change. */
   font-weight: bold;
-  font-size: 24px; /* no token — TOKENS.md's own "not cleanly clustered" outlier */
+  font-size: var(--fs-3xl);
 }
 
 .radius-preview-input {
@@ -574,7 +574,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 17px; /* no token — TOKENS.md's own "not cleanly clustered" outlier */
+  font-size: var(--fs-2xl);
   font-weight: 700; /* literal, like .radius-preview-symbol above — not --fw-bold */
   cursor: pointer;
   background: transparent;

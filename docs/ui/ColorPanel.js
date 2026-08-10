@@ -1002,7 +1002,7 @@ export function addColorPanel(target = "colorContainer") {
     display: "flex", alignItems: "center", gap: "12px", margin: "4px 0",
   });
   const atomsLogLabel = createElement("label", {}, {
-    display: "flex", alignItems: "center", gap: "4px", fontSize: "12px",
+    display: "flex", alignItems: "center", gap: "4px", fontSize: "var(--fs-base)",
     color: "white", whiteSpace: "nowrap", cursor: "pointer",
   });
   const atomsLogCheckbox = createElement("input", { type: "checkbox", id: "atomsLogScaleCheckbox" });
@@ -1221,7 +1221,7 @@ export function addColorPanel(target = "colorContainer") {
     display: "flex", alignItems: "center", gap: "12px", margin: "4px 0",
   });
   const bondsLogLabel = createElement("label", {}, {
-    display: "flex", alignItems: "center", gap: "4px", fontSize: "12px",
+    display: "flex", alignItems: "center", gap: "4px", fontSize: "var(--fs-base)",
     color: "white", whiteSpace: "nowrap", cursor: "pointer",
   });
   const bondsLogCheckbox = createElement("input", { type: "checkbox", id: "bondsLogScaleCheckbox" });

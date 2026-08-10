@@ -281,7 +281,7 @@
 }
 .comp-expand-icon {
   margin-left: var(--sp-1);
-  font-size: 14px;
+  font-size: var(--fs-lg);
   transition: transform 0.2s ease;
   color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
   transform: rotate(0deg);

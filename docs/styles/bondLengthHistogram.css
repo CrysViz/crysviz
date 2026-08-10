@@ -362,8 +362,7 @@
 
 .bond-expand-icon {
   margin-left: var(--sp-1);
-  font-size: 14px; /* deliberately NOT --fs-lg/--fs-xl: this caret must stay a fixed
-    size regardless of the user's font-scale control, unlike the label next to it */
+  font-size: var(--fs-lg);
   transition: transform 0.2s ease;
   color: var(--fg-75);
   transform: rotate(0deg); /* JS overrides this inline (rotate(90deg)) on expand — the
