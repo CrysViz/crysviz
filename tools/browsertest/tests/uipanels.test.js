@@ -33,6 +33,107 @@ async function expandPanel(page, id) {
   H.check('Settings window is last in the dock',
     dockOrder[dockOrder.length - 1] === 'settings', JSON.stringify(dockOrder));
 
+  // --- Features shared-view switch -------------------------------------------
+  const featureLockUi = await page.evaluate(() => {
+    const panel = document.querySelector('.cv-panel[data-panel-id="features"]');
+    const body = document.getElementById('cvPanelBody-features');
+    const firstGroup = body?.firstElementChild;
+    const firstRow = firstGroup?.firstElementChild;
+    const text = firstRow?.querySelector('.toggle_text');
+    return {
+      titlebarLock: !!panel?.querySelector('.cv-panel-titlebar .lock-toggle-btn'),
+      firstRowIsSharedView: firstGroup?.classList.contains('toggle_group')
+        && firstRow?.classList.contains('feature-lock-row'),
+      label: text?.textContent.trim(),
+      switch: !!firstRow?.querySelector('#featureSharedViewToggle'),
+      cameraLock: !!document.querySelector('#cvPanelBody-view .camera-lock-btn'),
+    };
+  });
+  H.check('Features title bar no longer contains a padlock', !featureLockUi.titlebarLock);
+  H.check('Features shared-view switch is the first content row with the exact label',
+    featureLockUi.firstRowIsSharedView
+      && featureLockUi.label === 'Shared view for all structures'
+      && featureLockUi.switch, JSON.stringify(featureLockUi));
+  H.check('View panel camera lock remains available', featureLockUi.cameraLock);
+
+  // OFF is the non-destructive direction and changes the same persisted flag
+  // without a dialog. Turning it back ON must hold the flag until the existing
+  // confirm dialog is accepted.
+  await page.evaluate(() => document.getElementById('featureSharedViewToggle').click());
+  await page.waitForTimeout(100);
+  const featureUnlocked = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    return {
+      flag: general.featuresLocked,
+      checked: document.getElementById('featureSharedViewToggle').checked,
+      modalHidden: document.getElementById('confirmModal')?.hidden !== false,
+    };
+  });
+  H.check('turning shared view OFF flips the existing flag without confirmation',
+    featureUnlocked.flag === false && featureUnlocked.checked === false && featureUnlocked.modalHidden,
+    JSON.stringify(featureUnlocked));
+
+  await page.evaluate(() => document.getElementById('featureSharedViewToggle').click());
+  await page.waitForTimeout(100);
+  const featureConfirmPending = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    return {
+      flag: general.featuresLocked,
+      checked: document.getElementById('featureSharedViewToggle').checked,
+      modalVisible: document.getElementById('confirmModal')?.hidden === false,
+      title: document.getElementById('confirmModalTitle')?.textContent,
+    };
+  });
+  H.check('turning shared view ON shows the existing confirmation before changing the flag',
+    featureConfirmPending.flag === false
+      && featureConfirmPending.checked === true
+      && featureConfirmPending.modalVisible
+      && featureConfirmPending.title === 'Lock this setting?',
+  JSON.stringify(featureConfirmPending));
+  await H.clickById(page, 'confirmModalOk');
+  await page.waitForTimeout(100);
+  const featureLocked = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    return general.featuresLocked === true
+      && document.getElementById('featureSharedViewToggle').checked === true
+      && document.getElementById('confirmModal').hidden;
+  });
+  H.check('confirming shared view ON flips the same flag', featureLocked);
+
+  await page.evaluate(() => document.getElementById('featureSharedViewToggle').click());
+  await page.waitForTimeout(100);
+  const featureUnlockedAgain = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    return general.featuresLocked === false
+      && document.getElementById('featureSharedViewToggle').checked === false
+      && document.getElementById('confirmModal').hidden;
+  });
+  H.check('turning shared view OFF again needs no confirmation', featureUnlockedAgain);
+
+  await page.evaluate(async () => {
+    const { rebuildPanel } = await import('./ui/panels/PanelManager.js');
+    rebuildPanel('features');
+  });
+  await page.waitForTimeout(100);
+  const featureAfterRebuild = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const body = document.getElementById('cvPanelBody-features');
+    const firstRow = body?.firstElementChild?.firstElementChild;
+    return {
+      flag: general.featuresLocked,
+      checked: document.getElementById('featureSharedViewToggle')?.checked,
+      firstRowIsSharedView: firstRow?.classList.contains('feature-lock-row'),
+      staticRowRestored: !!document.getElementById('showAtoms')
+        && document.getElementById('showAtoms').closest('#cvPanelBody-features') !== null,
+    };
+  });
+  H.check('shared-view state and first-row placement survive a Features rebuild',
+    featureAfterRebuild.flag === false
+      && featureAfterRebuild.checked === false
+      && featureAfterRebuild.firstRowIsSharedView
+      && featureAfterRebuild.staticRowRestored,
+  JSON.stringify(featureAfterRebuild));
+
   // --- Visual window contents --------------------------------------------------
   for (const id of ['atomSize', 'bondWidth', 'showLattice', 'latticeWidth', 'showAxes', 'axesWidth',
     'backgroundDotToggle', 'backgroundSwatch', 'colorControlsGroup', 'cameraControlsGroup']) {

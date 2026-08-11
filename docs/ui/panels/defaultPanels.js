@@ -28,7 +28,7 @@ import { addDummySplitPanel, removeDummySplitPanel } from '../DummySplitPanel.js
 import { addLandscapePanel, removeLandscapePanel, addLandscapePlotsPanel, removeLandscapePlotsPanel } from '../LandscapePanel.js';
 import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
-import { createFeatureLockButton } from '../FeatureLockModule.js';
+import { createFeatureLockSwitch } from '../FeatureLockModule.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
@@ -125,6 +125,8 @@ function stashStaticRows(inputIds) {
 // window; feature windows keep only their feature-specific rows. The Neighbour
 // Bonds toggle lives in the Features window, next to Show Bonds.)
 const CELL_ROWS = ['showPeriodic'];
+const FEATURE_STATIC_ROWS = ['showAtoms', 'showBonds', 'showCharges', 'PBCBondToggle',
+  'showPolyhedra', 'completePolyhedraToggle'];
 
 // ---- Features window toggle rows ---------------------------------------------
 
@@ -147,6 +149,7 @@ function makeToggleRow(id, labelText, checked, onChange) {
 function buildFeaturesBody(body) {
   const group = document.createElement('div');
   group.className = 'toggle_group';
+  group.appendChild(createFeatureLockSwitch());
 
   const showAtoms = detachStaticRow('showAtoms');
   if (showAtoms) group.appendChild(showAtoms);
@@ -346,21 +349,16 @@ export function registerDefaultPanels() {
     defaults: { dock: 'left', order: -20, collapsed: false, barCollapsed: true },
   });
 
-  const featuresPanel = registerPanel({
+  registerPanel({
     id: 'features',
     title: 'Features',
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
     infoMd: './data/analysisInfo.md',
     buildContent: buildFeaturesBody,
+    onDestroyContent() { stashStaticRows(FEATURE_STATIC_ROWS); },
     defaults: { dock: 'left', order: 2, collapsed: false },
   });
-  // Per-structure lock, top-right of the title bar next to the other window
-  // controls (see FeatureLockModule.js).
-  featuresPanel.titlebar.insertBefore(
-    createFeatureLockButton(),
-    featuresPanel.titlebar.querySelector('.cv-panel-menu-btn'),
-  );
 
   //
   // Feature panels are lifecycle 'rebuild': their content is built lazily on

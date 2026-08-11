@@ -23,6 +23,21 @@
   white-space: nowrap;
 }
 
+/* The Features shared-view row keeps the lock glyph with its label while the
+   switch itself remains the standard app toggle. */
+.feature-lock-row .toggle_text {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.feature-lock-row .feature-lock-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+  color: var(--fg-2);
+}
+
 /* toggle base */
 .toggle_switch {
   position: relative;

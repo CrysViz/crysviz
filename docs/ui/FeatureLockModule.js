@@ -7,7 +7,9 @@
 // updateStructureFromRowAndStep, the single choke point for every row switch.
 
 import { general, saveLockPrefs } from '../state/store.js';
-import { createLockToggleButton } from './LockToggleButton.js';
+import { createToggleRow } from './ToggleSwitch.js';
+import { createLockIcon } from './LockToggleButton.js';
+import { confirmDialog } from './ConfirmModal.js';
 
 // Checkbox ids for every toggle the Features window exposes — the complete
 // set snapshotted/restored per-structure while unlocked. Values here are the
@@ -63,13 +65,35 @@ export function applyDefaultFeatureToggles() {
   applyFeatureToggles(FEATURE_TOGGLE_DEFAULTS);
 }
 
-export function createFeatureLockButton() {
-  return createLockToggleButton({
-    className: 'cv-panel-lock',
-    titleLocked: 'Feature toggles are shared across all structures — click to make them independent per structure',
-    titleUnlocked: 'Feature toggles are independent per structure — click to share them across all structures',
-    locked: general.featuresLocked !== false,
-    confirmOnLock: 'Locking feature toggles makes every structure share the current values going forward — any independent settings other structures had will stop being used (though not lost; unlocking again brings them back). Continue?',
-    onChange: (locked) => { general.featuresLocked = locked; saveLockPrefs(); },
+const FEATURE_LOCK_CONFIRM = 'Locking feature toggles makes every structure share the current values going forward — any independent settings other structures had will stop being used (though not lost; unlocking again brings them back). Continue?';
+
+/** Build the Features panel's first row: a normal app switch whose ON state
+ * means that all feature toggles are shared across structures. */
+export function createFeatureLockSwitch() {
+  const { row, input } = createToggleRow({
+    id: 'featureSharedViewToggle',
+    label: 'Shared view for all structures',
+    checked: general.featuresLocked !== false,
   });
+  row.classList.add('feature-lock-row');
+  const text = row.querySelector('.toggle_text');
+  if (text) {
+    const icon = createLockIcon({ strike: false });
+    icon.classList.add('feature-lock-icon');
+    text.prepend(icon);
+  }
+
+  input.addEventListener('change', async () => {
+    const locked = input.checked;
+    if (locked) {
+      const ok = await confirmDialog(FEATURE_LOCK_CONFIRM, { title: 'Lock this setting?', okLabel: 'Lock' });
+      if (!ok) {
+        input.checked = false;
+        return;
+      }
+    }
+    general.featuresLocked = locked;
+    saveLockPrefs();
+  });
+  return row;
 }
