@@ -43,14 +43,14 @@ function changedPixelCount(fileA, fileB) {
       Xx: s.getDefaultElementMaterial('Xx'),   // unknown -> null
     });
     const shipped = general.elementMaterialsMap;
+    general.elementMaterialsMap = 'crysviz';
     const crysviz = probe();
     general.elementMaterialsMap = 'standard';
     const standard = probe();
-    general.elementMaterialsMap = 'crysviz';
     return { shipped, crysviz, standard };
   });
-  H.check('map ships as crysviz and resolves the category presets',
-    resolver.shipped === 'crysviz'
+  H.check('map ships as standard and chemistry resolves the category presets',
+    resolver.shipped === 'standard'
       && resolver.crysviz.Cu?.type === 'metal' && Math.abs(resolver.crysviz.Cu.roughness - 0.05) < 1e-9
       && resolver.crysviz.Ba?.type === 'metal' && Math.abs(resolver.crysviz.Ba.roughness - 0.3) < 1e-9
       && resolver.crysviz.O?.type === 'standard' && Math.abs(resolver.crysviz.O.gloss - 0.5) < 1e-9
@@ -65,8 +65,9 @@ function changedPixelCount(fileA, fileB) {
   // --- MaterialEditor default-awareness (getDefault seeds + clear-to-default) ----
   const editorCheck = await page.evaluate(async () => {
     const { createMaterialEditor } = await import('./ui/StructureInfoPanel/components/MaterialEditor.js');
-    const { fileBrowser } = await import('./state/store.js');
+    const { fileBrowser, general } = await import('./state/store.js');
     const structure = fileBrowser.selectedStructure;
+    general.elementMaterialsMap = 'crysviz';
     const calls = [];
     let stored;
     const editor = createMaterialEditor(
@@ -106,12 +107,15 @@ function changedPixelCount(fileA, fileB) {
     return {
       exists: !!select,
       value: select?.value,
+      chemistryLabel: [...(select?.options ?? [])]
+        .find((option) => option.value === 'crysviz')?.textContent,
       besideColorMap: !!row && !!colorRow && row.parentElement === colorRow.parentElement,
       hiddenUnderRaster: row ? getComputedStyle(row).display === 'none' : false,
     };
   });
   H.check('materials-map dropdown sits beside the color map and hides under raster',
-    dropdownRaster.exists && dropdownRaster.value === 'crysviz'
+    dropdownRaster.exists && dropdownRaster.value === 'standard'
+      && dropdownRaster.chemistryLabel === 'Chemistry'
       && dropdownRaster.besideColorMap && dropdownRaster.hiddenUnderRaster,
     JSON.stringify(dropdownRaster));
 
@@ -138,7 +142,7 @@ function changedPixelCount(fileA, fileB) {
       && persist.roundTrip === 'crysviz' && persist.roundTripSelect === 'crysviz'
       && persist.legacyMap === 'standard' && persist.legacySelect === 'standard',
     JSON.stringify(persist));
-  await H.setSelect(page, 'atomsElementMaterialsMapMenu', 'crysviz'); // back to the default
+  await H.setSelect(page, 'atomsElementMaterialsMapMenu', 'crysviz'); // select the chemistry map
 
   // --- Tracer: presets encode into the atom + bond-half texels --------------------
   await page.evaluate(async () => {

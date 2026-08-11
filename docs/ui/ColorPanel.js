@@ -947,7 +947,7 @@ export function addColorPanel(target = "colorContainer") {
   // Structure-window material editors. Color-palette parity: switching the
   // map RESETS manual material edits on the selected structure.
   const atomsElementMaterialsMapMenu = createDropdown("atomsElementMaterialsMapMenu", "Element Materials Map", [
-    { value: "crysviz", text: "CrysViz Default", selected: general.elementMaterialsMap !== "standard" },
+    { value: "crysviz", text: "Chemistry", selected: general.elementMaterialsMap !== "standard" },
     { value: "standard", text: "Standard", selected: general.elementMaterialsMap === "standard" }
   ], () => {
     general.elementMaterialsMap = atomsElementMaterialsMapMenu.querySelector("select").value;
@@ -1422,8 +1422,7 @@ export function addColorPanel(target = "colorContainer") {
   group.appendChild(panel);
   targetPanel.appendChild(group);
 
-  // The dropdown above hardcodes "CrysViz Default" as selected at creation;
-  // fix it up to the real state (including "User (custom)" if overrides were
-  // already restored from localStorage before this panel built).
+  // Fix the dropdown to the real state (including "User (custom)" if overrides
+  // were already restored from localStorage before this panel built).
   syncElementColorMapDropdown();
 }

@@ -178,7 +178,7 @@ export const general = {
   // presets. 'crysviz' = defaults/material_defaults.js crysvizMaterialMap,
   // 'standard' = no presets (plain standard material everywhere). Resolved by
   // Structure.getDefaultElementMaterial below manual atomMaterials edits.
-  elementMaterialsMap:'crysviz',
+  elementMaterialsMap:'standard',
   // Sparse per-element overrides from the Custom User Settings panel (loaded
   // JSON or picked interactively) - element -> 0xRRGGBB / element -> radius
   // in Å. Only elements the user has actually touched are present; anything

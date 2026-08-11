@@ -1,4 +1,4 @@
-// Per-element ray/path-tracing material presets — the "CrysViz Default" entry
+// Per-element ray/path-tracing material presets — the "Chemistry" entry
 // of the "Element Materials Map" dropdown (Visual → Colors, ui/ColorPanel.js,
 // general.elementMaterialsMap). Consumed as the LAST fallback of the tracer
 // material cascade (per-copy > per-atom > per-species > this map) via
