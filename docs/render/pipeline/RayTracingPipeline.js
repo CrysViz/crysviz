@@ -3,6 +3,9 @@
 // with true reflections, refractive transparency, hard shadows and
 // progressive accumulation — built on the vendored
 // docs/external/three-raytracing/ GLSL chunk library (CC0, Erich Loftis).
+// This file is original CrysViz work licensed under AGPL-3.0 (see the
+// repository LICENSE); it builds on the vendored CC0 chunk library, whose
+// dedication covers the upstream material only.
 // The raster scene is NOT drawn: each frame renders a fullscreen triangle
 // whose fragment shader traces the scene from data textures
 // (render/pipeline/raytrace/SceneEncoder.js), accumulates into a ping-pong

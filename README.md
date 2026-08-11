@@ -184,6 +184,9 @@ Third-Party Libraries and Attribution:
 7. THREE.js-RayTracing-Renderer
    - Repository: https://github.com/erichlof/THREE.js-RayTracing-Renderer
    - License: CC0 1.0 (public domain; attribution given as a courtesy)
+  The CC0 dedication applies to the upstream original only; CrysViz's
+     local adaptations in docs/external/three-raytracing/ and the first-party ray/path
+     tracing code under docs/render/pipeline/ are licensed AGPL-3.0.
    - Author: Erich Loftis (@erichlof)
    - See docs/external/three-raytracing/LICENSE for the full license text.
    - GLSL chunk library adapted for the optional "Ray tracing" rendering
@@ -193,6 +196,9 @@ Third-Party Libraries and Attribution:
 8. THREE.js-PathTracing-Renderer
    - Repository: https://github.com/erichlof/THREE.js-PathTracing-Renderer
    - License: CC0 1.0 (public domain; attribution given as a courtesy)
+  The CC0 dedication applies to the upstream original only; CrysViz's
+     local adaptations in docs/external/three-pathtracing/ and the first-party ray/path
+     tracing code under docs/render/pipeline/ are licensed AGPL-3.0.
    - Author: Erich Loftis (@erichlof)
    - See docs/external/three-pathtracing/LICENSE for the full license text.
    - GLSL chunk library adapted for the optional "Path tracing" rendering

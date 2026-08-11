@@ -4,6 +4,10 @@
 // Loftis). The RayTrace() loop structure is adapted from the upstream demos
 // (InstanceMapping_Fragment.glsl), with four material types (per-object,
 // from the Structure-window material editors):
+// This file is part of CrysViz and is licensed under AGPL-3.0 (see the
+// repository LICENSE). The CC0 dedication applies only to the original
+// upstream material it adapts; the adaptations and all CrysViz additions
+// in this file are AGPL-3.0.
 //   - MAT_OPAQUE (standard): Blinn-Phong diffuse + specular with a hard
 //     shadow ray, plus a mirror reflection ray weighted by Fresnel + the
 //     "Reflectivity" slider;

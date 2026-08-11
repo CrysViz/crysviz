@@ -4,6 +4,10 @@
 // The CalculateRadiance() loop is adapted from the upstream demos
 // (Geometry_Showcase_Fragment.glsl), with one spherical area light and
 // per-object materials (from the Structure-window material editors):
+// This file is part of CrysViz and is licensed under AGPL-3.0 (see the
+// repository LICENSE). The CC0 dedication applies only to the original
+// upstream material it adapts; the adaptations and all CrysViz additions
+// in this file are AGPL-3.0.
 //   - LIGHT: the main area light AND any emissive object. Both are DIRECTLY
 //     sampled by next-event estimation (ptSampleNEE, up to 64 listed emitters
 //     from SceneEncoder) so emissive materials light their neighbours with low

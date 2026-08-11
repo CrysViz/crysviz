@@ -9,6 +9,9 @@
 // radius is the "Light softness" slider) and the denoising output pass
 // (denoiser toggled by general.ptDenoise; edge flags travel in the
 // accumulation buffer's alpha channel).
+// This file is original CrysViz work licensed under AGPL-3.0 (see the
+// repository LICENSE); it builds on the vendored CC0 chunk library, whose
+// dedication covers the upstream material only.
 //
 // Same v1 scope/limits as the raytrace pipeline (see its header). Path
 // tracing is stochastic: the image starts noisy and refines over many more
