@@ -86,11 +86,11 @@ This information may be logged or otherwise processed for purposes such as deliv
 Software used in our projects, e.g., as part of this website, and otherwise for executing computations, analyzing results, disseminating research data, and as part of computational pipelines generating data, are created by humans that use generative and other forms of AI as part of their tools. Generative AI based on large language models (LLMs) can greatly speed up many tasks in programming and data processing, but the final outcome is almost always a result of many iterations with substantial human input to instruct and control these tools.
 
 ## External libraries
-- [Three.js](https://threejs.org/) for the WebGL rendering pipeline, with rendering pipelines options built on [three-wboit](https://github.com/stevinz/three-wboit), [three-depthpeeling-demo](https://github.com/gkjohnson/three-depthpeeling-demo), [THREE.js-RayTracing-Renderer](https://github.com/erichlof/THREE.js-RayTracing-Renderer], [THREE.js-PathTracing-Renderer](https://github.com/erichlof/THREE.js-PathTracing-Renderer)
-- Symmetry analysis is based on [moyo](https://github.com/spglib/moyo)
-- ON-the-fly relaxations and moleceular dynamics uses [NEP-CPU](https://github.com/brucefan1983/NEP_CPU) and the NEP89 weigths from [GPUMD](https://github.com/brucefan1983/GPUMD)
+- [Three.js](https://threejs.org/) for the WebGL rendering pipeline, with rendering pipelines options built on [three-wboit](https://github.com/stevinz/three-wboit), [three-depthpeeling-demo](https://github.com/gkjohnson/three-depthpeeling-demo), [THREE.js-RayTracing-Renderer](https://github.com/erichlof/THREE.js-RayTracing-Renderer), [THREE.js-PathTracing-Renderer](https://github.com/erichlof/THREE.js-PathTracing-Renderer).
+- Symmetry analysis is based on [moyo](https://github.com/spglib/moyo).
+- ON-the-fly relaxations and moleceular dynamics uses [NEP-CPU](https://github.com/brucefan1983/NEP_CPU) and the NEP89 weigths from [GPUMD](https://github.com/brucefan1983/GPUMD).
 
 ## Other credits
 
-- CrysViz use some color maps from the [Scientific colour maps by Fabio Crameri](https://doi.org/10.5281/zenodo.1243862) (Version 8)
+- CrysViz use some color maps from the [Scientific colour maps by Fabio Crameri](https://doi.org/10.5281/zenodo.1243862) (Version 8).
 - [OPTIMADE](https://www.optimade.org/) compatible structure providers including Materials Project and Alexandria.
