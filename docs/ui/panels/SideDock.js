@@ -282,9 +282,10 @@ function onTabPointerDown(panel, tab, e) {
     const r = strip.getBoundingClientRect();
     const outside = mv.clientY < r.top - DRAG_OUT_PX || mv.clientY > r.bottom + DRAG_OUT_PX
       || mv.clientX < r.left - DRAG_OUT_PX || mv.clientX > r.right + DRAG_OUT_PX;
-    if (outside && hooks?.getPref('dragOutOfDock')) {
+    if (outside && hooks?.getPref('dragOutOfDock') && hooks?.canFloat?.() !== false) {
       cleanup();
       strip.releasePointerCapture(e.pointerId);
+      hooks.onUserMutation?.(panel);
       // floatPanelForDrag detaches the window from the pane (via the
       // manager's side-dock guard) and floats it under the pointer.
       hooks.floatPanelForDrag(panel, {
@@ -311,7 +312,7 @@ function onTabPointerDown(panel, tab, e) {
       if (up.type === 'pointerup') activatePanel(panel);
       return;
     }
-    commitTabOrder();
+    commitTabOrder(panel);
   };
 
   strip.addEventListener('pointermove', onMove);
@@ -321,12 +322,15 @@ function onTabPointerDown(panel, tab, e) {
 
 /** After a reorder drag: make the pane body's child order (the canonical tab
  *  order, what persistence reads) match the header strip. */
-function commitTabOrder() {
+function commitTabOrder(movedPanel) {
   const { body, headerTabs } = els();
   if (!body || !headerTabs) return;
+  hooks.onUserMutation?.(movedPanel);
   for (const tab of Array.from(headerTabs.children)) {
     const panel = hooks.resolvePanel(/** @type {HTMLElement} */ (tab).dataset.panelId);
-    if (panel && panel.el.parentElement === body) body.appendChild(panel.el);
+    if (panel && panel.el.parentElement === body) {
+      body.appendChild(panel.el);
+    }
   }
   renderTabs();
   hooks.onLayoutChange();

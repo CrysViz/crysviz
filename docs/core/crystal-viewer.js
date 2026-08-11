@@ -45,7 +45,7 @@ import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render
 
 import {initAddStructureButton, initModifyStructureButton} from '../ui/addToStructureModule/AddStructureModule.js'
 import {initCombineTrajectoriesButton, selectStructure} from '../ui/FileBrowswerPanel.js'
-import {initPanelSystem, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
+import {initPanelSystem, finishPanelRegistration, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
 import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
 import {initFontScale} from '../ui/FontScaleModule.js'
 import {initKeyboardShortcuts} from '../ui/KeyboardShortcuts.js'
@@ -549,6 +549,7 @@ async function initUIPanels() {
   await setupThemeSystem();
   initPanelSystem();
   registerDefaultPanels();
+  finishPanelRegistration();
   // Apply availability (grey-out) once now that panels exist. On first load the
   // default structure is loaded before panels are registered, so its own
   // revealFeaturePanels() refresh ran against no panels; this makes the initial

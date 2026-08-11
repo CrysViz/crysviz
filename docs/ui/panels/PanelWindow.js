@@ -79,6 +79,7 @@ export class PanelWindow {
     this.redockBeforeId = null;
     this.redockRemembered = false;
     this._moving = false; // a floating drag is in progress
+    this._gestureCancel = null;
     // Lifecycle/layout bookkeeping maintained by PanelManager:
     this.built = false;        // content has been built into the body
     this.stale = false;        // built content refers to a previous structure
@@ -88,6 +89,7 @@ export class PanelWindow {
      *  time), so it is what dock-hide and window-grow restore.
      *  @type {{left?: number, right?: number, top?: number, bottom?: number}|null} */
     this.floatPos = null;
+    this.autoDocked = false;
     this.sortKey = 0;          // dock ordering key
     // Compact round-icon mode (only for panels that declare a compactIcon):
     // when the scene is too narrow for the floating toolbars, the window
@@ -325,8 +327,19 @@ export class PanelWindow {
 
   remove() {
     this._closeMenu();
+    this.cancelActiveGesture();
     this._sizeObserver.disconnect();
     this.el.remove();
+  }
+
+  /** Close a portaled Position menu through its normal cleanup path. */
+  closeMenu() {
+    this._closeMenu();
+  }
+
+  /** Abort a live pointer gesture without committing its geometry. */
+  cancelActiveGesture() {
+    this._gestureCancel?.();
   }
 
   // ---- ≡ window menu -------------------------------------------------------
@@ -341,10 +354,13 @@ export class PanelWindow {
     const sections = [{
       title: 'Position',
       items: [
-        { label: 'Float', checked: mode === 'float', onSelect: () => move('float') },
+        ...(this.hooks.canFloat?.() !== false
+          ? [{ label: 'Float', checked: mode === 'float', onSelect: () => move('float') }]
+          : []),
         { label: 'Main dock', checked: mode === 'left', onSelect: () => move('left') },
         { label: 'Side dock', checked: mode === 'right', onSelect: () => move('right') },
-        { label: 'Default', onSelect: () => move('default') },
+        ...(this.hooks.canFloat?.() === false && this.hooks.defaultFloats?.(this)
+          ? [] : [{ label: 'Default', onSelect: () => move('default') }]),
       ],
     }];
     const extra = typeof this.def.menuSections === 'function'
@@ -643,17 +659,33 @@ export class PanelWindow {
     const startY = e.clientY;
 
     const bar = this.titlebar;
-    bar.setPointerCapture(e.pointerId);
+    try { bar.setPointerCapture(e.pointerId); } catch { /* synthetic event */ }
+
+    let finished = false;
+    const releaseCapture = () => {
+      try { bar.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    };
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
+      bar.removeEventListener('pointermove', onMove);
+      bar.removeEventListener('pointerup', onUp);
+      bar.removeEventListener('pointercancel', onUp);
+      if (this._gestureCancel === cancel) this._gestureCancel = null;
+    };
+    const cancel = () => {
+      cleanup();
+      releaseCapture();
+    };
+    this._gestureCancel = cancel;
 
     const onMove = (ev) => {
       if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD &&
           Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
-      bar.removeEventListener('pointermove', onMove);
-      bar.removeEventListener('pointerup', onUp);
-      bar.removeEventListener('pointercancel', onUp);
+      cleanup();
       if (this.dock === 'left') {
         // Hand the whole gesture over to the manager's reorder logic.
-        bar.releasePointerCapture(e.pointerId);
+        releaseCapture();
         this.hooks.beginDockReorder(this, ev);
         return;
       }
@@ -661,9 +693,8 @@ export class PanelWindow {
     };
 
     const onUp = (ev) => {
-      bar.removeEventListener('pointermove', onMove);
-      bar.removeEventListener('pointerup', onUp);
-      bar.removeEventListener('pointercancel', onUp);
+      cleanup();
+      if (ev.type === 'pointercancel') return;
       // Plain click on the title bar toggles collapse — except on the thin
       // strip of a hidden bar, where only double-click (restore) acts.
       if (!this.barCollapsed) {
@@ -691,7 +722,7 @@ export class PanelWindow {
   /** Run a floating title-bar drag (threshold already crossed). */
   _startFloatMove(ev, pointerId) {
     const bar = this.titlebar;
-    bar.setPointerCapture(pointerId); // no-op if already captured
+    try { bar.setPointerCapture(pointerId); } catch { /* synthetic event */ }
     this._anchorTopLeft();
     this._moving = true;
     const rect = this.el.getBoundingClientRect();
@@ -699,14 +730,26 @@ export class PanelWindow {
     const grabDY = ev.clientY - rect.top;
     this.el.classList.add('cv-drag-moving');
 
+    let finished = false;
+    const releaseCapture = () => {
+      try { bar.releasePointerCapture(pointerId); } catch { /* already released */ }
+    };
     const teardown = () => {
+      if (finished) return;
+      finished = true;
       bar.removeEventListener('pointermove', onMove);
       bar.removeEventListener('pointerup', onUp);
       bar.removeEventListener('pointercancel', onUp);
       this.el.classList.remove('cv-drag-moving');
       this._moving = false;
       this.hooks.updateSideDockHint?.(null);
+      if (this._gestureCancel === cancel) this._gestureCancel = null;
     };
+    const cancel = () => {
+      teardown();
+      releaseCapture();
+    };
+    this._gestureCancel = cancel;
 
     const onMove = (mv) => {
       if (this.hooks.wantsDockDrop && this.hooks.wantsDockDrop(mv)) {
@@ -714,7 +757,7 @@ export class PanelWindow {
         // gesture as a reorder drag. Capture is released explicitly (the
         // reparent into #dock would drop it anyway).
         teardown();
-        bar.releasePointerCapture(pointerId);
+        releaseCapture();
         this.hooks.dockAtPointer(this, mv);
         return;
       }
@@ -739,6 +782,7 @@ export class PanelWindow {
 
     const onUp = (up) => {
       teardown();
+      if (up.type === 'pointercancel') return;
       // Released over the side dock's drop zone: dock there instead of
       // parking. Only a real pointerup commits (a pointercancel must not).
       if (up.type === 'pointerup'

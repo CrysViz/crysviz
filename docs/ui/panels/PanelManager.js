@@ -41,6 +41,8 @@ const DOCK_GAP = 10; // gap between the dock's right edge and displaced windows
 // is pulled out. Also the hysteresis gap against wantsDockDrop (which triggers
 // at the edge itself), so a pulled-out panel doesn't immediately re-dock.
 const DRAG_OUT_PX = 24;
+const COMPACT_QUERY = '(max-width: 1024px)';
+const MOBILE_EXEMPT_IDS = new Set(['view', 'measure', 'info']);
 
 // ---- compact round-icon mode --------------------------------------------
 // Extra scene width kept free before the floating toolbars collapse to icons,
@@ -88,6 +90,10 @@ export function setPanelPref(name, value) {
 
 /** @type {Map<string, PanelWindow>} */
 const panels = new Map();
+const activeDockGestures = new Map();
+// Transient panels are not written to localStorage, but an auto-docked one
+// can be removed and re-registered during the same compact/large cycle.
+const removedPanelLayouts = new Map();
 let dockEl = null;
 let stored = { dockOrder: [], panels: {}, rightDock: defaultSideDockLayout() };
 let revealed = false; // set once a structure is loaded (feature panels unhide)
@@ -96,6 +102,9 @@ let dockOccupies = false; // side panel currently takes layout space
 let lastUiWidth = 0; // last known #ui width (it measures 0 while hidden)
 let rightReservePx = 0; // width reserved on the right (e.g. the EOS split pane)
 let bottomReservePx = 0; // height reserved at the bottom (e.g. the split pane docked to the bottom)
+let compactViewport = false;
+let panelSystemReady = false;
+let compactMediaQuery = null;
 
 const hooks = {
   beforeExpand(panel) {
@@ -113,11 +122,21 @@ const hooks = {
   },
   // The ≡ menu's Position section: move a window to one of its three homes,
   // or back to its per-panel defaults (the old ⌂ button).
-  positionPanel(panel, mode) {
+  positionPanel(panel, mode, { auto = false, restorePos = null } = {}) {
+    const refusedFloat = mode === 'float'
+      || (mode === 'default' && defaultDockOf(panel.def) === false);
+    if (refusedFloat && !canFloatPanels()) return;
+    if (!auto) clearAutoDocked(panel);
     if (mode === 'default') {
       applyPanelDefaults(panel);
     } else if (mode === 'float') {
-      if (panel.docked) floatPanel(panel); // pops out near its current spot
+      if (panel.docked && canFloatPanels()) {
+        floatPanel(panel, restorePos, {
+          preserveFloatPos: !!restorePos,
+          preserveRedockSlot: !!restorePos,
+          user: !auto,
+        });
+      }
     } else if (mode === 'left') {
       if (panel.dock !== 'left') {
         if (panel.dock === 'right') sideUndockPanel(panel);
@@ -163,6 +182,9 @@ const hooks = {
   sideDockAtPointer,
   updateSideDockHint,
   getPref: getPanelPref,
+  canFloat: canFloatPanels,
+  defaultFloats(panel) { return defaultDockOf(panel.def) === false; },
+  onUserMutation: clearAutoDocked,
 };
 
 /** Normalize a stored/default dock value to 'left' | 'right' | false. */
@@ -201,7 +223,12 @@ function applyPanelDefaults(panel, { resetCollapsed = false } = {}) {
   } else if (dock === 'left') {
     dockPanelAtDefaultOrder(panel);
   } else {
-    floatPanel(panel, clampPos({ ...(defaults.anchor || { left: 40, top: 40 }) }));
+    if (compactViewport && !isMobileExempt(panel)) {
+      panel.floatPos = null;
+      positionPanelForDock(panel);
+    } else {
+      floatPanel(panel, clampPos({ ...(defaults.anchor || { left: 40, top: 40 }) }));
+    }
   }
   const barCollapsed = defaults.barCollapsed !== undefined
     ? !!defaults.barCollapsed
@@ -236,10 +263,12 @@ function dockPanelAtDefaultOrder(panel) {
 /** Restore every window to its defaults and forget the remembered layout. */
 export function resetAllPanels() {
   stored = { dockOrder: [], panels: {}, rightDock: defaultSideDockLayout() };
+  removedPanelLayouts.clear();
   resetSideDockLayout();
   // Reset in default-order sequence so each dock insertion lands correctly.
   const all = [...panels.values()].sort(
     (a, b) => ((a.def.defaults?.order) || 0) - ((b.def.defaults?.order) || 0));
+  for (const panel of all) clearAutoDocked(panel);
   for (const panel of all) applyPanelDefaults(panel, { resetCollapsed: true });
   // Windows whose default state is closed (EOS, Energy Landscape, ...) end
   // detached again — after placement, so their remembered dock is the default.
@@ -254,6 +283,13 @@ export function initPanelSystem() {
   dockEl = document.getElementById('dock');
   loadStoredLayout();
   loadPanelPrefs();
+  compactMediaQuery = window.matchMedia(COMPACT_QUERY);
+  compactViewport = compactMediaQuery.matches;
+  compactMediaQuery.addEventListener('change', (event) => {
+    compactViewport = event.matches;
+    for (const panel of panels.values()) panel.closeMenu();
+    if (panelSystemReady) reconcileCompactViewport();
+  });
 
   // The side dock never imports the manager (acyclic layering): everything
   // it needs from the registry/persistence side is handed over here.
@@ -263,7 +299,7 @@ export function initPanelSystem() {
     onLayoutChange: scheduleSave,
     setRightReserve,
     setBottomReserve,
-    floatPanelForDrag: (panel, pos) => floatPanel(panel, pos, { noDockShift: true }),
+    floatPanelForDrag: (panel, pos) => floatPanel(panel, pos, { noDockShift: true, user: true }),
   });
   applySideDockLayout(stored.rightDock);
 
@@ -302,6 +338,70 @@ export function initPanelSystem() {
   });
 }
 
+/** Finish the synchronous default registration pass. This single reconcile
+ * restores all stale large-screen autoDocked entries only after every stored
+ * dock index has been inserted; it also handles a page loaded below compact.
+ * Later registrations while compact are treated as newly opened windows and
+ * are docked without the autoDocked marker. */
+export function finishPanelRegistration() {
+  panelSystemReady = true;
+  reconcileCompactViewport();
+}
+
+function canFloatPanels() {
+  return !compactViewport;
+}
+
+function isMobileExempt(panel) {
+  return MOBILE_EXEMPT_IDS.has(panel.id);
+}
+
+function clearAutoDocked(panel) {
+  if (!panel.autoDocked) return;
+  panel.autoDocked = false;
+  scheduleSave();
+}
+
+/** Use the same Main-dock action as the Position menu. Automatic entry is
+ *  iterated in panel Map order, i.e. existing registration order. */
+function positionPanelForDock(panel) {
+  hooks.positionPanel(panel, 'left', { auto: true });
+}
+
+function restoreAutoDockedPanel(panel) {
+  if (!panel.autoDocked) return;
+  if (panel.closed) {
+    panel.dock = false;
+    panel.dockShifted = false;
+  } else if (panel.dock === 'left' && panel.floatPos) {
+    hooks.positionPanel(panel, 'float', { auto: true, restorePos: panel.floatPos });
+  }
+  panel.autoDocked = false;
+}
+
+function reconcileCompactViewport() {
+  // A breakpoint change can arrive while a title-bar gesture still owns
+  // pointer capture. Abort it before any panel is reparented; cancellation
+  // deliberately does not capture or persist the in-progress CSS position.
+  for (const panel of panels.values()) {
+    activeDockGestures.get(panel)?.();
+    panel.cancelActiveGesture();
+  }
+  if (compactViewport) {
+    for (const panel of panels.values()) {
+      if (panel.closed || panel.docked || isMobileExempt(panel)) continue;
+      panel.autoDocked = true;
+      positionPanelForDock(panel);
+    }
+  } else {
+    for (const panel of panels.values()) {
+      restoreAutoDockedPanel(panel);
+    }
+  }
+  refreshCompactFloatingPanels();
+  scheduleSave();
+}
+
 export function getPanel(id) {
   return panels.get(id) || null;
 }
@@ -318,7 +418,10 @@ export function registerPanel(def) {
   const panel = new PanelWindow(def, hooks);
   panels.set(def.id, panel);
 
-  const persisted = def.persist === false ? null : stored.panels[def.id];
+  const persisted = def.persist === false
+    ? (removedPanelLayouts.get(def.id) || null)
+    : stored.panels[def.id];
+  removedPanelLayouts.delete(def.id);
   const defaults = def.defaults || {};
   const dock = persisted ? normalizeDock(persisted.dock, defaultDockOf(def)) : defaultDockOf(def);
   const closed = persisted ? !!persisted.closed : !!defaults.closed;
@@ -332,6 +435,10 @@ export function registerPanel(def) {
   // on-screen placement from it without modifying it.
   panel.floatPos = sanitizePos(persisted && persisted.pos)
     || sanitizePos(defaults.anchor) || { left: 40, top: 40 };
+  panel.autoDocked = !isMobileExempt(panel) && !!persisted?.autoDocked;
+  const compactStoredFloating = compactViewport && !isMobileExempt(panel)
+    && !!persisted && persisted.dock === false;
+  if (compactStoredFloating) panel.autoDocked = true;
   panel.sortKey = dockSortKey(def);
 
   const waitsForStructure = def.hiddenUntilStructure && !revealed;
@@ -361,9 +468,23 @@ export function registerPanel(def) {
     // monitor docked in a past run) goes to the top, like the dock button.
     const atTop = !!persisted && !stored.dockOrder.includes(def.id);
     dockPanel(panel, atTop);
+  } else if (compactViewport && !isMobileExempt(panel)) {
+    // A newly registered floating-definition panel must never pass through a
+    // real floating state on compact screens. Set the logical state first,
+    // then invoke the same Main-dock action used by the Position menu.
+    panel.dock = false;
+    if (!persisted) panel.floatPos = null;
+    positionPanelForDock(panel);
   } else {
     floatPanel(panel, panel.floatPos);
   }
+
+  // During the synchronous default registration pass, leave stale markers in
+  // place until finishPanelRegistration(). Restoring one panel here would
+  // resequence the already-built dock before later registrations compare their
+  // persisted sort keys. Dynamic registrations after the pass can reconcile
+  // immediately because no stored registration indices remain to protect.
+  if (!compactViewport && panelSystemReady) restoreAutoDockedPanel(panel);
 
   // Build persistent content only after the panel is attached: builders
   // resolve their target container by id (document.getElementById), which
@@ -478,7 +599,10 @@ export function openPanel(id) {
     setSideDockCollapsed(false);
   } else if (!panel.el.isConnected) {
     if (panel.dock === 'left') dockPanel(panel);
-    else floatPanel(panel, panel.floatPos);
+    else if (compactViewport && !isMobileExempt(panel)) {
+      if (!panel.autoDocked) panel.floatPos = null;
+      positionPanelForDock(panel);
+    } else floatPanel(panel, panel.floatPos);
   }
   panel.expandBar();
   panel.expand(); // builds deferred content via beforeExpand
@@ -495,6 +619,7 @@ export function openPanel(id) {
 export function closePanel(id) {
   const panel = panels.get(id);
   if (!panel || panel.closed) return;
+  panel.cancelActiveGesture();
   if (panel.dock === 'right') sideUndockPanel(panel);
   else if (panel.el.isConnected) panel.el.remove();
   panel.closed = true;
@@ -510,6 +635,16 @@ export function closePanel(id) {
 export function removePanel(id) {
   const panel = panels.get(id);
   if (!panel) return;
+  if (panel.autoDocked) {
+    removedPanelLayouts.set(id, {
+      dock: panel.dock,
+      closed: panel.closed,
+      collapsed: panel.collapsed,
+      bar: panel.barCollapsed,
+      pos: panel.floatPos,
+      autoDocked: true,
+    });
+  }
   if (panel.dock === 'right' && !panel.closed) sideUndockPanel(panel);
   destroyContent(panel);
   panel.remove();
@@ -598,6 +733,7 @@ export function saveLayout() {
       collapsed: panel.collapsed,
       bar: panel.barCollapsed,
       pos: panel.floatPos,
+      autoDocked: !!panel.autoDocked,
     };
   }
   // Keep remembered entries of currently-unregistered panels.
@@ -724,6 +860,7 @@ function wantsDockDrop(ev) {
  * its move listeners and released pointer capture.
  */
 function dockAtPointer(panel, ev) {
+  clearAutoDocked(panel);
   panel.floatPos = panel.captureFloatPosition(); // last float pos, before styles clear
   const pointerY = ev.clientY - dockEl.getBoundingClientRect().top;
   let before = null;
@@ -740,6 +877,7 @@ function dockAtPointer(panel, ev) {
  *  window becomes the front tab (and the dock un-collapses if it was a
  *  closed-edge drop). */
 function sideDockAtPointer(panel, ev) {
+  clearAutoDocked(panel);
   panel.floatPos = panel.captureFloatPosition(); // last float pos, before styles clear
   // An EMPTY dock materializes on whichever edge the window was dropped at
   // (sideDockDropSideAt only ever reports the other edge while the dock has
@@ -766,15 +904,17 @@ function sideDockBeforeFromStoredOrder(id) {
   return null;
 }
 
-/** @param {{noDockShift?: boolean}} [opts] noDockShift skips the displacement
- *  past the dock (used when a drag-out must keep the panel under the pointer). */
+/** @param {{noDockShift?: boolean, preserveFloatPos?: boolean, preserveRedockSlot?: boolean, user?: boolean}} [opts]
+ *  noDockShift skips displacement past the dock; preserveFloatPos is used by
+ *  automatic restoration; user clears an automatic-dock marker. */
 function floatPanel(panel, pos, opts = {}) {
+  if (opts.user) clearAutoDocked(panel);
   // Leaving the side dock: detach from the pane (re-fronts/hides its chrome)
   // before the reparent below, so no stale tab is left behind.
   if (panel.dock === 'right') sideUndockPanel(panel);
   // Remember the main dock slot (the panel it sits above) so re-docking
   // restores it.
-  if (panel.dock === 'left') {
+  if (panel.dock === 'left' && !opts.preserveRedockSlot) {
     const siblings = dockedPanels();
     const idx = siblings.indexOf(panel);
     const after = idx >= 0 ? siblings[idx + 1] : null;
@@ -789,7 +929,7 @@ function floatPanel(panel, pos, opts = {}) {
       ? clampPos({ left: Math.round(rect.left) + 24, top: Math.round(rect.top) })
       : panel.floatPos;
   }
-  panel.floatPos = pos;
+  if (!opts.preserveFloatPos) panel.floatPos = pos;
   // A window whose base position would be covered by the dock is displaced
   // just past its right edge (only as far as needed) while it occupies space.
   panel.dockShifted = !opts.noDockShift && dockOccupies
@@ -808,7 +948,7 @@ function floatPanel(panel, pos, opts = {}) {
 /** Does the side panel currently reserve layout space? (On mobile it slides
  *  OVER the canvas, so floating windows never need to make room for it.) */
 function dockOccupiesSpace() {
-  if (window.innerWidth <= 1024) return false;
+  if (compactViewport) return false;
   const ui = document.getElementById('ui');
   return !!ui && ui.getBoundingClientRect().width > 0;
 }
@@ -1036,6 +1176,7 @@ function resequenceSortKeys() {
 // ---- drag-to-reorder inside the dock ---------------------------------------
 
 function beginDockReorder(panel, startEv) {
+  clearAutoDocked(panel);
   const el = panel.el;
   const bar = panel.titlebar;
   const elH = el.offsetHeight;
@@ -1056,17 +1197,42 @@ function beginDockReorder(panel, startEv) {
   el.style.left = '0';
   el.style.right = '0';
 
-  bar.setPointerCapture(startEv.pointerId);
+  try { bar.setPointerCapture(startEv.pointerId); } catch { /* synthetic event */ }
+
+  let finished = false;
+  const removeListeners = () => {
+    bar.removeEventListener('pointermove', onMove);
+    bar.removeEventListener('pointerup', onUp);
+    bar.removeEventListener('pointercancel', onUp);
+    activeDockGestures.delete(panel);
+  };
+  const clearDragStyles = () => {
+    el.classList.remove('cv-dragging');
+    el.style.position = '';
+    el.style.top = '';
+    el.style.left = '';
+    el.style.right = '';
+  };
+  const cancel = () => {
+    if (finished) return;
+    finished = true;
+    removeListeners();
+    dockEl.insertBefore(el, placeholder);
+    placeholder.remove();
+    clearDragStyles();
+    try { bar.releasePointerCapture(startEv.pointerId); } catch { /* already released */ }
+    resequenceSortKeys();
+  };
+  activeDockGestures.set(panel, cancel);
 
   const onMove = (ev) => {
     // Dragged far enough right of the dock: pull the panel out and continue
     // the same gesture as a floating move.
-    if (panelPrefs.dragOutOfDock && dockOccupiesSpace()
+    if (panelPrefs.dragOutOfDock && canFloatPanels() && dockOccupiesSpace()
         && ev.clientX > uiRect.right + DRAG_OUT_PX) {
-      bar.removeEventListener('pointermove', onMove);
-      bar.removeEventListener('pointerup', onUp);
-      bar.removeEventListener('pointercancel', onUp);
-      bar.releasePointerCapture(startEv.pointerId);
+      finished = true;
+      removeListeners();
+      try { bar.releasePointerCapture(startEv.pointerId); } catch { /* already released */ }
       // Land in the placeholder slot FIRST so floatPanel records that slot as
       // redockBeforeId (panel.docked is still true) — the dock button then
       // restores the panel to where it was pulled from.
@@ -1082,7 +1248,7 @@ function beginDockReorder(panel, startEv) {
         left: ev.clientX - Math.min(grabDX, 180), // keep the grip near the pointer
         top: ev.clientY - Math.round(barH / 2),
       });
-      floatPanel(panel, pos, { noDockShift: true });
+      floatPanel(panel, pos, { noDockShift: true, user: true });
       panel.beginFloatDrag(ev); // gesture continues as a floating move
       return;
     }
@@ -1105,16 +1271,12 @@ function beginDockReorder(panel, startEv) {
   };
 
   const onUp = () => {
-    bar.removeEventListener('pointermove', onMove);
-    bar.removeEventListener('pointerup', onUp);
-    bar.removeEventListener('pointercancel', onUp);
+    if (finished) return;
+    finished = true;
+    removeListeners();
     dockEl.insertBefore(el, placeholder);
     placeholder.remove();
-    el.classList.remove('cv-dragging');
-    el.style.position = '';
-    el.style.top = '';
-    el.style.left = '';
-    el.style.right = '';
+    clearDragStyles();
     resequenceSortKeys();
     scheduleSave();
   };
