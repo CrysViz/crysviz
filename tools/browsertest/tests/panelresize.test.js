@@ -160,7 +160,7 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
   // -- a remembered dock order differing from registration order is restored,
   //    exercised through the v2 -> v4 migration path: float positions and the
   //    dock order survive, while the old eos stub entry is dropped (eos gets
-  //    its new default: a left-dock controls window) ---------------------------
+  //    its new default: a main-dock controls window) ---------------------------
   await page.evaluate(() => {
     localStorage.setItem('panelLayout', JSON.stringify({
       version: 2,
@@ -201,7 +201,7 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
     JSON.stringify(migrated));
 
   // -- a v3 blob (the merged-window dev iteration) also migrates: its stale
-  //    eos/landscape right-dock entries are dropped, everything else survives --
+  //    eos/landscape side-dock entries are dropped, everything else survives --
   await page.evaluate(() => {
     localStorage.setItem('panelLayout', JSON.stringify({
       version: 3,
@@ -222,19 +222,19 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
     return {
       version: layout.version,
       viewPos: layout.panels.view?.pos || null,
-      rightOrder: layout.rightDock.order,
-      rightFraction: layout.rightDock.fraction,
+      sideOrder: layout.rightDock.order,
+      sideFraction: layout.rightDock.fraction,
       eosDock: getPanel('eos')?.dock ?? null,
       eosClosed: !!getPanel('eos')?.closed,
       landscapeDock: getPanel('landscape')?.dock ?? null,
     };
   });
   H.check('v3 blob migrated to v4, float pos + pane fraction kept',
-    v3m.version === 4 && v3m.viewPos?.left === 333 && Math.abs(v3m.rightFraction - 0.4) < 1e-6,
+    v3m.version === 4 && v3m.viewPos?.left === 333 && Math.abs(v3m.sideFraction - 0.4) < 1e-6,
     JSON.stringify(v3m));
-  H.check('v3 stale eos/landscape right-dock entries dropped (left-dock defaults apply)',
+  H.check('v3 stale eos/landscape side-dock entries dropped (main-dock defaults apply)',
     v3m.eosDock === 'left' && !v3m.eosClosed && v3m.landscapeDock === 'left'
-      && !v3m.rightOrder.includes('eos'),
+      && !v3m.sideOrder.includes('eos'),
     JSON.stringify(v3m));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');

@@ -1,13 +1,13 @@
 // Coordination-number histogram: grouped bar chart (one series per element)
 // of how many bonds start or end on each atom, in ONE ordinary panel window
-// that defaults to the right dock — see BondLengthHistogram.js, which this
+// that defaults to the side dock — see BondLengthHistogram.js, which this
 // mirrors. Coordination number is a small discrete count (unlike bond
 // length), so there's no bin/max-range control: one bar per distinct value
 // actually present. Clicking a bar highlights every atom of that element
 // with that coordination number (click again to clear).
 
 import { registerPanel, removePanel, getPanel, openPanel } from '../panels/PanelManager.js';
-import { expandSplitItem, closeExpandedSplitItem } from '../panels/RightDock.js';
+import { expandSplitItem, closeExpandedSplitItem } from '../panels/SideDock.js';
 import {
   renderGroupedHistogram, onHistogramBarClick, exportHistogramPNG, resizeHistogramPlot, clearHistogramPlot,
   togglePlotTheme,
@@ -73,7 +73,7 @@ export function removeCoordinationHistogramPanel() {
 }
 
 /** The single entry point (the Bonds window's "Coordination Number" button):
- *  opens the window — right-dock front tab by default, or wherever the user
+ *  opens the window — side-dock front tab by default, or wherever the user
  *  last dragged it — creating it on first use. */
 export function addCoordinationHistogramPanel() {
   if (getPanel(PANEL_ID)) {

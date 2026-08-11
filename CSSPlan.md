@@ -61,7 +61,7 @@ Two invariants, both machine-checkable (see Wave 5):
 **Depth is deferred, not done.** Wave 2 inventoried every `z-index` in the tree
 and the flat ladder cannot absorb what is actually there. The dock alone runs a
 five-level internal stack (`.cv-panel.cv-floating` 1200, `.split-pane` 1300,
-`.split-handle` 1301, `#rightDockDropHint` 1302, `.split-pane-overlay` 1350,
+`.split-handle` 1301, `#sideDockDropHint` 1302, `.split-pane-overlay` 1350,
 expanded items 1400 `!important`), so `--z-dock` needs sub-rungs
 (`--z-dock`, `--z-dock-handle`, `--z-dock-scrim`, `--z-dock-expanded`). Two
 genuine inversions also exist in the shipped code: `.cv-panel-menu` (3200)
@@ -110,7 +110,7 @@ count:
 
 - A — `styles.css` (2 908)
 - B — `controlPanel.css`, `backendPanel.css` (1 645)
-- C — `toggle_styles.css`, `rightDock.css`, `panelWindow.css` (1 751)
+- C — `toggle_styles.css`, `sideDock.css`, `panelWindow.css` (1 751)
 - D — the remaining 11 small files (~1 620)
 
 Each replaces literals with tokens and snaps font sizes to the ladder. Snapping

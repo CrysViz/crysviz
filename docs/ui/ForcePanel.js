@@ -92,7 +92,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   content.appendChild(noForcesNote);
 
   // --- Histogram ---
-  // Opens ui/AnalysisPanels/ForceHistogram.js's window (right-dock by
+  // Opens ui/AnalysisPanels/ForceHistogram.js's window (side-dock by
   // default) — same "Histograms" idiom as the Bonds window's Bond Length /
   // Coordination Number buttons (BondPanel.js). Disabled while the structure
   // has no force data (updateNoForcesNote keeps this in sync on rebuild and

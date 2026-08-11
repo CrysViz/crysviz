@@ -3,7 +3,7 @@
 // and bond-angle variance (CN4/CN6 only — see PolyhedraAnalysisModule.js),
 // plus a small interactive 3D render of just that one polyhedron with every
 // bond length and (non-trans) angle labelled directly on the geometry. ONE
-// ordinary panel window that defaults to the right dock, mirroring the other
+// ordinary panel window that defaults to the side dock, mirroring the other
 // AnalysisPanels — but unlike those, content here is selection-driven
 // ('crysviz:polyhedron-selection-changed', dispatched by
 // SelectAndHighlightModule.js) rather than a redraw-on-data-refresh chart.
@@ -188,7 +188,7 @@ export function removePolyhedronInspectorPanel() {
 }
 
 /** The single entry point (the Polyhedra window's "Inspector" button): opens
- *  the window — right-dock front tab by default, or wherever the user last
+ *  the window — side-dock front tab by default, or wherever the user last
  *  dragged it — creating it on first use. */
 export function addPolyhedronInspectorPanel() {
   if (getPanel(PANEL_ID)) {

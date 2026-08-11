@@ -384,7 +384,7 @@ export function registerDefaultPanels() {
     },
     buildContent(body) { addTrajectoryPlayer(body.id); },
     onDestroyContent() { removeTrajectoryPlayer(); },
-    // Left dock, but directly above Atomistic (order -10) rather than down at
+    // Main dock, but directly above Atomistic (order -10) rather than down at
     // 10 with the feature panels: this is the live MD/relax monitor, so it
     // belongs next to the controls that drive it instead of below a dozen
     // collapsed panels where it was easy to miss. Files (-20) stays on top.
@@ -599,13 +599,13 @@ export function registerDefaultPanels() {
 
   // ---- controls + plots window pairs (EOS, Energy Landscape) -----------------
   //
-  // Each feature is TWO ordinary windows: a controls window in the left dock
+  // Each feature is TWO ordinary windows: a controls window in the main dock
   // (like any feature window) and a plots window that DEFAULTS to the wide
-  // right dock (ui/panels/RightDock.js) and starts closed. The plots window
+  // side dock (ui/panels/SideDock.js) and starts closed. The plots window
   // is never opened by hand — the feature opens it when there is something
   // to show (EOSPanel.js on dataset load/re-fit, LandscapePanel.js when a
   // landscape JSON loads) — and, like any window, it can be dragged out to
-  // float or into the left dock. Plots windows are 'persistent' +
+  // float or into the main dock. Plots windows are 'persistent' +
   // closeMode:'hide': their content (fit data / loaded JSON) is independent
   // of the selected structure and survives both structure switches and
   // close/reopen; the build is simply deferred to first open.
@@ -637,7 +637,7 @@ export function registerDefaultPanels() {
 
   registerPanel({
     id: 'splitDemo',
-    title: 'Right Dock Demo',
+    title: 'Side Dock Demo',
     lifecycle: 'persistent',
     closable: true,
     closeMode: 'hide',
@@ -645,7 +645,7 @@ export function registerDefaultPanels() {
     available() { return true; },
     buildContent(body) { addDummySplitPanel(body.id); },
     onDestroyContent() { removeDummySplitPanel(); },
-    // Minimal reference example of a right-dock-by-default window (open it
+    // Minimal reference example of a side-dock-by-default window (open it
     // from the console/tests via openPanel('splitDemo')).
     defaults: { dock: 'right', closed: true, order: 93 },
   });

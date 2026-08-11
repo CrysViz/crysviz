@@ -346,7 +346,7 @@
   --z-chrome: 2000;
   /* info-panel-overlay/info-panel (ui/InfoPanel.js) are a second popup-vs-dock
      inversion (TOKENS.md): the ⓘ button that opens them lives ON a floating
-     .cv-panel/right-dock tab (--z-dock, 1200), so the overlay+card need to
+     .cv-panel/side-dock tab (--z-dock, 1200), so the overlay+card need to
      out-rank every dock-role element or they render behind the very panel
      that opened them. Same full-screen-scrim-plus-centered-card shape as
      #aboutOverlay/#aboutModal, so --z-chrome is the matching role; the card

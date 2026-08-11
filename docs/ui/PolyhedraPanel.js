@@ -36,7 +36,7 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
   // --- Histograms ---
   // Same idiom as the Bonds panel's histograms (BondPanel.js): one button per
   // analysis, each opening ONE ordinary panel window that defaults to the
-  // right dock (drag its tab out to float, or into the left bar). See
+  // side dock (drag its tab out to float, or into the left bar). See
   // AnalysisPanels/PolyhedraTypeHistogram.js, PolyhedronInspector.js,
   // PolyhedraConnectivityHistogram.js.
   if (structure) {

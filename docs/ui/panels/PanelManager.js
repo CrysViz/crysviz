@@ -1,37 +1,39 @@
 // Panel registry + layout management for the unified panel/window system.
 //
 // Owns the cross-panel concerns: which panels exist, their dock order,
-// drag-to-reorder inside #dock, dock<->float<->right-dock transitions,
+// drag-to-reorder inside #dock, dock<->float<->side-dock transitions,
 // content lifecycle ('persistent' content is built once; 'rebuild' content is
 // built lazily on first expand and torn down/rebuilt when the active
 // structure changes), and layout persistence in localStorage (single
 // versioned key, like the theme).
 //
-// Per-window DOM/behavior lives in PanelWindow.js; the wide right dock's pane
-// plumbing (tabs, resize handle, drop zone) lives in RightDock.js.
+// Per-window DOM/behavior lives in PanelWindow.js; the wide side dock's pane
+// plumbing (tabs, resize handle, drop zone) lives in SideDock.js.
 
 import { PanelWindow } from './PanelWindow.js';
 import {
-  initRightDock, rightDockPanel, rightUndockPanel,
-  setRightDockCollapsed, setRightDockSide, refreshRightDock, getRightDockLayout,
-  applyRightDockLayout, resetRightDockLayout, wantsRightDockDrop,
-  rightDockDropSideAt, updateRightDockHint,
-} from './RightDock.js';
+  initSideDock, sideDockPanel, sideUndockPanel,
+  setSideDockCollapsed, setSideDockSide, refreshSideDock, getSideDockLayout,
+  applySideDockLayout, resetSideDockLayout, wantsSideDockDrop,
+  sideDockDropSideAt, updateSideDockHint,
+} from './SideDock.js';
 
 const LS_KEY = 'panelLayout';
-// v4: eos/landscape reverted to left-dock CONTROLS windows with separate
-// right-dock plots windows (eosPlots/landscapePlots) — v3 blobs (one dev
+// Historical persisted field name: panelLayout.rightDock predates the Side dock rename.
+// v4: eos/landscape reverted to main-dock CONTROLS windows with separate
+// side-dock plots windows (eosPlots/landscapePlots) — v3 blobs (one dev
 // iteration) are migrated by dropping their eos/landscape entries (which
-// meant "merged window, right dock, closed" — a shape that no longer exists).
-// v3: `docked` (boolean) became `dock` ('left'|'right'|false — the right dock
+// meant "merged window, side dock, closed" — a shape that no longer exists).
+// v3: `docked` (boolean) became `dock` ('left'|'right'|false — the side dock
 // is the wide tabbed pane), plus per-panel `closed` (closeMode:'hide' windows
 // detached from the DOM) and the top-level `rightDock` block (tab order,
 // front tab, collapsed, pane fraction). v2 blobs are migrated; the old
-// eos/landscape/splitDemo entries (collapsed left-dock stubs) are dropped so
+// eos/landscape/splitDemo entries (collapsed main-dock stubs) are dropped so
 // the new defaults apply.
 // v2: pos is the INHERENT position, per axis anchored to the nearest viewport
 // edge at capture time (v1 stored absolute left/top rect readings; no
 // migration — a v1 blob is simply discarded).
+// Persisted panel.dock values remain 'left'/'right'; only their UI names changed.
 const LAYOUT_VERSION = 4;
 const SAVE_DEBOUNCE_MS = 250;
 const DOCK_GAP = 10; // gap between the dock's right edge and displaced windows
@@ -87,7 +89,7 @@ export function setPanelPref(name, value) {
 /** @type {Map<string, PanelWindow>} */
 const panels = new Map();
 let dockEl = null;
-let stored = { dockOrder: [], panels: {}, rightDock: defaultRightDockLayout() };
+let stored = { dockOrder: [], panels: {}, rightDock: defaultSideDockLayout() };
 let revealed = false; // set once a structure is loaded (feature panels unhide)
 let saveTimer = 0;
 let dockOccupies = false; // side panel currently takes layout space
@@ -118,13 +120,13 @@ const hooks = {
       if (panel.docked) floatPanel(panel); // pops out near its current spot
     } else if (mode === 'left') {
       if (panel.dock !== 'left') {
-        if (panel.dock === 'right') rightUndockPanel(panel);
+        if (panel.dock === 'right') sideUndockPanel(panel);
         redockPanel(panel); // restores the slot it last occupied
       }
     } else if (mode === 'right') {
       if (panel.dock !== 'right') {
-        // Leaving the left dock: remember the slot (same as floatPanel does)
-        // so a later "Left dock" returns the window to where it sat.
+        // Leaving the main dock: remember the slot (same as floatPanel does)
+        // so a later "Main dock" returns the window to where it sat.
         if (panel.dock === 'left') {
           const siblings = dockedPanels();
           const idx = siblings.indexOf(panel);
@@ -132,8 +134,8 @@ const hooks = {
           panel.redockBeforeId = after ? after.id : null;
           panel.redockRemembered = true;
         }
-        rightDockPanel(panel, { front: true, expand: true });
-        setRightDockCollapsed(false);
+        sideDockPanel(panel, { front: true, expand: true });
+        setSideDockCollapsed(false);
         resequenceSortKeys();
       }
     }
@@ -157,9 +159,9 @@ const hooks = {
   beginDockReorder,
   wantsDockDrop,
   dockAtPointer,
-  wantsRightDockDrop,
-  rightDockAtPointer,
-  updateRightDockHint,
+  wantsSideDockDrop,
+  sideDockAtPointer,
+  updateSideDockHint,
   getPref: getPanelPref,
 };
 
@@ -194,8 +196,8 @@ function applyPanelDefaults(panel, { resetCollapsed = false } = {}) {
   const dock = defaultDockOf(panel.def);
   panel.closed = false;
   if (dock === 'right') {
-    rightDockPanel(panel, { front: true, expand: false });
-    setRightDockCollapsed(false);
+    sideDockPanel(panel, { front: true, expand: false });
+    setSideDockCollapsed(false);
   } else if (dock === 'left') {
     dockPanelAtDefaultOrder(panel);
   } else {
@@ -209,7 +211,7 @@ function applyPanelDefaults(panel, { resetCollapsed = false } = {}) {
 
   if (resetCollapsed) {
     // Same convention registerPanel uses: collapsed by default unless the
-    // panel explicitly opts out with `collapsed: false`. Right-docked
+    // panel explicitly opts out with `collapsed: false`. Side-docked
     // windows are always expanded while docked.
     if (dock !== 'right' && defaults.collapsed !== false) panel.collapse();
     else panel.expand();
@@ -233,8 +235,8 @@ function dockPanelAtDefaultOrder(panel) {
 
 /** Restore every window to its defaults and forget the remembered layout. */
 export function resetAllPanels() {
-  stored = { dockOrder: [], panels: {}, rightDock: defaultRightDockLayout() };
-  resetRightDockLayout();
+  stored = { dockOrder: [], panels: {}, rightDock: defaultSideDockLayout() };
+  resetSideDockLayout();
   // Reset in default-order sequence so each dock insertion lands correctly.
   const all = [...panels.values()].sort(
     (a, b) => ((a.def.defaults?.order) || 0) - ((b.def.defaults?.order) || 0));
@@ -253,9 +255,9 @@ export function initPanelSystem() {
   loadStoredLayout();
   loadPanelPrefs();
 
-  // The right dock never imports the manager (acyclic layering): everything
+  // The side dock never imports the manager (acyclic layering): everything
   // it needs from the registry/persistence side is handed over here.
-  initRightDock({
+  initSideDock({
     resolvePanel: (id) => panels.get(id) || null,
     getPref: getPanelPref,
     onLayoutChange: scheduleSave,
@@ -263,7 +265,7 @@ export function initPanelSystem() {
     setBottomReserve,
     floatPanelForDrag: (panel, pos) => floatPanel(panel, pos, { noDockShift: true }),
   });
-  applyRightDockLayout(stored.rightDock);
+  applySideDockLayout(stored.rightDock);
 
   // Floating windows react to the layout changing around them through one
   // derivation (see updateFloatPlacements): windows in the dock's column are
@@ -320,7 +322,7 @@ export function registerPanel(def) {
   const defaults = def.defaults || {};
   const dock = persisted ? normalizeDock(persisted.dock, defaultDockOf(def)) : defaultDockOf(def);
   const closed = persisted ? !!persisted.closed : !!defaults.closed;
-  // Right-docked windows are always expanded while docked (the tab is the
+  // Side-docked windows are always expanded while docked (the tab is the
   // only per-window chrome there); otherwise remembered/default state.
   const collapsed = dock === 'right'
     ? false
@@ -349,8 +351,8 @@ export function registerPanel(def) {
     panel.closed = true;
     panel.dock = dock;
   } else if (dock === 'right') {
-    rightDockPanel(panel, {
-      beforeEl: rightDockBeforeFromStoredOrder(def.id),
+    sideDockPanel(panel, {
+      beforeEl: sideDockBeforeFromStoredOrder(def.id),
       front: stored.rightDock.front === def.id,
       expand: false,
     });
@@ -386,14 +388,14 @@ export function registerPanel(def) {
  * half-state that used to require a UI reset.
  *
  * Order matters: setAvailable(avail) runs FIRST, because reopening a
- * right-docked panel goes through openPanel -> expand(), and expand() bails
+ * side-docked panel goes through openPanel -> expand(), and expand() bails
  * while the panel is still flagged unavailable — so it would re-dock as an
  * empty, unbuilt tab. Greying/un-greying before the open/close reconciliation
  * makes expand() actually build the content.
  *
- * An unavailable right-docked window would otherwise be a greyed tab over a
+ * An unavailable side-docked window would otherwise be a greyed tab over a
  * live body — close it out of the dock and flag the close (_closedForUnavailable)
- * so it reopens right-docked, and rebuilds, the moment its feature returns.
+ * so it reopens side-docked, and rebuilds, the moment its feature returns.
  */
 function applyPanelAvailability(panel) {
   const avail = panel.def.available ? !!panel.def.available() : true;
@@ -445,8 +447,8 @@ export function revealFeaturePanels() {
   // placement (viewport clamp) before any wantExpanded expansion below
   // decides its grow-upward anchoring from the applied position.
   updateFloatPlacements();
-  // Right-docked feature windows became visible -> show the pane chrome/tabs.
-  refreshRightDock();
+  // Side-docked feature windows became visible -> show the pane chrome/tabs.
+  refreshSideDock();
   for (const panel of panels.values()) {
     if (panel.wantExpanded && !panel.closed) {
       panel.wantExpanded = false;
@@ -458,8 +460,8 @@ export function revealFeaturePanels() {
 
 /**
  * Open a registered window: re-attach it if it was closed (closeMode:'hide'),
- * then bring it into view — a right-docked window becomes the front tab (and
- * the right dock un-collapses); others expand in place. The Features window's
+ * then bring it into view — a side-docked window becomes the front tab (and
+ * the side dock un-collapses); others expand in place. The Features window's
  * EOS / Energy Landscape rows drive this.
  */
 export function openPanel(id) {
@@ -472,8 +474,8 @@ export function openPanel(id) {
   panel._closedForUnavailable = false;
   if (revealed || !panel.def.hiddenUntilStructure) panel.el.hidden = false;
   if (panel.dock === 'right') {
-    rightDockPanel(panel, { front: true, expand: false });
-    setRightDockCollapsed(false);
+    sideDockPanel(panel, { front: true, expand: false });
+    setSideDockCollapsed(false);
   } else if (!panel.el.isConnected) {
     if (panel.dock === 'left') dockPanel(panel);
     else floatPanel(panel, panel.floatPos);
@@ -493,7 +495,7 @@ export function openPanel(id) {
 export function closePanel(id) {
   const panel = panels.get(id);
   if (!panel || panel.closed) return;
-  if (panel.dock === 'right') rightUndockPanel(panel);
+  if (panel.dock === 'right') sideUndockPanel(panel);
   else if (panel.el.isConnected) panel.el.remove();
   panel.closed = true;
   if (panel.def.onClosed) panel.def.onClosed(panel);
@@ -508,7 +510,7 @@ export function closePanel(id) {
 export function removePanel(id) {
   const panel = panels.get(id);
   if (!panel) return;
-  if (panel.dock === 'right' && !panel.closed) rightUndockPanel(panel);
+  if (panel.dock === 'right' && !panel.closed) sideUndockPanel(panel);
   destroyContent(panel);
   panel.remove();
   panels.delete(id);
@@ -528,7 +530,7 @@ export function rebuildPanel(id) {
 }
 
 /** Re-evaluate available() for all panels without rebuilding structure content.
- *  Dock-aware (via applyPanelAvailability): a right-docked panel that loses its
+ *  Dock-aware (via applyPanelAvailability): a side-docked panel that loses its
  *  feature closes out of the dock and reopens when it returns, same as the
  *  structure-switch path — so URL load / live-plot start / overlay sync can't
  *  leave a panel stranded as a greyed or vanished tab. */
@@ -553,7 +555,7 @@ export function revealPanel(id) {
 
 export function resetLayout() {
   try { localStorage.removeItem(LS_KEY); } catch { /* storage unavailable */ }
-  stored = { dockOrder: [], panels: {}, rightDock: defaultRightDockLayout() };
+  stored = { dockOrder: [], panels: {}, rightDock: defaultSideDockLayout() };
 }
 
 export function saveLayout() {
@@ -561,7 +563,7 @@ export function saveLayout() {
   const data = {
     version: LAYOUT_VERSION,
     dockOrder: [],
-    rightDock: defaultRightDockLayout(),
+    rightDock: defaultSideDockLayout(),
     panels: {},
   };
   for (const p of dockedPanels()) {
@@ -576,7 +578,7 @@ export function saveLayout() {
       data.dockOrder.splice(Math.min(oldIdx, data.dockOrder.length), 0, id);
     }
   }
-  const rd = getRightDockLayout();
+  const rd = getSideDockLayout();
   data.rightDock = {
     order: rd.order.filter((id) => panels.get(id)?.def.persist !== false),
     front: rd.front,
@@ -734,24 +736,24 @@ function dockAtPointer(panel, ev) {
   beginDockReorder(panel, ev); // re-captures the pointer, gesture continues
 }
 
-/** Commit a floating drag released over the right dock's drop zone: the
+/** Commit a floating drag released over the side dock's drop zone: the
  *  window becomes the front tab (and the dock un-collapses if it was a
  *  closed-edge drop). */
-function rightDockAtPointer(panel, ev) {
+function sideDockAtPointer(panel, ev) {
   panel.floatPos = panel.captureFloatPosition(); // last float pos, before styles clear
   // An EMPTY dock materializes on whichever edge the window was dropped at
-  // (rightDockDropSideAt only ever reports the other edge while the dock has
+  // (sideDockDropSideAt only ever reports the other edge while the dock has
   // no visible windows, so an occupied dock is never silently relocated).
-  const side = ev ? rightDockDropSideAt(ev) : null;
-  if (side) setRightDockSide(side);
-  rightDockPanel(panel, { front: true, expand: true });
-  setRightDockCollapsed(false);
+  const side = ev ? sideDockDropSideAt(ev) : null;
+  if (side) setSideDockSide(side);
+  sideDockPanel(panel, { front: true, expand: true });
+  setSideDockCollapsed(false);
   refreshCompactFloatingPanels();
 }
 
-/** The pane-body sibling a restored right-docked panel should be inserted
+/** The pane-body sibling a restored side-docked panel should be inserted
  *  before, honoring the persisted tab order (panels register one by one). */
-function rightDockBeforeFromStoredOrder(id) {
+function sideDockBeforeFromStoredOrder(id) {
   const order = stored.rightDock?.order || [];
   const idx = order.indexOf(id);
   if (idx < 0) return null;
@@ -767,10 +769,10 @@ function rightDockBeforeFromStoredOrder(id) {
 /** @param {{noDockShift?: boolean}} [opts] noDockShift skips the displacement
  *  past the dock (used when a drag-out must keep the panel under the pointer). */
 function floatPanel(panel, pos, opts = {}) {
-  // Leaving the right dock: detach from the pane (re-fronts/hides its chrome)
+  // Leaving the side dock: detach from the pane (re-fronts/hides its chrome)
   // before the reparent below, so no stale tab is left behind.
-  if (panel.dock === 'right') rightUndockPanel(panel);
-  // Remember the LEFT dock slot (the panel it sits above) so re-docking
+  if (panel.dock === 'right') sideUndockPanel(panel);
+  // Remember the main dock slot (the panel it sits above) so re-docking
   // restores it.
   if (panel.dock === 'left') {
     const siblings = dockedPanels();
@@ -1124,16 +1126,16 @@ function beginDockReorder(panel, startEv) {
 
 // ---- persistence ------------------------------------------------------------
 
-function defaultRightDockLayout() {
+function defaultSideDockLayout() {
   return { order: [], front: null, collapsed: false, fraction: null, side: 'right' };
 }
 
 // Entries for windows whose meaning changed shape across versions — dropped
 // at migration so the new defaults apply. v2's eos/landscape/splitDemo were
-// "collapsed stub in the left dock" (the split-view era); v3's eos/landscape
-// were "one merged window, right dock, closed" (one dev iteration) — both
-// gone now that eos/landscape are left-dock controls windows with separate
-// eosPlots/landscapePlots right-dock windows.
+// "collapsed stub in the main dock" (the split-view era); v3's eos/landscape
+// were "one merged window, side dock, closed" (one dev iteration) — both
+// gone now that eos/landscape are main-dock controls windows with separate
+// eosPlots/landscapePlots side-dock windows.
 const DROPPED_V2_IDS = ['eos', 'landscape', 'splitDemo'];
 const DROPPED_V3_IDS = ['eos', 'landscape'];
 
@@ -1150,19 +1152,19 @@ function loadStoredLayout() {
         dockOrder: orderIn,
         panels: panelsIn,
         rightDock: parsed.rightDock && typeof parsed.rightDock === 'object'
-          ? { ...defaultRightDockLayout(), ...parsed.rightDock }
-          : defaultRightDockLayout(),
+          ? { ...defaultSideDockLayout(), ...parsed.rightDock }
+          : defaultSideDockLayout(),
       };
     } else if (parsed.version === 3) {
       // v3 -> v4 migration: same shape; only the stale eos/landscape entries
-      // (and their right-dock slots) are dropped.
+      // (and their side-dock slots) are dropped.
       const panelsOut = {};
       for (const [id, e] of Object.entries(panelsIn)) {
         if (DROPPED_V3_IDS.includes(id) || !e || typeof e !== 'object') continue;
         panelsOut[id] = e;
       }
       const rdIn = parsed.rightDock && typeof parsed.rightDock === 'object' ? parsed.rightDock : {};
-      const rd = { ...defaultRightDockLayout(), ...rdIn };
+      const rd = { ...defaultSideDockLayout(), ...rdIn };
       rd.order = (Array.isArray(rd.order) ? rd.order : []).filter((id) => !DROPPED_V3_IDS.includes(id));
       if (DROPPED_V3_IDS.includes(rd.front)) rd.front = null;
       stored = {
@@ -1187,7 +1189,7 @@ function loadStoredLayout() {
       stored = {
         dockOrder: orderIn.filter((id) => !DROPPED_V2_IDS.includes(id)),
         panels: panelsOut,
-        rightDock: defaultRightDockLayout(),
+        rightDock: defaultSideDockLayout(),
       };
     }
     // v1 (or unknown) blobs are discarded, as before.

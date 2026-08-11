@@ -19,7 +19,7 @@
 // a single rAF-coalesced relayout, so even a fast live feed can't thrash it.
 
 import { loadPlotly } from '../utils/plotlyLoader.js';
-import { expandSplitItem, closeExpandedSplitItem } from './panels/RightDock.js';
+import { expandSplitItem, closeExpandedSplitItem } from './panels/SideDock.js';
 import { exportHistogramPNG } from './AnalysisPanels/histogramPlotly.js';
 
 // Stable id for the chart div — there is only ever one trajectory plot
@@ -116,7 +116,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   computeBtn.style.display = 'none';
   toolbar.appendChild(computeBtn);
   // Export + expand, same icons/styling as the analysis histograms'
-  // .split-item-action-btn corner buttons — reused directly (rightDock.css)
+  // .split-item-action-btn corner buttons — reused directly (sideDock.css)
   // rather than re-styled, so this reads as the same chrome.
   const exportBtn = document.createElement('button');
   exportBtn.type = 'button';
@@ -140,7 +140,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   toolbar.appendChild(expandBtn);
   root.appendChild(toolbar);
 
-  // Fullscreen-only close button — same .split-item-close-btn RightDock.js's
+  // Fullscreen-only close button — same .split-item-close-btn SideDock.js's
   // expandSplitItem()/closeExpandedSplitItem() drive on the analysis
   // histograms and EOS plots (hidden unless `root` carries `.expanded`, see
   // trajectoryPanel.css's .trajPlot.expanded rule below).

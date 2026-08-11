@@ -18,7 +18,7 @@
 // safety net so a missed keyup (alt-tab while held, a dialog stealing focus)
 // can't leave it stuck "on" forever. Four other places in the app used to
 // treat Space as an activation key on custom (non-<button>) controls — the
-// right-dock tab bar, the Structure panel's own formula-box toggle, the
+// side-dock tab bar, the Structure panel's own formula-box toggle, the
 // About-panel logo, and the volumetric-field color-box toggle — those now
 // only respond to Enter; Space is reserved for this file globally. The theme
 // menu's keyboard activation was dropped entirely (click-only) rather than

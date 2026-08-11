@@ -1,4 +1,4 @@
-// A right-docked panel that becomes unavailable (e.g. the user selects a
+// A side-docked panel that becomes unavailable (e.g. the user selects a
 // single-structure row) must REOPEN when its feature returns. Previously it was
 // closed out of the dock and stayed closed until a full UI reset. This drives
 // the availability toggle directly on the Trajectory panel.
@@ -24,7 +24,7 @@ const H = require('../harness');
     panel.dock = 'right';
     pm.openPanel('trajectory');
     await new Promise((r) => setTimeout(r, 100));
-    const openedRightDocked = !panel.closed && panel.dock === 'right';
+    const openedSideDocked = !panel.closed && panel.dock === 'right';
 
     // Override availability to simulate selecting a non-trajectory structure.
     const origAvail = panel.def.available;
@@ -42,12 +42,12 @@ const H = require('../harness');
     const reopened = panel.closed === false && panel.el.isConnected && panel.dock === 'right';
 
     panel.def.available = origAvail;
-    return { openedRightDocked, closedWhenUnavailable, reopened };
+    return { openedSideDocked, closedWhenUnavailable, reopened };
   }, TRAJ);
 
-  H.check('panel opens right-docked', res.openedRightDocked, JSON.stringify(res));
+  H.check('panel opens side-docked', res.openedSideDocked, JSON.stringify(res));
   H.check('panel auto-closes when its feature goes unavailable', res.closedWhenUnavailable, JSON.stringify(res));
-  H.check('panel REOPENS right-docked when the feature returns', res.reopened, JSON.stringify(res));
+  H.check('panel REOPENS side-docked when the feature returns', res.reopened, JSON.stringify(res));
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

@@ -223,7 +223,7 @@
     max-height: 200px;
   }
 
-  /* ---- rightDock.css: bottom-docked pane ----
+  /* ---- sideDock.css: bottom-docked pane ----
      #ui is an off-canvas overlay on mobile, so it never narrows the scene
      — the bottom pane/handle/pull-tabs always start at the left edge. */
   #viewArea.split-dock-bottom .split-pane,
@@ -489,7 +489,7 @@
     inset: -10px;
   }
 
-  /* ---- rightDock.css: per-tab window-menu dot + the fullscreen close btn ---- */
+  /* ---- sideDock.css: per-tab window-menu dot + the fullscreen close btn ---- */
   .split-pane-tab-menu {
     position: relative;
   }

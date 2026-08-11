@@ -1,11 +1,11 @@
-// Minimal reference example of a right-dock-by-default window (registered in
+// Minimal reference example of a side-dock-by-default window (registered in
 // ui/panels/defaultPanels.js as 'splitDemo', closed by default — open it with
 // openPanel('splitDemo') from the console or a test). One ordinary window
 // body holding a .split-item content card with action buttons, including the
 // generic ⛶ fullscreen expand the EOS plots use. Kept deliberately trivial so
 // the wiring (not the feature) is what stands out.
 
-import { expandSplitItem, closeExpandedSplitItem } from './panels/RightDock.js';
+import { expandSplitItem, closeExpandedSplitItem } from './panels/SideDock.js';
 
 const state = { count: 0 };
 
@@ -23,7 +23,7 @@ export function addDummySplitPanel(target = 'cvPanelBody-splitDemo') {
 
   container.innerHTML = `
     <div class="control-group">
-      <p>Trivial demo window: it defaults to the right dock, but can be
+      <p>Trivial demo window: it defaults to the side dock, but can be
       dragged out to float or into the left bar like any window. The counter
       lives in module state, so it survives closing and reopening.</p>
       <div class="dummy-docked-row">
@@ -45,7 +45,7 @@ export function addDummySplitPanel(target = 'cvPanelBody-splitDemo') {
 
   // One delegated listener for all [data-split-action] buttons — the same
   // idiom the EOS window uses, so actions keep working when the window is
-  // right-docked, floating or left-docked.
+  // side-docked, floating or main-docked.
   container.addEventListener('click', (ev) => {
     const btn = /** @type {HTMLElement} */ (ev.target).closest('[data-split-action]');
     if (!btn) return;

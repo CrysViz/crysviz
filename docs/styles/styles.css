@@ -133,8 +133,8 @@ body.panel-hidden #axesLegend {
   cursor: grab;
   touch-action: none;
   top: max(120px, calc(var(--compact-stack-bottom, 0px) + 20px));
-  /* --split-reserve is kept in sync with the right dock's pane width (see
-     ui/panels/RightDock.js) so the dot stays clear of the pane instead of
+  /* --split-reserve is kept in sync with the side dock's pane width (see
+     ui/panels/SideDock.js) so the dot stays clear of the pane instead of
      sliding underneath it. 0px when the dock is closed. */
   right: calc(20px + var(--split-reserve, 0px));
   z-index: var(--z-anchor);

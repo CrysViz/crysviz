@@ -17,7 +17,7 @@ export function addBondPanel(target = "cvPanelBody-bonds") {
   // --- Histograms ---
   // One button per histogram: each opens ONE ordinary panel window
   // (AnalysisPanels/BondLengthHistogram.js, CoordinationHistogram.js) that
-  // defaults to the right dock — from there the user drags its tab out to
+  // defaults to the side dock — from there the user drags its tab out to
   // float, or into the left bar, like any other window.
   const histogramsPanel = document.createElement("div");
   histogramsPanel.id = "histogramsPanel";

@@ -11,7 +11,7 @@
 'use strict';
 const H = require('../harness');
 
-/** Dock a panel into the right pane (same path the ≡ menu's "Right dock"
+/** Dock a panel into the right pane (same path the ≡ menu's "Side dock"
  *  item uses) and expand it, then wait for the width to stop changing —
  *  more robust than a fixed timeout if a future change adds a transition. */
 async function dockRightAndSettle(page, id) {
@@ -47,9 +47,9 @@ async function contentFillRatio(page, id, contentSelector) {
   }, { id, contentSelector });
 }
 
-/** Drag the right dock's resize splitter to a target viewport-x, the same
+/** Drag the side dock's resize splitter to a target viewport-x, the same
  *  gesture a user performs — the pane fraction lives in a module-level
- *  variable in RightDock.js (RightDock.js:43), so setting the CSS var
+ *  variable in SideDock.js (SideDock.js:43), so setting the CSS var
  *  directly from a test gets silently clobbered the next time anything calls
  *  applyPaneWidth(). Dragging through the real handle is the only way to
  *  actually change it. */

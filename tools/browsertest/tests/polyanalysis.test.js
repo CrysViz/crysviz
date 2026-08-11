@@ -1,7 +1,7 @@
 // Polyhedra analysis windows (docs/ui/AnalysisPanels/*): Type histogram,
 // Polyhedron Inspector and Connectivity, each ONE ordinary panel window
 // opened from the Polyhedra window's per-row Open buttons, defaulting to the
-// right dock. Covers the single-window conversion of the contributed
+// side dock. Covers the single-window conversion of the contributed
 // Panel/Split-View dual implementations: open → front tab, several coexist
 // as tabs, the Inspector forces Show/Complete Polyhedra on while open and
 // restores them on close, and the tab ≡ menu's Close item unregisters the
@@ -45,11 +45,11 @@ function dockState(page) {
   H.check('Polyhedra window offers one Open button per analysis',
     buttons.type && buttons.inspector && buttons.connectivity, JSON.stringify(buttons));
 
-  // ---- Type histogram opens as the right dock's front tab -----------------
+  // ---- Type histogram opens as the side dock's front tab -----------------
   await H.clickById(page, 'openPolyhedraTypeHistogram');
   await page.waitForTimeout(500);
   let s = await dockState(page);
-  H.check('Type histogram window opens right-docked, front',
+  H.check('Type histogram window opens side-docked, front',
     s.active && s.frontId === 'polyhedraTypeHistogram', JSON.stringify(s));
   const typeCard = await page.evaluate(() =>
     !!document.querySelector('.cv-panel[data-panel-id="polyhedraTypeHistogram"] #polyhedra-type-histogram-item'));

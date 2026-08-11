@@ -107,7 +107,7 @@ async function expandPanel(page, id) {
     (await inBody(page, 'features', 'PBCBondToggle')) && !(await inBody(page, 'bonds', 'PBCBondToggle')));
   H.check('Bond Diameter moved out of Bonds', !(await inBody(page, 'bonds', 'bondWidth')));
 
-  // --- Bond Length Histogram: ONE ordinary window, right dock by default -------
+  // --- Bond Length Histogram: ONE ordinary window, side dock by default -------
   await H.clickById(page, 'openBondLengthHistogram');
   await page.waitForTimeout(400);
   const hist = await page.evaluate(() => {
@@ -124,7 +124,7 @@ async function expandPanel(page, id) {
       hasCard: !!el.querySelector('.blh-pair-card'),
     };
   });
-  H.check('Bond Length Histogram opens as the right dock\'s front tab',
+  H.check('Bond Length Histogram opens as the side dock\'s front tab',
     !!hist && hist.front && hist.splitActive && hist.tab && hist.hasCard, JSON.stringify(hist));
   await page.screenshot({ path: path.join(ARTIFACTS, 'uipanels-histogram.png') });
   await page.evaluate(() => {

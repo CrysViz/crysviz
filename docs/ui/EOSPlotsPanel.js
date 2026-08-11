@@ -1,6 +1,6 @@
 // EOS plots window ('eosPlots'): the E-V / P-V plot cards in their own
-// ordinary panel window, defaulting to the wide right dock. It is NOT opened
-// by hand — EOSPanel.js (the controls window in the left dock) opens it
+// ordinary panel window, defaulting to the wide side dock. It is NOT opened
+// by hand — EOSPanel.js (the controls window in the main dock) opens it
 // whenever there is something to show (a dataset was loaded / re-fit) and
 // closes it when the fit is reset. closeMode:'hide' keeps the built plots
 // across close/reopen.
@@ -10,7 +10,7 @@
 // keeps the import direction one-way (EOSPanel -> this module).
 
 import { togglePlotTheme, exportPlotAsPNG, resizePlot } from '../eos/eosPlots.js';
-import { expandSplitItem, closeExpandedSplitItem } from './panels/RightDock.js';
+import { expandSplitItem, closeExpandedSplitItem } from './panels/SideDock.js';
 
 let redrawHandler = null; // (plotId) => Promise<void>
 let showErrorPlots = true; // the P-V card's "Show Error Plots" mini toggle
@@ -78,7 +78,7 @@ export function addEOSPlotsPanel(target = 'cvPanelBody-eosPlots') {
   `;
 
   // One delegated listener for every [data-split-action] button/toggle in the
-  // plot cards — works the same right-docked, floating or left-docked.
+  // plot cards — works the same side-docked, floating or main-docked.
   container.addEventListener('click', (ev) => {
     const btn = /** @type {HTMLElement|null} */ (
       /** @type {HTMLElement} */ (ev.target).closest('[data-split-action]'));
@@ -103,7 +103,7 @@ export function addEOSPlotsPanel(target = 'cvPanelBody-eosPlots') {
     }
   });
 
-  // Refit the Plotly charts whenever the plot stack's size changes: right-dock
+  // Refit the Plotly charts whenever the plot stack's size changes: side-dock
   // handle drags, tab switches (display none -> flex), floating-window growth,
   // browser resizes. rAF-debounced — ResizeObserver can fire in bursts.
   plotResizeObserver?.disconnect();
