@@ -164,26 +164,43 @@ direct
       state.stress = [[-p, 0, 0], [0, -p, 0], [0, 0, -p]];
     };
 
-    const settle = (targetPressureGPa, steps) => {
+    const settle = (targetPressureGPa, steps, trailingWindow = 0, disableCoupling = false) => {
       const state = makeState();
-      const barostat = md.createStochasticCellBarostat({
-        targetPressureGPa, tauFs: 20, compressibility: 0.02,
-      });
+      const barostat = disableCoupling
+        ? { apply() {} }
+        : md.createStochasticCellBarostat({
+          targetPressureGPa, tauFs: 20, compressibility: 0.02,
+        });
+      const trailingPressures = [];
       for (let s = 0; s < steps; s += 1) {
         refreshStress(state);
         barostat.apply(state, 1.0, { step: s + 1, state });
+        refreshStress(state);
+        if (s >= steps - trailingWindow) {
+          trailingPressures.push(md.instantaneousPressureGPa(state));
+        }
       }
       refreshStress(state);
-      return { volume: md.cellVolume(state.lattice), pressure: md.instantaneousPressureGPa(state) };
+      const pressure = md.instantaneousPressureGPa(state);
+      const meanPressure = trailingPressures.length
+        ? trailingPressures.reduce((sum, value) => sum + value, 0) / trailingPressures.length
+        : pressure;
+      return { volume: md.cellVolume(state.lattice), pressure, meanPressure };
     };
 
-    const squeezed = settle(10, 4000);   // +10 GPa -> smaller cell
+    // The 1,000-step tail gives a physical, time-averaged NPT pressure
+    // estimator without extending the 4,000-step settling run.
+    const squeezed = settle(10, 4000, 1000);   // +10 GPa -> smaller cell
     const relaxed = settle(0, 4000);     // 0 GPa   -> back to V0
     const pulled = settle(-5, 4000);     // tension -> larger cell
+    // Permanent negative control: this has the same toy solid and estimator,
+    // but a barostat with its coupling disabled inside this test.
+    const broken = settle(10, 4000, 1000, true);
     return {
       squeezed,
       relaxed,
       pulled,
+      broken,
       wantSqueezed: V0 / (1 + 10 / BULK_GPa),
       wantRelaxed: V0,
       wantPulled: V0 / (1 - 5 / BULK_GPa),
@@ -199,8 +216,15 @@ direct
   H.check('barostat expands under tension',
     Math.abs(baro.pulled.volume - baro.wantPulled) / baro.wantPulled < 0.08,
     `V=${baro.pulled.volume.toFixed(1)} want~${baro.wantPulled.toFixed(1)}`);
-  H.check('the settled pressure matches the target',
-    Math.abs(baro.squeezed.pressure - 10) < 1.0, `P=${baro.squeezed.pressure.toFixed(2)} GPa`);
+  // In 25 independent in-session settling runs, this trailing estimator had
+  // sigma = 0.084 GPa and mean = 9.996 GPa. 0.35 GPa is about 4.2 sigma.
+  const pressureMatchesTarget = (pressure) => Math.abs(pressure - 10) < 0.35;
+  H.check('the time-averaged settled pressure matches the target',
+    pressureMatchesTarget(baro.squeezed.meanPressure),
+    `mean P=${baro.squeezed.meanPressure.toFixed(2)} GPa`);
+  H.check('the settled-pressure estimator rejects disabled barostat coupling',
+    !pressureMatchesTarget(baro.broken.meanPressure),
+    `broken mean P=${baro.broken.meanPressure.toFixed(2)} GPa`);
 
   // ---- 4. Wyckoff: isotropic scaling cannot lower the space group -----------
   const sym = await page.evaluate(async (poscar) => {
