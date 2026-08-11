@@ -196,6 +196,8 @@ export function initGizmoDrag() {
   menuLock.addEventListener('click', (e) => {
     e.stopPropagation();
     general.gizmoLocked = !general.gizmoLocked;
+    abortActiveGesture?.();
+    abortForwardedGestures?.abortAll?.();
     updateMenuState();
     closeMenu();
   });
@@ -215,6 +217,7 @@ export function initGizmoDrag() {
   // The whole box is the drag handle now, so repositioning does not require a
   // small visible control target.
   let abortActiveGesture = null;
+  let abortForwardedGestures = null;
   function bindDragHandle(handle) {
     handle.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -241,6 +244,10 @@ export function initGizmoDrag() {
       };
 
       const onMove = (mv) => {
+        if (general.gizmoLocked) {
+          abort(e.pointerId);
+          return;
+        }
         if (!dragging) {
           if (Math.hypot(mv.clientX - startX, mv.clientY - startY) < DRAG_THRESHOLD) return;
           dragging = true;
@@ -266,7 +273,7 @@ export function initGizmoDrag() {
       };
 
       const abort = (pointerId) => {
-        if (pointerId !== e.pointerId || finished) return;
+        if ((pointerId !== undefined && pointerId !== e.pointerId) || finished) return;
         cleanup();
         gizmoDiv.classList.remove('cv-gizmo-dragging');
       };
@@ -278,12 +285,15 @@ export function initGizmoDrag() {
     });
   }
   bindDragHandle(gizmoDiv);
-  wireLockedWidgetForwarding(gizmoDiv, () => general.gizmoLocked, {
+  abortForwardedGestures = wireLockedWidgetForwarding(gizmoDiv, () => general.gizmoLocked, {
     ignoreSelector: '.cv-gizmo-resize-handle',
   });
   wireLongPress(gizmoDiv, ({ clientX, clientY }) => openMenuAt(clientX, clientY), {
     ignoreSelector: '.cv-gizmo-resize-handle',
-    onFire: ({ pointerId }) => abortActiveGesture?.(pointerId),
+    onFire: ({ pointerId }) => {
+      abortActiveGesture?.(pointerId);
+      abortForwardedGestures?.abortPointer(pointerId);
+    },
   });
 
   resizeHandle.addEventListener('pointerdown', (e) => {
@@ -306,6 +316,10 @@ export function initGizmoDrag() {
     let finished = false;
 
     const onMove = (mv) => {
+      if (general.gizmoLocked) {
+        abort(e.pointerId);
+        return;
+      }
       const delta = Math.max(mv.clientX - startX, mv.clientY - startY);
       const size = Math.min(Math.max(startSize + delta, MIN_GIZMO_SIZE), maxSize);
       applySize(size);
@@ -330,7 +344,7 @@ export function initGizmoDrag() {
       general.gizmoSize = gizmoDiv.offsetWidth;
     };
     const abort = (pointerId) => {
-      if (pointerId !== e.pointerId || finished) return;
+      if ((pointerId !== undefined && pointerId !== e.pointerId) || finished) return;
       cleanup();
       gizmoDiv.classList.remove('cv-gizmo-dragging');
     };

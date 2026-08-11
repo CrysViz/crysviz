@@ -291,6 +291,10 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
     };
 
     const onMove = (mv) => {
+      if (floating && isLocked()) {
+        abort(mv.pointerId);
+        return;
+      }
       if (!dragging) {
         if (Math.hypot(mv.clientX - startX, mv.clientY - startY) < DRAG_THRESHOLD) return;
         startDrag();
@@ -384,6 +388,15 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
   // the anchor rather than leaving stale left/top in place.
   window.addEventListener('resize', applyAnchor);
 
+  const abortPointer = (pointerId) => {
+    activeAbort?.(pointerId);
+    disposeLockedForwarding.abortPointer(pointerId);
+  };
+  const abortAll = () => {
+    activeAbort?.();
+    disposeLockedForwarding.abortAll();
+  };
+
   return {
     isFloating: () => floating,
     getFloatPos: () => (floating ? { left: parseFloat(wrapper.style.left), top: parseFloat(wrapper.style.top) } : null),
@@ -406,7 +419,8 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
     // the next #view resize (ResizeObserver/applyAnchor) would re-derive
     // position from the stale pre-resize anchor and visibly jump.
     recaptureAnchor: () => { if (floating) captureAnchor(); },
-    abortPointer: (pointerId) => activeAbort?.(pointerId),
+    abortPointer,
+    abortAll,
     dockBack,
     destroy: () => {
       activeAbort?.();

@@ -349,7 +349,7 @@ function applyTransparent(on) {
 }
 
 /** The dropdown is opened by long press on the legend. */
-function buildControls() {
+function buildControls(onLockChange = () => {}) {
   const menuWrap = document.createElement('div');
   menuWrap.className = 'cv-colorbar-menu-host';
   const menu = document.createElement('div');
@@ -384,6 +384,7 @@ function buildControls() {
   item('Close', () => closeCompositionLegend());
   const lockItem = item(general.compositionLegendLocked ? 'Unlock' : 'Lock', () => {
     general.compositionLegendLocked = !general.compositionLegendLocked;
+    onLockChange();
     syncLock();
   });
 
@@ -458,6 +459,10 @@ function wireResize(handle, body, drag, redrawRows, isLocked) {
     let finished = false;
 
     const onMove = (mv) => {
+      if (isLocked()) {
+        abort(mv.pointerId);
+        return;
+      }
       // Proportional to the box's own width, so the far edge tracks the
       // cursor however large the legend already is.
       const scale = clampScale(startScale * ((startW + mv.clientX - startX) / startW));
@@ -501,7 +506,8 @@ function openCompositionLegend() {
   const wrapper = document.createElement('div');
   wrapper.className = 'comp-legend-widget';
 
-  const { menuWrap, openAt, dispose: disposeControls, syncLock } = buildControls();
+  let abortInteractions = () => {};
+  const { menuWrap, openAt, dispose: disposeControls, syncLock } = buildControls(() => abortInteractions());
 
   const body = document.createElement('div');
   body.className = 'comp-legend-body';
@@ -547,6 +553,10 @@ function openCompositionLegend() {
     renderRows(list);
   };
   const resizeController = wireResize(resizeHandle, body, drag, refresh, () => general.compositionLegendLocked);
+  abortInteractions = () => {
+    drag.abortAll?.();
+    resizeController.abortPointer();
+  };
   const disposeLongPress = wireLongPress(wrapper, ({ clientX, clientY }) => openAt(clientX, clientY), {
     ignoreSelector: '.cv-colorbar-resize-handle',
     onFire: ({ pointerId }) => {

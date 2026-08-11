@@ -48,8 +48,9 @@ let activePicker = null;
 
 function positionPickerPanel(dot, pickerPanel) {
   const rect = dot.getBoundingClientRect();
-  let topPosition = rect.top + window.scrollY + 60;
-  const bottomSpace = window.innerHeight - (rect.top + window.scrollY + 24 + pickerPanel.offsetHeight);
+  const gap = 6;
+  let topPosition = rect.bottom + window.scrollY + gap;
+  const bottomSpace = window.innerHeight - (rect.bottom + window.scrollY + gap + pickerPanel.offsetHeight);
   if (bottomSpace < 40) topPosition = window.innerHeight - pickerPanel.offsetHeight - 65;
 
   // Keep the panel on screen for anchors near the left edge (the Visual
@@ -230,6 +231,9 @@ export function createBackgroundControl() {
   lockItem.addEventListener('click', (event) => {
     event.stopPropagation();
     general.backgroundDotLocked = !general.backgroundDotLocked;
+    abortActiveGesture?.();
+    abortResize?.();
+    abortForwardedGestures?.abortAll?.();
     updateLockState();
     closeMenu();
   });
@@ -238,6 +242,7 @@ export function createBackgroundControl() {
   if (general.backgroundDotPos) applyDotAnchor();
 
   let abortActiveGesture = null;
+  let abortForwardedGestures = null;
   let suppressNextClick = false;
   const bindDrag = () => {
     dot.addEventListener('pointerdown', (event) => {
@@ -256,6 +261,10 @@ export function createBackgroundControl() {
       try { dot.setPointerCapture(event.pointerId); } catch { /* synthetic events cannot capture */ }
 
       const onMove = (move) => {
+        if (general.backgroundDotLocked) {
+          abort(event.pointerId);
+          return;
+        }
         if (!dragging) {
           if (Math.hypot(move.clientX - startX, move.clientY - startY) < DRAG_THRESHOLD) return;
           dragging = true;
@@ -290,7 +299,7 @@ export function createBackgroundControl() {
         general.backgroundDotPos = captureAnchor(dot);
       };
       const abort = (pointerId) => {
-        if (pointerId !== event.pointerId || finished) return;
+        if ((pointerId !== undefined && pointerId !== event.pointerId) || finished) return;
         cleanup();
         dot.classList.remove('background-dot-dragging');
       };
@@ -301,7 +310,7 @@ export function createBackgroundControl() {
     });
   };
   bindDrag();
-  wireLockedWidgetForwarding(dot, () => general.backgroundDotLocked, {
+  abortForwardedGestures = wireLockedWidgetForwarding(dot, () => general.backgroundDotLocked, {
     ignoreSelector: '.background-dot-resize-handle',
     onPromote: () => { suppressNextClick = true; },
   });
@@ -329,6 +338,10 @@ export function createBackgroundControl() {
     try { resizeHandle.setPointerCapture(event.pointerId); } catch { /* synthetic events cannot capture */ }
 
     const onMove = (move) => {
+      if (general.backgroundDotLocked) {
+        abort(event.pointerId);
+        return;
+      }
       const delta = Math.max(move.clientX - startX, move.clientY - startY);
       applyDotSize(Math.min(Math.max(startSize + delta, MIN_DOT_SIZE), maxSize));
     };
@@ -345,9 +358,13 @@ export function createBackgroundControl() {
       cleanup();
       general.backgroundDotSize = dot.offsetWidth;
       general.backgroundDotPos = captureAnchor(dot);
+      // Consume only the compatibility click belonging to this resize. If a
+      // browser emits no click for the moved pointer, do not leave the next
+      // deliberate dot click suppressed.
+      setTimeout(() => { suppressNextClick = false; }, 0);
     };
     const abort = (pointerId) => {
-      if (pointerId !== event.pointerId || finished) return;
+      if ((pointerId !== undefined && pointerId !== event.pointerId) || finished) return;
       cleanup();
     };
     resizeHandle.addEventListener('pointermove', onMove);
@@ -362,6 +379,7 @@ export function createBackgroundControl() {
     onFire: ({ pointerId }) => {
       abortActiveGesture?.(pointerId);
       abortResize?.(pointerId);
+      abortForwardedGestures?.abortPointer(pointerId);
     },
   });
 

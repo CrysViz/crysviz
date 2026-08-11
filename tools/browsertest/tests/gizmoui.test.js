@@ -251,20 +251,64 @@ const countDrawnGizmoPixels = async (page) => {
   H.check('locking the axes menu item marks it active and persists in general',
     axesLockedMenu.locked && axesLockedMenu.active, JSON.stringify(axesLockedMenu));
 
+  const lockedAxesHeldMenu = await mouseLongPress(page, '#axesGizmo', axesLockPoint.x, axesLockPoint.y);
+  const lockedAxesHeldCameraBefore = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
+  await page.mouse.move(axesLockPoint.x + 60, axesLockPoint.y + 35, { steps: 4 });
+  const lockedAxesHeldAfter = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    return {
+      camera: app.camera.quaternion.toArray(),
+      menu: !!document.querySelector('.cv-gizmo-menu-wrap .cv-colorbar-menu-open'),
+    };
+  });
+  const lockedHeldRotationDelta = lockedAxesHeldAfter.camera.reduce((sum, value, i) =>
+    sum + Math.abs(value - lockedAxesHeldCameraBefore[i]), 0);
+  H.check('a locked axes long-press consumes later movement while keeping its menu open',
+    lockedAxesHeldMenu && lockedAxesHeldAfter.menu && lockedHeldRotationDelta < 1e-8,
+    JSON.stringify({ rotationDelta: lockedHeldRotationDelta, after: lockedAxesHeldAfter }));
+  await page.mouse.up();
+  await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+
   const axesLockedBefore = await page.evaluate(() => {
     const r = document.getElementById('axesGizmo').getBoundingClientRect();
     return { x: r.left, y: r.top, size: r.width, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
   });
+  await page.evaluate(async () => {
+    const canvas = document.querySelector('#view canvas');
+    window.__forwardCaptureCalls = 0;
+    window.__originalCanvasCapture = canvas.setPointerCapture;
+    canvas.setPointerCapture = (...args) => {
+      window.__forwardCaptureCalls++;
+      return window.__originalCanvasCapture.apply(canvas, args);
+    };
+  });
   const axesLockedCameraBefore = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
   await page.mouse.move(axesLockedBefore.cx, axesLockedBefore.cy);
   await page.mouse.down();
-  await page.mouse.move(axesLockedBefore.cx + 120, axesLockedBefore.cy + 45, { steps: 8 });
+  await page.mouse.move(axesLockedBefore.cx + 25, axesLockedBefore.cy + 10);
+  await page.mouse.move(axesLockedBefore.cx + 220, axesLockedBefore.cy + 80);
+  const axesLockedMid = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    return { pointers: app.controls._pointers.length, state: app.controls.state,
+      movePrev: app.controls._movePrev.toArray(), moveCurr: app.controls._moveCurr.toArray() };
+  });
   await page.mouse.up();
+  const axesCameraAtRelease = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
+  await page.waitForTimeout(120);
+  const axesCameraAfterCoast = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
   await page.waitForTimeout(100);
   const axesLockedAfter = await page.evaluate(async () => {
     const { app } = await import('./state/store.js');
     const r = document.getElementById('axesGizmo').getBoundingClientRect();
-    return { x: r.left, y: r.top, size: r.width, camera: app.camera.quaternion.toArray() };
+    return { x: r.left, y: r.top, size: r.width, camera: app.camera.quaternion.toArray(),
+      controls: { pointers: app.controls._pointers.length, state: app.controls.state,
+        pointerPositions: Object.keys(app.controls._pointerPositions) },
+      canvasCaptureCalls: window.__forwardCaptureCalls };
+  });
+  axesLockedAfter.mid = axesLockedMid;
+  await page.evaluate(() => {
+    const canvas = document.querySelector('#view canvas');
+    canvas.setPointerCapture = window.__originalCanvasCapture;
   });
   const axesRotationDelta = axesLockedAfter.camera.reduce((sum, value, i) => sum + Math.abs(value - axesLockedCameraBefore[i]), 0);
   H.check('a locked axes drag rotates the camera but does not move the gizmo',
@@ -272,6 +316,50 @@ const countDrawnGizmoPixels = async (page) => {
       && Math.abs(axesLockedAfter.x - axesLockedBefore.x) < 1
       && Math.abs(axesLockedAfter.y - axesLockedBefore.y) < 1,
     JSON.stringify({ rotationDelta: axesRotationDelta, before: axesLockedBefore, after: axesLockedAfter }));
+  const axesCoastDelta = axesCameraAfterCoast.reduce((sum, value, i) =>
+    sum + Math.abs(value - axesCameraAtRelease[i]), 0);
+  H.check('an ordinary forwarded release preserves camera rotation inertia', axesCoastDelta > 1e-6,
+    JSON.stringify({ coastDelta: axesCoastDelta, release: axesCameraAtRelease, after: axesCameraAfterCoast }));
+
+  await page.mouse.move(axesLockedBefore.cx, axesLockedBefore.cy);
+  await page.mouse.down();
+  await page.mouse.move(axesLockedBefore.cx + 35, axesLockedBefore.cy + 15, { steps: 2 });
+  const forwardedBeforeUnlock = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    return app.camera.quaternion.toArray();
+  });
+  await page.evaluate(async () => { (await import('./state/store.js')).general.gizmoLocked = false; });
+  await page.mouse.move(axesLockedBefore.cx + 100, axesLockedBefore.cy + 60, { steps: 3 });
+  await page.mouse.up();
+  const forwardedAfterUnlock = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
+  await page.waitForTimeout(150);
+  const forcedAbortAfterCoast = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
+  const forwardedAbortDelta = forwardedAfterUnlock.reduce((sum, value, i) => sum + Math.abs(value - forwardedBeforeUnlock[i]), 0);
+  const forcedAbortCoastDelta = forcedAbortAfterCoast.reduce((sum, value, i) => sum + Math.abs(value - forwardedAfterUnlock[i]), 0);
+  H.check('unlocking mid-forwarded axes drag aborts that sequence', forwardedAbortDelta < 1e-8,
+    JSON.stringify({ rotationDeltaAfterUnlock: forwardedAbortDelta }));
+  H.check('a forced forwarded abort does not coast', forcedAbortCoastDelta < 1e-8,
+    JSON.stringify({ coastDelta: forcedAbortCoastDelta }));
+  await page.evaluate(async () => { (await import('./state/store.js')).general.gizmoLocked = true; });
+  H.check('forwarding does not capture the renderer canvas and cleans Trackball state',
+    axesLockedAfter.canvasCaptureCalls === 0
+      && axesLockedAfter.controls.pointers === 0
+      && axesLockedAfter.controls.pointerPositions.length === 0,
+    JSON.stringify(axesLockedAfter));
+  const freshTouchMove = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    try {
+      app.renderer.domElement.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true, pointerId: 991, pointerType: 'touch', clientX: 40, clientY: 40,
+      }));
+      return { pointers: app.controls._pointers.length, pointerPositions: Object.keys(app.controls._pointerPositions) };
+    } catch (error) {
+      return { error: String(error) };
+    }
+  });
+  H.check('a fresh touch move after forwarding has no stale Trackball sequence',
+    !freshTouchMove.error && freshTouchMove.pointers === 0 && freshTouchMove.pointerPositions.length === 0,
+    JSON.stringify(freshTouchMove));
 
   await page.mouse.move(axesLockedBefore.x + axesLockedBefore.size - 8, axesLockedBefore.y + axesLockedBefore.size - 8);
   await page.mouse.down();
@@ -307,7 +395,10 @@ const countDrawnGizmoPixels = async (page) => {
   await page.mouse.up();
   H.check('a locked axes gizmo still opens its Unlock menu item', await page.locator('.cv-gizmo-menu-wrap .cv-colorbar-menu-item').filter({ hasText: /^Unlock$/ }).count() > 0);
   await page.locator('.cv-gizmo-menu-wrap .cv-colorbar-menu-item').filter({ hasText: /^Unlock$/ }).click();
-  await page.waitForTimeout(1800);
+  // The preceding locked touch pass-through is an ordinary release and now
+  // deliberately retains Trackball inertia; let that coast settle before
+  // measuring the unlocked widget drag.
+  await page.waitForTimeout(3000);
   const axesUnlockedBefore = await page.evaluate(async () => {
     const { app, general } = await import('./state/store.js');
     const r = document.getElementById('axesGizmo').getBoundingClientRect();
@@ -328,6 +419,26 @@ const countDrawnGizmoPixels = async (page) => {
       && (Math.abs(axesUnlockedAfter.x - axesUnlockedBefore.x) > 20 || Math.abs(axesUnlockedAfter.y - axesUnlockedBefore.y) > 10)
       && axesUnlockRotationDelta < 1e-8,
     JSON.stringify({ rotationDelta: axesUnlockRotationDelta, before: axesUnlockedBefore, after: axesUnlockedAfter }));
+
+  await page.mouse.move(axesUnlockedAfter.x + 30, axesUnlockedAfter.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(axesUnlockedAfter.x + 60, axesUnlockedAfter.y + 55, { steps: 2 });
+  const unlockedBeforeLock = await page.evaluate(() => {
+    const r = document.getElementById('axesGizmo').getBoundingClientRect();
+    return { x: r.left, y: r.top };
+  });
+  await page.evaluate(async () => { (await import('./state/store.js')).general.gizmoLocked = true; });
+  await page.mouse.move(axesUnlockedAfter.x + 150, axesUnlockedAfter.y + 100, { steps: 3 });
+  await page.mouse.up();
+  const unlockedAfterLock = await page.evaluate(() => {
+    const r = document.getElementById('axesGizmo').getBoundingClientRect();
+    return { x: r.left, y: r.top };
+  });
+  H.check('locking mid-move aborts an axes drag',
+    Math.abs(unlockedAfterLock.x - unlockedBeforeLock.x) < 1
+      && Math.abs(unlockedAfterLock.y - unlockedBeforeLock.y) < 1,
+    JSON.stringify({ before: unlockedBeforeLock, after: unlockedAfterLock }));
+  await page.evaluate(async () => { (await import('./state/store.js')).general.gizmoLocked = false; });
 
   await page.evaluate(async () => {
     const { createColorBar } = await import('./ui/ColorBarWidget.js');
@@ -671,6 +782,49 @@ const countDrawnGizmoPixels = async (page) => {
     backgroundResizeAfter.width > backgroundResizeBefore.width + 20
       && backgroundResizeAfter.size === backgroundResizeAfter.width,
     JSON.stringify({ before: backgroundResizeBefore.width, after: backgroundResizeAfter }));
+
+  const backgroundMaxReposition = await page.evaluate(() => {
+    const dot = document.getElementById('backgroundDot');
+    const view = document.getElementById('view').getBoundingClientRect();
+    const r = dot.getBoundingClientRect();
+    return { from: { x: r.left + r.width / 2, y: r.top + r.height / 2 },
+      to: { x: view.left + 120, y: view.top + 120 } };
+  });
+  await page.mouse.move(backgroundMaxReposition.from.x, backgroundMaxReposition.from.y);
+  await page.mouse.down();
+  await page.mouse.move(backgroundMaxReposition.to.x, backgroundMaxReposition.to.y, { steps: 4 });
+  await page.mouse.up();
+
+  const backgroundMaxResizeBefore = await page.evaluate(() => {
+    const dot = document.getElementById('backgroundDot');
+    const handle = dot.querySelector('.background-dot-resize-handle').getBoundingClientRect();
+    return { x: handle.right - 20, y: handle.bottom - 20 };
+  });
+  await page.mouse.move(backgroundMaxResizeBefore.x, backgroundMaxResizeBefore.y);
+  await page.mouse.down();
+  await page.mouse.move(backgroundMaxResizeBefore.x + 600, backgroundMaxResizeBefore.y + 600, { steps: 8 });
+  await page.mouse.up();
+  const backgroundMaxCenter = await page.evaluate(() => {
+    const r = document.getElementById('backgroundDot').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page.mouse.click(backgroundMaxCenter.x, backgroundMaxCenter.y);
+  await page.waitForTimeout(120);
+  const backgroundPickerOverlap = await page.evaluate(() => {
+    const dot = document.getElementById('backgroundDot').getBoundingClientRect();
+    const panel = document.querySelector('.cv-background-picker-panel')?.getBoundingClientRect();
+    const center = { x: dot.left + dot.width / 2, y: dot.top + dot.height / 2 };
+    return panel ? {
+      dot: { left: dot.left, right: dot.right, top: dot.top, bottom: dot.bottom },
+      panel: { left: panel.left, right: panel.right, top: panel.top, bottom: panel.bottom },
+      overlap: !(panel.right <= dot.left || panel.left >= dot.right || panel.bottom <= dot.top || panel.top >= dot.bottom),
+    } : { missing: true, dot: { left: dot.left, right: dot.right, top: dot.top, bottom: dot.bottom }, center,
+      element: document.elementFromPoint(center.x, center.y)?.className || '' };
+  });
+  H.check('the background picker stays clear of a maximally resized dot',
+    !backgroundPickerOverlap.missing && !backgroundPickerOverlap.overlap,
+    JSON.stringify(backgroundPickerOverlap));
+  await page.mouse.click(backgroundMaxCenter.x, backgroundMaxCenter.y);
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

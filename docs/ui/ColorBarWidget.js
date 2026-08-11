@@ -1068,6 +1068,8 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   menuLock.addEventListener("click", (e) => {
     e.stopPropagation();
     onLockChange?.(!isLocked());
+    dragCtl?.abortAll?.();
+    abortResizePointer?.();
     updateMenuState();
     closeMenu();
   });
@@ -1076,7 +1078,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // dragCtl?.isFloating() to size the bar) — makeColorBarDraggable only
   // wires up event listeners at this point, none of which depend on layout
   // having already run.
-  const dragCtl = floatingId
+  let dragCtl = floatingId
     ? makeColorBarDraggable(wrapper, floatingId, {
       gripParent: controlsBar,
       extraHandles: [barOuter, wrapper],
@@ -1148,6 +1150,10 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     let finished = false;
 
     const onMove = (mv) => {
+      if (isLocked()) {
+        abort(mv.pointerId);
+        return;
+      }
       const delta = horizontalAtStart ? (mv.clientX - startX) : (mv.clientY - startY);
       const size = Math.min(Math.max(startLength + delta, MIN_BAR_LENGTH), MAX_BAR_LENGTH);
       general.colorBarSize = size;
