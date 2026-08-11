@@ -224,6 +224,7 @@ export class RayTracingPipeline extends ForwardPipeline {
   _sceneDirty = true;
   _shaderHasOccupancy = false;
   _boostSamples = 0;
+  _lastLookBackground = undefined;
 
   // ---- async shader-compile gate ------------------------------------------
   // The scene-trace ShaderMaterial is thousands of assembled GLSL lines
@@ -1078,8 +1079,18 @@ export class RayTracingPipeline extends ForwardPipeline {
       + `|${u.uGroundPattern.value}|${u.uGroundColor1.value.getHex()}`
       + `|${u.uGroundColor2.value.getHex()}|${u.uGroundScale.value}|${u.uGroundReflect.value}`
       + `|${general.rtGroundOffset ?? 0.75}|${general.rtGroundSize ?? 2.5}`;
-    if (this._lastLookKey !== undefined && lookKey !== this._lastLookKey) this.resetAccumulation();
+    const backgroundChanged = this._lastLookBackground !== undefined
+      && u.uBackgroundColor.value.getHex() !== this._lastLookBackground;
+    if (this._lastLookKey !== undefined && lookKey !== this._lastLookKey) {
+      // A soft look reset deliberately retains the old sum for a gentle
+      // transition. That is not valid for a display-matched background: the
+      // old backdrop is a full-frame signal and otherwise remains as a bright
+      // ghost while the new pre-compensated miss colour converges.
+      if (backgroundChanged) this.hardResetAccumulation(renderer);
+      else this.resetAccumulation();
+    }
     this._lastLookKey = lookKey;
+    this._lastLookBackground = u.uBackgroundColor.value.getHex();
 
     // --- accumulate ---------------------------------------------------------
     // Either one scissored TILE of a round (tiled mode) or the full-frame

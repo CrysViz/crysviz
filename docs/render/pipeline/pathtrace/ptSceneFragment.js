@@ -26,7 +26,7 @@ import { planeChunk } from '../raytrace/planeChunk.js';
 import { gridChunk } from '../raytrace/gridChunk.js';
 import { convexChunk } from '../raytrace/convexChunk.js';
 
-export function makePtSceneFragment(pieChunk = '') {
+export function makePtSceneFragment(pieChunk = '', preMainChunk = '') {
 return /* glsl */`
 precision highp float;
 precision highp int;
@@ -959,8 +959,30 @@ void SetupScene(void)
 	lightSphere = Sphere(uLightRadius, uLightPosition, uLightColor * 12.0, vec3(0), LIGHT);
 }
 
-#include <pathtracing_main>
+${preMainChunk}#include <pathtracing_main>
 `;
 }
+
+// pathtracing_main is vendored and calls rand() for the two primary-pixel
+// jitter draws before CalculateRadiance resets the path state. Adapt those
+// calls locally: LDS-off keeps the original rand() stream; LDS-on seeds the
+// same per-pixel sequence used by the path decisions. This is supplied by the
+// pipeline assembly, so makePtSceneFragment() without a pre-main chunk keeps
+// its historical no-occupancy source byte-for-byte.
+export const ptPrimaryRandAdapter = /* glsl */`
+float ptPrimaryRand()
+{
+	if (uLdsEnabled)
+	{
+		gLdsSampleIndex = uint(uFrameCounter + 0.5);
+		gLdsPixelHash = ptHashLowbias32(uint(gl_FragCoord.x)
+			+ ptHashLowbias32(uint(gl_FragCoord.y)));
+		return ptRand();
+	}
+	return rand();
+}
+
+#define rand ptPrimaryRand
+`;
 
 export const ptSceneFragment = makePtSceneFragment();

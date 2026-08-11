@@ -27,7 +27,7 @@ import { common_PathTracing_Vertex } from '../../external/three-pathtracing/comm
 import { ScreenCopy_Fragment } from '../../external/three-pathtracing/ScreenCopy_Fragment.js';
 import { ScreenOutput_Fragment } from '../../external/three-pathtracing/ScreenOutput_Fragment.js';
 import { RayTracingPipeline } from './RayTracingPipeline.js';
-import { makePtSceneFragment } from './pathtrace/ptSceneFragment.js';
+import { makePtSceneFragment, ptPrimaryRandAdapter } from './pathtrace/ptSceneFragment.js';
 import { occupancyChunk } from './raytrace/occupancyChunk.js';
 
 export class PathTracingPipeline extends RayTracingPipeline {
@@ -47,7 +47,8 @@ export class PathTracingPipeline extends RayTracingPipeline {
     return {
       vertexShader: common_PathTracing_Vertex,
       sceneFragment: (hasOccupancy) => hasOccupancy
-        ? makePtSceneFragment(occupancyChunk) : makePtSceneFragment(),
+        ? makePtSceneFragment(occupancyChunk, ptPrimaryRandAdapter)
+        : makePtSceneFragment('', ptPrimaryRandAdapter),
       copyFragment: ScreenCopy_Fragment,
       outputFragment: ScreenOutput_Fragment,
       copyTexUniform: 'tPathTracedImageTexture',
