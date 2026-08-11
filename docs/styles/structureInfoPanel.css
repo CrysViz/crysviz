@@ -679,6 +679,13 @@
   border: 1px solid var(--wash-2); /* was 0.08 — exact --wash-2 */
   border-radius: var(--radius);
 }
+.spin-force-category-editor {
+  grid-column: 2;
+  padding: var(--sp-3);
+  background: var(--wash-0);
+  border: 1px solid var(--wash-2);
+  border-radius: var(--radius);
+}
 .ece-top-row {
   display: flex;
   align-items: center;
