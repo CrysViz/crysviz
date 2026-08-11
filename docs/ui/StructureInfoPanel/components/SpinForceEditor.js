@@ -1,8 +1,9 @@
 import * as THREE from '../../../external/three/three.module.js';
 import { fileBrowser, general } from '../../../state/store.js';
-import { updateSpins, updateForces, computeSpinColor, computeForceColor } from '../../../render/index.js';
+import { updateSpins, updateForces, computeSpinColor, computeForceColor, requestRender } from '../../../render/index.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { getLuminance } from '../../BackgroundPicker.js';
+import { createMaterialEditor, MATERIAL_TYPES } from './MaterialEditor.js';
 
 // Same lum>0.5 threshold BackgroundPicker.js's getContrastingBorder() uses,
 // applied to text instead of a border — a swatch's background can land
@@ -123,6 +124,28 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
     return mode === 'spin' ? structure()?.spins?.[atomIndex] : structure()?.forces?.[atomIndex];
   }
 
+  function currentCategoryStyle() {
+    const s = structure();
+    const elementSymbol = s?.elements?.[atomIndex];
+    const styles = mode === 'spin' ? s?.spinCategoryStyles : s?.forceCategoryStyles;
+    return styles?.[elementSymbol];
+  }
+
+  // Per-arrow material follows the same editor contract as atom rows: a
+  // cleared entry exposes the effective species category material as its
+  // default, while an edited entry is stored on this Spin/Force object.
+  const materialEditor = createMaterialEditor(
+    () => currentObj()?.userMaterial,
+    (material) => {
+      const obj = currentObj();
+      if (obj) obj.userMaterial = material;
+    },
+    {
+      getDefault: () => currentCategoryStyle()?.material,
+      types: MATERIAL_TYPES.filter((type) => type.value !== 'glass'),
+    });
+  spinEditor.appendChild(materialEditor);
+
   function refreshView() {
     if (mode === 'spin') updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
     else updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
@@ -134,6 +157,11 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
       ? computeSpinColor(obj.vector, obj.scaling, { element: speciesElement })
       : computeForceColor(obj.vector, obj.scaling, { element: speciesElement });
     return computed ?? obj.color;
+  }
+
+  function effectiveCurrentColor(obj) {
+    const categoryColor = currentCategoryStyle()?.color;
+    return obj.userColor ?? (categoryColor != null ? new THREE.Color(categoryColor) : computeCurrentColor(obj));
   }
 
   function setSwitchActive(activeBtn, inactiveBtn) {
@@ -166,7 +194,8 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
     spinApplyBtn.style.display = editable ? '' : 'none';
 
     hideCheckbox.checked = Boolean(obj.hidden);
-    applySwatch(obj.userColor ?? computeCurrentColor(obj));
+    applySwatch(effectiveCurrentColor(obj));
+    materialEditor.syncFromStore?.();
   }
 
   function applySwatch(color) {
@@ -231,7 +260,7 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
       closeColorPicker();
       return;
     }
-    const initial = obj.userColor ?? computeCurrentColor(obj);
+    const initial = effectiveCurrentColor(obj);
     colorPickerSection.innerHTML = '';
     const picker = createColorPicker(`#${initial.getHexString()}`, (hex) => {
       obj.userColor = new THREE.Color(hex);
@@ -251,7 +280,9 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
     } else {
       obj.userColor = null;
     }
+    obj.userMaterial = null;
     refreshView();
+    requestRender();
     refreshInputs();
   };
 

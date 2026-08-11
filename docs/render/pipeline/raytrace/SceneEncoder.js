@@ -72,6 +72,23 @@ function materialTexel(mat) {
   }
 }
 
+function colorArray(value, fallback) {
+  if (value == null) return fallback;
+  const color = value?.isColor ? value : new THREE.Color(value);
+  return [color.r, color.g, color.b];
+}
+
+function arrowStyle(structure, kind, srcIdx, fallbackColor, rasterArrow) {
+  const arrow = rasterArrow ?? structure?.[kind]?.[srcIdx];
+  const element = structure?.elements?.[srcIdx];
+  const category = structure?.[kind === 'forces' ? 'forceCategoryStyles' : 'spinCategoryStyles']?.[element];
+  let material = arrow?.userMaterial ?? category?.material ?? null;
+  // Legacy arrow glass is clamped: the joined shaft/cone creates an artificial
+  // internal optical boundary, so refraction/Fresnel is not valid here.
+  if (material?.type === 'glass') material = null;
+  return { color: colorArray(arrow?.userColor ?? category?.color, fallbackColor), material };
+}
+
 const _pos = new THREE.Vector3();
 const _pos2 = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
@@ -359,7 +376,12 @@ export class SceneEncoder {
         JSON.stringify(structure.bondCategoryStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.bondUserStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.polyhedraCategoryStyles ?? {}, dropMaterialKey),
-        JSON.stringify(structure.polyhedraUserStyles ?? {}, dropMaterialKey));
+        JSON.stringify(structure.polyhedraUserStyles ?? {}, dropMaterialKey),
+        JSON.stringify(structure.spinCategoryStyles ?? {}, dropMaterialKey),
+        JSON.stringify(structure.forceCategoryStyles ?? {}, dropMaterialKey));
+      const arrowColorState = (arrows) => (arrows ?? []).map((arrow) =>
+        arrow?.userColor?.getHexString?.() ?? arrow?.userColor ?? null);
+      parts.push('arcolors', arrowColorState(structure.forces), arrowColorState(structure.spins));
       // WedgeAtoms is source data for the optional tracer pie table. Include
       // species occupancy/colour edits so the table and the conditional shader
       // presence flag are refreshed when disorder is changed in-place.
@@ -431,7 +453,11 @@ export class SceneEncoder {
         JSON.stringify(structure.bondUserStyles ?? {}),
         JSON.stringify(structure.polyhedraCategoryStyles ?? {}),
         JSON.stringify(structure.polyhedraUserStyles ?? {}),
-        JSON.stringify(structure.fieldMaterial ?? {}));
+        JSON.stringify(structure.fieldMaterial ?? {}),
+        JSON.stringify(structure.spinCategoryStyles ?? {}),
+        JSON.stringify(structure.forceCategoryStyles ?? {}),
+        JSON.stringify((structure.forces ?? []).map((arrow) => arrow?.userMaterial ?? null)),
+        JSON.stringify((structure.spins ?? []).map((arrow) => arrow?.userMaterial ?? null)));
     }
 
     const coreFp = parts.join('|');
@@ -1136,7 +1162,7 @@ export class SceneEncoder {
    *  origin, direction, length, radius and per-instance colour. */
   _arrowConvexBodies() {
     const result = [];
-    const addBody = (mesh, points, instanceIndex) => {
+    const addBody = (mesh, points, instanceIndex, style) => {
       let hull;
       try { hull = new ConvexHull().setFromPoints(points); } catch { return; }
       const planes = [];
@@ -1151,15 +1177,23 @@ export class SceneEncoder {
       if (!colors) return;
       const c = instanceIndex * 3;
       result.push({ kind: 'arrow', planes, aabb,
-        color: [colors[c], colors[c + 1], colors[c + 2]],
+        color: style.color ?? [colors[c], colors[c + 1], colors[c + 2]],
+        material: style.material,
         alpha: mesh.material?.opacity ?? 1 });
       this.arrowPlaneCount += planes.length;
     };
-    const addMeshArrows = (shaft, tip) => {
+    const addMeshArrows = (shaft, tip, kind) => {
       if (!shaft?.visible || !tip?.visible || shaft.count < 2 || tip.count < 1) return;
       shaft.updateWorldMatrix(true, false);
       tip.updateWorldMatrix(true, false);
       const count = Math.min(tip.count, Math.floor(shaft.count / 2));
+      const instanceMap = (kind === 'forces'
+        ? groups.forcesInstanceBySrcIndex : groups.spinsInstanceBySrcIndex) ?? new Map();
+      const arrowMap = kind === 'forces'
+        ? (shaft.userData?.arrowStylesByInstance ?? groups.forcesArrowByInstance)
+        : (shaft.userData?.arrowStylesByInstance ?? groups.spinsArrowByInstance);
+      const srcByInstance = new Map([...instanceMap]
+        .map(([srcIdx, instanceIndex]) => [instanceIndex, srcIdx]));
       for (let i = 0; i < count; i++) {
         // The raster shaft is two contiguous half-length cylinders. Merge the
         // pair into one prism so the tracer has exactly two bodies per arrow.
@@ -1186,7 +1220,13 @@ export class SceneEncoder {
               .addScaledVector(radial2, Math.sin(angle)));
           }
         }
-        addBody(shaft, points, i * 2);
+        const shaftColor = shaft.instanceColor?.array;
+        const fallbackColor = shaftColor
+          ? [shaftColor[i * 6], shaftColor[i * 6 + 1], shaftColor[i * 6 + 2]]
+          : [1, 1, 1];
+        const style = arrowStyle(fileBrowser.selectedStructure, kind,
+          srcByInstance.get(i), fallbackColor, arrowMap?.get(i));
+        addBody(shaft, points, i * 2, style);
 
         tip.getMatrixAt(i, _m);
         _m2.multiplyMatrices(tip.matrixWorld, _m);
@@ -1203,11 +1243,11 @@ export class SceneEncoder {
           cone.push(base.clone().addScaledVector(tipRadial0, Math.cos(angle))
             .addScaledVector(tipRadial2, Math.sin(angle)));
         }
-        addBody(tip, cone, i);
+        addBody(tip, cone, i, style);
       }
     };
-    addMeshArrows(groups.forcesShaftMesh, groups.forcesTipMesh);
-    addMeshArrows(groups.spinShaftMesh, groups.spinTipMesh);
+    addMeshArrows(groups.forcesShaftMesh, groups.forcesTipMesh, 'forces');
+    addMeshArrows(groups.spinShaftMesh, groups.spinTipMesh, 'spins');
     this.arrowBodyCount = result.length;
     return result;
   }
@@ -1243,7 +1283,9 @@ export class SceneEncoder {
       // built — the default material applies)
       const poly = entry.kind === 'poly'
         ? structure?.polyhedra?.polyhedra?.[mesh.userData.polyIndex] : null;
-      const material = entry.kind === 'poly'
+      const material = entry.kind === 'arrow'
+        ? entry.material
+        : entry.kind === 'poly'
         ? ((poly?.key ? structure?.polyhedraUserStyles?.[poly.key]?.material : null)
           ?? (poly?.catKey ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null))
         : null;
@@ -1253,7 +1295,8 @@ export class SceneEncoder {
         this.hasEmissive = true;
         const listed = this._emissiveList.length < EMISSIVE_CAP;
         listedReflect = listed ? 1 : 0;
-        // emitter bounding sphere from the poly AABB (center + half-diagonal)
+        // Emitter bounding sphere from the convex body's AABB (center +
+        // half-diagonal). This covers both polyhedra and arrows.
         const cx = (aabb.min.x + aabb.max.x) / 2;
         const cy = (aabb.min.y + aabb.max.y) / 2;
         const cz = (aabb.min.z + aabb.max.z) / 2;

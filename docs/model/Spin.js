@@ -22,6 +22,8 @@ export class Spin extends ColoredObject {
     // editor "Color" button) — same precedent as Atom.userColor: wins over
     // whatever the live colormap would otherwise compute, until cleared.
     this.userColor = null;
+    // Per-arrow ray/path-tracing material override; raster arrows ignore it.
+    this.userMaterial = null;
     // Per-atom arrow visibility (that row's "Hide" checkbox), independent of
     // the Spins panel's per-species show/hide toggles.
     this.hidden = false;
@@ -64,6 +66,7 @@ export class Spin extends ColoredObject {
     this.scaling = this.original.scaling;
     this.color = this.original.color;
     this.userColor = null;
+    this.userMaterial = null;
     // Note: atomIndex, element, and position are typically immutable
   }
 }

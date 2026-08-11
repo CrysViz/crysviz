@@ -18,12 +18,13 @@ function colorToHex(c) {
  *  is mandatory; scaling/color/hidden and the spin-only atomIndex/element/
  *  position are written when set, so a plain arrow list stays compact. A saved
  *  `color` means a pinned per-arrow pick (userColor) — the colormap otherwise
- *  recomputes color on load. */
+ *  recomputes color on load. userMaterial follows the same frame-only path. */
 function serializeArrows(arrows, isSpin = false) {
   return arrows.map((a) => {
     const out = { vector: [...a.vector] };
     if (a.scaling != null) out.scaling = a.scaling;
     if (a.userColor) out.color = colorToHex(a.userColor);
+    if (a.userMaterial) out.material = JSON.parse(JSON.stringify(a.userMaterial));
     if (a.hidden) out.hidden = true;
     if (isSpin) {
       if (a.atomIndex != null) out.atomIndex = a.atomIndex;
@@ -238,6 +239,8 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       // poly materials ride in their user/category stores above).
       atomMaterials: nonEmptyDeepCopy(structure.atomMaterials),
       atomUserMaterials: nonEmptyDeepCopy(structure.atomUserMaterials),
+      spinCategoryStyles: nonEmptyDeepCopy(structure.spinCategoryStyles),
+      forceCategoryStyles: nonEmptyDeepCopy(structure.forceCategoryStyles),
       fieldMaterial: nonEmptyDeepCopy(structure.fieldMaterial),
     },
     display: {
@@ -676,7 +679,7 @@ function applyAtomColors(colors, structure) {
   // (see applySharedState), so the wrapped-index bondUserStyles keys match the
   // corrected atom order when the caller's rebuildBonds() re-applies them;
   // stale keys are silently ignored by the stores' element/geometry checks.
-  for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles', 'polyhedraCategoryStyles', 'atomMaterials', 'atomUserMaterials', 'fieldMaterial']) {
+  for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles', 'polyhedraCategoryStyles', 'atomMaterials', 'atomUserMaterials', 'spinCategoryStyles', 'forceCategoryStyles', 'fieldMaterial']) {
     if (colors[k]) structure[k] = JSON.parse(JSON.stringify(colors[k]));
   }
 }
@@ -733,6 +736,7 @@ function applyArrows(saved, structure) {
     structure.forces = saved.forces.map((f) => {
       const force = new Force({ vector: [...f.vector], scaling: f.scaling ?? null, color: f.color ?? null });
       if (f.color) force.userColor = force.color;
+      if (f.material) force.userMaterial = JSON.parse(JSON.stringify(f.material));
       if (f.hidden) force.hidden = true;
       return force;
     });
@@ -745,6 +749,7 @@ function applyArrows(saved, structure) {
         position: s.position ? [...s.position] : null,
       });
       if (s.color) spin.userColor = spin.color;
+      if (s.material) spin.userMaterial = JSON.parse(JSON.stringify(s.material));
       if (s.hidden) spin.hidden = true;
       return spin;
     });
@@ -1076,6 +1081,15 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   // multi-frame path already drew the viewed frame's arrows via
   // showTrajectoryFrame, so only the single-frame view needs this kick.
   if (!multiFrame) {
+    if (general.forcesActive && structure.forces?.length) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
+    else removeForces();
+    if (general.spinsActive && structure.spins?.length) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
+    else removeSpins();
+  } else {
+    // Category stores follow the existing bondCategoryStyles restore scope:
+    // they are restored on the selected frame only. Redraw that frame after
+    // applying the stores so the raster arrow buffers no longer show the
+    // pre-restore category colors.
     if (general.forcesActive && structure.forces?.length) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
     else removeForces();
     if (general.spinsActive && structure.spins?.length) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');

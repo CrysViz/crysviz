@@ -9,6 +9,7 @@ import { createIndividualAtomRow } from './IndividualAtomRow.js';
 import { createElementColorEditor } from './ColorEditor.js';
 import { setSpeciesColorBulk, refreshBondColorsForAtoms } from '../../../render/index.js';
 import { openSwatchColorPicker } from '../../SwatchColorPicker.js';
+import { createSpinForceCategoryEditor } from './SpinForceCategoryEditor.js';
 
 import { applyWyckoffOrbitPosition, getOrbitAxisFreedom } from '../../SymmetryEditModule.js';
 
@@ -238,6 +239,7 @@ export function createCompositionRow(el, count, total, options = {}) {
       e.stopPropagation();
       editor.style.display = (editor.style.display === 'none') ? 'flex' : 'none';
       if (editor.style.display === 'flex') editor.style.flexDirection = 'column';
+      spinForceEditor.style.display = 'none';
       // Mirrors the row's own click handler closing the color editor when
       // expanding/collapsing — the dot closes the individual-atom list the
       // same way, so the two never clutter the row at once.
@@ -296,7 +298,15 @@ export function createCompositionRow(el, count, total, options = {}) {
   pctLabel.textContent = `(${pct}%)`;
   countLabel.appendChild(pctLabel);
   right.appendChild(countLabel);
+
+  const groupElements = options.elements ?? [el];
+  const spinForceButton = document.createElement('button');
+  spinForceButton.type = 'button';
+  spinForceButton.textContent = 'Spins/Forces';
+  spinForceButton.className = 'btn-mini highlight si-action-btn-narrow spin-force-category-button';
+  spinForceButton.title = `Customize spin and force arrows for ${groupElements.join(', ')}`;
   right.appendChild(keepToggle.wrapper);
+  right.insertBefore(spinForceButton, keepToggle.wrapper);
 
   row.appendChild(left);
   row.appendChild(right);
@@ -367,6 +377,17 @@ export function createCompositionRow(el, count, total, options = {}) {
 
   // Hover tint is plain CSS (.comp-row:hover, structureInfoPanel.css).
 
+  const spinForceEditor = createSpinForceCategoryEditor(groupElements);
+  spinForceButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    spinForceEditor.style.display = spinForceEditor.style.display === 'none' ? 'block' : 'none';
+    if (spinForceEditor.style.display !== 'none') {
+      editor.style.display = 'none';
+      atomsContainer.style.display = 'none';
+      expandIcon.style.transform = 'rotate(0deg)';
+    }
+  });
+
   row.addEventListener('click', (e) => {
     e.stopPropagation();
     const isExpanded = atomsContainer.style.display !== 'none';
@@ -375,16 +396,21 @@ export function createCompositionRow(el, count, total, options = {}) {
     expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
     updatePieDotForRow(); // Update pie dot when expanded/collapsed
     editor.style.display = 'none'; // expanding/collapsing closes the category color editor
+    spinForceEditor.style.display = 'none';
   });
 
   container.appendChild(row);
   container.appendChild(atomsContainer);
+  container.appendChild(spinForceEditor);
 
   // =========================================
   // COLOR EDITOR
   // =========================================
 
   const editor = createElementColorEditor(el, updatePieDotForRow, elementAtomIndices);
+  // The two row-level style editors are mutually exclusive. The dot is
+  // created above and closes the arrow editor before opening this one.
+  spinForceEditor.addEventListener('click', (e) => e.stopPropagation());
   container.appendChild(editor);
 
   return container;
@@ -452,6 +478,7 @@ export function createWyckoffCompositionRow(el, entries, total) {
       e.stopPropagation();
       editor.style.display = (editor.style.display === 'none') ? 'flex' : 'none';
       if (editor.style.display === 'flex') editor.style.flexDirection = 'column';
+      spinForceEditor.style.display = 'none';
       // Mirrors the row's own click handler closing the color editor when
       // expanding/collapsing — the dot closes the individual-atom list the
       // same way, so the two never clutter the row at once.
@@ -500,6 +527,13 @@ export function createWyckoffCompositionRow(el, entries, total) {
   const pct = (100 * entries.length / total).toFixed(1);
   countLabel.textContent = `${entries.length} (${pct}%)`;
   right.appendChild(countLabel);
+
+  const spinForceButton = document.createElement('button');
+  spinForceButton.type = 'button';
+  spinForceButton.textContent = 'Spins/Forces';
+  spinForceButton.className = 'btn-mini highlight si-action-btn-narrow spin-force-category-button';
+  spinForceButton.title = `Customize spin and force arrows for ${el}`;
+  right.appendChild(spinForceButton);
   right.appendChild(keepToggle.wrapper);
 
   row.appendChild(left);
@@ -543,6 +577,13 @@ export function createWyckoffCompositionRow(el, entries, total) {
 
   // Hover tint is plain CSS (.comp-row:hover, structureInfoPanel.css).
 
+  const spinForceEditor = createSpinForceCategoryEditor([el]);
+  spinForceButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    spinForceEditor.style.display = spinForceEditor.style.display === 'none' ? 'block' : 'none';
+    if (spinForceEditor.style.display !== 'none') editor.style.display = 'none';
+  });
+
   row.addEventListener('click', (e) => {
     e.stopPropagation();
     const isExpanded = atomsContainer.style.display !== 'none';
@@ -550,6 +591,7 @@ export function createWyckoffCompositionRow(el, entries, total) {
     expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
     updatePieDotForRow();
     editor.style.display = 'none'; // expanding/collapsing closes the category color editor
+    spinForceEditor.style.display = 'none';
   });
 
   container.appendChild(row);
@@ -557,6 +599,7 @@ export function createWyckoffCompositionRow(el, entries, total) {
 
   // CREATE AND ADD COLOR EDITOR FOR WYCKOFF ELEMENTS
   const editor = createElementColorEditor(el, updatePieDotForRow, wyckoffAtomIndices);
+  container.appendChild(spinForceEditor);
   container.appendChild(editor);
 
   return container;
