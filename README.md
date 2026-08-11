@@ -30,7 +30,7 @@ Source code: https://github.com/ftrybel/CrysViz_hot_develop
 - **[Abhijith S Parackal](https://github.com/Abhivega)** - Core development, and design
 
 ## Contributors
-- **[Rickard Armiento](https://github.com/rartino)** - CIF Reader, I/O
+- **[Rickard Armiento](https://github.com/rartino)** - I/O (CIF), rendering (depth peeling, WBOIT, ray/path tracing), dockable window GUI, polyhedra, camera controls, bond styling, standalone app with Python API, PNG export, dev tooling/CI/browser tests.
 - **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)** - Vector Field Visualisation (ELF, Charge)
 
 ## Key Features
@@ -130,11 +130,16 @@ viewer = show(["structure.cif"])
 
 For more, see [examples](examples/).
 
-## 
+## Third-Party Libraries
 
-Third-Party Libraries and Attribution:
-
-1. Moyo
+1. THREE.js
+   - Repository: https://github.com/mrdoob/three.js/
+   - License: MIT
+   - Copyright: THREE.js authors
+   - See docs/external/three/LICENSE for the full license text.
+   - License and code can be found in docs/external/three/
+   
+2. Moyo
    - Repository: https://github.com/spglib/moyo
    - License: MIT or Apache-2.0
    - Copyright: Kohei Shinohara
@@ -142,20 +147,13 @@ Third-Party Libraries and Attribution:
    - Explicitly moyo-wasm is used.
    - License and code can be found in docs/external/moyo-test/
 
-2. NEP_CPU
+3. NEP_CPU
    - Repository: https://github.com/brucefan1983/NEP_CPU
    - License: GPL-3.0
    - Copyright: NEP_CPU authors
    - See docs/external/nep_wasm/LICENSE-NEP_CPU for the full license text.
    - Explicitly NEP_CPU is compliled into a WASM module. 
    - License and code can be found in docs/external/nep_wasm/
-
-3. THREE.js
-   - Repository: https://github.com/mrdoob/three.js/
-   - License: MIT
-   - Copyright: THREE.js authors
-   - See docs/external/three/LICENSE for the full license text.
-   - License and code can be found in docs/external/three/
 
 4. NEP89 Weights (from GPUMD)
    - Repository: https://github.com/brucefan1983/GPUMD
@@ -204,3 +202,8 @@ Third-Party Libraries and Attribution:
    - GLSL chunk library adapted for the optional "Path tracing" rendering
      pipeline; see docs/external/three-pathtracing/README.md for the adaptations.
    - License and code can be found in docs/external/three-pathtracing/
+
+## Other Attributions
+
+- CrysViz uses some color maps from the [Scientific colour maps by Fabio Crameri](https://doi.org/10.5281/zenodo.1243862) (Version 8)
+- [OPTIMADE](https://www.optimade.org/) compatible structure providers including Materials Project and Alexandria.
