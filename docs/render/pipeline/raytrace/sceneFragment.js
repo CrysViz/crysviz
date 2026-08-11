@@ -40,7 +40,8 @@ import { convexChunk } from './convexChunk.js';
 
 export const DATA_TEX_WIDTH = 1024;
 
-export const sceneFragment = /* glsl */`
+export function makeSceneFragment(pieChunk = '') {
+return /* glsl */`
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -120,7 +121,7 @@ vec4 fetchData(sampler2D tex, int index)
 	return texelFetch(tex, ivec2(index % DATA_W, index / DATA_W), 0);
 }
 
-${convexChunk}
+${convexChunk}${pieChunk ? '\n\n' + pieChunk : ''}
 
 ${fieldChunk}
 
@@ -167,8 +168,7 @@ int testAtom(int i, int isShadowRay, inout float t)
 	vec4 colA = fetchData(uAtomsDataTexture, (i * 3) + 1);
 	vec4 mat = fetchData(uAtomsDataTexture, (i * 3) + 2);
 	intersectionNormal = (rayOrigin + (t * rayDirection)) - posRad.xyz;
-	intersectionColor = colA.rgb;
-	intersectionAlpha = colA.a;
+${pieChunk ? '\tintersectionColor = pieAtomColor(i, posRad.xyz, rayOrigin + (t * rayDirection), mat, colA.rgb);\n' : '\tintersectionColor = colA.rgb;\n'}	intersectionAlpha = colA.a;
 	intersectionMaterialType = resolveMaterialType(mat.x, colA.a);
 	intersectionRoughness = mat.y;
 	intersectionTypeParam = mat.z;
@@ -635,3 +635,6 @@ void SetupScene(void)
 
 #include <raytracing_main>
 `;
+}
+
+export const sceneFragment = makeSceneFragment();

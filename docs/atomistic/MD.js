@@ -1,6 +1,9 @@
 import { fileBrowser, groups, general } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE, deriveVisibleWrapped, lastFastFrameBail } from '../render/index.js';
+import {
+  runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE, deriveVisibleWrapped,
+  lastFastFrameBail, updateForces, updateSpins,
+} from '../render/index.js';
 import { buildNEPStructure, expandKeptFracToFull } from './relaxer.js';
 import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart, normalizeFractionalPositions } from './math.js';
 import {
@@ -808,5 +811,8 @@ export function applyMDStateToViewer(
     // them on the run-end full apply (P6).
     reRenderPolyhedra: full || general.showPolyhedra || general.completePolyhedra,
   });
+  // Full/periodic syncs are the arrow refresh boundary. FastFrameModule keeps
+  // its existing force-only budgeted refresh; spin arrows are rebuilt here.
+  if (general.forcesActive) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
+  if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
 }
-

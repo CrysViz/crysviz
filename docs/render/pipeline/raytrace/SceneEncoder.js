@@ -21,6 +21,7 @@ import { bondKey } from '../../BondsFracUpdateModule.js';
 import { getAtomImageStyle } from '../../AtomsFracUpdateModule.js';
 import { MAX_CUT_PLANES } from '../../MaterialStyles.js';
 import { getCutPlaneMaskSign, Plane } from '../../../model/index.js';
+import { wedgeDataForAtom, MAX_WEDGES } from '../../WedgeAtoms.js';
 import { DATA_TEX_WIDTH } from './sceneFragment.js';
 
 // Texture/perf sanity cap on unique face planes per polyhedron. No longer the
@@ -51,9 +52,12 @@ const DEFAULT_MATERIAL_TEXEL = [0, 0.6, 0.6, -1]; // standard, tint 0.6 + gloss 
 // arrival lighting (their material texel's "listed" bit stays 0) so they never
 // go dark — see the LIGHT-branch gate in ptSceneFragment.js.
 const EMISSIVE_CAP = 64;
+const ARROW_FACETS = 8;
+const OCCUPANCY_FLAG = 0.25;
+const OCCUPANCY_MIN_WEDGE = 1e-3;
 
 function materialTexel(mat) {
-  if (!mat) return DEFAULT_MATERIAL_TEXEL;
+  if (!mat) return [...DEFAULT_MATERIAL_TEXEL];
   switch (mat.type) {
     case 'metal': // typeParam slot carries the reflection color tint (1 = colored mirror, 0 = chrome)
       return [1, mat.roughness ?? 0.2, mat.tint ?? 1, mat.reflectivity ?? -1];
@@ -73,6 +77,7 @@ const _pos2 = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
 const _scale = new THREE.Vector3();
 const _m = new THREE.Matrix4();
+const _m2 = new THREE.Matrix4();
 const _mInv = new THREE.Matrix4();
 const _halfY = new THREE.Matrix4().makeScale(1, 0.5, 1);
 const _yAxis = new THREE.Vector3(0, 1, 0);
@@ -187,11 +192,16 @@ export function activeAtomCutPlanes() {
 
 export class SceneEncoder {
   atomsTexture = makeDataTexture(1);
+  occupancyTexture = makeDataTexture(1);
   cylindersTexture = makeDataTexture(1);
   polyTexture = makeDataTexture(1);
   atomCount = 0;
   cylinderCount = 0;
   polyCount = 0;
+  hasOccupancy = false;
+  occupancyFoldedSites = 0;
+  arrowBodyCount = 0;
+  arrowPlaneCount = 0;
   _cylBounds = new Float32Array(4); // per-cylinder world bounding spheres (cx,cy,cz,r)
   _cylSegs = new Float32Array(8);   // per-cylinder (cx,cy,cz, hx,hy,hz, rad, sphereR)
   hasEmissive = false; // any emissive (code 3) material texel written this encode
@@ -271,6 +281,7 @@ export class SceneEncoder {
 
   dispose() {
     this.atomsTexture.dispose();
+    this.occupancyTexture.dispose();
     this.cylindersTexture.dispose();
     this.polyTexture.dispose();
     this.planesTexture.dispose();
@@ -296,6 +307,12 @@ export class SceneEncoder {
       parts.push('a', atoms.count, atoms.instanceMatrix.version, atoms.instanceColor?.version,
         atoms.geometry.attributes.instanceOpacity?.version, atoms.material.opacity,
         atoms.geometry.attributes.instanceCutPlaneImmune?.version);
+    }
+    for (const key of ['forcesShaftMesh', 'forcesTipMesh', 'spinShaftMesh', 'spinTipMesh']) {
+      const mesh = groups[key];
+      if (!mesh) { parts.push('ar', key, 0); continue; }
+      parts.push('ar', key, mesh.visible ? 1 : 0, mesh.count,
+        mesh.instanceMatrix?.version, mesh.instanceColor?.version, mesh.material?.opacity);
     }
     // cut planes remove whole atoms at encode time; re-encode when they change
     // (only the enabled-relevant fields matter — see _activeCutPlanes)
@@ -343,6 +360,11 @@ export class SceneEncoder {
         JSON.stringify(structure.bondUserStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.polyhedraCategoryStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.polyhedraUserStyles ?? {}, dropMaterialKey));
+      // WedgeAtoms is source data for the optional tracer pie table. Include
+      // species occupancy/colour edits so the table and the conditional shader
+      // presence flag are refreshed when disorder is changed in-place.
+      parts.push('occ', JSON.stringify((structure.atoms ?? []).map((atom) =>
+        atom?.species?.map((s) => [s.element, s.occupancy, s.color]) ?? [])));
     }
     // volumetric field isosurface (same source the raster pipelines draw):
     // presence/visibility, dims, iso, abs mode, pos/neg colours, opacity, and
@@ -437,6 +459,10 @@ export class SceneEncoder {
   /** Re-encode everything into the data textures. */
   encode() {
     this.hasEmissive = false; // sub-encoders set it when an emissive texel is written
+    this.hasOccupancy = false;
+    this.occupancyFoldedSites = 0;
+    this.arrowBodyCount = 0;
+    this.arrowPlaneCount = 0;
     this._emissiveList = [];  // sub-encoders push emissive prims (encode order)
     this._encodeAtoms();
     this._encodeCylinders();
@@ -712,7 +738,10 @@ export class SceneEncoder {
     const cutPlanes = this._activeCutPlanes();
     const texture = this._ensureCapacity('atomsTexture',
       Math.max(1, ((meshVisible ? mesh.count : 0) + measSpheres.length) * 3));
+    const occupancyTexture = this._ensureCapacity('occupancyTexture',
+      Math.max(1, (meshVisible ? mesh.count : 0) * 2));
     const data = texture.image.data;
+    const occupancyData = occupancyTexture.image.data;
     let n = 0;
     let maxR2 = 25;
     let minX = Infinity, minY = Infinity, minZ = Infinity;
@@ -766,6 +795,21 @@ export class SceneEncoder {
             ?? (element
               ? atomMaterials[element] ?? structure.getDefaultElementMaterial(element)
               : null));
+        const atom = structure?.atoms?.[src];
+        const wedge = wedgeDataForAtom(atom);
+        let occupancyAtom = false;
+        if (wedge) {
+          this.hasOccupancy = true;
+          occupancyAtom = true;
+          // Match WedgeAtoms' exact ordering, colours, vacancy handling and
+          // tail-folding. Keep a metric for the rare >4-species case.
+          const rawSpecies = (atom?.species?.filter((s) => s.occupancy > OCCUPANCY_MIN_WEDGE).length ?? 0)
+            + ((atom?.getVacancyFraction?.() ?? 0) > OCCUPANCY_MIN_WEDGE ? 1 : 0);
+          if (rawSpecies > MAX_WEDGES) this.occupancyFoldedSites++;
+          const od = n * 8;
+          occupancyData.set(wedge.fracs, od);
+          occupancyData.set(wedge.packed, od + 4);
+        }
         if (mt[0] === 3) {
           this.hasEmissive = true;
           // listed bit into the free reflectivity slot (unused for emissive);
@@ -775,6 +819,8 @@ export class SceneEncoder {
           this._emissiveList.push({ kind: 0, encIndex: n,
             cx: data[d], cy: data[d + 1], cz: data[d + 2], r: radius, power: mt[2] });
         }
+        // int(mat.x + 0.5) continues to decode the original integer type.
+        if (occupancyAtom) mt[0] += OCCUPANCY_FLAG;
         data.set(mt, d + 8);
         n++;
       }
@@ -811,6 +857,7 @@ export class SceneEncoder {
     }
     this.atomCount = n;
     texture.needsUpdate = true;
+    occupancyTexture.needsUpdate = true;
   }
 
   /** Visible measurement shell markers ('distanceMarker'/'angleMarker' groups)
@@ -1082,23 +1129,108 @@ export class SceneEncoder {
     return edges;
   }
 
+  /** Convert the visible raster arrow meshes into the two convex bodies that
+   *  represent each arrow in the tracer: one eight-sided prism for the joined
+   *  two-part shaft and one eight-sided cone for the tip. The matrices are read
+   *  from the live InstancedMeshes, so this follows the raster module's exact
+   *  origin, direction, length, radius and per-instance colour. */
+  _arrowConvexBodies() {
+    const result = [];
+    const addBody = (mesh, points, instanceIndex) => {
+      let hull;
+      try { hull = new ConvexHull().setFromPoints(points); } catch { return; }
+      const planes = [];
+      for (const face of hull.faces) {
+        const n = face.normal, w = face.constant;
+        if (!planes.some((p) => (p[0] * n.x + p[1] * n.y + p[2] * n.z) > 0.9999
+            && Math.abs(p[3] - w) < 1e-4)) planes.push([n.x, n.y, n.z, w]);
+      }
+      if (planes.length > MAX_PLANES) return;
+      const aabb = new THREE.Box3().setFromPoints(points);
+      const colors = mesh.instanceColor?.array;
+      if (!colors) return;
+      const c = instanceIndex * 3;
+      result.push({ kind: 'arrow', planes, aabb,
+        color: [colors[c], colors[c + 1], colors[c + 2]],
+        alpha: mesh.material?.opacity ?? 1 });
+      this.arrowPlaneCount += planes.length;
+    };
+    const addMeshArrows = (shaft, tip) => {
+      if (!shaft?.visible || !tip?.visible || shaft.count < 2 || tip.count < 1) return;
+      shaft.updateWorldMatrix(true, false);
+      tip.updateWorldMatrix(true, false);
+      const count = Math.min(tip.count, Math.floor(shaft.count / 2));
+      for (let i = 0; i < count; i++) {
+        // The raster shaft is two contiguous half-length cylinders. Merge the
+        // pair into one prism so the tracer has exactly two bodies per arrow.
+        shaft.getMatrixAt(i * 2, _m);
+        _m2.multiplyMatrices(shaft.matrixWorld, _m);
+        const e = _m2.elements;
+        const center = new THREE.Vector3(e[12], e[13], e[14]);
+        const axis = new THREE.Vector3(e[4], e[5], e[6]);
+        const half = axis.length();
+        if (!(half > 1e-8)) continue;
+        axis.multiplyScalar(1 / half);
+        shaft.getMatrixAt(i * 2 + 1, _m);
+        _m2.multiplyMatrices(shaft.matrixWorld, _m);
+        const e2 = _m2.elements;
+        center.add(new THREE.Vector3(e2[12], e2[13], e2[14])).multiplyScalar(0.5);
+        const radial0 = new THREE.Vector3(e[0], e[1], e[2]);
+        const radial2 = new THREE.Vector3(e[8], e[9], e[10]);
+        const points = [];
+        for (const end of [-1, 1]) {
+          for (let k = 0; k < ARROW_FACETS; k++) {
+            const angle = (k / ARROW_FACETS) * Math.PI * 2;
+            points.push(center.clone().addScaledVector(axis, end * half)
+              .addScaledVector(radial0, Math.cos(angle))
+              .addScaledVector(radial2, Math.sin(angle)));
+          }
+        }
+        addBody(shaft, points, i * 2);
+
+        tip.getMatrixAt(i, _m);
+        _m2.multiplyMatrices(tip.matrixWorld, _m);
+        const te = _m2.elements;
+        const tipCenter = new THREE.Vector3(te[12], te[13], te[14]);
+        const tipAxis = new THREE.Vector3(te[4], te[5], te[6]);
+        const base = tipCenter.clone().addScaledVector(tipAxis, -0.5);
+        const apex = tipCenter.clone().addScaledVector(tipAxis, 0.5);
+        const tipRadial0 = new THREE.Vector3(te[0], te[1], te[2]);
+        const tipRadial2 = new THREE.Vector3(te[8], te[9], te[10]);
+        const cone = [apex];
+        for (let k = 0; k < ARROW_FACETS; k++) {
+          const angle = (k / ARROW_FACETS) * Math.PI * 2;
+          cone.push(base.clone().addScaledVector(tipRadial0, Math.cos(angle))
+            .addScaledVector(tipRadial2, Math.sin(angle)));
+        }
+        addBody(tip, cone, i);
+      }
+    };
+    addMeshArrows(groups.forcesShaftMesh, groups.forcesTipMesh);
+    addMeshArrows(groups.spinShaftMesh, groups.spinTipMesh);
+    this.arrowBodyCount = result.length;
+    return result;
+  }
+
   _encodePolyhedra() {
     const group = groups.polyhedraGroup;
     const meshes = (group?.children ?? []).filter(
       (m) => m.userData?.type === 'polyhedron' && m.visible && this._polyPlanes(m));
-    // layout: 4 header texels per poly up front, then the plane texels
+    const arrows = this._arrowConvexBodies();
+    const entries = meshes.map((mesh) => ({ kind: 'poly', mesh,
+      planes: mesh.userData.rtPlanes, aabb: mesh.userData.rtAabb })).concat(arrows);
+    // layout: 4 header texels per convex body up front, then the plane texels
     let planeTexels = 0;
-    for (const mesh of meshes) planeTexels += mesh.userData.rtPlanes.length;
-    const texture = this._ensureCapacity('polyTexture', Math.max(1, meshes.length * 4 + planeTexels));
+    for (const entry of entries) planeTexels += entry.planes.length;
+    const texture = this._ensureCapacity('polyTexture', Math.max(1, entries.length * 4 + planeTexels));
     const data = texture.image.data;
-    let planeOffset = meshes.length * 4;
+    let planeOffset = entries.length * 4;
     const structure = fileBrowser.selectedStructure;
     // poly-only AABB union for the whole-scene bound (step 3)
     this._polyMin = [Infinity, Infinity, Infinity];
     this._polyMax = [-Infinity, -Infinity, -Infinity];
-    meshes.forEach((mesh, p) => {
-      const planes = mesh.userData.rtPlanes;
-      const aabb = mesh.userData.rtAabb;
+    entries.forEach((entry, p) => {
+      const { mesh, planes, aabb } = entry;
       if (aabb.min.x < this._polyMin[0]) this._polyMin[0] = aabb.min.x;
       if (aabb.min.y < this._polyMin[1]) this._polyMin[1] = aabb.min.y;
       if (aabb.min.z < this._polyMin[2]) this._polyMin[2] = aabb.min.z;
@@ -1109,9 +1241,12 @@ export class SceneEncoder {
       // spare header/AABB w slots (poly.key/catKey are stamped by
       // PolyhedraModule.assignPolyhedraKeys; when absent — list panel never
       // built — the default material applies)
-      const poly = structure?.polyhedra?.polyhedra?.[mesh.userData.polyIndex];
-      const material = (poly?.key ? structure?.polyhedraUserStyles?.[poly.key]?.material : null)
-        ?? (poly?.catKey ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null);
+      const poly = entry.kind === 'poly'
+        ? structure?.polyhedra?.polyhedra?.[mesh.userData.polyIndex] : null;
+      const material = entry.kind === 'poly'
+        ? ((poly?.key ? structure?.polyhedraUserStyles?.[poly.key]?.material : null)
+          ?? (poly?.catKey ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null))
+        : null;
       const [matType, roughness, typeParam, reflectivity] = materialTexel(material);
       let listedReflect = reflectivity; // aabbMax.w slot (listed bit for emissive)
       if (matType === 3) {
@@ -1128,9 +1263,10 @@ export class SceneEncoder {
       }
       const d = p * 16;
       data[d] = planeOffset; data[d + 1] = planes.length; data[d + 2] = matType; data[d + 3] = roughness;
-      _color.copy(mesh.material.color);
+      if (entry.kind === 'poly') _color.copy(mesh.material.color);
+      else _color.fromArray(entry.color);
       data[d + 4] = _color.r; data[d + 5] = _color.g; data[d + 6] = _color.b;
-      data[d + 7] = mesh.material.opacity ?? 1;
+      data[d + 7] = entry.kind === 'poly' ? (mesh.material.opacity ?? 1) : entry.alpha;
       data[d + 8] = aabb.min.x; data[d + 9] = aabb.min.y; data[d + 10] = aabb.min.z; data[d + 11] = typeParam;
       data[d + 12] = aabb.max.x; data[d + 13] = aabb.max.y; data[d + 14] = aabb.max.z; data[d + 15] = listedReflect;
       for (const plane of planes) {
@@ -1138,7 +1274,7 @@ export class SceneEncoder {
         planeOffset++;
       }
     });
-    this.polyCount = meshes.length;
+    this.polyCount = entries.length;
     texture.needsUpdate = true;
   }
 

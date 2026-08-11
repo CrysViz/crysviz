@@ -26,7 +26,8 @@ import { planeChunk } from '../raytrace/planeChunk.js';
 import { gridChunk } from '../raytrace/gridChunk.js';
 import { convexChunk } from '../raytrace/convexChunk.js';
 
-export const ptSceneFragment = /* glsl */`
+export function makePtSceneFragment(pieChunk = '') {
+return /* glsl */`
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -328,7 +329,7 @@ vec3 ptSampleNEE(vec3 x, vec3 nl, out float weight)
 	return dir;
 }
 
-${convexChunk}
+${convexChunk}${pieChunk ? '\n\n' + pieChunk : ''}
 
 ${fieldChunk}
 
@@ -377,8 +378,7 @@ int testAtom(int i, inout float t)
 	vec4 colA = fetchData(uAtomsDataTexture, (i * 3) + 1);
 	vec4 mat = fetchData(uAtomsDataTexture, (i * 3) + 2);
 	hitNormal = (rayOrigin + (t * rayDirection)) - posRad.xyz;
-	hitColor = colA.rgb;
-	hitType = resolveHitType(mat, colA.rgb, colA.a);
+${pieChunk ? '\thitColor = pieAtomColor(i, posRad.xyz, rayOrigin + (t * rayDirection), mat, colA.rgb);\n' : '\thitColor = colA.rgb;\n'}	hitType = resolveHitType(mat, ${pieChunk ? 'hitColor' : 'colA.rgb'}, colA.a);
 	hitObjectID = float(1 + i);
 	gRayExiting = dot(hitNormal, rayDirection) > 0.0 ? TRUE : FALSE;
 	return (gShadowRay == TRUE && uShadowAnyHit
@@ -961,3 +961,6 @@ void SetupScene(void)
 
 #include <pathtracing_main>
 `;
+}
+
+export const ptSceneFragment = makePtSceneFragment();

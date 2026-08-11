@@ -111,10 +111,15 @@ import { requestRender } from '../AnimateModule.js';
 import { updateTracerProgress, hideTracerProgress, showTracerCompiling } from '../TracerProgressModule.js';
 import { ForwardPipeline } from './ForwardPipeline.js';
 import { DepthPeelPipeline } from './DepthPeelPipeline.js';
-import { sceneFragment } from './raytrace/sceneFragment.js';
+import { makeSceneFragment } from './raytrace/sceneFragment.js';
 import { SceneEncoder } from './raytrace/SceneEncoder.js';
+import { occupancyChunk } from './raytrace/occupancyChunk.js';
 
 const RESIZE_BOOST_SAMPLES = 16; // inner samples after a size change (PNG export)
+
+function sceneFragmentForOccupancy(hasOccupancy) {
+  return hasOccupancy ? makeSceneFragment(occupancyChunk) : makeSceneFragment();
+}
 
 // ---- tiled progressive rendering ("gentle" mode) ---------------------------
 // Bounds per-frame GPU work by rendering each accumulation SAMPLE as a series
@@ -217,6 +222,7 @@ export class RayTracingPipeline extends ForwardPipeline {
 
   _initialized = false;
   _sceneDirty = true;
+  _shaderHasOccupancy = false;
   _boostSamples = 0;
 
   // ---- async shader-compile gate ------------------------------------------
@@ -285,7 +291,7 @@ export class RayTracingPipeline extends ForwardPipeline {
   _config() {
     return {
       vertexShader: CommonRayTracing_Vertex,
-      sceneFragment,
+      sceneFragment: sceneFragmentForOccupancy,
       copyFragment: ScreenCopy_Fragment,
       outputFragment: ScreenOutput_Fragment,
       copyTexUniform: 'uRayTracedImageTexture',
@@ -312,6 +318,9 @@ export class RayTracingPipeline extends ForwardPipeline {
   _init(renderer) {
     this._cfg = this._config();
     this._encoder = new SceneEncoder();
+    // Select the optional source before the first compile gate frame.
+    this._encoder.encode();
+    this._shaderHasOccupancy = this._encoder.hasOccupancy;
 
     const makeTarget = () => {
       const target = new THREE.WebGLRenderTarget(4, 4, {
@@ -356,9 +365,13 @@ export class RayTracingPipeline extends ForwardPipeline {
       uSceneIsDynamic: { value: false },
       uCameraIsMoving: { value: false },
       uUseOrthographicCamera: { value: false },
+      uPieAxis: { value: new THREE.Vector3(0, 0, 1) },
+      uPieRight: { value: new THREE.Vector3(1, 0, 0) },
+      uPieUp: { value: new THREE.Vector3(0, 1, 0) },
       uAtomsDataTexture: { value: this._encoder.atomsTexture },
       uCylindersDataTexture: { value: this._encoder.cylindersTexture },
       uPolyDataTexture: { value: this._encoder.polyTexture },
+      uOccupancyDataTexture: { value: this._encoder.occupancyTexture },
       uAtomCount: { value: 0 },
       uCylinderCount: { value: 0 },
       uPolyCount: { value: 0 },
@@ -416,7 +429,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     const material = new THREE.ShaderMaterial({
       uniforms: this._uniforms,
       vertexShader: this._cfg.vertexShader,
-      fragmentShader: this._cfg.sceneFragment,
+      fragmentShader: this._cfg.sceneFragment(this._shaderHasOccupancy),
       depthTest: false,
       depthWrite: false,
     });
@@ -908,11 +921,13 @@ export class RayTracingPipeline extends ForwardPipeline {
     // consumes the _sceneDirty flag it set. _sceneDirty is sticky across
     // preview frames, so a core edit made during the preview window is picked
     // up here on the resume frame.
+    let shaderSourceChanged = false;
     if (this._sceneDirty) {
       this._encoder.encode();
       u.uAtomsDataTexture.value = this._encoder.atomsTexture;
       u.uCylindersDataTexture.value = this._encoder.cylindersTexture;
       u.uPolyDataTexture.value = this._encoder.polyTexture;
+      u.uOccupancyDataTexture.value = this._encoder.occupancyTexture;
       u.uAtomCount.value = this._encoder.atomCount;
       u.uCylinderCount.value = this._encoder.cylinderCount;
       u.uPolyCount.value = this._encoder.polyCount;
@@ -945,14 +960,34 @@ export class RayTracingPipeline extends ForwardPipeline {
       u.uPlanesDataTexture.value = this._encoder.planesTexture;
       u.uPlaneAtlasTex.value = this._encoder.planeAtlasTexture;
       u.uCellWorldToFrac.value.copy(this._encoder.cellWorldToFrac);
+      if (this._shaderHasOccupancy !== this._encoder.hasOccupancy) {
+        this._shaderHasOccupancy = this._encoder.hasOccupancy;
+        this._rtMesh.material.fragmentShader = this._cfg.sceneFragment(this._shaderHasOccupancy);
+        this._rtMesh.material.needsUpdate = true;
+        this._shaderState = 'pending';
+        shaderSourceChanged = true;
+      }
       this._sceneDirty = false;
       // content changed: flush the accumulation so the old scene cannot ghost
       this.hardResetAccumulation(renderer);
     }
 
+    // Keep occupancy source transitions behind the same async compile gate as
+    // initial activation. Do not fall through to renderer.render() here: that
+    // would synchronously link the replacement program and could accumulate a
+    // sample in the transition frame. PathTracingPipeline inherits this path.
+    if (shaderSourceChanged) {
+      this._renderCompileGate(ctx);
+      return;
+    }
+
     // --- camera uniforms ----------------------------------------------------
     u.uCameraMatrix.value.copy(camera.matrixWorld);
     u.uCameraIsMoving.value = cameraIsMoving;
+    const ce = camera.matrixWorld.elements;
+    u.uPieAxis.value.set(-ce[8], -ce[9], -ce[10]).normalize();
+    u.uPieRight.value.set(ce[0], ce[1], ce[2]).normalize();
+    u.uPieUp.value.set(ce[4], ce[5], ce[6]).normalize();
     if (camera.isOrthographicCamera) {
       // chunk convention: ortho half-extents are uULen/uVLen * 100
       u.uUseOrthographicCamera.value = true;
