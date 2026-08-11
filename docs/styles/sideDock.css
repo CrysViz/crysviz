@@ -28,7 +28,7 @@
 #viewArea #view {
   flex: 1 1 auto;
   min-width: 0;
-  border-radius: 0 20px 20px 0;
+  border-radius: 0;
 }
 
 /* Only actually narrow the 3D view once the side dock holds a window. */

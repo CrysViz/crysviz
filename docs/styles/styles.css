@@ -1018,13 +1018,13 @@ body.panel-hidden #axesLegend {
   background: var(--hover-color);
 }
 
-/* Small "keyboard shortcuts" trigger, positioned just left of .theme-switch
- * (ui/KeyboardShortcuts.js; controlPanel.css's .theme-switch is
- * left:286px/top:10px — adjust both together if the logo width changes). */
-.shortcuts-help-trigger {
+/* Small Main-dock triggers, positioned immediately left of .theme-switch
+ * (ui/KeyboardShortcuts.js; the About trigger is the left sibling of the
+ * keyboard-shortcuts trigger). */
+.shortcuts-help-trigger,
+.about-help-trigger {
   position: absolute;
   top: 10px;
-  left: 246px;
   z-index: 10;
   width: 30px;
   height: 30px;
@@ -1038,7 +1038,22 @@ body.panel-hidden #axesLegend {
   transition: background-color 0.2s, box-shadow 0.2s;
 }
 
-.shortcuts-help-trigger:hover {
+.about-help-trigger {
+  left: 210px;
+}
+
+.shortcuts-help-trigger {
+  left: 246px;
+}
+
+.about-help-trigger svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.shortcuts-help-trigger:hover,
+.about-help-trigger:hover {
   background: var(--bg-color);
   box-shadow: 0 0 4px 2px var(--bg-color);
 }
@@ -1380,7 +1395,7 @@ input[type="checkbox"] {
 #view {
   flex: 1;
   position: relative;
-  border-radius: 0 20px 20px 0;
+  border-radius: 0;
   overflow: hidden;
 }
 

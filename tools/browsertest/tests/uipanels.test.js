@@ -25,6 +25,49 @@ async function expandPanel(page, id) {
 (async () => {
   const { browser, page, errors } = await H.launchApp();
 
+  // The scene must stay square-edged whether the side dock is absent, open,
+  // or collapsed to its edge pull-tab.
+  const initialCanvasRadius = await page.evaluate(() =>
+    getComputedStyle(document.getElementById('view')).borderRadius);
+  H.check('canvas has square corners with no side dock', initialCanvasRadius === '0px', initialCanvasRadius);
+
+  const aboutControls = await page.evaluate(() => {
+    const about = document.getElementById('aboutHelpTrigger');
+    const shortcuts = document.getElementById('shortcutsHelpTrigger');
+    const aboutRect = about?.getBoundingClientRect();
+    const shortcutsRect = shortcuts?.getBoundingClientRect();
+    return {
+      exists: !!about && !!shortcuts,
+      immediateSibling: about?.nextElementSibling === shortcuts,
+      adjacent: !!aboutRect && !!shortcutsRect && aboutRect.right <= shortcutsRect.left
+        && shortcutsRect.left - aboutRect.right <= 8,
+      title: about?.title,
+      hasSvg: !!about?.querySelector('svg'),
+    };
+  });
+  H.check('About trigger is the info-icon sibling immediately left of shortcuts',
+    aboutControls.exists && aboutControls.immediateSibling && aboutControls.adjacent
+      && aboutControls.title === 'About CrysViz' && aboutControls.hasSvg,
+  JSON.stringify(aboutControls));
+
+  await H.clickById(page, 'aboutHelpTrigger');
+  await page.waitForTimeout(100);
+  H.check('About trigger opens the shared About dialog', await page.evaluate(() => {
+    const overlay = document.getElementById('aboutOverlay');
+    return overlay && !overlay.hasAttribute('hidden') && overlay.classList.contains('visible');
+  }));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(220);
+  H.check('Escape closes the About dialog', await page.evaluate(() =>
+    document.getElementById('aboutOverlay')?.hasAttribute('hidden')));
+
+  await H.clickById(page, 'aboutTrigger');
+  await page.waitForTimeout(100);
+  H.check('logo still opens the same About dialog', await page.evaluate(() =>
+    !document.getElementById('aboutOverlay')?.hasAttribute('hidden')));
+  await H.clickById(page, 'aboutClose');
+  await page.waitForTimeout(220);
+
   // --- dock order: Visual after Features, Settings last -----------------------
   const dockOrder = await page.evaluate(() => Array.from(
     document.querySelectorAll('#dock > .cv-panel')).map((el) => el.dataset.panelId));
@@ -227,6 +270,18 @@ async function expandPanel(page, id) {
   });
   H.check('Bond Length Histogram opens as the side dock\'s front tab',
     !!hist && hist.front && hist.splitActive && hist.tab && hist.hasCard, JSON.stringify(hist));
+  H.check('canvas has square corners with the side dock open', await page.evaluate(() =>
+    getComputedStyle(document.getElementById('view')).borderRadius === '0px'));
+  await page.evaluate(async () => {
+    const { setSideDockCollapsed } = await import('./ui/panels/SideDock.js');
+    setSideDockCollapsed(true);
+  });
+  H.check('canvas has square corners with the side dock collapsed', await page.evaluate(() =>
+    getComputedStyle(document.getElementById('view')).borderRadius === '0px'));
+  await page.evaluate(async () => {
+    const { setSideDockCollapsed } = await import('./ui/panels/SideDock.js');
+    setSideDockCollapsed(false);
+  });
   await page.screenshot({ path: path.join(ARTIFACTS, 'uipanels-histogram.png') });
   await page.evaluate(() => {
     const tab = [...document.querySelectorAll('#splitPaneHeaderTabs .split-pane-tab')]
