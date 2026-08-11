@@ -204,6 +204,10 @@
   border-bottom: 2px solid currentColor;
   border-radius: 0 0 50% 0;
 }
+.background-dot.background-dot-locked .background-dot-resize-handle {
+  display: none;
+  pointer-events: none;
+}
 
 .background-dot:hover .background-dot-resize-handle,
 .background-dot.background-dot-dragging .background-dot-resize-handle,

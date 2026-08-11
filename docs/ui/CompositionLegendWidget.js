@@ -37,7 +37,7 @@ import { currentContrastColor } from './ColorBarWidget.js';
 import { createStyledMaterial } from '../render/MaterialStyles.js';
 import { getAtomVisSettings } from '../defaults/color_texture_defaults.js';
 import { wedgeDataForAtom } from '../render/WedgeAtoms.js';
-import { fileBrowser } from '../state/store.js';
+import { fileBrowser, general } from '../state/store.js';
 
 const FLOATING_ID = 'compositionLegendFloating';
 const SWATCH_PX = 30;   // on-screen swatch size at scale 1
@@ -366,6 +366,7 @@ function buildControls() {
       onSelect();
     });
     menu.appendChild(button);
+    return button;
   };
 
   item('Transparent background', () => applyTransparent(!getPanelPref('legendTransparent')));
@@ -381,6 +382,16 @@ function buildControls() {
     widget.drag.recaptureAnchor();
   });
   item('Close', () => closeCompositionLegend());
+  const lockItem = item(general.compositionLegendLocked ? 'Unlock' : 'Lock', () => {
+    general.compositionLegendLocked = !general.compositionLegendLocked;
+    syncLock();
+  });
+
+  function syncLock() {
+    lockItem.textContent = general.compositionLegendLocked ? 'Unlock' : 'Lock';
+    lockItem.classList.toggle('cv-colorbar-menu-item-active', general.compositionLegendLocked);
+    widget?.wrapper.classList.toggle('cv-colorbar-locked', general.compositionLegendLocked);
+  }
 
   menuWrap.addEventListener('pointerdown', (event) => event.stopPropagation());
   const onDocumentPointerDown = (event) => {
@@ -401,6 +412,7 @@ function buildControls() {
     menuWrap,
     menu,
     openAt(x, y) {
+      syncLock();
       menu.classList.add('cv-colorbar-menu-open');
       const view = document.getElementById('view')?.getBoundingClientRect();
       const rect = menu.getBoundingClientRect();
@@ -414,6 +426,7 @@ function buildControls() {
       document.removeEventListener('click', onDocumentClick);
       document.removeEventListener('keydown', onEscape);
     },
+    syncLock,
   };
 }
 
@@ -430,10 +443,11 @@ function buildControls() {
  *  cursor. The wrapper's inline left/top already pin its top-left corner, so
  *  growing does the expected thing; the anchor is re-taken on release, from
  *  wherever it ended up. */
-function wireResize(handle, body, drag, redrawRows) {
+function wireResize(handle, body, drag, redrawRows, isLocked) {
   let activeAbort = null;
   handle.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (isLocked()) return;
     e.preventDefault();
     e.stopPropagation(); // never let this reach the wrapper's drag handles
     try { handle.setPointerCapture(e.pointerId); } catch { /* synthetic events cannot capture */ }
@@ -487,7 +501,7 @@ function openCompositionLegend() {
   const wrapper = document.createElement('div');
   wrapper.className = 'comp-legend-widget';
 
-  const { menuWrap, openAt, dispose: disposeControls } = buildControls();
+  const { menuWrap, openAt, dispose: disposeControls, syncLock } = buildControls();
 
   const body = document.createElement('div');
   body.className = 'comp-legend-body';
@@ -516,6 +530,7 @@ function openCompositionLegend() {
   const drag = makeColorBarDraggable(wrapper, FLOATING_ID, {
     gripParent: null,
     extraHandles: [body],
+    isLocked: () => general.compositionLegendLocked,
     onFloatChange: (floating) => {
       if (!floating) { closeCompositionLegend(); return; }
       // beginFloating() pins the measured width inline; the legend keeps
@@ -531,7 +546,7 @@ function openCompositionLegend() {
     if (list.contains(document.activeElement)) return;
     renderRows(list);
   };
-  const resizeController = wireResize(resizeHandle, body, drag, refresh);
+  const resizeController = wireResize(resizeHandle, body, drag, refresh, () => general.compositionLegendLocked);
   const disposeLongPress = wireLongPress(wrapper, ({ clientX, clientY }) => openAt(clientX, clientY), {
     ignoreSelector: '.cv-colorbar-resize-handle',
     onFire: ({ pointerId }) => {
@@ -560,6 +575,8 @@ function openCompositionLegend() {
       disposeGL();
     },
   };
+
+  syncLock();
 
   if (getPanelPref('legendTransparent')) applyTransparent(true);
   tickContrast(wrapper);

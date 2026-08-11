@@ -275,9 +275,11 @@ export const general = {
   forceColorBarOrientation: 'horizontal',
   forceColorBarFloating: false,
   forceColorBarFloatPos: null,
+  forceColorBarLocked: false,
   spinColorBarOrientation: 'horizontal',
   spinColorBarFloating: false,
   spinColorBarFloatPos: null,
+  spinColorBarLocked: false,
   // Same trio for the Atoms ("Force" mode) and Bonds ("Length" mode) color
   // bars in ColorPanel.js, which now share the same ColorBarWidget.js as
   // Forces/Spins. ForceMin/ForceMax and BondMin/BondMax (above) already hold
@@ -285,13 +287,16 @@ export const general = {
   atomColorBarOrientation: 'horizontal',
   atomColorBarFloating: false,
   atomColorBarFloatPos: null,
+  atomColorBarLocked: false,
   bondColorBarOrientation: 'horizontal',
   bondColorBarFloating: false,
   bondColorBarFloatPos: null,
+  bondColorBarLocked: false,
   // Same trio for the Planes panel's colorbar (PlanesPanel.js).
   planeColorBarOrientation: 'horizontal',
   planeColorBarFloating: false,
   planeColorBarFloatPos: null,
+  planeColorBarLocked: false,
   // Side the legend/tick labels render on, independent of orientation: the
   // "far" edge (below the bar in horizontal, right of it in vertical — the
   // original/default) or the "near" edge (above/left). Shared by all four
@@ -325,6 +330,7 @@ export const general = {
   // as an edge anchor relative to #view — same scheme as the color bars'
   // *ColorBarFloatPos fields — or null to use the CSS default (bottom-left).
   gizmoPos: null,
+  gizmoLocked: false,
   // When true, the a/b/c letters render as billboarded sprites at each
   // arrow's tip inside the gizmo's own 3D scene instead of in the separate
   // #axesLegend box (WindowAndSceneControls.initAxesGizmo).
@@ -332,10 +338,12 @@ export const general = {
   // Side length in px of the #axesGizmo box (ui/GizmoDrag.js's resize
   // handle), or null to use the CSS default (--gizmo-size, theme.css).
   gizmoSize: null,
+  compositionLegendLocked: false,
   // Position and diameter of the draggable background picker dot. These are
   // viewport-local UI preferences, like gizmoPos/gizmoSize, not share state.
   backgroundDotPos: null,
   backgroundDotSize: null,
+  backgroundDotLocked: false,
   // Cylinder radius of the unit-cell outline edges, in world units (Å)
   // (LatticeModule.createLatticeLines).
   latticeLineWidth:0.015,

@@ -234,14 +234,112 @@ const countDrawnGizmoPixels = async (page) => {
   H.check('dragging across the axes gizmo does not rotate the camera',
     cameraBefore.every((v, i) => Math.abs(v - cameraAfter[i]) < 1e-8), JSON.stringify({ cameraBefore, cameraAfter }));
 
+  // ---- locked axes pass-through -------------------------------------------
+  const axesLockPoint = await page.evaluate(() => {
+    const r = document.getElementById('axesGizmo').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await mouseLongPress(page, '#axesGizmo', axesLockPoint.x, axesLockPoint.y);
+  await page.mouse.up();
+  await page.locator('.cv-gizmo-menu-wrap .cv-colorbar-menu-item').filter({ hasText: /^Lock$/ }).click();
+  const axesLockedMenu = await page.evaluate(async () => {
+    const { app, general } = await import('./state/store.js');
+    const item = [...document.querySelectorAll('.cv-gizmo-menu-wrap .cv-colorbar-menu-item')]
+      .find((button) => button.textContent === 'Unlock');
+    return { locked: general.gizmoLocked, active: item?.classList.contains('cv-colorbar-menu-item-active'), pos: document.getElementById('axesGizmo').getBoundingClientRect().toJSON(), camera: app.camera.quaternion.toArray() };
+  });
+  H.check('locking the axes menu item marks it active and persists in general',
+    axesLockedMenu.locked && axesLockedMenu.active, JSON.stringify(axesLockedMenu));
+
+  const axesLockedBefore = await page.evaluate(() => {
+    const r = document.getElementById('axesGizmo').getBoundingClientRect();
+    return { x: r.left, y: r.top, size: r.width, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  });
+  const axesLockedCameraBefore = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
+  await page.mouse.move(axesLockedBefore.cx, axesLockedBefore.cy);
+  await page.mouse.down();
+  await page.mouse.move(axesLockedBefore.cx + 120, axesLockedBefore.cy + 45, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  const axesLockedAfter = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const r = document.getElementById('axesGizmo').getBoundingClientRect();
+    return { x: r.left, y: r.top, size: r.width, camera: app.camera.quaternion.toArray() };
+  });
+  const axesRotationDelta = axesLockedAfter.camera.reduce((sum, value, i) => sum + Math.abs(value - axesLockedCameraBefore[i]), 0);
+  H.check('a locked axes drag rotates the camera but does not move the gizmo',
+    axesRotationDelta > 1e-5
+      && Math.abs(axesLockedAfter.x - axesLockedBefore.x) < 1
+      && Math.abs(axesLockedAfter.y - axesLockedBefore.y) < 1,
+    JSON.stringify({ rotationDelta: axesRotationDelta, before: axesLockedBefore, after: axesLockedAfter }));
+
+  await page.mouse.move(axesLockedBefore.x + axesLockedBefore.size - 8, axesLockedBefore.y + axesLockedBefore.size - 8);
+  await page.mouse.down();
+  await page.mouse.move(axesLockedBefore.x + axesLockedBefore.size + 30, axesLockedBefore.y + axesLockedBefore.size + 30, { steps: 3 });
+  await page.mouse.up();
+  const axesLockedResize = await page.evaluate(() => document.getElementById('axesGizmo').getBoundingClientRect().width);
+  H.check('a locked axes resize corner is inert', Math.abs(axesLockedResize - axesLockedBefore.size) < 1,
+    JSON.stringify({ before: axesLockedBefore.size, after: axesLockedResize }));
+
+  const touchAxesCameraBefore = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
+  await page.evaluate(({ x, y }) => {
+    const gizmo = document.getElementById('axesGizmo');
+    gizmo.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true, cancelable: true, pointerId: 811, pointerType: 'touch', isPrimary: true,
+      button: 0, buttons: 1, clientX: x, clientY: y, screenX: x, screenY: y, pressure: 0.5,
+    }));
+    gizmo.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true, cancelable: true, pointerId: 811, pointerType: 'touch', isPrimary: true,
+      button: 0, buttons: 1, clientX: x + 100, clientY: y + 35, screenX: x + 100, screenY: y + 35, pressure: 0.5,
+    }));
+    gizmo.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true, cancelable: true, pointerId: 811, pointerType: 'touch', isPrimary: true,
+      button: 0, buttons: 0, clientX: x + 100, clientY: y + 35, screenX: x + 100, screenY: y + 35,
+    }));
+  }, axesLockPoint);
+  await page.waitForTimeout(100);
+  const touchAxesCameraAfter = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
+  const touchAxesRotationDelta = touchAxesCameraAfter.reduce((sum, value, i) => sum + Math.abs(value - touchAxesCameraBefore[i]), 0);
+  H.check('a synthetic touch drag over a locked axes gizmo reaches the camera', touchAxesRotationDelta > 1e-5,
+    JSON.stringify({ rotationDelta: touchAxesRotationDelta }));
+
+  await mouseLongPress(page, '#axesGizmo', axesLockPoint.x, axesLockPoint.y);
+  await page.mouse.up();
+  H.check('a locked axes gizmo still opens its Unlock menu item', await page.locator('.cv-gizmo-menu-wrap .cv-colorbar-menu-item').filter({ hasText: /^Unlock$/ }).count() > 0);
+  await page.locator('.cv-gizmo-menu-wrap .cv-colorbar-menu-item').filter({ hasText: /^Unlock$/ }).click();
+  await page.waitForTimeout(1800);
+  const axesUnlockedBefore = await page.evaluate(async () => {
+    const { app, general } = await import('./state/store.js');
+    const r = document.getElementById('axesGizmo').getBoundingClientRect();
+    return { locked: general.gizmoLocked, x: r.left, y: r.top, camera: app.camera.quaternion.toArray() };
+  });
+  await page.mouse.move(axesUnlockedBefore.x + 25, axesUnlockedBefore.y + 25);
+  await page.mouse.down();
+  await page.mouse.move(axesUnlockedBefore.x + 100, axesUnlockedBefore.y + 70, { steps: 5 });
+  await page.mouse.up();
+  const axesUnlockedAfter = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const r = document.getElementById('axesGizmo').getBoundingClientRect();
+    return { x: r.left, y: r.top, camera: app.camera.quaternion.toArray() };
+  });
+  const axesUnlockRotationDelta = axesUnlockedAfter.camera.reduce((sum, value, i) => sum + Math.abs(value - axesUnlockedBefore.camera[i]), 0);
+  H.check('unlocking restores axes dragging without camera rotation',
+    !axesUnlockedBefore.locked
+      && (Math.abs(axesUnlockedAfter.x - axesUnlockedBefore.x) > 20 || Math.abs(axesUnlockedAfter.y - axesUnlockedBefore.y) > 10)
+      && axesUnlockRotationDelta < 1e-8,
+    JSON.stringify({ rotationDelta: axesUnlockRotationDelta, before: axesUnlockedBefore, after: axesUnlockedAfter }));
+
   await page.evaluate(async () => {
     const { createColorBar } = await import('./ui/ColorBarWidget.js');
     const { registerColorBarSource } = await import('./ui/ColorBarRegistry.js');
+    const { general } = await import('./state/store.js');
     const host = document.createElement('div');
     host.id = 'gizmoui-colorbar-host';
     document.body.appendChild(host);
     const bar = createColorBar(host, 'viridis', 0, 1, {
       floatingId: 'gizmoui-colorbar', legend: 'Test', size: 300,
+      isLocked: () => general.forceColorBarLocked,
+      onLockChange: (locked) => { general.forceColorBarLocked = locked; },
     });
     const view = document.getElementById('view').getBoundingClientRect();
     bar.floatAt(view.left + 420, view.top + 220);
@@ -260,7 +358,79 @@ const countDrawnGizmoPixels = async (page) => {
   });
   H.check('long-pressing a floating color bar opens its menu',
     await mouseLongPress(page, barSelector, barPoint.x, barPoint.y));
-  await page.locator('#gizmoui-colorbar .cv-colorbar-menu-item', { hasText: 'Dock' }).click();
+  await page.locator('#gizmoui-colorbar .cv-colorbar-menu-item').filter({ hasText: /^Lock$/ }).click();
+  await page.mouse.up();
+  const barLockedState = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const item = [...document.querySelectorAll('#gizmoui-colorbar .cv-colorbar-menu-item')]
+      .find((button) => button.textContent === 'Unlock');
+    return { locked: general.forceColorBarLocked, active: item?.classList.contains('cv-colorbar-menu-item-active') };
+  });
+  H.check('locking a floating color bar marks its Lock item active and persists',
+    barLockedState.locked && barLockedState.active, JSON.stringify(barLockedState));
+
+  const barLockedBefore = await page.evaluate(() => {
+    const bar = document.querySelector('#gizmoui-colorbar');
+    const r = bar.getBoundingClientRect();
+    return { x: r.left, y: r.top, width: document.querySelector('#gizmoui-colorbar .cv-colorbar-bar-handle').getBoundingClientRect().width, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  });
+  const barLockedCameraBefore = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
+  const minInput = page.locator('#gizmoui-colorbar .cv-colorbar-value-input').first();
+  await minInput.fill('0.25');
+  await minInput.press('Enter');
+  H.check('a locked color bar still accepts Min/Max input', await minInput.inputValue() === '0.25');
+  await page.mouse.move(barLockedBefore.cx, barLockedBefore.cy);
+  await page.mouse.down();
+  await page.mouse.move(barLockedBefore.cx + 120, barLockedBefore.cy + 40, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  const barLockedAfter = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const bar = document.querySelector('#gizmoui-colorbar');
+    const r = bar.getBoundingClientRect();
+    return { x: r.left, y: r.top, width: document.querySelector('#gizmoui-colorbar .cv-colorbar-bar-handle').getBoundingClientRect().width, camera: app.camera.quaternion.toArray() };
+  });
+  const barRotationDelta = barLockedAfter.camera.reduce((sum, value, i) => sum + Math.abs(value - barLockedCameraBefore[i]), 0);
+  H.check('a locked color bar drag rotates through to the camera without moving the bar',
+    barRotationDelta > 1e-5
+      && Math.abs(barLockedAfter.x - barLockedBefore.x) < 1
+      && Math.abs(barLockedAfter.y - barLockedBefore.y) < 1,
+    JSON.stringify({ rotationDelta: barRotationDelta, before: barLockedBefore, after: barLockedAfter }));
+
+  await mouseLongPress(page, barSelector, barLockedBefore.cx, barLockedBefore.cy);
+  await page.mouse.up();
+  H.check('a locked color bar still opens Unlock', await page.locator('#gizmoui-colorbar .cv-colorbar-menu-item').filter({ hasText: /^Unlock$/ }).count() > 0);
+  await page.locator('#gizmoui-colorbar .cv-colorbar-menu-item').filter({ hasText: /^Unlock$/ }).click();
+  await page.waitForTimeout(1800);
+  const barUnlockedBefore = await page.evaluate(async () => {
+    const { app, general } = await import('./state/store.js');
+    const r = document.querySelector('#gizmoui-colorbar').getBoundingClientRect();
+    return { locked: general.forceColorBarLocked, x: r.left, y: r.top, camera: app.camera.quaternion.toArray() };
+  });
+  await page.mouse.move(barUnlockedBefore.x + 35, barUnlockedBefore.y + 35);
+  await page.mouse.down();
+  await page.mouse.move(barUnlockedBefore.x + 120, barUnlockedBefore.y + 85, { steps: 6 });
+  await page.mouse.up();
+  const barUnlockedAfter = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const r = document.querySelector('#gizmoui-colorbar').getBoundingClientRect();
+    return { x: r.left, y: r.top, camera: app.camera.quaternion.toArray() };
+  });
+  const barUnlockRotationDelta = barUnlockedAfter.camera.reduce((sum, value, i) => sum + Math.abs(value - barUnlockedBefore.camera[i]), 0);
+  H.check('unlocking restores color-bar dragging without camera rotation',
+    !barUnlockedBefore.locked
+      && (Math.abs(barUnlockedAfter.x - barUnlockedBefore.x) > 20 || Math.abs(barUnlockedAfter.y - barUnlockedBefore.y) > 20)
+      && barUnlockRotationDelta < 1e-8,
+    JSON.stringify({ rotationDelta: barUnlockRotationDelta, before: barUnlockedBefore, after: barUnlockedAfter }));
+
+  const barDockPoint = await page.evaluate(() => {
+    const r = document.querySelector('#gizmoui-colorbar').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page.mouse.move(barDockPoint.x, barDockPoint.y);
+  await page.mouse.down();
+  await page.waitForTimeout(650);
+  await page.locator('#gizmoui-colorbar .cv-colorbar-menu-item').filter({ hasText: /^Dock$/ }).click();
   await page.mouse.up();
   H.check('the floating color bar Dock item still docks it', await page.evaluate(() =>
     !document.querySelector('#gizmoui-colorbar')?.classList.contains('cv-colorbar-floating')));
@@ -411,6 +581,60 @@ const countDrawnGizmoPixels = async (page) => {
       && backgroundAfterReset.size === null
       && backgroundAfterReset.left === ''
       && backgroundAfterReset.right === '', JSON.stringify(backgroundAfterReset));
+
+  const backgroundLockPoint = await page.evaluate(() => {
+    const r = document.getElementById('backgroundDot').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page.mouse.move(backgroundLockPoint.x, backgroundLockPoint.y);
+  await page.mouse.down();
+  await page.waitForTimeout(650);
+  await page.mouse.up();
+  await page.locator('.background-dot-menu-wrap .cv-colorbar-menu-item').filter({ hasText: /^Lock$/ }).click();
+  const backgroundLockedState = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const item = [...document.querySelectorAll('.background-dot-menu-wrap .cv-colorbar-menu-item')]
+      .find((button) => button.textContent === 'Unlock');
+    return { locked: general.backgroundDotLocked, active: item?.classList.contains('cv-colorbar-menu-item-active') };
+  });
+  H.check('locking the background dot marks its Lock item active and persists',
+    backgroundLockedState.locked && backgroundLockedState.active, JSON.stringify(backgroundLockedState));
+  await page.mouse.click(backgroundLockPoint.x, backgroundLockPoint.y);
+  await page.waitForTimeout(120);
+  H.check('a locked background dot still opens its picker', await page.evaluate(() => !!document.querySelector('.cv-background-picker-panel')));
+  await page.mouse.click(backgroundLockPoint.x, backgroundLockPoint.y);
+  await page.waitForTimeout(120);
+  H.check('a locked background dot still toggles its picker closed', await page.evaluate(() => !document.querySelector('.cv-background-picker-panel')));
+
+  const backgroundLockedBefore = await page.evaluate(() => {
+    const r = document.getElementById('backgroundDot').getBoundingClientRect();
+    return { x: r.left, y: r.top, cx: r.left + r.width / 2, cy: r.top + r.height / 2, pos: document.getElementById('backgroundDot').style.cssText };
+  });
+  const backgroundLockedCameraBefore = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
+  await page.mouse.move(backgroundLockedBefore.cx, backgroundLockedBefore.cy);
+  await page.mouse.down();
+  await page.mouse.move(backgroundLockedBefore.cx + 120, backgroundLockedBefore.cy + 45, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  const backgroundLockedAfter = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const r = document.getElementById('backgroundDot').getBoundingClientRect();
+    return { x: r.left, y: r.top, camera: app.camera.quaternion.toArray() };
+  });
+  const backgroundRotationDelta = backgroundLockedAfter.camera.reduce((sum, value, i) => sum + Math.abs(value - backgroundLockedCameraBefore[i]), 0);
+  H.check('a locked background-dot drag rotates the camera without moving the dot',
+    backgroundRotationDelta > 1e-5
+      && Math.abs(backgroundLockedAfter.x - backgroundLockedBefore.x) < 1
+      && Math.abs(backgroundLockedAfter.y - backgroundLockedBefore.y) < 1,
+    JSON.stringify({ rotationDelta: backgroundRotationDelta, before: backgroundLockedBefore, after: backgroundLockedAfter }));
+
+  await page.mouse.move(backgroundLockedBefore.cx, backgroundLockedBefore.cy);
+  await page.mouse.down();
+  await page.waitForTimeout(650);
+  await page.mouse.up();
+  await page.locator('.background-dot-menu-wrap .cv-colorbar-menu-item').filter({ hasText: /^Unlock$/ }).click();
+  H.check('unlocking the background dot updates its persisted state',
+    await page.evaluate(async () => !(await import('./state/store.js')).general.backgroundDotLocked));
 
   const backgroundTouchPoint = await page.evaluate(() => {
     const r = document.getElementById('backgroundDot').getBoundingClientRect();

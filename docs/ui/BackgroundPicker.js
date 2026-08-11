@@ -11,6 +11,7 @@ import { applySceneFromCSS } from './ThemeManager.js';
 import { createColorPicker } from './ColorPickerModule.js';
 import { updateLattice } from '../render/index.js';
 import { captureAnchor, clampToScene, getViewRect, positionFromAnchor } from './GizmoLayout.js';
+import { wireLockedWidgetForwarding } from './GizmoPointerForward.js';
 import { wireLongPress } from '../utils/index.js';
 
 const DEFAULT_DOT_SIZE = 54;
@@ -158,11 +159,22 @@ export function createBackgroundControl() {
   resetItem.className = 'cv-colorbar-menu-item';
   resetItem.textContent = 'Reset Layout';
   menu.appendChild(resetItem);
+  const lockItem = document.createElement('button');
+  lockItem.type = 'button';
+  lockItem.className = 'cv-colorbar-menu-item';
+  menu.appendChild(lockItem);
   menuWrap.appendChild(menu);
   document.body.appendChild(menuWrap);
 
   const closeMenu = () => menu.classList.remove('cv-colorbar-menu-open');
+  const updateLockState = () => {
+    lockItem.textContent = general.backgroundDotLocked ? 'Unlock' : 'Lock';
+    lockItem.classList.toggle('cv-colorbar-menu-item-active', general.backgroundDotLocked);
+    dot.classList.toggle('background-dot-locked', general.backgroundDotLocked);
+  };
+  updateLockState();
   const openMenuAt = (x, y) => {
+    updateLockState();
     menu.classList.add('cv-colorbar-menu-open');
     const view = getViewRect();
     const rect = menu.getBoundingClientRect();
@@ -215,6 +227,12 @@ export function createBackgroundControl() {
     resetDotLayout();
     closeMenu();
   });
+  lockItem.addEventListener('click', (event) => {
+    event.stopPropagation();
+    general.backgroundDotLocked = !general.backgroundDotLocked;
+    updateLockState();
+    closeMenu();
+  });
 
   if (general.backgroundDotSize != null) applyDotSize(general.backgroundDotSize);
   if (general.backgroundDotPos) applyDotAnchor();
@@ -225,6 +243,7 @@ export function createBackgroundControl() {
     dot.addEventListener('pointerdown', (event) => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
       if (event.target !== dot) return;
+      if (general.backgroundDotLocked) return;
       suppressNextClick = false;
       event.stopPropagation();
       const startX = event.clientX;
@@ -282,10 +301,15 @@ export function createBackgroundControl() {
     });
   };
   bindDrag();
+  wireLockedWidgetForwarding(dot, () => general.backgroundDotLocked, {
+    ignoreSelector: '.background-dot-resize-handle',
+    onPromote: () => { suppressNextClick = true; },
+  });
 
   let abortResize = null;
   resizeHandle.addEventListener('pointerdown', (event) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (general.backgroundDotLocked) return;
     event.preventDefault();
     event.stopPropagation();
     suppressNextClick = true;

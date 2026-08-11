@@ -2093,6 +2093,10 @@ z-index:var(--z-overlay-widget); pointer-events:none;
   border-radius: 0 0 3px 0;
   opacity: 0.85;
 }
+#axesGizmo.cv-gizmo-locked .cv-gizmo-resize-handle {
+  display: none;
+  pointer-events: none;
+}
 
 
 

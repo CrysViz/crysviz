@@ -580,6 +580,8 @@ function refreshColorBarVisibility() {
       orientation: general.spinColorBarOrientation,
       flipSide: general.spinColorBarFlipSide,
       size: general.colorBarSize,
+      isLocked: () => general.spinColorBarLocked,
+      onLockChange: (locked) => { general.spinColorBarLocked = locked; },
       onLimitsCommit: (min, max) => {
         general.spinMin = min;
         general.spinMax = max;

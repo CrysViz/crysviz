@@ -14,6 +14,7 @@ import { currentContrastColor } from './ColorBarWidget.js';
 import { captureAnchor, clampToScene, getViewRect, positionFromAnchor } from './GizmoLayout.js';
 import { wireLongPress } from '../utils/index.js';
 import { requestRender, renderFrameNow } from '../render/index.js';
+import { wireLockedWidgetForwarding } from './GizmoPointerForward.js';
 
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
 const MIN_GIZMO_SIZE = 50;
@@ -52,8 +53,12 @@ export function initGizmoDrag() {
   menuReset.type = 'button';
   menuReset.className = 'cv-colorbar-menu-item';
   menuReset.textContent = 'Reset';
+  const menuLock = document.createElement('button');
+  menuLock.type = 'button';
+  menuLock.className = 'cv-colorbar-menu-item';
   menu.appendChild(menuLabels);
   menu.appendChild(menuReset);
+  menu.appendChild(menuLock);
   menuWrap.appendChild(menu);
   document.body.appendChild(menuWrap);
 
@@ -146,6 +151,9 @@ export function initGizmoDrag() {
 
   function updateMenuState() {
     menuLabels.classList.toggle('cv-colorbar-menu-item-active', general.gizmoLabelsOnArrows);
+    menuLock.textContent = general.gizmoLocked ? 'Unlock' : 'Lock';
+    menuLock.classList.toggle('cv-colorbar-menu-item-active', general.gizmoLocked);
+    gizmoDiv.classList.toggle('cv-gizmo-locked', general.gizmoLocked);
   }
   updateMenuState();
 
@@ -185,6 +193,12 @@ export function initGizmoDrag() {
     resetLayout();
     closeMenu();
   });
+  menuLock.addEventListener('click', (e) => {
+    e.stopPropagation();
+    general.gizmoLocked = !general.gizmoLocked;
+    updateMenuState();
+    closeMenu();
+  });
 
   if (general.gizmoSize) {
     gizmoDiv.style.width = `${general.gizmoSize}px`;
@@ -204,6 +218,7 @@ export function initGizmoDrag() {
   function bindDragHandle(handle) {
     handle.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (general.gizmoLocked) return;
       e.preventDefault();
       e.stopPropagation();
       const startX = e.clientX;
@@ -263,6 +278,9 @@ export function initGizmoDrag() {
     });
   }
   bindDragHandle(gizmoDiv);
+  wireLockedWidgetForwarding(gizmoDiv, () => general.gizmoLocked, {
+    ignoreSelector: '.cv-gizmo-resize-handle',
+  });
   wireLongPress(gizmoDiv, ({ clientX, clientY }) => openMenuAt(clientX, clientY), {
     ignoreSelector: '.cv-gizmo-resize-handle',
     onFire: ({ pointerId }) => abortActiveGesture?.(pointerId),
@@ -270,6 +288,7 @@ export function initGizmoDrag() {
 
   resizeHandle.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (general.gizmoLocked) return;
     e.preventDefault();
     e.stopPropagation();
     try { resizeHandle.setPointerCapture(e.pointerId); } catch { /* synthetic events cannot capture */ }

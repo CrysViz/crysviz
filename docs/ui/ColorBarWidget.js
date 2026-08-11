@@ -193,6 +193,7 @@ export function currentContrastColor() {
  *   fallbackMin?: number, fallbackMax?: number, legend?: string, scale?: string,
  *   onScaleChange?: (scale: string) => void, onAutoRange?: () => void,
  *   onLegendChange?: (legend: string) => void, isScaleLocked?: () => boolean,
+ *   isLocked?: () => boolean, onLockChange?: (locked: boolean) => void,
  *   orientation?: string, flipSide?: boolean, size?: number }} [opts]
  *   legend: axis title shown alongside the bar (e.g. "Force (eV/Å)"), rotated
  *   to read bottom-to-top when the bar is vertical. Click-to-edit: the raw
@@ -232,7 +233,11 @@ export function currentContrastColor() {
  *   length.
  */
 export function createColorBar(container, colormap, minValue, maxValue, opts = {}) {
-  const { floatingId, onLimitsCommit, onScaleChange, onAutoRange, onLegendChange, isScaleLocked = () => false, fallbackMin = 0, fallbackMax = 2, legend = '' } = opts;
+  const {
+    floatingId, onLimitsCommit, onScaleChange, onAutoRange, onLegendChange,
+    isScaleLocked = () => false, isLocked = () => false, onLockChange,
+    fallbackMin = 0, fallbackMax = 2, legend = '',
+  } = opts;
   container.innerHTML = '';
 
   let orientation = opts.orientation === 'vertical' ? 'vertical' : 'horizontal';
@@ -281,6 +286,9 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   const menuDock = createElement("button", {
     type: "button", class: "cv-colorbar-menu-item"
   }, {}, "Dock");
+  const menuLock = createElement("button", {
+    type: "button", class: "cv-colorbar-menu-item"
+  });
   menu.appendChild(menuHorizontal);
   menu.appendChild(menuVertical);
   menu.appendChild(menuFlip);
@@ -288,6 +296,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   menu.appendChild(menuAutoRange);
   menu.appendChild(menuResetSize);
   menu.appendChild(menuDock);
+  menu.appendChild(menuLock);
   menuWrap.appendChild(menu);
   wrapper.appendChild(menuWrap);
 
@@ -960,6 +969,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // opts doc comment).
   function updateMenuState() {
     const floating = dragCtl?.isFloating() ?? false;
+    wrapper.classList.toggle('cv-colorbar-locked', floating && isLocked());
     menuHorizontal.classList.toggle('cv-colorbar-menu-item-active', orientation === 'horizontal');
     menuVertical.classList.toggle('cv-colorbar-menu-item-active', orientation === 'vertical');
     menuVertical.disabled = !floating;
@@ -973,6 +983,9 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     menuAutoRange.style.display = onAutoRange ? '' : 'none';
     menuResetSize.style.display = floating ? '' : 'none';
     menuDock.style.display = floating ? '' : 'none';
+    menuLock.style.display = floating ? '' : 'none';
+    menuLock.textContent = isLocked() ? 'Unlock' : 'Lock';
+    menuLock.classList.toggle('cv-colorbar-menu-item-active', isLocked());
   }
 
   function openMenuAt(x, y) {
@@ -1052,6 +1065,12 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     dragCtl?.dockBack();
     closeMenu();
   });
+  menuLock.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onLockChange?.(!isLocked());
+    updateMenuState();
+    closeMenu();
+  });
 
   // Defined before the first applyLayout() call below (which reads
   // dragCtl?.isFloating() to size the bar) — makeColorBarDraggable only
@@ -1061,6 +1080,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     ? makeColorBarDraggable(wrapper, floatingId, {
       gripParent: controlsBar,
       extraHandles: [barOuter, wrapper],
+      isLocked,
       onFloatChange: (floating) => {
         closeMenu();
         if (floating) controlsBar.remove();
@@ -1072,6 +1092,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
           orientation = 'horizontal';
         }
         applyLayout();
+        updateMenuState();
         if (floating) startContrastSync(); else stopContrastSync();
         render(currentColormap);
       },
@@ -1095,6 +1116,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   resizeHandle.addEventListener('pointerdown', (e) => {
     if (!dragCtl?.isFloating()) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (isLocked()) return;
     e.preventDefault();
     e.stopPropagation();
     try { resizeHandle.setPointerCapture(e.pointerId); } catch { /* synthetic events cannot capture */ }
@@ -1159,6 +1181,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
 
   applyLayout();
   render(colormap);
+  updateMenuState();
 
   return {
     update(cmap, scale) { render(cmap, scale); },

@@ -350,6 +350,8 @@ export function addForcePanel(target = "cvPanelBody-forces") {
         orientation: general.forceColorBarOrientation,
         flipSide: general.forceColorBarFlipSide,
         size: general.colorBarSize,
+        isLocked: () => general.forceColorBarLocked,
+        onLockChange: (locked) => { general.forceColorBarLocked = locked; },
         onLimitsCommit: (min, max) => {
           general.forceMin = min;
           general.forceMax = max;

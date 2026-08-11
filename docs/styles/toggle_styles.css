@@ -533,6 +533,11 @@ margin: var(--sp-5) 0px 5px 0px;
   border-radius: var(--radius-3);
   opacity: 0.9;
 }
+.cv-colorbar-floating.cv-colorbar-locked .cv-colorbar-resize-handle,
+.cv-colorbar-floating.cv-colorbar-locked .cv-colorbar-resize-frame {
+  display: none;
+  pointer-events: none;
+}
 
 /* Which corner (JS toggles exactly one of these, based on orientation +
    flipSide — the growing end, on the labeled side) — same -11px inset as

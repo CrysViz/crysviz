@@ -1113,6 +1113,8 @@ export function addColorPanel(target = "colorContainer") {
             orientation: general.atomColorBarOrientation,
             flipSide: general.atomColorBarFlipSide,
             size: general.colorBarSize,
+            isLocked: () => general.atomColorBarLocked,
+            onLockChange: (locked) => { general.atomColorBarLocked = locked; },
             onLimitsCommit: (min, max) => {
               general.ForceMin = min;
               general.ForceMax = max;
@@ -1329,6 +1331,8 @@ export function addColorPanel(target = "colorContainer") {
             orientation: general.bondColorBarOrientation,
             flipSide: general.bondColorBarFlipSide,
             size: general.colorBarSize,
+            isLocked: () => general.bondColorBarLocked,
+            onLockChange: (locked) => { general.bondColorBarLocked = locked; },
             onLimitsCommit: (min, max) => {
               general.BondMin = min;
               general.BondMax = max;

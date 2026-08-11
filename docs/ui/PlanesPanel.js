@@ -591,6 +591,8 @@ function refreshPlaneColorBar() {
     orientation: general.planeColorBarOrientation,
     flipSide: general.planeColorBarFlipSide,
     size: general.colorBarSize,
+    isLocked: () => general.planeColorBarLocked,
+    onLockChange: (locked) => { general.planeColorBarLocked = locked; },
     onLimitsCommit: (min, max) => {
       const s = getSelectedStructure();
       if (!s || selectedPlaneIndex === null || selectedPlaneIndex < 0) return;

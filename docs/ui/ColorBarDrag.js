@@ -6,6 +6,7 @@
 // before a press becomes a drag, viewport/scene clamping).
 
 import { listActiveColorBars } from './ColorBarRegistry.js';
+import { wireLockedWidgetForwarding } from './GizmoPointerForward.js';
 
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
 const OVERLAY_Z = 950; // above the canvas, below panel windows (which start at 1200)
@@ -49,7 +50,7 @@ function clampToScene(left, top, width, height) {
  *   floating over the scene, so the owning panel can find-and-remove it on
  *   teardown even though it now lives outside the panel's DOM subtree.
  * @param {{ gripParent?: HTMLElement | null, onFloatChange?: (floating: boolean) => void,
- *   extraHandles?: HTMLElement[] }} [opts]
+ *   extraHandles?: HTMLElement[], isLocked?: () => boolean }} [opts]
  *   gripParent: where to mount the drag grip (defaults to `wrapper` itself).
  *   onFloatChange: called right after floating starts/ends. extraHandles:
  *   additional elements (e.g. the gradient bar itself) that also start a
@@ -58,7 +59,7 @@ function clampToScene(left, top, width, height) {
  *   its panel without a drag gesture.
  */
 export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
-  const { gripParent = wrapper, onFloatChange, extraHandles = [] } = opts;
+  const { gripParent = wrapper, onFloatChange, extraHandles = [], isLocked = () => false } = opts;
 
   // While dragging, pull the box toward center-alignment with any other
   // floating bar it passes near — "within 10px" reads as "snaps into
@@ -240,6 +241,7 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
   // one the pointermove/up listeners live on for the rest of the gesture.
   function onHandlePointerDown(handle, e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (floating && isLocked()) return;
     // The wrapper is the floating bar's body drag surface. Its descendants
     // that are controls keep their own behavior, while the bar/legend
     // surfaces still reach their dedicated handle listeners below.
@@ -355,6 +357,10 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
     handle.addEventListener('pointerdown', (e) => onHandlePointerDown(handle, e));
   });
 
+  const disposeLockedForwarding = wireLockedWidgetForwarding(wrapper, () => floating && isLocked(), {
+    ignoreSelector: '.cv-colorbar-resize-handle',
+  });
+
   // Raises on ANY interaction while floating (typing in Min/Max, opening the
   // menu, resizing — not just a drag gesture), mirroring PanelWindow.js's own
   // "pointerdown anywhere in the panel raises it". Capture phase, not
@@ -404,6 +410,7 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
     dockBack,
     destroy: () => {
       activeAbort?.();
+      disposeLockedForwarding();
       window.removeEventListener('resize', applyAnchor);
       resizeObserver?.disconnect();
     },

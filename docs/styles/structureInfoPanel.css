@@ -882,6 +882,11 @@
 .comp-legend-widget:hover .cv-colorbar-resize-handle {
   opacity: 1;
 }
+.comp-legend-widget.cv-colorbar-locked .cv-colorbar-resize-frame,
+.comp-legend-widget.cv-colorbar-locked .cv-colorbar-resize-handle {
+  display: none;
+  pointer-events: none;
+}
 
 .comp-legend-list {
   display: flex;
