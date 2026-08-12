@@ -1,8 +1,8 @@
 // Settings > "Always show small drag handles": ON reverts the collapsed-bar
-// drag handle to the ORIGINAL mini-titlebar strip (thin 2px, full panel
-// width, always visible); OFF (default) keeps the current short, thicker,
-// hover-revealed handle. The pref is a body class (cv-small-drag-handles)
-// the CSS keys off — panelWindow.css + responsive.css.
+// drag handle to the early short-centered strip (thin 2px, 64px, always
+// visible); OFF (default) keeps the current thicker, hover-revealed handle.
+// The pref is a body class (cv-small-drag-handles) the CSS keys off —
+// panelWindow.css + responsive.css.
 'use strict';
 const H = require('../harness');
 
@@ -52,12 +52,12 @@ async function handleState(page, id) {
   await page.evaluate(() => document.getElementById('smallDragHandlesToggle').click());
   await page.waitForTimeout(400);
 
-  // On: the original strip — 2px tall, the panel's full width, opacity 1
+  // On: the early strip — 2px tall, 64px wide (still centered), opacity 1
   // even without hover.
   s = await handleState(page, PANEL);
-  H.check('toggled on: the original thin full-width strip, always visible',
+  H.check('toggled on: the early thin 64px strip, always visible',
     s.bodyClass && Math.abs(s.height - 2) < 1
-      && Math.abs(s.width - s.panelWidth) < 2 && s.opacity === 1,
+      && Math.abs(s.width - 64) < 1 && s.opacity === 1,
     JSON.stringify(s));
 
   // The pref persists in panelPrefs (survives Reset UI by design).

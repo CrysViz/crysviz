@@ -726,9 +726,9 @@ export function registerDefaultPanels() {
         !!getPanelPref('dragOutOfDock'), (on) => setPanelPref('dragOutOfDock', on)));
       dragGroup.appendChild(makeToggleRow('dragByHandleToggle', 'Only drag windows by handle',
         !!getPanelPref('dragByHandleOnly'), (on) => setPanelPref('dragByHandleOnly', on)));
-      // Collapsed-bar drag handles: ON restores the original mini-titlebar
-      // strip (thin, full-width, always visible — styles/panelWindow.css);
-      // OFF keeps the current short hover-revealed handle.
+      // Collapsed-bar drag handles: ON restores the early short-centered
+      // strip (thin 2px, 64px, always visible — styles/panelWindow.css);
+      // OFF keeps the current thicker hover-revealed handle.
       dragGroup.appendChild(makeToggleRow('smallDragHandlesToggle', 'Always show small drag handles',
         !!getPanelPref('smallDragHandles'), (on) => {
           setPanelPref('smallDragHandles', on);
