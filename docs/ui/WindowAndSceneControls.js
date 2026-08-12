@@ -220,6 +220,48 @@ export function initCamera(useOrthographicCamera){
 
 }
 
+// Shown when WebGL context creation fails at startup — most commonly because
+// the browser disabled WebGL for the WHOLE session after a GPU-process crash
+// (e.g. a very large PNG export in another tab), in which case reloading the
+// tab does nothing and only a full browser restart helps. Deliberately
+// self-contained (inline styles, no app CSS/theme dependencies): it must
+// render even though app initialization is about to abort.
+function showWebglStartupFailureDialog() {
+  if (document.getElementById('webglFailureDialog')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'webglFailureDialog';
+  overlay.setAttribute('role', 'alertdialog');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;'
+    + 'align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+  const box = document.createElement('div');
+  box.style.cssText = 'max-width:520px;margin:16px;padding:20px 24px;border-radius:10px;'
+    + 'background:#222;color:#eee;font:14px/1.5 sans-serif;box-shadow:0 8px 40px rgba(0,0,0,0.6);';
+  const title = document.createElement('h3');
+  title.textContent = '3D graphics could not be started';
+  title.style.cssText = 'margin:0 0 10px 0;font-size:17px;color:#fff;';
+  const body = document.createElement('p');
+  body.style.margin = '0 0 10px 0';
+  body.textContent = 'The browser refused to create a WebGL context, so CrysViz cannot render. '
+    + 'This usually means the browser disabled WebGL for the whole session after a graphics '
+    + 'crash (for example, a very large PNG export), or that hardware acceleration is off.';
+  const steps = document.createElement('p');
+  steps.style.margin = '0 0 14px 0';
+  steps.textContent = 'Restart the browser completely — reloading this tab is not enough — '
+    + 'and close other GPU-heavy tabs first. If the problem persists, check that hardware '
+    + 'acceleration / WebGL is enabled in the browser settings.';
+  const close = document.createElement('button');
+  close.textContent = 'Close';
+  close.style.cssText = 'padding:6px 16px;border:none;border-radius:6px;cursor:pointer;'
+    + 'background:#4a4a4a;color:#fff;font-size:14px;';
+  close.addEventListener('click', () => overlay.remove());
+  box.appendChild(title);
+  box.appendChild(body);
+  box.appendChild(steps);
+  box.appendChild(close);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
 export function initRenderer(){
   const w = view.clientWidth || window.innerWidth;
   const h = view.clientHeight || window.innerHeight;
@@ -235,6 +277,7 @@ export function initRenderer(){
       { antialias: false, alpha: true, powerPreference: 'default' }
     );
   } catch (_) {
+    showWebglStartupFailureDialog();
     throw new Error('WebGL could not be initialized. Close GPU-heavy tabs or restart the browser, then reload.');
   }
   app.renderer.setSize(w, h);

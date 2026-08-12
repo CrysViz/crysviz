@@ -44,6 +44,16 @@ import { listActiveColorBars } from '../ui/ColorBarRegistry.js';
 import { repaintSwatchesForExport } from '../ui/CompositionLegendWidget.js';
 import { drawLegendRichText, legendPlainText, crysVizFontsLoaded } from '../utils/index.js';
 import { configureGizmoCameraProjection } from '../ui/GizmoLayout.js';
+import { getPanelPref } from '../ui/panels/PanelManager.js';
+
+/** The GPU memory the export may allocate for its render surface, from the
+ *  Settings > Graphics "Allocated GPU memory" slider. WebGL cannot query the
+ *  real GPU memory, so this is a user-asserted budget; the default is safe
+ *  for integrated GPUs. Clamped so a corrupted pref can't disable the guard. */
+function renderMemoryBudgetBytes() {
+  const gib = Number(getPanelPref('exportGpuMemoryGiB'));
+  return Math.min(8, Math.max(0.25, Number.isFinite(gib) && gib > 0 ? gib : 1)) * (1 << 30);
+}
 
 /** @returns {HTMLElement} the #view container */
 function getViewEl() {
@@ -124,7 +134,7 @@ function throwIfContextLost(gl) {
   if (gl.isContextLost()) {
     throw new Error('The WebGL context was lost during the export — usually the requested '
       + 'resolution exhausted GPU memory. Reduce the export resolution and try again '
-      + '(if the 3D view stays blank, reload the page).');
+      + '(if the 3D view stays blank, save your work and then reload the page).');
   }
 }
 
@@ -751,9 +761,8 @@ async function captureSceneToPngImpl(opts) {
     // query actual GPU memory, so cap the source AREA to a conservative
     // budget rather than even trying; the output keeps its requested size
     // (the capped source upscales into it), same as the dimension cap above.
-    const RENDER_MEMORY_BUDGET_BYTES = 1024 * 1024 * 1024; // 1 GiB, heuristic
     const bytesPerPixel = app.pipeline?.isConverged ? 64 : 16;
-    const maxPixels = RENDER_MEMORY_BUDGET_BYTES / bytesPerPixel;
+    const maxPixels = renderMemoryBudgetBytes() / bytesPerPixel;
     if (srcW * srcH > maxPixels) {
       const k = Math.sqrt(maxPixels / (srcW * srcH));
       srcW = Math.max(1, Math.floor(srcW * k));

@@ -744,6 +744,39 @@ export function registerDefaultPanels() {
         'Disable raytracing warning', !!getPanelPref('hideRaytraceWarning'),
         (on) => setPanelPref('hideRaytraceWarning', on)));
       body.appendChild(warnGroup);
+      // Graphics: GPU memory the PNG export may allocate for its render
+      // surface (render/ImageExportModule.js reads it live). WebGL cannot
+      // query real GPU memory, so this is the user's promise about their
+      // hardware: raising it lets big-GPU machines render larger/sharper
+      // exports in one pass; the default is safe for integrated GPUs.
+      body.appendChild(makeSectionHeadline('Graphics'));
+      const gmRow = document.createElement('label');
+      gmRow.className = 'toggle_row toggle_container';
+      gmRow.style.gap = '8px';
+      const gmText = document.createElement('span');
+      gmText.className = 'toggle_text';
+      gmText.textContent = 'Allocated GPU memory';
+      const gmSlider = document.createElement('input');
+      gmSlider.type = 'range';
+      gmSlider.id = 'exportGpuMemorySlider';
+      gmSlider.min = '0.25';
+      gmSlider.max = '8';
+      gmSlider.step = '0.25';
+      gmSlider.value = String(getPanelPref('exportGpuMemoryGiB') || 1);
+      gmSlider.style.flex = '1';
+      const gmVal = document.createElement('span');
+      gmVal.className = 'toggle_text';
+      gmVal.style.minWidth = '58px';
+      gmVal.style.textAlign = 'right';
+      gmVal.textContent = `${gmSlider.value} GiB`;
+      gmSlider.addEventListener('input', () => {
+        setPanelPref('exportGpuMemoryGiB', parseFloat(gmSlider.value));
+        gmVal.textContent = `${gmSlider.value} GiB`;
+      });
+      gmRow.appendChild(gmText);
+      gmRow.appendChild(gmSlider);
+      gmRow.appendChild(gmVal);
+      body.appendChild(gmRow);
       // Overall font scale: multiplies the window fonts (title bars, headlines,
       // labels) live via --cv-font-scale; persisted across sessions.
       body.appendChild(makeSectionHeadline('Text'));

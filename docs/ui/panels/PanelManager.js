@@ -60,6 +60,7 @@ const panelPrefDefaults = {
   dragOutOfDock: true,
   dragByHandleOnly: false,
   smallDragHandles: false, // collapsed-bar handles: original thin always-visible strip
+  exportGpuMemoryGiB: 1, // PNG export render-surface GPU memory budget (GiB)
   hideRaytraceWarning: false, // "Don't show again" on the tracer performance modal
   legendTransparent: false, // Composition Display: no window chrome, swatches+text only
   axisStepButtons: 'longpress', // 'on'|'off'|'longpress' for View step-rotate arrows
