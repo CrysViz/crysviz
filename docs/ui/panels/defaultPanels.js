@@ -291,15 +291,12 @@ export function registerDefaultPanels() {
     infoMd: './data/structureInfo.md',
     onCollapse() { collapseAllAtomExpansions(); },
     buildContent(body) {
-      // Fixed width regardless of which tab (Atoms/Bonds/Poly/Wyckoff) is
-      // active — without this the floating panel shrink-wraps to whichever
-      // tab's content is currently widest, so it visibly resizes every time
-      // the user switches tabs. Still shrinks on narrow viewports.
-      // 300px (not the old 340px): the Bonds tab's double-range slider row no
-      // longer carries its own redundant min/max labels (the combined "min -
-      // max Å" label above the slider already shows them), so the row needs
-      // much less width than before.
-      body.style.width = 'min(300px, calc(100vw - 16px))';
+      // Fixed width while floating, so the panel doesn't shrink-wrap to
+      // whichever tab (Atoms/Bonds/Poly/Wyckoff) is currently widest and
+      // visibly resize on tab switches. The width itself, and the docked
+      // override that lets the body follow the dock's width instead, live in
+      // styles/structureInfoPanel.css.
+      body.classList.add('si-panel-body');
 
       // Adopt the formula header box (+/− expandable) and the composition
       // details it controls; wire the header (the old inline-script behavior).

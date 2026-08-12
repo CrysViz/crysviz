@@ -13,6 +13,22 @@
    `display: none` inline on creation — only the rest of each panel's chrome
    (background/border/padding/spacing) moved here. */
 
+/* ---- Panel body width (defaultPanels.js's 'info'/Structure window) ----
+   Fixed while FLOATING so the panel doesn't shrink-wrap to whichever tab's
+   content is widest and visibly resize on tab switches; still shrinks on
+   narrow viewports. 300px (not the old 340px): the Bonds tab's double-range
+   slider row no longer carries its own redundant min/max labels (the
+   combined "min - max Å" label above the slider already shows them), so the
+   row needs much less width than before. Docked, the dock width wins —
+   descendant selectors on the dock-state classes, same pattern as
+   addStructure.css's docked overrides. */
+.si-panel-body { width: min(300px, calc(100vw - 16px)); }
+
+.cv-docked .si-panel-body,
+.cv-side-docked .si-panel-body {
+  width: auto;
+}
+
 /* ---- Shared "Alpha / Size / Edge alpha" row (label + range + number-box),
    used identically by the atom/bond/polyhedron/element colour editors. ---- */
 .si-row {
