@@ -758,7 +758,10 @@ async function captureSceneToPngImpl(opts) {
     // query actual GPU memory, so cap the source AREA to a conservative
     // budget rather than even trying; the output keeps its requested size
     // (the capped source upscales into it), same as the dimension cap above.
-    const bytesPerPixel = app.pipeline?.isConverged ? 64 : 16;
+    // Tracers in export (paced) mode hold TWO full-size RGBA32F targets (the
+    // display snapshot is shrunk for the export — RayTracingPipeline's
+    // beginPacedRender) plus the drawing buffer; raster just the buffer.
+    const bytesPerPixel = app.pipeline?.isConverged ? 48 : 16;
     const maxPixels = renderMemoryBudgetBytes() / bytesPerPixel;
     if (srcW * srcH > maxPixels) {
       const k = Math.sqrt(maxPixels / (srcW * srcH));

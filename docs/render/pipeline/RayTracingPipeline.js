@@ -550,12 +550,32 @@ export class RayTracingPipeline extends ForwardPipeline {
    *  the PNG export can advance the accumulation one RAF at a time without a
    *  synchronous multi-sample freeze. The resize path may still SET _boostSamples;
    *  it just isn't consumed in bursts. PathTracingPipeline inherits this. */
-  beginPacedRender() { this._pacedExternally = true; }
+  beginPacedRender() {
+    this._pacedExternally = true;
+    // The export presents the newest accumulation sum directly (mid-round
+    // tile seams are acceptable progress feedback; the final captured frame
+    // lands exactly at a round boundary), so the full-size display snapshot
+    // is dead weight — at export resolutions it is a third full-size RGBA32F
+    // target, a third of the tracer's GPU memory. Shrink it for the export;
+    // endPacedRender restores it.
+    this._displayTarget.setSize(4, 4);
+  }
 
   /** Leave externally-paced mode (paired with beginPacedRender in the export's
    *  finally). Any leftover boost is cleared so a later interactive frame doesn't
    *  burst unexpectedly. */
-  endPacedRender() { this._pacedExternally = false; this._boostSamples = 0; }
+  endPacedRender() {
+    this._pacedExternally = false;
+    this._boostSamples = 0;
+    // Restore the display snapshot shrunk by beginPacedRender. Its content is
+    // stale/black until the next completed round refreshes it, so re-present
+    // paths right after the export must not read it before a snapshot lands
+    // (the export's finally resizes/resets the pipeline, which handles that).
+    if (this._displayTarget.width !== this._accumTarget.width
+        || this._displayTarget.height !== this._accumTarget.height) {
+      this._displayTarget.setSize(this._accumTarget.width, this._accumTarget.height);
+    }
+  }
 
   /** True once the accumulation has reached this tracer's convergence target
    *  (the image no longer changes). The PNG export loops render() until this
@@ -902,7 +922,8 @@ export class RayTracingPipeline extends ForwardPipeline {
         && baseW === this._lastBaseW && baseH === this._lastBaseH;
       this._accumTarget.setSize(w, h);
       this._previousTarget.setSize(w, h);
-      this._displayTarget.setSize(w, h);
+      // Export mode keeps the display snapshot shrunk (see beginPacedRender).
+      if (!this._pacedExternally) this._displayTarget.setSize(w, h);
       u.uResolution.value.set(w, h);
       this._outputQuad.material.uniforms.uOutputResolution.value.copy(bufferSize);
       this._lastScale = effScale;
@@ -1165,7 +1186,8 @@ export class RayTracingPipeline extends ForwardPipeline {
         // it with no extra bookkeeping. Mid-round frames re-present this
         // unchanged snapshot, so the canvas never shows a partial-round seam.
         // (Tiled rounds keep the newest sum in _accumTarget — no swap here.)
-        this._snapshotDisplay(renderer, this._accumTarget);
+        // Export mode presents the sum directly — no snapshot to refresh.
+        if (!this._pacedExternally) this._snapshotDisplay(renderer, this._accumTarget);
       } else {
         completedFraction = this._tileCursor / roundTiles;
       }
@@ -1201,7 +1223,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       // When tiling is enabled, the output pass presents the DISPLAY snapshot;
       // the untiled path (sample 1, boosts, motion frames) must refresh it so
       // it isn't stale/black. The newest sum is now in _previousTarget (swap).
-      if (tilingEnabled) this._snapshotDisplay(renderer, this._previousTarget);
+      if (tilingEnabled && !this._pacedExternally) this._snapshotDisplay(renderer, this._previousTarget);
     }
 
     // --- averaged, tone-mapped output to the canvas -------------------------
@@ -1213,7 +1235,12 @@ export class RayTracingPipeline extends ForwardPipeline {
     // present: read the newest sum (in _previousTarget since the burst swap),
     // divide by 1/max(1, uSampleCounter).
     const out = this._outputQuad.material.uniforms;
-    if (tilingEnabled) {
+    if (tilingEnabled && this._pacedExternally) {
+      // Export: present the evolving sum directly (tiled rounds keep the
+      // newest sum in _accumTarget). Mid-round frames show tile-seam progress,
+      // which is fine — the capture happens at a completed round.
+      out[this._cfg.outputTexUniform].value = this._accumTarget.texture;
+    } else if (tilingEnabled) {
       out[this._cfg.outputTexUniform].value = this._displayTarget.texture;
     } else {
       // untiled present: the burst swap leaves the newest sum in _previousTarget
