@@ -334,6 +334,23 @@ export const general = {
   // Cylinder radius of the unit-cell outline edges, in world units (Å)
   // (LatticeModule.createLatticeLines).
   latticeLineWidth:0.015,
+  // Measurement value-label size multiplier (render/MeasurementModule.js).
+  // 1.0 is the default on-screen size; the Settings slider drives it.
+  measureLabelScale: 1.0,
+  // Measurement atom-marker appearance (render/MeasurementModule.js, wired by
+  // ui/MeasurementSettingsPanel.js): 'shell' = translucent sphere hugging the
+  // atom, 'ring' = three orthogonal rings around it, 'none' = no marker.
+  measureMarkerStyle: 'shell',
+  // One accent per measurement type, driving its line, atom markers, angle
+  // arc and label outline. Defaults keep each type's existing signature
+  // colour (distance blue, angle orange).
+  measureDistanceColor: '#0066ff',
+  measureAngleColor: '#ff6600',
+  // 'dashed' (default) or 'solid' connecting line.
+  measureLineStyle: 'dashed',
+  // 0..1 opacity for the atom highlight (shell/rings) and for the line.
+  measureMarkerOpacity: 0.32,
+  measureLineOpacity: 1.0,
   showComparisonInfo:false,
   showPeriodic:true,
   // Atoms tab: edit all periodic-image copies of an atom together. When false

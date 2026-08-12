@@ -9,7 +9,7 @@ import { app, groups, mode, fileBrowser, measurements, general } from '../state/
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { updateForces, updateSpins } from '../render/index.js';
 import {
-  clearHighlightAtom, highlightAtomIn3D,
+  clearHighlightAtom, applyAtomHighlightIndices,
   clearAllHighlights, clearBondSelection, selectBondFromInstance,
   clearPolyhedronSelection, selectPolyhedronFromMesh,
   clearSelectedAtoms, updateAtomSelectionFrom3DHit,
@@ -180,9 +180,10 @@ export function setupSceneInteraction() {
     // but avoid double-picking the exact same rendered instance.
     if (measurements.selectedAtoms.some(a => a.userData.instanceId === instanceId)) return;
 
-    // Add atom to selection and highlight it
+    // Add atom to selection and highlight it (all selected atoms stay
+    // highlighted at once — highlightAtomIn3D would clear prior highlights).
     measurements.selectedAtoms.push(hit);
-    highlightAtomIn3D(instanceId);
+    applyAtomHighlightIndices(measurements.selectedAtoms.map(a => a.userData.instanceId));
 
     // Handle actions based on mode
     if (mode.measureMode === 'distance' && measurements.selectedAtoms.length === 2) {

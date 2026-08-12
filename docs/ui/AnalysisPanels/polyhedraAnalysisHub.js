@@ -11,12 +11,12 @@
 
 import { fileBrowser } from '../../state/store.js';
 import {
-  computePolyhedraTypeGroups, computePolyhedraConnectivity,
+  computePolyhedraTypeGroups, computePolyhedraConnectivity, computePolyhedraVolumes,
 } from '../../render/PolyhedraAnalysisModule.js';
 
 const listeners = new Set();
 
-/** @param {(data: {typeGroups: any[], connectivity: any[]}) => void} cb */
+/** @param {(data: {typeGroups: any[], connectivity: any[], volumes: any[]}) => void} cb */
 export function subscribePolyhedraAnalysis(cb) {
   listeners.add(cb);
   return () => listeners.delete(cb);
@@ -28,8 +28,9 @@ function recompute() {
     ? {
       typeGroups: computePolyhedraTypeGroups(structure),
       connectivity: computePolyhedraConnectivity(structure),
+      volumes: computePolyhedraVolumes(structure),
     }
-    : { typeGroups: [], connectivity: [] };
+    : { typeGroups: [], connectivity: [], volumes: [] };
   for (const cb of listeners) cb(data);
 }
 

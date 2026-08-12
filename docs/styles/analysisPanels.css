@@ -92,6 +92,50 @@
   background: var(--wash-0); /* was 0.03 — Wave 2.6 --wash-0 */
 }
 
+/* Inspector top toolbar: the Angles toggle + a short double-click hint. */
+.pi-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) 12px;
+  margin-bottom: var(--sp-2);
+}
+
+.pi-toolbar-hint {
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Volume histogram bin-width control (mirrors bondLengthHistogram's row). */
+.pvh-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3-5) 14px;
+  margin-bottom: var(--sp-3);
+  font-size: var(--fs-base);
+  color: var(--ink-4);
+}
+
+.pvh-controls-row label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.pvh-width-slider {
+  width: 90px;
+}
+
+.pvh-width-label {
+  font-family: var(--font-mono);
+  min-width: 44px;
+}
+
 .pi-opacity-row {
   display: flex;
   align-items: center;

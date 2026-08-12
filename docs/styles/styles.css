@@ -2485,36 +2485,61 @@ body > #structureInfoContent {
   backdrop-filter: blur(6px); white-space:nowrap;
 }
 
+/* Hover target for a measurement's remove button. The measurement's value
+ * label is a depth-tested WebGL sprite now (so it clips correctly behind
+ * atoms), which cannot host a DOM child — this invisible box is pinned to the
+ * same anchor point purely to give the "x" somewhere to live and something to
+ * hover over. */
+.measure-remove-hotspot {
+  position: relative;
+  /* Width/height are set per frame from the label sprite's real on-screen box
+   * (render/MeasurementModule.js) so the button pins to the pill's actual
+   * top-right corner at any zoom or label size. */
+  width: 46px;
+  height: 26px;
+  pointer-events: auto;
+  --measure-remove-size: 16px;
+}
+
 /* Per-measurement remove button — hidden until the label is hovered, so it
  * doesn't clutter the view when several measurements are on screen at once. */
 .measure-label-remove {
   position: absolute;
-  top: -8px;
-  right: -8px;
-  width: 16px;
-  height: 16px;
+  /* Sits ON the pill's top-right corner (half outside), and scales with it —
+   * --measure-remove-size is set per frame from the label's on-screen size. */
+  top: calc(var(--measure-remove-size, 16px) / -2);
+  right: calc(var(--measure-remove-size, 16px) / -2);
+  width: var(--measure-remove-size, 16px);
+  height: var(--measure-remove-size, 16px);
+  font-size: calc(var(--measure-remove-size, 16px) * 0.72);
   padding: 0;
   border-radius: 50%;
-  border: 1px solid var(--fg-3);
-  background: var(--chrome-1);
-  color: var(--fg-1);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-tight);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  /* Solid white, not a theme/backdrop-blur tint — this button floats over
+   * the 3D viewport itself, not a panel, and the viewport renders black
+   * regardless of UI theme, so anything less than a fully opaque, fixed
+   * light color reads as invisible against it. */
+  background: #ffffff;
+  color: #2a2a2a;
+  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
-.measure-label:hover .measure-label-remove {
+.measure-label:hover .measure-label-remove,
+.measure-remove-hotspot:hover .measure-label-remove {
   opacity: 1;
 }
 
 .measure-label-remove:hover {
-  background: var(--danger);
-  border-color: var(--fg-2);
+  background: var(--danger-fill, #c82323);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
 /* Hamburger Menu - Always Top Left. max() so a notch/rounded corner (only
@@ -2593,3 +2618,37 @@ body:not(.tracer-pipeline) .material-editor,
 body:not(.tracer-pipeline) .tracer-only-control {
   display: none;
 }
+
+
+/* Settings > Measurements (ui/MeasurementSettingsPanel.js). Seven controls,
+ * so they are split into labelled sub-groups with comfortable spacing rather
+ * than one dense wall of rows. */
+.measure-settings-group { display: flex; flex-direction: column; gap: 10px; }
+.measure-settings-subgroup { display: flex; flex-direction: column; gap: 6px; }
+.measure-settings-subhead {
+  font-size: var(--fs-sm);
+  opacity: 0.62;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 2px 0 0;
+}
+.measure-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin: 0;
+  line-height: 1.3;
+}
+.measure-settings-row > span:first-child { flex: 0 0 auto; }
+.measure-settings-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+.measure-settings-slider input[type="range"] { width: 104px; margin: 0; }
+.measure-settings-slider .slider-value { min-width: 2.6em; text-align: right; }
+.measure-settings-row select { padding: 2px 6px; max-width: 130px; }
+.measure-settings-row .color-swatch-btn { width: 30px; height: 18px; }

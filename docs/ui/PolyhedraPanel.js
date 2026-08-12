@@ -4,6 +4,7 @@ import { makeSectionHeadline } from './panels/sectionHeadline.js';
 import { addPolyhedraTypeHistogramPanel } from './AnalysisPanels/PolyhedraTypeHistogram.js';
 import { addPolyhedronInspectorPanel } from './AnalysisPanels/PolyhedronInspector.js';
 import { addPolyhedraConnectivityHistogramPanel } from './AnalysisPanels/PolyhedraConnectivityHistogram.js';
+import { addPolyhedraVolumeHistogramPanel } from './AnalysisPanels/PolyhedraVolumeHistogram.js';
 import { createToggleRow } from './ToggleSwitch.js';
 
 function getSelectedStructureSettings() {
@@ -67,6 +68,7 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
     addHistogramRow('Type', 'openPolyhedraTypeHistogram', addPolyhedraTypeHistogramPanel);
     addHistogramRow('Inspector', 'openPolyhedronInspector', addPolyhedronInspectorPanel);
     addHistogramRow('Connectivity', 'openPolyhedraConnectivityHistogram', addPolyhedraConnectivityHistogramPanel);
+    addHistogramRow('Volume', 'openPolyhedraVolumeHistogram', addPolyhedraVolumeHistogramPanel);
 
     group.appendChild(histogramsPanel);
   }

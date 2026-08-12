@@ -7,6 +7,7 @@ import { syncGroundPlaneVisibility } from './GroundPlaneModule.js'
 
 import {updateRandomColors, startDisco, stopDisco} from '../ui/DiscoModule.js'
 import { updateChargeBadges } from './ChargeBadgeModule.js'
+import { updateMeasurementLabelVisibility } from './MeasurementModule.js'
 import { renderScanlinePass, toggleScanlineMode } from './ScanlinePass.js'
 
 
@@ -41,6 +42,7 @@ export function renderFrameNow({ interactive = false } = {}) {
   // camera, so they have to be updated before the scene is drawn. Cheap when
   // there are none, and the loop only runs on frames that actually render.
   updateChargeBadges();
+  updateMeasurementLabelVisibility();
   app.pipeline.render({ renderer: app.renderer, scene: app.scene, camera: app.camera, interactive });
   renderScanlinePass(app.renderer);
   if (app.gizmoRenderer && app.gizmoScene && app.gizmoCamera) {

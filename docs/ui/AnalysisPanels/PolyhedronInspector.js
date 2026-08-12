@@ -1,17 +1,22 @@
 // Single-polyhedron distortion inspector: pick a polyhedron (or its centre
-// atom) in the main 3D view and this shows its bond-length distortion index
-// and bond-angle variance (CN4/CN6 only — see PolyhedraAnalysisModule.js),
-// plus a small interactive 3D render of just that one polyhedron with every
-// bond length and (non-trans) angle labelled directly on the geometry. ONE
-// ordinary panel window that defaults to the right dock, mirroring the other
-// AnalysisPanels — but unlike those, content here is selection-driven
-// ('crysviz:polyhedron-selection-changed', dispatched by
-// SelectAndHighlightModule.js) rather than a redraw-on-data-refresh chart.
+// atom) in the main 3D view and this shows its convex-hull volume, bond-length
+// distortion index and bond-angle variance (that variance number is CN4/CN6
+// only — see PolyhedraAnalysisModule.js), plus a small interactive 3D render of
+// just that one polyhedron with every bond length and (non-trans) angle
+// labelled directly on the geometry. ONE ordinary panel window that defaults to
+// the right dock, mirroring the other AnalysisPanels — but unlike those,
+// content here is selection-driven ('crysviz:polyhedron-selection-changed',
+// dispatched by SelectAndHighlightModule.js) rather than a redraw-on-data-
+// refresh chart.
+//
+// A top "Angles" toggle shows/hides the arc labels, and double-clicking the
+// mini view glows the same polyhedron back in the main structure (without
+// opening the Structure Info panel).
 
 import { registerPanel, removePanel, getPanel, openPanel } from '../panels/PanelManager.js';
 import { createPolyhedronMiniRenderer } from './PolyhedronMiniRenderer.js';
 import { computePolyhedronDetail } from '../../render/PolyhedraAnalysisModule.js';
-import { subscribeToAtomSelection, getSelectedAtoms } from '../SelectAndHighlightModule.js';
+import { subscribeToAtomSelection, getSelectedAtoms, highlightPolyhedronByKey } from '../SelectAndHighlightModule.js';
 import { fileBrowser, highlightHover, general } from '../../state/store.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 
@@ -114,7 +119,16 @@ function refreshAll(opts = {}) {
   view?.update(opts);
 }
 
-document.addEventListener('crysviz:polyhedron-selection-changed', () => refreshAll());
+// The key of the polyhedron currently shown in the mini viewport — lets a
+// selection-changed event that resolves to the SAME polyhedron (e.g. the
+// inspector's own double-click highlighting it in the main view) refresh
+// without snapping the user's mini-view orbit/zoom back to the framed angle.
+let shownPolyKey = null;
+
+document.addEventListener('crysviz:polyhedron-selection-changed', (ev) => {
+  const key = /** @type {CustomEvent} */ (ev).detail?.key ?? null;
+  refreshAll({ keepCamera: key != null && key === shownPolyKey });
+});
 // Selecting the central atom (rather than the polyhedron body) inspects the
 // same polyhedron — driven off the atom-selection subscription instead.
 subscribeToAtomSelection(() => refreshAll());
@@ -143,6 +157,10 @@ function fmt(n, digits = 4) { return Number.isFinite(n) ? n.toFixed(digits) : '�
 // whatever opacity you dialed in here).
 let localFaceOpacity = 0.4;
 
+// Whether the mini view draws the bond-angle arcs/labels — persisted the same
+// way (survives selection changes and closing/reopening the window).
+let showAngles = true;
+
 /** Slider controlling just the mini view's polyhedron face opacity. */
 function buildOpacityControl(container, mini) {
   container.innerHTML = `
@@ -170,6 +188,7 @@ function renderSummary(container, detail) {
   const rows = [
     ['Category', detail.catLabel ?? '—'],
     ['Coordination number', String(detail.cn)],
+    ['Volume', detail.volume != null ? `${fmt(detail.volume, 3)} Å³` : 'n/a (degenerate hull)'],
     ['Bond-length distortion', detail.bld != null ? fmt(detail.bld, 4) : 'n/a (cage — no centre)'],
     [detail.angleLabel ? `${detail.angleLabel} (angle variance, °²)` : 'Angle variance',
       detail.angleVariance != null ? fmt(detail.angleVariance, 2) : 'n/a (only CN4/CN6)'],
@@ -220,6 +239,16 @@ export function addPolyhedronInspectorPanel() {
           <div class="split-item" id="polyhedron-inspector-item">
             <h4>Polyhedron Inspector</h4>
             ${FORCED_NOTICE_HTML}
+            <div class="pi-toolbar">
+              <label class="eos-mini-toggle toggle_row toggle_container" title="Show bond-angle arcs and labels">
+                <span class="toggle_switch">
+                  <input type="checkbox" id="piAnglesToggle" ${showAngles ? 'checked' : ''}>
+                  <span class="toggle_slider"></span>
+                </span>
+                <span class="toggle_text">Angles</span>
+              </label>
+              <span class="pi-toolbar-hint">Double-click the polyhedron to highlight it in the structure.</span>
+            </div>
             <div id="piSummary"></div>
             <div id="piViewport" class="split-item-body pi-viewport"></div>
             <div id="piOpacityControl"></div>
@@ -230,12 +259,28 @@ export function addPolyhedronInspectorPanel() {
       const viewport = body.querySelector('#piViewport');
       const summaryEl = body.querySelector('#piSummary');
       mini = createPolyhedronMiniRenderer(viewport);
+      mini.setShowAngles(showAngles); // sync a persisted "off" before the first build
       mini.resize();
       mini.start();
       buildOpacityControl(body.querySelector('#piOpacityControl'), mini);
 
+      const anglesToggle = /** @type {HTMLInputElement} */ (body.querySelector('#piAnglesToggle'));
+      anglesToggle.addEventListener('change', () => {
+        showAngles = anglesToggle.checked;
+        mini.setShowAngles(showAngles);
+      });
+
+      // Double-click the mini viewport → glow this polyhedron in the main 3D
+      // view (no Structure panel opened). The inspector only ever shows one
+      // polyhedron, so any double-click means "this one".
+      viewport.addEventListener('dblclick', () => {
+        const poly = resolveInspectedPoly();
+        if (poly?.key) highlightPolyhedronByKey(poly.key, poly.catKey);
+      });
+
       function update(opts = {}) {
         const detail = currentDetail();
+        shownPolyKey = detail?.key ?? null;
         renderSummary(summaryEl, detail);
         mini.setDetail(detail, { faceOpacity: localFaceOpacity, keepCamera: opts.keepCamera });
       }

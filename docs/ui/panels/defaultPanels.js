@@ -28,6 +28,7 @@ import { addDummySplitPanel, removeDummySplitPanel } from '../DummySplitPanel.js
 import { addLandscapePanel, removeLandscapePanel, addLandscapePlotsPanel, removeLandscapePlotsPanel } from '../LandscapePanel.js';
 import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
+import { buildMeasurementSettings } from '../MeasurementSettingsPanel.js';
 import { createFeatureLockButton } from '../FeatureLockModule.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 
@@ -696,6 +697,9 @@ export function registerDefaultPanels() {
       // (#StorageOptionSwitch in index.html) is hidden for now — it has no
       // wiring. Left in the DOM, just not adopted here, so it can return later.
       // Window drag behavior: dragging across the dock boundary docks/undocks.
+      // How measurements are drawn (label size, atom highlight marker, accent
+      // colours) — see ui/MeasurementSettingsPanel.js.
+      buildMeasurementSettings(body);
       body.appendChild(makeSectionHeadline('Windows'));
       const dragGroup = document.createElement('div');
       dragGroup.className = 'toggle_group';

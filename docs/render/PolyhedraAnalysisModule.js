@@ -6,6 +6,8 @@
 // see computePolyhedraConnectivity). Pure data: no rendering. Consumed by
 // ui/AnalysisPanels/Polyhedra*Histogram.js and PolyhedronInspector.js.
 
+import * as THREE from '../external/three/three.module.js';
+import { ConvexGeometry } from '../external/three/ConvexGeometry.js';
 import { invert3x3, transpose3x3, fracToCartPoint, cartToFrac } from '../math/index.js';
 import { groupPolyhedraByCategory, resolvePolyhedronStyle } from './PolyhedraModule.js';
 import { atomicRadii } from '../defaults/radii_defaults.js';
@@ -96,6 +98,35 @@ function angleAtCenterDeg(center, p, q) {
   return Math.acos(cos) * (180 / Math.PI);
 }
 
+/** Volume (Å³) of the convex hull of a polyhedron's vertex positions — the
+ *  standard coordination-polyhedron volume. Triangulates the hull (reusing the
+ *  same ConvexGeometry the inspector's mini render draws) and sums the signed
+ *  tetrahedra each hull triangle forms with the origin: for a closed surface
+ *  that total is the enclosed volume regardless of where the origin sits, so no
+ *  centring is needed. Returns null for fewer than 4 points or a degenerate
+ *  (coplanar/collinear) set that has no hull.
+ *  @param {number[][]} vertexPositions cartesian [x,y,z] per vertex */
+function convexHullVolume(vertexPositions) {
+  if (!vertexPositions || vertexPositions.length < 4) return null;
+  let geom;
+  try {
+    geom = /** @type {any} */ (new ConvexGeometry(vertexPositions.map((p) => new THREE.Vector3(p[0], p[1], p[2]))));
+  } catch {
+    return null; // degenerate / coplanar point set — no hull
+  }
+  const pos = geom.getAttribute('position');
+  if (!pos) { geom.dispose(); return null; }
+  let v6 = 0;
+  for (let i = 0; i < pos.count; i += 3) {
+    const ax = pos.getX(i), ay = pos.getY(i), az = pos.getZ(i);
+    const bx = pos.getX(i + 1), by = pos.getY(i + 1), bz = pos.getZ(i + 1);
+    const cx = pos.getX(i + 2), cy = pos.getY(i + 2), cz = pos.getZ(i + 2);
+    v6 += ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+  }
+  geom.dispose();
+  return Math.abs(v6) / 6;
+}
+
 /** Exact Cartesian position of a centered polyhedron's centre ATOM for this
  *  specific periodic-image instance (not the vertex centroid, which is only an
  *  approximation — distortion needs the real centre). Derives the image shift
@@ -157,6 +188,86 @@ function octahedralAngles(center, vertices) {
   return pairs.map((p) => ({ ...p, kind: transKeys.has(`${p.i}-${p.j}`) ? 'trans' : 'cis' }));
 }
 
+/** Whether vertices a and b span an EDGE of the convex hull of `points`.
+ *
+ *  Test: project every point along the line ab onto the plane perpendicular to
+ *  it. Both a and b land on that plane's origin, so ab is a hull edge exactly
+ *  when the origin sits on the boundary of the projected points' 2-D hull —
+ *  i.e. when all of them fit in a closed half-plane through it, which is true
+ *  iff the largest angular gap between consecutive projected directions is at
+ *  least 180°. (The plane through a and b that closes that gap is then a
+ *  supporting plane of the whole set.) */
+function isHullEdge(points, ai, bi) {
+  const a = points[ai], b = points[bi];
+  const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const uLen = Math.hypot(...u);
+  if (uLen < 1e-9) return false;
+  const un = [u[0] / uLen, u[1] / uLen, u[2] / uLen];
+  // Any two axes spanning the plane perpendicular to the line.
+  const seed = Math.abs(un[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const e1 = [
+    seed[1] * un[2] - seed[2] * un[1],
+    seed[2] * un[0] - seed[0] * un[2],
+    seed[0] * un[1] - seed[1] * un[0],
+  ];
+  const e1Len = Math.hypot(...e1);
+  if (e1Len < 1e-9) return false;
+  for (let k = 0; k < 3; k++) e1[k] /= e1Len;
+  const e2 = [
+    un[1] * e1[2] - un[2] * e1[1],
+    un[2] * e1[0] - un[0] * e1[2],
+    un[0] * e1[1] - un[1] * e1[0],
+  ];
+
+  const dirs = [];
+  for (let i = 0; i < points.length; i++) {
+    if (i === ai || i === bi) continue;
+    const w = [points[i][0] - a[0], points[i][1] - a[1], points[i][2] - a[2]];
+    const x = w[0] * e1[0] + w[1] * e1[1] + w[2] * e1[2];
+    const y = w[0] * e2[0] + w[1] * e2[1] + w[2] * e2[2];
+    // A point landing on the origin lies on line ab itself; it constrains
+    // nothing about which side the supporting plane can face.
+    if (Math.hypot(x, y) < 1e-9) continue;
+    dirs.push(Math.atan2(y, x));
+  }
+  if (dirs.length < 2) return true;
+  dirs.sort((p, q) => p - q);
+  let maxGap = dirs[0] + 2 * Math.PI - dirs[dirs.length - 1]; // wrap-around gap
+  for (let i = 1; i < dirs.length; i++) maxGap = Math.max(maxGap, dirs[i] - dirs[i - 1]);
+  // Strictly greater than 180°: at exactly 180° the origin lies ON the 2-D
+  // hull's boundary rather than at a corner of it, which is the signature of a
+  // pair spanning a FLAT FACE instead of an edge — a square face's diagonal
+  // projects its two neighbours to exactly opposite directions. Those cut
+  // across the face and are not edges.
+  return maxGap > Math.PI + 1e-7;
+}
+
+/** Vertex-centre-vertex angles for a shell of ANY coordination number, kept to
+ *  the pairs of vertices that are actually adjacent — joined by an edge of the
+ *  coordination polyhedron rather than reaching across its interior.
+ *
+ *  Every pair is useless past CN6: a CN8 shell has 28 of them, most cutting
+ *  through the polyhedron's own middle, and the two hand-written cases already
+ *  restrict themselves (CN6 drops its 3 trans pairs). Hull edges reproduce
+ *  those exactly — 6 for a tetrahedron, the 12 cis pairs for an octahedron —
+ *  and give the expected count elsewhere: 12 for a cube, 16 for a square
+ *  antiprism, 9 for a trigonal bipyramid, 24 for a cuboctahedron.
+ *
+ *  Kept separate from tetrahedralAngles/octahedralAngles rather than replacing
+ *  them: those feed the published TAV/OAV distortion indices, which are defined
+ *  over a specific pair set, and a distorted shell would not necessarily
+ *  reduce to the same set here. */
+function adjacentAngles(center, vertices) {
+  const out = [];
+  for (let i = 0; i < vertices.length; i++) {
+    for (let j = i + 1; j < vertices.length; j++) {
+      if (!isHullEdge(vertices, i, j)) continue;
+      out.push({ i, j, angleDeg: angleAtCenterDeg(center, vertices[i], vertices[j]), kind: null });
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // 1) Type / composition histogram data — thin wrapper over the existing
 //    category grouping (Poly tab) so both stay in sync.
@@ -203,7 +314,8 @@ export function computePolyhedraTypeGroups(structure) {
  *     bondLength:number|null, color:number|null, radius:number,
  *     bondColorNear:number|null, bondColorFar:number|null}>,
  *   angles: Array<{i:number, j:number, angleDeg:number, kind:'cis'|'trans'|null}>,
- *   bld:number|null, angleVariance:number|null, angleLabel:string|null} | null}
+ *   bld:number|null, angleVariance:number|null, angleLabel:string|null,
+ *   key:string, volume:number|null} | null}
  *  Colours/radii mirror what the main viewer renders (per-atom colour + rendered
  *  radius, resolved polyhedron face/edge style) so the inspector's mini view
  *  looks like the same structure, not a generic diagram. */
@@ -237,6 +349,7 @@ export function computePolyhedronDetail(structure, poly) {
   if (centerCart) {
     if (cn === 4) angles = tetrahedralAngles(centerCart, poly.vertices);
     else if (cn === 6) angles = octahedralAngles(centerCart, poly.vertices);
+    else if (cn >= 2) angles = adjacentAngles(centerCart, poly.vertices);
   }
 
   let bld = null;
@@ -258,14 +371,50 @@ export function computePolyhedronDetail(structure, poly) {
     structure, poly.key, poly.catKey, poly.type, poly.centerIndex, poly.colorElem);
 
   return {
-    type: poly.type, cn, catKey: poly.catKey, catLabel: poly.catLabel,
+    key: poly.key, catKey: poly.catKey, catLabel: poly.catLabel,
+    type: poly.type, cn,
     centerCart, centerElement: isCentered ? (poly.centerElement ?? null) : null,
     centerIndex: isCentered ? poly.centerIndex : null,
     centerColor: isCentered ? atomColorHex(structure, poly.centerIndex) : null,
     centerRadius: isCentered ? renderedAtomRadius(structure, poly.centerIndex, poly.centerElement) : null,
     faceColor: style.color, faceOpacity: style.opacity, edgeColor: style.edgeColor,
     vertices, angles, bld, angleVariance, angleLabel,
+    volume: convexHullVolume(poly.vertices),
   };
+}
+
+/** Convex-hull volume (Å³) of every distinct physical polyhedron, one row per
+ *  periodic-image GROUP (duplicates share a volume, so plotting each copy would
+ *  just uniformly scale the distribution). Mirrors computePolyhedraTypeGroups'
+ *  role for the type histogram; consumed by the volume histogram panel, which
+ *  bins `volume` and highlights the polyhedra whose keys fall in a clicked bin.
+ *  @returns {Array<{key:string, groupKey:string, catKey:string, catLabel:string,
+ *   cn:number, centerIndex:number|null, label:string, volume:number}>} */
+export function computePolyhedraVolumes(structure) {
+  const polys = structure?.polyhedra?.polyhedra ?? [];
+  if (!polys.length) return [];
+  const seen = new Set();
+  const out = [];
+  for (const poly of polys) {
+    const groupKey = poly.groupKey ?? poly.key;
+    if (seen.has(groupKey)) continue; // one representative per physical polyhedron
+    seen.add(groupKey);
+    const volume = convexHullVolume(poly.vertices);
+    if (volume == null) continue;
+    // A short human label for the drill-down list: the centre atom for a
+    // centered polyhedron (e.g. "Ba12"), else just the category (cages).
+    const centered = Number.isInteger(poly.centerIndex);
+    const label = centered
+      ? `${poly.centerElement ?? structure.elements?.[poly.centerIndex] ?? '?'}${poly.centerIndex}`
+      : (poly.catLabel ?? 'polyhedron');
+    out.push({
+      key: poly.key, groupKey, catKey: poly.catKey, catLabel: poly.catLabel,
+      cn: poly.vertices.length,
+      centerIndex: centered ? poly.centerIndex : null,
+      label, volume,
+    });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

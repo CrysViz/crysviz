@@ -255,6 +255,7 @@ function clearUIHighlight() {
 function clear3DHighlights() {
   clearHighlightBond();
   clearHighlightAtom();
+  clearPolyhedraMultiHighlight();
 }
 
 export function applyAtomHighlightIndices(indices) {
@@ -629,6 +630,65 @@ export function selectPolyhedronFromMesh(mesh, options = {}) {
 export function selectPolyhedronFromRow(key, rowEl) {
   const catKey = rowEl?.dataset?.catKey ?? findPolyhedronMesh(key)?.userData?.catKey;
   selectPolyhedronByKey(key, catKey, { row: rowEl });
+}
+
+/** External→3D: glow a single polyhedron by key WITHOUT opening the Structure
+ *  panel or scrolling to a row (openPanel is omitted). The Polyhedron
+ *  Inspector's double-click uses this to point back at the polyhedron it is
+ *  showing. Idempotent: if that polyhedron is already the selection this is a
+ *  no-op (it stays glowing) rather than toggling off — double-clicking to
+ *  highlight must not clear the very selection driving the inspector. */
+export function highlightPolyhedronByKey(key, catKey = null) {
+  const linking = general.linkPeriodicCopies !== false;
+  const cur = highlightHover.currentlyHighlightedPolyhedron;
+  const alreadySelected = cur
+    && (linking ? cur.groupKey === polyhedronGroupKey(key) : cur.key === key);
+  if (alreadySelected) return;
+  const resolvedCat = catKey ?? findPolyhedronMesh(key)?.userData?.catKey;
+  selectPolyhedronByKey(key, resolvedCat, {});
+}
+
+// ---- multi-polyhedron highlight (a histogram bin → many polyhedra at once) ----
+// Kept separate from the single-select currentlyHighlightedPolyhedron above:
+// this glows an arbitrary SET of polyhedra with no panel-row / selection
+// semantics, the polyhedra analogue of highlightAtomsIn3D / highlightBondIn3D.
+let highlightedPolyhedraMeshes = [];
+
+function clearPolyhedraMultiHighlight() {
+  for (const mesh of highlightedPolyhedraMeshes) {
+    if (mesh?.material?.emissive) {
+      mesh.material.emissive.set(0x000000);
+      mesh.material.emissiveIntensity = 1;
+    }
+  }
+  highlightedPolyhedraMeshes = [];
+}
+
+/**
+ * Glow every polyhedron whose key is in `keys` (expanding each to its
+ * periodic-image copies when "Link periodic copies" is on, same as the
+ * single-select path). Clears any atom/bond/single-polyhedron selection first
+ * and opens no panel — used by the volume histogram's click-to-highlight.
+ */
+export function highlightPolyhedraIn3D(keys) {
+  clearSelectedAtoms({ reason: 'polyhedron-multi-select' });
+  clearBondSelection();
+  clearPolyhedronSelection();
+  clearPolyhedraMultiHighlight();
+  const linking = general.linkPeriodicCopies !== false;
+  const seen = new Set();
+  for (const key of keys ?? []) {
+    const meshes = linking
+      ? findPolyhedronGroupMeshes(polyhedronGroupKey(key))
+      : [findPolyhedronMesh(key)].filter(Boolean);
+    for (const mesh of meshes) {
+      if (!mesh || seen.has(mesh) || !mesh.material?.emissive) continue;
+      seen.add(mesh);
+      mesh.material.emissive.set(0xFF8C00);
+      mesh.material.emissiveIntensity = 1.0;
+      highlightedPolyhedraMeshes.push(mesh);
+    }
+  }
 }
 
 function getTargetAtomDetails(sourceIndex) {
