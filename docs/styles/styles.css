@@ -2287,10 +2287,9 @@ body > #structureInfoContent {
   gap: var(--sp-1);
 }
 
-/* The small step-rotation arrows flanking each axis button. Hidden until a
-   long-press on the stack's main button reveals them (see
-   cameraAngleControl.js's setupAxisLongPress) — visibility, not display, so
-   the stack's own height/gap never shifts when they appear/disappear.
+/* The small step-rotation arrows flanking each axis button. Their visibility
+   is governed by the View window's "Stepwise buttons" menu option — visibility,
+   not display, so the stack's own height/gap never shifts when they appear/disappear.
    pointer-events follows visibility so a hidden arrow can't be clicked (or
    caught by the outside-click handler's own hit-testing) while invisible. */
 #cameraTools .camera-axis-stack .axis-step {

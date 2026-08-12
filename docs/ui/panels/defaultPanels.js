@@ -6,7 +6,7 @@
 import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
-import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender } from '../../render/index.js';
+import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender, setAxisStepButtonsMode } from '../../render/index.js';
 import { addCameraPanel } from '../CameraPanel.js';
 import { addColorPanel } from '../ColorPanel.js';
 import { collapseAllAtomExpansions } from '../WindowAndSceneControls.js';
@@ -254,12 +254,35 @@ export function registerDefaultPanels() {
       const el = document.getElementById('cameraTools');
       if (el) body.appendChild(el);
     },
+    // Radio-style choices for the View window's step-rotate arrows.
+    menuSections: () => {
+      const current = getPanelPref('axisStepButtons');
+      const mode = current === 'on' || current === 'off' ? current : 'longpress';
+      return [{
+        title: 'Stepwise buttons',
+        items: [
+          { label: 'On', value: 'on' },
+          { label: 'Off', value: 'off' },
+          { label: 'Long press', value: 'longpress' },
+        ].map(({ label, value }) => ({
+          label,
+          checked: mode === value,
+          onSelect: () => {
+            setPanelPref('axisStepButtons', value);
+            setAxisStepButtonsMode(value);
+          },
+        })),
+      }];
+    },
     // Base position (dock hidden) clears the dock-unhide menu button
     // (#mobileMenuToggle: left 12px + 44px wide) with the same 12px margin the
     // button keeps to the screen edge. While the dock occupies that column the
     // window is displaced to sit just right of it.
     defaults: { dock: false, anchor: { left: 68, top: 20 }, collapsed: false },
   });
+  // setupScene wired the handlers earlier under the default mode; apply the
+  // stored preference now that panel preferences have been loaded.
+  setAxisStepButtonsMode(getPanelPref('axisStepButtons'));
 
   registerPanel({
     id: 'info',

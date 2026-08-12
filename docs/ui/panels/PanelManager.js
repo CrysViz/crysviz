@@ -55,13 +55,15 @@ const COMPACT_STACK_GAP_PX = 20;
 // in their own localStorage key, NOT in the versioned panelLayout blob: they
 // must survive both Reset UI (which clears LS_KEY) and layout version bumps.
 const PREFS_KEY = 'panelPrefs';
-const panelPrefs = {
+const panelPrefDefaults = {
   dragIntoDock: true,
   dragOutOfDock: true,
   dragByHandleOnly: false,
   hideRaytraceWarning: false, // "Don't show again" on the tracer performance modal
   legendTransparent: false, // Composition Display: no window chrome, swatches+text only
+  axisStepButtons: 'longpress', // 'on'|'off'|'longpress' for View step-rotate arrows
 };
+const panelPrefs = { ...panelPrefDefaults };
 
 function loadPanelPrefs() {
   try {
@@ -69,11 +71,12 @@ function loadPanelPrefs() {
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') {
-      // Every known boolean pref loads from storage (a pref missing from this
-      // defaults bag would be saved by setPanelPref but DROPPED here on the
-      // next load — add new prefs above, not just at the write site).
-      for (const key of Object.keys(panelPrefs)) {
-        if (typeof parsed[key] === 'boolean') panelPrefs[key] = parsed[key];
+      // Every known pref loads from storage when its type matches the default
+      // (a pref missing from this defaults bag would be saved by setPanelPref
+      // but DROPPED here on the next load — add new prefs above, not just at
+      // the write site).
+      for (const key of Object.keys(panelPrefDefaults)) {
+        if (typeof parsed[key] === typeof panelPrefDefaults[key]) panelPrefs[key] = parsed[key];
       }
     }
   } catch { /* corrupted prefs -> defaults */ }
@@ -84,7 +87,7 @@ export function getPanelPref(name) {
 }
 
 export function setPanelPref(name, value) {
-  panelPrefs[name] = !!value;
+  panelPrefs[name] = typeof panelPrefDefaults[name] === 'boolean' ? !!value : value;
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(panelPrefs)); } catch { /* storage unavailable */ }
 }
 

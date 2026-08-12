@@ -67,7 +67,9 @@ export {
 
 export { removeSpins, updateSpins, deleteSpins, computeSpinColor } from './SpinModule.js';
 
-export { setupAxisControls, setupAxisLongPress, applyRotationFromUI } from './cameraAngleControl.js';
+export {
+  setupAxisControls, setupAxisLongPress, setAxisStepButtonsMode, applyRotationFromUI,
+} from './cameraAngleControl.js';
 
 export { setCelHullWidth, setCelHullPolyWidth } from './MaterialStyles.js';
 
