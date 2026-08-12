@@ -443,6 +443,12 @@
   .cv-panel.cv-bar-collapsed:hover > .cv-panel-titlebar {
     opacity: 0.6;
   }
+  /* "Always show small drag handles" (Settings) opts out of the hover
+     reveal: the original strip is always fully visible. */
+  body.cv-small-drag-handles .cv-panel.cv-bar-collapsed > .cv-panel-titlebar,
+  body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:hover > .cv-panel-titlebar {
+    opacity: 1;
+  }
 }
 
 /* ================================================================

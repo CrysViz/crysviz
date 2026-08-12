@@ -185,6 +185,29 @@
   border-top: 1px solid var(--line-1);
 }
 
+/* "Always show small drag handles" (Settings): reverts the handle to the
+   ORIGINAL mini-titlebar strip — thin (2px), the panel's full width, flush
+   on the body, solid accent green, always visible (the desktop hover reveal
+   is opted out in responsive.css). :not(.cv-compact) because these
+   higher-specificity rules would otherwise beat the compact round-icon
+   rules below, which normally win their tie by source order alone
+   (.cv-bar-collapsed stays set while a panel is compact). */
+body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-panel-titlebar {
+  height: 2px;
+  min-height: 0;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  opacity: 1;
+}
+
+/* ... and the body reattaches under the strip: normal attached-top look
+   instead of the free-standing box above. */
+body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-panel-body {
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  border-top: none;
+}
+
 .cv-panel-titlebar:active,
 .cv-panel.cv-dragging .cv-panel-titlebar,
 .cv-panel.cv-drag-moving .cv-panel-titlebar {

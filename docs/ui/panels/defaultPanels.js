@@ -283,6 +283,9 @@ export function registerDefaultPanels() {
   // setupScene wired the handlers earlier under the default mode; apply the
   // stored preference now that panel preferences have been loaded.
   setAxisStepButtonsMode(getPanelPref('axisStepButtons'));
+  // Same for the collapsed-bar handle style (Settings > "Always show small
+  // drag handles") — a body class the CSS keys off.
+  document.body.classList.toggle('cv-small-drag-handles', !!getPanelPref('smallDragHandles'));
 
   registerPanel({
     id: 'info',
@@ -723,6 +726,14 @@ export function registerDefaultPanels() {
         !!getPanelPref('dragOutOfDock'), (on) => setPanelPref('dragOutOfDock', on)));
       dragGroup.appendChild(makeToggleRow('dragByHandleToggle', 'Only drag windows by handle',
         !!getPanelPref('dragByHandleOnly'), (on) => setPanelPref('dragByHandleOnly', on)));
+      // Collapsed-bar drag handles: ON restores the original mini-titlebar
+      // strip (thin, full-width, always visible — styles/panelWindow.css);
+      // OFF keeps the current short hover-revealed handle.
+      dragGroup.appendChild(makeToggleRow('smallDragHandlesToggle', 'Always show small drag handles',
+        !!getPanelPref('smallDragHandles'), (on) => {
+          setPanelPref('smallDragHandles', on);
+          document.body.classList.toggle('cv-small-drag-handles', on);
+        }));
       body.appendChild(dragGroup);
       // Warnings: the ray/path-tracing performance modal (shown on every
       // raster -> tracer switch unless suppressed). Unchecking re-enables it.
