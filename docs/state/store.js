@@ -330,7 +330,9 @@ export const general = {
   // as an edge anchor relative to #view — same scheme as the color bars'
   // *ColorBarFloatPos fields — or null to use the CSS default (bottom-left).
   gizmoPos: null,
-  gizmoLocked: false,
+  // Startup gizmos are interaction-opaque by default; an explicit preference
+  // assignment/restoration, when present, still overwrites this default.
+  gizmoLocked: true,
   // When true, the a/b/c letters render as billboarded sprites at each
   // arrow's tip inside the gizmo's own 3D scene instead of in the separate
   // #axesLegend box (WindowAndSceneControls.initAxesGizmo).
@@ -343,7 +345,9 @@ export const general = {
   // viewport-local UI preferences, like gizmoPos/gizmoSize, not share state.
   backgroundDotPos: null,
   backgroundDotSize: null,
-  backgroundDotLocked: false,
+  // As with gizmoLocked, this default applies only when no explicit user
+  // preference assignment/restoration overrides it.
+  backgroundDotLocked: true,
   // Cylinder radius of the unit-cell outline edges, in world units (Å)
   // (LatticeModule.createLatticeLines).
   latticeLineWidth:0.015,

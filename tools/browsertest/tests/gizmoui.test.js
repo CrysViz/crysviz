@@ -71,6 +71,91 @@ const countDrawnGizmoPixels = async (page) => {
   const labelsAfter = await page.evaluate(async () => (await import('./state/store.js')).general.gizmoLabelsOnArrows);
   H.check('the axes Integrate Labels item still works after natural release', labelsAfter !== labelsBefore);
 
+  const startupGizmoState = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const axesHandle = document.querySelector('.cv-gizmo-resize-handle');
+    const dot = document.getElementById('backgroundDot');
+    const dotHandle = dot.querySelector('.background-dot-resize-handle');
+    return {
+      axesLocked: general.gizmoLocked,
+      dotLocked: general.backgroundDotLocked,
+      axesHandleDisplay: getComputedStyle(axesHandle).display,
+      dotHandleDisplay: getComputedStyle(dotHandle).display,
+      axesItemActive: [...document.querySelectorAll('.cv-gizmo-menu-wrap .cv-colorbar-menu-item')]
+        .find((item) => item.textContent === 'Unlock')?.classList.contains('cv-colorbar-menu-item-active'),
+    };
+  });
+  H.check('a fresh app starts with both startup gizmos locked',
+    startupGizmoState.axesLocked && startupGizmoState.dotLocked
+      && startupGizmoState.axesHandleDisplay === 'none'
+      && startupGizmoState.dotHandleDisplay === 'none'
+      && startupGizmoState.axesItemActive,
+    JSON.stringify(startupGizmoState));
+
+  const startupAxesBefore = await page.evaluate(() => {
+    const r = document.getElementById('axesGizmo').getBoundingClientRect();
+    return { x: r.left, y: r.top, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  });
+  const startupAxesCameraBefore = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
+  await page.mouse.move(startupAxesBefore.cx, startupAxesBefore.cy);
+  await page.mouse.down();
+  await page.mouse.move(startupAxesBefore.cx + 110, startupAxesBefore.cy + 45, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  const startupAxesAfter = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const r = document.getElementById('axesGizmo').getBoundingClientRect();
+    return { x: r.left, y: r.top, camera: app.camera.quaternion.toArray() };
+  });
+  const startupAxesRotation = startupAxesAfter.camera.reduce((sum, value, i) =>
+    sum + Math.abs(value - startupAxesCameraBefore[i]), 0);
+  H.check('the startup-locked axes gizmo forwards drag-through rotation',
+    startupAxesRotation > 1e-5
+      && Math.abs(startupAxesAfter.x - startupAxesBefore.x) < 1
+      && Math.abs(startupAxesAfter.y - startupAxesBefore.y) < 1,
+    JSON.stringify({ rotationDelta: startupAxesRotation, before: startupAxesBefore, after: startupAxesAfter }));
+
+  const startupDotBefore = await page.evaluate(() => {
+    const r = document.getElementById('backgroundDot').getBoundingClientRect();
+    return { x: r.left, y: r.top, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  });
+  await page.mouse.click(startupDotBefore.cx, startupDotBefore.cy);
+  await page.waitForTimeout(100);
+  const startupDotPickerOpened = await page.evaluate(() => !!document.querySelector('.cv-background-picker-panel'));
+  await page.mouse.click(startupDotBefore.cx, startupDotBefore.cy);
+  await page.waitForTimeout(100);
+  H.check('the startup-locked dot still opens its picker on click', startupDotPickerOpened);
+  const startupDotCameraBefore = await page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
+  await page.mouse.move(startupDotBefore.cx, startupDotBefore.cy);
+  await page.mouse.down();
+  await page.mouse.move(startupDotBefore.cx + 110, startupDotBefore.cy + 45, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  const startupDotAfter = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const r = document.getElementById('backgroundDot').getBoundingClientRect();
+    return { x: r.left, y: r.top, camera: app.camera.quaternion.toArray(), picker: !!document.querySelector('.cv-background-picker-panel') };
+  });
+  const startupDotRotation = startupDotAfter.camera.reduce((sum, value, i) =>
+    sum + Math.abs(value - startupDotCameraBefore[i]), 0);
+  H.check('the startup-locked dot does not move on drag',
+    Math.abs(startupDotAfter.x - startupDotBefore.x) < 1
+      && Math.abs(startupDotAfter.y - startupDotBefore.y) < 1
+      && !startupDotAfter.picker,
+    JSON.stringify({ rotationDelta: startupDotRotation, before: startupDotBefore, after: startupDotAfter }));
+
+  await mouseLongPress(page, '#axesGizmo', startupAxesBefore.cx, startupAxesBefore.cy);
+  await page.mouse.up();
+  await page.locator('.cv-gizmo-menu-wrap .cv-colorbar-menu-item').filter({ hasText: /^Unlock$/ }).click();
+  await mouseLongPress(page, '#backgroundDot', startupDotBefore.cx, startupDotBefore.cy);
+  await page.mouse.up();
+  await page.locator('.background-dot-menu-wrap .cv-colorbar-menu-item').filter({ hasText: /^Unlock$/ }).click();
+  H.check('startup gizmos can be explicitly unlocked through their menus',
+    await page.evaluate(async () => {
+      const { general } = await import('./state/store.js');
+      return !general.gizmoLocked && !general.backgroundDotLocked;
+    }));
+
   const readGizmoLabels = () => page.evaluate(async () => {
     const { app } = await import('./state/store.js');
     return {
