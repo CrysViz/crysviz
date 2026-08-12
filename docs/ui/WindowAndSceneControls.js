@@ -251,6 +251,23 @@ export function initRenderer(){
   app.renderer.toneMapping = THREE.ACESFilmicToneMapping;
   app.renderer.toneMappingExposure = 1.2;
   app.renderer.localClippingEnabled = true;
+
+  // A lost WebGL context (GPU memory exhaustion — e.g. an oversized PNG
+  // export — or a driver reset) is PERMANENT for the canvas unless the page
+  // calls preventDefault() here; with it, the browser may restore the
+  // context once the pressure clears. On restore, three re-creates its GL
+  // resources lazily on the next render — which the on-demand render loop
+  // never issues unprompted, so poke it or the view stays blank until a
+  // manual reload.
+  app.renderer.domElement.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    console.warn('[webgl] context lost — waiting for the browser to restore it');
+  });
+  app.renderer.domElement.addEventListener('webglcontextrestored', () => {
+    console.info('[webgl] context restored');
+    requestRender();
+  });
+
   view.appendChild(app.renderer.domElement);
 }
 

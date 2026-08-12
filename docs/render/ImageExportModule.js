@@ -100,6 +100,22 @@ function createVerifiedCanvas(width, height, what) {
   return { canvas, ctx };
 }
 
+/** Drain the GL error queue (bounded — a lost context can report endlessly)
+ *  and say whether OUT_OF_MEMORY was among them. Called once with the result
+ *  ignored before the export renders (so stale errors from earlier app work
+ *  aren't blamed on it), then checked right after the first frame — the
+ *  render that forces the pipeline's full-size target allocations, where a
+ *  driver that reports OOM properly (instead of crashing) surfaces it. */
+function sawGlOutOfMemory(gl) {
+  let oom = false;
+  for (let i = 0; i < 8; i++) {
+    const err = gl.getError();
+    if (err === gl.NO_ERROR) break;
+    if (err === gl.OUT_OF_MEMORY) oom = true;
+  }
+  return oom;
+}
+
 /** Throw a clear error if the WebGL context has been lost — the usual way a
  *  too-large export dies (GPU memory), and otherwise a SILENT one: renders
  *  no-op, the tracer's sample counter stops advancing (so the convergence
@@ -131,6 +147,16 @@ async function renderMainToCanvasConverged(w, h, onProgress, signal) {
       + 'Reduce the export resolution and try again.');
   }
   app.pipeline?.setSize(w, h);
+  sawGlOutOfMemory(gl); // drain stale errors so the post-frame check is honest
+  let checkFirstFrame = true;
+  const checkAfterFrame = () => {
+    if (!checkFirstFrame) return;
+    checkFirstFrame = false;
+    if (sawGlOutOfMemory(gl)) {
+      throw new Error(`WebGL ran out of memory rendering the export at ${w}×${h}. `
+        + 'Reduce the export resolution and try again.');
+    }
+  };
   const renderCtx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
   // Report accumulation progress on the export button (tracer pipelines only).
   // Reads the same counters the on-screen progress strip uses; guarded so raster
@@ -163,11 +189,13 @@ async function renderMainToCanvasConverged(w, h, onProgress, signal) {
       // stuck) instead of reporting what actually happened.
       throwIfContextLost(gl);
       app.pipeline.render(renderCtx); // one paced sample (one tile when tiling)
+      checkAfterFrame();
       reportProgress();
     }
     reportProgress(); // final (converged) count
   } else {
     app.pipeline?.render(renderCtx); // raster: single frame, capture immediately
+    checkAfterFrame();
   }
   throwIfContextLost(gl); // a lost context reads back as an empty image
 
@@ -711,6 +739,27 @@ async function captureSceneToPngImpl(opts) {
       srcW = Math.max(1, Math.floor(srcW * k));
       srcH = Math.max(1, Math.floor(srcH * k));
       console.info(`[png-export] source render capped to ${srcW}x${srcH}; small selections may upscale.`);
+    }
+
+    // The driver-reported MAX_TEXTURE_SIZE above says nothing about MEMORY:
+    // tracer pipelines hold three full-size RGBA32F accumulation targets on
+    // top of the drawing buffer (~64 bytes/px all told; raster ~16), so an
+    // 8192² tracer surface means gigabytes of GPU allocations. Allocations
+    // that size tend not to fail cleanly — they crash the driver/GPU
+    // process, and Chromium answers repeated GPU crashes by disabling WebGL
+    // for the whole browser session until restart. WebGL has no way to
+    // query actual GPU memory, so cap the source AREA to a conservative
+    // budget rather than even trying; the output keeps its requested size
+    // (the capped source upscales into it), same as the dimension cap above.
+    const RENDER_MEMORY_BUDGET_BYTES = 1024 * 1024 * 1024; // 1 GiB, heuristic
+    const bytesPerPixel = app.pipeline?.isConverged ? 64 : 16;
+    const maxPixels = RENDER_MEMORY_BUDGET_BYTES / bytesPerPixel;
+    if (srcW * srcH > maxPixels) {
+      const k = Math.sqrt(maxPixels / (srcW * srcH));
+      srcW = Math.max(1, Math.floor(srcW * k));
+      srcH = Math.max(1, Math.floor(srcH * k));
+      console.info(`[png-export] source render capped to ${srcW}x${srcH} by the `
+        + 'render-memory budget; the output upscales from it.');
     }
 
     // --- Final high-res pass (tracer pipelines render to full convergence,
