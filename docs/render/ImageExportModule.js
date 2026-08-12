@@ -68,6 +68,50 @@ function throwIfAborted(signal) {
   }
 }
 
+// Allocate a 2D canvas and PROVE its backing store exists before it is relied
+// on: browsers cap both canvas dimensions and total area, and an over-limit
+// canvas does not throw anywhere — getContext still succeeds, drawing
+// silently no-ops, and toBlob returns null or a blank image. That was
+// exactly the "export produced an empty PNG" failure at big requested
+// resolutions. Probing a real pixel write+read at the far corner surfaces
+// the failure as a clear error instead (and doing it for the OUTPUT canvas
+// before any rendering starts means a doomed export fails fast, not after
+// minutes of tracer convergence).
+function createVerifiedCanvas(width, height, what) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = /** @type {CanvasRenderingContext2D | null} */ (canvas.getContext('2d'));
+  let ok = false;
+  try {
+    if (ctx) {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(width - 1, height - 1, 1, 1);
+      ok = ctx.getImageData(width - 1, height - 1, 1, 1).data[3] !== 0;
+      ctx.clearRect(0, 0, width, height);
+    }
+  } catch {
+    ok = false;
+  }
+  if (!ok || !ctx) {
+    throw new Error(`This browser cannot allocate the ${width}×${height} ${what}. `
+      + 'Reduce the export resolution and try again.');
+  }
+  return { canvas, ctx };
+}
+
+/** Throw a clear error if the WebGL context has been lost — the usual way a
+ *  too-large export dies (GPU memory), and otherwise a SILENT one: renders
+ *  no-op, the tracer's sample counter stops advancing (so the convergence
+ *  loop would spin forever), and the readback comes out empty. */
+function throwIfContextLost(gl) {
+  if (gl.isContextLost()) {
+    throw new Error('The WebGL context was lost during the export — usually the requested '
+      + 'resolution exhausted GPU memory. Reduce the export resolution and try again '
+      + '(if the 3D view stays blank, reload the page).');
+  }
+}
+
 // Like renderMainToCanvas, but for progressive tracer pipelines: keeps
 // accumulating in small batches — yielding to the browser between them so the
 // on-screen progress bar (render/TracerProgressModule.js, driven from
@@ -75,6 +119,17 @@ function throwIfAborted(signal) {
 // Non-tracer pipelines (no isConverged) capture after the single frame.
 async function renderMainToCanvasConverged(w, h, onProgress, signal) {
   app.renderer.setSize(w, h, false);
+  // The WebGL spec allows the drawing buffer to come up SMALLER than asked
+  // for when the allocation fails — no exception, no context loss, just a
+  // shrunken (or dead) surface that would export as a blank/garbled image.
+  // Refuse loudly instead.
+  const gl = app.renderer.getContext();
+  throwIfContextLost(gl);
+  if (gl.drawingBufferWidth < w || gl.drawingBufferHeight < h) {
+    throw new Error(`WebGL could not allocate a ${w}×${h} render surface `
+      + `(got ${gl.drawingBufferWidth}×${gl.drawingBufferHeight}). `
+      + 'Reduce the export resolution and try again.');
+  }
   app.pipeline?.setSize(w, h);
   const renderCtx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
   // Report accumulation progress on the export button (tracer pipelines only).
@@ -103,6 +158,10 @@ async function renderMainToCanvasConverged(w, h, onProgress, signal) {
       throwIfAborted(signal);
       await nextFrame();            // yield first: the button/progress repaints
       throwIfAborted(signal);
+      // A context lost mid-accumulation stops the sample counter, so without
+      // this check the convergence loop would spin forever ("Rendering…"
+      // stuck) instead of reporting what actually happened.
+      throwIfContextLost(gl);
       app.pipeline.render(renderCtx); // one paced sample (one tile when tiling)
       reportProgress();
     }
@@ -110,11 +169,9 @@ async function renderMainToCanvasConverged(w, h, onProgress, signal) {
   } else {
     app.pipeline?.render(renderCtx); // raster: single frame, capture immediately
   }
+  throwIfContextLost(gl); // a lost context reads back as an empty image
 
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
+  const { canvas, ctx } = createVerifiedCanvas(w, h, 'render capture');
   ctx.drawImage(app.renderer.domElement, 0, 0, w, h);
   return canvas;
 }
@@ -581,6 +638,12 @@ async function captureSceneToPngImpl(opts) {
     throw new Error('No export area selected.');
   }
 
+  // Allocate (and PROVE) the output canvas up front, before any live-view
+  // state is touched or a long tracer convergence starts: an over-limit
+  // request fails here with a clear message instead of silently producing an
+  // empty PNG at the end (see createVerifiedCanvas).
+  const { canvas: out, ctx: octx } = createVerifiedCanvas(width, height, 'output image');
+
   const viewEl = getViewEl();
   const viewRect = viewEl.getBoundingClientRect();
   const vw = Math.max(1, viewEl.clientWidth || window.innerWidth);
@@ -660,10 +723,6 @@ async function captureSceneToPngImpl(opts) {
     const cropPxW = cropFracW * srcW;
     const cropPxH = cropFracH * srcH;
 
-    const out = document.createElement('canvas');
-    out.width = width;
-    out.height = height;
-    const octx = /** @type {CanvasRenderingContext2D} */ (out.getContext('2d'));
     octx.imageSmoothingEnabled = true;
     octx.imageSmoothingQuality = 'high';
     if (!transparent) {
@@ -696,7 +755,10 @@ async function captureSceneToPngImpl(opts) {
     return await new Promise((resolve, reject) => {
       out.toBlob((blob) => {
         if (blob) resolve(blob);
-        else reject(new Error('Failed to encode PNG.'));
+        else {
+          reject(new Error(`Failed to encode the ${width}×${height} PNG — likely too `
+            + 'large for this browser. Reduce the export resolution and try again.'));
+        }
       }, 'image/png');
     });
   } finally {
