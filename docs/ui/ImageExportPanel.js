@@ -196,14 +196,16 @@ export function initImageExportPanel() {
     closeModal();
 
     openCropOverlay({
-      // Locked aspect: the crop tool is constrained to the exact
-      // width/height ratio, so the crop always fills width x height with no
-      // distortion. Free: let the crop tool resize to whatever shape the
-      // user wants — width/height's LARGER edge becomes the output's long
-      // edge, with the other edge derived from the shape actually drawn
-      // (see below) instead of forcing every free-form crop through
-      // whatever ratio the width/height inputs happened to work out to.
+      // The initial crop shape: the exact width/height ratio (Free mode fits
+      // the view instead). Whether corner drags then PRESERVE that shape is
+      // the Lock aspect toggle, carried into the overlay's own toolbar from
+      // this dialog's checkbox and persisted back from there — unlocked,
+      // the crop resizes to whatever shape the user wants, and width/
+      // height's LARGER edge becomes the output's long edge with the other
+      // edge derived from the shape actually drawn (see below).
       aspect: free ? null : width / height,
+      locked: lockInput.checked,
+      onLockChange: (locked) => savePrefs({ ...loadPrefs(), lock: locked }),
       // Tracer pipelines render to full convergence inside captureSceneToPng
       // (paced tiled rendering). onConfirm receives {signal, onProgress} from
       // the overlay's own confirm button — signal lets its Abort cancel the
@@ -213,7 +215,13 @@ export function initImageExportPanel() {
       onConfirm: async (crop, { signal, onProgress }) => {
         let outWidth = width;
         let outHeight = height;
-        if (free) {
+        // A crop drawn at a different shape than width x height — Free mode,
+        // or corners dragged with the overlay's Lock aspect toggle off —
+        // must not be squeezed into the typed dimensions: keep their long
+        // edge, derive the other side from the shape actually drawn. A crop
+        // still at the dialog ratio keeps the exact typed dimensions.
+        const target = width / height;
+        if (Math.abs(crop.aspect - target) > target * 0.005) {
           const longEdge = Math.max(width, height);
           if (crop.aspect >= 1) {
             outWidth = Math.round(longEdge);

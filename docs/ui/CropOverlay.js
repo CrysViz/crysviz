@@ -16,11 +16,18 @@ function currentViewRect() {
 }
 
 /**
- * @param {{aspect: number|null,
+ * @param {{aspect: number|null, locked?: boolean,
+ *   onLockChange?: (locked: boolean) => void,
  *   onConfirm: (crop: {x0:number,y0:number,x1:number,y1:number,aspect:number},
  *     opts: {signal: AbortSignal, onProgress: (p:{current:number, target:number})=>void}) => Promise<void>|void,
  *   onCancel: () => void}} opts
- *   aspect: width/height to lock the rect to, or null for freeform resize.
+ *   aspect: width/height the INITIAL rect is shaped to (null: fit the view).
+ *   locked (default: aspect given): initial state of the toolbar's own
+ *   "Lock aspect" toggle. While locked, corner drags preserve the rect's
+ *   current aspect ratio; unlocked, corners resize freely. The toggle can be
+ *   flipped mid-selection — re-locking freezes whatever shape has been drawn
+ *   — and each change is reported through onLockChange (the export dialog
+ *   persists it so the two Lock aspect checkboxes stay one setting).
  *   onConfirm receives the chosen area as fractions (0..1) of #view's box,
  *   plus the rect's own on-screen pixel aspect ratio (== the `aspect` opt
  *   when one was given; freeform mode's only way to report what shape the
@@ -32,9 +39,10 @@ function currentViewRect() {
  *   rejects — with no alert for a user-triggered abort — so the selection
  *   isn't lost.
  */
-export function openCropOverlay({ aspect, onConfirm, onCancel }) {
+export function openCropOverlay({ aspect, locked = aspect != null, onLockChange, onConfirm, onCancel }) {
   let vRect = currentViewRect();
   if (!vRect) { onCancel(); return; }
+  let lockAspect = !!locked;
 
   const overlay = document.createElement('div');
   overlay.className = 'cv-crop-overlay';
@@ -64,6 +72,19 @@ export function openCropOverlay({ aspect, onConfirm, onCancel }) {
   const hint = document.createElement('span');
   hint.className = 'cv-crop-hint';
   hint.textContent = 'Drag to reposition, corners to resize';
+  const lockLabel = document.createElement('label');
+  lockLabel.className = 'cv-crop-lock';
+  const lockToggle = document.createElement('input');
+  lockToggle.type = 'checkbox';
+  lockToggle.checked = lockAspect;
+  lockToggle.addEventListener('change', () => {
+    // Re-locking freezes the rect's CURRENT shape (subsequent corner drags
+    // preserve it); it never snaps the rect back to the dialog's ratio.
+    lockAspect = lockToggle.checked;
+    onLockChange?.(lockAspect);
+  });
+  lockLabel.appendChild(lockToggle);
+  lockLabel.appendChild(document.createTextNode('Lock aspect'));
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'cv-crop-cancel';
@@ -73,6 +94,7 @@ export function openCropOverlay({ aspect, onConfirm, onCancel }) {
   confirmBtn.className = 'cv-crop-confirm';
   confirmBtn.textContent = 'Download';
   toolbar.appendChild(hint);
+  toolbar.appendChild(lockLabel);
   toolbar.appendChild(cancelBtn);
   toolbar.appendChild(confirmBtn);
   overlay.appendChild(toolbar);
@@ -185,16 +207,20 @@ export function openCropOverlay({ aspect, onConfirm, onCancel }) {
       e.stopPropagation();
       handles[corner].setPointerCapture(e.pointerId);
       const anchor = cornerPoint(rect, OPPOSITE[corner]);
+      // Locked: this drag preserves the rect's shape as of the grab — the
+      // dialog's ratio while it hasn't been unlocked, or whatever shape was
+      // drawn freeform before re-locking.
+      const ratio = lockAspect ? rect.width / Math.max(rect.height, 1) : null;
       const onMove = (mv) => {
         const x = Math.min(Math.max(mv.clientX - vRect.left, 0), vRect.width);
         const y = Math.min(Math.max(mv.clientY - vRect.top, 0), vRect.height);
         let w = Math.abs(x - anchor.x);
         let h = Math.abs(y - anchor.y);
-        if (aspect) {
-          if (w / Math.max(h, 1) > aspect) h = w / aspect; else w = h * aspect;
+        if (ratio) {
+          if (w / Math.max(h, 1) > ratio) h = w / ratio; else w = h * ratio;
         }
         w = Math.max(w, MIN_SIZE);
-        h = Math.max(h, aspect ? MIN_SIZE / aspect : MIN_SIZE);
+        h = Math.max(h, ratio ? MIN_SIZE / ratio : MIN_SIZE);
         const left = corner.includes('w') ? anchor.x - w : anchor.x;
         const top = corner.includes('n') ? anchor.y - h : anchor.y;
         rect = clampRect({ left, top, width: w, height: h });
@@ -215,9 +241,10 @@ export function openCropOverlay({ aspect, onConfirm, onCancel }) {
       y0: rect.top / vRect.height,
       x1: (rect.left + rect.width) / vRect.width,
       y1: (rect.top + rect.height) / vRect.height,
-      // The rect's own on-screen pixel aspect — always equal to the `aspect`
-      // opt when one was given, but freeform mode (aspect: null) has no
-      // other way to tell the caller what shape the user actually drew.
+      // The rect's own on-screen pixel aspect — equal to the `aspect` opt
+      // while the toolbar's Lock aspect toggle was never turned off, but the
+      // caller has no other way to learn what shape was actually drawn once
+      // corners have been dragged freeform.
       aspect: rect.width / rect.height,
     };
   }

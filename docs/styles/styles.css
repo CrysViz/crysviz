@@ -1151,6 +1151,17 @@ body.panel-hidden #axesLegend {
   opacity: 0.7;
   color: var(--panel-fg);
 }
+/* The toolbar's own Lock aspect toggle (mirrors the export dialog's). */
+.cv-crop-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-base);
+  color: var(--panel-fg);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
 .cv-crop-confirm,
 .cv-crop-cancel {
   padding: var(--sp-3) 14px;
