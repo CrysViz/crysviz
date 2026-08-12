@@ -133,7 +133,7 @@ function orangeFraction(png) {
     const { captureSceneToPng } = await import('./render/index.js');
     let lastTarget = 0, ticks = 0;
     const blob = await captureSceneToPng({
-      width: 240, height: 180, margin: 0, transparent: false,
+      width: 240, height: 180, transparent: false,
       onProgress: ({ target }) => { lastTarget = target; ticks++; },
     });
     return { type: blob.type, lastTarget, ticks };

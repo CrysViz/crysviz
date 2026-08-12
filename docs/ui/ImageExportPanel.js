@@ -1,5 +1,5 @@
 // "Download → PNG Image…" flow: a settings modal (output size/aspect ratio,
-// margin, transparency), then an interactive crop overlay
+// transparency), then an interactive crop overlay
 // (ui/CropOverlay.js) over the live 3D view to pick exactly what's exported
 // — a high-resolution PNG via render/ImageExportModule.js, WYSIWYG (gizmo,
 // floating color bars, measurements exactly as arranged on screen).
@@ -73,7 +73,6 @@ export function initImageExportPanel() {
         <label class="png-check"><input type="checkbox" id="pngLock" checked>Lock aspect</label>
       </div>
       <div class="png-row">
-        <label>Margin (px)<input type="number" id="pngMargin" min="0" max="4096" step="1" value="0"></label>
         <label class="png-check"><input type="checkbox" id="pngTransparent">Transparent background</label>
       </div>
       <p class="png-note">Next, drag the crop area over the 3D view to choose exactly what's exported — the scene, the gizmo, and any floating color bars, right where they're currently arranged.</p>
@@ -89,7 +88,6 @@ export function initImageExportPanel() {
   const heightInput = document.getElementById('pngHeight');
   const aspectSelect = document.getElementById('pngAspect');
   const lockInput = document.getElementById('pngLock');
-  const marginInput = document.getElementById('pngMargin');
   const transparentInput = document.getElementById('pngTransparent');
   const downloadBtn = document.getElementById('pngDownloadBtn');
   const cancelBtn = document.getElementById('pngCancelBtn');
@@ -116,7 +114,6 @@ export function initImageExportPanel() {
       lock: lockInput.checked,
       width: Math.round(Number(widthInput.value) || 0),
       height: Math.round(Number(heightInput.value) || 0),
-      margin: Math.max(0, Math.round(Number(marginInput.value) || 0)),
       transparent: transparentInput.checked,
     };
   }
@@ -133,7 +130,6 @@ export function initImageExportPanel() {
     if (aspectSelect.value !== aspect) aspectSelect.value = 'view';
     lockInput.disabled = free;
     lockInput.checked = free ? false : (p.lock !== false);
-    marginInput.value = String(p.margin != null ? p.margin : 0);
     transparentInput.checked = !!p.transparent;
 
     const longEdge = Math.max(Number(p.width) || 0, Number(p.height) || 0) || DEFAULT_LONG_EDGE;
@@ -186,7 +182,6 @@ export function initImageExportPanel() {
   function chooseArea() {
     const width = Math.round(Number(widthInput.value) || 0);
     const height = Math.round(Number(heightInput.value) || 0);
-    const margin = Math.max(0, Math.round(Number(marginInput.value) || 0));
     if (!(width > 0 && height > 0)) {
       alert('Enter a valid width and height.');
       return;
@@ -232,7 +227,7 @@ export function initImageExportPanel() {
           }
         }
         const blob = await captureSceneToPng({
-          width: outWidth, height: outHeight, margin, transparent, crop, signal, onProgress,
+          width: outWidth, height: outHeight, transparent, crop, signal, onProgress,
         });
         downloadBlob(currentBaseName() + '.png', blob);
       },

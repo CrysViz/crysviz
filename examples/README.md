@@ -44,7 +44,7 @@ and saves a PNG, and
 [`update_lattice_and_positions.py`](examples/update_lattice_and_positions.py)
 updates a two-atom structure. The managed controller also provides
 `rotate_camera(angle_degrees, axis="y")`, `set_render_pipeline(pipeline_id)`,
-and `save_image(path, width=800, height=600, margin=0, transparent=False,
+and `save_image(path, width=800, height=600, transparent=False,
 timeout=None)`. `save_image` returns the written `pathlib.Path`; PNG capture is
 full-view and restores the browser's render state after export.
 

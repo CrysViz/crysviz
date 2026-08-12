@@ -241,16 +241,14 @@ function viewFraction(rect, viewRect) {
 // canvas pixels. Returns null when the rect falls entirely outside either
 // the crop or the output — same as a real screenshot, something dragged out
 // of frame simply isn't in the picture.
-function cropToOutputRect(viewFrac, crop, width, height, margin) {
+function cropToOutputRect(viewFrac, crop, width, height) {
   const cw = crop.x1 - crop.x0;
   const ch = crop.y1 - crop.y0;
   if (cw <= 0 || ch <= 0) return null;
-  const innerW = width - 2 * margin;
-  const innerH = height - 2 * margin;
-  const x0 = margin + ((viewFrac.x0 - crop.x0) / cw) * innerW;
-  const y0 = margin + ((viewFrac.y0 - crop.y0) / ch) * innerH;
-  const x1 = margin + ((viewFrac.x1 - crop.x0) / cw) * innerW;
-  const y1 = margin + ((viewFrac.y1 - crop.y0) / ch) * innerH;
+  const x0 = ((viewFrac.x0 - crop.x0) / cw) * width;
+  const y0 = ((viewFrac.y0 - crop.y0) / ch) * height;
+  const x1 = ((viewFrac.x1 - crop.x0) / cw) * width;
+  const y1 = ((viewFrac.y1 - crop.y0) / ch) * height;
   if (x1 <= 0 || y1 <= 0 || x0 >= width || y0 >= height) return null;
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
@@ -312,13 +310,13 @@ function drawMeasurementLabels(octx, map) {
 // Skipped entirely if the gizmo is hidden, or dragged fully outside the
 // chosen crop. Returns the previous gizmo pixel ratio so the caller can
 // restore it (null if skipped).
-function drawGizmoAndLegend(octx, width, height, margin, crop, viewRect) {
+function drawGizmoAndLegend(octx, width, height, crop, viewRect) {
   const gizmoDiv = document.getElementById('axesGizmo');
   if (!app.gizmoRenderer || !app.gizmoScene || !app.gizmoCamera || !gizmoDiv) return null;
   if (!general.showAxes) return null;
   if (gizmoDiv.style.display === 'none') return null;
 
-  const outRect = cropToOutputRect(viewFraction(gizmoDiv.getBoundingClientRect(), viewRect), crop, width, height, margin);
+  const outRect = cropToOutputRect(viewFraction(gizmoDiv.getBoundingClientRect(), viewRect), crop, width, height);
   if (!outRect) return null;
 
   const prevGizmoPR = app.gizmoRenderer.getPixelRatio();
@@ -341,7 +339,7 @@ function drawGizmoAndLegend(octx, width, height, margin, crop, viewRect) {
   if (!general.gizmoLabelsOnArrows) {
     const legendDiv = document.getElementById('axesLegend');
     if (legendDiv && legendDiv.style.display !== 'none') {
-      const legendOut = cropToOutputRect(viewFraction(legendDiv.getBoundingClientRect(), viewRect), crop, width, height, margin);
+      const legendOut = cropToOutputRect(viewFraction(legendDiv.getBoundingClientRect(), viewRect), crop, width, height);
       if (legendOut) drawAxesLegend(octx, legendOut);
     }
   }
@@ -514,11 +512,11 @@ function drawColorBar(octx, settings, x, y, w, h, tickFont, legendFont, inputFon
 // docked one — that lives in the side panel, not over #view, so it's no
 // more "in the scene" than the panel itself) at its own true on-screen
 // position, mapped through the crop.
-function drawFloatingColorBars(octx, width, height, margin, crop, viewRect) {
+function drawFloatingColorBars(octx, width, height, crop, viewRect) {
   const bars = listActiveColorBars().filter((bar) => bar.instance.isFloating());
   for (const bar of bars) {
     const visualRect = bar.instance.getVisualRect();
-    const outRect = cropToOutputRect(viewFraction(visualRect, viewRect), crop, width, height, margin);
+    const outRect = cropToOutputRect(viewFraction(visualRect, viewRect), crop, width, height);
     if (!outRect) continue; // dragged fully outside the chosen crop
 
     // The gradient strip itself, not the wrapper (which is a plain flex row
@@ -526,7 +524,7 @@ function drawFloatingColorBars(octx, width, height, margin, crop, viewRect) {
     // visual union (which also includes the tick labels/legend below/beside
     // it) — drawColorBar needs just the bar's own box to lay ticks out from.
     const barRect = bar.instance.getBarRect();
-    const barOut = cropToOutputRect(viewFraction(barRect, viewRect), crop, width, height, margin);
+    const barOut = cropToOutputRect(viewFraction(barRect, viewRect), crop, width, height);
     if (!barOut) continue;
 
     const settings = bar.instance.getSettings();
@@ -558,7 +556,7 @@ function drawFloatingColorBars(octx, width, height, margin, crop, viewRect) {
 // handle are chrome for operating the thing, not legend content. The body
 // surface is filled only when the user hasn't stripped it via the long-press
 // menu's Transparent option; otherwise the widget background is included.
-function drawCompositionLegend(octx, width, height, margin, crop, viewRect) {
+function drawCompositionLegend(octx, width, height, crop, viewRect) {
   const widget = document.querySelector('.comp-legend-widget.cv-colorbar-floating');
   const body = /** @type {HTMLElement | null} */ (widget?.querySelector('.comp-legend-body'));
   if (!body) return;
@@ -566,7 +564,7 @@ function drawCompositionLegend(octx, width, height, margin, crop, viewRect) {
   if (!rows.length) return; // collapsed, or no structure ("No structure loaded.")
 
   const bodyRect = body.getBoundingClientRect();
-  const bodyOut = cropToOutputRect(viewFraction(bodyRect, viewRect), crop, width, height, margin);
+  const bodyOut = cropToOutputRect(viewFraction(bodyRect, viewRect), crop, width, height);
   if (!bodyOut) return; // dragged fully outside the chosen crop
   const pxScale = bodyRect.width > 0 ? bodyOut.width / bodyRect.width : 1;
 
@@ -593,13 +591,13 @@ function drawCompositionLegend(octx, width, height, margin, crop, viewRect) {
     for (const row of rows) {
       const canvas = /** @type {HTMLCanvasElement | null} */ (row.querySelector('canvas'));
       if (canvas) {
-        const out = cropToOutputRect(viewFraction(canvas.getBoundingClientRect(), viewRect), crop, width, height, margin);
+        const out = cropToOutputRect(viewFraction(canvas.getBoundingClientRect(), viewRect), crop, width, height);
         if (out) octx.drawImage(canvas, out.x, out.y, out.width, out.height);
       }
       for (const el of row.querySelectorAll('.comp-legend-label, .comp-legend-sub')) {
         const text = (el.textContent || '').trim();
         if (!text) continue;
-        const out = cropToOutputRect(viewFraction(el.getBoundingClientRect(), viewRect), crop, width, height, margin);
+        const out = cropToOutputRect(viewFraction(el.getBoundingClientRect(), viewRect), crop, width, height);
         if (!out) continue;
         const cs = window.getComputedStyle(el);
         octx.font = `${cs.fontWeight} ${(parseFloat(cs.fontSize) || 12) * pxScale}px ${cs.fontFamily}`;
@@ -637,7 +635,7 @@ export function isPngCaptureInProgress() {
  * clean mid-export cancel: on abort the live view is fully restored (the same
  * finally as a normal completion) and an AbortError is thrown.
  *
- * @param {{width:number, height:number, margin?:number, transparent?:boolean,
+ * @param {{width:number, height:number, transparent?:boolean,
  *   crop?: {x0:number, y0:number, x1:number, y1:number},
  *   onProgress?:(p:{current:number, target:number})=>void,
  *   signal?:AbortSignal}} opts
@@ -666,7 +664,6 @@ async function captureSceneToPngImpl(opts) {
   }
   const width = Math.max(1, Math.round(opts.width));
   const height = Math.max(1, Math.round(opts.height));
-  const margin = Math.max(0, Math.round(opts.margin || 0));
   const transparent = !!opts.transparent;
   // crop is optional: omitting it (a direct/programmatic capture, no
   // ui/CropOverlay.js step) captures the full #view, same as the crop tool's
@@ -713,8 +710,8 @@ async function captureSceneToPngImpl(opts) {
     app.renderer.setClearAlpha(0);
     general.rtResolutionScale = 1;
 
-    const innerW = Math.max(1, width - 2 * margin);
-    const innerH = Math.max(1, height - 2 * margin);
+    const innerW = width;
+    const innerH = height;
     const cropFracW = crop.x1 - crop.x0;
     const cropFracH = crop.y1 - crop.y0;
 
@@ -787,7 +784,7 @@ async function captureSceneToPngImpl(opts) {
       octx.fillStyle = bgCss;
       octx.fillRect(0, 0, width, height);
     }
-    // Contain-fit the crop into the inner box, centred within the margins. A
+    // Contain-fit the crop into the output box, centred. A
     // real crop-tool selection already matches the output's aspect exactly
     // (ui/CropOverlay.js enforces it), so this reduces to filling innerW x
     // innerH with no letterboxing; the no-crop fallback (arbitrary output
@@ -796,8 +793,8 @@ async function captureSceneToPngImpl(opts) {
     const scale = Math.min(innerW / cropPxW, innerH / cropPxH);
     const drawW = cropPxW * scale;
     const drawH = cropPxH * scale;
-    const dx = margin + (innerW - drawW) / 2;
-    const dy = margin + (innerH - drawH) / 2;
+    const dx = (innerW - drawW) / 2;
+    const dy = (innerH - drawH) / 2;
     octx.drawImage(srcCanvas, cropPxX, cropPxY, cropPxW, cropPxH, dx, dy, drawW, drawH);
 
     const map = {
@@ -806,9 +803,9 @@ async function captureSceneToPngImpl(opts) {
       fontScale: (cropPxH * scale) / Math.max(1, cropFracH * vh),
     };
     drawMeasurementLabels(octx, map);
-    prevGizmoPR = drawGizmoAndLegend(octx, width, height, margin, crop, viewRect);
-    drawFloatingColorBars(octx, width, height, margin, crop, viewRect);
-    drawCompositionLegend(octx, width, height, margin, crop, viewRect);
+    prevGizmoPR = drawGizmoAndLegend(octx, width, height, crop, viewRect);
+    drawFloatingColorBars(octx, width, height, crop, viewRect);
+    drawCompositionLegend(octx, width, height, crop, viewRect);
 
     return await new Promise((resolve, reject) => {
       out.toBlob((blob) => {
