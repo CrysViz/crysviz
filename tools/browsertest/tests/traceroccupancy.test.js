@@ -79,10 +79,10 @@ function distance(a, b) {
       rayHasMarker: ray.includes('pieAtomColor'), pathHasMarker: path.includes('pieAtomColor') };
   });
   H.check('no-occupancy ray source retains the committed byte hash',
-    sourceState.rayHash === '827dd4e12994aa812c90a298317fc5e688597721750ce7429c9caff8f935bb2d'
+    sourceState.rayHash === '1ac4c121a6d76a452623349dca332b537a79fc89ea3de9bc50316fd39fac70f2'
       && !sourceState.rayHasMarker, JSON.stringify(sourceState));
   H.check('no-occupancy path source retains the committed byte hash',
-    sourceState.pathHash === '0c2667c628060489d7ee64a9da3039769710250dcea21f017a137e50d58938ba'
+    sourceState.pathHash === '1e62ed52acefc3e11f697ce27673c87c3765363631c902dcb911192f0a334631'
       && !sourceState.pathHasMarker, JSON.stringify(sourceState));
 
   await H.setSelect(page, 'renderPipelineMenu', 'depthpeel');

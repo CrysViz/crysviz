@@ -24,7 +24,8 @@
 //              pre-reject; 4 columns of the inverse object matrix (unit
 //              cylinder y in [-1,1]; direction NOT renormalized in object
 //              space so t stays world-valid); (rgb, alpha);
-//              (matType, roughness, typeParam, reflectivity); reserved (zeros)
+//              (matType, roughness, typeParam, reflectivity); shape:
+//              (1, rTop, 0, 0) for capped frustums, zeros for legacy cylinders
 //   polyhedra  header (planeOffset, planeCount, matType, roughness),
 //              (rgb, alpha), (aabbMin, typeParam), (aabbMax, reflectivity),
 //              then planeCount (normal.xyz, d)
@@ -41,6 +42,7 @@ import { fieldChunk } from './fieldChunk.js';
 import { planeChunk } from './planeChunk.js';
 import { gridChunk } from './gridChunk.js';
 import { convexChunk } from './convexChunk.js';
+import { coneChunk } from './coneChunk.js';
 
 export const DATA_TEX_WIDTH = 1024;
 
@@ -119,6 +121,8 @@ int resolveMaterialType(float matCode, float alpha)
 #include <raytracing_boundingbox_intersect>
 #include <raytracing_convexpolyhedron_intersect>
 #include <raytracing_plane_intersect>
+
+${coneChunk}
 
 vec4 fetchData(sampler2D tex, int index)
 {
@@ -202,7 +206,10 @@ int testCylinder(int i, int isShadowRay, inout float t)
 	vec3 ro = (invM * vec4(rayOrigin, 1.0)).xyz;
 	vec3 rd = (invM * vec4(rayDirection, 0.0)).xyz;
 	vec3 cn;
-	float d = UnitCylinderIntersect(ro, rd, cn);
+	vec4 shape = fetchData(uCylindersDataTexture, o + 7);
+	float d = (shape.x > 0.5)
+		? UnitCappedConeFrustumIntersect(shape.y, ro, rd, cn)
+		: UnitCylinderIntersect(ro, rd, cn);
 	if (d >= t) return 0;
 	t = d;
 	vec4 colA = fetchData(uCylindersDataTexture, o + 5);
@@ -214,7 +221,7 @@ int testCylinder(int i, int isShadowRay, inout float t)
 	intersectionRoughness = mat.y;
 	intersectionTypeParam = mat.z;
 	intersectionReflectivity = mat.w;
-	intersectionShapeIsClosed = FALSE;
+	intersectionShapeIsClosed = (shape.x > 0.5) ? TRUE : FALSE;
 	return (isShadowRay == TRUE && colA.a >= 0.999 && intersectionMaterialType != MAT_TRANSP) ? 1 : 0;
 }
 

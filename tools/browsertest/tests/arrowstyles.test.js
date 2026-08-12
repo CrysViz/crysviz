@@ -64,17 +64,29 @@ function distinctivePixels(file) {
   const arrowTexels = async () => page.evaluate(async () => {
     const { app } = await import('./state/store.js');
     const { fileBrowser } = await import('./state/store.js');
+    const { groups } = await import('./state/store.js');
     const e = app.pipeline?._encoder;
-    if (!e?.polyTexture?.image?.data || !e.arrowBodyCount) return null;
-    const data = e.polyTexture.image.data;
-    const first = e.polyCount - e.arrowBodyCount;
+    if (!e?.cylindersTexture?.image?.data || !e.arrowBodyCount) return null;
+    const data = e.cylindersTexture.image.data;
+    const first = e.cylinderCount - e.arrowBodyCount;
     const arrow = [];
-    for (let i = first; i < e.polyCount; i++) {
-      const d = i * 16;
-      arrow.push({ type: data[d + 2], color: [...data.slice(d + 4, d + 7)] });
+    for (let i = first; i < e.cylinderCount; i++) {
+      const d = i * 32;
+      arrow.push({ type: data[d + 24], color: [...data.slice(d + 20, d + 23)], listed: data[d + 27] });
     }
+    const emissiveArrowBodies = arrow.filter((entry) => entry.type === 3);
+    const emissiveArrowIndices = arrow
+      .map((entry, j) => entry.type === 3 ? first + j : null)
+      .filter((index) => index != null).sort((a, b) => a - b);
+    const emissiveListIndices = e._emissiveList
+      .filter((entry) => entry.kind === 1 && entry.encIndex >= first && entry.encIndex < e.cylinderCount)
+      .map((entry) => entry.encIndex).sort((a, b) => a - b);
     return {
       arrowCount: e.arrowBodyCount, arrow, fingerprint: e._matFingerprint,
+      forceEntries: groups.forcesShaftMesh?.count ?? 0,
+      emissiveArrowBodies: emissiveArrowBodies.length,
+      emissiveListed: emissiveArrowBodies.length > 0 && emissiveArrowBodies.every((entry) => entry.listed === 1),
+      emissiveArrowIndices, emissiveListIndices,
       force0: {
         userColor: fileBrowser.selectedStructure.forces?.[0]?.userColor?.getHexString?.(),
         material: fileBrowser.selectedStructure.forces?.[0]?.userMaterial,
@@ -110,8 +122,9 @@ function distinctivePixels(file) {
   });
   await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
   await waitTracer();
-  const perAtomAfter = await pollTexels((value) => value.arrow.some((entry) => entry.type === 1
-    && entry.color[0] > 0.8 && entry.color[2] > 0.3));
+  const perAtomAfter = await pollTexels((value) => value.arrow.slice(0, 2).length === 2
+    && value.arrow.slice(0, 2).every((entry) => entry.type === 1
+      && entry.color[0] > 0.8 && entry.color[2] > 0.3));
   H.check('per-atom force editor changes the raster instance color',
     perAtomUi.rgb[0] > 0.9 && perAtomUi.rgb[1] < 0.1 && perAtomUi.rgb[2] > 0.3,
     JSON.stringify(perAtomUi));
@@ -119,8 +132,9 @@ function distinctivePixels(file) {
     perAtomUi.material?.type === 'metal' && Math.abs(perAtomUi.material.roughness - 0.05) < 1e-9,
     JSON.stringify(perAtomUi));
   H.check('pipeline re-encodes the per-atom arrow style',
-    !!perAtomAfter && perAtomAfter.arrow.some((entry) => entry.type === 1
-      && entry.color[0] > 0.8 && entry.color[2] > 0.3), JSON.stringify(perAtomAfter));
+    !!perAtomAfter && perAtomAfter.arrow.slice(0, 2).length === 2
+      && perAtomAfter.arrow.slice(0, 2).every((entry) => entry.type === 1
+        && entry.color[0] > 0.8 && entry.color[2] > 0.3), JSON.stringify(perAtomAfter));
 
   // Stored legacy glass is accepted by the model but clamps to standard at
   // arrow decode; glass is absent from the live editor choices.
@@ -133,10 +147,12 @@ function distinctivePixels(file) {
     requestRender();
     return { options, stored: fileBrowser.selectedStructure.forces[0].userMaterial };
   });
-  const glassAfter = await pollTexels((value) => value.arrow[0]?.type === 0);
+  const glassAfter = await pollTexels((value) => value.arrow.slice(0, 2).length === 2
+    && value.arrow.slice(0, 2).every((entry) => entry.type === 0));
   H.check('glass is excluded from the per-arrow material editor', !glass.options.includes('glass'), JSON.stringify(glass));
   H.check('stored legacy glass clamps to standard arrow texels',
-    glass.stored.type === 'glass' && glassAfter?.arrow.some((entry) => entry.type === 0), JSON.stringify(glassAfter));
+    glass.stored.type === 'glass' && glassAfter?.arrow.slice(0, 2).length === 2
+      && glassAfter.arrow.slice(0, 2).every((entry) => entry.type === 0), JSON.stringify(glassAfter));
 
   // Per-atom Reset clears both fields and invalidates the tracer scene.
   const resetBefore = await page.evaluate(async () => {
@@ -187,16 +203,24 @@ function distinctivePixels(file) {
     const overriddenInstance = groups.spinsInstanceBySrcIndex.get(0);
     const overriddenRgb = groups.spinShaftMesh.instanceColor.array
       .slice(overriddenInstance * 6, overriddenInstance * 6 + 3);
-    return { el, categorySrcIdx, rgb: [...rgb], overriddenRgb: [...overriddenRgb], category: s.spinCategoryStyles[el] };
+    return { el, categorySrcIdx, spinInstance: instance, rgb: [...rgb],
+      overriddenRgb: [...overriddenRgb], category: s.spinCategoryStyles[el] };
   });
-  const categoryAfter = await pollTexels((value) => value.arrow.some((entry) => entry.type === 1
-    && entry.color[2] > 0.7));
+  const categoryAfter = await pollTexels((value) => {
+    const first = value.forceEntries + element.spinInstance * 2;
+    const pair = value.arrow.slice(first, first + 2);
+    return pair.length === 2 && pair.every((entry) => entry.type === 1 && entry.color[2] > 0.7);
+  });
   H.check('species category color reaches raster arrows',
     element.rgb[0] < 0.2 && element.rgb[2] > 0.7, JSON.stringify(element));
   H.check('per-arrow userColor still wins over species color',
     element.overriddenRgb[1] > 0.8 && element.overriddenRgb[0] < 0.2, JSON.stringify(element));
   H.check('species editor stores metal and pipeline encodes it',
-    element.category?.material?.type === 'metal' && categoryAfter?.arrow.some((entry) => entry.type === 1),
+    element.category?.material?.type === 'metal' && categoryAfter && (() => {
+      const first = categoryAfter.forceEntries + element.spinInstance * 2;
+      const pair = categoryAfter.arrow.slice(first, first + 2);
+      return pair.length === 2 && pair.every((entry) => entry.type === 1 && entry.color[2] > 0.7);
+    })(),
     JSON.stringify(categoryAfter));
 
   const emissive = await page.evaluate(async () => {
@@ -206,9 +230,19 @@ function distinctivePixels(file) {
     type.dispatchEvent(new Event('change'));
     return editor.querySelector('.material-type-select').value;
   });
-  const emissiveAfter = await pollTexels((value) => value.arrow.some((entry) => entry.type === 3));
+  const emissiveAfter = await pollTexels((value) => value.emissiveArrowBodies === 4
+    && value.emissiveListed && value.emissiveArrowIndices.length === 4
+    && value.emissiveListIndices.length === 4
+    && value.emissiveArrowIndices.every((index, i) => index === value.emissiveListIndices[i]));
+  const emissiveIndicesMatch = !!emissiveAfter
+    && emissiveAfter.emissiveArrowIndices.length === emissiveAfter.emissiveListIndices.length
+    && emissiveAfter.emissiveArrowIndices.every((index, i) => index === emissiveAfter.emissiveListIndices[i]);
   H.check('species emissive material encodes emissive texels', emissive === 'emissive'
-    && emissiveAfter?.arrow.some((entry) => entry.type === 3), JSON.stringify(emissiveAfter));
+    && emissiveAfter?.emissiveArrowBodies === 4
+    && emissiveAfter.emissiveListed
+    && emissiveIndicesMatch
+    && emissiveAfter.arrow.filter((entry) => entry.type === 3).every((entry) => entry.listed === 1),
+  JSON.stringify(emissiveAfter));
 
   // Reset under the "none" colormap must restore the raster/default color,
   // since the none path deliberately does not rewrite arrow.color.

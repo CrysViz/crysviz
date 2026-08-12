@@ -52,7 +52,6 @@ const DEFAULT_MATERIAL_TEXEL = [0, 0.6, 0.6, -1]; // standard, tint 0.6 + gloss 
 // arrival lighting (their material texel's "listed" bit stays 0) so they never
 // go dark — see the LIGHT-branch gate in ptSceneFragment.js.
 const EMISSIVE_CAP = 64;
-const ARROW_FACETS = 8;
 const OCCUPANCY_FLAG = 0.25;
 const OCCUPANCY_MIN_WEDGE = 1e-3;
 
@@ -218,7 +217,6 @@ export class SceneEncoder {
   hasOccupancy = false;
   occupancyFoldedSites = 0;
   arrowBodyCount = 0;
-  arrowPlaneCount = 0;
   _cylBounds = new Float32Array(4); // per-cylinder world bounding spheres (cx,cy,cz,r)
   _cylSegs = new Float32Array(8);   // per-cylinder (cx,cy,cz, hx,hy,hz, rad, sphereR)
   hasEmissive = false; // any emissive (code 3) material texel written this encode
@@ -488,7 +486,6 @@ export class SceneEncoder {
     this.hasOccupancy = false;
     this.occupancyFoldedSites = 0;
     this.arrowBodyCount = 0;
-    this.arrowPlaneCount = 0;
     this._emissiveList = [];  // sub-encoders push emissive prims (encode order)
     this._encodeAtoms();
     this._encodeCylinders();
@@ -952,14 +949,15 @@ export class SceneEncoder {
   _encodeCylinders() {
     // bonds + unit-cell edges + polyhedra edges share the cylinder encoding
     // (8 texels each: bounding sphere, 4 inverse-matrix columns, colour,
-    // material, reserved — see sceneFragment.js layout comment)
+    // material, optional frustum shape — see sceneFragment.js layout comment)
     const bonds = (groups.bondsMesh && groups.bondsMesh.visible) ? groups.bondsMesh : null;
     const edges = this._latticeEdges();
     const polyEdges = this._polyEdges();
     const planeBorders = this._planeBorders();
     const measCyls = this._measurementCylinders();
+    const arrows = this._arrowFrustumEntries();
     const total = (bonds ? bonds.count : 0) + edges.length + polyEdges.length
-      + planeBorders.length + measCyls.length;
+      + planeBorders.length + measCyls.length + arrows.length;
     const texture = this._ensureCapacity('cylindersTexture', Math.max(1, total * 8));
     const data = texture.image.data;
     // per-cylinder world bounding spheres (cx,cy,cz,r), reused by the whole-
@@ -971,7 +969,7 @@ export class SceneEncoder {
     this._cylSegs = new Float32Array(Math.max(8, total * 8));
     let n = 0;
 
-    const writeCylinder = (invM, geom, r, g, b, a, matTexel) => {
+    const writeCylinder = (invM, geom, r, g, b, a, matTexel, shape = null) => {
       const d = n * 32;
       data[d] = geom[0]; data[d + 1] = geom[1];      // texel 0: bounding sphere
       data[d + 2] = geom[2]; data[d + 3] = geom[7];  // (center.xyz, radius)
@@ -990,7 +988,9 @@ export class SceneEncoder {
           cx: geom[0], cy: geom[1], cz: geom[2], r: geom[7], power: matTexel[2] });
       }
       data.set(matTexel, d + 24);                    // texel 6: material
-      data[d + 28] = 0; data[d + 29] = 0; data[d + 30] = 0; data[d + 31] = 0; // texel 7: reserved
+      data[d + 28] = shape ? 1 : 0;
+      data[d + 29] = shape?.rTop ?? 0;
+      data[d + 30] = 0; data[d + 31] = 0; // texel 7: reserved / frustum shape
       const cb = n * 4;
       this._cylBounds[cb] = geom[0]; this._cylBounds[cb + 1] = geom[1];
       this._cylBounds[cb + 2] = geom[2]; this._cylBounds[cb + 3] = geom[7];
@@ -1046,8 +1046,13 @@ export class SceneEncoder {
     for (const edge of measCyls) {
       writeCylinder(edge.invM, edge.geom, edge.r, edge.g, edge.b, edge.a, DEFAULT_MATERIAL_TEXEL);
     }
+    for (const arrow of arrows) {
+      writeCylinder(arrow.invM, arrow.geom, arrow.r, arrow.g, arrow.b, arrow.a,
+        arrow.matTexel, arrow.shape);
+    }
 
     this.cylinderCount = n;
+    this.arrowBodyCount = arrows.length;
     texture.needsUpdate = true;
   }
 
@@ -1155,33 +1160,13 @@ export class SceneEncoder {
     return edges;
   }
 
-  /** Convert the visible raster arrow meshes into the two convex bodies that
-   *  represent each arrow in the tracer: one eight-sided prism for the joined
-   *  two-part shaft and one eight-sided cone for the tip. The matrices are read
-   *  from the live InstancedMeshes, so this follows the raster module's exact
-   *  origin, direction, length, radius and per-instance colour. */
-  _arrowConvexBodies() {
+  /** Convert the visible raster arrow meshes into two analytic frustum entries
+   *  per arrow: a capped cylinder for the joined shaft and a sharp capped cone
+   *  for the tip. The matrices are read from the live InstancedMeshes, so this
+   *  follows the raster module's exact origin, direction, length, radius and
+   *  per-instance colour. */
+  _arrowFrustumEntries() {
     const result = [];
-    const addBody = (mesh, points, instanceIndex, style) => {
-      let hull;
-      try { hull = new ConvexHull().setFromPoints(points); } catch { return; }
-      const planes = [];
-      for (const face of hull.faces) {
-        const n = face.normal, w = face.constant;
-        if (!planes.some((p) => (p[0] * n.x + p[1] * n.y + p[2] * n.z) > 0.9999
-            && Math.abs(p[3] - w) < 1e-4)) planes.push([n.x, n.y, n.z, w]);
-      }
-      if (planes.length > MAX_PLANES) return;
-      const aabb = new THREE.Box3().setFromPoints(points);
-      const colors = mesh.instanceColor?.array;
-      if (!colors) return;
-      const c = instanceIndex * 3;
-      result.push({ kind: 'arrow', planes, aabb,
-        color: style.color ?? [colors[c], colors[c + 1], colors[c + 2]],
-        material: style.material,
-        alpha: mesh.material?.opacity ?? 1 });
-      this.arrowPlaneCount += planes.length;
-    };
     const addMeshArrows = (shaft, tip, kind) => {
       if (!shaft?.visible || !tip?.visible || shaft.count < 2 || tip.count < 1) return;
       shaft.updateWorldMatrix(true, false);
@@ -1195,8 +1180,12 @@ export class SceneEncoder {
       const srcByInstance = new Map([...instanceMap]
         .map(([srcIdx, instanceIndex]) => [instanceIndex, srcIdx]));
       for (let i = 0; i < count; i++) {
+        const shaftColors = shaft.instanceColor?.array;
+        const tipColors = tip.instanceColor?.array;
+        if (!shaftColors || !tipColors) continue;
         // The raster shaft is two contiguous half-length cylinders. Merge the
-        // pair into one prism so the tracer has exactly two bodies per arrow.
+        // pair into one capped cylinder so the tracer has exactly two entries
+        // per arrow.
         shaft.getMatrixAt(i * 2, _m);
         _m2.multiplyMatrices(shaft.matrixWorld, _m);
         const e = _m2.elements;
@@ -1204,46 +1193,38 @@ export class SceneEncoder {
         const axis = new THREE.Vector3(e[4], e[5], e[6]);
         const half = axis.length();
         if (!(half > 1e-8)) continue;
-        axis.multiplyScalar(1 / half);
         shaft.getMatrixAt(i * 2 + 1, _m);
         _m2.multiplyMatrices(shaft.matrixWorld, _m);
         const e2 = _m2.elements;
         center.add(new THREE.Vector3(e2[12], e2[13], e2[14])).multiplyScalar(0.5);
-        const radial0 = new THREE.Vector3(e[0], e[1], e[2]);
-        const radial2 = new THREE.Vector3(e[8], e[9], e[10]);
-        const points = [];
-        for (const end of [-1, 1]) {
-          for (let k = 0; k < ARROW_FACETS; k++) {
-            const angle = (k / ARROW_FACETS) * Math.PI * 2;
-            points.push(center.clone().addScaledVector(axis, end * half)
-              .addScaledVector(radial0, Math.cos(angle))
-              .addScaledVector(radial2, Math.sin(angle)));
-          }
-        }
-        const shaftColor = shaft.instanceColor?.array;
-        const fallbackColor = shaftColor
-          ? [shaftColor[i * 6], shaftColor[i * 6 + 1], shaftColor[i * 6 + 2]]
-          : [1, 1, 1];
+        _m.set(e[0], e[4], e[8], center.x,
+          e[1], e[5], e[9], center.y,
+          e[2], e[6], e[10], center.z,
+          0, 0, 0, 1);
+        const fallbackColor = [shaftColors[i * 6], shaftColors[i * 6 + 1],
+          shaftColors[i * 6 + 2]];
         const style = arrowStyle(fileBrowser.selectedStructure, kind,
           srcByInstance.get(i), fallbackColor, arrowMap?.get(i));
-        addBody(shaft, points, i * 2, style);
+        result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
+          r: style.color[0], g: style.color[1], b: style.color[2],
+          a: shaft.material?.opacity ?? 1, matTexel: materialTexel(style.material),
+          shape: { rTop: 1 } });
 
         tip.getMatrixAt(i, _m);
         _m2.multiplyMatrices(tip.matrixWorld, _m);
         const te = _m2.elements;
-        const tipCenter = new THREE.Vector3(te[12], te[13], te[14]);
-        const tipAxis = new THREE.Vector3(te[4], te[5], te[6]);
-        const base = tipCenter.clone().addScaledVector(tipAxis, -0.5);
-        const apex = tipCenter.clone().addScaledVector(tipAxis, 0.5);
-        const tipRadial0 = new THREE.Vector3(te[0], te[1], te[2]);
-        const tipRadial2 = new THREE.Vector3(te[8], te[9], te[10]);
-        const cone = [apex];
-        for (let k = 0; k < ARROW_FACETS; k++) {
-          const angle = (k / ARROW_FACETS) * Math.PI * 2;
-          cone.push(base.clone().addScaledVector(tipRadial0, Math.cos(angle))
-            .addScaledVector(tipRadial2, Math.sin(angle)));
-        }
-        addBody(tip, cone, i, style);
+        _m.set(te[0], te[4] * 0.5, te[8], te[12],
+          te[1], te[5] * 0.5, te[9], te[13],
+          te[2], te[6] * 0.5, te[10], te[14],
+          0, 0, 0, 1);
+        const tipFallback = [tipColors[i * 3], tipColors[i * 3 + 1], tipColors[i * 3 + 2]];
+        const tipStyle = arrowStyle(fileBrowser.selectedStructure, kind,
+          srcByInstance.get(i), tipFallback, arrowMap?.get(i));
+        const tipColor = tipStyle.color ?? tipFallback;
+        result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
+          r: tipColor[0], g: tipColor[1], b: tipColor[2],
+          a: tip.material?.opacity ?? 1, matTexel: materialTexel(tipStyle.material),
+          shape: { rTop: 0 } });
       }
     };
     addMeshArrows(groups.forcesShaftMesh, groups.forcesTipMesh, 'forces');
@@ -1256,9 +1237,8 @@ export class SceneEncoder {
     const group = groups.polyhedraGroup;
     const meshes = (group?.children ?? []).filter(
       (m) => m.userData?.type === 'polyhedron' && m.visible && this._polyPlanes(m));
-    const arrows = this._arrowConvexBodies();
     const entries = meshes.map((mesh) => ({ kind: 'poly', mesh,
-      planes: mesh.userData.rtPlanes, aabb: mesh.userData.rtAabb })).concat(arrows);
+      planes: mesh.userData.rtPlanes, aabb: mesh.userData.rtAabb }));
     // layout: 4 header texels per convex body up front, then the plane texels
     let planeTexels = 0;
     for (const entry of entries) planeTexels += entry.planes.length;
@@ -1281,14 +1261,9 @@ export class SceneEncoder {
       // spare header/AABB w slots (poly.key/catKey are stamped by
       // PolyhedraModule.assignPolyhedraKeys; when absent — list panel never
       // built — the default material applies)
-      const poly = entry.kind === 'poly'
-        ? structure?.polyhedra?.polyhedra?.[mesh.userData.polyIndex] : null;
-      const material = entry.kind === 'arrow'
-        ? entry.material
-        : entry.kind === 'poly'
-        ? ((poly?.key ? structure?.polyhedraUserStyles?.[poly.key]?.material : null)
-          ?? (poly?.catKey ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null))
-        : null;
+      const poly = structure?.polyhedra?.polyhedra?.[mesh.userData.polyIndex];
+      const material = (poly?.key ? structure?.polyhedraUserStyles?.[poly.key]?.material : null)
+        ?? (poly?.catKey ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null);
       const [matType, roughness, typeParam, reflectivity] = materialTexel(material);
       let listedReflect = reflectivity; // aabbMax.w slot (listed bit for emissive)
       if (matType === 3) {
@@ -1296,7 +1271,7 @@ export class SceneEncoder {
         const listed = this._emissiveList.length < EMISSIVE_CAP;
         listedReflect = listed ? 1 : 0;
         // Emitter bounding sphere from the convex body's AABB (center +
-        // half-diagonal). This covers both polyhedra and arrows.
+        // half-diagonal).
         const cx = (aabb.min.x + aabb.max.x) / 2;
         const cy = (aabb.min.y + aabb.max.y) / 2;
         const cz = (aabb.min.z + aabb.max.z) / 2;
@@ -1306,10 +1281,9 @@ export class SceneEncoder {
       }
       const d = p * 16;
       data[d] = planeOffset; data[d + 1] = planes.length; data[d + 2] = matType; data[d + 3] = roughness;
-      if (entry.kind === 'poly') _color.copy(mesh.material.color);
-      else _color.fromArray(entry.color);
+      _color.copy(mesh.material.color);
       data[d + 4] = _color.r; data[d + 5] = _color.g; data[d + 6] = _color.b;
-      data[d + 7] = entry.kind === 'poly' ? (mesh.material.opacity ?? 1) : entry.alpha;
+      data[d + 7] = mesh.material.opacity ?? 1;
       data[d + 8] = aabb.min.x; data[d + 9] = aabb.min.y; data[d + 10] = aabb.min.z; data[d + 11] = typeParam;
       data[d + 12] = aabb.max.x; data[d + 13] = aabb.max.y; data[d + 14] = aabb.max.z; data[d + 15] = listedReflect;
       for (const plane of planes) {

@@ -29,6 +29,7 @@ import { fieldChunk } from '../raytrace/fieldChunk.js';
 import { planeChunk } from '../raytrace/planeChunk.js';
 import { gridChunk } from '../raytrace/gridChunk.js';
 import { convexChunk } from '../raytrace/convexChunk.js';
+import { coneChunk } from '../raytrace/coneChunk.js';
 
 export function makePtSceneFragment(pieChunk = '', preMainChunk = '') {
 return /* glsl */`
@@ -166,6 +167,8 @@ int gRayExiting = FALSE;
 #include <pathtracing_boundingbox_intersect>
 #include <pathtracing_convexpolyhedron_intersect>
 #include <pathtracing_plane_intersect>
+
+${coneChunk}
 #include <pathtracing_sample_sphere_light>
 
 // ===========================================================================
@@ -409,7 +412,10 @@ int testCylinder(int i, inout float t)
 	vec3 ro = (invM * vec4(rayOrigin, 1.0)).xyz;
 	vec3 rd = (invM * vec4(rayDirection, 0.0)).xyz;
 	vec3 cn;
-	float d = UnitCylinderIntersect(ro, rd, cn);
+	vec4 shape = fetchData(uCylindersDataTexture, o + 7);
+	float d = (shape.x > 0.5)
+		? UnitCappedConeFrustumIntersect(shape.y, ro, rd, cn)
+		: UnitCylinderIntersect(ro, rd, cn);
 	if (d >= t) return 0;
 	t = d;
 	vec4 colA = fetchData(uCylindersDataTexture, o + 5);
@@ -418,7 +424,8 @@ int testCylinder(int i, inout float t)
 	hitColor = colA.rgb;
 	hitType = resolveHitType(mat, colA.rgb, colA.a);
 	hitObjectID = float(1 + uAtomCount + i);
-	gRayExiting = FALSE; // open cylinders are not closed shapes
+	// The frustum intersector flips normals toward the ray; arrows are never glass.
+	gRayExiting = FALSE;
 	return (gShadowRay == TRUE && uShadowAnyHit
 		&& (int(mat.x + 0.5) == 2 || colA.a >= 0.999)) ? 1 : 0;
 }
