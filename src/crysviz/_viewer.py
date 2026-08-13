@@ -580,7 +580,8 @@ class Viewer:
         return result
 
     def save_image(self, path: str | os.PathLike[str], *, width: int = 800, height: int = 600,
-                   margin: int = 0, transparent: bool = False, timeout: float | None = None) -> Path:
+                   margin: int = 0, transparent: bool = False, structure_only: bool = False,
+                   timeout: float | None = None) -> Path:
         if isinstance(width, bool) or not isinstance(width, int) or not 1 <= width <= 16384:
             raise ValueError("width must be an integer from 1 through 16384")
         if isinstance(height, bool) or not isinstance(height, int) or not 1 <= height <= 16384:
@@ -591,6 +592,8 @@ class Viewer:
             raise ValueError("margin must be smaller than half of each dimension")
         if not isinstance(transparent, bool):
             raise TypeError("transparent must be boolean")
+        if not isinstance(structure_only, bool):
+            raise TypeError("structure_only must be boolean")
         if timeout is not None:
             try:
                 valid_timeout = (not isinstance(timeout, bool) and isinstance(timeout, (int, float))
@@ -601,7 +604,8 @@ class Viewer:
                 raise ValueError("timeout must be a positive finite number")
         target = Path(path)
         result, received = self._command(
-            "save_image", {"width": width, "height": height, "margin": margin, "transparent": transparent},
+            "save_image", {"width": width, "height": height, "margin": margin,
+                           "transparent": transparent, "structureOnly": structure_only},
             timeout=timeout, include_attachments=True,
         )
         try:

@@ -76,6 +76,9 @@ export function initImageExportPanel() {
         <label>Margin (px)<input type="number" id="pngMargin" min="0" max="4096" step="1" value="0"></label>
         <label class="png-check"><input type="checkbox" id="pngTransparent">Transparent background</label>
       </div>
+      <div class="png-row">
+        <label class="png-check"><input type="checkbox" id="pngStructureOnly">Frame only structure (not axes, colorbars)</label>
+      </div>
       <p class="png-note">Save exports the whole view as-is (Margin adds a band of surrounding scene). Choose region lets you drag a crop area over the 3D view first — the scene, the gizmo, and any floating color bars, right where they're currently arranged.</p>
       <div class="paste-modal-actions">
         <button type="button" id="pngSaveBtn" class="png-primary">Save</button>
@@ -92,6 +95,7 @@ export function initImageExportPanel() {
   const lockInput = document.getElementById('pngLock');
   const marginInput = document.getElementById('pngMargin');
   const transparentInput = document.getElementById('pngTransparent');
+  const structureOnlyInput = document.getElementById('pngStructureOnly');
   const saveBtn = document.getElementById('pngSaveBtn');
   const downloadBtn = document.getElementById('pngDownloadBtn');
   const cancelBtn = document.getElementById('pngCancelBtn');
@@ -120,6 +124,7 @@ export function initImageExportPanel() {
       height: Math.round(Number(heightInput.value) || 0),
       margin: Math.max(0, Math.round(Number(marginInput.value) || 0)),
       transparent: transparentInput.checked,
+      structureOnly: structureOnlyInput.checked,
     };
   }
 
@@ -137,6 +142,7 @@ export function initImageExportPanel() {
     lockInput.checked = free ? false : (p.lock !== false);
     marginInput.value = String(p.margin != null ? p.margin : 0);
     transparentInput.checked = !!p.transparent;
+    structureOnlyInput.checked = !!p.structureOnly;
 
     const longEdge = Math.max(Number(p.width) || 0, Number(p.height) || 0) || DEFAULT_LONG_EDGE;
     if (aspectSelect.value === 'free') {
@@ -219,7 +225,8 @@ export function initImageExportPanel() {
     try {
       const blob = await captureSceneToPng({
         width: dims.width, height: dims.height, margin,
-        transparent: transparentInput.checked, signal: activeAbort.signal,
+        transparent: transparentInput.checked,
+        structureOnly: structureOnlyInput.checked, signal: activeAbort.signal,
         onProgress: ({ current, target }) => {
           saveBtn.textContent = `Rendering… ${current} / ${target}`;
         },
@@ -245,7 +252,7 @@ export function initImageExportPanel() {
   // aspect — but only when that box fits the view as it is; otherwise the
   // crop overlay keeps its own default (a centered inset box).
   function autoInitialRect(lockedAspect) {
-    const box = computeContentScreenBox();
+    const box = computeContentScreenBox({ structureOnly: structureOnlyInput.checked });
     if (!box) return null;
     const view = document.getElementById('view');
     const vw = (view && view.clientWidth) || 0;
@@ -270,6 +277,7 @@ export function initImageExportPanel() {
     if (!dims) return;
     const { width, height } = dims;
     const transparent = transparentInput.checked;
+    const structureOnly = structureOnlyInput.checked;
     const free = isFree();
     closeModal();
 
@@ -311,7 +319,7 @@ export function initImageExportPanel() {
           }
         }
         const blob = await captureSceneToPng({
-          width: outWidth, height: outHeight, transparent, crop, signal, onProgress,
+          width: outWidth, height: outHeight, transparent, structureOnly, crop, signal, onProgress,
         });
         downloadBlob(currentBaseName() + '.png', blob);
       },

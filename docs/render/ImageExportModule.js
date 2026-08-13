@@ -193,12 +193,25 @@ export function makeTileCamera(camera, srcW, srcH, tx, ty, tw, th, isTracer) {
 // overlap region is cleared before each draw so transparent pixels don't
 // double-composite. Tracer tiles each run their own full convergence
 // (total work ~ samples x pixels, the same as an untiled render).
-async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal, win) {
+/** Tile origin positions covering [0, total) with 2*ov guard overlap between
+ *  neighbours (edge tiles clamp inward), so every composited pixel has >= ov
+ *  valid neighbour pixels inside its own tile for the smoothing filter. */
+function tilePositions(total, tile, ov) {
+  if (tile >= total) return [0];
+  const step = tile - 2 * ov;
+  const pos = [];
+  for (let p = 0; ; p += step) {
+    if (p + tile >= total) { pos.push(total - tile); break; }
+    pos.push(p);
+  }
+  return pos;
+}
+
+async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal, win, composeTile) {
   const w0 = isIdentityWindow(win) ? 0 : win.x0;
   const h0 = isIdentityWindow(win) ? 0 : win.y0;
   const wW = isIdentityWindow(win) ? 1 : win.x1 - win.x0;
   const wH = isIdentityWindow(win) ? 1 : win.y1 - win.y0;
-  const { canvas: srcCanvas, ctx: sctx } = createVerifiedCanvas(srcW, srcH, 'render capture');
   app.renderer.setSize(tileW, tileH, false);
   const gl = app.renderer.getContext();
   throwIfContextLost(gl);
@@ -210,8 +223,16 @@ async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal, win
   app.pipeline?.setSize(tileW, tileH);
   sawGlOutOfMemory(gl); // drain stale errors so the post-frame check is honest
   const isTracer = !!app.pipeline?.isConverged;
-  const nx = Math.ceil(srcW / tileW);
-  const ny = Math.ceil(srcH / tileH);
+  // Guard overlap so the compositor's smoothing filter never reads past a
+  // tile's own pixels at an interior seam (see tilePositions/composeTile).
+  const OV = 8;
+  const posX = tilePositions(srcW, tileW, OV);
+  const posY = tilePositions(srcH, tileH, OV);
+  // Disjoint per-tile ownership cuts: tile i owns [cut[i], cut[i+1]).
+  const cutsX = [0, ...posX.slice(1).map((p) => p + OV), srcW];
+  const cutsY = [0, ...posY.slice(1).map((p) => p + OV), srcH];
+  const nx = posX.length;
+  const ny = posY.length;
   const perTileTarget = app.pipeline?._cfg?.targetSamples ?? 0;
   let firstFrameChecked = false;
   const checkFirstFrame = () => {
@@ -225,8 +246,8 @@ async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal, win
   };
   for (let j = 0; j < ny; j++) {
     for (let i = 0; i < nx; i++) {
-      const tx = Math.min(i * tileW, srcW - tileW);
-      const ty = Math.min(j * tileH, srcH - tileH);
+      const tx = posX[i];
+      const ty = posY[j];
       // Tile rect composed through the render window, all in fractions of
       // the live camera's own frame (makeTileCamera is ratio-based).
       const tile = makeTileCamera(app.camera, 1, 1,
@@ -262,13 +283,14 @@ async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal, win
         tile.restore();
       }
       // No await between the last render and this read (no preserveDrawingBuffer).
-      // clearRect first: edge tiles overlap, and source-over would double-
-      // composite semi-transparent pixels.
-      sctx.clearRect(tx, ty, tileW, tileH);
-      sctx.drawImage(app.renderer.domElement, tx, ty);
+      // The tile is composited STRAIGHT into the output canvas — a full
+      // srcW x srcH intermediate would be the one remaining allocation that
+      // grows with export size (a ~300 MB canvas at 7000x7000 outputs, on
+      // top of the output itself: exactly the Firefox-killing spike).
+      composeTile(app.renderer.domElement, tx, ty,
+        cutsX[i], cutsX[i + 1], cutsY[j], cutsY[j + 1]);
     }
   }
-  return srcCanvas;
 }
 
 // Like renderMainToCanvas, but for progressive tracer pipelines: keeps
@@ -774,7 +796,7 @@ function drawCompositionLegend(octx, width, height, crop, viewRect) {
  * @returns {{left:number, top:number, width:number, height:number} | null}
  *   null when there is no content or no scene yet.
  */
-export function computeContentScreenBox() {
+export function computeContentScreenBox({ structureOnly = false } = {}) {
   if (!app.renderer || !app.scene || !app.camera) return null;
   const viewEl = getViewEl();
   if (!viewEl) return null;
@@ -822,8 +844,10 @@ export function computeContentScreenBox() {
     }
   }
 
-  // --- visible floating overlays: their true on-screen DOM rects ---
+  // --- visible floating overlays: their true on-screen DOM rects
+  //     (skipped for a structure-only framing) ---
   const domRect = (el) => {
+    if (structureOnly) return;
     if (!el || el.style?.display === 'none') return;
     const r = el.getBoundingClientRect();
     if (!(r.width > 0) || !(r.height > 0)) return;
@@ -835,7 +859,7 @@ export function computeContentScreenBox() {
     if (!general.gizmoLabelsOnArrows) domRect(document.getElementById('axesLegend'));
   }
   for (const bar of listActiveColorBars()) {
-    if (bar.instance.isFloating()) {
+    if (!structureOnly && bar.instance.isFloating()) {
       const r = bar.instance.getVisualRect();
       include(r.left - viewRect.left, r.top - viewRect.top,
         r.right - viewRect.left, r.bottom - viewRect.top);
@@ -867,9 +891,13 @@ export function isPngCaptureInProgress() {
  * finally as a normal completion) and an AbortError is thrown.
  *
  * @param {{width:number, height:number, margin?:number, transparent?:boolean,
+ *   structureOnly?: boolean,
  *   crop?: {x0:number, y0:number, x1:number, y1:number},
  *   onProgress?:(p:{current:number, target:number})=>void,
  *   signal?:AbortSignal}} opts
+ *   structureOnly: omit the axes gizmo/legend, floating color bars, and the
+ *   composition legend from the capture — just the structure (measurement
+ *   labels stay).
  *   margin: pixels of SCENE border added inside the width x height output —
  *   the capture window widens so the band shows the scene continuing beyond
  *   the captured area (the content itself occupies the central
@@ -1077,17 +1105,59 @@ async function captureSceneToPngImpl(opts, finish = encodePng) {
     const bytesPerPixel = isTracer ? 48 : 16;
     const maxPixels = renderMemoryBudgetBytes() / bytesPerPixel;
 
+    // Whether one GL surface can hold the whole source, and whether the
+    // pipeline/camera combination can express tiles — everything except a
+    // perspective-camera tracer, which instead caps the source and upscales
+    // (see makeTileCamera).
+    const single = srcW <= glMaxDim && srcH <= glMaxDim && srcW * srcH <= maxPixels;
+    const canTile = !isTracer || app.camera.isOrthographicCamera === true;
+    if (!single && !canTile) {
+      const capDim = Math.min(glMaxDim, Math.floor(Math.sqrt(maxPixels)));
+      const k = Math.min(1, capDim / Math.max(srcW, srcH),
+        Math.sqrt(maxPixels / (srcW * srcH)));
+      srcW = Math.max(1, Math.floor(srcW * k));
+      srcH = Math.max(1, Math.floor(srcH * k));
+      console.info(`[png-export] perspective tracer cannot render tiled; source `
+        + `capped to ${srcW}x${srcH} (the output upscales from it).`);
+    }
+
+    // --- Source -> output mapping, computed BEFORE rendering so the tiled
+    //     path can composite each tile straight into the output canvas.
+    //     Contain-fit the crop into the output box, centred: a real
+    //     crop-tool selection already matches the output's aspect exactly
+    //     (ui/CropOverlay.js enforces it), so this reduces to filling
+    //     innerW x innerH with no letterboxing; the no-crop fallback
+    //     (arbitrary output dims vs the view's own aspect) is the case the
+    //     centring actually guards against distortion for. ---
+    const cropPxX = ((crop.x0 - win.x0) / winW) * srcW;
+    const cropPxY = ((crop.y0 - win.y0) / winH) * srcH;
+    const cropPxW = cropFracW * srcW;
+    const cropPxH = cropFracH * srcH;
+    const scale = Math.min(innerW / cropPxW, innerH / cropPxH);
+    const drawW = cropPxW * scale;
+    const drawH = cropPxH * scale;
+    const dx = (innerW - drawW) / 2;
+    const dy = (innerH - drawH) / 2;
+    octx.imageSmoothingEnabled = true;
+    octx.imageSmoothingQuality = 'high';
+    if (!transparent) {
+      octx.fillStyle = bgCss;
+      octx.fillRect(0, 0, width, height);
+    }
+
     // --- Final high-res pass (tracer pipelines render to full convergence,
     //     with the on-screen progress bar tracking the accumulation). A
-    //     source too large for ONE GL surface renders TILED (bounded GPU
-    //     memory at any size) whenever the pipeline/camera combination can
-    //     express a sub-window — everything except a perspective-camera
-    //     tracer, which instead caps the source and upscales (see
-    //     makeTileCamera). ---
-    let srcCanvas;
-    if (srcW <= glMaxDim && srcH <= glMaxDim && srcW * srcH <= maxPixels) {
-      srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal, win);
-    } else if (!isTracer || app.camera.isOrthographicCamera === true) {
+    //     source too large for ONE GL surface renders TILED — bounded GPU
+    //     memory at any size, and no full-size CPU intermediate either:
+    //     each tile lands in the output directly, clipped to its own
+    //     disjoint ownership region (so transparency never
+    //     double-composites) while the whole tile is available to the
+    //     smoothing filter (the guard overlap prevents seams). ---
+    if (single || !canTile) {
+      const srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal, win);
+      throwIfAborted(signal);
+      octx.drawImage(srcCanvas, cropPxX, cropPxY, cropPxW, cropPxH, dx, dy, drawW, drawH);
+    } else {
       let tileW = Math.min(srcW, glMaxDim);
       let tileH = Math.min(srcH, glMaxDim);
       if (tileW * tileH > maxPixels) {
@@ -1097,42 +1167,24 @@ async function captureSceneToPngImpl(opts, finish = encodePng) {
       }
       console.info(`[png-export] rendering ${srcW}x${srcH} in `
         + `${Math.ceil(srcW / tileW)}x${Math.ceil(srcH / tileH)} tiles of ${tileW}x${tileH}.`);
-      srcCanvas = await renderMainTiled(srcW, srcH, tileW, tileH, opts.onProgress, signal, win);
-    } else {
-      const capDim = Math.min(glMaxDim, Math.floor(Math.sqrt(maxPixels)));
-      const k = Math.min(1, capDim / Math.max(srcW, srcH),
-        Math.sqrt(maxPixels / (srcW * srcH)));
-      srcW = Math.max(1, Math.floor(srcW * k));
-      srcH = Math.max(1, Math.floor(srcH * k));
-      console.info(`[png-export] perspective tracer cannot render tiled; source `
-        + `capped to ${srcW}x${srcH} (the output upscales from it).`);
-      srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal, win);
+      const composeTile = (canvasEl, tx, ty, cx0, cx1, cy0, cy1) => {
+        const rx0 = Math.max(dx + (cx0 - cropPxX) * scale, dx);
+        const ry0 = Math.max(dy + (cy0 - cropPxY) * scale, dy);
+        const rx1 = Math.min(dx + (cx1 - cropPxX) * scale, dx + drawW);
+        const ry1 = Math.min(dy + (cy1 - cropPxY) * scale, dy + drawH);
+        if (rx1 <= rx0 || ry1 <= ry0) return; // tile fully outside the crop
+        octx.save();
+        octx.beginPath();
+        octx.rect(rx0, ry0, rx1 - rx0, ry1 - ry0);
+        octx.clip();
+        octx.drawImage(canvasEl,
+          dx + (tx - cropPxX) * scale, dy + (ty - cropPxY) * scale,
+          tileW * scale, tileH * scale);
+        octx.restore();
+      };
+      await renderMainTiled(srcW, srcH, tileW, tileH, opts.onProgress, signal, win, composeTile);
+      throwIfAborted(signal);
     }
-    throwIfAborted(signal);
-
-    const cropPxX = ((crop.x0 - win.x0) / winW) * srcW;
-    const cropPxY = ((crop.y0 - win.y0) / winH) * srcH;
-    const cropPxW = cropFracW * srcW;
-    const cropPxH = cropFracH * srcH;
-
-    octx.imageSmoothingEnabled = true;
-    octx.imageSmoothingQuality = 'high';
-    if (!transparent) {
-      octx.fillStyle = bgCss;
-      octx.fillRect(0, 0, width, height);
-    }
-    // Contain-fit the crop into the output box, centred. A
-    // real crop-tool selection already matches the output's aspect exactly
-    // (ui/CropOverlay.js enforces it), so this reduces to filling innerW x
-    // innerH with no letterboxing; the no-crop fallback (arbitrary output
-    // dims vs the view's own aspect) is the case this centring actually
-    // guards against distortion for.
-    const scale = Math.min(innerW / cropPxW, innerH / cropPxH);
-    const drawW = cropPxW * scale;
-    const drawH = cropPxH * scale;
-    const dx = (innerW - drawW) / 2;
-    const dy = (innerH - drawH) / 2;
-    octx.drawImage(srcCanvas, cropPxX, cropPxY, cropPxW, cropPxH, dx, dy, drawW, drawH);
 
     const map = {
       srcW, srcH, win, cropX: cropPxX, cropY: cropPxY, dx, dy, scale,
@@ -1140,9 +1192,14 @@ async function captureSceneToPngImpl(opts, finish = encodePng) {
       fontScale: (cropPxH * scale) / Math.max(1, (crop.y1 - crop.y0) * vh),
     };
     drawMeasurementLabels(octx, map);
-    prevGizmoPR = drawGizmoAndLegend(octx, width, height, crop, viewRect);
-    drawFloatingColorBars(octx, width, height, crop, viewRect);
-    drawCompositionLegend(octx, width, height, crop, viewRect);
+    // structureOnly: a bare figure of the structure itself — no axes gizmo/
+    // legend, floating color bars, or composition legend (measurement labels
+    // stay: they annotate the structure and are anchored to its atoms).
+    if (!opts.structureOnly) {
+      prevGizmoPR = drawGizmoAndLegend(octx, width, height, crop, viewRect);
+      drawFloatingColorBars(octx, width, height, crop, viewRect);
+      drawCompositionLegend(octx, width, height, crop, viewRect);
+    }
 
     return await finish(out);
   } finally {

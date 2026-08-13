@@ -35,10 +35,12 @@ async function cropRect(page) {
     region: document.getElementById('pngDownloadBtn')?.className,
     regionLabel: document.getElementById('pngDownloadBtn')?.textContent,
     margin: !!document.getElementById('pngMargin'),
+    structureOnly: !!document.getElementById('pngStructureOnly'),
   }));
-  H.check('dialog has the two green primary buttons and the margin field',
+  H.check('dialog has the two green primary buttons, margin, and structure-only',
     anatomy.save === 'png-primary' && anatomy.region === 'png-primary'
-      && /choose region/i.test(anatomy.regionLabel || '') && anatomy.margin,
+      && /choose region/i.test(anatomy.regionLabel || '') && anatomy.margin
+      && anatomy.structureOnly,
     JSON.stringify(anatomy));
 
   // --- Save: direct export at the dialog's size with margin ---
@@ -116,6 +118,48 @@ async function cropRect(page) {
     app.camera.zoom /= 3;
     app.camera.updateProjectionMatrix();
   });
+
+  // --- structure-only: smaller auto box, and no gizmo in the capture ---
+  const so = await page.evaluate(async () => {
+    const { computeContentScreenBox, captureSceneToPng } = await import('./render/index.js');
+    const full = computeContentScreenBox();
+    const bare = computeContentScreenBox({ structureOnly: true });
+    const gizmo = document.getElementById('axesGizmo')?.getBoundingClientRect();
+    const view = document.getElementById('view').getBoundingClientRect();
+    const decode = async (blob) => {
+      const bmp = await createImageBitmap(blob);
+      const c = document.createElement('canvas');
+      c.width = bmp.width; c.height = bmp.height;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(bmp, 0, 0);
+      return ctx;
+    };
+    // Full-view transparent captures at view scale: count alpha inside the
+    // gizmo's on-screen rect with and without structureOnly.
+    const W = view.width; const Hh = view.height;
+    const count = (ctx) => {
+      let n = 0;
+      const gx = Math.round(gizmo.left - view.left); const gy = Math.round(gizmo.top - view.top);
+      const d = ctx.getImageData(gx, gy, Math.round(gizmo.width), Math.round(gizmo.height)).data;
+      for (let i = 3; i < d.length; i += 16) if (d[i] > 0) n += 1;
+      return n;
+    };
+    const a = count(await decode(await captureSceneToPng({
+      width: Math.round(W), height: Math.round(Hh), transparent: true })));
+    const b = count(await decode(await captureSceneToPng({
+      width: Math.round(W), height: Math.round(Hh), transparent: true, structureOnly: true })));
+    return {
+      fullBox: full, bareBox: bare,
+      gizmoAlphaDefault: a, gizmoAlphaStructureOnly: b,
+    };
+  });
+  H.check('structure-only auto box is not larger than the full box',
+    so.bareBox.width <= so.fullBox.width + 1 && so.bareBox.height <= so.fullBox.height + 1
+      && (so.bareBox.width < so.fullBox.width - 1 || so.bareBox.height < so.fullBox.height - 1),
+    JSON.stringify({ full: so.fullBox, bare: so.bareBox }));
+  H.check('structure-only export omits the axes gizmo',
+    so.gizmoAlphaDefault > 20 && so.gizmoAlphaStructureOnly < so.gizmoAlphaDefault * 0.1,
+    JSON.stringify({ def: so.gizmoAlphaDefault, so: so.gizmoAlphaStructureOnly }));
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
