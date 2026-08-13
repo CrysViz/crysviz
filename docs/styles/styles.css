@@ -430,12 +430,14 @@ body.panel-hidden #axesLegend {
   line-height: var(--lh-normal);
 }
 
-.png-export-modal .paste-modal-actions #pngDownloadBtn {
+/* The two primary (green) actions: Save (direct programmatic export of the
+   full view) and Choose region… (the crop-overlay flow). */
+.png-export-modal .paste-modal-actions .png-primary {
   flex: 1;
   margin-top: var(--sp-1);
   padding: var(--sp-4) var(--sp-5);
-  background: var(--bg-color);
-  color: var(--fg-1);
+  background: var(--highlight-color);
+  color: var(--bg-color);
   border: none;
   border-radius: var(--radius);
   font-size: var(--fs-lg);
@@ -443,11 +445,11 @@ body.panel-hidden #axesLegend {
   cursor: pointer;
 }
 
-.png-export-modal .paste-modal-actions #pngDownloadBtn:hover {
+.png-export-modal .paste-modal-actions .png-primary:hover {
   box-shadow: 0 0 4px 2px var(--highlight-color);
 }
 
-.png-export-modal .paste-modal-actions #pngDownloadBtn:disabled {
+.png-export-modal .paste-modal-actions .png-primary:disabled {
   opacity: 0.6;
   cursor: default;
   box-shadow: none;

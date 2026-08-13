@@ -9,7 +9,7 @@
 // the crop overlay's own confirm/cancel buttons (ui/CropOverlay.js), driven
 // by captureSceneToPng's onProgress/signal options.
 
-import { captureSceneToPng } from '../render/index.js';
+import { captureSceneToPng, computeContentScreenBox } from '../render/index.js';
 import { downloadBlob, currentBaseName } from './SavePanel.js';
 import { openCropOverlay } from './CropOverlay.js';
 
@@ -73,11 +73,13 @@ export function initImageExportPanel() {
         <label class="png-check"><input type="checkbox" id="pngLock" checked>Lock aspect</label>
       </div>
       <div class="png-row">
+        <label>Margin (px)<input type="number" id="pngMargin" min="0" max="4096" step="1" value="0"></label>
         <label class="png-check"><input type="checkbox" id="pngTransparent">Transparent background</label>
       </div>
-      <p class="png-note">Next, drag the crop area over the 3D view to choose exactly what's exported — the scene, the gizmo, and any floating color bars, right where they're currently arranged.</p>
+      <p class="png-note">Save exports the whole view as-is (Margin adds a band of surrounding scene). Choose region lets you drag a crop area over the 3D view first — the scene, the gizmo, and any floating color bars, right where they're currently arranged.</p>
       <div class="paste-modal-actions">
-        <button type="button" id="pngDownloadBtn">Choose area…</button>
+        <button type="button" id="pngSaveBtn" class="png-primary">Save</button>
+        <button type="button" id="pngDownloadBtn" class="png-primary">Choose region…</button>
         <button type="button" id="pngCancelBtn">Cancel</button>
       </div>
     </div>
@@ -88,7 +90,9 @@ export function initImageExportPanel() {
   const heightInput = document.getElementById('pngHeight');
   const aspectSelect = document.getElementById('pngAspect');
   const lockInput = document.getElementById('pngLock');
+  const marginInput = document.getElementById('pngMargin');
   const transparentInput = document.getElementById('pngTransparent');
+  const saveBtn = document.getElementById('pngSaveBtn');
   const downloadBtn = document.getElementById('pngDownloadBtn');
   const cancelBtn = document.getElementById('pngCancelBtn');
 
@@ -114,6 +118,7 @@ export function initImageExportPanel() {
       lock: lockInput.checked,
       width: Math.round(Number(widthInput.value) || 0),
       height: Math.round(Number(heightInput.value) || 0),
+      margin: Math.max(0, Math.round(Number(marginInput.value) || 0)),
       transparent: transparentInput.checked,
     };
   }
@@ -130,6 +135,7 @@ export function initImageExportPanel() {
     if (aspectSelect.value !== aspect) aspectSelect.value = 'view';
     lockInput.disabled = free;
     lockInput.checked = free ? false : (p.lock !== false);
+    marginInput.value = String(p.margin != null ? p.margin : 0);
     transparentInput.checked = !!p.transparent;
 
     const longEdge = Math.max(Number(p.width) || 0, Number(p.height) || 0) || DEFAULT_LONG_EDGE;
@@ -179,13 +185,90 @@ export function initImageExportPanel() {
     }
   });
 
-  function chooseArea() {
+  // Set while a direct Save capture runs: repurposes Cancel into Abort and
+  // keeps the modal open (mirrors the crop overlay's own busy handling).
+  let activeAbort = null;
+
+  function readDims() {
     const width = Math.round(Number(widthInput.value) || 0);
     const height = Math.round(Number(heightInput.value) || 0);
     if (!(width > 0 && height > 0)) {
       alert('Enter a valid width and height.');
+      return null;
+    }
+    return { width, height };
+  }
+
+  // "Save": the direct programmatic path — the whole view as-is (plus the
+  // scene-border margin), no crop step. Exactly what the Python API's
+  // save_image does, exercised from the dialog.
+  async function saveDirect() {
+    const dims = readDims();
+    if (!dims) return;
+    const margin = Math.max(0, Math.round(Number(marginInput.value) || 0));
+    if (margin * 2 >= dims.width || margin * 2 >= dims.height) {
+      alert('Margin is too large for the requested output size.');
       return;
     }
+    savePrefs(currentPrefs());
+    saveBtn.disabled = true;
+    downloadBtn.disabled = true;
+    cancelBtn.textContent = 'Abort';
+    saveBtn.textContent = 'Rendering…';
+    activeAbort = new AbortController();
+    try {
+      const blob = await captureSceneToPng({
+        width: dims.width, height: dims.height, margin,
+        transparent: transparentInput.checked, signal: activeAbort.signal,
+        onProgress: ({ current, target }) => {
+          saveBtn.textContent = `Rendering… ${current} / ${target}`;
+        },
+      });
+      downloadBlob(currentBaseName() + '.png', blob);
+      closeModal();
+    } catch (e) {
+      // Abort is a user action, not an error: stay open, selection intact.
+      if (/** @type {any} */ (e)?.name !== 'AbortError') {
+        alert(/** @type {any} */ (e)?.message || String(e));
+      }
+    } finally {
+      activeAbort = null;
+      saveBtn.disabled = false;
+      downloadBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+      cancelBtn.textContent = 'Cancel';
+    }
+  }
+
+  // The automatic starting selection for "Choose region": frame the actual
+  // content (structure + visible floating overlays), grown to the locked
+  // aspect — but only when that box fits the view as it is; otherwise the
+  // crop overlay keeps its own default (a centered inset box).
+  function autoInitialRect(lockedAspect) {
+    const box = computeContentScreenBox();
+    if (!box) return null;
+    const view = document.getElementById('view');
+    const vw = (view && view.clientWidth) || 0;
+    const vh = (view && view.clientHeight) || 0;
+    let { width: bw, height: bh } = box;
+    if (lockedAspect) {
+      if (bw / Math.max(bh, 1) > lockedAspect) bh = bw / lockedAspect;
+      else bw = bh * lockedAspect;
+    }
+    if (!(bw > 0 && bh > 0) || bw > vw || bh > vh) return null;
+    // centre the (possibly aspect-grown) box on the content, then shift it
+    // fully into the view.
+    let left = box.left + (box.width - bw) / 2;
+    let top = box.top + (box.height - bh) / 2;
+    left = Math.min(Math.max(left, 0), vw - bw);
+    top = Math.min(Math.max(top, 0), vh - bh);
+    return { left, top, width: bw, height: bh };
+  }
+
+  function chooseArea() {
+    const dims = readDims();
+    if (!dims) return;
+    const { width, height } = dims;
     const transparent = transparentInput.checked;
     const free = isFree();
     closeModal();
@@ -199,6 +282,7 @@ export function initImageExportPanel() {
       // height's LARGER edge becomes the output's long edge with the other
       // edge derived from the shape actually drawn (see below).
       aspect: free ? null : width / height,
+      initial: autoInitialRect(lockInput.checked && !free ? width / height : null),
       locked: lockInput.checked,
       onLockChange: (locked) => savePrefs({ ...loadPrefs(), lock: locked }),
       // Tracer pipelines render to full convergence inside captureSceneToPng
@@ -236,12 +320,17 @@ export function initImageExportPanel() {
   }
 
   trigger.addEventListener('click', openModal);
-  cancelBtn.addEventListener('click', closeModal);
+  cancelBtn.addEventListener('click', () => {
+    // While a Save capture runs, Cancel is "Abort": cancel it, stay open.
+    if (activeAbort) { activeAbort.abort(); return; }
+    closeModal();
+  });
+  saveBtn.addEventListener('click', saveDirect);
   downloadBtn.addEventListener('click', chooseArea);
   modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeModal(); // backdrop click
+    if (e.target === modal && !activeAbort) closeModal(); // backdrop click
   });
   modal.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Escape' && !activeAbort) closeModal();
   });
 }

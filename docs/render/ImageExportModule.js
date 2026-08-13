@@ -36,7 +36,7 @@
 // the live view, then an AbortError is thrown.
 
 import * as THREE from '../external/three/three.module.js';
-import { app, general, measurements } from '../state/store.js';
+import { app, general, groups, measurements } from '../state/store.js';
 import { latticeDirsNorm } from './LatticeModule.js';
 import { requestRender } from './AnimateModule.js';
 import { colorsFor, computeTicks, formatTick, currentContrastColor } from '../ui/ColorBarWidget.js';
@@ -761,6 +761,90 @@ function drawCompositionLegend(octx, width, height, crop, viewRect) {
   } finally {
     restoreSwatches();
   }
+}
+
+/**
+ * The on-screen bounding box of everything a figure-style export would want
+ * framed: the structure content (atoms/bonds/polyhedra/cell, forces/spins,
+ * fields/isosurfaces, structure overlays — NOT the ground plane, a scene
+ * fixture that spans the whole frame) projected through the live camera,
+ * united with the visible floating overlays' DOM rects (gizmo + its legend,
+ * floating color bars, the Composition Display legend). In #view CSS pixels.
+ * Used by the export dialog to seed the crop overlay's starting selection.
+ * @returns {{left:number, top:number, width:number, height:number} | null}
+ *   null when there is no content or no scene yet.
+ */
+export function computeContentScreenBox() {
+  if (!app.renderer || !app.scene || !app.camera) return null;
+  const viewEl = getViewEl();
+  if (!viewEl) return null;
+  const viewRect = viewEl.getBoundingClientRect();
+  const vw = Math.max(1, viewEl.clientWidth || window.innerWidth);
+  const vh = Math.max(1, viewEl.clientHeight || window.innerHeight);
+
+  let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+  const include = (x0, y0, x1, y1) => {
+    minX = Math.min(minX, x0); minY = Math.min(minY, y0);
+    maxX = Math.max(maxX, x1); maxY = Math.max(maxY, y1);
+  };
+
+  // --- structure content: world boxes projected through the live camera ---
+  const objects = [
+    groups.atomsMesh, groups.ghostAtomsMesh, groups.bondsMesh,
+    groups.polyhedraGroup, groups.latticeGroup,
+    groups.forcesShaftMesh, groups.forcesTipMesh,
+    groups.spinShaftMesh, groups.spinTipMesh,
+    groups.fieldGroup, groups.isosurfaceGroup,
+  ];
+  for (const entry of groups.overlayMeshes.values()) {
+    objects.push(entry?.atomsMesh, entry?.bondsMesh);
+  }
+  const worldBox = new THREE.Box3();
+  const objBox = new THREE.Box3();
+  for (const obj of objects) {
+    if (!obj || obj.visible === false) continue;
+    // InstancedMesh caches its bounding box; recompute so moved atoms count.
+    obj.traverse?.((child) => { if (child.isInstancedMesh) child.computeBoundingBox(); });
+    objBox.setFromObject(obj);
+    if (!objBox.isEmpty()) worldBox.union(objBox);
+  }
+  if (!worldBox.isEmpty()) {
+    const corner = new THREE.Vector3();
+    for (let i = 0; i < 8; i++) {
+      corner.set(
+        i & 1 ? worldBox.max.x : worldBox.min.x,
+        i & 2 ? worldBox.max.y : worldBox.min.y,
+        i & 4 ? worldBox.max.z : worldBox.min.z,
+      ).project(app.camera);
+      const x = (corner.x * 0.5 + 0.5) * vw;
+      const y = (1 - (corner.y * 0.5 + 0.5)) * vh;
+      include(x, y, x, y);
+    }
+  }
+
+  // --- visible floating overlays: their true on-screen DOM rects ---
+  const domRect = (el) => {
+    if (!el || el.style?.display === 'none') return;
+    const r = el.getBoundingClientRect();
+    if (!(r.width > 0) || !(r.height > 0)) return;
+    include(r.left - viewRect.left, r.top - viewRect.top,
+      r.right - viewRect.left, r.bottom - viewRect.top);
+  };
+  if (general.showAxes) {
+    domRect(document.getElementById('axesGizmo'));
+    if (!general.gizmoLabelsOnArrows) domRect(document.getElementById('axesLegend'));
+  }
+  for (const bar of listActiveColorBars()) {
+    if (bar.instance.isFloating()) {
+      const r = bar.instance.getVisualRect();
+      include(r.left - viewRect.left, r.top - viewRect.top,
+        r.right - viewRect.left, r.bottom - viewRect.top);
+    }
+  }
+  domRect(document.querySelector('.comp-legend-widget.cv-colorbar-floating'));
+
+  if (!(maxX > minX) || !(maxY > minY)) return null;
+  return { left: minX, top: minY, width: maxX - minX, height: maxY - minY };
 }
 
 let captureInProgress = false;

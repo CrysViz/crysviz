@@ -7,7 +7,7 @@
 // This is a *curated* surface: only the symbols actually consumed by other
 // domains are re-exported. Add to it when a new cross-domain function is needed.
 
-import { captureSceneToPng, isPngCaptureInProgress } from './ImageExportModule.js';
+import { captureSceneToPng, isPngCaptureInProgress, computeContentScreenBox } from './ImageExportModule.js';
 import {
   registerPipeline, listPipelines, getActivePipeline, setActivePipeline,
   isTracerPipelineActive,
@@ -73,6 +73,6 @@ export {
 
 export { setCelHullWidth, setCelHullPolyWidth } from './MaterialStyles.js';
 
-export { captureSceneToPng, isPngCaptureInProgress };
+export { captureSceneToPng, computeContentScreenBox, isPngCaptureInProgress };
 
 export { registerPipeline, listPipelines, getActivePipeline, setActivePipeline, isTracerPipelineActive };

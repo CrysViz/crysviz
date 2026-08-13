@@ -17,11 +17,15 @@ function currentViewRect() {
 
 /**
  * @param {{aspect: number|null, locked?: boolean,
+ *   initial?: {left:number, top:number, width:number, height:number} | null,
  *   onLockChange?: (locked: boolean) => void,
  *   onConfirm: (crop: {x0:number,y0:number,x1:number,y1:number,aspect:number},
  *     opts: {signal: AbortSignal, onProgress: (p:{current:number, target:number})=>void}) => Promise<void>|void,
  *   onCancel: () => void}} opts
  *   aspect: width/height the INITIAL rect is shaped to (null: fit the view).
+ *   initial: a caller-chosen starting rect in #view CSS px (the export
+ *   dialog's automatic content framing); omitted/null falls back to the
+ *   default centered inset box.
  *   locked (default: aspect given): initial state of the toolbar's own
  *   "Lock aspect" toggle. While locked, corner drags preserve the rect's
  *   current aspect ratio; unlocked, corners resize freely. The toggle can be
@@ -39,7 +43,7 @@ function currentViewRect() {
  *   rejects — with no alert for a user-triggered abort — so the selection
  *   isn't lost.
  */
-export function openCropOverlay({ aspect, locked = aspect != null, onLockChange, onConfirm, onCancel }) {
+export function openCropOverlay({ aspect, locked = aspect != null, initial = null, onLockChange, onConfirm, onCancel }) {
   let vRect = currentViewRect();
   if (!vRect) { onCancel(); return; }
   let lockAspect = !!locked;
@@ -103,6 +107,9 @@ export function openCropOverlay({ aspect, locked = aspect != null, onLockChange,
 
   // Rect state in CSS px relative to the overlay (== relative to #view).
   function initialRect() {
+    if (initial && initial.width >= MIN_SIZE && initial.height >= MIN_SIZE) {
+      return clampRect({ ...initial });
+    }
     const inset = Math.min(vRect.width, vRect.height) * 0.08;
     let w = vRect.width - inset * 2;
     let h = vRect.height - inset * 2;
