@@ -190,13 +190,6 @@ export function addFieldPanel(target = "cvPanelBody-field") {
         </span>
         <span class="toggle_text"> Logarithmic Slider Scale</span>
       </label>
-      <label class="toggle_row toggle_container">
-        <span class="toggle_switch">
-          <input type="checkbox" id="FieldTriangleSortToggle" ${getIsosurfaceTriangleSortingEnabled() ? 'checked' : ''}>
-          <span class="toggle_slider"></span>
-        </span>
-        <span class="toggle_text"> Camera Distance Sorting</span>
-      </label>
     </div>
 
     <div class="control-group">
