@@ -336,6 +336,9 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     const treatAsCHGCAR = lower.includes('chgcar') ||
                          lower.endsWith('.chgcar');
 
+    const treatAsELFCAR = lower.includes('elfcar') ||
+                          lower.endsWith('.elfcar');
+
     if (treatAsCrysviz) {
       // A saved CrysViz session: structure + full visual state (ShareModule).
       // Loads its own structure via parsePOSCAR -> initializeUIOnLoad.
@@ -344,8 +347,17 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     else if (treatAsCube) {
       structureContainer = await parseCubeFile(contentString, fileName);
     }
-    else if (treatAsCHGCAR) {
-      structureContainer = await parseCHGCARFile(contentString, fileName);
+    else if (treatAsCHGCAR || treatAsELFCAR) {
+      let source = '';
+      if (treatAsCHGCAR) {
+        source = 'CHGCAR';
+      } else if (treatAsELFCAR) {
+        source = 'ELFCAR';
+      } else {
+        console.warn("Unrecognized volumetric field file type; defaulting to CHGCAR parser");
+        source = 'CHGCAR';
+      }
+      structureContainer = await parseCHGCARFile(contentString, fileName, source);
     }
 
     // Everything else is a structure file and goes through the single pure
