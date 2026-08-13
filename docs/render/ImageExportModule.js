@@ -138,6 +138,126 @@ function throwIfContextLost(gl) {
   }
 }
 
+// A camera that renders exactly one tile (a sub-window) of the full srcW x
+// srcH frame, plus how to undo it. Raster pipelines read the projection
+// matrix, so three's own setViewOffset on the LIVE camera is the exact
+// mechanism (restored per tile). The tracer pipelines never read the
+// projection matrix — they build rays from matrixWorld plus SYMMETRIC ortho
+// half-extents (uULen/uVLen, RayTracingPipeline's camera uniforms) — so a
+// view offset can't reach them; for an orthographic camera the same
+// sub-window is expressed exactly by translating a CLONE in its own
+// right/up plane to the tile's centre and shrinking the extents to the
+// tile (an asymmetric window is impossible with symmetric extents, hence
+// the translation; a perspective tracer camera cannot be tiled this way at
+// all — the caller falls back to capping instead).
+export function makeTileCamera(camera, srcW, srcH, tx, ty, tw, th, isTracer) {
+  if (!isTracer) {
+    camera.setViewOffset(srcW, srcH, tx, ty, tw, th);
+    return { camera, restore: () => camera.clearViewOffset() };
+  }
+  const cam = camera.clone();
+  const zoom = camera.zoom ?? 1;
+  const halfW = ((camera.right - camera.left) / 2) / zoom;
+  const halfH = ((camera.top - camera.bottom) / 2) / zoom;
+  const e = camera.matrixWorld.elements;
+  const right = new THREE.Vector3(e[0], e[1], e[2]).normalize();
+  const up = new THREE.Vector3(e[4], e[5], e[6]).normalize();
+  const cx = (tx + tw / 2) / srcW;  // tile centre, fractions of the full frame
+  const cy = (ty + th / 2) / srcH;
+  cam.position.setFromMatrixPosition(camera.matrixWorld)
+    .addScaledVector(right, (cx - 0.5) * 2 * halfW)
+    .addScaledVector(up, (0.5 - cy) * 2 * halfH);
+  cam.quaternion.setFromRotationMatrix(camera.matrixWorld);
+  // Bake the tile's half-extents so the tracer's ((right-left)/2)/zoom
+  // arrives at exactly halfW * tw/srcW (and likewise vertically).
+  cam.left = -halfW * (tw / srcW) * zoom;
+  cam.right = halfW * (tw / srcW) * zoom;
+  cam.top = halfH * (th / srcH) * zoom;
+  cam.bottom = -halfH * (th / srcH) * zoom;
+  cam.updateProjectionMatrix();
+  cam.updateMatrixWorld(true);
+  return { camera: cam, restore: () => {} };
+}
+
+// Render the full srcW x srcH frame as a grid of tileW x tileH GL surfaces,
+// composited into a (CPU-side) 2D canvas — GPU memory stays bounded by the
+// TILE size no matter how large the requested export is, which is what makes
+// resolutions beyond the render-memory budget possible at all instead of
+// crashing the driver. Edge tiles are shifted inward (full-size, overlapping
+// already-rendered area) so the GL surface never reallocates mid-export; the
+// overlap region is cleared before each draw so transparent pixels don't
+// double-composite. Tracer tiles each run their own full convergence
+// (total work ~ samples x pixels, the same as an untiled render).
+async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal) {
+  const { canvas: srcCanvas, ctx: sctx } = createVerifiedCanvas(srcW, srcH, 'render capture');
+  app.renderer.setSize(tileW, tileH, false);
+  const gl = app.renderer.getContext();
+  throwIfContextLost(gl);
+  if (gl.drawingBufferWidth < tileW || gl.drawingBufferHeight < tileH) {
+    throw new Error(`WebGL could not allocate a ${tileW}×${tileH} render surface `
+      + `(got ${gl.drawingBufferWidth}×${gl.drawingBufferHeight}). `
+      + 'Reduce the export resolution and try again.');
+  }
+  app.pipeline?.setSize(tileW, tileH);
+  sawGlOutOfMemory(gl); // drain stale errors so the post-frame check is honest
+  const isTracer = !!app.pipeline?.isConverged;
+  const nx = Math.ceil(srcW / tileW);
+  const ny = Math.ceil(srcH / tileH);
+  const perTileTarget = app.pipeline?._cfg?.targetSamples ?? 0;
+  let firstFrameChecked = false;
+  const checkFirstFrame = () => {
+    if (firstFrameChecked) return;
+    firstFrameChecked = true;
+    if (sawGlOutOfMemory(gl)) {
+      throw new Error(`WebGL ran out of memory rendering the export at ${tileW}×${tileH} `
+        + 'per tile. Reduce the export resolution or the Allocated GPU memory setting '
+        + 'and try again.');
+    }
+  };
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const tx = Math.min(i * tileW, srcW - tileW);
+      const ty = Math.min(j * tileH, srcH - tileH);
+      const tile = makeTileCamera(app.camera, srcW, srcH, tx, ty, tileW, tileH, isTracer);
+      const renderCtx = { renderer: app.renderer, scene: app.scene, camera: tile.camera };
+      try {
+        if (isTracer) {
+          app.pipeline.resetAccumulation?.();
+          const base = (j * nx + i) * perTileTarget;
+          const reportTile = () => {
+            if (typeof onProgress !== 'function' || !(perTileTarget > 0)) return;
+            const current = app.pipeline?._uniforms?.uSampleCounter?.value ?? 0;
+            onProgress({ current: base + current, target: perTileTarget * nx * ny });
+          };
+          reportTile();
+          while (!app.pipeline.isConverged()) {
+            throwIfAborted(signal);
+            await nextFrame();
+            throwIfAborted(signal);
+            throwIfContextLost(gl);
+            app.pipeline.render(renderCtx);
+            checkFirstFrame();
+            reportTile();
+          }
+          reportTile();
+        } else {
+          app.pipeline?.render(renderCtx);
+          checkFirstFrame();
+        }
+        throwIfContextLost(gl); // a lost context reads back as an empty image
+      } finally {
+        tile.restore();
+      }
+      // No await between the last render and this read (no preserveDrawingBuffer).
+      // clearRect first: edge tiles overlap, and source-over would double-
+      // composite semi-transparent pixels.
+      sctx.clearRect(tx, ty, tileW, tileH);
+      sctx.drawImage(app.renderer.domElement, tx, ty);
+    }
+  }
+  return srcCanvas;
+}
+
 // Like renderMainToCanvas, but for progressive tracer pipelines: keeps
 // accumulating in small batches — yielding to the browser between them so the
 // on-screen progress bar (render/TracerProgressModule.js, driven from
@@ -734,46 +854,69 @@ async function captureSceneToPngImpl(opts) {
     let srcW = Math.ceil(Math.max(scaleToFillW, scaleToFillH * aspect) * SS);
     let srcH = Math.ceil(srcW / aspect);
 
+    // CPU-side sanity: the source is composited on a 2D canvas, so cap by
+    // the requested output (no point rendering beyond output x SS) and an
+    // absolute dimension guard (createVerifiedCanvas still proves whatever
+    // survives this cap actually allocates).
+    const srcCap = Math.min(Math.ceil(Math.max(width, height) * SS), 16384);
+    if (srcW > srcCap || srcH > srcCap) {
+      const k = srcCap / Math.max(srcW, srcH);
+      srcW = Math.max(1, Math.floor(srcW * k));
+      srcH = Math.max(1, Math.floor(srcH * k));
+    }
+
+    // GPU-side limits. Dimensions come from the driver; MEMORY does not —
+    // the driver-reported MAX_TEXTURE_SIZE says nothing about it, and
+    // over-memory allocations tend not to fail cleanly: they crash the
+    // driver/GPU process, and Chromium answers repeated GPU crashes by
+    // disabling WebGL for the whole browser session until restart. WebGL
+    // cannot query real GPU memory, so the area budget comes from the
+    // Settings > Graphics slider (user-asserted, defaults safe for
+    // integrated GPUs). Tracers in export (paced) mode hold TWO full-size
+    // RGBA32F targets (the display snapshot is shrunk for the export —
+    // RayTracingPipeline's beginPacedRender) plus the drawing buffer;
+    // raster pipelines just the buffer.
     const gl = app.renderer.getContext();
-    const maxDim = Math.min(
+    const glMaxDim = Math.min(
       gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) || 4096,
       gl.getParameter(gl.MAX_TEXTURE_SIZE) || 4096,
-      Math.ceil(Math.max(width, height) * SS),
       8192,
     );
-    if (srcW > maxDim || srcH > maxDim) {
-      const k = maxDim / Math.max(srcW, srcH);
-      srcW = Math.max(1, Math.floor(srcW * k));
-      srcH = Math.max(1, Math.floor(srcH * k));
-      console.info(`[png-export] source render capped to ${srcW}x${srcH}; small selections may upscale.`);
-    }
-
-    // The driver-reported MAX_TEXTURE_SIZE above says nothing about MEMORY:
-    // tracer pipelines hold three full-size RGBA32F accumulation targets on
-    // top of the drawing buffer (~64 bytes/px all told; raster ~16), so an
-    // 8192² tracer surface means gigabytes of GPU allocations. Allocations
-    // that size tend not to fail cleanly — they crash the driver/GPU
-    // process, and Chromium answers repeated GPU crashes by disabling WebGL
-    // for the whole browser session until restart. WebGL has no way to
-    // query actual GPU memory, so cap the source AREA to a conservative
-    // budget rather than even trying; the output keeps its requested size
-    // (the capped source upscales into it), same as the dimension cap above.
-    // Tracers in export (paced) mode hold TWO full-size RGBA32F targets (the
-    // display snapshot is shrunk for the export — RayTracingPipeline's
-    // beginPacedRender) plus the drawing buffer; raster just the buffer.
-    const bytesPerPixel = app.pipeline?.isConverged ? 48 : 16;
+    const isTracer = !!app.pipeline?.isConverged;
+    const bytesPerPixel = isTracer ? 48 : 16;
     const maxPixels = renderMemoryBudgetBytes() / bytesPerPixel;
-    if (srcW * srcH > maxPixels) {
-      const k = Math.sqrt(maxPixels / (srcW * srcH));
-      srcW = Math.max(1, Math.floor(srcW * k));
-      srcH = Math.max(1, Math.floor(srcH * k));
-      console.info(`[png-export] source render capped to ${srcW}x${srcH} by the `
-        + 'render-memory budget; the output upscales from it.');
-    }
 
     // --- Final high-res pass (tracer pipelines render to full convergence,
-    //     with the on-screen progress bar tracking the accumulation). ---
-    const srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal);
+    //     with the on-screen progress bar tracking the accumulation). A
+    //     source too large for ONE GL surface renders TILED (bounded GPU
+    //     memory at any size) whenever the pipeline/camera combination can
+    //     express a sub-window — everything except a perspective-camera
+    //     tracer, which instead caps the source and upscales (see
+    //     makeTileCamera). ---
+    let srcCanvas;
+    if (srcW <= glMaxDim && srcH <= glMaxDim && srcW * srcH <= maxPixels) {
+      srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal);
+    } else if (!isTracer || app.camera.isOrthographicCamera === true) {
+      let tileW = Math.min(srcW, glMaxDim);
+      let tileH = Math.min(srcH, glMaxDim);
+      if (tileW * tileH > maxPixels) {
+        const k = Math.sqrt(maxPixels / (tileW * tileH));
+        tileW = Math.max(64, Math.floor(tileW * k));
+        tileH = Math.max(64, Math.floor(tileH * k));
+      }
+      console.info(`[png-export] rendering ${srcW}x${srcH} in `
+        + `${Math.ceil(srcW / tileW)}x${Math.ceil(srcH / tileH)} tiles of ${tileW}x${tileH}.`);
+      srcCanvas = await renderMainTiled(srcW, srcH, tileW, tileH, opts.onProgress, signal);
+    } else {
+      const capDim = Math.min(glMaxDim, Math.floor(Math.sqrt(maxPixels)));
+      const k = Math.min(1, capDim / Math.max(srcW, srcH),
+        Math.sqrt(maxPixels / (srcW * srcH)));
+      srcW = Math.max(1, Math.floor(srcW * k));
+      srcH = Math.max(1, Math.floor(srcH * k));
+      console.info(`[png-export] perspective tracer cannot render tiled; source `
+        + `capped to ${srcW}x${srcH} (the output upscales from it).`);
+      srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal);
+    }
     throwIfAborted(signal);
 
     const cropPxX = crop.x0 * srcW;
