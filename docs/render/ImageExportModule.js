@@ -138,6 +138,11 @@ function throwIfContextLost(gl) {
   }
 }
 
+/** True when the render window is the camera's own full frame (or omitted). */
+function isIdentityWindow(win) {
+  return !win || (win.x0 === 0 && win.y0 === 0 && win.x1 === 1 && win.y1 === 1);
+}
+
 // A camera that renders exactly one tile (a sub-window) of the full srcW x
 // srcH frame, plus how to undo it. Raster pipelines read the projection
 // matrix, so three's own setViewOffset on the LIVE camera is the exact
@@ -188,7 +193,11 @@ export function makeTileCamera(camera, srcW, srcH, tx, ty, tw, th, isTracer) {
 // overlap region is cleared before each draw so transparent pixels don't
 // double-composite. Tracer tiles each run their own full convergence
 // (total work ~ samples x pixels, the same as an untiled render).
-async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal) {
+async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal, win) {
+  const w0 = isIdentityWindow(win) ? 0 : win.x0;
+  const h0 = isIdentityWindow(win) ? 0 : win.y0;
+  const wW = isIdentityWindow(win) ? 1 : win.x1 - win.x0;
+  const wH = isIdentityWindow(win) ? 1 : win.y1 - win.y0;
   const { canvas: srcCanvas, ctx: sctx } = createVerifiedCanvas(srcW, srcH, 'render capture');
   app.renderer.setSize(tileW, tileH, false);
   const gl = app.renderer.getContext();
@@ -218,7 +227,11 @@ async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal) {
     for (let i = 0; i < nx; i++) {
       const tx = Math.min(i * tileW, srcW - tileW);
       const ty = Math.min(j * tileH, srcH - tileH);
-      const tile = makeTileCamera(app.camera, srcW, srcH, tx, ty, tileW, tileH, isTracer);
+      // Tile rect composed through the render window, all in fractions of
+      // the live camera's own frame (makeTileCamera is ratio-based).
+      const tile = makeTileCamera(app.camera, 1, 1,
+        w0 + (tx / srcW) * wW, h0 + (ty / srcH) * wH,
+        (tileW / srcW) * wW, (tileH / srcH) * wH, isTracer);
       const renderCtx = { renderer: app.renderer, scene: app.scene, camera: tile.camera };
       try {
         if (isTracer) {
@@ -263,7 +276,7 @@ async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal) {
 // on-screen progress bar (render/TracerProgressModule.js, driven from
 // pipeline.render()) stays live — until the pipeline reports convergence.
 // Non-tracer pipelines (no isConverged) capture after the single frame.
-async function renderMainToCanvasConverged(w, h, onProgress, signal) {
+async function renderMainToCanvasConverged(w, h, onProgress, signal, win) {
   app.renderer.setSize(w, h, false);
   // The WebGL spec allows the drawing buffer to come up SMALLER than asked
   // for when the allocation fails — no exception, no context loss, just a
@@ -287,7 +300,14 @@ async function renderMainToCanvasConverged(w, h, onProgress, signal) {
         + 'Reduce the export resolution and try again.');
     }
   };
-  const renderCtx = { renderer: app.renderer, scene: app.scene, camera: app.camera };
+  // A non-identity window (scene-border margin, or a crop reaching outside
+  // the view) renders through a widened/offset camera; identity keeps the
+  // live camera untouched.
+  const isTracer = !!app.pipeline?.isConverged;
+  const cam = isIdentityWindow(win)
+    ? { camera: app.camera, restore: () => {} }
+    : makeTileCamera(app.camera, 1, 1, win.x0, win.y0, win.x1 - win.x0, win.y1 - win.y0, isTracer);
+  const renderCtx = { renderer: app.renderer, scene: app.scene, camera: cam.camera };
   // Report accumulation progress on the export button (tracer pipelines only).
   // Reads the same counters the on-screen progress strip uses; guarded so raster
   // pipelines (no uSampleCounter / targetSamples) never emit a bogus 0/0.
@@ -299,39 +319,44 @@ async function renderMainToCanvasConverged(w, h, onProgress, signal) {
       onProgress({ current, target });
     }
   };
-  if (app.pipeline?.isConverged) {
-    // The live view's accumulation belongs to the on-screen size and RT
-    // resolution scale, so it cannot be carried into the export: render()'s own
-    // resize reset would zero it on the very first paced frame, after the
-    // starting count had already been reported (progress running BACKWARDS,
-    // e.g. "Rendering… 16 / 64" then "1 / 64") — and a live view that had
-    // already reached the target would satisfy isConverged() before a single
-    // export frame was traced, capturing a canvas that was resized but never
-    // rendered into. Start the export from a known-empty accumulation instead.
-    app.pipeline.resetAccumulation?.();
-    reportProgress(); // show the starting count before the first paced frame
-    while (!app.pipeline.isConverged()) {
-      throwIfAborted(signal);
-      await nextFrame();            // yield first: the button/progress repaints
-      throwIfAborted(signal);
-      // A context lost mid-accumulation stops the sample counter, so without
-      // this check the convergence loop would spin forever ("Rendering…"
-      // stuck) instead of reporting what actually happened.
-      throwIfContextLost(gl);
-      app.pipeline.render(renderCtx); // one paced sample (one tile when tiling)
+  try {
+    if (app.pipeline?.isConverged) {
+      // The live view's accumulation belongs to the on-screen size and RT
+      // resolution scale, so it cannot be carried into the export: render()'s own
+      // resize reset would zero it on the very first paced frame, after the
+      // starting count had already been reported (progress running BACKWARDS,
+      // e.g. "Rendering… 16 / 64" then "1 / 64") — and a live view that had
+      // already reached the target would satisfy isConverged() before a single
+      // export frame was traced, capturing a canvas that was resized but never
+      // rendered into. Start the export from a known-empty accumulation instead.
+      app.pipeline.resetAccumulation?.();
+      reportProgress(); // show the starting count before the first paced frame
+      while (!app.pipeline.isConverged()) {
+        throwIfAborted(signal);
+        await nextFrame();          // yield first: the button/progress repaints
+        throwIfAborted(signal);
+        // A context lost mid-accumulation stops the sample counter, so without
+        // this check the convergence loop would spin forever ("Rendering…"
+        // stuck) instead of reporting what actually happened.
+        throwIfContextLost(gl);
+        app.pipeline.render(renderCtx); // one paced sample (one tile when tiling)
+        checkAfterFrame();
+        reportProgress();
+      }
+      reportProgress(); // final (converged) count
+    } else {
+      app.pipeline?.render(renderCtx); // raster: single frame, capture immediately
       checkAfterFrame();
-      reportProgress();
     }
-    reportProgress(); // final (converged) count
-  } else {
-    app.pipeline?.render(renderCtx); // raster: single frame, capture immediately
-    checkAfterFrame();
-  }
-  throwIfContextLost(gl); // a lost context reads back as an empty image
+    throwIfContextLost(gl); // a lost context reads back as an empty image
 
-  const { canvas, ctx } = createVerifiedCanvas(w, h, 'render capture');
-  ctx.drawImage(app.renderer.domElement, 0, 0, w, h);
-  return canvas;
+    const { canvas, ctx } = createVerifiedCanvas(w, h, 'render capture');
+    // No await between the last render and this read (no preserveDrawingBuffer).
+    ctx.drawImage(app.renderer.domElement, 0, 0, w, h);
+    return canvas;
+  } finally {
+    cam.restore();
+  }
 }
 
 function roundRectPath(ctx, x, y, w, h, r) {
@@ -387,9 +412,11 @@ function drawMeasurementLabels(octx, map) {
 
     const ndc = label.position.clone().project(app.camera);
     if (ndc.z < -1 || ndc.z > 1) continue; // outside the near/far frustum
-    // NDC -> source pixels -> output pixels
-    const srcX = (ndc.x * 0.5 + 0.5) * map.srcW;
-    const srcY = (1 - (ndc.y * 0.5 + 0.5)) * map.srcH;
+    // NDC (of the live VIEW camera) -> view fractions -> source pixels (the
+    // source spans map.win, which is wider than the view when a scene-border
+    // margin expanded it) -> output pixels
+    const srcX = (((ndc.x * 0.5 + 0.5) - map.win.x0) / (map.win.x1 - map.win.x0)) * map.srcW;
+    const srcY = (((1 - (ndc.y * 0.5 + 0.5)) - map.win.y0) / (map.win.y1 - map.win.y0)) * map.srcH;
     const ox = map.dx + (srcX - map.cropX) * map.scale;
     const oy = map.dy + (srcY - map.cropY) * map.scale;
 
@@ -755,10 +782,16 @@ export function isPngCaptureInProgress() {
  * clean mid-export cancel: on abort the live view is fully restored (the same
  * finally as a normal completion) and an AbortError is thrown.
  *
- * @param {{width:number, height:number, transparent?:boolean,
+ * @param {{width:number, height:number, margin?:number, transparent?:boolean,
  *   crop?: {x0:number, y0:number, x1:number, y1:number},
  *   onProgress?:(p:{current:number, target:number})=>void,
  *   signal?:AbortSignal}} opts
+ *   margin: pixels of SCENE border added inside the width x height output —
+ *   the capture window widens so the band shows the scene continuing beyond
+ *   the captured area (the content itself occupies the central
+ *   (width-2*margin) x (height-2*margin) box). A perspective-camera tracer
+ *   cannot widen its ray window; there the band falls back to blank
+ *   background/transparency.
  *   crop: the chosen area, as fractions (0..1) of #view's own box — from
  *   ui/CropOverlay.js. Its on-screen aspect ratio must match width/height's
  *   (the crop tool enforces this), so the crop always fills the output
@@ -772,13 +805,58 @@ export async function captureSceneToPng(opts) {
   if (captureInProgress) throw new Error('A PNG capture is already in progress.');
   captureInProgress = true;
   try {
+    const margin = Math.max(0, Math.round(opts.margin || 0));
+    const perspectiveTracer = !!app.pipeline?.isConverged
+      && app.camera?.isOrthographicCamera !== true;
+    if (margin > 0 && perspectiveTracer) {
+      // The tracers build rays from symmetric extents a view offset can't
+      // reach (see makeTileCamera), and only an orthographic camera can be
+      // widened by translation — so a perspective tracer gets the margin as
+      // a blank band instead of surrounding scene: capture at the inner
+      // size, then pad.
+      const width = Math.max(1, Math.round(opts.width));
+      const height = Math.max(1, Math.round(opts.height));
+      if (margin * 2 >= width || margin * 2 >= height) {
+        throw new Error('Margin is too large for the requested output size.');
+      }
+      console.info('[png-export] perspective tracer cannot widen its camera window; '
+        + 'margin rendered as a blank band.');
+      return await captureSceneToPngImpl(
+        { ...opts, margin: 0, width: width - 2 * margin, height: height - 2 * margin },
+        async (inner) => {
+          const { canvas, ctx } = createVerifiedCanvas(width, height, 'output image');
+          if (!opts.transparent) {
+            ctx.fillStyle = colorToCss(app.scene.background);
+            ctx.fillRect(0, 0, width, height);
+          }
+          ctx.drawImage(inner, margin, margin);
+          return encodePng(canvas);
+        });
+    }
     return await captureSceneToPngImpl(opts);
   } finally {
     captureInProgress = false;
   }
 }
 
-async function captureSceneToPngImpl(opts) {
+function encodePng(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else {
+        reject(new Error(`Failed to encode the ${canvas.width}×${canvas.height} PNG — likely `
+          + 'too large for this browser. Reduce the export resolution and try again.'));
+      }
+    }, 'image/png');
+  });
+}
+
+// finish(outCanvas) -> Promise<Blob> runs INSIDE the try, before the finally
+// restores the live view — deliberately: a view resized mid-encode must be
+// restored at its size at true completion time (pngexport.test.js pins
+// this). The default just encodes; the blank-band margin fallback pads
+// first.
+async function captureSceneToPngImpl(opts, finish = encodePng) {
   if (!app.renderer || !app.scene || !app.camera) {
     throw new Error('Scene is not ready.');
   }
@@ -788,9 +866,34 @@ async function captureSceneToPngImpl(opts) {
   // crop is optional: omitting it (a direct/programmatic capture, no
   // ui/CropOverlay.js step) captures the full #view, same as the crop tool's
   // own full-frame default.
-  const crop = opts.crop || { x0: 0, y0: 0, x1: 1, y1: 1 };
+  let crop = opts.crop || { x0: 0, y0: 0, x1: 1, y1: 1 };
   if (crop.x1 <= crop.x0 || crop.y1 <= crop.y0) {
     throw new Error('No export area selected.');
+  }
+  // Scene-border margin: widen the capture window so the band shows the
+  // scene continuing beyond the captured area (blank-band fallback for
+  // perspective tracers is handled by the captureSceneToPng wrapper). The
+  // expansion is sized so the original crop lands exactly in the central
+  // (width-2*margin) x (height-2*margin) box of the output.
+  const margin = Math.max(0, Math.round(opts.margin || 0));
+  if (margin > 0) {
+    if (margin * 2 >= width || margin * 2 >= height) {
+      throw new Error('Margin is too large for the requested output size.');
+    }
+    const ax = (crop.x1 - crop.x0) * margin / (width - 2 * margin);
+    const ay = (crop.y1 - crop.y0) * margin / (height - 2 * margin);
+    crop = { x0: crop.x0 - ax, y0: crop.y0 - ay, x1: crop.x1 + ax, y1: crop.y1 + ay };
+  }
+  // The source render covers the WINDOW: identical to the view unless the
+  // crop reaches outside it (margin expansion, or a caller-supplied crop
+  // beyond the view edges) — the normal in-view case keeps its exact
+  // existing path.
+  const win = (crop.x0 < 0 || crop.y0 < 0 || crop.x1 > 1 || crop.y1 > 1)
+    ? { x0: crop.x0, y0: crop.y0, x1: crop.x1, y1: crop.y1 }
+    : { x0: 0, y0: 0, x1: 1, y1: 1 };
+  if (!isIdentityWindow(win) && app.pipeline?.isConverged
+      && app.camera?.isOrthographicCamera !== true) {
+    throw new Error('A perspective-camera ray-traced export cannot capture outside the visible view.');
   }
 
   // Allocate (and PROVE) the output canvas up front, before any live-view
@@ -803,7 +906,6 @@ async function captureSceneToPngImpl(opts) {
   const viewRect = viewEl.getBoundingClientRect();
   const vw = Math.max(1, viewEl.clientWidth || window.innerWidth);
   const vh = Math.max(1, viewEl.clientHeight || window.innerHeight);
-  const aspect = vw / vh;
 
   // Save live-view state so we can restore exactly (camera projection is never
   // touched: every internal render keeps the #view aspect).
@@ -832,8 +934,13 @@ async function captureSceneToPngImpl(opts) {
 
     const innerW = width;
     const innerH = height;
-    const cropFracW = crop.x1 - crop.x0;
-    const cropFracH = crop.y1 - crop.y0;
+    const winW = win.x1 - win.x0;
+    const winH = win.y1 - win.y0;
+    // Crop as fractions OF THE SOURCE WINDOW (== view fractions when the
+    // window is the view), and the window's own on-screen aspect.
+    const cropFracW = (crop.x1 - crop.x0) / winW;
+    const cropFracH = (crop.y1 - crop.y0) / winH;
+    const srcAspect = (winW * vw) / (winH * vh);
 
     // --- Choose the source render size so the cropped region maps ~1:1
     //     (slightly super-sampled for AA) to the inner output box, capped by
@@ -851,8 +958,8 @@ async function captureSceneToPngImpl(opts) {
     const SS = app.pipeline?.isConverged ? 1.0 : 1.25;
     const scaleToFillW = innerW / Math.max(cropFracW, 1e-3);
     const scaleToFillH = innerH / Math.max(cropFracH, 1e-3);
-    let srcW = Math.ceil(Math.max(scaleToFillW, scaleToFillH * aspect) * SS);
-    let srcH = Math.ceil(srcW / aspect);
+    let srcW = Math.ceil(Math.max(scaleToFillW, scaleToFillH * srcAspect) * SS);
+    let srcH = Math.ceil(srcW / srcAspect);
 
     // CPU-side sanity: the source is composited on a 2D canvas, so cap by
     // the requested output (no point rendering beyond output x SS) and an
@@ -895,7 +1002,7 @@ async function captureSceneToPngImpl(opts) {
     //     makeTileCamera). ---
     let srcCanvas;
     if (srcW <= glMaxDim && srcH <= glMaxDim && srcW * srcH <= maxPixels) {
-      srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal);
+      srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal, win);
     } else if (!isTracer || app.camera.isOrthographicCamera === true) {
       let tileW = Math.min(srcW, glMaxDim);
       let tileH = Math.min(srcH, glMaxDim);
@@ -906,7 +1013,7 @@ async function captureSceneToPngImpl(opts) {
       }
       console.info(`[png-export] rendering ${srcW}x${srcH} in `
         + `${Math.ceil(srcW / tileW)}x${Math.ceil(srcH / tileH)} tiles of ${tileW}x${tileH}.`);
-      srcCanvas = await renderMainTiled(srcW, srcH, tileW, tileH, opts.onProgress, signal);
+      srcCanvas = await renderMainTiled(srcW, srcH, tileW, tileH, opts.onProgress, signal, win);
     } else {
       const capDim = Math.min(glMaxDim, Math.floor(Math.sqrt(maxPixels)));
       const k = Math.min(1, capDim / Math.max(srcW, srcH),
@@ -915,12 +1022,12 @@ async function captureSceneToPngImpl(opts) {
       srcH = Math.max(1, Math.floor(srcH * k));
       console.info(`[png-export] perspective tracer cannot render tiled; source `
         + `capped to ${srcW}x${srcH} (the output upscales from it).`);
-      srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal);
+      srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal, win);
     }
     throwIfAborted(signal);
 
-    const cropPxX = crop.x0 * srcW;
-    const cropPxY = crop.y0 * srcH;
+    const cropPxX = ((crop.x0 - win.x0) / winW) * srcW;
+    const cropPxY = ((crop.y0 - win.y0) / winH) * srcH;
     const cropPxW = cropFracW * srcW;
     const cropPxH = cropFracH * srcH;
 
@@ -944,24 +1051,16 @@ async function captureSceneToPngImpl(opts) {
     octx.drawImage(srcCanvas, cropPxX, cropPxY, cropPxW, cropPxH, dx, dy, drawW, drawH);
 
     const map = {
-      srcW, srcH, cropX: cropPxX, cropY: cropPxY, dx, dy, scale,
+      srcW, srcH, win, cropX: cropPxX, cropY: cropPxY, dx, dy, scale,
       // output px per on-screen CSS px, for scaling label font/padding sizes.
-      fontScale: (cropPxH * scale) / Math.max(1, cropFracH * vh),
+      fontScale: (cropPxH * scale) / Math.max(1, (crop.y1 - crop.y0) * vh),
     };
     drawMeasurementLabels(octx, map);
     prevGizmoPR = drawGizmoAndLegend(octx, width, height, crop, viewRect);
     drawFloatingColorBars(octx, width, height, crop, viewRect);
     drawCompositionLegend(octx, width, height, crop, viewRect);
 
-    return await new Promise((resolve, reject) => {
-      out.toBlob((blob) => {
-        if (blob) resolve(blob);
-        else {
-          reject(new Error(`Failed to encode the ${width}×${height} PNG — likely too `
-            + 'large for this browser. Reduce the export resolution and try again.'));
-        }
-      }, 'image/png');
-    });
+    return await finish(out);
   } finally {
     // Restore the live view. Camera projection was never changed. Runs on
     // normal completion AND on abort, so the view is always intact afterwards.

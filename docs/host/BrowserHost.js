@@ -376,6 +376,12 @@ export function createBrowserHost({
         if (!integerInRange(input.width, 1, 16384) || !integerInRange(input.height, 1, 16384)) {
           throw commandError('INVALID_ARGS', 'save_image dimensions must be integers from 1 through 16384');
         }
+        if (!integerInRange(input.margin, 0, 4096)) {
+          throw commandError('INVALID_ARGS', 'save_image.margin must be an integer from 0 through 4096');
+        }
+        if (input.margin * 2 >= input.width || input.margin * 2 >= input.height) {
+          throw commandError('INVALID_ARGS', 'save_image.margin must be smaller than half of each dimension');
+        }
         if (typeof input.transparent !== 'boolean') {
           throw commandError('INVALID_ARGS', 'save_image.transparent must be boolean');
         }
@@ -387,7 +393,7 @@ export function createBrowserHost({
           throw commandError('INVALID_OUTPUT_URL', 'Managed output URL is invalid');
         }
         const blob = await captureSceneToPng({
-          width: input.width, height: input.height, transparent: input.transparent,
+          width: input.width, height: input.height, margin: input.margin, transparent: input.transparent,
         });
         if (!(blob instanceof Blob) || blob.type !== 'image/png') {
           throw commandError('CAPTURE_FAILED', 'PNG capture did not return an image/png Blob');

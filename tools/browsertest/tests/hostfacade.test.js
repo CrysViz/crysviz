@@ -427,11 +427,11 @@ async function waitForHostFailure(page) {
     const unknownPipeline = await host.dispatch({ command: 'set_render_pipeline', args: { pipelineId: 'unknown' } });
     const raster = await host.dispatch({ command: 'set_render_pipeline', args: { pipelineId: 'forward' } });
     const saved = await host.dispatch({ command: 'save_image', args: {
-      width: 320, height: 240, transparent: false,
+      width: 320, height: 240, margin: 16, transparent: false,
       outputUrl: `${location.origin}/_crysviz/output/output-capability-123456789012345678901234`,
     } });
     const invalidOutput = await host.dispatch({ command: 'save_image', args: {
-      width: 320, height: 240, transparent: false,
+      width: 320, height: 240, margin: 0, transparent: false,
       outputUrl: `${location.origin}/_crysviz/output/output-capability-123456789012345678901234?alias=1`,
     } });
     return {
