@@ -437,7 +437,7 @@ body.panel-hidden #axesLegend {
   margin-top: var(--sp-1);
   padding: var(--sp-4) var(--sp-5);
   background: var(--highlight-color);
-  color: var(--bg-color);
+  color: var(--fg-1); /* same text color as the theme's other green buttons */
   border: none;
   border-radius: var(--radius);
   font-size: var(--fs-lg);
@@ -1799,7 +1799,7 @@ gap: var(--sp-3);
 }
 
 .spin-input-mode-btn.active {
-  background: var(--highlight-color)
+  background: var(--highlight-color);
   color: var(--fg-1);
 }
 
