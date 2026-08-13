@@ -876,6 +876,16 @@ export function recenterCamera() {
   // rotate-then-switch.
   stopCameraMomentum();
   app.controls.update();
+  app.cameraPan.x = panX;
+  app.cameraPan.y = panY;
+  if (panX !== 0 || panY !== 0) {
+    app.camera.updateMatrixWorld(true);
+    cameraPanRight.setFromMatrixColumn(app.camera.matrixWorld, 0);
+    cameraPanUp.setFromMatrixColumn(app.camera.matrixWorld, 1);
+    app.camera.position.addScaledVector(cameraPanRight, panX);
+    app.camera.position.addScaledVector(cameraPanUp, panY);
+    app.camera.updateMatrixWorld(true);
+  }
 }
 
 
