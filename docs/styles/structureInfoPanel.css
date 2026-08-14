@@ -69,11 +69,12 @@
   padding: 0 var(--sp-3-5);
   margin-right: var(--sp-1);
 }
-/* min-width, not a fixed width: the class also carries "Spins/Forces", and
-   the compact rung's .btn-mini font bump overflowed a hard 50px box. The
-   Apply/Reset labels are all under 50px, so their rows are unchanged. */
+/* min-width/min-height, not fixed width/height: the class also carries
+   "Spins/Forces", which neither fits a hard 50px box nor stays on one line in
+   a narrow dock — with a fixed height its second line spilled out of the
+   button. The Apply/Reset labels are all short, so their rows are unchanged. */
 .si-action-btn-narrow {
-  height: 32px;
+  min-height: 32px;
   font-size: var(--fs-sm);
   min-width: 50px;
   width: auto;
@@ -282,6 +283,8 @@
      via its narrow-viewport media queries — this only adds the layout this
      component actually needs, which the base rule doesn't set. */
   display: grid;
+  /* The tracks floor at min-content, which is right everywhere there is room —
+     the phone-width relaxation lives in responsive.css's mobile rung. */
   grid-template-columns: auto 1fr;
   align-items: center;
   column-gap: var(--sp-3);

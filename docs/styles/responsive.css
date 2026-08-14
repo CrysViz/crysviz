@@ -210,8 +210,12 @@
     border: 1px solid var(--wash-4);
   }
 
-  /* Measure panel improvements */
-  .btn-mini {
+  /* Measure panel improvements.
+     The .si-action-* variants are excluded: they are dense in-row actions
+     (Apply/Reset, Spins/Forces) sized against the row they sit in, not
+     standalone taps. Bumped to --fs-xl, the 12-char "Spins/Forces" label
+     needed three lines and pushed its row off a phone-width panel. */
+  .btn-mini:not(.si-action-btn):not(.si-action-btn-narrow):not(.si-action-btn-wide) {
     padding: var(--sp-4) var(--sp-5);
     font-size: var(--fs-xl);
     align-self: stretch;
@@ -280,6 +284,32 @@
      parked in the one corner a phone needs for the compact toolbar icons. */
   .background-dot {
     display: none;
+  }
+
+  /* ---- structureInfoPanel.css: composition rows ----
+     The count + Spins/Forces + toggle group doesn't fit one line beside the
+     element name on a phone-width sheet, and both grid tracks floor at
+     min-content, so the row stayed wide and pushed the button off the panel's
+     right edge. Let the tracks shrink and the group wrap onto a second line.
+     Mobile only: at dock width the row already fits, and relaxing it there
+     squeezed the button's label into two lines instead. */
+  .comp-row {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  }
+
+  .comp-right {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  /* ---- styles.css: file-actions row ----
+     Last resort if the fluid shrink still isn't enough for a label: wrap it
+     onto a second line rather than let it spill out of the sheet. Kept out of
+     the base rule because at desktop width there is room, and wrapping there
+     would change a row nothing was wrong with. */
+  .file-actions .file-action-btn {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   /* ---- styles.css: camera tools ----
@@ -565,6 +595,14 @@
     content: "";
     position: absolute;
     inset: -11px;
+  }
+
+  /* ---- panelWindow.css: compact round icons ----
+     PanelManager anchors these inline (Structure Info at bottom: 20), which
+     can't know about a home indicator. A margin composes with that offset
+     instead of mirroring it, so the JS stays the single source of the anchor. */
+  .cv-panel.cv-compact {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   /* ---- panelWindow.css: docked panel headers ----

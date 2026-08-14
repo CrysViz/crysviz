@@ -237,8 +237,11 @@ body.panel-hidden #axesLegend {
 .file-actions {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: var(--sp-3);
+  /* minmax(0, 1fr), not 1fr: a bare 1fr track floors at min-content, and with
+     nowrap labels that summed to more than a phone-width sheet, so Share ran
+     off the right edge. The labels wrap instead (see below). */
+  grid-auto-columns: minmax(0, 1fr);
+  gap: clamp(4px, 1.1111vw, var(--sp-3));
   margin-bottom: var(--sp-5);
   background: var(--wash-1);
   padding: var(--sp-2);
@@ -257,6 +260,14 @@ body.panel-hidden #axesLegend {
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Fluid on the same 720px pivot as the scene toolbars: --fs-md and --sp-3 are
+   the upper bounds, so nothing moves on a desktop-width sheet. (The mobile
+   rung additionally lets the label wrap — see responsive.css.) */
+.file-actions .file-action-btn {
+  padding: var(--sp-3-5) clamp(3px, 1.1111vw, var(--sp-3));
+  font-size: clamp(calc(10px * var(--cv-font-scale, 1)), 1.8056vw, var(--fs-md));
 }
 
 .file-action-btn:hover {
@@ -2157,7 +2168,7 @@ body > #structureInfoContent {
 /* --- Camera view tools --- (hosted by the unified "View" panel window) */
 #cameraTools {
   display: flex;
-  gap: var(--sp-3);
+  gap: clamp(4px, 1.1111vw, var(--sp-3));
   flex-wrap: wrap;
   max-width: 320px;
 }
@@ -2168,7 +2179,7 @@ body > #structureInfoContent {
    this, which made the panel change appearance mid-width for no clear reason). */
 #cameraPanel {
   display: flex;
-  gap: var(--sp-3);
+  gap: clamp(4px, 1.1111vw, var(--sp-3));
   align-items: center;
   max-height: none;
   flex-wrap: wrap;
@@ -2200,26 +2211,36 @@ body > #structureInfoContent {
 }
 
 
-/* Camera buttons for desktop - compact style like original vbtn */
+/* One size for every button in the row — 32px squares, no padding of their
+   own, so the row reads as a single control strip. Only the reset is wider:
+   it is the row's primary action, and lock+reset together then occupy about
+   what the old "Reset" text button did. */
+#cameraTools .camera-tool-btn,
+#cameraTools .camera-tool-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
 #cameraTools .camera-tool-btn {
-  padding: var(--sp-2) var(--sp-3-5);
   font-size: var(--fs-lg);
   color: var(--fg-1);
   background: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
   cursor: pointer;
-  min-width: 32px;
-  min-height: 32px;
   flex-direction: row;
   gap: 0;
 }
 
 #cameraTools .camera-tool-reset-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--sp-2) var(--sp-3-5);
+  width: 44px;
   font-size: var(--fs-lg);
   color: var(--fg-1);
   background: var(--danger);
@@ -2279,14 +2300,17 @@ body > #structureInfoContent {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: var(--sp-3);
+  gap: var(--sp-1);
 }
 
-/* Sized like the axis buttons now that it shares their row. */
+/* Same 32px square as the axis buttons, but painted from the "locked" family
+   rather than the plain button fill — it is a standing mode, not another view
+   shortcut, and reading identical to the axis letters hid that. --locked-* is
+   the token family the Wyckoff lock already uses, and every light palette
+   overrides it, so the --fg-1 glyph stays legible on both. */
 #cameraTools .camera-lock-btn {
-  padding: var(--sp-1);
-  min-width: 32px;
-  min-height: 32px;
+  background: var(--locked-badge-bg);
+  border-color: var(--locked-grad-1);
 }
 
 #cameraTools .camera-lock-btn svg {
@@ -2312,12 +2336,15 @@ body > #structureInfoContent {
   justify-content: center;
 }
 
-/* Vertical stack: up-arrow / view-along-axis button / down-arrow. */
+/* Vertical stack: up-arrow / view-along-axis button / down-arrow. The arrows
+   keep their box while hidden (see below), so this gap and their height are
+   dead space in the default long-press mode — both kept as small as the
+   chevrons allow. */
 .camera-axis-stack {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--sp-1);
+  gap: 2px;
 }
 
 /* The small step-rotation arrows flanking each axis button. Their visibility
@@ -2326,7 +2353,8 @@ body > #structureInfoContent {
    pointer-events follows visibility so a hidden arrow can't be clicked (or
    caught by the outside-click handler's own hit-testing) while invisible. */
 #cameraTools .camera-axis-stack .axis-step {
-  padding: 1px var(--sp-2);
+  padding: 0 var(--sp-2);
+  border-width: 0;
   font-size: var(--fs-xs);
   line-height: var(--lh-tight);
   min-width: 32px;
@@ -2352,10 +2380,19 @@ body > #structureInfoContent {
   margin: 0 2px;
 }
 
+/* Fluid toolbar sizing (#measurementPanel and #cameraPanel).
+   Every clamp() below pivots on 720px — the mobile rung — with today's desktop
+   value as the UPPER bound, so nothing moves at or above 720px and the
+   controls shrink smoothly from there down. The vw middle terms are just each
+   desktop value expressed as a fraction of 720 (6px = 0.8333vw, and so on).
+   Wrapping stays on as the backstop: at the narrowest widths the row still has
+   to break, and #measurementPanel not wrapping is what clipped "Distance" off
+   the left screen edge inside the compact panel's clamped body. */
 .measurement-group {
   display: flex;
-  gap: var(--sp-3);
+  gap: clamp(4px, 1.1111vw, var(--sp-3));
   align-items: center;
+  flex-wrap: wrap;
   max-height: none;
   overflow: visible;
 }
@@ -2365,8 +2402,8 @@ body > #structureInfoContent {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-2);
+  gap: clamp(3px, 0.8333vw, var(--sp-2));
+  padding: clamp(3px, 0.8333vw, var(--sp-2));
   background: var(--bg-color);
   border: 2px solid var(--border-color);
   border-radius: var(--radius-12);
@@ -2375,8 +2412,9 @@ body > #structureInfoContent {
   transition: all 0.3s ease;
   font-size: var(--fs-base);
   font-weight: var(--fw-bold);
-  min-width: 45px;
-  min-height: 45px;
+  /* 40px floor: the smallest this may get and still be a touch target. */
+  min-width: clamp(40px, 6.25vw, 45px);
+  min-height: clamp(40px, 6.25vw, 45px);
   text-align: center;
   user-select: none;
   -webkit-user-select: none;
@@ -2471,6 +2509,20 @@ body > #structureInfoContent {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Fluid below 720px, same pivot as .measure-tool-btn above. Scoped to the
+   measurement buttons: .tool-icon's other users are full-width panel rows. */
+.measure-tool-btn .tool-icon {
+  width: clamp(20px, 4.4444vw, 32px);
+  height: clamp(15px, 3.3333vw, 24px);
+}
+
+/* The label. Needs the id to outrank panelWindow.css's `.cv-panel-body button`
+   (--fs-md), which is what these buttons actually render at once adopted into
+   the Measure window — hence --fs-md, not --fs-base, as the desktop bound. */
+#measurementTools .measure-tool-btn {
+  font-size: clamp(calc(9px * var(--cv-font-scale, 1)), 1.8056vw, var(--fs-md));
 }
 
 .tool-icon img {
